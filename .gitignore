@@ -1,4 +1,4 @@
-nebula
+./nebula
 nebula.log
 output/*
 .devcontainer
