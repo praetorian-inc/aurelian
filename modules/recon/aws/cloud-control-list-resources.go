@@ -4,8 +4,6 @@ import (
 	"context"
 	"log"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
 	"github.com/praetorian-inc/nebula/internal/helpers"
@@ -75,19 +73,10 @@ func (m *AwsCloudControlListResources) Invoke() error {
 
 	log.Default().Printf("Listing resources of type %s in regions: %v", rtype, regions)
 	for _, region := range regions {
-		go func(region string) {
-			cfg, err := config.LoadDefaultConfig(
-				context.TODO(),
-				config.WithClientLogMode(
-					aws.LogRetries|
-						aws.LogRequestWithBody|
-						aws.LogRequestEventMessage|
-						aws.LogResponseEventMessage),
-				config.WithLogger(logger),
-				config.WithRegion(region))
+		go func(region string) error {
+			cfg, err := helpers.GetAWSCfg(region)
 			if err != nil {
-				resultsChan <- []types.ResourceDescription{}
-				return
+				return err
 			}
 
 			cc := cloudcontrol.NewFromConfig(cfg)
@@ -101,11 +90,13 @@ func (m *AwsCloudControlListResources) Invoke() error {
 			res, err := cc.ListResources(context.Background(), params)
 			if err != nil {
 				resultsChan <- []types.ResourceDescription{}
-				return
+				return err
 			}
 
 			// TODO results need to be enriched with region and account id
 			resultsChan <- res.ResourceDescriptions
+
+			return nil
 		}(region)
 	}
 

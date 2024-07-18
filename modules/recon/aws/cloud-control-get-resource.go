@@ -3,9 +3,8 @@ package reconaws
 import (
 	"context"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
+	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
 )
@@ -51,16 +50,7 @@ func (m *AwsCloudControlGetResource) Invoke() error {
 	rtype := m.GetOptionByName(options.AwsResourceTypeOpt.Name).Value
 	id := m.GetOptionByName(options.AwsResourceIdOpt.Name).Value
 
-	cfg, err := config.LoadDefaultConfig(
-		context.TODO(),
-		config.WithClientLogMode(
-			aws.LogRetries|
-				aws.LogRequestWithBody|
-				aws.LogRequestEventMessage|
-				aws.LogResponseEventMessage),
-		config.WithLogger(logger),
-		config.WithRegion(region))
-
+	cfg, err := helpers.GetAWSCfg(region)
 	if err != nil {
 		return err
 	}

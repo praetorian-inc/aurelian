@@ -3,7 +3,6 @@ package helpers
 import (
 	"context"
 
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 )
 
@@ -43,7 +42,7 @@ var Regions = []string{
 
 func EnabledRegions() ([]string, error) {
 	// TODO centralize the config creation so that it includes the logging
-	cfg, err := config.LoadDefaultConfig(context.TODO())
+	cfg, err := GetAWSCfg("")
 
 	if err != nil {
 		return nil, err

@@ -35,7 +35,7 @@ func NewAwsAuthorizationDetails(options []*options.Option, run modules.Run) (mod
 }
 
 func (m *AwsAuthorizationDetails) Invoke() error {
-	config, err := helpers.GetAWSCfg()
+	config, err := helpers.GetAWSCfg("")
 	if err != nil {
 		return err
 	}
