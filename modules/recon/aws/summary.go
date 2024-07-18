@@ -64,6 +64,7 @@ func (m *AwsSummary) Invoke() error {
 		}
 
 	}
+	m.Run.Data <- m.MakeResult(serviceRegions)
 	close(m.Run.Data)
 	return nil
 }
