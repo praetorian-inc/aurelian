@@ -6,6 +6,7 @@ import (
 
 var AwsAccessKeyIdOpt = Option{
 	Name:        "access-key-id",
+	Short:       "k",
 	Description: "AWS access key ID",
 	Required:    true,
 	Type:        String,
@@ -15,6 +16,7 @@ var AwsAccessKeyIdOpt = Option{
 
 var AwsAccountIdOpt = Option{
 	Name:        "account-id",
+	Short:       "i",
 	Description: "AWS account ID",
 	Required:    true,
 	Type:        String,
@@ -24,6 +26,7 @@ var AwsAccountIdOpt = Option{
 
 var AwsRegionOpt = Option{
 	Name:        "region",
+	Short:       "r",
 	Description: "AWS region",
 	Required:    true,
 	Type:        String,
@@ -32,6 +35,7 @@ var AwsRegionOpt = Option{
 
 var AwsRegionsOpt = Option{
 	Name:        "regions",
+	Short:       "r",
 	Description: "Comma separated list of AWS regions",
 	Required:    true,
 	Type:        String,
@@ -40,6 +44,7 @@ var AwsRegionsOpt = Option{
 
 var AwsResourceTypeOpt = Option{
 	Name:        "resource-type",
+	Short:       "t",
 	Description: "AWS Cloud Control resource type",
 	Required:    true,
 	Type:        String,
@@ -49,8 +54,18 @@ var AwsResourceTypeOpt = Option{
 
 var AwsResourceIdOpt = Option{
 	Name:        "resource-id",
+	Short:       "i",
 	Description: "AWS Cloud Control resource identifier",
 	Required:    true,
 	Type:        String,
+	Value:       "",
+}
+
+var AwsSummaryServicesOpt = Option{
+	Name:        "summary",
+	Short:       "s",
+	Description: "Use the cost explorer API to get a summary of services",
+	Required:    false,
+	Type:        Bool,
 	Value:       "",
 }

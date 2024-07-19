@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/praetorian-inc/nebula/modules"
-	"github.com/praetorian-inc/nebula/modules/aws/analyze"
+	analyze "github.com/praetorian-inc/nebula/modules/analyze/aws"
 	o "github.com/praetorian-inc/nebula/modules/options"
 	"github.com/spf13/cobra"
 )

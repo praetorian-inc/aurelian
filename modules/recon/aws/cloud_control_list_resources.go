@@ -21,7 +21,7 @@ var AwsCloudControlListResourcesRequiredOptions = []*options.Option{
 }
 
 var AwsCloudControlListResourcesMetadata = modules.Metadata{
-	Id:          "cloud-control-list-resources",
+	Id:          "list",
 	Name:        "Cloud Control List Resources",
 	Description: "List resources in an AWS account using Cloud Control API.",
 	Platform:    modules.AWS,

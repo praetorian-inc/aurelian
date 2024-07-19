@@ -20,7 +20,7 @@ var AwsCloudControlGetResourceRequiredOptions = []*options.Option{
 }
 
 var AwsCloudControlGetResourceMetadata = modules.Metadata{
-	Id:          "cloud-control-get-resource",
+	Id:          "get",
 	Name:        "Cloud Control Get Resource",
 	Description: "Get a resource in an AWS account using Cloud Control API.",
 	Platform:    modules.AWS,

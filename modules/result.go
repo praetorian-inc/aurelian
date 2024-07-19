@@ -11,7 +11,7 @@ type Result struct {
 }
 
 func (r *Result) String() string {
-	d, _ := json.Marshal(r)
+	d, _ := json.MarshalIndent(r, "", "  ")
 	return string(d)
 }
 

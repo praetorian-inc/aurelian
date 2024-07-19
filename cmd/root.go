@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/modules"
 	o "github.com/praetorian-inc/nebula/modules/options"
 	"github.com/spf13/cobra"
@@ -142,6 +143,7 @@ func runModule(module modules.Module, meta modules.Metadata, options []*o.Option
 					log.Default().Println(err)
 					return
 				}
+				helpers.PrintResult(result)
 				log.Default().Printf("Data written to %s\n", outputFile)
 			} else {
 				log.Default().Println("Output option not found")
@@ -151,6 +153,7 @@ func runModule(module modules.Module, meta modules.Metadata, options []*o.Option
 		}
 	}()
 
+	helpers.PrintMessage(meta.Name)
 	err := module.Invoke()
 	if err != nil {
 		log.Default().Println(err)
