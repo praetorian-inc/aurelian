@@ -61,7 +61,13 @@ func initConfig() {
 	}
 }
 
-// TODO refactor to accept []*Option so you can just pass in the required options
+func options2Flag(options []*o.Option, cmd *cobra.Command) {
+	for _, option := range options {
+		option2Flag(option, cmd)
+	}
+
+}
+
 func option2Flag(option *o.Option, cmd *cobra.Command) {
 	switch o.OptionType(option.Type) {
 	case o.String:

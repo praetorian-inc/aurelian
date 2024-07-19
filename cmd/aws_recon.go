@@ -112,13 +112,10 @@ var awsGetAuthorizationDetailsCommand = &cobra.Command{
 func init() {
 	awsReconCmd.AddCommand(awsSummaryCmd)
 
-	option2Flag(&o.AwsRegionsOpt, awsCloudControlListCommand)
-	option2Flag(&o.AwsResourceTypeOpt, awsCloudControlListCommand)
+	options2Flag(reconaws.AwsCloudControlListResourcesRequiredOptions, awsCloudControlListCommand)
 	awsReconCmd.AddCommand(awsCloudControlListCommand)
 
-	option2Flag(&o.AwsRegionOpt, awsCloudControlGetCommand)
-	option2Flag(&o.AwsResourceTypeOpt, awsCloudControlGetCommand)
-	option2Flag(&o.AwsResourceIdOpt, awsCloudControlGetCommand)
+	options2Flag(reconaws.AwsCloudControlGetResourceRequiredOptions, awsCloudControlGetCommand)
 	awsReconCmd.AddCommand(awsCloudControlGetCommand)
 
 	awsReconCmd.AddCommand(awsGetAuthorizationDetailsCommand)

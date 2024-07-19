@@ -63,10 +63,10 @@ var awsKnownAccountId = &cobra.Command{
 }
 
 func init() {
-	option2Flag(&o.AwsAccessKeyIdOpt, awsAccessKeyIdToAccountIdCmd)
+	options2Flag(analyze.AccessKeyIdToAccountIdRequiredOptions, awsAccessKeyIdToAccountIdCmd)
 	awsAnalyzeCmd.AddCommand(awsAccessKeyIdToAccountIdCmd)
 
-	option2Flag(&o.AwsAccountIdOpt, awsKnownAccountId)
+	options2Flag(analyze.KnownAccountIDRequiredOptions, awsKnownAccountId)
 	awsAnalyzeCmd.AddCommand(awsKnownAccountId)
 
 	awsCmd.AddCommand(awsAnalyzeCmd)
