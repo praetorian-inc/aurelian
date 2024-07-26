@@ -1,11 +1,7 @@
 package modules
 
 import (
-	"errors"
-	"strconv"
-
 	"github.com/praetorian-inc/nebula/modules/options"
-	o "github.com/praetorian-inc/nebula/modules/options"
 )
 
 /*
@@ -100,43 +96,6 @@ func (m *BaseModule) SetMetdata(meta Metadata) {
 	m.Authors = meta.Authors
 	m.References = meta.References
 	m.OpsecLevel = meta.OpsecLevel
-}
-
-// ValidateOptions ensures the provided option is in the list of options and valid.
-// It checks if the option is required and has a valid format.
-// If any validation fails, it returns an error.
-func (m *BaseModule) ValidateOptions(opt options.Option, options []*options.Option) error {
-
-	for _, option := range options {
-		if option.Name == opt.Name {
-
-			// Not required and empty
-			if !opt.Required && option.Value == "" {
-				return nil
-			}
-
-			// Required and empty
-			if opt.Required && option.Value == "" {
-				return errors.New(option.Name + " is required")
-			}
-
-			if opt.ValueFormat != nil && !opt.ValueFormat.MatchString(option.Value) {
-				return errors.New(option.Name + " is an invalid format")
-			}
-
-			// Check if the option value is of the correct type when non-string
-			switch opt.Type {
-			case o.Bool:
-				_, err := strconv.ParseBool(option.Value)
-				return err
-			case o.Int:
-				_, err := strconv.Atoi(option.Value)
-				return err
-			}
-		}
-	}
-
-	return nil
 }
 
 func (m *BaseModule) MakeResult(data interface{}) Result {

@@ -35,11 +35,8 @@ func NewAwsOllamaIam(options []*o.Option, run modules.Run) (modules.Module, erro
 	var m AwsOllamaIam
 	m.SetMetdata(AwsOllamaIamMetadata)
 	m.Run = run
-	err := m.ValidateOptions(o.PathOpt, options)
-	if err != nil {
-		return nil, err
-	}
 
+	// TODO we need a way to have non-required options
 	urlOpt := o.UrlOpt
 	urlOpt.Value = "http://localhost:11434/api"
 	options = append(options, &urlOpt)
@@ -47,11 +44,6 @@ func NewAwsOllamaIam(options []*o.Option, run modules.Run) (modules.Module, erro
 	promptOpt := o.PromptOpt
 	promptOpt.Value = "In ithe AWS Policy below, what security weaknesses are present? Please list all weaknesses, be thorough. Respond None if there are no weaknesses. Finally rate the risk of the policy."
 	options = append(options, &promptOpt)
-
-	err = m.ValidateOptions(o.UrlOpt, options)
-	if err != nil {
-		return nil, err
-	}
 
 	m.Options = options
 

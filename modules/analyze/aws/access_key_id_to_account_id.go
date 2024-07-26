@@ -35,11 +35,6 @@ func NewAccessKeyIdToAccountId(options []*o.Option, run modules.Run) (modules.Mo
 	var m AccessKeyIdToAccountId
 	m.SetMetdata(AccessKeyIdToAccountIdMetadata)
 	m.Run = run
-	err := m.ValidateOptions(o.AwsAccessKeyIdOpt, options)
-	if err != nil {
-		return nil, err
-	}
-
 	m.Options = options
 
 	return &m, nil

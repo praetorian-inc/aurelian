@@ -34,11 +34,6 @@ func NewKnownAccountID(options []*o.Option, run modules.Run) (modules.Module, er
 	var m KnownAccountID
 	m.SetMetdata(KnownAccountIDMetadata)
 	m.Run = run
-	err := m.ValidateOptions(o.AwsAccountIdOpt, options)
-	if err != nil {
-		return nil, err
-	}
-
 	m.Options = options
 
 	return &m, nil

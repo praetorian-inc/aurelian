@@ -8,7 +8,7 @@ import (
 	logs "github.com/praetorian-inc/nebula/internal/logs"
 )
 
-func GetAWSCfg(region string) (aws.Config, error) {
+func GetAWSCfg(region string, profile string) (aws.Config, error) {
 
 	cfg, err := config.LoadDefaultConfig(
 		context.TODO(),
@@ -19,6 +19,7 @@ func GetAWSCfg(region string) (aws.Config, error) {
 				aws.LogResponseEventMessage),
 		config.WithLogger(logs.Logger()),
 		config.WithRegion(region),
+		config.WithSharedConfigProfile(profile),
 	)
 
 	if err != nil {

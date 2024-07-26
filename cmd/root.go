@@ -62,11 +62,14 @@ func initConfig() {
 	}
 }
 
-func options2Flag(options []*o.Option, cmd *cobra.Command) {
+func options2Flag(options []*o.Option, common []*o.Option, cmd *cobra.Command) {
 	for _, option := range options {
 		option2Flag(option, cmd)
 	}
 
+	for _, option := range common {
+		option2Flag(option, cmd)
+	}
 }
 
 func option2Flag(option *o.Option, cmd *cobra.Command) {
@@ -87,9 +90,25 @@ func option2Flag(option *o.Option, cmd *cobra.Command) {
 
 }
 
-func getOpts(cmd *cobra.Command, required []*o.Option) []*o.Option {
+func getOpts(cmd *cobra.Command, required []*o.Option, common []*o.Option) []*o.Option {
 	opts := getGlobalOpts(cmd)
-	opts = append(opts, getRequiredOpts(cmd, required)...)
+
+	// Process required options
+	opts = append(opts, getOptsFromCmd(cmd, required)...)
+	err := o.ValidateOptions(opts, required)
+	if err != nil {
+		log.Default().Println(err)
+		os.Exit(1)
+	}
+
+	// Process common options
+	opts = append(opts, getOptsFromCmd(cmd, common)...)
+	err = o.ValidateOptions(opts, common)
+	if err != nil {
+		log.Default().Println(err)
+		os.Exit(1)
+	}
+
 	return opts
 }
 
@@ -102,22 +121,20 @@ func getGlobalOpts(cmd *cobra.Command) []*o.Option {
 	return opts
 }
 
-func getRequiredOpts(cmd *cobra.Command, required []*o.Option) []*o.Option {
+func getOptsFromCmd(cmd *cobra.Command, required []*o.Option) []*o.Option {
 	opts := []*o.Option{}
 	for _, opt := range required {
-		if opt.Required {
-			switch o.OptionType(opt.Type) {
-			case o.String:
-				opt.Value, _ = cmd.Flags().GetString(opt.Name)
-			case o.Bool:
-				value, _ := cmd.Flags().GetBool(opt.Name)
-				opt.Value = strconv.FormatBool(value)
-			case o.Int:
-				value, _ := cmd.Flags().GetInt(opt.Name)
-				opt.Value = strconv.Itoa(value)
-			}
-			opts = append(opts, opt)
+		switch o.OptionType(opt.Type) {
+		case o.String:
+			opt.Value, _ = cmd.Flags().GetString(opt.Name)
+		case o.Bool:
+			value, _ := cmd.Flags().GetBool(opt.Name)
+			opt.Value = strconv.FormatBool(value)
+		case o.Int:
+			value, _ := cmd.Flags().GetInt(opt.Name)
+			opt.Value = strconv.Itoa(value)
 		}
+		opts = append(opts, opt)
 	}
 	return opts
 }

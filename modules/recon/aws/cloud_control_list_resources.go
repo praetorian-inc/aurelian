@@ -2,6 +2,7 @@ package reconaws
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
@@ -34,12 +35,14 @@ func NewAwsCloudControlListResources(options []*options.Option, run modules.Run)
 	var m AwsCloudControlListResources
 	m.SetMetdata(AwsCloudControlListResourcesMetadata)
 	m.Run = run
-	for _, opt := range AwsCloudControlListResourcesRequiredOptions {
-		err := m.ValidateOptions(*opt, options)
-		if err != nil {
-			return nil, err
+	/*
+		for _, opt := range AwsCloudControlListResourcesRequiredOptions {
+			err := m.ValidateOptions(*opt, options)
+			if err != nil {
+				return nil, err
+			}
 		}
-	}
+	*/
 
 	m.Options = options
 
@@ -55,7 +58,9 @@ func (m *AwsCloudControlListResources) Invoke() error {
 	if regionsOpt.Value == "ALL" {
 		log.Default().Println("Gathering enabled regions")
 		// TODO we should cache this
-		enabledRegions, err := helpers.EnabledRegions()
+		profile := m.GetOptionByName(options.AwsProfileOpt.Name).Value
+		fmt.Println(profile)
+		enabledRegions, err := helpers.EnabledRegions(profile)
 		if err != nil {
 			return err
 		}
@@ -74,7 +79,7 @@ func (m *AwsCloudControlListResources) Invoke() error {
 	log.Default().Printf("Listing resources of type %s in regions: %v", rtype, regions)
 	for _, region := range regions {
 		go func(region string) error {
-			cfg, err := helpers.GetAWSCfg(region)
+			cfg, err := helpers.GetAWSCfg(region, m.GetOptionByName(options.AwsProfileOpt.Name).Value)
 			if err != nil {
 				return err
 			}

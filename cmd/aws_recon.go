@@ -1,12 +1,10 @@
 package cmd
 
 import (
-	"fmt"
 	"log"
 	"os"
 
 	"github.com/praetorian-inc/nebula/modules"
-	o "github.com/praetorian-inc/nebula/modules/options"
 	reconaws "github.com/praetorian-inc/nebula/modules/recon/aws"
 	"github.com/spf13/cobra"
 )
@@ -20,16 +18,11 @@ var awsReconCmd = &cobra.Command{
 	},
 }
 
-func AwsEnum(cmd *cobra.Command, args []string) {
-
-	fmt.Println("AWS Enum")
-}
-
 var awsSummaryCmd = &cobra.Command{
 	Use:   reconaws.AwsSummaryMetadata.Id,
 	Short: reconaws.AwsSummaryMetadata.Description,
 	Run: func(cmd *cobra.Command, args []string) {
-		options := getGlobalOpts(cmd)
+		options := getOpts(cmd, reconaws.AwsSummaryRequiredOptions, awsCommonOptions)
 		run := modules.Run{Data: make(chan modules.Result)}
 		m, err := reconaws.NewAwsSummary(options, run)
 		if err != nil {
@@ -44,15 +37,7 @@ var awsCloudControlListCommand = &cobra.Command{
 	Use:   reconaws.AwsCloudControlListResourcesMetadata.Id,
 	Short: reconaws.AwsCloudControlListResourcesMetadata.Description,
 	Run: func(cmd *cobra.Command, args []string) {
-		options := getGlobalOpts(cmd)
-
-		regions := o.AwsRegionsOpt
-		regions.Value, _ = cmd.Flags().GetString(regions.Name)
-		options = append(options, &regions)
-
-		rtype := o.AwsResourceTypeOpt
-		rtype.Value, _ = cmd.Flags().GetString(rtype.Name)
-		options = append(options, &rtype)
+		options := getOpts(cmd, reconaws.AwsCloudControlListResourcesRequiredOptions, awsCommonOptions)
 
 		run := modules.Run{Data: make(chan modules.Result)}
 		m, err := reconaws.NewAwsCloudControlListResources(options, run)
@@ -60,8 +45,8 @@ var awsCloudControlListCommand = &cobra.Command{
 			log.Default().Println(err)
 			os.Exit(1)
 		}
-		runModule(m, reconaws.AwsCloudControlListResourcesMetadata, options, run)
 
+		runModule(m, reconaws.AwsCloudControlListResourcesMetadata, options, run)
 	},
 }
 
@@ -69,19 +54,7 @@ var awsCloudControlGetCommand = &cobra.Command{
 	Use:   reconaws.AwsCloudControlGetResourceMetadata.Id,
 	Short: reconaws.AwsCloudControlGetResourceMetadata.Description,
 	Run: func(cmd *cobra.Command, args []string) {
-		options := getGlobalOpts(cmd)
-
-		region := o.AwsRegionOpt
-		region.Value, _ = cmd.Flags().GetString(region.Name)
-		options = append(options, &region)
-
-		rtype := o.AwsResourceTypeOpt
-		rtype.Value, _ = cmd.Flags().GetString(rtype.Name)
-		options = append(options, &rtype)
-
-		id := o.AwsResourceIdOpt
-		id.Value, _ = cmd.Flags().GetString(id.Name)
-		options = append(options, &id)
+		options := getOpts(cmd, reconaws.AwsCloudControlGetResourceRequiredOptions, awsCommonOptions)
 
 		run := modules.Run{Data: make(chan modules.Result)}
 		m, err := reconaws.NewAwsCloudControlGetResource(options, run)
@@ -114,7 +87,7 @@ var awsGetAuthorizationDetailsCommand = &cobra.Command{
 	Use:   reconaws.AwsAuthorizationDetailsMetadata.Id,
 	Short: reconaws.AwsAuthorizationDetailsMetadata.Description,
 	Run: func(cmd *cobra.Command, args []string) {
-		options := getGlobalOpts(cmd)
+		options := getOpts(cmd, reconaws.AwsAuthorizationDetailsRequiredOptions, awsCommonOptions)
 
 		run := modules.Run{Data: make(chan modules.Result)}
 		m, err := reconaws.NewAwsAuthorizationDetails(options, run)
@@ -129,16 +102,16 @@ var awsGetAuthorizationDetailsCommand = &cobra.Command{
 func init() {
 	awsReconCmd.AddCommand(awsSummaryCmd)
 
-	options2Flag(reconaws.AwsCloudControlListResourcesRequiredOptions, awsCloudControlListCommand)
+	options2Flag(reconaws.AwsCloudControlListResourcesRequiredOptions, awsCommonOptions, awsCloudControlListCommand)
 	awsReconCmd.AddCommand(awsCloudControlListCommand)
 
-	options2Flag(reconaws.AwsCloudControlGetResourceRequiredOptions, awsCloudControlGetCommand)
+	options2Flag(reconaws.AwsCloudControlGetResourceRequiredOptions, awsCommonOptions, awsCloudControlGetCommand)
 	awsReconCmd.AddCommand(awsCloudControlGetCommand)
 
-	options2Flag(reconaws.AwsAuthorizationDetailsRequiredOptions, awsGetAuthorizationDetailsCommand)
+	options2Flag(reconaws.AwsAuthorizationDetailsRequiredOptions, awsCommonOptions, awsGetAuthorizationDetailsCommand)
 	awsReconCmd.AddCommand(awsGetAuthorizationDetailsCommand)
 
-	//options2Flag(reconaws.AwsListAllResourcesRequiredOptions, awsListAllResourcesCmd)
+	//options2Flag(reconaws.AwsListAllResourcesRequiredOptions, commonOptions, awsListAllResourcesCmd)
 	//awsReconCmd.AddCommand(awsListAllResourcesCmd)
 
 	awsCmd.AddCommand(awsReconCmd)

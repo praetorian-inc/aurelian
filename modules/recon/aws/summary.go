@@ -9,6 +9,7 @@ import (
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/modules"
+	"github.com/praetorian-inc/nebula/modules/options"
 	o "github.com/praetorian-inc/nebula/modules/options"
 	naws "github.com/praetorian-inc/nebula/pkg/nebula/aws/active_regions"
 )
@@ -39,7 +40,7 @@ func NewAwsSummary(options []*o.Option, run modules.Run) (modules.Module, error)
 }
 
 func (m *AwsSummary) Invoke() error {
-	cfg, err := helpers.GetAWSCfg("")
+	cfg, err := helpers.GetAWSCfg("", m.GetOptionByName(options.AwsProfileOpt.Name).Value)
 
 	if err != nil {
 		fmt.Println("Failed to load AWS config:", err)

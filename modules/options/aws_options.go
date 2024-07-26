@@ -78,3 +78,11 @@ var AwsActionOpt = Option{
 	Type:        String,
 	Value:       "",
 }
+
+var AwsProfileOpt = Option{
+	Name:        "profile",
+	Description: "AWS shared credentials profile",
+	Required:    false,
+	Type:        String,
+	Value:       "",
+}

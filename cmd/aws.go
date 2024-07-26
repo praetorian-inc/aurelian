@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 
+	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/spf13/cobra"
 )
 
@@ -18,4 +19,8 @@ var awsCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(awsCmd)
+}
+
+var awsCommonOptions = []*options.Option{
+	&options.AwsProfileOpt,
 }

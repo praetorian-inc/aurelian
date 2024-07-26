@@ -40,8 +40,8 @@ var Regions = []string{
 	"us-gov-west-1",
 }
 
-func EnabledRegions() ([]string, error) {
-	cfg, err := GetAWSCfg("")
+func EnabledRegions(profile string) ([]string, error) {
+	cfg, err := GetAWSCfg("", profile)
 
 	if err != nil {
 		return nil, err

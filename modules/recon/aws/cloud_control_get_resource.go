@@ -33,13 +33,6 @@ func NewAwsCloudControlGetResource(options []*options.Option, run modules.Run) (
 	var m AwsCloudControlGetResource
 	m.SetMetdata(AwsCloudControlGetResourceMetadata)
 	m.Run = run
-	for _, opt := range AwsCloudControlGetResourceRequiredOptions {
-		err := m.ValidateOptions(*opt, options)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	m.Options = options
 
 	return &m, nil
@@ -50,7 +43,7 @@ func (m *AwsCloudControlGetResource) Invoke() error {
 	rtype := m.GetOptionByName(options.AwsResourceTypeOpt.Name).Value
 	id := m.GetOptionByName(options.AwsResourceIdOpt.Name).Value
 
-	cfg, err := helpers.GetAWSCfg(region)
+	cfg, err := helpers.GetAWSCfg(region, m.GetOptionByName(options.AwsProfileOpt.Name).Value)
 	if err != nil {
 		return err
 	}

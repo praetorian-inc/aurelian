@@ -67,7 +67,7 @@ var awsOllamaIamCmd = &cobra.Command{
 	Short: analyze.AwsOllamaIamMetadata.Description,
 	Run: func(cmd *cobra.Command, args []string) {
 
-		options := getOpts(cmd, analyze.AwsOllamaIamRequiredOptions)
+		options := getOpts(cmd, analyze.AwsOllamaIamRequiredOptions, []*o.Option{})
 		run := modules.Run{Data: make(chan modules.Result)}
 		m, err := analyze.NewAwsOllamaIam(options, run)
 		if err != nil {
@@ -84,7 +84,7 @@ var awsExpandActionsCmd = &cobra.Command{
 	Short: analyze.AwsExpandActionsMetadata.Description,
 	Run: func(cmd *cobra.Command, args []string) {
 
-		options := getOpts(cmd, analyze.AwsExpandActionsRequiredOptions)
+		options := getOpts(cmd, analyze.AwsExpandActionsRequiredOptions, []*o.Option{})
 		run := modules.Run{Data: make(chan modules.Result)}
 		m, err := analyze.NewAwsExpandActions(options, run)
 		if err != nil {
@@ -97,16 +97,16 @@ var awsExpandActionsCmd = &cobra.Command{
 }
 
 func init() {
-	options2Flag(analyze.AccessKeyIdToAccountIdRequiredOptions, awsAccessKeyIdToAccountIdCmd)
+	options2Flag(analyze.AccessKeyIdToAccountIdRequiredOptions, []*o.Option{}, awsAccessKeyIdToAccountIdCmd)
 	awsAnalyzeCmd.AddCommand(awsAccessKeyIdToAccountIdCmd)
 
-	options2Flag(analyze.KnownAccountIDRequiredOptions, awsKnownAccountIdCmd)
+	options2Flag(analyze.KnownAccountIDRequiredOptions, []*o.Option{}, awsKnownAccountIdCmd)
 	awsAnalyzeCmd.AddCommand(awsKnownAccountIdCmd)
 
-	options2Flag(analyze.AwsOllamaIamRequiredOptions, awsOllamaIamCmd)
+	options2Flag(analyze.AwsOllamaIamRequiredOptions, []*o.Option{}, awsOllamaIamCmd)
 	awsAnalyzeCmd.AddCommand(awsOllamaIamCmd)
 
-	options2Flag(analyze.AwsExpandActionsRequiredOptions, awsExpandActionsCmd)
+	options2Flag(analyze.AwsExpandActionsRequiredOptions, []*o.Option{}, awsExpandActionsCmd)
 	awsAnalyzeCmd.AddCommand(awsExpandActionsCmd)
 
 	awsCmd.AddCommand(awsAnalyzeCmd)
