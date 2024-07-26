@@ -93,6 +93,7 @@ var awsCloudControlGetCommand = &cobra.Command{
 	},
 }
 
+/*
 var awsListAllResourcesCmd = &cobra.Command{
 	Use:   reconaws.AwsListAllResourcesMetadata.Id,
 	Short: reconaws.AwsListAllResourcesMetadata.Description,
@@ -107,6 +108,7 @@ var awsListAllResourcesCmd = &cobra.Command{
 		runModule(m, reconaws.AwsListAllResourcesMetadata, options, run)
 	},
 }
+*/
 
 var awsGetAuthorizationDetailsCommand = &cobra.Command{
 	Use:   reconaws.AwsAuthorizationDetailsMetadata.Id,
@@ -136,8 +138,8 @@ func init() {
 	options2Flag(reconaws.AwsAuthorizationDetailsRequiredOptions, awsGetAuthorizationDetailsCommand)
 	awsReconCmd.AddCommand(awsGetAuthorizationDetailsCommand)
 
-	options2Flag(reconaws.AwsListAllResourcesRequiredOptions, awsListAllResourcesCmd)
-	awsReconCmd.AddCommand(awsListAllResourcesCmd)
+	//options2Flag(reconaws.AwsListAllResourcesRequiredOptions, awsListAllResourcesCmd)
+	//awsReconCmd.AddCommand(awsListAllResourcesCmd)
 
 	awsCmd.AddCommand(awsReconCmd)
 }
