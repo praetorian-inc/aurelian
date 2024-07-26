@@ -69,3 +69,12 @@ var AwsSummaryServicesOpt = Option{
 	Type:        Bool,
 	Value:       "",
 }
+
+var AwsActionOpt = Option{
+	Name:        "action",
+	Short:       "a",
+	Description: "AWS IAM action",
+	Required:    true,
+	Type:        String,
+	Value:       "",
+}

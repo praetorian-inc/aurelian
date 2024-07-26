@@ -130,6 +130,7 @@ func runModule(module modules.Module, meta modules.Metadata, options []*o.Option
 		for result := range run.Data {
 
 			if output != nil {
+				// TODO create the directory if it doens't exist
 				outputFile := output.Value + "/" + meta.Id + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".json"
 				file, err := os.Create(outputFile)
 				if err != nil {

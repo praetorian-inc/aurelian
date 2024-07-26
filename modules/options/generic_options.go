@@ -26,3 +26,11 @@ var UrlOpt = Option{
 	Type:        String,
 	Value:       "",
 }
+
+var PromptOpt = Option{
+	Name:        "prompt",
+	Description: "prompt for input",
+	Required:    false,
+	Type:        Bool,
+	Value:       "",
+}

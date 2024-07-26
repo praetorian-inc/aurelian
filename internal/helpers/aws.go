@@ -5,7 +5,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	l "github.com/praetorian-inc/nebula/internal/logging"
+	logs "github.com/praetorian-inc/nebula/internal/logs"
 )
 
 func GetAWSCfg(region string) (aws.Config, error) {
@@ -17,7 +17,7 @@ func GetAWSCfg(region string) (aws.Config, error) {
 				aws.LogRequestWithBody|
 				aws.LogRequestEventMessage|
 				aws.LogResponseEventMessage),
-		config.WithLogger(l.Logger()),
+		config.WithLogger(logs.Logger()),
 		config.WithRegion(region),
 	)
 

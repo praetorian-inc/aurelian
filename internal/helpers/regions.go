@@ -41,7 +41,6 @@ var Regions = []string{
 }
 
 func EnabledRegions() ([]string, error) {
-	// TODO centralize the config creation so that it includes the logging
 	cfg, err := GetAWSCfg("")
 
 	if err != nil {
