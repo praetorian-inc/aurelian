@@ -16,6 +16,10 @@ func registerPackageFunctions(pkgName string, registry map[string]func(model.Job
 }
 */
 
+type OutputProvider interface {
+	Write(result Result) error
+}
+
 type OpsecLevel string
 
 const (
@@ -63,6 +67,7 @@ type Metadata struct {
 
 type Module interface {
 	Invoke() error
+	GetOutputProviders() []OutputProvider
 }
 
 type Run struct {
@@ -72,8 +77,9 @@ type Run struct {
 type BaseModule struct {
 	Module
 	Metadata
-	Options []*options.Option
-	Run     Run
+	Options         []*options.Option
+	OutputProviders []OutputProvider
+	Run             Run
 }
 
 func (m *BaseModule) Invoke() error {
@@ -103,5 +109,15 @@ func (m *BaseModule) MakeResult(data interface{}) Result {
 		Platform: m.Platform,
 		Module:   m.Name,
 		Data:     data,
+	}
+}
+
+func (m *BaseModule) GetOutputProviders() []OutputProvider {
+	return m.OutputProviders
+}
+
+func (m *BaseModule) ConfigureOutputProviders(providers []func(options []*options.Option) OutputProvider) {
+	for _, p := range providers {
+		m.OutputProviders = append(m.OutputProviders, p(m.Options))
 	}
 }

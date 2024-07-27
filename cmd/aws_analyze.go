@@ -97,7 +97,7 @@ var awsExpandActionsCmd = &cobra.Command{
 }
 
 func init() {
-	options2Flag(analyze.AccessKeyIdToAccountIdRequiredOptions, []*o.Option{}, awsAccessKeyIdToAccountIdCmd)
+	options2Flag(analyze.AwsAccessKeyIdToAccountIdRequiredOptions, []*o.Option{}, awsAccessKeyIdToAccountIdCmd)
 	awsAnalyzeCmd.AddCommand(awsAccessKeyIdToAccountIdCmd)
 
 	options2Flag(analyze.KnownAccountIDRequiredOptions, []*o.Option{}, awsKnownAccountIdCmd)

@@ -3,22 +3,26 @@ package reconaws
 import (
 	"context"
 	"fmt"
-	"log"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
 	"github.com/praetorian-inc/nebula/internal/helpers"
+	"github.com/praetorian-inc/nebula/internal/logs"
+	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
-	"github.com/praetorian-inc/nebula/modules/options"
+	o "github.com/praetorian-inc/nebula/modules/options"
 )
 
 type AwsCloudControlListResources struct {
 	modules.BaseModule
 }
 
-var AwsCloudControlListResourcesRequiredOptions = []*options.Option{
-	&options.AwsRegionsOpt,
-	&options.AwsResourceTypeOpt,
+var AwsCloudControlListResourcesRequiredOptions = []*o.Option{
+	&o.AwsRegionsOpt,
+	&o.AwsResourceTypeOpt,
 }
 
 var AwsCloudControlListResourcesMetadata = modules.Metadata{
@@ -31,20 +35,20 @@ var AwsCloudControlListResourcesMetadata = modules.Metadata{
 	References:  []string{},
 }
 
-func NewAwsCloudControlListResources(options []*options.Option, run modules.Run) (modules.Module, error) {
+var AwsCloudControlListResourcesOutputProviders = []func(options []*o.Option) modules.OutputProvider{
+	op.NewFileProvider,
+}
+
+func NewAwsCloudControlListResources(options []*o.Option, run modules.Run) (modules.Module, error) {
 	var m AwsCloudControlListResources
 	m.SetMetdata(AwsCloudControlListResourcesMetadata)
 	m.Run = run
-	/*
-		for _, opt := range AwsCloudControlListResourcesRequiredOptions {
-			err := m.ValidateOptions(*opt, options)
-			if err != nil {
-				return nil, err
-			}
-		}
-	*/
 
+	fileNameOpt := o.FileNameOpt
+	fileNameOpt.Value = m.Metadata.Id + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".json"
+	options = append(options, &fileNameOpt)
 	m.Options = options
+	m.ConfigureOutputProviders(AwsCloudControlListResourcesOutputProviders)
 
 	return &m, nil
 }
@@ -52,13 +56,13 @@ func NewAwsCloudControlListResources(options []*options.Option, run modules.Run)
 func (m *AwsCloudControlListResources) Invoke() error {
 	var regions = []string{}
 
-	rtype := m.GetOptionByName(options.AwsResourceTypeOpt.Name).Value
-	regionsOpt := m.GetOptionByName(options.AwsRegionsOpt.Name)
+	rtype := m.GetOptionByName(o.AwsResourceTypeOpt.Name).Value
+	regionsOpt := m.GetOptionByName(o.AwsRegionsOpt.Name)
 
 	if regionsOpt.Value == "ALL" {
-		log.Default().Println("Gathering enabled regions")
+		logs.ConsoleLogger().Info("Gathering enabled regions")
 		// TODO we should cache this
-		profile := m.GetOptionByName(options.AwsProfileOpt.Name).Value
+		profile := m.GetOptionByName(o.AwsProfileOpt.Name).Value
 		fmt.Println(profile)
 		enabledRegions, err := helpers.EnabledRegions(profile)
 		if err != nil {
@@ -76,10 +80,10 @@ func (m *AwsCloudControlListResources) Invoke() error {
 
 	resultsChan := make(chan []types.ResourceDescription)
 
-	log.Default().Printf("Listing resources of type %s in regions: %v", rtype, regions)
+	helpers.PrintMessage("Listing resources of type " + rtype + " in regions: " + strings.Join(regions, ", "))
 	for _, region := range regions {
 		go func(region string) error {
-			cfg, err := helpers.GetAWSCfg(region, m.GetOptionByName(options.AwsProfileOpt.Name).Value)
+			cfg, err := helpers.GetAWSCfg(region, m.GetOptionByName(o.AwsProfileOpt.Name).Value)
 			if err != nil {
 				return err
 			}

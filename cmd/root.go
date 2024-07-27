@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/modules"
@@ -140,34 +139,22 @@ func getOptsFromCmd(cmd *cobra.Command, required []*o.Option) []*o.Option {
 }
 
 func runModule(module modules.Module, meta modules.Metadata, options []*o.Option, run modules.Run) {
-	output := o.GetOptionByName("output", options)
 	wg := new(sync.WaitGroup)
 	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for result := range run.Data {
+			for _, outputProvider := range module.GetOutputProviders() {
+				wg.Add(1)
+				go func(outputProvider modules.OutputProvider, result modules.Result) {
+					err := outputProvider.Write(result)
 
-			if output != nil {
-				// TODO create the directory if it doens't exist
-				outputFile := output.Value + "/" + meta.Id + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".json"
-				file, err := os.Create(outputFile)
-				if err != nil {
-					log.Default().Println(err)
-					return
-				}
-				defer file.Close()
-
-				_, err = file.WriteString(result.String())
-				if err != nil {
-					log.Default().Println(err)
-					return
-				}
-				helpers.PrintResult(result)
-				log.Default().Printf("Data written to %s\n", outputFile)
-			} else {
-				log.Default().Println("Output option not found")
+					if err != nil {
+						log.Default().Println(err)
+					}
+					wg.Done()
+				}(outputProvider, result)
 			}
-			//log.Default().Println(result.String())
-			wg.Done()
 		}
 	}()
 

@@ -9,6 +9,15 @@ var OutputOpt = Option{
 	Value:       "output",
 }
 
+var FileNameOpt = Option{
+	Name:        "file",
+	Short:       "f",
+	Description: "File name",
+	Required:    false,
+	Type:        String,
+	Value:       "",
+}
+
 var PathOpt = Option{
 	Name:        "path",
 	Short:       "p",

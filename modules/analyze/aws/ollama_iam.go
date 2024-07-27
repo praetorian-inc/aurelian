@@ -2,10 +2,10 @@ package analyze
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	api "github.com/ollama/ollama/api"
+	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	o "github.com/praetorian-inc/nebula/modules/options"
 )
@@ -31,6 +31,10 @@ var AwsOllamaIamRequiredOptions = []*o.Option{
 	//&o.PromptOpt,
 }
 
+var AwsOllamaIamOutputProviders = []func(options []*o.Option) modules.OutputProvider{
+	op.NewConsoleProvider,
+}
+
 func NewAwsOllamaIam(options []*o.Option, run modules.Run) (modules.Module, error) {
 	var m AwsOllamaIam
 	m.SetMetdata(AwsOllamaIamMetadata)
@@ -46,20 +50,12 @@ func NewAwsOllamaIam(options []*o.Option, run modules.Run) (modules.Module, erro
 	options = append(options, &promptOpt)
 
 	m.Options = options
+	m.ConfigureOutputProviders(AwsOllamaIamOutputProviders)
 
 	return &m, nil
 }
 
 func (m *AwsOllamaIam) Invoke() error {
-	/*
-		u, err := url.Parse(m.GetOptionByName(o.UrlOpt.Name).Value)
-		if err != nil {
-			return err
-		}
-	*/
-
-	//httpClient := http.Client{}
-	//client := api.NewClient(u, &httpClient)
 	client, err := api.ClientFromEnvironment()
 	if err != nil {
 		return err
@@ -80,14 +76,9 @@ func (m *AwsOllamaIam) Invoke() error {
 		Stream: new(bool),
 	}
 
-	//res := http.Response{}
-	//client.Chat(context.TODO(), req, m.chatResponse(&res))
-
 	respFunc := func(resp api.GenerateResponse) error {
-		// Only print the response here; GenerateResponse has a number of other
-		// interesting fields you want to examine.
-		fmt.Println(resp.Response)
 		m.Run.Data <- m.MakeResult(resp.Response)
+		close(m.Run.Data)
 		return nil
 	}
 	ctx := context.Background()

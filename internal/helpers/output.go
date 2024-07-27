@@ -2,14 +2,12 @@ package helpers
 
 import (
 	"encoding/json"
-	"fmt"
 
 	l "github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules"
 )
 
 func PrintMessage(message string) {
-	fmt.Println(message)
 	logger := l.ConsoleLogger()
 	logger.Info(message)
 }

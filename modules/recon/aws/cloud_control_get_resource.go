@@ -2,11 +2,15 @@ package reconaws
 
 import (
 	"context"
+	"strconv"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/praetorian-inc/nebula/internal/helpers"
+	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
+	o "github.com/praetorian-inc/nebula/modules/options"
 )
 
 type AwsCloudControlGetResource struct {
@@ -29,11 +33,20 @@ var AwsCloudControlGetResourceMetadata = modules.Metadata{
 	References:  []string{},
 }
 
+var AwsCloudControlGetResourceOutputProviders = []func(options []*options.Option) modules.OutputProvider{
+	op.NewFileProvider,
+}
+
 func NewAwsCloudControlGetResource(options []*options.Option, run modules.Run) (modules.Module, error) {
 	var m AwsCloudControlGetResource
 	m.SetMetdata(AwsCloudControlGetResourceMetadata)
 	m.Run = run
+
+	fileNameOpt := o.FileNameOpt
+	fileNameOpt.Value = m.Metadata.Id + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".json"
+	options = append(options, &fileNameOpt)
 	m.Options = options
+	m.ConfigureOutputProviders(AwsCloudControlGetResourceOutputProviders)
 
 	return &m, nil
 }
@@ -61,6 +74,7 @@ func (m *AwsCloudControlGetResource) Invoke() error {
 	}
 
 	m.Run.Data <- m.MakeResult(res)
+	close(m.Run.Data)
 
 	return nil
 }

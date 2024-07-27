@@ -6,16 +6,21 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	o "github.com/praetorian-inc/nebula/modules/options"
 )
 
-type AccessKeyIdToAccountId struct {
+type AwsAccessKeyIdToAccountId struct {
 	modules.BaseModule
 }
 
-var AccessKeyIdToAccountIdRequiredOptions = []*o.Option{
+var AwsAccessKeyIdToAccountIdRequiredOptions = []*o.Option{
 	&o.AwsAccessKeyIdOpt,
+}
+
+var AwsAccessKeyIdToAccountIdOutputProviders = []func(options []*o.Option) modules.OutputProvider{
+	op.NewConsoleProvider,
 }
 
 var AccessKeyIdToAccountIdMetadata = modules.Metadata{
@@ -32,15 +37,16 @@ var AccessKeyIdToAccountIdMetadata = modules.Metadata{
 }
 
 func NewAccessKeyIdToAccountId(options []*o.Option, run modules.Run) (modules.Module, error) {
-	var m AccessKeyIdToAccountId
+	var m AwsAccessKeyIdToAccountId
 	m.SetMetdata(AccessKeyIdToAccountIdMetadata)
 	m.Run = run
 	m.Options = options
+	m.ConfigureOutputProviders(AwsAccessKeyIdToAccountIdOutputProviders)
 
 	return &m, nil
 }
 
-func (m *AccessKeyIdToAccountId) Invoke() error {
+func (m *AwsAccessKeyIdToAccountId) Invoke() error {
 
 	opt := m.GetOptionByName(o.AwsAccessKeyIdOpt.Name)
 
@@ -61,7 +67,7 @@ func (m *AccessKeyIdToAccountId) Invoke() error {
 	return nil
 }
 
-func (m *AccessKeyIdToAccountId) convert(AWSKeyID string) int {
+func (m *AwsAccessKeyIdToAccountId) convert(AWSKeyID string) int {
 	trimmedAWSKeyID := AWSKeyID[4:]                          // remove KeyID prefix
 	x, _ := base32.StdEncoding.DecodeString(trimmedAWSKeyID) // base32 decode
 	y := make([]byte, 8)
@@ -80,6 +86,6 @@ func (m *AccessKeyIdToAccountId) convert(AWSKeyID string) int {
 	return int(e)
 }
 
-func (m *AccessKeyIdToAccountId) ValidateAccessKeyID(accessKeyID string) bool {
+func (m *AwsAccessKeyIdToAccountId) ValidateAccessKeyID(accessKeyID string) bool {
 	return len(accessKeyID) == 20
 }

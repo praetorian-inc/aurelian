@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	o "github.com/praetorian-inc/nebula/modules/options"
 )
@@ -30,11 +31,16 @@ var KnownAccountIDMetadata = modules.Metadata{
 	},
 }
 
+var KnownAccountIDOutputProviders = []func(options []*o.Option) modules.OutputProvider{
+	op.NewConsoleProvider,
+}
+
 func NewKnownAccountID(options []*o.Option, run modules.Run) (modules.Module, error) {
 	var m KnownAccountID
 	m.SetMetdata(KnownAccountIDMetadata)
 	m.Run = run
 	m.Options = options
+	m.ConfigureOutputProviders(KnownAccountIDOutputProviders)
 
 	return &m, nil
 }

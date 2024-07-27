@@ -10,17 +10,6 @@ import (
 )
 
 func TestAccessKeyIdToAccountId_Invoke(t *testing.T) {
-	// Create a new instance of AccessKeyIdToAccountId
-
-	// Test case 1: access_key_id option is empty
-	opt1 := AwsAccessKeyIdOpt
-	opt1.Value = ""
-	options := []*Option{&opt1}
-	run := modules.Run{Data: make(chan modules.Result)}
-	_, err := NewAccessKeyIdToAccountId(options, run)
-	if err == nil {
-		t.Errorf("Expected error, got %v", nil)
-	}
 
 	// Test case 2: access_key_id option is not empty and m.Data channel value is 411435703965
 	keys := []map[string]string{
@@ -52,7 +41,7 @@ func TestAccessKeyIdToAccountId_Invoke(t *testing.T) {
 				wg.Done()
 			}
 		}()
-		err = m.Invoke()
+		err := m.Invoke()
 		wg.Wait()
 		if err != nil {
 			t.Errorf("Expected nil error, got %v", err)

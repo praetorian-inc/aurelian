@@ -2,12 +2,12 @@ package analyze
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"regexp"
 	"strings"
 
+	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
 )
@@ -18,6 +18,10 @@ type AwsExpandActions struct {
 
 var AwsExpandActionsRequiredOptions = []*options.Option{
 	&options.AwsActionOpt,
+}
+
+var AwsExpandActionOutputProvders = []func(options []*options.Option) modules.OutputProvider{
+	op.NewConsoleProvider,
 }
 
 var AwsExpandActionsMetadata = modules.Metadata{
@@ -35,6 +39,7 @@ func NewAwsExpandActions(options []*options.Option, run modules.Run) (modules.Mo
 	m.SetMetdata(AwsExpandActionsMetadata)
 	m.Run = run
 	m.Options = options
+	m.ConfigureOutputProviders(AwsExpandActionOutputProvders)
 
 	return &m, nil
 }
@@ -77,11 +82,12 @@ func (m *AwsExpandActions) Invoke() error {
 		match, _ := regexp.MatchString(pattern, a)
 		if match {
 			matchedActions = append(matchedActions, a)
-			fmt.Println(a)
+			//fmt.Println(a)
+			m.Run.Data <- m.MakeResult(a)
 		}
 	}
 
-	m.Run.Data <- m.MakeResult(matchedActions)
+	//m.Run.Data <- m.MakeResult(matchedActions)
 	close(m.Run.Data)
 	return nil
 }
