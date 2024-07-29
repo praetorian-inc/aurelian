@@ -17,7 +17,28 @@ var awsCmd = &cobra.Command{
 	},
 }
 
+var awsAnalyzeCmd = &cobra.Command{
+	Use:   "analyze",
+	Short: "aws analyze modules",
+	Long:  `Execute aws analyze modules.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		cmd.Help()
+		os.Exit(1)
+	},
+}
+
+var awsReconCmd = &cobra.Command{
+	Use:   "recon",
+	Short: "AWS recon modules",
+	Run: func(cmd *cobra.Command, args []string) {
+		cmd.Help()
+		os.Exit(1)
+	},
+}
+
 func init() {
+	awsCmd.AddCommand(awsAnalyzeCmd)
+	awsCmd.AddCommand(awsReconCmd)
 	rootCmd.AddCommand(awsCmd)
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
@@ -61,7 +62,7 @@ func (m *AwsAccessKeyIdToAccountId) Invoke() error {
 	accessKeyID := opt.Value
 	accountID := m.convert(accessKeyID)
 	//log.Default().Printf("Access Key ID %s belongs to AWS account %d", accessKeyID, accountID)
-	m.Run.Data <- m.MakeResult(accountID)
+	m.Run.Data <- m.MakeResult(strconv.Itoa(accountID))
 	close(m.Run.Data)
 
 	return nil

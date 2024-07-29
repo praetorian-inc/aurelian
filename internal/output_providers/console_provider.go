@@ -15,6 +15,6 @@ func NewConsoleProvider(options []*options.Option) modules.OutputProvider {
 }
 
 func (cp *ConsoleProvider) Write(result modules.Result) error {
-	helpers.PrintMessage(result.Data.(string))
+	helpers.PrintMessage(result.String())
 	return nil
 }
