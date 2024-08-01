@@ -76,6 +76,7 @@ func (m *AwsExpandActions) Invoke() error {
 
 	action := m.GetOptionByName(options.AwsActionOpt.Name).Value
 	pattern := strings.ReplaceAll(action, "*", ".*")
+	pattern = "^" + pattern + "$"
 
 	matchedActions := []string{}
 	for _, a := range allActions {
