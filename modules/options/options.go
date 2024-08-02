@@ -26,6 +26,11 @@ type Option struct {
 	Sensitive   bool
 }
 
+func SetRequired(option *Option, required bool) *Option {
+	option.Required = required
+	return option
+}
+
 func GetOptionByName(name string, options []*Option) *Option {
 
 	for _, option := range options {

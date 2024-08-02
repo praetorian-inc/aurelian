@@ -40,6 +40,14 @@ var PromptOpt = Option{
 	Name:        "prompt",
 	Description: "prompt for input",
 	Required:    false,
-	Type:        Bool,
+	Type:        String,
 	Value:       "",
+}
+
+var ModelOpt = Option{
+	Name:        "model",
+	Description: "ollama model",
+	Required:    false,
+	Type:        String,
+	Value:       "llama3",
 }

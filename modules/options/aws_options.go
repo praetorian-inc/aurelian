@@ -61,6 +61,15 @@ var AwsResourceIdOpt = Option{
 	Value:       "",
 }
 
+var AwsResourceNameOpt = Option{
+	Name:        "name",
+	Short:       "n",
+	Description: "AWS resource name",
+	Required:    true,
+	Type:        String,
+	Value:       "",
+}
+
 var AwsSummaryServicesOpt = Option{
 	Name:        "summary",
 	Short:       "s",

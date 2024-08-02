@@ -1,6 +1,12 @@
 package modules
 
 import (
+	"context"
+	"strconv"
+	"time"
+
+	"github.com/ollama/ollama/api"
+	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
 )
 
@@ -120,4 +126,37 @@ func (m *BaseModule) ConfigureOutputProviders(providers []func(options []*option
 	for _, p := range providers {
 		m.OutputProviders = append(m.OutputProviders, p(m.Options))
 	}
+}
+
+func (m *BaseModule) GetOutputFileName() string {
+	return m.Metadata.Id + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".json"
+}
+
+func (m *BaseModule) GenerateOllamaResponse(prompt string) error {
+	client, err := api.ClientFromEnvironment()
+	if err != nil {
+		return err
+	}
+
+	logs.ConsoleLogger().Debug(prompt)
+
+	model := m.GetOptionByName(options.ModelOpt.Name).Value
+	req := &api.GenerateRequest{
+		Model:  model,
+		Prompt: prompt,
+		Stream: new(bool),
+	}
+
+	respFunc := func(resp api.GenerateResponse) error {
+		m.Run.Data <- m.MakeResult(resp.Response)
+		return nil
+	}
+	ctx := context.Background()
+	err = client.Generate(ctx, req, respFunc)
+	if err != nil {
+		return err
+	}
+
+	return nil
+
 }

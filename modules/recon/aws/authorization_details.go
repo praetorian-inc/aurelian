@@ -2,6 +2,7 @@ package reconaws
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 
 type AwsAuthorizationDetails struct {
 	modules.BaseModule
+	AccountId string
 }
 
 var AwsAuthorizationDetailsRequiredOptions = []*o.Option{}
@@ -40,7 +42,7 @@ func NewAwsAuthorizationDetails(options []*o.Option, run modules.Run) (modules.M
 
 	// TODO: this should be an optional parameter and we can use this as the default
 	fileNameOpt := o.FileNameOpt
-	fileNameOpt.Value = m.Metadata.Id + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".json"
+	fileNameOpt.Value = m.GetOutputFileName()
 	options = append(options, &fileNameOpt)
 
 	m.Options = options
@@ -54,6 +56,13 @@ func (m *AwsAuthorizationDetails) Invoke() error {
 	if err != nil {
 		return err
 	}
+
+	m.AccountId, err = helpers.GetAccountId(config)
+	if err != nil {
+		return err
+	}
+	fmt.Println(m.AccountId)
+
 	client := iam.NewFromConfig(config)
 	output, err := client.GetAccountAuthorizationDetails(context.TODO(), &iam.GetAccountAuthorizationDetailsInput{})
 	if err != nil {
@@ -64,4 +73,8 @@ func (m *AwsAuthorizationDetails) Invoke() error {
 	close(m.Run.Data)
 
 	return nil
+}
+
+func (m *AwsAuthorizationDetails) GetOutputFileName() string {
+	return m.AccountId + "-" + m.Metadata.Id + "-" + strconv.FormatInt(time.Now().Unix(), 10) + "-gaad.json"
 }

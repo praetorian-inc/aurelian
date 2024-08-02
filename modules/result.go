@@ -15,6 +15,10 @@ func (r *Result) String() string {
 	return string(d)
 }
 
+func (r *Result) StringData() string {
+	return r.Data.(string)
+}
+
 func (r *Result) Json() []byte {
 	d, _ := json.Marshal(r)
 	return d

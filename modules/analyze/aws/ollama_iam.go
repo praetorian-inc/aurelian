@@ -1,10 +1,8 @@
 package analyze
 
 import (
-	"context"
 	"os"
 
-	api "github.com/ollama/ollama/api"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	o "github.com/praetorian-inc/nebula/modules/options"
@@ -26,9 +24,9 @@ var AwsOllamaIamMetadata = modules.Metadata{
 
 var AwsOllamaIamRequiredOptions = []*o.Option{
 	&o.PathOpt,
-	// TODO we need a way to have non-required options
-	//&o.UrlOpt,
-	//&o.PromptOpt,
+	o.SetRequired(&o.UrlOpt, false),
+	o.SetRequired(&o.PromptOpt, false),
+	o.SetRequired(&o.ModelOpt, false),
 }
 
 var AwsOllamaIamOutputProviders = []func(options []*o.Option) modules.OutputProvider{
@@ -40,14 +38,15 @@ func NewAwsOllamaIam(options []*o.Option, run modules.Run) (modules.Module, erro
 	m.SetMetdata(AwsOllamaIamMetadata)
 	m.Run = run
 
-	// TODO we need a way to have non-required options
-	urlOpt := o.UrlOpt
-	urlOpt.Value = "http://localhost:11434/api"
-	options = append(options, &urlOpt)
+	urlOpt := o.GetOptionByName(o.UrlOpt.Name, options)
+	if urlOpt.Value == "" {
+		urlOpt.Value = "http://localhost:11434/api"
+	}
 
-	promptOpt := o.PromptOpt
-	promptOpt.Value = "In ithe AWS Policy below, what security weaknesses are present? Please list all weaknesses, be thorough. Respond None if there are no weaknesses. Finally rate the risk of the policy."
-	options = append(options, &promptOpt)
+	promptOpt := o.GetOptionByName(o.PromptOpt.Name, options)
+	if promptOpt.Value == "" {
+		promptOpt.Value = "Print the arn of the IAM Policy below. Then analyze the AWS Policy for security weaknesses. Please expand all actions with a wildcard to understand the risk they actions may pose. Print a list of security weaknesses. Respond None if there are no weaknesses. Finally rate the risk of the policy."
+	}
 
 	m.Options = options
 	m.ConfigureOutputProviders(AwsOllamaIamOutputProviders)
@@ -56,10 +55,6 @@ func NewAwsOllamaIam(options []*o.Option, run modules.Run) (modules.Module, erro
 }
 
 func (m *AwsOllamaIam) Invoke() error {
-	client, err := api.ClientFromEnvironment()
-	if err != nil {
-		return err
-	}
 
 	prompt := m.GetOptionByName(o.PromptOpt.Name).Value
 	polBytes, err := os.ReadFile(m.GetOptionByName(o.PathOpt.Name).Value)
@@ -70,30 +65,11 @@ func (m *AwsOllamaIam) Invoke() error {
 	policy := string(polBytes)
 	prompt = prompt + "\n" + policy
 
-	req := &api.GenerateRequest{
-		Model:  "llama3",
-		Prompt: prompt,
-		Stream: new(bool),
-	}
-
-	respFunc := func(resp api.GenerateResponse) error {
-		m.Run.Data <- m.MakeResult(resp.Response)
-		close(m.Run.Data)
-		return nil
-	}
-	ctx := context.Background()
-	err = client.Generate(ctx, req, respFunc)
+	err = m.GenerateOllamaResponse(prompt)
 	if err != nil {
 		return err
 	}
 
+	close(m.Run.Data)
 	return nil
 }
-
-/*
-func (m *AwsOllamaIam) generateResponse(res *api.GenerateResponse) api.GenerateResponseFunc {
-	fmt.Println(res.Response)
-	m.Run.Data <- m.MakeResult(res)
-	return nil
-}
-*/
