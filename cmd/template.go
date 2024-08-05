@@ -76,9 +76,7 @@ type {{ .Provider | capitalize}}{{ .Name }} struct {{ "{" }}
 	modules.BaseModule
 {{ "}" }}
 
-var {{ .Provider | capitalize}}{{ .Name }}Options= []*options.Option{{ "{" }}
-	&options.AwsActionOpt,
-{{ "}" }}
+var {{ .Provider | capitalize}}{{ .Name }}Options= []*options.Option{{ "{" }}{{ "}" }}
 
 var {{ .Provider | capitalize}}{{ .Name }}OutputProvders = []func(options []*options.Option) modules.OutputProvider{{ "{" }}
 	op.NewConsoleProvider,
@@ -95,13 +93,14 @@ var {{ .Provider | capitalize}}{{ .Name }}Metadata = modules.Metadata{{ "{" }}
 {{ "}" }}
 
 func New{{ .Provider | capitalize}}{{ .Name }}(options []*options.Option, run modules.Run) (modules.Module, error) {{ "{" }}
-	var m {{ .Provider |capitalize}}{{ .Name }}
-	m.SetMetdata({{ .Provider | capitalize}}{{ .Name }}Metadata)
-	m.Run = run
-	m.Options = options
-	m.ConfigureOutputProviders({{ .Provider | capitalize}}{{ .Name }}OutputProvders)
-
-	return &m, nil
+	return &{{ .Provider |capitalize}}{{ .Name }}{{ "{" }}
+		BaseModule: modules.BaseModule{{ "{" }}
+			Metadata:        {{ .Provider | capitalize}}{{ .Name }}Metadata,
+			Options:         options,
+			Run:             run,
+			OutputProviders: modules.RenderOutputProviders({{ .Provider | capitalize}}SummaryOutputProvders, options),
+		{{ "}" }},
+	{{ "}" }}, nil
 {{ "}" }}
 
 func (m *{{ .Provider | capitalize}}{{ .Name }}) Invoke() error {{ "{" }}
