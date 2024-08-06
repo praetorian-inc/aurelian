@@ -2,6 +2,8 @@ package outputproviders
 
 import (
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules"
@@ -40,4 +42,8 @@ func (lp *FileProvider) Write(result modules.Result) error {
 
 func (lp *FileProvider) GetFullPath() string {
 	return lp.OutputPath + string(os.PathSeparator) + lp.FileName
+}
+
+func DefaultFileName(prefix string) string {
+	return prefix + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".json"
 }

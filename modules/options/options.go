@@ -31,6 +31,11 @@ func SetRequired(option *Option, required bool) *Option {
 	return option
 }
 
+func SetDefaultValue(option *Option, value string) *Option {
+	option.Value = value
+	return option
+}
+
 func GetOptionByName(name string, options []*Option) *Option {
 
 	for _, option := range options {

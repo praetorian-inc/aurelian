@@ -2,8 +2,7 @@ package modules
 
 import (
 	"context"
-	"strconv"
-	"time"
+	"sync"
 
 	"github.com/ollama/ollama/api"
 	"github.com/praetorian-inc/nebula/internal/logs"
@@ -80,6 +79,12 @@ type Run struct {
 	Data chan Result
 }
 
+func NewRun() Run {
+	return Run{
+		Data: make(chan Result, 1),
+	}
+}
+
 type BaseModule struct {
 	Module
 	Metadata
@@ -128,8 +133,13 @@ func (m *BaseModule) ConfigureOutputProviders(providers []func(options []*option
 	}
 }
 
-func (m *BaseModule) GetOutputFileName() string {
-	return m.Metadata.Id + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".json"
+func RenderOutputProviders(providers []func(options []*options.Option) OutputProvider, opts []*options.Option) []OutputProvider {
+	op := []OutputProvider{}
+	for _, p := range providers {
+		op = append(op, p(opts))
+	}
+
+	return op
 }
 
 func (m *BaseModule) GenerateOllamaResponse(prompt string) error {
@@ -159,4 +169,27 @@ func (m *BaseModule) GenerateOllamaResponse(prompt string) error {
 
 	return nil
 
+}
+
+func RunModule(factoryFn func(options []*options.Option, run Run) (Module, error), options []*options.Option, run Run) error {
+
+	var err error
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		var m Module
+
+		m, err := factoryFn(options, run)
+		if err == nil {
+			err = m.Invoke()
+		}
+	}()
+
+	wg.Wait()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

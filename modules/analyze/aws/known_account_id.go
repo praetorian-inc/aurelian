@@ -15,7 +15,7 @@ type KnownAccountID struct {
 	modules.BaseModule
 }
 
-var KnownAccountIDRequiredOptions = []*o.Option{
+var KnownAccountIDOptions = []*o.Option{
 	&o.AwsAccountIdOpt,
 }
 

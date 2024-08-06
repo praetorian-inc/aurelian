@@ -100,7 +100,7 @@ close(m.Run.Data)
 
 You've built a module, but how do you call it? Modules are registered in `cmd/registry.go` using the `RegisterModule` function. The `RegisterModule` function uses the module metadata, required options, and factory function to create the CLI subcommand for 
 
-`RegisterModule(awsAnalyzeCmd, analyze.AccessKeyIdToAccountIdMetadata, analyze.AwsAccessKeyIdToAccountIdRequiredOptions, noCommon, analyze.NewAccessKeyIdToAccountId)`
+`RegisterModule(awsAnalyzeCmd, analyze.AccessKeyIdToAccountIdMetadata, analyze.AwsAccessKeyIdToAccountIdOptions, noCommon, analyze.NewAccessKeyIdToAccountId)`
 
 ## Module Template
 

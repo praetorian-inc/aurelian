@@ -16,7 +16,7 @@ type AwsAccessKeyIdToAccountId struct {
 	modules.BaseModule
 }
 
-var AwsAccessKeyIdToAccountIdRequiredOptions = []*o.Option{
+var AwsAccessKeyIdToAccountIdOptions = []*o.Option{
 	&o.AwsAccessKeyIdOpt,
 }
 

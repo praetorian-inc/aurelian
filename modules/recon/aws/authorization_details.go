@@ -18,7 +18,7 @@ type AwsAuthorizationDetails struct {
 	AccountId string
 }
 
-var AwsAuthorizationDetailsRequiredOptions = []*o.Option{}
+var AwsAuthorizationDetailsOptions = []*o.Option{}
 
 var AwsAuthorizationDetailsMetadata = modules.Metadata{
 	Id:          "authorization-details",

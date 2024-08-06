@@ -20,9 +20,13 @@ type AwsCloudControlListResources struct {
 	modules.BaseModule
 }
 
-var AwsCloudControlListResourcesRequiredOptions = []*o.Option{
+var AwsCloudControlListResourcesOptions = []*o.Option{
 	&o.AwsRegionsOpt,
 	&o.AwsResourceTypeOpt,
+	o.SetDefaultValue(
+		o.SetRequired(
+			&o.FileNameOpt, false),
+		AwsCloudControlListResourcesMetadata.Id+"-"+strconv.FormatInt(time.Now().Unix(), 10)+".json"),
 }
 
 var AwsCloudControlListResourcesMetadata = modules.Metadata{
@@ -40,17 +44,14 @@ var AwsCloudControlListResourcesOutputProviders = []func(options []*o.Option) mo
 }
 
 func NewAwsCloudControlListResources(options []*o.Option, run modules.Run) (modules.Module, error) {
-	var m AwsCloudControlListResources
-	m.SetMetdata(AwsCloudControlListResourcesMetadata)
-	m.Run = run
-
-	fileNameOpt := o.FileNameOpt
-	fileNameOpt.Value = m.Metadata.Id + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".json"
-	options = append(options, &fileNameOpt)
-	m.Options = options
-	m.ConfigureOutputProviders(AwsCloudControlListResourcesOutputProviders)
-
-	return &m, nil
+	return &AwsCloudControlListResources{
+		BaseModule: modules.BaseModule{
+			Metadata:        AwsCloudControlListResourcesMetadata,
+			Options:         options,
+			Run:             run,
+			OutputProviders: modules.RenderOutputProviders(AwsCloudControlListResourcesOutputProviders, options),
+		},
+	}, nil
 }
 
 func (m *AwsCloudControlListResources) Invoke() error {

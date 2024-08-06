@@ -16,7 +16,7 @@ type AwsExpandActions struct {
 	modules.BaseModule
 }
 
-var AwsExpandActionsRequiredOptions = []*options.Option{
+var AwsExpandActionsOptions = []*options.Option{
 	&options.AwsActionOpt,
 }
 

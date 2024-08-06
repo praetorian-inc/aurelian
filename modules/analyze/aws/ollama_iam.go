@@ -22,7 +22,7 @@ var AwsOllamaIamMetadata = modules.Metadata{
 	References:  []string{},
 }
 
-var AwsOllamaIamRequiredOptions = []*o.Option{
+var AwsOllamaIamOptions = []*o.Option{
 	&o.PathOpt,
 	o.SetRequired(&o.UrlOpt, false),
 	o.SetRequired(&o.PromptOpt, false),

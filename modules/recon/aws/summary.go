@@ -18,7 +18,7 @@ type AwsSummary struct {
 	modules.BaseModule
 }
 
-var AwsSummaryRequiredOptions = []*o.Option{}
+var AwsSummaryOptions = []*o.Option{}
 
 var AwsSummaryMetadata = modules.Metadata{
 	Id:          "summary",

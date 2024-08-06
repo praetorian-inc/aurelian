@@ -17,7 +17,7 @@ type AwsCloudControlGetResource struct {
 	modules.BaseModule
 }
 
-var AwsCloudControlGetResourceRequiredOptions = []*options.Option{
+var AwsCloudControlGetResourceOptions = []*options.Option{
 	&options.AwsRegionOpt,
 	&options.AwsResourceTypeOpt,
 	&options.AwsResourceIdOpt,
