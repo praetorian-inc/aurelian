@@ -69,7 +69,7 @@ import (
 /*
 Add the follwoing to the init() function in cmd/registry.go to register the module:
 
-RegisterModule({{ .Provider | toLower}}{{ .Category | capitalize}}Cmd, {{ .Category | toLower }}.{{ .Provider | capitalize}}{{ .Name }}Metadata, {{ .Category | toLower }}.{{ .Provider | capitalize}}{{ .Name }}RequiredOptions, {{ .Provider | toLower}}CommonOptions, {{ .Category | toLower}}.New{{.Provider | capitalize}}{{ .Name }})
+RegisterModule({{ .Provider | toLower}}{{ .Category | capitalize}}Cmd, {{ .Category | toLower }}.{{ .Provider | capitalize}}{{ .Name }}Metadata, {{ .Category | toLower }}.{{ .Provider | capitalize}}{{ .Name }}Options, {{ .Provider | toLower}}CommonOptions, {{ .Category | toLower}}.New{{.Provider | capitalize}}{{ .Name }})
 */
 
 type {{ .Provider | capitalize}}{{ .Name }} struct {{ "{" }}
@@ -98,7 +98,7 @@ func New{{ .Provider | capitalize}}{{ .Name }}(options []*options.Option, run mo
 			Metadata:        {{ .Provider | capitalize}}{{ .Name }}Metadata,
 			Options:         options,
 			Run:             run,
-			OutputProviders: modules.RenderOutputProviders({{ .Provider | capitalize}}SummaryOutputProvders, options),
+			OutputProviders: modules.RenderOutputProviders({{ .Provider | capitalize}}OutputProvders, options),
 		{{ "}" }},
 	{{ "}" }}, nil
 {{ "}" }}
