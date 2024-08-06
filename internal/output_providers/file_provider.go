@@ -23,8 +23,15 @@ func NewFileProvider(options []*o.Option) modules.OutputProvider {
 	}
 }
 
-func (lp *FileProvider) Write(result modules.Result) error {
-	file, err := os.Create(lp.GetFullPath())
+func (fp *FileProvider) Write(result modules.Result) error {
+	if _, err := os.Stat(fp.OutputPath); os.IsNotExist(err) {
+		err := os.MkdirAll(fp.OutputPath, os.ModePerm)
+		if err != nil {
+			return err
+		}
+	}
+
+	file, err := os.Create(fp.GetFulfpath())
 	if err != nil {
 		return err
 	}
@@ -35,13 +42,13 @@ func (lp *FileProvider) Write(result modules.Result) error {
 		return err
 	}
 
-	logs.ConsoleLogger().Info("Output written", "path", lp.GetFullPath())
+	logs.ConsoleLogger().Info("Output written", "path", fp.GetFulfpath())
 
 	return nil
 }
 
-func (lp *FileProvider) GetFullPath() string {
-	return lp.OutputPath + string(os.PathSeparator) + lp.FileName
+func (fp *FileProvider) GetFulfpath() string {
+	return fp.OutputPath + string(os.PathSeparator) + fp.FileName
 }
 
 func DefaultFileName(prefix string) string {
