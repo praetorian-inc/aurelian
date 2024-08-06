@@ -17,7 +17,7 @@ func init() {
 	RegisterModule(awsAnalyzeCmd, analyze.KnownAccountIDMetadata, analyze.KnownAccountIDOptions, noCommon, analyze.NewKnownAccountID)
 	RegisterModule(awsAnalyzeCmd, analyze.AwsOllamaIamMetadata, analyze.AwsOllamaIamOptions, noCommon, analyze.NewAwsOllamaIam)
 	RegisterModule(awsAnalyzeCmd, analyze.AwsExpandActionsMetadata, analyze.AwsExpandActionsOptions, noCommon, analyze.NewAwsExpandActions)
-	RegisterModule(awsAnalyzeCmd, analyze.AwsOllamaIamAuditMetadata, analyze.AwsOllamaIamAuditOptions, noCommon, analyze.NewAwsOllamaIamAudit)
+	//RegisterModule(awsAnalyzeCmd, analyze.AwsOllamaIamAuditMetadata, analyze.AwsOllamaIamAuditOptions, noCommon, analyze.NewAwsOllamaIamAudit)
 
 	// AWS Recon
 	RegisterModule(awsReconCmd, reconaws.AwsSummaryMetadata, reconaws.AwsSummaryOptions, awsCommonOptions, reconaws.NewAwsSummary)
