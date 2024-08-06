@@ -26,14 +26,14 @@ type Option struct {
 	Sensitive   bool
 }
 
-func SetRequired(option *Option, required bool) *Option {
+func SetRequired(option Option, required bool) *Option {
 	option.Required = required
-	return option
+	return &option
 }
 
-func SetDefaultValue(option *Option, value string) *Option {
+func SetDefaultValue(option Option, value string) *Option {
 	option.Value = value
-	return option
+	return &option
 }
 
 func GetOptionByName(name string, options []*Option) *Option {

@@ -24,8 +24,8 @@ var AwsCloudControlListResourcesOptions = []*o.Option{
 	&o.AwsRegionsOpt,
 	&o.AwsResourceTypeOpt,
 	o.SetDefaultValue(
-		o.SetRequired(
-			&o.FileNameOpt, false),
+		*o.SetRequired(
+			o.FileNameOpt, false),
 		AwsCloudControlListResourcesMetadata.Id+"-"+strconv.FormatInt(time.Now().Unix(), 10)+".json"),
 }
 

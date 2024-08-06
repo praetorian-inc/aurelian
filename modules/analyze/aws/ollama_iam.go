@@ -24,9 +24,9 @@ var AwsOllamaIamMetadata = modules.Metadata{
 
 var AwsOllamaIamOptions = []*o.Option{
 	&o.PathOpt,
-	o.SetRequired(&o.UrlOpt, false),
-	o.SetRequired(&o.PromptOpt, false),
-	o.SetRequired(&o.ModelOpt, false),
+	o.SetRequired(o.UrlOpt, false),
+	o.SetRequired(o.PromptOpt, false),
+	o.SetRequired(o.ModelOpt, false),
 }
 
 var AwsOllamaIamOutputProviders = []func(options []*o.Option) modules.OutputProvider{
