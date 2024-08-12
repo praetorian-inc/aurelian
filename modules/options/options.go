@@ -43,7 +43,6 @@ func GetOptionByName(name string, options []*Option) *Option {
 			return option
 		}
 	}
-
 	return nil
 }
 

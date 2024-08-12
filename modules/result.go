@@ -2,12 +2,27 @@ package modules
 
 import (
 	"encoding/json"
+	"log"
 )
 
 type Result struct {
-	Platform Platform    `json:"platform"`
-	Module   string      `json:"module"`
+	Platform Platform `json:"platform"`
+	Module   string   `json:"module"`
+	Filename string
 	Data     interface{} `json:"data"`
+}
+
+// struct to parse the JSON response from the CloudControl ListResources API
+type ListDataResult struct {
+	NextToken            string                `json:"NextToken"`
+	ResourceDescriptions []ResourceDescription `json:"ResourceDescriptions"`
+	TypeName             string                `json:"TypeName"`
+	ResultMetadata       interface{}           `json:"ResultMetadata"`
+}
+
+type ResourceDescription struct {
+	Identifier string      `json:"Identifier"`
+	Properties interface{} `json:"Properties"`
 }
 
 func (r *Result) String() string {
@@ -22,4 +37,26 @@ func (r *Result) StringData() string {
 func (r *Result) Json() []byte {
 	d, _ := json.Marshal(r)
 	return d
+}
+
+func (r *Result) DataJson() []byte {
+	d, _ := json.Marshal(r.Data)
+	return d
+}
+
+func (r *Result) UnmarshalListData() ListDataResult {
+	var dataResult ListDataResult
+	err := json.Unmarshal(r.DataJson(), &dataResult)
+	if err != nil {
+		log.Fatalf("Unable to marshal JSON due to %s", err)
+	}
+	return dataResult
+}
+
+func (listData *ListDataResult) GetIdentifiers() []string {
+	var identifiers []string
+	for _, resourceDescription := range listData.ResourceDescriptions {
+		identifiers = append(identifiers, resourceDescription.Identifier)
+	}
+	return identifiers
 }

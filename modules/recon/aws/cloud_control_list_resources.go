@@ -2,7 +2,6 @@ package reconaws
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -10,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
 	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/internal/logs"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	o "github.com/praetorian-inc/nebula/modules/options"
@@ -56,22 +54,26 @@ func NewAwsCloudControlListResources(options []*o.Option, run modules.Run) (modu
 
 func (m *AwsCloudControlListResources) Invoke() error {
 	var regions = []string{}
-
 	rtype := m.GetOptionByName(o.AwsResourceTypeOpt.Name).Value
 	regionsOpt := m.GetOptionByName(o.AwsRegionsOpt.Name)
+	profile := m.GetOptionByName(o.AwsProfileOpt.Name).Value
+	// if regionsOpt.Value == "ALL" {
+	// 	logs.ConsoleLogger().Info("Gathering enabled regions")
+	// 	// TODO we should cache this
+	// 	profile := m.GetOptionByName(o.AwsProfileOpt.Name).Value
+	// 	fmt.Println(profile)
+	// 	enabledRegions, err := helpers.EnabledRegions(profile)
+	// 	if err != nil {
+	// 		return err
+	// 	}
+	// 	regions = enabledRegions
+	// } else {
+	// 	regions = []string{regionsOpt.Value}
+	// }
 
-	if regionsOpt.Value == "ALL" {
-		logs.ConsoleLogger().Info("Gathering enabled regions")
-		// TODO we should cache this
-		profile := m.GetOptionByName(o.AwsProfileOpt.Name).Value
-		fmt.Println(profile)
-		enabledRegions, err := helpers.EnabledRegions(profile)
-		if err != nil {
-			return err
-		}
-		regions = enabledRegions
-	} else {
-		regions = []string{regionsOpt.Value}
+	regions, err := helpers.ParseRegionsOption(regionsOpt.Value, profile)
+	if err != nil {
+		return err
 	}
 
 	results := &cloudcontrol.ListResourcesOutput{
@@ -117,7 +119,7 @@ func (m *AwsCloudControlListResources) Invoke() error {
 
 	close(resultsChan)
 
-	m.Run.Data <- m.MakeResult(results)
+	m.Run.Data <- m.MakeResultCustomFilename(results, "test.json")
 	close(m.Run.Data)
 
 	return nil

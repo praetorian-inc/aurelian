@@ -58,7 +58,7 @@ func init() {
 }
 
 var moduleTemplate = `
-package {{ .Category }}
+package {{ .Category }}{{.Provider | toLower}}
 
 import (
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
@@ -69,7 +69,7 @@ import (
 /*
 Add the follwoing to the init() function in cmd/registry.go to register the module:
 
-RegisterModule({{ .Provider | toLower}}{{ .Category | capitalize}}Cmd, {{ .Category | toLower }}.{{ .Provider | capitalize}}{{ .Name }}Metadata, {{ .Category | toLower }}.{{ .Provider | capitalize}}{{ .Name }}Options, {{ .Provider | toLower}}CommonOptions, {{ .Category | toLower}}.New{{.Provider | capitalize}}{{ .Name }})
+RegisterModule({{ .Provider | toLower}}{{ .Category | capitalize}}Cmd, {{ .Category | toLower }}{{.Provider | toLower}}.{{ .Provider | capitalize}}{{ .Name }}Metadata, {{ .Category | toLower }}{{.Provider | toLower}}.{{ .Provider | capitalize}}{{ .Name }}Options, {{ .Provider | toLower}}CommonOptions, {{ .Category | toLower}}{{.Provider | toLower}}.New{{.Provider | capitalize}}{{ .Name }})
 */
 
 type {{ .Provider | capitalize}}{{ .Name }} struct {{ "{" }}
@@ -78,7 +78,7 @@ type {{ .Provider | capitalize}}{{ .Name }} struct {{ "{" }}
 
 var {{ .Provider | capitalize}}{{ .Name }}Options= []*options.Option{{ "{" }}{{ "}" }}
 
-var {{ .Provider | capitalize}}{{ .Name }}OutputProvders = []func(options []*options.Option) modules.OutputProvider{{ "{" }}
+var {{ .Provider | capitalize}}{{ .Name }}OutputProviders = []func(options []*options.Option) modules.OutputProvider{{ "{" }}
 	op.NewConsoleProvider,
 {{ "}" }}
 
@@ -98,7 +98,7 @@ func New{{ .Provider | capitalize}}{{ .Name }}(options []*options.Option, run mo
 			Metadata:        {{ .Provider | capitalize}}{{ .Name }}Metadata,
 			Options:         options,
 			Run:             run,
-			OutputProviders: modules.RenderOutputProviders({{ .Provider | capitalize}}OutputProvders, options),
+			OutputProviders: modules.RenderOutputProviders({{ .Provider | capitalize}}{{ .Name }}OutputProviders, options),
 		{{ "}" }},
 	{{ "}" }}, nil
 {{ "}" }}

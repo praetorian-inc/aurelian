@@ -52,6 +52,16 @@ var AwsResourceTypeOpt = Option{
 	ValueFormat: regexp.MustCompile("^(AWS::[a-zA-Z0-9:]+|ALL)$"),
 }
 
+var AwsFindSecretsResourceType = Option{
+	Name:        "secret-resource-type",
+	Short:       "t",
+	Description: "Currently only supports CloudFormation for scanning secrets",
+	Required:    true,
+	Type:        String,
+	Value:       "",
+	ValueFormat: regexp.MustCompile("^cloudformation$"),
+}
+
 var AwsResourceIdOpt = Option{
 	Name:        "resource-id",
 	Short:       "i",

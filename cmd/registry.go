@@ -24,6 +24,7 @@ func init() {
 	RegisterModule(awsReconCmd, reconaws.AwsCloudControlListResourcesMetadata, reconaws.AwsCloudControlListResourcesOptions, awsCommonOptions, reconaws.NewAwsCloudControlListResources)
 	RegisterModule(awsReconCmd, reconaws.AwsCloudControlGetResourceMetadata, reconaws.AwsCloudControlGetResourceOptions, awsCommonOptions, reconaws.NewAwsCloudControlGetResource)
 	RegisterModule(awsReconCmd, reconaws.AwsAuthorizationDetailsMetadata, reconaws.AwsAuthorizationDetailsOptions, awsCommonOptions, reconaws.NewAwsAuthorizationDetails)
+	RegisterModule(awsReconCmd, reconaws.AwsFindSecretsMetadata, reconaws.AwsFindSecretsOptions, awsCommonOptions, reconaws.NewAwsFindSecrets)
 
 	// Azure Recon
 	//RegisterModule(azureReconCmd, reconaz.AzureSummaryMetadata, reconaz.AzureSummaryOptions, azureCommonOptions, reconaz.NewAzureSummary)
