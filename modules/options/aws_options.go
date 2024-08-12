@@ -53,13 +53,13 @@ var AwsResourceTypeOpt = Option{
 }
 
 var AwsFindSecretsResourceType = Option{
-	Name:        "secret-resource-type",
+	Name:        "secret-resource-types",
 	Short:       "t",
-	Description: "Currently only supports CloudFormation for scanning secrets",
+	Description: "Comma separated list of AWS services. Currently only supports cloudformation for scanning secrets",
 	Required:    true,
 	Type:        String,
 	Value:       "",
-	ValueFormat: regexp.MustCompile("^cloudformation$"),
+	ValueFormat: regexp.MustCompile("^(cloudformation|lambda)(,(cloudformation|lambda))*$"),
 }
 
 var AwsResourceIdOpt = Option{

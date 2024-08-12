@@ -28,7 +28,7 @@ func NewArn(identifier string) (ArnIdentifier, error) {
 		return ArnIdentifier{}, err
 	}
 	if !valid {
-		return ArnIdentifier{}, fmt.Errorf("This is not a valid arn %v", identifier)
+		return ArnIdentifier{}, fmt.Errorf("this is not a valid arn %v", identifier)
 	}
 
 	var arn ArnIdentifier
@@ -42,6 +42,30 @@ func NewArn(identifier string) (ArnIdentifier, error) {
 	arn.AccountID = parts[4]
 	arn.Resource = parts[5]
 	return arn, nil
+}
+
+func MakeArnIdentifiers(identifiers []string) ([]ArnIdentifier, error) {
+	var ArnIdentifiers []ArnIdentifier
+	for _, identifier := range identifiers {
+		arn, err := NewArn(identifier)
+		if err != nil {
+			return nil, err
+		}
+		ArnIdentifiers = append(ArnIdentifiers, arn)
+	}
+	return ArnIdentifiers, nil
+}
+
+func MapArnByRegions(identifiers []string) (map[string][]ArnIdentifier, error) {
+	regionToArnIdentifiers := make(map[string][]ArnIdentifier)
+	for _, identifier := range identifiers {
+		arn, err := NewArn(identifier)
+		if err != nil {
+			return nil, err
+		}
+		regionToArnIdentifiers[arn.Region] = append(regionToArnIdentifiers[arn.Region], arn)
+	}
+	return regionToArnIdentifiers, nil
 }
 
 func validateARN(arn string) (bool, error) {
@@ -111,6 +135,21 @@ func ParseRegionsOption(regionsOpt string, profile string) ([]string, error) {
 	}
 }
 
-func CreateFilePath(cloudProvider, service, region, account, resource string) string {
-	return fmt.Sprintf("%s%s%s%s%s%s%s-%s.json", cloudProvider, string(os.PathSeparator), service, string(os.PathSeparator), account, string(os.PathSeparator), region, resource)
+func ParseSecretsResourceType(regionsOpt string, profile string) ([]string, error) {
+
+	if regionsOpt == "ALL" {
+		logs.ConsoleLogger().Info("Gathering enabled regions")
+		enabledRegions, err := EnabledRegions(profile)
+		if err != nil {
+			return nil, err
+		}
+		return enabledRegions, nil
+	} else {
+		regions := strings.Split(regionsOpt, ",")
+		return regions, nil
+	}
+}
+
+func CreateFilePath(cloudProvider, service, account, command, region, resource string) string {
+	return fmt.Sprintf("%s%s%s%s%s%s%s-%s-%s.json", cloudProvider, string(os.PathSeparator), service, string(os.PathSeparator), account, string(os.PathSeparator), command, region, resource)
 }
