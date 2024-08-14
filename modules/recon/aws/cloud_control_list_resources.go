@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
-	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
@@ -75,13 +74,31 @@ func (m *AwsCloudControlListResources) Invoke() error {
 	if err != nil {
 		return err
 	}
-
-	results := &cloudcontrol.ListResourcesOutput{
-		ResourceDescriptions: []types.ResourceDescription{},
-		TypeName:             &rtype,
+	cfg, err := helpers.GetAWSCfg(regions[0], m.GetOptionByName(o.AwsProfileOpt.Name).Value)
+	if err != nil {
+		return err
+	}
+	accountId, err := helpers.GetAccountId(cfg)
+	if err != nil {
+		return err
 	}
 
-	resultsChan := make(chan []types.ResourceDescription)
+	// Because we wanted to add a region field to the Resource Description, we had to create our own struct rather than use the one defined by the cloudcontrol API.
+	type EnrichedListResourcesOutput struct {
+		ResourceDescriptions []modules.EnrichedResourceDescription
+		TypeName             *string
+	}
+
+	results := EnrichedListResourcesOutput{
+		ResourceDescriptions: []modules.EnrichedResourceDescription{},
+		TypeName:             &rtype,
+	}
+	// results := &cloudcontrol.ListResourcesOutput{
+	// 	ResourceDescriptions: []types.ResourceDescription{},
+	// 	TypeName:             &rtype,
+	// }
+
+	resultsChan := make(chan []modules.EnrichedResourceDescription)
 
 	helpers.PrintMessage("Listing resources of type " + rtype + " in regions: " + strings.Join(regions, ", "))
 	for _, region := range regions {
@@ -101,12 +118,22 @@ func (m *AwsCloudControlListResources) Invoke() error {
 
 			res, err := cc.ListResources(context.Background(), params)
 			if err != nil {
-				resultsChan <- []types.ResourceDescription{}
+				resultsChan <- []modules.EnrichedResourceDescription{}
 				return err
 			}
+			var enrichedResourceDescriptions []modules.EnrichedResourceDescription
+			// Enrich Resource Descipriton with both Region and Account ID
+			for _, resourceDescription := range res.ResourceDescriptions {
+				desc := modules.EnrichedResourceDescription{
+					Identifier: *resourceDescription.Identifier,
+					Properties: *resourceDescription.Properties,
+					Region:     region,
+					AccountId:  accountId,
+				}
+				enrichedResourceDescriptions = append(enrichedResourceDescriptions, desc)
+			}
 
-			// TODO results need to be enriched with region and account id
-			resultsChan <- res.ResourceDescriptions
+			resultsChan <- enrichedResourceDescriptions
 
 			return nil
 		}(region)
@@ -118,8 +145,8 @@ func (m *AwsCloudControlListResources) Invoke() error {
 	}
 
 	close(resultsChan)
-
-	m.Run.Data <- m.MakeResultCustomFilename(results, "test.json")
+	filepath := helpers.CreateFilePath(string(m.Platform), helpers.CloudControlTypeNames[rtype], accountId, "list-resources", "all-regions", "")
+	m.Run.Data <- m.MakeResultCustomFilename(results, filepath)
 	close(m.Run.Data)
 
 	return nil

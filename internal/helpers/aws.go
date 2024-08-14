@@ -11,7 +11,22 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/modules"
 )
+
+const (
+	CCCloudFormationStack string = "AWS::CloudFormation::Stack"
+	CCEc2Instance         string = "AWS::EC2::Instance"
+)
+
+var CloudControlTypeNames = map[string]string{
+	"AWS::CloudFormation::Stack": "cloudformation",
+	"AWS::S3::Bucket":            "s3",
+	"AWS::EC2::Instance":         "ec2",
+	"AWS::Lambda::Function":      "lambda",
+	"AWS::DynamoDB::Table":       "dynamodb",
+	"AWS::RDS::DBInstance":       "rds",
+}
 
 type ArnIdentifier struct {
 	ARN       string
@@ -56,6 +71,7 @@ func MakeArnIdentifiers(identifiers []string) ([]ArnIdentifier, error) {
 	return ArnIdentifiers, nil
 }
 
+// Useful if identifier returned from CloudControl API is an ARN
 func MapArnByRegions(identifiers []string) (map[string][]ArnIdentifier, error) {
 	regionToArnIdentifiers := make(map[string][]ArnIdentifier)
 	for _, identifier := range identifiers {
@@ -66,6 +82,15 @@ func MapArnByRegions(identifiers []string) (map[string][]ArnIdentifier, error) {
 		regionToArnIdentifiers[arn.Region] = append(regionToArnIdentifiers[arn.Region], arn)
 	}
 	return regionToArnIdentifiers, nil
+}
+
+// Some resources do not return ARN as identifiers so need to be processed differently
+func MapIdentifiersByRegions(resourceDescriptions []modules.EnrichedResourceDescription) map[string][]string {
+	regionToIdentifiers := make(map[string][]string)
+	for _, description := range resourceDescriptions {
+		regionToIdentifiers[description.Region] = append(regionToIdentifiers[description.Region], description.Identifier)
+	}
+	return regionToIdentifiers
 }
 
 func validateARN(arn string) (bool, error) {
@@ -135,21 +160,22 @@ func ParseRegionsOption(regionsOpt string, profile string) ([]string, error) {
 	}
 }
 
-func ParseSecretsResourceType(regionsOpt string, profile string) ([]string, error) {
-
-	if regionsOpt == "ALL" {
-		logs.ConsoleLogger().Info("Gathering enabled regions")
-		enabledRegions, err := EnabledRegions(profile)
-		if err != nil {
-			return nil, err
-		}
-		return enabledRegions, nil
+func ParseSecretsResourceType(secretsOpt string) []string {
+	allSupportedTypes := []string{"cloudformation,ec2"}
+	var resourceTypes []string
+	if secretsOpt == "ALL" {
+		resourceTypes = allSupportedTypes
 	} else {
-		regions := strings.Split(regionsOpt, ",")
-		return regions, nil
+		resourceTypes = strings.Split(secretsOpt, ",")
 	}
+	return resourceTypes
+
 }
 
 func CreateFilePath(cloudProvider, service, account, command, region, resource string) string {
 	return fmt.Sprintf("%s%s%s%s%s%s%s-%s-%s.json", cloudProvider, string(os.PathSeparator), service, string(os.PathSeparator), account, string(os.PathSeparator), command, region, resource)
+}
+
+func CreateFileName(parts ...string) string {
+	return strings.Join(parts, "-")
 }

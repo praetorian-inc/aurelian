@@ -14,15 +14,17 @@ type Result struct {
 
 // struct to parse the JSON response from the CloudControl ListResources API
 type ListDataResult struct {
-	NextToken            string                `json:"NextToken"`
-	ResourceDescriptions []ResourceDescription `json:"ResourceDescriptions"`
-	TypeName             string                `json:"TypeName"`
-	ResultMetadata       interface{}           `json:"ResultMetadata"`
+	NextToken            string                        `json:"NextToken"`
+	ResourceDescriptions []EnrichedResourceDescription `json:"ResourceDescriptions"`
+	TypeName             string                        `json:"TypeName"`
+	ResultMetadata       interface{}                   `json:"ResultMetadata"`
 }
 
-type ResourceDescription struct {
+type EnrichedResourceDescription struct {
 	Identifier string      `json:"Identifier"`
+	Region     string      `json:"Region"` //additional field to enrich
 	Properties interface{} `json:"Properties"`
+	AccountId  string
 }
 
 func (r *Result) String() string {
