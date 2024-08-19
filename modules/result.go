@@ -12,6 +12,27 @@ type Result struct {
 	Data     interface{} `json:"data"`
 }
 
+type ResultOption func(*Result)
+
+func NewResult(platform Platform, module string, data interface{}, opts ...ResultOption) Result {
+	r := &Result{
+		Platform: platform,
+		Module:   module,
+		Data:     data,
+	}
+
+	for _, opt := range opts {
+		opt(r)
+	}
+	return *r
+}
+
+func WithFilename(filename string) ResultOption {
+	return func(r *Result) {
+		r.Filename = filename
+	}
+}
+
 // struct to parse the JSON response from the CloudControl ListResources API
 type ListDataResult struct {
 	NextToken            string                        `json:"NextToken"`

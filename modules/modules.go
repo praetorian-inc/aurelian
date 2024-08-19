@@ -9,18 +9,6 @@ import (
 	"github.com/praetorian-inc/nebula/modules/options"
 )
 
-/*
-func registerPackageFunctions(pkgName string, registry map[string]func(model.Job) model.Capability) {
-	pkg, _ := reflect.TypeOf(model.Job{}).PkgPath(), Package(pkgName)
-	funcs := runtime.FuncForPC(pkg).Name()
-	for _, f := range funcs {
-		if _, ok := registry[f]; !ok {
-			registry[f] = pkgName
-		}
-	}
-}
-*/
-
 type OutputProvider interface {
 	Write(result Result) error
 }
@@ -115,22 +103,8 @@ func (m *BaseModule) SetMetdata(meta Metadata) {
 	m.OpsecLevel = meta.OpsecLevel
 }
 
-func (m *BaseModule) MakeResult(data interface{}) Result {
-	return Result{
-		Platform: m.Platform,
-		Module:   m.Name,
-		Filename: "",
-		Data:     data,
-	}
-}
-
-func (m *BaseModule) MakeResultCustomFilename(data interface{}, filename string) Result {
-	return Result{
-		Platform: m.Platform,
-		Module:   m.Name,
-		Filename: filename,
-		Data:     data,
-	}
+func (m *BaseModule) MakeResult(data interface{}, opts ...ResultOption) Result {
+	return NewResult(m.Platform, m.Name, data, opts...)
 }
 
 func (m *BaseModule) GetOutputProviders() []OutputProvider {

@@ -13,7 +13,7 @@ If you get an `EOF` error, refer to the `KNOWN ISSUES` section below.
 
 ## Module Categories
 
-**Recon:** Directly interact with a cloud service provider (CSP) to gather information. 
+**Recon:** Directly interact with a cloud service provider (CSP) to gather information.
 **Analyze:** Offline analysis of data.
 
 
@@ -89,9 +89,15 @@ Modules will typically have some results from their invocation. The results are 
 
 Once all results have been processed, the results channel must be closed or the module will hang.
 
-```
+```go
 m.Run.Data <- m.MakeResult(output)
 close(m.Run.Data)
+```
+
+To specify a file name, pass the option using the `WithFilename` option.
+
+```go
+m.Run.Data <- m.MakeResult(stack, modules.WithFilename(filepath))
 ```
 
 **Note:** The results channel must be closed, if not the module will hang as the module runner is waiting for more data to be sent on the channel.
