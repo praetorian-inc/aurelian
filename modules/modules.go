@@ -119,6 +119,16 @@ func (m *BaseModule) MakeResult(data interface{}) Result {
 	return Result{
 		Platform: m.Platform,
 		Module:   m.Name,
+		Filename: "",
+		Data:     data,
+	}
+}
+
+func (m *BaseModule) MakeResultCustomFilename(data interface{}, filename string) Result {
+	return Result{
+		Platform: m.Platform,
+		Module:   m.Name,
+		Filename: filename,
 		Data:     data,
 	}
 }

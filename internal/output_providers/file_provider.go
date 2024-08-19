@@ -2,6 +2,7 @@ package outputproviders
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -18,20 +19,30 @@ type FileProvider struct {
 
 func NewFileProvider(options []*o.Option) modules.OutputProvider {
 	return &FileProvider{
-		OutputPath: o.GetOptionByName(o.OutputOpt.Name, options).Value,
-		FileName:   o.GetOptionByName(o.FileNameOpt.Name, options).Value,
+		OutputPath: o.GetOptionByName(o.OutputOpt.Value, options).Value,
+		FileName:   "",
 	}
 }
 
 func (fp *FileProvider) Write(result modules.Result) error {
-	if _, err := os.Stat(fp.OutputPath); os.IsNotExist(err) {
-		err := os.MkdirAll(fp.OutputPath, os.ModePerm)
+	var filename string
+
+	if result.Filename == "" {
+		filename = DefaultFileName(result.Module)
+	} else {
+		filename = result.Filename
+	}
+	fullpath := fp.GetFulfpath(filename)
+	dir := filepath.Dir(fullpath)
+
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		err := os.MkdirAll(dir, os.ModePerm)
 		if err != nil {
 			return err
 		}
 	}
 
-	file, err := os.Create(fp.GetFulfpath())
+	file, err := os.Create(fullpath)
 	if err != nil {
 		return err
 	}
@@ -42,13 +53,13 @@ func (fp *FileProvider) Write(result modules.Result) error {
 		return err
 	}
 
-	logs.ConsoleLogger().Info("Output written", "path", fp.GetFulfpath())
+	logs.ConsoleLogger().Info("Output written", "path", fullpath)
 
 	return nil
 }
 
-func (fp *FileProvider) GetFulfpath() string {
-	return fp.OutputPath + string(os.PathSeparator) + fp.FileName
+func (fp *FileProvider) GetFulfpath(filename string) string {
+	return fp.OutputPath + string(os.PathSeparator) + filename
 }
 
 func DefaultFileName(prefix string) string {

@@ -9,6 +9,8 @@ For the impatient, use the `template` command to generate a module skeleton and 
 nebula template -c recon -p aws -n FooBar > modules/recon/aws/foo_bar.go
 ```
 
+If you get an `EOF` error, refer to the `KNOWN ISSUES` section below. 
+
 ## Module Categories
 
 **Recon:** Directly interact with a cloud service provider (CSP) to gather information. 
@@ -116,3 +118,7 @@ nebula template -c recon -p aws -n FooBar > modules/recon/aws/foo_bar.go
 
 Modules will hang if the results channel is not closed. Add `defer close(m.Run.Data)` to your module to close the channel, otherwise explicitly close it when you're done.
 
+
+
+## KNOWN ISSUES
+If you see receive a `modules/recon/aws/foo_bar.go:1:1: expected 'package', found 'EOF'` when trying to run `go run main.go template -c recon -p aws -n FooBar > modules/recon/aws/foo_bar.go`, then you have to run `go build .` to build the binary and that should solve it. 
