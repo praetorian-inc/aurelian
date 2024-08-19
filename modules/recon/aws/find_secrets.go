@@ -1,6 +1,7 @@
 package reconaws
 
 import (
+	"fmt"
 	"strconv"
 	"sync"
 	"time"
@@ -91,56 +92,73 @@ func (m *AwsFindSecrets) Invoke() error {
 				DescribeCFStacks(m, regions)
 			}()
 		} else if resourceType == "ec2" {
-			// incomplete. there is a bug in GetResourcesCloudCOntrol
 			runListResources := modules.NewRun()
 			ListResourcesCloudControl(m, runListResources, helpers.CCEc2Instance)
 			ec2ListData := <-runListResources.Data
 			resourceData := ec2ListData.UnmarshalListData()
 			regionToIdentifiers := helpers.MapIdentifiersByRegions(resourceData.ResourceDescriptions)
+			// runGetResources will be used to accept all the data from each getResource run.
 			runGetResources := modules.NewRun()
-			GetResourcesCloudControl(m, runGetResources, helpers.CCEc2Instance, regionToIdentifiers)
-			close(runGetResources.Data)
+			go func() {
+				GetResourcesCloudControl(m, runGetResources, helpers.CCEc2Instance, regionToIdentifiers)
+			}()
+			for data := range runGetResources.Data {
+				// TODO need to work on processing data to extract userdata and base64 decode
+				fmt.Println(data)
+				m.Run.Data <- data
+			}
 
 		}
 	}
-
 	wg.Wait()
 	return nil
 }
 
-// There is soemthign wrong here
-// TODO to fix - i think it's something to do with the channels not being closed properly
+// You can probalby not use runGetResources and instead just pass in m.Run.Data
+// However, if you want to do any processing later then you wouldn't be able to if youre passing directly to m.Run.Data
 func GetResourcesCloudControl(m *AwsFindSecrets, runGetResources modules.Run, ccResource string, regionToIdentifiers map[string][]string) error {
-
+	defer close(runGetResources.Data)
+	wg := new(sync.WaitGroup)
+	// Need to add resource type to options
 	AwsResourceTypeOpt := o.Option{
 		Name:  o.AwsResourceTypeOpt.Name,
 		Value: ccResource,
 	}
 	for region, identifiers := range regionToIdentifiers {
+		// need to add region to the run options
 		AwsRegionOpt := o.Option{
 			Name:  o.AwsRegionOpt.Name,
 			Value: region,
 		}
 		for _, identifier := range identifiers {
-			AwsResourceIdOpt := o.Option{
-				Name:  o.AwsResourceIdOpt.Name,
-				Value: identifier,
-			}
-			run := modules.NewRun()
-			options := m.Options
-			options = append(options, &AwsResourceTypeOpt, &AwsRegionOpt, &AwsResourceIdOpt)
-			getResource, err := NewAwsCloudControlGetResource(options, run)
-			if err != nil {
-				return err
-			}
-			err = getResource.Invoke()
-			if err != nil {
-				return err
-			}
-			runGetResources.Data <- m.MakeResult(run.Data)
-
+			wg.Add(1)
+			go func(r string, i string) error {
+				defer wg.Done()
+				// need to add the specific resource ID to the options
+				AwsResourceIdOpt := o.Option{
+					Name:  o.AwsResourceIdOpt.Name,
+					Value: i,
+				}
+				run := modules.NewRun()
+				// need to create a deep copy or else you'll end up editing m.Options which will mess up the other goroutines that are running
+				options := o.CreateDeepCopyOfOptions(m.Options)
+				// add it all to options
+				options = append(options, &AwsResourceTypeOpt, &AwsRegionOpt, &AwsResourceIdOpt)
+				getResource, err := NewAwsCloudControlGetResource(options, run)
+				if err != nil {
+					return err
+				}
+				err = getResource.Invoke()
+				if err != nil {
+					return err
+				}
+				runData := <-run.Data
+				runGetResources.Data <- runData
+				return nil
+			}(region, identifier)
 		}
 	}
+	wg.Wait()
 	return nil
 }
 

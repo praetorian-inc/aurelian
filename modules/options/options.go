@@ -46,6 +46,17 @@ func GetOptionByName(name string, options []*Option) *Option {
 	return nil
 }
 
+func CreateDeepCopyOfOptions(original []*Option) []*Option {
+	copiedOptions := make([]*Option, len(original))
+
+	for i, option := range original {
+		newOption := *option
+		copiedOptions[i] = &newOption
+	}
+
+	return copiedOptions
+}
+
 // ValidateOption ensures the provided option is in the list of options and valid.
 // It checks if the option is required and has a valid format.
 // If any validation fails, it returns an error.

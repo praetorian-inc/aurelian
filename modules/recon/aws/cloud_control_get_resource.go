@@ -2,6 +2,7 @@ package reconaws
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -60,6 +61,10 @@ func (m *AwsCloudControlGetResource) Invoke() error {
 	if err != nil {
 		return err
 	}
+	accountId, err := helpers.GetAccountId(cfg)
+	if err != nil {
+		fmt.Println(err)
+	}
 
 	cc := cloudcontrol.NewFromConfig(cfg)
 
@@ -72,8 +77,9 @@ func (m *AwsCloudControlGetResource) Invoke() error {
 	if err != nil {
 		return err
 	}
+	filepath := helpers.CreateFilePath(string(m.Platform), helpers.CloudControlTypeNames[rtype], accountId, "get-resource", region, id)
 
-	m.Run.Data <- m.MakeResult(res)
+	m.Run.Data <- m.MakeResultCustomFilename(res, filepath)
 	close(m.Run.Data)
 
 	return nil
