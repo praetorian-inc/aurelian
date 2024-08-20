@@ -79,7 +79,7 @@ func (m *AwsCloudControlGetResource) Invoke() error {
 	}
 	filepath := helpers.CreateFilePath(string(m.Platform), helpers.CloudControlTypeNames[rtype], accountId, "get-resource", region, id)
 
-	m.Run.Data <- m.MakeResultCustomFilename(res, filepath)
+	m.Run.Data <- m.MakeResult(res, modules.WithFilename(filepath))
 	close(m.Run.Data)
 
 	return nil
