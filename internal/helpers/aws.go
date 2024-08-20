@@ -12,11 +12,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules"
+	"github.com/praetorian-inc/nebula/modules/options"
 )
 
 const (
 	CCCloudFormationStack string = "AWS::CloudFormation::Stack"
 	CCEc2Instance         string = "AWS::EC2::Instance"
+	CCEcs                 string = "AWS::ECS::TaskDefinition"
 )
 
 var CloudControlTypeNames = map[string]string{
@@ -161,7 +163,7 @@ func ParseRegionsOption(regionsOpt string, profile string) ([]string, error) {
 }
 
 func ParseSecretsResourceType(secretsOpt string) []string {
-	allSupportedTypes := []string{"cloudformation,ec2"}
+	allSupportedTypes := options.AwsFindSecretsResourceType.ValueList
 	var resourceTypes []string
 	if secretsOpt == "ALL" {
 		resourceTypes = allSupportedTypes

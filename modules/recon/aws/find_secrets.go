@@ -71,7 +71,8 @@ func (m *AwsFindSecrets) Invoke() error {
 	}
 
 	for _, resourceType := range resourceTypes {
-		if resourceType == "cloudformation" {
+		switch resourceType {
+		case "cloudformation":
 			run := modules.NewRun()
 			ListResourcesCloudControl(m, run, helpers.CCCloudFormationStack)
 			stacksData := <-run.Data
@@ -91,7 +92,7 @@ func (m *AwsFindSecrets) Invoke() error {
 				defer wg.Done()
 				DescribeCFStacks(m, regions)
 			}()
-		} else if resourceType == "ec2" {
+		case "ec2":
 			runListResources := modules.NewRun()
 			ListResourcesCloudControl(m, runListResources, helpers.CCEc2Instance)
 			ec2ListData := <-runListResources.Data
@@ -107,7 +108,22 @@ func (m *AwsFindSecrets) Invoke() error {
 				fmt.Println(data)
 				m.Run.Data <- data
 			}
+		case "ecs":
+			runListResources := modules.NewRun()
+			ListResourcesCloudControl(m, runListResources, helpers.CCEcs)
+			ecsListData := <-runListResources.Data
+			resourceData := ecsListData.UnmarshalListData()
+			regionToIdentifiers := helpers.MapIdentifiersByRegions(resourceData.ResourceDescriptions)
+			runGetResources := modules.NewRun()
 
+			go func() {
+				GetResourcesCloudControl(m, runGetResources, helpers.CCEcs, regionToIdentifiers)
+			}()
+
+			for data := range runGetResources.Data {
+				fmt.Println(data)
+				m.Run.Data <- data
+			}
 		}
 	}
 	wg.Wait()

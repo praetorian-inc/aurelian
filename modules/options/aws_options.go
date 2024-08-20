@@ -59,7 +59,7 @@ var AwsFindSecretsResourceType = Option{
 	Required:    true,
 	Type:        String,
 	Value:       "",
-	ValueFormat: regexp.MustCompile("^(cloudformation|lambda|ec2)(,(cloudformation|lambda|ec2))*$"),
+	ValueList:   []string{"cloudformation", "ecs", "ec2", "lambda"},
 }
 
 var AwsResourceIdOpt = Option{
