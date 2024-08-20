@@ -146,7 +146,7 @@ func (m *AwsCloudControlListResources) Invoke() error {
 
 	close(resultsChan)
 	filepath := helpers.CreateFilePath(string(m.Platform), helpers.CloudControlTypeNames[rtype], accountId, "list-resources", "all-regions", "")
-	m.Run.Data <- m.MakeResultCustomFilename(results, filepath)
+	m.Run.Data <- modules.NewResult(m.Platform, m.Metadata.Id, results, modules.WithFilename(filepath))
 	close(m.Run.Data)
 
 	return nil

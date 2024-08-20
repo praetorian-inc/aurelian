@@ -163,6 +163,7 @@ func ParseRegionsOption(regionsOpt string, profile string) ([]string, error) {
 }
 
 func ParseSecretsResourceType(secretsOpt string) []string {
+
 	allSupportedTypes := options.AwsFindSecretsResourceType.ValueList
 	var resourceTypes []string
 	if secretsOpt == "ALL" {

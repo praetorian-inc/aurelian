@@ -41,7 +41,7 @@ func DescribeCFStacks(m *AwsFindSecrets, regions []string) error {
 					return err
 				}
 				filepath := helpers.CreateFilePath(string(m.Platform), resourceType.Value, stackArn.AccountID, command, region, stackName)
-				m.Run.Data <- m.MakeResultCustomFilename(stack, filepath)
+				m.Run.Data <- m.MakeResult(stack, modules.WithFilename(filepath))
 			}
 			return nil
 		}()
@@ -112,7 +112,8 @@ func GetCFTemplates(m *AwsFindSecrets, regionToArnIdentifiers map[string][]helpe
 				}
 				filepath := helpers.CreateFilePath(string(m.Platform), resourceType.Value, arn.AccountID, command, region, stackName)
 				templateBody := *result.TemplateBody
-				m.Run.Data <- m.MakeResultCustomFilename(templateBody, filepath)
+
+				m.Run.Data <- modules.NewResult(m.Platform, m.Id, templateBody, modules.WithFilename(filepath))
 				return nil
 			}()
 		}
