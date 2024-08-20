@@ -1,6 +1,7 @@
 package reconaws
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"sync"
@@ -116,16 +117,14 @@ func (m *AwsFindSecrets) Invoke() error {
 		case "ecs":
 			runListResources := modules.NewRun()
 			ListResourcesCloudControl(m, runListResources, helpers.CCEcs)
-			ecsListData := <-runListResources.Data
-			resourceData := ecsListData.UnmarshalListData()
-			regionToIdentifiers := helpers.MapIdentifiersByRegions(resourceData.ResourceDescriptions)
-			runGetResources := modules.NewRun()
+			res := modules.NewRun()
+			ctx := context.WithValue(context.Background(), "awsProfile", profile)
 
 			go func() {
-				GetResourcesCloudControl(m, runGetResources, helpers.CCEcs, regionToIdentifiers)
+				GetResources(ctx, runListResources.Data, res.Data)
 			}()
 
-			for data := range runGetResources.Data {
+			for data := range res.Data {
 				fmt.Println(data)
 				m.Run.Data <- data
 			}

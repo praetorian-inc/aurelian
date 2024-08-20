@@ -49,7 +49,7 @@ type EnrichedResourceDescription struct {
 }
 
 func (r *Result) String() string {
-	d, _ := json.MarshalIndent(r, "", "  ")
+	d, _ := json.MarshalIndent(r.Data, "", "  ")
 	return string(d)
 }
 

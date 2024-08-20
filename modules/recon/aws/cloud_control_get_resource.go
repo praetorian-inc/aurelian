@@ -11,7 +11,6 @@ import (
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
-	o "github.com/praetorian-inc/nebula/modules/options"
 )
 
 type AwsCloudControlGetResource struct {
@@ -38,15 +37,15 @@ var AwsCloudControlGetResourceOutputProviders = []func(options []*options.Option
 	op.NewFileProvider,
 }
 
-func NewAwsCloudControlGetResource(options []*options.Option, run modules.Run) (modules.Module, error) {
+func NewAwsCloudControlGetResource(opts []*options.Option, run modules.Run) (modules.Module, error) {
 	var m AwsCloudControlGetResource
 	m.SetMetdata(AwsCloudControlGetResourceMetadata)
 	m.Run = run
 
-	fileNameOpt := o.FileNameOpt
+	fileNameOpt := options.FileNameOpt
 	fileNameOpt.Value = m.Metadata.Id + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".json"
-	options = append(options, &fileNameOpt)
-	m.Options = options
+	opts = append(opts, &fileNameOpt)
+	m.Options = opts
 	m.ConfigureOutputProviders(AwsCloudControlGetResourceOutputProviders)
 
 	return &m, nil
@@ -83,4 +82,33 @@ func (m *AwsCloudControlGetResource) Invoke() error {
 	close(m.Run.Data)
 
 	return nil
+}
+
+func GetResources(ctx context.Context, list <-chan modules.Result, results chan<- modules.Result) {
+	data := <-list
+	resources := data.UnmarshalListData()
+
+	for _, resource := range resources.ResourceDescriptions {
+		cfg, err := helpers.GetAWSCfg(resource.Region, ctx.Value("awsProfile").(string))
+		if err != nil {
+			panic(err)
+		}
+
+		cc := cloudcontrol.NewFromConfig(cfg)
+
+		params := &cloudcontrol.GetResourceInput{
+			Identifier: &resource.Identifier,
+			TypeName:   &resources.TypeName,
+		}
+
+		res, err := cc.GetResource(ctx, params)
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		fname := helpers.CreateFilePath(string(AwsCloudControlGetResourceMetadata.Platform), helpers.CloudControlTypeNames[resources.TypeName], resource.AccountId, "get-resource", resource.Region, resource.Identifier)
+		results <- modules.NewResult(modules.AWS, AwsCloudControlGetResourceMetadata.Id, res, modules.WithFilename(fname))
+	}
+	close(results)
+
 }
