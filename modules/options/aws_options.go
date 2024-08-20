@@ -2,6 +2,7 @@ package options
 
 import (
 	"regexp"
+	"strings"
 )
 
 var AwsAccessKeyIdOpt = Option{
@@ -52,14 +53,15 @@ var AwsResourceTypeOpt = Option{
 	ValueFormat: regexp.MustCompile("^(AWS::[a-zA-Z0-9:]+|ALL)$"),
 }
 
+var findsecretsTypes = []string{"cloudformation", "ecs", "ec2", "lambda", "ALL"}
 var AwsFindSecretsResourceType = Option{
 	Name:        "secret-resource-types",
 	Short:       "t",
-	Description: "Comma separated list of AWS services. Currently only supports cloudformation for scanning secrets",
+	Description: "Comma separated list of AWS services. Currently supported types: " + strings.Join(findsecretsTypes, ", "),
 	Required:    true,
 	Type:        String,
 	Value:       "",
-	ValueFormat: regexp.MustCompile("^(cloudformation|lambda|ec2)(,(cloudformation|lambda|ec2))*$"),
+	ValueList:   findsecretsTypes,
 }
 
 var AwsResourceIdOpt = Option{

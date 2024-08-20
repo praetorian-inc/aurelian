@@ -112,6 +112,7 @@ func GetCFTemplates(m *AwsFindSecrets, regionToArnIdentifiers map[string][]helpe
 				}
 				filepath := helpers.CreateFilePath(string(m.Platform), resourceType.Value, arn.AccountID, command, region, stackName)
 				templateBody := *result.TemplateBody
+
 				m.Run.Data <- modules.NewResult(m.Platform, m.Id, templateBody, modules.WithFilename(filepath))
 				return nil
 			}()
