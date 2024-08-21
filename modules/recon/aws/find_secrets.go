@@ -114,7 +114,7 @@ func (m *AwsFindSecrets) Invoke() error {
 				fmt.Println(data)
 				m.Run.Data <- data
 			}
-		case "ecs", "ssm":
+		default:
 			name, err := helpers.ResolveCommonResourceTypes(resourceType)
 			if !err {
 				return fmt.Errorf("unable to resolve resource type %s", resourceType)

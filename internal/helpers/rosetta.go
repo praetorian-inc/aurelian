@@ -41,6 +41,7 @@ var common = map[string]string{
 	"rds":            "AWS::RDS::DBInstance",
 	"ecs":            "AWS::ECS::TaskDefinition",
 	"ssm":            "AWS::SSM::Document",
+	"stepfunctions":  "AWS::StepFunctions::StateMachine",
 }
 
 // ResolveService returns the service identifier based on the service friendly name
