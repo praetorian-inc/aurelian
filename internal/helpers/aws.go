@@ -15,10 +15,12 @@ import (
 	"github.com/praetorian-inc/nebula/modules/options"
 )
 
+// TODO this should be combined with roseta
 const (
 	CCCloudFormationStack string = "AWS::CloudFormation::Stack"
 	CCEc2Instance         string = "AWS::EC2::Instance"
 	CCEcs                 string = "AWS::ECS::TaskDefinition"
+	CCSsmDocument         string = "AWS::SSM::Document"
 )
 
 var CloudControlTypeNames = map[string]string{

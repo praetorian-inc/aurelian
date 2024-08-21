@@ -32,8 +32,24 @@ var serviceMap = map[string][]string{
 	"Amazon Kinesis Firehose":                   {"AWS::KinesisFirehose::DeliveryStream"},
 }
 
+var common = map[string]string{
+	"cloudformation": "AWS::CloudFormation::Stack",
+	"s3":             "AWS::S3::Bucket",
+	"ec2":            "AWS::EC2::Instance",
+	"lambda":         "AWS::Lambda::Function",
+	"dynamodb":       "AWS::DynamoDB::Table",
+	"rds":            "AWS::RDS::DBInstance",
+	"ecs":            "AWS::ECS::TaskDefinition",
+	"ssm":            "AWS::SSM::Document",
+}
+
 // ResolveService returns the service identifier based on the service friendly name
 func ResolveCostExplorerService(friendlyName string) ([]string, bool) {
 	serviceID, ok := serviceMap[friendlyName]
 	return serviceID, ok
+}
+
+func ResolveCommonResourceTypes(friendlyName string) (string, bool) {
+	resourceTypes, ok := common[friendlyName]
+	return resourceTypes, ok
 }

@@ -114,9 +114,14 @@ func (m *AwsFindSecrets) Invoke() error {
 				fmt.Println(data)
 				m.Run.Data <- data
 			}
-		case "ecs":
+		case "ecs", "ssm":
+			name, err := helpers.ResolveCommonResourceTypes(resourceType)
+			if !err {
+				return fmt.Errorf("unable to resolve resource type %s", resourceType)
+			}
+
 			runListResources := modules.NewRun()
-			ListResourcesCloudControl(m, runListResources, helpers.CCEcs)
+			ListResourcesCloudControl(m, runListResources, name)
 			res := modules.NewRun()
 			ctx := context.WithValue(context.Background(), "awsProfile", profile)
 
