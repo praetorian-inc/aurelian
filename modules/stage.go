@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sync"
 
 	"github.com/praetorian-inc/nebula/modules/options"
 )
@@ -132,10 +133,18 @@ func validateStageCompatibility(stage1, stage2 interface{}) error {
 	return nil
 }
 
-/*
-
-// Send the input data through each stage and the results to the shared output channel
-func FanStages[T any](ctx context.Context, opts []*options.Option, in <-chan T, out chan T, stages ...Stage[T]) {
+// FanStages concurrently executes multiple stages on the input channel and sends the results to the output channel.
+// Each input is fanned to the stages, and the output of each stage is sent to the output channel.
+//
+// Parameters:
+//   - ctx: The context to control the lifecycle of the stages.
+//   - opts: A slice of options to configure the stages.
+//   - in: The input channel from which data is read.
+//   - out: The output channel to which processed data is sent.
+//   - stages: A variadic list of Stage functions that process the input data.
+//
+// The function
+func FanStages[In, Out any](ctx context.Context, opts []*options.Option, in <-chan In, out chan Out, stages ...Stage[In, Out]) {
 
 	wg := sync.WaitGroup{} //
 	for i := range in {
@@ -145,7 +154,7 @@ func FanStages[T any](ctx context.Context, opts []*options.Option, in <-chan T, 
 			wg2.Add(len(stages))
 			for _, stage := range stages {
 				go func() {
-					fChan := make(chan T, 1)
+					fChan := make(chan In, 1)
 					fChan <- i
 					close(fChan)
 					sout := stage(ctx, opts, fChan)
@@ -161,7 +170,6 @@ func FanStages[T any](ctx context.Context, opts []*options.Option, in <-chan T, 
 	}
 	wg.Wait()
 }
-*/
 
 // Generator takes a slice of any type and returns a read-only channel that emits each element of the slice.
 // The function runs a goroutine that sends each element of the input slice to the channel and then closes the channel.

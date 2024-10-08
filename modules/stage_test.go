@@ -2,6 +2,7 @@ package modules
 
 import (
 	"context"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -173,7 +174,6 @@ func TestValidateStages(t *testing.T) {
 	}
 }
 
-/*
 func TestFanStages(t *testing.T) {
 	stage1 := func(ctx context.Context, opts []*options.Option, in <-chan int) <-chan int {
 		out := make(chan int)
@@ -226,4 +226,3 @@ func TestFanStages(t *testing.T) {
 		t.Errorf("Expected %v, but got %v", expected, results)
 	}
 }
-*/
