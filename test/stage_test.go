@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/nebula/stages"
 )
 
 func TestChainStages(t *testing.T) {
@@ -36,18 +37,35 @@ func TestChainStages(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
+	// test single stage
 	input := make(chan int, 1)
 	input <- 1
 	close(input)
 
-	chain, err := ChainStages[int, int](stage1, stage2)
+	chain, err := stages.ChainStages[int, int](stage1)
 	if err != nil {
 		t.Errorf("Error chaining stages: %v", err)
 	}
 
 	output := chain(ctx, nil, input)
-
 	result := <-output
+	if result != 2 {
+		t.Errorf("Expected 2, but got %d", result)
+	}
+
+	// test multiple stages
+	input = make(chan int, 1)
+	input <- 1
+	close(input)
+
+	chain, err = stages.ChainStages[int, int](stage1, stage2)
+	if err != nil {
+		t.Errorf("Error chaining stages: %v", err)
+	}
+
+	output = chain(ctx, nil, input)
+
+	result = <-output
 	expected := 4 // (1 + 1) * 2
 
 	if result != expected {
@@ -95,7 +113,7 @@ func TestChainStagesDifferentTypes(t *testing.T) {
 	input <- 1
 	close(input)
 
-	chain, err := ChainStages[int, int](stage1, stage2, stage3)
+	chain, err := stages.ChainStages[int, int](stage1, stage2, stage3)
 	if err != nil {
 		t.Errorf("Error chaining stages: %v", err)
 	}
@@ -150,14 +168,14 @@ func TestValidateStages(t *testing.T) {
 	var out1 string
 
 	// should fail as the input of stage2 is an int and we expect a string as the type of in1
-	err := validateStages(in1, out1, stage2, stage1, stage3)
+	err := stages.ValidateStages(in1, out1, stage2, stage1, stage3)
 	if err == nil {
 		t.Error("Expected error, but got nil")
 
 	}
 
 	// valid
-	err = validateStages(in1, out1, stage1, stage3)
+	err = stages.ValidateStages(in1, out1, stage1, stage3)
 	if err != nil {
 		t.Errorf("Expected no error, but got %v", err)
 	}
@@ -168,7 +186,7 @@ func TestValidateStages(t *testing.T) {
 	// stage2 - in:int -> out:string
 	// stage1 - in:string -> out:string
 	// stage3 - in:string -> out:string
-	err = validateStages(in2, out2, stage2, stage1, stage3)
+	err = stages.ValidateStages(in2, out2, stage2, stage1, stage3)
 	if err != nil {
 		t.Errorf("Expected no error, but got %v", err)
 	}
@@ -206,7 +224,7 @@ func TestFanStages(t *testing.T) {
 	output := make(chan int)
 	defer close(output)
 	go func() {
-		FanStages(ctx, nil, input, output, stage1, stage2)
+		stages.FanStages(ctx, nil, input, output, stage1, stage2)
 	}()
 
 	input <- 2
@@ -224,5 +242,25 @@ func TestFanStages(t *testing.T) {
 
 	if len(results) != len(expected) {
 		t.Errorf("Expected %v, but got %v", expected, results)
+	}
+}
+
+func TestGeneratorStage(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	input := make(chan string, 1)
+	input <- "test"
+	close(input)
+
+	in := stages.Generator([]string{"test"})
+
+	output := stages.Echo[string, string](ctx, nil, in)
+
+	result := <-output
+	expected := "test"
+
+	if result != expected {
+		t.Errorf("Expected %s, but got %s", expected, result)
 	}
 }

@@ -1,4 +1,4 @@
-package modules
+package stages
 
 import (
 	"context"
@@ -49,7 +49,7 @@ func ChainStages[I any, O any](stages ...any) (Stage[I, O], error) {
 	// Validate the stages are compatible
 	var inType I
 	var outType O
-	if err := validateStages(inType, outType, stages...); err != nil {
+	if err := ValidateStages(inType, outType, stages...); err != nil {
 		return nil, err
 	}
 
@@ -60,12 +60,12 @@ func ChainStages[I any, O any](stages ...any) (Stage[I, O], error) {
 		var chanOut reflect.Value
 		chanIn = reflect.ValueOf(in)
 		for i := 0; i < len(stages); i++ {
-			stageTypeOut := reflect.TypeOf(stages[i]).Out(0).Elem() // Output type of stage's channel
+			//stageTypeOut := reflect.TypeOf(stages[i]).Out(0).Elem() // Output type of stage's channel
 
-			chanOut = reflect.MakeChan(reflect.ChanOf(reflect.BothDir, stageTypeOut), 0)
+			//chanOut = reflect.MakeChan(reflect.ChanOf(reflect.BothDir, stageTypeOut), 0)
 
-			fmt.Printf("chanIn%d: %v\n", i, chanIn)
-			fmt.Printf("chanOut%d: %v\n", i, chanOut)
+			// fmt.Printf("chanIn%d: %v\n", i, chanIn)
+			// fmt.Printf("chanOut%d: %v\n", i, chanOut)
 			stageFunc := reflect.ValueOf(stages[i])
 			chanOut = stageFunc.Call([]reflect.Value{
 				reflect.ValueOf(ctx),
@@ -93,12 +93,15 @@ func ChainStages[I any, O any](stages ...any) (Stage[I, O], error) {
 //
 // Returns:
 // - error: An error if any of the stages are incompatible, or if the input/output types do not match the expected types.
-func validateStages(In any, Out any, stages ...any) error {
+func ValidateStages(In any, Out any, stages ...any) error {
 
 	// Validate chaining each stage together is compatible
-	for i := 0; i < len(stages)-1; i++ {
-		if err := validateStageCompatibility(stages[i], stages[i+1]); err != nil {
-			return err
+	fmt.Println("num stages: ", len(stages))
+	if len(stages) > 1 {
+		for i := 0; i < len(stages)-1; i++ {
+			if err := validateStageCompatibility(stages[i], stages[i+1]); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -196,14 +199,18 @@ func Generator[T any](inputs []T) <-chan T {
 	return out
 }
 
-func Spy(ctx context.Context, opts []*options.Option, in <-chan string) <-chan string {
-	fmt.Println("Running spy stage")
-	out := make(chan string)
+func Echo[In, Out any](ctx context.Context, opts []*options.Option, in <-chan In) <-chan Out {
+	out := make(chan Out)
 	go func() {
 		defer close(out)
 		for i := range in {
-			fmt.Printf("spy: %v\n", i)
-			out <- i
+			fmt.Printf("echo: %v\n", i)
+			if outVal, ok := any(i).(Out); ok {
+				out <- outVal
+			} else {
+				// Handle the type conversion error appropriately
+				fmt.Printf("type conversion error: cannot convert %v to %T\n", i, out)
+			}
 		}
 	}()
 	return out
