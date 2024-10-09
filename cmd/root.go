@@ -1,15 +1,16 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"sync"
 
-	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/modules"
 	o "github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/nebula/stages"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -136,13 +137,18 @@ func getOptsFromCmd(cmd *cobra.Command, required []*o.Option) []*o.Option {
 	return opts
 }
 
-func runModule(module modules.Module, meta modules.Metadata, options []*o.Option, run modules.Run) {
+func runModule[In, Out any](ctx context.Context, opts []*o.Option, ouputProviders modules.OutputProviders, factory stages.StageFactory[In, Out]) {
+	in, chain, err := factory(opts)
+	if err != nil {
+		panic(err)
+	}
+
 	wg := new(sync.WaitGroup)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for result := range run.Data {
-			for _, outputProvider := range module.GetOutputProviders() {
+		for result := range chain(ctx, opts, in) {
+			for _, outputProvider := range ouputProviders {
 				wg.Add(1)
 				go func(outputProvider modules.OutputProvider, result modules.Result) {
 					err := outputProvider.Write(result)
@@ -151,15 +157,12 @@ func runModule(module modules.Module, meta modules.Metadata, options []*o.Option
 						log.Default().Println(err)
 					}
 					wg.Done()
-				}(outputProvider, result)
+				}(outputProvider(opts), modules.NewResult(modules.AWS, "foo", result))
 			}
 		}
 	}()
-
-	helpers.PrintMessage(meta.Name)
-	err := module.Invoke()
-	if err != nil {
-		log.Default().Println(err)
-	}
+	// for result := range output {
+	// 	logs.ConsoleLogger().Info(fmt.Sprintf("%v", result))
+	// }
 	wg.Wait()
 }

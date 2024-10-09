@@ -14,6 +14,8 @@ import (
 // It returns an output channel of type O.
 type Stage[I any, O any] func(ctx context.Context, opts []*options.Option, in <-chan I) <-chan O
 
+type StageFactory[I any, O any] func(opts []*options.Option) (<-chan I, Stage[I, O], error)
+
 // ChainStages chains multiple stages together, ensuring that the output type of each stage
 // matches the input type of the next stage. It returns a single stage function that processes
 // the input through all the provided stages sequentially.
@@ -60,12 +62,6 @@ func ChainStages[I any, O any](stages ...any) (Stage[I, O], error) {
 		var chanOut reflect.Value
 		chanIn = reflect.ValueOf(in)
 		for i := 0; i < len(stages); i++ {
-			//stageTypeOut := reflect.TypeOf(stages[i]).Out(0).Elem() // Output type of stage's channel
-
-			//chanOut = reflect.MakeChan(reflect.ChanOf(reflect.BothDir, stageTypeOut), 0)
-
-			// fmt.Printf("chanIn%d: %v\n", i, chanIn)
-			// fmt.Printf("chanOut%d: %v\n", i, chanOut)
 			stageFunc := reflect.ValueOf(stages[i])
 			chanOut = stageFunc.Call([]reflect.Value{
 				reflect.ValueOf(ctx),
@@ -96,7 +92,6 @@ func ChainStages[I any, O any](stages ...any) (Stage[I, O], error) {
 func ValidateStages(In any, Out any, stages ...any) error {
 
 	// Validate chaining each stage together is compatible
-	fmt.Println("num stages: ", len(stages))
 	if len(stages) > 1 {
 		for i := 0; i < len(stages)-1; i++ {
 			if err := validateStageCompatibility(stages[i], stages[i+1]); err != nil {

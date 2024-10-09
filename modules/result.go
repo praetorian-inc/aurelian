@@ -9,7 +9,7 @@ type Result struct {
 	Platform Platform `json:"platform"`
 	Module   string   `json:"module"`
 	Filename string
-	Data     interface{} `json:"data"`
+	Data     any `json:"data"`
 }
 
 type ResultOption func(*Result)
