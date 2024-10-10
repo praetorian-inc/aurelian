@@ -1,8 +1,6 @@
 package modules
 
 import (
-	"sync"
-
 	"github.com/praetorian-inc/nebula/modules/options"
 )
 
@@ -113,27 +111,4 @@ func RenderOutputProviders(providers []func(options []*options.Option) OutputPro
 	}
 
 	return op
-}
-
-func RunModule(factoryFn func(options []*options.Option, run Run) (Module, error), options []*options.Option, run Run) error {
-
-	var err error
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		var m Module
-
-		m, err := factoryFn(options, run)
-		if err == nil {
-			err = m.Invoke()
-		}
-	}()
-
-	wg.Wait()
-	if err != nil {
-		return err
-	}
-
-	return nil
 }

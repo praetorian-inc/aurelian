@@ -48,5 +48,5 @@ func NewAwsAuthorizationDetails(opts []*o.Option) (<-chan string, stages.Stage[s
 		return nil, nil, err
 	}
 
-	return stages.Generator([]string{}), pipeline, nil
+	return stages.Generator([]string{"foo"}), pipeline, nil
 }

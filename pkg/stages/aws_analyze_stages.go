@@ -34,8 +34,8 @@ import (
 //
 // Returns:
 //   - An output channel of type Out (string) containing matched actions.
-func AwsExpandActionsStage[In, Out string](ctx context.Context, opts []*options.Option, in <-chan In) <-chan Out {
-	out := make(chan Out)
+func AwsExpandActionsStage(ctx context.Context, opts []*options.Option, in <-chan string) <-chan string {
+	out := make(chan string)
 	body, err := utils.Cached_httpGet("https://awspolicygen.s3.amazonaws.com/js/policies.js")
 	if err != nil {
 		fmt.Println(fmt.Errorf("error getting AWS policy actions: %v", err))
@@ -69,7 +69,7 @@ func AwsExpandActionsStage[In, Out string](ctx context.Context, opts []*options.
 			for _, a := range allActions {
 				match, _ := regexp.MatchString(pattern, a)
 				if match {
-					out <- Out(a)
+					out <- a
 				}
 			}
 

@@ -192,39 +192,37 @@ func ParseTypes(types string) <-chan string {
 	return out
 }
 
-func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*options.Option) Stage[string, []byte] {
-	return func(ctx context.Context, opts []*options.Option, in <-chan string) <-chan []byte {
-		out := make(chan []byte)
-		go func() {
-			defer close(out)
+func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*options.Option, in <-chan string) <-chan []byte {
+	out := make(chan []byte)
+	go func() {
+		defer close(out)
 
-			config, err := helpers.GetAWSCfg("", options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+		config, err := helpers.GetAWSCfg("", options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
 
-			if err != nil {
-				logs.ConsoleLogger().Error(fmt.Sprintf("Error getting AWS config: %s", err))
-				return
-			}
+		if err != nil {
+			logs.ConsoleLogger().Error(fmt.Sprintf("Error getting AWS config: %s", err))
+			return
+		}
 
-			accountId, err := helpers.GetAccountId(config)
-			if err != nil {
-				logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account ID: %s", err))
-			}
-			fmt.Println(accountId)
+		accountId, err := helpers.GetAccountId(config)
+		if err != nil {
+			logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account ID: %s", err))
+		}
+		fmt.Println(accountId)
 
-			client := iam.NewFromConfig(config)
-			output, err := client.GetAccountAuthorizationDetails(ctx, &iam.GetAccountAuthorizationDetailsInput{})
-			if err != nil {
-				logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account authorization details: %s", err))
-				return
-			}
+		client := iam.NewFromConfig(config)
+		output, err := client.GetAccountAuthorizationDetails(ctx, &iam.GetAccountAuthorizationDetailsInput{})
+		if err != nil {
+			logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account authorization details: %s", err))
+			return
+		}
 
-			res, err := json.Marshal(output)
-			if err != nil {
-				logs.ConsoleLogger().Error(fmt.Sprintf("Error marshalling account authorization details: %s", err))
-			}
+		res, err := json.Marshal(output)
+		if err != nil {
+			logs.ConsoleLogger().Error(fmt.Sprintf("Error marshalling account authorization details: %s", err))
+		}
 
-			out <- res
-		}()
-		return out
-	}
+		out <- res
+	}()
+	return out
 }
