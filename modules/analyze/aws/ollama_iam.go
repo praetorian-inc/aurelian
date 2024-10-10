@@ -5,7 +5,9 @@ import (
 
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
+	"github.com/praetorian-inc/nebula/modules/options"
 	o "github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/nebula/stages"
 )
 
 type AwsOllamaIam struct {
@@ -33,43 +35,34 @@ var AwsOllamaIamOutputProviders = []func(options []*o.Option) modules.OutputProv
 	op.NewConsoleProvider,
 }
 
-func NewAwsOllamaIam(options []*o.Option, run modules.Run) (modules.Module, error) {
-	var m AwsOllamaIam
-	m.SetMetdata(AwsOllamaIamMetadata)
-	m.Run = run
+func NewAwsOllamaIam(opts []*options.Option) (<-chan string, stages.Stage[string, string], error) {
 
-	urlOpt := o.GetOptionByName(o.UrlOpt.Name, options)
+	urlOpt := o.GetOptionByName(o.UrlOpt.Name, opts)
 	if urlOpt.Value == "" {
 		urlOpt.Value = "http://localhost:11434/api"
 	}
 
-	promptOpt := o.GetOptionByName(o.PromptOpt.Name, options)
+	// Get the default base prompt
+	promptOpt := o.GetOptionByName(o.PromptOpt.Name, opts)
 	if promptOpt.Value == "" {
 		promptOpt.Value = "Print the arn of the IAM Policy below. Then analyze the AWS Policy for security weaknesses. Please expand all actions with a wildcard to understand the risk they actions may pose. Print a list of security weaknesses. Respond None if there are no weaknesses. Finally rate the risk of the policy."
 	}
 
-	m.Options = options
-	m.ConfigureOutputProviders(AwsOllamaIamOutputProviders)
-
-	return &m, nil
-}
-
-func (m *AwsOllamaIam) Invoke() error {
-
-	prompt := m.GetOptionByName(o.PromptOpt.Name).Value
-	polBytes, err := os.ReadFile(m.GetOptionByName(o.PathOpt.Name).Value)
+	polBytes, err := os.ReadFile(options.GetOptionByName(o.PathOpt.Name, opts).Value)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	policy := string(polBytes)
-	prompt = prompt + "\n" + policy
+	prompt := promptOpt.Value + "\n" + policy
 
-	err = m.GenerateOllamaResponse(prompt)
+	pipeline, err := stages.ChainStages[string, string](
+		stages.GenerateOllamaResponse,
+	)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
-	close(m.Run.Data)
-	return nil
+	return stages.Generator([]string{prompt}), pipeline, nil
+
 }
