@@ -1,6 +1,7 @@
-package jq
+package utils
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/savaki/jq"
@@ -20,6 +21,7 @@ func PerformJqQuery(jsonContent []byte, jqQuery string) ([]byte, error) {
 
 	// Create a new jq processor
 	op, err := jq.Parse(jqQuery)
+	fmt.Printf("op: %v\n", op)
 	if err != nil {
 		return nil, err
 	}

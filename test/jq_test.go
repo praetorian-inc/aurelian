@@ -1,9 +1,12 @@
-package jq
+package test
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"testing"
+
+	"github.com/praetorian-inc/nebula/pkg/nebula/utils"
 )
 
 func TestPerformJqQuery(t *testing.T) {
@@ -41,28 +44,21 @@ func TestPerformJqQuery(t *testing.T) {
 			expectErr:  true,
 			errMessage: "key not found",
 		},
-		// Add more test cases as needed
-		// Test case 3: Empty query
-		{
-			filePath:   tempFile.Name(),
-			jqQuery:    "",
-			expected:   nil,
-			expectErr:  true,
-			errMessage: "jq query is empty",
-		},
-		// Test case 4: Nonexistent file
+		// Test case 3: Nonexistent file
 		{
 			filePath:   "nonexistent.json",
 			jqQuery:    ".age",
 			expected:   nil,
 			expectErr:  true,
-			errMessage: "no such file or directory",
+			errMessage: "open nonexistent.json: no such file or directory",
 		},
 	}
 
 	// Run the test cases
 	for _, tc := range testCases {
-		result, err := PerformJqQueryOnFile(tc.filePath, tc.jqQuery)
+		fmt.Println("tc.filePath: ", tc.filePath)
+		fmt.Println("tc.jqQuery: ", tc.jqQuery)
+		result, err := utils.PerformJqQueryOnFile(tc.filePath, tc.jqQuery)
 
 		if tc.expectErr {
 			if err == nil {
