@@ -38,13 +38,14 @@ var AccessKeyIdToAccountIdMetadata = modules.Metadata{
 }
 
 func NewAccessKeyIdToAccountId(options []*o.Option, run modules.Run) (modules.Module, error) {
-	var m AwsAccessKeyIdToAccountId
-	m.SetMetdata(AccessKeyIdToAccountIdMetadata)
-	m.Run = run
-	m.Options = options
-	m.ConfigureOutputProviders(AwsAccessKeyIdToAccountIdOutputProviders)
-
-	return &m, nil
+	return &AwsAccessKeyIdToAccountId{
+		BaseModule: modules.BaseModule{
+			Metadata:        AccessKeyIdToAccountIdMetadata,
+			Options:         options,
+			Run:             run,
+			OutputProviders: modules.RenderOutputProviders(AwsAccessKeyIdToAccountIdOutputProviders, options),
+		},
+	}, nil
 }
 
 func (m *AwsAccessKeyIdToAccountId) Invoke() error {
@@ -62,8 +63,8 @@ func (m *AwsAccessKeyIdToAccountId) Invoke() error {
 	accessKeyID := opt.Value
 	accountID := m.convert(accessKeyID)
 	//log.Default().Printf("Access Key ID %s belongs to AWS account %d", accessKeyID, accountID)
-	m.Run.Data <- m.MakeResult(strconv.Itoa(accountID))
-	close(m.Run.Data)
+	m.Run.Output <- m.MakeResult(strconv.Itoa(accountID))
+	close(m.Run.Output)
 
 	return nil
 }
