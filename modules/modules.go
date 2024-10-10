@@ -1,17 +1,16 @@
 package modules
 
 import (
-	"context"
 	"sync"
 
-	"github.com/ollama/ollama/api"
-	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
 )
 
 type OutputProvider interface {
 	Write(result Result) error
 }
+
+type OutputProviders []func(options []*options.Option) OutputProvider
 
 type OpsecLevel string
 
@@ -61,16 +60,6 @@ type Metadata struct {
 type Module interface {
 	Invoke() error
 	GetOutputProviders() []OutputProvider
-}
-
-type Run struct {
-	Data chan Result
-}
-
-func NewRun() Run {
-	return Run{
-		Data: make(chan Result, 1),
-	}
 }
 
 type BaseModule struct {
@@ -124,35 +113,6 @@ func RenderOutputProviders(providers []func(options []*options.Option) OutputPro
 	}
 
 	return op
-}
-
-func (m *BaseModule) GenerateOllamaResponse(prompt string) error {
-	client, err := api.ClientFromEnvironment()
-	if err != nil {
-		return err
-	}
-
-	logs.ConsoleLogger().Debug(prompt)
-
-	model := m.GetOptionByName(options.ModelOpt.Name).Value
-	req := &api.GenerateRequest{
-		Model:  model,
-		Prompt: prompt,
-		Stream: new(bool),
-	}
-
-	respFunc := func(resp api.GenerateResponse) error {
-		m.Run.Data <- m.MakeResult(resp.Response)
-		return nil
-	}
-	ctx := context.Background()
-	err = client.Generate(ctx, req, respFunc)
-	if err != nil {
-		return err
-	}
-
-	return nil
-
 }
 
 func RunModule(factoryFn func(options []*options.Option, run Run) (Module, error), options []*options.Option, run Run) error {

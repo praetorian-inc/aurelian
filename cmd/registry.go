@@ -12,12 +12,12 @@ import (
 
 func init() {
 	// AWS Analyze
-	// RegisterModule(awsAnalyzeCmd, analyze.AccessKeyIdToAccountIdMetadata, analyze.AwsAccessKeyIdToAccountIdOptions, noCommon, analyze.NewAccessKeyIdToAccountId)
-	// RegisterModule(awsAnalyzeCmd, analyze.KnownAccountIDMetadata, analyze.KnownAccountIDOptions, noCommon, analyze.NewKnownAccountID)
-	// RegisterModule(awsAnalyzeCmd, analyze.AwsOllamaIamMetadata, analyze.AwsOllamaIamOptions, noCommon, analyze.NewAwsOllamaIam)
+	RegisterModule(awsAnalyzeCmd, analyze.AccessKeyIdToAccountIdMetadata, analyze.AwsAccessKeyIdToAccountIdOptions, noCommon, analyze.AwsAccessKeyIdToAccountIdOutputProviders, analyze.NewAccessKeyIdToAccountId)
+	RegisterModule(awsAnalyzeCmd, analyze.KnownAccountIDMetadata, analyze.KnownAccountIDOptions, noCommon, analyze.KnownAccountIDOutputProviders, analyze.NewKnownAccountID)
+	RegisterModule(awsAnalyzeCmd, analyze.AwsOllamaIamMetadata, analyze.AwsOllamaIamOptions, noCommon, analyze.AwsOllamaIamOutputProviders, analyze.NewAwsOllamaIam)
 	RegisterModule(awsAnalyzeCmd, analyze.AwsExpandActionsMetadata, analyze.AwsExpandActionsOptions, noCommon, analyze.AwsExpandActionOutputProvders, analyze.NewAwsExpandActions)
-	//RegisterModule(awsAnalyzeCmd, analyze.AwsOllamaIamAuditMetadata, analyze.AwsOllamaIamAuditOptions, noCommon, analyze.NewAwsOllamaIamAudit)
-	// RegisterModule(awsAnalyzeCmd, analyze.AwsIPLookupMetadata, analyze.AwsIPLookupOptions, noCommon, analyze.NewAwsIPLookup)
+	//RegisterModule(awsAnalyzeCmd, analyze.AwsOllamaIamAuditMetadata, analyze.AwsOllamaIamAuditOptions, noCommon, analyze.AwsOllamaIamAuditOutputProviders, analyze.NewAwsOllamaIamAudit)
+	RegisterModule(awsAnalyzeCmd, analyze.AwsIPLookupMetadata, analyze.AwsIPLookupOptions, noCommon, analyze.AwsIPLookupOutputProviders, analyze.NewAwsIPLookup)
 
 	// AWS Recon
 	// RegisterModule(awsReconCmd, reconaws.AwsSummaryMetadata, reconaws.AwsSummaryOptions, awsCommonOptions, reconaws.NewAwsSummary)

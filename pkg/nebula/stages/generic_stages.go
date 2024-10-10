@@ -8,6 +8,20 @@ import (
 	"github.com/praetorian-inc/nebula/modules/options"
 )
 
+// GenerateOllamaResponse generates responses for given prompts using the Ollama API.
+// It takes a context, a slice of options, and an input channel of strings, and returns an output channel of strings.
+//
+// Parameters:
+//   - ctx: The context for controlling cancellation and deadlines.
+//   - opts: A slice of options to configure the API client and request.
+//   - in: An input channel of strings containing prompts for which responses are to be generated.
+//
+// Returns:
+//   - An output channel of strings containing the generated responses.
+//
+// The function initializes an API client from the environment and starts a goroutine to process prompts from the input channel.
+// For each prompt, it logs the prompt, constructs a generate request, and sends it to the API client.
+// The responses are logged and sent to the output channel. If an error occurs, it is logged and the processing stops.
 func GenerateOllamaResponse(ctx context.Context, opts []*options.Option, in <-chan string) <-chan string {
 	out := make(chan string)
 	client, err := api.ClientFromEnvironment()

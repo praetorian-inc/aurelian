@@ -1,5 +1,7 @@
 package options
 
+import "regexp"
+
 var OutputOpt = Option{
 	Name:        "output",
 	Short:       "o",
@@ -50,4 +52,13 @@ var ModelOpt = Option{
 	Required:    false,
 	Type:        String,
 	Value:       "llama3",
+}
+
+var IPOpt = Option{
+	Name:        "ip",
+	Description: "ip address",
+	Required:    true,
+	Type:        String,
+	Value:       "",
+	ValueFormat: regexp.MustCompile(`^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$`),
 }

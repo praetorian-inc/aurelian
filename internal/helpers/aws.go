@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	arn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules"
@@ -41,43 +42,35 @@ type ArnIdentifier struct {
 	Resource  string
 }
 
-func NewArn(identifier string) (ArnIdentifier, error) {
-	valid, err := validateARN(identifier)
-	if err != nil {
-		return ArnIdentifier{}, err
-	}
+func NewArn(identifier string) (arn.ARN, error) {
+	valid := arn.IsARN(identifier)
 	if !valid {
-		return ArnIdentifier{}, fmt.Errorf("this is not a valid arn %v", identifier)
+		return arn.ARN{}, fmt.Errorf("this is not a valid arn %v", identifier)
 	}
 
-	var arn ArnIdentifier
-	parts := strings.Split(identifier, ":")
+	a, err := arn.Parse(identifier)
+	if err != nil {
+		return arn.ARN{}, err
+	}
 
-	// The last part after the service and region parts should start with "stack/"
-	arn.ARN = identifier
-	arn.Partition = parts[1]
-	arn.Service = parts[2]
-	arn.Region = parts[3]
-	arn.AccountID = parts[4]
-	arn.Resource = parts[5]
-	return arn, nil
+	return a, nil
 }
 
-func MakeArnIdentifiers(identifiers []string) ([]ArnIdentifier, error) {
-	var ArnIdentifiers []ArnIdentifier
+func MakeArnIdentifiers(identifiers []string) ([]arn.ARN, error) {
+	var arnIdentifiers []arn.ARN
 	for _, identifier := range identifiers {
 		arn, err := NewArn(identifier)
 		if err != nil {
 			return nil, err
 		}
-		ArnIdentifiers = append(ArnIdentifiers, arn)
+		arnIdentifiers = append(arnIdentifiers, arn)
 	}
-	return ArnIdentifiers, nil
+	return arnIdentifiers, nil
 }
 
 // Useful if identifier returned from CloudControl API is an ARN
-func MapArnByRegions(identifiers []string) (map[string][]ArnIdentifier, error) {
-	regionToArnIdentifiers := make(map[string][]ArnIdentifier)
+func MapArnByRegions(identifiers []string) (map[string][]arn.ARN, error) {
+	regionToArnIdentifiers := make(map[string][]arn.ARN)
 	for _, identifier := range identifiers {
 		arn, err := NewArn(identifier)
 		if err != nil {
@@ -97,19 +90,8 @@ func MapIdentifiersByRegions(resourceDescriptions []modules.EnrichedResourceDesc
 	return regionToIdentifiers
 }
 
-func validateARN(arn string) (bool, error) {
-	// Define the regex pattern for a valid ARN
-	var arnRegex = `^arn:(aws|aws-cn|aws-us-gov):[a-zA-Z0-9-]+:[a-zA-Z0-9-]*:\d{12}:[^:]+$`
-
-	// Compile the regex
-	re, err := regexp.Compile(arnRegex)
-	if err != nil {
-		return false, fmt.Errorf("failed to compile regex: %v", err)
-	}
-
-	// Validate the ARN
-	isValid := re.MatchString(arn)
-	return isValid, nil
+func validateARN(s string) bool {
+	return arn.IsARN(s)
 }
 
 func GetAWSCfg(region string, profile string) (aws.Config, error) {
@@ -124,6 +106,7 @@ func GetAWSCfg(region string, profile string) (aws.Config, error) {
 		config.WithLogger(logs.Logger()),
 		config.WithRegion(region),
 		config.WithSharedConfigProfile(profile),
+		config.WithRetryMode(aws.RetryModeAdaptive),
 	)
 
 	if err != nil {
@@ -177,10 +160,36 @@ func ParseSecretsResourceType(secretsOpt string) []string {
 
 }
 
+// TODO this needs to use the `output` parameter for the leading path segment
 func CreateFilePath(cloudProvider, service, account, command, region, resource string) string {
 	return fmt.Sprintf("%s%s%s%s%s%s%s-%s-%s.json", cloudProvider, string(os.PathSeparator), service, string(os.PathSeparator), account, string(os.PathSeparator), command, region, resource)
 }
 
 func CreateFileName(parts ...string) string {
 	return strings.Join(parts, "-")
+}
+
+func RegionFromArn(arn string) string {
+	parts := strings.Split(arn, ":")
+	return parts[3]
+}
+
+func LambdaGetFunctionUrl(ctx context.Context, profile, arn string) (string, error) {
+
+	region := RegionFromArn(arn)
+	config, err := GetAWSCfg(region, profile)
+	if err != nil {
+		return "", err
+	}
+
+	client := lambda.NewFromConfig(config)
+	params := &lambda.GetFunctionUrlConfigInput{
+		FunctionName: aws.String(arn),
+	}
+	output, err := client.GetFunctionUrlConfig(ctx, params)
+	if err != nil {
+		return "", err
+	}
+
+	return *output.FunctionUrl, nil
 }

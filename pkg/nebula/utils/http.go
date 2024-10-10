@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -37,8 +38,8 @@ func Cached_httpGet(url string) ([]byte, error) {
 }
 
 func createCachedFileName(url string) string {
-	safeFileName := strings.ReplaceAll(url, "/", "_")
-	return fmt.Sprintf("/tmp/%s.cache", safeFileName)
+	safeFileName := strings.ReplaceAll(url, "/", "_") + ".cache"
+	return filepath.Join(os.TempDir(), safeFileName)
 }
 
 func isCacheValid(path string) bool {

@@ -1,15 +1,10 @@
 package analyze
 
 import (
-	"encoding/base32"
-	"encoding/binary"
-	"encoding/hex"
-	"fmt"
-	"strconv"
-
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	o "github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/nebula/stages"
 )
 
 type AwsAccessKeyIdToAccountId struct {
@@ -37,57 +32,16 @@ var AccessKeyIdToAccountIdMetadata = modules.Metadata{
 	},
 }
 
-func NewAccessKeyIdToAccountId(options []*o.Option, run modules.Run) (modules.Module, error) {
-	return &AwsAccessKeyIdToAccountId{
-		BaseModule: modules.BaseModule{
-			Metadata:        AccessKeyIdToAccountIdMetadata,
-			Options:         options,
-			Run:             run,
-			OutputProviders: modules.RenderOutputProviders(AwsAccessKeyIdToAccountIdOutputProviders, options),
-		},
-	}, nil
-}
+func NewAccessKeyIdToAccountId(opts []*o.Option) (<-chan string, stages.Stage[string, int], error) {
+	pipeline, err := stages.ChainStages[string, int](
+		stages.AwsAccessKeyIdtoAccountIdStage,
+	)
 
-func (m *AwsAccessKeyIdToAccountId) Invoke() error {
-
-	opt := m.GetOptionByName(o.AwsAccessKeyIdOpt.Name)
-
-	if opt.Value == "" {
-		return fmt.Errorf("access_key_id option must be supplied")
-	}
-
-	if !m.ValidateAccessKeyID(opt.Value) {
-		return fmt.Errorf("access_key_id is not a valid AWS access key ID")
-	}
-
-	accessKeyID := opt.Value
-	accountID := m.convert(accessKeyID)
-	//log.Default().Printf("Access Key ID %s belongs to AWS account %d", accessKeyID, accountID)
-	m.Run.Output <- m.MakeResult(strconv.Itoa(accountID))
-	close(m.Run.Output)
-
-	return nil
-}
-
-func (m *AwsAccessKeyIdToAccountId) convert(AWSKeyID string) int {
-	trimmedAWSKeyID := AWSKeyID[4:]                          // remove KeyID prefix
-	x, _ := base32.StdEncoding.DecodeString(trimmedAWSKeyID) // base32 decode
-	y := make([]byte, 8)
-	copy(y[2:], x[0:6])
-
-	z := binary.BigEndian.Uint64(y)
-	//z := int(binary.BigEndian.Uint64(y))
-	m1, err := hex.DecodeString("7fffffffff80")
 	if err != nil {
-		fmt.Println(err)
+		return nil, nil, err
 	}
-	mask := make([]byte, 8)
-	copy(mask[2:], m1)
 
-	e := (z & binary.BigEndian.Uint64(mask)) >> 7
-	return int(e)
-}
+	accessKeyId := o.GetOptionByName(o.AwsAccessKeyIdOpt.Name, opts).Value
 
-func (m *AwsAccessKeyIdToAccountId) ValidateAccessKeyID(accessKeyID string) bool {
-	return len(accessKeyID) == 20
+	return stages.Generator([]string{accessKeyId}), pipeline, nil
 }
