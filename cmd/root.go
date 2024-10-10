@@ -10,7 +10,7 @@ import (
 
 	"github.com/praetorian-inc/nebula/modules"
 	o "github.com/praetorian-inc/nebula/modules/options"
-	"github.com/praetorian-inc/nebula/pkg/nebula/stages"
+	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/praetorian-inc/nebula/modules/options"
-	"github.com/praetorian-inc/nebula/pkg/nebula/stages"
+	"github.com/praetorian-inc/nebula/pkg/stages"
 )
 
 func TestChainStages(t *testing.T) {

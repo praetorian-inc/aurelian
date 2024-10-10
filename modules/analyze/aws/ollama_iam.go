@@ -7,7 +7,7 @@ import (
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
 	o "github.com/praetorian-inc/nebula/modules/options"
-	"github.com/praetorian-inc/nebula/pkg/nebula/stages"
+	"github.com/praetorian-inc/nebula/pkg/stages"
 )
 
 type AwsOllamaIam struct {

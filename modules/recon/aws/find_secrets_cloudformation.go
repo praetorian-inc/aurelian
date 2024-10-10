@@ -1,4 +1,4 @@
-package reconaws
+package recon
 
 import (
 	"context"
@@ -6,11 +6,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/modules"
-	"github.com/praetorian-inc/nebula/modules/options"
 	o "github.com/praetorian-inc/nebula/modules/options"
 )
 
@@ -41,7 +41,7 @@ func DescribeCFStacks(m *AwsFindSecrets, regions []string) error {
 					return err
 				}
 				filepath := helpers.CreateFilePath(string(m.Platform), resourceType.Value, stackArn.AccountID, command, region, stackName)
-				m.Run.Data <- m.MakeResult(stack, modules.WithFilename(filepath))
+				m.Run.Output <- m.MakeResult(stack, modules.WithFilename(filepath))
 			}
 			return nil
 		}()
@@ -53,23 +53,23 @@ func DescribeCFStacks(m *AwsFindSecrets, regions []string) error {
 // This function uses the CloudControl List Resources module to grab all the stack names for the passed in region
 func ListCloudFormationStacksSingleRegion(region, profile string, run modules.Run) error {
 
-	AwsResourceTypeOpt := options.Option{
-		Name:  options.AwsResourceTypeOpt.Name,
+	AwsResourceTypeOpt := o.Option{
+		Name:  o.AwsResourceTypeOpt.Name,
 		Value: "AWS::CloudFormation::Stack",
 	}
-	AwsRegionsOpt := options.Option{
-		Name:  options.AwsRegionsOpt.Name,
+	AwsRegionsOpt := o.Option{
+		Name:  o.AwsRegionsOpt.Name,
 		Value: region,
 	}
-	AwsProfileOpt := options.Option{
-		Name:  options.AwsProfileOpt.Name,
+	AwsProfileOpt := o.Option{
+		Name:  o.AwsProfileOpt.Name,
 		Value: profile,
 	}
-	OutputOpt := options.Option{
-		Name:  options.OutputOpt.Name,
-		Value: options.OutputOpt.Value,
+	OutputOpt := o.Option{
+		Name:  o.OutputOpt.Name,
+		Value: o.OutputOpt.Value,
 	}
-	var options []*options.Option
+	var options []*o.Option
 	options = append(options, &AwsResourceTypeOpt, &AwsProfileOpt, &AwsRegionsOpt, &OutputOpt)
 	listResources, err := NewAwsCloudControlListResources(options, run)
 	if err != nil {
@@ -84,7 +84,7 @@ func ListCloudFormationStacksSingleRegion(region, profile string, run modules.Ru
 
 // This function is used to retrieve all the cloudformation templates given a map of region to a list of ArnIdentifiers
 // This is much faster pass in the map containing all regions rather than passing in only a list of only a region because the goroutine would have to wait for each region to finish before moving forward.
-func GetCFTemplates(m *AwsFindSecrets, regionToArnIdentifiers map[string][]helpers.ArnIdentifier) error {
+func GetCFTemplates(m *AwsFindSecrets, regionToArnIdentifiers map[string][]arn.ARN) error {
 	wg := new(sync.WaitGroup)
 	resourceType := o.GetOptionByName("secret-resource-types", m.Options)
 	profile := o.GetOptionByName("profile", m.Options)
@@ -96,24 +96,24 @@ func GetCFTemplates(m *AwsFindSecrets, regionToArnIdentifiers map[string][]helpe
 		}
 		client := cloudformation.NewFromConfig(cfg)
 
-		for _, arn := range arns {
+		for _, a := range arns {
 			wg.Add(1)
 			go func() error {
 				defer wg.Done()
 				result, err := client.GetTemplate(context.TODO(), &cloudformation.GetTemplateInput{
-					StackName: aws.String(arn.ARN),
+					StackName: aws.String(a.String()),
 				})
 				if err != nil {
 					return err
 				}
-				stackName, err := ExtractCFStackName(arn.Resource)
+				stackName, err := ExtractCFStackName(a.Resource)
 				if err != nil {
 					return err
 				}
-				filepath := helpers.CreateFilePath(string(m.Platform), resourceType.Value, arn.AccountID, command, region, stackName)
+				filepath := helpers.CreateFilePath(string(m.Platform), resourceType.Value, a.AccountID, command, region, stackName)
 				templateBody := *result.TemplateBody
 
-				m.Run.Data <- modules.NewResult(m.Platform, m.Id, templateBody, modules.WithFilename(filepath))
+				m.Run.Output <- modules.NewResult(m.Platform, m.Id, templateBody, modules.WithFilename(filepath))
 				return nil
 			}()
 		}

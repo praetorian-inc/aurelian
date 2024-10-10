@@ -1,4 +1,4 @@
-package reconaws
+package recon
 
 import (
 	"context"
@@ -13,12 +13,6 @@ import (
 	"github.com/praetorian-inc/nebula/modules/options"
 	o "github.com/praetorian-inc/nebula/modules/options"
 )
-
-/*
-Add the follwoing to the init() function in cmd/registry.go to register the module:
-
-RegisterModule(awsReconCmd, recon.AwsFindSecretsMetadata, recon.AwsFindSecretsOptions, awsCommonOptions, recon.NewAwsFindSecrets)
-*/
 
 type AwsFindSecrets struct {
 	modules.BaseModule
@@ -43,7 +37,7 @@ var AwsFindSecretsMetadata = modules.Metadata{
 	Description: "this module will search multiple different known places for potential secrets ",
 	Platform:    modules.AWS,
 	Authors:     []string{"Praetorian"},
-	OpsecLevel:  modules.Stealth,
+	OpsecLevel:  modules.Moderate,
 	References:  []string{},
 }
 
@@ -60,7 +54,7 @@ func NewAwsFindSecrets(options []*options.Option, run modules.Run) (modules.Modu
 
 func (m *AwsFindSecrets) Invoke() error {
 
-	defer close(m.Run.Data)
+	defer close(m.Run.Output)
 	wg := new(sync.WaitGroup)
 	profile := o.GetOptionByName("profile", m.Options).Value
 	regionsOpt := o.GetOptionByName("regions", m.Options)
@@ -78,7 +72,7 @@ func (m *AwsFindSecrets) Invoke() error {
 
 			run := modules.NewRun()
 			ListResourcesCloudControl(m, run, helpers.CCCloudFormationStack)
-			stacksData := <-run.Data
+			stacksData := <-run.Output
 			resourceData := stacksData.UnmarshalListData()
 			identifiers := resourceData.GetIdentifiers()
 			regionToArnIdentifiers, err := helpers.MapArnByRegions(identifiers)
@@ -100,7 +94,7 @@ func (m *AwsFindSecrets) Invoke() error {
 
 			runListResources := modules.NewRun()
 			ListResourcesCloudControl(m, runListResources, helpers.CCEc2Instance)
-			ec2ListData := <-runListResources.Data
+			ec2ListData := <-runListResources.Output
 			resourceData := ec2ListData.UnmarshalListData()
 			regionToIdentifiers := helpers.MapIdentifiersByRegions(resourceData.ResourceDescriptions)
 
@@ -109,10 +103,10 @@ func (m *AwsFindSecrets) Invoke() error {
 			go func() {
 				GetResourcesCloudControl(m, runGetResources, helpers.CCEc2Instance, regionToIdentifiers)
 			}()
-			for data := range runGetResources.Data {
+			for data := range runGetResources.Output {
 				// TODO need to work on processing data to extract userdata and base64 decode
 				fmt.Println(data)
-				m.Run.Data <- data
+				m.Run.Output <- data
 			}
 		default:
 			name, err := helpers.ResolveCommonResourceTypes(resourceType)
@@ -126,12 +120,12 @@ func (m *AwsFindSecrets) Invoke() error {
 			ctx := context.WithValue(context.Background(), "awsProfile", profile)
 
 			go func() {
-				GetResources(ctx, runListResources.Data, res.Data)
+				GetResources(ctx, runListResources.Output, res.Output)
 			}()
 
-			for data := range res.Data {
+			for data := range res.Output {
 				fmt.Println(data)
-				m.Run.Data <- data
+				m.Run.Output <- data
 			}
 		}
 	}
@@ -143,7 +137,7 @@ func (m *AwsFindSecrets) Invoke() error {
 // You can probalby not use runGetResources and instead just pass in m.Run.Data
 // However, if you want to do any processing later then you wouldn't be able to if youre passing directly to m.Run.Data
 func GetResourcesCloudControl(m *AwsFindSecrets, runGetResources modules.Run, ccResource string, regionToIdentifiers map[string][]string) error {
-	defer close(runGetResources.Data)
+	defer close(runGetResources.Output)
 	wg := new(sync.WaitGroup)
 	// Need to add resource type to options
 	AwsResourceTypeOpt := o.Option{
@@ -179,8 +173,8 @@ func GetResourcesCloudControl(m *AwsFindSecrets, runGetResources modules.Run, cc
 				if err != nil {
 					return err
 				}
-				runData := <-run.Data
-				runGetResources.Data <- runData
+				runData := <-run.Output
+				runGetResources.Output <- runData
 				return nil
 			}(region, identifier)
 		}

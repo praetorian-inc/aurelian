@@ -1,13 +1,16 @@
-package reconaws
+package recon
 
 import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/praetorian-inc/nebula/internal/helpers"
+	"github.com/praetorian-inc/nebula/internal/logs"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -78,8 +81,8 @@ func (m *AwsCloudControlGetResource) Invoke() error {
 	}
 	filepath := helpers.CreateFilePath(string(m.Platform), helpers.CloudControlTypeNames[rtype], accountId, "get-resource", region, id)
 
-	m.Run.Data <- m.MakeResult(res, modules.WithFilename(filepath))
-	close(m.Run.Data)
+	m.Run.Output <- m.MakeResult(res, modules.WithFilename(filepath))
+	close(m.Run.Output)
 
 	return nil
 }
@@ -87,8 +90,11 @@ func (m *AwsCloudControlGetResource) Invoke() error {
 func GetResources(ctx context.Context, list <-chan modules.Result, results chan<- modules.Result) {
 	data := <-list
 	resources := data.UnmarshalListData()
+	defer close(results)
 
+	wg := new(sync.WaitGroup)
 	for _, resource := range resources.ResourceDescriptions {
+		fmt.Println("Getting resource: ", resource.Region+":"+resource.Identifier)
 		cfg, err := helpers.GetAWSCfg(resource.Region, ctx.Value("awsProfile").(string))
 		if err != nil {
 			panic(err)
@@ -101,14 +107,33 @@ func GetResources(ctx context.Context, list <-chan modules.Result, results chan<
 			TypeName:   &resources.TypeName,
 		}
 
-		res, err := cc.GetResource(ctx, params)
-		if err != nil {
-			fmt.Println(err)
-		}
+		wg.Add(1)
+		go func() {
+			retries := 3
+			backoff := 1000
 
-		fname := helpers.CreateFilePath(string(AwsCloudControlGetResourceMetadata.Platform), helpers.CloudControlTypeNames[resources.TypeName], resource.AccountId, "get-resource", resource.Region, resource.Identifier)
-		results <- modules.NewResult(modules.AWS, AwsCloudControlGetResourceMetadata.Id, res, modules.WithFilename(fname))
+			for i := 0; i < retries; i++ {
+				res, err := cc.GetResource(ctx, params)
+				if err != nil && strings.Contains(err.Error(), "ThrottlingException") {
+					logs.ConsoleLogger().Info("ThrottlingException encountered. Retrying in " + strconv.Itoa(backoff) + "ms")
+					b := time.Duration(backoff) * time.Millisecond * time.Duration(i)
+					time.Sleep(b)
+					continue
+				}
+
+				if err != nil {
+					logs.ConsoleLogger().Error("Error getting resource: %s, %s", resource.Identifier, err)
+					break
+				}
+
+				fname := helpers.CreateFilePath(string(AwsCloudControlGetResourceMetadata.Platform), helpers.CloudControlTypeNames[resources.TypeName], resource.AccountId, "get-resource", resource.Region, resource.Identifier)
+				results <- modules.NewResult(modules.AWS, AwsCloudControlGetResourceMetadata.Id, res, modules.WithFilename(fname))
+				break
+			}
+			wg.Done()
+		}()
 	}
-	close(results)
-
+	helpers.PrintMessage("before wait")
+	wg.Wait()
+	helpers.PrintMessage("after wait")
 }

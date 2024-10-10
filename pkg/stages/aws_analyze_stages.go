@@ -15,7 +15,7 @@ import (
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
-	"github.com/praetorian-inc/nebula/pkg/nebula/utils"
+	"github.com/praetorian-inc/nebula/pkg/utils"
 	a "github.com/seancfoley/ipaddress-go/ipaddr"
 )
 

@@ -1,4 +1,4 @@
-package reconaws
+package recon
 
 import (
 	"fmt"
@@ -35,11 +35,11 @@ func NewAwsListAllResources(options []*options.Option, run modules.Run) (modules
 }
 
 func (m *AwsListAllResources) Invoke() error {
-	defer close(m.Run.Data)
+	defer close(m.Run.Output)
 
 	sumOpt := m.GetOptionByName(options.AwsSummaryServicesOpt.Name)
 	if sumOpt.Value == "true" {
-		run := modules.Run{Data: make(chan modules.Result)}
+		run := modules.Run{Output: make(chan modules.Result)}
 		sum, err := NewAwsSummary(m.Options, run)
 		if err != nil {
 			return err
@@ -50,10 +50,10 @@ func (m *AwsListAllResources) Invoke() error {
 		}
 
 		fmt.Println("1")
-		services := <-run.Data
+		services := <-run.Output
 		fmt.Println(services)
 		fmt.Println("2")
-		close(run.Data)
+		close(run.Output)
 	} else {
 		regions, error := helpers.EnabledRegions(m.GetOptionByName(options.AwsProfileOpt.Name).Value)
 		if error != nil {
@@ -61,7 +61,7 @@ func (m *AwsListAllResources) Invoke() error {
 		}
 
 		for _, region := range regions {
-			run := modules.Run{Data: make(chan modules.Result)}
+			run := modules.Run{Output: make(chan modules.Result)}
 			awsRegionOpt := options.Option{
 				Name:  options.AwsRegionOpt.Name,
 				Value: region,
@@ -77,13 +77,13 @@ func (m *AwsListAllResources) Invoke() error {
 				return err
 			}
 
-			resources := <-run.Data
-			close(run.Data)
+			resources := <-run.Output
+			close(run.Output)
 
-			m.Run.Data <- resources
+			m.Run.Output <- resources
 		}
 	}
 
-	m.Run.Data <- m.MakeResult("")
+	m.Run.Output <- m.MakeResult("")
 	return nil
 }

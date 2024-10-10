@@ -1,4 +1,4 @@
-package reconaws
+package recon
 
 import (
 	"context"
@@ -33,7 +33,9 @@ var AwsCloudControlListResourcesMetadata = modules.Metadata{
 	Platform:    modules.AWS,
 	Authors:     []string{"Praetorian"},
 	OpsecLevel:  modules.Moderate,
-	References:  []string{},
+	References: []string{
+		"https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/supported-resources.html",
+	},
 }
 
 var AwsCloudControlListResourcesOutputProviders = []func(options []*o.Option) modules.OutputProvider{
@@ -99,6 +101,7 @@ func (m *AwsCloudControlListResources) Invoke() error {
 	// }
 
 	resultsChan := make(chan []modules.EnrichedResourceDescription)
+	defer close(resultsChan)
 
 	helpers.PrintMessage("Listing resources of type " + rtype + " in regions: " + strings.Join(regions, ", "))
 	for _, region := range regions {
@@ -144,10 +147,9 @@ func (m *AwsCloudControlListResources) Invoke() error {
 		results.ResourceDescriptions = append(results.ResourceDescriptions, res...)
 	}
 
-	close(resultsChan)
 	filepath := helpers.CreateFilePath(string(m.Platform), helpers.CloudControlTypeNames[rtype], accountId, "list-resources", "all-regions", "")
-	m.Run.Data <- modules.NewResult(m.Platform, m.Metadata.Id, results, modules.WithFilename(filepath))
-	close(m.Run.Data)
+	m.Run.Output <- modules.NewResult(m.Platform, m.Metadata.Id, results, modules.WithFilename(filepath))
 
+	close(m.Run.Output)
 	return nil
 }

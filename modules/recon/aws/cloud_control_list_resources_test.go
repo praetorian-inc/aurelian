@@ -1,4 +1,4 @@
-package reconaws
+package recon
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 
 func TestCloudControlListResources_Invoke(t *testing.T) {
 
-	run := modules.Run{Data: make(chan modules.Result)}
+	run := modules.Run{Output: make(chan modules.Result)}
 
 	// Default to all regions
 	regions := AwsRegionsOpt
@@ -31,7 +31,7 @@ func TestCloudControlListResources_Invoke(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
-		for res := range run.Data {
+		for res := range run.Output {
 			fmt.Println(res.String())
 			t.Log(res.String())
 		}

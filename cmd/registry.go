@@ -6,7 +6,8 @@ import (
 	"github.com/praetorian-inc/nebula/modules"
 	analyze "github.com/praetorian-inc/nebula/modules/analyze/aws"
 	o "github.com/praetorian-inc/nebula/modules/options"
-	"github.com/praetorian-inc/nebula/pkg/nebula/stages"
+	recon "github.com/praetorian-inc/nebula/modules/recon/aws"
+	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/spf13/cobra"
 )
 
@@ -20,12 +21,12 @@ func init() {
 	RegisterModule(awsAnalyzeCmd, analyze.AwsIPLookupMetadata, analyze.AwsIPLookupOptions, noCommon, analyze.AwsIPLookupOutputProviders, analyze.NewAwsIPLookup)
 
 	// AWS Recon
-	// RegisterModule(awsReconCmd, reconaws.AwsSummaryMetadata, reconaws.AwsSummaryOptions, awsCommonOptions, reconaws.NewAwsSummary)
-	// RegisterModule(awsReconCmd, reconaws.AwsCloudControlListResourcesMetadata, reconaws.AwsCloudControlListResourcesOptions, awsCommonOptions, reconaws.NewAwsCloudControlListResources)
-	// RegisterModule(awsReconCmd, reconaws.AwsCloudControlGetResourceMetadata, reconaws.AwsCloudControlGetResourceOptions, awsCommonOptions, reconaws.NewAwsCloudControlGetResource)
-	// RegisterModule(awsReconCmd, reconaws.AwsAuthorizationDetailsMetadata, reconaws.AwsAuthorizationDetailsOptions, awsCommonOptions, reconaws.NewAwsAuthorizationDetails)
-	// RegisterModule(awsReconCmd, reconaws.AwsFindSecretsMetadata, reconaws.AwsFindSecretsOptions, awsCommonOptions, reconaws.NewAwsFindSecrets)
-	//RegisterModule(awsReconCmd, reconaws.AwsPublicResourcesMetadata, reconaws.AwsPublicResourcesOptions, awsCommonOptions, reconaws.NewAwsPublicResources)
+	// RegisterModule(awsReconCmd, recon.AwsSummaryMetadata, recon.AwsSummaryOptions, awsCommonOptions, recon.NewAwsSummary)
+	// RegisterModule(awsReconCmd, recon.AwsCloudControlListResourcesMetadata, recon.AwsCloudControlListResourcesOptions, awsCommonOptions, recon.NewAwsCloudControlListResources)
+	// RegisterModule(awsReconCmd, recon.AwsCloudControlGetResourceMetadata, recon.AwsCloudControlGetResourceOptions, awsCommonOptions, recon.NewAwsCloudControlGetResource)
+	RegisterModule(awsReconCmd, recon.AwsAuthorizationDetailsMetadata, recon.AwsAuthorizationDetailsOptions, awsCommonOptions, recon.AwsAuthorizationDetailsOutputProviders, recon.NewAwsAuthorizationDetails)
+	// RegisterModule(awsReconCmd, recon.AwsFindSecretsMetadata, recon.AwsFindSecretsOptions, awsCommonOptions, recon.NewAwsFindSecrets)
+	//RegisterModule(awsReconCmd, recon.AwsPublicResourcesMetadata, recon.AwsPublicResourcesOptions, awsCommonOptions, recon.NewAwsPublicResources)
 
 	// Azure Recon
 	//RegisterModule(azureReconCmd, reconaz.AzureSummaryMetadata, reconaz.AzureSummaryOptions, azureCommonOptions, reconaz.NewAzureSummary)

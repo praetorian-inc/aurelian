@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/praetorian-inc/nebula/pkg/nebula/stages"
+	"github.com/praetorian-inc/nebula/pkg/stages"
 )
 
 func TestAccessKeyIdToAccountIdStage(t *testing.T) {
