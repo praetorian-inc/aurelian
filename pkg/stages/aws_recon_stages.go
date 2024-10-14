@@ -4,33 +4,35 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
-	ntypes "github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 func Ec2ListPublic(ctx context.Context, profile string) Stage[string, string] {
-	return func(ctx context.Context, opts []*ntypes.Option, in <-chan string) <-chan string {
+	return func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
 		out := make(chan string)
 		go func() {
 			defer close(out)
 			for region := range in {
 				logs.ConsoleLogger().Debug("Listing public EC2 resources for " + region)
-				config, _ := helpers.GetAWSCfg(region, ntypes.GetOptionByName("profile", opts).Value)
+				config, _ := helpers.GetAWSCfg(region, types.GetOptionByName("profile", opts).Value)
 				client := ec2.NewFromConfig(config)
 
 				ec2Input := ec2.DescribeInstancesInput{
-					Filters: []types.Filter{
+					Filters: []ec2types.Filter{
 						{
 							Name:   aws.String("network-interface.association.public-ip"),
 							Values: []string{"*"}, // Filters instances with a public IP
@@ -70,7 +72,7 @@ func Ec2ListPublic(ctx context.Context, profile string) Stage[string, string] {
 }
 
 func LambdaGetFunctionUrl(ctx context.Context, profile string) Stage[string, string] {
-	return func(ctx context.Context, opts []*ntypes.Option, in <-chan string) <-chan string {
+	return func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
 		out := make(chan string)
 		go func() {
 			defer close(out)
@@ -101,7 +103,7 @@ func LambdaGetFunctionUrl(ctx context.Context, profile string) Stage[string, str
 }
 
 func ListLambdaFunctions(ctx context.Context, profile string) Stage[string, string] {
-	return func(ctx context.Context, opts []*ntypes.Option, in <-chan string) <-chan string {
+	return func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
 		out := make(chan string)
 		go func() {
 			defer close(out)
@@ -129,11 +131,11 @@ func ListLambdaFunctions(ctx context.Context, profile string) Stage[string, stri
 	}
 }
 
-func GetRegions(ctx context.Context, opts []*ntypes.Option) <-chan string {
+func GetRegions(ctx context.Context, opts []*types.Option) <-chan string {
 	regChan := make(chan string)
 	go func() {
 		defer close(regChan)
-		enabled, _ := helpers.EnabledRegions(ntypes.GetOptionByName("profile", opts).Value)
+		enabled, _ := helpers.EnabledRegions(types.GetOptionByName("profile", opts).Value)
 
 		for _, region := range enabled {
 			regChan <- region
@@ -143,11 +145,11 @@ func GetRegions(ctx context.Context, opts []*ntypes.Option) <-chan string {
 	return regChan
 }
 
-func CloudControlListResources(ctx context.Context, opts []*ntypes.Option, rtype <-chan string) <-chan ntypes.EnrichedResourceDescription {
-	out := make(chan ntypes.EnrichedResourceDescription)
+func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	out := make(chan types.EnrichedResourceDescription)
 	logs.ConsoleLogger().Info("Listing resources")
-	profile := ntypes.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(ntypes.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	profile := types.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
 	if err != nil {
 		logs.ConsoleLogger().Error(err.Error())
 		return nil
@@ -185,7 +187,7 @@ func CloudControlListResources(ctx context.Context, opts []*ntypes.Option, rtype
 				}
 
 				for _, resource := range res.ResourceDescriptions {
-					out <- ntypes.EnrichedResourceDescription{
+					out <- types.EnrichedResourceDescription{
 						Identifier: *resource.Identifier,
 						TypeName:   rtype,
 						Region:     region,
@@ -200,6 +202,49 @@ func CloudControlListResources(ctx context.Context, opts []*ntypes.Option, rtype
 	return out
 }
 
+func CloudControlGetResource(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan *cloudcontrol.GetResourceOutput {
+	out := make(chan *cloudcontrol.GetResourceOutput)
+
+	for resource := range in {
+		cfg, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+		if err != nil {
+			panic(err)
+		}
+
+		cc := cloudcontrol.NewFromConfig(cfg)
+
+		params := &cloudcontrol.GetResourceInput{
+			Identifier: &resource.Identifier,
+			TypeName:   &resource.TypeName,
+		}
+		go func(resource types.EnrichedResourceDescription) {
+			defer close(out)
+			retries := 3
+			backoff := 1000
+
+			for i := 0; i < retries; i++ {
+				res, err := cc.GetResource(ctx, params)
+				if err != nil && strings.Contains(err.Error(), "ThrottlingException") {
+					logs.ConsoleLogger().Info("ThrottlingException encountered. Retrying in " + strconv.Itoa(backoff) + "ms")
+					b := time.Duration(backoff) * time.Millisecond * time.Duration(i)
+					time.Sleep(b)
+					continue
+				}
+
+				if err != nil {
+					logs.ConsoleLogger().Error(fmt.Sprintf("Error getting resource: %s, %s", resource.Identifier, err))
+					break
+				}
+
+				out <- res
+				return
+			}
+		}(resource)
+	}
+
+	return out
+}
+
 func ParseTypes(types string) <-chan string {
 	out := make(chan string)
 	defer close(out)
@@ -211,12 +256,12 @@ func ParseTypes(types string) <-chan string {
 	return out
 }
 
-func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*ntypes.Option, in <-chan string) <-chan []byte {
+func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan []byte {
 	out := make(chan []byte)
 	go func() {
 		defer close(out)
 
-		config, err := helpers.GetAWSCfg("", ntypes.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+		config, err := helpers.GetAWSCfg("", types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
 
 		if err != nil {
 			logs.ConsoleLogger().Error(fmt.Sprintf("Error getting AWS config: %s", err))

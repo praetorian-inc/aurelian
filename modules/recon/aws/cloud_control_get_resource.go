@@ -14,6 +14,7 @@ import (
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -38,24 +39,44 @@ var AwsCloudControlGetResourceMetadata = modules.Metadata{
 }
 
 var AwsCloudControlGetResourceOutputProviders = []func(options []*types.Option) types.OutputProvider{
-	op.NewFileProvider,
+	//op.NewFileProvider,
+	op.NewConsoleProvider,
 }
 
-func NewAwsCloudControlGetResource(opts []*types.Option, run types.Run) (modules.Module, error) {
+func NewAwsCloudControlGetResource(opts []*types.Option) (<-chan types.EnrichedResourceDescription, stages.Stage[types.EnrichedResourceDescription, *cloudcontrol.GetResourceOutput], error) {
+	pipeline, err := stages.ChainStages[types.EnrichedResourceDescription, *cloudcontrol.GetResourceOutput](
+		stages.CloudControlGetResource,
+	)
 
-	fileNameOpt := options.FileNameOpt
-	fileNameOpt.Value = AwsCloudControlGetResourceMetadata.Id + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".json"
-	opts = append(opts, &fileNameOpt)
+	if err != nil {
+		return nil, nil, err
+	}
 
-	return &AwsCloudControlGetResource{
-		BaseModule: modules.BaseModule{
-			Metadata:        AwsCloudControlGetResourceMetadata,
-			Options:         opts,
-			Run:             run,
-			OutputProviders: modules.RenderOutputProviders(AwsCloudControlGetResourceOutputProviders, opts),
-		},
-	}, nil
+	resource := types.EnrichedResourceDescription{
+		Region:     types.GetOptionByName(options.AwsRegionOpt.Name, opts).Value,
+		TypeName:   types.GetOptionByName(options.AwsResourceTypeOpt.Name, opts).Value,
+		AccountId:  "",
+		Identifier: types.GetOptionByName(options.AwsResourceIdOpt.Name, opts).Value,
+	}
+
+	return stages.Generator([]types.EnrichedResourceDescription{resource}), pipeline, nil
 }
+
+// func NewAwsCloudControlGetResource(opts []*types.Option, run types.Run) (modules.Module, error) {
+
+// 	fileNameOpt := options.FileNameOpt
+// 	fileNameOpt.Value = AwsCloudControlGetResourceMetadata.Id + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".json"
+// 	opts = append(opts, &fileNameOpt)
+
+// 	return &AwsCloudControlGetResource{
+// 		BaseModule: modules.BaseModule{
+// 			Metadata:        AwsCloudControlGetResourceMetadata,
+// 			Options:         opts,
+// 			Run:             run,
+// 			OutputProviders: modules.RenderOutputProviders(AwsCloudControlGetResourceOutputProviders, opts),
+// 		},
+// 	}, nil
+// }
 
 func (m *AwsCloudControlGetResource) Invoke() error {
 	region := m.GetOptionByName(options.AwsRegionOpt.Name).Value

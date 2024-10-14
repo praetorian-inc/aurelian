@@ -23,7 +23,7 @@ func init() {
 	// AWS Recon
 	// RegisterModule(awsReconCmd, recon.AwsSummaryMetadata, recon.AwsSummaryOptions, awsCommonOptions, recon.NewAwsSummary)
 	RegisterModule(awsReconCmd, recon.AwsCloudControlListResourcesMetadata, recon.AwsCloudControlListResourcesOptions, awsCommonOptions, recon.AwsCloudControlListResourcesOutputProviders, recon.NewAwsCloudControlListResources)
-	// RegisterModule(awsReconCmd, recon.AwsCloudControlGetResourceMetadata, recon.AwsCloudControlGetResourceOptions, awsCommonOptions, recon.NewAwsCloudControlGetResource)
+	RegisterModule(awsReconCmd, recon.AwsCloudControlGetResourceMetadata, recon.AwsCloudControlGetResourceOptions, awsCommonOptions, recon.AwsCloudControlGetResourceOutputProviders, recon.NewAwsCloudControlGetResource)
 	RegisterModule(awsReconCmd, recon.AwsAuthorizationDetailsMetadata, recon.AwsAuthorizationDetailsOptions, awsCommonOptions, recon.AwsAuthorizationDetailsOutputProviders, recon.NewAwsAuthorizationDetails)
 	// RegisterModule(awsReconCmd, recon.AwsFindSecretsMetadata, recon.AwsFindSecretsOptions, awsCommonOptions, recon.NewAwsFindSecrets)
 	//RegisterModule(awsReconCmd, recon.AwsPublicResourcesMetadata, recon.AwsPublicResourcesOptions, awsCommonOptions, recon.NewAwsPublicResources)
@@ -44,7 +44,7 @@ func RegisterModule[In, Out any](cmd *cobra.Command, metadata modules.Metadata, 
 		Run: func(cmd *cobra.Command, args []string) {
 			options := getOpts(cmd, required, common)
 
-			runModule[In, Out](context.Background(), options, outputProviders, sf)
+			runModule[In, Out](context.Background(), metadata, options, outputProviders, sf)
 		},
 	}
 

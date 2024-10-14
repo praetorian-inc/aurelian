@@ -1,7 +1,6 @@
 package modules
 
 import (
-	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -59,7 +58,6 @@ type BaseModule struct {
 	Options         []*types.Option
 	OutputProviders []types.OutputProvider
 	Run             types.Run
-	StageFactory    stages.StageFactory[any, any]
 }
 
 func (m *BaseModule) Invoke() error {

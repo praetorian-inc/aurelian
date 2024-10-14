@@ -138,7 +138,7 @@ func getOptsFromCmd(cmd *cobra.Command, required []*types.Option) []*types.Optio
 	return opts
 }
 
-func runModule[In, Out any](ctx context.Context, opts []*types.Option, ouputProviders types.OutputProviders, factory stages.StageFactory[In, Out]) {
+func runModule[In, Out any](ctx context.Context, metadata modules.Metadata, opts []*types.Option, ouputProviders types.OutputProviders, factory stages.StageFactory[In, Out]) {
 	in, chain, err := factory(opts)
 	if err != nil {
 		panic(err)
@@ -158,7 +158,7 @@ func runModule[In, Out any](ctx context.Context, opts []*types.Option, ouputProv
 						log.Default().Println(err)
 					}
 					wg.Done()
-				}(outputProvider(opts), types.NewResult(modules.AWS, "foo", result))
+				}(outputProvider(opts), types.NewResult(metadata.Platform, metadata.Id, result))
 			}
 		}
 	}()
