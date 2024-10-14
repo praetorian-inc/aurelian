@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 func TestChainStages(t *testing.T) {
-	stage1 := func(ctx context.Context, opts []*options.Option, in <-chan int) <-chan int {
+	stage1 := func(ctx context.Context, opts []*types.Option, in <-chan int) <-chan int {
 		out := make(chan int)
 		go func() {
 			defer close(out)
@@ -23,7 +23,7 @@ func TestChainStages(t *testing.T) {
 		return out
 	}
 
-	stage2 := func(ctx context.Context, opts []*options.Option, in <-chan int) <-chan int {
+	stage2 := func(ctx context.Context, opts []*types.Option, in <-chan int) <-chan int {
 		out := make(chan int)
 		go func() {
 			defer close(out)
@@ -73,7 +73,7 @@ func TestChainStages(t *testing.T) {
 	}
 }
 func TestChainStagesDifferentTypes(t *testing.T) {
-	stage1 := func(ctx context.Context, opts []*options.Option, in <-chan int) <-chan string {
+	stage1 := func(ctx context.Context, opts []*types.Option, in <-chan int) <-chan string {
 		out := make(chan string)
 		go func() {
 			defer close(out)
@@ -84,7 +84,7 @@ func TestChainStagesDifferentTypes(t *testing.T) {
 		return out
 	}
 
-	stage2 := func(ctx context.Context, opts []*options.Option, in <-chan string) <-chan string {
+	stage2 := func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
 		out := make(chan string)
 		go func() {
 			defer close(out)
@@ -95,7 +95,7 @@ func TestChainStagesDifferentTypes(t *testing.T) {
 		return out
 	}
 
-	stage3 := func(ctx context.Context, opts []*options.Option, in <-chan string) <-chan int {
+	stage3 := func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan int {
 		out := make(chan int)
 		go func() {
 			defer close(out)
@@ -131,7 +131,7 @@ func TestChainStagesDifferentTypes(t *testing.T) {
 // TestValidateStageCompaibility tests the validateStageCompatibility function to ensure it correctly identifies
 // incompatible and compatible stages.
 func TestValidateStages(t *testing.T) {
-	stage1 := func(ctx context.Context, opts []*options.Option, in <-chan string) <-chan string {
+	stage1 := func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
 		out := make(chan string)
 		go func() {
 			defer close(out)
@@ -142,7 +142,7 @@ func TestValidateStages(t *testing.T) {
 		return out
 	}
 
-	stage2 := func(ctx context.Context, opts []*options.Option, in <-chan int) <-chan string {
+	stage2 := func(ctx context.Context, opts []*types.Option, in <-chan int) <-chan string {
 		out := make(chan string)
 		go func() {
 			defer close(out)
@@ -153,7 +153,7 @@ func TestValidateStages(t *testing.T) {
 		return out
 	}
 
-	stage3 := func(ctx context.Context, opts []*options.Option, in <-chan string) <-chan string {
+	stage3 := func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
 		out := make(chan string)
 		go func() {
 			defer close(out)
@@ -193,7 +193,7 @@ func TestValidateStages(t *testing.T) {
 }
 
 func TestFanStages(t *testing.T) {
-	stage1 := func(ctx context.Context, opts []*options.Option, in <-chan int) <-chan int {
+	stage1 := func(ctx context.Context, opts []*types.Option, in <-chan int) <-chan int {
 		out := make(chan int)
 		go func() {
 			defer close(out)
@@ -204,7 +204,7 @@ func TestFanStages(t *testing.T) {
 		return out
 	}
 
-	stage2 := func(ctx context.Context, opts []*options.Option, in <-chan int) <-chan int {
+	stage2 := func(ctx context.Context, opts []*types.Option, in <-chan int) <-chan int {
 		out := make(chan int)
 		go func() {
 			defer close(out)

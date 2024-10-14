@@ -76,9 +76,9 @@ type {{ .Provider | capitalize}}{{ .Name }} struct {{ "{" }}
 	modules.BaseModule
 {{ "}" }}
 
-var {{ .Provider | capitalize}}{{ .Name }}Options= []*options.Option{{ "{" }}{{ "}" }}
+var {{ .Provider | capitalize}}{{ .Name }}Options= []*types.Option{{ "{" }}{{ "}" }}
 
-var {{ .Provider | capitalize}}{{ .Name }}OutputProviders = []func(options []*options.Option) modules.OutputProvider{{ "{" }}
+var {{ .Provider | capitalize}}{{ .Name }}OutputProviders = []func(options []*types.Option) types.OutputProvider{{ "{" }}
 	op.NewConsoleProvider,
 {{ "}" }}
 
@@ -92,7 +92,7 @@ var {{ .Provider | capitalize}}{{ .Name }}Metadata = modules.Metadata{{ "{" }}
 	References:  []string{},
 {{ "}" }}
 
-func New{{ .Provider | capitalize}}{{ .Name }}(options []*options.Option, run modules.Run) (modules.Module, error) {{ "{" }}
+func New{{ .Provider | capitalize}}{{ .Name }}(options []*types.Option, run types.Run) (modules.Module, error) {{ "{" }}
 	return &{{ .Provider |capitalize}}{{ .Name }}{{ "{" }}
 		BaseModule: modules.BaseModule{{ "{" }}
 			Metadata:        {{ .Provider | capitalize}}{{ .Name }}Metadata,

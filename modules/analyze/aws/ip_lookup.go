@@ -5,6 +5,7 @@ import (
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 /*
@@ -16,11 +17,11 @@ type AwsIPLookup struct {
 	modules.BaseModule
 }
 
-var AwsIPLookupOptions = []*options.Option{
+var AwsIPLookupOptions = []*types.Option{
 	&options.IPOpt,
 }
 
-var AwsIPLookupOutputProviders = []func(options []*options.Option) modules.OutputProvider{
+var AwsIPLookupOutputProviders = []func(options []*types.Option) types.OutputProvider{
 	op.NewConsoleProvider,
 }
 
@@ -34,7 +35,7 @@ var AwsIPLookupMetadata = modules.Metadata{
 	References:  []string{},
 }
 
-func NewAwsIPLookup(opts []*options.Option) (<-chan string, stages.Stage[string, string], error) {
+func NewAwsIPLookup(opts []*types.Option) (<-chan string, stages.Stage[string, string], error) {
 	pipeline, err := stages.ChainStages[string, string](
 		stages.AwsIpLookupStage,
 	)
@@ -43,7 +44,7 @@ func NewAwsIPLookup(opts []*options.Option) (<-chan string, stages.Stage[string,
 		return nil, nil, err
 	}
 
-	ip := options.GetOptionByName(options.IPOpt.Name, opts).Value
+	ip := types.GetOptionByName(options.IPOpt.Name, opts).Value
 
 	return stages.Generator([]string{ip}), pipeline, nil
 }

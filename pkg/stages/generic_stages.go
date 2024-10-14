@@ -6,6 +6,7 @@ import (
 	"github.com/ollama/ollama/api"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 // GenerateOllamaResponse generates responses for given prompts using the Ollama API.
@@ -22,7 +23,7 @@ import (
 // The function initializes an API client from the environment and starts a goroutine to process prompts from the input channel.
 // For each prompt, it logs the prompt, constructs a generate request, and sends it to the API client.
 // The responses are logged and sent to the output channel. If an error occurs, it is logged and the processing stops.
-func GenerateOllamaResponse(ctx context.Context, opts []*options.Option, in <-chan string) <-chan string {
+func GenerateOllamaResponse(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
 	out := make(chan string)
 	client, err := api.ClientFromEnvironment()
 	if err != nil {
@@ -34,7 +35,7 @@ func GenerateOllamaResponse(ctx context.Context, opts []*options.Option, in <-ch
 		defer close(out)
 		for prompt := range in {
 			logs.ConsoleLogger().Info("Generating response for prompt: " + prompt)
-			model := options.GetOptionByName(options.ModelOpt.Name, opts).Value
+			model := types.GetOptionByName(options.ModelOpt.Name, opts).Value
 			req := &api.GenerateRequest{
 				Model:  model,
 				Prompt: prompt,

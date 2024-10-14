@@ -3,16 +3,16 @@ package analyze
 import (
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
-	"github.com/praetorian-inc/nebula/modules/options"
 	o "github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type KnownAccountID struct {
 	modules.BaseModule
 }
 
-var KnownAccountIDOptions = []*o.Option{
+var KnownAccountIDOptions = []*types.Option{
 	&o.AwsAccountIdOpt,
 }
 
@@ -28,11 +28,11 @@ var KnownAccountIDMetadata = modules.Metadata{
 	},
 }
 
-var KnownAccountIDOutputProviders = []func(options []*o.Option) modules.OutputProvider{
+var KnownAccountIDOutputProviders = []func(options []*types.Option) types.OutputProvider{
 	op.NewConsoleProvider,
 }
 
-func NewKnownAccountID(opts []*options.Option) (<-chan string, stages.Stage[string, stages.AwsKnownAccount], error) {
+func NewKnownAccountID(opts []*types.Option) (<-chan string, stages.Stage[string, stages.AwsKnownAccount], error) {
 	pipeline, err := stages.ChainStages[string, stages.AwsKnownAccount](
 		stages.AwsKnownAccountIdStage,
 	)
@@ -41,7 +41,7 @@ func NewKnownAccountID(opts []*options.Option) (<-chan string, stages.Stage[stri
 		return nil, nil, err
 	}
 
-	accountID := options.GetOptionByName(o.AwsAccountIdOpt.Name, opts).Value
+	accountID := types.GetOptionByName(o.AwsAccountIdOpt.Name, opts).Value
 
 	return stages.Generator([]string{accountID}), pipeline, nil
 }

@@ -1,4 +1,4 @@
-package modules
+package types
 
 import (
 	"encoding/json"
@@ -39,13 +39,6 @@ type ListDataResult struct {
 	ResourceDescriptions []EnrichedResourceDescription `json:"ResourceDescriptions"`
 	TypeName             string                        `json:"TypeName"`
 	ResultMetadata       interface{}                   `json:"ResultMetadata"`
-}
-
-type EnrichedResourceDescription struct {
-	Identifier string      `json:"Identifier"`
-	Region     string      `json:"Region"` //additional field to enrich
-	Properties interface{} `json:"Properties"`
-	AccountId  string
 }
 
 func (r *Result) String() string {

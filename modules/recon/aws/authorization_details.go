@@ -8,6 +8,7 @@ import (
 	"github.com/praetorian-inc/nebula/modules"
 	o "github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AwsAuthorizationDetails struct {
@@ -15,7 +16,7 @@ type AwsAuthorizationDetails struct {
 	AccountId string
 }
 
-var AwsAuthorizationDetailsOptions = []*o.Option{}
+var AwsAuthorizationDetailsOptions = []*types.Option{}
 
 var AwsAuthorizationDetailsMetadata = modules.Metadata{
 	Id:          "authorization-details",
@@ -27,11 +28,11 @@ var AwsAuthorizationDetailsMetadata = modules.Metadata{
 	References:  []string{},
 }
 
-var AwsAuthorizationDetailsOutputProviders = []func(options []*o.Option) modules.OutputProvider{
+var AwsAuthorizationDetailsOutputProviders = []func(options []*types.Option) types.OutputProvider{
 	op.NewFileProvider,
 }
 
-func NewAwsAuthorizationDetails(opts []*o.Option) (<-chan string, stages.Stage[string, []byte], error) {
+func NewAwsAuthorizationDetails(opts []*types.Option) (<-chan string, stages.Stage[string, []byte], error) {
 
 	// TODO: this should be an optional parameter and we can use this as the default
 	// TODO: default should have the account id in the file name

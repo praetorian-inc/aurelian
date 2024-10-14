@@ -6,15 +6,15 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 // Stage represents a pipeline stage that processes input of type I and produces output of type O.
 // It takes a context for cancellation, a slice of options for configuration, and an input channel of type I.
 // It returns an output channel of type O.
-type Stage[I any, O any] func(ctx context.Context, opts []*options.Option, in <-chan I) <-chan O
+type Stage[I any, O any] func(ctx context.Context, opts []*types.Option, in <-chan I) <-chan O
 
-type StageFactory[I any, O any] func(opts []*options.Option) (<-chan I, Stage[I, O], error)
+type StageFactory[I any, O any] func(opts []*types.Option) (<-chan I, Stage[I, O], error)
 
 // ChainStages chains multiple stages together, ensuring that the output type of each stage
 // matches the input type of the next stage. It returns a single stage function that processes
@@ -37,8 +37,8 @@ type StageFactory[I any, O any] func(opts []*options.Option) (<-chan I, Stage[I,
 //
 // Example:
 //
-//	stage1 := func(ctx context.Context, opts []*options.Option, in <-chan int) <-chan string { /* ... */ }
-//	stage2 := func(ctx context.Context, opts []*options.Option, in <-chan string) <-chan float64 { /* ... */ }
+//	stage1 := func(ctx context.Context, opts []*types.Option, in <-chan int) <-chan string { /* ... */ }
+//	stage2 := func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan float64 { /* ... */ }
 //	chainedStage, err := ChainStages[int, float64](stage1, stage2)
 //	if err != nil {
 //	    log.Fatal(err)
@@ -46,6 +46,12 @@ type StageFactory[I any, O any] func(opts []*options.Option) (<-chan I, Stage[I,
 func ChainStages[I any, O any](stages ...any) (Stage[I, O], error) {
 	if len(stages) == 0 {
 		return nil, fmt.Errorf("no stages provided")
+	}
+
+	for i, stage := range stages {
+		if err := validateFunctionSignature(stage); err != nil {
+			return nil, fmt.Errorf("stage %d: %v", i, err)
+		}
 	}
 
 	// Validate the stages are compatible
@@ -56,7 +62,7 @@ func ChainStages[I any, O any](stages ...any) (Stage[I, O], error) {
 	}
 
 	// Return the chained stage function
-	return func(ctx context.Context, opts []*options.Option, in <-chan I) <-chan O {
+	return func(ctx context.Context, opts []*types.Option, in <-chan I) <-chan O {
 
 		var chanIn reflect.Value
 		var chanOut reflect.Value
@@ -115,6 +121,39 @@ func ValidateStages(In any, Out any, stages ...any) error {
 	return nil
 }
 
+func validateFunctionSignature(stage interface{}) error {
+	stageType := reflect.TypeOf(stage)
+	if stageType.Kind() != reflect.Func {
+		return fmt.Errorf("stage is not a function")
+	}
+
+	if stageType.NumIn() != 3 {
+		return fmt.Errorf("stage function must have exactly 3 input parameters")
+	}
+
+	if stageType.In(0) != reflect.TypeOf((*context.Context)(nil)).Elem() {
+		return fmt.Errorf("first parameter of stage function must be context.Context")
+	}
+
+	if stageType.In(1) != reflect.TypeOf([]*types.Option{}) {
+		return fmt.Errorf("second parameter of stage function must be []*types.Option")
+	}
+
+	if stageType.In(2).Kind() != reflect.Chan {
+		return fmt.Errorf("third parameter of stage function must be a channel")
+	}
+
+	if stageType.NumOut() != 1 {
+		return fmt.Errorf("stage function must have exactly 1 output parameter")
+	}
+
+	if stageType.Out(0).Kind() != reflect.Chan {
+		return fmt.Errorf("output parameter of stage function must be a channel")
+	}
+
+	return nil
+}
+
 // Helper function to validate that the output type of one stage matches the input type of the next
 func validateStageCompatibility(stage1, stage2 interface{}) error {
 	stage1Type := reflect.TypeOf(stage1)
@@ -142,7 +181,7 @@ func validateStageCompatibility(stage1, stage2 interface{}) error {
 //   - stages: A variadic list of Stage functions that process the input data.
 //
 // The function
-func FanStages[In, Out any](ctx context.Context, opts []*options.Option, in <-chan In, out chan Out, stages ...Stage[In, Out]) {
+func FanStages[In, Out any](ctx context.Context, opts []*types.Option, in <-chan In, out chan Out, stages ...Stage[In, Out]) {
 
 	wg := sync.WaitGroup{} //
 	for i := range in {
@@ -194,7 +233,7 @@ func Generator[T any](inputs []T) <-chan T {
 	return out
 }
 
-func Echo[In, Out any](ctx context.Context, opts []*options.Option, in <-chan In) <-chan Out {
+func Echo[In, Out any](ctx context.Context, opts []*types.Option, in <-chan In) <-chan Out {
 	out := make(chan Out)
 	go func() {
 		defer close(out)

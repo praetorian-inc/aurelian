@@ -1,48 +1,52 @@
 package options
 
-import "regexp"
+import (
+	"regexp"
 
-var GcpProjectIdOpt = Option{
+	"github.com/praetorian-inc/nebula/pkg/types"
+)
+
+var GcpProjectIdOpt = types.Option{
 	Name:        "project-id",
 	Short:       "p",
 	Description: "GCP project ID",
 	Required:    true,
-	Type:        String,
+	Type:        types.String,
 	Value:       "",
 }
 
-var GcpFolderIdOpt = Option{
+var GcpFolderIdOpt = types.Option{
 	Name:        "folder-id",
 	Short:       "f",
 	Description: "GCP folder ID",
 	Required:    true,
-	Type:        String,
+	Type:        types.String,
 	Value:       "",
 }
 
-var GcpOrganizationIdOpt = Option{
+var GcpOrganizationIdOpt = types.Option{
 	Name:        "org-id",
 	Description: "GCP organization ID",
 	Required:    true,
-	Type:        String,
+	Type:        types.String,
 	Value:       "",
 	ValueFormat: regexp.MustCompile("^[0-9]{12}$"),
 }
 
-var GcpProjectsListOpt = Option{
+var GcpProjectsListOpt = types.Option{
 	Name:        "projects-list",
 	Short:       "",
 	Description: "GCP projects list",
 	Required:    true,
-	Type:        String,
+	Type:        types.String,
 	Value:       "",
 }
 
-var GcpIncludeAncestorsOpt = Option{
+var GcpIncludeAncestorsOpt = types.Option{
 	Name:        "ancestors",
 	Short:       "",
 	Description: "include ancestors",
 	Required:    true,
-	Type:        String,
+	Type:        types.String,
 	Value:       "",
 }

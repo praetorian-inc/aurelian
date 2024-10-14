@@ -5,9 +5,9 @@ import (
 
 	"github.com/praetorian-inc/nebula/modules"
 	analyze "github.com/praetorian-inc/nebula/modules/analyze/aws"
-	o "github.com/praetorian-inc/nebula/modules/options"
 	recon "github.com/praetorian-inc/nebula/modules/recon/aws"
 	"github.com/praetorian-inc/nebula/pkg/stages"
+	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +22,7 @@ func init() {
 
 	// AWS Recon
 	// RegisterModule(awsReconCmd, recon.AwsSummaryMetadata, recon.AwsSummaryOptions, awsCommonOptions, recon.NewAwsSummary)
-	// RegisterModule(awsReconCmd, recon.AwsCloudControlListResourcesMetadata, recon.AwsCloudControlListResourcesOptions, awsCommonOptions, recon.NewAwsCloudControlListResources)
+	RegisterModule(awsReconCmd, recon.AwsCloudControlListResourcesMetadata, recon.AwsCloudControlListResourcesOptions, awsCommonOptions, recon.AwsCloudControlListResourcesOutputProviders, recon.NewAwsCloudControlListResources)
 	// RegisterModule(awsReconCmd, recon.AwsCloudControlGetResourceMetadata, recon.AwsCloudControlGetResourceOptions, awsCommonOptions, recon.NewAwsCloudControlGetResource)
 	RegisterModule(awsReconCmd, recon.AwsAuthorizationDetailsMetadata, recon.AwsAuthorizationDetailsOptions, awsCommonOptions, recon.AwsAuthorizationDetailsOutputProviders, recon.NewAwsAuthorizationDetails)
 	// RegisterModule(awsReconCmd, recon.AwsFindSecretsMetadata, recon.AwsFindSecretsOptions, awsCommonOptions, recon.NewAwsFindSecrets)
@@ -35,9 +35,9 @@ func init() {
 	//RegisterModule(gcpReconCmd, recongcp.GetProjectsMetadata, recongcp.GetProjectsOptions, noCommon, recongcp.NewGetProjects)
 }
 
-var noCommon = []*o.Option{}
+var noCommon = []*types.Option{}
 
-func RegisterModule[In, Out any](cmd *cobra.Command, metadata modules.Metadata, required []*o.Option, common []*o.Option, outputProviders modules.OutputProviders, sf stages.StageFactory[In, Out]) {
+func RegisterModule[In, Out any](cmd *cobra.Command, metadata modules.Metadata, required []*types.Option, common []*types.Option, outputProviders types.OutputProviders, sf stages.StageFactory[In, Out]) {
 	c := &cobra.Command{
 		Use:   metadata.Id,
 		Short: metadata.Description,

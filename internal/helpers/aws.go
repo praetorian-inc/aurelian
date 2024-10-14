@@ -12,8 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/praetorian-inc/nebula/internal/logs"
-	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 // TODO this should be combined with roseta
@@ -82,7 +82,7 @@ func MapArnByRegions(identifiers []string) (map[string][]arn.ARN, error) {
 }
 
 // Some resources do not return ARN as identifiers so need to be processed differently
-func MapIdentifiersByRegions(resourceDescriptions []modules.EnrichedResourceDescription) map[string][]string {
+func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescription) map[string][]string {
 	regionToIdentifiers := make(map[string][]string)
 	for _, description := range resourceDescriptions {
 		regionToIdentifiers[description.Region] = append(regionToIdentifiers[description.Region], description.Identifier)
@@ -140,6 +140,7 @@ func ParseRegionsOption(regionsOpt string, profile string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
+		logs.ConsoleLogger().Info("Enabled regions: " + strings.Join(enabledRegions, ", "))
 		return enabledRegions, nil
 	} else {
 		regions := strings.Split(regionsOpt, ",")

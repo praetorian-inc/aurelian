@@ -14,7 +14,7 @@ import (
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
-	"github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/utils"
 	a "github.com/seancfoley/ipaddress-go/ipaddr"
 )
@@ -34,7 +34,7 @@ import (
 //
 // Returns:
 //   - An output channel of type Out (string) containing matched actions.
-func AwsExpandActionsStage(ctx context.Context, opts []*options.Option, in <-chan string) <-chan string {
+func AwsExpandActionsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
 	out := make(chan string)
 	body, err := utils.Cached_httpGet("https://awspolicygen.s3.amazonaws.com/js/policies.js")
 	if err != nil {
@@ -89,7 +89,7 @@ func AwsExpandActionsStage(ctx context.Context, opts []*options.Option, in <-cha
 //
 // Returns:
 //   - A channel of AwsKnownAccount structs that match the input IDs.
-func AwsKnownAccountIdStage(ctx context.Context, opts []*options.Option, in <-chan string) <-chan AwsKnownAccount {
+func AwsKnownAccountIdStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan AwsKnownAccount {
 	out := make(chan AwsKnownAccount)
 
 	go func() {
@@ -129,7 +129,7 @@ type AwsKnownAccount struct {
 	Description string      `json:"description"`
 }
 
-func AwsAccessKeyIdtoAccountIdStage(ctx context.Context, opts []*options.Option, in <-chan string) <-chan int {
+func AwsAccessKeyIdtoAccountIdStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan int {
 	out := make(chan int)
 	go func() {
 		defer close(out)
@@ -155,7 +155,7 @@ func AwsAccessKeyIdtoAccountIdStage(ctx context.Context, opts []*options.Option,
 	return out
 }
 
-func AwsIpLookupStage(ctx context.Context, opts []*options.Option, in <-chan string) <-chan string {
+func AwsIpLookupStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
 	out := make(chan string)
 	go func() {
 		defer close(out)

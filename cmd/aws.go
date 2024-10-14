@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/spf13/cobra"
 )
 
@@ -42,6 +43,6 @@ func init() {
 	rootCmd.AddCommand(awsCmd)
 }
 
-var awsCommonOptions = []*options.Option{
+var awsCommonOptions = []*types.Option{
 	&options.AwsProfileOpt,
 }

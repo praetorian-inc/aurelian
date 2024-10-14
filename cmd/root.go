@@ -9,8 +9,9 @@ import (
 	"sync"
 
 	"github.com/praetorian-inc/nebula/modules"
-	o "github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
+	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -33,7 +34,7 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.nebula.yaml)")
-	rootCmd.PersistentFlags().StringP(o.OutputOpt.Name, o.OutputOpt.Short, o.OutputOpt.Value, o.OutputOpt.Description)
+	rootCmd.PersistentFlags().StringP(options.OutputOpt.Name, options.OutputOpt.Short, options.OutputOpt.Value, options.OutputOpt.Description)
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -60,7 +61,7 @@ func initConfig() {
 	}
 }
 
-func options2Flag(options []*o.Option, common []*o.Option, cmd *cobra.Command) {
+func options2Flag(options []*types.Option, common []*types.Option, cmd *cobra.Command) {
 	for _, option := range options {
 		option2Flag(option, cmd)
 	}
@@ -70,14 +71,14 @@ func options2Flag(options []*o.Option, common []*o.Option, cmd *cobra.Command) {
 	}
 }
 
-func option2Flag(option *o.Option, cmd *cobra.Command) {
-	switch o.OptionType(option.Type) {
-	case o.String:
+func option2Flag(option *types.Option, cmd *cobra.Command) {
+	switch types.OptionType(option.Type) {
+	case types.String:
 		cmd.Flags().StringP(option.Name, option.Short, option.Value, option.Description)
-	case o.Bool:
+	case types.Bool:
 		value, _ := strconv.ParseBool(option.Value) // Convert string to bool
 		cmd.Flags().BoolP(option.Name, option.Short, value, option.Description)
-	case o.Int:
+	case types.Int:
 		intValue, _ := strconv.Atoi(option.Value) // Convert string to int
 		cmd.Flags().IntP(option.Name, option.Short, intValue, option.Description)
 	}
@@ -88,12 +89,12 @@ func option2Flag(option *o.Option, cmd *cobra.Command) {
 
 }
 
-func getOpts(cmd *cobra.Command, required []*o.Option, common []*o.Option) []*o.Option {
+func getOpts(cmd *cobra.Command, required []*types.Option, common []*types.Option) []*types.Option {
 	opts := getGlobalOpts(cmd)
 
 	// Process required options
 	opts = append(opts, getOptsFromCmd(cmd, required)...)
-	err := o.ValidateOptions(opts, required)
+	err := types.ValidateOptions(opts, required)
 	if err != nil {
 		log.Default().Println(err)
 		os.Exit(1)
@@ -101,7 +102,7 @@ func getOpts(cmd *cobra.Command, required []*o.Option, common []*o.Option) []*o.
 
 	// Process common options
 	opts = append(opts, getOptsFromCmd(cmd, common)...)
-	err = o.ValidateOptions(opts, common)
+	err = types.ValidateOptions(opts, common)
 	if err != nil {
 		log.Default().Println(err)
 		os.Exit(1)
@@ -110,25 +111,25 @@ func getOpts(cmd *cobra.Command, required []*o.Option, common []*o.Option) []*o.
 	return opts
 }
 
-func getGlobalOpts(cmd *cobra.Command) []*o.Option {
-	opts := []*o.Option{}
-	output := o.OutputOpt
+func getGlobalOpts(cmd *cobra.Command) []*types.Option {
+	opts := []*types.Option{}
+	output := options.OutputOpt
 	output.Value, _ = cmd.Flags().GetString(output.Name)
 	opts = append(opts, &output)
 
 	return opts
 }
 
-func getOptsFromCmd(cmd *cobra.Command, required []*o.Option) []*o.Option {
-	opts := []*o.Option{}
+func getOptsFromCmd(cmd *cobra.Command, required []*types.Option) []*types.Option {
+	opts := []*types.Option{}
 	for _, opt := range required {
-		switch o.OptionType(opt.Type) {
-		case o.String:
+		switch types.OptionType(opt.Type) {
+		case types.String:
 			opt.Value, _ = cmd.Flags().GetString(opt.Name)
-		case o.Bool:
+		case types.Bool:
 			value, _ := cmd.Flags().GetBool(opt.Name)
 			opt.Value = strconv.FormatBool(value)
-		case o.Int:
+		case types.Int:
 			value, _ := cmd.Flags().GetInt(opt.Name)
 			opt.Value = strconv.Itoa(value)
 		}
@@ -137,7 +138,7 @@ func getOptsFromCmd(cmd *cobra.Command, required []*o.Option) []*o.Option {
 	return opts
 }
 
-func runModule[In, Out any](ctx context.Context, opts []*o.Option, ouputProviders modules.OutputProviders, factory stages.StageFactory[In, Out]) {
+func runModule[In, Out any](ctx context.Context, opts []*types.Option, ouputProviders types.OutputProviders, factory stages.StageFactory[In, Out]) {
 	in, chain, err := factory(opts)
 	if err != nil {
 		panic(err)
@@ -150,14 +151,14 @@ func runModule[In, Out any](ctx context.Context, opts []*o.Option, ouputProvider
 		for result := range chain(ctx, opts, in) {
 			for _, outputProvider := range ouputProviders {
 				wg.Add(1)
-				go func(outputProvider modules.OutputProvider, result modules.Result) {
+				go func(outputProvider types.OutputProvider, result types.Result) {
 					err := outputProvider.Write(result)
 
 					if err != nil {
 						log.Default().Println(err)
 					}
 					wg.Done()
-				}(outputProvider(opts), modules.NewResult(modules.AWS, "foo", result))
+				}(outputProvider(opts), types.NewResult(modules.AWS, "foo", result))
 			}
 		}
 	}()

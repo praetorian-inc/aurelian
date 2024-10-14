@@ -5,17 +5,18 @@ import (
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AwsExpandActions struct {
 	modules.BaseModule
 }
 
-var AwsExpandActionsOptions = []*options.Option{
+var AwsExpandActionsOptions = []*types.Option{
 	&options.AwsActionOpt,
 }
 
-var AwsExpandActionOutputProvders = []func(options []*options.Option) modules.OutputProvider{
+var AwsExpandActionOutputProvders = []func(options []*types.Option) types.OutputProvider{
 	op.NewConsoleProvider,
 }
 
@@ -29,7 +30,7 @@ var AwsExpandActionsMetadata = modules.Metadata{
 	References:  []string{},
 }
 
-// func NewAwsExpandActions(options []*options.Option, run modules.Run) (modules.Module, error) {
+// func NewAwsExpandActions(options []*types.Option, run types.Run) (modules.Module, error) {
 // 	var m AwsExpandActions
 // 	m.SetMetdata(AwsExpandActionsMetadata)
 // 	m.Run = run
@@ -39,7 +40,7 @@ var AwsExpandActionsMetadata = modules.Metadata{
 // 	return &m, nil
 // }
 
-func NewAwsExpandActions(opts []*options.Option) (<-chan string, stages.Stage[string, string], error) {
+func NewAwsExpandActions(opts []*types.Option) (<-chan string, stages.Stage[string, string], error) {
 	pipeline, err := stages.ChainStages[string, string](
 		stages.AwsExpandActionsStage,
 	)
@@ -48,7 +49,7 @@ func NewAwsExpandActions(opts []*options.Option) (<-chan string, stages.Stage[st
 		return nil, nil, err
 	}
 
-	action := options.GetOptionByName(options.AwsActionOpt.Name, opts).Value
+	action := types.GetOptionByName(options.AwsActionOpt.Name, opts).Value
 
 	return stages.Generator([]string{action}), pipeline, nil
 }

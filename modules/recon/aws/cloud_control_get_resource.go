@@ -14,13 +14,14 @@ import (
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AwsCloudControlGetResource struct {
 	modules.BaseModule
 }
 
-var AwsCloudControlGetResourceOptions = []*options.Option{
+var AwsCloudControlGetResourceOptions = []*types.Option{
 	&options.AwsRegionOpt,
 	&options.AwsResourceTypeOpt,
 	&options.AwsResourceIdOpt,
@@ -36,22 +37,24 @@ var AwsCloudControlGetResourceMetadata = modules.Metadata{
 	References:  []string{},
 }
 
-var AwsCloudControlGetResourceOutputProviders = []func(options []*options.Option) modules.OutputProvider{
+var AwsCloudControlGetResourceOutputProviders = []func(options []*types.Option) types.OutputProvider{
 	op.NewFileProvider,
 }
 
-func NewAwsCloudControlGetResource(opts []*options.Option, run modules.Run) (modules.Module, error) {
-	var m AwsCloudControlGetResource
-	m.SetMetdata(AwsCloudControlGetResourceMetadata)
-	m.Run = run
+func NewAwsCloudControlGetResource(opts []*types.Option, run types.Run) (modules.Module, error) {
 
 	fileNameOpt := options.FileNameOpt
-	fileNameOpt.Value = m.Metadata.Id + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".json"
+	fileNameOpt.Value = AwsCloudControlGetResourceMetadata.Id + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".json"
 	opts = append(opts, &fileNameOpt)
-	m.Options = opts
-	m.ConfigureOutputProviders(AwsCloudControlGetResourceOutputProviders)
 
-	return &m, nil
+	return &AwsCloudControlGetResource{
+		BaseModule: modules.BaseModule{
+			Metadata:        AwsCloudControlGetResourceMetadata,
+			Options:         opts,
+			Run:             run,
+			OutputProviders: modules.RenderOutputProviders(AwsCloudControlGetResourceOutputProviders, opts),
+		},
+	}, nil
 }
 
 func (m *AwsCloudControlGetResource) Invoke() error {
@@ -81,13 +84,13 @@ func (m *AwsCloudControlGetResource) Invoke() error {
 	}
 	filepath := helpers.CreateFilePath(string(m.Platform), helpers.CloudControlTypeNames[rtype], accountId, "get-resource", region, id)
 
-	m.Run.Output <- m.MakeResult(res, modules.WithFilename(filepath))
+	m.Run.Output <- m.MakeResult(res, types.WithFilename(filepath))
 	close(m.Run.Output)
 
 	return nil
 }
 
-func GetResources(ctx context.Context, list <-chan modules.Result, results chan<- modules.Result) {
+func GetResources(ctx context.Context, list <-chan types.Result, results chan<- types.Result) {
 	data := <-list
 	resources := data.UnmarshalListData()
 	defer close(results)
@@ -127,7 +130,7 @@ func GetResources(ctx context.Context, list <-chan modules.Result, results chan<
 				}
 
 				fname := helpers.CreateFilePath(string(AwsCloudControlGetResourceMetadata.Platform), helpers.CloudControlTypeNames[resources.TypeName], resource.AccountId, "get-resource", resource.Region, resource.Identifier)
-				results <- modules.NewResult(modules.AWS, AwsCloudControlGetResourceMetadata.Id, res, modules.WithFilename(fname))
+				results <- types.NewResult(modules.AWS, AwsCloudControlGetResourceMetadata.Id, res, types.WithFilename(fname))
 				break
 			}
 			wg.Done()
