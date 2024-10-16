@@ -7,24 +7,24 @@ import (
 	"time"
 
 	"github.com/praetorian-inc/nebula/internal/logs"
-	"github.com/praetorian-inc/nebula/modules"
 	o "github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type FileProvider struct {
-	modules.OutputProvider
+	types.OutputProvider
 	OutputPath string
 	FileName   string
 }
 
-func NewFileProvider(options []*o.Option) modules.OutputProvider {
+func NewFileProvider(options []*types.Option) types.OutputProvider {
 	return &FileProvider{
-		OutputPath: o.GetOptionByName(o.OutputOpt.Value, options).Value,
+		OutputPath: types.GetOptionByName(o.OutputOpt.Value, options).Value,
 		FileName:   "",
 	}
 }
 
-func (fp *FileProvider) Write(result modules.Result) error {
+func (fp *FileProvider) Write(result types.Result) error {
 	var filename string
 
 	if result.Filename == "" {

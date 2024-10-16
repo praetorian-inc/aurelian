@@ -1,22 +1,23 @@
 package outputproviders
 
 import (
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/modules"
-	"github.com/praetorian-inc/nebula/modules/options"
+	"fmt"
+
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type ConsoleProvider struct {
-	modules.OutputProvider
+	types.OutputProvider
 }
 
-func NewConsoleProvider(options []*options.Option) modules.OutputProvider {
+func NewConsoleProvider(options []*types.Option) types.OutputProvider {
 	return &ConsoleProvider{}
 }
 
 // Write writes the `data` field of the result
 // to the console.
-func (cp *ConsoleProvider) Write(result modules.Result) error {
-	helpers.PrintResult(result)
+func (cp *ConsoleProvider) Write(result types.Result) error {
+	//helpers.PrintResult(result)
+	fmt.Println(result.String())
 	return nil
 }

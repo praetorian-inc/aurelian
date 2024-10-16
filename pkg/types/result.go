@@ -1,4 +1,4 @@
-package modules
+package types
 
 import (
 	"encoding/json"
@@ -9,7 +9,28 @@ type Result struct {
 	Platform Platform `json:"platform"`
 	Module   string   `json:"module"`
 	Filename string
-	Data     interface{} `json:"data"`
+	Data     any `json:"data"`
+}
+
+type ResultOption func(*Result)
+
+func NewResult(platform Platform, module string, data interface{}, opts ...ResultOption) Result {
+	r := &Result{
+		Platform: platform,
+		Module:   module,
+		Data:     data,
+	}
+
+	for _, opt := range opts {
+		opt(r)
+	}
+	return *r
+}
+
+func WithFilename(filename string) ResultOption {
+	return func(r *Result) {
+		r.Filename = filename
+	}
 }
 
 // struct to parse the JSON response from the CloudControl ListResources API
@@ -20,15 +41,8 @@ type ListDataResult struct {
 	ResultMetadata       interface{}                   `json:"ResultMetadata"`
 }
 
-type EnrichedResourceDescription struct {
-	Identifier string      `json:"Identifier"`
-	Region     string      `json:"Region"` //additional field to enrich
-	Properties interface{} `json:"Properties"`
-	AccountId  string
-}
-
 func (r *Result) String() string {
-	d, _ := json.MarshalIndent(r, "", "  ")
+	d, _ := json.MarshalIndent(r.Data, "", "  ")
 	return string(d)
 }
 

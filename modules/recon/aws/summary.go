@@ -1,4 +1,4 @@
-package reconaws
+package recon
 
 import (
 	"context"
@@ -10,15 +10,15 @@ import (
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
-	o "github.com/praetorian-inc/nebula/modules/options"
-	naws "github.com/praetorian-inc/nebula/pkg/nebula/aws/active_regions"
+	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/nebula/pkg/utils"
 )
 
 type AwsSummary struct {
 	modules.BaseModule
 }
 
-var AwsSummaryOptions = []*o.Option{}
+var AwsSummaryOptions = []*types.Option{}
 
 var AwsSummaryMetadata = modules.Metadata{
 	Id:          "summary",
@@ -30,13 +30,14 @@ var AwsSummaryMetadata = modules.Metadata{
 	References:  []string{},
 }
 
-func NewAwsSummary(options []*o.Option, run modules.Run) (modules.Module, error) {
-	var m AwsSummary
-	m.SetMetdata(AwsSummaryMetadata)
-	m.Run = run
-	m.Options = options
-
-	return &m, nil
+func NewAwsSummary(options []*types.Option, run types.Run) (modules.Module, error) {
+	return &AwsSummary{
+		BaseModule: modules.BaseModule{
+			Metadata:        AwsSummaryMetadata,
+			Options:         options,
+			Run:             run,
+			OutputProviders: modules.RenderOutputProviders(nil, options),
+		}}, nil
 }
 
 func (m *AwsSummary) Invoke() error {
@@ -48,7 +49,7 @@ func (m *AwsSummary) Invoke() error {
 	}
 
 	// Get all regions
-	serviceRegions, err := naws.GetServiceAndRegions(cfg)
+	serviceRegions, err := utils.GetServiceAndRegions(cfg)
 	if err != nil {
 		fmt.Println("Failed to get regions:", err)
 		return err
@@ -65,8 +66,8 @@ func (m *AwsSummary) Invoke() error {
 		}
 
 	}
-	m.Run.Data <- m.MakeResult(serviceRegions)
-	close(m.Run.Data)
+	m.Run.Output <- m.MakeResult(serviceRegions)
+	close(m.Run.Output)
 	return nil
 }
 

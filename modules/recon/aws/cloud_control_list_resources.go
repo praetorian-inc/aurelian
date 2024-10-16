@@ -1,4 +1,4 @@
-package reconaws
+package recon
 
 import (
 	"context"
@@ -10,18 +10,21 @@ import (
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
+	"github.com/praetorian-inc/nebula/modules/options"
 	o "github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/stages"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AwsCloudControlListResources struct {
 	modules.BaseModule
 }
 
-var AwsCloudControlListResourcesOptions = []*o.Option{
+var AwsCloudControlListResourcesOptions = []*types.Option{
 	&o.AwsRegionsOpt,
 	&o.AwsResourceTypeOpt,
-	o.SetDefaultValue(
-		*o.SetRequired(
+	types.SetDefaultValue(
+		*types.SetRequired(
 			o.FileNameOpt, false),
 		AwsCloudControlListResourcesMetadata.Id+"-"+strconv.FormatInt(time.Now().Unix(), 10)+".json"),
 }
@@ -33,25 +36,31 @@ var AwsCloudControlListResourcesMetadata = modules.Metadata{
 	Platform:    modules.AWS,
 	Authors:     []string{"Praetorian"},
 	OpsecLevel:  modules.Moderate,
-	References:  []string{},
+	References: []string{
+		"https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/supported-resources.html",
+	},
 }
 
-var AwsCloudControlListResourcesOutputProviders = []func(options []*o.Option) modules.OutputProvider{
-	op.NewFileProvider,
+var AwsCloudControlListResourcesOutputProviders = []func(options []*types.Option) types.OutputProvider{
+	//op.NewFileProvider,
+	op.NewConsoleProvider,
 }
 
-func NewAwsCloudControlListResources(options []*o.Option, run modules.Run) (modules.Module, error) {
-	return &AwsCloudControlListResources{
-		BaseModule: modules.BaseModule{
-			Metadata:        AwsCloudControlListResourcesMetadata,
-			Options:         options,
-			Run:             run,
-			OutputProviders: modules.RenderOutputProviders(AwsCloudControlListResourcesOutputProviders, options),
-		},
-	}, nil
+func NewAwsCloudControlListResources(opts []*types.Option) (<-chan string, stages.Stage[string, types.EnrichedResourceDescription], error) {
+	pipeline, err := stages.ChainStages[string, types.EnrichedResourceDescription](
+		stages.CloudControlListResources,
+	)
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	resourceType := types.GetOptionByName(options.AwsResourceTypeOpt.Name, opts).Value
+
+	return stages.Generator([]string{resourceType}), pipeline, nil
 }
 
-func (m *AwsCloudControlListResources) Invoke() error {
+func (m *AwsCloudControlListResources) Foo() error {
 	var regions = []string{}
 	rtype := m.GetOptionByName(o.AwsResourceTypeOpt.Name).Value
 	regionsOpt := m.GetOptionByName(o.AwsRegionsOpt.Name)
@@ -85,12 +94,12 @@ func (m *AwsCloudControlListResources) Invoke() error {
 
 	// Because we wanted to add a region field to the Resource Description, we had to create our own struct rather than use the one defined by the cloudcontrol API.
 	type EnrichedListResourcesOutput struct {
-		ResourceDescriptions []modules.EnrichedResourceDescription
+		ResourceDescriptions []types.EnrichedResourceDescription
 		TypeName             *string
 	}
 
 	results := EnrichedListResourcesOutput{
-		ResourceDescriptions: []modules.EnrichedResourceDescription{},
+		ResourceDescriptions: []types.EnrichedResourceDescription{},
 		TypeName:             &rtype,
 	}
 	// results := &cloudcontrol.ListResourcesOutput{
@@ -98,7 +107,8 @@ func (m *AwsCloudControlListResources) Invoke() error {
 	// 	TypeName:             &rtype,
 	// }
 
-	resultsChan := make(chan []modules.EnrichedResourceDescription)
+	resultsChan := make(chan []types.EnrichedResourceDescription)
+	defer close(resultsChan)
 
 	helpers.PrintMessage("Listing resources of type " + rtype + " in regions: " + strings.Join(regions, ", "))
 	for _, region := range regions {
@@ -118,13 +128,13 @@ func (m *AwsCloudControlListResources) Invoke() error {
 
 			res, err := cc.ListResources(context.Background(), params)
 			if err != nil {
-				resultsChan <- []modules.EnrichedResourceDescription{}
+				resultsChan <- []types.EnrichedResourceDescription{}
 				return err
 			}
-			var enrichedResourceDescriptions []modules.EnrichedResourceDescription
+			var enrichedResourceDescriptions []types.EnrichedResourceDescription
 			// Enrich Resource Descipriton with both Region and Account ID
 			for _, resourceDescription := range res.ResourceDescriptions {
-				desc := modules.EnrichedResourceDescription{
+				desc := types.EnrichedResourceDescription{
 					Identifier: *resourceDescription.Identifier,
 					Properties: *resourceDescription.Properties,
 					Region:     region,
@@ -144,10 +154,9 @@ func (m *AwsCloudControlListResources) Invoke() error {
 		results.ResourceDescriptions = append(results.ResourceDescriptions, res...)
 	}
 
-	close(resultsChan)
 	filepath := helpers.CreateFilePath(string(m.Platform), helpers.CloudControlTypeNames[rtype], accountId, "list-resources", "all-regions", "")
-	m.Run.Data <- m.MakeResultCustomFilename(results, filepath)
-	close(m.Run.Data)
+	m.Run.Output <- types.NewResult(m.Platform, m.Metadata.Id, results, types.WithFilename(filepath))
 
+	close(m.Run.Output)
 	return nil
 }

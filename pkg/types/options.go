@@ -1,9 +1,10 @@
-package options
+package types
 
 import (
 	"errors"
 	"regexp"
 	"strconv"
+	"strings"
 )
 
 type OptionType string
@@ -23,6 +24,7 @@ type Option struct {
 	Type        OptionType
 	Value       string
 	ValueFormat *regexp.Regexp
+	ValueList   []string
 	Sensitive   bool
 }
 
@@ -46,6 +48,17 @@ func GetOptionByName(name string, options []*Option) *Option {
 	return nil
 }
 
+func CreateDeepCopyOfOptions(original []*Option) []*Option {
+	copiedOptions := make([]*Option, len(original))
+
+	for i, option := range original {
+		newOption := *option
+		copiedOptions[i] = &newOption
+	}
+
+	return copiedOptions
+}
+
 // ValidateOption ensures the provided option is in the list of options and valid.
 // It checks if the option is required and has a valid format.
 // If any validation fails, it returns an error.
@@ -66,6 +79,15 @@ func ValidateOption(opt Option, options []*Option) error {
 
 			if opt.ValueFormat != nil && !opt.ValueFormat.MatchString(option.Value) {
 				return errors.New(option.Name + " is an invalid format")
+			}
+
+			if opt.ValueList != nil {
+				for _, value := range opt.ValueList {
+					if value == option.Value {
+						return nil
+					}
+				}
+				return errors.New(option.Name + " is not a valid option. Valid options are: " + strings.Join(opt.ValueList, ", "))
 			}
 
 			// Check if the option value is of the correct type when non-string

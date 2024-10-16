@@ -1,21 +1,18 @@
 package analyze
 
 import (
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	o "github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/stages"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type KnownAccountID struct {
 	modules.BaseModule
 }
 
-var KnownAccountIDOptions = []*o.Option{
+var KnownAccountIDOptions = []*types.Option{
 	&o.AwsAccountIdOpt,
 }
 
@@ -31,60 +28,20 @@ var KnownAccountIDMetadata = modules.Metadata{
 	},
 }
 
-var KnownAccountIDOutputProviders = []func(options []*o.Option) modules.OutputProvider{
+var KnownAccountIDOutputProviders = []func(options []*types.Option) types.OutputProvider{
 	op.NewConsoleProvider,
 }
 
-func NewKnownAccountID(options []*o.Option, run modules.Run) (modules.Module, error) {
-	var m KnownAccountID
-	m.SetMetdata(KnownAccountIDMetadata)
-	m.Run = run
-	m.Options = options
-	m.ConfigureOutputProviders(KnownAccountIDOutputProviders)
+func NewKnownAccountID(opts []*types.Option) (<-chan string, stages.Stage[string, stages.AwsKnownAccount], error) {
+	pipeline, err := stages.ChainStages[string, stages.AwsKnownAccount](
+		stages.AwsKnownAccountIdStage,
+	)
 
-	return &m, nil
-}
-
-func (m *KnownAccountID) Invoke() error {
-	opt := m.GetOptionByName(o.AwsAccountIdOpt.Name)
-
-	if opt.Value == "" {
-		return fmt.Errorf("access_key_id option must be supplied")
-	}
-
-	resp, err := http.Get("https://raw.githubusercontent.com/rupertbg/aws-public-account-ids/master/accounts.json")
 	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
-	var accounts []Account
-	err = json.Unmarshal(body, &accounts)
-	if err != nil {
-		return err
-	}
+	accountID := types.GetOptionByName(o.AwsAccountIdOpt.Name, opts).Value
 
-	for _, account := range accounts {
-		if account.ID == opt.Value {
-			r := m.MakeResult(account)
-			m.Run.Data <- r
-			close(m.Run.Data)
-			break
-		}
-	}
-
-	return nil
-
-}
-
-type Account struct {
-	ID          string      `json:"id"`
-	Owner       string      `json:"owner"`
-	Source      interface{} `json:"source"`
-	Description string      `json:"description"`
+	return stages.Generator([]string{accountID}), pipeline, nil
 }

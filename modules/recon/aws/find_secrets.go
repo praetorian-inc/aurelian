@@ -1,164 +1,203 @@
-package reconaws
+package recon
 
-import (
-	"strconv"
-	"sync"
-	"time"
+// import (
+// 	"context"
+// 	"fmt"
+// 	"strconv"
+// 	"sync"
+// 	"time"
 
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	op "github.com/praetorian-inc/nebula/internal/output_providers"
-	"github.com/praetorian-inc/nebula/modules"
-	"github.com/praetorian-inc/nebula/modules/options"
-	o "github.com/praetorian-inc/nebula/modules/options"
-)
+// 	"github.com/praetorian-inc/nebula/internal/helpers"
+// 	op "github.com/praetorian-inc/nebula/internal/output_providers"
+// 	"github.com/praetorian-inc/nebula/modules"
+// 	"github.com/praetorian-inc/nebula/modules/options"
+// 	o "github.com/praetorian-inc/nebula/modules/options"
+// )
 
-/*
-Add the follwoing to the init() function in cmd/registry.go to register the module:
+// type AwsFindSecrets struct {
+// 	modules.BaseModule
+// }
 
-RegisterModule(awsReconCmd, recon.AwsFindSecretsMetadata, recon.AwsFindSecretsOptions, awsCommonOptions, recon.NewAwsFindSecrets)
-*/
+// var AwsFindSecretsOptions = []*types.Option{
+// 	&o.AwsRegionsOpt,
+// 	&o.AwsFindSecretsResourceType,
+// 	types.SetDefaultValue(
+// 		*types.SetRequired(
+// 			o.OutputOpt, false),
+// 		AwsFindSecretsMetadata.Id+"-"+strconv.FormatInt(time.Now().Unix(), 10)),
+// }
 
-type AwsFindSecrets struct {
-	modules.BaseModule
-}
+// var AwsFindSecretsOutputProviders = []func(options []*types.Option) types.OutputProvider{
+// 	op.NewFileProvider,
+// }
 
-var AwsFindSecretsOptions = []*options.Option{
-	&o.AwsRegionsOpt,
-	&o.AwsFindSecretsResourceType,
-	o.SetDefaultValue(
-		*o.SetRequired(
-			o.OutputOpt, false),
-		AwsFindSecretsMetadata.Id+"-"+strconv.FormatInt(time.Now().Unix(), 10)),
-}
+// var AwsFindSecretsMetadata = modules.Metadata{
+// 	Id:          "find-secrets", // this will be the CLI command name
+// 	Name:        "find-secrets",
+// 	Description: "this module will search multiple different known places for potential secrets ",
+// 	Platform:    modules.AWS,
+// 	Authors:     []string{"Praetorian"},
+// 	OpsecLevel:  modules.Moderate,
+// 	References:  []string{},
+// }
 
-var AwsFindSecretsOutputProviders = []func(options []*options.Option) modules.OutputProvider{
-	op.NewFileProvider,
-}
+// func NewAwsFindSecrets(options []*types.Option, run types.Run) (modules.Module, error) {
+// 	return &AwsFindSecrets{
+// 		BaseModule: modules.BaseModule{
+// 			Metadata:        AwsFindSecretsMetadata,
+// 			Options:         options,
+// 			Run:             run,
+// 			OutputProviders: modules.RenderOutputProviders(AwsFindSecretsOutputProviders, options),
+// 		},
+// 	}, nil
+// }
 
-var AwsFindSecretsMetadata = modules.Metadata{
-	Id:          "find-secrets", // this will be the CLI command name
-	Name:        "find-secrets",
-	Description: "this module will search multiple different known places for potential secrets ",
-	Platform:    modules.AWS,
-	Authors:     []string{"Praetorian"},
-	OpsecLevel:  modules.Stealth,
-	References:  []string{},
-}
+// func (m *AwsFindSecrets) Invoke() error {
 
-func NewAwsFindSecrets(options []*options.Option, run modules.Run) (modules.Module, error) {
-	return &AwsFindSecrets{
-		BaseModule: modules.BaseModule{
-			Metadata:        AwsFindSecretsMetadata,
-			Options:         options,
-			Run:             run,
-			OutputProviders: modules.RenderOutputProviders(AwsFindSecretsOutputProviders, options),
-		},
-	}, nil
-}
+// 	defer close(m.Run.Output)
+// 	wg := new(sync.WaitGroup)
+// 	profile := types.GetOptionByName("profile", m.Options).Value
+// 	regionsOpt := types.GetOptionByName("regions", m.Options)
+// 	resourceTypesOpt := types.GetOptionByName("secret-resource-types", m.Options).Value
+// 	resourceTypes := helpers.ParseSecretsResourceType(resourceTypesOpt)
+// 	regions, err := helpers.ParseRegionsOption(regionsOpt.Value, profile)
+// 	if err != nil {
+// 		return err
+// 	}
 
-func (m *AwsFindSecrets) Invoke() error {
+// 	for _, resourceType := range resourceTypes {
 
-	defer close(m.Run.Data)
-	wg := new(sync.WaitGroup)
-	profile := o.GetOptionByName("profile", m.Options).Value
-	regionsOpt := o.GetOptionByName("regions", m.Options)
-	resourceTypesOpt := o.GetOptionByName("secret-resource-types", m.Options).Value
-	resourceTypes := helpers.ParseSecretsResourceType(resourceTypesOpt)
-	regions, err := helpers.ParseRegionsOption(regionsOpt.Value, profile)
-	if err != nil {
-		return err
-	}
+// 		switch resourceType {
+// 		case "cloudformation":
 
-	for _, resourceType := range resourceTypes {
-		if resourceType == "cloudformation" {
-			run := modules.NewRun()
-			ListResourcesCloudControl(m, run, helpers.CCCloudFormationStack)
-			stacksData := <-run.Data
-			resourceData := stacksData.UnmarshalListData()
-			identifiers := resourceData.GetIdentifiers()
-			regionToArnIdentifiers, err := helpers.MapArnByRegions(identifiers)
-			if err != nil {
-				return err
-			}
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				GetCFTemplates(m, regionToArnIdentifiers)
-			}()
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				DescribeCFStacks(m, regions)
-			}()
-		} else if resourceType == "ec2" {
-			// incomplete. there is a bug in GetResourcesCloudCOntrol
-			runListResources := modules.NewRun()
-			ListResourcesCloudControl(m, runListResources, helpers.CCEc2Instance)
-			ec2ListData := <-runListResources.Data
-			resourceData := ec2ListData.UnmarshalListData()
-			regionToIdentifiers := helpers.MapIdentifiersByRegions(resourceData.ResourceDescriptions)
-			runGetResources := modules.NewRun()
-			GetResourcesCloudControl(m, runGetResources, helpers.CCEc2Instance, regionToIdentifiers)
-			close(runGetResources.Data)
+// 			run := modules.NewRun()
+// 			ListResourcesCloudControl(m, run, helpers.CCCloudFormationStack)
+// 			stacksData := <-run.Output
+// 			resourceData := stacksData.UnmarshalListData()
+// 			identifiers := resourceData.GetIdentifiers()
+// 			regionToArnIdentifiers, err := helpers.MapArnByRegions(identifiers)
+// 			if err != nil {
+// 				return err
+// 			}
+// 			wg.Add(1)
+// 			go func() {
+// 				defer wg.Done()
+// 				GetCFTemplates(m, regionToArnIdentifiers)
+// 			}()
+// 			wg.Add(1)
+// 			go func() {
+// 				defer wg.Done()
+// 				DescribeCFStacks(m, regions)
+// 			}()
 
-		}
-	}
+// 		case "ec2":
 
-	wg.Wait()
-	return nil
-}
+// 			runListResources := modules.NewRun()
+// 			ListResourcesCloudControl(m, runListResources, helpers.CCEc2Instance)
+// 			ec2ListData := <-runListResources.Output
+// 			resourceData := ec2ListData.UnmarshalListData()
+// 			regionToIdentifiers := helpers.MapIdentifiersByRegions(resourceData.ResourceDescriptions)
 
-// There is soemthign wrong here
-// TODO to fix - i think it's something to do with the channels not being closed properly
-func GetResourcesCloudControl(m *AwsFindSecrets, runGetResources modules.Run, ccResource string, regionToIdentifiers map[string][]string) error {
+// 			// runGetResources will be used to accept all the data from each getResource run.
+// 			runGetResources := modules.NewRun()
+// 			go func() {
+// 				GetResourcesCloudControl(m, runGetResources, helpers.CCEc2Instance, regionToIdentifiers)
+// 			}()
+// 			for data := range runGetResources.Output {
+// 				// TODO need to work on processing data to extract userdata and base64 decode
+// 				fmt.Println(data)
+// 				m.Run.Output <- data
+// 			}
+// 		default:
+// 			name, err := helpers.ResolveCommonResourceTypes(resourceType)
+// 			if !err {
+// 				return fmt.Errorf("unable to resolve resource type %s", resourceType)
+// 			}
 
-	AwsResourceTypeOpt := o.Option{
-		Name:  o.AwsResourceTypeOpt.Name,
-		Value: ccResource,
-	}
-	for region, identifiers := range regionToIdentifiers {
-		AwsRegionOpt := o.Option{
-			Name:  o.AwsRegionOpt.Name,
-			Value: region,
-		}
-		for _, identifier := range identifiers {
-			AwsResourceIdOpt := o.Option{
-				Name:  o.AwsResourceIdOpt.Name,
-				Value: identifier,
-			}
-			run := modules.NewRun()
-			options := m.Options
-			options = append(options, &AwsResourceTypeOpt, &AwsRegionOpt, &AwsResourceIdOpt)
-			getResource, err := NewAwsCloudControlGetResource(options, run)
-			if err != nil {
-				return err
-			}
-			err = getResource.Invoke()
-			if err != nil {
-				return err
-			}
-			runGetResources.Data <- m.MakeResult(run.Data)
+// 			runListResources := modules.NewRun()
+// 			ListResourcesCloudControl(m, runListResources, name)
+// 			res := modules.NewRun()
+// 			ctx := context.WithValue(context.Background(), "awsProfile", profile)
 
-		}
-	}
-	return nil
-}
+// 			go func() {
+// 				GetResources(ctx, runListResources.Output, res.Output)
+// 			}()
 
-// This uses the cloud_control_list_resources module to get all the cloudformation stacks
-func ListResourcesCloudControl(m *AwsFindSecrets, run modules.Run, ccResource string) error {
-	AwsResourceTypeOpt := o.Option{
-		Name:  o.AwsResourceTypeOpt.Name,
-		Value: ccResource,
-	}
-	options := m.Options
-	options = append(options, &AwsResourceTypeOpt)
-	listResources, err := NewAwsCloudControlListResources(options, run)
-	if err != nil {
-		return err
-	}
-	err = listResources.Invoke()
-	if err != nil {
-		return err
-	}
-	return nil
-}
+// 			for data := range res.Output {
+// 				fmt.Println(data)
+// 				m.Run.Output <- data
+// 			}
+// 		}
+// 	}
+
+// 	wg.Wait()
+// 	return nil
+// }
+
+// // You can probalby not use runGetResources and instead just pass in m.Run.Data
+// // However, if you want to do any processing later then you wouldn't be able to if youre passing directly to m.Run.Data
+// func GetResourcesCloudControl(m *AwsFindSecrets, runGetResources types.Run, ccResource string, regionToIdentifiers map[string][]string) error {
+// 	defer close(runGetResources.Output)
+// 	wg := new(sync.WaitGroup)
+// 	// Need to add resource type to options
+// 	AwsResourceTypeOpt := types.Option{
+// 		Name:  o.AwsResourceTypeOpt.Name,
+// 		Value: ccResource,
+// 	}
+// 	for region, identifiers := range regionToIdentifiers {
+// 		// need to add region to the run options
+// 		AwsRegionOpt := types.Option{
+// 			Name:  o.AwsRegionOpt.Name,
+// 			Value: region,
+// 		}
+// 		for _, identifier := range identifiers {
+
+// 			wg.Add(1)
+// 			go func(r string, i string) error {
+// 				defer wg.Done()
+// 				// need to add the specific resource ID to the options
+// 				AwsResourceIdOpt := types.Option{
+// 					Name:  o.AwsResourceIdOpt.Name,
+// 					Value: i,
+// 				}
+// 				run := modules.NewRun()
+// 				// need to create a deep copy or else you'll end up editing m.Options which will mess up the other goroutines that are running
+// 				options := o.CreateDeepCopyOfOptions(m.Options)
+// 				// add it all to options
+// 				options = append(options, &AwsResourceTypeOpt, &AwsRegionOpt, &AwsResourceIdOpt)
+// 				getResource, err := NewAwsCloudControlGetResource(options, run)
+// 				if err != nil {
+// 					return err
+// 				}
+// 				err = getResource.Invoke()
+// 				if err != nil {
+// 					return err
+// 				}
+// 				runData := <-run.Output
+// 				runGetResources.Output <- runData
+// 				return nil
+// 			}(region, identifier)
+// 		}
+// 	}
+// 	wg.Wait()
+// 	return nil
+// }
+
+// // This uses the cloud_control_list_resources module to get all the cloudformation stacks
+// func ListResourcesCloudControl(m *AwsFindSecrets, run types.Run, ccResource string) error {
+// 	AwsResourceTypeOpt := types.Option{
+// 		Name:  o.AwsResourceTypeOpt.Name,
+// 		Value: ccResource,
+// 	}
+// 	options := m.Options
+// 	options = append(options, &AwsResourceTypeOpt)
+// 	listResources, err := NewAwsCloudControlListResources(options, run)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	err = listResources.Invoke()
+// 	if err != nil {
+// 		return err
+// 	}
+// 	return nil
+// }

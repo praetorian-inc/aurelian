@@ -3,3 +3,4 @@ nebula.log
 output/*
 .devcontainer
 .vscode
+.DS_Store
