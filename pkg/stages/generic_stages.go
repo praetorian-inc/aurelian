@@ -2,11 +2,14 @@ package stages
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"github.com/ollama/ollama/api"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/nebula/pkg/utils"
 )
 
 // GenerateOllamaResponse generates responses for given prompts using the Ollama API.
@@ -58,4 +61,49 @@ func GenerateOllamaResponse(ctx context.Context, opts []*types.Option, in <-chan
 
 	return out
 
+}
+
+func ToJsonBytes[In any](ctx context.Context, opts []*types.Option, in <-chan In) <-chan []byte {
+	out := make(chan []byte)
+	go func() {
+		defer close(out)
+		for data := range in {
+			jsonData, err := json.Marshal(data)
+			if err != nil {
+				logs.ConsoleLogger().Error(err.Error())
+				return
+			}
+			out <- jsonData
+		}
+	}()
+	return out
+}
+
+func JqFilter(filter string) Stage[[]byte, []byte] {
+	return func(ctx context.Context, opts []*types.Option, in <-chan []byte) <-chan []byte {
+		out := make(chan []byte)
+		go func() {
+			defer close(out)
+			for data := range in {
+				filtered, err := utils.PerformJqQuery(data, filter)
+				if err != nil {
+					logs.ConsoleLogger().Error(err.Error())
+					return
+				}
+				out <- filtered
+			}
+		}()
+		return out
+	}
+}
+
+func ToString[In any](ctx context.Context, opts []*types.Option, in <-chan In) <-chan string {
+	out := make(chan string)
+	go func() {
+		defer close(out)
+		for data := range in {
+			out <- fmt.Sprintf("%v", data)
+		}
+	}()
+	return out
 }

@@ -66,3 +66,11 @@ var IPOpt = types.Option{
 	Value:       "",
 	ValueFormat: regexp.MustCompile(`^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$`),
 }
+
+var JqFilterOpt = types.Option{
+	Name:        "jq",
+	Description: "jq filter",
+	Required:    false,
+	Type:        types.String,
+	Value:       "",
+}

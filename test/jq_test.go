@@ -70,7 +70,8 @@ func TestPerformJqQuery(t *testing.T) {
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
 			} else if !bytes.Equal(result, tc.expected) {
-				t.Errorf("Expected '%s', but got '%s'", tc.expected, result)
+				t.Errorf("Expected '%s', but got '%v'", tc.expected, result)
+				fmt.Printf("result: [%v]\n", result)
 			}
 		}
 	}

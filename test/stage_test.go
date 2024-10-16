@@ -255,7 +255,7 @@ func TestGeneratorStage(t *testing.T) {
 
 	in := stages.Generator([]string{"test"})
 
-	output := stages.Echo[string, string](ctx, nil, in)
+	output := stages.Echo[string](ctx, nil, in)
 
 	result := <-output
 	expected := "test"

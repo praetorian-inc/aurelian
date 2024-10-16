@@ -233,18 +233,13 @@ func Generator[T any](inputs []T) <-chan T {
 	return out
 }
 
-func Echo[In, Out any](ctx context.Context, opts []*types.Option, in <-chan In) <-chan Out {
-	out := make(chan Out)
+func Echo[In any](ctx context.Context, opts []*types.Option, in <-chan In) <-chan In {
+	out := make(chan In)
 	go func() {
 		defer close(out)
 		for i := range in {
 			fmt.Printf("echo: %v\n", i)
-			if outVal, ok := any(i).(Out); ok {
-				out <- outVal
-			} else {
-				// Handle the type conversion error appropriately
-				fmt.Printf("type conversion error: cannot convert %v to %T\n", i, out)
-			}
+			out <- i
 		}
 	}()
 	return out

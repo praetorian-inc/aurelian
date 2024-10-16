@@ -71,35 +71,33 @@ func Ec2ListPublic(ctx context.Context, profile string) Stage[string, string] {
 	}
 }
 
-func LambdaGetFunctionUrl(ctx context.Context, profile string) Stage[string, string] {
-	return func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
-		out := make(chan string)
-		go func() {
-			defer close(out)
-			for arn := range in {
-				logs.ConsoleLogger().Debug("Getting URL for Lambda function: " + arn)
-				region := helpers.RegionFromArn(arn)
-				config, err := helpers.GetAWSCfg(region, profile)
-				if err != nil {
-					out <- ""
-				}
-				client := lambda.NewFromConfig(config)
-				params := &lambda.GetFunctionUrlConfigInput{
-					FunctionName: aws.String(arn),
-				}
-				output, err := client.GetFunctionUrlConfig(ctx, params)
-				if err != nil {
-					if !strings.Contains(err.Error(), "StatusCode: 404") {
-						logs.ConsoleLogger().Error(err.Error())
-					}
-					continue
-				}
-
-				out <- *output.FunctionUrl
+func LambdaGetFunctionUrl(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan string {
+	logs.ConsoleLogger().Info("Getting Lambda function URLs")
+	out := make(chan string)
+	go func() {
+		for resource := range in {
+			logs.ConsoleLogger().Debug("Getting URL for Lambda function: " + resource.Identifier)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				out <- ""
 			}
-		}()
-		return out
-	}
+			client := lambda.NewFromConfig(config)
+			params := &lambda.GetFunctionUrlConfigInput{
+				FunctionName: aws.String(resource.Identifier),
+			}
+			output, err := client.GetFunctionUrlConfig(ctx, params)
+			if err != nil {
+				if !strings.Contains(err.Error(), "StatusCode: 404") {
+					logs.ConsoleLogger().Error(err.Error())
+				}
+				continue
+			}
+
+			out <- *output.FunctionUrl
+		}
+		close(out)
+	}()
+	return out
 }
 
 func ListLambdaFunctions(ctx context.Context, profile string) Stage[string, string] {
@@ -169,11 +167,11 @@ func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype 
 	var wg sync.WaitGroup
 
 	for rtype := range rtype {
+		// Capture the current value of rtype by passing it to the goroutine
 		for _, region := range regions {
 			logs.ConsoleLogger().Info("Listing resources of type " + rtype + " in region: " + region)
 			wg.Add(1)
-			go func(region string) {
-				defer close(out)
+			go func(region string, rtype string) {
 				defer wg.Done()
 				config, _ := helpers.GetAWSCfg(region, profile)
 				cc := cloudcontrol.NewFromConfig(config)
@@ -194,11 +192,16 @@ func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype 
 						Properties: *resource.Properties,
 						AccountId:  acctId,
 					}
-
 				}
-			}(region)
+			}(region, rtype)
 		}
 	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
 	return out
 }
 
@@ -247,8 +250,8 @@ func CloudControlGetResource(ctx context.Context, opts []*types.Option, in <-cha
 
 func ParseTypes(types string) <-chan string {
 	out := make(chan string)
-	defer close(out)
 	go func() {
+		defer close(out)
 		for _, t := range strings.Split(types, ",") {
 			out <- t
 		}
@@ -287,6 +290,89 @@ func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*types.Opti
 		}
 
 		out <- res
+	}()
+	return out
+}
+
+func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
+
+	out := make(chan string)
+	//var pipelines []stages.Stage[string, string]
+
+	go func() {
+		defer close(out)
+		for rtype := range in {
+
+			logs.ConsoleLogger().Info("Running recon for resource type: " + rtype)
+			var pl Stage[string, string]
+			var err error
+			switch rtype {
+			case "AWS::Lambda::Function":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					LambdaGetFunctionUrl,
+				)
+
+			case "AWS::EC2::Instance":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					ToJson[types.EnrichedResourceDescription],
+					// TODO - add jq filter to get public ip and public dns name
+					JqFilter(".Properties | fromjson | select(.PublicIp != null) | .PublicIp"),
+					ToString[[]byte],
+				)
+
+			case "AWS::S3::Bucket":
+				fmt.Println("S3 bucket ")
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					// Echo[types.EnrichedResourceDescription],
+					CloudControlGetResource,
+					Echo[*cloudcontrol.GetResourceOutput],
+					ToJson[*cloudcontrol.GetResourceOutput],
+					JqFilter(".ResourceDescription.Properties | fromjson | select(.RegionalDomainName != null) | .RegionalDomainName"),
+					ToString[[]byte],
+				)
+
+			default:
+				continue
+			}
+
+			if err != nil {
+				logs.ConsoleLogger().Error("Failed to " + rtype + " create pipeline: " + err.Error())
+				continue
+			}
+
+			wg := new(sync.WaitGroup)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for s := range pl(ctx, opts, Generator([]string{rtype})) {
+					out <- s
+				}
+			}()
+			wg.Wait()
+		}
+
+		//stages.FanStages(ctx, opts, in, out, pipelines...)
+	}()
+
+	return out
+
+}
+
+func ToJson[In any](ctx context.Context, opts []*types.Option, in <-chan In) <-chan []byte {
+	out := make(chan []byte)
+	go func() {
+		defer close(out)
+		for resource := range in {
+			res, err := json.Marshal(resource)
+			if err != nil {
+				logs.ConsoleLogger().Error(err.Error())
+				continue
+			}
+			out <- res
+		}
 	}()
 	return out
 }
