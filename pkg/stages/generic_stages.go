@@ -59,7 +59,7 @@ func GenerateOllamaResponse(ctx context.Context, opts []*types.Option, in <-chan
 		}
 	}()
 
-	return out
+gs	return out
 
 }
 
