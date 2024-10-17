@@ -58,18 +58,19 @@ func init() {
 }
 
 var moduleTemplate = `
-package {{ .Category }}{{.Provider | toLower}}
+package {{ .Category }}
 
 import (
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
-	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/modules"
+	"github.com/praetorian-inc/nebula/pkg/stages"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 /*
 Add the follwoing to the init() function in cmd/registry.go to register the module:
 
-RegisterModule({{ .Provider | toLower}}{{ .Category | capitalize}}Cmd, {{ .Category | toLower }}{{.Provider | toLower}}.{{ .Provider | capitalize}}{{ .Name }}Metadata, {{ .Category | toLower }}{{.Provider | toLower}}.{{ .Provider | capitalize}}{{ .Name }}Options, {{ .Provider | toLower}}CommonOptions, {{ .Category | toLower}}{{.Provider | toLower}}.New{{.Provider | capitalize}}{{ .Name }})
+RegisterModule({{ .Provider | toLower}}{{ .Category | capitalize}}Cmd, {{ .Category | toLower }}.{{ .Provider | capitalize}}{{ .Name }}Metadata, {{ .Category | toLower }}.{{ .Provider | capitalize}}{{ .Name }}Options, {{ .Provider | toLower}}CommonOptions, {{ .Category }}.{{ .Provider | capitalize}}{{ .Name }}OutputProviders, {{ .Category | toLower}}.New{{.Provider | capitalize}}{{ .Name }})
 */
 
 type {{ .Provider | capitalize}}{{ .Name }} struct {{ "{" }}
@@ -92,26 +93,18 @@ var {{ .Provider | capitalize}}{{ .Name }}Metadata = modules.Metadata{{ "{" }}
 	References:  []string{},
 {{ "}" }}
 
-func New{{ .Provider | capitalize}}{{ .Name }}(options []*types.Option, run types.Run) (modules.Module, error) {{ "{" }}
-	return &{{ .Provider |capitalize}}{{ .Name }}{{ "{" }}
-		BaseModule: modules.BaseModule{{ "{" }}
-			Metadata:        {{ .Provider | capitalize}}{{ .Name }}Metadata,
-			Options:         options,
-			Run:             run,
-			OutputProviders: modules.RenderOutputProviders({{ .Provider | capitalize}}{{ .Name }}OutputProviders, options),
-		{{ "}" }},
-	{{ "}" }}, nil
+func New{{ .Provider | capitalize}}{{ .Name }}(options []*types.Option) (<-chan string, stages.Stage[string, string], error) {{ "{" }}
+	pipeline, err := stages.ChainStages[string, string](
+		stages.Echo[string],
+	)
+
+	if err != nil {{ "{" }}
+		return nil, nil, err
+	{{ "}" }}
+
+	return stages.Generator([]string{{ "{" }}"TODO"{{ "}" }}), pipeline, nil
 {{ "}" }}
 
-func (m *{{ .Provider | capitalize}}{{ .Name }}) Invoke() error {{ "{" }}
-	defer close(m.Run.Data)
-
-	// Do Work
-	var result = "TODO"
-	m.Run.Data <- m.MakeResult(result)
-
-	return nil
-{{ "}" }}
 `
 
 func capitalize(s string) string {

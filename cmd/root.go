@@ -21,7 +21,7 @@ var cfgFile string
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "nebula",
-	Short: "Nebula is a CLI tool for offensive security testing cloud services.",
+	Short: "Nebula is a CLI tool for testing the offensive security of cloud services.",
 }
 
 func Execute() {
