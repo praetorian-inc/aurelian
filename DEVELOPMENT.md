@@ -79,10 +79,6 @@ The factory function returns a stage and input channel ready for invocation. The
 func NewFoo (opts []*types.Option) (<-chan string, stages.Stage[string, int], error) 
 ```
 
-### Invoke Function
-
-The `Invoke` function does the work of the module. Once the module has gathered, analyzed, or completed its processing, the results should be sent to the results channel. The data is read from the channel by the output providers and handled accordingly.
-
 #### Results
 
 Modules will typically have some results from their invocation. The results are returned by the module using an output channel which is automatically processed by the configured output providers. 
@@ -116,11 +112,11 @@ If you see receive a `modules/recon/aws/foo_bar.go:1:1: expected 'package', foun
 
 ## Stages
 
-Modules use stages to build their capabilities. Stages are like go versions of Unix utilities. They take a context, configuration options, and an input channel, perform a single function on the input data, and return an output channel.
+Modules use stages to build their capabilities. Stages are a core concept in the AWS Recon Framework, enabling the creation of modular and reusable capabilities for processing AWS resources. Each stage represents a step in a pipeline, taking input from the previous stage and providing output to the next stage. This allows for flexible and composable workflows.
 
 ### Chaining Stages
 
-Stages are intended to be chained together to enable the [pipeline](https://go.dev/blog/pipelines) pattern. Stages allow for composable pipelines with code reuse. 
+A stage is a function that processes data and passes it along to the next stage. Stages are implemented as Go functions that take a context, options, and an input channel, and return an output channel. Stages are intended to be chained together to enable the [pipeline](https://go.dev/blog/pipelines) pattern. Stages allow for composable pipelines with code reuse. 
 
 The `ChainStages` function handles the pipeline assembly. It uses generics to specify the input and output of the rendered pipeline. It verifies that the initial stage's input matches the specified input type, the last stage's output matches the output type, and all chained stages have compatible types.
 

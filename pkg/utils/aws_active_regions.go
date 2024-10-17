@@ -104,7 +104,7 @@ func GetServiceAndRegions(cfg aws.Config) (map[string][]string, error) {
 
 	// Unique the regions slice
 	for service, regions := range serviceRegionMap {
-		r := u.StringSlice{&regions}
+		r := u.StringSlice{P: &regions}
 		u.Sort(r)
 		u.Strings(r.P)
 		serviceRegionMap[service] = *r.P
@@ -152,14 +152,12 @@ func outputToSlice(output *costexplorer.GetCostAndUsageOutput, unique bool) []st
 
 	for _, resource := range output.ResultsByTime {
 		for _, group := range resource.Groups {
-			for _, key := range group.Keys {
-				resources = append(resources, key)
-			}
+			resources = append(resources, group.Keys...)
 		}
 	}
 
 	if unique {
-		r := u.StringSlice{&resources}
+		r := u.StringSlice{P: &resources}
 		u.Sort(r)
 		u.Strings(r.P)
 		resources = *r.P

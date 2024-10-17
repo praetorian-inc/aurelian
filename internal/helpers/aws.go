@@ -9,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	arn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -90,10 +89,6 @@ func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescri
 	return regionToIdentifiers
 }
 
-func validateARN(s string) bool {
-	return arn.IsARN(s)
-}
-
 func GetAWSCfg(region string, profile string) (aws.Config, error) {
 
 	cfg, err := config.LoadDefaultConfig(
@@ -168,29 +163,4 @@ func CreateFilePath(cloudProvider, service, account, command, region, resource s
 
 func CreateFileName(parts ...string) string {
 	return strings.Join(parts, "-")
-}
-
-func RegionFromArn(arn string) string {
-	parts := strings.Split(arn, ":")
-	return parts[3]
-}
-
-func LambdaGetFunctionUrl(ctx context.Context, profile, arn string) (string, error) {
-
-	region := RegionFromArn(arn)
-	config, err := GetAWSCfg(region, profile)
-	if err != nil {
-		return "", err
-	}
-
-	client := lambda.NewFromConfig(config)
-	params := &lambda.GetFunctionUrlConfigInput{
-		FunctionName: aws.String(arn),
-	}
-	output, err := client.GetFunctionUrlConfig(ctx, params)
-	if err != nil {
-		return "", err
-	}
-
-	return *output.FunctionUrl, nil
 }
