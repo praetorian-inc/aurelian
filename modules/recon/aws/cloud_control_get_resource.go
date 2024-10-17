@@ -39,7 +39,7 @@ var AwsCloudControlGetResourceMetadata = modules.Metadata{
 }
 
 var AwsCloudControlGetResourceOutputProviders = []func(options []*types.Option) types.OutputProvider{
-	op.NewFileProvider,
+	op.NewJsonFileProvider,
 	op.NewConsoleProvider,
 }
 

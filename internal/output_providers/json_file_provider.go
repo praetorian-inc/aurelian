@@ -1,6 +1,7 @@
 package outputproviders
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,20 +12,20 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
-type FileProvider struct {
+type JsonFileProvider struct {
 	types.OutputProvider
 	OutputPath string
 	FileName   string
 }
 
-func NewFileProvider(options []*types.Option) types.OutputProvider {
-	return &FileProvider{
+func NewJsonFileProvider(options []*types.Option) types.OutputProvider {
+	return &JsonFileProvider{
 		OutputPath: types.GetOptionByName(o.OutputOpt.Value, options).Value,
 		FileName:   "",
 	}
 }
 
-func (fp *FileProvider) Write(result types.Result) error {
+func (fp *JsonFileProvider) Write(result types.Result) error {
 	var filename string
 
 	if result.Filename == "" {
@@ -32,7 +33,7 @@ func (fp *FileProvider) Write(result types.Result) error {
 	} else {
 		filename = result.Filename
 	}
-	fullpath := fp.GetFulfpath(filename)
+	fullpath := fp.GetFullPath(filename)
 	dir := filepath.Dir(fullpath)
 
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
@@ -47,8 +48,9 @@ func (fp *FileProvider) Write(result types.Result) error {
 		return err
 	}
 	defer file.Close()
-
-	_, err = file.WriteString(result.String())
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+	err = encoder.Encode(result)
 	if err != nil {
 		return err
 	}
@@ -58,7 +60,7 @@ func (fp *FileProvider) Write(result types.Result) error {
 	return nil
 }
 
-func (fp *FileProvider) GetFulfpath(filename string) string {
+func (fp *JsonFileProvider) GetFullPath(filename string) string {
 	return fp.OutputPath + string(os.PathSeparator) + filename
 }
 

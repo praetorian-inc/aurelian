@@ -29,7 +29,25 @@ var AwsAuthorizationDetailsMetadata = modules.Metadata{
 }
 
 var AwsAuthorizationDetailsOutputProviders = []func(options []*types.Option) types.OutputProvider{
-	op.NewFileProvider,
+	op.NewJsonFileProvider,
+}
+
+func NewAwsAuthorizationDetailsModel(opts []*types.Option) (modules.Module, error) {
+	in, pl, err := NewAwsAuthorizationDetails(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return &AwsAuthorizationDetails{
+		BaseModule: modules.BaseModule{
+			Metadata:        AwsAuthorizationDetailsMetadata,
+			Options:         AwsAuthorizationDetailsOptions,
+			OutputProviders: modules.RenderOutputProviders(AwsAuthorizationDetailsOutputProviders, opts),
+			In:              in,
+			Stage:           pl,
+		},
+	}, nil
+
 }
 
 func NewAwsAuthorizationDetails(opts []*types.Option) (<-chan string, stages.Stage[string, []byte], error) {

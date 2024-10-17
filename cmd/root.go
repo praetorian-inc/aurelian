@@ -162,8 +162,5 @@ func runModule[In, Out any](ctx context.Context, metadata modules.Metadata, opts
 			}
 		}
 	}()
-	// for result := range output {
-	// 	logs.ConsoleLogger().Info(fmt.Sprintf("%v", result))
-	// }
 	wg.Wait()
 }

@@ -97,6 +97,10 @@ func JqFilter(filter string) Stage[[]byte, []byte] {
 	}
 }
 
+// ToString converts any input channel of type In to an output channel of strings.
+// It reads from the input channel, formats each item as a string using fmt.Sprintf,
+// and sends the formatted string to the output channel. The output channel is closed
+// once all input has been processed.
 func ToString[In any](ctx context.Context, opts []*types.Option, in <-chan In) <-chan string {
 	out := make(chan string)
 	go func() {
@@ -104,6 +108,21 @@ func ToString[In any](ctx context.Context, opts []*types.Option, in <-chan In) <
 		for data := range in {
 			out <- fmt.Sprintf("%v", data)
 		}
+	}()
+	return out
+}
+
+func AggregateOutput[In any, Out []In](ctx context.Context, opts []*types.Option, in <-chan In) <-chan Out {
+	out := make(chan Out)
+	var items Out
+
+	go func() {
+		defer close(out)
+		for data := range in {
+			items = append(items, data)
+		}
+
+		out <- items
 	}()
 	return out
 }

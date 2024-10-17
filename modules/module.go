@@ -58,6 +58,9 @@ type BaseModule struct {
 	Options         []*types.Option
 	OutputProviders []types.OutputProvider
 	Run             types.Run
+
+	In    any
+	Stage any
 }
 
 func (m *BaseModule) Invoke() error {

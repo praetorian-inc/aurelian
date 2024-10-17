@@ -37,13 +37,14 @@ var AwsCloudControlListResourcesMetadata = modules.Metadata{
 }
 
 var AwsCloudControlListResourcesOutputProviders = []func(options []*types.Option) types.OutputProvider{
-	//op.NewFileProvider,
-	op.NewConsoleProvider,
+	op.NewJsonFileProvider,
+	//op.NewConsoleProvider,
 }
 
-func NewAwsCloudControlListResources(opts []*types.Option) (<-chan string, stages.Stage[string, types.EnrichedResourceDescription], error) {
-	pipeline, err := stages.ChainStages[string, types.EnrichedResourceDescription](
+func NewAwsCloudControlListResources(opts []*types.Option) (<-chan string, stages.Stage[string, []types.EnrichedResourceDescription], error) {
+	pipeline, err := stages.ChainStages[string, []types.EnrichedResourceDescription](
 		stages.CloudControlListResources,
+		stages.AggregateOutput[types.EnrichedResourceDescription],
 	)
 
 	if err != nil {
