@@ -143,3 +143,9 @@ for s := range pipeline(ctx, opts, Generator([]string{rtype})) {
 - `Echo` - A useful debugging stage that will print the values received on the input channel to stdout and send the values unchanged to the output channel.
 - `ToJsonBytes` - Marshals the input channel value to JSON and returns the resulting `[]byte`.
 - `ToString` - Casts the input value to a string.
+
+## Output Providers
+
+Output providers are responsible for handling the output of data from modules. They abstract the complexity of writing data to different targets, allowing for a consistent interface. 
+
+Each module defines the output providers it supports. All data sent to the final output channel is processed by each of the configured output providers.

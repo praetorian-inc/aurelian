@@ -169,7 +169,7 @@ func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype 
 	for rtype := range rtype {
 		// Capture the current value of rtype by passing it to the goroutine
 		for _, region := range regions {
-			logs.ConsoleLogger().Info("Listing resources of type " + rtype + " in region: " + region)
+			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
 			wg.Add(1)
 			go func(region string, rtype string) {
 				defer wg.Done()
@@ -303,7 +303,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 		defer close(out)
 		for rtype := range in {
 
-			logs.ConsoleLogger().Info("Running recon for resource type: " + rtype)
+			logs.ConsoleLogger().Debug("Running recon for resource type: " + rtype)
 			var pl Stage[string, string]
 			var err error
 			switch rtype {

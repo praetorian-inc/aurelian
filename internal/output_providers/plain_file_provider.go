@@ -43,7 +43,7 @@ func (fp *PlainFileProvider) Write(result types.Result) error {
 		}
 	}
 
-	file, err := os.Create(fullpath)
+	file, err := os.OpenFile(fullpath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}

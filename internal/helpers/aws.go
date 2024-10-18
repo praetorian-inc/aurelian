@@ -130,12 +130,12 @@ func GetAccountId(cfg aws.Config) (string, error) {
 func ParseRegionsOption(regionsOpt string, profile string) ([]string, error) {
 
 	if regionsOpt == "ALL" {
-		logs.ConsoleLogger().Info("Gathering enabled regions")
+		logs.ConsoleLogger().Debug("Gathering enabled regions")
 		enabledRegions, err := EnabledRegions(profile)
 		if err != nil {
 			return nil, err
 		}
-		logs.ConsoleLogger().Info("Enabled regions: " + strings.Join(enabledRegions, ", "))
+		logs.ConsoleLogger().Debug("Enabled regions: " + strings.Join(enabledRegions, ", "))
 		return enabledRegions, nil
 	} else {
 		regions := strings.Split(regionsOpt, ",")
