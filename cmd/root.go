@@ -1,15 +1,17 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/praetorian-inc/nebula/modules"
-	o "github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/stages"
+	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
@@ -19,11 +21,9 @@ var cfgFile string
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "nebula",
-	Short: "Nebula is a CLI tool for offensive security testing cloud services.",
+	Short: "Nebula is a CLI tool for testing the offensive security of cloud services.",
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
@@ -34,7 +34,7 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.nebula.yaml)")
-	rootCmd.PersistentFlags().StringP(o.OutputOpt.Name, o.OutputOpt.Short, o.OutputOpt.Value, o.OutputOpt.Description)
+	rootCmd.PersistentFlags().StringP(options.OutputOpt.Name, options.OutputOpt.Short, options.OutputOpt.Value, options.OutputOpt.Description)
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -61,15 +61,24 @@ func initConfig() {
 	}
 }
 
-// TODO refactor to accept []*Option so you can just pass in the required options
-func option2Flag(option *o.Option, cmd *cobra.Command) {
-	switch o.OptionType(option.Type) {
-	case o.String:
+func options2Flag(options []*types.Option, common []*types.Option, cmd *cobra.Command) {
+	for _, option := range options {
+		option2Flag(option, cmd)
+	}
+
+	for _, option := range common {
+		option2Flag(option, cmd)
+	}
+}
+
+func option2Flag(option *types.Option, cmd *cobra.Command) {
+	switch types.OptionType(option.Type) {
+	case types.String:
 		cmd.Flags().StringP(option.Name, option.Short, option.Value, option.Description)
-	case o.Bool:
+	case types.Bool:
 		value, _ := strconv.ParseBool(option.Value) // Convert string to bool
 		cmd.Flags().BoolP(option.Name, option.Short, value, option.Description)
-	case o.Int:
+	case types.Int:
 		intValue, _ := strconv.Atoi(option.Value) // Convert string to int
 		cmd.Flags().IntP(option.Name, option.Short, intValue, option.Description)
 	}
@@ -80,74 +89,78 @@ func option2Flag(option *o.Option, cmd *cobra.Command) {
 
 }
 
-func getOpts(cmd *cobra.Command, required []*o.Option) []*o.Option {
+func getOpts(cmd *cobra.Command, required []*types.Option, common []*types.Option) []*types.Option {
 	opts := getGlobalOpts(cmd)
-	opts = append(opts, getRequiredOpts(cmd, required)...)
+
+	// Process required options
+	opts = append(opts, getOptsFromCmd(cmd, required)...)
+	err := types.ValidateOptions(opts, required)
+	if err != nil {
+		log.Default().Println(err)
+		os.Exit(1)
+	}
+
+	// Process common options
+	opts = append(opts, getOptsFromCmd(cmd, common)...)
+	err = types.ValidateOptions(opts, common)
+	if err != nil {
+		log.Default().Println(err)
+		os.Exit(1)
+	}
+
 	return opts
 }
 
-func getGlobalOpts(cmd *cobra.Command) []*o.Option {
-	opts := []*o.Option{}
-	output := o.OutputOpt
+func getGlobalOpts(cmd *cobra.Command) []*types.Option {
+	opts := []*types.Option{}
+	output := options.OutputOpt
 	output.Value, _ = cmd.Flags().GetString(output.Name)
 	opts = append(opts, &output)
 
 	return opts
 }
 
-func getRequiredOpts(cmd *cobra.Command, required []*o.Option) []*o.Option {
-	opts := []*o.Option{}
+func getOptsFromCmd(cmd *cobra.Command, required []*types.Option) []*types.Option {
+	opts := []*types.Option{}
 	for _, opt := range required {
-		if opt.Required {
-			switch o.OptionType(opt.Type) {
-			case o.String:
-				opt.Value, _ = cmd.Flags().GetString(opt.Name)
-			case o.Bool:
-				value, _ := cmd.Flags().GetBool(opt.Name)
-				opt.Value = strconv.FormatBool(value)
-			case o.Int:
-				value, _ := cmd.Flags().GetInt(opt.Name)
-				opt.Value = strconv.Itoa(value)
-			}
-			opts = append(opts, opt)
+		switch types.OptionType(opt.Type) {
+		case types.String:
+			opt.Value, _ = cmd.Flags().GetString(opt.Name)
+		case types.Bool:
+			value, _ := cmd.Flags().GetBool(opt.Name)
+			opt.Value = strconv.FormatBool(value)
+		case types.Int:
+			value, _ := cmd.Flags().GetInt(opt.Name)
+			opt.Value = strconv.Itoa(value)
 		}
+		opts = append(opts, opt)
 	}
 	return opts
 }
 
-func runModule(module modules.Module, meta modules.Metadata, options []*o.Option, run modules.Run) {
-	output := o.GetOptionByName("output", options)
+func runModule[In, Out any](ctx context.Context, metadata modules.Metadata, opts []*types.Option, ouputProviders types.OutputProviders, factory stages.StageFactory[In, Out]) {
+	in, chain, err := factory(opts)
+	if err != nil {
+		panic(err)
+	}
+
 	wg := new(sync.WaitGroup)
 	wg.Add(1)
 	go func() {
-		for result := range run.Data {
+		defer wg.Done()
+		for result := range chain(ctx, opts, in) {
+			for _, outputProvider := range ouputProviders {
+				wg.Add(1)
+				go func(outputProvider types.OutputProvider, result types.Result) {
+					err := outputProvider.Write(result)
 
-			if output != nil {
-				outputFile := output.Value + "/" + meta.Id + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".json"
-				file, err := os.Create(outputFile)
-				if err != nil {
-					log.Default().Println(err)
-					return
-				}
-				defer file.Close()
-
-				_, err = file.WriteString(result.String())
-				if err != nil {
-					log.Default().Println(err)
-					return
-				}
-				log.Default().Printf("Data written to %s\n", outputFile)
-			} else {
-				log.Default().Println("Output option not found")
+					if err != nil {
+						log.Default().Println(err)
+					}
+					wg.Done()
+				}(outputProvider(opts), types.NewResult(metadata.Platform, metadata.Id, result))
 			}
-			//log.Default().Println(result.String())
-			wg.Done()
 		}
 	}()
-
-	err := module.Invoke()
-	if err != nil {
-		log.Default().Println(err)
-	}
 	wg.Wait()
 }

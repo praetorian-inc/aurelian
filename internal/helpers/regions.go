@@ -2,9 +2,12 @@ package helpers
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/pkg/utils"
 )
 
 var Regions = []string{
@@ -41,9 +44,25 @@ var Regions = []string{
 	"us-gov-west-1",
 }
 
-func EnabledRegions() ([]string, error) {
-	// TODO centralize the config creation so that it includes the logging
-	cfg, err := config.LoadDefaultConfig(context.TODO())
+func EnabledRegions(profile string) ([]string, error) {
+	var regions []string
+
+	// Use cache if it exists for profile
+	if utils.IsCacheValid(CreateFileName(fmt.Sprintf("%s_enabled_regions", profile))) {
+		data, err := utils.ReadCache(CreateFileName(fmt.Sprintf("%s_enabled_regions", profile)))
+		if err != nil {
+			return nil, err
+		}
+
+		err = json.Unmarshal(data, &regions)
+		if err != nil {
+			return nil, err
+		}
+		logs.ConsoleLogger().Debug("Using cached enabled regions")
+		return regions, nil
+	}
+
+	cfg, err := GetAWSCfg("", profile)
 
 	if err != nil {
 		return nil, err
@@ -57,10 +76,15 @@ func EnabledRegions() ([]string, error) {
 		return nil, err
 	}
 
-	var regions []string
 	for _, region := range result.Regions {
 		regions = append(regions, *region.RegionName)
 	}
 
+	data, err := json.Marshal(regions)
+	if err != nil {
+		return nil, err
+	}
+
+	utils.WriteCache(CreateFileName(fmt.Sprintf("%s_enabled_regions", profile)), data)
 	return regions, nil
 }
