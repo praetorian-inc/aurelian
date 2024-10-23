@@ -88,7 +88,7 @@ func JqFilter(filter string) Stage[[]byte, []byte] {
 				filtered, err := utils.PerformJqQuery(data, filter)
 				if err != nil {
 					logs.ConsoleLogger().Error(err.Error())
-					return
+					continue
 				}
 				out <- filtered
 			}

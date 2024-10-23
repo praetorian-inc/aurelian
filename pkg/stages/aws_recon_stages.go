@@ -14,11 +14,13 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/nebula/pkg/utils"
 )
 
 func Ec2ListPublic(ctx context.Context, profile string) Stage[string, string] {
@@ -127,6 +129,163 @@ func ListLambdaFunctions(ctx context.Context, profile string) Stage[string, stri
 		}()
 		return out
 	}
+}
+
+func S3FixResourceRegion(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Fixing S3 bucket regions")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				return
+			}
+			s3Client := s3.NewFromConfig(config)
+			locationParams := &s3.GetBucketLocationInput{
+				Bucket: aws.String(resource.Identifier),
+			}
+			locationOutput, err := s3Client.GetBucketLocation(ctx, locationParams)
+			if err != nil {
+				if !strings.Contains(err.Error(), "StatusCode: 404") {
+					logs.ConsoleLogger().Error("Could not get bucket location, error: " + err.Error())
+				}
+				return
+			}
+
+			var location string
+			if locationOutput.LocationConstraint == "" {
+				location = "us-east-1"
+			} else {
+				location = string(locationOutput.LocationConstraint)
+			}
+
+			out <- types.EnrichedResourceDescription{
+				Identifier: resource.Identifier,
+				TypeName:   resource.TypeName,
+				Region:     location,
+				Properties: resource.Properties,
+				AccountId:  resource.AccountId,
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func S3CheckBucketPAB(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking S3 public access block configs")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			s3Client := s3.NewFromConfig(config)
+
+			pabInput := &s3.GetPublicAccessBlockInput{
+				Bucket: aws.String(resource.Identifier),
+			}
+			pabOutput, err := s3Client.GetPublicAccessBlock(ctx, pabInput)
+			if err != nil {
+				if strings.Contains(err.Error(), "StatusCode: 404") {
+					out <- resource
+				} else {
+					logs.ConsoleLogger().Error("Could not get PAB for " + resource.Identifier + ", error: " + err.Error())
+					out <- resource
+				}
+			} else {
+				publicAccessBlockConfig := pabOutput.PublicAccessBlockConfiguration
+				if !utils.S3BucketPABConfigFullyBlocks(publicAccessBlockConfig) {
+					out <- resource
+				} else {
+					continue
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func S3CheckBucketACL(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking S3 bucket ACLs")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			s3Client := s3.NewFromConfig(config)
+
+			aclInput := &s3.GetBucketAclInput{
+				Bucket: aws.String(resource.Identifier),
+			}
+			aclOutput, err := s3Client.GetBucketAcl(ctx, aclInput)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not get ACL for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				aclResultString := utils.S3BucketACLPublic(aclOutput)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + aclResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func S3CheckBucketPolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking S3 bucket access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			s3Client := s3.NewFromConfig(config)
+
+			policyInput := &s3.GetBucketPolicyInput{
+				Bucket: aws.String(resource.Identifier),
+			}
+			policyOutput, err := s3Client.GetBucketPolicy(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get bucket access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				policyResultString := utils.S3BucketPolicyPublic(*policyOutput.Policy)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
 }
 
 func GetRegions(ctx context.Context, opts []*types.Option) <-chan string {
@@ -318,19 +477,20 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					CloudControlListResources,
 					ToJson[types.EnrichedResourceDescription],
 					// TODO - add jq filter to get public ip and public dns name
-					JqFilter(".Properties | fromjson | select(.PublicIp != null) | .PublicIp"),
+					JqFilter("select(.Properties | fromjson | has(\"PublicIp\")) | \"\\(.Identifier),\\(.Properties | fromjson | .PublicIp)\""),
 					ToString[[]byte],
 				)
 
 			case "AWS::S3::Bucket":
-				fmt.Println("S3 bucket ")
 				pl, err = ChainStages[string, string](
 					CloudControlListResources,
+					S3FixResourceRegion,
+					S3CheckBucketPAB,
+					S3CheckBucketACL,
+					S3CheckBucketPolicy,
 					// Echo[types.EnrichedResourceDescription],
-					CloudControlGetResource,
-					Echo[*cloudcontrol.GetResourceOutput],
-					ToJson[*cloudcontrol.GetResourceOutput],
-					JqFilter(".ResourceDescription.Properties | fromjson | select(.RegionalDomainName != null) | .RegionalDomainName"),
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if ($input.BucketACL != null or $input.BucketPolicy != null) then \"Bucket: \\($input.BucketName)\" + (if $input.BucketACL != null and ($input.BucketACL | type) == \"object\" and $input.BucketACL.Grants != null and $input.BucketACL.Grants then \", ACL: \\($input.BucketACL | tostring)\" else \"\" end) + (if $input.BucketPolicy != null and ($input.BucketPolicy | type) == \"object\" and $input.BucketPolicy.Statement != null and $input.BucketPolicy.Statement then \", Policy: \\($input.BucketPolicy | tostring)\" else \"\" end) else empty end"),
 					ToString[[]byte],
 				)
 
