@@ -4,3 +4,5 @@ output/*
 .devcontainer
 .vscode
 .DS_Store
+.go-ignore
+nebula
