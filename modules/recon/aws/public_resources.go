@@ -53,7 +53,11 @@ func NewAwsPublicResources(opts []*types.Option) (<-chan string, stages.Stage[st
 
 var PublicTypes = []string{
 	"AWS::EC2::Instance",
+	"AWS::ECR::Repository",
+	"AWS::ECR::PublicRepository",
 	"AWS::Lambda::Function",
+	"AWS::Lambda::LayerVersion",
 	// "AWS::RDS::DBCluster",
 	"AWS::S3::Bucket",
+	"AWS::ServerlessRepo::Application",
 }

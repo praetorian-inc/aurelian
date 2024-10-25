@@ -9,12 +9,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/backup"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	"github.com/aws/aws-sdk-go-v2/service/ecrpublic"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/serverlessapplicationrepository"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
@@ -22,271 +26,6 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/utils"
 )
-
-func Ec2ListPublic(ctx context.Context, profile string) Stage[string, string] {
-	return func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
-		out := make(chan string)
-		go func() {
-			defer close(out)
-			for region := range in {
-				logs.ConsoleLogger().Debug("Listing public EC2 resources for " + region)
-				config, _ := helpers.GetAWSCfg(region, types.GetOptionByName("profile", opts).Value)
-				client := ec2.NewFromConfig(config)
-
-				ec2Input := ec2.DescribeInstancesInput{
-					Filters: []ec2types.Filter{
-						{
-							Name:   aws.String("network-interface.association.public-ip"),
-							Values: []string{"*"}, // Filters instances with a public IP
-						},
-						{
-							Name:   aws.String("network-interface.association.public-dns-name"),
-							Values: []string{"*"}, // Filters instances with a public DNS name
-						},
-					},
-				}
-				output, err := client.DescribeInstances(ctx, &ec2Input)
-				if err != nil {
-					logs.ConsoleLogger().Error(err.Error())
-					continue
-				}
-
-				for _, reservation := range output.Reservations {
-					for _, instance := range reservation.Instances {
-						for _, networkInterface := range instance.NetworkInterfaces {
-							if networkInterface.Association != nil {
-								if networkInterface.Association.PublicIp != nil {
-									out <- *networkInterface.Association.PublicIp
-								}
-								if networkInterface.Association.PublicDnsName != nil {
-									out <- *networkInterface.Association.PublicDnsName
-								}
-							}
-						}
-					}
-				}
-
-			}
-
-		}()
-		return out
-	}
-}
-
-func LambdaGetFunctionUrl(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan string {
-	logs.ConsoleLogger().Info("Getting Lambda function URLs")
-	out := make(chan string)
-	go func() {
-		for resource := range in {
-			logs.ConsoleLogger().Debug("Getting URL for Lambda function: " + resource.Identifier)
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
-			if err != nil {
-				out <- ""
-			}
-			client := lambda.NewFromConfig(config)
-			params := &lambda.GetFunctionUrlConfigInput{
-				FunctionName: aws.String(resource.Identifier),
-			}
-			output, err := client.GetFunctionUrlConfig(ctx, params)
-			if err != nil {
-				if !strings.Contains(err.Error(), "StatusCode: 404") {
-					logs.ConsoleLogger().Error(err.Error())
-				}
-				continue
-			}
-
-			out <- *output.FunctionUrl
-		}
-		close(out)
-	}()
-	return out
-}
-
-func ListLambdaFunctions(ctx context.Context, profile string) Stage[string, string] {
-	return func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
-		out := make(chan string)
-		go func() {
-			defer close(out)
-			for region := range in {
-				logs.ConsoleLogger().Debug("Listing Lambda functions " + region)
-				config, err := helpers.GetAWSCfg(region, profile)
-				if err != nil {
-					logs.ConsoleLogger().Error(err.Error())
-					continue
-				}
-				client := lambda.NewFromConfig(config)
-				params := &lambda.ListFunctionsInput{}
-				output, err := client.ListFunctions(ctx, params)
-				if err != nil {
-					out <- ""
-					logs.ConsoleLogger().Error(err.Error())
-				}
-
-				for _, function := range output.Functions {
-					out <- *function.FunctionArn
-				}
-			}
-		}()
-		return out
-	}
-}
-
-func S3FixResourceRegion(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Fixing S3 bucket regions")
-	out := make(chan types.EnrichedResourceDescription)
-	go func() {
-		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
-			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
-				return
-			}
-			s3Client := s3.NewFromConfig(config)
-			locationParams := &s3.GetBucketLocationInput{
-				Bucket: aws.String(resource.Identifier),
-			}
-			locationOutput, err := s3Client.GetBucketLocation(ctx, locationParams)
-			if err != nil {
-				if !strings.Contains(err.Error(), "StatusCode: 404") {
-					logs.ConsoleLogger().Error("Could not get bucket location, error: " + err.Error())
-				}
-				return
-			}
-
-			var location string
-			if locationOutput.LocationConstraint == "" {
-				location = "us-east-1"
-			} else {
-				location = string(locationOutput.LocationConstraint)
-			}
-
-			out <- types.EnrichedResourceDescription{
-				Identifier: resource.Identifier,
-				TypeName:   resource.TypeName,
-				Region:     location,
-				Properties: resource.Properties,
-				AccountId:  resource.AccountId,
-			}
-		}
-		close(out)
-	}()
-	return out
-}
-
-func S3CheckBucketPAB(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking S3 public access block configs")
-	out := make(chan types.EnrichedResourceDescription)
-	go func() {
-		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
-			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
-				continue
-			}
-			s3Client := s3.NewFromConfig(config)
-
-			pabInput := &s3.GetPublicAccessBlockInput{
-				Bucket: aws.String(resource.Identifier),
-			}
-			pabOutput, err := s3Client.GetPublicAccessBlock(ctx, pabInput)
-			if err != nil {
-				if strings.Contains(err.Error(), "StatusCode: 404") {
-					out <- resource
-				} else {
-					logs.ConsoleLogger().Error("Could not get PAB for " + resource.Identifier + ", error: " + err.Error())
-					out <- resource
-				}
-			} else {
-				publicAccessBlockConfig := pabOutput.PublicAccessBlockConfiguration
-				if !utils.S3BucketPABConfigFullyBlocks(publicAccessBlockConfig) {
-					out <- resource
-				} else {
-					continue
-				}
-			}
-		}
-		close(out)
-	}()
-	return out
-}
-
-func S3CheckBucketACL(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking S3 bucket ACLs")
-	out := make(chan types.EnrichedResourceDescription)
-	go func() {
-		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
-			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
-				continue
-			}
-			s3Client := s3.NewFromConfig(config)
-
-			aclInput := &s3.GetBucketAclInput{
-				Bucket: aws.String(resource.Identifier),
-			}
-			aclOutput, err := s3Client.GetBucketAcl(ctx, aclInput)
-			if err != nil {
-				logs.ConsoleLogger().Error("Could not get ACL for " + resource.Identifier + ", error: " + err.Error())
-				out <- resource
-			} else {
-				aclResultString := utils.S3BucketACLPublic(aclOutput)
-
-				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
-				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + aclResultString + "}"
-
-				out <- types.EnrichedResourceDescription{
-					Identifier: resource.Identifier,
-					TypeName:   resource.TypeName,
-					Region:     resource.Region,
-					Properties: newProperties,
-					AccountId:  resource.AccountId,
-				}
-			}
-		}
-		close(out)
-	}()
-	return out
-}
-
-func S3CheckBucketPolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking S3 bucket access policies")
-	out := make(chan types.EnrichedResourceDescription)
-	go func() {
-		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
-			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
-				continue
-			}
-			s3Client := s3.NewFromConfig(config)
-
-			policyInput := &s3.GetBucketPolicyInput{
-				Bucket: aws.String(resource.Identifier),
-			}
-			policyOutput, err := s3Client.GetBucketPolicy(ctx, policyInput)
-			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get bucket access policy for " + resource.Identifier + ", error: " + err.Error())
-				out <- resource
-			} else {
-				policyResultString := utils.S3BucketPolicyPublic(*policyOutput.Policy)
-
-				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
-				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
-
-				out <- types.EnrichedResourceDescription{
-					Identifier: resource.Identifier,
-					TypeName:   resource.TypeName,
-					Region:     resource.Region,
-					Properties: newProperties,
-					AccountId:  resource.AccountId,
-				}
-			}
-		}
-		close(out)
-	}()
-	return out
-}
 
 func GetRegions(ctx context.Context, opts []*types.Option) <-chan string {
 	regChan := make(chan string)
@@ -453,6 +192,652 @@ func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*types.Opti
 	return out
 }
 
+func BackupVaultCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking Backup Vaults resource access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			backupClient := backup.NewFromConfig(config)
+
+			policyInput := &backup.GetBackupVaultAccessPolicyInput{
+				BackupVaultName: aws.String(resource.Identifier),
+			}
+			policyOutput, err := backupClient.GetBackupVaultAccessPolicy(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get Backup Vault resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func Ec2ListPublic(ctx context.Context, profile string) Stage[string, string] {
+	return func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
+		out := make(chan string)
+		go func() {
+			defer close(out)
+			for region := range in {
+				logs.ConsoleLogger().Debug("Listing public EC2 resources for " + region)
+				config, _ := helpers.GetAWSCfg(region, types.GetOptionByName("profile", opts).Value)
+				client := ec2.NewFromConfig(config)
+
+				ec2Input := ec2.DescribeInstancesInput{
+					Filters: []ec2types.Filter{
+						{
+							Name:   aws.String("network-interface.association.public-ip"),
+							Values: []string{"*"}, // Filters instances with a public IP
+						},
+						{
+							Name:   aws.String("network-interface.association.public-dns-name"),
+							Values: []string{"*"}, // Filters instances with a public DNS name
+						},
+					},
+				}
+				output, err := client.DescribeInstances(ctx, &ec2Input)
+				if err != nil {
+					logs.ConsoleLogger().Error(err.Error())
+					continue
+				}
+
+				for _, reservation := range output.Reservations {
+					for _, instance := range reservation.Instances {
+						for _, networkInterface := range instance.NetworkInterfaces {
+							if networkInterface.Association != nil {
+								if networkInterface.Association.PublicIp != nil {
+									out <- *networkInterface.Association.PublicIp
+								}
+								if networkInterface.Association.PublicDnsName != nil {
+									out <- *networkInterface.Association.PublicDnsName
+								}
+							}
+						}
+					}
+				}
+
+			}
+
+		}()
+		return out
+	}
+}
+
+func ECRCheckRepoPolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking ECR repository access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			ecrClient := ecr.NewFromConfig(config)
+
+			policyInput := &ecr.GetRepositoryPolicyInput{
+				RepositoryName: aws.String(resource.Identifier),
+			}
+			policyOutput, err := ecrClient.GetRepositoryPolicy(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get ECR repository access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.PolicyText)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func ECRCheckPublicRepoPolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking ECR public repository access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			ecrPublicClient := ecrpublic.NewFromConfig(config)
+
+			policyInput := &ecrpublic.GetRepositoryPolicyInput{
+				RepositoryName: aws.String(resource.Identifier),
+			}
+			policyOutput, err := ecrPublicClient.GetRepositoryPolicy(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get ECR public repository access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.PolicyText)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func LambdaGetFunctionUrl(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan string {
+	logs.ConsoleLogger().Info("Getting Lambda function URLs")
+	out := make(chan string)
+	go func() {
+		for resource := range in {
+			logs.ConsoleLogger().Debug("Getting URL for Lambda function: " + resource.Identifier)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				out <- ""
+			}
+			client := lambda.NewFromConfig(config)
+			params := &lambda.GetFunctionUrlConfigInput{
+				FunctionName: aws.String(resource.Identifier),
+			}
+			output, err := client.GetFunctionUrlConfig(ctx, params)
+			if err != nil {
+				if !strings.Contains(err.Error(), "StatusCode: 404") {
+					logs.ConsoleLogger().Error(err.Error())
+				}
+				continue
+			}
+
+			out <- *output.FunctionUrl
+		}
+		close(out)
+	}()
+	return out
+}
+
+func ListLambdaFunctions(ctx context.Context, profile string) Stage[string, string] {
+	return func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
+		out := make(chan string)
+		go func() {
+			defer close(out)
+			for region := range in {
+				logs.ConsoleLogger().Debug("Listing Lambda functions " + region)
+				config, err := helpers.GetAWSCfg(region, profile)
+				if err != nil {
+					logs.ConsoleLogger().Error(err.Error())
+					continue
+				}
+				client := lambda.NewFromConfig(config)
+				params := &lambda.ListFunctionsInput{}
+				output, err := client.ListFunctions(ctx, params)
+				if err != nil {
+					out <- ""
+					logs.ConsoleLogger().Error(err.Error())
+				}
+
+				for _, function := range output.Functions {
+					out <- *function.FunctionArn
+				}
+			}
+		}()
+		return out
+	}
+}
+
+func ListLambdaLayers(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	out := make(chan types.EnrichedResourceDescription)
+	logs.ConsoleLogger().Info("Listing Lambda Layers")
+	profile := types.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	config, err := helpers.GetAWSCfg(regions[0], profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+	acctId, err := helpers.GetAccountId(config)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	var wg sync.WaitGroup
+
+	for rtype := range rtype {
+		// Capture the current value of rtype by passing it to the goroutine
+		for _, region := range regions {
+			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			wg.Add(1)
+			go func(region string, rtype string) {
+				defer wg.Done()
+				config, _ := helpers.GetAWSCfg(region, profile)
+				lambdaClient := lambda.NewFromConfig(config)
+				params := &lambda.ListLayersInput{}
+				res, err := lambdaClient.ListLayers(ctx, params)
+				if err != nil {
+					logs.ConsoleLogger().Error(err.Error())
+					return
+				}
+
+				for _, resource := range res.Layers {
+					latestMatchingVersionStr, err := json.Marshal(resource.LatestMatchingVersion)
+					if err != nil {
+						logs.ConsoleLogger().Error("Could not marshal Lambda layer version")
+						continue
+					}
+					lastBracketIndex := strings.LastIndex(string(latestMatchingVersionStr), "}")
+					newProperties := string(latestMatchingVersionStr)[:lastBracketIndex] + "," + "\"LayerName\":\"" + *resource.LayerName + "\"" + "}"
+
+					out <- types.EnrichedResourceDescription{
+						Identifier: *resource.LayerName,
+						TypeName:   rtype,
+						Region:     region,
+						Properties: newProperties,
+						AccountId:  acctId,
+					}
+				}
+			}(region, rtype)
+		}
+	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return out
+}
+
+func LambdaCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking Lambda function resource access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			lambdaClient := lambda.NewFromConfig(config)
+
+			policyInput := &lambda.GetPolicyInput{
+				FunctionName: aws.String(resource.Identifier),
+			}
+			policyOutput, err := lambdaClient.GetPolicy(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get Lambda function resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func LambdaLayerCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking Lambda layer resource access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			lambdaClient := lambda.NewFromConfig(config)
+
+			var properties map[string]interface{}
+			if err := json.Unmarshal([]byte(resource.Properties.(string)), &properties); err != nil {
+				logs.ConsoleLogger().Error("Could not unmarshal Lambda layer version, error: " + err.Error())
+				continue
+			}
+			version, ok := properties["Version"].(float64)
+			if !ok {
+				logs.ConsoleLogger().Error("Could not find Lambda layer version")
+				continue
+			}
+
+			policyInput := &lambda.GetLayerVersionPolicyInput{
+				LayerName:     aws.String(resource.Identifier),
+				VersionNumber: aws.Int64(int64(version)),
+			}
+			policyOutput, err := lambdaClient.GetLayerVersionPolicy(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get Lambda layer resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func S3FixResourceRegion(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Fixing S3 bucket regions")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				return
+			}
+			s3Client := s3.NewFromConfig(config)
+			locationParams := &s3.GetBucketLocationInput{
+				Bucket: aws.String(resource.Identifier),
+			}
+			locationOutput, err := s3Client.GetBucketLocation(ctx, locationParams)
+			if err != nil {
+				if !strings.Contains(err.Error(), "StatusCode: 404") {
+					logs.ConsoleLogger().Error("Could not get bucket location, error: " + err.Error())
+				}
+				return
+			}
+
+			var location string
+			if locationOutput.LocationConstraint == "" {
+				location = "us-east-1"
+			} else {
+				location = string(locationOutput.LocationConstraint)
+			}
+
+			out <- types.EnrichedResourceDescription{
+				Identifier: resource.Identifier,
+				TypeName:   resource.TypeName,
+				Region:     location,
+				Properties: resource.Properties,
+				AccountId:  resource.AccountId,
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func S3CheckBucketPAB(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking S3 public access block configs")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			s3Client := s3.NewFromConfig(config)
+
+			pabInput := &s3.GetPublicAccessBlockInput{
+				Bucket: aws.String(resource.Identifier),
+			}
+			pabOutput, err := s3Client.GetPublicAccessBlock(ctx, pabInput)
+			if err != nil {
+				if strings.Contains(err.Error(), "StatusCode: 404") {
+					out <- resource
+				} else {
+					logs.ConsoleLogger().Error("Could not get PAB for " + resource.Identifier + ", error: " + err.Error())
+					out <- resource
+				}
+			} else {
+				publicAccessBlockConfig := pabOutput.PublicAccessBlockConfiguration
+				if !utils.S3BucketPABConfigFullyBlocks(publicAccessBlockConfig) || strings.Contains(resource.Properties.(string), "root") {
+					out <- resource
+				} else {
+					continue
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func S3CheckBucketACL(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking S3 bucket ACLs")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			s3Client := s3.NewFromConfig(config)
+
+			aclInput := &s3.GetBucketAclInput{
+				Bucket: aws.String(resource.Identifier),
+			}
+			aclOutput, err := s3Client.GetBucketAcl(ctx, aclInput)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not get ACL for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				aclResultString := utils.S3BucketACLPublic(aclOutput)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + aclResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func S3CheckBucketPolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking S3 bucket access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			s3Client := s3.NewFromConfig(config)
+
+			policyInput := &s3.GetBucketPolicyInput{
+				Bucket: aws.String(resource.Identifier),
+			}
+			policyOutput, err := s3Client.GetBucketPolicy(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get bucket access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func ListServerlessRepoApplications(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	out := make(chan types.EnrichedResourceDescription)
+	logs.ConsoleLogger().Info("Listing serverless repo applications")
+	profile := types.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	config, err := helpers.GetAWSCfg(regions[0], profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+	acctId, err := helpers.GetAccountId(config)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	var wg sync.WaitGroup
+
+	for rtype := range rtype {
+		// Capture the current value of rtype by passing it to the goroutine
+		for _, region := range regions {
+			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			wg.Add(1)
+			go func(region string, rtype string) {
+				defer wg.Done()
+				config, _ := helpers.GetAWSCfg(region, profile)
+
+				serverlessrepoClient := serverlessapplicationrepository.NewFromConfig(config)
+				params := &serverlessapplicationrepository.ListApplicationsInput{}
+				res, err := serverlessrepoClient.ListApplications(ctx, params)
+				if err != nil {
+					logs.ConsoleLogger().Error(err.Error())
+					return
+				}
+
+				for _, resource := range res.Applications {
+					properties, err := json.Marshal(resource)
+					if err != nil {
+						logs.ConsoleLogger().Error("Could not marshal serverless repo application")
+						continue
+					}
+
+					out <- types.EnrichedResourceDescription{
+						Identifier: *resource.ApplicationId,
+						TypeName:   rtype,
+						Region:     region,
+						Properties: string(properties),
+						AccountId:  acctId,
+					}
+				}
+			}(region, rtype)
+		}
+	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return out
+}
+
+func ServerlessRepoAppCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking serverless repo app resource access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			serverlessrepoClient := serverlessapplicationrepository.NewFromConfig(config)
+
+			policyInput := &serverlessapplicationrepository.GetApplicationPolicyInput{
+				ApplicationId: aws.String(resource.Identifier),
+			}
+			policyOutput, err := serverlessrepoClient.GetApplicationPolicy(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get serverless repo app resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				policyResultString := utils.CheckServerlessRepoAppResourceAccessPolicy(policyOutput.Statements)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
 func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
 
 	out := make(chan string)
@@ -466,10 +851,14 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 			var pl Stage[string, string]
 			var err error
 			switch rtype {
-			case "AWS::Lambda::Function":
+			case "AWS::Backup::BackupVault":
 				pl, err = ChainStages[string, string](
 					CloudControlListResources,
-					LambdaGetFunctionUrl,
+					BackupVaultCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | \"Repository: \\($input.BackupVaultName), Access Policy: all users can pull by default\" + (if (has(\"AccessPolicy\") and $input.AccessPolicy != null and ($input.AccessPolicy | type) == \"object\" and $input.AccessPolicy.Statement != null and $input.AccessPolicy.Statement) then \", Additional Permissions: \\($input.AccessPolicy | tostring)\" else \"\" end)"),
+					ToString[[]byte],
 				)
 
 			case "AWS::EC2::Instance":
@@ -481,16 +870,66 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					ToString[[]byte],
 				)
 
+			case "AWS::ECR::Repository":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					ECRCheckRepoPolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Repository: \\($input.RepositoryName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
+			case "AWS::ECR::PublicRepository":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					ECRCheckPublicRepoPolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | \"Repository: \\($input.RepositoryName), Access Policy: all users can pull by default\" + (if (has(\"AccessPolicy\") and $input.AccessPolicy != null and ($input.AccessPolicy | type) == \"object\" and $input.AccessPolicy.Statement != null and $input.AccessPolicy.Statement) then \", Additional Permissions: \\($input.AccessPolicy | tostring)\" else \"\" end)"),
+					ToString[[]byte],
+				)
+
+			case "AWS::Lambda::Function":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					LambdaCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Repository: \\($input.FunctionName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
+			case "AWS::Lambda::LayerVersion":
+				pl, err = ChainStages[string, string](
+					ListLambdaLayers,
+					LambdaLayerCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Lambda Layer: \\($input.LayerName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
 			case "AWS::S3::Bucket":
 				pl, err = ChainStages[string, string](
 					CloudControlListResources,
 					S3FixResourceRegion,
-					S3CheckBucketPAB,
 					S3CheckBucketACL,
 					S3CheckBucketPolicy,
+					S3CheckBucketPAB,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if ($input.BucketACL != null or $input.BucketPolicy != null) then \"Bucket: \\($input.BucketName)\" + (if $input.BucketACL != null and ($input.BucketACL | type) == \"object\" and $input.BucketACL.Grants != null and $input.BucketACL.Grants then \", ACL: \\($input.BucketACL | tostring)\" else \"\" end) + (if $input.BucketPolicy != null and ($input.BucketPolicy | type) == \"object\" and $input.BucketPolicy.Statement != null and $input.BucketPolicy.Statement then \", Policy: \\($input.BucketPolicy | tostring)\" else \"\" end) else empty end"),
+					JqFilter(".Properties | fromjson | . as $input | if ((has(\"BucketACL\") and $input.BucketACL != null) or (has(\"AccessPolicy\") and $input.AccessPolicy != null)) then \"Bucket: \\($input.BucketName)\" + (if has(\"BucketACL\") and $input.BucketACL != null and ($input.BucketACL | type) == \"object\" and $input.BucketACL.Grants != null and $input.BucketACL.Grants then \", ACL: \\($input.BucketACL | tostring)\" else \"\" end) + (if has(\"AccessPolicy\") and $input.AccessPolicy != null and ($input.AccessPolicy | type) == \"object\" and $input.AccessPolicy.Statement != null and $input.AccessPolicy.Statement then \", Access Policy: \\($input.AccessPolicy | tostring)\" else \"\" end) else empty end"),
+					ToString[[]byte],
+				)
+
+			case "AWS::ServerlessRepo::Application":
+				pl, err = ChainStages[string, string](
+					ListServerlessRepoApplications,
+					ServerlessRepoAppCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Lambda Layer: \\($input.Name)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
 					ToString[[]byte],
 				)
 

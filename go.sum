@@ -46,12 +46,18 @@ github.com/aws/aws-sdk-go-v2/internal/ini v1.8.0 h1:hT8rVHwugYE2lEfdFE0QWVo81lF7
 github.com/aws/aws-sdk-go-v2/internal/ini v1.8.0/go.mod h1:8tu/lYfQfFe6IGnaOdrpVgEL2IrrDOf6/m9RQum4NkY=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.21 h1:7edmS3VOBDhK00b/MwGtGglCm7hhwNYnjJs/PgFdMQE=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.21/go.mod h1:Q9o5h4HoIWG8XfzxqiuK/CGUbepCJ8uTlaE3bAbxytQ=
+github.com/aws/aws-sdk-go-v2/service/backup v1.39.3 h1:mjYDN7CPl0CHrTBe36EKqAAGGXAKy8MXuNF+2qHkVdM=
+github.com/aws/aws-sdk-go-v2/service/backup v1.39.3/go.mod h1:dc18UjjmJLlpcPGF6kluQcEpcddqlkdRTF8h5XKWSbc=
 github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.18.5 h1:8s0iOBAAUEq0m51PWmaCuEfrdH0OQkXyGL4+jgQoIJ8=
 github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.18.5/go.mod h1:oOvzqGwjzl5fyWi0C7YfOalzMDS8R4yapREwUVV5gBY=
 github.com/aws/aws-sdk-go-v2/service/costexplorer v1.38.1 h1:HncrihDko4doTAsUWMiiRib3nD1I1JfB8DXOypr1yMc=
 github.com/aws/aws-sdk-go-v2/service/costexplorer v1.38.1/go.mod h1:uLOg0o57AyQQhZGtUKIlcBJOKE53mO9bXKyrM9dFhy4=
 github.com/aws/aws-sdk-go-v2/service/ec2 v1.169.0 h1:iSXZ+vCHYQRolS80L7rBKBQOEVzVI8tH52e81+e5lCQ=
 github.com/aws/aws-sdk-go-v2/service/ec2 v1.169.0/go.mod h1:f6QOsYTkYwIuVAAs38kqSEC3ljJ7HNvXhGigzvNpuTE=
+github.com/aws/aws-sdk-go-v2/service/ecr v1.36.2 h1:VDQaVwGOokbd3VUbHF+wupiffdrbAZPdQnr5XZMJqrs=
+github.com/aws/aws-sdk-go-v2/service/ecr v1.36.2/go.mod h1:lvUlMghKYmSxSfv0vU7pdU/8jSY+s0zpG8xXhaGKCw0=
+github.com/aws/aws-sdk-go-v2/service/ecrpublic v1.27.2 h1:Zru9Iy2JPM5+uRnFnoqeOZzi8JIVIHJ0ua6JdeDHcyg=
+github.com/aws/aws-sdk-go-v2/service/ecrpublic v1.27.2/go.mod h1:PtQC3XjutCYFCn1+i8+wtpDaXvEK+vXF2gyLIKAmh4A=
 github.com/aws/aws-sdk-go-v2/service/iam v1.34.3 h1:p4L/tixJ3JUIxCteMGT6oMlqCbEv/EzSZoVwdiib8sU=
 github.com/aws/aws-sdk-go-v2/service/iam v1.34.3/go.mod h1:rfOWxxwdecWvSC9C2/8K/foW3Blf+aKnIIPP9kQ2DPE=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.11.3 h1:dT3MqvGhSoaIhRseqw2I0yH81l7wiR2vjs57O51EAm8=
@@ -72,6 +78,8 @@ github.com/aws/aws-sdk-go-v2/service/s3 v1.66.0 h1:xA6XhTF7PE89BCNHJbQi8VvPzcgMt
 github.com/aws/aws-sdk-go-v2/service/s3 v1.66.0/go.mod h1:cB6oAuus7YXRZhWCc1wIwPywwZ1XwweNp2TVAEGYeB8=
 github.com/aws/aws-sdk-go-v2/service/s3control v1.49.2 h1:W1nwi6M/LfTRO8bPw9wlKJ1tDy1tIT4fytBsHXpIRIw=
 github.com/aws/aws-sdk-go-v2/service/s3control v1.49.2/go.mod h1:+EAvXfnipjpvEfaKWS98sgU7KgzEuH4/qxJIeEG+GTY=
+github.com/aws/aws-sdk-go-v2/service/serverlessapplicationrepository v1.24.2 h1:kZH4TxPNznySgGp9HaHNdWnpTnn8cFBNaBYu4ViN6PI=
+github.com/aws/aws-sdk-go-v2/service/serverlessapplicationrepository v1.24.2/go.mod h1:SH6092ZWTtelRGD0bARMsUNN2FQI/RrCcX/TQZLDZjA=
 github.com/aws/aws-sdk-go-v2/service/sso v1.22.4 h1:BXx0ZIxvrJdSgSvKTZ+yRBeSqqgPM89VPlulEcl37tM=
 github.com/aws/aws-sdk-go-v2/service/sso v1.22.4/go.mod h1:ooyCOXjvJEsUw7x+ZDHeISPMhtwI3ZCB7ggFMcFfWLU=
 github.com/aws/aws-sdk-go-v2/service/ssooidc v1.26.4 h1:yiwVzJW2ZxZTurVbYWA7QOrAaCYQR72t0wrSBfoesUE=

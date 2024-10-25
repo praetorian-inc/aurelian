@@ -35,12 +35,14 @@ func PerformJqQuery(jsonContent []byte, jqQuery string) ([]byte, error) {
 	iter := query.Run(jsonData)
 	// Process the JSON content using the jq query
 	v, ok := iter.Next()
-	if !ok {
-		return nil, fmt.Errorf("key not found")
+	if !ok && v == nil {
+		return nil, fmt.Errorf("jq has empty results")
 	}
 	if err, ok := v.(error); ok {
-		if err, ok := err.(*gojq.HaltError); ok && err.Value() == nil {
-			return nil, err
+		if haltErr, ok := err.(*gojq.HaltError); ok && haltErr.Value() == nil {
+			return nil, haltErr
+		} else if parseErr, ok := err.(*gojq.ParseError); ok {
+			return nil, parseErr
 		}
 		log.Fatalln(err)
 	}
