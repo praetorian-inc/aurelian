@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/mediastore"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/serverlessapplicationrepository"
@@ -985,6 +986,111 @@ func LambdaLayerCheckResourcePolicy(ctx context.Context, opts []*types.Option, i
 	return out
 }
 
+func ListMediaStoreContainers(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	out := make(chan types.EnrichedResourceDescription)
+	logs.ConsoleLogger().Info("Listing MediaStore Containers")
+	profile := types.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	config, err := helpers.GetAWSCfg(regions[0], profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+	acctId, err := helpers.GetAccountId(config)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	var wg sync.WaitGroup
+
+	for rtype := range rtype {
+		// Capture the current value of rtype by passing it to the goroutine
+		for _, region := range regions {
+			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			wg.Add(1)
+			go func(region string, rtype string) {
+				defer wg.Done()
+				config, _ := helpers.GetAWSCfg(region, profile)
+				mediastoreClient := mediastore.NewFromConfig(config)
+				params := &mediastore.ListContainersInput{}
+				res, err := mediastoreClient.ListContainers(ctx, params)
+				if err != nil {
+					logs.ConsoleLogger().Error(err.Error())
+					return
+				}
+
+				for _, resource := range res.Containers {
+					propertiesStr, err := json.Marshal(resource)
+					if err != nil {
+						logs.ConsoleLogger().Error("Could not marshal properties for MediaStore container")
+						continue
+					}
+
+					out <- types.EnrichedResourceDescription{
+						Identifier: *resource.Name,
+						TypeName:   rtype,
+						Region:     region,
+						Properties: propertiesStr,
+						AccountId:  acctId,
+					}
+				}
+			}(region, rtype)
+		}
+	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return out
+}
+
+func MediaStoreContainerCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking MediaStore container resource access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			mediastoreClient := mediastore.NewFromConfig(config)
+
+			policyInput := &mediastore.GetContainerPolicyInput{
+				ContainerName: aws.String(resource.Identifier),
+			}
+			policyOutput, err := mediastoreClient.GetContainerPolicy(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get MediaStore container resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
 func S3FixResourceRegion(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
 	logs.ConsoleLogger().Info("Fixing S3 bucket regions")
 	out := make(chan types.EnrichedResourceDescription)
@@ -1432,6 +1538,16 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
 					JqFilter(".Properties | fromjson | . as $input | if (has(\"PolicyDocument\") and $input.PolicyDocument != null) then \"CloudWatch Service Access Policy: \\($input.PolicyDocument | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
+			case "AWS::MediaStore::Container":
+				pl, err = ChainStages[string, string](
+					ListMediaStoreContainers,
+					MediaStoreContainerCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"MediaStore Container: \\($input.LayerName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
 					ToString[[]byte],
 				)
 
