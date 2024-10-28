@@ -14,9 +14,13 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.169.0
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.36.2
 	github.com/aws/aws-sdk-go-v2/service/ecrpublic v1.27.2
+	github.com/aws/aws-sdk-go-v2/service/efs v1.33.2
+	github.com/aws/aws-sdk-go-v2/service/glacier v1.26.2
 	github.com/aws/aws-sdk-go-v2/service/iam v1.34.3
+	github.com/aws/aws-sdk-go-v2/service/kms v1.37.2
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.57.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.66.0
+	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.34.2
 	github.com/aws/aws-sdk-go-v2/service/serverlessapplicationrepository v1.24.2
 	github.com/aws/aws-sdk-go-v2/service/sts v1.30.3
 	github.com/aws/smithy-go v1.22.0

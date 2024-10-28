@@ -15,9 +15,13 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/aws/aws-sdk-go-v2/service/ecrpublic"
+	"github.com/aws/aws-sdk-go-v2/service/efs"
+	"github.com/aws/aws-sdk-go-v2/service/glacier"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/serverlessapplicationrepository"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/praetorian-inc/nebula/internal/helpers"
@@ -352,6 +356,315 @@ func ECRCheckPublicRepoPolicy(ctx context.Context, opts []*types.Option, in <-ch
 					Properties: newProperties,
 					AccountId:  resource.AccountId,
 				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func EFSFileSystemCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking EFS File Systems resource access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			efsClient := efs.NewFromConfig(config)
+
+			policyInput := &efs.DescribeFileSystemPolicyInput{
+				FileSystemId: aws.String(resource.Identifier),
+			}
+			policyOutput, err := efsClient.DescribeFileSystemPolicy(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get EFS File Systems resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				if strings.Contains(err.Error(), "PolicyNotFound") {
+					lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+					newProperties := resource.Properties.(string)[:lastBracketIndex] + ",\"AccessPolicy\":\"Default (all users with network access can mount)\"}"
+
+					out <- types.EnrichedResourceDescription{
+						Identifier: resource.Identifier,
+						TypeName:   resource.TypeName,
+						Region:     resource.Region,
+						Properties: newProperties,
+						AccountId:  resource.AccountId,
+					}
+				} else {
+					out <- resource
+				}
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func ListGlacierVaults(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	out := make(chan types.EnrichedResourceDescription)
+	logs.ConsoleLogger().Info("Listing Glacier Vaults")
+	profile := types.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	config, err := helpers.GetAWSCfg(regions[0], profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+	acctId, err := helpers.GetAccountId(config)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	var wg sync.WaitGroup
+
+	for rtype := range rtype {
+		// Capture the current value of rtype by passing it to the goroutine
+		for _, region := range regions {
+			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			wg.Add(1)
+			go func(region string, rtype string) {
+				defer wg.Done()
+				config, _ := helpers.GetAWSCfg(region, profile)
+
+				glacierClient := glacier.NewFromConfig(config)
+				params := &glacier.ListVaultsInput{
+					AccountId: aws.String(acctId),
+				}
+				for {
+					res, err := glacierClient.ListVaults(ctx, params)
+					if err != nil {
+						logs.ConsoleLogger().Error(err.Error())
+						return
+					}
+
+					for _, vault := range res.VaultList {
+						properties, err := json.Marshal(vault)
+						if err != nil {
+							logs.ConsoleLogger().Error("Could not marshal Glacier vault")
+							continue
+						}
+
+						out <- types.EnrichedResourceDescription{
+							Identifier: *vault.VaultName,
+							TypeName:   rtype,
+							Region:     region,
+							Properties: string(properties),
+							AccountId:  acctId,
+						}
+					}
+
+					if res.Marker == nil {
+						break
+					}
+					params.Marker = res.Marker
+				}
+			}(region, rtype)
+		}
+	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return out
+}
+
+func GlacierVaultCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking Glacier Vault resource access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			glacierClient := glacier.NewFromConfig(config)
+
+			policyInput := &glacier.GetVaultAccessPolicyInput{
+				AccountId: aws.String(resource.AccountId),
+				VaultName: aws.String(resource.Identifier),
+			}
+			policyOutput, err := glacierClient.GetVaultAccessPolicy(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get Glacier Vault resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy.Policy)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func IAMRoleCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking IAM Role AssumeRole policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			iamClient := iam.NewFromConfig(config)
+
+			policyInput := &iam.GetRoleInput{
+				RoleName: aws.String(resource.Identifier),
+			}
+			roleOutput, err := iamClient.GetRole(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get IAM Role AssumeRole policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(*roleOutput.Role.AssumeRolePolicyDocument)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func KMSKeyCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking KMS key resource access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			kmsClient := kms.NewFromConfig(config)
+
+			policyInput := &kms.GetKeyPolicyInput{
+				KeyId: aws.String(resource.Identifier),
+			}
+			policyOutput, err := kmsClient.GetKeyPolicy(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get KMS key resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func KMSKeyCheckGrants(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking KMS key grants")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			kmsClient := kms.NewFromConfig(config)
+
+			policyInput := &kms.ListGrantsInput{
+				KeyId: aws.String(resource.Identifier),
+			}
+			for {
+				policyOutput, err := kmsClient.ListGrants(ctx, policyInput)
+				if err != nil {
+					logs.ConsoleLogger().Debug("Could not get KMS key grants for " + resource.Identifier + ", error: " + err.Error())
+					out <- resource
+					break
+				}
+
+				var grantees []string
+				for _, grant := range policyOutput.Grants {
+					if strings.Contains(*grant.GranteePrincipal, "*") || strings.Contains(*grant.GranteePrincipal, "root") {
+						grantees = append(grantees, *grant.GranteePrincipal)
+					}
+				}
+
+				if len(grantees) == 0 {
+					out <- resource
+					break
+				}
+
+				granteesJson, err := json.Marshal(grantees)
+				if err != nil {
+					logs.ConsoleLogger().Error("Could not marshal grantees")
+					continue
+				}
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + ",\"Grantees\":" + string(granteesJson) + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+
+				if policyOutput.NextMarker == nil {
+					break
+				}
+				policyInput.Marker = policyOutput.NextMarker
 			}
 		}
 		close(out)
@@ -732,6 +1045,48 @@ func S3CheckBucketPolicy(ctx context.Context, opts []*types.Option, in <-chan ty
 	return out
 }
 
+func SecretCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking SecretsManager secret access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			smClient := secretsmanager.NewFromConfig(config)
+
+			policyInput := &secretsmanager.GetResourcePolicyInput{
+				SecretId: aws.String(resource.Identifier),
+			}
+			policyOutput, err := smClient.GetResourcePolicy(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get SecretsManager secret access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else if policyOutput.ResourcePolicy == nil {
+				logs.ConsoleLogger().Debug("Could not get SecretsManager secret access policy for " + resource.Identifier + ", policy doesn't exist")
+				out <- resource
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.ResourcePolicy)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
 func ListServerlessRepoApplications(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
 	out := make(chan types.EnrichedResourceDescription)
 	logs.ConsoleLogger().Info("Listing serverless repo applications")
@@ -857,7 +1212,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					BackupVaultCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | \"Repository: \\($input.BackupVaultName), Access Policy: all users can pull by default\" + (if (has(\"AccessPolicy\") and $input.AccessPolicy != null and ($input.AccessPolicy | type) == \"object\" and $input.AccessPolicy.Statement != null and $input.AccessPolicy.Statement) then \", Additional Permissions: \\($input.AccessPolicy | tostring)\" else \"\" end)"),
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Vault: \\($input.BackupVaultName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
 					ToString[[]byte],
 				)
 
@@ -887,6 +1242,47 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
 					JqFilter(".Properties | fromjson | . as $input | \"Repository: \\($input.RepositoryName), Access Policy: all users can pull by default\" + (if (has(\"AccessPolicy\") and $input.AccessPolicy != null and ($input.AccessPolicy | type) == \"object\" and $input.AccessPolicy.Statement != null and $input.AccessPolicy.Statement) then \", Additional Permissions: \\($input.AccessPolicy | tostring)\" else \"\" end)"),
+					ToString[[]byte],
+				)
+
+			case "AWS::EFS::FileSystem":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					EFSFileSystemCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"FileSystem: \\($input.FileSystemId)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
+			case "AWS::Glacier::Vault":
+				pl, err = ChainStages[string, string](
+					ListGlacierVaults,
+					GlacierVaultCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Glacier Vault : \\($input.VaultName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
+			case "AWS::IAM::Role":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					IAMRoleCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"IAM Role: \\($input.RoleName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
+			case "AWS::KMS::Key":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					KMSKeyCheckResourcePolicy,
+					KMSKeyCheckGrants,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if ((has(\"AccessPolicy\") and $input.AccessPolicy != null) or (has(\"Grantees\") and $input.Grantees != null)) then \"KMS Key ID: \\($input.KeyId)\" + (if has(\"Grantees\") and $input.Grantees != null and ($input.Grantees | type) == \"object\" then \", Grantees: \\($input.Grantees | tostring)\" else \"\" end) + (if has(\"AccessPolicy\") and $input.AccessPolicy != null and ($input.AccessPolicy | type) == \"object\" and $input.AccessPolicy.Statement != null and $input.AccessPolicy.Statement then \", Access Policy: \\($input.AccessPolicy | tostring)\" else \"\" end) else empty end"),
 					ToString[[]byte],
 				)
 
@@ -923,13 +1319,23 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					ToString[[]byte],
 				)
 
+			case "AWS::SecretsManager::Secret":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					SecretCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Secret ID: \\($input.Id)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
 			case "AWS::ServerlessRepo::Application":
 				pl, err = ChainStages[string, string](
 					ListServerlessRepoApplications,
 					ServerlessRepoAppCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Lambda Layer: \\($input.Name)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Application ID: \\($input.ApplicationId)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
 					ToString[[]byte],
 				)
 
