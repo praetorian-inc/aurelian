@@ -8,9 +8,11 @@ require (
 	github.com/aws/aws-sdk-go v1.55.5
 	github.com/aws/aws-sdk-go-v2 v1.32.2
 	github.com/aws/aws-sdk-go-v2/config v1.27.27
-	github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.18.5
-	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.38.1
 	github.com/aws/aws-sdk-go-v2/service/backup v1.39.3
+	github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.18.5
+	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.42.0
+	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.42.0
+	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.38.1
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.169.0
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.36.2
 	github.com/aws/aws-sdk-go-v2/service/ecrpublic v1.27.2

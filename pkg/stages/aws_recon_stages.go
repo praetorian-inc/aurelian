@@ -11,6 +11,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/backup"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
@@ -227,6 +228,50 @@ func BackupVaultCheckResourcePolicy(ctx context.Context, opts []*types.Option, i
 					Region:     resource.Region,
 					Properties: newProperties,
 					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func CloudWatchDestinationCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking CloudWatch destination resource access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			logsClient := cloudwatchlogs.NewFromConfig(config)
+
+			destinationsInput := &cloudwatchlogs.DescribeDestinationsInput{
+				DestinationNamePrefix: aws.String(resource.Identifier),
+			}
+			destinationsOutput, err := logsClient.DescribeDestinations(ctx, destinationsInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get CloudWatch destination resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				var newProperties string
+				for _, destination := range destinationsOutput.Destinations {
+					if destination.DestinationName == &resource.Identifier {
+						policyResultString := utils.CheckResourceAccessPolicy(*destination.AccessPolicy)
+
+						lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+						newProperties = resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+						out <- types.EnrichedResourceDescription{
+							Identifier: resource.Identifier,
+							TypeName:   resource.TypeName,
+							Region:     resource.Region,
+							Properties: newProperties,
+							AccountId:  resource.AccountId,
+						}
+					}
 				}
 			}
 		}
@@ -1213,6 +1258,25 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
 					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Vault: \\($input.BackupVaultName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
+			case "AWS::Logs::Destination":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					CloudWatchDestinationCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"CloudWatch Destination: \\($input.DestinationName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
+			case "AWS::Logs::ResourcePolicy":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"PolicyDocument\") and $input.PolicyDocument != null) then \"CloudWatch Service Access Policy: \\($input.PolicyDocument | tostring)\" else empty end"),
 					ToString[[]byte],
 				)
 
