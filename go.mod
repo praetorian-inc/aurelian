@@ -17,6 +17,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.36.2
 	github.com/aws/aws-sdk-go-v2/service/ecrpublic v1.27.2
 	github.com/aws/aws-sdk-go-v2/service/efs v1.33.2
+	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.35.2
 	github.com/aws/aws-sdk-go-v2/service/glacier v1.26.2
 	github.com/aws/aws-sdk-go-v2/service/iam v1.34.3
 	github.com/aws/aws-sdk-go-v2/service/kms v1.37.2

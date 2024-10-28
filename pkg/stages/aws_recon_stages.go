@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/aws/aws-sdk-go-v2/service/ecrpublic"
 	"github.com/aws/aws-sdk-go-v2/service/efs"
+	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/glacier"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
@@ -108,23 +109,26 @@ func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype 
 	return out
 }
 
-func CloudControlGetResource(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan *cloudcontrol.GetResourceOutput {
-	out := make(chan *cloudcontrol.GetResourceOutput)
+func CloudControlGetResource(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	out := make(chan types.EnrichedResourceDescription)
+	logs.ConsoleLogger().Info("Getting resource to populate properties")
+	go func() {
+		defer close(out)
+		for resource := range in {
+			logs.ConsoleLogger().Info("Now getting resource: " + resource.Identifier)
+			cfg, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error(fmt.Sprintf("Error getting AWS config: %s", err))
+				continue
+			}
 
-	for resource := range in {
-		cfg, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
-		if err != nil {
-			panic(err)
-		}
+			cc := cloudcontrol.NewFromConfig(cfg)
 
-		cc := cloudcontrol.NewFromConfig(cfg)
+			params := &cloudcontrol.GetResourceInput{
+				Identifier: &resource.Identifier,
+				TypeName:   &resource.TypeName,
+			}
 
-		params := &cloudcontrol.GetResourceInput{
-			Identifier: &resource.Identifier,
-			TypeName:   &resource.TypeName,
-		}
-		go func(resource types.EnrichedResourceDescription) {
-			defer close(out)
 			retries := 3
 			backoff := 1000
 
@@ -142,12 +146,17 @@ func CloudControlGetResource(ctx context.Context, opts []*types.Option, in <-cha
 					break
 				}
 
-				out <- res
-				return
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: res.ResourceDescription.Properties,
+					AccountId:  resource.AccountId,
+				}
+				break
 			}
-		}(resource)
-	}
-
+		}
+	}()
 	return out
 }
 
@@ -247,6 +256,7 @@ func CloudWatchDestinationCheckResourcePolicy(ctx context.Context, opts []*types
 				continue
 			}
 			logsClient := cloudwatchlogs.NewFromConfig(config)
+			logs.ConsoleLogger().Info("Trying to get CloudWatch destination resource access policy for " + resource.Identifier)
 
 			destinationsInput := &cloudwatchlogs.DescribeDestinationsInput{
 				DestinationNamePrefix: aws.String(resource.Identifier),
@@ -442,6 +452,48 @@ func EFSFileSystemCheckResourcePolicy(ctx context.Context, opts []*types.Option,
 				}
 			} else {
 				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func EventBusCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking event bus resource access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			eventsClient := eventbridge.NewFromConfig(config)
+
+			describeInput := &eventbridge.DescribeEventBusInput{
+				Name: aws.String(resource.Identifier),
+			}
+			describeOutput, err := eventsClient.DescribeEventBus(ctx, describeInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get event bus resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else if describeOutput.Policy == nil {
+				logs.ConsoleLogger().Debug("Could not get event bus resource access policy for " + resource.Identifier + ", no policy found")
+				out <- resource
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(*describeOutput.Policy)
 
 				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
 				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
@@ -1261,25 +1313,6 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					ToString[[]byte],
 				)
 
-			case "AWS::Logs::Destination":
-				pl, err = ChainStages[string, string](
-					CloudControlListResources,
-					CloudWatchDestinationCheckResourcePolicy,
-					// Echo[types.EnrichedResourceDescription],
-					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"CloudWatch Destination: \\($input.DestinationName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
-					ToString[[]byte],
-				)
-
-			case "AWS::Logs::ResourcePolicy":
-				pl, err = ChainStages[string, string](
-					CloudControlListResources,
-					// Echo[types.EnrichedResourceDescription],
-					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"PolicyDocument\") and $input.PolicyDocument != null) then \"CloudWatch Service Access Policy: \\($input.PolicyDocument | tostring)\" else empty end"),
-					ToString[[]byte],
-				)
-
 			case "AWS::EC2::Instance":
 				pl, err = ChainStages[string, string](
 					CloudControlListResources,
@@ -1313,6 +1346,16 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 				pl, err = ChainStages[string, string](
 					CloudControlListResources,
 					EFSFileSystemCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"FileSystem: \\($input.FileSystemId)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
+			case "AWS::Events::EventBus":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					EventBusCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
 					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"FileSystem: \\($input.FileSystemId)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
@@ -1367,6 +1410,28 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
 					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Lambda Layer: \\($input.LayerName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
+			case "AWS::Logs::Destination":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					CloudControlGetResource,
+					CloudWatchDestinationCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"CloudWatch Destination: \\($input.DestinationName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
+			// this is an untested resource type
+			case "AWS::Logs::ResourcePolicy":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					CloudControlGetResource,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"PolicyDocument\") and $input.PolicyDocument != null) then \"CloudWatch Service Access Policy: \\($input.PolicyDocument | tostring)\" else empty end"),
 					ToString[[]byte],
 				)
 
