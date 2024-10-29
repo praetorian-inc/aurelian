@@ -33,6 +33,24 @@ var PathOpt = types.Option{
 	Value:       "",
 }
 
+var DirPathOpt = types.Option{
+	Name:        "directory path",
+	Short:       "d",
+	Description: "path to an input directory",
+	Required:    true,
+	Type:        types.String,
+	Value:       "",
+}
+
+var ProviderType = types.Option{
+	Name:        "csp",
+	Short:       "c",
+	Description: "the Cloud Service Provider of context - aws, gcp, or azure",
+	Required:    true,
+	Type:        types.String,
+	Value:       "",
+}
+
 var UrlOpt = types.Option{
 	Name:        "url",
 	Short:       "u",

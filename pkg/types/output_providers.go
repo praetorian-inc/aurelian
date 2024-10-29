@@ -5,3 +5,9 @@ type OutputProvider interface {
 }
 
 type OutputProviders []func(options []*Option) OutputProvider
+
+type MarkdownTable struct {
+	TableHeading string
+	Headers      []string
+	Rows         [][]string
+}
