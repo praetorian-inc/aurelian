@@ -1,4 +1,4 @@
-package helpers
+package types
 
 type Gaad struct {
 	UserDetailList  []UserDL     `json:"UserDetailList"`
