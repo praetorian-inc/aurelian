@@ -17,12 +17,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/aws/aws-sdk-go-v2/service/ecrpublic"
 	"github.com/aws/aws-sdk-go-v2/service/efs"
+	"github.com/aws/aws-sdk-go-v2/service/elasticsearchservice"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/glacier"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/mediastore"
+	"github.com/aws/aws-sdk-go-v2/service/opensearch"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/serverlessapplicationrepository"
@@ -453,6 +455,114 @@ func EFSFileSystemCheckResourcePolicy(ctx context.Context, opts []*types.Option,
 				}
 			} else {
 				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func ListESDomains(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	out := make(chan types.EnrichedResourceDescription)
+	logs.ConsoleLogger().Info("Listing ElasticSearch Domains")
+	profile := types.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	config, err := helpers.GetAWSCfg(regions[0], profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+	acctId, err := helpers.GetAccountId(config)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	var wg sync.WaitGroup
+
+	for rtype := range rtype {
+		// Capture the current value of rtype by passing it to the goroutine
+		for _, region := range regions {
+			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			wg.Add(1)
+			go func(region string, rtype string) {
+				defer wg.Done()
+				config, _ := helpers.GetAWSCfg(region, profile)
+				esClient := elasticsearchservice.NewFromConfig(config)
+				params := &elasticsearchservice.ListDomainsInput{}
+				res, err := esClient.ListDomains(ctx, params)
+				if err != nil {
+					logs.ConsoleLogger().Error(err.Error())
+					return
+				}
+
+				for _, resource := range res.DomainNames {
+					propertiesStr, err := json.Marshal(resource)
+					if err != nil {
+						logs.ConsoleLogger().Error("Could not marshal properties for ElasticSearch domain")
+						continue
+					}
+
+					out <- types.EnrichedResourceDescription{
+						Identifier: *resource.DomainName,
+						TypeName:   rtype,
+						Region:     region,
+						Properties: propertiesStr,
+						AccountId:  acctId,
+					}
+				}
+			}(region, rtype)
+		}
+	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return out
+}
+
+func ESDomainCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking ElasticSearch domain resource access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			esClient := elasticsearchservice.NewFromConfig(config)
+
+			policyInput := &elasticsearchservice.DescribeElasticsearchDomainConfigInput{
+				DomainName: aws.String(resource.Identifier),
+			}
+			policyOutput, err := esClient.DescribeElasticsearchDomainConfig(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get ElasticSearch domain resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else if policyOutput.DomainConfig == nil || policyOutput.DomainConfig.AccessPolicies == nil || policyOutput.DomainConfig.AccessPolicies.Options == nil {
+				logs.ConsoleLogger().Debug("Could not get ElasticSearch domain resource access policy for " + resource.Identifier + ", no policy exists")
+				out <- resource
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.DomainConfig.AccessPolicies.Options)
 
 				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
 				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
@@ -1091,6 +1201,48 @@ func MediaStoreContainerCheckResourcePolicy(ctx context.Context, opts []*types.O
 	return out
 }
 
+func OSSDomainCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking OpenSearch domain resource access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			ossClient := opensearch.NewFromConfig(config)
+
+			policyInput := &opensearch.DescribeDomainConfigInput{
+				DomainName: aws.String(resource.Identifier),
+			}
+			policyOutput, err := ossClient.DescribeDomainConfig(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get OpenSearch domain resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else if policyOutput.DomainConfig == nil || policyOutput.DomainConfig.AccessPolicies == nil || policyOutput.DomainConfig.AccessPolicies.Options == nil {
+				logs.ConsoleLogger().Debug("Could not get OpenSearch domain resource access policy for " + resource.Identifier + ", no policy exists")
+				out <- resource
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.DomainConfig.AccessPolicies.Options)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
 func S3FixResourceRegion(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
 	logs.ConsoleLogger().Info("Fixing S3 bucket regions")
 	out := make(chan types.EnrichedResourceDescription)
@@ -1458,13 +1610,23 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					ToString[[]byte],
 				)
 
+			case "AWS::ElasticSearch::Domain":
+				pl, err = ChainStages[string, string](
+					ListESDomains,
+					ESDomainCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"ElasticSearch Domain : \\($input.DomainName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
 			case "AWS::Events::EventBus":
 				pl, err = ChainStages[string, string](
 					CloudControlListResources,
 					EventBusCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"FileSystem: \\($input.FileSystemId)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Event Bus: \\($input.Name)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
 					ToString[[]byte],
 				)
 
@@ -1547,7 +1709,17 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					MediaStoreContainerCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"MediaStore Container: \\($input.LayerName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"MediaStore Container: \\($input.Name)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
+			case "AWS::OpenSearchService::Domain":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					OSSDomainCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"OpenSearch Domain : \\($input.DomainName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
 					ToString[[]byte],
 				)
 
