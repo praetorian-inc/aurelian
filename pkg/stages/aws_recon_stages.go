@@ -505,8 +505,8 @@ func ListESDomains(ctx context.Context, opts []*types.Option, rtype <-chan strin
 				defer wg.Done()
 				config, _ := helpers.GetAWSCfg(region, profile)
 				esClient := elasticsearchservice.NewFromConfig(config)
-				params := &elasticsearchservice.ListDomainsInput{}
-				res, err := esClient.ListDomains(ctx, params)
+				params := &elasticsearchservice.ListDomainNamesInput{}
+				res, err := esClient.ListDomainNames(ctx, params)
 				if err != nil {
 					logs.ConsoleLogger().Error(err.Error())
 					return
