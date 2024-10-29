@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/elasticsearchservice"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/glacier"
+	"github.com/aws/aws-sdk-go-v2/service/glue"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
@@ -28,6 +29,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/serverlessapplicationrepository"
+	"github.com/aws/aws-sdk-go-v2/service/ses"
+	"github.com/aws/aws-sdk-go-v2/service/sns"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	sqsTypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
@@ -736,6 +741,72 @@ func GlacierVaultCheckResourcePolicy(ctx context.Context, opts []*types.Option, 
 		}
 		close(out)
 	}()
+	return out
+}
+
+func GlueCheckResourcePolicy(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	out := make(chan types.EnrichedResourceDescription)
+	logs.ConsoleLogger().Info("Checking Glue resource access policies")
+	profile := types.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	config, err := helpers.GetAWSCfg(regions[0], profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+	acctId, err := helpers.GetAccountId(config)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	var wg sync.WaitGroup
+
+	for rtype := range rtype {
+		// Capture the current value of rtype by passing it to the goroutine
+		for _, region := range regions {
+			logs.ConsoleLogger().Debug("Getting Glue resource access policies in region: " + region)
+			wg.Add(1)
+			go func(region string, rtype string) {
+				defer wg.Done()
+				config, _ := helpers.GetAWSCfg(region, profile)
+
+				glueClient := glue.NewFromConfig(config)
+
+				policyInput := &glue.GetResourcePolicyInput{}
+				policyOutput, err := glueClient.GetResourcePolicy(ctx, policyInput)
+
+				if err != nil {
+					logs.ConsoleLogger().Debug("Could not get Glue resource access policy, error: " + err.Error())
+					return
+				} else {
+					glueCatalogArn := fmt.Sprintf("arn:aws:glue:%s:%s:catalog", region, acctId)
+					policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.PolicyInJson)
+
+					newProperties := "{\"Arn\":\"" + glueCatalogArn + "\"," + policyResultString + "}"
+
+					out <- types.EnrichedResourceDescription{
+						Identifier: glueCatalogArn,
+						TypeName:   rtype,
+						Region:     region,
+						Properties: newProperties,
+						AccountId:  acctId,
+					}
+				}
+			}(region, rtype)
+		}
+	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
 	return out
 }
 
@@ -1548,6 +1619,170 @@ func ServerlessRepoAppCheckResourcePolicy(ctx context.Context, opts []*types.Opt
 	return out
 }
 
+func SESIdentityCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking SES email identity resource access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			sesClient := ses.NewFromConfig(config)
+
+			policyInput := &ses.ListIdentityPoliciesInput{
+				Identity: aws.String(resource.Identifier),
+			}
+			policyOutput, err := sesClient.ListIdentityPolicies(ctx, policyInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get SES email identity resource access policies for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				var policyResultStrings []string
+				for i := 0; i < len(policyOutput.PolicyNames); i += 20 {
+					end := i + 20
+					if end > len(policyOutput.PolicyNames) {
+						end = len(policyOutput.PolicyNames)
+					}
+					policyNamesChunk := policyOutput.PolicyNames[i:end]
+
+					policyInput := &ses.GetIdentityPoliciesInput{
+						Identity:    aws.String(resource.Identifier),
+						PolicyNames: policyNamesChunk,
+					}
+					policyDetails, err := sesClient.GetIdentityPolicies(ctx, policyInput)
+					if err != nil {
+						logs.ConsoleLogger().Debug("Could not get SES email identity policy details for " + resource.Identifier + ", error: " + err.Error())
+						continue
+					}
+
+					for _, policyDocument := range policyDetails.Policies {
+						policyResultString := utils.CheckResourceAccessPolicy(policyDocument)
+						start := strings.Index(policyResultString, "[")
+						end := strings.LastIndex(policyResultString, "]")
+						if start != -1 && end != -1 {
+							policyResultStrings = append(policyResultStrings, policyResultString[start+1:end])
+						}
+					}
+				}
+
+				if len(policyResultStrings) > 0 {
+					lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+					newProperties := resource.Properties.(string)[:lastBracketIndex] + ",\"AccessPolicy\":{\"Statement\":[" + strings.Join(policyResultStrings, ",") + "]}}"
+
+					out <- types.EnrichedResourceDescription{
+						Identifier: resource.Identifier,
+						TypeName:   resource.TypeName,
+						Region:     resource.Region,
+						Properties: newProperties,
+						AccountId:  resource.AccountId,
+					}
+				} else {
+					out <- resource
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func SNSTopicCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking SNS topic access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			snsClient := sns.NewFromConfig(config)
+
+			attributeInput := &sns.GetTopicAttributesInput{
+				TopicArn: aws.String(resource.Identifier),
+			}
+			attributeOutput, err := snsClient.GetTopicAttributes(ctx, attributeInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not getSNS topic access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			}
+
+			policyString, ok := attributeOutput.Attributes["Policy"]
+			if !ok {
+				logs.ConsoleLogger().Debug("Could not find policy attribute for " + resource.Identifier)
+				out <- resource
+				continue
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(policyString)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func SQSQueueCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking SQS queue access policies")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			sqsClient := sqs.NewFromConfig(config)
+
+			attributeInput := &sqs.GetQueueAttributesInput{
+				QueueUrl: aws.String(resource.Identifier),
+				AttributeNames: []sqsTypes.QueueAttributeName{
+					sqsTypes.QueueAttributeNamePolicy,
+				},
+			}
+			attributeOutput, err := sqsClient.GetQueueAttributes(ctx, attributeInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get SQS queue access policy for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			}
+
+			policyString, ok := attributeOutput.Attributes["Policy"]
+			if !ok {
+				logs.ConsoleLogger().Debug("Could not find policy attribute for " + resource.Identifier)
+				out <- resource
+				continue
+			} else {
+				policyResultString := utils.CheckResourceAccessPolicy(policyString)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
 func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
 
 	out := make(chan string)
@@ -1637,6 +1872,15 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
 					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Glacier Vault : \\($input.VaultName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
+			case "AWS::Glue::ResourcePolicy":
+				pl, err = ChainStages[string, string](
+					GlueCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Glue Catalog: \\($input.Arn)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
 					ToString[[]byte],
 				)
 
@@ -1753,6 +1997,36 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
 					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Application ID: \\($input.ApplicationId)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
+			case "AWS::SES::EmailIdentity":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					SESIdentityCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"SNS Topic: \\($input.EmailIdentity)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
+			case "AWS::SNS::Topic":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					SNSTopicCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"SNS Topic: \\($input.TopicArn)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					ToString[[]byte],
+				)
+
+			case "AWS::SQS::Queue":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					SQSQueueCheckResourcePolicy,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"SQS Queue: \\($input.QueueUrl)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
 					ToString[[]byte],
 				)
 

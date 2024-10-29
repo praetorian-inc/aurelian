@@ -20,6 +20,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/elasticsearchservice v1.32.3
 	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.35.2
 	github.com/aws/aws-sdk-go-v2/service/glacier v1.26.2
+	github.com/aws/aws-sdk-go-v2/service/glue v1.100.3
 	github.com/aws/aws-sdk-go-v2/service/iam v1.34.3
 	github.com/aws/aws-sdk-go-v2/service/kms v1.37.2
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.57.0
@@ -28,6 +29,9 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.66.0
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.34.2
 	github.com/aws/aws-sdk-go-v2/service/serverlessapplicationrepository v1.24.2
+	github.com/aws/aws-sdk-go-v2/service/ses v1.28.3
+	github.com/aws/aws-sdk-go-v2/service/sns v1.33.3
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.36.3
 	github.com/aws/aws-sdk-go-v2/service/sts v1.30.3
 	github.com/aws/smithy-go v1.22.0
 	github.com/itchyny/gojq v0.12.16
