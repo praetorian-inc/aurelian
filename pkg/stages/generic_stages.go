@@ -106,11 +106,51 @@ func ToString[In any](ctx context.Context, opts []*types.Option, in <-chan In) <
 	go func() {
 		defer close(out)
 		for data := range in {
-			out <- fmt.Sprintf("%v", data)
+			switch v := any(data).(type) {
+			case []byte:
+				if utils.IsASCII(v) {
+					out <- string(v)
+				} else {
+					out <- fmt.Sprintf("%v", data)
+				}
+			default:
+				out <- fmt.Sprintf("%v", data)
+			}
 		}
 	}()
 	return out
 }
+
+func UnmarshalOutput(ctx context.Context, opts []*types.Option, in <-chan string) <-chan map[string]interface{} {
+	out := make(chan map[string]interface{})
+	go func() {
+		defer close(out)
+		for data := range in {
+			var jsonObj map[string]interface{}
+			err := json.Unmarshal([]byte(data), &jsonObj)
+			if err != nil {
+				logs.ConsoleLogger().Error(err.Error())
+				continue
+			}
+			out <- jsonObj
+		}
+	}()
+	return out
+}
+
+// func ReplaceBackslashes(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
+// 	out := make(chan string)
+// 	go func() {
+// 		defer close(out)
+// 		for data := range in {
+// 			newString := strings.ReplaceAll(data, "\\\"", "\"")
+// 			newString = strings.ReplaceAll(newString, "\\", "")
+// 			fmt.Println(newString)
+// 			out <- newString
+// 		}
+// 	}()
+// 	return out
+// }
 
 func AggregateOutput[In any, Out []In](ctx context.Context, opts []*types.Option, in <-chan In) <-chan Out {
 	out := make(chan Out)

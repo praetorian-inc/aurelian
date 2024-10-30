@@ -46,7 +46,7 @@ func PerformJqQuery(jsonContent []byte, jqQuery string) ([]byte, error) {
 		}
 		log.Fatalln(err)
 	}
-	fmt.Printf("%#v\n", v)
+	// fmt.Printf("%#v\n", v)
 
 	result, err := json.Marshal(v)
 	if err != nil {

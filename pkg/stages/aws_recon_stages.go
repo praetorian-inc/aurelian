@@ -1802,7 +1802,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					BackupVaultCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Vault: \\($input.BackupVaultName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .BackupVaultName), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1810,8 +1810,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 				pl, err = ChainStages[string, string](
 					CloudControlListResources,
 					ToJson[types.EnrichedResourceDescription],
-					// TODO - add jq filter to get public ip and public dns name
-					JqFilter("select(.Properties | fromjson | has(\"PublicIp\")) | \"\\(.Identifier),\\(.Properties | fromjson | .PublicIp)\""),
+					JqFilter("select(.Properties | fromjson | has(\"PublicIp\")) | {Identifier: .Identifier, PublicIp: (.Properties | fromjson | .PublicIp)}"),
 					ToString[[]byte],
 				)
 
@@ -1821,7 +1820,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					ECRCheckRepoPolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Repository: \\($input.RepositoryName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .RepositoryName), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1831,7 +1830,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					ECRCheckPublicRepoPolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | \"Repository: \\($input.RepositoryName), Access Policy: all users can pull by default\" + (if (has(\"AccessPolicy\") and $input.AccessPolicy != null and ($input.AccessPolicy | type) == \"object\" and $input.AccessPolicy.Statement != null and $input.AccessPolicy.Statement) then \", Additional Permissions: \\($input.AccessPolicy | tostring)\" else \"\" end)"),
+					JqFilter("{Type: .TypeName, Identifier: (.Properties | fromjson | .RepositoryName), VulnerableAccessPolicies: \"all users can pull by default\", AdditionalVulnerablePermissions: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1841,7 +1840,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					EFSFileSystemCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"FileSystem: \\($input.FileSystemId)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .FileSystemId), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1851,7 +1850,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					ESDomainCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"ElasticSearch Domain : \\($input.DomainName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .DomainName), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1861,7 +1860,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					EventBusCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Event Bus: \\($input.Name)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .Name), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1871,7 +1870,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					GlacierVaultCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Glacier Vault : \\($input.VaultName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .VaultName), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1880,7 +1879,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					GlueCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Glue Catalog: \\($input.Arn)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .Arn), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1890,7 +1889,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					IAMRoleCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"IAM Role: \\($input.RoleName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .RoleName), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1901,7 +1900,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					KMSKeyCheckGrants,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if ((has(\"AccessPolicy\") and $input.AccessPolicy != null) or (has(\"Grantees\") and $input.Grantees != null)) then \"KMS Key ID: \\($input.KeyId)\" + (if has(\"Grantees\") and $input.Grantees != null and ($input.Grantees | type) == \"object\" then \", Grantees: \\($input.Grantees | tostring)\" else \"\" end) + (if has(\"AccessPolicy\") and $input.AccessPolicy != null and ($input.AccessPolicy | type) == \"object\" and $input.AccessPolicy.Statement != null and $input.AccessPolicy.Statement then \", Access Policy: \\($input.AccessPolicy | tostring)\" else \"\" end) else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null) or (has(\"Grantees\") and $input.Grantees != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .KeyId), VulnerableGrantees: (.Properties | fromjson | .Grantees // null), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1911,7 +1910,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					LambdaCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Repository: \\($input.FunctionName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .FunctionName), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1921,7 +1920,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					LambdaLayerCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Lambda Layer: \\($input.LayerName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .LayerName), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1932,7 +1931,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					CloudWatchDestinationCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"CloudWatch Destination: \\($input.DestinationName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .DestinationName), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1943,7 +1942,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					CloudControlGetResource,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"PolicyDocument\") and $input.PolicyDocument != null) then \"CloudWatch Service Access Policy: \\($input.PolicyDocument | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"PolicyDocument\") and $input.PolicyDocument != null)) | {Type: .TypeName, VulnerableAccessPolicies: (.Properties | fromjson | .PolicyDocument // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1953,7 +1952,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					MediaStoreContainerCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"MediaStore Container: \\($input.Name)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .Name), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1963,7 +1962,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					OSSDomainCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"OpenSearch Domain : \\($input.DomainName)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .DomainName), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1976,7 +1975,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					S3CheckBucketPAB,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if ((has(\"BucketACL\") and $input.BucketACL != null) or (has(\"AccessPolicy\") and $input.AccessPolicy != null)) then \"Bucket: \\($input.BucketName)\" + (if has(\"BucketACL\") and $input.BucketACL != null and ($input.BucketACL | type) == \"object\" and $input.BucketACL.Grants != null and $input.BucketACL.Grants then \", ACL: \\($input.BucketACL | tostring)\" else \"\" end) + (if has(\"AccessPolicy\") and $input.AccessPolicy != null and ($input.AccessPolicy | type) == \"object\" and $input.AccessPolicy.Statement != null and $input.AccessPolicy.Statement then \", Access Policy: \\($input.AccessPolicy | tostring)\" else \"\" end) else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | ((has(\"BucketACL\") and $input.BucketACL != null) or (has(\"AccessPolicy\") and $input.AccessPolicy != null))) | {Type: .TypeName, Identifier: (.Properties | fromjson | .BucketName), VulnerableBucketACLs: (.Properties | fromjson | .BucketACL // null), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1986,7 +1985,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					SecretCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Secret ID: \\($input.Id)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .Id), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -1996,7 +1995,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					ServerlessRepoAppCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"Application ID: \\($input.ApplicationId)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .ApplicationId), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -2006,7 +2005,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					SESIdentityCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"SNS Topic: \\($input.EmailIdentity)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .EmailIdentity), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -2016,7 +2015,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					SNSTopicCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"SNS Topic: \\($input.TopicArn)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .TopicArn), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 
@@ -2026,7 +2025,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					SQSQueueCheckResourcePolicy,
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter(".Properties | fromjson | . as $input | if (has(\"AccessPolicy\") and $input.AccessPolicy != null) then \"SQS Queue: \\($input.QueueUrl)\" + \", Access Policy: \\($input.AccessPolicy | tostring)\" else empty end"),
+					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .QueueUrl), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
 

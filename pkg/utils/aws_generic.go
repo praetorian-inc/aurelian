@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/praetorian-inc/nebula/internal/logs"
@@ -11,9 +12,16 @@ import (
 func CheckResourceAccessPolicy(policyOutput string) string {
 	outString := "\"AccessPolicy\":{\"Statement\":["
 
+	policyDocument, err := url.QueryUnescape(policyOutput)
+	if err != nil {
+		logs.ConsoleLogger().Error("Could not URL decode policy document, error: " + err.Error())
+		outString = "\"AccessPolicy\":null"
+		return outString
+	}
+
 	var policyDoc map[string]interface{}
-	if err := json.Unmarshal([]byte(policyOutput), &policyDoc); err != nil {
-		logs.ConsoleLogger().Error("Could not parse bucket access policy, error: " + err.Error())
+	if err := json.Unmarshal([]byte(policyDocument), &policyDoc); err != nil {
+		logs.ConsoleLogger().Error("Could not parse access policy: " + policyOutput + ", error: " + err.Error())
 	} else {
 		statements, ok := policyDoc["Statement"].([]interface{})
 		if ok {
@@ -55,24 +63,25 @@ func CheckResourceAccessPolicy(policyOutput string) string {
 					actionStr = actionStr + "]"
 				}
 
+				var resourceStr string
 				resource, ok := statement["Resource"]
 				if !ok {
-					logs.ConsoleLogger().Error("Could not find Resource")
-					continue
-				}
-				var resourceStr string
-				switch resourceValue := resource.(type) {
-				case string:
-					resourceStr = "\"" + resourceValue + "\""
-				case []interface{}:
-					resourceStr = "["
-					for _, arn := range resourceValue {
-						if arnStr, ok := arn.(string); ok {
-							resourceStr = resourceStr + fmt.Sprintf("\"%s\",", arnStr)
+					logs.ConsoleLogger().Error("Could not find Resource, policy: " + policyDocument)
+					resourceStr = "null"
+				} else {
+					switch resourceValue := resource.(type) {
+					case string:
+						resourceStr = "\"" + resourceValue + "\""
+					case []interface{}:
+						resourceStr = "["
+						for _, arn := range resourceValue {
+							if arnStr, ok := arn.(string); ok {
+								resourceStr = resourceStr + fmt.Sprintf("\"%s\",", arnStr)
+							}
 						}
+						resourceStr = strings.TrimSuffix(resourceStr, ",")
+						resourceStr = resourceStr + "]"
 					}
-					resourceStr = strings.TrimSuffix(resourceStr, ",")
-					resourceStr = resourceStr + "]"
 				}
 
 				var conditionStr string
