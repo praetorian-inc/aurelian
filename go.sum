@@ -59,6 +59,8 @@ github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.18.5/go.mod h1:oOvzqGwjzl5f
 github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.42.0/go.mod h1:5B7Q2Pzv5cho/JShyRmjBtgP4/zzQ7eqL77chZ3mA3s=
 github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.42.0 h1:LM/Ij1aUUeqRTEJPm5kLLcougWLKDSvZE3P4OGB5P8c=
 github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.42.0/go.mod h1:+/4cU1i0DF9gaA6GAZRIHVJWLZB7SSqJTCvkOMilNQE=
+github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.46.3 h1:psaBtnzfGXdAbQblMRMB66b5rQ4EfqRuNeD71DsAa2s=
+github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.46.3/go.mod h1:FAKuqIR85M3yrw9AtlzCd0MLq6KZPllx17m+oCyr9j0=
 github.com/aws/aws-sdk-go-v2/service/costexplorer v1.38.1 h1:HncrihDko4doTAsUWMiiRib3nD1I1JfB8DXOypr1yMc=
 github.com/aws/aws-sdk-go-v2/service/costexplorer v1.38.1/go.mod h1:uLOg0o57AyQQhZGtUKIlcBJOKE53mO9bXKyrM9dFhy4=
 github.com/aws/aws-sdk-go-v2/service/ec2 v1.169.0 h1:iSXZ+vCHYQRolS80L7rBKBQOEVzVI8tH52e81+e5lCQ=

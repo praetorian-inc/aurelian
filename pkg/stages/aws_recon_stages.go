@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/backup"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
+	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
@@ -291,6 +292,151 @@ func CloudWatchDestinationCheckResourcePolicy(ctx context.Context, opts []*types
 						}
 					}
 				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func CognitoUserPoolGetDomains(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking Cognito user pool domains")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			cognitoClient := cognitoidentityprovider.NewFromConfig(config)
+
+			cognitoInput := &cognitoidentityprovider.DescribeUserPoolInput{
+				UserPoolId: aws.String(resource.Identifier),
+			}
+			cognitoOutput, err := cognitoClient.DescribeUserPool(ctx, cognitoInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not describe " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				if cognitoOutput.UserPool.AdminCreateUserConfig.AllowAdminCreateUserOnly {
+					out <- resource
+					continue
+				}
+
+				domainString := "\"Domains\":["
+
+				domain := cognitoOutput.UserPool.Domain
+				var formattedDomain string
+				if domain != nil {
+					formattedDomain = fmt.Sprintf("https://%s.auth.%s.amazoncognito.com", *domain, resource.Region)
+					domainString = domainString + "\"" + formattedDomain + "\","
+				}
+
+				customDomain := cognitoOutput.UserPool.CustomDomain
+				var formattedCustomDomain string
+				if customDomain != nil {
+					formattedCustomDomain = fmt.Sprintf("https://%s", *customDomain)
+					domainString = domainString + "\"" + formattedCustomDomain + "\","
+				}
+
+				if domain == nil && customDomain == nil {
+					out <- resource
+					continue
+				}
+
+				domainString = strings.TrimSuffix(domainString, ",")
+				domainString = domainString + "]"
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + domainString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func CognitoUserPoolDescribeClients(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking Cognito user pool clients")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			cognitoClient := cognitoidentityprovider.NewFromConfig(config)
+
+			cognitoInput := &cognitoidentityprovider.ListUserPoolClientsInput{
+				UserPoolId: aws.String(resource.Identifier),
+			}
+
+			clientPropertiesString := "\"ClientProperties\":["
+			for {
+				clientsOutput, err := cognitoClient.ListUserPoolClients(ctx, cognitoInput)
+				if err != nil {
+					logs.ConsoleLogger().Info("Could not list user pool clients for " + resource.Identifier + ", error: " + err.Error())
+					out <- resource
+					break
+				}
+				for _, client := range clientsOutput.UserPoolClients {
+					describeClientInput := &cognitoidentityprovider.DescribeUserPoolClientInput{
+						UserPoolId: aws.String(resource.Identifier),
+						ClientId:   client.ClientId,
+					}
+					describeClientOutput, err := cognitoClient.DescribeUserPoolClient(ctx, describeClientInput)
+					if err != nil {
+						logs.ConsoleLogger().Info("Could not describe user pool client " + *client.ClientId + " for " + resource.Identifier + ", error: " + err.Error())
+						continue
+					}
+
+					clientProperties := map[string]interface{}{
+						"CallbackURLs":       describeClientOutput.UserPoolClient.CallbackURLs,
+						"ClientId":           describeClientOutput.UserPoolClient.ClientId,
+						"AllowedOAuthFlows":  describeClientOutput.UserPoolClient.AllowedOAuthFlows,
+						"AllowedOAuthScopes": describeClientOutput.UserPoolClient.AllowedOAuthScopes,
+					}
+
+					clientPropertiesBytes, err := json.Marshal(clientProperties)
+					if err != nil {
+						logs.ConsoleLogger().Info("Could not marshal user pool client properties for " + *client.ClientId + ", error: " + err.Error())
+						continue
+					}
+					clientPropertiesString = clientPropertiesString + string(clientPropertiesBytes) + ","
+				}
+
+				if clientsOutput.NextToken == nil {
+					break
+				}
+				cognitoInput.NextToken = clientsOutput.NextToken
+			}
+
+			if clientPropertiesString == "\"ClientProperties\":[" {
+				clientPropertiesString = "\"ClientProperties\":null"
+			} else {
+				clientPropertiesString = strings.TrimSuffix(clientPropertiesString, ",")
+				clientPropertiesString = clientPropertiesString + "]"
+			}
+			lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+			newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + clientPropertiesString + "}"
+			logs.ConsoleLogger().Info(newProperties)
+
+			out <- types.EnrichedResourceDescription{
+				Identifier: resource.Identifier,
+				TypeName:   resource.TypeName,
+				Region:     resource.Region,
+				Properties: newProperties,
+				AccountId:  resource.AccountId,
 			}
 		}
 		close(out)
@@ -1806,11 +1952,22 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					ToString[[]byte],
 				)
 
+			case "AWS::Cognito::UserPool":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					CognitoUserPoolGetDomains,
+					CognitoUserPoolDescribeClients,
+					// Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter("select(.Properties | fromjson | has(\"Domains\")) | {Type: .TypeName, Identifier: .Identifier, Domains: (.Properties | fromjson | .Domains), ClientProperties: (.Properties | fromjson | .ClientProperties // null)}"),
+					ToString[[]byte],
+				)
+
 			case "AWS::EC2::Instance":
 				pl, err = ChainStages[string, string](
 					CloudControlListResources,
 					ToJson[types.EnrichedResourceDescription],
-					JqFilter("select(.Properties | fromjson | has(\"PublicIp\")) | {Identifier: .Identifier, PublicIp: (.Properties | fromjson | .PublicIp)}"),
+					JqFilter("select(.Properties | fromjson | has(\"PublicIp\")) | {Identifier: .TypeName, Identifier: .Identifier, PublicIp: (.Properties | fromjson | .PublicIp)}"),
 					ToString[[]byte],
 				)
 
