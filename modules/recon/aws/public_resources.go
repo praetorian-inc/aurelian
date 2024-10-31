@@ -63,6 +63,10 @@ func NewAwsPublicResources(opts []*types.Option) (<-chan string, stages.Stage[st
 
 var PublicTypes = []string{
 	"AWS::Backup::BackupVault",
+	"AWS::Cognito::UserPool",
+	"AWS::EBS::Snapshot",
+	"AWS::EC2::FPGAImage",
+	"AWS::EC2::Image",
 	"AWS::EC2::Instance",
 	"AWS::ECR::Repository",
 	"AWS::ECR::PublicRepository",
@@ -79,7 +83,8 @@ var PublicTypes = []string{
 	"AWS::Logs::ResourcePolicy",
 	"AWS::MediaStore::Container",
 	"AWS::OpenSearchService::Domain",
-	// "AWS::RDS::DBCluster",
+	"AWS::RDS::DBClusterSnapshot",
+	"AWS::RDS::DBSnapshot",
 	"AWS::S3::Bucket",
 	"AWS::SecretsManager::Secret",
 	"AWS::ServerlessRepo::Application",

@@ -27,6 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/mediastore"
 	"github.com/aws/aws-sdk-go-v2/service/opensearch"
+	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/serverlessapplicationrepository"
@@ -437,6 +438,375 @@ func CognitoUserPoolDescribeClients(ctx context.Context, opts []*types.Option, i
 				Region:     resource.Region,
 				Properties: newProperties,
 				AccountId:  resource.AccountId,
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func ListEBSSnapshots(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	out := make(chan types.EnrichedResourceDescription)
+	logs.ConsoleLogger().Info("Listing EBS snapshots")
+	profile := types.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	config, err := helpers.GetAWSCfg(regions[0], profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+	acctId, err := helpers.GetAccountId(config)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	var wg sync.WaitGroup
+
+	for rtype := range rtype {
+		// Capture the current value of rtype by passing it to the goroutine
+		for _, region := range regions {
+			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			wg.Add(1)
+			go func(region string, rtype string) {
+				defer wg.Done()
+				config, _ := helpers.GetAWSCfg(region, profile)
+
+				ec2Client := ec2.NewFromConfig(config)
+				params := &ec2.DescribeSnapshotsInput{
+					OwnerIds: []string{acctId},
+				}
+				for {
+					for {
+						res, err := ec2Client.DescribeSnapshots(ctx, params)
+						if err != nil {
+							logs.ConsoleLogger().Error(err.Error())
+							return
+						}
+
+						for _, snapshot := range res.Snapshots {
+							properties, err := json.Marshal(snapshot)
+							if err != nil {
+								logs.ConsoleLogger().Error("Could not marshal EBS snapshot description")
+								continue
+							}
+
+							out <- types.EnrichedResourceDescription{
+								Identifier: *snapshot.SnapshotId,
+								TypeName:   rtype,
+								Region:     region,
+								Properties: string(properties),
+								AccountId:  acctId,
+							}
+						}
+
+						if res.NextToken == nil {
+							break
+						}
+						params.NextToken = res.NextToken
+					}
+				}
+			}(region, rtype)
+		}
+	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return out
+}
+
+func EBSSnapshotDescribeAttributes(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking EBS snapshot create volume permissions")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			ec2Client := ec2.NewFromConfig(config)
+
+			loadPermissionInput := &ec2.DescribeSnapshotAttributeInput{
+				Attribute:  ec2types.SnapshotAttributeNameCreateVolumePermission,
+				SnapshotId: aws.String(resource.Identifier),
+			}
+			permissionsOutput, err := ec2Client.DescribeSnapshotAttribute(ctx, loadPermissionInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not describe EBS snapshot create volume permissions for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				loadPermissions, err := json.Marshal(permissionsOutput.CreateVolumePermissions)
+				if err != nil {
+					logs.ConsoleLogger().Error("Could not marshal EBS snapshot create volume permissions")
+					continue
+				}
+				loadPermissionsString := "\"CreateVolumePermissions\":" + string(loadPermissions)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + loadPermissionsString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func ListEC2FPGAImages(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	out := make(chan types.EnrichedResourceDescription)
+	logs.ConsoleLogger().Info("Listing EC2 FPGA images")
+	profile := types.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	config, err := helpers.GetAWSCfg(regions[0], profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+	acctId, err := helpers.GetAccountId(config)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	var wg sync.WaitGroup
+
+	for rtype := range rtype {
+		// Capture the current value of rtype by passing it to the goroutine
+		for _, region := range regions {
+			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			wg.Add(1)
+			go func(region string, rtype string) {
+				defer wg.Done()
+				config, _ := helpers.GetAWSCfg(region, profile)
+
+				ec2Client := ec2.NewFromConfig(config)
+				params := &ec2.DescribeFpgaImagesInput{
+					Owners: []string{acctId},
+				}
+				for {
+					for {
+						res, err := ec2Client.DescribeFpgaImages(ctx, params)
+						if err != nil {
+							logs.ConsoleLogger().Error(err.Error())
+							return
+						}
+
+						for _, image := range res.FpgaImages {
+							properties, err := json.Marshal(image)
+							if err != nil {
+								logs.ConsoleLogger().Error("Could not marshal EC2 FPGA image description")
+								continue
+							}
+
+							out <- types.EnrichedResourceDescription{
+								Identifier: *image.FpgaImageId,
+								TypeName:   rtype,
+								Region:     region,
+								Properties: string(properties),
+								AccountId:  acctId,
+							}
+						}
+
+						if res.NextToken == nil {
+							break
+						}
+						params.NextToken = res.NextToken
+					}
+				}
+			}(region, rtype)
+		}
+	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return out
+}
+
+func EC2FPGAImageDescribeAttributes(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking EC2 FPGA image load permissions")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			ec2Client := ec2.NewFromConfig(config)
+
+			loadPermissionInput := &ec2.DescribeFpgaImageAttributeInput{
+				Attribute:   ec2types.FpgaImageAttributeNameLoadPermission,
+				FpgaImageId: aws.String(resource.Identifier),
+			}
+			permissionsOutput, err := ec2Client.DescribeFpgaImageAttribute(ctx, loadPermissionInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not describe EC2 FPGA image load permissions for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				loadPermissions, err := json.Marshal(permissionsOutput.FpgaImageAttribute.LoadPermissions)
+				if err != nil {
+					logs.ConsoleLogger().Error("Could not marshal EC2 FPGA image load permissions")
+					continue
+				}
+				loadPermissionsString := "\"LoadPermissions\":" + string(loadPermissions)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + loadPermissionsString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func ListEC2Images(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	out := make(chan types.EnrichedResourceDescription)
+	logs.ConsoleLogger().Info("Listing EC2 AMIs")
+	profile := types.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	config, err := helpers.GetAWSCfg(regions[0], profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+	acctId, err := helpers.GetAccountId(config)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	var wg sync.WaitGroup
+
+	for rtype := range rtype {
+		// Capture the current value of rtype by passing it to the goroutine
+		for _, region := range regions {
+			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			wg.Add(1)
+			go func(region string, rtype string) {
+				defer wg.Done()
+				config, _ := helpers.GetAWSCfg(region, profile)
+
+				ec2Client := ec2.NewFromConfig(config)
+				params := &ec2.DescribeImagesInput{
+					Owners: []string{acctId},
+				}
+				for {
+					for {
+						res, err := ec2Client.DescribeImages(ctx, params)
+						if err != nil {
+							logs.ConsoleLogger().Error(err.Error())
+							return
+						}
+
+						for _, image := range res.Images {
+							properties, err := json.Marshal(image)
+							if err != nil {
+								logs.ConsoleLogger().Error("Could not marshal EC2 image description")
+								continue
+							}
+
+							out <- types.EnrichedResourceDescription{
+								Identifier: *image.ImageId,
+								TypeName:   rtype,
+								Region:     region,
+								Properties: string(properties),
+								AccountId:  acctId,
+							}
+						}
+
+						if res.NextToken == nil {
+							break
+						}
+						params.NextToken = res.NextToken
+					}
+				}
+			}(region, rtype)
+		}
+	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return out
+}
+
+func EC2ImageDescribeAttributes(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking EC2 AMI launch permissions")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			ec2Client := ec2.NewFromConfig(config)
+
+			launchPermissionInput := &ec2.DescribeImageAttributeInput{
+				Attribute: ec2types.ImageAttributeNameLaunchPermission,
+				ImageId:   aws.String(resource.Identifier),
+			}
+			permissionsOutput, err := ec2Client.DescribeImageAttribute(ctx, launchPermissionInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not get EC2 image launch permissions for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				launchPermissions, err := json.Marshal(permissionsOutput.LaunchPermissions)
+				if err != nil {
+					logs.ConsoleLogger().Error("Could not marshal EC2 image launch permissions")
+					continue
+				}
+				launchPermissionsString := "\"LaunchPermissions\":" + string(launchPermissions)
+
+				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + launchPermissionsString + "}"
+
+				out <- types.EnrichedResourceDescription{
+					Identifier: resource.Identifier,
+					TypeName:   resource.TypeName,
+					Region:     resource.Region,
+					Properties: newProperties,
+					AccountId:  resource.AccountId,
+				}
 			}
 		}
 		close(out)
@@ -1460,6 +1830,264 @@ func OSSDomainCheckResourcePolicy(ctx context.Context, opts []*types.Option, in 
 	return out
 }
 
+func ListRDSDBSnapshots(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	out := make(chan types.EnrichedResourceDescription)
+	logs.ConsoleLogger().Info("Listing RDS DB snapshots")
+	profile := types.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	config, err := helpers.GetAWSCfg(regions[0], profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+	acctId, err := helpers.GetAccountId(config)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	var wg sync.WaitGroup
+
+	for rtype := range rtype {
+		// Capture the current value of rtype by passing it to the goroutine
+		for _, region := range regions {
+			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			wg.Add(1)
+			go func(region string, rtype string) {
+				defer wg.Done()
+				config, _ := helpers.GetAWSCfg(region, profile)
+
+				rdsClient := rds.NewFromConfig(config)
+				params := &rds.DescribeDBSnapshotsInput{
+					IncludePublic: aws.Bool(true),
+					SnapshotType:  aws.String("manual"),
+				}
+				for {
+					for {
+						res, err := rdsClient.DescribeDBSnapshots(ctx, params)
+						if err != nil {
+							logs.ConsoleLogger().Error(err.Error())
+							return
+						}
+
+						for _, snapshot := range res.DBSnapshots {
+							properties, err := json.Marshal(snapshot)
+							if err != nil {
+								logs.ConsoleLogger().Error("Could not marshal RDS DB snapshot description")
+								continue
+							}
+
+							out <- types.EnrichedResourceDescription{
+								Identifier: *snapshot.DBSnapshotIdentifier,
+								TypeName:   rtype,
+								Region:     region,
+								Properties: string(properties),
+								AccountId:  acctId,
+							}
+						}
+
+						if res.Marker == nil {
+							break
+						}
+						params.Marker = res.Marker
+					}
+				}
+			}(region, rtype)
+		}
+	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return out
+}
+
+func RDSDBSnapshotDescribeAttributes(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking RDS DB snapshot restore snapshot permissions")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			rdsClient := rds.NewFromConfig(config)
+
+			loadPermissionInput := &rds.DescribeDBSnapshotAttributesInput{
+				DBSnapshotIdentifier: aws.String(resource.Identifier),
+			}
+			permissionsOutput, err := rdsClient.DescribeDBSnapshotAttributes(ctx, loadPermissionInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not describe RDS DB snapshot restore snapshot permissions for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				for _, attribute := range permissionsOutput.DBSnapshotAttributesResult.DBSnapshotAttributes {
+					if *attribute.AttributeName == "restore" {
+						restorePermissions, err := json.Marshal(attribute.AttributeValues)
+						if err != nil {
+							logs.ConsoleLogger().Error("Could not marshal RDS DB snapshot restore snapshot permissions")
+							continue
+						}
+						loadPermissionsString := "\"RestorePermissions\":[" + string(restorePermissions)
+
+						lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+						newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + loadPermissionsString + "]}"
+
+						out <- types.EnrichedResourceDescription{
+							Identifier: resource.Identifier,
+							TypeName:   resource.TypeName,
+							Region:     resource.Region,
+							Properties: newProperties,
+							AccountId:  resource.AccountId,
+						}
+					}
+				}
+				out <- resource
+
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
+func ListRDSDBClusterSnapshots(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	out := make(chan types.EnrichedResourceDescription)
+	logs.ConsoleLogger().Info("Listing RDS DB cluster snapshots")
+	profile := types.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	config, err := helpers.GetAWSCfg(regions[0], profile)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+	acctId, err := helpers.GetAccountId(config)
+	if err != nil {
+		logs.ConsoleLogger().Error(err.Error())
+		return nil
+	}
+
+	var wg sync.WaitGroup
+
+	for rtype := range rtype {
+		// Capture the current value of rtype by passing it to the goroutine
+		for _, region := range regions {
+			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			wg.Add(1)
+			go func(region string, rtype string) {
+				defer wg.Done()
+				config, _ := helpers.GetAWSCfg(region, profile)
+
+				rdsClient := rds.NewFromConfig(config)
+				params := &rds.DescribeDBClusterSnapshotsInput{
+					IncludePublic: aws.Bool(true),
+					SnapshotType:  aws.String("manual"),
+				}
+				for {
+					for {
+						res, err := rdsClient.DescribeDBClusterSnapshots(ctx, params)
+						if err != nil {
+							logs.ConsoleLogger().Error(err.Error())
+							return
+						}
+
+						for _, snapshot := range res.DBClusterSnapshots {
+							properties, err := json.Marshal(snapshot)
+							if err != nil {
+								logs.ConsoleLogger().Error("Could not marshal RDS DB snapshot description")
+								continue
+							}
+
+							out <- types.EnrichedResourceDescription{
+								Identifier: *snapshot.DBClusterIdentifier,
+								TypeName:   rtype,
+								Region:     region,
+								Properties: string(properties),
+								AccountId:  acctId,
+							}
+						}
+
+						if res.Marker == nil {
+							break
+						}
+						params.Marker = res.Marker
+					}
+				}
+			}(region, rtype)
+		}
+	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return out
+}
+
+func RDSDBClusterSnapshotDescribeAttributes(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logs.ConsoleLogger().Info("Checking RDS DB cluster snapshot restore snapshot permissions")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		for resource := range in {
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			if err != nil {
+				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+			rdsClient := rds.NewFromConfig(config)
+
+			loadPermissionInput := &rds.DescribeDBClusterSnapshotAttributesInput{
+				DBClusterSnapshotIdentifier: aws.String(resource.Identifier),
+			}
+			permissionsOutput, err := rdsClient.DescribeDBClusterSnapshotAttributes(ctx, loadPermissionInput)
+			if err != nil {
+				logs.ConsoleLogger().Debug("Could not describe RDS DB cluster snapshot restore snapshot permissions for " + resource.Identifier + ", error: " + err.Error())
+				out <- resource
+			} else {
+				for _, attribute := range permissionsOutput.DBClusterSnapshotAttributesResult.DBClusterSnapshotAttributes {
+					if *attribute.AttributeName == "restore" {
+						restorePermissions, err := json.Marshal(attribute.AttributeValues)
+						if err != nil {
+							logs.ConsoleLogger().Error("Could not marshal RDS DB cluster snapshot restore snapshot permissions")
+							continue
+						}
+						loadPermissionsString := "\"RestorePermissions\":[" + string(restorePermissions)
+
+						lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+						newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + loadPermissionsString + "]}"
+
+						out <- types.EnrichedResourceDescription{
+							Identifier: resource.Identifier,
+							TypeName:   resource.TypeName,
+							Region:     resource.Region,
+							Properties: newProperties,
+							AccountId:  resource.AccountId,
+						}
+					}
+				}
+				out <- resource
+
+			}
+		}
+		close(out)
+	}()
+	return out
+}
+
 func S3FixResourceRegion(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
 	logs.ConsoleLogger().Info("Fixing S3 bucket regions")
 	out := make(chan types.EnrichedResourceDescription)
@@ -1963,6 +2591,33 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					ToString[[]byte],
 				)
 
+			case "AWS::EBS::Snapshot":
+				pl, err = ChainStages[string, string](
+					ListEBSSnapshots,
+					EBSSnapshotDescribeAttributes,
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter("select(.Properties | fromjson | has(\"CreateVolumePermissions\")) | {Identifier: .TypeName, Identifier: .Identifier, CreateVolumePermissions: (.Properties | fromjson | .CreateVolumePermissions)}"),
+					ToString[[]byte],
+				)
+
+			case "AWS::EC2::FPGAImage":
+				pl, err = ChainStages[string, string](
+					ListEC2FPGAImages,
+					EC2FPGAImageDescribeAttributes,
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter("select(.Properties | fromjson | has(\"LoadPermissions\")) | {Identifier: .TypeName, Identifier: .Identifier, LoadPermissions: (.Properties | fromjson | .LoadPermissions)}"),
+					ToString[[]byte],
+				)
+
+			case "AWS::EC2::Image":
+				pl, err = ChainStages[string, string](
+					ListEC2Images,
+					EC2ImageDescribeAttributes,
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter("select(.Properties | fromjson | has(\"LaunchPermissions\")) | {Identifier: .TypeName, Identifier: .Identifier, LaunchPermissions: (.Properties | fromjson | .LaunchPermissions)}"),
+					ToString[[]byte],
+				)
+
 			case "AWS::EC2::Instance":
 				pl, err = ChainStages[string, string](
 					CloudControlListResources,
@@ -2120,6 +2775,24 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					// Echo[types.EnrichedResourceDescription],
 					ToJson[types.EnrichedResourceDescription],
 					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .DomainName), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
+					ToString[[]byte],
+				)
+
+			case "AWS::RDS::DBClusterSnapshot":
+				pl, err = ChainStages[string, string](
+					ListRDSDBClusterSnapshots,
+					RDSDBClusterSnapshotDescribeAttributes,
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter("select(.Properties | fromjson | has(\"CreateVolumePermissions\")) | {Identifier: .TypeName, Identifier: .Identifier, CreateVolumePermissions: (.Properties | fromjson | .CreateVolumePermissions)}"),
+					ToString[[]byte],
+				)
+
+			case "AWS::RDS::DBSnapshot":
+				pl, err = ChainStages[string, string](
+					ListRDSDBSnapshots,
+					RDSDBSnapshotDescribeAttributes,
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter("select(.Properties | fromjson | has(\"CreateVolumePermissions\")) | {Identifier: .TypeName, Identifier: .Identifier, CreateVolumePermissions: (.Properties | fromjson | .CreateVolumePermissions)}"),
 					ToString[[]byte],
 				)
 
