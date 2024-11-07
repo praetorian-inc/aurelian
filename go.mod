@@ -6,13 +6,34 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.7.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/aws/aws-sdk-go v1.55.5
-	github.com/aws/aws-sdk-go-v2 v1.32.2
+	github.com/aws/aws-sdk-go-v2 v1.32.3
 	github.com/aws/aws-sdk-go-v2/config v1.27.27
+	github.com/aws/aws-sdk-go-v2/service/backup v1.39.3
 	github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.18.5
+	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.42.0
+	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.42.0
+	github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.46.3
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.38.1
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.169.0
+	github.com/aws/aws-sdk-go-v2/service/ecr v1.36.2
+	github.com/aws/aws-sdk-go-v2/service/ecrpublic v1.27.2
+	github.com/aws/aws-sdk-go-v2/service/efs v1.33.2
+	github.com/aws/aws-sdk-go-v2/service/elasticsearchservice v1.32.3
+	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.35.2
+	github.com/aws/aws-sdk-go-v2/service/glacier v1.26.2
+	github.com/aws/aws-sdk-go-v2/service/glue v1.100.3
 	github.com/aws/aws-sdk-go-v2/service/iam v1.34.3
+	github.com/aws/aws-sdk-go-v2/service/kms v1.37.2
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.57.0
+	github.com/aws/aws-sdk-go-v2/service/mediastore v1.24.3
+	github.com/aws/aws-sdk-go-v2/service/opensearch v1.41.2
+	github.com/aws/aws-sdk-go-v2/service/rds v1.89.0
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.66.0
+	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.34.2
+	github.com/aws/aws-sdk-go-v2/service/serverlessapplicationrepository v1.24.2
+	github.com/aws/aws-sdk-go-v2/service/ses v1.28.3
+	github.com/aws/aws-sdk-go-v2/service/sns v1.33.3
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.36.3
 	github.com/aws/aws-sdk-go-v2/service/sts v1.30.3
 	github.com/aws/smithy-go v1.22.0
 	github.com/itchyny/gojq v0.12.16
@@ -33,7 +54,11 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.11.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.8.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.2.2 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.4 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.6 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.21 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.4.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.18.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/s3control v1.49.2 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.4 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
@@ -67,11 +92,11 @@ require (
 require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.27 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.11 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.16 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.16 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.22 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.22 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.11.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.11.17 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.12.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.22.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.26.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
