@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/ollama/ollama/api"
 	"github.com/praetorian-inc/nebula/internal/logs"
@@ -163,6 +166,27 @@ func AggregateOutput[In any, Out []In](ctx context.Context, opts []*types.Option
 		}
 
 		out <- items
+	}()
+	return out
+}
+
+func GetFilesOfType(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
+	out := make(chan string)
+	go func() {
+		defer close(out)
+		inputLoc := types.GetOptionByName(options.DirPathOpt.Name, opts).Value
+		for extension := range in {
+			inputFiles, err := os.ReadDir(inputLoc)
+			if err != nil {
+				logs.ConsoleLogger().Error(err.Error())
+				return
+			}
+			for _, file := range inputFiles {
+				if strings.HasSuffix(file.Name(), extension) {
+					out <- filepath.Join(inputLoc, file.Name())
+				}
+			}
+		}
 	}()
 	return out
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/praetorian-inc/nebula/modules"
 	analyze "github.com/praetorian-inc/nebula/modules/analyze/aws"
+	augment "github.com/praetorian-inc/nebula/modules/misc/augment"
 	recon "github.com/praetorian-inc/nebula/modules/recon/aws"
 	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -33,6 +34,9 @@ func init() {
 
 	// GCP Recon
 	//RegisterModule(gcpReconCmd, recongcp.GetProjectsMetadata, recongcp.GetProjectsOptions, noCommon, recongcp.NewGetProjects)
+
+	// Misc Modules
+	RegisterModule(miscAugmentCmd, augment.MiscProwlerToMDTableMetadata, augment.MiscProwlerToMDTableOptions, miscCommonOptions, augment.MiscProwlerToMDTableOutputProviders, augment.NewMiscProwlerToMDTable)
 }
 
 var noCommon = []*types.Option{}
