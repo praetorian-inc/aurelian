@@ -104,7 +104,16 @@ var AwsActionOpt = types.Option{
 
 var AwsProfileOpt = types.Option{
 	Name:        "profile",
+	Short:       "p",
 	Description: "AWS shared credentials profile",
+	Required:    false,
+	Type:        types.String,
+	Value:       "",
+}
+
+var AwsProfileListOpt = types.Option{
+	Name:        "profile-list",
+	Description: "List of AWS shared credentials profiles",
 	Required:    false,
 	Type:        types.String,
 	Value:       "",

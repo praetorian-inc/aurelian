@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/glacier"
 	"github.com/aws/aws-sdk-go-v2/service/glue"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/mediastore"
@@ -185,33 +186,75 @@ func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*types.Opti
 	out := make(chan []byte)
 	go func() {
 		defer close(out)
-
+		// Get AWS config
 		config, err := helpers.GetAWSCfg("", types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
-
 		if err != nil {
 			logs.ConsoleLogger().Error(fmt.Sprintf("Error getting AWS config: %s", err))
 			return
 		}
 
+		// Get account ID
 		accountId, err := helpers.GetAccountId(config)
 		if err != nil {
 			logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account ID: %s", err))
+			return
 		}
-		fmt.Println(accountId)
+		logs.ConsoleLogger().Info("Got account ID:", "id", accountId)
 
+		// Initialize IAM client and pagination
 		client := iam.NewFromConfig(config)
-		output, err := client.GetAccountAuthorizationDetails(ctx, &iam.GetAccountAuthorizationDetailsInput{})
+		var completeOutput *iam.GetAccountAuthorizationDetailsOutput
+		var marker *string
+
+		// Paginate through results
+		for {
+			input := &iam.GetAccountAuthorizationDetailsInput{
+				Filter: []iamtypes.EntityType{
+					iamtypes.EntityTypeUser,
+					iamtypes.EntityTypeRole,
+					iamtypes.EntityTypeGroup,
+					iamtypes.EntityTypeLocalManagedPolicy,
+					iamtypes.EntityTypeAWSManagedPolicy,
+				},
+				Marker: marker,
+			}
+			output, err := client.GetAccountAuthorizationDetails(ctx, input)
+			if err != nil {
+				logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account authorization details: %s", err))
+				return
+			}
+
+			// Initialize or append to completeOutput
+			if completeOutput == nil {
+				completeOutput = output
+			} else {
+				completeOutput.UserDetailList = append(completeOutput.UserDetailList, output.UserDetailList...)
+				completeOutput.GroupDetailList = append(completeOutput.GroupDetailList, output.GroupDetailList...)
+				completeOutput.RoleDetailList = append(completeOutput.RoleDetailList, output.RoleDetailList...)
+				completeOutput.Policies = append(completeOutput.Policies, output.Policies...)
+			}
+
+			if output.Marker == nil {
+				break
+			}
+			marker = output.Marker
+		}
+
+		// Marshal the complete output
+		rawData, err := json.Marshal(completeOutput)
 		if err != nil {
-			logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account authorization details: %s", err))
+			logs.ConsoleLogger().Error(fmt.Sprintf("Error marshaling authorization details: %s", err))
 			return
 		}
 
-		res, err := json.Marshal(output)
+		// Replace URL-encoded policies with decoded versions
+		decodedData, err := utils.GaadReplaceURLEncodedPolicies(rawData)
 		if err != nil {
-			logs.ConsoleLogger().Error(fmt.Sprintf("Error marshalling account authorization details: %s", err))
+			logs.ConsoleLogger().Error(fmt.Sprintf("Error replacing URL-encoded policies: %s", err))
+			return
 		}
 
-		out <- res
+		out <- decodedData
 	}()
 	return out
 }
