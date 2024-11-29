@@ -5,6 +5,16 @@ import (
 	"log"
 )
 
+var resultFilenameOverride string
+
+func OverrideResultFilename(filename string) {
+	resultFilenameOverride = filename
+}
+
+func getOverriddenResultFilename() string {
+	return resultFilenameOverride
+}
+
 type Result struct {
 	Platform Platform `json:"platform"`
 	Module   string   `json:"module"`
@@ -19,6 +29,11 @@ func NewResult(platform Platform, module string, data interface{}, opts ...Resul
 		Platform: platform,
 		Module:   module,
 		Data:     data,
+	}
+
+	if filename := getOverriddenResultFilename(); filename != "" {
+		r.Filename = filename
+		resultFilenameOverride = ""
 	}
 
 	for _, opt := range opts {

@@ -182,80 +182,111 @@ func ParseTypes(types string) <-chan string {
 	return out
 }
 
-func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan []byte {
-	out := make(chan []byte)
+func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan struct {
+	Data     []byte
+	Filename string
+} {
+	out := make(chan struct {
+		Data     []byte
+		Filename string
+	})
+	var wg sync.WaitGroup
+
 	go func() {
-		defer close(out)
-		// Get AWS config
-		config, err := helpers.GetAWSCfg("", types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
-		if err != nil {
-			logs.ConsoleLogger().Error(fmt.Sprintf("Error getting AWS config: %s", err))
-			return
+		for profile := range in {
+			wg.Add(1)
+			go func(profile string) {
+				defer wg.Done()
+
+				type gaadOut struct {
+					Data     []byte
+					Filename string
+				}
+
+				// Get AWS config for this profile
+				config, err := helpers.GetAWSCfg("", profile)
+				if err != nil {
+					logs.ConsoleLogger().Error(fmt.Sprintf("Error getting AWS config for profile %s: %s", profile, err))
+					return
+				}
+
+				// Get account ID
+				accountId, err := helpers.GetAccountId(config)
+				if err != nil {
+					logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account ID for profile %s: %s", profile, err))
+					return
+				}
+
+				// Initialize IAM client and pagination
+				client := iam.NewFromConfig(config)
+				var completeOutput *iam.GetAccountAuthorizationDetailsOutput
+				var marker *string
+
+				// Paginate through results
+				for {
+					input := &iam.GetAccountAuthorizationDetailsInput{
+						Filter: []iamtypes.EntityType{
+							iamtypes.EntityTypeUser,
+							iamtypes.EntityTypeRole,
+							iamtypes.EntityTypeGroup,
+							iamtypes.EntityTypeLocalManagedPolicy,
+							iamtypes.EntityTypeAWSManagedPolicy,
+						},
+						Marker: marker,
+					}
+					output, err := client.GetAccountAuthorizationDetails(ctx, input)
+					if err != nil {
+						logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account authorization details for profile %s: %s", profile, err))
+						return
+					}
+
+					if completeOutput == nil {
+						completeOutput = output
+					} else {
+						completeOutput.UserDetailList = append(completeOutput.UserDetailList, output.UserDetailList...)
+						completeOutput.GroupDetailList = append(completeOutput.GroupDetailList, output.GroupDetailList...)
+						completeOutput.RoleDetailList = append(completeOutput.RoleDetailList, output.RoleDetailList...)
+						completeOutput.Policies = append(completeOutput.Policies, output.Policies...)
+					}
+
+					if output.Marker == nil {
+						break
+					}
+					marker = output.Marker
+				}
+
+				if completeOutput == nil {
+					return
+				}
+
+				// Marshal and decode the output
+				rawData, err := json.Marshal(completeOutput)
+				if err != nil {
+					logs.ConsoleLogger().Error(fmt.Sprintf("Error marshaling authorization details for profile %s: %s", profile, err))
+					return
+				}
+
+				decodedData, err := utils.GaadReplaceURLEncodedPolicies(rawData)
+				if err != nil {
+					logs.ConsoleLogger().Error(fmt.Sprintf("Error replacing URL-encoded policies for profile %s: %s", profile, err))
+					return
+				}
+
+				// filename := fmt.Sprintf("authorization-details-%s-%s-%s-gaad.json", profile, accountId, strconv.FormatInt(time.Now().Unix(), 10))
+				filename := fmt.Sprintf("authorization-details-%s-%s-gaad.json", profile, accountId)
+
+				// Send the result with profile-specific filename
+				out <- gaadOut{
+					Data:     decodedData,
+					Filename: filename,
+				}
+			}(profile)
 		}
 
-		// Get account ID
-		accountId, err := helpers.GetAccountId(config)
-		if err != nil {
-			logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account ID: %s", err))
-			return
-		}
-		logs.ConsoleLogger().Info("Got account ID:", "id", accountId)
-
-		// Initialize IAM client and pagination
-		client := iam.NewFromConfig(config)
-		var completeOutput *iam.GetAccountAuthorizationDetailsOutput
-		var marker *string
-
-		// Paginate through results
-		for {
-			input := &iam.GetAccountAuthorizationDetailsInput{
-				Filter: []iamtypes.EntityType{
-					iamtypes.EntityTypeUser,
-					iamtypes.EntityTypeRole,
-					iamtypes.EntityTypeGroup,
-					iamtypes.EntityTypeLocalManagedPolicy,
-					iamtypes.EntityTypeAWSManagedPolicy,
-				},
-				Marker: marker,
-			}
-			output, err := client.GetAccountAuthorizationDetails(ctx, input)
-			if err != nil {
-				logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account authorization details: %s", err))
-				return
-			}
-
-			// Initialize or append to completeOutput
-			if completeOutput == nil {
-				completeOutput = output
-			} else {
-				completeOutput.UserDetailList = append(completeOutput.UserDetailList, output.UserDetailList...)
-				completeOutput.GroupDetailList = append(completeOutput.GroupDetailList, output.GroupDetailList...)
-				completeOutput.RoleDetailList = append(completeOutput.RoleDetailList, output.RoleDetailList...)
-				completeOutput.Policies = append(completeOutput.Policies, output.Policies...)
-			}
-
-			if output.Marker == nil {
-				break
-			}
-			marker = output.Marker
-		}
-
-		// Marshal the complete output
-		rawData, err := json.Marshal(completeOutput)
-		if err != nil {
-			logs.ConsoleLogger().Error(fmt.Sprintf("Error marshaling authorization details: %s", err))
-			return
-		}
-
-		// Replace URL-encoded policies with decoded versions
-		decodedData, err := utils.GaadReplaceURLEncodedPolicies(rawData)
-		if err != nil {
-			logs.ConsoleLogger().Error(fmt.Sprintf("Error replacing URL-encoded policies: %s", err))
-			return
-		}
-
-		out <- decodedData
+		wg.Wait()
+		close(out)
 	}()
+
 	return out
 }
 

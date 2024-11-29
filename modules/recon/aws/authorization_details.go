@@ -1,8 +1,8 @@
 package recon
 
 import (
-	"strconv"
-	"time"
+	"context"
+	"strings"
 
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
@@ -16,7 +16,9 @@ type AwsAuthorizationDetails struct {
 	AccountId string
 }
 
-var AwsAuthorizationDetailsOptions = []*types.Option{}
+var AwsAuthorizationDetailsOptions = []*types.Option{
+	&o.AwsProfileListOpt,
+}
 
 var AwsAuthorizationDetailsMetadata = modules.Metadata{
 	Id:          "authorization-details",
@@ -51,21 +53,38 @@ func NewAwsAuthorizationDetailsModel(opts []*types.Option) (modules.Module, erro
 }
 
 func NewAwsAuthorizationDetails(opts []*types.Option) (<-chan string, stages.Stage[string, []byte], error) {
+	profileList := types.GetOptionByName(o.AwsProfileListOpt.Name, opts).Value
+	profile := types.GetOptionByName(o.AwsProfileOpt.Name, opts).Value
+	var profiles []string
 
-	// TODO: this should be an optional parameter and we can use this as the default
-	// TODO: default should have the account id in the file name
-	fileNameOpt := o.FileNameOpt
-
-	fileNameOpt.Value = AwsAuthorizationDetailsMetadata.Id + "-" + strconv.FormatInt(time.Now().Unix(), 10) + "-gaad.json"
-	opts = append(opts, &fileNameOpt)
+	if profileList == "" {
+		profiles = []string{profile}
+	} else {
+		profiles = strings.Split(profileList, ",")
+	}
 
 	pipeline, err := stages.ChainStages[string, []byte](
 		stages.GetAccountAuthorizationDetailsStage,
+		func(ctx context.Context, opts []*types.Option, in <-chan struct {
+			Data     []byte
+			Filename string
+		}) <-chan []byte {
+			out := make(chan []byte)
+			go func() {
+				defer close(out)
+				for output := range in {
+					// define filename that output provider will wrap in Result
+					types.OverrideResultFilename(output.Filename)
+					out <- output.Data
+				}
+			}()
+			return out
+		},
 	)
 
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return stages.Generator([]string{"foo"}), pipeline, nil
+	return stages.Generator(profiles), pipeline, nil
 }
