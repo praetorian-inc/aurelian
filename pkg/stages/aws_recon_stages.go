@@ -182,14 +182,8 @@ func ParseTypes(types string) <-chan string {
 	return out
 }
 
-func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan struct {
-	Data     []byte
-	Filename string
-} {
-	out := make(chan struct {
-		Data     []byte
-		Filename string
-	})
+func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan []byte {
+	out := make(chan []byte)
 	var wg sync.WaitGroup
 
 	go func() {
@@ -274,12 +268,10 @@ func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*types.Opti
 
 				// filename := fmt.Sprintf("authorization-details-%s-%s-%s-gaad.json", profile, accountId, strconv.FormatInt(time.Now().Unix(), 10))
 				filename := fmt.Sprintf("authorization-details-%s-%s-gaad.json", profile, accountId)
+				types.OverrideResultFilename(filename)
 
 				// Send the result with profile-specific filename
-				out <- gaadOut{
-					Data:     decodedData,
-					Filename: filename,
-				}
+				out <- decodedData
 			}(profile)
 		}
 

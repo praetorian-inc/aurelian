@@ -1,7 +1,6 @@
 package recon
 
 import (
-	"context"
 	"strings"
 
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
@@ -65,21 +64,6 @@ func NewAwsAuthorizationDetails(opts []*types.Option) (<-chan string, stages.Sta
 
 	pipeline, err := stages.ChainStages[string, []byte](
 		stages.GetAccountAuthorizationDetailsStage,
-		func(ctx context.Context, opts []*types.Option, in <-chan struct {
-			Data     []byte
-			Filename string
-		}) <-chan []byte {
-			out := make(chan []byte)
-			go func() {
-				defer close(out)
-				for output := range in {
-					// define filename that output provider will wrap in Result
-					types.OverrideResultFilename(output.Filename)
-					out <- output.Data
-				}
-			}()
-			return out
-		},
 	)
 
 	if err != nil {
