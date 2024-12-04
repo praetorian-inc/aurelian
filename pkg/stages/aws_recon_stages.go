@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/glacier"
 	"github.com/aws/aws-sdk-go-v2/service/glue"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/mediastore"
@@ -183,36 +184,101 @@ func ParseTypes(types string) <-chan string {
 
 func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan []byte {
 	out := make(chan []byte)
+	var wg sync.WaitGroup
+
 	go func() {
-		defer close(out)
+		for profile := range in {
+			wg.Add(1)
+			go func(profile string) {
+				defer wg.Done()
 
-		config, err := helpers.GetAWSCfg("", types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+				type gaadOut struct {
+					Data     []byte
+					Filename string
+				}
 
-		if err != nil {
-			logs.ConsoleLogger().Error(fmt.Sprintf("Error getting AWS config: %s", err))
-			return
+				// Get AWS config for this profile
+				config, err := helpers.GetAWSCfg("", profile)
+				if err != nil {
+					logs.ConsoleLogger().Error(fmt.Sprintf("Error getting AWS config for profile %s: %s", profile, err))
+					return
+				}
+
+				// Get account ID
+				accountId, err := helpers.GetAccountId(config)
+				if err != nil {
+					logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account ID for profile %s: %s", profile, err))
+					return
+				}
+
+				// Initialize IAM client and pagination
+				client := iam.NewFromConfig(config)
+				var completeOutput *iam.GetAccountAuthorizationDetailsOutput
+				var marker *string
+
+				// Paginate through results
+				for {
+					input := &iam.GetAccountAuthorizationDetailsInput{
+						Filter: []iamtypes.EntityType{
+							iamtypes.EntityTypeUser,
+							iamtypes.EntityTypeRole,
+							iamtypes.EntityTypeGroup,
+							iamtypes.EntityTypeLocalManagedPolicy,
+							iamtypes.EntityTypeAWSManagedPolicy,
+						},
+						Marker: marker,
+					}
+					output, err := client.GetAccountAuthorizationDetails(ctx, input)
+					if err != nil {
+						logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account authorization details for profile %s: %s", profile, err))
+						return
+					}
+
+					if completeOutput == nil {
+						completeOutput = output
+					} else {
+						completeOutput.UserDetailList = append(completeOutput.UserDetailList, output.UserDetailList...)
+						completeOutput.GroupDetailList = append(completeOutput.GroupDetailList, output.GroupDetailList...)
+						completeOutput.RoleDetailList = append(completeOutput.RoleDetailList, output.RoleDetailList...)
+						completeOutput.Policies = append(completeOutput.Policies, output.Policies...)
+					}
+
+					if output.Marker == nil {
+						break
+					}
+					marker = output.Marker
+				}
+
+				if completeOutput == nil {
+					return
+				}
+
+				// Marshal and decode the output
+				rawData, err := json.Marshal(completeOutput)
+				if err != nil {
+					logs.ConsoleLogger().Error(fmt.Sprintf("Error marshaling authorization details for profile %s: %s", profile, err))
+					return
+				}
+
+				decodedData, err := utils.GaadReplaceURLEncodedPolicies(rawData)
+				if err != nil {
+					logs.ConsoleLogger().Error(fmt.Sprintf("Error replacing URL-encoded policies for profile %s: %s", profile, err))
+					return
+				}
+
+				// filename := fmt.Sprintf("authorization-details-%s-%s-%s-gaad.json", profile, accountId, strconv.FormatInt(time.Now().Unix(), 10))
+				filename := fmt.Sprintf("authorization-details-%s-%s-gaad.json", profile, accountId)
+				types.OverrideResultFilename(filename)
+
+				// Send the result with profile-specific filename
+				out <- decodedData
+			}(profile)
 		}
 
-		accountId, err := helpers.GetAccountId(config)
-		if err != nil {
-			logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account ID: %s", err))
-		}
-		fmt.Println(accountId)
-
-		client := iam.NewFromConfig(config)
-		output, err := client.GetAccountAuthorizationDetails(ctx, &iam.GetAccountAuthorizationDetailsInput{})
-		if err != nil {
-			logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account authorization details: %s", err))
-			return
-		}
-
-		res, err := json.Marshal(output)
-		if err != nil {
-			logs.ConsoleLogger().Error(fmt.Sprintf("Error marshalling account authorization details: %s", err))
-		}
-
-		out <- res
+		wg.Wait()
+		close(out)
 	}()
+
 	return out
 }
 
