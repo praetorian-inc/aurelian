@@ -10,7 +10,7 @@ nebula aws recon get [flags]
 
 ```
   -h, --help                   help for get
-      --profile string         AWS shared credentials profile
+  -p, --profile string         AWS shared credentials profile
   -r, --region string          AWS region (default "us-east-1")
   -i, --resource-id string     AWS Cloud Control resource identifier
   -t, --resource-type string   AWS Cloud Control resource type
