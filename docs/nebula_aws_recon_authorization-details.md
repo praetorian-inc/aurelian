@@ -9,8 +9,9 @@ nebula aws recon authorization-details [flags]
 ### Options
 
 ```
-  -h, --help             help for authorization-details
-      --profile string   AWS shared credentials profile
+  -h, --help                  help for authorization-details
+  -p, --profile string        AWS shared credentials profile
+      --profile-list string   List of AWS shared credentials profiles
 ```
 
 ### Options inherited from parent commands
