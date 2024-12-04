@@ -1,0 +1,55 @@
+name: Generate CLI Documentation
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  generate-docs:
+    name: Generate CLI Documentation
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+          cache: true
+          
+      - name: Generate documentation
+        run: |
+          go run main.go gendoc
+          
+      - name: Check for changes
+        id: git-check
+        run: |
+          if [[ -n "$(git status --porcelain docs/)" ]]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Create Pull Request
+        if: steps.git-check.outputs.changes == 'true'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          commit-message: "docs: update CLI documentation"
+          title: "docs: update CLI documentation"
+          body: |
+            Auto-generated CLI documentation update
+            
+            This PR updates the CLI documentation based on the latest changes in the main branch.
+          branch: update-cli-docs
+          base: main
+          delete-branch: true
+          labels: |
+            documentation
+            automated pr
