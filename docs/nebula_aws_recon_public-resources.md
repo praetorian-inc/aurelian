@@ -11,7 +11,7 @@ nebula aws recon public-resources [flags]
 ```
   -f, --file string            File name (default "public-resources-<timestamp>.json")
   -h, --help                   help for public-resources
-      --profile string         AWS shared credentials profile
+  -p, --profile string         AWS shared credentials profile
   -r, --regions string         Comma separated list of AWS regions
   -t, --resource-type string   AWS Cloud Control resource type
 ```
