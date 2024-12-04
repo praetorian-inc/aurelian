@@ -7,6 +7,7 @@ import (
 	analyze "github.com/praetorian-inc/nebula/modules/analyze/aws"
 	augment "github.com/praetorian-inc/nebula/modules/misc/augment"
 	recon "github.com/praetorian-inc/nebula/modules/recon/aws"
+	reconaz "github.com/praetorian-inc/nebula/modules/recon/azure"
 	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/spf13/cobra"
@@ -30,7 +31,7 @@ func init() {
 	RegisterModule(awsReconCmd, recon.AwsPublicResourcesMetadata, recon.AwsPublicResourcesOptions, awsCommonOptions, recon.AwsPublicResourcesOutputProviders, recon.NewAwsPublicResources)
 
 	// Azure Recon
-	//RegisterModule(azureReconCmd, reconaz.AzureSummaryMetadata, reconaz.AzureSummaryOptions, azureCommonOptions, reconaz.NewAzureSummary)
+	RegisterModule(azureReconCmd, reconaz.AzureSummaryMetadata, reconaz.AzureSummaryOptions, azureCommonOptions, reconaz.AzureSummaryOutputProvders, reconaz.NewAzureSummary)
 
 	// GCP Recon
 	//RegisterModule(gcpReconCmd, recongcp.GetProjectsMetadata, recongcp.GetProjectsOptions, noCommon, recongcp.NewGetProjects)
