@@ -25,6 +25,8 @@ var KnownAccountIDMetadata = modules.Metadata{
 	OpsecLevel:  modules.Stealth,
 	References: []string{
 		"https://github.com/rupertbg/aws-public-account-ids/tree/master",
+		"https://github.com/fwdcloudsec/known_aws_accounts",
+		"https://github.com/trufflesecurity/trufflehog/blob/4cd055fe3f13b5e17fcb19553c623f1f2720e9f3/pkg/detectors/aws/access_keys/canary.go#L16",
 	},
 }
 
