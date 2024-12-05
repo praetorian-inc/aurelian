@@ -17,6 +17,7 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/utils"
 	a "github.com/seancfoley/ipaddress-go/ipaddr"
+	"gopkg.in/yaml.v3"
 )
 
 // AwsExpandActionsStage is a generic function that takes an input channel of strings and returns an output channel of strings.
@@ -110,6 +111,44 @@ func AwsKnownAccountIdStage(ctx context.Context, opts []*types.Option, in <-chan
 				continue
 			}
 
+			body, err = utils.Cached_httpGet("https://raw.githubusercontent.com/fwdcloudsec/known_aws_accounts/main/accounts.yaml")
+			if err != nil {
+				logs.ConsoleLogger().Error(fmt.Sprintf("Error getting known AWS account IDs: %v", err))
+				continue
+			}
+
+			fcsAccounts := []fwdcloudsecAccount{}
+			yaml.Unmarshal(body, &fcsAccounts)
+			if err != nil {
+				logs.ConsoleLogger().Error(fmt.Sprintf("Error unmarshalling fwdcloudsec known AWS account IDs: %v", err))
+				continue
+			}
+
+			body, err = utils.Cached_httpGet("https://raw.githubusercontent.com/duo-labs/cloudmapper/refs/heads/main/vendor_accounts.yaml")
+			if err != nil {
+				logs.ConsoleLogger().Error(fmt.Sprintf("Error getting known AWS account IDs: %v", err))
+				continue
+			}
+
+			cmAccounts := []cloudmapperAccount{}
+			yaml.Unmarshal(body, &cmAccounts)
+			if err != nil {
+				logs.ConsoleLogger().Error(fmt.Sprintf("Error unmarshalling fwdcloudsec known AWS account IDs: %v", err))
+				continue
+			}
+			for _, account := range cmAccounts {
+				for _, id := range account.Accounts {
+					accounts = append(accounts, AwsKnownAccount{ID: id, Owner: account.Name, Source: account.Source})
+				}
+			}
+
+			// https://github.com/trufflesecurity/trufflehog/blob/4cd055fe3f13b5e17fcb19553c623f1f2720e9f3/pkg/detectors/aws/access_keys/canary.go#L16
+			canaryTokens := []string{"052310077262", "171436882533", "534261010715", "595918472158", "717712589309", "819147034852", "992382622183", "730335385048", "266735846894"}
+
+			for _, id := range canaryTokens {
+				accounts = append(accounts, AwsKnownAccount{ID: id, Owner: "Thinkst", Description: "Canary Tokens AWS account"})
+			}
+
 			for _, account := range accounts {
 				if account.ID == string(id) {
 					out <- account
@@ -120,6 +159,18 @@ func AwsKnownAccountIdStage(ctx context.Context, opts []*types.Option, in <-chan
 	}()
 
 	return out
+}
+
+type cloudmapperAccount struct {
+	Name     string   `json:"name"`
+	Source   string   `json:"source"`
+	Accounts []string `json:"accounts"`
+}
+
+type fwdcloudsecAccount struct {
+	Name     string   `yaml:"name"`
+	Source   []string `yaml:"source"`
+	Accounts []string `yaml:"accounts"`
 }
 
 type AwsKnownAccount struct {
