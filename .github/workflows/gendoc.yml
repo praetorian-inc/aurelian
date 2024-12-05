@@ -1,9 +1,10 @@
 name: Generate CLI Documentation
 
 on:
-  push:
+  pull_request:
     branches:
       - main
+    types: [opened, synchronize]
 
 permissions:
   contents: write
@@ -11,20 +12,22 @@ permissions:
 
 jobs:
   generate-docs:
-    name: Generate CLI Documentation
+    name: Generate Documentation
     runs-on: ubuntu-latest
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
+        with:
+          ref: ${{ github.head_ref }}
+          
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
           go-version: '1.22'
           cache: true
           
-      - name: Generate documentation
+      - name: Generate CLI Documentation
         run: |
           go run main.go gendoc
           
@@ -37,19 +40,11 @@ jobs:
             echo "changes=false" >> $GITHUB_OUTPUT
           fi
           
-      - name: Create Pull Request
+      - name: Commit and push changes
         if: steps.git-check.outputs.changes == 'true'
-        uses: peter-evans/create-pull-request@v5
-        with:
-          commit-message: "docs: update CLI documentation"
-          title: "docs: update CLI documentation"
-          body: |
-            Auto-generated CLI documentation update
-            
-            This PR updates the CLI documentation based on the latest changes in the main branch.
-          branch: update-cli-docs
-          base: main
-          delete-branch: true
-          labels: |
-            documentation
-            automated pr
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add docs/
+          git commit -m "docs: Update CLI documentation"
+          git push
