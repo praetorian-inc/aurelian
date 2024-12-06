@@ -1,8 +1,6 @@
 package outputproviders
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,13 +33,12 @@ func (fp *MarkdownFileProvider) Write(result types.Result) error {
 		return fmt.Errorf("incoming result 'Data' not of type MarkdownTable instead received %T", result.Data)
 	}
 	var filename string
-	// TODO we should centralize this logic
 	if result.Filename == "" {
 		filename = fp.DefaultFileName(result.Module)
 	} else {
 		filename = result.Filename
 	}
-	fullpath := fp.GetFullPath(filename)
+	fullpath := GetFullPath(filename, fp.OutputPath)
 	dir := filepath.Dir(fullpath)
 
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
@@ -102,17 +99,8 @@ func (fp *MarkdownFileProvider) Write(result types.Result) error {
 	return nil
 }
 
-// Generate a random 10-character UUID
-func generateShortUUIDMarkdown() string {
-	b := make([]byte, 5) // 5 bytes = 10 hex characters
-	if _, err := rand.Read(b); err != nil {
-		return "" // In case of error, return empty string
-	}
-	return hex.EncodeToString(b)
-}
-
 func (fp *MarkdownFileProvider) DefaultFileName(prefix string) string {
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-	uuid := generateShortUUIDMarkdown()
+	uuid := GenerateShortUUID()
 	return prefix + "-" + timestamp + "-" + uuid + ".md"
 }

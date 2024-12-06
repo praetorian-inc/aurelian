@@ -1,8 +1,6 @@
 package outputproviders
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -31,11 +29,11 @@ func (fp *JsonFileProvider) Write(result types.Result) error {
 	var filename string
 
 	if result.Filename == "" {
-		filename = DefaultFileName(result.Module)
+		filename = fp.DefaultFileName(result.Module)
 	} else {
 		filename = result.Filename
 	}
-	fullpath := fp.GetFullPath(filename)
+	fullpath := GetFullPath(filename, fp.OutputPath)
 	dir := filepath.Dir(fullpath)
 
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
@@ -62,21 +60,8 @@ func (fp *JsonFileProvider) Write(result types.Result) error {
 	return nil
 }
 
-func (fp *JsonFileProvider) GetFullPath(filename string) string {
-	return fp.OutputPath + string(os.PathSeparator) + filename
-}
-
-// Generate a random 10-character UUID
-func generateShortUUIDJson() string {
-	b := make([]byte, 5) // 5 bytes = 10 hex characters
-	if _, err := rand.Read(b); err != nil {
-		return "" // In case of error, return empty string
-	}
-	return hex.EncodeToString(b)
-}
-
-func DefaultFileName(prefix string) string {
+func (fp *JsonFileProvider) DefaultFileName(prefix string) string {
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-	uuid := generateShortUUIDJson()
+	uuid := GenerateShortUUID()
 	return prefix + "-" + timestamp + "-" + uuid + ".json"
 }
