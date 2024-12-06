@@ -1,6 +1,8 @@
 package outputproviders
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -100,10 +102,17 @@ func (fp *MarkdownFileProvider) Write(result types.Result) error {
 	return nil
 }
 
-func (fp *MarkdownFileProvider) GetFullPath(filename string) string {
-	return fp.OutputPath + string(os.PathSeparator) + filename
+// Generate a random 10-character UUID
+func generateShortUUIDMarkdown() string {
+	b := make([]byte, 5) // 5 bytes = 10 hex characters
+	if _, err := rand.Read(b); err != nil {
+		return "" // In case of error, return empty string
+	}
+	return hex.EncodeToString(b)
 }
 
 func (fp *MarkdownFileProvider) DefaultFileName(prefix string) string {
-	return prefix + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".md"
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	uuid := generateShortUUIDMarkdown()
+	return prefix + "-" + timestamp + "-" + uuid + ".md"
 }
