@@ -27,13 +27,12 @@ func NewPlainFileProvider(options []*types.Option) types.OutputProvider {
 func (fp *PlainFileProvider) Write(result types.Result) error {
 	var filename string
 
-	// TODO we should centralize this logic
 	if result.Filename == "" {
-		filename = DefaultFileName(result.Module)
+		filename = fp.DefaultFileName(result.Module)
 	} else {
 		filename = result.Filename
 	}
-	fullpath := fp.GetFullPath(filename)
+	fullpath := GetFullPath(filename, fp.OutputPath)
 	dir := filepath.Dir(fullpath)
 
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
@@ -55,10 +54,8 @@ func (fp *PlainFileProvider) Write(result types.Result) error {
 	return nil
 }
 
-func (fp *PlainFileProvider) GetFullPath(filename string) string {
-	return fp.OutputPath + string(os.PathSeparator) + filename
-}
-
 func (fp *PlainFileProvider) DefaultFileName(prefix string) string {
-	return prefix + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".txt"
+	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+	uuid := GenerateShortUUID()
+	return prefix + "-" + timestamp + "-" + uuid + ".txt"
 }
