@@ -81,10 +81,15 @@ func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype 
 
 	var wg sync.WaitGroup
 
+	// Create semaphores for each region to limit concurrent resource processing
+	regionSemaphores := make(map[string]chan struct{})
+	for _, region := range regions {
+		regionSemaphores[region] = make(chan struct{}, 5) // Limit 10 concurrent resources per region
+	}
+
 	for rtype := range rtype {
-		// Capture the current value of rtype by passing it to the goroutine
 		for _, region := range regions {
-			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			logs.ConsoleLogger().Info("Listing resources of type " + rtype + " in region: " + region)
 			wg.Add(1)
 			go func(region string, rtype string) {
 				defer wg.Done()
@@ -93,21 +98,57 @@ func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype 
 				params := &cloudcontrol.ListResourcesInput{
 					TypeName: &rtype,
 				}
-				res, err := cc.ListResources(ctx, params)
-				if err != nil {
-					logs.ConsoleLogger().Error(err.Error())
-					return
-				}
 
-				for _, resource := range res.ResourceDescriptions {
-					out <- types.EnrichedResourceDescription{
-						Identifier: *resource.Identifier,
-						TypeName:   rtype,
-						Region:     region,
-						Properties: *resource.Properties,
-						AccountId:  acctId,
+				for {
+					res, err := cc.ListResources(ctx, params)
+					if err != nil {
+						// Check for TypeNotFoundException
+						if strings.Contains(err.Error(), "TypeNotFoundException") {
+							logs.ConsoleLogger().Info(fmt.Sprintf("The type %s is not available in region %s", rtype, region))
+							return
+						}
+						// Log other errors with resource type context
+						if strings.Contains(err.Error(), "operation error CloudControl: ListResources") {
+							logs.ConsoleLogger().Error(fmt.Sprintf("Error processing type %s: %s", rtype, err.Error()))
+						} else {
+							logs.ConsoleLogger().Error(err.Error())
+						}
+						return
 					}
+
+					// Process resources with limited concurrency
+					var resourceWg sync.WaitGroup
+					for _, resource := range res.ResourceDescriptions {
+						identifier := resource.Identifier
+						properties := resource.Properties
+
+						resourceWg.Add(1)
+						go func() {
+							defer resourceWg.Done()
+							// Acquire semaphore for this region
+							regionSemaphores[region] <- struct{}{}
+							defer func() {
+								// Release semaphore when done
+								<-regionSemaphores[region]
+							}()
+
+							out <- types.EnrichedResourceDescription{
+								Identifier: *identifier,
+								TypeName:   rtype,
+								Region:     region,
+								Properties: *properties,
+								AccountId:  acctId,
+							}
+						}()
+					}
+					resourceWg.Wait()
+
+					if res.NextToken == nil {
+						break
+					}
+					params.NextToken = res.NextToken
 				}
+				logs.ConsoleLogger().Info("Completed collecting resource type " + rtype + " in region: " + region)
 			}(region, rtype)
 		}
 	}

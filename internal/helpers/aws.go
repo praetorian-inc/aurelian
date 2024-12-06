@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	arn "github.com/aws/aws-sdk-go-v2/aws/arn"
+	"github.com/aws/aws-sdk-go-v2/aws/ratelimit"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -90,7 +93,6 @@ func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescri
 }
 
 func GetAWSCfg(region string, profile string) (aws.Config, error) {
-
 	cfg, err := config.LoadDefaultConfig(
 		context.TODO(),
 		config.WithClientLogMode(
@@ -101,7 +103,14 @@ func GetAWSCfg(region string, profile string) (aws.Config, error) {
 		config.WithLogger(logs.Logger()),
 		config.WithRegion(region),
 		config.WithSharedConfigProfile(profile),
-		config.WithRetryMode(aws.RetryModeAdaptive),
+		config.WithRetryer(func() aws.Retryer {
+			return retry.NewStandard(func(o *retry.StandardOptions) {
+				o.Backoff = retry.NewExponentialJitterBackoff(100 * time.Second)
+				o.MaxAttempts = 10
+				o.MaxBackoff = 100 * time.Second
+				o.RateLimiter = ratelimit.NewTokenRateLimit(500)
+			})
+		}),
 	)
 
 	if err != nil {
