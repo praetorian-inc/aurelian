@@ -3,8 +3,6 @@ package outputproviders
 import (
 	"os"
 	"path/filepath"
-	"strconv"
-	"time"
 
 	"github.com/praetorian-inc/nebula/internal/logs"
 	o "github.com/praetorian-inc/nebula/modules/options"
@@ -55,7 +53,5 @@ func (fp *PlainFileProvider) Write(result types.Result) error {
 }
 
 func (fp *PlainFileProvider) DefaultFileName(prefix string) string {
-	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-	uuid := GenerateShortUUID()
-	return prefix + "-" + timestamp + "-" + uuid + ".txt"
+	return DefaultFileName(prefix, "txt")
 }

@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strconv"
-	"time"
 
 	"github.com/praetorian-inc/nebula/internal/logs"
 	o "github.com/praetorian-inc/nebula/modules/options"
@@ -61,7 +59,5 @@ func (fp *JsonFileProvider) Write(result types.Result) error {
 }
 
 func (fp *JsonFileProvider) DefaultFileName(prefix string) string {
-	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-	uuid := GenerateShortUUID()
-	return prefix + "-" + timestamp + "-" + uuid + ".json"
+	return DefaultFileName(prefix, "json")
 }
