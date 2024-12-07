@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/praetorian-inc/nebula/internal/logs"
 	o "github.com/praetorian-inc/nebula/modules/options"
@@ -100,7 +98,5 @@ func (fp *MarkdownFileProvider) Write(result types.Result) error {
 }
 
 func (fp *MarkdownFileProvider) DefaultFileName(prefix string) string {
-	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
-	uuid := GenerateShortUUID()
-	return prefix + "-" + timestamp + "-" + uuid + ".md"
+	return DefaultFileName(prefix, "md")
 }
