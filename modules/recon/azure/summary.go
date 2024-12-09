@@ -3,7 +3,6 @@ package reconaz
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
@@ -33,7 +32,14 @@ var AzureSummaryMetadata = modules.Metadata{
 
 // Module options
 var AzureSummaryOptions = []*types.Option{
-	&options.AzureSubscriptionOpt,
+	&types.Option{
+		Name:        "subscription",
+		Short:       "s",
+		Description: "Azure subscription ID or 'all' to scan all accessible subscriptions",
+		Required:    true,
+		Type:        types.String,
+		Value:       "",
+	},
 	types.SetDefaultValue(
 		*types.SetRequired(
 			options.FileNameOpt, false),
@@ -51,8 +57,28 @@ func NewAzureSummary(opts []*types.Option) (<-chan string, stages.Stage[string, 
 		AzureSummaryStage,
 	)
 
-	subscription := types.GetOptionByName(options.AzureSubscriptionOpt.Name, opts).Value
-	return stages.Generator([]string{subscription}), pipeline, err
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Get Azure credentials first
+	cred, err := helpers.GetAzureCredentials(opts)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	subscriptionOpt := types.GetOptionByName("subscription", opts).Value
+
+	// Handle "all" case insensitively
+	if strings.EqualFold(subscriptionOpt, "all") {
+		subscriptions, err := helpers.ListSubscriptions(context.Background(), cred)
+		if err != nil {
+			return nil, nil, err
+		}
+		return stages.Generator(subscriptions), pipeline, nil
+	}
+
+	return stages.Generator([]string{subscriptionOpt}), pipeline, err
 }
 
 // AzureSummaryStage is the main processing stage for the module
@@ -111,7 +137,7 @@ func AzureSummaryStage(ctx context.Context, opts []*types.Option, in <-chan stri
 			for _, rc := range env.Resources {
 				row := []string{
 					rc.ResourceType,
-					strconv.Itoa(rc.Count),
+					fmt.Sprintf("%d", rc.Count),
 				}
 				table.Rows = append(table.Rows, row)
 			}

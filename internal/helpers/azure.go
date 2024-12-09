@@ -227,3 +227,33 @@ func HandleAzureError(err error, operation string, resourceID string) {
 			err))
 	}
 }
+
+// ListSubscriptions returns all subscriptions accessible to the user
+func ListSubscriptions(ctx context.Context, cred *azidentity.DefaultAzureCredential) ([]string, error) {
+	subsClient, err := armsubscriptions.NewClient(cred, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create subscriptions client: %v", err)
+	}
+
+	var subscriptionIDs []string
+	pager := subsClient.NewListPager(nil)
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list subscriptions: %v", err)
+		}
+
+		for _, sub := range page.Value {
+			if sub.SubscriptionID != nil {
+				subscriptionIDs = append(subscriptionIDs, *sub.SubscriptionID)
+			}
+		}
+	}
+
+	if len(subscriptionIDs) == 0 {
+		return nil, fmt.Errorf("no accessible subscriptions found")
+	}
+
+	return subscriptionIDs, nil
+}
