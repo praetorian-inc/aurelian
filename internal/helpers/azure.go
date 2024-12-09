@@ -3,7 +3,6 @@ package helpers
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -65,7 +64,7 @@ func GetAzureCredentials(opts []*types.Option) (*azidentity.DefaultAzureCredenti
 }
 
 // GetSubscriptionDetails gets details about an Azure subscription
-func GetSubscriptionDetails(ctx context.Context, cred *azidentity.DefaultAzureCredential, subscriptionID string) (*armsubscriptions.Subscription, error) {
+func GetSubscriptionDetails(ctx context.Context, cred *azidentity.DefaultAzureCredential, subscriptionID string) (*armsubscriptions.ClientGetResponse, error) {
 	subsClient, err := armsubscriptions.NewClient(cred, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create subscriptions client: %v", err)
@@ -175,12 +174,20 @@ func GetEnvironmentDetails(ctx context.Context, cred *azidentity.DefaultAzureCre
 		return nil, err
 	}
 
+	// Convert State to string, handling the pointer
+	var stateStr string
+	if sub.State != nil {
+		stateStr = string(*sub.State)
+	} else {
+		stateStr = "Unknown"
+	}
+
 	return &AzureEnvironmentDetails{
 		TenantName:       tenantName,
 		TenantID:         tenantID,
 		SubscriptionID:   *sub.SubscriptionID,
 		SubscriptionName: *sub.DisplayName,
-		State:            *sub.State,
+		State:            stateStr,
 		Tags:             sub.Tags,
 		Resources:        resources,
 	}, nil
@@ -209,19 +216,6 @@ func IsValidLocation(location string) bool {
 		}
 	}
 	return false
-}
-
-// CreateFilePath creates a file path for Azure resources
-func CreateFilePath(service, subscription, command, location, resource string) string {
-	return fmt.Sprintf("azure%s%s%s%s%s%s-%s-%s.json",
-		string(os.PathSeparator),
-		service,
-		string(os.PathSeparator),
-		subscription,
-		string(os.PathSeparator),
-		command,
-		location,
-		resource)
 }
 
 // HandleAzureError logs Azure-specific errors with appropriate context

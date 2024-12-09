@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
@@ -38,7 +37,7 @@ var AzureSummaryOptions = []*types.Option{
 	types.SetDefaultValue(
 		*types.SetRequired(
 			options.FileNameOpt, false),
-		AzureSummaryMetadata.Id+"-"+strconv.FormatInt(time.Now().Unix(), 10)+".md"),
+		op.DefaultFileName(AzureSummaryMetadata.Id, "md")),
 }
 
 // Output providers
