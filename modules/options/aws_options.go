@@ -118,3 +118,13 @@ var AwsProfileListOpt = types.Option{
 	Type:        types.String,
 	Value:       "",
 }
+
+var AwsScanTypeOpt = types.Option{
+	Name:        "scan-type",
+	Short:       "s",
+	Description: "Scan type - 'full' for all resources or 'summary' for key services",
+	Required:    true,
+	Type:        types.String,
+	Value:       "full",
+	ValueList:   []string{"full", "summary"},
+}

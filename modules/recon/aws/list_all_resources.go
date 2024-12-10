@@ -18,9 +18,9 @@ import (
 var AwsListAllResourcesMetadata = modules.Metadata{
 	Id:          "list-all",
 	Name:        "List All Resources",
-	Description: "List all resources in an AWS account using CloudControl API.",
+	Description: "List resources in an AWS account using CloudControl API. Supports 'full' scan for all resources or 'summary' scan for key services.",
 	Platform:    modules.AWS,
-	Authors:     []string{"Praetorian"},
+	Authors:     []string{"Elgin"},
 	OpsecLevel:  modules.Moderate,
 	References: []string{
 		"https://docs.aws.amazon.com/cloudcontrolapi/latest/APIReference/Welcome.html",
@@ -30,6 +30,7 @@ var AwsListAllResourcesMetadata = modules.Metadata{
 
 var AwsListAllResourcesOptions = []*types.Option{
 	&options.AwsRegionsOpt,
+	&options.AwsScanTypeOpt,
 	types.SetDefaultValue(
 		*types.SetRequired(options.FileNameOpt, false),
 		"list-all-"+strconv.FormatInt(time.Now().Unix(), 10)),
@@ -92,6 +93,16 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 		return out
 	}
 
+	// Get the scan type from options
+	scanType := types.GetOptionByName(options.AwsScanTypeOpt.Name, opts).Value
+	if scanType == "" {
+		scanType = "full"
+	}
+
+	// Return appropriate resource types based on scan type
+	if scanType == "summary" {
+		return stages.Generator(awsServices), pipeline, nil
+	}
 	return stages.Generator(GetSupportedResourceTypes()), pipeline, nil
 }
 
@@ -163,6 +174,142 @@ func ProcessResourcesForMarkdown(resources []types.EnrichedResourceDescription) 
 		Headers:      headers,
 		Rows:         rows,
 	}
+}
+
+var awsServices = []string{
+	// Compute
+	"AWS::Amplify::App",
+	"AWS::AppRunner::Service",
+	"AWS::Batch::ComputeEnvironment",
+	"AWS::ECS::Cluster",
+	"AWS::ECS::Service",
+	"AWS::EKS::Cluster",
+	"AWS::ElasticBeanstalk::Application",
+	"AWS::EMR::Studio",
+	"AWS::Lambda::Function",
+	"AWS::Lightsail::Instance",
+	"AWS::EC2::Instance",
+	"AWS::AutoScaling::AutoScalingGroup",
+
+	// Database & Storage
+	"AWS::DynamoDB::Table",
+	"AWS::DocumentDB::Cluster",
+	"AWS::ElastiCache::ServerlessCache",
+	"AWS::ElastiCache::Cluster",
+	"AWS::MemoryDB::Cluster",
+	"AWS::Neptune::DBCluster",
+	"AWS::RDS::DBInstance",
+	"AWS::RDS::DBCluster",
+	"AWS::Redshift::Cluster",
+	"AWS::S3::Bucket",
+	"AWS::Timestream::Database",
+	"AWS::QLDB::Ledger",
+
+	// AI/ML Services
+	"AWS::Bedrock::Agent",
+	"AWS::Comprehend::Flywheel",
+	"AWS::Kendra::Index",
+	"AWS::Lex::Bot",
+	"AWS::Personalize::Solution",
+	"AWS::Rekognition::Collection",
+	"AWS::SageMaker::Domain",
+	"AWS::Textract::Project",
+	"AWS::Polly::Lexicon",
+	"AWS::Transcribe::VocabularyFilter",
+
+	// Analytics
+	"AWS::Athena::WorkGroup",
+	"AWS::DataBrew::Project",
+	"AWS::Glue::Crawler",
+	"AWS::Glue::Job",
+	"AWS::Kinesis::Stream",
+	"AWS::KinesisFirehose::DeliveryStream",
+	"AWS::QuickSight::Analysis",
+	"AWS::OpenSearchService::Domain",
+	"AWS::MSK::Cluster",
+	"AWS::LakeFormation::DataLakeSettings",
+
+	// Security & Identity
+	"AWS::Cognito::UserPool",
+	"AWS::Detective::Graph",
+	"AWS::GuardDuty::Detector",
+	"AWS::IAM::Group",
+	"AWS::IAM::Role",
+	"AWS::Macie::Session",
+	"AWS::SecurityHub::Hub",
+	"AWS::SSO::Instance",
+	"AWS::WAFv2::WebACL",
+	"AWS::Shield::Protection",
+	"AWS::SecretsManager::Secret",
+
+	// Networking
+	"AWS::ApiGateway::RestApi",
+	"AWS::ApiGatewayV2::Api",
+	"AWS::CloudFront::Distribution",
+	"AWS::ElasticLoadBalancingV2::LoadBalancer",
+	"AWS::GlobalAccelerator::Accelerator",
+	"AWS::Route53::HostedZone",
+	"AWS::VPCLattice::Service",
+	"AWS::VPC::VPC",
+	"AWS::NetworkFirewall::Firewall",
+	"AWS::AppMesh::Mesh",
+	"AWS::DirectConnect::Connection",
+
+	// Application Integration
+	"AWS::EventBridge::EventBus",
+	"AWS::MQ::Broker",
+	"AWS::SNS::Topic",
+	"AWS::SQS::Queue",
+	"AWS::StepFunctions::StateMachine",
+	"AWS::AppFlow::Flow",
+	"AWS::AppSync::GraphQLApi",
+
+	// Developer Tools
+	"AWS::CodeBuild::Project",
+	"AWS::CodeCommit::Repository",
+	"AWS::CodeDeploy::Application",
+	"AWS::CodePipeline::Pipeline",
+	"AWS::CodeArtifact::Repository",
+	"AWS::Cloud9::EnvironmentEC2",
+
+	// Monitoring & Management
+	"AWS::CloudWatch::Dashboard",
+	"AWS::CloudTrail::Trail",
+	"AWS::Config::ConfigRule",
+	"AWS::ResourceGroups::Group",
+	"AWS::SSM::Document",
+	"AWS::Organizations::Organization",
+	"AWS::Backup::BackupVault",
+	"AWS::ServiceCatalog::Portfolio",
+
+	// Media Services
+	"AWS::MediaConvert::Queue",
+	"AWS::MediaLive::Channel",
+	"AWS::MediaPackage::Channel",
+	"AWS::MediaStore::Container",
+	"AWS::MediaTailor::Configuration",
+	"AWS::ElementalMediaconnect::Flow",
+
+	// IoT
+	"AWS::IoT::Thing",
+	"AWS::IoTAnalytics::Dataset",
+	"AWS::IoTEvents::DetectorModel",
+	"AWS::IoTSiteWise::Portal",
+	"AWS::IoTTwinMaker::Workspace",
+	"AWS::IoTFleetWise::Fleet",
+
+	// Contact Center
+	"AWS::Connect::Instance",
+	"AWS::ConnectCampaigns::Campaign",
+
+	// Game Development
+	"AWS::GameLift::Fleet",
+	"AWS::GameSparks::Game",
+
+	// End User Computing
+	"AWS::WorkSpaces::Workspace",
+	"AWS::AppStream::Fleet",
+	"AWS::WorkSpacesWeb::Portal",
 }
 
 func GetSupportedResourceTypes() []string {
