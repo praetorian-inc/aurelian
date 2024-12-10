@@ -2,7 +2,6 @@ package recon
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,61 +15,24 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
-type ResourceSummary struct {
-	ResourceType string
-	Count        int
-	Regions      []string
-}
-
-var globalServices = []string{
-	"AWS::S3::",
-	"AWS::IAM::",
-	"AWS::CloudFront::",
-	"AWS::Route53::",
-	"AWS::Organizations::",
-}
-
-func isGlobalService(resourceType string) bool {
-	for _, prefix := range globalServices {
-		if strings.HasPrefix(resourceType, prefix) {
-			return true
-		}
-	}
-	return false
-}
-
-var AwsListAllResourcesOptions = []*types.Option{
-	&options.AwsRegionsOpt,
-	types.SetDefaultValue(
-		*types.SetRequired(
-			options.FileNameOpt, false),
-		"list-all-"+strconv.FormatInt(time.Now().Unix(), 10)),
-}
-
 var AwsListAllResourcesMetadata = modules.Metadata{
-<<<<<<< HEAD
 	Id:          "list-all",
 	Name:        "List All Resources",
 	Description: "List all resources in an AWS account using CloudControl API.",
 	Platform:    modules.AWS,
 	Authors:     []string{"Praetorian"},
 	OpsecLevel:  modules.Moderate,
-=======
-	Id:   "list-all",
-	Name: "List All Resources",
-	Description: "List all resources in an AWS account using CloudControl API. " +
-		"LIMITATIONS:\n" +
-		"1. Only lists resources supported by CloudControl API\n" +
-		"2. Service must be enabled in the region to be queried\n" +
-		"3. Global resources are only shown in us-east-1",
-	Platform:   modules.AWS,
-	Authors:    []string{"Praetorian"},
-	OpsecLevel: modules.Moderate,
->>>>>>> 8666adc (Init Module)
 	References: []string{
 		"https://docs.aws.amazon.com/cloudcontrolapi/latest/APIReference/Welcome.html",
 		"https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/supported-resources.html",
 	},
+}
+
+var AwsListAllResourcesOptions = []*types.Option{
+	&options.AwsRegionsOpt,
+	types.SetDefaultValue(
+		*types.SetRequired(options.FileNameOpt, false),
+		"list-all-"+strconv.FormatInt(time.Now().Unix(), 10)),
 }
 
 var AwsListAllResourcesOutputProviders = []func(options []*types.Option) types.OutputProvider{
@@ -79,7 +41,6 @@ var AwsListAllResourcesOutputProviders = []func(options []*types.Option) types.O
 }
 
 func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[string, interface{}], error) {
-
 	regionsOpt := types.GetOptionByName(options.AwsRegionsOpt.Name, opts)
 	if regionsOpt == nil {
 		regionsOpt = &options.AwsRegionsOpt
@@ -107,13 +68,101 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 		go func() {
 			defer close(out)
 			resources := <-resourcePipeline(ctx, opts, in)
-			out <- resources                              // For JSON
-			out <- ProcessResourcesForMarkdown(resources) // For Markdown
+
+			// Write outputs
+			for _, provider := range AwsListAllResourcesOutputProviders {
+				outputProvider := provider(opts)
+
+				// Send raw data for JSON output
+				outputProvider.Write(types.Result{
+					Platform: AwsListAllResourcesMetadata.Platform,
+					Module:   AwsListAllResourcesMetadata.Id,
+					Data:     resources,
+				})
+
+				// Send markdown table for Markdown output
+				outputProvider.Write(types.Result{
+					Platform: AwsListAllResourcesMetadata.Platform,
+					Module:   AwsListAllResourcesMetadata.Id,
+					Data:     ProcessResourcesForMarkdown(resources),
+				})
+			}
 		}()
+
 		return out
 	}
 
 	return stages.Generator(GetSupportedResourceTypes()), pipeline, nil
+}
+
+func ProcessResourcesForMarkdown(resources []types.EnrichedResourceDescription) types.MarkdownTable {
+	summaries := make(map[string]map[string]int)
+	activeRegions := make(map[string]bool)
+	uniqueTypes := make(map[string]bool)
+	seenGlobal := make(map[string]bool)
+	var accountId string
+
+	// Build summary data
+	for _, res := range resources {
+		accountId = res.AccountId
+		uniqueTypes[res.TypeName] = true
+
+		if _, exists := summaries[res.TypeName]; !exists {
+			summaries[res.TypeName] = make(map[string]int)
+		}
+
+		if helpers.IsGlobalService(res.TypeName) {
+			if !seenGlobal[res.Identifier] {
+				seenGlobal[res.Identifier] = true
+				summaries[res.TypeName]["us-east-1"]++
+				activeRegions["us-east-1"] = true
+			}
+		} else {
+			summaries[res.TypeName][res.Region]++
+			if summaries[res.TypeName][res.Region] > 0 {
+				activeRegions[res.Region] = true
+			}
+		}
+	}
+
+	// Get and sort regions/resource types
+	var regions []string
+	for region := range activeRegions {
+		regions = append(regions, region)
+	}
+	sort.Slice(regions, func(i, j int) bool { return regions[i] > regions[j] })
+
+	var resourceTypes []string
+	for resType := range uniqueTypes {
+		resourceTypes = append(resourceTypes, resType)
+	}
+	sort.Strings(resourceTypes)
+
+	// Build table
+	headers := append([]string{"Type"}, regions...)
+	rows := make([][]string, len(resourceTypes))
+
+	for i, resType := range resourceTypes {
+		row := make([]string, len(headers))
+		row[0] = resType
+
+		for j, region := range regions {
+			if helpers.IsGlobalService(resType) && region == "us-east-1" {
+				row[j+1] = strconv.Itoa(summaries[resType][region])
+			} else if !helpers.IsGlobalService(resType) && summaries[resType][region] > 0 {
+				row[j+1] = strconv.Itoa(summaries[resType][region])
+			} else {
+				row[j+1] = ""
+			}
+		}
+		rows[i] = row
+	}
+
+	return types.MarkdownTable{
+		TableHeading: "AWS Resource Summary [" + accountId + "]",
+		Headers:      headers,
+		Rows:         rows,
+	}
 }
 
 func GetSupportedResourceTypes() []string {
@@ -825,87 +874,5 @@ func GetSupportedResourceTypes() []string {
 		"AWS::XRay::Group",
 		"AWS::XRay::ResourcePolicy",
 		"AWS::XRay::SamplingRule",
-	}
-}
-
-func ProcessResourcesForMarkdown(resources []types.EnrichedResourceDescription) types.MarkdownTable {
-	summaries := make(map[string]map[string]int)
-	activeRegions := make(map[string]bool)
-	uniqueTypes := make(map[string]bool)
-	var accountId string
-	seenGlobalResources := make(map[string]bool)
-
-	// Process each resource
-	for _, res := range resources {
-		accountId = res.AccountId
-		uniqueTypes[res.TypeName] = true
-
-		if _, exists := summaries[res.TypeName]; !exists {
-			summaries[res.TypeName] = make(map[string]int)
-		}
-
-		// Special handling for global resources
-		if isGlobalService(res.TypeName) {
-			if !seenGlobalResources[res.Identifier] {
-				seenGlobalResources[res.Identifier] = true
-				summaries[res.TypeName]["us-east-1"]++
-				activeRegions["us-east-1"] = true
-			}
-			continue
-		}
-
-		// Normal handling for regional resources
-		summaries[res.TypeName][res.Region]++
-		if summaries[res.TypeName][res.Region] > 0 {
-			activeRegions[res.Region] = true
-		}
-	}
-
-	var regions []string
-	for region := range activeRegions {
-		regions = append(regions, region)
-	}
-	// Sort regions in reverse alphabetical order
-	sort.Slice(regions, func(i, j int) bool {
-		return regions[i] > regions[j]
-	})
-
-	var resourceTypes []string
-	for resType := range uniqueTypes {
-		resourceTypes = append(resourceTypes, resType)
-	}
-	sort.Strings(resourceTypes)
-
-	headers := []string{"Type"}
-	headers = append(headers, regions...)
-
-	rows := make([][]string, len(resourceTypes))
-	for i, resType := range resourceTypes {
-		row := make([]string, len(headers))
-		row[0] = resType
-		for j, region := range regions {
-			if isGlobalService(resType) {
-				if region == "us-east-1" {
-					count := summaries[resType][region]
-					row[j+1] = strconv.Itoa(count)
-				} else {
-					row[j+1] = ""
-				}
-			} else {
-				count := summaries[resType][region]
-				if count == 0 {
-					row[j+1] = ""
-				} else {
-					row[j+1] = strconv.Itoa(count)
-				}
-			}
-		}
-		rows[i] = row
-	}
-
-	return types.MarkdownTable{
-		TableHeading: fmt.Sprintf("AWS Resource Summary [%s]", accountId),
-		Headers:      headers,
-		Rows:         rows,
 	}
 }
