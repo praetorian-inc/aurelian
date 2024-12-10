@@ -1,6 +1,6 @@
 ## nebula aws recon list-all
 
-List all resources in an AWS account using CloudControl API.
+List resources in an AWS account using CloudControl API. Supports 'full' scan for all resources or 'summary' scan for key services.
 
 ```
 nebula aws recon list-all [flags]
@@ -9,10 +9,11 @@ nebula aws recon list-all [flags]
 ### Options
 
 ```
-  -f, --file string      File name (default "list-all-1733833667")
-  -h, --help             help for list-all
-  -p, --profile string   AWS shared credentials profile
-  -r, --regions string   Comma separated list of AWS regions
+  -f, --file string        File name (default "list-all-1733835357")
+  -h, --help               help for list-all
+  -p, --profile string     AWS shared credentials profile
+  -r, --regions string     Comma separated list of AWS regions
+  -s, --scan-type string   Scan type - 'full' for all resources or 'summary' for key services (default "full")
 ```
 
 ### Options inherited from parent commands
