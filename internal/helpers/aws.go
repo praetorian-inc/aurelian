@@ -93,6 +93,29 @@ func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescri
 }
 
 func GetAWSCfg(region string, profile string) (aws.Config, error) {
+<<<<<<< HEAD
+=======
+
+	if len(profile) > 0 {
+		cfg, err := config.LoadDefaultConfig(
+			context.TODO(),
+			config.WithClientLogMode(
+				aws.LogRetries|
+					aws.LogRequestWithBody|
+					aws.LogRequestEventMessage|
+					aws.LogResponseEventMessage),
+			config.WithLogger(logs.Logger()),
+			config.WithRegion(region),
+			config.WithSharedConfigProfile(profile),
+			config.WithRetryMode(aws.RetryModeAdaptive),
+		)
+		if err != nil {
+			return aws.Config{}, err
+		}
+
+		return cfg, nil
+	}
+>>>>>>> 218d952 (Update file format to include account ID and profile)
 	cfg, err := config.LoadDefaultConfig(
 		context.TODO(),
 		config.WithClientLogMode(
@@ -102,6 +125,7 @@ func GetAWSCfg(region string, profile string) (aws.Config, error) {
 				aws.LogResponseEventMessage),
 		config.WithLogger(logs.Logger()),
 		config.WithRegion(region),
+<<<<<<< HEAD
 		config.WithSharedConfigProfile(profile),
 		config.WithRetryer(func() aws.Retryer {
 			return retry.NewStandard(func(o *retry.StandardOptions) {
@@ -111,13 +135,16 @@ func GetAWSCfg(region string, profile string) (aws.Config, error) {
 				o.RateLimiter = ratelimit.NewTokenRateLimit(500)
 			})
 		}),
+=======
+		config.WithRetryMode(aws.RetryModeAdaptive),
+>>>>>>> 218d952 (Update file format to include account ID and profile)
 	)
-
 	if err != nil {
 		return aws.Config{}, err
 	}
 
 	return cfg, nil
+
 }
 
 func GetAccountId(cfg aws.Config) (string, error) {

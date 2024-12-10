@@ -16,13 +16,14 @@ func GetFullPath(filename string, outputPath string) string {
 
 // DefaultFileName generates a standardized filename in the format:
 // prefix-accountid-timestamp.extension
-func DefaultFileName(prefix string, extension string) string {
+func DefaultFileName(prefix string, extension string, profile string) string {
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 
-	// Get AWS config and account ID using existing helper
-	cfg, err := helpers.GetAWSCfg("", "")
-	if err != nil {
-		return fmt.Sprintf("%s-%s-%s.%s", prefix, "unknown", timestamp, extension)
+	// Get AWS config and account ID using existing helper with provided profile
+	cfg, err := helpers.GetAWSCfg("us-east-1", profile)
+
+	if len(profile) == 0 {
+		profile = "default"
 	}
 
 	accountId, err := helpers.GetAccountId(cfg)
@@ -30,5 +31,5 @@ func DefaultFileName(prefix string, extension string) string {
 		accountId = "unknown"
 	}
 
-	return fmt.Sprintf("%s-%s-%s.%s", prefix, accountId, timestamp, extension)
+	return fmt.Sprintf("%s-%s-%s-%s.%s", prefix, accountId, profile, timestamp, extension)
 }
