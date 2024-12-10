@@ -22,10 +22,6 @@ func DefaultFileName(prefix string, extension string, profile string) string {
 	// Get AWS config and account ID using existing helper with provided profile
 	cfg, err := helpers.GetAWSCfg("us-east-1", profile)
 
-	if len(profile) == 0 {
-		profile = "default"
-	}
-
 	accountId, err := helpers.GetAccountId(cfg)
 	if err != nil {
 		accountId = "unknown"

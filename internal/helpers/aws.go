@@ -91,25 +91,6 @@ func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescri
 
 func GetAWSCfg(region string, profile string) (aws.Config, error) {
 
-	if len(profile) > 0 {
-		cfg, err := config.LoadDefaultConfig(
-			context.TODO(),
-			config.WithClientLogMode(
-				aws.LogRetries|
-					aws.LogRequestWithBody|
-					aws.LogRequestEventMessage|
-					aws.LogResponseEventMessage),
-			config.WithLogger(logs.Logger()),
-			config.WithRegion(region),
-			config.WithSharedConfigProfile(profile),
-			config.WithRetryMode(aws.RetryModeAdaptive),
-		)
-		if err != nil {
-			return aws.Config{}, err
-		}
-
-		return cfg, nil
-	}
 	cfg, err := config.LoadDefaultConfig(
 		context.TODO(),
 		config.WithClientLogMode(
@@ -119,6 +100,7 @@ func GetAWSCfg(region string, profile string) (aws.Config, error) {
 				aws.LogResponseEventMessage),
 		config.WithLogger(logs.Logger()),
 		config.WithRegion(region),
+		config.WithSharedConfigProfile(profile),
 		config.WithRetryMode(aws.RetryModeAdaptive),
 	)
 	if err != nil {
