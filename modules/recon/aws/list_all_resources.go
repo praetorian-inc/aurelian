@@ -48,12 +48,25 @@ var AwsListAllResourcesOptions = []*types.Option{
 }
 
 var AwsListAllResourcesMetadata = modules.Metadata{
+<<<<<<< HEAD
 	Id:          "list-all",
 	Name:        "List All Resources",
 	Description: "List all resources in an AWS account using CloudControl API.",
 	Platform:    modules.AWS,
 	Authors:     []string{"Praetorian"},
 	OpsecLevel:  modules.Moderate,
+=======
+	Id:   "list-all",
+	Name: "List All Resources",
+	Description: "List all resources in an AWS account using CloudControl API. " +
+		"LIMITATIONS:\n" +
+		"1. Only lists resources supported by CloudControl API\n" +
+		"2. Service must be enabled in the region to be queried\n" +
+		"3. Global resources are only shown in us-east-1",
+	Platform:   modules.AWS,
+	Authors:    []string{"Praetorian"},
+	OpsecLevel: modules.Moderate,
+>>>>>>> 8666adc (Init Module)
 	References: []string{
 		"https://docs.aws.amazon.com/cloudcontrolapi/latest/APIReference/Welcome.html",
 		"https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/supported-resources.html",
