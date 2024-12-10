@@ -5,14 +5,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/ratelimit"
-	"github.com/aws/aws-sdk-go-v2/aws/retry"
+	arn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -93,8 +90,6 @@ func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescri
 }
 
 func GetAWSCfg(region string, profile string) (aws.Config, error) {
-<<<<<<< HEAD
-=======
 
 	if len(profile) > 0 {
 		cfg, err := config.LoadDefaultConfig(
@@ -115,7 +110,6 @@ func GetAWSCfg(region string, profile string) (aws.Config, error) {
 
 		return cfg, nil
 	}
->>>>>>> 218d952 (Update file format to include account ID and profile)
 	cfg, err := config.LoadDefaultConfig(
 		context.TODO(),
 		config.WithClientLogMode(
@@ -125,19 +119,7 @@ func GetAWSCfg(region string, profile string) (aws.Config, error) {
 				aws.LogResponseEventMessage),
 		config.WithLogger(logs.Logger()),
 		config.WithRegion(region),
-<<<<<<< HEAD
-		config.WithSharedConfigProfile(profile),
-		config.WithRetryer(func() aws.Retryer {
-			return retry.NewStandard(func(o *retry.StandardOptions) {
-				o.Backoff = retry.NewExponentialJitterBackoff(100 * time.Second)
-				o.MaxAttempts = 10
-				o.MaxBackoff = 100 * time.Second
-				o.RateLimiter = ratelimit.NewTokenRateLimit(500)
-			})
-		}),
-=======
 		config.WithRetryMode(aws.RetryModeAdaptive),
->>>>>>> 218d952 (Update file format to include account ID and profile)
 	)
 	if err != nil {
 		return aws.Config{}, err
