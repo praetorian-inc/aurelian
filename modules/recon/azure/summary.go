@@ -80,17 +80,10 @@ func NewAzureSummary(opts []*types.Option) (<-chan string, stages.Stage[string, 
 		return nil, nil, err
 	}
 
-	// Get Azure credentials first
-	cred, err := helpers.GetAzureCredentials(opts)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	subscriptionOpt := types.GetOptionByName("subscription", opts).Value
 
 	if strings.EqualFold(subscriptionOpt, "all") {
-		subscriptions, err := helpers.ListSubscriptions(context.Background(), cred)
-
+		subscriptions, err := helpers.ListSubscriptions(context.Background(), opts)
 		if err != nil {
 			logs.ConsoleLogger().Error(fmt.Sprintf("Failed to list subscriptions: %v", err))
 			return nil, nil, err
@@ -204,13 +197,6 @@ func subscriptionWorker(
 ) {
 	defer wg.Done()
 
-	// Create per-worker credential to avoid sharing
-	cred, err := helpers.GetAzureCredentials(opts)
-	if err != nil {
-		logs.ConsoleLogger().Error(fmt.Sprintf("Worker failed to get credentials: %v", err))
-		return
-	}
-
 	for subscriptionID := range jobs {
 		// Add timeout to context for each job
 		jobCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -220,7 +206,7 @@ func subscriptionWorker(
 		}
 
 		// Process subscription
-		env, err := helpers.GetEnvironmentDetails(jobCtx, cred, subscriptionID)
+		env, err := helpers.GetEnvironmentDetails(jobCtx, subscriptionID, opts)
 		if err != nil {
 			result.err = err
 			results <- result

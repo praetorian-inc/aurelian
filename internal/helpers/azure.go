@@ -150,7 +150,13 @@ func addResourceCount(resourcesCount []*ResourceCount, resourceType string) []*R
 }
 
 // GetEnvironmentDetails gets all Azure environment details
-func GetEnvironmentDetails(ctx context.Context, cred *azidentity.DefaultAzureCredential, subscriptionID string) (*AzureEnvironmentDetails, error) {
+func GetEnvironmentDetails(ctx context.Context, subscriptionID string, opts []*types.Option) (*AzureEnvironmentDetails, error) {
+	// Get credentials
+	cred, err := GetAzureCredentials(opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get credentials: %v", err)
+	}
+
 	// Get subscription details
 	sub, err := GetSubscriptionDetails(ctx, cred, subscriptionID)
 	if err != nil {
@@ -229,45 +235,86 @@ func HandleAzureError(err error, operation string, resourceID string) {
 }
 
 // ListSubscriptions returns all subscriptions accessible to the user
-func ListSubscriptions(ctx context.Context, cred *azidentity.DefaultAzureCredential) ([]string, error) {
+func ListSubscriptions(ctx context.Context, opts []*types.Option) ([]string, error) {
+	// Use the existing helper function to get credentials
+	cred, err := GetAzureCredentials(opts)
+	if err != nil {
+		logs.ConsoleLogger().Error(fmt.Sprintf("Failed to get Azure credentials: %v", err))
+		return nil, fmt.Errorf("failed to get Azure credentials: %v", err)
+	}
+
 	subsClient, err := armsubscriptions.NewClient(cred, nil)
 	if err != nil {
+		logs.ConsoleLogger().Error(fmt.Sprintf("Failed to create subscriptions client: %v", err))
 		return nil, fmt.Errorf("failed to create subscriptions client: %v", err)
 	}
 
 	var subscriptionIDs []string
 	pager := subsClient.NewListPager(nil)
 
-	// Log the start of subscription listing
 	logs.ConsoleLogger().Info("Starting to list subscriptions...")
 
+	pageCount := 0
 	for pager.More() {
+		pageCount++
+		logs.ConsoleLogger().Info(fmt.Sprintf("Fetching page %d of subscriptions...", pageCount))
+
 		page, err := pager.NextPage(ctx)
 		if err != nil {
+			logs.ConsoleLogger().Error(fmt.Sprintf("Failed to get page %d: %v", pageCount, err))
 			return nil, fmt.Errorf("failed to list subscriptions: %v", err)
 		}
 
-		// Log each page of results
-		logs.ConsoleLogger().Info(fmt.Sprintf("Processing page of subscriptions, found %d subscriptions", len(page.Value)))
+		if page.Value == nil {
+			logs.ConsoleLogger().Warn(fmt.Sprintf("Page %d returned nil value", pageCount))
+			continue
+		}
 
-		for _, sub := range page.Value {
-			if sub.SubscriptionID != nil {
-				// Log each subscription found
-				logs.ConsoleLogger().Info(fmt.Sprintf("Found subscription: ID=%s, Name=%s, State=%s",
-					*sub.SubscriptionID,
-					*sub.DisplayName,
-					string(*sub.State)))
-				subscriptionIDs = append(subscriptionIDs, *sub.SubscriptionID)
+		logs.ConsoleLogger().Info(fmt.Sprintf("Processing page %d, found %d subscriptions",
+			pageCount, len(page.Value)))
+
+		for i, sub := range page.Value {
+			if sub.SubscriptionID == nil {
+				logs.ConsoleLogger().Warn(fmt.Sprintf("Subscription at index %d has nil ID", i))
+				continue
 			}
+
+			state := "Unknown"
+			if sub.State != nil {
+				state = string(*sub.State)
+			}
+
+			name := "Unknown"
+			if sub.DisplayName != nil {
+				name = *sub.DisplayName
+			}
+
+			logs.ConsoleLogger().Info(fmt.Sprintf("Found subscription: ID=%s, Name=%s, State=%s",
+				*sub.SubscriptionID,
+				name,
+				state))
+
+			subscriptionIDs = append(subscriptionIDs, *sub.SubscriptionID)
+		}
+
+		// Check if there's another page
+		if pager.More() {
+			logs.ConsoleLogger().Info("More pages available")
+		} else {
+			logs.ConsoleLogger().Info("No more pages available")
 		}
 	}
 
 	if len(subscriptionIDs) == 0 {
+		logs.ConsoleLogger().Error("No accessible subscriptions found. This could be due to insufficient permissions")
 		return nil, fmt.Errorf("no accessible subscriptions found")
 	}
 
-	// Log total subscriptions found
 	logs.ConsoleLogger().Info(fmt.Sprintf("Total subscriptions found: %d", len(subscriptionIDs)))
+	logs.ConsoleLogger().Info("Summary of all found subscriptions:")
+	for i, subID := range subscriptionIDs {
+		logs.ConsoleLogger().Info(fmt.Sprintf("%d. %s", i+1, subID))
+	}
 
 	return subscriptionIDs, nil
 }
