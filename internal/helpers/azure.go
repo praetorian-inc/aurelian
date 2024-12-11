@@ -238,14 +238,25 @@ func ListSubscriptions(ctx context.Context, cred *azidentity.DefaultAzureCredent
 	var subscriptionIDs []string
 	pager := subsClient.NewListPager(nil)
 
+	// Log the start of subscription listing
+	logs.ConsoleLogger().Info("Starting to list subscriptions...")
+
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list subscriptions: %v", err)
 		}
 
+		// Log each page of results
+		logs.ConsoleLogger().Info(fmt.Sprintf("Processing page of subscriptions, found %d subscriptions", len(page.Value)))
+
 		for _, sub := range page.Value {
 			if sub.SubscriptionID != nil {
+				// Log each subscription found
+				logs.ConsoleLogger().Info(fmt.Sprintf("Found subscription: ID=%s, Name=%s, State=%s",
+					*sub.SubscriptionID,
+					*sub.DisplayName,
+					string(*sub.State)))
 				subscriptionIDs = append(subscriptionIDs, *sub.SubscriptionID)
 			}
 		}
@@ -254,6 +265,9 @@ func ListSubscriptions(ctx context.Context, cred *azidentity.DefaultAzureCredent
 	if len(subscriptionIDs) == 0 {
 		return nil, fmt.Errorf("no accessible subscriptions found")
 	}
+
+	// Log total subscriptions found
+	logs.ConsoleLogger().Info(fmt.Sprintf("Total subscriptions found: %d", len(subscriptionIDs)))
 
 	return subscriptionIDs, nil
 }
