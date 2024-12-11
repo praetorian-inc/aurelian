@@ -14,14 +14,12 @@ type JsonFileProvider struct {
 	types.OutputProvider
 	OutputPath string
 	FileName   string
-	Profile    string
 }
 
 func NewJsonFileProvider(options []*types.Option) types.OutputProvider {
 	return &JsonFileProvider{
 		OutputPath: types.GetOptionByName(o.OutputOpt.Value, options).Value,
 		FileName:   "",
-		Profile:    types.GetOptionByName("profile", options).Value,
 	}
 }
 
@@ -31,6 +29,7 @@ func (fp *JsonFileProvider) Write(result types.Result) error {
 	_, ok := result.Data.([]types.EnrichedResourceDescription)
 	if !ok {
 		// Skip if not the correct type
+		logs.ConsoleLogger().Info("Result is not of JSON type")
 		return nil
 	}
 
@@ -67,5 +66,5 @@ func (fp *JsonFileProvider) Write(result types.Result) error {
 }
 
 func (fp *JsonFileProvider) DefaultFileName(prefix string) string {
-	return DefaultFileName(prefix, "json", fp.Profile)
+	return DefaultFileName(prefix, "json")
 }

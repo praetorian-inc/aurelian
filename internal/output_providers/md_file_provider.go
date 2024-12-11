@@ -15,14 +15,12 @@ type MarkdownFileProvider struct {
 	types.OutputProvider
 	OutputPath string
 	FileName   string
-	Profile    string
 }
 
 func NewMarkdownFileProvider(options []*types.Option) types.OutputProvider {
 	return &MarkdownFileProvider{
 		OutputPath: types.GetOptionByName(o.OutputOpt.Value, options).Value,
 		FileName:   "",
-		Profile:    types.GetOptionByName("profile", options).Value,
 	}
 }
 
@@ -100,5 +98,5 @@ func (fp *MarkdownFileProvider) Write(result types.Result) error {
 }
 
 func (fp *MarkdownFileProvider) DefaultFileName(prefix string) string {
-	return DefaultFileName(prefix, "md", fp.Profile)
+	return DefaultFileName(prefix, "md")
 }

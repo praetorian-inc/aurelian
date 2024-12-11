@@ -39,7 +39,7 @@ var AwsRegionOpt = types.Option{
 var AwsRegionsOpt = types.Option{
 	Name:        "regions",
 	Short:       "r",
-	Description: "Comma separated list of AWS regions",
+	Description: "Comma separated list of AWS regions. Can be 'all' for all regions.",
 	Required:    true,
 	Type:        types.String,
 	Value:       "",

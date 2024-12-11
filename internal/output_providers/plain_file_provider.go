@@ -13,14 +13,12 @@ type PlainFileProvider struct {
 	types.OutputProvider
 	OutputPath string
 	FileName   string
-	Profile    string
 }
 
 func NewPlainFileProvider(options []*types.Option) types.OutputProvider {
 	return &PlainFileProvider{
 		OutputPath: types.GetOptionByName(o.OutputOpt.Value, options).Value,
 		FileName:   "",
-		Profile:    types.GetOptionByName("profile", options).Value,
 	}
 }
 
@@ -55,5 +53,5 @@ func (fp *PlainFileProvider) Write(result types.Result) error {
 }
 
 func (fp *PlainFileProvider) DefaultFileName(prefix string) string {
-	return DefaultFileName(prefix, "txt", fp.Profile)
+	return DefaultFileName(prefix, "txt")
 }

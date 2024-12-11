@@ -59,6 +59,7 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 		stages.CloudControlListResources,
 		stages.AggregateOutput[types.EnrichedResourceDescription],
 	)
+
 	if err != nil {
 		return nil, nil, err
 	}
@@ -70,24 +71,9 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 			defer close(out)
 			resources := <-resourcePipeline(ctx, opts, in)
 
-			// Write outputs
-			for _, provider := range AwsListAllResourcesOutputProviders {
-				outputProvider := provider(opts)
-
-				// Send raw data for JSON output
-				outputProvider.Write(types.Result{
-					Platform: AwsListAllResourcesMetadata.Platform,
-					Module:   AwsListAllResourcesMetadata.Id,
-					Data:     resources,
-				})
-
-				// Send markdown table for Markdown output
-				outputProvider.Write(types.Result{
-					Platform: AwsListAllResourcesMetadata.Platform,
-					Module:   AwsListAllResourcesMetadata.Id,
-					Data:     ProcessResourcesForMarkdown(resources),
-				})
-			}
+			// Send both raw JSON and markdown table data through the channel
+			out <- resources                              // Raw JSON data
+			out <- ProcessResourcesForMarkdown(resources) // Markdown table
 		}()
 
 		return out
