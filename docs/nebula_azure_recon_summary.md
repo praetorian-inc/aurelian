@@ -9,9 +9,10 @@ nebula azure recon summary [flags]
 ### Options
 
 ```
-  -f, --file string           File name (default "summary-1733746092-faa42.md")
+  -f, --file string           File name (default "summary-1733918955-da144.md")
   -h, --help                  help for summary
-  -s, --subscription string   Azure subscription ID
+  -s, --subscription string   Azure subscription ID or 'all' to scan all accessible subscriptions
+  -w, --workers int           Number of concurrent workers for processing subscriptions (default 5)
 ```
 
 ### Options inherited from parent commands
