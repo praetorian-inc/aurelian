@@ -113,6 +113,7 @@ var AwsProfileOpt = types.Option{
 
 var AwsProfileListOpt = types.Option{
 	Name:        "profile-list",
+	Short:       "l",
 	Description: "List of AWS shared credentials profiles",
 	Required:    false,
 	Type:        types.String,

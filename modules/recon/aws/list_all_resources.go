@@ -2,12 +2,14 @@ package recon
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
+	"github.com/praetorian-inc/nebula/internal/logs"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -33,7 +35,8 @@ var AwsListAllResourcesOptions = []*types.Option{
 	&options.AwsScanTypeOpt,
 	types.SetDefaultValue(
 		*types.SetRequired(options.FileNameOpt, false),
-		"list-all-"+strconv.FormatInt(time.Now().Unix(), 10)),
+		""),
+	&options.AwsProfileListOpt,
 }
 
 var AwsListAllResourcesOutputProviders = []func(options []*types.Option) types.OutputProvider{
@@ -41,7 +44,8 @@ var AwsListAllResourcesOutputProviders = []func(options []*types.Option) types.O
 	op.NewMarkdownFileProvider,
 }
 
-func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[string, interface{}], error) {
+func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[string, types.Result], error) {
+	// Handle region options
 	regionsOpt := types.GetOptionByName(options.AwsRegionsOpt.Name, opts)
 	if regionsOpt == nil {
 		regionsOpt = &options.AwsRegionsOpt
@@ -55,31 +59,112 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 		opts = append(opts, &options.AwsResourceTypeOpt)
 	}
 
-	resourcePipeline, err := stages.ChainStages[string, []types.EnrichedResourceDescription](
-		stages.CloudControlListResources,
-		stages.AggregateOutput[types.EnrichedResourceDescription],
-	)
+	// Get profile list
+	profileList := types.GetOptionByName(options.AwsProfileListOpt.Name, opts).Value
+	profile := types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value
+	var profiles []string
 
-	if err != nil {
-		return nil, nil, err
+	if profileList == "" {
+		profiles = []string{profile}
+	} else {
+		profiles = strings.Split(profileList, ",")
 	}
 
-	pipeline := func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan interface{} {
-		out := make(chan interface{})
+	// Create a wrapper pipeline that iterates through profiles
+	pipeline := func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan types.Result {
+		out := make(chan types.Result)
 
 		go func() {
 			defer close(out)
-			resources := <-resourcePipeline(ctx, opts, in)
 
-			// Send both raw JSON and markdown table data through the channel
-			out <- resources                              // Raw JSON data
-			out <- ProcessResourcesForMarkdown(resources) // Markdown table
+			// Save input channel contents since we need to reuse it for each profile
+			var resourceTypes []string
+			for rt := range in {
+				resourceTypes = append(resourceTypes, rt)
+			}
+
+			for _, currentProfile := range profiles {
+				// Generate filename at profile level
+				profileOpts := types.CreateDeepCopyOfOptions(opts)
+				for _, opt := range profileOpts {
+					if opt.Name == options.AwsProfileOpt.Name {
+						opt.Value = currentProfile
+					}
+				}
+
+				baseFilename := ""
+				providedFilename := types.GetOptionByName(options.FileNameOpt.Name, profileOpts).Value
+				if len(providedFilename) == 0 {
+					config, err := helpers.GetAWSCfg("", currentProfile)
+					if err != nil {
+						logs.ConsoleLogger().Error(fmt.Sprintf("Error getting AWS config for profile %s: %s", currentProfile, err))
+						continue
+					}
+
+					// Set default region if not set
+					if len(config.Region) == 0 {
+						config.Region = "us-east-1"
+					}
+
+					accountId, err := helpers.GetAccountId(config)
+					if err != nil {
+						logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account ID for profile %s: %s", currentProfile, err))
+						continue
+					}
+
+					timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+					baseFilename = fmt.Sprintf("list-all-%s-%s-%s", currentProfile, accountId, timestamp)
+				} else {
+					baseFilename = providedFilename + "-" + currentProfile
+				}
+				logs.ConsoleLogger().Info(fmt.Sprintf("Using base filename for profile %s: %s", currentProfile, baseFilename))
+
+				// Initialize slice for all resources
+				var allResources []types.EnrichedResourceDescription
+
+				// Create a channel for all resource types
+				inChan := make(chan string, len(resourceTypes))
+				for _, resourceType := range resourceTypes {
+					inChan <- resourceType
+				}
+				close(inChan)
+
+				// Setup inner pipeline for this profile
+				resourcePipeline, err := stages.ChainStages[string, []types.EnrichedResourceDescription](
+					stages.CloudControlListResources,
+					stages.AggregateOutput[types.EnrichedResourceDescription],
+				)
+				if err != nil {
+					logs.ConsoleLogger().Error(fmt.Sprintf("Error creating pipeline for profile %s: %v", currentProfile, err))
+					continue
+				}
+
+				// Run pipeline once for all resources
+				if resources := <-resourcePipeline(ctx, profileOpts, inChan); resources != nil {
+					allResources = append(allResources, resources...)
+				}
+
+				// Create single result for all resources
+				out <- types.NewResult(
+					AwsListAllResourcesMetadata.Platform,
+					AwsListAllResourcesMetadata.Id,
+					allResources,
+					types.WithFilename(baseFilename+".json"),
+				)
+
+				out <- types.NewResult(
+					AwsListAllResourcesMetadata.Platform,
+					AwsListAllResourcesMetadata.Id,
+					ProcessResourcesForMarkdown(allResources),
+					types.WithFilename(baseFilename+".md"),
+				)
+			}
 		}()
 
 		return out
 	}
 
-	// Get the scan type from options
+	// Get scan type from options
 	scanType := types.GetOptionByName(options.AwsScanTypeOpt.Name, opts).Value
 	if scanType == "" {
 		scanType = "full"
