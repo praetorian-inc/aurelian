@@ -9,11 +9,12 @@ nebula aws recon list-all [flags]
 ### Options
 
 ```
-  -f, --file string        File name (default "list-all-1733937240")
-  -h, --help               help for list-all
-  -p, --profile string     AWS shared credentials profile
-  -r, --regions string     Comma separated list of AWS regions. Can be 'all' for all regions.
-  -s, --scan-type string   Scan type - 'full' for all resources or 'summary' for key services (default "full")
+  -f, --file string           File name
+  -h, --help                  help for list-all
+  -p, --profile string        AWS shared credentials profile
+  -l, --profile-list string   List of AWS shared credentials profiles
+  -r, --regions string        Comma separated list of AWS regions. Can be 'all' for all regions.
+  -s, --scan-type string      Scan type - 'full' for all resources or 'summary' for key services (default "full")
 ```
 
 ### Options inherited from parent commands
