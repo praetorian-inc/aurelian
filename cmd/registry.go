@@ -31,7 +31,7 @@ func init() {
 	RegisterModule(awsReconCmd, recon.AwsPublicResourcesMetadata, recon.AwsPublicResourcesOptions, awsCommonOptions, recon.AwsPublicResourcesOutputProviders, recon.NewAwsPublicResources)
 
 	// Azure Recon
-	RegisterModule(azureReconCmd, reconaz.AzureSummaryMetadata, reconaz.AzureSummaryOptions, azureCommonOptions, reconaz.AzureSummaryOutputProvders, reconaz.NewAzureSummary)
+	RegisterModule(azureReconCmd, reconaz.AzureSummaryMetadata, reconaz.AzureSummaryOptions, azureCommonOptions, reconaz.AzureSummaryOutputProviders, reconaz.NewAzureSummary)
 
 	// GCP Recon
 	//RegisterModule(gcpReconCmd, recongcp.GetProjectsMetadata, recongcp.GetProjectsOptions, noCommon, recongcp.NewGetProjects)
