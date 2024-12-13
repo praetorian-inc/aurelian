@@ -28,7 +28,7 @@ func (fp *MarkdownFileProvider) Write(result types.Result) error {
 	// Result.Data needs to be of type MarkdownTable for this provider to work
 	table, ok := result.Data.(types.MarkdownTable)
 	if !ok {
-		return fmt.Errorf("incoming result 'Data' not of type MarkdownTable instead received %T", result.Data)
+		return nil
 	}
 	var filename string
 	if result.Filename == "" {
