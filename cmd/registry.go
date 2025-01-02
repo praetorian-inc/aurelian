@@ -29,6 +29,7 @@ func init() {
 	RegisterModule(awsReconCmd, recon.AwsAuthorizationDetailsMetadata, recon.AwsAuthorizationDetailsOptions, awsCommonOptions, recon.AwsAuthorizationDetailsOutputProviders, recon.NewAwsAuthorizationDetails)
 	// RegisterModule(awsReconCmd, recon.AwsFindSecretsMetadata, recon.AwsFindSecretsOptions, awsCommonOptions, recon.NewAwsFindSecrets)
 	RegisterModule(awsReconCmd, recon.AwsPublicResourcesMetadata, recon.AwsPublicResourcesOptions, awsCommonOptions, recon.AwsPublicResourcesOutputProviders, recon.NewAwsPublicResources)
+	RegisterModule(awsReconCmd, recon.AwsListAllResourcesMetadata, recon.AwsListAllResourcesOptions, awsCommonOptions, recon.AwsListAllResourcesOutputProviders, recon.NewAwsListAllResources)
 
 	// Azure Recon
 	RegisterModule(azureReconCmd, reconaz.AzureSummaryMetadata, reconaz.AzureSummaryOptions, azureCommonOptions, reconaz.AzureSummaryOutputProviders, reconaz.NewAzureSummary)

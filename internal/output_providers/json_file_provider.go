@@ -26,9 +26,11 @@ func NewJsonFileProvider(options []*types.Option) types.OutputProvider {
 func (fp *JsonFileProvider) Write(result types.Result) error {
 	var filename string
 
-	// Result.Data should not be of type MarkdownTable for this provider to work
-	_, ok := result.Data.(types.MarkdownTable)
-	if ok {
+
+	_, ok := result.Data.([]types.EnrichedResourceDescription)
+	if !ok {
+		// Skip if not the correct type
+		logs.ConsoleLogger().Info("Result is not of JSON type")
 		return nil
 	}
 

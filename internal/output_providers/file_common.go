@@ -23,7 +23,8 @@ func GenerateShortUUID() string {
 }
 
 // DefaultFileName generates a standardized filename in the format:
-// prefix-timestamp-account-uuid.extension
+// prefix-timestamp-uuid.extension
+
 func DefaultFileName(prefix string, extension string) string {
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 	uuid := GenerateShortUUID()

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
@@ -157,8 +158,10 @@ func runModule[In, Out any](ctx context.Context, metadata modules.Metadata, opts
 					// Check if result is already of type Result
 					if r, ok := any(result).(types.Result); ok {
 						finalResult = r
+						logs.ConsoleLogger().Info("Final result is of type result, do not need to create new result")
 					} else {
 						finalResult = types.NewResult(metadata.Platform, metadata.Id, result)
+						logs.ConsoleLogger().Info("Final result is not of type result, creating new result")
 					}
 
 					err := outputProvider.Write(finalResult)

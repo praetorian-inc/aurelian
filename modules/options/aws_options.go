@@ -39,7 +39,7 @@ var AwsRegionOpt = types.Option{
 var AwsRegionsOpt = types.Option{
 	Name:        "regions",
 	Short:       "r",
-	Description: "Comma separated list of AWS regions",
+	Description: "Comma separated list of AWS regions. Can be 'all' for all regions.",
 	Required:    true,
 	Type:        types.String,
 	Value:       "",
@@ -113,8 +113,19 @@ var AwsProfileOpt = types.Option{
 
 var AwsProfileListOpt = types.Option{
 	Name:        "profile-list",
+	Short:       "l",
 	Description: "List of AWS shared credentials profiles",
 	Required:    false,
 	Type:        types.String,
 	Value:       "",
+}
+
+var AwsScanTypeOpt = types.Option{
+	Name:        "scan-type",
+	Short:       "s",
+	Description: "Scan type - 'full' for all resources or 'summary' for key services",
+	Required:    true,
+	Type:        types.String,
+	Value:       "full",
+	ValueList:   []string{"full", "summary"},
 }
