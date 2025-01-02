@@ -9,8 +9,10 @@ import (
 	"sync"
 	"time"
 
+	// AWS service imports
 	"github.com/aws/aws-sdk-go-v2/service/backup"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
+	cctypes "github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -36,7 +38,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqsTypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
+
+	// Legacy AWS SDK import needed for some helper functions
 	"github.com/aws/aws-sdk-go/aws"
+
+	// Internal imports
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -61,6 +67,7 @@ func GetRegions(ctx context.Context, opts []*types.Option) <-chan string {
 func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
 	out := make(chan types.EnrichedResourceDescription)
 	logs.ConsoleLogger().Info("Listing resources")
+
 	profile := types.GetOptionByName("profile", opts).Value
 	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
 	if err != nil {
@@ -81,10 +88,20 @@ func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype 
 
 	var wg sync.WaitGroup
 
+	// Create semaphores for each region to limit concurrent resource processing
+	regionSemaphores := make(map[string]chan struct{})
+	for _, region := range regions {
+		regionSemaphores[region] = make(chan struct{}, 5)
+	}
+
 	for rtype := range rtype {
-		// Capture the current value of rtype by passing it to the goroutine
 		for _, region := range regions {
-			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			// Skip non us-east-1 regions for global services
+			if helpers.IsGlobalService(rtype) && region != "us-east-1" {
+				continue
+			}
+
+			logs.ConsoleLogger().Info("Listing resources of type " + rtype + " in region: " + region)
 			wg.Add(1)
 			go func(region string, rtype string) {
 				defer wg.Done()
@@ -93,21 +110,43 @@ func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype 
 				params := &cloudcontrol.ListResourcesInput{
 					TypeName: &rtype,
 				}
-				res, err := cc.ListResources(ctx, params)
-				if err != nil {
-					logs.ConsoleLogger().Error(err.Error())
-					return
-				}
 
-				for _, resource := range res.ResourceDescriptions {
-					out <- types.EnrichedResourceDescription{
-						Identifier: *resource.Identifier,
-						TypeName:   rtype,
-						Region:     region,
-						Properties: *resource.Properties,
-						AccountId:  acctId,
+				for {
+					res, err := cc.ListResources(ctx, params)
+					if err != nil {
+						if strings.Contains(err.Error(), "TypeNotFoundException") {
+							logs.ConsoleLogger().Info(fmt.Sprintf("The type %s is not available in region %s", rtype, region))
+							return
+						}
+						logs.ConsoleLogger().Debug(err.Error())
+						return
 					}
+
+					var resourceWg sync.WaitGroup
+					for _, resource := range res.ResourceDescriptions {
+						resourceWg.Add(1)
+						go func(resource *cctypes.ResourceDescription) {
+							defer resourceWg.Done()
+							regionSemaphores[region] <- struct{}{}
+							defer func() { <-regionSemaphores[region] }()
+
+							out <- types.EnrichedResourceDescription{
+								Identifier: *resource.Identifier,
+								TypeName:   rtype,
+								Region:     region,
+								Properties: *resource.Properties,
+								AccountId:  acctId,
+							}
+						}(&resource)
+					}
+					resourceWg.Wait()
+
+					if res.NextToken == nil {
+						break
+					}
+					params.NextToken = res.NextToken
 				}
+				logs.ConsoleLogger().Info("Completed collecting resource type " + rtype + " in region: " + region)
 			}(region, rtype)
 		}
 	}

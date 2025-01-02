@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strconv"
-	"time"
 
 	"github.com/praetorian-inc/nebula/internal/logs"
 	o "github.com/praetorian-inc/nebula/modules/options"
@@ -28,12 +26,19 @@ func NewJsonFileProvider(options []*types.Option) types.OutputProvider {
 func (fp *JsonFileProvider) Write(result types.Result) error {
 	var filename string
 
+	_, ok := result.Data.([]types.EnrichedResourceDescription)
+	if !ok {
+		// Skip if not the correct type
+		logs.ConsoleLogger().Info("Result is not of JSON type")
+		return nil
+	}
+
 	if result.Filename == "" {
-		filename = DefaultFileName(result.Module)
+		filename = fp.DefaultFileName(result.Module)
 	} else {
 		filename = result.Filename
 	}
-	fullpath := fp.GetFullPath(filename)
+	fullpath := GetFullPath(filename, fp.OutputPath)
 	dir := filepath.Dir(fullpath)
 
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
@@ -60,10 +65,6 @@ func (fp *JsonFileProvider) Write(result types.Result) error {
 	return nil
 }
 
-func (fp *JsonFileProvider) GetFullPath(filename string) string {
-	return fp.OutputPath + string(os.PathSeparator) + filename
-}
-
-func DefaultFileName(prefix string) string {
-	return prefix + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".json"
+func (fp *JsonFileProvider) DefaultFileName(prefix string) string {
+	return DefaultFileName(prefix, "json")
 }

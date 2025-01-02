@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/praetorian-inc/nebula/internal/logs"
 	o "github.com/praetorian-inc/nebula/modules/options"
@@ -33,13 +31,12 @@ func (fp *MarkdownFileProvider) Write(result types.Result) error {
 		return fmt.Errorf("incoming result 'Data' not of type MarkdownTable instead received %T", result.Data)
 	}
 	var filename string
-	// TODO we should centralize this logic
 	if result.Filename == "" {
 		filename = fp.DefaultFileName(result.Module)
 	} else {
 		filename = result.Filename
 	}
-	fullpath := fp.GetFullPath(filename)
+	fullpath := GetFullPath(filename, fp.OutputPath)
 	dir := filepath.Dir(fullpath)
 
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
@@ -100,10 +97,6 @@ func (fp *MarkdownFileProvider) Write(result types.Result) error {
 	return nil
 }
 
-func (fp *MarkdownFileProvider) GetFullPath(filename string) string {
-	return fp.OutputPath + string(os.PathSeparator) + filename
-}
-
 func (fp *MarkdownFileProvider) DefaultFileName(prefix string) string {
-	return prefix + "-" + strconv.FormatInt(time.Now().Unix(), 10) + ".md"
+	return DefaultFileName(prefix, "md")
 }

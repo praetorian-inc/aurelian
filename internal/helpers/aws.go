@@ -103,12 +103,12 @@ func GetAWSCfg(region string, profile string) (aws.Config, error) {
 		config.WithSharedConfigProfile(profile),
 		config.WithRetryMode(aws.RetryModeAdaptive),
 	)
-
 	if err != nil {
 		return aws.Config{}, err
 	}
 
 	return cfg, nil
+
 }
 
 func GetAccountId(cfg aws.Config) (string, error) {
