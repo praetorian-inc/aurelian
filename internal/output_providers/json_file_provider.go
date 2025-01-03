@@ -26,6 +26,7 @@ func NewJsonFileProvider(options []*types.Option) types.OutputProvider {
 func (fp *JsonFileProvider) Write(result types.Result) error {
 	var filename string
 
+
 	_, ok := result.Data.([]types.EnrichedResourceDescription)
 	if !ok {
 		// Skip if not the correct type

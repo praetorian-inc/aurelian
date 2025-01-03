@@ -7,6 +7,7 @@ import (
 	analyze "github.com/praetorian-inc/nebula/modules/analyze/aws"
 	augment "github.com/praetorian-inc/nebula/modules/misc/augment"
 	recon "github.com/praetorian-inc/nebula/modules/recon/aws"
+	reconaz "github.com/praetorian-inc/nebula/modules/recon/azure"
 	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/spf13/cobra"
@@ -31,7 +32,9 @@ func init() {
 	RegisterModule(awsReconCmd, recon.AwsListAllResourcesMetadata, recon.AwsListAllResourcesOptions, awsCommonOptions, recon.AwsListAllResourcesOutputProviders, recon.NewAwsListAllResources)
 
 	// Azure Recon
-	//RegisterModule(azureReconCmd, reconaz.AzureSummaryMetadata, reconaz.AzureSummaryOptions, azureCommonOptions, reconaz.NewAzureSummary)
+	RegisterModule(azureReconCmd, reconaz.AzureSummaryMetadata, reconaz.AzureSummaryOptions, azureCommonOptions, reconaz.AzureSummaryOutputProviders, reconaz.NewAzureSummary)
+	RegisterModule(azureReconCmd, reconaz.AzureRoleAssignmentsMetadata, reconaz.AzureRoleAssignmentsOptions, azureCommonOptions, reconaz.AzureRoleAssignmentsOutputProviders, reconaz.NewAzureRoleAssignments)
+	RegisterModule(azureReconCmd, reconaz.AzureListAllMetadata, reconaz.AzureListAllOptions, []*types.Option{}, reconaz.AzureListAllOutputProviders, reconaz.NewAzureListAll)
 
 	// GCP Recon
 	//RegisterModule(gcpReconCmd, recongcp.GetProjectsMetadata, recongcp.GetProjectsOptions, noCommon, recongcp.NewGetProjects)

@@ -13,6 +13,7 @@ Nebula is a CLI tool for testing the offensive security of cloud services.
 ### SEE ALSO
 
 * [nebula aws](nebula_aws.md)	 - aws commands
+* [nebula azure](nebula_azure.md)	 - azure commands
 * [nebula misc](nebula_misc.md)	 - misc commands
 * [nebula template](nebula_template.md)	 - Generate a module template
 
