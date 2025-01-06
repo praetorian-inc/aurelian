@@ -27,10 +27,10 @@ func (fp *JsonFileProvider) Write(result types.Result) error {
 	var filename string
 
 
-	_, ok := result.Data.([]types.EnrichedResourceDescription)
-	if !ok {
+	_, ok := result.Data.(types.MarkdownTable)
+	if ok {
 		// Skip if not the correct type
-		logs.ConsoleLogger().Info("Result is not of JSON type")
+		logs.ConsoleLogger().Info("Skipping JSON provider for the Markdown table")
 		return nil
 	}
 
