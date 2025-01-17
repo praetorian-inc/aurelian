@@ -10,6 +10,7 @@ var GlobalServices = []string{
 	"AWS::CloudFront::",
 	"AWS::Route53::",
 	"AWS::Organizations::",
+	"AWS::ECR::PublicRepository",
 }
 
 func IsGlobalService(resourceType string) bool {

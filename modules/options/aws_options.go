@@ -1,6 +1,7 @@
 package options
 
 import (
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -128,4 +129,28 @@ var AwsScanTypeOpt = types.Option{
 	Type:        types.String,
 	Value:       "full",
 	ValueList:   []string{"full", "summary"},
+}
+
+var AwsCacheDirOpt = types.Option{
+	Name:        "cache-dir",
+	Description: "Directory to store API response cache files",
+	Required:    false,
+	Type:        types.String,
+	Value:       filepath.Join(OutputOpt.Value, ".aws-cache"),
+}
+
+var AwsCacheTTLOpt = types.Option{
+	Name:        "cache-ttl",
+	Description: "TTL for cached responses in seconds (default 3600)",
+	Required:    false,
+	Type:        types.Int,
+	Value:       "3600",
+}
+
+var AwsDisableCacheOpt = types.Option{
+	Name:        "disable-cache",
+	Description: "Disable API response caching",
+	Required:    false,
+	Type:        types.Bool,
+	Value:       "false",
 }

@@ -3,6 +3,7 @@ package stages
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ import (
 
 // Stage for getting Azure environment summary
 func GetAzureEnvironmentSummaryStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan *helpers.AzureEnvironmentDetails {
+	logger := logs.NewStageLogger(ctx, opts, "GetAzureEnvironmentSummaryStage")
 	out := make(chan *helpers.AzureEnvironmentDetails)
 
 	go func() {
@@ -28,7 +30,7 @@ func GetAzureEnvironmentSummaryStage(ctx context.Context, opts []*types.Option, 
 		for subscription := range in {
 			env, err := helpers.GetEnvironmentDetails(ctx, subscription, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error(fmt.Sprintf("Failed to get environment details for subscription %s: %v", subscription, err))
+				logger.Error("Failed to get environment details for subscription %s: %v", subscription, err)
 				continue
 			}
 			out <- env
@@ -40,6 +42,7 @@ func GetAzureEnvironmentSummaryStage(ctx context.Context, opts []*types.Option, 
 
 // Stage for getting detailed Azure resource information
 func GetAzureListAllStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan *types.AzureResourceDetails {
+	logger := logs.NewStageLogger(ctx, opts, "GetAzureListAllStage")
 	out := make(chan *types.AzureResourceDetails)
 	workersCount, _ := strconv.Atoi(types.GetOptionByName("workers", opts).Value)
 
@@ -58,27 +61,27 @@ func GetAzureListAllStage(ctx context.Context, opts []*types.Option, in <-chan s
 					// Get Azure credentials
 					cred, err := azidentity.NewDefaultAzureCredential(nil)
 					if err != nil {
-						logs.ConsoleLogger().Error(fmt.Sprintf("Failed to get Azure credential for subscription %s: %v", subscription, err))
+						logger.Error("Failed to get Azure credential for subscription %s: %v", subscription, err)
 						continue
 					}
 
 					// Initialize the resources client
 					client, err := armresources.NewClient(subscription, cred, nil)
 					if err != nil {
-						logs.ConsoleLogger().Error(fmt.Sprintf("Failed to create resources client for subscription %s: %v", subscription, err))
+						logger.Error("Failed to create resources client for subscription %s: %v", subscription, err)
 						continue
 					}
 
 					// Get subscription and tenant details
 					subDetails, err := helpers.GetSubscriptionDetails(ctx, cred, subscription)
 					if err != nil {
-						logs.ConsoleLogger().Error(fmt.Sprintf("Failed to get subscription details for %s: %v", subscription, err))
+						logger.Error("Failed to get subscription details for %s: %v", subscription, err)
 						continue
 					}
 
 					tenantID, tenantName, err := helpers.GetTenantDetails(ctx, cred)
 					if err != nil {
-						logs.ConsoleLogger().Error(fmt.Sprintf("Failed to get tenant details for subscription %s: %v", subscription, err))
+						logger.Error("Failed to get tenant details for subscription %s: %v", subscription, err)
 						continue
 					}
 
@@ -97,7 +100,7 @@ func GetAzureListAllStage(ctx context.Context, opts []*types.Option, in <-chan s
 					for pager.More() {
 						page, err := pager.NextPage(ctx)
 						if err != nil {
-							logs.ConsoleLogger().Error(fmt.Sprintf("Failed to get next page for subscription %s: %v", subscription, err))
+							logger.Error("Failed to get next page for subscription %s: %v", subscription, err)
 							continue
 						}
 
@@ -142,6 +145,7 @@ func GetAzureListAllStage(ctx context.Context, opts []*types.Option, in <-chan s
 
 // GetAzureRoleAssignmentsStage enumerates role assignments across management groups, subscriptions, and resource groups
 func GetAzureRoleAssignmentsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan []*types.RoleAssignmentDetails {
+	logger := logs.NewStageLogger(ctx, opts, "GetAzureRoleAssignmentsStage")
 	out := make(chan []*types.RoleAssignmentDetails)
 	workersCount, _ := strconv.Atoi(types.GetOptionByName("workers", opts).Value)
 
@@ -156,37 +160,37 @@ func GetAzureRoleAssignmentsStage(ctx context.Context, opts []*types.Option, in 
 			wg.Add(1)
 			go func(workerNum int) {
 				defer wg.Done()
-				logs.ConsoleLogger().Info(fmt.Sprintf("Starting worker %d", workerNum))
+				logger.Info("Starting worker %d", workerNum)
 
 				for subscription := range subscriptionChan {
-					logs.ConsoleLogger().Info(fmt.Sprintf("Worker %d processing subscription: %s", workerNum, subscription))
+					logger.Info("Worker %d processing subscription: %s", workerNum, subscription)
 
 					// Get Azure credentials
 					cred, err := azidentity.NewDefaultAzureCredential(nil)
 					if err != nil {
-						logs.ConsoleLogger().Error(fmt.Sprintf("Worker %d failed to get Azure credential: %v", workerNum, err))
+						logger.Error("Worker %d failed to get Azure credential: %v", workerNum, err)
 						continue
 					}
 
 					assignments := make([]*types.RoleAssignmentDetails, 0)
 
 					// Get subscription details first to ensure we have access
-					logs.ConsoleLogger().Info(fmt.Sprintf("Worker %d getting subscription details for %s", workerNum, subscription))
+					logger.Debug("Getting subscription details", slog.Int("worker", workerNum), slog.String("subscription", subscription))
 					subDetails, err := helpers.GetSubscriptionDetails(ctx, cred, subscription)
 					if err != nil {
-						logs.ConsoleLogger().Error(fmt.Sprintf("Worker %d failed to get subscription details for %s: %v", workerNum, subscription, err))
+						logger.Error("Worker %d failed to get subscription details for %s: %v", workerNum, subscription, err)
 						continue
 					}
 
 					// Try to get management group assignments
-					logs.ConsoleLogger().Info(fmt.Sprintf("Worker %d attempting to get management group assignments for %s", workerNum, subscription))
+					logger.Info("Worker %d attempting to get management group assignments for %s", workerNum, subscription)
 					mgmtClient, err := armmanagementgroups.NewClient(cred, &arm.ClientOptions{})
 					if err == nil {
 						mgmtAssignments, err := helpers.GetMgmtGroupRoleAssignments(ctx, mgmtClient, subscription)
 						if err != nil {
-							logs.ConsoleLogger().Error(fmt.Sprintf("Worker %d failed to get management group assignments: %v", workerNum, err))
+							logger.Error("Worker %d failed to get management group assignments: %v", workerNum, err)
 						} else {
-							logs.ConsoleLogger().Info(fmt.Sprintf("Worker %d found %d management group assignments", workerNum, len(mgmtAssignments)))
+							logger.Info("Worker %d found %d management group assignments", workerNum, len(mgmtAssignments))
 							if len(mgmtAssignments) > 0 {
 								assignments = append(assignments, mgmtAssignments...)
 							}
@@ -194,54 +198,54 @@ func GetAzureRoleAssignmentsStage(ctx context.Context, opts []*types.Option, in 
 					}
 
 					// Get subscription level assignments
-					logs.ConsoleLogger().Info(fmt.Sprintf("Worker %d getting subscription level assignments for %s", workerNum, subscription))
+					logger.Info("Worker %d getting subscription level assignments for %s", workerNum, subscription)
 					authClient, err := armauthorization.NewRoleAssignmentsClient(subscription, cred, &arm.ClientOptions{})
 					if err != nil {
-						logs.ConsoleLogger().Error(fmt.Sprintf("Worker %d failed to create authorization client: %v", workerNum, err))
+						logger.Error("Worker %d failed to create authorization client: %v", workerNum, err)
 						continue
 					}
 
 					subAssignments, err := helpers.GetSubscriptionRoleAssignments(ctx, authClient, subscription, *subDetails.DisplayName)
 					if err != nil {
-						logs.ConsoleLogger().Error(fmt.Sprintf("Worker %d failed to get subscription assignments: %v", workerNum, err))
+						logger.Error("Worker %d failed to get subscription assignments: %v", workerNum, err)
 					} else {
-						logs.ConsoleLogger().Info(fmt.Sprintf("Worker %d found %d subscription level assignments", workerNum, len(subAssignments)))
+						logger.Info("Worker %d found %d subscription level assignments", workerNum, len(subAssignments))
 						if len(subAssignments) > 0 {
 							assignments = append(assignments, subAssignments...)
 						}
 					}
 
 					// Get resource group level assignments
-					logs.ConsoleLogger().Info(fmt.Sprintf("Worker %d getting resource group level assignments for %s", workerNum, subscription))
+					logger.Info("Worker %d getting resource group level assignments for %s", workerNum, subscription)
 					resourceClient, err := armresources.NewClient(subscription, cred, &arm.ClientOptions{})
 					if err != nil {
-						logs.ConsoleLogger().Error(fmt.Sprintf("Worker %d failed to create resources client: %v", workerNum, err))
+						logger.Error("Worker %d failed to create resources client: %v", workerNum, err)
 						continue
 					}
 
 					rgAssignments, err := helpers.GetResourceGroupRoleAssignments(ctx, resourceClient, authClient, subscription, *subDetails.DisplayName)
 					if err != nil {
-						logs.ConsoleLogger().Error(fmt.Sprintf("Worker %d failed to get resource group assignments: %v", workerNum, err))
+						logger.Error("Worker %d failed to get resource group assignments: %v", workerNum, err)
 					} else {
-						logs.ConsoleLogger().Info(fmt.Sprintf("Worker %d found %d resource group level assignments", workerNum, len(rgAssignments)))
+						logger.Info("Worker %d found %d resource group level assignments", workerNum, len(rgAssignments))
 						if len(rgAssignments) > 0 {
 							assignments = append(assignments, rgAssignments...)
 						}
 					}
 
-					logs.ConsoleLogger().Info(fmt.Sprintf("Worker %d found total of %d assignments for subscription %s", workerNum, len(assignments), subscription))
+					logger.Info("Worker %d found total of %d assignments for subscription %s", workerNum, len(assignments), subscription)
 					if len(assignments) > 0 {
 						resultsChan <- assignments
 					}
 				}
-				logs.ConsoleLogger().Info(fmt.Sprintf("Worker %d finished processing", workerNum))
+				logger.Info("Worker %d finished processing", workerNum)
 			}(i)
 		}
 
 		// Feed subscriptions to workers
 		go func() {
 			for subscription := range in {
-				logs.ConsoleLogger().Info(fmt.Sprintf("Processing subscription: %s", subscription))
+				logger.Info("Processing subscription: %s", subscription)
 				select {
 				case subscriptionChan <- subscription:
 				case <-ctx.Done():

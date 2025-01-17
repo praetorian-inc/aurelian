@@ -1,10 +1,10 @@
 package recon
 
 import (
+	"log/slog"
 	"strconv"
 	"time"
 
-	"github.com/praetorian-inc/nebula/internal/logs"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -39,7 +39,6 @@ var AwsPublicResourcesMetadata = modules.Metadata{
 func NewAwsPublicResources(opts []*types.Option) (<-chan string, stages.Stage[string, []map[string]interface{}], error) {
 
 	pipeline, err := stages.ChainStages[string, []map[string]interface{}](
-		stages.Echo[string],
 		stages.AwsPublicResources,
 		stages.UnmarshalOutput,
 		stages.AggregateOutput[map[string]interface{}],
@@ -52,10 +51,10 @@ func NewAwsPublicResources(opts []*types.Option) (<-chan string, stages.Stage[st
 	rtype := types.GetOptionByName(options.AwsResourceTypeOpt.Name, opts).Value
 
 	if rtype == "ALL" {
-		logs.ConsoleLogger().Info("Loading public resources recon module for all types")
+		slog.Info("Loading public resources recon module for all types")
 		return stages.Generator(PublicTypes), pipeline, nil
 	} else {
-		logs.ConsoleLogger().Info("Loading public resources recon module for types: " + rtype)
+		slog.Info("Loading public resources recon module for types: " + rtype)
 		in := stages.ParseTypes(types.GetOptionByName(options.AwsResourceTypeOpt.Name, opts).Value)
 		return in, pipeline, nil
 	}
@@ -83,6 +82,7 @@ var PublicTypes = []string{
 	"AWS::Logs::ResourcePolicy",
 	"AWS::MediaStore::Container",
 	"AWS::OpenSearchService::Domain",
+	"AWS::RDS::DBInstance",
 	"AWS::RDS::DBClusterSnapshot",
 	"AWS::RDS::DBSnapshot",
 	"AWS::S3::Bucket",

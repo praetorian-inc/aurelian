@@ -2,6 +2,7 @@ package stages
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -54,7 +55,7 @@ func GetRegions(ctx context.Context, opts []*types.Option) <-chan string {
 	regChan := make(chan string)
 	go func() {
 		defer close(regChan)
-		enabled, _ := helpers.EnabledRegions(types.GetOptionByName("profile", opts).Value)
+		enabled, _ := helpers.EnabledRegions(types.GetOptionByName("profile", opts).Value, opts)
 
 		for _, region := range enabled {
 			regChan <- region
@@ -65,24 +66,26 @@ func GetRegions(ctx context.Context, opts []*types.Option) <-chan string {
 }
 
 func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	logger := logs.NewStageLogger(ctx, opts, "CloudControlListResources")
+
 	out := make(chan types.EnrichedResourceDescription)
-	logs.ConsoleLogger().Info("Listing resources")
+	logger.Info("Listing resources")
 
 	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
-	config, err := helpers.GetAWSCfg(regions[0], profile)
+	config, err := helpers.GetAWSCfg(regions[0], profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 	acctId, err := helpers.GetAccountId(config)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
@@ -101,11 +104,11 @@ func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype 
 				continue
 			}
 
-			logs.ConsoleLogger().Info("Listing resources of type " + rtype + " in region: " + region)
+			logger.Info("Listing resources of type " + rtype + " in region: " + region)
 			wg.Add(1)
 			go func(region string, rtype string) {
 				defer wg.Done()
-				config, _ := helpers.GetAWSCfg(region, profile)
+				config, _ := helpers.GetAWSCfg(region, profile, opts)
 				cc := cloudcontrol.NewFromConfig(config)
 				params := &cloudcontrol.ListResourcesInput{
 					TypeName: &rtype,
@@ -115,10 +118,10 @@ func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype 
 					res, err := cc.ListResources(ctx, params)
 					if err != nil {
 						if strings.Contains(err.Error(), "TypeNotFoundException") {
-							logs.ConsoleLogger().Info(fmt.Sprintf("The type %s is not available in region %s", rtype, region))
+							logger.Info("The type %s is not available in region %s", rtype, region)
 							return
 						}
-						logs.ConsoleLogger().Debug(err.Error())
+						logger.Debug(err.Error())
 						return
 					}
 
@@ -146,7 +149,7 @@ func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype 
 					}
 					params.NextToken = res.NextToken
 				}
-				logs.ConsoleLogger().Info("Completed collecting resource type " + rtype + " in region: " + region)
+				logger.Info("Completed collecting resource type " + rtype + " in region: " + region)
 			}(region, rtype)
 		}
 	}
@@ -160,15 +163,16 @@ func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype 
 }
 
 func CloudControlGetResource(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
+	logger := logs.NewStageLogger(ctx, opts, "CloudControlGetResource")
 	out := make(chan types.EnrichedResourceDescription)
-	logs.ConsoleLogger().Info("Getting resource to populate properties")
+	logger.Info("Getting resource to populate properties")
 	go func() {
 		defer close(out)
 		for resource := range in {
-			logs.ConsoleLogger().Info("Now getting resource: " + resource.Identifier)
-			cfg, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			logger.Info("Now getting resource: " + resource.Identifier)
+			cfg, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error(fmt.Sprintf("Error getting AWS config: %s", err))
+				logger.Error("Error getting AWS config: %s", err)
 				continue
 			}
 
@@ -185,14 +189,14 @@ func CloudControlGetResource(ctx context.Context, opts []*types.Option, in <-cha
 			for i := 0; i < retries; i++ {
 				res, err := cc.GetResource(ctx, params)
 				if err != nil && strings.Contains(err.Error(), "ThrottlingException") {
-					logs.ConsoleLogger().Info("ThrottlingException encountered. Retrying in " + strconv.Itoa(backoff) + "ms")
+					logger.Info("ThrottlingException encountered. Retrying in " + strconv.Itoa(backoff) + "ms")
 					b := time.Duration(backoff) * time.Millisecond * time.Duration(i)
 					time.Sleep(b)
 					continue
 				}
 
 				if err != nil {
-					logs.ConsoleLogger().Error(fmt.Sprintf("Error getting resource: %s, %s", resource.Identifier, err))
+					logger.Error("Error getting resource: %s, %s", resource.Identifier, err)
 					break
 				}
 
@@ -222,6 +226,8 @@ func ParseTypes(types string) <-chan string {
 }
 
 func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan []byte {
+	logger := logs.NewStageLogger(ctx, opts, "GetAccountAuthorizationDetailsStage")
+
 	out := make(chan []byte)
 	var wg sync.WaitGroup
 
@@ -237,16 +243,16 @@ func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*types.Opti
 				}
 
 				// Get AWS config for this profile
-				config, err := helpers.GetAWSCfg("", profile)
+				config, err := helpers.GetAWSCfg("", profile, opts)
 				if err != nil {
-					logs.ConsoleLogger().Error(fmt.Sprintf("Error getting AWS config for profile %s: %s", profile, err))
+					logger.Error("Error getting AWS config for profile %s: %s", profile, err)
 					return
 				}
 
 				// Get account ID
 				accountId, err := helpers.GetAccountId(config)
 				if err != nil {
-					logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account ID for profile %s: %s", profile, err))
+					logger.Error("Error getting account ID for profile %s: %s", profile, err)
 					return
 				}
 
@@ -269,7 +275,7 @@ func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*types.Opti
 					}
 					output, err := client.GetAccountAuthorizationDetails(ctx, input)
 					if err != nil {
-						logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account authorization details for profile %s: %s", profile, err))
+						logger.Error("Error getting account authorization details for profile %s: %s", profile, err)
 						return
 					}
 
@@ -295,13 +301,13 @@ func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*types.Opti
 				// Marshal and decode the output
 				rawData, err := json.Marshal(completeOutput)
 				if err != nil {
-					logs.ConsoleLogger().Error(fmt.Sprintf("Error marshaling authorization details for profile %s: %s", profile, err))
+					logger.Error("Error marshaling authorization details for profile %s: %s", profile, err)
 					return
 				}
 
 				decodedData, err := utils.GaadReplaceURLEncodedPolicies(rawData)
 				if err != nil {
-					logs.ConsoleLogger().Error(fmt.Sprintf("Error replacing URL-encoded policies for profile %s: %s", profile, err))
+					logger.Error("Error replacing URL-encoded policies for profile %s: %s", profile, err)
 					return
 				}
 
@@ -322,13 +328,14 @@ func GetAccountAuthorizationDetailsStage(ctx context.Context, opts []*types.Opti
 }
 
 func BackupVaultCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking Backup Vaults resource access policies")
+	logger := logs.NewStageLogger(ctx, opts, "BackupVaultCheckResourcePolicy")
+	logger.Info("Checking Backup Vaults resource access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			backupClient := backup.NewFromConfig(config)
@@ -338,7 +345,7 @@ func BackupVaultCheckResourcePolicy(ctx context.Context, opts []*types.Option, i
 			}
 			policyOutput, err := backupClient.GetBackupVaultAccessPolicy(ctx, policyInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get Backup Vault resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get Backup Vault resource access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
@@ -361,24 +368,25 @@ func BackupVaultCheckResourcePolicy(ctx context.Context, opts []*types.Option, i
 }
 
 func CloudWatchDestinationCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking CloudWatch destination resource access policies")
+	logger := logs.NewStageLogger(ctx, opts, "CloudWatchDestinationCheckResourcePolicy")
+	logger.Info("Checking CloudWatch destination resource access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			logsClient := cloudwatchlogs.NewFromConfig(config)
-			logs.ConsoleLogger().Info("Trying to get CloudWatch destination resource access policy for " + resource.Identifier)
+			logger.Info("Trying to get CloudWatch destination resource access policy for " + resource.Identifier)
 
 			destinationsInput := &cloudwatchlogs.DescribeDestinationsInput{
 				DestinationNamePrefix: aws.String(resource.Identifier),
 			}
 			destinationsOutput, err := logsClient.DescribeDestinations(ctx, destinationsInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get CloudWatch destination resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get CloudWatch destination resource access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				var newProperties string
@@ -406,13 +414,14 @@ func CloudWatchDestinationCheckResourcePolicy(ctx context.Context, opts []*types
 }
 
 func CognitoUserPoolGetDomains(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking Cognito user pool domains")
+	logger := logs.NewStageLogger(ctx, opts, "CognitoUserPoolGetDomains")
+	logger.Info("Checking Cognito user pool domains")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			cognitoClient := cognitoidentityprovider.NewFromConfig(config)
@@ -422,7 +431,7 @@ func CognitoUserPoolGetDomains(ctx context.Context, opts []*types.Option, in <-c
 			}
 			cognitoOutput, err := cognitoClient.DescribeUserPool(ctx, cognitoInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not describe " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not describe " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				if cognitoOutput.UserPool.AdminCreateUserConfig.AllowAdminCreateUserOnly {
@@ -472,13 +481,14 @@ func CognitoUserPoolGetDomains(ctx context.Context, opts []*types.Option, in <-c
 }
 
 func CognitoUserPoolDescribeClients(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking Cognito user pool clients")
+	logger := logs.NewStageLogger(ctx, opts, "CognitoUserPoolDescribeClients")
+	logger.Info("Checking Cognito user pool clients")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			cognitoClient := cognitoidentityprovider.NewFromConfig(config)
@@ -491,7 +501,7 @@ func CognitoUserPoolDescribeClients(ctx context.Context, opts []*types.Option, i
 			for {
 				clientsOutput, err := cognitoClient.ListUserPoolClients(ctx, cognitoInput)
 				if err != nil {
-					logs.ConsoleLogger().Info("Could not list user pool clients for " + resource.Identifier + ", error: " + err.Error())
+					logger.Info("Could not list user pool clients for " + resource.Identifier + ", error: " + err.Error())
 					out <- resource
 					break
 				}
@@ -502,7 +512,7 @@ func CognitoUserPoolDescribeClients(ctx context.Context, opts []*types.Option, i
 					}
 					describeClientOutput, err := cognitoClient.DescribeUserPoolClient(ctx, describeClientInput)
 					if err != nil {
-						logs.ConsoleLogger().Info("Could not describe user pool client " + *client.ClientId + " for " + resource.Identifier + ", error: " + err.Error())
+						logger.Info("Could not describe user pool client " + *client.ClientId + " for " + resource.Identifier + ", error: " + err.Error())
 						continue
 					}
 
@@ -515,7 +525,7 @@ func CognitoUserPoolDescribeClients(ctx context.Context, opts []*types.Option, i
 
 					clientPropertiesBytes, err := json.Marshal(clientProperties)
 					if err != nil {
-						logs.ConsoleLogger().Info("Could not marshal user pool client properties for " + *client.ClientId + ", error: " + err.Error())
+						logger.Info("Could not marshal user pool client properties for " + *client.ClientId + ", error: " + err.Error())
 						continue
 					}
 					clientPropertiesString = clientPropertiesString + string(clientPropertiesBytes) + ","
@@ -535,7 +545,7 @@ func CognitoUserPoolDescribeClients(ctx context.Context, opts []*types.Option, i
 			}
 			lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
 			newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + clientPropertiesString + "}"
-			logs.ConsoleLogger().Info(newProperties)
+			logger.Info(newProperties)
 
 			out <- types.EnrichedResourceDescription{
 				Identifier: resource.Identifier,
@@ -551,23 +561,24 @@ func CognitoUserPoolDescribeClients(ctx context.Context, opts []*types.Option, i
 }
 
 func ListEBSSnapshots(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	logger := logs.NewStageLogger(ctx, opts, "ListEBSSnapshots")
 	out := make(chan types.EnrichedResourceDescription)
-	logs.ConsoleLogger().Info("Listing EBS snapshots")
+	logger.Info("Listing EBS snapshots")
 	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
-	config, err := helpers.GetAWSCfg(regions[0], profile)
+	config, err := helpers.GetAWSCfg(regions[0], profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 	acctId, err := helpers.GetAccountId(config)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
@@ -576,11 +587,11 @@ func ListEBSSnapshots(ctx context.Context, opts []*types.Option, rtype <-chan st
 	for rtype := range rtype {
 		// Capture the current value of rtype by passing it to the goroutine
 		for _, region := range regions {
-			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			logger.Debug("Listing resources of type " + rtype + " in region: " + region)
 			wg.Add(1)
 			go func(region string, rtype string) {
 				defer wg.Done()
-				config, _ := helpers.GetAWSCfg(region, profile)
+				config, _ := helpers.GetAWSCfg(region, profile, opts)
 
 				ec2Client := ec2.NewFromConfig(config)
 				params := &ec2.DescribeSnapshotsInput{
@@ -590,14 +601,14 @@ func ListEBSSnapshots(ctx context.Context, opts []*types.Option, rtype <-chan st
 					for {
 						res, err := ec2Client.DescribeSnapshots(ctx, params)
 						if err != nil {
-							logs.ConsoleLogger().Error(err.Error())
+							logger.Error(err.Error())
 							return
 						}
 
 						for _, snapshot := range res.Snapshots {
 							properties, err := json.Marshal(snapshot)
 							if err != nil {
-								logs.ConsoleLogger().Error("Could not marshal EBS snapshot description")
+								logger.Error("Could not marshal EBS snapshot description")
 								continue
 							}
 
@@ -629,13 +640,14 @@ func ListEBSSnapshots(ctx context.Context, opts []*types.Option, rtype <-chan st
 }
 
 func EBSSnapshotDescribeAttributes(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking EBS snapshot create volume permissions")
+	logger := logs.NewStageLogger(ctx, opts, "EBSSnapshotDescribeAttributes")
+	logger.Info("Checking EBS snapshot create volume permissions")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			ec2Client := ec2.NewFromConfig(config)
@@ -646,12 +658,12 @@ func EBSSnapshotDescribeAttributes(ctx context.Context, opts []*types.Option, in
 			}
 			permissionsOutput, err := ec2Client.DescribeSnapshotAttribute(ctx, loadPermissionInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not describe EBS snapshot create volume permissions for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not describe EBS snapshot create volume permissions for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				loadPermissions, err := json.Marshal(permissionsOutput.CreateVolumePermissions)
 				if err != nil {
-					logs.ConsoleLogger().Error("Could not marshal EBS snapshot create volume permissions")
+					logger.Error("Could not marshal EBS snapshot create volume permissions")
 					continue
 				}
 				loadPermissionsString := "\"CreateVolumePermissions\":" + string(loadPermissions)
@@ -674,23 +686,24 @@ func EBSSnapshotDescribeAttributes(ctx context.Context, opts []*types.Option, in
 }
 
 func ListEC2FPGAImages(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	logger := logs.NewStageLogger(ctx, opts, "ListEC2FPGAImages")
 	out := make(chan types.EnrichedResourceDescription)
-	logs.ConsoleLogger().Info("Listing EC2 FPGA images")
+	logger.Info("Listing EC2 FPGA images")
 	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
-	config, err := helpers.GetAWSCfg(regions[0], profile)
+	config, err := helpers.GetAWSCfg(regions[0], profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 	acctId, err := helpers.GetAccountId(config)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
@@ -699,11 +712,11 @@ func ListEC2FPGAImages(ctx context.Context, opts []*types.Option, rtype <-chan s
 	for rtype := range rtype {
 		// Capture the current value of rtype by passing it to the goroutine
 		for _, region := range regions {
-			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			logger.Debug("Listing resources of type " + rtype + " in region: " + region)
 			wg.Add(1)
 			go func(region string, rtype string) {
 				defer wg.Done()
-				config, _ := helpers.GetAWSCfg(region, profile)
+				config, _ := helpers.GetAWSCfg(region, profile, opts)
 
 				ec2Client := ec2.NewFromConfig(config)
 				params := &ec2.DescribeFpgaImagesInput{
@@ -713,14 +726,14 @@ func ListEC2FPGAImages(ctx context.Context, opts []*types.Option, rtype <-chan s
 					for {
 						res, err := ec2Client.DescribeFpgaImages(ctx, params)
 						if err != nil {
-							logs.ConsoleLogger().Error(err.Error())
+							logger.Error(err.Error())
 							return
 						}
 
 						for _, image := range res.FpgaImages {
 							properties, err := json.Marshal(image)
 							if err != nil {
-								logs.ConsoleLogger().Error("Could not marshal EC2 FPGA image description")
+								logger.Error("Could not marshal EC2 FPGA image description")
 								continue
 							}
 
@@ -752,13 +765,14 @@ func ListEC2FPGAImages(ctx context.Context, opts []*types.Option, rtype <-chan s
 }
 
 func EC2FPGAImageDescribeAttributes(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking EC2 FPGA image load permissions")
+	logger := logs.NewStageLogger(ctx, opts, "EC2FPGAImageDescribeAttributes")
+	logger.Info("Checking EC2 FPGA image load permissions")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			ec2Client := ec2.NewFromConfig(config)
@@ -769,12 +783,12 @@ func EC2FPGAImageDescribeAttributes(ctx context.Context, opts []*types.Option, i
 			}
 			permissionsOutput, err := ec2Client.DescribeFpgaImageAttribute(ctx, loadPermissionInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not describe EC2 FPGA image load permissions for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not describe EC2 FPGA image load permissions for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				loadPermissions, err := json.Marshal(permissionsOutput.FpgaImageAttribute.LoadPermissions)
 				if err != nil {
-					logs.ConsoleLogger().Error("Could not marshal EC2 FPGA image load permissions")
+					logger.Error("Could not marshal EC2 FPGA image load permissions")
 					continue
 				}
 				loadPermissionsString := "\"LoadPermissions\":" + string(loadPermissions)
@@ -797,23 +811,24 @@ func EC2FPGAImageDescribeAttributes(ctx context.Context, opts []*types.Option, i
 }
 
 func ListEC2Images(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	logger := logs.NewStageLogger(ctx, opts, "ListEC2Images")
 	out := make(chan types.EnrichedResourceDescription)
-	logs.ConsoleLogger().Info("Listing EC2 AMIs")
+	logger.Info("Listing EC2 AMIs")
 	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
-	config, err := helpers.GetAWSCfg(regions[0], profile)
+	config, err := helpers.GetAWSCfg(regions[0], profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 	acctId, err := helpers.GetAccountId(config)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
@@ -822,11 +837,11 @@ func ListEC2Images(ctx context.Context, opts []*types.Option, rtype <-chan strin
 	for rtype := range rtype {
 		// Capture the current value of rtype by passing it to the goroutine
 		for _, region := range regions {
-			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			logger.Debug("Listing resources of type " + rtype + " in region: " + region)
 			wg.Add(1)
 			go func(region string, rtype string) {
 				defer wg.Done()
-				config, _ := helpers.GetAWSCfg(region, profile)
+				config, _ := helpers.GetAWSCfg(region, profile, opts)
 
 				ec2Client := ec2.NewFromConfig(config)
 				params := &ec2.DescribeImagesInput{
@@ -836,14 +851,14 @@ func ListEC2Images(ctx context.Context, opts []*types.Option, rtype <-chan strin
 					for {
 						res, err := ec2Client.DescribeImages(ctx, params)
 						if err != nil {
-							logs.ConsoleLogger().Error(err.Error())
+							logger.Error(err.Error())
 							return
 						}
 
 						for _, image := range res.Images {
 							properties, err := json.Marshal(image)
 							if err != nil {
-								logs.ConsoleLogger().Error("Could not marshal EC2 image description")
+								logger.Error("Could not marshal EC2 image description")
 								continue
 							}
 
@@ -875,13 +890,14 @@ func ListEC2Images(ctx context.Context, opts []*types.Option, rtype <-chan strin
 }
 
 func EC2ImageDescribeAttributes(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking EC2 AMI launch permissions")
+	logger := logs.NewStageLogger(ctx, opts, "EC2ImageDescribeAttributes")
+	logger.Info("Checking EC2 AMI launch permissions")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			ec2Client := ec2.NewFromConfig(config)
@@ -892,12 +908,12 @@ func EC2ImageDescribeAttributes(ctx context.Context, opts []*types.Option, in <-
 			}
 			permissionsOutput, err := ec2Client.DescribeImageAttribute(ctx, launchPermissionInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get EC2 image launch permissions for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get EC2 image launch permissions for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				launchPermissions, err := json.Marshal(permissionsOutput.LaunchPermissions)
 				if err != nil {
-					logs.ConsoleLogger().Error("Could not marshal EC2 image launch permissions")
+					logger.Error("Could not marshal EC2 image launch permissions")
 					continue
 				}
 				launchPermissionsString := "\"LaunchPermissions\":" + string(launchPermissions)
@@ -921,12 +937,13 @@ func EC2ImageDescribeAttributes(ctx context.Context, opts []*types.Option, in <-
 
 func Ec2ListPublic(ctx context.Context, profile string) Stage[string, string] {
 	return func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
+		logger := logs.NewStageLogger(ctx, opts, "Ec2ListPublic")
 		out := make(chan string)
 		go func() {
 			defer close(out)
 			for region := range in {
-				logs.ConsoleLogger().Debug("Listing public EC2 resources for " + region)
-				config, _ := helpers.GetAWSCfg(region, types.GetOptionByName("profile", opts).Value)
+				logger.Debug("Listing public EC2 resources for " + region)
+				config, _ := helpers.GetAWSCfg(region, types.GetOptionByName("profile", opts).Value, opts)
 				client := ec2.NewFromConfig(config)
 
 				ec2Input := ec2.DescribeInstancesInput{
@@ -943,7 +960,7 @@ func Ec2ListPublic(ctx context.Context, profile string) Stage[string, string] {
 				}
 				output, err := client.DescribeInstances(ctx, &ec2Input)
 				if err != nil {
-					logs.ConsoleLogger().Error(err.Error())
+					logger.Error(err.Error())
 					continue
 				}
 
@@ -970,13 +987,14 @@ func Ec2ListPublic(ctx context.Context, profile string) Stage[string, string] {
 }
 
 func ECRCheckRepoPolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking ECR repository access policies")
+	logger := logs.NewStageLogger(ctx, opts, "ECRCheckRepoPolicy")
+	logger.Info("Checking ECR repository access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			ecrClient := ecr.NewFromConfig(config)
@@ -986,7 +1004,7 @@ func ECRCheckRepoPolicy(ctx context.Context, opts []*types.Option, in <-chan typ
 			}
 			policyOutput, err := ecrClient.GetRepositoryPolicy(ctx, policyInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get ECR repository access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get ECR repository access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.PolicyText)
@@ -1009,13 +1027,14 @@ func ECRCheckRepoPolicy(ctx context.Context, opts []*types.Option, in <-chan typ
 }
 
 func ECRCheckPublicRepoPolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking ECR public repository access policies")
+	logger := logs.NewStageLogger(ctx, opts, "ECRCheckPublicRepoPolicy")
+	logger.Info("Checking ECR public repository access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			ecrPublicClient := ecrpublic.NewFromConfig(config)
@@ -1025,7 +1044,7 @@ func ECRCheckPublicRepoPolicy(ctx context.Context, opts []*types.Option, in <-ch
 			}
 			policyOutput, err := ecrPublicClient.GetRepositoryPolicy(ctx, policyInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get ECR public repository access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get ECR public repository access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.PolicyText)
@@ -1048,13 +1067,14 @@ func ECRCheckPublicRepoPolicy(ctx context.Context, opts []*types.Option, in <-ch
 }
 
 func EFSFileSystemCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking EFS File Systems resource access policies")
+	logger := logs.NewStageLogger(ctx, opts, "EFSFileSystemCheckResourcePolicy")
+	logger.Info("Checking EFS File Systems resource access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			efsClient := efs.NewFromConfig(config)
@@ -1064,7 +1084,7 @@ func EFSFileSystemCheckResourcePolicy(ctx context.Context, opts []*types.Option,
 			}
 			policyOutput, err := efsClient.DescribeFileSystemPolicy(ctx, policyInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get EFS File Systems resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get EFS File Systems resource access policy for " + resource.Identifier + ", error: " + err.Error())
 				if strings.Contains(err.Error(), "PolicyNotFound") {
 					lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
 					newProperties := resource.Properties.(string)[:lastBracketIndex] + ",\"AccessPolicy\":\"Default (all users with network access can mount)\"}"
@@ -1100,23 +1120,24 @@ func EFSFileSystemCheckResourcePolicy(ctx context.Context, opts []*types.Option,
 }
 
 func ListESDomains(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	logger := logs.NewStageLogger(ctx, opts, "ListESDomains")
 	out := make(chan types.EnrichedResourceDescription)
-	logs.ConsoleLogger().Info("Listing ElasticSearch Domains")
+	logger.Info("Listing ElasticSearch Domains")
 	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
-	config, err := helpers.GetAWSCfg(regions[0], profile)
+	config, err := helpers.GetAWSCfg(regions[0], profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 	acctId, err := helpers.GetAccountId(config)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
@@ -1125,23 +1146,23 @@ func ListESDomains(ctx context.Context, opts []*types.Option, rtype <-chan strin
 	for rtype := range rtype {
 		// Capture the current value of rtype by passing it to the goroutine
 		for _, region := range regions {
-			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			logger.Debug("Listing resources of type " + rtype + " in region: " + region)
 			wg.Add(1)
 			go func(region string, rtype string) {
 				defer wg.Done()
-				config, _ := helpers.GetAWSCfg(region, profile)
+				config, _ := helpers.GetAWSCfg(region, profile, opts)
 				esClient := elasticsearchservice.NewFromConfig(config)
 				params := &elasticsearchservice.ListDomainNamesInput{}
 				res, err := esClient.ListDomainNames(ctx, params)
 				if err != nil {
-					logs.ConsoleLogger().Error(err.Error())
+					logger.Error(err.Error())
 					return
 				}
 
 				for _, resource := range res.DomainNames {
 					propertiesStr, err := json.Marshal(resource)
 					if err != nil {
-						logs.ConsoleLogger().Error("Could not marshal properties for ElasticSearch domain")
+						logger.Error("Could not marshal properties for ElasticSearch domain")
 						continue
 					}
 
@@ -1166,13 +1187,14 @@ func ListESDomains(ctx context.Context, opts []*types.Option, rtype <-chan strin
 }
 
 func ESDomainCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking ElasticSearch domain resource access policies")
+	logger := logs.NewStageLogger(ctx, opts, "ESDomainCheckResourcePolicy")
+	logger.Info("Checking ElasticSearch domain resource access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			esClient := elasticsearchservice.NewFromConfig(config)
@@ -1182,10 +1204,10 @@ func ESDomainCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <
 			}
 			policyOutput, err := esClient.DescribeElasticsearchDomainConfig(ctx, policyInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get ElasticSearch domain resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get ElasticSearch domain resource access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else if policyOutput.DomainConfig == nil || policyOutput.DomainConfig.AccessPolicies == nil || policyOutput.DomainConfig.AccessPolicies.Options == nil {
-				logs.ConsoleLogger().Debug("Could not get ElasticSearch domain resource access policy for " + resource.Identifier + ", no policy exists")
+				logger.Debug("Could not get ElasticSearch domain resource access policy for " + resource.Identifier + ", no policy exists")
 				out <- resource
 			} else {
 				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.DomainConfig.AccessPolicies.Options)
@@ -1208,13 +1230,14 @@ func ESDomainCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <
 }
 
 func EventBusCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking event bus resource access policies")
+	logger := logs.NewStageLogger(ctx, opts, "EventBusCheckResourcePolicy")
+	logger.Info("Checking event bus resource access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			eventsClient := eventbridge.NewFromConfig(config)
@@ -1224,10 +1247,10 @@ func EventBusCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <
 			}
 			describeOutput, err := eventsClient.DescribeEventBus(ctx, describeInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get event bus resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get event bus resource access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else if describeOutput.Policy == nil {
-				logs.ConsoleLogger().Debug("Could not get event bus resource access policy for " + resource.Identifier + ", no policy found")
+				logger.Debug("Could not get event bus resource access policy for " + resource.Identifier + ", no policy found")
 				out <- resource
 			} else {
 				policyResultString := utils.CheckResourceAccessPolicy(*describeOutput.Policy)
@@ -1250,23 +1273,24 @@ func EventBusCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <
 }
 
 func ListGlacierVaults(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	logger := logs.NewStageLogger(ctx, opts, "ListGlacierVaults")
 	out := make(chan types.EnrichedResourceDescription)
-	logs.ConsoleLogger().Info("Listing Glacier Vaults")
+	logger.Info("Listing Glacier Vaults")
 	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
-	config, err := helpers.GetAWSCfg(regions[0], profile)
+	config, err := helpers.GetAWSCfg(regions[0], profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 	acctId, err := helpers.GetAccountId(config)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
@@ -1275,11 +1299,11 @@ func ListGlacierVaults(ctx context.Context, opts []*types.Option, rtype <-chan s
 	for rtype := range rtype {
 		// Capture the current value of rtype by passing it to the goroutine
 		for _, region := range regions {
-			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			logger.Debug("Listing resources of type " + rtype + " in region: " + region)
 			wg.Add(1)
 			go func(region string, rtype string) {
 				defer wg.Done()
-				config, _ := helpers.GetAWSCfg(region, profile)
+				config, _ := helpers.GetAWSCfg(region, profile, opts)
 
 				glacierClient := glacier.NewFromConfig(config)
 				params := &glacier.ListVaultsInput{
@@ -1288,14 +1312,14 @@ func ListGlacierVaults(ctx context.Context, opts []*types.Option, rtype <-chan s
 				for {
 					res, err := glacierClient.ListVaults(ctx, params)
 					if err != nil {
-						logs.ConsoleLogger().Error(err.Error())
+						logger.Error(err.Error())
 						return
 					}
 
 					for _, vault := range res.VaultList {
 						properties, err := json.Marshal(vault)
 						if err != nil {
-							logs.ConsoleLogger().Error("Could not marshal Glacier vault")
+							logger.Error("Could not marshal Glacier vault")
 							continue
 						}
 
@@ -1326,13 +1350,14 @@ func ListGlacierVaults(ctx context.Context, opts []*types.Option, rtype <-chan s
 }
 
 func GlacierVaultCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking Glacier Vault resource access policies")
+	logger := logs.NewStageLogger(ctx, opts, "GlacierVaultCheckResourcePolicy")
+	logger.Info("Checking Glacier Vault resource access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			glacierClient := glacier.NewFromConfig(config)
@@ -1343,7 +1368,7 @@ func GlacierVaultCheckResourcePolicy(ctx context.Context, opts []*types.Option, 
 			}
 			policyOutput, err := glacierClient.GetVaultAccessPolicy(ctx, policyInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get Glacier Vault resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get Glacier Vault resource access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy.Policy)
@@ -1366,23 +1391,24 @@ func GlacierVaultCheckResourcePolicy(ctx context.Context, opts []*types.Option, 
 }
 
 func GlueCheckResourcePolicy(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	logger := logs.NewStageLogger(ctx, opts, "GlueCheckResourcePolicy")
 	out := make(chan types.EnrichedResourceDescription)
-	logs.ConsoleLogger().Info("Checking Glue resource access policies")
+	logger.Info("Checking Glue resource access policies")
 	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
-	config, err := helpers.GetAWSCfg(regions[0], profile)
+	config, err := helpers.GetAWSCfg(regions[0], profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 	acctId, err := helpers.GetAccountId(config)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
@@ -1391,11 +1417,11 @@ func GlueCheckResourcePolicy(ctx context.Context, opts []*types.Option, rtype <-
 	for rtype := range rtype {
 		// Capture the current value of rtype by passing it to the goroutine
 		for _, region := range regions {
-			logs.ConsoleLogger().Debug("Getting Glue resource access policies in region: " + region)
+			logger.Debug("Getting Glue resource access policies in region: " + region)
 			wg.Add(1)
 			go func(region string, rtype string) {
 				defer wg.Done()
-				config, _ := helpers.GetAWSCfg(region, profile)
+				config, _ := helpers.GetAWSCfg(region, profile, opts)
 
 				glueClient := glue.NewFromConfig(config)
 
@@ -1403,7 +1429,7 @@ func GlueCheckResourcePolicy(ctx context.Context, opts []*types.Option, rtype <-
 				policyOutput, err := glueClient.GetResourcePolicy(ctx, policyInput)
 
 				if err != nil {
-					logs.ConsoleLogger().Debug("Could not get Glue resource access policy, error: " + err.Error())
+					logger.Debug("Could not get Glue resource access policy, error: " + err.Error())
 					return
 				} else {
 					glueCatalogArn := fmt.Sprintf("arn:aws:glue:%s:%s:catalog", region, acctId)
@@ -1432,13 +1458,14 @@ func GlueCheckResourcePolicy(ctx context.Context, opts []*types.Option, rtype <-
 }
 
 func IAMRoleCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking IAM Role AssumeRole policies")
+	logger := logs.NewStageLogger(ctx, opts, "IAMRoleCheckResourcePolicy")
+	logger.Info("Checking IAM Role AssumeRole policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			iamClient := iam.NewFromConfig(config)
@@ -1448,7 +1475,7 @@ func IAMRoleCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-
 			}
 			roleOutput, err := iamClient.GetRole(ctx, policyInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get IAM Role AssumeRole policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get IAM Role AssumeRole policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				policyResultString := utils.CheckResourceAccessPolicy(*roleOutput.Role.AssumeRolePolicyDocument)
@@ -1471,13 +1498,14 @@ func IAMRoleCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-
 }
 
 func KMSKeyCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking KMS key resource access policies")
+	logger := logs.NewStageLogger(ctx, opts, "KMSKeyCheckResourcePolicy")
+	logger.Info("Checking KMS key resource access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			kmsClient := kms.NewFromConfig(config)
@@ -1487,7 +1515,7 @@ func KMSKeyCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-c
 			}
 			policyOutput, err := kmsClient.GetKeyPolicy(ctx, policyInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get KMS key resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get KMS key resource access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
@@ -1510,13 +1538,14 @@ func KMSKeyCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-c
 }
 
 func KMSKeyCheckGrants(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking KMS key grants")
+	logger := logs.NewStageLogger(ctx, opts, "KMSKeyCheckGrants")
+	logger.Info("Checking KMS key grants")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			kmsClient := kms.NewFromConfig(config)
@@ -1527,7 +1556,7 @@ func KMSKeyCheckGrants(ctx context.Context, opts []*types.Option, in <-chan type
 			for {
 				policyOutput, err := kmsClient.ListGrants(ctx, policyInput)
 				if err != nil {
-					logs.ConsoleLogger().Debug("Could not get KMS key grants for " + resource.Identifier + ", error: " + err.Error())
+					logger.Debug("Could not get KMS key grants for " + resource.Identifier + ", error: " + err.Error())
 					out <- resource
 					break
 				}
@@ -1546,7 +1575,7 @@ func KMSKeyCheckGrants(ctx context.Context, opts []*types.Option, in <-chan type
 
 				granteesJson, err := json.Marshal(grantees)
 				if err != nil {
-					logs.ConsoleLogger().Error("Could not marshal grantees")
+					logger.Error("Could not marshal grantees")
 					continue
 				}
 
@@ -1573,12 +1602,13 @@ func KMSKeyCheckGrants(ctx context.Context, opts []*types.Option, in <-chan type
 }
 
 func LambdaGetFunctionUrl(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan string {
-	logs.ConsoleLogger().Info("Getting Lambda function URLs")
+	logger := logs.NewStageLogger(ctx, opts, "LambdaGetFunctionUrl")
+	logger.Info("Getting Lambda function URLs")
 	out := make(chan string)
 	go func() {
 		for resource := range in {
-			logs.ConsoleLogger().Debug("Getting URL for Lambda function: " + resource.Identifier)
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			logger.Debug("Getting URL for Lambda function: " + resource.Identifier)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				out <- ""
 			}
@@ -1589,7 +1619,7 @@ func LambdaGetFunctionUrl(ctx context.Context, opts []*types.Option, in <-chan t
 			output, err := client.GetFunctionUrlConfig(ctx, params)
 			if err != nil {
 				if !strings.Contains(err.Error(), "StatusCode: 404") {
-					logs.ConsoleLogger().Error(err.Error())
+					logger.Error(err.Error())
 				}
 				continue
 			}
@@ -1603,14 +1633,15 @@ func LambdaGetFunctionUrl(ctx context.Context, opts []*types.Option, in <-chan t
 
 func ListLambdaFunctions(ctx context.Context, profile string) Stage[string, string] {
 	return func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
+		logger := logs.NewStageLogger(ctx, opts, "ListLambdaFunctions")
 		out := make(chan string)
 		go func() {
 			defer close(out)
 			for region := range in {
-				logs.ConsoleLogger().Debug("Listing Lambda functions " + region)
-				config, err := helpers.GetAWSCfg(region, profile)
+				logger.Debug("Listing Lambda functions " + region)
+				config, err := helpers.GetAWSCfg(region, profile, opts)
 				if err != nil {
-					logs.ConsoleLogger().Error(err.Error())
+					logger.Error(err.Error())
 					continue
 				}
 				client := lambda.NewFromConfig(config)
@@ -1618,7 +1649,7 @@ func ListLambdaFunctions(ctx context.Context, profile string) Stage[string, stri
 				output, err := client.ListFunctions(ctx, params)
 				if err != nil {
 					out <- ""
-					logs.ConsoleLogger().Error(err.Error())
+					logger.Error(err.Error())
 				}
 
 				for _, function := range output.Functions {
@@ -1631,23 +1662,24 @@ func ListLambdaFunctions(ctx context.Context, profile string) Stage[string, stri
 }
 
 func ListLambdaLayers(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	logger := logs.NewStageLogger(ctx, opts, "ListLambdaLayers")
 	out := make(chan types.EnrichedResourceDescription)
-	logs.ConsoleLogger().Info("Listing Lambda Layers")
+	logger.Info("Listing Lambda Layers")
 	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
-	config, err := helpers.GetAWSCfg(regions[0], profile)
+	config, err := helpers.GetAWSCfg(regions[0], profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 	acctId, err := helpers.GetAccountId(config)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
@@ -1656,23 +1688,23 @@ func ListLambdaLayers(ctx context.Context, opts []*types.Option, rtype <-chan st
 	for rtype := range rtype {
 		// Capture the current value of rtype by passing it to the goroutine
 		for _, region := range regions {
-			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			logger.Debug("Listing resources of type " + rtype + " in region: " + region)
 			wg.Add(1)
 			go func(region string, rtype string) {
 				defer wg.Done()
-				config, _ := helpers.GetAWSCfg(region, profile)
+				config, _ := helpers.GetAWSCfg(region, profile, opts)
 				lambdaClient := lambda.NewFromConfig(config)
 				params := &lambda.ListLayersInput{}
 				res, err := lambdaClient.ListLayers(ctx, params)
 				if err != nil {
-					logs.ConsoleLogger().Error(err.Error())
+					logger.Error(err.Error())
 					return
 				}
 
 				for _, resource := range res.Layers {
 					latestMatchingVersionStr, err := json.Marshal(resource.LatestMatchingVersion)
 					if err != nil {
-						logs.ConsoleLogger().Error("Could not marshal Lambda layer version")
+						logger.Error("Could not marshal Lambda layer version")
 						continue
 					}
 					lastBracketIndex := strings.LastIndex(string(latestMatchingVersionStr), "}")
@@ -1699,13 +1731,14 @@ func ListLambdaLayers(ctx context.Context, opts []*types.Option, rtype <-chan st
 }
 
 func LambdaCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking Lambda function resource access policies")
+	logger := logs.NewStageLogger(ctx, opts, "LambdaCheckResourcePolicy")
+	logger.Info("Checking Lambda function resource access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			lambdaClient := lambda.NewFromConfig(config)
@@ -1715,7 +1748,7 @@ func LambdaCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-c
 			}
 			policyOutput, err := lambdaClient.GetPolicy(ctx, policyInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get Lambda function resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get Lambda function resource access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
@@ -1738,25 +1771,26 @@ func LambdaCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-c
 }
 
 func LambdaLayerCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking Lambda layer resource access policies")
+	logger := logs.NewStageLogger(ctx, opts, "LambdaLayerCheckResourcePolicy")
+	logger.Info("Checking Lambda layer resource access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			lambdaClient := lambda.NewFromConfig(config)
 
 			var properties map[string]interface{}
 			if err := json.Unmarshal([]byte(resource.Properties.(string)), &properties); err != nil {
-				logs.ConsoleLogger().Error("Could not unmarshal Lambda layer version, error: " + err.Error())
+				logger.Error("Could not unmarshal Lambda layer version, error: " + err.Error())
 				continue
 			}
 			version, ok := properties["Version"].(float64)
 			if !ok {
-				logs.ConsoleLogger().Error("Could not find Lambda layer version")
+				logger.Error("Could not find Lambda layer version")
 				continue
 			}
 
@@ -1766,7 +1800,7 @@ func LambdaLayerCheckResourcePolicy(ctx context.Context, opts []*types.Option, i
 			}
 			policyOutput, err := lambdaClient.GetLayerVersionPolicy(ctx, policyInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get Lambda layer resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get Lambda layer resource access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
@@ -1789,23 +1823,24 @@ func LambdaLayerCheckResourcePolicy(ctx context.Context, opts []*types.Option, i
 }
 
 func ListMediaStoreContainers(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	logger := logs.NewStageLogger(ctx, opts, "ListMediaStoreContainers")
 	out := make(chan types.EnrichedResourceDescription)
-	logs.ConsoleLogger().Info("Listing MediaStore Containers")
+	logger.Info("Listing MediaStore Containers")
 	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
-	config, err := helpers.GetAWSCfg(regions[0], profile)
+	config, err := helpers.GetAWSCfg(regions[0], profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 	acctId, err := helpers.GetAccountId(config)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
@@ -1814,23 +1849,23 @@ func ListMediaStoreContainers(ctx context.Context, opts []*types.Option, rtype <
 	for rtype := range rtype {
 		// Capture the current value of rtype by passing it to the goroutine
 		for _, region := range regions {
-			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			logger.Debug("Listing resources of type " + rtype + " in region: " + region)
 			wg.Add(1)
 			go func(region string, rtype string) {
 				defer wg.Done()
-				config, _ := helpers.GetAWSCfg(region, profile)
+				config, _ := helpers.GetAWSCfg(region, profile, opts)
 				mediastoreClient := mediastore.NewFromConfig(config)
 				params := &mediastore.ListContainersInput{}
 				res, err := mediastoreClient.ListContainers(ctx, params)
 				if err != nil {
-					logs.ConsoleLogger().Error(err.Error())
+					logger.Error(err.Error())
 					return
 				}
 
 				for _, resource := range res.Containers {
 					propertiesStr, err := json.Marshal(resource)
 					if err != nil {
-						logs.ConsoleLogger().Error("Could not marshal properties for MediaStore container")
+						logger.Error("Could not marshal properties for MediaStore container")
 						continue
 					}
 
@@ -1855,13 +1890,14 @@ func ListMediaStoreContainers(ctx context.Context, opts []*types.Option, rtype <
 }
 
 func MediaStoreContainerCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking MediaStore container resource access policies")
+	logger := logs.NewStageLogger(ctx, opts, "MediaStoreContainerCheckResourcePolicy")
+	logger.Info("Checking MediaStore container resource access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			mediastoreClient := mediastore.NewFromConfig(config)
@@ -1871,7 +1907,7 @@ func MediaStoreContainerCheckResourcePolicy(ctx context.Context, opts []*types.O
 			}
 			policyOutput, err := mediastoreClient.GetContainerPolicy(ctx, policyInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get MediaStore container resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get MediaStore container resource access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
@@ -1894,13 +1930,14 @@ func MediaStoreContainerCheckResourcePolicy(ctx context.Context, opts []*types.O
 }
 
 func OSSDomainCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking OpenSearch domain resource access policies")
+	logger := logs.NewStageLogger(ctx, opts, "OSSDomainCheckResourcePolicy")
+	logger.Info("Checking OpenSearch domain resource access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			ossClient := opensearch.NewFromConfig(config)
@@ -1910,10 +1947,10 @@ func OSSDomainCheckResourcePolicy(ctx context.Context, opts []*types.Option, in 
 			}
 			policyOutput, err := ossClient.DescribeDomainConfig(ctx, policyInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get OpenSearch domain resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get OpenSearch domain resource access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else if policyOutput.DomainConfig == nil || policyOutput.DomainConfig.AccessPolicies == nil || policyOutput.DomainConfig.AccessPolicies.Options == nil {
-				logs.ConsoleLogger().Debug("Could not get OpenSearch domain resource access policy for " + resource.Identifier + ", no policy exists")
+				logger.Debug("Could not get OpenSearch domain resource access policy for " + resource.Identifier + ", no policy exists")
 				out <- resource
 			} else {
 				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.DomainConfig.AccessPolicies.Options)
@@ -1936,23 +1973,24 @@ func OSSDomainCheckResourcePolicy(ctx context.Context, opts []*types.Option, in 
 }
 
 func ListRDSDBSnapshots(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	logger := logs.NewStageLogger(ctx, opts, "ListRDSDBSnapshots")
 	out := make(chan types.EnrichedResourceDescription)
-	logs.ConsoleLogger().Info("Listing RDS DB snapshots")
+	logger.Info("Listing RDS DB snapshots")
 	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
-	config, err := helpers.GetAWSCfg(regions[0], profile)
+	config, err := helpers.GetAWSCfg(regions[0], profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 	acctId, err := helpers.GetAccountId(config)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
@@ -1961,11 +1999,11 @@ func ListRDSDBSnapshots(ctx context.Context, opts []*types.Option, rtype <-chan 
 	for rtype := range rtype {
 		// Capture the current value of rtype by passing it to the goroutine
 		for _, region := range regions {
-			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			logger.Debug("Listing resources of type " + rtype + " in region: " + region)
 			wg.Add(1)
 			go func(region string, rtype string) {
 				defer wg.Done()
-				config, _ := helpers.GetAWSCfg(region, profile)
+				config, _ := helpers.GetAWSCfg(region, profile, opts)
 
 				rdsClient := rds.NewFromConfig(config)
 				params := &rds.DescribeDBSnapshotsInput{
@@ -1976,14 +2014,14 @@ func ListRDSDBSnapshots(ctx context.Context, opts []*types.Option, rtype <-chan 
 					for {
 						res, err := rdsClient.DescribeDBSnapshots(ctx, params)
 						if err != nil {
-							logs.ConsoleLogger().Error(err.Error())
+							logger.Error(err.Error())
 							return
 						}
 
 						for _, snapshot := range res.DBSnapshots {
 							properties, err := json.Marshal(snapshot)
 							if err != nil {
-								logs.ConsoleLogger().Error("Could not marshal RDS DB snapshot description")
+								logger.Error("Could not marshal RDS DB snapshot description")
 								continue
 							}
 
@@ -2015,13 +2053,14 @@ func ListRDSDBSnapshots(ctx context.Context, opts []*types.Option, rtype <-chan 
 }
 
 func RDSDBSnapshotDescribeAttributes(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking RDS DB snapshot restore snapshot permissions")
+	logger := logs.NewStageLogger(ctx, opts, "RDSDBSnapshotDescribeAttributes")
+	logger.Info("Checking RDS DB snapshot restore snapshot permissions")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			rdsClient := rds.NewFromConfig(config)
@@ -2031,14 +2070,14 @@ func RDSDBSnapshotDescribeAttributes(ctx context.Context, opts []*types.Option, 
 			}
 			permissionsOutput, err := rdsClient.DescribeDBSnapshotAttributes(ctx, loadPermissionInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not describe RDS DB snapshot restore snapshot permissions for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not describe RDS DB snapshot restore snapshot permissions for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				for _, attribute := range permissionsOutput.DBSnapshotAttributesResult.DBSnapshotAttributes {
 					if *attribute.AttributeName == "restore" {
 						restorePermissions, err := json.Marshal(attribute.AttributeValues)
 						if err != nil {
-							logs.ConsoleLogger().Error("Could not marshal RDS DB snapshot restore snapshot permissions")
+							logger.Error("Could not marshal RDS DB snapshot restore snapshot permissions")
 							continue
 						}
 						loadPermissionsString := "\"RestorePermissions\":[" + string(restorePermissions)
@@ -2065,23 +2104,24 @@ func RDSDBSnapshotDescribeAttributes(ctx context.Context, opts []*types.Option, 
 }
 
 func ListRDSDBClusterSnapshots(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	logger := logs.NewStageLogger(ctx, opts, "ListRDSDBClusterSnapshots")
 	out := make(chan types.EnrichedResourceDescription)
-	logs.ConsoleLogger().Info("Listing RDS DB cluster snapshots")
+	logger.Info("Listing RDS DB cluster snapshots")
 	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
-	config, err := helpers.GetAWSCfg(regions[0], profile)
+	config, err := helpers.GetAWSCfg(regions[0], profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 	acctId, err := helpers.GetAccountId(config)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
@@ -2090,11 +2130,11 @@ func ListRDSDBClusterSnapshots(ctx context.Context, opts []*types.Option, rtype 
 	for rtype := range rtype {
 		// Capture the current value of rtype by passing it to the goroutine
 		for _, region := range regions {
-			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			logger.Debug("Listing resources of type " + rtype + " in region: " + region)
 			wg.Add(1)
 			go func(region string, rtype string) {
 				defer wg.Done()
-				config, _ := helpers.GetAWSCfg(region, profile)
+				config, _ := helpers.GetAWSCfg(region, profile, opts)
 
 				rdsClient := rds.NewFromConfig(config)
 				params := &rds.DescribeDBClusterSnapshotsInput{
@@ -2105,14 +2145,14 @@ func ListRDSDBClusterSnapshots(ctx context.Context, opts []*types.Option, rtype 
 					for {
 						res, err := rdsClient.DescribeDBClusterSnapshots(ctx, params)
 						if err != nil {
-							logs.ConsoleLogger().Error(err.Error())
+							logger.Error(err.Error())
 							return
 						}
 
 						for _, snapshot := range res.DBClusterSnapshots {
 							properties, err := json.Marshal(snapshot)
 							if err != nil {
-								logs.ConsoleLogger().Error("Could not marshal RDS DB snapshot description")
+								logger.Error("Could not marshal RDS DB snapshot description")
 								continue
 							}
 
@@ -2144,13 +2184,14 @@ func ListRDSDBClusterSnapshots(ctx context.Context, opts []*types.Option, rtype 
 }
 
 func RDSDBClusterSnapshotDescribeAttributes(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking RDS DB cluster snapshot restore snapshot permissions")
+	logger := logs.NewStageLogger(ctx, opts, "RDSDBClusterSnapshotDescribeAttributes")
+	logger.Info("Checking RDS DB cluster snapshot restore snapshot permissions")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			rdsClient := rds.NewFromConfig(config)
@@ -2160,14 +2201,14 @@ func RDSDBClusterSnapshotDescribeAttributes(ctx context.Context, opts []*types.O
 			}
 			permissionsOutput, err := rdsClient.DescribeDBClusterSnapshotAttributes(ctx, loadPermissionInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not describe RDS DB cluster snapshot restore snapshot permissions for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not describe RDS DB cluster snapshot restore snapshot permissions for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				for _, attribute := range permissionsOutput.DBClusterSnapshotAttributesResult.DBClusterSnapshotAttributes {
 					if *attribute.AttributeName == "restore" {
 						restorePermissions, err := json.Marshal(attribute.AttributeValues)
 						if err != nil {
-							logs.ConsoleLogger().Error("Could not marshal RDS DB cluster snapshot restore snapshot permissions")
+							logger.Error("Could not marshal RDS DB cluster snapshot restore snapshot permissions")
 							continue
 						}
 						loadPermissionsString := "\"RestorePermissions\":[" + string(restorePermissions)
@@ -2194,13 +2235,14 @@ func RDSDBClusterSnapshotDescribeAttributes(ctx context.Context, opts []*types.O
 }
 
 func S3FixResourceRegion(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Fixing S3 bucket regions")
+	logger := logs.NewStageLogger(ctx, opts, "S3FixResourceRegion")
+	logger.Info("Fixing S3 bucket regions")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				return
 			}
 			s3Client := s3.NewFromConfig(config)
@@ -2210,7 +2252,7 @@ func S3FixResourceRegion(ctx context.Context, opts []*types.Option, in <-chan ty
 			locationOutput, err := s3Client.GetBucketLocation(ctx, locationParams)
 			if err != nil {
 				if !strings.Contains(err.Error(), "StatusCode: 404") {
-					logs.ConsoleLogger().Error("Could not get bucket location, error: " + err.Error())
+					logger.Error("Could not get bucket location, error: " + err.Error())
 				}
 				return
 			}
@@ -2236,13 +2278,14 @@ func S3FixResourceRegion(ctx context.Context, opts []*types.Option, in <-chan ty
 }
 
 func S3CheckBucketPAB(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking S3 public access block configs")
+	logger := logs.NewStageLogger(ctx, opts, "S3CheckBucketPAB")
+	logger.Info("Checking S3 public access block configs")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			s3Client := s3.NewFromConfig(config)
@@ -2255,7 +2298,7 @@ func S3CheckBucketPAB(ctx context.Context, opts []*types.Option, in <-chan types
 				if strings.Contains(err.Error(), "StatusCode: 404") {
 					out <- resource
 				} else {
-					logs.ConsoleLogger().Error("Could not get PAB for " + resource.Identifier + ", error: " + err.Error())
+					logger.Error("Could not get PAB for " + resource.Identifier + ", error: " + err.Error())
 					out <- resource
 				}
 			} else {
@@ -2273,13 +2316,14 @@ func S3CheckBucketPAB(ctx context.Context, opts []*types.Option, in <-chan types
 }
 
 func S3CheckBucketACL(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking S3 bucket ACLs")
+	logger := logs.NewStageLogger(ctx, opts, "S3CheckBucketACL")
+	logger.Info("Checking S3 bucket ACLs")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			s3Client := s3.NewFromConfig(config)
@@ -2289,7 +2333,7 @@ func S3CheckBucketACL(ctx context.Context, opts []*types.Option, in <-chan types
 			}
 			aclOutput, err := s3Client.GetBucketAcl(ctx, aclInput)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not get ACL for " + resource.Identifier + ", error: " + err.Error())
+				logger.Error("Could not get ACL for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				aclResultString := utils.S3BucketACLPublic(aclOutput)
@@ -2312,13 +2356,14 @@ func S3CheckBucketACL(ctx context.Context, opts []*types.Option, in <-chan types
 }
 
 func S3CheckBucketPolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking S3 bucket access policies")
+	logger := logs.NewStageLogger(ctx, opts, "S3CheckBucketPolicy")
+	logger.Info("Checking S3 bucket access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			s3Client := s3.NewFromConfig(config)
@@ -2328,7 +2373,7 @@ func S3CheckBucketPolicy(ctx context.Context, opts []*types.Option, in <-chan ty
 			}
 			policyOutput, err := s3Client.GetBucketPolicy(ctx, policyInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get bucket access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get bucket access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
@@ -2351,13 +2396,14 @@ func S3CheckBucketPolicy(ctx context.Context, opts []*types.Option, in <-chan ty
 }
 
 func SecretCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking SecretsManager secret access policies")
+	logger := logs.NewStageLogger(ctx, opts, "SecretCheckResourcePolicy")
+	logger.Info("Checking SecretsManager secret access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			smClient := secretsmanager.NewFromConfig(config)
@@ -2367,10 +2413,10 @@ func SecretCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-c
 			}
 			policyOutput, err := smClient.GetResourcePolicy(ctx, policyInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get SecretsManager secret access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get SecretsManager secret access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else if policyOutput.ResourcePolicy == nil {
-				logs.ConsoleLogger().Debug("Could not get SecretsManager secret access policy for " + resource.Identifier + ", policy doesn't exist")
+				logger.Debug("Could not get SecretsManager secret access policy for " + resource.Identifier + ", policy doesn't exist")
 				out <- resource
 			} else {
 				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.ResourcePolicy)
@@ -2393,23 +2439,24 @@ func SecretCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-c
 }
 
 func ListServerlessRepoApplications(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
+	logger := logs.NewStageLogger(ctx, opts, "ListServerlessRepoApplications")
 	out := make(chan types.EnrichedResourceDescription)
-	logs.ConsoleLogger().Info("Listing serverless repo applications")
+	logger.Info("Listing serverless repo applications")
 	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile)
+	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
-	config, err := helpers.GetAWSCfg(regions[0], profile)
+	config, err := helpers.GetAWSCfg(regions[0], profile, opts)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 	acctId, err := helpers.GetAccountId(config)
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
@@ -2418,24 +2465,24 @@ func ListServerlessRepoApplications(ctx context.Context, opts []*types.Option, r
 	for rtype := range rtype {
 		// Capture the current value of rtype by passing it to the goroutine
 		for _, region := range regions {
-			logs.ConsoleLogger().Debug("Listing resources of type " + rtype + " in region: " + region)
+			logger.Debug("Listing resources of type " + rtype + " in region: " + region)
 			wg.Add(1)
 			go func(region string, rtype string) {
 				defer wg.Done()
-				config, _ := helpers.GetAWSCfg(region, profile)
+				config, _ := helpers.GetAWSCfg(region, profile, opts)
 
 				serverlessrepoClient := serverlessapplicationrepository.NewFromConfig(config)
 				params := &serverlessapplicationrepository.ListApplicationsInput{}
 				res, err := serverlessrepoClient.ListApplications(ctx, params)
 				if err != nil {
-					logs.ConsoleLogger().Error(err.Error())
+					logger.Error(err.Error())
 					return
 				}
 
 				for _, resource := range res.Applications {
 					properties, err := json.Marshal(resource)
 					if err != nil {
-						logs.ConsoleLogger().Error("Could not marshal serverless repo application")
+						logger.Error("Could not marshal serverless repo application")
 						continue
 					}
 
@@ -2460,13 +2507,14 @@ func ListServerlessRepoApplications(ctx context.Context, opts []*types.Option, r
 }
 
 func ServerlessRepoAppCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking serverless repo app resource access policies")
+	logger := logs.NewStageLogger(ctx, opts, "ServerlessRepoAppCheckResourcePolicy")
+	logger.Info("Checking serverless repo app resource access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			serverlessrepoClient := serverlessapplicationrepository.NewFromConfig(config)
@@ -2476,7 +2524,7 @@ func ServerlessRepoAppCheckResourcePolicy(ctx context.Context, opts []*types.Opt
 			}
 			policyOutput, err := serverlessrepoClient.GetApplicationPolicy(ctx, policyInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get serverless repo app resource access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get serverless repo app resource access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				policyResultString := utils.CheckServerlessRepoAppResourceAccessPolicy(policyOutput.Statements)
@@ -2499,13 +2547,14 @@ func ServerlessRepoAppCheckResourcePolicy(ctx context.Context, opts []*types.Opt
 }
 
 func SESIdentityCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking SES email identity resource access policies")
+	logger := logs.NewStageLogger(ctx, opts, "SESIdentityCheckResourcePolicy")
+	logger.Info("Checking SES email identity resource access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			sesClient := ses.NewFromConfig(config)
@@ -2515,7 +2564,7 @@ func SESIdentityCheckResourcePolicy(ctx context.Context, opts []*types.Option, i
 			}
 			policyOutput, err := sesClient.ListIdentityPolicies(ctx, policyInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get SES email identity resource access policies for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get SES email identity resource access policies for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			} else {
 				var policyResultStrings []string
@@ -2532,7 +2581,7 @@ func SESIdentityCheckResourcePolicy(ctx context.Context, opts []*types.Option, i
 					}
 					policyDetails, err := sesClient.GetIdentityPolicies(ctx, policyInput)
 					if err != nil {
-						logs.ConsoleLogger().Debug("Could not get SES email identity policy details for " + resource.Identifier + ", error: " + err.Error())
+						logger.Debug("Could not get SES email identity policy details for " + resource.Identifier + ", error: " + err.Error())
 						continue
 					}
 
@@ -2568,13 +2617,14 @@ func SESIdentityCheckResourcePolicy(ctx context.Context, opts []*types.Option, i
 }
 
 func SNSTopicCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking SNS topic access policies")
+	logger := logs.NewStageLogger(ctx, opts, "SNSTopicCheckResourcePolicy")
+	logger.Info("Checking SNS topic access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			snsClient := sns.NewFromConfig(config)
@@ -2584,13 +2634,13 @@ func SNSTopicCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <
 			}
 			attributeOutput, err := snsClient.GetTopicAttributes(ctx, attributeInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not getSNS topic access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not getSNS topic access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			}
 
 			policyString, ok := attributeOutput.Attributes["Policy"]
 			if !ok {
-				logs.ConsoleLogger().Debug("Could not find policy attribute for " + resource.Identifier)
+				logger.Debug("Could not find policy attribute for " + resource.Identifier)
 				out <- resource
 				continue
 			} else {
@@ -2614,13 +2664,14 @@ func SNSTopicCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <
 }
 
 func SQSQueueCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.EnrichedResourceDescription {
-	logs.ConsoleLogger().Info("Checking SQS queue access policies")
+	logger := logs.NewStageLogger(ctx, opts, "SQSQueueCheckResourcePolicy")
+	logger.Info("Checking SQS queue access policies")
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value)
+			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logs.ConsoleLogger().Error("Could not set up client config, error: " + err.Error())
+				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
 			}
 			sqsClient := sqs.NewFromConfig(config)
@@ -2633,13 +2684,13 @@ func SQSQueueCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <
 			}
 			attributeOutput, err := sqsClient.GetQueueAttributes(ctx, attributeInput)
 			if err != nil {
-				logs.ConsoleLogger().Debug("Could not get SQS queue access policy for " + resource.Identifier + ", error: " + err.Error())
+				logger.Debug("Could not get SQS queue access policy for " + resource.Identifier + ", error: " + err.Error())
 				out <- resource
 			}
 
 			policyString, ok := attributeOutput.Attributes["Policy"]
 			if !ok {
-				logs.ConsoleLogger().Debug("Could not find policy attribute for " + resource.Identifier)
+				logger.Debug("Could not find policy attribute for " + resource.Identifier)
 				out <- resource
 				continue
 			} else {
@@ -2663,7 +2714,7 @@ func SQSQueueCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <
 }
 
 func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
-
+	logger := logs.NewStageLogger(ctx, opts, "AwsPublicResources")
 	out := make(chan string)
 	//var pipelines []stages.Stage[string, string]
 
@@ -2671,7 +2722,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 		defer close(out)
 		for rtype := range in {
 
-			logs.ConsoleLogger().Debug("Running recon for resource type: " + rtype)
+			logger.Debug("Running recon for resource type: " + rtype)
 			var pl Stage[string, string]
 			var err error
 			switch rtype {
@@ -2963,13 +3014,21 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 					JqFilter("select(.Properties | fromjson | . as $input | (has(\"AccessPolicy\") and $input.AccessPolicy != null)) | {Type: .TypeName, Identifier: (.Properties | fromjson | .QueueUrl), VulnerableAccessPolicies: (.Properties | fromjson | .AccessPolicy // null)}"),
 					ToString[[]byte],
 				)
+			case "AWS::RDS::DBInstance":
+				pl, err = ChainStages[string, string](
+					CloudControlListResources,
+					Echo[types.EnrichedResourceDescription],
+					ToJson[types.EnrichedResourceDescription],
+					JqFilter("select(.Properties | fromjson | .PubliclyAccessible == true) | {Type: .TypeName, Identifier: (.Properties | fromjson | .DBInstanceArn), Endpoint: (.Properties | fromjson | .Endpoint.Address) + \":\" + (.Properties | fromjson | .Endpoint.Port)}"),
+					ToString[[]byte],
+				)
 
 			default:
 				continue
 			}
 
 			if err != nil {
-				logs.ConsoleLogger().Error("Failed to " + rtype + " create pipeline: " + err.Error())
+				logger.Error("Failed to " + rtype + " create pipeline: " + err.Error())
 				continue
 			}
 
@@ -2992,16 +3051,171 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 }
 
 func ToJson[In any](ctx context.Context, opts []*types.Option, in <-chan In) <-chan []byte {
+	logger := logs.NewStageLogger(ctx, opts, "ToJson")
 	out := make(chan []byte)
 	go func() {
 		defer close(out)
 		for resource := range in {
 			res, err := json.Marshal(resource)
 			if err != nil {
-				logs.ConsoleLogger().Error(err.Error())
+				logger.Error(err.Error())
 				continue
 			}
 			out <- res
+		}
+	}()
+	return out
+}
+
+// ListECRImages retrieves image URIs from ECR repositories
+// Input: types.EnrichedResourceDescription from CloudControlListResources
+// Output: string (URI)
+func ListECRImages(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan string {
+	logger := logs.NewStageLogger(ctx, opts, "ListECRImages")
+	out := make(chan string)
+	profile := types.GetOptionByName("profile", opts).Value
+
+	go func() {
+		defer close(out)
+		for resource := range in {
+			// Skip if invalid resource description
+			if resource.Properties == nil {
+				logger.Debug("Skipping resource with no properties: %s", resource.Identifier)
+				continue
+			}
+
+			// Handle public repositories (only in us-east-1)
+			if resource.TypeName == "AWS::ECR::PublicRepository" {
+				config, err := helpers.GetAWSCfg("us-east-1", profile, opts)
+				if err != nil {
+					logger.Error(err.Error())
+					continue
+				}
+
+				publicClient := ecrpublic.NewFromConfig(config)
+				input := &ecrpublic.DescribeImagesInput{
+					RepositoryName: &resource.Identifier,
+				}
+
+				// Get public registry domain
+				registryDomain := "public.ecr.aws"
+
+				for {
+					result, err := publicClient.DescribeImages(ctx, input)
+					if err != nil {
+						logger.Error("Error describing public images for %s: %v", resource.Identifier, err)
+						break
+					}
+
+					for _, image := range result.ImageDetails {
+						if image.ImageTags != nil && len(image.ImageTags) > 0 {
+							for _, tag := range image.ImageTags {
+								uri := fmt.Sprintf("%s/%s:%s", registryDomain, resource.Identifier, tag)
+								out <- uri
+							}
+						} else if image.ImageDigest != nil {
+							uri := fmt.Sprintf("%s/%s@%s", registryDomain, resource.Identifier, *image.ImageDigest)
+							out <- uri
+						}
+					}
+
+					if result.NextToken == nil {
+						break
+					}
+					input.NextToken = result.NextToken
+				}
+			} else { // Handle private repositories
+				config, err := helpers.GetAWSCfg(resource.Region, profile, opts)
+				if err != nil {
+					logger.Error(err.Error())
+					continue
+				}
+
+				privateClient := ecr.NewFromConfig(config)
+				input := &ecr.DescribeImagesInput{
+					RepositoryName: &resource.Identifier,
+				}
+
+				// Get registry info for this account/region
+				registryDomain := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", resource.AccountId, resource.Region)
+
+				for {
+					result, err := privateClient.DescribeImages(ctx, input)
+					if err != nil {
+						logger.Error("Error describing private images for %s: %v", resource.Identifier, err)
+						break
+					}
+
+					for _, image := range result.ImageDetails {
+						fmt.Println(image)
+						if image.ImageTags != nil && len(image.ImageTags) > 0 {
+							for _, tag := range image.ImageTags {
+								uri := fmt.Sprintf("%s/%s:%s", registryDomain, resource.Identifier, tag)
+								out <- uri
+							}
+						} else if image.ImageDigest != nil {
+							uri := fmt.Sprintf("%s/%s@%s", registryDomain, resource.Identifier, *image.ImageDigest)
+							out <- uri
+						}
+					}
+
+					if result.NextToken == nil {
+						break
+					}
+					input.NextToken = result.NextToken
+				}
+			}
+		}
+	}()
+
+	return out
+}
+
+func ECRLoginStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
+	logger := logs.NewStageLogger(ctx, opts, "ECRLoginStage")
+	out := make(chan string)
+
+	go func() {
+		defer close(out)
+		for uri := range in {
+			// Skip if user and password are already set
+			if types.GetOptionByName(options.DockerUserOpt.Name, opts).Value != "" || types.GetOptionByName(options.DockerPasswordOpt.Name, opts).Value != "" {
+				continue
+			}
+
+			region, err := extractRegion(uri)
+			if err != nil {
+				logger.Error(err.Error())
+				continue
+			}
+
+			config, err := helpers.GetAWSCfg(region, types.GetOptionByName("profile", opts).Value, opts)
+			if err != nil {
+				logger.Error(err.Error())
+				continue
+			}
+
+			client := ecr.NewFromConfig(config)
+			input := &ecr.GetAuthorizationTokenInput{}
+			tokenOutput, err := client.GetAuthorizationToken(ctx, input)
+			if err != nil {
+				logger.Error(err.Error())
+				continue
+			}
+
+			token := tokenOutput.AuthorizationData[0].AuthorizationToken
+			parsed, err := base64.StdEncoding.DecodeString(*token)
+			if err != nil {
+				logger.Error(err.Error())
+				continue
+			}
+			user := types.GetOptionByName(options.DockerUserOpt.Name, opts)
+			user.Value = strings.Split(string(parsed), ":")[0]
+
+			password := types.GetOptionByName(options.DockerPasswordOpt.Name, opts)
+			password.Value = strings.Split(string(parsed), ":")[1]
+
+			out <- uri
 		}
 	}()
 	return out

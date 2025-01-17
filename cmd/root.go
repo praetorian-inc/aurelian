@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"sync"
 
 	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
@@ -17,7 +19,13 @@ import (
 	"github.com/spf13/viper"
 )
 
-var cfgFile string
+var (
+	cfgFile      string
+	quietFlag    bool
+	noColorFlag  bool
+	silentFlag   bool
+	logLevelFlag string
+)
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -35,7 +43,12 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.nebula.yaml)")
+	rootCmd.PersistentFlags().StringVar(&logLevelFlag, options.LogLevelOpt.Name, options.LogLevelOpt.Value, "Log level (debug, info, warn, error)")
+	//rootCmd.PersistentFlags().StringP(options.LogLevelOpt.Name, options.LogLevelOpt.Short, options.LogLevelOpt.Value, options.LogLevelOpt.Description)
 	rootCmd.PersistentFlags().StringP(options.OutputOpt.Name, options.OutputOpt.Short, options.OutputOpt.Value, options.OutputOpt.Description)
+	rootCmd.PersistentFlags().BoolVar(&quietFlag, "quiet", false, "Suppress user messages")
+	rootCmd.PersistentFlags().BoolVar(&noColorFlag, "no-color", false, "Disable colored output")
+	rootCmd.PersistentFlags().BoolVar(&silentFlag, "silent", false, "Suppress all messages except critical errors")
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -55,11 +68,18 @@ func initConfig() {
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
+	viper.SetEnvPrefix("NEBULA")
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 	}
+
+	logs.ConfigureDefaults(logLevelFlag)
+	message.SetQuiet(quietFlag)
+	message.SetNoColor(noColorFlag)
+	message.SetSilent(silentFlag)
+	message.Banner()
 }
 
 func options2Flag(options []*types.Option, common []*types.Option, cmd *cobra.Command) {
@@ -89,6 +109,16 @@ func option2Flag(option *types.Option, cmd *cobra.Command) {
 	}
 
 }
+
+// Helper function to convert option names to viper config keys
+// func getConfigKey(optionName string) string {
+// 	// Convert option names like "aws-region" to "aws.region"
+// 	parts := strings.Split(optionName, "-")
+// 	if len(parts) > 1 {
+// 		return fmt.Sprintf("%s.%s", parts[0], strings.Join(parts[1:], "."))
+// 	}
+// 	return optionName
+// }
 
 func getOpts(cmd *cobra.Command, required []*types.Option, common []*types.Option) []*types.Option {
 	opts := getGlobalOpts(cmd)
@@ -140,6 +170,9 @@ func getOptsFromCmd(cmd *cobra.Command, required []*types.Option) []*types.Optio
 }
 
 func runModule[In, Out any](ctx context.Context, metadata modules.Metadata, opts []*types.Option, ouputProviders types.OutputProviders, factory stages.StageFactory[In, Out]) {
+	ctx = context.WithValue(ctx, "metadata", metadata)
+	logger := logs.NewModuleLogger(ctx, opts)
+	message.Section(metadata.Name)
 	in, chain, err := factory(opts)
 	if err != nil {
 		panic(err)
@@ -158,15 +191,14 @@ func runModule[In, Out any](ctx context.Context, metadata modules.Metadata, opts
 					// Check if result is already of type Result
 					if r, ok := any(result).(types.Result); ok {
 						finalResult = r
-						logs.ConsoleLogger().Info("Final result is of type result, do not need to create new result")
+						logger.Debug("Final result is of type result, do not need to create new result")
 					} else {
 						finalResult = types.NewResult(metadata.Platform, metadata.Id, result)
-						logs.ConsoleLogger().Info("Final result is not of type result, creating new result")
 					}
 
 					err := outputProvider.Write(finalResult)
 					if err != nil {
-						log.Default().Println(err)
+						logger.Error("Error writing output", slog.String("error", err.Error()), slog.String("output-provider", fmt.Sprintf("%T", outputProvider)))
 					}
 					wg.Done()
 				}(outputProvider(opts), result)

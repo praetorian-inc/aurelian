@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/internal/message"
 	o "github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
@@ -93,7 +93,7 @@ func (fp *MarkdownFileProvider) Write(result types.Result) error {
 		file.WriteString(rowText)
 	}
 	file.WriteString("\n\n\n")
-	logs.ConsoleLogger().Info("Markdown table written", "path", fullpath)
+	message.Success("Markdown table written to %s", fullpath)
 	return nil
 }
 

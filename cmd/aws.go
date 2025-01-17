@@ -45,4 +45,7 @@ func init() {
 
 var awsCommonOptions = []*types.Option{
 	&options.AwsProfileOpt,
+	&options.AwsCacheDirOpt,
+	&options.AwsCacheTTLOpt,
+	&options.AwsDisableCacheOpt,
 }

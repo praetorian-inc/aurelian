@@ -3,13 +3,13 @@ package reconaz
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/internal/logs"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -167,7 +167,7 @@ func (bp *BatchProcessor) ProcessBatch(ctx context.Context, subscriptions []stri
 				// Process single subscription with timeout
 				result, err := processSingleSubscription(subCtx, subscription)
 				if err != nil {
-					logs.ConsoleLogger().Error("Error processing subscription " + subscription + ": " + err.Error())
+					slog.Error("Error processing subscription " + subscription + ": " + err.Error())
 					return
 				}
 

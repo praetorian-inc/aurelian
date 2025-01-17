@@ -22,6 +22,8 @@ func GetPlatformFromString(platform string) types.Platform {
 		return GCP
 	case "oci":
 		return OCI
+	case "saas":
+		return SaaS
 	case "universal":
 		return Universal
 	default:
@@ -34,6 +36,7 @@ const (
 	Azure     types.Platform = "azure"
 	GCP       types.Platform = "gcp"
 	OCI       types.Platform = "oci"
+	SaaS      types.Platform = "saas"
 	Universal types.Platform = "universal"
 )
 
@@ -47,20 +50,14 @@ type Metadata struct {
 	OpsecLevel  OpsecLevel
 }
 
-type Module interface {
-	Invoke() error
-	GetOutputProviders() []types.OutputProvider
-}
-
 type BaseModule struct {
-	Module
 	Metadata
 	Options         []*types.Option
 	OutputProviders []types.OutputProvider
 	Run             types.Run
 
 	In    any
-	Stage any
+	Stage types.Stage[any, any]
 }
 
 func (m *BaseModule) Invoke() error {

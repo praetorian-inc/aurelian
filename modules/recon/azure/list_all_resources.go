@@ -3,12 +3,12 @@ package reconaz
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/internal/logs"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -69,13 +69,13 @@ func NewAzureListAll(opts []*types.Option) (<-chan string, stages.Stage[string, 
 	if strings.EqualFold(subscriptionOpt, "all") {
 		subscriptions, err := helpers.ListSubscriptions(context.Background(), opts)
 		if err != nil {
-			logs.ConsoleLogger().Error(fmt.Sprintf("Failed to list subscriptions: %v", err))
+			slog.Error("Failed to list subscriptions: %v", err)
 			return nil, nil, err
 		}
 
-		logs.ConsoleLogger().Info(fmt.Sprintf("Found %d subscriptions", len(subscriptions)))
+		slog.Info("Found %d subscriptions", len(subscriptions))
 		for _, sub := range subscriptions {
-			logs.ConsoleLogger().Info(fmt.Sprintf("Found subscription: %s", sub))
+			slog.Info("Found subscription: %s", sub)
 		}
 
 		return stages.Generator(subscriptions), pipeline, nil

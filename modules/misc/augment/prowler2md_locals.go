@@ -58,6 +58,7 @@ var providerHeaders = map[string][]string{
 
 // LOCAL Stage
 func prowlerToMDTableStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan types.MarkdownTable {
+	logger := logs.NewStageLogger(ctx, opts, "prowlerToMDTableStage")
 	out := make(chan types.MarkdownTable)
 	provider := strings.ToLower(types.GetOptionByName(options.ProviderType.Name, opts).Value)
 	go func() {
@@ -66,14 +67,14 @@ func prowlerToMDTableStage(ctx context.Context, opts []*types.Option, in <-chan 
 		for inputCSV := range in {
 			file, err := os.Open(inputCSV)
 			if err != nil {
-				logs.ConsoleLogger().Error(fmt.Errorf("error opening CSV %s. [%w]", inputCSV, err).Error())
+				logger.Error(fmt.Errorf("error opening CSV %s. [%w]", inputCSV, err).Error())
 				continue
 			}
 			reader := csv.NewReader(file)
 			reader.Comma = ';'
 			header, err := reader.Read()
 			if err != nil {
-				logs.ConsoleLogger().Error(fmt.Errorf("error reading CSV %s. [%w]", inputCSV, err).Error())
+				logger.Error(fmt.Errorf("error reading CSV %s. [%w]", inputCSV, err).Error())
 				continue
 			}
 			indexes := []int{}
@@ -84,7 +85,7 @@ func prowlerToMDTableStage(ctx context.Context, opts []*types.Option, in <-chan 
 			for {
 				row, err := reader.Read()
 				if err != nil {
-					// logs.ConsoleLogger().Error(fmt.Errorf("error reading row in CSV %s. [%w]", inputCSV, err))
+					// logger.Error(fmt.Errorf("error reading row in CSV %s. [%w]", inputCSV, err))
 					break
 				}
 				// STATUS is the last index

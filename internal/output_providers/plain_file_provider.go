@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/internal/message"
 	o "github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
@@ -47,7 +47,7 @@ func (fp *PlainFileProvider) Write(result types.Result) error {
 	defer file.Close()
 	file.WriteString(result.String())
 
-	logs.ConsoleLogger().Info("Output written", "path", fullpath)
+	message.Success("Output written to %s", fullpath)
 
 	return nil
 }

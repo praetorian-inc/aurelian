@@ -2,7 +2,6 @@ package utils
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 
@@ -36,7 +35,8 @@ func PerformJqQuery(jsonContent []byte, jqQuery string) ([]byte, error) {
 	// Process the JSON content using the jq query
 	v, ok := iter.Next()
 	if !ok && v == nil {
-		return nil, fmt.Errorf("jq has empty results")
+		return nil, nil // empty results shouldn't produce an error
+		//return nil, fmt.Errorf("jq has empty results")
 	}
 	if err, ok := v.(error); ok {
 		if haltErr, ok := err.(*gojq.HaltError); ok && haltErr.Value() == nil {

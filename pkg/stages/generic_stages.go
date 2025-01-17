@@ -1,6 +1,7 @@
 package stages
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -30,17 +31,18 @@ import (
 // For each prompt, it logs the prompt, constructs a generate request, and sends it to the API client.
 // The responses are logged and sent to the output channel. If an error occurs, it is logged and the processing stops.
 func GenerateOllamaResponse(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
+	logger := logs.NewStageLogger(ctx, opts, "GenerateOllamaResponse")
 	out := make(chan string)
 	client, err := api.ClientFromEnvironment()
 	if err != nil {
-		logs.ConsoleLogger().Error(err.Error())
+		logger.Error(err.Error())
 		return nil
 	}
 
 	go func() {
 		defer close(out)
 		for prompt := range in {
-			logs.ConsoleLogger().Info("Generating response for prompt: " + prompt)
+			logger.Info("Generating response for prompt: " + prompt)
 			model := types.GetOptionByName(options.ModelOpt.Name, opts).Value
 			req := &api.GenerateRequest{
 				Model:  model,
@@ -49,14 +51,14 @@ func GenerateOllamaResponse(ctx context.Context, opts []*types.Option, in <-chan
 			}
 
 			respFunc := func(resp api.GenerateResponse) error {
-				logs.ConsoleLogger().Info(resp.Response)
+				logger.Info(resp.Response)
 				out <- resp.Response
 				return nil
 			}
 
 			err = client.Generate(ctx, req, respFunc)
 			if err != nil {
-				logs.ConsoleLogger().Error(err.Error())
+				logger.Error(err.Error())
 				return
 			}
 		}
@@ -67,13 +69,14 @@ func GenerateOllamaResponse(ctx context.Context, opts []*types.Option, in <-chan
 }
 
 func ToJsonBytes[In any](ctx context.Context, opts []*types.Option, in <-chan In) <-chan []byte {
+	logger := logs.NewStageLogger(ctx, opts, "ToJsonBytes")
 	out := make(chan []byte)
 	go func() {
 		defer close(out)
 		for data := range in {
 			jsonData, err := json.Marshal(data)
 			if err != nil {
-				logs.ConsoleLogger().Error(err.Error())
+				logger.Error(err.Error())
 				return
 			}
 			out <- jsonData
@@ -83,6 +86,7 @@ func ToJsonBytes[In any](ctx context.Context, opts []*types.Option, in <-chan In
 }
 
 func JqFilter(filter string) Stage[[]byte, []byte] {
+	logger := logs.NewStageLogger(context.Background(), nil, "JqFilter")
 	return func(ctx context.Context, opts []*types.Option, in <-chan []byte) <-chan []byte {
 		out := make(chan []byte)
 		go func() {
@@ -90,7 +94,7 @@ func JqFilter(filter string) Stage[[]byte, []byte] {
 			for data := range in {
 				filtered, err := utils.PerformJqQuery(data, filter)
 				if err != nil {
-					logs.ConsoleLogger().Error(err.Error())
+					logger.Error(err.Error())
 					continue
 				}
 				out <- filtered
@@ -125,6 +129,7 @@ func ToString[In any](ctx context.Context, opts []*types.Option, in <-chan In) <
 }
 
 func UnmarshalOutput(ctx context.Context, opts []*types.Option, in <-chan string) <-chan map[string]interface{} {
+	logger := logs.NewStageLogger(ctx, opts, "UnmarshalOutput")
 	out := make(chan map[string]interface{})
 	go func() {
 		defer close(out)
@@ -132,7 +137,7 @@ func UnmarshalOutput(ctx context.Context, opts []*types.Option, in <-chan string
 			var jsonObj map[string]interface{}
 			err := json.Unmarshal([]byte(data), &jsonObj)
 			if err != nil {
-				logs.ConsoleLogger().Error(err.Error())
+				logger.Error(err.Error())
 				continue
 			}
 			out <- jsonObj
@@ -171,6 +176,7 @@ func AggregateOutput[In any, Out []In](ctx context.Context, opts []*types.Option
 }
 
 func GetFilesOfType(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
+	logger := logs.NewStageLogger(ctx, opts, "GetFilesOfType")
 	out := make(chan string)
 	go func() {
 		defer close(out)
@@ -178,13 +184,67 @@ func GetFilesOfType(ctx context.Context, opts []*types.Option, in <-chan string)
 		for extension := range in {
 			inputFiles, err := os.ReadDir(inputLoc)
 			if err != nil {
-				logs.ConsoleLogger().Error(err.Error())
+				logger.Error(err.Error())
 				return
 			}
 			for _, file := range inputFiles {
 				if strings.HasSuffix(file.Name(), extension) {
 					out <- filepath.Join(inputLoc, file.Name())
 				}
+			}
+		}
+	}()
+	return out
+}
+
+// FileGenerator reads lines from files provided via an input channel and sends them to an output channel.
+// Each file is read line by line, and each line is sent to the output channel. After reading all lines,
+// the file name is sent to the output channel.
+//
+// Parameters:
+//
+//	ctx - context for managing the lifecycle of the goroutine.
+//	opts - a slice of options (currently unused).
+//	in - a channel that provides file paths to be read.
+//
+// Returns:
+//
+//	A channel that emits lines read from the files and the file name after all lines are read.
+func FileGenerator(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
+	logger := logs.NewStageLogger(ctx, opts, "FileGenerator")
+	out := make(chan string)
+	go func() {
+		defer close(out)
+		for file := range in {
+			f, err := os.Open(file)
+			if err != nil {
+				logger.Error(err.Error())
+				return
+			}
+			defer f.Close()
+
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				out <- scanner.Text()
+			}
+
+			if err := scanner.Err(); err != nil {
+				logger.Error(err.Error())
+			}
+		}
+	}()
+	return out
+}
+
+func UnqueItemsStage[Item comparable](ctx context.Context, opts []*types.Option, in <-chan Item) <-chan Item {
+	out := make(chan Item)
+	go func() {
+		defer close(out)
+		seen := make(map[Item]bool)
+		for item := range in {
+			if _, ok := seen[item]; !ok {
+				seen[item] = true
+				out <- item
 			}
 		}
 	}()

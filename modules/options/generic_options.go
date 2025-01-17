@@ -6,13 +6,18 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
+func WithValue(opt types.Option, value string) *types.Option {
+	opt.Value = value
+	return &opt
+}
+
 var OutputOpt = types.Option{
 	Name:        "output",
 	Short:       "o",
 	Description: "output directory",
 	Required:    false,
 	Type:        types.String,
-	Value:       "output",
+	Value:       "nebula-output",
 }
 
 var FileNameOpt = types.Option{
@@ -26,7 +31,6 @@ var FileNameOpt = types.Option{
 
 var PathOpt = types.Option{
 	Name:        "path",
-	Short:       "p",
 	Description: "path to the file",
 	Required:    true,
 	Type:        types.String,
@@ -91,4 +95,31 @@ var JqFilterOpt = types.Option{
 	Required:    false,
 	Type:        types.String,
 	Value:       "",
+}
+
+var ImageOpt = types.Option{
+	Name:        "image",
+	Short:       "i",
+	Description: "docker image",
+	Required:    true,
+	Type:        types.String,
+	Value:       "",
+}
+
+var WorkersOpt = types.Option{
+	Name:        "workers",
+	Short:       "w",
+	Description: "number of workers",
+	Required:    false,
+	Type:        types.Int,
+	Value:       "10",
+}
+
+var LogLevelOpt = types.Option{
+	Name:        "log-level",
+	Description: "log level",
+	Required:    false,
+	Type:        types.String,
+	Value:       "warn",
+	ValueFormat: regexp.MustCompile("^(debug|info|warn|error)$"),
 }

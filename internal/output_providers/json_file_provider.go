@@ -2,10 +2,11 @@ package outputproviders
 
 import (
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 
-	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/internal/message"
 	o "github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
@@ -18,7 +19,7 @@ type JsonFileProvider struct {
 
 func NewJsonFileProvider(options []*types.Option) types.OutputProvider {
 	return &JsonFileProvider{
-		OutputPath: types.GetOptionByName(o.OutputOpt.Value, options).Value,
+		OutputPath: types.GetOptionByName(o.OutputOpt.Name, options).Value,
 		FileName:   "",
 	}
 }
@@ -26,11 +27,10 @@ func NewJsonFileProvider(options []*types.Option) types.OutputProvider {
 func (fp *JsonFileProvider) Write(result types.Result) error {
 	var filename string
 
-
-	_, ok := result.Data.([]types.EnrichedResourceDescription)
-	if !ok {
+	_, ok := result.Data.(types.MarkdownTable)
+	if ok {
 		// Skip if not the correct type
-		logs.ConsoleLogger().Info("Result is not of JSON type")
+		slog.Info("JSON provider is skipping markdown table output")
 		return nil
 	}
 
@@ -56,12 +56,12 @@ func (fp *JsonFileProvider) Write(result types.Result) error {
 	defer file.Close()
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
-	err = encoder.Encode(result)
+	err = encoder.Encode(result.Data)
 	if err != nil {
 		return err
 	}
 
-	logs.ConsoleLogger().Info("Output written", "path", fullpath)
+	message.Success("Output written to %s", fullpath)
 
 	return nil
 }

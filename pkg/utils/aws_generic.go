@@ -3,25 +3,26 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strings"
-
-	"github.com/praetorian-inc/nebula/internal/logs"
 )
 
+// TODO migrate to a stage
 func CheckResourceAccessPolicy(policyOutput string) string {
+
 	outString := "\"AccessPolicy\":{\"Statement\":["
 
 	policyDocument, err := url.QueryUnescape(policyOutput)
 	if err != nil {
-		logs.ConsoleLogger().Error("Could not URL decode policy document, error: " + err.Error())
+		slog.Error("Could not URL decode policy document, error: " + err.Error())
 		outString = "\"AccessPolicy\":null"
 		return outString
 	}
 
 	var policyDoc map[string]interface{}
 	if err := json.Unmarshal([]byte(policyDocument), &policyDoc); err != nil {
-		logs.ConsoleLogger().Error("Could not parse access policy: " + policyOutput + ", error: " + err.Error())
+		slog.Error("Could not parse access policy," + policyOutput + ", error: " + err.Error())
 	} else {
 		statements, ok := policyDoc["Statement"].([]interface{})
 		if ok {
@@ -33,19 +34,19 @@ func CheckResourceAccessPolicy(policyOutput string) string {
 
 				principal, ok := statement["Principal"]
 				if !ok {
-					logs.ConsoleLogger().Error("Could not find Principal")
+					slog.Error("Could not find Principal")
 					continue
 				}
 
 				effect, ok := statement["Effect"]
 				if !ok {
-					logs.ConsoleLogger().Error("Could not find Effect")
+					slog.Error("Could not find Effect")
 					continue
 				}
 
 				action, ok := statement["Action"]
 				if !ok {
-					logs.ConsoleLogger().Error("Could not find Action")
+					slog.Error("Could not find Action")
 					continue
 				}
 				var actionStr string
@@ -66,7 +67,7 @@ func CheckResourceAccessPolicy(policyOutput string) string {
 				var resourceStr string
 				resource, ok := statement["Resource"]
 				if !ok {
-					logs.ConsoleLogger().Error("Could not find Resource, policy: " + policyDocument)
+					slog.Error("Could not find Resource, policy: " + policyDocument)
 					resourceStr = "null"
 				} else {
 					switch resourceValue := resource.(type) {
@@ -91,7 +92,7 @@ func CheckResourceAccessPolicy(policyOutput string) string {
 				}
 				conditionVal, err := json.Marshal(condition)
 				if err != nil {
-					logs.ConsoleLogger().Error(err.Error())
+					slog.Error(err.Error())
 					conditionStr = "null"
 				}
 				conditionStr = string(conditionVal)

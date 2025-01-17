@@ -82,8 +82,8 @@ package recon
 // 	return nil
 // }
 
-// // This function is used to retrieve all the cloudformation templates given a map of region to a list of ArnIdentifiers
-// // This is much faster pass in the map containing all regions rather than passing in only a list of only a region because the goroutine would have to wait for each region to finish before moving forward.
+// This function is used to retrieve all the cloudformation templates given a map of region to a list of ArnIdentifiers
+// This is much faster pass in the map containing all regions rather than passing in only a list of only a region because the goroutine would have to wait for each region to finish before moving forward.
 // func GetCFTemplates(m *AwsFindSecrets, regionToArnIdentifiers map[string][]arn.ARN) error {
 // 	wg := new(sync.WaitGroup)
 // 	resourceType := types.GetOptionByName("secret-resource-types", m.Options)
@@ -106,11 +106,11 @@ package recon
 // 				if err != nil {
 // 					return err
 // 				}
-// 				stackName, err := ExtractCFStackName(a.Resource)
+// 				//stackName, err := ExtractCFStackName(a.Resource)
 // 				if err != nil {
 // 					return err
 // 				}
-// 				filepath := helpers.CreateFilePath(string(m.Platform), resourceType.Value, a.AccountID, command, region, stackName)
+// 				filepath := helpers.CreateFilePath(string(m.Platform), resourceType.Value, a.AccountID, command, region, a.Resource)
 // 				templateBody := *result.TemplateBody
 
 // 				m.Run.Output <- types.NewResult(m.Platform, m.Id, templateBody, types.WithFilename(filepath))

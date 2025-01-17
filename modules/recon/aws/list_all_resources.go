@@ -3,13 +3,13 @@ package recon
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/internal/logs"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -95,9 +95,9 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 				baseFilename := ""
 				providedFilename := types.GetOptionByName(options.FileNameOpt.Name, profileOpts).Value
 				if len(providedFilename) == 0 {
-					config, err := helpers.GetAWSCfg("", currentProfile)
+					config, err := helpers.GetAWSCfg("", currentProfile, opts)
 					if err != nil {
-						logs.ConsoleLogger().Error(fmt.Sprintf("Error getting AWS config for profile %s: %s", currentProfile, err))
+						slog.Error("Error getting AWS config for profile %s: %s", currentProfile, err)
 						continue
 					}
 
@@ -108,7 +108,7 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 
 					accountId, err := helpers.GetAccountId(config)
 					if err != nil {
-						logs.ConsoleLogger().Error(fmt.Sprintf("Error getting account ID for profile %s: %s", currentProfile, err))
+						slog.Error("Error getting account ID for profile %s: %s", currentProfile, err)
 						continue
 					}
 
@@ -117,7 +117,7 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 				} else {
 					baseFilename = providedFilename + "-" + currentProfile
 				}
-				logs.ConsoleLogger().Info(fmt.Sprintf("Using base filename for profile %s: %s", currentProfile, baseFilename))
+				slog.Info("Using base filename for profile %s: %s", currentProfile, baseFilename)
 
 				// Initialize slice for all resources
 				var allResources []types.EnrichedResourceDescription
@@ -135,7 +135,7 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 					stages.AggregateOutput[types.EnrichedResourceDescription],
 				)
 				if err != nil {
-					logs.ConsoleLogger().Error(fmt.Sprintf("Error creating pipeline for profile %s: %v", currentProfile, err))
+					slog.Error("Error creating pipeline for profile %s: %v", currentProfile, err)
 					continue
 				}
 

@@ -38,6 +38,11 @@ func SetDefaultValue(option Option, value string) *Option {
 	return &option
 }
 
+func WithDescription(option Option, description string) *Option {
+	option.Description = description
+	return &option
+}
+
 func GetOptionByName(name string, options []*Option) *Option {
 
 	for _, option := range options {

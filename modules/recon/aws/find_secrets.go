@@ -1,56 +1,111 @@
 package recon
 
-// import (
-// 	"context"
-// 	"fmt"
-// 	"strconv"
-// 	"sync"
-// 	"time"
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"strconv"
+	"time"
 
-// 	"github.com/praetorian-inc/nebula/internal/helpers"
-// 	op "github.com/praetorian-inc/nebula/internal/output_providers"
-// 	"github.com/praetorian-inc/nebula/modules"
-// 	"github.com/praetorian-inc/nebula/modules/options"
-// 	o "github.com/praetorian-inc/nebula/modules/options"
-// )
+	"github.com/praetorian-inc/nebula/internal/logs"
+	op "github.com/praetorian-inc/nebula/internal/output_providers"
+	"github.com/praetorian-inc/nebula/modules"
+	"github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/stages"
+	"github.com/praetorian-inc/nebula/pkg/types"
+)
 
-// type AwsFindSecrets struct {
-// 	modules.BaseModule
-// }
+type AwsFindSecrets struct {
+	modules.BaseModule
+}
 
-// var AwsFindSecretsOptions = []*types.Option{
-// 	&o.AwsRegionsOpt,
-// 	&o.AwsFindSecretsResourceType,
-// 	types.SetDefaultValue(
-// 		*types.SetRequired(
-// 			o.OutputOpt, false),
-// 		AwsFindSecretsMetadata.Id+"-"+strconv.FormatInt(time.Now().Unix(), 10)),
-// }
+var AwsFindSecretsOptions = []*types.Option{
+	&options.AwsRegionsOpt,
+	&options.AwsFindSecretsResourceType,
+	types.SetDefaultValue(
+		*types.SetRequired(
+			options.OutputOpt, false),
+		AwsFindSecretsMetadata.Id+"-"+strconv.FormatInt(time.Now().Unix(), 10)),
+}
 
-// var AwsFindSecretsOutputProviders = []func(options []*types.Option) types.OutputProvider{
-// 	op.NewFileProvider,
-// }
+var AwsFindSecretsOutputProviders = []func(options []*types.Option) types.OutputProvider{
+	op.NewJsonFileProvider,
+}
 
-// var AwsFindSecretsMetadata = modules.Metadata{
-// 	Id:          "find-secrets", // this will be the CLI command name
-// 	Name:        "find-secrets",
-// 	Description: "this module will search multiple different known places for potential secrets ",
-// 	Platform:    modules.AWS,
-// 	Authors:     []string{"Praetorian"},
-// 	OpsecLevel:  modules.Moderate,
-// 	References:  []string{},
-// }
+var AwsFindSecretsMetadata = modules.Metadata{
+	Id:          "find-secrets",
+	Name:        "find-secrets",
+	Description: "this module will search multiple different known places for potential secrets ",
+	Platform:    modules.AWS,
+	Authors:     []string{"Praetorian"},
+	OpsecLevel:  modules.Moderate,
+	References:  []string{},
+}
 
-// func NewAwsFindSecrets(options []*types.Option, run types.Run) (modules.Module, error) {
-// 	return &AwsFindSecrets{
-// 		BaseModule: modules.BaseModule{
-// 			Metadata:        AwsFindSecretsMetadata,
-// 			Options:         options,
-// 			Run:             run,
-// 			OutputProviders: modules.RenderOutputProviders(AwsFindSecretsOutputProviders, options),
-// 		},
-// 	}, nil
-// }
+func NewAwsFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[string, []types.EnrichedResourceDescription], error) {
+	pipeline, err := stages.ChainStages[string, []types.EnrichedResourceDescription](
+		AwsFindSecretsStage,
+		stages.AggregateOutput[types.EnrichedResourceDescription], // TODO this is a hack until we can write files to the approporate location again
+	)
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	rtype := types.GetOptionByName(options.AwsFindSecretsResourceType.Name, opts).Value
+
+	if rtype == "ALL" {
+		slog.Info("Loading public resources recon module for all types")
+		return stages.Generator(SecretTypes), pipeline, nil
+	} else {
+		slog.Info("Loading public resources recon module for types: " + rtype)
+		in := stages.ParseTypes(types.GetOptionByName(options.AwsResourceTypeOpt.Name, opts).Value)
+		return in, pipeline, nil
+	}
+}
+
+func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan types.EnrichedResourceDescription {
+	logger := logs.NewStageLogger(ctx, opts, "AwsFindSecretsStage")
+	out := make(chan types.EnrichedResourceDescription)
+	go func() {
+		defer close(out)
+
+		for rtype := range in {
+			var pl stages.Stage[string, types.EnrichedResourceDescription]
+			var err error
+
+			switch rtype {
+			case "AWS::Lambda::Function":
+				pl, err = stages.ChainStages[string, types.EnrichedResourceDescription](
+					stages.CloudControlListResources,
+				)
+			case "AWS::EC2::Instance":
+				pl, err = stages.ChainStages[string, types.EnrichedResourceDescription](
+					stages.CloudControlListResources,
+				)
+			case "AWS::CloudFormation::Stack":
+				pl, err = stages.ChainStages[string, types.EnrichedResourceDescription](
+					stages.CloudControlListResources,
+				)
+			default:
+				logger.Error("Unknown resource type: " + rtype)
+				continue
+			}
+
+			fmt.Println("rtype: ", rtype)
+			fmt.Println("pl: ", pl)
+			if err != nil {
+				logger.Error("Failed to " + rtype + " create pipeline: " + err.Error())
+				continue
+			}
+			for s := range pl(ctx, opts, stages.Generator([]string{rtype})) {
+				out <- s
+			}
+		}
+	}()
+
+	return out
+}
 
 // func (m *AwsFindSecrets) Invoke() error {
 
@@ -134,8 +189,38 @@ package recon
 // 	return nil
 // }
 
-// // You can probalby not use runGetResources and instead just pass in m.Run.Data
-// // However, if you want to do any processing later then you wouldn't be able to if youre passing directly to m.Run.Data
+func GetCFTemplatesStage(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.Result {
+	out := make(chan types.Result)
+	go func() {
+		// defer close(out)
+		// for data := range in {
+		// 	cfg, err := helpers.GetAWSCfg(data.Region, types.GetOptionByName("profile", opts).Value)
+		// 	if err != nil {
+		// 		logger.Error(err.Error())
+		// 		continue
+		// 	}
+
+		// 	cf := cloudformation.NewFromConfig(cfg)
+		// 	template, err := cf.GetTemplate(ctx, &cloudformation.GetTemplateInput{
+		// 		StackName: &data.Identifier,
+		// 	})
+
+		// 	if err != nil {
+		// 		logger.Error(err.Error())
+		// 		continue
+		// 	}
+
+		// 	result := types.NewResult(m.Platform, m.Id, templateBody, types.WithFilename(filepath))
+
+		// 	out <- data
+		// }
+	}()
+
+	return out
+}
+
+// You can probalby not use runGetResources and instead just pass in m.Run.Data
+// However, if you want to do any processing later then you wouldn't be able to if youre passing directly to m.Run.Data
 // func GetResourcesCloudControl(m *AwsFindSecrets, runGetResources types.Run, ccResource string, regionToIdentifiers map[string][]string) error {
 // 	defer close(runGetResources.Output)
 // 	wg := new(sync.WaitGroup)
@@ -183,21 +268,8 @@ package recon
 // 	return nil
 // }
 
-// // This uses the cloud_control_list_resources module to get all the cloudformation stacks
-// func ListResourcesCloudControl(m *AwsFindSecrets, run types.Run, ccResource string) error {
-// 	AwsResourceTypeOpt := types.Option{
-// 		Name:  o.AwsResourceTypeOpt.Name,
-// 		Value: ccResource,
-// 	}
-// 	options := m.Options
-// 	options = append(options, &AwsResourceTypeOpt)
-// 	listResources, err := NewAwsCloudControlListResources(options, run)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	err = listResources.Invoke()
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return nil
-// }
+var SecretTypes = []string{
+	"AWS::CloudFormation::Stack",
+	"AWS::Lambda::Function",
+	"AWS::EC2::Instance",
+}
