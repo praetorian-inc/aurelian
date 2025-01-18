@@ -17,6 +17,7 @@ import (
 	msgraphsdk "github.com/microsoftgraph/msgraph-sdk-go"
 	"github.com/microsoftgraph/msgraph-sdk-go/organization"
 	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
@@ -327,7 +328,7 @@ func (wp *WorkerPool[T, R]) Process(ctx context.Context, input <-chan T) ([]R, e
 // ProcessWithLogging wraps Process with standard logging
 func (wp *WorkerPool[T, R]) ProcessWithLogging(ctx context.Context, input <-chan T, description string) ([]R, error) {
 	logger := logs.NewStageLogger(ctx, opts, "WorkerPool")
-	logger.Info("Starting to process %s...", description)
+	message.Info("Starting to process %s...", description)
 
 	results, err := wp.Process(ctx, input)
 	if err != nil {
@@ -465,7 +466,7 @@ func GetResourceGroupRoleAssignments(ctx context.Context, resourceClient *armres
 		for pager.More() {
 			page, err := pager.NextPage(ctx)
 			if err != nil {
-				logger.Error("Error listing resource groups: %v", err)
+				logger.Error("Error listing resource groups", slog.String("error", err.Error()))
 				return
 			}
 
@@ -473,13 +474,13 @@ func GetResourceGroupRoleAssignments(ctx context.Context, resourceClient *armres
 				rgCount++
 				select {
 				case rgChan <- group:
-					logger.Debug("Queued resource group: %s", *group.Name)
+					logger.Debug(fmt.Sprintf("Queued resource group: %s", *group.Name))
 				case <-ctx.Done():
 					return
 				}
 			}
 		}
-		logger.Info("Found %d resource groups to process", rgCount)
+		message.Info("Found %d resource groups to process", rgCount)
 	}()
 
 	// Process resource groups with logging
@@ -488,7 +489,7 @@ func GetResourceGroupRoleAssignments(ctx context.Context, resourceClient *armres
 		return nil, fmt.Errorf("error processing resource groups: %v", err)
 	}
 
-	logger.Info("Successfully processed %d role assignments", len(assignments))
+	message.Info("Successfully processed %d role assignments", len(assignments))
 	return assignments, nil
 }
 
@@ -596,10 +597,10 @@ func IsValidLocation(location string) bool {
 // HandleAzureError logs Azure-specific errors with appropriate context
 func HandleAzureError(err error, operation string, resourceID string) {
 	if err != nil {
-		slog.Error("Azure operation '%s' failed for resource '%s': %v",
+		slog.Error(fmt.Sprintf("Azure operation '%s' failed for resource '%s': %v",
 			operation,
 			resourceID,
-			err)
+			err))
 	}
 }
 
@@ -655,25 +656,25 @@ func ListSubscriptions(ctx context.Context, opts []*types.Option) ([]string, err
 	pageCount := 0
 	for pager.More() {
 		pageCount++
-		logger.Info("Fetching page %d of subscriptions...", pageCount)
+		message.Info("Fetching page %d of subscriptions...", pageCount)
 
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			logger.Error("Failed to get page %d: %v", pageCount, err)
+			logger.Error(fmt.Sprintf("Failed to get page %d", pageCount), slog.String("error", err.Error()))
 			return nil, fmt.Errorf("failed to list subscriptions: %v", err)
 		}
 
 		if page.Value == nil {
-			logger.Warn("Page %d returned nil value", pageCount)
+			message.Warning("Page %d returned nil value", pageCount)
 			continue
 		}
 
-		logger.Info("Processing page %d, found %d subscriptions",
-			pageCount, len(page.Value))
+		logger.Info(fmt.Sprintf("Processing page %d, found %d subscriptions",
+			pageCount, len(page.Value)))
 
 		for i, sub := range page.Value {
 			if sub.SubscriptionID == nil {
-				logger.Warn("Subscription at index %d has nil ID", i)
+				message.Warning("Subscription at index %d has nil ID", i)
 				continue
 			}
 
@@ -687,10 +688,10 @@ func ListSubscriptions(ctx context.Context, opts []*types.Option) ([]string, err
 				name = *sub.DisplayName
 			}
 
-			logger.Info("Found subscription: ID=%s, Name=%s, State=%s",
+			logger.Info(fmt.Sprintf("Found subscription: ID=%s, Name=%s, State=%s",
 				*sub.SubscriptionID,
 				name,
-				state)
+				state))
 
 			subscriptionIDs = append(subscriptionIDs, *sub.SubscriptionID)
 		}
@@ -701,10 +702,10 @@ func ListSubscriptions(ctx context.Context, opts []*types.Option) ([]string, err
 		return nil, fmt.Errorf("no accessible subscriptions found")
 	}
 
-	logger.Info("Total subscriptions found: %d", len(subscriptionIDs))
-	logger.Info("Summary of all found subscriptions:")
+	message.Info("Total subscriptions found: %d", len(subscriptionIDs))
+	message.Info("Summary of all found subscriptions:")
 	for i, subID := range subscriptionIDs {
-		logger.Info("%d. %s", i+1, subID)
+		message.Info("%d. %s", i+1, subID)
 	}
 
 	return subscriptionIDs, nil
@@ -735,11 +736,11 @@ func GetMgmtGroupRoleAssignments(ctx context.Context, client *armmanagementgroup
 	// Create role definitions client for looking up role names
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		logger.Error("Failed to get Azure credential for role definitions: %v", err)
+		logger.Error("Failed to get Azure credential for role definitions", slog.String("error", err.Error()))
 	}
 	roleDefClient, err := armauthorization.NewRoleDefinitionsClient(cred, &arm.ClientOptions{})
 	if err != nil {
-		logger.Error("Failed to create role definitions client: %v", err)
+		logger.Error("Failed to create role definitions client", slog.String("error", err.Error()))
 	}
 
 	pager := client.NewListPager(nil)
@@ -753,7 +754,7 @@ func GetMgmtGroupRoleAssignments(ctx context.Context, client *armmanagementgroup
 			// Create authorization client
 			authClient, err := armauthorization.NewRoleAssignmentsClient(subscription, cred, &arm.ClientOptions{})
 			if err != nil {
-				logger.Error("Failed to create authorization client for mgmt group: %v", err)
+				logger.Error("Failed to create authorization client for mgmt group", slog.String("error", err.Error()))
 				continue
 			}
 
@@ -774,7 +775,7 @@ func GetMgmtGroupRoleAssignments(ctx context.Context, client *armmanagementgroup
 						if props != nil && props.RoleDefinitionID != nil {
 							roleName, err = getRoleDefinition(ctx, roleDefClient, *props.RoleDefinitionID)
 							if err != nil {
-								logger.Debug("Could not get role name: %v", err)
+								logger.Debug("Could not get role name", slog.String("error", err.Error()))
 							}
 						}
 					}
@@ -809,11 +810,11 @@ func GetSubscriptionRoleAssignments(ctx context.Context, client *armauthorizatio
 	// Get role definition client to look up role names
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		logger.Error("Failed to get Azure credential for role definitions: %v", err)
+		logger.Error("Failed to get Azure credential for role definitions", slog.String("error", err.Error()))
 	}
 	roleDefClient, err := armauthorization.NewRoleDefinitionsClient(cred, &arm.ClientOptions{})
 	if err != nil {
-		logger.Error("Failed to create role definitions client: %v", err)
+		logger.Error("Failed to create role definitions client", slog.String("error", err.Error()))
 	}
 
 	// Get subscription role assignments at scope
@@ -831,7 +832,7 @@ func GetSubscriptionRoleAssignments(ctx context.Context, client *armauthorizatio
 			if roleDefClient != nil && assignment.Properties != nil && assignment.Properties.RoleDefinitionID != nil {
 				roleName, err = getRoleDefinition(ctx, roleDefClient, *assignment.Properties.RoleDefinitionID)
 				if err != nil {
-					logger.Debug("Could not get role name: %v", err)
+					logger.Debug("Could not get role name", slog.String("error", err.Error()))
 				}
 			}
 

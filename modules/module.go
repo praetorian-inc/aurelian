@@ -50,14 +50,20 @@ type Metadata struct {
 	OpsecLevel  OpsecLevel
 }
 
+type Module interface {
+	Invoke() error
+	GetOutputProviders() []types.OutputProvider
+}
+
 type BaseModule struct {
+	Module
 	Metadata
 	Options         []*types.Option
 	OutputProviders []types.OutputProvider
 	Run             types.Run
 
 	In    any
-	Stage types.Stage[any, any]
+	Stage any
 }
 
 func (m *BaseModule) Invoke() error {

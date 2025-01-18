@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -172,7 +173,7 @@ func CloudControlGetResource(ctx context.Context, opts []*types.Option, in <-cha
 			logger.Info("Now getting resource: " + resource.Identifier)
 			cfg, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
-				logger.Error("Error getting AWS config: %s", err)
+				logger.Error(err.Error())
 				continue
 			}
 
@@ -3080,7 +3081,7 @@ func ListECRImages(ctx context.Context, opts []*types.Option, in <-chan types.En
 		for resource := range in {
 			// Skip if invalid resource description
 			if resource.Properties == nil {
-				logger.Debug("Skipping resource with no properties: %s", resource.Identifier)
+				logger.Debug("Skipping resource with no properties", slog.String("identifier", resource.Identifier))
 				continue
 			}
 

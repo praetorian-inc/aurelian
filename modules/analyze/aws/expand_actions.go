@@ -30,16 +30,6 @@ var AwsExpandActionsMetadata = modules.Metadata{
 	References:  []string{},
 }
 
-// func NewAwsExpandActions(options []*types.Option, run types.Run) (modules.Module, error) {
-// 	var m AwsExpandActions
-// 	m.SetMetdata(AwsExpandActionsMetadata)
-// 	m.Run = run
-// 	m.Options = options
-// 	m.ConfigureOutputProviders(AwsExpandActionOutputProvders)
-
-// 	return &m, nil
-// }
-
 func NewAwsExpandActions(opts []*types.Option) (<-chan string, stages.Stage[string, string], error) {
 	pipeline, err := stages.ChainStages[string, string](
 		stages.AwsExpandActionsStage,
