@@ -72,8 +72,6 @@ func NewLogger() *slog.Logger {
 }
 
 func NewModuleLogger(ctx context.Context, opts []*types.Option) *slog.Logger {
-	slog.With(ctx).Debug("Logger initialized")
-
 	logger := NewLogger()
 	metadata := ctx.Value("metadata").(modules.Metadata)
 	child := logger.WithGroup("module").With("platform", metadata.Platform).With("id", metadata.Id)

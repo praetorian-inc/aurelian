@@ -85,8 +85,8 @@ func ToJsonBytes[In any](ctx context.Context, opts []*types.Option, in <-chan In
 	return out
 }
 
-func JqFilter(filter string) Stage[[]byte, []byte] {
-	logger := logs.NewStageLogger(context.Background(), nil, "JqFilter")
+func JqFilter(ctx context.Context, filter string) Stage[[]byte, []byte] {
+	logger := logs.NewStageLogger(ctx, []*types.Option{}, "JqFilter")
 	return func(ctx context.Context, opts []*types.Option, in <-chan []byte) <-chan []byte {
 		out := make(chan []byte)
 		go func() {
