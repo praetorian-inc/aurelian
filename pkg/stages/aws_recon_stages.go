@@ -3222,3 +3222,48 @@ func ECRLoginStage(ctx context.Context, opts []*types.Option, in <-chan string) 
 	}()
 	return out
 }
+
+func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan types.NpInput {
+	logger := logs.NewStageLogger(ctx, opts, "AwsFindSecretsStage")
+	out := make(chan types.NpInput)
+	go func() {
+		defer close(out)
+
+		for rtype := range in {
+			var pl Stage[string, types.NpInput]
+			var err error
+
+			switch rtype {
+			case "AWS::Lambda::Function":
+				pl, err = ChainStages[string, types.NpInput](
+					CloudControlListResources,
+					EnrichedResourceDescriptionToNpInput,
+				)
+			case "AWS::EC2::Instance":
+				pl, err = ChainStages[string, types.NpInput](
+					CloudControlListResources,
+					EC2GetUserDataStage,
+				)
+			case "AWS::CloudFormation::Stack":
+				pl, err = ChainStages[string, types.NpInput](
+					CloudControlListResources,
+					CloudFormationGetTemplatesNpInputStage,
+				)
+			default:
+				logger.Error("Unknown resource type: " + rtype)
+				continue
+			}
+
+			logger.Info(fmt.Sprintf("Processing resource type %s", rtype))
+			if err != nil {
+				logger.Error("Failed to " + rtype + " create pipeline: " + err.Error())
+				continue
+			}
+			for s := range pl(ctx, opts, Generator([]string{rtype})) {
+				out <- s
+			}
+		}
+	}()
+
+	return out
+}

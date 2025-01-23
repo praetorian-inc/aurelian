@@ -47,7 +47,7 @@ func NoseyParkerEnumeratorStage(ctx context.Context, opts []*types.Option, in <-
 				logger.Error(fmt.Sprintf("failed to find noseyparker: %v", err))
 				return
 			}
-			logger.Warn(fmt.Sprintf("noseyparker path: %v", npPath))
+			logger.Debug(fmt.Sprintf("noseyparker path: %v", npPath))
 
 			npOpts := []string{"scan", "--datastore", datastore, "--progress", "never", "--enumerator", "/dev/stdin"}
 			cliOpts := types.GetOptionByName(options.NoseyParkerArgsOpt.Name, opts).Value
