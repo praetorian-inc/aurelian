@@ -56,8 +56,8 @@ var AzureRoleAssignmentsOptions = []*types.Option{
 		Type:        types.Int,
 		Value:       "300", // 5 minute default timeout
 	},
-	types.SetDefaultValue(
-		*types.SetRequired(
+	options.WithDefaultValue(
+		*options.WithRequired(
 			options.FileNameOpt, false),
 		""),
 }
@@ -77,7 +77,7 @@ func NewAzureRoleAssignments(opts []*types.Option) (<-chan string, stages.Stage[
 		return nil, nil, err
 	}
 
-	subscriptionOpt := types.GetOptionByName("subscription", opts).Value
+	subscriptionOpt := options.GetOptionByName("subscription", opts).Value
 
 	if strings.EqualFold(subscriptionOpt, "all") {
 		// Added context with timeout for subscription listing
@@ -201,7 +201,7 @@ func FormatAzureRoleAssignmentsOutput(ctx context.Context, opts []*types.Option,
 
 			// Generate base filename
 			baseFilename := ""
-			providedFilename := types.GetOptionByName(options.FileNameOpt.Name, opts).Value
+			providedFilename := options.GetOptionByName(options.FileNameOpt.Name, opts).Value
 			if len(providedFilename) == 0 {
 				timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 				baseFilename = fmt.Sprintf("role-assignments-%s-%s", assignments[0].SubscriptionID, timestamp)

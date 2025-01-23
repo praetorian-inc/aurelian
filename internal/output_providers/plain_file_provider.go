@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/praetorian-inc/nebula/internal/message"
-	o "github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -15,9 +15,9 @@ type PlainFileProvider struct {
 	FileName   string
 }
 
-func NewPlainFileProvider(options []*types.Option) types.OutputProvider {
+func NewPlainFileProvider(opts []*types.Option) types.OutputProvider {
 	return &PlainFileProvider{
-		OutputPath: types.GetOptionByName(o.OutputOpt.Value, options).Value,
+		OutputPath: options.GetOptionByName(options.OutputOpt.Value, opts).Value,
 		FileName:   "",
 	}
 }

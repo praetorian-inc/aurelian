@@ -95,7 +95,7 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 	// stack := middleware.NewStack("CacheStack", middleware.StackSend)
 
 	// cacheMiddleware := &CacheMiddleware{
-	// 	CacheDir: types.GetOptionByName(options.LogLevelOpt.Name, opts).Value,
+	// 	CacheDir: options.GetOptionByName(options.LogLevelOpt.Name, opts).Value,
 	// }
 	// stack.Deserialize.Add(cacheMiddleware, middleware.After)
 

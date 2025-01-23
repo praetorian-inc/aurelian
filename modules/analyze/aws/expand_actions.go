@@ -39,7 +39,7 @@ func NewAwsExpandActions(opts []*types.Option) (<-chan string, stages.Stage[stri
 		return nil, nil, err
 	}
 
-	action := types.GetOptionByName(options.AwsActionOpt.Name, opts).Value
+	action := options.GetOptionByName(options.AwsActionOpt.Name, opts).Value
 
 	return stages.Generator([]string{action}), pipeline, nil
 }

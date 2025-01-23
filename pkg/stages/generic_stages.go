@@ -43,7 +43,7 @@ func GenerateOllamaResponse(ctx context.Context, opts []*types.Option, in <-chan
 		defer close(out)
 		for prompt := range in {
 			logger.Info("Generating response for prompt: " + prompt)
-			model := types.GetOptionByName(options.ModelOpt.Name, opts).Value
+			model := options.GetOptionByName(options.ModelOpt.Name, opts).Value
 			req := &api.GenerateRequest{
 				Model:  model,
 				Prompt: prompt,
@@ -180,7 +180,7 @@ func GetFilesOfType(ctx context.Context, opts []*types.Option, in <-chan string)
 	out := make(chan string)
 	go func() {
 		defer close(out)
-		inputLoc := types.GetOptionByName(options.DirPathOpt.Name, opts).Value
+		inputLoc := options.GetOptionByName(options.DirPathOpt.Name, opts).Value
 		for extension := range in {
 			inputFiles, err := os.ReadDir(inputLoc)
 			if err != nil {

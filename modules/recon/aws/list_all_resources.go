@@ -33,8 +33,8 @@ var AwsListAllResourcesMetadata = modules.Metadata{
 var AwsListAllResourcesOptions = []*types.Option{
 	&options.AwsRegionsOpt,
 	&options.AwsScanTypeOpt,
-	types.SetDefaultValue(
-		*types.SetRequired(options.FileNameOpt, false),
+	options.WithDefaultValue(
+		*options.WithRequired(options.FileNameOpt, false),
 		""),
 	&options.AwsProfileListOpt,
 }
@@ -46,7 +46,7 @@ var AwsListAllResourcesOutputProviders = []func(options []*types.Option) types.O
 
 func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[string, types.Result], error) {
 	// Handle region options
-	regionsOpt := types.GetOptionByName(options.AwsRegionsOpt.Name, opts)
+	regionsOpt := options.GetOptionByName(options.AwsRegionsOpt.Name, opts)
 	if regionsOpt == nil {
 		regionsOpt = &options.AwsRegionsOpt
 		regionsOpt.Value = "ALL"
@@ -55,13 +55,13 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 		regionsOpt.Value = strings.Join(helpers.Regions, ",")
 	}
 
-	if types.GetOptionByName(options.AwsResourceTypeOpt.Name, opts) == nil {
+	if options.GetOptionByName(options.AwsResourceTypeOpt.Name, opts) == nil {
 		opts = append(opts, &options.AwsResourceTypeOpt)
 	}
 
 	// Get profile list
-	profileList := types.GetOptionByName(options.AwsProfileListOpt.Name, opts).Value
-	profile := types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value
+	profileList := options.GetOptionByName(options.AwsProfileListOpt.Name, opts).Value
+	profile := options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value
 	var profiles []string
 
 	if profileList == "" {
@@ -85,7 +85,7 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 
 			for _, currentProfile := range profiles {
 				// Generate filename at profile level
-				profileOpts := types.CreateDeepCopyOfOptions(opts)
+				profileOpts := options.CreateDeepCopyOfOptions(opts)
 				for _, opt := range profileOpts {
 					if opt.Name == options.AwsProfileOpt.Name {
 						opt.Value = currentProfile
@@ -93,7 +93,7 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 				}
 
 				baseFilename := ""
-				providedFilename := types.GetOptionByName(options.FileNameOpt.Name, profileOpts).Value
+				providedFilename := options.GetOptionByName(options.FileNameOpt.Name, profileOpts).Value
 				if len(providedFilename) == 0 {
 					config, err := helpers.GetAWSCfg("", currentProfile, opts)
 					if err != nil {
@@ -165,7 +165,7 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 	}
 
 	// Get scan type from options
-	scanType := types.GetOptionByName(options.AwsScanTypeOpt.Name, opts).Value
+	scanType := options.GetOptionByName(options.AwsScanTypeOpt.Name, opts).Value
 	if scanType == "" {
 		scanType = "full"
 	}

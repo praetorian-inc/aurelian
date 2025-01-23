@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -70,7 +71,7 @@ func (m *BaseModule) Invoke() error {
 }
 
 func (m *BaseModule) GetOptionByName(name string) *types.Option {
-	return types.GetOptionByName(name, m.Options)
+	return options.GetOptionByName(name, m.Options)
 }
 
 func (m *BaseModule) AddOption(option types.Option) {

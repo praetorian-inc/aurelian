@@ -44,8 +44,8 @@ var AzureSummaryOptions = []*types.Option{
 		Type:        types.Int,
 		Value:       "5",
 	},
-	types.SetDefaultValue(
-		*types.SetRequired(
+	options.WithDefaultValue(
+		*options.WithRequired(
 			options.FileNameOpt, false),
 		""),
 }
@@ -65,7 +65,7 @@ func NewAzureSummary(opts []*types.Option) (<-chan string, stages.Stage[string, 
 		return nil, nil, err
 	}
 
-	subscriptionOpt := types.GetOptionByName("subscription", opts).Value
+	subscriptionOpt := options.GetOptionByName("subscription", opts).Value
 
 	if strings.EqualFold(subscriptionOpt, "all") {
 		subscriptions, err := helpers.ListSubscriptions(context.Background(), opts)
@@ -94,7 +94,7 @@ func FormatAzureOutputToMarkdownJsonStage(ctx context.Context, opts []*types.Opt
 		for env := range in {
 			// Generate base filename
 			baseFilename := ""
-			providedFilename := types.GetOptionByName(options.FileNameOpt.Name, opts).Value
+			providedFilename := options.GetOptionByName(options.FileNameOpt.Name, opts).Value
 			if len(providedFilename) == 0 {
 				timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 				baseFilename = fmt.Sprintf("summary-%s-%s", env.SubscriptionID, timestamp)

@@ -15,8 +15,8 @@ import (
 var AwsPublicResourcesOptions = []*types.Option{
 	&options.AwsRegionsOpt,
 	&options.AwsResourceTypeOpt,
-	types.SetDefaultValue(
-		*types.SetRequired(
+	options.WithDefaultValue(
+		*options.WithRequired(
 			options.FileNameOpt, false),
 		AwsPublicResourcesMetadata.Id+"-"+strconv.FormatInt(time.Now().Unix(), 10)+".json"),
 }
@@ -48,14 +48,14 @@ func NewAwsPublicResources(opts []*types.Option) (<-chan string, stages.Stage[st
 		return nil, nil, err
 	}
 
-	rtype := types.GetOptionByName(options.AwsResourceTypeOpt.Name, opts).Value
+	rtype := options.GetOptionByName(options.AwsResourceTypeOpt.Name, opts).Value
 
 	if rtype == "ALL" {
 		slog.Info("Loading public resources recon module for all types")
 		return stages.Generator(PublicTypes), pipeline, nil
 	} else {
 		slog.Info("Loading public resources recon module for types: " + rtype)
-		in := stages.ParseTypes(types.GetOptionByName(options.AwsResourceTypeOpt.Name, opts).Value)
+		in := stages.ParseTypes(options.GetOptionByName(options.AwsResourceTypeOpt.Name, opts).Value)
 		return in, pipeline, nil
 	}
 }

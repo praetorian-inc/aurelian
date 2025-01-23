@@ -44,7 +44,7 @@ func GetAzureEnvironmentSummaryStage(ctx context.Context, opts []*types.Option, 
 func GetAzureListAllStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan *types.AzureResourceDetails {
 	logger := logs.NewStageLogger(ctx, opts, "GetAzureListAllStage")
 	out := make(chan *types.AzureResourceDetails)
-	workersCount, _ := strconv.Atoi(types.GetOptionByName("workers", opts).Value)
+	workersCount, _ := strconv.Atoi(options.GetOptionByName("workers", opts).Value)
 
 	go func() {
 		defer close(out)
@@ -147,7 +147,7 @@ func GetAzureListAllStage(ctx context.Context, opts []*types.Option, in <-chan s
 func GetAzureRoleAssignmentsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan []*types.RoleAssignmentDetails {
 	logger := logs.NewStageLogger(ctx, opts, "GetAzureRoleAssignmentsStage")
 	out := make(chan []*types.RoleAssignmentDetails)
-	workersCount, _ := strconv.Atoi(types.GetOptionByName("workers", opts).Value)
+	workersCount, _ := strconv.Atoi(options.GetOptionByName("workers", opts).Value)
 
 	go func() {
 		defer close(out)
@@ -288,7 +288,7 @@ func FormatAzureRoleAssignmentsOutput(ctx context.Context, opts []*types.Option,
 
 			// Generate base filename
 			baseFilename := ""
-			providedFilename := types.GetOptionByName(options.FileNameOpt.Name, opts).Value
+			providedFilename := options.GetOptionByName(options.FileNameOpt.Name, opts).Value
 			if len(providedFilename) == 0 {
 				timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 				baseFilename = fmt.Sprintf("role-assignments-%s-%s", assignments[0].SubscriptionID, timestamp)

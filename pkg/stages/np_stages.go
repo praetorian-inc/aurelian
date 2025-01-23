@@ -34,7 +34,7 @@ func NoseyParkerEnumeratorStage(ctx context.Context, opts []*types.Option, in <-
 		go func() {
 			defer close(stdOut)
 
-			datastore, err := filepath.Abs(filepath.Join(types.GetOptionByName(options.OutputOpt.Name, opts).Value, types.GetOptionByName(options.NoseyParkerOutputOpt.Name, opts).Value))
+			datastore, err := filepath.Abs(filepath.Join(options.GetOptionByName(options.OutputOpt.Name, opts).Value, options.GetOptionByName(options.NoseyParkerOutputOpt.Name, opts).Value))
 			if err != nil {
 				logger.Error(fmt.Sprintf("failed to get absolute path for datastore: %v", err))
 				return
@@ -42,7 +42,7 @@ func NoseyParkerEnumeratorStage(ctx context.Context, opts []*types.Option, in <-
 
 			message.Info(fmt.Sprintf("Writing Nosey Parker Results to %s", datastore))
 
-			npPath, err := helpers.FindBinary(types.GetOptionByName(options.NoseyParkerPathOpt.Name, opts).Value)
+			npPath, err := helpers.FindBinary(options.GetOptionByName(options.NoseyParkerPathOpt.Name, opts).Value)
 			if err != nil {
 				logger.Error(fmt.Sprintf("failed to find noseyparker: %v", err))
 				return
@@ -50,7 +50,7 @@ func NoseyParkerEnumeratorStage(ctx context.Context, opts []*types.Option, in <-
 			logger.Debug(fmt.Sprintf("noseyparker path: %v", npPath))
 
 			npOpts := []string{"scan", "--datastore", datastore, "--progress", "never", "--enumerator", "/dev/stdin"}
-			cliOpts := types.GetOptionByName(options.NoseyParkerArgsOpt.Name, opts).Value
+			cliOpts := options.GetOptionByName(options.NoseyParkerArgsOpt.Name, opts).Value
 			logger.Debug(fmt.Sprintf("noseyparker cli options: %v", cliOpts))
 			if cliOpts != "" {
 				parsed := strings.Split(cliOpts, " ")

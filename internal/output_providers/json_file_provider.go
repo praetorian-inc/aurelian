@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/praetorian-inc/nebula/internal/message"
-	o "github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -17,9 +17,9 @@ type JsonFileProvider struct {
 	FileName   string
 }
 
-func NewJsonFileProvider(options []*types.Option) types.OutputProvider {
+func NewJsonFileProvider(opts []*types.Option) types.OutputProvider {
 	return &JsonFileProvider{
-		OutputPath: types.GetOptionByName(o.OutputOpt.Name, options).Value,
+		OutputPath: options.GetOptionByName(options.OutputOpt.Name, opts).Value,
 		FileName:   "",
 	}
 }

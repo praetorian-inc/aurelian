@@ -53,8 +53,8 @@ func DockerExtractorStage(ctx context.Context, opts []*types.Option, in <-chan s
 			}
 
 			authConfig := registry.AuthConfig{
-				Username:      types.GetOptionByName(options.DockerUserOpt.Name, opts).Value,
-				Password:      types.GetOptionByName(options.DockerPasswordOpt.Name, opts).Value,
+				Username:      options.GetOptionByName(options.DockerUserOpt.Name, opts).Value,
+				Password:      options.GetOptionByName(options.DockerPasswordOpt.Name, opts).Value,
 				ServerAddress: domain,
 			}
 
@@ -101,7 +101,7 @@ func DockerExtractorStage(ctx context.Context, opts []*types.Option, in <-chan s
 			name = strings.Split(name, ":")[0] // Remove tag if present
 
 			// Create directory
-			if err := os.MkdirAll(filepath.Join(types.GetOptionByName(options.OutputOpt.Name, opts).Value, name), 0755); err != nil {
+			if err := os.MkdirAll(filepath.Join(options.GetOptionByName(options.OutputOpt.Name, opts).Value, name), 0755); err != nil {
 				logger.Error(fmt.Sprintf("Failed to create directory: %v", err))
 				cleanupContainer(ctx, cli, containerID)
 				removeImage(ctx, cli, c)
@@ -118,7 +118,7 @@ func DockerExtractorStage(ctx context.Context, opts []*types.Option, in <-chan s
 			}
 
 			// Create gzipped tar archive
-			archivePath := filepath.Join(types.GetOptionByName(options.OutputOpt.Name, opts).Value, name, name+".tar.gz")
+			archivePath := filepath.Join(options.GetOptionByName(options.OutputOpt.Name, opts).Value, name, name+".tar.gz")
 			archive, err := os.Create(archivePath)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Failed to create archive: %v", err))
@@ -142,7 +142,7 @@ func DockerExtractorStage(ctx context.Context, opts []*types.Option, in <-chan s
 			}
 
 			// Extract archive
-			if err := extractTarGz(archivePath, filepath.Join(types.GetOptionByName(options.OutputOpt.Name, opts).Value, name)); err != nil {
+			if err := extractTarGz(archivePath, filepath.Join(options.GetOptionByName(options.OutputOpt.Name, opts).Value, name)); err != nil {
 				logger.Error(fmt.Sprintf("Failed to extract archive: %v", err))
 				cleanupContainer(ctx, cli, containerID)
 				removeImage(ctx, cli, c)

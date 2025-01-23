@@ -15,8 +15,8 @@ package recon
 // )
 
 // func DescribeCFStacks(m *AwsFindSecrets, regions []string) error {
-// 	resourceType := types.GetOptionByName("secret-resource-types", m.Options)
-// 	profile := types.GetOptionByName("profile", m.Options)
+// 	resourceType := options.GetOptionByName("secret-resource-types", m.Options)
+// 	profile := options.GetOptionByName("profile", m.Options)
 // 	command := "describeStacks"
 // 	wg := new(sync.WaitGroup)
 
@@ -86,8 +86,8 @@ package recon
 // This is much faster pass in the map containing all regions rather than passing in only a list of only a region because the goroutine would have to wait for each region to finish before moving forward.
 // func GetCFTemplates(m *AwsFindSecrets, regionToArnIdentifiers map[string][]arn.ARN) error {
 // 	wg := new(sync.WaitGroup)
-// 	resourceType := types.GetOptionByName("secret-resource-types", m.Options)
-// 	profile := types.GetOptionByName("profile", m.Options)
+// 	resourceType := options.GetOptionByName("secret-resource-types", m.Options)
+// 	profile := options.GetOptionByName("profile", m.Options)
 // 	command := "getTemplate"
 // 	for region, arns := range regionToArnIdentifiers {
 // 		cfg, err := helpers.GetAWSCfg(region, profile.Value)

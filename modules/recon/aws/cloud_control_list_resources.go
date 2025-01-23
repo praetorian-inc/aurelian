@@ -6,6 +6,7 @@ import (
 
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
+	"github.com/praetorian-inc/nebula/modules/options"
 	o "github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -18,8 +19,8 @@ type AwsCloudControlListResources struct {
 var AwsCloudControlListResourcesOptions = []*types.Option{
 	&o.AwsRegionsOpt,
 	&o.AwsResourceTypeOpt,
-	types.SetDefaultValue(
-		*types.SetRequired(
+	options.WithDefaultValue(
+		*options.WithRequired(
 			o.FileNameOpt, false),
 		AwsCloudControlListResourcesMetadata.Id+"-"+strconv.FormatInt(time.Now().Unix(), 10)+".json"),
 }
@@ -51,7 +52,7 @@ func NewAwsCloudControlListResources(opts []*types.Option) (<-chan string, stage
 		return nil, nil, err
 	}
 
-	resourceType := types.GetOptionByName(o.AwsResourceTypeOpt.Name, opts).Value
+	resourceType := options.GetOptionByName(o.AwsResourceTypeOpt.Name, opts).Value
 
 	return stages.Generator([]string{resourceType}), pipeline, nil
 }

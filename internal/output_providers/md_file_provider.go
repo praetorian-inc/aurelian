@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/praetorian-inc/nebula/internal/message"
-	o "github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -17,9 +17,9 @@ type MarkdownFileProvider struct {
 	FileName   string
 }
 
-func NewMarkdownFileProvider(options []*types.Option) types.OutputProvider {
+func NewMarkdownFileProvider(opts []*types.Option) types.OutputProvider {
 	return &MarkdownFileProvider{
-		OutputPath: types.GetOptionByName(o.OutputOpt.Value, options).Value,
+		OutputPath: options.GetOptionByName(options.OutputOpt.Value, opts).Value,
 		FileName:   "",
 	}
 }

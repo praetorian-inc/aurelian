@@ -60,7 +60,7 @@ var providerHeaders = map[string][]string{
 func prowlerToMDTableStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan types.MarkdownTable {
 	logger := logs.NewStageLogger(ctx, opts, "prowlerToMDTableStage")
 	out := make(chan types.MarkdownTable)
-	provider := strings.ToLower(types.GetOptionByName(options.ProviderType.Name, opts).Value)
+	provider := strings.ToLower(options.GetOptionByName(options.ProviderType.Name, opts).Value)
 	go func() {
 		defer close(out)
 		groupedData := make(map[string]Occurences)

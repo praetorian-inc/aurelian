@@ -5,6 +5,7 @@ import (
 
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
+	"github.com/praetorian-inc/nebula/modules/options"
 	o "github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -26,9 +27,9 @@ var AwsOllamaIamMetadata = modules.Metadata{
 
 var AwsOllamaIamOptions = []*types.Option{
 	&o.PathOpt,
-	types.SetRequired(o.UrlOpt, false),
-	types.SetRequired(o.PromptOpt, false),
-	types.SetRequired(o.ModelOpt, false),
+	options.WithRequired(o.UrlOpt, false),
+	options.WithRequired(o.PromptOpt, false),
+	options.WithRequired(o.ModelOpt, false),
 }
 
 var AwsOllamaIamOutputProviders = []func(options []*types.Option) types.OutputProvider{
@@ -37,18 +38,18 @@ var AwsOllamaIamOutputProviders = []func(options []*types.Option) types.OutputPr
 
 func NewAwsOllamaIam(opts []*types.Option) (<-chan string, stages.Stage[string, string], error) {
 
-	urlOpt := types.GetOptionByName(o.UrlOpt.Name, opts)
+	urlOpt := options.GetOptionByName(o.UrlOpt.Name, opts)
 	if urlOpt.Value == "" {
 		urlOpt.Value = "http://localhost:11434/api"
 	}
 
 	// Get the default base prompt
-	promptOpt := types.GetOptionByName(o.PromptOpt.Name, opts)
+	promptOpt := options.GetOptionByName(o.PromptOpt.Name, opts)
 	if promptOpt.Value == "" {
 		promptOpt.Value = "Print the arn of the IAM Policy below. Then analyze the AWS Policy for security weaknesses. Please expand all actions with a wildcard to understand the risk they actions may pose. Print a list of security weaknesses. Respond None if there are no weaknesses. Finally rate the risk of the policy."
 	}
 
-	polBytes, err := os.ReadFile(types.GetOptionByName(o.PathOpt.Name, opts).Value)
+	polBytes, err := os.ReadFile(options.GetOptionByName(o.PathOpt.Name, opts).Value)
 	if err != nil {
 		return nil, nil, err
 	}

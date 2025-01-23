@@ -125,7 +125,7 @@ func getOpts(cmd *cobra.Command, required []*types.Option, common []*types.Optio
 
 	// Process required options
 	opts = append(opts, getOptsFromCmd(cmd, required)...)
-	err := types.ValidateOptions(opts, required)
+	err := options.ValidateOptions(opts, required)
 	if err != nil {
 		log.Default().Println(err)
 		os.Exit(1)
@@ -133,7 +133,7 @@ func getOpts(cmd *cobra.Command, required []*types.Option, common []*types.Optio
 
 	// Process common options
 	opts = append(opts, getOptsFromCmd(cmd, common)...)
-	err = types.ValidateOptions(opts, common)
+	err = options.ValidateOptions(opts, common)
 	if err != nil {
 		log.Default().Println(err)
 		os.Exit(1)

@@ -56,7 +56,7 @@ func GetRegions(ctx context.Context, opts []*types.Option) <-chan string {
 	regChan := make(chan string)
 	go func() {
 		defer close(regChan)
-		enabled, _ := helpers.EnabledRegions(types.GetOptionByName("profile", opts).Value, opts)
+		enabled, _ := helpers.EnabledRegions(options.GetOptionByName("profile", opts).Value, opts)
 
 		for _, region := range enabled {
 			regChan <- region
@@ -72,8 +72,8 @@ func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype 
 	out := make(chan types.EnrichedResourceDescription)
 	logger.Info("Listing resources")
 
-	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
+	profile := options.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(options.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
 		logger.Error(err.Error())
 		return nil
@@ -173,7 +173,7 @@ func CloudControlGetResource(ctx context.Context, opts []*types.Option, in <-cha
 		defer close(out)
 		for resource := range in {
 			logger.Info("Now getting resource: " + resource.Identifier)
-			cfg, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			cfg, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error(err.Error())
 				continue
@@ -336,7 +336,7 @@ func BackupVaultCheckResourcePolicy(ctx context.Context, opts []*types.Option, i
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -376,7 +376,7 @@ func CloudWatchDestinationCheckResourcePolicy(ctx context.Context, opts []*types
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -422,7 +422,7 @@ func CognitoUserPoolGetDomains(ctx context.Context, opts []*types.Option, in <-c
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -489,7 +489,7 @@ func CognitoUserPoolDescribeClients(ctx context.Context, opts []*types.Option, i
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -567,8 +567,8 @@ func ListEBSSnapshots(ctx context.Context, opts []*types.Option, rtype <-chan st
 	logger := logs.NewStageLogger(ctx, opts, "ListEBSSnapshots")
 	out := make(chan types.EnrichedResourceDescription)
 	logger.Info("Listing EBS snapshots")
-	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
+	profile := options.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(options.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
 		logger.Error(err.Error())
 		return nil
@@ -648,7 +648,7 @@ func EBSSnapshotDescribeAttributes(ctx context.Context, opts []*types.Option, in
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -692,8 +692,8 @@ func ListEC2FPGAImages(ctx context.Context, opts []*types.Option, rtype <-chan s
 	logger := logs.NewStageLogger(ctx, opts, "ListEC2FPGAImages")
 	out := make(chan types.EnrichedResourceDescription)
 	logger.Info("Listing EC2 FPGA images")
-	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
+	profile := options.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(options.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
 		logger.Error(err.Error())
 		return nil
@@ -773,7 +773,7 @@ func EC2FPGAImageDescribeAttributes(ctx context.Context, opts []*types.Option, i
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -817,8 +817,8 @@ func ListEC2Images(ctx context.Context, opts []*types.Option, rtype <-chan strin
 	logger := logs.NewStageLogger(ctx, opts, "ListEC2Images")
 	out := make(chan types.EnrichedResourceDescription)
 	logger.Info("Listing EC2 AMIs")
-	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
+	profile := options.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(options.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
 		logger.Error(err.Error())
 		return nil
@@ -898,7 +898,7 @@ func EC2ImageDescribeAttributes(ctx context.Context, opts []*types.Option, in <-
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -946,7 +946,7 @@ func Ec2ListPublic(ctx context.Context, profile string) Stage[string, string] {
 			defer close(out)
 			for region := range in {
 				logger.Debug("Listing public EC2 resources for " + region)
-				config, _ := helpers.GetAWSCfg(region, types.GetOptionByName("profile", opts).Value, opts)
+				config, _ := helpers.GetAWSCfg(region, options.GetOptionByName("profile", opts).Value, opts)
 				client := ec2.NewFromConfig(config)
 
 				ec2Input := ec2.DescribeInstancesInput{
@@ -995,7 +995,7 @@ func ECRCheckRepoPolicy(ctx context.Context, opts []*types.Option, in <-chan typ
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -1035,7 +1035,7 @@ func ECRCheckPublicRepoPolicy(ctx context.Context, opts []*types.Option, in <-ch
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -1075,7 +1075,7 @@ func EFSFileSystemCheckResourcePolicy(ctx context.Context, opts []*types.Option,
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -1126,8 +1126,8 @@ func ListESDomains(ctx context.Context, opts []*types.Option, rtype <-chan strin
 	logger := logs.NewStageLogger(ctx, opts, "ListESDomains")
 	out := make(chan types.EnrichedResourceDescription)
 	logger.Info("Listing ElasticSearch Domains")
-	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
+	profile := options.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(options.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
 		logger.Error(err.Error())
 		return nil
@@ -1195,7 +1195,7 @@ func ESDomainCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -1238,7 +1238,7 @@ func EventBusCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -1279,8 +1279,8 @@ func ListGlacierVaults(ctx context.Context, opts []*types.Option, rtype <-chan s
 	logger := logs.NewStageLogger(ctx, opts, "ListGlacierVaults")
 	out := make(chan types.EnrichedResourceDescription)
 	logger.Info("Listing Glacier Vaults")
-	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
+	profile := options.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(options.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
 		logger.Error(err.Error())
 		return nil
@@ -1358,7 +1358,7 @@ func GlacierVaultCheckResourcePolicy(ctx context.Context, opts []*types.Option, 
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -1397,8 +1397,8 @@ func GlueCheckResourcePolicy(ctx context.Context, opts []*types.Option, rtype <-
 	logger := logs.NewStageLogger(ctx, opts, "GlueCheckResourcePolicy")
 	out := make(chan types.EnrichedResourceDescription)
 	logger.Info("Checking Glue resource access policies")
-	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
+	profile := options.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(options.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
 		logger.Error(err.Error())
 		return nil
@@ -1466,7 +1466,7 @@ func IAMRoleCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -1506,7 +1506,7 @@ func KMSKeyCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-c
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -1546,7 +1546,7 @@ func KMSKeyCheckGrants(ctx context.Context, opts []*types.Option, in <-chan type
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -1611,7 +1611,7 @@ func LambdaGetFunctionUrl(ctx context.Context, opts []*types.Option, in <-chan t
 	go func() {
 		for resource := range in {
 			logger.Debug("Getting URL for Lambda function: " + resource.Identifier)
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				out <- ""
 			}
@@ -1668,8 +1668,8 @@ func ListLambdaLayers(ctx context.Context, opts []*types.Option, rtype <-chan st
 	logger := logs.NewStageLogger(ctx, opts, "ListLambdaLayers")
 	out := make(chan types.EnrichedResourceDescription)
 	logger.Info("Listing Lambda Layers")
-	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
+	profile := options.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(options.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
 		logger.Error(err.Error())
 		return nil
@@ -1739,7 +1739,7 @@ func LambdaCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-c
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -1779,7 +1779,7 @@ func LambdaLayerCheckResourcePolicy(ctx context.Context, opts []*types.Option, i
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -1829,8 +1829,8 @@ func ListMediaStoreContainers(ctx context.Context, opts []*types.Option, rtype <
 	logger := logs.NewStageLogger(ctx, opts, "ListMediaStoreContainers")
 	out := make(chan types.EnrichedResourceDescription)
 	logger.Info("Listing MediaStore Containers")
-	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
+	profile := options.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(options.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
 		logger.Error(err.Error())
 		return nil
@@ -1898,7 +1898,7 @@ func MediaStoreContainerCheckResourcePolicy(ctx context.Context, opts []*types.O
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -1938,7 +1938,7 @@ func OSSDomainCheckResourcePolicy(ctx context.Context, opts []*types.Option, in 
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -1979,8 +1979,8 @@ func ListRDSDBSnapshots(ctx context.Context, opts []*types.Option, rtype <-chan 
 	logger := logs.NewStageLogger(ctx, opts, "ListRDSDBSnapshots")
 	out := make(chan types.EnrichedResourceDescription)
 	logger.Info("Listing RDS DB snapshots")
-	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
+	profile := options.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(options.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
 		logger.Error(err.Error())
 		return nil
@@ -2061,7 +2061,7 @@ func RDSDBSnapshotDescribeAttributes(ctx context.Context, opts []*types.Option, 
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -2110,8 +2110,8 @@ func ListRDSDBClusterSnapshots(ctx context.Context, opts []*types.Option, rtype 
 	logger := logs.NewStageLogger(ctx, opts, "ListRDSDBClusterSnapshots")
 	out := make(chan types.EnrichedResourceDescription)
 	logger.Info("Listing RDS DB cluster snapshots")
-	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
+	profile := options.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(options.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
 		logger.Error(err.Error())
 		return nil
@@ -2192,7 +2192,7 @@ func RDSDBClusterSnapshotDescribeAttributes(ctx context.Context, opts []*types.O
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -2243,7 +2243,7 @@ func S3FixResourceRegion(ctx context.Context, opts []*types.Option, in <-chan ty
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				return
@@ -2286,7 +2286,7 @@ func S3CheckBucketPAB(ctx context.Context, opts []*types.Option, in <-chan types
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -2324,7 +2324,7 @@ func S3CheckBucketACL(ctx context.Context, opts []*types.Option, in <-chan types
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -2364,7 +2364,7 @@ func S3CheckBucketPolicy(ctx context.Context, opts []*types.Option, in <-chan ty
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -2404,7 +2404,7 @@ func SecretCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <-c
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -2445,8 +2445,8 @@ func ListServerlessRepoApplications(ctx context.Context, opts []*types.Option, r
 	logger := logs.NewStageLogger(ctx, opts, "ListServerlessRepoApplications")
 	out := make(chan types.EnrichedResourceDescription)
 	logger.Info("Listing serverless repo applications")
-	profile := types.GetOptionByName("profile", opts).Value
-	regions, err := helpers.ParseRegionsOption(types.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
+	profile := options.GetOptionByName("profile", opts).Value
+	regions, err := helpers.ParseRegionsOption(options.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
 		logger.Error(err.Error())
 		return nil
@@ -2515,7 +2515,7 @@ func ServerlessRepoAppCheckResourcePolicy(ctx context.Context, opts []*types.Opt
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -2555,7 +2555,7 @@ func SESIdentityCheckResourcePolicy(ctx context.Context, opts []*types.Option, i
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -2625,7 +2625,7 @@ func SNSTopicCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -2672,7 +2672,7 @@ func SQSQueueCheckResourcePolicy(ctx context.Context, opts []*types.Option, in <
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
-			config, err := helpers.GetAWSCfg(resource.Region, types.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())
 				continue
@@ -3075,7 +3075,7 @@ func ToJson[In any](ctx context.Context, opts []*types.Option, in <-chan In) <-c
 func ListECRImages(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan string {
 	logger := logs.NewStageLogger(ctx, opts, "ListECRImages")
 	out := make(chan string)
-	profile := types.GetOptionByName("profile", opts).Value
+	profile := options.GetOptionByName("profile", opts).Value
 
 	go func() {
 		defer close(out)
@@ -3181,7 +3181,7 @@ func ECRLoginStage(ctx context.Context, opts []*types.Option, in <-chan string) 
 		defer close(out)
 		for uri := range in {
 			// Skip if user and password are already set
-			if types.GetOptionByName(options.DockerUserOpt.Name, opts).Value != "" || types.GetOptionByName(options.DockerPasswordOpt.Name, opts).Value != "" {
+			if options.GetOptionByName(options.DockerUserOpt.Name, opts).Value != "" || options.GetOptionByName(options.DockerPasswordOpt.Name, opts).Value != "" {
 				continue
 			}
 
@@ -3191,7 +3191,7 @@ func ECRLoginStage(ctx context.Context, opts []*types.Option, in <-chan string) 
 				continue
 			}
 
-			config, err := helpers.GetAWSCfg(region, types.GetOptionByName("profile", opts).Value, opts)
+			config, err := helpers.GetAWSCfg(region, options.GetOptionByName("profile", opts).Value, opts)
 			if err != nil {
 				logger.Error(err.Error())
 				continue
@@ -3211,10 +3211,10 @@ func ECRLoginStage(ctx context.Context, opts []*types.Option, in <-chan string) 
 				logger.Error(err.Error())
 				continue
 			}
-			user := types.GetOptionByName(options.DockerUserOpt.Name, opts)
+			user := options.GetOptionByName(options.DockerUserOpt.Name, opts)
 			user.Value = strings.Split(string(parsed), ":")[0]
 
-			password := types.GetOptionByName(options.DockerPasswordOpt.Name, opts)
+			password := options.GetOptionByName(options.DockerPasswordOpt.Name, opts)
 			password.Value = strings.Split(string(parsed), ":")[1]
 
 			out <- uri

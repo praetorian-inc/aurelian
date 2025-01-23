@@ -44,7 +44,7 @@ func NewAwsIPLookup(opts []*types.Option) (<-chan string, stages.Stage[string, s
 		return nil, nil, err
 	}
 
-	ip := types.GetOptionByName(options.IPOpt.Name, opts).Value
+	ip := options.GetOptionByName(options.IPOpt.Name, opts).Value
 
 	return stages.Generator([]string{ip}), pipeline, nil
 }

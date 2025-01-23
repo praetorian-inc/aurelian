@@ -3,6 +3,7 @@ package analyze
 import (
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
+	"github.com/praetorian-inc/nebula/modules/options"
 	o "github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -43,7 +44,7 @@ func NewKnownAccountID(opts []*types.Option) (<-chan string, stages.Stage[string
 		return nil, nil, err
 	}
 
-	accountID := types.GetOptionByName(o.AwsAccountIdOpt.Name, opts).Value
+	accountID := options.GetOptionByName(o.AwsAccountIdOpt.Name, opts).Value
 
 	return stages.Generator([]string{accountID}), pipeline, nil
 }

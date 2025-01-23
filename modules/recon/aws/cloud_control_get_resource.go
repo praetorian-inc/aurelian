@@ -43,10 +43,10 @@ func NewAwsCloudControlGetResource(opts []*types.Option) (<-chan types.EnrichedR
 	}
 
 	resource := types.EnrichedResourceDescription{
-		Region:     types.GetOptionByName(options.AwsRegionOpt.Name, opts).Value,
-		TypeName:   types.GetOptionByName(options.AwsResourceTypeOpt.Name, opts).Value,
+		Region:     options.GetOptionByName(options.AwsRegionOpt.Name, opts).Value,
+		TypeName:   options.GetOptionByName(options.AwsResourceTypeOpt.Name, opts).Value,
 		AccountId:  "",
-		Identifier: types.GetOptionByName(options.AwsResourceIdOpt.Name, opts).Value,
+		Identifier: options.GetOptionByName(options.AwsResourceIdOpt.Name, opts).Value,
 	}
 
 	return stages.Generator([]types.EnrichedResourceDescription{resource}), pipeline, nil

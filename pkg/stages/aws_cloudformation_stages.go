@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -43,7 +44,7 @@ func CloudFormationGetTemplateStage(ctx context.Context, opts []*types.Option, i
 	go func() {
 		defer close(out)
 		for data := range in {
-			cfg, err := helpers.GetAWSCfg(data.Region, types.GetOptionByName("profile", opts).Value, opts)
+			cfg, err := helpers.GetAWSCfg(data.Region, options.GetOptionByName("profile", opts).Value, opts)
 			if err != nil {
 				logger.Error(err.Error())
 				continue

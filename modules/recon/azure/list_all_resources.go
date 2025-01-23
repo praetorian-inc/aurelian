@@ -43,8 +43,8 @@ var AzureListAllOptions = []*types.Option{
 		Type:        types.Int,
 		Value:       "5",
 	},
-	types.SetDefaultValue(
-		*types.SetRequired(
+	options.WithDefaultValue(
+		*options.WithRequired(
 			options.FileNameOpt, false),
 		""),
 }
@@ -64,7 +64,7 @@ func NewAzureListAll(opts []*types.Option) (<-chan string, stages.Stage[string, 
 		return nil, nil, err
 	}
 
-	subscriptionOpt := types.GetOptionByName("subscription", opts).Value
+	subscriptionOpt := options.GetOptionByName("subscription", opts).Value
 
 	if strings.EqualFold(subscriptionOpt, "all") {
 		subscriptions, err := helpers.ListSubscriptions(context.Background(), opts)
@@ -92,7 +92,7 @@ func FormatAzureListAllOutputStage(ctx context.Context, opts []*types.Option, in
 		defer close(out)
 		for resourceDetails := range in {
 			baseFilename := ""
-			providedFilename := types.GetOptionByName(options.FileNameOpt.Name, opts).Value
+			providedFilename := options.GetOptionByName(options.FileNameOpt.Name, opts).Value
 			if len(providedFilename) == 0 {
 				timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 				baseFilename = fmt.Sprintf("list-all-%s-%s", resourceDetails.SubscriptionID, timestamp)
