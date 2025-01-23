@@ -134,13 +134,15 @@ func CloudControlListResources(ctx context.Context, opts []*types.Option, rtype 
 							regionSemaphores[region] <- struct{}{}
 							defer func() { <-regionSemaphores[region] }()
 
-							out <- types.EnrichedResourceDescription{
+							erd := types.EnrichedResourceDescription{
 								Identifier: *resource.Identifier,
 								TypeName:   rtype,
 								Region:     region,
 								Properties: *resource.Properties,
 								AccountId:  acctId,
 							}
+							erd.Arn = types.ArnFromEnrichedResourceDescription(erd)
+							out <- erd
 						}(&resource)
 					}
 					resourceWg.Wait()

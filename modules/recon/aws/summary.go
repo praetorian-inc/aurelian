@@ -23,15 +23,15 @@ var AwsSummaryMetadata = modules.Metadata{
 	References:  []string{},
 }
 
-func NewAwsSummary(options []*types.Option, run types.Run) (modules.Module, error) {
-	return &AwsSummary{
-		BaseModule: modules.BaseModule{
-			Metadata:        AwsSummaryMetadata,
-			Options:         options,
-			Run:             run,
-			OutputProviders: modules.RenderOutputProviders(nil, options),
-		}}, nil
-}
+// func NewAwsSummary(options []*types.Option, run types.Run) (modules.Module, error) {
+// 	return &AwsSummary{
+// 		BaseModule: modules.BaseModule{
+// 			Metadata:        AwsSummaryMetadata,
+// 			Options:         options,
+// 			Run:             run,
+// 			OutputProviders: modules.RenderOutputProviders(nil, options),
+// 		}}, nil
+// }
 
 // func (m *AwsSummary) Invoke() error {
 // 	cfg, err := helpers.GetAWSCfg("", m.GetOptionByName(options.AwsProfileOpt.Name).Value, opts)

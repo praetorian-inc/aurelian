@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strconv"
-	"time"
 
+	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/internal/message"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -22,33 +22,40 @@ type AwsFindSecrets struct {
 var AwsFindSecretsOptions = []*types.Option{
 	&options.AwsRegionsOpt,
 	&options.AwsFindSecretsResourceType,
-	types.SetDefaultValue(
-		*types.SetRequired(
-			options.OutputOpt, false),
-		AwsFindSecretsMetadata.Id+"-"+strconv.FormatInt(time.Now().Unix(), 10)),
+	&options.OutputOpt,
+	&options.NoseyParkerPathOpt,
+	&options.NoseyParkerArgsOpt,
+	&options.NoseyParkerOutputOpt,
 }
 
 var AwsFindSecretsOutputProviders = []func(options []*types.Option) types.OutputProvider{
-	op.NewJsonFileProvider,
+	op.NewConsoleProvider,
 }
 
 var AwsFindSecretsMetadata = modules.Metadata{
 	Id:          "find-secrets",
-	Name:        "find-secrets",
-	Description: "this module will search multiple different known places for potential secrets ",
+	Name:        "AWS Find Secrets",
+	Description: "This module will enumerate resources in AWS and attempt to find secrets using Nosey Parker.",
 	Platform:    modules.AWS,
 	Authors:     []string{"Praetorian"},
 	OpsecLevel:  modules.Moderate,
 	References:  []string{},
 }
 
-func NewAwsFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[string, []types.EnrichedResourceDescription], error) {
-	pipeline, err := stages.ChainStages[string, []types.EnrichedResourceDescription](
+func NewAwsFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[string, string], error) {
+	pipeline, err := stages.ChainStages[string, string](
 		AwsFindSecretsStage,
-		stages.AggregateOutput[types.EnrichedResourceDescription], // TODO this is a hack until we can write files to the approporate location again
+		stages.NoseyParkerEnumeratorStage,
+		//stages.AggregateOutput[types.EnrichedResourceDescription], // TODO this is a hack until we can write files to the approporate location again
 	)
 
 	if err != nil {
+		return nil, nil, err
+	}
+
+	_, err = helpers.FindBinary(types.GetOptionByName(options.NoseyParkerPathOpt.Name, opts).Value)
+	if err != nil {
+		message.Error("Nosey Parker binary not found in path")
 		return nil, nil, err
 	}
 
@@ -64,36 +71,38 @@ func NewAwsFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[string
 	}
 }
 
-func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan types.EnrichedResourceDescription {
+func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan types.NpInput {
 	logger := logs.NewStageLogger(ctx, opts, "AwsFindSecretsStage")
-	out := make(chan types.EnrichedResourceDescription)
+	out := make(chan types.NpInput)
 	go func() {
 		defer close(out)
 
 		for rtype := range in {
-			var pl stages.Stage[string, types.EnrichedResourceDescription]
+			var pl stages.Stage[string, types.NpInput]
 			var err error
 
 			switch rtype {
 			case "AWS::Lambda::Function":
-				pl, err = stages.ChainStages[string, types.EnrichedResourceDescription](
+				pl, err = stages.ChainStages[string, types.NpInput](
 					stages.CloudControlListResources,
+					stages.EnrichedResourceDescriptionToNpInput,
 				)
 			case "AWS::EC2::Instance":
-				pl, err = stages.ChainStages[string, types.EnrichedResourceDescription](
+				pl, err = stages.ChainStages[string, types.NpInput](
 					stages.CloudControlListResources,
+					stages.EnrichedResourceDescriptionToNpInput,
 				)
 			case "AWS::CloudFormation::Stack":
-				pl, err = stages.ChainStages[string, types.EnrichedResourceDescription](
+				pl, err = stages.ChainStages[string, types.NpInput](
 					stages.CloudControlListResources,
+					stages.EnrichedResourceDescriptionToNpInput,
 				)
 			default:
 				logger.Error("Unknown resource type: " + rtype)
 				continue
 			}
 
-			fmt.Println("rtype: ", rtype)
-			fmt.Println("pl: ", pl)
+			logger.Info(fmt.Sprintf("Processing resource type %s", rtype))
 			if err != nil {
 				logger.Error("Failed to " + rtype + " create pipeline: " + err.Error())
 				continue
