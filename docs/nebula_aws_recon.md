@@ -15,14 +15,19 @@ nebula aws recon [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default is $HOME/.nebula.yaml)
-  -o, --output string   output directory (default "output")
+      --config string      config file (default is $HOME/.nebula.yaml)
+      --log-level string   Log level (debug, info, warn, error) (default "warn")
+      --no-color           Disable colored output
+  -o, --output string      output directory (default "nebula-output")
+      --quiet              Suppress user messages
+      --silent             Suppress all messages except critical errors
 ```
 
 ### SEE ALSO
 
 * [nebula aws](nebula_aws.md)	 - aws commands
 * [nebula aws recon authorization-details](nebula_aws_recon_authorization-details.md)	 - Get authorization details in an AWS account.
+* [nebula aws recon find-secrets](nebula_aws_recon_find-secrets.md)	 - This module will enumerate resources in AWS and attempt to find secrets using Nosey Parker.
 * [nebula aws recon get](nebula_aws_recon_get.md)	 - Get a resource in an AWS account using Cloud Control API.
 * [nebula aws recon list](nebula_aws_recon_list.md)	 - List resources in an AWS account using Cloud Control API.
 * [nebula aws recon list-all](nebula_aws_recon_list-all.md)	 - List resources in an AWS account using CloudControl API. Supports 'full' scan for all resources or 'summary' scan for key services.

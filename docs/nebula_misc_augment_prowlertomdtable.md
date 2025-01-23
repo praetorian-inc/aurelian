@@ -12,13 +12,17 @@ nebula misc augment prowlertomdtable [flags]
   -c, --csp string              the Cloud Service Provider of context - aws, gcp, or azure
   -d, --directory path string   path to an input directory
   -h, --help                    help for prowlertomdtable
-  -o, --output string           output directory (default "output")
+  -o, --output string           output directory (default "nebula-output")
 ```
 
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default is $HOME/.nebula.yaml)
+      --config string      config file (default is $HOME/.nebula.yaml)
+      --log-level string   Log level (debug, info, warn, error) (default "warn")
+      --no-color           Disable colored output
+      --quiet              Suppress user messages
+      --silent             Suppress all messages except critical errors
 ```
 
 ### SEE ALSO
