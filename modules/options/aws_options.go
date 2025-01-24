@@ -56,15 +56,21 @@ var AwsResourceTypeOpt = types.Option{
 	ValueFormat: regexp.MustCompile("^(AWS::[a-zA-Z0-9:]+|ALL)$"),
 }
 
-var findsecretsTypes = []string{"cloudformation", "ecs", "ec2", "lambda", "ssm", "stepfunctions", "ALL"}
+var FindSecretsTypes = []string{
+	"AWS::CloudFormation::Stack",
+	"AWS::Lambda::Function",
+	"AWS::EC2::Instance",
+	"ALL",
+}
+
 var AwsFindSecretsResourceType = types.Option{
 	Name:        "secret-resource-types",
 	Short:       "t",
-	Description: "Comma separated list of AWS services. Currently supported types: " + strings.Join(findsecretsTypes, ", "),
+	Description: "Comma separated list of AWS services. Currently supported types: " + strings.Join(FindSecretsTypes, ", "),
 	Required:    true,
 	Type:        types.String,
 	Value:       "",
-	ValueList:   findsecretsTypes,
+	ValueList:   FindSecretsTypes,
 }
 
 var AwsResourceIdOpt = types.Option{

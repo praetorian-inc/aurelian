@@ -5,6 +5,7 @@ import (
 	"context"
 	"testing"
 
+	analyze "github.com/praetorian-inc/nebula/modules/analyze/aws"
 	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
@@ -41,7 +42,7 @@ func TestJqFilter(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := context.WithValue(context.Background(), "metadata", analyze.AwsExpandActionsMetadata)
 			opts := []*types.Option{}
 			in := make(chan []byte, 1)
 			in <- tc.input

@@ -68,7 +68,7 @@ func ValidateOption(opt types.Option, options []*types.Option) error {
 
 			if opt.ValueList != nil {
 				for _, value := range opt.ValueList {
-					if value == option.Value {
+					if strings.ToLower(value) == strings.ToLower(option.Value) {
 						return nil
 					}
 				}

@@ -12,6 +12,7 @@ import (
 	// Internal imports
 
 	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -377,6 +378,8 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 					AwsCloudControlListResources,
 					AwsCloudFormationGetTemplatesNpInputStage,
 				)
+			case "ALL":
+				continue
 			default:
 				logger.Error("Unknown resource type: " + rtype)
 				continue
@@ -387,6 +390,7 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 				logger.Error("Failed to " + rtype + " create pipeline: " + err.Error())
 				continue
 			}
+			message.Info("Searching %s for secrets", rtype)
 			for s := range pl(ctx, opts, Generator([]string{rtype})) {
 				out <- s
 			}

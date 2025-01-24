@@ -190,7 +190,7 @@ func AwsEc2GetUserDataStage(ctx context.Context, opts []*types.Option, in <-chan
 				ContentBase64: *output.UserData.Value,
 				Provenance: types.NpProvenance{
 					Platform:     string(modules.AWS),
-					ResourceType: resource.TypeName,
+					ResourceType: fmt.Sprintf("%s::UserData", resource.TypeName),
 					ResourceID:   resource.Arn.String(),
 					Region:       resource.Region,
 					AccountID:    resource.AccountId,

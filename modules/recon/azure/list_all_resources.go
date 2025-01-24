@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
+	"github.com/praetorian-inc/nebula/internal/message"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -73,9 +74,9 @@ func NewAzureListAll(opts []*types.Option) (<-chan string, stages.Stage[string, 
 			return nil, nil, err
 		}
 
-		slog.Info("Found %d subscriptions", len(subscriptions))
+		message.Info("Found %d subscriptions", len(subscriptions))
 		for _, sub := range subscriptions {
-			slog.Info("Found subscription: %s", sub)
+			message.Info("Found subscription: %s", sub)
 		}
 
 		return stages.Generator(subscriptions), pipeline, nil

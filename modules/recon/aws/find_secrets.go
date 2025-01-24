@@ -2,6 +2,7 @@ package recon
 
 import (
 	"log/slog"
+	"strings"
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/message"
@@ -57,18 +58,12 @@ func NewAwsFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[string
 
 	rtype := options.GetOptionByName(options.AwsFindSecretsResourceType.Name, opts).Value
 
-	if rtype == "ALL" {
+	if strings.ToLower(rtype) == "all" {
 		slog.Info("Loading public resources recon module for all types")
-		return stages.Generator(SecretTypes), pipeline, nil
+		return stages.Generator(options.FindSecretsTypes), pipeline, nil
 	} else {
 		slog.Info("Loading public resources recon module for types: " + rtype)
 		in := stages.SplitByComma(options.GetOptionByName(options.AwsResourceTypeOpt.Name, opts).Value)
 		return in, pipeline, nil
 	}
-}
-
-var SecretTypes = []string{
-	"AWS::CloudFormation::Stack",
-	"AWS::Lambda::Function",
-	"AWS::EC2::Instance",
 }
