@@ -64,7 +64,7 @@ func NewAwsAuthorizationDetails(opts []*types.Option) (<-chan string, stages.Sta
 	}
 
 	pipeline, err := stages.ChainStages[string, []byte](
-		stages.GetAccountAuthorizationDetailsStage,
+		stages.AwsGetAccountAuthorizationDetailsStage,
 	)
 
 	if err != nil {

@@ -57,7 +57,7 @@ var AzureSummaryOutputProviders = []func(options []*types.Option) types.OutputPr
 
 func NewAzureSummary(opts []*types.Option) (<-chan string, stages.Stage[string, types.Result], error) {
 	pipeline, err := stages.ChainStages[string, types.Result](
-		stages.GetAzureEnvironmentSummaryStage,
+		stages.AzureGetEnvironmentSummaryStage,
 		FormatAzureOutputToMarkdownJsonStage,
 	)
 

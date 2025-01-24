@@ -69,8 +69,8 @@ var AzureRoleAssignmentsOutputProviders = []func(options []*types.Option) types.
 
 func NewAzureRoleAssignments(opts []*types.Option) (<-chan string, stages.Stage[string, types.Result], error) {
 	pipeline, err := stages.ChainStages[string, types.Result](
-		stages.GetAzureRoleAssignmentsStage,
-		stages.FormatAzureRoleAssignmentsOutput,
+		stages.AzureGetRoleAssignmentsStage,
+		stages.AzureFormatRoleAssignmentsOutput,
 	)
 
 	if err != nil {

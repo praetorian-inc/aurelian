@@ -131,7 +131,7 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 
 				// Setup inner pipeline for this profile
 				resourcePipeline, err := stages.ChainStages[string, []types.EnrichedResourceDescription](
-					stages.CloudControlListResources,
+					stages.AwsCloudControlListResources,
 					stages.AggregateOutput[types.EnrichedResourceDescription],
 				)
 				if err != nil {

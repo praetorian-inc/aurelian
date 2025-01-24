@@ -1,3 +1,36 @@
+// The stages package provides pipeline components for processing cloud resources.
+// Stages are composable building blocks that implement Go's pipeline pattern
+// through channel-based communication.
+//
+// A stage is a function that processes input from an input channel and writes results
+// to an output channel. Stages can be chained together using ChainStages to create
+// reusable processing pipelines.
+//
+// Each stage implements this core type signature:
+//
+//	type Stage[In any, Out any] func(ctx context.Context, opts []*types.Option, in <-chan In) <-chan Out
+//
+// Common stage patterns include:
+//   - Resource enumeration
+//   - Filtering and transformation
+//   - Aggregation of results
+//   - Output formatting
+//
+// Example usage:
+//
+//	// Chain stages to list AWS resources and aggregate results
+//	pipeline, err := stages.ChainStages[string, []types.EnrichedResourceDescription](
+//	    stages.CloudControlListResources,
+//	    stages.AggregateOutput[types.EnrichedResourceDescription],
+//	)
+//
+// Stages are designed to be:
+//   - Composable - can be chained together in flexible ways
+//   - Type-safe - using Go generics to ensure type compatibility
+//   - Context-aware - supporting cancellation and deadlines
+//   - Reusable - implementing common processing patterns
+//
+// See individual stage documentation for details on specific implementations.
 package stages
 
 import (
@@ -18,14 +51,6 @@ import (
 
 // GenerateOllamaResponse generates responses for given prompts using the Ollama API.
 // It takes a context, a slice of options, and an input channel of strings, and returns an output channel of strings.
-//
-// Parameters:
-//   - ctx: The context for controlling cancellation and deadlines.
-//   - opts: A slice of options to configure the API client and request.
-//   - in: An input channel of strings containing prompts for which responses are to be generated.
-//
-// Returns:
-//   - An output channel of strings containing the generated responses.
 //
 // The function initializes an API client from the environment and starts a goroutine to process prompts from the input channel.
 // For each prompt, it logs the prompt, constructs a generate request, and sends it to the API client.
@@ -68,6 +93,8 @@ func GenerateOllamaResponse(ctx context.Context, opts []*types.Option, in <-chan
 
 }
 
+// ToJsonBytes converts input data from a channel to JSON-encoded byte slices and sends them to an output channel.
+// It logs any errors encountered during the JSON marshaling process.
 func ToJsonBytes[In any](ctx context.Context, opts []*types.Option, in <-chan In) <-chan []byte {
 	logger := logs.NewStageLogger(ctx, opts, "ToJsonBytes")
 	out := make(chan []byte)
@@ -85,6 +112,31 @@ func ToJsonBytes[In any](ctx context.Context, opts []*types.Option, in <-chan In
 	return out
 }
 
+// ToJson converts a channel of any type to a channel of JSON-encoded byte slices.
+// It logs any errors encountered during the JSON marshaling process.
+func ToJson[In any](ctx context.Context, opts []*types.Option, in <-chan In) <-chan []byte {
+	logger := logs.NewStageLogger(ctx, opts, "ToJson")
+	out := make(chan []byte)
+	go func() {
+		defer close(out)
+		for resource := range in {
+			res, err := json.Marshal(resource)
+			if err != nil {
+				logger.Error(err.Error())
+				continue
+			}
+			out <- res
+		}
+	}()
+	return out
+}
+
+// JqFilter applies a JQ filter to the input data and returns the filtered result.
+// It takes a context and a JQ filter string as parameters and returns a Stage function
+// that processes a channel of byte slices.
+//
+// The Stage function logs any errors encountered during the filtering process and continues processing
+// the remaining data.
 func JqFilter(ctx context.Context, filter string) Stage[[]byte, []byte] {
 	logger := logs.NewStageLogger(ctx, []*types.Option{}, "JqFilter")
 	return func(ctx context.Context, opts []*types.Option, in <-chan []byte) <-chan []byte {
@@ -128,6 +180,7 @@ func ToString[In any](ctx context.Context, opts []*types.Option, in <-chan In) <
 	return out
 }
 
+// UnmarshalOutput unmarshals JSON data from a channel of strings to a channel of maps.
 func UnmarshalOutput(ctx context.Context, opts []*types.Option, in <-chan string) <-chan map[string]interface{} {
 	logger := logs.NewStageLogger(ctx, opts, "UnmarshalOutput")
 	out := make(chan map[string]interface{})
@@ -146,20 +199,7 @@ func UnmarshalOutput(ctx context.Context, opts []*types.Option, in <-chan string
 	return out
 }
 
-// func ReplaceBackslashes(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
-// 	out := make(chan string)
-// 	go func() {
-// 		defer close(out)
-// 		for data := range in {
-// 			newString := strings.ReplaceAll(data, "\\\"", "\"")
-// 			newString = strings.ReplaceAll(newString, "\\", "")
-// 			fmt.Println(newString)
-// 			out <- newString
-// 		}
-// 	}()
-// 	return out
-// }
-
+// AggregateOutput aggregates all items from an input channel into a single slice.
 func AggregateOutput[In any, Out []In](ctx context.Context, opts []*types.Option, in <-chan In) <-chan Out {
 	out := make(chan Out)
 	var items Out
@@ -175,6 +215,7 @@ func AggregateOutput[In any, Out []In](ctx context.Context, opts []*types.Option
 	return out
 }
 
+// GetFilesOfType reads files from a directory and filters them based on the file extension.
 func GetFilesOfType(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
 	logger := logs.NewStageLogger(ctx, opts, "GetFilesOfType")
 	out := make(chan string)
@@ -200,16 +241,6 @@ func GetFilesOfType(ctx context.Context, opts []*types.Option, in <-chan string)
 // FileGenerator reads lines from files provided via an input channel and sends them to an output channel.
 // Each file is read line by line, and each line is sent to the output channel. After reading all lines,
 // the file name is sent to the output channel.
-//
-// Parameters:
-//
-//	ctx - context for managing the lifecycle of the goroutine.
-//	opts - a slice of options (currently unused).
-//	in - a channel that provides file paths to be read.
-//
-// Returns:
-//
-//	A channel that emits lines read from the files and the file name after all lines are read.
 func FileGenerator(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
 	logger := logs.NewStageLogger(ctx, opts, "FileGenerator")
 	out := make(chan string)
@@ -236,6 +267,8 @@ func FileGenerator(ctx context.Context, opts []*types.Option, in <-chan string) 
 	return out
 }
 
+// UnqueItemsStage ensures that only unique items are sent to the output channel.
+// It uses a map to keep track of items that have already been seen and sends only unseen items to the output channel.
 func UnqueItemsStage[Item comparable](ctx context.Context, opts []*types.Option, in <-chan Item) <-chan Item {
 	out := make(chan Item)
 	go func() {
@@ -246,6 +279,18 @@ func UnqueItemsStage[Item comparable](ctx context.Context, opts []*types.Option,
 				seen[item] = true
 				out <- item
 			}
+		}
+	}()
+	return out
+}
+
+// SplitByComma splits a comma-separated string of resource types into a channel of strings.
+func SplitByComma(types string) <-chan string {
+	out := make(chan string)
+	go func() {
+		defer close(out)
+		for _, t := range strings.Split(types, ",") {
+			out <- t
 		}
 	}()
 	return out

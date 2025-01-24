@@ -35,7 +35,7 @@ var AwsCloudControlGetResourceOutputProviders = []func(options []*types.Option) 
 
 func NewAwsCloudControlGetResource(opts []*types.Option) (<-chan types.EnrichedResourceDescription, stages.Stage[types.EnrichedResourceDescription, types.EnrichedResourceDescription], error) {
 	pipeline, err := stages.ChainStages[types.EnrichedResourceDescription, types.EnrichedResourceDescription](
-		stages.CloudControlGetResource,
+		stages.AwsCloudControlGetResource,
 	)
 
 	if err != nil {

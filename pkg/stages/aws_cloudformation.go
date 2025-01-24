@@ -12,13 +12,13 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
-func CloudFormationGetTemplatesNpInputStage(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.NpInput {
+func AwsCloudFormationGetTemplatesNpInputStage(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.NpInput {
 	out := make(chan types.NpInput)
 
 	go func() {
 		defer close(out)
 		for erd := range in {
-			for template := range CloudFormationGetTemplateStage(ctx, opts, Generator[types.EnrichedResourceDescription]([]types.EnrichedResourceDescription{erd})) {
+			for template := range AwsCloudFormationGetTemplateStage(ctx, opts, Generator[types.EnrichedResourceDescription]([]types.EnrichedResourceDescription{erd})) {
 				encodedTemplate := base64.StdEncoding.EncodeToString([]byte(template))
 				out <- types.NpInput{
 					ContentBase64: encodedTemplate,
@@ -37,7 +37,7 @@ func CloudFormationGetTemplatesNpInputStage(ctx context.Context, opts []*types.O
 	return out
 }
 
-func CloudFormationGetTemplateStage(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan string {
+func AwsCloudFormationGetTemplateStage(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan string {
 	logger := logs.NewStageLogger(ctx, opts, "GetCFTemplatesStage")
 	out := make(chan string)
 

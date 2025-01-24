@@ -46,7 +46,7 @@ func DockerExtractorStage(ctx context.Context, opts []*types.Option, in <-chan s
 
 			logger.Info(fmt.Sprintf("Pulling container: %s", c))
 
-			domain, err := extractDomain(c)
+			domain, err := DockerExtractDomain(c)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Failed to extract domain: %v", err))
 				continue
@@ -159,7 +159,7 @@ func DockerExtractorStage(ctx context.Context, opts []*types.Option, in <-chan s
 	return out
 }
 
-func extractDomain(rawURL string) (string, error) {
+func DockerExtractDomain(rawURL string) (string, error) {
 	// If URL doesn't start with a protocol, prepend "https://"
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
 		rawURL = "https://" + rawURL
@@ -172,7 +172,7 @@ func extractDomain(rawURL string) (string, error) {
 	return parsedURL.Host, nil
 }
 
-func extractContainer(url string) (string, error) {
+func DockerExtractContainer(url string) (string, error) {
 	// Split by "/" to separate domain and path
 	parts := strings.Split(url, "/")
 	if len(parts) < 2 {
@@ -185,7 +185,7 @@ func extractContainer(url string) (string, error) {
 	return container, nil
 }
 
-func extractRegion(url string) (string, error) {
+func DockerExtractRegion(url string) (string, error) {
 
 	if strings.Contains(url, "public.ecr.aws") {
 		return "us-east-1", nil

@@ -21,7 +21,7 @@ import (
 )
 
 // Stage for getting Azure environment summary
-func GetAzureEnvironmentSummaryStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan *helpers.AzureEnvironmentDetails {
+func AzureGetEnvironmentSummaryStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan *helpers.AzureEnvironmentDetails {
 	logger := logs.NewStageLogger(ctx, opts, "GetAzureEnvironmentSummaryStage")
 	out := make(chan *helpers.AzureEnvironmentDetails)
 
@@ -41,7 +41,7 @@ func GetAzureEnvironmentSummaryStage(ctx context.Context, opts []*types.Option, 
 }
 
 // Stage for getting detailed Azure resource information
-func GetAzureListAllStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan *types.AzureResourceDetails {
+func AzureListAllStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan *types.AzureResourceDetails {
 	logger := logs.NewStageLogger(ctx, opts, "GetAzureListAllStage")
 	out := make(chan *types.AzureResourceDetails)
 	workersCount, _ := strconv.Atoi(options.GetOptionByName("workers", opts).Value)
@@ -143,8 +143,8 @@ func GetAzureListAllStage(ctx context.Context, opts []*types.Option, in <-chan s
 	return out
 }
 
-// GetAzureRoleAssignmentsStage enumerates role assignments across management groups, subscriptions, and resource groups
-func GetAzureRoleAssignmentsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan []*types.RoleAssignmentDetails {
+// AzureGetRoleAssignmentsStage enumerates role assignments across management groups, subscriptions, and resource groups
+func AzureGetRoleAssignmentsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan []*types.RoleAssignmentDetails {
 	logger := logs.NewStageLogger(ctx, opts, "GetAzureRoleAssignmentsStage")
 	out := make(chan []*types.RoleAssignmentDetails)
 	workersCount, _ := strconv.Atoi(options.GetOptionByName("workers", opts).Value)
@@ -274,8 +274,8 @@ func GetAzureRoleAssignmentsStage(ctx context.Context, opts []*types.Option, in 
 	return out
 }
 
-// FormatAzureRoleAssignmentsOutput formats role assignments into JSON and Markdown
-func FormatAzureRoleAssignmentsOutput(ctx context.Context, opts []*types.Option, in <-chan []*types.RoleAssignmentDetails) <-chan types.Result {
+// AzureFormatRoleAssignmentsOutput formats role assignments into JSON and Markdown
+func AzureFormatRoleAssignmentsOutput(ctx context.Context, opts []*types.Option, in <-chan []*types.RoleAssignmentDetails) <-chan types.Result {
 	out := make(chan types.Result)
 
 	go func() {

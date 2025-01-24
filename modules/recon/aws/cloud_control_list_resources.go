@@ -44,7 +44,7 @@ var AwsCloudControlListResourcesOutputProviders = []func(options []*types.Option
 
 func NewAwsCloudControlListResources(opts []*types.Option) (<-chan string, stages.Stage[string, []types.EnrichedResourceDescription], error) {
 	pipeline, err := stages.ChainStages[string, []types.EnrichedResourceDescription](
-		stages.CloudControlListResources,
+		stages.AwsCloudControlListResources,
 		stages.AggregateOutput[types.EnrichedResourceDescription],
 	)
 

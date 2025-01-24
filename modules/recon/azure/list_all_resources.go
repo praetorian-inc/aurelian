@@ -56,7 +56,7 @@ var AzureListAllOutputProviders = []func(options []*types.Option) types.OutputPr
 
 func NewAzureListAll(opts []*types.Option) (<-chan string, stages.Stage[string, types.Result], error) {
 	pipeline, err := stages.ChainStages[string, types.Result](
-		stages.GetAzureListAllStage,
+		stages.AzureListAllStage,
 		FormatAzureListAllOutputStage,
 	)
 
