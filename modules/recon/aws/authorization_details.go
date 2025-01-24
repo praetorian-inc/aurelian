@@ -5,6 +5,7 @@ import (
 
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
+	"github.com/praetorian-inc/nebula/modules/options"
 	o "github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -52,8 +53,8 @@ func NewAwsAuthorizationDetailsModel(opts []*types.Option) (modules.Module, erro
 }
 
 func NewAwsAuthorizationDetails(opts []*types.Option) (<-chan string, stages.Stage[string, []byte], error) {
-	profileList := types.GetOptionByName(o.AwsProfileListOpt.Name, opts).Value
-	profile := types.GetOptionByName(o.AwsProfileOpt.Name, opts).Value
+	profileList := options.GetOptionByName(o.AwsProfileListOpt.Name, opts).Value
+	profile := options.GetOptionByName(o.AwsProfileOpt.Name, opts).Value
 	var profiles []string
 
 	if profileList == "" {
@@ -63,7 +64,7 @@ func NewAwsAuthorizationDetails(opts []*types.Option) (<-chan string, stages.Sta
 	}
 
 	pipeline, err := stages.ChainStages[string, []byte](
-		stages.GetAccountAuthorizationDetailsStage,
+		stages.AwsGetAccountAuthorizationDetailsStage,
 	)
 
 	if err != nil {

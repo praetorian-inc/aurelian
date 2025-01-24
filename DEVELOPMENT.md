@@ -114,6 +114,12 @@ If you see receive a `modules/recon/aws/foo_bar.go:1:1: expected 'package', foun
 
 Modules use stages to build their capabilities. Stages are a core concept in the AWS Recon Framework, enabling the creation of modular and reusable capabilities for processing AWS resources. Each stage represents a step in a pipeline, taking input from the previous stage and providing output to the next stage. This allows for flexible and composable workflows.
 
+Use [godoc](https://pkg.go.dev/golang.org/x/tools/cmd/godoc) to view the currently implemented stages. Run `godoc -http=:6060` in the module root, and browse to `http://127.0.0.1:6060/pkg/github.com/praetorian-inc/nebula/pkg/stages/` to view the documentation.
+
+## Stage Naming
+
+Stage naming should follow the format `ProviderServiceAction` where possible. For example, a stage that gets the template for a CloudFormation stack, should be called `AwsCloudFormationGetTemplate`.
+
 ### Chaining Stages
 
 A stage is a function that processes data and passes it along to the next stage. Stages are implemented as Go functions that take a context, options, and an input channel, and return an output channel. Stages are intended to be chained together to enable the [pipeline](https://go.dev/blog/pipelines) pattern. Stages allow for composable pipelines with code reuse. 
@@ -149,3 +155,40 @@ for s := range pipeline(ctx, opts, Generator([]string{rtype})) {
 Output providers are responsible for handling the output of data from modules. They abstract the complexity of writing data to different targets, allowing for a consistent interface. 
 
 Each module defines the output providers it supports. All data sent to the final output channel is processed by each of the configured output providers.
+
+## Logging and User Messages
+We've split out application logging and user messages. 
+
+### User Messages
+
+User messages are intended for the operator running the nebula tool. These messages may indicate some progress, something interesting, or something went wrong. All other messages should be sent to logs.
+
+```go
+message.Info("Message goes here")
+message.Success("Message goes here")
+message.Warning("Message goes here")
+message.Error("Message goes here")
+```
+
+### Logging
+
+Logging is intended for more detailed information about the running application. The default log level is set to `warn` to not over burden the user with information by default. If you require more details to ensure a module is progressing, set the appropriate level using `--log-level`.
+
+Factory functions exist to aid in creating a contextually aware logger. Below is an example of setting up a logger inside a stage. Three 
+
+
+Example Stage logger:
+
+```
+logger := logs.NewStageLogger(ctx, opts, "AwsIpLookupStage")
+logger.Info(fmt.Sprintf("Searching for %s in AWS IP ranges", ip))
+```
+Will produce a json log such as:
+```json
+{"time":"2025-01-16T15:38:18.988965-06:00","level":"INFO","msg":"Searching for 1.1.1.1 in AWS IP ranges","module":{"platform":"aws","id":"iplookup","stage":"AwsIpLookupStage"}}
+```
+
+If you need to add additional fields, use the `slog` helpers to add them like the xample below.
+```go
+logger.Error("Something went wrong", slog.String("error", err.Error()))
+```

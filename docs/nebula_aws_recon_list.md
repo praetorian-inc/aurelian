@@ -9,6 +9,9 @@ nebula aws recon list [flags]
 ### Options
 
 ```
+      --cache-dir string       Directory to store API response cache files (default "nebula-output/.aws-cache")
+      --cache-ttl int          TTL for cached responses in seconds (default 3600) (default 3600)
+      --disable-cache          Disable API response caching
   -f, --file string            File name (default "list-<timestamp>.json")
   -h, --help                   help for list
   -p, --profile string         AWS shared credentials profile
@@ -19,8 +22,12 @@ nebula aws recon list [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default is $HOME/.nebula.yaml)
-  -o, --output string   output directory (default "output")
+      --config string      config file (default is $HOME/.nebula.yaml)
+      --log-level string   Log level (debug, info, warn, error) (default "warn")
+      --no-color           Disable colored output
+  -o, --output string      output directory (default "nebula-output")
+      --quiet              Suppress user messages
+      --silent             Suppress all messages except critical errors
 ```
 
 ### SEE ALSO

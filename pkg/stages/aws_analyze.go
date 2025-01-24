@@ -7,13 +7,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
 
-	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/utils"
 	a "github.com/seancfoley/ipaddress-go/ipaddr"
@@ -36,10 +37,11 @@ import (
 // Returns:
 //   - An output channel of type Out (string) containing matched actions.
 func AwsExpandActionsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
+	logger := logs.NewStageLogger(ctx, opts, "AwsExpandActionsStage")
 	out := make(chan string)
 	body, err := utils.Cached_httpGet("https://awspolicygen.s3.amazonaws.com/js/policies.js")
 	if err != nil {
-		fmt.Println(fmt.Errorf("error getting AWS policy actions: %v", err))
+		logger.Error("error getting AWS policy actions", slog.String("error", err.Error()))
 		return nil
 	}
 
@@ -48,7 +50,7 @@ func AwsExpandActionsStage(ctx context.Context, opts []*types.Option, in <-chan 
 	var j map[string]interface{}
 	err = json.Unmarshal([]byte(jstring), &j)
 	if err != nil {
-		fmt.Println(fmt.Errorf("error unmarshalling JSON: %v", err))
+		logger.Error("error unmarshalling JSON", slog.String("error", err.Error()))
 		return nil
 	}
 
@@ -91,49 +93,50 @@ func AwsExpandActionsStage(ctx context.Context, opts []*types.Option, in <-chan 
 // Returns:
 //   - A channel of AwsKnownAccount structs that match the input IDs.
 func AwsKnownAccountIdStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan AwsKnownAccount {
+	logger := logs.NewStageLogger(ctx, opts, "AwsKnownAccountIdStage")
 	out := make(chan AwsKnownAccount)
 
 	go func() {
 		defer close(out)
-		logs.ConsoleLogger().Info("Getting known AWS account IDs")
+		logger.Info("Getting known AWS account IDs")
 		for id := range in {
 
 			body, err := utils.Cached_httpGet("https://raw.githubusercontent.com/rupertbg/aws-public-account-ids/master/accounts.json")
 			if err != nil {
-				logs.ConsoleLogger().Error(fmt.Sprintf("Error getting known AWS account IDs: %v", err))
+				logger.Error("Error getting known AWS account IDs", slog.String("error", err.Error()))
 				continue
 			}
 
 			var accounts []AwsKnownAccount
 			err = json.Unmarshal(body, &accounts)
 			if err != nil {
-				logs.ConsoleLogger().Error(fmt.Sprintf("Error unmarshalling known AWS account IDs: %v", err))
+				logger.Error("Error unmarshalling known AWS account IDs", slog.String("error", err.Error()))
 				continue
 			}
 
 			body, err = utils.Cached_httpGet("https://raw.githubusercontent.com/fwdcloudsec/known_aws_accounts/main/accounts.yaml")
 			if err != nil {
-				logs.ConsoleLogger().Error(fmt.Sprintf("Error getting known AWS account IDs: %v", err))
+				logger.Error("Error getting known AWS account IDs", slog.String("error", err.Error()))
 				continue
 			}
 
 			fcsAccounts := []fwdcloudsecAccount{}
 			yaml.Unmarshal(body, &fcsAccounts)
 			if err != nil {
-				logs.ConsoleLogger().Error(fmt.Sprintf("Error unmarshalling fwdcloudsec known AWS account IDs: %v", err))
+				logger.Error("Error unmarshalling fwdcloudsec known AWS account IDs", slog.String("error", err.Error()))
 				continue
 			}
 
 			body, err = utils.Cached_httpGet("https://raw.githubusercontent.com/duo-labs/cloudmapper/refs/heads/main/vendor_accounts.yaml")
 			if err != nil {
-				logs.ConsoleLogger().Error(fmt.Sprintf("Error getting known AWS account IDs: %v", err))
+				logger.Error("Error getting known AWS account IDs", slog.String("error", err.Error()))
 				continue
 			}
 
 			cmAccounts := []cloudmapperAccount{}
 			yaml.Unmarshal(body, &cmAccounts)
 			if err != nil {
-				logs.ConsoleLogger().Error(fmt.Sprintf("Error unmarshalling fwdcloudsec known AWS account IDs: %v", err))
+				logger.Error("Error unmarshalling fwdcloudsec known AWS account IDs", slog.String("error", err.Error()))
 				continue
 			}
 			for _, account := range cmAccounts {
@@ -181,6 +184,7 @@ type AwsKnownAccount struct {
 }
 
 func AwsAccessKeyIdtoAccountIdStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan int {
+
 	out := make(chan int)
 	go func() {
 		defer close(out)
@@ -207,26 +211,27 @@ func AwsAccessKeyIdtoAccountIdStage(ctx context.Context, opts []*types.Option, i
 }
 
 func AwsIpLookupStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
+	logger := logs.NewStageLogger(ctx, opts, "AwsIpLookupStage")
 	out := make(chan string)
 	go func() {
 		defer close(out)
 		for ip := range in {
 
-			helpers.PrintMessage("Downloading AWS IP ranges...")
+			message.Info("Downloading AWS IP ranges")
 			body, err := utils.Cached_httpGet("https://ip-ranges.amazonaws.com/ip-ranges.json")
 			if err != nil {
-				logs.ConsoleLogger().Error("Error getting AWS IP ranges: " + err.Error())
+				logger.Error("Error getting AWS IP ranges", slog.String("error", err.Error()))
 				continue
 			}
 
 			var ipRanges IPRanges
 			err = json.Unmarshal(body, &ipRanges)
 			if err != nil {
-				logs.ConsoleLogger().Error("Error unmarshalling AWS IP ranges: " + err.Error())
+				logger.Error("Error unmarshalling AWS IP ranges", slog.String("error", err.Error()))
 				continue
 			}
 
-			logs.ConsoleLogger().Info("Searching for " + ip + " in AWS IP ranges")
+			message.Info("Searching for %s in AWS IP ranges", ip)
 			var found int32
 			prefixesChan := make(chan Prefix, 100) // Buffered channel to reduce blocking on send
 
@@ -266,7 +271,7 @@ func processPrefix(prefixesChan <-chan Prefix, found *int32, target string, wg *
 
 		for _, ip := range ips {
 			if ip == target {
-				helpers.PrintMessage("Found:\n" + prefix.String())
+				message.Success("Found:\n" + prefix.String())
 				atomic.StoreInt32(found, 1)
 				return
 			}

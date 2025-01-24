@@ -2,10 +2,10 @@ package utils
 
 import (
 	"encoding/json"
+	"log/slog"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/serverlessapplicationrepository/types"
-	"github.com/praetorian-inc/nebula/internal/logs"
 )
 
 func CheckServerlessRepoAppResourceAccessPolicy(statements []types.ApplicationPolicyStatement) string {
@@ -14,7 +14,7 @@ func CheckServerlessRepoAppResourceAccessPolicy(statements []types.ApplicationPo
 	for _, statement := range statements {
 		statementBytes, err := json.Marshal(statement)
 		if err != nil {
-			logs.ConsoleLogger().Error("Could not marshal serverless repo application")
+			slog.Error("Could not marshal serverless repo application")
 			continue
 		}
 

@@ -3,13 +3,13 @@ package reconaz
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/internal/logs"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -56,8 +56,8 @@ var AzureRoleAssignmentsOptions = []*types.Option{
 		Type:        types.Int,
 		Value:       "300", // 5 minute default timeout
 	},
-	types.SetDefaultValue(
-		*types.SetRequired(
+	options.WithDefaultValue(
+		*options.WithRequired(
 			options.FileNameOpt, false),
 		""),
 }
@@ -69,15 +69,15 @@ var AzureRoleAssignmentsOutputProviders = []func(options []*types.Option) types.
 
 func NewAzureRoleAssignments(opts []*types.Option) (<-chan string, stages.Stage[string, types.Result], error) {
 	pipeline, err := stages.ChainStages[string, types.Result](
-		stages.GetAzureRoleAssignmentsStage,
-		stages.FormatAzureRoleAssignmentsOutput,
+		stages.AzureGetRoleAssignmentsStage,
+		stages.AzureFormatRoleAssignmentsOutput,
 	)
 
 	if err != nil {
 		return nil, nil, err
 	}
 
-	subscriptionOpt := types.GetOptionByName("subscription", opts).Value
+	subscriptionOpt := options.GetOptionByName("subscription", opts).Value
 
 	if strings.EqualFold(subscriptionOpt, "all") {
 		// Added context with timeout for subscription listing
@@ -167,7 +167,7 @@ func (bp *BatchProcessor) ProcessBatch(ctx context.Context, subscriptions []stri
 				// Process single subscription with timeout
 				result, err := processSingleSubscription(subCtx, subscription)
 				if err != nil {
-					logs.ConsoleLogger().Error("Error processing subscription " + subscription + ": " + err.Error())
+					slog.Error("Error processing subscription " + subscription + ": " + err.Error())
 					return
 				}
 
@@ -201,7 +201,7 @@ func FormatAzureRoleAssignmentsOutput(ctx context.Context, opts []*types.Option,
 
 			// Generate base filename
 			baseFilename := ""
-			providedFilename := types.GetOptionByName(options.FileNameOpt.Name, opts).Value
+			providedFilename := options.GetOptionByName(options.FileNameOpt.Name, opts).Value
 			if len(providedFilename) == 0 {
 				timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 				baseFilename = fmt.Sprintf("role-assignments-%s-%s", assignments[0].SubscriptionID, timestamp)

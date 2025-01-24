@@ -1,6 +1,6 @@
 ./nebula
 nebula.log
-output/*
+nebula-output/*
 .devcontainer
 .vscode
 .DS_Store

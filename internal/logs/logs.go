@@ -1,15 +1,22 @@
 package logs
 
 import (
+	"context"
 	"log/slog"
 	"os"
-	"time"
+	"strings"
 
 	"github.com/aws/smithy-go/logging"
-	"github.com/lmittmann/tint"
+	"github.com/praetorian-inc/nebula/modules"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
-func Logger() logging.Logger {
+var (
+	logLevel string
+)
+
+// Currently used to write the AWS API calls to a log file
+func AwsCliLogger() logging.Logger {
 	return logging.LoggerFunc(func(classification logging.Classification, format string, v ...interface{}) {
 		LOG_FILE := "nebula.log"
 
@@ -40,31 +47,49 @@ func Logger() logging.Logger {
 	})
 }
 
-func ConsoleLogger() *slog.Logger {
+func getLevelFromString(level string) slog.Level {
+	switch strings.ToLower(level) {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
 
-	/*
-		config := zap.NewProductionEncoderConfig()
-		config.EncodeLevel = zapcore.CapitalColorLevelEncoder
-		core := zapcore.NewCore(
-			zapcore.NewConsoleEncoder(config),
-			zapcore.AddSync(os.Stdout),
-			zap.DebugLevel,
-		)
-		logger := zap.New(core)
-		defer logger.Sync()
-		return logger
-	*/
-	w := os.Stderr
+func NewLogger() *slog.Logger {
+	handler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: getLevelFromString(logLevel),
+	})
+	logger := slog.New(handler)
 
-	// create a new logger
-	logger := slog.New(tint.NewHandler(w, nil))
-
-	// set global logger with custom options
-	slog.SetDefault(slog.New(
-		tint.NewHandler(w, &tint.Options{
-			Level:      slog.LevelDebug,
-			TimeFormat: time.Kitchen,
-		}),
-	))
 	return logger
+}
+
+func NewModuleLogger(ctx context.Context, opts []*types.Option) *slog.Logger {
+	logger := NewLogger()
+	metadata := ctx.Value("metadata").(modules.Metadata)
+	child := logger.WithGroup("module").With("platform", metadata.Platform).With("id", metadata.Id)
+
+	return child
+}
+
+func NewStageLogger(ctx context.Context, opts []*types.Option, stage string) *slog.Logger {
+	logger := NewModuleLogger(ctx, opts)
+	return logger.With("stage", stage)
+}
+
+func SetLogLevel(level string) {
+	logLevel = level
+}
+
+func ConfigureDefaults(level string) {
+	SetLogLevel(level)
+	logger := NewLogger()
+	slog.SetDefault(logger)
 }

@@ -3,12 +3,13 @@ package reconaz
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/internal/message"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -43,8 +44,8 @@ var AzureListAllOptions = []*types.Option{
 		Type:        types.Int,
 		Value:       "5",
 	},
-	types.SetDefaultValue(
-		*types.SetRequired(
+	options.WithDefaultValue(
+		*options.WithRequired(
 			options.FileNameOpt, false),
 		""),
 }
@@ -56,7 +57,7 @@ var AzureListAllOutputProviders = []func(options []*types.Option) types.OutputPr
 
 func NewAzureListAll(opts []*types.Option) (<-chan string, stages.Stage[string, types.Result], error) {
 	pipeline, err := stages.ChainStages[string, types.Result](
-		stages.GetAzureListAllStage,
+		stages.AzureListAllStage,
 		FormatAzureListAllOutputStage,
 	)
 
@@ -64,18 +65,18 @@ func NewAzureListAll(opts []*types.Option) (<-chan string, stages.Stage[string, 
 		return nil, nil, err
 	}
 
-	subscriptionOpt := types.GetOptionByName("subscription", opts).Value
+	subscriptionOpt := options.GetOptionByName("subscription", opts).Value
 
 	if strings.EqualFold(subscriptionOpt, "all") {
 		subscriptions, err := helpers.ListSubscriptions(context.Background(), opts)
 		if err != nil {
-			logs.ConsoleLogger().Error(fmt.Sprintf("Failed to list subscriptions: %v", err))
+			slog.Error("Failed to list subscriptions: %v", err)
 			return nil, nil, err
 		}
 
-		logs.ConsoleLogger().Info(fmt.Sprintf("Found %d subscriptions", len(subscriptions)))
+		message.Info("Found %d subscriptions", len(subscriptions))
 		for _, sub := range subscriptions {
-			logs.ConsoleLogger().Info(fmt.Sprintf("Found subscription: %s", sub))
+			message.Info("Found subscription: %s", sub)
 		}
 
 		return stages.Generator(subscriptions), pipeline, nil
@@ -92,7 +93,7 @@ func FormatAzureListAllOutputStage(ctx context.Context, opts []*types.Option, in
 		defer close(out)
 		for resourceDetails := range in {
 			baseFilename := ""
-			providedFilename := types.GetOptionByName(options.FileNameOpt.Name, opts).Value
+			providedFilename := options.GetOptionByName(options.FileNameOpt.Name, opts).Value
 			if len(providedFilename) == 0 {
 				timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 				baseFilename = fmt.Sprintf("list-all-%s-%s", resourceDetails.SubscriptionID, timestamp)

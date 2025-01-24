@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/praetorian-inc/nebula/internal/logs"
-	o "github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/internal/message"
+	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -17,9 +17,9 @@ type MarkdownFileProvider struct {
 	FileName   string
 }
 
-func NewMarkdownFileProvider(options []*types.Option) types.OutputProvider {
+func NewMarkdownFileProvider(opts []*types.Option) types.OutputProvider {
 	return &MarkdownFileProvider{
-		OutputPath: types.GetOptionByName(o.OutputOpt.Value, options).Value,
+		OutputPath: options.GetOptionByName(options.OutputOpt.Value, opts).Value,
 		FileName:   "",
 	}
 }
@@ -93,7 +93,7 @@ func (fp *MarkdownFileProvider) Write(result types.Result) error {
 		file.WriteString(rowText)
 	}
 	file.WriteString("\n\n\n")
-	logs.ConsoleLogger().Info("Markdown table written", "path", fullpath)
+	message.Success("Markdown table written to %s", fullpath)
 	return nil
 }
 

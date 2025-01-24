@@ -4,8 +4,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/praetorian-inc/nebula/internal/logs"
-	o "github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/internal/message"
+	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -15,9 +15,9 @@ type PlainFileProvider struct {
 	FileName   string
 }
 
-func NewPlainFileProvider(options []*types.Option) types.OutputProvider {
+func NewPlainFileProvider(opts []*types.Option) types.OutputProvider {
 	return &PlainFileProvider{
-		OutputPath: types.GetOptionByName(o.OutputOpt.Value, options).Value,
+		OutputPath: options.GetOptionByName(options.OutputOpt.Value, opts).Value,
 		FileName:   "",
 	}
 }
@@ -47,7 +47,7 @@ func (fp *PlainFileProvider) Write(result types.Result) error {
 	defer file.Close()
 	file.WriteString(result.String())
 
-	logs.ConsoleLogger().Info("Output written", "path", fullpath)
+	message.Success("Output written to %s", fullpath)
 
 	return nil
 }

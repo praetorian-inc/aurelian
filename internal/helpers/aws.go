@@ -3,6 +3,7 @@ package helpers
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -89,7 +90,24 @@ func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescri
 	return regionToIdentifiers
 }
 
-func GetAWSCfg(region string, profile string) (aws.Config, error) {
+func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config, error) {
+
+	// stack := middleware.NewStack("CacheStack", middleware.StackSend)
+
+	// cacheMiddleware := &CacheMiddleware{
+	// 	CacheDir: options.GetOptionByName(options.LogLevelOpt.Name, opts).Value,
+	// }
+	// stack.Deserialize.Add(cacheMiddleware, middleware.After)
+
+	// cacheFunc := []func(*middleware.Stack) error{
+	// 	func(stack *middleware.Stack) error {
+	// 		// Add cache middleware after service metadata is registered to ensure we can access service info
+	// 		// return stack.Initialize.Insert(&fileCacheMiddleware{config: fc},
+	// 		// 	"RegisterServiceMetadata",
+	// 		// 	middleware.After)
+	// 		return stack.Deserialize.Insert(cacheMiddleware, "RegisterServiceMetadata", middleware.After)
+	// 	},
+	// }
 
 	cfg, err := config.LoadDefaultConfig(
 		context.TODO(),
@@ -98,10 +116,11 @@ func GetAWSCfg(region string, profile string) (aws.Config, error) {
 				aws.LogRequestWithBody|
 				aws.LogRequestEventMessage|
 				aws.LogResponseEventMessage),
-		config.WithLogger(logs.Logger()),
+		config.WithLogger(logs.AwsCliLogger()),
 		config.WithRegion(region),
 		config.WithSharedConfigProfile(profile),
 		config.WithRetryMode(aws.RetryModeAdaptive),
+		// config.WithAPIOptions(cacheFunc),
 	)
 	if err != nil {
 		return aws.Config{}, err
@@ -112,6 +131,9 @@ func GetAWSCfg(region string, profile string) (aws.Config, error) {
 }
 
 func GetAccountId(cfg aws.Config) (string, error) {
+	if strings.ToLower(cfg.Region) == "all" {
+		cfg.Region = "us-east-1"
+	}
 	client := sts.NewFromConfig(cfg)
 	input := &sts.GetCallerIdentityInput{}
 
@@ -127,15 +149,14 @@ func GetAccountId(cfg aws.Config) (string, error) {
 // if "ALL" is provided, then it detects all Enabled Regions
 // else it just reads the list of regions provided
 
-func ParseRegionsOption(regionsOpt string, profile string) ([]string, error) {
-
-	if regionsOpt == "ALL" {
-		logs.ConsoleLogger().Debug("Gathering enabled regions")
-		enabledRegions, err := EnabledRegions(profile)
+func ParseRegionsOption(regionsOpt string, profile string, opts []*types.Option) ([]string, error) {
+	if strings.ToLower(regionsOpt) == "all" {
+		slog.Debug("Gathering enabled regions")
+		enabledRegions, err := EnabledRegions(profile, opts)
 		if err != nil {
 			return nil, err
 		}
-		logs.ConsoleLogger().Debug("Enabled regions: " + strings.Join(enabledRegions, ", "))
+		slog.Debug("Enabled regions: " + strings.Join(enabledRegions, ", "))
 		return enabledRegions, nil
 	} else {
 		regions := strings.Split(regionsOpt, ",")

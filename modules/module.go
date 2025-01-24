@@ -1,6 +1,7 @@
 package modules
 
 import (
+	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -22,6 +23,8 @@ func GetPlatformFromString(platform string) types.Platform {
 		return GCP
 	case "oci":
 		return OCI
+	case "saas":
+		return SaaS
 	case "universal":
 		return Universal
 	default:
@@ -34,6 +37,7 @@ const (
 	Azure     types.Platform = "azure"
 	GCP       types.Platform = "gcp"
 	OCI       types.Platform = "oci"
+	SaaS      types.Platform = "saas"
 	Universal types.Platform = "universal"
 )
 
@@ -57,7 +61,6 @@ type BaseModule struct {
 	Metadata
 	Options         []*types.Option
 	OutputProviders []types.OutputProvider
-	Run             types.Run
 
 	In    any
 	Stage any
@@ -68,7 +71,7 @@ func (m *BaseModule) Invoke() error {
 }
 
 func (m *BaseModule) GetOptionByName(name string) *types.Option {
-	return types.GetOptionByName(name, m.Options)
+	return options.GetOptionByName(name, m.Options)
 }
 
 func (m *BaseModule) AddOption(option types.Option) {

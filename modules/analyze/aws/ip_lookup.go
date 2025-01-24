@@ -27,7 +27,7 @@ var AwsIPLookupOutputProviders = []func(options []*types.Option) types.OutputPro
 
 var AwsIPLookupMetadata = modules.Metadata{
 	Id:          "iplookup", // this will be the CLI command name
-	Name:        "IPLookup",
+	Name:        "AWS IP Lookup",
 	Description: "Search AWS IP ranges for a specific IP address.",
 	Platform:    modules.AWS,
 	Authors:     []string{"Praetorian"},
@@ -44,7 +44,7 @@ func NewAwsIPLookup(opts []*types.Option) (<-chan string, stages.Stage[string, s
 		return nil, nil, err
 	}
 
-	ip := types.GetOptionByName(options.IPOpt.Name, opts).Value
+	ip := options.GetOptionByName(options.IPOpt.Name, opts).Value
 
 	return stages.Generator([]string{ip}), pipeline, nil
 }

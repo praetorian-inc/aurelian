@@ -15,8 +15,12 @@ nebula azure recon [flags]
 ### Options inherited from parent commands
 
 ```
-      --config string   config file (default is $HOME/.nebula.yaml)
-  -o, --output string   output directory (default "output")
+      --config string      config file (default is $HOME/.nebula.yaml)
+      --log-level string   Log level (debug, info, warn, error) (default "warn")
+      --no-color           Disable colored output
+  -o, --output string      output directory (default "nebula-output")
+      --quiet              Suppress user messages
+      --silent             Suppress all messages except critical errors
 ```
 
 ### SEE ALSO

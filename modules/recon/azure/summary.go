@@ -3,13 +3,13 @@ package reconaz
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/internal/logs"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -44,8 +44,8 @@ var AzureSummaryOptions = []*types.Option{
 		Type:        types.Int,
 		Value:       "5",
 	},
-	types.SetDefaultValue(
-		*types.SetRequired(
+	options.WithDefaultValue(
+		*options.WithRequired(
 			options.FileNameOpt, false),
 		""),
 }
@@ -57,7 +57,7 @@ var AzureSummaryOutputProviders = []func(options []*types.Option) types.OutputPr
 
 func NewAzureSummary(opts []*types.Option) (<-chan string, stages.Stage[string, types.Result], error) {
 	pipeline, err := stages.ChainStages[string, types.Result](
-		stages.GetAzureEnvironmentSummaryStage,
+		stages.AzureGetEnvironmentSummaryStage,
 		FormatAzureOutputToMarkdownJsonStage,
 	)
 
@@ -65,18 +65,18 @@ func NewAzureSummary(opts []*types.Option) (<-chan string, stages.Stage[string, 
 		return nil, nil, err
 	}
 
-	subscriptionOpt := types.GetOptionByName("subscription", opts).Value
+	subscriptionOpt := options.GetOptionByName("subscription", opts).Value
 
 	if strings.EqualFold(subscriptionOpt, "all") {
 		subscriptions, err := helpers.ListSubscriptions(context.Background(), opts)
 		if err != nil {
-			logs.ConsoleLogger().Error(fmt.Sprintf("Failed to list subscriptions: %v", err))
+			slog.Error("Failed to list subscriptions", slog.String("error", err.Error()))
 			return nil, nil, err
 		}
 
-		logs.ConsoleLogger().Info(fmt.Sprintf("Found %d subscriptions", len(subscriptions)))
+		slog.Info(fmt.Sprintf("Found %d subscriptions", len(subscriptions)), slog.Int("count", len(subscriptions)))
 		for _, sub := range subscriptions {
-			logs.ConsoleLogger().Info(fmt.Sprintf("Found subscription: %s", sub))
+			slog.Debug("Found subscription", slog.String("subscription", sub))
 		}
 
 		return stages.Generator(subscriptions), pipeline, nil
@@ -94,7 +94,7 @@ func FormatAzureOutputToMarkdownJsonStage(ctx context.Context, opts []*types.Opt
 		for env := range in {
 			// Generate base filename
 			baseFilename := ""
-			providedFilename := types.GetOptionByName(options.FileNameOpt.Name, opts).Value
+			providedFilename := options.GetOptionByName(options.FileNameOpt.Name, opts).Value
 			if len(providedFilename) == 0 {
 				timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 				baseFilename = fmt.Sprintf("summary-%s-%s", env.SubscriptionID, timestamp)

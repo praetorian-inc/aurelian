@@ -1,8 +1,7 @@
 package outputproviders
 
 import (
-	"fmt"
-
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -18,6 +17,9 @@ func NewConsoleProvider(options []*types.Option) types.OutputProvider {
 // to the console.
 func (cp *ConsoleProvider) Write(result types.Result) error {
 	//helpers.PrintResult(result)
-	fmt.Println(result.String())
+	res := result.Data.(string)
+	if res != "" {
+		message.Success(res)
+	}
 	return nil
 }

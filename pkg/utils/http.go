@@ -3,9 +3,8 @@ package utils
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
-
-	"github.com/praetorian-inc/nebula/internal/logs"
 )
 
 func Cached_httpGet(url string) ([]byte, error) {
@@ -21,7 +20,7 @@ func Cached_httpGet(url string) ([]byte, error) {
 		defer res.Body.Close()
 		body, err := io.ReadAll(res.Body)
 		if err != nil {
-			logs.ConsoleLogger().Error(fmt.Sprintf("Error reading response body: %v", err))
+			slog.Error(fmt.Sprintf("Error reading response body: %v", err))
 		}
 
 		WriteCache(CreateCachedFileName(url), body)

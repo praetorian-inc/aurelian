@@ -1,6 +1,7 @@
 package options
 
 import (
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -55,15 +56,21 @@ var AwsResourceTypeOpt = types.Option{
 	ValueFormat: regexp.MustCompile("^(AWS::[a-zA-Z0-9:]+|ALL)$"),
 }
 
-var findsecretsTypes = []string{"cloudformation", "ecs", "ec2", "lambda", "ssm", "stepfunctions", "ALL"}
+var FindSecretsTypes = []string{
+	"AWS::CloudFormation::Stack",
+	"AWS::Lambda::Function",
+	"AWS::EC2::Instance",
+	"ALL",
+}
+
 var AwsFindSecretsResourceType = types.Option{
 	Name:        "secret-resource-types",
 	Short:       "t",
-	Description: "Comma separated list of AWS services. Currently supported types: " + strings.Join(findsecretsTypes, ", "),
+	Description: "Comma separated list of AWS services. Currently supported types: " + strings.Join(FindSecretsTypes, ", "),
 	Required:    true,
 	Type:        types.String,
 	Value:       "",
-	ValueList:   findsecretsTypes,
+	ValueList:   FindSecretsTypes,
 }
 
 var AwsResourceIdOpt = types.Option{
@@ -128,4 +135,28 @@ var AwsScanTypeOpt = types.Option{
 	Type:        types.String,
 	Value:       "full",
 	ValueList:   []string{"full", "summary"},
+}
+
+var AwsCacheDirOpt = types.Option{
+	Name:        "cache-dir",
+	Description: "Directory to store API response cache files",
+	Required:    false,
+	Type:        types.String,
+	Value:       filepath.Join(OutputOpt.Value, ".aws-cache"),
+}
+
+var AwsCacheTTLOpt = types.Option{
+	Name:        "cache-ttl",
+	Description: "TTL for cached responses in seconds (default 3600)",
+	Required:    false,
+	Type:        types.Int,
+	Value:       "3600",
+}
+
+var AwsDisableCacheOpt = types.Option{
+	Name:        "disable-cache",
+	Description: "Disable API response caching",
+	Required:    false,
+	Type:        types.Bool,
+	Value:       "false",
 }
