@@ -1,11 +1,10 @@
 name: Generate CLI Documentation
 
 on:
-  workflow_dispatch:
-  workflow_run:
-    workflows: ["Build"]
-    types:
-      - completed
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize]
 
 permissions:
   contents: write
@@ -15,8 +14,7 @@ jobs:
   generate-docs:
     name: Generate Documentation
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
-
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
