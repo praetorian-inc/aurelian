@@ -19,7 +19,7 @@ nebula aws recon find-secrets [flags]
   -o, --output string                  output directory (default "nebula-output")
   -p, --profile string                 AWS shared credentials profile
   -r, --regions string                 Comma separated list of AWS regions. Can be 'all' for all regions.
-  -t, --secret-resource-types string   Comma separated list of AWS services. Currently supported types: cloudformation, ecs, ec2, lambda, ssm, stepfunctions, ALL
+  -t, --secret-resource-types string   Comma separated list of AWS services. Currently supported types: AWS::CloudFormation::Stack, AWS::Lambda::Function, AWS::EC2::Instance, ALL
 ```
 
 ### Options inherited from parent commands
