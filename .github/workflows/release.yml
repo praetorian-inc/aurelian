@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Release Binaries
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
+        exclude:
+          # Exclude Windows ARM64 as it's not a common target
+          - goos: windows
+            goarch: arm64
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          check-latest: true
+
+      - name: Get version info
+        id: get_version
+        run: |
+          echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          echo "COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "BUILD_TIME=$(date -u '+%Y-%m-%d %H:%M:%S')" >> $GITHUB_ENV
+
+      - name: Build Binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          BINARY_NAME=nebula-${{ matrix.goos }}-${{ matrix.goarch }}
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME="$BINARY_NAME.exe"
+          fi
+
+          go build -v -trimpath \
+            -ldflags "-s -w \
+              -X github.com/praetorian-inc/nebula/version.Version=${{ env.VERSION }} \
+              -X github.com/praetorian-inc/nebula/version.Commit=${{ env.COMMIT }} \
+              -X 'github.com/praetorian-inc/nebula/version.BuildTime=${{ env.BUILD_TIME }}'" \
+            -o "$BINARY_NAME"
+
+      - name: Generate SHA256
+        run: |
+          BINARY_NAME=nebula-${{ matrix.goos }}-${{ matrix.goarch }}
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME="$BINARY_NAME.exe"
+          fi
+          sha256sum "$BINARY_NAME" > "$BINARY_NAME.sha256"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nebula-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            nebula-${{ matrix.goos }}-${{ matrix.goarch }}*
+          retention-days: 1
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

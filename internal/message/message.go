@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/fatih/color"
+	"github.com/praetorian-inc/nebula/version"
 )
 
 var (
@@ -24,7 +25,6 @@ var (
 	errorColor   = color.New(color.FgRed)
 	bannerColor  = color.New(color.FgHiMagenta, color.Bold).Add(color.Attribute(95)).Add(color.Attribute(71)).Add(color.Attribute(183))
 	sectionColor = color.New(color.FgHiMagenta, color.Bold).Add(color.Attribute(95)).Add(color.Attribute(71)).Add(color.Attribute(183))
-	//debugColor   = color.New(color.FgMagenta)
 )
 
 const asciiBanner = `
@@ -114,11 +114,6 @@ func Critical(format string, args ...interface{}) {
 	printf(errorColor, "[!!] ", format, args...)
 }
 
-// Debug prints a debug message in magenta unless quiet mode is enabled
-// func Debug(format string, args ...interface{}) {
-// 	printf(debugColor, "[*] ", format, args...)
-// }
-
 // Emphasize returns a string with bold formatting
 func Emphasize(s string) string {
 	if noColor {
@@ -158,9 +153,9 @@ func Banner() {
 
 	if !quiet {
 		if noColor {
-			fmt.Fprint(outWriter, asciiBanner)
+			fmt.Fprint(outWriter, asciiBanner, version.AbbreviatedVersion(), "\n")
 		} else {
-			bannerColor.Fprint(outWriter, asciiBanner)
+			bannerColor.Fprint(outWriter, asciiBanner, version.AbbreviatedVersion(), "\n")
 		}
 	}
 }

@@ -110,16 +110,6 @@ func option2Flag(option *types.Option, cmd *cobra.Command) {
 
 }
 
-// Helper function to convert option names to viper config keys
-// func getConfigKey(optionName string) string {
-// 	// Convert option names like "aws-region" to "aws.region"
-// 	parts := strings.Split(optionName, "-")
-// 	if len(parts) > 1 {
-// 		return fmt.Sprintf("%s.%s", parts[0], strings.Join(parts[1:], "."))
-// 	}
-// 	return optionName
-// }
-
 func getOpts(cmd *cobra.Command, required []*types.Option, common []*types.Option) []*types.Option {
 	opts := getGlobalOpts(cmd)
 

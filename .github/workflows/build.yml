@@ -38,4 +38,4 @@ jobs:
         run: go mod download
 
       - name: Build the application
-        run: go build -v ./...
+        run: go build -v -ldflags "-s -w" main.go
