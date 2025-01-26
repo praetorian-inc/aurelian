@@ -19,7 +19,7 @@ import (
 var AzureListAllMetadata = modules.Metadata{
 	Id:          "list-all",
 	Name:        "List All Resources",
-	Description: "List all Azure resources across subscriptions with complete details",
+	Description: "List all Azure resources across subscriptions with complete details including identifier. This might take a while for large subscriptions.",
 	Platform:    modules.Azure,
 	Authors:     []string{"Praetorian"},
 	OpsecLevel:  modules.Stealth,
