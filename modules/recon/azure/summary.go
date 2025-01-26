@@ -68,7 +68,9 @@ func NewAzureSummary(opts []*types.Option) (<-chan string, stages.Stage[string, 
 	subscriptionOpt := options.GetOptionByName("subscription", opts).Value
 
 	if strings.EqualFold(subscriptionOpt, "all") {
-		subscriptions, err := helpers.ListSubscriptions(context.Background(), opts)
+		// Create context with metadata for the subscription listing
+		ctx := context.WithValue(context.Background(), "metadata", AzureSummaryMetadata)
+		subscriptions, err := helpers.ListSubscriptions(ctx, opts)
 		if err != nil {
 			slog.Error("Failed to list subscriptions", slog.String("error", err.Error()))
 			return nil, nil, err
