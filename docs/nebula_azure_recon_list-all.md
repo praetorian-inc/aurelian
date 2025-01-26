@@ -1,6 +1,6 @@
 ## nebula azure recon list-all
 
-List all Azure resources across subscriptions with complete details
+List all Azure resources across subscriptions with complete details including identifier. This might take a while for large subscriptions.
 
 ```
 nebula azure recon list-all [flags]

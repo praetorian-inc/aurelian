@@ -1,6 +1,6 @@
 ## nebula azure recon summary
 
-Summarize Azure resources
+Provides a count of Azure resources within a subscription without details such as identifiers. For a detailed resource list with identifiers, please use the list-all module.
 
 ```
 nebula azure recon summary [flags]
