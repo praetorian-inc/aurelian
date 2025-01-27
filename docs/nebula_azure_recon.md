@@ -26,6 +26,7 @@ nebula azure recon [flags]
 ### SEE ALSO
 
 * [nebula azure](nebula_azure.md)	 - azure commands
+* [nebula azure recon find-secrets](nebula_azure_recon_find-secrets.md)	 - Enumerate Azure resources and find secrets using Nosey Parker
 * [nebula azure recon list-all](nebula_azure_recon_list-all.md)	 - List all Azure resources across subscriptions with complete details including identifier. This might take a while for large subscriptions.
 * [nebula azure recon role-assignments](nebula_azure_recon_role-assignments.md)	 - Enumerate role assignments across all Azure scopes including management groups, subscriptions, and resources
 * [nebula azure recon summary](nebula_azure_recon_summary.md)	 - Provides a count of Azure resources within a subscription without details such as identifiers. For a detailed resource list with identifiers, please use the list-all module.
