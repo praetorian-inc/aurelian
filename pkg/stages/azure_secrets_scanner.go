@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -111,21 +112,25 @@ func (h *VMResourceHandler) makeNpInput(resource types.ResourceInfo, subscriptio
 	return input
 }
 
+// ExtractSecretContent extracts potential secret content from a VM resource
 func (h *VMResourceHandler) ExtractSecretContent(ctx context.Context, resource types.ResourceInfo, subscription string, cred *azidentity.DefaultAzureCredential) ([]types.NpInput, error) {
-	client, err := armcompute.NewVirtualMachinesClient(subscription, cred, nil)
+	var inputs []types.NpInput
+	logger := logs.NewStageLogger(ctx, nil, "VMResourceHandler")
+
+	// Create VM client
+	vmClient, err := armcompute.NewVirtualMachinesClient(subscription, cred, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create VM client: %v", err)
 	}
 
+	// 1. Get VM details including UserData and CustomData
 	userDataExpand := armcompute.InstanceViewTypesUserData
-	vm, err := client.Get(ctx, resource.ResourceGroup, resource.Name, &armcompute.VirtualMachinesClientGetOptions{
+	vm, err := vmClient.Get(ctx, resource.ResourceGroup, resource.Name, &armcompute.VirtualMachinesClientGetOptions{
 		Expand: &userDataExpand,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get VM details: %v", err)
 	}
-
-	var inputs []types.NpInput
 
 	// Check UserData
 	if vm.Properties.UserData != nil {
@@ -144,31 +149,122 @@ func (h *VMResourceHandler) ExtractSecretContent(ctx context.Context, resource t
 		}
 	}
 
-	// Check Extensions
+	// 2. Check VM Extensions including Custom Script Extension
 	extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(subscription, cred, nil)
 	if err != nil {
-		return inputs, fmt.Errorf("failed to create extensions client: %v", err)
+		logger.Error("Failed to create extensions client", slog.String("error", err.Error()))
+	} else {
+		extensions, err := extensionsClient.List(ctx, resource.ResourceGroup, resource.Name, nil)
+		if err != nil {
+			logger.Error("Failed to list extensions", slog.String("error", err.Error()))
+		} else {
+			for _, ext := range extensions.Value {
+				if ext.Properties == nil {
+					continue
+				}
+
+				// Check extension settings
+				if ext.Properties.Settings != nil {
+					settingsJson, err := json.Marshal(ext.Properties.Settings)
+					if err == nil {
+						inputs = append(inputs, h.makeNpInput(resource, subscription, string(settingsJson),
+							fmt.Sprintf("Extension::%s::Settings", *ext.Properties.Type), false))
+					}
+				}
+
+				// Handle Custom Script Extension specifically
+				if ext.Properties.Type != nil && (strings.Contains(*ext.Properties.Type, "CustomScript") ||
+					strings.Contains(*ext.Properties.Type, "customscript")) {
+
+					// Get extension status and output
+					status, err := extensionsClient.Get(ctx, resource.ResourceGroup, resource.Name, *ext.Name, nil)
+					if err == nil && status.Properties != nil && status.Properties.InstanceView != nil {
+						// Check substatuses for script output
+						for _, substatus := range status.Properties.InstanceView.Substatuses {
+							if substatus.Message != nil {
+								inputs = append(inputs, h.makeNpInput(resource, subscription, *substatus.Message,
+									fmt.Sprintf("Extension::%s::Output", *ext.Properties.Type), false))
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
-	// Use List instead of NewListPager
+	// 3. Check Disk Encryption Settings
+	if vm.Properties.StorageProfile != nil && vm.Properties.StorageProfile.OSDisk != nil {
+		if vm.Properties.StorageProfile.OSDisk.EncryptionSettings != nil {
+			encSettings := vm.Properties.StorageProfile.OSDisk.EncryptionSettings
+			if encSettings.DiskEncryptionKey != nil || encSettings.KeyEncryptionKey != nil {
+				encSettingsJson, err := json.Marshal(encSettings)
+				if err == nil {
+					inputs = append(inputs, h.makeNpInput(resource, subscription, string(encSettingsJson),
+						"DiskEncryptionSettings", false))
+				}
+			}
+		}
+	}
+
+	// 4. Check Boot Diagnostics
+	if vm.Properties.DiagnosticsProfile != nil &&
+		vm.Properties.DiagnosticsProfile.BootDiagnostics != nil &&
+		vm.Properties.DiagnosticsProfile.BootDiagnostics.StorageURI != nil {
+
+		// Get the storage account info from the URI
+		storageURI := *vm.Properties.DiagnosticsProfile.BootDiagnostics.StorageURI
+
+		// Parse storage URI to get account name and key
+		// Note: This requires additional permissions to access the storage account
+		if strings.Contains(storageURI, ".blob.core.windows.net") {
+			// Extract diagnostic logs if possible
+			// This would require additional storage client implementation
+			inputs = append(inputs, h.makeNpInput(resource, subscription, storageURI,
+				"BootDiagnostics::StorageURI", false))
+		}
+	}
+
+	// 5. Configuration Management Extensions
+	configExtensions := map[string]string{
+		"DSC":    "Microsoft.Powershell.DSC",
+		"Chef":   "Chef.Bootstrap.WindowsAzure",
+		"Puppet": "PuppetLabs.PuppetEnterprise",
+	}
+
+	// Get extensions again for config management check
 	extensions, err := extensionsClient.List(ctx, resource.ResourceGroup, resource.Name, nil)
 	if err != nil {
-		return inputs, fmt.Errorf("failed to list VM extensions: %v", err)
+		logger.Error("Failed to list extensions for config management check", slog.String("error", err.Error()))
+		return inputs, nil
 	}
 
-	// Process the extensions
 	for _, ext := range extensions.Value {
-		if ext.Properties == nil || ext.Properties.Settings == nil {
+		if ext.Properties == nil || ext.Properties.Type == nil {
 			continue
 		}
 
-		settingsJson, err := json.Marshal(ext.Properties.Settings)
-		if err != nil {
-			continue
-		}
+		for configType, extensionType := range configExtensions {
+			if strings.Contains(*ext.Properties.Type, extensionType) {
+				if ext.Properties.Settings != nil {
+					settingsJson, err := json.Marshal(ext.Properties.Settings)
+					if err == nil {
+						inputs = append(inputs, h.makeNpInput(resource, subscription, string(settingsJson),
+							fmt.Sprintf("ConfigManagement::%s::Settings", configType), false))
+					}
+				}
 
-		inputs = append(inputs, h.makeNpInput(resource, subscription, string(settingsJson),
-			"Extension::"+*ext.Properties.Type, false))
+				// Get configuration scripts if available
+				status, err := extensionsClient.Get(ctx, resource.ResourceGroup, resource.Name, *ext.Name, nil)
+				if err == nil && status.Properties != nil && status.Properties.InstanceView != nil {
+					for _, substatus := range status.Properties.InstanceView.Substatuses {
+						if substatus.Message != nil {
+							inputs = append(inputs, h.makeNpInput(resource, subscription, *substatus.Message,
+								fmt.Sprintf("ConfigManagement::%s::Output", configType), false))
+						}
+					}
+				}
+			}
+		}
 	}
 
 	return inputs, nil
