@@ -187,6 +187,7 @@ func FanStages[In, Out any](ctx context.Context, opts []*types.Option, in <-chan
 	for i := range in {
 		wg.Add(1)
 		go func() {
+			defer close(out)
 			wg2 := sync.WaitGroup{}
 			wg2.Add(len(stages))
 			for _, stage := range stages {
@@ -206,6 +207,37 @@ func FanStages[In, Out any](ctx context.Context, opts []*types.Option, in <-chan
 		}()
 	}
 	wg.Wait()
+}
+
+// Tee creates a stage that splits processing into multiple parallel pipelines and merges their outputs.
+func Tee[In any, Out any](pipelines ...[]Stage[In, Out]) Stage[In, Out] {
+	return func(ctx context.Context, opts []*types.Option, in <-chan In) <-chan Out {
+		out := make(chan Out)
+
+		// Create slice of intermediate stages for fan out
+		var intermediateStages []Stage[In, Out]
+
+		// Chain the pipelines together
+		for _, pipeline := range pipelines {
+			// Convert []Stage[In, Out] to []any for ChainStages
+			anyStages := make([]any, len(pipeline))
+			for i, s := range pipeline {
+				anyStages[i] = s
+			}
+
+			// Create chained stage
+			stage, err := ChainStages[In, Out](anyStages...)
+			if err != nil {
+				panic(err)
+			}
+			intermediateStages = append(intermediateStages, stage)
+		}
+
+		// Fan out to all pipelines and collect results
+		go FanStages(ctx, opts, in, out, intermediateStages...)
+
+		return out
+	}
 }
 
 // Generator takes a slice of any type and returns a read-only channel that emits each element of the slice.

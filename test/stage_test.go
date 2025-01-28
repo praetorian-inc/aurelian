@@ -264,3 +264,70 @@ func TestGeneratorStage(t *testing.T) {
 		t.Errorf("Expected %s, but got %s", expected, result)
 	}
 }
+
+func TestTee(t *testing.T) {
+	stage1 := func(ctx context.Context, opts []*types.Option, in <-chan int) <-chan int {
+		out := make(chan int)
+		go func() {
+			defer close(out)
+			for i := range in {
+				out <- i + 1
+			}
+		}()
+		return out
+	}
+
+	stage2 := func(ctx context.Context, opts []*types.Option, in <-chan int) <-chan int {
+		out := make(chan int)
+		go func() {
+			defer close(out)
+			for i := range in {
+				out <- i * 2
+			}
+		}()
+		return out
+	}
+
+	stage3 := func(ctx context.Context, opts []*types.Option, in <-chan int) <-chan int {
+		out := make(chan int)
+		go func() {
+			defer close(out)
+			for i := range in {
+				out <- i - 1
+			}
+		}()
+		return out
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	input := make(chan int, 1)
+	input <- 1
+	close(input)
+
+	teeStage := stages.Tee([]stages.Stage[int, int]{stage1, stage2}, []stages.Stage[int, int]{stage3})
+
+	output := teeStage(ctx, nil, input)
+
+	results := []int{}
+	for result := range output {
+		results = append(results, result)
+		if len(results) == 2 {
+			break
+		}
+	}
+
+	expected := []int{0, 4} // 1 - 1 = 0, (1 +1) * 2 = 4
+	sort.Ints(results)
+
+	if len(results) != len(expected) {
+		t.Errorf("Expected %v, but got %v", expected, results)
+	}
+
+	for i, result := range results {
+		if result != expected[i] {
+			t.Errorf("Expected %d, but got %d", expected[i], result)
+		}
+	}
+}
