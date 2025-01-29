@@ -13,9 +13,9 @@ nebula azure recon find-secrets [flags]
       --np-args string          custom args to pass to Nosey Parker
       --np-output string        output directory for Nosey Parker (default "datastore.np")
       --np-path string          path to Nosey Parker (default "noseyparker")
-  -t, --resource-types string   Azure resource types to scan - Microsoft.Compute/virtualMachines, ALL
+  -t, --resource-types string   Azure resource types to scan - Microsoft.Compute/virtualMachines, Microsoft.Web/sites, all
   -s, --subscription string     Azure subscription ID or 'all' for all accessible subscriptions
-  -w, --workers int             Number of concurrent workers for processing resources (default 5)
+  -w, --workers int             Number of concurrent workers for processing subscriptions (default 5)
 ```
 
 ### Options inherited from parent commands
