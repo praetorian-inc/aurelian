@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecrpublic"
 	ecrpublictype "github.com/aws/aws-sdk-go-v2/service/ecrpublic/types"
 	"github.com/aws/aws-sdk-go/aws"
@@ -132,7 +133,7 @@ func AwsEcrPublicLoginStage(ctx context.Context, opts []*types.Option, in <-chan
 	return out
 }
 
-// AwsEcrListImages lists images in Amazon ECR repositories.
+// AwsEcrListImages lists images in Amazon ECR repositories, returning only the latest version.
 func AwsEcrListImages(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan string {
 	logger := logs.NewStageLogger(ctx, opts, "ListECRImages")
 	out := make(chan string)
@@ -146,7 +147,6 @@ func AwsEcrListImages(ctx context.Context, opts []*types.Option, in <-chan types
 				logger.Debug("Skipping resource with no properties", slog.String("identifier", resource.Identifier))
 				continue
 			}
-
 			if resource.TypeName != "AWS::ECR::Repository" {
 				logger.Debug("Skipping non-ECR resource", slog.String("identifier", resource.Identifier))
 				continue
@@ -161,11 +161,13 @@ func AwsEcrListImages(ctx context.Context, opts []*types.Option, in <-chan types
 			privateClient := ecr.NewFromConfig(config)
 			input := &ecr.DescribeImagesInput{
 				RepositoryName: &resource.Identifier,
+				MaxResults:     aws.Int32(1000),
 			}
 
 			// Get registry info for this account/region
 			registryDomain := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", resource.AccountId, resource.Region)
 
+			var latest *ecrtypes.ImageDetail
 			for {
 				result, err := privateClient.DescribeImages(ctx, input)
 				if err != nil {
@@ -173,15 +175,10 @@ func AwsEcrListImages(ctx context.Context, opts []*types.Option, in <-chan types
 					break
 				}
 
+				// Compare images in this page to find latest
 				for _, image := range result.ImageDetails {
-					if image.ImageTags != nil && len(image.ImageTags) > 0 {
-						for _, tag := range image.ImageTags {
-							uri := fmt.Sprintf("%s/%s:%s", registryDomain, resource.Identifier, tag)
-							out <- uri
-						}
-					} else if image.ImageDigest != nil {
-						uri := fmt.Sprintf("%s/%s@%s", registryDomain, resource.Identifier, *image.ImageDigest)
-						out <- uri
+					if latest == nil || image.ImagePushedAt.After(*latest.ImagePushedAt) {
+						latest = &image
 					}
 				}
 
@@ -189,6 +186,16 @@ func AwsEcrListImages(ctx context.Context, opts []*types.Option, in <-chan types
 					break
 				}
 				input.NextToken = result.NextToken
+			}
+
+			if latest != nil {
+				if latest.ImageTags != nil && len(latest.ImageTags) > 0 {
+					uri := fmt.Sprintf("%s/%s:%s", registryDomain, resource.Identifier, latest.ImageTags[0])
+					out <- uri
+				} else if latest.ImageDigest != nil {
+					uri := fmt.Sprintf("%s/%s@%s", registryDomain, resource.Identifier, *latest.ImageDigest)
+					out <- uri
+				}
 			}
 		}
 	}()
