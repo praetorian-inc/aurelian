@@ -473,7 +473,7 @@ func AzureGetTargetedResourcesStage(ctx context.Context, opts []*types.Option, i
 
 					// Handle ALL flag by iterating through all registered handlers
 					var handlersToUse map[string]AzureResourceHandler
-					if resourceType == "ALL" {
+					if strings.EqualFold(resourceType, "ALL") {
 						handlersToUse = make(map[string]AzureResourceHandler)
 						registry.mu.RLock()
 						for rt, h := range registry.handlers {
