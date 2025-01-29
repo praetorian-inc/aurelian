@@ -7,6 +7,7 @@ type ResourceInfo struct {
 	Type          string
 	Location      string
 	ResourceGroup string
+	Subscription  string
 	Tags          map[string]*string
 	Properties    map[string]interface{}
 }
@@ -34,4 +35,10 @@ type RoleAssignmentDetails struct {
 	SubscriptionID   string                 `json:"subscriptionId"`
 	SubscriptionName string                 `json:"subscriptionName"`
 	Properties       map[string]interface{} `json:"properties"`
+}
+
+// ResourceScanInput holds the subscription and resource type to scan
+type ResourceScanInput struct {
+	Subscription string
+	ResourceType string
 }
