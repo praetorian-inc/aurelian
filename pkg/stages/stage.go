@@ -179,48 +179,57 @@ func validateStageCompatibility(stage1, stage2 interface{}) error {
 //   - in: The input channel from which data is read.
 //   - out: The output channel to which processed data is sent.
 //   - stages: A variadic list of Stage functions that process the input data.
-//
-// The function
 func FanStages[In, Out any](ctx context.Context, opts []*types.Option, in <-chan In, out chan Out, stages ...Stage[In, Out]) {
-	var wg sync.WaitGroup
-	// Create a channel to signal completion
-	done := make(chan struct{})
+	// Create buffered input channels for each stage
+	stageInputs := make([]chan In, len(stages))
+	for i := range stageInputs {
+		stageInputs[i] = make(chan In, 100)
+	}
 
+	var wg sync.WaitGroup
+	wg.Add(len(stages))
+
+	// Start goroutine to distribute input to all stage channels
 	go func() {
 		defer func() {
-			wg.Wait()
-			done <- struct{}{} // Signal completion
+			// Close all stage input channels once input is exhausted
+			for i := range stageInputs {
+				close(stageInputs[i])
+			}
 		}()
 
-		for input := range in {
-			wg.Add(len(stages))
-			for _, stage := range stages {
-				go func(stage Stage[In, Out], input In) {
-					defer wg.Done()
-
-					// Create input channel for this stage
-					inChan := make(chan In, 1)
-					inChan <- input
-					close(inChan)
-
-					// Process stage output
-					for result := range stage(ctx, opts, inChan) {
-						select {
-						case <-ctx.Done():
-							return
-						case out <- result:
-						}
-					}
-				}(stage, input)
+		// Fan out each input value to all stage channels
+		for val := range in {
+			for i := range stageInputs {
+				select {
+				case stageInputs[i] <- val:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}()
 
-	// Start a single goroutine to close the output channel
+	// Start each stage in its own goroutine
+	for i, stage := range stages {
+		go func(stageInput chan In, stageFunc Stage[In, Out]) {
+			defer wg.Done()
+
+			// Process stage output and send to aggregated output channel
+			for result := range stageFunc(ctx, opts, stageInput) {
+				select {
+				case out <- result:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}(stageInputs[i], stage)
+	}
+
+	// Close output channel once all stages complete
 	go func() {
-		<-done      // Wait for all processing to complete
-		close(done) // Close the done channel
-		close(out)  // Close the output channel
+		wg.Wait()
+		close(out)
 	}()
 }
 
@@ -286,6 +295,17 @@ func Echo[In any](ctx context.Context, opts []*types.Option, in <-chan In) <-cha
 		defer close(out)
 		for i := range in {
 			fmt.Printf("echo: %v\n", i)
+			out <- i
+		}
+	}()
+	return out
+}
+
+func NopStage[In any](ctx context.Context, opts []*types.Option, in <-chan In) <-chan In {
+	out := make(chan In)
+	go func() {
+		defer close(out)
+		for i := range in {
 			out <- i
 		}
 	}()

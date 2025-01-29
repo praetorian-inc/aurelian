@@ -23,6 +23,11 @@ var SaasDockerDumpOptions = []*types.Option{
 	options.WithRequired(options.ImageOpt, false),
 	options.WithRequired(options.DockerUserOpt, false),
 	options.WithRequired(options.DockerPasswordOpt, false),
+	options.WithDefaultValue(options.DockerExtractOpt, "true"),
+	&options.NoseyParkerArgsOpt,
+	&options.NoseyParkerOutputOpt,
+	&options.NoseyParkerPathOpt,
+	options.WithDefaultValue(options.NoseyParkerScanOpt, "true"),
 }
 
 var SaasDockerDumpOutputProviders = []func(options []*types.Option) types.OutputProvider{
@@ -40,9 +45,33 @@ var SaasDockerDumpMetadata = modules.Metadata{
 }
 
 func NewSaasDockerDump(opts []*types.Option) (<-chan stages.ImageContext, stages.Stage[stages.ImageContext, string], error) {
+
+	// only run Nosey Parker if the the scan opt is true
+	npPipeline := []stages.Stage[string, string]{}
+	if options.GetOptionByName(options.NoseyParkerScanOpt.Name, opts).Value == "true" {
+		p, err := stages.ChainStages[string, string](
+			stages.DockerExtractToNPStage,
+			stages.NoseyParkerEnumeratorStage,
+			stages.NoseyParkerSummarizeStage,
+		)
+
+		if err != nil {
+			return nil, nil, err
+		}
+
+		npPipeline = append(npPipeline, p)
+	} else {
+		npPipeline = []stages.Stage[string, string]{stages.NopStage[string]}
+
+	}
+
 	pipeline, err := stages.ChainStages[stages.ImageContext, string](
 		stages.DockerPullStage,
 		stages.DockerSaveStage,
+		stages.Tee(
+			[]stages.Stage[string, string]{stages.DockerExtractToFSStage},
+			npPipeline,
+		),
 	)
 
 	if err != nil {
