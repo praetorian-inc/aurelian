@@ -9,11 +9,12 @@ import (
 var AzureSubscriptionOpt = types.Option{
 	Name:        "subscription",
 	Short:       "s",
-	Description: "Azure subscription ID",
+	Description: "Azure subscription ID or 'all' to scan all accessible subscriptions",
 	Required:    true,
 	Type:        types.String,
 	Value:       "",
-	ValueFormat: regexp.MustCompile("^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$"),
+	ValueFormat: regexp.MustCompile(`(?i)^([0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}|ALL)$`),
+	ValueList:   []string{"all"},
 }
 
 var AzureWorkerCountOpt = types.Option{
@@ -23,4 +24,24 @@ var AzureWorkerCountOpt = types.Option{
 	Required:    false,
 	Type:        types.Int,
 	Value:       "5", // Default to 5 workers
+}
+
+var AzureTimeoutOpt = types.Option{
+	Name:        "timeout",
+	Short:       "t",
+	Description: "Timeout in seconds for each subscription scan",
+	Required:    false,
+	Type:        types.Int,
+	Value:       "600", // 10 minute default timeout
+}
+
+var AzureResourceTypesOpt = types.Option{
+	Name:        "resource-types",
+	Short:       "t",
+	Description: "Azure resource types to scan",
+	Required:    true,
+	Type:        types.String,
+	Value:       "",
+	ValueFormat: regexp.MustCompile(`(?i)^(Microsoft\.[A-Za-z]+/[A-Za-z]+|ALL)$`),
+	ValueList:   []string{"Microsoft.Compute/virtualMachines", "Microsoft.Web/sites", "all"},
 }

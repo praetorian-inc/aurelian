@@ -23,6 +23,11 @@ func WithDescription(option types.Option, description string) *types.Option {
 	return &option
 }
 
+func WithValueList(option types.Option, values []string) *types.Option {
+	option.ValueList = values
+	return &option
+}
+
 func GetOptionByName(name string, options []*types.Option) *types.Option {
 
 	for _, option := range options {

@@ -32,30 +32,18 @@ var AzureRoleAssignmentsMetadata = modules.Metadata{
 
 // Modified options to include timeout
 var AzureRoleAssignmentsOptions = []*types.Option{
-	&types.Option{
-		Name:        "subscription",
-		Short:       "s",
-		Description: "Azure subscription ID or 'all' to scan all accessible subscriptions",
-		Required:    true,
-		Type:        types.String,
-		Value:       "",
-	},
-	&types.Option{
-		Name:        "workers",
-		Short:       "w",
-		Description: "Number of concurrent workers",
-		Required:    false,
-		Type:        types.Int,
-		Value:       "5", // Reduced from 15 to prevent throttling
-	},
-	&types.Option{
-		Name:        "timeout",
-		Short:       "t",
-		Description: "Timeout in seconds for each subscription scan",
-		Required:    false,
-		Type:        types.Int,
-		Value:       "300", // 5 minute default timeout
-	},
+	options.WithDescription(
+		options.AzureSubscriptionOpt,
+		"Azure subscription ID or 'all' for all accessible subscriptions",
+	),
+	options.WithDefaultValue(
+		options.AzureWorkerCountOpt,
+		"5",
+	),
+	options.WithDefaultValue(
+		options.AzureTimeoutOpt,
+		"600",
+	),
 	options.WithDefaultValue(
 		*options.WithRequired(
 			options.FileNameOpt, false),

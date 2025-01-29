@@ -27,22 +27,14 @@ var AzureListAllMetadata = modules.Metadata{
 }
 
 var AzureListAllOptions = []*types.Option{
-	&types.Option{
-		Name:        "subscription",
-		Short:       "s",
-		Description: "Azure subscription ID or 'all' to scan all accessible subscriptions",
-		Required:    true,
-		Type:        types.String,
-		Value:       "",
-	},
-	&types.Option{
-		Name:        "workers",
-		Short:       "w",
-		Description: "Number of concurrent workers for processing resources",
-		Required:    false,
-		Type:        types.Int,
-		Value:       "5",
-	},
+	options.WithDescription(
+		options.AzureSubscriptionOpt,
+		"Azure subscription ID or 'all' for all accessible subscriptions",
+	),
+	options.WithDefaultValue(
+		options.AzureWorkerCountOpt,
+		"5",
+	),
 	options.WithDefaultValue(
 		*options.WithRequired(
 			options.FileNameOpt, false),

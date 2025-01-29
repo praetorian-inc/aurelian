@@ -17,7 +17,7 @@ import (
 // Supported resource types for secret scanning
 var AzureFindSecretsTypes = []string{
 	"Microsoft.Compute/virtualMachines",
-	// Add more resource types here as handlers are implemented
+	"Microsoft.Web/sites",
 	"ALL",
 }
 
@@ -34,31 +34,18 @@ var AzureFindSecretsMetadata = modules.Metadata{
 
 // Module options
 var AzureFindSecretsOptions = []*types.Option{
-	&types.Option{
-		Name:        "subscription",
-		Short:       "s",
-		Description: "Azure subscription ID or 'all' for all accessible subscriptions",
-		Required:    true,
-		Type:        types.String,
-		Value:       "",
-	},
-	&types.Option{
-		Name:        "resource-types",
-		Short:       "t",
-		Description: "Azure resource types to scan - " + strings.Join(AzureFindSecretsTypes, ", "),
-		Required:    true,
-		Type:        types.String,
-		Value:       "",
-		ValueList:   AzureFindSecretsTypes,
-	},
-	&types.Option{
-		Name:        "workers",
-		Short:       "w",
-		Description: "Number of concurrent workers for processing resources",
-		Required:    false,
-		Type:        types.Int,
-		Value:       "5",
-	},
+	options.WithDescription(
+		options.AzureSubscriptionOpt,
+		"Azure subscription ID or 'all' for all accessible subscriptions",
+	),
+	options.WithDescription(
+		options.AzureResourceTypesOpt,
+		"Azure resource types to scan - "+strings.Join(options.AzureResourceTypesOpt.ValueList, ", "),
+	),
+	options.WithDefaultValue(
+		options.AzureWorkerCountOpt,
+		"5",
+	),
 	&options.NoseyParkerPathOpt,
 	&options.NoseyParkerArgsOpt,
 	&options.NoseyParkerOutputOpt,
@@ -89,7 +76,7 @@ func NewAzureFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[stri
 
 	// Handle subscription input
 	subscriptionsChan := make(chan string)
-	subscriptionOpt := options.GetOptionByName("subscription", opts).Value
+	subscriptionOpt := options.GetOptionByName(options.AzureSubscriptionOpt.Name, opts).Value
 
 	go func() {
 		defer close(subscriptionsChan)
