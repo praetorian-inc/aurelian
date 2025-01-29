@@ -27,6 +27,7 @@ nebula aws recon [flags]
 
 * [nebula aws](nebula_aws.md)	 - aws commands
 * [nebula aws recon authorization-details](nebula_aws_recon_authorization-details.md)	 - Get authorization details in an AWS account.
+* [nebula aws recon ecr-dump](nebula_aws_recon_ecr-dump.md)	 - Dump ECR container filesystems to disk
 * [nebula aws recon find-secrets](nebula_aws_recon_find-secrets.md)	 - This module will enumerate resources in AWS and attempt to find secrets using Nosey Parker.
 * [nebula aws recon get](nebula_aws_recon_get.md)	 - Get a resource in an AWS account using Cloud Control API.
 * [nebula aws recon list](nebula_aws_recon_list.md)	 - List resources in an AWS account using Cloud Control API.
