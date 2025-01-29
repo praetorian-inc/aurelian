@@ -2,6 +2,8 @@ package stages
 
 import (
 	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -18,6 +20,7 @@ import (
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
 	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
@@ -58,6 +61,7 @@ func DockerPullStage(ctx context.Context, opts []*types.Option, in <-chan ImageC
 				continue
 			}
 
+			message.Info(fmt.Sprintf("Pulling container: %s", c.Image))
 			logger.Info(fmt.Sprintf("Pulling container: %s", c.Image))
 
 			pullOpts := image.PullOptions{}
@@ -106,6 +110,7 @@ func DockerSaveStage(ctx context.Context, opts []*types.Option, in <-chan string
 		defer cli.Close()
 
 		for image := range in {
+			message.Info(fmt.Sprintf("Saving image: %s", image))
 			defer removeImage(ctx, cli, image)
 
 			// Get image name for directory
@@ -381,6 +386,197 @@ func DockerExtractToNPStage(ctx context.Context, opts []*types.Option, in <-chan
 					}
 				}
 			}
+		}
+	}()
+
+	return out
+}
+
+// DockerExtractToFSStage extracts Docker image tarballs to the filesystem
+func DockerExtractToFSStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
+	logger := logs.NewStageLogger(ctx, opts, "DockerExtractToFSStage")
+	out := make(chan string)
+
+	go func() {
+		defer close(out)
+
+		for imagePath := range in {
+			logger.Info(fmt.Sprintf("Extracting image: %s", imagePath))
+			baseDir := filepath.Dir(imagePath)
+			imageFile, err := os.Open(imagePath)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to open image: %v", err))
+				continue
+			}
+			defer imageFile.Close()
+
+			// First pass: Extract all non-layer files and find manifest
+			tr := tar.NewReader(imageFile)
+			var manifest []DockerManifest
+			manifestFound := false
+
+			for {
+				header, err := tr.Next()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					logger.Error(fmt.Sprintf("Failed reading tar: %v", err))
+					break
+				}
+
+				targetPath := filepath.Join(baseDir, header.Name)
+				if !strings.HasPrefix(targetPath, baseDir) {
+					logger.Error(fmt.Sprintf("Invalid path in tar: %s", header.Name))
+					continue
+				}
+
+				// Check if this is a layer from the manifest before extraction
+				isLayer := strings.Contains(header.Name, "blobs/sha256/")
+				if !isLayer {
+					switch header.Typeflag {
+					case tar.TypeDir:
+						if err := os.MkdirAll(targetPath, 0755); err != nil {
+							logger.Error(fmt.Sprintf("Failed to create directory %s: %v", targetPath, err))
+						}
+
+					case tar.TypeReg:
+						if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+							logger.Error(fmt.Sprintf("Failed to create parent directory for %s: %v", targetPath, err))
+							continue
+						}
+
+						// Read and write file
+						contents, err := io.ReadAll(tr)
+						if err != nil {
+							logger.Error(fmt.Sprintf("Failed to read file contents for %s: %v", header.Name, err))
+							continue
+						}
+
+						if err := os.WriteFile(targetPath, contents, os.FileMode(header.Mode)); err != nil {
+							logger.Error(fmt.Sprintf("Failed to write file %s: %v", targetPath, err))
+							continue
+						}
+
+						// Parse manifest if found
+						if header.Name == "manifest.json" {
+							if err := json.Unmarshal(contents, &manifest); err != nil {
+								logger.Error(fmt.Sprintf("Failed parsing manifest: %v", err))
+								continue
+							}
+							manifestFound = true
+							logger.Info("Found and parsed manifest.json")
+						}
+					}
+				}
+			}
+
+			if !manifestFound || len(manifest) == 0 {
+				logger.Error("No valid manifest found in image")
+				continue
+			}
+
+			// Second pass: Process layers
+			if _, err := imageFile.Seek(0, 0); err != nil {
+				logger.Error(fmt.Sprintf("Failed to seek to start of file: %v", err))
+				continue
+			}
+
+			tr = tar.NewReader(imageFile)
+			for {
+				header, err := tr.Next()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					logger.Error(fmt.Sprintf("Failed reading tar: %v", err))
+					break
+				}
+
+				// Only process blobs/sha256 files
+				if !strings.Contains(header.Name, "blobs/sha256/") {
+					continue
+				}
+
+				targetPath := filepath.Join(baseDir, header.Name)
+				layerDir := strings.TrimSuffix(targetPath, ".tar")
+
+				// Read the entire layer into memory
+				layerData, err := io.ReadAll(tr)
+				if err != nil {
+					logger.Error(fmt.Sprintf("Failed to read layer data: %v", err))
+					continue
+				}
+
+				// Try different decompression methods
+				var layerReader io.Reader = bytes.NewReader(layerData)
+
+				// Try gzip first
+				if gzReader, err := gzip.NewReader(bytes.NewReader(layerData)); err == nil {
+					layerReader = gzReader
+					defer gzReader.Close()
+				}
+
+				// Create directory for layer contents
+				if err := os.MkdirAll(layerDir, 0755); err != nil {
+					logger.Error(fmt.Sprintf("Failed to create layer directory %s: %v", layerDir, err))
+					continue
+				}
+
+				// Extract layer contents
+				layerTr := tar.NewReader(layerReader)
+				for {
+					layerHeader, err := layerTr.Next()
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						logger.Debug(fmt.Sprintf("Failed reading layer (skipping): %v", err),
+							slog.String("layer", header.Name))
+						break
+					}
+
+					if layerHeader.Typeflag == tar.TypeDir {
+						layerTargetPath := filepath.Join(layerDir, layerHeader.Name)
+						if !strings.HasPrefix(layerTargetPath, layerDir) {
+							logger.Warn(fmt.Sprintf("Skipping suspicious path: %s", layerHeader.Name))
+							continue
+						}
+						if err := os.MkdirAll(layerTargetPath, 0755); err != nil {
+							logger.Error(fmt.Sprintf("Failed to create directory %s: %v", layerTargetPath, err))
+						}
+						continue
+					}
+
+					if layerHeader.Typeflag == tar.TypeReg {
+						layerTargetPath := filepath.Join(layerDir, layerHeader.Name)
+						if !strings.HasPrefix(layerTargetPath, layerDir) {
+							logger.Warn(fmt.Sprintf("Skipping suspicious path: %s", layerHeader.Name))
+							continue
+						}
+
+						if err := os.MkdirAll(filepath.Dir(layerTargetPath), 0755); err != nil {
+							logger.Error(fmt.Sprintf("Failed to create parent directory for %s: %v", layerTargetPath, err))
+							continue
+						}
+
+						outFile, err := os.OpenFile(layerTargetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(layerHeader.Mode))
+						if err != nil {
+							logger.Error(fmt.Sprintf("Failed to create file %s: %v", layerTargetPath, err))
+							continue
+						}
+
+						if _, err := io.Copy(outFile, layerTr); err != nil {
+							outFile.Close()
+							logger.Error(fmt.Sprintf("Failed to write file %s: %v", layerTargetPath, err))
+							continue
+						}
+						outFile.Close()
+					}
+				}
+				//out <- layerDir
+			}
+			out <- fmt.Sprintf("%s extracted to %s", imagePath, baseDir)
 		}
 	}()
 
