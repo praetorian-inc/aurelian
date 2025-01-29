@@ -345,7 +345,6 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 			wg.Wait()
 		}
 
-		//stages.FanStages(ctx, opts, in, out, pipelines...)
 	}()
 
 	return out
