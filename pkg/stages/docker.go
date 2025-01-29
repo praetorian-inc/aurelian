@@ -22,7 +22,12 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
-func DockerExtractorStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
+type ImageContext struct {
+	AuthConfig registry.AuthConfig
+	Image      string
+}
+
+func DockerExtractorStage(ctx context.Context, opts []*types.Option, in <-chan ImageContext) <-chan string {
 	logger := logs.NewStageLogger(ctx, opts, "DockerExtractorStage")
 	out := make(chan string)
 
@@ -39,33 +44,22 @@ func DockerExtractorStage(ctx context.Context, opts []*types.Option, in <-chan s
 
 		// TODO handle container and image cleanup more elegantly with defer
 		for c := range in {
-			c = strings.TrimSpace(c)
-			if c == "" {
+			c.Image = strings.TrimSpace(c.Image)
+			if c.Image == "" {
 				continue
 			}
 
-			logger.Info(fmt.Sprintf("Pulling container: %s", c))
+			logger.Info(fmt.Sprintf("Pulling container: %s", c.Image))
 
-			domain, err := DockerExtractDomain(c)
-			if err != nil {
-				logger.Error(fmt.Sprintf("Failed to extract domain: %v", err))
-				continue
-			}
+			pullOpts := image.PullOptions{}
 
-			authConfig := registry.AuthConfig{
-				Username:      options.GetOptionByName(options.DockerUserOpt.Name, opts).Value,
-				Password:      options.GetOptionByName(options.DockerPasswordOpt.Name, opts).Value,
-				ServerAddress: domain,
-			}
-
-			var pullOpts image.PullOptions
-
-			if !isPublicImage(c) {
-				if _, err := cli.RegistryLogin(ctx, authConfig); err != nil {
+			if !isPublicImage(c.AuthConfig.ServerAddress) {
+				logger.Debug(fmt.Sprintf("AuthConfig: %+v", c.AuthConfig))
+				if _, err := cli.RegistryLogin(ctx, c.AuthConfig); err != nil {
 					logger.Error(fmt.Sprintf("Failed to login to Docker registry: %v", err))
 					continue
 				}
-				encodedAuthConfig, err := registry.EncodeAuthConfig(authConfig)
+				encodedAuthConfig, err := registry.EncodeAuthConfig(c.AuthConfig)
 				if err != nil {
 					logger.Error(fmt.Sprintf("Failed to encode auth config: %v", err))
 					continue
@@ -76,18 +70,18 @@ func DockerExtractorStage(ctx context.Context, opts []*types.Option, in <-chan s
 				}
 			}
 
-			reader, err := cli.ImagePull(ctx, c, pullOpts)
+			reader, err := cli.ImagePull(ctx, c.Image, pullOpts)
 			if err != nil {
-				logger.Error(fmt.Sprintf("Failed to pull container %s: %v", c, err))
+				logger.Error(fmt.Sprintf("Failed to pull container %s: %v", c.Image, err))
 				continue
 			}
 			io.Copy(io.Discard, reader)
 			reader.Close()
 
-			logger.Info(fmt.Sprintf("Processing container: %s", c))
+			logger.Info(fmt.Sprintf("Processing container: %s", c.Image))
 			// Create container
 			resp, err := cli.ContainerCreate(ctx, &container.Config{
-				Image: c,
+				Image: c.Image,
 			}, nil, nil, nil, "")
 			if err != nil {
 				logger.Error(fmt.Sprintf("Failed to create container: %v", err))
@@ -96,15 +90,15 @@ func DockerExtractorStage(ctx context.Context, opts []*types.Option, in <-chan s
 			containerID := resp.ID
 
 			// Get container name for directory
-			parts := strings.Split(c, "/")
+			parts := strings.Split(c.Image, "/")
 			name := parts[len(parts)-1]
-			name = strings.Split(name, ":")[0] // Remove tag if present
+			//name = strings.Split(name, ":")[0] // Remove tag if present
 
 			// Create directory
 			if err := os.MkdirAll(filepath.Join(options.GetOptionByName(options.OutputOpt.Name, opts).Value, name), 0755); err != nil {
 				logger.Error(fmt.Sprintf("Failed to create directory: %v", err))
 				cleanupContainer(ctx, cli, containerID)
-				removeImage(ctx, cli, c)
+				removeImage(ctx, cli, c.Image)
 				continue
 			}
 
@@ -113,7 +107,7 @@ func DockerExtractorStage(ctx context.Context, opts []*types.Option, in <-chan s
 			if err != nil {
 				logger.Error(fmt.Sprintf("Failed to export container: %v", err))
 				cleanupContainer(ctx, cli, containerID)
-				removeImage(ctx, cli, c)
+				removeImage(ctx, cli, c.Image)
 				continue
 			}
 
@@ -123,7 +117,7 @@ func DockerExtractorStage(ctx context.Context, opts []*types.Option, in <-chan s
 			if err != nil {
 				logger.Error(fmt.Sprintf("Failed to create archive: %v", err))
 				cleanupContainer(ctx, cli, containerID)
-				removeImage(ctx, cli, c)
+				removeImage(ctx, cli, c.Image)
 				reader.Close()
 				continue
 			}
@@ -137,7 +131,7 @@ func DockerExtractorStage(ctx context.Context, opts []*types.Option, in <-chan s
 			if err != nil {
 				logger.Error(fmt.Sprintf("Failed to write archive: %v", err))
 				cleanupContainer(ctx, cli, containerID)
-				removeImage(ctx, cli, c)
+				removeImage(ctx, cli, c.Image)
 				continue
 			}
 
@@ -145,14 +139,14 @@ func DockerExtractorStage(ctx context.Context, opts []*types.Option, in <-chan s
 			if err := extractTarGz(archivePath, filepath.Join(options.GetOptionByName(options.OutputOpt.Name, opts).Value, name)); err != nil {
 				logger.Error(fmt.Sprintf("Failed to extract archive: %v", err))
 				cleanupContainer(ctx, cli, containerID)
-				removeImage(ctx, cli, c)
+				removeImage(ctx, cli, c.Image)
 				continue
 			}
 
 			cleanupContainer(ctx, cli, containerID)
-			removeImage(ctx, cli, c)
+			removeImage(ctx, cli, c.Image)
 
-			out <- c
+			out <- c.Image
 		}
 	}()
 
@@ -172,6 +166,7 @@ func DockerExtractDomain(rawURL string) (string, error) {
 	return parsedURL.Host, nil
 }
 
+// DockerExtractContainer extracts the container reference from a Docker container URL
 func DockerExtractContainer(url string) (string, error) {
 	// Split by "/" to separate domain and path
 	parts := strings.Split(url, "/")
@@ -185,6 +180,7 @@ func DockerExtractContainer(url string) (string, error) {
 	return container, nil
 }
 
+// DockerExtractRegion extracts the region from a Docker container URL
 func DockerExtractRegion(url string) (string, error) {
 
 	if strings.Contains(url, "public.ecr.aws") {

@@ -182,31 +182,46 @@ func validateStageCompatibility(stage1, stage2 interface{}) error {
 //
 // The function
 func FanStages[In, Out any](ctx context.Context, opts []*types.Option, in <-chan In, out chan Out, stages ...Stage[In, Out]) {
+	var wg sync.WaitGroup
+	// Create a channel to signal completion
+	done := make(chan struct{})
 
-	wg := sync.WaitGroup{} //
-	for i := range in {
-		wg.Add(1)
-		go func() {
-			defer close(out)
-			wg2 := sync.WaitGroup{}
-			wg2.Add(len(stages))
-			for _, stage := range stages {
-				go func() {
-					fChan := make(chan In, 1)
-					fChan <- i
-					close(fChan)
-					sout := stage(ctx, opts, fChan)
-					for data := range sout {
-						out <- data
-					}
-					defer wg2.Done()
-				}()
-			}
-			wg2.Wait()
-			wg.Done()
+	go func() {
+		defer func() {
+			wg.Wait()
+			done <- struct{}{} // Signal completion
 		}()
-	}
-	wg.Wait()
+
+		for input := range in {
+			wg.Add(len(stages))
+			for _, stage := range stages {
+				go func(stage Stage[In, Out], input In) {
+					defer wg.Done()
+
+					// Create input channel for this stage
+					inChan := make(chan In, 1)
+					inChan <- input
+					close(inChan)
+
+					// Process stage output
+					for result := range stage(ctx, opts, inChan) {
+						select {
+						case <-ctx.Done():
+							return
+						case out <- result:
+						}
+					}
+				}(stage, input)
+			}
+		}
+	}()
+
+	// Start a single goroutine to close the output channel
+	go func() {
+		<-done      // Wait for all processing to complete
+		close(done) // Close the done channel
+		close(out)  // Close the output channel
+	}()
 }
 
 // Tee creates a stage that splits processing into multiple parallel pipelines and merges their outputs.
