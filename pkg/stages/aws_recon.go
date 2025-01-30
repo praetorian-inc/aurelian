@@ -377,6 +377,24 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 					AwsCloudControlListResources,
 					AwsCloudFormationGetTemplatesNpInputStage,
 				)
+			case "AWS::ECR::Repository":
+				pl, err = ChainStages[string, types.NpInput](
+					AwsCloudControlListResources,
+					AwsEcrListImages,
+					AwsEcrLoginStage,
+					DockerPullStage,
+					DockerSaveStage,
+					DockerExtractToNPStage,
+				)
+			case "AWS::ECR::PublicRepository":
+				pl, err = ChainStages[string, types.NpInput](
+					AwsCloudControlListResources,
+					AwsEcrPublicListLatestImages,
+					AwsEcrPublicLoginStage,
+					DockerPullStage,
+					DockerSaveStage,
+					DockerExtractToNPStage,
+				)
 			case "ALL":
 				continue
 			default:
