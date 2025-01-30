@@ -3,7 +3,11 @@
 package helpers
 
 import (
+	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -15,10 +19,12 @@ import (
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
+	"log"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 )
@@ -95,6 +101,89 @@ func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescri
 		regionToIdentifiers[description.Region] = append(regionToIdentifiers[description.Region], description.Identifier)
 	}
 	return regionToIdentifiers
+}
+
+func saveResponseToFile(resp *http.Response, filename string) error {
+	// Dump the response
+	respBytes, err := httputil.DumpResponse(resp, true)
+	if err != nil {
+		return fmt.Errorf("failed to dump response: %v", err)
+	}
+
+	// Write to file
+	file, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %v", err)
+	}
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			log.Printf("failed to close file: %v", err)
+		}
+	}(file)
+
+	_, err = file.Write(respBytes)
+	if err != nil {
+		return fmt.Errorf("failed to write to file: %v", err)
+	}
+
+	return nil
+}
+
+func loadResponseFromFile(filename string) (*http.Response, error) {
+	// Open the file
+	file, err := os.Open(filename)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %v", err)
+	}
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			log.Printf("failed to close file: %v", err)
+		}
+	}(file)
+
+	// Read the file content
+	reader := bufio.NewReader(file)
+	resp, err := http.ReadResponse(reader, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %v", err)
+	}
+
+	return resp, nil
+}
+
+func getCachePath(CacheDir string, key string) string {
+	return filepath.Join(CacheDir, key+".cache")
+}
+
+func generateCacheKey(service, operation string, params interface{}) string {
+	data, err := json.Marshal(params)
+	if err != nil {
+		return fmt.Sprintf("%s-%s", service, operation)
+	}
+
+	hash := sha256.Sum256(data)
+	return fmt.Sprintf("%s-%s-%s", service, operation, hex.EncodeToString(hash[:]))
+}
+
+type CustomKey struct {
+	CachePath string
+	CacheKey  string
+	Enabled   bool
+}
+
+func SetCustomKey(ctx context.Context, key string, value CustomKey) context.Context {
+	return context.WithValue(ctx, key, value)
+}
+
+func GetCustomKey(ctx context.Context, key string) (CustomKey, bool) {
+	v, ok := ctx.Value(key).(CustomKey)
+	return v, ok
+}
+
+type Response struct {
+	Response *http.Response
 }
 
 func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config, error) {
@@ -238,6 +327,76 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 		return output, metadata, err
 	})
 
+	var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context.Context, input middleware.DeserializeInput, handler middleware.DeserializeHandler) (middleware.DeserializeOutput, middleware.Metadata, error) {
+		if v, ok := GetCustomKey(ctx, "cache_config"); ok {
+			fmt.Printf("Retrieved value: %+v\n", v)
+			if !v.Enabled {
+				return handler.HandleDeserialize(ctx, input)
+			}
+			resp, err := loadResponseFromFile(v.CachePath)
+			if err != nil {
+				fmt.Printf("Error loading response: %v\n", err)
+				output, metadata, err := handler.HandleDeserialize(ctx, input)
+				if err != nil {
+					return output, metadata, err
+				}
+				fmt.Printf("Got Response\n")
+				fmt.Printf("Output: %#v\n", output)
+				fmt.Printf("Metadata: %#v\n", metadata)
+				fmt.Printf("Error: %v\n", err)
+				if resp, ok := output.RawResponse.(*smithyhttp.Response); ok {
+					standardResp := resp.Response
+					save_err := saveResponseToFile(standardResp, v.CachePath)
+					if save_err != nil {
+						fmt.Printf("Error saving response: %v\n", save_err)
+					} else {
+						fmt.Printf("Saved response to file %s\n", v.CachePath)
+					}
+				} else {
+					fmt.Printf("Raw response is not an HTTP response\n")
+				}
+				return output, metadata, err
+			} else {
+				// TODO check cache expired
+				output := middleware.DeserializeOutput{RawResponse: &Response{Response: resp}, Result: nil}
+				fmt.Printf("Using cache file: %s\n", v.CacheKey)
+				return output, middleware.Metadata{}, err
+			}
+		} else {
+			fmt.Println("Value not found in context")
+			return handler.HandleDeserialize(ctx, input)
+		}
+	})
+
+	var CachePrep = middleware.InitializeMiddlewareFunc("CachePrep", func(ctx context.Context, input middleware.InitializeInput, handler middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
+		// Extract service and operation information using awsmiddleware helpers
+		service := awsmiddleware.GetServiceID(ctx)
+		operation := awsmiddleware.GetOperationName(ctx)
+
+		fmt.Printf("Service: %s\n", service)
+		fmt.Printf("Operation: %s\n", operation)
+
+		// Skip if we couldn't determine service or operation
+		if service == "" || operation == "" {
+			fmt.Sprintf("Could not determine service (%s) or operation (%s), params: %+v",
+				service, operation, input.Parameters)
+			return handler.HandleInitialize(ctx, input)
+		}
+
+		fmt.Sprintf("Processing request for service: %s, operation: %s", service, operation)
+		// Generate cache key and get cache file path
+		cacheKey := generateCacheKey(service, operation, input.Parameters)
+		cachePath := getCachePath("/tmp", cacheKey)
+
+		CacheConfig := CustomKey{
+			CachePath: cachePath,
+			CacheKey:  cacheKey,
+			Enabled:   true,
+		}
+		ctx = SetCustomKey(ctx, "cache_config", CacheConfig)
+		return handler.HandleInitialize(ctx, input)
+	})
+
 	cfg, err := config.LoadDefaultConfig(
 		context.TODO(),
 		config.WithClientLogMode(
@@ -256,7 +415,13 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 		if err := stack.Initialize.Add(testMiddleware, middleware.After); err != nil {
 			return err
 		}
+		if err := stack.Initialize.Add(CachePrep, middleware.After); err != nil {
+			return err
+		}
 		if err := stack.Deserialize.Insert(testMiddleware2, "OperationDeserializer", middleware.After); err != nil {
+			return err
+		}
+		if err := stack.Deserialize.Add(CacheOps, middleware.After); err != nil {
 			return err
 		}
 		fmt.Printf("Middleware Stack: %v\n", stack.List())
