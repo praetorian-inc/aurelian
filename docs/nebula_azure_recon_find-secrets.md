@@ -1,6 +1,6 @@
 ## nebula azure recon find-secrets
 
-Enumerate Azure resources and find secrets using Nosey Parker
+Enumerate Azure VMs and Function Apps to find secrets using Nosey Parker and Azure Resource Graph
 
 ```
 nebula azure recon find-secrets [flags]
@@ -9,13 +9,13 @@ nebula azure recon find-secrets [flags]
 ### Options
 
 ```
-  -h, --help                    help for find-secrets
-      --np-args string          custom args to pass to Nosey Parker
-      --np-output string        output directory for Nosey Parker (default "datastore.np")
-      --np-path string          path to Nosey Parker (default "noseyparker")
-  -t, --resource-types string   Azure resource types to scan. Currently supported types: Microsoft.Compute/virtualMachines, Microsoft.Web/sites, ALL
-  -s, --subscription string     Azure subscription ID or 'all' to scan all accessible subscriptions
-  -w, --workers int             Number of concurrent workers for processing subscriptions (default 5)
+  -h, --help                  help for find-secrets
+      --np-args string        custom args to pass to Nosey Parker
+      --np-output string      output directory for Nosey Parker (default "datastore.np")
+      --np-path string        path to Nosey Parker (default "noseyparker")
+  -s, --subscription string   Azure subscription ID or 'all' to scan all accessible subscriptions
+  -t, --timeout int           Timeout in seconds for each subscription scan (default 600)
+  -w, --workers int           Number of concurrent workers for processing subscriptions (default 5)
 ```
 
 ### Options inherited from parent commands
