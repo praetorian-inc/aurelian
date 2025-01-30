@@ -395,6 +395,11 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 					DockerSaveStage,
 					DockerExtractToNPStage,
 				)
+			case "AWS::ECS::TaskDefinition":
+				pl, err = ChainStages[string, types.NpInput](
+					AwsCloudControlListResources,
+					EnrichedResourceDescriptionToNpInput,
+				)
 			case "ALL":
 				continue
 			default:
