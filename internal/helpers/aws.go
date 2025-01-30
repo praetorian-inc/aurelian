@@ -1,19 +1,26 @@
+//go:generate go run aws_type_gen.go
+
 package helpers
 
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"os"
-	"strings"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
-	arn "github.com/aws/aws-sdk-go-v2/aws/arn"
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
+	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
+	"log/slog"
+	"net/http"
+	"net/http/httputil"
+	"os"
+	"reflect"
+	"strings"
 )
 
 // TODO this should be combined with roseta
@@ -109,6 +116,128 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 	// 	},
 	// }
 
+	var testMiddleware = middleware.InitializeMiddlewareFunc("TestMiddleware", func(ctx context.Context, input middleware.InitializeInput, handler middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
+
+		fmt.Println("\n=== Initialize Debug ===")
+
+		// Print Context details
+		fmt.Println("\n=== Context Details ===")
+		fmt.Printf("Context: %#v\n", ctx)
+
+		// Print Input details
+		fmt.Println("\n=== Input Details ===")
+		fmt.Printf("Parameters Type: %T\n", input.Parameters)
+		if input.Parameters != nil {
+			v := reflect.ValueOf(input.Parameters).Elem()
+			t := v.Type()
+
+			fmt.Println("Parameters Content:")
+			for i := 0; i < v.NumField(); i++ {
+				field := v.Field(i)
+				fieldName := t.Field(i).Name
+
+				// Handle string pointers
+				if field.Kind() == reflect.Pointer && field.Type().Elem().Kind() == reflect.String {
+					if !field.IsNil() {
+						fmt.Printf("  %s: %q\n", fieldName, field.Elem().String())
+					} else {
+						fmt.Printf("  %s: nil\n", fieldName)
+					}
+					continue
+				}
+
+				// Handle other types
+				if field.CanInterface() {
+					fmt.Printf("  %s: %#v\n", fieldName, field.Interface())
+				}
+			}
+		}
+
+		// Print Handler details
+		fmt.Println("\n=== Handler Details ===")
+		handlerValue := reflect.ValueOf(handler)
+		fmt.Printf("Handler Type: %T\n", handler)
+
+		if handlerValue.Kind() == reflect.Struct {
+			for i := 0; i < handlerValue.NumField(); i++ {
+				field := handlerValue.Field(i)
+				fieldType := handlerValue.Type().Field(i)
+				if field.CanInterface() {
+					fmt.Printf("Field: %s, Type: %s, Value: %#v\n",
+						fieldType.Name, field.Type(), field.Interface())
+				} else {
+					fmt.Printf("Field: %s, Type: %s (unexported)\n",
+						fieldType.Name, field.Type())
+				}
+			}
+		}
+
+		// Execute the handler and save results
+		output, metadata, err := handler.HandleInitialize(ctx, input)
+
+		// Print the results
+		fmt.Println("\n=== Handler Output ===")
+		fmt.Printf("Output: %#v\n", output)
+		fmt.Printf("Metadata: %#v\n", metadata)
+		fmt.Printf("Error: %v\n", err)
+
+		return output, metadata, err
+	})
+
+	var testMiddleware2 = middleware.DeserializeMiddlewareFunc("TestMiddleware2", func(ctx context.Context, input middleware.DeserializeInput, handler middleware.DeserializeHandler) (middleware.DeserializeOutput, middleware.Metadata, error) {
+		fmt.Println("\n=== Deserialize Debug ===")
+
+		// Print Context details
+		fmt.Println("\n=== Context Details ===")
+		fmt.Printf("Context: %#v\n", ctx)
+
+		// Print Input details
+		fmt.Println("\n=== Input Details ===")
+		fmt.Printf("Parameters Type: %T\n", input)
+
+		// Execute the handler and save results
+		output, metadata, err := handler.HandleDeserialize(ctx, input)
+
+		fmt.Println("\n=== Output Details ===")
+
+		if err != nil {
+			fmt.Printf("Error occurred: %v\n", err)
+		}
+		fmt.Printf("Output: %#v\n", output)
+		fmt.Printf("Metadata: %#v\n", metadata)
+		fmt.Printf("Error: %v\n", err)
+
+		resp := awsmiddleware.GetRawResponse(metadata)
+		fmt.Printf("resp: %#v\n", resp)
+
+		if resp, ok := output.RawResponse.(*smithyhttp.Response); ok {
+			standardResp := resp.Response
+			respBytes, dumpErr := httputil.DumpResponse(standardResp, true)
+			if dumpErr != nil {
+				fmt.Printf("Failed to dump response: %v\n", dumpErr)
+			} else {
+				fmt.Printf("HTTP Response:\n%s\n", string(respBytes))
+			}
+		}
+
+		// Access the raw HTTP response
+		if httpResp, ok := resp.(*http.Response); ok {
+			respBytes, dumpErr := httputil.DumpResponse(httpResp, true)
+			if dumpErr != nil {
+				fmt.Printf("Failed to dump response: %v\n", dumpErr)
+			} else {
+				fmt.Printf("HTTP Response:\n%s\n", string(respBytes))
+			}
+		} else {
+			fmt.Println("Raw response is not an HTTP response")
+			fmt.Printf("Raw response type: %T\n", resp)
+			fmt.Printf("Raw response: %v\n", resp)
+			fmt.Printf("Raw response2: %s\n", resp)
+		}
+
+		return output, metadata, err
+	})
+
 	cfg, err := config.LoadDefaultConfig(
 		context.TODO(),
 		config.WithClientLogMode(
@@ -122,6 +251,29 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 		config.WithRetryMode(aws.RetryModeAdaptive),
 		// config.WithAPIOptions(cacheFunc),
 	)
+	cfg.APIOptions = append(cfg.APIOptions, func(stack *middleware.Stack) error {
+		// Add custom middlewares
+		if err := stack.Initialize.Add(testMiddleware, middleware.After); err != nil {
+			return err
+		}
+		if err := stack.Deserialize.Insert(testMiddleware2, "OperationDeserializer", middleware.After); err != nil {
+			return err
+		}
+		fmt.Printf("Middleware Stack: %v\n", stack.List())
+		return nil
+	})
+	//stack := middleware.NewStack("CacheStack", nil)
+	//// Simulate applying the options to the stack
+	//for _, opt := range cfg.APIOptions {
+	//	err := opt(stack)
+	//	if err != nil {
+	//		fmt.Printf("Error adding middleware: %v\n", err)
+	//	}
+	//}
+	//
+	//// List the middleware in the Initialize phase
+	//fmt.Printf("Middleware in Initialize phase: %v\n", stack.Initialize.List())
+
 	if err != nil {
 		return aws.Config{}, err
 	}
