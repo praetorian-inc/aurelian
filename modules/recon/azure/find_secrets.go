@@ -3,7 +3,6 @@ package reconaz
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"strings"
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
@@ -15,38 +14,28 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
-// List of supported resource types
-var AzureSupportedTypes = []string{
-	"Microsoft.Compute/virtualMachines",
-	"Microsoft.Web/sites",
-	"ALL",
-}
-
-// Module metadata
 var AzureFindSecretsMetadata = modules.Metadata{
 	Id:          "find-secrets",
-	Name:        "Find Secrets",
-	Description: "Enumerate Azure resources and find secrets using Nosey Parker",
+	Name:        "Find Azure Secrets",
+	Description: "Enumerate Azure VMs and Function Apps to find secrets using Nosey Parker and Azure Resource Graph",
 	Platform:    modules.Azure,
 	Authors:     []string{"Praetorian"},
 	OpsecLevel:  modules.Moderate,
-	References:  []string{},
+	References: []string{
+		"https://learn.microsoft.com/en-us/azure/azure-resource-graph/overview",
+		"https://learn.microsoft.com/en-us/azure/azure-functions/security-concepts",
+	},
 }
 
-// Module options
 var AzureFindSecretsOptions = []*types.Option{
-	options.WithDescription(
-		options.AzureResourceTypesOpt,
-		"Azure resource types to scan. Currently supported types: "+strings.Join(AzureSupportedTypes, ", "),
-	),
 	&options.AzureSubscriptionOpt,
 	&options.AzureWorkerCountOpt,
+	&options.AzureTimeoutOpt,
 	&options.NoseyParkerPathOpt,
 	&options.NoseyParkerArgsOpt,
 	&options.NoseyParkerOutputOpt,
 }
 
-// Output providers
 var AzureFindSecretsOutputProviders = []func(options []*types.Option) types.OutputProvider{
 	op.NewConsoleProvider,
 }
@@ -69,70 +58,57 @@ func NewAzureFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[stri
 	if strings.EqualFold(subscriptionOpt, "all") {
 		subs, err := helpers.ListSubscriptions(ctx, opts)
 		if err != nil {
-			logger.Error("Failed to list subscriptions", slog.String("error", err.Error()))
 			return nil, nil, err
 		}
 		subscriptions = subs
-		logger.Info("Found subscriptions to scan", slog.Int("count", len(subscriptions)))
 	} else {
 		subscriptions = []string{subscriptionOpt}
 	}
 
-	// Get resource types
-	resourceType := options.GetOptionByName(options.AzureResourceTypesOpt.Name, opts).Value
-	var resourceTypes []string
-	if strings.EqualFold(resourceType, "all") {
-		logger.Info("Loading secrets scanner for all resource types")
-		for _, rt := range AzureSupportedTypes {
-			if !strings.EqualFold(rt, "all") {
-				resourceTypes = append(resourceTypes, rt)
-			}
-		}
-	} else {
-		logger.Info("Loading secrets scanner for type", slog.String("type", resourceType))
-		resourceTypes = append(resourceTypes, resourceType)
-	}
-
-	// Create input channel
+	// Create input channel with subscription config
 	inputChan := make(chan string)
 	go func() {
 		defer close(inputChan)
-		for _, rt := range resourceTypes {
-			// Create config for this resource type
-			config := stages.ScanConfig{
-				ResourceType:  rt,
-				Subscriptions: subscriptions,
-			}
-			// Marshal to JSON string
-			if configStr, err := json.Marshal(config); err == nil {
-				select {
-				case inputChan <- string(configStr):
-				case <-ctx.Done():
-					return
-				}
+		config := helpers.ScanConfig{
+			Subscriptions: subscriptions,
+		}
+		configStr, err := json.Marshal(config)
+		if err == nil {
+			select {
+			case inputChan <- string(configStr):
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()
 
-	// Create the main pipeline chain
-	mainPipeline, err := stages.ChainStages[string, types.NpInput](
-		stages.AzureFindSecretsStage,
+	// Create parallel pipelines for VMs and Function Apps that merge into NoseyParker
+	vmPipeline, err := stages.ChainStages[string, types.NpInput](
+		stages.AzureListVMsStage,
+		stages.AzureVMSecretsStage,
 	)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// Create the complete pipeline with NoseyParker
-	fullPipeline, err := stages.ChainStages[string, string](
-		func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan types.NpInput {
-			return mainPipeline(ctx, opts, in)
-		},
-		stages.NoseyParkerEnumeratorStage,
-		stages.ToString[string],
+	functionPipeline, err := stages.ChainStages[string, types.NpInput](
+		stages.AzureListFunctionAppsStage,
+		stages.AzureFunctionAppSecretsStage,
 	)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return inputChan, fullPipeline, nil
+	// Final pipeline that combines VM and Function App scanning
+	pipeline, err := stages.ChainStages[string, string](
+		stages.ParallelStages(vmPipeline, functionPipeline), // Run VM and Function App scanning in parallel
+		stages.NoseyParkerEnumeratorStage,                   // Process extracted content with Nosey Parker
+		stages.ToString[string],                             // Convert to string output
+	)
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return inputChan, pipeline, nil
 }

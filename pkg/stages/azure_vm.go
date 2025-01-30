@@ -9,95 +9,131 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
-// AzureVMListResourcesStage lists all VMs in an Azure subscription
-func AzureVMListResourcesStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan types.ResourceInfo {
-	logger := logs.NewStageLogger(ctx, opts, "AzureVMListResourcesStage")
-	out := make(chan types.ResourceInfo)
+// AzureVMDetail contains all relevant information about an Azure VM
+type AzureVMDetail struct {
+	ID             string                 `json:"id"`
+	Name           string                 `json:"name"`
+	ResourceGroup  string                 `json:"resourceGroup"`
+	Location       string                 `json:"location"`
+	SubscriptionID string                 `json:"subscriptionId"`
+	Properties     map[string]interface{} `json:"properties"`
+}
+
+// AzureListVMsStage uses Azure Resource Graph to efficiently list VMs across subscriptions
+func AzureListVMsStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan *AzureVMDetail {
+	logger := logs.NewStageLogger(ctx, opts, "AzureListVMsStage")
+	out := make(chan *AzureVMDetail)
 
 	go func() {
 		defer close(out)
 
-		for subscription := range in {
-			// Get Azure credentials
-			cred, err := azidentity.NewDefaultAzureCredential(nil)
-			if err != nil {
-				logger.Error("Failed to get Azure credential",
-					slog.String("error", err.Error()))
+		// Initialize ARG client
+		argClient, err := helpers.NewARGClient(ctx)
+		if err != nil {
+			logger.Error("Failed to create ARG client", slog.String("error", err.Error()))
+			return
+		}
+
+		for configStr := range in {
+			var config helpers.ScanConfig
+			if err := json.Unmarshal([]byte(configStr), &config); err != nil {
+				logger.Error("Failed to parse config", slog.String("error", err.Error()))
 				continue
 			}
 
-			// Create VM client
-			client, err := armcompute.NewVirtualMachinesClient(subscription, cred, nil)
-			if err != nil {
-				logger.Error(fmt.Sprintf("Failed to create VM client: %v", err))
-				continue
-			}
+			logger.Info("Listing VMs across subscriptions")
 
-			// List all VMs
-			pager := client.NewListAllPager(nil)
+			// Process each subscription
+			for _, subscription := range config.Subscriptions {
+				logger.Info("Processing subscription", slog.String("subscription", subscription))
 
-			// Get first page
-			hasResources := false
-			firstPage := true
+				// Build ARG query for VMs
+				query := `
+					resources
+					| where type =~ 'Microsoft.Compute/virtualMachines'
+					| extend resourceGroup = resourceGroup
+					| extend osType = properties.storageProfile.osDisk.osType
+					| extend osProfile = properties.osProfile
+					| extend computerName = properties.osProfile.computerName
+					`
 
-			for pager.More() {
-				result, err := pager.NextPage(ctx)
-				// Check first page for auth errors
-				if firstPage && err != nil {
-					if strings.Contains(err.Error(), "AuthorizationFailed") {
-						logger.Info("No access to subscription",
-							slog.String("subscription", subscription))
-						// Return a special "no access" resource
-						out <- types.ResourceInfo{
-							Subscription: subscription,
-							Type:         "NO_ACCESS",
-						}
-						break
-					}
-					logger.Error("Failed to list VMs",
-						slog.String("error", err.Error()))
-					break
+				// Set up ARG query options
+				queryOpts := &helpers.ARGQueryOptions{
+					Subscriptions: []string{subscription},
 				}
-				firstPage = false
+
+				err = argClient.ExecutePaginatedQuery(ctx, query, queryOpts, func(response *armresourcegraph.ClientResourcesResponse) error {
+					if response == nil || response.Data == nil {
+						return nil
+					}
+
+					rows, ok := response.Data.([]interface{})
+					if !ok {
+						return fmt.Errorf("unexpected response data type")
+					}
+
+					logger.Info("Processing VM data", slog.Int("count", len(rows)))
+
+					for _, row := range rows {
+						item, ok := row.(map[string]interface{})
+						if !ok {
+							continue
+						}
+
+						vmName, ok := item["name"].(string)
+						if !ok {
+							continue
+						}
+
+						resourceGroup, ok := item["resourceGroup"].(string)
+						if !ok {
+							continue
+						}
+
+						vmId, ok := item["id"].(string)
+						if !ok {
+							continue
+						}
+
+						vmLocation, ok := item["location"].(string)
+						if !ok {
+							continue
+						}
+
+						properties, ok := item["properties"].(map[string]interface{})
+						if !ok {
+							properties = make(map[string]interface{})
+						}
+
+						vmDetail := &AzureVMDetail{
+							ID:             vmId,
+							Name:           vmName,
+							ResourceGroup:  resourceGroup,
+							Location:       vmLocation,
+							SubscriptionID: subscription,
+							Properties:     properties,
+						}
+
+						select {
+						case out <- vmDetail:
+						case <-ctx.Done():
+							return nil
+						}
+					}
+					return nil
+				})
 
 				if err != nil {
-					logger.Error(fmt.Sprintf("Failed to get page: %v", err))
-					break
+					logger.Error("Failed to execute ARG query",
+						slog.String("subscription", subscription),
+						slog.String("error", err.Error()))
 				}
-
-				for _, vm := range result.Value {
-					if vm.ID == nil || vm.Name == nil || vm.Type == nil || vm.Location == nil {
-						logger.Error("VM missing required properties")
-						continue
-					}
-
-					hasResources = true
-					resourceInfo := types.ResourceInfo{
-						ID:            *vm.ID,
-						Name:          *vm.Name,
-						Type:          *vm.Type,
-						Location:      *vm.Location,
-						ResourceGroup: helpers.ExtractResourceGroup(*vm.ID),
-						Subscription:  subscription,
-						Tags:          vm.Tags,
-						Properties:    make(map[string]interface{}),
-					}
-
-					select {
-					case out <- resourceInfo:
-					case <-ctx.Done():
-						return
-					}
-				}
-			}
-
-			if !hasResources {
-				logger.Info(fmt.Sprintf("No resources found in subscription %s", subscription))
 			}
 		}
 	}()
@@ -105,31 +141,32 @@ func AzureVMListResourcesStage(ctx context.Context, opts []*types.Option, in <-c
 	return out
 }
 
-// AzureVMScanSecretsStage performs comprehensive secret scanning of Azure VMs
-func AzureVMScanSecretsStage(ctx context.Context, opts []*types.Option, in <-chan types.ResourceInfo) <-chan types.NpInput {
-	logger := logs.NewStageLogger(ctx, opts, "AzureVMScanSecretsStage")
+// AzureVMSecretsStage processes VMs and extracts potential secrets
+func AzureVMSecretsStage(ctx context.Context, opts []*types.Option, in <-chan *AzureVMDetail) <-chan types.NpInput {
+	logger := logs.NewStageLogger(ctx, opts, "AzureVMSecretsStage")
 	out := make(chan types.NpInput)
 
 	go func() {
 		defer close(out)
 
-		for resource := range in {
-			// Skip resources marked as no access
-			if resource.Type == "NO_ACCESS" {
-				continue
-			}
+		for vm := range in {
+			logger.Debug("Processing VM for secrets", slog.String("name", vm.Name))
 
-			// Get Azure credentials
+			// Get Azure credentials for VM operations
 			cred, err := azidentity.NewDefaultAzureCredential(nil)
 			if err != nil {
-				logger.Error(fmt.Sprintf("Failed to get Azure credential: %v", err))
+				logger.Error("Failed to get Azure credential",
+					slog.String("subscription", vm.SubscriptionID),
+					slog.String("error", err.Error()))
 				continue
 			}
 
-			// Create VM client with subscription from resource
-			vmClient, err := armcompute.NewVirtualMachinesClient(resource.Subscription, cred, nil)
+			// Create VM client
+			vmClient, err := armcompute.NewVirtualMachinesClient(vm.SubscriptionID, cred, nil)
 			if err != nil {
-				logger.Error(fmt.Sprintf("Failed to create VM client: %v", err))
+				logger.Error("Failed to create VM client",
+					slog.String("subscription", vm.SubscriptionID),
+					slog.String("error", err.Error()))
 				continue
 			}
 
@@ -138,10 +175,10 @@ func AzureVMScanSecretsStage(ctx context.Context, opts []*types.Option, in <-cha
 				input := types.NpInput{
 					Provenance: types.NpProvenance{
 						Platform:     "azure",
-						ResourceType: resource.Type + "::" + contentType,
-						ResourceID:   resource.ID,
-						Region:       resource.Location,
-						AccountID:    resource.Subscription,
+						ResourceType: "Microsoft.Compute/virtualMachines::" + contentType,
+						ResourceID:   vm.ID,
+						Region:       vm.Location,
+						AccountID:    vm.SubscriptionID,
 					},
 				}
 				if isBase64 {
@@ -158,66 +195,60 @@ func AzureVMScanSecretsStage(ctx context.Context, opts []*types.Option, in <-cha
 
 			// 1. Get VM details including UserData and CustomData
 			userDataExpand := armcompute.InstanceViewTypesUserData
-			vm, err := vmClient.Get(ctx, resource.ResourceGroup, resource.Name, &armcompute.VirtualMachinesClientGetOptions{
+			vmDetails, err := vmClient.Get(ctx, vm.ResourceGroup, vm.Name, &armcompute.VirtualMachinesClientGetOptions{
 				Expand: &userDataExpand,
 			})
 			if err != nil {
-				logger.Error(fmt.Sprintf("Failed to get VM details: %v", err))
+				logger.Error("Failed to get VM details",
+					slog.String("vm", vm.Name),
+					slog.String("error", err.Error()))
 				continue
 			}
 
-			// Check UserData and CustomData
-			if vm.Properties != nil {
-				if vm.Properties.UserData != nil {
-					sendNpInput(*vm.Properties.UserData, "UserData", true)
+			// Process VM details for secrets
+			if vmDetails.Properties != nil {
+				if vmDetails.Properties.UserData != nil {
+					sendNpInput(*vmDetails.Properties.UserData, "UserData", true)
 				}
 
-				if vm.Properties.OSProfile != nil {
-					if vm.Properties.OSProfile.CustomData != nil {
-						sendNpInput(*vm.Properties.OSProfile.CustomData, "CustomData", true)
+				if vmDetails.Properties.OSProfile != nil {
+					if vmDetails.Properties.OSProfile.CustomData != nil {
+						sendNpInput(*vmDetails.Properties.OSProfile.CustomData, "CustomData", true)
 					}
-					if osProfileJson, err := json.Marshal(vm.Properties.OSProfile); err == nil {
+					if osProfileJson, err := json.Marshal(vmDetails.Properties.OSProfile); err == nil {
 						sendNpInput(string(osProfileJson), "OSProfile", false)
 					}
 				}
 			}
 
-			// 2. Check VM Extensions including Custom Script Extension
-			extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(resource.Subscription, cred, nil)
-			if err != nil {
-				logger.Error("Failed to create extensions client")
-				continue
-			}
+			// 2. Process VM Extensions
+			extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(vm.SubscriptionID, cred, nil)
+			if err == nil {
+				extensions, err := extensionsClient.List(ctx, vm.ResourceGroup, vm.Name, nil)
+				if err == nil {
+					for _, ext := range extensions.Value {
+						if ext.Properties == nil {
+							continue
+						}
 
-			extensions, err := extensionsClient.List(ctx, resource.ResourceGroup, resource.Name, nil)
-			if err != nil {
-				logger.Error("Failed to list extensions")
-				continue
-			}
+						// Check extension settings
+						if ext.Properties.Settings != nil {
+							if settingsJson, err := json.Marshal(ext.Properties.Settings); err == nil {
+								sendNpInput(string(settingsJson),
+									fmt.Sprintf("Extension::%s::Settings", *ext.Properties.Type), false)
+							}
+						}
 
-			for _, ext := range extensions.Value {
-				if ext.Properties == nil {
-					continue
-				}
-
-				// Check extension settings
-				if ext.Properties.Settings != nil {
-					if settingsJson, err := json.Marshal(ext.Properties.Settings); err == nil {
-						sendNpInput(string(settingsJson),
-							fmt.Sprintf("Extension::%s::Settings", *ext.Properties.Type), false)
-					}
-				}
-
-				// Handle Custom Script Extension
-				if ext.Properties.Type != nil && (strings.Contains(*ext.Properties.Type, "CustomScript") ||
-					strings.Contains(*ext.Properties.Type, "customscript")) {
-
-					status, err := extensionsClient.Get(ctx, resource.ResourceGroup, resource.Name, *ext.Name, nil)
-					if err == nil && status.Properties != nil && status.Properties.InstanceView != nil {
-						for _, substatus := range status.Properties.InstanceView.Substatuses {
-							if substatus.Message != nil {
-								sendNpInput(*substatus.Message,
-									fmt.Sprintf("Extension::%s::Output", *ext.Properties.Type), false)
+						// Process Custom Script Extension outputs
+						if ext.Properties.Type != nil && strings.Contains(strings.ToLower(*ext.Properties.Type), "customscript") {
+							status, err := extensionsClient.Get(ctx, vm.ResourceGroup, vm.Name, *ext.Name, nil)
+							if err == nil && status.Properties != nil && status.Properties.InstanceView != nil {
+								for _, substatus := range status.Properties.InstanceView.Substatuses {
+									if substatus.Message != nil {
+										sendNpInput(*substatus.Message,
+											fmt.Sprintf("Extension::%s::Output", *ext.Properties.Type), false)
+									}
+								}
 							}
 						}
 					}
@@ -225,60 +256,24 @@ func AzureVMScanSecretsStage(ctx context.Context, opts []*types.Option, in <-cha
 			}
 
 			// 3. Check Disk Encryption Settings
-			if vm.Properties.StorageProfile != nil && vm.Properties.StorageProfile.OSDisk != nil {
-				if vm.Properties.StorageProfile.OSDisk.EncryptionSettings != nil {
-					encSettings := vm.Properties.StorageProfile.OSDisk.EncryptionSettings
-					if encSettings.DiskEncryptionKey != nil || encSettings.KeyEncryptionKey != nil {
-						if encSettingsJson, err := json.Marshal(encSettings); err == nil {
-							sendNpInput(string(encSettingsJson), "DiskEncryptionSettings", false)
-						}
+			if vmDetails.Properties != nil && vmDetails.Properties.StorageProfile != nil &&
+				vmDetails.Properties.StorageProfile.OSDisk != nil &&
+				vmDetails.Properties.StorageProfile.OSDisk.EncryptionSettings != nil {
+				encSettings := vmDetails.Properties.StorageProfile.OSDisk.EncryptionSettings
+				if encSettings.DiskEncryptionKey != nil || encSettings.KeyEncryptionKey != nil {
+					if encSettingsJson, err := json.Marshal(encSettings); err == nil {
+						sendNpInput(string(encSettingsJson), "DiskEncryptionSettings", false)
 					}
 				}
 			}
 
-			// 4. Check Boot Diagnostics
-			if vm.Properties.DiagnosticsProfile != nil &&
-				vm.Properties.DiagnosticsProfile.BootDiagnostics != nil &&
-				vm.Properties.DiagnosticsProfile.BootDiagnostics.StorageURI != nil {
-
-				storageURI := *vm.Properties.DiagnosticsProfile.BootDiagnostics.StorageURI
+			// 4. Check Boot Diagnostics Storage
+			if vmDetails.Properties != nil && vmDetails.Properties.DiagnosticsProfile != nil &&
+				vmDetails.Properties.DiagnosticsProfile.BootDiagnostics != nil &&
+				vmDetails.Properties.DiagnosticsProfile.BootDiagnostics.StorageURI != nil {
+				storageURI := *vmDetails.Properties.DiagnosticsProfile.BootDiagnostics.StorageURI
 				if strings.Contains(storageURI, ".blob.core.windows.net") {
 					sendNpInput(storageURI, "BootDiagnostics::StorageURI", false)
-				}
-			}
-
-			// 5. Configuration Management Extensions
-			configExtensions := map[string]string{
-				"DSC":    "Microsoft.Powershell.DSC",
-				"Chef":   "Chef.Bootstrap.WindowsAzure",
-				"Puppet": "PuppetLabs.PuppetEnterprise",
-			}
-
-			// Already have extensions list from earlier
-			for _, ext := range extensions.Value {
-				if ext.Properties == nil || ext.Properties.Type == nil {
-					continue
-				}
-
-				for configType, extensionType := range configExtensions {
-					if strings.Contains(*ext.Properties.Type, extensionType) {
-						if ext.Properties.Settings != nil {
-							if settingsJson, err := json.Marshal(ext.Properties.Settings); err == nil {
-								sendNpInput(string(settingsJson),
-									fmt.Sprintf("ConfigManagement::%s::Settings", configType), false)
-							}
-						}
-
-						status, err := extensionsClient.Get(ctx, resource.ResourceGroup, resource.Name, *ext.Name, nil)
-						if err == nil && status.Properties != nil && status.Properties.InstanceView != nil {
-							for _, substatus := range status.Properties.InstanceView.Substatuses {
-								if substatus.Message != nil {
-									sendNpInput(*substatus.Message,
-										fmt.Sprintf("ConfigManagement::%s::Output", configType), false)
-								}
-							}
-						}
-					}
 				}
 			}
 		}

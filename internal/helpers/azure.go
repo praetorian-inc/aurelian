@@ -79,6 +79,12 @@ type AzureEnvironmentDetails struct {
 	Resources        []*ResourceCount
 }
 
+// ScanConfig holds the configuration for a resource type scan
+type ScanConfig struct {
+	ResourceType  string   `json:"resourceType"`
+	Subscriptions []string `json:"subscriptions"`
+}
+
 // GetEnvironmentDetails gets all Azure environment details
 func GetEnvironmentDetails(ctx context.Context, subscriptionID string, opts []*types.Option) (*AzureEnvironmentDetails, error) {
 	// Get credentials
