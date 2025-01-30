@@ -179,33 +179,89 @@ func validateStageCompatibility(stage1, stage2 interface{}) error {
 //   - in: The input channel from which data is read.
 //   - out: The output channel to which processed data is sent.
 //   - stages: A variadic list of Stage functions that process the input data.
-//
-// The function
 func FanStages[In, Out any](ctx context.Context, opts []*types.Option, in <-chan In, out chan Out, stages ...Stage[In, Out]) {
-
-	wg := sync.WaitGroup{} //
-	for i := range in {
-		wg.Add(1)
-		go func() {
-			wg2 := sync.WaitGroup{}
-			wg2.Add(len(stages))
-			for _, stage := range stages {
-				go func() {
-					fChan := make(chan In, 1)
-					fChan <- i
-					close(fChan)
-					sout := stage(ctx, opts, fChan)
-					for data := range sout {
-						out <- data
-					}
-					defer wg2.Done()
-				}()
-			}
-			wg2.Wait()
-			wg.Done()
-		}()
+	// Create buffered input channels for each stage
+	stageInputs := make([]chan In, len(stages))
+	for i := range stageInputs {
+		stageInputs[i] = make(chan In, 100)
 	}
-	wg.Wait()
+
+	var wg sync.WaitGroup
+	wg.Add(len(stages))
+
+	// Start goroutine to distribute input to all stage channels
+	go func() {
+		defer func() {
+			// Close all stage input channels once input is exhausted
+			for i := range stageInputs {
+				close(stageInputs[i])
+			}
+		}()
+
+		// Fan out each input value to all stage channels
+		for val := range in {
+			for i := range stageInputs {
+				select {
+				case stageInputs[i] <- val:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+
+	// Start each stage in its own goroutine
+	for i, stage := range stages {
+		go func(stageInput chan In, stageFunc Stage[In, Out]) {
+			defer wg.Done()
+
+			// Process stage output and send to aggregated output channel
+			for result := range stageFunc(ctx, opts, stageInput) {
+				select {
+				case out <- result:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}(stageInputs[i], stage)
+	}
+
+	// Close output channel once all stages complete
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+}
+
+// Tee creates a stage that splits processing into multiple parallel pipelines and merges their outputs.
+func Tee[In any, Out any](pipelines ...[]Stage[In, Out]) Stage[In, Out] {
+	return func(ctx context.Context, opts []*types.Option, in <-chan In) <-chan Out {
+		out := make(chan Out)
+
+		// Create slice of intermediate stages for fan out
+		var intermediateStages []Stage[In, Out]
+
+		// Chain the pipelines together
+		for _, pipeline := range pipelines {
+			// Convert []Stage[In, Out] to []any for ChainStages
+			anyStages := make([]any, len(pipeline))
+			for i, s := range pipeline {
+				anyStages[i] = s
+			}
+
+			// Create chained stage
+			stage, err := ChainStages[In, Out](anyStages...)
+			if err != nil {
+				panic(err)
+			}
+			intermediateStages = append(intermediateStages, stage)
+		}
+
+		// Fan out to all pipelines and collect results
+		go FanStages(ctx, opts, in, out, intermediateStages...)
+
+		return out
+	}
 }
 
 // Generator takes a slice of any type and returns a read-only channel that emits each element of the slice.
@@ -239,6 +295,17 @@ func Echo[In any](ctx context.Context, opts []*types.Option, in <-chan In) <-cha
 		defer close(out)
 		for i := range in {
 			fmt.Printf("echo: %v\n", i)
+			out <- i
+		}
+	}()
+	return out
+}
+
+func NopStage[In any](ctx context.Context, opts []*types.Option, in <-chan In) <-chan In {
+	out := make(chan In)
+	go func() {
+		defer close(out)
+		for i := range in {
 			out <- i
 		}
 	}()

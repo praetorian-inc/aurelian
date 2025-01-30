@@ -12,6 +12,9 @@ nebula aws recon find-secrets [flags]
       --cache-dir string               Directory to store API response cache files (default "nebula-output/.aws-cache")
       --cache-ttl int                  TTL for cached responses in seconds (default 3600) (default 3600)
       --disable-cache                  Disable API response caching
+  -e, --docker-extract                 Extract files from Docker image (default true)
+      --docker-password string         Docker registry password
+      --docker-user string             Docker registry username
   -h, --help                           help for find-secrets
       --np-args string                 custom args to pass to Nosey Parker
       --np-output string               output directory for Nosey Parker (default "datastore.np")
@@ -19,7 +22,7 @@ nebula aws recon find-secrets [flags]
   -o, --output string                  output directory (default "nebula-output")
   -p, --profile string                 AWS shared credentials profile
   -r, --regions string                 Comma separated list of AWS regions. Can be 'all' for all regions.
-  -t, --secret-resource-types string   Comma separated list of AWS services. Currently supported types: AWS::CloudFormation::Stack, AWS::Lambda::Function, AWS::EC2::Instance, ALL
+  -t, --secret-resource-types string   Comma separated list of AWS services. Currently supported types: AWS::CloudFormation::Stack, AWS::Lambda::Function, AWS::EC2::Instance, AWS::ECR::Repository, AWS::ECR::PublicRepository, AWS::ECS::TaskDefinition, ALL
 ```
 
 ### Options inherited from parent commands

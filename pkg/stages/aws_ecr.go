@@ -8,8 +8,11 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
+	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecrpublic"
+	ecrpublictype "github.com/aws/aws-sdk-go-v2/service/ecrpublic/types"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/docker/docker/api/types/registry"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -18,9 +21,9 @@ import (
 )
 
 // AwsEcrLoginStage logs into Amazon ECR repositories.
-func AwsEcrLoginStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan string {
+func AwsEcrLoginStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan ImageContext {
 	logger := logs.NewStageLogger(ctx, opts, "ECRLoginStage")
-	out := make(chan string)
+	out := make(chan ImageContext)
 
 	go func() {
 		defer close(out)
@@ -56,21 +59,81 @@ func AwsEcrLoginStage(ctx context.Context, opts []*types.Option, in <-chan strin
 				logger.Error(err.Error())
 				continue
 			}
-			user := options.GetOptionByName(options.DockerUserOpt.Name, opts)
-			user.Value = strings.Split(string(parsed), ":")[0]
+			jwt := strings.Split(string(parsed), ":")[1]
 
-			password := options.GetOptionByName(options.DockerPasswordOpt.Name, opts)
-			password.Value = strings.Split(string(parsed), ":")[1]
+			account, err := helpers.GetAccountId(config)
+			if err != nil {
+				logger.Error(err.Error())
+				continue
+			}
 
-			out <- uri
+			out <- ImageContext{
+				AuthConfig: registry.AuthConfig{
+					Username:      "AWS",
+					Password:      string(jwt),
+					ServerAddress: fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", account, region),
+				},
+				Image: uri,
+			}
 		}
 	}()
 	return out
 }
 
-// AwsEcrListImages lists the images in both public and private Amazon ECR repositories.
-// It takes a context, a slice of options, and a channel of EnrichedResourceDescription as input,
-// and returns a channel of image URIs as output.
+// AwsEcrPublicLoginStage logs into Amazon ECR repositories.
+func AwsEcrPublicLoginStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan ImageContext {
+	logger := logs.NewStageLogger(ctx, opts, "ECRLoginStage")
+	out := make(chan ImageContext)
+
+	go func() {
+		defer close(out)
+		for uri := range in {
+			// Skip if user and password are already set
+			if options.GetOptionByName(options.DockerUserOpt.Name, opts).Value != "" || options.GetOptionByName(options.DockerPasswordOpt.Name, opts).Value != "" {
+				continue
+			}
+
+			region, err := DockerExtractRegion(uri)
+			if err != nil {
+				logger.Error(err.Error())
+				continue
+			}
+
+			config, err := helpers.GetAWSCfg(region, options.GetOptionByName("profile", opts).Value, opts)
+			if err != nil {
+				logger.Error(err.Error())
+				continue
+			}
+
+			client := ecrpublic.NewFromConfig(config)
+			input := &ecrpublic.GetAuthorizationTokenInput{}
+			tokenOutput, err := client.GetAuthorizationToken(ctx, input)
+			if err != nil {
+				logger.Error(err.Error())
+				continue
+			}
+
+			token := tokenOutput.AuthorizationData.AuthorizationToken
+			parsed, err := base64.StdEncoding.DecodeString(*token)
+			if err != nil {
+				logger.Error(err.Error())
+				continue
+			}
+
+			out <- ImageContext{
+				AuthConfig: registry.AuthConfig{
+					Username:      "AWS",
+					Password:      string(parsed),
+					ServerAddress: fmt.Sprintf("public.ecr.aws"),
+				},
+				Image: uri,
+			}
+		}
+	}()
+	return out
+}
+
+// AwsEcrListImages lists images in Amazon ECR repositories, returning only the latest version.
 func AwsEcrListImages(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan string {
 	logger := logs.NewStageLogger(ctx, opts, "ListECRImages")
 	out := make(chan string)
@@ -84,87 +147,136 @@ func AwsEcrListImages(ctx context.Context, opts []*types.Option, in <-chan types
 				logger.Debug("Skipping resource with no properties", slog.String("identifier", resource.Identifier))
 				continue
 			}
+			if resource.TypeName != "AWS::ECR::Repository" {
+				logger.Debug("Skipping non-ECR resource", slog.String("identifier", resource.Identifier))
+				continue
+			}
 
-			// Handle public repositories (only in us-east-1)
-			if resource.TypeName == "AWS::ECR::PublicRepository" {
-				config, err := helpers.GetAWSCfg("us-east-1", profile, opts)
+			config, err := helpers.GetAWSCfg(resource.Region, profile, opts)
+			if err != nil {
+				logger.Error(err.Error())
+				continue
+			}
+
+			privateClient := ecr.NewFromConfig(config)
+			input := &ecr.DescribeImagesInput{
+				RepositoryName: &resource.Identifier,
+				MaxResults:     aws.Int32(1000),
+			}
+
+			// Get registry info for this account/region
+			registryDomain := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", resource.AccountId, resource.Region)
+
+			var latest *ecrtypes.ImageDetail
+			for {
+				result, err := privateClient.DescribeImages(ctx, input)
 				if err != nil {
-					logger.Error(err.Error())
-					continue
+					logger.Error("Error describing private images for %s: %v", resource.Identifier, err)
+					break
 				}
 
-				publicClient := ecrpublic.NewFromConfig(config)
-				input := &ecrpublic.DescribeImagesInput{
-					RepositoryName: &resource.Identifier,
+				// Compare images in this page to find latest
+				for _, image := range result.ImageDetails {
+					if latest == nil || image.ImagePushedAt.After(*latest.ImagePushedAt) {
+						latest = &image
+					}
 				}
 
-				// Get public registry domain
-				registryDomain := "public.ecr.aws"
-
-				for {
-					result, err := publicClient.DescribeImages(ctx, input)
-					if err != nil {
-						logger.Error("Error describing public images for %s: %v", resource.Identifier, err)
-						break
-					}
-
-					for _, image := range result.ImageDetails {
-						if image.ImageTags != nil && len(image.ImageTags) > 0 {
-							for _, tag := range image.ImageTags {
-								uri := fmt.Sprintf("%s/%s:%s", registryDomain, resource.Identifier, tag)
-								out <- uri
-							}
-						} else if image.ImageDigest != nil {
-							uri := fmt.Sprintf("%s/%s@%s", registryDomain, resource.Identifier, *image.ImageDigest)
-							out <- uri
-						}
-					}
-
-					if result.NextToken == nil {
-						break
-					}
-					input.NextToken = result.NextToken
+				if result.NextToken == nil {
+					break
 				}
-			} else { // Handle private repositories
-				config, err := helpers.GetAWSCfg(resource.Region, profile, opts)
+				input.NextToken = result.NextToken
+			}
+
+			if latest != nil {
+				if latest.ImageTags != nil && len(latest.ImageTags) > 0 {
+					uri := fmt.Sprintf("%s/%s:%s", registryDomain, resource.Identifier, latest.ImageTags[0])
+					out <- uri
+				} else if latest.ImageDigest != nil {
+					uri := fmt.Sprintf("%s/%s@%s", registryDomain, resource.Identifier, *latest.ImageDigest)
+					out <- uri
+				}
+			}
+		}
+	}()
+
+	return out
+}
+
+// AwsEcrPublicListLatestImages looks up details about a public ECR image and returns the latest version URL
+func AwsEcrPublicListLatestImages(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan string {
+	logger := logs.NewStageLogger(ctx, opts, "AwsEcrPublicListLatestImages")
+	out := make(chan string)
+
+	go func() {
+		defer close(out)
+		for resource := range in {
+			if resource.TypeName != "AWS::ECR::PublicRepository" {
+				logger.Debug("Skipping non-public ECR resource", slog.String("identifier", resource.Identifier))
+				continue
+			}
+
+			config, err := helpers.GetAWSCfg("us-east-1", options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			if err != nil {
+				logger.Error("Could not set up client config, error: " + err.Error())
+				continue
+			}
+
+			ecrPublicClient := ecrpublic.NewFromConfig(config)
+
+			// First get repository info to get the registry alias
+			descInput := &ecrpublic.DescribeRepositoriesInput{
+				RepositoryNames: []string{resource.Identifier},
+			}
+
+			descResp, err := ecrPublicClient.DescribeRepositories(ctx, descInput)
+			if err != nil {
+				logger.Error("Could not describe repository " + resource.Identifier + ", error: " + err.Error())
+				continue
+			}
+
+			if len(descResp.Repositories) == 0 {
+				logger.Error("Repository not found: " + resource.Identifier)
+				continue
+			}
+
+			registryAlias := *descResp.Repositories[0].RepositoryUri
+			registryAlias = strings.TrimSuffix(strings.TrimPrefix(registryAlias, "public.ecr.aws/"), "/"+resource.Identifier)
+
+			input := &ecrpublic.DescribeImagesInput{
+				RepositoryName: aws.String(resource.Identifier),
+				MaxResults:     aws.Int32(1000),
+			}
+
+			var latest *ecrpublictype.ImageDetail
+			for {
+				result, err := ecrPublicClient.DescribeImages(ctx, input)
 				if err != nil {
-					logger.Error(err.Error())
-					continue
+					logger.Error("Could not get public image details for " + resource.Identifier + ", error: " + err.Error())
+					break
 				}
 
-				privateClient := ecr.NewFromConfig(config)
-				input := &ecr.DescribeImagesInput{
-					RepositoryName: &resource.Identifier,
+				// Compare images in this page to find latest
+				for _, image := range result.ImageDetails {
+					if latest == nil || image.ImagePushedAt.After(*latest.ImagePushedAt) {
+						latest = &image
+					}
 				}
 
-				// Get registry info for this account/region
-				registryDomain := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", resource.AccountId, resource.Region)
-
-				for {
-					result, err := privateClient.DescribeImages(ctx, input)
-					if err != nil {
-						logger.Error("Error describing private images for %s: %v", resource.Identifier, err)
-						break
-					}
-
-					for _, image := range result.ImageDetails {
-						fmt.Println(image)
-						if image.ImageTags != nil && len(image.ImageTags) > 0 {
-							for _, tag := range image.ImageTags {
-								uri := fmt.Sprintf("%s/%s:%s", registryDomain, resource.Identifier, tag)
-								out <- uri
-							}
-						} else if image.ImageDigest != nil {
-							uri := fmt.Sprintf("%s/%s@%s", registryDomain, resource.Identifier, *image.ImageDigest)
-							out <- uri
-						}
-					}
-
-					if result.NextToken == nil {
-						break
-					}
-					input.NextToken = result.NextToken
+				// Check for more pages
+				if result.NextToken == nil {
+					break
 				}
+				input.NextToken = result.NextToken
+			}
+
+			if latest != nil && len(latest.ImageTags) > 0 {
+				// Format: public.ecr.aws/registry-alias/repository:tag
+				imageURL := fmt.Sprintf("public.ecr.aws/%s/%s:%s",
+					registryAlias,
+					resource.Identifier,
+					latest.ImageTags[0])
+				out <- imageURL
 			}
 		}
 	}()

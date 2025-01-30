@@ -345,7 +345,6 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 			wg.Wait()
 		}
 
-		//stages.FanStages(ctx, opts, in, out, pipelines...)
 	}()
 
 	return out
@@ -377,6 +376,29 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 				pl, err = ChainStages[string, types.NpInput](
 					AwsCloudControlListResources,
 					AwsCloudFormationGetTemplatesNpInputStage,
+				)
+			case "AWS::ECR::Repository":
+				pl, err = ChainStages[string, types.NpInput](
+					AwsCloudControlListResources,
+					AwsEcrListImages,
+					AwsEcrLoginStage,
+					DockerPullStage,
+					DockerSaveStage,
+					DockerExtractToNPStage,
+				)
+			case "AWS::ECR::PublicRepository":
+				pl, err = ChainStages[string, types.NpInput](
+					AwsCloudControlListResources,
+					AwsEcrPublicListLatestImages,
+					AwsEcrPublicLoginStage,
+					DockerPullStage,
+					DockerSaveStage,
+					DockerExtractToNPStage,
+				)
+			case "AWS::ECS::TaskDefinition":
+				pl, err = ChainStages[string, types.NpInput](
+					AwsCloudControlListResources,
+					EnrichedResourceDescriptionToNpInput,
 				)
 			case "ALL":
 				continue

@@ -46,6 +46,8 @@ require (
 	github.com/docker/docker v27.4.1+incompatible
 	github.com/fatih/color v1.18.0
 	github.com/itchyny/gojq v0.12.16
+	github.com/lmittmann/tint v1.0.7
+	github.com/mattn/go-isatty v0.0.20
 	github.com/microsoftgraph/msgraph-sdk-go v1.53.0
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de
 	github.com/neo4j/neo4j-go-driver/v5 v5.27.0
@@ -79,7 +81,6 @@ require (
 	github.com/itchyny/timefmt-go v0.1.6 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/microsoft/kiota-abstractions-go v1.8.1 // indirect
 	github.com/microsoft/kiota-authentication-azure-go v1.1.0 // indirect
 	github.com/microsoft/kiota-http-go v1.4.4 // indirect

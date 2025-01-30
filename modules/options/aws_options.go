@@ -60,6 +60,9 @@ var FindSecretsTypes = []string{
 	"AWS::CloudFormation::Stack",
 	"AWS::Lambda::Function",
 	"AWS::EC2::Instance",
+	"AWS::ECR::Repository",
+	"AWS::ECR::PublicRepository",
+	"AWS::ECS::TaskDefinition",
 	"ALL",
 }
 
