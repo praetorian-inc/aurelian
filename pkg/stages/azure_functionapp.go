@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -139,9 +140,12 @@ func AzureFunctionAppSecretsStage(ctx context.Context, opts []*types.Option, in 
 	out := make(chan types.NpInput)
 
 	go func() {
+		message.Info("Began scanning Microsoft.Web/sites")
+		rgCount := 0
 		defer close(out)
 
 		for app := range in {
+			rgCount++
 			logger.Debug("Processing Function App for secrets", slog.String("name", app.Name))
 
 			// Get Azure credentials
@@ -233,6 +237,8 @@ func AzureFunctionAppSecretsStage(ctx context.Context, opts []*types.Option, in 
 				}
 			}
 		}
+
+		message.Info("Completed scanning Microsoft.Web/sites, %d function apps scanned.", rgCount)
 	}()
 
 	return out

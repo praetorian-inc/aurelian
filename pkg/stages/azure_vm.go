@@ -12,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -147,9 +148,12 @@ func AzureVMSecretsStage(ctx context.Context, opts []*types.Option, in <-chan *A
 	out := make(chan types.NpInput)
 
 	go func() {
+		message.Info("Began scanning Microsoft.Compute/virtualMachines")
+		rgCount := 0
 		defer close(out)
 
 		for vm := range in {
+			rgCount++
 			logger.Debug("Processing VM for secrets", slog.String("name", vm.Name))
 
 			// Get Azure credentials for VM operations
@@ -277,6 +281,7 @@ func AzureVMSecretsStage(ctx context.Context, opts []*types.Option, in <-chan *A
 				}
 			}
 		}
+		message.Info("Completed scanning Microsoft.Compute/virtualMachines, %d virtual machines scanned.", rgCount)
 	}()
 
 	return out

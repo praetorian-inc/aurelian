@@ -142,9 +142,9 @@ func NewAzureFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[stri
 
 	// Combine all resource pipelines and create final pipeline
 	pipeline, err := stages.ChainStages[string, string](
-		stages.ParallelStages(resourcePipelines...), // Run all resource scanning in parallel
-		stages.NoseyParkerEnumeratorStage,           // Process extracted content with Nosey Parker
-		stages.ToString[string],                     // Convert to string output
+		stages.ParallelStages(resourcePipelines...),
+		stages.NoseyParkerEnumeratorStage,
+		stages.ToString[string],
 	)
 
 	if err != nil {
