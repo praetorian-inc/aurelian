@@ -24,6 +24,9 @@ var AwsFindSecretsOptions = []*types.Option{
 	&options.NoseyParkerPathOpt,
 	&options.NoseyParkerArgsOpt,
 	&options.NoseyParkerOutputOpt,
+	options.WithRequired(options.DockerUserOpt, false),
+	options.WithRequired(options.DockerPasswordOpt, false),
+	options.WithDefaultValue(options.DockerExtractOpt, "true"),
 }
 
 var AwsFindSecretsOutputProviders = []func(options []*types.Option) types.OutputProvider{
@@ -44,6 +47,7 @@ func NewAwsFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[string
 	pipeline, err := stages.ChainStages[string, string](
 		stages.AwsFindSecretsStage,
 		stages.NoseyParkerEnumeratorStage,
+		stages.NoseyParkerSummarizeStage,
 	)
 
 	if err != nil {
