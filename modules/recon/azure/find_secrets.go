@@ -3,10 +3,13 @@ package reconaz
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/internal/message"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -17,7 +20,7 @@ import (
 var AzureFindSecretsMetadata = modules.Metadata{
 	Id:          "find-secrets",
 	Name:        "Find Azure Secrets",
-	Description: "Enumerate Azure VMs and Function Apps to find secrets using Nosey Parker and Azure Resource Graph",
+	Description: "Enumerate Azure resources and find secrets using Nosey Parker and Azure Resource Graph",
 	Platform:    modules.Azure,
 	Authors:     []string{"Praetorian"},
 	OpsecLevel:  modules.Moderate,
@@ -34,6 +37,7 @@ var AzureFindSecretsOptions = []*types.Option{
 	&options.NoseyParkerPathOpt,
 	&options.NoseyParkerArgsOpt,
 	&options.NoseyParkerOutputOpt,
+	&options.AzureResourceTypesOpt,
 }
 
 var AzureFindSecretsOutputProviders = []func(options []*types.Option) types.OutputProvider{
@@ -65,12 +69,29 @@ func NewAzureFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[stri
 		subscriptions = []string{subscriptionOpt}
 	}
 
-	// Create input channel with subscription config
+	// Get resource types to scan
+	resourceTypes := []string{}
+	resourceTypeOpt := options.GetOptionByName(options.AzureResourceTypesOpt.Name, opts).Value
+	if strings.ToLower(resourceTypeOpt) == "all" {
+		slog.Info("Loading secrets scanning module for all supported resource types")
+		// Get resource types from option's ValueList
+		for _, rtype := range options.AzureResourceTypesOpt.ValueList {
+			if strings.ToLower(rtype) != "all" {
+				resourceTypes = append(resourceTypes, rtype)
+			}
+		}
+	} else {
+		slog.Info("Loading secrets scanning module for resource types: " + resourceTypeOpt)
+		resourceTypes = strings.Split(resourceTypeOpt, ",")
+	}
+
+	// Create input channel with subscription and resource type config
 	inputChan := make(chan string)
 	go func() {
 		defer close(inputChan)
 		config := helpers.ScanConfig{
 			Subscriptions: subscriptions,
+			ResourceTypes: resourceTypes,
 		}
 		configStr, err := json.Marshal(config)
 		if err == nil {
@@ -82,28 +103,48 @@ func NewAzureFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[stri
 		}
 	}()
 
-	// Create parallel pipelines for VMs and Function Apps that merge into NoseyParker
-	vmPipeline, err := stages.ChainStages[string, types.NpInput](
-		stages.AzureListVMsStage,
-		stages.AzureVMSecretsStage,
-	)
-	if err != nil {
-		return nil, nil, err
+	// Create resource type specific pipelines
+	var resourcePipelines []stages.Stage[string, types.NpInput]
+
+	for _, rtype := range resourceTypes {
+		message.Info("Configuring pipeline for resource type: %s", rtype)
+
+		var pipeline stages.Stage[string, types.NpInput]
+		var err error
+
+		switch rtype {
+		case "Microsoft.Compute/virtualMachines":
+			pipeline, err = stages.ChainStages[string, types.NpInput](
+				stages.AzureListVMsStage,
+				stages.AzureVMSecretsStage,
+			)
+		case "Microsoft.Web/sites":
+			pipeline, err = stages.ChainStages[string, types.NpInput](
+				stages.AzureListFunctionAppsStage,
+				stages.AzureFunctionAppSecretsStage,
+			)
+		default:
+			logger.Error("Unsupported resource type: " + rtype)
+			continue
+		}
+
+		if err != nil {
+			logger.Error("Failed to create pipeline for " + rtype + ": " + err.Error())
+			continue
+		}
+
+		resourcePipelines = append(resourcePipelines, pipeline)
 	}
 
-	functionPipeline, err := stages.ChainStages[string, types.NpInput](
-		stages.AzureListFunctionAppsStage,
-		stages.AzureFunctionAppSecretsStage,
-	)
-	if err != nil {
-		return nil, nil, err
+	if len(resourcePipelines) == 0 {
+		return nil, nil, fmt.Errorf("no valid resource type pipelines configured")
 	}
 
-	// Final pipeline that combines VM and Function App scanning
+	// Combine all resource pipelines and create final pipeline
 	pipeline, err := stages.ChainStages[string, string](
-		stages.ParallelStages(vmPipeline, functionPipeline), // Run VM and Function App scanning in parallel
-		stages.NoseyParkerEnumeratorStage,                   // Process extracted content with Nosey Parker
-		stages.ToString[string],                             // Convert to string output
+		stages.ParallelStages(resourcePipelines...), // Run all resource scanning in parallel
+		stages.NoseyParkerEnumeratorStage,           // Process extracted content with Nosey Parker
+		stages.ToString[string],                     // Convert to string output
 	)
 
 	if err != nil {

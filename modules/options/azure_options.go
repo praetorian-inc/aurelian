@@ -1,7 +1,9 @@
 package options
 
 import (
+	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
@@ -35,13 +37,19 @@ var AzureTimeoutOpt = types.Option{
 	Value:       "600", // 10 minute default timeout
 }
 
+var azureAcceptedTypes = []string{
+	"all",
+	"Microsoft.Compute/virtualMachines",
+	"Microsoft.Web/sites",
+}
+
 var AzureResourceTypesOpt = types.Option{
 	Name:        "resource-types",
-	Short:       "t",
-	Description: "Azure resource types to scan",
+	Short:       "r",
+	Description: fmt.Sprintf("Azure resource types to scan (supported: %s)", strings.Join(azureAcceptedTypes, ", ")),
 	Required:    true,
 	Type:        types.String,
 	Value:       "",
 	ValueFormat: regexp.MustCompile(`(?i)^(Microsoft\.[A-Za-z]+/[A-Za-z]+|ALL)$`),
-	ValueList:   []string{"Microsoft.Compute/virtualMachines", "Microsoft.Web/sites", "all"},
+	ValueList:   azureAcceptedTypes,
 }

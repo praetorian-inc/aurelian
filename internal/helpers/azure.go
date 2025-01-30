@@ -81,8 +81,8 @@ type AzureEnvironmentDetails struct {
 
 // ScanConfig holds the configuration for a resource type scan
 type ScanConfig struct {
-	ResourceType  string   `json:"resourceType"`
-	Subscriptions []string `json:"subscriptions"`
+	Subscriptions []string
+	ResourceTypes []string
 }
 
 // GetEnvironmentDetails gets all Azure environment details
