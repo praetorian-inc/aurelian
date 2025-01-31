@@ -41,7 +41,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/ollama/ollama/api"
 	"github.com/praetorian-inc/nebula/internal/logs"
@@ -295,68 +294,4 @@ func SplitByComma(types string) <-chan string {
 		}
 	}()
 	return out
-}
-
-func ParallelStages[In any, Out any](stages ...Stage[In, Out]) Stage[In, Out] {
-	return func(ctx context.Context, opts []*types.Option, in <-chan In) <-chan Out {
-		out := make(chan Out)
-		var wg sync.WaitGroup
-
-		// Create a separate input channel for each stage
-		inputs := make([]chan In, len(stages))
-		for i := range inputs {
-			inputs[i] = make(chan In)
-		}
-
-		// Start each stage with its own input channel
-		outputs := make([]<-chan Out, len(stages))
-		for i, stage := range stages {
-			wg.Add(1)
-			go func(i int, stage Stage[In, Out]) {
-				defer wg.Done()
-				outputs[i] = stage(ctx, opts, inputs[i])
-			}(i, stage)
-		}
-
-		// Fan out input to all stage input channels
-		go func() {
-			for item := range in {
-				for _, input := range inputs {
-					input <- item
-				}
-			}
-			// Close all input channels when original input is done
-			for _, input := range inputs {
-				close(input)
-			}
-		}()
-
-		// Merge all outputs into single channel
-		go func() {
-			defer close(out)
-
-			// Wait for all stages to complete
-			wg.Wait()
-
-			// Create new WaitGroup for merging outputs
-			var mergeWg sync.WaitGroup
-			for _, output := range outputs {
-				output := output // Create new variable for goroutine
-				mergeWg.Add(1)
-				go func() {
-					defer mergeWg.Done()
-					for item := range output {
-						select {
-						case out <- item:
-						case <-ctx.Done():
-							return
-						}
-					}
-				}()
-			}
-			mergeWg.Wait()
-		}()
-
-		return out
-	}
 }

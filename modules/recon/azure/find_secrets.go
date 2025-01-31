@@ -74,7 +74,6 @@ func NewAzureFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[stri
 	resourceTypeOpt := options.GetOptionByName(options.AzureResourceTypesOpt.Name, opts).Value
 	if strings.ToLower(resourceTypeOpt) == "all" {
 		slog.Info("Loading secrets scanning module for all supported resource types")
-		// Get resource types from option's ValueList
 		for _, rtype := range options.AzureResourceTypesOpt.ValueList {
 			if strings.ToLower(rtype) != "all" {
 				resourceTypes = append(resourceTypes, rtype)
@@ -103,48 +102,49 @@ func NewAzureFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[stri
 		}
 	}()
 
-	// Create resource type specific pipelines
-	var resourcePipelines []stages.Stage[string, types.NpInput]
+	// Create resource type pipelines
+	var resourcePipelines [][]stages.Stage[string, types.NpInput]
 
 	for _, rtype := range resourceTypes {
 		message.Info("Configuring pipeline for resource type: %s", rtype)
 
-		var pipeline stages.Stage[string, types.NpInput]
-		var err error
-
 		switch rtype {
 		case "Microsoft.Compute/virtualMachines":
-			pipeline, err = stages.ChainStages[string, types.NpInput](
+			vmPipeline, err := stages.ChainStages[string, types.NpInput](
 				stages.AzureListVMsStage,
 				stages.AzureVMSecretsStage,
 			)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to create VM pipeline: %v", err))
+				continue
+			}
+			resourcePipelines = append(resourcePipelines, []stages.Stage[string, types.NpInput]{vmPipeline})
+
 		case "Microsoft.Web/sites":
-			pipeline, err = stages.ChainStages[string, types.NpInput](
+			appPipeline, err := stages.ChainStages[string, types.NpInput](
 				stages.AzureListFunctionAppsStage,
 				stages.AzureFunctionAppSecretsStage,
 			)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to create Function App pipeline: %v", err))
+				continue
+			}
+			resourcePipelines = append(resourcePipelines, []stages.Stage[string, types.NpInput]{appPipeline})
+
 		default:
 			logger.Error("Unsupported resource type: " + rtype)
-			continue
 		}
-
-		if err != nil {
-			logger.Error("Failed to create pipeline for " + rtype + ": " + err.Error())
-			continue
-		}
-
-		resourcePipelines = append(resourcePipelines, pipeline)
 	}
 
 	if len(resourcePipelines) == 0 {
 		return nil, nil, fmt.Errorf("no valid resource type pipelines configured")
 	}
 
-	// Combine all resource pipelines and create final pipeline
+	// Create final pipeline using Tee
 	pipeline, err := stages.ChainStages[string, string](
-		stages.ParallelStages(resourcePipelines...),
+		stages.Tee(resourcePipelines...),
 		stages.NoseyParkerEnumeratorStage,
-		stages.ToString[string],
+		stages.NoseyParkerSummarizeStage,
 	)
 
 	if err != nil {
