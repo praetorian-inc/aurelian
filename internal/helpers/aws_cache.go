@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"os"
@@ -19,66 +19,68 @@ import (
 	"reflect"
 )
 
-var NonCacheableOperations = []string{
-	"STS.GetCallerIdentity",
-}
+var (
+	NonCacheableOperations = []string{
+		"STS.GetCallerIdentity",
+	}
+	logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+)
 
 func isCacheable(service, operation string) bool {
-
 	for _, nonCacheableOperation := range NonCacheableOperations {
 		if fmt.Sprintf("%s.%s", service, operation) == nonCacheableOperation {
 			return false
 		}
 	}
-
 	return true
 }
 
 // saveResponseToFile writes the HTTP response to a specified file.
 func saveResponseToFile(resp *http.Response, filename string) error {
-	// Dump the response
 	respBytes, err := httputil.DumpResponse(resp, true)
 	if err != nil {
+		logger.Error("Failed to dump response", "error", err)
 		return fmt.Errorf("failed to dump response: %v", err)
 	}
 
-	// Write to file
 	file, err := os.Create(filename)
 	if err != nil {
+		logger.Error("Failed to create file", "filename", filename, "error", err)
 		return fmt.Errorf("failed to create file: %v", err)
 	}
-	defer func(file *os.File) {
-		err := file.Close()
-		if err != nil {
-			log.Printf("failed to close file: %v", err)
+	defer func() {
+		if err := file.Close(); err != nil {
+			logger.Error("Failed to close file", "filename", filename, "error", err)
 		}
-	}(file)
+	}()
 
 	_, err = file.Write(respBytes)
 	if err != nil {
+		logger.Error("Failed to write to file", "filename", filename, "error", err)
 		return fmt.Errorf("failed to write to file: %v", err)
 	}
 
+	logger.Info("Response saved to file", "filename", filename)
 	return nil
 }
 
 // loadResponseFromFile reads an HTTP response from a specified file.
-// Caller Responsibility: With this approach, the caller is responsible for closing the file after processing the *http.Response
 func loadResponseFromFile(filename string) (*http.Response, *os.File, error) {
-	// Open the file
 	file, err := os.Open(filename)
 	if err != nil {
+		logger.Error("Failed to open file", "filename", filename, "error", err)
 		return nil, nil, fmt.Errorf("failed to open file: %v", err)
 	}
 
-	// Read the file content
 	reader := bufio.NewReader(file)
 	resp, err := http.ReadResponse(reader, nil)
 	if err != nil {
+		logger.Error("Failed to read response from file", "filename", filename, "error", err)
 		file.Close()
 		return nil, nil, fmt.Errorf("failed to read response: %v", err)
 	}
 
+	logger.Info("Response loaded from file", "filename", filename)
 	return resp, file, nil
 }
 
@@ -91,16 +93,14 @@ func getCachePath(CacheDir string, key string) string {
 func generateCacheKey(arn, service, operation string, params interface{}) string {
 	data, err := json.Marshal(params)
 	if err != nil {
+		logger.Error("Failed to marshal parameters", "error", err)
 		return fmt.Sprintf("%s-%s-%s", service, operation, arn)
 	}
 
-	// Combine all components into a single string
 	combined := fmt.Sprintf("%s-%s-%s-%s", arn, service, operation, string(data))
-
-	// Create hash of the combined string
 	hash := sha256.Sum256([]byte(combined))
 
-	// Return the final cache key
+	logger.Debug("Generated cache key", "cacheKey", hex.EncodeToString(hash[:]))
 	return hex.EncodeToString(hash[:])
 }
 
@@ -114,23 +114,23 @@ type CacheConfigs struct {
 	Identity  sts.GetCallerIdentityOutput
 }
 
-// SetCacheConfigMeta adds a CacheConfigs to the context.
+// SetCacheConfig adds a CacheConfigs to the context.
 func SetCacheConfig(ctx context.Context, key string, value CacheConfigs) context.Context {
 	return context.WithValue(ctx, key, value)
 }
 
-// GetCacheConfigMeta retrieves a CacheConfigs from the context.
+// GetCacheConfig retrieves a CacheConfigs from the context.
 func GetCacheConfig(ctx context.Context, key string) (CacheConfigs, bool) {
 	v, ok := ctx.Value(key).(CacheConfigs)
 	return v, ok
 }
 
-// SetCacheConfigMeta adds a CacheConfigs to the context.
+// SetCacheConfigMeta adds a CacheConfigs to the middleware metadata.
 func SetCacheConfigMeta(metadata *middleware.Metadata, key string, value CacheConfigs) {
 	metadata.Set(key, value)
 }
 
-// GetCacheConfigMeta retrieves a CacheConfigs from the context.
+// GetCacheConfigMeta retrieves a CacheConfigs from the middleware metadata.
 func GetCacheConfigMeta(metadata middleware.Metadata, key string) (v CacheConfigs) {
 	v, _ = metadata.Get(key).(CacheConfigs)
 	return v
@@ -260,92 +260,65 @@ var testMiddleware2 = middleware.DeserializeMiddlewareFunc("TestMiddleware2", fu
 
 // CacheOps is a middleware that handles caching operations during the deserialization phase.
 var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context.Context, input middleware.DeserializeInput, handler middleware.DeserializeHandler) (middleware.DeserializeOutput, middleware.Metadata, error) {
+	// Retrieve cache configuration from context
 	if v, ok := GetCacheConfig(ctx, "cache_config"); ok {
-		fmt.Printf("Retrieved value: %+v\n", v)
+		logger.Debug("Retrieved cache configuration", "config", v)
+
+		// Check if caching is enabled and the operation is cacheable
 		if !v.Enabled || !v.Cacheable {
-			fmt.Printf("Cache bypassed. Enabled: %t; Cacheable: %t", v.Enabled, v.Cacheable)
+			logger.Info("Cache bypassed", "enabled", v.Enabled, "cacheable", v.Cacheable)
 			return handler.HandleDeserialize(ctx, input)
 		}
+
+		// Attempt to load response from cache
 		resp, file, err := loadResponseFromFile(v.CachePath)
 		if err != nil {
-			fmt.Printf("Error loading response: %v\n", err)
-			err := file.Close()
-			if err != nil {
-				fmt.Printf("Failed to close file: %v\n", err)
+			logger.Warn("Error loading response from cache", "error", err, "cachePath", v.CachePath)
+
+			// Ensure the file is closed if it was opened
+			if file != nil {
+				if closeErr := file.Close(); closeErr != nil {
+					logger.Error("Failed to close cache file", "error", closeErr, "cachePath", v.CachePath)
+				}
 			}
+
+			// Proceed with the handler if cache loading fails
 			output, metadata, err := handler.HandleDeserialize(ctx, input)
 			if err != nil {
+				logger.Error("Handler encountered an error", "error", err)
 				return output, metadata, err
 			}
-			fmt.Printf("Got Response\n")
-			fmt.Printf("Output: %#v\n", output)
-			fmt.Printf("Metadata: %#v\n", metadata)
-			fmt.Printf("Error: %v\n", err)
+
+			logger.Info("Handler processed response", "output", output, "metadata", metadata)
+
+			// Save the response to cache
 			if resp, ok := output.RawResponse.(*smithyhttp.Response); ok {
 				standardResp := resp.Response
-				saveErr := saveResponseToFile(standardResp, v.CachePath)
-				if saveErr != nil {
-					fmt.Printf("Error saving response: %v\n", saveErr)
+				if saveErr := saveResponseToFile(standardResp, v.CachePath); saveErr != nil {
+					logger.Error("Error saving response to cache", "error", saveErr, "cachePath", v.CachePath)
 				} else {
-					fmt.Printf("Saved response to file %s\n", v.CachePath)
+					logger.Info("Response saved to cache", "cachePath", v.CachePath)
 				}
 			} else {
-				fmt.Printf("Raw response is not an HTTP response\n")
+				logger.Warn("Raw response is not an HTTP response", "rawResponse", output.RawResponse)
 			}
-			return output, metadata, err
-		} else {
-			// TODO: check if cache expired
-			output := middleware.DeserializeOutput{RawResponse: &smithyhttp.Response{Response: resp}, Result: nil}
-			fmt.Printf("Using cache file: %s\n", v.CacheKey)
-			v.Fd = file
-			metadata := middleware.Metadata{}
-			SetCacheConfigMeta(&metadata, "cache_config", v)
+
 			return output, metadata, err
 		}
-	} else {
-		fmt.Println("Value not found in context")
-		return handler.HandleDeserialize(ctx, input)
-	}
-})
 
-// CachePrep is a middleware that prepares caching by setting up the context with cache configuration.
-//var CachePrep = middleware.InitializeMiddlewareFunc("CachePrep", func(ctx context.Context, input middleware.InitializeInput, handler middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
-//	// Extract service and operation information using awsmiddleware helpers
-//	service := awsmiddleware.GetServiceID(ctx)
-//	operation := awsmiddleware.GetOperationName(ctx)
-//
-//	fmt.Printf("Service: %s\n", service)
-//	fmt.Printf("Operation: %s\n", operation)
-//
-//	// Skip if we couldn't determine service or operation
-//	if service == "" || operation == "" {
-//		fmt.Sprintf("Could not determine service (%s) or operation (%s), params: %+v",
-//			service, operation, input.Parameters)
-//		return handler.HandleInitialize(ctx, input)
-//	}
-//
-//	fmt.Sprintf("Processing request for service: %s, operation: %s", service, operation)
-//	// Generate cache key and get cache file path
-//	cacheKey := generateCacheKey(service, operation, input.Parameters)
-//	cachePath := getCachePath("/tmp", cacheKey)
-//
-//	CacheConfig := CacheConfigs{
-//		CachePath: cachePath,
-//		CacheKey:  cacheKey,
-//		Enabled:   true,
-//		Cacheable: isCacheable(service, operation),
-//	}
-//	ctx = SetCacheConfig(ctx, "cache_config", CacheConfig)
-//	output, metadata, err := handler.HandleInitialize(ctx, input)
-//	if CacheConfig.Enabled && CacheConfig.Cacheable {
-//		v := GetCacheConfigMeta(metadata, "cache_config")
-//		errFd := v.Fd.Close()
-//		if errFd != nil {
-//			fmt.Printf("CachePrep: Failed to close file: %v\n", errFd)
-//		}
-//	}
-//	return output, metadata, err
-//})
+		// Cache hit: use the cached response
+		logger.Info("Using cached response", "cacheKey", v.CacheKey)
+		v.Fd = file
+		metadata := middleware.Metadata{}
+		SetCacheConfigMeta(&metadata, "cache_config", v)
+		output := middleware.DeserializeOutput{RawResponse: &smithyhttp.Response{Response: resp}, Result: nil}
+		return output, metadata, nil
+	}
+
+	// Cache configuration not found in context
+	logger.Warn("Cache configuration not found in context")
+	return handler.HandleDeserialize(ctx, input)
+})
 
 func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput) middleware.InitializeMiddleware {
 	return middleware.InitializeMiddlewareFunc("CachePrep", func(ctx context.Context, input middleware.InitializeInput, handler middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
@@ -353,40 +326,49 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput) middle
 		service := awsmiddleware.GetServiceID(ctx)
 		operation := awsmiddleware.GetOperationName(ctx)
 
-		fmt.Printf("Service: %s\n", service)
-		fmt.Printf("Operation: %s\n", operation)
+		logger.Debug("Extracted service and operation", "service", service, "operation", operation)
 
 		// Skip if we couldn't determine service or operation
 		if service == "" || operation == "" {
-			fmt.Sprintf("Could not determine service (%s) or operation (%s), params: %+v",
-				service, operation, input.Parameters)
+			logger.Warn("Could not determine service or operation", "service", service, "operation", operation, "parameters", input.Parameters)
 			return handler.HandleInitialize(ctx, input)
 		}
 
-		fmt.Sprintf("Processing request for service: %s, operation: %s", service, operation)
+		logger.Info("Processing request", "service", service, "operation", operation)
+
 		// Generate cache key and get cache file path
 		cacheKey := generateCacheKey(*callerIdentity.Arn, service, operation, input.Parameters)
 		cachePath := getCachePath("/tmp", cacheKey)
 
-		CacheConfig := CacheConfigs{
+		cacheConfig := CacheConfigs{
 			CachePath: cachePath,
 			CacheKey:  cacheKey,
 			Enabled:   true,
 			Cacheable: isCacheable(service, operation),
 			Identity:  callerIdentity,
 		}
-		ctx = SetCacheConfig(ctx, "cache_config", CacheConfig)
+		ctx = SetCacheConfig(ctx, "cache_config", cacheConfig)
+
 		output, metadata, err := handler.HandleInitialize(ctx, input)
-		if CacheConfig.Enabled && CacheConfig.Cacheable {
+		if err != nil {
+			logger.Error("Handler encountered an error", "error", err)
+			return output, metadata, err
+		}
+
+		if cacheConfig.Enabled && cacheConfig.Cacheable {
 			v := GetCacheConfigMeta(metadata, "cache_config")
-			errFd := v.Fd.Close()
-			if errFd != nil {
-				fmt.Printf("CachePrep: Failed to close file: %v\n", errFd)
+			if v.Fd != nil {
+				if err := v.Fd.Close(); err != nil {
+					logger.Error("Failed to close file", "error", err)
+				} else {
+					logger.Debug("Closed file successfully")
+				}
 			}
 		}
 
-		//fmt.Printf("Identity:\n")
-		//fmt.Printf("Account: %s; Arn: %s; UserId: %s\n", *callerIdentity.Account, *callerIdentity.Arn, *callerIdentity.UserId)
-		return output, metadata, err
+		// Optionally log caller identity details
+		// logger.Debug("Caller Identity", "Account", *callerIdentity.Account, "Arn", *callerIdentity.Arn, "UserId", *callerIdentity.UserId)
+
+		return output, metadata, nil
 	})
 }

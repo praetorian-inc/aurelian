@@ -99,23 +99,6 @@ type Response struct {
 
 func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config, error) {
 
-	// stack := middleware.NewStack("CacheStack", middleware.StackSend)
-
-	// cacheMiddleware := &CacheMiddleware{
-	// 	CacheDir: options.GetOptionByName(options.LogLevelOpt.Name, opts).Value,
-	// }
-	// stack.Deserialize.Add(cacheMiddleware, middleware.After)
-
-	// cacheFunc := []func(*middleware.Stack) error{
-	// 	func(stack *middleware.Stack) error {
-	// 		// Add cache middleware after service metadata is registered to ensure we can access service info
-	// 		// return stack.Initialize.Insert(&fileCacheMiddleware{config: fc},
-	// 		// 	"RegisterServiceMetadata",
-	// 		// 	middleware.After)
-	// 		return stack.Deserialize.Insert(cacheMiddleware, "RegisterServiceMetadata", middleware.After)
-	// 	},
-	// }
-
 	cfg, err := config.LoadDefaultConfig(
 		context.TODO(),
 		config.WithClientLogMode(
@@ -155,20 +138,9 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 			return err
 		}
 
-		fmt.Printf("Middleware Stack: %v\n", stack.List())
+		//fmt.Printf("Middleware Stack: %v\n", stack.List())
 		return nil
 	})
-	//stack := middleware.NewStack("CacheStack", nil)
-	//// Simulate applying the options to the stack
-	//for _, opt := range cfg.APIOptions {
-	//	err := opt(stack)
-	//	if err != nil {
-	//		fmt.Printf("Error adding middleware: %v\n", err)
-	//	}
-	//}
-	//
-	//// List the middleware in the Initialize phase
-	//fmt.Printf("Middleware in Initialize phase: %v\n", stack.Initialize.List())
 
 	return cfg, nil
 
