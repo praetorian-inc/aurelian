@@ -19,7 +19,7 @@ type MarkdownFileProvider struct {
 
 func NewMarkdownFileProvider(opts []*types.Option) types.OutputProvider {
 	return &MarkdownFileProvider{
-		OutputPath: options.GetOptionByName(options.OutputOpt.Value, opts).Value,
+		OutputPath: options.GetOptionByName(options.OutputOpt.Name, opts).Value,
 		FileName:   "",
 	}
 }
