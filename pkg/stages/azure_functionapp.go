@@ -182,6 +182,9 @@ func AzureFunctionAppSecretsStage(ctx context.Context, opts []*types.Option, in 
 				} else {
 					input.Content = content
 				}
+
+				logger.Debug(fmt.Sprintf("Sending data to NP from %s in subscription %s: %s", app.ID, app.SubscriptionID, content))
+
 				select {
 				case out <- input:
 				case <-ctx.Done():

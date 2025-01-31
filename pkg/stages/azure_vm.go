@@ -190,6 +190,9 @@ func AzureVMSecretsStage(ctx context.Context, opts []*types.Option, in <-chan *A
 				} else {
 					input.Content = content
 				}
+
+				logger.Debug(fmt.Sprintf("Sending data to NP from %s in subscription %s: %s", vm.ID, vm.SubscriptionID, content))
+
 				select {
 				case out <- input:
 				case <-ctx.Done():
