@@ -44,12 +44,13 @@ var azureAcceptedTypes = []string{
 }
 
 var AzureResourceTypesOpt = types.Option{
-	Name:        "resource-types",
-	Short:       "r",
-	Description: fmt.Sprintf("Azure resource types to scan (supported: %s)", strings.Join(azureAcceptedTypes, ", ")),
-	Required:    true,
-	Type:        types.String,
-	Value:       "",
-	ValueFormat: regexp.MustCompile(`(?i)^(Microsoft\.[A-Za-z]+/[A-Za-z]+|ALL)$`),
-	ValueList:   azureAcceptedTypes,
+	Name:                "resource-types",
+	Short:               "r",
+	Description:         fmt.Sprintf("Comma-separated list of Azure resource types to scan (supported: %s)", strings.Join(azureAcceptedTypes, ", ")),
+	Required:            true,
+	Type:                types.String,
+	Value:               "",
+	ValueFormat:         nil,
+	ValueList:           azureAcceptedTypes,
+	ValueCommaSeparated: true,
 }

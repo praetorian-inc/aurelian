@@ -53,10 +53,8 @@ func CreateDeepCopyOfOptions(original []*types.Option) []*types.Option {
 // It checks if the option is required and has a valid format.
 // If any validation fails, it returns an error.
 func ValidateOption(opt types.Option, options []*types.Option) error {
-
 	for _, option := range options {
 		if option.Name == opt.Name {
-
 			// Not required and empty
 			if !opt.Required && option.Value == "" {
 				return nil
@@ -67,13 +65,38 @@ func ValidateOption(opt types.Option, options []*types.Option) error {
 				return errors.New(option.Name + " is required")
 			}
 
+			// Check format if defined
 			if opt.ValueFormat != nil && !opt.ValueFormat.MatchString(option.Value) {
 				return errors.New(option.Name + " is an invalid format")
 			}
 
+			// Handle value list validation
 			if opt.ValueList != nil {
+				if opt.ValueCommaSeparated {
+					if strings.EqualFold(option.Value, "all") {
+						return nil
+					}
+					// Split by comma and validate each part
+					parts := strings.Split(option.Value, ",")
+					for _, part := range parts {
+						part = strings.TrimSpace(part)
+						found := false
+						for _, validValue := range opt.ValueList {
+							if strings.EqualFold(part, validValue) {
+								found = true
+								break
+							}
+						}
+						if !found {
+							return errors.New(option.Name + " is not a valid option. Valid options are: " + strings.Join(opt.ValueList, ", "))
+						}
+					}
+					return nil
+				}
+
+				// Standard single value validation
 				for _, value := range opt.ValueList {
-					if strings.ToLower(value) == strings.ToLower(option.Value) {
+					if strings.EqualFold(value, option.Value) {
 						return nil
 					}
 				}

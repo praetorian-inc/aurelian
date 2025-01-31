@@ -69,20 +69,42 @@ func NewAzureFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[stri
 		subscriptions = []string{subscriptionOpt}
 	}
 
-	// Get resource types to scan
+	// Get and validate resource types
 	resourceTypes := []string{}
 	resourceTypeOpt := options.GetOptionByName(options.AzureResourceTypesOpt.Name, opts).Value
-	if strings.ToLower(resourceTypeOpt) == "all" {
+
+	if strings.EqualFold(resourceTypeOpt, "all") {
 		slog.Info("Loading secrets scanning module for all supported resource types")
+		// Add all supported resource types except "all"
 		for _, rtype := range options.AzureResourceTypesOpt.ValueList {
-			if strings.ToLower(rtype) != "all" {
+			if !strings.EqualFold(rtype, "all") {
 				resourceTypes = append(resourceTypes, rtype)
 			}
 		}
 	} else {
-		slog.Info("Loading secrets scanning module for resource types: " + resourceTypeOpt)
-		resourceTypes = strings.Split(resourceTypeOpt, ",")
+		// Split comma-separated list and validate each type
+		inputTypes := strings.Split(resourceTypeOpt, ",")
+		for _, rtype := range inputTypes {
+			rtype = strings.TrimSpace(rtype)
+			valid := false
+			for _, supportedType := range options.AzureResourceTypesOpt.ValueList {
+				if strings.EqualFold(rtype, supportedType) {
+					valid = true
+					resourceTypes = append(resourceTypes, supportedType) // Use canonical case from supported types
+					break
+				}
+			}
+			if !valid && !strings.EqualFold(rtype, "all") {
+				return nil, nil, fmt.Errorf("unsupported resource type: %s", rtype)
+			}
+		}
 	}
+
+	if len(resourceTypes) == 0 {
+		return nil, nil, fmt.Errorf("no valid resource types specified")
+	}
+
+	message.Info("Scanning resource types: %s", strings.Join(resourceTypes, ", "))
 
 	// Create input channel with subscription and resource type config
 	inputChan := make(chan string)
