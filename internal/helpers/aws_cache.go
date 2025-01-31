@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"log"
@@ -62,27 +63,23 @@ func saveResponseToFile(resp *http.Response, filename string) error {
 }
 
 // loadResponseFromFile reads an HTTP response from a specified file.
-func loadResponseFromFile(filename string) (*http.Response, error) {
+// Caller Responsibility: With this approach, the caller is responsible for closing the file after processing the *http.Response
+func loadResponseFromFile(filename string) (*http.Response, *os.File, error) {
 	// Open the file
 	file, err := os.Open(filename)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file: %v", err)
+		return nil, nil, fmt.Errorf("failed to open file: %v", err)
 	}
-	defer func(file *os.File) {
-		err := file.Close()
-		if err != nil {
-			log.Printf("failed to close file: %v", err)
-		}
-	}(file)
 
 	// Read the file content
 	reader := bufio.NewReader(file)
 	resp, err := http.ReadResponse(reader, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %v", err)
+		file.Close()
+		return nil, nil, fmt.Errorf("failed to read response: %v", err)
 	}
 
-	return resp, nil
+	return resp, file, nil
 }
 
 // getCachePath constructs the file path for the cache based on the cache directory and key.
@@ -91,14 +88,20 @@ func getCachePath(CacheDir string, key string) string {
 }
 
 // generateCacheKey creates a unique cache key based on the service, operation, and parameters.
-func generateCacheKey(service, operation string, params interface{}) string {
+func generateCacheKey(arn, service, operation string, params interface{}) string {
 	data, err := json.Marshal(params)
 	if err != nil {
-		return fmt.Sprintf("%s-%s", service, operation)
+		return fmt.Sprintf("%s-%s-%s", service, operation, arn)
 	}
 
-	hash := sha256.Sum256(data)
-	return fmt.Sprintf("%s-%s-%s", service, operation, hex.EncodeToString(hash[:]))
+	// Combine all components into a single string
+	combined := fmt.Sprintf("%s-%s-%s-%s", arn, service, operation, string(data))
+
+	// Create hash of the combined string
+	hash := sha256.Sum256([]byte(combined))
+
+	// Return the final cache key
+	return hex.EncodeToString(hash[:])
 }
 
 // CacheConfigs holds cache configuration details.
@@ -107,17 +110,30 @@ type CacheConfigs struct {
 	CacheKey  string
 	Enabled   bool
 	Cacheable bool
+	Fd        *os.File
+	Identity  sts.GetCallerIdentityOutput
 }
 
-// SetCacheConfig adds a CacheConfigs to the context.
+// SetCacheConfigMeta adds a CacheConfigs to the context.
 func SetCacheConfig(ctx context.Context, key string, value CacheConfigs) context.Context {
 	return context.WithValue(ctx, key, value)
 }
 
-// GetCacheConfig retrieves a CacheConfigs from the context.
+// GetCacheConfigMeta retrieves a CacheConfigs from the context.
 func GetCacheConfig(ctx context.Context, key string) (CacheConfigs, bool) {
 	v, ok := ctx.Value(key).(CacheConfigs)
 	return v, ok
+}
+
+// SetCacheConfigMeta adds a CacheConfigs to the context.
+func SetCacheConfigMeta(metadata *middleware.Metadata, key string, value CacheConfigs) {
+	metadata.Set(key, value)
+}
+
+// GetCacheConfigMeta retrieves a CacheConfigs from the context.
+func GetCacheConfigMeta(metadata middleware.Metadata, key string) (v CacheConfigs) {
+	v, _ = metadata.Get(key).(CacheConfigs)
+	return v
 }
 
 var testMiddleware = middleware.InitializeMiddlewareFunc("TestMiddleware", func(ctx context.Context, input middleware.InitializeInput, handler middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
@@ -250,9 +266,13 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 			fmt.Printf("Cache bypassed. Enabled: %t; Cacheable: %t", v.Enabled, v.Cacheable)
 			return handler.HandleDeserialize(ctx, input)
 		}
-		resp, err := loadResponseFromFile(v.CachePath)
+		resp, file, err := loadResponseFromFile(v.CachePath)
 		if err != nil {
 			fmt.Printf("Error loading response: %v\n", err)
+			err := file.Close()
+			if err != nil {
+				fmt.Printf("Failed to close file: %v\n", err)
+			}
 			output, metadata, err := handler.HandleDeserialize(ctx, input)
 			if err != nil {
 				return output, metadata, err
@@ -277,7 +297,10 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 			// TODO: check if cache expired
 			output := middleware.DeserializeOutput{RawResponse: &smithyhttp.Response{Response: resp}, Result: nil}
 			fmt.Printf("Using cache file: %s\n", v.CacheKey)
-			return output, middleware.Metadata{}, err
+			v.Fd = file
+			metadata := middleware.Metadata{}
+			SetCacheConfigMeta(&metadata, "cache_config", v)
+			return output, metadata, err
 		}
 	} else {
 		fmt.Println("Value not found in context")
@@ -286,32 +309,84 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 })
 
 // CachePrep is a middleware that prepares caching by setting up the context with cache configuration.
-var CachePrep = middleware.InitializeMiddlewareFunc("CachePrep", func(ctx context.Context, input middleware.InitializeInput, handler middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
-	// Extract service and operation information using awsmiddleware helpers
-	service := awsmiddleware.GetServiceID(ctx)
-	operation := awsmiddleware.GetOperationName(ctx)
+//var CachePrep = middleware.InitializeMiddlewareFunc("CachePrep", func(ctx context.Context, input middleware.InitializeInput, handler middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
+//	// Extract service and operation information using awsmiddleware helpers
+//	service := awsmiddleware.GetServiceID(ctx)
+//	operation := awsmiddleware.GetOperationName(ctx)
+//
+//	fmt.Printf("Service: %s\n", service)
+//	fmt.Printf("Operation: %s\n", operation)
+//
+//	// Skip if we couldn't determine service or operation
+//	if service == "" || operation == "" {
+//		fmt.Sprintf("Could not determine service (%s) or operation (%s), params: %+v",
+//			service, operation, input.Parameters)
+//		return handler.HandleInitialize(ctx, input)
+//	}
+//
+//	fmt.Sprintf("Processing request for service: %s, operation: %s", service, operation)
+//	// Generate cache key and get cache file path
+//	cacheKey := generateCacheKey(service, operation, input.Parameters)
+//	cachePath := getCachePath("/tmp", cacheKey)
+//
+//	CacheConfig := CacheConfigs{
+//		CachePath: cachePath,
+//		CacheKey:  cacheKey,
+//		Enabled:   true,
+//		Cacheable: isCacheable(service, operation),
+//	}
+//	ctx = SetCacheConfig(ctx, "cache_config", CacheConfig)
+//	output, metadata, err := handler.HandleInitialize(ctx, input)
+//	if CacheConfig.Enabled && CacheConfig.Cacheable {
+//		v := GetCacheConfigMeta(metadata, "cache_config")
+//		errFd := v.Fd.Close()
+//		if errFd != nil {
+//			fmt.Printf("CachePrep: Failed to close file: %v\n", errFd)
+//		}
+//	}
+//	return output, metadata, err
+//})
 
-	fmt.Printf("Service: %s\n", service)
-	fmt.Printf("Operation: %s\n", operation)
+func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput) middleware.InitializeMiddleware {
+	return middleware.InitializeMiddlewareFunc("CachePrep", func(ctx context.Context, input middleware.InitializeInput, handler middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
+		// Extract service and operation information using awsmiddleware helpers
+		service := awsmiddleware.GetServiceID(ctx)
+		operation := awsmiddleware.GetOperationName(ctx)
 
-	// Skip if we couldn't determine service or operation
-	if service == "" || operation == "" {
-		fmt.Sprintf("Could not determine service (%s) or operation (%s), params: %+v",
-			service, operation, input.Parameters)
-		return handler.HandleInitialize(ctx, input)
-	}
+		fmt.Printf("Service: %s\n", service)
+		fmt.Printf("Operation: %s\n", operation)
 
-	fmt.Sprintf("Processing request for service: %s, operation: %s", service, operation)
-	// Generate cache key and get cache file path
-	cacheKey := generateCacheKey(service, operation, input.Parameters)
-	cachePath := getCachePath("/tmp", cacheKey)
+		// Skip if we couldn't determine service or operation
+		if service == "" || operation == "" {
+			fmt.Sprintf("Could not determine service (%s) or operation (%s), params: %+v",
+				service, operation, input.Parameters)
+			return handler.HandleInitialize(ctx, input)
+		}
 
-	CacheConfig := CacheConfigs{
-		CachePath: cachePath,
-		CacheKey:  cacheKey,
-		Enabled:   true,
-		Cacheable: isCacheable(service, operation),
-	}
-	ctx = SetCacheConfig(ctx, "cache_config", CacheConfig)
-	return handler.HandleInitialize(ctx, input)
-})
+		fmt.Sprintf("Processing request for service: %s, operation: %s", service, operation)
+		// Generate cache key and get cache file path
+		cacheKey := generateCacheKey(*callerIdentity.Arn, service, operation, input.Parameters)
+		cachePath := getCachePath("/tmp", cacheKey)
+
+		CacheConfig := CacheConfigs{
+			CachePath: cachePath,
+			CacheKey:  cacheKey,
+			Enabled:   true,
+			Cacheable: isCacheable(service, operation),
+			Identity:  callerIdentity,
+		}
+		ctx = SetCacheConfig(ctx, "cache_config", CacheConfig)
+		output, metadata, err := handler.HandleInitialize(ctx, input)
+		if CacheConfig.Enabled && CacheConfig.Cacheable {
+			v := GetCacheConfigMeta(metadata, "cache_config")
+			errFd := v.Fd.Close()
+			if errFd != nil {
+				fmt.Printf("CachePrep: Failed to close file: %v\n", errFd)
+			}
+		}
+
+		//fmt.Printf("Identity:\n")
+		//fmt.Printf("Account: %s; Arn: %s; UserId: %s\n", *callerIdentity.Account, *callerIdentity.Arn, *callerIdentity.UserId)
+		return output, metadata, err
+	})
+}

@@ -129,6 +129,17 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 		config.WithRetryMode(aws.RetryModeAdaptive),
 		// config.WithAPIOptions(cacheFunc),
 	)
+	if err != nil {
+		return aws.Config{}, err
+	}
+
+	principal, err := GetCallerIdentity(cfg)
+	if err != nil {
+		return aws.Config{}, err
+	}
+
+	CachePrep := GetCachePrepWithIdentity(principal)
+
 	cfg.APIOptions = append(cfg.APIOptions, func(stack *middleware.Stack) error {
 		// Add custom middlewares
 		//if err := stack.Initialize.Add(testMiddleware, middleware.After); err != nil {
@@ -143,6 +154,7 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 		if err := stack.Deserialize.Add(CacheOps, middleware.After); err != nil {
 			return err
 		}
+
 		fmt.Printf("Middleware Stack: %v\n", stack.List())
 		return nil
 	})
@@ -157,10 +169,6 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 	//
 	//// List the middleware in the Initialize phase
 	//fmt.Printf("Middleware in Initialize phase: %v\n", stack.Initialize.List())
-
-	if err != nil {
-		return aws.Config{}, err
-	}
 
 	return cfg, nil
 
@@ -179,6 +187,21 @@ func GetAccountId(cfg aws.Config) (string, error) {
 	}
 
 	return *result.Account, nil
+}
+
+func GetCallerIdentity(cfg aws.Config) (sts.GetCallerIdentityOutput, error) {
+	if strings.ToLower(cfg.Region) == "all" {
+		cfg.Region = "us-east-1"
+	}
+	client := sts.NewFromConfig(cfg)
+	input := &sts.GetCallerIdentityInput{}
+
+	result, err := client.GetCallerIdentity(context.TODO(), input)
+	if err != nil {
+		return sts.GetCallerIdentityOutput{}, err
+	}
+
+	return *result, nil
 }
 
 // Parses regions with 2 primary outcomes
