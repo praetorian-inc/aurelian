@@ -273,16 +273,6 @@ func AzureVMSecretsStage(ctx context.Context, opts []*types.Option, in <-chan *A
 					}
 				}
 			}
-
-			// 4. Check Boot Diagnostics Storage
-			if vmDetails.Properties != nil && vmDetails.Properties.DiagnosticsProfile != nil &&
-				vmDetails.Properties.DiagnosticsProfile.BootDiagnostics != nil &&
-				vmDetails.Properties.DiagnosticsProfile.BootDiagnostics.StorageURI != nil {
-				storageURI := *vmDetails.Properties.DiagnosticsProfile.BootDiagnostics.StorageURI
-				if strings.Contains(storageURI, ".blob.core.windows.net") {
-					sendNpInput(storageURI, "BootDiagnostics::StorageURI", false)
-				}
-			}
 		}
 		message.Info("Completed scanning Microsoft.Compute/virtualMachines, %d virtual machines scanned.", rgCount)
 	}()
