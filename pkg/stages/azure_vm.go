@@ -23,6 +23,7 @@ type AzureVMDetail struct {
 	ResourceGroup  string                 `json:"resourceGroup"`
 	Location       string                 `json:"location"`
 	SubscriptionID string                 `json:"subscriptionId"`
+	Tags           map[string]*string     `json:"tags"`
 	Properties     map[string]interface{} `json:"properties"`
 }
 
@@ -54,7 +55,7 @@ func AzureListVMsStage(ctx context.Context, opts []*types.Option, in <-chan stri
 			for _, subscription := range config.Subscriptions {
 				logger.Info("Processing subscription", slog.String("subscription", subscription))
 
-				// Build ARG query for VMs
+				// Build ARG query for VMs - now including tags
 				query := `
 					resources
 					| where type =~ 'Microsoft.Compute/virtualMachines'
@@ -62,9 +63,10 @@ func AzureListVMsStage(ctx context.Context, opts []*types.Option, in <-chan stri
 					| extend osType = properties.storageProfile.osDisk.osType
 					| extend osProfile = properties.osProfile
 					| extend computerName = properties.osProfile.computerName
+					| project id, name, resourceGroup, location, tags, properties
+					| project id, name, resourceGroup, location, tags, properties
 					`
 
-				// Set up ARG query options
 				queryOpts := &helpers.ARGQueryOptions{
 					Subscriptions: []string{subscription},
 				}
@@ -87,38 +89,40 @@ func AzureListVMsStage(ctx context.Context, opts []*types.Option, in <-chan stri
 							continue
 						}
 
-						vmName, ok := item["name"].(string)
-						if !ok {
-							continue
-						}
-
-						resourceGroup, ok := item["resourceGroup"].(string)
-						if !ok {
-							continue
-						}
-
-						vmId, ok := item["id"].(string)
-						if !ok {
-							continue
-						}
-
-						vmLocation, ok := item["location"].(string)
-						if !ok {
-							continue
-						}
-
-						properties, ok := item["properties"].(map[string]interface{})
-						if !ok {
-							properties = make(map[string]interface{})
-						}
-
 						vmDetail := &AzureVMDetail{
-							ID:             vmId,
-							Name:           vmName,
-							ResourceGroup:  resourceGroup,
-							Location:       vmLocation,
 							SubscriptionID: subscription,
-							Properties:     properties,
+						}
+
+						// Extract basic fields
+						if id, ok := item["id"].(string); ok {
+							vmDetail.ID = id
+						}
+						if name, ok := item["name"].(string); ok {
+							vmDetail.Name = name
+						}
+						if rg, ok := item["resourceGroup"].(string); ok {
+							vmDetail.ResourceGroup = rg
+						}
+						if location, ok := item["location"].(string); ok {
+							vmDetail.Location = location
+						}
+
+						// Extract tags
+						if tags, ok := item["tags"].(map[string]interface{}); ok {
+							vmDetail.Tags = make(map[string]*string)
+							for k, v := range tags {
+								if v != nil {
+									vStr := fmt.Sprintf("%v", v)
+									vmDetail.Tags[k] = &vStr
+								}
+							}
+						}
+
+						// Extract properties
+						if properties, ok := item["properties"].(map[string]interface{}); ok {
+							vmDetail.Properties = properties
+						} else {
+							vmDetail.Properties = make(map[string]interface{})
 						}
 
 						select {
@@ -271,6 +275,14 @@ func AzureVMSecretsStage(ctx context.Context, opts []*types.Option, in <-chan *A
 					if encSettingsJson, err := json.Marshal(encSettings); err == nil {
 						sendNpInput(string(encSettingsJson), "DiskEncryptionSettings", false)
 					}
+				}
+			}
+
+			// 4. Scan tags for secrets
+			if vm.Tags != nil && len(vm.Tags) > 0 {
+				tagsJson, err := json.Marshal(vm.Tags)
+				if err == nil {
+					sendNpInput(string(tagsJson), "Tags", false)
 				}
 			}
 		}
