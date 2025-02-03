@@ -67,7 +67,7 @@ func NewAwsFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[string
 		return stages.Generator(options.FindSecretsTypes), pipeline, nil
 	} else {
 		slog.Info("Loading public resources recon module for types: " + rtype)
-		in := stages.SplitByComma(options.GetOptionByName(options.AwsResourceTypeOpt.Name, opts).Value)
+		in := stages.SplitByComma(options.GetOptionByName(options.AwsFindSecretsResourceType.Name, opts).Value)
 		return in, pipeline, nil
 	}
 }

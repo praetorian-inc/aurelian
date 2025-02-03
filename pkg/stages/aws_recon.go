@@ -358,6 +358,7 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 		defer close(out)
 
 		for rtype := range in {
+			message.Info("Searching %s for secrets", rtype)
 			var pl Stage[string, types.NpInput]
 			var err error
 
@@ -366,6 +367,13 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 				pl, err = ChainStages[string, types.NpInput](
 					AwsCloudControlListResources,
 					EnrichedResourceDescriptionToNpInput,
+				)
+			case "AWS::Lambda::Function::Code":
+				// we need to use the actual CC type
+				rtype = "AWS::Lambda::Function"
+				pl, err = ChainStages[string, types.NpInput](
+					AwsCloudControlListResources,
+					AwsLambdaGetCodeContent,
 				)
 			case "AWS::EC2::Instance":
 				pl, err = ChainStages[string, types.NpInput](
@@ -412,7 +420,7 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 				logger.Error("Failed to " + rtype + " create pipeline: " + err.Error())
 				continue
 			}
-			message.Info("Searching %s for secrets", rtype)
+
 			for s := range pl(ctx, opts, Generator([]string{rtype})) {
 				out <- s
 			}

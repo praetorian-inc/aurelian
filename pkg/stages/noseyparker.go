@@ -54,15 +54,15 @@ func NoseyParkerEnumeratorStage(ctx context.Context, opts []*types.Option, in <-
 				if err != nil {
 					logger.Error(fmt.Sprintf("failed to marshal raw json: %v", err))
 				}
-				f, err := os.OpenFile("debug.json", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+				f, err := os.OpenFile("np-error.json", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 				if err != nil {
-					logger.Error(fmt.Sprintf("failed to open debug.json: %v", err))
+					logger.Error(fmt.Sprintf("failed to open np-error.json: %v", err))
 				} else {
 					if _, err := f.WriteString(string(rawJson) + "\n"); err != nil {
-						logger.Error(fmt.Sprintf("failed to write to debug.json: %v", err))
+						logger.Error(fmt.Sprintf("failed to write to np-error.json: %v", err))
 					}
 					if err := f.Close(); err != nil {
-						logger.Error(fmt.Sprintf("failed to close debug.json: %v", err))
+						logger.Error(fmt.Sprintf("failed to close np-error.json: %v", err))
 					}
 				}
 
@@ -78,7 +78,7 @@ func NoseyParkerEnumeratorStage(ctx context.Context, opts []*types.Option, in <-
 								slog.String("account_id", input.Provenance.AccountID),
 							),
 							slog.String("content", input.ContentBase64),
-							//slog.String("raw_json", string(rawJson)),
+							slog.String("raw_json", string(rawJson)),
 						),
 					)
 				} else {
