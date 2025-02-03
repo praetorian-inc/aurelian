@@ -14,7 +14,6 @@ import (
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"log/slog"
-	"net/http"
 	"os"
 	"strings"
 )
@@ -91,10 +90,6 @@ func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescri
 		regionToIdentifiers[description.Region] = append(regionToIdentifiers[description.Region], description.Identifier)
 	}
 	return regionToIdentifiers
-}
-
-type Response struct {
-	Response *http.Response
 }
 
 func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config, error) {
