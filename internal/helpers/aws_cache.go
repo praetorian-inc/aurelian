@@ -35,6 +35,36 @@ func isCacheable(service, operation string) bool {
 	return true
 }
 
+func dumpResponse(resp *http.Response) ([]byte, error) {
+	dump, err := httputil.DumpResponse(resp, true)
+	if err != nil {
+		return nil, err
+	}
+	return dump, nil
+}
+
+func saveResponseFromDumpToFile(dump []byte, filename string) error {
+	file, err := os.Create(filename)
+	if err != nil {
+		logger.Error("Failed to create file", "filename", filename, "error", err)
+		return fmt.Errorf("failed to create file: %v", err)
+	}
+	defer func() {
+		if err := file.Close(); err != nil {
+			logger.Error("Failed to close file", "filename", filename, "error", err)
+		}
+	}()
+
+	_, err = file.Write(dump)
+	if err != nil {
+		logger.Error("Failed to write to file", "filename", filename, "error", err)
+		return fmt.Errorf("failed to write to file: %v", err)
+	}
+
+	logger.Info("Response saved to file", "filename", filename)
+	return nil
+}
+
 // saveResponseToFile writes the HTTP response to a specified file.
 func saveResponseToFile(resp *http.Response, filename string) error {
 	respBytes, err := httputil.DumpResponse(resp, true)
@@ -68,7 +98,7 @@ func saveResponseToFile(resp *http.Response, filename string) error {
 func loadResponseFromFile(filename string) (*http.Response, *os.File, error) {
 	file, err := os.Open(filename)
 	if err != nil {
-		logger.Error("Failed to open file", "filename", filename, "error", err)
+		logger.Warn("Failed to open file", "filename", filename, "error", err)
 		return nil, nil, fmt.Errorf("failed to open file: %v", err)
 	}
 
@@ -106,12 +136,13 @@ func generateCacheKey(arn, service, operation string, params interface{}) string
 
 // CacheConfigs holds cache configuration details.
 type CacheConfigs struct {
-	CachePath string
-	CacheKey  string
-	Enabled   bool
-	Cacheable bool
-	Fd        *os.File
-	Identity  sts.GetCallerIdentityOutput
+	CachePath    string
+	CacheKey     string
+	Enabled      bool
+	Cacheable    bool
+	Fd           *os.File
+	Identity     sts.GetCallerIdentityOutput
+	ResponseDump []byte
 }
 
 // SetCacheConfig adds a CacheConfigs to the context.
@@ -291,14 +322,23 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 
 			logger.Info("Handler processed response", "output", output, "metadata", metadata)
 
-			// Save the response to cache
+			//Save the response to cache
 			if resp, ok := output.RawResponse.(*smithyhttp.Response); ok {
 				standardResp := resp.Response
-				if saveErr := saveResponseToFile(standardResp, v.CachePath); saveErr != nil {
-					logger.Error("Error saving response to cache", "error", saveErr, "cachePath", v.CachePath)
-				} else {
-					logger.Info("Response saved to cache", "cachePath", v.CachePath)
+				//if saveErr := saveResponseToFile(standardResp, v.CachePath); saveErr != nil {
+				//	logger.Error("Error saving response to cache", "error", saveErr, "cachePath", v.CachePath)
+				//} else {
+				//	logger.Info("Response saved to cache", "cachePath", v.CachePath)
+				//}
+
+				ResponseDump, DumpErr := dumpResponse(standardResp)
+				if DumpErr != nil {
+					logger.Warn("Error dumping response", "error", DumpErr, "response", resp)
+					return output, metadata, err
 				}
+				v.ResponseDump = ResponseDump
+				SetCacheConfigMeta(&metadata, "cache_config", v)
+
 			} else {
 				logger.Warn("Raw response is not an HTTP response", "rawResponse", output.RawResponse)
 			}
@@ -341,11 +381,12 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput) middle
 		cachePath := getCachePath("/tmp", cacheKey)
 
 		cacheConfig := CacheConfigs{
-			CachePath: cachePath,
-			CacheKey:  cacheKey,
-			Enabled:   true,
-			Cacheable: isCacheable(service, operation),
-			Identity:  callerIdentity,
+			CachePath:    cachePath,
+			CacheKey:     cacheKey,
+			Enabled:      true,
+			Cacheable:    isCacheable(service, operation),
+			Identity:     callerIdentity,
+			ResponseDump: nil,
 		}
 		ctx = SetCacheConfig(ctx, "cache_config", cacheConfig)
 
@@ -362,6 +403,12 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput) middle
 					logger.Error("Failed to close file", "error", err)
 				} else {
 					logger.Debug("Closed file successfully")
+				}
+			}
+			if v.ResponseDump != nil {
+				SaveErr := saveResponseFromDumpToFile(v.ResponseDump, v.CachePath)
+				if SaveErr != nil {
+					logger.Error("Failed to save response from cache", "error", SaveErr)
 				}
 			}
 		}
