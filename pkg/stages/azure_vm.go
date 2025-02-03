@@ -71,6 +71,8 @@ func AzureListVMsStage(ctx context.Context, opts []*types.Option, in <-chan stri
 					Subscriptions: []string{subscription},
 				}
 
+				page_no := 0
+
 				err = argClient.ExecutePaginatedQuery(ctx, query, queryOpts, func(response *armresourcegraph.ClientResourcesResponse) error {
 					if response == nil || response.Data == nil {
 						return nil
@@ -81,7 +83,12 @@ func AzureListVMsStage(ctx context.Context, opts []*types.Option, in <-chan stri
 						return fmt.Errorf("unexpected response data type")
 					}
 
-					logger.Info("Processing VM data", slog.Int("count", len(rows)))
+					page_no++
+
+					logger.Info("Processing VM data",
+						slog.Int("page_total_resource_count", len(rows)),
+						slog.Int("page", page_no),
+					)
 
 					for _, row := range rows {
 						item, ok := row.(map[string]interface{})
@@ -195,7 +202,10 @@ func AzureVMSecretsStage(ctx context.Context, opts []*types.Option, in <-chan *A
 					input.Content = content
 				}
 
-				logger.Debug(fmt.Sprintf("Sending data to NP from %s in subscription %s: %s", vm.ID, vm.SubscriptionID, content))
+				logger.Debug("Sending data to NP:",
+					slog.String("subscription", vm.SubscriptionID),
+					slog.String("virtual-machine", vm.ID),
+					slog.String("content", content))
 
 				select {
 				case out <- input:

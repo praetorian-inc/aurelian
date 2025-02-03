@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/managementgroups/armmanagementgroups"
@@ -887,4 +889,28 @@ func GetSubscriptionRoleAssignments(ctx context.Context, client *armauthorizatio
 	}
 
 	return assignments, nil
+}
+
+// MakeAzureRestRequest makes an authenticated HTTP request to Azure REST API
+func MakeAzureRestRequest(ctx context.Context, method string, url string, cred *azidentity.DefaultAzureCredential) (*http.Response, error) {
+	// Get the token for the request
+	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: []string{"https://management.azure.com/.default"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get token: %v", err)
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	// Add auth header
+	req.Header.Set("Authorization", "Bearer "+token.Token)
+
+	// Make the request
+	client := &http.Client{}
+	return client.Do(req)
 }

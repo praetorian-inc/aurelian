@@ -153,6 +153,17 @@ func NewAzureFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[stri
 			}
 			resourcePipelines = append(resourcePipelines, []stages.Stage[string, types.NpInput]{appPipeline})
 
+		case "Microsoft.Automation/automationAccounts":
+			automationPipeline, err := stages.ChainStages[string, types.NpInput](
+				stages.AzureListAutomationAccountsStage,
+				stages.AzureAutomationAccountSecretsStage,
+			)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to create Automation Account pipeline: %v", err))
+				continue
+			}
+			resourcePipelines = append(resourcePipelines, []stages.Stage[string, types.NpInput]{automationPipeline})
+
 		default:
 			logger.Error("Unsupported resource type: " + rtype)
 		}

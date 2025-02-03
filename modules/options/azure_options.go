@@ -40,6 +40,7 @@ var azureAcceptedTypes = []string{
 	"all",
 	"Microsoft.Compute/virtualMachines",
 	"Microsoft.Web/sites",
+	"Microsoft.Automation/automationAccounts",
 }
 
 var AzureResourceTypesOpt = types.Option{

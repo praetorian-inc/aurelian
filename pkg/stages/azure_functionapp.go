@@ -68,6 +68,8 @@ func AzureListFunctionAppsStage(ctx context.Context, opts []*types.Option, in <-
 					Subscriptions: []string{subscription},
 				}
 
+				page_no := 0
+
 				err = argClient.ExecutePaginatedQuery(ctx, query, queryOpts, func(response *armresourcegraph.ClientResourcesResponse) error {
 					if response == nil || response.Data == nil {
 						return nil
@@ -78,7 +80,12 @@ func AzureListFunctionAppsStage(ctx context.Context, opts []*types.Option, in <-
 						return fmt.Errorf("unexpected response data type")
 					}
 
-					logger.Info("Processing Function App data", slog.Int("count", len(rows)))
+					page_no++
+
+					logger.Info("Processing Function App data",
+						slog.Int("page_total_resource_count", len(rows)),
+						slog.Int("page", page_no),
+					)
 
 					for _, row := range rows {
 						item, ok := row.(map[string]interface{})
@@ -192,7 +199,10 @@ func AzureFunctionAppSecretsStage(ctx context.Context, opts []*types.Option, in 
 					input.Content = content
 				}
 
-				logger.Debug(fmt.Sprintf("Sending data to NP from %s in subscription %s: %s", app.ID, app.SubscriptionID, content))
+				logger.Debug("Sending data to NP:",
+					slog.String("subscription", app.SubscriptionID),
+					slog.String("function-app", app.ID),
+					slog.String("content", content))
 
 				select {
 				case out <- input:
