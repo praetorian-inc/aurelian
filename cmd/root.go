@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"os"
 	"strconv"
@@ -117,7 +116,7 @@ func getOpts(cmd *cobra.Command, required []*types.Option, common []*types.Optio
 	opts = append(opts, getOptsFromCmd(cmd, required)...)
 	err := options.ValidateOptions(opts, required)
 	if err != nil {
-		log.Default().Println(err)
+		slog.Error(err.Error())
 		os.Exit(1)
 	}
 
@@ -125,7 +124,7 @@ func getOpts(cmd *cobra.Command, required []*types.Option, common []*types.Optio
 	opts = append(opts, getOptsFromCmd(cmd, common)...)
 	err = options.ValidateOptions(opts, common)
 	if err != nil {
-		log.Default().Println(err)
+		slog.Error(err.Error())
 		os.Exit(1)
 	}
 
