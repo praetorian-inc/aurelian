@@ -378,7 +378,7 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput) middle
 
 		// Generate cache key and get cache file path
 		cacheKey := generateCacheKey(*callerIdentity.Arn, service, operation, input.Parameters)
-		cachePath := getCachePath("/tmp", cacheKey)
+		cachePath := getCachePath(os.TempDir(), cacheKey)
 
 		cacheConfig := CacheConfigs{
 			CachePath:    cachePath,
