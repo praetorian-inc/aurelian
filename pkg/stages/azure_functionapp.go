@@ -403,7 +403,7 @@ func logFunctionAppError(logger *slog.Logger, msg string, err error, appName str
 	if strings.Contains(err.Error(), "AuthorizationFailed") ||
 		strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
 		strings.Contains(err.Error(), "403") {
-		logger.Debug("Insufficient permissions",
+		logger.Error("Insufficient permissions",
 			slog.String("function_app", appName),
 			slog.String("error", err.Error()))
 	} else {

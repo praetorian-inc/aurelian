@@ -418,7 +418,7 @@ func logVMError(logger *slog.Logger, msg string, err error, vmName string) {
 	if strings.Contains(err.Error(), "AuthorizationFailed") ||
 		strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
 		strings.Contains(err.Error(), "403") {
-		logger.Debug("Insufficient permissions", slog.String("vm", vmName))
+		logger.Error("Insufficient permissions", slog.String("vm", vmName))
 	} else {
 		logger.Error(msg, slog.String("error", err.Error()))
 	}

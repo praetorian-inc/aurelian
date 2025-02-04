@@ -433,7 +433,7 @@ func logError(logger *slog.Logger, msg string, err error, resourceName string) {
 	if strings.Contains(err.Error(), "AuthorizationFailed") ||
 		strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
 		strings.Contains(err.Error(), "403") {
-		logger.Debug("Insufficient permissions", slog.String("resource", resourceName))
+		logger.Error("Insufficient permissions", slog.String("resource", resourceName))
 	} else {
 		logger.Error(msg, slog.String("error", err.Error()))
 	}
