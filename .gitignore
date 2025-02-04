@@ -6,3 +6,4 @@ nebula-output/*
 .DS_Store
 .go-ignore
 nebula
+np-debug.json

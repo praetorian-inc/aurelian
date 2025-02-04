@@ -1,8 +1,15 @@
 package stages
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 
@@ -10,6 +17,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/internal/message"
+	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/utils"
@@ -207,5 +216,110 @@ func AwsLambdaLayerCheckResourcePolicy(ctx context.Context, opts []*types.Option
 		}
 		close(out)
 	}()
+	return out
+}
+
+func AwsLambdaGetCodeContent(ctx context.Context, opts []*types.Option, in <-chan types.EnrichedResourceDescription) <-chan types.NpInput {
+	logger := logs.NewStageLogger(ctx, opts, "LambdaGetCodeContent")
+	out := make(chan types.NpInput)
+
+	go func() {
+		defer close(out)
+		for resource := range in {
+			// Skip if not a Lambda function
+			if resource.TypeName != "AWS::Lambda::Function" {
+				continue
+			}
+
+			// Get AWS config
+			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+			if err != nil {
+				logger.Error(err.Error())
+				continue
+			}
+
+			// Create Lambda client
+			lambdaClient := lambda.NewFromConfig(config)
+
+			// Get function URL to download code
+			getFuncInput := &lambda.GetFunctionInput{
+				FunctionName: aws.String(resource.Identifier),
+			}
+
+			funcOutput, err := lambdaClient.GetFunction(ctx, getFuncInput)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to get function %s: %v", resource.Identifier, err))
+				continue
+			}
+
+			// Get code URL from output
+			if funcOutput.Code == nil || funcOutput.Code.Location == nil {
+				logger.Error(fmt.Sprintf("No code location found for function %s", resource.Identifier))
+				continue
+			}
+
+			message.Info(fmt.Sprintf("Downloading code for function %s", resource.Identifier))
+			// Download code from URL
+			resp, err := http.Get(*funcOutput.Code.Location)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to download code for function %s: %v", resource.Identifier, err))
+				continue
+			}
+			defer resp.Body.Close()
+
+			// Read zip content
+			zipBytes, err := io.ReadAll(resp.Body)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to read zip content for function %s: %v", resource.Identifier, err))
+				continue
+			}
+
+			// Open zip archive in memory
+			zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to open zip for function %s: %v", resource.Identifier, err))
+				continue
+			}
+
+			// Process each file in the zip
+			for _, file := range zipReader.File {
+				// Skip directories
+				if file.FileInfo().IsDir() {
+					continue
+				}
+
+				rc, err := file.Open()
+				if err != nil {
+					logger.Error(fmt.Sprintf("Failed to open file %s in function %s: %v", file.Name, resource.Identifier, err))
+					continue
+				}
+
+				content, err := io.ReadAll(rc)
+				rc.Close()
+				if err != nil {
+					logger.Error(fmt.Sprintf("Failed to read file %s in function %s: %v", file.Name, resource.Identifier, err))
+					continue
+				}
+
+				if len(content) == 0 {
+					logger.Debug("Skipping empty file", slog.String("file", file.Name), slog.String("resource", resource.Identifier))
+					continue
+				}
+
+				// Create NP input for scanning
+				out <- types.NpInput{
+					ContentBase64: base64.StdEncoding.EncodeToString(content),
+					Provenance: types.NpProvenance{
+						Platform:     string(modules.AWS),
+						ResourceType: "AWS::Lambda::Function::Code",
+						ResourceID:   fmt.Sprintf("%s/%s", resource.ToArn().String(), file.Name),
+						Region:       resource.Region,
+						AccountID:    resource.AccountId,
+					},
+				}
+			}
+		}
+	}()
+
 	return out
 }

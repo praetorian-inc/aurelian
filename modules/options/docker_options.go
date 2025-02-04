@@ -17,3 +17,12 @@ var DockerPasswordOpt = types.Option{
 	Type:        types.String,
 	Value:       "",
 }
+
+var DockerExtractOpt = types.Option{
+	Name:        "docker-extract",
+	Short:       "e",
+	Description: "Extract files from Docker image",
+	Required:    false,
+	Type:        types.Bool,
+	Value:       "",
+}

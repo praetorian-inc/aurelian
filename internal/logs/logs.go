@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/aws/smithy-go/logging"
+	"github.com/lmittmann/tint"
+	"github.com/mattn/go-isatty"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
@@ -63,9 +65,13 @@ func getLevelFromString(level string) slog.Level {
 }
 
 func NewLogger() *slog.Logger {
-	handler := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-		Level: getLevelFromString(logLevel),
-	})
+	w := os.Stderr
+	handler := tint.NewHandler(w,
+		&tint.Options{
+			Level:   getLevelFromString(logLevel),
+			NoColor: !isatty.IsTerminal(w.Fd()),
+		},
+	)
 	logger := slog.New(handler)
 
 	return logger

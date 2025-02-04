@@ -24,6 +24,10 @@ var AwsFindSecretsOptions = []*types.Option{
 	&options.NoseyParkerPathOpt,
 	&options.NoseyParkerArgsOpt,
 	&options.NoseyParkerOutputOpt,
+	options.WithRequired(options.DockerUserOpt, false),
+	options.WithRequired(options.DockerPasswordOpt, false),
+	options.WithDefaultValue(options.DockerExtractOpt, "true"),
+	options.WithDefaultValue(options.WorkersOpt, "5"),
 }
 
 var AwsFindSecretsOutputProviders = []func(options []*types.Option) types.OutputProvider{
@@ -44,6 +48,7 @@ func NewAwsFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[string
 	pipeline, err := stages.ChainStages[string, string](
 		stages.AwsFindSecretsStage,
 		stages.NoseyParkerEnumeratorStage,
+		stages.NoseyParkerSummarizeStage,
 	)
 
 	if err != nil {
@@ -63,7 +68,7 @@ func NewAwsFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[string
 		return stages.Generator(options.FindSecretsTypes), pipeline, nil
 	} else {
 		slog.Info("Loading public resources recon module for types: " + rtype)
-		in := stages.SplitByComma(options.GetOptionByName(options.AwsResourceTypeOpt.Name, opts).Value)
+		in := stages.SplitByComma(options.GetOptionByName(options.AwsFindSecretsResourceType.Name, opts).Value)
 		return in, pipeline, nil
 	}
 }

@@ -25,3 +25,11 @@ var NoseyParkerOutputOpt = types.Option{
 	Type:        types.String,
 	Value:       "datastore.np",
 }
+
+var NoseyParkerScanOpt = types.Option{
+	Name:        "np-scan",
+	Description: "scan for secrets using Nosey Parker",
+	Required:    false,
+	Type:        types.Bool,
+	Value:       "true",
+}

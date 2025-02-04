@@ -345,7 +345,6 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 			wg.Wait()
 		}
 
-		//stages.FanStages(ctx, opts, in, out, pipelines...)
 	}()
 
 	return out
@@ -359,6 +358,7 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 		defer close(out)
 
 		for rtype := range in {
+			message.Info("Searching %s for secrets", rtype)
 			var pl Stage[string, types.NpInput]
 			var err error
 
@@ -367,6 +367,13 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 				pl, err = ChainStages[string, types.NpInput](
 					AwsCloudControlListResources,
 					EnrichedResourceDescriptionToNpInput,
+				)
+			case "AWS::Lambda::Function::Code":
+				// we need to use the actual CC type
+				rtype = "AWS::Lambda::Function"
+				pl, err = ChainStages[string, types.NpInput](
+					AwsCloudControlListResources,
+					AwsLambdaGetCodeContent,
 				)
 			case "AWS::EC2::Instance":
 				pl, err = ChainStages[string, types.NpInput](
@@ -377,6 +384,42 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 				pl, err = ChainStages[string, types.NpInput](
 					AwsCloudControlListResources,
 					AwsCloudFormationGetTemplatesNpInputStage,
+				)
+			case "AWS::ECR::Repository":
+				pl, err = ChainStages[string, types.NpInput](
+					AwsCloudControlListResources,
+					AwsEcrListImages,
+					AwsEcrLoginStage,
+					DockerPullStage,
+					DockerSaveStage,
+					DockerExtractToNPStage,
+				)
+			case "AWS::ECR::PublicRepository":
+				pl, err = ChainStages[string, types.NpInput](
+					AwsCloudControlListResources,
+					AwsEcrPublicListLatestImages,
+					AwsEcrPublicLoginStage,
+					DockerPullStage,
+					DockerSaveStage,
+					DockerExtractToNPStage,
+				)
+			case "AWS::ECS::TaskDefinition":
+				pl, err = ChainStages[string, types.NpInput](
+					AwsCloudControlListResources,
+					EnrichedResourceDescriptionToNpInput,
+				)
+			case "AWS::SSM::Parameter":
+				pl, err = ChainStages[string, types.NpInput](
+					AwsCloudControlListResources,
+					AwsSsmListParameters,
+					EnrichedResourceDescriptionToNpInput,
+				)
+
+			case "AWS::SSM::Document":
+				pl, err = ChainStages[string, types.NpInput](
+					// AwsCloudControlListResources can't be used as there's no way to filter on only user-created documents
+					AwsSsmListDocuments,
+					EnrichedResourceDescriptionToNpInput,
 				)
 			case "ALL":
 				continue
@@ -390,7 +433,7 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 				logger.Error("Failed to " + rtype + " create pipeline: " + err.Error())
 				continue
 			}
-			message.Info("Searching %s for secrets", rtype)
+
 			for s := range pl(ctx, opts, Generator([]string{rtype})) {
 				out <- s
 			}
