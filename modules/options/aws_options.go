@@ -64,6 +64,8 @@ var FindSecretsTypes = []string{
 	"AWS::ECR::Repository",
 	"AWS::ECR::PublicRepository",
 	"AWS::ECS::TaskDefinition",
+	"AWS::SSM::Parameter",
+	"AWS::SSM::Document",
 	"ALL",
 }
 

@@ -408,6 +408,19 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 					AwsCloudControlListResources,
 					EnrichedResourceDescriptionToNpInput,
 				)
+			case "AWS::SSM::Parameter":
+				pl, err = ChainStages[string, types.NpInput](
+					AwsCloudControlListResources,
+					AwsSsmListParameters,
+					EnrichedResourceDescriptionToNpInput,
+				)
+
+			case "AWS::SSM::Document":
+				pl, err = ChainStages[string, types.NpInput](
+					// AwsCloudControlListResources can't be used as there's no way to filter on only user-created documents
+					AwsSsmListDocuments,
+					EnrichedResourceDescriptionToNpInput,
+				)
 			case "ALL":
 				continue
 			default:
