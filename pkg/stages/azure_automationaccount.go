@@ -190,7 +190,7 @@ func AzureAutomationAccountSecretsStage(ctx context.Context, opts []*types.Optio
 				logger.Debug("Sending data to NP:",
 					slog.String("subscription", account.SubscriptionID),
 					slog.String("automation-account", account.ID),
-					slog.String("content", content))
+					slog.String("content", content[1:5]+"*****[REDACTED]******"))
 
 				select {
 				case out <- input:

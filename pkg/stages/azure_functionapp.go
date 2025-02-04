@@ -202,7 +202,7 @@ func AzureFunctionAppSecretsStage(ctx context.Context, opts []*types.Option, in 
 				logger.Debug("Sending data to NP:",
 					slog.String("subscription", app.SubscriptionID),
 					slog.String("function-app", app.ID),
-					slog.String("content", content))
+					slog.String("content", content[1:5]+"*****[REDACTED]******"))
 
 				select {
 				case out <- input:
@@ -224,7 +224,7 @@ func AzureFunctionAppSecretsStage(ctx context.Context, opts []*types.Option, in 
 				if strings.Contains(err.Error(), "AuthorizationFailed") ||
 					strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
 					strings.Contains(err.Error(), "403") {
-					logger.Debug("Insufficient permissions to access Function App settings - requires more than Reader role",
+					logger.Error("Insufficient permissions to access Function App settings - requires more than Reader role",
 						slog.String("function_app", app.Name),
 						slog.String("operation", "ListApplicationSettings"))
 				}
@@ -240,7 +240,7 @@ func AzureFunctionAppSecretsStage(ctx context.Context, opts []*types.Option, in 
 				if strings.Contains(err.Error(), "AuthorizationFailed") ||
 					strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
 					strings.Contains(err.Error(), "403") {
-					logger.Debug("Insufficient permissions to access Function App connection strings - requires more than Reader role",
+					logger.Error("Insufficient permissions to access Function App connection strings - requires more than Reader role",
 						slog.String("function_app", app.Name),
 						slog.String("operation", "ListConnectionStrings"))
 				}
@@ -256,7 +256,7 @@ func AzureFunctionAppSecretsStage(ctx context.Context, opts []*types.Option, in 
 				if strings.Contains(err.Error(), "AuthorizationFailed") ||
 					strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
 					strings.Contains(err.Error(), "403") {
-					logger.Debug("Insufficient permissions to access Function App function keys - requires more than Reader role",
+					logger.Error("Insufficient permissions to access Function App function keys - requires more than Reader role",
 						slog.String("function_app", app.Name),
 						slog.String("operation", "ListFunctionKeys"))
 				}
@@ -272,7 +272,7 @@ func AzureFunctionAppSecretsStage(ctx context.Context, opts []*types.Option, in 
 				if strings.Contains(err.Error(), "AuthorizationFailed") ||
 					strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
 					strings.Contains(err.Error(), "403") {
-					logger.Debug("Insufficient permissions to access Function App host keys - requires more than Reader role",
+					logger.Error("Insufficient permissions to access Function App host keys - requires more than Reader role",
 						slog.String("function_app", app.Name),
 						slog.String("operation", "ListHostKeys"))
 				}
@@ -288,7 +288,7 @@ func AzureFunctionAppSecretsStage(ctx context.Context, opts []*types.Option, in 
 				if strings.Contains(err.Error(), "AuthorizationFailed") ||
 					strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
 					strings.Contains(err.Error(), "403") {
-					logger.Debug("Insufficient permissions to access Function App source control - requires more than Reader role",
+					logger.Error("Insufficient permissions to access Function App source control - requires more than Reader role",
 						slog.String("function_app", app.Name),
 						slog.String("operation", "GetSourceControl"))
 				}
@@ -304,7 +304,7 @@ func AzureFunctionAppSecretsStage(ctx context.Context, opts []*types.Option, in 
 				if strings.Contains(err.Error(), "AuthorizationFailed") ||
 					strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
 					strings.Contains(err.Error(), "403") {
-					logger.Debug("Insufficient permissions to access Function App configuration - requires more than Reader role",
+					logger.Error("Insufficient permissions to access Function App configuration - requires more than Reader role",
 						slog.String("function_app", app.Name),
 						slog.String("operation", "GetConfiguration"))
 				}
@@ -320,7 +320,7 @@ func AzureFunctionAppSecretsStage(ctx context.Context, opts []*types.Option, in 
 				if strings.Contains(err.Error(), "AuthorizationFailed") ||
 					strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
 					strings.Contains(err.Error(), "403") {
-					logger.Debug("Insufficient permissions to access Function App auth settings - requires more than Reader role",
+					logger.Error("Insufficient permissions to access Function App auth settings - requires more than Reader role",
 						slog.String("function_app", app.Name),
 						slog.String("operation", "GetAuthSettings"))
 				}
