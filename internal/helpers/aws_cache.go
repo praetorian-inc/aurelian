@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
-	"log/slog"
+	"github.com/praetorian-inc/nebula/internal/logs"
 	"net/http"
 	"net/http/httputil"
 	"os"
@@ -23,7 +23,7 @@ var (
 	NonCacheableOperations = []string{
 		"STS.GetCallerIdentity",
 	}
-	logger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	logger = logs.NewLogger()
 )
 
 func isCacheable(service, operation string) bool {
