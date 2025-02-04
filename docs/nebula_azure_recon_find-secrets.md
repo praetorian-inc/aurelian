@@ -13,7 +13,7 @@ nebula azure recon find-secrets [flags]
       --np-args string          custom args to pass to Nosey Parker
       --np-output string        output directory for Nosey Parker (default "datastore.np")
       --np-path string          path to Nosey Parker (default "noseyparker")
-  -r, --resource-types string   Comma-separated list of Azure resource types to scan (supported: all, Microsoft.Compute/virtualMachines, Microsoft.Web/sites, Microsoft.Automation/automationAccounts)
+  -r, --resource-types string   Comma-separated list of Azure resource types to scan (supported: all, Microsoft.Compute/virtualMachines/userData, Microsoft.Compute/virtualMachines/extensions, Microsoft.Compute/virtualMachines/diskEncryption, Microsoft.Compute/virtualMachines/tags, Microsoft.Web/sites/configuration, Microsoft.Web/sites/connectionStrings, Microsoft.Web/sites/keys, Microsoft.Web/sites/settings, Microsoft.Web/sites/tags, Microsoft.Automation/automationAccounts/runbooks, Microsoft.Automation/automationAccounts/variables, Microsoft.Automation/automationAccounts/jobs)
   -s, --subscription string     Azure subscription ID or 'all' to scan all accessible subscriptions
   -t, --timeout int             Timeout in seconds for each subscription scan (default 600)
   -w, --workers int             Number of concurrent workers for processing subscriptions (default 5)
