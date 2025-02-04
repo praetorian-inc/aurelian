@@ -30,7 +30,7 @@ func NewEnrichedResourceDescriptionFromArn(a string) (EnrichedResourceDescriptio
 	}, nil
 }
 
-func ArnFromEnrichedResourceDescription(e EnrichedResourceDescription) arn.ARN {
+func (e *EnrichedResourceDescription) ToArn() arn.ARN {
 	a := arn.ARN{
 		Partition: "aws",
 		Service:   getServiceName(e.TypeName),

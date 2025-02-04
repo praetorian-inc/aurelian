@@ -59,6 +59,7 @@ var AwsResourceTypeOpt = types.Option{
 var FindSecretsTypes = []string{
 	"AWS::CloudFormation::Stack",
 	"AWS::Lambda::Function",
+	"AWS::Lambda::Function::Code",
 	"AWS::EC2::Instance",
 	"AWS::ECR::Repository",
 	"AWS::ECR::PublicRepository",

@@ -92,7 +92,7 @@ func AwsCloudControlListResources(ctx context.Context, opts []*types.Option, rty
 								Properties: *resource.Properties,
 								AccountId:  acctId,
 							}
-							erd.Arn = types.ArnFromEnrichedResourceDescription(erd)
+							erd.Arn = erd.ToArn()
 							out <- erd
 						}(&resource)
 					}

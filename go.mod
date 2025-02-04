@@ -12,7 +12,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
 	github.com/aws/aws-sdk-go v1.55.5
-	github.com/aws/aws-sdk-go-v2 v1.33.0
+	github.com/aws/aws-sdk-go-v2 v1.35.0
 	github.com/aws/aws-sdk-go-v2/config v1.27.27
 	github.com/aws/aws-sdk-go-v2/service/backup v1.39.3
 	github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.18.5
@@ -34,6 +34,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.57.0
 	github.com/aws/aws-sdk-go-v2/service/mediastore v1.24.3
 	github.com/aws/aws-sdk-go-v2/service/opensearch v1.41.2
+	github.com/aws/aws-sdk-go-v2/service/organizations v1.37.5
 	github.com/aws/aws-sdk-go-v2/service/rds v1.89.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.66.0
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.34.2
@@ -42,7 +43,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sns v1.33.3
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.36.3
 	github.com/aws/aws-sdk-go-v2/service/sts v1.30.3
-	github.com/aws/smithy-go v1.22.1
+	github.com/aws/smithy-go v1.22.2
 	github.com/docker/docker v27.4.1+incompatible
 	github.com/fatih/color v1.18.0
 	github.com/itchyny/gojq v0.12.16
@@ -116,8 +117,8 @@ require (
 require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.27 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.11 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.28 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.28 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.30 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.30 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.12.3 // indirect
