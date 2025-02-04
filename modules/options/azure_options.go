@@ -53,13 +53,11 @@ var azureAcceptedSecretsTypes = []string{
 }
 
 var AzureResourceSecretsTypesOpt = types.Option{
-	Name:                "resource-types",
-	Short:               "r",
-	Description:         fmt.Sprintf("Comma-separated list of Azure resource types to scan (supported: %s)", strings.Join(azureAcceptedSecretsTypes, ", ")),
-	Required:            true,
-	Type:                types.String,
-	Value:               "",
-	ValueFormat:         nil,
-	ValueList:           azureAcceptedSecretsTypes,
-	ValueCommaSeparated: true,
+	Name:        "resource-types",
+	Short:       "r",
+	Description: fmt.Sprintf("Comma-separated list of Azure resource types to scan (supported: %s)", strings.Join(azureAcceptedSecretsTypes, ", ")),
+	Required:    true,
+	Type:        types.String,
+	Value:       "",
+	ValueList:   azureAcceptedSecretsTypes,
 }
