@@ -16,7 +16,6 @@ import (
 	"net/http/httputil"
 	"os"
 	"path/filepath"
-	"reflect"
 )
 
 var (
@@ -120,14 +119,14 @@ func getCachePath(CacheDir string, key string) string {
 }
 
 // generateCacheKey creates a unique cache key based on the service, operation, and parameters.
-func generateCacheKey(arn, service, operation string, params interface{}) string {
+func generateCacheKey(arn, service, region string, operation string, params interface{}) string {
 	data, err := json.Marshal(params)
 	if err != nil {
 		logger.Error("Failed to marshal parameters", "error", err)
-		return fmt.Sprintf("%s-%s-%s", service, operation, arn)
+		return fmt.Sprintf("%s-%s-%s-%s", service, operation, arn, region)
 	}
 
-	combined := fmt.Sprintf("%s-%s-%s-%s", arn, service, operation, string(data))
+	combined := fmt.Sprintf("%s-%s-%s-%s-%s", arn, region, service, operation, string(data))
 	hash := sha256.Sum256([]byte(combined))
 
 	logger.Debug("Generated cache key", "cacheKey", hex.EncodeToString(hash[:]))
@@ -166,128 +165,6 @@ func GetCacheConfigMeta(metadata middleware.Metadata, key string) (v CacheConfig
 	v, _ = metadata.Get(key).(CacheConfigs)
 	return v
 }
-
-var testMiddleware = middleware.InitializeMiddlewareFunc("TestMiddleware", func(ctx context.Context, input middleware.InitializeInput, handler middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
-
-	fmt.Println("\n=== Initialize Debug ===")
-
-	// Print Context details
-	fmt.Println("\n=== Context Details ===")
-	fmt.Printf("Context: %#v\n", ctx)
-
-	// Print Input details
-	fmt.Println("\n=== Input Details ===")
-	fmt.Printf("Parameters Type: %T\n", input.Parameters)
-	if input.Parameters != nil {
-		v := reflect.ValueOf(input.Parameters).Elem()
-		t := v.Type()
-
-		fmt.Println("Parameters Content:")
-		for i := 0; i < v.NumField(); i++ {
-			field := v.Field(i)
-			fieldName := t.Field(i).Name
-
-			// Handle string pointers
-			if field.Kind() == reflect.Pointer && field.Type().Elem().Kind() == reflect.String {
-				if !field.IsNil() {
-					fmt.Printf("  %s: %q\n", fieldName, field.Elem().String())
-				} else {
-					fmt.Printf("  %s: nil\n", fieldName)
-				}
-				continue
-			}
-
-			// Handle other types
-			if field.CanInterface() {
-				fmt.Printf("  %s: %#v\n", fieldName, field.Interface())
-			}
-		}
-	}
-
-	// Print Handler details
-	fmt.Println("\n=== Handler Details ===")
-	handlerValue := reflect.ValueOf(handler)
-	fmt.Printf("Handler Type: %T\n", handler)
-
-	if handlerValue.Kind() == reflect.Struct {
-		for i := 0; i < handlerValue.NumField(); i++ {
-			field := handlerValue.Field(i)
-			fieldType := handlerValue.Type().Field(i)
-			if field.CanInterface() {
-				fmt.Printf("Field: %s, Type: %s, Value: %#v\n",
-					fieldType.Name, field.Type(), field.Interface())
-			} else {
-				fmt.Printf("Field: %s, Type: %s (unexported)\n",
-					fieldType.Name, field.Type())
-			}
-		}
-	}
-
-	// Execute the handler and save results
-	output, metadata, err := handler.HandleInitialize(ctx, input)
-
-	// Print the results
-	fmt.Println("\n=== Handler Output ===")
-	fmt.Printf("Output: %#v\n", output)
-	fmt.Printf("Metadata: %#v\n", metadata)
-	fmt.Printf("Error: %v\n", err)
-
-	return output, metadata, err
-})
-
-var testMiddleware2 = middleware.DeserializeMiddlewareFunc("TestMiddleware2", func(ctx context.Context, input middleware.DeserializeInput, handler middleware.DeserializeHandler) (middleware.DeserializeOutput, middleware.Metadata, error) {
-	fmt.Println("\n=== Deserialize Debug ===")
-
-	// Print Context details
-	fmt.Println("\n=== Context Details ===")
-	fmt.Printf("Context: %#v\n", ctx)
-
-	// Print Input details
-	fmt.Println("\n=== Input Details ===")
-	fmt.Printf("Parameters Type: %T\n", input)
-
-	// Execute the handler and save results
-	output, metadata, err := handler.HandleDeserialize(ctx, input)
-
-	fmt.Println("\n=== Output Details ===")
-
-	if err != nil {
-		fmt.Printf("Error occurred: %v\n", err)
-	}
-	fmt.Printf("Output: %#v\n", output)
-	fmt.Printf("Metadata: %#v\n", metadata)
-	fmt.Printf("Error: %v\n", err)
-
-	resp := awsmiddleware.GetRawResponse(metadata)
-	fmt.Printf("resp: %#v\n", resp)
-
-	if resp, ok := output.RawResponse.(*smithyhttp.Response); ok {
-		standardResp := resp.Response
-		respBytes, dumpErr := httputil.DumpResponse(standardResp, true)
-		if dumpErr != nil {
-			fmt.Printf("Failed to dump response: %v\n", dumpErr)
-		} else {
-			fmt.Printf("HTTP Response:\n%s\n", string(respBytes))
-		}
-	}
-
-	// Access the raw HTTP response
-	if httpResp, ok := resp.(*http.Response); ok {
-		respBytes, dumpErr := httputil.DumpResponse(httpResp, true)
-		if dumpErr != nil {
-			fmt.Printf("Failed to dump response: %v\n", dumpErr)
-		} else {
-			fmt.Printf("HTTP Response:\n%s\n", string(respBytes))
-		}
-	} else {
-		fmt.Println("Raw response is not an HTTP response")
-		fmt.Printf("Raw response type: %T\n", resp)
-		fmt.Printf("Raw response: %v\n", resp)
-		fmt.Printf("Raw response2: %s\n", resp)
-	}
-
-	return output, metadata, err
-})
 
 // CacheOps is a middleware that handles caching operations during the deserialization phase.
 var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context.Context, input middleware.DeserializeInput, handler middleware.DeserializeHandler) (middleware.DeserializeOutput, middleware.Metadata, error) {
@@ -365,6 +242,7 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput) middle
 		// Extract service and operation information using awsmiddleware helpers
 		service := awsmiddleware.GetServiceID(ctx)
 		operation := awsmiddleware.GetOperationName(ctx)
+		region := awsmiddleware.GetRegion(ctx)
 
 		logger.Debug("Extracted service and operation", "service", service, "operation", operation)
 
@@ -374,10 +252,15 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput) middle
 			return handler.HandleInitialize(ctx, input)
 		}
 
-		logger.Info("Processing request", "service", service, "operation", operation)
+		if region == "" {
+			logger.Warn("Could not determine region", "region", region, "parameters", input.Parameters)
+			return handler.HandleInitialize(ctx, input)
+		}
+
+		logger.Info("Processing request", "service", service, "operation", operation, "region", region)
 
 		// Generate cache key and get cache file path
-		cacheKey := generateCacheKey(*callerIdentity.Arn, service, operation, input.Parameters)
+		cacheKey := generateCacheKey(*callerIdentity.Arn, service, region, operation, input.Parameters)
 		cachePath := getCachePath(os.TempDir(), cacheKey)
 
 		cacheConfig := CacheConfigs{

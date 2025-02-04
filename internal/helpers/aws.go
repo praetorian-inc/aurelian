@@ -120,20 +120,12 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 
 	cfg.APIOptions = append(cfg.APIOptions, func(stack *middleware.Stack) error {
 		// Add custom middlewares
-		//if err := stack.Initialize.Add(testMiddleware, middleware.After); err != nil {
-		//	return err
-		//}
 		if err := stack.Initialize.Add(CachePrep, middleware.After); err != nil {
 			return err
 		}
-		//if err := stack.Deserialize.Insert(testMiddleware2, "OperationDeserializer", middleware.After); err != nil {
-		//	return err
-		//}
 		if err := stack.Deserialize.Add(CacheOps, middleware.After); err != nil {
 			return err
 		}
-
-		//fmt.Printf("Middleware Stack: %v\n", stack.List())
 		return nil
 	})
 
