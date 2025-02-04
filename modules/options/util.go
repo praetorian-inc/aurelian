@@ -2,6 +2,7 @@ package options
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -67,12 +68,24 @@ func ValidateOption(opt types.Option, options []*types.Option) error {
 			}
 
 			if opt.ValueList != nil {
-				for _, value := range opt.ValueList {
-					if strings.ToLower(value) == strings.ToLower(option.Value) {
-						return nil
+				values := strings.Split(option.Value, ",")
+				for _, value := range values {
+					value = strings.TrimSpace(value)
+					valid := false
+					for _, allowedValue := range opt.ValueList {
+						if strings.EqualFold(value, allowedValue) {
+							valid = true
+							break
+						}
+					}
+					if !valid {
+						return fmt.Errorf("%s contains invalid value '%s'. Valid options are: %s",
+							opt.Name,
+							value,
+							strings.Join(opt.ValueList, ", "))
 					}
 				}
-				return errors.New(option.Name + " is not a valid option. Valid options are: " + strings.Join(opt.ValueList, ", "))
+				return nil
 			}
 
 			// Check if the option value is of the correct type when non-string

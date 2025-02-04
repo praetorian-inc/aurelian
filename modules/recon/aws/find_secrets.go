@@ -27,6 +27,7 @@ var AwsFindSecretsOptions = []*types.Option{
 	options.WithRequired(options.DockerUserOpt, false),
 	options.WithRequired(options.DockerPasswordOpt, false),
 	options.WithDefaultValue(options.DockerExtractOpt, "true"),
+	options.WithDefaultValue(options.WorkersOpt, "5"),
 }
 
 var AwsFindSecretsOutputProviders = []func(options []*types.Option) types.OutputProvider{
