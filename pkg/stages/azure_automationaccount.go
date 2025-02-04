@@ -163,7 +163,10 @@ func AzureAutomationAccountSecretsStage(ctx context.Context, opts []*types.Optio
 		message.Info("Began scanning Microsoft.Automation/automationAccounts")
 		defer close(out)
 
+		aaCount := 0
+
 		for account := range in {
+			aaCount++
 			cred, err := azidentity.NewDefaultAzureCredential(nil)
 			if err != nil {
 				logger.Error("Failed to get Azure credential", slog.String("error", err.Error()))
@@ -190,7 +193,8 @@ func AzureAutomationAccountSecretsStage(ctx context.Context, opts []*types.Optio
 				logger.Debug("Sending data to NP:",
 					slog.String("subscription", account.SubscriptionID),
 					slog.String("automation-account", account.ID),
-					slog.String("content", content[1:5]+"*****[REDACTED]******"))
+					slog.String("content", content[:min(5, len(content))]+"*****[REDACTED]******"),
+				)
 
 				select {
 				case out <- input:
@@ -208,9 +212,14 @@ func AzureAutomationAccountSecretsStage(ctx context.Context, opts []*types.Optio
 			// Process runbooks
 			processRunbooks(ctx, logger, account, cred, sendToNP)
 
+			// Process jobs and job logs
+			processJobs(ctx, logger, account, cred, sendToNP)
+
 			// Process variables
 			processVariables(ctx, logger, account, cred, sendToNP)
 		}
+
+		message.Info("Completed scanning Microsoft.Automation/automationAccounts, %d automation accounts scanned.", aaCount)
 	}()
 	return out
 }
@@ -273,6 +282,73 @@ func processVariables(ctx context.Context, logger *slog.Logger, account *Automat
 				"value":       variable.Properties.Value,
 			}); err == nil {
 				sendToNP(string(varJson), "Variable::"+*variable.Name, false)
+			}
+		}
+	}
+}
+
+func processJobs(ctx context.Context, logger *slog.Logger, account *AutomationAccountDetail, cred *azidentity.DefaultAzureCredential, sendToNP func(string, string, bool)) {
+	jobClient, err := armautomation.NewJobClient(account.SubscriptionID, cred, nil)
+	if err != nil {
+		logger.Error("Failed to create job client", slog.String("error", err.Error()))
+		return
+	}
+
+	// Get jobs from the last 30 days
+	pager := jobClient.NewListByAutomationAccountPager(account.ResourceGroup, account.Name,
+		&armautomation.JobClientListByAutomationAccountOptions{
+			Filter: nil, // Could add filter here if needed
+		})
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			logError(logger, "Failed to list jobs", err, account.Name)
+			break
+		}
+
+		for _, job := range page.Value {
+			if job.Name == nil || job.Properties == nil {
+				continue
+			}
+
+			// Process job properties for potential secrets
+			if jobPropsJson, err := json.Marshal(job.Properties); err == nil {
+				sendToNP(string(jobPropsJson), "Job::"+*job.Name+"::Properties", false)
+			}
+
+			// Get job output
+			output, err := jobClient.GetOutput(ctx, account.ResourceGroup, account.Name, *job.Name, nil)
+			if err != nil {
+				logError(logger, "Failed to get job output", err, *job.Name)
+				continue
+			}
+
+			if output.Value != nil {
+				sendToNP(*output.Value, "Job::"+*job.Name+"::Output", false)
+			}
+
+			// Get job streams (logs)
+			streamClient, err := armautomation.NewJobStreamClient(account.SubscriptionID, cred, nil)
+			streamPager := streamClient.NewListByJobPager(account.ResourceGroup, account.Name, *job.Name, nil)
+
+			var combinedLogs strings.Builder
+			for streamPager.More() {
+				streamPage, err := streamPager.NextPage(ctx)
+				if err != nil {
+					logError(logger, "Failed to list job streams", err, *job.Name)
+					break
+				}
+
+				for _, stream := range streamPage.Value {
+					if stream.Properties != nil && stream.Properties.Summary != nil {
+						combinedLogs.WriteString(*stream.Properties.Summary + "\n")
+					}
+				}
+			}
+
+			if combinedLogs.Len() > 0 {
+				sendToNP(combinedLogs.String(), "Job::"+*job.Name+"::Logs", false)
 			}
 		}
 	}

@@ -202,7 +202,7 @@ func AzureFunctionAppSecretsStage(ctx context.Context, opts []*types.Option, in 
 				logger.Debug("Sending data to NP:",
 					slog.String("subscription", app.SubscriptionID),
 					slog.String("function-app", app.ID),
-					slog.String("content", content[1:5]+"*****[REDACTED]******"))
+					slog.String("content", content[:min(5, len(content))]+"*****[REDACTED]******"))
 
 				select {
 				case out <- input:

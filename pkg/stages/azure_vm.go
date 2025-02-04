@@ -205,7 +205,7 @@ func AzureVMSecretsStage(ctx context.Context, opts []*types.Option, in <-chan *A
 				logger.Debug("Sending data to NP:",
 					slog.String("subscription", vm.SubscriptionID),
 					slog.String("virtual-machine", vm.ID),
-					slog.String("content", content[1:5]+"*****[REDACTED]******"))
+					slog.String("content", content[:min(5, len(content))]+"*****[REDACTED]******"))
 
 				select {
 				case out <- input:
