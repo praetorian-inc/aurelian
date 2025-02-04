@@ -36,21 +36,30 @@ var AzureTimeoutOpt = types.Option{
 	Value:       "600", // 10 minute default timeout
 }
 
-var azureAcceptedTypes = []string{
+var azureAcceptedSecretsTypes = []string{
 	"all",
-	"Microsoft.Compute/virtualMachines",
-	"Microsoft.Web/sites",
-	"Microsoft.Automation/automationAccounts",
+	"Microsoft.Compute/virtualMachines/userData",
+	"Microsoft.Compute/virtualMachines/extensions",
+	"Microsoft.Compute/virtualMachines/diskEncryption",
+	"Microsoft.Compute/virtualMachines/tags",
+	"Microsoft.Web/sites/configuration",
+	"Microsoft.Web/sites/connectionStrings",
+	"Microsoft.Web/sites/keys",
+	"Microsoft.Web/sites/settings",
+	"Microsoft.Web/sites/tags",
+	"Microsoft.Automation/automationAccounts/runbooks",
+	"Microsoft.Automation/automationAccounts/variables",
+	"Microsoft.Automation/automationAccounts/jobs",
 }
 
-var AzureResourceTypesOpt = types.Option{
+var AzureResourceSecretsTypesOpt = types.Option{
 	Name:                "resource-types",
 	Short:               "r",
-	Description:         fmt.Sprintf("Comma-separated list of Azure resource types to scan (supported: %s)", strings.Join(azureAcceptedTypes, ", ")),
+	Description:         fmt.Sprintf("Comma-separated list of Azure resource types to scan (supported: %s)", strings.Join(azureAcceptedSecretsTypes, ", ")),
 	Required:            true,
 	Type:                types.String,
 	Value:               "",
 	ValueFormat:         nil,
-	ValueList:           azureAcceptedTypes,
+	ValueList:           azureAcceptedSecretsTypes,
 	ValueCommaSeparated: true,
 }

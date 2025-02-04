@@ -37,7 +37,7 @@ var AzureFindSecretsOptions = []*types.Option{
 	&options.NoseyParkerPathOpt,
 	&options.NoseyParkerArgsOpt,
 	&options.NoseyParkerOutputOpt,
-	&options.AzureResourceTypesOpt,
+	&options.AzureResourceSecretsTypesOpt,
 }
 
 var AzureFindSecretsOutputProviders = []func(options []*types.Option) types.OutputProvider{
@@ -71,12 +71,12 @@ func NewAzureFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[stri
 
 	// Get and validate resource types
 	resourceTypes := []string{}
-	resourceTypeOpt := options.GetOptionByName(options.AzureResourceTypesOpt.Name, opts).Value
+	resourceTypeOpt := options.GetOptionByName(options.AzureResourceSecretsTypesOpt.Name, opts).Value
 
 	if strings.EqualFold(resourceTypeOpt, "all") {
 		slog.Info("Loading secrets scanning module for all supported resource types")
 		// Add all supported resource types except "all"
-		for _, rtype := range options.AzureResourceTypesOpt.ValueList {
+		for _, rtype := range options.AzureResourceSecretsTypesOpt.ValueList {
 			if !strings.EqualFold(rtype, "all") {
 				resourceTypes = append(resourceTypes, rtype)
 			}
@@ -87,7 +87,7 @@ func NewAzureFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[stri
 		for _, rtype := range inputTypes {
 			rtype = strings.TrimSpace(rtype)
 			valid := false
-			for _, supportedType := range options.AzureResourceTypesOpt.ValueList {
+			for _, supportedType := range options.AzureResourceSecretsTypesOpt.ValueList {
 				if strings.EqualFold(rtype, supportedType) {
 					valid = true
 					resourceTypes = append(resourceTypes, supportedType) // Use canonical case from supported types
@@ -131,10 +131,10 @@ func NewAzureFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[stri
 		message.Info("Configuring pipeline for resource type: %s", rtype)
 
 		switch rtype {
-		case "Microsoft.Compute/virtualMachines":
+		case "Microsoft.Compute/virtualMachines/userData":
 			vmPipeline, err := stages.ChainStages[string, types.NpInput](
 				stages.AzureListVMsStage,
-				stages.AzureVMSecretsStage,
+				stages.AzureVMUserDataStage,
 			)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Failed to create VM pipeline: %v", err))
@@ -142,10 +142,43 @@ func NewAzureFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[stri
 			}
 			resourcePipelines = append(resourcePipelines, []stages.Stage[string, types.NpInput]{vmPipeline})
 
-		case "Microsoft.Web/sites":
+		case "Microsoft.Compute/virtualMachines/extensions":
+			vmPipeline, err := stages.ChainStages[string, types.NpInput](
+				stages.AzureListVMsStage,
+				stages.AzureVMExtensionsStage,
+			)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to create VM pipeline: %v", err))
+				continue
+			}
+			resourcePipelines = append(resourcePipelines, []stages.Stage[string, types.NpInput]{vmPipeline})
+
+		case "Microsoft.Compute/virtualMachines/diskEncryption":
+			vmPipeline, err := stages.ChainStages[string, types.NpInput](
+				stages.AzureListVMsStage,
+				stages.AzureVMDiskEncryptionStage,
+			)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to create VM pipeline: %v", err))
+				continue
+			}
+			resourcePipelines = append(resourcePipelines, []stages.Stage[string, types.NpInput]{vmPipeline})
+
+		case "Microsoft.Compute/virtualMachines/tags":
+			vmPipeline, err := stages.ChainStages[string, types.NpInput](
+				stages.AzureListVMsStage,
+				stages.AzureVMTagsStage,
+			)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to create VM pipeline: %v", err))
+				continue
+			}
+			resourcePipelines = append(resourcePipelines, []stages.Stage[string, types.NpInput]{vmPipeline})
+
+		case "Microsoft.Web/sites/configuration":
 			appPipeline, err := stages.ChainStages[string, types.NpInput](
 				stages.AzureListFunctionAppsStage,
-				stages.AzureFunctionAppSecretsStage,
+				stages.AzureFunctionAppConfigStage,
 			)
 			if err != nil {
 				logger.Error(fmt.Sprintf("Failed to create Function App pipeline: %v", err))
@@ -153,13 +186,79 @@ func NewAzureFindSecrets(opts []*types.Option) (<-chan string, stages.Stage[stri
 			}
 			resourcePipelines = append(resourcePipelines, []stages.Stage[string, types.NpInput]{appPipeline})
 
-		case "Microsoft.Automation/automationAccounts":
-			automationPipeline, err := stages.ChainStages[string, types.NpInput](
-				stages.AzureListAutomationAccountsStage,
-				stages.AzureAutomationAccountSecretsStage,
+		case "Microsoft.Web/sites/connectionStrings":
+			appPipeline, err := stages.ChainStages[string, types.NpInput](
+				stages.AzureListFunctionAppsStage,
+				stages.AzureFunctionAppConnectionsStage,
 			)
 			if err != nil {
-				logger.Error(fmt.Sprintf("Failed to create Automation Account pipeline: %v", err))
+				logger.Error(fmt.Sprintf("Failed to create Function App pipeline: %v", err))
+				continue
+			}
+			resourcePipelines = append(resourcePipelines, []stages.Stage[string, types.NpInput]{appPipeline})
+
+		case "Microsoft.Web/sites/keys":
+			appPipeline, err := stages.ChainStages[string, types.NpInput](
+				stages.AzureListFunctionAppsStage,
+				stages.AzureFunctionAppKeysStage,
+			)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to create Function App pipeline: %v", err))
+				continue
+			}
+			resourcePipelines = append(resourcePipelines, []stages.Stage[string, types.NpInput]{appPipeline})
+
+		case "Microsoft.Web/sites/settings":
+			appPipeline, err := stages.ChainStages[string, types.NpInput](
+				stages.AzureListFunctionAppsStage,
+				stages.AzureFunctionAppSettingsStage,
+			)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to create Function App pipeline: %v", err))
+				continue
+			}
+			resourcePipelines = append(resourcePipelines, []stages.Stage[string, types.NpInput]{appPipeline})
+
+		case "Microsoft.Web/sites/tags":
+			appPipeline, err := stages.ChainStages[string, types.NpInput](
+				stages.AzureListFunctionAppsStage,
+				stages.AzureFunctionAppTagsStage,
+			)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to create Function App pipeline: %v", err))
+				continue
+			}
+			resourcePipelines = append(resourcePipelines, []stages.Stage[string, types.NpInput]{appPipeline})
+
+		case "Microsoft.Automation/automationAccounts/runbooks":
+			automationPipeline, err := stages.ChainStages[string, types.NpInput](
+				stages.AzureListAutomationAccountsStage,
+				stages.AutomationAccountRunbooksStage,
+			)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to create Automation Account Runbooks pipeline: %v", err))
+				continue
+			}
+			resourcePipelines = append(resourcePipelines, []stages.Stage[string, types.NpInput]{automationPipeline})
+
+		case "Microsoft.Automation/automationAccounts/variables":
+			automationPipeline, err := stages.ChainStages[string, types.NpInput](
+				stages.AzureListAutomationAccountsStage,
+				stages.AutomationAccountVariablesStage,
+			)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to create Automation Account Runbooks pipeline: %v", err))
+				continue
+			}
+			resourcePipelines = append(resourcePipelines, []stages.Stage[string, types.NpInput]{automationPipeline})
+
+		case "Microsoft.Automation/automationAccounts/jobs":
+			automationPipeline, err := stages.ChainStages[string, types.NpInput](
+				stages.AzureListAutomationAccountsStage,
+				stages.AutomationAccountJobsStage,
+			)
+			if err != nil {
+				logger.Error(fmt.Sprintf("Failed to create Automation Account Runbooks pipeline: %v", err))
 				continue
 			}
 			resourcePipelines = append(resourcePipelines, []stages.Stage[string, types.NpInput]{automationPipeline})

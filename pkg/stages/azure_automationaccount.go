@@ -15,7 +15,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
-	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -154,206 +153,251 @@ func AzureListAutomationAccountsStage(ctx context.Context, opts []*types.Option,
 	return out
 }
 
-// AzureAutomationAccountSecretsStage scans automation accounts for potential secrets
-func AzureAutomationAccountSecretsStage(ctx context.Context, opts []*types.Option, in <-chan *AutomationAccountDetail) <-chan types.NpInput {
-	logger := logs.NewStageLogger(ctx, opts, "AzureAutomationAccountSecretsStage")
+func AutomationAccountRunbooksStage(ctx context.Context, opts []*types.Option, in <-chan *AutomationAccountDetail) <-chan types.NpInput {
+	logger := logs.NewStageLogger(ctx, opts, "AutomationAccountRunbooksStage")
 	out := make(chan types.NpInput)
 
 	go func() {
-		message.Info("Began scanning Microsoft.Automation/automationAccounts")
 		defer close(out)
 
-		aaCount := 0
-
 		for account := range in {
-			aaCount++
+			logger.Debug("Processing Automation Account Runbooks for secrets", slog.String("name", account.Name))
 			cred, err := azidentity.NewDefaultAzureCredential(nil)
 			if err != nil {
 				logger.Error("Failed to get Azure credential", slog.String("error", err.Error()))
 				continue
 			}
 
-			// Function to send content to NP
-			sendToNP := func(content string, contentType string, isBase64 bool) {
-				input := types.NpInput{
-					Provenance: types.NpProvenance{
-						Platform:     "azure",
-						ResourceType: "Microsoft.Automation/automationAccounts::" + contentType,
-						ResourceID:   account.ID,
-						Region:       account.Location,
-						AccountID:    account.SubscriptionID,
-					},
-				}
-				if isBase64 {
-					input.ContentBase64 = content
-				} else {
-					input.Content = content
-				}
-
-				logger.Debug("Sending data to NP:",
-					slog.String("subscription", account.SubscriptionID),
-					slog.String("automation-account", account.ID),
-					slog.String("content", content[:min(5, len(content))]+"*****[REDACTED]******"),
-				)
-
-				select {
-				case out <- input:
-				case <-ctx.Done():
-				}
+			runbookClient, err := armautomation.NewRunbookClient(account.SubscriptionID, cred, nil)
+			if err != nil {
+				logger.Error("Failed to create runbook client", slog.String("error", err.Error()))
+				continue
 			}
 
-			// Process account tags
-			if account.Tags != nil {
-				if tagsJson, err := json.Marshal(account.Tags); err == nil {
-					sendToNP(string(tagsJson), "Tags", false)
+			pager := runbookClient.NewListByAutomationAccountPager(account.ResourceGroup, account.Name, nil)
+			for pager.More() {
+				page, err := pager.NextPage(ctx)
+				if err != nil {
+					logError(logger, "Failed to list runbooks", err, account.Name)
+					break
+				}
+
+				for _, runbook := range page.Value {
+					if runbook.Name == nil {
+						continue
+					}
+
+					contentURL := fmt.Sprintf("https://management.azure.com%s/%scontent?api-version=2018-06-30",
+						*runbook.ID,
+						getDraftPrefix(*runbook.Properties.State))
+
+					content := getRunbookContent(ctx, logger, cred, contentURL, *runbook.Name)
+					if content != "" {
+						select {
+						case out <- types.NpInput{
+							Content: content,
+							Provenance: types.NpProvenance{
+								Platform:     "azure",
+								ResourceType: "Microsoft.Automation/automationAccounts::Runbook",
+								ResourceID:   account.ID,
+								Region:       account.Location,
+								AccountID:    account.SubscriptionID,
+							},
+						}:
+						case <-ctx.Done():
+							return
+						}
+					}
 				}
 			}
-
-			// Process runbooks
-			processRunbooks(ctx, logger, account, cred, sendToNP)
-
-			// Process jobs and job logs
-			processJobs(ctx, logger, account, cred, sendToNP)
-
-			// Process variables
-			processVariables(ctx, logger, account, cred, sendToNP)
 		}
-
-		message.Info("Completed scanning Microsoft.Automation/automationAccounts, %d automation accounts scanned.", aaCount)
 	}()
 	return out
 }
 
-func processRunbooks(ctx context.Context, logger *slog.Logger, account *AutomationAccountDetail, cred *azidentity.DefaultAzureCredential, sendToNP func(string, string, bool)) {
-	runbookClient, err := armautomation.NewRunbookClient(account.SubscriptionID, cred, nil)
-	if err != nil {
-		logger.Error("Failed to create runbook client", slog.String("error", err.Error()))
-		return
-	}
+// AutomationAccountVariablesStage processes variables of an automation account
+func AutomationAccountVariablesStage(ctx context.Context, opts []*types.Option, in <-chan *AutomationAccountDetail) <-chan types.NpInput {
+	logger := logs.NewStageLogger(ctx, opts, "AutomationAccountVariablesStage")
+	out := make(chan types.NpInput)
 
-	pager := runbookClient.NewListByAutomationAccountPager(account.ResourceGroup, account.Name, nil)
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			logError(logger, "Failed to list runbooks", err, account.Name)
-			break
-		}
+	go func() {
+		defer close(out)
 
-		for _, runbook := range page.Value {
-			if runbook.Name == nil {
-				continue
-			}
-
-			contentURL := fmt.Sprintf("https://management.azure.com%s/%scontent?api-version=2018-06-30",
-				*runbook.ID,
-				getDraftPrefix(*runbook.Properties.State))
-
-			content := getRunbookContent(ctx, logger, cred, contentURL, *runbook.Name)
-			if content != "" {
-				sendToNP(content, "Runbook::"+*runbook.Name, false)
-			}
-		}
-	}
-}
-
-func processVariables(ctx context.Context, logger *slog.Logger, account *AutomationAccountDetail, cred *azidentity.DefaultAzureCredential, sendToNP func(string, string, bool)) {
-	variableClient, err := armautomation.NewVariableClient(account.SubscriptionID, cred, nil)
-	if err != nil {
-		logger.Error("Failed to create variable client", slog.String("error", err.Error()))
-		return
-	}
-
-	pager := variableClient.NewListByAutomationAccountPager(account.ResourceGroup, account.Name, nil)
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			logError(logger, "Failed to list variables", err, account.Name)
-			break
-		}
-
-		for _, variable := range page.Value {
-			if variable.Properties == nil || variable.Properties.IsEncrypted == nil || *variable.Properties.IsEncrypted {
-				continue
-			}
-
-			if varJson, err := json.Marshal(map[string]interface{}{
-				"name":        variable.Name,
-				"description": variable.Properties.Description,
-				"value":       variable.Properties.Value,
-			}); err == nil {
-				sendToNP(string(varJson), "Variable::"+*variable.Name, false)
-			}
-		}
-	}
-}
-
-func processJobs(ctx context.Context, logger *slog.Logger, account *AutomationAccountDetail, cred *azidentity.DefaultAzureCredential, sendToNP func(string, string, bool)) {
-	jobClient, err := armautomation.NewJobClient(account.SubscriptionID, cred, nil)
-	if err != nil {
-		logger.Error("Failed to create job client", slog.String("error", err.Error()))
-		return
-	}
-
-	// Get jobs from the last 30 days
-	pager := jobClient.NewListByAutomationAccountPager(account.ResourceGroup, account.Name,
-		&armautomation.JobClientListByAutomationAccountOptions{
-			Filter: nil, // Could add filter here if needed
-		})
-
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			logError(logger, "Failed to list jobs", err, account.Name)
-			break
-		}
-
-		for _, job := range page.Value {
-			if job.Name == nil || job.Properties == nil {
-				continue
-			}
-
-			// Process job properties for potential secrets
-			if jobPropsJson, err := json.Marshal(job.Properties); err == nil {
-				sendToNP(string(jobPropsJson), "Job::"+*job.Name+"::Properties", false)
-			}
-
-			// Get job output
-			output, err := jobClient.GetOutput(ctx, account.ResourceGroup, account.Name, *job.Name, nil)
+		for account := range in {
+			cred, err := azidentity.NewDefaultAzureCredential(nil)
+			logger.Debug("Processing Automation Account Variables for secrets", slog.String("name", account.Name))
 			if err != nil {
-				logError(logger, "Failed to get job output", err, *job.Name)
+				logger.Error("Failed to get Azure credential", slog.String("error", err.Error()))
 				continue
 			}
 
-			if output.Value != nil {
-				sendToNP(*output.Value, "Job::"+*job.Name+"::Output", false)
+			variableClient, err := armautomation.NewVariableClient(account.SubscriptionID, cred, nil)
+			if err != nil {
+				logger.Error("Failed to create variable client", slog.String("error", err.Error()))
+				continue
 			}
 
-			// Get job streams (logs)
-			streamClient, err := armautomation.NewJobStreamClient(account.SubscriptionID, cred, nil)
-			streamPager := streamClient.NewListByJobPager(account.ResourceGroup, account.Name, *job.Name, nil)
-
-			var combinedLogs strings.Builder
-			for streamPager.More() {
-				streamPage, err := streamPager.NextPage(ctx)
+			pager := variableClient.NewListByAutomationAccountPager(account.ResourceGroup, account.Name, nil)
+			for pager.More() {
+				page, err := pager.NextPage(ctx)
 				if err != nil {
-					logError(logger, "Failed to list job streams", err, *job.Name)
+					logError(logger, "Failed to list variables", err, account.Name)
 					break
 				}
 
-				for _, stream := range streamPage.Value {
-					if stream.Properties != nil && stream.Properties.Summary != nil {
-						combinedLogs.WriteString(*stream.Properties.Summary + "\n")
+				for _, variable := range page.Value {
+					if variable.Properties == nil || variable.Properties.IsEncrypted == nil || *variable.Properties.IsEncrypted {
+						continue
+					}
+
+					if varJson, err := json.Marshal(map[string]interface{}{
+						"name":        variable.Name,
+						"description": variable.Properties.Description,
+						"value":       variable.Properties.Value,
+					}); err == nil {
+						select {
+						case out <- types.NpInput{
+							Content: string(varJson),
+							Provenance: types.NpProvenance{
+								Platform:     "azure",
+								ResourceType: "Microsoft.Automation/automationAccounts::Variable",
+								ResourceID:   account.ID,
+								Region:       account.Location,
+								AccountID:    account.SubscriptionID,
+							},
+						}:
+						case <-ctx.Done():
+							return
+						}
 					}
 				}
 			}
-
-			if combinedLogs.Len() > 0 {
-				sendToNP(combinedLogs.String(), "Job::"+*job.Name+"::Logs", false)
-			}
 		}
-	}
+	}()
+	return out
 }
 
+// AutomationAccountJobsStage processes jobs of an automation account
+func AutomationAccountJobsStage(ctx context.Context, opts []*types.Option, in <-chan *AutomationAccountDetail) <-chan types.NpInput {
+	logger := logs.NewStageLogger(ctx, opts, "AutomationAccountJobsStage")
+	out := make(chan types.NpInput)
+
+	go func() {
+		defer close(out)
+
+		for account := range in {
+			cred, err := azidentity.NewDefaultAzureCredential(nil)
+			logger.Debug("Processing Automation Account Jobs for secrets", slog.String("name", account.Name))
+			if err != nil {
+				logger.Error("Failed to get Azure credential", slog.String("error", err.Error()))
+				continue
+			}
+
+			jobClient, err := armautomation.NewJobClient(account.SubscriptionID, cred, nil)
+			if err != nil {
+				logger.Error("Failed to create job client", slog.String("error", err.Error()))
+				continue
+			}
+
+			pager := jobClient.NewListByAutomationAccountPager(account.ResourceGroup, account.Name, nil)
+			for pager.More() {
+				page, err := pager.NextPage(ctx)
+				if err != nil {
+					logError(logger, "Failed to list jobs", err, account.Name)
+					break
+				}
+
+				for _, job := range page.Value {
+					if job.Name == nil || job.Properties == nil {
+						continue
+					}
+
+					// Send job properties
+					if jobPropsJson, err := json.Marshal(job.Properties); err == nil {
+						select {
+						case out <- types.NpInput{
+							Content: string(jobPropsJson),
+							Provenance: types.NpProvenance{
+								Platform:     "azure",
+								ResourceType: "Microsoft.Automation/automationAccounts::Job::Properties",
+								ResourceID:   account.ID,
+								Region:       account.Location,
+								AccountID:    account.SubscriptionID,
+							},
+						}:
+						case <-ctx.Done():
+							return
+						}
+					}
+
+					// Get job output
+					output, err := jobClient.GetOutput(ctx, account.ResourceGroup, account.Name, *job.Name, nil)
+					if err != nil {
+						logError(logger, "Failed to get job output", err, *job.Name)
+					} else if output.Value != nil {
+						select {
+						case out <- types.NpInput{
+							Content: *output.Value,
+							Provenance: types.NpProvenance{
+								Platform:     "azure",
+								ResourceType: "Microsoft.Automation/automationAccounts::Job::Output",
+								ResourceID:   account.ID,
+								Region:       account.Location,
+								AccountID:    account.SubscriptionID,
+							},
+						}:
+						case <-ctx.Done():
+							return
+						}
+					}
+
+					// Get job streams (logs)
+					streamClient, err := armautomation.NewJobStreamClient(account.SubscriptionID, cred, nil)
+					if err != nil {
+						logger.Error("Failed to create stream client", slog.String("error", err.Error()))
+						continue
+					}
+
+					streamPager := streamClient.NewListByJobPager(account.ResourceGroup, account.Name, *job.Name, nil)
+					var combinedLogs strings.Builder
+					for streamPager.More() {
+						streamPage, err := streamPager.NextPage(ctx)
+						if err != nil {
+							logError(logger, "Failed to list job streams", err, *job.Name)
+							break
+						}
+
+						for _, stream := range streamPage.Value {
+							if stream.Properties != nil && stream.Properties.Summary != nil {
+								combinedLogs.WriteString(*stream.Properties.Summary + "\n")
+							}
+						}
+					}
+
+					if combinedLogs.Len() > 0 {
+						select {
+						case out <- types.NpInput{
+							Content: combinedLogs.String(),
+							Provenance: types.NpProvenance{
+								Platform:     "azure",
+								ResourceType: "Microsoft.Automation/automationAccounts::Job::Stream",
+								ResourceID:   account.ID,
+								Region:       account.Location,
+								AccountID:    account.SubscriptionID,
+							},
+						}:
+						case <-ctx.Done():
+							return
+						}
+					}
+				}
+			}
+		}
+	}()
+	return out
+}
+
+// Helper functions preserved from original code
 func getDraftPrefix(state armautomation.RunbookState) string {
 	if state == armautomation.RunbookStateNew {
 		return "draft/"

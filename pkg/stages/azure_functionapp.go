@@ -12,7 +12,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
-	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -150,189 +149,266 @@ func AzureListFunctionAppsStage(ctx context.Context, opts []*types.Option, in <-
 	return out
 }
 
-// AzureFunctionAppSecretsStage processes Function Apps and extracts potential secrets
-func AzureFunctionAppSecretsStage(ctx context.Context, opts []*types.Option, in <-chan *AzureFunctionAppDetail) <-chan types.NpInput {
-	logger := logs.NewStageLogger(ctx, opts, "AzureFunctionAppSecretsStage")
+// Function App configuration settings
+func AzureFunctionAppConfigStage(ctx context.Context, opts []*types.Option, in <-chan *AzureFunctionAppDetail) <-chan types.NpInput {
+	logger := logs.NewStageLogger(ctx, opts, "AzureFunctionAppConfigStage")
 	out := make(chan types.NpInput)
 
 	go func() {
-		message.Info("Began scanning Microsoft.Web/sites")
-		appCount := 0
 		defer close(out)
-
 		for app := range in {
-			appCount++
-			logger.Debug("Processing Function App for secrets", slog.String("name", app.Name))
-
-			// Get Azure credentials
 			cred, err := azidentity.NewDefaultAzureCredential(nil)
 			if err != nil {
-				logger.Error("Failed to get Azure credential",
-					slog.String("subscription", app.SubscriptionID),
-					slog.String("error", err.Error()))
+				logger.Error("Failed to get Azure credential", slog.String("error", err.Error()))
 				continue
 			}
 
-			// Create Web Apps client
+			logger.Debug("Processing Function App Configurations for secrets", slog.String("name", app.Name))
+
 			webClient, err := armappservice.NewWebAppsClient(app.SubscriptionID, cred, nil)
 			if err != nil {
-				logger.Error("Failed to create web client",
-					slog.String("subscription", app.SubscriptionID),
-					slog.String("error", err.Error()))
+				logger.Error("Failed to create web client", slog.String("error", err.Error()))
 				continue
 			}
 
-			// Helper function to send NpInput
-			sendNpInput := func(content string, contentType string, isBase64 bool) {
-				input := types.NpInput{
-					Provenance: types.NpProvenance{
-						Platform:     "azure",
-						ResourceType: "Microsoft.Web/sites::functionapp::" + contentType,
-						ResourceID:   app.ID,
-						Region:       app.Location,
-						AccountID:    app.SubscriptionID,
-					},
-				}
-				if isBase64 {
-					input.ContentBase64 = content
-				} else {
-					input.Content = content
-				}
-
-				logger.Debug("Sending data to NP:",
-					slog.String("subscription", app.SubscriptionID),
-					slog.String("function-app", app.ID),
-					slog.String("content", content[:min(5, len(content))]+"*****[REDACTED]******"))
-
-				select {
-				case out <- input:
-				case <-ctx.Done():
-					return
-				}
-			}
-
-			// 1. Process tags for secrets
-			if app.Tags != nil && len(app.Tags) > 0 {
-				if tagsJson, err := json.Marshal(app.Tags); err == nil {
-					sendNpInput(string(tagsJson), "Tags", false)
-				}
-			}
-
-			// 2. Application Settings
+			// Application Settings
 			appSettings, err := webClient.ListApplicationSettings(ctx, app.ResourceGroup, app.Name, nil)
 			if err != nil {
-				if strings.Contains(err.Error(), "AuthorizationFailed") ||
-					strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
-					strings.Contains(err.Error(), "403") {
-					logger.Error("Insufficient permissions to access Function App settings - requires more than Reader role",
-						slog.String("function_app", app.Name),
-						slog.String("operation", "ListApplicationSettings"))
-				}
+				logFunctionAppError(logger, "Failed to list application settings", err, app.Name)
 			} else if len(appSettings.Properties) > 0 {
 				if settingsJson, err := json.Marshal(appSettings.Properties); err == nil {
-					sendNpInput(string(settingsJson), "AppSettings", false)
-				}
-			}
-
-			// 3. Connection Strings
-			connStrings, err := webClient.ListConnectionStrings(ctx, app.ResourceGroup, app.Name, nil)
-			if err != nil {
-				if strings.Contains(err.Error(), "AuthorizationFailed") ||
-					strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
-					strings.Contains(err.Error(), "403") {
-					logger.Error("Insufficient permissions to access Function App connection strings - requires more than Reader role",
-						slog.String("function_app", app.Name),
-						slog.String("operation", "ListConnectionStrings"))
-				}
-			} else if connStrings.Properties != nil {
-				if stringsJson, err := json.Marshal(connStrings.Properties); err == nil {
-					sendNpInput(string(stringsJson), "ConnectionStrings", false)
-				}
-			}
-
-			// 4. Function Keys
-			funcKeys, err := webClient.ListFunctionKeys(ctx, app.ResourceGroup, app.Name, "", nil)
-			if err != nil {
-				if strings.Contains(err.Error(), "AuthorizationFailed") ||
-					strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
-					strings.Contains(err.Error(), "403") {
-					logger.Error("Insufficient permissions to access Function App function keys - requires more than Reader role",
-						slog.String("function_app", app.Name),
-						slog.String("operation", "ListFunctionKeys"))
-				}
-			} else {
-				if keysJson, err := json.Marshal(funcKeys); err == nil {
-					sendNpInput(string(keysJson), "FunctionKeys", false)
-				}
-			}
-
-			// 5. Host Keys
-			hostKeys, err := webClient.ListHostKeys(ctx, app.ResourceGroup, app.Name, nil)
-			if err != nil {
-				if strings.Contains(err.Error(), "AuthorizationFailed") ||
-					strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
-					strings.Contains(err.Error(), "403") {
-					logger.Error("Insufficient permissions to access Function App host keys - requires more than Reader role",
-						slog.String("function_app", app.Name),
-						slog.String("operation", "ListHostKeys"))
-				}
-			} else {
-				if keysJson, err := json.Marshal(hostKeys); err == nil {
-					sendNpInput(string(keysJson), "HostKeys", false)
-				}
-			}
-
-			// 6. Source Control Details
-			sourceControl, err := webClient.GetSourceControl(ctx, app.ResourceGroup, app.Name, nil)
-			if err != nil {
-				if strings.Contains(err.Error(), "AuthorizationFailed") ||
-					strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
-					strings.Contains(err.Error(), "403") {
-					logger.Error("Insufficient permissions to access Function App source control - requires more than Reader role",
-						slog.String("function_app", app.Name),
-						slog.String("operation", "GetSourceControl"))
-				}
-			} else if sourceControl.Properties != nil {
-				if scJson, err := json.Marshal(sourceControl.Properties); err == nil {
-					sendNpInput(string(scJson), "SourceControl", false)
-				}
-			}
-
-			// 7. Configuration
-			siteConfig, err := webClient.GetConfiguration(ctx, app.ResourceGroup, app.Name, nil)
-			if err != nil {
-				if strings.Contains(err.Error(), "AuthorizationFailed") ||
-					strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
-					strings.Contains(err.Error(), "403") {
-					logger.Error("Insufficient permissions to access Function App configuration - requires more than Reader role",
-						slog.String("function_app", app.Name),
-						slog.String("operation", "GetConfiguration"))
-				}
-			} else if siteConfig.Properties != nil {
-				if configJson, err := json.Marshal(siteConfig.Properties); err == nil {
-					sendNpInput(string(configJson), "Configuration", false)
-				}
-			}
-
-			// 8. Auth Settings
-			authSettings, err := webClient.GetAuthSettings(ctx, app.ResourceGroup, app.Name, nil)
-			if err != nil {
-				if strings.Contains(err.Error(), "AuthorizationFailed") ||
-					strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
-					strings.Contains(err.Error(), "403") {
-					logger.Error("Insufficient permissions to access Function App auth settings - requires more than Reader role",
-						slog.String("function_app", app.Name),
-						slog.String("operation", "GetAuthSettings"))
-				}
-			} else if authSettings.Properties != nil {
-				if authJson, err := json.Marshal(authSettings.Properties); err == nil {
-					sendNpInput(string(authJson), "AuthSettings", false)
+					select {
+					case out <- types.NpInput{
+						Content: string(settingsJson),
+						Provenance: types.NpProvenance{
+							Platform:     "azure",
+							ResourceType: "Microsoft.Web/sites::AppSettings",
+							ResourceID:   app.ID,
+							Region:       app.Location,
+							AccountID:    app.SubscriptionID,
+						},
+					}:
+					case <-ctx.Done():
+						return
+					}
 				}
 			}
 		}
-
-		message.Info("Completed scanning Microsoft.Web/sites, %d function apps scanned.", appCount)
 	}()
-
 	return out
+}
+
+// Function App connection strings
+func AzureFunctionAppConnectionsStage(ctx context.Context, opts []*types.Option, in <-chan *AzureFunctionAppDetail) <-chan types.NpInput {
+	logger := logs.NewStageLogger(ctx, opts, "AzureFunctionAppConnectionsStage")
+	out := make(chan types.NpInput)
+
+	go func() {
+		defer close(out)
+		for app := range in {
+			cred, err := azidentity.NewDefaultAzureCredential(nil)
+			if err != nil {
+				logger.Error("Failed to get Azure credential", slog.String("error", err.Error()))
+				continue
+			}
+
+			logger.Debug("Processing Function App Connection Strings for secrets", slog.String("name", app.Name))
+
+			webClient, err := armappservice.NewWebAppsClient(app.SubscriptionID, cred, nil)
+			if err != nil {
+				logger.Error("Failed to create web client", slog.String("error", err.Error()))
+				continue
+			}
+
+			// Connection Strings
+			connStrings, err := webClient.ListConnectionStrings(ctx, app.ResourceGroup, app.Name, nil)
+			if err != nil {
+				logFunctionAppError(logger, "Failed to list connection strings", err, app.Name)
+			} else if connStrings.Properties != nil {
+				if stringsJson, err := json.Marshal(connStrings.Properties); err == nil {
+					select {
+					case out <- types.NpInput{
+						Content: string(stringsJson),
+						Provenance: types.NpProvenance{
+							Platform:     "azure",
+							ResourceType: "Microsoft.Web/sites::ConnectionStrings",
+							ResourceID:   app.ID,
+							Region:       app.Location,
+							AccountID:    app.SubscriptionID,
+						},
+					}:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+		}
+	}()
+	return out
+}
+
+// Function App keys
+func AzureFunctionAppKeysStage(ctx context.Context, opts []*types.Option, in <-chan *AzureFunctionAppDetail) <-chan types.NpInput {
+	logger := logs.NewStageLogger(ctx, opts, "AzureFunctionAppKeysStage")
+	out := make(chan types.NpInput)
+
+	go func() {
+		defer close(out)
+		for app := range in {
+			cred, err := azidentity.NewDefaultAzureCredential(nil)
+			if err != nil {
+				logger.Error("Failed to get Azure credential", slog.String("error", err.Error()))
+				continue
+			}
+
+			webClient, err := armappservice.NewWebAppsClient(app.SubscriptionID, cred, nil)
+			if err != nil {
+				logger.Error("Failed to create web client", slog.String("error", err.Error()))
+				continue
+			}
+
+			// Get host keys (these are app-level keys)
+			hostKeys, err := webClient.ListHostKeys(ctx, app.ResourceGroup, app.Name, nil)
+			if err != nil {
+				logFunctionAppError(logger, "Failed to list host keys", err, app.Name)
+			} else {
+				if keysJson, err := json.Marshal(hostKeys); err == nil {
+					select {
+					case out <- types.NpInput{
+						Content: string(keysJson),
+						Provenance: types.NpProvenance{
+							Platform:     "azure",
+							ResourceType: "Microsoft.Web/sites::HostKeys",
+							ResourceID:   app.ID,
+							Region:       app.Location,
+							AccountID:    app.SubscriptionID,
+						},
+					}:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+		}
+	}()
+	return out
+}
+
+// Function App auth and source control settings
+func AzureFunctionAppSettingsStage(ctx context.Context, opts []*types.Option, in <-chan *AzureFunctionAppDetail) <-chan types.NpInput {
+	logger := logs.NewStageLogger(ctx, opts, "AzureFunctionAppSettingsStage")
+	out := make(chan types.NpInput)
+
+	go func() {
+		defer close(out)
+		for app := range in {
+			cred, err := azidentity.NewDefaultAzureCredential(nil)
+			logger.Debug("Processing Function App Settings for secrets", slog.String("name", app.Name))
+			if err != nil {
+				logger.Error("Failed to get Azure credential", slog.String("error", err.Error()))
+				continue
+			}
+
+			webClient, err := armappservice.NewWebAppsClient(app.SubscriptionID, cred, nil)
+			if err != nil {
+				logger.Error("Failed to create web client", slog.String("error", err.Error()))
+				continue
+			}
+
+			// Auth Settings
+			authSettings, err := webClient.GetAuthSettings(ctx, app.ResourceGroup, app.Name, nil)
+			if err != nil {
+				logFunctionAppError(logger, "Failed to get auth settings", err, app.Name)
+			} else if authSettings.Properties != nil {
+				if authJson, err := json.Marshal(authSettings.Properties); err == nil {
+					select {
+					case out <- types.NpInput{
+						Content: string(authJson),
+						Provenance: types.NpProvenance{
+							Platform:     "azure",
+							ResourceType: "Microsoft.Web/sites::AuthSettings",
+							ResourceID:   app.ID,
+							Region:       app.Location,
+							AccountID:    app.SubscriptionID,
+						},
+					}:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+
+			// Source Control
+			sourceControl, err := webClient.GetSourceControl(ctx, app.ResourceGroup, app.Name, nil)
+			if err != nil {
+				logFunctionAppError(logger, "Failed to get source control settings", err, app.Name)
+			} else if sourceControl.Properties != nil {
+				if scJson, err := json.Marshal(sourceControl.Properties); err == nil {
+					select {
+					case out <- types.NpInput{
+						Content: string(scJson),
+						Provenance: types.NpProvenance{
+							Platform:     "azure",
+							ResourceType: "Microsoft.Web/sites::SourceControl",
+							ResourceID:   app.ID,
+							Region:       app.Location,
+							AccountID:    app.SubscriptionID,
+						},
+					}:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+		}
+	}()
+	return out
+}
+
+// Function App Resource Tags
+func AzureFunctionAppTagsStage(ctx context.Context, opts []*types.Option, in <-chan *AzureFunctionAppDetail) <-chan types.NpInput {
+	logger := logs.NewStageLogger(ctx, opts, "AzureFunctionAppTagsStage")
+	out := make(chan types.NpInput)
+
+	go func() {
+		defer close(out)
+		for app := range in {
+			logger.Debug("Processing Function App Tags for secrets", slog.String("name", app.Name))
+			if app.Tags != nil && len(app.Tags) > 0 {
+				tagsJson, err := json.Marshal(app.Tags)
+				if err == nil {
+					select {
+					case out <- types.NpInput{
+						Content: string(tagsJson),
+						Provenance: types.NpProvenance{
+							Platform:     "azure",
+							ResourceType: "Microsoft.Web/sites::Tags",
+							ResourceID:   app.ID,
+							Region:       app.Location,
+							AccountID:    app.SubscriptionID,
+						},
+					}:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+		}
+	}()
+	return out
+}
+
+// Helper function for Function App error logging
+func logFunctionAppError(logger *slog.Logger, msg string, err error, appName string) {
+	if strings.Contains(err.Error(), "AuthorizationFailed") ||
+		strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
+		strings.Contains(err.Error(), "403") {
+		logger.Debug("Insufficient permissions",
+			slog.String("function_app", appName),
+			slog.String("error", err.Error()))
+	} else {
+		logger.Error(msg,
+			slog.String("function_app", appName),
+			slog.String("error", err.Error()))
+	}
 }

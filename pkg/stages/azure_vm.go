@@ -12,7 +12,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
-	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -153,151 +152,274 @@ func AzureListVMsStage(ctx context.Context, opts []*types.Option, in <-chan stri
 	return out
 }
 
-// AzureVMSecretsStage processes VMs and extracts potential secrets
-func AzureVMSecretsStage(ctx context.Context, opts []*types.Option, in <-chan *AzureVMDetail) <-chan types.NpInput {
-	logger := logs.NewStageLogger(ctx, opts, "AzureVMSecretsStage")
+// AzureVMUserDataStage processes VM user and custom data
+func AzureVMUserDataStage(ctx context.Context, opts []*types.Option, in <-chan *AzureVMDetail) <-chan types.NpInput {
+	logger := logs.NewStageLogger(ctx, opts, "AzureVMUserDataStage")
 	out := make(chan types.NpInput)
 
 	go func() {
-		message.Info("Began scanning Microsoft.Compute/virtualMachines")
-		rgCount := 0
 		defer close(out)
-
 		for vm := range in {
-			rgCount++
-			logger.Debug("Processing VM for secrets", slog.String("name", vm.Name))
-
-			// Get Azure credentials for VM operations
 			cred, err := azidentity.NewDefaultAzureCredential(nil)
 			if err != nil {
-				logger.Error("Failed to get Azure credential",
-					slog.String("subscription", vm.SubscriptionID),
-					slog.String("error", err.Error()))
+				logger.Error("Failed to get Azure credential", slog.String("error", err.Error()))
 				continue
 			}
 
-			// Create VM client
 			vmClient, err := armcompute.NewVirtualMachinesClient(vm.SubscriptionID, cred, nil)
 			if err != nil {
-				logger.Error("Failed to create VM client",
-					slog.String("subscription", vm.SubscriptionID),
-					slog.String("error", err.Error()))
+				logger.Error("Failed to create VM client", slog.String("error", err.Error()))
 				continue
 			}
 
-			// Helper function to send NpInput
-			sendNpInput := func(content string, contentType string, isBase64 bool) {
-				input := types.NpInput{
-					Provenance: types.NpProvenance{
-						Platform:     "azure",
-						ResourceType: "Microsoft.Compute/virtualMachines::" + contentType,
-						ResourceID:   vm.ID,
-						Region:       vm.Location,
-						AccountID:    vm.SubscriptionID,
-					},
-				}
-				if isBase64 {
-					input.ContentBase64 = content
-				} else {
-					input.Content = content
-				}
-
-				logger.Debug("Sending data to NP:",
-					slog.String("subscription", vm.SubscriptionID),
-					slog.String("virtual-machine", vm.ID),
-					slog.String("content", content[:min(5, len(content))]+"*****[REDACTED]******"))
-
-				select {
-				case out <- input:
-				case <-ctx.Done():
-					return
-				}
-			}
-
-			// 1. Get VM details including UserData and CustomData
+			// Get VM details including UserData
 			userDataExpand := armcompute.InstanceViewTypesUserData
 			vmDetails, err := vmClient.Get(ctx, vm.ResourceGroup, vm.Name, &armcompute.VirtualMachinesClientGetOptions{
 				Expand: &userDataExpand,
 			})
 			if err != nil {
-				logger.Error("Failed to get VM details",
-					slog.String("vm", vm.Name),
-					slog.String("error", err.Error()))
+				logVMError(logger, "Failed to get VM details", err, vm.Name)
 				continue
 			}
 
-			// Process VM details for secrets
 			if vmDetails.Properties != nil {
+				// Process UserData
 				if vmDetails.Properties.UserData != nil {
-					sendNpInput(*vmDetails.Properties.UserData, "UserData", true)
+					select {
+					case out <- types.NpInput{
+						ContentBase64: *vmDetails.Properties.UserData,
+						Provenance: types.NpProvenance{
+							Platform:     "azure",
+							ResourceType: "Microsoft.Compute/virtualMachines::UserData",
+							ResourceID:   vm.ID,
+							Region:       vm.Location,
+							AccountID:    vm.SubscriptionID,
+						},
+					}:
+					case <-ctx.Done():
+						return
+					}
 				}
 
+				// Process OSProfile and CustomData
 				if vmDetails.Properties.OSProfile != nil {
 					if vmDetails.Properties.OSProfile.CustomData != nil {
-						sendNpInput(*vmDetails.Properties.OSProfile.CustomData, "CustomData", true)
+						select {
+						case out <- types.NpInput{
+							ContentBase64: *vmDetails.Properties.OSProfile.CustomData,
+							Provenance: types.NpProvenance{
+								Platform:     "azure",
+								ResourceType: "Microsoft.Compute/virtualMachines::CustomData",
+								ResourceID:   vm.ID,
+								Region:       vm.Location,
+								AccountID:    vm.SubscriptionID,
+							},
+						}:
+						case <-ctx.Done():
+							return
+						}
 					}
+
 					if osProfileJson, err := json.Marshal(vmDetails.Properties.OSProfile); err == nil {
-						sendNpInput(string(osProfileJson), "OSProfile", false)
+						select {
+						case out <- types.NpInput{
+							Content: string(osProfileJson),
+							Provenance: types.NpProvenance{
+								Platform:     "azure",
+								ResourceType: "Microsoft.Compute/virtualMachines::OSProfile",
+								ResourceID:   vm.ID,
+								Region:       vm.Location,
+								AccountID:    vm.SubscriptionID,
+							},
+						}:
+						case <-ctx.Done():
+							return
+						}
 					}
 				}
 			}
+		}
+	}()
+	return out
+}
 
-			// 2. Process VM Extensions
+// AzureVMExtensionsStage processes VM extensions
+func AzureVMExtensionsStage(ctx context.Context, opts []*types.Option, in <-chan *AzureVMDetail) <-chan types.NpInput {
+	logger := logs.NewStageLogger(ctx, opts, "AzureVMExtensionsStage")
+	out := make(chan types.NpInput)
+
+	go func() {
+		defer close(out)
+		for vm := range in {
+			logger.Debug("Processing Virtual Machine Extension for secrets", slog.String("name", vm.Name))
+			cred, err := azidentity.NewDefaultAzureCredential(nil)
+			if err != nil {
+				logger.Error("Failed to get Azure credential", slog.String("error", err.Error()))
+				continue
+			}
+
 			extensionsClient, err := armcompute.NewVirtualMachineExtensionsClient(vm.SubscriptionID, cred, nil)
-			if err == nil {
-				extensions, err := extensionsClient.List(ctx, vm.ResourceGroup, vm.Name, nil)
-				if err == nil {
-					for _, ext := range extensions.Value {
-						if ext.Properties == nil {
-							continue
-						}
+			if err != nil {
+				logger.Error("Failed to create extensions client", slog.String("error", err.Error()))
+				continue
+			}
 
-						// Check extension settings
-						if ext.Properties.Settings != nil {
-							if settingsJson, err := json.Marshal(ext.Properties.Settings); err == nil {
-								sendNpInput(string(settingsJson),
-									fmt.Sprintf("Extension::%s::Settings", *ext.Properties.Type), false)
-							}
-						}
+			extensions, err := extensionsClient.List(ctx, vm.ResourceGroup, vm.Name, nil)
+			if err != nil {
+				logVMError(logger, "Failed to list extensions", err, vm.Name)
+				continue
+			}
 
-						// Process Custom Script Extension outputs
-						if ext.Properties.Type != nil && strings.Contains(strings.ToLower(*ext.Properties.Type), "customscript") {
-							status, err := extensionsClient.Get(ctx, vm.ResourceGroup, vm.Name, *ext.Name, nil)
-							if err == nil && status.Properties != nil && status.Properties.InstanceView != nil {
-								for _, substatus := range status.Properties.InstanceView.Substatuses {
-									if substatus.Message != nil {
-										sendNpInput(*substatus.Message,
-											fmt.Sprintf("Extension::%s::Output", *ext.Properties.Type), false)
-									}
+			for _, ext := range extensions.Value {
+				if ext.Properties == nil {
+					continue
+				}
+
+				// Process extension settings
+				if ext.Properties.Settings != nil {
+					if settingsJson, err := json.Marshal(ext.Properties.Settings); err == nil {
+						select {
+						case out <- types.NpInput{
+							Content: string(settingsJson),
+							Provenance: types.NpProvenance{
+								Platform:     "azure",
+								ResourceType: "Microsoft.Compute/virtualMachines::Extension::Settings",
+								ResourceID:   vm.ID,
+								Region:       vm.Location,
+								AccountID:    vm.SubscriptionID,
+							},
+						}:
+						case <-ctx.Done():
+							return
+						}
+					}
+				}
+
+				// Process Custom Script Extension outputs
+				if ext.Properties.Type != nil && strings.Contains(strings.ToLower(*ext.Properties.Type), "customscript") {
+					status, err := extensionsClient.Get(ctx, vm.ResourceGroup, vm.Name, *ext.Name, nil)
+					if err == nil && status.Properties != nil && status.Properties.InstanceView != nil {
+						for _, substatus := range status.Properties.InstanceView.Substatuses {
+							if substatus.Message != nil {
+								select {
+								case out <- types.NpInput{
+									Content: *substatus.Message,
+									Provenance: types.NpProvenance{
+										Platform:     "azure",
+										ResourceType: "Microsoft.Compute/virtualMachines::Extension::CustomScript",
+										ResourceID:   vm.ID,
+										Region:       vm.Location,
+										AccountID:    vm.SubscriptionID,
+									},
+								}:
+								case <-ctx.Done():
+									return
 								}
 							}
 						}
 					}
 				}
 			}
+		}
+	}()
+	return out
+}
 
-			// 3. Check Disk Encryption Settings
+// AzureVMDiskEncryptionStage processes VM disk encryption settings
+func AzureVMDiskEncryptionStage(ctx context.Context, opts []*types.Option, in <-chan *AzureVMDetail) <-chan types.NpInput {
+	logger := logs.NewStageLogger(ctx, opts, "AzureVMDiskEncryptionStage")
+	out := make(chan types.NpInput)
+
+	go func() {
+		defer close(out)
+		for vm := range in {
+			cred, err := azidentity.NewDefaultAzureCredential(nil)
+			logger.Debug("Processing Virtual Machine Disk Encryption for secrets", slog.String("name", vm.Name))
+			if err != nil {
+				logger.Error("Failed to get Azure credential", slog.String("error", err.Error()))
+				continue
+			}
+
+			vmClient, err := armcompute.NewVirtualMachinesClient(vm.SubscriptionID, cred, nil)
+			if err != nil {
+				logger.Error("Failed to create VM client", slog.String("error", err.Error()))
+				continue
+			}
+
+			vmDetails, err := vmClient.Get(ctx, vm.ResourceGroup, vm.Name, nil)
+			if err != nil {
+				logVMError(logger, "Failed to get VM details", err, vm.Name)
+				continue
+			}
+
 			if vmDetails.Properties != nil && vmDetails.Properties.StorageProfile != nil &&
 				vmDetails.Properties.StorageProfile.OSDisk != nil &&
 				vmDetails.Properties.StorageProfile.OSDisk.EncryptionSettings != nil {
 				encSettings := vmDetails.Properties.StorageProfile.OSDisk.EncryptionSettings
 				if encSettings.DiskEncryptionKey != nil || encSettings.KeyEncryptionKey != nil {
 					if encSettingsJson, err := json.Marshal(encSettings); err == nil {
-						sendNpInput(string(encSettingsJson), "DiskEncryptionSettings", false)
+						select {
+						case out <- types.NpInput{
+							Content: string(encSettingsJson),
+							Provenance: types.NpProvenance{
+								Platform:     "azure",
+								ResourceType: "Microsoft.Compute/virtualMachines::DiskEncryption",
+								ResourceID:   vm.ID,
+								Region:       vm.Location,
+								AccountID:    vm.SubscriptionID,
+							},
+						}:
+						case <-ctx.Done():
+							return
+						}
 					}
 				}
 			}
+		}
+	}()
+	return out
+}
 
-			// 4. Scan tags for secrets
+// AzureVMTagsStage processes VM tags
+func AzureVMTagsStage(ctx context.Context, opts []*types.Option, in <-chan *AzureVMDetail) <-chan types.NpInput {
+	logger := logs.NewStageLogger(ctx, opts, "AzureVMTagsStage")
+	out := make(chan types.NpInput)
+
+	go func() {
+		defer close(out)
+		for vm := range in {
+			logger.Debug("Processing Virtual Machine Tags for secrets", slog.String("name", vm.Name))
 			if vm.Tags != nil && len(vm.Tags) > 0 {
 				tagsJson, err := json.Marshal(vm.Tags)
 				if err == nil {
-					sendNpInput(string(tagsJson), "Tags", false)
+					select {
+					case out <- types.NpInput{
+						Content: string(tagsJson),
+						Provenance: types.NpProvenance{
+							Platform:     "azure",
+							ResourceType: "Microsoft.Compute/virtualMachines::Tags",
+							ResourceID:   vm.ID,
+							Region:       vm.Location,
+							AccountID:    vm.SubscriptionID,
+						},
+					}:
+					case <-ctx.Done():
+						return
+					}
 				}
 			}
 		}
-		message.Info("Completed scanning Microsoft.Compute/virtualMachines, %d virtual machines scanned.", rgCount)
 	}()
-
 	return out
+}
+
+// Helper function for VM error logging
+func logVMError(logger *slog.Logger, msg string, err error, vmName string) {
+	if strings.Contains(err.Error(), "AuthorizationFailed") ||
+		strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
+		strings.Contains(err.Error(), "403") {
+		logger.Debug("Insufficient permissions", slog.String("vm", vmName))
+	} else {
+		logger.Error(msg, slog.String("error", err.Error()))
+	}
 }
