@@ -1,5 +1,3 @@
-//go:generate go run aws_type_gen.go
-
 package helpers
 
 import (

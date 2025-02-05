@@ -152,7 +152,7 @@ var AwsCacheDirOpt = types.Option{
 
 var AwsCacheExtOpt = types.Option{
 	Name:        "cache-ext",
-	Description: "Name of AWS API response cache files extension (default .aws-cache)",
+	Description: "Name of AWS API response cache files extension (default .aws-cache)\nWarning! Changing the cache file extension may lead to unintended file deletion during automatic cache cleanup.",
 	Required:    false,
 	Type:        types.String,
 	Value:       ".aws-cache",
