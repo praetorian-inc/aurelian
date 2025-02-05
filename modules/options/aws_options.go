@@ -66,6 +66,7 @@ var FindSecretsTypes = []string{
 	"AWS::ECS::TaskDefinition",
 	"AWS::SSM::Parameter",
 	"AWS::SSM::Document",
+	"AWS::StepFunctions::StateMachine",
 	"ALL",
 }
 

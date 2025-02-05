@@ -17,7 +17,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/backup v1.39.3
 	github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.18.5
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.56.7
-	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.44.2
+	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.44.8
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.42.0
 	github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.46.3
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.38.1
@@ -34,14 +34,15 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.57.0
 	github.com/aws/aws-sdk-go-v2/service/mediastore v1.24.3
 	github.com/aws/aws-sdk-go-v2/service/opensearch v1.41.2
-	github.com/aws/aws-sdk-go-v2/service/organizations v1.37.5
 	github.com/aws/aws-sdk-go-v2/service/rds v1.89.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.66.0
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.34.2
 	github.com/aws/aws-sdk-go-v2/service/serverlessapplicationrepository v1.24.2
 	github.com/aws/aws-sdk-go-v2/service/ses v1.28.3
+	github.com/aws/aws-sdk-go-v2/service/sfn v1.34.11
 	github.com/aws/aws-sdk-go-v2/service/sns v1.33.3
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.36.3
+	github.com/aws/aws-sdk-go-v2/service/ssm v1.56.10
 	github.com/aws/aws-sdk-go-v2/service/sts v1.30.3
 	github.com/aws/smithy-go v1.22.2
 	github.com/docker/docker v27.4.1+incompatible
@@ -66,7 +67,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.21 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.4.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.18.2 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssm v1.56.10 // indirect
 	github.com/cjlapao/common-go v0.0.39 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.4 // indirect
