@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/managementgroups/armmanagementgroups"
@@ -77,6 +79,12 @@ type AzureEnvironmentDetails struct {
 	State            string
 	Tags             map[string]*string
 	Resources        []*ResourceCount
+}
+
+// ScanConfig holds the configuration for a resource type scan
+type ScanConfig struct {
+	Subscriptions []string
+	ResourceTypes []string
 }
 
 // GetEnvironmentDetails gets all Azure environment details
@@ -713,17 +721,43 @@ func ListSubscriptions(ctx context.Context, opts []*types.Option) ([]string, err
 
 // GetSubscriptionDetails gets details about an Azure subscription
 func GetSubscriptionDetails(ctx context.Context, cred *azidentity.DefaultAzureCredential, subscriptionID string) (*armsubscriptions.ClientGetResponse, error) {
+	logger := logs.NewStageLogger(ctx, []*types.Option{}, "GetSubscriptionDetails")
+
 	// Initialize clients or reuse existing credentials
 	clients, err := InitializeClients(subscriptionID, cred)
 	if err != nil {
+		logger.Error("Failed to initialize clients", slog.String("subscription", subscriptionID), slog.String("error", err.Error()))
 		return nil, fmt.Errorf("failed to initialize clients: %v", err)
 	}
 
 	sub, err := clients.SubscriptionClient.Get(ctx, subscriptionID, nil)
 	if err != nil {
+		// Check for specific Azure errors indicating permission issues
+		if strings.Contains(err.Error(), "AuthorizationFailed") ||
+			strings.Contains(err.Error(), "InvalidAuthenticationToken") ||
+			strings.Contains(err.Error(), "403") {
+			logger.Error("Access denied for subscription",
+				slog.String("subscription", subscriptionID),
+				slog.String("error", err.Error()))
+			return nil, fmt.Errorf("no access to subscription - insufficient permissions")
+		}
+		logger.Error("Failed to get subscription details",
+			slog.String("subscription", subscriptionID),
+			slog.String("error", err.Error()))
 		return nil, fmt.Errorf("failed to get subscription details: %v", err)
 	}
 
+	// Additional check if subscription is disabled/not active
+	if sub.State != nil && *sub.State != armsubscriptions.SubscriptionStateEnabled {
+		logger.Debug("Subscription is not in enabled state",
+			slog.String("subscription", subscriptionID),
+			slog.String("state", string(*sub.State)))
+		return nil, fmt.Errorf("subscription not enabled (current state: %s)", *sub.State)
+	}
+
+	logger.Debug("Successfully validated subscription access",
+		slog.String("subscription", subscriptionID),
+		slog.String("name", *sub.DisplayName))
 	return &sub, nil
 }
 
@@ -855,4 +889,28 @@ func GetSubscriptionRoleAssignments(ctx context.Context, client *armauthorizatio
 	}
 
 	return assignments, nil
+}
+
+// MakeAzureRestRequest makes an authenticated HTTP request to Azure REST API
+func MakeAzureRestRequest(ctx context.Context, method string, url string, cred *azidentity.DefaultAzureCredential) (*http.Response, error) {
+	// Get the token for the request
+	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: []string{"https://management.azure.com/.default"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get token: %v", err)
+	}
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	// Add auth header
+	req.Header.Set("Authorization", "Bearer "+token.Token)
+
+	// Make the request
+	client := &http.Client{}
+	return client.Do(req)
 }

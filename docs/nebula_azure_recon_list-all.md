@@ -1,6 +1,6 @@
 ## nebula azure recon list-all
 
-List all Azure resources across subscriptions with complete details
+List all Azure resources across subscriptions with complete details including identifier. This might take a while for large subscriptions.
 
 ```
 nebula azure recon list-all [flags]
@@ -11,8 +11,8 @@ nebula azure recon list-all [flags]
 ```
   -f, --file string           File name
   -h, --help                  help for list-all
-  -s, --subscription string   Azure subscription ID or 'all' to scan all accessible subscriptions
-  -w, --workers int           Number of concurrent workers for processing resources (default 5)
+  -s, --subscription string   Azure subscription ID or 'all' for all accessible subscriptions
+  -w, --workers int           Number of concurrent workers for processing subscriptions (default 5)
 ```
 
 ### Options inherited from parent commands

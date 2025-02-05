@@ -421,6 +421,7 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 					AwsSsmListDocuments,
 					EnrichedResourceDescriptionToNpInput,
 				)
+
 			case "AWS::StepFunctions::StateMachine":
 				pl, err = ChainStages[string, types.NpInput](
 					AwsCloudControlListResources,
@@ -428,6 +429,7 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 					AwsStepFunctionsGetExecutionDetailsStage,
 					AwsStateMachineExecutionDetailsToNpInputStage,
 				)
+
 			case "ALL":
 				continue
 			default:
