@@ -57,8 +57,13 @@ func NewAzureDevOpsSecrets(opts []*types.Option) (<-chan string, stages.Stage[st
 
 	// Validate NoseyParker installation
 	npPath := options.GetOptionByName(options.NoseyParkerPathOpt.Name, opts).Value
+
 	if _, err := helpers.FindBinary(npPath); err != nil {
 		return nil, nil, fmt.Errorf("NoseyParker binary not found at %s: %v", npPath, err)
+	}
+
+	if _, err := helpers.FindBinary("git"); err != nil {
+		return nil, nil, fmt.Errorf("Git not found in PATH: %v", err)
 	}
 
 	// Validate PAT token
