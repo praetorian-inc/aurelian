@@ -21,6 +21,10 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
+func isUnauthorizedResponse(resp *http.Response) bool {
+	return resp != nil && resp.StatusCode == http.StatusUnauthorized
+}
+
 // Helper function to make authenticated requests to Azure DevOps API
 func makeDevOpsRequest(ctx context.Context, logger *slog.Logger, method string, url string, pat string) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, url, nil)
@@ -42,6 +46,10 @@ func makeDevOpsRequest(ctx context.Context, logger *slog.Logger, method string, 
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
+	}
+
+	if isUnauthorizedResponse(resp) {
+		return nil, fmt.Errorf("unauthorized access - please verify your PAT token has the required permissions")
 	}
 
 	return resp, nil
@@ -115,12 +123,18 @@ func processPipelineJob(ctx context.Context, logger *slog.Logger, pat string, jo
 		job.Id)
 
 	timelineResp, err := makeDevOpsRequest(ctx, logger, http.MethodGet, timelineUrl, pat)
+
 	if err != nil {
-		logger.Error("Failed to get job timeline",
-			slog.String("error", err.Error()),
-			slog.Int("job_id", job.Id))
+		if strings.Contains(err.Error(), "unauthorized access") {
+			logger.Error("Unauthorized access to repositories - verify PAT has Code (Read) permissions")
+		} else {
+			logger.Error("Failed to get job timeline",
+				slog.String("error", err.Error()),
+				slog.Int("job_id", job.Id))
+		}
 		return
 	}
+
 	defer timelineResp.Body.Close()
 
 	timelineBody, err := io.ReadAll(timelineResp.Body)
@@ -168,9 +182,11 @@ func processPipelineJob(ctx context.Context, logger *slog.Logger, pat string, jo
 
 	outputsResp, err := makeDevOpsRequest(ctx, logger, http.MethodGet, outputsUrl, pat)
 	if err != nil {
-		logger.Error("Failed to get job outputs",
-			slog.String("error", err.Error()),
-			slog.Int("job_id", job.Id))
+		if strings.Contains(err.Error(), "unauthorized access") {
+			logger.Error("Unauthorized access to job outputs - verify PAT has Code (Read) permissions")
+		} else {
+			logger.Error("Failed to get job outputs", slog.String("error", err.Error()))
+		}
 		return
 	}
 	defer outputsResp.Body.Close()
@@ -196,6 +212,9 @@ func GetOrganizationProjects(ctx context.Context, logger *slog.Logger, pat strin
 
 	projectsResp, err := makeDevOpsRequest(ctx, logger, http.MethodGet, projectsUrl, pat)
 	if err != nil {
+		if strings.Contains(err.Error(), "unauthorized access") {
+			return nil, fmt.Errorf("unauthorized access to projects - verify PAT has Project (Read) permissions")
+		}
 		return nil, err
 	}
 	defer projectsResp.Body.Close()
@@ -245,8 +264,13 @@ func AzureDevOpsReposStage(ctx context.Context, opts []*types.Option, in <-chan 
 				config.Organization, config.Project)
 
 			reposResp, err := makeDevOpsRequest(ctx, logger, http.MethodGet, reposUrl, pat)
+
 			if err != nil {
-				logger.Error("Failed to get repositories", slog.String("error", err.Error()))
+				if strings.Contains(err.Error(), "unauthorized access") {
+					logger.Error("Unauthorized access to repositories - verify PAT has Code (Read) permissions")
+				} else {
+					logger.Error("Failed to get repositories", slog.String("error", err.Error()))
+				}
 				continue
 			}
 			defer reposResp.Body.Close()
@@ -345,7 +369,11 @@ func AzureDevOpsVariableGroupsStage(ctx context.Context, opts []*types.Option, i
 
 			groupsResp, err := makeDevOpsRequest(ctx, logger, http.MethodGet, groupsUrl, pat)
 			if err != nil {
-				logger.Error("Failed to get variable groups", slog.String("error", err.Error()))
+				if strings.Contains(err.Error(), "unauthorized access") {
+					logger.Error("Unauthorized access to variable groups - verify PAT has Variable Groups (Read) permissions")
+				} else {
+					logger.Error("Failed to get variable groups", slog.String("error", err.Error()))
+				}
 				continue
 			}
 			defer groupsResp.Body.Close()
@@ -433,7 +461,11 @@ func AzureDevOpsPipelinesStage(ctx context.Context, opts []*types.Option, in <-c
 
 			pipelinesResp, err := makeDevOpsRequest(ctx, logger, http.MethodGet, pipelinesUrl, pat)
 			if err != nil {
-				logger.Error("Failed to get pipelines", slog.String("error", err.Error()))
+				if strings.Contains(err.Error(), "unauthorized access") {
+					logger.Error("Unauthorized access to pipelines - verify PAT has Build (Read) permissions")
+				} else {
+					logger.Error("Failed to get pipelines", slog.String("error", err.Error()))
+				}
 				continue
 			}
 			defer pipelinesResp.Body.Close()
@@ -470,9 +502,12 @@ func AzureDevOpsPipelinesStage(ctx context.Context, opts []*types.Option, in <-c
 
 					defResp, err := makeDevOpsRequest(ctx, logger, http.MethodGet, defUrl, pat)
 					if err != nil {
-						logger.Error("Failed to get pipeline definition",
-							slog.String("error", err.Error()),
-							slog.Int("pipeline_id", pipeline.Id))
+						if strings.Contains(err.Error(), "unauthorized access") {
+							logger.Error("Unauthorized access to pipeline definition - verify PAT has Code (Read) permissions")
+						} else {
+							logger.Error("Failed to get pipeline definition", slog.String("error", err.Error()))
+						}
+
 						return
 					}
 					defer defResp.Body.Close()
@@ -500,9 +535,12 @@ func AzureDevOpsPipelinesStage(ctx context.Context, opts []*types.Option, in <-c
 
 					runsResp, err := makeDevOpsRequest(ctx, logger, http.MethodGet, runsUrl, pat)
 					if err != nil {
-						logger.Error("Failed to get pipeline runs",
-							slog.String("error", err.Error()),
-							slog.Int("pipeline_id", pipeline.Id))
+						if strings.Contains(err.Error(), "unauthorized access") {
+							logger.Error("Unauthorized access to pipeline runs - verify PAT has Code (Read) permissions")
+						} else {
+							logger.Error("Failed to get pipeline runs", slog.String("error", err.Error()))
+						}
+
 						return
 					}
 					defer runsResp.Body.Close()
@@ -560,9 +598,15 @@ func processPipelineRunLogs(ctx context.Context, logger *slog.Logger, config typ
 		config.Organization, config.Project, pipelineId, runId)
 
 	logsResp, err := makeDevOpsRequest(ctx, logger, http.MethodGet, logsUrl, pat)
+
 	if err != nil {
-		return fmt.Errorf("failed to get logs: %v", err)
+		if strings.Contains(err.Error(), "unauthorized access") {
+			logger.Error("Unauthorized access to logs - verify PAT has Code (Read) permissions")
+		} else {
+			logger.Error("Failed to get logs", slog.String("error", err.Error()))
+		}
 	}
+
 	defer logsResp.Body.Close()
 
 	var logsList struct {
@@ -588,10 +632,14 @@ func processPipelineRunLogs(ctx context.Context, logger *slog.Logger, config typ
 
 		logContentResp, err := makeDevOpsRequest(ctx, logger, http.MethodGet, logContentUrl, pat)
 		if err != nil {
-			logger.Error("Failed to get log content",
-				slog.String("error", err.Error()),
-				slog.Int("log_id", log.Id))
-			continue
+			if strings.Contains(err.Error(), "unauthorized access") {
+				logger.Error("Unauthorized access to log content - verify PAT has Code (Read) permissions")
+			} else {
+				logger.Error("Failed to get log content",
+					slog.String("error", err.Error()),
+					slog.Int("log_id", log.Id))
+				continue
+			}
 		}
 
 		logContent, err := io.ReadAll(logContentResp.Body)
@@ -639,7 +687,11 @@ func AzureDevOpsServiceEndpointsStage(ctx context.Context, opts []*types.Option,
 
 			endpointsResp, err := makeDevOpsRequest(ctx, logger, http.MethodGet, endpointsUrl, pat)
 			if err != nil {
-				logger.Error("Failed to get service endpoints", slog.String("error", err.Error()))
+				if strings.Contains(err.Error(), "unauthorized access") {
+					logger.Error("Unauthorized access to service endpoints - verify PAT has Service Connections (Read) permissions")
+				} else {
+					logger.Error("Failed to get service endpoints", slog.String("error", err.Error()))
+				}
 				continue
 			}
 			defer endpointsResp.Body.Close()
@@ -717,9 +769,13 @@ func AzureDevOpsServiceEndpointsStage(ctx context.Context, opts []*types.Option,
 
 				historyResp, err := makeDevOpsRequest(ctx, logger, http.MethodGet, historyUrl, pat)
 				if err != nil {
-					logger.Error("Failed to get endpoint history",
-						slog.String("error", err.Error()),
-						slog.String("endpoint_id", endpoint.Id))
+					if strings.Contains(err.Error(), "unauthorized access") {
+						logger.Error("Unauthorized access to repositories - verify PAT has Code (Read) permissions")
+					} else {
+						logger.Error("Failed to get endpoint history",
+							slog.String("error", err.Error()),
+							slog.String("endpoint_id", endpoint.Id))
+					}
 					continue
 				}
 
