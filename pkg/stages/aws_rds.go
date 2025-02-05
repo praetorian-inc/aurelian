@@ -53,35 +53,34 @@ func AwsRdsListDBSnapshots(ctx context.Context, opts []*types.Option, rtype <-ch
 					IncludePublic: aws.Bool(true),
 					SnapshotType:  aws.String("manual"),
 				}
+
 				for {
-					for {
-						res, err := rdsClient.DescribeDBSnapshots(ctx, params)
-						if err != nil {
-							logger.Error(err.Error())
-							return
-						}
-
-						for _, snapshot := range res.DBSnapshots {
-							properties, err := json.Marshal(snapshot)
-							if err != nil {
-								logger.Error("Could not marshal RDS DB snapshot description")
-								continue
-							}
-
-							out <- types.EnrichedResourceDescription{
-								Identifier: *snapshot.DBSnapshotIdentifier,
-								TypeName:   rtype,
-								Region:     region,
-								Properties: string(properties),
-								AccountId:  acctId,
-							}
-						}
-
-						if res.Marker == nil {
-							break
-						}
-						params.Marker = res.Marker
+					res, err := rdsClient.DescribeDBSnapshots(ctx, params)
+					if err != nil {
+						logger.Error(err.Error())
+						break
 					}
+
+					for _, snapshot := range res.DBSnapshots {
+						properties, err := json.Marshal(snapshot)
+						if err != nil {
+							logger.Error("Could not marshal RDS DB snapshot description")
+							continue
+						}
+
+						out <- types.EnrichedResourceDescription{
+							Identifier: *snapshot.DBSnapshotIdentifier,
+							TypeName:   rtype,
+							Region:     region,
+							Properties: string(properties),
+							AccountId:  acctId,
+						}
+					}
+
+					if res.Marker == nil {
+						break
+					}
+					params.Marker = res.Marker
 				}
 			}(region, rtype)
 		}
@@ -186,35 +185,34 @@ func AwsRdsListDbClusterSnapshots(ctx context.Context, opts []*types.Option, rty
 					IncludePublic: aws.Bool(true),
 					SnapshotType:  aws.String("manual"),
 				}
+
 				for {
-					for {
-						res, err := rdsClient.DescribeDBClusterSnapshots(ctx, params)
-						if err != nil {
-							logger.Error(err.Error())
-							return
-						}
-
-						for _, snapshot := range res.DBClusterSnapshots {
-							properties, err := json.Marshal(snapshot)
-							if err != nil {
-								logger.Error("Could not marshal RDS DB snapshot description")
-								continue
-							}
-
-							out <- types.EnrichedResourceDescription{
-								Identifier: *snapshot.DBClusterIdentifier,
-								TypeName:   rtype,
-								Region:     region,
-								Properties: string(properties),
-								AccountId:  acctId,
-							}
-						}
-
-						if res.Marker == nil {
-							break
-						}
-						params.Marker = res.Marker
+					res, err := rdsClient.DescribeDBClusterSnapshots(ctx, params)
+					if err != nil {
+						logger.Error(err.Error())
+						break
 					}
+
+					for _, snapshot := range res.DBClusterSnapshots {
+						properties, err := json.Marshal(snapshot)
+						if err != nil {
+							logger.Error("Could not marshal RDS DB snapshot description")
+							continue
+						}
+
+						out <- types.EnrichedResourceDescription{
+							Identifier: *snapshot.DBClusterIdentifier,
+							TypeName:   rtype,
+							Region:     region,
+							Properties: string(properties),
+							AccountId:  acctId,
+						}
+					}
+
+					if res.Marker == nil {
+						break
+					}
+					params.Marker = res.Marker
 				}
 			}(region, rtype)
 		}

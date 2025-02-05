@@ -67,7 +67,7 @@ func CheckResourceAccessPolicy(policyOutput string) string {
 				var resourceStr string
 				resource, ok := statement["Resource"]
 				if !ok {
-					slog.Error("Could not find Resource, policy: " + policyDocument)
+					slog.Debug("Could not find Resource, policy: " + policyDocument)
 					resourceStr = "null"
 				} else {
 					switch resourceValue := resource.(type) {
