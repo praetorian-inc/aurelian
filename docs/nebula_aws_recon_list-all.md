@@ -10,10 +10,10 @@ nebula aws recon list-all [flags]
 
 ```
       --cache-dir string      Directory to store API response cache files (default "nebula-output")
-      --cache-error-resp      Cache error response (default false)
-      --cache-ext string      Name of AWS API response cache files extension (default .aws-cache)
+      --cache-error-resp      Cache error response
+      --cache-ext string      Name of AWS API response cache files extension 
                               Warning! Changing the cache file extension may lead to unintended file deletion during automatic cache cleanup. (default ".aws-cache")
-      --cache-ttl int         TTL for cached responses in seconds (default 3600) (default 3600)
+      --cache-ttl int         TTL for cached responses in seconds (default 3600)
       --disable-cache         Disable API response caching
   -f, --file string           File name
   -h, --help                  help for list-all
