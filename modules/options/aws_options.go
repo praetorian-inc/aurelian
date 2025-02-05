@@ -152,7 +152,7 @@ var AwsCacheDirOpt = types.Option{
 
 var AwsCacheExtOpt = types.Option{
 	Name:        "cache-ext",
-	Description: "Name of AWS API response cache files extension (default .aws-cache)\nWarning! Changing the cache file extension may lead to unintended file deletion during automatic cache cleanup.",
+	Description: "Name of AWS API response cache files extension \nWarning! Changing the cache file extension may lead to unintended file deletion during automatic cache cleanup.",
 	Required:    false,
 	Type:        types.String,
 	Value:       ".aws-cache",
@@ -160,7 +160,7 @@ var AwsCacheExtOpt = types.Option{
 
 var AwsCacheTTLOpt = types.Option{
 	Name:        "cache-ttl",
-	Description: "TTL for cached responses in seconds (default 3600)",
+	Description: "TTL for cached responses in seconds",
 	Required:    false,
 	Type:        types.Int,
 	Value:       "3600",
@@ -176,7 +176,7 @@ var AwsDisableCacheOpt = types.Option{
 
 var AwsCacheErrorRespOpt = types.Option{
 	Name:        "cache-error-resp",
-	Description: "Cache error response (default false)",
+	Description: "Cache error response",
 	Required:    false,
 	Type:        types.Bool,
 	Value:       "false",
