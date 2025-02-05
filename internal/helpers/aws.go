@@ -127,6 +127,11 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 		return nil
 	})
 
+	if !cacheMaintained {
+		InitCacheCleanup(opts)
+		cacheMaintained = true
+	}
+
 	return cfg, nil
 
 }

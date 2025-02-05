@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -27,7 +28,10 @@ var (
 	NonCacheableOperations = []string{
 		"STS.GetCallerIdentity",
 	}
-	logger = logs.NewLogger()
+	logger          = logs.NewLogger()
+	cacheMaintained = false
+	cacheHitCount   int64
+	cacheMissCount  int64
 )
 
 func isCacheable(service, operation string) bool {
@@ -197,6 +201,9 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 				}
 			}
 
+			// Cache miss: increment miss counter
+			atomic.AddInt64(&cacheMissCount, 1)
+
 			// Proceed with the handler if cache loading fails
 			output, metadata, err := handler.HandleDeserialize(ctx, input)
 			if err != nil {
@@ -229,6 +236,9 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 
 			return output, metadata, err
 		}
+
+		// Cache hit: increment hit counter
+		atomic.AddInt64(&cacheHitCount, 1)
 
 		// Cache hit: use the cached response
 		logger.Debug("Using cached response", "cacheKey", v.CacheKey)
@@ -271,7 +281,7 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 		CacheErrorResp = false
 	}
 	if !(CacheEnabled) {
-		logger.Warn("Cache bypassed", "enabled", CacheEnabled, "cacheErrorResp", CacheErrorResp)
+		logger.Debug("Cache bypassed", "enabled", CacheEnabled, "cacheErrorResp", CacheErrorResp)
 	}
 
 	return middleware.InitializeMiddlewareFunc("CachePrep", func(ctx context.Context, input middleware.InitializeInput, handler middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
@@ -408,4 +418,12 @@ func InitCacheCleanup(opts []*types.Option) {
 	}
 
 	CleanupCacheFiles(cacheDir, ttl, cacheExt)
+}
+
+func GetCacheHitCount() int64 {
+	return atomic.LoadInt64(&cacheHitCount)
+}
+
+func GetCacheMissCount() int64 {
+	return atomic.LoadInt64(&cacheMissCount)
 }
