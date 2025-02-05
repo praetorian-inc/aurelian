@@ -1,7 +1,6 @@
 package options
 
 import (
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -148,7 +147,15 @@ var AwsCacheDirOpt = types.Option{
 	Description: "Directory to store API response cache files",
 	Required:    false,
 	Type:        types.String,
-	Value:       filepath.Join(OutputOpt.Value, ".aws-cache"),
+	Value:       OutputOpt.Value,
+}
+
+var AwsCacheExtOpt = types.Option{
+	Name:        "cache-ext",
+	Description: "Name of AWS API response cache files extension (default .aws-cache)",
+	Required:    false,
+	Type:        types.String,
+	Value:       ".aws-cache",
 }
 
 var AwsCacheTTLOpt = types.Option{
@@ -162,6 +169,14 @@ var AwsCacheTTLOpt = types.Option{
 var AwsDisableCacheOpt = types.Option{
 	Name:        "disable-cache",
 	Description: "Disable API response caching",
+	Required:    false,
+	Type:        types.Bool,
+	Value:       "false",
+}
+
+var AwsCacheErrorRespOpt = types.Option{
+	Name:        "cache-error-resp",
+	Description: "Cache error response (default false)",
 	Required:    false,
 	Type:        types.Bool,
 	Value:       "false",

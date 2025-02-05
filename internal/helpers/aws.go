@@ -116,7 +116,7 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 		return aws.Config{}, err
 	}
 
-	CachePrep := GetCachePrepWithIdentity(principal)
+	CachePrep := GetCachePrepWithIdentity(principal, opts)
 
 	cfg.APIOptions = append(cfg.APIOptions, func(stack *middleware.Stack) error {
 		// Add custom middlewares

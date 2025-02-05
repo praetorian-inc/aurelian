@@ -12,10 +12,15 @@ import (
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/types"
 	"net/http"
 	"net/http/httputil"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
 )
 
 var (
@@ -60,7 +65,7 @@ func saveResponseFromDumpToFile(dump []byte, filename string) error {
 		return fmt.Errorf("failed to write to file: %v", err)
 	}
 
-	logger.Info("Response saved to file", "filename", filename)
+	logger.Debug("Response saved to file", "filename", filename)
 	return nil
 }
 
@@ -89,7 +94,7 @@ func saveResponseToFile(resp *http.Response, filename string) error {
 		return fmt.Errorf("failed to write to file: %v", err)
 	}
 
-	logger.Info("Response saved to file", "filename", filename)
+	logger.Debug("Response saved to file", "filename", filename)
 	return nil
 }
 
@@ -97,7 +102,7 @@ func saveResponseToFile(resp *http.Response, filename string) error {
 func loadResponseFromFile(filename string) (*http.Response, *os.File, error) {
 	file, err := os.Open(filename)
 	if err != nil {
-		logger.Warn("Failed to open file", "filename", filename, "error", err)
+		logger.Debug("Failed to open file", "filename", filename, "error", err)
 		return nil, nil, fmt.Errorf("failed to open file: %v", err)
 	}
 
@@ -109,13 +114,13 @@ func loadResponseFromFile(filename string) (*http.Response, *os.File, error) {
 		return nil, nil, fmt.Errorf("failed to read response: %v", err)
 	}
 
-	logger.Info("Response loaded from file", "filename", filename)
+	logger.Debug("Response loaded from file", "filename", filename)
 	return resp, file, nil
 }
 
 // getCachePath constructs the file path for the cache based on the cache directory and key.
-func getCachePath(CacheDir string, key string) string {
-	return filepath.Join(CacheDir, key+".cache")
+func getCachePath(CacheDir string, key string, ext string) string {
+	return filepath.Join(CacheDir, key+ext)
 }
 
 // generateCacheKey creates a unique cache key based on the service, operation, and parameters.
@@ -135,13 +140,15 @@ func generateCacheKey(arn, service, region string, operation string, params inte
 
 // CacheConfigs holds cache configuration details.
 type CacheConfigs struct {
-	CachePath    string
-	CacheKey     string
-	Enabled      bool
-	Cacheable    bool
-	Fd           *os.File
-	Identity     sts.GetCallerIdentityOutput
-	ResponseDump []byte
+	CachePath      string
+	CacheKey       string
+	TTL            int
+	Enabled        bool
+	Cacheable      bool
+	CacheErrorResp bool
+	Fd             *os.File
+	Identity       sts.GetCallerIdentityOutput
+	ResponseDump   []byte
 }
 
 // SetCacheConfig adds a CacheConfigs to the context.
@@ -174,14 +181,14 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 
 		// Check if caching is enabled and the operation is cacheable
 		if !v.Enabled || !v.Cacheable {
-			logger.Info("Cache bypassed", "enabled", v.Enabled, "cacheable", v.Cacheable)
+			logger.Debug("Cache bypassed", "enabled", v.Enabled, "cacheable", v.Cacheable)
 			return handler.HandleDeserialize(ctx, input)
 		}
 
 		// Attempt to load response from cache
 		resp, file, err := loadResponseFromFile(v.CachePath)
 		if err != nil {
-			logger.Warn("Error loading response from cache", "error", err, "cachePath", v.CachePath)
+			logger.Debug("Error loading response from cache", "error", err, "cachePath", v.CachePath)
 
 			// Ensure the file is closed if it was opened
 			if file != nil {
@@ -197,7 +204,7 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 				return output, metadata, err
 			}
 
-			logger.Info("Handler processed response", "output", output, "metadata", metadata)
+			logger.Debug("Handler processed response", "output", output, "metadata", metadata)
 
 			//Save the response to cache
 			if resp, ok := output.RawResponse.(*smithyhttp.Response); ok {
@@ -205,7 +212,7 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 				//if saveErr := saveResponseToFile(standardResp, v.CachePath); saveErr != nil {
 				//	logger.Error("Error saving response to cache", "error", saveErr, "cachePath", v.CachePath)
 				//} else {
-				//	logger.Info("Response saved to cache", "cachePath", v.CachePath)
+				//	logger.Debug("Response saved to cache", "cachePath", v.CachePath)
 				//}
 
 				ResponseDump, DumpErr := dumpResponse(standardResp)
@@ -224,7 +231,7 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 		}
 
 		// Cache hit: use the cached response
-		logger.Info("Using cached response", "cacheKey", v.CacheKey)
+		logger.Debug("Using cached response", "cacheKey", v.CacheKey)
 		v.Fd = file
 		metadata := middleware.Metadata{}
 		SetCacheConfigMeta(&metadata, "cache_config", v)
@@ -237,7 +244,36 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 	return handler.HandleDeserialize(ctx, input)
 })
 
-func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput) middleware.InitializeMiddleware {
+func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts []*types.Option) middleware.InitializeMiddleware {
+	CacheDir := options.GetOptionByName(options.AwsCacheDirOpt.Name, opts).Value
+	CacheExt := options.GetOptionByName(options.AwsCacheExtOpt.Name, opts).Value
+	CacheTTL := options.GetOptionByName(options.AwsCacheTTLOpt.Name, opts).Value
+	CacheError := options.GetOptionByName(options.AwsCacheErrorRespOpt.Name, opts).Value
+	TTL, err := strconv.Atoi(CacheTTL)
+	if err != nil {
+		logger.Error("Could not determine cache TTL", "error", err)
+		logger.Warn("Fallback to default TTL of 3600")
+		TTL = 3600
+	}
+	CacheDisabled := options.GetOptionByName(options.AwsDisableCacheOpt.Name, opts).Value
+	CacheEnabled, err := strconv.ParseBool(CacheDisabled)
+	if err != nil {
+		logger.Error("Could not determine cache enabled", "error", err)
+		logger.Warn("Fallback to enable cache")
+		CacheEnabled = true
+	} else { // Mapping from CacheDisabled to CacheEnabled
+		CacheEnabled = !CacheEnabled
+	}
+	CacheErrorResp, err := strconv.ParseBool(CacheError)
+	if err != nil {
+		logger.Error("Could not determine cache error response", "error", err)
+		logger.Warn("Fallback to Not cache error response")
+		CacheErrorResp = false
+	}
+	if !(CacheEnabled) {
+		logger.Warn("Cache bypassed", "enabled", CacheEnabled, "cacheErrorResp", CacheErrorResp)
+	}
+
 	return middleware.InitializeMiddlewareFunc("CachePrep", func(ctx context.Context, input middleware.InitializeInput, handler middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
 		// Extract service and operation information using awsmiddleware helpers
 		service := awsmiddleware.GetServiceID(ctx)
@@ -257,26 +293,34 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput) middle
 			return handler.HandleInitialize(ctx, input)
 		}
 
-		logger.Info("Processing request", "service", service, "operation", operation, "region", region)
+		logger.Debug("Processing request", "service", service, "operation", operation, "region", region)
 
 		// Generate cache key and get cache file path
 		cacheKey := generateCacheKey(*callerIdentity.Arn, service, region, operation, input.Parameters)
-		cachePath := getCachePath(os.TempDir(), cacheKey)
+
+		logger.Debug("CacheKey computed", "cacheKey", cacheKey)
+
+		cachePath := getCachePath(CacheDir, cacheKey, CacheExt)
 
 		cacheConfig := CacheConfigs{
-			CachePath:    cachePath,
-			CacheKey:     cacheKey,
-			Enabled:      true,
-			Cacheable:    isCacheable(service, operation),
-			Identity:     callerIdentity,
-			ResponseDump: nil,
+			CachePath:      cachePath,
+			CacheKey:       cacheKey,
+			Enabled:        CacheEnabled,
+			CacheErrorResp: CacheErrorResp,
+			TTL:            TTL,
+			Cacheable:      isCacheable(service, operation),
+			Identity:       callerIdentity,
+			ResponseDump:   nil,
 		}
 		ctx = SetCacheConfig(ctx, "cache_config", cacheConfig)
 
 		output, metadata, err := handler.HandleInitialize(ctx, input)
 		if err != nil {
 			logger.Error("Handler encountered an error", "error", err)
-			return output, metadata, err
+			if !(cacheConfig.Enabled && cacheConfig.Cacheable && cacheConfig.CacheErrorResp) {
+				logger.Debug("Cache bypassed", "enabled", cacheConfig.Enabled, "cacheable", cacheConfig.Cacheable, "cacheErrorResp", cacheConfig.CacheErrorResp)
+				return output, metadata, err
+			}
 		}
 
 		if cacheConfig.Enabled && cacheConfig.Cacheable {
@@ -293,7 +337,11 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput) middle
 				if SaveErr != nil {
 					logger.Error("Failed to save response from cache", "error", SaveErr)
 				}
+			} else {
+				logger.Debug("ResponseDump is nil")
 			}
+		} else {
+			logger.Debug("Cache bypassed", "enabled", cacheConfig.Enabled, "cacheable", cacheConfig.Cacheable, "cacheErrorResp", cacheConfig.CacheErrorResp)
 		}
 
 		// Optionally log caller identity details
@@ -301,4 +349,63 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput) middle
 
 		return output, metadata, nil
 	})
+}
+
+// CleanupCacheFiles scans the cache directory and removes expired cache files.
+func CleanupCacheFiles(cacheDir string, ttl int, cacheExt string) {
+	clanUpCount := 0
+	total := 0
+	files, err := os.ReadDir(cacheDir)
+	if err != nil {
+		logger.Error("Failed to read cache directory", "cacheDir", cacheDir, "error", err)
+		return
+	}
+
+	expirationTime := time.Duration(ttl) * time.Second
+	currentTime := time.Now()
+
+	for _, file := range files {
+		if !strings.HasSuffix(file.Name(), cacheExt) {
+			continue
+		}
+		total++
+
+		filePath := filepath.Join(cacheDir, file.Name())
+
+		info, err := os.Stat(filePath)
+		if err != nil {
+			logger.Warn("Failed to get file info", "filePath", filePath, "error", err)
+			continue
+		}
+
+		if currentTime.Sub(info.ModTime()) > expirationTime {
+			logger.Debug("Cache cleanup", "filePath", filePath, "currentTime", currentTime, "fileModTime", info.ModTime(), "delta", currentTime.Sub(info.ModTime()), "expirationTime", expirationTime)
+			err := os.Remove(filePath)
+			if err != nil {
+				logger.Warn("Failed to delete expired cache file", "filePath", filePath, "error", err)
+			} else {
+				clanUpCount++
+				logger.Debug("Deleted expired cache file", "filePath", filePath)
+			}
+		} else {
+			logger.Debug("Cache persisted", "filePath", filePath, "currentTime", currentTime, "fileModTime", info.ModTime(), "delta", currentTime.Sub(info.ModTime()), "expirationTime", expirationTime)
+		}
+	}
+	logger.Info("Cache cleanup processed", "total", total, "clanUpCount", clanUpCount)
+}
+
+// InitCacheCleanup runs once at the program start to clean up expired cache files.
+func InitCacheCleanup(opts []*types.Option) {
+	cacheDir := options.GetOptionByName(options.AwsCacheDirOpt.Name, opts).Value
+	cacheExt := options.GetOptionByName(options.AwsCacheExtOpt.Name, opts).Value
+	cacheTTL := options.GetOptionByName(options.AwsCacheTTLOpt.Name, opts).Value
+
+	ttl, err := strconv.Atoi(cacheTTL)
+	if err != nil {
+		logger.Error("Could not determine cache TTL", "error", err)
+		logger.Warn("Fallback to default TTL of 3600")
+		ttl = 3600
+	}
+
+	CleanupCacheFiles(cacheDir, ttl, cacheExt)
 }
