@@ -17,6 +17,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/backup v1.39.3
 	github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.18.5
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.56.7
+	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.44.8
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.42.0
 	github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.46.3
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.38.1
@@ -51,6 +52,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20
 	github.com/microsoftgraph/msgraph-sdk-go v1.53.0
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de
+	github.com/neo4j/neo4j-go-driver/v5 v5.27.0
 	github.com/ollama/ollama v0.2.7
 	github.com/seancfoley/ipaddress-go v1.7.0
 	github.com/spf13/cobra v1.8.1
@@ -138,7 +140,7 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
+	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
 	golang.org/x/sys v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect

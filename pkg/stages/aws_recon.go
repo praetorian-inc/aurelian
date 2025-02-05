@@ -424,7 +424,9 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 			case "AWS::StepFunctions::StateMachine":
 				pl, err = ChainStages[string, types.NpInput](
 					AwsCloudControlListResources,
-					AwsStepFunctionsExecutionsToNpInputStage,
+					AwsStepFunctionsListExecutionsStage,
+					AwsStepFunctionsGetExecutionDetailsStage,
+					AwsStateMachineExecutionDetailsToNpInputStage,
 				)
 			case "ALL":
 				continue
