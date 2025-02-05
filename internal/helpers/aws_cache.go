@@ -207,8 +207,8 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 			// Proceed with the handler if cache loading fails
 			output, metadata, err := handler.HandleDeserialize(ctx, input)
 			if err != nil {
-				logger.Error("Handler encountered an error", "error", err)
-				return output, metadata, err
+				logger.Debug("Handler encountered an error", "error", err)
+				//return output, metadata, err
 			}
 
 			logger.Debug("Handler processed response", "output", output, "metadata", metadata)
@@ -326,7 +326,7 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 
 		output, metadata, err := handler.HandleInitialize(ctx, input)
 		if err != nil {
-			logger.Error("Handler encountered an error", "error", err)
+			logger.Debug("Handler encountered an error", "error", err)
 			if !(cacheConfig.Enabled && cacheConfig.Cacheable && cacheConfig.CacheErrorResp) {
 				logger.Debug("Cache bypassed", "enabled", cacheConfig.Enabled, "cacheable", cacheConfig.Cacheable, "cacheErrorResp", cacheConfig.CacheErrorResp)
 				return output, metadata, err
@@ -336,7 +336,7 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 		if cacheConfig.Enabled && cacheConfig.Cacheable {
 			v := GetCacheConfigMeta(metadata, "cache_config")
 			if v.Fd != nil {
-				if err := v.Fd.Close(); err != nil {
+				if fdErr := v.Fd.Close(); fdErr != nil {
 					logger.Error("Failed to close file", "error", err)
 				} else {
 					logger.Debug("Closed file successfully")
@@ -357,7 +357,7 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 		// Optionally log caller identity details
 		// logger.Debug("Caller Identity", "Account", *callerIdentity.Account, "Arn", *callerIdentity.Arn, "UserId", *callerIdentity.UserId)
 
-		return output, metadata, nil
+		return output, metadata, err
 	})
 }
 
