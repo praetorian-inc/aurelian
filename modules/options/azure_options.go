@@ -8,6 +8,22 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
+var azureAcceptedSecretsTypes = []string{
+	"all",
+	"Microsoft.Compute/virtualMachines/userData",
+	"Microsoft.Compute/virtualMachines/extensions",
+	"Microsoft.Compute/virtualMachines/diskEncryption",
+	"Microsoft.Compute/virtualMachines/tags",
+	"Microsoft.Web/sites/configuration",
+	"Microsoft.Web/sites/connectionStrings",
+	"Microsoft.Web/sites/keys",
+	"Microsoft.Web/sites/settings",
+	"Microsoft.Web/sites/tags",
+	"Microsoft.Automation/automationAccounts/runbooks",
+	"Microsoft.Automation/automationAccounts/variables",
+	"Microsoft.Automation/automationAccounts/jobs",
+}
+
 var AzureSubscriptionOpt = types.Option{
 	Name:        "subscription",
 	Short:       "s",
@@ -36,22 +52,6 @@ var AzureTimeoutOpt = types.Option{
 	Value:       "600", // 10 minute default timeout
 }
 
-var azureAcceptedSecretsTypes = []string{
-	"all",
-	"Microsoft.Compute/virtualMachines/userData",
-	"Microsoft.Compute/virtualMachines/extensions",
-	"Microsoft.Compute/virtualMachines/diskEncryption",
-	"Microsoft.Compute/virtualMachines/tags",
-	"Microsoft.Web/sites/configuration",
-	"Microsoft.Web/sites/connectionStrings",
-	"Microsoft.Web/sites/keys",
-	"Microsoft.Web/sites/settings",
-	"Microsoft.Web/sites/tags",
-	"Microsoft.Automation/automationAccounts/runbooks",
-	"Microsoft.Automation/automationAccounts/variables",
-	"Microsoft.Automation/automationAccounts/jobs",
-}
-
 var AzureResourceSecretsTypesOpt = types.Option{
 	Name:        "resource-types",
 	Short:       "r",
@@ -60,4 +60,31 @@ var AzureResourceSecretsTypesOpt = types.Option{
 	Type:        types.String,
 	Value:       "",
 	ValueList:   azureAcceptedSecretsTypes,
+}
+
+// Azure DevOps PAT
+var AzureDevOpsPATOpt = types.Option{
+	Name:        "devops-pat",
+	Short:       "d",
+	Description: "Azure DevOps Personal Access Token with read access",
+	Required:    true,
+	Type:        types.String,
+	Value:       "",
+	Sensitive:   true,
+}
+
+var AzureDevOpsOrgOpt = types.Option{
+	Name:        "devops-org",
+	Description: "Azure DevOps organization name",
+	Required:    true,
+	Type:        types.String,
+	Value:       "",
+}
+
+var AzureDevOpsProjectOpt = types.Option{
+	Name:        "devops-project",
+	Description: "Azure DevOps project name",
+	Required:    true,
+	Type:        types.String,
+	Value:       "",
 }

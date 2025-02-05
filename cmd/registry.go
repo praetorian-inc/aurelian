@@ -38,6 +38,7 @@ func init() {
 	RegisterModule(azureReconCmd, reconaz.AzureRoleAssignmentsMetadata, reconaz.AzureRoleAssignmentsOptions, azureCommonOptions, reconaz.AzureRoleAssignmentsOutputProviders, reconaz.NewAzureRoleAssignments)
 	RegisterModule(azureReconCmd, reconaz.AzureListAllMetadata, reconaz.AzureListAllOptions, []*types.Option{}, reconaz.AzureListAllOutputProviders, reconaz.NewAzureListAll)
 	RegisterModule(azureReconCmd, reconaz.AzureFindSecretsMetadata, reconaz.AzureFindSecretsOptions, azureCommonOptions, reconaz.AzureFindSecretsOutputProviders, reconaz.NewAzureFindSecrets)
+	RegisterModule(azureReconCmd, reconaz.AzureDevOpsSecretsMetadata, reconaz.AzureDevOpsSecretsOptions, []*types.Option{}, reconaz.AzureDevOpsSecretsOutputProviders, reconaz.NewAzureDevOpsSecrets)
 
 	// GCP Recon
 	//RegisterModule(gcpReconCmd, recongcp.GetProjectsMetadata, recongcp.GetProjectsOptions, noCommon, recongcp.NewGetProjects)
