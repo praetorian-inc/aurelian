@@ -33,7 +33,7 @@ Nebula uses the same authentication methods as the official cloud provider CLIs:
 
 For details on configuring authentication, refer to:
 - AWS: [Configuration and credential file settings](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html)
-- Azure: [Azure authentication methods](https://docs.microsoft.com/en-us/azure/developer/go/azure-sdk-authorization)
+- Azure: [Azure authentication methods](https://learn.microsoft.com/en-us/cli/azure/authenticate-azure-cli#sign-into-azure-with-azure-cli)
 - GCP: [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials)
 
 ## Basic Usage
