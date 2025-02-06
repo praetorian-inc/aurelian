@@ -14,6 +14,7 @@ import (
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"os"
@@ -28,7 +29,7 @@ var (
 	NonCacheableOperations = []string{
 		"STS.GetCallerIdentity",
 	}
-	logger          = logs.NewLogger()
+	logger          = *logs.NewLogger()
 	cacheMaintained = false
 	cacheHitCount   int64
 	cacheMissCount  int64
@@ -426,4 +427,8 @@ func GetCacheHitCount() int64 {
 
 func GetCacheMissCount() int64 {
 	return atomic.LoadInt64(&cacheMissCount)
+}
+
+func SetAWSCacheLogger(newLogger *slog.Logger) {
+	logger = *newLogger
 }
