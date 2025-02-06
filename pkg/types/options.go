@@ -13,15 +13,14 @@ const (
 )
 
 type Option struct {
-	Name                string
-	Short               string
-	Description         string
-	Default             string
-	Required            bool
-	Type                OptionType
-	Value               string
-	ValueFormat         *regexp.Regexp
-	ValueList           []string
-	ValueCommaSeparated bool // Indicates if the value can be a comma-separated list of ValueList items
-	Sensitive           bool
+	Name        string
+	Short       string
+	Description string
+	Default     string
+	Required    bool
+	Type        OptionType
+	Value       string
+	ValueFormat *regexp.Regexp
+	ValueList   []string
+	Sensitive   bool
 }
