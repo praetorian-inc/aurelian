@@ -421,6 +421,10 @@ func GetCacheMissCount() int64 {
 	return atomic.LoadInt64(&cacheMissCount)
 }
 
+func ShowCacheStat() {
+	fmt.Printf("AWS Cache Stat: Hit: %d, Miss: %d\n", GetCacheHitCount(), GetCacheMissCount())
+}
+
 func SetAWSCacheLogger(newLogger *slog.Logger) {
 	logger = *newLogger
 }
