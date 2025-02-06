@@ -114,3 +114,4 @@ Azure Common Flags:
 - Use resource type filters to limit scope when possible
 - For large environments, consider using resource type or region filters to break up scans
 - Monitor API rate limits, especially when scanning multiple regions
+- Use `--log-level debug` to triage errors or unexpected results
