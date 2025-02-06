@@ -254,11 +254,11 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 })
 
 func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts []*types.Option) middleware.InitializeMiddleware {
-	CacheDir := options.GetOptionByName(options.AwsCacheDirOpt.Name, opts).Value
-	CacheExt := options.GetOptionByName(options.AwsCacheExtOpt.Name, opts).Value
-	CacheTTL := options.GetOptionByName(options.AwsCacheTTLOpt.Name, opts).Value
-	CacheError := options.GetOptionByName(options.AwsCacheErrorRespOpt.Name, opts).Value
-	TTL, err := strconv.Atoi(CacheTTL)
+	cacheDir := options.GetOptionByName(options.AwsCacheDirOpt.Name, opts).Value
+	cacheExt := options.GetOptionByName(options.AwsCacheExtOpt.Name, opts).Value
+	cacheTTL := options.GetOptionByName(options.AwsCacheTTLOpt.Name, opts).Value
+	cacheError := options.GetOptionByName(options.AwsCacheErrorRespOpt.Name, opts).Value
+	TTL, err := strconv.Atoi(cacheTTL)
 	if err != nil {
 		logger.Error("Could not determine cache TTL", "error", err)
 		logger.Warn("Fallback to default TTL of 3600")
@@ -273,7 +273,7 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 	} else { // Mapping from CacheDisabled to CacheEnabled
 		CacheEnabled = !CacheEnabled
 	}
-	CacheErrorResp, err := strconv.ParseBool(CacheError)
+	CacheErrorResp, err := strconv.ParseBool(cacheError)
 	if err != nil {
 		logger.Error("Could not determine cache error response", "error", err)
 		logger.Warn("Fallback to Not cache error response")
@@ -303,7 +303,7 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 
 		logger.Debug("CacheKey computed", "cacheKey", cacheKey)
 
-		cachePath := getCachePath(CacheDir, cacheKey, CacheExt)
+		cachePath := getCachePath(cacheDir, cacheKey, cacheExt)
 
 		cacheConfig := CacheConfigs{
 			CachePath:      cachePath,
