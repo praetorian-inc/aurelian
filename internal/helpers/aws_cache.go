@@ -138,8 +138,6 @@ func generateCacheKey(arn, service, region string, operation string, params inte
 
 	combined := fmt.Sprintf("%s-%s-%s-%s-%s", arn, region, service, operation, string(data))
 	hash := sha256.Sum256([]byte(combined))
-
-	logger.Debug("Generated cache key", "cacheKey", hex.EncodeToString(hash[:]))
 	return hex.EncodeToString(hash[:])
 }
 
@@ -186,7 +184,7 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 
 		// Check if caching is enabled and the operation is cacheable
 		if !v.Enabled || !v.Cacheable {
-			logger.Debug("Cache bypassed", "enabled", v.Enabled, "cacheable", v.Cacheable)
+			logger.Debug("Deserialize Cache bypassed", "enabled", v.Enabled, "cacheable", v.Cacheable)
 			return handler.HandleDeserialize(ctx, input)
 		}
 
@@ -282,7 +280,7 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 		CacheErrorResp = false
 	}
 	if !(CacheEnabled) {
-		logger.Debug("Cache bypassed", "enabled", CacheEnabled, "cacheErrorResp", CacheErrorResp)
+		logger.Debug("Config Cache bypassed", "enabled", CacheEnabled, "cacheErrorResp", CacheErrorResp)
 	}
 
 	return middleware.InitializeMiddlewareFunc("CachePrep", func(ctx context.Context, input middleware.InitializeInput, handler middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
@@ -291,16 +289,10 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 		operation := awsmiddleware.GetOperationName(ctx)
 		region := awsmiddleware.GetRegion(ctx)
 
-		logger.Debug("Extracted service and operation", "service", service, "operation", operation)
-
-		// Skip if we couldn't determine service or operation
-		if service == "" || operation == "" {
-			logger.Warn("Could not determine service or operation", "service", service, "operation", operation, "parameters", input.Parameters)
-			return handler.HandleInitialize(ctx, input)
-		}
-
-		if region == "" {
-			logger.Warn("Could not determine region", "region", region, "parameters", input.Parameters)
+		// Skip if we couldn't determine service, operation, or region
+		if service == "" || operation == "" || region == "" {
+			logger.Warn("Could not determine service, operation, or region",
+				"service", service, "operation", operation, "region", region, "parameters", input.Parameters)
 			return handler.HandleInitialize(ctx, input)
 		}
 
