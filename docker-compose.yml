@@ -1,0 +1,29 @@
+services:
+  nebula:
+    image: nebula:latest
+    container_name: nebula
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ~/.aws:/root/.aws:ro  # AWS credentials
+      - ~/.azure:/root/.azure:ro  # Azure credentials
+      - ~/.config/gcloud:/root/.config/gcloud:ro  # GCP credentials
+      - ${GOOGLE_APPLICATION_CREDENTIALS:-$HOME/.config/gcloud/application_default_credentials.json}:/gcp-credentials.json:ro  # GCP credentials
+      - ./nebula-output/:/root/nebula-output
+    environment:
+      # AWS Configuration
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      - AWS_REGION=${AWS_REGION:-us-west-2}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN:-}
+
+      # Azure Configuration
+      - AZURE_CLIENT_ID=${AZURE_CLIENT_ID:-}
+      - AZURE_TENANT_ID=${AZURE_TENANT_ID:-}
+
+      # GCP Configuration
+      - GOOGLE_APPLICATION_CREDENTIALS=/gcp-credentials.json
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT:-}
+      - GOOGLE_CLOUD_REGION=${GOOGLE_CLOUD_REGION:-us-central1}
+
