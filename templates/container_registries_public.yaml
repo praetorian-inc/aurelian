@@ -1,0 +1,33 @@
+id: container_registries_public_access
+name: Publicly Accessible Container Registries
+description: Detects container registries with public network access enabled
+severity: High
+category: Containers
+references:
+  - https://learn.microsoft.com/en-us/azure/container-registry/container-registry-access-selected-networks
+query: |
+    resources
+    | where type =~ 'Microsoft.ContainerRegistry/registries'
+    | extend publicNetworkAccess = tolower(properties.publicNetworkAccess)
+    | extend networkRuleSet = properties.networkRuleSet
+    | extend adminUserEnabled = properties.adminUserEnabled
+    | extend sku = properties.sku.name
+    | extend loginServer = properties.loginServer
+    | where publicNetworkAccess != 'disabled'
+    | extend defaultAction = tolower(coalesce(networkRuleSet.defaultAction, 'allow'))
+    | extend ipRules = networkRuleSet.ipRules
+    | where 
+        defaultAction == 'allow' or
+        isnull(ipRules) or
+        ipRules has '0.0.0.0/0' or 
+        ipRules has '*' or 
+        ipRules has 'Internet'
+    | project
+        id,
+        name,
+        type,
+        location,
+        publicNetworkAccess,
+        adminUserEnabled,
+        sku,
+        loginServer

@@ -1,0 +1,22 @@
+id: storage_accounts_public_access
+name: Publicly Accessible Storage Accounts
+description: Detects storage accounts with public network access enabled and default allow action
+severity: High
+category: Storage
+references:
+  - https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security
+query: |
+    resources
+    | where type =~ 'Microsoft.Storage/storageAccounts'
+    | extend publicNetworkAccess = tolower(properties.publicNetworkAccess)
+    | extend networkAcls = properties.networkAcls
+    | extend defaultAction = tolower(coalesce(networkAcls.defaultAction, 'allow'))
+    | where publicNetworkAccess != 'disabled'
+    | where defaultAction =~ 'allow'
+    | project
+        id,
+        name,
+        type,
+        location,
+        publicNetworkAccess,
+        defaultAction

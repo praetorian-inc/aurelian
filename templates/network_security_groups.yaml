@@ -1,0 +1,21 @@
+id: nsg_open_ports
+name: Network Security Groups with Open Ports
+description: Detects NSGs with ports open to the internet
+severity: High
+category: Network
+references:
+  - https://learn.microsoft.com/en-us/azure/network-watcher/network-watcher-security-group-view-overview
+query: |
+  resources
+  | where type =~ 'Microsoft.Network/networkSecurityGroups'
+  | mv-expand rule = properties.securityRules
+  | where rule.properties.direction == 'Inbound' 
+    and rule.properties.access == 'Allow'
+    and rule.properties.sourceAddressPrefix in ('*', 'Internet', '0.0.0.0', '0.0.0.0/0')
+  | project
+      id,
+      name,
+      type,
+      location,
+      ports=rule.properties.destinationPortRange,
+      protocol=rule.properties.protocol

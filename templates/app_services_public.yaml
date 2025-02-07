@@ -1,0 +1,23 @@
+id: app_services_public_access
+name: Publicly Accessible App Services
+description: Detects app services without virtual network integration
+severity: High
+category: Compute
+references:
+  - https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration
+query: |
+    resources
+    | where type =~ 'microsoft.web/sites'
+    | extend publicAccess = iif(
+        isnull(properties.virtualNetworkSubnetId) or properties.virtualNetworkSubnetId == '', 
+        true, 
+        false
+    )
+    | where publicAccess == true
+    | project
+        id,
+        name,
+        type,
+        location,
+        publicNetworkAccess = publicAccess,
+        kind

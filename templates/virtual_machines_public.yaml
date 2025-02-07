@@ -1,0 +1,48 @@
+id: virtual_machines_public_access
+name: Virtual Machines with Public IP
+description: Detects virtual machines with public IPs and open network security group rules
+severity: High
+category: Compute
+references:
+  - https://learn.microsoft.com/en-us/azure/virtual-machines/network-overview
+query: |
+    resources
+    | where type =~ 'Microsoft.Compute/virtualMachines'
+    | extend nics = array_length(properties.networkProfile.networkInterfaces)
+    | mv-expand nic = properties.networkProfile.networkInterfaces
+    | extend nicId = tostring(nic.id)
+    | extend osType = properties.storageProfile.osDisk.osType
+    | join kind=leftouter (
+        resources
+        | where type =~ 'Microsoft.Network/networkInterfaces'
+        | extend ipConfigsCount = array_length(properties.ipConfigurations)
+        | mv-expand ipconfig = properties.ipConfigurations
+        | extend publicIPId = tostring(ipconfig.properties.publicIPAddress.id)
+        | extend privateIP = tostring(ipconfig.properties.privateIPAddress)
+        | where isnotempty(publicIPId)
+        | join kind=leftouter (
+            resources
+            | where type =~ 'Microsoft.Network/publicIPAddresses'
+            | extend publicIP = properties.ipAddress
+        ) on $left.publicIPId == $right.id
+        | project nicId = id, publicIP, privateIP,
+            nsgId = tostring(properties.networkSecurityGroup.id)
+    ) on nicId
+    | where isnotempty(publicIP)
+    | join kind=leftouter (
+        resources
+        | where type =~ 'Microsoft.Network/networkSecurityGroups'
+        | mv-expand rule = properties.securityRules
+        | where rule.properties.direction == 'Inbound' and rule.properties.access == 'Allow'
+        | where rule.properties.sourceAddressPrefix in ('*', 'Internet', '0.0.0.0', '0.0.0.0/0')
+        | summarize openPorts=make_set(rule.properties.destinationPortRange) by id
+    ) on $left.nsgId == $right.id
+    | project
+        id,
+        name,
+        type,
+        location,
+        publicIP,
+        hasPublicIP = true,
+        openPorts = iif(isempty(openPorts), '*', tostring(openPorts)),
+        osType
