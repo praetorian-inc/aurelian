@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync/atomic"
 )
 
 // TODO this should be combined with roseta
@@ -102,7 +103,7 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 		config.WithLogger(logs.AwsCliLogger()),
 		config.WithRegion(region),
 		config.WithSharedConfigProfile(profile),
-		config.WithRetryMode(aws.RetryModeAdaptive),
+		//config.WithRetryMode(aws.RetryModeAdaptive),
 		// config.WithAPIOptions(cacheFunc),
 	)
 	if err != nil {
@@ -110,6 +111,7 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 	}
 
 	principal, err := GetCallerIdentity(cfg)
+	atomic.AddInt64(&cacheBypassedCount, 1)
 	if err != nil {
 		return aws.Config{}, err
 	}
@@ -152,9 +154,9 @@ func GetAccountId(cfg aws.Config) (string, error) {
 }
 
 func GetCallerIdentity(cfg aws.Config) (sts.GetCallerIdentityOutput, error) {
-	if strings.ToLower(cfg.Region) == "all" {
-		cfg.Region = "us-east-1"
-	}
+	// Force to use us-east-1 for STS
+	// https://docs.aws.amazon.com/sdkref/latest/guide/feature-sts-regionalized-endpoints.html
+	cfg.Region = "us-east-1"
 	client := sts.NewFromConfig(cfg)
 	input := &sts.GetCallerIdentityInput{}
 
@@ -171,6 +173,7 @@ func GetCallerIdentity(cfg aws.Config) (sts.GetCallerIdentityOutput, error) {
 // else it just reads the list of regions provided
 
 func ParseRegionsOption(regionsOpt string, profile string, opts []*types.Option) ([]string, error) {
+	slog.Debug("ParseRegionsOption", "regionsOpt", strings.ToLower(regionsOpt))
 	if strings.ToLower(regionsOpt) == "all" {
 		slog.Debug("Gathering enabled regions")
 		enabledRegions, err := EnabledRegions(profile, opts)

@@ -29,10 +29,11 @@ var (
 	NonCacheableOperations = []string{
 		"STS.GetCallerIdentity",
 	}
-	logger          = *logs.NewLogger()
-	cacheMaintained = false
-	cacheHitCount   int64
-	cacheMissCount  int64
+	logger             = *logs.NewLogger()
+	cacheMaintained    = false
+	cacheHitCount      int64
+	cacheMissCount     int64
+	cacheBypassedCount int64
 )
 
 func isCacheable(service, operation string) bool {
@@ -185,7 +186,12 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 		// Check if caching is enabled and the operation is cacheable
 		if !v.Enabled || !v.Cacheable {
 			logger.Debug("Deserialize Cache bypassed", "enabled", v.Enabled, "cacheable", v.Cacheable)
-			return handler.HandleDeserialize(ctx, input)
+			atomic.AddInt64(&cacheBypassedCount, 1)
+			output, metadata, err := handler.HandleDeserialize(ctx, input)
+			if err != nil {
+				logger.Debug("Handler encountered an error", "error", err)
+			}
+			return output, metadata, err
 		}
 
 		// Attempt to load response from cache
@@ -250,7 +256,12 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 
 	// Cache configuration not found in context
 	logger.Warn("Cache configuration not found in context")
-	return handler.HandleDeserialize(ctx, input)
+	atomic.AddInt64(&cacheBypassedCount, 1)
+	output, metadata, err := handler.HandleDeserialize(ctx, input)
+	if err != nil {
+		logger.Debug("Handler encountered an error", "error", err)
+	}
+	return output, metadata, err
 })
 
 func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts []*types.Option) middleware.InitializeMiddleware {
@@ -319,7 +330,7 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 
 		output, metadata, err := handler.HandleInitialize(ctx, input)
 		if err != nil {
-			logger.Debug("Handler encountered an error", "error", err)
+			logger.Debug("Handler encountered an error", "error", err, "CacheKey", cacheConfig.CacheKey)
 			if !(cacheConfig.Enabled && cacheConfig.Cacheable && cacheConfig.CacheErrorResp) {
 				logger.Debug("Cache bypassed", "enabled", cacheConfig.Enabled, "cacheable", cacheConfig.Cacheable, "cacheErrorResp", cacheConfig.CacheErrorResp)
 				return output, metadata, err
@@ -421,8 +432,12 @@ func GetCacheMissCount() int64 {
 	return atomic.LoadInt64(&cacheMissCount)
 }
 
+func GetCacheBypassedCount() int64 {
+	return atomic.LoadInt64(&cacheBypassedCount)
+}
+
 func ShowCacheStat() {
-	fmt.Printf("AWS Cache Stat: Hit: %d, Miss: %d\n", GetCacheHitCount(), GetCacheMissCount())
+	fmt.Printf("AWS Cache Stat: Hit: %d, Miss: %d Bypassed: %d\n", GetCacheHitCount(), GetCacheMissCount(), GetCacheBypassedCount())
 }
 
 func SetAWSCacheLogger(newLogger *slog.Logger) {
