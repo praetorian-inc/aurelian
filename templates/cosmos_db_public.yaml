@@ -2,7 +2,7 @@ id: cosmos_db_public_access
 name: Publicly Accessible Cosmos DB Accounts
 description: Detects Cosmos DB accounts with public network access enabled
 severity: High
-category: Database
+category: Automatic
 references:
   - https://learn.microsoft.com/en-us/azure/cosmos-db/how-to-configure-firewall
 query: |

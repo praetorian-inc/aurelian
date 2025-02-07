@@ -2,7 +2,7 @@ id: container_registries_public_access
 name: Publicly Accessible Container Registries
 description: Detects container registries with public network access enabled
 severity: High
-category: Containers
+category: Automatic
 references:
   - https://learn.microsoft.com/en-us/azure/container-registry/container-registry-access-selected-networks
 query: |

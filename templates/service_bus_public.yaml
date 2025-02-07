@@ -2,7 +2,7 @@ id: service_bus_public_access
 name: Publicly Accessible Service Bus Namespaces
 description: Detects Service Bus namespaces with public network access enabled
 severity: High
-category: Messaging
+reportability: Automatic
 references:
   - https://learn.microsoft.com/en-us/azure/service-bus-messaging/network-security
 query: |

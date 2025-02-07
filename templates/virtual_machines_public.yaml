@@ -2,7 +2,7 @@ id: virtual_machines_public_access
 name: Virtual Machines with Public IP
 description: Detects virtual machines with public IPs and open network security group rules
 severity: High
-category: Compute
+reportability: Manual Triage
 references:
   - https://learn.microsoft.com/en-us/azure/virtual-machines/network-overview
 query: |

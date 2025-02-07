@@ -2,7 +2,7 @@ id: redis_cache_public_access
 name: Publicly Accessible Redis Caches
 description: Detects Redis Cache instances with public network access enabled
 severity: High
-category: Database
+category: Automatic
 references:
   - https://learn.microsoft.com/en-us/azure/azure-cache-for-redis/cache-network-isolation
 query: |
