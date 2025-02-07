@@ -93,7 +93,7 @@ var AzureARGTemplatesDirOpt = types.Option{
     Name:        "template-dir",
     Short:       "T",
     Description: "Directory containing ARG query templates",
-    Required:    true,
+    Required:    false,
     Type:        types.String,
-    Value:       "",
+    Value:       "templates",
 }

@@ -6,7 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
+	"encoding/json"
 	"path/filepath"
+	"time"
+	"strconv"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"gopkg.in/yaml.v3"
@@ -15,6 +19,8 @@ import (
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/nebula/modules"
+	"github.com/praetorian-inc/nebula/internal/message"
 )
 
 // LoadARGTemplates loads ARG query templates from a directory
@@ -92,92 +98,258 @@ func validateTemplate(template *types.ARGQueryTemplate) error {
 
 // AzureARGTemplateStage executes ARG queries from templates
 func AzureARGTemplateStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan *types.ARGQueryResult {
-	logger := logs.NewStageLogger(ctx, opts, "AzureARGTemplateStage")
-	out := make(chan *types.ARGQueryResult)
+    logger := logs.NewStageLogger(ctx, opts, "AzureARGTemplateStage")
+    out := make(chan *types.ARGQueryResult)
 
-	go func() {
-		defer close(out)
+    go func() {
+        defer close(out)
 
-		// Initialize ARG client
-		argClient, err := helpers.NewARGClient(ctx)
-		if err != nil {
-			logger.Error("Failed to create ARG client", slog.String("error", err.Error()))
-			return
-		}
+        // Initialize ARG client
+        argClient, err := helpers.NewARGClient(ctx)
+        if err != nil {
+            logger.Error("Failed to create ARG client", slog.String("error", err.Error()))
+            return
+        }
 
-		// Load templates
-		templateDir := options.GetOptionByName(options.AzureARGTemplatesDirOpt.Name, opts).Value
-		loader, err := LoadARGTemplates(templateDir)
-		if err != nil {
-			logger.Error("Failed to load templates", slog.String("error", err.Error()))
-			return
-		}
+        // Load templates
+        templateDir := options.GetOptionByName(options.AzureARGTemplatesDirOpt.Name, opts).Value
+        loader, err := LoadARGTemplates(templateDir)
+        if err != nil {
+            logger.Error("Failed to load templates", slog.String("error", err.Error()))
+            return
+        }
 
-		for subscription := range in {
-			logger.Info("Processing subscription", slog.String("subscription", subscription))
+        for subscription := range in {
+            message.Info("Processing subscription %s", subscription)
 
-			// Execute each template
-			for _, template := range loader.Templates {
-				logger.Debug("Executing template",
-					slog.String("template_id", template.ID),
-					slog.String("template_name", template.Name))
+            // Execute each template
+            for _, template := range loader.Templates {
+                message.Info("Executing template %s %s",template.ID,template.Name)
 
-				queryOpts := &helpers.ARGQueryOptions{
-					Subscriptions: []string{subscription},
-				}
+                queryOpts := &helpers.ARGQueryOptions{
+                    Subscriptions: []string{subscription},
+                }
 
-				err = argClient.ExecutePaginatedQuery(ctx, template.Query, queryOpts, func(response *armresourcegraph.ClientResourcesResponse) error {
-					if response == nil || response.Data == nil {
-						return nil
-					}
+                err = argClient.ExecutePaginatedQuery(ctx, template.Query, queryOpts, func(response *armresourcegraph.ClientResourcesResponse) error {
+                    if response == nil || response.Data == nil {
+                        return nil
+                    }
 
-					rows, ok := response.Data.([]interface{})
-					if !ok {
-						return fmt.Errorf("unexpected response data type")
-					}
+                    rows, ok := response.Data.([]interface{})
+                    if !ok {
+                        return fmt.Errorf("unexpected response data type")
+                    }
 
-					for _, row := range rows {
-						item, ok := row.(map[string]interface{})
-						if !ok {
-							continue
-						}
+                    for _, row := range rows {
+                        item, ok := row.(map[string]interface{})
+                        if !ok {
+                            continue
+                        }
 
-						// Create standardized result
-						result := &types.ARGQueryResult{
-							TemplateID:     template.ID,
-							Name:           template.Name,
-							ResourceID:     helpers.SafeGetString(item, "id"),
-							ResourceName:   helpers.SafeGetString(item, "name"),
-							ResourceType:   helpers.SafeGetString(item, "type"),
-							Location:       helpers.SafeGetString(item, "location"),
-							SubscriptionID: subscription,
-						}
+                        // Create standardized result - now includes template details
+                        result := &types.ARGQueryResult{
+                            TemplateID:      template.ID,
+                            TemplateDetails: template,
+                            ResourceID:     helpers.SafeGetString(item, "id"),
+                            ResourceName:   helpers.SafeGetString(item, "name"),
+                            ResourceType:   helpers.SafeGetString(item, "type"),
+                            Location:       helpers.SafeGetString(item, "location"),
+                            SubscriptionID: subscription,
+                        }
 
-						// Extract any additional properties specified in the query
-						result.Properties = make(map[string]interface{})
-						for k, v := range item {
-							if k != "id" && k != "name" && k != "type" && k != "location" {
-								result.Properties[k] = v
-							}
-						}
+                        // Extract any additional properties specified in the query
+                        result.Properties = make(map[string]interface{})
+                        for k, v := range item {
+                            if k != "id" && k != "name" && k != "type" && k != "location" {
+                                result.Properties[k] = v
+                            }
+                        }
 
-						select {
-						case out <- result:
-						case <-ctx.Done():
-							return nil
-						}
-					}
-					return nil
-				})
+                        select {
+                        case out <- result:
+                        case <-ctx.Done():
+                            return nil
+                        }
+                    }
+                    return nil
+                })
 
-				if err != nil {
-					logger.Error("Failed to execute template",
-						slog.String("template_id", template.ID),
-						slog.String("error", err.Error()))
-				}
-			}
-		}
-	}()
+                if err != nil {
+                    logger.Error("Failed to execute template",
+                        slog.String("template_id", template.ID),
+                        slog.String("error", err.Error()))
+                }
+            }
+        }
+    }()
 
-	return out
+    return out
+}
+
+
+func FormatARGReconOutput(ctx context.Context, opts []*types.Option, in <-chan *types.ARGQueryResult) <-chan types.Result {
+    out := make(chan types.Result)
+
+    go func() {
+        defer close(out)
+
+        // Group results by template
+        resultsByTemplate := make(map[string][]*types.ARGQueryResult)
+        for result := range in {
+            resultsByTemplate[result.TemplateID] = append(resultsByTemplate[result.TemplateID], result)
+        }
+
+        // Generate base filename
+        baseFilename := ""
+        providedFilename := options.GetOptionByName(options.FileNameOpt.Name, opts).Value
+        if len(providedFilename) == 0 {
+            timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+            baseFilename = fmt.Sprintf("arg-findings-%s", timestamp)
+        } else {
+            baseFilename = providedFilename
+        }
+
+        // Output JSON format - simplified template details
+        jsonOutput := make(map[string]interface{})
+        for templateID, results := range resultsByTemplate {
+            if len(results) == 0 || results[0].TemplateDetails == nil {
+                continue
+            }
+
+            jsonOutput[templateID] = map[string]interface{}{
+                "templateName": results[0].TemplateDetails.Name,
+                "templateDescription": results[0].TemplateDetails.Description,
+                "findings": results,
+            }
+        }
+
+        out <- types.NewResult(
+            modules.Azure,
+            "arg-scan",
+            jsonOutput,
+            types.WithFilename(baseFilename+".json"),
+        )
+
+        // Create markdown report
+        var mdContent strings.Builder
+        mdContent.WriteString("Azure Resource Graph Scan Results\n---\n")
+        
+        foundIssues := false
+        for templateID, results := range resultsByTemplate {
+            if len(results) == 0 || results[0].TemplateDetails == nil {
+                continue
+            }
+
+            template := results[0].TemplateDetails
+            
+            // Only create section if there are findings
+            if len(results) > 0 {
+                foundIssues = true
+                mdContent.WriteString(fmt.Sprintf("## %s\n\n", template.Name))
+                mdContent.WriteString(fmt.Sprintf("**Description:** %s\n\n", template.Description))
+                mdContent.WriteString(fmt.Sprintf("**Severity:** %s\n\n", template.Severity))
+				mdContent.WriteString(fmt.Sprintf("**Template ID:** %s\n\n", templateID))
+                
+                // Create findings table
+                mdContent.WriteString("### Findings\n\n")
+                mdContent.WriteString("| Resource Name | Resource Type | Location | Details |\n")
+                mdContent.WriteString("|--------------|---------------|----------|----------|\n")
+                
+                for _, result := range results {
+                    details := formatResultDetails(result.Properties)
+                    mdContent.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n",
+                        result.ResourceName,
+                        result.ResourceType,
+                        result.Location,
+                        details,
+                    ))
+                }
+                mdContent.WriteString("\n")
+
+                // Add triage notes after table if they exist
+                if template.TriageNotes != "" {
+                    mdContent.WriteString("### Triage Guide\n\n")
+                    mdContent.WriteString("```\n")
+                    mdContent.WriteString(template.TriageNotes)
+                    mdContent.WriteString("\n```\n\n")
+                }
+
+                // Add references if they exist
+                if len(template.References) > 0 {
+                    mdContent.WriteString("### References\n\n")
+                    for _, ref := range template.References {
+                        mdContent.WriteString(fmt.Sprintf("- %s\n", ref))
+                    }
+                    mdContent.WriteString("\n")
+                }
+
+				mdContent.WriteString("---\n")
+            }
+        }
+
+        if !foundIssues {
+            mdContent.WriteString("No issues found.\n")
+        }
+
+        out <- types.NewResult(
+            modules.Azure,
+            "arg-scan",
+            types.MarkdownTable{
+                TableHeading: mdContent.String(),
+                Headers:     []string{},
+                Rows:       [][]string{},
+            },
+            types.WithFilename(baseFilename+".md"),
+        )
+    }()
+
+    return out
+}
+
+// Helper function to format result details
+func formatResultDetails(properties map[string]interface{}) string {
+    var details []string
+    for k, v := range properties {
+        // Format values based on type
+        var valueStr string
+        switch val := v.(type) {
+        case []interface{}, map[string]interface{}:
+            // Convert complex types to JSON
+            if jsonBytes, err := json.Marshal(val); err == nil {
+                valueStr = string(jsonBytes)
+            } else {
+                valueStr = fmt.Sprintf("%v", val)
+            }
+        default:
+            valueStr = fmt.Sprintf("%v", val)
+        }
+        details = append(details, fmt.Sprintf("%s: %s", k, valueStr))
+    }
+    return strings.Join(details, "; ")
+}
+
+// formatMarkdownTable converts a MarkdownTable struct into a string representation
+func formatMarkdownTable(table *types.MarkdownTable) string {
+    var sb strings.Builder
+
+    // Write headers
+    sb.WriteString("| ")
+    sb.WriteString(strings.Join(table.Headers, " | "))
+    sb.WriteString(" |\n")
+
+    // Write separator
+    sb.WriteString("| ")
+    for range table.Headers {
+        sb.WriteString("--- | ")
+    }
+    sb.WriteString("\n")
+
+    // Write rows
+    for _, row := range table.Rows {
+        sb.WriteString("| ")
+        sb.WriteString(strings.Join(row, " | "))
+        sb.WriteString(" |\n")
+    }
+
+    return sb.String()
 }

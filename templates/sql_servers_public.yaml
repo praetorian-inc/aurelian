@@ -1,27 +1,32 @@
 id: sql_servers_public_access
-name: Publicly Accessible SQL Servers
-description: Detects SQL servers with firewall rules allowing public access
+name: SQL Servers Without Public Access Block
+description: Detects SQL servers with public network access enabled
 severity: High
 category: Database
 references:
   - https://learn.microsoft.com/en-us/azure/azure-sql/database/network-access-controls
+triageNotes: |
+  Additional manual verification is required:
+  
+  1. Check firewall rules using Azure CLI:
+     az sql server firewall-rule list --resource-group <resourceGroup> --server <serverName>
+  
+  2. Look for rules that indicate public access:
+     - Rules with startIpAddress='0.0.0.0' and endIpAddress='255.255.255.255'
+     - Rules that allow a wide public range (/16)
+     - The entire corporate IP address range is not recommended, should be using a bastion host or JIT access
+     - Single public IP addresses (/32) are generally fine unless it's a developer PC
 query: |
     resources
     | where type =~ 'Microsoft.Sql/servers'
-    | extend publicNetworkAccess = iif(isnotempty(properties.publicNetworkAccess), tolower(properties.publicNetworkAccess), 'enabled')
-    | extend minimalTlsVersion = tostring(properties.minimalTlsVersion)
-    | mv-expand firewallRule = properties.firewallRules
-    | extend startIp = tostring(firewallRule.startIpAddress)
-    | extend endIp = tostring(firewallRule.endIpAddress)
-    | extend hasPublicAccess = startIp == '0.0.0.0' and endIp == '255.255.255.255'
-    | where publicNetworkAccess != 'disabled'
-    | where hasPublicAccess
+    | extend serverName = tostring(name)
+    | extend publicNetworkAccess = iif(isnotempty(properties.publicNetworkAccess), 
+        tolower(properties.publicNetworkAccess), 
+        'enabled')
+    | where publicNetworkAccess == 'enabled'
     | project
         id,
         name,
         type,
         location,
-        publicNetworkAccess,
-        minimalTlsVersion,
-        scope = 'server'
-    | distinct *
+        publicNetworkAccess
