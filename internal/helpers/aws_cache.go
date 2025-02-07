@@ -29,6 +29,12 @@ var (
 	NonCacheableOperations = []string{
 		"STS.GetCallerIdentity",
 	}
+	CacheableExceptions = []string{
+		"is not authorized to perform",
+		"TypeNotFoundException",
+		"AccessDeniedException",
+		"UnsupportedActionException",
+	}
 	logger             = *logs.NewLogger()
 	cacheMaintained    = false
 	cacheHitCount      int64
@@ -36,13 +42,22 @@ var (
 	cacheBypassedCount int64
 )
 
-func isCacheable(service, operation string) bool {
+func isRequestCacheable(service, operation string) bool {
 	for _, nonCacheableOperation := range NonCacheableOperations {
 		if fmt.Sprintf("%s.%s", service, operation) == nonCacheableOperation {
 			return false
 		}
 	}
 	return true
+}
+
+func isErrorRespCacheable(errStr string) bool {
+	for _, exception := range CacheableExceptions {
+		if strings.Contains(errStr, exception) {
+			return true
+		}
+	}
+	return false
 }
 
 func dumpResponse(resp *http.Response) ([]byte, error) {
@@ -150,6 +165,8 @@ type CacheConfigs struct {
 	Enabled        bool
 	Cacheable      bool
 	CacheErrorResp bool
+	CacheAllError  bool
+	CacheErrorType []string
 	Fd             *os.File
 	Identity       sts.GetCallerIdentityOutput
 	ResponseDump   []byte
@@ -268,7 +285,9 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 	cacheDir := options.GetOptionByName(options.AwsCacheDirOpt.Name, opts).Value
 	cacheExt := options.GetOptionByName(options.AwsCacheExtOpt.Name, opts).Value
 	cacheTTL := options.GetOptionByName(options.AwsCacheTTLOpt.Name, opts).Value
+	cacheErrTypes := options.GetOptionByName(options.AwsCacheErrorRespTypesOpt.Name, opts).Value
 	cacheError := options.GetOptionByName(options.AwsCacheErrorRespOpt.Name, opts).Value
+	saveAllError := false
 	TTL, err := strconv.Atoi(cacheTTL)
 	if err != nil {
 		logger.Error("Could not determine cache TTL", "error", err)
@@ -289,6 +308,23 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 		logger.Error("Could not determine cache error response", "error", err)
 		logger.Warn("Fallback to Not cache error response")
 		CacheErrorResp = false
+	}
+	if CacheEnabled && CacheErrorResp {
+		if strings.EqualFold(cacheErrTypes, "all") {
+			saveAllError = true
+		} else {
+			if !(cacheErrTypes == "") {
+				exceptions := strings.Split(cacheErrTypes, ",")
+
+				for i, exception := range exceptions {
+					exceptions[i] = strings.TrimSpace(exception)
+				}
+
+				CacheableExceptions = exceptions
+				logger.Debug("Overriding cache error response types", "types", cacheErrTypes)
+			}
+		}
+
 	}
 	if !(CacheEnabled) {
 		logger.Debug("Config Cache bypassed", "enabled", CacheEnabled, "cacheErrorResp", CacheErrorResp)
@@ -322,9 +358,11 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 			Enabled:        CacheEnabled,
 			CacheErrorResp: CacheErrorResp,
 			TTL:            TTL,
-			Cacheable:      isCacheable(service, operation),
+			Cacheable:      isRequestCacheable(service, operation),
 			Identity:       callerIdentity,
 			ResponseDump:   nil,
+			CacheAllError:  saveAllError,
+			CacheErrorType: CacheableExceptions,
 		}
 		ctx = SetCacheConfig(ctx, "cache_config", cacheConfig)
 
@@ -347,6 +385,10 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 				}
 			}
 			if v.ResponseDump != nil {
+				if err != nil && !saveAllError && !isErrorRespCacheable(err.Error()) {
+					logger.Debug("Error Response not Cacheable", "err", err)
+					return output, metadata, err
+				}
 				SaveErr := saveResponseFromDumpToFile(v.ResponseDump, v.CachePath)
 				if SaveErr != nil {
 					logger.Error("Failed to save response from cache", "error", SaveErr)

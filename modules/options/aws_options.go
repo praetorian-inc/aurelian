@@ -181,3 +181,11 @@ var AwsCacheErrorRespOpt = types.Option{
 	Type:        types.Bool,
 	Value:       "false",
 }
+
+var AwsCacheErrorRespTypesOpt = types.Option{
+	Name:        "cache-error-resp-type",
+	Description: "A comma-separated list of strings specifying cache error response types, e.g., TypeNotFoundException, AccessDeniedException. Use all to represent any error.",
+	Required:    false,
+	Type:        types.String,
+	Value:       "",
+}

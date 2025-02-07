@@ -50,4 +50,5 @@ var awsCommonOptions = []*types.Option{
 	&options.AwsCacheTTLOpt,
 	&options.AwsDisableCacheOpt,
 	&options.AwsCacheErrorRespOpt,
+	&options.AwsCacheErrorRespTypesOpt,
 }
