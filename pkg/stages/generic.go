@@ -36,6 +36,7 @@ package stages
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -149,7 +150,10 @@ func JqFilter(ctx context.Context, filter string) Stage[[]byte, []byte] {
 					logger.Error(err.Error())
 					continue
 				}
-				out <- filtered
+
+				if len(filtered) > 0 {
+					out <- filtered
+				}
 			}
 		}()
 		return out
@@ -190,6 +194,7 @@ func UnmarshalOutput(ctx context.Context, opts []*types.Option, in <-chan string
 			var jsonObj map[string]interface{}
 			err := json.Unmarshal([]byte(data), &jsonObj)
 			if err != nil {
+				logger.Debug("Failed to unmarshal JSON data: " + base64.StdEncoding.EncodeToString([]byte(data)))
 				logger.Error(err.Error())
 				continue
 			}

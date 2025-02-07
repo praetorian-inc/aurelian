@@ -55,35 +55,34 @@ func AwsEc2ListImages(ctx context.Context, opts []*types.Option, rtype <-chan st
 				params := &ec2.DescribeImagesInput{
 					Owners: []string{acctId},
 				}
+
 				for {
-					for {
-						res, err := ec2Client.DescribeImages(ctx, params)
-						if err != nil {
-							logger.Error(err.Error())
-							return
-						}
-
-						for _, image := range res.Images {
-							properties, err := json.Marshal(image)
-							if err != nil {
-								logger.Error("Could not marshal EC2 image description")
-								continue
-							}
-
-							out <- types.EnrichedResourceDescription{
-								Identifier: *image.ImageId,
-								TypeName:   rtype,
-								Region:     region,
-								Properties: string(properties),
-								AccountId:  acctId,
-							}
-						}
-
-						if res.NextToken == nil {
-							break
-						}
-						params.NextToken = res.NextToken
+					res, err := ec2Client.DescribeImages(ctx, params)
+					if err != nil {
+						logger.Error(err.Error())
+						break
 					}
+
+					for _, image := range res.Images {
+						properties, err := json.Marshal(image)
+						if err != nil {
+							logger.Error("Could not marshal EC2 image description")
+							continue
+						}
+
+						out <- types.EnrichedResourceDescription{
+							Identifier: *image.ImageId,
+							TypeName:   rtype,
+							Region:     region,
+							Properties: string(properties),
+							AccountId:  acctId,
+						}
+					}
+
+					if res.NextToken == nil {
+						break
+					}
+					params.NextToken = res.NextToken
 				}
 			}(region, rtype)
 		}
@@ -240,35 +239,40 @@ func AwsEc2ListFPGAImages(ctx context.Context, opts []*types.Option, rtype <-cha
 				params := &ec2.DescribeFpgaImagesInput{
 					Owners: []string{acctId},
 				}
+
 				for {
-					for {
-						res, err := ec2Client.DescribeFpgaImages(ctx, params)
-						if err != nil {
-							logger.Error(err.Error())
-							return
-						}
-
-						for _, image := range res.FpgaImages {
-							properties, err := json.Marshal(image)
-							if err != nil {
-								logger.Error("Could not marshal EC2 FPGA image description")
-								continue
-							}
-
-							out <- types.EnrichedResourceDescription{
-								Identifier: *image.FpgaImageId,
-								TypeName:   rtype,
-								Region:     region,
-								Properties: string(properties),
-								AccountId:  acctId,
-							}
-						}
-
-						if res.NextToken == nil {
+					res, err := ec2Client.DescribeFpgaImages(ctx, params)
+					if err != nil {
+						if strings.Contains(err.Error(), "The functionality you requested is not available in this region") {
+							logger.Debug(err.Error())
 							break
+						} else {
+
+							logger.Error(err.Error())
 						}
-						params.NextToken = res.NextToken
+						continue
 					}
+
+					for _, image := range res.FpgaImages {
+						properties, err := json.Marshal(image)
+						if err != nil {
+							logger.Error("Could not marshal EC2 FPGA image description")
+							continue
+						}
+
+						out <- types.EnrichedResourceDescription{
+							Identifier: *image.FpgaImageId,
+							TypeName:   rtype,
+							Region:     region,
+							Properties: string(properties),
+							AccountId:  acctId,
+						}
+					}
+
+					if res.NextToken == nil {
+						break
+					}
+					params.NextToken = res.NextToken
 				}
 			}(region, rtype)
 		}
@@ -367,36 +371,36 @@ func AwsEBSListSnapshots(ctx context.Context, opts []*types.Option, rtype <-chan
 				params := &ec2.DescribeSnapshotsInput{
 					OwnerIds: []string{acctId},
 				}
+
 				for {
-					for {
-						res, err := ec2Client.DescribeSnapshots(ctx, params)
-						if err != nil {
-							logger.Error(err.Error())
-							return
-						}
-
-						for _, snapshot := range res.Snapshots {
-							properties, err := json.Marshal(snapshot)
-							if err != nil {
-								logger.Error("Could not marshal EBS snapshot description")
-								continue
-							}
-
-							out <- types.EnrichedResourceDescription{
-								Identifier: *snapshot.SnapshotId,
-								TypeName:   rtype,
-								Region:     region,
-								Properties: string(properties),
-								AccountId:  acctId,
-							}
-						}
-
-						if res.NextToken == nil {
-							break
-						}
-						params.NextToken = res.NextToken
+					res, err := ec2Client.DescribeSnapshots(ctx, params)
+					if err != nil {
+						logger.Error(err.Error())
+						continue
 					}
+
+					for _, snapshot := range res.Snapshots {
+						properties, err := json.Marshal(snapshot)
+						if err != nil {
+							logger.Error("Could not marshal EBS snapshot description")
+							continue
+						}
+
+						out <- types.EnrichedResourceDescription{
+							Identifier: *snapshot.SnapshotId,
+							TypeName:   rtype,
+							Region:     region,
+							Properties: string(properties),
+							AccountId:  acctId,
+						}
+					}
+
+					if res.NextToken == nil {
+						break
+					}
+					params.NextToken = res.NextToken
 				}
+
 			}(region, rtype)
 		}
 	}
@@ -416,6 +420,7 @@ func AwsEbsSnapshotDescribeAttributes(ctx context.Context, opts []*types.Option,
 	out := make(chan types.EnrichedResourceDescription)
 	go func() {
 		for resource := range in {
+			logger.Debug("Checking EBS snapshot create volume permissions for " + resource.Identifier)
 			config, err := helpers.GetAWSCfg(resource.Region, options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
 			if err != nil {
 				logger.Error("Could not set up client config, error: " + err.Error())

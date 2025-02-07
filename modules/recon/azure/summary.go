@@ -20,7 +20,7 @@ import (
 var AzureSummaryMetadata = modules.Metadata{
 	Id:          "summary",
 	Name:        "Summary",
-	Description: "Summarize Azure resources",
+	Description: "Provides a count of Azure resources within a subscription without details such as identifiers. For a detailed resource list with identifiers, please use the list-all module.",
 	Platform:    modules.Azure,
 	Authors:     []string{"Praetorian"},
 	OpsecLevel:  modules.Stealth,
@@ -68,7 +68,9 @@ func NewAzureSummary(opts []*types.Option) (<-chan string, stages.Stage[string, 
 	subscriptionOpt := options.GetOptionByName("subscription", opts).Value
 
 	if strings.EqualFold(subscriptionOpt, "all") {
-		subscriptions, err := helpers.ListSubscriptions(context.Background(), opts)
+		// Create context with metadata for the subscription listing
+		ctx := context.WithValue(context.Background(), "metadata", AzureSummaryMetadata)
+		subscriptions, err := helpers.ListSubscriptions(ctx, opts)
 		if err != nil {
 			slog.Error("Failed to list subscriptions", slog.String("error", err.Error()))
 			return nil, nil, err

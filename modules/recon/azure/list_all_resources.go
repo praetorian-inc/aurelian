@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/internal/message"
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -20,7 +19,7 @@ import (
 var AzureListAllMetadata = modules.Metadata{
 	Id:          "list-all",
 	Name:        "List All Resources",
-	Description: "List all Azure resources across subscriptions with complete details",
+	Description: "List all Azure resources across subscriptions with complete details including identifier. This might take a while for large subscriptions.",
 	Platform:    modules.Azure,
 	Authors:     []string{"Praetorian"},
 	OpsecLevel:  modules.Stealth,
@@ -28,22 +27,14 @@ var AzureListAllMetadata = modules.Metadata{
 }
 
 var AzureListAllOptions = []*types.Option{
-	&types.Option{
-		Name:        "subscription",
-		Short:       "s",
-		Description: "Azure subscription ID or 'all' to scan all accessible subscriptions",
-		Required:    true,
-		Type:        types.String,
-		Value:       "",
-	},
-	&types.Option{
-		Name:        "workers",
-		Short:       "w",
-		Description: "Number of concurrent workers for processing resources",
-		Required:    false,
-		Type:        types.Int,
-		Value:       "5",
-	},
+	options.WithDescription(
+		options.AzureSubscriptionOpt,
+		"Azure subscription ID or 'all' for all accessible subscriptions",
+	),
+	options.WithDefaultValue(
+		options.AzureWorkerCountOpt,
+		"5",
+	),
 	options.WithDefaultValue(
 		*options.WithRequired(
 			options.FileNameOpt, false),
@@ -68,18 +59,26 @@ func NewAzureListAll(opts []*types.Option) (<-chan string, stages.Stage[string, 
 	subscriptionOpt := options.GetOptionByName("subscription", opts).Value
 
 	if strings.EqualFold(subscriptionOpt, "all") {
-		subscriptions, err := helpers.ListSubscriptions(context.Background(), opts)
-		if err != nil {
-			slog.Error("Failed to list subscriptions: %v", err)
-			return nil, nil, err
-		}
+		// Create channel for subscriptions
+		subscriptionsChan := make(chan string)
 
-		message.Info("Found %d subscriptions", len(subscriptions))
-		for _, sub := range subscriptions {
-			message.Info("Found subscription: %s", sub)
-		}
+		go func() {
+			defer close(subscriptionsChan)
 
-		return stages.Generator(subscriptions), pipeline, nil
+			// Create context with metadata
+			ctx := context.WithValue(context.Background(), "metadata", AzureListAllMetadata)
+			subscriptions, err := helpers.ListSubscriptions(ctx, opts)
+			if err != nil {
+				slog.Error("Failed to list subscriptions", slog.String("error", err.Error()))
+				return
+			}
+
+			for _, sub := range subscriptions {
+				subscriptionsChan <- sub
+			}
+		}()
+
+		return subscriptionsChan, pipeline, nil
 	}
 
 	return stages.Generator([]string{subscriptionOpt}), pipeline, nil

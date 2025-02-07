@@ -11,9 +11,9 @@ nebula azure recon role-assignments [flags]
 ```
   -f, --file string           File name
   -h, --help                  help for role-assignments
-  -s, --subscription string   Azure subscription ID or 'all' to scan all accessible subscriptions
-  -t, --timeout int           Timeout in seconds for each subscription scan (default 300)
-  -w, --workers int           Number of concurrent workers (default 5)
+  -s, --subscription string   Azure subscription ID or 'all' for all accessible subscriptions
+  -t, --timeout int           Timeout in seconds for each subscription scan (default 600)
+  -w, --workers int           Number of concurrent workers for processing subscriptions (default 5)
 ```
 
 ### Options inherited from parent commands

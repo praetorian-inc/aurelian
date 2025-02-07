@@ -52,7 +52,7 @@ var AwsResourceTypeOpt = types.Option{
 	Required:    true,
 	Type:        types.String,
 	Value:       "",
-	ValueFormat: regexp.MustCompile("^(AWS::[a-zA-Z0-9:]+|ALL)$"),
+	ValueFormat: regexp.MustCompile("^(AWS::[a-zA-Z0-9:]+|ALL|all)$"),
 }
 
 var FindSecretsTypes = []string{
@@ -65,6 +65,7 @@ var FindSecretsTypes = []string{
 	"AWS::ECS::TaskDefinition",
 	"AWS::SSM::Parameter",
 	"AWS::SSM::Document",
+	"AWS::StepFunctions::StateMachine",
 	"ALL",
 }
 

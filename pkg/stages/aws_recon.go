@@ -5,12 +5,6 @@ import (
 	"fmt"
 	"sync"
 
-	// AWS service imports
-
-	// Legacy AWS SDK import needed for some helper functions
-
-	// Internal imports
-
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -24,7 +18,7 @@ func AwsPublicResources(ctx context.Context, opts []*types.Option, in <-chan str
 		defer close(out)
 		for rtype := range in {
 
-			logger.Debug("Running recon for resource type: " + rtype)
+			message.Info("Gathering " + rtype + " resources")
 			var pl Stage[string, string]
 			var err error
 			switch rtype {
@@ -421,6 +415,15 @@ func AwsFindSecretsStage(ctx context.Context, opts []*types.Option, in <-chan st
 					AwsSsmListDocuments,
 					EnrichedResourceDescriptionToNpInput,
 				)
+
+			case "AWS::StepFunctions::StateMachine":
+				pl, err = ChainStages[string, types.NpInput](
+					AwsCloudControlListResources,
+					AwsStepFunctionsListExecutionsStage,
+					AwsStepFunctionsGetExecutionDetailsStage,
+					AwsStateMachineExecutionDetailsToNpInputStage,
+				)
+
 			case "ALL":
 				continue
 			default:
