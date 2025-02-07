@@ -26,10 +26,10 @@ nebula azure recon [flags]
 ### SEE ALSO
 
 * [nebula azure](nebula_azure.md)	 - azure commands
+* [nebula azure recon arg-scan](nebula_azure_recon_arg-scan.md)	 - Configuration review that scans Azure resources using custom Resource Graph query templates
 * [nebula azure recon devops-secrets](nebula_azure_recon_devops-secrets.md)	 - Find secrets in Azure DevOps resources including repositories, variable groups, service connections, pipelines, and job logs
 * [nebula azure recon find-secrets](nebula_azure_recon_find-secrets.md)	 - Enumerate Azure resources and find secrets using Nosey Parker and Azure Resource Graph
 * [nebula azure recon list-all](nebula_azure_recon_list-all.md)	 - List all Azure resources across subscriptions with complete details including identifier. This might take a while for large subscriptions.
-* [nebula azure recon public-access](nebula_azure_recon_public-access.md)	 - Detect publicly accessible Azure resources including storage accounts, app services, SQL databases, VMs, and more
 * [nebula azure recon role-assignments](nebula_azure_recon_role-assignments.md)	 - Enumerate role assignments across all Azure scopes including management groups, subscriptions, and resources
 * [nebula azure recon summary](nebula_azure_recon_summary.md)	 - Provides a count of Azure resources within a subscription without details such as identifiers. For a detailed resource list with identifiers, please use the list-all module.
 
