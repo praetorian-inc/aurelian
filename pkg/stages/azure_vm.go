@@ -12,10 +12,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
-// AzureVMDetail contains all relevant information about an Azure VM
+// AzureVMDetail contains all relevant information about an Azure VM for secrets scanning
 type AzureVMDetail struct {
 	ID             string                 `json:"id"`
 	Name           string                 `json:"name"`
@@ -24,6 +25,18 @@ type AzureVMDetail struct {
 	SubscriptionID string                 `json:"subscriptionId"`
 	Tags           map[string]*string     `json:"tags"`
 	Properties     map[string]interface{} `json:"properties"`
+}
+
+// AzureVMDetail contains all relevant information about an Azure VM for public access checks
+type VirtualMachineDetail struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Location    string `json:"location"`
+	PublicIP    string `json:"publicIp"`
+	HasPublicIP bool   `json:"hasPublicIp"`
+	OpenPorts   string `json:"openPorts,omitempty"`
+	OsType      string `json:"osType"`
 }
 
 // AzureListVMsStage uses Azure Resource Graph to efficiently list VMs across subscriptions
@@ -422,4 +435,138 @@ func logVMError(logger *slog.Logger, msg string, err error, vmName string) {
 	} else {
 		logger.Error(msg, slog.String("error", err.Error()))
 	}
+}
+
+// AzureVMStage checks for publicly accessible VMs using Azure Resource Graph
+func AzureVMStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan []*VirtualMachineDetail {
+	logger := logs.NewStageLogger(ctx, opts, "AzureVMStage")
+	out := make(chan []*VirtualMachineDetail)
+
+	go func() {
+		defer close(out)
+
+		argClient, err := helpers.NewARGClient(ctx)
+		if err != nil {
+			logger.Error("Failed to create ARG client", slog.String("error", err.Error()))
+			return
+		}
+
+		for subscription := range in {
+			message.Info("Scanning subscription %s for publicly accessible virtual machines", subscription)
+
+			// Query for VMs with public IPs and open NSG rules
+			query := `
+                resources
+				| where type =~ 'Microsoft.Compute/virtualMachines'
+				| extend nics = array_length(properties.networkProfile.networkInterfaces)
+				| mv-expand nic = properties.networkProfile.networkInterfaces
+				| extend nicId = tostring(nic.id)
+				| extend osType = properties.storageProfile.osDisk.osType
+				| join kind=leftouter (
+					resources
+					| where type =~ 'Microsoft.Network/networkInterfaces'
+					| extend ipConfigsCount = array_length(properties.ipConfigurations)
+					| mv-expand ipconfig = properties.ipConfigurations
+					| extend publicIPId = tostring(ipconfig.properties.publicIPAddress.id)
+					| extend privateIP = tostring(ipconfig.properties.privateIPAddress)
+					| where isnotempty(publicIPId)
+					| join kind=leftouter (
+						resources
+						| where type =~ 'Microsoft.Network/publicIPAddresses'
+						| extend publicIP = properties.ipAddress
+					) on $left.publicIPId == $right.id
+					| project nicId = id, publicIP, privateIP,
+						nsgId = tostring(properties.networkSecurityGroup.id)
+				) on nicId
+				| where isnotempty(publicIP)
+				| join kind=leftouter (
+					resources
+					| where type =~ 'Microsoft.Network/networkSecurityGroups'
+					| mv-expand rule = properties.securityRules
+					| where rule.properties.direction == 'Inbound' and rule.properties.access == 'Allow'
+					| where rule.properties.sourceAddressPrefix in ('*', 'Internet', '0.0.0.0', '0.0.0.0/0')
+					| summarize openPorts=make_set(rule.properties.destinationPortRange) by id
+				) on $left.nsgId == $right.id
+				| project
+					id,
+					name,
+					type,
+					location,
+					publicIP,
+					hasPublicIP = true,
+					openPorts = iif(isempty(openPorts), '*', tostring(openPorts)),
+					osType
+				| order by name asc
+            `
+
+			queryOpts := &helpers.ARGQueryOptions{
+				Subscriptions: []string{subscription},
+			}
+
+			var details = make(map[string]*VirtualMachineDetail)
+
+			err = argClient.ExecutePaginatedQuery(ctx, query, queryOpts, func(response *armresourcegraph.ClientResourcesResponse) error {
+				if response == nil || response.Data == nil {
+					return nil
+				}
+
+				rows, ok := response.Data.([]interface{})
+				if !ok {
+					return fmt.Errorf("unexpected response data type")
+				}
+
+				logger.Debug("Processing virtual machines",
+					slog.Int("count", len(rows)),
+					slog.String("subscription", subscription))
+
+				for _, row := range rows {
+					item, ok := row.(map[string]interface{})
+					if !ok {
+						continue
+					}
+
+					if _, exists := details[helpers.SafeGetString(item, "id")]; !exists {
+						detail := &VirtualMachineDetail{
+							ID:          helpers.SafeGetString(item, "id"),
+							Name:        helpers.SafeGetString(item, "name"),
+							Type:        helpers.SafeGetString(item, "type"),
+							Location:    helpers.SafeGetString(item, "location"),
+							PublicIP:    helpers.SafeGetString(item, "publicIP"),
+							HasPublicIP: true, // If it's in results, it has a public IP
+							OpenPorts:   helpers.SafeGetString(item, "openPorts"),
+							OsType:      helpers.SafeGetString(item, "osType"),
+						}
+
+						details[detail.ID] = detail
+					}
+				}
+				return nil
+			})
+
+			if err != nil {
+				logger.Error("Failed to query virtual machines",
+					slog.String("subscription", subscription),
+					slog.String("error", err.Error()))
+				continue
+			}
+
+			if len(details) > 0 {
+				var detailsList []*VirtualMachineDetail
+				for _, detail := range details {
+					detailsList = append(detailsList, detail)
+				}
+
+				message.Info("Found %d publicly accessible virtual machines in subscription %s", len(detailsList), subscription)
+				select {
+				case out <- detailsList:
+				case <-ctx.Done():
+					return
+				}
+			} else {
+				message.Info("No publicly accessible virtual machines found in subscription %s", subscription)
+			}
+		}
+	}()
+
+	return out
 }
