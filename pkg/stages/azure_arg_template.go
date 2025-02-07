@@ -20,11 +20,37 @@ import (
 // LoadARGTemplates loads ARG query templates from a directory
 func LoadARGTemplates(templateDir string) (*types.ARGTemplateLoader, error) {
 	loader := &types.ARGTemplateLoader{}
+
+	// If the path is not absolute, make it relative to current directory
+	if !filepath.IsAbs(templateDir) {
+		currentDir, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current directory: %v", err)
+		}
+		templateDir = filepath.Join(currentDir, templateDir)
+	}
+
+	// Check if directory exists
+	dirInfo, err := os.Stat(templateDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("template directory '%s' does not exist", templateDir)
+		}
+		return nil, fmt.Errorf("failed to access template directory: %v", err)
+	}
+
+	if !dirInfo.IsDir() {
+		return nil, fmt.Errorf("'%s' is not a directory", templateDir)
+	}
 	
 	// Find all .yaml files in template directory
 	files, err := filepath.Glob(filepath.Join(templateDir, "*.yaml"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list template files: %v", err)
+	}
+
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no template files (*.yaml) found in directory '%s'", templateDir)
 	}
 
 	// Load each template file
