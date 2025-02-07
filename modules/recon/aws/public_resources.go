@@ -3,6 +3,7 @@ package recon
 import (
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
@@ -50,7 +51,7 @@ func NewAwsPublicResources(opts []*types.Option) (<-chan string, stages.Stage[st
 
 	rtype := options.GetOptionByName(options.AwsResourceTypeOpt.Name, opts).Value
 
-	if rtype == "ALL" {
+	if strings.EqualFold(rtype, "all") {
 		slog.Info("Loading public resources recon module for all types")
 		return stages.Generator(PublicTypes), pipeline, nil
 	} else {

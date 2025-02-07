@@ -71,10 +71,10 @@ func AwsCloudControlListResources(ctx context.Context, opts []*types.Option, rty
 					if err != nil {
 						if strings.Contains(err.Error(), "TypeNotFoundException") {
 							logger.Info("The type %s is not available in region %s", rtype, region)
-							return
+							break
 						}
 						logger.Debug(err.Error())
-						return
+						break
 					}
 
 					var resourceWg sync.WaitGroup

@@ -30,23 +30,24 @@ func AwsBackupVaultCheckResourcePolicy(ctx context.Context, opts []*types.Option
 			policyInput := &backup.GetBackupVaultAccessPolicyInput{
 				BackupVaultName: aws.String(resource.Identifier),
 			}
+
 			policyOutput, err := backupClient.GetBackupVaultAccessPolicy(ctx, policyInput)
 			if err != nil {
 				logger.Debug("Could not get Backup Vault resource access policy for " + resource.Identifier + ", error: " + err.Error())
-				out <- resource
-			} else {
-				policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
+				continue
+			}
 
-				lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
-				newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+			policyResultString := utils.CheckResourceAccessPolicy(*policyOutput.Policy)
 
-				out <- types.EnrichedResourceDescription{
-					Identifier: resource.Identifier,
-					TypeName:   resource.TypeName,
-					Region:     resource.Region,
-					Properties: newProperties,
-					AccountId:  resource.AccountId,
-				}
+			lastBracketIndex := strings.LastIndex(resource.Properties.(string), "}")
+			newProperties := resource.Properties.(string)[:lastBracketIndex] + "," + policyResultString + "}"
+
+			out <- types.EnrichedResourceDescription{
+				Identifier: resource.Identifier,
+				TypeName:   resource.TypeName,
+				Region:     resource.Region,
+				Properties: newProperties,
+				AccountId:  resource.AccountId,
 			}
 		}
 		close(out)
