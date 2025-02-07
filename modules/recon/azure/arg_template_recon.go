@@ -19,7 +19,7 @@ import (
 var AzureARGReconMetadata = modules.Metadata{
 	Id:          "arg-scan",
 	Name:        "Azure Resource Graph Scanner",
-	Description: "Scan Azure resources using custom Resource Graph query templates",
+	Description: "Configuration review that scans Azure resources using custom Resource Graph query templates",
 	Platform:    modules.Azure,
 	Authors:     []string{"Praetorian"},
 	OpsecLevel:  modules.Stealth,
