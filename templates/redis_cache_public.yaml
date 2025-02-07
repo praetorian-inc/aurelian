@@ -3,6 +3,8 @@ name: Publicly Accessible Redis Caches
 description: Detects Redis Cache instances with public network access enabled
 severity: High
 category: Automatic
+triageNotes: |
+  No need for manual triage, note that this only confirms Internet accessibility not annonymous identity access.
 references:
   - https://learn.microsoft.com/en-us/azure/azure-cache-for-redis/cache-network-isolation
 query: |
@@ -14,13 +16,8 @@ query: |
     | extend minimumTlsVersion = properties.minimumTlsVersion
     | extend hostname = properties.hostName
     | extend subnetId = properties.subnetId
-    | extend firewallRules = array_length(properties.firewallRules)
     | where isempty(subnetId)
     | where publicNetworkAccess != 'disabled'
-    | extend hasOpenFirewall = firewallRules == 0 or
-        properties.firewallRules has '0.0.0.0' and 
-        properties.firewallRules has '255.255.255.255'
-    | where hasOpenFirewall
     | project
         id,
         name,

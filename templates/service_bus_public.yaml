@@ -3,6 +3,8 @@ name: Publicly Accessible Service Bus Namespaces
 description: Detects Service Bus namespaces with public network access enabled
 severity: High
 reportability: Automatic
+triageNotes: |
+  No need for manual triage, note that this only confirms Internet accessibility not annonymous identity access.
 references:
   - https://learn.microsoft.com/en-us/azure/service-bus-messaging/network-security
 query: |

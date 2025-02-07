@@ -3,31 +3,31 @@ name: Publicly Accessible Cosmos DB Accounts
 description: Detects Cosmos DB accounts with public network access enabled
 severity: High
 category: Automatic
+triageNotes: |
+  No need for manual triage, note that this only confirms Internet accessibility not annonymous identity access.
 references:
   - https://learn.microsoft.com/en-us/azure/cosmos-db/how-to-configure-firewall
 query: |
     resources
     | where type =~ 'Microsoft.DocumentDB/databaseAccounts'
     | extend publicNetworkAccess = tolower(properties.publicNetworkAccess)
-    | extend networkSettings = properties.networkAclBypass
-    | extend ipRules = array_length(properties.ipRules)
-    | extend defaultAction = tolower(coalesce(properties.networkAcls.defaultAction, 'allow'))
+    | extend ipRules = properties.ipRules
     | extend enableFreeTier = properties.enableFreeTier
     | extend endpoint = properties.documentEndpoint
     | where publicNetworkAccess != 'disabled'
-    | where defaultAction == 'allow' or
-        ipRules == 0 or
-        properties.ipRules has '0.0.0.0' or
-        properties.ipRules has '0.0.0.0/0' or
-        properties.ipRules has '*' or
-        properties.ipRules has 'Internet'
+    | where 
+        isempty(ipRules) or
+        array_length(ipRules) == 0 or
+        ipRules has '0.0.0.0' or
+        ipRules has '0.0.0.0/0' or
+        ipRules has '*' or
+        ipRules has 'Internet'
     | project
         id,
         name,
         type,
         location,
         publicNetworkAccess,
-        defaultAction,
         enableFreeTier,
         kind,
         endpoint

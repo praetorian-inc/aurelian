@@ -3,6 +3,8 @@ name: Publicly Accessible Container Registries
 description: Detects container registries with public network access enabled
 severity: High
 category: Automatic
+triageNotes: |
+  No need for manual triage, note that this only confirms Internet accessibility not annonymous identity access.
 references:
   - https://learn.microsoft.com/en-us/azure/container-registry/container-registry-access-selected-networks
 query: |
