@@ -12,7 +12,7 @@ nebula azure recon arg-scan [flags]
   -f, --file string           File name
   -h, --help                  help for arg-scan
   -s, --subscription string   Azure subscription ID or 'all' to scan all accessible subscriptions
-  -T, --template-dir string   Directory containing ARG query templates
+  -T, --template-dir string   Directory containing ARG query templates (default "templates")
   -w, --workers int           Number of concurrent workers for processing subscriptions (default 5)
 ```
 
