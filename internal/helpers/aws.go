@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -42,6 +43,8 @@ type ArnIdentifier struct {
 	AccountID string
 	Resource  string
 }
+
+var ProfileIdentity sync.Map
 
 func NewArn(identifier string) (arn.ARN, error) {
 	valid := arn.IsARN(identifier)
@@ -109,11 +112,18 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 	if err != nil {
 		return aws.Config{}, err
 	}
-
-	principal, err := GetCallerIdentity(cfg)
-	atomic.AddInt64(&cacheBypassedCount, 1)
-	if err != nil {
-		return aws.Config{}, err
+	var principal sts.GetCallerIdentityOutput
+	if value, ok := ProfileIdentity.Load(profile); ok {
+		principal = value.(sts.GetCallerIdentityOutput)
+		slog.Debug("Loaded Profile ARN from Cached Map", "profile", profile, "ARN", principal.Arn)
+	} else {
+		principal, err = GetCallerIdentity(cfg)
+		atomic.AddInt64(&cacheBypassedCount, 1)
+		if err != nil {
+			return aws.Config{}, err
+		}
+		ProfileIdentity.Store(profile, principal)
+		slog.Debug("Called STS GetCallerIdentity for", "profile", profile, "ARN", principal.Arn)
 	}
 
 	CachePrep := GetCachePrepWithIdentity(principal, opts)
