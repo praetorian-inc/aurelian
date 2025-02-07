@@ -9,18 +9,19 @@ nebula aws recon list-all [flags]
 ### Options
 
 ```
-      --cache-dir string      Directory to store API response cache files (default "nebula-output")
-      --cache-error-resp      Cache error response
-      --cache-ext string      Name of AWS API response cache files extension 
-                              Warning! Changing the cache file extension may lead to unintended file deletion during automatic cache cleanup. (default ".aws-cache")
-      --cache-ttl int         TTL for cached responses in seconds (default 3600)
-      --disable-cache         Disable API response caching
-  -f, --file string           File name
-  -h, --help                  help for list-all
-  -p, --profile string        AWS shared credentials profile
-  -l, --profile-list string   List of AWS shared credentials profiles
-  -r, --regions string        Comma separated list of AWS regions. Can be 'all' for all regions.
-  -s, --scan-type string      Scan type - 'full' for all resources or 'summary' for key services (default "full")
+      --cache-dir string               Directory to store API response cache files (default "nebula-output")
+      --cache-error-resp               Cache error response
+      --cache-error-resp-type string   A comma-separated list of strings specifying cache error response types, e.g., TypeNotFoundException, AccessDeniedException. Use all to represent any error.
+      --cache-ext string               Name of AWS API response cache files extension 
+                                       Warning! Changing the cache file extension may lead to unintended file deletion during automatic cache cleanup. (default ".aws-cache")
+      --cache-ttl int                  TTL for cached responses in seconds (default 3600)
+      --disable-cache                  Disable API response caching
+  -f, --file string                    File name
+  -h, --help                           help for list-all
+  -p, --profile string                 AWS shared credentials profile
+  -l, --profile-list string            List of AWS shared credentials profiles
+  -r, --regions string                 Comma separated list of AWS regions. Can be 'all' for all regions.
+  -s, --scan-type string               Scan type - 'full' for all resources or 'summary' for key services (default "full")
 ```
 
 ### Options inherited from parent commands

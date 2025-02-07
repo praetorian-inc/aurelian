@@ -9,17 +9,18 @@ nebula aws recon get [flags]
 ### Options
 
 ```
-      --cache-dir string       Directory to store API response cache files (default "nebula-output")
-      --cache-error-resp       Cache error response
-      --cache-ext string       Name of AWS API response cache files extension 
-                               Warning! Changing the cache file extension may lead to unintended file deletion during automatic cache cleanup. (default ".aws-cache")
-      --cache-ttl int          TTL for cached responses in seconds (default 3600)
-      --disable-cache          Disable API response caching
-  -h, --help                   help for get
-  -p, --profile string         AWS shared credentials profile
-  -r, --region string          AWS region (default "us-east-1")
-  -i, --resource-id string     AWS Cloud Control resource identifier
-  -t, --resource-type string   AWS Cloud Control resource type
+      --cache-dir string               Directory to store API response cache files (default "nebula-output")
+      --cache-error-resp               Cache error response
+      --cache-error-resp-type string   A comma-separated list of strings specifying cache error response types, e.g., TypeNotFoundException, AccessDeniedException. Use all to represent any error.
+      --cache-ext string               Name of AWS API response cache files extension 
+                                       Warning! Changing the cache file extension may lead to unintended file deletion during automatic cache cleanup. (default ".aws-cache")
+      --cache-ttl int                  TTL for cached responses in seconds (default 3600)
+      --disable-cache                  Disable API response caching
+  -h, --help                           help for get
+  -p, --profile string                 AWS shared credentials profile
+  -r, --region string                  AWS region (default "us-east-1")
+  -i, --resource-id string             AWS Cloud Control resource identifier
+  -t, --resource-type string           AWS Cloud Control resource type
 ```
 
 ### Options inherited from parent commands
