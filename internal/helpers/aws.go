@@ -106,7 +106,7 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 		config.WithLogger(logs.AwsCliLogger()),
 		config.WithRegion(region),
 		config.WithSharedConfigProfile(profile),
-		//config.WithRetryMode(aws.RetryModeAdaptive),
+		config.WithRetryMode(aws.RetryModeAdaptive),
 		// config.WithAPIOptions(cacheFunc),
 	)
 	if err != nil {
