@@ -68,7 +68,7 @@ import (
 )
 
 /*
-Add the follwoing to the init() function in cmd/registry.go to register the module:
+Add the following to the init() function in cmd/registry.go to register the module:
 
 RegisterModule({{ .Provider | toLower}}{{ .Category | capitalize}}Cmd, {{ .Category | toLower }}.{{ .Provider | capitalize}}{{ .Name }}Metadata, {{ .Category | toLower }}.{{ .Provider | capitalize}}{{ .Name }}Options, {{ .Provider | toLower}}CommonOptions, {{ .Category }}.{{ .Provider | capitalize}}{{ .Name }}OutputProviders, {{ .Category | toLower}}.New{{.Provider | capitalize}}{{ .Name }})
 */
