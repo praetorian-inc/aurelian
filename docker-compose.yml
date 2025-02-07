@@ -10,7 +10,7 @@ services:
       - ~/.azure:/root/.azure:ro  # Azure credentials
       - ~/.config/gcloud:/root/.config/gcloud:ro  # GCP credentials
       - ${GOOGLE_APPLICATION_CREDENTIALS:-$HOME/.config/gcloud/application_default_credentials.json}:/gcp-credentials.json:ro  # GCP credentials
-      - ./nebula-output/:/root/nebula-output
+      - ./nebula-output/:/root/nebula-output # default output folder
     environment:
       # AWS Configuration
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
