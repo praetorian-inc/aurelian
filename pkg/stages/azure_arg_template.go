@@ -21,6 +21,7 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/internal/message"
+    "github.com/praetorian-inc/nebula/pkg/templates"
 )
 
 // LoadARGTemplates loads ARG query templates from a directory
@@ -111,11 +112,27 @@ func AzureARGTemplateStage(ctx context.Context, opts []*types.Option, in <-chan 
             return
         }
 
-        // Load templates
-        templateDir := options.GetOptionByName(options.AzureARGTemplatesDirOpt.Name, opts).Value
-        loader, err := LoadARGTemplates(templateDir)
+        // Initialize template loader with embedded templates
+        loader, err := templates.NewTemplateLoader()
         if err != nil {
-            logger.Error("Failed to load templates", slog.String("error", err.Error()))
+            logger.Error("Failed to initialize template loader", slog.String("error", err.Error()))
+            return
+        }
+
+        // Load user-supplied templates if directory is provided
+        userTemplateDir := options.GetOptionByName(options.AzureARGTemplatesDirOpt.Name, opts).Value
+        if userTemplateDir != "" {
+            if err := loader.LoadUserTemplates(userTemplateDir); err != nil {
+                logger.Error("Failed to load user templates", 
+                    slog.String("directory", userTemplateDir),
+                    slog.String("error", err.Error()))
+                return
+            }
+        }
+
+        templateList := loader.GetTemplates()
+        if len(templateList) == 0 {
+            logger.Error("No templates found")
             return
         }
 
@@ -123,8 +140,8 @@ func AzureARGTemplateStage(ctx context.Context, opts []*types.Option, in <-chan 
             message.Info("Processing subscription %s", subscription)
 
             // Execute each template
-            for _, template := range loader.Templates {
-                message.Info("Executing template %s %s",template.ID,template.Name)
+            for _, template := range templateList {
+                message.Info("Executing template %s: %s", template.ID, template.Name)
 
                 queryOpts := &helpers.ARGQueryOptions{
                     Subscriptions: []string{subscription},
@@ -146,18 +163,18 @@ func AzureARGTemplateStage(ctx context.Context, opts []*types.Option, in <-chan 
                             continue
                         }
 
-                        // Create standardized result - now includes template details
+                        // Create standardized result
                         result := &types.ARGQueryResult{
                             TemplateID:      template.ID,
                             TemplateDetails: template,
-                            ResourceID:     helpers.SafeGetString(item, "id"),
-                            ResourceName:   helpers.SafeGetString(item, "name"),
-                            ResourceType:   helpers.SafeGetString(item, "type"),
-                            Location:       helpers.SafeGetString(item, "location"),
-                            SubscriptionID: subscription,
+                            ResourceID:      helpers.SafeGetString(item, "id"),
+                            ResourceName:    helpers.SafeGetString(item, "name"),
+                            ResourceType:    helpers.SafeGetString(item, "type"),
+                            Location:        helpers.SafeGetString(item, "location"),
+                            SubscriptionID:  subscription,
                         }
 
-                        // Extract any additional properties specified in the query
+                        // Extract additional properties
                         result.Properties = make(map[string]interface{})
                         for k, v := range item {
                             if k != "id" && k != "name" && k != "type" && k != "location" {
