@@ -5,17 +5,44 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/praetorian-inc/nebula/pkg/types"
 	"gopkg.in/yaml.v3"
 )
+
+// ARGQueryTemplate represents a single Azure Resource Graph query template
+type ARGQueryTemplate struct {
+    ID          string   `yaml:"id"`          
+    Name        string   `yaml:"name"`        
+    Description string   `yaml:"description"`  
+    Severity    string   `yaml:"severity"`     
+    Query       string   `yaml:"query"`       
+    Category    string   `yaml:"category"`    
+    References  []string `yaml:"references"` 
+    TriageNotes string   `yaml:"triageNotes,omitempty"`
+}
+
+// ARGQueryResult represents a standardized result from an ARG query
+type ARGQueryResult struct {
+    TemplateID      string                 `json:"templateId"`
+    TemplateDetails *ARGQueryTemplate      `json:"templateDetails"`
+    Name            string                 `json:"name"`
+    ResourceID      string                 `json:"resourceId"`
+    ResourceName    string                 `json:"resourceName"`
+    ResourceType    string                 `json:"resourceType"`
+    Location        string                 `json:"location"`
+    SubscriptionID  string                 `json:"subscriptionId"`
+    Properties      map[string]interface{} `json:"properties,omitempty"`
+}
+// ARGTemplateLoader handles loading and validating ARG query templates
+type ARGTemplateLoader struct {
+	Templates []*ARGQueryTemplate
+}
 
 //go:embed *.yaml
 var EmbeddedTemplates embed.FS
 
 // TemplateLoader loads templates from both embedded files and optional user-supplied directory
 type TemplateLoader struct {
-	templates []*types.ARGQueryTemplate
+	templates []*ARGQueryTemplate
 }
 
 // NewTemplateLoader creates a new template loader and loads embedded templates
@@ -35,7 +62,7 @@ func NewTemplateLoader() (*TemplateLoader, error) {
 				return nil, fmt.Errorf("failed to read embedded template %s: %v", entry.Name(), err)
 			}
 
-			var template types.ARGQueryTemplate
+			var template ARGQueryTemplate
 			if err := yaml.Unmarshal(data, &template); err != nil {
 				return nil, fmt.Errorf("failed to parse embedded template %s: %v", entry.Name(), err)
 			}
@@ -84,7 +111,7 @@ func (l *TemplateLoader) LoadUserTemplates(templateDir string) error {
 			return fmt.Errorf("failed to read template file %s: %v", file, err)
 		}
 
-		var template types.ARGQueryTemplate
+		var template ARGQueryTemplate
 		if err := yaml.Unmarshal(data, &template); err != nil {
 			return fmt.Errorf("failed to parse template file %s: %v", file, err)
 		}
@@ -102,15 +129,15 @@ func (l *TemplateLoader) LoadUserTemplates(templateDir string) error {
 }
 
 // GetTemplates returns all loaded templates
-func (l *TemplateLoader) GetTemplates() []*types.ARGQueryTemplate {
+func (l *TemplateLoader) GetTemplates() []*ARGQueryTemplate {
 	if len(l.templates) == 0 {
-		return []*types.ARGQueryTemplate{}
+		return []*ARGQueryTemplate{}
 	}
 	return l.templates
 }
 
 // validateTemplate performs basic validation of a template
-func validateTemplate(template *types.ARGQueryTemplate) error {
+func validateTemplate(template *ARGQueryTemplate) error {
 	if template.ID == "" {
 		return fmt.Errorf("template ID is required")
 	}

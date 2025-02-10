@@ -25,8 +25,8 @@ import (
 )
 
 // LoadARGTemplates loads ARG query templates from a directory
-func LoadARGTemplates(templateDir string) (*types.ARGTemplateLoader, error) {
-	loader := &types.ARGTemplateLoader{}
+func LoadARGTemplates(templateDir string) (*templates.ARGTemplateLoader, error) {
+	loader := &templates.ARGTemplateLoader{}
 
 	// If the path is not absolute, make it relative to current directory
 	if !filepath.IsAbs(templateDir) {
@@ -67,7 +67,7 @@ func LoadARGTemplates(templateDir string) (*types.ARGTemplateLoader, error) {
 			return nil, fmt.Errorf("failed to read template file %s: %v", file, err)
 		}
 
-		var template types.ARGQueryTemplate
+		var template templates.ARGQueryTemplate
 		if err := yaml.Unmarshal(data, &template); err != nil {
 			return nil, fmt.Errorf("failed to parse template file %s: %v", file, err)
 		}
@@ -84,7 +84,7 @@ func LoadARGTemplates(templateDir string) (*types.ARGTemplateLoader, error) {
 }
 
 // validateTemplate performs basic validation of a template
-func validateTemplate(template *types.ARGQueryTemplate) error {
+func validateTemplate(template *templates.ARGQueryTemplate) error {
 	if template.ID == "" {
 		return fmt.Errorf("template ID is required")
 	}
@@ -98,9 +98,9 @@ func validateTemplate(template *types.ARGQueryTemplate) error {
 }
 
 // AzureARGTemplateStage executes ARG queries from templates
-func AzureARGTemplateStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan *types.ARGQueryResult {
+func AzureARGTemplateStage(ctx context.Context, opts []*types.Option, in <-chan string) <-chan *templates.ARGQueryResult {
     logger := logs.NewStageLogger(ctx, opts, "AzureARGTemplateStage")
-    out := make(chan *types.ARGQueryResult)
+    out := make(chan *templates.ARGQueryResult)
 
     go func() {
         defer close(out)
@@ -164,7 +164,7 @@ func AzureARGTemplateStage(ctx context.Context, opts []*types.Option, in <-chan 
                         }
 
                         // Create standardized result
-                        result := &types.ARGQueryResult{
+                        result := &templates.ARGQueryResult{
                             TemplateID:      template.ID,
                             TemplateDetails: template,
                             ResourceID:      helpers.SafeGetString(item, "id"),
@@ -204,14 +204,14 @@ func AzureARGTemplateStage(ctx context.Context, opts []*types.Option, in <-chan 
 }
 
 
-func FormatARGReconOutput(ctx context.Context, opts []*types.Option, in <-chan *types.ARGQueryResult) <-chan types.Result {
+func FormatARGReconOutput(ctx context.Context, opts []*types.Option, in <-chan *templates.ARGQueryResult) <-chan types.Result {
     out := make(chan types.Result)
 
     go func() {
         defer close(out)
 
         // Group results by template
-        resultsByTemplate := make(map[string][]*types.ARGQueryResult)
+        resultsByTemplate := make(map[string][]*templates.ARGQueryResult)
         for result := range in {
             resultsByTemplate[result.TemplateID] = append(resultsByTemplate[result.TemplateID], result)
         }
