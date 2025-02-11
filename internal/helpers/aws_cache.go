@@ -454,11 +454,9 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 }
 
 func ensureDirExists(cacheDir string) error {
-	if _, err := os.Stat(cacheDir); os.IsNotExist(err) {
-		err := os.MkdirAll(cacheDir, 0755) // Create the directory with proper permissions
-		if err != nil {
-			return err
-		}
+	err := os.MkdirAll(cacheDir, 0755)
+	if err != nil {
+		return err
 	}
 	return nil
 }
