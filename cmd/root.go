@@ -29,7 +29,7 @@ var (
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "nebula",
-	Short: "Nebula is a CLI tool for testing the offensive security of cloud services.",
+	Short: "Nebula is a multi-cloud offensive security testing toolkit.",
 }
 
 func Execute() {
@@ -78,7 +78,7 @@ func initConfig() {
 	message.SetQuiet(quietFlag)
 	message.SetNoColor(noColorFlag)
 	message.SetSilent(silentFlag)
-	message.Banner()
+	message.Banner(len(registeredModules))
 }
 
 func options2Flag(options []*types.Option, common []*types.Option, cmd *cobra.Command) {

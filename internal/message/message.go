@@ -143,7 +143,7 @@ func Section(format string, args ...interface{}) {
 }
 
 // Prints the banner
-func Banner() {
+func Banner(modules int) {
 	if quiet || silent {
 		return
 	}
@@ -153,9 +153,9 @@ func Banner() {
 
 	if !quiet {
 		if noColor {
-			fmt.Fprint(outWriter, asciiBanner, version.AbbreviatedVersion(), "\n")
+			fmt.Fprint(outWriter, asciiBanner, version.AbbreviatedVersion(), "\n", fmt.Sprintf("%d modules", modules), "\n")
 		} else {
-			bannerColor.Fprint(outWriter, asciiBanner, version.AbbreviatedVersion(), "\n")
+			bannerColor.Fprint(outWriter, asciiBanner, version.AbbreviatedVersion(), "\n", fmt.Sprintf("%d modules", modules), "\n")
 		}
 	}
 }
