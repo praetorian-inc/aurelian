@@ -4,7 +4,7 @@ description: Detects Cosmos DB accounts with public network access enabled
 severity: High
 category: Automatic
 triageNotes: |
-  No need for manual triage, note that this only confirms Internet accessibility not annonymous identity access.
+  No need for additional manual triage, note that this only confirms Internet accessibility not annonymous identity access.
 references:
   - https://learn.microsoft.com/en-us/azure/cosmos-db/how-to-configure-firewall
 query: |
@@ -30,4 +30,5 @@ query: |
         publicNetworkAccess,
         enableFreeTier,
         kind,
-        endpoint
+        endpoint,
+        subscriptionId

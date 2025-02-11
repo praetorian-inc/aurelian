@@ -4,7 +4,7 @@ description: Detects storage accounts with public network access enabled and def
 severity: High
 reportability: Automatic
 triageNotes: |
-  No need for manual triage, note that this only confirms Internet accessibility not annonymous identity access.
+  No need for additional manual triage, note that this only confirms Internet accessibility not annonymous identity access.
 references:
   - https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security
 query: |
@@ -27,4 +27,5 @@ query: |
         publicNetworkAccess,
         defaultAction,
         hasIpRules,
-        hasVnetRules
+        hasVnetRules,
+        subscriptionId

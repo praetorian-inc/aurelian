@@ -4,7 +4,7 @@ description: Detects app services without virtual network integration
 severity: High
 reportability: Automatic
 triageNotes: |
-  No need for manual triage, note that this only confirms Internet accessibility not annonymous identity access.
+  No need for additional manual triage, note that this only confirms Internet accessibility not annonymous identity access.
 references:
   - https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration
 query: |
@@ -22,4 +22,5 @@ query: |
         type,
         location,
         publicNetworkAccess = publicAccess,
-        kind
+        kind,
+        subscriptionId

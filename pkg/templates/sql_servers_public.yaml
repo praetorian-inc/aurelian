@@ -33,4 +33,5 @@ query: |
         name,
         type,
         location,
-        publicNetworkAccess
+        publicNetworkAccess,
+        subscriptionId

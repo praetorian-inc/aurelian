@@ -21,7 +21,7 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/internal/message"
-    "github.com/praetorian-inc/nebula/pkg/templates"
+	"github.com/praetorian-inc/nebula/pkg/templates"
 )
 
 // LoadARGTemplates loads ARG query templates from a directory
@@ -177,7 +177,7 @@ func AzureARGTemplateStage(ctx context.Context, opts []*types.Option, in <-chan 
                         // Extract additional properties
                         result.Properties = make(map[string]interface{})
                         for k, v := range item {
-                            if k != "id" && k != "name" && k != "type" && k != "location" {
+                            if k != "id" && k != "name" && k != "type" && k != "location" && k != "subscriptionId" {
                                 result.Properties[k] = v
                             }
                         }
@@ -202,7 +202,6 @@ func AzureARGTemplateStage(ctx context.Context, opts []*types.Option, in <-chan 
 
     return out
 }
-
 
 func FormatARGReconOutput(ctx context.Context, opts []*types.Option, in <-chan *templates.ARGQueryResult) <-chan types.Result {
     out := make(chan types.Result)
@@ -265,19 +264,20 @@ func FormatARGReconOutput(ctx context.Context, opts []*types.Option, in <-chan *
                 mdContent.WriteString(fmt.Sprintf("## %s\n\n", template.Name))
                 mdContent.WriteString(fmt.Sprintf("**Description:** %s\n\n", template.Description))
                 mdContent.WriteString(fmt.Sprintf("**Severity:** %s\n\n", template.Severity))
-				mdContent.WriteString(fmt.Sprintf("**Template ID:** %s\n\n", templateID))
+                mdContent.WriteString(fmt.Sprintf("**Template ID:** %s\n\n", templateID))
                 
                 // Create findings table
                 mdContent.WriteString("### Findings\n\n")
-                mdContent.WriteString("| Resource Name | Resource Type | Location | Details |\n")
-                mdContent.WriteString("|--------------|---------------|----------|----------|\n")
+                mdContent.WriteString("| Resource Name | Resource Type | Location | Subscription | Details |\n")
+                mdContent.WriteString("|--------------|---------------|----------|----------|----------|\n")
                 
                 for _, result := range results {
                     details := formatResultDetails(result.Properties)
-                    mdContent.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n",
+                    mdContent.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
                         result.ResourceName,
                         result.ResourceType,
                         result.Location,
+                        result.SubscriptionID,
                         details,
                     ))
                 }
@@ -300,7 +300,7 @@ func FormatARGReconOutput(ctx context.Context, opts []*types.Option, in <-chan *
                     mdContent.WriteString("\n")
                 }
 
-				mdContent.WriteString("---\n")
+                mdContent.WriteString("---\n")
             }
         }
 
@@ -343,30 +343,4 @@ func formatResultDetails(properties map[string]interface{}) string {
         details = append(details, fmt.Sprintf("%s: %s", k, valueStr))
     }
     return strings.Join(details, "; ")
-}
-
-// formatMarkdownTable converts a MarkdownTable struct into a string representation
-func formatMarkdownTable(table *types.MarkdownTable) string {
-    var sb strings.Builder
-
-    // Write headers
-    sb.WriteString("| ")
-    sb.WriteString(strings.Join(table.Headers, " | "))
-    sb.WriteString(" |\n")
-
-    // Write separator
-    sb.WriteString("| ")
-    for range table.Headers {
-        sb.WriteString("--- | ")
-    }
-    sb.WriteString("\n")
-
-    // Write rows
-    for _, row := range table.Rows {
-        sb.WriteString("| ")
-        sb.WriteString(strings.Join(row, " | "))
-        sb.WriteString(" |\n")
-    }
-
-    return sb.String()
 }

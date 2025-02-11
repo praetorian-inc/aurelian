@@ -1,0 +1,41 @@
+id: aks_public_access  
+name: Publicly Accessible AKS Clusters
+description: Details AKS cluster network access configurations and IP restrictions for public clusters
+severity: High
+reportability: Automatic
+triageNotes: |
+  This finding shows publicly accessible AKS clusters and their IP restrictions:
+  
+  1. Public clusters with no IP restrictions are highest risk
+  2. Public clusters with IP restrictions should be reviewed for appropriate ranges
+  3. Private clusters without a public endpoint are automatically filtered and removed from the query
+
+  Review criteria:
+  - IP ranges should be as narrow as possible (avoid wide ranges like 0.0.0.0/0)
+  - Evaluate if cluster can be converted to private
+  - Consider implementing network policies if public clusters cannot be converted to private clusters
+references:
+  - https://learn.microsoft.com/en-us/azure/aks/private-clusters
+  - https://learn.microsoft.com/en-us/azure/aks/api-server-authorized-ip-ranges
+query: |
+    resources
+    | where type =~ 'Microsoft.ContainerService/managedClusters'
+    | extend apiServer = properties.apiServerAccessProfile
+    | extend isPrivateCluster = coalesce(apiServer.enablePrivateCluster, false)
+    | extend authorizedIPRanges = apiServer.authorizedIPRanges
+    | extend hasAuthorizedRanges = isnotnull(authorizedIPRanges) and array_length(authorizedIPRanges) > 0
+    | where isPrivateCluster == false
+    | extend accessType = case(
+        hasAuthorizedRanges, 'Public with IP Restrictions',
+        'Public without Restrictions'
+    )
+    | extend authorizedIPs = iif(isnotnull(authorizedIPRanges), strcat_array(authorizedIPRanges, ', '), 'None')
+    | project
+        accessType,
+        authorizedIPs,
+        id,
+        name,
+        type,
+        location,
+        resourceGroup,
+        subscriptionId
