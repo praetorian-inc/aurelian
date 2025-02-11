@@ -23,6 +23,18 @@ cd nebula
 go build
 ```
 
+From docker:
+```bash
+docker build -t nebula .
+docker run --rm nebula
+```
+
+From docker-compose:
+```bash
+docker compose build
+docker compose run --rm nebula
+```
+
 ## Authentication
 
 Nebula uses the same authentication methods as the official cloud provider CLIs:
