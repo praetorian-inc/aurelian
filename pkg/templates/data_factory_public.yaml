@@ -1,0 +1,38 @@
+id: data_factory_public_access
+name: Publicly Accessible Data Factories
+description: Detects Azure Data Factory instances with public network access enabled
+severity: High
+reportability: Manual Triage 
+triageNotes: |-
+  Potential Risk:
+  - Public accessibility exposes the Data Factory endpoints to the entire internet
+  - Could lead to unauthorized access to data pipelines and their configurations
+  - May expose sensitive connection information in pipeline metadata
+  - Potential for unauthorized pipeline execution or modification
+  
+  Triage Guidance:
+  - Verify additional fields such as ipRules and defaultAction to ensure public access is enabled 
+  - This finding confirms the Data Factory is accessible from the internet but not anonymous access
+  - Additional manual testing is required to determine if unauthorized access is possible
+  - Review configured integrations and linked services for sensitive connections
+references:
+  - https://learn.microsoft.com/en-us/azure/data-factory/data-movement-security-considerations
+  - https://learn.microsoft.com/en-us/azure/data-factory/
+query: |-
+    resources
+    | where type =~ 'Microsoft.DataFactory/factories'
+    | extend publicNetworkAccess = tolower(properties.publicNetworkAccess)
+    | extend purviewEnabled = isnotempty(properties.purviewConfiguration.purviewResourceId)
+    | extend repoConfigured = isnotempty(properties.repoConfiguration)
+    | extend encryptionConfigured = isnotempty(properties.encryption)
+    | where publicNetworkAccess != 'disabled'
+    | project
+        id,
+        name,
+        type,
+        location,
+        publicNetworkAccess,
+        purviewEnabled,
+        repoConfigured,
+        encryptionConfigured,
+        subscriptionId
