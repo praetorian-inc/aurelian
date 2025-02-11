@@ -115,7 +115,7 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 	var principal sts.GetCallerIdentityOutput
 	if value, ok := ProfileIdentity.Load(profile); ok {
 		principal = value.(sts.GetCallerIdentityOutput)
-		slog.Debug("Loaded Profile ARN from Cached Map", "profile", profile, "ARN", principal.Arn)
+		slog.Debug("Loaded Profile ARN from Cached Map", "profile", profile, "ARN", *principal.Arn)
 	} else {
 		principal, err = GetCallerIdentity(cfg)
 		atomic.AddInt64(&cacheBypassedCount, 1)

@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -40,6 +41,7 @@ var (
 	cacheHitCount      int64
 	cacheMissCount     int64
 	cacheBypassedCount int64
+	throttlingStats    sync.Map
 )
 
 func isRequestCacheable(service, operation string) bool {
@@ -192,6 +194,47 @@ func SetCacheConfigMeta(metadata *middleware.Metadata, key string, value CacheCo
 func GetCacheConfigMeta(metadata middleware.Metadata, key string) (v CacheConfigs) {
 	v, _ = metadata.Get(key).(CacheConfigs)
 	return v
+}
+
+func recordThrottling(service, operation string) {
+	// Load or initialize the service map
+	serviceMap, _ := throttlingStats.LoadOrStore(service, &sync.Map{})
+	opMap := serviceMap.(*sync.Map)
+
+	// Load or initialize the operation counter
+	actual, _ := opMap.LoadOrStore(operation, new(int64))
+	countPtr, ok := actual.(*int64)
+	if !ok {
+		logger.Debug("type assertion to *int64 failed for", "service", service, "operation", operation)
+		return
+	}
+
+	// Atomically increment the counter
+	atomic.AddInt64(countPtr, 1)
+}
+
+func getThrottlingCount(service, operation string) int64 {
+	if serviceMap, ok := throttlingStats.Load(service); ok {
+		opMap := serviceMap.(*sync.Map)
+		if countPtr, ok := opMap.Load(operation); ok {
+			return atomic.LoadInt64(countPtr.(*int64))
+		}
+	}
+	return 0
+}
+
+func PrintAllThrottlingCounts() {
+	throttlingStats.Range(func(serviceKey, serviceValue interface{}) bool {
+		service := serviceKey.(string)
+		opMap := serviceValue.(*sync.Map)
+		opMap.Range(func(opKey, countValue interface{}) bool {
+			operation := opKey.(string)
+			count := atomic.LoadInt64(countValue.(*int64))
+			fmt.Printf("Service: %s, Operation: %s, Throttling Count: %d\n", service, operation, count)
+			return true
+		})
+		return true
+	})
 }
 
 // CacheOps is a middleware that handles caching operations during the deserialization phase.
@@ -383,6 +426,9 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 				} else {
 					logger.Debug("Closed file successfully")
 				}
+			}
+			if err != nil && strings.Contains(err.Error(), "ThrottlingException") {
+				recordThrottling(service, operation)
 			}
 			if v.ResponseDump != nil {
 				if err != nil && !saveAllError && !isErrorRespCacheable(err.Error()) {
