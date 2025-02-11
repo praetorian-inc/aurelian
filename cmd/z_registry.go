@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"strings"
 
 	"github.com/praetorian-inc/nebula/modules"
 	analyze "github.com/praetorian-inc/nebula/modules/analyze/aws"
@@ -53,7 +54,9 @@ func init() {
 
 var noCommon = []*types.Option{}
 
-func RegisterModule[In, Out any](cmd *cobra.Command, metadata modules.Metadata, required []*types.Option, common []*types.Option, outputProviders types.OutputProviders, sf stages.StageFactory[In, Out]) {
+func RegisterModule[In, Out any](cmd *cobra.Command, metadata modules.Metadata, required []*types.Option,
+	common []*types.Option, outputProviders types.OutputProviders, sf stages.StageFactory[In, Out]) {
+
 	c := &cobra.Command{
 		Use:   metadata.Id,
 		Short: metadata.Description,
@@ -63,6 +66,41 @@ func RegisterModule[In, Out any](cmd *cobra.Command, metadata modules.Metadata, 
 		},
 	}
 
+	// Build command path from root
+	var pathParts []string
+	current := cmd
+	for current != nil {
+		// Insert at beginning to build path from root down
+		pathParts = append([]string{current.Name()}, pathParts...)
+		current = current.Parent()
+	}
+	// Add the new command name
+	pathParts = append(pathParts, metadata.Id)
+
+	// Clean up path - remove empty/root elements
+	var cleanPath []string
+	for _, part := range pathParts {
+		if part != "" && part != "nebula" {
+			cleanPath = append(cleanPath, part)
+		}
+	}
+
+	registeredModules = append(registeredModules, ModuleInfo{
+		Name:        metadata.Id,
+		Description: metadata.Description,
+		CommandPath: strings.Join(cleanPath, "/"),
+		Metadata:    metadata,
+	})
+
 	options2Flag(required, common, c)
 	cmd.AddCommand(c)
 }
+
+type ModuleInfo struct {
+	Name        string
+	Description string
+	CommandPath string
+	Metadata    modules.Metadata
+}
+
+var registeredModules []ModuleInfo
