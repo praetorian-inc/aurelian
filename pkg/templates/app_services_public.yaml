@@ -4,7 +4,14 @@ description: Detects app services without virtual network integration
 severity: High
 reportability: Automatic
 triageNotes: |
-  No need for additional manual triage, note that this only confirms Internet accessibility not annonymous identity access.
+  Potential Risks:
+  - Public accessibility exposes the application to the entire internet, increasing the attack surface
+  - Could lead to unauthorized access attempts, DDoS attacks, and potential exploitation of application vulnerabilities
+  - May violate security compliance requirements for internal-only services
+
+  Triage Guidance:
+  - This finding only confirms the app service is accessible from the internet
+  - Browse to the application from the Internet to determine anonymous access
 references:
   - https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration
 query: |

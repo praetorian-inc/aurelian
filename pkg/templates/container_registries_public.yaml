@@ -4,7 +4,14 @@ description: Detects container registries with public network access enabled
 severity: High
 category: Automatic
 triageNotes: |
-  No need for additional manual triage, note that this only confirms Internet accessibility not annonymous identity access.
+  Potential Risk:
+  - Public accessibility may allow container image pulls from anywhere on the internet
+  - Could lead to excessive data transfer costs from unauthorized pulls
+  - May expose sensitive information if images contain secrets or proprietary code
+  
+  Triage Guidance:
+  - This finding only confirms the registry is accessible from the internet not anonymous access
+  - Additional manual testing is required to determine if anonymous/unauthorized access is possible
 references:
   - https://learn.microsoft.com/en-us/azure/container-registry/container-registry-access-selected-networks
 query: |

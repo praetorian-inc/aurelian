@@ -4,7 +4,13 @@ description: Detects Cosmos DB accounts with public network access enabled
 severity: High
 category: Automatic
 triageNotes: |
-  No need for additional manual triage, note that this only confirms Internet accessibility not annonymous identity access.
+  Potential Risk:
+  - Public accessibility exposes the database endpoint to the entire internet
+  - Increases risk of brute force attacks and unauthorized access attempts
+  
+  Triage Guidance:
+  - This finding only confirms the database is accessible from the internet and not anonymous access
+  - Additional manual testing is required to determine if anonymous/unauthorized access is possible
 references:
   - https://learn.microsoft.com/en-us/azure/cosmos-db/how-to-configure-firewall
 query: |

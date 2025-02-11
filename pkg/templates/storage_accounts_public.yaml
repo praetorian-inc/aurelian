@@ -4,7 +4,15 @@ description: Detects storage accounts with public network access enabled and def
 severity: High
 reportability: Automatic
 triageNotes: |
-  No need for additional manual triage, note that this only confirms Internet accessibility not annonymous identity access.
+  Potential Risk:
+  - Public accessibility exposes storage endpoints to the entire internet
+  - Could lead to unauthorized data access attempts
+  - Potential for data exfiltration if misconfigured
+  
+  Triage Guidance:
+  - This finding only confirms the storage account is accessible from the internet and not anonymous access
+  - Additional manual testing is required to determine if anonymous/unauthorized access is possible
+  - Readers do not have object-level access, some additional permissions or shoulder surfing may be required
 references:
   - https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security
 query: |

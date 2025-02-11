@@ -4,7 +4,14 @@ description: Detects Redis Cache instances with public network access enabled
 severity: High
 category: Automatic
 triageNotes: |
-  No need for additional manual triage, note that this only confirms Internet accessibility not annonymous identity access.
+  Potential Risk:
+  - Public accessibility exposes the cache endpoint to the entire internet
+  - Could lead to unauthorized access attempts and data exposure
+  - May impact performance due to processing unauthorized requests (DoS)
+  
+  Triage Guidance:
+  - This finding only confirms the cache is accessible from the internet and not anonymous access
+  - Additional manual testing is required to determine if anonymous/unauthorized access is possible
 references:
   - https://learn.microsoft.com/en-us/azure/azure-cache-for-redis/cache-network-isolation
 query: |

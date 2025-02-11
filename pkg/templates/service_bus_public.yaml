@@ -4,7 +4,14 @@ description: Detects Service Bus namespaces with public network access enabled
 severity: High
 reportability: Automatic
 triageNotes: |
-  No need for additional manual triage, note that this only confirms Internet accessibility not annonymous identity access.
+  Potential Risk:
+  - Public accessibility exposes messaging endpoints to the entire internet
+  - Could lead to unauthorized message interception or injection attempts
+  - May impact service performance from processing unauthorized requests (DoS)
+  
+  Triage Guidance:
+  - This finding only confirms the service bus is accessible from the internet and not anonymous access
+  - Additional manual testing is required to determine if anonymous/unauthorized access is possible
 references:
   - https://learn.microsoft.com/en-us/azure/service-bus-messaging/network-security
 query: |
