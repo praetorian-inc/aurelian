@@ -1,6 +1,7 @@
 package options
 
 import (
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -149,12 +150,20 @@ var AwsCacheDirOpt = types.Option{
 	Description: "Directory to store API response cache files",
 	Required:    false,
 	Type:        types.String,
-	Value:       filepath.Join(OutputOpt.Value, ".aws-cache"),
+	Value:       filepath.Join(os.TempDir(), "nebula-cache"),
+}
+
+var AwsCacheExtOpt = types.Option{
+	Name:        "cache-ext",
+	Description: "Name of AWS API response cache files extension \nWarning! Changing the cache file extension may lead to unintended file deletion during automatic cache cleanup.",
+	Required:    false,
+	Type:        types.String,
+	Value:       ".aws-cache",
 }
 
 var AwsCacheTTLOpt = types.Option{
 	Name:        "cache-ttl",
-	Description: "TTL for cached responses in seconds (default 3600)",
+	Description: "TTL for cached responses in seconds",
 	Required:    false,
 	Type:        types.Int,
 	Value:       "3600",
@@ -166,4 +175,20 @@ var AwsDisableCacheOpt = types.Option{
 	Required:    false,
 	Type:        types.Bool,
 	Value:       "false",
+}
+
+var AwsCacheErrorRespOpt = types.Option{
+	Name:        "cache-error-resp",
+	Description: "Cache error response",
+	Required:    false,
+	Type:        types.Bool,
+	Value:       "false",
+}
+
+var AwsCacheErrorRespTypesOpt = types.Option{
+	Name:        "cache-error-resp-type",
+	Description: "A comma-separated list of strings specifying cache error response types, e.g., TypeNotFoundException, AccessDeniedException. Use all to represent any error.",
+	Required:    false,
+	Type:        types.String,
+	Value:       "",
 }

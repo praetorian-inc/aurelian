@@ -3,17 +3,19 @@ package helpers
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"os"
-	"strings"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
-	arn "github.com/aws/aws-sdk-go-v2/aws/arn"
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go/middleware"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
+	"log/slog"
+	"os"
+	"strings"
+	"sync"
+	"sync/atomic"
 )
 
 // TODO this should be combined with roseta
@@ -41,6 +43,8 @@ type ArnIdentifier struct {
 	AccountID string
 	Resource  string
 }
+
+var ProfileIdentity sync.Map
 
 func NewArn(identifier string) (arn.ARN, error) {
 	valid := arn.IsARN(identifier)
@@ -91,23 +95,10 @@ func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescri
 }
 
 func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config, error) {
-
-	// stack := middleware.NewStack("CacheStack", middleware.StackSend)
-
-	// cacheMiddleware := &CacheMiddleware{
-	// 	CacheDir: options.GetOptionByName(options.LogLevelOpt.Name, opts).Value,
-	// }
-	// stack.Deserialize.Add(cacheMiddleware, middleware.After)
-
-	// cacheFunc := []func(*middleware.Stack) error{
-	// 	func(stack *middleware.Stack) error {
-	// 		// Add cache middleware after service metadata is registered to ensure we can access service info
-	// 		// return stack.Initialize.Insert(&fileCacheMiddleware{config: fc},
-	// 		// 	"RegisterServiceMetadata",
-	// 		// 	middleware.After)
-	// 		return stack.Deserialize.Insert(cacheMiddleware, "RegisterServiceMetadata", middleware.After)
-	// 	},
-	// }
+	if !cacheMaintained {
+		InitCache(opts)
+		cacheMaintained = true
+	}
 
 	cfg, err := config.LoadDefaultConfig(
 		context.TODO(),
@@ -125,6 +116,32 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 	if err != nil {
 		return aws.Config{}, err
 	}
+	var principal sts.GetCallerIdentityOutput
+	if value, ok := ProfileIdentity.Load(profile); ok {
+		principal = value.(sts.GetCallerIdentityOutput)
+		slog.Debug("Loaded Profile ARN from Cached Map", "profile", profile, "ARN", *principal.Arn)
+	} else {
+		principal, err = GetCallerIdentity(cfg)
+		atomic.AddInt64(&cacheBypassedCount, 1)
+		if err != nil {
+			return aws.Config{}, err
+		}
+		ProfileIdentity.Store(profile, principal)
+		slog.Debug("Called STS GetCallerIdentity for", "profile", profile, "ARN", principal.Arn)
+	}
+
+	CachePrep := GetCachePrepWithIdentity(principal, opts)
+
+	cfg.APIOptions = append(cfg.APIOptions, func(stack *middleware.Stack) error {
+		// Add custom middlewares
+		if err := stack.Initialize.Add(CachePrep, middleware.After); err != nil {
+			return err
+		}
+		if err := stack.Deserialize.Add(CacheOps, middleware.After); err != nil {
+			return err
+		}
+		return nil
+	})
 
 	return cfg, nil
 
@@ -145,11 +162,27 @@ func GetAccountId(cfg aws.Config) (string, error) {
 	return *result.Account, nil
 }
 
+func GetCallerIdentity(cfg aws.Config) (sts.GetCallerIdentityOutput, error) {
+	// Force to use us-east-1 for STS
+	// https://docs.aws.amazon.com/sdkref/latest/guide/feature-sts-regionalized-endpoints.html
+	cfg.Region = "us-east-1"
+	client := sts.NewFromConfig(cfg)
+	input := &sts.GetCallerIdentityInput{}
+
+	result, err := client.GetCallerIdentity(context.TODO(), input)
+	if err != nil {
+		return sts.GetCallerIdentityOutput{}, err
+	}
+
+	return *result, nil
+}
+
 // Parses regions with 2 primary outcomes
 // if "ALL" is provided, then it detects all Enabled Regions
 // else it just reads the list of regions provided
 
 func ParseRegionsOption(regionsOpt string, profile string, opts []*types.Option) ([]string, error) {
+	slog.Debug("ParseRegionsOption", "regionsOpt", strings.ToLower(regionsOpt))
 	if strings.ToLower(regionsOpt) == "all" {
 		slog.Debug("Gathering enabled regions")
 		enabledRegions, err := EnabledRegions(profile, opts)

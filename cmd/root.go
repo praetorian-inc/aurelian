@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"github.com/praetorian-inc/nebula/internal/helpers"
 	"log/slog"
 	"os"
 	"strconv"
@@ -75,6 +76,7 @@ func initConfig() {
 	}
 
 	logs.ConfigureDefaults(logLevelFlag)
+	helpers.SetAWSCacheLogger(logs.NewLogger())
 	message.SetQuiet(quietFlag)
 	message.SetNoColor(noColorFlag)
 	message.SetSilent(silentFlag)

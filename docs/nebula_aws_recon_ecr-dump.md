@@ -9,20 +9,24 @@ nebula aws recon ecr-dump [flags]
 ### Options
 
 ```
-      --cache-dir string         Directory to store API response cache files (default "nebula-output/.aws-cache")
-      --cache-ttl int            TTL for cached responses in seconds (default 3600) (default 3600)
-      --disable-cache            Disable API response caching
-  -e, --docker-extract           Extract files from Docker image (default true)
-      --docker-password string   Docker registry password
-      --docker-user string       Docker registry username
-  -h, --help                     help for ecr-dump
-      --np-args string           custom args to pass to Nosey Parker
-      --np-output string         output directory for Nosey Parker (default "datastore.np")
-      --np-path string           path to Nosey Parker (default "noseyparker")
-      --np-scan                  scan for secrets using Nosey Parker (default true)
-  -o, --output string            output directory (default "nebula-output")
-  -p, --profile string           AWS shared credentials profile
-  -r, --regions string           Comma separated list of AWS regions. Can be 'all' for all regions.
+      --cache-dir string               Directory to store API response cache files (default "/tmp/nebula-cache")
+      --cache-error-resp               Cache error response
+      --cache-error-resp-type string   A comma-separated list of strings specifying cache error response types, e.g., TypeNotFoundException, AccessDeniedException. Use all to represent any error.
+      --cache-ext string               Name of AWS API response cache files extension 
+                                       Warning! Changing the cache file extension may lead to unintended file deletion during automatic cache cleanup. (default ".aws-cache")
+      --cache-ttl int                  TTL for cached responses in seconds (default 3600)
+      --disable-cache                  Disable API response caching
+  -e, --docker-extract                 Extract files from Docker image (default true)
+      --docker-password string         Docker registry password
+      --docker-user string             Docker registry username
+  -h, --help                           help for ecr-dump
+      --np-args string                 custom args to pass to Nosey Parker
+      --np-output string               output directory for Nosey Parker (default "datastore.np")
+      --np-path string                 path to Nosey Parker (default "noseyparker")
+      --np-scan                        scan for secrets using Nosey Parker (default true)
+  -o, --output string                  output directory (default "nebula-output")
+  -p, --profile string                 AWS shared credentials profile
+  -r, --regions string                 Comma separated list of AWS regions. Can be 'all' for all regions.
 ```
 
 ### Options inherited from parent commands

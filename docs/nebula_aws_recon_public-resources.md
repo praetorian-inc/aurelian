@@ -9,14 +9,18 @@ nebula aws recon public-resources [flags]
 ### Options
 
 ```
-      --cache-dir string       Directory to store API response cache files (default "nebula-output/.aws-cache")
-      --cache-ttl int          TTL for cached responses in seconds (default 3600) (default 3600)
-      --disable-cache          Disable API response caching
-  -f, --file string            File name (default "public-resources-<timestamp>.json")
-  -h, --help                   help for public-resources
-  -p, --profile string         AWS shared credentials profile
-  -r, --regions string         Comma separated list of AWS regions. Can be 'all' for all regions.
-  -t, --resource-type string   AWS Cloud Control resource type
+      --cache-dir string               Directory to store API response cache files (default "/tmp/nebula-cache")
+      --cache-error-resp               Cache error response
+      --cache-error-resp-type string   A comma-separated list of strings specifying cache error response types, e.g., TypeNotFoundException, AccessDeniedException. Use all to represent any error.
+      --cache-ext string               Name of AWS API response cache files extension 
+                                       Warning! Changing the cache file extension may lead to unintended file deletion during automatic cache cleanup. (default ".aws-cache")
+      --cache-ttl int                  TTL for cached responses in seconds (default 3600)
+      --disable-cache                  Disable API response caching
+  -f, --file string                    File name (default "public-resources-<timestamp>.json")
+  -h, --help                           help for public-resources
+  -p, --profile string                 AWS shared credentials profile
+  -r, --regions string                 Comma separated list of AWS regions. Can be 'all' for all regions.
+  -t, --resource-type string           AWS Cloud Control resource type
 ```
 
 ### Options inherited from parent commands

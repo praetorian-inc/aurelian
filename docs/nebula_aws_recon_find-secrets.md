@@ -9,8 +9,12 @@ nebula aws recon find-secrets [flags]
 ### Options
 
 ```
-      --cache-dir string               Directory to store API response cache files (default "nebula-output/.aws-cache")
-      --cache-ttl int                  TTL for cached responses in seconds (default 3600) (default 3600)
+      --cache-dir string               Directory to store API response cache files (default "/tmp/nebula-cache")
+      --cache-error-resp               Cache error response
+      --cache-error-resp-type string   A comma-separated list of strings specifying cache error response types, e.g., TypeNotFoundException, AccessDeniedException. Use all to represent any error.
+      --cache-ext string               Name of AWS API response cache files extension 
+                                       Warning! Changing the cache file extension may lead to unintended file deletion during automatic cache cleanup. (default ".aws-cache")
+      --cache-ttl int                  TTL for cached responses in seconds (default 3600)
       --disable-cache                  Disable API response caching
   -e, --docker-extract                 Extract files from Docker image (default true)
       --docker-password string         Docker registry password
