@@ -1,6 +1,8 @@
 package options
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -148,7 +150,7 @@ var AwsCacheDirOpt = types.Option{
 	Description: "Directory to store API response cache files",
 	Required:    false,
 	Type:        types.String,
-	Value:       OutputOpt.Value,
+	Value:       filepath.Join(os.TempDir(), "nebula-cache"),
 }
 
 var AwsCacheExtOpt = types.Option{

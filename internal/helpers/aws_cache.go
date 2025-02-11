@@ -453,10 +453,25 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 	})
 }
 
+func ensureDirExists(cacheDir string) error {
+	if _, err := os.Stat(cacheDir); os.IsNotExist(err) {
+		err := os.MkdirAll(cacheDir, 0755) // Create the directory with proper permissions
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // CleanupCacheFiles scans the cache directory and removes expired cache files.
 func CleanupCacheFiles(cacheDir string, ttl int, cacheExt string) {
 	clanUpCount := 0
 	total := 0
+	err := ensureDirExists(cacheDir)
+	if err != nil {
+		logger.Error("Error creating cache directory", "error", err)
+		return
+	}
 	files, err := os.ReadDir(cacheDir)
 	if err != nil {
 		logger.Error("Failed to read cache directory", "cacheDir", cacheDir, "error", err)
