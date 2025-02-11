@@ -14,6 +14,7 @@ import (
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/spf13/cobra"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -509,8 +510,8 @@ func CleanupCacheFiles(cacheDir string, ttl int, cacheExt string) {
 	logger.Info("Cache cleanup processed", "total", total, "clanUpCount", clanUpCount)
 }
 
-// InitCacheCleanup runs once at the program start to clean up expired cache files.
-func InitCacheCleanup(opts []*types.Option) {
+// InitCache runs once at the program start to clean up expired cache files.
+func InitCache(opts []*types.Option) {
 	cacheDir := options.GetOptionByName(options.AwsCacheDirOpt.Name, opts).Value
 	cacheExt := options.GetOptionByName(options.AwsCacheExtOpt.Name, opts).Value
 	cacheTTL := options.GetOptionByName(options.AwsCacheTTLOpt.Name, opts).Value
@@ -521,6 +522,9 @@ func InitCacheCleanup(opts []*types.Option) {
 		logger.Warn("Fallback to default TTL of 3600")
 		ttl = 3600
 	}
+	
+	cobra.OnFinalize(ShowCacheStat)
+	cobra.OnFinalize(PrintAllThrottlingCounts)
 
 	CleanupCacheFiles(cacheDir, ttl, cacheExt)
 }

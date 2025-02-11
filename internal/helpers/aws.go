@@ -96,10 +96,10 @@ func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescri
 
 func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config, error) {
 	if !cacheMaintained {
-		InitCacheCleanup(opts)
+		InitCache(opts)
 		cacheMaintained = true
 	}
-	
+
 	cfg, err := config.LoadDefaultConfig(
 		context.TODO(),
 		config.WithClientLogMode(
