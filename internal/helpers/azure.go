@@ -914,3 +914,52 @@ func MakeAzureRestRequest(ctx context.Context, method string, url string, cred *
 	client := &http.Client{}
 	return client.Do(req)
 }
+
+func SafeGetString(m map[string]interface{}, key string) string {
+	if val, ok := m[key].(string); ok {
+		return val
+	}
+	return ""
+}
+
+// Helper function to safely get boolean values from map
+func SafeGetBool(m map[string]interface{}, key string) bool {
+	if val, ok := m[key].(bool); ok {
+		return val
+	}
+	return false
+}
+
+// GetSubscriptionFromResourceID extracts the subscription ID and name from a resource ID
+func GetSubscriptionFromResourceID(resourceID string) (string, string, error) {
+	parts := strings.Split(resourceID, "/")
+	for i, part := range parts {
+		if strings.EqualFold(part, "subscriptions") && i+1 < len(parts) {
+			subID := parts[i+1]
+
+			// Try to get subscription name
+			cred, err := azidentity.NewDefaultAzureCredential(nil)
+			if err != nil {
+				return subID, "", nil
+			}
+
+			client, err := armsubscriptions.NewClient(cred, &arm.ClientOptions{})
+			if err != nil {
+				return subID, "", nil
+			}
+
+			sub, err := client.Get(context.Background(), subID, nil)
+			if err != nil {
+				return subID, "", nil
+			}
+
+			if sub.DisplayName != nil {
+				return subID, *sub.DisplayName, nil
+			}
+
+			return subID, "", nil
+		}
+	}
+
+	return "", "", fmt.Errorf("subscription ID not found in resource ID: %s", resourceID)
+}

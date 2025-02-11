@@ -1,0 +1,38 @@
+id: key_vault_public_access
+name: Publicly Accessible Key Vaults
+description: Detects Key Vault instances with public network access enabled and permissive network rules
+severity: High
+reportability: Automatic
+triageNotes: |
+  No need for additional manual triage, note that this only confirms Internet accessibility not anonymous identity access.
+references:
+  - https://learn.microsoft.com/en-us/azure/key-vault/general/network-security
+query: |
+    resources
+    | where type =~ 'Microsoft.KeyVault/vaults'
+    | extend networkAcls = properties.networkAcls
+    | extend publicNetworkAccess = tolower(properties.publicNetworkAccess)
+    | extend defaultAction = tolower(coalesce(networkAcls.defaultAction, 'allow'))
+    | extend ipRules = array_length(coalesce(networkAcls.ipRules, dynamic([])))
+    | extend vnetRules = array_length(coalesce(networkAcls.virtualNetworkRules, dynamic([])))
+    | extend bypass = coalesce(networkAcls.bypass, 'None')
+    | extend vaultUri = properties.vaultUri
+    | extend sku = properties.sku.name
+    | extend privateEndpointConnections = array_length(properties.privateEndpointConnections)
+    | where 
+        publicNetworkAccess != 'disabled' and
+        (defaultAction == 'allow' or
+        (defaultAction == 'deny' and ipRules == 0 and vnetRules == 0 and privateEndpointConnections == 0))
+    | project
+        id,
+        name,
+        type,
+        location,
+        publicNetworkAccess,
+        defaultAction,
+        sku,
+        vaultUri,
+        hasVnetRules=(vnetRules > 0),
+        hasPrivateEndpoints=(privateEndpointConnections > 0),
+        bypass,
+        subscriptionId

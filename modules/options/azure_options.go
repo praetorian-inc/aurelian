@@ -88,3 +88,12 @@ var AzureDevOpsProjectOpt = types.Option{
 	Type:        types.String,
 	Value:       "",
 }
+
+var AzureARGTemplatesDirOpt = types.Option{
+    Name:        "template-dir",
+    Short:       "T",
+    Description: "Optional directory containing additional ARG query templates (defaults to embedded templates)",
+    Required:    false,
+    Type:        types.String,
+    Value:       "", // Empty means use only embedded templates
+}

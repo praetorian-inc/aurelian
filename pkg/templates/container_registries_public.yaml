@@ -1,0 +1,43 @@
+id: container_registries_public_access
+name: Publicly Accessible Container Registries
+description: Detects container registries with public network access enabled
+severity: High
+category: Automatic
+triageNotes: |
+  Potential Risk:
+  - Public accessibility may allow container image pulls from anywhere on the internet
+  - Could lead to excessive data transfer costs from unauthorized pulls
+  - May expose sensitive information if images contain secrets or proprietary code
+  
+  Triage Guidance:
+  - This finding only confirms the registry is accessible from the internet not anonymous access
+  - Additional manual testing is required to determine if anonymous/unauthorized access is possible
+references:
+  - https://learn.microsoft.com/en-us/azure/container-registry/container-registry-access-selected-networks
+query: |
+    resources
+    | where type =~ 'Microsoft.ContainerRegistry/registries'
+    | extend publicNetworkAccess = tolower(properties.publicNetworkAccess)
+    | extend networkRuleSet = properties.networkRuleSet
+    | extend adminUserEnabled = properties.adminUserEnabled
+    | extend sku = properties.sku.name
+    | extend loginServer = properties.loginServer
+    | where publicNetworkAccess != 'disabled'
+    | extend defaultAction = tolower(coalesce(networkRuleSet.defaultAction, 'allow'))
+    | extend ipRules = networkRuleSet.ipRules
+    | where 
+        defaultAction == 'allow' or
+        isnull(ipRules) or
+        ipRules has '0.0.0.0/0' or 
+        ipRules has '*' or 
+        ipRules has 'Internet'
+    | project
+        id,
+        name,
+        type,
+        location,
+        publicNetworkAccess,
+        adminUserEnabled,
+        sku,
+        loginServer,
+        subscriptionId

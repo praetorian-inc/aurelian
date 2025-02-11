@@ -15,7 +15,7 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
-// AzureVMDetail contains all relevant information about an Azure VM
+// AzureVMDetail contains all relevant information about an Azure VM for secrets scanning
 type AzureVMDetail struct {
 	ID             string                 `json:"id"`
 	Name           string                 `json:"name"`
@@ -24,6 +24,18 @@ type AzureVMDetail struct {
 	SubscriptionID string                 `json:"subscriptionId"`
 	Tags           map[string]*string     `json:"tags"`
 	Properties     map[string]interface{} `json:"properties"`
+}
+
+// AzureVMDetail contains all relevant information about an Azure VM for public access checks
+type VirtualMachineDetail struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Location    string `json:"location"`
+	PublicIP    string `json:"publicIp"`
+	HasPublicIP bool   `json:"hasPublicIp"`
+	OpenPorts   string `json:"openPorts,omitempty"`
+	OsType      string `json:"osType"`
 }
 
 // AzureListVMsStage uses Azure Resource Graph to efficiently list VMs across subscriptions

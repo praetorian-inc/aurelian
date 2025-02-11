@@ -1,0 +1,47 @@
+id: cloud_shell_storage_detection
+name: Azure Cloud Shell Storage Accounts
+description: Identifies storage accounts used for Azure Cloud Shell services which may contain sensitive scripts and data
+severity: Medium
+reportability: Automatic
+triageNotes: |
+  Cloud Shell storage accounts can contain sensitive data including:
+  - Shell scripts and automation files
+  - SSH keys and configuration files
+  - Tool configurations and credentials
+  - Command history
+  - Uploaded/downloaded files
+  - User customizations and profiles
+
+  Enumerate the contents of the containers and reduce risk rating of the issue if storage was created a long time ago (outdated credentials).
+  Readers do not have sufficient permissions to retrieve contents but if you have additional developer permissions, retrieve and validate secrets stored on the storage account.
+references:
+  - https://learn.microsoft.com/en-us/azure/cloud-shell/persisting-shell-storage
+  - https://learn.microsoft.com/en-us/azure/cloud-shell/overview
+  - https://learn.microsoft.com/en-us/azure/cloud-shell/security
+query: |
+    resources
+    | where type =~ 'Microsoft.Storage/storageAccounts'
+    | where 
+        name startswith 'cs'and
+        name matches regex '^cs[a-f0-9]{18}$' or
+        tags['ms-resource-usage'] =~ 'azure-cloud-shell'
+    | extend publicNetworkAccess = tostring(properties.publicNetworkAccess)
+    | extend networkAcls = properties.networkAcls
+    | extend defaultAction = tostring(networkAcls.defaultAction)
+    | extend ipRules = array_length(coalesce(networkAcls.ipRules, dynamic([])))
+    | extend vnetRules = array_length(coalesce(networkAcls.virtualNetworkRules, dynamic([])))
+    | extend allowBlobPublicAccess = coalesce(properties.allowBlobPublicAccess, true)
+    | extend minimumTlsVersion = properties.minimumTlsVersion
+    | extend supportsHttpsTrafficOnly = properties.supportsHttpsTrafficOnly
+    | extend bypass = tostring(networkAcls.bypass)
+    | extend allowSharedKeyAccess = coalesce(properties.allowSharedKeyAccess, true)
+    | extend defaultToOAuthAuthentication = coalesce(properties.defaultToOAuthAuthentication, false)
+    | project
+        id,
+        name,
+        type,
+        location,
+        tags,
+        defaultAction,
+        bypass,
+        subscriptionId

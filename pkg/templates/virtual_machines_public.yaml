@@ -1,0 +1,54 @@
+id: virtual_machines_public_access
+name: Virtual Machines with Public IP
+description: Detects virtual machines with public IPs and open network security group rules
+severity: High
+reportability: Automatic
+triageNotes: |
+  No need for manual triage, already cross-references network security group rules of the associated NIC. Check out the open ports to analyze which services may be exposed.
+references:
+  - https://learn.microsoft.com/en-us/azure/virtual-machines/network-overview
+query: |
+    resources
+    | where type =~ 'Microsoft.Compute/virtualMachines'
+    | mv-expand nic = properties.networkProfile.networkInterfaces
+    | extend nicId = tostring(nic.id)
+    | extend osType = properties.storageProfile.osDisk.osType
+    | join kind=leftouter (
+        resources
+        | where type =~ 'Microsoft.Network/networkInterfaces'
+        | mv-expand ipconfig = properties.ipConfigurations
+        | extend publicIPId = tostring(ipconfig.properties.publicIPAddress.id)
+        | extend privateIP = tostring(ipconfig.properties.privateIPAddress)
+        | where isnotempty(publicIPId)
+        | join kind=leftouter (
+            resources
+            | where type =~ 'Microsoft.Network/publicIPAddresses'
+            | extend publicIP = properties.ipAddress
+        ) on $left.publicIPId == $right.id
+        | project nicId = id, publicIP, privateIP,
+            nsgId = tostring(properties.networkSecurityGroup.id)
+    ) on nicId
+    | where isnotempty(publicIP)
+    | join kind=leftouter (
+        resources
+        | where type =~ 'Microsoft.Network/networkSecurityGroups'
+        | mv-expand rule = properties.securityRules
+        | where rule.properties.direction == 'Inbound' 
+        | where rule.properties.access == 'Allow'
+        | extend sourceAddressPrefix = rule.properties.sourceAddressPrefix
+        | extend destinationPortRange = rule.properties.destinationPortRange
+        | where sourceAddressPrefix in ('*', 'Internet', '0.0.0.0', '0.0.0.0/0')
+        | summarize openPorts=make_set(destinationPortRange) by id
+    ) on $left.nsgId == $right.id
+    | where isnotnull(openPorts)
+    | project
+        id,
+        name,
+        type,
+        location,
+        publicIP,
+        privateIP,
+        osType,
+        hasPublicIP = true,
+        openPorts = iif(isempty(openPorts), '', tostring(openPorts)),
+        nsgId

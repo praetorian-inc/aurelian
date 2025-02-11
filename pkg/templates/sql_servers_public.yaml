@@ -1,0 +1,37 @@
+id: sql_servers_public_access
+name: SQL Servers Without Public Access Block
+description: Detects SQL servers with public network access enabled
+severity: High
+reportability: Manual Triage
+references:
+  - https://learn.microsoft.com/en-us/azure/azure-sql/database/network-access-controls
+  - https://www.praetorian.com/blog/migrating-to-azure/
+triageNotes: |
+  Additional manual verification is required:
+  
+  1. Check for "Allow Azure services and resources to access this server" as that allows firewall bypass (see references for Praetorian blogpost - Solely Relying on Azure Portal and Not Consulting Azure Documentation).
+      az sql server firewall-rule list --resource-group <resource-group-name> --server <server-name> --query "[?name=='AllowAllWindowsAzureIps']"
+  
+  2. Check firewall rules using Azure CLI:
+     az sql server firewall-rule list --resource-group <resourceGroup> --server <serverName>
+  
+  3. Look for rules that indicate public access:
+     - Rules with startIpAddress='0.0.0.0' and endIpAddress='255.255.255.255'
+     - Rules that allow a wide public range (/16)
+     - The entire corporate IP address range is not recommended, should be using a bastion host or JIT access
+     - Single public IP addresses (/32) are generally fine unless it's a developer PC
+query: |
+    resources
+    | where type =~ 'Microsoft.Sql/servers'
+    | extend serverName = tostring(name)
+    | extend publicNetworkAccess = iif(isnotempty(properties.publicNetworkAccess), 
+        tolower(properties.publicNetworkAccess), 
+        'enabled')
+    | where publicNetworkAccess == 'enabled'
+    | project
+        id,
+        name,
+        type,
+        location,
+        publicNetworkAccess,
+        subscriptionId

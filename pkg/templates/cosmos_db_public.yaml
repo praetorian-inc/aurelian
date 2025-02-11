@@ -1,0 +1,40 @@
+id: cosmos_db_public_access
+name: Publicly Accessible Cosmos DB Accounts
+description: Detects Cosmos DB accounts with public network access enabled
+severity: High
+category: Automatic
+triageNotes: |
+  Potential Risk:
+  - Public accessibility exposes the database endpoint to the entire internet
+  - Increases risk of brute force attacks and unauthorized access attempts
+  
+  Triage Guidance:
+  - This finding only confirms the database is accessible from the internet and not anonymous access
+  - Additional manual testing is required to determine if anonymous/unauthorized access is possible
+references:
+  - https://learn.microsoft.com/en-us/azure/cosmos-db/how-to-configure-firewall
+query: |
+    resources
+    | where type =~ 'Microsoft.DocumentDB/databaseAccounts'
+    | extend publicNetworkAccess = tolower(properties.publicNetworkAccess)
+    | extend ipRules = properties.ipRules
+    | extend enableFreeTier = properties.enableFreeTier
+    | extend endpoint = properties.documentEndpoint
+    | where publicNetworkAccess != 'disabled'
+    | where 
+        isempty(ipRules) or
+        array_length(ipRules) == 0 or
+        ipRules has '0.0.0.0' or
+        ipRules has '0.0.0.0/0' or
+        ipRules has '*' or
+        ipRules has 'Internet'
+    | project
+        id,
+        name,
+        type,
+        location,
+        publicNetworkAccess,
+        enableFreeTier,
+        kind,
+        endpoint,
+        subscriptionId

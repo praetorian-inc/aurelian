@@ -1,0 +1,39 @@
+id: storage_accounts_public_access
+name: Publicly Accessible Storage Accounts
+description: Detects storage accounts with public network access enabled and default allow action
+severity: High
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - Public accessibility exposes storage endpoints to the entire internet
+  - Could lead to unauthorized data access attempts
+  - Potential for data exfiltration if misconfigured
+  
+  Triage Guidance:
+  - This finding only confirms the storage account is accessible from the internet and not anonymous access
+  - Additional manual testing is required to determine if anonymous/unauthorized access is possible
+  - Readers do not have object-level access, some additional permissions or shoulder surfing may be required
+references:
+  - https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security
+query: |
+    resources
+    | where type =~ 'Microsoft.Storage/storageAccounts'
+    | extend publicNetworkAccess = tostring(properties.publicNetworkAccess)
+    | extend acls = properties.networkAcls
+    | extend defaultAction = tostring(acls.defaultAction)
+    | extend hasIpRules = array_length(acls.ipRules)
+    | extend hasVnetRules = array_length(acls.virtualNetworkRules)
+    | where publicNetworkAccess == 'Enabled'
+    | where defaultAction == 'Allow'
+    | where hasIpRules == 0
+    | where hasVnetRules == 0
+    | project
+        id,
+        name,
+        type,
+        location,
+        publicNetworkAccess,
+        defaultAction,
+        hasIpRules,
+        hasVnetRules,
+        subscriptionId

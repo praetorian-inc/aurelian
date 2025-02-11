@@ -1,0 +1,43 @@
+id: service_bus_public_access
+name: Publicly Accessible Service Bus Namespaces
+description: Detects Service Bus namespaces with public network access enabled
+severity: High
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - Public accessibility exposes messaging endpoints to the entire internet
+  - Could lead to unauthorized message interception or injection attempts
+  - May impact service performance from processing unauthorized requests (DoS)
+  
+  Triage Guidance:
+  - This finding only confirms the service bus is accessible from the internet and not anonymous access
+  - Additional manual testing is required to determine if anonymous/unauthorized access is possible
+references:
+  - https://learn.microsoft.com/en-us/azure/service-bus-messaging/network-security
+query: |
+    resources
+    | where type =~ 'Microsoft.ServiceBus/namespaces'
+    | extend publicNetworkAccess = tolower(properties.publicNetworkAccess)
+    | extend networkRuleSets = properties.networkRuleSets
+    | extend defaultAction = tolower(coalesce(properties.networkRuleSets.defaultAction, 'allow'))
+    | extend sku = properties.sku.name
+    | extend endpoint = properties.serviceBusEndpoint
+    | extend zoneRedundant = properties.zoneRedundant
+    | where publicNetworkAccess != 'disabled'
+    | where defaultAction == 'allow' or
+        isnull(networkRuleSets.ipRules) or
+        networkRuleSets.ipRules has '0.0.0.0' or
+        networkRuleSets.ipRules has '0.0.0.0/0' or
+        networkRuleSets.ipRules has '*' or
+        networkRuleSets.ipRules has 'Internet'
+    | project
+        id,
+        name,
+        type,
+        location,
+        publicNetworkAccess,
+        defaultAction,
+        sku,
+        endpoint,
+        zoneRedundant,
+        subscriptionId
