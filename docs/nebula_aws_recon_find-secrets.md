@@ -9,7 +9,7 @@ nebula aws recon find-secrets [flags]
 ### Options
 
 ```
-      --cache-dir string               Directory to store API response cache files (default "nebula-output")
+      --cache-dir string               Directory to store API response cache files (default "/tmp/nebula-cache")
       --cache-error-resp               Cache error response
       --cache-error-resp-type string   A comma-separated list of strings specifying cache error response types, e.g., TypeNotFoundException, AccessDeniedException. Use all to represent any error.
       --cache-ext string               Name of AWS API response cache files extension 
