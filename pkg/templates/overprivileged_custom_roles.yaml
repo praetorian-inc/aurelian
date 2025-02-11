@@ -1,0 +1,51 @@
+id: overprivileged_custom_roles
+name: Custom Roles with Privilege Escalation Permissions
+description: Detects custom role definitions that contain permissions allowing privilege escalation through role assignments, classic administrator changes, or role definition modifications
+severity: High
+category: Automatic
+triageNotes: |
+  Potential Risk:
+  - Permissions that allow users to modify role assignments or definitions can lead to privilege escalation
+  - Users could escalate their own privileges or grant elevated access to others
+  - Classic Administrator write permissions are especially dangerous as they grant legacy full access
+  
+  Triage Guidance:
+  - Check who is currently assigned these roles using role assignments
+  - Validate privilege escalation using a simulated environment with the same permissions assigned
+  - Check if role is used in PIM (Privileged Identity Management) for additional controls
+references:
+  - https://learn.microsoft.com/en-us/azure/role-based-access-control/custom-roles
+  - https://learn.microsoft.com/en-us/azure/role-based-access-control/resource-provider-operations
+query: |
+    AuthorizationResources
+    | where type =~ 'microsoft.authorization/roledefinitions'
+    | where properties.type == 'CustomRole'
+    | mv-expand permission = properties.permissions
+    | mv-expand action = permission.actions
+    | where 
+        action contains 'Microsoft.Authorization/*' or
+        action contains 'Microsoft.Authorization/role*' or
+        action contains 'Microsoft.Authorization/*/write' or
+        action contains 'Microsoft.Authorization/roleAssignments/*' or
+        action contains 'Microsoft.Authorization/roleAssignments/write' or
+        action contains 'Microsoft.Authorization/roleDefinitions/*' or
+        action contains 'Microsoft.Authorization/roleDefinitions/write' or
+        action contains 'Microsoft.Authorization/classicAdministrators/*' or
+        action contains 'Microsoft.Authorization/classicAdministrators/write' or
+        action contains 'Microsoft.Authorization/elevateAccess/*' or
+        action contains 'Microsoft.Authorization/*/delete' or
+        action contains '*/write' or
+        action contains '*'
+    | extend 
+        roleName = properties.roleName,
+        roleDescription = properties.description,
+        assignableScopes = array_strcat(properties.assignableScopes, ';')
+    | project
+        id,
+        name,
+        type,
+        roleName,
+        roleDescription,
+        assignableScopes,
+        dangerousAction = tostring(action),
+        subscriptionId
