@@ -422,7 +422,7 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 			v := GetCacheConfigMeta(metadata, "cache_config")
 			if v.Fd != nil {
 				if fdErr := v.Fd.Close(); fdErr != nil {
-					logger.Error("Failed to close file", "error", err)
+					logger.Error("Failed to close file", "error", fdErr)
 				} else {
 					logger.Debug("Closed file successfully")
 				}
