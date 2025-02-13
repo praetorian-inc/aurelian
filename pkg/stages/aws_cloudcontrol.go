@@ -27,6 +27,7 @@ func AwsCloudControlListResources(ctx context.Context, opts []*types.Option, rty
 	profile := options.GetOptionByName("profile", opts).Value
 	regions, err := helpers.ParseRegionsOption(options.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
+		logger.Error(err.Error())
 		close(out)
 		return nil
 	}
