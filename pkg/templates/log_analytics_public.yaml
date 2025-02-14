@@ -1,0 +1,34 @@
+id: log_analytics_public_access
+name: Publicly Accessible Log Analytics Workspaces
+description: Detects Log Analytics workspaces with public network access enabled for ingestion or query
+severity: High
+reportability: Manual Triage
+triageNotes: |
+  Potential Risk:
+  - Public accessibility exposes log data and queries to potential unauthorized access
+  - Could lead to sensitive data exposure if misconfigured
+  - May allow unauthorized ingestion of data
+  - Potential for excessive resource consumption through public queries
+  
+  Triage Guidance:
+  - This finding confirms the workspace allows public network access for ingestion and/or query operations
+  - Review if public access is required for both ingestion and query operations
+  - Validate if any IP restrictions or private endpoints are configured
+  - Check workspace access control and data export settings
+references:
+  - https://learn.microsoft.com/en-us/azure/azure-monitor/logs/log-analytics-workspace-overview
+  - https://learn.microsoft.com/en-us/azure/azure-monitor/logs/private-link-security
+query: |
+    resources
+    | where type =~ 'Microsoft.OperationalInsights/workspaces'
+    | where 
+        properties.publicNetworkAccessForIngestion == 'Enabled' or 
+        properties.publicNetworkAccessForQuery == 'Enabled'
+    | project
+        id,
+        name,
+        type,
+        location,
+        publicNetworkAccessForIngestion = properties.publicNetworkAccessForIngestion,
+        publicNetworkAccessForQuery = properties.publicNetworkAccessForQuery,
+        subscriptionId
