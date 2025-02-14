@@ -1,0 +1,48 @@
+id: event_hub_public_access
+name: Publicly Accessible Event Hub Namespaces
+description: Detects Event Hub namespaces with public network access enabled and permissive network rules
+severity: High
+reportability: Manual Triage
+triageNotes: |
+  Potential Risk:
+  - Public accessibility exposes messaging endpoints to the entire internet
+  - Could lead to unauthorized message interception or injection attempts
+  - May impact service performance from processing unauthorized requests (DoS)
+  - Sensitive data could be exposed if authentication is misconfigured
+  
+  Triage Guidance:
+  - This finding confirms the event hub namespace is accessible from the internet and not anonymous access
+  - Additional manual testing is required to determine if anonymous/unauthorized access is possible
+  - Review configured authentication mechanisms and shared access policies
+references:
+  - https://learn.microsoft.com/en-us/azure/event-hubs/network-security
+  - https://learn.microsoft.com/en-us/azure/event-hubs/event-hubs-ip-filtering
+query: |
+    resources
+    | where type =~ 'Microsoft.EventHub/namespaces'
+    | extend 
+        publicNetworkAccess = tolower(properties.publicNetworkAccess),
+        networkRuleSets = properties.networkRuleSets,
+        defaultAction = tolower(coalesce(properties.networkRuleSets.defaultAction, 'allow')),
+        sku = properties.sku.name,
+        endpoint = properties.serviceBusEndpoint,
+        zoneRedundant = properties.zoneRedundant
+    | where 
+        publicNetworkAccess != 'disabled' and
+        (defaultAction == 'allow' or
+        isnull(networkRuleSets.ipRules) or
+        networkRuleSets.ipRules has '0.0.0.0' or
+        networkRuleSets.ipRules has '0.0.0.0/0' or
+        networkRuleSets.ipRules has '*' or
+        networkRuleSets.ipRules has 'Internet')
+    | project
+        id,
+        name,
+        type,
+        location,
+        publicNetworkAccess,
+        defaultAction,
+        sku,
+        endpoint,
+        zoneRedundant,
+        subscriptionId
