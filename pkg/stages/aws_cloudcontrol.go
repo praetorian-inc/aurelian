@@ -2,12 +2,16 @@ package stages
 
 import (
 	"context"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awstypes "github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
+	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awstypes "github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
+	"github.com/cloudflare/backoff"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/praetorian-inc/nebula/internal/helpers"
@@ -53,7 +57,7 @@ func AwsCloudControlListResources(ctx context.Context, opts []*types.Option, rty
 	for _, region := range regions {
 		config, err := helpers.GetAWSCfg(region, profile, opts)
 		if err != nil {
-			logger.Error("Failed to get AWS config for", "region", region, "err:", err)
+			logger.Error(fmt.Sprintf("Failed to get AWS config for %s ", region), slog.String("error", err.Error()))
 			continue
 		}
 
@@ -66,20 +70,26 @@ func AwsCloudControlListResources(ctx context.Context, opts []*types.Option, rty
 	for rtype := range rtype {
 		for region, cc := range cloudControlClients {
 			if cc == nil {
-				logger.Debug("Missing CloudControl Client for region", region)
+				logger.Debug(fmt.Sprintf("Missing CloudControl Client for region %s", region))
 				continue
 			}
 
 			if helpers.IsGlobalService(rtype) && region != "us-east-1" {
-				logger.Debug("Skipping global resource type %s in region %s", rtype, region)
+				logger.Debug(fmt.Sprintf("Skipping global resource type %s in region %s", rtype, region))
 				continue
 			}
 
-			logger.Debug("Listing resources of type %s in region: %s", rtype, region)
+			if !helpers.IsSupportedTypeInRegion(region, rtype) {
+				logger.Debug(fmt.Sprintf("Skipping unsupported resource type %s in region %s", rtype, region))
+				continue
+			}
+
+			logger.Debug(fmt.Sprintf("Listing resources of type %s in region: %s", rtype, region))
 			wg.Add(1)
 
 			go func(region, rtype string) {
 				defer wg.Done()
+
 				cc := cloudControlClients[region]
 
 				paginator := cloudcontrol.NewListResourcesPaginator(cc, &cloudcontrol.ListResourcesInput{
@@ -87,11 +97,15 @@ func AwsCloudControlListResources(ctx context.Context, opts []*types.Option, rty
 					MaxResults: aws.Int32(100),
 				})
 
+				// Create backoff with 5s initial interval, max 5m duration
+				b := backoff.New(5*time.Minute, 5*time.Second)
+				b.SetDecay(30 * time.Second)
+			paginationLoop:
 				for paginator.HasMorePages() {
 					select {
 					case <-ctx.Done():
-						logger.Info("Context cancelled, stopping pagination for", rtype, "in region", region)
-						break
+						logger.Info(fmt.Sprintf("Context cancelled, stopping pagination for %s in region %s", rtype, region))
+						break paginationLoop
 					case regionSemaphores[region] <- struct{}{}: // Acquire semaphore
 					}
 
@@ -99,10 +113,24 @@ func AwsCloudControlListResources(ctx context.Context, opts []*types.Option, rty
 					if err != nil {
 						<-regionSemaphores[region] // Release semaphore
 						if strings.Contains(err.Error(), "TypeNotFoundException") {
-							logger.Debug("The type %s is not available in region %s", rtype, region)
-						} else {
-							logger.Debug("Failed to ListResources", "region", region, "type", rtype, "err", err.Error())
+							logger.Debug(fmt.Sprintf("The type %s is not available in region %s", rtype, region))
+						} else if strings.Contains(err.Error(), "AccessDenied") || strings.Contains(err.Error(), "HandlerErrorCode: GeneralServiceException") {
+							// HandlerErrorCode: GeneralServiceException seems to be a catch-all for access denied
+							logger.Error(fmt.Sprintf("Access denied to list resources of type %s in region %s", rtype, region))
+							logger.Debug(err.Error())
+							return
+						} else if strings.Contains(err.Error(), "UnsupportedActionException") {
+							logger.Info(fmt.Sprintf("The type %s is not supported in region %s", rtype, region))
+							return
 						}
+						if strings.Contains(err.Error(), "ThrottlingException") {
+							delay := b.Duration()
+							logger.Info(fmt.Sprintf("Rate limited, backing off for %v", delay), slog.String("region", region), slog.String("type", rtype))
+							time.Sleep(delay)
+							continue
+						}
+
+						logger.Error("Failed to ListResources", slog.String("region", region), slog.String("type", rtype), slog.String("err", err.Error()))
 						break
 					}
 
