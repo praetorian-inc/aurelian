@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	cctypes "github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
 	"github.com/praetorian-inc/nebula/internal/helpers"
@@ -92,6 +93,16 @@ func AwsCloudControlListResources(ctx context.Context, opts []*types.Option, rty
 								Properties: *resource.Properties,
 								AccountId:  acctId,
 							}
+
+							// some resources have a different ARN format than the identifier
+							// so we need to parse the identifier to get the ARN
+							parsed, err := arn.Parse(*resource.Identifier)
+							if err != nil {
+								erd.Arn = erd.ToArn()
+							} else {
+								erd.Arn = parsed
+							}
+
 							erd.Arn = erd.ToArn()
 							out <- erd
 						}(&resource)

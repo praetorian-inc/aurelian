@@ -1,6 +1,8 @@
 package types
 
 import (
+	"encoding/json"
+	"log/slog"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -11,8 +13,8 @@ type EnrichedResourceDescription struct {
 	TypeName   string      `json:"TypeName"`
 	Region     string      `json:"Region"` //additional field to enrich
 	Properties interface{} `json:"Properties"`
-	AccountId  string
-	Arn        arn.ARN
+	AccountId  string      `json:"AccountId"`
+	Arn        arn.ARN     `json:"Arn"`
 }
 
 func NewEnrichedResourceDescriptionFromArn(a string) (EnrichedResourceDescription, error) {
@@ -33,7 +35,7 @@ func NewEnrichedResourceDescriptionFromArn(a string) (EnrichedResourceDescriptio
 func (e *EnrichedResourceDescription) ToArn() arn.ARN {
 	a := arn.ARN{
 		Partition: "aws",
-		Service:   getServiceName(e.TypeName),
+		Service:   e.Service(),
 		Region:    e.Region,
 		AccountID: e.AccountId,
 		Resource:  e.Identifier,
@@ -41,7 +43,49 @@ func (e *EnrichedResourceDescription) ToArn() arn.ARN {
 	return a
 }
 
-func getServiceName(resourceType string) string {
-	service := strings.ToLower(strings.Split(resourceType, "::")[1])
+// Helper struct to unmarshal the Properties JSON string
+type resourceProperties struct {
+	Tags []struct {
+		Key   string `json:"Key"`
+		Value string `json:"Value"`
+	} `json:"Tags"`
+}
+
+// Tags returns the list of tag keys from the Properties field
+func (e *EnrichedResourceDescription) Tags() map[string]string {
+	// Handle case where Properties is empty or nil
+	if e.Properties == nil {
+		return map[string]string{}
+	}
+
+	// Convert Properties to string if it's not already
+	propsStr, ok := e.Properties.(string)
+	if !ok {
+		return map[string]string{}
+	}
+
+	// Unmarshal the Properties JSON string
+	var props resourceProperties
+	if err := json.Unmarshal([]byte(propsStr), &props); err != nil {
+		return map[string]string{}
+	}
+
+	// Extract just the tag keys
+	tags := make(map[string]string, len(props.Tags))
+	for _, tag := range props.Tags {
+		tags[tag.Key] = tag.Value
+	}
+
+	return tags
+}
+
+func (e *EnrichedResourceDescription) Service() string {
+	split := strings.Split(e.TypeName, "::")
+	if len(split) < 3 {
+		slog.Debug("Failed to parse resource type", slog.String("resourceType", e.TypeName))
+		return ""
+	}
+
+	service := strings.ToLower(split[1])
 	return service
 }
