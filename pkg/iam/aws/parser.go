@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -17,6 +18,13 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
+
+// Cache maps for faster lookups
+var policyCache map[string]*types.PoliciesDL                    // ARN -> Policy
+var roleCache map[string]*types.RoleDL                          // ARN -> Role
+var userCache map[string]*types.UserDL                          // ARN -> User
+var groupCache map[string]*types.GroupDL                        // ARN -> Group
+var resourceCache map[string]*types.EnrichedResourceDescription // ARN -> Resource
 
 // PermissionsSummary maps principal ARNs to their permissions
 type PermissionsSummary struct {
@@ -250,13 +258,7 @@ func (ps *PermissionsSummary) MarshalJSON() ([]byte, error) {
 type GaadAnalyzer struct {
 	policyData *PolicyData
 
-	// Cache maps for faster lookups
-	policyCache   sync.Map                                      // ARN -> Policy
-	roleCache     sync.Map                                      // ARN -> Role
-	userCache     sync.Map                                      // ARN -> User
-	groupCache    sync.Map                                      // ARN -> Group
-	resourceCache map[string]*types.EnrichedResourceDescription // ARN -> Resource
-	evaluator     *PolicyEvaluator
+	evaluator *PolicyEvaluator
 }
 
 // NewGaadAnalyzer creates a new analyzer and initializes caches
@@ -272,47 +274,48 @@ func NewGaadAnalyzer(pd *PolicyData, evaluator *PolicyEvaluator) *GaadAnalyzer {
 // initializeCaches populates lookup maps for faster access
 func (ga *GaadAnalyzer) initializeCaches() {
 	// Cache policies
+	policyCache = make(map[string]*types.PoliciesDL)
 	for i := range ga.policyData.Gaad.Policies {
 		policy := &ga.policyData.Gaad.Policies[i]
-		ga.policyCache.Store(policy.Arn, policy)
+		policyCache[policy.Arn] = policy
 	}
 
 	// Cache roles
+	roleCache = make(map[string]*types.RoleDL)
 	for i := range ga.policyData.Gaad.RoleDetailList {
 		role := &ga.policyData.Gaad.RoleDetailList[i]
-		ga.roleCache.Store(role.Arn, role)
+		roleCache[role.Arn] = role
 	}
 
 	// Cache users
+	userCache = make(map[string]*types.UserDL)
 	for i := range ga.policyData.Gaad.UserDetailList {
 		user := &ga.policyData.Gaad.UserDetailList[i]
-		ga.userCache.Store(user.Arn, user)
+		userCache[user.Arn] = user
 	}
 
 	// Cache groups
+	groupCache = make(map[string]*types.GroupDL)
 	for i := range ga.policyData.Gaad.GroupDetailList {
 		group := &ga.policyData.Gaad.GroupDetailList[i]
-		ga.groupCache.Store(group.Arn, group)
+		groupCache[group.Arn] = group
 	}
 
 	// Cache resources
-	ga.resourceCache = make(map[string]*types.EnrichedResourceDescription)
+	resourceCache = make(map[string]*types.EnrichedResourceDescription)
 	if ga.policyData.Resources != nil {
 		for i := range *ga.policyData.Resources {
 			resource := &(*ga.policyData.Resources)[i]
 			arn := resource.Arn.String()
-			ga.resourceCache[arn] = resource
-			slog.Debug(fmt.Sprintf("Cached resource: %s", arn))
+			resourceCache[arn] = resource
 		}
 	}
 }
 
 // getPolicyByArn retrieves a policy using the cache
 func (ga *GaadAnalyzer) getPolicyByArn(arn string) *types.PoliciesDL {
-	if val, ok := ga.policyCache.Load(arn); ok {
-		if policy, ok := val.(*types.PoliciesDL); ok {
-			return policy
-		}
+	if policy, ok := policyCache[arn]; ok {
+		return policy
 	}
 	return nil
 }
@@ -329,9 +332,9 @@ func (ga *GaadAnalyzer) getDefaultPolicyDocument(policy *types.PoliciesDL) *type
 
 func (ga *GaadAnalyzer) getResources(pattern *regexp.Regexp) []*types.EnrichedResourceDescription {
 	resources := make([]*types.EnrichedResourceDescription, 0)
-	for arn := range ga.resourceCache {
+	for arn := range resourceCache {
 		if pattern.MatchString(arn) {
-			resources = append(resources, ga.resourceCache[arn])
+			resources = append(resources, resourceCache[arn])
 		}
 	}
 
@@ -354,120 +357,133 @@ func (ga *GaadAnalyzer) AnalyzePrincipalPermissions() (*PermissionsSummary, erro
 	summary := NewPermissionsSummary()
 	var wg sync.WaitGroup
 
+	// Create buffered channel for evaluation requests
+	// Use buffer to prevent blocking
+	evalChan := make(chan *EvaluationRequest, 1000)
+
+	// Start evaluation workers
+	var evalWg sync.WaitGroup
+	ga.startEvaluationWorkers(evalChan, summary, &evalWg)
+
 	// Process users
 	for _, user := range ga.policyData.Gaad.UserDetailList {
 		wg.Add(1)
-		go ga.processUserPermissions(user, summary, &wg)
+		go func(u types.UserDL) {
+			defer wg.Done()
+			ga.processUserPermissions(u, evalChan)
+		}(user)
 	}
 
-	// Process roles
-	// for _, role := range ga.policyData.Gaad.RoleDetailList {
-	// 	wg.Add(1)
-	// 	go ga.processRolePermissions(role, summary, &wg)
-	// }
+	for _, role := range ga.policyData.Gaad.RoleDetailList {
+		wg.Add(1)
+		go func(r types.RoleDL) {
+			defer wg.Done()
+			ga.processRolePermissions(r, evalChan)
+		}(role)
+	}
 
 	wg.Wait()
 	return summary, nil
 }
 
-func (ga *GaadAnalyzer) evaluatePermissions(principalArn string, policies []*types.Policy, summary *PermissionsSummary) {
-	// Extract unique resources and actions from policies
-	resources := make(map[string]bool)
-	allActions := make(map[string]bool)
+// func (ga *GaadAnalyzer) evaluatePermissions(principalArn string, policies []*types.Policy, summary *PermissionsSummary) {
+// 	// Extract unique resources and actions from policies
+// 	resources := make(map[string]bool)
+// 	allActions := make(map[string]bool)
 
-	// First pass - collect all raw actions and resources
-	for _, policy := range policies {
-		for _, statement := range *policy.Statement {
-			// Handle regular Actions
-			if statement.Action != nil {
-				expandedActions := expandActionsWithStage(*statement.Action)
-				for _, action := range expandedActions {
-					allActions[action] = true
-				}
-			}
+// 	// First pass - collect all raw actions and resources
+// 	for _, policy := range policies {
+// 		for _, statement := range *policy.Statement {
+// 			// Handle regular Actions
+// 			if statement.Action != nil {
+// 				expandedActions := expandActionsWithStage(*statement.Action)
+// 				for _, action := range expandedActions {
+// 					allActions[action] = true
+// 				}
+// 			}
 
-			// Handle NotAction by getting all possible actions and removing matches
-			if statement.NotAction != nil {
-				notActions := expandActionsWithStage(*statement.NotAction)
-				for action := range allActions {
-					for _, notAction := range notActions {
-						if strings.HasPrefix(action, notAction) {
-							delete(allActions, action)
-						}
-					}
-				}
-			}
+// 			// Handle NotAction by getting all possible actions and removing matches
+// 			if statement.NotAction != nil {
+// 				notActions := expandActionsWithStage(*statement.NotAction)
+// 				for action := range allActions {
+// 					for _, notAction := range notActions {
+// 						if strings.HasPrefix(action, notAction) {
+// 							delete(allActions, action)
+// 						}
+// 					}
+// 				}
+// 			}
 
-			// Collect Resources
-			if statement.Resource != nil {
-				for _, resource := range *statement.Resource {
-					resources[resource] = true
-				}
-			}
-		}
-	}
+// 			// Collect Resources
+// 			if statement.Resource != nil {
+// 				for _, resource := range *statement.Resource {
+// 					resources[resource] = true
+// 				}
+// 			}
+// 		}
+// 	}
 
-	// Create worker pool for concurrent evaluation
-	workerCount := 10
-	type workItem struct {
-		resource *types.EnrichedResourceDescription
-		action   string
-	}
-	workChan := make(chan workItem)
-	var wg sync.WaitGroup
+// 	// Create worker pool for concurrent evaluation
+// 	workerCount := 10
+// 	type workItem struct {
+// 		resource *types.EnrichedResourceDescription
+// 		action   string
+// 	}
+// 	workChan := make(chan workItem)
+// 	var wg sync.WaitGroup
 
-	// Start workers
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for work := range workChan {
-				// Create evaluation request
-				req := &EvaluationRequest{
-					Action:   work.action,
-					Resource: work.resource.Arn.String(),
-					Context: &RequestContext{
-						PrincipalArn: principalArn,
-						ResourceTags: work.resource.Tags(),
-						AccountId:    work.resource.AccountId,
-						CurrentTime:  time.Now(),
-					},
-				}
-				slog.Debug(fmt.Sprintf("EvaluationRequest: %s", req.String()))
+// 	// Start workers
+// 	for i := 0; i < workerCount; i++ {
+// 		wg.Add(1)
+// 		go func() {
+// 			defer wg.Done()
+// 			for work := range workChan {
+// 				// Create evaluation request
+// 				req := &EvaluationRequest{
+// 					Action:   work.action,
+// 					Resource: work.resource.Arn.String(),
+// 					Context: &RequestContext{
+// 						PrincipalArn: principalArn,
+// 						ResourceTags: work.resource.Tags(),
+// 						AccountId:    work.resource.AccountId,
+// 						CurrentTime:  time.Now(),
+// 					},
+// 				}
+// 				slog.Debug(fmt.Sprintf("EvaluationRequest: %s", req.String()))
 
-				// Evaluate permissions
-				result, err := ga.evaluator.Evaluate(req)
-				if err != nil {
-					slog.Error("Error evaluating permissions",
-						"principal", principalArn,
-						"resource", work.resource,
-						"action", work.action,
-						"error", err)
-					continue
-				}
+// 				// Evaluate permissions
+// 				result, err := ga.evaluator.Evaluate(req)
+// 				if err != nil {
+// 					slog.Error("Error evaluating permissions",
+// 						"principal", principalArn,
+// 						"resource", work.resource,
+// 						"action", work.action,
+// 						"error", err)
+// 					continue
+// 				}
 
-				slog.Debug(fmt.Sprintf("EvaluationRequest: %s, EvaluationResult: %s", req.String(), result.String()))
+// 				slog.Debug(fmt.Sprintf("EvaluationRequest: %s, EvaluationResult: %s", req.String(), result.String()))
 
-				// Record result
-				summary.AddPermission(principalArn, work.resource.Arn.String(), work.action, result.Allowed, result)
-			}
-		}()
-	}
+// 				// Record result
+// 				summary.AddPermission(principalArn, work.resource.Arn.String(), work.action, result.Allowed, result)
+// 			}
+// 		}()
+// 	}
 
-	// Send work items - evaluate each resource/action combination
-	for action := range allActions {
-		for _, resource := range ga.getResourcesByAction(Action(action)) {
-			workChan <- workItem{
-				resource: resource,
-				action:   action,
-			}
-		}
-	}
+// 	// Send work items - evaluate each resource/action combination
+// 	for action := range allActions {
+// 		for _, resource := range ga.getResourcesByAction(Action(action)) {
+// 			workChan <- workItem{
+// 				resource: resource,
+// 				action:   action,
+// 			}
+// 		}
+// 	}
 
-	// Close channel and wait for completion
-	close(workChan)
-	wg.Wait()
-}
+// 	// Close channel and wait for completion
+// 	close(workChan)
+// 	wg.Wait()
+// }
 
 // Helper function to use AwsExpandActionsStage
 func expandActionsWithStage(actions types.DynaString) []string {
@@ -494,16 +510,15 @@ func expandActionsWithStage(actions types.DynaString) []string {
 }
 
 // Modified process methods to gather all policies
-func (ga *GaadAnalyzer) processUserPermissions(user types.UserDL, summary *PermissionsSummary, wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func (ga *GaadAnalyzer) processUserPermissions(user types.UserDL, evalChan chan<- *EvaluationRequest) {
 	// Create identity statements list
 	identityStatements := types.PolicyStatementList{}
+	boundaryStatements := types.PolicyStatementList{}
 
 	// Add inline policies
 	for _, policy := range user.UserPolicyList {
 		if policy.PolicyDocument.Statement != nil {
-			// Decorate the policy with the user's ARN
+			// Decorate with user's ARN
 			for i := range *policy.PolicyDocument.Statement {
 				(*policy.PolicyDocument.Statement)[i].OriginArn = user.Arn
 			}
@@ -516,26 +531,34 @@ func (ga *GaadAnalyzer) processUserPermissions(user types.UserDL, summary *Permi
 		if policy := ga.getPolicyByArn(attachedPolicy.PolicyArn); policy != nil {
 			for i := range policy.PolicyVersionList {
 				if policy.PolicyVersionList[i].IsDefaultVersion {
-					// Decorate the policy with the user's ARN
+					// Decorate with policy ARN
 					for j := range *policy.PolicyVersionList[i].Document.Statement {
 						(*policy.PolicyVersionList[i].Document.Statement)[j].OriginArn = attachedPolicy.PolicyArn
 					}
 					identityStatements = append(identityStatements, *policy.PolicyVersionList[i].Document.Statement...)
 				}
 			}
-			// if doc := ga.getDefaultPolicyDocument(policy); doc != nil && doc.Statement != nil {
-			// 	identityStatements = append(identityStatements, *doc.Statement...)
-			// }
 		}
 	}
 
-	// Add group policies
+	// Add permissions boundary
+	if user.PermissionsBoundary != (types.ManagedPL{}) {
+		if boundaryPolicy := ga.getPolicyByArn(user.PermissionsBoundary.PolicyArn); boundaryPolicy != nil {
+			if boundaryDoc := ga.getDefaultPolicyDocument(boundaryPolicy); boundaryDoc != nil {
+				for i := range *boundaryDoc.Statement {
+					(*boundaryDoc.Statement)[i].OriginArn = user.PermissionsBoundary.PolicyArn
+				}
+				boundaryStatements = *boundaryDoc.Statement
+			}
+		}
+	}
+
+	// Process group policies
 	for _, groupName := range user.GroupList {
 		if group, exists := ga.getGroupByName(groupName); exists {
 			// Add group inline policies
 			for _, policy := range group.GroupPolicyList {
 				if policy.PolicyDocument.Statement != nil {
-					// Decorate the policy with the group's ARN
 					for i := range *policy.PolicyDocument.Statement {
 						(*policy.PolicyDocument.Statement)[i].OriginArn = group.Arn
 					}
@@ -546,7 +569,6 @@ func (ga *GaadAnalyzer) processUserPermissions(user types.UserDL, summary *Permi
 			for _, attachedPolicy := range group.AttachedManagedPolicies {
 				if policy := ga.getPolicyByArn(attachedPolicy.PolicyArn); policy != nil {
 					if doc := ga.getDefaultPolicyDocument(policy); doc != nil && doc.Statement != nil {
-						// Decorate the policy with the group's ARN
 						for i := range *doc.Statement {
 							(*doc.Statement)[i].OriginArn = attachedPolicy.PolicyArn
 						}
@@ -557,96 +579,77 @@ func (ga *GaadAnalyzer) processUserPermissions(user types.UserDL, summary *Permi
 		}
 	}
 
-	// Now we can evaluate permissions properly
-	resources := make(map[string]bool)
-	allActions := make(map[string]bool)
+	// Extract and process actions/resources
+	allActions := ExtractActions(&identityStatements)
 
-	// Extract resources and actions from identityStatements
-	for _, statement := range identityStatements {
-		// Handle regular Actions
+	// Generate evaluation requests
+	for _, action := range allActions {
+		if isPrivEscAction(action) {
+			for _, resource := range ga.getResourcesByAction(Action(action)) {
+				evalReq := &EvaluationRequest{
+					Action:             action,
+					Resource:           resource.Arn.String(),
+					IdentityStatements: &identityStatements,
+					BoundaryStatements: &boundaryStatements,
+					Context: &RequestContext{
+						PrincipalArn: user.Arn,
+						ResourceTags: resource.Tags(),
+						AccountId:    resource.AccountId,
+						CurrentTime:  time.Now(),
+					},
+				}
+				evalChan <- evalReq
+			}
+		}
+	}
+}
+
+func ExtractActions(psl *types.PolicyStatementList) []string {
+	actions := []string{}
+	for _, statement := range *psl {
 		if statement.Action != nil {
 			expandedActions := expandActionsWithStage(*statement.Action)
 			for _, action := range expandedActions {
-				allActions[action] = true
-			}
-		}
-
-		// Handle Resources
-		if statement.Resource != nil {
-			for _, resource := range *statement.Resource {
-				resources[resource] = true
+				actions = append(actions, action)
 			}
 		}
 	}
+	return actions
+}
 
-	// Create worker pool
-	workerCount := 10
-	type workItem struct {
-		resource *types.EnrichedResourceDescription
-		action   string
-	}
-	workChan := make(chan workItem)
-	var evalWg sync.WaitGroup
+func (ga *GaadAnalyzer) startEvaluationWorkers(evalChan <-chan *EvaluationRequest, summary *PermissionsSummary, wg *sync.WaitGroup) {
+	numWorkers := runtime.NumCPU() * 3
+	slog.Debug(fmt.Sprintf("Starting %d evaluation workers", numWorkers))
 
-	// Start workers
-	for i := 0; i < workerCount; i++ {
-		evalWg.Add(1)
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
 		go func() {
-			defer evalWg.Done()
-			for work := range workChan {
-				// Create evaluation request with identity statements
-				req := &EvaluationRequest{
-					Action:             work.action,
-					Resource:           work.resource.Arn.String(),
-					IdentityStatements: &identityStatements, // Pass the identity statements
-					Context: &RequestContext{
-						PrincipalArn: user.Arn,
-						// Add other context as needed
-					},
-				}
+			defer wg.Done()
 
-				// Evaluate permissions
+			for req := range evalChan {
 				result, err := ga.evaluator.Evaluate(req)
 				if err != nil {
 					slog.Error("Error evaluating permissions",
-						"principal", user.Arn,
-						"resource", work.resource,
-						"action", work.action,
+						"principal", req.Context.PrincipalArn,
+						"resource", req.Resource,
+						"action", req.Action,
 						"error", err)
 					continue
 				}
 
-				slog.Debug(fmt.Sprintf("EvaluationRequest: %s, EvaluationResult: %s", req.String(), result.String()))
+				slog.Debug(fmt.Sprintf("EvaluationRequest: %s, EvaluationResult: %s",
+					req.String(), result.String()))
 
-				// Record result
-				summary.AddPermission(user.Arn, work.resource.Arn.String(), work.action, result.Allowed, result)
+				summary.AddPermission(req.Context.PrincipalArn, req.Resource,
+					req.Action, result.Allowed, result)
 			}
 		}()
 	}
-
-	// Send work items
-	for action := range allActions {
-		if isPrivEscAction(action) {
-			for _, resource := range ga.getResourcesByAction(Action(action)) {
-				workChan <- workItem{
-					resource: resource,
-					action:   action,
-				}
-			}
-		}
-	}
-
-	// Close channel and wait
-	close(workChan)
-	evalWg.Wait()
 }
 
-func (ga *GaadAnalyzer) processRolePermissions(role types.RoleDL, summary *PermissionsSummary, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	allPolicies := &PrincipalPolicies{
-		IdentityPolicies: make([]*types.Policy, 0),
-	}
+func (ga *GaadAnalyzer) processRolePermissions(role types.RoleDL, evalChan chan<- *EvaluationRequest) {
+	identityStatements := types.PolicyStatementList{}
+	boundaryStatements := types.PolicyStatementList{}
 
 	// Add inline policies
 	for _, policy := range role.RolePolicyList {
@@ -654,7 +657,7 @@ func (ga *GaadAnalyzer) processRolePermissions(role types.RoleDL, summary *Permi
 		for stmt := range *policy.PolicyDocument.Statement {
 			(*policy.PolicyDocument.Statement)[stmt].OriginArn = role.Arn
 		}
-		allPolicies.IdentityPolicies = append(allPolicies.IdentityPolicies, &policy.PolicyDocument)
+		identityStatements = append(identityStatements, *policy.PolicyDocument.Statement...)
 	}
 
 	// Add managed policies
@@ -665,22 +668,46 @@ func (ga *GaadAnalyzer) processRolePermissions(role types.RoleDL, summary *Permi
 				for stmt := range *doc.Statement {
 					(*doc.Statement)[stmt].OriginArn = attachedPolicy.PolicyArn
 				}
-				allPolicies.IdentityPolicies = append(allPolicies.IdentityPolicies, doc)
+				identityStatements = append(identityStatements, *doc.Statement...)
 			}
 		}
 	}
 
-	// Set permissions boundary if present
-	// if len(role.PermissionsBoundary.PermissionsBoundaryArn) > 0 {
-	// 	if boundaryPolicy := ga.getPolicyByArn(role.PermissionsBoundary.PermissionsBoundaryArn); boundaryPolicy != nil {
-	// 		if boundaryDoc := ga.getDefaultPolicyDocument(boundaryPolicy); boundaryDoc != nil {
-	// 			allPolicies.PermissionsBoundary = boundaryDoc
-	// 		}
-	// 	}
-	// }
+	//Set permissions boundary if present
+	if role.PermissionsBoundary != (types.ManagedPL{}) {
+		if boundaryPolicy := ga.getPolicyByArn(role.PermissionsBoundary.PolicyArn); boundaryPolicy != nil {
+			if boundaryDoc := ga.getDefaultPolicyDocument(boundaryPolicy); boundaryDoc != nil {
+				for i := range *boundaryDoc.Statement {
+					(*boundaryDoc.Statement)[i].OriginArn = role.PermissionsBoundary.PolicyArn
+				}
+				boundaryStatements = *boundaryDoc.Statement
+			}
+		}
+	}
 
-	// Evaluate permissions with all policies
-	ga.evaluatePermissions(role.Arn, allPolicies.IdentityPolicies, summary)
+	// Extract and process actions/resources
+	allActions := ExtractActions(&identityStatements)
+
+	// Generate evaluation requests
+	for _, action := range allActions {
+		if isPrivEscAction(action) {
+			for _, resource := range ga.getResourcesByAction(Action(action)) {
+				evalReq := &EvaluationRequest{
+					Action:             action,
+					Resource:           resource.Arn.String(),
+					IdentityStatements: &identityStatements,
+					BoundaryStatements: &boundaryStatements,
+					Context: &RequestContext{
+						PrincipalArn: role.Arn,
+						ResourceTags: resource.Tags(),
+						AccountId:    resource.AccountId,
+						CurrentTime:  time.Now(),
+					},
+				}
+				evalChan <- evalReq
+			}
+		}
+	}
 }
 
 // getGroupByName retrieves a group by name

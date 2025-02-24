@@ -89,3 +89,13 @@ func (e *EnrichedResourceDescription) Service() string {
 	service := strings.ToLower(split[1])
 	return service
 }
+
+func (e *EnrichedResourceDescription) Type() string {
+	split := strings.Split(e.TypeName, "::")
+	if len(split) < 3 {
+		slog.Debug("Failed to parse resource type", slog.String("resourceType", e.TypeName))
+		return ""
+	}
+
+	return strings.ToLower(split[2])
+}

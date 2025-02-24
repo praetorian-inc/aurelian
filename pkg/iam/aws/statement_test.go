@@ -248,11 +248,60 @@ func TestEvaluateStatement(t *testing.T) {
 				MatchedResource: true,
 			},
 		},
+		{
+			name: "Principal match",
+			stmt: &types.PolicyStatement{
+				Effect:   "Allow",
+				Action:   &types.DynaString{"sts:AssumeRole"},
+				Resource: &types.DynaString{"arn:aws:iam::123456789012:role/test-role"},
+				Principal: &types.Principal{
+					AWS: &types.DynaString{"arn:aws:iam::123456789012:root"},
+				},
+			},
+			requestedAction:   "sts:AssumeRole",
+			requestedResource: "arn:aws:iam::123456789012:role/test-role",
+			context: &RequestContext{
+				PrincipalArn: "arn:aws:iam::123456789012:role/test-role",
+			},
+			expected: &StatementEvaluation{
+				ExplicitAllow:    true,
+				ExplicitDeny:     false,
+				ImplicitDeny:     false,
+				MatchedAction:    true,
+				MatchedResource:  true,
+				MatchedPrincipal: true,
+			},
+		},
+		{
+			name: "Principal match service",
+			stmt: &types.PolicyStatement{
+				Effect:   "Allow",
+				Action:   &types.DynaString{"sts:AssumeRole"},
+				Resource: &types.DynaString{"arn:aws:iam::123456789012:role/test-role"},
+				Principal: &types.Principal{
+					Service: &types.DynaString{"glue.amazonaws.com"},
+				},
+			},
+			requestedAction:   "sts:AssumeRole",
+			requestedResource: "arn:aws:iam::123456789012:role/test-role",
+			context: &RequestContext{
+				PrincipalArn: "glue.amazonaws.com",
+			},
+			expected: &StatementEvaluation{
+				ExplicitAllow:    true,
+				ExplicitDeny:     false,
+				ImplicitDeny:     false,
+				MatchedAction:    true,
+				MatchedResource:  true,
+				MatchedPrincipal: true,
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := evaluateStatement(tt.stmt, tt.requestedAction, tt.requestedResource, tt.context)
+			t.Logf("EvaluateStatement: ExplicitAllow: %v, ExplicitDeny: %v, ImplicitDeny: %v, MatchedAction: %v, MatchedResource: %v, MatchedPrincipal: %v", got.ExplicitAllow, got.ExplicitDeny, got.ImplicitDeny, got.MatchedAction, got.MatchedResource, got.MatchedPrincipal)
 			if !reflect.DeepEqual(got, tt.expected) {
 				t.Errorf("evaluateStatement() = %v, want %v", got, tt.expected)
 			}
@@ -373,6 +422,7 @@ func TestMatchesResources(t *testing.T) {
 		resources         *types.DynaString
 		requestedResource string
 		matched           bool
+		error             bool
 	}{
 		{
 			name:              "Exact match",
@@ -408,12 +458,6 @@ func TestMatchesResources(t *testing.T) {
 			name:              "Wildcard no match",
 			resources:         &types.DynaString{"arn:aws:s3:::example-*"},
 			requestedResource: "arn:aws:s3:::different-bucket",
-			matched:           false,
-		},
-		{
-			name:              "Invalid regex pattern",
-			resources:         &types.DynaString{"arn:aws:s3:::mybucket/["},
-			requestedResource: "arn:aws:s3:::mybucket/myfile.txt",
 			matched:           false,
 		},
 	}

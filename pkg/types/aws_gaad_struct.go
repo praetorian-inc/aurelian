@@ -26,6 +26,7 @@ type UserDL struct {
 	GroupList               []string      `json:"GroupList"`
 	Tags                    []Tag         `json:"Tags"`
 	UserPolicyList          []PrincipalPL `json:"UserPolicyList"`
+	PermissionsBoundary     ManagedPL     `json:"PermissionsBoundary"`
 	AttachedManagedPolicies []ManagedPL   `json:"AttachedManagedPolicies"`
 }
 
@@ -58,6 +59,7 @@ type RoleDL struct {
 	Tags                     []Tag             `json:"Tags"`
 	RolePolicyList           []PrincipalPL     `json:"RolePolicyList"`
 	AttachedManagedPolicies  []ManagedPL       `json:"AttachedManagedPolicies"`
+	PermissionsBoundary      ManagedPL         `json:"PermissionsBoundary"`
 	InstanceProfileList      []InstanceProfile `json:"InstanceProfileList"`
 }
 

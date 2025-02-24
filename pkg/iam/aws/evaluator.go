@@ -225,7 +225,7 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 	}
 
 	// 4. Evaluate permission boundary if present
-	if req.BoundaryStatements != nil {
+	if req.BoundaryStatements != nil && len(*req.BoundaryStatements) > 0 {
 		boundaryEvals, err := e.evaluatePolicyType(req.Action, req.Resource, req.Context,
 			req.BoundaryStatements, EvalTypePermBoundary)
 		if err != nil {
@@ -270,11 +270,24 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 		result.PolicyResult.AddEvaluation(EvalTypeIdentity, identityEvals)
 	}
 
-	// 8. Make final determination based on cross-account status and policy evaluations
+	// 8. Make final determination based on cross-account status, policy evaluations,
+	//    and special handling for assume role operations
+
+	// Check if this is an AssumeRole operation on an IAM role
+	isAssumeRoleOperation := strings.HasPrefix(req.Action, "sts:AssumeRole") &&
+		strings.Contains(req.Resource, ":role/")
+
 	if result.CrossAccountAccess {
-		// Cross-account access requires both identity and resource policy allows
-		result.Allowed = result.PolicyResult.HasTypeAllow(EvalTypeIdentity) && resourceAllowed
-		result.EvaluationDetails = "Cross-account access"
+		if isAssumeRoleOperation && result.PolicyResult.HasTypeAllow(EvalTypePermBoundary) {
+			// Special case: For cross-account assume role, the trust policy (permission boundary)
+			// is sufficient if it allows the operation, even without a resource policy
+			result.Allowed = result.PolicyResult.HasTypeAllow(EvalTypeIdentity)
+			result.EvaluationDetails = "Cross-account assume role access"
+		} else {
+			// Normal cross-account access requires both identity and resource policy allows
+			result.Allowed = result.PolicyResult.HasTypeAllow(EvalTypeIdentity) && resourceAllowed
+			result.EvaluationDetails = "Cross-account access"
+		}
 	} else {
 		// Same account access allows if:
 		// - Principal is explicitly named in resource policy, OR
@@ -389,22 +402,10 @@ func (e *PolicyEvaluator) isCrossAccountRequest(resourceArn string, ctx *Request
 		return false // If we can't parse resource ARN, assume same account for safety
 	}
 
+	// Handle special cases
 	// If resource account contains wildcard or is empty, assume same account
+	// Empty account ID is used for global services
 	if resourceAcct.AccountID == "*" || resourceAcct.AccountID == "" {
-		return false
-	}
-
-	// Handle global services that don't have account IDs
-	globalServices := map[string]bool{
-		"s3":            true,
-		"iam":           true,
-		"route53":       true,
-		"cloudfront":    true,
-		"apigateway":    true,
-		"organizations": true,
-	}
-
-	if globalServices[resourceAcct.Service] {
 		return false
 	}
 
@@ -444,12 +445,13 @@ func (e *PolicyEvaluator) hasExplicitPrincipalAllow(statements *types.PolicyStat
 }
 
 type StatementEvaluation struct {
-	ExplicitAllow   bool // Statement matched and explicitly allows
-	ExplicitDeny    bool // Statement matched and explicitly denies
-	ImplicitDeny    bool // Default deny or criteria didn't match
-	MatchedAction   bool // For debugging - did action/notAction match
-	MatchedResource bool // For debugging - did resource/notResource match
-	Origin          string
+	ExplicitAllow    bool // Statement matched and explicitly allows
+	ExplicitDeny     bool // Statement matched and explicitly denies
+	ImplicitDeny     bool // Default deny or criteria didn't match
+	MatchedAction    bool // For debugging - did action/notAction match
+	MatchedResource  bool // For debugging - did resource/notResource match
+	MatchedPrincipal bool // For debugging - did principal match
+	Origin           string
 }
 
 func (eval *StatementEvaluation) IsAllowed() bool {

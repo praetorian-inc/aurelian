@@ -171,6 +171,21 @@ func TestPolicyEvaluator_PermissionBoundary(t *testing.T) {
 	result3, err := evaluator.Evaluate(req3)
 	assert.NoError(t, err)
 	assert.True(t, result3.Allowed) // Allowed by identity policy
+
+	// Test 3: No boundary - falls back to identity policy evaluation
+	req4 := &EvaluationRequest{
+		Action:             "ec2:RunInstances",
+		Resource:           "arn:aws:ec2:us-west-2:111122223333:instance/*",
+		Context:            createRequestContext("arn:aws:iam::111122223333:user/test-user"),
+		IdentityStatements: identityStatements,
+		BoundaryStatements: &types.PolicyStatementList{},
+	}
+
+	result4, err := evaluator.Evaluate(req4)
+	t.Log(result4)
+	assert.NoError(t, err)
+	assert.True(t, result4.Allowed) // Allowed by identity policy
+
 }
 
 func TestPolicyEvaluator_ServiceControlPolicy(t *testing.T) {
@@ -288,7 +303,7 @@ func TestPolicyEvaluator_ResourceBasedPolicy(t *testing.T) {
 
 	resource := "arn:aws:s3::111122223333:example-bucket/file.txt"
 	resourcePolicies := map[string]*types.Policy{
-		resource: &types.Policy{
+		resource: {
 			Id:      "Policy1",
 			Version: "2012-10-17",
 			Statement: &types.PolicyStatementList{
@@ -443,4 +458,100 @@ func TestPolicyEvaluator_SCPDenyS3PublicAccess(t *testing.T) {
 			// }
 		})
 	}
+}
+
+func TestPolicyEvaluator_AssumeRolePolicyDocument(t *testing.T) {
+	// Define the assume role trust document
+	assumeRolePolicy := &types.PolicyStatementList{
+		{
+			Effect: "Allow",
+			Principal: &types.Principal{
+				AWS: types.NewDynaString([]string{
+					"arn:aws:iam::111122223333:root",
+					"arn:aws:iam::123456789012:role/cross-account",
+				}),
+				Service: types.NewDynaString([]string{"glue.amazonaws.com"}),
+			},
+			Action:    types.NewDynaString([]string{"sts:AssumeRole"}),
+			Condition: &types.Condition{},
+			OriginArn: "arn:aws:iam::111122223333:role/role-name/assume-role-policy",
+			Resource:  types.NewDynaString([]string{"arn:aws:iam::111122223333:role/role-name"}), // we need to inject this into the ARPD
+		},
+	}
+
+	identity := &types.PolicyStatementList{
+		{
+			Effect:   "Allow",
+			Action:   types.NewDynaString([]string{"*"}),
+			Resource: types.NewDynaString([]string{"*"}),
+		},
+	}
+
+	evaluator := NewPolicyEvaluator(&PolicyData{})
+
+	tests := []struct {
+		name             string
+		principalArn     string
+		action           string
+		resource         string
+		wantAllowed      bool
+		wantExplicitDeny bool
+	}{
+		{
+			name:             "Allowed role",
+			principalArn:     "arn:aws:iam::111122223333:user/test-user",
+			action:           "sts:AssumeRole",
+			resource:         "arn:aws:iam::111122223333:role/role-name",
+			wantAllowed:      true,
+			wantExplicitDeny: false,
+		},
+		{
+			name:             "Denied different account",
+			principalArn:     "arn:aws:iam::111122223334:user/some-other-user",
+			action:           "sts:AssumeRole",
+			resource:         "arn:aws:iam::111122223333:role/role-name",
+			wantAllowed:      false,
+			wantExplicitDeny: true,
+		},
+		{
+			name:             "Allowed cross-account role",
+			principalArn:     "arn:aws:iam::123456789012:role/cross-account",
+			action:           "sts:AssumeRole",
+			resource:         "arn:aws:iam::111122223333:role/role-name",
+			wantAllowed:      true,
+			wantExplicitDeny: false,
+		},
+		{
+			name:             "Service",
+			principalArn:     "glue.amazonaws.com",
+			action:           "sts:AssumeRole",
+			resource:         "arn:aws:iam::111122223333:role/role-name",
+			wantAllowed:      true,
+			wantExplicitDeny: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &EvaluationRequest{
+				Action:             tt.action,
+				Resource:           tt.resource,
+				Context:            createRequestContext(tt.principalArn),
+				IdentityStatements: identity,
+				BoundaryStatements: assumeRolePolicy,
+			}
+
+			result, err := evaluator.Evaluate(req)
+			assert.NoError(t, err)
+			t.Log(t.Name())
+			t.Log(result)
+			t.Logf("PrincipalArn: %s, Action: %s, Allowed: %v, WantAllowed: %v", tt.principalArn, tt.action, result.Allowed, tt.wantAllowed)
+
+			// Add more detailed assertion logging
+			t.Logf("Allowed assertion: expected=%v, got=%v", tt.wantAllowed, result.Allowed)
+			assert.Equal(t, tt.wantAllowed, result.Allowed)
+
+		})
+	}
+
 }

@@ -146,3 +146,12 @@ func loadJSONFile[T any](filename string) (*T, error) {
 
 	return &result, nil
 }
+
+// func GraphRelationship(principal, resource, action string) {
+// 	rel := graph.Relationship{}
+// 	rel.Type = action
+// 	rel.StartNode = graph.NodeFromEnrichedResourceDescription(principal)
+// 	rel.EndNode = graph.NodeFromEnrichedResourceDescription(resource)
+// 	re.Properties = evaluationResult
+
+// }

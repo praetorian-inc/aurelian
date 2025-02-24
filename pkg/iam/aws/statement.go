@@ -10,19 +10,39 @@ import (
 
 func evaluateStatement(stmt *types.PolicyStatement, requestedAction, requestedResource string, context *RequestContext) *StatementEvaluation {
 	eval := &StatementEvaluation{
-		Origin:       stmt.OriginArn,
 		ImplicitDeny: true, // Start with implicit deny as default
+		Origin:       stmt.OriginArn,
+	}
+
+	// Evaluate Principal/NotPrincipal first
+	// For resource-based policies, principal is required (implicit deny if missing)
+	// For identity-based policies, principal should not be present
+	if stmt.Principal != nil || stmt.NotPrincipal != nil {
+		if context == nil || context.PrincipalArn == "" {
+			// No principal in request context - implicit deny
+			return eval
+		}
+
+		if stmt.NotPrincipal != nil {
+			// NotPrincipal matches if the request principal does NOT match any specified principals
+			eval.MatchedPrincipal = !matchesPrincipal(stmt.NotPrincipal, context.PrincipalArn)
+		} else {
+			// Regular Principal matches if the request principal matches any specified principal
+			eval.MatchedPrincipal = matchesPrincipal(stmt.Principal, context.PrincipalArn)
+		}
+
+		// If principals don't match, return implicit deny
+		if !eval.MatchedPrincipal {
+			return eval
+		}
 	}
 
 	// Evaluate Action/NotAction
 	if stmt.NotAction != nil {
-		// NotAction matches if the requested action does NOT match any of the specified actions
 		eval.MatchedAction = !matchesActions(stmt.NotAction, requestedAction)
 	} else if stmt.Action != nil {
-		// Regular Action matches if the requested action matches any specified action
 		eval.MatchedAction = matchesActions(stmt.Action, requestedAction)
 	} else {
-		// No action specified, leave as implicit deny
 		return eval
 	}
 
@@ -33,13 +53,10 @@ func evaluateStatement(stmt *types.PolicyStatement, requestedAction, requestedRe
 
 	// Evaluate Resource/NotResource
 	if stmt.NotResource != nil {
-		// NotResource matches if the requested resource does NOT match any specified resources
 		eval.MatchedResource = !MatchesResources(stmt.NotResource, requestedResource)
 	} else if stmt.Resource != nil {
-		// Regular Resource matches if the requested resource matches any specified resource
 		eval.MatchedResource = MatchesResources(stmt.Resource, requestedResource)
 	} else {
-		// No resource specified, leave as implicit deny
 		return eval
 	}
 
@@ -51,12 +68,12 @@ func evaluateStatement(stmt *types.PolicyStatement, requestedAction, requestedRe
 	// Check conditions if present
 	if stmt.Condition != nil {
 		if !evaluateConditions(stmt.Condition, context) {
-			return eval // Return implicit deny
+			return eval
 		}
 	}
 
 	// If we get here, all criteria matched
-	eval.ImplicitDeny = false // Clear implicit deny
+	eval.ImplicitDeny = false
 
 	// Set explicit allow/deny based on Effect
 	if strings.EqualFold(stmt.Effect, "Deny") {
@@ -150,4 +167,49 @@ func (ctx *RequestContext) GetPrincipalType() PrincipalType {
 	default:
 		return PrincipalTypeUnknown
 	}
+}
+
+// matchesPrincipal checks if the requestedPrincipal matches the principal definition
+func matchesPrincipal(principal *types.Principal, requestedPrincipal string) bool {
+	// Handle nil principal
+	if principal == nil {
+		return false
+	}
+
+	if principal.AWS != nil {
+		for _, aws := range *principal.AWS {
+			if strings.HasSuffix(aws, ":root") {
+				aws = strings.Replace(aws, ":root", "*", 1)
+			}
+			if matchesPattern(aws, requestedPrincipal) {
+				return true
+			}
+		}
+	}
+
+	if principal.Service != nil {
+		for _, service := range *principal.Service {
+			if matchesPattern(service, requestedPrincipal) {
+				return true
+			}
+		}
+	}
+
+	if principal.Federated != nil {
+		for _, federated := range *principal.Federated {
+			if matchesPattern(federated, requestedPrincipal) {
+				return true
+			}
+		}
+	}
+
+	if principal.CanonicalUser != nil {
+		for _, canonicalUser := range *principal.CanonicalUser {
+			if matchesPattern(canonicalUser, requestedPrincipal) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
