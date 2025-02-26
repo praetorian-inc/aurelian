@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
@@ -53,13 +54,10 @@ func (ps *PermissionsSummary) GetResults() []PrincipalResult {
 
 						// Add allowed actions
 						if len(resPerm.AllowedActions) > 0 {
-							actions = append(actions, resPerm.AllowedActions...)
+							for _, action := range resPerm.AllowedActions {
+								actions = append(actions, action.Name)
+							}
 						}
-
-						// Add denied actions (if you want to include them)
-						// if len(resPerm.DeniedActions) > 0 {
-						//     actions = append(actions, resPerm.DeniedActions...)
-						// }
 
 						// Only add if we have actions
 						if len(actions) > 0 {
@@ -81,6 +79,146 @@ func (ps *PermissionsSummary) GetResults() []PrincipalResult {
 	// Sort by principal ARN for consistent output
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].PrincipalArn < results[j].PrincipalArn
+	})
+
+	return results
+}
+
+type FullResult struct {
+	Principal interface{}                        `json:"principal"`
+	Resource  *types.EnrichedResourceDescription `json:"resource"`
+	Action    string                             `json:"action"`
+	Result    *EvaluationResult                  `json:"result"`
+}
+
+func (fr *FullResult) UnmarshalJSON(data []byte) error {
+	var intermediate struct {
+		Principal json.RawMessage                    `json:"principal"`
+		Resource  *types.EnrichedResourceDescription `json:"resource"`
+		Action    string                             `json:"action"`
+		Result    *EvaluationResult                  `json:"result"`
+	}
+
+	// Unmarshal into the intermediate structure
+	if err := json.Unmarshal(data, &intermediate); err != nil {
+		return fmt.Errorf("failed to unmarshal FullResult: %w", err)
+	}
+
+	fr.Resource = intermediate.Resource
+	fr.Action = intermediate.Action
+	fr.Result = intermediate.Result
+
+	// First check if it's a simple string (service principal)
+	var service string
+	if err := json.Unmarshal(intermediate.Principal, &service); err == nil {
+		// Verify it's actually a string and not an empty object
+		if service != "" && service != "{}" {
+			fr.Principal = service
+			return nil
+		}
+	}
+
+	// If not a string, it should be an object - try to detect its type
+	var principalMap map[string]interface{}
+	if err := json.Unmarshal(intermediate.Principal, &principalMap); err != nil {
+		return fmt.Errorf("principal is neither a string nor an object: %w", err)
+	}
+
+	// Check for distinguishing fields to determine the type
+	if _, hasUserName := principalMap["UserName"]; hasUserName {
+		var user types.UserDL
+		if err := json.Unmarshal(intermediate.Principal, &user); err != nil {
+			return fmt.Errorf("failed to unmarshal user: %w", err)
+		}
+		fr.Principal = &user
+		return nil
+	}
+
+	if _, hasRoleName := principalMap["RoleName"]; hasRoleName {
+		var role types.RoleDL
+		if err := json.Unmarshal(intermediate.Principal, &role); err != nil {
+			return fmt.Errorf("failed to unmarshal role: %w", err)
+		}
+		fr.Principal = &role
+		return nil
+	}
+
+	if _, hasGroupName := principalMap["GroupName"]; hasGroupName {
+		var group types.GroupDL
+		if err := json.Unmarshal(intermediate.Principal, &group); err != nil {
+			return fmt.Errorf("failed to unmarshal group: %w", err)
+		}
+		fr.Principal = &group
+		return nil
+	}
+
+	// If we can't determine the type, store it as a generic map
+	fr.Principal = principalMap
+	return nil
+}
+
+func (ps *PermissionsSummary) FullResults() []FullResult {
+	results := make([]FullResult, 0)
+
+	ps.Permissions.Range(func(key, value interface{}) bool {
+		if perms, ok := value.(*PrincipalPermissions); ok {
+			// Convert ResourcePerms sync.Map to map, skipping empty resources
+			perms.ResourcePerms.Range(func(resKey, resValue interface{}) bool {
+				if resPerm, ok := resValue.(*ResourcePermission); ok {
+					// Only include resources that have allowed or denied actions
+					if len(resPerm.AllowedActions) > 0 || len(resPerm.DeniedActions) > 0 {
+						resArn := resKey.(string)
+
+						// Get the resource from the cache
+						if resource, ok := resourceCache[resArn]; ok {
+							for _, action := range resPerm.AllowedActions {
+								if principal, ok := userCache[perms.PrincipalArn]; ok {
+									results = append(results, FullResult{
+										Principal: principal,
+										Resource:  resource,
+										Action:    action.Name,
+										Result:    action.EvaluationResult,
+									})
+								}
+								if principal, ok := userCache[perms.PrincipalArn]; ok {
+									results = append(results, FullResult{
+										Principal: principal,
+										Resource:  resource,
+										Action:    action.Name,
+										Result:    action.EvaluationResult,
+									})
+								} else if principal, ok := roleCache[perms.PrincipalArn]; ok {
+									results = append(results, FullResult{
+										Principal: principal,
+										Resource:  resource,
+										Action:    action.Name,
+										Result:    action.EvaluationResult,
+									})
+								} else if principal, ok := groupCache[perms.PrincipalArn]; ok {
+									results = append(results, FullResult{
+										Principal: principal,
+										Resource:  resource,
+										Action:    action.Name,
+										Result:    action.EvaluationResult,
+									})
+								} else {
+									results = append(results, FullResult{
+										Principal: perms.PrincipalArn,
+										Resource:  resource,
+										Action:    action.Name,
+										Result:    action.EvaluationResult,
+									})
+								}
+
+							}
+						}
+
+					}
+				}
+				return true
+			})
+		}
+		return true
 	})
 
 	return results
@@ -110,77 +248,77 @@ type PrincipalPolicies struct {
 
 // ResourcePermission represents what a principal can do with a resource
 type ResourcePermission struct {
-	Resource       string   // ARN of the resource
-	AllowedActions []string // Actions explicitly allowed on this resource
-	DeniedActions  []string // Actions explicitly denied on this resource
-	CrossAccount   bool     // Whether this is a cross-account access
-	ReasonAllowed  string   // Description of why access is allowed
-	ReasonDenied   string   // Description of why access is denied
+	Resource       string            // ARN of the resource
+	AllowedActions []*ResourceAction // Action being evaluated
+	DeniedActions  []*ResourceAction // Action being evaluated
 
 	// Internal mutex for concurrent updates
 	mu sync.RWMutex
 }
 
+type ResourceAction struct {
+	Name             string
+	EvaluationResult *EvaluationResult
+}
+
 // AddAction safely adds an action to the appropriate list
-func (rp *ResourcePermission) AddAction(action string, allowed bool, reason string) {
+func (rp *ResourcePermission) AddAction(action string, eval *EvaluationResult) {
 	rp.mu.Lock()
 	defer rp.mu.Unlock()
-
-	if allowed {
-		if !containsString(rp.AllowedActions, action) {
-			rp.AllowedActions = append(rp.AllowedActions, action)
-			rp.ReasonAllowed = reason
-		}
+	if eval.Allowed {
+		rp.AllowedActions = append(rp.AllowedActions, &ResourceAction{
+			Name:             action,
+			EvaluationResult: eval,
+		})
 	} else {
-		if !containsString(rp.DeniedActions, action) {
-			rp.DeniedActions = append(rp.DeniedActions, action)
-			rp.ReasonDenied = reason
-		}
+		rp.DeniedActions = append(rp.DeniedActions, &ResourceAction{
+			Name:             action,
+			EvaluationResult: eval,
+		})
 	}
 }
 
-func containsString(slice []string, target string) bool {
-	for _, item := range slice {
-		if item == target {
-			return true
-		}
-	}
-	return false
-}
+// func containsString(slice []string, target string) bool {
+// 	for _, item := range slice {
+// 		if item == target {
+// 			return true
+// 		}
+// 	}
+// 	return false
+// }
 
 // MarshalJSON implements custom JSON marshaling
-func (rp *ResourcePermission) MarshalJSON() ([]byte, error) {
-	rp.mu.RLock()
-	defer rp.mu.RUnlock()
+// func (rp *ResourcePermission) MarshalJSON() ([]byte, error) {
+// 	rp.mu.RLock()
+// 	defer rp.mu.RUnlock()
 
-	// Sort actions for consistent output
-	sort.Strings(rp.AllowedActions)
-	sort.Strings(rp.DeniedActions)
+// 	// Sort actions for consistent output
+// 	sort.Strings(rp.AllowedActions)
+// 	sort.Strings(rp.DeniedActions)
 
-	type Alias ResourcePermission
-	return json.Marshal(&struct {
-		*Alias
-		AllowedActions []string `json:"allowed_actions"`
-		DeniedActions  []string `json:"denied_actions"`
-	}{
-		Alias:          (*Alias)(rp),
-		AllowedActions: rp.AllowedActions,
-		DeniedActions:  rp.DeniedActions,
-	})
-}
+// 	type Alias ResourcePermission
+// 	return json.Marshal(&struct {
+// 		*Alias
+// 		AllowedActions []string `json:"allowed_actions"`
+// 		DeniedActions  []string `json:"denied_actions"`
+// 	}{
+// 		Alias:          (*Alias)(rp),
+// 		AllowedActions: rp.AllowedActions,
+// 		DeniedActions:  rp.DeniedActions,
+// 	})
+// }
 
 // AddResourcePermission safely adds or updates a resource permission
 func (p *PrincipalPermissions) AddResourcePermission(resourceArn string, action string, allowed bool, eval *EvaluationResult) {
 	// Get or create resource permission
 	val, _ := p.ResourcePerms.LoadOrStore(resourceArn, &ResourcePermission{
 		Resource:       resourceArn,
-		AllowedActions: make([]string, 0),
-		DeniedActions:  make([]string, 0),
-		CrossAccount:   eval.CrossAccountAccess,
+		AllowedActions: make([]*ResourceAction, 0),
+		DeniedActions:  make([]*ResourceAction, 0),
 	})
 
 	rp := val.(*ResourcePermission)
-	rp.AddAction(action, allowed, eval.EvaluationDetails)
+	rp.AddAction(action, eval)
 }
 
 // GetResources returns a sorted list of all resource ARNs
@@ -382,108 +520,104 @@ func (ga *GaadAnalyzer) AnalyzePrincipalPermissions() (*PermissionsSummary, erro
 		}(role)
 	}
 
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ga.generateServicePrincipalEvaluations(evalChan)
+	}()
+
 	wg.Wait()
 	return summary, nil
 }
 
-// func (ga *GaadAnalyzer) evaluatePermissions(principalArn string, policies []*types.Policy, summary *PermissionsSummary) {
-// 	// Extract unique resources and actions from policies
-// 	resources := make(map[string]bool)
-// 	allActions := make(map[string]bool)
+func (ga *GaadAnalyzer) generateServicePrincipalEvaluations(evalChan chan *EvaluationRequest) {
 
-// 	// First pass - collect all raw actions and resources
-// 	for _, policy := range policies {
-// 		for _, statement := range *policy.Statement {
-// 			// Handle regular Actions
-// 			if statement.Action != nil {
-// 				expandedActions := expandActionsWithStage(*statement.Action)
-// 				for _, action := range expandedActions {
-// 					allActions[action] = true
-// 				}
-// 			}
+	// Process resource policies
+	for resourceArn := range ga.policyData.ResourcePolicies {
+		policy := ga.policyData.ResourcePolicies[resourceArn]
+		evalReq := ga.generateServiceEvaluations(resourceArn, policy)
+		if evalReq != nil {
+			evalChan <- evalReq
+		}
+	}
 
-// 			// Handle NotAction by getting all possible actions and removing matches
-// 			if statement.NotAction != nil {
-// 				notActions := expandActionsWithStage(*statement.NotAction)
-// 				for action := range allActions {
-// 					for _, notAction := range notActions {
-// 						if strings.HasPrefix(action, notAction) {
-// 							delete(allActions, action)
-// 						}
-// 					}
-// 				}
-// 			}
+	// Proccess AssumeRole policies
+	for _, role := range ga.policyData.Gaad.RoleDetailList {
+		for i, stmt := range *role.AssumeRolePolicyDocument.Statement {
+			(*role.AssumeRolePolicyDocument.Statement)[i].OriginArn = role.Arn
+			(*role.AssumeRolePolicyDocument.Statement)[i].Resource = &types.DynaString{role.Arn}
+			if stmt.Principal != nil && stmt.Principal.Service != nil {
+				for _, service := range *stmt.Principal.Service {
+					for _, action := range *stmt.Action {
+						if isPrivEscAction(action) {
 
-// 			// Collect Resources
-// 			if statement.Resource != nil {
-// 				for _, resource := range *statement.Resource {
-// 					resources[resource] = true
-// 				}
-// 			}
-// 		}
-// 	}
+							accountID, tags := getResourceDeets(role.Arn)
 
-// 	// Create worker pool for concurrent evaluation
-// 	workerCount := 10
-// 	type workItem struct {
-// 		resource *types.EnrichedResourceDescription
-// 		action   string
-// 	}
-// 	workChan := make(chan workItem)
-// 	var wg sync.WaitGroup
+							evalReq := &EvaluationRequest{
+								Action:             action,
+								Resource:           role.Arn,
+								IdentityStatements: role.AssumeRolePolicyDocument.Statement,
+								Context: &RequestContext{
+									PrincipalArn: service,
+									ResourceTags: tags,
+									AccountId:    accountID,
+									CurrentTime:  time.Now(),
+								},
+							}
+							evalChan <- evalReq
+						}
+					}
+				}
+			}
+		}
+	}
+}
 
-// 	// Start workers
-// 	for i := 0; i < workerCount; i++ {
-// 		wg.Add(1)
-// 		go func() {
-// 			defer wg.Done()
-// 			for work := range workChan {
-// 				// Create evaluation request
-// 				req := &EvaluationRequest{
-// 					Action:   work.action,
-// 					Resource: work.resource.Arn.String(),
-// 					Context: &RequestContext{
-// 						PrincipalArn: principalArn,
-// 						ResourceTags: work.resource.Tags(),
-// 						AccountId:    work.resource.AccountId,
-// 						CurrentTime:  time.Now(),
-// 					},
-// 				}
-// 				slog.Debug(fmt.Sprintf("EvaluationRequest: %s", req.String()))
+func getResourceDeets(resourceArn string) (string, map[string]string) {
+	resource, ok := resourceCache[resourceArn]
+	if !ok {
+		slog.Debug("Resource not found for ARN", "arn", resourceArn)
+		parsed, err := arn.Parse(resourceArn)
+		if err != nil {
+			slog.Error("Failed to parse ARN", "arn", resourceArn, "error", err)
+			return "", nil
+		}
+		return parsed.AccountID, nil
+	}
+	return resource.AccountId, resource.Tags()
+}
 
-// 				// Evaluate permissions
-// 				result, err := ga.evaluator.Evaluate(req)
-// 				if err != nil {
-// 					slog.Error("Error evaluating permissions",
-// 						"principal", principalArn,
-// 						"resource", work.resource,
-// 						"action", work.action,
-// 						"error", err)
-// 					continue
-// 				}
+func (ga *GaadAnalyzer) generateServiceEvaluations(resourceArn string, policy *types.Policy) *EvaluationRequest {
+	if policy.Statement != nil {
+		for i := range *policy.Statement {
+			(*policy.Statement)[i].OriginArn = resourceArn
+			if (*policy.Statement)[i].Principal != nil && (*policy.Statement)[i].Principal.Service != nil {
+				for _, service := range *(*policy.Statement)[i].Principal.Service {
+					for _, action := range *(*policy.Statement)[i].Action {
+						if isPrivEscAction(action) {
 
-// 				slog.Debug(fmt.Sprintf("EvaluationRequest: %s, EvaluationResult: %s", req.String(), result.String()))
+							accountID, tags := getResourceDeets(resourceArn)
 
-// 				// Record result
-// 				summary.AddPermission(principalArn, work.resource.Arn.String(), work.action, result.Allowed, result)
-// 			}
-// 		}()
-// 	}
-
-// 	// Send work items - evaluate each resource/action combination
-// 	for action := range allActions {
-// 		for _, resource := range ga.getResourcesByAction(Action(action)) {
-// 			workChan <- workItem{
-// 				resource: resource,
-// 				action:   action,
-// 			}
-// 		}
-// 	}
-
-// 	// Close channel and wait for completion
-// 	close(workChan)
-// 	wg.Wait()
-// }
+							evalReq := &EvaluationRequest{
+								Action:             action,
+								Resource:           resourceArn,
+								IdentityStatements: policy.Statement,
+								Context: &RequestContext{
+									PrincipalArn: service,
+									ResourceTags: tags,
+									AccountId:    accountID,
+									CurrentTime:  time.Now(),
+								},
+							}
+							return evalReq
+						}
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
 
 // Helper function to use AwsExpandActionsStage
 func expandActionsWithStage(actions types.DynaString) []string {
@@ -585,12 +719,31 @@ func (ga *GaadAnalyzer) processUserPermissions(user types.UserDL, evalChan chan<
 	// Generate evaluation requests
 	for _, action := range allActions {
 		if isPrivEscAction(action) {
+
+			var tempBoundary types.PolicyStatementList
+			deepCopy(boundaryStatements, tempBoundary)
 			for _, resource := range ga.getResourcesByAction(Action(action)) {
+
+				// For AssumeRole actions, update the resource in the policy document
+				// Without the resource, the evaluator won't match the policy
+				if action == "sts:AssumeRole" {
+					role := roleCache[resource.Arn.String()]
+					if role != nil {
+						arpd := role.AssumeRolePolicyDocument
+						for i := range *arpd.Statement {
+							(*arpd.Statement)[i].Resource = &types.DynaString{resource.Arn.String()}
+						}
+
+						slog.Debug(fmt.Sprintf("AssumeRole policy for %s: %v", role.Arn, arpd.Statement))
+						tempBoundary = append(tempBoundary, *arpd.Statement...)
+					}
+				}
+
 				evalReq := &EvaluationRequest{
 					Action:             action,
 					Resource:           resource.Arn.String(),
 					IdentityStatements: &identityStatements,
-					BoundaryStatements: &boundaryStatements,
+					BoundaryStatements: &tempBoundary,
 					Context: &RequestContext{
 						PrincipalArn: user.Arn,
 						ResourceTags: resource.Tags(),
@@ -604,14 +757,20 @@ func (ga *GaadAnalyzer) processUserPermissions(user types.UserDL, evalChan chan<
 	}
 }
 
+func deepCopy(src, dst interface{}) error {
+	data, err := json.Marshal(src)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, dst)
+}
+
 func ExtractActions(psl *types.PolicyStatementList) []string {
 	actions := []string{}
 	for _, statement := range *psl {
 		if statement.Action != nil {
 			expandedActions := expandActionsWithStage(*statement.Action)
-			for _, action := range expandedActions {
-				actions = append(actions, action)
-			}
+			actions = append(actions, expandedActions...)
 		}
 	}
 	return actions
@@ -691,7 +850,25 @@ func (ga *GaadAnalyzer) processRolePermissions(role types.RoleDL, evalChan chan<
 	// Generate evaluation requests
 	for _, action := range allActions {
 		if isPrivEscAction(action) {
+
+			var tempBoundary types.PolicyStatementList
+			deepCopy(boundaryStatements, tempBoundary)
+
 			for _, resource := range ga.getResourcesByAction(Action(action)) {
+				// For AssumeRole actions, update the resource in the policy document
+				// Without the resource, the evaluator won't match the policy
+				if action == "sts:AssumeRole" {
+					role := roleCache[resource.Arn.String()]
+					if role != nil {
+						arpd := role.AssumeRolePolicyDocument
+						for i := range *arpd.Statement {
+							(*arpd.Statement)[i].Resource = &types.DynaString{resource.Arn.String()}
+						}
+
+						slog.Debug(fmt.Sprintf("AssumeRole policy for %s: %v", role.Arn, arpd.Statement))
+						tempBoundary = append(tempBoundary, *arpd.Statement...)
+					}
+				}
 				evalReq := &EvaluationRequest{
 					Action:             action,
 					Resource:           resource.Arn.String(),
