@@ -184,7 +184,7 @@ func AwsCloudControlListResources(ctx context.Context, opts []*types.Option, rty
 								return
 
 							case strings.Contains(errMsg, "is not authorized to perform") || strings.Contains(errMsg, "AccessDeniedException"):
-								logger.Info(fmt.Sprintf("Access denied to list resources of type %s in region %s", resourceType, region))
+								logger.Error(fmt.Sprintf("Access denied to list resources of type %s in region %s", resourceType, region))
 								logger.Debug(errMsg)
 								return
 
