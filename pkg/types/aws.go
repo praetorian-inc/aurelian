@@ -36,7 +36,7 @@ func (e *EnrichedResourceDescription) ToArn() arn.ARN {
 		Service:   getServiceName(e.TypeName),
 		Region:    e.Region,
 		AccountID: e.AccountId,
-		Resource:  e.Identifier,
+		Resource:  getResourceName(e.TypeName, e.Identifier),
 	}
 	return a
 }
@@ -44,4 +44,22 @@ func (e *EnrichedResourceDescription) ToArn() arn.ARN {
 func getServiceName(resourceType string) string {
 	service := strings.ToLower(strings.Split(resourceType, "::")[1])
 	return service
+}
+
+func getResourceName(resourceType, resource string) string {
+
+	switch resourceType {
+	case "AWS::IAM::Role":
+		return "role/" + resource
+	case "AWS::IAM::Policy":
+		return "policy/" + resource
+	case "AWS::IAM::User":
+		return "user/" + resource
+	case "AWS::IAM::Group":
+		return "group/" + resource
+	case "AWS::IAM::InstanceProfile":
+		return "instance-profile/" + resource
+	}
+
+	return resource
 }
