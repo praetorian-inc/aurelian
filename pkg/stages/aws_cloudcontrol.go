@@ -3,8 +3,6 @@ package stages
 import (
 	"context"
 	"fmt"
-	"github.com/aws/aws-sdk-go-v2/aws/ratelimit"
-	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	"log/slog"
 	"regexp"
 	"strconv"
@@ -12,6 +10,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
+	"github.com/aws/aws-sdk-go-v2/aws/ratelimit"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
@@ -227,13 +229,33 @@ func AwsCloudControlListResources(ctx context.Context, opts []*types.Option, rty
 								defer resourceWg.Done()
 								defer func() { <-resourceSemaphore }() // Release resource semaphore
 
+								// set the region to empty string for global services
+								var erdRegion string
+								if helpers.IsGlobalService(resourceType) {
+									erdRegion = ""
+								} else {
+									erdRegion = region
+								}
+
 								erd := types.EnrichedResourceDescription{
 									Identifier: *resourceCopy.Identifier,
 									TypeName:   resourceType,
-									Region:     region,
+									Region:     erdRegion,
 									Properties: *resourceCopy.Properties,
 									AccountId:  acctId,
 								}
+
+								// some resources have a different ARN format than the identifier
+								// so we need to parse the identifier to get the ARN
+								parsed, err := arn.Parse(*resource.Identifier)
+								if err != nil {
+									logger.Debug("Failed to parse ARN: "+*resource.Identifier, slog.String("error", err.Error()))
+									erd.Arn = erd.ToArn()
+								} else {
+									logger.Debug("Parsed ARN: "+*resource.Identifier, slog.String("arn", parsed.String()))
+									erd.Arn = parsed
+								}
+
 								erd.Arn = erd.ToArn()
 
 								atomic.AddInt64(&resourceCount, 1)
