@@ -71,6 +71,10 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 		regionsOpt.Value = strings.Join(regions, ",")
 	}
 
+	if options.GetOptionByName(options.AwsResourceTypeOpt.Name, opts) == nil {
+		opts = append(opts, &options.AwsResourceTypeOpt)
+	}
+
 	// Create a wrapper pipeline that iterates through profiles
 	pipeline := func(ctx context.Context, opts []*types.Option, in <-chan string) <-chan types.Result {
 		out := make(chan types.Result)
