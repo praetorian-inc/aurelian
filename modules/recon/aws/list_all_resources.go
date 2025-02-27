@@ -45,25 +45,6 @@ var AwsListAllResourcesOutputProviders = []func(options []*types.Option) types.O
 }
 
 func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[string, types.Result], error) {
-	// Handle region options
-	regionsOpt := options.GetOptionByName(options.AwsRegionsOpt.Name, opts)
-	if regionsOpt == nil {
-		regionsOpt = &options.AwsRegionsOpt
-		regionsOpt.Value = "ALL"
-		opts = append(opts, regionsOpt)
-	} else if strings.ToUpper(regionsOpt.Value) == "ALL" {
-		regions, err := helpers.EnabledRegions(options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		regionsOpt.Value = strings.Join(regions, ",")
-	}
-
-	if options.GetOptionByName(options.AwsResourceTypeOpt.Name, opts) == nil {
-		opts = append(opts, &options.AwsResourceTypeOpt)
-	}
-
 	// Get profile list
 	profileList := options.GetOptionByName(options.AwsProfileListOpt.Name, opts).Value
 	profile := options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value
@@ -73,6 +54,21 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 		profiles = []string{profile}
 	} else {
 		profiles = strings.Split(profileList, ",")
+	}
+
+	// Handle region options
+	regionsOpt := options.GetOptionByName(options.AwsRegionsOpt.Name, opts)
+	if regionsOpt == nil {
+		regionsOpt = &options.AwsRegionsOpt
+		regionsOpt.Value = "ALL"
+		opts = append(opts, regionsOpt)
+	} else if strings.ToUpper(regionsOpt.Value) == "ALL" {
+		regions, err := helpers.EnabledRegions(profiles[0], opts)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		regionsOpt.Value = strings.Join(regions, ",")
 	}
 
 	// Create a wrapper pipeline that iterates through profiles
