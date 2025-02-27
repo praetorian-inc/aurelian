@@ -2,13 +2,19 @@ package stages
 
 import (
 	"context"
+	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws/ratelimit"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
+	"log/slog"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
-	cctypes "github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/modules/options"
@@ -19,101 +25,248 @@ import (
 // This should be the primary method of listing resources in AWS.
 func AwsCloudControlListResources(ctx context.Context, opts []*types.Option, rtype <-chan string) <-chan types.EnrichedResourceDescription {
 	logger := logs.NewStageLogger(ctx, opts, "CloudControlListResources")
+	out := make(chan types.EnrichedResourceDescription, 50000) // Buffered to reduce blocking
 
-	out := make(chan types.EnrichedResourceDescription)
+	var resourceCount int64
+
 	logger.Info("Listing resources")
 
 	profile := options.GetOptionByName("profile", opts).Value
 	regions, err := helpers.ParseRegionsOption(options.GetOptionByName(options.AwsRegionsOpt.Name, opts).Value, profile, opts)
 	if err != nil {
 		logger.Error(err.Error())
-		return nil
+		close(out)
+		return out
 	}
 
 	config, err := helpers.GetAWSCfg(regions[0], profile, opts)
 	if err != nil {
 		logger.Error(err.Error())
-		return nil
+		close(out)
+		return out
 	}
+
 	acctId, err := helpers.GetAccountId(config)
 	if err != nil {
 		logger.Error(err.Error())
-		return nil
+		close(out)
+		return out
+	}
+
+	// Preload AWS clients
+	cloudControlClients := make(map[string]*cloudcontrol.Client)
+
+	globalSemaphore := make(chan struct{}, 500)
+	regionSemaphores := make(map[string]chan struct{})
+
+	for _, region := range regions {
+		config, err := helpers.GetAWSCfg(region, profile, opts)
+		if err != nil {
+			logger.Error(fmt.Sprintf("Failed to get AWS config for %s ", region), slog.String("error", err.Error()))
+			continue
+		}
+		//config.RetryMaxAttempts = 10 // Overwrite the Max Retry for ThrottlingException
+		var standardOptions []func(*retry.StandardOptions)
+		standardOptions = append(standardOptions, func(so *retry.StandardOptions) {
+			so.MaxAttempts = 10
+			so.RateLimiter = ratelimit.None
+			so.MaxBackoff = time.Second * 60
+		})
+		var adaptiveOptions []func(*retry.AdaptiveModeOptions)
+		adaptiveOptions = append(adaptiveOptions, func(ao *retry.AdaptiveModeOptions) {
+			ao.StandardOptions = append(ao.StandardOptions, standardOptions...)
+		})
+		var retryer aws.RetryerV2
+		retryer = retry.NewAdaptiveMode(adaptiveOptions...)
+
+		config.Retryer = func() aws.Retryer {
+			return retryer
+		}
+		cloudControlClients[region] = cloudcontrol.NewFromConfig(config)
+		regionSemaphores[region] = make(chan struct{}, 10) // Limit concurrency per region
 	}
 
 	var wg sync.WaitGroup
 
-	// Create semaphores for each region to limit concurrent resource processing
-	regionSemaphores := make(map[string]chan struct{})
-	for _, region := range regions {
-		regionSemaphores[region] = make(chan struct{}, 5)
-	}
+	// Process resource types
+	go func() {
+		defer func() {
+			// Proper cleanup when all resource type processing is done
+			wg.Wait()
+			logger.Info(fmt.Sprintf("Total resources processed: %d", atomic.LoadInt64(&resourceCount)))
+			close(out)
+			for _, ch := range regionSemaphores {
+				close(ch)
+			}
+			close(globalSemaphore)
+		}()
 
-	for rtype := range rtype {
-		for _, region := range regions {
-			// Skip non us-east-1 regions for global services
-			if helpers.IsGlobalService(rtype) && region != "us-east-1" {
+		for resourceType := range rtype {
+			// Validate resource type format
+			if !IsValidResourceType(resourceType) {
+				logger.Error(fmt.Sprintf("Invalid resource type format: %s", resourceType))
 				continue
 			}
 
-			logger.Info("Listing resources of type " + rtype + " in region: " + region)
-			wg.Add(1)
-			go func(region string, rtype string) {
-				defer wg.Done()
-				config, _ := helpers.GetAWSCfg(region, profile, opts)
-				cc := cloudcontrol.NewFromConfig(config)
-				params := &cloudcontrol.ListResourcesInput{
-					TypeName: &rtype,
+			for region, cc := range cloudControlClients {
+				if cc == nil {
+					logger.Debug(fmt.Sprintf("Missing CloudControl Client for region %s", region))
+					continue
 				}
 
-				for {
-					res, err := cc.ListResources(ctx, params)
-					if err != nil {
-						if strings.Contains(err.Error(), "TypeNotFoundException") {
-							logger.Info("The type %s is not available in region %s", rtype, region)
-							break
-						}
-						logger.Debug(err.Error())
-						break
-					}
+				if helpers.IsGlobalService(resourceType) && region != "us-east-1" {
+					logger.Debug(fmt.Sprintf("Skipping global resource type %s in region %s", resourceType, region))
+					continue
+				}
+
+				if !helpers.IsSupportedTypeInRegion(region, resourceType) {
+					logger.Debug(fmt.Sprintf("Skipping unsupported resource type %s in region %s", resourceType, region))
+					continue
+				}
+
+				logger.Debug(fmt.Sprintf("Listing resources of type %s in region: %s", resourceType, region))
+				wg.Add(1)
+
+				go func(region, resourceType string) {
+					defer wg.Done()
+
+					cc := cloudControlClients[region]
+
+					paginator := cloudcontrol.NewListResourcesPaginator(cc, &cloudcontrol.ListResourcesInput{
+						TypeName:   &resourceType,
+						MaxResults: aws.Int32(100),
+					})
 
 					var resourceWg sync.WaitGroup
-					for _, resource := range res.ResourceDescriptions {
-						resourceWg.Add(1)
-						go func(resource *cctypes.ResourceDescription) {
-							defer resourceWg.Done()
-							regionSemaphores[region] <- struct{}{}
-							defer func() { <-regionSemaphores[region] }()
+					resourceSemaphore := make(chan struct{}, 10) // Limit resource goroutines
+					defer close(resourceSemaphore)
 
-							erd := types.EnrichedResourceDescription{
-								Identifier: *resource.Identifier,
-								TypeName:   rtype,
-								Region:     region,
-								Properties: *resource.Properties,
-								AccountId:  acctId,
+				paginationLoop:
+					for paginator.HasMorePages() {
+						// Check for context cancellation
+						select {
+						case <-ctx.Done():
+							logger.Info(fmt.Sprintf("Context cancelled, stopping pagination for %s in region %s", resourceType, region))
+							break paginationLoop
+						default:
+							// Continue processing
+						}
+
+						// Acquire both semaphores with proper error handling
+						select {
+						case <-ctx.Done():
+							break paginationLoop
+						case globalSemaphore <- struct{}{}:
+							// Acquired global semaphore
+						}
+
+						select {
+						case <-ctx.Done():
+							<-globalSemaphore // Release global semaphore if we can't acquire regional
+							break paginationLoop
+						case regionSemaphores[region] <- struct{}{}:
+							// Acquired regional semaphore
+						}
+
+						// Execute API call with proper semaphore release
+						res, err := paginator.NextPage(ctx)
+
+						// Always release semaphores regardless of errors
+						<-regionSemaphores[region]
+						<-globalSemaphore
+
+						if err != nil {
+							errMsg := err.Error()
+							// Check for different error types
+							switch {
+							case strings.Contains(errMsg, "TypeNotFoundException"):
+								logger.Debug(fmt.Sprintf("The type %s is not available in region %s", resourceType, region))
+								return
+
+							case strings.Contains(errMsg, "is not authorized to perform") || strings.Contains(errMsg, "AccessDeniedException"):
+								logger.Error(fmt.Sprintf("Access denied to list resources of type %s in region %s", resourceType, region))
+								logger.Debug(errMsg)
+								return
+
+							case strings.Contains(errMsg, "UnsupportedActionException"):
+								logger.Info(fmt.Sprintf("The type %s is not supported in region %s", resourceType, region))
+								return
+
+							case strings.Contains(errMsg, "ThrottlingException"):
+								// Log throttling but don't terminate - let AWS SDK retry with backoff
+								logger.Info("Rate limited", slog.String("region", region), slog.String("type", resourceType))
+								return
+
+							default:
+								logger.Error("Failed to ListResources",
+									slog.String("region", region),
+									slog.String("type", resourceType),
+									slog.String("err", errMsg))
 							}
-							erd.Arn = erd.ToArn()
-							out <- erd
-						}(&resource)
+							// For non-terminal errors, continue to next page
+							return
+						}
+
+						// Process resources with controlled concurrency
+						for _, resource := range res.ResourceDescriptions {
+							resourceWg.Add(1)
+
+							// Reuse resource structs to avoid unnecessary allocations
+							resourceCopy := resource // Copy to avoid race conditions
+
+							// Use a semaphore to limit resource goroutines
+							select {
+							case <-ctx.Done():
+								resourceWg.Done()
+								continue
+							case resourceSemaphore <- struct{}{}:
+								// Acquired resource semaphore
+							}
+
+							go func() {
+								defer resourceWg.Done()
+								defer func() { <-resourceSemaphore }() // Release resource semaphore
+
+								erd := types.EnrichedResourceDescription{
+									Identifier: *resourceCopy.Identifier,
+									TypeName:   resourceType,
+									Region:     region,
+									Properties: *resourceCopy.Properties,
+									AccountId:  acctId,
+								}
+								erd.Arn = erd.ToArn()
+
+								atomic.AddInt64(&resourceCount, 1)
+
+								// Non-blocking channel send with context cancellation
+								select {
+								case out <- erd:
+									// Successfully sent
+								case <-ctx.Done():
+									// Context cancelled, don't block
+									return
+								}
+							}()
+						}
 					}
+
+					// Wait for all resource goroutines to finish before moving to next region/type
 					resourceWg.Wait()
-
-					if res.NextToken == nil {
-						break
-					}
-					params.NextToken = res.NextToken
-				}
-				logger.Info("Completed collecting resource type " + rtype + " in region: " + region)
-			}(region, rtype)
+					logger.Info("Completed collecting resource type " + resourceType + " in region: " + region)
+				}(region, resourceType)
+			}
 		}
-	}
-
-	go func() {
-		wg.Wait()
-		close(out)
 	}()
 
 	return out
+}
+
+// Helper function to validate resource type format
+func IsValidResourceType(resourceType string) bool {
+	// Basic format validation for AWS resource types
+	// Should match pattern like: AWS::Service::Resource
+	regex := regexp.MustCompile(`^[A-Za-z0-9]+::[A-Za-z0-9]+::[A-Za-z0-9]+$`)
+	return regex.MatchString(resourceType)
 }
 
 // AwsCloudControlGetResource gets a single resource using the Cloud Control API.

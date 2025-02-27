@@ -7,14 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
-	"github.com/praetorian-inc/nebula/internal/logs"
-	"github.com/praetorian-inc/nebula/modules/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/spf13/cobra"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -25,6 +17,15 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
+	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -250,7 +251,7 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 			atomic.AddInt64(&cacheBypassedCount, 1)
 			output, metadata, err := handler.HandleDeserialize(ctx, input)
 			if err != nil {
-				logger.Debug("Handler encountered an error", "error", err)
+				logger.Debug("Handler encountered an error", "error", err, "region", awsmiddleware.GetRegion(ctx), "service", awsmiddleware.GetServiceID(ctx), "operation", awsmiddleware.GetOperationName(ctx))
 			}
 			return output, metadata, err
 		}
@@ -273,7 +274,7 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 			// Proceed with the handler if cache loading fails
 			output, metadata, err := handler.HandleDeserialize(ctx, input)
 			if err != nil {
-				logger.Debug("Handler encountered an error", "error", err)
+				logger.Debug("Handler encountered an error", "error", err, "region", awsmiddleware.GetRegion(ctx), "service", awsmiddleware.GetServiceID(ctx), "operation", awsmiddleware.GetOperationName(ctx))
 				//return output, metadata, err
 			}
 
@@ -320,7 +321,7 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 	atomic.AddInt64(&cacheBypassedCount, 1)
 	output, metadata, err := handler.HandleDeserialize(ctx, input)
 	if err != nil {
-		logger.Debug("Handler encountered an error", "error", err)
+		logger.Debug("Handler encountered an error", "error", err, "region", awsmiddleware.GetRegion(ctx), "service", awsmiddleware.GetServiceID(ctx), "operation", awsmiddleware.GetOperationName(ctx))
 	}
 	return output, metadata, err
 })
@@ -412,7 +413,7 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 
 		output, metadata, err := handler.HandleInitialize(ctx, input)
 		if err != nil {
-			logger.Debug("Handler encountered an error", "error", err, "CacheKey", cacheConfig.CacheKey)
+			logger.Debug("Handler encountered an error", "error", err, "CacheKey", cacheConfig.CacheKey, "region", region, "service", service, "operation", operation)
 			if !(cacheConfig.Enabled && cacheConfig.Cacheable && cacheConfig.CacheErrorResp) {
 				logger.Debug("Cache bypassed", "enabled", cacheConfig.Enabled, "cacheable", cacheConfig.Cacheable, "cacheErrorResp", cacheConfig.CacheErrorResp)
 				return output, metadata, err
@@ -522,7 +523,7 @@ func InitCache(opts []*types.Option) {
 		logger.Warn("Fallback to default TTL of 3600")
 		ttl = 3600
 	}
-	
+
 	cobra.OnFinalize(ShowCacheStat)
 	cobra.OnFinalize(PrintAllThrottlingCounts)
 

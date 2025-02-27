@@ -52,7 +52,12 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 		regionsOpt.Value = "ALL"
 		opts = append(opts, regionsOpt)
 	} else if strings.ToUpper(regionsOpt.Value) == "ALL" {
-		regionsOpt.Value = strings.Join(helpers.Regions, ",")
+		regions, err := helpers.EnabledRegions(options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value, opts)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		regionsOpt.Value = strings.Join(regions, ",")
 	}
 
 	if options.GetOptionByName(options.AwsResourceTypeOpt.Name, opts) == nil {
@@ -108,7 +113,7 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 
 					accountId, err := helpers.GetAccountId(config)
 					if err != nil {
-						slog.Error("Error getting account ID for profile %s: %s", currentProfile, err)
+						slog.Error(fmt.Sprintf("Error getting account ID for profile %s: %s", currentProfile, err))
 						continue
 					}
 
@@ -117,7 +122,7 @@ func NewAwsListAllResources(opts []*types.Option) (<-chan string, stages.Stage[s
 				} else {
 					baseFilename = providedFilename + "-" + currentProfile
 				}
-				slog.Info("Using base filename for profile %s: %s", currentProfile, baseFilename)
+				slog.Info(fmt.Sprintf("Using base filename for profile %s: %s", currentProfile, baseFilename))
 
 				// Initialize slice for all resources
 				var allResources []types.EnrichedResourceDescription
