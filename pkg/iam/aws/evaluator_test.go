@@ -460,6 +460,94 @@ func TestPolicyEvaluator_SCPDenyS3PublicAccess(t *testing.T) {
 	}
 }
 
+func TestPolicyEvaluator_SCPRegionGuardRails(t *testing.T) {
+	scpStatements := &types.PolicyStatementList{
+		{
+			Sid:      "p-FullAWSAccess",
+			Effect:   "Allow",
+			Action:   types.NewDynaString([]string{"*"}),
+			Resource: types.NewDynaString([]string{"*"}),
+		},
+		{
+			Sid:    "DenyNonUsRegions",
+			Effect: "Deny",
+			Action: types.NewDynaString([]string{
+				"*",
+			}),
+			Resource: types.NewDynaString([]string{"*"}),
+			Condition: &types.Condition{
+				"StringNotEquals": {
+					"aws:RequestedRegion": []string{
+						"us-east-1",
+						"us-east-2",
+						"us-west-1",
+						"us-west-2",
+						"us-gov-east-1",
+						"us-gov-west-1",
+					},
+				},
+			},
+		},
+	}
+
+	identity := &types.PolicyStatementList{
+		{
+			Effect:   "Allow",
+			Action:   types.NewDynaString([]string{"*"}),
+			Resource: types.NewDynaString([]string{"*"}),
+		},
+	}
+
+	tests := []struct {
+		name         string
+		principalArn string
+		action       string
+		resource     string
+		eval         EvaluationResult
+	}{
+		{
+			"Allowed in us-east-1",
+			"arn:aws:iam::111122223333:user/test-user",
+			"s3:GetObject",
+			"arn:aws:s3::111122223333:example-bucket/file.txt",
+			EvaluationResult{
+				Allowed: true,
+			},
+		},
+		{
+			"Denied in eu-west-1",
+			"arn:aws:iam::111122223333:user/test-user",
+			"s3:GetObject",
+			"arn:aws:lambda:eu-west-1:111122223333:function:example-function",
+			EvaluationResult{
+				Allowed: false,
+			},
+		},
+	}
+
+	evaluator := NewPolicyEvaluator(&PolicyData{SCP: scpStatements})
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &EvaluationRequest{
+				Action:             tt.action,
+				Resource:           tt.resource,
+				Context:            createRequestContext(tt.principalArn),
+				IdentityStatements: identity,
+			}
+
+			req.Context.PopulateDefaultRequestConditionKeys(tt.resource)
+
+			result, err := evaluator.Evaluate(req)
+			assert.NoError(t, err)
+			t.Log(t.Name())
+			t.Log(result)
+			assert.Equal(t, tt.eval.Allowed, result.Allowed)
+		})
+	}
+
+}
+
 func TestPolicyEvaluator_AssumeRolePolicyDocument(t *testing.T) {
 	// Define the assume role trust document
 	assumeRolePolicy := &types.PolicyStatementList{

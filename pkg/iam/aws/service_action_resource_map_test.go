@@ -169,6 +169,11 @@ func TestGetResourcePatternsFromAction(t *testing.T) {
 			action:   "ec2:RunInstances",
 			expected: []*regexp.Regexp{regexp.MustCompile(`^arn:aws:ec2:[a-z-0-9]+:\d{12}:instance/.*`)},
 		},
+		{
+			name:     "sts:AssumeRole",
+			action:   "sts:AssumeRole",
+			expected: []*regexp.Regexp{regexp.MustCompile(`^arn:aws:iam::\d{12}:role/.*`)},
+		},
 	}
 
 	for _, tc := range testCases {

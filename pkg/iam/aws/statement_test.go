@@ -296,10 +296,43 @@ func TestEvaluateStatement(t *testing.T) {
 				MatchedPrincipal: true,
 			},
 		},
+		{
+			name: "Principal match service missing source arn",
+			stmt: &types.PolicyStatement{
+				Effect:   "Allow",
+				Action:   &types.DynaString{"sts:AssumeRole"},
+				Resource: &types.DynaString{"arn:aws:iam::123456789012:role/test-role"},
+				Principal: &types.Principal{
+					Service: &types.DynaString{"glue.amazonaws.com"},
+				},
+				Condition: &types.Condition{
+					"StringEquals": {
+						"aws:SourceAccount": types.DynaString{"123456789012"},
+					},
+					"ArnLike": {
+						"aws:SourceArn": types.DynaString{"arn:aws:iam::123456789012:glue/*"},
+					},
+				},
+			},
+			requestedAction:   "sts:AssumeRole",
+			requestedResource: "arn:aws:iam::123456789012:role/test-role",
+			context: &RequestContext{
+				PrincipalArn: "glue.amazonaws.com",
+			},
+			expected: &StatementEvaluation{
+				ExplicitAllow:    true,
+				ExplicitDeny:     false,
+				ImplicitDeny:     false,
+				MatchedAction:    true,
+				MatchedResource:  true,
+				MatchedPrincipal: true,
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt.context.PopulateDefaultRequestConditionKeys(tt.requestedResource)
 			got := evaluateStatement(tt.stmt, tt.requestedAction, tt.requestedResource, tt.context)
 			t.Logf("EvaluateStatement: ExplicitAllow: %v, ExplicitDeny: %v, ImplicitDeny: %v, MatchedAction: %v, MatchedResource: %v, MatchedPrincipal: %v", got.ExplicitAllow, got.ExplicitDeny, got.ImplicitDeny, got.MatchedAction, got.MatchedResource, got.MatchedPrincipal)
 			if !reflect.DeepEqual(got, tt.expected) {

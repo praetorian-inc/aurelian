@@ -34,66 +34,64 @@ type Config struct {
 
 func main() {
 	logs.ConfigureDefaults("debug")
-	/*
-		// Initialize configuration from command line flags
-		config := parseFlags()
-		if config.Debug {
-			logs.ConfigureDefaults("debug")
+	// Initialize configuration from command line flags
+	config := parseFlags()
+	if config.Debug {
+		logs.ConfigureDefaults("debug")
+	}
+
+	// Load and parse all policy files
+	policyData, err := loadPolicies(config)
+	if err != nil {
+		log.Fatalf("Failed to load policies: %v", err)
+	}
+
+	evaluator := aws.NewPolicyEvaluator(policyData)
+	analyzer := aws.NewGaadAnalyzer(policyData, evaluator)
+
+	summary, err := analyzer.AnalyzePrincipalPermissions()
+	if err != nil {
+		// Handle error
+		logger.Error("Failed to analyze policy permissions: " + err.Error())
+	}
+
+	for _, result := range summary.GetResults() {
+		fmt.Printf("Principal: %s\n", result.PrincipalArn)
+		fmt.Printf("Account: %s\n", result.AccountID)
+		for resource, actions := range result.ResourcePerms {
+			fmt.Printf("  Resource: %s\n", resource)
+			fmt.Printf("    Allowed Actions: %v\n", actions)
 		}
+	}
 
-		// Load and parse all policy files
-		policyData, err := loadPolicies(config)
-		if err != nil {
-			log.Fatalf("Failed to load policies: %v", err)
+	full := summary.FullResults()
+	for _, result := range full {
+		switch result.Principal.(type) {
+		case *types.UserDL:
+			fmt.Printf("Principal: %s\n", result.Principal.(*types.UserDL).Arn)
+		case *types.RoleDL:
+			fmt.Printf("Principal: %s\n", result.Principal.(*types.RoleDL).Arn)
+		case *types.GroupDL:
+			fmt.Printf("Principal: %s\n", result.Principal.(*types.GroupDL).Arn)
+		default:
+			fmt.Printf("Principal: %v\n", result.Principal)
 		}
+		fmt.Printf("Resource: %s\n", result.Resource.Arn)
+		fmt.Printf("Action: %v\n", result.Action)
+		fmt.Printf("ER: %v\n", result.Result)
+	}
 
-		evaluator := aws.NewPolicyEvaluator(policyData)
-		analyzer := aws.NewGaadAnalyzer(policyData, evaluator)
+	fullResultsJSON, err := json.MarshalIndent(full, "", "  ")
+	if err != nil {
+		log.Fatalf("Failed to marshal full results to JSON: %v", err)
+	}
 
-		summary, err := analyzer.AnalyzePrincipalPermissions()
-		if err != nil {
-			// Handle error
-			logger.Error("Failed to analyze policy permissions: " + err.Error())
-		}
+	err = os.WriteFile("full_results.json", fullResultsJSON, 0644)
+	if err != nil {
+		log.Fatalf("Failed to write full results to file: %v", err)
+	}
 
-		for _, result := range summary.GetResults() {
-			fmt.Printf("Principal: %s\n", result.PrincipalArn)
-			fmt.Printf("Account: %s\n", result.AccountID)
-			for resource, actions := range result.ResourcePerms {
-				fmt.Printf("  Resource: %s\n", resource)
-				fmt.Printf("    Allowed Actions: %v\n", actions)
-			}
-		}
-
-		full := summary.FullResults()
-		for _, result := range full {
-			switch result.Principal.(type) {
-			case *types.UserDL:
-				fmt.Printf("Principal: %s\n", result.Principal.(*types.UserDL).Arn)
-			case *types.RoleDL:
-				fmt.Printf("Principal: %s\n", result.Principal.(*types.RoleDL).Arn)
-			case *types.GroupDL:
-				fmt.Printf("Principal: %s\n", result.Principal.(*types.GroupDL).Arn)
-			default:
-				fmt.Printf("Principal: %v\n", result.Principal)
-			}
-			fmt.Printf("Resource: %s\n", result.Resource.Arn)
-			fmt.Printf("Action: %v\n", result.Action)
-			fmt.Printf("ER: %v\n", result.Result)
-		}
-
-		fullResultsJSON, err := json.MarshalIndent(full, "", "  ")
-		if err != nil {
-			log.Fatalf("Failed to marshal full results to JSON: %v", err)
-		}
-
-		err = os.WriteFile("full_results.json", fullResultsJSON, 0644)
-		if err != nil {
-			log.Fatalf("Failed to write full results to file: %v", err)
-		}
-	*/
-
-	var full []aws.FullResult
+	//var full []aws.FullResult
 	data, err := os.ReadFile("full_results.json")
 	if err != nil {
 		log.Fatalf("Failed to read full results file: %v", err)
@@ -105,18 +103,22 @@ func main() {
 
 	rels := make([]*graph.Relationship, 0)
 	for _, result := range full {
-		rel := resultToRelationship(result)
+		rel, err := resultToRelationship(result)
+		if err != nil {
+			logger.Error("Failed to create relationship: " + err.Error())
+			continue
+		}
 		rels = append(rels, rel)
 	}
 
-	config := &graph.Config{
+	graphConfig := &graph.Config{
 		URI:      "bolt://localhost:7687",
 		Username: "neo4j",
 		Password: "konstellation",
 	}
 
 	ctx := context.Background()
-	driver, err := adapters.NewNeo4jDatabase(config)
+	driver, err := adapters.NewNeo4jDatabase(graphConfig)
 	if err != nil {
 		logger.Error("Failed to create Neo4j driver: " + err.Error())
 		os.Exit(1)
@@ -226,48 +228,95 @@ func loadJSONFile[T any](filename string) (*T, error) {
 	return &result, nil
 }
 
-func resultToRelationship(result aws.FullResult) *graph.Relationship {
-	var err error
+func resultToRelationship(result aws.FullResult) (*graph.Relationship, error) {
 	rel := graph.Relationship{}
 	rel.Type = result.Action
-	//rel.StartNode = graph.
 
-	switch result.Principal.(type) {
+	// Handle Principal (StartNode)
+	switch p := result.Principal.(type) {
 	case *types.UserDL:
-		rel.StartNode = transformer.NodeFromUserDL(result.Principal.(*types.UserDL))
+		rel.StartNode = transformer.NodeFromUserDL(p)
 	case *types.RoleDL:
-		rel.StartNode = transformer.NodeFromRoleDL(result.Principal.(*types.RoleDL))
+		rel.StartNode = transformer.NodeFromRoleDL(p)
 	case *types.GroupDL:
-		rel.StartNode = transformer.NodeFromGroupDL(result.Principal.(*types.GroupDL))
+		rel.StartNode = transformer.NodeFromGroupDL(p)
 	case string:
-		// service
-		if result.Principal != nil && strings.Contains(result.Principal.(string), "amazonaws.com") {
-			start := &graph.Node{
+		// Handle service principals
+		if strings.Contains(p, "amazonaws.com") || strings.Contains(p, "aws:service") {
+			serviceName := p
+
+			// Extract service name from ARN format if needed
+			if strings.HasPrefix(p, "arn:aws:iam::aws:service/") {
+				serviceName = strings.TrimPrefix(p, "arn:aws:iam::aws:service/")
+			}
+
+			rel.StartNode = &graph.Node{
 				Labels: []string{"Service", "Principal"},
 				Properties: map[string]interface{}{
-					"name": result.Principal,
+					"name":     serviceName,
+					"arn":      p,
+					"fullName": p,
 				},
 				UniqueKey: []string{"name"},
 			}
-			rel.StartNode = start
+		} else {
+			// Handle other string principal types (ARNs, etc.)
+			principalName := p
 
+			// Try to extract a short name from ARN
+			if strings.HasPrefix(p, "arn:") {
+				parts := strings.Split(p, "/")
+				if len(parts) > 1 {
+					principalName = parts[len(parts)-1]
+				}
+			}
+
+			rel.StartNode = &graph.Node{
+				Labels: []string{"Principal"},
+				Properties: map[string]interface{}{
+					"arn":  p,
+					"name": principalName,
+				},
+				UniqueKey: []string{"arn"},
+			}
 		}
 	default:
-		logger.Error(fmt.Sprintf("Unknown principal type: %v, %T", result.Principal, result.Principal))
+		return nil, fmt.Errorf("unknown principal type: %T", p)
 	}
 
-	slog.Debug(fmt.Sprintf("result: %v", result))
-	slog.Debug(fmt.Sprintf("Resource ARN: %v", result.Resource))
+	// Ensure StartNode is not nil
+	if rel.StartNode == nil {
+		return nil, fmt.Errorf("could not create start node for principal: %v", result.Principal)
+	}
+
+	// Handle Resource (EndNode)
+	if result.Resource == nil {
+		return nil, fmt.Errorf("nil resource")
+	}
+
+	var err error
 	rel.EndNode, err = transformer.NodeFromEnrichedResourceDescription(result.Resource)
 	if err != nil {
-		logger.Error("Failed to create node from resource: " + err.Error())
+		return nil, fmt.Errorf("failed to create node from resource: %w", err)
 	}
 
-	flattenedResult, _ := utils.ConvertAndFlatten(result.Result)
-	rel.Properties = make(map[string]interface{})
-	for k, v := range flattenedResult {
-		rel.Properties[k] = v
+	// Process Result
+	if result.Result != nil {
+		flattenedResult, err := utils.ConvertAndFlatten(result.Result)
+		if err != nil {
+			rel.Properties = map[string]interface{}{
+				"allowed": result.Result.Allowed,
+				"details": result.Result.EvaluationDetails,
+			}
+		} else {
+			rel.Properties = flattenedResult
+		}
+	} else {
+		rel.Properties = map[string]interface{}{
+			"allowed": false,
+			"details": "No evaluation result available",
+		}
 	}
 
-	return &rel
+	return &rel, nil
 }

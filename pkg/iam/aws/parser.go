@@ -526,6 +526,13 @@ func (ga *GaadAnalyzer) AnalyzePrincipalPermissions() (*PermissionsSummary, erro
 		ga.generateServicePrincipalEvaluations(evalChan)
 	}()
 
+	// Process direct assume role policies for direct principal access
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ga.processAssumeRolePolicies(evalChan)
+	}()
+
 	wg.Wait()
 	return summary, nil
 }
@@ -552,17 +559,19 @@ func (ga *GaadAnalyzer) generateServicePrincipalEvaluations(evalChan chan *Evalu
 						if isPrivEscAction(action) {
 
 							accountID, tags := getResourceDeets(role.Arn)
+							rc := &RequestContext{
+								PrincipalArn: service,
+								ResourceTags: tags,
+								AccountId:    accountID,
+								CurrentTime:  time.Now(),
+							}
+							rc.PopulateDefaultRequestConditionKeys(role.Arn)
 
 							evalReq := &EvaluationRequest{
 								Action:             action,
 								Resource:           role.Arn,
 								IdentityStatements: role.AssumeRolePolicyDocument.Statement,
-								Context: &RequestContext{
-									PrincipalArn: service,
-									ResourceTags: tags,
-									AccountId:    accountID,
-									CurrentTime:  time.Now(),
-								},
+								Context:            rc,
 							}
 							evalChan <- evalReq
 						}
@@ -598,16 +607,19 @@ func (ga *GaadAnalyzer) generateServiceEvaluations(resourceArn string, policy *t
 
 							accountID, tags := getResourceDeets(resourceArn)
 
+							rc := &RequestContext{
+								PrincipalArn: service,
+								ResourceTags: tags,
+								AccountId:    accountID,
+								CurrentTime:  time.Now(),
+							}
+							rc.PopulateDefaultRequestConditionKeys(resourceArn)
+
 							evalReq := &EvaluationRequest{
 								Action:             action,
 								Resource:           resourceArn,
 								IdentityStatements: policy.Statement,
-								Context: &RequestContext{
-									PrincipalArn: service,
-									ResourceTags: tags,
-									AccountId:    accountID,
-									CurrentTime:  time.Now(),
-								},
+								Context:            rc,
 							}
 							return evalReq
 						}
@@ -739,17 +751,20 @@ func (ga *GaadAnalyzer) processUserPermissions(user types.UserDL, evalChan chan<
 					}
 				}
 
+				rc := &RequestContext{
+					PrincipalArn: user.Arn,
+					ResourceTags: resource.Tags(),
+					AccountId:    resource.AccountId,
+					CurrentTime:  time.Now(),
+				}
+				rc.PopulateDefaultRequestConditionKeys(resource.Arn.String())
+
 				evalReq := &EvaluationRequest{
 					Action:             action,
 					Resource:           resource.Arn.String(),
 					IdentityStatements: &identityStatements,
 					BoundaryStatements: &tempBoundary,
-					Context: &RequestContext{
-						PrincipalArn: user.Arn,
-						ResourceTags: resource.Tags(),
-						AccountId:    resource.AccountId,
-						CurrentTime:  time.Now(),
-					},
+					Context:            rc,
 				}
 				evalChan <- evalReq
 			}
@@ -816,6 +831,7 @@ func (ga *GaadAnalyzer) processRolePermissions(role types.RoleDL, evalChan chan<
 		for stmt := range *policy.PolicyDocument.Statement {
 			(*policy.PolicyDocument.Statement)[stmt].OriginArn = role.Arn
 		}
+		slog.Debug(fmt.Sprintf("Role policy for %s: %v", role.Arn, policy.PolicyDocument.Statement))
 		identityStatements = append(identityStatements, *policy.PolicyDocument.Statement...)
 	}
 
@@ -869,22 +885,115 @@ func (ga *GaadAnalyzer) processRolePermissions(role types.RoleDL, evalChan chan<
 						tempBoundary = append(tempBoundary, *arpd.Statement...)
 					}
 				}
+				rc := &RequestContext{
+					PrincipalArn: role.Arn,
+					ResourceTags: resource.Tags(),
+					AccountId:    resource.AccountId,
+					CurrentTime:  time.Now(),
+				}
+				rc.PopulateDefaultRequestConditionKeys(resource.Arn.String())
+
 				evalReq := &EvaluationRequest{
 					Action:             action,
 					Resource:           resource.Arn.String(),
 					IdentityStatements: &identityStatements,
 					BoundaryStatements: &boundaryStatements,
-					Context: &RequestContext{
-						PrincipalArn: role.Arn,
-						ResourceTags: resource.Tags(),
-						AccountId:    resource.AccountId,
-						CurrentTime:  time.Now(),
-					},
+					Context:            rc,
 				}
 				evalChan <- evalReq
 			}
 		}
 	}
+}
+
+func (ga *GaadAnalyzer) processAssumeRolePolicies(evalChan chan<- *EvaluationRequest) {
+	// Process all roles' assume role policy documents
+	for _, role := range ga.policyData.Gaad.RoleDetailList {
+		// Skip if there's no policy document or statements
+		if role.AssumeRolePolicyDocument.Statement == nil || len(*role.AssumeRolePolicyDocument.Statement) == 0 {
+			continue
+		}
+
+		// Extract the principals that can assume this role
+		for _, stmt := range *role.AssumeRolePolicyDocument.Statement {
+			// Skip if not an allow statement
+			if strings.ToLower(stmt.Effect) != "allow" {
+				continue
+			}
+
+			// Process principals from different types
+			principals := extractPrincipalsFromStatement(&stmt)
+			for _, principal := range principals {
+				// Create the evaluation context
+				accountID, tags := getResourceDeets(role.Arn)
+
+				// Create a copy of the statements with resource populated
+				stmtCopy := make(types.PolicyStatementList, len(*role.AssumeRolePolicyDocument.Statement))
+				copy(stmtCopy, *role.AssumeRolePolicyDocument.Statement)
+				for i := range stmtCopy {
+					stmtCopy[i].Resource = &types.DynaString{role.Arn}
+					stmtCopy[i].OriginArn = fmt.Sprintf("%s/AssumeRolePolicyDocument", role.Arn)
+				}
+
+				rc := &RequestContext{
+					PrincipalArn:    principal,
+					ResourceTags:    tags,
+					AccountId:       accountID,
+					CurrentTime:     time.Now(),
+					SecureTransport: true,
+				}
+				rc.PopulateDefaultRequestConditionKeys(role.Arn)
+
+				// Create the evaluation request
+				evalReq := &EvaluationRequest{
+					Action:             "sts:AssumeRole",
+					Resource:           role.Arn,
+					IdentityStatements: &types.PolicyStatementList{},
+					Context:            rc,
+				}
+
+				// Add the role's assume role policy as a resource policy for evaluation
+				ga.policyData.ResourcePolicies[role.Arn] = &types.Policy{
+					Statement: &stmtCopy,
+				}
+
+				// Send the evaluation request
+				evalChan <- evalReq
+			}
+		}
+	}
+}
+
+// Helper function to extract all principals from a statement
+func extractPrincipalsFromStatement(stmt *types.PolicyStatement) []string {
+	principals := []string{}
+
+	if stmt.Principal == nil {
+		return principals
+	}
+
+	// Extract AWS principals
+	if stmt.Principal.AWS != nil {
+		for _, p := range *stmt.Principal.AWS {
+			principals = append(principals, p)
+		}
+	}
+
+	// Extract Service principals
+	if stmt.Principal.Service != nil {
+		for _, p := range *stmt.Principal.Service {
+			principals = append(principals, p)
+		}
+	}
+
+	// Extract Federated principals
+	if stmt.Principal.Federated != nil {
+		for _, p := range *stmt.Principal.Federated {
+			principals = append(principals, p)
+		}
+	}
+
+	return principals
 }
 
 // getGroupByName retrieves a group by name

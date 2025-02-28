@@ -58,7 +58,7 @@ func IsValidActionForResource(action, resource string) bool {
 func GetResourcePatternsFromAction(action Action) []*regexp.Regexp {
 	patterns := []*regexp.Regexp{}
 	service := action.Service()
-	act := strings.Split(string(action), ":")[1]
+	act := strings.ToLower(strings.Split(string(action), ":")[1])
 
 	serviceMap, exists := serviceResourceMaps[service]
 	if exists {
@@ -137,7 +137,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"detachrolepolicy":                        {"role"},
 			"detachuserpolicy":                        {"user"},
 			"enablemfadevice":                         {"user"},
-			"generateservicelastacceseddetails":       {"group", "role", "user", "policy"},
+			"generateservicelastaccesseddetails":      {"group", "role", "user", "policy"},
 			"getaccesskeylastused":                    {"user"},
 			"getgroup":                                {"group"},
 			"getgrouppolicy":                          {"group"},
@@ -231,7 +231,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"image":    regexp.MustCompile(`^arn:aws:ec2:[a-z-0-9]+:\d{12}:image/.*`),
 		},
 		ActionResourceMap: map[string][]string{
-			"RunInstances": {"instance"},
+			"runinstances": {"instance"},
 		},
 	},
 	"cloudformation": {
