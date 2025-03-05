@@ -496,7 +496,6 @@ func (ga *GaadAnalyzer) AnalyzePrincipalPermissions() (*PermissionsSummary, erro
 	var wg sync.WaitGroup
 
 	// Create buffered channel for evaluation requests
-	// Use buffer to prevent blocking
 	evalChan := make(chan *EvaluationRequest, 1000)
 
 	// Start evaluation workers
@@ -533,7 +532,15 @@ func (ga *GaadAnalyzer) AnalyzePrincipalPermissions() (*PermissionsSummary, erro
 		ga.processAssumeRolePolicies(evalChan)
 	}()
 
+	// Wait for all producers to finish
 	wg.Wait()
+
+	// Close the channel to signal workers to exit
+	close(evalChan)
+
+	// Wait for all workers to finish
+	evalWg.Wait()
+
 	return summary, nil
 }
 
@@ -732,8 +739,8 @@ func (ga *GaadAnalyzer) processUserPermissions(user types.UserDL, evalChan chan<
 	for _, action := range allActions {
 		if isPrivEscAction(action) {
 
-			var tempBoundary types.PolicyStatementList
-			deepCopy(boundaryStatements, tempBoundary)
+			tempBoundary := make(types.PolicyStatementList, 0)
+			deepCopy(boundaryStatements, &tempBoundary)
 			for _, resource := range ga.getResourcesByAction(Action(action)) {
 
 				// For AssumeRole actions, update the resource in the policy document
@@ -801,6 +808,7 @@ func (ga *GaadAnalyzer) startEvaluationWorkers(evalChan <-chan *EvaluationReques
 			defer wg.Done()
 
 			for req := range evalChan {
+				// This loop will exit when evalChan is closed
 				result, err := ga.evaluator.Evaluate(req)
 				if err != nil {
 					slog.Error("Error evaluating permissions",
@@ -867,8 +875,8 @@ func (ga *GaadAnalyzer) processRolePermissions(role types.RoleDL, evalChan chan<
 	for _, action := range allActions {
 		if isPrivEscAction(action) {
 
-			var tempBoundary types.PolicyStatementList
-			deepCopy(boundaryStatements, tempBoundary)
+			tempBoundary := make(types.PolicyStatementList, 0)
+			deepCopy(boundaryStatements, &tempBoundary)
 
 			for _, resource := range ga.getResourcesByAction(Action(action)) {
 				// For AssumeRole actions, update the resource in the policy document
@@ -1034,7 +1042,6 @@ func getAccountFromArn(arnStr string) string {
 }
 
 func isPrivEscAction(action string) bool {
-	slices.Contains(privEscActions, action)
 	return slices.Contains(privEscActions, action)
 }
 
