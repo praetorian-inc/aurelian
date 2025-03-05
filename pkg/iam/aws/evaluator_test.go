@@ -11,10 +11,10 @@ import (
 func createRequestContext(principalArn string) *RequestContext {
 	return &RequestContext{
 		PrincipalArn:    principalArn,
-		SourceIp:        "203.0.113.0",
+		SourceIP:        "203.0.113.0",
 		UserAgent:       "aws-cli/1.16.312",
 		CurrentTime:     time.Now(),
-		SecureTransport: true,
+		SecureTransport: Bool(true),
 		ResourceTags: map[string]string{
 			"environment": "production",
 			"project":     "website",
@@ -22,8 +22,8 @@ func createRequestContext(principalArn string) *RequestContext {
 		RequestTags: map[string]string{
 			"costcenter": "12345",
 		},
-		PrincipalOrgId: "o-1234567",
-		AccountId:      "111122223333",
+		PrincipalOrgID:   "o-1234567",
+		PrincipalAccount: "111122223333",
 		RequestParameters: map[string]string{
 			"PrincipalOrgPaths": "o-1234567/r-ab12/ou-ab12-11111111/",
 		},
@@ -275,7 +275,7 @@ func TestPolicyEvaluator_ResourceControlPolicy(t *testing.T) {
 
 	// Test outside-org request
 	ctx := createRequestContext("arn:aws:iam::999988887777:user/external-user")
-	ctx.PrincipalOrgId = "o-9999999"
+	ctx.PrincipalOrgID = "o-9999999"
 
 	t.Logf("Request Context: %+v", ctx)
 

@@ -560,10 +560,10 @@ func (ga *GaadAnalyzer) generateServicePrincipalEvaluations(evalChan chan *Evalu
 
 							accountID, tags := getResourceDeets(role.Arn)
 							rc := &RequestContext{
-								PrincipalArn: service,
-								ResourceTags: tags,
-								AccountId:    accountID,
-								CurrentTime:  time.Now(),
+								PrincipalArn:     service,
+								ResourceTags:     tags,
+								PrincipalAccount: accountID,
+								CurrentTime:      time.Now(),
 							}
 							rc.PopulateDefaultRequestConditionKeys(role.Arn)
 
@@ -608,10 +608,10 @@ func (ga *GaadAnalyzer) generateServiceEvaluations(resourceArn string, policy *t
 							accountID, tags := getResourceDeets(resourceArn)
 
 							rc := &RequestContext{
-								PrincipalArn: service,
-								ResourceTags: tags,
-								AccountId:    accountID,
-								CurrentTime:  time.Now(),
+								PrincipalArn:     service,
+								ResourceTags:     tags,
+								PrincipalAccount: accountID,
+								CurrentTime:      time.Now(),
 							}
 							rc.PopulateDefaultRequestConditionKeys(resourceArn)
 
@@ -752,10 +752,10 @@ func (ga *GaadAnalyzer) processUserPermissions(user types.UserDL, evalChan chan<
 				}
 
 				rc := &RequestContext{
-					PrincipalArn: user.Arn,
-					ResourceTags: resource.Tags(),
-					AccountId:    resource.AccountId,
-					CurrentTime:  time.Now(),
+					PrincipalArn:     user.Arn,
+					ResourceTags:     resource.Tags(),
+					PrincipalAccount: resource.AccountId,
+					CurrentTime:      time.Now(),
 				}
 				rc.PopulateDefaultRequestConditionKeys(resource.Arn.String())
 
@@ -886,10 +886,10 @@ func (ga *GaadAnalyzer) processRolePermissions(role types.RoleDL, evalChan chan<
 					}
 				}
 				rc := &RequestContext{
-					PrincipalArn: role.Arn,
-					ResourceTags: resource.Tags(),
-					AccountId:    resource.AccountId,
-					CurrentTime:  time.Now(),
+					PrincipalArn:     role.Arn,
+					ResourceTags:     resource.Tags(),
+					PrincipalAccount: resource.AccountId,
+					CurrentTime:      time.Now(),
 				}
 				rc.PopulateDefaultRequestConditionKeys(resource.Arn.String())
 
@@ -936,11 +936,11 @@ func (ga *GaadAnalyzer) processAssumeRolePolicies(evalChan chan<- *EvaluationReq
 				}
 
 				rc := &RequestContext{
-					PrincipalArn:    principal,
-					ResourceTags:    tags,
-					AccountId:       accountID,
-					CurrentTime:     time.Now(),
-					SecureTransport: true,
+					PrincipalArn:     principal,
+					ResourceTags:     tags,
+					PrincipalAccount: accountID,
+					CurrentTime:      time.Now(),
+					SecureTransport:  Bool(true),
 				}
 				rc.PopulateDefaultRequestConditionKeys(role.Arn)
 

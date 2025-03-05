@@ -445,13 +445,14 @@ func (e *PolicyEvaluator) hasExplicitPrincipalAllow(statements *types.PolicyStat
 }
 
 type StatementEvaluation struct {
-	ExplicitAllow    bool // Statement matched and explicitly allows
-	ExplicitDeny     bool // Statement matched and explicitly denies
-	ImplicitDeny     bool // Default deny or criteria didn't match
-	MatchedAction    bool // For debugging - did action/notAction match
-	MatchedResource  bool // For debugging - did resource/notResource match
-	MatchedPrincipal bool // For debugging - did principal match
-	Origin           string
+	ExplicitAllow       bool           // Statement matched and explicitly allows
+	ExplicitDeny        bool           // Statement matched and explicitly denies
+	ImplicitDeny        bool           // Default deny or criteria didn't match
+	MatchedAction       bool           // For debugging - did action/notAction match
+	MatchedResource     bool           // For debugging - did resource/notResource match
+	MatchedPrincipal    bool           // For debugging - did principal match
+	ConditionEvaluation *ConditionEval // Detailed condition evaluation results
+	Origin              string
 }
 
 func (eval *StatementEvaluation) IsAllowed() bool {

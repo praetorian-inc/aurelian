@@ -10,17 +10,155 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
-func evaluateConditions(conditions *types.Condition, ctx *RequestContext) bool {
-	for operator, keyValues := range *conditions {
-		for key, values := range keyValues {
-			if !evaluateCondition(operator, key, values, ctx) {
-				return false
-			}
-		}
-	}
-	return true
+// ConditionEvalResult represents the outcome of evaluating policy conditions
+type ConditionEvalResult string
+
+const (
+	// ConditionMatched indicates all conditions were explicitly satisfied
+	ConditionMatched ConditionEvalResult = "MATCHED"
+
+	// ConditionFailed indicates at least one condition explicitly failed
+	ConditionFailed ConditionEvalResult = "FAILED"
+
+	// ConditionInconclusive indicates evaluation couldn't be completed due to missing context
+	ConditionInconclusive ConditionEvalResult = "INCONCLUSIVE"
+)
+
+// ConditionEval captures detailed information about condition evaluation
+type ConditionEval struct {
+	// Overall result of condition evaluation
+	Result ConditionEvalResult `json:"result"`
+
+	// The specific conditions from the policy
+	Conditions []*types.Condition `json:"conditions,omitempty"`
+
+	// Missing context keys that prevented complete evaluation
+	MissingKeys []string `json:"missing_keys,omitempty"`
+
+	// For each condition key, the detailed evaluation result
+	KeyResults map[string]KeyEvaluation `json:"key_results,omitempty"`
 }
 
+func (c *ConditionEval) Allowed() bool {
+	if c.Result == ConditionMatched || c.Result == ConditionInconclusive {
+		return true
+	}
+	return false
+}
+
+func (c *ConditionEval) String() string {
+	return fmt.Sprintf("ConditionEval{Result: %s, Conditions: %v, MissingKeys: %v, KeyResults: %v}",
+		c.Result, c.Conditions, c.MissingKeys, c.KeyResults)
+}
+
+// Not defines the behavior of the ! operator for ConditionEval
+func (c *ConditionEval) Not() bool {
+	// Return true if the condition evaluation failed
+	return c.Result == ConditionFailed
+}
+
+// KeyEvaluation represents the evaluation of a single condition key
+type KeyEvaluation struct {
+	Key      string              `json:"key"`
+	Operator string              `json:"operator"`
+	Values   []string            `json:"values"`
+	Result   ConditionEvalResult `json:"result"`
+	Context  interface{}         `json:"context_value,omitempty"` // The actual value from the context, if available
+}
+
+// SingleCondition represents a single condition rule
+type SingleCondition struct {
+	Operator string   `json:"operator"`
+	Key      string   `json:"key"`
+	Values   []string `json:"values"`
+}
+
+// evaluateConditions evaluates all conditions in a policy statement
+func evaluateConditions(conditions *types.Condition, ctx *RequestContext) *ConditionEval {
+	if conditions == nil {
+		// No conditions to evaluate, so we match by default
+		return &ConditionEval{
+			Result: ConditionMatched,
+		}
+	}
+
+	eval := &ConditionEval{
+		Result:      ConditionMatched, // Start optimistic
+		MissingKeys: []string{},
+		KeyResults:  make(map[string]KeyEvaluation),
+	}
+
+	for operator, conditionStatement := range *conditions {
+		for key, values := range conditionStatement {
+			// Check if the key exists in the context
+			exists := doesContextValueExist(key, ctx)
+			if !exists && !strings.HasSuffix(operator, "IfExists") && operator != "Null" {
+				// Key doesn't exist and we're not using IfExists or Null operator
+				eval.MissingKeys = append(eval.MissingKeys, key)
+
+				// Determine if this is a critical key we should default to inconclusive
+				if isCriticalConditionKey(key) {
+					eval.Result = ConditionInconclusive
+					eval.KeyResults[key] = KeyEvaluation{
+						Key:      key,
+						Operator: operator,
+						Values:   values,
+						Result:   ConditionInconclusive,
+					}
+					continue
+				}
+			}
+
+			// Evaluate the individual condition
+			result := evaluateCondition(operator, key, values, ctx)
+
+			keyResult := KeyEvaluation{
+				Key:      key,
+				Operator: operator,
+				Values:   values,
+				Result:   ConditionMatched,
+				Context:  getContextValue(key, ctx),
+			}
+
+			if !result {
+				keyResult.Result = ConditionFailed
+
+				// If any condition fails, the overall result is failure
+				// (unless we've already marked it inconclusive)
+				if eval.Result != ConditionInconclusive {
+					eval.Result = ConditionFailed
+				}
+			}
+
+			eval.KeyResults[key] = keyResult
+		}
+	}
+
+	return eval
+}
+
+// Helper function to identify condition keys that should default to inconclusive
+func isCriticalConditionKey(key string) bool {
+	criticalKeys := map[string]bool{
+		"aws:SourceArn":         true,
+		"aws:SourceVpc":         true,
+		"aws:SourceVpce":        true,
+		"aws:PrincipalOrgID":    true,
+		"aws:ResourceOrgID":     true,
+		"aws:PrincipalOrgPaths": true,
+		"aws:ResourceOrgPaths":  true,
+		"aws:SourceAccount":     true,
+		"aws:ResourceAccount":   true,
+		"aws:ViaAWSService":     true,
+		"aws:CalledVia":         true,
+		"aws:CalledViaFirst":    true,
+		"aws:CalledViaLast":     true,
+	}
+
+	return criticalKeys[key]
+}
+
+// evaluateCondition evaluates a single condition
 func evaluateCondition(operator string, key string, values []string, ctx *RequestContext) bool {
 	// Handle IfExists suffix first
 	isIfExists := strings.HasSuffix(operator, "IfExists")
@@ -29,8 +167,7 @@ func evaluateCondition(operator string, key string, values []string, ctx *Reques
 	}
 
 	// Get context value and check existence
-	actualValue := getContextValue(key, ctx)
-	exists := doesContextValueExist(key, ctx)
+	exists, actualValue := findContextKeyValue(key, ctx)
 
 	// Handle Null operator
 	if operator == "Null" {
@@ -76,99 +213,25 @@ func evaluateCondition(operator string, key string, values []string, ctx *Reques
 	return false
 }
 
-// New helper function to check if a context value exists
-func doesContextValueExist(key string, ctx *RequestContext) bool {
-	if ctx == nil {
-		return false
-	}
-
-	// Handle tag-based keys
-	if strings.HasPrefix(key, "aws:ResourceTag/") {
-		tagKey := strings.TrimPrefix(key, "aws:ResourceTag/")
-		if ctx.ResourceTags == nil {
-			return false
-		}
-		_, exists := ctx.ResourceTags[tagKey]
-		return exists
-	}
-
-	if strings.HasPrefix(key, "aws:RequestTag/") {
-		tagKey := strings.TrimPrefix(key, "aws:RequestTag/")
-		if ctx.RequestTags == nil {
-			return false
-		}
-		_, exists := ctx.RequestTags[tagKey]
-		return exists
-	}
-
-	if strings.HasPrefix(key, "aws:PrincipalTag/") {
-		tagKey := strings.TrimPrefix(key, "aws:PrincipalTag/")
-		if ctx.ResourceTags == nil {
-			return false
-		}
-		_, exists := ctx.ResourceTags[tagKey]
-		return exists
-	}
-
-	// Handle PrincipalOrgPaths specially
-	if key == "aws:PrincipalOrgPaths" {
-		_, exists := ctx.RequestParameters["PrincipalOrgPaths"]
-		return exists
-	}
-
-	if key == "aws:PrincipalOrgID" {
-		return true
-	}
-
-	// Check request parameters
-	if ctx.RequestParameters != nil {
-		if _, ok := ctx.RequestParameters[key]; ok {
-			return true
-		}
-	}
-
-	// Check standard context keys
-	switch key {
-	case "aws:CurrentTime":
-		return !ctx.CurrentTime.IsZero()
-	case "aws:SourceIp":
-		return ctx.SourceIp != ""
-	case "aws:PrincipalArn":
-		return ctx.PrincipalArn != ""
-	case "aws:UserAgent":
-		return ctx.UserAgent != ""
-	}
-
-	return false
-}
-
 func evaluateSetCondition(operator string, key string, values []string, ctx *RequestContext) bool {
 	var actualValues []string
 
-	// Handle PrincipalOrgPaths specially
-	if key == "aws:PrincipalOrgPaths" {
-		if val, ok := ctx.RequestParameters["PrincipalOrgPaths"]; ok {
-			actualValues = []string{val}
-		}
-	} else {
-		// Get normal context value
-		actualValue := getContextValue(key, ctx)
-		if actualValue == nil {
-			return false
-		}
+	actualValue := getContextValue(key, ctx)
+	if actualValue == nil {
+		return false
+	}
 
-		switch v := actualValue.(type) {
-		case []string:
-			actualValues = v
-		case map[string]string:
-			for k := range v {
-				actualValues = append(actualValues, k)
-			}
-		case string:
-			actualValues = []string{v}
-		default:
-			return false
+	switch v := actualValue.(type) {
+	case []string:
+		actualValues = v
+	case map[string]string:
+		for k := range v {
+			actualValues = append(actualValues, k)
 		}
+	case string:
+		actualValues = []string{v}
+	default:
+		return false
 	}
 
 	baseOperator := ""
@@ -206,73 +269,219 @@ func evaluateSetCondition(operator string, key string, values []string, ctx *Req
 	return false
 }
 
+func doesContextValueExist(key string, ctx *RequestContext) bool {
+	exists, _ := findContextKeyValue(key, ctx)
+	return exists
+}
+
 func getContextValue(key string, ctx *RequestContext) interface{} {
+	_, value := findContextKeyValue(key, ctx)
+	return value
+}
+
+// findContextKeyValue is a helper function that checks if a key exists in the context
+// and returns both whether it exists and its value (if it exists)
+func findContextKeyValue(key string, ctx *RequestContext) (exists bool, value interface{}) {
 	if ctx == nil {
-		return nil
+		return false, nil
 	}
 
-	// Handle tag-based keys
-	if strings.HasPrefix(key, "aws:ResourceTag/") {
+	// Convert key to lowercase for case-insensitive comparison
+	lowerKey := strings.ToLower(key)
+
+	// Handle tag-based keys first as they have special prefix handling
+	if strings.HasPrefix(lowerKey, "aws:resourcetag/") {
 		tagKey := strings.TrimPrefix(key, "aws:ResourceTag/")
 		if ctx.ResourceTags == nil {
-			return nil
+			return false, nil
 		}
-		return ctx.ResourceTags[tagKey]
+		val, exists := ctx.ResourceTags[tagKey]
+		return exists, val
 	}
 
-	if strings.HasPrefix(key, "aws:RequestTag/") {
+	if strings.HasPrefix(lowerKey, "aws:requesttag/") {
 		tagKey := strings.TrimPrefix(key, "aws:RequestTag/")
 		if ctx.RequestTags == nil {
-			return nil
+			return false, nil
 		}
-		return ctx.RequestTags[tagKey]
+		val, exists := ctx.RequestTags[tagKey]
+		return exists, val
 	}
 
-	if strings.HasPrefix(key, "aws:PrincipalTag/") {
+	if strings.HasPrefix(lowerKey, "aws:principaltag/") {
 		tagKey := strings.TrimPrefix(key, "aws:PrincipalTag/")
-		if ctx.ResourceTags == nil {
-			return nil
+		if ctx.PrincipalTags == nil {
+			return false, nil
 		}
-		return ctx.ResourceTags[tagKey]
+		val, exists := ctx.PrincipalTags[tagKey]
+		return exists, val
 	}
 
-	if strings.EqualFold(key, "aws:PrincipalOrgId") {
-		return ctx.PrincipalOrgId
+	// Handle Principal Properties
+	switch lowerKey {
+	case "aws:principalarn":
+		return ctx.PrincipalArn != "", ctx.PrincipalArn
+	case "aws:principalaccount":
+		return ctx.PrincipalAccount != "", ctx.PrincipalAccount
+	case "aws:principalorgid":
+		return ctx.PrincipalOrgID != "", ctx.PrincipalOrgID
+	case "aws:principalorgpaths":
+		return len(ctx.PrincipalOrgPaths) > 0, ctx.PrincipalOrgPaths
+	case "aws:principaltype":
+		return ctx.PrincipalType != "", ctx.PrincipalType
+	case "aws:userid", "aws:username":
+		return ctx.PrincipalUsername != "", ctx.PrincipalUsername
 	}
 
-	// Special handling for TagKeys
-	if key == "aws:TagKeys" {
-		return getTagKeys(ctx)
+	// Handle Role Session Properties
+	switch lowerKey {
+	case "aws:rolesessionname":
+		return ctx.RoleSessionName != "", ctx.RoleSessionName
+	case "aws:federatedprovider":
+		return ctx.FederatedProvider != "", ctx.FederatedProvider
+	case "aws:tokenissuetime":
+		return !ctx.TokenIssueTime.IsZero(), ctx.TokenIssueTime
+	case "aws:sourceidentity":
+		return ctx.SourceIdentity != "", ctx.SourceIdentity
+	case "aws:assumedroot":
+		return ctx.AssumedRoot != nil, ctx.AssumedRoot
+	case "aws:multifactorauthage":
+		if ctx.MultiFactorAuthAge != 0 {
+			return true, ctx.MultiFactorAuthAge
+		}
+		return false, nil
+	case "aws:multifactorauthpresent":
+		return true, ctx.MultiFactorAuthPresent
+	case "aws:Ec2InstanceSourceVpc":
+		return ctx.Ec2InstanceSourceVpc != "", ctx.Ec2InstanceSourceVpc
+	case "aws:Ec2InstanceSourcePrivateIPv4":
+		return ctx.Ec2InstanceSourcePrivateIPv4 != "", ctx.Ec2InstanceSourcePrivateIPv4
+	case "ec2:RoleDelivery":
+		return ctx.ec2_RoleDelivery != "", ctx.ec2_RoleDelivery
+	case "ec2:sourceinstancearn":
+		return ctx.ec2_SourceInstanceArn != "", ctx.ec2_SourceInstanceArn
+	case "glue:roleassumedby":
+		return ctx.glue_RoleAssumedBy != "", ctx.glue_RoleAssumedBy
+	case "glue:credentialissuingservice":
+		return ctx.glue_CredentialIssuingService != "", ctx.glue_CredentialIssuingService
+	case "lambda:sourcefunctionarn":
+		return ctx.lambda_SourceFunctionArn != "", ctx.lambda_SourceFunctionArn
+	case "ssm:sourceinstancearn":
+		return ctx.ssm_SourceInstanceArn != "", ctx.ssm_SourceInstanceArn
+	case "identitystore:userid":
+		return ctx.identitystore_UserId != "", ctx.identitystore_UserId
+
 	}
 
-	// Handle request parameters first as they can override standard keys
+	// Handle Network Properties
+	switch lowerKey {
+	case "aws:sourceip":
+		return ctx.SourceIP != "", ctx.SourceIP
+	case "aws:sourcevpc":
+		return ctx.SourceVPC != "", ctx.SourceVPC
+	case "aws:sourcevpce":
+		return ctx.SourceVPCE != "", ctx.SourceVPCE
+	case "aws:vpcsourceip":
+		return ctx.VPCSourceIP != "", ctx.VPCSourceIP
+	}
+
+	// Handle Resource Properties
+	switch lowerKey {
+	case "aws:resourceaccount":
+		return ctx.ResourceAccount != "", ctx.ResourceAccount
+	case "aws:resourceorgid":
+		return ctx.ResourceOrgID != "", ctx.ResourceOrgID
+	case "aws:resourceorgpaths":
+		return len(ctx.ResourceOrgPaths) > 0, ctx.ResourceOrgPaths
+	}
+
+	// Handle Request Properties
+	switch lowerKey {
+	case "aws:currenttime":
+		return !ctx.CurrentTime.IsZero(), ctx.CurrentTime
+	case "aws:requestedregion":
+		return ctx.RequestedRegion != "", ctx.RequestedRegion
+	case "aws:securetransport":
+		return ctx.SecureTransport != nil, ctx.SecureTransport
+	case "aws:useragent":
+		return ctx.UserAgent != "", ctx.UserAgent
+	case "aws:referer":
+		return ctx.Referer != "", ctx.Referer
+	}
+
+	// Handle Cross-service Properties
+	switch lowerKey {
+	case "aws:viaawsservice":
+		return ctx.ViaAWSService != nil, ctx.ViaAWSService
+	case "aws:calledvia":
+		return len(ctx.CalledVia) > 0, ctx.CalledVia
+	case "aws:calledviafirst":
+		if len(ctx.CalledVia) > 0 {
+			return true, ctx.CalledVia[0]
+		}
+		return false, nil
+	case "aws:calledvialast":
+		if len(ctx.CalledVia) > 0 {
+			return true, ctx.CalledVia[len(ctx.CalledVia)-1]
+		}
+		return false, nil
+	case "aws:sourcearn":
+		return ctx.SourceArn != "", ctx.SourceArn
+	case "aws:sourceaccount":
+		return ctx.SourceAccount != "", ctx.SourceAccount
+	case "aws:sourceorgid":
+		return ctx.SourceOrgID != "", ctx.SourceOrgID
+	case "aws:sourceorgpaths":
+		return len(ctx.SourceOrgPaths) > 0, ctx.SourceOrgPaths
+	}
+
+	// Special handling for TagKeys - aggregate all tag keys from all tag maps
+	if lowerKey == "aws:tagkeys" {
+		var keys []string
+		for k := range ctx.PrincipalTags {
+			keys = append(keys, k)
+		}
+		for k := range ctx.ResourceTags {
+			keys = append(keys, k)
+		}
+		for k := range ctx.RequestTags {
+			keys = append(keys, k)
+		}
+		return len(keys) > 0, keys
+	}
+
+	// Check the request parameters for any other keys not handled above
 	if ctx.RequestParameters != nil {
 		if val, ok := ctx.RequestParameters[key]; ok {
-			return val
+			return true, val
 		}
 	}
 
-	// Handle standard AWS context keys
-	switch key {
-	case "aws:CurrentTime":
-		return ctx.CurrentTime
-	case "aws:username":
-		return ctx.RequestParameters["aws:username"]
-	case "aws:SourceIp":
-		return ctx.SourceIp
-	case "aws:PrincipalArn":
-		return ctx.PrincipalArn
-	case "aws:UserAgent":
-		return ctx.UserAgent
-	case "aws:SecureTransport":
-		return ctx.SecureTransport
-	case "aws:MultiFactorAuthAge":
-		if val, ok := ctx.RequestParameters["MultiFactorAuthAge"]; ok {
-			return val
-		}
+	return false, nil
+}
+
+// getTagKeys is a helper function to get all tag keys from all tag maps
+func getTagKeys(ctx *RequestContext) []string {
+	// Use a map to deduplicate keys
+	keyMap := make(map[string]bool)
+
+	for k := range ctx.PrincipalTags {
+		keyMap[k] = true
+	}
+	for k := range ctx.ResourceTags {
+		keyMap[k] = true
+	}
+	for k := range ctx.RequestTags {
+		keyMap[k] = true
 	}
 
-	return nil
+	// Convert to slice
+	keys := make([]string, 0, len(keyMap))
+	for k := range keyMap {
+		keys = append(keys, k)
+	}
+
+	return keys
 }
 
 func evaluateStringCondition(operator string, values []string, actualValue interface{}) bool {
@@ -401,14 +610,20 @@ func evaluateDateCondition(operator string, values []string, actualValue interfa
 }
 
 func evaluateBoolCondition(values []string, actualValue interface{}) bool {
-	actual, ok := actualValue.(bool)
-	if !ok {
-		return false
-	}
-
 	// Convert string value to bool
 	expected := values[0] == "true"
-	return actual == expected
+
+	switch v := actualValue.(type) {
+	case *bool:
+		if v == nil {
+			return false
+		}
+		return *v == expected
+	case bool:
+		return v == expected
+	default:
+		return false
+	}
 }
 
 func evaluateArnCondition(operator string, values []string, actualValue interface{}) bool {
@@ -464,21 +679,6 @@ func evaluateIpAddressCondition(isPositive bool, values []string, actualValue in
 	}
 
 	return !isPositive
-}
-
-func getTagKeys(ctx *RequestContext) []string {
-	var keys []string
-	// Get keys from all tag maps
-	for k := range ctx.ResourceTags {
-		keys = append(keys, k)
-	}
-	for k := range ctx.RequestTags {
-		keys = append(keys, k)
-	}
-	for k := range ctx.ResourceTags {
-		keys = append(keys, k)
-	}
-	return keys
 }
 
 func toFloat64(v interface{}) (float64, bool) {
