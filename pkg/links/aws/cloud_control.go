@@ -14,7 +14,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus/pkg/util"
 	"github.com/praetorian-inc/nebula/internal/helpers"
-	opts "github.com/praetorian-inc/nebula/pkg/links/opts"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -32,11 +32,11 @@ func (a *AWSCloudControl) Metadata() *cfg.Metadata {
 }
 
 func (a *AWSCloudControl) Params() []cfg.Param {
-	return []cfg.Param{
-		opts.AwsRegions(),
-		opts.AwsProfile(),
-		opts.AwsResourceType(),
-	}
+	params := a.Base.Params()
+	params = append(params, options.CommonAwsReconOptions()...)
+	params = append(params, options.AwsRegions(), options.AwsResourceType())
+
+	return params
 }
 
 func NewAWSCloudControl(configs ...cfg.Config) chain.Link {
@@ -72,12 +72,18 @@ func (a *AWSCloudControl) initializeClients() error {
 
 func (a *AWSCloudControl) Initialize() error {
 	a.ContextHolder = cfg.NewContextHolder()
+
 	regions, err := cfg.As[[]string](a.Arg("regions"))
-	slog.Debug("cloudcontrol regions", "regions", regions)
+	slog.Info("cloudcontrol regions", "regions", regions)
 	if err != nil || len(regions) == 0 || strings.ToLower(regions[0]) == "all" {
-		regions = util.Regions
+		a.regions, err = helpers.EnabledRegions(a.profile, options.JanusParamAdapter(a.Params()))
+		if err != nil {
+			return err
+		}
+	} else {
+		a.regions = regions
 	}
-	a.regions = regions
+
 	a.initializeClients()
 	a.initializeSemaphores()
 
@@ -117,7 +123,8 @@ func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
 	defer a.wg.Done()
 	slog.Debug("Listing resources in region", "type", resourceType, "region", region, "profile", a.profile)
 
-	config, err := util.GetAWSConfig(region, a.profile)
+	config, err := helpers.GetAWSCfg(region, a.profile, options.JanusParamAdapter(a.Params()))
+
 	if err != nil {
 		slog.Error("Failed to create AWS config", "error", err)
 		return
@@ -125,7 +132,7 @@ func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
 
 	accountId, err := util.GetAccountId(config)
 	if err != nil {
-		slog.Error("Failed to get account ID", "error", err)
+		slog.Error("Failed to get account ID", "error", err, "region", region)
 		return
 	}
 
@@ -164,20 +171,20 @@ func (a *AWSCloudControl) processError(resourceType, region string, err error) (
 	errMsg := err.Error()
 	switch {
 	case strings.Contains(errMsg, "TypeNotFoundException"):
-		return fmt.Errorf("The type %s is not available in region %s", resourceType, region), true
+		return fmt.Errorf("%s is not available in region %s", resourceType, region), true
 
 	case strings.Contains(errMsg, "is not authorized to perform") || strings.Contains(errMsg, "AccessDeniedException"):
-		return fmt.Errorf("Access denied to list resources of type %s in region %s", resourceType, region), true
+		return fmt.Errorf("access denied to list resources of type %s in region %s", resourceType, region), true
 
 	case strings.Contains(errMsg, "UnsupportedActionException"):
-		return fmt.Errorf("The type %s is not supported in region %s", resourceType, region), true
+		return fmt.Errorf("the type %s is not supported in region %s", resourceType, region), true
 
 	case strings.Contains(errMsg, "ThrottlingException"):
 		// Log throttling but don't terminate - let AWS SDK retry with backoff
-		return fmt.Errorf("Rate limited: %s", errMsg), false
+		return fmt.Errorf("rate limited: %s", errMsg), false
 
 	default:
-		return fmt.Errorf("Failed to ListResources of type %s in region %s: %w", resourceType, region, err), false
+		return fmt.Errorf("failed to ListResources of type %s in region %s: %w", resourceType, region, err), false
 	}
 }
 
@@ -220,7 +227,7 @@ func (a *AWSCloudControl) sendResource(resource *types.EnrichedResourceDescripti
 
 	defer func() { <-sem }()
 
-	fmt.Printf("sending resource: %+v\n", resource)
+	slog.Debug(fmt.Sprintf("sending resource: %+v\n", resource))
 	a.Send(resource)
 }
 

@@ -23,9 +23,8 @@ import (
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/praetorian-inc/nebula/internal/logs"
-	options "github.com/praetorian-inc/nebula/pkg/links/opts"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/spf13/cobra"
 )
 
 var (
@@ -524,8 +523,8 @@ func InitCache(opts []*types.Option) {
 		ttl = 3600
 	}
 
-	cobra.OnFinalize(ShowCacheStat)
-	cobra.OnFinalize(PrintAllThrottlingCounts)
+	// cobra.OnFinalize(ShowCacheStat)
+	// cobra.OnFinalize(PrintAllThrottlingCounts)
 
 	CleanupCacheFiles(cacheDir, ttl, cacheExt)
 }

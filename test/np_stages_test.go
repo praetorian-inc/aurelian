@@ -8,7 +8,7 @@ import (
 	"time"
 
 	reconaws "github.com/praetorian-inc/nebula/modules/recon/aws"
-	options "github.com/praetorian-inc/nebula/pkg/links/opts"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )

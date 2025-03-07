@@ -8,7 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/glue"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
-	options "github.com/praetorian-inc/nebula/pkg/links/opts"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/utils"
 )

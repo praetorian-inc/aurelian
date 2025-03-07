@@ -4,8 +4,14 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/internal/registry"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/spf13/cobra"
+)
+
+var (
+	logLevelFlag string
 )
 
 var rootCmd = &cobra.Command{
@@ -22,6 +28,9 @@ func initCommands() {
 }
 
 func init() {
+	rootCmd.PersistentFlags().StringVar(&logLevelFlag, options.LogLevel().Name(), options.LogLevel().Value().(string), "Log level (debug, info, warn, error)")
+	logs.ConfigureDefaults(logLevelFlag)
+
 }
 
 func Execute() error {

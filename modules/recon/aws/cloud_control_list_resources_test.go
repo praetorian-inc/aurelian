@@ -6,7 +6,7 @@ package recon
 // 	"testing"
 
 // 	"github.com/praetorian-inc/nebula/modules"
-// 	. options "github.com/praetorian-inc/nebula/pkg/links/opts"
+// 	. "github.com/praetorian-inc/nebula/pkg/links/options"
 // )
 
 // func TestCloudControlListResources_Invoke(t *testing.T) {

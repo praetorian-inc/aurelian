@@ -11,7 +11,7 @@ import (
 	cctypes "github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
-	options "github.com/praetorian-inc/nebula/pkg/links/opts"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 

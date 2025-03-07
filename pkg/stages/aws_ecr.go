@@ -15,7 +15,7 @@ import (
 	"github.com/docker/docker/api/types/registry"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
-	options "github.com/praetorian-inc/nebula/pkg/links/opts"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/utils"
 )

@@ -8,7 +8,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
-	opts "github.com/praetorian-inc/nebula/pkg/links/opts"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
 
 func init() {
@@ -29,11 +29,11 @@ var AwsListResources = chain.NewModule(
 			"https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/what-is-cloudcontrol.html",
 			"https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/supported-resources.html",
 		},
-	).WithChainInputParam(opts.AwsResourceType().Name()),
+	).WithChainInputParam(options.AwsResourceType().Name()),
 	chain.NewChain(
 		aws.NewAWSCloudControl(),
 	).WithOutputters(
-		output.NewConsoleOutputter(),
+		// output.NewConsoleOutputter(),
 		output.NewJSONOutputter(),
 	),
 )

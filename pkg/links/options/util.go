@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -111,4 +112,37 @@ func ValidateOptions(opts []*types.Option, required []*types.Option) error {
 		}
 	}
 	return nil
+}
+
+func JanusParamAdapter(params []cfg.Param) []*types.Option {
+	options := make([]*types.Option, len(params))
+	for i, param := range params {
+		options[i] = &types.Option{
+			Name:        param.Name(),
+			Description: param.Description(),
+			Required:    param.Required(),
+		}
+
+		switch param.Type() {
+		case "string":
+			options[i].Value = param.Value().(string)
+			options[i].Type = types.String
+		case "int":
+			options[i].Value = strconv.Itoa(param.Value().(int))
+			options[i].Type = types.Int
+		case "bool":
+			options[i].Value = strconv.FormatBool(param.Value().(bool))
+			options[i].Type = types.Bool
+		case "[]string":
+			options[i].Value = strings.Join(param.Value().([]string), ",")
+			options[i].Type = types.String
+		default:
+			options[i].Value = param.Value().(string)
+			options[i].Type = types.String
+
+		}
+
+	}
+
+	return options
 }

@@ -3,6 +3,7 @@ package options
 import (
 	"regexp"
 
+	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -122,4 +123,10 @@ var LogLevelOpt = types.Option{
 	Type:        types.String,
 	Value:       "warn",
 	ValueFormat: regexp.MustCompile("^(debug|info|warn|error)$"),
+}
+
+func LogLevel() cfg.Param {
+	return cfg.NewParam[string]("log-level", "log level").
+		WithDefault("warn").
+		WithRegex(regexp.MustCompile("^(debug|info|warn|error)$"))
 }

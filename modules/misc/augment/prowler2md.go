@@ -3,7 +3,7 @@ package augment
 import (
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
-	options "github.com/praetorian-inc/nebula/pkg/links/opts"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )

@@ -5,6 +5,7 @@ import (
 
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -105,7 +106,23 @@ func generateModuleCommand(moduleName string, parent *cobra.Command) {
 
 	// Add flags based on module parameters
 	flagValues := make(map[string]interface{})
+
+	// Here's the issue - you might be collecting duplicate parameters
+	// Let's ensure we only add each parameter once:
+
+	// Create a set of parameter names to track which ones we've seen
+	paramNames := make(map[string]bool)
+
 	for _, param := range entry.Module.Params() {
+		// Skip if we've already added this parameter
+		if paramNames[param.Name()] {
+			continue
+		}
+
+		// Mark as seen
+		paramNames[param.Name()] = true
+
+		// Add the flag
 		addFlag(cmd, param, flagValues)
 	}
 
@@ -137,6 +154,11 @@ func addFlag(cmd *cobra.Command, param cfg.Param, flagValues map[string]interfac
 		}
 	}
 	description := param.Description()
+
+	// Add (required) to description if param is required
+	if param.Required() {
+		description = description + " (required)"
+	}
 
 	switch param.Type() {
 	case "string":
@@ -222,6 +244,8 @@ func runModule(cmd *cobra.Command, module chain.Module) error {
 	})
 
 	module.Run(configs...)
+	helpers.ShowCacheStat()
+	helpers.PrintAllThrottlingCounts()
 	return module.Error()
 }
 

@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus/pkg/util"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -199,18 +198,61 @@ var AwsCacheErrorRespTypesOpt = types.Option{
 
 func AwsRegions() cfg.Param {
 	return cfg.NewParam[[]string]("regions", "AWS regions to scan").
-		WithDefault(util.Regions).
+		WithDefault([]string{"all"}).
 		WithRegex(regexp.MustCompile(`(?i)^[a-z]{2}\-([a-z]+\-){1,2}\d|all$`)).
 		AsRequired()
 }
 
 func AwsProfile() cfg.Param {
-	return cfg.NewParam[string]("profile", "AWS profile to use").AsRequired()
+	return cfg.NewParam[string]("profile", "AWS profile to use").
+		WithDefault("default")
 }
 
 func AwsResourceType() cfg.Param {
 	return cfg.NewParam[[]string]("resource-type", "AWS Cloud Control resource type").
-		WithRegex(regexp.MustCompile("^(AWS::[a-zA-Z0-9:]+|ALL|all)$")).
+		WithRegex(regexp.MustCompile("^(AWS::[a-zA-Z0-9:]+|all|ALL)$")).
 		WithShortcode("t").
 		AsRequired()
+}
+
+func AwsCacheDir() cfg.Param {
+	return cfg.NewParam[string]("cache-dir", "Directory to store API response cache files").
+		WithDefault(filepath.Join(os.TempDir(), "nebula-cache"))
+}
+
+func AwsCacheExt() cfg.Param {
+	return cfg.NewParam[string]("cache-ext", "Name of AWS API response cache files extension").
+		WithDefault(".aws-cache")
+}
+
+func AwsCacheTTL() cfg.Param {
+	return cfg.NewParam[int]("cache-ttl", "TTL for cached responses in seconds").
+		WithDefault(3600)
+}
+
+func AwsCacheErrorTypes() cfg.Param {
+	return cfg.NewParam[string]("cache-error-resp-type", "A comma-separated list of strings specifying cache error response types, e.g., TypeNotFoundException, AccessDeniedException. Use all to represent any error.")
+}
+
+func AwsCacheErrorResp() cfg.Param {
+	return cfg.NewParam[bool]("cache-error-resp", "Cache error response").
+		WithDefault(false)
+}
+
+func AwsDisableCache() cfg.Param {
+	return cfg.NewParam[bool]("disable-cache", "Disable API response caching").
+		WithDefault(false)
+}
+
+func CommonAwsReconOptions() []cfg.Param {
+	return []cfg.Param{
+		AwsProfile(),
+		AwsResourceType(),
+		AwsCacheDir(),
+		AwsCacheExt(),
+		AwsCacheTTL(),
+		AwsCacheErrorTypes(),
+		AwsCacheErrorResp(),
+		AwsDisableCache(),
+	}
 }
