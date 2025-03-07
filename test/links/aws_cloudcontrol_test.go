@@ -19,7 +19,7 @@ func TestCCBasic(t *testing.T) {
 	).WithConfigs(
 		cfg.WithArg("regions", []string{"all"}),
 		cfg.WithArg("profile", "default"),
-		cfg.WithArg("jsonoutfile", "cloudcontrol.json"),
+		cfg.WithArg("jsonoutfile", "cloudcontrol2.json"),
 	).WithStrictness(
 		chain.Strict)
 

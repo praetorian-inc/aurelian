@@ -209,7 +209,7 @@ func AwsProfile() cfg.Param {
 }
 
 func AwsResourceType() cfg.Param {
-	return cfg.NewParam[string]("resource-type", "AWS Cloud Control resource type").
+	return cfg.NewParam[[]string]("resource-type", "AWS Cloud Control resource type").
 		WithRegex(regexp.MustCompile("^(AWS::[a-zA-Z0-9:]+|ALL|all)$")).
 		WithShortcode("t").
 		AsRequired()

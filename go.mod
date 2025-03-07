@@ -57,7 +57,7 @@ require (
 	github.com/microsoftgraph/msgraph-sdk-go v1.53.0
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de
 	github.com/ollama/ollama v0.2.7
-	github.com/praetorian-inc/janus v0.0.0-20250307172724-4a00ce688895
+	github.com/praetorian-inc/janus v0.0.0-20250307181342-eff5d3c70ea6
 	github.com/seancfoley/ipaddress-go v1.7.0
 	github.com/spf13/cobra v1.8.1
 )
