@@ -7,3 +7,5 @@ nebula-output/*
 .go-ignore
 nebula
 np-debug.json
+bin/*
+bin
