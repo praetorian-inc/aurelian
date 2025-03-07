@@ -3,8 +3,7 @@ package analyze
 import (
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
-	"github.com/praetorian-inc/nebula/modules/options"
-	o "github.com/praetorian-inc/nebula/modules/options"
+	options "github.com/praetorian-inc/nebula/pkg/links/opts"
 	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
@@ -14,7 +13,7 @@ type AwsAccessKeyIdToAccountId struct {
 }
 
 var AwsAccessKeyIdToAccountIdOptions = []*types.Option{
-	&o.AwsAccessKeyIdOpt,
+	&options.AwsAccessKeyIdOpt,
 }
 
 var AwsAccessKeyIdToAccountIdOutputProviders = []func(options []*types.Option) types.OutputProvider{
@@ -43,7 +42,7 @@ func NewAccessKeyIdToAccountId(opts []*types.Option) (<-chan string, stages.Stag
 		return nil, nil, err
 	}
 
-	accessKeyId := options.GetOptionByName(o.AwsAccessKeyIdOpt.Name, opts).Value
+	accessKeyId := options.GetOptionByName(options.AwsAccessKeyIdOpt.Name, opts).Value
 
 	return stages.Generator([]string{accessKeyId}), pipeline, nil
 }

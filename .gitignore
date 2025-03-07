@@ -9,3 +9,4 @@ nebula
 np-debug.json
 bin/*
 bin
+test/links/*.json

@@ -3,7 +3,7 @@ package cmd
 import (
 	"os"
 
-	"github.com/praetorian-inc/nebula/modules/options"
+	options "github.com/praetorian-inc/nebula/pkg/links/opts"
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/spf13/cobra"
 )

@@ -12,7 +12,7 @@ import (
 	sfntypes "github.com/aws/aws-sdk-go-v2/service/sfn/types"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
-	"github.com/praetorian-inc/nebula/modules/options"
+	options "github.com/praetorian-inc/nebula/pkg/links/opts"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 

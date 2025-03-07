@@ -221,11 +221,8 @@ func runModule(cmd *cobra.Command, module chain.Module) error {
 		}
 	})
 
-	// Create and run the chain
-	chain := module.Chain().WithConfigs(configs...)
-	chain.Wait()
-
-	return chain.Error()
+	module.Run(configs...)
+	return module.Error()
 }
 
 func getFirstKey(m interface{}) string {

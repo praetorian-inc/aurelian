@@ -5,8 +5,7 @@ import (
 
 	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
-	"github.com/praetorian-inc/nebula/modules/options"
-	o "github.com/praetorian-inc/nebula/modules/options"
+	options "github.com/praetorian-inc/nebula/pkg/links/opts"
 	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
@@ -17,7 +16,7 @@ type AwsAuthorizationDetails struct {
 }
 
 var AwsAuthorizationDetailsOptions = []*types.Option{
-	&o.AwsProfileListOpt,
+	&options.AwsProfileListOpt,
 }
 
 var AwsAuthorizationDetailsMetadata = modules.Metadata{
@@ -53,8 +52,8 @@ func NewAwsAuthorizationDetailsModel(opts []*types.Option) (modules.Module, erro
 }
 
 func NewAwsAuthorizationDetails(opts []*types.Option) (<-chan string, stages.Stage[string, []byte], error) {
-	profileList := options.GetOptionByName(o.AwsProfileListOpt.Name, opts).Value
-	profile := options.GetOptionByName(o.AwsProfileOpt.Name, opts).Value
+	profileList := options.GetOptionByName(options.AwsProfileListOpt.Name, opts).Value
+	profile := options.GetOptionByName(options.AwsProfileOpt.Name, opts).Value
 	var profiles []string
 
 	if profileList == "" {

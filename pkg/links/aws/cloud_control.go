@@ -14,7 +14,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus/pkg/util"
 	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/pkg/links/opts"
+	opts "github.com/praetorian-inc/nebula/pkg/links/opts"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -33,8 +33,9 @@ func (a *AWSCloudControl) Metadata() *cfg.Metadata {
 
 func (a *AWSCloudControl) Params() []cfg.Param {
 	return []cfg.Param{
-		opts.AWSRegions(),
-		opts.AWSProfile(),
+		opts.AwsRegions(),
+		opts.AwsProfile(),
+		opts.AwsResourceType(),
 	}
 }
 
@@ -99,7 +100,6 @@ func (a *AWSCloudControl) Process(resourceType string) error {
 			continue
 		}
 
-		a.wg.Add(1)
 		go a.listResourcesInRegion(resourceType, region)
 	}
 
@@ -217,4 +217,9 @@ func (a *AWSCloudControl) sendResource(resource *types.EnrichedResourceDescripti
 	defer func() { <-sem }()
 
 	a.Send(resource)
+}
+
+func (a *AWSCloudControl) Complete() error {
+	a.wg.Wait()
+	return nil
 }

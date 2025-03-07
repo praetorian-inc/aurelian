@@ -7,14 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
-	"github.com/praetorian-inc/nebula/internal/logs"
-	"github.com/praetorian-inc/nebula/modules/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/spf13/cobra"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -25,6 +17,15 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
+	"github.com/praetorian-inc/nebula/internal/logs"
+	options "github.com/praetorian-inc/nebula/pkg/links/opts"
+	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -522,7 +523,7 @@ func InitCache(opts []*types.Option) {
 		logger.Warn("Fallback to default TTL of 3600")
 		ttl = 3600
 	}
-	
+
 	cobra.OnFinalize(ShowCacheStat)
 	cobra.OnFinalize(PrintAllThrottlingCounts)
 
