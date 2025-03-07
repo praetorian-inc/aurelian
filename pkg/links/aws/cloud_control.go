@@ -100,10 +100,12 @@ func (a *AWSCloudControl) Process(resourceType string) error {
 			continue
 		}
 
+		a.wg.Add(1)
 		go a.listResourcesInRegion(resourceType, region)
 	}
 
 	a.wg.Wait()
+	slog.Debug("cloudcontrol complete")
 	return nil
 }
 
@@ -123,6 +125,7 @@ func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
 
 	accountId, err := util.GetAccountId(config)
 	if err != nil {
+		slog.Error("Failed to get account ID", "error", err)
 		return
 	}
 
@@ -137,35 +140,15 @@ func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
 		res, err := paginator.NextPage(a.Context())
 
 		if err != nil {
-			errMsg := err.Error()
-			// Check for different error types
-			switch {
-			case strings.Contains(errMsg, "TypeNotFoundException"):
-				slog.Debug(fmt.Sprintf("The type %s is not available in region %s", resourceType, region))
-				break
-
-			case strings.Contains(errMsg, "is not authorized to perform") || strings.Contains(errMsg, "AccessDeniedException"):
-				slog.Error(fmt.Sprintf("Access denied to list resources of type %s in region %s", resourceType, region))
-				slog.Debug(errMsg)
-				break
-
-			case strings.Contains(errMsg, "UnsupportedActionException"):
-				slog.Info(fmt.Sprintf("The type %s is not supported in region %s", resourceType, region))
-				break
-
-			case strings.Contains(errMsg, "ThrottlingException"):
-				// Log throttling but don't terminate - let AWS SDK retry with backoff
-				slog.Info("Rate limited", slog.String("region", region), slog.String("type", resourceType))
-				continue
-
-			default:
-				slog.Error("Failed to ListResources",
-					slog.String("region", region),
-					slog.String("type", resourceType),
-					slog.String("err", errMsg))
+			err, shouldBreak := a.processError(resourceType, region, err)
+			if err != nil {
+				slog.Error("Failed to list resources", "error", err)
+				return
 			}
-			// For non-terminal errors, continue to next page
-			continue
+
+			if shouldBreak {
+				break
+			}
 		}
 
 		for _, resource := range res.ResourceDescriptions {
@@ -174,6 +157,27 @@ func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
 			a.sendResource(erd)
 		}
 
+	}
+}
+
+func (a *AWSCloudControl) processError(resourceType, region string, err error) (error, bool) {
+	errMsg := err.Error()
+	switch {
+	case strings.Contains(errMsg, "TypeNotFoundException"):
+		return fmt.Errorf("The type %s is not available in region %s", resourceType, region), true
+
+	case strings.Contains(errMsg, "is not authorized to perform") || strings.Contains(errMsg, "AccessDeniedException"):
+		return fmt.Errorf("Access denied to list resources of type %s in region %s", resourceType, region), true
+
+	case strings.Contains(errMsg, "UnsupportedActionException"):
+		return fmt.Errorf("The type %s is not supported in region %s", resourceType, region), true
+
+	case strings.Contains(errMsg, "ThrottlingException"):
+		// Log throttling but don't terminate - let AWS SDK retry with backoff
+		return fmt.Errorf("Rate limited: %s", errMsg), false
+
+	default:
+		return fmt.Errorf("Failed to ListResources of type %s in region %s: %w", resourceType, region, err), false
 	}
 }
 
@@ -216,6 +220,7 @@ func (a *AWSCloudControl) sendResource(resource *types.EnrichedResourceDescripti
 
 	defer func() { <-sem }()
 
+	fmt.Printf("sending resource: %+v\n", resource)
 	a.Send(resource)
 }
 
