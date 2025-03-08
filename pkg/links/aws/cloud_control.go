@@ -57,7 +57,7 @@ func (a *AWSCloudControl) initializeClients() error {
 	a.cloudControlClients = make(map[string]*cloudcontrol.Client)
 
 	for _, region := range a.regions {
-		config, err := util.GetAWSConfig(region, a.profile)
+		config, err := helpers.GetAWSCfg(region, a.profile, options.JanusParamAdapter(a.Params()))
 		if err != nil {
 			return fmt.Errorf("failed to create AWS config: %w", err)
 		}

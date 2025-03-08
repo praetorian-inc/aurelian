@@ -1,5 +1,3 @@
-//go:build aws || aws_recon || aws_public_resources || all
-
 package recon
 
 import (

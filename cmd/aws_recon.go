@@ -1,5 +1,3 @@
-//go:build aws || aws_recon || aws_recon_find_secrets || all
-
 package cmd
 
 import (

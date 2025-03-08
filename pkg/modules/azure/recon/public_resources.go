@@ -1,5 +1,3 @@
-//go:build azure || azure_recon || azure_public_resources || all
-
 package recon
 
 import (

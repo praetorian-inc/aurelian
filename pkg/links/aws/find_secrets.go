@@ -11,6 +11,7 @@ import (
 
 type AWSFindSecrets struct {
 	*AwsReconLink
+	clientMap map[string]interface{} // map key is type-region
 }
 
 func NewAWSFindSecrets(configs ...cfg.Config) chain.Link {
