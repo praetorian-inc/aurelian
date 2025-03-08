@@ -25,8 +25,6 @@ func NewAWSEC2UserData(configs ...cfg.Config) chain.Link {
 }
 
 func (a *AwsEc2UserData) Process(resource *types.EnrichedResourceDescription) error {
-	slog.Debug("Processing EC2 instance")
-
 	if resource.TypeName != "AWS::EC2::Instance" {
 		slog.Info("Skipping non-EC2 instance", "resource", resource)
 		return nil
