@@ -30,7 +30,7 @@ func (a *AWSCloudControl) Metadata() *cfg.Metadata {
 }
 
 func (a *AWSCloudControl) Params() []cfg.Param {
-	params := a.Base.Params()
+	params := a.AwsReconLink.Params()
 	params = append(params, options.AwsCommonReconOptions()...)
 	params = append(params, options.AwsRegions(), options.AwsResourceType())
 
@@ -141,7 +141,6 @@ func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
 
 		for _, resource := range res.ResourceDescriptions {
 			erd := a.resourceDescriptionToERD(resource, resourceType, accountId, region)
-			slog.Debug("Sending resource", "resource", erd)
 			a.sendResource(region, erd)
 		}
 
@@ -208,7 +207,6 @@ func (a *AWSCloudControl) sendResource(region string, resource *types.EnrichedRe
 
 	defer func() { <-sem }()
 
-	slog.Debug(fmt.Sprintf("sending resource: %+v\n", resource))
 	a.Send(resource)
 }
 

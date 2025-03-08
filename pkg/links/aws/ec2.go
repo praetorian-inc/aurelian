@@ -15,16 +15,18 @@ import (
 )
 
 type AwsEc2UserData struct {
-	AwsReconLink
+	*AwsReconLink
 }
 
 func NewAWSEC2UserData(configs ...cfg.Config) chain.Link {
 	ec2 := &AwsEc2UserData{}
-	ec2.Base = chain.NewBase(ec2, configs...)
+	ec2.AwsReconLink = NewAwsReconLink(ec2, configs...)
 	return ec2
 }
 
 func (a *AwsEc2UserData) Process(resource *types.EnrichedResourceDescription) error {
+	slog.Debug("Processing EC2 instance")
+
 	if resource.TypeName != "AWS::EC2::Instance" {
 		slog.Info("Skipping non-EC2 instance", "resource", resource)
 		return nil
@@ -50,6 +52,7 @@ func (a *AwsEc2UserData) Process(resource *types.EnrichedResourceDescription) er
 	}
 
 	if output.UserData == nil || output.UserData.Value == nil {
+		slog.Debug("No user data found for instance", "instance", resource.Identifier)
 		return nil
 	}
 

@@ -23,13 +23,13 @@ func NewAWSFindSecrets(configs ...cfg.Config) chain.Link {
 
 func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) error {
 	var resourceChain chain.Chain
-	var err error
+
+	slog.Debug("Processing resource", "resource", resource)
 
 	switch resource.TypeName {
 	case "AWS::EC2::Instance":
 		resourceChain = chain.NewChain(
 			NewAWSEC2UserData(),
-			general.NewErdToNPInput(),
 		)
 
 	case "AWS::Lambda::Function":
@@ -37,17 +37,13 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 			general.NewErdToNPInput(),
 		)
 
-	// case "AWS::CloudFormation::Stack":
-	// 	resourceChain = chain.NewChain(
-	// 		NewAWSCloudFormationTemplates(),
-	// 	)
+	case "AWS::CloudFormation::Stack":
+		resourceChain = chain.NewChain(
+			NewAWSCloudFormationTemplates(),
+		)
+
 	default:
 		slog.Error("Unsupported resource type", "resource", resource)
-		return nil
-	}
-
-	if err != nil {
-		slog.Error("Failed to start resource chain", "error", err)
 		return nil
 	}
 
@@ -59,14 +55,19 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 		}
 	}
 
-	// propogate the args to the chain
-	resourceChain = resourceChain.WithConfigs(cfg.WithArgs(ccArgs))
+	resourceChain.WithConfigs(cfg.WithArgs(ccArgs))
+	resourceChain.WithParams(a.Params()...)
+
 	resourceChain.Send(resource)
 	resourceChain.Close()
 
+	count := 0
 	for o, ok := chain.RecvAs[types.NPInput](resourceChain); ok; o, ok = chain.RecvAs[types.NPInput](resourceChain) {
 		a.Send(o)
+		count++
 	}
 
-	return nil
+	slog.Debug("Found secret config data", "count", count)
+
+	return resourceChain.Error()
 }
