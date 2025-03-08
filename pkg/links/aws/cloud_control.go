@@ -69,10 +69,12 @@ func (a *AWSCloudControl) initializeClients() error {
 }
 
 func (a *AWSCloudControl) Initialize() error {
-	a.AwsReconLink.Initialize()
+	if err := a.AwsReconLink.Initialize(); err != nil {
+		return err
+	}
+
 	a.initializeClients()
 	a.initializeSemaphores()
-
 	return nil
 }
 
@@ -151,7 +153,7 @@ func (a *AWSCloudControl) processError(resourceType, region string, err error) (
 		return fmt.Errorf("%s is not available in region %s", resourceType, region), true
 
 	case strings.Contains(errMsg, "is not authorized to perform") || strings.Contains(errMsg, "AccessDeniedException"):
-		return fmt.Errorf("access denied to list resources of type %s in region %s", resourceType, region), true
+		return fmt.Errorf("access denied to list resources of type %s in region %s: %s", resourceType, region, errMsg), true
 
 	case strings.Contains(errMsg, "UnsupportedActionException"):
 		return fmt.Errorf("the type %s is not supported in region %s", resourceType, region), true
