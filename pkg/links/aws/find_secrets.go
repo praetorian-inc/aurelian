@@ -33,8 +33,9 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 		)
 
 	case "AWS::Lambda::Function":
-		resourceChain = chain.NewChain(
+		resourceChain = chain.NewMulti(
 			general.NewErdToNPInput(),
+			NewAWSLambdaFunctionCode(),
 		)
 
 	case "AWS::CloudFormation::Stack":
@@ -61,13 +62,9 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 	resourceChain.Send(resource)
 	resourceChain.Close()
 
-	count := 0
 	for o, ok := chain.RecvAs[types.NPInput](resourceChain); ok; o, ok = chain.RecvAs[types.NPInput](resourceChain) {
 		a.Send(o)
-		count++
 	}
-
-	slog.Debug("Found secret config data", "count", count)
 
 	return resourceChain.Error()
 }
