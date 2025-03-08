@@ -57,7 +57,7 @@ require (
 	github.com/microsoftgraph/msgraph-sdk-go v1.53.0
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de
 	github.com/ollama/ollama v0.2.7
-	github.com/praetorian-inc/janus v0.0.0-20250307223216-ccb4b3dcbe8a
+	github.com/praetorian-inc/janus v0.0.0-20250308225626-7f57fae93a06
 	github.com/seancfoley/ipaddress-go v1.7.0
 	github.com/spf13/cobra v1.8.1
 )
@@ -135,3 +135,5 @@ require (
 	golang.org/x/text v0.21.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+replace github.com/praetorian-inc/janus => ../janus

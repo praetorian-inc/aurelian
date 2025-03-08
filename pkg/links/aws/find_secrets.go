@@ -43,6 +43,8 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 			NewAWSCloudFormationTemplates(),
 		)
 
+	case "AWS::ECR::Repository":
+		
 	default:
 		slog.Error("Unsupported resource type", "resource", resource)
 		return nil
