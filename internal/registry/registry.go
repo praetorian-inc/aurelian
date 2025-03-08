@@ -108,3 +108,10 @@ func GetRegistryEntry(name string) (RegistryEntry, bool) {
 	entry, exists := Registry.modules[name]
 	return entry, exists
 }
+
+func GetModuleCount() int {
+	Registry.mu.RLock()
+	defer Registry.mu.RUnlock()
+
+	return len(Registry.modules)
+}

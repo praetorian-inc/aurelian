@@ -1,9 +1,12 @@
 package types
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
+	"github.com/praetorian-inc/janus/pkg/types"
 )
 
 type EnrichedResourceDescription struct {
@@ -44,4 +47,22 @@ func (e *EnrichedResourceDescription) ToArn() arn.ARN {
 func getServiceName(resourceType string) string {
 	service := strings.ToLower(strings.Split(resourceType, "::")[1])
 	return service
+}
+
+func (erd *EnrichedResourceDescription) ToNPInput() (types.NPInput, error) {
+	propsJson, err := json.Marshal(erd.Properties)
+	if err != nil {
+		return types.NPInput{}, err
+	}
+
+	return types.NPInput{
+		ContentBase64: base64.StdEncoding.EncodeToString(propsJson),
+		Provenance: types.NPProvenance{
+			Platform:     "aws",
+			ResourceType: erd.TypeName,
+			ResourceID:   erd.Arn.String(),
+			Region:       erd.Region,
+			AccountID:    erd.AccountId,
+		},
+	}, nil
 }

@@ -5,9 +5,11 @@ package recon
 import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	"github.com/praetorian-inc/janus/pkg/links"
 	"github.com/praetorian-inc/janus/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
 
 func init() {
@@ -30,9 +32,11 @@ var AWSFindSecrets = chain.NewModule(
 		"opsec_level", "moderate",
 	).WithProperty(
 		"authors", []string{"Praetorian"},
-	),
+	).WithChainInputParam(options.AwsResourceType().Name()),
 	chain.NewChain(
 		aws.NewAWSCloudControl(),
+		aws.NewAWSFindSecrets(),
+		links.NewNoseyParkerScanner(cfg.WithArg("continue_piping", true)),
 	).WithOutputters(
 		output.NewJSONOutputter(),
 		output.NewConsoleOutputter(),

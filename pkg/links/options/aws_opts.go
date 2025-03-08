@@ -244,7 +244,7 @@ func AwsDisableCache() cfg.Param {
 		WithDefault(false)
 }
 
-func CommonAwsReconOptions() []cfg.Param {
+func AwsCommonReconOptions() []cfg.Param {
 	return []cfg.Param{
 		AwsProfile(),
 		AwsResourceType(),

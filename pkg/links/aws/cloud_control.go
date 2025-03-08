@@ -19,10 +19,8 @@ import (
 )
 
 type AWSCloudControl struct {
-	*chain.Base
+	AwsReconLink
 	semaphores          map[string]chan struct{}
-	regions             []string
-	profile             string
 	wg                  sync.WaitGroup
 	cloudControlClients map[string]*cloudcontrol.Client
 }
@@ -33,7 +31,7 @@ func (a *AWSCloudControl) Metadata() *cfg.Metadata {
 
 func (a *AWSCloudControl) Params() []cfg.Param {
 	params := a.Base.Params()
-	params = append(params, options.CommonAwsReconOptions()...)
+	params = append(params, options.AwsCommonReconOptions()...)
 	params = append(params, options.AwsRegions(), options.AwsResourceType())
 
 	return params
@@ -71,30 +69,9 @@ func (a *AWSCloudControl) initializeClients() error {
 }
 
 func (a *AWSCloudControl) Initialize() error {
-	a.ContextHolder = cfg.NewContextHolder()
-
-	regions, err := cfg.As[[]string](a.Arg("regions"))
-	slog.Info("cloudcontrol regions", "regions", regions)
-	if err != nil || len(regions) == 0 || strings.ToLower(regions[0]) == "all" {
-		a.regions, err = helpers.EnabledRegions(a.profile, options.JanusParamAdapter(a.Params()))
-		if err != nil {
-			return err
-		}
-	} else {
-		a.regions = regions
-	}
-
+	a.AwsReconLink.Initialize()
 	a.initializeClients()
 	a.initializeSemaphores()
-
-	profile, err := cfg.As[string](a.Arg("profile"))
-	slog.Debug("cloudcontrol profile", "profile", profile)
-	if err != nil {
-		return fmt.Errorf("failed to get profile: %w", err)
-	}
-	a.profile = profile
-
-	slog.Debug("cloudcontrol initialized", "regions", a.regions, "profile", a.profile)
 
 	return nil
 }

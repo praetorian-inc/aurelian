@@ -5,6 +5,7 @@ import (
 	"runtime"
 
 	"github.com/praetorian-inc/nebula/internal/logs"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/spf13/cobra"
@@ -23,6 +24,7 @@ potential security issues in cloud environments.`,
 
 func initCommands() {
 	runtime.GC()
+	message.Banner(registry.GetModuleCount())
 	rootCmd.AddCommand(listModulesCmd)
 	generateCommands(rootCmd)
 }
