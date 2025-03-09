@@ -10,9 +10,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus/pkg/types"
+	jtypes "github.com/praetorian-inc/janus/pkg/types"
 	"github.com/praetorian-inc/janus/pkg/util"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AwsEc2UserData struct {
@@ -55,9 +56,9 @@ func (a *AwsEc2UserData) Process(resource *types.EnrichedResourceDescription) er
 		return nil
 	}
 
-	a.Send(types.NPInput{
+	a.Send(jtypes.NPInput{
 		ContentBase64: *output.UserData.Value,
-		Provenance: types.NPProvenance{
+		Provenance: jtypes.NPProvenance{
 			Platform:     "aws",
 			ResourceType: fmt.Sprintf("%s::UserData", resource.TypeName),
 			ResourceID:   resource.Arn.String(),

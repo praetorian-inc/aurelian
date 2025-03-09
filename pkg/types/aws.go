@@ -50,20 +50,22 @@ func getServiceName(resourceType string) string {
 	return service
 }
 
-func (erd *EnrichedResourceDescription) ToNPInput() (jtypes.NPInput, error) {
+func (erd *EnrichedResourceDescription) ToNPInputs() ([]jtypes.NPInput, error) {
 	propsJson, err := json.Marshal(erd.Properties)
 	if err != nil {
-		return jtypes.NPInput{}, err
+		return nil, err
 	}
 
-	return jtypes.NPInput{
-		ContentBase64: base64.StdEncoding.EncodeToString(propsJson),
-		Provenance: jtypes.NPProvenance{
-			Platform:     "aws",
-			ResourceType: erd.TypeName,
-			ResourceID:   erd.Arn.String(),
-			Region:       erd.Region,
-			AccountID:    erd.AccountId,
+	return []jtypes.NPInput{
+		{
+			ContentBase64: base64.StdEncoding.EncodeToString(propsJson),
+			Provenance: jtypes.NPProvenance{
+				Platform:     "aws",
+				ResourceType: erd.TypeName,
+				ResourceID:   erd.Arn.String(),
+				Region:       erd.Region,
+				AccountID:    erd.AccountId,
+			},
 		},
 	}, nil
 }

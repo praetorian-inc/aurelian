@@ -1,18 +1,20 @@
 package aws
 
 import (
+	"fmt"
 	"log/slog"
 
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus/pkg/links/docker"
-	"github.com/praetorian-inc/janus/pkg/types"
+	jtypes "github.com/praetorian-inc/janus/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudformation"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/ec2"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/ecr"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/lambda"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AWSFindSecrets struct {
@@ -28,44 +30,51 @@ func NewAWSFindSecrets(configs ...cfg.Config) chain.Link {
 }
 
 func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) error {
-	var resourceChain chain.Chain
+	var links []chain.Link
 
 	slog.Debug("Processing resource", "resource", resource)
 
 	switch resource.TypeName {
 	case "AWS::EC2::Instance":
-		resourceChain = chain.NewChain(
+		links = []chain.Link{
 			ec2.NewAWSEC2UserData(),
-		)
+		}
 
 	case "AWS::Lambda::Function":
-		resourceChain = chain.NewMulti(
-			general.NewToNPInput(),
-			lambda.NewAWSLambdaFunctionCode(),
-		)
+		links = []chain.Link{
+			chain.NewMulti(
+				general.NewToNPInput(),
+				lambda.NewAWSLambdaFunctionCode(),
+			),
+		}
 
 	case "AWS::CloudFormation::Stack":
-		resourceChain = chain.NewChain(
+		links = []chain.Link{
 			cloudformation.NewAWSCloudFormationTemplates(),
-		)
+		}
 
 	case "AWS::ECR::Repository":
-		resourceChain = chain.NewChain(
+		links = []chain.Link{
 			ecr.NewAWSECRListImages(),
 			ecr.NewAWSECRLogin(),
 			docker.NewDockerPull(),
 			docker.NewDockerSave(),
 			general.NewToNPInput(),
-		)
+		}
 
 	case "AWS::ECR::PublicRepository":
-		resourceChain = chain.NewChain(
+		links = []chain.Link{
 			ecr.NewAWSECRListPublicImages(),
 			ecr.NewAWSECRLoginPublic(),
 			docker.NewDockerPull(),
 			docker.NewDockerSave(),
 			general.NewToNPInput(),
-		)
+		}
+
+	case "AWS::ECS::TaskDefinition":
+		links = []chain.Link{
+			general.NewToNPInput(),
+		}
 
 	default:
 		slog.Error("Unsupported resource type", "resource", resource)
@@ -80,13 +89,16 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 		}
 	}
 
+	resourceChain := chain.NewChain(links...)
+
 	resourceChain.WithConfigs(cfg.WithArgs(ccArgs))
 	resourceChain.WithParams(a.Params()...)
 
+	slog.Debug("Sending resource to chain", "resource", resource, "type", fmt.Sprintf("%T", resource))
 	resourceChain.Send(resource)
 	resourceChain.Close()
 
-	for o, ok := chain.RecvAs[types.NPInput](resourceChain); ok; o, ok = chain.RecvAs[types.NPInput](resourceChain) {
+	for o, ok := chain.RecvAs[jtypes.NPInput](resourceChain); ok; o, ok = chain.RecvAs[jtypes.NPInput](resourceChain) {
 		slog.Debug("NPInput", "npinput", o)
 		a.Send(o)
 	}
