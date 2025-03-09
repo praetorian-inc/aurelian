@@ -61,7 +61,6 @@ func (a *AWSCloudControl) initializeSemaphores() {
 	for _, region := range a.regions {
 		a.semaphores[region] = make(chan struct{}, 5)
 	}
-	a.semaphores[""] = make(chan struct{}, 5) // global region
 }
 
 func (a *AWSCloudControl) initializeClients() error {
@@ -81,7 +80,9 @@ func (a *AWSCloudControl) initializeClients() error {
 
 func (a *AWSCloudControl) Process(resourceType string) error {
 	for _, region := range a.regions {
-		if a.isGlobalService(resourceType, region) {
+
+		// Global services are only available in us-east-1
+		if util.IsGlobalService(resourceType) && region != "us-east-1" {
 			slog.Info("Skipping global service", "type", resourceType, "region", region)
 			continue
 		}
@@ -93,10 +94,6 @@ func (a *AWSCloudControl) Process(resourceType string) error {
 	a.wg.Wait()
 	slog.Debug("cloudcontrol complete")
 	return nil
-}
-
-func (a *AWSCloudControl) isGlobalService(resourceType, region string) bool {
-	return util.IsGlobalService(resourceType) && region != "us-east-1"
 }
 
 func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
