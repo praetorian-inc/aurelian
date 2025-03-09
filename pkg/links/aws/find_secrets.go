@@ -40,7 +40,7 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 
 	case "AWS::Lambda::Function":
 		resourceChain = chain.NewMulti(
-			general.NewErdToNPInput(),
+			general.NewToNPInput(),
 			lambda.NewAWSLambdaFunctionCode(),
 		)
 
@@ -54,6 +54,8 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 			ecr.NewAWSECRListImages(),
 			ecr.NewAWSECRLogin(),
 			docker.NewDockerPull(),
+			docker.NewDockerSave(),
+			general.NewToNPInput(),
 		)
 
 	default:
