@@ -23,7 +23,7 @@ func NewAwsReconLink(link chain.Link, configs ...cfg.Config) *AwsReconLink {
 	return a
 }
 
-func (a *AWSFindSecrets) Params() []cfg.Param {
+func (a *AwsReconLink) Params() []cfg.Param {
 	return options.AwsCommonReconOptions()
 }
 

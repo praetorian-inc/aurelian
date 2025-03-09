@@ -6,6 +6,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
 
 func init() {
@@ -27,9 +28,9 @@ var AWSPublicResources = chain.NewModule(
 		"opsec_level", "moderate",
 	).WithProperty(
 		"authors", []string{"Praetorian"},
-	),
+	).WithChainInputParam(options.AwsResourceType().Name()),
 	chain.NewChain(
-		aws.NewAWSCloudControl(),
+		aws.NewAwsPublicResources(),
 	).WithOutputters(
 		output.NewJSONOutputter(),
 		output.NewConsoleOutputter(),
