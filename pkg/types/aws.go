@@ -56,6 +56,8 @@ func (erd *EnrichedResourceDescription) ToNPInputs() ([]jtypes.NPInput, error) {
 		return nil, err
 	}
 
+	fmt.Printf("erd: %+v\n", erd)
+
 	return []jtypes.NPInput{
 		{
 			ContentBase64: base64.StdEncoding.EncodeToString(propsJson),

@@ -7,13 +7,14 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus/pkg/links/docker"
+	"github.com/praetorian-inc/janus/pkg/links/noseyparker"
 	jtypes "github.com/praetorian-inc/janus/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudformation"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/ec2"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/ecr"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/lambda"
-	"github.com/praetorian-inc/nebula/pkg/links/general"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/ssm"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -43,7 +44,7 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 	case "AWS::Lambda::Function":
 		links = []chain.Link{
 			chain.NewMulti(
-				general.NewToNPInput(),
+				noseyparker.NewConvertToNPInput(),
 				lambda.NewAWSLambdaFunctionCode(),
 			),
 		}
@@ -59,7 +60,7 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 			ecr.NewAWSECRLogin(),
 			docker.NewDockerPull(),
 			docker.NewDockerSave(),
-			general.NewToNPInput(),
+			noseyparker.NewConvertToNPInput(),
 		}
 
 	case "AWS::ECR::PublicRepository":
@@ -68,12 +69,23 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 			ecr.NewAWSECRLoginPublic(),
 			docker.NewDockerPull(),
 			docker.NewDockerSave(),
-			general.NewToNPInput(),
+			noseyparker.NewConvertToNPInput(),
 		}
 
 	case "AWS::ECS::TaskDefinition":
 		links = []chain.Link{
-			general.NewToNPInput(),
+			noseyparker.NewConvertToNPInput(),
+		}
+
+	case "AWS::SSM::Document":
+		links = []chain.Link{
+			noseyparker.NewConvertToNPInput(),
+		}
+
+	case "AWS::SSM::Parameter":
+		links = []chain.Link{
+			ssm.NewAWSListSSMParameters(),
+			noseyparker.NewConvertToNPInput(),
 		}
 
 	default:

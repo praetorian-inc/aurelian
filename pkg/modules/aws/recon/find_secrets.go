@@ -3,7 +3,7 @@ package recon
 import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus/pkg/links"
+	"github.com/praetorian-inc/janus/pkg/links/noseyparker"
 	"github.com/praetorian-inc/janus/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
@@ -34,7 +34,7 @@ var AWSFindSecrets = chain.NewModule(
 	chain.NewChain(
 		aws.NewAWSCloudControl(),
 		aws.NewAWSFindSecrets(),
-		links.NewNoseyParkerScanner(cfg.WithArg("continue_piping", true)),
+		noseyparker.NewNoseyParkerScanner(cfg.WithArg("continue_piping", true)),
 	).WithOutputters(
 		output.NewJSONOutputter(),
 		output.NewConsoleOutputter(),
