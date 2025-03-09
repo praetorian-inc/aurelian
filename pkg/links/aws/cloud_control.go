@@ -14,12 +14,13 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus/pkg/util"
 	"github.com/praetorian-inc/nebula/internal/helpers"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AWSCloudControl struct {
-	AwsReconLink
+	base.AwsReconLink
 	semaphores          map[string]chan struct{}
 	wg                  sync.WaitGroup
 	cloudControlClients map[string]*cloudcontrol.Client
@@ -58,7 +59,7 @@ func (a *AWSCloudControl) Initialize() error {
 
 func (a *AWSCloudControl) initializeSemaphores() {
 	a.semaphores = make(map[string]chan struct{})
-	for _, region := range a.regions {
+	for _, region := range a.Regions {
 		a.semaphores[region] = make(chan struct{}, 5)
 	}
 	a.semaphores[""] = make(chan struct{}, 5) // global region
@@ -67,8 +68,8 @@ func (a *AWSCloudControl) initializeSemaphores() {
 func (a *AWSCloudControl) initializeClients() error {
 	a.cloudControlClients = make(map[string]*cloudcontrol.Client)
 
-	for _, region := range a.regions {
-		config, err := helpers.GetAWSCfg(region, a.profile, options.JanusParamAdapter(a.Params()))
+	for _, region := range a.Regions {
+		config, err := helpers.GetAWSCfg(region, a.Profile, options.JanusParamAdapter(a.Params()))
 		if err != nil {
 			return fmt.Errorf("failed to create AWS config: %w", err)
 		}
@@ -80,7 +81,7 @@ func (a *AWSCloudControl) initializeClients() error {
 }
 
 func (a *AWSCloudControl) Process(resourceType string) error {
-	for _, region := range a.regions {
+	for _, region := range a.Regions {
 		if a.isGlobalService(resourceType, region) {
 			slog.Info("Skipping global service", "type", resourceType, "region", region)
 			continue
@@ -102,9 +103,9 @@ func (a *AWSCloudControl) isGlobalService(resourceType, region string) bool {
 func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
 	defer a.wg.Done()
 
-	slog.Debug("Listing resources in region", "type", resourceType, "region", region, "profile", a.profile)
+	slog.Debug("Listing resources in region", "type", resourceType, "region", region, "profile", a.Profile)
 
-	config, err := helpers.GetAWSCfg(region, a.profile, options.JanusParamAdapter(a.Params()))
+	config, err := helpers.GetAWSCfg(region, a.Profile, options.JanusParamAdapter(a.Params()))
 
 	if err != nil {
 		slog.Error("Failed to create AWS config", "error", err)

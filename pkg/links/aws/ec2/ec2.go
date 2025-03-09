@@ -1,4 +1,4 @@
-package aws
+package ec2
 
 import (
 	"context"
@@ -12,15 +12,16 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus/pkg/types"
 	"github.com/praetorian-inc/janus/pkg/util"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 )
 
 type AwsEc2UserData struct {
-	*AwsReconLink
+	*base.AwsReconLink
 }
 
 func NewAWSEC2UserData(configs ...cfg.Config) chain.Link {
 	ec2 := &AwsEc2UserData{}
-	ec2.AwsReconLink = NewAwsReconLink(ec2, configs...)
+	ec2.AwsReconLink = base.NewAwsReconLink(ec2, configs...)
 	return ec2
 }
 
@@ -30,7 +31,7 @@ func (a *AwsEc2UserData) Process(resource *types.EnrichedResourceDescription) er
 		return nil
 	}
 
-	config, err := util.GetAWSConfig(resource.Region, a.profile)
+	config, err := util.GetAWSConfig(resource.Region, a.Profile)
 	if err != nil {
 		slog.Error("Failed to get AWS config for region", "region", resource.Region, "error", err)
 		return nil

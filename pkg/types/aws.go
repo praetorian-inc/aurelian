@@ -3,10 +3,11 @@ package types
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
-	"github.com/praetorian-inc/janus/pkg/types"
+	jtypes "github.com/praetorian-inc/janus/pkg/types"
 )
 
 type EnrichedResourceDescription struct {
@@ -49,15 +50,15 @@ func getServiceName(resourceType string) string {
 	return service
 }
 
-func (erd *EnrichedResourceDescription) ToNPInput() (types.NPInput, error) {
+func (erd *EnrichedResourceDescription) ToNPInput() (jtypes.NPInput, error) {
 	propsJson, err := json.Marshal(erd.Properties)
 	if err != nil {
-		return types.NPInput{}, err
+		return jtypes.NPInput{}, err
 	}
 
-	return types.NPInput{
+	return jtypes.NPInput{
 		ContentBase64: base64.StdEncoding.EncodeToString(propsJson),
-		Provenance: types.NPProvenance{
+		Provenance: jtypes.NPProvenance{
 			Platform:     "aws",
 			ResourceType: erd.TypeName,
 			ResourceID:   erd.Arn.String(),
@@ -65,4 +66,19 @@ func (erd *EnrichedResourceDescription) ToNPInput() (types.NPInput, error) {
 			AccountID:    erd.AccountId,
 		},
 	}, nil
+}
+
+func (erd *EnrichedResourceDescription) PropertiesAsMap() (map[string]any, error) {
+	rawProps, ok := erd.Properties.(string)
+	if !ok {
+		return nil, fmt.Errorf("properties are not a string")
+	}
+
+	var props map[string]any
+	err := json.Unmarshal([]byte(rawProps), &props)
+	if err != nil {
+		return nil, err
+	}
+
+	return props, nil
 }

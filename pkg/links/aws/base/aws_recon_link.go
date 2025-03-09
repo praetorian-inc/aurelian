@@ -1,4 +1,4 @@
-package aws
+package base
 
 import (
 	"fmt"
@@ -13,8 +13,8 @@ import (
 
 type AwsReconLink struct {
 	*chain.Base
-	regions []string
-	profile string
+	Regions []string
+	Profile string
 }
 
 func NewAwsReconLink(link chain.Link, configs ...cfg.Config) *AwsReconLink {
@@ -36,20 +36,20 @@ func (a *AwsReconLink) Initialize() error {
 	if err != nil {
 		return fmt.Errorf("failed to get profile: %w", err)
 	}
-	a.profile = profile
+	a.Profile = profile
 
 	regions, err := cfg.As[[]string](a.Arg("regions"))
 	slog.Info("cloudcontrol regions", "regions", regions)
 	if err != nil || len(regions) == 0 || strings.ToLower(regions[0]) == "all" {
-		a.regions, err = helpers.EnabledRegions(a.profile, options.JanusParamAdapter(a.Params()))
+		a.Regions, err = helpers.EnabledRegions(a.Profile, options.JanusParamAdapter(a.Params()))
 		if err != nil {
 			return err
 		}
 	} else {
-		a.regions = regions
+		a.Regions = regions
 	}
 
-	slog.Debug("initialized", "regions", a.regions, "profile", a.profile)
+	slog.Debug("initialized", "regions", a.Regions, "profile", a.Profile)
 
 	return nil
 }

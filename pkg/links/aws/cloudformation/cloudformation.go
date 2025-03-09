@@ -1,4 +1,4 @@
-package aws
+package cloudformation
 
 import (
 	"encoding/base64"
@@ -9,21 +9,22 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus/pkg/types"
 	"github.com/praetorian-inc/janus/pkg/util"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AWSCloudFormationTemplates struct {
-	AwsReconLink
+	*base.AwsReconLink
 }
 
 func NewAWSCloudFormationTemplates(configs ...cfg.Config) chain.Link {
 	cf := &AWSCloudFormationTemplates{}
-	cf.Base = chain.NewBase(cf, configs...)
+	cf.AwsReconLink = base.NewAwsReconLink(cf, configs...)
 	return cf
 }
 
 func (a *AWSCloudFormationTemplates) Process(resource *types.EnrichedResourceDescription) error {
-	config, err := util.GetAWSConfig(resource.Region, a.profile)
+	config, err := util.GetAWSConfig(resource.Region, a.Profile)
 	if err != nil {
 		slog.Error("Failed to get AWS config for region", "region", resource.Region, "error", err)
 		return nil
@@ -47,6 +48,7 @@ func (a *AWSCloudFormationTemplates) Process(resource *types.EnrichedResourceDes
 		Provenance: jtypes.NPProvenance{
 			Platform:     "aws",
 			ResourceType: "AWS::CloudFormation::Template",
+			ResourceID:   resource.Arn.String(),
 		},
 	})
 }

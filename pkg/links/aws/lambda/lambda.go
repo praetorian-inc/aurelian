@@ -1,4 +1,4 @@
-package aws
+package lambda
 
 import (
 	"archive/zip"
@@ -15,16 +15,17 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus/pkg/types"
 	"github.com/praetorian-inc/janus/pkg/util"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AWSLambdaFunctionCode struct {
-	*AwsReconLink
+	*base.AwsReconLink
 }
 
 func NewAWSLambdaFunctionCode(configs ...cfg.Config) chain.Link {
 	lambda := &AWSLambdaFunctionCode{}
-	lambda.AwsReconLink = NewAwsReconLink(lambda, configs...)
+	lambda.AwsReconLink = base.NewAwsReconLink(lambda, configs...)
 	return lambda
 }
 
@@ -52,7 +53,7 @@ func (l *AWSLambdaFunctionCode) Process(resource *types.EnrichedResourceDescript
 }
 
 func (l *AWSLambdaFunctionCode) downloadCode(resource *types.EnrichedResourceDescription) (*zip.Reader, error) {
-	config, err := util.GetAWSConfig(resource.Region, l.profile)
+	config, err := util.GetAWSConfig(resource.Region, l.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AWS config for region %s: %w", resource.Region, err)
 	}
@@ -117,7 +118,7 @@ func (l *AWSLambdaFunctionCode) processFile(resource *types.EnrichedResourceDesc
 		Provenance: jtypes.NPProvenance{
 			Platform:     "aws",
 			ResourceType: fmt.Sprintf("%s::Code", resource.TypeName),
-			ResourceID:   resource.Identifier,
+			ResourceID:   resource.Arn.String(),
 		},
 	})
 }

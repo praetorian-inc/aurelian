@@ -5,19 +5,25 @@ import (
 
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	"github.com/praetorian-inc/janus/pkg/links/docker"
 	"github.com/praetorian-inc/janus/pkg/types"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudformation"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/ec2"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/ecr"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/lambda"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
 )
 
 type AWSFindSecrets struct {
-	*AwsReconLink
+	*base.AwsReconLink
 	clientMap map[string]interface{} // map key is type-region
 }
 
 func NewAWSFindSecrets(configs ...cfg.Config) chain.Link {
 	fs := &AWSFindSecrets{}
 	// Initialize the embedded AwsReconLink with fs as the link
-	fs.AwsReconLink = NewAwsReconLink(fs, configs...)
+	fs.AwsReconLink = base.NewAwsReconLink(fs, configs...)
 	return fs
 }
 
@@ -29,23 +35,25 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 	switch resource.TypeName {
 	case "AWS::EC2::Instance":
 		resourceChain = chain.NewChain(
-			NewAWSEC2UserData(),
+			ec2.NewAWSEC2UserData(),
 		)
 
 	case "AWS::Lambda::Function":
 		resourceChain = chain.NewMulti(
 			general.NewErdToNPInput(),
-			NewAWSLambdaFunctionCode(),
+			lambda.NewAWSLambdaFunctionCode(),
 		)
 
 	case "AWS::CloudFormation::Stack":
 		resourceChain = chain.NewChain(
-			NewAWSCloudFormationTemplates(),
+			cloudformation.NewAWSCloudFormationTemplates(),
 		)
 
 	case "AWS::ECR::Repository":
 		resourceChain = chain.NewChain(
-			NewAWSECRListImages(),
+			ecr.NewAWSECRListImages(),
+			ecr.NewAWSECRLogin(),
+			docker.NewDockerPull(),
 		)
 
 	default:
@@ -68,6 +76,7 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 	resourceChain.Close()
 
 	for o, ok := chain.RecvAs[types.NPInput](resourceChain); ok; o, ok = chain.RecvAs[types.NPInput](resourceChain) {
+		slog.Debug("NPInput", "npinput", o)
 		a.Send(o)
 	}
 

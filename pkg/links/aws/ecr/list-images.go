@@ -1,4 +1,4 @@
-package aws
+package ecr
 
 import (
 	"fmt"
@@ -10,16 +10,17 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus/pkg/util"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AWSECRListImages struct {
-	*AwsReconLink
+	*base.AwsReconLink
 }
 
 func NewAWSECRListImages(configs ...cfg.Config) chain.Link {
 	r := &AWSECRListImages{}
-	r.AwsReconLink = NewAwsReconLink(r, configs...)
+	r.AwsReconLink = base.NewAwsReconLink(r, configs...)
 	return r
 }
 
@@ -34,7 +35,7 @@ func (r *AWSECRListImages) Process(resource *types.EnrichedResourceDescription) 
 		return nil
 	}
 
-	config, err := util.GetAWSConfig(resource.Region, "repositoryName")
+	config, err := util.GetAWSConfig(resource.Region, r.Profile)
 	if err != nil {
 		slog.Error("Failed to get AWS config", "error", err)
 		return nil
