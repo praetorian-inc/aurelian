@@ -1,12 +1,15 @@
 package aws
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	"github.com/praetorian-inc/janus/pkg/util"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
@@ -39,7 +42,7 @@ func (a *AwsReconLink) Initialize() error {
 	a.profile = profile
 
 	regions, err := cfg.As[[]string](a.Arg("regions"))
-	slog.Info("cloudcontrol regions", "regions", regions)
+	slog.Debug("cloudcontrol regions", "regions", regions)
 	if err != nil || len(regions) == 0 || strings.ToLower(regions[0]) == "all" {
 		a.regions, err = helpers.EnabledRegions(a.profile, options.JanusParamAdapter(a.Params()))
 		if err != nil {
@@ -49,7 +52,30 @@ func (a *AwsReconLink) Initialize() error {
 		a.regions = regions
 	}
 
-	slog.Debug("initialized", "regions", a.regions, "profile", a.profile)
+	slog.Info("initialized", "regions", a.regions, "profile", a.profile)
+
+	err = a.validateResourceRegions()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateResourceRegions ensures that if global services are requested,
+// the "us-east-1" region is included in the list of regions.
+func (a *AwsReconLink) validateResourceRegions() error {
+	// validate us-east-1 is in the regions list if global services are requested
+	rtype, err := cfg.As[[]string](a.Arg(options.AwsResourceType().Name()))
+	if err != nil {
+		return fmt.Errorf("failed to get resource type: %w", err)
+	}
+
+	for _, r := range rtype {
+		if util.IsGlobalService(r) && !slices.Contains(a.regions, "us-east-1") {
+			return errors.New("global services are only supported in us-east-1")
+		}
+	}
 
 	return nil
 }
