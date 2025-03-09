@@ -19,12 +19,12 @@ type AWSECRListImages struct {
 }
 
 func NewAWSECRListImages(configs ...cfg.Config) chain.Link {
-	r := &AWSECRListImages{}
-	r.AwsReconLink = base.NewAwsReconLink(r, configs...)
-	return r
+	e := &AWSECRListImages{}
+	e.AwsReconLink = base.NewAwsReconLink(e, configs...)
+	return e
 }
 
-func (r *AWSECRListImages) Process(resource *types.EnrichedResourceDescription) error {
+func (e *AWSECRListImages) Process(resource *types.EnrichedResourceDescription) error {
 	if resource.Properties == nil {
 		slog.Debug("Skipping resource with no properties", "identifier", resource.Identifier)
 		return nil
@@ -35,7 +35,7 @@ func (r *AWSECRListImages) Process(resource *types.EnrichedResourceDescription) 
 		return nil
 	}
 
-	config, err := util.GetAWSConfig(resource.Region, r.Profile)
+	config, err := util.GetAWSConfig(resource.Region, e.Profile)
 	if err != nil {
 		slog.Error("Failed to get AWS config", "error", err)
 		return nil
@@ -51,7 +51,7 @@ func (r *AWSECRListImages) Process(resource *types.EnrichedResourceDescription) 
 	var latest *ecrtypes.ImageDetail
 
 	for {
-		result, err := ecrClient.DescribeImages(r.Context(), input)
+		result, err := ecrClient.DescribeImages(e.Context(), input)
 		if err != nil {
 			slog.Error("Failed to describe images", "error", err)
 			return nil
@@ -82,7 +82,7 @@ func (r *AWSECRListImages) Process(resource *types.EnrichedResourceDescription) 
 		uri = fmt.Sprintf("%s/%s@%s", ecrRegistry, resource.Identifier, *latest.ImageDigest)
 	}
 
-	r.Send(uri)
+	e.Send(uri)
 
 	return nil
 }

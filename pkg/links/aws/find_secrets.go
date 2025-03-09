@@ -58,6 +58,15 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 			general.NewToNPInput(),
 		)
 
+	case "AWS::ECR::PublicRepository":
+		resourceChain = chain.NewChain(
+			ecr.NewAWSECRListPublicImages(),
+			ecr.NewAWSECRLoginPublic(),
+			docker.NewDockerPull(),
+			docker.NewDockerSave(),
+			general.NewToNPInput(),
+		)
+
 	default:
 		slog.Error("Unsupported resource type", "resource", resource)
 		return nil

@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -18,21 +17,6 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
 
-func ECRExtractRegion(url string) (string, error) {
-	if strings.Contains(url, "public.ecr.aws") {
-		return "us-east-1", nil
-	}
-
-	pattern := regexp.MustCompile(`ecr\.([-a-z0-9]+)\.amazonaws\.com`)
-
-	matches := pattern.FindStringSubmatch(url)
-	if len(matches) < 2 {
-		return "", fmt.Errorf("no region found in URL: %s", url)
-	}
-
-	return matches[1], nil
-}
-
 type AWSECRLogin struct {
 	*base.AwsReconLink
 }
@@ -44,7 +28,7 @@ func NewAWSECRLogin(configs ...cfg.Config) chain.Link {
 }
 
 func (a *AWSECRLogin) Process(registryURL string) error {
-	region, err := ECRExtractRegion(registryURL)
+	region, err := ExtractRegion(registryURL)
 	if err != nil {
 		return err
 	}
@@ -84,13 +68,13 @@ func (a *AWSECRLogin) authenticate(config aws.Config) (string, error) {
 	input := &ecr.GetAuthorizationTokenInput{}
 	tokenOutput, err := client.GetAuthorizationToken(a.Context(), input)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("authentication error: %w", err)
 	}
 
 	token := tokenOutput.AuthorizationData[0].AuthorizationToken
 	parsed, err := base64.StdEncoding.DecodeString(*token)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("decoding error: %w", err)
 	}
 
 	if !strings.Contains(string(parsed), ":") {
