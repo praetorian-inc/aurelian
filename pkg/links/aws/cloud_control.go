@@ -61,7 +61,6 @@ func (a *AWSCloudControl) initializeSemaphores() {
 	for _, region := range a.Regions {
 		a.semaphores[region] = make(chan struct{}, 5)
 	}
-	a.semaphores[""] = make(chan struct{}, 5) // global region
 }
 
 func (a *AWSCloudControl) initializeClients() error {
