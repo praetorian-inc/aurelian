@@ -15,6 +15,7 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/links/aws/ecr"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/lambda"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/ssm"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/stepfunctions"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -88,6 +89,13 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 			noseyparker.NewConvertToNPInput(),
 		}
 
+	case "AWS::StepFunctions::StateMachine":
+		links = []chain.Link{
+			stepfunctions.NewAWSListExecutions(),
+			stepfunctions.NewAWSGetExecutionDetails(),
+			noseyparker.NewConvertToNPInput(),
+		}
+
 	default:
 		slog.Error("Unsupported resource type", "resource", resource)
 		return nil
@@ -107,6 +115,7 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 	resourceChain.WithParams(a.Params()...)
 
 	slog.Debug("Sending resource to chain", "resource", resource, "type", fmt.Sprintf("%T", resource))
+	
 	resourceChain.Send(resource)
 	resourceChain.Close()
 

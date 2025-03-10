@@ -26,7 +26,7 @@ func NewAWSCloudFormationTemplates(configs ...cfg.Config) chain.Link {
 func (a *AWSCloudFormationTemplates) Process(resource *types.EnrichedResourceDescription) error {
 	config, err := util.GetAWSConfig(resource.Region, a.Profile)
 	if err != nil {
-		slog.Error("Failed to get AWS config for region", "region", resource.Region, "error", err)
+		slog.Debug("Failed to get AWS config for region", "region", resource.Region, "error", err)
 		return nil
 	}
 
@@ -37,7 +37,7 @@ func (a *AWSCloudFormationTemplates) Process(resource *types.EnrichedResourceDes
 	})
 
 	if err != nil {
-		slog.Error("Failed to get template", "error", err)
+		slog.Debug("Failed to get template", "error", err)
 		return nil
 	}
 
