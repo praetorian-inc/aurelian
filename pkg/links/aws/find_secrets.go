@@ -1,7 +1,6 @@
 package aws
 
 import (
-	"fmt"
 	"log/slog"
 
 	"github.com/praetorian-inc/janus/pkg/chain"
@@ -119,37 +118,27 @@ func (fs *AWSFindSecrets) ResourceMap() map[string]func() chain.Chain {
 }
 
 func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) error {
-	slog.Debug("Processing resource", "resource", resource)
-
 	constructor, ok := fs.resourceMap[resource.TypeName]
 	if !ok {
 		slog.Error("Unsupported resource type", "resource", resource)
 		return nil
 	}
 
-	// TODO: do I even need this?
-	ccArgs := make(map[string]any)
-	for _, param := range fs.Params() {
-		name := param.Name()
-		if fs.HasParam(name) {
-			ccArgs[name] = fs.Arg(name)
-		}
-	}
-
 	resourceChain := constructor()
 
 	resourceChain.WithParams(fs.Params()...)
-	resourceChain.WithConfigs(cfg.WithArgs(ccArgs))
-
-	slog.Debug("Sending resource to chain", "resource", resource, "type", fmt.Sprintf("%T", resource))
+	resourceChain.WithConfigs(cfg.WithArgs(fs.Args()))
 
 	resourceChain.Send(resource)
 	resourceChain.Close()
 
 	for o, ok := chain.RecvAs[jtypes.NPInput](resourceChain); ok; o, ok = chain.RecvAs[jtypes.NPInput](resourceChain) {
-		slog.Debug("NPInput", "npinput", o)
 		fs.Send(o)
 	}
 
-	return resourceChain.Error()
+	if err := resourceChain.Error(); err != nil {
+		slog.Error("Error processing resource for secrets", "resource", resource, "error", err)
+	}
+
+	return nil
 }
