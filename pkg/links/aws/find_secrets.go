@@ -127,8 +127,6 @@ func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) e
 		return nil
 	}
 
-	resourceChain := constructor()
-
 	// TODO: do I even need this?
 	ccArgs := make(map[string]any)
 	for _, param := range fs.Params() {
@@ -138,8 +136,10 @@ func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) e
 		}
 	}
 
-	resourceChain.WithConfigs(cfg.WithArgs(ccArgs))
+	resourceChain := constructor()
+
 	resourceChain.WithParams(fs.Params()...)
+	resourceChain.WithConfigs(cfg.WithArgs(ccArgs))
 
 	slog.Debug("Sending resource to chain", "resource", resource, "type", fmt.Sprintf("%T", resource))
 

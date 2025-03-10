@@ -32,7 +32,7 @@ func (a *AwsReconLink) Initialize() error {
 	a.ContextHolder = cfg.NewContextHolder()
 
 	profile, err := cfg.As[string](a.Arg("profile"))
-	slog.Debug("cloudcontrol profile", "profile", profile)
+	slog.Debug("AWS recon profile", "profile", profile)
 	if err != nil {
 		return fmt.Errorf("failed to get profile: %w", err)
 	}
