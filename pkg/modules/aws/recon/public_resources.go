@@ -28,10 +28,9 @@ var AWSPublicResources = chain.NewModule(
 	).WithProperty(
 		"authors", []string{"Praetorian"},
 	),
-	chain.NewChain(
-		aws.NewAWSCloudControl(),
-	).WithOutputters(
-		output.NewJSONOutputter(),
-		output.NewConsoleOutputter(),
-	),
+).WithLinks(
+	aws.NewAWSCloudControl,
+).WithOutputters(
+	output.NewJSONOutputter,
+	output.NewConsoleOutputter,
 )

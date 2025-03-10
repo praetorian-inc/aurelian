@@ -39,16 +39,17 @@ var AWSFindSecrets = chain.NewModule(
 		"platform":    "aws",
 		"opsec_level": "moderate",
 		"authors":     []string{"Praetorian"},
-	}).WithChainInputParam(options.AwsResourceType().Name()),
-	chain.NewChain(
-		jlinks.NewAdHocLink(preprocessResourceTypes),
-		aws.NewAWSCloudControl(),
-		aws.NewAWSFindSecrets(),
-		noseyparker.NewNoseyParkerScanner(cfg.WithArg("continue_piping", true)),
-	).WithOutputters(
-		output.NewJSONOutputter(),
-		output.NewConsoleOutputter(),
-	).WithParams(
-		options.AwsResourceType().WithDefault([]string{"all"}),
+	}).WithChainInputParam(
+		options.AwsResourceType().Name(),
 	),
+).WithLinks(
+	jlinks.ConstructAdHocLink(preprocessResourceTypes),
+	aws.NewAWSCloudControl,
+	aws.NewAWSFindSecrets,
+	chain.ConstructLinkWithConfigs(noseyparker.NewNoseyParkerScanner, cfg.WithArg("continue_piping", true)),
+).WithOutputters(
+	output.NewJSONOutputter,
+	output.NewConsoleOutputter,
+).WithParams(
+	options.AwsResourceType().WithDefault([]string{"all"}),
 )
