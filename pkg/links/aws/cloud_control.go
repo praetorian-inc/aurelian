@@ -46,6 +46,16 @@ func NewAWSCloudControl(configs ...cfg.Config) chain.Link {
 	return cc
 }
 
+func (a *AWSCloudControl) Initialize() error {
+	if err := a.AwsReconLink.Initialize(); err != nil {
+		return err
+	}
+
+	a.initializeClients()
+	a.initializeSemaphores()
+	return nil
+}
+
 func (a *AWSCloudControl) initializeSemaphores() {
 	a.semaphores = make(map[string]chan struct{})
 	for _, region := range a.regions {
@@ -68,19 +78,11 @@ func (a *AWSCloudControl) initializeClients() error {
 	return nil
 }
 
-func (a *AWSCloudControl) Initialize() error {
-	if err := a.AwsReconLink.Initialize(); err != nil {
-		return err
-	}
-
-	a.initializeClients()
-	a.initializeSemaphores()
-	return nil
-}
-
 func (a *AWSCloudControl) Process(resourceType string) error {
 	for _, region := range a.regions {
-		if a.isGlobalService(resourceType, region) {
+
+		// Global services are only available in us-east-1
+		if util.IsGlobalService(resourceType) && region != "us-east-1" {
 			slog.Info("Skipping global service", "type", resourceType, "region", region)
 			continue
 		}
@@ -94,12 +96,9 @@ func (a *AWSCloudControl) Process(resourceType string) error {
 	return nil
 }
 
-func (a *AWSCloudControl) isGlobalService(resourceType, region string) bool {
-	return util.IsGlobalService(resourceType) && region != "us-east-1"
-}
-
 func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
 	defer a.wg.Done()
+
 	slog.Debug("Listing resources in region", "type", resourceType, "region", region, "profile", a.profile)
 
 	config, err := helpers.GetAWSCfg(region, a.profile, options.JanusParamAdapter(a.Params()))
@@ -140,7 +139,7 @@ func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
 		for _, resource := range res.ResourceDescriptions {
 			erd := a.resourceDescriptionToERD(resource, resourceType, accountId, region)
 			slog.Debug("Sending resource", "resource", erd)
-			a.sendResource(erd)
+			a.sendResource(region, erd)
 		}
 
 	}
@@ -200,8 +199,8 @@ func (a *AWSCloudControl) resourceDescriptionToERD(resource cctypes.ResourceDesc
 
 }
 
-func (a *AWSCloudControl) sendResource(resource *types.EnrichedResourceDescription) {
-	sem := a.semaphores[resource.Region]
+func (a *AWSCloudControl) sendResource(region string, resource *types.EnrichedResourceDescription) {
+	sem := a.semaphores[region]
 	sem <- struct{}{}
 
 	defer func() { <-sem }()
