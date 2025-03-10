@@ -9,7 +9,6 @@ import (
 
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus/pkg/util"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
@@ -72,7 +71,7 @@ func (a *AwsReconLink) validateResourceRegions() error {
 	}
 
 	for _, r := range rtype {
-		if util.IsGlobalService(r) && !slices.Contains(a.regions, "us-east-1") {
+		if helpers.IsGlobalService(r) && !slices.Contains(a.regions, "us-east-1") {
 			return errors.New("global services are only supported in us-east-1")
 		}
 	}

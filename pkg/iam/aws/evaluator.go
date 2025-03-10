@@ -248,6 +248,27 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 
 	if resourcePolicy, exists := e.policyData.ResourcePolicies[req.Resource]; exists {
 		resourceStatements := policyToStatementList(resourcePolicy)
+
+		// Check if principal is explicitly allowed
+		explicitPrincipalAllow = e.hasExplicitPrincipalAllow(resourceStatements, req.Context.PrincipalArn)
+		if explicitPrincipalAllow {
+			result.Allowed = true
+			result.EvaluationDetails = "Principal explicitly allowed by resource-based policy"
+
+			result.PolicyResult.AddEvaluation(EvalTypeResource, []*StatementEvaluation{
+				{
+					ExplicitAllow:    true,
+					MatchedPrincipal: true,
+					Origin:           fmt.Sprintf("%s/resource-policy", req.Resource),
+				},
+			})
+
+			// If resource policy allows, we can short-circuit here
+			return result, nil
+		}
+
+		// Evaluate resource-based policy
+
 		resourceEvals, err := e.evaluatePolicyType(req.Action, req.Resource, req.Context,
 			resourceStatements, EvalTypeResource)
 		if err != nil {
@@ -256,12 +277,10 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 		result.PolicyResult.AddEvaluation(EvalTypeResource, resourceEvals)
 		resourceAllowed = result.PolicyResult.HasTypeAllow(EvalTypeResource)
 
-		// Check if principal is explicitly allowed
-		explicitPrincipalAllow = e.hasExplicitPrincipalAllow(resourceStatements, req.Context.PrincipalArn)
 	}
 
 	// 7. Evaluate identity-based policy
-	if req.IdentityStatements != nil {
+	if req.IdentityStatements != nil && len(*req.IdentityStatements) > 0 {
 		identityEvals, err := e.evaluatePolicyType(req.Action, req.Resource, req.Context,
 			req.IdentityStatements, EvalTypeIdentity)
 		if err != nil {

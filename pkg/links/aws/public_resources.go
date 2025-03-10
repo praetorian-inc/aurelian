@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 // PublicTypes contains the list of AWS resource types that can have public exposure
@@ -55,8 +57,19 @@ func (a *AwsPublicResources) processResourceType(resourceType string) error {
 			NewAWSCloudControl(),
 			general.NewJqFilter(cfg.WithArg("filter", "select(.Properties | fromjson | has(\"PublicIp\")) | {Type: .TypeName, Identifier: .Identifier, PublicIp: (.Properties | fromjson | .PublicIp)}")),
 		)
+
+	case "AWS::SNS::Topic",
+		"AWS::SQS::Queue",
+		"AWS::Lambda::Function",
+		"AWS::EFS::FileSystem",
+		"AWS::Elasticsearch::Domain":
+		resourceChain = chain.NewChain(
+			NewAWSCloudControl(),
+			NewAwsResourcePolicyChecker(),
+		)
+
 	default:
-		slog.Error("Unsupported resource type", "resourceType", resourceType)
+		return fmt.Errorf("unsupported resource type: %s", resourceType)
 	}
 
 	// Propagate parameters from this link to the chain
@@ -65,12 +78,16 @@ func (a *AwsPublicResources) processResourceType(resourceType string) error {
 		ccArgs[k] = v
 	}
 
+	if resourceChain == nil {
+		return fmt.Errorf("failed to create resource chain for resource type: %s", resourceType)
+	}
+
 	resourceChain = resourceChain.WithConfigs(cfg.WithArgs(ccArgs))
 	resourceChain.Send(resourceType)
 	resourceChain.Close()
 
 	// Collect and forward results
-	for result, ok := chain.RecvAs[map[string]interface{}](resourceChain); ok; result, ok = chain.RecvAs[map[string]interface{}](resourceChain) {
+	for result, ok := chain.RecvAs[*types.EnrichedResourceDescription](resourceChain); ok; result, ok = chain.RecvAs[*types.EnrichedResourceDescription](resourceChain) {
 		a.Send(result)
 	}
 

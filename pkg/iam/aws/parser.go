@@ -15,7 +15,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/nebula/modules"
-	"github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
@@ -649,6 +649,13 @@ func expandActionsWithStage(actions types.DynaString) []string {
 	// Process each action
 	for _, action := range actions {
 		if strings.Contains(action, "*") {
+			// c := NewAWSExpandActionsLink()
+			// c.Send(action)
+			// c.Close()
+
+			// for o, ok := chain.RecvAs[string](c); ok; o, ok = chain.RecvAs[string](c) {
+			// 	expandedActions = append(expandedActions, o)
+			// }
 			// Use the stage to expand wildcards
 			for expAction := range stages.AwsExpandActionsStage(ctx, opts, stages.Generator([]string{action})) {
 				expandedActions = append(expandedActions, expAction)

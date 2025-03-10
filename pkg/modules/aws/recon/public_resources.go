@@ -15,7 +15,7 @@ func init() {
 
 var PublicResourcesTypes = []string{
 	"AWS::EC2::Instance",
-	"AWS::CloudFormation::Stack",
+	"AWS::ECR::PublicRepository",
 }
 
 var AWSPublicResources = chain.NewModule(

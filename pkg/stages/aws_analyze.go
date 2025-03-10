@@ -66,8 +66,11 @@ func AwsExpandActionsStage(ctx context.Context, opts []*types.Option, in <-chan 
 	go func() {
 		defer close(out)
 		for action := range in {
-			pattern := strings.ReplaceAll(string(action), "*", ".*")
-			pattern = "^" + pattern + "$"
+			service := strings.ToLower(strings.Split(action, ":")[0])
+			act := strings.Split(action, ":")[1]
+
+			pattern := strings.ReplaceAll(act, "*", ".*")
+			pattern = "(?i)^" + service + ":" + pattern + "$"
 
 			for _, a := range allActions {
 				match, _ := regexp.MatchString(pattern, a)

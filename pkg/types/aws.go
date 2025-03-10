@@ -3,6 +3,7 @@ package types
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -17,6 +18,39 @@ type EnrichedResourceDescription struct {
 	Properties interface{} `json:"Properties"`
 	AccountId  string      `json:"AccountId"`
 	Arn        arn.ARN     `json:"Arn"`
+}
+
+func NewEnrichedResourceDescription(identifier, typeName, region, accountId string, properties interface{}) EnrichedResourceDescription {
+	a := arn.ARN{}
+	switch typeName {
+	case "AWS::SQS::Queue":
+		arn, err := SQSUrlToArn(identifier)
+		if err == nil {
+			a = arn
+		}
+	case "AWS::EC2::Instance":
+		a = arn.ARN{
+			Partition: "aws",
+			Service:   "ec2",
+			Region:    region,
+			AccountID: accountId,
+			Resource:  "instance/" + identifier,
+		}
+	default:
+		parsed, err := arn.Parse(identifier)
+		if err != nil {
+			a = parsed
+		}
+	}
+
+	return EnrichedResourceDescription{
+		Identifier: identifier,
+		TypeName:   typeName,
+		Region:     region,
+		Properties: properties,
+		AccountId:  accountId,
+		Arn:        a,
+	}
 }
 
 func NewEnrichedResourceDescriptionFromArn(a string) (EnrichedResourceDescription, error) {
@@ -118,4 +152,35 @@ func (e *EnrichedResourceDescription) Type() string {
 	}
 
 	return split[2]
+}
+
+func SQSUrlToArn(sqsUrl string) (arn.ARN, error) {
+	// Parse URL to extract components
+	// Format: https://sqs.{region}.amazonaws.com/{accountId}/{queueName}
+	parts := strings.Split(sqsUrl, ".")
+	if len(parts) < 4 || !strings.HasPrefix(sqsUrl, "https://sqs.") {
+		return arn.ARN{}, fmt.Errorf("invalid SQS URL format: %s", sqsUrl)
+	}
+
+	region := parts[1]
+
+	// Extract account ID and queue name from the path
+	pathParts := strings.Split(parts[3], "/")
+	if len(pathParts) < 3 {
+		return arn.ARN{}, fmt.Errorf("invalid SQS URL path format: %s", sqsUrl)
+	}
+
+	accountId := pathParts[1]
+	queueName := pathParts[2]
+
+	// Construct the ARN
+	a := arn.ARN{
+		Partition: "aws",
+		Service:   "sqs",
+		Region:    region,
+		AccountID: accountId,
+		Resource:  queueName,
+	}
+
+	return a, nil
 }

@@ -68,7 +68,7 @@ type Principal struct {
 }
 
 func (p *Principal) UnmarshalJSON(rawData []byte) error {
-	if string(rawData) == "*" {
+	if string(rawData) == `"*"` {
 		star := DynaString{"*"}
 
 		*p = Principal{
