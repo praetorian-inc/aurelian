@@ -8,8 +8,9 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus/pkg/types"
-	"github.com/praetorian-inc/janus/pkg/util"
+	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -24,7 +25,7 @@ func NewAWSCloudFormationTemplates(configs ...cfg.Config) chain.Link {
 }
 
 func (a *AWSCloudFormationTemplates) Process(resource *types.EnrichedResourceDescription) error {
-	config, err := util.GetAWSConfig(resource.Region, a.Profile)
+	config, err := helpers.GetAWSCfg(resource.Region, a.Profile, options.JanusParamAdapter(a.Params()))
 	if err != nil {
 		slog.Debug("Failed to get AWS config for region", "region", resource.Region, "error", err)
 		return nil

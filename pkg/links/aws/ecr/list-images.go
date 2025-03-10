@@ -9,8 +9,9 @@ import (
 	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus/pkg/util"
+	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -35,7 +36,7 @@ func (e *AWSECRListImages) Process(resource *types.EnrichedResourceDescription) 
 		return nil
 	}
 
-	config, err := util.GetAWSConfig(resource.Region, e.Profile)
+	config, err := helpers.GetAWSCfg(resource.Region, e.Profile, options.JanusParamAdapter(e.Params()))
 	if err != nil {
 		slog.Error("Failed to get AWS config", "error", err)
 		return nil

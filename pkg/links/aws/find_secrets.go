@@ -21,107 +21,134 @@ import (
 
 type AWSFindSecrets struct {
 	*base.AwsReconLink
-	clientMap map[string]interface{} // map key is type-region
+	clientMap   map[string]interface{} // map key is type-region
+	resourceMap map[string]func() chain.Chain
 }
 
 func NewAWSFindSecrets(configs ...cfg.Config) chain.Link {
 	fs := &AWSFindSecrets{}
-	// Initialize the embedded AwsReconLink with fs as the link
 	fs.AwsReconLink = base.NewAwsReconLink(fs, configs...)
 	return fs
 }
 
-func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) error {
-	var links []chain.Link
+func (fs *AWSFindSecrets) Initialize() error {
+	fs.AwsReconLink.Initialize()
+	fs.resourceMap = fs.ResourceMap()
+	return nil
+}
 
-	slog.Debug("Processing resource", "resource", resource)
+func (fs *AWSFindSecrets) SupportedResourceTypes() []string {
+	resources := fs.ResourceMap()
+	types := make([]string, 0, len(resources))
+	for resourceType := range resources {
+		types = append(types, resourceType)
+	}
+	return types
+}
 
-	switch resource.TypeName {
-	case "AWS::EC2::Instance":
-		links = []chain.Link{
+func (fs *AWSFindSecrets) ResourceMap() map[string]func() chain.Chain {
+	resourceMap := make(map[string]func() chain.Chain)
+
+	resourceMap["AWS::EC2::Instance"] = func() chain.Chain {
+		return chain.NewChain(
 			ec2.NewAWSEC2UserData(),
-		}
+		)
+	}
 
-	case "AWS::Lambda::Function":
-		links = []chain.Link{
-			chain.NewMulti(
-				noseyparker.NewConvertToNPInput(),
-				lambda.NewAWSLambdaFunctionCode(),
-			),
-		}
+	resourceMap["AWS::Lambda::Function"] = func() chain.Chain {
+		return chain.NewMulti(
+			noseyparker.NewConvertToNPInput(),
+			lambda.NewAWSLambdaFunctionCode(),
+		)
+	}
 
-	case "AWS::CloudFormation::Stack":
-		links = []chain.Link{
+	resourceMap["AWS::CloudFormation::Stack"] = func() chain.Chain {
+		return chain.NewChain(
 			cloudformation.NewAWSCloudFormationTemplates(),
-		}
+		)
+	}
 
-	case "AWS::ECR::Repository":
-		links = []chain.Link{
+	resourceMap["AWS::ECR::Repository"] = func() chain.Chain {
+		return chain.NewChain(
 			ecr.NewAWSECRListImages(),
 			ecr.NewAWSECRLogin(),
 			docker.NewDockerPull(),
 			docker.NewDockerSave(),
 			noseyparker.NewConvertToNPInput(),
-		}
+		)
+	}
 
-	case "AWS::ECR::PublicRepository":
-		links = []chain.Link{
+	resourceMap["AWS::ECR::PublicRepository"] = func() chain.Chain {
+		return chain.NewChain(
 			ecr.NewAWSECRListPublicImages(),
 			ecr.NewAWSECRLoginPublic(),
 			docker.NewDockerPull(),
 			docker.NewDockerSave(),
 			noseyparker.NewConvertToNPInput(),
-		}
+		)
+	}
 
-	case "AWS::ECS::TaskDefinition":
-		links = []chain.Link{
+	resourceMap["AWS::ECS::TaskDefinition"] = func() chain.Chain {
+		return chain.NewChain(
 			noseyparker.NewConvertToNPInput(),
-		}
+		)
+	}
 
-	case "AWS::SSM::Document":
-		links = []chain.Link{
+	resourceMap["AWS::SSM::Document"] = func() chain.Chain {
+		return chain.NewChain(
 			noseyparker.NewConvertToNPInput(),
-		}
+		)
+	}
 
-	case "AWS::SSM::Parameter":
-		links = []chain.Link{
+	resourceMap["AWS::SSM::Parameter"] = func() chain.Chain {
+		return chain.NewChain(
 			ssm.NewAWSListSSMParameters(),
 			noseyparker.NewConvertToNPInput(),
-		}
+		)
+	}
 
-	case "AWS::StepFunctions::StateMachine":
-		links = []chain.Link{
+	resourceMap["AWS::StepFunctions::StateMachine"] = func() chain.Chain {
+		return chain.NewChain(
 			stepfunctions.NewAWSListExecutions(),
 			stepfunctions.NewAWSGetExecutionDetails(),
 			noseyparker.NewConvertToNPInput(),
-		}
+		)
+	}
 
-	default:
+	return resourceMap
+}
+
+func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) error {
+	slog.Debug("Processing resource", "resource", resource)
+
+	constructor, ok := fs.resourceMap[resource.TypeName]
+	if !ok {
 		slog.Error("Unsupported resource type", "resource", resource)
 		return nil
 	}
 
+	resourceChain := constructor()
+
+	// TODO: do I even need this?
 	ccArgs := make(map[string]any)
-	for _, param := range a.Params() {
+	for _, param := range fs.Params() {
 		name := param.Name()
-		if a.HasParam(name) {
-			ccArgs[name] = a.Arg(name)
+		if fs.HasParam(name) {
+			ccArgs[name] = fs.Arg(name)
 		}
 	}
 
-	resourceChain := chain.NewChain(links...)
-
 	resourceChain.WithConfigs(cfg.WithArgs(ccArgs))
-	resourceChain.WithParams(a.Params()...)
+	resourceChain.WithParams(fs.Params()...)
 
 	slog.Debug("Sending resource to chain", "resource", resource, "type", fmt.Sprintf("%T", resource))
-	
+
 	resourceChain.Send(resource)
 	resourceChain.Close()
 
 	for o, ok := chain.RecvAs[jtypes.NPInput](resourceChain); ok; o, ok = chain.RecvAs[jtypes.NPInput](resourceChain) {
 		slog.Debug("NPInput", "npinput", o)
-		a.Send(o)
+		fs.Send(o)
 	}
 
 	return resourceChain.Error()
