@@ -14,7 +14,6 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus/pkg/types"
-	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -54,7 +53,7 @@ func (l *AWSLambdaFunctionCode) Process(resource *types.EnrichedResourceDescript
 }
 
 func (l *AWSLambdaFunctionCode) downloadCode(resource *types.EnrichedResourceDescription) (*zip.Reader, error) {
-	config, err := helpers.GetAWSCfg(resource.Region, l.Profile, options.JanusParamAdapter(l.Params()))
+	config, err := l.GetConfig(resource.Region, options.JanusParamAdapter(l.Params()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AWS config for region %s: %w", resource.Region, err)
 	}

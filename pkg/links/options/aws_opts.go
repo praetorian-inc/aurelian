@@ -208,6 +208,10 @@ func AwsProfile() cfg.Param {
 		WithDefault("default")
 }
 
+func AwsProfileDir() cfg.Param {
+	return cfg.NewParam[string]("profile-dir", "Set to override the default AWS profile directory")
+}
+
 func AwsResourceType() cfg.ParamImpl[[]string] {
 	return cfg.NewParam[[]string]("resource-type", "AWS Cloud Control resource type").
 		WithRegex(regexp.MustCompile("^(AWS::[a-zA-Z0-9:]+|all|ALL)$")).
@@ -246,6 +250,7 @@ func AwsDisableCache() cfg.Param {
 func AwsCommonReconOptions() []cfg.Param {
 	return []cfg.Param{
 		AwsProfile(),
+		AwsProfileDir(),
 		AwsRegions(),
 		AwsResourceType(),
 		AwsCacheDir(),
