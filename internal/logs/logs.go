@@ -77,6 +77,7 @@ func getLevelFromString(level string) slog.Level {
 }
 
 func NewLogger() *slog.Logger {
+	fmt.Printf("log level: %s\n", logLevel)
 	w := os.Stderr
 	handler := tint.NewHandler(w,
 		&tint.Options{
