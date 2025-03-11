@@ -51,7 +51,7 @@ func (a *AwsReconLink) Initialize() error {
 		a.Regions = regions
 	}
 
-	slog.Info("AWS recon link initialized", "regions", a.Regions, "profile", a.Profile)
+	slog.Debug("AWS recon link initialized", "regions", a.Regions, "profile", a.Profile)
 
 	err = a.validateResourceRegions()
 	if err != nil {
