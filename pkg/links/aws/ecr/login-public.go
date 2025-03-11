@@ -41,7 +41,7 @@ func (a *AWSECRLoginPublic) Process(repositoryURI string) error {
 	input := &ecrpublic.GetAuthorizationTokenInput{}
 	tokenOutput, err := client.GetAuthorizationToken(a.Context(), input)
 	if err != nil {
-		slog.Debug("Failed to get authorization token", "error", err)
+		slog.Error("Failed to get authorization token", "error", err)
 		return nil
 	}
 
