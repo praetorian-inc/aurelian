@@ -5,67 +5,139 @@ import (
 
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus/pkg/types"
-	"github.com/praetorian-inc/nebula/pkg/links/general"
+	"github.com/praetorian-inc/janus/pkg/links/docker"
+	"github.com/praetorian-inc/janus/pkg/links/noseyparker"
+	jtypes "github.com/praetorian-inc/janus/pkg/types"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudformation"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/ec2"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/ecr"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/lambda"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/ssm"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/stepfunctions"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AWSFindSecrets struct {
-	*AwsReconLink
-	clientMap map[string]interface{} // map key is type-region
+	*base.AwsReconLink
+	clientMap   map[string]interface{} // map key is type-region
+	resourceMap map[string]func() chain.Chain
 }
 
 func NewAWSFindSecrets(configs ...cfg.Config) chain.Link {
 	fs := &AWSFindSecrets{}
-	// Initialize the embedded AwsReconLink with fs as the link
-	fs.AwsReconLink = NewAwsReconLink(fs, configs...)
+	fs.AwsReconLink = base.NewAwsReconLink(fs, configs...)
 	return fs
 }
 
-func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) error {
-	var resourceChain chain.Chain
-	var err error
+func (fs *AWSFindSecrets) Initialize() error {
+	fs.AwsReconLink.Initialize()
+	fs.resourceMap = fs.ResourceMap()
+	return nil
+}
 
-	switch resource.TypeName {
-	case "AWS::EC2::Instance":
-		resourceChain = chain.NewChain(
-			NewAWSEC2UserData(),
-			general.NewErdToNPInput(),
+func (fs *AWSFindSecrets) SupportedResourceTypes() []string {
+	resources := fs.ResourceMap()
+	types := make([]string, 0, len(resources))
+	for resourceType := range resources {
+		types = append(types, resourceType)
+	}
+	return types
+}
+
+func (fs *AWSFindSecrets) ResourceMap() map[string]func() chain.Chain {
+	resourceMap := make(map[string]func() chain.Chain)
+
+	resourceMap["AWS::EC2::Instance"] = func() chain.Chain {
+		return chain.NewChain(
+			ec2.NewAWSEC2UserData(),
 		)
+	}
 
-	case "AWS::Lambda::Function":
-		resourceChain = chain.NewChain(
-			general.NewErdToNPInput(),
+	resourceMap["AWS::Lambda::Function"] = func() chain.Chain {
+		return chain.NewMulti(
+			noseyparker.NewConvertToNPInput(),
+			lambda.NewAWSLambdaFunctionCode(),
 		)
+	}
 
-	// case "AWS::CloudFormation::Stack":
-	// 	resourceChain = chain.NewChain(
-	// 		NewAWSCloudFormationTemplates(),
-	// 	)
-	default:
+	resourceMap["AWS::CloudFormation::Stack"] = func() chain.Chain {
+		return chain.NewChain(
+			cloudformation.NewAWSCloudFormationTemplates(),
+		)
+	}
+
+	resourceMap["AWS::ECR::Repository"] = func() chain.Chain {
+		return chain.NewChain(
+			ecr.NewAWSECRListImages(),
+			ecr.NewAWSECRLogin(),
+			docker.NewDockerPull(),
+			docker.NewDockerSave(),
+			noseyparker.NewConvertToNPInput(),
+		)
+	}
+
+	resourceMap["AWS::ECR::PublicRepository"] = func() chain.Chain {
+		return chain.NewChain(
+			ecr.NewAWSECRListPublicImages(),
+			ecr.NewAWSECRLoginPublic(),
+			docker.NewDockerPull(),
+			docker.NewDockerSave(),
+			noseyparker.NewConvertToNPInput(),
+		)
+	}
+
+	resourceMap["AWS::ECS::TaskDefinition"] = func() chain.Chain {
+		return chain.NewChain(
+			noseyparker.NewConvertToNPInput(),
+		)
+	}
+
+	resourceMap["AWS::SSM::Document"] = func() chain.Chain {
+		return chain.NewChain(
+			noseyparker.NewConvertToNPInput(),
+		)
+	}
+
+	resourceMap["AWS::SSM::Parameter"] = func() chain.Chain {
+		return chain.NewChain(
+			ssm.NewAWSListSSMParameters(),
+			noseyparker.NewConvertToNPInput(),
+		)
+	}
+
+	resourceMap["AWS::StepFunctions::StateMachine"] = func() chain.Chain {
+		return chain.NewChain(
+			stepfunctions.NewAWSListExecutions(),
+			stepfunctions.NewAWSGetExecutionDetails(),
+			noseyparker.NewConvertToNPInput(),
+		)
+	}
+
+	return resourceMap
+}
+
+func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) error {
+	constructor, ok := fs.resourceMap[resource.TypeName]
+	if !ok {
 		slog.Error("Unsupported resource type", "resource", resource)
 		return nil
 	}
 
-	if err != nil {
-		slog.Error("Failed to start resource chain", "error", err)
-		return nil
-	}
+	resourceChain := constructor()
 
-	ccArgs := make(map[string]any)
-	for _, param := range a.Params() {
-		name := param.Name()
-		if a.HasParam(name) {
-			ccArgs[name] = a.Arg(name)
-		}
-	}
+	resourceChain.WithParams(fs.Params()...)
+	resourceChain.WithConfigs(cfg.WithArgs(fs.Args()))
 
-	// propogate the args to the chain
-	resourceChain = resourceChain.WithConfigs(cfg.WithArgs(ccArgs))
 	resourceChain.Send(resource)
 	resourceChain.Close()
 
-	for o, ok := chain.RecvAs[types.NPInput](resourceChain); ok; o, ok = chain.RecvAs[types.NPInput](resourceChain) {
-		a.Send(o)
+	for o, ok := chain.RecvAs[jtypes.NPInput](resourceChain); ok; o, ok = chain.RecvAs[jtypes.NPInput](resourceChain) {
+		fs.Send(o)
+	}
+
+	if err := resourceChain.Error(); err != nil {
+		slog.Error("Error processing resource for secrets", "resource", resource, "error", err)
 	}
 
 	return nil

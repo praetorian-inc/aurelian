@@ -10,7 +10,7 @@ import (
 )
 
 func init() {
-	AwsListResources.Chain().Initialize()
+	AwsListResources.New().Initialize()
 	registry.Register("aws", "recon", "list", *AwsListResources)
 }
 
@@ -18,20 +18,18 @@ var AwsListResources = chain.NewModule(
 	cfg.NewMetadata(
 		"AWS List Resources",
 		"List resources in an AWS account using Cloud Control API.",
-	).WithProperty(
-		"platform", "aws",
-	).WithProperty(
-		"authors", []string{"Praetorian"},
-	).WithProperty(
-		"references", []string{
+	).WithProperties(map[string]any{
+		"platform":    "aws",
+		"opsec_level": "moderate",
+		"authors":     []string{"Praetorian"},
+		"references": []string{
 			"https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/what-is-cloudcontrol.html",
 			"https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/supported-resources.html",
 		},
-	).WithChainInputParam(options.AwsResourceType().Name()),
-	chain.NewChain(
-		aws.NewAWSCloudControl(),
-	).WithOutputters(
-		// output.NewConsoleOutputter(),
-		output.NewJSONOutputter(),
-	),
+	}).WithChainInputParam(options.AwsResourceType().Name()),
+).WithLinks(
+	aws.NewAWSCloudControl,
+).WithOutputters(
+	// output.NewConsoleOutputter,
+	output.NewJSONOutputter,
 )
