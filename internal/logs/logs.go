@@ -2,7 +2,6 @@ package logs
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
 	"strings"
