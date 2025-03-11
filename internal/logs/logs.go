@@ -2,6 +2,7 @@ package logs
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -17,6 +18,10 @@ var (
 	logLevel string
 )
 
+const (
+	LevelNone = slog.Level(12)
+)
+
 // Currently used to write the AWS API calls to a log file
 func AwsCliLogger() logging.Logger {
 	return logging.LoggerFunc(func(classification logging.Classification, format string, v ...interface{}) {
@@ -29,7 +34,8 @@ func AwsCliLogger() logging.Logger {
 
 		var f *os.File
 		var err error
-		if logLevel != "none" {
+
+		if getLevelFromString(logLevel) != LevelNone {
 			f, err = os.OpenFile(LOG_FILE, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 			if err != nil {
 				panic(err)
@@ -54,8 +60,6 @@ func AwsCliLogger() logging.Logger {
 }
 
 func getLevelFromString(level string) slog.Level {
-	levelNone := slog.Level(16)
-
 	switch strings.ToLower(level) {
 	case "debug":
 		return slog.LevelDebug
@@ -66,9 +70,9 @@ func getLevelFromString(level string) slog.Level {
 	case "error":
 		return slog.LevelError
 	case "none":
-		return levelNone
+		return LevelNone
 	default:
-		return levelNone
+		return LevelNone
 	}
 }
 
