@@ -246,6 +246,7 @@ func AwsDisableCache() cfg.Param {
 func AwsCommonReconOptions() []cfg.Param {
 	return []cfg.Param{
 		AwsProfile(),
+		AwsRegions(),
 		AwsResourceType(),
 		AwsCacheDir(),
 		AwsCacheExt(),
