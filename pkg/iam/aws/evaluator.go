@@ -123,6 +123,7 @@ type EvaluationResult struct {
 	PolicyResult       *PolicyResult
 	EvaluationDetails  string
 	CrossAccountAccess bool
+	Action             Action
 }
 
 func (er *EvaluationResult) String() string {
@@ -132,6 +133,24 @@ func (er *EvaluationResult) String() string {
 		return ""
 	}
 	return string(jsonResult)
+}
+
+func (er *EvaluationResult) HasInconclusiveCondition() bool {
+	if er.PolicyResult == nil {
+		return false
+	}
+
+	// Iterate through all evaluation types
+	for _, statements := range er.PolicyResult.Evaluations {
+		for _, statement := range statements {
+			if statement.ConditionEvaluation != nil &&
+				statement.ConditionEvaluation.Result == ConditionInconclusive {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // PolicyEvaluator handles AWS IAM policy evaluation
@@ -179,6 +198,7 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 
 	result := &EvaluationResult{
 		PolicyResult: NewPolicyResult(),
+		Action:       Action(req.Action),
 	}
 
 	// 1. First check all policy types for explicit denies
@@ -248,27 +268,6 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 
 	if resourcePolicy, exists := e.policyData.ResourcePolicies[req.Resource]; exists {
 		resourceStatements := policyToStatementList(resourcePolicy)
-
-		// Check if principal is explicitly allowed
-		explicitPrincipalAllow = e.hasExplicitPrincipalAllow(resourceStatements, req.Context.PrincipalArn)
-		if explicitPrincipalAllow {
-			result.Allowed = true
-			result.EvaluationDetails = "Principal explicitly allowed by resource-based policy"
-
-			result.PolicyResult.AddEvaluation(EvalTypeResource, []*StatementEvaluation{
-				{
-					ExplicitAllow:    true,
-					MatchedPrincipal: true,
-					Origin:           fmt.Sprintf("%s/resource-policy", req.Resource),
-				},
-			})
-
-			// If resource policy allows, we can short-circuit here
-			return result, nil
-		}
-
-		// Evaluate resource-based policy
-
 		resourceEvals, err := e.evaluatePolicyType(req.Action, req.Resource, req.Context,
 			resourceStatements, EvalTypeResource)
 		if err != nil {
@@ -277,6 +276,14 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 		result.PolicyResult.AddEvaluation(EvalTypeResource, resourceEvals)
 		resourceAllowed = result.PolicyResult.HasTypeAllow(EvalTypeResource)
 
+		// Check if principal is explicitly allowed
+		explicitPrincipalAllow = e.hasExplicitPrincipalAllow(resourceStatements, req.Context.PrincipalArn)
+
+		if resourceAllowed && explicitPrincipalAllow && result.PolicyResult.IsAllowed() {
+			result.Allowed = true
+			result.EvaluationDetails = "Explicitly allowed by resource policy"
+			return result, nil
+		}
 	}
 
 	// 7. Evaluate identity-based policy
@@ -311,8 +318,7 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 		// Same account access allows if:
 		// - Principal is explicitly named in resource policy, OR
 		// - Either identity or resource policy allows (when not explicitly named)
-		result.Allowed = explicitPrincipalAllow ||
-			resourceAllowed ||
+		result.Allowed = explicitPrincipalAllow && result.PolicyResult.HasTypeAllow(EvalTypeResource) ||
 			result.PolicyResult.HasTypeAllow(EvalTypeIdentity)
 		result.EvaluationDetails = "Same-account access"
 	}

@@ -148,6 +148,7 @@ func isCriticalConditionKey(key string) bool {
 		"aws:PrincipalOrgPaths": true,
 		"aws:ResourceOrgPaths":  true,
 		"aws:SourceAccount":     true,
+		"aws:SourceOwner":       true,
 		"aws:ResourceAccount":   true,
 		"aws:ViaAWSService":     true,
 		"aws:CalledVia":         true,
@@ -429,6 +430,8 @@ func findContextKeyValue(key string, ctx *RequestContext) (exists bool, value in
 		return ctx.SourceArn != "", ctx.SourceArn
 	case "aws:sourceaccount":
 		return ctx.SourceAccount != "", ctx.SourceAccount
+	case "aws:sourceowner":
+		return ctx.SourceOwner != "", ctx.SourceOwner
 	case "aws:sourceorgid":
 		return ctx.SourceOrgID != "", ctx.SourceOrgID
 	case "aws:sourceorgpaths":

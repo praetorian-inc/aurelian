@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -75,7 +75,7 @@ func (u *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 	}
 
 	// Get the policy
-	policy, err := u.getPolicy(context.TODO(), awsCfg, serviceConfig, identifierStr)
+	policy, err := ServiceMap[resource.TypeName].GetPolicy(context.TODO(), awsCfg, identifierStr)
 	if err != nil {
 		slog.Debug("Failed to get policy", "resource", identifierStr, "type", resource.TypeName, "error", err)
 		return nil // Continue with other resources
@@ -87,19 +87,22 @@ func (u *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 	}
 
 	// Check if the policy allows public access
-	isPublic, err := analyzePolicy(resource.Arn.String(), policy)
+	res, err := analyzePolicy(resource.Arn.String(), policy)
 	if err != nil {
 		slog.Error("Failed to analyze policy", "resource", identifierStr, "error", err)
 		return err
 	}
 
 	// Skip if not public
-	if !isPublic {
+	if !isPublic(res) {
 		return nil
 	}
 
 	// Add the policy to the properties
 	props[serviceConfig.PolicyField] = policy
+	props["EvaluationReasons"] = getUnqiueDetails(res)
+	props["NeedsManualTriage"] = hasInconclusiveConditions(res)
+	props["Actions"] = getAllowedActions(res)
 
 	// Create enriched resource with the policy
 	enriched := types.EnrichedResourceDescription{
@@ -116,99 +119,13 @@ func (u *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 	return nil
 }
 
-// getPolicy retrieves a policy using reflection to handle different service clients
-func (u *AwsResourcePolicyChecker) getPolicy(ctx context.Context, cfg aws.Config, serviceConfig ServicePolicyConfig, identifier string) (string, error) {
-	// Create the client
-	client := serviceConfig.ClientConstructor(cfg)
-	clientValue := reflect.ValueOf(client)
-
-	// Create the input
-	input := serviceConfig.InputConstructor(identifier)
-
-	// Find the appropriate method (GetBucketPolicy, GetTopicAttributes, etc.)
-	// The method name is derived from the input type name
-	inputType := reflect.TypeOf(input).Elem()
-	methodName := strings.TrimSuffix(inputType.Name(), "Input")
-	method := clientValue.MethodByName(methodName)
-
-	if !method.IsValid() {
-		return "", fmt.Errorf("method %s not found on client", methodName)
-	}
-
-	// Call the method
-	results := method.Call([]reflect.Value{
-		reflect.ValueOf(ctx),
-		reflect.ValueOf(input),
-	})
-
-	// Check for error
-	if !results[1].IsNil() {
-		err := results[1].Interface().(error)
-		// Handle "no policy" errors gracefully
-		if strings.Contains(err.Error(), "NoSuchBucketPolicy") ||
-			strings.Contains(err.Error(), "NoSuchEntityException") ||
-			strings.Contains(err.Error(), "ResourceNotFoundException") {
-			return "", nil
-		}
-		return "", err
-	}
-
-	// Extract the policy using the field path
-	return extractPolicy(results[0].Interface(), serviceConfig.GetPolicyFieldPath)
-}
-
-// extractPolicy extracts a policy string from a response using a dot-notation path
-func extractPolicy(response interface{}, path string) (string, error) {
-	parts := strings.Split(path, ".")
-	value := reflect.ValueOf(response)
-
-	for _, part := range parts {
-		// Handle pointer indirection
-		if value.Kind() == reflect.Ptr && !value.IsNil() {
-			value = value.Elem()
-		}
-
-		// Handle map access
-		if value.Kind() == reflect.Map {
-			mapValue := value.MapIndex(reflect.ValueOf(part))
-			if !mapValue.IsValid() {
-				return "", nil // Field not found
-			}
-			value = mapValue
-			continue
-		}
-
-		// Handle struct field access
-		if value.Kind() == reflect.Struct {
-			value = value.FieldByName(part)
-			if !value.IsValid() {
-				return "", nil // Field not found
-			}
-			continue
-		}
-
-		return "", fmt.Errorf("cannot access %s in %v", part, value.Type())
-	}
-
-	// Handle final pointer indirection
-	if value.Kind() == reflect.Ptr && !value.IsNil() {
-		value = value.Elem()
-	}
-
-	// Get the string value
-	if value.Kind() == reflect.String {
-		return value.String(), nil
-	}
-
-	return "", fmt.Errorf("path %s does not lead to a string", path)
-}
-
 // analyzePolicy analyzes a policy to determine if it grants public access
-func analyzePolicy(resource, policyStr string) (bool, error) {
+func analyzePolicy(resource, policyStr string) ([]*iam.EvaluationResult, error) {
+	results := []*iam.EvaluationResult{}
 	var policy types.Policy
 	err := json.Unmarshal([]byte(policyStr), &policy)
 	if err != nil {
-		return false, err
+		return results, err
 	}
 
 	pd := &iam.PolicyData{
@@ -236,30 +153,63 @@ func analyzePolicy(resource, policyStr string) (bool, error) {
 
 		res, err := evaluator.Evaluate(er)
 		if err != nil {
-			return false, err
+			return results, err
 		}
 
-		slog.Debug("Policy evaluation result", "resource", resource, "action", action, "allowed", res.Allowed, "EvaluationResult", res)
+		slog.Debug("Policy evaluation result", "principal", reqCtx.PrincipalArn, "resource", resource, "action", action, "allowed", res.Allowed, "EvaluationResult", res)
+		results = append(results, res)
 
-		// shortcut if the action is allowed
-		if res.Allowed {
-			return true, nil
-		}
 	}
 
-	return false, nil
+	return results, nil
+}
+
+func getAllowedResults(results []*iam.EvaluationResult) []*iam.EvaluationResult {
+	allowed := []*iam.EvaluationResult{}
+	for _, res := range results {
+		if res.Allowed {
+			allowed = append(allowed, res)
+		}
+	}
+	return allowed
+}
+
+func isPublic(results []*iam.EvaluationResult) bool {
+	allowed := getAllowedResults(results)
+	return len(allowed) > 0
+}
+
+func getAllowedActions(results []*iam.EvaluationResult) []string {
+	allowed := getAllowedResults(results)
+	actions := []string{}
+	for _, res := range allowed {
+		actions = append(actions, string(res.Action))
+	}
+	return actions
+}
+
+func getUnqiueDetails(results []*iam.EvaluationResult) []string {
+	details := []string{}
+	for _, res := range results {
+		if !slices.Contains(details, res.EvaluationDetails) {
+			details = append(details, res.EvaluationDetails)
+		}
+	}
+	return details
+}
+
+func hasInconclusiveConditions(results []*iam.EvaluationResult) bool {
+	for _, res := range results {
+		if res.HasInconclusiveCondition() {
+			return true
+		}
+	}
+	return false
 }
 
 type ServicePolicyConfig struct {
-	// ClientConstructor creates a service client from an AWS config
-	ClientConstructor func(cfg aws.Config) interface{}
-
-	// InputConstructor creates the appropriate input type for the GetPolicy method
-	InputConstructor func(identifier string) interface{}
-
-	// GetPolicyFieldPath is the JSON path to extract the policy from the response
-	// e.g., "Policy" for SQS/SNS, "PolicyDocument" for IAM
-	GetPolicyFieldPath string
+	// GetPolicy retrieves the policy for the given identifier
+	GetPolicy func(ctx context.Context, cfg aws.Config, identifier string) (string, error)
 
 	// IdentifierField is the name of the field in ResourceDescription.Properties to use as identifier
 	IdentifierField string
@@ -270,74 +220,134 @@ type ServicePolicyConfig struct {
 
 // ServiceMap maps AWS resource types to their policy checking configurations
 var ServiceMap = map[string]ServicePolicyConfig{
-	// Example mappings
 	"AWS::S3::Bucket": {
-		ClientConstructor: func(cfg aws.Config) interface{} {
-			return s3.NewFromConfig(cfg)
+		GetPolicy: func(ctx context.Context, cfg aws.Config, bucketName string) (string, error) {
+			client := s3.NewFromConfig(cfg)
+			resp, err := client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
+				Bucket: aws.String(bucketName),
+			})
+			if err != nil {
+				// Handle "no policy" errors gracefully
+				if strings.Contains(err.Error(), "NoSuchBucketPolicy") {
+					return "", nil
+				}
+				return "", err
+			}
+			if resp.Policy == nil {
+				return "", nil
+			}
+			return *resp.Policy, nil
 		},
-		InputConstructor: func(id string) interface{} {
-			return &s3.GetBucketPolicyInput{Bucket: aws.String(id)}
-		},
-		GetPolicyFieldPath: "Policy",
-		IdentifierField:    "BucketName",
-		PolicyField:        "AccessPolicy",
+		IdentifierField: "BucketName",
+		PolicyField:     "AccessPolicy",
 	},
 	"AWS::SNS::Topic": {
-		ClientConstructor: func(cfg aws.Config) interface{} {
-			return sns.NewFromConfig(cfg)
+		GetPolicy: func(ctx context.Context, cfg aws.Config, topicArn string) (string, error) {
+			client := sns.NewFromConfig(cfg)
+			resp, err := client.GetTopicAttributes(ctx, &sns.GetTopicAttributesInput{
+				TopicArn: aws.String(topicArn),
+			})
+			if err != nil {
+				// Handle "no policy" errors gracefully
+				if strings.Contains(err.Error(), "NoSuchEntityException") {
+					return "", nil
+				}
+				return "", err
+			}
+			policy, ok := resp.Attributes["Policy"]
+			if !ok {
+				return "", nil
+			}
+			return policy, nil
 		},
-		InputConstructor: func(id string) interface{} {
-			return &sns.GetTopicAttributesInput{TopicArn: aws.String(id)}
-		},
-		GetPolicyFieldPath: "Attributes.Policy",
-		IdentifierField:    "TopicArn",
-		PolicyField:        "AccessPolicy",
+		IdentifierField: "TopicArn",
+		PolicyField:     "AccessPolicy",
 	},
 	"AWS::SQS::Queue": {
-		ClientConstructor: func(cfg aws.Config) interface{} {
-			return sqs.NewFromConfig(cfg)
-		},
-		InputConstructor: func(id string) interface{} {
-			return &sqs.GetQueueAttributesInput{
-				QueueUrl:       aws.String(id),
+		GetPolicy: func(ctx context.Context, cfg aws.Config, queueUrl string) (string, error) {
+			client := sqs.NewFromConfig(cfg)
+			resp, err := client.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+				QueueUrl:       aws.String(queueUrl),
 				AttributeNames: []sqstypes.QueueAttributeName{"Policy"},
+			})
+			if err != nil {
+				// Handle "no policy" errors gracefully
+				if strings.Contains(err.Error(), "NoSuchEntityException") {
+					return "", nil
+				}
+				return "", err
 			}
+			policy, ok := resp.Attributes["Policy"]
+			if !ok {
+				return "", nil
+			}
+			return policy, nil
 		},
-		GetPolicyFieldPath: "Attributes.Policy",
-		IdentifierField:    "QueueUrl",
-		PolicyField:        "AccessPolicy",
+		IdentifierField: "QueueUrl",
+		PolicyField:     "AccessPolicy",
 	},
 	"AWS::Lambda::Function": {
-		ClientConstructor: func(cfg aws.Config) interface{} {
-			return lambda.NewFromConfig(cfg)
+		GetPolicy: func(ctx context.Context, cfg aws.Config, functionName string) (string, error) {
+			client := lambda.NewFromConfig(cfg)
+			resp, err := client.GetPolicy(ctx, &lambda.GetPolicyInput{
+				FunctionName: aws.String(functionName),
+			})
+			if err != nil {
+				// Handle "no policy" errors gracefully
+				if strings.Contains(err.Error(), "ResourceNotFoundException") {
+					return "", nil
+				}
+				return "", err
+			}
+			if resp.Policy == nil {
+				return "", nil
+			}
+			return *resp.Policy, nil
 		},
-		InputConstructor: func(id string) interface{} {
-			return &lambda.GetPolicyInput{FunctionName: aws.String(id)}
-		},
-		GetPolicyFieldPath: "Policy",
-		IdentifierField:    "FunctionName",
-		PolicyField:        "AccessPolicy",
+		IdentifierField: "FunctionName",
+		PolicyField:     "AccessPolicy",
 	},
 	"AWS::EFS::FileSystem": {
-		ClientConstructor: func(cfg aws.Config) interface{} {
-			return efs.NewFromConfig(cfg)
+		GetPolicy: func(ctx context.Context, cfg aws.Config, fileSystemId string) (string, error) {
+			client := efs.NewFromConfig(cfg)
+			resp, err := client.DescribeFileSystemPolicy(ctx, &efs.DescribeFileSystemPolicyInput{
+				FileSystemId: aws.String(fileSystemId),
+			})
+			if err != nil {
+				// Handle "no policy" errors gracefully
+				if strings.Contains(err.Error(), "PolicyNotFound") ||
+					strings.Contains(err.Error(), "FileSystemNotFound") {
+					return "", nil
+				}
+				return "", err
+			}
+			if resp.Policy == nil {
+				return "", nil
+			}
+			return *resp.Policy, nil
 		},
-		InputConstructor: func(id string) interface{} {
-			return &efs.DescribeFileSystemPolicyInput{FileSystemId: aws.String(id)}
-		},
-		GetPolicyFieldPath: "Policy",
-		IdentifierField:    "FileSystemId",
-		PolicyField:        "AccessPolicy",
+		IdentifierField: "FileSystemId",
+		PolicyField:     "AccessPolicy",
 	},
 	"AWS::ElasticSearch::Domain": {
-		ClientConstructor: func(cfg aws.Config) interface{} {
-			return elasticsearchservice.NewFromConfig(cfg)
+		GetPolicy: func(ctx context.Context, cfg aws.Config, domainName string) (string, error) {
+			client := elasticsearchservice.NewFromConfig(cfg)
+			resp, err := client.DescribeElasticsearchDomainConfig(ctx, &elasticsearchservice.DescribeElasticsearchDomainConfigInput{
+				DomainName: aws.String(domainName),
+			})
+			if err != nil {
+				// Handle "no policy" errors gracefully
+				if strings.Contains(err.Error(), "ResourceNotFoundException") {
+					return "", nil
+				}
+				return "", err
+			}
+			if resp.DomainConfig.AccessPolicies == nil || resp.DomainConfig.AccessPolicies.Options == nil {
+				return "", nil
+			}
+			return *resp.DomainConfig.AccessPolicies.Options, nil
 		},
-		InputConstructor: func(id string) interface{} {
-			return &elasticsearchservice.DescribeElasticsearchDomainConfigInput{DomainName: aws.String(id)}
-		},
-		GetPolicyFieldPath: "DomainConfig.AccessPolicies",
-		IdentifierField:    "DomainName",
-		PolicyField:        "AccessPolicy",
+		IdentifierField: "DomainName",
+		PolicyField:     "AccessPolicy",
 	},
 }

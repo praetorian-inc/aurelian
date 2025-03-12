@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"encoding/json"
+
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/stretchr/testify/assert"
 )
@@ -642,4 +644,112 @@ func TestPolicyEvaluator_AssumeRolePolicyDocument(t *testing.T) {
 		})
 	}
 
+}
+
+func TestPolicyEvaluator_SNSResourcePolicy(t *testing.T) {
+	// Create the SNS resource policy
+
+	rawPolicy := `{
+  "Version": "2008-10-17",
+  "Id": "__default_policy_ID",
+  "Statement": [
+    {
+      "Sid": "__default_statement_ID",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "*"
+      },
+      "Action": [
+        "SNS:Publish",
+        "SNS:RemovePermission",
+        "SNS:SetTopicAttributes",
+        "SNS:DeleteTopic",
+        "SNS:ListSubscriptionsByTopic",
+        "SNS:GetTopicAttributes",
+        "SNS:AddPermission",
+        "SNS:Subscribe"
+      ],
+      "Resource": "arn:aws:sns:us-east-1:123456789012:PublicTopic",
+      "Condition": {
+        "StringEquals": {
+          "AWS:SourceOwner": "123456789012"
+        }
+      }
+    }
+  ]
+}`
+	var snsPolicy types.Policy
+	err := json.Unmarshal([]byte(rawPolicy), &snsPolicy)
+	assert.NoError(t, err)
+
+	// Create the PolicyData with the resource policy
+	policyData := &PolicyData{
+		ResourcePolicies: map[string]*types.Policy{
+			"arn:aws:sns:us-east-1:123456789012:PublicTopic": &snsPolicy,
+		},
+	}
+
+	// Create evaluator with the policy data
+	evaluator := NewPolicyEvaluator(policyData)
+
+	// Test with matching SourceOwner - should be allowed
+	ctx := createRequestContext("arn:aws:iam::123456789012:user/test-user")
+	ctx.SourceOwner = "123456789012"
+
+	req := &EvaluationRequest{
+		Action:   "SNS:Publish",
+		Resource: "arn:aws:sns:us-east-1:123456789012:PublicTopic",
+		Context:  ctx,
+	}
+
+	result, err := evaluator.Evaluate(req)
+	t.Log(result)
+	assert.NoError(t, err)
+	assert.True(t, result.Allowed)
+	assert.False(t, result.CrossAccountAccess)
+
+	// Test with non-matching SourceOwner - should be denied
+	ctx = createRequestContext("arn:aws:iam::111122223333:user/test-user")
+	ctx.SourceOwner = "111122223333"
+
+	req = &EvaluationRequest{
+		Action:   "SNS:Publish",
+		Resource: "arn:aws:sns:us-east-1:123456789012:PublicTopic",
+		Context:  ctx,
+	}
+
+	result, err = evaluator.Evaluate(req)
+	t.Log(result)
+	assert.NoError(t, err)
+	assert.False(t, result.Allowed, "Access should be denied due to non-matching SourceOwner condition")
+
+	// Test with matching SourceOwner but non-matching action - should be denied
+	ctx = createRequestContext("arn:aws:iam::123456789012:user/test-user")
+	ctx.RequestParameters["AWS:SourceOwner"] = "123456789012"
+
+	req = &EvaluationRequest{
+		Action:   "SNS:CreateTopic", // Action not in policy
+		Resource: "arn:aws:sns:us-east-1:123456789012:PublicTopic",
+		Context:  ctx,
+	}
+
+	result, err = evaluator.Evaluate(req)
+	t.Log(result)
+	assert.NoError(t, err)
+	assert.False(t, result.Allowed, "Access should be denied due to non-matching action")
+
+	// Test with matching SourceOwner but non-matching resource - should be denied
+	ctx = createRequestContext("arn:aws:iam::123456789012:user/test-user")
+	ctx.RequestParameters["AWS:SourceOwner"] = "123456789012"
+
+	req = &EvaluationRequest{
+		Action:   "SNS:Publish",
+		Resource: "arn:aws:sns:us-east-1:123456789012:DifferentTopic", // Resource not matching
+		Context:  ctx,
+	}
+
+	result, err = evaluator.Evaluate(req)
+	t.Log(result)
+	assert.NoError(t, err)
+	assert.False(t, result.Allowed, "Access should be denied due to non-matching resource")
 }

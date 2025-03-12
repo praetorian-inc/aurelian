@@ -4,6 +4,8 @@ go 1.23.2
 
 toolchain go1.24.1
 
+replace github.com/praetorian-inc/konstellation => github.com/praetorian-inc/konstellation-go v0.0.0-20250312210038-89524f146d3e
+
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.16.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.7.0
@@ -57,7 +59,7 @@ require (
 	github.com/microsoftgraph/msgraph-sdk-go v1.53.0
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de
 	github.com/ollama/ollama v0.2.7
-	github.com/praetorian-inc/janus v0.0.0-20250310155859-83930382a35b
+	github.com/praetorian-inc/janus v0.0.0-20250312150623-362d0c2fd9d5
 	github.com/seancfoley/ipaddress-go v1.7.0
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.10.0
@@ -141,5 +143,3 @@ require (
 	golang.org/x/text v0.22.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )
-
-replace github.com/praetorian-inc/janus => ../janus
