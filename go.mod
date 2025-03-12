@@ -4,7 +4,7 @@ go 1.23.2
 
 toolchain go1.24.1
 
-replace github.com/praetorian-inc/konstellation => /Users/zachgrace/tools/konstellation-go
+replace github.com/praetorian-inc/konstellation => github.com/praetorian-inc/konstellation-go v0.0.0-20250312210038-89524f146d3e
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.16.0
@@ -101,6 +101,8 @@ require (
 	github.com/microsoft/kiota-serialization-text-go v1.0.0 // indirect
 	github.com/microsoftgraph/msgraph-sdk-go-core v1.2.1 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
+	github.com/moby/sys/user v0.3.0 // indirect
+	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/neo4j/neo4j-go-driver/v5 v5.27.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
