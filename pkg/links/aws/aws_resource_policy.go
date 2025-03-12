@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -93,13 +94,14 @@ func (u *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 	}
 
 	// Skip if not public
-	if !res.Allowed {
+	if !isPublic(res) {
 		return nil
 	}
 
 	// Add the policy to the properties
 	props[serviceConfig.PolicyField] = policy
-	props["Action"] = res.Action
+	props["EvaluationReasons"] = getUnqiueDetails(res)
+	props["Actions"] = getAllowedActions(res)
 
 	// Create enriched resource with the policy
 	enriched := types.EnrichedResourceDescription{
@@ -117,11 +119,12 @@ func (u *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 }
 
 // analyzePolicy analyzes a policy to determine if it grants public access
-func analyzePolicy(resource, policyStr string) (*iam.EvaluationResult, error) {
+func analyzePolicy(resource, policyStr string) ([]*iam.EvaluationResult, error) {
+	results := []*iam.EvaluationResult{}
 	var policy types.Policy
 	err := json.Unmarshal([]byte(policyStr), &policy)
 	if err != nil {
-		return &iam.EvaluationResult{}, err
+		return results, err
 	}
 
 	pd := &iam.PolicyData{
@@ -149,18 +152,49 @@ func analyzePolicy(resource, policyStr string) (*iam.EvaluationResult, error) {
 
 		res, err := evaluator.Evaluate(er)
 		if err != nil {
-			return &iam.EvaluationResult{}, err
+			return results, err
 		}
 
 		slog.Debug("Policy evaluation result", "principal", reqCtx.PrincipalArn, "resource", resource, "action", action, "allowed", res.Allowed, "EvaluationResult", res)
+		results = append(results, res)
 
-		// shortcut if the action is allowed
-		if res.Allowed {
-			return res, nil
-		}
 	}
 
-	return &iam.EvaluationResult{}, nil
+	return results, nil
+}
+
+func getAllowedResults(results []*iam.EvaluationResult) []*iam.EvaluationResult {
+	allowed := []*iam.EvaluationResult{}
+	for _, res := range results {
+		if res.Allowed {
+			allowed = append(allowed, res)
+		}
+	}
+	return allowed
+}
+
+func isPublic(results []*iam.EvaluationResult) bool {
+	allowed := getAllowedResults(results)
+	return len(allowed) > 0
+}
+
+func getAllowedActions(results []*iam.EvaluationResult) []string {
+	allowed := getAllowedResults(results)
+	actions := []string{}
+	for _, res := range allowed {
+		actions = append(actions, string(res.Action))
+	}
+	return actions
+}
+
+func getUnqiueDetails(results []*iam.EvaluationResult) []string {
+	details := []string{}
+	for _, res := range results {
+		if !slices.Contains(details, res.EvaluationDetails) {
+			details = append(details, res.EvaluationDetails)
+		}
+	}
+	return details
 }
 
 type ServicePolicyConfig struct {
