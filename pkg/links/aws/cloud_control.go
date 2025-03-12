@@ -12,7 +12,6 @@ import (
 	cctypes "github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus/pkg/util"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -82,7 +81,7 @@ func (a *AWSCloudControl) Process(resourceType string) error {
 	for _, region := range a.regions {
 
 		// Global services are only available in us-east-1
-		if util.IsGlobalService(resourceType) && region != "us-east-1" {
+		if helpers.IsGlobalService(resourceType) && region != "us-east-1" {
 			slog.Info("Skipping global service", "type", resourceType, "region", region)
 			continue
 		}
@@ -108,7 +107,7 @@ func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
 		return
 	}
 
-	accountId, err := util.GetAccountId(config)
+	accountId, err := helpers.GetAccountId(config)
 	if err != nil {
 		slog.Error("Failed to get account ID", "error", err, "region", region)
 		return

@@ -5,8 +5,9 @@ import (
 
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus/pkg/types"
+	jtypes "github.com/praetorian-inc/janus/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AWSFindSecrets struct {
@@ -19,6 +20,10 @@ func NewAWSFindSecrets(configs ...cfg.Config) chain.Link {
 	// Initialize the embedded AwsReconLink with fs as the link
 	fs.AwsReconLink = NewAwsReconLink(fs, configs...)
 	return fs
+}
+
+func (a *AWSFindSecrets) SupportedResourceTypes() []string {
+	return nil // temporary noop just so Chariot can compile
 }
 
 func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) error {
@@ -64,7 +69,7 @@ func (a *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) er
 	resourceChain.Send(resource)
 	resourceChain.Close()
 
-	for o, ok := chain.RecvAs[types.NPInput](resourceChain); ok; o, ok = chain.RecvAs[types.NPInput](resourceChain) {
+	for o, ok := chain.RecvAs[jtypes.NPInput](resourceChain); ok; o, ok = chain.RecvAs[jtypes.NPInput](resourceChain) {
 		a.Send(o)
 	}
 

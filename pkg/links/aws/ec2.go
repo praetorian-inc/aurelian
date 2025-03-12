@@ -10,8 +10,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus/pkg/types"
-	"github.com/praetorian-inc/janus/pkg/util"
+	jtypes "github.com/praetorian-inc/janus/pkg/types"
+	"github.com/praetorian-inc/nebula/internal/helpers"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AwsEc2UserData struct {
@@ -30,7 +32,7 @@ func (a *AwsEc2UserData) Process(resource *types.EnrichedResourceDescription) er
 		return nil
 	}
 
-	config, err := util.GetAWSConfig(resource.Region, a.profile)
+	config, err := helpers.GetAWSCfg(resource.Region, a.profile, options.JanusParamAdapter(a.Params()))
 	if err != nil {
 		slog.Error("Failed to get AWS config for region", "region", resource.Region, "error", err)
 		return nil
@@ -53,9 +55,9 @@ func (a *AwsEc2UserData) Process(resource *types.EnrichedResourceDescription) er
 		return nil
 	}
 
-	a.Send(types.NPInput{
+	a.Send(jtypes.NPInput{
 		ContentBase64: *output.UserData.Value,
-		Provenance: types.NPProvenance{
+		Provenance: jtypes.NPProvenance{
 			Platform:     "aws",
 			ResourceType: fmt.Sprintf("%s::UserData", resource.TypeName),
 			ResourceID:   resource.Arn.String(),

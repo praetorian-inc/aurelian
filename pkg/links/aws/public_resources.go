@@ -47,6 +47,17 @@ func (a *AwsPublicResources) Process(resourceType string) error {
 	return a.processResourceType(resourceType)
 }
 
+func (a *AwsPublicResources) SupportedResourceTypes() []string {
+	return []string{
+		"AWS::EC2::Instance",
+		"AWS::SNS::Topic",
+		"AWS::SQS::Queue",
+		"AWS::Lambda::Function",
+		"AWS::EFS::FileSystem",
+		"AWS::Elasticsearch::Domain",
+	}
+}
+
 func (a *AwsPublicResources) processResourceType(resourceType string) error {
 	var resourceChain chain.Chain
 

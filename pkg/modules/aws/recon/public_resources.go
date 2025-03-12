@@ -22,17 +22,15 @@ var AWSPublicResources = chain.NewModule(
 	cfg.NewMetadata(
 		"AWS Public Resources",
 		"Enumerate public AWS resources",
-	).WithProperty(
-		"platform", "aws",
-	).WithProperty(
-		"opsec_level", "moderate",
-	).WithProperty(
-		"authors", []string{"Praetorian"},
-	).WithChainInputParam(options.AwsResourceType().Name()),
-	chain.NewChain(
-		aws.NewAwsPublicResources(),
-	).WithOutputters(
-		output.NewJSONOutputter(),
-		output.NewConsoleOutputter(),
-	),
+	).WithProperties(map[string]any{
+		"platform":    "aws",
+		"opsec_level": "moderate",
+		"authors":     []string{"Praetorian"},
+	}).
+		WithChainInputParam(options.AwsResourceType().Name()),
+).WithLinks(
+	aws.NewAwsPublicResources,
+).WithOutputters(
+	output.NewJSONOutputter,
+	output.NewConsoleOutputter,
 )
