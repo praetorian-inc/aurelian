@@ -13,12 +13,13 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/helpers"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AWSCloudControl struct {
-	AwsReconLink
+	base.AwsReconLink
 	semaphores          map[string]chan struct{}
 	wg                  sync.WaitGroup
 	cloudControlClients map[string]*cloudcontrol.Client
@@ -29,7 +30,7 @@ func (a *AWSCloudControl) Metadata() *cfg.Metadata {
 }
 
 func (a *AWSCloudControl) Params() []cfg.Param {
-	params := a.Base.Params()
+	params := a.AwsReconLink.Params()
 	params = append(params, options.AwsCommonReconOptions()...)
 	params = append(params, options.AwsRegions(), options.AwsResourceType())
 
@@ -57,7 +58,7 @@ func (a *AWSCloudControl) Initialize() error {
 
 func (a *AWSCloudControl) initializeSemaphores() {
 	a.semaphores = make(map[string]chan struct{})
-	for _, region := range a.regions {
+	for _, region := range a.Regions {
 		a.semaphores[region] = make(chan struct{}, 5)
 	}
 }
@@ -65,8 +66,8 @@ func (a *AWSCloudControl) initializeSemaphores() {
 func (a *AWSCloudControl) initializeClients() error {
 	a.cloudControlClients = make(map[string]*cloudcontrol.Client)
 
-	for _, region := range a.regions {
-		config, err := helpers.GetAWSCfg(region, a.profile, options.JanusParamAdapter(a.Params()))
+	for _, region := range a.Regions {
+		config, err := helpers.GetAWSCfg(region, a.Profile, options.JanusParamAdapter(a.Params()))
 		if err != nil {
 			return fmt.Errorf("failed to create AWS config: %w", err)
 		}
@@ -78,11 +79,9 @@ func (a *AWSCloudControl) initializeClients() error {
 }
 
 func (a *AWSCloudControl) Process(resourceType string) error {
-	for _, region := range a.regions {
-
-		// Global services are only available in us-east-1
-		if helpers.IsGlobalService(resourceType) && region != "us-east-1" {
-			slog.Info("Skipping global service", "type", resourceType, "region", region)
+	for _, region := range a.Regions {
+		if a.isGlobalService(resourceType, region) {
+			slog.Debug("Skipping global service", "type", resourceType, "region", region)
 			continue
 		}
 
@@ -95,12 +94,16 @@ func (a *AWSCloudControl) Process(resourceType string) error {
 	return nil
 }
 
+func (a *AWSCloudControl) isGlobalService(resourceType, region string) bool {
+	return helpers.IsGlobalService(resourceType) && region != "us-east-1"
+}
+
 func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
 	defer a.wg.Done()
 
-	slog.Debug("Listing resources in region", "type", resourceType, "region", region, "profile", a.profile)
+	slog.Debug("Listing resources in region", "type", resourceType, "region", region, "profile", a.Profile)
 
-	config, err := helpers.GetAWSCfg(region, a.profile, options.JanusParamAdapter(a.Params()))
+	config, err := helpers.GetAWSCfg(region, a.Profile, options.JanusParamAdapter(a.Params()))
 
 	if err != nil {
 		slog.Error("Failed to create AWS config", "error", err)
@@ -137,7 +140,6 @@ func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
 
 		for _, resource := range res.ResourceDescriptions {
 			erd := a.resourceDescriptionToERD(resource, resourceType, accountId, region)
-			slog.Debug("Sending resource", "resource", erd)
 			a.sendResource(region, erd)
 		}
 
@@ -204,7 +206,6 @@ func (a *AWSCloudControl) sendResource(region string, resource *types.EnrichedRe
 
 	defer func() { <-sem }()
 
-	slog.Debug(fmt.Sprintf("sending resource: %+v\n", resource))
 	a.Send(resource)
 }
 

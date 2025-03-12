@@ -57,7 +57,7 @@ require (
 	github.com/microsoftgraph/msgraph-sdk-go v1.53.0
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de
 	github.com/ollama/ollama v0.2.7
-	github.com/praetorian-inc/janus v0.0.0-20250311165840-f8b8ed7a8868
+	github.com/praetorian-inc/janus v0.0.0-20250310155859-83930382a35b
 	github.com/seancfoley/ipaddress-go v1.7.0
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.10.0
@@ -104,6 +104,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/seancfoley/bintree v1.3.1 // indirect
+	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/std-uritemplate/std-uritemplate/go/v2 v2.0.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0 // indirect
@@ -140,3 +141,5 @@ require (
 	golang.org/x/text v0.22.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+replace github.com/praetorian-inc/janus => ../janus
