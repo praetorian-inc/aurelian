@@ -30,9 +30,6 @@ query: |
         action contains 'Microsoft.Authorization/roleAssignments/write' or
         action contains 'Microsoft.Authorization/roleDefinitions/*' or
         action contains 'Microsoft.Authorization/roleDefinitions/write' or
-        action contains 'Microsoft.Authorization/classicAdministrators/*' or
-        action contains 'Microsoft.Authorization/classicAdministrators/write' or
-        action contains 'Microsoft.Authorization/elevateAccess/*' or
         action contains 'Microsoft.Authorization/*/delete' or
         action contains '*/write' or
         action contains '*'
