@@ -3,7 +3,7 @@ package recon
 import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus/pkg/links"
+	jlinks "github.com/praetorian-inc/janus/pkg/links"
 	"github.com/praetorian-inc/janus/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
@@ -28,7 +28,7 @@ var AWSPublicResources = chain.NewModule(
 	}).
 		WithChainInputParam(options.AwsResourceType().Name()),
 ).WithLinks(
-	links.ConstructAdHocLink(preprocessor),
+	jlinks.ConstructAdHocLink(preprocessor),
 	aws.NewAwsPublicResources,
 ).WithOutputters(
 	output.NewJSONOutputter,
