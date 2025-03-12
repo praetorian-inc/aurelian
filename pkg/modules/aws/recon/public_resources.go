@@ -1,8 +1,11 @@
 package recon
 
 import (
+	"strings"
+
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	jlinks "github.com/praetorian-inc/janus/pkg/links"
 	"github.com/praetorian-inc/janus/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
@@ -13,9 +16,18 @@ func init() {
 	registry.Register("aws", "recon", "public-resources", *AWSPublicResources)
 }
 
-var PublicResourcesTypes = []string{
-	"AWS::EC2::Instance",
-	"AWS::ECR::PublicRepository",
+func getPublicResourceTypes(self chain.Link, resourceType string) error {
+	resourceTypes := []string{resourceType}
+
+	if strings.ToLower(resourceType) == "all" {
+		resourceTypes = (&aws.AwsPublicResources{}).SupportedResourceTypes()
+	}
+
+	for _, resourceType := range resourceTypes {
+		self.Send(resourceType)
+	}
+
+	return nil
 }
 
 var AWSPublicResources = chain.NewModule(
@@ -29,10 +41,10 @@ var AWSPublicResources = chain.NewModule(
 	).WithProperty(
 		"authors", []string{"Praetorian"},
 	).WithChainInputParam(options.AwsResourceType().Name()),
-	chain.NewChain(
-		aws.NewAwsPublicResources(),
-	).WithOutputters(
-		output.NewJSONOutputter(),
-		output.NewConsoleOutputter(),
-	),
+).WithLinks(
+	jlinks.ConstructAdHocLink(getPublicResourceTypes),
+	aws.NewAwsPublicResources,
+).WithOutputters(
+	output.NewJSONOutputter,
+	output.NewConsoleOutputter,
 )
