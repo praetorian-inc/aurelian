@@ -123,6 +123,7 @@ type EvaluationResult struct {
 	PolicyResult       *PolicyResult
 	EvaluationDetails  string
 	CrossAccountAccess bool
+	Action             Action
 }
 
 func (er *EvaluationResult) String() string {
@@ -179,6 +180,7 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 
 	result := &EvaluationResult{
 		PolicyResult: NewPolicyResult(),
+		Action:       Action(req.Action),
 	}
 
 	// 1. First check all policy types for explicit denies
