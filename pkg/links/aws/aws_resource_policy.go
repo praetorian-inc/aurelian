@@ -20,21 +20,22 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	iam "github.com/praetorian-inc/nebula/pkg/iam/aws"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AwsResourcePolicyChecker struct {
-	*AwsReconLink
+	*base.AwsReconLink
 }
 
 func NewAwsResourcePolicyChecker(configs ...cfg.Config) chain.Link {
 	r := &AwsResourcePolicyChecker{}
-	r.AwsReconLink = NewAwsReconLink(r, configs...)
+	r.AwsReconLink = base.NewAwsReconLink(r, configs...)
 	return r
 }
 
-func (u *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescription) error {
+func (a *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescription) error {
 	// Check if we have a configuration for this resource type
 	serviceConfig, ok := ServiceMap[resource.TypeName]
 	if !ok {
@@ -68,7 +69,7 @@ func (u *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 	}
 
 	// Get AWS config
-	awsCfg, err := helpers.GetAWSCfg(resource.Region, u.profile, options.JanusParamAdapter(u.Params()))
+	awsCfg, err := helpers.GetAWSCfg(resource.Region, a.Profile, options.JanusParamAdapter(a.Params()))
 	if err != nil {
 		slog.Error("Failed to get AWS config", "region", resource.Region, "error", err)
 		return nil // Continue with other resources
@@ -115,7 +116,7 @@ func (u *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 	}
 
 	// Send the enriched resource
-	u.Send(enriched)
+	a.Send(enriched)
 	return nil
 }
 

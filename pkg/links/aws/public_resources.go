@@ -5,6 +5,7 @@ import (
 
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -16,14 +17,14 @@ var PublicTypes = []string{
 }
 
 type AwsPublicResources struct {
-	*AwsReconLink
+	*base.AwsReconLink
 	resourceMap map[string]func() chain.Chain
 }
 
 func NewAwsPublicResources(configs ...cfg.Config) chain.Link {
 	a := &AwsPublicResources{}
 	// Initialize the embedded AwsReconLink with fs as the link
-	a.AwsReconLink = NewAwsReconLink(a, configs...)
+	a.AwsReconLink = base.NewAwsReconLink(a, configs...)
 	return a
 }
 

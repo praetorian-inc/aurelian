@@ -1,4 +1,4 @@
-package aws
+package ec2
 
 import (
 	"context"
@@ -10,27 +10,30 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus/pkg/types"
-	"github.com/praetorian-inc/janus/pkg/util"
+	jtypes "github.com/praetorian-inc/janus/pkg/types"
+	"github.com/praetorian-inc/nebula/internal/helpers"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
-type AwsEc2UserData struct {
-	AwsReconLink
+type AWSEC2UserData struct {
+	*base.AwsReconLink
 }
 
 func NewAWSEC2UserData(configs ...cfg.Config) chain.Link {
-	ec2 := &AwsEc2UserData{}
-	ec2.Base = chain.NewBase(ec2, configs...)
+	ec2 := &AWSEC2UserData{}
+	ec2.AwsReconLink = base.NewAwsReconLink(ec2, configs...)
 	return ec2
 }
 
-func (a *AwsEc2UserData) Process(resource *types.EnrichedResourceDescription) error {
+func (a *AWSEC2UserData) Process(resource *types.EnrichedResourceDescription) error {
 	if resource.TypeName != "AWS::EC2::Instance" {
 		slog.Info("Skipping non-EC2 instance", "resource", resource)
 		return nil
 	}
 
-	config, err := util.GetAWSConfig(resource.Region, a.profile)
+	config, err := helpers.GetAWSCfg(resource.Region, a.Profile, options.JanusParamAdapter(a.Params()))
 	if err != nil {
 		slog.Error("Failed to get AWS config for region", "region", resource.Region, "error", err)
 		return nil
@@ -45,17 +48,18 @@ func (a *AwsEc2UserData) Process(resource *types.EnrichedResourceDescription) er
 
 	output, err := ec2Client.DescribeInstanceAttribute(context.TODO(), input)
 	if err != nil {
-		slog.Error("Failed to get user data for instance", "instance", resource.Identifier, "error", err)
+		slog.Error("Failed to get user data for instance", "instance", resource.Identifier, "profile", a.Profile, "error", err)
 		return nil
 	}
 
 	if output.UserData == nil || output.UserData.Value == nil {
+		slog.Debug("No user data found for instance", "instance", resource.Identifier)
 		return nil
 	}
 
-	a.Send(types.NPInput{
+	a.Send(jtypes.NPInput{
 		ContentBase64: *output.UserData.Value,
-		Provenance: types.NPProvenance{
+		Provenance: jtypes.NPProvenance{
 			Platform:     "aws",
 			ResourceType: fmt.Sprintf("%s::UserData", resource.TypeName),
 			ResourceID:   resource.Arn.String(),

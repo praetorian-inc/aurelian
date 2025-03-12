@@ -1,4 +1,4 @@
-package aws
+package base
 
 import (
 	"errors"
@@ -15,8 +15,8 @@ import (
 
 type AwsReconLink struct {
 	*chain.Base
-	regions []string
-	profile string
+	Regions []string
+	Profile string
 }
 
 func NewAwsReconLink(link chain.Link, configs ...cfg.Config) *AwsReconLink {
@@ -34,24 +34,24 @@ func (a *AwsReconLink) Initialize() error {
 	a.ContextHolder = cfg.NewContextHolder()
 
 	profile, err := cfg.As[string](a.Arg("profile"))
-	slog.Debug("cloudcontrol profile", "profile", profile)
+	slog.Debug("AWS recon profile", "profile", profile)
 	if err != nil {
 		return fmt.Errorf("failed to get profile: %w", err)
 	}
-	a.profile = profile
+	a.Profile = profile
 
 	regions, err := cfg.As[[]string](a.Arg("regions"))
-	slog.Debug("cloudcontrol regions", "regions", regions)
+	slog.Debug("AWS recon regions", "regions", regions)
 	if err != nil || len(regions) == 0 || strings.ToLower(regions[0]) == "all" {
-		a.regions, err = helpers.EnabledRegions(a.profile, options.JanusParamAdapter(a.Params()))
+		a.Regions, err = helpers.EnabledRegions(a.Profile, options.JanusParamAdapter(a.Params()))
 		if err != nil {
 			return err
 		}
 	} else {
-		a.regions = regions
+		a.Regions = regions
 	}
 
-	slog.Info("initialized", "regions", a.regions, "profile", a.profile)
+	slog.Debug("AWS recon link initialized", "regions", a.Regions, "profile", a.Profile)
 
 	err = a.validateResourceRegions()
 	if err != nil {
@@ -71,7 +71,7 @@ func (a *AwsReconLink) validateResourceRegions() error {
 	}
 
 	for _, r := range rtype {
-		if helpers.IsGlobalService(r) && !slices.Contains(a.regions, "us-east-1") {
+		if helpers.IsGlobalService(r) && !slices.Contains(a.Regions, "us-east-1") {
 			return errors.New("global services are only supported in us-east-1")
 		}
 	}

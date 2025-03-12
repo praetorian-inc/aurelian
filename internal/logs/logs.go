@@ -17,6 +17,10 @@ var (
 	logLevel string
 )
 
+const (
+	LevelNone = slog.Level(12)
+)
+
 // Currently used to write the AWS API calls to a log file
 func AwsCliLogger() logging.Logger {
 	return logging.LoggerFunc(func(classification logging.Classification, format string, v ...interface{}) {
@@ -24,14 +28,19 @@ func AwsCliLogger() logging.Logger {
 
 		opts := &slog.HandlerOptions{
 			AddSource: true,
-			Level:     slog.LevelDebug,
+			Level:     getLevelFromString(logLevel),
 		}
 
-		f, err := os.OpenFile(LOG_FILE, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-		if err != nil {
-			panic(err)
+		var f *os.File
+		var err error
+
+		if getLevelFromString(logLevel) != LevelNone {
+			f, err = os.OpenFile(LOG_FILE, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+			if err != nil {
+				panic(err)
+			}
+			defer f.Close()
 		}
-		defer f.Close()
 
 		handler := slog.NewJSONHandler(f, opts)
 		logger := slog.New(handler)
@@ -59,8 +68,10 @@ func getLevelFromString(level string) slog.Level {
 		return slog.LevelWarn
 	case "error":
 		return slog.LevelError
+	case "none":
+		return LevelNone
 	default:
-		return slog.LevelInfo
+		return LevelNone
 	}
 }
 

@@ -127,6 +127,6 @@ var LogLevelOpt = types.Option{
 
 func LogLevel() cfg.Param {
 	return cfg.NewParam[string]("log-level", "log level").
-		WithDefault("warn").
-		WithRegex(regexp.MustCompile("^(debug|info|warn|error)$"))
+		WithDefault("none").
+		WithRegex(regexp.MustCompile("^(none|debug|info|warn|error)$"))
 }

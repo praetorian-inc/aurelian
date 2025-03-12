@@ -254,8 +254,8 @@ github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRI
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c h1:ncq/mPwQF4JjgDlrVEn3C11VoGHZN7m8qihwgMEtzYw=
 github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c/go.mod h1:OmDBASR4679mdNQnz2pUhc2G8CO2JrUAVFDRBDP/hJE=
-github.com/praetorian-inc/janus v0.0.0-20250310155859-83930382a35b h1:R30hxmRJgLesABRZI2+967eiJA6UDTkeWUkh7Ryipf0=
-github.com/praetorian-inc/janus v0.0.0-20250310155859-83930382a35b/go.mod h1:1WW6QKT167HES3M1tdSvmkj+gxix/RGI2OJNioyZ1pU=
+github.com/praetorian-inc/janus v0.0.0-20250310215713-971b690f5ca8 h1:SEZpkbqRiyXIN/aDiVDBY+ecT6RJ2JBJVtVRs/aYW4U=
+github.com/praetorian-inc/janus v0.0.0-20250310215713-971b690f5ca8/go.mod h1:1WW6QKT167HES3M1tdSvmkj+gxix/RGI2OJNioyZ1pU=
 github.com/praetorian-inc/konstellation-go v0.0.0-20250312210038-89524f146d3e h1:5cbXX9Uhfxkp7lKNgW8jTsT0wsPL4fllUrui+b441rA=
 github.com/praetorian-inc/konstellation-go v0.0.0-20250312210038-89524f146d3e/go.mod h1:2mdae09qL88fly+5Cq3Kbgrm1oqSO2KLLJbh93zH3cQ=
 github.com/rogpeppe/go-internal v1.13.1 h1:KvO1DLK/DRN07sQ1LQKScxyZJuNnedQ5/wKSR38lUII=

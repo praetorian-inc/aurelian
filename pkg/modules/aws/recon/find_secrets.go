@@ -1,9 +1,12 @@
 package recon
 
 import (
+	"strings"
+
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus/pkg/links"
+	jlinks "github.com/praetorian-inc/janus/pkg/links"
+	"github.com/praetorian-inc/janus/pkg/links/noseyparker"
 	"github.com/praetorian-inc/janus/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
@@ -14,29 +17,39 @@ func init() {
 	registry.Register("aws", "recon", "find-secrets", *AWSFindSecrets)
 }
 
-// List of resource types to scan for secrets
-var FindSecretsTypes = []string{
-	"AWS::EC2::Instance",
-	"AWS::CloudFormation::Stack",
+func preprocessResourceTypes(self chain.Link, resourceType string) error {
+	resourceTypes := []string{resourceType}
+
+	if strings.ToLower(resourceType) == "all" {
+		resourceTypes = (&aws.AWSFindSecrets{}).SupportedResourceTypes()
+	}
+
+	for _, resourceType := range resourceTypes {
+		self.Send(resourceType)
+	}
+
+	return nil
 }
 
 var AWSFindSecrets = chain.NewModule(
 	cfg.NewMetadata(
 		"AWS Find Secrets",
 		"Enumerate AWS resources and find secrets using NoseyParker",
-	).WithProperty(
-		"platform", "aws",
-	).WithProperty(
-		"opsec_level", "moderate",
-	).WithProperty(
-		"authors", []string{"Praetorian"},
-	).WithChainInputParam(options.AwsResourceType().Name()),
-	chain.NewChain(
-		aws.NewAWSCloudControl(),
-		aws.NewAWSFindSecrets(),
-		links.NewNoseyParkerScanner(cfg.WithArg("continue_piping", true)),
-	).WithOutputters(
-		output.NewJSONOutputter(),
-		output.NewConsoleOutputter(),
+	).WithProperties(map[string]any{
+		"platform":    "aws",
+		"opsec_level": "moderate",
+		"authors":     []string{"Praetorian"},
+	}).WithChainInputParam(
+		options.AwsResourceType().Name(),
 	),
+).WithLinks(
+	jlinks.ConstructAdHocLink(preprocessResourceTypes),
+	aws.NewAWSCloudControl,
+	aws.NewAWSFindSecrets,
+	chain.ConstructLinkWithConfigs(noseyparker.NewNoseyParkerScanner, cfg.WithArg("continue_piping", true)),
+).WithOutputters(
+	output.NewJSONOutputter,
+	output.NewConsoleOutputter,
+).WithParams(
+	options.AwsResourceType().WithDefault([]string{"all"}),
 )
