@@ -227,8 +227,6 @@ github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINE
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
-github.com/praetorian-inc/janus v0.0.0-20250310155859-83930382a35b h1:R30hxmRJgLesABRZI2+967eiJA6UDTkeWUkh7Ryipf0=
-github.com/praetorian-inc/janus v0.0.0-20250310155859-83930382a35b/go.mod h1:1WW6QKT167HES3M1tdSvmkj+gxix/RGI2OJNioyZ1pU=
 github.com/praetorian-inc/janus v0.0.0-20250312150623-362d0c2fd9d5 h1:ecYuqlXzoYTNsfbZ/n4EaZM7Bxz04ZezpUA/N+Z/qBE=
 github.com/praetorian-inc/janus v0.0.0-20250312150623-362d0c2fd9d5/go.mod h1:d9Lvt8J8ea3HXt8QLwynECuxRljHyk5dU0Xfdj2MWbk=
 github.com/rogpeppe/go-internal v1.13.1 h1:KvO1DLK/DRN07sQ1LQKScxyZJuNnedQ5/wKSR38lUII=

@@ -27,14 +27,14 @@ func NewAWSExpandActionsLink(configs ...cfg.Config) chain.Link {
 
 // Initialize fetches all AWS actions when the link is created
 func (a *AWSExpandActions) Initialize() error {
-	slog.Info("Initializing AWS Expand Actions link")
+	slog.Debug("Initializing AWS Expand Actions link")
 	var err error
 	a.allActions, err = fetchAllAWSActions()
 	if err != nil {
 		slog.Error("Error fetching AWS actions during initialization", "error", err)
 		return err
 	}
-	slog.Info("Successfully loaded AWS actions", "count", len(a.allActions))
+	slog.Debug("Successfully loaded AWS actions", "count", len(a.allActions))
 	return nil
 }
 
