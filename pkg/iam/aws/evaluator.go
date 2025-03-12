@@ -135,6 +135,24 @@ func (er *EvaluationResult) String() string {
 	return string(jsonResult)
 }
 
+func (er *EvaluationResult) HasInconclusiveCondition() bool {
+	if er.PolicyResult == nil {
+		return false
+	}
+
+	// Iterate through all evaluation types
+	for _, statements := range er.PolicyResult.Evaluations {
+		for _, statement := range statements {
+			if statement.ConditionEvaluation != nil &&
+				statement.ConditionEvaluation.Result == ConditionInconclusive {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 // PolicyEvaluator handles AWS IAM policy evaluation
 type PolicyEvaluator struct {
 	policyData *PolicyData

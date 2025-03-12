@@ -101,6 +101,7 @@ func (u *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 	// Add the policy to the properties
 	props[serviceConfig.PolicyField] = policy
 	props["EvaluationReasons"] = getUnqiueDetails(res)
+	props["NeedsManualTriage"] = hasInconclusiveConditions(res)
 	props["Actions"] = getAllowedActions(res)
 
 	// Create enriched resource with the policy
@@ -195,6 +196,15 @@ func getUnqiueDetails(results []*iam.EvaluationResult) []string {
 		}
 	}
 	return details
+}
+
+func hasInconclusiveConditions(results []*iam.EvaluationResult) bool {
+	for _, res := range results {
+		if res.HasInconclusiveCondition() {
+			return true
+		}
+	}
+	return false
 }
 
 type ServicePolicyConfig struct {
