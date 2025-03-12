@@ -84,22 +84,17 @@ func (a *AwsPublicResources) processResourceType(resourceType string) error {
 		return fmt.Errorf("unsupported resource type: %s", resourceType)
 	}
 
-	// Propagate parameters from this link to the chain
-	ccArgs := make(map[string]any)
-	for k, v := range a.Args() {
-		ccArgs[k] = v
-	}
-
 	if resourceChain == nil {
 		return fmt.Errorf("failed to create resource chain for resource type: %s", resourceType)
 	}
 
-	resourceChain = resourceChain.WithConfigs(cfg.WithArgs(ccArgs))
+	resourceChain = resourceChain.WithConfigs(cfg.WithArgs(a.Args()))
 	resourceChain.Send(resourceType)
 	resourceChain.Close()
 
 	// Collect and forward results
 	for result, ok := chain.RecvAs[*types.EnrichedResourceDescription](resourceChain); ok; result, ok = chain.RecvAs[*types.EnrichedResourceDescription](resourceChain) {
+		slog.Debug("Received resource", "resource", result)
 		a.Send(result)
 	}
 
