@@ -239,7 +239,7 @@ func analyzePolicy(resource, policyStr string) (bool, error) {
 			return false, err
 		}
 
-		slog.Debug("Policy evaluation result", "resource", resource, "action", action, "allowed", res.Allowed, "EvaluationResult", res)
+		slog.Debug("Policy evaluation result", "principal", reqCtx.PrincipalArn, "resource", resource, "action", action, "allowed", res.Allowed, "EvaluationResult", res)
 
 		// shortcut if the action is allowed
 		if res.Allowed {

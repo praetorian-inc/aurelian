@@ -7,12 +7,10 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	cctypes "github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus/pkg/util"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -82,7 +80,7 @@ func (a *AWSCloudControl) Process(resourceType string) error {
 	for _, region := range a.regions {
 
 		// Global services are only available in us-east-1
-		if util.IsGlobalService(resourceType) && region != "us-east-1" {
+		if helpers.IsGlobalService(resourceType) && region != "us-east-1" {
 			slog.Info("Skipping global service", "type", resourceType, "region", region)
 			continue
 		}
@@ -108,7 +106,7 @@ func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
 		return
 	}
 
-	accountId, err := util.GetAccountId(config)
+	accountId, err := helpers.GetAccountId(config)
 	if err != nil {
 		slog.Error("Failed to get account ID", "error", err, "region", region)
 		return
@@ -174,26 +172,13 @@ func (a *AWSCloudControl) resourceDescriptionToERD(resource cctypes.ResourceDesc
 		erdRegion = region
 	}
 
-	erd := types.EnrichedResourceDescription{
-		Identifier: *resource.Identifier,
-		TypeName:   rType,
-		Region:     erdRegion,
-		Properties: *resource.Properties,
-		AccountId:  accountId,
-	}
-
-	// some resources have a different ARN format than the identifier
-	// so we need to parse the identifier to get the ARN
-	parsed, err := arn.Parse(*resource.Identifier)
-	if err != nil {
-		slog.Debug("Failed to parse ARN: "+*resource.Identifier, slog.String("error", err.Error()))
-		erd.Arn = erd.ToArn()
-	} else {
-		slog.Debug("Parsed ARN: "+*resource.Identifier, slog.String("arn", parsed.String()))
-		erd.Arn = parsed
-	}
-
-	erd.Arn = erd.ToArn()
+	erd := types.NewEnrichedResourceDescription(
+		*resource.Identifier,
+		rType,
+		erdRegion,
+		accountId,
+		*resource.Properties,
+	)
 
 	return &erd
 

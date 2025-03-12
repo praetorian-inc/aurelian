@@ -178,6 +178,7 @@ type RequestContext struct {
 	RequestedRegion string            // Region request was made to
 	SecureTransport *bool             // Whether request used TLS
 	SourceAccount   string            // Account of resource making request
+	SourceOwner     string            // Deprecated: owner of resource making request
 	SourceArn       string            // ARN of resource making request
 	SourceOrgID     string            // Org ID of resource making request
 	SourceOrgPaths  []string          // Org paths of resource making request
@@ -326,6 +327,10 @@ func (rc *RequestContext) PopulateDefaultRequestConditionKeys(resourceArn string
 	// }
 	if rc.SourceAccount == "" {
 		rc.SourceAccount = resArnParsed.AccountID
+	}
+
+	if rc.SourceOwner == "" {
+		rc.SourceOwner = resArnParsed.AccountID
 	}
 
 	return nil

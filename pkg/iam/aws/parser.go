@@ -1,7 +1,6 @@
 package aws
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -14,9 +13,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
-	"github.com/praetorian-inc/nebula/modules"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/stages"
+	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -641,24 +638,16 @@ func (ga *GaadAnalyzer) generateServiceEvaluations(resourceArn string, policy *t
 // Helper function to use AwsExpandActionsStage
 func expandActionsWithStage(actions types.DynaString) []string {
 	expandedActions := make([]string, 0)
-	ctx := context.WithValue(context.Background(), "metadata", modules.Metadata{Name: "AwsExpandActionsStage"})
-	opts := []*types.Option{
-		options.WithDefaultValue(options.LogLevelOpt, "debug"),
-	}
 
 	// Process each action
 	for _, action := range actions {
 		if strings.Contains(action, "*") {
-			// c := NewAWSExpandActionsLink()
-			// c.Send(action)
-			// c.Close()
+			c := chain.NewChain(NewAWSExpandActionsLink())
+			c.Send(action)
+			c.Close()
 
-			// for o, ok := chain.RecvAs[string](c); ok; o, ok = chain.RecvAs[string](c) {
-			// 	expandedActions = append(expandedActions, o)
-			// }
-			// Use the stage to expand wildcards
-			for expAction := range stages.AwsExpandActionsStage(ctx, opts, stages.Generator([]string{action})) {
-				expandedActions = append(expandedActions, expAction)
+			for o, ok := chain.RecvAs[string](c); ok; o, ok = chain.RecvAs[string](c) {
+				expandedActions = append(expandedActions, o)
 			}
 		} else {
 			// Add non-wildcard actions directly
