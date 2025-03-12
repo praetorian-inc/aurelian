@@ -87,7 +87,7 @@ func MapArnByRegions(identifiers []string) (map[string][]arn.ARN, error) {
 }
 
 // Some resources do not return ARN as identifiers so need to be processed differently
-func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescription) map[string][]string {
+func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescription, optFns ...func(*config.LoadOptions) error) map[string][]string {
 	regionToIdentifiers := make(map[string][]string)
 	for _, description := range resourceDescriptions {
 		regionToIdentifiers[description.Region] = append(regionToIdentifiers[description.Region], description.Identifier)
@@ -95,24 +95,30 @@ func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescri
 	return regionToIdentifiers
 }
 
-func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config, error) {
+func GetAWSCfg(region string, profile string, opts []*types.Option, optFns ...func(*config.LoadOptions) error) (aws.Config, error) {
 	if !cacheMaintained {
 		InitCache(opts)
 		cacheMaintained = true
 	}
 
-	cfg, err := config.LoadDefaultConfig(
-		context.TODO(),
+	options := []func(*config.LoadOptions) error{
 		config.WithClientLogMode(
-			aws.LogRetries|
-				aws.LogRequestWithBody|
-				aws.LogRequestEventMessage|
+			aws.LogRetries |
+				aws.LogRequestWithBody |
+				aws.LogRequestEventMessage |
 				aws.LogResponseEventMessage),
 		config.WithLogger(logs.AwsCliLogger()),
 		config.WithRegion(region),
 		config.WithSharedConfigProfile(profile),
 		config.WithRetryMode(aws.RetryModeAdaptive),
 		// config.WithAPIOptions(cacheFunc),
+	}
+
+	options = append(options, optFns...)
+
+	cfg, err := config.LoadDefaultConfig(
+		context.TODO(),
+		options...,
 	)
 	if err != nil {
 		return aws.Config{}, err

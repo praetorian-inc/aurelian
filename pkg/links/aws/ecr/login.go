@@ -33,7 +33,7 @@ func (a *AWSECRLogin) Process(registryURL string) error {
 		return err
 	}
 
-	config, err := helpers.GetAWSCfg(region, a.Profile, options.JanusParamAdapter(a.Params()))
+	config, err := a.GetConfig(region, options.JanusParamAdapter(a.Params()))
 	if err != nil {
 		slog.Error("Failed to get AWS config", "error", err)
 		return nil
