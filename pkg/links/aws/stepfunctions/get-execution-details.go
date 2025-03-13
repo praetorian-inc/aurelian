@@ -9,7 +9,6 @@ import (
 	sfntypes "github.com/aws/aws-sdk-go-v2/service/sfn/types"
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -32,7 +31,7 @@ func (ged *AWSGetExecutionDetails) Process(execution *sfntypes.ExecutionListItem
 		return nil
 	}
 
-	config, err := helpers.GetAWSCfg(parsed.Region, ged.Profile, options.JanusParamAdapter(ged.Params()))
+	config, err := ged.GetConfig(parsed.Region, options.JanusParamAdapter(ged.Params()))
 	if err != nil {
 		slog.Debug("Could not get AWS config, error: " + err.Error())
 		return nil
