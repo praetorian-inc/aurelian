@@ -6,7 +6,6 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
@@ -85,7 +84,8 @@ func (a *AwsPublicResources) ResourceMap() map[string]func() chain.Chain {
 	resourceMap["AWS::EC2::Instance"] = func() chain.Chain {
 		return chain.NewChain(
 			NewAWSCloudControl(),
-			general.NewJqFilter(cfg.WithArg("filter", "select(.Properties | fromjson | has(\"PublicIp\")) | {Type: .TypeName, Identifier: .Identifier, PublicIp: (.Properties | fromjson | .PublicIp)}")),
+			NewPropertyFilterLink(cfg.WithArg("property", "PublicIp")),
+			//general.NewJqFilter(cfg.WithArg("filter", "select(.Properties | fromjson | has(\"PublicIp\")) | {Type: .TypeName, Identifier: .Identifier, PublicIp: (.Properties | fromjson | .PublicIp)}")),
 		)
 	}
 
@@ -117,12 +117,12 @@ func (a *AwsPublicResources) ResourceMap() map[string]func() chain.Chain {
 		)
 	}
 
-	resourceMap["AWS::Elasticsearch::Domain"] = func() chain.Chain {
-		return chain.NewChain(
-			NewAWSCloudControl(),
-			NewAwsResourcePolicyChecker(),
-		)
-	}
+	// resourceMap["AWS::Elasticsearch::Domain"] = func() chain.Chain {
+	// 	return chain.NewChain(
+	// 		NewAWSCloudControl(),
+	// 		NewAwsResourcePolicyChecker(),
+	// 	)
+	// }
 
 	resourceMap["AWS::S3::Bucket"] = func() chain.Chain {
 		return chain.NewChain(

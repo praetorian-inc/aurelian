@@ -8,6 +8,7 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
 
 func init() {
@@ -29,5 +30,6 @@ var AWSPublicResources = chain.NewModule(
 	aws.NewAwsPublicResources,
 ).WithOutputters(
 	output.NewJSONOutputter,
-	output.NewConsoleOutputter,
+	//output.NewConsoleOutputter,
+	outputters.NewERDConsoleOutputter,
 )

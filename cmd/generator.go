@@ -6,6 +6,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/helpers"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -233,16 +234,30 @@ func runModule(cmd *cobra.Command, module chain.Module) error {
 	var configs []cfg.Config
 	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
 		if flag.Changed {
-			// Special handling for StringSlice flags
-			if stringSliceFlag, ok := flag.Value.(pflag.SliceValue); ok {
-				// Get the actual slice value instead of the string representation
-				configs = append(configs, cfg.WithArg(flag.Name, stringSliceFlag.GetSlice()))
-			} else {
-				configs = append(configs, cfg.WithArg(flag.Name, flag.Value.String()))
+			name := flag.Name
+
+			// Handle different flag types
+			switch flag.Value.Type() {
+			case "bool":
+				value, _ := cmd.Flags().GetBool(name)
+				configs = append(configs, cfg.WithArg(name, value))
+			case "int":
+				value, _ := cmd.Flags().GetInt(name)
+				configs = append(configs, cfg.WithArg(name, value))
+			case "stringSlice":
+				value, _ := cmd.Flags().GetStringSlice(name)
+				configs = append(configs, cfg.WithArg(name, value))
+			case "string":
+				value, _ := cmd.Flags().GetString(name)
+				configs = append(configs, cfg.WithArg(name, value))
+			default:
+				// Fallback to string representation
+				configs = append(configs, cfg.WithArg(name, flag.Value.String()))
 			}
 		}
 	})
 
+	message.Section("Running module %s", module.Metadata().Name)
 	module.Run(configs...)
 	helpers.ShowCacheStat()
 	helpers.PrintAllThrottlingCounts()
