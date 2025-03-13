@@ -36,6 +36,14 @@ func NewEnrichedResourceDescription(identifier, typeName, region, accountId stri
 			AccountID: accountId,
 			Resource:  "instance/" + identifier,
 		}
+	case "AWS::S3::Bucket":
+		a = arn.ARN{
+			Partition: "aws",
+			Service:   "s3",
+			Region:    "",
+			AccountID: "",
+			Resource:  identifier,
+		}
 	default:
 		parsed, err := arn.Parse(identifier)
 		if err == nil {
