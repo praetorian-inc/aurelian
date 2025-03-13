@@ -5,7 +5,6 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
-	"github.com/praetorian-inc/nebula/pkg/links/aws"
 )
 
 func init() {
@@ -22,10 +21,8 @@ var AzurePublicResources = chain.NewModule(
 		"opsec_level", "moderate",
 	).WithProperty(
 		"authors", []string{"Praetorian"},
-	),
-).WithLinks(
-	aws.NewAWSCloudControl,
-).WithOutputters(
+	).WithChainInputParam("resource-type"),
+).WithLinks().WithOutputters(
 	output.NewJSONOutputter,
 	output.NewConsoleOutputter,
 )

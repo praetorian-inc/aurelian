@@ -38,9 +38,18 @@ func NewEnrichedResourceDescription(identifier, typeName, region, accountId stri
 		}
 	default:
 		parsed, err := arn.Parse(identifier)
-		if err != nil {
+		if err == nil {
 			a = parsed
+		} else {
+			a = arn.ARN{
+				Partition: "aws",
+				Service:   typeName,
+				Region:    region,
+				AccountID: accountId,
+				Resource:  identifier,
+			}
 		}
+
 	}
 
 	return EnrichedResourceDescription{

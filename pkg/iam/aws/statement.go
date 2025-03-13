@@ -326,11 +326,11 @@ func (rc *RequestContext) PopulateDefaultRequestConditionKeys(resourceArn string
 	// 	rc.SourceArn = resourceArn
 	// }
 	if rc.SourceAccount == "" {
-		rc.SourceAccount = resArnParsed.AccountID
+		rc.SourceAccount = principalArnParsed.AccountID
 	}
 
 	if rc.SourceOwner == "" {
-		rc.SourceOwner = resArnParsed.AccountID
+		rc.SourceOwner = principalArnParsed.AccountID
 	}
 
 	return nil
