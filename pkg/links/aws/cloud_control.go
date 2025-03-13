@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	cctypes "github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
 	"github.com/praetorian-inc/janus/pkg/chain"
@@ -175,26 +174,13 @@ func (a *AWSCloudControl) resourceDescriptionToERD(resource cctypes.ResourceDesc
 		erdRegion = region
 	}
 
-	erd := types.EnrichedResourceDescription{
-		Identifier: *resource.Identifier,
-		TypeName:   rType,
-		Region:     erdRegion,
-		Properties: *resource.Properties,
-		AccountId:  accountId,
-	}
-
-	// some resources have a different ARN format than the identifier
-	// so we need to parse the identifier to get the ARN
-	parsed, err := arn.Parse(*resource.Identifier)
-	if err != nil {
-		slog.Debug("Failed to parse ARN: "+*resource.Identifier, slog.String("error", err.Error()))
-		erd.Arn = erd.ToArn()
-	} else {
-		slog.Debug("Parsed ARN: "+*resource.Identifier, slog.String("arn", parsed.String()))
-		erd.Arn = parsed
-	}
-
-	erd.Arn = erd.ToArn()
+	erd := types.NewEnrichedResourceDescription(
+		*resource.Identifier,
+		rType,
+		erdRegion,
+		accountId,
+		*resource.Properties,
+	)
 
 	return &erd
 

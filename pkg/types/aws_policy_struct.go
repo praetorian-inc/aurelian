@@ -3,6 +3,7 @@ package types
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -11,6 +12,23 @@ type Policy struct {
 	Id        string               `json:"Id,omitempty"`
 	Version   string               `json:"Version"`
 	Statement *PolicyStatementList `json:"Statement"`
+}
+
+func NewPolicyFromJSON(data []byte) (*Policy, error) {
+	var policy Policy
+	if err := json.Unmarshal(data, &policy); err != nil {
+		return nil, err
+	}
+
+	if policy.Version == "" {
+		return nil, fmt.Errorf("missing version in policy")
+	}
+
+	if policy.Statement == nil || len(*policy.Statement) == 0 {
+		return nil, fmt.Errorf("empty statements in policy")
+	}
+
+	return &policy, nil
 }
 
 type PolicyStatementList []PolicyStatement
@@ -39,6 +57,7 @@ type PolicyStatement struct {
 	Resource     *DynaString `json:"Resource,omitempty"`
 	NotResource  *DynaString `json:"NotResource,omitempty"`
 	Condition    *Condition  `json:"Condition,omitempty"`
+	OriginArn    string      `json:"OriginArn,omitempty"` // Used for tracking the origin of the statement throughout evaluation
 }
 
 type Principal struct {
@@ -49,14 +68,16 @@ type Principal struct {
 }
 
 func (p *Principal) UnmarshalJSON(rawData []byte) error {
-	if string(rawData) == "*" {
-		retp := Principal{
-			AWS:           &DynaString{"*"},
-			Service:       &DynaString{"*"},
-			Federated:     &DynaString{"*"},
-			CanonicalUser: &DynaString{"*"},
+	if string(rawData) == `"*"` {
+		star := DynaString{"*"}
+
+		*p = Principal{
+			AWS:           &star,
+			Service:       &star,
+			Federated:     &star,
+			CanonicalUser: &star,
 		}
-		*p = retp
+
 		return nil
 	} else {
 		type tmpPrincipal Principal
@@ -68,6 +89,22 @@ func (p *Principal) UnmarshalJSON(rawData []byte) error {
 			return fmt.Errorf("- Unmarshall error for principal type. %v", rawData)
 		}
 	}
+}
+
+func (p *Principal) String() string {
+	if p.AWS != nil {
+		return fmt.Sprintf("AWS: %s", p.AWS.ToHumanReadable())
+	}
+	if p.Service != nil {
+		return fmt.Sprintf("Service: %s", p.Service.ToHumanReadable())
+	}
+	if p.Federated != nil {
+		return fmt.Sprintf("Federated: %s", p.Federated.ToHumanReadable())
+	}
+	if p.CanonicalUser != nil {
+		return fmt.Sprintf("CanonicalUser: %s", p.CanonicalUser.ToHumanReadable())
+	}
+	return ""
 }
 
 type Condition map[string]ConditionStatement
@@ -170,19 +207,53 @@ func (dyna DynaString) ToHumanReadable() string {
 }
 
 // Custom unmarshall for DynaString (last step in all structs)
+// func (dyna *DynaString) UnmarshalJSON(rawData []byte) error {
+// 	var retString string
+// 	var retSlice []string
+// 	if string(rawData) == "true" || string(rawData) == "false" {
+// 		*dyna = append(*dyna, string(rawData))
+// 		return nil
+// 	} else if err := json.Unmarshal(rawData, &retString); err == nil {
+// 		*dyna = append(*dyna, retString)
+// 		return nil
+// 	} else if err := json.Unmarshal(rawData, &retSlice); err == nil {
+// 		*dyna = retSlice
+// 		return nil
+// 	} else {
+// 		return fmt.Errorf("- Unmarshall error for DynaString type. %v", rawData)
+// 	}
+// }
+
+// Custom unmarshall for DynaString (last step in all structs)
 func (dyna *DynaString) UnmarshalJSON(rawData []byte) error {
+	// Try unmarshaling as a single string first
 	var retString string
-	var retSlice []string
-	if string(rawData) == "true" || string(rawData) == "false" {
-		*dyna = append(*dyna, string(rawData))
-		return nil
-	} else if err := json.Unmarshal(rawData, &retString); err == nil {
+	if err := json.Unmarshal(rawData, &retString); err == nil {
 		*dyna = append(*dyna, retString)
 		return nil
-	} else if err := json.Unmarshal(rawData, &retSlice); err == nil {
+	}
+
+	// Try as string array
+	var retSlice []string
+	if err := json.Unmarshal(rawData, &retSlice); err == nil {
 		*dyna = retSlice
 		return nil
-	} else {
-		return fmt.Errorf("- Unmarshall error for DynaString type. %v", rawData)
 	}
+
+	// Handle boolean special case (for policies that use true/false)
+	var retBool bool
+	if err := json.Unmarshal(rawData, &retBool); err == nil {
+		*dyna = append(*dyna, strconv.FormatBool(retBool))
+		return nil
+	}
+
+	return fmt.Errorf("unmarshal error for DynaString type: %v", rawData)
+}
+
+func NewDynaString(values []string) *DynaString {
+	if values == nil {
+		return nil
+	}
+	ds := DynaString(values)
+	return &ds
 }
