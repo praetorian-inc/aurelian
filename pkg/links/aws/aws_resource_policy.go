@@ -19,7 +19,6 @@ import (
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
 	iam "github.com/praetorian-inc/nebula/pkg/iam/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
@@ -70,7 +69,7 @@ func (a *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 	}
 
 	// Get AWS config
-	awsCfg, err := helpers.GetAWSCfg(resource.Region, a.Profile, options.JanusParamAdapter(a.Params()))
+	awsCfg, err := a.GetConfig(resource.Region, options.JanusParamAdapter(a.Params()))
 	if err != nil {
 		slog.Error("Failed to get AWS config", "region", resource.Region, "error", err)
 		return nil // Continue with other resources

@@ -11,7 +11,6 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus/pkg/types"
-	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -33,7 +32,7 @@ func (a *AWSEC2UserData) Process(resource *types.EnrichedResourceDescription) er
 		return nil
 	}
 
-	config, err := helpers.GetAWSCfg(resource.Region, a.Profile, options.JanusParamAdapter(a.Params()))
+	config, err := a.GetConfig(resource.Region, options.JanusParamAdapter(a.Params()))
 	if err != nil {
 		slog.Error("Failed to get AWS config for region", "region", resource.Region, "error", err)
 		return nil

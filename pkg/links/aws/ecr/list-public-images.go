@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -32,7 +31,7 @@ func (ep *AWSECRListPublicImages) Process(resource *types.EnrichedResourceDescri
 		return nil
 	}
 
-	config, err := helpers.GetAWSCfg(resource.Region, ep.Profile, options.JanusParamAdapter(ep.Params()))
+	config, err := ep.GetConfig(resource.Region, options.JanusParamAdapter(ep.Params()))
 	if err != nil {
 		slog.Error("Failed to get AWS config", "error", err)
 		return nil

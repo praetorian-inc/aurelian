@@ -1,34 +1,18 @@
 package recon
 
 import (
-	"strings"
-
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	jlinks "github.com/praetorian-inc/janus/pkg/links"
 	"github.com/praetorian-inc/janus/pkg/links/noseyparker"
 	"github.com/praetorian-inc/janus/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
+	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
 
 func init() {
 	registry.Register("aws", "recon", "find-secrets", *AWSFindSecrets)
-}
-
-func preprocessResourceTypes(self chain.Link, resourceType string) error {
-	resourceTypes := []string{resourceType}
-
-	if strings.ToLower(resourceType) == "all" {
-		resourceTypes = (&aws.AWSFindSecrets{}).SupportedResourceTypes()
-	}
-
-	for _, resourceType := range resourceTypes {
-		self.Send(resourceType)
-	}
-
-	return nil
 }
 
 var AWSFindSecrets = chain.NewModule(
@@ -43,7 +27,7 @@ var AWSFindSecrets = chain.NewModule(
 		options.AwsResourceType().Name(),
 	),
 ).WithLinks(
-	jlinks.ConstructAdHocLink(preprocessResourceTypes),
+	general.NewResourceTypePreprocessor(&aws.AWSFindSecrets{}),
 	aws.NewAWSCloudControl,
 	aws.NewAWSFindSecrets,
 	chain.ConstructLinkWithConfigs(noseyparker.NewNoseyParkerScanner, cfg.WithArg("continue_piping", true)),

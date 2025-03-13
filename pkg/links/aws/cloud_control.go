@@ -66,7 +66,7 @@ func (a *AWSCloudControl) initializeClients() error {
 	a.cloudControlClients = make(map[string]*cloudcontrol.Client)
 
 	for _, region := range a.Regions {
-		config, err := helpers.GetAWSCfg(region, a.Profile, options.JanusParamAdapter(a.Params()))
+		config, err := a.GetConfig(region, options.JanusParamAdapter(a.Params()))
 		if err != nil {
 			return fmt.Errorf("failed to create AWS config: %w", err)
 		}
@@ -102,7 +102,7 @@ func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
 
 	slog.Debug("Listing resources in region", "type", resourceType, "region", region, "profile", a.Profile)
 
-	config, err := helpers.GetAWSCfg(region, a.Profile, options.JanusParamAdapter(a.Params()))
+	config, err := a.GetConfig(region, options.JanusParamAdapter(a.Params()))
 
 	if err != nil {
 		slog.Error("Failed to create AWS config", "error", err)

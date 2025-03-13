@@ -8,7 +8,6 @@ import (
 	sfntypes "github.com/aws/aws-sdk-go-v2/service/sfn/types"
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -25,7 +24,7 @@ func NewAWSListExecutions(configs ...cfg.Config) chain.Link {
 }
 
 func (le *AWSListExecutions) Process(resource *types.EnrichedResourceDescription) error {
-	config, err := helpers.GetAWSCfg(resource.Region, le.Profile, options.JanusParamAdapter(le.Params()))
+	config, err := le.GetConfig(resource.Region, options.JanusParamAdapter(le.Params()))
 	if err != nil {
 		slog.Debug("Failed to get AWS config for region", "region", resource.Region, "error", err)
 		return err
