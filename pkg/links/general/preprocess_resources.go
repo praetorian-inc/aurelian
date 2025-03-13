@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"github.com/praetorian-inc/janus/pkg/chain"
+	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	jlinks "github.com/praetorian-inc/janus/pkg/links"
 )
 
 type SupportsResourceTypes interface {
@@ -26,4 +28,9 @@ func PreprocessResourceTypes(class SupportsResourceTypes) func(chain.Link, strin
 	}
 
 	return processor
+}
+
+func NewResourceTypePreprocessor(class SupportsResourceTypes) func(...cfg.Config) chain.Link {
+	preprocessor := PreprocessResourceTypes(class)
+	return jlinks.ConstructAdHocLink(preprocessor)
 }
