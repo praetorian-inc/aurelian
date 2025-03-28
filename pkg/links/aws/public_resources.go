@@ -46,7 +46,6 @@ func (a *AwsPublicResources) Process(resourceType string) error {
 	}
 
 	c := rc()
-	c.WithParams(a.Params()...)
 	c.WithConfigs(cfg.WithArgs(a.Args()))
 
 	c.Send(resourceType)
