@@ -17,6 +17,42 @@ type PolicyData struct {
 	Resources        *[]types.EnrichedResourceDescription
 }
 
+func NewPolicyData(gaad *types.Gaad, scp, rcp *types.PolicyStatementList, resourcePolicies map[string]*types.Policy, resources *[]types.EnrichedResourceDescription) *PolicyData {
+	if resourcePolicies == nil {
+		resourcePolicies = make(map[string]*types.Policy, 0)
+	}
+
+	// Create resource polices from role assume role policies
+	if gaad != nil {
+		for _, role := range gaad.RoleDetailList {
+			if role.AssumeRolePolicyDocument.Statement != nil {
+				// Create copy of statements to avoid modifying original
+				stmtCopy := make(types.PolicyStatementList, len(*role.AssumeRolePolicyDocument.Statement))
+				copy(stmtCopy, *role.AssumeRolePolicyDocument.Statement)
+
+				// Set resource and origin for each statement
+				for i := range stmtCopy {
+					stmtCopy[i].Resource = &types.DynaString{role.Arn}
+					stmtCopy[i].OriginArn = fmt.Sprintf("%s/AssumeRolePolicyDocument", role.Arn)
+				}
+
+				// Add to resource policies map
+				resourcePolicies[role.Arn] = &types.Policy{
+					Statement: &stmtCopy,
+				}
+			}
+		}
+	}
+
+	return &PolicyData{
+		Gaad:             gaad,
+		SCP:              scp,
+		RCP:              rcp,
+		ResourcePolicies: resourcePolicies,
+		Resources:        resources,
+	}
+}
+
 // EvaluationType identifies the type of policy evaluation
 type EvaluationType string
 
@@ -266,23 +302,25 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 	resourceAllowed := false
 	explicitPrincipalAllow := false
 
-	if resourcePolicy, exists := e.policyData.ResourcePolicies[req.Resource]; exists {
-		resourceStatements := policyToStatementList(resourcePolicy)
-		resourceEvals, err := e.evaluatePolicyType(req.Action, req.Resource, req.Context,
-			resourceStatements, EvalTypeResource)
-		if err != nil {
-			return nil, err
-		}
-		result.PolicyResult.AddEvaluation(EvalTypeResource, resourceEvals)
-		resourceAllowed = result.PolicyResult.HasTypeAllow(EvalTypeResource)
+	if e.policyData.ResourcePolicies != nil {
+		if resourcePolicy, exists := e.policyData.ResourcePolicies[req.Resource]; exists {
+			resourceStatements := policyToStatementList(resourcePolicy)
+			resourceEvals, err := e.evaluatePolicyType(req.Action, req.Resource, req.Context,
+				resourceStatements, EvalTypeResource)
+			if err != nil {
+				return nil, err
+			}
+			result.PolicyResult.AddEvaluation(EvalTypeResource, resourceEvals)
+			resourceAllowed = result.PolicyResult.HasTypeAllow(EvalTypeResource)
 
-		// Check if principal is explicitly allowed
-		explicitPrincipalAllow = e.hasExplicitPrincipalAllow(resourceStatements, req.Context.PrincipalArn)
+			// Check if principal is explicitly allowed
+			explicitPrincipalAllow = e.hasExplicitPrincipalAllow(resourceStatements, req.Context.PrincipalArn)
 
-		if resourceAllowed && explicitPrincipalAllow && result.PolicyResult.IsAllowed() {
-			result.Allowed = true
-			result.EvaluationDetails = "Explicitly allowed by resource policy"
-			return result, nil
+			if resourceAllowed && explicitPrincipalAllow && result.PolicyResult.IsAllowed() {
+				result.Allowed = true
+				result.EvaluationDetails = "Explicitly allowed by resource policy"
+				return result, nil
+			}
 		}
 	}
 

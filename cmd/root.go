@@ -31,7 +31,8 @@ func initCommands() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&logLevelFlag, options.LogLevel().Name(), options.LogLevel().Value().(string), "Log level (debug, info, warn, error)")
-	logs.ConfigureDefaults(logLevelFlag)
+	//logs.ConfigureDefaults(logLevelFlag)
+	logs.ConfigureDefaults("info")
 
 }
 

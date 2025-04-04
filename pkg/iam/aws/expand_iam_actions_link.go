@@ -40,8 +40,15 @@ func (a *AWSExpandActions) Initialize() error {
 
 // Process expands wildcard IAM actions by matching against all known AWS actions
 func (a *AWSExpandActions) Process(action string) error {
-	service := strings.ToLower(strings.Split(action, ":")[0])
-	act := strings.Split(action, ":")[1]
+	slog.Debug("Expanding AWS action pattern", "pattern", action)
+	var service, act string
+	if action == "*" {
+		service = "*"
+		act = "*"
+	} else {
+		service = strings.ToLower(strings.Split(action, ":")[0])
+		act = strings.Split(action, ":")[1]
+	}
 
 	// Create a case insensitive regex pattern from the input action wildcard
 	pattern := strings.ReplaceAll(act, "*", ".*")

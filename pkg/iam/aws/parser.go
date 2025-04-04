@@ -176,14 +176,6 @@ func (ps *PermissionsSummary) FullResults() []FullResult {
 										Action:    action.Name,
 										Result:    action.EvaluationResult,
 									})
-								}
-								if principal, ok := userCache[perms.PrincipalArn]; ok {
-									results = append(results, FullResult{
-										Principal: principal,
-										Resource:  resource,
-										Action:    action.Name,
-										Result:    action.EvaluationResult,
-									})
 								} else if principal, ok := roleCache[perms.PrincipalArn]; ok {
 									results = append(results, FullResult{
 										Principal: principal,
@@ -275,35 +267,7 @@ func (rp *ResourcePermission) AddAction(action string, eval *EvaluationResult) {
 	}
 }
 
-// func containsString(slice []string, target string) bool {
-// 	for _, item := range slice {
-// 		if item == target {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
-
-// MarshalJSON implements custom JSON marshaling
-// func (rp *ResourcePermission) MarshalJSON() ([]byte, error) {
-// 	rp.mu.RLock()
-// 	defer rp.mu.RUnlock()
-
-// 	// Sort actions for consistent output
-// 	sort.Strings(rp.AllowedActions)
-// 	sort.Strings(rp.DeniedActions)
-
-// 	type Alias ResourcePermission
-// 	return json.Marshal(&struct {
-// 		*Alias
-// 		AllowedActions []string `json:"allowed_actions"`
-// 		DeniedActions  []string `json:"denied_actions"`
-// 	}{
-// 		Alias:          (*Alias)(rp),
-// 		AllowedActions: rp.AllowedActions,
-// 		DeniedActions:  rp.DeniedActions,
-// 	})
-// }
+// func containsString(slice []s
 
 // AddResourcePermission safely adds or updates a resource permission
 func (p *PrincipalPermissions) AddResourcePermission(resourceArn string, action string, allowed bool, eval *EvaluationResult) {
@@ -397,7 +361,8 @@ type GaadAnalyzer struct {
 }
 
 // NewGaadAnalyzer creates a new analyzer and initializes caches
-func NewGaadAnalyzer(pd *PolicyData, evaluator *PolicyEvaluator) *GaadAnalyzer {
+func NewGaadAnalyzer(pd *PolicyData) *GaadAnalyzer {
+	evaluator := NewPolicyEvaluator(pd)
 	ga := &GaadAnalyzer{
 		policyData: pd,
 		evaluator:  evaluator,
@@ -931,14 +896,6 @@ func (ga *GaadAnalyzer) processAssumeRolePolicies(evalChan chan<- *EvaluationReq
 				// Create the evaluation context
 				accountID, tags := getResourceDeets(role.Arn)
 
-				// Create a copy of the statements with resource populated
-				stmtCopy := make(types.PolicyStatementList, len(*role.AssumeRolePolicyDocument.Statement))
-				copy(stmtCopy, *role.AssumeRolePolicyDocument.Statement)
-				for i := range stmtCopy {
-					stmtCopy[i].Resource = &types.DynaString{role.Arn}
-					stmtCopy[i].OriginArn = fmt.Sprintf("%s/AssumeRolePolicyDocument", role.Arn)
-				}
-
 				rc := &RequestContext{
 					PrincipalArn:     principal,
 					ResourceTags:     tags,
@@ -954,11 +911,6 @@ func (ga *GaadAnalyzer) processAssumeRolePolicies(evalChan chan<- *EvaluationReq
 					Resource:           role.Arn,
 					IdentityStatements: &types.PolicyStatementList{},
 					Context:            rc,
-				}
-
-				// Add the role's assume role policy as a resource policy for evaluation
-				ga.policyData.ResourcePolicies[role.Arn] = &types.Policy{
-					Statement: &stmtCopy,
 				}
 
 				// Send the evaluation request
