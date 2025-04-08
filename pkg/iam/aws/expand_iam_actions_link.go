@@ -2,6 +2,7 @@ package aws
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"regexp"
 	"strings"
@@ -40,6 +41,11 @@ func (a *AWSExpandActions) Initialize() error {
 
 // Process expands wildcard IAM actions by matching against all known AWS actions
 func (a *AWSExpandActions) Process(action string) error {
+	if !strings.Contains(action, "*") {
+		slog.Debug("No wildcard in action, skipping expansion", "action", action)
+		return a.Send(action)
+	}
+
 	slog.Debug("Expanding AWS action pattern", "pattern", action)
 	var service, act string
 	if action == "*" {
@@ -50,15 +56,18 @@ func (a *AWSExpandActions) Process(action string) error {
 		act = strings.Split(action, ":")[1]
 	}
 
-	// Create a case insensitive regex pattern from the input action wildcard
+	// Precompile regex outside the loop
 	pattern := strings.ReplaceAll(act, "*", ".*")
-	pattern = "(?i)^" + service + ":" + pattern + "$"
+	regexPattern := "(?i)^" + service + ":" + pattern + "$"
+	regex, err := regexp.Compile(regexPattern)
+	if err != nil {
+		return fmt.Errorf("invalid regex pattern: %s", err)
+	}
 
 	// Find and send all matching actions
 	matchCount := 0
 	for _, actionName := range a.allActions {
-		match, _ := regexp.MatchString(pattern, actionName)
-		if match {
+		if regex.MatchString(actionName) {
 			if err := a.Send(actionName); err != nil {
 				return err
 			}

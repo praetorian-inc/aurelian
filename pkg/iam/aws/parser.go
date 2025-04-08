@@ -45,7 +45,7 @@ func (ps *PermissionsSummary) GetResults() []PrincipalResult {
 			perms.ResourcePerms.Range(func(resKey, resValue interface{}) bool {
 				if resPerm, ok := resValue.(*ResourcePermission); ok {
 					// Only include resources that have allowed or denied actions
-					if len(resPerm.AllowedActions) > 0 || len(resPerm.DeniedActions) > 0 {
+					if len(resPerm.AllowedActions) > 0 {
 						resArn := resKey.(string)
 						actions := make([]string, 0)
 
@@ -163,7 +163,7 @@ func (ps *PermissionsSummary) FullResults() []FullResult {
 			perms.ResourcePerms.Range(func(resKey, resValue interface{}) bool {
 				if resPerm, ok := resValue.(*ResourcePermission); ok {
 					// Only include resources that have allowed or denied actions
-					if len(resPerm.AllowedActions) > 0 || len(resPerm.DeniedActions) > 0 {
+					if len(resPerm.AllowedActions) > 0 {
 						resArn := resKey.(string)
 
 						// Get the resource from the cache

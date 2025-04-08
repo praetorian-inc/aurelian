@@ -2,6 +2,7 @@ package aws
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"testing"
@@ -48,26 +49,20 @@ func TestAWSActionClassifierLink_FullPolicy(t *testing.T) {
 			NewAWSActionClassifierLink(),
 		)
 
-		count := 0
-		maxActions := 10
 		for _, statement := range *roa.Statement {
 			if statement.Effect == "Allow" {
 				if statement.Action != nil {
 					for _, action := range *statement.Action {
 						c.Send(action)
-						count++
 					}
 				}
-			}
-			if count >= maxActions {
-				break
 			}
 		}
 		c.Close()
 
-		// for o, ok := chain.RecvAs[map[string][]string](c); ok; o, ok = chain.RecvAs[map[string][]string](c) {
-		// 	fmt.Printf("%s \n", o)
-		// 	t.Logf("%s \n", o)
-		// }
+		for o, ok := chain.RecvAs[map[string][]string](c); ok; o, ok = chain.RecvAs[map[string][]string](c) {
+			fmt.Printf("%s \n", o)
+			t.Logf("%s \n", o)
+		}
 	})
 }

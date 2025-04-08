@@ -193,7 +193,7 @@ func loadPolicies(config *Config) (*aws.PolicyData, error) {
 
 	var resources *[]types.EnrichedResourceDescription
 	if config.Resources != "" {
-		resources, err := loadJSONFile[[]types.EnrichedResourceDescription](config.Resources)
+		resources, err = loadJSONFile[[]types.EnrichedResourceDescription](config.Resources)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load resources: %w", err)
 		}
