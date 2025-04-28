@@ -134,7 +134,7 @@ func GetAWSCfg(region string, profile string, opts []*types.Option, optFns ...fu
 			return aws.Config{}, err
 		}
 		ProfileIdentity.Store(profile, principal)
-		slog.Debug("Called STS GetCallerIdentity for", "profile", profile, "ARN", principal.Arn)
+		slog.Debug("Called STS GetCallerIdentity for", "profile", profile, "ARN", *principal.Arn)
 	}
 
 	CachePrep := GetCachePrepWithIdentity(principal, opts)
