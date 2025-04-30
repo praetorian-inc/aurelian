@@ -11,3 +11,5 @@ bin/*
 bin
 test/links/*.json
 .vscode/launch.json
+.go-version
+out.json
