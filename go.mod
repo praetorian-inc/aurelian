@@ -4,7 +4,8 @@ go 1.23.2
 
 toolchain go1.24.1
 
-replace github.com/praetorian-inc/konstellation => github.com/praetorian-inc/konstellation-go v0.0.0-20250312210038-89524f146d3e
+//replace github.com/praetorian-inc/konstellation => github.com/praetorian-inc/konstellation-go v0.0.0-20250421232724-bc1d1afaecc2
+replace github.com/praetorian-inc/konstellation => /Users/zachgrace/tools/konstellation-go
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.16.0
@@ -60,7 +61,7 @@ require (
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de
 	github.com/ollama/ollama v0.2.7
 	github.com/praetorian-inc/janus v0.0.0-20250404190800-8e515fba09db
-	github.com/praetorian-inc/konstellation v0.0.0-20230810052123-c553e90167a7
+	github.com/praetorian-inc/konstellation v0.0.0-20250421223916-06253fd4062e
 	github.com/seancfoley/ipaddress-go v1.7.0
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
@@ -101,9 +102,7 @@ require (
 	github.com/microsoft/kiota-serialization-text-go v1.0.0 // indirect
 	github.com/microsoftgraph/msgraph-sdk-go-core v1.2.1 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
-	github.com/moby/sys/user v0.3.0 // indirect
-	github.com/moby/sys/userns v0.1.0 // indirect
-	github.com/neo4j/neo4j-go-driver/v5 v5.15.0 // indirect
+	github.com/neo4j/neo4j-go-driver/v5 v5.27.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect

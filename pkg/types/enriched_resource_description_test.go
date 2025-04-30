@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestTags(t *testing.T) {
@@ -47,4 +49,15 @@ func TestTags(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_NewEnrichedResourceDescription_Service(t *testing.T) {
+	erd := NewEnrichedResourceDescription("ec2.amazonaws.com", "AWS::Service", "*", "123456789012", map[string]any{})
+
+	assert.Equal(t, "ec2.amazonaws.com", erd.Identifier)
+	assert.Equal(t, "AWS::Service", erd.TypeName)
+	assert.Equal(t, "*", erd.Region)
+	assert.Equal(t, "123456789012", erd.AccountId)
+	assert.Equal(t, "arn:aws:ec2:*:*:*", erd.Arn.String())
+	assert.Equal(t, "ec2", erd.Service())
 }

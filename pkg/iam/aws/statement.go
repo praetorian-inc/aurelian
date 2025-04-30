@@ -189,6 +189,10 @@ type RequestContext struct {
 	RequestParameters map[string]string // Raw key-value pairs from request
 }
 
+func (rc *RequestContext) IsServiceLinkedRole() bool {
+	return strings.Contains(rc.PrincipalArn, ":role/aws-service-role/")
+}
+
 func Bool(b bool) *bool {
 	return &b
 }

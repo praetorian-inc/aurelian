@@ -249,7 +249,7 @@ func resultToRelationship(result aws.FullResult) (*graph.Relationship, error) {
 			}
 
 			rel.StartNode = &graph.Node{
-				Labels: []string{"Service", "Principal"},
+				Labels: []string{"Service", "Principal", "Resource"},
 				Properties: map[string]interface{}{
 					"name":     serviceName,
 					"arn":      p,

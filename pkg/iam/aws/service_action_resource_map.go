@@ -55,7 +55,7 @@ func IsValidActionForResource(action, resource string) bool {
 	return false
 }
 
-func GetResourcePatternsFromAction(action Action) []*regexp.Regexp {
+func getResourcePatternsFromAction(action Action) []*regexp.Regexp {
 	patterns := []*regexp.Regexp{}
 	service := action.Service()
 	act := strings.ToLower(strings.Split(string(action), ":")[1])
@@ -84,11 +84,13 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"group":              regexp.MustCompile(`^arn:aws:iam::\d{12}:group/.*`),
 			"role":               regexp.MustCompile(`^arn:aws:iam::\d{12}:role/.*`),
 			"policy":             regexp.MustCompile(`^arn:aws:iam::(\d{12}|aws):policy/.*`),
+			"custom-policy":      regexp.MustCompile(`^arn:aws:iam::(\d{12}):policy/.*`),
 			"instance-profile":   regexp.MustCompile(`^arn:aws:iam::\d{12}:instance-profile/.*`),
 			"mfa":                regexp.MustCompile(`^arn:aws:iam::\d{12}:mfa/.*`),
 			"oidc-provider":      regexp.MustCompile(`^arn:aws:iam::\d{12}:oidc-provider/.*`),
 			"saml-provider":      regexp.MustCompile(`^arn:aws:iam::\d{12}:saml-provider/.*`),
 			"server-certificate": regexp.MustCompile(`^arn:aws:iam::\d{12}:server-certificate/.*`),
+			"service":            regexp.MustCompile(`^iam.amazonaws.com$`),
 		},
 		ActionResourceMap: map[string][]string{
 			"addclientidtoopenidconnectprovider":      {"oidc-provider"},
@@ -99,17 +101,17 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"attachuserpolicy":                        {"user"},
 			"changepassword":                          {"user"},
 			"createaccesskey":                         {"user"},
-			"creategroup":                             {"group"},
+			"creategroup":                             {"service"},
 			"createinstanceprofile":                   {"instance-profile"},
 			"createloginprofile":                      {"user"},
 			"createopenidconnectprovider":             {"oidc-provider"},
 			"createpolicy":                            {"policy"},
-			"createpolicyversion":                     {"policy"},
-			"createrole":                              {"role"},
+			"createpolicyversion":                     {"custom-policy"},
+			"createrole":                              {"service"},
 			"createsamlprovider":                      {"saml-provider"},
 			"createservicelinkedrole":                 {"role"},
 			"createservicespecificcredential":         {"user"},
-			"createuser":                              {"user"},
+			"createuser":                              {"service"},
 			"createvirtualmfadevice":                  {"mfa"},
 			"deactivatemfadevice":                     {"user"},
 			"deleteaccesskey":                         {"user"},
@@ -225,22 +227,24 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 	},
 	"ec2": {
 		ResourcePatterns: map[string]*regexp.Regexp{
+			"service":  regexp.MustCompile(`^ec2.amazonaws.com$`),
 			"instance": regexp.MustCompile(`^arn:aws:ec2:[a-z-0-9]+:\d{12}:instance/.*`),
 			"volume":   regexp.MustCompile(`^arn:aws:ec2:[a-z-0-9]+:\d{12}:volume/.*`),
 			"snapshot": regexp.MustCompile(`^arn:aws:ec2:[a-z-0-9]+:\d{12}:snapshot/.*`),
 			"image":    regexp.MustCompile(`^arn:aws:ec2:[a-z-0-9]+:\d{12}:image/.*`),
 		},
 		ActionResourceMap: map[string][]string{
-			"runinstances": {"instance"},
+			"runinstances": {"service"},
 		},
 	},
 	"cloudformation": {
 		ResourcePatterns: map[string]*regexp.Regexp{
+			"service":  regexp.MustCompile(`^cloudformation.amazonaws.com$`),
 			"stack":    regexp.MustCompile(`^arn:aws:cloudformation:[a-z-0-9]+:\d{12}:stack/.*`),
 			"stackset": regexp.MustCompile(`^arn:aws:cloudformation:[a-z-0-9]+:\d{12}:stackset/.*`),
 		},
 		ActionResourceMap: map[string][]string{
-			"createstack":      {"stack"},
+			"createstack":      {"service"},
 			"updatestack":      {"stack"},
 			"setstackpolicy":   {"stack"},
 			"createchangeset":  {"stack"},
@@ -257,6 +261,17 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 		ActionResourceMap: map[string][]string{
 			"assumerole":         {"role"},
 			"getfederationtoken": {"policy"},
+		},
+	},
+	"lambda": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"function": regexp.MustCompile(`^arn:aws:lambda:[a-z-0-9]+:\d{12}:function:.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createfunction":           {"function"},
+			"createeventsourcemapping": {"function"},
+			"invokefunction":           {"function"},
+			"updatefunctioncode":       {"function"},
 		},
 	},
 }

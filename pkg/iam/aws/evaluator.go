@@ -93,8 +93,8 @@ func (pr *PolicyResult) HasDeny() bool {
 	return false
 }
 
-// HasAllow checks if any policy type has an explicit allow
-func (pr *PolicyResult) HasAllow() bool {
+// hasAllow checks if any policy type has an explicit allow
+func (pr *PolicyResult) hasAllow() bool {
 	for _, evals := range pr.Evaluations {
 		for _, eval := range evals {
 			if eval.ExplicitAllow {
@@ -105,8 +105,8 @@ func (pr *PolicyResult) HasAllow() bool {
 	return false
 }
 
-// HasTypeAllow checks if a specific policy type has an explicit allow
-func (pr *PolicyResult) HasTypeAllow(evalType EvaluationType) bool {
+// hasTypeAllow checks if a specific policy type has an explicit allow
+func (pr *PolicyResult) hasTypeAllow(evalType EvaluationType) bool {
 	if evals, exists := pr.Evaluations[evalType]; exists {
 		for _, eval := range evals {
 			if eval.ExplicitAllow {
@@ -117,24 +117,37 @@ func (pr *PolicyResult) HasTypeAllow(evalType EvaluationType) bool {
 	return false
 }
 
-// HasTypeDeny checks if a specific policy type has an explicit deny
-func (pr *PolicyResult) HasTypeDeny(evalType EvaluationType) bool {
+// allPoliciesHaveAllow checks if all policies of a specific type have an explicit allow
+// This is used for special cases like SCPs
+func (pr *PolicyResult) allPoliciesHaveAllow(evalType EvaluationType) bool {
 	if evals, exists := pr.Evaluations[evalType]; exists {
 		for _, eval := range evals {
-			if eval.ExplicitDeny {
-				return true
+			if !eval.ExplicitAllow {
+				return false
 			}
 		}
 	}
-	return false
+	return true
 }
+
+// hasTypeDeny checks if a specific policy type has an explicit deny
+// func (pr *PolicyResult) hasTypeDeny(evalType EvaluationType) bool {
+// 	if evals, exists := pr.Evaluations[evalType]; exists {
+// 		for _, eval := range evals {
+// 			if eval.ExplicitDeny {
+// 				return true
+// 			}
+// 		}
+// 	}
+// 	return false
+// }
 
 // IsAllowed determines if the overall policy evaluations result in an allow
 func (pr *PolicyResult) IsAllowed() bool {
 	if pr.HasDeny() {
 		return false
 	}
-	return pr.HasAllow()
+	return pr.hasAllow()
 }
 
 // EvaluationRequest contains all inputs needed for policy evaluation
@@ -258,7 +271,7 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 			return nil, err
 		}
 		result.PolicyResult.AddEvaluation(EvalTypeRCP, rcpEvals)
-		if !result.PolicyResult.HasTypeAllow(EvalTypeRCP) {
+		if !result.PolicyResult.hasTypeAllow(EvalTypeRCP) {
 			result.Allowed = false
 			result.EvaluationDetails = "Denied by RCP"
 			return result, nil
@@ -272,8 +285,9 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 		if err != nil {
 			return nil, err
 		}
+
 		result.PolicyResult.AddEvaluation(EvalTypeSCP, scpEvals)
-		if !result.PolicyResult.HasTypeAllow(EvalTypeSCP) {
+		if !result.PolicyResult.hasTypeAllow(EvalTypeSCP) {
 			result.Allowed = false
 			result.EvaluationDetails = "Denied by SCP"
 			return result, nil
@@ -288,7 +302,7 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 			return nil, err
 		}
 		result.PolicyResult.AddEvaluation(EvalTypePermBoundary, boundaryEvals)
-		if !result.PolicyResult.HasTypeAllow(EvalTypePermBoundary) {
+		if !result.PolicyResult.hasTypeAllow(EvalTypePermBoundary) {
 			result.Allowed = false
 			result.EvaluationDetails = "Denied by permission boundary"
 			return result, nil
@@ -311,7 +325,7 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 				return nil, err
 			}
 			result.PolicyResult.AddEvaluation(EvalTypeResource, resourceEvals)
-			resourceAllowed = result.PolicyResult.HasTypeAllow(EvalTypeResource)
+			resourceAllowed = result.PolicyResult.hasTypeAllow(EvalTypeResource)
 
 			// Check if principal is explicitly allowed
 			explicitPrincipalAllow = e.hasExplicitPrincipalAllow(resourceStatements, req.Context.PrincipalArn)
@@ -342,22 +356,22 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 		strings.Contains(req.Resource, ":role/")
 
 	if result.CrossAccountAccess {
-		if isAssumeRoleOperation && result.PolicyResult.HasTypeAllow(EvalTypePermBoundary) {
+		if isAssumeRoleOperation && result.PolicyResult.hasTypeAllow(EvalTypePermBoundary) {
 			// Special case: For cross-account assume role, the trust policy (permission boundary)
 			// is sufficient if it allows the operation, even without a resource policy
-			result.Allowed = result.PolicyResult.HasTypeAllow(EvalTypeIdentity)
+			result.Allowed = result.PolicyResult.hasTypeAllow(EvalTypeIdentity)
 			result.EvaluationDetails = "Cross-account assume role access"
 		} else {
 			// Normal cross-account access requires both identity and resource policy allows
-			result.Allowed = result.PolicyResult.HasTypeAllow(EvalTypeIdentity) && resourceAllowed
+			result.Allowed = result.PolicyResult.hasTypeAllow(EvalTypeIdentity) && resourceAllowed
 			result.EvaluationDetails = "Cross-account access"
 		}
 	} else {
 		// Same account access allows if:
 		// - Principal is explicitly named in resource policy, OR
 		// - Either identity or resource policy allows (when not explicitly named)
-		result.Allowed = explicitPrincipalAllow && result.PolicyResult.HasTypeAllow(EvalTypeResource) ||
-			result.PolicyResult.HasTypeAllow(EvalTypeIdentity)
+		result.Allowed = explicitPrincipalAllow && result.PolicyResult.hasTypeAllow(EvalTypeResource) ||
+			result.PolicyResult.hasTypeAllow(EvalTypeIdentity)
 		result.EvaluationDetails = "Same-account access"
 	}
 
@@ -370,6 +384,22 @@ func (e *PolicyEvaluator) evaluatePolicyType(action, resource string, ctx *Reque
 	}
 
 	evals := make([]*StatementEvaluation, 0)
+
+	// Skip SCP evaluation for service-linked roles
+	if evalType == EvalTypeSCP && ctx.IsServiceLinkedRole() {
+		eval := &StatementEvaluation{
+			ExplicitAllow:    true,
+			ExplicitDeny:     false,
+			ImplicitDeny:     false,
+			MatchedAction:    true,
+			MatchedResource:  true,
+			MatchedPrincipal: true,
+			Origin:           "SCP - Service-Linked Role Bypass",
+		}
+		evals = append(evals, eval)
+		return evals, nil
+	}
+
 	for _, statement := range *statements {
 		eval := evaluateStatement(&statement, action, resource, ctx)
 		evals = append(evals, eval)

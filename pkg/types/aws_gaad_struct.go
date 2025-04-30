@@ -87,6 +87,16 @@ type PoliciesDL struct {
 	PolicyVersionList             []PoliciesVL `json:"PolicyVersionList"`
 }
 
+// getDefaultPolicyDocument retrieves the default policy version document
+func (policy *PoliciesDL) DefaultPolicyDocument() *Policy {
+	for _, version := range policy.PolicyVersionList {
+		if version.IsDefaultVersion {
+			return &version.Document
+		}
+	}
+	return nil
+}
+
 type PoliciesVL struct {
 	VersionId        string `json:"VersionId"`
 	IsDefaultVersion bool   `json:"IsDefaultVersion"`

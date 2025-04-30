@@ -151,7 +151,7 @@ func TestPolicyEvaluator_PermissionBoundary(t *testing.T) {
 	// Test 2: Action denied - allowed by identity but not boundary
 	req2 := &EvaluationRequest{
 		Action:             "ec2:RunInstances",
-		Resource:           "arn:aws:ec2:us-west-2:111122223333:instance/*",
+		Resource:           "ec2.amazonaws.com",
 		Context:            createRequestContext("arn:aws:iam::111122223333:user/test-user"),
 		IdentityStatements: identityStatements,
 		BoundaryStatements: boundaryStatements,
@@ -165,7 +165,7 @@ func TestPolicyEvaluator_PermissionBoundary(t *testing.T) {
 	// Test 3: No boundary - falls back to identity policy evaluation
 	req3 := &EvaluationRequest{
 		Action:             "ec2:RunInstances",
-		Resource:           "arn:aws:ec2:us-west-2:111122223333:instance/*",
+		Resource:           "ec2.amazonaws.com",
 		Context:            createRequestContext("arn:aws:iam::111122223333:user/test-user"),
 		IdentityStatements: identityStatements,
 	}
@@ -177,7 +177,7 @@ func TestPolicyEvaluator_PermissionBoundary(t *testing.T) {
 	// Test 3: No boundary - falls back to identity policy evaluation
 	req4 := &EvaluationRequest{
 		Action:             "ec2:RunInstances",
-		Resource:           "arn:aws:ec2:us-west-2:111122223333:instance/*",
+		Resource:           "ec2.amazonaws.com",
 		Context:            createRequestContext("arn:aws:iam::111122223333:user/test-user"),
 		IdentityStatements: identityStatements,
 		BoundaryStatements: &types.PolicyStatementList{},
@@ -225,6 +225,7 @@ func TestPolicyEvaluator_ServiceControlPolicy(t *testing.T) {
 	}
 
 	result1, err := evaluator.Evaluate(req1)
+	t.Log(result1)
 	assert.NoError(t, err)
 	assert.True(t, result1.Allowed)
 
@@ -238,6 +239,7 @@ func TestPolicyEvaluator_ServiceControlPolicy(t *testing.T) {
 
 	result2, err := evaluator.Evaluate(req2)
 	assert.NoError(t, err)
+	t.Log(result2)
 	assert.False(t, result2.Allowed)
 	assert.Equal(t, "Explicitly denied by SCP", result2.EvaluationDetails)
 }
@@ -752,4 +754,92 @@ func TestPolicyEvaluator_SNSResourcePolicy(t *testing.T) {
 	t.Log(result)
 	assert.NoError(t, err)
 	assert.False(t, result.Allowed, "Access should be denied due to non-matching resource")
+}
+
+func TestPolicyEvaluator_CreateWithServiceAsResource(t *testing.T) {
+	identityStatements := &types.PolicyStatementList{
+		{
+			Effect: "Allow",
+			Action: types.NewDynaString([]string{"lambda:CreateFunction"}),
+			Resource: types.NewDynaString([]string{
+				"*",
+			}),
+		},
+	}
+
+	evaluator := NewPolicyEvaluator(&PolicyData{})
+	req := &EvaluationRequest{
+		Action:             "lambda:CreateFunction",
+		Resource:           "lambda.amazonaws.com",
+		Context:            createRequestContext("arn:aws:iam::111122223333:user/test-user"),
+		IdentityStatements: identityStatements,
+	}
+
+	result, err := evaluator.Evaluate(req)
+	t.Log(result)
+	assert.NoError(t, err)
+	assert.False(t, result.Allowed)
+	assert.False(t, result.CrossAccountAccess)
+
+	evaluator = NewPolicyEvaluator(&PolicyData{})
+	req = &EvaluationRequest{
+		Action:             "lambda:CreateFunction",
+		Resource:           "arn:aws:lambda:us-east-1:111122223333:function:my-function",
+		Context:            createRequestContext("arn:aws:iam::111122223333:user/test-user"),
+		IdentityStatements: identityStatements,
+	}
+
+	result, err = evaluator.Evaluate(req)
+	t.Log(result)
+	assert.NoError(t, err)
+	assert.True(t, result.Allowed)
+}
+
+func TestPolicyEvaluator_SCPServiceLinkedRole(t *testing.T) {
+	scpStatements := &types.PolicyStatementList{
+		{
+			Effect:   "Allow",
+			Action:   types.NewDynaString([]string{"*"}),
+			Resource: types.NewDynaString([]string{"*"}),
+		},
+		{
+			Effect:   "Deny",
+			Action:   types.NewDynaString([]string{"bedrock:*"}),
+			Resource: types.NewDynaString([]string{"*"}),
+		},
+	}
+
+	identityStatements := &types.PolicyStatementList{
+		{
+			Effect:   "Allow",
+			Action:   types.NewDynaString([]string{"bedrock:*"}),
+			Resource: types.NewDynaString([]string{"*"}),
+		},
+	}
+
+	evaluator := NewPolicyEvaluator(&PolicyData{SCP: scpStatements})
+	// regular principal
+	req := &EvaluationRequest{
+		Action:             "bedrock:InvokeModel",
+		Resource:           "arn:aws:bedrock:us-east-1:111122223333:agent/QOYTA2YG0G",
+		Context:            createRequestContext("arn:aws:iam::111122223333:user/test-user"),
+		IdentityStatements: identityStatements,
+	}
+	result, err := evaluator.Evaluate(req)
+	t.Log(result)
+	assert.NoError(t, err)
+	assert.False(t, result.Allowed)
+
+	// service-linked role
+	req = &EvaluationRequest{
+		Action:             "bedrock:InvokeModel",
+		Resource:           "arn:aws:bedrock:us-east-1:111122223333:agent/QOYTA2YG0G",
+		Context:            createRequestContext("arn:aws:iam::111122223333:role/aws-service-role/bedrock.amazonaws.com/AWSServiceRoleForBedrock"),
+		IdentityStatements: identityStatements,
+	}
+
+	result, err = evaluator.Evaluate(req)
+	t.Log(result)
+	assert.NoError(t, err)
+	assert.True(t, result.Allowed)
 }

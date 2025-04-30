@@ -44,6 +44,14 @@ func NewEnrichedResourceDescription(identifier, typeName, region, accountId stri
 			AccountID: "",
 			Resource:  identifier,
 		}
+	case "AWS::Service":
+		a = arn.ARN{
+			Partition: "aws",
+			Service:   strings.Split(identifier, ".")[0],
+			Region:    "*",
+			AccountID: "*",
+			Resource:  "*",
+		}
 	default:
 		parsed, err := arn.Parse(identifier)
 		if err == nil {
@@ -133,6 +141,11 @@ func (e *EnrichedResourceDescription) Tags() map[string]string {
 }
 
 func (e *EnrichedResourceDescription) Service() string {
+	if e.TypeName == "AWS::Service" {
+		split := strings.Split(e.Identifier, ".")
+		return split[0]
+	}
+
 	split := strings.Split(e.TypeName, "::")
 	if len(split) < 3 {
 		slog.Debug("Failed to parse resource type", slog.String("resourceType", e.TypeName))

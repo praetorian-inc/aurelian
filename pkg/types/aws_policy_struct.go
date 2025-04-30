@@ -60,6 +60,38 @@ type PolicyStatement struct {
 	OriginArn    string      `json:"OriginArn,omitempty"` // Used for tracking the origin of the statement throughout evaluation
 }
 
+// Helper function to extract all principals from a statement
+func (stmt *PolicyStatement) ExtractPrincipals() []string {
+	principals := []string{}
+
+	if stmt.Principal == nil {
+		return principals
+	}
+
+	// Extract AWS principals
+	if stmt.Principal.AWS != nil {
+		for _, p := range *stmt.Principal.AWS {
+			principals = append(principals, p)
+		}
+	}
+
+	// Extract Service principals
+	if stmt.Principal.Service != nil {
+		for _, p := range *stmt.Principal.Service {
+			principals = append(principals, p)
+		}
+	}
+
+	// Extract Federated principals
+	if stmt.Principal.Federated != nil {
+		for _, p := range *stmt.Principal.Federated {
+			principals = append(principals, p)
+		}
+	}
+
+	return principals
+}
+
 type Principal struct {
 	AWS           *DynaString `json:"AWS,omitempty"`
 	Service       *DynaString `json:"Service,omitempty"`
