@@ -15,42 +15,8 @@ import (
 // generateCommands builds the command tree based on registered modules
 func generateCommands(root *cobra.Command) {
 	hierarchy := registry.GetHierarchy()
-	platforms := len(hierarchy)
 
-	// If there's only one module total, make it the root command
-	if platforms == 1 {
-		platform := getFirstKey(hierarchy)
-		categories := hierarchy[platform]
-		if len(categories) == 1 {
-			category := getFirstKey(categories)
-			modules := categories[category]
-			if len(modules) == 1 {
-				generateModuleCommand(modules[0], root)
-				return
-			}
-		}
-	}
-
-	// If there's only one platform, check if we need category commands
-	if platforms == 1 {
-		platform := getFirstKey(hierarchy)
-		categories := hierarchy[platform]
-		if len(categories) > 0 {
-			for category, modules := range categories {
-				categoryCmd := &cobra.Command{
-					Use:   category,
-					Short: fmt.Sprintf("%s commands", category),
-				}
-				for _, module := range modules {
-					generateModuleCommand(module, categoryCmd)
-				}
-				root.AddCommand(categoryCmd)
-			}
-			return
-		}
-	}
-
-	// Otherwise, create the full platform->category->module hierarchy
+	// Create the full platform->category->module hierarchy
 	for platform, categories := range hierarchy {
 		platformCmd := &cobra.Command{
 			Use:   platform,
@@ -71,23 +37,6 @@ func generateCommands(root *cobra.Command) {
 		}
 
 		root.AddCommand(platformCmd)
-	}
-}
-
-func generatePlatformCommands(platform string, categories map[string][]string, parent *cobra.Command) {
-	for category, modules := range categories {
-		categoryCmd := &cobra.Command{
-			Use:   category,
-			Short: fmt.Sprintf("%s commands for %s", category, platform),
-		}
-		generateCategoryCommands(category, modules, categoryCmd)
-		parent.AddCommand(categoryCmd)
-	}
-}
-
-func generateCategoryCommands(category string, modules []string, parent *cobra.Command) {
-	for _, module := range modules {
-		generateModuleCommand(module, parent)
 	}
 }
 
