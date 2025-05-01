@@ -14,8 +14,7 @@ import (
 // GaadAnalyzer handles efficient analysis of GAAD policy data
 type GaadAnalyzer struct {
 	policyData *PolicyData
-
-	evaluator *PolicyEvaluator
+	evaluator  *PolicyEvaluator
 }
 
 // NewGaadAnalyzer creates a new analyzer and initializes caches
@@ -182,19 +181,7 @@ func (ga *GaadAnalyzer) processUserPermissions(user types.UserDL, evalChan chan<
 	}
 
 	// Add managed policies
-	for _, attachedPolicy := range user.AttachedManagedPolicies {
-		if policy := getPolicyByArn(attachedPolicy.PolicyArn); policy != nil {
-			for i := range policy.PolicyVersionList {
-				if policy.PolicyVersionList[i].IsDefaultVersion {
-					// Decorate with policy ARN
-					for j := range *policy.PolicyVersionList[i].Document.Statement {
-						(*policy.PolicyVersionList[i].Document.Statement)[j].OriginArn = attachedPolicy.PolicyArn
-					}
-					identityStatements = append(identityStatements, *policy.PolicyVersionList[i].Document.Statement...)
-				}
-			}
-		}
-	}
+	identityStatements = append(identityStatements, getUserAttachedManagedPolicies(user)...)
 
 	// Add permissions boundary
 	if user.PermissionsBoundary != (types.ManagedPL{}) {
@@ -241,8 +228,8 @@ func (ga *GaadAnalyzer) processUserPermissions(user types.UserDL, evalChan chan<
 	for _, action := range allActions {
 		if isPrivEscAction(action) {
 
-			tempBoundary := make(types.PolicyStatementList, 0)
-			deepCopy(boundaryStatements, &tempBoundary)
+			// tempBoundary := make(types.PolicyStatementList, 0)
+			// deepCopy(boundaryStatements, &tempBoundary)
 			for _, resource := range getResourcesByAction(Action(action)) {
 
 				// For AssumeRole actions, update the resource in the policy document
@@ -256,7 +243,7 @@ func (ga *GaadAnalyzer) processUserPermissions(user types.UserDL, evalChan chan<
 						}
 
 						slog.Debug(fmt.Sprintf("AssumeRole policy for %s: %v", role.Arn, arpd.Statement))
-						tempBoundary = append(tempBoundary, *arpd.Statement...)
+						// tempBoundary = append(tempBoundary, *arpd.Statement...)
 					}
 				}
 
@@ -272,7 +259,7 @@ func (ga *GaadAnalyzer) processUserPermissions(user types.UserDL, evalChan chan<
 					Action:             action,
 					Resource:           getIdentifierForEvalRequest(resource),
 					IdentityStatements: &identityStatements,
-					BoundaryStatements: &tempBoundary,
+					BoundaryStatements: &boundaryStatements,
 					Context:            rc,
 				}
 				evalChan <- evalReq
@@ -327,17 +314,7 @@ func (ga *GaadAnalyzer) processRolePermissions(role types.RoleDL, evalChan chan<
 	}
 
 	// Add managed policies
-	for _, attachedPolicy := range role.AttachedManagedPolicies {
-		if policy := getPolicyByArn(attachedPolicy.PolicyArn); policy != nil {
-			if doc := policy.DefaultPolicyDocument(); doc != nil {
-				// Decorate the policy with the role's ARN
-				for stmt := range *doc.Statement {
-					(*doc.Statement)[stmt].OriginArn = attachedPolicy.PolicyArn
-				}
-				identityStatements = append(identityStatements, *doc.Statement...)
-			}
-		}
-	}
+	identityStatements = append(identityStatements, getRoleAttachedManagedPolicies(role)...)
 
 	//Set permissions boundary if present
 	if role.PermissionsBoundary != (types.ManagedPL{}) {

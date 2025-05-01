@@ -49,6 +49,9 @@ func initializeRoleCache(wg *sync.WaitGroup, pd *PolicyData) {
 	for i := range pd.Gaad.RoleDetailList {
 		role := &pd.Gaad.RoleDetailList[i]
 		roleCache[role.Arn] = role
+
+		// Add the role's policy document to the resource policy cache
+		pd.ResourcePolicies[role.Arn] = &role.AssumeRolePolicyDocument
 	}
 }
 
@@ -169,4 +172,41 @@ func getResourceDeets(resourceArn string) (string, map[string]string) {
 		return parsed.AccountID, nil
 	}
 	return resource.AccountId, resource.Tags()
+}
+
+func getUserAttachedManagedPolicies(user types.UserDL) types.PolicyStatementList {
+	identityStatements := types.PolicyStatementList{}
+	for _, attachedPolicy := range user.AttachedManagedPolicies {
+		if policy := getPolicyByArn(attachedPolicy.PolicyArn); policy != nil {
+			for i := range policy.PolicyVersionList {
+				if policy.PolicyVersionList[i].IsDefaultVersion {
+					// Decorate with policy ARN
+					for j := range *policy.PolicyVersionList[i].Document.Statement {
+						(*policy.PolicyVersionList[i].Document.Statement)[j].OriginArn = attachedPolicy.PolicyArn
+					}
+					identityStatements = append(identityStatements, *policy.PolicyVersionList[i].Document.Statement...)
+				}
+			}
+		}
+	}
+	return identityStatements
+}
+
+func getRoleAttachedManagedPolicies(role types.RoleDL) types.PolicyStatementList {
+	identityStatements := types.PolicyStatementList{}
+	// Iterate over the attached managed policies
+	// and add their statements to the identityStatements list
+	// Decorate with policy ARN
+	for _, attachedPolicy := range role.AttachedManagedPolicies {
+		if policy := getPolicyByArn(attachedPolicy.PolicyArn); policy != nil {
+			if doc := policy.DefaultPolicyDocument(); doc != nil {
+				// Decorate the policy with the role's ARN
+				for stmt := range *doc.Statement {
+					(*doc.Statement)[stmt].OriginArn = attachedPolicy.PolicyArn
+				}
+				identityStatements = append(identityStatements, *doc.Statement...)
+			}
+		}
+	}
+	return identityStatements
 }
