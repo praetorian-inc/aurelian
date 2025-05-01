@@ -9,6 +9,7 @@ import (
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/spf13/cobra"
+	"github.com/praetorian-inc/nebula/internal/helpers"
 )
 
 var (
@@ -31,8 +32,10 @@ func initCommands() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&logLevelFlag, options.LogLevel().Name(), options.LogLevel().Value().(string), "Log level (debug, info, warn, error)")
-	logs.ConfigureDefaults(logLevelFlag)
-
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		logs.ConfigureDefaults(logLevelFlag)
+		helpers.SetAWSCacheLogger(logs.NewLogger())
+	}
 }
 
 func Execute() error {
