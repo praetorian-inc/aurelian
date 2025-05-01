@@ -24,7 +24,16 @@ var AwsOrganizationPolicies = chain.NewModule(
 		"authors":     []string{"Praetorian"},
 		"references": []string{
 			"https://docs.aws.amazon.com/organizations/latest/APIReference/API_ListRoots.html",
+			"https://docs.aws.amazon.com/organizations/latest/APIReference/API_ListOrganizationalUnitsForParent.html",
+			"https://docs.aws.amazon.com/organizations/latest/APIReference/API_ListAccountsForParent.html",
+			"https://docs.aws.amazon.com/organizations/latest/APIReference/API_ListPolicies.html",
+			"https://docs.aws.amazon.com/organizations/latest/APIReference/API_DescribePolicy.html",
+			"https://docs.aws.amazon.com/organizations/latest/APIReference/API_ListTargetsForPolicy.html",
 			"https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/organizations#Client.ListRoots",
+			"https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/organizations#Client.ListOrganizationalUnitsForParent",
+			"https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/organizations#Client.ListAccountsForParent",
+			"https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/organizations#Client.DescribePolicy",
+			"https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/organizations#Client.ListTargetsForPolicy",
 		},
 	}).WithChainInputParam(
 		options.AwsResourceType().Name()),
