@@ -10,8 +10,7 @@ import (
 )
 
 func init() {
-	//AwsAuthorizationDetails.New().Initialize()
-	registry.Register("aws", "recon", "account-auth-detials", *AwsAuthorizationDetails)
+	registry.Register("aws", "recon", "account-auth-details", *AwsAuthorizationDetails)
 }
 
 var AwsAuthorizationDetails = chain.NewModule(

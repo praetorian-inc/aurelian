@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
 	"log/slog"
 	"net/url"
 	"strings"
+
+	"github.com/praetorian-inc/nebula/pkg/outputters"
 
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/praetorian-inc/janus/pkg/chain"
@@ -24,7 +25,7 @@ type JanusAWSAuthorizationDetails struct {
 func NewJanusAWSAuthorizationDetails(configs ...cfg.Config) chain.Link {
 	slog.Debug("Creating JanusAWSAuthorizationDetails link")
 	ad := &JanusAWSAuthorizationDetails{}
-	slog.Debug("Config:", configs)
+	slog.Debug("config:", "config", configs)
 	ad.AwsReconLink = base.NewAwsReconLink(ad, configs...)
 	return ad
 }
@@ -163,7 +164,7 @@ func (a *JanusAWSAuthorizationDetails) GetAccountAuthorizationDetails() error {
 
 	filename := fmt.Sprintf("authorization-details-%s-%s-gaad.json", a.Profile, accountId)
 
-	outputData := outputters.OutputData{
+	outputData := outputters.NamedOutputData{
 		OutputFilename: filename,
 		Data:           authDetails,
 	}
@@ -173,4 +174,13 @@ func (a *JanusAWSAuthorizationDetails) GetAccountAuthorizationDetails() error {
 	slog.Info("Generated authorization details", "filename", filename)
 
 	return nil
+}
+
+func (ad *JanusAWSAuthorizationDetails) Permissions() []cfg.Permission {
+	return []cfg.Permission{
+		{
+			Platform:   "aws",
+			Permission: "iam:GetAccountAuthorizationDetails",
+		},
+	}
 }
