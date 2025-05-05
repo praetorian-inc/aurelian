@@ -200,7 +200,8 @@ func AwsRegions() cfg.Param {
 	return cfg.NewParam[[]string]("regions", "AWS regions to scan").
 		WithDefault([]string{"all"}).
 		WithRegex(regexp.MustCompile(`(?i)^[a-z]{2}\-([a-z]+\-){1,2}\d|all$`)).
-		AsRequired()
+		AsRequired().
+		WithShortcode("r")
 }
 
 func AwsProfile() cfg.Param {
@@ -247,12 +248,10 @@ func AwsDisableCache() cfg.Param {
 		WithDefault(false)
 }
 
-func AwsCommonReconOptions() []cfg.Param {
+func AwsReconBaseOptions() []cfg.Param {
 	return []cfg.Param{
 		AwsProfile(),
 		AwsProfileDir(),
-		AwsRegions(),
-		AwsResourceType(),
 		AwsCacheDir(),
 		AwsCacheExt(),
 		AwsCacheTTL(),
@@ -260,4 +259,14 @@ func AwsCommonReconOptions() []cfg.Param {
 		AwsCacheErrorResp(),
 		AwsDisableCache(),
 	}
+}
+
+func AwsCommonReconOptions() []cfg.Param {
+	baseOpts := AwsReconBaseOptions()
+	return append(baseOpts, []cfg.Param{
+		AwsProfile(),
+		AwsProfileDir(),
+		AwsRegions(),
+		AwsResourceType(),
+	}...)
 }

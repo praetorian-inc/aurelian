@@ -3,10 +3,10 @@ package recon
 import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
 
 func init() {
@@ -30,6 +30,5 @@ var AwsListResources = chain.NewModule(
 ).WithLinks(
 	aws.NewAWSCloudControl,
 ).WithOutputters(
-	// output.NewConsoleOutputter,
-	output.NewJSONOutputter,
+	outputters.NewRuntimeJSONOutputter,
 )

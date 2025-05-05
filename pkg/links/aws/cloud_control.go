@@ -18,7 +18,7 @@ import (
 )
 
 type AWSCloudControl struct {
-	base.AwsReconLink
+	*base.AwsReconLink
 	semaphores          map[string]chan struct{}
 	wg                  sync.WaitGroup
 	cloudControlClients map[string]*cloudcontrol.Client
@@ -40,7 +40,7 @@ func NewAWSCloudControl(configs ...cfg.Config) chain.Link {
 	cc := &AWSCloudControl{
 		wg: sync.WaitGroup{},
 	}
-	cc.Base = chain.NewBase(cc, configs...)
+	cc.AwsReconLink = base.NewAwsReconLink(cc, configs...)
 
 	return cc
 }
