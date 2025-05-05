@@ -19,27 +19,27 @@ import (
 )
 
 type JanusAWSAuthorizationDetails struct {
-	*base.AwsReconLink
+	*base.AwsReconBaseLink
 }
 
 func NewJanusAWSAuthorizationDetails(configs ...cfg.Config) chain.Link {
 	slog.Debug("Creating JanusAWSAuthorizationDetails link")
 	ad := &JanusAWSAuthorizationDetails{}
 	slog.Debug("config:", "config", configs)
-	ad.AwsReconLink = base.NewAwsReconLink(ad, configs...)
+	ad.AwsReconBaseLink = base.NewAwsReconBaseLink(ad, configs...)
 	return ad
 }
 
 func (ad *JanusAWSAuthorizationDetails) Initialize() error {
 	slog.Debug("Initializing JanusAWSAuthorizationDetails")
-	if err := ad.AwsReconLink.Initialize(); err != nil {
+	if err := ad.AwsReconBaseLink.Initialize(); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (ad *JanusAWSAuthorizationDetails) Process(resource string) error {
-	slog.Debug("Beging processing JanusAWSAuthorizationDetails", "regions", ad.Regions, "profile", ad.Profile)
+	slog.Debug("Beging processing JanusAWSAuthorizationDetails", "profile", ad.Profile)
 	return ad.GetAccountAuthorizationDetails()
 }
 
