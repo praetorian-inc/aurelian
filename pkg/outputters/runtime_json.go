@@ -11,12 +11,14 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 )
 
-// OutputData represents the structure that should be sent to the RuntimeJSONOutputter
+// NamedOutputData represents the structure that should be sent to the RuntimeJSONOutputter
 // It contains both the data to be output and the filename to write it to
-type OutputData struct {
+type NamedOutputData struct {
 	OutputFilename string
 	Data           any
 }
+
+const defaultOutfile = "out.json"
 
 // RuntimeJSONOutputter allows specifying the output file at runtime
 // rather than at initialization time
@@ -39,7 +41,7 @@ func (j *RuntimeJSONOutputter) Initialize() error {
 	// Get default output file (can be overridden at runtime)
 	outfile, err := cfg.As[string](j.Arg("jsonoutfile"))
 	if err != nil {
-		outfile = "out.json" // Fallback default
+		outfile = defaultOutfile // Fallback default
 	}
 	j.outfile = outfile
 
@@ -57,9 +59,9 @@ func (j *RuntimeJSONOutputter) Initialize() error {
 // Output stores a value in memory for later writing
 func (j *RuntimeJSONOutputter) Output(val any) error {
 	// Check if we received an OutputData structure
-	if outputData, ok := val.(OutputData); ok {
+	if outputData, ok := val.(NamedOutputData); ok {
 		// If filename is provided, update the output file
-		if outputData.OutputFilename != "" {
+		if outputData.OutputFilename != "" && j.outfile == defaultOutfile {
 			j.SetOutputFile(outputData.OutputFilename)
 		}
 		// Add the actual data to our output list
@@ -96,7 +98,7 @@ func (j *RuntimeJSONOutputter) Complete() error {
 // Params defines the parameters accepted by this outputter
 func (j *RuntimeJSONOutputter) Params() []cfg.Param {
 	return []cfg.Param{
-		cfg.NewParam[string]("jsonoutfile", "the default file to write the JSON to (can be changed at runtime)").WithDefault("out.json"),
+		cfg.NewParam[string]("jsonoutfile", "the default file to write the JSON to (can be changed at runtime)").WithDefault(defaultOutfile),
 		cfg.NewParam[int]("indent", "the number of spaces to use for the JSON indentation").WithDefault(0),
 	}
 }

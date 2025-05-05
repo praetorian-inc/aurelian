@@ -10,25 +10,25 @@ import (
 )
 
 func init() {
-	AwsListResources.New().Initialize()
-	registry.Register("aws", "recon", "list", *AwsListResources)
+	registry.Register("aws", "recon", "account-auth-details", *AwsAuthorizationDetails)
 }
 
-var AwsListResources = chain.NewModule(
+var AwsAuthorizationDetails = chain.NewModule(
 	cfg.NewMetadata(
-		"AWS List Resources",
-		"List resources in an AWS account using Cloud Control API.",
+		"AWS Get Account Authorization Details",
+		"Get authorization details in an AWS account.",
 	).WithProperties(map[string]any{
 		"platform":    "aws",
 		"opsec_level": "moderate",
 		"authors":     []string{"Praetorian"},
 		"references": []string{
-			"https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/what-is-cloudcontrol.html",
-			"https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/supported-resources.html",
+			"https://docs.aws.amazon.com/IAM/latest/APIReference/API_GetAccountAuthorizationDetails.html",
+			"https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/iam#Client.GetAccountAuthorizationDetails",
 		},
-	}).WithChainInputParam(options.AwsResourceType().Name()),
+	}).WithChainInputParam(
+		options.AwsResourceType().Name()),
 ).WithLinks(
-	aws.NewAWSCloudControl,
+	aws.NewJanusAWSAuthorizationDetails,
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
 )
