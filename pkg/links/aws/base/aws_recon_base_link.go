@@ -27,7 +27,7 @@ func NewAwsReconBaseLink(link chain.Link, configs ...cfg.Config) *AwsReconBaseLi
 }
 
 func (a *AwsReconBaseLink) Params() []cfg.Param {
-	return options.AwsCommonReconOptions()
+	return options.AwsReconBaseOptions()
 }
 
 func (a *AwsReconBaseLink) Initialize() error {
