@@ -10,7 +10,6 @@ import (
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/spf13/cobra"
-	"github.com/praetorian-inc/nebula/internal/helpers"
 )
 
 var (

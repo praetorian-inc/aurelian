@@ -18,7 +18,7 @@ import (
 )
 
 type AWSOrganizationPolicies struct {
-	*base.AwsReconLink
+	*base.AwsReconBaseLink
 }
 
 type OrgUnit struct {
@@ -75,20 +75,21 @@ func NewAWSOrganizationPolicies(configs ...cfg.Config) chain.Link {
 	slog.Debug("Creating AWSOrganizationPolicies link")
 	ad := &AWSOrganizationPolicies{}
 	slog.Debug("Config:", configs)
-	ad.AwsReconLink = base.NewAwsReconLink(ad, configs...)
+	ad.AwsReconBaseLink = base.NewAwsReconBaseLink(ad, configs...)
 	return ad
 }
 
 func (ad *AWSOrganizationPolicies) Initialize() error {
 	slog.Debug("Initializing AWSOrganizationPolicies")
-	if err := ad.AwsReconLink.Initialize(); err != nil {
+	if err := ad.AwsReconBaseLink.Initialize(); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (ad *AWSOrganizationPolicies) Process(resource string) error {
-	slog.Debug("Begin processing AWSOrganizationPolicies", "regions", ad.Regions, "profile", ad.Profile)
+func (ad *AWSOrganizationPolicies) Process(_ string) error {
+	// the Process() method signature requires an input even if it is unused
+	slog.Debug("Begin processing AWSOrganizationPolicies", "profile", ad.Profile)
 
 	org_hierarchy, error := ad.CollectOrganizationHierarchy()
 	if error != nil {

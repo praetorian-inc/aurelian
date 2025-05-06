@@ -6,7 +6,6 @@ import (
 	"github.com/praetorian-inc/janus/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/orgpolicies"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
 
 func init() {
@@ -35,10 +34,9 @@ var AwsOrganizationPolicies = chain.NewModule(
 			"https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/organizations#Client.DescribePolicy",
 			"https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/organizations#Client.ListTargetsForPolicy",
 		},
-	}).WithChainInputParam(
-		options.AwsResourceType().Name()),
+	}),
 ).WithLinks(
 	orgpolicies.NewAWSOrganizationPolicies,
 ).WithOutputters(
 	output.NewJSONOutputter,
-)
+).WithAutoRun()
