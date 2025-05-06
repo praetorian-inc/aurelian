@@ -10,11 +10,6 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
-// PublicTypes contains the list of AWS resource types that can have public exposure
-var PublicTypes = []string{
-	"AWS::EC2::Instance",
-}
-
 type AwsPublicResources struct {
 	*base.AwsReconLink
 	resourceMap map[string]func() chain.Chain
@@ -51,8 +46,6 @@ func (a *AwsPublicResources) Process(resourceType string) error {
 	}
 
 	c := rc()
-	// TODO: figure out what changed
-	//c.WithParams(a.Params()...)
 	c.WithConfigs(cfg.WithArgs(a.Args()))
 
 	c.Send(resourceType)
@@ -129,6 +122,13 @@ func (a *AwsPublicResources) ResourceMap() map[string]func() chain.Chain {
 		return chain.NewChain(
 			NewAWSCloudControl(),
 			NewAwsResourcePolicyChecker(),
+		)
+	}
+
+	resourceMap["AWS::RDS::DBInstance"] = func() chain.Chain {
+		return chain.NewChain(
+			NewAWSCloudControl(),
+			NewPropertyFilterLink(cfg.WithArg("property", "PubliclyAccessible")),
 		)
 	}
 

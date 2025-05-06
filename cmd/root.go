@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/internal/registry"
@@ -31,9 +32,10 @@ func initCommands() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&logLevelFlag, options.LogLevel().Name(), options.LogLevel().Value().(string), "Log level (debug, info, warn, error)")
-	//logs.ConfigureDefaults(logLevelFlag)
-	logs.ConfigureDefaults("info")
-
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		logs.ConfigureDefaults(logLevelFlag)
+		helpers.SetAWSCacheLogger(logs.NewLogger())
+	}
 }
 
 func Execute() error {

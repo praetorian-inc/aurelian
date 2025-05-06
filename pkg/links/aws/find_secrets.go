@@ -126,8 +126,6 @@ func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) e
 
 	resourceChain := constructor()
 
-	// TODO: figure out what changed
-	//resourceChain.WithParams(fs.Params()...)
 	resourceChain.WithConfigs(cfg.WithArgs(fs.Args()))
 
 	resourceChain.Send(resource)

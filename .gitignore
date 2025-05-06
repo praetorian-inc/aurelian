@@ -11,3 +11,8 @@ bin/*
 bin
 test/links/*.json
 .vscode/launch.json
+.idea/modules.xml
+.idea/nebula.iml
+.idea/vcs.xml
+.idea/workspace.xml
+debug.log*
