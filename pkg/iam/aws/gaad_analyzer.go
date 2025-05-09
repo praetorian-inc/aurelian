@@ -95,37 +95,37 @@ func (ga *GaadAnalyzer) generateServicePrincipalEvaluations(evalChan chan *Evalu
 	}
 
 	// Proccess AssumeRole policies
-	for _, role := range ga.policyData.Gaad.RoleDetailList {
-		for i, stmt := range *role.AssumeRolePolicyDocument.Statement {
-			(*role.AssumeRolePolicyDocument.Statement)[i].OriginArn = role.Arn
-			(*role.AssumeRolePolicyDocument.Statement)[i].Resource = &types.DynaString{role.Arn}
-			if stmt.Principal != nil && stmt.Principal.Service != nil {
-				for _, service := range *stmt.Principal.Service {
-					for _, action := range *stmt.Action {
-						if isPrivEscAction(action) {
+	// for _, role := range ga.policyData.Gaad.RoleDetailList {
+	// 	for i, stmt := range *role.AssumeRolePolicyDocument.Statement {
+	// 		(*role.AssumeRolePolicyDocument.Statement)[i].OriginArn = role.Arn
+	// 		(*role.AssumeRolePolicyDocument.Statement)[i].Resource = &types.DynaString{role.Arn}
+	// 		if stmt.Principal != nil && stmt.Principal.Service != nil {
+	// 			for _, service := range *stmt.Principal.Service {
+	// 				for _, action := range *stmt.Action {
+	// 					if isPrivEscAction(action) {
 
-							accountID, tags := getResourceDeets(role.Arn)
-							rc := &RequestContext{
-								PrincipalArn:     service,
-								ResourceTags:     tags,
-								PrincipalAccount: accountID,
-								CurrentTime:      time.Now(),
-							}
-							rc.PopulateDefaultRequestConditionKeys(role.Arn)
+	// 						accountID, tags := getResourceDeets(role.Arn)
+	// 						rc := &RequestContext{
+	// 							PrincipalArn:     service,
+	// 							ResourceTags:     tags,
+	// 							PrincipalAccount: accountID,
+	// 							CurrentTime:      time.Now(),
+	// 						}
+	// 						rc.PopulateDefaultRequestConditionKeys(role.Arn)
 
-							evalReq := &EvaluationRequest{
-								Action:             action,
-								Resource:           role.Arn,
-								IdentityStatements: role.AssumeRolePolicyDocument.Statement,
-								Context:            rc,
-							}
-							evalChan <- evalReq
-						}
-					}
-				}
-			}
-		}
-	}
+	// 						evalReq := &EvaluationRequest{
+	// 							Action:             action,
+	// 							Resource:           role.Arn,
+	// 							IdentityStatements: role.AssumeRolePolicyDocument.Statement,
+	// 							Context:            rc,
+	// 						}
+	// 						evalChan <- evalReq
+	// 					}
+	// 				}
+	// 			}
+	// 		}
+	// 	}
+	// }
 }
 
 func (ga *GaadAnalyzer) generateServiceEvaluations(resourceArn string, policy *types.Policy) *EvaluationRequest {
@@ -222,7 +222,7 @@ func (ga *GaadAnalyzer) processUserPermissions(user types.UserDL, evalChan chan<
 	}
 
 	// Extract and process actions/resources
-	allActions := extractActions(&identityStatements)
+	allActions := ExtractActions(&identityStatements)
 
 	// Generate evaluation requests
 	for _, action := range allActions {
@@ -329,7 +329,7 @@ func (ga *GaadAnalyzer) processRolePermissions(role types.RoleDL, evalChan chan<
 	}
 
 	// Extract and process actions/resources
-	allActions := extractActions(&identityStatements)
+	allActions := ExtractActions(&identityStatements)
 
 	// Generate evaluation requests
 	for _, action := range allActions {

@@ -94,7 +94,7 @@ func expandActionsWithStage(actions types.DynaString) []string {
 	return expandedActions
 }
 
-func extractActions(psl *types.PolicyStatementList) []string {
+func ExtractActions(psl *types.PolicyStatementList) []string {
 	actions := []string{}
 	for _, statement := range *psl {
 		if statement.Action != nil {

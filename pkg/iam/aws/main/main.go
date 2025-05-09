@@ -198,12 +198,12 @@ func loadPolicies(config *Config) (*aws.PolicyData, error) {
 			return nil, fmt.Errorf("failed to load resources: %w", err)
 		}
 
-		//policies.Resources = ResourceFilter(resources)
-		for _, resource := range *resources {
-			if strings.Contains(resource.TypeName, "AWS::IAM::") {
-				slog.Debug("Resource type: "+resource.TypeName, slog.String("arn", resource.Arn.String()))
-			}
-		}
+		// //policies.Resources = ResourceFilter(resources)
+		// for _, resource := range *resources {
+		// 	if strings.Contains(resource.TypeName, "AWS::IAM::") {
+		// 		slog.Debug("Resource type: "+resource.TypeName, slog.String("arn", resource.Arn.String()))
+		// 	}
+		// }
 		slog.Warn("Loaded resources", slog.Int("count", len(*resources)))
 	}
 

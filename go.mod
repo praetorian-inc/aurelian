@@ -4,7 +4,9 @@ go 1.23.4
 
 toolchain go1.24.2
 
-replace github.com/praetorian-inc/konstellation => github.com/praetorian-inc/konstellation-go v0.0.0-20250421232724-bc1d1afaecc2
+//replace github.com/praetorian-inc/konstellation => github.com/praetorian-inc/konstellation-go v0.0.0-20250421232724-bc1d1afaecc2
+replace github.com/praetorian-inc/konstellation => /Users/zachgrace/tools/konstellation-go
+replace github.com/praetorian-inc/janus => /Users/zachgrace/tools/janus
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.16.0
@@ -93,6 +95,7 @@ require (
 	github.com/itchyny/timefmt-go v0.1.6 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
+	github.com/mark3labs/mcp-go v0.26.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/microsoft/kiota-abstractions-go v1.8.1 // indirect
 	github.com/microsoft/kiota-authentication-azure-go v1.1.0 // indirect
@@ -104,7 +107,6 @@ require (
 	github.com/microsoftgraph/msgraph-sdk-go-core v1.2.1 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/sys/user v0.4.0 // indirect
-	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
@@ -112,7 +114,9 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/seancfoley/bintree v1.3.1 // indirect
+	github.com/spf13/cast v1.7.1 // indirect
 	github.com/std-uritemplate/std-uritemplate/go/v2 v2.0.1 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.60.0 // indirect
 	go.opentelemetry.io/otel v1.35.0 // indirect

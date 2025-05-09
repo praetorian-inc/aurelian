@@ -3,6 +3,7 @@ package aws
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
@@ -87,49 +88,59 @@ func (ps *PermissionsSummary) FullResults() []FullResult {
 		if perms, ok := value.(*PrincipalPermissions); ok {
 			// Convert ResourcePerms sync.Map to map, skipping empty resources
 			perms.ResourcePerms.Range(func(resKey, resValue interface{}) bool {
-				if resPerm, ok := resValue.(*ResourcePermission); ok {
-					// Only include resources that have allowed or denied actions
-					if len(resPerm.AllowedActions) > 0 {
-						resArn := resKey.(string)
+				resPerm, ok := resValue.(*ResourcePermission)
 
-						// Get the resource from the cache
-						if resource, ok := resourceCache[resArn]; ok {
-							for _, action := range resPerm.AllowedActions {
-								if principal, ok := userCache[perms.PrincipalArn]; ok {
-									results = append(results, FullResult{
-										Principal: principal,
-										Resource:  resource,
-										Action:    action.Name,
-										Result:    action.EvaluationResult,
-									})
-								} else if principal, ok := roleCache[perms.PrincipalArn]; ok {
-									results = append(results, FullResult{
-										Principal: principal,
-										Resource:  resource,
-										Action:    action.Name,
-										Result:    action.EvaluationResult,
-									})
-								} else if principal, ok := groupCache[perms.PrincipalArn]; ok {
-									results = append(results, FullResult{
-										Principal: principal,
-										Resource:  resource,
-										Action:    action.Name,
-										Result:    action.EvaluationResult,
-									})
-								} else {
-									results = append(results, FullResult{
-										Principal: perms.PrincipalArn,
-										Resource:  resource,
-										Action:    action.Name,
-										Result:    action.EvaluationResult,
-									})
-								}
+				if !ok {
+					slog.Error("Resource permission not found", "resource", resKey)
+					return false
+				}
 
-							}
+				// Only include resources that have allowed or denied actions
+				if len(resPerm.AllowedActions) > 0 {
+					resArn := resKey.(string)
+
+					// Get the resource from the cache
+					resource, ok := resourceCache[resArn]
+					if !ok {
+						slog.Error("Resource not found in cache", "resource", resArn)
+						return false
+					}
+
+					for _, action := range resPerm.AllowedActions {
+						if principal, ok := userCache[perms.PrincipalArn]; ok {
+							results = append(results, FullResult{
+								Principal: principal,
+								Resource:  resource,
+								Action:    action.Name,
+								Result:    action.EvaluationResult,
+							})
+						} else if principal, ok := roleCache[perms.PrincipalArn]; ok {
+							results = append(results, FullResult{
+								Principal: principal,
+								Resource:  resource,
+								Action:    action.Name,
+								Result:    action.EvaluationResult,
+							})
+						} else if principal, ok := groupCache[perms.PrincipalArn]; ok {
+							results = append(results, FullResult{
+								Principal: principal,
+								Resource:  resource,
+								Action:    action.Name,
+								Result:    action.EvaluationResult,
+							})
+						} else {
+							results = append(results, FullResult{
+								Principal: perms.PrincipalArn,
+								Resource:  resource,
+								Action:    action.Name,
+								Result:    action.EvaluationResult,
+							})
 						}
 
 					}
+
 				}
+
 				return true
 			})
 		}

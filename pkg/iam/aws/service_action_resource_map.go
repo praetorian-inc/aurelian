@@ -259,8 +259,9 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"policy": regexp.MustCompile(`^arn:aws:iam::(\d{12}|aws):policy/.*`),
 		},
 		ActionResourceMap: map[string][]string{
-			"assumerole":         {"role"},
-			"getfederationtoken": {"policy"},
+			"assumerole": {"role"},
+			// TODO: populate resources with federated users
+			//"getfederationtoken": {"federated-user"},
 		},
 	},
 	"lambda": {

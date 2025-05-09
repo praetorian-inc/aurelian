@@ -533,6 +533,15 @@ func (e *PolicyEvaluator) hasExplicitPrincipalAllow(statements *types.PolicyStat
 				}
 			}
 		}
+
+		// Check service principals
+		if statement.Principal.Service != nil {
+			for _, allowedService := range *statement.Principal.Service {
+				if allowedService == principalArn {
+					return true
+				}
+			}
+		}
 	}
 	return false
 }

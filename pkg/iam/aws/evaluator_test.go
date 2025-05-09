@@ -843,3 +843,123 @@ func TestPolicyEvaluator_SCPServiceLinkedRole(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, result.Allowed)
 }
+
+func TestHasExplicitPrincipalAllow(t *testing.T) {
+	evaluator := NewPolicyEvaluator(&PolicyData{})
+
+	tests := []struct {
+		name         string
+		statements   *types.PolicyStatementList
+		principalArn string
+		want         bool
+	}{
+		{
+			name: "Direct ARN match",
+			statements: &types.PolicyStatementList{
+				{
+					Effect: "Allow",
+					Principal: &types.Principal{
+						AWS: &types.DynaString{"arn:aws:iam::111122223333:user/test-user"},
+					},
+				},
+			},
+			principalArn: "arn:aws:iam::111122223333:user/test-user",
+			want:         true,
+		},
+		{
+			name: "Wildcard match",
+			statements: &types.PolicyStatementList{
+				{
+					Effect: "Allow",
+					Principal: &types.Principal{
+						AWS: &types.DynaString{"*"},
+					},
+				},
+			},
+			principalArn: "arn:aws:iam::111122223333:user/test-user",
+			want:         true,
+		},
+		{
+			name: "Root account match",
+			statements: &types.PolicyStatementList{
+				{
+					Effect: "Allow",
+					Principal: &types.Principal{
+						AWS: &types.DynaString{"arn:aws:iam::111122223333:root"},
+					},
+				},
+			},
+			principalArn: "arn:aws:iam::111122223333:user/test-user",
+			want:         true,
+		},
+		{
+			name: "Account wildcard match",
+			statements: &types.PolicyStatementList{
+				{
+					Effect: "Allow",
+					Principal: &types.Principal{
+						AWS: &types.DynaString{"arn:aws:iam::111122223333:*"},
+					},
+				},
+			},
+			principalArn: "arn:aws:iam::111122223333:user/test-user",
+			want:         true,
+		},
+		{
+			name: "No match",
+			statements: &types.PolicyStatementList{
+				{
+					Effect: "Allow",
+					Principal: &types.Principal{
+						AWS: &types.DynaString{"arn:aws:iam::999988887777:user/other-user"},
+					},
+				},
+			},
+			principalArn: "arn:aws:iam::111122223333:user/test-user",
+			want:         false,
+		},
+		{
+			name: "Deny statement",
+			statements: &types.PolicyStatementList{
+				{
+					Effect: "Deny",
+					Principal: &types.Principal{
+						AWS: &types.DynaString{"arn:aws:iam::111122223333:user/test-user"},
+					},
+				},
+			},
+			principalArn: "arn:aws:iam::111122223333:user/test-user",
+			want:         false,
+		},
+		{
+			name: "No Principal",
+			statements: &types.PolicyStatementList{
+				{
+					Effect: "Allow",
+				},
+			},
+			principalArn: "arn:aws:iam::111122223333:user/test-user",
+			want:         false,
+		},
+		{
+			name: "AWS Service Principal Match",
+			statements: &types.PolicyStatementList{
+				{
+					Effect: "Allow",
+					Principal: &types.Principal{
+						Service: &types.DynaString{"glue.amazonaws.com"},
+					},
+				},
+			},
+			principalArn: "glue.amazonaws.com",
+			want:         true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := evaluator.hasExplicitPrincipalAllow(tt.statements, tt.principalArn)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

@@ -20,6 +20,17 @@ type EnrichedResourceDescription struct {
 	Arn        arn.ARN     `json:"Arn"`
 }
 
+func (e *EnrichedResourceDescription) ToArn() arn.ARN {
+	a := arn.ARN{
+		Partition: "aws",
+		Service:   e.Service(),
+		Region:    e.Region,
+		AccountID: e.AccountId,
+		Resource:  e.Identifier,
+	}
+	return a
+}
+
 func NewEnrichedResourceDescription(identifier, typeName, region, accountId string, properties interface{}) EnrichedResourceDescription {
 	a := arn.ARN{}
 	switch typeName {
@@ -93,15 +104,52 @@ func NewEnrichedResourceDescriptionFromArn(a string) (EnrichedResourceDescriptio
 	}, nil
 }
 
-func (e *EnrichedResourceDescription) ToArn() arn.ARN {
-	a := arn.ARN{
-		Partition: "aws",
-		Service:   e.Service(),
-		Region:    e.Region,
-		AccountID: e.AccountId,
-		Resource:  e.Identifier,
+func NewEnrichedResourceDescriptionFromRoleDL(roleDL RoleDL) *EnrichedResourceDescription {
+	arn, _ := arn.Parse(roleDL.Arn)
+
+	return &EnrichedResourceDescription{
+		Identifier: roleDL.RoleName,
+		TypeName:   "AWS::IAM::Role",
+		Region:     "",
+		AccountId:  arn.AccountID,
+		Arn:        arn,
 	}
-	return a
+}
+
+func NewEnrichedResourceDescriptionFromPolicyDL(policyDL PoliciesDL) *EnrichedResourceDescription {
+	arn, _ := arn.Parse(policyDL.Arn)
+
+	return &EnrichedResourceDescription{
+		Identifier: policyDL.PolicyName,
+		TypeName:   "AWS::IAM::ManagedPolicy",
+		Region:     "",
+		AccountId:  arn.AccountID,
+		Arn:        arn,
+	}
+}
+
+func NewEnrichedResourceDescriptionFromUserDL(userDL UserDL) *EnrichedResourceDescription {
+	arn, _ := arn.Parse(userDL.Arn)
+
+	return &EnrichedResourceDescription{
+		Identifier: userDL.UserName,
+		TypeName:   "AWS::IAM::User",
+		Region:     "",
+		AccountId:  arn.AccountID,
+		Arn:        arn,
+	}
+}
+
+func NewEnrichedResourceDescriptionFromGroupDL(groupDL GroupDL) *EnrichedResourceDescription {
+	arn, _ := arn.Parse(groupDL.Arn)
+
+	return &EnrichedResourceDescription{
+		Identifier: groupDL.GroupName,
+		TypeName:   "AWS::IAM::Group",
+		Region:     "",
+		AccountId:  arn.AccountID,
+		Arn:        arn,
+	}
 }
 
 // Helper struct to unmarshal the Properties JSON string

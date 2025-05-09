@@ -83,6 +83,21 @@ func initializeResourceCache(wg *sync.WaitGroup, pd *PolicyData) {
 			resourceCache[arn] = resource
 		}
 	}
+
+	// Cloud Control doesn't return sufficient information to populate the resource cache
+	// for IAM resources, so we need to do it manually
+	for _, role := range pd.Gaad.RoleDetailList {
+		resourceCache[role.Arn] = types.NewEnrichedResourceDescriptionFromRoleDL(role)
+	}
+	for _, policy := range pd.Gaad.Policies {
+		resourceCache[policy.Arn] = types.NewEnrichedResourceDescriptionFromPolicyDL(policy)
+	}
+	for _, user := range pd.Gaad.UserDetailList {
+		resourceCache[user.Arn] = types.NewEnrichedResourceDescriptionFromUserDL(user)
+	}
+	for _, group := range pd.Gaad.GroupDetailList {
+		resourceCache[group.Arn] = types.NewEnrichedResourceDescriptionFromGroupDL(group)
+	}
 }
 
 // addServicesToResourceCache adds common AWS services to the resource cache

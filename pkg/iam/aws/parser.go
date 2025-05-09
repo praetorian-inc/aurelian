@@ -95,66 +95,25 @@ func (p *PrincipalPermissions) MarshalJSON() ([]byte, error) {
 
 	return json.Marshal(struct {
 		PrincipalArn  string                         `json:"principal_arn"`
-		AccountID     string                         `json:"account_id"`
 		ResourcePerms map[string]*ResourcePermission `json:"resource_permissions"`
 	}{
 		PrincipalArn:  p.PrincipalArn,
-		AccountID:     p.AccountID,
 		ResourcePerms: resourcePerms,
-	})
-}
-
-// AddPermission safely adds or updates a permission for a principal
-func (ps *PermissionsSummary) AddPermission(principalArn, resourceArn, action string, allowed bool, eval *EvaluationResult) {
-	// Get or create principal permissions
-	val, _ := ps.Permissions.LoadOrStore(principalArn, NewPrincipalPermissions(principalArn, getAccountFromArn(principalArn)))
-	perms := val.(*PrincipalPermissions)
-
-	// Add the resource permission
-	perms.AddResourcePermission(resourceArn, action, allowed, eval)
-}
-
-// GetPrincipals returns a sorted list of all principal ARNs
-func (ps *PermissionsSummary) GetPrincipals() []string {
-	principals := make([]string, 0)
-	ps.Permissions.Range(func(key, value interface{}) bool {
-		principals = append(principals, key.(string))
-		return true
-	})
-	sort.Strings(principals)
-	return principals
-}
-
-// MarshalJSON implements custom JSON marshaling
-func (ps *PermissionsSummary) MarshalJSON() ([]byte, error) {
-	// Convert sync.Map to regular map for marshaling
-	permissions := make(map[string]*PrincipalPermissions)
-	ps.Permissions.Range(func(key, value interface{}) bool {
-		permissions[key.(string)] = value.(*PrincipalPermissions)
-		return true
-	})
-
-	return json.Marshal(struct {
-		Permissions map[string]*PrincipalPermissions `json:"permissions"`
-	}{
-		Permissions: permissions,
 	})
 }
 
 // PrincipalPermissions contains all permissions for a single principal
 type PrincipalPermissions struct {
 	PrincipalArn  string
-	AccountID     string
 	ResourcePerms sync.Map // Key is resource ARN, value is *ResourcePermission
 
 	mu sync.RWMutex
 }
 
 // NewPrincipalPermissions creates a new PrincipalPermissions instance
-func NewPrincipalPermissions(principalArn string, accountId string) *PrincipalPermissions {
+func NewPrincipalPermissions(principalArn string) *PrincipalPermissions {
 	return &PrincipalPermissions{
 		PrincipalArn:  principalArn,
-		AccountID:     accountId,
 		ResourcePerms: sync.Map{},
 	}
 }

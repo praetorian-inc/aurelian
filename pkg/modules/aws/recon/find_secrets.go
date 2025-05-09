@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	registry.Register("aws", "recon", "find-secrets", *AWSFindSecrets)
+	registry.Register("aws", "recon", AWSFindSecrets.Metadata().Properties()["id"].(string), *AWSFindSecrets)
 }
 
 var AWSFindSecrets = chain.NewModule(
@@ -20,6 +20,7 @@ var AWSFindSecrets = chain.NewModule(
 		"AWS Find Secrets",
 		"Enumerate AWS resources and find secrets using NoseyParker",
 	).WithProperties(map[string]any{
+		"id":          "find-secrets",
 		"platform":    "aws",
 		"opsec_level": "moderate",
 		"authors":     []string{"Praetorian"},
