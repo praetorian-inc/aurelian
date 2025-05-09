@@ -191,13 +191,13 @@ func (ad *AWSOrganizationPolicies) BuildOrgPoliciesFromHierarchy(ou *OrgUnit, sc
 }
 
 func (a *AWSOrganizationPolicies) CollectOrganizationHierarchy() (*OrgUnit, error) {
-	slog.Debug("Getting Account Authorization Details", "profile", a.Profile)
-	print("Getting Account Authorization Details", "profile", a.Profile)
+	slog.Debug("Collecting Organization Hierarchy", "profile", a.Profile)
+	print("Collecting Organization Hierarchy", "profile", a.Profile)
 
 	// We'll use us-east-1 for IAM since it's a global service
 	region := "us-east-1"
 
-	slog.Debug("Getting Account Authorization Details: Set region to ", "region", region)
+	slog.Debug("Collecting Organization Hierarchy: Set region to ", "region", region)
 
 	config, err := a.GetConfig(region, options.JanusParamAdapter(a.Params()))
 	if err != nil {
