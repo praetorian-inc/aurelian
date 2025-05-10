@@ -247,6 +247,11 @@ func AwsDisableCache() cfg.Param {
 		WithDefault(false)
 }
 
+func AwsOrgPolicies() cfg.Param {
+	return cfg.NewParam[string]("org-policies", "Enable organization policies").
+		WithShortcode("op")
+}
+
 func AwsCommonReconOptions() []cfg.Param {
 	return []cfg.Param{
 		AwsProfile(),

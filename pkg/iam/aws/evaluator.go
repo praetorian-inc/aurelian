@@ -22,9 +22,22 @@ func NewPolicyData(gaad *types.Gaad, scp, rcp *types.PolicyStatementList, resour
 		resourcePolicies = make(map[string]*types.Policy, 0)
 	}
 
+	pd := &PolicyData{
+		Gaad:             gaad,
+		SCP:              scp,
+		RCP:              rcp,
+		ResourcePolicies: resourcePolicies,
+		Resources:        resources,
+	}
+
+	pd.AddResourcePolicies()
+	return pd
+}
+
+func (pd *PolicyData) AddResourcePolicies() {
 	// Create resource polices from role assume role policies
-	if gaad != nil {
-		for _, role := range gaad.RoleDetailList {
+	if pd.Gaad != nil {
+		for _, role := range pd.Gaad.RoleDetailList {
 			if role.AssumeRolePolicyDocument.Statement != nil {
 				// Create copy of statements to avoid modifying original
 				stmtCopy := make(types.PolicyStatementList, len(*role.AssumeRolePolicyDocument.Statement))
@@ -37,19 +50,11 @@ func NewPolicyData(gaad *types.Gaad, scp, rcp *types.PolicyStatementList, resour
 				}
 
 				// Add to resource policies map
-				resourcePolicies[role.Arn] = &types.Policy{
+				pd.ResourcePolicies[role.Arn] = &types.Policy{
 					Statement: &stmtCopy,
 				}
 			}
 		}
-	}
-
-	return &PolicyData{
-		Gaad:             gaad,
-		SCP:              scp,
-		RCP:              rcp,
-		ResourcePolicies: resourcePolicies,
-		Resources:        resources,
 	}
 }
 

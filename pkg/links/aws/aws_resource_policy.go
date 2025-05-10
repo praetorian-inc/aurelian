@@ -215,9 +215,11 @@ func strToPolicy(s string) (*types.Policy, error) {
 	return &p, nil
 }
 
+type PolicyGetter func(ctx context.Context, cfg aws.Config, identifier string) (*types.Policy, error)
+
 type ServicePolicyConfig struct {
 	// GetPolicy retrieves the policy for the given identifier
-	GetPolicy func(ctx context.Context, cfg aws.Config, identifier string) (*types.Policy, error)
+	GetPolicy PolicyGetter
 
 	// IdentifierField is the name of the field in ResourceDescription.Properties to use as identifier
 	IdentifierField string
@@ -229,166 +231,210 @@ type ServicePolicyConfig struct {
 // ServiceMap maps AWS resource types to their policy checking configurations
 var ServiceMap = map[string]ServicePolicyConfig{
 	"AWS::S3::Bucket": {
-		GetPolicy: func(ctx context.Context, cfg aws.Config, bucketName string) (*types.Policy, error) {
-			client := s3.NewFromConfig(cfg)
-			resp, err := client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
-				Bucket: aws.String(bucketName),
-			})
-			if err != nil {
-				if strings.Contains(err.Error(), "NoSuchBucketPolicy") {
-					return nil, err
-				}
-				return nil, err
-			}
-			if resp.Policy == nil {
-				return nil, nil
-			}
-			policy, err := strToPolicy(*resp.Policy)
-			if err != nil {
-				return nil, err
-			}
-
-			return policy, nil
-		},
+		GetPolicy:       ServicePolicyFuncMap["AWS::S3::Bucket"],
 		IdentifierField: "BucketName",
 		PolicyField:     "AccessPolicy",
 	},
 	"AWS::SNS::Topic": {
-		GetPolicy: func(ctx context.Context, cfg aws.Config, topicArn string) (*types.Policy, error) {
-			client := sns.NewFromConfig(cfg)
-			resp, err := client.GetTopicAttributes(ctx, &sns.GetTopicAttributesInput{
-				TopicArn: aws.String(topicArn),
-			})
-			if err != nil {
-				// Handle "no policy" errors gracefully
-				if strings.Contains(err.Error(), "NoSuchEntityException") {
-					return &types.Policy{}, nil
-				}
-				return &types.Policy{}, err
-			}
-			pol, ok := resp.Attributes["Policy"]
-			if !ok {
-				return &types.Policy{}, errors.New("no policy found")
-			}
-
-			policy, err := strToPolicy(pol)
-			if err != nil {
-				return nil, err
-			}
-
-			return policy, nil
-		},
+		GetPolicy:       ServicePolicyFuncMap["AWS::SNS::Topic"],
 		IdentifierField: "TopicArn",
 		PolicyField:     "AccessPolicy",
 	},
 	"AWS::SQS::Queue": {
-		GetPolicy: func(ctx context.Context, cfg aws.Config, queueUrl string) (*types.Policy, error) {
-			client := sqs.NewFromConfig(cfg)
-			resp, err := client.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
-				QueueUrl:       aws.String(queueUrl),
-				AttributeNames: []sqstypes.QueueAttributeName{"Policy"},
-			})
-			if err != nil {
-				// Handle "no policy" errors gracefully
-				if strings.Contains(err.Error(), "NoSuchEntityException") {
-					return &types.Policy{}, nil
-				}
-				return nil, err
-			}
-			pol, ok := resp.Attributes["Policy"]
-			if !ok {
-				return nil, errors.New("no policy found")
-			}
-
-			policy, err := strToPolicy(pol)
-			if err != nil {
-				return nil, err
-			}
-
-			return policy, nil
-		},
+		GetPolicy:       ServicePolicyFuncMap["AWS::SQS::Queue"],
 		IdentifierField: "QueueUrl",
 		PolicyField:     "AccessPolicy",
 	},
 	"AWS::Lambda::Function": {
-		GetPolicy: func(ctx context.Context, cfg aws.Config, functionName string) (*types.Policy, error) {
-			client := lambda.NewFromConfig(cfg)
-			resp, err := client.GetPolicy(ctx, &lambda.GetPolicyInput{
-				FunctionName: aws.String(functionName),
-			})
-			if err != nil {
-				// Handle "no policy" errors gracefully
-				if strings.Contains(err.Error(), "ResourceNotFoundException") {
-					return nil, errors.New("no policy found")
-				}
-				return nil, err
-			}
-			if resp.Policy == nil {
-				return nil, errors.New("no policy found")
-			}
-
-			policy, err := strToPolicy(*resp.Policy)
-			if err != nil {
-				return nil, err
-			}
-
-			return policy, nil
-		},
+		GetPolicy:       ServicePolicyFuncMap["AWS::Lambda::Function"],
 		IdentifierField: "FunctionName",
 		PolicyField:     "AccessPolicy",
 	},
 	"AWS::EFS::FileSystem": {
-		GetPolicy: func(ctx context.Context, cfg aws.Config, fileSystemId string) (*types.Policy, error) {
-			client := efs.NewFromConfig(cfg)
-			resp, err := client.DescribeFileSystemPolicy(ctx, &efs.DescribeFileSystemPolicyInput{
-				FileSystemId: aws.String(fileSystemId),
-			})
-			if err != nil {
-				// Handle "no policy" errors gracefully
-				if strings.Contains(err.Error(), "PolicyNotFound") ||
-					strings.Contains(err.Error(), "FileSystemNotFound") {
-					return nil, err
-				}
-				return nil, err
-			}
-			if resp.Policy == nil {
-				return nil, nil
-			}
-			policy, err := strToPolicy(*resp.Policy)
-			if err != nil {
-				return nil, err
-			}
-
-			return policy, nil
-		},
+		GetPolicy:       ServicePolicyFuncMap["AWS::EFS::FileSystem"],
 		IdentifierField: "FileSystemId",
 		PolicyField:     "AccessPolicy",
 	},
 	"AWS::ElasticSearch::Domain": {
-		GetPolicy: func(ctx context.Context, cfg aws.Config, domainName string) (*types.Policy, error) {
-			client := elasticsearchservice.NewFromConfig(cfg)
-			resp, err := client.DescribeElasticsearchDomainConfig(ctx, &elasticsearchservice.DescribeElasticsearchDomainConfigInput{
-				DomainName: aws.String(domainName),
-			})
-			if err != nil {
-				// Handle "no policy" errors gracefully
-				if strings.Contains(err.Error(), "ResourceNotFoundException") {
-					return nil, err
-				}
-				return nil, err
-			}
-			if resp.DomainConfig.AccessPolicies == nil || resp.DomainConfig.AccessPolicies.Options == nil {
-				return nil, errors.New("no policy found")
-			}
-
-			policy, err := strToPolicy(*resp.DomainConfig.AccessPolicies.Options)
-			if err != nil {
-				return nil, err
-			}
-
-			return policy, nil
-		},
+		GetPolicy:       ServicePolicyFuncMap["AWS::ElasticSearch::Domain"],
 		IdentifierField: "DomainName",
 		PolicyField:     "AccessPolicy",
 	},
+}
+
+var ServicePolicyFuncMap = map[string]PolicyGetter{
+	"AWS::Lambda::Function": func(ctx context.Context, cfg aws.Config, functionName string) (*types.Policy, error) {
+		client := lambda.NewFromConfig(cfg)
+		resp, err := client.GetPolicy(ctx, &lambda.GetPolicyInput{
+			FunctionName: aws.String(functionName),
+		})
+		if err != nil {
+			// Handle "no policy" errors gracefully
+			if strings.Contains(err.Error(), "ResourceNotFoundException") {
+				return nil, errors.New("no policy found")
+			}
+			return nil, err
+		}
+		if resp.Policy == nil {
+			return nil, errors.New("no policy found")
+		}
+
+		policy, err := strToPolicy(*resp.Policy)
+		if err != nil {
+			return nil, err
+		}
+
+		return policy, nil
+	},
+	"AWS::S3::Bucket": func(ctx context.Context, cfg aws.Config, bucketName string) (*types.Policy, error) {
+		client := s3.NewFromConfig(cfg)
+		resp, err := client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
+			Bucket: aws.String(bucketName),
+		})
+		if err != nil {
+			if strings.Contains(err.Error(), "NoSuchBucketPolicy") {
+				return nil, err
+			}
+			return nil, err
+		}
+		if resp.Policy == nil {
+			return nil, nil
+		}
+		policy, err := strToPolicy(*resp.Policy)
+		if err != nil {
+			return nil, err
+		}
+
+		return policy, nil
+	},
+	"AWS::EFS::FileSystem": func(ctx context.Context, cfg aws.Config, fileSystemId string) (*types.Policy, error) {
+		client := efs.NewFromConfig(cfg)
+		resp, err := client.DescribeFileSystemPolicy(ctx, &efs.DescribeFileSystemPolicyInput{
+			FileSystemId: aws.String(fileSystemId),
+		})
+		if err != nil {
+			// Handle "no policy" errors gracefully
+			if strings.Contains(err.Error(), "PolicyNotFound") ||
+				strings.Contains(err.Error(), "FileSystemNotFound") {
+				return nil, err
+			}
+			return nil, err
+		}
+		if resp.Policy == nil {
+			return nil, nil
+		}
+		policy, err := strToPolicy(*resp.Policy)
+		if err != nil {
+			return nil, err
+		}
+
+		return policy, nil
+	},
+	"AWS::SQS::Queue": func(ctx context.Context, cfg aws.Config, queueUrl string) (*types.Policy, error) {
+		client := sqs.NewFromConfig(cfg)
+		resp, err := client.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
+			QueueUrl:       aws.String(queueUrl),
+			AttributeNames: []sqstypes.QueueAttributeName{"Policy"},
+		})
+		if err != nil {
+			// Handle "no policy" errors gracefully
+			if strings.Contains(err.Error(), "NoSuchEntityException") {
+				return &types.Policy{}, nil
+			}
+			return nil, err
+		}
+		pol, ok := resp.Attributes["Policy"]
+		if !ok {
+			return nil, errors.New("no policy found")
+		}
+
+		policy, err := strToPolicy(pol)
+		if err != nil {
+			return nil, err
+		}
+
+		return policy, nil
+	},
+	"AWS::ElasticSearch::Domain": func(ctx context.Context, cfg aws.Config, domainName string) (*types.Policy, error) {
+		client := elasticsearchservice.NewFromConfig(cfg)
+		resp, err := client.DescribeElasticsearchDomainConfig(ctx, &elasticsearchservice.DescribeElasticsearchDomainConfigInput{
+			DomainName: aws.String(domainName),
+		})
+		if err != nil {
+			// Handle "no policy" errors gracefully
+			if strings.Contains(err.Error(), "ResourceNotFoundException") {
+				return nil, err
+			}
+			return nil, err
+		}
+		if resp.DomainConfig.AccessPolicies == nil || resp.DomainConfig.AccessPolicies.Options == nil {
+			return nil, errors.New("no policy found")
+		}
+
+		policy, err := strToPolicy(*resp.DomainConfig.AccessPolicies.Options)
+		if err != nil {
+			return nil, err
+		}
+
+		return policy, nil
+	},
+	"AWS::SNS::Topic": func(ctx context.Context, cfg aws.Config, topicArn string) (*types.Policy, error) {
+		client := sns.NewFromConfig(cfg)
+		resp, err := client.GetTopicAttributes(ctx, &sns.GetTopicAttributesInput{
+			TopicArn: aws.String(topicArn),
+		})
+		if err != nil {
+			// Handle "no policy" errors gracefully
+			if strings.Contains(err.Error(), "NoSuchEntityException") {
+				return &types.Policy{}, nil
+			}
+			return &types.Policy{}, err
+		}
+		pol, ok := resp.Attributes["Policy"]
+		if !ok {
+			return &types.Policy{}, errors.New("no policy found")
+		}
+
+		policy, err := strToPolicy(pol)
+		if err != nil {
+			return nil, err
+		}
+
+		return policy, nil
+	},
+}
+
+type AwsResourcePolicyFetcher struct {
+	*base.AwsReconLink
+}
+
+func NewAwsResourcePolicyFetcher(configs ...cfg.Config) chain.Link {
+	r := &AwsResourcePolicyFetcher{}
+	r.AwsReconLink = base.NewAwsReconLink(r, configs...)
+	return r
+}
+
+func (a *AwsResourcePolicyFetcher) Process(resource *types.EnrichedResourceDescription) error {
+	// Get the policy getter function for this resource type
+	policyGetter, ok := ServicePolicyFuncMap[resource.Identifier]
+	if !ok {
+		return fmt.Errorf("unsupported resource type: %s", resource.Identifier)
+	}
+
+	// Get AWS config from the link parameters
+	awsCfg, err := a.GetConfig(resource.Region, options.JanusParamAdapter(a.Params()))
+	if err != nil {
+		return fmt.Errorf("failed to get AWS config: %w", err)
+	}
+
+	// Get the policy
+	policy, err := policyGetter(a.ContextHolder.Context(), awsCfg, resource.Identifier)
+	if err != nil {
+		return fmt.Errorf("failed to get policy: %w", err)
+	}
+
+	// Send the policy downstream
+	a.Send(policy)
+	return nil
+
 }

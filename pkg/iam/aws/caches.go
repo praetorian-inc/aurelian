@@ -49,9 +49,6 @@ func initializeRoleCache(wg *sync.WaitGroup, pd *PolicyData) {
 	for i := range pd.Gaad.RoleDetailList {
 		role := &pd.Gaad.RoleDetailList[i]
 		roleCache[role.Arn] = role
-
-		// Add the role's policy document to the resource policy cache
-		pd.ResourcePolicies[role.Arn] = &role.AssumeRolePolicyDocument
 	}
 }
 
