@@ -6,6 +6,7 @@ toolchain go1.24.2
 
 //replace github.com/praetorian-inc/konstellation => github.com/praetorian-inc/konstellation-go v0.0.0-20250421232724-bc1d1afaecc2
 replace github.com/praetorian-inc/konstellation => /Users/zachgrace/tools/konstellation-go
+
 replace github.com/praetorian-inc/janus => /Users/zachgrace/tools/janus
 
 require (
@@ -20,7 +21,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
 	github.com/aws/aws-sdk-go v1.55.5
-	github.com/aws/aws-sdk-go-v2 v1.36.1
+	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/config v1.29.6
 	github.com/aws/aws-sdk-go-v2/service/backup v1.39.3
 	github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.23.11
@@ -57,6 +58,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/itchyny/gojq v0.12.17
 	github.com/lmittmann/tint v1.0.7
+	github.com/mark3labs/mcp-go v0.26.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/microsoftgraph/msgraph-sdk-go v1.53.0
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de
@@ -95,7 +97,6 @@ require (
 	github.com/itchyny/timefmt-go v0.1.6 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
-	github.com/mark3labs/mcp-go v0.26.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/microsoft/kiota-abstractions-go v1.8.1 // indirect
 	github.com/microsoft/kiota-authentication-azure-go v1.1.0 // indirect
@@ -128,6 +129,7 @@ require (
 	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/net v0.37.0 // indirect
 	golang.org/x/sync v0.12.0 // indirect
+	golang.org/x/time v0.11.0 // indirect
 	golang.org/x/tools v0.31.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250218202821-56aae31c358a // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250218202821-56aae31c358a // indirect
@@ -138,11 +140,12 @@ require (
 require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.59 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.28 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.32 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.32 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.34 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.34 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.12.13 // indirect
+	github.com/aws/aws-sdk-go-v2/service/organizations v1.38.3
 	github.com/aws/aws-sdk-go-v2/service/sso v1.24.15 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.28.14 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
