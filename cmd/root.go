@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"runtime"
 
+	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/spf13/cobra"
-	"github.com/praetorian-inc/nebula/internal/helpers"
 )
 
 var (

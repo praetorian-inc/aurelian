@@ -11,6 +11,8 @@ bin/*
 bin
 test/links/*.json
 .vscode/launch.json
+.go-version
+out.json
 .idea/modules.xml
 .idea/nebula.iml
 .idea/vcs.xml

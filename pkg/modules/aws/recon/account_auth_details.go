@@ -5,7 +5,6 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
 
@@ -25,10 +24,9 @@ var AwsAuthorizationDetails = chain.NewModule(
 			"https://docs.aws.amazon.com/IAM/latest/APIReference/API_GetAccountAuthorizationDetails.html",
 			"https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/iam#Client.GetAccountAuthorizationDetails",
 		},
-	}).WithChainInputParam(
-		options.AwsResourceType().Name()),
+	}),
 ).WithLinks(
 	aws.NewJanusAWSAuthorizationDetails,
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
-)
+).WithAutoRun()

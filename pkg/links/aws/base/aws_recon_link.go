@@ -4,29 +4,23 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"slices"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AwsReconLink struct {
-	*chain.Base
-	Regions    []string
-	Profile    string
-	ProfileDir string
+	*AwsReconBaseLink
+	Regions []string
 }
 
 func NewAwsReconLink(link chain.Link, configs ...cfg.Config) *AwsReconLink {
 	a := &AwsReconLink{}
-	a.Base = chain.NewBase(link, configs...)
+	a.AwsReconBaseLink = NewAwsReconBaseLink(link, configs...)
 	return a
 }
 
@@ -37,20 +31,6 @@ func (a *AwsReconLink) Params() []cfg.Param {
 // Initializes common AWS recon link parameters
 func (a *AwsReconLink) Initialize() error {
 	a.ContextHolder = cfg.NewContextHolder()
-
-	profile, err := cfg.As[string](a.Arg("profile"))
-	slog.Debug("AWS recon profile", "profile", profile)
-	if err != nil {
-		return fmt.Errorf("failed to get profile: %w", err)
-	}
-	a.Profile = profile
-
-	profileDir, err := cfg.As[string](a.Arg("profile-dir"))
-	slog.Debug("AWS recon profile dir", "profile-dir", profileDir)
-	if err != nil {
-		return fmt.Errorf("failed to get profile dir: %w", err)
-	}
-	a.ProfileDir = profileDir
 
 	regions, err := cfg.As[[]string](a.Arg("regions"))
 	slog.Debug("AWS recon regions", "regions", regions)
@@ -89,13 +69,4 @@ func (a *AwsReconLink) validateResourceRegions() error {
 	}
 
 	return nil
-}
-
-func (a *AwsReconLink) GetConfig(region string, opts []*types.Option) (aws.Config, error) {
-	optFns := []func(*config.LoadOptions) error{}
-	if a.ProfileDir != "" {
-		optFns = append(optFns, config.WithSharedConfigFiles([]string{filepath.Join(a.ProfileDir, "config")}))
-		optFns = append(optFns, config.WithSharedCredentialsFiles([]string{filepath.Join(a.ProfileDir, "credentials")}))
-	}
-	return helpers.GetAWSCfg(region, a.Profile, opts, optFns...)
 }
