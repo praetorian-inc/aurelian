@@ -216,7 +216,8 @@ func AwsProfileDir() cfg.Param {
 func AwsResourceType() cfg.ParamImpl[[]string] {
 	return cfg.NewParam[[]string]("resource-type", "AWS Cloud Control resource type").
 		WithRegex(regexp.MustCompile("^(AWS::[a-zA-Z0-9:]+|all|ALL)$")).
-		WithShortcode("t")
+		WithShortcode("t").
+		WithDefault([]string{"all"})
 }
 
 func AwsCacheDir() cfg.Param {

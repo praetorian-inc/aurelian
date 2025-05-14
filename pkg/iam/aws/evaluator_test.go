@@ -6,6 +6,9 @@ import (
 
 	"encoding/json"
 
+	awstypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/orgpolicies"
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/stretchr/testify/assert"
 )
@@ -199,47 +202,130 @@ func TestPolicyEvaluator_ServiceControlPolicy(t *testing.T) {
 		},
 	}
 
-	scpStatements := &types.PolicyStatementList{
-		{
-			Effect:   "Allow",
-			Action:   types.NewDynaString([]string{"*"}),
-			Resource: types.NewDynaString([]string{"*"}),
+	// Create OrgPolicies structure with both allow and deny statements
+	orgPolicies := &orgpolicies.OrgPolicies{
+		SCPs: []orgpolicies.PolicyData{
+			{
+				PolicySummary: awstypes.PolicySummary{
+					Name: aws.String("FullAWSAccess"),
+					Id:   aws.String("p-FullAWSAccess"),
+					Arn:  aws.String("arn:aws:organizations::aws:policy/service_control_policy/p-FullAWSAccess"),
+				},
+				PolicyContent: types.Policy{
+					Version: "2012-10-17",
+					Statement: &types.PolicyStatementList{
+						{
+							Effect:   "Allow",
+							Action:   types.NewDynaString([]string{"*"}),
+							Resource: types.NewDynaString([]string{"*"}),
+						},
+						{
+							Effect:   "Deny",
+							Action:   types.NewDynaString([]string{"s3:DeleteBucket"}),
+							Resource: types.NewDynaString([]string{"*"}),
+						},
+					},
+				},
+				Targets: []orgpolicies.PolicyTarget{
+					{
+						TargetID: "o-1234567",
+						Name:     "Root",
+						Type:     "ROOT",
+					},
+				},
+			},
 		},
-		{
-			Effect:   "Deny",
-			Action:   types.NewDynaString([]string{"s3:DeleteBucket"}),
-			Resource: types.NewDynaString([]string{"*"}),
+		RCPs: []orgpolicies.PolicyData{},
+		Targets: []orgpolicies.OrgPolicyTarget{
+			{
+				Name: "Root",
+				ID:   "o-1234567",
+				Type: "ROOT",
+				SCPs: orgpolicies.OrgPolicyTargetPolicies{
+					DirectPolicies: []string{"arn:aws:organizations::aws:policy/service_control_policy/p-FullAWSAccess"},
+					ParentPolicies: []orgpolicies.ParentPolicy{},
+				},
+			},
+			{
+				Name: "Test Account",
+				ID:   "111122223333",
+				Type: "ACCOUNT",
+				Account: &orgpolicies.Account{
+					ID:     "111122223333",
+					Name:   "Test Account",
+					Email:  "test@example.com",
+					Status: "ACTIVE",
+				},
+				SCPs: orgpolicies.OrgPolicyTargetPolicies{
+					DirectPolicies: []string{},
+					ParentPolicies: []orgpolicies.ParentPolicy{
+						{
+							Name:     "Root",
+							ID:       "o-1234567",
+							Policies: []string{"arn:aws:organizations::aws:policy/service_control_policy/p-FullAWSAccess"},
+						},
+					},
+				},
+				RCPs: orgpolicies.OrgPolicyTargetPolicies{
+					DirectPolicies: []string{},
+					ParentPolicies: []orgpolicies.ParentPolicy{},
+				},
+			},
 		},
 	}
 
-	evaluator := NewPolicyEvaluator(&PolicyData{
-		SCP: scpStatements,
+	// Add the test account to the Targets list
+	orgPolicies.Targets = append(orgPolicies.Targets, orgpolicies.OrgPolicyTarget{
+		Name: "Test Account",
+		ID:   "999999999999",
+		Type: "ACCOUNT",
+		Account: &orgpolicies.Account{
+			ID:     "999999999999",
+			Name:   "Test Account",
+			Email:  "test@example.com",
+			Status: "ACTIVE",
+		},
+		SCPs: orgpolicies.OrgPolicyTargetPolicies{
+			DirectPolicies: []string{},
+			ParentPolicies: []orgpolicies.ParentPolicy{
+				{
+					Name:     "Root",
+					ID:       "o-1234567",
+					Policies: []string{"arn:aws:organizations::aws:policy/service_control_policy/p-FullAWSAccess"},
+				},
+			},
+		},
 	})
 
-	// Test allowed action
+	evaluator := NewPolicyEvaluator(&PolicyData{
+		OrgPolicies: orgPolicies,
+	})
+
+	// Test 1: Allowed action
+	ctx := createRequestContext("arn:aws:iam::111122223333:user/test-user")
+	ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:example-bucket/file.txt")
 	req1 := &EvaluationRequest{
 		Action:             "s3:GetObject",
 		Resource:           "arn:aws:s3::111122223333:example-bucket/file.txt",
-		Context:            createRequestContext("arn:aws:iam::111122223333:user/test-user"),
+		Context:            ctx,
 		IdentityStatements: identityStatements,
 	}
 
 	result1, err := evaluator.Evaluate(req1)
-	t.Log(result1)
 	assert.NoError(t, err)
 	assert.True(t, result1.Allowed)
 
-	// Test denied action by SCP
+	// Test 2: Explicitly denied action by SCP
+
 	req2 := &EvaluationRequest{
 		Action:             "s3:DeleteBucket",
 		Resource:           "arn:aws:s3::111122223333:example-bucket",
-		Context:            createRequestContext("arn:aws:iam::111122223333:user/test-user"),
+		Context:            ctx,
 		IdentityStatements: identityStatements,
 	}
 
 	result2, err := evaluator.Evaluate(req2)
 	assert.NoError(t, err)
-	t.Log(result2)
 	assert.False(t, result2.Allowed)
 	assert.Equal(t, "Explicitly denied by SCP", result2.EvaluationDetails)
 }
@@ -275,17 +361,102 @@ func TestPolicyEvaluator_ResourceControlPolicy(t *testing.T) {
 	t.Logf("Identity Statements: %+v", identityStatements)
 	t.Logf("RCP Statements: %+v", rcpStatements)
 
-	evaluator := NewPolicyEvaluator(&PolicyData{RCP: rcpStatements})
+	orgPolicies := orgpolicies.NewDefaultOrgPolicies()
+	orgPolicies.RCPs = []orgpolicies.PolicyData{
+		{
+			PolicySummary: awstypes.PolicySummary{
+				Name: aws.String("TestRCP"),
+				Id:   aws.String("p-testrcp"),
+				Arn:  aws.String("arn:aws:organizations::aws:policy/resource_control_policy/p-testrcp"),
+			},
+			PolicyContent: types.Policy{
+				Version: "2012-10-17",
+				Statement: &types.PolicyStatementList{
+					{
+						Effect:   "Allow",
+						Action:   types.NewDynaString([]string{"*"}),
+						Resource: types.NewDynaString([]string{"*"}),
+					},
+					{
+						Effect:   "Deny",
+						Action:   types.NewDynaString([]string{"s3:PutObject"}),
+						Resource: types.NewDynaString([]string{"*"}),
+						Condition: &types.Condition{
+							"StringNotEquals": {
+								"aws:PrincipalOrgID": {"o-1234567"},
+							},
+						},
+					},
+				},
+			},
+			Targets: []orgpolicies.PolicyTarget{
+				{
+					TargetID: "r-root",
+					Name:     "Root",
+					Type:     "ROOT",
+				},
+			},
+		},
+	}
+
+	// Add the target account to the Targets list
+	orgPolicies.Targets = append(orgPolicies.Targets, orgpolicies.OrgPolicyTarget{
+		Name: "Resource Account",
+		ID:   "111122223333",
+		Type: "ACCOUNT",
+		Account: &orgpolicies.Account{
+			ID:     "111122223333",
+			Name:   "Resource Account",
+			Email:  "resource@example.com",
+			Status: "ACTIVE",
+		},
+		RCPs: orgpolicies.OrgPolicyTargetPolicies{
+			DirectPolicies: []string{},
+			ParentPolicies: []orgpolicies.ParentPolicy{
+				{
+					Name:     "Root",
+					ID:       "r-root",
+					Policies: []string{"arn:aws:organizations::aws:policy/resource_control_policy/p-testrcp"},
+				},
+			},
+		},
+	})
+
+	// Create a resource policy to ensure the external user has basic access
+	resourcePolicy := &types.Policy{
+		Version: "2012-10-17",
+		Statement: &types.PolicyStatementList{
+			{
+				Effect: "Allow",
+				Principal: &types.Principal{
+					AWS: types.NewDynaString([]string{"*"}),
+				},
+				Action:   types.NewDynaString([]string{"s3:PutObject"}),
+				Resource: types.NewDynaString([]string{"arn:aws:s3::111122223333:example-bucket/file.txt"}),
+			},
+		},
+	}
+
+	evaluator := NewPolicyEvaluator(&PolicyData{
+		OrgPolicies: orgPolicies,
+		ResourcePolicies: map[string]*types.Policy{
+			"arn:aws:s3::111122223333:example-bucket/file.txt": resourcePolicy,
+		},
+	})
 
 	// Test outside-org request
 	ctx := createRequestContext("arn:aws:iam::999988887777:user/external-user")
 	ctx.PrincipalOrgID = "o-9999999"
 
+	// Set the resource account ID and populate condition keys
+	resource := "arn:aws:s3::111122223333:example-bucket/file.txt"
+	ctx.PopulateDefaultRequestConditionKeys(resource)
+
 	t.Logf("Request Context: %+v", ctx)
 
 	req := &EvaluationRequest{
 		Action:             "s3:PutObject",
-		Resource:           "arn:aws:s3::111122223333:example-bucket/file.txt",
+		Resource:           resource,
 		Context:            ctx,
 		IdentityStatements: identityStatements,
 	}
@@ -354,34 +525,88 @@ func TestPolicyEvaluator_ResourceBasedPolicy(t *testing.T) {
 }
 
 func TestPolicyEvaluator_SCPDenyS3PublicAccess(t *testing.T) {
-	// Define the SCP policy statements
-	scpStatements := &types.PolicyStatementList{
-		{
-			Sid:      "p-FullAWSAccess",
-			Effect:   "Allow",
-			Action:   types.NewDynaString([]string{"*"}),
-			Resource: types.NewDynaString([]string{"*"}),
+	// Create OrgPolicies structure with both allow and deny statements
+	orgPolicies := &orgpolicies.OrgPolicies{
+		SCPs: []orgpolicies.PolicyData{
+			{
+				PolicySummary: awstypes.PolicySummary{
+					Name: aws.String("FullAWSAccess"),
+					Id:   aws.String("p-FullAWSAccess"),
+					Arn:  aws.String("arn:aws:organizations::aws:policy/service_control_policy/p-FullAWSAccess"),
+				},
+				PolicyContent: types.Policy{
+					Version: "2012-10-17",
+					Statement: &types.PolicyStatementList{
+						{
+							Sid:      "p-FullAWSAccess",
+							Effect:   "Allow",
+							Action:   types.NewDynaString([]string{"*"}),
+							Resource: types.NewDynaString([]string{"*"}),
+						},
+						{
+							Sid:    "BlockChangesToS3PublicAccess",
+							Effect: "Deny",
+							Action: types.NewDynaString([]string{
+								"s3:PutBucketPublicAccessBlock",
+								"s3:PutBucketPolicy",
+								"s3:PutBucketAcl",
+								"s3:PutAccountPublicAccessBlock",
+							}),
+							Resource: types.NewDynaString([]string{"*"}),
+							Condition: &types.Condition{
+								"StringNotEquals": {
+									"aws:PrincipalArn": []string{
+										"arn:aws:iam::111122223333:role/foo-dev-us-west-2",
+										"arn:aws:iam::222233334444:role/foo-prod-us-west-2",
+									},
+								},
+							},
+						},
+					},
+				},
+				Targets: []orgpolicies.PolicyTarget{
+					{
+						TargetID: "o-1234567",
+						Name:     "Root",
+						Type:     "ROOT",
+					},
+				},
+			},
 		},
-		{
-			Sid:    "BlockChangesToS3PublicAccess",
-			Effect: "Deny",
-			Action: types.NewDynaString([]string{
-				"s3:PutBucketPublicAccessBlock",
-				"s3:PutBucketPolicy",
-				"s3:PutBucketAcl",
-				"s3:PutAccountPublicAccessBlock",
-			}),
-			Resource: types.NewDynaString([]string{"*"}),
-			Condition: &types.Condition{
-				"StringNotEquals": {
-					"aws:PrincipalArn": []string{
-						"arn:aws:iam::111122223333:role/foo-dev-us-west-2",
-						"arn:aws:iam::222233334444:role/foo-prod-us-west-2",
+		Targets: []orgpolicies.OrgPolicyTarget{
+			{
+				Name: "Root",
+				ID:   "o-1234567",
+				Type: "ROOT",
+				SCPs: orgpolicies.OrgPolicyTargetPolicies{
+					DirectPolicies: []string{"arn:aws:organizations::aws:policy/service_control_policy/p-FullAWSAccess"},
+					ParentPolicies: []orgpolicies.ParentPolicy{},
+				},
+			},
+			{
+				Name: "Test Account",
+				ID:   "111122223333",
+				Type: "ACCOUNT",
+				Account: &orgpolicies.Account{
+					ID:     "111122223333",
+					Name:   "Test Account",
+					Email:  "test@example.com",
+					Status: "ACTIVE",
+				},
+				SCPs: orgpolicies.OrgPolicyTargetPolicies{
+					DirectPolicies: []string{},
+					ParentPolicies: []orgpolicies.ParentPolicy{
+						{
+							Name:     "Root",
+							ID:       "o-1234567",
+							Policies: []string{"arn:aws:organizations::aws:policy/service_control_policy/p-FullAWSAccess"},
+						},
 					},
 				},
 			},
 		},
 	}
+
 	identity := &types.PolicyStatementList{
 		{
 			Effect:   "Allow",
@@ -390,7 +615,9 @@ func TestPolicyEvaluator_SCPDenyS3PublicAccess(t *testing.T) {
 		},
 	}
 
-	evaluator := NewPolicyEvaluator(&PolicyData{SCP: scpStatements})
+	evaluator := NewPolicyEvaluator(&PolicyData{
+		OrgPolicies: orgPolicies,
+	})
 
 	bucket := "arn:aws:s3::111122223333:example-bucket"
 	tests := []struct {
@@ -437,10 +664,12 @@ func TestPolicyEvaluator_SCPDenyS3PublicAccess(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctx := createRequestContext(tt.principalArn)
+			ctx.PopulateDefaultRequestConditionKeys(tt.resource)
 			req := &EvaluationRequest{
 				Action:             tt.action,
 				Resource:           tt.resource,
-				Context:            createRequestContext(tt.principalArn),
+				Context:            ctx,
 				IdentityStatements: identity,
 			}
 
@@ -450,44 +679,90 @@ func TestPolicyEvaluator_SCPDenyS3PublicAccess(t *testing.T) {
 			t.Log(result)
 			t.Logf("PrincipalArn: %s, Action: %s, Allowed: %v, WantAllowed: %v", tt.principalArn, tt.action, result.Allowed, tt.wantAllowed)
 
-			// Add more detailed assertion logging
-			t.Logf("Allowed assertion: expected=%v, got=%v", tt.wantAllowed, result.Allowed)
 			assert.Equal(t, tt.wantAllowed, result.Allowed)
-
-			// Verify SCP evaluations separately
-			// scpEvals := result.PolicyResult.Evaluations[EvalTypeSCP]
-			// if assert.NotEmpty(t, scpEvals, "Expected non-empty SCP evaluations") {
-			// 	t.Logf("ExplicitDeny assertion: expected=%v, got=%v", tt.wantExplicitDeny, scpEvals[0].ExplicitDeny)
-			// 	assert.Equal(t, tt.wantExplicitDeny, scpEvals[0].ExplicitDeny)
-			// }
+			if !tt.wantAllowed {
+				assert.Equal(t, "Explicitly denied by SCP", result.EvaluationDetails)
+			}
 		})
 	}
 }
 
 func TestPolicyEvaluator_SCPRegionGuardRails(t *testing.T) {
-	scpStatements := &types.PolicyStatementList{
-		{
-			Sid:      "p-FullAWSAccess",
-			Effect:   "Allow",
-			Action:   types.NewDynaString([]string{"*"}),
-			Resource: types.NewDynaString([]string{"*"}),
+	// Create OrgPolicies structure with region guardrails
+	orgPolicies := &orgpolicies.OrgPolicies{
+		SCPs: []orgpolicies.PolicyData{
+			{
+				PolicySummary: awstypes.PolicySummary{
+					Name: aws.String("RegionGuardrails"),
+					Id:   aws.String("p-RegionGuardrails"),
+					Arn:  aws.String("arn:aws:organizations::aws:policy/service_control_policy/p-RegionGuardrails"),
+				},
+				PolicyContent: types.Policy{
+					Version: "2012-10-17",
+					Statement: &types.PolicyStatementList{
+						{
+							Sid:      "p-FullAWSAccess",
+							Effect:   "Allow",
+							Action:   types.NewDynaString([]string{"*"}),
+							Resource: types.NewDynaString([]string{"*"}),
+						},
+						{
+							Sid:      "DenyNonUsRegions",
+							Effect:   "Deny",
+							Action:   types.NewDynaString([]string{"*"}),
+							Resource: types.NewDynaString([]string{"*"}),
+							Condition: &types.Condition{
+								"StringNotEquals": {
+									"aws:RequestedRegion": []string{
+										"us-east-1",
+										"us-east-2",
+										"us-west-1",
+										"us-west-2",
+										"us-gov-east-1",
+										"us-gov-west-1",
+									},
+								},
+							},
+						},
+					},
+				},
+				Targets: []orgpolicies.PolicyTarget{
+					{
+						TargetID: "o-1234567",
+						Name:     "Root",
+						Type:     "ROOT",
+					},
+				},
+			},
 		},
-		{
-			Sid:    "DenyNonUsRegions",
-			Effect: "Deny",
-			Action: types.NewDynaString([]string{
-				"*",
-			}),
-			Resource: types.NewDynaString([]string{"*"}),
-			Condition: &types.Condition{
-				"StringNotEquals": {
-					"aws:RequestedRegion": []string{
-						"us-east-1",
-						"us-east-2",
-						"us-west-1",
-						"us-west-2",
-						"us-gov-east-1",
-						"us-gov-west-1",
+		Targets: []orgpolicies.OrgPolicyTarget{
+			{
+				Name: "Root",
+				ID:   "o-1234567",
+				Type: "ROOT",
+				SCPs: orgpolicies.OrgPolicyTargetPolicies{
+					DirectPolicies: []string{"arn:aws:organizations::aws:policy/service_control_policy/p-RegionGuardrails"},
+					ParentPolicies: []orgpolicies.ParentPolicy{},
+				},
+			},
+			{
+				Name: "Test Account",
+				ID:   "111122223333",
+				Type: "ACCOUNT",
+				Account: &orgpolicies.Account{
+					ID:     "111122223333",
+					Name:   "Test Account",
+					Email:  "test@example.com",
+					Status: "ACTIVE",
+				},
+				SCPs: orgpolicies.OrgPolicyTargetPolicies{
+					DirectPolicies: []string{},
+					ParentPolicies: []orgpolicies.ParentPolicy{
+						{
+							Name:     "Root",
+							ID:       "o-1234567",
+							Policies: []string{"arn:aws:organizations::aws:policy/service_control_policy/p-RegionGuardrails"},
+						},
 					},
 				},
 			},
@@ -524,12 +799,38 @@ func TestPolicyEvaluator_SCPRegionGuardRails(t *testing.T) {
 			"s3:GetObject",
 			"arn:aws:lambda:eu-west-1:111122223333:function:example-function",
 			EvaluationResult{
-				Allowed: false,
+				Allowed:           false,
+				EvaluationDetails: "Explicitly denied by SCP",
 			},
 		},
 	}
 
-	evaluator := NewPolicyEvaluator(&PolicyData{SCP: scpStatements})
+	evaluator := NewPolicyEvaluator(&PolicyData{
+		OrgPolicies: orgPolicies,
+	})
+
+	// Add the test account to the Targets list
+	orgPolicies.Targets = append(orgPolicies.Targets, orgpolicies.OrgPolicyTarget{
+		Name: "Test Account",
+		ID:   "111122223333",
+		Type: "ACCOUNT",
+		Account: &orgpolicies.Account{
+			ID:     "111122223333",
+			Name:   "Test Account",
+			Email:  "test@example.com",
+			Status: "ACTIVE",
+		},
+		SCPs: orgpolicies.OrgPolicyTargetPolicies{
+			DirectPolicies: []string{},
+			ParentPolicies: []orgpolicies.ParentPolicy{
+				{
+					Name:     "Root",
+					ID:       "o-1234567",
+					Policies: []string{"arn:aws:organizations::aws:policy/service_control_policy/p-RegionGuardrails"},
+				},
+			},
+		},
+	})
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -547,9 +848,11 @@ func TestPolicyEvaluator_SCPRegionGuardRails(t *testing.T) {
 			t.Log(t.Name())
 			t.Log(result)
 			assert.Equal(t, tt.eval.Allowed, result.Allowed)
+			if !tt.eval.Allowed {
+				assert.Equal(t, tt.eval.EvaluationDetails, result.EvaluationDetails)
+			}
 		})
 	}
-
 }
 
 func TestPolicyEvaluator_AssumeRolePolicyDocument(t *testing.T) {
@@ -796,16 +1099,95 @@ func TestPolicyEvaluator_CreateWithServiceAsResource(t *testing.T) {
 }
 
 func TestPolicyEvaluator_SCPServiceLinkedRole(t *testing.T) {
-	scpStatements := &types.PolicyStatementList{
-		{
-			Effect:   "Allow",
-			Action:   types.NewDynaString([]string{"*"}),
-			Resource: types.NewDynaString([]string{"*"}),
+	// Create OrgPolicies structure with deny bedrock:* policy
+	orgPolicies := &orgpolicies.OrgPolicies{
+		SCPs: []orgpolicies.PolicyData{
+			{
+				PolicySummary: awstypes.PolicySummary{
+					Name: aws.String("FullAWSAccess"),
+					Id:   aws.String("p-FullAWSAccess"),
+					Arn:  aws.String("arn:aws:organizations::aws:policy/service_control_policy/p-FullAWSAccess"),
+				},
+				PolicyContent: types.Policy{
+					Version: "2012-10-17",
+					Statement: &types.PolicyStatementList{
+						{
+							Effect:   "Allow",
+							Action:   types.NewDynaString([]string{"*"}),
+							Resource: types.NewDynaString([]string{"*"}),
+						},
+					},
+				},
+				Targets: []orgpolicies.PolicyTarget{
+					{
+						TargetID: "o-1234567",
+						Name:     "Root",
+						Type:     "ROOT",
+					},
+				},
+			},
+			{
+				PolicySummary: awstypes.PolicySummary{
+					Name: aws.String("DenyBedrock"),
+					Id:   aws.String("p-DenyBedrock"),
+					Arn:  aws.String("arn:aws:organizations::aws:policy/service_control_policy/p-DenyBedrock"),
+				},
+				PolicyContent: types.Policy{
+					Version: "2012-10-17",
+					Statement: &types.PolicyStatementList{
+						{
+							Effect:   "Deny",
+							Action:   types.NewDynaString([]string{"bedrock:*"}),
+							Resource: types.NewDynaString([]string{"*"}),
+						},
+					},
+				},
+				Targets: []orgpolicies.PolicyTarget{
+					{
+						TargetID: "o-1234567",
+						Name:     "Root",
+						Type:     "ROOT",
+					},
+				},
+			},
 		},
-		{
-			Effect:   "Deny",
-			Action:   types.NewDynaString([]string{"bedrock:*"}),
-			Resource: types.NewDynaString([]string{"*"}),
+		Targets: []orgpolicies.OrgPolicyTarget{
+			{
+				Name: "Root",
+				ID:   "o-1234567",
+				Type: "ROOT",
+				SCPs: orgpolicies.OrgPolicyTargetPolicies{
+					DirectPolicies: []string{
+						"arn:aws:organizations::aws:policy/service_control_policy/p-FullAWSAccess",
+						"arn:aws:organizations::aws:policy/service_control_policy/p-DenyBedrock",
+					},
+					ParentPolicies: []orgpolicies.ParentPolicy{},
+				},
+			},
+			{
+				Name: "Test Account",
+				ID:   "111122223333",
+				Type: "ACCOUNT",
+				Account: &orgpolicies.Account{
+					ID:     "111122223333",
+					Name:   "Test Account",
+					Email:  "test@example.com",
+					Status: "ACTIVE",
+				},
+				SCPs: orgpolicies.OrgPolicyTargetPolicies{
+					DirectPolicies: []string{},
+					ParentPolicies: []orgpolicies.ParentPolicy{
+						{
+							Name: "Root",
+							ID:   "o-1234567",
+							Policies: []string{
+								"arn:aws:organizations::aws:policy/service_control_policy/p-FullAWSAccess",
+								"arn:aws:organizations::aws:policy/service_control_policy/p-DenyBedrock",
+							},
+						},
+					},
+				},
+			},
 		},
 	}
 
@@ -817,24 +1199,33 @@ func TestPolicyEvaluator_SCPServiceLinkedRole(t *testing.T) {
 		},
 	}
 
-	evaluator := NewPolicyEvaluator(&PolicyData{SCP: scpStatements})
-	// regular principal
+	evaluator := NewPolicyEvaluator(&PolicyData{
+		OrgPolicies: orgPolicies,
+	})
+
+	// Test regular principal - should be denied by SCP
+	ctx := createRequestContext("arn:aws:iam::111122223333:user/test-user")
+	ctx.PrincipalOrgID = "o-1234567"
 	req := &EvaluationRequest{
 		Action:             "bedrock:InvokeModel",
 		Resource:           "arn:aws:bedrock:us-east-1:111122223333:agent/QOYTA2YG0G",
-		Context:            createRequestContext("arn:aws:iam::111122223333:user/test-user"),
+		Context:            ctx,
 		IdentityStatements: identityStatements,
 	}
+
 	result, err := evaluator.Evaluate(req)
 	t.Log(result)
 	assert.NoError(t, err)
 	assert.False(t, result.Allowed)
+	assert.Equal(t, "Explicitly denied by SCP", result.EvaluationDetails)
 
-	// service-linked role
+	// Test service-linked role - should be allowed despite SCP deny
+	ctx = createRequestContext("arn:aws:iam::111122223333:role/aws-service-role/bedrock.amazonaws.com/AWSServiceRoleForBedrock")
+	ctx.PrincipalOrgID = "o-1234567"
 	req = &EvaluationRequest{
 		Action:             "bedrock:InvokeModel",
 		Resource:           "arn:aws:bedrock:us-east-1:111122223333:agent/QOYTA2YG0G",
-		Context:            createRequestContext("arn:aws:iam::111122223333:role/aws-service-role/bedrock.amazonaws.com/AWSServiceRoleForBedrock"),
+		Context:            ctx,
 		IdentityStatements: identityStatements,
 	}
 

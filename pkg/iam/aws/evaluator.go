@@ -6,26 +6,25 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/arn"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/orgpolicies"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type PolicyData struct {
 	Gaad             *types.Gaad
-	SCP              *types.PolicyStatementList
-	RCP              *types.PolicyStatementList
+	OrgPolicies      *orgpolicies.OrgPolicies
 	ResourcePolicies map[string]*types.Policy
 	Resources        *[]types.EnrichedResourceDescription
 }
 
-func NewPolicyData(gaad *types.Gaad, scp, rcp *types.PolicyStatementList, resourcePolicies map[string]*types.Policy, resources *[]types.EnrichedResourceDescription) *PolicyData {
+func NewPolicyData(gaad *types.Gaad, orgPolicies *orgpolicies.OrgPolicies, resourcePolicies map[string]*types.Policy, resources *[]types.EnrichedResourceDescription) *PolicyData {
 	if resourcePolicies == nil {
 		resourcePolicies = make(map[string]*types.Policy, 0)
 	}
 
 	pd := &PolicyData{
 		Gaad:             gaad,
-		SCP:              scp,
-		RCP:              rcp,
+		OrgPolicies:      orgPolicies,
 		ResourcePolicies: resourcePolicies,
 		Resources:        resources,
 	}
@@ -214,17 +213,9 @@ type PolicyEvaluator struct {
 
 // NewPolicyEvaluator creates a new policy evaluator instance
 func NewPolicyEvaluator(pd *PolicyData) *PolicyEvaluator {
-	if pd.SCP == nil {
+	if pd.OrgPolicies == nil {
 		// Default to full AWS access if no SCP is present
-		pd.SCP = &types.PolicyStatementList{
-			{
-				Sid:       "p-FullAWSAccess",
-				Effect:    "Allow",
-				Action:    types.NewDynaString([]string{"*"}),
-				Resource:  types.NewDynaString([]string{"*"}),
-				OriginArn: "p-FullAWSAccess",
-			},
-		}
+		pd.OrgPolicies = orgpolicies.NewDefaultOrgPolicies()
 	}
 	return &PolicyEvaluator{
 		policyData: pd,
@@ -268,10 +259,43 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 		return denyResult, nil
 	}
 
-	// 2. Evaluate RCPs if present (these are always enforced)
-	if e.policyData.RCP != nil {
+	// 2a. Evaluate parent RCPs if present
+	parentRcps := e.policyData.OrgPolicies.GetMergedParentRcpsForTarget(req.Context.ResourceAccount)
+	if len(parentRcps) > 0 {
+		// Check that each parent RCP group has at least one allow statement
+		for parentID, policyStatements := range parentRcps {
+			parentEvals, err := e.evaluatePolicyType(req.Action, req.Resource, req.Context,
+				policyStatements, EvalTypeRCP)
+			if err != nil {
+				return nil, err
+			}
+
+			// Add all evaluations to the result
+			result.PolicyResult.AddEvaluation(EvalTypeRCP, parentEvals)
+
+			// Check if this parent group has at least one allow
+			hasParentAllow := false
+			for _, eval := range parentEvals {
+				if eval.ExplicitAllow {
+					hasParentAllow = true
+					break
+				}
+			}
+
+			// If any parent group doesn't have an allow, deny the request
+			if !hasParentAllow {
+				result.Allowed = false
+				result.EvaluationDetails = fmt.Sprintf("No explicit allow in parent RCP from %s", parentID)
+				return result, nil
+			}
+		}
+	}
+
+	// 2b. Evaluate directly attached RCPs if present
+	rcps := e.policyData.OrgPolicies.GetDirectRcpStatementsForTarget(req.Context.ResourceAccount)
+	if rcps != nil && len(*rcps) > 0 {
 		rcpEvals, err := e.evaluatePolicyType(req.Action, req.Resource, req.Context,
-			e.policyData.RCP, EvalTypeRCP)
+			rcps, EvalTypeRCP)
 		if err != nil {
 			return nil, err
 		}
@@ -283,10 +307,43 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 		}
 	}
 
-	// 3. Evaluate SCPs if present (these are always enforced)
-	if e.policyData.SCP != nil {
+	// 3a. Evaluate parent SCPs if present
+	parentScps := e.policyData.OrgPolicies.GetMergedParentScpsForTarget(req.Context.ResourceAccount)
+	if len(parentScps) > 0 {
+		// Check that each parent SCP group has at least one allow statement
+		for parentID, policyStatements := range parentScps {
+			parentEvals, err := e.evaluatePolicyType(req.Action, req.Resource, req.Context,
+				policyStatements, EvalTypeSCP)
+			if err != nil {
+				return nil, err
+			}
+
+			// Add all evaluations to the result
+			result.PolicyResult.AddEvaluation(EvalTypeSCP, parentEvals)
+
+			// Check if this parent group has at least one allow
+			hasParentAllow := false
+			for _, eval := range parentEvals {
+				if eval.ExplicitAllow {
+					hasParentAllow = true
+					break
+				}
+			}
+
+			// If any parent group doesn't have an allow, deny the request
+			if !hasParentAllow {
+				result.Allowed = false
+				result.EvaluationDetails = fmt.Sprintf("No explicit allow in parent SCP from %s", parentID)
+				return result, nil
+			}
+		}
+	}
+
+	// 3b. Evaluate SCPs if present (these are always enforced)
+	scps := e.policyData.OrgPolicies.GetDirectScpStatementsForTarget(req.Context.ResourceAccount)
+	if scps != nil && len(*scps) > 0 {
 		scpEvals, err := e.evaluatePolicyType(req.Action, req.Resource, req.Context,
-			e.policyData.SCP, EvalTypeSCP)
+			scps, EvalTypeSCP)
 		if err != nil {
 			return nil, err
 		}
@@ -437,8 +494,8 @@ func (e *PolicyEvaluator) checkExplicitDenies(req *EvaluationRequest) (*Evaluati
 		statements *types.PolicyStatementList
 		evalType   EvaluationType
 	}{
-		{e.policyData.RCP, EvalTypeRCP},
-		{e.policyData.SCP, EvalTypeSCP},
+		{e.policyData.OrgPolicies.GetAllScpPoliciesForTarget(req.Context.ResourceAccount), EvalTypeSCP},
+		{e.policyData.OrgPolicies.GetAllRcpPoliciesForTarget(req.Context.ResourceAccount), EvalTypeRCP},
 		{req.BoundaryStatements, EvalTypePermBoundary},
 		{req.IdentityStatements, EvalTypeIdentity},
 	}
@@ -564,4 +621,15 @@ type StatementEvaluation struct {
 
 func (eval *StatementEvaluation) IsAllowed() bool {
 	return eval.ExplicitAllow && !eval.ExplicitDeny && !eval.ImplicitDeny
+}
+
+// allPoliciesAllow checks if all policies of a specific type have an explicit allow
+// This is used for special cases like SCPs and RCPs
+func allPoliciesAllow(evals []*StatementEvaluation) bool {
+	for _, eval := range evals {
+		if !eval.IsAllowed() {
+			return false
+		}
+	}
+	return true
 }

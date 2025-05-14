@@ -416,9 +416,11 @@ func NewAwsResourcePolicyFetcher(configs ...cfg.Config) chain.Link {
 
 func (a *AwsResourcePolicyFetcher) Process(resource *types.EnrichedResourceDescription) error {
 	// Get the policy getter function for this resource type
-	policyGetter, ok := ServicePolicyFuncMap[resource.Identifier]
+	policyGetter, ok := ServicePolicyFuncMap[resource.TypeName]
 	if !ok {
-		return fmt.Errorf("unsupported resource type: %s", resource.Identifier)
+		// Silently skip resources that don't have resource policies
+		slog.Debug("Skipping resource type without resource policy", "type", resource.TypeName)
+		return nil
 	}
 
 	// Get AWS config from the link parameters
@@ -436,5 +438,4 @@ func (a *AwsResourcePolicyFetcher) Process(resource *types.EnrichedResourceDescr
 	// Send the policy downstream
 	a.Send(policy)
 	return nil
-
 }

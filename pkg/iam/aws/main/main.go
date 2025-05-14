@@ -8,13 +8,10 @@ import (
 	"log"
 	"log/slog"
 	"os"
-	"strings"
 
 	"github.com/praetorian-inc/konstellation/pkg/graph"
 	"github.com/praetorian-inc/konstellation/pkg/graph/adapters"
 	"github.com/praetorian-inc/konstellation/pkg/graph/queries"
-	transformers "github.com/praetorian-inc/konstellation/pkg/graph/transformers/aws"
-	"github.com/praetorian-inc/konstellation/pkg/graph/utils"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/pkg/iam/aws"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -224,97 +221,4 @@ func loadJSONFile[T any](filename string) (*T, error) {
 	}
 
 	return &result, nil
-}
-
-func resultToRelationship(result aws.FullResult) (*graph.Relationship, error) {
-	rel := graph.Relationship{}
-	rel.Type = result.Action
-
-	// Handle Principal (StartNode)
-	switch p := result.Principal.(type) {
-	case *types.UserDL:
-		rel.StartNode = transformers.NodeFromUserDL(p)
-	case *types.RoleDL:
-		rel.StartNode = transformers.NodeFromRoleDL(p)
-	case *types.GroupDL:
-		rel.StartNode = transformers.NodeFromGroupDL(p)
-	case string:
-		// Handle service principals
-		if strings.Contains(p, "amazonaws.com") || strings.Contains(p, "aws:service") {
-			serviceName := p
-
-			// Extract service name from ARN format if needed
-			if strings.HasPrefix(p, "arn:aws:iam::aws:service/") {
-				serviceName = strings.TrimPrefix(p, "arn:aws:iam::aws:service/")
-			}
-
-			rel.StartNode = &graph.Node{
-				Labels: []string{"Service", "Principal", "Resource"},
-				Properties: map[string]interface{}{
-					"name":     serviceName,
-					"arn":      p,
-					"fullName": p,
-				},
-				UniqueKey: []string{"name"},
-			}
-		} else {
-			// Handle other string principal types (ARNs, etc.)
-			principalName := p
-
-			// Try to extract a short name from ARN
-			if strings.HasPrefix(p, "arn:") {
-				parts := strings.Split(p, "/")
-				if len(parts) > 1 {
-					principalName = parts[len(parts)-1]
-				}
-			}
-
-			rel.StartNode = &graph.Node{
-				Labels: []string{"Principal"},
-				Properties: map[string]interface{}{
-					"arn":  p,
-					"name": principalName,
-				},
-				UniqueKey: []string{"arn"},
-			}
-		}
-	default:
-		return nil, fmt.Errorf("unknown principal type: %T", p)
-	}
-
-	// Ensure StartNode is not nil
-	if rel.StartNode == nil {
-		return nil, fmt.Errorf("could not create start node for principal: %v", result.Principal)
-	}
-
-	// Handle Resource (EndNode)
-	if result.Resource == nil {
-		return nil, fmt.Errorf("nil resource")
-	}
-
-	var err error
-	rel.EndNode, err = transformers.NodeFromEnrichedResourceDescription(result.Resource)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create node from resource: %w", err)
-	}
-
-	// Process Result
-	if result.Result != nil {
-		flattenedResult, err := utils.ConvertAndFlatten(result.Result)
-		if err != nil {
-			rel.Properties = map[string]interface{}{
-				"allowed": result.Result.Allowed,
-				"details": result.Result.EvaluationDetails,
-			}
-		} else {
-			rel.Properties = flattenedResult
-		}
-	} else {
-		rel.Properties = map[string]interface{}{
-			"allowed": false,
-			"details": "No evaluation result available",
-		}
-	}
-
-	return &rel, nil
 }
