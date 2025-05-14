@@ -20,6 +20,8 @@ import (
 
 func init() {
 	rootCmd.AddCommand(mcpCmd)
+	mcpCmd.Flags().BoolP("http", "", false, "Use HTTP transport instead of stdio")
+	mcpCmd.Flags().StringP("addr", "", ":8080", "HTTP server address")
 }
 
 var mcpCmd = &cobra.Command{
@@ -27,11 +29,12 @@ var mcpCmd = &cobra.Command{
 	Short: "Launch Nebula's MCP server",
 	Long:  `Launch Nebula's MCP server`,
 	Run: func(cmd *cobra.Command, args []string) {
-		mcpServer()
+
+		mcpServer(cmd)
 	},
 }
 
-func mcpServer() {
+func mcpServer(cmd *cobra.Command) {
 	s := server.NewMCPServer(
 		"Nebula Server",
 		version.FullVersion(),
@@ -54,9 +57,26 @@ func mcpServer() {
 	// Add tool handler
 	s.AddTool(tool, moduleHandler)
 
-	// Start the stdio server
-	if err := server.ServeStdio(s); err != nil {
-		fmt.Printf("Server error: %v\n", err)
+	// Get transport flags
+	useHTTP, _ := cmd.Flags().GetBool("http")
+	addr, _ := cmd.Flags().GetString("addr")
+
+	// Ensure addr is only used with http
+	if addr != ":8080" && !useHTTP {
+		fmt.Println("Error: --addr flag requires --http to be specified")
+		return
+	}
+
+	// Start server with selected transport
+	if useHTTP {
+		sseServer := server.NewSSEServer(s)
+		if err := sseServer.Start(addr); err != nil {
+			fmt.Printf("HTTP Server error: %v\n", err)
+		}
+	} else {
+		if err := server.ServeStdio(s); err != nil {
+			fmt.Printf("Stdio Server error: %v\n", err)
+		}
 	}
 }
 

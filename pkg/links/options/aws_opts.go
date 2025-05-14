@@ -276,3 +276,17 @@ func AwsCommonReconOptions() []cfg.Param {
 		AwsResourceType(),
 	}...)
 }
+
+func AwsAccessKeyId() cfg.Param {
+	return cfg.NewParam[[]string]("access-key-id", "AWS access key ID").
+		WithRegex(regexp.MustCompile("([^A-Z0-9]|^)(AKIA|A3T|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{12,}")).
+		WithShortcode("k").
+		AsRequired()
+}
+
+func AwsAccountId() cfg.Param {
+	return cfg.NewParam[[]string]("account-id", "AWS account ID").
+		WithRegex(regexp.MustCompile("[0-9]{12}")).
+		WithShortcode("i").
+		AsRequired()
+}

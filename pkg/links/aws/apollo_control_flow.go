@@ -320,19 +320,14 @@ func resultToRelationship(result iam.FullResult) (*graph.Relationship, error) {
 
 	// Process Result
 	if result.Result != nil {
-		flattenedResult, err := utils.ConvertAndFlatten(result.Result)
+		flattenedResult, err := utils.ConvertAndFlatten(result.Result, "EvaluationDetails")
 		if err != nil {
-			rel.Properties = map[string]interface{}{
+			rel.Properties = map[string]any{
 				"allowed": result.Result.Allowed,
 				"details": result.Result.EvaluationDetails,
 			}
 		} else {
 			rel.Properties = flattenedResult
-		}
-	} else {
-		rel.Properties = map[string]interface{}{
-			"allowed": false,
-			"details": "No evaluation result available",
 		}
 	}
 

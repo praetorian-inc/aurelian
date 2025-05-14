@@ -2,6 +2,7 @@ package registry
 
 import (
 	"regexp"
+	"slices"
 	"sync"
 
 	"github.com/praetorian-inc/janus/pkg/chain"
@@ -89,12 +90,11 @@ func GetHierarchy() map[string]map[string][]string {
 	Registry.mu.RLock()
 	defer Registry.mu.RUnlock()
 
-	// Return a copy to prevent modification of the original
 	result := make(map[string]map[string][]string)
 	for platform, categories := range Registry.hierarchy {
 		result[platform] = make(map[string][]string)
 		for category, modules := range categories {
-			result[platform][category] = append([]string{}, modules...)
+			result[platform][category] = slices.Clone(modules)
 		}
 	}
 
