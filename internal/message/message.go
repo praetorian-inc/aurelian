@@ -23,8 +23,8 @@ var (
 	successColor = color.New(color.FgGreen)
 	warningColor = color.New(color.FgYellow)
 	errorColor   = color.New(color.FgRed)
-	bannerColor  = color.New(color.FgHiMagenta, color.Bold).Add(color.Attribute(95)).Add(color.Attribute(71)).Add(color.Attribute(183))
-	sectionColor = color.New(color.FgHiMagenta, color.Bold).Add(color.Attribute(95)).Add(color.Attribute(71)).Add(color.Attribute(183))
+	bannerColor  = color.RGB(95, 71, 183)
+	sectionColor = color.RGB(95, 71, 183)
 )
 
 const asciiBanner = `

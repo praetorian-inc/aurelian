@@ -305,6 +305,12 @@ func (ga *GaadAnalyzer) processRolePermissions(role types.RoleDL, evalChan chan<
 
 	// Add inline policies
 	for _, policy := range role.RolePolicyList {
+		// Defensive check for nil policy document or statements
+		if policy.PolicyDocument.Statement == nil || len(*policy.PolicyDocument.Statement) == 0 {
+			slog.Debug(fmt.Sprintf("Skipping empty policy document for role %s", role.Arn))
+			continue
+		}
+
 		// Decorate the policy with the role's ARN
 		for stmt := range *policy.PolicyDocument.Statement {
 			(*policy.PolicyDocument.Statement)[stmt].OriginArn = role.Arn
@@ -320,10 +326,12 @@ func (ga *GaadAnalyzer) processRolePermissions(role types.RoleDL, evalChan chan<
 	if role.PermissionsBoundary != (types.ManagedPL{}) {
 		if boundaryPolicy := getPolicyByArn(role.PermissionsBoundary.PolicyArn); boundaryPolicy != nil {
 			if boundaryDoc := boundaryPolicy.DefaultPolicyDocument(); boundaryDoc != nil {
-				for i := range *boundaryDoc.Statement {
-					(*boundaryDoc.Statement)[i].OriginArn = role.PermissionsBoundary.PolicyArn
+				if boundaryDoc.Statement != nil && len(*boundaryDoc.Statement) > 0 {
+					for i := range *boundaryDoc.Statement {
+						(*boundaryDoc.Statement)[i].OriginArn = role.PermissionsBoundary.PolicyArn
+					}
+					boundaryStatements = *boundaryDoc.Statement
 				}
-				boundaryStatements = *boundaryDoc.Statement
 			}
 		}
 	}
@@ -338,24 +346,65 @@ func (ga *GaadAnalyzer) processRolePermissions(role types.RoleDL, evalChan chan<
 			tempBoundary := make(types.PolicyStatementList, 0)
 			deepCopy(boundaryStatements, &tempBoundary)
 
-			for _, resource := range getResourcesByAction(Action(action)) {
+			resources := getResourcesByAction(Action(action))
+			if resources == nil {
+				slog.Debug(fmt.Sprintf("No resources found for action %s", action))
+				continue
+			}
+
+			for _, resource := range resources {
+				// Skip nil resources
+				if resource == nil {
+					slog.Debug(fmt.Sprintf("Skipping nil resource for action %s", action))
+					continue
+				}
+
+				// Ensure resource has valid Arn
+				if resource.Arn.String() == "" {
+					slog.Debug(fmt.Sprintf("Skipping resource with empty ARN for action %s", action))
+					continue
+				}
+
 				// For AssumeRole actions, update the resource in the policy document
 				// Without the resource, the evaluator won't match the policy
 				if action == "sts:AssumeRole" {
-					role := roleCache[resource.Arn.String()]
-					if role != nil {
-						arpd := role.AssumeRolePolicyDocument
-						for i := range *arpd.Statement {
+					if roleCache == nil {
+						slog.Debug("Role cache is nil, skipping AssumeRole handling")
+						continue
+					}
+
+					roleObj := roleCache[resource.Arn.String()]
+					if roleObj == nil {
+						slog.Debug(fmt.Sprintf("No role found in cache for %s", resource.Arn.String()))
+						continue
+					}
+
+					if roleObj.AssumeRolePolicyDocument.Statement == nil || len(*roleObj.AssumeRolePolicyDocument.Statement) == 0 {
+						slog.Debug(fmt.Sprintf("Empty AssumeRolePolicyDocument for role %s", roleObj.Arn))
+						continue
+					}
+
+					arpd := roleObj.AssumeRolePolicyDocument
+					for i := range *arpd.Statement {
+						// Ensure each statement in the policy has its resource set correctly
+						if (*arpd.Statement)[i].Resource == nil {
 							(*arpd.Statement)[i].Resource = &types.DynaString{resource.Arn.String()}
 						}
-
-						slog.Debug(fmt.Sprintf("AssumeRole policy for %s: %v", role.Arn, arpd.Statement))
-						tempBoundary = append(tempBoundary, *arpd.Statement...)
 					}
+
+					slog.Debug(fmt.Sprintf("AssumeRole policy for %s: %v", roleObj.Arn, arpd.Statement))
+					tempBoundary = append(tempBoundary, *arpd.Statement...)
 				}
+
+				// Create request context with defensive checks
+				resourceTags := make(map[string]string)
+				if resource != nil {
+					resourceTags = resource.Tags()
+				}
+
 				rc := &RequestContext{
 					PrincipalArn:     role.Arn,
-					ResourceTags:     resource.Tags(),
+					ResourceTags:     resourceTags,
 					PrincipalAccount: resource.AccountId,
 					CurrentTime:      time.Now(),
 				}
@@ -389,9 +438,26 @@ func (ga *GaadAnalyzer) processAssumeRolePolicies(evalChan chan<- *EvaluationReq
 				continue
 			}
 
+			// Skip if Principal is nil
+			if stmt.Principal == nil {
+				slog.Debug(fmt.Sprintf("Skipping statement with nil Principal for role %s", role.Arn))
+				continue
+			}
+
 			// Process principals from different types
 			principals := stmt.ExtractPrincipals()
+			if len(principals) == 0 {
+				slog.Debug(fmt.Sprintf("No principals found in statement for role %s", role.Arn))
+				continue
+			}
+
 			for _, principal := range principals {
+				// Skip empty principals
+				if principal == "" {
+					slog.Debug("Skipping empty principal")
+					continue
+				}
+
 				// Create the evaluation context
 				accountID, tags := getResourceDeets(role.Arn)
 

@@ -37,7 +37,7 @@ type Prefix6 struct {
 func NewIPLookup(configs ...cfg.Config) chain.Link {
 	l := &IPLookup{}
 	l.Base = chain.NewBase(l, configs...)
-	l.SetDescription("Searches AWS IP ranges for a specific IP address")
+	l.Base.SetName("Searches AWS IP ranges for a specific IP address")
 	return l
 }
 

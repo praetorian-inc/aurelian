@@ -18,3 +18,4 @@ out.json
 .idea/vcs.xml
 .idea/workspace.xml
 debug.log*
+*.json

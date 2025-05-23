@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/konstellation/pkg/graph"
@@ -26,7 +27,9 @@ import (
 
 type AwsApolloControlFlow struct {
 	*base.AwsReconLink
-	pd *iam.PolicyData
+	pd  *iam.PolicyData
+	db  graph.GraphDatabase
+	ctx context.Context
 }
 
 func (a *AwsApolloControlFlow) SupportedResourceTypes() []string {
@@ -50,6 +53,7 @@ func (a *AwsApolloControlFlow) Params() []cfg.Param {
 	params := a.AwsReconLink.Params()
 	params = append(params, options.AwsCommonReconOptions()...)
 	params = append(params, options.AwsOrgPolicies())
+	params = append(params, options.Neo4jOptions()...)
 	return params
 }
 
@@ -63,6 +67,23 @@ func (a *AwsApolloControlFlow) Initialize() error {
 		Resources: &resources,
 	}
 	a.loadOrgPolicies()
+
+	graphConfig := &graph.Config{
+		URI:      a.Args()[options.Neo4jURI().Name()].(string),
+		Username: a.Args()[options.Neo4jUsername().Name()].(string),
+		Password: a.Args()[options.Neo4jPassword().Name()].(string),
+	}
+	var err error
+	a.db, err = adapters.NewNeo4jDatabase(graphConfig)
+	if err != nil {
+		return err
+	}
+
+	a.ctx = context.Background()
+	err = a.db.VerifyConnectivity(a.ctx)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -116,6 +137,12 @@ func (a *AwsApolloControlFlow) Process(resourceType string) error {
 	}
 
 	a.graph(summary)
+
+	// Create relationships between resources and their IAM roles
+	err = a.mapResourceRoleRelationships()
+	if err != nil {
+		a.Logger.Error("Failed to create assume role relationships: " + err.Error())
+	}
 
 	return nil
 }
@@ -217,20 +244,7 @@ func (a *AwsApolloControlFlow) graph(summary *iam.PermissionsSummary) {
 		rels = append(rels, rel)
 	}
 
-	graphConfig := &graph.Config{
-		URI:      "bolt://localhost:7687",
-		Username: "neo4j",
-		Password: "konstellation",
-	}
-
-	ctx := context.Background()
-	driver, err := adapters.NewNeo4jDatabase(graphConfig)
-	if err != nil {
-		a.Logger.Error("Failed to create Neo4j driver: " + err.Error())
-		os.Exit(1)
-	}
-
-	res, err := driver.CreateRelationships(ctx, rels)
+	res, err := a.db.CreateRelationships(a.ctx, rels)
 	if err != nil {
 		a.Logger.Error("Failed to create relationships: " + err.Error())
 	}
@@ -238,12 +252,96 @@ func (a *AwsApolloControlFlow) graph(summary *iam.PermissionsSummary) {
 	res.PrintSummary()
 
 	// Enrich data
-	eResults, err := queries.EnrichAWS(driver)
+	eResults, err := queries.EnrichAWS(a.db)
 	if err != nil {
 		a.Logger.Error("Failed to enrich data: " + err.Error())
 	}
 
-	fmt.Println("Enriched results: ", eResults)
+	// Enrich data with org policies and known account IDs
+	a.enrichAccountDetails()
+
+	a.Logger.Debug("Enriched results: ", eResults)
+}
+
+// enrichAccountDetails enriches Account nodes with information from org policies and known account IDs
+func (a *AwsApolloControlFlow) enrichAccountDetails() {
+	// Query for all Account nodes
+	query := `
+		MATCH (a:Account)
+		RETURN a.id as id
+	`
+
+	results, err := a.db.Query(a.ctx, query, nil)
+	if err != nil {
+		a.Logger.Error("Failed to query Account nodes: " + err.Error())
+		return
+	}
+
+	for _, record := range results.Records {
+		accountID, ok := record["id"]
+		if !ok || accountID == nil {
+			continue
+		}
+
+		accountIDStr, ok := accountID.(string)
+		if !ok {
+			continue
+		}
+
+		// Build properties to update
+		props := make(map[string]interface{})
+
+		// Try org policy lookup first
+		orgAccount := a.pd.OrgPolicies.GetAccount(accountIDStr)
+		if orgAccount != nil {
+			// Use org policy data
+			props["name"] = orgAccount.Name
+			props["email"] = orgAccount.Email
+			props["status"] = orgAccount.Status
+			props["source"] = "OrgPolicies"
+			props["memberoforg"] = true
+		} else {
+			// If no org policy data, try known account
+			knownAccountChain := chain.NewChain(
+				NewKnownAccountID(cfg.WithArgs(a.Args())),
+			)
+			knownAccountChain.WithConfigs(cfg.WithArgs(a.Args()))
+			knownAccountChain.Send(accountIDStr)
+			knownAccountChain.Close()
+
+			var knownAccount *AwsKnownAccount
+			knownAccountData, ok := chain.RecvAs[AwsKnownAccount](knownAccountChain)
+			if ok {
+				knownAccount = &knownAccountData
+				props["name"] = knownAccount.Owner
+				props["owner"] = knownAccount.Owner
+				if knownAccount.Description != "" {
+					props["description"] = knownAccount.Description
+				}
+				props["thirdparty"] = true
+				props["source"] = "KnownAccountID"
+			}
+		}
+
+		// Only update if we have properties to set
+		if len(props) > 0 {
+			updateQuery := `
+				MATCH (a:Account {id: $id})
+				SET a += $props
+				RETURN a
+			`
+
+			params := map[string]any{
+				"id":    accountIDStr,
+				"props": props,
+			}
+
+			_, err := a.db.Query(a.ctx, updateQuery, params)
+			if err != nil {
+				a.Logger.Error(fmt.Sprintf("Failed to update Account node for %s: %s", accountIDStr, err.Error()))
+			}
+		}
+	}
 }
 
 func resultToRelationship(result iam.FullResult) (*graph.Relationship, error) {
@@ -332,4 +430,92 @@ func resultToRelationship(result iam.FullResult) (*graph.Relationship, error) {
 	}
 
 	return &rel, nil
+}
+
+// mapResourceRoleRelationships creates sts:AssumeRole relationships between resources and their IAM roles
+func (a *AwsApolloControlFlow) mapResourceRoleRelationships() error {
+	if a.pd.Resources == nil || len(*a.pd.Resources) == 0 {
+		return nil
+	}
+
+	rels := make([]*graph.Relationship, 0)
+
+	for _, resource := range *a.pd.Resources {
+		roleArn := resource.GetRoleArn()
+		if roleArn == "" {
+			continue
+		}
+
+		var roleName string
+		var accountId string = resource.AccountId
+
+		// Check if we have a full ARN or just a role name
+		if strings.HasPrefix(roleArn, "arn:") {
+			// Parse the ARN for proper role name
+			parsedArn, err := arn.Parse(roleArn)
+			if err != nil {
+				a.Logger.Error(fmt.Sprintf("Failed to parse role ARN %s: %s", roleArn, err.Error()))
+				continue
+			}
+
+			// If we have a valid ARN, use the account ID from it
+			accountId = parsedArn.AccountID
+
+			// Extract role name from resource field
+			roleName = parsedArn.Resource
+			// Handle the case where the resource includes a path like "role/rolename"
+			if strings.Contains(roleName, "/") {
+				parts := strings.Split(roleName, "/")
+				roleName = parts[len(parts)-1]
+			}
+		} else {
+			// If no ARN format, assume it's a direct role name
+			roleName = roleArn
+			// Use the resource's account ID for constructing the role ARN
+			roleArn = fmt.Sprintf("arn:aws:iam::%s:role/%s", accountId, roleName)
+		}
+
+		// Create the resource node
+		resourceNode, err := transformers.NodeFromEnrichedResourceDescription(&resource)
+		if err != nil {
+			a.Logger.Error(fmt.Sprintf("Failed to create node from resource %s: %s", resource.Arn.String(), err.Error()))
+			continue
+		}
+
+		// Create the role node
+		roleNode := &graph.Node{
+			Labels: []string{"Role", "Principal", "Resource"},
+			Properties: map[string]interface{}{
+				"name": roleName,
+				"arn":  roleArn,
+			},
+			UniqueKey: []string{"arn"},
+		}
+
+		// Create the relationship
+		rel := &graph.Relationship{
+			StartNode:  resourceNode,
+			EndNode:    roleNode,
+			Type:       "sts:AssumeRole",
+			Properties: map[string]any{"allowed": true},
+		}
+
+		rels = append(rels, rel)
+	}
+
+	if len(rels) == 0 {
+		return nil
+	}
+
+	// Create relationships in the graph database
+	if _, err := a.db.CreateRelationships(a.ctx, rels); err != nil {
+		return fmt.Errorf("failed to create assume role relationships: %w", err)
+	}
+
+	a.Logger.Info(fmt.Sprintf("Created %d assume role relationships", len(rels)))
+	return nil
+}
+
+func (a *AwsApolloControlFlow) Close() {
+	a.db.Close()
 }

@@ -54,6 +54,15 @@ type OrgPolicies struct {
 	Targets []OrgPolicyTarget `json:"targets"`
 }
 
+func (o *OrgPolicies) GetAccount(accountID string) *Account {
+	for _, target := range o.Targets {
+		if target.Type == "ACCOUNT" && target.Account != nil && target.Account.ID == accountID {
+			return target.Account
+		}
+	}
+	return nil
+}
+
 func (o *OrgPolicies) GetPolicyForTarget(accountID string) *OrgPolicyTarget {
 	for _, target := range o.Targets {
 		if target.Account != nil && target.Account.ID == accountID {

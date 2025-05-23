@@ -279,3 +279,47 @@ func (erd *EnrichedResourceDescription) PropertiesAsMap() (map[string]any, error
 
 	return props, nil
 }
+
+// GetRoleArn extracts the IAM role ARN from resource properties if it exists
+func (e *EnrichedResourceDescription) GetRoleArn() string {
+	// Handle case where Properties is empty or nil
+	if e.Properties == nil {
+		return ""
+	}
+
+	// Convert Properties to check if it's a string
+	_, ok := e.Properties.(string)
+	if !ok {
+		return ""
+	}
+
+	// Use PropertiesAsMap to get a map of properties
+	props, err := e.PropertiesAsMap()
+	if err != nil {
+		return ""
+	}
+
+	// Check resource type and extract role ARN accordingly
+	switch e.TypeName {
+	case "AWS::Lambda::Function":
+		if roleArn, ok := props["Role"].(string); ok {
+			return roleArn
+		}
+	case "AWS::EC2::Instance":
+		if profile, ok := props["IamInstanceProfile"].(string); ok {
+			return profile
+		}
+		// Some EC2 instances have a nested IamInstanceProfile object
+		if profileObj, ok := props["IamInstanceProfile"].(map[string]any); ok {
+			if arn, ok := profileObj["Arn"].(string); ok {
+				return arn
+			}
+		}
+	case "AWS::CloudFormation::Stack":
+		if roleArn, ok := props["RoleARN"].(string); ok {
+			return roleArn
+		}
+	}
+
+	return ""
+}

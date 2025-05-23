@@ -35,7 +35,7 @@ type AwsKnownAccount struct {
 func NewKnownAccountID(configs ...cfg.Config) chain.Link {
 	l := &KnownAccountID{}
 	l.Base = chain.NewBase(l, configs...)
-	l.SetDescription("Looks up AWS account IDs against known public accounts")
+	l.Base.SetName("Looks up AWS account IDs against known public accounts")
 	return l
 }
 

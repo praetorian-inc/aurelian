@@ -129,11 +129,13 @@ func chainToToolAdpater(mod *chain.Module) mcp.Tool {
 		metadata.Name,
 	)
 
+	openWorldHint := true
+
 	toolOpts := []mcp.ToolOption{
 		mcp.WithDescription(description),
 		mcp.WithToolAnnotation(mcp.ToolAnnotation{
 			Title:         metadata.Name,
-			OpenWorldHint: true,
+			OpenWorldHint: &openWorldHint,
 		}),
 	}
 
@@ -184,8 +186,13 @@ func janusReqToMcpReq(param cfg.Param) mcp.PropertyOption {
 func mcpParamToJanusParam(request mcp.CallToolRequest, jparams []cfg.Param) []cfg.Config {
 	var configs []cfg.Config
 
+	argsMap, ok := request.Params.Arguments.(map[string]any)
+	if !ok {
+		return configs
+	}
+
 	for _, param := range jparams {
-		p := request.Params.Arguments[param.Name()]
+		p := argsMap[param.Name()]
 		if p == nil {
 			continue
 		}
