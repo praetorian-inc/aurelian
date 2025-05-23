@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"runtime"
+	"strings"
 
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
@@ -25,7 +27,9 @@ potential security issues in cloud environments.`,
 
 func initCommands() {
 	runtime.GC()
-	message.Banner(registry.GetModuleCount())
+	if !strings.Contains(strings.Join(os.Args, " "), "mcp-server") {
+		message.Banner(registry.GetModuleCount())
+	}
 	rootCmd.AddCommand(listModulesCmd)
 	generateCommands(rootCmd)
 }

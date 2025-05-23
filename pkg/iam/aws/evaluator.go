@@ -6,15 +6,55 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws/arn"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/orgpolicies"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type PolicyData struct {
 	Gaad             *types.Gaad
-	SCP              *types.PolicyStatementList
-	RCP              *types.PolicyStatementList
+	OrgPolicies      *orgpolicies.OrgPolicies
 	ResourcePolicies map[string]*types.Policy
 	Resources        *[]types.EnrichedResourceDescription
+}
+
+func NewPolicyData(gaad *types.Gaad, orgPolicies *orgpolicies.OrgPolicies, resourcePolicies map[string]*types.Policy, resources *[]types.EnrichedResourceDescription) *PolicyData {
+	if resourcePolicies == nil {
+		resourcePolicies = make(map[string]*types.Policy, 0)
+	}
+
+	pd := &PolicyData{
+		Gaad:             gaad,
+		OrgPolicies:      orgPolicies,
+		ResourcePolicies: resourcePolicies,
+		Resources:        resources,
+	}
+
+	pd.AddResourcePolicies()
+	return pd
+}
+
+func (pd *PolicyData) AddResourcePolicies() {
+	// Create resource polices from role assume role policies
+	if pd.Gaad != nil {
+		for _, role := range pd.Gaad.RoleDetailList {
+			if role.AssumeRolePolicyDocument.Statement != nil {
+				// Create copy of statements to avoid modifying original
+				stmtCopy := make(types.PolicyStatementList, len(*role.AssumeRolePolicyDocument.Statement))
+				copy(stmtCopy, *role.AssumeRolePolicyDocument.Statement)
+
+				// Set resource and origin for each statement
+				for i := range stmtCopy {
+					stmtCopy[i].Resource = &types.DynaString{role.Arn}
+					stmtCopy[i].OriginArn = fmt.Sprintf("%s/AssumeRolePolicyDocument", role.Arn)
+				}
+
+				// Add to resource policies map
+				pd.ResourcePolicies[role.Arn] = &types.Policy{
+					Statement: &stmtCopy,
+				}
+			}
+		}
+	}
 }
 
 // EvaluationType identifies the type of policy evaluation
@@ -57,8 +97,8 @@ func (pr *PolicyResult) HasDeny() bool {
 	return false
 }
 
-// HasAllow checks if any policy type has an explicit allow
-func (pr *PolicyResult) HasAllow() bool {
+// hasAllow checks if any policy type has an explicit allow
+func (pr *PolicyResult) hasAllow() bool {
 	for _, evals := range pr.Evaluations {
 		for _, eval := range evals {
 			if eval.ExplicitAllow {
@@ -69,8 +109,8 @@ func (pr *PolicyResult) HasAllow() bool {
 	return false
 }
 
-// HasTypeAllow checks if a specific policy type has an explicit allow
-func (pr *PolicyResult) HasTypeAllow(evalType EvaluationType) bool {
+// hasTypeAllow checks if a specific policy type has an explicit allow
+func (pr *PolicyResult) hasTypeAllow(evalType EvaluationType) bool {
 	if evals, exists := pr.Evaluations[evalType]; exists {
 		for _, eval := range evals {
 			if eval.ExplicitAllow {
@@ -81,24 +121,37 @@ func (pr *PolicyResult) HasTypeAllow(evalType EvaluationType) bool {
 	return false
 }
 
-// HasTypeDeny checks if a specific policy type has an explicit deny
-func (pr *PolicyResult) HasTypeDeny(evalType EvaluationType) bool {
+// allPoliciesHaveAllow checks if all policies of a specific type have an explicit allow
+// This is used for special cases like SCPs
+func (pr *PolicyResult) allPoliciesHaveAllow(evalType EvaluationType) bool {
 	if evals, exists := pr.Evaluations[evalType]; exists {
 		for _, eval := range evals {
-			if eval.ExplicitDeny {
-				return true
+			if !eval.ExplicitAllow {
+				return false
 			}
 		}
 	}
-	return false
+	return true
 }
+
+// hasTypeDeny checks if a specific policy type has an explicit deny
+// func (pr *PolicyResult) hasTypeDeny(evalType EvaluationType) bool {
+// 	if evals, exists := pr.Evaluations[evalType]; exists {
+// 		for _, eval := range evals {
+// 			if eval.ExplicitDeny {
+// 				return true
+// 			}
+// 		}
+// 	}
+// 	return false
+// }
 
 // IsAllowed determines if the overall policy evaluations result in an allow
 func (pr *PolicyResult) IsAllowed() bool {
 	if pr.HasDeny() {
 		return false
 	}
-	return pr.HasAllow()
+	return pr.hasAllow()
 }
 
 // EvaluationRequest contains all inputs needed for policy evaluation
@@ -160,17 +213,9 @@ type PolicyEvaluator struct {
 
 // NewPolicyEvaluator creates a new policy evaluator instance
 func NewPolicyEvaluator(pd *PolicyData) *PolicyEvaluator {
-	if pd.SCP == nil {
+	if pd.OrgPolicies == nil {
 		// Default to full AWS access if no SCP is present
-		pd.SCP = &types.PolicyStatementList{
-			{
-				Sid:       "p-FullAWSAccess",
-				Effect:    "Allow",
-				Action:    types.NewDynaString([]string{"*"}),
-				Resource:  types.NewDynaString([]string{"*"}),
-				OriginArn: "p-FullAWSAccess",
-			},
-		}
+		pd.OrgPolicies = orgpolicies.NewDefaultOrgPolicies()
 	}
 	return &PolicyEvaluator{
 		policyData: pd,
@@ -214,30 +259,97 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 		return denyResult, nil
 	}
 
-	// 2. Evaluate RCPs if present (these are always enforced)
-	if e.policyData.RCP != nil {
+	// 2a. Evaluate parent RCPs if present
+	parentRcps := e.policyData.OrgPolicies.GetMergedParentRcpsForTarget(req.Context.ResourceAccount)
+	if len(parentRcps) > 0 {
+		// Check that each parent RCP group has at least one allow statement
+		for parentID, policyStatements := range parentRcps {
+			parentEvals, err := e.evaluatePolicyType(req.Action, req.Resource, req.Context,
+				policyStatements, EvalTypeRCP)
+			if err != nil {
+				return nil, err
+			}
+
+			// Add all evaluations to the result
+			result.PolicyResult.AddEvaluation(EvalTypeRCP, parentEvals)
+
+			// Check if this parent group has at least one allow
+			hasParentAllow := false
+			for _, eval := range parentEvals {
+				if eval.ExplicitAllow {
+					hasParentAllow = true
+					break
+				}
+			}
+
+			// If any parent group doesn't have an allow, deny the request
+			if !hasParentAllow {
+				result.Allowed = false
+				result.EvaluationDetails = fmt.Sprintf("No explicit allow in parent RCP from %s", parentID)
+				return result, nil
+			}
+		}
+	}
+
+	// 2b. Evaluate directly attached RCPs if present
+	rcps := e.policyData.OrgPolicies.GetDirectRcpStatementsForTarget(req.Context.ResourceAccount)
+	if rcps != nil && len(*rcps) > 0 {
 		rcpEvals, err := e.evaluatePolicyType(req.Action, req.Resource, req.Context,
-			e.policyData.RCP, EvalTypeRCP)
+			rcps, EvalTypeRCP)
 		if err != nil {
 			return nil, err
 		}
 		result.PolicyResult.AddEvaluation(EvalTypeRCP, rcpEvals)
-		if !result.PolicyResult.HasTypeAllow(EvalTypeRCP) {
+		if !result.PolicyResult.hasTypeAllow(EvalTypeRCP) {
 			result.Allowed = false
 			result.EvaluationDetails = "Denied by RCP"
 			return result, nil
 		}
 	}
 
-	// 3. Evaluate SCPs if present (these are always enforced)
-	if e.policyData.SCP != nil {
+	// 3a. Evaluate parent SCPs if present
+	parentScps := e.policyData.OrgPolicies.GetMergedParentScpsForTarget(req.Context.ResourceAccount)
+	if len(parentScps) > 0 {
+		// Check that each parent SCP group has at least one allow statement
+		for parentID, policyStatements := range parentScps {
+			parentEvals, err := e.evaluatePolicyType(req.Action, req.Resource, req.Context,
+				policyStatements, EvalTypeSCP)
+			if err != nil {
+				return nil, err
+			}
+
+			// Add all evaluations to the result
+			result.PolicyResult.AddEvaluation(EvalTypeSCP, parentEvals)
+
+			// Check if this parent group has at least one allow
+			hasParentAllow := false
+			for _, eval := range parentEvals {
+				if eval.ExplicitAllow {
+					hasParentAllow = true
+					break
+				}
+			}
+
+			// If any parent group doesn't have an allow, deny the request
+			if !hasParentAllow {
+				result.Allowed = false
+				result.EvaluationDetails = fmt.Sprintf("No explicit allow in parent SCP from %s", parentID)
+				return result, nil
+			}
+		}
+	}
+
+	// 3b. Evaluate SCPs if present (these are always enforced)
+	scps := e.policyData.OrgPolicies.GetDirectScpStatementsForTarget(req.Context.ResourceAccount)
+	if scps != nil && len(*scps) > 0 {
 		scpEvals, err := e.evaluatePolicyType(req.Action, req.Resource, req.Context,
-			e.policyData.SCP, EvalTypeSCP)
+			scps, EvalTypeSCP)
 		if err != nil {
 			return nil, err
 		}
+
 		result.PolicyResult.AddEvaluation(EvalTypeSCP, scpEvals)
-		if !result.PolicyResult.HasTypeAllow(EvalTypeSCP) {
+		if !result.PolicyResult.hasTypeAllow(EvalTypeSCP) {
 			result.Allowed = false
 			result.EvaluationDetails = "Denied by SCP"
 			return result, nil
@@ -252,7 +364,7 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 			return nil, err
 		}
 		result.PolicyResult.AddEvaluation(EvalTypePermBoundary, boundaryEvals)
-		if !result.PolicyResult.HasTypeAllow(EvalTypePermBoundary) {
+		if !result.PolicyResult.hasTypeAllow(EvalTypePermBoundary) {
 			result.Allowed = false
 			result.EvaluationDetails = "Denied by permission boundary"
 			return result, nil
@@ -266,23 +378,25 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 	resourceAllowed := false
 	explicitPrincipalAllow := false
 
-	if resourcePolicy, exists := e.policyData.ResourcePolicies[req.Resource]; exists {
-		resourceStatements := policyToStatementList(resourcePolicy)
-		resourceEvals, err := e.evaluatePolicyType(req.Action, req.Resource, req.Context,
-			resourceStatements, EvalTypeResource)
-		if err != nil {
-			return nil, err
-		}
-		result.PolicyResult.AddEvaluation(EvalTypeResource, resourceEvals)
-		resourceAllowed = result.PolicyResult.HasTypeAllow(EvalTypeResource)
+	if e.policyData.ResourcePolicies != nil {
+		if resourcePolicy, exists := e.policyData.ResourcePolicies[req.Resource]; exists {
+			resourceStatements := policyToStatementList(resourcePolicy)
+			resourceEvals, err := e.evaluatePolicyType(req.Action, req.Resource, req.Context,
+				resourceStatements, EvalTypeResource)
+			if err != nil {
+				return nil, err
+			}
+			result.PolicyResult.AddEvaluation(EvalTypeResource, resourceEvals)
+			resourceAllowed = result.PolicyResult.hasTypeAllow(EvalTypeResource)
 
-		// Check if principal is explicitly allowed
-		explicitPrincipalAllow = e.hasExplicitPrincipalAllow(resourceStatements, req.Context.PrincipalArn)
+			// Check if principal is explicitly allowed
+			explicitPrincipalAllow = e.hasExplicitPrincipalAllow(resourceStatements, req.Context.PrincipalArn)
 
-		if resourceAllowed && explicitPrincipalAllow && result.PolicyResult.IsAllowed() {
-			result.Allowed = true
-			result.EvaluationDetails = "Explicitly allowed by resource policy"
-			return result, nil
+			if resourceAllowed && explicitPrincipalAllow && result.PolicyResult.IsAllowed() {
+				result.Allowed = true
+				result.EvaluationDetails = "Explicitly allowed by resource policy"
+				return result, nil
+			}
 		}
 	}
 
@@ -304,22 +418,22 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 		strings.Contains(req.Resource, ":role/")
 
 	if result.CrossAccountAccess {
-		if isAssumeRoleOperation && result.PolicyResult.HasTypeAllow(EvalTypePermBoundary) {
+		if isAssumeRoleOperation && result.PolicyResult.hasTypeAllow(EvalTypePermBoundary) {
 			// Special case: For cross-account assume role, the trust policy (permission boundary)
 			// is sufficient if it allows the operation, even without a resource policy
-			result.Allowed = result.PolicyResult.HasTypeAllow(EvalTypeIdentity)
+			result.Allowed = result.PolicyResult.hasTypeAllow(EvalTypeIdentity)
 			result.EvaluationDetails = "Cross-account assume role access"
 		} else {
 			// Normal cross-account access requires both identity and resource policy allows
-			result.Allowed = result.PolicyResult.HasTypeAllow(EvalTypeIdentity) && resourceAllowed
+			result.Allowed = result.PolicyResult.hasTypeAllow(EvalTypeIdentity) && resourceAllowed
 			result.EvaluationDetails = "Cross-account access"
 		}
 	} else {
 		// Same account access allows if:
 		// - Principal is explicitly named in resource policy, OR
 		// - Either identity or resource policy allows (when not explicitly named)
-		result.Allowed = explicitPrincipalAllow && result.PolicyResult.HasTypeAllow(EvalTypeResource) ||
-			result.PolicyResult.HasTypeAllow(EvalTypeIdentity)
+		result.Allowed = explicitPrincipalAllow && result.PolicyResult.hasTypeAllow(EvalTypeResource) ||
+			result.PolicyResult.hasTypeAllow(EvalTypeIdentity)
 		result.EvaluationDetails = "Same-account access"
 	}
 
@@ -332,6 +446,22 @@ func (e *PolicyEvaluator) evaluatePolicyType(action, resource string, ctx *Reque
 	}
 
 	evals := make([]*StatementEvaluation, 0)
+
+	// Skip SCP evaluation for service-linked roles
+	if evalType == EvalTypeSCP && ctx.IsServiceLinkedRole() {
+		eval := &StatementEvaluation{
+			ExplicitAllow:    true,
+			ExplicitDeny:     false,
+			ImplicitDeny:     false,
+			MatchedAction:    true,
+			MatchedResource:  true,
+			MatchedPrincipal: true,
+			Origin:           "SCP - Service-Linked Role Bypass",
+		}
+		evals = append(evals, eval)
+		return evals, nil
+	}
+
 	for _, statement := range *statements {
 		eval := evaluateStatement(&statement, action, resource, ctx)
 		evals = append(evals, eval)
@@ -364,8 +494,8 @@ func (e *PolicyEvaluator) checkExplicitDenies(req *EvaluationRequest) (*Evaluati
 		statements *types.PolicyStatementList
 		evalType   EvaluationType
 	}{
-		{e.policyData.RCP, EvalTypeRCP},
-		{e.policyData.SCP, EvalTypeSCP},
+		{e.policyData.OrgPolicies.GetAllScpPoliciesForTarget(req.Context.ResourceAccount), EvalTypeSCP},
+		{e.policyData.OrgPolicies.GetAllRcpPoliciesForTarget(req.Context.ResourceAccount), EvalTypeRCP},
 		{req.BoundaryStatements, EvalTypePermBoundary},
 		{req.IdentityStatements, EvalTypeIdentity},
 	}
@@ -465,6 +595,15 @@ func (e *PolicyEvaluator) hasExplicitPrincipalAllow(statements *types.PolicyStat
 				}
 			}
 		}
+
+		// Check service principals
+		if statement.Principal.Service != nil {
+			for _, allowedService := range *statement.Principal.Service {
+				if allowedService == principalArn {
+					return true
+				}
+			}
+		}
 	}
 	return false
 }
@@ -482,4 +621,15 @@ type StatementEvaluation struct {
 
 func (eval *StatementEvaluation) IsAllowed() bool {
 	return eval.ExplicitAllow && !eval.ExplicitDeny && !eval.ImplicitDeny
+}
+
+// allPoliciesAllow checks if all policies of a specific type have an explicit allow
+// This is used for special cases like SCPs and RCPs
+func allPoliciesAllow(evals []*StatementEvaluation) bool {
+	for _, eval := range evals {
+		if !eval.IsAllowed() {
+			return false
+		}
+	}
+	return true
 }

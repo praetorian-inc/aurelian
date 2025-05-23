@@ -130,3 +130,11 @@ func LogLevel() cfg.Param {
 		WithDefault("none").
 		WithRegex(regexp.MustCompile("^(none|debug|info|warn|error)$"))
 }
+
+func IP() cfg.Param {
+	return cfg.NewParam[[]string]("ip", "ip address").
+		WithRegex(regexp.MustCompile(`^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$`)).
+		WithShortcode("i").
+		AsRequired()
+
+}

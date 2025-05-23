@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	registry.Register("aws", "recon", "public-resources", *AWSPublicResources)
+	registry.Register("aws", "recon", AWSPublicResources.Metadata().Properties()["id"].(string), *AWSPublicResources)
 }
 
 var AWSPublicResources = chain.NewModule(
@@ -20,6 +20,7 @@ var AWSPublicResources = chain.NewModule(
 		"AWS Public Resources",
 		"Enumerate public AWS resources",
 	).WithProperties(map[string]any{
+		"id":          "public-resources",
 		"platform":    "aws",
 		"opsec_level": "moderate",
 		"authors":     []string{"Praetorian"},

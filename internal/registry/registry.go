@@ -1,6 +1,8 @@
 package registry
 
 import (
+	"regexp"
+	"slices"
 	"sync"
 
 	"github.com/praetorian-inc/janus/pkg/chain"
@@ -32,7 +34,7 @@ func Register(platform, category, name string, module chain.Module) {
 	defer Registry.mu.Unlock()
 
 	// Store the module itself
-	Registry.modules[name] = RegistryEntry{
+	Registry.modules[FormatMcpToolName(name)] = RegistryEntry{
 		Module: module,
 		ModuleHeriarchy: ModuleHeriarchy{
 			Platform: platform,
@@ -88,12 +90,11 @@ func GetHierarchy() map[string]map[string][]string {
 	Registry.mu.RLock()
 	defer Registry.mu.RUnlock()
 
-	// Return a copy to prevent modification of the original
 	result := make(map[string]map[string][]string)
 	for platform, categories := range Registry.hierarchy {
 		result[platform] = make(map[string][]string)
 		for category, modules := range categories {
-			result[platform][category] = append([]string{}, modules...)
+			result[platform][category] = slices.Clone(modules)
 		}
 	}
 
@@ -114,4 +115,13 @@ func GetModuleCount() int {
 	defer Registry.mu.RUnlock()
 
 	return len(Registry.modules)
+}
+
+func FormatMcpToolName(name string) string {
+	// Limit name to 64 characters and replace invalid characters
+	name = regexp.MustCompile(`[^a-zA-Z0-9_-]`).ReplaceAllString(name, "")
+	if len(name) > 64 {
+		name = name[:64]
+	}
+	return name
 }

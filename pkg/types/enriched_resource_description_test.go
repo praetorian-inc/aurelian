@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestTags(t *testing.T) {
@@ -47,4 +49,110 @@ func TestTags(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_NewEnrichedResourceDescription_Service(t *testing.T) {
+	erd := NewEnrichedResourceDescription("ec2.amazonaws.com", "AWS::Service", "*", "123456789012", map[string]any{})
+
+	assert.Equal(t, "ec2.amazonaws.com", erd.Identifier)
+	assert.Equal(t, "AWS::Service", erd.TypeName)
+	assert.Equal(t, "*", erd.Region)
+	assert.Equal(t, "123456789012", erd.AccountId)
+	assert.Equal(t, "arn:aws:ec2:*:*:*", erd.Arn.String())
+	assert.Equal(t, "ec2", erd.Service())
+}
+
+func Test_NewEnrichedResourceDescription_IAMPolicy(t *testing.T) {
+	erd := `{
+    "Identifier": "arn:aws:iam::123456789012:policy/vuln-iam-attach-user-policy-target-policy-eV6dJr4X",
+    "TypeName": "AWS::IAM::ManagedPolicy", 
+    "Region": "",
+    "Properties": "{\"PolicyArn\":\"arn:aws:iam::123456789012:policy/vuln-iam-attach-user-policy-target-policy-eV6dJr4X\"}",
+    "AccountId": "123456789012",
+    "Arn": {
+        "Partition": "aws",
+        "Service": "iam",
+        "Region": "",
+        "AccountID": "123456789012",
+        "Resource": "policy/vuln-iam-attach-user-policy-target-policy-eV6dJr4X"
+    }
+}`
+
+	var resource EnrichedResourceDescription
+	err := json.Unmarshal([]byte(erd), &resource)
+	assert.NoError(t, err)
+
+	assert.Equal(t, "arn:aws:iam::123456789012:policy/vuln-iam-attach-user-policy-target-policy-eV6dJr4X", resource.Arn.String())
+}
+
+func Test_NewEnrichedResourceDescription_IAMRole(t *testing.T) {
+	erd := `{
+    "Identifier": "acme-admin-access",                                                                                                                                                                                            "TypeName": "AWS::IAM::Role",                                                                                                                                                                                                 "Region": "",
+    "Properties": "{\"RoleName\":\"acme-admin-access\"}",
+    "AccountId": "123456789012",
+    "Arn": {
+      "Partition": "aws",
+      "Service": "iam",
+      "Region": "",
+      "AccountID": "123456789012",
+      "Resource": "role/acme-admin-access"
+    }
+}`
+
+	var resource EnrichedResourceDescription
+	err := json.Unmarshal([]byte(erd), &resource)
+	assert.NoError(t, err)
+
+	assert.Equal(t, "arn:aws:iam::123456789012:role/acme-admin-access", resource.Arn.String())
+}
+
+func Test_NewEnrichedResourceDescriptionFromRoleDL(t *testing.T) {
+	roleJSON := `{
+		"Path": "/",
+		"RoleName": "acme-admin-access", 
+		"RoleId": "AROAYCO2J6PBWTNHKCYLL",
+		"Arn": "arn:aws:iam::123456789012:role/acme-admin-access",
+		"CreateDate": "2024-05-10T15:06:37+00:00",
+		"AssumeRolePolicyDocument": {
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Principal": {
+						"AWS": [
+							"arn:aws:iam::123456789012:root",
+							"arn:aws:iam::123456789012:user/ReadOnlyUser"
+						]
+					},
+					"Action": "sts:AssumeRole",
+					"Condition": {}
+				}
+			]
+		},
+		"InstanceProfileList": [],
+		"RolePolicyList": [],
+		"AttachedManagedPolicies": [
+			{
+				"PolicyName": "AdministratorAccess",
+				"PolicyArn": "arn:aws:iam::aws:policy/AdministratorAccess"
+			}
+		],
+		"Tags": [],
+		"RoleLastUsed": {
+			"LastUsedDate": "2024-05-10T15:46:34+00:00",
+			"Region": "us-east-1"
+		}
+	}`
+
+	var role RoleDL
+	err := json.Unmarshal([]byte(roleJSON), &role)
+	assert.NoError(t, err)
+
+	erd := NewEnrichedResourceDescriptionFromRoleDL(role)
+
+	assert.Equal(t, "acme-admin-access", erd.Identifier)
+	assert.Equal(t, "AWS::IAM::Role", erd.TypeName)
+	assert.Equal(t, "", erd.Region)
+	assert.Equal(t, "123456789012", erd.AccountId)
+	assert.Equal(t, "arn:aws:iam::123456789012:role/acme-admin-access", erd.Arn.String())
 }

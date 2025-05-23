@@ -5,13 +5,14 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
+	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
 
 func init() {
 	AwsListResources.New().Initialize()
-	registry.Register("aws", "recon", "list", *AwsListResources)
+	registry.Register("aws", "recon", AwsListResources.Metadata().Properties()["id"].(string), *AwsListResources)
 }
 
 var AwsListResources = chain.NewModule(
@@ -19,6 +20,7 @@ var AwsListResources = chain.NewModule(
 		"AWS List Resources",
 		"List resources in an AWS account using Cloud Control API.",
 	).WithProperties(map[string]any{
+		"id":          "list",
 		"platform":    "aws",
 		"opsec_level": "moderate",
 		"authors":     []string{"Praetorian"},
@@ -28,6 +30,7 @@ var AwsListResources = chain.NewModule(
 		},
 	}).WithChainInputParam(options.AwsResourceType().Name()),
 ).WithLinks(
+	general.NewResourceTypePreprocessor(&aws.AWSCloudControl{}),
 	aws.NewAWSCloudControl,
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,

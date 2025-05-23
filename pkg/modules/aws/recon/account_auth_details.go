@@ -9,7 +9,7 @@ import (
 )
 
 func init() {
-	registry.Register("aws", "recon", "account-auth-details", *AwsAuthorizationDetails)
+	registry.Register("aws", "recon", AwsAuthorizationDetails.Metadata().Properties()["id"].(string), *AwsAuthorizationDetails)
 }
 
 var AwsAuthorizationDetails = chain.NewModule(
@@ -17,6 +17,7 @@ var AwsAuthorizationDetails = chain.NewModule(
 		"AWS Get Account Authorization Details",
 		"Get authorization details in an AWS account.",
 	).WithProperties(map[string]any{
+		"id":          "account-auth-details",
 		"platform":    "aws",
 		"opsec_level": "moderate",
 		"authors":     []string{"Praetorian"},

@@ -216,7 +216,8 @@ func AwsProfileDir() cfg.Param {
 func AwsResourceType() cfg.ParamImpl[[]string] {
 	return cfg.NewParam[[]string]("resource-type", "AWS Cloud Control resource type").
 		WithRegex(regexp.MustCompile("^(AWS::[a-zA-Z0-9:]+|all|ALL)$")).
-		WithShortcode("t")
+		WithShortcode("t").
+		WithDefault([]string{"all"})
 }
 
 func AwsCacheDir() cfg.Param {
@@ -248,6 +249,11 @@ func AwsDisableCache() cfg.Param {
 		WithDefault(false)
 }
 
+func AwsOrgPolicies() cfg.Param {
+	return cfg.NewParam[string]("org-policies", "Enable organization policies").
+		WithShortcode("op")
+}
+
 func AwsReconBaseOptions() []cfg.Param {
 	return []cfg.Param{
 		AwsProfile(),
@@ -269,4 +275,18 @@ func AwsCommonReconOptions() []cfg.Param {
 		AwsRegions(),
 		AwsResourceType(),
 	}...)
+}
+
+func AwsAccessKeyId() cfg.Param {
+	return cfg.NewParam[[]string]("access-key-id", "AWS access key ID").
+		WithRegex(regexp.MustCompile("([^A-Z0-9]|^)(AKIA|A3T|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{12,}")).
+		WithShortcode("k").
+		AsRequired()
+}
+
+func AwsAccountId() cfg.Param {
+	return cfg.NewParam[[]string]("account-id", "AWS account ID").
+		WithRegex(regexp.MustCompile("[0-9]{12}")).
+		WithShortcode("i").
+		AsRequired()
 }

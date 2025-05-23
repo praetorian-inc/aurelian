@@ -18,9 +18,10 @@ var AwsOrganizationPolicies = chain.NewModule(
 		"AWS Get Organization Policies",
 		"Get SCPs and RCPs of an AWS organization and the targets to which they are attached.",
 	).WithProperties(map[string]any{
+		"id":          "org-policies",
 		"platform":    "aws",
 		"opsec_level": "moderate",
-		"authors":     []string{"Praetorian"},
+		"authors":     []string{"Andrew Chang"},
 		"references": []string{
 			"https://docs.aws.amazon.com/organizations/latest/APIReference/API_ListRoots.html",
 			"https://docs.aws.amazon.com/organizations/latest/APIReference/API_ListOrganizationalUnitsForParent.html",

@@ -60,6 +60,53 @@ type PolicyStatement struct {
 	OriginArn    string      `json:"OriginArn,omitempty"` // Used for tracking the origin of the statement throughout evaluation
 }
 
+// Helper function to extract all principals from a statement
+func (stmt *PolicyStatement) ExtractPrincipals() []string {
+	principals := []string{}
+
+	if stmt == nil || stmt.Principal == nil {
+		return principals
+	}
+
+	// Extract AWS principals
+	if stmt.Principal.AWS != nil {
+		for _, p := range *stmt.Principal.AWS {
+			if p != "" {
+				principals = append(principals, p)
+			}
+		}
+	}
+
+	// Extract Service principals
+	if stmt.Principal.Service != nil {
+		for _, p := range *stmt.Principal.Service {
+			if p != "" {
+				principals = append(principals, p)
+			}
+		}
+	}
+
+	// Extract Federated principals
+	if stmt.Principal.Federated != nil {
+		for _, p := range *stmt.Principal.Federated {
+			if p != "" {
+				principals = append(principals, p)
+			}
+		}
+	}
+
+	// Extract CanonicalUser principals
+	if stmt.Principal.CanonicalUser != nil {
+		for _, p := range *stmt.Principal.CanonicalUser {
+			if p != "" {
+				principals = append(principals, p)
+			}
+		}
+	}
+
+	return principals
+}
+
 type Principal struct {
 	AWS           *DynaString `json:"AWS,omitempty"`
 	Service       *DynaString `json:"Service,omitempty"`
@@ -92,6 +139,10 @@ func (p *Principal) UnmarshalJSON(rawData []byte) error {
 }
 
 func (p *Principal) String() string {
+	if p == nil {
+		return "nil"
+	}
+
 	if p.AWS != nil {
 		return fmt.Sprintf("AWS: %s", p.AWS.ToHumanReadable())
 	}
@@ -200,6 +251,9 @@ type DynaString []string
 
 // Convert DynaString to human readable format
 func (dyna DynaString) ToHumanReadable() string {
+	if len(dyna) == 0 {
+		return "empty"
+	}
 	if len(dyna) == 1 {
 		return dyna[0]
 	}

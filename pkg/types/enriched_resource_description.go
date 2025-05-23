@@ -20,6 +20,17 @@ type EnrichedResourceDescription struct {
 	Arn        arn.ARN     `json:"Arn"`
 }
 
+func (e *EnrichedResourceDescription) ToArn() arn.ARN {
+	a := arn.ARN{
+		Partition: "aws",
+		Service:   e.Service(),
+		Region:    e.Region,
+		AccountID: e.AccountId,
+		Resource:  e.Identifier,
+	}
+	return a
+}
+
 func NewEnrichedResourceDescription(identifier, typeName, region, accountId string, properties interface{}) EnrichedResourceDescription {
 	a := arn.ARN{}
 	switch typeName {
@@ -43,6 +54,14 @@ func NewEnrichedResourceDescription(identifier, typeName, region, accountId stri
 			Region:    "",
 			AccountID: "",
 			Resource:  identifier,
+		}
+	case "AWS::Service":
+		a = arn.ARN{
+			Partition: "aws",
+			Service:   strings.Split(identifier, ".")[0],
+			Region:    "*",
+			AccountID: "*",
+			Resource:  "*",
 		}
 	default:
 		parsed, err := arn.Parse(identifier)
@@ -85,15 +104,52 @@ func NewEnrichedResourceDescriptionFromArn(a string) (EnrichedResourceDescriptio
 	}, nil
 }
 
-func (e *EnrichedResourceDescription) ToArn() arn.ARN {
-	a := arn.ARN{
-		Partition: "aws",
-		Service:   e.Service(),
-		Region:    e.Region,
-		AccountID: e.AccountId,
-		Resource:  e.Identifier,
+func NewEnrichedResourceDescriptionFromRoleDL(roleDL RoleDL) *EnrichedResourceDescription {
+	arn, _ := arn.Parse(roleDL.Arn)
+
+	return &EnrichedResourceDescription{
+		Identifier: roleDL.RoleName,
+		TypeName:   "AWS::IAM::Role",
+		Region:     "",
+		AccountId:  arn.AccountID,
+		Arn:        arn,
 	}
-	return a
+}
+
+func NewEnrichedResourceDescriptionFromPolicyDL(policyDL PoliciesDL) *EnrichedResourceDescription {
+	arn, _ := arn.Parse(policyDL.Arn)
+
+	return &EnrichedResourceDescription{
+		Identifier: policyDL.PolicyName,
+		TypeName:   "AWS::IAM::ManagedPolicy",
+		Region:     "",
+		AccountId:  arn.AccountID,
+		Arn:        arn,
+	}
+}
+
+func NewEnrichedResourceDescriptionFromUserDL(userDL UserDL) *EnrichedResourceDescription {
+	arn, _ := arn.Parse(userDL.Arn)
+
+	return &EnrichedResourceDescription{
+		Identifier: userDL.UserName,
+		TypeName:   "AWS::IAM::User",
+		Region:     "",
+		AccountId:  arn.AccountID,
+		Arn:        arn,
+	}
+}
+
+func NewEnrichedResourceDescriptionFromGroupDL(groupDL GroupDL) *EnrichedResourceDescription {
+	arn, _ := arn.Parse(groupDL.Arn)
+
+	return &EnrichedResourceDescription{
+		Identifier: groupDL.GroupName,
+		TypeName:   "AWS::IAM::Group",
+		Region:     "",
+		AccountId:  arn.AccountID,
+		Arn:        arn,
+	}
 }
 
 // Helper struct to unmarshal the Properties JSON string
@@ -133,6 +189,11 @@ func (e *EnrichedResourceDescription) Tags() map[string]string {
 }
 
 func (e *EnrichedResourceDescription) Service() string {
+	if e.TypeName == "AWS::Service" {
+		split := strings.Split(e.Identifier, ".")
+		return split[0]
+	}
+
 	split := strings.Split(e.TypeName, "::")
 	if len(split) < 3 {
 		slog.Debug("Failed to parse resource type", slog.String("resourceType", e.TypeName))
@@ -217,4 +278,48 @@ func (erd *EnrichedResourceDescription) PropertiesAsMap() (map[string]any, error
 	}
 
 	return props, nil
+}
+
+// GetRoleArn extracts the IAM role ARN from resource properties if it exists
+func (e *EnrichedResourceDescription) GetRoleArn() string {
+	// Handle case where Properties is empty or nil
+	if e.Properties == nil {
+		return ""
+	}
+
+	// Convert Properties to check if it's a string
+	_, ok := e.Properties.(string)
+	if !ok {
+		return ""
+	}
+
+	// Use PropertiesAsMap to get a map of properties
+	props, err := e.PropertiesAsMap()
+	if err != nil {
+		return ""
+	}
+
+	// Check resource type and extract role ARN accordingly
+	switch e.TypeName {
+	case "AWS::Lambda::Function":
+		if roleArn, ok := props["Role"].(string); ok {
+			return roleArn
+		}
+	case "AWS::EC2::Instance":
+		if profile, ok := props["IamInstanceProfile"].(string); ok {
+			return profile
+		}
+		// Some EC2 instances have a nested IamInstanceProfile object
+		if profileObj, ok := props["IamInstanceProfile"].(map[string]any); ok {
+			if arn, ok := profileObj["Arn"].(string); ok {
+				return arn
+			}
+		}
+	case "AWS::CloudFormation::Stack":
+		if roleArn, ok := props["RoleARN"].(string); ok {
+			return roleArn
+		}
+	}
+
+	return ""
 }

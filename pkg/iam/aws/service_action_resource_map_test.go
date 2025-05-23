@@ -167,18 +167,23 @@ func TestGetResourcePatternsFromAction(t *testing.T) {
 		{
 			name:     "Valid action with EC2 service",
 			action:   "ec2:RunInstances",
-			expected: []*regexp.Regexp{regexp.MustCompile(`^arn:aws:ec2:[a-z-0-9]+:\d{12}:instance/.*`)},
+			expected: []*regexp.Regexp{regexp.MustCompile(`^ec2.amazonaws.com$`)},
 		},
 		{
 			name:     "sts:AssumeRole",
 			action:   "sts:AssumeRole",
 			expected: []*regexp.Regexp{regexp.MustCompile(`^arn:aws:iam::\d{12}:role/.*`)},
 		},
+		{
+			name:     "lambda:CreateFuntion returns lambda service",
+			action:   "lambda:CreateFunction",
+			expected: []*regexp.Regexp{regexp.MustCompile(`^arn:aws:lambda:[a-z-0-9]+:\d{12}:function:.*$`)},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := GetResourcePatternsFromAction(Action(tc.action))
+			result := getResourcePatternsFromAction(Action(tc.action))
 			if !equalSlices(result, tc.expected) {
 				t.Errorf("Expected %v, but got %v for action %v", tc.expected, result, tc.action)
 			}
@@ -204,6 +209,7 @@ func TestResourcePatterns(t *testing.T) {
 		"arn:aws:iam::aws:policy/AdministratorAccess",
 		"arn:aws:iam::123456789012:policy/test",
 		"arn:aws:cloudformation:us-east-2:123456789012:stack/foo/bar",
+		"cloudformation.amazonaws.com",
 	}
 
 	testCases := []struct {
@@ -230,14 +236,14 @@ func TestResourcePatterns(t *testing.T) {
 			name:   "Cloudformation",
 			action: "cloudformation:CreateStack",
 			matchedResources: []string{
-				resources[3],
+				resources[4],
 			},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			patterns := GetResourcePatternsFromAction(Action(tc.action))
+			patterns := getResourcePatternsFromAction(Action(tc.action))
 			t.Logf("Patterns: %v", patterns)
 			matched := []string{}
 			for _, pattern := range patterns {
