@@ -269,6 +269,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"function":    regexp.MustCompile(`^arn:aws:lambda:[a-z-0-9]+:\d{12}:function:.*$`),
 			"layer":       regexp.MustCompile(`^arn:aws:lambda:[a-z-0-9]+:\d{12}:layer:.*$`),
 			"eventconfig": regexp.MustCompile(`^arn:aws:lambda:[a-z-0-9]+:\d{12}:event-source-mapping:.*$`),
+			"service":     regexp.MustCompile(`^lambda.amazonaws.com$`),
 		},
 		ActionResourceMap: map[string][]string{
 			"addlayerversionpermission":          {"layer"},
@@ -276,7 +277,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"createalias":                        {"function"},
 			"createcodeSigningconfig":            {"function"},
 			"createeventSourcemapping":           {"function", "eventconfig"},
-			"createfunction":                     {"function"},
+			"createfunction":                     {"service"},
 			"deletealias":                        {"function"},
 			"deletecodesigningconfig":            {"function"},
 			"deleteeventsourcemapping":           {"eventconfig"},
