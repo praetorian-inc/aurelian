@@ -10,7 +10,6 @@ references:
 query: |
   resources
   | where type =~ 'Microsoft.Compute/virtualMachines'
-  | where resourceGroup =~ 'PublicIPTestRG'  // Remove for all RGs
   | extend vmId = id, vmName = name, vmLocation = location
   | extend osType = properties.storageProfile.osDisk.osType
   | mv-expand nic = properties.networkProfile.networkInterfaces
