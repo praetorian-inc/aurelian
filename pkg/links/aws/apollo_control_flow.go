@@ -102,13 +102,27 @@ func (a *AwsApolloControlFlow) loadOrgPolicies() error {
 		if err != nil {
 			return fmt.Errorf("failed to read org policies file: %w", err)
 		}
-		var orgPolicies *orgpolicies.OrgPolicies
-		if err := json.Unmarshal(fileBytes, &orgPolicies); err != nil {
-			return fmt.Errorf("failed to unmarshal org policies: %w", err)
+
+		// Try to unmarshal as array first (current format)
+		var orgPoliciesArray []*orgpolicies.OrgPolicies
+		if err := json.Unmarshal(fileBytes, &orgPoliciesArray); err == nil {
+			if len(orgPoliciesArray) > 0 {
+				a.pd.OrgPolicies = orgPoliciesArray[0]
+			} else {
+				slog.Warn("Empty organization policies array, assuming p-FullAWSAccess.")
+				a.pd.OrgPolicies = orgpolicies.NewDefaultOrgPolicies()
+			}
+		} else {
+			// Fallback to single object format
+			var orgPolicies *orgpolicies.OrgPolicies
+			if err := json.Unmarshal(fileBytes, &orgPolicies); err != nil {
+				return fmt.Errorf("failed to unmarshal org policies: %w", err)
+			}
+			a.pd.OrgPolicies = orgPolicies
 		}
-		a.pd.OrgPolicies = orgPolicies
 	} else {
 		slog.Warn("Empty organization policies file path provided, assuming p-FullAWSAccess.")
+		a.pd.OrgPolicies = orgpolicies.NewDefaultOrgPolicies()
 	}
 
 	return nil
@@ -268,7 +282,7 @@ func (a *AwsApolloControlFlow) enrichAccountDetails() {
 	// Query for all Account nodes
 	query := `
 		MATCH (a:Account)
-		RETURN a.id as id
+		RETURN a.accountId as accountId
 	`
 
 	results, err := a.db.Query(a.ctx, query, nil)
@@ -278,7 +292,7 @@ func (a *AwsApolloControlFlow) enrichAccountDetails() {
 	}
 
 	for _, record := range results.Records {
-		accountID, ok := record["id"]
+		accountID, ok := record["accountId"]
 		if !ok || accountID == nil {
 			continue
 		}
@@ -326,14 +340,14 @@ func (a *AwsApolloControlFlow) enrichAccountDetails() {
 		// Only update if we have properties to set
 		if len(props) > 0 {
 			updateQuery := `
-				MATCH (a:Account {id: $id})
+				MATCH (a:Account {accountId: $accountId})
 				SET a += $props
 				RETURN a
 			`
 
 			params := map[string]any{
-				"id":    accountIDStr,
-				"props": props,
+				"accountId": accountIDStr,
+				"props":     props,
 			}
 
 			_, err := a.db.Query(a.ctx, updateQuery, params)
