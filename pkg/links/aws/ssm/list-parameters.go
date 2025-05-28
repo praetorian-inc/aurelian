@@ -11,7 +11,6 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -26,7 +25,7 @@ func NewAWSListSSMParameters(configs ...cfg.Config) chain.Link {
 }
 
 func (a *AWSListSSMParameters) Process(resource *types.EnrichedResourceDescription) error {
-	config, err := a.GetConfig(resource.Region, options.JanusParamAdapter(a.Params()))
+	config, err := a.GetConfigWithRuntimeArgs(resource.Region)
 	if err != nil {
 		return err
 	}

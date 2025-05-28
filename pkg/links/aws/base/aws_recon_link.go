@@ -35,7 +35,7 @@ func (a *AwsReconLink) Initialize() error {
 	regions, err := cfg.As[[]string](a.Arg("regions"))
 	slog.Debug("AWS recon regions", "regions", regions)
 	if err != nil || len(regions) == 0 || strings.ToLower(regions[0]) == "all" {
-		a.Regions, err = helpers.EnabledRegions(a.Profile, options.JanusParamAdapter(a.Params()))
+		a.Regions, err = helpers.EnabledRegions(a.Profile, options.JanusArgsAdapter(a.Params(), a.Args()))
 		if err != nil {
 			return err
 		}

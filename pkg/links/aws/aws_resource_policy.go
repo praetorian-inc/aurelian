@@ -21,7 +21,6 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	iam "github.com/praetorian-inc/nebula/pkg/iam/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -69,7 +68,7 @@ func (a *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 	}
 
 	// Get AWS config
-	awsCfg, err := a.GetConfig(resource.Region, options.JanusParamAdapter(a.Params()))
+	awsCfg, err := a.GetConfigWithRuntimeArgs(resource.Region)
 	if err != nil {
 		slog.Error("Failed to get AWS config", "region", resource.Region, "error", err)
 		return nil // Continue with other resources
@@ -424,7 +423,7 @@ func (a *AwsResourcePolicyFetcher) Process(resource *types.EnrichedResourceDescr
 	}
 
 	// Get AWS config from the link parameters
-	awsCfg, err := a.GetConfig(resource.Region, options.JanusParamAdapter(a.Params()))
+	awsCfg, err := a.GetConfigWithRuntimeArgs(resource.Region)
 	if err != nil {
 		return fmt.Errorf("failed to get AWS config: %w", err)
 	}

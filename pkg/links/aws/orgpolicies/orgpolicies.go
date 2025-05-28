@@ -14,7 +14,6 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -425,7 +424,7 @@ func (a *AWSOrganizationPolicies) CollectOrganizationHierarchy() (*OrgUnit, erro
 
 	slog.Debug("Collecting Organization Hierarchy: Set region to ", "region", region)
 
-	config, err := a.GetConfig(region, options.JanusParamAdapter(a.Params()))
+	config, err := a.GetConfigWithRuntimeArgs(region)
 	if err != nil {
 		slog.Error("Failed to create AWS config", "error", err)
 		return nil, err
@@ -538,7 +537,7 @@ func (a *AWSOrganizationPolicies) CollectPolicies(policyType awstypes.PolicyType
 
 	slog.Debug("Getting Account Authorization Details: Set region to ", "region", region)
 
-	config, err := a.GetConfig(region, options.JanusParamAdapter(a.Params()))
+	config, err := a.GetConfigWithRuntimeArgs(region)
 	if err != nil {
 		slog.Error("Failed to create AWS config", "error", err)
 		return nil, err

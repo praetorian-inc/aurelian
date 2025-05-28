@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/utils"
 )
@@ -48,20 +50,34 @@ var Regions = []string{
 func EnabledRegions(profile string, opts []*types.Option) ([]string, error) {
 	var regions []string
 
-	// Use cache if it exists for profile
-	cachedRegionsFile := utils.CreateCachedFileName(fmt.Sprintf("%s_enabled_regions", profile))
-	if utils.IsCacheValid(cachedRegionsFile) {
-		data, err := utils.ReadCache(cachedRegionsFile)
+	// Check if cache is disabled
+	disableCacheOpt := options.GetOptionByName(options.AwsDisableCacheOpt.Name, opts)
+	cacheDisabled := false
+	if disableCacheOpt != nil {
+		var err error
+		cacheDisabled, err = strconv.ParseBool(disableCacheOpt.Value)
 		if err != nil {
-			return nil, err
+			slog.Warn("Failed to parse disable-cache option, defaulting to false", "error", err)
+			cacheDisabled = false
 		}
+	}
 
-		err = json.Unmarshal(data, &regions)
-		if err != nil {
-			return nil, err
+	// Use cache if it exists for profile and cache is not disabled
+	if !cacheDisabled {
+		cachedRegionsFile := utils.CreateCachedFileName(fmt.Sprintf("%s_enabled_regions", profile))
+		if utils.IsCacheValid(cachedRegionsFile) {
+			data, err := utils.ReadCache(cachedRegionsFile)
+			if err != nil {
+				return nil, err
+			}
+
+			err = json.Unmarshal(data, &regions)
+			if err != nil {
+				return nil, err
+			}
+			slog.Debug("Using cached enabled regions")
+			return regions, nil
 		}
-		slog.Debug("Using cached enabled regions")
-		return regions, nil
 	}
 
 	cfg, err := GetAWSCfg("", profile, opts)

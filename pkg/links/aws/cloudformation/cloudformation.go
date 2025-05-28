@@ -9,7 +9,6 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -24,7 +23,7 @@ func NewAWSCloudFormationTemplates(configs ...cfg.Config) chain.Link {
 }
 
 func (a *AWSCloudFormationTemplates) Process(resource *types.EnrichedResourceDescription) error {
-	config, err := a.GetConfig(resource.Region, options.JanusParamAdapter(a.Params()))
+	config, err := a.GetConfigWithRuntimeArgs(resource.Region)
 	if err != nil {
 		slog.Debug("Failed to get AWS config for region", "region", resource.Region, "error", err)
 		return nil

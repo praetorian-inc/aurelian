@@ -60,3 +60,9 @@ func (a *AwsReconBaseLink) GetConfig(region string, opts []*types.Option) (aws.C
 	}
 	return helpers.GetAWSCfg(region, a.Profile, opts, optFns...)
 }
+
+// GetConfigWithRuntimeArgs gets AWS config using runtime arguments instead of default values
+func (a *AwsReconBaseLink) GetConfigWithRuntimeArgs(region string) (aws.Config, error) {
+	opts := options.JanusArgsAdapter(a.Params(), a.Args())
+	return a.GetConfig(region, opts)
+}

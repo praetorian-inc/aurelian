@@ -11,7 +11,6 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
 
 type AWSECRLoginPublic struct {
@@ -30,7 +29,7 @@ func (a *AWSECRLoginPublic) Process(repositoryURI string) error {
 		return err
 	}
 
-	config, err := a.GetConfig(region, options.JanusParamAdapter(a.Params()))
+	config, err := a.GetConfigWithRuntimeArgs(region)
 	if err != nil {
 		slog.Error("Failed to get AWS config", "error", err)
 		return nil

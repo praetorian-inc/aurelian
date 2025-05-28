@@ -15,7 +15,6 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
 
 type JanusAWSAuthorizationDetails struct {
@@ -99,7 +98,7 @@ func (a *JanusAWSAuthorizationDetails) GetAccountAuthorizationDetails() error {
 
 	slog.Debug("Getting Account Authorization Details: Set region to ", "region", region)
 
-	config, err := a.GetConfig(region, options.JanusParamAdapter(a.Params()))
+	config, err := a.GetConfigWithRuntimeArgs(region)
 	if err != nil {
 		slog.Error("Failed to create AWS config", "error", err)
 		return err
