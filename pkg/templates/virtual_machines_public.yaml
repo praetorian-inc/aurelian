@@ -8,47 +8,121 @@ triageNotes: |
 references:
   - https://learn.microsoft.com/en-us/azure/virtual-machines/network-overview
 query: |
-    resources
-    | where type =~ 'Microsoft.Compute/virtualMachines'
-    | mv-expand nic = properties.networkProfile.networkInterfaces
-    | extend nicId = tostring(nic.id)
-    | extend osType = properties.storageProfile.osDisk.osType
-    | join kind=leftouter (
-        resources
-        | where type =~ 'Microsoft.Network/networkInterfaces'
-        | mv-expand ipconfig = properties.ipConfigurations
-        | extend publicIPId = tostring(ipconfig.properties.publicIPAddress.id)
-        | extend privateIP = tostring(ipconfig.properties.privateIPAddress)
-        | where isnotempty(publicIPId)
-        | join kind=leftouter (
-            resources
-            | where type =~ 'Microsoft.Network/publicIPAddresses'
-            | extend publicIP = properties.ipAddress
-        ) on $left.publicIPId == $right.id
-        | project nicId = id, publicIP, privateIP,
-            nsgId = tostring(properties.networkSecurityGroup.id)
-    ) on nicId
-    | where isnotempty(publicIP)
-    | join kind=leftouter (
-        resources
-        | where type =~ 'Microsoft.Network/networkSecurityGroups'
-        | mv-expand rule = properties.securityRules
-        | where rule.properties.direction == 'Inbound' 
-        | where rule.properties.access == 'Allow'
-        | extend sourceAddressPrefix = rule.properties.sourceAddressPrefix
-        | extend destinationPortRange = rule.properties.destinationPortRange
-        | where sourceAddressPrefix in ('*', 'Internet', '0.0.0.0', '0.0.0.0/0')
-        | summarize openPorts=make_set(destinationPortRange) by id
-    ) on $left.nsgId == $right.id
-    | where isnotnull(openPorts)
-    | project
-        id,
-        name,
-        type,
-        location,
-        publicIP,
-        privateIP,
-        osType,
-        hasPublicIP = true,
-        openPorts = iif(isempty(openPorts), '', tostring(openPorts)),
-        nsgId
+  resources
+  | where type =~ 'Microsoft.Compute/virtualMachines'
+  | where resourceGroup =~ 'PublicIPTestRG'  // Remove for all RGs
+  | extend vmId = id, vmName = name, vmLocation = location
+  | extend osType = properties.storageProfile.osDisk.osType
+  | mv-expand nic = properties.networkProfile.networkInterfaces
+  | extend nicId = tostring(nic.id)
+  // Join with network interfaces to find public IPs
+  | join kind=inner (
+      resources
+      | where type =~ 'Microsoft.Network/networkInterfaces'
+      | extend nicId = id
+      | extend subnetId = tostring(properties.ipConfigurations[0].properties.subnet.id)
+      | extend nicNsgId = tostring(properties.networkSecurityGroup.id)
+      | mv-expand ipconfig = properties.ipConfigurations
+      | extend publicIPId = tostring(ipconfig.properties.publicIPAddress.id)
+      | extend privateIP = tostring(ipconfig.properties.privateIPAddress)
+      | where isnotempty(publicIPId)
+      // Join with public IPs to get the actual IP address
+      | join kind=inner (
+          resources
+          | where type =~ 'Microsoft.Network/publicIPAddresses'
+          | where isnotempty(properties.ipAddress)
+          | project publicIPId = id, publicIP = tostring(properties.ipAddress)
+      ) on $left.publicIPId == $right.publicIPId
+      | project nicId, publicIP, privateIP, nicNsgId, subnetId
+  ) on $left.nicId == $right.nicId
+  // First summarize to get VM-level data
+  | summarize 
+      publicIPs = make_set(publicIP),
+      privateIPs = make_set(privateIP),
+      nicNsgIds = make_set(nicNsgId),
+      subnetIds = make_set(subnetId),
+      osType = any(osType)
+      by vmId, vmName, vmLocation
+  // Get all NSGs (from all NICs of the VM, not just the one with public IP)
+  | join kind=leftouter (
+      resources
+      | where type =~ 'Microsoft.Compute/virtualMachines'
+      | mv-expand nic = properties.networkProfile.networkInterfaces
+      | extend nicId = tostring(nic.id)
+      | join kind=inner (
+          resources
+          | where type =~ 'Microsoft.Network/networkInterfaces'
+          | extend nicId = id
+          | extend nicNsgId = tostring(properties.networkSecurityGroup.id)
+          | where isnotempty(nicNsgId)
+          | project nicId, nicNsgId
+      ) on $left.nicId == $right.nicId
+      | summarize allVmNicNsgIds = make_set(nicNsgId) by vmId = id
+  ) on $left.vmId == $right.vmId
+  | extend nicNsgIds = coalesce(allVmNicNsgIds, nicNsgIds)
+  // Expand subnet IDs to check for subnet-level NSGs
+  | mv-expand subnetId = subnetIds to typeof(string)
+  | join kind=leftouter (
+      resources
+      | where type =~ 'Microsoft.Network/virtualNetworks'
+      | mv-expand subnet = properties.subnets
+      | extend subnetId = tostring(subnet.id)
+      | extend subnetNsgId = tostring(subnet.properties.networkSecurityGroup.id)
+      | where isnotempty(subnetNsgId)
+      | project subnetId, subnetNsgId
+  ) on $left.subnetId == $right.subnetId
+  // Re-aggregate after subnet join
+  | summarize 
+      publicIPs = make_set(publicIPs),
+      privateIPs = make_set(privateIPs),
+      nicNsgIds = make_set(nicNsgIds),
+      subnetNsgIds = make_set(subnetNsgId),
+      osType = any(osType)
+      by vmId, vmName, vmLocation
+  | extend allNsgIds = set_union(nicNsgIds, subnetNsgIds)
+  // Now get ports - but don't filter out VMs without NSGs yet
+  | mv-expand nsgId = allNsgIds to typeof(string)
+  | join kind=leftouter (
+      resources
+      | where type =~ 'Microsoft.Network/networkSecurityGroups'
+      | mv-expand rule = properties.securityRules
+      | where rule.properties.direction == 'Inbound' 
+      | where rule.properties.access == 'Allow'
+      | extend sourcePrefix = tostring(rule.properties.sourceAddressPrefix)
+      | extend sourcePrefixes = rule.properties.sourceAddressPrefixes
+      // Check if source allows internet traffic
+      | where sourcePrefix in ('*', 'Internet', '0.0.0.0', '0.0.0.0/0')
+          or sourcePrefixes has '*' 
+          or sourcePrefixes has 'Internet' 
+          or sourcePrefixes has '0.0.0.0/0'
+      | extend destPort = tostring(rule.properties.destinationPortRange)
+      | extend destPorts = rule.properties.destinationPortRanges
+      // Handle both single ports and port arrays
+      | extend ports = case(
+          isnotempty(destPort), pack_array(destPort),
+          isnotempty(destPorts), destPorts,
+          pack_array('*')
+      )
+      | mv-expand port = ports to typeof(string)
+      | summarize openPorts = make_set(port) by nsgId = id
+  ) on $left.nsgId == $right.nsgId
+  // Final aggregation - include VMs even if no NSG rules found
+  | summarize 
+      publicIPs = make_set(publicIPs),
+      privateIPs = make_set(privateIPs),
+      allOpenPorts = make_set(openPorts),
+      nsgCount = dcount(nsgId),
+      osType = any(osType)
+      by vmId, vmName, vmLocation
+  // Only show VMs that have at least one NSG protecting them
+  | where nsgCount > 0
+  // Format the output
+  | project
+      name = vmName,
+      location = vmLocation,
+      osType,
+      publicIPs = tostring(publicIPs),
+      privateIPs = tostring(privateIPs),
+      openPorts = tostring(allOpenPorts),
+      nsgCount,
+      numberOfPublicIPs = array_length(publicIPs)
