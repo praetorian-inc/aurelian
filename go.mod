@@ -75,6 +75,7 @@ require (
 	github.com/Ullaakut/nmap/v3 v3.0.5 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.6 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.21 // indirect
+	github.com/aws/aws-sdk-go-v2/service/account v1.24.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.4.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.18.2 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
