@@ -95,6 +95,9 @@ func initializeResourceCache(wg *sync.WaitGroup, pd *PolicyData) {
 	for _, group := range pd.Gaad.GroupDetailList {
 		resourceCache[group.Arn] = types.NewEnrichedResourceDescriptionFromGroupDL(group)
 	}
+
+	// Create attacker resources used to identify cross-account access
+	createAttackerResources(pd)
 }
 
 // addServicesToResourceCache adds common AWS services to the resource cache
@@ -120,6 +123,8 @@ func addServicesToResourceCache() {
 		"eks.amazonaws.com",
 		"glue.amazonaws.com",
 		"sagemaker.amazonaws.com",
+		"ecs.amazonaws.com",
+		"apigateway.amazonaws.com",
 	}
 
 	// Add services to the cache
@@ -221,4 +226,14 @@ func getRoleAttachedManagedPolicies(role types.RoleDL) types.PolicyStatementList
 		}
 	}
 	return identityStatements
+}
+
+func createAttackerResources(pd *PolicyData) {
+	for _, ar := range attackResources {
+		resourceCache[ar.Arn.String()] = &ar
+	}
+}
+
+var attackResources = []types.EnrichedResourceDescription{
+	types.NewEnrichedResourceDescription("attacker", "AWS::API::Gateway", "us-east-1", "123456789012", make(map[string]string)),
 }

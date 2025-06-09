@@ -432,7 +432,7 @@ func resultToRelationship(result iam.FullResult) (*graph.Relationship, error) {
 
 	// Process Result
 	if result.Result != nil {
-		flattenedResult, err := utils.ConvertAndFlatten(result.Result, "EvaluationDetails")
+		flattenedResult, err := utils.ConvertAndFlatten(result.Result, "PolicyResult")
 		if err != nil {
 			rel.Properties = map[string]any{
 				"allowed": result.Result.Allowed,

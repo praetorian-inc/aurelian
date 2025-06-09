@@ -1,7 +1,6 @@
 package aws
 
 import (
-	"slices"
 	"strings"
 
 	"github.com/praetorian-inc/janus/pkg/chain"
@@ -19,7 +18,8 @@ func (a *Action) Service() string {
 }
 
 func isPrivEscAction(action string) bool {
-	return slices.Contains(privEscActions, action)
+	// return slices.Contains(privEscActions, action)
+	return true
 }
 
 var privEscActions = []string{

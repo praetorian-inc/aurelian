@@ -300,7 +300,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"getlayerversionpolicy":              {"layer"},
 			"getpolicy":                          {"function"},
 			"getprovisionedconcurrencyconfig":    {"function"},
-			"invokefunction":                     {"function"},
+			"invokefunction":                     {"function", "service"},
 			"invokeAsync":                        {"function"},
 			"listaliases":                        {"function"},
 			"listcodesigningconfigs":             {"function"},
@@ -327,6 +327,15 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"updatefunctioncode":                 {"function"},
 			"updatefunctionconfiguration":        {"function"},
 			"updatefunctioneventinvokeconfig":    {"function"},
+		},
+	},
+	"ecs": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service": regexp.MustCompile(`^ecs.amazonaws.com$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"runtask":                {"service"},
+			"registertaskdefinition": {"service"},
 		},
 	},
 }
