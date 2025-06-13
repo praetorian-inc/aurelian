@@ -270,7 +270,7 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 		if err != nil {
 			// Handle "no policy" errors gracefully
 			if strings.Contains(err.Error(), "ResourceNotFoundException") || strings.Contains(err.Error(), "failed to get policy") {
-				return &types.Policy{}, nil
+				return nil, nil
 			}
 			return nil, err
 		}
