@@ -27,7 +27,7 @@ query: |
     | extend publicNetworkAccess = iif(isnotempty(properties.publicNetworkAccess), 
         tolower(properties.publicNetworkAccess), 
         'enabled')
-    | where publicNetworkAccess == 'enabled'
+    | where publicNetworkAccess != 'disabled'
     | project
         id,
         name,
