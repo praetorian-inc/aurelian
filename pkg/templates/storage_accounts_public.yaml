@@ -11,6 +11,7 @@ triageNotes: |
   
   Triage Guidance:
   - This finding only confirms the storage account is accessible from the internet and not anonymous access
+  - This finding does not take into consideration fine-grained IP rules, always check manually if storage account hasIpRules and hasVnetRules is not returning a 0 value
   - Additional manual testing is required to determine if anonymous/unauthorized access is possible
   - Readers do not have object-level access, some additional permissions or shoulder surfing may be required
 references:
@@ -23,10 +24,8 @@ query: |
     | extend defaultAction = tostring(acls.defaultAction)
     | extend hasIpRules = array_length(acls.ipRules)
     | extend hasVnetRules = array_length(acls.virtualNetworkRules)
-    | where publicNetworkAccess == 'Enabled'
+    | where publicNetworkAccess != 'Disabled'
     | where defaultAction == 'Allow'
-    | where hasIpRules == 0
-    | where hasVnetRules == 0
     | project
         id,
         name,
