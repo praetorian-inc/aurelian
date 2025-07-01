@@ -19,7 +19,7 @@ var AWSFindSecretsResource = chain.NewModule(
 		"AWS Find Secrets Resource",
 		"Enumerate AWS resources and find secrets using NoseyParker for a specific resource type",
 	).WithProperties(map[string]any{
-		"id":          "find-secrets",
+		"id":          "aws-find-secrets-resource",
 		"platform":    "aws",
 		"opsec_level": "moderate",
 		"authors":     []string{"Praetorian"},

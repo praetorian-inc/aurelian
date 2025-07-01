@@ -5,11 +5,11 @@ import (
 
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus/pkg/types"
 	"github.com/praetorian-inc/konstellation/pkg/graph"
 	"github.com/praetorian-inc/konstellation/pkg/graph/adapters"
 	"github.com/praetorian-inc/konstellation/pkg/graph/queries"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/tabularium/pkg/model/model"
 )
 
 type ApolloQuery struct {
@@ -83,32 +83,32 @@ func (a *ApolloQuery) Process(query string) error {
 					continue
 				}
 
-				var proofKey string
-				var proofValue any
-				for k, _ := range r {
-					if k != "vulnerable" {
-						proofKey = k
-						proofValue = r.String()
-						break
-					}
-				}
+				// var proofKey string
+				// var proofValue any
+				// for k, _ := range r {
+				// 	if k != "vulnerable" {
+				// 		proofKey = k
+				// 		proofValue = r.String()
+				// 		break
+				// 	}
+				// }
 
-				if proofKey == "" {
-					proofKey = "attack-path"
-					proofValue = r.String()
-				}
+				// if proofKey == "" {
+				// 	proofKey = "attack-path"
+				// 	proofValue = r.String()
+				// }
 
-				risk := types.Risk{
+				risk := model.Risk{
 					Name:     q.QueryMetadata.Name,
 					DNS:      vuln,
-					Severity: q.QueryMetadata.Severity,
-					Proof:    map[string]any{proofKey: proofValue},
-					Metadata: map[string]any{
-						"name":              q.QueryMetadata.Name,
-						"description":       q.QueryMetadata.Description,
-						"severity":          q.QueryMetadata.Severity,
-						"impacted-services": q.QueryMetadata.ImpactedServices,
-					},
+					Priority: GetPriority(q.QueryMetadata.Severity),
+					// Proof:    map[string]any{proofKey: proofValue},
+					// Metadata: map[string]any{
+					// 	"name":              q.QueryMetadata.Name,
+					// 	"description":       q.QueryMetadata.Description,
+					// 	"severity":          q.QueryMetadata.Severity,
+					// 	"impacted-services": q.QueryMetadata.ImpactedServices,
+					// },
 				}
 				a.Send(risk)
 			}
@@ -119,4 +119,19 @@ func (a *ApolloQuery) Process(query string) error {
 
 func (a *ApolloQuery) Close() {
 	a.db.Close()
+}
+
+func GetPriority(severity string) int {
+	switch severity {
+	case "LOW":
+		return 3
+	case "MEDIUM":
+		return 5
+	case "HIGH":
+		return 8
+	case "CRITICAL":
+		return 10
+	default:
+		return 3
+	}
 }
