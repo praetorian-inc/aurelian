@@ -6,6 +6,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	jlinks "github.com/praetorian-inc/janus/pkg/links"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type SupportsResourceTypes interface {
@@ -32,5 +33,18 @@ func PreprocessResourceTypes(class SupportsResourceTypes) func(chain.Link, strin
 
 func NewResourceTypePreprocessor(class SupportsResourceTypes) func(...cfg.Config) chain.Link {
 	preprocessor := PreprocessResourceTypes(class)
+	return jlinks.ConstructAdHocLink(preprocessor)
+}
+
+// NewSingleResourcePreprocessor returns a link that accepts a string (ARN), constructs an EnrichedResourceDescription, and sends it.
+func NewSingleResourcePreprocessor() func(...cfg.Config) chain.Link {
+	preprocessor := func(self chain.Link, input string) error {
+		erd, err := types.NewEnrichedResourceDescriptionFromArn(input)
+		if err != nil {
+			return err
+		}
+		self.Send(erd)
+		return nil
+	}
 	return jlinks.ConstructAdHocLink(preprocessor)
 }

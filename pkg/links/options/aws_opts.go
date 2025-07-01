@@ -220,6 +220,12 @@ func AwsResourceType() cfg.ParamImpl[[]string] {
 		WithDefault([]string{"all"})
 }
 
+func AwsResourceArn() cfg.Param {
+	return cfg.NewParam[string]("resource-arn", "AWS Cloud Control resource ARN").
+		WithShortcode("a").
+		WithRegex(regexp.MustCompile("^arn:aws:.*$"))
+}
+
 func AwsCacheDir() cfg.Param {
 	return cfg.NewParam[string]("cache-dir", "Directory to store API response cache files").
 		WithDefault(filepath.Join(os.TempDir(), "nebula-cache"))
