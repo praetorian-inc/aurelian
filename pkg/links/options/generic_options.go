@@ -131,6 +131,15 @@ func LogLevel() cfg.Param {
 		WithRegex(regexp.MustCompile("^(none|debug|info|warn|error)$"))
 }
 
+func AwsCacheLogLevel() cfg.Param {
+	return cfg.NewParam[string]("aws-cache-log-level", "Log level for AWS cache operations (debug, info, warn, error, none). Overrides global --log-level for cache logging.").
+		WithRegex(regexp.MustCompile("^(none|debug|info|warn|error)$"))
+}
+
+func AwsCacheLogFile() cfg.Param {
+	return cfg.NewParam[string]("aws-cache-log-file", "File path to redirect AWS cache logs. If not specified, logs will be written to stdout.")
+}
+
 func IP() cfg.Param {
 	return cfg.NewParam[[]string]("ip", "ip address").
 		WithRegex(regexp.MustCompile(`^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$`)).

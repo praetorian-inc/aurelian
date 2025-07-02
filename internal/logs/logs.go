@@ -88,6 +88,46 @@ func NewLogger() *slog.Logger {
 	return logger
 }
 
+func NewLoggerWithLevel(level string) *slog.Logger {
+	w := os.Stderr
+	handler := tint.NewHandler(w,
+		&tint.Options{
+			Level:   getLevelFromString(level),
+			NoColor: !isatty.IsTerminal(w.Fd()),
+		},
+	)
+	logger := slog.New(handler)
+
+	return logger
+}
+
+func NewLoggerWithFile(level, filename string) *slog.Logger {
+	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		// If we can't open the file, fall back to stderr
+		if level == "" {
+			return NewLogger()
+		}
+		return NewLoggerWithLevel(level)
+	}
+
+	var targetLevel slog.Level
+	if level == "" {
+		// Use global log level if no specific level provided
+		targetLevel = getLevelFromString(logLevel)
+	} else {
+		targetLevel = getLevelFromString(level)
+	}
+
+	opts := &slog.HandlerOptions{
+		Level: targetLevel,
+	}
+	handler := slog.NewJSONHandler(f, opts)
+	logger := slog.New(handler)
+
+	return logger
+}
+
 func NewModuleLogger(ctx context.Context, opts []*types.Option) *slog.Logger {
 	logger := NewLogger()
 	metadata := ctx.Value("metadata").(modules.Metadata)

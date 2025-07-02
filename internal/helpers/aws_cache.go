@@ -545,6 +545,28 @@ func ShowCacheStat() {
 	fmt.Printf("AWS Cache Stat: Hit: %d, Miss: %d Bypassed: %d\n", GetCacheHitCount(), GetCacheMissCount(), GetCacheBypassedCount())
 }
 
-func SetAWSCacheLogger(newLogger *slog.Logger) {
-	logger = *newLogger
+func ConfigureAWSCacheLogger(logLevel, logFile string) {
+	var cacheLogger *slog.Logger
+	
+	// If no specific log level is set, use the global default logger
+	if logLevel == "" {
+		if logFile != "" {
+			// Use global log level but redirect to file
+			cacheLogger = logs.NewLoggerWithFile("", logFile)
+		} else {
+			// Use the global default logger
+			cacheLogger = logs.NewLogger()
+		}
+	} else {
+		// Create a new logger with the specified level and optional file output
+		if logFile != "" {
+			cacheLogger = logs.NewLoggerWithFile(logLevel, logFile)
+		} else {
+			cacheLogger = logs.NewLoggerWithLevel(logLevel)
+		}
+	}
+	
+	if cacheLogger != nil {
+		logger = *cacheLogger
+	}
 }
