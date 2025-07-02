@@ -79,7 +79,15 @@ func NewLogger() *slog.Logger {
 
 func NewModuleLogger(ctx context.Context, opts []*types.Option) *slog.Logger {
 	logger := NewLogger()
-	metadata := ctx.Value("metadata").(modules.Metadata)
+	
+	// Handle case where metadata might not be in context (e.g., helper functions)
+	metadataValue := ctx.Value("metadata")
+	if metadataValue == nil {
+		// Return logger without module-specific attributes when metadata is not available
+		return logger
+	}
+	
+	metadata := metadataValue.(modules.Metadata)
 	child := logger.WithGroup("module").With("platform", metadata.Platform).With("id", metadata.Id)
 
 	return child
