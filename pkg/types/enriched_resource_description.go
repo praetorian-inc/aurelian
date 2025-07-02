@@ -101,7 +101,7 @@ func NewEnrichedResourceDescriptionFromArn(a string) (EnrichedResourceDescriptio
 	}
 
 	return EnrichedResourceDescription{
-		Identifier: parsed.String(),
+		Identifier: parsed.Resource,
 		TypeName:   typename,
 		Region:     parsed.Region,
 		AccountId:  parsed.AccountID,
