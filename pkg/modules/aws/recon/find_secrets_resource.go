@@ -34,5 +34,5 @@ var AWSFindSecretsResource = chain.NewModule(
 	output.NewJSONOutputter,
 	output.NewConsoleOutputter,
 ).WithInputParam(
-	options.AwsResourceType().WithDefault([]string{"all"}),
+	options.AwsResourceArn(),
 )

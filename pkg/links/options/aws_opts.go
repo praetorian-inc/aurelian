@@ -223,7 +223,8 @@ func AwsResourceType() cfg.ParamImpl[[]string] {
 func AwsResourceArn() cfg.Param {
 	return cfg.NewParam[string]("resource-arn", "AWS Cloud Control resource ARN").
 		WithShortcode("a").
-		WithRegex(regexp.MustCompile("^arn:aws:.*$"))
+		WithRegex(regexp.MustCompile("^arn:aws:.*$")).
+		AsRequired()
 }
 
 func AwsCacheDir() cfg.Param {
