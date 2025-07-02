@@ -16,6 +16,8 @@ import (
 
 var (
 	logLevelFlag string
+	awsCacheLogLevel string
+	awsCacheLogFile string
 )
 
 var rootCmd = &cobra.Command{
@@ -36,9 +38,12 @@ func initCommands() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&logLevelFlag, options.LogLevel().Name(), options.LogLevel().Value().(string), "Log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().StringVar(&awsCacheLogLevel, options.AwsCacheLogLevel().Name(), options.AwsCacheLogLevel().Value().(string), "Log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().StringVar(&awsCacheLogFile, options.AwsCacheLogFile().Name(), options.AwsCacheLogFile().Value().(string), "")
+	
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
 		logs.ConfigureDefaults(logLevelFlag)
-		helpers.SetAWSCacheLogger(logs.NewLogger())
+		helpers.ConfigureAWSCacheLogger(awsCacheLogLevel, awsCacheLogFile)
 	}
 }
 
