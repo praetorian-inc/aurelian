@@ -124,6 +124,19 @@ func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) e
 		return nil
 	}
 
+	// Send all properties as NPInput
+	if resource.Properties != nil {
+		npInput, err := resource.ToNPInputs()
+		if err != nil {
+			slog.Error("Error converting resource to NPInput", "resource", resource, "error", err)
+			return err
+		}
+
+		for _, input := range npInput {
+			fs.Send(input)
+		}
+	}
+
 	resourceChain := constructor()
 
 	resourceChain.WithConfigs(cfg.WithArgs(fs.Args()))

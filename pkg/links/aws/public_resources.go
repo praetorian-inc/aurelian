@@ -56,7 +56,7 @@ func (a *AwsPublicResources) Process(resourceType string) error {
 	}
 
 	if err := c.Error(); err != nil {
-		slog.Error("Error processing resource for secrets", "resource", resourceType, "error", err)
+		slog.Error("Error processing resource for public resources", "resource", resourceType, "error", err)
 	}
 
 	return nil
@@ -79,7 +79,6 @@ func (a *AwsPublicResources) ResourceMap() map[string]func() chain.Chain {
 		return chain.NewChain(
 			NewAWSCloudControl(),
 			NewPropertyFilterLink(cfg.WithArg("property", "PublicIp")),
-			//general.NewJqFilter(cfg.WithArg("filter", "select(.Properties | fromjson | has(\"PublicIp\")) | {Type: .TypeName, Identifier: .Identifier, PublicIp: (.Properties | fromjson | .PublicIp)}")),
 		)
 	}
 
