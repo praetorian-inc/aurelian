@@ -20,6 +20,7 @@ query: |
     | extend ipRules = properties.ipRules
     | extend enableFreeTier = properties.enableFreeTier
     | extend endpoint = properties.documentEndpoint
+    | extend disableLocalAuth = properties.disableLocalAuth
     | where publicNetworkAccess != 'disabled'
     | where 
         isempty(ipRules) or
@@ -35,6 +36,7 @@ query: |
         location,
         publicNetworkAccess,
         enableFreeTier,
+        disableLocalAuth,
         kind,
         endpoint,
         subscriptionId
