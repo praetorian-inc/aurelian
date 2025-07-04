@@ -14,27 +14,29 @@ triageNotes: |
 references:
   - https://learn.microsoft.com/en-us/azure/cosmos-db/how-to-configure-firewall
 query: |
-    resources
-    | where type =~ 'Microsoft.DocumentDB/databaseAccounts'
-    | extend publicNetworkAccess = tolower(properties.publicNetworkAccess)
-    | extend ipRules = properties.ipRules
-    | extend enableFreeTier = properties.enableFreeTier
-    | extend endpoint = properties.documentEndpoint
-    | where publicNetworkAccess != 'disabled'
-    | where 
-        isempty(ipRules) or
-        array_length(ipRules) == 0 or
-        ipRules has '0.0.0.0' or
-        ipRules has '0.0.0.0/0' or
-        ipRules has '*' or
-        ipRules has 'Internet'
-    | project
-        id,
-        name,
-        type,
-        location,
-        publicNetworkAccess,
-        enableFreeTier,
-        kind,
-        endpoint,
-        subscriptionId
+  resources
+  | where type =~ 'Microsoft.DocumentDB/databaseAccounts'
+  | extend publicNetworkAccess = tolower(properties.publicNetworkAccess)
+  | extend ipRules = properties.ipRules
+  | extend enableFreeTier = properties.enableFreeTier
+  | extend endpoint = properties.documentEndpoint
+  | extend disableLocalAuth = properties.disableLocalAuth
+  | where publicNetworkAccess != 'disabled'
+  | where 
+      isempty(ipRules) or
+      array_length(ipRules) == 0 or
+      ipRules has '0.0.0.0' or
+      ipRules has '0.0.0.0/0' or
+      ipRules has '*' or
+      ipRules has 'Internet'
+  | project
+      id,
+      name,
+      type,
+      location,
+      publicNetworkAccess,
+      enableFreeTier,
+      disableLocalAuth,
+      kind,
+      endpoint,
+      subscriptionId
