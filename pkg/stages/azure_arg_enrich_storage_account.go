@@ -46,7 +46,7 @@ func enrichStorageAccount(ctx context.Context, result *templates.ARGQueryResult)
 	curlCommand := templates.Command{
 		Command:                   command,
 		Description:               "Test anonymous access to storage account container listing",
-		ExpectedOutputDescription: "anonymous access enabled 404 | anonymous access disabled = 401/403 | public access disabled = 409",
+		ExpectedOutputDescription: "anonymous access enabled = 404 | anonymous access disabled = 401/403 | public access disabled = 409",
 	}
 
 	if err != nil {
