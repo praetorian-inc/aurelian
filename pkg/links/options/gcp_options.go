@@ -3,6 +3,7 @@ package options
 import (
 	"regexp"
 
+	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -49,4 +50,39 @@ var GcpIncludeAncestorsOpt = types.Option{
 	Required:    true,
 	Type:        types.String,
 	Value:       "",
+}
+
+// Janus Options
+
+func GcpCredentialsFile() cfg.Param {
+	return cfg.NewParam[string]("credentials-file", "Path to GCP credentials JSON file").
+		WithDefault("")
+}
+
+func GcpProjects() cfg.Param {
+	return cfg.NewParam[[]string]("projects", "GCP project IDs to scan").
+		WithDefault([]string{}).
+		AsRequired().
+		WithShortcode("p")
+}
+
+func GcpRegions() cfg.Param {
+	return cfg.NewParam[[]string]("regions", "GCP regions to scan").
+		WithDefault([]string{"all"}).
+		AsRequired().
+		WithShortcode("r")
+}
+
+func GcpReconBaseOptions() []cfg.Param {
+	return []cfg.Param{
+		GcpCredentialsFile(),
+	}
+}
+
+func GcpCommonReconOptions() []cfg.Param {
+	baseOpts := GcpReconBaseOptions()
+	return append(baseOpts, []cfg.Param{
+		GcpProjects(),
+		GcpRegions(),
+	}...)
 }
