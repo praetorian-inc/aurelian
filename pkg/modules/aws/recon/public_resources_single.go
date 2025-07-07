@@ -28,4 +28,6 @@ var AWSPublicResourcesSingle = chain.NewModule(
 	output.NewJSONOutputter,
 	//output.NewConsoleOutputter,
 	outputters.NewERDConsoleOutputter,
+).WithInputParam(
+	options.AwsResourceArn(),
 )
