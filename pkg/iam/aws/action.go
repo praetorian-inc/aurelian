@@ -60,6 +60,7 @@ var privEscActions = []string{
 	"lambda:CreateFunction",
 	"lambda:InvokeFunction",
 	"lambda:UpdateFunctionCode",
+	"lambda:UpdateFunctionConfiguration",
 	"sagemaker:CreateHyperParameterTuningJob",
 	"sagemaker:CreateNotebookInstance",
 	"sagemaker:CreatePresignedNotebookInstanceUrl",
