@@ -134,7 +134,7 @@ func (g *GcpOrgInfoLink) Process(resource tab.GCPResource) error {
 	return nil
 }
 
-// GcpOrgFolderListLink lists folders within an organization
+// list folders within an organization
 type GcpOrgFolderListLink struct {
 	*base.GcpBaseLink
 	resourceManagerService *cloudresourcemanager.Service
@@ -205,7 +205,7 @@ func (g *GcpOrgFolderListLink) Process(resource tab.GCPResource) error {
 	return nil
 }
 
-// GcpOrgProjectListLink lists projects within an organization
+// list projects within an organization
 type GcpOrgProjectListLink struct {
 	*base.GcpBaseLink
 	resourceManagerService *cloudresourcemanager.Service

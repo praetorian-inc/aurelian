@@ -23,7 +23,7 @@ var GcpListProjects = chain.NewModule(
 		"opsec_level": "moderate",
 		"authors":     []string{"Praetorian"},
 		"references":  []string{},
-	}),
+	}).WithChainInputParam("org"),
 ).WithLinks(
 	hierarchy.NewGcpOrgProjectListLink,
 ).WithOutputters(
