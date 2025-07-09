@@ -101,6 +101,11 @@ func GetAWSCfg(region string, profile string, opts []*types.Option, optFns ...fu
 		cacheMaintained = true
 	}
 
+	if region == "" {
+		region = "us-east-1"
+		slog.Warn("Calling GetAWSCfg without a region is risky — it defaults to us-east-1, which might not be what you want. Always provide a region explicitly.")
+	}
+
 	options := []func(*config.LoadOptions) error{
 		config.WithClientLogMode(
 			aws.LogRetries |
