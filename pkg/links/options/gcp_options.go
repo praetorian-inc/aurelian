@@ -55,34 +55,22 @@ var GcpIncludeAncestorsOpt = types.Option{
 // Janus Options
 
 func GcpCredentialsFile() cfg.Param {
-	return cfg.NewParam[string]("credentials-file", "Path to GCP credentials JSON file").
-		WithDefault("")
+	return cfg.NewParam[string]("creds-file", "Path to GCP credentials JSON file").WithDefault("").AsRequired().WithShortcode("c")
 }
 
-func GcpProjects() cfg.Param {
-	return cfg.NewParam[[]string]("projects", "GCP project IDs to scan").
-		WithDefault([]string{}).
-		AsRequired().
-		WithShortcode("p")
+func GcpProject() cfg.Param {
+	return cfg.NewParam[string]("project", "GCP project ID").WithDefault("").AsRequired().WithShortcode("p")
 }
 
-func GcpRegions() cfg.Param {
-	return cfg.NewParam[[]string]("regions", "GCP regions to scan").
-		WithDefault([]string{"all"}).
-		AsRequired().
-		WithShortcode("r")
-}
-
-func GcpReconBaseOptions() []cfg.Param {
+func GcpBaseOptions() []cfg.Param {
 	return []cfg.Param{
 		GcpCredentialsFile(),
 	}
 }
 
 func GcpCommonReconOptions() []cfg.Param {
-	baseOpts := GcpReconBaseOptions()
-	return append(baseOpts, []cfg.Param{
-		GcpProjects(),
-		GcpRegions(),
-	}...)
+	return []cfg.Param{
+		GcpCredentialsFile(),
+		GcpProject(),
+	}
 }

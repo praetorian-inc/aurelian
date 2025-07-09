@@ -13,30 +13,28 @@ import (
 	"google.golang.org/api/cloudresourcemanager/v1"
 )
 
+// GcpProjectLister lists all projects (not scoped to any parent)
 type GcpProjectLister struct {
-	*base.GcpReconBaseLink
+	*base.GcpBaseLink
 	resourceManagerService *cloudresourcemanager.Service
 	FilterSysProjects      bool
-	Filter                 string
 }
 
 func NewGcpProjectLister(configs ...cfg.Config) chain.Link {
 	g := &GcpProjectLister{}
-	g.GcpReconBaseLink = base.NewGcpReconBaseLink(g, configs...)
+	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
 	return g
 }
 
 func (g *GcpProjectLister) Params() []cfg.Param {
-	params := g.GcpReconBaseLink.Params()
-	params = append(params,
+	params := append(g.GcpBaseLink.Params(),
 		cfg.NewParam[bool]("filter-sys-projects", "Filter out system projects like Apps Script projects").WithDefault(true),
-		cfg.NewParam[string]("filter", "Additional filter to apply to project listing").WithDefault(""),
 	)
 	return params
 }
 
 func (g *GcpProjectLister) Initialize() error {
-	if err := g.GcpReconBaseLink.Initialize(); err != nil {
+	if err := g.GcpBaseLink.Initialize(); err != nil {
 		return err
 	}
 	var err error
@@ -49,42 +47,36 @@ func (g *GcpProjectLister) Initialize() error {
 		return fmt.Errorf("failed to get filter-sys-projects: %w", err)
 	}
 	g.FilterSysProjects = filterSysProjects
-	filter, err := cfg.As[string](g.Arg("filter"))
-	if err != nil {
-		return fmt.Errorf("failed to get filter: %w", err)
-	}
-	g.Filter = filter
 	return nil
 }
 
 func (g *GcpProjectLister) Process() error {
-	slog.Debug("Listing GCP projects", "filterSysProjects", g.FilterSysProjects, "filter", g.Filter)
+	slog.Debug("Listing all GCP projects", "filterSysProjects", g.FilterSysProjects)
 	listReq := g.resourceManagerService.Projects.List()
-	if g.Filter != "" {
-		listReq = listReq.Filter(g.Filter)
-	}
 	err := listReq.Pages(context.Background(), func(page *cloudresourcemanager.ListProjectsResponse) error {
 		for _, project := range page.Projects {
 			if g.FilterSysProjects && g.isSysProject(project) {
 				slog.Debug("Skipping system project", "projectId", project.ProjectId, "name", project.Name)
 				continue
 			}
-			gcpProject := &tab.CloudResource{
-				Name:         project.ProjectId,
-				DisplayName:  project.Name,
-				Provider:     "gcp",
-				ResourceType: "gcp_project",
-				Region:       "global",
-				AccountRef:   project.ProjectId,
-				Properties: map[string]any{
-					"projectId":      project.ProjectId,
-					"name":           project.Name,
-					"projectNumber":  project.ProjectNumber,
-					"lifecycleState": project.LifecycleState,
-					"createTime":     project.CreateTime,
-					"parent":         project.Parent,
-					"labels":         project.Labels,
-				},
+			properties := map[string]any{
+				"projectId":      project.ProjectId,
+				"name":           project.Name,
+				"projectNumber":  project.ProjectNumber,
+				"lifecycleState": project.LifecycleState,
+				"createTime":     project.CreateTime,
+				"parent":         project.Parent,
+				"labels":         project.Labels,
+			}
+			gcpProject, err := tab.NewGCPResource(
+				project.ProjectId,      // resource name
+				project.ProjectId,      // accountRef (project is its own account ref)
+				tab.GCPResourceProject, // resource type
+				properties,             // properties
+			)
+			if err != nil {
+				slog.Error("Failed to create GCP project resource", "error", err, "projectId", project.ProjectId)
+				continue
 			}
 			slog.Debug("Found project", "projectId", project.ProjectId, "name", project.Name, "state", project.LifecycleState)
 			g.Send(gcpProject)

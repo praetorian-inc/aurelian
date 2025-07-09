@@ -11,31 +11,29 @@ import (
 	"google.golang.org/api/option"
 )
 
-type GcpReconBaseLink struct {
+type GcpBaseLink struct {
 	*chain.Base
 	CredentialsFile string
 	ClientOptions   []option.ClientOption
 }
 
-func NewGcpReconBaseLink(link chain.Link, configs ...cfg.Config) *GcpReconBaseLink {
-	g := &GcpReconBaseLink{}
+func NewGcpBaseLink(link chain.Link, configs ...cfg.Config) *GcpBaseLink {
+	g := &GcpBaseLink{}
 	g.Base = chain.NewBase(link, configs...)
 	return g
 }
 
-func (g *GcpReconBaseLink) Params() []cfg.Param {
-	return options.GcpReconBaseOptions()
+func (g *GcpBaseLink) Params() []cfg.Param {
+	return options.GcpBaseOptions()
 }
 
-func (g *GcpReconBaseLink) Initialize() error {
+func (g *GcpBaseLink) Initialize() error {
 	g.ContextHolder = cfg.NewContextHolder()
-
-	credentialsFile, err := cfg.As[string](g.Arg("credentials-file"))
+	credentialsFile, err := cfg.As[string](g.Arg("creds-file"))
 	if err != nil {
 		return fmt.Errorf("failed to get credentials-file: %w", err)
 	}
 	g.CredentialsFile = credentialsFile
-
 	if g.CredentialsFile != "" {
 		g.ClientOptions = append(g.ClientOptions, option.WithCredentialsFile(g.CredentialsFile))
 	} else {
@@ -45,8 +43,6 @@ func (g *GcpReconBaseLink) Initialize() error {
 			return fmt.Errorf("cannot find default credentials: %w", err)
 		}
 	}
-
-	slog.Debug("GCP recon global link initialized", "credentials-file", g.CredentialsFile)
-
+	slog.Debug("GCP global link initialized", "credentials-file", g.CredentialsFile)
 	return nil
 }
