@@ -78,6 +78,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.10 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.18.12 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.21 // indirect
+	github.com/aws/aws-sdk-go-v2/service/account v1.24.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.42.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.25.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.4.2 // indirect

@@ -66,6 +66,8 @@ github.com/aws/aws-sdk-go-v2/internal/ini v1.8.2 h1:Pg9URiobXy85kgFev3og2CuOZ8JZ
 github.com/aws/aws-sdk-go-v2/internal/ini v1.8.2/go.mod h1:FbtygfRFze9usAadmnGJNc8KsP346kEe+y2/oyhGAGc=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.21 h1:7edmS3VOBDhK00b/MwGtGglCm7hhwNYnjJs/PgFdMQE=
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.21/go.mod h1:Q9o5h4HoIWG8XfzxqiuK/CGUbepCJ8uTlaE3bAbxytQ=
+github.com/aws/aws-sdk-go-v2/service/account v1.24.0 h1:bxsS3BE+wpRBd4B0//h/ZOo8Ay55jyb9zprax9rCSYs=
+github.com/aws/aws-sdk-go-v2/service/account v1.24.0/go.mod h1:BwMkMxZPTVtRT9zRKpB92ljsRFX0EXk2WoLQmCnNuRs=
 github.com/aws/aws-sdk-go-v2/service/backup v1.39.3 h1:mjYDN7CPl0CHrTBe36EKqAAGGXAKy8MXuNF+2qHkVdM=
 github.com/aws/aws-sdk-go-v2/service/backup v1.39.3/go.mod h1:dc18UjjmJLlpcPGF6kluQcEpcddqlkdRTF8h5XKWSbc=
 github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.23.11 h1:vsDNkqiXTCeTaSt1qNtri0RzTBDAXV1VQ4L5c5lvW2k=

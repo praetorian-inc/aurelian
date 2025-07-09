@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
-
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/account"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	awstypes "github.com/aws/aws-sdk-go-v2/service/account/types"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/utils"
@@ -80,29 +82,107 @@ func EnabledRegions(profile string, opts []*types.Option) ([]string, error) {
 		}
 	}
 
-	cfg, err := GetAWSCfg("", profile, opts)
-
+	cfg, err := GetAWSCfg("us-east-1", profile, opts)
 	if err != nil {
 		return nil, err
 	}
+
+	// Tier 1: Try AWS Account API first
+	regions, err = getEnabledRegionsFromAccount(cfg)
+	if err == nil && len(regions) > 0 {
+		slog.Debug("Retrieved enabled regions from AWS Account API")
+		return cacheAndReturnRegions(profile, regions, cacheDisabled)
+	}
+	slog.Debug("Failed to get regions from AWS Account API, trying EC2", "error", err)
+
+	// Tier 2: Try EC2 API
+	regions, err = getEnabledRegionsFromEC2(cfg)
+	if err == nil && len(regions) > 0 {
+		slog.Debug("Retrieved enabled regions from EC2 API")
+		return cacheAndReturnRegions(profile, regions, cacheDisabled)
+	}
+	slog.Debug("Failed to get regions from EC2 API, using hardcoded list", "error", err)
+
+	// Tier 3: Fallback to hardcoded list
+	slog.Debug("Using hardcoded region list as fallback")
+	return cacheAndReturnRegions(profile, Regions, cacheDisabled)
+}
+
+// getEnabledRegionsFromAccount attempts to get enabled regions using AWS Account API
+func getEnabledRegionsFromAccount(cfg aws.Config) ([]string, error) {
+	var regions []string
+	
+	accountClient := account.NewFromConfig(cfg)
+	
+	paginator := account.NewListRegionsPaginator(accountClient, &account.ListRegionsInput{
+		RegionOptStatusContains: []awstypes.RegionOptStatus{
+			awstypes.RegionOptStatusEnabled,
+			awstypes.RegionOptStatusEnabledByDefault,
+		},
+	})
+	
+	for paginator.HasMorePages() {
+		result, err := paginator.NextPage(context.TODO())
+		if err != nil {
+			return nil, fmt.Errorf("failed to list regions from account API: %w", err)
+		}
+
+		for _, region := range result.Regions {
+			if region.RegionName != nil {
+				regions = append(regions, *region.RegionName)
+			}
+		}
+	}
+
+	if len(regions) == 0 {
+		return nil, fmt.Errorf("no enabled regions found from account API")
+	}
+
+	return regions, nil
+}
+
+// getEnabledRegionsFromEC2 attempts to get enabled regions using EC2 API
+func getEnabledRegionsFromEC2(cfg aws.Config) ([]string, error) {
+	var regions []string
 
 	client := ec2.NewFromConfig(cfg)
 	input := &ec2.DescribeRegionsInput{}
 
 	result, err := client.DescribeRegions(context.TODO(), input)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to describe regions from EC2 API: %w", err)
 	}
 
 	for _, region := range result.Regions {
-		regions = append(regions, *region.RegionName)
+		if region.RegionName != nil {
+			regions = append(regions, *region.RegionName)
+		}
 	}
 
-	// data, err := json.Marshal(regions)
-	// if err != nil {
-	// 	return nil, err
-	// }
+	if len(regions) == 0 {
+		return nil, fmt.Errorf("no regions found from EC2 API")
+	}
 
-	//utils.WriteCache(CreateFileName(fmt.Sprintf("%s_enabled_regions", profile)), data)
+	return regions, nil
+}
+
+// cacheAndReturnRegions caches the regions if caching is enabled and returns them
+func cacheAndReturnRegions(profile string, regions []string, cacheDisabled bool) ([]string, error) {
+	
+	if !cacheDisabled {
+		data, err := json.Marshal(regions)
+		if err != nil {
+			slog.Warn("Failed to marshal regions for caching", "error", err)
+		} else {
+			cachedRegionsFile := utils.CreateCachedFileName(fmt.Sprintf("%s_enabled_regions", profile))
+			err = utils.WriteCache(cachedRegionsFile, data)
+			if err != nil {
+				slog.Warn("Failed to write regions to cache", "error", err)
+			} else {
+				slog.Debug("Cached enabled regions", "count", len(regions))
+			}
+		}
+	}
+
 	return regions, nil
 }
