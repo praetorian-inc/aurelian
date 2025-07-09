@@ -30,6 +30,12 @@ func (a *AwsReconLink) Params() []cfg.Param {
 
 // Initializes common AWS recon link parameters
 func (a *AwsReconLink) Initialize() error {
+	
+	// First initialize the base link to ensure Profile, ProfileDir, etc. are set
+	if err := a.AwsReconBaseLink.Initialize(); err != nil {
+		return fmt.Errorf("failed to initialize base link: %w", err)
+	}
+
 	a.ContextHolder = cfg.NewContextHolder()
 
 	regions, err := cfg.As[[]string](a.Arg("regions"))

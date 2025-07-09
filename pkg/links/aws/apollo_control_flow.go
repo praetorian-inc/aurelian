@@ -18,6 +18,7 @@ import (
 	"github.com/praetorian-inc/konstellation/pkg/graph/utils"
 	iam "github.com/praetorian-inc/nebula/pkg/iam/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/orgpolicies"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
@@ -164,7 +165,7 @@ func (a *AwsApolloControlFlow) Process(resourceType string) error {
 func (a *AwsApolloControlFlow) gatherResources(resourceType string) error {
 	resourceChain := chain.NewChain(
 		general.NewResourceTypePreprocessor(a)(),
-		NewAWSCloudControl(cfg.WithArgs(a.Args())),
+		cloudcontrol.NewAWSCloudControl(cfg.WithArgs(a.Args())),
 	)
 
 	resourceChain.WithConfigs(cfg.WithArgs(a.Args()))
@@ -432,7 +433,7 @@ func resultToRelationship(result iam.FullResult) (*graph.Relationship, error) {
 
 	// Process Result
 	if result.Result != nil {
-		flattenedResult, err := utils.ConvertAndFlatten(result.Result, "EvaluationDetails")
+		flattenedResult, err := utils.ConvertAndFlatten(result.Result, "PolicyResult")
 		if err != nil {
 			rel.Properties = map[string]any{
 				"allowed": result.Result.Allowed,

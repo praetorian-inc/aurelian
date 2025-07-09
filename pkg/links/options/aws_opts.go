@@ -220,6 +220,13 @@ func AwsResourceType() cfg.ParamImpl[[]string] {
 		WithDefault([]string{"all"})
 }
 
+func AwsResourceArn() cfg.Param {
+	return cfg.NewParam[[]string]("resource-arn", "AWS Cloud Control resource ARN").
+		WithShortcode("a").
+		WithRegex(regexp.MustCompile("^arn:aws:.*$")).
+		AsRequired()
+}
+
 func AwsCacheDir() cfg.Param {
 	return cfg.NewParam[string]("cache-dir", "Directory to store API response cache files").
 		WithDefault(filepath.Join(os.TempDir(), "nebula-cache"))
@@ -288,5 +295,11 @@ func AwsAccountId() cfg.Param {
 	return cfg.NewParam[[]string]("account-id", "AWS account ID").
 		WithRegex(regexp.MustCompile("[0-9]{12}")).
 		WithShortcode("i").
+		AsRequired()
+}
+
+func AwsAction() cfg.Param {
+	return cfg.NewParam[[]string]("action", "AWS IAM action").
+		WithShortcode("a").
 		AsRequired()
 }

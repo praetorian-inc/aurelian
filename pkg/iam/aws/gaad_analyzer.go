@@ -93,39 +93,6 @@ func (ga *GaadAnalyzer) generateServicePrincipalEvaluations(evalChan chan *Evalu
 			evalChan <- evalReq
 		}
 	}
-
-	// Proccess AssumeRole policies
-	// for _, role := range ga.policyData.Gaad.RoleDetailList {
-	// 	for i, stmt := range *role.AssumeRolePolicyDocument.Statement {
-	// 		(*role.AssumeRolePolicyDocument.Statement)[i].OriginArn = role.Arn
-	// 		(*role.AssumeRolePolicyDocument.Statement)[i].Resource = &types.DynaString{role.Arn}
-	// 		if stmt.Principal != nil && stmt.Principal.Service != nil {
-	// 			for _, service := range *stmt.Principal.Service {
-	// 				for _, action := range *stmt.Action {
-	// 					if isPrivEscAction(action) {
-
-	// 						accountID, tags := getResourceDeets(role.Arn)
-	// 						rc := &RequestContext{
-	// 							PrincipalArn:     service,
-	// 							ResourceTags:     tags,
-	// 							PrincipalAccount: accountID,
-	// 							CurrentTime:      time.Now(),
-	// 						}
-	// 						rc.PopulateDefaultRequestConditionKeys(role.Arn)
-
-	// 						evalReq := &EvaluationRequest{
-	// 							Action:             action,
-	// 							Resource:           role.Arn,
-	// 							IdentityStatements: role.AssumeRolePolicyDocument.Statement,
-	// 							Context:            rc,
-	// 						}
-	// 						evalChan <- evalReq
-	// 					}
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-	// }
 }
 
 func (ga *GaadAnalyzer) generateServiceEvaluations(resourceArn string, policy *types.Policy) *EvaluationRequest {

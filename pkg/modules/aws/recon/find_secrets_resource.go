@@ -5,37 +5,34 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus/pkg/links/noseyparker"
 	"github.com/praetorian-inc/janus/pkg/output"
-	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
 
-func init() {
-	registry.Register("aws", "recon", AWSFindSecrets.Metadata().Properties()["id"].(string), *AWSFindSecrets)
-}
+// func init() {
+// 	registry.Register("aws", "recon", AWSFindSecrets.Metadata().Properties()["id"].(string), *AWSFindSecrets)
+// }
 
-var AWSFindSecrets = chain.NewModule(
+var AWSFindSecretsResource = chain.NewModule(
 	cfg.NewMetadata(
-		"AWS Find Secrets",
-		"Enumerate AWS resources and find secrets using NoseyParker",
+		"AWS Find Secrets Resource",
+		"Enumerate AWS resources and find secrets using NoseyParker for a specific resource type",
 	).WithProperties(map[string]any{
-		"id":          "find-secrets",
+		"id":          "aws-find-secrets-resource",
 		"platform":    "aws",
 		"opsec_level": "moderate",
 		"authors":     []string{"Praetorian"},
 	}).WithChainInputParam(
-		options.AwsResourceType().Name(),
+		options.AwsResourceArn().Name(),
 	),
 ).WithLinks(
-	general.NewResourceTypePreprocessor(&aws.AWSFindSecrets{}),
-	cloudcontrol.NewAWSCloudControl,
+	general.NewSingleResourcePreprocessor(),
 	aws.NewAWSFindSecrets,
 	chain.ConstructLinkWithConfigs(noseyparker.NewNoseyParkerScanner, cfg.WithArg("continue_piping", true)),
 ).WithOutputters(
 	output.NewJSONOutputter,
 	output.NewConsoleOutputter,
 ).WithInputParam(
-	options.AwsResourceType().WithDefault([]string{"all"}),
+	options.AwsResourceArn(),
 )

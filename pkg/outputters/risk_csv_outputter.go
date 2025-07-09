@@ -10,20 +10,20 @@ import (
 
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	janustypes "github.com/praetorian-inc/janus/pkg/types"
 	"github.com/praetorian-inc/nebula/internal/message"
+	"github.com/praetorian-inc/tabularium/pkg/model/model"
 )
 
 type RiskCSVOutputter struct {
 	*chain.BaseOutputter
-	risks      []janustypes.Risk // List to store all risks
+	risks      []model.Risk // List to store all risks
 	outputFile string
 }
 
 // NewRiskCSVOutputter creates a new CSV outputter for Risk types
 func NewRiskCSVOutputter(configs ...cfg.Config) chain.Outputter {
 	o := &RiskCSVOutputter{
-		risks:      []janustypes.Risk{},
+		risks:      []model.Risk{},
 		outputFile: "risks.csv",
 	}
 	o.BaseOutputter = chain.NewBaseOutputter(o, configs...)
@@ -33,10 +33,10 @@ func NewRiskCSVOutputter(configs ...cfg.Config) chain.Outputter {
 // Output collects risk items for CSV output
 func (o *RiskCSVOutputter) Output(v any) error {
 	// Try to get a Janus Risk type
-	janusRisk, ok := v.(janustypes.Risk)
+	janusRisk, ok := v.(model.Risk)
 	if !ok {
 		// Try as pointer
-		janusRiskPtr, ok := v.(*janustypes.Risk)
+		janusRiskPtr, ok := v.(*model.Risk)
 		if !ok {
 			return nil // Not a Janus Risk, silently ignore
 		}
@@ -98,42 +98,41 @@ func (o *RiskCSVOutputter) Complete() error {
 		description := ""
 		impactedServices := ""
 
-		if risk.Metadata != nil {
-			if desc, ok := risk.Metadata["description"].(string); ok {
-				description = desc
-			}
+		// if risk.Metadata != nil {
+		// 	if desc, ok := risk.Metadata["description"].(string); ok {
+		// 		description = desc
+		// 	}
 
-			if services, ok := risk.Metadata["impacted-services"]; ok {
-				// Convert services to string
-				servicesStr, err := formatAny(services)
-				if err == nil {
-					impactedServices = servicesStr
-				}
-			}
-		}
+		// 	if services, ok := risk.Metadata["impacted-services"]; ok {
+		// 		// Convert services to string
+		// 		servicesStr, err := formatAny(services)
+		// 		if err == nil {
+		// 			impactedServices = servicesStr
+		// 		}
+		// 	}
+		// }
 
 		// Convert proof to string
-		proofStr, err := formatMap(risk.Proof)
-		if err != nil {
-			proofStr = fmt.Sprintf("Error formatting proof: %v", err)
-		}
+		// proofStr, err := formatMap(risk.Proof)
+		// if err != nil {
+		// 	proofStr = fmt.Sprintf("Error formatting proof: %v", err)
+		// }
 
 		// Convert metadata to string
-		metadataStr, err := formatMap(risk.Metadata)
-		if err != nil {
-			metadataStr = fmt.Sprintf("Error formatting metadata: %v", err)
-		}
+		// metadataStr, err := formatMap(risk.Metadata)
+		// if err != nil {
+		// 	metadataStr = fmt.Sprintf("Error formatting metadata: %v", err)
+		// }
 
 		// Create and write the CSV row
 		row := []string{
 			risk.Name,
-			risk.Severity,
+			string(risk.Priority),
 			risk.DNS,
-			risk.IP,
 			description,
 			impactedServices,
-			proofStr,
-			metadataStr,
+			// proofStr,
+			// metadataStr,
 		}
 
 		if err := writer.Write(row); err != nil {

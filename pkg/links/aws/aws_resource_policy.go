@@ -43,14 +43,14 @@ func (a *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 	}
 
 	// Parse resource properties
-	var props map[string]interface{}
+	var props map[string]any
 	switch p := resource.Properties.(type) {
 	case string:
 		err := json.Unmarshal([]byte(p), &props)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal resource properties: %w", err)
 		}
-	case map[string]interface{}:
+	case map[string]any:
 		props = p
 	default:
 		return fmt.Errorf("unexpected properties type: %T", resource.Properties)
@@ -270,7 +270,7 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 		if err != nil {
 			// Handle "no policy" errors gracefully
 			if strings.Contains(err.Error(), "ResourceNotFoundException") || strings.Contains(err.Error(), "failed to get policy") {
-				return &types.Policy{}, nil
+				return nil, nil
 			}
 			return nil, err
 		}

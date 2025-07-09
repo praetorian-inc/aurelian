@@ -95,9 +95,14 @@ func NewEnrichedResourceDescriptionFromArn(a string) (EnrichedResourceDescriptio
 		return EnrichedResourceDescription{}, err
 	}
 
+	typename := ServiceToResourceType[parsed.Service]
+	if _, ok := ServiceToResourceType[parsed.Service]; !ok {
+		typename = fmt.Sprintf("AWS::%s::Unknown", parsed.Service)
+	}
+
 	return EnrichedResourceDescription{
-		Identifier: parsed.String(),
-		TypeName:   parsed.Resource,
+		Identifier: parsed.Resource,
+		TypeName:   typename,
 		Region:     parsed.Region,
 		AccountId:  parsed.AccountID,
 		Arn:        parsed,
@@ -322,4 +327,25 @@ func (e *EnrichedResourceDescription) GetRoleArn() string {
 	}
 
 	return ""
+}
+
+// ServiceToResourceType maps AWS service names to their CloudFormation resource types
+var ServiceToResourceType = map[string]string{
+	"ec2":            "AWS::EC2::Instance",
+	"s3":             "AWS::S3::Bucket",
+	"lambda":         "AWS::Lambda::Function",
+	"iam":            "AWS::IAM::Role",
+	"cloudformation": "AWS::CloudFormation::Stack",
+	"sqs":            "AWS::SQS::Queue",
+	"sns":            "AWS::SNS::Topic",
+	"rds":            "AWS::RDS::DBInstance",
+	"dynamodb":       "AWS::DynamoDB::Table",
+	"ecr":            "AWS::ECR::Repository",
+	"ecs":            "AWS::ECS::Cluster",
+	"elasticache":    "AWS::ElastiCache::CacheCluster",
+	"elasticsearch":  "AWS::Elasticsearch::Domain",
+	"apigateway":     "AWS::ApiGateway::RestApi",
+	"kms":            "AWS::KMS::Key",
+	"secretsmanager": "AWS::SecretsManager::Secret",
+	"ssm":            "AWS::SSM::Parameter",
 }
