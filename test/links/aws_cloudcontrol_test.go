@@ -7,12 +7,12 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus/pkg/output"
-	"github.com/praetorian-inc/nebula/pkg/links/aws"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
 )
 
 func TestCCBasic(t *testing.T) {
 	c := chain.NewChain(
-		aws.NewAWSCloudControl(),
+		cloudcontrol.NewAWSCloudControl(),
 	).WithOutputters(
 		output.NewConsoleOutputter(),
 		output.NewJSONOutputter(),

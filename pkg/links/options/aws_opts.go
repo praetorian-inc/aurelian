@@ -297,3 +297,9 @@ func AwsAccountId() cfg.Param {
 		WithShortcode("i").
 		AsRequired()
 }
+
+func AwsAction() cfg.Param {
+	return cfg.NewParam[[]string]("action", "AWS IAM action").
+		WithShortcode("a").
+		AsRequired()
+}

@@ -6,6 +6,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
@@ -38,17 +39,17 @@ func (a *AwsPublicResources) Initialize() error {
 	return nil
 }
 
-func (a *AwsPublicResources) Process(resourceType string) error {
-	rc, ok := a.resourceMap[resourceType]
+func (a *AwsPublicResources) Process(resource *types.EnrichedResourceDescription) error {
+	rc, ok := a.resourceMap[resource.TypeName]
 	if !ok {
-		slog.Error("Unsupported resource type", "resourceType", resourceType)
+		slog.Error("Unsupported resource type", "resourceType", resource.Type)
 		return nil
 	}
 
 	c := rc()
 	c.WithConfigs(cfg.WithArgs(a.Args()))
 
-	c.Send(resourceType)
+	c.Send(resource)
 	c.Close()
 
 	for o, ok := chain.RecvAs[*types.EnrichedResourceDescription](c); ok; o, ok = chain.RecvAs[*types.EnrichedResourceDescription](c) {
@@ -56,7 +57,7 @@ func (a *AwsPublicResources) Process(resourceType string) error {
 	}
 
 	if err := c.Error(); err != nil {
-		slog.Error("Error processing resource for public resources", "resource", resourceType, "error", err)
+		slog.Error("Error processing resource for public resources", "resource", resource, "error", err)
 	}
 
 	return nil
@@ -77,56 +78,49 @@ func (a *AwsPublicResources) ResourceMap() map[string]func() chain.Chain {
 
 	resourceMap["AWS::EC2::Instance"] = func() chain.Chain {
 		return chain.NewChain(
-			NewAWSCloudControl(),
+			cloudcontrol.NewCloudControlGet(),
 			NewPropertyFilterLink(cfg.WithArg("property", "PublicIp")),
 		)
 	}
 
 	resourceMap["AWS::SNS::Topic"] = func() chain.Chain {
 		return chain.NewChain(
-			NewAWSCloudControl(),
 			NewAwsResourcePolicyChecker(),
 		)
 	}
 
 	resourceMap["AWS::SQS::Queue"] = func() chain.Chain {
 		return chain.NewChain(
-			NewAWSCloudControl(),
 			NewAwsResourcePolicyChecker(),
 		)
 	}
 
 	resourceMap["AWS::Lambda::Function"] = func() chain.Chain {
 		return chain.NewChain(
-			NewAWSCloudControl(),
 			NewAwsResourcePolicyChecker(),
 		)
 	}
 
 	resourceMap["AWS::EFS::FileSystem"] = func() chain.Chain {
 		return chain.NewChain(
-			NewAWSCloudControl(),
 			NewAwsResourcePolicyChecker(),
 		)
 	}
 
 	// resourceMap["AWS::Elasticsearch::Domain"] = func() chain.Chain {
 	// 	return chain.NewChain(
-	// 		NewAWSCloudControl(),
 	// 		NewAwsResourcePolicyChecker(),
 	// 	)
 	// }
 
 	resourceMap["AWS::S3::Bucket"] = func() chain.Chain {
 		return chain.NewChain(
-			NewAWSCloudControl(),
 			NewAwsResourcePolicyChecker(),
 		)
 	}
 
 	resourceMap["AWS::RDS::DBInstance"] = func() chain.Chain {
 		return chain.NewChain(
-			NewAWSCloudControl(),
 			NewPropertyFilterLink(cfg.WithArg("property", "PubliclyAccessible")),
 		)
 	}
