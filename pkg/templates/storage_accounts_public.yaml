@@ -17,22 +17,26 @@ triageNotes: |
 references:
   - https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security
 query: |
-    resources
-    | where type =~ 'Microsoft.Storage/storageAccounts'
-    | extend publicNetworkAccess = tostring(properties.publicNetworkAccess)
-    | extend acls = properties.networkAcls
-    | extend defaultAction = tostring(acls.defaultAction)
-    | extend hasIpRules = array_length(acls.ipRules)
-    | extend hasVnetRules = array_length(acls.virtualNetworkRules)
-    | where publicNetworkAccess != 'Disabled'
-    | where defaultAction == 'Allow'
-    | project
-        id,
-        name,
-        type,
-        location,
-        publicNetworkAccess,
-        defaultAction,
-        hasIpRules,
-        hasVnetRules,
-        subscriptionId
+  resources
+  | where type =~ 'Microsoft.Storage/storageAccounts'
+  | extend publicNetworkAccess = tostring(properties.publicNetworkAccess)
+  | extend acls = properties.networkAcls
+  | extend defaultAction = tostring(acls.defaultAction)
+  | extend hasIpRules = array_length(acls.ipRules)
+  | extend hasVnetRules = array_length(acls.virtualNetworkRules)
+  | extend ipRules = acls.ipRules
+  | extend virtualNetworkRules = acls.virtualNetworkRules
+  | where publicNetworkAccess != 'Disabled'
+  | where defaultAction == 'Allow'
+  | project
+      id,
+      name,
+      type,
+      location,
+      publicNetworkAccess,
+      defaultAction,
+      hasIpRules,
+      hasVnetRules,
+      ipRules,
+      virtualNetworkRules,
+      subscriptionId

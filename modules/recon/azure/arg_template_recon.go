@@ -5,8 +5,8 @@ import (
 	"context"
 	"strings"
 
-	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/internal/helpers"
+	op "github.com/praetorian-inc/nebula/internal/output_providers"
 	"github.com/praetorian-inc/nebula/modules"
 	"github.com/praetorian-inc/nebula/modules/options"
 	"github.com/praetorian-inc/nebula/pkg/stages"
@@ -45,6 +45,7 @@ var AzureARGReconOutputProviders = []func(options []*types.Option) types.OutputP
 func NewAzureARGRecon(opts []*types.Option) (<-chan string, stages.Stage[string, types.Result], error) {
 	pipeline, err := stages.ChainStages[string, types.Result](
 		stages.AzureARGTemplateStage,
+		stages.AzureARGEnrichStage,
 		stages.FormatARGReconOutput,
 	)
 
