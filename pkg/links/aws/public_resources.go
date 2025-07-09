@@ -85,24 +85,28 @@ func (a *AwsPublicResources) ResourceMap() map[string]func() chain.Chain {
 
 	resourceMap["AWS::SNS::Topic"] = func() chain.Chain {
 		return chain.NewChain(
+			cloudcontrol.NewCloudControlGet(),
 			NewAwsResourcePolicyChecker(),
 		)
 	}
 
 	resourceMap["AWS::SQS::Queue"] = func() chain.Chain {
 		return chain.NewChain(
+			cloudcontrol.NewCloudControlGet(),
 			NewAwsResourcePolicyChecker(),
 		)
 	}
 
 	resourceMap["AWS::Lambda::Function"] = func() chain.Chain {
 		return chain.NewChain(
+			cloudcontrol.NewCloudControlGet(),
 			NewAwsResourcePolicyChecker(),
 		)
 	}
 
 	resourceMap["AWS::EFS::FileSystem"] = func() chain.Chain {
 		return chain.NewChain(
+			cloudcontrol.NewCloudControlGet(),
 			NewAwsResourcePolicyChecker(),
 		)
 	}
@@ -115,12 +119,14 @@ func (a *AwsPublicResources) ResourceMap() map[string]func() chain.Chain {
 
 	resourceMap["AWS::S3::Bucket"] = func() chain.Chain {
 		return chain.NewChain(
+			cloudcontrol.NewCloudControlGet(),
 			NewAwsResourcePolicyChecker(),
 		)
 	}
 
 	resourceMap["AWS::RDS::DBInstance"] = func() chain.Chain {
 		return chain.NewChain(
+			cloudcontrol.NewCloudControlGet(),
 			NewPropertyFilterLink(cfg.WithArg("property", "PubliclyAccessible")),
 		)
 	}
