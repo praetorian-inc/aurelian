@@ -55,7 +55,8 @@ var GcpIncludeAncestorsOpt = types.Option{
 // Janus Options
 
 func GcpCredentialsFile() cfg.Param {
-	return cfg.NewParam[string]("creds-file", "Path to GCP credentials JSON file").WithDefault("").AsRequired().WithShortcode("c")
+	// TODO: make this required later
+	return cfg.NewParam[string]("creds-file", "Path to GCP credentials JSON file").WithDefault("").WithShortcode("c")
 }
 
 func GcpProject() cfg.Param {
@@ -73,4 +74,8 @@ func GcpCommonReconOptions() []cfg.Param {
 		GcpCredentialsFile(),
 		GcpProject(),
 	}
+}
+
+func GcpOrganizationId() cfg.Param {
+	return cfg.NewParam[string]("org-id", "GCP organization ID").AsRequired()
 }
