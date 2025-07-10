@@ -5,6 +5,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/hierarchy"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
 
@@ -23,7 +24,7 @@ var GcpListProjects = chain.NewModule(
 		"opsec_level": "moderate",
 		"authors":     []string{"Praetorian"},
 		"references":  []string{},
-	}).WithChainInputParam("org"),
+	}).WithChainInputParam(options.GcpOrgResource().Name()),
 ).WithLinks(
 	hierarchy.NewGcpOrgProjectListLink,
 ).WithOutputters(

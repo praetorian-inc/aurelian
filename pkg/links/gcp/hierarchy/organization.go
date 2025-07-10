@@ -9,6 +9,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 	"google.golang.org/api/cloudresourcemanager/v1"
 	cloudresourcemanagerv2 "google.golang.org/api/cloudresourcemanager/v2"
@@ -163,16 +164,12 @@ func (g *GcpOrgFolderListLink) Process(resource tab.GCPResource) error {
 		slog.Debug("Skipping non-organization resource", "resourceType", resource.ResourceType)
 		return nil
 	}
-
 	orgName := resource.Name
 	slog.Debug("Listing folders in organization", "orgName", orgName)
-
-	// We need to use v2 API for folders
 	v2Service, err := cloudresourcemanagerv2.NewService(context.Background(), g.ClientOptions...)
 	if err != nil {
 		return fmt.Errorf("failed to create v2 resource manager service: %w", err)
 	}
-
 	listReq := v2Service.Folders.List().Parent(orgName)
 	err = listReq.Pages(context.Background(), func(page *cloudresourcemanagerv2.ListFoldersResponse) error {
 		for _, folder := range page.Folders {
@@ -220,7 +217,8 @@ func NewGcpOrgProjectListLink(configs ...cfg.Config) chain.Link {
 
 func (g *GcpOrgProjectListLink) Params() []cfg.Param {
 	params := append(g.GcpBaseLink.Params(),
-		cfg.NewParam[bool]("filter-sys-projects", "Filter out system projects like Apps Script projects").WithDefault(true),
+		options.GcpFilterSysProjects(),
+		options.GcpOrgResource(),
 	)
 	return params
 }
@@ -247,11 +245,8 @@ func (g *GcpOrgProjectListLink) Process(resource tab.GCPResource) error {
 		slog.Debug("Skipping non-organization resource", "resourceType", resource.ResourceType)
 		return nil
 	}
-
 	orgName := resource.Name
 	slog.Debug("Listing projects in organization", "orgName", orgName, "filterSysProjects", g.FilterSysProjects)
-
-	// List projects with organization as parent
 	listReq := g.resourceManagerService.Projects.List().Filter(fmt.Sprintf("parent.id:%s", orgName))
 	err := listReq.Pages(context.Background(), func(page *cloudresourcemanager.ListProjectsResponse) error {
 		for _, project := range page.Projects {
@@ -260,6 +255,7 @@ func (g *GcpOrgProjectListLink) Process(resource tab.GCPResource) error {
 				continue
 			}
 			properties := map[string]any{
+				"output":         project,
 				"projectId":      project.ProjectId,
 				"name":           project.Name,
 				"projectNumber":  project.ProjectNumber,

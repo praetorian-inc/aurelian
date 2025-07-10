@@ -5,6 +5,7 @@ import (
 
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/types"
+	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 )
 
 var GcpProjectIdOpt = types.Option{
@@ -63,6 +64,10 @@ func GcpProject() cfg.Param {
 	return cfg.NewParam[string]("project", "GCP project ID").WithDefault("").AsRequired().WithShortcode("p")
 }
 
+func GcpFilterSysProjects() cfg.Param {
+	return cfg.NewParam[bool]("filter-sys-projects", "Filter out system projects like Apps Script projects").WithDefault(true)
+}
+
 func GcpBaseOptions() []cfg.Param {
 	return []cfg.Param{
 		GcpCredentialsFile(),
@@ -76,6 +81,6 @@ func GcpCommonReconOptions() []cfg.Param {
 	}
 }
 
-func GcpOrganizationId() cfg.Param {
-	return cfg.NewParam[string]("org-id", "GCP organization ID").AsRequired()
+func GcpOrgResource() cfg.Param {
+	return cfg.NewParam[tab.GCPResource]("org", "GCP organization resource").AsRequired()
 }
