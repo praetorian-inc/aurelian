@@ -1,6 +1,7 @@
 id: app_services_public_access
 name: Publicly Accessible App Services
 description: Detects app services without virtual network integration
+category: Public Access
 severity: High
 reportability: Automatic
 triageNotes: |

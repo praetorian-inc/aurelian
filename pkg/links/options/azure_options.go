@@ -2,9 +2,9 @@ package options
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
+	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -25,13 +25,10 @@ var azureAcceptedSecretsTypes = []string{
 }
 
 var AzureSubscriptionOpt = types.Option{
-	Name:        "subscription",
-	Short:       "s",
-	Description: "Azure subscription ID or 'all' to scan all accessible subscriptions",
+	Name:        "azure-subscription",
+	Description: "The Azure subscription to use. Can be a subscription ID or 'all'.",
 	Required:    true,
-	Type:        types.String,
-	Value:       "",
-	ValueFormat: regexp.MustCompile(`(?i)^([0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}|ALL)$`),
+	Default:     "all",
 }
 
 var AzureWorkerCountOpt = types.Option{
@@ -96,4 +93,21 @@ var AzureARGTemplatesDirOpt = types.Option{
 	Required:    false,
 	Type:        types.String,
 	Value:       "", // Empty means use only embedded templates
+}
+
+func AzureSubscription() cfg.Param {
+	return cfg.NewParam[[]string](
+		AzureSubscriptionOpt.Name,
+		AzureSubscriptionOpt.Description,
+	).WithShortcode("s")
+}
+
+func AzureTemplateDir() cfg.Param {
+	return cfg.NewParam[string]("template-dir", "Directory containing Azure ARG templates").
+		WithShortcode("t")
+}
+
+func AzureArgCategory() cfg.Param {
+	return cfg.NewParam[string]("category", "Category of Azure ARG templates to use").
+		WithShortcode("c")
 }

@@ -2,6 +2,7 @@ id: event_hub_public_access
 name: Publicly Accessible Event Hub Namespaces
 description: Detects Event Hub namespaces with public network access enabled and permissive network rules
 severity: High
+category: Public Access
 reportability: Manual Triage
 triageNotes: |
   Potential Risk:

@@ -1,5 +1,6 @@
 id: virtual_machines_public_access
 name: Virtual Machines with Public IP
+category: Public Access
 description: Detects virtual machines with public IPs and open network security group rules
 severity: High
 reportability: Automatic
@@ -41,14 +42,26 @@ query: |
         | summarize openPorts=make_set(destinationPortRange) by id
     ) on $left.nsgId == $right.id
     | where isnotnull(openPorts)
+    // First summarize to get VM-level data
+    | extend vmId = id, vmName = name, vmLocation = location
+    | summarize 
+        publicIPs = make_set(publicIP),
+        privateIPs = make_set(privateIP),
+        allOpenPorts = make_set(openPorts),
+        nsgCount = dcount(nsgId),
+        osType = any(osType)
+        by vmId, vmName, vmLocation
+    // Only show VMs that have at least one NSG protecting them
+    | where nsgCount > 0
+    // Format the output
     | project
-        id,
-        name,
-        type,
-        location,
-        publicIP,
-        privateIP,
+        id = vmId,
+        type = "Microsoft.Compute/virtualMachines",
+        name = vmName,
+        location = vmLocation,
         osType,
-        hasPublicIP = true,
-        openPorts = iif(isempty(openPorts), '', tostring(openPorts)),
-        nsgId
+        publicIPs = tostring(publicIPs),
+        privateIPs = tostring(privateIPs),
+        openPorts = tostring(allOpenPorts),
+        nsgCount,
+        numberOfPublicIPs = array_length(publicIPs)

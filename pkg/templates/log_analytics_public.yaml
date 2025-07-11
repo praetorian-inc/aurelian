@@ -2,6 +2,7 @@ id: log_analytics_public_access
 name: Publicly Accessible Log Analytics Workspaces
 description: Detects Log Analytics workspaces with public network access enabled for ingestion or query
 severity: High
+category: Public Access
 reportability: Manual Triage
 triageNotes: |
   Potential Risk:

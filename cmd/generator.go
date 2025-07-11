@@ -46,11 +46,13 @@ func generateModuleCommand(moduleName string, parent *cobra.Command) {
 		return
 	}
 
+	platform := entry.ModuleHeriarchy.Platform
+
 	cmd := &cobra.Command{
 		Use:   moduleName,
 		Short: entry.Module.Metadata().Description,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runModule(cmd, entry.Module)
+			return runModule(cmd, entry.Module, platform)
 		},
 	}
 
@@ -178,7 +180,8 @@ func addFlag(cmd *cobra.Command, param cfg.Param, flagValues map[string]interfac
 	}
 }
 
-func runModule(cmd *cobra.Command, module chain.Module) error {
+// Update runModule to accept platform string
+func runModule(cmd *cobra.Command, module chain.Module, platform string) error {
 	// Convert flags to configs
 	var configs []cfg.Config
 	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
@@ -208,8 +211,11 @@ func runModule(cmd *cobra.Command, module chain.Module) error {
 
 	message.Section("Running module %s", module.Metadata().Name)
 	module.Run(configs...)
-	helpers.ShowCacheStat()
-	helpers.PrintAllThrottlingCounts()
+
+	if platform == "aws" {
+		helpers.ShowCacheStat()
+		helpers.PrintAllThrottlingCounts()
+	}
 	return module.Error()
 }
 
