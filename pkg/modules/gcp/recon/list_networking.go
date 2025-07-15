@@ -4,31 +4,32 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/registry"
+	"github.com/praetorian-inc/nebula/pkg/links/gcp/compute"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/hierarchy"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
 
 func init() {
-	registry.Register("gcp", "recon", GcpListProjects.Metadata().Properties()["id"].(string), *GcpListProjects)
+	registry.Register("gcp", "recon", GcpListNetworking.Metadata().Properties()["id"].(string), *GcpListNetworking)
 }
 
-var GcpListProjects = chain.NewModule(
+var GcpListNetworking = chain.NewModule(
 	cfg.NewMetadata(
-		"GCP List Projects",
-		"List all projects in a GCP organization.",
+		"GCP List Networking",
+		"List all networking resources in a GCP project.",
 	).WithProperties(map[string]any{
-		"id":          "projects-list",
+		"id":          "networking-list",
 		"platform":    "gcp",
 		"opsec_level": "moderate",
 		"authors":     []string{"Praetorian"},
 		"references":  []string{},
-	}).WithChainInputParam(options.GcpOrg().Name()),
+	}).WithChainInputParam(options.GcpProject().Name()),
 ).WithLinks(
-	hierarchy.NewGcpOrgInfoLink,
-	hierarchy.NewGcpOrgProjectListLink,
+	hierarchy.NewGcpProjectInfoLink,
+	compute.NewGCPNetworkingFanOut,
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
 ).WithInputParam(
-	options.GcpOrg(),
+	options.GcpProject(),
 )

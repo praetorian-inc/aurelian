@@ -2,7 +2,6 @@ package base
 
 import (
 	"fmt"
-	"log/slog"
 
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
@@ -27,22 +26,18 @@ func (g *GcpBaseLink) Params() []cfg.Param {
 	return options.GcpBaseOptions()
 }
 
+// TODO: add support for SSO auth, access token, and service account impersonation
 func (g *GcpBaseLink) Initialize() error {
-	g.ContextHolder = cfg.NewContextHolder()
-	credentialsFile, err := cfg.As[string](g.Arg("creds-file"))
-	if err != nil {
-		return fmt.Errorf("failed to get credentials-file: %w", err)
-	}
-	g.CredentialsFile = credentialsFile
-	if g.CredentialsFile != "" {
+	// g.ContextHolder = cfg.NewContextHolder()
+	g.CredentialsFile, _ = cfg.As[string](g.Arg("creds-file"))
+	if g.CredentialsFile != "" { // main auth method for GCP
 		g.ClientOptions = append(g.ClientOptions, option.WithCredentialsFile(g.CredentialsFile))
 	} else {
-		// Use Application Default Credentials
+		// attempt to use application default credentials or default auth that SDK can find
 		_, err := google.FindDefaultCredentials(g.Context())
 		if err != nil {
 			return fmt.Errorf("cannot find default credentials: %w", err)
 		}
 	}
-	slog.Debug("GCP global link initialized", "credentials-file", g.CredentialsFile)
 	return nil
 }

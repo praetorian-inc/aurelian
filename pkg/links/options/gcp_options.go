@@ -1,72 +1,48 @@
 package options
 
 import (
-	"regexp"
-
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 )
-
-var GcpProjectIdOpt = types.Option{
-	Name:        "project-id",
-	Short:       "p",
-	Description: "GCP project ID",
-	Required:    true,
-	Type:        types.String,
-	Value:       "",
-}
-
-var GcpFolderIdOpt = types.Option{
-	Name:        "folder-id",
-	Short:       "f",
-	Description: "GCP folder ID",
-	Required:    true,
-	Type:        types.String,
-	Value:       "",
-}
-
-var GcpOrganizationIdOpt = types.Option{
-	Name:        "org-id",
-	Description: "GCP organization ID",
-	Required:    true,
-	Type:        types.String,
-	Value:       "",
-	ValueFormat: regexp.MustCompile("^[0-9]{12}$"),
-}
-
-var GcpProjectsListOpt = types.Option{
-	Name:        "projects-list",
-	Short:       "",
-	Description: "GCP projects list",
-	Required:    true,
-	Type:        types.String,
-	Value:       "",
-}
-
-var GcpIncludeAncestorsOpt = types.Option{
-	Name:        "ancestors",
-	Short:       "",
-	Description: "include ancestors",
-	Required:    true,
-	Type:        types.String,
-	Value:       "",
-}
 
 // Janus Options
 
 func GcpCredentialsFile() cfg.Param {
-	// TODO: make this required later
-	return cfg.NewParam[string]("creds-file", "Path to GCP credentials JSON file").WithDefault("").WithShortcode("c")
+	return cfg.NewParam[string]("creds-file", "Path to GCP credentials JSON file").WithDefault("").WithShortcode("c").AsRequired()
 }
 
 func GcpProject() cfg.Param {
-	return cfg.NewParam[string]("project", "GCP project ID").WithDefault("").AsRequired().WithShortcode("p")
+	return cfg.NewParam[[]string]("project", "GCP project ID").WithDefault([]string{}).AsRequired().WithShortcode("p")
 }
 
 func GcpFilterSysProjects() cfg.Param {
 	return cfg.NewParam[bool]("filter-sys-projects", "Filter out system projects like Apps Script projects").WithDefault(true)
 }
+
+func GcpOrg() cfg.Param {
+	return cfg.NewParam[[]string]("org", "GCP organization ID").WithDefault([]string{}).AsRequired().WithShortcode("o")
+}
+
+func GcpFolder() cfg.Param {
+	return cfg.NewParam[[]string]("folder", "GCP folder ID").WithDefault([]string{}).AsRequired().WithShortcode("f")
+}
+
+func GcpResourceType() cfg.Param {
+	return cfg.NewParam[string]("resource-type", "GCP resource type").WithDefault("").AsRequired().WithShortcode("t")
+}
+
+func GcpZone() cfg.Param {
+	return cfg.NewParam[string]("zone", "GCP zone containing the resource").WithDefault("").AsRequired().WithShortcode("z")
+}
+
+func GcpRegion() cfg.Param {
+	return cfg.NewParam[string]("region", "GCP region containing the resource").WithDefault("").AsRequired().WithShortcode("r")
+}
+
+func GcpResource() cfg.Param {
+	return cfg.NewParam[string]("resource", "GCP resource ID").WithDefault("").AsRequired().WithShortcode("r")
+}
+
+// general
 
 func GcpBaseOptions() []cfg.Param {
 	return []cfg.Param{
@@ -79,8 +55,4 @@ func GcpCommonReconOptions() []cfg.Param {
 		GcpCredentialsFile(),
 		GcpProject(),
 	}
-}
-
-func GcpOrgResource() cfg.Param {
-	return cfg.NewParam[tab.GCPResource]("org", "GCP organization resource").AsRequired()
 }
