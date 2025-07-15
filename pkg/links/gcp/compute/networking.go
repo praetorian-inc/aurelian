@@ -4,13 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net"
-	"strings"
 	"sync"
 
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
+	"github.com/praetorian-inc/nebula/pkg/utils"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/dns/v1"
@@ -100,16 +99,13 @@ func (g *GcpGlobalForwardingRuleListLink) postProcess(rule *compute.ForwardingRu
 		"creationTimestamp":   rule.CreationTimestamp,
 		"selfLink":            rule.SelfLink,
 	}
-
-	// Extract public IP information
 	if rule.IPAddress != "" {
-		if isIPv4(rule.IPAddress) {
+		if utils.IsIPv4(rule.IPAddress) {
 			properties["publicIPv4"] = rule.IPAddress
-		} else if isIPv6(rule.IPAddress) {
+		} else if utils.IsIPv6(rule.IPAddress) {
 			properties["publicIPv6"] = rule.IPAddress
 		}
 	}
-
 	return properties
 }
 
@@ -202,16 +198,13 @@ func (g *GcpRegionalForwardingRuleListLink) postProcess(rule *compute.Forwarding
 		"creationTimestamp":   rule.CreationTimestamp,
 		"selfLink":            rule.SelfLink,
 	}
-
-	// Extract public IP information
 	if rule.IPAddress != "" {
-		if isIPv4(rule.IPAddress) {
+		if utils.IsIPv4(rule.IPAddress) {
 			properties["publicIPv4"] = rule.IPAddress
-		} else if isIPv6(rule.IPAddress) {
+		} else if utils.IsIPv6(rule.IPAddress) {
 			properties["publicIPv6"] = rule.IPAddress
 		}
 	}
-
 	return properties
 }
 
@@ -286,12 +279,9 @@ func (g *GcpDnsManagedZoneListLink) postProcess(zone *dns.ManagedZone) map[strin
 		"reverseLookupConfig":     zone.ReverseLookupConfig,
 		"serviceDirectoryConfig":  zone.ServiceDirectoryConfig,
 	}
-
-	// Extract public domain information
 	if zone.DnsName != "" {
 		properties["publicDomain"] = zone.DnsName
 	}
-
 	return properties
 }
 
@@ -326,13 +316,4 @@ func (g *GCPNetworkingFanOut) Process(project tab.GCPResource) error {
 		slog.Error("Error in GCP networking fan out", "error", err)
 	}
 	return nil
-}
-
-// utility functions for IP detection
-func isIPv4(ip string) bool {
-	return net.ParseIP(ip) != nil && strings.Contains(ip, ".")
-}
-
-func isIPv6(ip string) bool {
-	return net.ParseIP(ip) != nil && strings.Contains(ip, ":")
 }

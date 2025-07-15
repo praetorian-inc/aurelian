@@ -10,6 +10,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/utils"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 	"google.golang.org/api/compute/v1"
 )
@@ -101,7 +102,7 @@ func (g *GcpInstanceInfoLink) postProcessSingleInstance(instance *compute.Instan
 	for _, networkInterface := range instance.NetworkInterfaces {
 		for _, accessConfig := range networkInterface.AccessConfigs {
 			if accessConfig.NatIP != "" {
-				if isIPv4(accessConfig.NatIP) {
+				if utils.IsIPv4(accessConfig.NatIP) {
 					properties["publicIPv4"] = accessConfig.NatIP
 				}
 			}
@@ -111,7 +112,7 @@ func (g *GcpInstanceInfoLink) postProcessSingleInstance(instance *compute.Instan
 		}
 		for _, ipv6AccessConfig := range networkInterface.Ipv6AccessConfigs {
 			if ipv6AccessConfig.ExternalIpv6 != "" {
-				if isIPv6(ipv6AccessConfig.ExternalIpv6) {
+				if utils.IsIPv6(ipv6AccessConfig.ExternalIpv6) {
 					properties["publicIPv6"] = ipv6AccessConfig.ExternalIpv6
 				}
 			}
@@ -191,17 +192,17 @@ func (g *GcpInstanceListLink) Process(resource tab.GCPResource) error {
 
 func (g *GcpInstanceListLink) postProcess(instance *compute.Instance) map[string]any {
 	properties := map[string]any{
-		"name":              instance.Name,
-		"id":                instance.Id,
-		"description":       instance.Description,
-		"status":            instance.Status,
-		"zone":              instance.Zone,
-		"machineType":       instance.MachineType,
-		"canIpForward":      instance.CanIpForward,
-		"networkInterfaces": instance.NetworkInterfaces,
-		"disks":             instance.Disks,
-		"metadata":          instance.Metadata,
-		"tags":              instance.Tags,
+		"name":         instance.Name,
+		"id":           instance.Id,
+		"description":  instance.Description,
+		"status":       instance.Status,
+		"zone":         instance.Zone,
+		"machineType":  instance.MachineType,
+		"canIpForward": instance.CanIpForward,
+		// "networkInterfaces": instance.NetworkInterfaces,
+		// "disks":             instance.Disks,
+		// "metadata":          instance.Metadata,
+		// "tags":              instance.Tags,
 		"labels":            instance.Labels,
 		"creationTimestamp": instance.CreationTimestamp,
 		"selfLink":          instance.SelfLink,
@@ -209,7 +210,7 @@ func (g *GcpInstanceListLink) postProcess(instance *compute.Instance) map[string
 	for _, networkInterface := range instance.NetworkInterfaces {
 		for _, accessConfig := range networkInterface.AccessConfigs {
 			if accessConfig.NatIP != "" {
-				if isIPv4(accessConfig.NatIP) {
+				if utils.IsIPv4(accessConfig.NatIP) {
 					properties["publicIPv4"] = accessConfig.NatIP
 				}
 			}
@@ -219,7 +220,7 @@ func (g *GcpInstanceListLink) postProcess(instance *compute.Instance) map[string
 		}
 		for _, ipv6AccessConfig := range networkInterface.Ipv6AccessConfigs {
 			if ipv6AccessConfig.ExternalIpv6 != "" {
-				if isIPv6(ipv6AccessConfig.ExternalIpv6) {
+				if utils.IsIPv6(ipv6AccessConfig.ExternalIpv6) {
 					properties["publicIPv6"] = ipv6AccessConfig.ExternalIpv6
 				}
 			}
