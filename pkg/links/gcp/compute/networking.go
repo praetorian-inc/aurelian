@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
+	"strings"
 	"sync"
 
 	"github.com/praetorian-inc/janus/pkg/chain"
@@ -57,25 +59,7 @@ func (g *GcpGlobalForwardingRuleListLink) Process(resource tab.GCPResource) erro
 	globalListReq := g.computeService.GlobalForwardingRules.List(projectId)
 	err := globalListReq.Pages(context.Background(), func(page *compute.ForwardingRuleList) error {
 		for _, rule := range page.Items {
-			properties := map[string]any{
-				"name":                rule.Name,
-				"id":                  rule.Id,
-				"description":         rule.Description,
-				"region":              rule.Region,
-				"ipAddress":           rule.IPAddress,
-				"ipProtocol":          rule.IPProtocol,
-				"portRange":           rule.PortRange,
-				"ports":               rule.Ports,
-				"target":              rule.Target,
-				"backendService":      rule.BackendService,
-				"loadBalancingScheme": rule.LoadBalancingScheme,
-				"network":             rule.Network,
-				"subnetwork":          rule.Subnetwork,
-				"networkTier":         rule.NetworkTier,
-				"labels":              rule.Labels,
-				"creationTimestamp":   rule.CreationTimestamp,
-				"selfLink":            rule.SelfLink,
-			}
+			properties := g.postProcess(rule)
 			gcpForwardingRule, err := tab.NewGCPResource(
 				rule.Name,                           // resource name
 				projectId,                           // accountRef (project ID)
@@ -94,6 +78,39 @@ func (g *GcpGlobalForwardingRuleListLink) Process(resource tab.GCPResource) erro
 		return fmt.Errorf("failed to list global forwarding rules: %w", err)
 	}
 	return nil
+}
+
+func (g *GcpGlobalForwardingRuleListLink) postProcess(rule *compute.ForwardingRule) map[string]any {
+	properties := map[string]any{
+		"name":                rule.Name,
+		"id":                  rule.Id,
+		"description":         rule.Description,
+		"region":              rule.Region,
+		"ipAddress":           rule.IPAddress,
+		"ipProtocol":          rule.IPProtocol,
+		"portRange":           rule.PortRange,
+		"ports":               rule.Ports,
+		"target":              rule.Target,
+		"backendService":      rule.BackendService,
+		"loadBalancingScheme": rule.LoadBalancingScheme,
+		"network":             rule.Network,
+		"subnetwork":          rule.Subnetwork,
+		"networkTier":         rule.NetworkTier,
+		"labels":              rule.Labels,
+		"creationTimestamp":   rule.CreationTimestamp,
+		"selfLink":            rule.SelfLink,
+	}
+
+	// Extract public IP information
+	if rule.IPAddress != "" {
+		if isIPv4(rule.IPAddress) {
+			properties["publicIPv4"] = rule.IPAddress
+		} else if isIPv6(rule.IPAddress) {
+			properties["publicIPv6"] = rule.IPAddress
+		}
+	}
+
+	return properties
 }
 
 // list regional forwarding rules within a project
@@ -141,25 +158,7 @@ func (g *GcpRegionalForwardingRuleListLink) Process(resource tab.GCPResource) er
 			regionalListReq := g.computeService.ForwardingRules.List(projectId, regionName)
 			err := regionalListReq.Pages(context.Background(), func(page *compute.ForwardingRuleList) error {
 				for _, rule := range page.Items {
-					properties := map[string]any{
-						"name":                rule.Name,
-						"id":                  rule.Id,
-						"description":         rule.Description,
-						"region":              rule.Region,
-						"ipAddress":           rule.IPAddress,
-						"ipProtocol":          rule.IPProtocol,
-						"portRange":           rule.PortRange,
-						"ports":               rule.Ports,
-						"target":              rule.Target,
-						"backendService":      rule.BackendService,
-						"loadBalancingScheme": rule.LoadBalancingScheme,
-						"network":             rule.Network,
-						"subnetwork":          rule.Subnetwork,
-						"networkTier":         rule.NetworkTier,
-						"labels":              rule.Labels,
-						"creationTimestamp":   rule.CreationTimestamp,
-						"selfLink":            rule.SelfLink,
-					}
+					properties := g.postProcess(rule)
 					gcpForwardingRule, err := tab.NewGCPResource(
 						rule.Name,                     // resource name
 						projectId,                     // accountRef (project ID)
@@ -181,6 +180,39 @@ func (g *GcpRegionalForwardingRuleListLink) Process(resource tab.GCPResource) er
 	}
 	wg.Wait()
 	return nil
+}
+
+func (g *GcpRegionalForwardingRuleListLink) postProcess(rule *compute.ForwardingRule) map[string]any {
+	properties := map[string]any{
+		"name":                rule.Name,
+		"id":                  rule.Id,
+		"description":         rule.Description,
+		"region":              rule.Region,
+		"ipAddress":           rule.IPAddress,
+		"ipProtocol":          rule.IPProtocol,
+		"portRange":           rule.PortRange,
+		"ports":               rule.Ports,
+		"target":              rule.Target,
+		"backendService":      rule.BackendService,
+		"loadBalancingScheme": rule.LoadBalancingScheme,
+		"network":             rule.Network,
+		"subnetwork":          rule.Subnetwork,
+		"networkTier":         rule.NetworkTier,
+		"labels":              rule.Labels,
+		"creationTimestamp":   rule.CreationTimestamp,
+		"selfLink":            rule.SelfLink,
+	}
+
+	// Extract public IP information
+	if rule.IPAddress != "" {
+		if isIPv4(rule.IPAddress) {
+			properties["publicIPv4"] = rule.IPAddress
+		} else if isIPv6(rule.IPAddress) {
+			properties["publicIPv6"] = rule.IPAddress
+		}
+	}
+
+	return properties
 }
 
 // list DNS managed zones within a project
@@ -215,27 +247,11 @@ func (g *GcpDnsManagedZoneListLink) Process(resource tab.GCPResource) error {
 	listReq := g.dnsService.ManagedZones.List(projectId)
 	err := listReq.Pages(context.Background(), func(page *dns.ManagedZonesListResponse) error {
 		for _, zone := range page.ManagedZones {
-			properties := map[string]any{
-				"name":                    zone.Name,
-				"id":                      zone.Id,
-				"dnsName":                 zone.DnsName,
-				"description":             zone.Description,
-				"nameServers":             zone.NameServers,
-				"visibility":              zone.Visibility,
-				"creationTime":            zone.CreationTime,
-				"labels":                  zone.Labels,
-				"nameServerSet":           zone.NameServerSet,
-				"dnssecConfig":            zone.DnssecConfig,
-				"privateVisibilityConfig": zone.PrivateVisibilityConfig,
-				"forwardingConfig":        zone.ForwardingConfig,
-				"peeringConfig":           zone.PeeringConfig,
-				"reverseLookupConfig":     zone.ReverseLookupConfig,
-				"serviceDirectoryConfig":  zone.ServiceDirectoryConfig,
-			}
+			properties := g.postProcess(zone)
 			gcpDnsZone, err := tab.NewGCPResource(
 				zone.Name,                     // resource name
 				projectId,                     // accountRef (project ID)
-				tab.GCPResourceDnsManagedZone, // resource type
+				tab.GCPResourceDNSManagedZone, // resource type
 				properties,                    // properties
 			)
 			if err != nil {
@@ -250,6 +266,33 @@ func (g *GcpDnsManagedZoneListLink) Process(resource tab.GCPResource) error {
 		return fmt.Errorf("failed to list DNS managed zones: %w", err)
 	}
 	return nil
+}
+
+func (g *GcpDnsManagedZoneListLink) postProcess(zone *dns.ManagedZone) map[string]any {
+	properties := map[string]any{
+		"name":                    zone.Name,
+		"id":                      zone.Id,
+		"dnsName":                 zone.DnsName,
+		"description":             zone.Description,
+		"nameServers":             zone.NameServers,
+		"visibility":              zone.Visibility,
+		"creationTime":            zone.CreationTime,
+		"labels":                  zone.Labels,
+		"nameServerSet":           zone.NameServerSet,
+		"dnssecConfig":            zone.DnssecConfig,
+		"privateVisibilityConfig": zone.PrivateVisibilityConfig,
+		"forwardingConfig":        zone.ForwardingConfig,
+		"peeringConfig":           zone.PeeringConfig,
+		"reverseLookupConfig":     zone.ReverseLookupConfig,
+		"serviceDirectoryConfig":  zone.ServiceDirectoryConfig,
+	}
+
+	// Extract public domain information
+	if zone.DnsName != "" {
+		properties["publicDomain"] = zone.DnsName
+	}
+
+	return properties
 }
 
 // networking fan out link
@@ -283,4 +326,13 @@ func (g *GCPNetworkingFanOut) Process(project tab.GCPResource) error {
 		slog.Error("Error in GCP networking fan out", "error", err)
 	}
 	return nil
+}
+
+// utility functions for IP detection
+func isIPv4(ip string) bool {
+	return net.ParseIP(ip) != nil && strings.Contains(ip, ".")
+}
+
+func isIPv6(ip string) bool {
+	return net.ParseIP(ip) != nil && strings.Contains(ip, ":")
 }

@@ -67,6 +67,21 @@ func (g *GcpInstanceInfoLink) Process(instanceName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get instance %s: %w", instanceName, err)
 	}
+	properties := g.postProcessSingleInstance(instance)
+	gcpInstance, err := tab.NewGCPResource(
+		instance.Name,           // resource name
+		g.ProjectId,             // accountRef (project ID)
+		tab.GCPResourceInstance, // resource type
+		properties,              // properties
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create GCP instance resource: %w", err)
+	}
+	g.Send(gcpInstance)
+	return nil
+}
+
+func (g *GcpInstanceInfoLink) postProcessSingleInstance(instance *compute.Instance) map[string]any {
 	properties := map[string]any{
 		"name":              instance.Name,
 		"id":                instance.Id,
@@ -82,19 +97,27 @@ func (g *GcpInstanceInfoLink) Process(instanceName string) error {
 		"labels":            instance.Labels,
 		"creationTimestamp": instance.CreationTimestamp,
 		"selfLink":          instance.SelfLink,
-		// "publicIp":          g.getPublicIp(instance),
 	}
-	gcpInstance, err := tab.NewGCPResource(
-		instance.Name,           // resource name
-		g.ProjectId,             // accountRef (project ID)
-		tab.GCPResourceInstance, // resource type
-		properties,              // properties
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create GCP instance resource: %w", err)
+	for _, networkInterface := range instance.NetworkInterfaces {
+		for _, accessConfig := range networkInterface.AccessConfigs {
+			if accessConfig.NatIP != "" {
+				if isIPv4(accessConfig.NatIP) {
+					properties["publicIPv4"] = accessConfig.NatIP
+				}
+			}
+			if accessConfig.PublicPtrDomainName != "" {
+				properties["publicDomain"] = accessConfig.PublicPtrDomainName
+			}
+		}
+		for _, ipv6AccessConfig := range networkInterface.Ipv6AccessConfigs {
+			if ipv6AccessConfig.ExternalIpv6 != "" {
+				if isIPv6(ipv6AccessConfig.ExternalIpv6) {
+					properties["publicIPv6"] = ipv6AccessConfig.ExternalIpv6
+				}
+			}
+		}
 	}
-	g.Send(gcpInstance)
-	return nil
+	return properties
 }
 
 // list instances within a project
@@ -139,26 +162,10 @@ func (g *GcpInstanceListLink) Process(resource tab.GCPResource) error {
 		go func(zoneName string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-
 			listReq := g.computeService.Instances.List(projectId, zoneName)
 			err := listReq.Pages(context.Background(), func(page *compute.InstanceList) error {
 				for _, instance := range page.Items {
-					properties := map[string]any{
-						"name":              instance.Name,
-						"id":                instance.Id,
-						"description":       instance.Description,
-						"status":            instance.Status,
-						"zone":              instance.Zone,
-						"machineType":       instance.MachineType,
-						"canIpForward":      instance.CanIpForward,
-						"networkInterfaces": instance.NetworkInterfaces,
-						"disks":             instance.Disks,
-						"metadata":          instance.Metadata,
-						"tags":              instance.Tags,
-						"labels":            instance.Labels,
-						"creationTimestamp": instance.CreationTimestamp,
-						"selfLink":          instance.SelfLink,
-					}
+					properties := g.postProcess(instance)
 					gcpInstance, err := tab.NewGCPResource(
 						instance.Name,           // resource name
 						projectId,               // accountRef (project ID)
@@ -180,4 +187,43 @@ func (g *GcpInstanceListLink) Process(resource tab.GCPResource) error {
 	}
 	wg.Wait()
 	return nil
+}
+
+func (g *GcpInstanceListLink) postProcess(instance *compute.Instance) map[string]any {
+	properties := map[string]any{
+		"name":              instance.Name,
+		"id":                instance.Id,
+		"description":       instance.Description,
+		"status":            instance.Status,
+		"zone":              instance.Zone,
+		"machineType":       instance.MachineType,
+		"canIpForward":      instance.CanIpForward,
+		"networkInterfaces": instance.NetworkInterfaces,
+		"disks":             instance.Disks,
+		"metadata":          instance.Metadata,
+		"tags":              instance.Tags,
+		"labels":            instance.Labels,
+		"creationTimestamp": instance.CreationTimestamp,
+		"selfLink":          instance.SelfLink,
+	}
+	for _, networkInterface := range instance.NetworkInterfaces {
+		for _, accessConfig := range networkInterface.AccessConfigs {
+			if accessConfig.NatIP != "" {
+				if isIPv4(accessConfig.NatIP) {
+					properties["publicIPv4"] = accessConfig.NatIP
+				}
+			}
+			if accessConfig.PublicPtrDomainName != "" {
+				properties["publicDomain"] = accessConfig.PublicPtrDomainName
+			}
+		}
+		for _, ipv6AccessConfig := range networkInterface.Ipv6AccessConfigs {
+			if ipv6AccessConfig.ExternalIpv6 != "" {
+				if isIPv6(ipv6AccessConfig.ExternalIpv6) {
+					properties["publicIPv6"] = ipv6AccessConfig.ExternalIpv6
+				}
+			}
+		}
+	}
+	return properties
 }
