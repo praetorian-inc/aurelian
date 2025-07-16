@@ -73,7 +73,7 @@ func (g *GcpCloudRunServiceInfoLink) Process(serviceName string) error {
 		return fmt.Errorf("failed to get Cloud Run service %s: %w", serviceName, err)
 	}
 
-	properties := g.postProcessSingle(service)
+	properties := linkPostProcessCloudRunService(service, true)
 	gcpCloudRunService, err := tab.NewGCPResource(
 		service.Metadata.Name,          // resource name
 		g.ProjectId,                    // accountRef (project ID)
@@ -87,69 +87,83 @@ func (g *GcpCloudRunServiceInfoLink) Process(serviceName string) error {
 	return nil
 }
 
-func (g *GcpCloudRunServiceInfoLink) postProcessSingle(service *run.Service) map[string]any {
+// linkPostProcessCloudRunService consolidates Cloud Run service processing logic for both info and list links
+// detailedInfo controls whether to include detailed spec, template, container, and status information
+func linkPostProcessCloudRunService(service *run.Service, detailedInfo bool) map[string]any {
 	properties := map[string]any{
-		"name":            service.Metadata.Name,
-		"namespace":       service.Metadata.Namespace,
-		"labels":          service.Metadata.Labels,
-		"annotations":     service.Metadata.Annotations,
-		"generation":      service.Metadata.Generation,
-		"creationTime":    service.Metadata.CreationTimestamp,
-		"selfLink":        service.Metadata.SelfLink,
-		"uid":             service.Metadata.Uid,
-		"resourceVersion": service.Metadata.ResourceVersion,
+		"name":         service.Metadata.Name,
+		"namespace":    service.Metadata.Namespace,
+		"labels":       service.Metadata.Labels,
+		"annotations":  service.Metadata.Annotations,
+		"generation":   service.Metadata.Generation,
+		"creationTime": service.Metadata.CreationTimestamp,
+		"selfLink":     service.Metadata.SelfLink,
 	}
 
-	// Extract public URL from service status
+	// Include detailed metadata only for info links
+	if detailedInfo {
+		properties["uid"] = service.Metadata.Uid
+		properties["resourceVersion"] = service.Metadata.ResourceVersion
+	}
+
+	// Extract public URL from service status (common for both)
 	if service.Status != nil && service.Status.Url != "" {
 		properties["publicURL"] = service.Status.Url
 	}
 
-	// Extract detailed service spec information
-	if service.Spec != nil {
-		properties["spec"] = service.Spec
-		if service.Spec.Template != nil {
-			properties["template"] = service.Spec.Template
-			if service.Spec.Template.Spec != nil {
-				properties["containerConcurrency"] = service.Spec.Template.Spec.ContainerConcurrency
-				properties["timeoutSeconds"] = service.Spec.Template.Spec.TimeoutSeconds
-				properties["serviceAccountName"] = service.Spec.Template.Spec.ServiceAccountName
+	if detailedInfo {
+		// Extract detailed service spec information
+		if service.Spec != nil {
+			properties["spec"] = service.Spec
+			if service.Spec.Template != nil {
+				properties["template"] = service.Spec.Template
+				if service.Spec.Template.Spec != nil {
+					properties["containerConcurrency"] = service.Spec.Template.Spec.ContainerConcurrency
+					properties["timeoutSeconds"] = service.Spec.Template.Spec.TimeoutSeconds
+					properties["serviceAccountName"] = service.Spec.Template.Spec.ServiceAccountName
 
-				// Extract container information
-				if len(service.Spec.Template.Spec.Containers) > 0 {
-					container := service.Spec.Template.Spec.Containers[0]
-					properties["image"] = container.Image
-					properties["ports"] = container.Ports
-					properties["env"] = container.Env
-					properties["resources"] = container.Resources
-					properties["command"] = container.Command
-					properties["args"] = container.Args
-					properties["workingDir"] = container.WorkingDir
+					// Extract container information
+					if len(service.Spec.Template.Spec.Containers) > 0 {
+						container := service.Spec.Template.Spec.Containers[0]
+						properties["image"] = container.Image
+						properties["ports"] = container.Ports
+						properties["env"] = container.Env
+						properties["resources"] = container.Resources
+						properties["command"] = container.Command
+						properties["args"] = container.Args
+						properties["workingDir"] = container.WorkingDir
+					}
 				}
+			}
+		}
+
+		// Extract detailed status information
+		if service.Status != nil {
+			properties["status"] = service.Status
+			properties["observedGeneration"] = service.Status.ObservedGeneration
+			properties["conditions"] = service.Status.Conditions
+		}
+	} else {
+		// Extract simplified service details for list view
+		if service.Spec != nil && service.Spec.Template != nil {
+			properties["image"] = ""
+			if service.Spec.Template.Spec != nil && len(service.Spec.Template.Spec.Containers) > 0 {
+				properties["image"] = service.Spec.Template.Spec.Containers[0].Image
 			}
 		}
 	}
 
-	// Extract detailed status information
-	if service.Status != nil {
-		properties["status"] = service.Status
-		properties["observedGeneration"] = service.Status.ObservedGeneration
-		properties["conditions"] = service.Status.Conditions
-
-		// Extract traffic allocation information
-		if len(service.Status.Traffic) > 0 {
-			var trafficInfo []map[string]any
-			for _, traffic := range service.Status.Traffic {
-				trafficInfo = append(trafficInfo, map[string]any{
-					"revisionName":   traffic.RevisionName,
-					"percent":        traffic.Percent,
-					"url":            traffic.Url,
-					"tag":            traffic.Tag,
-					"latestRevision": traffic.LatestRevision,
-				})
-			}
-			properties["traffic"] = trafficInfo
+	// Extract traffic allocation information (common logic)
+	if service.Status != nil && len(service.Status.Traffic) > 0 {
+		var trafficInfo []map[string]any
+		for _, traffic := range service.Status.Traffic {
+			trafficInfo = append(trafficInfo, map[string]any{
+				"revisionName": traffic.RevisionName,
+				"percent":      traffic.Percent,
+				"url":          traffic.Url,
+			})
 		}
+		properties["traffic"] = trafficInfo
 	}
 
 	return properties
@@ -208,7 +222,7 @@ func (g *GcpCloudRunServiceListLink) Process(resource tab.GCPResource) error {
 			servicesResp, err := servicesCall.Do()
 			if err == nil && servicesResp != nil {
 				for _, service := range servicesResp.Items {
-					properties := g.postProcess(service)
+					properties := linkPostProcessCloudRunService(service, false)
 					gcpCloudRunService, err := tab.NewGCPResource(
 						service.Metadata.Name,          // resource name
 						projectId,                      // accountRef (project ID)
@@ -229,44 +243,4 @@ func (g *GcpCloudRunServiceListLink) Process(resource tab.GCPResource) error {
 	}
 	wg.Wait()
 	return nil
-}
-
-func (g *GcpCloudRunServiceListLink) postProcess(service *run.Service) map[string]any {
-	properties := map[string]any{
-		"name":         service.Metadata.Name,
-		"namespace":    service.Metadata.Namespace,
-		"labels":       service.Metadata.Labels,
-		"annotations":  service.Metadata.Annotations,
-		"generation":   service.Metadata.Generation,
-		"creationTime": service.Metadata.CreationTimestamp,
-		"selfLink":     service.Metadata.SelfLink,
-	}
-
-	// Extract public URL from service status
-	if service.Status != nil && service.Status.Url != "" {
-		properties["publicURL"] = service.Status.Url
-	}
-
-	// Extract additional service details
-	if service.Spec != nil && service.Spec.Template != nil {
-		properties["image"] = ""
-		if service.Spec.Template.Spec != nil && len(service.Spec.Template.Spec.Containers) > 0 {
-			properties["image"] = service.Spec.Template.Spec.Containers[0].Image
-		}
-	}
-
-	// Extract traffic allocation information
-	if service.Status != nil && len(service.Status.Traffic) > 0 {
-		var trafficInfo []map[string]any
-		for _, traffic := range service.Status.Traffic {
-			trafficInfo = append(trafficInfo, map[string]any{
-				"revisionName": traffic.RevisionName,
-				"percent":      traffic.Percent,
-				"url":          traffic.Url,
-			})
-		}
-		properties["traffic"] = trafficInfo
-	}
-
-	return properties
 }

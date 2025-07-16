@@ -60,7 +60,7 @@ func (g *GcpSQLInstanceInfoLink) Process(instanceName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get SQL instance %s: %w", instanceName, err)
 	}
-	properties := g.postProcessSingleInstance(instance)
+	properties := linkPostProcessSQLInstance(instance, true)
 	gcpSQLInstance, err := tab.NewGCPResource(
 		instance.Name,              // resource name
 		g.ProjectId,                // accountRef (project ID)
@@ -74,38 +74,52 @@ func (g *GcpSQLInstanceInfoLink) Process(instanceName string) error {
 	return nil
 }
 
-func (g *GcpSQLInstanceInfoLink) postProcessSingleInstance(instance *sqladmin.DatabaseInstance) map[string]any {
+// linkPostProcessSQLInstance consolidates SQL instance processing logic for both info and list links
+// detailedInfo controls whether to include detailed settings and metadata
+func linkPostProcessSQLInstance(instance *sqladmin.DatabaseInstance, detailedInfo bool) map[string]any {
 	properties := map[string]any{
-		"name":                       instance.Name,
-		"project":                    instance.Project,
-		"databaseVersion":            instance.DatabaseVersion,
-		"region":                     instance.Region,
-		"state":                      instance.State,
-		"backendType":                instance.BackendType,
-		"instanceType":               instance.InstanceType,
-		"connectionName":             instance.ConnectionName,
-		"createdTime":                instance.CreateTime,
-		"currentDiskSize":            instance.CurrentDiskSize,
-		"maxDiskSize":                instance.MaxDiskSize,
-		"selfLink":                   instance.SelfLink,
-		"serviceAccountEmailAddress": instance.ServiceAccountEmailAddress,
+		"name":            instance.Name,
+		"project":         instance.Project,
+		"databaseVersion": instance.DatabaseVersion,
+		"region":          instance.Region,
+		"state":           instance.State,
+		"backendType":     instance.BackendType,
+		"instanceType":    instance.InstanceType,
+		"connectionName":  instance.ConnectionName,
+		"createdTime":     instance.CreateTime,
+		"selfLink":        instance.SelfLink,
 	}
 
-	// Add settings information
-	if instance.Settings != nil {
-		settings := map[string]any{
-			"tier":                   instance.Settings.Tier,
-			"availabilityType":       instance.Settings.AvailabilityType,
-			"pricingPlan":            instance.Settings.PricingPlan,
-			"activationPolicy":       instance.Settings.ActivationPolicy,
-			"storageAutoResize":      instance.Settings.StorageAutoResize,
-			"storageAutoResizeLimit": instance.Settings.StorageAutoResizeLimit,
-			"dataDiskSizeGb":         instance.Settings.DataDiskSizeGb,
-			"dataDiskType":           instance.Settings.DataDiskType,
-		}
-		properties["settings"] = settings
+	// Include detailed metadata only for info links
+	if detailedInfo {
+		properties["currentDiskSize"] = instance.CurrentDiskSize
+		properties["maxDiskSize"] = instance.MaxDiskSize
+		properties["serviceAccountEmailAddress"] = instance.ServiceAccountEmailAddress
+	}
 
-		// Check for public IP
+	// Process settings information
+	if instance.Settings != nil {
+		if detailedInfo {
+			// Detailed settings as nested object for info links
+			settings := map[string]any{
+				"tier":                   instance.Settings.Tier,
+				"availabilityType":       instance.Settings.AvailabilityType,
+				"pricingPlan":            instance.Settings.PricingPlan,
+				"activationPolicy":       instance.Settings.ActivationPolicy,
+				"storageAutoResize":      instance.Settings.StorageAutoResize,
+				"storageAutoResizeLimit": instance.Settings.StorageAutoResizeLimit,
+				"dataDiskSizeGb":         instance.Settings.DataDiskSizeGb,
+				"dataDiskType":           instance.Settings.DataDiskType,
+			}
+			properties["settings"] = settings
+		} else {
+			// Flattened basic settings for list links
+			properties["tier"] = instance.Settings.Tier
+			properties["availabilityType"] = instance.Settings.AvailabilityType
+			properties["pricingPlan"] = instance.Settings.PricingPlan
+		}
+
+		// Check for public IP (common logic)
 		if instance.Settings.IpConfiguration != nil {
 			ipConfig := instance.Settings.IpConfiguration
 			properties["ipv4Enabled"] = ipConfig.Ipv4Enabled
@@ -117,20 +131,25 @@ func (g *GcpSQLInstanceInfoLink) postProcessSingleInstance(instance *sqladmin.Da
 		}
 	}
 
-	// Add IP addresses
+	// Add IP addresses (common logic, but different handling)
 	if len(instance.IpAddresses) > 0 {
-		var ipAddresses []map[string]any
+		var publicIPs []string
+		var privateIPs []string
+
 		for _, ip := range instance.IpAddresses {
-			ipAddr := map[string]any{
-				"type":      ip.Type,
-				"ipAddress": ip.IpAddress,
+			if ip.Type == "PRIMARY" {
+				publicIPs = append(publicIPs, ip.IpAddress)
+			} else if ip.Type == "PRIVATE" {
+				privateIPs = append(privateIPs, ip.IpAddress)
 			}
-			if ip.TimeToRetire != "" {
-				ipAddr["timeToRetire"] = ip.TimeToRetire
-			}
-			ipAddresses = append(ipAddresses, ipAddr)
 		}
-		properties["ipAddresses"] = ipAddresses
+
+		if len(publicIPs) > 0 {
+			properties["publicIPs"] = publicIPs
+		}
+		if len(privateIPs) > 0 {
+			properties["privateIPs"] = privateIPs
+		}
 	}
 
 	return properties
@@ -182,7 +201,7 @@ func (g *GcpSQLInstanceListLink) Process(resource tab.GCPResource) error {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			properties := g.postProcess(inst)
+			properties := linkPostProcessSQLInstance(inst, false)
 			gcpSQLInstance, err := tab.NewGCPResource(
 				inst.Name,                  // resource name
 				projectId,                  // accountRef (project ID)
@@ -198,60 +217,4 @@ func (g *GcpSQLInstanceListLink) Process(resource tab.GCPResource) error {
 	}
 	wg.Wait()
 	return nil
-}
-
-func (g *GcpSQLInstanceListLink) postProcess(instance *sqladmin.DatabaseInstance) map[string]any {
-	properties := map[string]any{
-		"name":            instance.Name,
-		"project":         instance.Project,
-		"databaseVersion": instance.DatabaseVersion,
-		"region":          instance.Region,
-		"state":           instance.State,
-		"backendType":     instance.BackendType,
-		"instanceType":    instance.InstanceType,
-		"connectionName":  instance.ConnectionName,
-		"createdTime":     instance.CreateTime,
-		"selfLink":        instance.SelfLink,
-	}
-
-	// Add basic settings information
-	if instance.Settings != nil {
-		properties["tier"] = instance.Settings.Tier
-		properties["availabilityType"] = instance.Settings.AvailabilityType
-		properties["pricingPlan"] = instance.Settings.PricingPlan
-
-		// Check for public IP
-		if instance.Settings.IpConfiguration != nil {
-			ipConfig := instance.Settings.IpConfiguration
-			properties["ipv4Enabled"] = ipConfig.Ipv4Enabled
-			properties["requireSsl"] = ipConfig.RequireSsl
-
-			if ipConfig.Ipv4Enabled {
-				properties["hasPublicIP"] = true
-			}
-		}
-	}
-
-	// Add IP addresses
-	if len(instance.IpAddresses) > 0 {
-		var publicIPs []string
-		var privateIPs []string
-
-		for _, ip := range instance.IpAddresses {
-			if ip.Type == "PRIMARY" {
-				publicIPs = append(publicIPs, ip.IpAddress)
-			} else if ip.Type == "PRIVATE" {
-				privateIPs = append(privateIPs, ip.IpAddress)
-			}
-		}
-
-		if len(publicIPs) > 0 {
-			properties["publicIPs"] = publicIPs
-		}
-		if len(privateIPs) > 0 {
-			properties["privateIPs"] = privateIPs
-		}
-	}
-
-	return properties
 }

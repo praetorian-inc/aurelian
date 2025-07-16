@@ -68,7 +68,7 @@ func (g *GcpFunctionInfoLink) Process(functionName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get function %s: %w", functionName, err)
 	}
-	properties := g.postProcessSingleFunction(function)
+	properties := linkPostProcessFunction(function)
 	gcpFunction, err := tab.NewGCPResource(
 		function.Name,           // resource name
 		g.ProjectId,             // accountRef (project ID)
@@ -82,7 +82,8 @@ func (g *GcpFunctionInfoLink) Process(functionName string) error {
 	return nil
 }
 
-func (g *GcpFunctionInfoLink) postProcessSingleFunction(function *cloudfunctions.CloudFunction) map[string]any {
+// linkPostProcessFunction consolidates function processing logic for both info and list links
+func linkPostProcessFunction(function *cloudfunctions.CloudFunction) map[string]any {
 	properties := map[string]any{
 		"name":                 function.Name,
 		"description":          function.Description,
@@ -157,7 +158,7 @@ func (g *GcpFunctionListLink) Process(resource tab.GCPResource) error {
 			listReq := g.functionsService.Projects.Locations.Functions.List(parent)
 			err := listReq.Pages(context.Background(), func(page *cloudfunctions.ListFunctionsResponse) error {
 				for _, function := range page.Functions {
-					properties := g.postProcess(function)
+					properties := linkPostProcessFunction(function)
 					gcpFunction, err := tab.NewGCPResource(
 						function.Name,           // resource name
 						projectId,               // accountRef (project ID)
@@ -179,33 +180,4 @@ func (g *GcpFunctionListLink) Process(resource tab.GCPResource) error {
 	}
 	wg.Wait()
 	return nil
-}
-
-func (g *GcpFunctionListLink) postProcess(function *cloudfunctions.CloudFunction) map[string]any {
-	properties := map[string]any{
-		"name":                 function.Name,
-		"description":          function.Description,
-		"status":               function.Status,
-		"entryPoint":           function.EntryPoint,
-		"runtime":              function.Runtime,
-		"timeout":              function.Timeout,
-		"availableMemoryMb":    function.AvailableMemoryMb,
-		"serviceAccountEmail":  function.ServiceAccountEmail,
-		"updateTime":           function.UpdateTime,
-		"versionId":            function.VersionId,
-		"labels":               function.Labels,
-		"environmentVariables": function.EnvironmentVariables,
-		"sourceArchiveUrl":     function.SourceArchiveUrl,
-		"sourceRepository":     function.SourceRepository,
-		"httpsTrigger":         function.HttpsTrigger,
-		"eventTrigger":         function.EventTrigger,
-		"maxInstances":         function.MaxInstances,
-		"minInstances":         function.MinInstances,
-		"vpcConnector":         function.VpcConnector,
-		"ingressSettings":      function.IngressSettings,
-	}
-	if function.HttpsTrigger != nil && function.HttpsTrigger.Url != "" {
-		properties["publicURL"] = function.HttpsTrigger.Url
-	}
-	return properties
 }

@@ -92,7 +92,7 @@ func (g *GcpAppEngineApplicationInfoLink) Process(applicationName string) error 
 		return fmt.Errorf("failed to get App Engine version %s: %w", g.VersionId, err)
 	}
 
-	properties := g.postProcessSingle(app, service, version)
+	properties := linkPostProcessAppEngineApplication(app, service, version, true)
 	gcpAppEngineVersion, err := tab.NewGCPResource(
 		fmt.Sprintf("%s-%s", service.Id, version.Id), // resource name
 		g.ProjectId,                         // accountRef (project ID)
@@ -106,35 +106,41 @@ func (g *GcpAppEngineApplicationInfoLink) Process(applicationName string) error 
 	return nil
 }
 
-func (g *GcpAppEngineApplicationInfoLink) postProcessSingle(app *appengine.Application, service *appengine.Service, version *appengine.Version) map[string]any {
+// linkPostProcessAppEngineApplication consolidates App Engine application processing logic for both info and list links
+// detailedInfo controls whether to include detailed deployment and configuration information
+func linkPostProcessAppEngineApplication(app *appengine.Application, service *appengine.Service, version *appengine.Version, detailedInfo bool) map[string]any {
 	properties := map[string]any{
-		"applicationId":     app.Id,
-		"locationId":        app.LocationId,
-		"serviceId":         service.Id,
-		"serviceName":       service.Name,
-		"versionId":         version.Id,
-		"versionName":       version.Name,
-		"servingStatus":     version.ServingStatus,
-		"runtime":           version.Runtime,
-		"env":               version.Env,
-		"creationTime":      version.CreateTime,
-		"diskUsageBytes":    version.DiskUsageBytes,
-		"instanceClass":     version.InstanceClass,
-		"threadsafe":        version.Threadsafe,
-		"automaticScaling":  version.AutomaticScaling,
-		"basicScaling":      version.BasicScaling,
-		"manualScaling":     version.ManualScaling,
-		"network":           version.Network,
-		"resources":         version.Resources,
-		"handlers":          version.Handlers,
-		"errorHandlers":     version.ErrorHandlers,
-		"libraries":         version.Libraries,
-		"envVariables":      version.EnvVariables,
-		"defaultExpiration": version.DefaultExpiration,
-		"healthCheck":       version.HealthCheck,
+		"applicationId":  app.Id,
+		"locationId":     app.LocationId,
+		"serviceId":      service.Id,
+		"serviceName":    service.Name,
+		"versionId":      version.Id,
+		"versionName":    version.Name,
+		"servingStatus":  version.ServingStatus,
+		"runtime":        version.Runtime,
+		"env":            version.Env,
+		"creationTime":   version.CreateTime,
+		"diskUsageBytes": version.DiskUsageBytes,
+		"instanceClass":  version.InstanceClass,
+		"threadsafe":     version.Threadsafe,
 	}
 
-	// Extract public URL
+	// Include detailed deployment information only for info links
+	if detailedInfo {
+		properties["automaticScaling"] = version.AutomaticScaling
+		properties["basicScaling"] = version.BasicScaling
+		properties["manualScaling"] = version.ManualScaling
+		properties["network"] = version.Network
+		properties["resources"] = version.Resources
+		properties["handlers"] = version.Handlers
+		properties["errorHandlers"] = version.ErrorHandlers
+		properties["libraries"] = version.Libraries
+		properties["envVariables"] = version.EnvVariables
+		properties["defaultExpiration"] = version.DefaultExpiration
+		properties["healthCheck"] = version.HealthCheck
+	}
+
+	// Extract public URL (common logic)
 	if app.DefaultHostname != "" {
 		var publicURL string
 		if service.Id == "default" {
@@ -147,7 +153,7 @@ func (g *GcpAppEngineApplicationInfoLink) postProcessSingle(app *appengine.Appli
 		properties["publicURL"] = publicURL
 	}
 
-	// Extract custom domains if available
+	// Extract custom domains if available (common logic)
 	if app.DispatchRules != nil {
 		var customDomains []string
 		for _, rule := range app.DispatchRules {
@@ -218,7 +224,7 @@ func (g *GcpAppEngineApplicationListLink) Process(resource tab.GCPResource) erro
 		}
 
 		for _, version := range versionsResp.Versions {
-			properties := g.postProcess(app, service, version)
+			properties := linkPostProcessAppEngineApplication(app, service, version, false)
 			gcpAppEngineVersion, err := tab.NewGCPResource(
 				fmt.Sprintf("%s-%s", service.Id, version.Id), // resource name
 				projectId,                           // accountRef (project ID)
@@ -233,50 +239,4 @@ func (g *GcpAppEngineApplicationListLink) Process(resource tab.GCPResource) erro
 		}
 	}
 	return nil
-}
-
-func (g *GcpAppEngineApplicationListLink) postProcess(app *appengine.Application, service *appengine.Service, version *appengine.Version) map[string]any {
-	properties := map[string]any{
-		"applicationId":  app.Id,
-		"locationId":     app.LocationId,
-		"serviceId":      service.Id,
-		"serviceName":    service.Name,
-		"versionId":      version.Id,
-		"versionName":    version.Name,
-		"servingStatus":  version.ServingStatus,
-		"runtime":        version.Runtime,
-		"env":            version.Env,
-		"creationTime":   version.CreateTime,
-		"diskUsageBytes": version.DiskUsageBytes,
-		"instanceClass":  version.InstanceClass,
-		"threadsafe":     version.Threadsafe,
-	}
-
-	// Extract public URL
-	if app.DefaultHostname != "" {
-		var publicURL string
-		if service.Id == "default" {
-			// Default service uses the main hostname with version
-			publicURL = fmt.Sprintf("https://%s-dot-%s", version.Id, app.DefaultHostname)
-		} else {
-			// Non-default services
-			publicURL = fmt.Sprintf("https://%s-dot-%s-dot-%s", version.Id, service.Id, app.DefaultHostname)
-		}
-		properties["publicURL"] = publicURL
-	}
-
-	// Extract custom domains if available
-	if app.DispatchRules != nil {
-		var customDomains []string
-		for _, rule := range app.DispatchRules {
-			if rule.Domain != "" && !strings.Contains(rule.Domain, app.DefaultHostname) {
-				customDomains = append(customDomains, rule.Domain)
-			}
-		}
-		if len(customDomains) > 0 {
-			properties["customDomains"] = customDomains
-		}
-	}
-
-	return properties
 }

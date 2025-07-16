@@ -59,7 +59,7 @@ func (g *GcpStorageBucketInfoLink) Process(bucketName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get bucket %s: %w", bucketName, err)
 	}
-	properties := g.postProcessSingleBucket(bucket)
+	properties := linkPostProcessBucket(bucket)
 	gcpBucket, err := tab.NewGCPResource(
 		bucket.Name,           // resource name
 		g.ProjectId,           // accountRef (project ID)
@@ -73,7 +73,8 @@ func (g *GcpStorageBucketInfoLink) Process(bucketName string) error {
 	return nil
 }
 
-func (g *GcpStorageBucketInfoLink) postProcessSingleBucket(bucket *storage.Bucket) map[string]any {
+// linkPostProcessBucket consolidates bucket processing logic for both info and list links
+func linkPostProcessBucket(bucket *storage.Bucket) map[string]any {
 	properties := map[string]any{
 		"name":                   bucket.Name,
 		"id":                     bucket.Id,
@@ -83,7 +84,6 @@ func (g *GcpStorageBucketInfoLink) postProcessSingleBucket(bucket *storage.Bucke
 		"publicURL":              fmt.Sprintf("https://storage.googleapis.com/%s", bucket.Name), // also <bucket-name>.storage.googleapis.com
 		"labels":                 bucket.Labels,
 		"publicAccessPrevention": bucket.IamConfiguration.PublicAccessPrevention,
-		// "iamConfiguration":       bucket.IamConfiguration,
 	}
 	if bucket.IamConfiguration != nil && bucket.IamConfiguration.PublicAccessPrevention == "inherited" {
 		properties["publicAccessPrevention"] = false
@@ -128,7 +128,7 @@ func (g *GcpStorageBucketListLink) Process(resource tab.GCPResource) error {
 		return fmt.Errorf("failed to list buckets in project %s: %w", projectId, err)
 	}
 	for _, bucket := range buckets.Items {
-		properties := g.postProcess(bucket)
+		properties := linkPostProcessBucket(bucket)
 		gcpBucket, err := tab.NewGCPResource(
 			bucket.Name,           // resource name
 			projectId,             // accountRef (project ID)
@@ -142,23 +142,4 @@ func (g *GcpStorageBucketListLink) Process(resource tab.GCPResource) error {
 		g.Send(gcpBucket)
 	}
 	return nil
-}
-
-func (g *GcpStorageBucketListLink) postProcess(bucket *storage.Bucket) map[string]any {
-	properties := map[string]any{
-		"name":                   bucket.Name,
-		"id":                     bucket.Id,
-		"location":               bucket.Location,
-		"selfLink":               bucket.SelfLink,
-		"gsUtilURL":              fmt.Sprintf("gs://%s", bucket.Name),
-		"publicURL":              fmt.Sprintf("https://storage.googleapis.com/%s", bucket.Name), // also <bucket-name>.storage.googleapis.com
-		"labels":                 bucket.Labels,
-		"publicAccessPrevention": bucket.IamConfiguration.PublicAccessPrevention,
-	}
-	if bucket.IamConfiguration != nil && bucket.IamConfiguration.PublicAccessPrevention == "inherited" {
-		properties["publicAccessPrevention"] = false
-	} else {
-		properties["publicAccessPrevention"] = true
-	}
-	return properties
 }
