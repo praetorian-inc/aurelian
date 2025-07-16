@@ -75,35 +75,21 @@ func (g *GcpStorageBucketInfoLink) Process(bucketName string) error {
 
 func (g *GcpStorageBucketInfoLink) postProcessSingleBucket(bucket *storage.Bucket) map[string]any {
 	properties := map[string]any{
-		"name":             bucket.Name,
-		"id":               bucket.Id,
-		"location":         bucket.Location,
-		"storageClass":     bucket.StorageClass,
-		"timeCreated":      bucket.TimeCreated,
-		"updated":          bucket.Updated,
-		"metageneration":   bucket.Metageneration,
-		"selfLink":         bucket.SelfLink,
-		"bucketURL":        fmt.Sprintf("gs://%s", bucket.Name),
-		"webURL":           fmt.Sprintf("https://storage.googleapis.com/%s", bucket.Name),
-		"versioning":       bucket.Versioning,
-		"lifecycle":        bucket.Lifecycle,
-		"cors":             bucket.Cors,
-		"defaultObjectAcl": bucket.DefaultObjectAcl,
-		"acl":              bucket.Acl,
-		"encryption":       bucket.Encryption,
-		"labels":           bucket.Labels,
-		"logging":          bucket.Logging,
-		"retentionPolicy":  bucket.RetentionPolicy,
-		"iamConfiguration": bucket.IamConfiguration,
+		"name":                   bucket.Name,
+		"id":                     bucket.Id,
+		"location":               bucket.Location,
+		"selfLink":               bucket.SelfLink,
+		"gsUtilURL":              fmt.Sprintf("gs://%s", bucket.Name),
+		"publicURL":              fmt.Sprintf("https://storage.googleapis.com/%s", bucket.Name), // also <bucket-name>.storage.googleapis.com
+		"labels":                 bucket.Labels,
+		"publicAccessPrevention": bucket.IamConfiguration.PublicAccessPrevention,
+		// "iamConfiguration":       bucket.IamConfiguration,
 	}
-
-	// Check if bucket is publicly accessible
 	if bucket.IamConfiguration != nil && bucket.IamConfiguration.PublicAccessPrevention == "inherited" {
 		properties["publicAccessPrevention"] = false
 	} else {
 		properties["publicAccessPrevention"] = true
 	}
-
 	return properties
 }
 
@@ -136,13 +122,11 @@ func (g *GcpStorageBucketListLink) Process(resource tab.GCPResource) error {
 		return nil
 	}
 	projectId := resource.Name
-
 	listReq := g.storageService.Buckets.List(projectId)
 	buckets, err := listReq.Do()
 	if err != nil {
 		return fmt.Errorf("failed to list buckets in project %s: %w", projectId, err)
 	}
-
 	for _, bucket := range buckets.Items {
 		properties := g.postProcess(bucket)
 		gcpBucket, err := tab.NewGCPResource(
@@ -157,22 +141,19 @@ func (g *GcpStorageBucketListLink) Process(resource tab.GCPResource) error {
 		}
 		g.Send(gcpBucket)
 	}
-
 	return nil
 }
 
 func (g *GcpStorageBucketListLink) postProcess(bucket *storage.Bucket) map[string]any {
 	properties := map[string]any{
-		"name":         bucket.Name,
-		"id":           bucket.Id,
-		"location":     bucket.Location,
-		"storageClass": bucket.StorageClass,
-		"timeCreated":  bucket.TimeCreated,
-		"updated":      bucket.Updated,
-		"selfLink":     bucket.SelfLink,
-		"bucketURL":    fmt.Sprintf("gs://%s", bucket.Name),
-		"webURL":       fmt.Sprintf("https://storage.googleapis.com/%s", bucket.Name),
-		"labels":       bucket.Labels,
+		"name":                   bucket.Name,
+		"id":                     bucket.Id,
+		"location":               bucket.Location,
+		"selfLink":               bucket.SelfLink,
+		"gsUtilURL":              fmt.Sprintf("gs://%s", bucket.Name),
+		"publicURL":              fmt.Sprintf("https://storage.googleapis.com/%s", bucket.Name), // also <bucket-name>.storage.googleapis.com
+		"labels":                 bucket.Labels,
+		"publicAccessPrevention": bucket.IamConfiguration.PublicAccessPrevention,
 	}
 	if bucket.IamConfiguration != nil && bucket.IamConfiguration.PublicAccessPrevention == "inherited" {
 		properties["publicAccessPrevention"] = false

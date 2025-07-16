@@ -21,6 +21,8 @@ import (
 // FILE INFO:
 // GcpGlobalForwardingRuleListLink
 // GcpRegionalForwardingRuleListLink
+// GcpGlobalAddressListLink
+// GcpRegionalAddressListLink
 // GcpDnsManagedZoneListLink
 // NetworkingMultiChain
 
@@ -203,6 +205,186 @@ func (g *GcpRegionalForwardingRuleListLink) postProcess(rule *compute.Forwarding
 			properties["publicIPv4"] = rule.IPAddress
 		} else if utils.IsIPv6(rule.IPAddress) {
 			properties["publicIPv6"] = rule.IPAddress
+		}
+	}
+	return properties
+}
+
+// list global addresses within a project
+type GcpGlobalAddressListLink struct {
+	*base.GcpBaseLink
+	computeService *compute.Service
+}
+
+func NewGcpGlobalAddressListLink(configs ...cfg.Config) chain.Link {
+	g := &GcpGlobalAddressListLink{}
+	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
+	return g
+}
+
+func (g *GcpGlobalAddressListLink) Initialize() error {
+	if err := g.GcpBaseLink.Initialize(); err != nil {
+		return err
+	}
+	var err error
+	g.computeService, err = compute.NewService(context.Background(), g.ClientOptions...)
+	if err != nil {
+		return fmt.Errorf("failed to create compute service: %w", err)
+	}
+	return nil
+}
+
+func (g *GcpGlobalAddressListLink) Process(resource tab.GCPResource) error {
+	if resource.ResourceType != tab.GCPResourceProject {
+		return nil
+	}
+	projectId := resource.Name
+	globalListReq := g.computeService.GlobalAddresses.List(projectId)
+	err := globalListReq.Pages(context.Background(), func(page *compute.AddressList) error {
+		for _, address := range page.Items {
+			properties := g.postProcess(address)
+			gcpGlobalAddress, err := tab.NewGCPResource(
+				address.Name,           // resource name
+				projectId,              // accountRef (project ID)
+				tab.GCPResourceAddress, // resource type
+				properties,             // properties
+			)
+			if err != nil {
+				slog.Error("Failed to create GCP global address resource", "error", err, "address", address.Name)
+				continue
+			}
+			g.Send(gcpGlobalAddress)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list global addresses: %w", err)
+	}
+	return nil
+}
+
+func (g *GcpGlobalAddressListLink) postProcess(address *compute.Address) map[string]any {
+	properties := map[string]any{
+		"name":              address.Name,
+		"id":                address.Id,
+		"description":       address.Description,
+		"region":            address.Region,
+		"address":           address.Address,
+		"status":            address.Status,
+		"addressType":       address.AddressType,
+		"purpose":           address.Purpose,
+		"networkTier":       address.NetworkTier,
+		"subnetwork":        address.Subnetwork,
+		"network":           address.Network,
+		"prefixLength":      address.PrefixLength,
+		"ipVersion":         address.IpVersion,
+		"labels":            address.Labels,
+		"creationTimestamp": address.CreationTimestamp,
+		"selfLink":          address.SelfLink,
+	}
+	if address.Address != "" {
+		if utils.IsIPv4(address.Address) {
+			properties["publicIPv4"] = address.Address
+		} else if utils.IsIPv6(address.Address) {
+			properties["publicIPv6"] = address.Address
+		}
+	}
+	return properties
+}
+
+// list regional addresses within a project
+type GcpRegionalAddressListLink struct {
+	*base.GcpBaseLink
+	computeService *compute.Service
+}
+
+func NewGcpRegionalAddressListLink(configs ...cfg.Config) chain.Link {
+	g := &GcpRegionalAddressListLink{}
+	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
+	return g
+}
+
+func (g *GcpRegionalAddressListLink) Initialize() error {
+	if err := g.GcpBaseLink.Initialize(); err != nil {
+		return err
+	}
+	var err error
+	g.computeService, err = compute.NewService(context.Background(), g.ClientOptions...)
+	if err != nil {
+		return fmt.Errorf("failed to create compute service: %w", err)
+	}
+	return nil
+}
+
+func (g *GcpRegionalAddressListLink) Process(resource tab.GCPResource) error {
+	if resource.ResourceType != tab.GCPResourceProject {
+		return nil
+	}
+	projectId := resource.Name
+	regionsListCall := g.computeService.Regions.List(projectId)
+	regionsResp, err := regionsListCall.Do()
+	if err != nil {
+		return fmt.Errorf("failed to list regions in project %s: %w", projectId, err)
+	}
+	sem := make(chan struct{}, 10)
+	var wg sync.WaitGroup
+	for _, region := range regionsResp.Items {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(regionName string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			regionalListReq := g.computeService.Addresses.List(projectId, regionName)
+			err := regionalListReq.Pages(context.Background(), func(page *compute.AddressList) error {
+				for _, address := range page.Items {
+					properties := g.postProcess(address)
+					gcpRegionalAddress, err := tab.NewGCPResource(
+						address.Name,           // resource name
+						projectId,              // accountRef (project ID)
+						tab.GCPResourceAddress, // resource type
+						properties,             // properties
+					)
+					if err != nil {
+						slog.Error("Failed to create GCP regional address resource", "error", err, "address", address.Name)
+						continue
+					}
+					g.Send(gcpRegionalAddress)
+				}
+				return nil
+			})
+			if err != nil {
+				slog.Error("Failed to list addresses in region", "error", err, "region", regionName)
+			}
+		}(region.Name)
+	}
+	wg.Wait()
+	return nil
+}
+
+func (g *GcpRegionalAddressListLink) postProcess(address *compute.Address) map[string]any {
+	properties := map[string]any{
+		"name":              address.Name,
+		"id":                address.Id,
+		"description":       address.Description,
+		"region":            address.Region,
+		"address":           address.Address,
+		"status":            address.Status,
+		"addressType":       address.AddressType,
+		"purpose":           address.Purpose,
+		"networkTier":       address.NetworkTier,
+		"subnetwork":        address.Subnetwork,
+		"network":           address.Network,
+		"prefixLength":      address.PrefixLength,
+		"ipVersion":         address.IpVersion,
+		"labels":            address.Labels,
+		"creationTimestamp": address.CreationTimestamp,
+		"selfLink":          address.SelfLink,
+	}
+	if address.Address != "" {
+		if utils.IsIPv4(address.Address) {
+			properties["publicIPv4"] = address.Address
+		} else if utils.IsIPv6(address.Address) {
+			properties["publicIPv6"] = address.Address
 		}
 	}
 	return properties
