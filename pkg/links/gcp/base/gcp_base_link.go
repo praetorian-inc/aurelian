@@ -23,12 +23,12 @@ func NewGcpBaseLink(link chain.Link, configs ...cfg.Config) *GcpBaseLink {
 }
 
 func (g *GcpBaseLink) Params() []cfg.Param {
-	return options.GcpBaseOptions()
+	return []cfg.Param{options.GcpCredentialsFile()}
 }
 
 // TODO: add support for SSO auth, access token, and service account impersonation
+// will need to make creds-file optional
 func (g *GcpBaseLink) Initialize() error {
-	// g.ContextHolder = cfg.NewContextHolder()
 	g.CredentialsFile, _ = cfg.As[string](g.Arg("creds-file"))
 	if g.CredentialsFile != "" { // main auth method for GCP
 		g.ClientOptions = append(g.ClientOptions, option.WithCredentialsFile(g.CredentialsFile))

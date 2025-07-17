@@ -15,16 +15,16 @@ import (
 )
 
 // FILE INFO:
-// GcpFolderInfoLink
-// GcpFolderSubFolderListLink
-// GcpFolderProjectListLink
+// GcpFolderInfoLink - get info of a single folder, Process(folderName string)
+// GcpFolderSubFolderListLink - list all folders in a folder, Process(resource tab.GCPResource); needs folder
+// GcpFolderProjectListLink - list all projects in a folder, Process(resource tab.GCPResource); needs folder
 
-// get information about a folder resource
 type GcpFolderInfoLink struct {
 	*base.GcpBaseLink
 	resourceManagerService *cloudresourcemanagerv2.Service
 }
 
+// creates a link to get info of a single folder
 func NewGcpFolderInfoLink(configs ...cfg.Config) chain.Link {
 	g := &GcpFolderInfoLink{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -55,20 +55,7 @@ func (g *GcpFolderInfoLink) Process(folderName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get folder %s: %w", folderName, err)
 	}
-	properties := map[string]any{
-		"name":           folder.Name,
-		"displayName":    folder.DisplayName,
-		"parent":         folder.Parent,
-		"lifecycleState": folder.LifecycleState,
-		"createTime":     folder.CreateTime,
-		"tags":           folder.Tags,
-	}
-	gcpFolder, err := tab.NewGCPResource(
-		folder.Name,           // resource name
-		folder.Name,           // accountRef (folder is its own account ref)
-		tab.GCPResourceFolder, // resource type
-		properties,            // properties
-	)
+	gcpFolder, err := createGcpFolderResource(folder)
 	if err != nil {
 		return fmt.Errorf("failed to create GCP folder resource: %w", err)
 	}
@@ -76,12 +63,12 @@ func (g *GcpFolderInfoLink) Process(folderName string) error {
 	return nil
 }
 
-// list folders within a folder
 type GcpFolderSubFolderListLink struct {
 	*base.GcpBaseLink
 	resourceManagerService *cloudresourcemanagerv2.Service
 }
 
+// creates a link to list all folders in a folder
 func NewGcpFolderSubFolderListLink(configs ...cfg.Config) chain.Link {
 	g := &GcpFolderSubFolderListLink{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -108,20 +95,7 @@ func (g *GcpFolderSubFolderListLink) Process(resource tab.GCPResource) error {
 	listReq := g.resourceManagerService.Folders.List().Parent(folderName)
 	err := listReq.Pages(context.Background(), func(page *cloudresourcemanagerv2.ListFoldersResponse) error {
 		for _, folder := range page.Folders {
-			properties := map[string]any{
-				"name":           folder.Name,
-				"displayName":    folder.DisplayName,
-				"parent":         folder.Parent,
-				"lifecycleState": folder.LifecycleState,
-				"createTime":     folder.CreateTime,
-				"tags":           folder.Tags,
-			}
-			gcpFolder, err := tab.NewGCPResource(
-				folder.Name,           // resource name
-				folder.Name,           // accountRef (folder is its own account ref)
-				tab.GCPResourceFolder, // resource type
-				properties,            // properties
-			)
+			gcpFolder, err := createGcpFolderResource(folder)
 			if err != nil {
 				slog.Error("Failed to create GCP folder resource", "error", err, "folder", folder.Name)
 				continue
@@ -136,13 +110,13 @@ func (g *GcpFolderSubFolderListLink) Process(resource tab.GCPResource) error {
 	return nil
 }
 
-// list projects within a folder
 type GcpFolderProjectListLink struct {
 	*base.GcpBaseLink
 	resourceManagerService *cloudresourcemanager.Service
 	FilterSysProjects      bool
 }
 
+// creates a link to list all projects in a folder
 func NewGcpFolderProjectListLink(configs ...cfg.Config) chain.Link {
 	g := &GcpFolderProjectListLink{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -181,24 +155,10 @@ func (g *GcpFolderProjectListLink) Process(resource tab.GCPResource) error {
 	listReq := g.resourceManagerService.Projects.List().Filter(fmt.Sprintf("parent.id:%s", folderName))
 	err := listReq.Pages(context.Background(), func(page *cloudresourcemanager.ListProjectsResponse) error {
 		for _, project := range page.Projects {
-			if g.FilterSysProjects && IsSysProject(project) {
+			if g.FilterSysProjects && isSysProject(project) {
 				continue
 			}
-			properties := map[string]any{
-				"projectId":      project.ProjectId,
-				"name":           project.Name,
-				"projectNumber":  project.ProjectNumber,
-				"lifecycleState": project.LifecycleState,
-				"createTime":     project.CreateTime,
-				"parent":         project.Parent.Id,
-				"labels":         project.Labels,
-			}
-			gcpProject, err := tab.NewGCPResource(
-				project.ProjectId,      // resource name
-				project.ProjectId,      // accountRef (project is its own account ref)
-				tab.GCPResourceProject, // resource type
-				properties,             // properties
-			)
+			gcpProject, err := createGcpProjectResource(project)
 			if err != nil {
 				slog.Error("Failed to create GCP project resource", "error", err, "projectId", project.ProjectId)
 				continue
@@ -211,4 +171,21 @@ func (g *GcpFolderProjectListLink) Process(resource tab.GCPResource) error {
 		return fmt.Errorf("failed to list projects in folder %s: %w", folderName, err)
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// helper functions
+
+func createGcpFolderResource(folder *cloudresourcemanagerv2.Folder) (*tab.GCPResource, error) {
+	gcpFolder, err := tab.NewGCPResource(
+		folder.Name,                   // resource name
+		folder.Parent,                 // accountRef (hierarchy parent)
+		tab.GCPResourceFolder,         // resource type
+		linkPostProcessFolder(folder), // properties
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCP folder resource: %w", err)
+	}
+	gcpFolder.DisplayName = folder.DisplayName
+	return &gcpFolder, nil
 }

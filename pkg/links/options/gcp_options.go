@@ -41,18 +41,3 @@ func GcpRegion() cfg.Param {
 func GcpResource() cfg.Param {
 	return cfg.NewParam[string]("resource", "GCP resource ID").WithDefault("").AsRequired().WithShortcode("r")
 }
-
-// general
-
-func GcpBaseOptions() []cfg.Param {
-	return []cfg.Param{
-		GcpCredentialsFile(),
-	}
-}
-
-func GcpCommonReconOptions() []cfg.Param {
-	return []cfg.Param{
-		GcpCredentialsFile(),
-		GcpProject(),
-	}
-}

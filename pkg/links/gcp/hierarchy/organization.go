@@ -16,17 +16,17 @@ import (
 )
 
 // FILE INFO:
-// GcpOrganizationLister
-// GcpOrgInfoLink
-// GcpOrgFolderListLink
-// GcpOrgProjectListLink
+// GcpOrganizationLister - list all organizations
+// GcpOrgInfoLink - get info of a single organization, Process(orgName string)
+// GcpOrgFolderListLink - list all folders in an organization, Process(resource tab.GCPResource); needs organization
+// GcpOrgProjectListLink - list all projects in an organization, Process(resource tab.GCPResource); needs organization
 
-// list all available organizations
 type GcpOrganizationLister struct {
 	*base.GcpBaseLink
 	resourceManagerService *cloudresourcemanager.Service
 }
 
+// creates a link to list all organizations
 func NewGcpOrganizationLister(configs ...cfg.Config) chain.Link {
 	g := &GcpOrganizationLister{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -45,7 +45,8 @@ func (g *GcpOrganizationLister) Initialize() error {
 	return nil
 }
 
-func (g *GcpOrganizationLister) Process() error { // no resource input (meant to be non-contextual)
+func (g *GcpOrganizationLister) Process() error {
+	// no resource input (meant to be non-contextual)
 	searchReq := g.resourceManagerService.Organizations.Search(&cloudresourcemanager.SearchOrganizationsRequest{})
 	resp, err := searchReq.Do()
 	if err != nil {
@@ -55,19 +56,7 @@ func (g *GcpOrganizationLister) Process() error { // no resource input (meant to
 		return nil
 	}
 	for _, org := range resp.Organizations {
-		properties := map[string]any{
-			"displayName":    org.DisplayName,
-			"name":           org.Name,
-			"lifecycleState": org.LifecycleState,
-			"creationTime":   org.CreationTime,
-			"owner":          org.Owner,
-		}
-		gcpOrg, err := tab.NewGCPResource(
-			org.Name,                    // resource name
-			org.Name,                    // accountRef (self right now)
-			tab.GCPResourceOrganization, // resource type
-			properties,                  // properties
-		)
+		gcpOrg, err := createGcpOrgResource(org)
 		if err != nil {
 			slog.Error("Failed to create GCP organization resource", "error", err, "org", org.Name)
 			continue
@@ -77,12 +66,12 @@ func (g *GcpOrganizationLister) Process() error { // no resource input (meant to
 	return nil
 }
 
-// get information about an organization resource
 type GcpOrgInfoLink struct {
 	*base.GcpBaseLink
 	resourceManagerService *cloudresourcemanager.Service
 }
 
+// creates a link to get info of a single organization
 func NewGcpOrgInfoLink(configs ...cfg.Config) chain.Link {
 	g := &GcpOrgInfoLink{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -116,32 +105,20 @@ func (g *GcpOrgInfoLink) Process(orgName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get organization %s: %w", orgName, err)
 	}
-	properties := map[string]any{
-		"displayName":    org.DisplayName,
-		"name":           org.Name,
-		"lifecycleState": org.LifecycleState,
-		"creationTime":   org.CreationTime,
-		"owner":          org.Owner,
-	}
-	gcpOrg, err := tab.NewGCPResource(
-		strings.Split(org.Name, "/")[1], // resource name
-		org.Name,                        // accountRef (self right now)
-		tab.GCPResourceOrganization,     // resource type
-		properties,                      // properties
-	)
+	gcpOrg, err := createGcpOrgResource(org)
 	if err != nil {
-		return fmt.Errorf("failed to create GCP organization resource: %w", err)
+		return err
 	}
 	g.Send(gcpOrg)
 	return nil
 }
 
-// list folders within an organization
 type GcpOrgFolderListLink struct {
 	*base.GcpBaseLink
 	resourceManagerService *cloudresourcemanager.Service
 }
 
+// creates a link to list all folders in an organization
 func NewGcpOrgFolderListLink(configs ...cfg.Config) chain.Link {
 	g := &GcpOrgFolderListLink{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -172,20 +149,7 @@ func (g *GcpOrgFolderListLink) Process(resource tab.GCPResource) error {
 	listReq := v2Service.Folders.List().Parent(orgName)
 	err = listReq.Pages(context.Background(), func(page *cloudresourcemanagerv2.ListFoldersResponse) error {
 		for _, folder := range page.Folders {
-			properties := map[string]any{
-				"name":           folder.Name,
-				"displayName":    folder.DisplayName,
-				"parent":         folder.Parent,
-				"lifecycleState": folder.LifecycleState,
-				"createTime":     folder.CreateTime,
-				"tags":           folder.Tags,
-			}
-			gcpFolder, err := tab.NewGCPResource(
-				folder.Name,           // resource name
-				folder.Name,           // accountRef (folder is its own account ref)
-				tab.GCPResourceFolder, // resource type
-				properties,            // properties
-			)
+			gcpFolder, err := createGcpFolderResource(folder)
 			if err != nil {
 				slog.Error("Failed to create GCP folder resource", "error", err, "folder", folder.Name)
 				continue
@@ -200,13 +164,13 @@ func (g *GcpOrgFolderListLink) Process(resource tab.GCPResource) error {
 	return nil
 }
 
-// list projects within an organization
 type GcpOrgProjectListLink struct {
 	*base.GcpBaseLink
 	resourceManagerService *cloudresourcemanager.Service
 	FilterSysProjects      bool
 }
 
+// creates a link to list all projects in an organization
 func NewGcpOrgProjectListLink(configs ...cfg.Config) chain.Link {
 	g := &GcpOrgProjectListLink{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -245,24 +209,10 @@ func (g *GcpOrgProjectListLink) Process(resource tab.GCPResource) error {
 	listReq := g.resourceManagerService.Projects.List() // .Filter(fmt.Sprintf("parent.id:%s", orgName)) -- TODO: add this back if/when we introduce folder filter in CLI
 	err := listReq.Pages(context.Background(), func(page *cloudresourcemanager.ListProjectsResponse) error {
 		for _, project := range page.Projects {
-			if g.FilterSysProjects && IsSysProject(project) {
+			if g.FilterSysProjects && isSysProject(project) {
 				continue
 			}
-			properties := map[string]any{
-				"projectId":      project.ProjectId,
-				"name":           project.Name,
-				"projectNumber":  project.ProjectNumber,
-				"lifecycleState": project.LifecycleState,
-				"createTime":     project.CreateTime,
-				"parent":         project.Parent.Id,
-				"labels":         project.Labels,
-			}
-			gcpProject, err := tab.NewGCPResource(
-				project.ProjectId,      // resource name
-				project.ProjectId,      // accountRef (project is its own account ref)
-				tab.GCPResourceProject, // resource type
-				properties,             // properties
-			)
+			gcpProject, err := createGcpProjectResource(project)
 			if err != nil {
 				slog.Error("Failed to create GCP project resource", "error", err, "projectId", project.ProjectId)
 				continue
@@ -275,4 +225,58 @@ func (g *GcpOrgProjectListLink) Process(resource tab.GCPResource) error {
 		return fmt.Errorf("failed to list projects in organization %s: %w", orgName, err)
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// helper functions
+
+func createGcpOrgResource(org *cloudresourcemanager.Organization) (*tab.GCPResource, error) {
+	gcpOrg, err := tab.NewGCPResource(
+		strings.Split(org.Name, "/")[1], // resource name
+		org.Name,                        // accountRef (self)
+		tab.GCPResourceOrganization,     // resource type
+		linkPostProcessOrg(org),         // properties
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCP organization resource: %w", err)
+	}
+	gcpOrg.DisplayName = org.DisplayName
+	return &gcpOrg, nil
+}
+
+func linkPostProcessFolder(folder *cloudresourcemanagerv2.Folder) map[string]any {
+	properties := map[string]any{
+		"resourceName":   folder.ManagementProject,
+		"lifecycleState": folder.LifecycleState,
+	}
+	return properties
+}
+
+func linkPostProcessOrg(org *cloudresourcemanager.Organization) map[string]any {
+	properties := map[string]any{
+		"lifecycleState": org.LifecycleState,
+		"owner":          org.Owner.DirectoryCustomerId,
+	}
+	return properties
+}
+
+func isSysProject(project *cloudresourcemanager.Project) bool {
+	sysPatterns := []string{
+		"sys-",
+		"script-editor-",
+		"apps-script-",
+		"system-",      // potentially worth removing
+		"firebase-",    // potentially worth removing
+		"cloud-build-", // potentially worth removing
+		"gcf-",         // potentially worth removing
+		"gae-",         // potentially worth removing
+	}
+	projectId := strings.ToLower(project.ProjectId)
+	projectName := strings.ToLower(project.Name)
+	for _, pattern := range sysPatterns {
+		if strings.HasPrefix(projectId, pattern) || strings.HasPrefix(projectName, pattern) {
+			return true
+		}
+	}
+	return false
 }

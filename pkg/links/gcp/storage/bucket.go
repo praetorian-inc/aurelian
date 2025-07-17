@@ -14,16 +14,16 @@ import (
 )
 
 // FILE INFO:
-// GcpStorageBucketInfoLink
-// GcpStorageBucketListLink
+// GcpStorageBucketInfoLink - get info of a single storage bucket, Process(bucketName string); needs project
+// GcpStorageBucketListLink - list all storage buckets in a project, Process(resource tab.GCPResource); needs project
 
-// get information about a specific storage bucket
 type GcpStorageBucketInfoLink struct {
 	*base.GcpBaseLink
 	storageService *storage.Service
 	ProjectId      string
 }
 
+// creates a link to get info of a single storage bucket
 func NewGcpStorageBucketInfoLink(configs ...cfg.Config) chain.Link {
 	g := &GcpStorageBucketInfoLink{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -59,46 +59,26 @@ func (g *GcpStorageBucketInfoLink) Process(bucketName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get bucket %s: %w", bucketName, err)
 	}
-	properties := linkPostProcessBucket(bucket)
 	gcpBucket, err := tab.NewGCPResource(
-		bucket.Name,           // resource name
-		g.ProjectId,           // accountRef (project ID)
-		tab.GCPResourceBucket, // resource type
-		properties,            // properties
+		bucket.Name,                   // resource name (bucket name)
+		g.ProjectId,                   // accountRef (project ID)
+		tab.GCPResourceBucket,         // resource type
+		linkPostProcessBucket(bucket), // properties
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create GCP bucket resource: %w", err)
+		slog.Error("Failed to create GCP bucket resource", "error", err, "bucket", bucket.Name)
+		return err
 	}
 	g.Send(gcpBucket)
 	return nil
 }
 
-// linkPostProcessBucket consolidates bucket processing logic for both info and list links
-func linkPostProcessBucket(bucket *storage.Bucket) map[string]any {
-	properties := map[string]any{
-		"name":                   bucket.Name,
-		"id":                     bucket.Id,
-		"location":               bucket.Location,
-		"selfLink":               bucket.SelfLink,
-		"gsUtilURL":              fmt.Sprintf("gs://%s", bucket.Name),
-		"publicURL":              fmt.Sprintf("https://storage.googleapis.com/%s", bucket.Name), // also <bucket-name>.storage.googleapis.com
-		"labels":                 bucket.Labels,
-		"publicAccessPrevention": bucket.IamConfiguration.PublicAccessPrevention,
-	}
-	if bucket.IamConfiguration != nil && bucket.IamConfiguration.PublicAccessPrevention == "inherited" {
-		properties["publicAccessPrevention"] = false
-	} else {
-		properties["publicAccessPrevention"] = true
-	}
-	return properties
-}
-
-// list storage buckets within a project
 type GcpStorageBucketListLink struct {
 	*base.GcpBaseLink
 	storageService *storage.Service
 }
 
+// creates a link to list all storage buckets in a project
 func NewGcpStorageBucketListLink(configs ...cfg.Config) chain.Link {
 	g := &GcpStorageBucketListLink{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -128,12 +108,11 @@ func (g *GcpStorageBucketListLink) Process(resource tab.GCPResource) error {
 		return fmt.Errorf("failed to list buckets in project %s: %w", projectId, err)
 	}
 	for _, bucket := range buckets.Items {
-		properties := linkPostProcessBucket(bucket)
 		gcpBucket, err := tab.NewGCPResource(
-			bucket.Name,           // resource name
-			projectId,             // accountRef (project ID)
-			tab.GCPResourceBucket, // resource type
-			properties,            // properties
+			bucket.Name,                   // resource name (bucket name)
+			projectId,                     // accountRef (project ID)
+			tab.GCPResourceBucket,         // resource type
+			linkPostProcessBucket(bucket), // properties
 		)
 		if err != nil {
 			slog.Error("Failed to create GCP bucket resource", "error", err, "bucket", bucket.Name)
@@ -142,4 +121,26 @@ func (g *GcpStorageBucketListLink) Process(resource tab.GCPResource) error {
 		g.Send(gcpBucket)
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// helper functions
+
+func linkPostProcessBucket(bucket *storage.Bucket) map[string]any {
+	properties := map[string]any{
+		"name":                   bucket.Name,
+		"id":                     bucket.Id,
+		"location":               bucket.Location,
+		"selfLink":               bucket.SelfLink,
+		"gsUtilURL":              fmt.Sprintf("gs://%s", bucket.Name),
+		"publicURL":              fmt.Sprintf("https://storage.googleapis.com/%s", bucket.Name), // also <bucket-name>.storage.googleapis.com
+		"labels":                 bucket.Labels,
+		"publicAccessPrevention": bucket.IamConfiguration.PublicAccessPrevention,
+	}
+	if bucket.IamConfiguration != nil && bucket.IamConfiguration.PublicAccessPrevention == "inherited" {
+		properties["publicAccessPrevention"] = false
+	} else {
+		properties["publicAccessPrevention"] = true
+	}
+	return properties
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 
 	"github.com/praetorian-inc/janus/pkg/chain"
@@ -19,21 +20,21 @@ import (
 // temporarily clubbing as networking
 
 // FILE INFO:
-// GcpGlobalForwardingRuleListLink
-// GcpRegionalForwardingRuleListLink
-// GcpGlobalAddressListLink
-// GcpRegionalAddressListLink
-// GcpDnsManagedZoneListLink
-// NetworkingMultiChain
+// GcpGlobalForwardingRuleListLink - list all global forwarding rules in a project
+// GcpRegionalForwardingRuleListLink - list all regional forwarding rules in a project
+// GcpGlobalAddressListLink - list all global addresses in a project
+// GcpRegionalAddressListLink - list all regional addresses in a project
+// GcpDnsManagedZoneListLink - list all DNS managed zones in a project
+// GCPNetworkingFanOut - fan out to all networking resources in a project
 
 // ------------------------------------------------------------------------------------------------
 
-// list global forwarding rules within a project
 type GcpGlobalForwardingRuleListLink struct {
 	*base.GcpBaseLink
 	computeService *compute.Service
 }
 
+// creates a link to list all global forwarding rules in a project
 func NewGcpGlobalForwardingRuleListLink(configs ...cfg.Config) chain.Link {
 	g := &GcpGlobalForwardingRuleListLink{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -84,7 +85,7 @@ func (g *GcpGlobalForwardingRuleListLink) Process(resource tab.GCPResource) erro
 func (g *GcpGlobalForwardingRuleListLink) postProcess(rule *compute.ForwardingRule) map[string]any {
 	properties := map[string]any{
 		"name":                rule.Name,
-		"id":                  rule.Id,
+		"id":                  strconv.FormatUint(rule.Id, 10),
 		"description":         rule.Description,
 		"region":              rule.Region,
 		"ipAddress":           rule.IPAddress,
@@ -96,14 +97,12 @@ func (g *GcpGlobalForwardingRuleListLink) postProcess(rule *compute.ForwardingRu
 		"loadBalancingScheme": rule.LoadBalancingScheme,
 		"network":             rule.Network,
 		"subnetwork":          rule.Subnetwork,
-		"networkTier":         rule.NetworkTier,
 		"labels":              rule.Labels,
-		"creationTimestamp":   rule.CreationTimestamp,
 		"selfLink":            rule.SelfLink,
 	}
-	if rule.IPAddress != "" {
+	if rule.IPAddress != "" && (rule.LoadBalancingScheme == "EXTERNAL" || rule.LoadBalancingScheme == "EXTERNAL_MANAGED") {
 		if utils.IsIPv4(rule.IPAddress) {
-			properties["publicIPv4"] = rule.IPAddress
+			properties["publicIP"] = rule.IPAddress
 		} else if utils.IsIPv6(rule.IPAddress) {
 			properties["publicIPv6"] = rule.IPAddress
 		}
@@ -111,12 +110,12 @@ func (g *GcpGlobalForwardingRuleListLink) postProcess(rule *compute.ForwardingRu
 	return properties
 }
 
-// list regional forwarding rules within a project
 type GcpRegionalForwardingRuleListLink struct {
 	*base.GcpBaseLink
 	computeService *compute.Service
 }
 
+// creates a link to list all regional forwarding rules in a project
 func NewGcpRegionalForwardingRuleListLink(configs ...cfg.Config) chain.Link {
 	g := &GcpRegionalForwardingRuleListLink{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -156,17 +155,17 @@ func (g *GcpRegionalForwardingRuleListLink) Process(resource tab.GCPResource) er
 			regionalListReq := g.computeService.ForwardingRules.List(projectId, regionName)
 			err := regionalListReq.Pages(context.Background(), func(page *compute.ForwardingRuleList) error {
 				for _, rule := range page.Items {
-					properties := g.postProcess(rule)
 					gcpForwardingRule, err := tab.NewGCPResource(
 						rule.Name,                     // resource name
 						projectId,                     // accountRef (project ID)
 						tab.GCPResourceForwardingRule, // resource type
-						properties,                    // properties
+						g.postProcess(rule),           // properties
 					)
 					if err != nil {
 						slog.Error("Failed to create GCP regional forwarding rule resource", "error", err, "rule", rule.Name)
 						continue
 					}
+					gcpForwardingRule.DisplayName = rule.Name
 					g.Send(gcpForwardingRule)
 				}
 				return nil
@@ -183,7 +182,7 @@ func (g *GcpRegionalForwardingRuleListLink) Process(resource tab.GCPResource) er
 func (g *GcpRegionalForwardingRuleListLink) postProcess(rule *compute.ForwardingRule) map[string]any {
 	properties := map[string]any{
 		"name":                rule.Name,
-		"id":                  rule.Id,
+		"id":                  strconv.FormatUint(rule.Id, 10),
 		"description":         rule.Description,
 		"region":              rule.Region,
 		"ipAddress":           rule.IPAddress,
@@ -195,14 +194,12 @@ func (g *GcpRegionalForwardingRuleListLink) postProcess(rule *compute.Forwarding
 		"loadBalancingScheme": rule.LoadBalancingScheme,
 		"network":             rule.Network,
 		"subnetwork":          rule.Subnetwork,
-		"networkTier":         rule.NetworkTier,
 		"labels":              rule.Labels,
-		"creationTimestamp":   rule.CreationTimestamp,
 		"selfLink":            rule.SelfLink,
 	}
-	if rule.IPAddress != "" {
+	if rule.IPAddress != "" && (rule.LoadBalancingScheme == "EXTERNAL" || rule.LoadBalancingScheme == "EXTERNAL_MANAGED") {
 		if utils.IsIPv4(rule.IPAddress) {
-			properties["publicIPv4"] = rule.IPAddress
+			properties["publicIP"] = rule.IPAddress
 		} else if utils.IsIPv6(rule.IPAddress) {
 			properties["publicIPv6"] = rule.IPAddress
 		}
@@ -210,12 +207,12 @@ func (g *GcpRegionalForwardingRuleListLink) postProcess(rule *compute.Forwarding
 	return properties
 }
 
-// list global addresses within a project
 type GcpGlobalAddressListLink struct {
 	*base.GcpBaseLink
 	computeService *compute.Service
 }
 
+// creates a link to list all global addresses in a project
 func NewGcpGlobalAddressListLink(configs ...cfg.Config) chain.Link {
 	g := &GcpGlobalAddressListLink{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -242,17 +239,17 @@ func (g *GcpGlobalAddressListLink) Process(resource tab.GCPResource) error {
 	globalListReq := g.computeService.GlobalAddresses.List(projectId)
 	err := globalListReq.Pages(context.Background(), func(page *compute.AddressList) error {
 		for _, address := range page.Items {
-			properties := g.postProcess(address)
 			gcpGlobalAddress, err := tab.NewGCPResource(
-				address.Name,           // resource name
+				address.Address,        // resource name
 				projectId,              // accountRef (project ID)
 				tab.GCPResourceAddress, // resource type
-				properties,             // properties
+				g.postProcess(address), // properties
 			)
 			if err != nil {
 				slog.Error("Failed to create GCP global address resource", "error", err, "address", address.Name)
 				continue
 			}
+			gcpGlobalAddress.DisplayName = address.Name
 			g.Send(gcpGlobalAddress)
 		}
 		return nil
@@ -265,26 +262,24 @@ func (g *GcpGlobalAddressListLink) Process(resource tab.GCPResource) error {
 
 func (g *GcpGlobalAddressListLink) postProcess(address *compute.Address) map[string]any {
 	properties := map[string]any{
-		"name":              address.Name,
-		"id":                address.Id,
-		"description":       address.Description,
-		"region":            address.Region,
-		"address":           address.Address,
-		"status":            address.Status,
-		"addressType":       address.AddressType,
-		"purpose":           address.Purpose,
-		"networkTier":       address.NetworkTier,
-		"subnetwork":        address.Subnetwork,
-		"network":           address.Network,
-		"prefixLength":      address.PrefixLength,
-		"ipVersion":         address.IpVersion,
-		"labels":            address.Labels,
-		"creationTimestamp": address.CreationTimestamp,
-		"selfLink":          address.SelfLink,
+		"name":         address.Name,
+		"id":           strconv.FormatUint(address.Id, 10),
+		"description":  address.Description,
+		"region":       address.Region,
+		"address":      address.Address,
+		"status":       address.Status,
+		"addressType":  address.AddressType,
+		"purpose":      address.Purpose,
+		"subnetwork":   address.Subnetwork,
+		"network":      address.Network,
+		"prefixLength": address.PrefixLength,
+		"ipVersion":    address.IpVersion,
+		"labels":       address.Labels,
+		"selfLink":     address.SelfLink,
 	}
-	if address.Address != "" {
+	if address.Address != "" && address.AddressType == "EXTERNAL" {
 		if utils.IsIPv4(address.Address) {
-			properties["publicIPv4"] = address.Address
+			properties["publicIP"] = address.Address
 		} else if utils.IsIPv6(address.Address) {
 			properties["publicIPv6"] = address.Address
 		}
@@ -292,12 +287,12 @@ func (g *GcpGlobalAddressListLink) postProcess(address *compute.Address) map[str
 	return properties
 }
 
-// list regional addresses within a project
 type GcpRegionalAddressListLink struct {
 	*base.GcpBaseLink
 	computeService *compute.Service
 }
 
+// creates a link to list all regional addresses in a project
 func NewGcpRegionalAddressListLink(configs ...cfg.Config) chain.Link {
 	g := &GcpRegionalAddressListLink{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -337,17 +332,17 @@ func (g *GcpRegionalAddressListLink) Process(resource tab.GCPResource) error {
 			regionalListReq := g.computeService.Addresses.List(projectId, regionName)
 			err := regionalListReq.Pages(context.Background(), func(page *compute.AddressList) error {
 				for _, address := range page.Items {
-					properties := g.postProcess(address)
 					gcpRegionalAddress, err := tab.NewGCPResource(
-						address.Name,           // resource name
+						address.Address,        // resource name
 						projectId,              // accountRef (project ID)
 						tab.GCPResourceAddress, // resource type
-						properties,             // properties
+						g.postProcess(address), // properties
 					)
 					if err != nil {
 						slog.Error("Failed to create GCP regional address resource", "error", err, "address", address.Name)
 						continue
 					}
+					gcpRegionalAddress.DisplayName = address.Name
 					g.Send(gcpRegionalAddress)
 				}
 				return nil
@@ -363,26 +358,24 @@ func (g *GcpRegionalAddressListLink) Process(resource tab.GCPResource) error {
 
 func (g *GcpRegionalAddressListLink) postProcess(address *compute.Address) map[string]any {
 	properties := map[string]any{
-		"name":              address.Name,
-		"id":                address.Id,
-		"description":       address.Description,
-		"region":            address.Region,
-		"address":           address.Address,
-		"status":            address.Status,
-		"addressType":       address.AddressType,
-		"purpose":           address.Purpose,
-		"networkTier":       address.NetworkTier,
-		"subnetwork":        address.Subnetwork,
-		"network":           address.Network,
-		"prefixLength":      address.PrefixLength,
-		"ipVersion":         address.IpVersion,
-		"labels":            address.Labels,
-		"creationTimestamp": address.CreationTimestamp,
-		"selfLink":          address.SelfLink,
+		"name":         address.Name,
+		"id":           strconv.FormatUint(address.Id, 10),
+		"description":  address.Description,
+		"region":       address.Region,
+		"address":      address.Address,
+		"status":       address.Status,
+		"addressType":  address.AddressType,
+		"purpose":      address.Purpose,
+		"subnetwork":   address.Subnetwork,
+		"network":      address.Network,
+		"prefixLength": address.PrefixLength,
+		"ipVersion":    address.IpVersion,
+		"labels":       address.Labels,
+		"selfLink":     address.SelfLink,
 	}
-	if address.Address != "" {
+	if address.Address != "" && address.AddressType == "EXTERNAL" {
 		if utils.IsIPv4(address.Address) {
-			properties["publicIPv4"] = address.Address
+			properties["publicIP"] = address.Address
 		} else if utils.IsIPv6(address.Address) {
 			properties["publicIPv6"] = address.Address
 		}
@@ -390,12 +383,12 @@ func (g *GcpRegionalAddressListLink) postProcess(address *compute.Address) map[s
 	return properties
 }
 
-// list DNS managed zones within a project
 type GcpDnsManagedZoneListLink struct {
 	*base.GcpBaseLink
 	dnsService *dns.Service
 }
 
+// creates a link to list all DNS managed zones in a project
 func NewGcpDnsManagedZoneListLink(configs ...cfg.Config) chain.Link {
 	g := &GcpDnsManagedZoneListLink{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -422,17 +415,17 @@ func (g *GcpDnsManagedZoneListLink) Process(resource tab.GCPResource) error {
 	listReq := g.dnsService.ManagedZones.List(projectId)
 	err := listReq.Pages(context.Background(), func(page *dns.ManagedZonesListResponse) error {
 		for _, zone := range page.ManagedZones {
-			properties := g.postProcess(zone)
 			gcpDnsZone, err := tab.NewGCPResource(
 				zone.Name,                     // resource name
 				projectId,                     // accountRef (project ID)
 				tab.GCPResourceDNSManagedZone, // resource type
-				properties,                    // properties
+				g.postProcess(zone),           // properties
 			)
 			if err != nil {
 				slog.Error("Failed to create GCP DNS managed zone resource", "error", err, "zone", zone.Name)
 				continue
 			}
+			gcpDnsZone.DisplayName = zone.DnsName
 			g.Send(gcpDnsZone)
 		}
 		return nil
@@ -445,33 +438,27 @@ func (g *GcpDnsManagedZoneListLink) Process(resource tab.GCPResource) error {
 
 func (g *GcpDnsManagedZoneListLink) postProcess(zone *dns.ManagedZone) map[string]any {
 	properties := map[string]any{
-		"name":                    zone.Name,
-		"id":                      zone.Id,
-		"dnsName":                 zone.DnsName,
-		"description":             zone.Description,
-		"nameServers":             zone.NameServers,
-		"visibility":              zone.Visibility,
-		"creationTime":            zone.CreationTime,
-		"labels":                  zone.Labels,
-		"nameServerSet":           zone.NameServerSet,
-		"dnssecConfig":            zone.DnssecConfig,
-		"privateVisibilityConfig": zone.PrivateVisibilityConfig,
-		"forwardingConfig":        zone.ForwardingConfig,
-		"peeringConfig":           zone.PeeringConfig,
-		"reverseLookupConfig":     zone.ReverseLookupConfig,
-		"serviceDirectoryConfig":  zone.ServiceDirectoryConfig,
+		"name":        zone.Name,
+		"id":          strconv.FormatUint(zone.Id, 10),
+		"dnsName":     zone.DnsName,
+		"description": zone.Description,
+		"nameServers": zone.NameServers,
+		"visibility":  zone.Visibility,
+		"labels":      zone.Labels,
+		// "forwardingConfig":        zone.ForwardingConfig,
+		// "reverseLookupConfig":     zone.ReverseLookupConfig,
 	}
-	if zone.DnsName != "" {
+	if zone.DnsName != "" && zone.Visibility == "public" {
 		properties["publicDomain"] = zone.DnsName
 	}
 	return properties
 }
 
-// networking fan out link
 type GCPNetworkingFanOut struct {
 	*base.GcpBaseLink
 }
 
+// creates a link to fan out to all networking resources list links in a project
 func NewGCPNetworkingFanOut(configs ...cfg.Config) chain.Link {
 	g := &GCPNetworkingFanOut{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -485,6 +472,8 @@ func (g *GCPNetworkingFanOut) Process(project tab.GCPResource) error {
 	multi := chain.NewMulti(
 		chain.NewChain(NewGcpGlobalForwardingRuleListLink()),
 		chain.NewChain(NewGcpRegionalForwardingRuleListLink()),
+		chain.NewChain(NewGcpGlobalAddressListLink()),
+		chain.NewChain(NewGcpRegionalAddressListLink()),
 		chain.NewChain(NewGcpDnsManagedZoneListLink()),
 	)
 	multi.WithConfigs(cfg.WithArgs(g.Args()))

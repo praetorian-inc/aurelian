@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 
 	"github.com/praetorian-inc/janus/pkg/chain"
@@ -15,10 +16,9 @@ import (
 )
 
 // FILE INFO:
-// GcpFunctionInfoLink
-// GcpFunctionListLink
+// GcpFunctionInfoLink - get info of a single cloud function, Process(functionName string); needs project and region
+// GcpFunctionListLink - list all cloud functions in a project, Process(resource tab.GCPResource)
 
-// get information about a cloud function
 type GcpFunctionInfoLink struct {
 	*base.GcpBaseLink
 	functionsService *cloudfunctions.Service
@@ -26,6 +26,7 @@ type GcpFunctionInfoLink struct {
 	Region           string
 }
 
+// creates a link to get info of a single cloud function
 func NewGcpFunctionInfoLink(configs ...cfg.Config) chain.Link {
 	g := &GcpFunctionInfoLink{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -68,56 +69,26 @@ func (g *GcpFunctionInfoLink) Process(functionName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get function %s: %w", functionName, err)
 	}
-	properties := linkPostProcessFunction(function)
 	gcpFunction, err := tab.NewGCPResource(
-		function.Name,           // resource name
-		g.ProjectId,             // accountRef (project ID)
-		tab.GCPResourceFunction, // resource type
-		properties,              // properties
+		function.Name,                     // resource name
+		g.ProjectId,                       // accountRef (project ID)
+		tab.GCPResourceFunction,           // resource type
+		linkPostProcessFunction(function), // properties
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create GCP function resource: %w", err)
 	}
+	gcpFunction.DisplayName = function.Name
 	g.Send(gcpFunction)
 	return nil
 }
 
-// linkPostProcessFunction consolidates function processing logic for both info and list links
-func linkPostProcessFunction(function *cloudfunctions.CloudFunction) map[string]any {
-	properties := map[string]any{
-		"name":                 function.Name,
-		"description":          function.Description,
-		"status":               function.Status,
-		"entryPoint":           function.EntryPoint,
-		"runtime":              function.Runtime,
-		"timeout":              function.Timeout,
-		"availableMemoryMb":    function.AvailableMemoryMb,
-		"serviceAccountEmail":  function.ServiceAccountEmail,
-		"updateTime":           function.UpdateTime,
-		"versionId":            function.VersionId,
-		"labels":               function.Labels,
-		"environmentVariables": function.EnvironmentVariables,
-		"sourceArchiveUrl":     function.SourceArchiveUrl,
-		"sourceRepository":     function.SourceRepository,
-		"httpsTrigger":         function.HttpsTrigger,
-		"eventTrigger":         function.EventTrigger,
-		"maxInstances":         function.MaxInstances,
-		"minInstances":         function.MinInstances,
-		"vpcConnector":         function.VpcConnector,
-		"ingressSettings":      function.IngressSettings,
-	}
-	if function.HttpsTrigger != nil && function.HttpsTrigger.Url != "" {
-		properties["publicURL"] = function.HttpsTrigger.Url
-	}
-	return properties
-}
-
-// list functions within a project
 type GcpFunctionListLink struct {
 	*base.GcpBaseLink
 	functionsService *cloudfunctions.Service
 }
 
+// creates a link to list all cloud functions in a project
 func NewGcpFunctionListLink(configs ...cfg.Config) chain.Link {
 	g := &GcpFunctionListLink{}
 	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
@@ -158,17 +129,17 @@ func (g *GcpFunctionListLink) Process(resource tab.GCPResource) error {
 			listReq := g.functionsService.Projects.Locations.Functions.List(parent)
 			err := listReq.Pages(context.Background(), func(page *cloudfunctions.ListFunctionsResponse) error {
 				for _, function := range page.Functions {
-					properties := linkPostProcessFunction(function)
 					gcpFunction, err := tab.NewGCPResource(
-						function.Name,           // resource name
-						projectId,               // accountRef (project ID)
-						tab.GCPResourceFunction, // resource type
-						properties,              // properties
+						function.Name,                     // resource name
+						projectId,                         // accountRef (project ID)
+						tab.GCPResourceFunction,           // resource type
+						linkPostProcessFunction(function), // properties
 					)
 					if err != nil {
 						slog.Error("Failed to create GCP function resource", "error", err, "function", function.Name)
 						continue
 					}
+					gcpFunction.DisplayName = function.Name
 					g.Send(gcpFunction)
 				}
 				return nil
@@ -180,4 +151,29 @@ func (g *GcpFunctionListLink) Process(resource tab.GCPResource) error {
 	}
 	wg.Wait()
 	return nil
+}
+
+// ------------------------------------------------------------------------------------------------
+// helper functions
+
+func linkPostProcessFunction(function *cloudfunctions.CloudFunction) map[string]any {
+	properties := map[string]any{
+		"name":                 function.Name,
+		"description":          function.Description,
+		"status":               function.Status,
+		"version":              strconv.FormatInt(function.VersionId, 10),
+		"entryPoint":           function.EntryPoint,
+		"runtime":              function.Runtime,
+		"serviceAccountEmail":  function.ServiceAccountEmail,
+		"labels":               function.Labels,
+		"environmentVariables": function.EnvironmentVariables,
+		"maxInstances":         function.MaxInstances,
+		"minInstances":         function.MinInstances,
+		"vpcConnector":         function.VpcConnector,
+		"ingressSettings":      function.IngressSettings,
+	}
+	if function.HttpsTrigger != nil && function.HttpsTrigger.Url != "" {
+		properties["publicURL"] = function.HttpsTrigger.Url
+	}
+	return properties
 }
