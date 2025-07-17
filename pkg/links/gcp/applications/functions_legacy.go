@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
-	"sync"
 
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
@@ -111,45 +110,60 @@ func (g *GcpFunctionListLink) Process(resource tab.GCPResource) error {
 	if resource.ResourceType != tab.GCPResourceProject {
 		return nil
 	}
-	projectId := resource.Name
-	regionsListCall := g.functionsService.Projects.Locations.List(fmt.Sprintf("projects/%s", projectId))
-	regionsResp, err := regionsListCall.Do()
-	if err != nil {
-		return fmt.Errorf("failed to list regions in project %s: %w", projectId, err)
-	}
-	sem := make(chan struct{}, 10)
-	var wg sync.WaitGroup
-	for _, location := range regionsResp.Locations {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(locationId string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			parent := fmt.Sprintf("projects/%s/locations/%s", projectId, locationId)
-			listReq := g.functionsService.Projects.Locations.Functions.List(parent)
-			err := listReq.Pages(context.Background(), func(page *cloudfunctions.ListFunctionsResponse) error {
-				for _, function := range page.Functions {
-					gcpFunction, err := tab.NewGCPResource(
-						function.Name,                     // resource name
-						projectId,                         // accountRef (project ID)
-						tab.GCPResourceFunction,           // resource type
-						linkPostProcessFunction(function), // properties
-					)
-					if err != nil {
-						slog.Error("Failed to create GCP function resource", "error", err, "function", function.Name)
-						continue
-					}
-					gcpFunction.DisplayName = function.Name
-					g.Send(gcpFunction)
-				}
-				return nil
-			})
+	// projectId := resource.Name
+	// regionsListCall := g.functionsService.Projects.Locations.List(fmt.Sprintf("projects/%s", projectId))
+	// regionsResp, err := regionsListCall.Do()
+	// if err != nil {
+	// 	return fmt.Errorf("failed to list regions in project %s: %w", projectId, err)
+	// }
+	// for _, location := range regionsResp.Locations {
+	// 	parent := fmt.Sprintf("projects/%s/locations/%s", projectId, location.LocationId)
+	// 	listReq := g.functionsService.Projects.Locations.Functions.List(parent)
+	// 	err := listReq.Pages(context.Background(), func(page *cloudfunctions.ListFunctionsResponse) error {
+	// 		for _, function := range page.Functions {
+	// 			slog.Debug("Found function", "function", function.Name)
+	// 			gcpFunction, err := tab.NewGCPResource(
+	// 				function.Name,                     // resource name
+	// 				projectId,                         // accountRef (project ID)
+	// 				tab.GCPResourceFunction,           // resource type
+	// 				linkPostProcessFunction(function), // properties
+	// 			)
+	// 			if err != nil {
+	// 				slog.Error("Failed to create GCP function resource", "error", err, "function", function.Name)
+	// 				continue
+	// 			}
+	// 			gcpFunction.DisplayName = function.Name
+	// 			g.Send(gcpFunction)
+	// 		}
+	// 		return nil
+	// 	})
+	// 	if err != nil {
+	// 		slog.Error("Failed to list functions in location", "error", err, "location", location.LocationId)
+	// 	}
+	// }
+	parent := fmt.Sprintf("projects/%s/locations/%s", resource.Name, "-")
+	listReq := g.functionsService.Projects.Locations.Functions.List(parent)
+	err := listReq.Pages(context.Background(), func(page *cloudfunctions.ListFunctionsResponse) error {
+		for _, function := range page.Functions {
+			slog.Debug("Found function", "function", function.Name)
+			gcpFunction, err := tab.NewGCPResource(
+				function.Name,                     // resource name
+				resource.Name,                     // accountRef (project ID)
+				tab.GCPResourceFunction,           // resource type
+				linkPostProcessFunction(function), // properties
+			)
 			if err != nil {
-				slog.Error("Failed to list functions in location", "error", err, "location", locationId)
+				slog.Error("Failed to create GCP function resource", "error", err, "function", function.Name)
+				continue
 			}
-		}(location.LocationId)
+			gcpFunction.DisplayName = function.Name
+			g.Send(gcpFunction)
+		}
+		return nil
+	})
+	if err != nil {
+		slog.Error("Failed to list functions in location", "error", err, "location", "-")
 	}
-	wg.Wait()
 	return nil
 }
 

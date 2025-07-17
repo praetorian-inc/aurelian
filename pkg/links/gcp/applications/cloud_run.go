@@ -11,7 +11,8 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
-	"google.golang.org/api/run/v1"
+	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/run/v2"
 )
 
 // FILE INFO:
@@ -20,7 +21,7 @@ import (
 
 type GcpCloudRunServiceInfoLink struct {
 	*base.GcpBaseLink
-	runService *run.APIService
+	runService *run.Service
 	ProjectId  string
 	Region     string
 }
@@ -69,7 +70,7 @@ func (g *GcpCloudRunServiceInfoLink) Process(serviceName string) error {
 		return fmt.Errorf("failed to get Cloud Run service %s: %w", serviceName, err)
 	}
 	gcpCloudRunService, err := tab.NewGCPResource(
-		service.Metadata.Name,                   // resource name
+		service.Name,                            // resource name
 		g.ProjectId,                             // accountRef (project ID)
 		tab.GCPResourceCloudRunService,          // resource type
 		linkPostProcessCloudRunService(service), // properties
@@ -84,7 +85,8 @@ func (g *GcpCloudRunServiceInfoLink) Process(serviceName string) error {
 
 type GcpCloudRunServiceListLink struct {
 	*base.GcpBaseLink
-	runService *run.APIService
+	runService    *run.Service
+	regionService *compute.Service
 }
 
 // creates a link to list all Cloud Run services in a project
@@ -103,6 +105,10 @@ func (g *GcpCloudRunServiceListLink) Initialize() error {
 	if err != nil {
 		return fmt.Errorf("failed to create cloud run service: %w", err)
 	}
+	g.regionService, err = compute.NewService(context.Background(), g.ClientOptions...)
+	if err != nil {
+		return fmt.Errorf("failed to create compute service: %w", err)
+	}
 	return nil
 }
 
@@ -111,42 +117,41 @@ func (g *GcpCloudRunServiceListLink) Process(resource tab.GCPResource) error {
 		return nil
 	}
 	projectId := resource.Name
-	locationsCall := g.runService.Projects.Locations.List(fmt.Sprintf("projects/%s", projectId))
-	locationsResp, err := locationsCall.Do()
+	regionsCall := g.regionService.Regions.List(projectId)
+	regionsResp, err := regionsCall.Do()
 	if err != nil {
-		return fmt.Errorf("failed to list locations in project %s: %w", projectId, err)
+		return fmt.Errorf("failed to list regions in project %s: %w", projectId, err)
 	}
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
-	for _, location := range locationsResp.Locations {
+	for _, region := range regionsResp.Items {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(locationId string) {
+		go func(regionId string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			parent := fmt.Sprintf("projects/%s/locations/%s", projectId, locationId)
+			parent := fmt.Sprintf("projects/%s/locations/%s", projectId, regionId)
 			servicesCall := g.runService.Projects.Locations.Services.List(parent)
 			servicesResp, err := servicesCall.Do()
 			if err == nil && servicesResp != nil {
-				for _, service := range servicesResp.Items {
+				for _, service := range servicesResp.Services {
 					gcpCloudRunService, err := tab.NewGCPResource(
-						service.Metadata.Name,                   // resource name
+						service.Name,                            // resource name
 						projectId,                               // accountRef (project ID)
 						tab.GCPResourceCloudRunService,          // resource type
 						linkPostProcessCloudRunService(service), // properties
 					)
 					if err != nil {
-						slog.Error("Failed to create GCP Cloud Run service resource", "error", err, "service", service.Metadata.Name)
+						slog.Error("Failed to create GCP Cloud Run service resource", "error", err, "service", service.Name)
 						continue
 					}
 					gcpCloudRunService.DisplayName = gcpCloudRunService.Name
 					g.Send(gcpCloudRunService)
 				}
+			} else if err != nil {
+				slog.Error("Failed to list Cloud Run services in region", "error", err, "region", regionId)
 			}
-			if err != nil {
-				slog.Error("Failed to list Cloud Run services in location", "error", err, "location", locationId)
-			}
-		}(location.LocationId)
+		}(region.Name)
 	}
 	wg.Wait()
 	return nil
@@ -155,33 +160,23 @@ func (g *GcpCloudRunServiceListLink) Process(resource tab.GCPResource) error {
 // ------------------------------------------------------------------------------------------------
 // helper functions
 
-func linkPostProcessCloudRunService(service *run.Service) map[string]any {
+func linkPostProcessCloudRunService(service *run.GoogleCloudRunV2Service) map[string]any {
 	properties := map[string]any{
-		"name":      service.Metadata.Name,
-		"namespace": service.Metadata.Namespace,
-		"labels":    service.Metadata.Labels,
-		"selfLink":  service.Metadata.SelfLink,
+		"name":      service.Name,
+		"namespace": service.Annotations["cloud.googleapis.com/namespace"],
+		"labels":    service.Labels,
 	}
-	properties["status"] = service.Status.Conditions
-	properties["uid"] = service.Metadata.Uid
-	if service.Status != nil && service.Status.Url != "" {
-		properties["publicURL"] = service.Status.Url
-	}
-	if service.Spec != nil {
-		if service.Spec.Template != nil {
-			properties["template"] = service.Spec.Template
-			if service.Spec.Template.Spec != nil {
-				properties["serviceAccountName"] = service.Spec.Template.Spec.ServiceAccountName
-				if len(service.Spec.Template.Spec.Containers) > 0 {
-					container := service.Spec.Template.Spec.Containers[0]
-					properties["image"] = container.Image
-					// properties["ports"] = container.Ports
-					// properties["env"] = container.Env
-					properties["command"] = container.Command
-					properties["args"] = container.Args
-					properties["workingDir"] = container.WorkingDir
-				}
-			}
+	properties["uid"] = service.Annotations["cloud.googleapis.com/uid"]
+	properties["publicURLs"] = service.Urls
+	properties["status"] = service.Conditions
+	if service.Template != nil {
+		properties["serviceAccountName"] = service.Template.ServiceAccount
+		if len(service.Template.Containers) > 0 {
+			container := service.Template.Containers[0]
+			properties["image"] = container.Image
+			properties["command"] = container.Command
+			properties["args"] = container.Args
+			properties["workingDir"] = container.WorkingDir
 		}
 	}
 	return properties
