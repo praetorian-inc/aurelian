@@ -169,7 +169,6 @@ func linkPostProcessCloudRunService(service *run.GoogleCloudRunV2Service) map[st
 	}
 	properties["uid"] = service.Annotations["cloud.googleapis.com/uid"]
 	properties["publicURLs"] = service.Urls
-	properties["status"] = service.Conditions
 	if service.Template != nil {
 		properties["serviceAccountName"] = service.Template.ServiceAccount
 		if len(service.Template.Containers) > 0 {
