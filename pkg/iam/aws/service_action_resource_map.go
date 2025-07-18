@@ -17,9 +17,11 @@ type ServiceResourceMap struct {
 
 // IsValidActionForResource checks if an action is valid for a given resource ARN
 func IsValidActionForResource(action, resource string) bool {
+
 	// Parse service and action name
 	parts := strings.Split(action, ":")
 	if len(parts) != 2 {
+		slog.Debug("Invalid action format", slog.String("action", action))
 		return false
 	}
 	service := strings.ToLower(parts[0])
@@ -29,20 +31,23 @@ func IsValidActionForResource(action, resource string) bool {
 	// assume true if we don't have a map for the service
 	serviceMap, exists := serviceResourceMaps[service]
 	if !exists {
+		slog.Debug("Service not found in serviceResourceMaps, assuming valid", slog.String("service", service))
 		return true
 	}
 
 	// Get valid resource types for action
 	validResourceTypes, exists := serviceMap.ActionResourceMap[actionName]
 	if !exists {
+		slog.Debug("Action not found in service map", slog.String("action", actionName), slog.String("service", service))
 		return false
 	}
-
+	
 	// Check each valid resource type
 	for _, resourceType := range validResourceTypes {
 		// Get pattern for resource type
 		pattern, exists := serviceMap.ResourcePatterns[resourceType]
 		if !exists {
+			slog.Debug("Pattern not found for resource type", slog.String("resourceType", resourceType))
 			continue
 		}
 
@@ -70,6 +75,8 @@ func getResourcePatternsFromAction(action Action) []*regexp.Regexp {
 		slog.Debug("Resource patterns", slog.String("action", string(action)), slog.String("patterns", fmt.Sprintf("%v", patterns)))
 		return patterns
 
+	} else {
+		slog.Debug("Service not found in serviceResourceMaps",service)
 	}
 
 	return []*regexp.Regexp{regexp.MustCompile(fmt.Sprintf("arn:aws:%s:*:*:*", service))}
@@ -301,6 +308,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"getpolicy":                          {"function"},
 			"getprovisionedconcurrencyconfig":    {"function"},
 			"invokefunction":                     {"function", "service"},
+			"invokefunctionurl":                  {"function"},
 			"invokeAsync":                        {"function"},
 			"listaliases":                        {"function"},
 			"listcodesigningconfigs":             {"function"},

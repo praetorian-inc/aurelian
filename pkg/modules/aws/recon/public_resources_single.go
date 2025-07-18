@@ -4,11 +4,16 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus/pkg/output"
+	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
+
+func init() {
+	registry.Register("aws", "recon", AWSPublicResourcesSingle.Metadata().Properties()["id"].(string), *AWSPublicResourcesSingle)
+}
 
 var AWSPublicResourcesSingle = chain.NewModule(
 	cfg.NewMetadata(
