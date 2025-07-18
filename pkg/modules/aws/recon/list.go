@@ -4,7 +4,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/registry"
-	"github.com/praetorian-inc/nebula/pkg/links/aws"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/outputters"
@@ -30,8 +30,8 @@ var AwsListResources = chain.NewModule(
 		},
 	}).WithChainInputParam(options.AwsResourceType().Name()),
 ).WithLinks(
-	general.NewResourceTypePreprocessor(&aws.AWSCloudControl{}),
-	aws.NewAWSCloudControl,
+	general.NewResourceTypePreprocessor(&cloudcontrol.AWSCloudControl{}),
+	cloudcontrol.NewAWSCloudControl,
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
 )

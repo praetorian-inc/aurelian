@@ -299,7 +299,7 @@ func AwsAccountId() cfg.Param {
 }
 
 func AwsAction() cfg.Param {
-	return cfg.NewParam[string]("action", "AWS IAM action").
+	return cfg.NewParam[[]string]("action", "AWS IAM action").
 		WithShortcode("a").
 		AsRequired()
 }

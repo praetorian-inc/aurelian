@@ -7,6 +7,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
@@ -29,7 +30,7 @@ var AWSFindSecrets = chain.NewModule(
 	),
 ).WithLinks(
 	general.NewResourceTypePreprocessor(&aws.AWSFindSecrets{}),
-	aws.NewAWSCloudControl,
+	cloudcontrol.NewAWSCloudControl,
 	aws.NewAWSFindSecrets,
 	chain.ConstructLinkWithConfigs(noseyparker.NewNoseyParkerScanner, cfg.WithArg("continue_piping", true)),
 ).WithOutputters(
