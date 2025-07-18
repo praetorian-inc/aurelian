@@ -8,6 +8,8 @@ import (
 	"google.golang.org/api/googleapi"
 )
 
+// logs skips and returns nil if the error is a 403 and the reason is API disabled
+// NOTE: for use ONLY in GCP link Process() functions; DO NOT use in Initialize() functions
 func HandleGcpError(err error, msg string) error {
 	if err == nil {
 		return nil
