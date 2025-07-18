@@ -23,6 +23,10 @@ func HandleGcpError(err error, msg string) error {
 						slog.Info("Skipping", "message", "API disabled for project")
 						return nil
 					}
+					if reason, ok := detailMap["reason"]; ok && reason == "BILLING_DISABLED" {
+						slog.Info("Skipping", "message", "Billing disabled for project")
+						return nil
+					}
 				}
 			}
 		}
