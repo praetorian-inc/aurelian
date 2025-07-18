@@ -10,6 +10,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/utils"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 	"google.golang.org/api/cloudfunctions/v1"
 )
@@ -66,7 +67,7 @@ func (g *GcpFunctionInfoLink) Process(functionName string) error {
 	functionPath := fmt.Sprintf("projects/%s/locations/%s/functions/%s", g.ProjectId, g.Region, functionName)
 	function, err := g.functionsService.Projects.Locations.Functions.Get(functionPath).Do()
 	if err != nil {
-		return fmt.Errorf("failed to get function %s: %w", functionName, err)
+		return utils.HandleGcpError(err, "failed to get function")
 	}
 	gcpFunction, err := tab.NewGCPResource(
 		function.Name,                     // resource name
@@ -130,10 +131,7 @@ func (g *GcpFunctionListLink) Process(resource tab.GCPResource) error {
 		}
 		return nil
 	})
-	if err != nil {
-		slog.Error("Failed to list functions in location", "error", err, "location", "-")
-	}
-	return nil
+	return utils.HandleGcpError(err, "failed to list functions in location")
 }
 
 // ------------------------------------------------------------------------------------------------

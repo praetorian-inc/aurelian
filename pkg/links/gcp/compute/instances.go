@@ -101,10 +101,7 @@ func (g *GcpInstanceListLink) Initialize() error {
 	}
 	var err error
 	g.computeService, err = compute.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create compute service: %w", err)
-	}
-	return nil
+	return utils.HandleGcpError(err, "failed to create compute service")
 }
 
 func (g *GcpInstanceListLink) Process(resource tab.GCPResource) error {
@@ -115,7 +112,7 @@ func (g *GcpInstanceListLink) Process(resource tab.GCPResource) error {
 	zonesListCall := g.computeService.Zones.List(projectId)
 	zonesResp, err := zonesListCall.Do()
 	if err != nil {
-		return fmt.Errorf("failed to list zones in project %s: %w", projectId, err)
+		return utils.HandleGcpError(err, "failed to list zones in project")
 	}
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
@@ -143,8 +140,8 @@ func (g *GcpInstanceListLink) Process(resource tab.GCPResource) error {
 				}
 				return nil
 			})
-			if err != nil {
-				slog.Error("Failed to list instances in zone", "error", err, "zone", zoneName)
+			if handledErr := utils.HandleGcpError(err, "failed to list instances in zone"); handledErr != nil {
+				slog.Error("error", "error", handledErr, "zone", zoneName)
 			}
 		}(zone.Name)
 	}

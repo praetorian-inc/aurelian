@@ -9,6 +9,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/utils"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 	"google.golang.org/api/storage/v1"
 )
@@ -57,7 +58,7 @@ func (g *GcpStorageBucketInfoLink) Initialize() error {
 func (g *GcpStorageBucketInfoLink) Process(bucketName string) error {
 	bucket, err := g.storageService.Buckets.Get(bucketName).Do()
 	if err != nil {
-		return fmt.Errorf("failed to get bucket %s: %w", bucketName, err)
+		return utils.HandleGcpError(err, "failed to get bucket")
 	}
 	gcpBucket, err := tab.NewGCPResource(
 		bucket.Name,                   // resource name (bucket name)
@@ -105,7 +106,7 @@ func (g *GcpStorageBucketListLink) Process(resource tab.GCPResource) error {
 	listReq := g.storageService.Buckets.List(projectId)
 	buckets, err := listReq.Do()
 	if err != nil {
-		return fmt.Errorf("failed to list buckets in project %s: %w", projectId, err)
+		return utils.HandleGcpError(err, "failed to list buckets in project")
 	}
 	for _, bucket := range buckets.Items {
 		gcpBucket, err := tab.NewGCPResource(

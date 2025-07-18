@@ -76,10 +76,7 @@ func (g *GcpGlobalForwardingRuleListLink) Process(resource tab.GCPResource) erro
 		}
 		return nil
 	})
-	if err != nil {
-		return fmt.Errorf("failed to list global forwarding rules: %w", err)
-	}
-	return nil
+	return utils.HandleGcpError(err, "failed to list global forwarding rules")
 }
 
 func (g *GcpGlobalForwardingRuleListLink) postProcess(rule *compute.ForwardingRule) map[string]any {
@@ -142,7 +139,7 @@ func (g *GcpRegionalForwardingRuleListLink) Process(resource tab.GCPResource) er
 	regionsListCall := g.computeService.Regions.List(projectId)
 	regionsResp, err := regionsListCall.Do()
 	if err != nil {
-		return fmt.Errorf("failed to list regions in project %s: %w", projectId, err)
+		return utils.HandleGcpError(err, "failed to list regions in project")
 	}
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
@@ -254,10 +251,7 @@ func (g *GcpGlobalAddressListLink) Process(resource tab.GCPResource) error {
 		}
 		return nil
 	})
-	if err != nil {
-		return fmt.Errorf("failed to list global addresses: %w", err)
-	}
-	return nil
+	return utils.HandleGcpError(err, "failed to list global addresses")
 }
 
 func (g *GcpGlobalAddressListLink) postProcess(address *compute.Address) map[string]any {
@@ -319,7 +313,7 @@ func (g *GcpRegionalAddressListLink) Process(resource tab.GCPResource) error {
 	regionsListCall := g.computeService.Regions.List(projectId)
 	regionsResp, err := regionsListCall.Do()
 	if err != nil {
-		return fmt.Errorf("failed to list regions in project %s: %w", projectId, err)
+		return utils.HandleGcpError(err, "failed to list regions in project")
 	}
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
@@ -430,10 +424,7 @@ func (g *GcpDnsManagedZoneListLink) Process(resource tab.GCPResource) error {
 		}
 		return nil
 	})
-	if err != nil {
-		return fmt.Errorf("failed to list DNS managed zones: %w", err)
-	}
-	return nil
+	return utils.HandleGcpError(err, "failed to list DNS managed zones")
 }
 
 func (g *GcpDnsManagedZoneListLink) postProcess(zone *dns.ManagedZone) map[string]any {

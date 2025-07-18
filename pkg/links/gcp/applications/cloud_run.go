@@ -10,6 +10,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/utils"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/run/v2"
@@ -67,7 +68,7 @@ func (g *GcpCloudRunServiceInfoLink) Process(serviceName string) error {
 	name := fmt.Sprintf("projects/%s/locations/%s/services/%s", g.ProjectId, g.Region, serviceName)
 	service, err := g.runService.Projects.Locations.Services.Get(name).Do()
 	if err != nil {
-		return fmt.Errorf("failed to get Cloud Run service %s: %w", serviceName, err)
+		return utils.HandleGcpError(err, "failed to get Cloud Run service")
 	}
 	gcpCloudRunService, err := tab.NewGCPResource(
 		service.Name,                            // resource name
@@ -120,7 +121,7 @@ func (g *GcpCloudRunServiceListLink) Process(resource tab.GCPResource) error {
 	regionsCall := g.regionService.Regions.List(projectId)
 	regionsResp, err := regionsCall.Do()
 	if err != nil {
-		return fmt.Errorf("failed to list regions in project %s: %w", projectId, err)
+		return utils.HandleGcpError(err, "failed to list regions in project")
 	}
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup

@@ -10,6 +10,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/utils"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 	"google.golang.org/api/appengine/v1"
 )
@@ -127,12 +128,12 @@ func (g *GcpAppEngineApplicationListLink) Process(resource tab.GCPResource) erro
 	projectId := resource.Name
 	app, err := g.appengineService.Apps.Get(projectId).Do()
 	if err != nil {
-		return fmt.Errorf("failed to get App Engine application %s: %w", projectId, err)
+		return utils.HandleGcpError(err, "failed to get App Engine application")
 	}
 	servicesCall := g.appengineService.Apps.Services.List(projectId)
 	servicesResp, err := servicesCall.Do()
 	if err != nil {
-		return fmt.Errorf("failed to list App Engine services in project %s: %w", projectId, err)
+		return utils.HandleGcpError(err, "failed to list App Engine services in project")
 	}
 	for _, service := range servicesResp.Services {
 		versionsCall := g.appengineService.Apps.Services.Versions.List(projectId, service.Id)
