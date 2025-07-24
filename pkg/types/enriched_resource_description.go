@@ -38,6 +38,8 @@ func NewEnrichedResourceDescription(identifier, typeName, region, accountId stri
 		arn, err := SQSUrlToArn(identifier)
 		if err == nil {
 			a = arn
+			// Extract queue name from the ARN resource to use as identifier
+			identifier = arn.Resource
 		}
 	case "AWS::EC2::Instance":
 		a = arn.ARN{
