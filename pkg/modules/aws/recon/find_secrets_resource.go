@@ -5,14 +5,15 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus/pkg/links/noseyparker"
 	"github.com/praetorian-inc/janus/pkg/output"
+	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
 
-// func init() {
-// 	registry.Register("aws", "recon", AWSFindSecrets.Metadata().Properties()["id"].(string), *AWSFindSecrets)
-// }
+func init() {
+	registry.Register("aws", "recon", AWSFindSecrets.Metadata().Properties()["id"].(string), *AWSFindSecrets)
+}
 
 var AWSFindSecretsResource = chain.NewModule(
 	cfg.NewMetadata(

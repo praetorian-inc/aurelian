@@ -1,52 +1,43 @@
 package options
 
 import (
-	"regexp"
-
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 )
 
-var GcpProjectIdOpt = types.Option{
-	Name:        "project-id",
-	Short:       "p",
-	Description: "GCP project ID",
-	Required:    true,
-	Type:        types.String,
-	Value:       "",
+// Janus Options
+
+func GcpCredentialsFile() cfg.Param {
+	return cfg.NewParam[string]("creds-file", "Path to GCP credentials JSON file").WithDefault("").WithShortcode("c").AsRequired()
 }
 
-var GcpFolderIdOpt = types.Option{
-	Name:        "folder-id",
-	Short:       "f",
-	Description: "GCP folder ID",
-	Required:    true,
-	Type:        types.String,
-	Value:       "",
+func GcpProject() cfg.Param {
+	return cfg.NewParam[[]string]("project", "GCP project ID").WithDefault([]string{}).AsRequired().WithShortcode("p")
 }
 
-var GcpOrganizationIdOpt = types.Option{
-	Name:        "org-id",
-	Description: "GCP organization ID",
-	Required:    true,
-	Type:        types.String,
-	Value:       "",
-	ValueFormat: regexp.MustCompile("^[0-9]{12}$"),
+func GcpFilterSysProjects() cfg.Param {
+	return cfg.NewParam[bool]("filter-sys-projects", "Filter out system projects like Apps Script projects").WithDefault(true)
 }
 
-var GcpProjectsListOpt = types.Option{
-	Name:        "projects-list",
-	Short:       "",
-	Description: "GCP projects list",
-	Required:    true,
-	Type:        types.String,
-	Value:       "",
+func GcpOrg() cfg.Param {
+	return cfg.NewParam[[]string]("org", "GCP organization ID").WithDefault([]string{}).AsRequired().WithShortcode("o")
 }
 
-var GcpIncludeAncestorsOpt = types.Option{
-	Name:        "ancestors",
-	Short:       "",
-	Description: "include ancestors",
-	Required:    true,
-	Type:        types.String,
-	Value:       "",
+func GcpFolder() cfg.Param {
+	return cfg.NewParam[[]string]("folder", "GCP folder ID").WithDefault([]string{}).AsRequired().WithShortcode("f")
+}
+
+func GcpResourceType() cfg.Param {
+	return cfg.NewParam[string]("resource-type", "GCP resource type").WithDefault("").AsRequired().WithShortcode("t")
+}
+
+func GcpZone() cfg.Param {
+	return cfg.NewParam[string]("zone", "GCP zone containing the resource").WithDefault("").AsRequired().WithShortcode("z")
+}
+
+func GcpRegion() cfg.Param {
+	return cfg.NewParam[string]("region", "GCP region containing the resource").WithDefault("").AsRequired().WithShortcode("r")
+}
+
+func GcpResource() cfg.Param {
+	return cfg.NewParam[string]("resource", "GCP resource ID").WithDefault("").AsRequired().WithShortcode("r")
 }
