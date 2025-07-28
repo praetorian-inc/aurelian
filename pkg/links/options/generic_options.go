@@ -147,3 +147,9 @@ func IP() cfg.Param {
 		AsRequired()
 
 }
+
+func OutputDir() cfg.Param {
+	return cfg.NewParam[string]("output", "output directory").
+		WithShortcode("o").
+		AsRequired()
+}
