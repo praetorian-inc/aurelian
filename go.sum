@@ -377,6 +377,8 @@ github.com/praetorian-inc/janus v0.0.0-20250701160449-b1d069f4896b h1:DTy1Z/PhVh
 github.com/praetorian-inc/janus v0.0.0-20250701160449-b1d069f4896b/go.mod h1:sgn0KN5jhTFhbcsrtW8/ZXbrgNRJl+nwoM4Lh46IxDc=
 github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157 h1:Hrov9II6t60IMF9wg8CqySnZi/2fdz/2DkAMcw48bkU=
 github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157/go.mod h1:sbwY5GVsqieoJXogpMMK+5GWZ15UgNnd9nRSkjBG8rQ=
+github.com/praetorian-inc/tabularium v0.1.3-0.20250728152811-58090c11d2de h1:onCbF7C9BN4lX8D1Gn0WnDUZst2AZUPnRUvDKsjU3sI=
+github.com/praetorian-inc/tabularium v0.1.3-0.20250728152811-58090c11d2de/go.mod h1:2Byf4ZxaU54v7A0FuWsXtURMo6yEUbFLM+5D+K51D24=
 github.com/projectdiscovery/wappalyzergo v0.2.30 h1:tLPuInCcLUUA9853zKXyLUSEv8zopUeozq41kLsmPo0=
 github.com/projectdiscovery/wappalyzergo v0.2.30/go.mod h1:L4P6SZuaEgEE2eXbpf4OnSGxjWj9vn6xM15SD78niLA=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
