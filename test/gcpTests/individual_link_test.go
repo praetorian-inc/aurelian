@@ -1,0 +1,27 @@
+package gcpTests
+
+import (
+	"testing"
+
+	"github.com/praetorian-inc/janus/pkg/chain"
+	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	"github.com/praetorian-inc/janus/pkg/output"
+	"github.com/praetorian-inc/nebula/pkg/links/gcp/compute"
+)
+
+func TestGcpFunctionInfoLink(t *testing.T) {
+	c := chain.NewChain(
+		compute.NewGcpFunctionInfoLink(),
+	).WithOutputters(
+		output.NewConsoleOutputter(),
+		output.NewJSONOutputter(),
+	).WithConfigs(
+		cfg.WithArg("project", "praetorian-inc"),
+		cfg.WithArg("region", "us-central1"),
+	).WithStrictness(
+		chain.Strict,
+	)
+	c.Send("gcp-function-info-link")
+	c.Close()
+	c.Wait()
+}
