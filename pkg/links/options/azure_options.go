@@ -25,7 +25,7 @@ var azureAcceptedSecretsTypes = []string{
 }
 
 var AzureSubscriptionOpt = types.Option{
-	Name:        "azure-subscription",
+	Name:        "subscription",
 	Description: "The Azure subscription to use. Can be a subscription ID or 'all'.",
 	Required:    true,
 	Default:     "all",
@@ -97,9 +97,9 @@ var AzureARGTemplatesDirOpt = types.Option{
 
 func AzureSubscription() cfg.Param {
 	return cfg.NewParam[[]string](
-		AzureSubscriptionOpt.Name,
-		AzureSubscriptionOpt.Description,
-	).WithShortcode("s")
+		"subscription",
+		"The Azure subscription to use. Can be a subscription ID or 'all'.",
+	).WithShortcode("s").AsRequired()
 }
 
 func AzureTemplateDir() cfg.Param {

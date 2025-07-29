@@ -12,6 +12,14 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// platformAliases maps platform names to their command aliases
+var platformAliases = map[string][]string{
+	"azure": {"az"},
+	"aws":   {"amazon"},
+	"gcp":   {"google"},
+	// Add more platform aliases as needed
+}
+
 // generateCommands builds the command tree based on registered modules
 func generateCommands(root *cobra.Command) {
 	hierarchy := registry.GetHierarchy()
@@ -19,8 +27,9 @@ func generateCommands(root *cobra.Command) {
 	// Create the full platform->category->module hierarchy
 	for platform, categories := range hierarchy {
 		platformCmd := &cobra.Command{
-			Use:   platform,
-			Short: fmt.Sprintf("%s platform commands", platform),
+			Use:     platform,
+			Aliases: platformAliases[platform], // Add aliases if they exist
+			Short:   fmt.Sprintf("%s platform commands", platform),
 		}
 
 		for category, modules := range categories {

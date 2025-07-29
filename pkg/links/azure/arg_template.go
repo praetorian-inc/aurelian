@@ -3,6 +3,8 @@ package azure
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/praetorian-inc/janus/pkg/chain"
@@ -11,6 +13,7 @@ import (
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/outputters"
 	"github.com/praetorian-inc/nebula/pkg/templates"
 	"github.com/praetorian-inc/tabularium/pkg/model/model"
 )
@@ -133,7 +136,13 @@ func (l *ARGTemplateQueryLink) Process(input ARGTemplateQueryInput) error {
 				}
 			}
 
-			l.Send(ar)
+			// Clean subscription for filename
+			cleanSub := strings.ReplaceAll(input.Subscription, " ", "-")
+			cleanSub = strings.ReplaceAll(cleanSub, "/", "-")
+			cleanSub = strings.ReplaceAll(cleanSub, "\\", "-")
+
+			filename := filepath.Join(options.OutputDir().Value().(string), fmt.Sprintf("public-resources-%s.json", cleanSub))
+			l.Send(outputters.NewNamedOutputData(ar, filename))
 		}
 		return nil
 	})

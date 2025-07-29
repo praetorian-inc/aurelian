@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	"github.com/praetorian-inc/nebula/internal/message"
 )
 
 // NamedOutputData represents the structure that should be sent to the RuntimeJSONOutputter
@@ -16,6 +18,14 @@ import (
 type NamedOutputData struct {
 	OutputFilename string
 	Data           any
+}
+
+// NewNamedOutputData creates a new NamedOutputData instance
+func NewNamedOutputData(data any, filename string) NamedOutputData {
+	return NamedOutputData{
+		OutputFilename: filename,
+		Data:           data,
+	}
 }
 
 const defaultOutfile = "out.json"
@@ -83,6 +93,11 @@ func (j *RuntimeJSONOutputter) SetOutputFile(filename string) {
 func (j *RuntimeJSONOutputter) Complete() error {
 	slog.Debug("writing JSON output", "filename", j.outfile, "entries", len(j.output))
 
+	// Ensure the directory exists
+	if err := os.MkdirAll(filepath.Dir(j.outfile), 0755); err != nil {
+		return fmt.Errorf("error creating directory for JSON file %s: %w", j.outfile, err)
+	}
+
 	writer, err := os.Create(j.outfile)
 	if err != nil {
 		return fmt.Errorf("error creating JSON file %s: %w", j.outfile, err)
@@ -92,7 +107,13 @@ func (j *RuntimeJSONOutputter) Complete() error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", strings.Repeat(" ", j.indent))
 
-	return encoder.Encode(j.output)
+	err = encoder.Encode(j.output)
+	if err != nil {
+		return err
+	}
+
+	message.Success("JSON output written to: %s", j.outfile)
+	return nil
 }
 
 // Params defines the parameters accepted by this outputter
