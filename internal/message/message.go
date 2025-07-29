@@ -63,22 +63,23 @@ func SetOutput(w io.Writer) {
 	outWriter = w
 }
 
-func printf(c *color.Color, prefix, format string, args ...interface{}) {
-	mutex.RLock()
-	defer mutex.RUnlock()
+func printf(c *color.Color, prefix, format string, args ...any) {
+	mutex.Lock() // Use exclusive lock instead of RLock
+	defer mutex.Unlock()
 
 	if !quiet {
 		msg := fmt.Sprintf(format, args...)
-		if noColor {
-			fmt.Fprintf(outWriter, "%s%s\n", prefix, msg)
-		} else {
+		useColor := !noColor // Capture decision atomically
+		if useColor {
 			c.Fprintf(outWriter, "%s%s\n", prefix, msg)
+		} else {
+			fmt.Fprintf(outWriter, "%s%s\n", prefix, msg)
 		}
 	}
 }
 
 // Info prints an informational message unless quiet/silent mode is enabled
-func Info(format string, args ...interface{}) {
+func Info(format string, args ...any) {
 	if quiet || silent {
 		return
 	}
@@ -86,7 +87,7 @@ func Info(format string, args ...interface{}) {
 }
 
 // Success prints a success message unless quiet/silent mode is enabled
-func Success(format string, args ...interface{}) {
+func Success(format string, args ...any) {
 	if quiet || silent {
 		return
 	}
@@ -94,7 +95,7 @@ func Success(format string, args ...interface{}) {
 }
 
 // Warning prints a warning message unless silent mode is enabled
-func Warning(format string, args ...interface{}) {
+func Warning(format string, args ...any) {
 	if silent {
 		return
 	}
@@ -102,7 +103,7 @@ func Warning(format string, args ...interface{}) {
 }
 
 // Error prints an error message unless silent mode is enabled
-func Error(format string, args ...interface{}) {
+func Error(format string, args ...any) {
 	if silent {
 		return
 	}
@@ -110,12 +111,14 @@ func Error(format string, args ...interface{}) {
 }
 
 // Critical prints a critical error message that is never suppressed
-func Critical(format string, args ...interface{}) {
+func Critical(format string, args ...any) {
 	printf(errorColor, "[!!] ", format, args...)
 }
 
 // Emphasize returns a string with bold formatting
 func Emphasize(s string) string {
+	mutex.RLock()
+	defer mutex.RUnlock()
 	if noColor {
 		return s
 	}
@@ -123,23 +126,12 @@ func Emphasize(s string) string {
 }
 
 // Section prints a section header in bold cyan
-func Section(format string, args ...interface{}) {
+func Section(format string, args ...any) {
 	if quiet || silent {
 		return
 	}
-
-	mutex.RLock()
-	defer mutex.RUnlock()
-
-	if !quiet {
-		msg := fmt.Sprintf(format, args...)
-		if noColor {
-			fmt.Fprintf(outWriter, "\n-=[%s]=-\n\n", msg)
-		} else {
-			//c := color.New(color.FgCyan, color.Bold)
-			sectionColor.Fprintf(outWriter, "\n-=[%s]=-\n\n", msg)
-		}
-	}
+	msg := fmt.Sprintf(format, args...)
+	printf(sectionColor, "\n-=[", "%s]=-\n", msg)
 }
 
 // Prints the banner
