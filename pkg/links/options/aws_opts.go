@@ -206,7 +206,8 @@ func AwsRegions() cfg.Param {
 
 func AwsProfile() cfg.Param {
 	return cfg.NewParam[string]("profile", "AWS profile to use").
-		WithDefault("default")
+		WithDefault("default").
+		WithShortcode("p")
 }
 
 func AwsProfileDir() cfg.Param {

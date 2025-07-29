@@ -10,6 +10,7 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
 
 func init() {
@@ -35,7 +36,7 @@ var AWSFindSecrets = chain.NewModule(
 	chain.ConstructLinkWithConfigs(noseyparker.NewNoseyParkerScanner, cfg.WithArg("continue_piping", true)),
 ).WithOutputters(
 	output.NewJSONOutputter,
-	output.NewConsoleOutputter,
+	outputters.NewNPFindingsConsoleOutputter,
 ).WithInputParam(
 	options.AwsResourceType().WithDefault([]string{"all"}),
 )

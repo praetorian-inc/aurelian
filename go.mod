@@ -62,7 +62,7 @@ require (
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.1
 	github.com/ollama/ollama v0.2.7
-	github.com/praetorian-inc/janus v0.0.0-20250728200524-145c85684130
+	github.com/praetorian-inc/janus v0.0.0-20250729101710-d816a1b40f1b
 	github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157
 	github.com/praetorian-inc/tabularium v0.1.3-0.20250728152811-58090c11d2de
 	github.com/spf13/cobra v1.9.1
