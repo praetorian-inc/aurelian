@@ -12,6 +12,7 @@ import (
 	"github.com/praetorian-inc/janus/pkg/chain"
 	"github.com/praetorian-inc/janus/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/helpers"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -100,6 +101,7 @@ func (a *AWSCloudControl) isGlobalService(resourceType, region string) bool {
 func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
 	defer a.wg.Done()
 
+	message.Info("Listing %s resources in %s (profile: %s)", resourceType, region, a.Profile)
 	slog.Debug("Listing resources in region", "type", resourceType, "region", region, "profile", a.Profile)
 
 	config, err := a.GetConfigWithRuntimeArgs(region)

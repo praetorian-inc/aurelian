@@ -124,7 +124,7 @@ func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) e
 		return nil
 	}
 
-	// Send all properties as NPInput
+	// Send all properties as NPInput immediately
 	if resource.Properties != nil {
 		npInput, err := resource.ToNPInputs()
 		if err != nil {
@@ -137,20 +137,23 @@ func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) e
 		}
 	}
 
-	resourceChain := constructor()
+	// Process resource chain asynchronously to avoid blocking the pipeline
+	go func() {
+		resourceChain := constructor()
+		resourceChain.WithConfigs(cfg.WithArgs(fs.Args()))
 
-	resourceChain.WithConfigs(cfg.WithArgs(fs.Args()))
+		resourceChain.Send(resource)
+		resourceChain.Close()
 
-	resourceChain.Send(resource)
-	resourceChain.Close()
+		// Collect and send all outputs from the chain
+		for o, ok := chain.RecvAs[jtypes.NPInput](resourceChain); ok; o, ok = chain.RecvAs[jtypes.NPInput](resourceChain) {
+			fs.Send(o)
+		}
 
-	for o, ok := chain.RecvAs[jtypes.NPInput](resourceChain); ok; o, ok = chain.RecvAs[jtypes.NPInput](resourceChain) {
-		fs.Send(o)
-	}
-
-	if err := resourceChain.Error(); err != nil {
-		slog.Error("Error processing resource for secrets", "resource", resource, "error", err)
-	}
+		if err := resourceChain.Error(); err != nil {
+			slog.Error("Error processing resource for secrets", "resource", resource, "error", err)
+		}
+	}()
 
 	return nil
 }
