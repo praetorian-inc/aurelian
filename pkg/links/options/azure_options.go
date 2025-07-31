@@ -111,3 +111,33 @@ func AzureArgCategory() cfg.Param {
 	return cfg.NewParam[string]("category", "Category of Azure ARG templates to use").
 		WithShortcode("c")
 }
+
+// Azure DevOps parameters for Janus framework
+func AzureDevOpsPAT() cfg.Param {
+	return cfg.NewParam[string]("devops-pat", "Azure DevOps Personal Access Token with read access").
+		WithShortcode("p").
+		AsRequired()
+}
+
+func AzureDevOpsOrganization() cfg.Param {
+	return cfg.NewParam[string]("devops-org", "Azure DevOps organization name").
+		WithShortcode("o").
+		AsRequired()
+}
+
+func AzureDevOpsProject() cfg.Param {
+	return cfg.NewParam[string]("devops-project", "Azure DevOps project name (optional, defaults to all projects)").
+		WithShortcode("j")
+}
+
+func AzureResourceSecretsTypes() cfg.Param {
+	return cfg.NewParam[[]string]("resource-types", "Azure resource types to scan for secrets").
+		WithShortcode("r").
+		WithDefault([]string{"all"})
+}
+
+func AzureWorkerCount() cfg.Param {
+	return cfg.NewParam[int]("workers", "Number of concurrent workers for processing").
+		WithShortcode("w").
+		WithDefault(5)
+}
