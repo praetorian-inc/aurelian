@@ -67,7 +67,7 @@ require (
 	github.com/praetorian-inc/janus v0.0.0-20250729101710-d816a1b40f1b
 	github.com/praetorian-inc/janus-core v0.0.0-20250729210455-b0761f38ac15
 	github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157
-	github.com/praetorian-inc/tabularium v0.1.3-0.20250731173847-f570a86b98b5
+	github.com/praetorian-inc/tabularium v1.0.0
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/oauth2 v0.30.0
@@ -165,4 +165,3 @@ require (
 	golang.org/x/text v0.27.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )
-
