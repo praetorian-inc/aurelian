@@ -963,3 +963,26 @@ func GetSubscriptionFromResourceID(resourceID string) (string, string, error) {
 
 	return "", "", fmt.Errorf("subscription ID not found in resource ID: %s", resourceID)
 }
+
+// ParseAzureResourceID parses an Azure resource ID and returns a map of components
+func ParseAzureResourceID(resourceID string) (map[string]string, error) {
+	result := make(map[string]string)
+	
+	if resourceID == "" {
+		return nil, fmt.Errorf("resource ID cannot be empty")
+	}
+	
+	parts := strings.Split(strings.TrimPrefix(resourceID, "/"), "/")
+	if len(parts) < 4 {
+		return nil, fmt.Errorf("invalid resource ID format: %s", resourceID)
+	}
+	
+	// Parse key-value pairs from the resource ID
+	for i := 0; i < len(parts)-1; i += 2 {
+		if i+1 < len(parts) {
+			result[parts[i]] = parts[i+1]
+		}
+	}
+	
+	return result, nil
+}

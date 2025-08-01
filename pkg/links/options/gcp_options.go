@@ -1,7 +1,7 @@
 package options
 
 import (
-	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 )
 
 // Janus Options

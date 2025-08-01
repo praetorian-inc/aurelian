@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/praetorian-inc/janus/pkg/chain"
+	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/praetorian-inc/janus/pkg/chain"
-	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	"github.com/praetorian-inc/janus-framework/pkg/chain"
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
@@ -30,7 +30,7 @@ func (a *AwsReconLink) Params() []cfg.Param {
 
 // Initializes common AWS recon link parameters
 func (a *AwsReconLink) Initialize() error {
-	
+
 	// First initialize the base link to ensure Profile, ProfileDir, etc. are set
 	if err := a.AwsReconBaseLink.Initialize(); err != nil {
 		return fmt.Errorf("failed to initialize base link: %w", err)

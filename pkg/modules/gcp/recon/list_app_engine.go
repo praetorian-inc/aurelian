@@ -1,8 +1,8 @@
 package recon
 
 import (
-	"github.com/praetorian-inc/janus/pkg/chain"
-	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	"github.com/praetorian-inc/janus-framework/pkg/chain"
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/applications"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/hierarchy"
