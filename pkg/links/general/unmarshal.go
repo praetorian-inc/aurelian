@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/praetorian-inc/janus/pkg/chain"
-	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus/pkg/links"
+	"github.com/praetorian-inc/janus-framework/pkg/chain"
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/janus-framework/pkg/links"
 )
 
 // NewTypedUnmarshalOutputLink creates a link that unmarshals JSON strings into a specific type.

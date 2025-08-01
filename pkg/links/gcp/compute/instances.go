@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/praetorian-inc/janus/pkg/chain"
-	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	"github.com/praetorian-inc/janus-framework/pkg/chain"
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/utils"

@@ -3,9 +3,9 @@ package general
 import (
 	"strings"
 
-	"github.com/praetorian-inc/janus/pkg/chain"
-	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	jlinks "github.com/praetorian-inc/janus/pkg/links"
+	"github.com/praetorian-inc/janus-framework/pkg/chain"
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	jlinks "github.com/praetorian-inc/janus-framework/pkg/links"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 

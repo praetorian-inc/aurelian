@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
-	jtypes "github.com/praetorian-inc/janus/pkg/types"
+	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
 )
 
 type EnrichedResourceDescription struct {

@@ -1,6 +1,9 @@
 package options
 
-import "github.com/praetorian-inc/nebula/pkg/types"
+import (
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/nebula/pkg/types"
+)
 
 var NoseyParkerPathOpt = types.Option{
 	Name:        "np-path",
@@ -32,4 +35,20 @@ var NoseyParkerScanOpt = types.Option{
 	Required:    false,
 	Type:        types.Bool,
 	Value:       "true",
+}
+
+// Janus-compatible NoseyParker parameters
+func NoseyParkerPath() cfg.Param {
+	return cfg.NewParam[string]("nosey-parker-path", "Path to NoseyParker executable").
+		WithDefault("noseyparker")
+}
+
+func NoseyParkerOutput() cfg.Param {
+	return cfg.NewParam[string]("nosey-parker-output", "Output directory for NoseyParker datastore").
+		WithDefault("datastore.np")
+}
+
+func NoseyParkerArgs() cfg.Param {
+	return cfg.NewParam[string]("nosey-parker-args", "Custom arguments to pass to NoseyParker").
+		WithDefault("")
 }

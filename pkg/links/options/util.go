@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 

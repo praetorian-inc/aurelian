@@ -5,9 +5,9 @@ import (
 	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudformation"
-	"github.com/praetorian-inc/janus/pkg/chain"
-	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	jtypes "github.com/praetorian-inc/janus/pkg/types"
+	"github.com/praetorian-inc/janus-framework/pkg/chain"
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
