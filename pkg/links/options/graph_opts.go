@@ -1,6 +1,6 @@
 package options
 
-import "github.com/praetorian-inc/janus/pkg/chain/cfg"
+import "github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 
 // Neo4jURI returns the connection string parameter for the Neo4j database
 func Neo4jURI() cfg.Param {

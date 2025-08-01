@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/praetorian-inc/janus/pkg/chain"
-	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	"github.com/praetorian-inc/janus-framework/pkg/chain"
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/tabularium/pkg/model/model"
 )

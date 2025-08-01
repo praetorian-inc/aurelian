@@ -11,8 +11,8 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/outputters"
 
 	"github.com/aws/aws-sdk-go-v2/service/iam"
-	"github.com/praetorian-inc/janus/pkg/chain"
-	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	"github.com/praetorian-inc/janus-framework/pkg/chain"
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 )

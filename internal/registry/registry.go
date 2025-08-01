@@ -5,7 +5,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/praetorian-inc/janus/pkg/chain"
+	"github.com/praetorian-inc/janus-framework/pkg/chain"
 )
 
 type ModuleHeriarchy struct {
