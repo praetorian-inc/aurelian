@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 
@@ -15,33 +16,55 @@ var docCmd = &cobra.Command{
 	Short: "Generate Markdown documentation",
 	Long:  `Generate Markdown documentation for the CLI and its subcommands.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		// Clone the root command to avoid modifying the original
+		docRoot := &cobra.Command{
+			Use:   rootCmd.Use,
+			Short: rootCmd.Short,
+			Long:  rootCmd.Long,
+		}
 
+		// Add all commands except excluded ones
 		excludedCmds := []string{"gendoc", "completion"}
 		for _, c := range rootCmd.Commands() {
-
+			excluded := false
 			for _, e := range excludedCmds {
 				if c.Use == e {
-					rootCmd.RemoveCommand(c)
+					excluded = true
 					break
 				}
+			}
+			if !excluded {
+				docRoot.AddCommand(c)
 			}
 		}
 
 		// First replace any FileNameOpt timestamp defaults
-		replaceFileNameOptDefaults(rootCmd)
+		replaceFileNameOptDefaults(docRoot)
 
-		err := doc.GenMarkdownTree(rootCmd, "./docs")
+		// Create docs directory if it doesn't exist
+		if err := os.MkdirAll("./docs", 0755); err != nil {
+			fmt.Printf("Error creating docs directory: %v\n", err)
+			return
+		}
+
+		// Remove old documentation files using git rm -f
+		err := removeOldDocs("./docs")
 		if err != nil {
-			fmt.Println("Error generating documentation:", err)
+			fmt.Printf("Error removing old documentation: %v\n", err)
+			return
+		}
+
+		err = doc.GenMarkdownTree(docRoot, "./docs")
+		if err != nil {
+			fmt.Printf("Error generating documentation: %v\n", err)
 		} else {
 			fmt.Println("Documentation generated in ./docs")
 		}
 
 		err = removeTimestamp("./docs")
 		if err != nil {
-			fmt.Println("Error removing timestamp:", err)
+			fmt.Printf("Error removing timestamp: %v\n", err)
 		}
-
 	},
 }
 
@@ -74,6 +97,50 @@ func removeTimestamp(path string) error {
 	})
 
 	return err
+}
+
+// removeOldDocs removes existing markdown documentation files using git rm -f
+func removeOldDocs(docsPath string) error {
+	// Check if docs directory exists and has markdown files
+	files, err := filepath.Glob(filepath.Join(docsPath, "*.md"))
+	if err != nil {
+		return fmt.Errorf("error globbing markdown files: %w", err)
+	}
+
+	if len(files) == 0 {
+		fmt.Println("No existing documentation files to remove")
+		return nil
+	}
+
+	fmt.Printf("Found %d existing documentation files to remove\n", len(files))
+
+	// Check if we're in a git repository and git is available
+	if _, err := exec.LookPath("git"); err != nil {
+		fmt.Println("Git not found, using regular file removal")
+		// Fall back to regular file removal
+		for _, file := range files {
+			if err := os.Remove(file); err != nil {
+				fmt.Printf("Error removing %s: %v\n", file, err)
+			}
+		}
+		return nil
+	}
+
+	// Try to remove individual files with git rm -f
+	for _, file := range files {
+		cmd := exec.Command("git", "rm", "-f", file)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			// If git rm fails, fall back to regular removal
+			fmt.Printf("Git rm failed for %s (may not be tracked), using regular removal: %s\n", file, string(output))
+			if err := os.Remove(file); err != nil {
+				fmt.Printf("Error removing %s: %v\n", file, err)
+			}
+		}
+	}
+
+	fmt.Printf("Removed %d documentation files\n", len(files))
+	return nil
 }
 
 // replaceFileNameOptDefaults recursively processes a command and its subcommands

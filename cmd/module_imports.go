@@ -5,4 +5,6 @@ package cmd
 import (
 	_ "github.com/praetorian-inc/nebula/pkg/modules/aws/analyze"
 	_ "github.com/praetorian-inc/nebula/pkg/modules/aws/recon"
+	_ "github.com/praetorian-inc/nebula/pkg/modules/azure/recon"
+	_ "github.com/praetorian-inc/nebula/pkg/modules/gcp/recon"
 )
