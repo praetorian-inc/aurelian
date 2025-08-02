@@ -576,6 +576,34 @@ func ExtractResourceGroup(resourceID string) string {
 	return ""
 }
 
+// ParseAzureResourceID parses an Azure resource ID and returns a map of its components
+func ParseAzureResourceID(resourceID string) (map[string]string, error) {
+	if resourceID == "" {
+		return nil, fmt.Errorf("resource ID cannot be empty")
+	}
+
+	// Remove leading slash if present
+	resourceID = strings.TrimPrefix(resourceID, "/")
+	parts := strings.Split(resourceID, "/")
+
+	if len(parts) < 4 {
+		return nil, fmt.Errorf("invalid resource ID format")
+	}
+
+	result := make(map[string]string)
+
+	// Parse the resource ID parts in pairs (key, value)
+	for i := 0; i < len(parts)-1; i += 2 {
+		if i+1 < len(parts) {
+			key := parts[i]
+			value := parts[i+1]
+			result[key] = value
+		}
+	}
+
+	return result, nil
+}
+
 // ParseLocationsOption parses the locations option string
 func ParseLocationsOption(locationsOpt string) ([]string, error) {
 	if strings.EqualFold(locationsOpt, "ALL") {

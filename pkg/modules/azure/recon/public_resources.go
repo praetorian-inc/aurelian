@@ -1,8 +1,8 @@
 package recon
 
 import (
-	"github.com/praetorian-inc/janus/pkg/chain"
-	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	"github.com/praetorian-inc/janus-framework/pkg/chain"
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/azure"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
@@ -21,7 +21,7 @@ var AzurePublicAccess = chain.NewModule(
 ).WithConfigs(
 	cfg.WithArg("category", "Public Access"),
 ).WithLinks(
-	azure.NewARGTemplateLoaderLink(),
+	azure.NewARGTemplateLoaderLink,
 	azure.NewARGTemplateQueryLink,
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,

@@ -1,0 +1,22 @@
+id: web_apps_all_secrets
+name: All Web Apps for Secret Scanning
+category: Secret Scanning
+description: Finds all web applications and function apps for secret scanning in configuration, connection strings, and keys
+severity: Medium
+reportability: Automatic
+triageNotes: |
+  This template discovers all web apps and function apps to enable comprehensive secret scanning.
+  The AzureFindSecretsLink will analyze app settings, connection strings, and keys for embedded secrets.
+references:
+  - https://learn.microsoft.com/en-us/azure/app-service/
+  - https://learn.microsoft.com/en-us/azure/azure-functions/
+query: |
+  resources
+  | where type in~ ('Microsoft.Web/sites', 'Microsoft.Web/sites/slots')
+  | project
+      id,
+      type,
+      name,
+      location,
+      subscriptionId,
+      resourceGroup

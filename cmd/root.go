@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/internal/message"
@@ -44,6 +45,11 @@ func init() {
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
 		logs.ConfigureDefaults(logLevelFlag)
 		helpers.ConfigureAWSCacheLogger(awsCacheLogLevel, awsCacheLogFile)
+		
+		// Configure janus-framework logging to match nebula's log level
+		if level, err := cfg.LevelFromString(logLevelFlag); err == nil {
+			cfg.SetDefaultLevel(level)
+		}
 	}
 }
 

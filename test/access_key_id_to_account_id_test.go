@@ -16,4 +16,14 @@ func TestAccessKeyIdToAccountId(t *testing.T) {
 		},
 	}
 
+	// Simple test to ensure test data is valid
+	if len(keys) == 0 {
+		t.Error("test data should not be empty")
+	}
+
+	for _, keyPair := range keys {
+		if keyPair["access_key_id"] == "" || keyPair["account_id"] == "" {
+			t.Error("access_key_id and account_id should not be empty")
+		}
+	}
 }

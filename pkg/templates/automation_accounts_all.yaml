@@ -1,0 +1,21 @@
+id: automation_accounts_all_secrets  
+name: All Automation Accounts for Secret Scanning
+category: Secret Scanning
+description: Finds all automation accounts for secret scanning in variables, runbooks, and job configurations
+severity: Medium
+reportability: Automatic
+triageNotes: |
+  This template discovers all automation accounts to enable comprehensive secret scanning.
+  The AzureFindSecretsLink will analyze variables, runbooks, and job configurations for embedded secrets.
+references:
+  - https://learn.microsoft.com/en-us/azure/automation/
+query: |
+  resources
+  | where type =~ 'Microsoft.Automation/automationAccounts'
+  | project
+      id,
+      type,
+      name,
+      location,
+      subscriptionId,
+      resourceGroup

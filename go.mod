@@ -55,7 +55,6 @@ require (
 	github.com/aws/smithy-go v1.22.4
 	github.com/docker/docker v28.0.1+incompatible
 	github.com/fatih/color v1.18.0
-	github.com/google/uuid v1.6.0
 	github.com/itchyny/gojq v0.12.17
 	github.com/lmittmann/tint v1.1.2
 	github.com/mark3labs/mcp-go v0.29.0
@@ -101,6 +100,7 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/googleapis/gax-go/v2 v2.14.2 // indirect
 	github.com/itchyny/timefmt-go v0.1.6 // indirect

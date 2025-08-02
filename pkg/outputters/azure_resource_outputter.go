@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/praetorian-inc/janus/pkg/chain"
-	"github.com/praetorian-inc/janus/pkg/chain/cfg"
+	"github.com/praetorian-inc/janus-framework/pkg/chain"
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/tabularium/pkg/model/model"
 )
@@ -24,6 +24,12 @@ func NewAzureResourceOutputter(configs ...cfg.Config) chain.Outputter {
 
 // Output prints an Azure resource to the console
 func (o *AzureResourceOutputter) Output(v any) error {
+	// Check if we received a NamedOutputData structure
+	if namedData, ok := v.(NamedOutputData); ok {
+		// Extract the actual data from the NamedOutputData
+		v = namedData.Data
+	}
+
 	azureResource, ok := v.(*model.AzureResource)
 	if !ok {
 		// Try without pointer in case it's passed as value

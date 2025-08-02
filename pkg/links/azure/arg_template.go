@@ -7,9 +7,8 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
-	"github.com/praetorian-inc/janus/pkg/chain"
-	"github.com/praetorian-inc/janus/pkg/chain/cfg"
-	jlinks "github.com/praetorian-inc/janus/pkg/links"
+	"github.com/praetorian-inc/janus-framework/pkg/chain"
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
@@ -26,35 +25,55 @@ type ARGTemplateQueryInput struct {
 	Subscription string
 }
 
-// NewARGTemplateLoaderLink returns an ad-hoc link that loads templates from a directory, filters by category, and emits ARGTemplateQueryInput for each template and subscription.
-// Params: directory (string), category (string)
-func NewARGTemplateLoaderLink() func(...cfg.Config) chain.Link {
-	return jlinks.ConstructAdHocLink(func(self chain.Link, subscription string) error {
-		directory := ""
-		category := ""
-		if self.HasParam("template-dir") {
-			directory, _ = self.Param("template-dir").Value().(string)
+// ARGTemplateLoaderLink loads and filters ARG templates by category
+type ARGTemplateLoaderLink struct {
+	*chain.Base
+}
+
+func NewARGTemplateLoaderLink(configs ...cfg.Config) chain.Link {
+	l := &ARGTemplateLoaderLink{}
+	l.Base = chain.NewBase(l, configs...)
+	return l
+}
+
+func (l *ARGTemplateLoaderLink) Params() []cfg.Param {
+	return []cfg.Param{
+		options.AzureTemplateDir(),
+		options.AzureArgCategory(),
+	}
+}
+
+func (l *ARGTemplateLoaderLink) Process(subscription string) error {
+	l.Logger.Info("ARGTemplateLoaderLink starting", "subscription", subscription)
+	
+	directory := ""
+	category := ""
+	if l.HasParam("template-dir") {
+		directory, _ = cfg.As[string](l.Arg("template-dir"))
+	}
+	if l.HasParam("category") {
+		category, _ = cfg.As[string](l.Arg("category"))
+	}
+	
+	loader, err := templates.NewTemplateLoader()
+	if err != nil {
+		return fmt.Errorf("failed to initialize template loader: %v", err)
+	}
+	if directory != "" {
+		if err := loader.LoadUserTemplates(directory); err != nil {
+			return fmt.Errorf("failed to load user templates: %v", err)
 		}
-		if self.HasParam("category") {
-			category, _ = self.Param("category").Value().(string)
+	}
+	templatesList := loader.GetTemplates()
+	l.Logger.Info("Templates loaded, filtering by category", "template_count", len(templatesList), "category", category)
+	
+	for _, t := range templatesList {
+		if category == "" || t.Category == category {
+			l.Logger.Debug("Matched template", "template_id", t.ID, "template_category", t.Category)
+			l.Send(ARGTemplateQueryInput{Template: t, Subscription: subscription})
 		}
-		loader, err := templates.NewTemplateLoader()
-		if err != nil {
-			return fmt.Errorf("failed to initialize template loader: %v", err)
-		}
-		if directory != "" {
-			if err := loader.LoadUserTemplates(directory); err != nil {
-				return fmt.Errorf("failed to load user templates: %v", err)
-			}
-		}
-		templatesList := loader.GetTemplates()
-		for _, t := range templatesList {
-			if category == "" || t.Category == category {
-				self.Send(ARGTemplateQueryInput{Template: t, Subscription: subscription})
-			}
-		}
-		return nil
-	})
+	}
+	return nil
 }
 
 // ARGTemplateQueryLink executes ARG queries from templates for a subscription
@@ -89,14 +108,17 @@ func (l *ARGTemplateQueryLink) Process(input ARGTemplateQueryInput) error {
 		Subscriptions: []string{input.Subscription},
 	}
 	message.Info("Executing ARG query for template %s", template.ID)
+	l.Logger.Debug("ARG query", "template_id", template.ID, "query", template.Query)
 	err = argClient.ExecutePaginatedQuery(l.Context(), template.Query, queryOpts, func(response *armresourcegraph.ClientResourcesResponse) error {
 		if response == nil || response.Data == nil {
+			l.Logger.Debug("ARG query returned no data", "template_id", template.ID)
 			return nil
 		}
 		rows, ok := response.Data.([]interface{})
 		if !ok {
 			return fmt.Errorf("unexpected response data type")
 		}
+		l.Logger.Debug("ARG query found resources", "template_id", template.ID, "count", len(rows))
 		for _, row := range rows {
 			item, ok := row.(map[string]any)
 			if !ok {
@@ -142,6 +164,7 @@ func (l *ARGTemplateQueryLink) Process(input ARGTemplateQueryInput) error {
 			cleanSub = strings.ReplaceAll(cleanSub, "\\", "-")
 
 			filename := filepath.Join(options.OutputDir().Value().(string), fmt.Sprintf("public-resources-%s.json", cleanSub))
+			l.Logger.Debug("Sending resource to next link", "template_id", template.ID, "resource_id", ar.Key, "resource_type", ar.ResourceType, "filename", filename)
 			l.Send(outputters.NewNamedOutputData(ar, filename))
 		}
 		return nil
