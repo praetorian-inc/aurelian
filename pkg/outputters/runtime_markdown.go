@@ -7,6 +7,7 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 const defaultMDOutfile = "out.md"
@@ -38,15 +39,15 @@ func (m *RuntimeMarkdownOutputter) Initialize() error {
 }
 
 func (m *RuntimeMarkdownOutputter) Output(val any) error {
-	// if outputData, ok := val.(NamedOutputData); ok {
-	// 	if outputData.OutputFilename != "" && m.outfile == defaultMDOutfile {
-	// 		m.SetOutputFile(outputData.OutputFilename)
-	// 	}
+	if outputData, ok := val.(NamedOutputData); ok {
+		if outputData.OutputFilename != "" && m.outfile == defaultMDOutfile {
+			m.SetOutputFile(outputData.OutputFilename)
+		}
 
-	// 	if table, ok := outputData.Data.(types.MarkdownTable); ok {
-	// 		m.results[m.outfile] = append(m.results[m.outfile], table.ToMarkdown())
-	// 	}
-	// }
+		if table, ok := outputData.Data.(types.MarkdownTable); ok {
+			m.results[m.outfile] = append(m.results[m.outfile], table.ToString())
+		}
+	}
 	return nil
 }
 

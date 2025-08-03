@@ -94,6 +94,7 @@ func (l *ARGTemplateQueryLink) Params() []cfg.Param {
 		options.AzureSubscription(),
 		options.AzureTemplateDir(),
 		options.AzureArgCategory(),
+		options.OutputDir(),
 	}
 }
 
@@ -163,7 +164,8 @@ func (l *ARGTemplateQueryLink) Process(input ARGTemplateQueryInput) error {
 			cleanSub = strings.ReplaceAll(cleanSub, "/", "-")
 			cleanSub = strings.ReplaceAll(cleanSub, "\\", "-")
 
-			filename := filepath.Join(options.OutputDir().Value().(string), fmt.Sprintf("public-resources-%s.json", cleanSub))
+			outputDir, _ := cfg.As[string](l.Arg("output"))
+			filename := filepath.Join(outputDir, fmt.Sprintf("public-resources-%s.json", cleanSub))
 			l.Logger.Debug("Sending resource to next link", "template_id", template.ID, "resource_id", ar.Key, "resource_type", ar.ResourceType, "filename", filename)
 			l.Send(outputters.NewNamedOutputData(ar, filename))
 		}

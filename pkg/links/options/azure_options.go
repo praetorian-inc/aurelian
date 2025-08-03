@@ -141,3 +141,12 @@ func AzureWorkerCount() cfg.Param {
 		WithShortcode("w").
 		WithDefault(5)
 }
+
+// AzureReconBaseOptions provides common options for Azure reconnaissance modules
+func AzureReconBaseOptions() []cfg.Param {
+	return []cfg.Param{
+		AzureSubscription(),
+		AzureWorkerCount(),
+		OutputDir(),
+	}
+}

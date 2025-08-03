@@ -151,6 +151,5 @@ func IP() cfg.Param {
 func OutputDir() cfg.Param {
 	return cfg.NewParam[string]("output", "output directory").
 		WithShortcode("o").
-		WithDefault("nebula-output").
-		AsRequired()
+		WithDefault("nebula-output")
 }
