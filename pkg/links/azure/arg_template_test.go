@@ -45,8 +45,8 @@ func TestNewARGTemplateLoaderLink(t *testing.T) {
 				}
 			}
 
-			link := NewARGTemplateLoaderLink()(
-				cfg.WithArg("directory", tt.directory),
+			link := NewARGTemplateLoaderLink(
+				cfg.WithArg("template-dir", tt.directory),
 				cfg.WithArg("category", tt.category),
 			)
 
