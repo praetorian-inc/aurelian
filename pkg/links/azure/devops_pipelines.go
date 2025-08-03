@@ -10,6 +10,7 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
 	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -105,9 +106,9 @@ func (l *AzureDevOpsPipelinesLink) processPipelineRunLogs(config types.DevOpsSca
 			continue
 		}
 
-		npInput := types.NpInput{
+		npInput := jtypes.NPInput{
 			Content: string(logContent),
-			Provenance: types.NpProvenance{
+			Provenance: jtypes.NPProvenance{
 				Platform:     "azure-devops",
 				ResourceType: "Microsoft.DevOps/Pipelines/Runs/Logs",
 				ResourceID: fmt.Sprintf("%s/%s/pipeline/%d/run/%d/log/%d",
@@ -122,7 +123,20 @@ func (l *AzureDevOpsPipelinesLink) processPipelineRunLogs(config types.DevOpsSca
 	return nil
 }
 
-func (l *AzureDevOpsPipelinesLink) Process(config types.DevOpsScanConfig) error {
+func (l *AzureDevOpsPipelinesLink) Process(input any) error {
+	// Handle both DevOpsScanConfig and NPInput types
+	var config types.DevOpsScanConfig
+	switch v := input.(type) {
+	case types.DevOpsScanConfig:
+		config = v
+	case jtypes.NPInput:
+		// Skip NPInput - we only process DevOpsScanConfig for pipeline discovery
+		l.Logger.Debug("Skipping NPInput in pipelines link", "resource_id", v.Provenance.ResourceID)
+		l.Send(input) // Pass through to next link
+		return nil
+	default:
+		return fmt.Errorf("unsupported input type: %T", input)
+	}
 	// Get list of pipelines in the project
 	pipelinesUrl := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines?api-version=7.1-preview.1",
 		config.Organization, config.Project)
@@ -185,9 +199,9 @@ func (l *AzureDevOpsPipelinesLink) Process(config types.DevOpsScanConfig) error 
 			}
 
 			// Send pipeline definition for scanning
-			npInput := types.NpInput{
+			npInput := jtypes.NPInput{
 				Content: string(defBody),
-				Provenance: types.NpProvenance{
+				Provenance: jtypes.NPProvenance{
 					Platform:     "azure-devops",
 					ResourceType: "Microsoft.DevOps/Pipelines/Definition",
 					ResourceID: fmt.Sprintf("%s/%s/pipeline/%d",
@@ -226,9 +240,9 @@ func (l *AzureDevOpsPipelinesLink) Process(config types.DevOpsScanConfig) error 
 				// Send run variables for scanning
 				if len(run.Variables) > 0 {
 					varsJson, _ := json.Marshal(run.Variables)
-					npInput := types.NpInput{
+					npInput := jtypes.NPInput{
 						Content: string(varsJson),
-						Provenance: types.NpProvenance{
+						Provenance: jtypes.NPProvenance{
 							Platform:     "azure-devops",
 							ResourceType: "Microsoft.DevOps/Pipelines/Runs/Variables",
 							ResourceID: fmt.Sprintf("%s/%s/pipeline/%d/run/%d/variables",

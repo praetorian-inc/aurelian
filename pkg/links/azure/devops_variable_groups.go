@@ -9,6 +9,7 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
 	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -98,13 +99,12 @@ func (l *AzureDevOpsVariableGroupsLink) Process(config types.DevOpsScanConfig) e
 	message.Info("Found %d variable groups to scan in project %s", len(groupsResult.Value), config.Project)
 
 	for _, group := range groupsResult.Value {
-		// Create content for scanning (exclude marked secrets to reduce noise)
+		// Create content for scanning (include all variables including secrets)
 		vars := make(map[string]string)
 		secretCount := 0
 		for k, v := range group.Variables {
-			if !v.IsSecret {
-				vars[k] = v.Value
-			} else {
+			vars[k] = v.Value // Include all variables for secret scanning
+			if v.IsSecret {
 				secretCount++
 			}
 		}
@@ -117,9 +117,9 @@ func (l *AzureDevOpsVariableGroupsLink) Process(config types.DevOpsScanConfig) e
 
 		content, _ := json.Marshal(vars)
 
-		npInput := types.NpInput{
+		npInput := jtypes.NPInput{
 			Content: string(content),
-			Provenance: types.NpProvenance{
+			Provenance: jtypes.NPProvenance{
 				Platform:     "azure-devops",
 				ResourceType: "Microsoft.DevOps/VariableGroups",
 				ResourceID: fmt.Sprintf("%s/%s/variablegroup/%d",
@@ -127,6 +127,15 @@ func (l *AzureDevOpsVariableGroupsLink) Process(config types.DevOpsScanConfig) e
 				AccountID: config.Organization,
 			},
 		}
+
+		preview := npInput.Content
+		if len(preview) > 200 {
+			preview = preview[:200] + "..."
+		}
+		l.Logger.Debug("Sending NPInput to next link", 
+			"content_length", len(npInput.Content),
+			"content_preview", preview,
+			"resource_id", npInput.Provenance.ResourceID)
 
 		l.Send(npInput)
 	}

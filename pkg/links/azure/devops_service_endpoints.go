@@ -10,6 +10,7 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
 	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -60,7 +61,20 @@ func (l *AzureDevOpsServiceEndpointsLink) makeDevOpsRequest(method, url string) 
 	return resp, nil
 }
 
-func (l *AzureDevOpsServiceEndpointsLink) Process(config types.DevOpsScanConfig) error {
+func (l *AzureDevOpsServiceEndpointsLink) Process(input any) error {
+	// Handle both DevOpsScanConfig and NPInput types
+	var config types.DevOpsScanConfig
+	switch v := input.(type) {
+	case types.DevOpsScanConfig:
+		config = v
+	case jtypes.NPInput:
+		// Skip NPInput - we only process DevOpsScanConfig for service endpoint discovery
+		l.Logger.Debug("Skipping NPInput in service endpoints link", "resource_id", v.Provenance.ResourceID)
+		l.Send(input) // Pass through to next link
+		return nil
+	default:
+		return fmt.Errorf("unsupported input type: %T", input)
+	}
 	// Get service endpoints for the project
 	endpointsUrl := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/serviceendpoint/endpoints?api-version=7.1-preview.4",
 		config.Organization, config.Project)
@@ -135,9 +149,9 @@ func (l *AzureDevOpsServiceEndpointsLink) Process(config types.DevOpsScanConfig)
 		}
 
 		// Send endpoint content for scanning
-		npInput := types.NpInput{
+		npInput := jtypes.NPInput{
 			Content: string(content),
-			Provenance: types.NpProvenance{
+			Provenance: jtypes.NPProvenance{
 				Platform:     "azure-devops",
 				ResourceType: "Microsoft.DevOps/ServiceEndpoints",
 				ResourceID: fmt.Sprintf("%s/%s/serviceendpoint/%s",
@@ -161,9 +175,9 @@ func (l *AzureDevOpsServiceEndpointsLink) Process(config types.DevOpsScanConfig)
 		historyResp.Body.Close()
 		if err == nil {
 			// Send endpoint history for scanning
-			historyInput := types.NpInput{
+			historyInput := jtypes.NPInput{
 				Content: string(historyBody),
-				Provenance: types.NpProvenance{
+				Provenance: jtypes.NPProvenance{
 					Platform:     "azure-devops",
 					ResourceType: "Microsoft.DevOps/ServiceEndpoints/History",
 					ResourceID: fmt.Sprintf("%s/%s/serviceendpoint/%s/history",

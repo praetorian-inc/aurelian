@@ -199,5 +199,9 @@ func (l *AzureDevOpsRepoScanLink) Process(config types.DevOpsScanConfig) error {
 	}
 
 	wg.Wait()
+	
+	// Repository scanning is handled internally with NoseyParker
+	// But still send the config to next links so they can process other data sources
+	l.Send(config)
 	return nil
 }
