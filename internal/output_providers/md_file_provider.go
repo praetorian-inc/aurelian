@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 

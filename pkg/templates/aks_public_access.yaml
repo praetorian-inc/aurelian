@@ -1,6 +1,7 @@
 id: aks_public_access  
 name: Publicly Accessible AKS Clusters
 description: Details AKS cluster network access configurations and IP restrictions for public clusters
+category: Public Access
 severity: High
 reportability: Automatic
 triageNotes: |

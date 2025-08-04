@@ -1,7 +1,6 @@
 package logs
 
 import (
-	"context"
 	"log/slog"
 	"os"
 	"strings"
@@ -9,12 +8,14 @@ import (
 	"github.com/aws/smithy-go/logging"
 	"github.com/lmittmann/tint"
 	"github.com/mattn/go-isatty"
-	"github.com/praetorian-inc/nebula/modules"
-	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 var (
 	logLevel string
+)
+
+const (
+	LevelNone = slog.Level(12)
 )
 
 // Currently used to write the AWS API calls to a log file
@@ -24,14 +25,19 @@ func AwsCliLogger() logging.Logger {
 
 		opts := &slog.HandlerOptions{
 			AddSource: true,
-			Level:     slog.LevelDebug,
+			Level:     getLevelFromString(logLevel),
 		}
 
-		f, err := os.OpenFile(LOG_FILE, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-		if err != nil {
-			panic(err)
+		var f *os.File
+		var err error
+
+		if getLevelFromString(logLevel) != LevelNone {
+			f, err = os.OpenFile(LOG_FILE, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+			if err != nil {
+				panic(err)
+			}
+			defer f.Close()
 		}
-		defer f.Close()
 
 		handler := slog.NewJSONHandler(f, opts)
 		logger := slog.New(handler)
@@ -59,8 +65,10 @@ func getLevelFromString(level string) slog.Level {
 		return slog.LevelWarn
 	case "error":
 		return slog.LevelError
+	case "none":
+		return LevelNone
 	default:
-		return slog.LevelInfo
+		return LevelNone
 	}
 }
 
@@ -77,25 +85,44 @@ func NewLogger() *slog.Logger {
 	return logger
 }
 
-func NewModuleLogger(ctx context.Context, opts []*types.Option) *slog.Logger {
-	logger := NewLogger()
-	
-	// Handle case where metadata might not be in context (e.g., helper functions)
-	metadataValue := ctx.Value("metadata")
-	if metadataValue == nil {
-		// Return logger without module-specific attributes when metadata is not available
-		return logger
-	}
-	
-	metadata := metadataValue.(modules.Metadata)
-	child := logger.WithGroup("module").With("platform", metadata.Platform).With("id", metadata.Id)
+func NewLoggerWithLevel(level string) *slog.Logger {
+	w := os.Stderr
+	handler := tint.NewHandler(w,
+		&tint.Options{
+			Level:   getLevelFromString(level),
+			NoColor: !isatty.IsTerminal(w.Fd()),
+		},
+	)
+	logger := slog.New(handler)
 
-	return child
+	return logger
 }
 
-func NewStageLogger(ctx context.Context, opts []*types.Option, stage string) *slog.Logger {
-	logger := NewModuleLogger(ctx, opts)
-	return logger.With("stage", stage)
+func NewLoggerWithFile(level, filename string) *slog.Logger {
+	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		// If we can't open the file, fall back to stderr
+		if level == "" {
+			return NewLogger()
+		}
+		return NewLoggerWithLevel(level)
+	}
+
+	var targetLevel slog.Level
+	if level == "" {
+		// Use global log level if no specific level provided
+		targetLevel = getLevelFromString(logLevel)
+	} else {
+		targetLevel = getLevelFromString(level)
+	}
+
+	opts := &slog.HandlerOptions{
+		Level: targetLevel,
+	}
+	handler := slog.NewJSONHandler(f, opts)
+	logger := slog.New(handler)
+
+	return logger
 }
 
 func SetLogLevel(level string) {

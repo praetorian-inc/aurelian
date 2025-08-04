@@ -1,0 +1,57 @@
+id: event_grid_domain_public  
+name: Publicly Accessible Event Grid Domain
+description: Details Event Grid Domain network access configurations and IP restrictions for public domains
+category: Public Access
+severity: High
+reportability: Manual
+triageNotes: |
+  This finding shows publicly accessible Event Grid Domains and their IP restrictions:
+  
+  1. Public domains with no IP restrictions are highest risk
+  2. Public domains with IP restrictions should be reviewed for appropriate ranges
+  3. Private domains without a public endpoint are automatically filtered and removed from the query
+
+  Review criteria:
+  - IP ranges should be as narrow as possible (avoid wide ranges like 0.0.0.0/0)
+  - Evaluate if domain can be converted to private
+  - Consider implementing network policies if public domains cannot be converted to private domains
+references:
+  - https://learn.microsoft.com/en-us/azure/event-grid/network-security
+  - https://docs.prowler.com/checks/azure/azure-networking-policies/ensure-that-azure-event-grid-domain-public-network-access-is-disabled/
+query: |
+  Resources
+  | where type == "microsoft.eventgrid/domains"
+  | project 
+      name,
+      resourceGroup,
+      subscriptionId,
+      location,
+      properties = parse_json(properties),
+      tags
+  | extend 
+      publicNetworkAccess = properties.publicNetworkAccess,
+      inboundIpRules = properties.inboundIpRules,
+      disableLocalAuth = properties.disableLocalAuth,
+      endpoint = properties.endpoint
+  | extend 
+      RiskReason = case(
+          publicNetworkAccess == "Enabled" and (isempty(inboundIpRules) or array_length(inboundIpRules) == 0), "Public access enabled with no IP restrictions",
+          publicNetworkAccess == "Enabled" and array_length(inboundIpRules) > 0, "Public access enabled with IP restrictions",
+          publicNetworkAccess == "Disabled", "Public access disabled",
+          "Unknown configuration"
+      )
+  | where publicNetworkAccess != "Disabled"
+  | project 
+      DomainName = name,
+      name = name,
+      type = "microsoft.eventgrid/domains",
+      ResourceGroup = resourceGroup,
+      SubscriptionId = subscriptionId,
+      location = location,
+      Endpoint = endpoint,
+      PublicNetworkAccess = publicNetworkAccess,
+      DisableLocalAuth = disableLocalAuth,
+      RiskReason = RiskReason,
+      IpRestrictionsCount = iff(isempty(inboundIpRules), 0, array_length(inboundIpRules)),
+      Tags = tags
+  | order by DomainName asc

@@ -3,19 +3,20 @@ package helpers
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
+	"strings"
+	"sync"
+	"sync/atomic"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go/middleware"
 	"github.com/praetorian-inc/nebula/internal/logs"
-	"github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
-	"log/slog"
-	"os"
-	"strings"
-	"sync"
-	"sync/atomic"
 )
 
 // TODO this should be combined with roseta
@@ -86,7 +87,7 @@ func MapArnByRegions(identifiers []string) (map[string][]arn.ARN, error) {
 }
 
 // Some resources do not return ARN as identifiers so need to be processed differently
-func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescription) map[string][]string {
+func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescription, optFns ...func(*config.LoadOptions) error) map[string][]string {
 	regionToIdentifiers := make(map[string][]string)
 	for _, description := range resourceDescriptions {
 		regionToIdentifiers[description.Region] = append(regionToIdentifiers[description.Region], description.Identifier)
@@ -94,24 +95,35 @@ func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescri
 	return regionToIdentifiers
 }
 
-func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config, error) {
+func GetAWSCfg(region string, profile string, opts []*types.Option, optFns ...func(*config.LoadOptions) error) (aws.Config, error) {
 	if !cacheMaintained {
 		InitCache(opts)
 		cacheMaintained = true
 	}
 
-	cfg, err := config.LoadDefaultConfig(
-		context.TODO(),
+	if region == "" {
+		region = "us-east-1"
+		slog.Warn("Calling GetAWSCfg without a region is risky — it defaults to us-east-1, which might not be what you want. Always provide a region explicitly.")
+	}
+
+	options := []func(*config.LoadOptions) error{
 		config.WithClientLogMode(
-			aws.LogRetries|
-				aws.LogRequestWithBody|
-				aws.LogRequestEventMessage|
+			aws.LogRetries |
+				aws.LogRequestWithBody |
+				aws.LogRequestEventMessage |
 				aws.LogResponseEventMessage),
 		config.WithLogger(logs.AwsCliLogger()),
 		config.WithRegion(region),
 		config.WithSharedConfigProfile(profile),
 		config.WithRetryMode(aws.RetryModeAdaptive),
 		// config.WithAPIOptions(cacheFunc),
+	}
+
+	options = append(options, optFns...)
+
+	cfg, err := config.LoadDefaultConfig(
+		context.TODO(),
+		options...,
 	)
 	if err != nil {
 		return aws.Config{}, err
@@ -127,7 +139,7 @@ func GetAWSCfg(region string, profile string, opts []*types.Option) (aws.Config,
 			return aws.Config{}, err
 		}
 		ProfileIdentity.Store(profile, principal)
-		slog.Debug("Called STS GetCallerIdentity for", "profile", profile, "ARN", principal.Arn)
+		slog.Debug("Called STS GetCallerIdentity for", "profile", profile, "ARN", *principal.Arn)
 	}
 
 	CachePrep := GetCachePrepWithIdentity(principal, opts)

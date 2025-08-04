@@ -2,7 +2,7 @@ id: overprivileged_custom_roles
 name: Custom Roles with Privilege Escalation Permissions
 description: Detects custom role definitions that contain permissions allowing privilege escalation through role assignments, classic administrator changes, or role definition modifications
 severity: High
-category: Automatic
+category: Privilege Escalation
 triageNotes: |
   Potential Risk:
   - Permissions that allow users to modify role assignments or definitions can lead to privilege escalation

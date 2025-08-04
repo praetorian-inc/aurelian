@@ -26,6 +26,7 @@ type UserDL struct {
 	GroupList               []string      `json:"GroupList"`
 	Tags                    []Tag         `json:"Tags"`
 	UserPolicyList          []PrincipalPL `json:"UserPolicyList"`
+	PermissionsBoundary     ManagedPL     `json:"PermissionsBoundary"`
 	AttachedManagedPolicies []ManagedPL   `json:"AttachedManagedPolicies"`
 }
 
@@ -58,6 +59,7 @@ type RoleDL struct {
 	Tags                     []Tag             `json:"Tags"`
 	RolePolicyList           []PrincipalPL     `json:"RolePolicyList"`
 	AttachedManagedPolicies  []ManagedPL       `json:"AttachedManagedPolicies"`
+	PermissionsBoundary      ManagedPL         `json:"PermissionsBoundary"`
 	InstanceProfileList      []InstanceProfile `json:"InstanceProfileList"`
 }
 
@@ -83,6 +85,16 @@ type PoliciesDL struct {
 	CreateDate                    string       `json:"CreateDate"`
 	UpdateDate                    string       `json:"UpdateDate"`
 	PolicyVersionList             []PoliciesVL `json:"PolicyVersionList"`
+}
+
+// getDefaultPolicyDocument retrieves the default policy version document
+func (policy *PoliciesDL) DefaultPolicyDocument() *Policy {
+	for _, version := range policy.PolicyVersionList {
+		if version.IsDefaultVersion {
+			return &version.Document
+		}
+	}
+	return nil
 }
 
 type PoliciesVL struct {

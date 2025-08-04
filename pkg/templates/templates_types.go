@@ -23,7 +23,6 @@ type ARGQueryResult struct {
 	Location        string                 `json:"location"`
 	SubscriptionID  string                 `json:"subscriptionId"`
 	Properties      map[string]interface{} `json:"properties,omitempty"`
-	Commands        []Command              `json:"commands,omitempty"` // Array of commands and outputs
 }
 
 // ARGTemplateLoader handles loading and validating ARG query templates
@@ -31,12 +30,8 @@ type ARGTemplateLoader struct {
 	Templates []*ARGQueryTemplate
 }
 
-// Command represents the input and output of a command that requires manual triage
-type Command struct {
-	Command                   string `json:"command"`
-	Description               string `json:"description"`
-	ExpectedOutputDescription string `json:"expected_output_description"`
-	ActualOutput              string `json:"actual_output"`
-	ExitCode                  int    `json:"exit_code"`
-	Error                     string `json:"error,omitempty"`
-}
+type TemplateCategory string
+
+const (
+	PublicAccess TemplateCategory = "Public Access"
+)

@@ -127,3 +127,30 @@ Azure Common Flags:
 - For large environments, consider using resource type or region filters to break up scans
 - Monitor API rate limits, especially when scanning multiple regions
 - Use `--log-level debug` to triage errors or unexpected results
+
+## MCP Server
+
+All Nebula modules are available as MCP server tools. The server supports both Stdio and HTTP with SSE transports.
+
+Stdio Server
+```shell
+nebula mcp-server
+```
+
+HTTP Server
+```shell
+nebula mcp-server --http --addr :8080
+```
+
+Claude Desktop configuration can be found at `~/Library/Application\ Support/Claude/claude_desktop_config.json`.
+```json
+{
+  "mcpServers": {
+    "nebula": {
+      "command": "/path/to/nebula",
+      "args": ["mcp-server"]
+    }
+  }
+}
+
+```

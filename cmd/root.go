@@ -1,200 +1,158 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"log/slog"
 	"os"
-	"strconv"
-	"sync"
+	"runtime"
+	"sort"
+	"strings"
 
+	"github.com/fatih/color"
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/modules"
-	"github.com/praetorian-inc/nebula/modules/options"
-	"github.com/praetorian-inc/nebula/pkg/stages"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/nebula/internal/registry"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var (
-	cfgFile      string
-	quietFlag    bool
-	noColorFlag  bool
-	silentFlag   bool
 	logLevelFlag string
+	awsCacheLogLevel string
+	awsCacheLogFile string
+	noColorFlag bool
 )
 
-// rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "nebula",
-	Short: "Nebula is a multi-cloud offensive security testing toolkit.",
+	Short: "Nebula - Cloud Security Testing Framework",
+	Long: `Nebula is a cloud security testing framework that helps identify
+potential security issues in cloud environments.`,
 }
 
-func Execute() {
-	err := rootCmd.Execute()
-	if err != nil {
-		os.Exit(1)
+func initCommands() {
+	runtime.GC()
+	if !strings.Contains(strings.Join(os.Args, " "), "mcp-server") {
+		message.Banner(registry.GetModuleCount())
 	}
+	rootCmd.AddCommand(listModulesCmd)
+	generateCommands(rootCmd)
 }
 
 func init() {
-	cobra.OnInitialize(initConfig)
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.nebula.yaml)")
-	rootCmd.PersistentFlags().StringVar(&logLevelFlag, options.LogLevelOpt.Name, options.LogLevelOpt.Value, "Log level (debug, info, warn, error)")
-	//rootCmd.PersistentFlags().StringP(options.LogLevelOpt.Name, options.LogLevelOpt.Short, options.LogLevelOpt.Value, options.LogLevelOpt.Description)
-	rootCmd.PersistentFlags().StringP(options.OutputOpt.Name, options.OutputOpt.Short, options.OutputOpt.Value, options.OutputOpt.Description)
-	rootCmd.PersistentFlags().BoolVar(&quietFlag, "quiet", false, "Suppress user messages")
+	rootCmd.PersistentFlags().StringVar(&logLevelFlag, options.LogLevel().Name(), options.LogLevel().Value().(string), "Log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().StringVar(&awsCacheLogLevel, options.AwsCacheLogLevel().Name(), options.AwsCacheLogLevel().Value().(string), "Log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().StringVar(&awsCacheLogFile, options.AwsCacheLogFile().Name(), options.AwsCacheLogFile().Value().(string), "")
 	rootCmd.PersistentFlags().BoolVar(&noColorFlag, "no-color", false, "Disable colored output")
-	rootCmd.PersistentFlags().BoolVar(&silentFlag, "silent", false, "Suppress all messages except critical errors")
-}
-
-// initConfig reads in config file and ENV variables if set.
-func initConfig() {
-	if cfgFile != "" {
-		// Use config file from the flag.
-		viper.SetConfigFile(cfgFile)
-	} else {
-		// Find home directory.
-		home, err := os.UserHomeDir()
-		cobra.CheckErr(err)
-
-		// Search config in home directory with name ".nebula" (without extension).
-		viper.AddConfigPath(home)
-		viper.SetConfigType("yaml")
-		viper.SetConfigName(".nebula")
-	}
-
-	viper.AutomaticEnv() // read in environment variables that match
-	viper.SetEnvPrefix("NEBULA")
-
-	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
-	}
-
-	logs.ConfigureDefaults(logLevelFlag)
-	helpers.SetAWSCacheLogger(logs.NewLogger())
-	message.SetQuiet(quietFlag)
-	message.SetNoColor(noColorFlag)
-	message.SetSilent(silentFlag)
-	message.Banner(len(registeredModules))
-}
-
-func options2Flag(options []*types.Option, common []*types.Option, cmd *cobra.Command) {
-	for _, option := range options {
-		option2Flag(option, cmd)
-	}
-
-	for _, option := range common {
-		option2Flag(option, cmd)
-	}
-}
-
-func option2Flag(option *types.Option, cmd *cobra.Command) {
-	switch types.OptionType(option.Type) {
-	case types.String:
-		cmd.Flags().StringP(option.Name, option.Short, option.Value, option.Description)
-	case types.Bool:
-		value, _ := strconv.ParseBool(option.Value) // Convert string to bool
-		cmd.Flags().BoolP(option.Name, option.Short, value, option.Description)
-	case types.Int:
-		intValue, _ := strconv.Atoi(option.Value) // Convert string to int
-		cmd.Flags().IntP(option.Name, option.Short, intValue, option.Description)
-	}
-
-	if option.Required {
-		cmd.MarkFlagRequired(option.Name)
-	}
-
-}
-
-func getOpts(cmd *cobra.Command, required []*types.Option, common []*types.Option) []*types.Option {
-	opts := getGlobalOpts(cmd)
-
-	// Process required options
-	opts = append(opts, getOptsFromCmd(cmd, required)...)
-	err := options.ValidateOptions(opts, required)
-	if err != nil {
-		slog.Error(err.Error())
-		os.Exit(1)
-	}
-
-	// Process common options
-	opts = append(opts, getOptsFromCmd(cmd, common)...)
-	err = options.ValidateOptions(opts, common)
-	if err != nil {
-		slog.Error(err.Error())
-		os.Exit(1)
-	}
-
-	return opts
-}
-
-func getGlobalOpts(cmd *cobra.Command) []*types.Option {
-	opts := []*types.Option{}
-	output := options.OutputOpt
-	output.Value, _ = cmd.Flags().GetString(output.Name)
-	opts = append(opts, &output)
-
-	return opts
-}
-
-func getOptsFromCmd(cmd *cobra.Command, required []*types.Option) []*types.Option {
-	opts := []*types.Option{}
-	for _, opt := range required {
-		switch types.OptionType(opt.Type) {
-		case types.String:
-			opt.Value, _ = cmd.Flags().GetString(opt.Name)
-		case types.Bool:
-			value, _ := cmd.Flags().GetBool(opt.Name)
-			opt.Value = strconv.FormatBool(value)
-		case types.Int:
-			value, _ := cmd.Flags().GetInt(opt.Name)
-			opt.Value = strconv.Itoa(value)
+	
+	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
+		logs.ConfigureDefaults(logLevelFlag)
+		helpers.ConfigureAWSCacheLogger(awsCacheLogLevel, awsCacheLogFile)
+		
+		// Configure janus-framework logging to match nebula's log level
+		if level, err := cfg.LevelFromString(logLevelFlag); err == nil {
+			cfg.SetDefaultLevel(level)
 		}
-		opts = append(opts, opt)
 	}
-	return opts
 }
 
-func runModule[In, Out any](ctx context.Context, metadata modules.Metadata, opts []*types.Option, ouputProviders types.OutputProviders, factory stages.StageFactory[In, Out]) {
-	ctx = context.WithValue(ctx, "metadata", metadata)
-	logger := logs.NewModuleLogger(ctx, opts)
-	message.Section(metadata.Name)
-	in, chain, err := factory(opts)
-	if err != nil {
-		panic(err)
+func Execute() error {
+	initCommands()
+	return rootCmd.Execute()
+}
+
+var listModulesCmd = &cobra.Command{
+	Use:   "list-modules",
+	Short: "Display available Nebula modules in a tree structure",
+	Run: func(cmd *cobra.Command, args []string) {
+		displayModuleTree()
+	},
+}
+
+func displayModuleTree() {
+	hierarchy := registry.GetHierarchy()
+	
+	// Create module info structs for the tree display
+	type ModuleInfo struct {
+		CommandPath string
+		Description string
 	}
-
-	wg := new(sync.WaitGroup)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for result := range chain(ctx, opts, in) {
-			for _, outputProvider := range ouputProviders {
-				wg.Add(1)
-				go func(outputProvider types.OutputProvider, result Out) {
-					var finalResult types.Result
-
-					// Check if result is already of type Result
-					if r, ok := any(result).(types.Result); ok {
-						finalResult = r
-						logger.Debug("Final result is of type result, do not need to create new result")
-					} else {
-						finalResult = types.NewResult(metadata.Platform, metadata.Id, result)
-					}
-
-					err := outputProvider.Write(finalResult)
-					if err != nil {
-						logger.Error("Error writing output", slog.String("error", err.Error()), slog.String("output-provider", fmt.Sprintf("%T", outputProvider)))
-					}
-					wg.Done()
-				}(outputProvider(opts), result)
+	
+	var allModules []ModuleInfo
+	
+	// Convert registry hierarchy to command paths
+	for platform, categories := range hierarchy {
+		for category, moduleNames := range categories {
+			for _, moduleName := range moduleNames {
+				if mod, ok := registry.GetModule(moduleName); ok {
+					commandPath := fmt.Sprintf("%s/%s/%s", platform, category, moduleName)
+					allModules = append(allModules, ModuleInfo{
+						CommandPath: commandPath,
+						Description: mod.Metadata().Description,
+					})
+				}
 			}
 		}
-	}()
-	wg.Wait()
+	}
+	
+	// Sort modules by command path
+	sort.Slice(allModules, func(i, j int) bool {
+		return allModules[i].CommandPath < allModules[j].CommandPath
+	})
+
+	// Group by top-level command (platform)
+	cmdGroups := make(map[string][]ModuleInfo)
+	for _, module := range allModules {
+		parts := strings.Split(module.CommandPath, "/")
+		if len(parts) > 0 {
+			topLevel := parts[0]
+			cmdGroups[topLevel] = append(cmdGroups[topLevel], module)
+		}
+	}
+
+	// Configure colors
+	bold := color.New(color.Bold)
+	if noColorFlag {
+		color.NoColor = true
+	}
+
+	// Print each command group and its modules
+	cmdNames := make([]string, 0, len(cmdGroups))
+	for cmd := range cmdGroups {
+		cmdNames = append(cmdNames, cmd)
+	}
+	sort.Strings(cmdNames)
+
+	for i, cmd := range cmdNames {
+		modules := cmdGroups[cmd]
+
+		// Print platform header
+		fmt.Printf("\n%s\n", bold.Sprint(cmd))
+
+		seenPaths := make(map[string]bool)
+
+		for _, module := range modules {
+			parts := strings.Split(module.CommandPath, "/")
+
+			// Print intermediate directories (categories)
+			for i := 1; i < len(parts)-1; i++ {
+				path := strings.Join(parts[1:i+1], "/")
+				if !seenPaths[path] {
+					indent := strings.Repeat("  ", i-1)
+					fmt.Printf("%s├─ %s\n", indent, parts[i])
+					seenPaths[path] = true
+				}
+			}
+
+			// Print module with description
+			indent := strings.Repeat("  ", len(parts)-2)
+			fmt.Printf("%s├─ %s - %s\n", indent, parts[len(parts)-1], module.Description)
+		}
+
+		if i < len(cmdNames)-1 {
+			fmt.Println()
+		}
+	}
+	fmt.Println()
 }

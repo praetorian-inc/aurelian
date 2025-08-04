@@ -18,9 +18,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	msgraphsdk "github.com/microsoftgraph/msgraph-sdk-go"
 	"github.com/microsoftgraph/msgraph-sdk-go/organization"
-	"github.com/praetorian-inc/nebula/internal/logs"
 	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/modules/options"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -271,7 +270,7 @@ func NewWorkerPool[T any, R any](config WorkerConfig, clients *ClientSet, proces
 
 // Process runs the worker pool on the given input channel
 func (wp *WorkerPool[T, R]) Process(ctx context.Context, input <-chan T) ([]R, error) {
-	logger := logs.NewStageLogger(ctx, []*types.Option{}, "WorkerPool")
+	logger := slog.Default().With("component", "WorkerPool")
 
 	var (
 		results = make([]R, 0)
@@ -335,7 +334,7 @@ func (wp *WorkerPool[T, R]) Process(ctx context.Context, input <-chan T) ([]R, e
 
 // ProcessWithLogging wraps Process with standard logging
 func (wp *WorkerPool[T, R]) ProcessWithLogging(ctx context.Context, input <-chan T, description string) ([]R, error) {
-	logger := logs.NewStageLogger(ctx, opts, "WorkerPool")
+	logger := slog.Default().With("component", "WorkerPool")
 	message.Info("Starting to process %s...", description)
 
 	results, err := wp.Process(ctx, input)
@@ -450,7 +449,7 @@ func ProcessResourceGroupAssignments(ctx context.Context, clients *ClientSet, rg
 
 // GetResourceGroupRoleAssignments retrieves role assignments for all resource groups
 func GetResourceGroupRoleAssignments(ctx context.Context, resourceClient *armresources.Client, authClient *armauthorization.RoleAssignmentsClient, subscriptionID, subscriptionName string) ([]*types.RoleAssignmentDetails, error) {
-	logger := logs.NewStageLogger(ctx, opts, "GetResourceGroupRoleAssignments")
+	logger := slog.Default().With("component", "GetResourceGroupRoleAssignments")
 
 	// Initialize clients
 	clients, err := InitializeClients(subscriptionID, nil)
@@ -505,7 +504,7 @@ func GetResourceGroupRoleAssignments(ctx context.Context, resourceClient *armres
 
 // getRoleDefinition gets the display name for a role definition
 func getRoleDefinition(ctx context.Context, client *armauthorization.RoleDefinitionsClient, roleDefID string) (string, error) {
-	logger := logs.NewStageLogger(ctx, opts, "GetRoleDefinition")
+	logger := slog.Default().With("component", "GetRoleDefinition")
 	parts := strings.Split(roleDefID, "/")
 	if len(parts) == 0 {
 		return "", fmt.Errorf("invalid role definition ID format")
@@ -574,6 +573,34 @@ func ExtractResourceGroup(resourceID string) string {
 		}
 	}
 	return ""
+}
+
+// ParseAzureResourceID parses an Azure resource ID and returns a map of its components
+func ParseAzureResourceID(resourceID string) (map[string]string, error) {
+	if resourceID == "" {
+		return nil, fmt.Errorf("resource ID cannot be empty")
+	}
+
+	// Remove leading slash if present
+	resourceID = strings.TrimPrefix(resourceID, "/")
+	parts := strings.Split(resourceID, "/")
+
+	if len(parts) < 4 {
+		return nil, fmt.Errorf("invalid resource ID format")
+	}
+
+	result := make(map[string]string)
+
+	// Parse the resource ID parts in pairs (key, value)
+	for i := 0; i < len(parts)-1; i += 2 {
+		if i+1 < len(parts) {
+			key := parts[i]
+			value := parts[i+1]
+			result[key] = value
+		}
+	}
+
+	return result, nil
 }
 
 // ParseLocationsOption parses the locations option string
@@ -648,7 +675,7 @@ func ValidateResourceID(resourceID string) error {
 
 // ListSubscriptions returns all subscriptions accessible to the user
 func ListSubscriptions(ctx context.Context, opts []*types.Option) ([]string, error) {
-	logger := logs.NewStageLogger(ctx, opts, "ListSubscriptions")
+	logger := slog.Default().With("component", "ListSubscriptions")
 
 	// Initialize clients (with empty subscription ID since we're listing all subscriptions)
 	clients, err := InitializeClients("", nil)
@@ -721,7 +748,7 @@ func ListSubscriptions(ctx context.Context, opts []*types.Option) ([]string, err
 
 // GetSubscriptionDetails gets details about an Azure subscription
 func GetSubscriptionDetails(ctx context.Context, cred *azidentity.DefaultAzureCredential, subscriptionID string) (*armsubscriptions.ClientGetResponse, error) {
-	logger := logs.NewStageLogger(ctx, []*types.Option{}, "GetSubscriptionDetails")
+	logger := slog.Default().With("component", "GetSubscriptionDetails")
 
 	// Initialize clients or reuse existing credentials
 	clients, err := InitializeClients(subscriptionID, cred)
@@ -763,7 +790,7 @@ func GetSubscriptionDetails(ctx context.Context, cred *azidentity.DefaultAzureCr
 
 // GetMgmtGroupRoleAssignments retrieves role assignments for all management groups
 func GetMgmtGroupRoleAssignments(ctx context.Context, client *armmanagementgroups.Client, subscription string) ([]*types.RoleAssignmentDetails, error) {
-	logger := logs.NewStageLogger(ctx, opts, "GetMgmtGroupRoleAssignments")
+	logger := slog.Default().With("component", "GetMgmtGroupRoleAssignments")
 
 	assignments := make([]*types.RoleAssignmentDetails, 0)
 
@@ -838,7 +865,7 @@ func GetMgmtGroupRoleAssignments(ctx context.Context, client *armmanagementgroup
 
 // GetSubscriptionRoleAssignments retrieves role assignments at the subscription level
 func GetSubscriptionRoleAssignments(ctx context.Context, client *armauthorization.RoleAssignmentsClient, subscriptionID, subscriptionName string) ([]*types.RoleAssignmentDetails, error) {
-	logger := logs.NewStageLogger(ctx, opts, "GetSubscriptionRoleAssignments")
+	logger := slog.Default().With("component", "GetSubscriptionRoleAssignments")
 	assignments := make([]*types.RoleAssignmentDetails, 0)
 
 	// Get role definition client to look up role names
