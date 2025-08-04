@@ -71,3 +71,31 @@ func (t MarkdownTable) ToString() string {
 	
 	return result.String()
 }
+
+// Implement Markdownable interface for compatibility with janus-framework output
+func (t MarkdownTable) Columns() []string {
+	return t.Headers
+}
+
+func (t MarkdownTable) RowIndices() []int {
+	rows := make([]int, len(t.Rows))
+	for i := range t.Rows {
+		rows[i] = i
+	}
+	return rows
+}
+
+func (t MarkdownTable) Values() []any {
+	var values []any
+	// Add headers first
+	for _, header := range t.Headers {
+		values = append(values, header)
+	}
+	// Add all row values
+	for _, row := range t.Rows {
+		for _, cell := range row {
+			values = append(values, cell)
+		}
+	}
+	return values
+}

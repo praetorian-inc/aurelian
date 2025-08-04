@@ -43,7 +43,7 @@ func (s *AWSSummaryLink) Process(input string) error {
 	}
 
 	ceClient := costexplorer.NewFromConfig(config)
-	
+
 	days, err := cfg.As[int](s.Arg("days"))
 	if err != nil {
 		days = 30
@@ -56,7 +56,7 @@ func (s *AWSSummaryLink) Process(input string) error {
 
 	// Create summary table
 	summary := s.createSummaryTable()
-	
+
 	// Send the summary as markdown table
 	return s.Send(summary)
 }
@@ -66,7 +66,7 @@ func (s *AWSSummaryLink) getCostData(client *costexplorer.Client, days int) erro
 	now := time.Now()
 	endDate := now.Format("2006-01-02")
 	startDate := now.AddDate(0, 0, -days).Format("2006-01-02")
-	
+
 	input := &costexplorer.GetCostAndUsageInput{
 		TimePeriod: &cetypes.DateInterval{
 			Start: &startDate,
@@ -76,7 +76,7 @@ func (s *AWSSummaryLink) getCostData(client *costexplorer.Client, days int) erro
 		Metrics:     []string{"BlendedCost"},
 		GroupBy: []cetypes.GroupDefinition{
 			{
-				Type: cetypes.GroupDefinitionTypeService,
+				Type: cetypes.GroupDefinitionTypeDimension,
 				Key:  stringPtr("SERVICE"),
 			},
 			{
@@ -99,23 +99,23 @@ func (s *AWSSummaryLink) getCostData(client *costexplorer.Client, days int) erro
 			if len(group.Keys) >= 2 {
 				service := group.Keys[0]
 				region := group.Keys[1]
-				
+
 				if service == "" || region == "" {
 					continue
 				}
-				
+
 				// Clean up service name
 				service = strings.ReplaceAll(service, "Amazon ", "")
 				service = strings.ReplaceAll(service, "AWS ", "")
-				
+
 				// Parse cost
 				var cost float64
-				if group.Metrics != nil && group.Metrics["BlendedCost"] != nil {
-					if group.Metrics["BlendedCost"].Amount != nil {
-						fmt.Sscanf(*group.Metrics["BlendedCost"].Amount, "%f", &cost)
+				if group.Metrics != nil {
+					if metric, ok := group.Metrics["BlendedCost"]; ok && metric.Amount != nil {
+						fmt.Sscanf(*metric.Amount, "%f", &cost)
 					}
 				}
-				
+
 				// Store in map
 				if s.serviceRegions[service] == nil {
 					s.serviceRegions[service] = make(map[string]float64)
@@ -156,19 +156,19 @@ func (s *AWSSummaryLink) createSummaryTable() types.MarkdownTable {
 			regionSet[region] = true
 		}
 	}
-	
+
 	// Convert to sorted slice
 	var regions []string
 	for region := range regionSet {
 		regions = append(regions, region)
 	}
 	sort.Strings(regions)
-	
+
 	// Create headers: Service | Region1 | Region2 | ... | Total
 	headers := []string{"Service"}
 	headers = append(headers, regions...)
 	headers = append(headers, "Total Cost")
-	
+
 	// Create rows
 	var rows [][]string
 	var services []string
@@ -176,14 +176,14 @@ func (s *AWSSummaryLink) createSummaryTable() types.MarkdownTable {
 		services = append(services, service)
 	}
 	sort.Strings(services)
-	
+
 	totalByRegion := make(map[string]float64)
 	grandTotal := 0.0
-	
+
 	for _, service := range services {
 		row := []string{service}
 		serviceTotal := 0.0
-		
+
 		// Add cost for each region
 		for _, region := range regions {
 			cost := s.serviceRegions[service][region]
@@ -195,7 +195,7 @@ func (s *AWSSummaryLink) createSummaryTable() types.MarkdownTable {
 			serviceTotal += cost
 			totalByRegion[region] += cost
 		}
-		
+
 		// Add service total
 		if serviceTotal > 0 {
 			row = append(row, fmt.Sprintf("$%.2f", serviceTotal))
@@ -203,10 +203,10 @@ func (s *AWSSummaryLink) createSummaryTable() types.MarkdownTable {
 			row = append(row, "-")
 		}
 		grandTotal += serviceTotal
-		
+
 		rows = append(rows, row)
 	}
-	
+
 	// Add totals row
 	totalRow := []string{"**TOTAL**"}
 	for _, region := range regions {
@@ -218,7 +218,7 @@ func (s *AWSSummaryLink) createSummaryTable() types.MarkdownTable {
 	}
 	totalRow = append(totalRow, fmt.Sprintf("**$%.2f**", grandTotal))
 	rows = append(rows, totalRow)
-	
+
 	return types.MarkdownTable{
 		TableHeading: fmt.Sprintf("# AWS Cost Summary\n\nCost breakdown by service and region:\n\n"),
 		Headers:      headers,

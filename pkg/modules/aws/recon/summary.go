@@ -7,6 +7,7 @@ import (
 	"github.com/praetorian-inc/nebula/internal/registry" 
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
 
 var AwsSummary = chain.NewModule(
@@ -30,7 +31,7 @@ var AwsSummary = chain.NewModule(
 	aws.NewAWSSummaryLink,
 ).WithOutputters(
 	// Output as markdown table for console display
-	output.NewMarkdownOutputter,
+	outputters.NewMarkdownTableConsoleOutputter,
 	// Also output as JSON for programmatic use
 	output.NewJSONOutputter,
 ).WithInputParam(
