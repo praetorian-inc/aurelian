@@ -2,7 +2,7 @@ id: cosmos_db_public_access
 name: Publicly Accessible Cosmos DB Accounts
 description: Detects Cosmos DB accounts with public network access enabled
 severity: High
-category: Automatic
+category: Public Access
 triageNotes: |
   Potential Risk:
   - Public accessibility exposes the database endpoint to the entire internet
@@ -20,6 +20,7 @@ query: |
     | extend ipRules = properties.ipRules
     | extend enableFreeTier = properties.enableFreeTier
     | extend endpoint = properties.documentEndpoint
+    | extend disableLocalAuth = properties.disableLocalAuth
     | where publicNetworkAccess != 'disabled'
     | where 
         isempty(ipRules) or
@@ -35,6 +36,7 @@ query: |
         location,
         publicNetworkAccess,
         enableFreeTier,
+        disableLocalAuth,
         kind,
         endpoint,
         subscriptionId

@@ -272,6 +272,7 @@ func AwsReconBaseOptions() []cfg.Param {
 		AwsCacheErrorTypes(),
 		AwsCacheErrorResp(),
 		AwsDisableCache(),
+		OutputDir(),
 	}
 }
 

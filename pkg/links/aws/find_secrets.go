@@ -5,7 +5,7 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/links/docker"
+	"github.com/praetorian-inc/nebula/pkg/links/docker"
 	"github.com/praetorian-inc/janus-framework/pkg/links/noseyparker"
 	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
@@ -122,19 +122,6 @@ func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) e
 	if !ok {
 		slog.Error("Unsupported resource type", "resource", resource)
 		return nil
-	}
-
-	// Send all properties as NPInput immediately
-	if resource.Properties != nil {
-		npInput, err := resource.ToNPInputs()
-		if err != nil {
-			slog.Error("Error converting resource to NPInput", "resource", resource, "error", err)
-			return err
-		}
-
-		for _, input := range npInput {
-			fs.Send(input)
-		}
 	}
 
 	// Process resource chain asynchronously to avoid blocking the pipeline

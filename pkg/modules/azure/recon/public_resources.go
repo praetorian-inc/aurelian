@@ -1,23 +1,33 @@
 package recon
 
-// func init() {
-// 	registry.Register("azure", "recon", "public-resources", *AzurePublicResources)
-// }
+import (
+	"github.com/praetorian-inc/janus-framework/pkg/chain"
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/nebula/internal/registry"
+	"github.com/praetorian-inc/nebula/pkg/links/azure"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/outputters"
+)
 
-// var AzurePublicResources = chain.NewModule(
-// 	cfg.NewMetadata(
-// 		"Azure Public Resources",
-// 		"Enumerate Azure public resources",
-// 	).WithProperty(
-// 		"platform", "azure",
-// 	).WithProperty(
-// 		"opsec_level", "moderate",
-// 	).WithProperty(
-// 		"authors", []string{"Praetorian"},
-// 	),
-// ).WithLinks(
-// 	aws.NewAWSCloudControl,
-// ).WithOutputters(
-// 	output.NewJSONOutputter,
-// 	output.NewConsoleOutputter,
-// )
+var AzurePublicAccess = chain.NewModule(
+	cfg.NewMetadata(
+		"Public Resource Scanner",
+		"Detects publicly accessible Azure resources including storage accounts, app services, SQL databases, VMs, and more.",
+	).WithProperties(map[string]any{
+		"id":       "public-resources",
+		"platform": "azure",
+		"authors":  []string{"Praetorian"},
+	}).WithChainInputParam(options.AzureSubscription().Name()),
+).WithConfigs(
+	cfg.WithArg("category", "Public Access"),
+).WithLinks(
+	azure.NewARGTemplateLoaderLink,
+	azure.NewARGTemplateQueryLink,
+).WithOutputters(
+	outputters.NewRuntimeJSONOutputter,
+	outputters.NewAzureResourceOutputter,
+)
+
+func init() {
+	registry.Register("azure", "recon", "public-resources", *AzurePublicAccess)
+}

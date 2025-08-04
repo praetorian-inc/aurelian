@@ -12,6 +12,14 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// platformAliases maps platform names to their command aliases
+var platformAliases = map[string][]string{
+	"azure": {"az"},
+	"aws":   {"amazon"},
+	"gcp":   {"google"},
+	// Add more platform aliases as needed
+}
+
 // generateCommands builds the command tree based on registered modules
 func generateCommands(root *cobra.Command) {
 	hierarchy := registry.GetHierarchy()
@@ -19,8 +27,9 @@ func generateCommands(root *cobra.Command) {
 	// Create the full platform->category->module hierarchy
 	for platform, categories := range hierarchy {
 		platformCmd := &cobra.Command{
-			Use:   platform,
-			Short: fmt.Sprintf("%s platform commands", platform),
+			Use:     platform,
+			Aliases: platformAliases[platform], // Add aliases if they exist
+			Short:   fmt.Sprintf("%s platform commands", platform),
 		}
 
 		for category, modules := range categories {
@@ -46,11 +55,13 @@ func generateModuleCommand(moduleName string, parent *cobra.Command) {
 		return
 	}
 
+	platform := entry.ModuleHeriarchy.Platform
+
 	cmd := &cobra.Command{
 		Use:   moduleName,
 		Short: entry.Module.Metadata().Description,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runModule(cmd, entry.Module)
+			return runModule(cmd, entry.Module, platform)
 		},
 	}
 
@@ -178,7 +189,8 @@ func addFlag(cmd *cobra.Command, param cfg.Param, flagValues map[string]interfac
 	}
 }
 
-func runModule(cmd *cobra.Command, module chain.Module) error {
+// Update runModule to accept platform string
+func runModule(cmd *cobra.Command, module chain.Module, platform string) error {
 	// Convert flags to configs
 	var configs []cfg.Config
 	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
@@ -208,8 +220,11 @@ func runModule(cmd *cobra.Command, module chain.Module) error {
 
 	message.Section("Running module %s", module.Metadata().Name)
 	module.Run(configs...)
-	helpers.ShowCacheStat()
-	helpers.PrintAllThrottlingCounts()
+
+	if platform == "aws" {
+		helpers.ShowCacheStat()
+		helpers.PrintAllThrottlingCounts()
+	}
 	return module.Error()
 }
 

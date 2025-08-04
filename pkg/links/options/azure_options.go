@@ -2,9 +2,9 @@ package options
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -26,12 +26,9 @@ var azureAcceptedSecretsTypes = []string{
 
 var AzureSubscriptionOpt = types.Option{
 	Name:        "subscription",
-	Short:       "s",
-	Description: "Azure subscription ID or 'all' to scan all accessible subscriptions",
+	Description: "The Azure subscription to use. Can be a subscription ID or 'all'.",
 	Required:    true,
-	Type:        types.String,
-	Value:       "",
-	ValueFormat: regexp.MustCompile(`(?i)^([0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}|ALL)$`),
+	Default:     "all",
 }
 
 var AzureWorkerCountOpt = types.Option{
@@ -96,4 +93,60 @@ var AzureARGTemplatesDirOpt = types.Option{
 	Required:    false,
 	Type:        types.String,
 	Value:       "", // Empty means use only embedded templates
+}
+
+func AzureSubscription() cfg.Param {
+	return cfg.NewParam[[]string](
+		"subscription",
+		"The Azure subscription to use. Can be a subscription ID or 'all'.",
+	).WithShortcode("s").AsRequired()
+}
+
+func AzureTemplateDir() cfg.Param {
+	return cfg.NewParam[string]("template-dir", "Directory containing Azure ARG templates").
+		WithShortcode("t")
+}
+
+func AzureArgCategory() cfg.Param {
+	return cfg.NewParam[string]("category", "Category of Azure ARG templates to use").
+		WithShortcode("c")
+}
+
+// Azure DevOps parameters for Janus framework
+func AzureDevOpsPAT() cfg.Param {
+	return cfg.NewParam[string]("devops-pat", "Azure DevOps Personal Access Token with read access").
+		WithShortcode("p").
+		AsRequired()
+}
+
+func AzureDevOpsOrganization() cfg.Param {
+	return cfg.NewParam[string]("devops-org", "Azure DevOps organization name").
+		WithShortcode("o").
+		AsRequired()
+}
+
+func AzureDevOpsProject() cfg.Param {
+	return cfg.NewParam[string]("devops-project", "Azure DevOps project name (optional, defaults to all projects)").
+		WithShortcode("j")
+}
+
+func AzureResourceSecretsTypes() cfg.Param {
+	return cfg.NewParam[[]string]("resource-types", "Azure resource types to scan for secrets").
+		WithShortcode("r").
+		WithDefault([]string{"all"})
+}
+
+func AzureWorkerCount() cfg.Param {
+	return cfg.NewParam[int]("workers", "Number of concurrent workers for processing").
+		WithShortcode("w").
+		WithDefault(5)
+}
+
+// AzureReconBaseOptions provides common options for Azure reconnaissance modules
+func AzureReconBaseOptions() []cfg.Param {
+	return []cfg.Param{
+		AzureSubscription(),
+		AzureWorkerCount(),
+		OutputDir(),
+	}
 }

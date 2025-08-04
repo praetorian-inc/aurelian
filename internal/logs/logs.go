@@ -1,7 +1,6 @@
 package logs
 
 import (
-	"context"
 	"log/slog"
 	"os"
 	"strings"
@@ -9,8 +8,6 @@ import (
 	"github.com/aws/smithy-go/logging"
 	"github.com/lmittmann/tint"
 	"github.com/mattn/go-isatty"
-	"github.com/praetorian-inc/nebula/modules"
-	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 var (
@@ -126,19 +123,6 @@ func NewLoggerWithFile(level, filename string) *slog.Logger {
 	logger := slog.New(handler)
 
 	return logger
-}
-
-func NewModuleLogger(ctx context.Context, opts []*types.Option) *slog.Logger {
-	logger := NewLogger()
-	metadata := ctx.Value("metadata").(modules.Metadata)
-	child := logger.WithGroup("module").With("platform", metadata.Platform).With("id", metadata.Id)
-
-	return child
-}
-
-func NewStageLogger(ctx context.Context, opts []*types.Option, stage string) *slog.Logger {
-	logger := NewModuleLogger(ctx, opts)
-	return logger.With("stage", stage)
 }
 
 func SetLogLevel(level string) {

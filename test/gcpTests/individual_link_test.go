@@ -6,12 +6,12 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus-framework/pkg/output"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/compute"
+	"github.com/praetorian-inc/nebula/pkg/links/gcp/applications"
 )
 
 func TestGcpFunctionInfoLink(t *testing.T) {
 	c := chain.NewChain(
-		compute.NewGcpFunctionInfoLink(),
+		applications.NewGcpFunctionInfoLink(),
 	).WithOutputters(
 		output.NewConsoleOutputter(),
 		output.NewJSONOutputter(),

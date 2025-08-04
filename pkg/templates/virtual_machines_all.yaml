@@ -1,0 +1,22 @@
+id: virtual_machines_all_secrets
+name: All Virtual Machines for Secret Scanning
+category: Secret Scanning
+description: Finds all virtual machines in the subscription for secret scanning in userData, extensions, and configuration
+severity: Medium
+reportability: Automatic
+triageNotes: |
+  This template discovers all VMs regardless of network configuration to enable comprehensive secret scanning.
+  The AzureFindSecretsLink will then analyze each VM for secrets in userData, extensions, and other configuration.
+references:
+  - https://learn.microsoft.com/en-us/azure/virtual-machines/
+  - https://learn.microsoft.com/en-us/azure/security/fundamentals/data-encryption-best-practices
+query: |
+  resources
+  | where type =~ 'Microsoft.Compute/virtualMachines'
+  | project
+      id,
+      type,
+      name,
+      location,
+      subscriptionId,
+      resourceGroup

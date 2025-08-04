@@ -2,6 +2,7 @@ id: sql_servers_public_access
 name: SQL Servers Without Public Access Block
 description: Detects SQL servers with public network access enabled
 severity: High
+category: Public Access
 reportability: Manual Triage
 references:
   - https://learn.microsoft.com/en-us/azure/azure-sql/database/network-access-controls
@@ -27,7 +28,7 @@ query: |
     | extend publicNetworkAccess = iif(isnotempty(properties.publicNetworkAccess), 
         tolower(properties.publicNetworkAccess), 
         'enabled')
-    | where publicNetworkAccess == 'enabled'
+    | where publicNetworkAccess != 'disabled'
     | project
         id,
         name,

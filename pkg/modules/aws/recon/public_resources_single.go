@@ -11,10 +11,6 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
 
-func init() {
-	registry.Register("aws", "recon", AWSPublicResourcesSingle.Metadata().Properties()["id"].(string), *AWSPublicResourcesSingle)
-}
-
 var AWSPublicResourcesSingle = chain.NewModule(
 	cfg.NewMetadata(
 		"AWS Public Resources Single",
@@ -36,3 +32,7 @@ var AWSPublicResourcesSingle = chain.NewModule(
 ).WithInputParam(
 	options.AwsResourceArn(),
 )
+
+func init() {
+	registry.Register("aws", "recon", AWSPublicResourcesSingle.Metadata().Properties()["id"].(string), *AWSPublicResourcesSingle)
+}
