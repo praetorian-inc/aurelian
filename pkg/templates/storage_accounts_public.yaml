@@ -24,7 +24,7 @@ query: |
     | extend defaultAction = tostring(acls.defaultAction)
     | extend hasIpRules = array_length(acls.ipRules)
     | extend hasVnetRules = array_length(acls.virtualNetworkRules)
-    | where publicNetworkAccess == 'Enabled'
+    | where publicNetworkAccess != 'Disabled'
     | where defaultAction == 'Allow'
     | where hasIpRules == 0
     | where hasVnetRules == 0

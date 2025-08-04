@@ -1,0 +1,37 @@
+package recon
+
+import (
+	"github.com/praetorian-inc/janus-framework/pkg/chain"
+	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/nebula/internal/registry"
+	"github.com/praetorian-inc/nebula/pkg/links/azure"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/outputters"
+)
+
+var AzureARGScan = chain.NewModule(
+	cfg.NewMetadata(
+		"Azure ARG Template Scanner with Enrichment",
+		"Scans Azure resources using ARG templates and enriches findings with security testing commands.",
+	).WithProperties(map[string]any{
+		"id":          "arg-scan",
+		"platform":    "azure",
+		"opsec_level": "moderate",
+		"authors":     []string{"Praetorian"},
+	}),
+).WithLinks(
+	// Load ARG templates and create queries for each subscription
+	azure.NewARGTemplateLoaderLink,
+	// Execute the ARG queries and get resources
+	azure.NewARGTemplateQueryLink,
+	// Enrich resources with security testing commands
+	azure.NewARGEnrichmentLink,
+).WithInputParam(
+	options.AzureSubscription(),
+).WithOutputters(
+	outputters.NewRuntimeJSONOutputter,
+).WithAutoRun()
+
+func init() {
+	registry.Register("azure", "recon", "arg-scan", *AzureARGScan)
+}
