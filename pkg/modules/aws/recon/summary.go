@@ -47,5 +47,5 @@ var AwsSummary = chain.NewModule(
 ).WithAutoRun()
 
 func init() {
-	registry.Register("aws", "recon", "summary", *AwsSummary)
+	registry.Register("aws", "recon", AwsSummary.Metadata().Properties()["id"].(string), *AwsSummary)
 }
