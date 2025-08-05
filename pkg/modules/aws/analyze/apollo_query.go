@@ -3,7 +3,6 @@ package analyze
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
@@ -30,7 +29,7 @@ var ApolloQuery = chain.NewModule(
 ).WithLinks(
 	aws.NewApolloQuery,
 ).WithOutputters(
-	output.NewJSONOutputter,
+	outputters.NewRuntimeJSONOutputter,
 	outputters.NewRiskConsoleOutputter,
 	outputters.NewRiskCSVOutputter,
 ).WithInputParam(

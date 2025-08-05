@@ -3,9 +3,9 @@ package recon
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/azure"
+	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
 
 func init() {
@@ -31,5 +31,5 @@ var AzureListAllResources = chain.NewModule(
 	azure.NewAzureResourceListerLink,
 	azure.NewAzureResourceAggregatorLink,
 ).WithOutputters(
-	output.NewJSONOutputter,
+	outputters.NewRuntimeJSONOutputter,
 ).WithAutoRun()

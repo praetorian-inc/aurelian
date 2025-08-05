@@ -217,6 +217,7 @@ func runModule(cmd *cobra.Command, module chain.Module, platform string) error {
 	})
 
 	message.Section("Running module %s", module.Metadata().Name)
+	
 	module.Run(configs...)
 
 	if platform == "aws" {

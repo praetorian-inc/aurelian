@@ -3,9 +3,9 @@ package recon
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/orgpolicies"
+	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
 
 func init() {
@@ -39,5 +39,5 @@ var AwsOrganizationPolicies = chain.NewModule(
 ).WithLinks(
 	orgpolicies.NewAWSOrganizationPolicies,
 ).WithOutputters(
-	output.NewJSONOutputter,
+	outputters.NewRuntimeJSONOutputter,
 ).WithAutoRun()

@@ -3,7 +3,6 @@ package recon
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/output"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
@@ -25,7 +24,7 @@ var AWSPublicResourcesSingle = chain.NewModule(
 	general.NewSingleResourcePreprocessor(),
 	aws.NewAwsPublicResources,
 ).WithOutputters(
-	output.NewJSONOutputter,
+	outputters.NewRuntimeJSONOutputter,
 	outputters.NewERDConsoleOutputter,
 ).WithInputParam(
 	options.AwsResourceArn(),

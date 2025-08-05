@@ -4,11 +4,11 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus-framework/pkg/links/noseyparker"
-	"github.com/praetorian-inc/janus-framework/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
 
 func init() {
@@ -32,8 +32,7 @@ var AWSFindSecretsResource = chain.NewModule(
 	aws.NewAWSFindSecrets,
 	chain.ConstructLinkWithConfigs(noseyparker.NewNoseyParkerScanner, cfg.WithArg("continue_piping", true)),
 ).WithOutputters(
-	output.NewJSONOutputter,
-	output.NewConsoleOutputter,
+	outputters.NewRuntimeJSONOutputter,
 ).WithInputParam(
 	options.AwsResourceArn(),
 )

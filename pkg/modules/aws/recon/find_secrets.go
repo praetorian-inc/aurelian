@@ -38,4 +38,8 @@ var AWSFindSecrets = chain.NewModule(
 	outputters.NewNPFindingsConsoleOutputter,
 ).WithInputParam(
 	options.AwsResourceType().WithDefault([]string{"all"}),
+).WithInputParam(
+	options.AwsProfile(),
+).WithConfigs(
+	cfg.WithArg("module-name", "find-secrets"), // Module name for contextual filenames
 )

@@ -3,11 +3,11 @@ package recon
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
 
 func init() {
@@ -33,7 +33,7 @@ var AwsListAllResources = chain.NewModule(
 	cloudcontrol.NewAWSCloudControl,
 	aws.NewAwsResourceAggregatorLink,
 ).WithOutputters(
-	output.NewJSONOutputter,
+	outputters.NewRuntimeJSONOutputter,
 ).WithInputParam(
 	cfg.NewParam[string]("scan-type", "Scan type - 'full' for all resources or 'summary' for key services").
 		WithDefault("full").

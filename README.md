@@ -1,156 +1,164 @@
 # Nebula
 
-Nebula is a command-line tool for testing the offensive security of cloud services. It provides modules for reconnaissance, analysis, and scanning of cloud environments across multiple providers including AWS, Azure, and GCP.
+Nebula is a command-line security scanning tool built on the Janus framework for testing cloud environments. It provides modular security testing capabilities across AWS, Azure, and GCP with extensible link-based architecture.
 
 For development guidance, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## Features
 
-- Comprehensive cloud resource discovery and enumeration
-- Secret scanning and sensitive data detection
-- Public resource exposure analysis
-- Cross-platform support (AWS, Azure, GCP)
-- Extensible module system
+- **Multi-Cloud Support**: AWS, Azure, GCP, and SaaS platforms
+- **Modular Architecture**: Built on Janus framework with composable links
+- **Security Scanning**: Resource discovery, secret detection, public exposure analysis
+- **Flexible Output**: JSON, Markdown, and console formats
+- **MCP Integration**: Model Context Protocol server for AI assistants
 
 ## Installation
 
-Pre-built binaries are available in the [GitHub Releases](https://github.com/praetorian-inc/nebula/releases) section.
-
-To build from source:
+**From Source:**
 ```bash
 git clone https://github.com/praetorian-inc/nebula
 cd nebula
 go build
 ```
 
-From docker:
+**Docker:**
 ```bash
 docker build -t nebula .
-docker run --rm nebula
+docker run --rm -v ~/.aws:/root/.aws nebula aws recon whoami
 ```
 
-From docker-compose:
-```bash
-docker compose build
-docker compose run --rm nebula
-```
+**Pre-built binaries** available in [GitHub Releases](https://github.com/praetorian-inc/nebula/releases).
 
 ## Authentication
 
-Nebula uses the same authentication methods as the official cloud provider CLIs:
+Nebula uses standard cloud provider authentication:
 
-- **AWS**: Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY), credentials file (~/.aws/credentials), IAM roles
-- **Azure**: Environment variables (AZURE_CLIENT_ID, AZURE_TENANT_ID, etc), Azure CLI credentials
-- **GCP**: Environment variables (GOOGLE_APPLICATION_CREDENTIALS), gcloud CLI credentials
-
-For details on configuring authentication, refer to:
-- AWS: [Configuration and credential file settings](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html)
-- Azure: [Azure authentication methods](https://learn.microsoft.com/en-us/cli/azure/authenticate-azure-cli#sign-into-azure-with-azure-cli)
-- GCP: [Application Default Credentials](https://cloud.google.com/docs/authentication/application-default-credentials)
+- **AWS**: Environment variables, credentials file (~/.aws/credentials), IAM roles
+- **Azure**: Environment variables, Azure CLI, managed identity
+- **GCP**: Service account keys, application default credentials
 
 ## Basic Usage
-
-The basic command structure is:
 
 ```bash
 nebula <provider> <category> <module> [flags]
 ```
 
-Where:
-- `provider` is the cloud provider (aws, azure, gcp)
-- `category` is the module category (recon, analyze)  
-- `module` is the specific module to run
-- `flags` are module-specific configuration options
-
-### Common Commands
-
-List resources in an AWS account:
+**Examples:**
 ```bash
-# List all resources in a specific region
-nebula aws recon list -r us-east-1 -t AWS::S3::Bucket
+# Check AWS account identity
+nebula aws recon whoami
 
-# List all resources across regions
-nebula aws recon list-all --scan-type full -r all
+# List all S3 buckets across regions
+nebula aws recon list -t AWS::S3::Bucket -r all
+
+# Find secrets in Lambda functions
+nebula aws recon find-secrets -t AWS::Lambda::Function
+
+# Discover public Azure resources  
+nebula azure recon public-resources -s subscription-id
+
+# Get GCP project information
+nebula gcp recon projects-list
 ```
 
-Find public resources:
+## Common Commands
+
+**AWS Reconnaissance:**
 ```bash
-# Check for public resources in all regions  
-nebula aws recon public-resources -r all -t all
+# Account information and permissions
+nebula aws recon account-auth-details
+nebula aws recon whoami
 
-# Check specific resource type
-nebula aws recon public-resources -r us-east-1 -t AWS::S3::Bucket
+# Resource discovery
+nebula aws recon list-all-resources -r us-east-1
+nebula aws recon public-resources -r all
+
+# Security scanning
+nebula aws recon find-secrets -t AWS::EC2::Instance
+nebula aws recon find-secrets -t AWS::Lambda::Function
 ```
 
-Scan for secrets:
+**Azure Reconnaissance:**
 ```bash
-# Scan EC2 user data for secrets
-nebula aws recon find-secrets -r us-east-1 -t AWS::EC2::Instance
+# Environment details
+nebula azure recon summary -s subscription-id
 
-# Scan Lambda functions and their code
-nebula aws recon find-secrets -t AWS::Lambda::Function::Code
+# Resource enumeration  
+nebula azure recon list-all-resources -s subscription-id
+nebula azure recon public-resources -s all
+
+# DevOps secrets scanning
+nebula azure recon devops-secrets --organization org-name
 ```
 
-### Output
+**Analysis Modules:**
+```bash
+# AWS key analysis
+nebula aws analyze access-key-to-account-id -k AKIA...
+nebula aws analyze known-account -a 123456789012
 
-Nebula supports multiple output formats including:
-- JSON files for detailed data
-- Markdown tables for readability
-- Console output for quick results
-
-Results are saved to the output directory (default: nebula-output/).
-
-## Common Flags
-
-```
-Global Flags:
-  --config string      Config file path (default ~/.nebula.yaml) 
-  --log-level string   Log level (debug, info, warn, error)
-  --no-color          Disable colored output
-  --output string     Output directory (default "nebula-output")
-  --quiet             Suppress user messages
-  --silent            Suppress all messages except critical errors
-
-AWS Common Flags:
-  -p, --profile string    AWS credentials profile
-  -r, --regions string    Comma-separated regions or 'all'
-  
-Azure Common Flags:
-  -s, --subscription     Azure subscription ID or 'all'
-  -w, --workers int      Number of concurrent workers
+# IP analysis
+nebula aws analyze ip-lookup -i 1.2.3.4
 ```
 
-## Notes
+## Output and Results
 
-- Always ensure you have appropriate permissions before scanning cloud environments
-- Use resource type filters to limit scope when possible
-- For large environments, consider using resource type or region filters to break up scans
-- Monitor API rate limits, especially when scanning multiple regions
-- Use `--log-level debug` to triage errors or unexpected results
+**Output Formats:**
+- **Console**: Real-time progress and summaries
+- **JSON**: Structured data in `nebula-output/` directory
+- **Markdown**: Human-readable tables
+
+**Common Flags:**
+```bash
+# Global options
+--log-level string    Log level (debug, info, warn, error)
+--output string       Output directory (default "nebula-output")
+--quiet              Suppress user messages
+--no-color           Disable colored output
+
+# Provider-specific  
+-r, --regions string  AWS regions ('all' or comma-separated)
+-s, --subscription    Azure subscription ID
+-t, --resource-type   Cloud resource type filter
+```
 
 ## MCP Server
 
-All Nebula modules are available as MCP server tools. The server supports both Stdio and HTTP with SSE transports.
+Nebula provides an MCP (Model Context Protocol) server for AI assistants:
 
-Stdio Server
-```shell
+**Stdio Server:**
+```bash
 nebula mcp-server
 ```
 
-HTTP Server
-```shell
+**HTTP Server:**
+```bash
 nebula mcp-server --http --addr :8080
 ```
 
-Claude Desktop configuration can be found at `~/Library/Application\ Support/Claude/claude_desktop_config.json`.
+**Claude Desktop Configuration:**
 ```json
 {
   "mcpServers": {
     "nebula": {
-      "command": "/path/to/nebula",
+      "command": "/path/to/nebula", 
       "args": ["mcp-server"]
     }
   }
 }
-
 ```
+
+## Security Notes
+
+- **Permissions**: Ensure appropriate read-only permissions before scanning. Note: Many AWS modules use the [Cloud Control API](https://aws.amazon.com/cloudcontrolapi/) which requires `cloudformation:ListResources` and `cloudformation:GetResources`.
+- **Scope Control**: Use resource type and region filters to limit scan scope
+
+## Architecture
+
+Nebula uses Praetorian's  [Janus Framework](https://github.com/praetorian-inc/janus-framework).
+- **Links**: Individual processing units that can be chained together
+- **Modules**: Pre-configured chains for specific security testing scenarios
+- **Outputters**: Pluggable output processing for different formats
+- **Registry**: Dynamic module discovery and CLI generation
+
+For development details, see [DEVELOPMENT.md](DEVELOPMENT.md).

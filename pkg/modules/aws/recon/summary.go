@@ -3,7 +3,6 @@ package recon
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry" 
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
@@ -33,7 +32,7 @@ var AwsSummary = chain.NewModule(
 	// Output as markdown table for console display
 	outputters.NewMarkdownTableConsoleOutputter,
 	// Also output as JSON for programmatic use
-	output.NewJSONOutputter,
+	outputters.NewRuntimeJSONOutputter,
 ).WithInputParam(
 	options.AwsProfile(),
 ).WithInputParam(

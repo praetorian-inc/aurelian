@@ -3,7 +3,6 @@ package recon
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
@@ -32,7 +31,10 @@ var AWSPublicResources = chain.NewModule(
 	cloudcontrol.NewAWSCloudControl,
 	aws.NewAwsPublicResources,
 ).WithOutputters(
-	output.NewJSONOutputter,
-	//output.NewConsoleOutputter,
+	outputters.NewRuntimeJSONOutputter,
 	outputters.NewERDConsoleOutputter,
+).WithInputParam(
+	options.AwsProfile(),
+).WithConfigs(
+	cfg.WithArg("module-name", "public-resources"), // Module name for contextual filenames
 )

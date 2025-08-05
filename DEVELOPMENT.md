@@ -1,194 +1,326 @@
-# Module Development
+# Nebula Development Guide
 
-This doc outlines the major components of a module, the type definition, metadata, options, and output providers.
+Nebula is built on the [Janus Framework](https://github.com/praetorian-inc/janus-framework), a modular chain-based architecture for building composable workflows that implement go's pipeline pattern. This guide covers developing links, modules, and extending the platform.
 
+## Architecture Overview
 
-For the impatient, use the `template` command to generate a module skeleton and get started.
+Nebula uses the Janus framework with these core concepts:
 
-```shell
-nebula template -c recon -p aws -n FooBar > modules/recon/aws/foo_bar.go
+- **Links**: Individual processing units that can be chained together
+- **Modules**: Pre-configured chains of links for specific use cases  
+- **Chains**: Connected sequences of links that process data
+- **Registry**: Dynamic module discovery and CLI command generation
+- **Outputters**: Pluggable output processors for different formats
+
+## Quick Start
+
+Generate a new module skeleton:
+```bash
+go run cmd/generator.go -platform aws -category recon -name MyModule
 ```
 
-If you get an `EOF` error, refer to the `KNOWN ISSUES` section below. 
+## Janus Framework Concepts
 
-## Module Categories
+### Links
 
-**Recon:** Directly interact with a cloud service provider (CSP) to gather information.
-**Analyze:** Offline analysis of data.
+Links are the fundamental building blocks. Each link:
+- Embeds `chain.Base` 
+- Implements `Process(input any) error`
+- Defines parameters via `Params() []cfg.Param`
+- Uses `l.Send(data)` to pass data to the next link
 
-
-### Module Type Definition
-
-Every module is a unique type that embeds the `BaseModule`.
-
+**Example Link:**
 ```go
-type ModuleName struct {
-	modules.BaseModule
+type MyLink struct {
+    *chain.Base
+}
+
+func NewMyLink(configs ...cfg.Config) chain.Link {
+    l := &MyLink{}
+    l.Base = chain.NewBase(l, configs...)
+    return l
+}
+
+func (l *MyLink) Process(input any) error {
+    // Process the input
+    result := processData(input)
+    
+    // Send to next link in chain
+    l.Send(result)
+    return nil
+}
+
+func (l *MyLink) Params() []cfg.Param {
+    return []cfg.Param{
+        cfg.NewParam[string]("my-param", "Description").AsRequired(),
+    }
 }
 ```
 
-### Metadata
+### Link Organization
 
-A module's metadata is used to identify and describe the module. Some of the values are used to expose the module in the CLI in the module registry.
+Links are organized by platform in `pkg/links/`:
+```
+pkg/links/
+├── aws/           # AWS-specific links
+├── azure/         # Azure-specific links  
+├── gcp/           # GCP-specific links
+├── docker/        # Docker container processing
+├── general/       # Platform-agnostic utilities
+└── options/       # Parameter definitions
+```
 
-- **Id:** Id is used as an identifier for the module and is converted to the CLI subcommand name.
-- **Name:** Name of the module
-- **Description:** Description of the module. This is used as the CLI subcommand description.
-- **Platform:** A platform string used to denote a CSP or similar type of provider.
-- **Authors:** A list of module developers/contributors.
-- **OpsecLevel:** Provide a rough idea of the OPSEC safety of a module. Stealth, Moderate, or None are the current values. A future feature will configure a global OPSEC level to act as a safety mechanism during an offensive engagement.
-- **References:** Giving credit where it's due. Blog posts, tweets, vendor docs, etc.
+### Modules
 
+Modules are pre-configured chains of links using `chain.NewModule()`:
 
-Example metadata:
 ```go
-var <module name>Metadata = modules.Metadata{
-	Id:          "module-id", 
-	Name:        "Readable name",
-	Description: "Description",
-	Platform:    modules.AWS,
-	Authors:     []string{"Praetorian"},
-	OpsecLevel:  modules.Stealth,
-	References: []string{},
+var MyModule = chain.NewModule(
+    cfg.NewMetadata("Module Name", "Description").WithProperties(map[string]any{
+        "id":          "unique-id",
+        "platform":    "aws",
+        "opsec_level": "moderate", 
+        "authors":     []string{"Praetorian"},
+    }),
+).WithLinks(
+    link1.NewLink1,
+    link2.NewLink2,
+    link3.NewLink3,
+).WithOutputters(
+    outputter.NewOutputter,
+)
+
+func init() {
+    registry.Register("aws", "recon", "unique-id", *MyModule)
 }
 ```
 
-### Options
-Each module configures its own non-global options. These options are used to provide configuration to the `Invoke` function, handle output
+### Parameters and Options
 
-Options are defined in the `modules/options` package. Generic and provider-specific options can be used to create a list of options required for the module. Defined options have a pre-configured `Required` value, but can be changed with the `SetRequired` function. Below is an example of 
+Parameters are defined in `pkg/links/options/` files:
 
 ```go
-var AwsFooOptions= []*options.Option{
-	&options.AwsRegionOpt,
-	o.SetRequired(&o.FileNameOpt, false), // don't require the file name
+// In options file
+var MyParam = cfg.NewParam[string]("my-param", "Parameter description").
+    WithDefault("default-value").
+    AsRequired().
+    WithShortcode("p")
+
+// In link
+func (l *MyLink) Params() []cfg.Param {
+    return []cfg.Param{
+        options.AwsRegion(),     // Pre-defined parameter
+        options.MyParam,         // Custom parameter
+    }
+}
+
+// Access in Process method
+func (l *MyLink) Process(input any) error {
+    region, _ := cfg.As[string](l.Arg("aws-region"))
+    myValue, _ := cfg.As[string](l.Arg("my-param"))
+    // Use values...
 }
 ```
 
-### Output Providers
+## Development Patterns
 
-Output providers process the results of a module. They abstract the mechanics of handling results processing. Modules define one or more output providers, and all results returned by the module will be processed by the output provider.
-
-Two providers have been currently implemented, `ConsoleProvider` and `FileProvider`.
-
-### Factory Function
-
-The factory function returns a stage and input channel ready for invocation. The naming convention is `New<module name>` and must have the following method signature.
+### AWS Links
+AWS links typically embed `base.AwsReconLink`:
 
 ```go
-func NewFoo (opts []*types.Option) (<-chan string, stages.Stage[string, int], error) 
+type MyAWSLink struct {
+    *base.AwsReconLink
+}
+
+func NewMyAWSLink(configs ...cfg.Config) chain.Link {
+    l := &MyAWSLink{}
+    l.AwsReconLink = base.NewAwsReconLink(l, configs...)
+    return l
+}
 ```
 
-#### Results
-
-Modules will typically have some results from their invocation. The results are returned by the module using an output channel which is automatically processed by the configured output providers. 
-
-**Note:** The output channel must be closed, if not the module will hang as the module runner is waiting for more data to be sent on the channel.
-
-
-### Module Registration
-
-You've built a module, but how do you call it? Modules are registered in `cmd/registry.go` using the `RegisterModule` function. The `RegisterModule` function uses the module metadata, required options, and factory function to create the CLI subcommand for 
-
-`RegisterModule(awsAnalyzeCmd, analyze.AccessKeyIdToAccountIdMetadata, analyze.AwsAccessKeyIdToAccountIdOptions, noCommon, analyze.NewAccessKeyIdToAccountId)`
-
-## Module Template
-
-The template command will generate a bare-bones template based on the parameters passed in.
-
-```
-nebula template -c recon -p aws -n FooBar > modules/recon/aws/foo_bar.go
-```
-
-## FAQ
-
-### Why is my module hanging?
-
-Modules will hang if the output channel is not closed. Add `defer close(out)` to your module to close the channel, otherwise explicitly close it when you're done.
-
-
-## KNOWN ISSUES
-If you see receive a `modules/recon/aws/foo_bar.go:1:1: expected 'package', found 'EOF'` when trying to run `go run main.go template -c recon -p aws -n FooBar > modules/recon/aws/foo_bar.go`, then you have to run `go build .` to build the binary and that should solve it. 
-
-## Stages
-
-Modules use stages to build their capabilities. Stages are a core concept in the AWS Recon Framework, enabling the creation of modular and reusable capabilities for processing AWS resources. Each stage represents a step in a pipeline, taking input from the previous stage and providing output to the next stage. This allows for flexible and composable workflows.
-
-Use [godoc](https://pkg.go.dev/golang.org/x/tools/cmd/godoc) to view the currently implemented stages. Run `godoc -http=:6060` in the module root, and browse to `http://127.0.0.1:6060/pkg/github.com/praetorian-inc/nebula/pkg/stages/` to view the documentation.
-
-## Stage Naming
-
-Stage naming should follow the format `ProviderServiceAction` where possible. For example, a stage that gets the template for a CloudFormation stack, should be called `AwsCloudFormationGetTemplate`.
-
-### Chaining Stages
-
-A stage is a function that processes data and passes it along to the next stage. Stages are implemented as Go functions that take a context, options, and an input channel, and return an output channel. Stages are intended to be chained together to enable the [pipeline](https://go.dev/blog/pipelines) pattern. Stages allow for composable pipelines with code reuse. 
-
-The `ChainStages` function handles the pipeline assembly. It uses generics to specify the input and output of the rendered pipeline. It verifies that the initial stage's input matches the specified input type, the last stage's output matches the output type, and all chained stages have compatible types.
-
-The example below uses AWS Cloud Control to list resources, convert the type to JSON, filter out the `.PublicIp` value, and converts the value to a string.
+### Azure Links  
+Azure links use helper functions from `internal/helpers/azure.go`:
 
 ```go
-pipelne, err = ChainStages[string, string](
-	CloudControlListResources,
-	ToJson[types.EnrichedResourceDescription],
-	JqFilter(".Properties | fromjson | select(.PublicIp != null) | .PublicIp"),
-	ToString[[]byte],
+func (l *MyAzureLink) Process(input any) error {
+    // Get Azure credentials
+    cred, err := azidentity.NewDefaultAzureCredential(nil)
+    
+    // Use helper functions
+    subscriptions, err := helpers.ListSubscriptions(l.Context(), nil)
+    
+    // Process and send results
+    for _, sub := range subscriptions {
+        l.Send(processSubscription(sub))
+    }
+    return nil
+}
+```
+
+### Chain Construction
+
+Links can construct sub-chains for complex processing:
+
+```go
+func (l *MyLink) Process(input any) error {
+    // Create a sub-chain
+    subChain := chain.NewChain(
+        link1.NewLink1(),
+        link2.NewLink2(),
+    )
+    
+    // Configure and run
+    subChain.WithConfigs(cfg.WithArgs(l.Args()))
+    subChain.Send(input)
+    subChain.Close()
+    
+    // Collect results
+    for result := range chain.RecvAll(subChain) {
+        l.Send(result)
+    }
+    return nil
+}
+```
+
+## Context and Logging
+
+Always use the link's context for operations:
+
+```go
+func (l *MyLink) Process(input any) error {
+    ctx := l.Context()  // Never use context.Background()
+    
+    // Use slog for structured logging
+    slog.InfoContext(ctx, "Processing input", "type", fmt.Sprintf("%T", input))
+    
+    // Make HTTP requests with context
+    req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+    
+    return nil
+}
+```
+
+## Output Processing
+
+### Built-in Outputters
+
+Nebula provides several outputters in `pkg/outputters/`:
+- `erd_console.go` - Console output for enriched resource descriptions
+- `markdown_table_console.go` - Console markdown tables
+- `runtime_json.go` - JSON file output
+- `runtime_markdown.go` - Markdown file output
+
+### Custom Outputters
+
+Create custom outputters by implementing the output interface:
+
+```go 
+type MyOutputter struct {
+    *outputter.Base
+}
+
+func NewMyOutputter(configs ...cfg.Config) chain.Outputter {
+    o := &MyOutputter{}
+    o.Base = outputter.NewBase(o, configs...)
+    return o
+}
+
+func (o *MyOutputter) Output(val any) error {
+    // Process the output value
+    return nil
+}
+```
+
+## Testing
+
+Write tests for links using the testutils:
+
+```go
+func TestMyLink(t *testing.T) {
+    link := NewMyLink()
+    
+    input := "test-input"
+    err := link.Process(input)
+    
+    assert.NoError(t, err)
+    // Test output...
+}
+```
+
+## Registry and CLI Integration
+
+Modules automatically generate CLI commands via the registry:
+
+```go
+func init() {
+    // This creates: nebula aws recon my-module
+    registry.Register("aws", "recon", "my-module", *MyModule)
+}
+```
+
+The registry system:
+1. Scans module definitions at startup
+2. Generates CLI command hierarchy  
+3. Extracts parameters for flag definitions
+4. Handles module execution and output
+
+## Platform-Specific Patterns
+
+### AWS CloudControl Integration
+Use the cloudcontrol links for resource discovery:
+
+```go
+).WithLinks(
+    cloudcontrol.NewCloudControlList,
+    general.NewPreprocessResources,  // Type filtering
+    mylink.NewMyProcessing,
 )
 ```
 
-`ChainStages` returns the pipeline (function) which can be executed to as a single function like the following example.
-```go
-for s := range pipeline(ctx, opts, Generator([]string{rtype})) {
-	out <- s
-}
-```
-
-### Helpful Stage Utilities
-
-- `Echo` - A useful debugging stage that will print the values received on the input channel to stdout and send the values unchanged to the output channel.
-- `ToJsonBytes` - Marshals the input channel value to JSON and returns the resulting `[]byte`.
-- `ToString` - Casts the input value to a string.
-
-## Output Providers
-
-Output providers are responsible for handling the output of data from modules. They abstract the complexity of writing data to different targets, allowing for a consistent interface. 
-
-Each module defines the output providers it supports. All data sent to the final output channel is processed by each of the configured output providers.
-
-## Logging and User Messages
-We've split out application logging and user messages. 
-
-### User Messages
-
-User messages are intended for the operator running the nebula tool. These messages may indicate some progress, something interesting, or something went wrong. All other messages should be sent to logs.
+### Azure Resource Graph
+Use ARG templates for Azure resource queries:
 
 ```go
-message.Info("Message goes here")
-message.Success("Message goes here")
-message.Warning("Message goes here")
-message.Error("Message goes here")
+).WithLinks(
+    azure.NewArgTemplate,
+    azure.NewResourceLister,
+    azure.NewResourceAggregator,
+)
 ```
 
-### Logging
+### Docker Processing
+For container security scanning:
 
-Logging is intended for more detailed information about the running application. The default log level is set to `warn` to not over burden the user with information by default. If you require more details to ensure a module is progressing, set the appropriate level using `--log-level`.
-
-Factory functions exist to aid in creating a contextually aware logger. Below is an example of setting up a logger inside a stage. Three 
-
-
-Example Stage logger:
-
-```
-logger := logs.NewStageLogger(ctx, opts, "AwsIpLookupStage")
-logger.Info(fmt.Sprintf("Searching for %s in AWS IP ranges", ip))
-```
-Will produce a json log such as:
-```json
-{"time":"2025-01-16T15:38:18.988965-06:00","level":"INFO","msg":"Searching for 1.1.1.1 in AWS IP ranges","module":{"platform":"aws","id":"iplookup","stage":"AwsIpLookupStage"}}
-```
-
-If you need to add additional fields, use the `slog` helpers to add them like the xample below.
 ```go
-logger.Error("Something went wrong", slog.String("error", err.Error()))
+).WithLinks(
+    ecr.NewECRListImages,
+    docker.NewDockerPull,
+    docker.NewDockerSave,
+    docker.NewDockerExtractToFS,
+)
 ```
+
+## Best Practices
+
+1. **Parameter Management**: Define parameters in options files, not inline
+2. **Context Usage**: Always use `l.Context()`, never `context.Background()`
+3. **Error Handling**: Return errors from `Process()`, don't panic
+4. **Resource Cleanup**: Close resources properly in deferred functions
+5. **Structured Logging**: Use slog with context for debugging
+6. **Type Safety**: Use generics and type assertions carefully
+7. **OPSEC Awareness**: Set appropriate opsec_level in module metadata
+
+## Common Issues
+
+**Link Hanging**: Ensure data flows through the chain - use `l.Send()` to pass data forward.
+
+**Parameter Not Found**: Check parameter name matches between definition and access:
+```go
+cfg.NewParam[string]("my-param", "...")  // Definition
+cfg.As[string](l.Arg("my-param"))        // Access - names must match
+```
+
+**Context Timeouts**: Use link context for operations that might timeout.
+
+For more examples, explore the existing links in `pkg/links/` and modules in `pkg/modules/`.
