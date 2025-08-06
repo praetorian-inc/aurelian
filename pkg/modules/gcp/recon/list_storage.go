@@ -33,6 +33,10 @@ var GcpListBuckets = chain.NewModule(
 	outputters.NewRuntimeJSONOutputter,
 ).WithInputParam(
 	options.GcpProject(),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "buckets-list"),
 )
 
 var GcpListSQLInstances = chain.NewModule(
@@ -53,4 +57,8 @@ var GcpListSQLInstances = chain.NewModule(
 	outputters.NewRuntimeJSONOutputter,
 ).WithInputParam(
 	options.GcpProject(),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "sql-instances-list"),
 )

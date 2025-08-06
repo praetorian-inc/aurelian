@@ -32,4 +32,8 @@ var GcpListFunctions = chain.NewModule(
 	outputters.NewRuntimeJSONOutputter,
 ).WithInputParam(
 	options.GcpProject(),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "functions-list"),
 )

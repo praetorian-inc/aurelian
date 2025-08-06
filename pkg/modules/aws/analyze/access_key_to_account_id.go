@@ -31,4 +31,8 @@ var AWSAccessKeyToAccountId = chain.NewModule(
 	outputters.NewRuntimeJSONOutputter,
 ).WithInputParam(
 	options.AwsAccessKeyId(),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "access-key-to-account-id"),
 )

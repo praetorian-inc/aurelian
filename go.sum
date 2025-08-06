@@ -290,6 +290,8 @@ github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c h1:ncq/mPwQF
 github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c/go.mod h1:OmDBASR4679mdNQnz2pUhc2G8CO2JrUAVFDRBDP/hJE=
 github.com/praetorian-inc/janus-framework v0.0.0-20250804160056-63536ec2fcdd h1:Wrt/fiB/4D4GT401lrhMNa0y+XqF8daP9WKCzqKAWqA=
 github.com/praetorian-inc/janus-framework v0.0.0-20250804160056-63536ec2fcdd/go.mod h1:Bsc+bNHt2jRYbr7i0OelquV3/X/qkal1Q/xAqk9h3lo=
+github.com/praetorian-inc/janus-framework v0.0.0-20250806015534-8389f3504fab h1:T2Ksp8RbG8NmCt7KABT6AYTusMIhBxzLw0oluYG+m9E=
+github.com/praetorian-inc/janus-framework v0.0.0-20250806015534-8389f3504fab/go.mod h1:Bsc+bNHt2jRYbr7i0OelquV3/X/qkal1Q/xAqk9h3lo=
 github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157 h1:Hrov9II6t60IMF9wg8CqySnZi/2fdz/2DkAMcw48bkU=
 github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157/go.mod h1:sbwY5GVsqieoJXogpMMK+5GWZ15UgNnd9nRSkjBG8rQ=
 github.com/praetorian-inc/tabularium v1.0.1 h1:4YsF6JxuD6DdmbzHD3lMg6ArwkoTN9lIG/7kr4KKowk=

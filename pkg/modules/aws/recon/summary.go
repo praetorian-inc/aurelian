@@ -43,6 +43,10 @@ var AwsSummary = chain.NewModule(
 	cfg.NewParam[string]("filename", "Base filename for output").
 		WithDefault("aws-summary").
 		WithShortcode("f"),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "summary"),
 ).WithAutoRun()
 
 func init() {

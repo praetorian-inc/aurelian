@@ -46,4 +46,8 @@ var AwsListAllResources = chain.NewModule(
 	cfg.NewParam[string]("filename", "Base filename for output").
 		WithDefault("").
 		WithShortcode("f"),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "list-all"),
 ).WithAutoRun()

@@ -49,6 +49,9 @@ var ECRDump = chain.NewModule(
 ).WithConfigs(
 	cfg.WithArg("extract", "true"),
 	cfg.WithArg("noseyparker-scan", "true"),
+	cfg.WithArg("module-name", "ecr-dump"),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
 	outputters.NewNPFindingsConsoleOutputter,

@@ -31,4 +31,8 @@ var GcpListProjects = chain.NewModule(
 	outputters.NewRuntimeJSONOutputter,
 ).WithInputParam(
 	options.GcpOrg(),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "projects-list"),
 )

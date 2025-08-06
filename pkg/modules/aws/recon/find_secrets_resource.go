@@ -35,4 +35,8 @@ var AWSFindSecretsResource = chain.NewModule(
 	outputters.NewRuntimeJSONOutputter,
 ).WithInputParam(
 	options.AwsResourceArn(),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "find-secrets-resource"),
 )

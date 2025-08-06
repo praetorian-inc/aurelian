@@ -31,8 +31,6 @@ var AzureFindSecrets = chain.NewModule(
 	}).WithChainInputParam(
 		options.AzureSubscription().Name(),
 	),
-).WithConfigs(
-	cfg.WithArg("category", "secrets"),
 ).WithLinks(
 	general.NewResourceTypePreprocessor(&azure.AzureFindSecretsLink{}),
 	azure.NewARGTemplateLoaderLink,
@@ -46,4 +44,10 @@ var AzureFindSecrets = chain.NewModule(
 	options.AzureResourceSecretsTypes(),
 ).WithInputParam(
 	options.AzureArgCategory(),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+	cfg.NewParam[string]("category", "category of Azure ARG templates to use"),
+).WithConfigs(
+	cfg.WithArg("module-name", "find-secrets"),
+	cfg.WithArg("category", "secrets"),
 )

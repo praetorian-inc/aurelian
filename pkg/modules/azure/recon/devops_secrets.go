@@ -39,6 +39,10 @@ var AzureDevOpsSecrets = chain.NewModule(
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
 	outputters.NewNPFindingsConsoleOutputter,
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "devops-secrets"),
 ).WithAutoRun()
 
 func init() {

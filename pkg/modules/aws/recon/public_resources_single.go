@@ -28,4 +28,8 @@ var AWSPublicResourcesSingle = chain.NewModule(
 	outputters.NewERDConsoleOutputter,
 ).WithInputParam(
 	options.AwsResourceArn(),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "public-resources-single"),
 )

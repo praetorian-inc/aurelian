@@ -18,14 +18,18 @@ var AzurePublicAccess = chain.NewModule(
 		"platform": "azure",
 		"authors":  []string{"Praetorian"},
 	}).WithChainInputParam(options.AzureSubscription().Name()),
-).WithConfigs(
-	cfg.WithArg("category", "Public Access"),
 ).WithLinks(
 	azure.NewARGTemplateLoaderLink,
 	azure.NewARGTemplateQueryLink,
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
 	outputters.NewAzureResourceOutputter,
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+	cfg.NewParam[string]("category", "category of Azure ARG templates to use"),
+).WithConfigs(
+	cfg.WithArg("module-name", "public-resources"),
+	cfg.WithArg("category", "Public Access"),
 )
 
 func init() {

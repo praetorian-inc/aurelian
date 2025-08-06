@@ -51,7 +51,7 @@ require (
 	github.com/microsoftgraph/msgraph-sdk-go v1.53.0
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.1
-	github.com/praetorian-inc/janus-framework v0.0.0-20250804160056-63536ec2fcdd
+	github.com/praetorian-inc/janus-framework v0.0.0-20250806015534-8389f3504fab
 	github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157
 	github.com/praetorian-inc/tabularium v1.0.1
 	github.com/spf13/cobra v1.9.1

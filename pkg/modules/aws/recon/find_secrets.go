@@ -40,6 +40,8 @@ var AWSFindSecrets = chain.NewModule(
 	options.AwsResourceType().WithDefault([]string{"all"}),
 ).WithInputParam(
 	options.AwsProfile(),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
 ).WithConfigs(
-	cfg.WithArg("module-name", "find-secrets"), // Module name for contextual filenames
+	cfg.WithArg("module-name", "find-secrets"),
 )

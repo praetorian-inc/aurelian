@@ -31,4 +31,8 @@ var AwsWhoami = chain.NewModule(
 	aws.NewAwsWhoami,
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "whoami"),
 ).WithAutoRun()

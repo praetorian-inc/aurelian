@@ -36,4 +36,8 @@ var AzureRoleAssignments = chain.NewModule(
 	outputters.NewRuntimeMarkdownOutputter,
 ).WithInputParam(
 	options.AzureSubscription(),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "role-assignments"),
 ).WithAutoRun()

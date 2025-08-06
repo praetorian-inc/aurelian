@@ -177,9 +177,9 @@ func (j *RuntimeJSONOutputter) generateContextualFilename() string {
 	
 	// Get module name if provided by the module
 	moduleName, moduleErr := cfg.As[string](j.Arg("module-name"))
-	if moduleErr != nil {
-		moduleName = "recon" // fallback
-		slog.Debug("module-name not found, using fallback", "fallback", moduleName, "error", moduleErr)
+	if moduleErr != nil || moduleName == "" {
+		moduleName = "recon" // fallback for missing or empty module name
+		slog.Debug("module-name not found or empty, using fallback", "fallback", moduleName, "error", moduleErr)
 	} else {
 		slog.Debug("found module-name parameter", "moduleName", moduleName)
 	}
@@ -195,8 +195,8 @@ func (j *RuntimeJSONOutputter) generateContextualFilename() string {
 	}
 	
 	// Azure parameters  
-	if subscription, err := cfg.As[string](j.Arg("subscription")); err == nil && subscription != "" {
-		slog.Debug("Found Azure subscription, generating Azure filename", "subscription", subscription, "moduleName", moduleName)
+	if subscriptions, err := cfg.As[[]string](j.Arg("subscription")); err == nil && len(subscriptions) > 0 && subscriptions[0] != "" {
+		slog.Debug("Found Azure subscription, generating Azure filename", "subscription", subscriptions[0], "moduleName", moduleName)
 		// This is an Azure command
 		return j.generateAzureFilename(moduleName)
 	} else {
@@ -241,7 +241,8 @@ func (j *RuntimeJSONOutputter) generateAzureFilename(moduleName string) string {
 	}
 	
 	// Standard Azure subscription format
-	if subscription, err := cfg.As[string](j.Arg("subscription")); err == nil && subscription != "" {
+	if subscriptions, err := cfg.As[[]string](j.Arg("subscription")); err == nil && len(subscriptions) > 0 {
+		subscription := subscriptions[0]
 		if subscription == "all" {
 			return fmt.Sprintf("%s-all-subscriptions.json", moduleName)
 		}
@@ -320,6 +321,7 @@ func (j *RuntimeJSONOutputter) Params() []cfg.Param {
 	return []cfg.Param{
 		cfg.NewParam[string]("file", "the default file to write the JSON to (can be changed at runtime)").WithDefault(defaultOutfile),
 		cfg.NewParam[int]("indent", "the number of spaces to use for the JSON indentation").WithDefault(0),
+		cfg.NewParam[string]("module-name", "the name of the module for dynamic file naming"),
 		options.OutputDir(),
 	}
 }
