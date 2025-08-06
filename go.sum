@@ -296,6 +296,8 @@ github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157 h1:Hr
 github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157/go.mod h1:sbwY5GVsqieoJXogpMMK+5GWZ15UgNnd9nRSkjBG8rQ=
 github.com/praetorian-inc/tabularium v1.0.1 h1:4YsF6JxuD6DdmbzHD3lMg6ArwkoTN9lIG/7kr4KKowk=
 github.com/praetorian-inc/tabularium v1.0.1/go.mod h1:5VgsU58pTSX+umfBcpmsOPu6TM9W7EOmErpNq2i50w4=
+github.com/praetorian-inc/tabularium v1.0.6 h1:S2qBooM1PX00886SGQ7mwIaJWkAGgTPegC3k//N27RA=
+github.com/praetorian-inc/tabularium v1.0.6/go.mod h1:5VgsU58pTSX+umfBcpmsOPu6TM9W7EOmErpNq2i50w4=
 github.com/redis/go-redis/v9 v9.8.0 h1:q3nRvjrlge/6UD7eTu/DSg2uYiU2mCL0G/uzBWqhicI=
 github.com/redis/go-redis/v9 v9.8.0/go.mod h1:huWgSWd8mW6+m0VPhJjSSQ+d6Nh1VICQ6Q5lHuCH/Iw=
 github.com/rogpeppe/go-internal v1.13.1 h1:KvO1DLK/DRN07sQ1LQKScxyZJuNnedQ5/wKSR38lUII=
