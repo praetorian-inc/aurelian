@@ -2,11 +2,9 @@ package aws
 
 import (
 	"log/slog"
-	"sync"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/docker"
 	"github.com/praetorian-inc/janus-framework/pkg/links/noseyparker"
 	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
@@ -16,6 +14,7 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/links/aws/lambda"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/ssm"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/stepfunctions"
+	"github.com/praetorian-inc/nebula/pkg/links/docker"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -23,7 +22,6 @@ type AWSFindSecrets struct {
 	*base.AwsReconLink
 	clientMap   map[string]interface{} // map key is type-region
 	resourceMap map[string]func() chain.Chain
-	wg          sync.WaitGroup
 }
 
 func NewAWSFindSecrets(configs ...cfg.Config) chain.Link {
@@ -126,11 +124,7 @@ func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) e
 		return nil
 	}
 
-	// Process resource chain asynchronously to avoid blocking the pipeline
-	fs.wg.Add(1)
 	go func() {
-		defer fs.wg.Done()
-
 		resourceChain := constructor()
 		resourceChain.WithConfigs(cfg.WithArgs(fs.Args()))
 
@@ -151,7 +145,5 @@ func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) e
 }
 
 func (fs *AWSFindSecrets) Complete() error {
-	// Wait for all goroutines to complete before finishing the link
-	fs.wg.Wait()
 	return nil
 }
