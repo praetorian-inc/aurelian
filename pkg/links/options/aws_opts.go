@@ -305,3 +305,29 @@ func AwsAction() cfg.Param {
 		WithShortcode("a").
 		AsRequired()
 }
+
+func AwsRoleArn() cfg.Param {
+	return cfg.NewParam[string]("role-arn", "AWS Role ARN to assume for console access").
+		WithShortcode("R")
+}
+
+func AwsSessionDuration() cfg.Param {
+	return cfg.NewParam[int]("duration", "Session duration in seconds (900-3600)").
+		WithShortcode("d").
+		WithDefault(3600)
+}
+
+func AwsMfaToken() cfg.Param {
+	return cfg.NewParam[string]("mfa-token", "MFA token code for role assumption").
+		WithShortcode("m")
+}
+
+func AwsRoleSessionName() cfg.Param {
+	return cfg.NewParam[string]("role-session-name", "Name for the assumed role session").
+		WithDefault("nebula-console-session")
+}
+
+func AwsFederationName() cfg.Param {
+	return cfg.NewParam[string]("federation-name", "Name for federation token").
+		WithDefault("nebula-federation")
+}
