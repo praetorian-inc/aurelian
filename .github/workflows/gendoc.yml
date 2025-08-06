@@ -29,15 +29,30 @@ jobs:
           
       - name: Generate CLI Documentation
         run: |
+          # Ensure docs directory exists
+          mkdir -p docs
+          echo "Contents of working directory before gendoc:"
+          ls -la
           go run main.go gendoc
+          echo "Contents of docs directory after gendoc:"
+          ls -la docs/ || echo "docs directory not found"
           
       - name: Check for changes
         id: git-check
         run: |
-          if [[ -n "$(git status --porcelain docs/)" ]]; then
-            echo "changes=true" >> $GITHUB_OUTPUT
+          # Check if docs directory exists and has content
+          if [ -d "docs" ] && [ "$(ls -A docs/)" ]; then
+            git add docs/
+            if [[ -n "$(git status --porcelain docs/)" ]]; then
+              echo "changes=true" >> $GITHUB_OUTPUT
+              echo "Found documentation changes to commit"
+            else
+              echo "changes=false" >> $GITHUB_OUTPUT  
+              echo "No documentation changes detected"
+            fi
           else
             echo "changes=false" >> $GITHUB_OUTPUT
+            echo "No docs directory or no files generated"
           fi
           
       - name: Commit and push changes

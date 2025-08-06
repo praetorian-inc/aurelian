@@ -4,6 +4,10 @@ Nebula is a command-line security scanning tool built on the Janus framework for
 
 For development guidance, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
+## Documentation
+
+📖 **[Full CLI Documentation](docs/)** - Complete command reference with examples
+
 ## Features
 
 - **Multi-Cloud Support**: AWS, Azure, GCP, and SaaS platforms
