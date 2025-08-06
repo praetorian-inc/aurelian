@@ -39,7 +39,7 @@ func generateCommands(root *cobra.Command) {
 			}
 
 			for _, module := range modules {
-				generateModuleCommand(module, categoryCmd)
+				generateModuleCommand(platform, category, module, categoryCmd)
 			}
 
 			platformCmd.AddCommand(categoryCmd)
@@ -49,13 +49,11 @@ func generateCommands(root *cobra.Command) {
 	}
 }
 
-func generateModuleCommand(moduleName string, parent *cobra.Command) {
-	entry, ok := registry.GetRegistryEntry(moduleName)
+func generateModuleCommand(platform, category, moduleName string, parent *cobra.Command) {
+	entry, ok := registry.GetRegistryEntryByPlatform(platform, category, moduleName)
 	if !ok {
 		return
 	}
-
-	platform := entry.ModuleHeriarchy.Platform
 
 	cmd := &cobra.Command{
 		Use:   moduleName,
@@ -219,6 +217,7 @@ func runModule(cmd *cobra.Command, module chain.Module, platform string) error {
 	})
 
 	message.Section("Running module %s", module.Metadata().Name)
+	
 	module.Run(configs...)
 
 	if platform == "aws" {

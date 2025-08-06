@@ -41,6 +41,9 @@ var DockerDump = chain.NewModule(
 	cfg.WithArg("docker-password", ""),
 	cfg.WithArg("extract", "true"),
 	cfg.WithArg("noseyparker-scan", "true"),
+	cfg.WithArg("module-name", "docker-dump"),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
 	outputters.NewNPFindingsConsoleOutputter,

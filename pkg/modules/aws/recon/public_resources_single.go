@@ -3,8 +3,6 @@ package recon
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/output"
-	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
@@ -26,13 +24,12 @@ var AWSPublicResourcesSingle = chain.NewModule(
 	general.NewSingleResourcePreprocessor(),
 	aws.NewAwsPublicResources,
 ).WithOutputters(
-	output.NewJSONOutputter,
-	//output.NewConsoleOutputter,
+	outputters.NewRuntimeJSONOutputter,
 	outputters.NewERDConsoleOutputter,
 ).WithInputParam(
 	options.AwsResourceArn(),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "public-resources-single"),
 )
-
-func init() {
-	registry.Register("aws", "recon", AWSPublicResourcesSingle.Metadata().Properties()["id"].(string), *AWSPublicResourcesSingle)
-}

@@ -3,6 +3,7 @@ package registry
 import (
 	"regexp"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
@@ -20,7 +21,7 @@ type RegistryEntry struct {
 
 type ModuleRegistry struct {
 	mu        sync.RWMutex
-	modules   map[string]RegistryEntry       // name -> module mapping
+	modules   map[string]RegistryEntry       // platform/category/name -> module mapping
 	hierarchy map[string]map[string][]string // platform -> category -> []name
 }
 
@@ -33,8 +34,11 @@ func Register(platform, category, name string, module chain.Module) {
 	Registry.mu.Lock()
 	defer Registry.mu.Unlock()
 
+	// Create composite key: platform/category/name
+	key := platform + "/" + category + "/" + name
+	
 	// Store the module itself
-	Registry.modules[FormatMcpToolName(name)] = RegistryEntry{
+	Registry.modules[key] = RegistryEntry{
 		Module: module,
 		ModuleHeriarchy: ModuleHeriarchy{
 			Platform: platform,
@@ -72,12 +76,28 @@ func GetModules(platform string) []chain.Module {
 	return modules
 }
 
-// GetModule gets a specific module by name
+// GetModule gets a specific module by name (legacy - searches all platforms)
 func GetModule(name string) (chain.Module, bool) {
 	Registry.mu.RLock()
 	defer Registry.mu.RUnlock()
 
-	entry, exists := Registry.modules[name]
+	// Search for the module across all platforms
+	for key, entry := range Registry.modules {
+		if getModuleNameFromKey(key) == name {
+			return entry.Module, true
+		}
+	}
+
+	return chain.Module{}, false
+}
+
+// GetModuleByPlatform gets a specific module by platform, category, and name
+func GetModuleByPlatform(platform, category, name string) (chain.Module, bool) {
+	Registry.mu.RLock()
+	defer Registry.mu.RUnlock()
+
+	key := platform + "/" + category + "/" + name
+	entry, exists := Registry.modules[key]
 	if !exists {
 		return chain.Module{}, false
 	}
@@ -101,12 +121,28 @@ func GetHierarchy() map[string]map[string][]string {
 	return result
 }
 
-// GetRegistryEntry gets the full entry for a module
+// GetRegistryEntry gets the full entry for a module (legacy - searches all platforms)
 func GetRegistryEntry(name string) (RegistryEntry, bool) {
 	Registry.mu.RLock()
 	defer Registry.mu.RUnlock()
 
-	entry, exists := Registry.modules[name]
+	// Search for the module across all platforms
+	for key, entry := range Registry.modules {
+		if getModuleNameFromKey(key) == name {
+			return entry, true
+		}
+	}
+
+	return RegistryEntry{}, false
+}
+
+// GetRegistryEntryByPlatform gets the full entry for a module by platform, category, and name
+func GetRegistryEntryByPlatform(platform, category, name string) (RegistryEntry, bool) {
+	Registry.mu.RLock()
+	defer Registry.mu.RUnlock()
+
+	key := platform + "/" + category + "/" + name
+	entry, exists := Registry.modules[key]
 	return entry, exists
 }
 
@@ -124,4 +160,13 @@ func FormatMcpToolName(name string) string {
 		name = name[:64]
 	}
 	return name
+}
+
+// getModuleNameFromKey extracts the module name from composite key "platform/category/name"
+func getModuleNameFromKey(key string) string {
+	parts := strings.Split(key, "/")
+	if len(parts) == 3 {
+		return parts[2]
+	}
+	return key // fallback for malformed keys
 }

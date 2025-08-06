@@ -30,6 +30,10 @@ var AzureARGScan = chain.NewModule(
 	options.AzureSubscription(),
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "arg-scan"),
 ).WithAutoRun()
 
 func init() {

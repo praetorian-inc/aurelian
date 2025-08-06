@@ -1,6 +1,6 @@
 id: automation_accounts_all_secrets  
 name: All Automation Accounts for Secret Scanning
-category: Secret Scanning
+category: secrets
 description: Finds all automation accounts for secret scanning in variables, runbooks, and job configurations
 severity: Medium
 reportability: Automatic

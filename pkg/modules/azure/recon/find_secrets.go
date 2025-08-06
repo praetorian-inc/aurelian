@@ -4,7 +4,6 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus-framework/pkg/links/noseyparker"
-	"github.com/praetorian-inc/janus-framework/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/azure"
 	"github.com/praetorian-inc/nebula/pkg/links/general"
@@ -32,8 +31,6 @@ var AzureFindSecrets = chain.NewModule(
 	}).WithChainInputParam(
 		options.AzureSubscription().Name(),
 	),
-).WithConfigs(
-	cfg.WithArg("category", "secrets"),
 ).WithLinks(
 	general.NewResourceTypePreprocessor(&azure.AzureFindSecretsLink{}),
 	azure.NewARGTemplateLoaderLink,
@@ -41,10 +38,16 @@ var AzureFindSecrets = chain.NewModule(
 	azure.NewAzureFindSecretsLink,
 	chain.ConstructLinkWithConfigs(noseyparker.NewNoseyParkerScanner, cfg.WithArg("continue_piping", true)),
 ).WithOutputters(
-	output.NewJSONOutputter,
+	outputters.NewRuntimeJSONOutputter,
 	outputters.NewNPFindingsConsoleOutputter,
 ).WithInputParam(
 	options.AzureResourceSecretsTypes(),
 ).WithInputParam(
 	options.AzureArgCategory(),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+	cfg.NewParam[string]("category", "category of Azure ARG templates to use"),
+).WithConfigs(
+	cfg.WithArg("module-name", "find-secrets"),
+	cfg.WithArg("category", "secrets"),
 )

@@ -85,7 +85,7 @@ func displayModuleTree() {
 	for platform, categories := range hierarchy {
 		for category, moduleNames := range categories {
 			for _, moduleName := range moduleNames {
-				if mod, ok := registry.GetModule(moduleName); ok {
+				if mod, ok := registry.GetModuleByPlatform(platform, category, moduleName); ok {
 					commandPath := fmt.Sprintf("%s/%s/%s", platform, category, moduleName)
 					allModules = append(allModules, ModuleInfo{
 						CommandPath: commandPath,

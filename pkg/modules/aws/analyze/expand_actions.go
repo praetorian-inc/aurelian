@@ -3,10 +3,10 @@ package analyze
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/iam/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
 
 func init() {
@@ -28,8 +28,11 @@ var AWSExpandActions = chain.NewModule(
 ).WithLinks(
 	aws.NewAWSExpandActionsLink,
 ).WithOutputters(
-	output.NewJSONOutputter,
-	output.NewConsoleOutputter,
+	outputters.NewRuntimeJSONOutputter,
 ).WithInputParam(
 	options.AwsAction(),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "expand-actions"),
 )

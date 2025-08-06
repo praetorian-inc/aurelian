@@ -26,6 +26,10 @@ var AzureSummary = chain.NewModule(
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
 	output.NewMarkdownOutputter,
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "summary"),
 ).WithAutoRun()
 
 func init() {

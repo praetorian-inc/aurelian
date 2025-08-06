@@ -3,7 +3,6 @@ package recon
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/output"
 	"github.com/praetorian-inc/nebula/internal/registry" 
 	"github.com/praetorian-inc/nebula/pkg/links/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
@@ -33,7 +32,7 @@ var AwsSummary = chain.NewModule(
 	// Output as markdown table for console display
 	outputters.NewMarkdownTableConsoleOutputter,
 	// Also output as JSON for programmatic use
-	output.NewJSONOutputter,
+	outputters.NewRuntimeJSONOutputter,
 ).WithInputParam(
 	options.AwsProfile(),
 ).WithInputParam(
@@ -44,8 +43,12 @@ var AwsSummary = chain.NewModule(
 	cfg.NewParam[string]("filename", "Base filename for output").
 		WithDefault("aws-summary").
 		WithShortcode("f"),
+).WithParams(
+	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+).WithConfigs(
+	cfg.WithArg("module-name", "summary"),
 ).WithAutoRun()
 
 func init() {
-	registry.Register("aws", "recon", "summary", *AwsSummary)
+	registry.Register("aws", "recon", AwsSummary.Metadata().Properties()["id"].(string), *AwsSummary)
 }
