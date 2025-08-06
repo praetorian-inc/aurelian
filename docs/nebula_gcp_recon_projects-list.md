@@ -10,11 +10,13 @@ nebula gcp recon projects-list [flags]
 
 ```
   -c, --creds-file string     Path to GCP credentials JSON file (required)
+      --file string           the default file to write the JSON to (can be changed at runtime) (default "out.json")
       --filter-sys-projects   Filter out system projects like Apps Script projects (default true)
   -h, --help                  help for projects-list
       --indent int            the number of spaces to use for the JSON indentation
-      --jsonoutfile string    the default file to write the JSON to (can be changed at runtime) (default "out.json")
+      --module-name string    name of the module for dynamic file naming
   -o, --org strings           GCP organization ID (required)
+      --output string         output directory (default "nebula-output")
 ```
 
 ### SEE ALSO

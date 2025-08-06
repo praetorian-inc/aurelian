@@ -1,22 +1,22 @@
-## nebula azure recon public-resources
+## nebula azure recon role-assignments
 
-Detects publicly accessible Azure resources including storage accounts, app services, SQL databases, VMs, and more.
+Enumerate role assignments across all Azure scopes including management groups, subscriptions, and resources
 
 ```
-nebula azure recon public-resources [flags]
+nebula azure recon role-assignments [flags]
 ```
 
 ### Options
 
 ```
-      --category string        category of Azure ARG templates to use
       --file string            the default file to write the JSON to (can be changed at runtime) (default "out.json")
-  -h, --help                   help for public-resources
+  -h, --help                   help for role-assignments
       --indent int             the number of spaces to use for the JSON indentation
+      --mdoutfile string       the default file to write the Markdown to (can be changed at runtime) (default "out.md")
       --module-name string     name of the module for dynamic file naming
   -o, --output string          output directory (default "nebula-output")
   -s, --subscription strings   The Azure subscription to use. Can be a subscription ID or 'all'. (required)
-  -t, --template-dir string    Directory containing Azure ARG templates
+  -w, --workers int            Number of concurrent workers for processing (default 5)
 ```
 
 ### SEE ALSO

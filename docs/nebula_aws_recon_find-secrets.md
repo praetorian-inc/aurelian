@@ -1,6 +1,6 @@
 ## nebula aws recon find-secrets
 
-Enumerate Azure resources and find secrets using NoseyParker across VMs, web apps, automation accounts, key vaults, and storage accounts
+Enumerate AWS resources and find secrets using NoseyParker
 
 ```
 nebula aws recon find-secrets [flags]
@@ -9,16 +9,23 @@ nebula aws recon find-secrets [flags]
 ### Options
 
 ```
-  -c, --category string          Category of Azure ARG templates to use
-      --continue_piping          If true, pipes output to next link. If false, saves to datastore file. (default true)
-      --datastore string         NoseyParker datastore file (default "datastore.np")
-  -h, --help                     help for find-secrets
-      --indent int               the number of spaces to use for the JSON indentation
-      --jsonoutfile string       the file to write the JSON to (default "out.json")
-  -r, --resource-types strings   Azure resource types to scan for secrets (default [all])
-  -s, --subscription strings     The Azure subscription to use. Can be a subscription ID or 'all'. (required)
-  -t, --template-dir string      Directory containing Azure ARG templates
-  -w, --workers int              Number of concurrent workers for processing (default 5)
+      --cache-dir string               Directory to store API response cache files (default "/tmp/nebula-cache")
+      --cache-error-resp               Cache error response
+      --cache-error-resp-type string   A comma-separated list of strings specifying cache error response types, e.g., TypeNotFoundException, AccessDeniedException. Use all to represent any error.
+      --cache-ext string               Name of AWS API response cache files extension (default ".aws-cache")
+      --cache-ttl int                  TTL for cached responses in seconds (default 3600)
+      --continue_piping                If true, pipes output to next link. If false, saves to datastore file. (default true)
+      --datastore string               NoseyParker datastore file (default "datastore.np")
+      --disable-cache                  Disable API response caching
+      --file string                    the default file to write the JSON to (can be changed at runtime) (default "out.json")
+  -h, --help                           help for find-secrets
+      --indent int                     the number of spaces to use for the JSON indentation
+      --module-name string             name of the module for dynamic file naming
+  -o, --output string                  output directory (default "nebula-output")
+  -p, --profile string                 AWS profile to use (default "default")
+      --profile-dir string             Set to override the default AWS profile directory
+  -r, --regions strings                AWS regions to scan (required) (default [all])
+  -t, --resource-type strings          AWS Cloud Control resource type (default [all])
 ```
 
 ### SEE ALSO

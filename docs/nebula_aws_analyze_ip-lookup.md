@@ -9,10 +9,12 @@ nebula aws analyze ip-lookup [flags]
 ### Options
 
 ```
+      --file string          the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -h, --help                 help for ip-lookup
       --indent int           the number of spaces to use for the JSON indentation
   -i, --ip strings           ip address (required)
-      --jsonoutfile string   the file to write the JSON to (default "out.json")
+      --module-name string   name of the module for dynamic file naming
+  -o, --output string        output directory (default "nebula-output")
 ```
 
 ### SEE ALSO

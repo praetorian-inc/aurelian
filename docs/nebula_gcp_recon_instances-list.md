@@ -10,9 +10,11 @@ nebula gcp recon instances-list [flags]
 
 ```
   -c, --creds-file string    Path to GCP credentials JSON file (required)
+      --file string          the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -h, --help                 help for instances-list
       --indent int           the number of spaces to use for the JSON indentation
-      --jsonoutfile string   the default file to write the JSON to (can be changed at runtime) (default "out.json")
+      --module-name string   name of the module for dynamic file naming
+  -o, --output string        output directory (default "nebula-output")
   -p, --project strings      GCP project ID (required)
 ```
 

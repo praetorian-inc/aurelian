@@ -4,6 +4,10 @@ Nebula is a command-line security scanning tool built on the Janus framework for
 
 For development guidance, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
+## Documentation
+
+📖 **[Full CLI Documentation](docs/)** - Complete command reference with examples
+
 ## Features
 
 - **Multi-Cloud Support**: AWS, Azure, GCP, and SaaS platforms
@@ -28,6 +32,8 @@ docker run --rm -v ~/.aws:/root/.aws nebula aws recon whoami
 ```
 
 **Pre-built binaries** available in [GitHub Releases](https://github.com/praetorian-inc/nebula/releases).
+
+**Dependencies** secret scanning is done using [https://github.com/praetorian-inc/noseyparker](https://github.com/praetorian-inc/noseyparker) and must be available in your `$PATH`.
 
 ## Authentication
 

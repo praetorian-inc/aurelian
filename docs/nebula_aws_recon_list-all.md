@@ -1,28 +1,31 @@
-## nebula aws recon public-resources-single
+## nebula aws recon list-all
 
-Enumerate public AWS resources
+List resources in an AWS account using CloudControl API. Supports 'full' scan for all resources or 'summary' scan for key services.
 
 ```
-nebula aws recon public-resources-single [flags]
+nebula aws recon list-all [flags]
 ```
 
 ### Options
 
 ```
-      --cache-dir string               Directory to store API response cache files (default "/var/folders/5z/z2x4ybyn7q9_txg13p2j6p8m0000gn/T/nebula-cache")
+      --cache-dir string               Directory to store API response cache files (default "/tmp/nebula-cache")
       --cache-error-resp               Cache error response
       --cache-error-resp-type string   A comma-separated list of strings specifying cache error response types, e.g., TypeNotFoundException, AccessDeniedException. Use all to represent any error.
       --cache-ext string               Name of AWS API response cache files extension (default ".aws-cache")
       --cache-ttl int                  TTL for cached responses in seconds (default 3600)
       --disable-cache                  Disable API response caching
-  -h, --help                           help for public-resources-single
+      --file string                    the default file to write the JSON to (can be changed at runtime) (default "out.json")
+  -f, --filename string                Base filename for output
+  -h, --help                           help for list-all
       --indent int                     the number of spaces to use for the JSON indentation
-      --jsonoutfile string             the file to write the JSON to (default "out.json")
+      --module-name string             name of the module for dynamic file naming
+  -o, --output string                  output directory (default "nebula-output")
   -p, --profile string                 AWS profile to use (default "default")
       --profile-dir string             Set to override the default AWS profile directory
   -r, --regions strings                AWS regions to scan (required) (default [all])
-  -a, --resource-arn strings           AWS Cloud Control resource ARN (required)
   -t, --resource-type strings          AWS Cloud Control resource type (default [all])
+  -s, --scan-type string               Scan type - 'full' for all resources or 'summary' for key services (default "full")
 ```
 
 ### SEE ALSO

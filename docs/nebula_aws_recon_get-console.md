@@ -1,9 +1,9 @@
-## nebula aws recon org-policies
+## nebula aws recon get-console
 
-Get SCPs and RCPs of an AWS organization and the targets to which they are attached.
+Generate a federated sign-in URL for the AWS Console using temporary credentials
 
 ```
-nebula aws recon org-policies [flags]
+nebula aws recon get-console [flags]
 ```
 
 ### Options
@@ -15,13 +15,18 @@ nebula aws recon org-policies [flags]
       --cache-ext string               Name of AWS API response cache files extension (default ".aws-cache")
       --cache-ttl int                  TTL for cached responses in seconds (default 3600)
       --disable-cache                  Disable API response caching
-      --file string                    the default file to write the JSON to (can be changed at runtime) (default "out.json")
-  -h, --help                           help for org-policies
-      --indent int                     the number of spaces to use for the JSON indentation
+  -d, --duration int                   Session duration in seconds (900-3600) (default 3600)
+      --federation-name string         Name for federation token (default "nebula-federation")
+  -h, --help                           help for get-console
+  -m, --mfa-token string               MFA token code for role assumption
       --module-name string             name of the module for dynamic file naming
   -o, --output string                  output directory (default "nebula-output")
   -p, --profile string                 AWS profile to use (default "default")
       --profile-dir string             Set to override the default AWS profile directory
+  -r, --regions strings                AWS regions to scan (required) (default [all])
+  -R, --role-arn string                AWS Role ARN to assume for console access
+      --role-session-name string       Name for the assumed role session (default "nebula-console-session")
+      --trigger-value string           Value to send to trigger the pipeline (default "trigger")
 ```
 
 ### SEE ALSO

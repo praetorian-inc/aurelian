@@ -10,9 +10,11 @@ nebula aws analyze access-key-to-account-id [flags]
 
 ```
   -k, --access-key-id strings   AWS access key ID (required)
+      --file string             the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -h, --help                    help for access-key-to-account-id
       --indent int              the number of spaces to use for the JSON indentation
-      --jsonoutfile string      the file to write the JSON to (default "out.json")
+      --module-name string      name of the module for dynamic file naming
+  -o, --output string           output directory (default "nebula-output")
 ```
 
 ### SEE ALSO

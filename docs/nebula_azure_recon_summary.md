@@ -1,22 +1,24 @@
-## nebula azure recon public-resources
+## nebula azure recon summary
 
-Detects publicly accessible Azure resources including storage accounts, app services, SQL databases, VMs, and more.
+Provides a count of Azure resources within a subscription without details such as identifiers. For a detailed resource list with identifiers, please use the list-all module.
 
 ```
-nebula azure recon public-resources [flags]
+nebula azure recon summary [flags]
 ```
 
 ### Options
 
 ```
-      --category string        category of Azure ARG templates to use
+      --columns strings        the columns to write to the markdown
       --file string            the default file to write the JSON to (can be changed at runtime) (default "out.json")
-  -h, --help                   help for public-resources
+  -f, --filename string        Base filename for output
+  -h, --help                   help for summary
       --indent int             the number of spaces to use for the JSON indentation
+      --mdoutfile string       the file to write the markdown to (default "out.md")
       --module-name string     name of the module for dynamic file naming
   -o, --output string          output directory (default "nebula-output")
   -s, --subscription strings   The Azure subscription to use. Can be a subscription ID or 'all'. (required)
-  -t, --template-dir string    Directory containing Azure ARG templates
+  -w, --workers int            Number of concurrent workers for processing (default 5)
 ```
 
 ### SEE ALSO

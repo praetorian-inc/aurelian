@@ -1,17 +1,17 @@
-## nebula azure recon public-resources
+## nebula azure recon arg-scan
 
-Detects publicly accessible Azure resources including storage accounts, app services, SQL databases, VMs, and more.
+Scans Azure resources using ARG templates and enriches findings with security testing commands.
 
 ```
-nebula azure recon public-resources [flags]
+nebula azure recon arg-scan [flags]
 ```
 
 ### Options
 
 ```
-      --category string        category of Azure ARG templates to use
+  -c, --category string        Category of Azure ARG templates to use
       --file string            the default file to write the JSON to (can be changed at runtime) (default "out.json")
-  -h, --help                   help for public-resources
+  -h, --help                   help for arg-scan
       --indent int             the number of spaces to use for the JSON indentation
       --module-name string     name of the module for dynamic file naming
   -o, --output string          output directory (default "nebula-output")
