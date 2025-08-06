@@ -29,6 +29,8 @@ docker run --rm -v ~/.aws:/root/.aws nebula aws recon whoami
 
 **Pre-built binaries** available in [GitHub Releases](https://github.com/praetorian-inc/nebula/releases).
 
+**Dependencies** secret scanning is done using [https://github.com/praetorian-inc/noseyparker](https://github.com/praetorian-inc/noseyparker) and must be available in your `$PATH`.
+
 ## Authentication
 
 Nebula uses standard cloud provider authentication:
