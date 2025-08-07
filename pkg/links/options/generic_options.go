@@ -153,3 +153,8 @@ func OutputDir() cfg.Param {
 		WithShortcode("o").
 		WithDefault("nebula-output")
 }
+
+func File() cfg.Param {
+	return cfg.NewParam[string]("file", "input file path").
+		WithShortcode("f")
+}

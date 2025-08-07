@@ -10,6 +10,7 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus-framework/pkg/types"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
 
 // DockerExtractToFS extracts Docker image files to the filesystem
@@ -26,7 +27,7 @@ func NewDockerExtractToFS(configs ...cfg.Config) chain.Link {
 
 func (de *DockerExtractToFS) Params() []cfg.Param {
 	return []cfg.Param{
-		cfg.NewParam[string]("output", "output directory to extract files to").WithDefault("docker-extracted"),
+		options.OutputDir(),
 		cfg.NewParam[bool]("extract", "enable extraction to filesystem").WithDefault(true),
 	}
 }
@@ -159,10 +160,10 @@ func NewDockerImageLoader(configs ...cfg.Config) chain.Link {
 
 func (dl *DockerImageLoader) Params() []cfg.Param {
 	return []cfg.Param{
-		cfg.NewParam[string]("image", "Docker image name to load"),
-		cfg.NewParam[string]("file", "File containing list of Docker images"),
-		cfg.NewParam[string]("docker-user", "Docker registry username"),
-		cfg.NewParam[string]("docker-password", "Docker registry password"),
+		options.DockerImage(),
+		options.File(),
+		options.DockerUser(),
+		options.DockerPassword(),
 	}
 }
 

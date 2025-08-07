@@ -36,7 +36,6 @@ var DockerDump = chain.NewModule(
 ).WithInputParam(
 	options.DockerImage(),
 ).WithConfigs(
-	cfg.WithArg("file", ""),
 	cfg.WithArg("docker-user", ""),
 	cfg.WithArg("docker-password", ""),
 	cfg.WithArg("extract", "true"),

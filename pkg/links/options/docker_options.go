@@ -36,10 +36,6 @@ func DockerImage() cfg.Param {
 		WithShortcode("i")
 }
 
-func DockerFile() cfg.Param {
-	return cfg.NewParam[string]("file", "File containing list of Docker images").
-		WithShortcode("f")
-}
 
 func DockerUser() cfg.Param {
 	return cfg.NewParam[string]("docker-user", "Docker registry username")
