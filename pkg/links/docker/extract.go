@@ -1,8 +1,10 @@
 package docker
 
 import (
+	"archive/tar"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,8 +74,8 @@ func (de *DockerExtractToFS) Process(imageContext types.DockerImage) error {
 
 	de.Logger.Info("Extracted Docker image to filesystem", "image", imageContext.Image, "path", extractDir)
 	
-	// Send the path to the extraction directory
-	return de.Send(extractDir)
+	// Send the original imageContext to the next link for NoseyParker processing
+	return de.Send(&imageContext)
 }
 
 func (de *DockerExtractToFS) sanitizeImageName(imageName string) string {
@@ -85,17 +87,60 @@ func (de *DockerExtractToFS) sanitizeImageName(imageName string) string {
 }
 
 func (de *DockerExtractToFS) extractTar(tarPath, extractDir string) error {
-	// For now, we'll use the built-in extraction from types.DockerImage
-	// In a real implementation, you might want to use external tools like tar command
-	// or implement custom tar extraction logic
-	
 	imageFile, err := os.Open(tarPath)
 	if err != nil {
 		return fmt.Errorf("failed to open tar file: %w", err)
 	}
 	defer imageFile.Close()
 
-	// Create a simple extraction manifest
+	// Extract Docker image tar using archive/tar
+	tarReader := tar.NewReader(imageFile)
+	
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read tar header: %w", err)
+		}
+
+		// Create the full path for extraction
+		targetPath := filepath.Join(extractDir, header.Name)
+		
+		// Ensure the target directory exists
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", filepath.Dir(targetPath), err)
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			// Create directory
+			if err := os.MkdirAll(targetPath, os.FileMode(header.Mode)); err != nil {
+				return fmt.Errorf("failed to create directory %s: %w", targetPath, err)
+			}
+		case tar.TypeReg:
+			// Extract regular file
+			outFile, err := os.Create(targetPath)
+			if err != nil {
+				return fmt.Errorf("failed to create file %s: %w", targetPath, err)
+			}
+
+			if _, err := io.Copy(outFile, tarReader); err != nil {
+				outFile.Close()
+				return fmt.Errorf("failed to extract file %s: %w", targetPath, err)
+			}
+			
+			outFile.Close()
+			
+			// Set file permissions
+			if err := os.Chmod(targetPath, os.FileMode(header.Mode)); err != nil {
+				de.Logger.Debug("failed to set file permissions", "file", targetPath, "error", err)
+			}
+		}
+	}
+
+	// Create extraction manifest
 	manifestPath := filepath.Join(extractDir, "extraction-manifest.json")
 	manifest := map[string]interface{}{
 		"image":        filepath.Base(tarPath),
