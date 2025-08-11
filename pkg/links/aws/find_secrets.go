@@ -1,7 +1,10 @@
 package aws
 
 import (
+	"fmt"
 	"log/slog"
+	"sync"
+	"time"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
@@ -22,6 +25,7 @@ type AWSFindSecrets struct {
 	*base.AwsReconLink
 	clientMap   map[string]interface{} // map key is type-region
 	resourceMap map[string]func() chain.Chain
+	wg          sync.WaitGroup
 }
 
 func NewAWSFindSecrets(configs ...cfg.Config) chain.Link {
@@ -124,16 +128,38 @@ func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) e
 		return nil
 	}
 
+	fs.wg.Add(1)
 	go func() {
+		defer fs.wg.Done()
+
+		slog.Debug("Starting resource processing", "resource_type", resource.TypeName, "resource_id", resource.Identifier)
+
 		resourceChain := constructor()
 		resourceChain.WithConfigs(cfg.WithArgs(fs.Args()))
 
 		resourceChain.Send(resource)
 		resourceChain.Close()
 
-		// Collect and send all outputs from the chain
-		for o, ok := chain.RecvAs[jtypes.NPInput](resourceChain); ok; o, ok = chain.RecvAs[jtypes.NPInput](resourceChain) {
-			fs.Send(o)
+		done := make(chan bool, 1)
+		go func() {
+			defer func() {
+				done <- true
+			}()
+
+			for o, ok := chain.RecvAs[jtypes.NPInput](resourceChain); ok; o, ok = chain.RecvAs[jtypes.NPInput](resourceChain) {
+				slog.Debug("Received output from chain", "resource_type", resource.TypeName, "output_type", fmt.Sprintf("%T", o))
+				if err := fs.Send(o); err != nil {
+					slog.Error("Failed to send output", "resource_type", resource.TypeName, "error", err)
+					return
+				}
+			}
+		}()
+
+		select {
+		case <-done:
+			slog.Debug("Resource processing completed", "resource_type", resource.TypeName, "resource_id", resource.Identifier)
+		case <-time.After(120 * time.Second):
+			slog.Warn("Resource processing timed out after 120 seconds", "resource_type", resource.TypeName, "resource_id", resource.Identifier)
 		}
 
 		if err := resourceChain.Error(); err != nil {
@@ -145,5 +171,6 @@ func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) e
 }
 
 func (fs *AWSFindSecrets) Complete() error {
+	fs.wg.Wait()
 	return nil
 }
