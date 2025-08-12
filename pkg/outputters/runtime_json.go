@@ -57,7 +57,7 @@ func (j *RuntimeJSONOutputter) Initialize() error {
 	}
 
 	// Get default output file (can be overridden at runtime)
-	outfile, err := cfg.As[string](j.Arg("file"))
+	outfile, err := cfg.As[string](j.Arg("outfile"))
 	if err != nil {
 		outfile = defaultOutfile // Fallback default
 	}
@@ -319,7 +319,7 @@ func (j *RuntimeJSONOutputter) Params() []cfg.Param {
 	// Note: Platform parameters (profile, subscription, project) are passed from modules
 	// and accessed via j.Arg() but not declared here to avoid conflicts
 	return []cfg.Param{
-		cfg.NewParam[string]("file", "the default file to write the JSON to (can be changed at runtime)").WithDefault(defaultOutfile),
+		cfg.NewParam[string]("outfile", "the default file to write the JSON to (can be changed at runtime)").WithDefault(defaultOutfile),
 		cfg.NewParam[int]("indent", "the number of spaces to use for the JSON indentation").WithDefault(0),
 		cfg.NewParam[string]("module-name", "the name of the module for dynamic file naming"),
 		options.OutputDir(),

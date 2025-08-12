@@ -3,9 +3,9 @@ package recon
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/docker"
 	"github.com/praetorian-inc/janus-framework/pkg/links/noseyparker"
 	"github.com/praetorian-inc/nebula/internal/registry"
+	"github.com/praetorian-inc/nebula/pkg/links/docker"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
@@ -16,7 +16,7 @@ var DockerDump = chain.NewModule(
 		"Extract the file contents of a Docker container and optionally scan for secrets using NoseyParker.",
 	).WithProperties(map[string]any{
 		"id":          "docker-dump",
-		"platform":    "universal", 
+		"platform":    "universal",
 		"opsec_level": "none",
 		"authors":     []string{"Praetorian"},
 	}),
@@ -31,12 +31,11 @@ var DockerDump = chain.NewModule(
 	docker.NewDockerExtractToFS,
 	// Convert to NoseyParker inputs and scan
 	docker.NewDockerExtractToNP,
-	chain.ConstructLinkWithConfigs(noseyparker.NewNoseyParkerScanner, 
+	chain.ConstructLinkWithConfigs(noseyparker.NewNoseyParkerScanner,
 		cfg.WithArg("continue_piping", true)),
 ).WithInputParam(
 	options.DockerImage(),
 ).WithConfigs(
-	cfg.WithArg("file", ""),
 	cfg.WithArg("docker-user", ""),
 	cfg.WithArg("docker-password", ""),
 	cfg.WithArg("extract", "true"),
@@ -45,7 +44,6 @@ var DockerDump = chain.NewModule(
 ).WithParams(
 	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
 ).WithOutputters(
-	outputters.NewRuntimeJSONOutputter,
 	outputters.NewNPFindingsConsoleOutputter,
 ).WithAutoRun()
 

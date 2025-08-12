@@ -11,6 +11,7 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus-framework/pkg/types"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
 
 type DockerSave struct {
@@ -26,7 +27,7 @@ func NewDockerSave(configs ...cfg.Config) chain.Link {
 
 func (dsl *DockerSave) Params() []cfg.Param {
 	return []cfg.Param{
-		cfg.NewParam[string]("output", "output directory to save images to"),
+		options.OutputDir(),
 	}
 }
 
