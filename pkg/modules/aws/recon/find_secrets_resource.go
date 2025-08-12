@@ -30,6 +30,7 @@ var AWSFindSecretsResource = chain.NewModule(
 ).WithLinks(
 	general.NewSingleResourcePreprocessor(),
 	aws.NewAWSFindSecrets,
+	aws.NewAWSResourceChainProcessor,
 	chain.ConstructLinkWithConfigs(noseyparker.NewNoseyParkerScanner, cfg.WithArg("continue_piping", true)),
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,

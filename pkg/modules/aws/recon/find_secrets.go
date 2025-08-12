@@ -32,6 +32,7 @@ var AWSFindSecrets = chain.NewModule(
 	general.NewResourceTypePreprocessor(&aws.AWSFindSecrets{}),
 	cloudcontrol.NewAWSCloudControl,
 	aws.NewAWSFindSecrets,
+	aws.NewAWSResourceChainProcessor,
 	chain.ConstructLinkWithConfigs(noseyparker.NewNoseyParkerScanner, cfg.WithArg("continue_piping", true)),
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
