@@ -1,15 +1,11 @@
 package aws
 
 import (
-	"fmt"
 	"log/slog"
-	"sync"
-	"time"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus-framework/pkg/links/noseyparker"
-	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudformation"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/ec2"
@@ -25,7 +21,6 @@ type AWSFindSecrets struct {
 	*base.AwsReconLink
 	clientMap   map[string]interface{} // map key is type-region
 	resourceMap map[string]func() chain.Chain
-	wg          sync.WaitGroup
 }
 
 func NewAWSFindSecrets(configs ...cfg.Config) chain.Link {
@@ -128,49 +123,19 @@ func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) e
 		return nil
 	}
 
-	fs.wg.Add(1)
-	go func() {
-		defer fs.wg.Done()
+	slog.Debug("Dispatching resource for processing", "resource_type", resource.TypeName, "resource_id", resource.Identifier)
 
-		slog.Debug("Starting resource processing", "resource_type", resource.TypeName, "resource_id", resource.Identifier)
+	// Create pair and send to processor
+	pair := &ResourceChainPair{
+		Resource:         resource,
+		ChainConstructor: constructor,
+		Args:             fs.Args(),
+	}
 
-		resourceChain := constructor()
-		resourceChain.WithConfigs(cfg.WithArgs(fs.Args()))
-
-		resourceChain.Send(resource)
-		resourceChain.Close()
-
-		done := make(chan bool, 1)
-		go func() {
-			defer func() {
-				done <- true
-			}()
-
-			for o, ok := chain.RecvAs[jtypes.NPInput](resourceChain); ok; o, ok = chain.RecvAs[jtypes.NPInput](resourceChain) {
-				slog.Debug("Received output from chain", "resource_type", resource.TypeName, "output_type", fmt.Sprintf("%T", o))
-				if err := fs.Send(o); err != nil {
-					slog.Error("Failed to send output", "resource_type", resource.TypeName, "error", err)
-					return
-				}
-			}
-		}()
-
-		select {
-		case <-done:
-			slog.Debug("Resource processing completed", "resource_type", resource.TypeName, "resource_id", resource.Identifier)
-		case <-time.After(120 * time.Second):
-			slog.Warn("Resource processing timed out after 120 seconds", "resource_type", resource.TypeName, "resource_id", resource.Identifier)
-		}
-
-		if err := resourceChain.Error(); err != nil {
-			slog.Error("Error processing resource for secrets", "resource", resource, "error", err)
-		}
-	}()
-
-	return nil
+	return fs.Send(pair)
 }
 
 func (fs *AWSFindSecrets) Complete() error {
-	fs.wg.Wait()
+	// No manual coordination needed - framework handles it
 	return nil
 }
