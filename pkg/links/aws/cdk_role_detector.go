@@ -37,7 +37,7 @@ func NewAwsCdkRoleDetector(configs ...cfg.Config) chain.Link {
 }
 
 func (l *AwsCdkRoleDetector) Params() []cfg.Param {
-	return append(l.AwsReconBaseLink.Params(), 
+	return append(options.AwsCommonReconOptions(), 
 		options.AwsCdkQualifiers(),
 	)
 }
