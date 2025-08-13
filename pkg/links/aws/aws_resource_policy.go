@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"slices"
 	"strings"
 
@@ -21,17 +22,62 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	iam "github.com/praetorian-inc/nebula/pkg/iam/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/orgpolicies"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
 type AwsResourcePolicyChecker struct {
 	*base.AwsReconLink
+	orgPolicies *orgpolicies.OrgPolicies
 }
 
 func NewAwsResourcePolicyChecker(configs ...cfg.Config) chain.Link {
 	r := &AwsResourcePolicyChecker{}
 	r.AwsReconLink = base.NewAwsReconLink(r, configs...)
 	return r
+}
+
+func (a *AwsResourcePolicyChecker) Params() []cfg.Param {
+	params := a.AwsReconLink.Params()
+	params = append(params, options.AwsOrgPoliciesFile())
+	return params
+}
+
+func (a *AwsResourcePolicyChecker) Initialize() error {
+	if err := a.AwsReconLink.Initialize(); err != nil {
+		return err
+	}
+
+	// Load org policies if file is provided
+	orgPoliciesFile, _ := cfg.As[string](a.Arg("org-policies"))
+	if orgPoliciesFile != "" {
+		slog.Debug("Loading organization policies", "file", orgPoliciesFile)
+		orgPolicies, err := loadOrgPoliciesFromFile(orgPoliciesFile)
+		if err != nil {
+			slog.Error("Failed to load org policies", "file", orgPoliciesFile, "error", err)
+			return fmt.Errorf("failed to load org policies from %s: %w", orgPoliciesFile, err)
+		}
+		a.orgPolicies = orgPolicies
+		slog.Info("Successfully loaded organization policies", "file", orgPoliciesFile, "scps", len(orgPolicies.SCPs), "rcps", len(orgPolicies.RCPs))
+	}
+
+	return nil
+}
+
+// loadOrgPoliciesFromFile loads organization policies from a JSON file
+func loadOrgPoliciesFromFile(filePath string) (*orgpolicies.OrgPolicies, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	var orgPolicies orgpolicies.OrgPolicies
+	if err := json.Unmarshal(data, &orgPolicies); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON: %w", err)
+	}
+
+	return &orgPolicies, nil
 }
 
 func (a *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescription) error {
@@ -86,8 +132,10 @@ func (a *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 		return nil
 	}
 
+	slog.Debug(fmt.Sprintf("policy for %s", resource.Arn.String()), "policy", policy)
+
 	// Check if the policy allows public access
-	res, err := analyzePolicy(resource.Arn.String(), policy)
+	res, err := a.analyzePolicy(resource.Arn.String(), policy, resource.AccountId, resource.TypeName)
 	if err != nil {
 		slog.Error("Failed to analyze policy", "resource", identifierStr, "error", err)
 		return err
@@ -119,28 +167,209 @@ func (a *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 	return nil
 }
 
-// analyzePolicy analyzes a policy to determine if it grants public access
-func analyzePolicy(resource string, policy *types.Policy) ([]*iam.EvaluationResult, error) {
-	results := []*iam.EvaluationResult{}
+// ConditionPermutation represents a condition key and its possible values
+type ConditionPermutation struct {
+	Key    string
+	Values []string // Include "" for missing/absent
+}
 
-	pd := &iam.PolicyData{
-		ResourcePolicies: map[string]*types.Policy{
+// ContextGenerator generates comprehensive context permutations for testing
+type ContextGenerator struct {
+	BasePrincipals []string
+	Conditions     []ConditionPermutation
+}
+
+// Bool helper function for creating *bool values  
+func Bool(b bool) *bool {
+	return &b
+}
+
+// GenerateAllPermutations creates all combinations of contexts with condition permutations
+func (cg *ContextGenerator) GenerateAllPermutations() []*iam.RequestContext {
+	contexts := []*iam.RequestContext{}
+	
+	// Add base principal contexts first (existing behavior)
+	for _, principal := range cg.BasePrincipals {
+		ctx := &iam.RequestContext{
+			PrincipalArn:      principal,
+			RequestParameters: make(map[string]string),
+		}
+		contexts = append(contexts, ctx)
+	}
+	
+	// Generate all condition combinations for wildcard principal
+	permutations := cg.generateConditionPermutations()
+	
+	for _, perm := range permutations {
+		ctx := &iam.RequestContext{
+			PrincipalArn:      "*", // Wildcard for public access testing
+			RequestParameters: make(map[string]string),
+		}
+		
+		cg.applyPermutation(ctx, perm)
+		contexts = append(contexts, ctx)
+	}
+	
+	return contexts
+}
+
+// generateConditionPermutations creates all combinations of condition values
+func (cg *ContextGenerator) generateConditionPermutations() []map[string]string {
+	if len(cg.Conditions) == 0 {
+		return []map[string]string{{}}
+	}
+	
+	// Calculate total permutations
+	totalPerms := 1
+	for _, condition := range cg.Conditions {
+		totalPerms *= len(condition.Values)
+	}
+	
+	permutations := make([]map[string]string, totalPerms)
+	
+	// Generate all combinations
+	for i := 0; i < totalPerms; i++ {
+		perm := make(map[string]string)
+		temp := i
+		
+		for _, condition := range cg.Conditions {
+			valueIndex := temp % len(condition.Values)
+			value := condition.Values[valueIndex]
+			if value != "" { // Only include non-empty values
+				perm[condition.Key] = value
+			}
+			temp /= len(condition.Values)
+		}
+		
+		permutations[i] = perm
+	}
+	
+	return permutations
+}
+
+// applyPermutation applies condition values to a RequestContext
+func (cg *ContextGenerator) applyPermutation(ctx *iam.RequestContext, perm map[string]string) {
+	for key, value := range perm {
+		switch key {
+		// Direct RequestContext fields
+		case "aws:SecureTransport":
+			if value == "true" {
+				ctx.SecureTransport = Bool(true)
+			} else if value == "false" {
+				ctx.SecureTransport = Bool(false)
+			}
+		case "aws:PrincipalType":
+			ctx.PrincipalType = value
+		case "aws:SourceAccount":
+			ctx.SourceAccount = value
+		case "aws:SourceVpc":
+			ctx.SourceVPC = value
+		case "aws:SourceArn":
+			ctx.SourceArn = value
+		case "aws:PrincipalOrgID":
+			ctx.PrincipalOrgID = value
+			
+		// RequestParameters (service-specific keys)
+		default:
+			ctx.RequestParameters[key] = value
+		}
+	}
+}
+
+// GetEvaluationContexts returns comprehensive RequestContexts for testing different access scenarios
+func GetEvaluationContexts(resourceType string) []*iam.RequestContext {
+	switch resourceType {
+	case "AWS::Lambda::Function":
+		generator := ContextGenerator{
+			BasePrincipals: []string{
+				"arn:aws:iam::111122223333:role/praetorian", // Generic cross-account
+				"apigateway.amazonaws.com",                   // API Gateway service
+				"lambda.amazonaws.com",                       // Lambda service
+			},
+			Conditions: []ConditionPermutation{
+				{"lambda:FunctionUrlAuthType", []string{"NONE", "AWS_IAM", ""}},
+				{"aws:SecureTransport", []string{"true", "false", ""}},
+				{"aws:PrincipalType", []string{"Anonymous", "AssumedRole", "User", "Service", ""}},
+				{"aws:SourceAccount", []string{"111122223333", ""}},
+			},
+		}
+		return generator.GenerateAllPermutations()
+		
+	case "AWS::S3::Bucket":
+		generator := ContextGenerator{
+			BasePrincipals: []string{
+				"arn:aws:iam::111122223333:role/praetorian", // Generic cross-account
+				"cloudfront.amazonaws.com",                   // CloudFront service  
+				"s3.amazonaws.com",                           // S3 service
+			},
+			Conditions: []ConditionPermutation{
+				{"aws:SecureTransport", []string{"true", "false", ""}},
+				{"aws:PrincipalType", []string{"Anonymous", "AssumedRole", "User", ""}},
+				{"s3:x-amz-server-side-encryption", []string{"AES256", "aws:kms", ""}},
+				{"aws:SourceAccount", []string{"111122223333", ""}},
+				{"aws:SourceVpc", []string{"vpc-12345678", ""}},
+			},
+		}
+		return generator.GenerateAllPermutations()
+		
+	case "AWS::SNS::Topic":
+		generator := ContextGenerator{
+			BasePrincipals: []string{
+				"arn:aws:iam::111122223333:role/praetorian",
+				"sns.amazonaws.com",
+			},
+			Conditions: []ConditionPermutation{
+				{"aws:SecureTransport", []string{"true", "false", ""}},
+				{"aws:PrincipalType", []string{"Anonymous", "AssumedRole", "User", ""}},
+				{"aws:SourceAccount", []string{"111122223333", ""}},
+			},
+		}
+		return generator.GenerateAllPermutations()
+		
+	case "AWS::SQS::Queue":
+		generator := ContextGenerator{
+			BasePrincipals: []string{
+				"arn:aws:iam::111122223333:role/praetorian",
+				"sqs.amazonaws.com",
+				"sns.amazonaws.com", // SNS can send to SQS
+			},
+			Conditions: []ConditionPermutation{
+				{"aws:SecureTransport", []string{"true", "false", ""}},
+				{"aws:PrincipalType", []string{"Anonymous", "AssumedRole", "User", ""}},
+				{"aws:SourceAccount", []string{"111122223333", ""}},
+				{"aws:SourceArn", []string{"arn:aws:sns:*:111122223333:*", ""}},
+			},
+		}
+		return generator.GenerateAllPermutations()
+		
+	default:
+		// Default fallback for unknown resource types
+		return []*iam.RequestContext{
+			{PrincipalArn: "arn:aws:iam::111122223333:role/praetorian"},
+		}
+	}
+}
+
+// evaluatePolicyWithContext evaluates a policy with a specific RequestContext (DRY helper)
+func (a *AwsResourcePolicyChecker) evaluatePolicyWithContext(reqCtx *iam.RequestContext, policy *types.Policy, resource string) ([]*iam.EvaluationResult, error) {
+	pd := iam.NewPolicyData(
+		nil,           // GAAD - not needed for resource policy analysis
+		a.orgPolicies, // Organization policies from loaded file
+		map[string]*types.Policy{
 			resource: policy,
 		},
-	}
+		nil, // Resources - not needed for this analysis
+	)
 
 	evaluator := iam.NewPolicyEvaluator(pd)
 
-	reqCtx := &iam.RequestContext{
-		// represents an arbitrary principal that is not the resource owner
-		PrincipalArn: "arn:aws:iam::111122223333:role/praetorian",
-	}
-	reqCtx.PopulateDefaultRequestConditionKeys(resource)
 	if policy.Statement == nil {
-		return results, errors.New("policy statement is nil")
+		return nil, errors.New("policy statement is nil")
 	}
 
+	results := []*iam.EvaluationResult{}
 	actions := iam.ExtractActions(policy.Statement)
+	
 	for _, action := range actions {
 		er := &iam.EvaluationRequest{
 			Action:             action,
@@ -151,15 +380,39 @@ func analyzePolicy(resource string, policy *types.Policy) ([]*iam.EvaluationResu
 
 		res, err := evaluator.Evaluate(er)
 		if err != nil {
-			return results, err
+			return nil, err
 		}
 
 		slog.Debug("Policy evaluation result", "principal", reqCtx.PrincipalArn, "resource", resource, "action", action, "allowed", res.Allowed, "EvaluationResult", res)
 		results = append(results, res)
-
 	}
 
 	return results, nil
+}
+
+// analyzePolicy analyzes a policy to determine if it grants public access
+func (a *AwsResourcePolicyChecker) analyzePolicy(resource string, policy *types.Policy, accountId string, resourceType string) ([]*iam.EvaluationResult, error) {
+	allResults := []*iam.EvaluationResult{}
+	
+	contexts := GetEvaluationContexts(resourceType)
+	
+	for _, reqCtx := range contexts {
+		// Apply org policies context if available
+		if a.orgPolicies != nil && accountId != "" {
+			reqCtx.ResourceAccount = accountId
+			slog.Debug("Enhanced policy analysis with org policies", "resource", resource, "account", accountId, "principal", reqCtx.PrincipalArn, "org_policies_available", true)
+		}
+		reqCtx.PopulateDefaultRequestConditionKeys(resource)
+		
+		// Evaluate policy with this context
+		results, err := a.evaluatePolicyWithContext(reqCtx, policy, resource)
+		if err != nil {
+			return nil, err
+		}
+		allResults = append(allResults, results...)
+	}
+
+	return allResults, nil
 }
 
 func getAllowedResults(results []*iam.EvaluationResult) []*iam.EvaluationResult {
@@ -181,7 +434,10 @@ func getAllowedActions(results []*iam.EvaluationResult) []string {
 	allowed := getAllowedResults(results)
 	actions := []string{}
 	for _, res := range allowed {
-		actions = append(actions, string(res.Action))
+		action := string(res.Action)
+		if !slices.Contains(actions, action) {
+			actions = append(actions, action)
+		}
 	}
 	return actions
 }
@@ -291,10 +547,37 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 			Bucket: aws.String(bucketName),
 		})
 		if err != nil {
-			if strings.Contains(err.Error(), "NoSuchBucketPolicy") {
+			// Handle region redirect for S3 buckets
+			if strings.Contains(err.Error(), "PermanentRedirect") {
+				// Try to get bucket location first
+				locationResp, locErr := client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
+					Bucket: aws.String(bucketName),
+				})
+				if locErr == nil {
+					// Handle empty LocationConstraint (means us-east-1)
+					region := "us-east-1"
+					if locationResp.LocationConstraint != "" {
+						region = string(locationResp.LocationConstraint)
+					}
+					
+					// Create new config with correct region
+					correctRegionCfg := cfg.Copy()
+					correctRegionCfg.Region = region
+					regionalClient := s3.NewFromConfig(correctRegionCfg)
+					
+					// Retry with correct region
+					resp, err = regionalClient.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
+						Bucket: aws.String(bucketName),
+					})
+				}
+			}
+			
+			if err != nil {
+				if strings.Contains(err.Error(), "NoSuchBucketPolicy") {
+					return nil, nil
+				}
 				return nil, err
 			}
-			return nil, err
 		}
 		if resp.Policy == nil {
 			return nil, nil

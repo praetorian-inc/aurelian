@@ -9,11 +9,8 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudformation"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/ec2"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/ecr"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/lambda"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/ssm"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/stepfunctions"
-	"github.com/praetorian-inc/nebula/pkg/links/docker"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -66,25 +63,25 @@ func (fs *AWSFindSecrets) ResourceMap() map[string]func() chain.Chain {
 		)
 	}
 
-	resourceMap["AWS::ECR::Repository"] = func() chain.Chain {
-		return chain.NewChain(
-			ecr.NewAWSECRListImages(),
-			ecr.NewAWSECRLogin(),
-			docker.NewDockerPull(),
-			docker.NewDockerSave(),
-			noseyparker.NewConvertToNPInput(),
-		)
-	}
+	// resourceMap["AWS::ECR::Repository"] = func() chain.Chain {
+	// 	return chain.NewChain(
+	// 		ecr.NewAWSECRListImages(),
+	// 		ecr.NewAWSECRLogin(),
+	// 		docker.NewDockerPull(),
+	// 		docker.NewDockerSave(),
+	// 		noseyparker.NewConvertToNPInput(),
+	// 	)
+	// }
 
-	resourceMap["AWS::ECR::PublicRepository"] = func() chain.Chain {
-		return chain.NewChain(
-			ecr.NewAWSECRListPublicImages(),
-			ecr.NewAWSECRLoginPublic(),
-			docker.NewDockerPull(),
-			docker.NewDockerSave(),
-			noseyparker.NewConvertToNPInput(),
-		)
-	}
+	// resourceMap["AWS::ECR::PublicRepository"] = func() chain.Chain {
+	// 	return chain.NewChain(
+	// 		ecr.NewAWSECRListPublicImages(),
+	// 		ecr.NewAWSECRLoginPublic(),
+	// 		docker.NewDockerPull(),
+	// 		docker.NewDockerSave(),
+	// 		noseyparker.NewConvertToNPInput(),
+	// 	)
+	// }
 
 	resourceMap["AWS::ECS::TaskDefinition"] = func() chain.Chain {
 		return chain.NewChain(
@@ -98,12 +95,12 @@ func (fs *AWSFindSecrets) ResourceMap() map[string]func() chain.Chain {
 		)
 	}
 
-	resourceMap["AWS::SSM::Parameter"] = func() chain.Chain {
-		return chain.NewChain(
-			ssm.NewAWSListSSMParameters(),
-			noseyparker.NewConvertToNPInput(),
-		)
-	}
+	// resourceMap["AWS::SSM::Parameter"] = func() chain.Chain {
+	// 	return chain.NewChain(
+	// 		ssm.NewAWSListSSMParameters(),
+	// 		noseyparker.NewConvertToNPInput(),
+	// 	)
+	// }
 
 	resourceMap["AWS::StepFunctions::StateMachine"] = func() chain.Chain {
 		return chain.NewChain(

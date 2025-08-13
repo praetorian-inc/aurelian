@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
@@ -39,6 +40,14 @@ func (c *CloudControlGet) Process(resource *types.EnrichedResourceDescription) e
 
 	output, err := client.GetResource(context.TODO(), input)
 	if err != nil {
+		// Handle ResourceNotFoundException gracefully - resource may have been deleted between discovery and processing
+		if strings.Contains(err.Error(), "ResourceNotFoundException") || strings.Contains(err.Error(), "NotFound") {
+			slog.Debug("Resource not found, skipping", 
+				"resource_id", resource.Identifier, 
+				"resource_type", resource.TypeName,
+				"arn", resource.Arn.String())
+			return nil
+		}
 		slog.Error("Failed to get resource", "arn", resource.Arn.String(), "error", err)
 		return err
 	}

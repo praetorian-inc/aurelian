@@ -132,7 +132,8 @@ func LogLevel() cfg.Param {
 }
 
 func AwsCacheLogLevel() cfg.Param {
-	return cfg.NewParam[string]("aws-cache-log-level", "Log level for AWS cache operations (debug, info, warn, error, none). Overrides global --log-level for cache logging.").
+	return cfg.NewParam[string]("aws-cache-log-level", "Log level for AWS cache operations (debug, info, warn, error, none). Defaults to 'none' for independent operation.").
+		WithDefault("none").
 		WithRegex(regexp.MustCompile("^(none|debug|info|warn|error)$"))
 }
 

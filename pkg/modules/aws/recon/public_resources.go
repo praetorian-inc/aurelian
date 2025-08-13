@@ -30,6 +30,7 @@ var AWSPublicResources = chain.NewModule(
 	general.NewResourceTypePreprocessor(&aws.AwsPublicResources{}),
 	cloudcontrol.NewAWSCloudControl,
 	aws.NewAwsPublicResources,
+	aws.NewAWSPublicResourcesProcessor,
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
 	outputters.NewERDConsoleOutputter,
@@ -37,6 +38,8 @@ var AWSPublicResources = chain.NewModule(
 	options.AwsProfile(),
 ).WithParams(
 	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+	options.AwsProfile(),
+	options.AwsOrgPoliciesFile(),
 ).WithConfigs(
 	cfg.WithArg("module-name", "public-resources"),
 )

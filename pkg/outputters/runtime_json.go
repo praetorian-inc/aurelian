@@ -9,8 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
@@ -185,13 +187,13 @@ func (j *RuntimeJSONOutputter) generateContextualFilename() string {
 	}
 	
 	// Try to infer platform from available parameters
-	// AWS parameters
-	if profile, err := cfg.As[string](j.Arg("profile")); err == nil && profile != "" {
-		slog.Debug("Found AWS profile, generating AWS filename", "profile", profile, "moduleName", moduleName)
-		// This is an AWS command - generate contextual AWS filename
+	// AWS parameters - check if profile parameter exists (even if empty)
+	if _, err := cfg.As[string](j.Arg("profile")); err == nil {
+		// Profile parameter exists (might be empty for env vars), this is an AWS command
+		slog.Debug("Found AWS profile parameter, generating AWS filename", "moduleName", moduleName)
 		return j.generateAWSFilename(moduleName)
 	} else {
-		slog.Debug("AWS profile not found", "error", err)
+		slog.Debug("AWS profile parameter not found", "error", err)
 	}
 	
 	// Azure parameters  
@@ -219,15 +221,53 @@ func (j *RuntimeJSONOutputter) generateContextualFilename() string {
 
 // generateAWSFilename creates AWS-specific filenames in format: {module-name}-{account}.json
 func (j *RuntimeJSONOutputter) generateAWSFilename(moduleName string) string {
-	// Get profile name - this should always be available for AWS modules
-	if profile, err := cfg.As[string](j.Arg("profile")); err == nil && profile != "" {
-		// Use profile name as account identifier for now
-		// TODO: In the future, this could be enhanced to get actual account ID
+	// Get profile name - might be empty when using environment variables
+	profile, err := cfg.As[string](j.Arg("profile"))
+	if err != nil {
+		profile = "" // No profile specified
+	}
+	
+	// Use consistent cache key logic - empty profile uses "default" as cache key
+	cacheKey := profile
+	if cacheKey == "" {
+		cacheKey = "default"
+	}
+	
+	// Always try to get account ID from the cached authentication data first
+	if accountID := j.getAWSAccountFromCache(cacheKey); accountID != "" {
+		slog.Debug("using account ID for filename", "accountID", accountID, "profile", profile, "cacheKey", cacheKey)
+		return fmt.Sprintf("%s-%s.json", moduleName, accountID)
+	}
+	
+	slog.Debug("account ID not found in cache", "profile", profile, "cacheKey", cacheKey)
+	
+	// Only use profile name if it's explicitly set (not empty) 
+	if profile != "" {
 		return fmt.Sprintf("%s-%s.json", moduleName, profile)
 	}
 	
-	// Fallback to module name only
+	// Fallback to module name only when no profile and no account ID
+	slog.Debug("using module name only for filename")
 	return fmt.Sprintf("%s.json", moduleName)
+}
+
+// getAWSAccountFromCache retrieves the AWS account ID from the cached authentication data
+func (j *RuntimeJSONOutputter) getAWSAccountFromCache(profile string) string {
+	// Access the same ProfileIdentity cache used during authentication
+	slog.Debug("looking up profile in cache", "profile", profile)
+	if value, ok := helpers.ProfileIdentity.Load(profile); ok {
+		slog.Debug("found profile in cache", "profile", profile)
+		if principal, ok := value.(sts.GetCallerIdentityOutput); ok && principal.Account != nil {
+			accountID := *principal.Account
+			slog.Debug("extracted account ID from cache", "accountID", accountID, "profile", profile)
+			return accountID
+		} else {
+			slog.Debug("failed to extract account ID from cached principal", "profile", profile)
+		}
+	} else {
+		slog.Debug("profile not found in cache", "profile", profile)
+	}
+	return ""
 }
 
 // generateAzureFilename creates Azure-specific filenames in format: {module-name}-{subscription}.json  
@@ -264,20 +304,6 @@ func (j *RuntimeJSONOutputter) generateGCPFilename(moduleName string) string {
 	return fmt.Sprintf("%s.json", moduleName)
 }
 
-// getAWSAccountContext tries to extract AWS account context from various parameters
-func (j *RuntimeJSONOutputter) getAWSAccountContext() (string, error) {
-	// Try account-id parameter (direct)
-	if accountIds, err := cfg.As[[]string](j.Arg("account-id")); err == nil && len(accountIds) > 0 {
-		accountId := accountIds[0]
-		if accountId != "" && accountId != "all" {
-			return accountId, nil
-		}
-	}
-	
-	// Could add logic here to derive account ID from profile or other AWS context
-	// For now, return empty to use module name only
-	return "", fmt.Errorf("no AWS account context available")
-}
 
 // enhanceFilenameWithPlatformInfo adds platform-specific identifiers to the filename before the extension
 // Examples: "find-secrets.json" -> "find-secrets-terraform.json", "report.json" -> "report-my-subscription.json"
@@ -286,9 +312,23 @@ func (j *RuntimeJSONOutputter) enhanceFilenameWithPlatformInfo(filename string) 
 	ext := filepath.Ext(filename)
 	baseName := strings.TrimSuffix(filename, ext)
 	
-	// Check for AWS profile (should be available from module's WithInputParam)
-	if profile, err := cfg.As[string](j.Arg("profile")); err == nil && profile != "" {
-		return fmt.Sprintf("%s-%s%s", baseName, profile, ext)
+	// Check for AWS profile parameter (should be available from module's WithInputParam)
+	if profile, err := cfg.As[string](j.Arg("profile")); err == nil {
+		// Use consistent cache key logic
+		cacheKey := profile
+		if cacheKey == "" {
+			cacheKey = "default"
+		}
+		
+		// Try to get account ID from the cached authentication data
+		if accountID := j.getAWSAccountFromCache(cacheKey); accountID != "" {
+			return fmt.Sprintf("%s-%s%s", baseName, accountID, ext)
+		}
+		
+		// Fallback to profile name if explicitly set and account ID not available
+		if profile != "" {
+			return fmt.Sprintf("%s-%s%s", baseName, profile, ext)
+		}
 	}
 	
 	// Check for Azure subscription (it's a []string, so get the first one)

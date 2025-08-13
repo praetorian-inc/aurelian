@@ -114,9 +114,14 @@ func GetAWSCfg(region string, profile string, opts []*types.Option, optFns ...fu
 				aws.LogResponseEventMessage),
 		config.WithLogger(logs.AwsCliLogger()),
 		config.WithRegion(region),
-		config.WithSharedConfigProfile(profile),
 		config.WithRetryMode(aws.RetryModeAdaptive),
 		// config.WithAPIOptions(cacheFunc),
+	}
+
+	// Only override profile if user explicitly specified one
+	// This allows the standard AWS credential chain to work (env vars -> default profile -> etc.)
+	if profile != "" {
+		options = append(options, config.WithSharedConfigProfile(profile))
 	}
 
 	options = append(options, optFns...)
@@ -128,18 +133,24 @@ func GetAWSCfg(region string, profile string, opts []*types.Option, optFns ...fu
 	if err != nil {
 		return aws.Config{}, err
 	}
+	// Use a consistent cache key - if no profile specified, use "default" as the key
+	cacheKey := profile
+	if cacheKey == "" {
+		cacheKey = "default"
+	}
+	
 	var principal sts.GetCallerIdentityOutput
-	if value, ok := ProfileIdentity.Load(profile); ok {
+	if value, ok := ProfileIdentity.Load(cacheKey); ok {
 		principal = value.(sts.GetCallerIdentityOutput)
-		slog.Debug("Loaded Profile ARN from Cached Map", "profile", profile, "ARN", *principal.Arn)
+		slog.Debug("Loaded Profile ARN from Cached Map", "cacheKey", cacheKey, "ARN", *principal.Arn)
 	} else {
 		principal, err = GetCallerIdentity(cfg)
 		atomic.AddInt64(&cacheBypassedCount, 1)
 		if err != nil {
 			return aws.Config{}, err
 		}
-		ProfileIdentity.Store(profile, principal)
-		slog.Debug("Called STS GetCallerIdentity for", "profile", profile, "ARN", *principal.Arn)
+		ProfileIdentity.Store(cacheKey, principal)
+		slog.Debug("Called STS GetCallerIdentity for", "cacheKey", cacheKey, "ARN", *principal.Arn)
 	}
 
 	CachePrep := GetCachePrepWithIdentity(principal, opts)
