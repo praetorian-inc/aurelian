@@ -32,10 +32,11 @@ var DockerExtractOpt = types.Option{
 
 // Janus framework parameters
 func DockerImage() cfg.Param {
-	return cfg.NewParam[string]("image", "Docker image name to process").
+	return cfg.NewParam[string]("image",
+		"Docker image name to process. To download an image from a custom registry, prepend the\n"+
+			"image name with the registry URL. Example: ghcr.io/oj/gobuster").
 		WithShortcode("i")
 }
-
 
 func DockerUser() cfg.Param {
 	return cfg.NewParam[string]("docker-user", "Docker registry username")
