@@ -545,6 +545,152 @@ func TestEvaluateConditions(t *testing.T) {
 		},
 	}
 
+	// Add Lambda Function URL and S3 public access condition tests
+	lambdaS3TestCases := []struct {
+		name       string
+		conditions *types.Condition
+		context    *RequestContext
+		expected   *ConditionEval
+	}{
+		{
+			name: "Lambda FunctionUrlAuthType NONE with key present - should match",
+			conditions: &types.Condition{
+				"StringEquals": {
+					"lambda:FunctionUrlAuthType": {"NONE"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					"lambda:FunctionUrlAuthType": "NONE",
+				},
+			},
+			expected: &ConditionEval{
+				Result: ConditionMatched,
+			},
+		},
+		{
+			name: "Lambda FunctionUrlAuthType NONE with key missing - should fail",
+			conditions: &types.Condition{
+				"StringEquals": {
+					"lambda:FunctionUrlAuthType": {"NONE"},
+				},
+			},
+			context: &RequestContext{}, // Missing the key
+			expected: &ConditionEval{
+				Result:      ConditionFailed,
+				MissingKeys: []string{"lambda:FunctionUrlAuthType"},
+			},
+		},
+		{
+			name: "Lambda FunctionUrlAuthType AWS_IAM with NONE value - should fail match",
+			conditions: &types.Condition{
+				"StringEquals": {
+					"lambda:FunctionUrlAuthType": {"AWS_IAM"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					"lambda:FunctionUrlAuthType": "NONE",
+				},
+			},
+			expected: &ConditionEval{
+				Result: ConditionFailed,
+			},
+		},
+		{
+			name: "S3 SecureTransport true with key present - should match",
+			conditions: &types.Condition{
+				"Bool": {
+					"aws:SecureTransport": {"true"},
+				},
+			},
+			context: &RequestContext{
+				SecureTransport: Bool(true),
+			},
+			expected: &ConditionEval{
+				Result: ConditionMatched,
+			},
+		},
+		{
+			name: "S3 SecureTransport true with key missing - should fail",
+			conditions: &types.Condition{
+				"Bool": {
+					"aws:SecureTransport": {"true"},
+				},
+			},
+			context: &RequestContext{}, // Missing SecureTransport
+			expected: &ConditionEval{
+				Result:      ConditionFailed,
+				MissingKeys: []string{"aws:SecureTransport"},
+			},
+		},
+		{
+			name: "S3 PrincipalType not Anonymous with AssumedRole - should match",
+			conditions: &types.Condition{
+				"StringNotEquals": {
+					"aws:PrincipalType": {"Anonymous"},
+				},
+			},
+			context: &RequestContext{
+				PrincipalType: "AssumedRole",
+			},
+			expected: &ConditionEval{
+				Result: ConditionMatched,
+			},
+		},
+		{
+			name: "S3 PrincipalType not Anonymous with Anonymous - should fail match",
+			conditions: &types.Condition{
+				"StringNotEquals": {
+					"aws:PrincipalType": {"Anonymous"},
+				},
+			},
+			context: &RequestContext{
+				PrincipalType: "Anonymous",
+			},
+			expected: &ConditionEval{
+				Result: ConditionFailed,
+			},
+		},
+		{
+			name: "Complex S3 public policy - SecureTransport true AND PrincipalType not Anonymous",
+			conditions: &types.Condition{
+				"Bool": {
+					"aws:SecureTransport": {"true"},
+				},
+				"StringNotEquals": {
+					"aws:PrincipalType": {"Anonymous"},
+				},
+			},
+			context: &RequestContext{
+				SecureTransport: Bool(true),
+				PrincipalType:   "AssumedRole",
+			},
+			expected: &ConditionEval{
+				Result: ConditionMatched,
+			},
+		},
+		{
+			name: "Complex S3 public policy - SecureTransport missing, PrincipalType present",
+			conditions: &types.Condition{
+				"Bool": {
+					"aws:SecureTransport": {"true"},
+				},
+				"StringNotEquals": {
+					"aws:PrincipalType": {"Anonymous"},
+				},
+			},
+			context: &RequestContext{
+				PrincipalType: "AssumedRole", // Only one condition satisfied
+			},
+			expected: &ConditionEval{
+				Result:      ConditionFailed,
+				MissingKeys: []string{"aws:SecureTransport"},
+			},
+		},
+	}
+	testCases = append(testCases, lambdaS3TestCases...)
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			//tc.context.PopulateDefaultRequestConditionKeys("arn:aws:iam::123456789012:role/test-role")
