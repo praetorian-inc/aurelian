@@ -19,3 +19,4 @@ out.json
 .idea/workspace.xml
 debug.log*
 *.json
+docker-images
