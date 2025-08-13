@@ -3,9 +3,11 @@ package aws
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
@@ -33,7 +35,7 @@ func NewAwsCdkQualifierDiscovery(configs ...cfg.Config) chain.Link {
 }
 
 func (l *AwsCdkQualifierDiscovery) Params() []cfg.Param {
-	return append(l.AwsReconBaseLink.Params(), 
+	return append(options.AwsCommonReconOptions(), 
 		options.AwsCdkQualifiers(),
 	)
 }
@@ -73,22 +75,36 @@ func (l *AwsCdkQualifierDiscovery) Process(input any) error {
 
 	l.Logger.Info("discovering CDK qualifiers", "account_id", accountID, "manual_qualifiers", manualQualifiers)
 
-	// Discover additional qualifiers from SSM parameters
+	// Discover additional qualifiers using multiple methods
 	var allQualifiers []string
 	allQualifiers = append(allQualifiers, manualQualifiers...)
 
 	for _, region := range regions {
-		discoveredQualifiers, err := l.discoverQualifiersInRegion(region)
-		if err != nil {
-			l.Logger.Debug("failed to discover qualifiers in region", "region", region, "error", err)
-			continue
-		}
-
-		// Add newly discovered qualifiers
-		for _, qualifier := range discoveredQualifiers {
-			if !l.contains(allQualifiers, qualifier) {
-				allQualifiers = append(allQualifiers, qualifier)
-				l.Logger.Info("discovered CDK qualifier", "qualifier", qualifier, "region", region)
+		// Method 1: Try SSM parameters first (more reliable but requires permissions)
+		ssmQualifiers, ssmErr := l.discoverQualifiersFromSSM(region)
+		if ssmErr == nil && len(ssmQualifiers) > 0 {
+			l.Logger.Info("using SSM-based qualifier discovery", "region", region, "qualifiers_found", len(ssmQualifiers))
+			for _, qualifier := range ssmQualifiers {
+				if !l.contains(allQualifiers, qualifier) {
+					allQualifiers = append(allQualifiers, qualifier)
+					l.Logger.Info("discovered CDK qualifier via SSM", "qualifier", qualifier, "region", region)
+				}
+			}
+		} else {
+			l.Logger.Debug("SSM qualifier discovery failed, trying IAM fallback", "region", region, "error", ssmErr)
+			
+			// Method 2: Fallback to IAM role enumeration (more widely accessible)
+			iamQualifiers, iamErr := l.discoverQualifiersFromIAMRoles(region, accountID)
+			if iamErr == nil && len(iamQualifiers) > 0 {
+				l.Logger.Info("using IAM role-based qualifier discovery", "region", region, "qualifiers_found", len(iamQualifiers))
+				for _, qualifier := range iamQualifiers {
+					if !l.contains(allQualifiers, qualifier) {
+						allQualifiers = append(allQualifiers, qualifier)
+						l.Logger.Info("discovered CDK qualifier via IAM roles", "qualifier", qualifier, "region", region)
+					}
+				}
+			} else {
+				l.Logger.Debug("both SSM and IAM qualifier discovery failed", "region", region, "ssm_error", ssmErr, "iam_error", iamErr)
 			}
 		}
 	}
@@ -128,7 +144,7 @@ func getCurrentAccountIDHelper(ctx context.Context, awsConfig aws.Config) (strin
 	return *result.Account, nil
 }
 
-func (l *AwsCdkQualifierDiscovery) discoverQualifiersInRegion(region string) ([]string, error) {
+func (l *AwsCdkQualifierDiscovery) discoverQualifiersFromSSM(region string) ([]string, error) {
 	awsConfig, err := l.GetConfigWithRuntimeArgs(region)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AWS config for region %s: %w", region, err)
@@ -173,6 +189,63 @@ func (l *AwsCdkQualifierDiscovery) discoverQualifiersInRegion(region string) ([]
 		}
 	}
 
+	return qualifiers, nil
+}
+
+// discoverQualifiersFromIAMRoles discovers CDK qualifiers by listing IAM roles and extracting qualifiers from role names
+// This is a fallback method when SSM permissions are not available
+// CDK roles follow pattern: cdk-{qualifier}-{role-type}-{account-id}-{region}
+func (l *AwsCdkQualifierDiscovery) discoverQualifiersFromIAMRoles(region, accountID string) ([]string, error) {
+	awsConfig, err := l.GetConfigWithRuntimeArgs(region)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get AWS config for region %s: %w", region, err)
+	}
+
+	iamClient := iam.NewFromConfig(awsConfig)
+	
+	l.Logger.Debug("scanning IAM roles for CDK qualifiers", "region", region, "account_id", accountID)
+
+	// Compile regex for CDK role patterns
+	// Pattern: cdk-{qualifier}-{role-type}-{account-id}-{region}
+	cdkRolePattern := regexp.MustCompile(fmt.Sprintf(`^cdk-([a-z0-9]+)-(?:file-publishing-role|cfn-exec-role|image-publishing-role|lookup-role|deploy-role)-%s-%s$`, accountID, region))
+	
+	var qualifiers []string
+	var marker *string
+
+	for {
+		listInput := &iam.ListRolesInput{
+			MaxItems: awsInt32Ptr(1000), // AWS maximum
+			Marker:   marker,
+		}
+
+		result, err := iamClient.ListRoles(l.Context(), listInput)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list IAM roles in region %s: %w", region, err)
+		}
+
+		// Extract qualifiers from CDK role names
+		for _, role := range result.Roles {
+			if role.RoleName != nil {
+				matches := cdkRolePattern.FindStringSubmatch(*role.RoleName)
+				if len(matches) == 2 { // Full match + qualifier capture group
+					qualifier := matches[1]
+					if !l.contains(qualifiers, qualifier) {
+						qualifiers = append(qualifiers, qualifier)
+						l.Logger.Debug("found CDK qualifier from IAM role", "qualifier", qualifier, "role_name", *role.RoleName)
+					}
+				}
+			}
+		}
+
+		// Check if there are more results
+		if result.IsTruncated {
+			marker = result.Marker
+		} else {
+			break
+		}
+	}
+
+	l.Logger.Info("IAM role-based qualifier discovery complete", "region", region, "qualifiers_found", len(qualifiers))
 	return qualifiers, nil
 }
 
