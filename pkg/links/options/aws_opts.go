@@ -332,3 +332,9 @@ func AwsFederationName() cfg.Param {
 	return cfg.NewParam[string]("federation-name", "Name for federation token").
 		WithDefault("nebula-federation")
 }
+
+func AwsCdkQualifiers() cfg.Param {
+	return cfg.NewParam[[]string]("cdk-qualifiers", "CDK bootstrap qualifiers to check").
+		WithDefault([]string{"hnb659fds"}).
+		WithShortcode("q")
+}
