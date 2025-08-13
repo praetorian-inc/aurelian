@@ -140,6 +140,14 @@ func (o *ERDConsoleOutputter) extractActions(props map[string]any) []string {
 	return nil
 }
 
+// needsManualTriage checks if the NeedsManualTriage property is set to true
+func (o *ERDConsoleOutputter) needsManualTriage(props map[string]any) bool {
+	if needsTriage, ok := props["NeedsManualTriage"].(bool); ok {
+		return needsTriage
+	}
+	return false
+}
+
 // Output prints an item to the console, assuming it's a pointer to EnrichedResourceDescription
 func (o *ERDConsoleOutputter) Output(v any) error {
 	erd, ok := v.(*types.EnrichedResourceDescription)
@@ -159,10 +167,13 @@ func (o *ERDConsoleOutputter) Output(v any) error {
 		return nil
 	}
 
+	// Check if manual triage is needed
+	needsTriage := o.needsManualTriage(propsMap)
+
 	// Try type-specific extractor first
 	if extractor, ok := o.extractors[erd.TypeName]; ok {
 		if publicIp, actions, success := extractor(propsMap); success {
-			o.outputResource(erd.Arn.String(), publicIp, actions)
+			o.outputResource(erd.Arn.String(), publicIp, actions, needsTriage)
 			return nil
 		}
 	}
@@ -170,24 +181,33 @@ func (o *ERDConsoleOutputter) Output(v any) error {
 	// Extract actions - this ensures we don't lose Actions output for other types
 	actions := o.extractActions(propsMap)
 	if len(actions) > 0 {
-		o.outputResource(erd.Arn.String(), "", actions)
+		o.outputResource(erd.Arn.String(), "", actions, needsTriage)
 		return nil
 	}
 
 	// No special formatting, just output the ARN
-	message.Success("%s", erd.Arn.String())
+	arnOutput := erd.Arn.String()
+	if needsTriage {
+		arnOutput += " (Requires Triage)"
+	}
+	message.Success("%s", arnOutput)
 	return nil
 }
 
 // outputResource handles the formatting of the resource output
-func (o *ERDConsoleOutputter) outputResource(arn string, publicIp string, actions []string) {
+func (o *ERDConsoleOutputter) outputResource(arn string, publicIp string, actions []string, needsTriage bool) {
+	arnOutput := arn
+	if needsTriage {
+		arnOutput += " (Requires Triage)"
+	}
+
 	if len(actions) > 0 {
 		actionsOut := strings.Join(actions, "\n    ")
-		message.Success("%s\n    %s", arn, actionsOut)
+		message.Success("%s\n    %s", arnOutput, actionsOut)
 	} else if publicIp != "" {
-		message.Success("%s\n    Public IP: %s", arn, publicIp)
+		message.Success("%s\n    Public IP: %s", arnOutput, publicIp)
 	} else {
-		message.Success("%s", arn)
+		message.Success("%s", arnOutput)
 	}
 }
 
