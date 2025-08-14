@@ -3,8 +3,10 @@ package aws
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
@@ -18,6 +20,7 @@ type CDKBootstrapInfo struct {
 	Qualifier string `json:"qualifier"`
 	Version   int    `json:"version"`
 	HasVersion bool  `json:"has_version"`
+	AccessDenied bool `json:"access_denied"` // True if we got permission denied, not missing parameter
 }
 
 type AwsCdkBootstrapChecker struct {
@@ -82,10 +85,20 @@ func (l *AwsCdkBootstrapChecker) checkBootstrapVersion(ssmClient *ssm.Client, ac
 		Region:    region,
 		Qualifier: qualifier,
 		HasVersion: false,
+		AccessDenied: false,
 	}
 	
 	if err != nil {
-		l.Logger.Debug("failed to get CDK bootstrap version parameter", "parameter", parameterName, "error", err)
+		// Check if this is a permission error vs parameter not found
+		if isAccessDeniedError(err) {
+			l.Logger.Info("SSM parameter access denied - cannot determine bootstrap status", "parameter", parameterName, "error", err)
+			bootstrapInfo.AccessDenied = true
+		} else if isParameterNotFoundError(err) {
+			l.Logger.Debug("CDK bootstrap parameter not found", "parameter", parameterName)
+			// HasVersion remains false for truly missing parameters
+		} else {
+			l.Logger.Debug("failed to get CDK bootstrap version parameter", "parameter", parameterName, "error", err)
+		}
 		return bootstrapInfo
 	}
 	
@@ -103,7 +116,13 @@ func (l *AwsCdkBootstrapChecker) checkBootstrapVersion(ssmClient *ssm.Client, ac
 }
 
 func (l *AwsCdkBootstrapChecker) generateBootstrapVersionRisk(cdkRole CDKRoleInfo, bootstrapInfo CDKBootstrapInfo) *model.Risk {
-	// Only generate risk if version is too old (< 21) or missing
+	// Don't generate false positives for permission errors
+	if bootstrapInfo.AccessDenied {
+		l.Logger.Info("skipping bootstrap risk due to SSM access denied", "qualifier", cdkRole.Qualifier, "region", cdkRole.Region)
+		return nil
+	}
+	
+	// Only generate risk if version is too old (< 21) or truly missing
 	if bootstrapInfo.HasVersion && bootstrapInfo.Version >= 21 {
 		return nil // Version 21+ has the security fixes
 	}
@@ -157,4 +176,29 @@ func (l *AwsCdkBootstrapChecker) generateBootstrapVersionRisk(cdkRole CDKRoleInf
 	risk.Definition(riskDef)
 	
 	return &risk
+}
+
+// isAccessDeniedError checks if the error is due to access denied (permission issue)
+func isAccessDeniedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	
+	errorStr := err.Error()
+	return strings.Contains(errorStr, "AccessDenied") || 
+		   strings.Contains(errorStr, "access denied") ||
+		   strings.Contains(errorStr, "not authorized")
+}
+
+// isParameterNotFoundError checks if the error is due to parameter not existing
+func isParameterNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	
+	// Check for AWS SSM specific parameter not found error
+	var paramNotFound *types.ParameterNotFound
+	return strings.Contains(err.Error(), "ParameterNotFound") || 
+		   strings.Contains(err.Error(), "parameter not found") ||
+		   err == paramNotFound // Type assertion for AWS SDK error
 }

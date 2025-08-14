@@ -52,13 +52,23 @@ func (a *AwsReconBaseLink) Initialize() error {
 	return nil
 }
 
+func (a *AwsReconBaseLink) GetOpsecLevel() string {
+	if val := a.Arg("opsec_level"); val != nil {
+		if level, ok := val.(string); ok {
+			return level
+		}
+	}
+	return "none"
+}
+
 func (a *AwsReconBaseLink) GetConfig(region string, opts []*types.Option) (aws.Config, error) {
 	optFns := []func(*config.LoadOptions) error{}
 	if a.ProfileDir != "" {
 		optFns = append(optFns, config.WithSharedConfigFiles([]string{filepath.Join(a.ProfileDir, "config")}))
 		optFns = append(optFns, config.WithSharedCredentialsFiles([]string{filepath.Join(a.ProfileDir, "credentials")}))
 	}
-	return helpers.GetAWSCfg(region, a.Profile, opts, optFns...)
+
+	return helpers.GetAWSCfg(region, a.Profile, opts, a.GetOpsecLevel(), optFns...)
 }
 
 // GetConfigWithRuntimeArgs gets AWS config using runtime arguments instead of default values

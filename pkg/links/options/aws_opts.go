@@ -276,6 +276,7 @@ func AwsReconBaseOptions() []cfg.Param {
 		AwsCacheErrorTypes(),
 		AwsCacheErrorResp(),
 		AwsDisableCache(),
+		AwsOpsecLevel(),
 	}
 }
 
@@ -337,4 +338,9 @@ func AwsCdkQualifiers() cfg.Param {
 	return cfg.NewParam[[]string]("cdk-qualifiers", "CDK bootstrap qualifiers to check").
 		WithDefault([]string{"hnb659fds"}).
 		WithShortcode("q")
+}
+
+func AwsOpsecLevel() cfg.Param {
+	return cfg.NewParam[string]("opsec_level", "Operational security level for AWS operations").
+		WithDefault("none")
 }
