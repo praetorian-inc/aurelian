@@ -95,7 +95,11 @@ func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescri
 	return regionToIdentifiers
 }
 
-func GetAWSCfg(region string, profile string, opts []*types.Option, optFns ...func(*config.LoadOptions) error) (aws.Config, error) {
+func GetAWSCfg(region string, profile string, opts []*types.Option, opsecLevel string, optFns ...func(*config.LoadOptions) error) (aws.Config, error) {
+	// Default to "none" for backwards compatibility
+	if opsecLevel == "" {
+		opsecLevel = "none"
+	}
 	if !cacheMaintained {
 		InitCache(opts)
 		cacheMaintained = true
@@ -140,20 +144,27 @@ func GetAWSCfg(region string, profile string, opts []*types.Option, optFns ...fu
 	}
 	
 	var principal sts.GetCallerIdentityOutput
-	if value, ok := ProfileIdentity.Load(cacheKey); ok {
-		principal = value.(sts.GetCallerIdentityOutput)
-		slog.Debug("Loaded Profile ARN from Cached Map", "cacheKey", cacheKey, "ARN", *principal.Arn)
+	var CachePrep middleware.InitializeMiddleware
+	
+	if opsecLevel == "stealth" {
+		slog.Debug("Stealth mode - skipping caller identity verification for OPSEC")
+		// Use alternative caching strategy without identity
+		CachePrep = GetCachePrepWithoutIdentity(opts)
 	} else {
-		principal, err = GetCallerIdentity(cfg)
-		atomic.AddInt64(&cacheBypassedCount, 1)
-		if err != nil {
-			return aws.Config{}, err
+		if value, ok := ProfileIdentity.Load(cacheKey); ok {
+			principal = value.(sts.GetCallerIdentityOutput)
+			slog.Debug("Loaded Profile ARN from Cached Map", "cacheKey", cacheKey, "ARN", *principal.Arn)
+		} else {
+			principal, err = GetCallerIdentity(cfg)
+			atomic.AddInt64(&cacheBypassedCount, 1)
+			if err != nil {
+				return aws.Config{}, err
+			}
+			ProfileIdentity.Store(cacheKey, principal)
+			slog.Debug("Called STS GetCallerIdentity for", "cacheKey", cacheKey, "ARN", *principal.Arn)
 		}
-		ProfileIdentity.Store(cacheKey, principal)
-		slog.Debug("Called STS GetCallerIdentity for", "cacheKey", cacheKey, "ARN", *principal.Arn)
+		CachePrep = GetCachePrepWithIdentity(principal, opts)
 	}
-
-	CachePrep := GetCachePrepWithIdentity(principal, opts)
 
 	cfg.APIOptions = append(cfg.APIOptions, func(stack *middleware.Stack) error {
 		// Add custom middlewares

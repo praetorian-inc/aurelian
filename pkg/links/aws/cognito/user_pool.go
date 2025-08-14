@@ -30,7 +30,7 @@ func (l *CognitoUserPoolGetDomains) Params() []cfg.Param {
 }
 
 func (l *CognitoUserPoolGetDomains) Process(resource types.EnrichedResourceDescription) error {
-	config, err := helpers.GetAWSCfg(resource.Region, l.Arg("profile").(string), nil)
+	config, err := helpers.GetAWSCfg(resource.Region, l.Arg("profile").(string), nil, "none")
 	if err != nil {
 		return fmt.Errorf("could not set up client config: %w", err)
 	}
@@ -132,7 +132,7 @@ func (l *CognitoUserPoolDescribeClients) Params() []cfg.Param {
 }
 
 func (l *CognitoUserPoolDescribeClients) Process(resource types.EnrichedResourceDescription) error {
-	config, err := helpers.GetAWSCfg(resource.Region, l.Arg("profile").(string), nil)
+	config, err := helpers.GetAWSCfg(resource.Region, l.Arg("profile").(string), nil, "none")
 	if err != nil {
 		return fmt.Errorf("could not set up client config: %w", err)
 	}
