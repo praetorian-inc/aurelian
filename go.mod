@@ -52,7 +52,7 @@ require (
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de
 	github.com/praetorian-inc/janus-framework v0.0.0-20250813151526-bc4f4c7279a7
 	github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157
-	github.com/praetorian-inc/tabularium v1.0.7-pre-prod
+	github.com/praetorian-inc/tabularium v1.0.10
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/oauth2 v0.30.0
