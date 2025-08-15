@@ -85,8 +85,27 @@ func (pfl *PropertyFilterLink) Process(erd *types.EnrichedResourceDescription) e
 		return nil // Skip this resource
 	}
 
-	// Property exists and is not empty, send the original ERD
-	pfl.Send(erd)
+	// Property exists and is not empty, add NeedsManualTriage for EC2 instances
+	if erd.TypeName == "AWS::EC2::Instance" {
+		// EC2 instances with public IPs need manual triage for network path evaluation
+		propsMap["NeedsManualTriage"] = true
+
+		// Update the properties in the ERD with the modified map
+		updatedPropsBytes, err := json.Marshal(propsMap)
+		if err != nil {
+			slog.Error("Failed to marshal updated properties", "error", err)
+			pfl.Send(erd)
+			return nil
+		}
+
+		// Create a new ERD with updated properties
+		updatedERD := *erd // Copy the ERD
+		updatedERD.Properties = string(updatedPropsBytes)
+		pfl.Send(&updatedERD)
+	} else {
+		// For other resource types, send the original ERD
+		pfl.Send(erd)
+	}
 	return nil
 }
 

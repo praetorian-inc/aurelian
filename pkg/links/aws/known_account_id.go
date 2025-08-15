@@ -117,5 +117,12 @@ func (l *KnownAccountID) Process(id string) error {
 		}
 	}
 
-	return nil
+	// Send a "no match" result
+	noMatch := AwsKnownAccount{
+		ID:          id,
+		Owner:       "Unknown",
+		Source:      "None",
+		Description: "Account ID not found in known public accounts",
+	}
+	return l.Send(noMatch)
 }

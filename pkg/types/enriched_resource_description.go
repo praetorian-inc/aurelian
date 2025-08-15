@@ -14,7 +14,7 @@ import (
 type EnrichedResourceDescription struct {
 	Identifier string      `json:"Identifier"`
 	TypeName   string      `json:"TypeName"`
-	Region     string      `json:"Region"` //additional field to enrich
+	Region     string      `json:"Region"`
 	Properties interface{} `json:"Properties"`
 	AccountId  string      `json:"AccountId"`
 	Arn        arn.ARN     `json:"Arn"`
@@ -57,6 +57,19 @@ func NewEnrichedResourceDescription(identifier, typeName, region, accountId stri
 			AccountID: "",
 			Resource:  identifier,
 		}
+	case "AWS::Lambda::Function":
+		parsed, err := arn.Parse(identifier)
+		if err == nil {
+			a = parsed
+		} else {
+			a = arn.ARN{
+				Partition: "aws",
+				Service:   "lambda",
+				Region:    region,
+				AccountID: accountId,
+				Resource:  "function:" + identifier,
+			}
+		}
 	case "AWS::Service":
 		a = arn.ARN{
 			Partition: "aws",
@@ -70,9 +83,10 @@ func NewEnrichedResourceDescription(identifier, typeName, region, accountId stri
 		if err == nil {
 			a = parsed
 		} else {
+			serviceName := extractServiceFromTypeName(typeName)
 			a = arn.ARN{
 				Partition: "aws",
-				Service:   typeName,
+				Service:   serviceName,
 				Region:    region,
 				AccountID: accountId,
 				Resource:  identifier,
@@ -159,7 +173,6 @@ func NewEnrichedResourceDescriptionFromGroupDL(groupDL GroupDL) *EnrichedResourc
 	}
 }
 
-// Helper struct to unmarshal the Properties JSON string
 type resourceProperties struct {
 	Tags []struct {
 		Key   string `json:"Key"`
@@ -167,26 +180,21 @@ type resourceProperties struct {
 	} `json:"Tags"`
 }
 
-// Tags returns the list of tag keys from the Properties field
 func (e *EnrichedResourceDescription) Tags() map[string]string {
-	// Handle case where Properties is empty or nil
 	if e.Properties == nil {
 		return map[string]string{}
 	}
 
-	// Convert Properties to string if it's not already
 	propsStr, ok := e.Properties.(string)
 	if !ok {
 		return map[string]string{}
 	}
 
-	// Unmarshal the Properties JSON string
 	var props resourceProperties
 	if err := json.Unmarshal([]byte(propsStr), &props); err != nil {
 		return map[string]string{}
 	}
 
-	// Extract just the tag keys
 	tags := make(map[string]string, len(props.Tags))
 	for _, tag := range props.Tags {
 		tags[tag.Key] = tag.Value
@@ -201,9 +209,13 @@ func (e *EnrichedResourceDescription) Service() string {
 		return split[0]
 	}
 
-	split := strings.Split(e.TypeName, "::")
+	return extractServiceFromTypeName(e.TypeName)
+}
+
+func extractServiceFromTypeName(typeName string) string {
+	split := strings.Split(typeName, "::")
 	if len(split) < 3 {
-		slog.Debug("Failed to parse resource type", slog.String("resourceType", e.TypeName))
+		slog.Debug("Failed to parse resource type", slog.String("resourceType", typeName))
 		return ""
 	}
 
@@ -242,7 +254,6 @@ func (e *EnrichedResourceDescription) Type() string {
 }
 
 func SQSUrlToArn(sqsUrl string) (arn.ARN, error) {
-	// Parse URL to extract components
 	// Format: https://sqs.{region}.amazonaws.com/{accountId}/{queueName}
 	parts := strings.Split(sqsUrl, ".")
 	if len(parts) < 4 || !strings.HasPrefix(sqsUrl, "https://sqs.") {
@@ -251,7 +262,6 @@ func SQSUrlToArn(sqsUrl string) (arn.ARN, error) {
 
 	region := parts[1]
 
-	// Extract account ID and queue name from the path
 	pathParts := strings.Split(parts[3], "/")
 	if len(pathParts) < 3 {
 		return arn.ARN{}, fmt.Errorf("invalid SQS URL path format: %s", sqsUrl)
@@ -260,7 +270,6 @@ func SQSUrlToArn(sqsUrl string) (arn.ARN, error) {
 	accountId := pathParts[1]
 	queueName := pathParts[2]
 
-	// Construct the ARN
 	a := arn.ARN{
 		Partition: "aws",
 		Service:   "sqs",
@@ -287,26 +296,21 @@ func (erd *EnrichedResourceDescription) PropertiesAsMap() (map[string]any, error
 	return props, nil
 }
 
-// GetRoleArn extracts the IAM role ARN from resource properties if it exists
 func (e *EnrichedResourceDescription) GetRoleArn() string {
-	// Handle case where Properties is empty or nil
 	if e.Properties == nil {
 		return ""
 	}
 
-	// Convert Properties to check if it's a string
 	_, ok := e.Properties.(string)
 	if !ok {
 		return ""
 	}
 
-	// Use PropertiesAsMap to get a map of properties
 	props, err := e.PropertiesAsMap()
 	if err != nil {
 		return ""
 	}
 
-	// Check resource type and extract role ARN accordingly
 	switch e.TypeName {
 	case "AWS::Lambda::Function":
 		if roleArn, ok := props["Role"].(string); ok {
@@ -316,7 +320,6 @@ func (e *EnrichedResourceDescription) GetRoleArn() string {
 		if profile, ok := props["IamInstanceProfile"].(string); ok {
 			return profile
 		}
-		// Some EC2 instances have a nested IamInstanceProfile object
 		if profileObj, ok := props["IamInstanceProfile"].(map[string]any); ok {
 			if arn, ok := profileObj["Arn"].(string); ok {
 				return arn
@@ -331,7 +334,6 @@ func (e *EnrichedResourceDescription) GetRoleArn() string {
 	return ""
 }
 
-// ServiceToResourceType maps AWS service names to their CloudFormation resource types
 var ServiceToResourceType = map[string]string{
 	"ec2":            "AWS::EC2::Instance",
 	"s3":             "AWS::S3::Bucket",

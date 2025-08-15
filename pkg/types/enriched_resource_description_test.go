@@ -315,12 +315,258 @@ func TestNewEnrichedResourceDescription(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:       "Lambda Function with function name identifier",
+			identifier: "my-lambda-function",
+			typeName:   "AWS::Lambda::Function",
+			region:     "us-east-2",
+			accountId:  "123456789012",
+			properties: nil,
+			expected: EnrichedResourceDescription{
+				Identifier: "my-lambda-function",
+				TypeName:   "AWS::Lambda::Function",
+				Region:     "us-east-2",
+				AccountId:  "123456789012",
+				Arn: arn.ARN{
+					Partition: "aws",
+					Service:   "lambda",
+					Region:    "us-east-2",
+					AccountID: "123456789012",
+					Resource:  "function:my-lambda-function",
+				},
+			},
+		},
+		{
+			name:       "Lambda Function with vulnerable function name (real scenario)",
+			identifier: "vuln-functionurlauthtype-none-5ada75c7",
+			typeName:   "AWS::Lambda::Function",
+			region:     "us-east-2",
+			accountId:  "411435703965",
+			properties: nil,
+			expected: EnrichedResourceDescription{
+				Identifier: "vuln-functionurlauthtype-none-5ada75c7",
+				TypeName:   "AWS::Lambda::Function",
+				Region:     "us-east-2",
+				AccountId:  "411435703965",
+				Arn: arn.ARN{
+					Partition: "aws",
+					Service:   "lambda",
+					Region:    "us-east-2",
+					AccountID: "411435703965",
+					Resource:  "function:vuln-functionurlauthtype-none-5ada75c7",
+				},
+			},
+		},
+		{
+			name:       "Default case - API Gateway",
+			identifier: "my-api-gateway",
+			typeName:   "AWS::ApiGateway::RestApi",
+			region:     "us-west-2",
+			accountId:  "123456789012",
+			properties: nil,
+			expected: EnrichedResourceDescription{
+				Identifier: "my-api-gateway",
+				TypeName:   "AWS::ApiGateway::RestApi",
+				Region:     "us-west-2",
+				AccountId:  "123456789012",
+				Arn: arn.ARN{
+					Partition: "aws",
+					Service:   "apigateway",
+					Region:    "us-west-2",
+					AccountID: "123456789012",
+					Resource:  "my-api-gateway",
+				},
+			},
+		},
+		{
+			name:       "Default case - DynamoDB Table",
+			identifier: "my-table",
+			typeName:   "AWS::DynamoDB::Table",
+			region:     "us-east-1",
+			accountId:  "123456789012",
+			properties: nil,
+			expected: EnrichedResourceDescription{
+				Identifier: "my-table",
+				TypeName:   "AWS::DynamoDB::Table",
+				Region:     "us-east-1",
+				AccountId:  "123456789012",
+				Arn: arn.ARN{
+					Partition: "aws",
+					Service:   "dynamodb",
+					Region:    "us-east-1",
+					AccountID: "123456789012",
+					Resource:  "my-table",
+				},
+			},
+		},
+		{
+			name:       "Default case - SNS Topic",
+			identifier: "my-topic",
+			typeName:   "AWS::SNS::Topic",
+			region:     "us-west-1",
+			accountId:  "123456789012",
+			properties: nil,
+			expected: EnrichedResourceDescription{
+				Identifier: "my-topic",
+				TypeName:   "AWS::SNS::Topic",
+				Region:     "us-west-1",
+				AccountId:  "123456789012",
+				Arn: arn.ARN{
+					Partition: "aws",
+					Service:   "sns",
+					Region:    "us-west-1",
+					AccountID: "123456789012",
+					Resource:  "my-topic",
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := NewEnrichedResourceDescription(tt.identifier, tt.typeName, tt.region, tt.accountId, tt.properties)
 			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// Test_extractServiceFromTypeName tests the service name extraction logic specifically
+func Test_extractServiceFromTypeName(t *testing.T) {
+	tests := []struct {
+		name        string
+		typeName    string
+		expected    string
+		description string
+	}{
+		{
+			name:        "Lambda Function",
+			typeName:    "AWS::Lambda::Function",
+			expected:    "lambda",
+			description: "Extract lambda service from Lambda Function type",
+		},
+		{
+			name:        "S3 Bucket",
+			typeName:    "AWS::S3::Bucket",
+			expected:    "s3",
+			description: "Extract s3 service from S3 Bucket type",
+		},
+		{
+			name:        "DynamoDB Table",
+			typeName:    "AWS::DynamoDB::Table",
+			expected:    "dynamodb",
+			description: "Extract dynamodb service from DynamoDB Table type",
+		},
+		{
+			name:        "API Gateway",
+			typeName:    "AWS::ApiGateway::RestApi",
+			expected:    "apigateway",
+			description: "Extract apigateway service from API Gateway type",
+		},
+		{
+			name:        "EC2 Instance",
+			typeName:    "AWS::EC2::Instance",
+			expected:    "ec2",
+			description: "Extract ec2 service from EC2 Instance type",
+		},
+		{
+			name:        "CloudFormation Stack",
+			typeName:    "AWS::CloudFormation::Stack",
+			expected:    "cloudformation",
+			description: "Extract cloudformation service from CloudFormation Stack type",
+		},
+		{
+			name:        "SNS Topic",
+			typeName:    "AWS::SNS::Topic",
+			expected:    "sns",
+			description: "Extract sns service from SNS Topic type",
+		},
+		{
+			name:        "SQS Queue",
+			typeName:    "AWS::SQS::Queue",
+			expected:    "sqs",
+			description: "Extract sqs service from SQS Queue type",
+		},
+		{
+			name:        "Invalid format - missing parts",
+			typeName:    "AWS::Lambda",
+			expected:    "",
+			description: "Return empty string for invalid CloudFormation type format",
+		},
+		{
+			name:        "Invalid format - single part",
+			typeName:    "Lambda",
+			expected:    "",
+			description: "Return empty string for non-CloudFormation format",
+		},
+		{
+			name:        "Empty string",
+			typeName:    "",
+			expected:    "",
+			description: "Return empty string for empty input",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractServiceFromTypeName(tt.typeName)
+			assert.Equal(t, tt.expected, result, tt.description)
+		})
+	}
+}
+
+// Test_ARNConstructionRegression tests specific regression scenarios
+func Test_ARNConstructionRegression(t *testing.T) {
+	tests := []struct {
+		name        string
+		identifier  string
+		typeName    string
+		region      string
+		accountId   string
+		expected    string
+		description string
+	}{
+		{
+			name:        "Lambda function identifier regression test",
+			identifier:  "vuln-functionurlauthtype-none-5ada75c7",
+			typeName:    "AWS::Lambda::Function",
+			region:      "us-east-2",
+			accountId:   "411435703965",
+			expected:    "arn:aws:lambda:us-east-2:411435703965:function:vuln-functionurlauthtype-none-5ada75c7",
+			description: "Ensure Lambda ARN uses 'lambda' service, not 'AWS::Lambda::Function'",
+		},
+		{
+			name:        "DynamoDB table default case",
+			identifier:  "my-table",
+			typeName:    "AWS::DynamoDB::Table",
+			region:      "us-west-2",
+			accountId:   "123456789012",
+			expected:    "arn:aws:dynamodb:us-west-2:123456789012:my-table",
+			description: "Ensure DynamoDB ARN uses 'dynamodb' service, not 'AWS::DynamoDB::Table'",
+		},
+		{
+			name:        "API Gateway default case",
+			identifier:  "my-api",
+			typeName:    "AWS::ApiGateway::RestApi",
+			region:      "us-east-1",
+			accountId:   "123456789012",
+			expected:    "arn:aws:apigateway:us-east-1:123456789012:my-api",
+			description: "Ensure API Gateway ARN uses 'apigateway' service, not 'AWS::ApiGateway::RestApi'",
+		},
+		{
+			name:        "CloudFormation stack default case",
+			identifier:  "my-stack",
+			typeName:    "AWS::CloudFormation::Stack",
+			region:      "us-west-1",
+			accountId:   "123456789012",
+			expected:    "arn:aws:cloudformation:us-west-1:123456789012:my-stack",
+			description: "Ensure CloudFormation ARN uses 'cloudformation' service, not 'AWS::CloudFormation::Stack'",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := NewEnrichedResourceDescription(tt.identifier, tt.typeName, tt.region, tt.accountId, nil)
+			assert.Equal(t, tt.expected, result.Arn.String(), tt.description)
 		})
 	}
 }

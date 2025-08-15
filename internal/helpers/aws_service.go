@@ -5,7 +5,6 @@ import (
 )
 
 var GlobalServices = []string{
-	"AWS::S3::",
 	"AWS::IAM::",
 	"AWS::CloudFront::",
 	"AWS::Route53::",

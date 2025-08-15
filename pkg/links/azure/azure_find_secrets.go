@@ -55,7 +55,7 @@ func (l *AzureFindSecretsLink) SupportedResourceTypes() []string {
 
 func (l *AzureFindSecretsLink) Process(input any) error {
 	l.Logger.Debug("AzureFindSecretsLink received input", "input_type", fmt.Sprintf("%T", input))
-	
+
 	// Handle NamedOutputData wrapper from ARG template query
 	var resource *model.AzureResource
 	if namedData, ok := input.(outputters.NamedOutputData); ok {
@@ -410,7 +410,7 @@ func (l *AzureFindSecretsLink) parseVMResourceID(resourceID string) (resourceGro
 		return "", "", fmt.Errorf("invalid nebula resource key format")
 	}
 	actualResourceID := parts[3] // The actual Azure resource ID
-	
+
 	parsed, err := helpers.ParseAzureResourceID(actualResourceID)
 	if err != nil {
 		return "", "", err
@@ -433,7 +433,7 @@ func (l *AzureFindSecretsLink) parseFunctionAppResourceID(resourceID string) (re
 		return "", "", fmt.Errorf("invalid nebula resource key format")
 	}
 	actualResourceID := parts[3] // The actual Azure resource ID
-	
+
 	parsed, err := helpers.ParseAzureResourceID(actualResourceID)
 	if err != nil {
 		return "", "", err
@@ -451,33 +451,33 @@ func (l *AzureFindSecretsLink) parseFunctionAppResourceID(resourceID string) (re
 
 func (l *AzureFindSecretsLink) processAutomationAccount(resource *model.AzureResource) error {
 	subscriptionID := resource.AccountRef
-	
+
 	// Parse resource ID to get resource group and automation account name
 	resourceGroup, automationAccountName, err := l.parseAutomationAccountResourceID(resource.Key)
 	if err != nil {
 		return fmt.Errorf("failed to parse Automation Account resource ID: %w", err)
 	}
-	
+
 	l.Logger.Debug("Processing automation account for secrets", "automation_account", automationAccountName, "resource_group", resourceGroup)
-	
+
 	// Process automation variables
 	err = l.processAutomationVariables(subscriptionID, resourceGroup, automationAccountName, resource.Key)
 	if err != nil {
 		l.Logger.Error("Failed to process automation variables", "error", err.Error())
 	}
-	
+
 	// Process automation runbooks
 	err = l.processAutomationRunbooks(subscriptionID, resourceGroup, automationAccountName, resource.Key)
 	if err != nil {
 		l.Logger.Error("Failed to process automation runbooks", "error", err.Error())
 	}
-	
+
 	return nil
 }
 
 func (l *AzureFindSecretsLink) processAutomationVariables(subscriptionID, resourceGroup, automationAccountName, resourceID string) error {
 	l.Logger.Debug("Processing automation variables", "automation_account", automationAccountName)
-	
+
 	// For now, create a placeholder NPInput to indicate we found an automation account
 	// In a full implementation, we would make the REST API call to get actual variables
 	npInput := jtypes.NPInput{
@@ -491,26 +491,26 @@ func (l *AzureFindSecretsLink) processAutomationVariables(subscriptionID, resour
 		},
 	}
 	l.Send(npInput)
-	
+
 	return nil
 }
 
 func (l *AzureFindSecretsLink) processAutomationRunbooks(subscriptionID, resourceGroup, automationAccountName, resourceID string) error {
 	l.Logger.Debug("Processing automation runbooks", "automation_account", automationAccountName)
-	
+
 	// Create a placeholder NPInput for runbooks
 	npInput := jtypes.NPInput{
 		Content: fmt.Sprintf("Automation Account Runbooks for %s", automationAccountName),
 		Provenance: jtypes.NPProvenance{
 			Platform:     "azure",
-			ResourceType: "Microsoft.Automation/automationAccounts::Runbooks", 
+			ResourceType: "Microsoft.Automation/automationAccounts::Runbooks",
 			ResourceID:   fmt.Sprintf("%s/runbooks", resourceID),
 			Region:       "",
 			AccountID:    subscriptionID,
 		},
 	}
 	l.Send(npInput)
-	
+
 	return nil
 }
 
@@ -521,7 +521,7 @@ func (l *AzureFindSecretsLink) parseAutomationAccountResourceID(resourceID strin
 		return "", "", fmt.Errorf("invalid nebula resource key format")
 	}
 	actualResourceID := parts[3] // The actual Azure resource ID
-	
+
 	parsed, err := helpers.ParseAzureResourceID(actualResourceID)
 	if err != nil {
 		return "", "", err

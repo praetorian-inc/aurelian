@@ -95,7 +95,11 @@ func MapIdentifiersByRegions(resourceDescriptions []types.EnrichedResourceDescri
 	return regionToIdentifiers
 }
 
-func GetAWSCfg(region string, profile string, opts []*types.Option, optFns ...func(*config.LoadOptions) error) (aws.Config, error) {
+func GetAWSCfg(region string, profile string, opts []*types.Option, opsecLevel string, optFns ...func(*config.LoadOptions) error) (aws.Config, error) {
+	// Default to "none" for backwards compatibility
+	if opsecLevel == "" {
+		opsecLevel = "none"
+	}
 	if !cacheMaintained {
 		InitCache(opts)
 		cacheMaintained = true
@@ -114,9 +118,14 @@ func GetAWSCfg(region string, profile string, opts []*types.Option, optFns ...fu
 				aws.LogResponseEventMessage),
 		config.WithLogger(logs.AwsCliLogger()),
 		config.WithRegion(region),
-		config.WithSharedConfigProfile(profile),
 		config.WithRetryMode(aws.RetryModeAdaptive),
 		// config.WithAPIOptions(cacheFunc),
+	}
+
+	// Only override profile if user explicitly specified one
+	// This allows the standard AWS credential chain to work (env vars -> default profile -> etc.)
+	if profile != "" {
+		options = append(options, config.WithSharedConfigProfile(profile))
 	}
 
 	options = append(options, optFns...)
@@ -128,21 +137,34 @@ func GetAWSCfg(region string, profile string, opts []*types.Option, optFns ...fu
 	if err != nil {
 		return aws.Config{}, err
 	}
-	var principal sts.GetCallerIdentityOutput
-	if value, ok := ProfileIdentity.Load(profile); ok {
-		principal = value.(sts.GetCallerIdentityOutput)
-		slog.Debug("Loaded Profile ARN from Cached Map", "profile", profile, "ARN", *principal.Arn)
-	} else {
-		principal, err = GetCallerIdentity(cfg)
-		atomic.AddInt64(&cacheBypassedCount, 1)
-		if err != nil {
-			return aws.Config{}, err
-		}
-		ProfileIdentity.Store(profile, principal)
-		slog.Debug("Called STS GetCallerIdentity for", "profile", profile, "ARN", *principal.Arn)
+	// Use a consistent cache key - if no profile specified, use "default" as the key
+	cacheKey := profile
+	if cacheKey == "" {
+		cacheKey = "default"
 	}
-
-	CachePrep := GetCachePrepWithIdentity(principal, opts)
+	
+	var principal sts.GetCallerIdentityOutput
+	var CachePrep middleware.InitializeMiddleware
+	
+	if opsecLevel == "stealth" {
+		slog.Debug("Stealth mode - skipping caller identity verification for OPSEC")
+		// Use alternative caching strategy without identity
+		CachePrep = GetCachePrepWithoutIdentity(opts)
+	} else {
+		if value, ok := ProfileIdentity.Load(cacheKey); ok {
+			principal = value.(sts.GetCallerIdentityOutput)
+			slog.Debug("Loaded Profile ARN from Cached Map", "cacheKey", cacheKey, "ARN", *principal.Arn)
+		} else {
+			principal, err = GetCallerIdentity(cfg)
+			atomic.AddInt64(&cacheBypassedCount, 1)
+			if err != nil {
+				return aws.Config{}, err
+			}
+			ProfileIdentity.Store(cacheKey, principal)
+			slog.Debug("Called STS GetCallerIdentity for", "cacheKey", cacheKey, "ARN", *principal.Arn)
+		}
+		CachePrep = GetCachePrepWithIdentity(principal, opts)
+	}
 
 	cfg.APIOptions = append(cfg.APIOptions, func(stack *middleware.Stack) error {
 		// Add custom middlewares

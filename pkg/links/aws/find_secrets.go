@@ -6,15 +6,11 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus-framework/pkg/links/noseyparker"
-	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudformation"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/ec2"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/ecr"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/lambda"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/ssm"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/stepfunctions"
-	"github.com/praetorian-inc/nebula/pkg/links/docker"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -67,25 +63,25 @@ func (fs *AWSFindSecrets) ResourceMap() map[string]func() chain.Chain {
 		)
 	}
 
-	resourceMap["AWS::ECR::Repository"] = func() chain.Chain {
-		return chain.NewChain(
-			ecr.NewAWSECRListImages(),
-			ecr.NewAWSECRLogin(),
-			docker.NewDockerPull(),
-			docker.NewDockerSave(),
-			noseyparker.NewConvertToNPInput(),
-		)
-	}
+	// resourceMap["AWS::ECR::Repository"] = func() chain.Chain {
+	// 	return chain.NewChain(
+	// 		ecr.NewAWSECRListImages(),
+	// 		ecr.NewAWSECRLogin(),
+	// 		docker.NewDockerPull(),
+	// 		docker.NewDockerSave(),
+	// 		noseyparker.NewConvertToNPInput(),
+	// 	)
+	// }
 
-	resourceMap["AWS::ECR::PublicRepository"] = func() chain.Chain {
-		return chain.NewChain(
-			ecr.NewAWSECRListPublicImages(),
-			ecr.NewAWSECRLoginPublic(),
-			docker.NewDockerPull(),
-			docker.NewDockerSave(),
-			noseyparker.NewConvertToNPInput(),
-		)
-	}
+	// resourceMap["AWS::ECR::PublicRepository"] = func() chain.Chain {
+	// 	return chain.NewChain(
+	// 		ecr.NewAWSECRListPublicImages(),
+	// 		ecr.NewAWSECRLoginPublic(),
+	// 		docker.NewDockerPull(),
+	// 		docker.NewDockerSave(),
+	// 		noseyparker.NewConvertToNPInput(),
+	// 	)
+	// }
 
 	resourceMap["AWS::ECS::TaskDefinition"] = func() chain.Chain {
 		return chain.NewChain(
@@ -99,12 +95,12 @@ func (fs *AWSFindSecrets) ResourceMap() map[string]func() chain.Chain {
 		)
 	}
 
-	resourceMap["AWS::SSM::Parameter"] = func() chain.Chain {
-		return chain.NewChain(
-			ssm.NewAWSListSSMParameters(),
-			noseyparker.NewConvertToNPInput(),
-		)
-	}
+	// resourceMap["AWS::SSM::Parameter"] = func() chain.Chain {
+	// 	return chain.NewChain(
+	// 		ssm.NewAWSListSSMParameters(),
+	// 		noseyparker.NewConvertToNPInput(),
+	// 	)
+	// }
 
 	resourceMap["AWS::StepFunctions::StateMachine"] = func() chain.Chain {
 		return chain.NewChain(
@@ -124,26 +120,68 @@ func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) e
 		return nil
 	}
 
-	go func() {
-		resourceChain := constructor()
-		resourceChain.WithConfigs(cfg.WithArgs(fs.Args()))
+	slog.Debug("Dispatching resource for processing", "resource_type", resource.TypeName, "resource_id", resource.Identifier)
 
-		resourceChain.Send(resource)
-		resourceChain.Close()
+	// Create pair and send to processor
+	pair := &ResourceChainPair{
+		Resource:         resource,
+		ChainConstructor: constructor,
+		Args:             fs.Args(),
+	}
 
-		// Collect and send all outputs from the chain
-		for o, ok := chain.RecvAs[jtypes.NPInput](resourceChain); ok; o, ok = chain.RecvAs[jtypes.NPInput](resourceChain) {
-			fs.Send(o)
-		}
-
-		if err := resourceChain.Error(); err != nil {
-			slog.Error("Error processing resource for secrets", "resource", resource, "error", err)
-		}
-	}()
-
-	return nil
+	return fs.Send(pair)
 }
 
 func (fs *AWSFindSecrets) Complete() error {
+	// No manual coordination needed - framework handles it
 	return nil
+}
+
+func (fs *AWSFindSecrets) Permissions() []cfg.Permission {
+	return []cfg.Permission{
+		{
+			Platform:   "aws",
+			Permission: "cloudcontrol:ListResources",
+		},
+		{
+			Platform:   "aws",
+			Permission: "cloudformation:ListStacks",
+		},
+		{
+			Platform:   "aws",
+			Permission: "ec2:DescribeInstanceAttribute",
+		},
+		{
+			Platform:   "aws",
+			Permission: "ec2:DescribeInstances",
+		},
+		{
+			Platform:   "aws",
+			Permission: "ecs:ListTaskDefinitions",
+		},
+		{
+			Platform:   "aws",
+			Permission: "kms:Decrypt",
+		},
+		{
+			Platform:   "aws",
+			Permission: "lambda:GetFunction",
+		},
+		{
+			Platform:   "aws",
+			Permission: "lambda:ListFunctions",
+		},
+		{
+			Platform:   "aws",
+			Permission: "ssm:ListDocuments",
+		},
+		{
+			Platform:   "aws",
+			Permission: "states:ListStateMachines",
+		},
+		{
+			Platform:   "aws",
+			Permission: "sts:GetCallerIdentity",
+		},
+	}
 }
