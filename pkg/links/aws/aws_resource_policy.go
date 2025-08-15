@@ -180,7 +180,7 @@ type ContextGenerator struct {
 	Conditions     []ConditionPermutation
 }
 
-// Bool helper function for creating *bool values  
+// Bool helper function for creating *bool values
 func Bool(b bool) *bool {
 	return &b
 }
@@ -188,7 +188,7 @@ func Bool(b bool) *bool {
 // GenerateAllPermutations creates all combinations of contexts with condition permutations
 func (cg *ContextGenerator) GenerateAllPermutations() []*iam.RequestContext {
 	contexts := []*iam.RequestContext{}
-	
+
 	// Add base principal contexts first (existing behavior)
 	for _, principal := range cg.BasePrincipals {
 		ctx := &iam.RequestContext{
@@ -197,20 +197,20 @@ func (cg *ContextGenerator) GenerateAllPermutations() []*iam.RequestContext {
 		}
 		contexts = append(contexts, ctx)
 	}
-	
+
 	// Generate all condition combinations for wildcard principal
 	permutations := cg.generateConditionPermutations()
-	
+
 	for _, perm := range permutations {
 		ctx := &iam.RequestContext{
 			PrincipalArn:      "*", // Wildcard for public access testing
 			RequestParameters: make(map[string]string),
 		}
-		
+
 		cg.applyPermutation(ctx, perm)
 		contexts = append(contexts, ctx)
 	}
-	
+
 	return contexts
 }
 
@@ -241,10 +241,10 @@ func (cg *ContextGenerator) generateConditionPermutations() []map[string]string 
 			}
 			temp /= len(condition.Values)
 		}
-		
+
 		permutations[i] = perm
 	}
-	
+
 	return permutations
 }
 
@@ -284,8 +284,8 @@ func GetEvaluationContexts(resourceType string) []*iam.RequestContext {
 		generator := ContextGenerator{
 			BasePrincipals: []string{
 				"arn:aws:iam::111122223333:role/praetorian", // Generic cross-account
-				"apigateway.amazonaws.com",                   // API Gateway service
-				"lambda.amazonaws.com",                       // Lambda service
+				"apigateway.amazonaws.com",                  // API Gateway service
+				"lambda.amazonaws.com",                      // Lambda service
 			},
 			Conditions: []ConditionPermutation{
 				{"lambda:FunctionUrlAuthType", []string{"NONE", "AWS_IAM", ""}},
@@ -295,13 +295,13 @@ func GetEvaluationContexts(resourceType string) []*iam.RequestContext {
 			},
 		}
 		return generator.GenerateAllPermutations()
-		
+
 	case "AWS::S3::Bucket":
 		generator := ContextGenerator{
 			BasePrincipals: []string{
 				"arn:aws:iam::111122223333:role/praetorian", // Generic cross-account
-				"cloudfront.amazonaws.com",                   // CloudFront service  
-				"s3.amazonaws.com",                           // S3 service
+				"cloudfront.amazonaws.com",                  // CloudFront service
+				"s3.amazonaws.com",                          // S3 service
 			},
 			Conditions: []ConditionPermutation{
 				{"aws:SecureTransport", []string{"true", "false", ""}},
@@ -327,7 +327,7 @@ func GetEvaluationContexts(resourceType string) []*iam.RequestContext {
 			},
 		}
 		return generator.GenerateAllPermutations()
-		
+
 	case "AWS::SQS::Queue":
 		generator := ContextGenerator{
 			BasePrincipals: []string{
@@ -343,7 +343,7 @@ func GetEvaluationContexts(resourceType string) []*iam.RequestContext {
 			},
 		}
 		return generator.GenerateAllPermutations()
-		
+
 	default:
 		// Default fallback for unknown resource types
 		return []*iam.RequestContext{
@@ -371,7 +371,7 @@ func (a *AwsResourcePolicyChecker) evaluatePolicyWithContext(reqCtx *iam.Request
 
 	results := []*iam.EvaluationResult{}
 	actions := iam.ExtractActions(policy.Statement)
-	
+
 	for _, action := range actions {
 		er := &iam.EvaluationRequest{
 			Action:             action,
@@ -395,9 +395,9 @@ func (a *AwsResourcePolicyChecker) evaluatePolicyWithContext(reqCtx *iam.Request
 // analyzePolicy analyzes a policy to determine if it grants public access
 func (a *AwsResourcePolicyChecker) analyzePolicy(resource string, policy *types.Policy, accountId string, resourceType string) ([]*iam.EvaluationResult, error) {
 	allResults := []*iam.EvaluationResult{}
-	
+
 	contexts := GetEvaluationContexts(resourceType)
-	
+
 	for _, reqCtx := range contexts {
 		// Apply org policies context if available
 		if a.orgPolicies != nil && accountId != "" {
@@ -405,7 +405,7 @@ func (a *AwsResourcePolicyChecker) analyzePolicy(resource string, policy *types.
 			slog.Debug("Enhanced policy analysis with org policies", "resource", resource, "account", accountId, "principal", reqCtx.PrincipalArn, "org_policies_available", true)
 		}
 		reqCtx.PopulateDefaultRequestConditionKeys(resource)
-		
+
 		// Evaluate policy with this context
 		results, err := a.evaluatePolicyWithContext(reqCtx, policy, resource)
 		if err != nil {
@@ -548,36 +548,6 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 	"AWS::S3::Bucket": func(ctx context.Context, cfg aws.Config, bucketName string, allowedRegions []string) (*types.Policy, error) {
 		client := s3.NewFromConfig(cfg)
 
-		// First, try to get the bucket's location to determine its region
-		locationResp, err := client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
-			Bucket: aws.String(bucketName),
-		})
-		if err != nil {
-			// If we can't get the location, fall back to the original approach
-			slog.Debug("Failed to get bucket location, using original config", "bucket", bucketName, "error", err)
-		} else {
-			// Create a new config for the bucket's specific region
-			bucketRegion := string(locationResp.LocationConstraint)
-			// AWS returns empty string for us-east-1
-			if bucketRegion == "" {
-				bucketRegion = "us-east-1"
-			}
-
-			// Check if the bucket's region is in the user's allowed regions list
-			if !slices.Contains(allowedRegions, bucketRegion) {
-				slog.Debug("Bucket region not in allowed regions list", "bucket", bucketName, "bucketRegion", bucketRegion, "allowedRegions", allowedRegions)
-				return nil, nil // Skip this bucket
-			}
-
-			// Only create a new client if the bucket is in a different region
-			if bucketRegion != cfg.Region {
-				newCfg := cfg.Copy()
-				newCfg.Region = bucketRegion
-				client = s3.NewFromConfig(newCfg)
-				slog.Debug("Created region-specific S3 client", "bucket", bucketName, "region", bucketRegion)
-			}
-		}
-
 		// 1. Check Block Public Access settings first - if it blocks access, the request is denied regardless of policies or ACLs
 		blockPublicAccessResp, err := client.GetPublicAccessBlock(ctx, &s3.GetPublicAccessBlockInput{
 			Bucket: aws.String(bucketName),
@@ -603,7 +573,9 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 				actionDynaString := types.DynaString{"s3:*"}
 				resourceDynaString := types.DynaString{fmt.Sprintf("arn:aws:s3:::%s", bucketName), fmt.Sprintf("arn:aws:s3:::%s/*", bucketName)}
 
+				// Essentiall we just return a virtual policy that denies everything
 				blockStatement := types.PolicyStatement{
+					Sid:       "VirtualPolicyFromBlockPublicAccess",
 					Effect:    "Deny",
 					Principal: &types.Principal{AWS: &starPrincipal},
 					Action:    &actionDynaString,
@@ -618,11 +590,59 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 			}
 		}
 
-		// 2. Check bucket policy next - policies can grant or explicitly deny access
-		var bucketPolicy *types.Policy
 		resp, err := client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
 			Bucket: aws.String(bucketName),
 		})
+		if err != nil {
+			// Handle region redirect for S3 buckets
+			if strings.Contains(err.Error(), "PermanentRedirect") {
+				// Try to get bucket location first
+				locationResp, locErr := client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
+					Bucket: aws.String(bucketName),
+				})
+
+				if locErr != nil {
+					slog.Error("Failed to get bucket location", "bucket", bucketName, "error", locErr)
+					return nil, locErr
+				}
+
+				bucketRegion := string(locationResp.LocationConstraint)
+				// AWS returns empty string for us-east-1
+				if bucketRegion == "" {
+					bucketRegion = "us-east-1"
+				}
+
+				// Check if the bucket's region is in the user's allowed regions list
+				if !slices.Contains(allowedRegions, bucketRegion) {
+					slog.Debug("Bucket region not in allowed regions list", "bucket", bucketName, "bucketRegion", bucketRegion, "allowedRegions", allowedRegions)
+					return nil, nil // Skip this bucket
+				}
+
+				// Only create a new client if the bucket is in a different region
+				if bucketRegion != cfg.Region {
+					newCfg := cfg.Copy()
+					newCfg.Region = bucketRegion
+					client = s3.NewFromConfig(newCfg)
+					slog.Debug("Created region-specific S3 client", "bucket", bucketName, "region", bucketRegion)
+				}
+
+				// Retrieve the bucket policy again
+				resp, err = client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
+					Bucket: aws.String(bucketName),
+				})
+			}
+
+			// If not a redirect error
+			if err != nil {
+				if strings.Contains(err.Error(), "NoSuchBucketPolicy") {
+					return nil, nil
+				}
+				return nil, err
+			}
+		}
+
+		// 2. Check bucket policy next - policies can grant or explicitly deny access
+		var bucketPolicy *types.Policy
 		if err != nil {
 			if !strings.Contains(err.Error(), "NoSuchBucketPolicy") {
 				return nil, err
