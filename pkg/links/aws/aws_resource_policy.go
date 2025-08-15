@@ -136,6 +136,16 @@ func analyzePolicy(resource string, policy *types.Policy) ([]*iam.EvaluationResu
 		PrincipalArn: "arn:aws:iam::111122223333:role/praetorian",
 	}
 	reqCtx.PopulateDefaultRequestConditionKeys(resource)
+
+	// For S3 buckets, set SecureTransport to true by default to properly evaluate
+	// policies that deny access when not using HTTPS
+	// This is particularly important for S3 buckets which often have policies like:
+	// "Condition": {"Bool": {"aws:SecureTransport": "false"}} that deny all S3 actions
+	if strings.Contains(resource, ":s3:") {
+		reqCtx.SecureTransport = aws.Bool(true)
+		slog.Debug("Set SecureTransport to true for S3 bucket HTTPS enforcement policy evaluation", "resource", resource)
+	}
+
 	if policy.Statement == nil {
 		return results, errors.New("policy statement is nil")
 	}
