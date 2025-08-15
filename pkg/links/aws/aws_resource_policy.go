@@ -75,7 +75,7 @@ func (a *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 	}
 
 	// Get the policy
-	policy, err := ServiceMap[resource.TypeName].GetPolicy(context.TODO(), awsCfg, identifierStr)
+	policy, err := ServiceMap[resource.TypeName].GetPolicy(context.TODO(), awsCfg, identifierStr, a.Regions)
 	if err != nil {
 		slog.Debug("Failed to get policy", "resource", identifierStr, "type", resource.TypeName, "error", err)
 		return nil // Continue with other resources
@@ -214,7 +214,7 @@ func strToPolicy(s string) (*types.Policy, error) {
 	return &p, nil
 }
 
-type PolicyGetter func(ctx context.Context, cfg aws.Config, identifier string) (*types.Policy, error)
+type PolicyGetter func(ctx context.Context, cfg aws.Config, identifier string, allowedRegions []string) (*types.Policy, error)
 
 type ServicePolicyConfig struct {
 	// GetPolicy retrieves the policy for the given identifier
@@ -262,7 +262,7 @@ var ServiceMap = map[string]ServicePolicyConfig{
 }
 
 var ServicePolicyFuncMap = map[string]PolicyGetter{
-	"AWS::Lambda::Function": func(ctx context.Context, cfg aws.Config, functionName string) (*types.Policy, error) {
+	"AWS::Lambda::Function": func(ctx context.Context, cfg aws.Config, functionName string, allowedRegions []string) (*types.Policy, error) {
 		client := lambda.NewFromConfig(cfg)
 		resp, err := client.GetPolicy(ctx, &lambda.GetPolicyInput{
 			FunctionName: aws.String(functionName),
@@ -285,28 +285,60 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 
 		return policy, nil
 	},
-	"AWS::S3::Bucket": func(ctx context.Context, cfg aws.Config, bucketName string) (*types.Policy, error) {
+	"AWS::S3::Bucket": func(ctx context.Context, cfg aws.Config, bucketName string, allowedRegions []string) (*types.Policy, error) {
 		client := s3.NewFromConfig(cfg)
+
+		// First, try to get the bucket's location to determine its region
+		locationResp, err := client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
+			Bucket: aws.String(bucketName),
+		})
+		if err != nil {
+			// If we can't get the location, fall back to the original approach
+			slog.Debug("Failed to get bucket location, using original config", "bucket", bucketName, "error", err)
+		} else {
+			// Create a new config for the bucket's specific region
+			bucketRegion := string(locationResp.LocationConstraint)
+			// AWS returns empty string for us-east-1
+			if bucketRegion == "" {
+				bucketRegion = "us-east-1"
+			}
+
+			// Check if the bucket's region is in the user's allowed regions list
+			if !slices.Contains(allowedRegions, bucketRegion) {
+				slog.Debug("Bucket region not in allowed regions list", "bucket", bucketName, "bucketRegion", bucketRegion, "allowedRegions", allowedRegions)
+				return nil, nil // Skip this bucket
+			}
+
+			// Only create a new client if the bucket is in a different region
+			if bucketRegion != cfg.Region {
+				newCfg := cfg.Copy()
+				newCfg.Region = bucketRegion
+				client = s3.NewFromConfig(newCfg)
+				slog.Debug("Created region-specific S3 client", "bucket", bucketName, "region", bucketRegion)
+			}
+		}
+
+		// Check bucket policy
+		var bucketPolicy *types.Policy
 		resp, err := client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
 			Bucket: aws.String(bucketName),
 		})
 		if err != nil {
-			if strings.Contains(err.Error(), "NoSuchBucketPolicy") {
+			if !strings.Contains(err.Error(), "NoSuchBucketPolicy") {
 				return nil, err
 			}
-			return nil, err
-		}
-		if resp.Policy == nil {
-			return nil, nil
-		}
-		policy, err := strToPolicy(*resp.Policy)
-		if err != nil {
-			return nil, err
+			// NoSuchBucketPolicy is fine, just means no bucket policy exists
+		} else if resp.Policy != nil {
+			bucketPolicy, err = strToPolicy(*resp.Policy)
+			if err != nil {
+				return nil, err
+			}
 		}
 
-		return policy, nil
+		// Return the bucket policy
+		return bucketPolicy, nil
 	},
-	"AWS::EFS::FileSystem": func(ctx context.Context, cfg aws.Config, fileSystemId string) (*types.Policy, error) {
+	"AWS::EFS::FileSystem": func(ctx context.Context, cfg aws.Config, fileSystemId string, allowedRegions []string) (*types.Policy, error) {
 		client := efs.NewFromConfig(cfg)
 		resp, err := client.DescribeFileSystemPolicy(ctx, &efs.DescribeFileSystemPolicyInput{
 			FileSystemId: aws.String(fileSystemId),
@@ -329,7 +361,7 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 
 		return policy, nil
 	},
-	"AWS::SQS::Queue": func(ctx context.Context, cfg aws.Config, queueUrl string) (*types.Policy, error) {
+	"AWS::SQS::Queue": func(ctx context.Context, cfg aws.Config, queueUrl string, allowedRegions []string) (*types.Policy, error) {
 		client := sqs.NewFromConfig(cfg)
 		resp, err := client.GetQueueAttributes(ctx, &sqs.GetQueueAttributesInput{
 			QueueUrl:       aws.String(queueUrl),
@@ -354,7 +386,7 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 
 		return policy, nil
 	},
-	"AWS::ElasticSearch::Domain": func(ctx context.Context, cfg aws.Config, domainName string) (*types.Policy, error) {
+	"AWS::ElasticSearch::Domain": func(ctx context.Context, cfg aws.Config, domainName string, allowedRegions []string) (*types.Policy, error) {
 		client := elasticsearchservice.NewFromConfig(cfg)
 		resp, err := client.DescribeElasticsearchDomainConfig(ctx, &elasticsearchservice.DescribeElasticsearchDomainConfigInput{
 			DomainName: aws.String(domainName),
@@ -377,7 +409,7 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 
 		return policy, nil
 	},
-	"AWS::SNS::Topic": func(ctx context.Context, cfg aws.Config, topicArn string) (*types.Policy, error) {
+	"AWS::SNS::Topic": func(ctx context.Context, cfg aws.Config, topicArn string, allowedRegions []string) (*types.Policy, error) {
 		client := sns.NewFromConfig(cfg)
 		resp, err := client.GetTopicAttributes(ctx, &sns.GetTopicAttributesInput{
 			TopicArn: aws.String(topicArn),
@@ -429,7 +461,7 @@ func (a *AwsResourcePolicyFetcher) Process(resource *types.EnrichedResourceDescr
 	}
 
 	// Get the policy
-	policy, err := policyGetter(a.ContextHolder.Context(), awsCfg, resource.Identifier)
+	policy, err := policyGetter(a.ContextHolder.Context(), awsCfg, resource.Identifier, a.Regions)
 	if err != nil {
 		return fmt.Errorf("failed to get policy: %w", err)
 	}
