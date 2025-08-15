@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/elasticsearchservice"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
@@ -189,9 +190,14 @@ func isPublic(results []*iam.EvaluationResult) bool {
 
 func getAllowedActions(results []*iam.EvaluationResult) []string {
 	allowed := getAllowedResults(results)
+	actionSet := make(map[string]struct{})
 	actions := []string{}
 	for _, res := range allowed {
-		actions = append(actions, string(res.Action))
+		actionStr := string(res.Action)
+		if _, exists := actionSet[actionStr]; !exists {
+			actionSet[actionStr] = struct{}{}
+			actions = append(actions, actionStr)
+		}
 	}
 	return actions
 }
@@ -345,6 +351,40 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 			}
 		}
 
+		// Check bucket ACL for additional access controls
+		aclResp, err := client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
+			Bucket: aws.String(bucketName),
+		})
+		if err != nil {
+			// Log ACL check failure but don't fail the entire operation
+			slog.Debug("Failed to get bucket ACL", "bucket", bucketName, "error", err)
+		} else if aclResp.Grants != nil {
+			// Convert ACL grants to policy statements and merge with bucket policy
+			aclStatements := convertACLGrantsToStatements(aclResp.Grants, bucketName)
+			if len(aclStatements) > 0 {
+				if bucketPolicy == nil {
+					// Create a new policy if none exists
+					aclStatementList := types.PolicyStatementList(aclStatements)
+					bucketPolicy = &types.Policy{
+						Version:   "2012-10-17",
+						Statement: &aclStatementList,
+					}
+				} else {
+					// Merge ACL statements with existing policy
+					if bucketPolicy.Statement == nil {
+						aclStatementList := types.PolicyStatementList(aclStatements)
+						bucketPolicy.Statement = &aclStatementList
+					} else {
+						// Dereference, append, and reassign
+						existingStatements := *bucketPolicy.Statement
+						mergedStatements := append(existingStatements, aclStatements...)
+						bucketPolicy.Statement = &mergedStatements
+					}
+				}
+				slog.Debug("Merged ACL grants into bucket policy", "bucket", bucketName, "aclStatements", len(aclStatements))
+			}
+		}
+
 		// Return the bucket policy
 		return bucketPolicy, nil
 	},
@@ -443,6 +483,82 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 
 		return policy, nil
 	},
+}
+
+// convertACLGrantsToStatements converts S3 ACL grants to IAM policy statements
+func convertACLGrantsToStatements(grants []s3types.Grant, bucketName string) []types.PolicyStatement {
+	var statements []types.PolicyStatement
+
+	for _, grant := range grants {
+		if grant.Grantee == nil || grant.Grantee.URI == nil {
+			continue
+		}
+
+		// Map ACL permissions to IAM actions
+		var actions []string
+		switch grant.Permission {
+		case "READ":
+			actions = []string{
+				"s3:GetObject",
+				"s3:GetObjectVersion",
+				"s3:ListBucket",
+			}
+		case "WRITE":
+			actions = []string{
+				"s3:PutObject",
+				"s3:DeleteObject",
+			}
+		case "READ_ACP":
+			actions = []string{"s3:GetBucketAcl"}
+		case "WRITE_ACP":
+			actions = []string{"s3:PutBucketAcl"}
+		case "FULL_CONTROL":
+			actions = []string{"s3:*"}
+		default:
+			continue
+		}
+
+		// Map grantee URI to principal
+		var principal *types.Principal
+		var granteeType string
+		switch *grant.Grantee.URI {
+		case "http://acs.amazonaws.com/groups/global/AllUsers":
+			// Create a Principal with AWS field set to "*"
+			star := types.DynaString{"*"}
+			principal = &types.Principal{
+				AWS: &star,
+			}
+			granteeType = "AllUsers"
+		case "http://acs.amazonaws.com/groups/global/AuthenticatedUsers":
+			// Create a Principal with AWS field set to "arn:aws:iam::*:root"
+			authUsers := types.DynaString{"arn:aws:iam::*:root"}
+			principal = &types.Principal{
+				AWS: &authUsers,
+			}
+			granteeType = "AuthenticatedUsers"
+		default:
+			// Skip other grantee types for now
+			continue
+		}
+
+		// Create statement with descriptive SID
+		actionDynaString := types.DynaString(actions)
+		resourceDynaString := types.DynaString{
+			fmt.Sprintf("arn:aws:s3:::%s", bucketName),
+			fmt.Sprintf("arn:aws:s3:::%s/*", bucketName),
+		}
+		statement := types.PolicyStatement{
+			Sid:       fmt.Sprintf("VirtualPolicyFromACL-%s-%s", granteeType, grant.Permission),
+			Effect:    "Allow",
+			Principal: principal,
+			Action:    &actionDynaString,
+			Resource:  &resourceDynaString,
+		}
+
+		statements = append(statements, statement)
+	}
+
+	return statements
 }
 
 type AwsResourcePolicyFetcher struct {
