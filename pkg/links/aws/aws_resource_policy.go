@@ -606,10 +606,10 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 					return nil, locErr
 				}
 
-				bucketRegion := string(locationResp.LocationConstraint)
-				// AWS returns empty string for us-east-1
-				if bucketRegion == "" {
-					bucketRegion = "us-east-1"
+				// Handle empty LocationConstraint (means us-east-1)
+				bucketRegion := "us-east-1"
+				if locationResp.LocationConstraint != "" {
+					bucketRegion = string(locationResp.LocationConstraint)
 				}
 
 				// Check if the bucket's region is in the user's allowed regions list
