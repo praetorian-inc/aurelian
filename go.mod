@@ -110,6 +110,7 @@ require (
 	github.com/microsoftgraph/msgraph-sdk-go-core v1.2.1 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/sys/user v0.4.0 // indirect
+	github.com/neo4j/neo4j-go-driver/v5 v5.28.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
