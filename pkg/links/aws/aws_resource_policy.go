@@ -309,6 +309,7 @@ func GetEvaluationContexts(resourceType string) []*iam.RequestContext {
 				{"s3:x-amz-server-side-encryption", []string{"AES256", "aws:kms", ""}},
 				{"aws:SourceAccount", []string{"111122223333", ""}},
 				{"aws:SourceVpc", []string{"vpc-12345678", ""}},
+				{"aws:SourceVpce", []string{"vpce-0123abcd4ef567890", ""}},
 			},
 		}
 		return generator.GenerateAllPermutations()
@@ -577,7 +578,47 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 			}
 		}
 
-		// Check bucket policy
+		// 1. Check Block Public Access settings first - if it blocks access, the request is denied regardless of policies or ACLs
+		blockPublicAccessResp, err := client.GetPublicAccessBlock(ctx, &s3.GetPublicAccessBlockInput{
+			Bucket: aws.String(bucketName),
+		})
+		if err != nil {
+			// Log the error but continue - some buckets might not have public access block settings
+			slog.Debug("Failed to get public access block settings", "bucket", bucketName, "error", err)
+		} else if blockPublicAccessResp.PublicAccessBlockConfiguration != nil {
+			config := blockPublicAccessResp.PublicAccessBlockConfiguration
+			// Only check the two flags that actually block current access:
+			// - IgnorePublicAcls: blocks all ACL-based public access
+			// - RestrictPublicBuckets: blocks all policy-based public access
+			// Note: BlockPublicAcls and BlockPublicPolicy only prevent future changes, not current access
+			if (config.IgnorePublicAcls != nil && *config.IgnorePublicAcls) ||
+				(config.RestrictPublicBuckets != nil && *config.RestrictPublicBuckets) {
+				slog.Debug("Bucket has public access blocked", "bucket", bucketName,
+					"ignorePublicAcls", config.IgnorePublicAcls,
+					"restrictPublicBuckets", config.RestrictPublicBuckets)
+
+				// Create a policy that represents the blocked access
+				// Use the correct types for Principal, Action, Resource, and Condition
+				starPrincipal := types.DynaString{"*"}
+				actionDynaString := types.DynaString{"s3:*"}
+				resourceDynaString := types.DynaString{fmt.Sprintf("arn:aws:s3:::%s", bucketName), fmt.Sprintf("arn:aws:s3:::%s/*", bucketName)}
+
+				blockStatement := types.PolicyStatement{
+					Effect:    "Deny",
+					Principal: &types.Principal{AWS: &starPrincipal},
+					Action:    &actionDynaString,
+					Resource:  &resourceDynaString,
+				}
+
+				blockStatementList := types.PolicyStatementList{blockStatement}
+				return &types.Policy{
+					Version:   "2012-10-17",
+					Statement: &blockStatementList,
+				}, nil
+			}
+		}
+
+		// 2. Check bucket policy next - policies can grant or explicitly deny access
 		var bucketPolicy *types.Policy
 		resp, err := client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
 			Bucket: aws.String(bucketName),
@@ -594,7 +635,8 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 			}
 		}
 
-		// Check bucket ACL for additional access controls
+		// 3. Check bucket ACLs only if no explicit deny is found in policies
+		// ACLs are evaluated last and can provide additional access controls
 		aclResp, err := client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
 			Bucket: aws.String(bucketName),
 		})
