@@ -136,3 +136,52 @@ func (fs *AWSFindSecrets) Complete() error {
 	// No manual coordination needed - framework handles it
 	return nil
 }
+
+func (fs *AWSFindSecrets) Permissions() []cfg.Permission {
+	return []cfg.Permission{
+		{
+			Platform:   "aws",
+			Permission: "cloudcontrol:ListResources",
+		},
+		{
+			Platform:   "aws",
+			Permission: "cloudformation:ListStacks",
+		},
+		{
+			Platform:   "aws",
+			Permission: "ec2:DescribeInstanceAttribute",
+		},
+		{
+			Platform:   "aws",
+			Permission: "ec2:DescribeInstances",
+		},
+		{
+			Platform:   "aws",
+			Permission: "ecs:ListTaskDefinitions",
+		},
+		{
+			Platform:   "aws",
+			Permission: "kms:Decrypt",
+		},
+		{
+			Platform:   "aws",
+			Permission: "lambda:GetFunction",
+		},
+		{
+			Platform:   "aws",
+			Permission: "lambda:ListFunctions",
+		},
+		{
+			Platform:   "aws",
+			Permission: "ssm:ListDocuments",
+		},
+		{
+			Platform:   "aws",
+			Permission: "states:ListStateMachines",
+		},
+		{
+			Platform:   "aws",
+			Permission: "sts:GetCallerIdentity",
+		},
+	}
+}
