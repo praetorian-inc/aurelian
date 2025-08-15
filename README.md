@@ -42,6 +42,7 @@ Nebula uses standard cloud provider authentication:
 - **AWS**: Environment variables, credentials file (~/.aws/credentials), IAM roles
 - **Azure**: Environment variables, Azure CLI, managed identity
 - **GCP**: Service account keys, application default credentials
+- **Docker**: Registry credentials via --docker-user and --docker-password flags
 
 ## Basic Usage
 
@@ -65,6 +66,9 @@ nebula azure recon public-resources -s subscription-id
 
 # Get GCP project information
 nebula gcp recon projects-list
+
+# Analyze Docker container for secrets
+nebula saas recon docker-dump -i nginx:latest
 ```
 
 ## Common Commands
@@ -97,6 +101,12 @@ nebula azure recon public-resources -s all
 nebula azure recon devops-secrets --organization org-name
 ```
 
+**SaaS Reconnaissance:**
+```bash
+# Docker container analysis and secret scanning
+nebula saas recon docker-dump -i image-name
+```
+
 **Analysis Modules:**
 ```bash
 # AWS key analysis
@@ -126,6 +136,7 @@ nebula aws analyze ip-lookup -i 1.2.3.4
 -r, --regions string  AWS regions ('all' or comma-separated)
 -s, --subscription    Azure subscription ID
 -t, --resource-type   Cloud resource type filter
+-i, --image string    Docker image name for SaaS modules
 ```
 
 ## MCP Server

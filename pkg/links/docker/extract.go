@@ -269,14 +269,13 @@ func (dl *DockerImageLoader) createImageContext(imageName string) types.DockerIm
 	if username != "" && password != "" {
 		imageContext.AuthConfig.Username = username
 		imageContext.AuthConfig.Password = password
-		
-		// Extract server address from image name
-		if strings.Contains(imageName, "/") {
-			parts := strings.SplitN(imageName, "/", 2)
-			if strings.Contains(parts[0], ".") {
-				imageContext.AuthConfig.ServerAddress = "https://" + parts[0]
-			}
-		}
+	}
+
+	// Extract server address from image name
+	parts := strings.SplitN(imageName, "/", 2)
+	if strings.Contains(parts[0], ".") {
+		imageContext.AuthConfig.ServerAddress = "https://" + parts[0]
+		imageContext.Image = parts[1]
 	}
 
 	return imageContext
