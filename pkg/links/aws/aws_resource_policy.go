@@ -180,7 +180,7 @@ type ContextGenerator struct {
 	Conditions     []ConditionPermutation
 }
 
-// Bool helper function for creating *bool values
+// Bool helper function for creating *bool values  
 func Bool(b bool) *bool {
 	return &b
 }
@@ -188,7 +188,7 @@ func Bool(b bool) *bool {
 // GenerateAllPermutations creates all combinations of contexts with condition permutations
 func (cg *ContextGenerator) GenerateAllPermutations() []*iam.RequestContext {
 	contexts := []*iam.RequestContext{}
-
+	
 	// Add base principal contexts first (existing behavior)
 	for _, principal := range cg.BasePrincipals {
 		ctx := &iam.RequestContext{
@@ -197,20 +197,20 @@ func (cg *ContextGenerator) GenerateAllPermutations() []*iam.RequestContext {
 		}
 		contexts = append(contexts, ctx)
 	}
-
+	
 	// Generate all condition combinations for wildcard principal
 	permutations := cg.generateConditionPermutations()
-
+	
 	for _, perm := range permutations {
 		ctx := &iam.RequestContext{
 			PrincipalArn:      "*", // Wildcard for public access testing
 			RequestParameters: make(map[string]string),
 		}
-
+		
 		cg.applyPermutation(ctx, perm)
 		contexts = append(contexts, ctx)
 	}
-
+	
 	return contexts
 }
 
@@ -241,10 +241,10 @@ func (cg *ContextGenerator) generateConditionPermutations() []map[string]string 
 			}
 			temp /= len(condition.Values)
 		}
-
+		
 		permutations[i] = perm
 	}
-
+	
 	return permutations
 }
 
@@ -284,8 +284,8 @@ func GetEvaluationContexts(resourceType string) []*iam.RequestContext {
 		generator := ContextGenerator{
 			BasePrincipals: []string{
 				"arn:aws:iam::111122223333:role/praetorian", // Generic cross-account
-				"apigateway.amazonaws.com",                  // API Gateway service
-				"lambda.amazonaws.com",                      // Lambda service
+				"apigateway.amazonaws.com",                   // API Gateway service
+				"lambda.amazonaws.com",                       // Lambda service
 			},
 			Conditions: []ConditionPermutation{
 				{"lambda:FunctionUrlAuthType", []string{"NONE", "AWS_IAM", ""}},
@@ -295,13 +295,13 @@ func GetEvaluationContexts(resourceType string) []*iam.RequestContext {
 			},
 		}
 		return generator.GenerateAllPermutations()
-
+		
 	case "AWS::S3::Bucket":
 		generator := ContextGenerator{
 			BasePrincipals: []string{
 				"arn:aws:iam::111122223333:role/praetorian", // Generic cross-account
-				"cloudfront.amazonaws.com",                  // CloudFront service
-				"s3.amazonaws.com",                          // S3 service
+				"cloudfront.amazonaws.com",                   // CloudFront service  
+				"s3.amazonaws.com",                           // S3 service
 			},
 			Conditions: []ConditionPermutation{
 				{"aws:SecureTransport", []string{"true", "false", ""}},
@@ -327,7 +327,7 @@ func GetEvaluationContexts(resourceType string) []*iam.RequestContext {
 			},
 		}
 		return generator.GenerateAllPermutations()
-
+		
 	case "AWS::SQS::Queue":
 		generator := ContextGenerator{
 			BasePrincipals: []string{
@@ -343,7 +343,7 @@ func GetEvaluationContexts(resourceType string) []*iam.RequestContext {
 			},
 		}
 		return generator.GenerateAllPermutations()
-
+		
 	default:
 		// Default fallback for unknown resource types
 		return []*iam.RequestContext{
@@ -371,7 +371,7 @@ func (a *AwsResourcePolicyChecker) evaluatePolicyWithContext(reqCtx *iam.Request
 
 	results := []*iam.EvaluationResult{}
 	actions := iam.ExtractActions(policy.Statement)
-
+	
 	for _, action := range actions {
 		er := &iam.EvaluationRequest{
 			Action:             action,
@@ -395,9 +395,9 @@ func (a *AwsResourcePolicyChecker) evaluatePolicyWithContext(reqCtx *iam.Request
 // analyzePolicy analyzes a policy to determine if it grants public access
 func (a *AwsResourcePolicyChecker) analyzePolicy(resource string, policy *types.Policy, accountId string, resourceType string) ([]*iam.EvaluationResult, error) {
 	allResults := []*iam.EvaluationResult{}
-
+	
 	contexts := GetEvaluationContexts(resourceType)
-
+	
 	for _, reqCtx := range contexts {
 		// Apply org policies context if available
 		if a.orgPolicies != nil && accountId != "" {
@@ -405,7 +405,7 @@ func (a *AwsResourcePolicyChecker) analyzePolicy(resource string, policy *types.
 			slog.Debug("Enhanced policy analysis with org policies", "resource", resource, "account", accountId, "principal", reqCtx.PrincipalArn, "org_policies_available", true)
 		}
 		reqCtx.PopulateDefaultRequestConditionKeys(resource)
-
+		
 		// Evaluate policy with this context
 		results, err := a.evaluatePolicyWithContext(reqCtx, policy, resource)
 		if err != nil {

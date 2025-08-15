@@ -50,6 +50,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20
 	github.com/microsoftgraph/msgraph-sdk-go v1.53.0
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de
+	github.com/neo4j/neo4j-go-driver/v5 v5.28.1
 	github.com/praetorian-inc/janus-framework v0.0.0-20250813151526-bc4f4c7279a7
 	github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157
 	github.com/praetorian-inc/tabularium v1.0.10

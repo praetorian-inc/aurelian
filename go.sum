@@ -292,8 +292,6 @@ github.com/praetorian-inc/janus-framework v0.0.0-20250813151526-bc4f4c7279a7 h1:
 github.com/praetorian-inc/janus-framework v0.0.0-20250813151526-bc4f4c7279a7/go.mod h1:/K/qM9j43mrPe0VsYy5xUDNWT+pnk7ejBE4O7Lcg8RY=
 github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157 h1:Hrov9II6t60IMF9wg8CqySnZi/2fdz/2DkAMcw48bkU=
 github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157/go.mod h1:sbwY5GVsqieoJXogpMMK+5GWZ15UgNnd9nRSkjBG8rQ=
-github.com/praetorian-inc/tabularium v1.0.7-pre-prod h1:odmUg34q3QCeytGSFRqsciYG4O9mLgPF7p0zW/pa2dY=
-github.com/praetorian-inc/tabularium v1.0.7-pre-prod/go.mod h1:5VgsU58pTSX+umfBcpmsOPu6TM9W7EOmErpNq2i50w4=
 github.com/praetorian-inc/tabularium v1.0.10 h1:TTsiYY4HxFhRYsI0zqzZK4Pj7tbOSAURN+3LTbWyBMU=
 github.com/praetorian-inc/tabularium v1.0.10/go.mod h1:7TpFxGVAoy1md1+QfQI8TpwHc5Hxui720cMcbzBDXEk=
 github.com/redis/go-redis/v9 v9.8.0 h1:q3nRvjrlge/6UD7eTu/DSg2uYiU2mCL0G/uzBWqhicI=
