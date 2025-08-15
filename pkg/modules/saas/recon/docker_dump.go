@@ -3,6 +3,7 @@ package recon
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	janusDocker "github.com/praetorian-inc/janus-framework/pkg/links/docker"
 	"github.com/praetorian-inc/janus-framework/pkg/links/noseyparker"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/docker"
@@ -23,10 +24,8 @@ var DockerDump = chain.NewModule(
 ).WithLinks(
 	// Load Docker images from file or single image input
 	docker.NewDockerImageLoader,
-	// Pull the Docker images
-	docker.NewDockerPull,
-	// Save images to local tar files
-	docker.NewDockerSave,
+	// Download images to local tar files
+	janusDocker.NewDockerDownload,
 	// Extract to filesystem
 	docker.NewDockerExtractToFS,
 	// Convert to NoseyParker inputs and scan
