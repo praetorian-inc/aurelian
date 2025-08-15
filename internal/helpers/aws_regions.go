@@ -82,7 +82,7 @@ func EnabledRegions(profile string, opts []*types.Option) ([]string, error) {
 		}
 	}
 
-	cfg, err := GetAWSCfg("us-east-1", profile, opts)
+	cfg, err := GetAWSCfg("us-east-1", profile, opts, "none")
 	if err != nil {
 		return nil, err
 	}

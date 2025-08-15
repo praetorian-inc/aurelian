@@ -76,7 +76,7 @@ func getResourcePatternsFromAction(action Action) []*regexp.Regexp {
 		return patterns
 
 	} else {
-		slog.Debug("Service not found in serviceResourceMaps",service)
+		slog.Debug("Service not found in serviceResourceMaps", "service", service)
 	}
 
 	return []*regexp.Regexp{regexp.MustCompile(fmt.Sprintf("arn:aws:%s:*:*:*", service))}
