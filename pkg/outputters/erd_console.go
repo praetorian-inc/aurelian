@@ -76,6 +76,14 @@ func (o *ERDConsoleOutputter) registerDefaultExtractors() {
 		return "", nil, false
 	})
 
+	// Lambda Function extractor
+	o.RegisterExtractor("AWS::Lambda::Function", func(props map[string]any) (string, []string, bool) {
+		if functionUrl, ok := props["FunctionUrl"].(string); ok && functionUrl != "" {
+			return functionUrl, nil, true
+		}
+		return "", nil, false
+	})
+
 	// Add more resource type extractors as needed...
 }
 
@@ -172,8 +180,8 @@ func (o *ERDConsoleOutputter) Output(v any) error {
 
 	// Try type-specific extractor first
 	if extractor, ok := o.extractors[erd.TypeName]; ok {
-		if publicIp, actions, success := extractor(propsMap); success {
-			o.outputResource(erd.Arn.String(), publicIp, actions, needsTriage)
+		if extractedValue, actions, success := extractor(propsMap); success {
+			o.outputResource(erd.Arn.String(), extractedValue, actions, needsTriage)
 			return nil
 		}
 	}
@@ -195,7 +203,7 @@ func (o *ERDConsoleOutputter) Output(v any) error {
 }
 
 // outputResource handles the formatting of the resource output
-func (o *ERDConsoleOutputter) outputResource(arn string, publicIp string, actions []string, needsTriage bool) {
+func (o *ERDConsoleOutputter) outputResource(arn string, extractedValue string, actions []string, needsTriage bool) {
 	arnOutput := arn
 	if needsTriage {
 		arnOutput += " (Requires Triage)"
@@ -204,8 +212,20 @@ func (o *ERDConsoleOutputter) outputResource(arn string, publicIp string, action
 	if len(actions) > 0 {
 		actionsOut := strings.Join(actions, "\n    ")
 		message.Success("%s\n    %s", arnOutput, actionsOut)
-	} else if publicIp != "" {
-		message.Success("%s\n    Public IP: %s", arnOutput, publicIp)
+	} else if extractedValue != "" {
+		// Format the extracted value based on what it looks like
+		var label string
+		if strings.HasPrefix(extractedValue, "http") {
+			label = "Function URL"
+		} else if strings.Contains(extractedValue, ":") && !strings.HasPrefix(extractedValue, "http") {
+			label = "Endpoint"
+		} else if strings.Count(extractedValue, ".") == 3 {
+			// Looks like an IP address
+			label = "Public IP"
+		} else {
+			label = "Value"
+		}
+		message.Success("%s\n    %s: %s", arnOutput, label, extractedValue)
 	} else {
 		message.Success("%s", arnOutput)
 	}
