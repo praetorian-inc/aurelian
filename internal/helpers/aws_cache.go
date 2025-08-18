@@ -39,9 +39,9 @@ var (
 	}
 	logger             = *logs.NewLogger()
 	cacheMaintained    = false
-	cacheHitCount      int64
-	cacheMissCount     int64
-	cacheBypassedCount int64
+	cacheHitCount      int64 = 0
+	cacheMissCount     int64 = 0
+	cacheBypassedCount int64 = 0
 	throttlingStats    sync.Map
 )
 
@@ -316,7 +316,7 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 	}
 
 	// Cache configuration not found in context
-	logger.Warn("Cache configuration not found in context")
+	logger.Warn("Cache configuration not found in context, cache bypassed")
 	atomic.AddInt64(&cacheBypassedCount, 1)
 	output, metadata, err := handler.HandleDeserialize(ctx, input)
 	if err != nil {
