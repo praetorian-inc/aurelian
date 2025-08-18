@@ -18,10 +18,11 @@ import (
 )
 
 var (
-	logLevelFlag string
+	logLevelFlag     string
 	awsCacheLogLevel string
-	awsCacheLogFile string
-	noColorFlag bool
+	awsCacheLogFile  string
+	noColorFlag      bool
+	quietFlag        bool
 )
 
 var rootCmd = &cobra.Command{
@@ -33,9 +34,6 @@ potential security issues in cloud environments.`,
 
 func initCommands() {
 	runtime.GC()
-	if !strings.Contains(strings.Join(os.Args, " "), "mcp-server") {
-		message.Banner(registry.GetModuleCount())
-	}
 	rootCmd.AddCommand(listModulesCmd)
 	generateCommands(rootCmd)
 }
@@ -45,14 +43,22 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&awsCacheLogLevel, options.AwsCacheLogLevel().Name(), options.AwsCacheLogLevel().Value().(string), "Log level (debug, info, warn, error)")
 	rootCmd.PersistentFlags().StringVar(&awsCacheLogFile, options.AwsCacheLogFile().Name(), options.AwsCacheLogFile().Value().(string), "")
 	rootCmd.PersistentFlags().BoolVar(&noColorFlag, "no-color", false, "Disable colored output")
-	
+	rootCmd.PersistentFlags().BoolVar(&quietFlag, "quiet", false, "Suppress user messages (overrides default verbose CLI mode)")
+
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
 		logs.ConfigureDefaults(logLevelFlag)
 		helpers.ConfigureAWSCacheLogger(awsCacheLogLevel, awsCacheLogFile)
-		
+
 		// Configure janus-framework logging to match nebula's log level
 		if level, err := cfg.LevelFromString(logLevelFlag); err == nil {
 			cfg.SetDefaultLevel(level)
+		}
+
+		message.SetQuiet(quietFlag)
+		message.SetNoColor(noColorFlag)
+
+		if !strings.Contains(strings.Join(os.Args, " "), "mcp-server") {
+			message.Banner(registry.GetModuleCount())
 		}
 	}
 }
@@ -72,15 +78,15 @@ var listModulesCmd = &cobra.Command{
 
 func displayModuleTree() {
 	hierarchy := registry.GetHierarchy()
-	
+
 	// Create module info structs for the tree display
 	type ModuleInfo struct {
 		CommandPath string
 		Description string
 	}
-	
+
 	var allModules []ModuleInfo
-	
+
 	// Convert registry hierarchy to command paths
 	for platform, categories := range hierarchy {
 		for category, moduleNames := range categories {
@@ -95,7 +101,7 @@ func displayModuleTree() {
 			}
 		}
 	}
-	
+
 	// Sort modules by command path
 	sort.Slice(allModules, func(i, j int) bool {
 		return allModules[i].CommandPath < allModules[j].CommandPath
