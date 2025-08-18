@@ -200,7 +200,6 @@ func AwsRegions() cfg.Param {
 	return cfg.NewParam[[]string]("regions", "AWS regions to scan").
 		WithDefault([]string{"all"}).
 		WithRegex(regexp.MustCompile(`(?i)^[a-z]{2}\-([a-z]+\-){1,2}\d|all$`)).
-		AsRequired().
 		WithShortcode("r")
 }
 
