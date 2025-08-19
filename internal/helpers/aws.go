@@ -166,7 +166,6 @@ func GetAWSCfg(region string, profile string, opts []*types.Option, opsecLevel s
 	}
 	cfg.ConfigSources = append(cfg.ConfigSources, nebulaSource)
 
-	var principal sts.GetCallerIdentityOutput
 	var CachePrep middleware.InitializeMiddleware
 
 	if opsecLevel == "stealth" {
@@ -174,16 +173,10 @@ func GetAWSCfg(region string, profile string, opts []*types.Option, opsecLevel s
 		// Use alternative caching strategy without identity
 		CachePrep = GetCachePrepWithoutIdentity(opts)
 	} else {
-		if value, ok := ProfileIdentity.Load(cacheKey); ok {
-			principal = value.(sts.GetCallerIdentityOutput)
-			slog.Debug("Loaded Profile ARN from Cached Map", "cacheKey", cacheKey, "ARN", *principal.Arn)
-		} else {
-			principal, err = GetCallerIdentity(cfg)
-			if err != nil {
-				return aws.Config{}, err
-			}
-			ProfileIdentity.Store(cacheKey, principal)
-			slog.Debug("GetAWSCfg Called STS GetCallerIdentity for", "cacheKey", cacheKey, "ARN", *principal.Arn)
+		principal, err := GetCallerIdentity(cfg)
+		if err != nil {
+			slog.Error("Error getting principal", err)
+			return aws.Config{}, err
 		}
 		CachePrep = GetCachePrepWithIdentity(principal, opts)
 	}
@@ -204,36 +197,11 @@ func GetAWSCfg(region string, profile string, opts []*types.Option, opsecLevel s
 }
 
 func GetAccountId(cfg aws.Config) (string, error) {
-
-	// Extract metadata from ConfigSources
-	nebulaSource, err := extractNebulaConfigSource(cfg)
+	principal, err := GetCallerIdentity(cfg)
 	if err != nil {
 		return "", err
 	}
-	
-	// In stealth mode, avoid making STS calls for OPSEC
-	if nebulaSource.OpsecLevel == "stealth" {
-		return "", fmt.Errorf("account ID not available in stealth mode - STS calls are disabled for OPSEC")
-	}
-
-	// Use the profile from ConfigSources as cache key
-	cacheKey := nebulaSource.Profile
-
-	slog.Debug("Getting Account ID for", "profile", cacheKey)
-
-	if value, ok := ProfileIdentity.Load(cacheKey); ok {
-		principal := value.(sts.GetCallerIdentityOutput)
-		slog.Debug("Loaded Profile ARN from Cached Map", "cacheKey", cacheKey, "ARN", *principal.Arn)
-		return *principal.Account, nil
-	} else {
-		principal, err := GetCallerIdentityAPI(cfg)
-		if err != nil {
-			return "", err
-		}
-		ProfileIdentity.Store(cacheKey, principal)
-		slog.Debug("GetAccountId Called STS GetCallerIdentityAPI for", "cacheKey", cacheKey, "ARN", *principal.Arn)
-		return *principal.Account, nil
-	}
+	return *principal.Account, nil
 }
 
 func GetCallerIdentityAPI(cfg aws.Config) (sts.GetCallerIdentityOutput, error) {
@@ -244,7 +212,7 @@ func GetCallerIdentityAPI(cfg aws.Config) (sts.GetCallerIdentityOutput, error) {
 	input := &sts.GetCallerIdentityInput{}
 
 	atomic.AddInt64(&cacheBypassedCount, 1)
-	
+
 	result, err := client.GetCallerIdentity(context.TODO(), input)
 	if err != nil {
 		return sts.GetCallerIdentityOutput{}, err
@@ -253,13 +221,29 @@ func GetCallerIdentityAPI(cfg aws.Config) (sts.GetCallerIdentityOutput, error) {
 	return *result, nil
 }
 
+func getCallerIdentityFromCache(cacheKey string, cfg aws.Config) (sts.GetCallerIdentityOutput, error) {
+	if value, ok := ProfileIdentity.Load(cacheKey); ok {
+		principal := value.(sts.GetCallerIdentityOutput)
+		slog.Debug("Loaded Profile Identity from cache", "cacheKey", cacheKey, "ARN", *principal.Arn)
+		return principal, nil
+	}
+
+	principal, err := GetCallerIdentityAPI(cfg)
+	if err != nil {
+		return sts.GetCallerIdentityOutput{}, err
+	}
+	ProfileIdentity.Store(cacheKey, principal)
+	slog.Debug("Cached new Profile Identity", "cacheKey", cacheKey, "ARN", *principal.Arn)
+	return principal, nil
+}
+
 func GetCallerIdentity(cfg aws.Config) (sts.GetCallerIdentityOutput, error) {
 	// Extract metadata from ConfigSources
 	nebulaSource, err := extractNebulaConfigSource(cfg)
 	if err != nil {
 		return sts.GetCallerIdentityOutput{}, err
 	}
-	
+
 	// In stealth mode, avoid making STS calls for OPSEC
 	if nebulaSource.OpsecLevel == "stealth" {
 		return sts.GetCallerIdentityOutput{}, fmt.Errorf("caller identity not available in stealth mode - STS calls are disabled for OPSEC")
@@ -268,19 +252,7 @@ func GetCallerIdentity(cfg aws.Config) (sts.GetCallerIdentityOutput, error) {
 	// Use the profile from ConfigSources as cache key
 	cacheKey := nebulaSource.Profile
 
-	if value, ok := ProfileIdentity.Load(cacheKey); ok {
-		principal := value.(sts.GetCallerIdentityOutput)
-		slog.Debug("Loaded Profile Identity from Cached Map", "cacheKey", cacheKey, "ARN", *principal.Arn)
-		return principal, nil
-	} else {
-		principal, err := GetCallerIdentityAPI(cfg)
-		if err != nil {
-			return sts.GetCallerIdentityOutput{}, err
-		}
-		ProfileIdentity.Store(cacheKey, principal)
-		slog.Debug("GetCallerIdentity Called STS GetCallerIdentityAPI for", "cacheKey", cacheKey, "ARN", *principal.Arn)
-		return principal, nil
-	}
+	return getCallerIdentityFromCache(cacheKey, cfg)
 }
 
 // Parses regions with 2 primary outcomes
