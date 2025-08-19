@@ -553,7 +553,36 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 	"AWS::S3::Bucket": func(ctx context.Context, cfg aws.Config, bucketName string, allowedRegions []string) (*types.Policy, error) {
 		client := s3.NewFromConfig(cfg)
 
-		// 1. Check Block Public Access settings first - if it blocks access, the request is denied regardless of policies or ACLs
+		// 0. Check bucket location first to ensure we're using the correct region
+		locationResp, err := client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
+			Bucket: aws.String(bucketName),
+		})
+		if err != nil {
+			slog.Error("Failed to get bucket location", "bucket", bucketName, "error", err)
+			return nil, err
+		}
+
+		// Handle empty LocationConstraint (means us-east-1)
+		bucketRegion := "us-east-1"
+		if locationResp.LocationConstraint != "" {
+			bucketRegion = string(locationResp.LocationConstraint)
+		}
+
+		// Check if the bucket's region is in the user's allowed regions list
+		if !slices.Contains(allowedRegions, bucketRegion) {
+			slog.Debug("Bucket region not in allowed regions list", "bucket", bucketName, "bucketRegion", bucketRegion, "allowedRegions", allowedRegions)
+			return nil, nil // Skip this bucket
+		}
+
+		// Only create a new client if the bucket is in a different region
+		if bucketRegion != cfg.Region {
+			newCfg := cfg.Copy()
+			newCfg.Region = bucketRegion
+			client = s3.NewFromConfig(newCfg)
+			slog.Debug("Created region-specific S3 client", "bucket", bucketName, "region", bucketRegion)
+		}
+
+		// 1. Check Block Public Access settings - if it blocks access, the request is denied regardless of policies or ACLs
 		blockPublicAccessResp, err := client.GetPublicAccessBlock(ctx, &s3.GetPublicAccessBlockInput{
 			Bucket: aws.String(bucketName),
 		})
@@ -599,51 +628,10 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 			Bucket: aws.String(bucketName),
 		})
 		if err != nil {
-			// Handle region redirect for S3 buckets
-			if strings.Contains(err.Error(), "PermanentRedirect") {
-				// Try to get bucket location first
-				locationResp, locErr := client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
-					Bucket: aws.String(bucketName),
-				})
-
-				if locErr != nil {
-					slog.Error("Failed to get bucket location", "bucket", bucketName, "error", locErr)
-					return nil, locErr
-				}
-
-				// Handle empty LocationConstraint (means us-east-1)
-				bucketRegion := "us-east-1"
-				if locationResp.LocationConstraint != "" {
-					bucketRegion = string(locationResp.LocationConstraint)
-				}
-
-				// Check if the bucket's region is in the user's allowed regions list
-				if !slices.Contains(allowedRegions, bucketRegion) {
-					slog.Debug("Bucket region not in allowed regions list", "bucket", bucketName, "bucketRegion", bucketRegion, "allowedRegions", allowedRegions)
-					return nil, nil // Skip this bucket
-				}
-
-				// Only create a new client if the bucket is in a different region
-				if bucketRegion != cfg.Region {
-					newCfg := cfg.Copy()
-					newCfg.Region = bucketRegion
-					client = s3.NewFromConfig(newCfg)
-					slog.Debug("Created region-specific S3 client", "bucket", bucketName, "region", bucketRegion)
-				}
-
-				// Retrieve the bucket policy again
-				resp, err = client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
-					Bucket: aws.String(bucketName),
-				})
+			if strings.Contains(err.Error(), "NoSuchBucketPolicy") {
+				return nil, nil
 			}
-
-			// If not a redirect error
-			if err != nil {
-				if strings.Contains(err.Error(), "NoSuchBucketPolicy") {
-					return nil, nil
-				}
-				return nil, err
-			}
+			return nil, err
 		}
 
 		// 2. Check bucket policy next - policies can grant or explicitly deny access
