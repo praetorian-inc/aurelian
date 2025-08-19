@@ -624,34 +624,29 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 			}
 		}
 
+		// 2. We pass through the bucket policy since this is what we want from this function
+		var bucketPolicy *types.Policy
 		resp, err := client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
 			Bucket: aws.String(bucketName),
 		})
 		if err != nil {
 			if strings.Contains(err.Error(), "NoSuchBucketPolicy") {
-				slog.Debug("No bucket policy found", "bucket", bucketName, "error", err)
-				return nil, nil
+				slog.Debug("Bucket does not exists", "bucket", bucketName, "error", err)
+				return nil, err
 			}
 			slog.Debug("Failed to get bucket policy", "bucket", bucketName, "error", err)
-			return nil, err
+			// Continue since we need to evaluate bucket ACL
 		}
-
-		// 2. Check bucket policy next - policies can grant or explicitly deny access
-		var bucketPolicy *types.Policy
-		if err != nil {
-			if !strings.Contains(err.Error(), "NoSuchBucketPolicy") {
-				return nil, err
-			}
-			// NoSuchBucketPolicy is fine, just means no bucket policy exists
-		} else if resp.Policy != nil {
+		if resp.Policy != nil {
 			bucketPolicy, err = strToPolicy(*resp.Policy)
 			if err != nil {
-				return nil, err
+				slog.Debug("Error in converting string to policy, continuing to evaluate ACLs", "policy", *resp.Policy, "error", err)
 			}
 		}
 
-		// 3. Check bucket ACLs only if no explicit deny is found in policies
-		// ACLs are evaluated last and can provide additional access controls
+		// 3. ACLs are evaluated last and can provide additional access controls
+		// In this case, we merge the policies.
+		// No better way to do this at the moment unless we evaluate the policy in the combined function with other resources
 		aclResp, err := client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
 			Bucket: aws.String(bucketName),
 		})
