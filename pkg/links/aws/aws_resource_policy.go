@@ -629,8 +629,10 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 		})
 		if err != nil {
 			if strings.Contains(err.Error(), "NoSuchBucketPolicy") {
+				slog.Debug("No bucket policy found", "bucket", bucketName, "error", err)
 				return nil, nil
 			}
+			slog.Debug("Failed to get bucket policy", "bucket", bucketName, "error", err)
 			return nil, err
 		}
 
