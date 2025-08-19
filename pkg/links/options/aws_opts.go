@@ -250,6 +250,16 @@ func AwsOrgPoliciesFile() cfg.Param {
 		WithShortcode("o")
 }
 
+func AwsGaadFile() cfg.Param {
+	return cfg.NewParam[string]("gaad-file", "Path to AWS GAAD (GetAccountAuthorizationDetails) JSON file from account-auth-details module").
+		WithShortcode("g")
+}
+
+func AwsResourcePoliciesFile() cfg.Param {
+	return cfg.NewParam[string]("resource-policies-file", "Path to AWS resource policies JSON file from resource-policies module").
+		WithShortcode("rp")
+}
+
 func AwsCacheErrorResp() cfg.Param {
 	return cfg.NewParam[bool]("cache-error-resp", "Cache error response").
 		WithDefault(false)
@@ -342,4 +352,13 @@ func AwsCdkQualifiers() cfg.Param {
 func AwsOpsecLevel() cfg.Param {
 	return cfg.NewParam[string]("opsec_level", "Operational security level for AWS operations").
 		WithDefault("none")
+}
+
+func AwsApolloOfflineOptions() []cfg.Param {
+	baseOpts := AwsReconBaseOptions()
+	return append(baseOpts, []cfg.Param{
+		AwsOrgPoliciesFile(),
+		AwsGaadFile(),
+		AwsResourcePoliciesFile(),
+	}...)
 }
