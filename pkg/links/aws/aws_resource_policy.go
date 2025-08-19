@@ -133,7 +133,12 @@ func (a *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 		return nil
 	}
 
-	slog.Debug(fmt.Sprintf("policy for %s", resource.Arn.String()), "policy", policy)
+	policyJson, err := json.MarshalIndent(policy, "", "  ")
+	if err != nil {
+		slog.Debug(fmt.Sprintf("policy for %s (failed to marshal): %v", resource.Arn.String(), err))
+	} else {
+		slog.Debug(fmt.Sprintf("policy for %s", resource.Arn.String()), "policy", string(policyJson))
+	}
 
 	// Check if the policy allows public access
 	res, err := a.analyzePolicy(resource.Arn.String(), policy, resource.AccountId, resource.TypeName)
@@ -564,8 +569,8 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 			if (config.IgnorePublicAcls != nil && *config.IgnorePublicAcls) ||
 				(config.RestrictPublicBuckets != nil && *config.RestrictPublicBuckets) {
 				slog.Debug("Bucket has public access blocked", "bucket", bucketName,
-					"ignorePublicAcls", config.IgnorePublicAcls,
-					"restrictPublicBuckets", config.RestrictPublicBuckets)
+					"ignorePublicAcls", config.IgnorePublicAcls != nil && *config.IgnorePublicAcls,
+					"restrictPublicBuckets", config.RestrictPublicBuckets != nil && *config.RestrictPublicBuckets)
 
 				// Create a policy that represents the blocked access
 				// Use the correct types for Principal, Action, Resource, and Condition
