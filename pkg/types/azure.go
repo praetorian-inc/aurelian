@@ -8,7 +8,7 @@ type ResourceInfo struct {
 	Location      string
 	ResourceGroup string
 	Subscription  string
-	Tags          map[string]*string
+	Tags          map[string]string
 	Properties    map[string]interface{}
 }
 

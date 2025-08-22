@@ -12,6 +12,7 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/links/aws/lambda"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/stepfunctions"
 	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/tabularium/pkg/model/model"
 )
 
 type AWSFindSecrets struct {
@@ -32,11 +33,11 @@ func (fs *AWSFindSecrets) Initialize() error {
 	return nil
 }
 
-func (fs *AWSFindSecrets) SupportedResourceTypes() []string {
+func (fs *AWSFindSecrets) SupportedResourceTypes() []model.CloudResourceType {
 	resources := fs.ResourceMap()
-	types := make([]string, 0, len(resources))
+	types := make([]model.CloudResourceType, 0, len(resources))
 	for resourceType := range resources {
-		types = append(types, resourceType)
+		types = append(types, model.CloudResourceType(resourceType))
 	}
 	return types
 }

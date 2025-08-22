@@ -3,10 +3,10 @@ package azure
 import (
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
 
@@ -37,7 +37,7 @@ func (l *AzureSubscriptionGeneratorLink) Process(input any) error {
 		l.Logger.Info("Listing all subscriptions")
 		
 		// Get credentials
-		cred, err := azidentity.NewDefaultAzureCredential(nil)
+		cred, err := helpers.NewAzureCredential()
 		if err != nil {
 			l.Logger.Error("Failed to get Azure credentials", "error", err)
 			return err

@@ -127,7 +127,7 @@ func (v *VirtualMachineEnricher) Enrich(ctx context.Context, resource *model.Azu
 	// Extract VM name and location
 	vmName := resource.Name
 	location := resource.Region
-	
+
 	if vmName == "" {
 		commands = append(commands, Command{
 			Command:      "",
@@ -162,14 +162,14 @@ func (v *VirtualMachineEnricher) Enrich(ctx context.Context, resource *model.Azu
 
 func (r *EnrichmentRegistry) EnrichResource(ctx context.Context, templateID string, resource *model.AzureResource) []Command {
 	var allCommands []Command
-	
+
 	for _, enricher := range r.enrichers {
 		if enricher.CanEnrich(templateID) {
 			commands := enricher.Enrich(ctx, resource)
 			allCommands = append(allCommands, commands...)
 		}
 	}
-	
+
 	return allCommands
 }
 
@@ -210,10 +210,10 @@ func (l *ARGEnrichmentLink) Process(data outputters.NamedOutputData) error {
 
 	// Enrich the resource with security testing commands
 	commands := l.registry.EnrichResource(l.Context(), templateID, resource)
-	
+
 	if len(commands) > 0 {
 		l.Logger.Debug("Enriched resource with commands", "resource_id", resource.Key, "template_id", templateID, "command_count", len(commands))
-		
+
 		// Add commands to resource properties
 		if resource.Properties == nil {
 			resource.Properties = make(map[string]any)
@@ -241,12 +241,27 @@ func (l *ARGTemplateLoaderLink) Params() []cfg.Param {
 	return []cfg.Param{
 		options.AzureTemplateDir(),
 		options.AzureArgCategory(),
+		options.AzureSubscription(),
 	}
 }
 
-func (l *ARGTemplateLoaderLink) Process(subscription string) error {
-	l.Logger.Info("ARGTemplateLoaderLink starting", "subscription", subscription)
+func (l *ARGTemplateLoaderLink) Process(input interface{}) error {
+	// This link can receive different types of input:
+	// - For modules with ResourceTypePreprocessor: model.CloudResourceType
+	// - For modules with WithChainInputParam: string (subscription ID)
+	// We ignore the input and get subscription from parameters
+	l.Logger.Debug("ARGTemplateLoaderLink received input", "input", input, "type", fmt.Sprintf("%T", input))
 	
+	// Get subscription from parameters (works for both cases)
+	subscriptions, err := cfg.As[[]string](l.Arg("subscription"))
+	l.Logger.Debug("subscription lookup", "subscriptions", subscriptions, "error", err, "all_args", l.Args())
+
+	subscription := ""
+	if len(subscriptions) > 0 {
+		subscription = subscriptions[0]
+	}
+	l.Logger.Info("ARGTemplateLoaderLink starting", "subscription", subscription)
+
 	directory := ""
 	category := ""
 	if l.HasParam("template-dir") {
@@ -255,7 +270,7 @@ func (l *ARGTemplateLoaderLink) Process(subscription string) error {
 	if l.HasParam("category") {
 		category, _ = cfg.As[string](l.Arg("category"))
 	}
-	
+
 	loader, err := templates.NewTemplateLoader()
 	if err != nil {
 		return fmt.Errorf("failed to initialize template loader: %v", err)
@@ -267,7 +282,7 @@ func (l *ARGTemplateLoaderLink) Process(subscription string) error {
 	}
 	templatesList := loader.GetTemplates()
 	l.Logger.Info("Templates loaded, filtering by category", "template_count", len(templatesList), "category", category)
-	
+
 	for _, t := range templatesList {
 		if category == "" || t.Category == category {
 			l.Logger.Debug("Matched template", "template_id", t.ID, "template_category", t.Category)

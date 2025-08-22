@@ -51,8 +51,8 @@ func (t *AzureSummaryTable) Values() []any {
 	if t.env.Tags != nil && len(t.env.Tags) > 0 {
 		var tagStrings []string
 		for k, v := range t.env.Tags {
-			if v != nil {
-				tagStrings = append(tagStrings, fmt.Sprintf("%s: %s", k, *v))
+			if v != "" {
+				tagStrings = append(tagStrings, fmt.Sprintf("%s: %s", k, v))
 			}
 		}
 		if len(tagStrings) > 0 {
@@ -206,8 +206,8 @@ func (l *AzureSummaryOutputFormatterLink) createSummaryTable(env *helpers.AzureE
 	if env.Tags != nil && len(env.Tags) > 0 {
 		var tagStrings []string
 		for k, v := range env.Tags {
-			if v != nil {
-				tagStrings = append(tagStrings, fmt.Sprintf("%s: %s", k, *v))
+			if v != "" {
+				tagStrings = append(tagStrings, fmt.Sprintf("%s: %s", k, v))
 			}
 		}
 		if len(tagStrings) > 0 {

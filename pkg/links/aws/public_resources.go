@@ -10,6 +10,7 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/links/aws/lambda"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/tabularium/pkg/model/model"
 )
 
 type AwsPublicResources struct {
@@ -59,11 +60,11 @@ func (a *AwsPublicResources) Process(resource *types.EnrichedResourceDescription
 	return a.Send(pair)
 }
 
-func (a *AwsPublicResources) SupportedResourceTypes() []string {
+func (a *AwsPublicResources) SupportedResourceTypes() []model.CloudResourceType {
 	resources := a.ResourceMap()
-	types := make([]string, 0, len(resources))
+	types := make([]model.CloudResourceType, 0, len(resources))
 	for resourceType := range resources {
-		types = append(types, resourceType)
+		types = append(types, model.CloudResourceType(resourceType))
 	}
 	return types
 }
