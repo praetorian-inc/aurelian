@@ -23,7 +23,7 @@ const (
 	consoleBase    = "https://console.aws.amazon.com/"
 	defaultIssuer  = "aws-console-tool"
 	minDuration    = 900
-	maxDuration    = 3600
+	maxDuration    = 129600
 )
 
 // Policy represents the IAM policy for federation token
@@ -61,7 +61,7 @@ func (l *AWSConsoleURLLink) Params() []cfg.Param {
 func (l *AWSConsoleURLLink) Process(input any) error {
 	// This link generates console URLs based on configuration, not input
 	// Input is ignored as this is typically used as a generator link
-	
+
 	roleArn, _ := cfg.As[string](l.Arg("role-arn"))
 	duration, _ := cfg.As[int](l.Arg("duration"))
 	mfaToken, _ := cfg.As[string](l.Arg("mfa-token"))
@@ -92,6 +92,7 @@ func (l *AWSConsoleURLLink) Process(input any) error {
 	}
 
 	// If the identity ARN contains "assumed-role", we're already using temporary credentials
+	isFederation := false
 	if strings.Contains(*identity.Arn, ":assumed-role/") {
 		// Extract the temporary credentials from the current config
 		creds, err := cfg.Credentials.Retrieve(l.Context())
@@ -111,6 +112,7 @@ func (l *AWSConsoleURLLink) Process(input any) error {
 			return fmt.Errorf("failed to assume role: %w", err)
 		}
 	} else {
+		isFederation = true
 		// Get federation token
 		credentials, err = l.getFederationToken(stsClient, federationName, duration)
 		if err != nil {
@@ -119,7 +121,7 @@ func (l *AWSConsoleURLLink) Process(input any) error {
 	}
 
 	// Generate console URL
-	consoleURL, err := l.generateConsoleURL(credentials)
+	consoleURL, err := l.generateConsoleURL(credentials, isFederation, duration)
 	if err != nil {
 		return fmt.Errorf("failed to generate console URL: %w", err)
 	}
@@ -180,7 +182,7 @@ func (l *AWSConsoleURLLink) getFederationToken(stsClient *sts.Client, federation
 	return result.Credentials, nil
 }
 
-func (l *AWSConsoleURLLink) generateConsoleURL(credentials *ststypes.Credentials) (string, error) {
+func (l *AWSConsoleURLLink) generateConsoleURL(credentials *ststypes.Credentials, isFederation bool, duration int) (string, error) {
 	// Construct session data
 	sessionData := map[string]string{
 		"sessionId":    *credentials.AccessKeyId,
@@ -194,9 +196,17 @@ func (l *AWSConsoleURLLink) generateConsoleURL(credentials *ststypes.Credentials
 	}
 
 	// Get sign-in token
-	federationURL := fmt.Sprintf("%s?Action=getSigninToken&Session=%s",
-		awsFedEndpoint,
-		url.QueryEscape(string(sessionDataBytes)))
+	var federationURL string
+	if isFederation {
+		federationURL = fmt.Sprintf("%s?Action=getSigninToken&Session=%s",
+			awsFedEndpoint,
+			url.QueryEscape(string(sessionDataBytes)))
+	} else {
+		federationURL = fmt.Sprintf("%s?Action=getSigninToken&SessionDuration=%d&Session=%s",
+			awsFedEndpoint,
+			duration,
+			url.QueryEscape(string(sessionDataBytes)))
+	}
 
 	resp, err := http.Get(federationURL)
 	if err != nil {
