@@ -1,13 +1,20 @@
 package applications
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/utils"
@@ -18,6 +25,7 @@ import (
 // FILE INFO:
 // GcpFunctionInfoLink - get info of a single cloud function, Process(functionName string); needs project and region
 // GcpFunctionListLink - list all cloud functions in a project, Process(resource tab.GCPResource)
+// GcpFunctionSecretsLink - extract secrets from a cloud function, Process(input tab.GCPResource)
 
 type GcpFunctionInfoLink struct {
 	*base.GcpBaseLink
@@ -132,6 +140,136 @@ func (g *GcpFunctionListLink) Process(resource tab.GCPResource) error {
 		return nil
 	})
 	return utils.HandleGcpError(err, "failed to list functions in location")
+}
+
+type GcpFunctionSecretsLink struct {
+	*base.GcpBaseLink
+	functionsService *cloudfunctions.Service
+}
+
+// creates a link to scan cloud function for secrets
+func NewGcpFunctionSecretsLink(configs ...cfg.Config) chain.Link {
+	g := &GcpFunctionSecretsLink{}
+	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
+	return g
+}
+
+func (g *GcpFunctionSecretsLink) Initialize() error {
+	if err := g.GcpBaseLink.Initialize(); err != nil {
+		return err
+	}
+	var err error
+	g.functionsService, err = cloudfunctions.NewService(context.Background(), g.ClientOptions...)
+	if err != nil {
+		return fmt.Errorf("failed to create cloud functions service: %w", err)
+	}
+	return nil
+}
+
+func (g *GcpFunctionSecretsLink) Process(input tab.GCPResource) error {
+	if input.ResourceType != tab.GCPResourceFunction {
+		return nil
+	}
+	fn, err := g.functionsService.Projects.Locations.Functions.Get(input.Name).Do()
+	if err != nil {
+		return utils.HandleGcpError(err, "failed to get cloud function for secrets extraction")
+	}
+	if len(fn.EnvironmentVariables) > 0 {
+		if content, err := json.Marshal(fn.EnvironmentVariables); err == nil {
+			g.Send(jtypes.NPInput{
+				Content: string(content),
+				Provenance: jtypes.NPProvenance{
+					Platform:     "gcp",
+					ResourceType: fmt.Sprintf("%s::EnvVariables", tab.GCPResourceFunction.String()),
+					ResourceID:   input.Name,
+					Region:       input.Region,
+					AccountID:    input.AccountRef,
+				},
+			})
+		}
+	}
+	if fn.SourceArchiveUrl != "" {
+		if err := g.scanFunctionSourceCode(fn.SourceArchiveUrl, input); err != nil {
+			slog.Error("Failed to scan function source code", "error", err, "function", input.Name)
+		}
+	}
+	return nil
+}
+
+func (g *GcpFunctionSecretsLink) scanFunctionSourceCode(sourceArchiveUrl string, input tab.GCPResource) error {
+	resp, err := http.Get(sourceArchiveUrl)
+	if err != nil {
+		return fmt.Errorf("failed to download source archive: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download source archive: status %d", resp.StatusCode)
+	}
+	archiveData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read archive data: %w", err)
+	}
+	if err := g.extractAndScanZipFiles(archiveData, input); err != nil {
+		return fmt.Errorf("failed to extract and scan files: %w", err)
+	}
+	return nil
+}
+
+func (g *GcpFunctionSecretsLink) extractAndScanZipFiles(archiveData []byte, input tab.GCPResource) error {
+	reader, err := zip.NewReader(bytes.NewReader(archiveData), int64(len(archiveData)))
+	if err != nil {
+		return fmt.Errorf("failed to create zip reader: %w", err)
+	}
+	for _, file := range reader.File {
+		if file.FileInfo().IsDir() || g.isSkippableFile(file.Name) {
+			continue
+		}
+		if file.UncompressedSize64 > 1*1024*1024 {
+			continue
+		}
+		rc, err := file.Open()
+		if err != nil {
+			slog.Error("Failed to open file in archive", "file", file.Name, "error", err)
+			continue
+		}
+		content, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			slog.Error("Failed to read file content", "file", file.Name, "error", err)
+			continue
+		}
+		g.Send(jtypes.NPInput{
+			Content: string(content),
+			Provenance: jtypes.NPProvenance{
+				Platform:     "gcp",
+				ResourceType: fmt.Sprintf("%s::SourceCode", tab.GCPResourceFunction.String()),
+				ResourceID:   fmt.Sprintf("%s/%s", input.Name, file.Name),
+				Region:       input.Region,
+				AccountID:    input.AccountRef,
+			},
+		})
+	}
+
+	return nil
+}
+
+// doing this for heurestic purposes, np might already be removing
+func (g *GcpFunctionSecretsLink) isSkippableFile(filename string) bool {
+	binaryExtensions := []string{
+		".exe", ".dll", ".so", ".dylib", ".bin", ".jar", ".war", ".ear",
+		".zip", ".tar", ".gz", ".bz2", ".rar", ".7z",
+		".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".webp",
+		".mp3", ".wav", ".mp4", ".avi", ".mov", ".mkv",
+		".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+		".pyc", ".pyo", ".class", ".o", ".obj",
+	}
+	lowerFilename := strings.ToLower(filename)
+	for _, ext := range binaryExtensions {
+		if strings.HasSuffix(lowerFilename, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 // ------------------------------------------------------------------------------------------------
