@@ -14,13 +14,13 @@ nebula azure recon devops-secrets [flags]
   -o, --devops-org string            Azure DevOps organization name (required)
   -p, --devops-pat string            Azure DevOps Personal Access Token with read access (required)
   -j, --devops-project string        Azure DevOps project name (optional, defaults to all projects)
-      --file string                  the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -h, --help                         help for devops-secrets
       --indent int                   the number of spaces to use for the JSON indentation
       --module-name string           name of the module for dynamic file naming
       --nosey-parker-args string     Custom arguments to pass to NoseyParker
       --nosey-parker-output string   Output directory for NoseyParker datastore (default "datastore.np")
       --nosey-parker-path string     Path to NoseyParker executable (default "noseyparker")
+      --outfile string               the default file to write the JSON to (can be changed at runtime) (default "out.json")
       --output string                output directory (default "nebula-output")
 ```
 

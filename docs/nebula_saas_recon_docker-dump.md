@@ -14,12 +14,12 @@ nebula saas recon docker-dump [flags]
       --docker-password string   Docker registry password
       --docker-user string       Docker registry username
       --extract                  enable extraction to filesystem (default true)
-      --file string              File containing list of Docker images
+  -f, --file string              input file path
   -h, --help                     help for docker-dump
-  -i, --image string             Docker image name to process
-      --indent int               the number of spaces to use for the JSON indentation
+  -i, --image string             Docker image name to process. To download an image from a custom registry, prepend the
+                                 image name with the registry URL. Example: ghcr.io/oj/gobuster
       --module-name string       name of the module for dynamic file naming
-      --output string            output directory to save images to
+  -o, --output string            output directory (default "docker-images")
 ```
 
 ### SEE ALSO

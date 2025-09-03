@@ -5,11 +5,11 @@ import (
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/nebula/internal/helpers"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/praetorian-inc/tabularium/pkg/model/model"
@@ -37,7 +37,7 @@ func (l *AzureResourceListerLink) Process(subscription string) error {
 	l.Logger.Info("Listing Azure resources", "subscription", subscription)
 	
 	// Get credentials
-	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	cred, err := helpers.NewAzureCredential()
 	if err != nil {
 		l.Logger.Error("Failed to get Azure credentials", "error", err)
 		return err
@@ -118,11 +118,10 @@ func (l *AzureResourceListerLink) Process(subscription string) error {
 			
 			// Handle tags
 			if tags, ok := item["tags"].(map[string]interface{}); ok {
-				resourceInfo.Tags = make(map[string]*string)
+				resourceInfo.Tags = make(map[string]string)
 				for k, v := range tags {
 					if v != nil {
-						vStr := fmt.Sprintf("%v", v)
-						resourceInfo.Tags[k] = &vStr
+						resourceInfo.Tags[k] = fmt.Sprintf("%v", v)
 					}
 				}
 			}
@@ -160,13 +159,7 @@ func (l *AzureResourceListerLink) Process(subscription string) error {
 		
 		// Handle tags
 		if resource.Tags != nil {
-			tagMap := make(map[string]string)
-			for k, v := range resource.Tags {
-				if v != nil {
-					tagMap[k] = *v
-				}
-			}
-			props["tags"] = tagMap
+			props["tags"] = resource.Tags
 		}
 		
 		// Create AzureResource using tabularium

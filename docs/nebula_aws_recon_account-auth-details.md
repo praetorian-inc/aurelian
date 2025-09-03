@@ -15,12 +15,13 @@ nebula aws recon account-auth-details [flags]
       --cache-ext string               Name of AWS API response cache files extension (default ".aws-cache")
       --cache-ttl int                  TTL for cached responses in seconds (default 3600)
       --disable-cache                  Disable API response caching
-      --file string                    the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -h, --help                           help for account-auth-details
       --indent int                     the number of spaces to use for the JSON indentation
       --module-name string             name of the module for dynamic file naming
+      --opsec_level string             Operational security level for AWS operations (default "none")
+      --outfile string                 the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -o, --output string                  output directory (default "nebula-output")
-  -p, --profile string                 AWS profile to use (default "default")
+  -p, --profile string                 AWS profile to use
       --profile-dir string             Set to override the default AWS profile directory
 ```
 

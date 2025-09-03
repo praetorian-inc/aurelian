@@ -20,10 +20,10 @@ nebula aws recon get-console [flags]
   -h, --help                           help for get-console
   -m, --mfa-token string               MFA token code for role assumption
       --module-name string             name of the module for dynamic file naming
-  -o, --output string                  output directory (default "nebula-output")
-  -p, --profile string                 AWS profile to use (default "default")
+      --opsec_level string             Operational security level for AWS operations (default "none")
+  -p, --profile string                 AWS profile to use
       --profile-dir string             Set to override the default AWS profile directory
-  -r, --regions strings                AWS regions to scan (required) (default [all])
+  -r, --regions strings                AWS regions to scan (default [all])
   -R, --role-arn string                AWS Role ARN to assume for console access
       --role-session-name string       Name for the assumed role session (default "nebula-console-session")
       --trigger-value string           Value to send to trigger the pipeline (default "trigger")

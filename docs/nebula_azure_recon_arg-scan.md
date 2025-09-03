@@ -10,10 +10,10 @@ nebula azure recon arg-scan [flags]
 
 ```
   -c, --category string        Category of Azure ARG templates to use
-      --file string            the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -h, --help                   help for arg-scan
       --indent int             the number of spaces to use for the JSON indentation
       --module-name string     name of the module for dynamic file naming
+      --outfile string         the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -o, --output string          output directory (default "nebula-output")
   -s, --subscription strings   The Azure subscription to use. Can be a subscription ID or 'all'. (required)
   -t, --template-dir string    Directory containing Azure ARG templates

@@ -76,7 +76,7 @@ type AzureEnvironmentDetails struct {
 	SubscriptionID   string
 	SubscriptionName string
 	State            string
-	Tags             map[string]*string
+	Tags             map[string]string
 	Resources        []*ResourceCount
 }
 
@@ -131,9 +131,23 @@ func GetEnvironmentDetails(ctx context.Context, subscriptionID string, opts []*t
 		SubscriptionID:   *sub.SubscriptionID,
 		SubscriptionName: *sub.DisplayName,
 		State:            stateStr,
-		Tags:             sub.Tags,
+		Tags:             convertAzureTagsToStringMap(sub.Tags),
 		Resources:        resources,
 	}, nil
+}
+
+// convertAzureTagsToStringMap converts Azure SDK tag format to simple string map
+func convertAzureTagsToStringMap(azureTags map[string]*string) map[string]string {
+	if azureTags == nil {
+		return nil
+	}
+	tags := make(map[string]string)
+	for k, v := range azureTags {
+		if v != nil {
+			tags[k] = *v
+		}
+	}
+	return tags
 }
 
 // GetTenantDetails gets details about the Azure tenant
@@ -989,4 +1003,9 @@ func GetSubscriptionFromResourceID(resourceID string) (string, string, error) {
 	}
 
 	return "", "", fmt.Errorf("subscription ID not found in resource ID: %s", resourceID)
+}
+
+// NewAzureCredential creates Azure credentials that respect AZURE_CONFIG_DIR environment variable
+func NewAzureCredential() (*azidentity.DefaultAzureCredential, error) {
+	return azidentity.NewDefaultAzureCredential(nil)
 }

@@ -80,7 +80,7 @@ func (l *AzureEnvironmentDetailsCollectorLink) Process(subscription string) erro
 		SubscriptionID:   *sub.SubscriptionID,
 		SubscriptionName: *sub.DisplayName,
 		State:            stateStr,
-		Tags:             sub.Tags,
+		Tags:             convertAzureTagsToStringMap(sub.Tags),
 		Resources:        resources,
 	}
 	
@@ -146,4 +146,18 @@ func (l *AzureEnvironmentDetailsCollectorLink) addResourceCount(resourcesCount [
 	})
 	
 	return resourcesCount
+}
+
+// convertAzureTagsToStringMap converts Azure SDK tag format to simple string map
+func convertAzureTagsToStringMap(azureTags map[string]*string) map[string]string {
+	if azureTags == nil {
+		return nil
+	}
+	tags := make(map[string]string)
+	for k, v := range azureTags {
+		if v != nil {
+			tags[k] = *v
+		}
+	}
+	return tags
 }

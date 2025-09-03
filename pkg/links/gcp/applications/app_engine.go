@@ -2,12 +2,14 @@ package applications
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/utils"
@@ -18,6 +20,7 @@ import (
 // FILE INFO:
 // GcpAppEngineApplicationInfoLink - get info of a single App Engine application/service/version, Process(applicationName string); needs project and service and version
 // GcpAppEngineApplicationListLink - list all App Engine applications/services/versions in a project, Process(resource tab.GCPResource)
+// GcpAppEngineSecretsLink - extract secrets from an App Engine application/service/version, Process(input tab.GCPResource)
 
 type GcpAppEngineApplicationInfoLink struct {
 	*base.GcpBaseLink
@@ -155,6 +158,61 @@ func (g *GcpAppEngineApplicationListLink) Process(resource tab.GCPResource) erro
 			}
 			gcpAppEngineVersion.DisplayName = gcpAppEngineVersion.Name
 			g.Send(gcpAppEngineVersion)
+		}
+	}
+	return nil
+}
+
+type GcpAppEngineSecretsLink struct {
+	*base.GcpBaseLink
+	appengineService *appengine.APIService
+}
+
+// creates a link to scan App Engine application/service/version for secrets
+func NewGcpAppEngineSecretsLink(configs ...cfg.Config) chain.Link {
+	g := &GcpAppEngineSecretsLink{}
+	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
+	return g
+}
+
+func (g *GcpAppEngineSecretsLink) Initialize() error {
+	if err := g.GcpBaseLink.Initialize(); err != nil {
+		return err
+	}
+	var err error
+	g.appengineService, err = appengine.NewService(context.Background(), g.ClientOptions...)
+	if err != nil {
+		return fmt.Errorf("failed to create appengine service: %w", err)
+	}
+	return nil
+}
+
+func (g *GcpAppEngineSecretsLink) Process(input tab.GCPResource) error {
+	if input.ResourceType != tab.GCPResourceAppEngineApplication {
+		return nil
+	}
+	projectId := input.AccountRef
+	serviceId, _ := input.Properties["serviceId"].(string)
+	versionId, _ := input.Properties["versionId"].(string)
+	if projectId == "" || serviceId == "" || versionId == "" {
+		return nil
+	}
+	ver, err := g.appengineService.Apps.Services.Versions.Get(projectId, serviceId, versionId).Do()
+	if err != nil {
+		return utils.HandleGcpError(err, "failed to get app engine version for secrets extraction")
+	}
+	if len(ver.EnvVariables) > 0 {
+		if content, err := json.Marshal(ver.EnvVariables); err == nil {
+			g.Send(jtypes.NPInput{
+				Content: string(content),
+				Provenance: jtypes.NPProvenance{
+					Platform:     "gcp",
+					ResourceType: fmt.Sprintf("%s::EnvVariables", tab.GCPResourceAppEngineApplication.String()),
+					ResourceID:   fmt.Sprintf("projects/%s/services/%s/versions/%s", projectId, serviceId, versionId),
+					Region:       input.Region,
+					AccountID:    projectId,
+				},
+			})
 		}
 	}
 	return nil

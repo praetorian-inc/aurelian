@@ -173,10 +173,10 @@ func (j *RuntimeJSONOutputter) Complete() error {
 // generateContextualFilename creates a filename with appropriate context to avoid overwrites
 func (j *RuntimeJSONOutputter) generateContextualFilename() string {
 	timestamp := time.Now().Format("20060102-150405")
-	
+
 	// Debug all available parameters
 	slog.Debug("generateContextualFilename: checking available parameters", "allArgs", j.Args())
-	
+
 	// Get module name if provided by the module
 	moduleName, moduleErr := cfg.As[string](j.Arg("module-name"))
 	if moduleErr != nil || moduleName == "" {
@@ -185,35 +185,29 @@ func (j *RuntimeJSONOutputter) generateContextualFilename() string {
 	} else {
 		slog.Debug("found module-name parameter", "moduleName", moduleName)
 	}
-	
+
 	// Try to infer platform from available parameters
 	// AWS parameters - check if profile parameter exists (even if empty)
 	if _, err := cfg.As[string](j.Arg("profile")); err == nil {
 		// Profile parameter exists (might be empty for env vars), this is an AWS command
 		slog.Debug("Found AWS profile parameter, generating AWS filename", "moduleName", moduleName)
 		return j.generateAWSFilename(moduleName)
-	} else {
-		slog.Debug("AWS profile parameter not found", "error", err)
 	}
-	
-	// Azure parameters  
+
+	// Azure parameters
 	if subscriptions, err := cfg.As[[]string](j.Arg("subscription")); err == nil && len(subscriptions) > 0 && subscriptions[0] != "" {
 		slog.Debug("Found Azure subscription, generating Azure filename", "subscription", subscriptions[0], "moduleName", moduleName)
 		// This is an Azure command
 		return j.generateAzureFilename(moduleName)
-	} else {
-		slog.Debug("Azure subscription not found", "error", err)
 	}
-	
+
 	// GCP parameters
 	if project, err := cfg.As[string](j.Arg("project")); err == nil && project != "" {
 		slog.Debug("Found GCP project, generating GCP filename", "project", project, "moduleName", moduleName)
 		// This is a GCP command
 		return j.generateGCPFilename(moduleName)
-	} else {
-		slog.Debug("GCP project not found", "error", err)
 	}
-	
+
 	// Fallback to timestamp
 	slog.Debug("No platform parameters found, using timestamp fallback")
 	return fmt.Sprintf("out-%s.json", timestamp)
@@ -226,26 +220,26 @@ func (j *RuntimeJSONOutputter) generateAWSFilename(moduleName string) string {
 	if err != nil {
 		profile = "" // No profile specified
 	}
-	
+
 	// Use consistent cache key logic - empty profile uses "default" as cache key
 	cacheKey := profile
 	if cacheKey == "" {
 		cacheKey = "default"
 	}
-	
+
 	// Always try to get account ID from the cached authentication data first
 	if accountID := j.getAWSAccountFromCache(cacheKey); accountID != "" {
 		slog.Debug("using account ID for filename", "accountID", accountID, "profile", profile, "cacheKey", cacheKey)
 		return fmt.Sprintf("%s-%s.json", moduleName, accountID)
 	}
-	
+
 	slog.Debug("account ID not found in cache", "profile", profile, "cacheKey", cacheKey)
-	
-	// Only use profile name if it's explicitly set (not empty) 
+
+	// Only use profile name if it's explicitly set (not empty)
 	if profile != "" {
 		return fmt.Sprintf("%s-%s.json", moduleName, profile)
 	}
-	
+
 	// Fallback to module name only when no profile and no account ID
 	slog.Debug("using module name only for filename")
 	return fmt.Sprintf("%s.json", moduleName)
@@ -270,7 +264,7 @@ func (j *RuntimeJSONOutputter) getAWSAccountFromCache(profile string) string {
 	return ""
 }
 
-// generateAzureFilename creates Azure-specific filenames in format: {module-name}-{subscription}.json  
+// generateAzureFilename creates Azure-specific filenames in format: {module-name}-{subscription}.json
 func (j *RuntimeJSONOutputter) generateAzureFilename(moduleName string) string {
 	// Handle special DevOps case first
 	if devopsOrg, orgErr := cfg.As[string](j.Arg("devops-org")); orgErr == nil && devopsOrg != "" {
@@ -279,7 +273,7 @@ func (j *RuntimeJSONOutputter) generateAzureFilename(moduleName string) string {
 		}
 		return fmt.Sprintf("%s-%s.json", moduleName, devopsOrg)
 	}
-	
+
 	// Standard Azure subscription format
 	if subscriptions, err := cfg.As[[]string](j.Arg("subscription")); err == nil && len(subscriptions) > 0 {
 		subscription := subscriptions[0]
@@ -288,7 +282,7 @@ func (j *RuntimeJSONOutputter) generateAzureFilename(moduleName string) string {
 		}
 		return fmt.Sprintf("%s-%s.json", moduleName, subscription)
 	}
-	
+
 	// Fallback to module name only
 	return fmt.Sprintf("%s.json", moduleName)
 }
@@ -299,11 +293,10 @@ func (j *RuntimeJSONOutputter) generateGCPFilename(moduleName string) string {
 	if projectId, err := cfg.As[string](j.Arg("project")); err == nil && projectId != "" {
 		return fmt.Sprintf("%s-%s.json", moduleName, projectId)
 	}
-	
-	// Fallback to module name only  
+
+	// Fallback to module name only
 	return fmt.Sprintf("%s.json", moduleName)
 }
-
 
 // enhanceFilenameWithPlatformInfo adds platform-specific identifiers to the filename before the extension
 // Examples: "find-secrets.json" -> "find-secrets-terraform.json", "report.json" -> "report-my-subscription.json"
@@ -311,7 +304,7 @@ func (j *RuntimeJSONOutputter) enhanceFilenameWithPlatformInfo(filename string) 
 	// Get the file extension and base name
 	ext := filepath.Ext(filename)
 	baseName := strings.TrimSuffix(filename, ext)
-	
+
 	// Check for AWS profile parameter (should be available from module's WithInputParam)
 	if profile, err := cfg.As[string](j.Arg("profile")); err == nil {
 		// Use consistent cache key logic
@@ -319,18 +312,18 @@ func (j *RuntimeJSONOutputter) enhanceFilenameWithPlatformInfo(filename string) 
 		if cacheKey == "" {
 			cacheKey = "default"
 		}
-		
+
 		// Try to get account ID from the cached authentication data
 		if accountID := j.getAWSAccountFromCache(cacheKey); accountID != "" {
 			return fmt.Sprintf("%s-%s%s", baseName, accountID, ext)
 		}
-		
+
 		// Fallback to profile name if explicitly set and account ID not available
 		if profile != "" {
 			return fmt.Sprintf("%s-%s%s", baseName, profile, ext)
 		}
 	}
-	
+
 	// Check for Azure subscription (it's a []string, so get the first one)
 	if subscriptions, err := cfg.As[[]string](j.Arg("subscription")); err == nil && len(subscriptions) > 0 && subscriptions[0] != "" {
 		subscription := subscriptions[0]
@@ -344,17 +337,17 @@ func (j *RuntimeJSONOutputter) enhanceFilenameWithPlatformInfo(filename string) 
 		}
 		return fmt.Sprintf("%s-%s%s", baseName, subscription, ext)
 	}
-	
+
 	// TODO: Add GCP project support when available
 	// if project, err := cfg.As[string](j.Arg("project")); err == nil && project != "" {
 	//     return fmt.Sprintf("%s-%s%s", baseName, project, ext)
 	// }
-	
+
 	// No platform info found, return original filename
 	return filename
 }
 
-// Params defines the parameters accepted by this outputter  
+// Params defines the parameters accepted by this outputter
 func (j *RuntimeJSONOutputter) Params() []cfg.Param {
 	// Note: Platform parameters (profile, subscription, project) are passed from modules
 	// and accessed via j.Arg() but not declared here to avoid conflicts
