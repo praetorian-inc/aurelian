@@ -39,9 +39,9 @@ var (
 	}
 	logger             = *logs.NewLogger()
 	cacheMaintained    = false
-	cacheHitCount      int64
-	cacheMissCount     int64
-	cacheBypassedCount int64
+	cacheHitCount      int64 = 0
+	cacheMissCount     int64 = 0
+	cacheBypassedCount int64 = 0
 	throttlingStats    sync.Map
 )
 
@@ -316,7 +316,7 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 	}
 
 	// Cache configuration not found in context
-	logger.Warn("Cache configuration not found in context")
+	logger.Warn("Cache configuration not found in context, cache bypassed")
 	atomic.AddInt64(&cacheBypassedCount, 1)
 	output, metadata, err := handler.HandleDeserialize(ctx, input)
 	if err != nil {
@@ -495,6 +495,9 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 			logger.Debug("Handler encountered an error", "error", err, "CacheKey", cacheConfig.CacheKey, "region", region, "service", service, "operation", operation)
 			if !(cacheConfig.Enabled && cacheConfig.Cacheable && cacheConfig.CacheErrorResp) {
 				logger.Debug("Cache bypassed", "enabled", cacheConfig.Enabled, "cacheable", cacheConfig.Cacheable, "cacheErrorResp", cacheConfig.CacheErrorResp)
+				if err != nil && (strings.Contains(err.Error(), "ThrottlingException") || strings.Contains(err.Error(), "failed to get rate limit token")) {
+				recordThrottling(service, operation)
+				}
 				return output, metadata, err
 			}
 		}
@@ -508,7 +511,7 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 					logger.Debug("Closed file successfully")
 				}
 			}
-			if err != nil && strings.Contains(err.Error(), "ThrottlingException") {
+			if err != nil && (strings.Contains(err.Error(), "ThrottlingException") || strings.Contains(err.Error(), "failed to get rate limit token")) {
 				recordThrottling(service, operation)
 			}
 			if v.ResponseDump != nil {
@@ -525,6 +528,9 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 			}
 		} else {
 			logger.Debug("Cache bypassed", "enabled", cacheConfig.Enabled, "cacheable", cacheConfig.Cacheable, "cacheErrorResp", cacheConfig.CacheErrorResp)
+			if err != nil && (strings.Contains(err.Error(), "ThrottlingException") || strings.Contains(err.Error(), "failed to get rate limit token")) {
+				recordThrottling(service, operation)
+			}
 		}
 
 		// Optionally log caller identity details
