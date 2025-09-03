@@ -2,6 +2,7 @@ package aws
 
 import (
 	"log/slog"
+	"sync"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
@@ -15,7 +16,9 @@ import (
 
 type AwsPublicResources struct {
 	*base.AwsReconLink
-	resourceMap map[string]func() chain.Chain
+	resourceMap     map[string]func() chain.Chain
+	processedS3     map[string]bool // Track processed S3 buckets to avoid duplicates
+	processedS3Mu   sync.RWMutex    // Protect concurrent access to processedS3
 }
 
 func NewAwsPublicResources(configs ...cfg.Config) chain.Link {
@@ -38,6 +41,7 @@ func (a *AwsPublicResources) Initialize() error {
 	}
 
 	a.resourceMap = a.ResourceMap()
+	a.processedS3 = make(map[string]bool)
 	return nil
 }
 
@@ -46,6 +50,23 @@ func (a *AwsPublicResources) Process(resource *types.EnrichedResourceDescription
 	if !ok {
 		slog.Error("Unsupported resource type", "resource", resource)
 		return nil
+	}
+
+	// Deduplication for S3 buckets - only process each bucket once
+	if resource.TypeName == "AWS::S3::Bucket" {
+		// Create unique key using account_id:bucket_name
+		bucketKey := resource.AccountId + ":" + resource.Identifier
+		
+		a.processedS3Mu.Lock()
+		if a.processedS3[bucketKey] {
+			a.processedS3Mu.Unlock()
+			slog.Debug("Skipping already processed S3 bucket", "bucket", resource.Identifier, "account", resource.AccountId)
+			return nil
+		}
+		a.processedS3[bucketKey] = true
+		a.processedS3Mu.Unlock()
+		
+		slog.Debug("Processing S3 bucket for first time", "bucket", resource.Identifier, "account", resource.AccountId)
 	}
 
 	slog.Debug("Dispatching resource for processing", "resource_type", resource.TypeName, "resource_id", resource.Identifier)
