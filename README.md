@@ -83,9 +83,9 @@ nebula aws recon whoami
 nebula aws recon list-all-resources -r us-east-1
 nebula aws recon public-resources -r all
 
-# Security scanning
-nebula aws recon find-secrets -t AWS::EC2::Instance
-nebula aws recon find-secrets -t AWS::Lambda::Function
+# Secrets scanning
+nebula aws recon find-secrets -t all -r all
+nebula aws recon find-secrets -t AWS::Lambda::Function -r us-east-2
 ```
 
 **Azure Reconnaissance:**
