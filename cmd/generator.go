@@ -217,26 +217,12 @@ func runModule(cmd *cobra.Command, module chain.Module, platform string) error {
 	})
 
 	message.Section("Running module %s", module.Metadata().Name)
-	
+
 	module.Run(configs...)
 
-	if platform == "aws" {
+	if platform == "aws" && !quietFlag {
 		helpers.ShowCacheStat()
 		helpers.PrintAllThrottlingCounts()
 	}
 	return module.Error()
-}
-
-func getFirstKey(m interface{}) string {
-	switch v := m.(type) {
-	case map[string]map[string][]string:
-		for k := range v {
-			return k
-		}
-	case map[string][]string:
-		for k := range v {
-			return k
-		}
-	}
-	return ""
 }
