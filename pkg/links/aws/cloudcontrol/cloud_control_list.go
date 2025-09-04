@@ -79,15 +79,15 @@ func (a *AWSCloudControl) initializeClients() error {
 	return nil
 }
 
-func (a *AWSCloudControl) Process(resourceType string) error {
+func (a *AWSCloudControl) Process(resourceType model.CloudResourceType) error {
 	for _, region := range a.Regions {
-		if a.isGlobalService(resourceType, region) {
+		if a.isGlobalService(resourceType.String(), region) {
 			slog.Debug("Skipping global service", "type", resourceType, "region", region)
 			continue
 		}
 
 		a.wg.Add(1)
-		go a.listResourcesInRegion(resourceType, region)
+		go a.listResourcesInRegion(resourceType.String(), region)
 	}
 
 	a.wg.Wait()
