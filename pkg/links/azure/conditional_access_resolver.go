@@ -11,6 +11,8 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 
 	msgraphsdk "github.com/microsoftgraph/msgraph-sdk-go"
+	"github.com/microsoftgraph/msgraph-sdk-go/applications"
+	"github.com/microsoftgraph/msgraph-sdk-go/serviceprincipals"
 )
 
 type AzureConditionalAccessResolverLink struct {
@@ -300,59 +302,90 @@ func (r *UUIDResolver) ResolveGroups(ctx context.Context, groupUUIDs []string) (
 
 func (r *UUIDResolver) ResolveApplications(ctx context.Context, appUUIDs []string) (map[string]ResolvedEntity, error) {
 	return r.resolveEntities(ctx, appUUIDs, "application", func(ctx context.Context, uuid string) (ResolvedEntity, error) {
-		// Try service principals first (more common in conditional access)
-		servicePrincipal, err := r.graphClient.ServicePrincipals().ByServicePrincipalId(uuid).Get(ctx, nil)
-		if err == nil {
+		// Helper function to build entity from service principal
+		buildServicePrincipalEntity := func(sp interface {
+			GetDisplayName() *string
+			GetDescription() *string  
+			GetAppId() *string
+		}) ResolvedEntity {
 			entity := ResolvedEntity{
 				ID:   uuid,
 				Type: "application",
 			}
-
-			if displayName := servicePrincipal.GetDisplayName(); displayName != nil {
+			if displayName := sp.GetDisplayName(); displayName != nil {
 				entity.DisplayName = *displayName
 			}
-
-			if description := servicePrincipal.GetDescription(); description != nil {
+			if description := sp.GetDescription(); description != nil {
 				entity.Description = *description
 			}
-
-			if appId := servicePrincipal.GetAppId(); appId != nil {
+			if appId := sp.GetAppId(); appId != nil {
 				if entity.ExtraInfo == nil {
 					entity.ExtraInfo = make(map[string]string)
 				}
 				entity.ExtraInfo["appId"] = *appId
 			}
-
-			return entity, nil
+			return entity
 		}
 
-		// Fallback to applications
+		// Helper function to build entity from application
+		buildApplicationEntity := func(app interface {
+			GetDisplayName() *string
+			GetDescription() *string
+			GetAppId() *string
+		}) ResolvedEntity {
+			entity := ResolvedEntity{
+				ID:   uuid,
+				Type: "application",
+			}
+			if displayName := app.GetDisplayName(); displayName != nil {
+				entity.DisplayName = *displayName
+			}
+			if description := app.GetDescription(); description != nil {
+				entity.Description = *description
+			}
+			if appId := app.GetAppId(); appId != nil {
+				if entity.ExtraInfo == nil {
+					entity.ExtraInfo = make(map[string]string)
+				}
+				entity.ExtraInfo["appId"] = *appId
+			}
+			return entity
+		}
+
+		// 1. Try service principals by appId filter (most common case)
+		filter := fmt.Sprintf("appId eq '%s'", uuid)
+		spList, err := r.graphClient.ServicePrincipals().Get(ctx, &serviceprincipals.ServicePrincipalsRequestBuilderGetRequestConfiguration{
+			QueryParameters: &serviceprincipals.ServicePrincipalsRequestBuilderGetQueryParameters{
+				Filter: &filter,
+			},
+		})
+		if err == nil && spList != nil && spList.GetValue() != nil && len(spList.GetValue()) > 0 {
+			return buildServicePrincipalEntity(spList.GetValue()[0]), nil
+		}
+
+		// 2. Try applications by appId filter
+		appList, err := r.graphClient.Applications().Get(ctx, &applications.ApplicationsRequestBuilderGetRequestConfiguration{
+			QueryParameters: &applications.ApplicationsRequestBuilderGetQueryParameters{
+				Filter: &filter,
+			},
+		})
+		if err == nil && appList != nil && appList.GetValue() != nil && len(appList.GetValue()) > 0 {
+			return buildApplicationEntity(appList.GetValue()[0]), nil
+		}
+
+		// 3. Fallback: Try service principals by object ID
+		servicePrincipal, err := r.graphClient.ServicePrincipals().ByServicePrincipalId(uuid).Get(ctx, nil)
+		if err == nil {
+			return buildServicePrincipalEntity(servicePrincipal), nil
+		}
+
+		// 4. Final fallback: Try applications by object ID
 		app, err := r.graphClient.Applications().ByApplicationId(uuid).Get(ctx, nil)
 		if err != nil {
-			return ResolvedEntity{}, fmt.Errorf("failed to get application %s: %w", uuid, err)
+			return ResolvedEntity{}, fmt.Errorf("failed to resolve application %s: tried appId filter and object ID lookup", uuid)
 		}
 
-		entity := ResolvedEntity{
-			ID:   uuid,
-			Type: "application",
-		}
-
-		if displayName := app.GetDisplayName(); displayName != nil {
-			entity.DisplayName = *displayName
-		}
-
-		if description := app.GetDescription(); description != nil {
-			entity.Description = *description
-		}
-
-		if appId := app.GetAppId(); appId != nil {
-			if entity.ExtraInfo == nil {
-				entity.ExtraInfo = make(map[string]string)
-			}
-			entity.ExtraInfo["appId"] = *appId
-		}
-
-		return entity, nil
+		return buildApplicationEntity(app), nil
 	})
 }
 
