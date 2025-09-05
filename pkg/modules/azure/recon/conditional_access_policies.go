@@ -30,7 +30,6 @@ var AzureConditionalAccessPolicies = chain.NewModule(
 	azure.NewAzureConditionalAccessOutputFormatterLink,
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
-	outputters.NewRuntimeMarkdownOutputter,
 ).WithParams(
 	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
 ).WithConfigs(
