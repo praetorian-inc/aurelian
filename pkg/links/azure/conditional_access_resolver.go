@@ -391,32 +391,67 @@ func (r *UUIDResolver) ResolveApplications(ctx context.Context, appUUIDs []strin
 
 func (r *UUIDResolver) ResolveDirectoryRoles(ctx context.Context, roleUUIDs []string) (map[string]ResolvedEntity, error) {
 	return r.resolveEntities(ctx, roleUUIDs, "role", func(ctx context.Context, uuid string) (ResolvedEntity, error) {
-		role, err := r.graphClient.DirectoryRoles().ByDirectoryRoleId(uuid).Get(ctx, nil)
-		if err != nil {
-			return ResolvedEntity{}, fmt.Errorf("failed to get directory role %s: %w", uuid, err)
-		}
-
-		entity := ResolvedEntity{
-			ID:   uuid,
-			Type: "role",
-		}
-
-		if displayName := role.GetDisplayName(); displayName != nil {
-			entity.DisplayName = *displayName
-		}
-
-		if description := role.GetDescription(); description != nil {
-			entity.Description = *description
-		}
-
-		if roleTemplateId := role.GetRoleTemplateId(); roleTemplateId != nil {
+		// Helper function to build entity from role template
+		buildRoleTemplateEntity := func(roleTemplate interface {
+			GetDisplayName() *string
+			GetDescription() *string
+			GetId() *string
+		}) ResolvedEntity {
+			entity := ResolvedEntity{
+				ID:   uuid,
+				Type: "role",
+			}
+			if displayName := roleTemplate.GetDisplayName(); displayName != nil {
+				entity.DisplayName = *displayName
+			}
+			if description := roleTemplate.GetDescription(); description != nil {
+				entity.Description = *description
+			}
 			if entity.ExtraInfo == nil {
 				entity.ExtraInfo = make(map[string]string)
 			}
-			entity.ExtraInfo["roleTemplateId"] = *roleTemplateId
+			entity.ExtraInfo["roleTemplateId"] = uuid
+			return entity
 		}
 
-		return entity, nil
+		// Helper function to build entity from directory role
+		buildDirectoryRoleEntity := func(role interface {
+			GetDisplayName() *string
+			GetDescription() *string
+			GetRoleTemplateId() *string
+		}) ResolvedEntity {
+			entity := ResolvedEntity{
+				ID:   uuid,
+				Type: "role",
+			}
+			if displayName := role.GetDisplayName(); displayName != nil {
+				entity.DisplayName = *displayName
+			}
+			if description := role.GetDescription(); description != nil {
+				entity.Description = *description
+			}
+			if roleTemplateId := role.GetRoleTemplateId(); roleTemplateId != nil {
+				if entity.ExtraInfo == nil {
+					entity.ExtraInfo = make(map[string]string)
+				}
+				entity.ExtraInfo["roleTemplateId"] = *roleTemplateId
+			}
+			return entity
+		}
+
+		// 1. Try role templates first (most common case)
+		roleTemplate, err := r.graphClient.DirectoryRoleTemplates().ByDirectoryRoleTemplateId(uuid).Get(ctx, nil)
+		if err == nil {
+			return buildRoleTemplateEntity(roleTemplate), nil
+		}
+
+		// 2. Fallback: Try directory roles by object ID
+		role, err := r.graphClient.DirectoryRoles().ByDirectoryRoleId(uuid).Get(ctx, nil)
+		if err != nil {
+			return ResolvedEntity{}, fmt.Errorf("failed to resolve role %s: tried role template and directory role lookup", uuid)
+		}
+
+		return buildDirectoryRoleEntity(role), nil
 	})
 }
 
