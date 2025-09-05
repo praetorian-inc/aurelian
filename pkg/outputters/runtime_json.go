@@ -87,7 +87,7 @@ func (j *RuntimeJSONOutputter) Initialize() error {
 
 func (j *RuntimeJSONOutputter) Output(val any) error {
 	if outputData, ok := val.(NamedOutputData); ok {
-		if outputData.OutputFilename != "" && j.outfile == defaultOutfile {
+		if outputData.OutputFilename != "" && filepath.Base(j.outfile) == defaultOutfile {
 			j.SetOutputFile(outputData.OutputFilename)
 		}
 		j.output = append(j.output, outputData.Data)
@@ -98,11 +98,16 @@ func (j *RuntimeJSONOutputter) Output(val any) error {
 }
 
 func (j *RuntimeJSONOutputter) SetOutputFile(filename string) {
-	j.outfile = filename
-	if err := j.EnsureOutputPath(filename); err != nil {
-		slog.Error("failed to create directory for new output file", "filename", filename, "error", err)
+	outputDir, _ := cfg.As[string](j.Arg("output"))
+	
+	cleanFilename := filepath.Base(filename)
+	enhancedFilename := j.enhanceFilenameWithPlatformInfo(cleanFilename)
+	j.outfile = filepath.Join(outputDir, enhancedFilename)
+	
+	if err := j.EnsureOutputPath(j.outfile); err != nil {
+		slog.Error("failed to create directory for new output file", "filename", j.outfile, "error", err)
 	}
-	slog.Debug("changed JSON output file", "filename", filename)
+	slog.Debug("changed JSON output file", "filename", j.outfile)
 }
 
 func (j *RuntimeJSONOutputter) Complete() error {
