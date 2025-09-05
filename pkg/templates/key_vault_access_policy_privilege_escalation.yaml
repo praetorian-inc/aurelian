@@ -16,7 +16,7 @@ query: |
    | extend accessPolicyCount = array_length(coalesce(accessPolicies, dynamic([])))
    | extend vaultUri = properties.vaultUri
    | extend sku = properties.sku.name
-   | extend privateEndpointConnections = array_length(properties.privateEndpointConnections)
+   | extend privateEndpointConnections = coalesce(array_length(properties.privateEndpointConnections), 0)
    | extend publicNetworkAccess = properties.publicNetworkAccess
    | extend networkAcls = properties.networkAcls
    | extend defaultAction = tolower(coalesce(networkAcls.defaultAction, 'allow'))
