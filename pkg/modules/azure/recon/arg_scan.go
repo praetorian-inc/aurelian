@@ -20,6 +20,8 @@ var AzureARGScan = chain.NewModule(
 		"authors":     []string{"Praetorian"},
 	}),
 ).WithLinks(
+	// Generate subscription IDs (resolves "all" to actual subscription GUIDs)
+	azure.NewAzureSubscriptionGeneratorLink,
 	// Load ARG templates and create queries for each subscription
 	azure.NewARGTemplateLoaderLink,
 	// Execute the ARG queries and get resources
