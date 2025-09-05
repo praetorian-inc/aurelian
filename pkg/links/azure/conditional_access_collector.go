@@ -142,11 +142,15 @@ func (l *AzureConditionalAccessCollectorLink) getConditionalAccessPolicies(ctx c
 
 		// Extract grant controls (raw for now, will be processed later)
 		if grantControls := policy.GetGrantControls(); grantControls != nil {
+			op := ""
+			if grantControls.GetOperator() != nil {
+				op = *grantControls.GetOperator()
+			}
 			policyResult.GrantControls = map[string]interface{}{
-				"operator":              safeStringDeref((*string)(grantControls.GetOperator())),
-				"builtInControls":       grantControls.GetBuiltInControls(),
+				"operator":                    op,
+				"builtInControls":             grantControls.GetBuiltInControls(),
 				"customAuthenticationFactors": grantControls.GetCustomAuthenticationFactors(),
-				"termsOfUse":           grantControls.GetTermsOfUse(),
+				"termsOfUse":                  grantControls.GetTermsOfUse(),
 			}
 		}
 
