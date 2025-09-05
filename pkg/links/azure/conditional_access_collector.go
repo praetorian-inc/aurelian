@@ -11,6 +11,7 @@ import (
 
 	msgraphsdk "github.com/microsoftgraph/msgraph-sdk-go"
 	"github.com/microsoftgraph/msgraph-sdk-go/models"
+	msgraphcore "github.com/microsoftgraph/msgraph-sdk-go-core"
 )
 
 type AzureConditionalAccessCollectorLink struct {
@@ -98,76 +99,93 @@ func (l *AzureConditionalAccessCollectorLink) Process(input any) error {
 func (l *AzureConditionalAccessCollectorLink) getConditionalAccessPolicies(ctx context.Context, graphClient *msgraphsdk.GraphServiceClient) ([]ConditionalAccessPolicyResult, error) {
 	var allPolicies []ConditionalAccessPolicyResult
 
-	// Get all conditional access policies from Microsoft Graph
+	// Get first page of conditional access policies from Microsoft Graph
 	result, err := graphClient.Identity().ConditionalAccess().Policies().Get(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get conditional access policies: %w", err)
 	}
 
-	if result == nil || result.GetValue() == nil {
+	if result == nil {
 		slog.Info("No conditional access policies found")
 		return allPolicies, nil
 	}
 
-	// Convert Graph API response to our internal structure
-	for _, policy := range result.GetValue() {
-		if policy == nil {
-			continue
-		}
+	// Create PageIterator to handle pagination across all pages
+	pageIterator, err := msgraphcore.NewPageIterator[models.ConditionalAccessPolicyable](
+		result,
+		graphClient.GetAdapter(),
+		models.CreateConditionalAccessPolicyCollectionResponseFromDiscriminatorValue)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create page iterator: %w", err)
+	}
 
-		policyResult := ConditionalAccessPolicyResult{
-			ID:          safeStringDeref(policy.GetId()),
-			DisplayName: safeStringDeref(policy.GetDisplayName()),
-			State:       l.convertPolicyState(policy.GetState()),
+	// Iterate through all pages and convert each policy
+	err = pageIterator.Iterate(ctx, func(policy models.ConditionalAccessPolicyable) bool {
+		if policy != nil {
+			policyResult := l.convertPolicyToResult(policy)
+			allPolicies = append(allPolicies, policyResult)
 		}
+		return true // continue iteration
+	})
 
-		// Handle optional fields
-		if policy.GetTemplateId() != nil {
-			templateID := *policy.GetTemplateId()
-			policyResult.TemplateID = &templateID
-		}
-
-		if policy.GetCreatedDateTime() != nil {
-			policyResult.CreatedDateTime = policy.GetCreatedDateTime().Format("2006-01-02T15:04:05Z")
-		}
-
-		if policy.GetModifiedDateTime() != nil {
-			policyResult.ModifiedDateTime = policy.GetModifiedDateTime().Format("2006-01-02T15:04:05Z")
-		}
-
-		// Extract conditions
-		if conditions := policy.GetConditions(); conditions != nil {
-			policyResult.Conditions = l.extractConditions(conditions)
-		}
-
-		// Extract grant controls (raw for now, will be processed later)
-		if grantControls := policy.GetGrantControls(); grantControls != nil {
-			op := ""
-			if grantControls.GetOperator() != nil {
-				op = *grantControls.GetOperator()
-			}
-			policyResult.GrantControls = map[string]interface{}{
-				"operator":                    op,
-				"builtInControls":             grantControls.GetBuiltInControls(),
-				"customAuthenticationFactors": grantControls.GetCustomAuthenticationFactors(),
-				"termsOfUse":                  grantControls.GetTermsOfUse(),
-			}
-		}
-
-		// Extract session controls (raw for now, will be processed later)
-		if sessionControls := policy.GetSessionControls(); sessionControls != nil {
-			policyResult.SessionControls = map[string]interface{}{
-				"applicationEnforcedRestrictions": sessionControls.GetApplicationEnforcedRestrictions(),
-				"cloudAppSecurity":               sessionControls.GetCloudAppSecurity(),
-				"persistentBrowser":              sessionControls.GetPersistentBrowser(),
-				"signInFrequency":               sessionControls.GetSignInFrequency(),
-			}
-		}
-
-		allPolicies = append(allPolicies, policyResult)
+	if err != nil {
+		return nil, fmt.Errorf("failed to iterate through conditional access policies: %w", err)
 	}
 
 	return allPolicies, nil
+}
+
+func (l *AzureConditionalAccessCollectorLink) convertPolicyToResult(policy models.ConditionalAccessPolicyable) ConditionalAccessPolicyResult {
+	policyResult := ConditionalAccessPolicyResult{
+		ID:          safeStringDeref(policy.GetId()),
+		DisplayName: safeStringDeref(policy.GetDisplayName()),
+		State:       l.convertPolicyState(policy.GetState()),
+	}
+
+	// Handle optional fields
+	if policy.GetTemplateId() != nil {
+		templateID := *policy.GetTemplateId()
+		policyResult.TemplateID = &templateID
+	}
+
+	if policy.GetCreatedDateTime() != nil {
+		policyResult.CreatedDateTime = policy.GetCreatedDateTime().Format("2006-01-02T15:04:05Z")
+	}
+
+	if policy.GetModifiedDateTime() != nil {
+		policyResult.ModifiedDateTime = policy.GetModifiedDateTime().Format("2006-01-02T15:04:05Z")
+	}
+
+	// Extract conditions
+	if conditions := policy.GetConditions(); conditions != nil {
+		policyResult.Conditions = l.extractConditions(conditions)
+	}
+
+	// Extract grant controls (raw for now, will be processed later)
+	if grantControls := policy.GetGrantControls(); grantControls != nil {
+		op := ""
+		if grantControls.GetOperator() != nil {
+			op = *grantControls.GetOperator()
+		}
+		policyResult.GrantControls = map[string]interface{}{
+			"operator":                    op,
+			"builtInControls":             grantControls.GetBuiltInControls(),
+			"customAuthenticationFactors": grantControls.GetCustomAuthenticationFactors(),
+			"termsOfUse":                  grantControls.GetTermsOfUse(),
+		}
+	}
+
+	// Extract session controls (raw for now, will be processed later)
+	if sessionControls := policy.GetSessionControls(); sessionControls != nil {
+		policyResult.SessionControls = map[string]interface{}{
+			"applicationEnforcedRestrictions": sessionControls.GetApplicationEnforcedRestrictions(),
+			"cloudAppSecurity":               sessionControls.GetCloudAppSecurity(),
+			"persistentBrowser":              sessionControls.GetPersistentBrowser(),
+			"signInFrequency":               sessionControls.GetSignInFrequency(),
+		}
+	}
+
+	return policyResult
 }
 
 func (l *AzureConditionalAccessCollectorLink) extractConditions(conditions models.ConditionalAccessConditionSetable) *ConditionalAccessConditionSet {
