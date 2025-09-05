@@ -249,17 +249,26 @@ func (l *ARGTemplateLoaderLink) Process(input interface{}) error {
 	// This link can receive different types of input:
 	// - For modules with ResourceTypePreprocessor: model.CloudResourceType
 	// - For modules with WithChainInputParam: string (subscription ID)
-	// We ignore the input and get subscription from parameters
+	// - For modules with AzureSubscriptionGeneratorLink: string (subscription ID from generator)
 	l.Logger.Debug("ARGTemplateLoaderLink received input", "input", input, "type", fmt.Sprintf("%T", input))
 	
-	// Get subscription from parameters (works for both cases)
-	subscriptions, err := cfg.As[[]string](l.Arg("subscription"))
-	l.Logger.Debug("subscription lookup", "subscriptions", subscriptions, "error", err, "all_args", l.Args())
-
 	subscription := ""
-	if len(subscriptions) > 0 {
-		subscription = subscriptions[0]
+	
+	// If input is a string, it's a subscription ID from the chain
+	if inputStr, ok := input.(string); ok {
+		subscription = inputStr
+		l.Logger.Debug("Using subscription from chain input", "subscription", subscription)
+	} else {
+		// Fallback: get subscription from parameters for backward compatibility
+		subscriptions, err := cfg.As[[]string](l.Arg("subscription"))
+		l.Logger.Debug("subscription lookup", "subscriptions", subscriptions, "error", err, "all_args", l.Args())
+		
+		if len(subscriptions) > 0 {
+			subscription = subscriptions[0]
+		}
+		l.Logger.Debug("Using subscription from parameters", "subscription", subscription)
 	}
+	
 	l.Logger.Info("ARGTemplateLoaderLink starting", "subscription", subscription)
 
 	directory := ""
