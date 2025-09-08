@@ -142,6 +142,26 @@ func AzureWorkerCount() cfg.Param {
 		WithDefault(5)
 }
 
+func AzureConditionalAccessFile() cfg.Param {
+	return cfg.NewParam[string]("conditional-access-file", "Path to JSON file containing conditional access policies")
+}
+
+func AzureLLMAPIKey() cfg.Param {
+	return cfg.NewParam[string]("llm-api-key", "API key for LLM provider").
+		AsRequired()
+}
+
+func AzureLLMProvider() cfg.Param {
+	return cfg.NewParam[string]("llm-provider", "LLM provider to use for analysis").
+		WithDefault("anthropic")
+}
+
+func AzureLLMModel() cfg.Param {
+	return cfg.NewParam[string]("llm-model", "LLM model to use for analysis").
+		WithDefault("claude-opus-4-20250514")
+}
+
+
 // AzureReconBaseOptions provides common options for Azure reconnaissance modules
 func AzureReconBaseOptions() []cfg.Param {
 	return []cfg.Param{
