@@ -31,8 +31,26 @@ type EnrichmentRegistry struct {
 func NewEnrichmentRegistry() *EnrichmentRegistry {
 	return &EnrichmentRegistry{
 		enrichers: []ResourceEnricher{
+			// Storage & Data Services
 			&StorageAccountEnricher{},
+			// &CosmosDBEnricher{},
+			// &RedisCacheEnricher{},
+			// &SQLServerEnricher{},
+
+			// Web & Application Services
 			&VirtualMachineEnricher{},
+			&AppServiceEnricher{},
+			&ContainerRegistryEnricher{},
+			// &AKSClusterEnricher{},
+
+			// Messaging & Event Services
+			// &EventHubEnricher{},
+			// &ServiceBusEnricher{},
+			// &EventGridEnricher{},
+			// &DataFactoryEnricher{},
+
+			// Security Services
+			// &KeyVaultEnricher{},
 		},
 	}
 }

@@ -3,6 +3,7 @@ package enricher
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -45,7 +46,7 @@ func (s *StorageAccountEnricher) Enrich(ctx context.Context, resource *model.Azu
 
 	resp, err := client.Get(testURL)
 
-	command := fmt.Sprintf("curl -w '\n===== Status Code =====\n%%{http_code}\n' '%s' --max-time 10", testURL)
+	command := fmt.Sprintf("curl -i '%s' --max-time 10", testURL)
 	curlCommand := Command{
 		Command:                   command,
 		Description:               "Test anonymous access to storage account container listing",
@@ -57,7 +58,13 @@ func (s *StorageAccountEnricher) Enrich(ctx context.Context, resource *model.Azu
 		curlCommand.ActualOutput = fmt.Sprintf("Request failed: %s", err.Error())
 	} else {
 		defer resp.Body.Close()
-		curlCommand.ActualOutput = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		// Read response body (limit to first 1000 characters for safety)
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 1000))
+		if readErr != nil {
+			curlCommand.ActualOutput = fmt.Sprintf("Body read error: %s", readErr.Error())
+		} else {
+			curlCommand.ActualOutput = fmt.Sprintf("Body: %s", string(body))
+		}
 		curlCommand.ExitCode = resp.StatusCode
 	}
 
