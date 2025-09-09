@@ -36,4 +36,5 @@ query: |-
         purviewEnabled,
         repoConfigured,
         encryptionConfigured,
-        subscriptionId
+        subscriptionId,
+        resourceGroup
