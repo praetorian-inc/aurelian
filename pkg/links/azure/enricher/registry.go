@@ -41,13 +41,12 @@ func NewEnrichmentRegistry() *EnrichmentRegistry {
 			&VirtualMachineEnricher{},
 			&AppServiceEnricher{},
 			&ContainerRegistryEnricher{},
-			// &AKSClusterEnricher{},
+			&AKSClusterEnricher{},
 
 			// Messaging & Event Services
 			&EventHubEnricher{},
 			&ServiceBusEnricher{},
 			&EventGridEnricher{},
-			// &DataFactoryEnricher{},
 
 			// Security Services
 			&KeyVaultEnricher{},

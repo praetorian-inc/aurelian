@@ -25,6 +25,8 @@ query: |
     | extend isPrivateCluster = coalesce(apiServer.enablePrivateCluster, false)
     | extend authorizedIPRanges = apiServer.authorizedIPRanges
     | extend hasAuthorizedRanges = isnotnull(authorizedIPRanges) and array_length(authorizedIPRanges) > 0
+    | extend fqdn = properties.fqdn
+    | extend azurePortalFqdn = properties.azurePortalFQDN
     | where isPrivateCluster == false
     | extend accessType = case(
         hasAuthorizedRanges, 'Public with IP Restrictions',
@@ -39,4 +41,8 @@ query: |
         type,
         location,
         resourceGroup,
-        subscriptionId
+        subscriptionId,
+        authorizedIPRanges,
+        fqdn,
+        azurePortalFqdn,
+        properties
