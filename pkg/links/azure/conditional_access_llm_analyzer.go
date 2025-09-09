@@ -220,11 +220,11 @@ func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []Enriched
 	// Parse XML response
 	var xmlResponse AnalysisXML
 	if err := xml.Unmarshal([]byte(analysisText), &xmlResponse); err != nil {
-		previewLen := 200
-		if len(analysisText) < previewLen {
-			previewLen = len(analysisText)
+		responsePreview := analysisText
+		if len(analysisText) > 200 {
+			responsePreview = analysisText[:200]
 		}
-		l.Logger.Warn("XML parsing failed", "provider", provider, "error", err.Error())
+		l.Logger.Warn("XML parsing failed", "provider", provider, "error", err.Error(), "response_preview", responsePreview)
 		return ConditionalAccessAnalysisResult{}, fmt.Errorf("failed to parse XML response from LLM provider %s: %w", provider, err)
 	}
 
