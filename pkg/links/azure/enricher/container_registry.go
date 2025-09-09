@@ -82,7 +82,7 @@ func (c *ContainerRegistryEnricher) Enrich(ctx context.Context, resource *model.
 	var catalogBody []byte // Store raw body for Test 2
 
 	catalogCommand := Command{
-		Command:                   fmt.Sprintf("TOKEN=$(curl -s \"https://%s/oauth2/token?service=%s&scope=%s\" | jq -r .access_token); curl -H \"Authorization: Bearer $TOKEN\" https://%s/v2/_catalog", loginServer, loginServer, catalogScope, loginServer),
+		Command:                   fmt.Sprintf("TOKEN=$(echo -en 'https://%s/oauth2/token?service=%s&scope=%s' | xargs curl -s | jq -r .access_token); curl -H 'Authorization: Bearer '$TOKEN 'https://%s/v2/_catalog'", loginServer, loginServer, catalogScope, loginServer),
 		Description:               "Test anonymous OAuth2 token + repository catalog access (definitive anonymous pull test)",
 		ExpectedOutputDescription: "Success with repositories list = anonymous pull enabled | Token failure = anonymous access disabled | 401/403 = secured",
 	}

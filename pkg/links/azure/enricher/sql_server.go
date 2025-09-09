@@ -62,7 +62,7 @@ func (s *SQLServerEnricher) Enrich(ctx context.Context, resource *model.AzureRes
 	username := "username"
 	password := "password"
 
-	sqlcmdCommand := fmt.Sprintf("sqlcmd -S %s -U %s -P '%s' -Q \"SELECT @@VERSION\" -l 10", sqlServerFQDN, username, password)
+	sqlcmdCommand := fmt.Sprintf("sqlcmd -S %s -U %s -P '%s' -Q 'SELECT @@VERSION' -l 10", sqlServerFQDN, username, password)
 	description := fmt.Sprintf("Test SQL connection with credentials '%s:%s'", username, password)
 
 	sqlTestCommand := Command{
