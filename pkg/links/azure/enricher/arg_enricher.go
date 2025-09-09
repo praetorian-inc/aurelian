@@ -5,6 +5,7 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/outputters"
 	"github.com/praetorian-inc/tabularium/pkg/model/model"
 )
@@ -26,11 +27,26 @@ func NewARGEnrichmentLink(configs ...cfg.Config) chain.Link {
 
 // Params returns the parameters required by this link
 func (l *ARGEnrichmentLink) Params() []cfg.Param {
-	return []cfg.Param{}
+	return []cfg.Param{
+		options.AzureDisableEnrichment(),
+	}
 }
 
 // Process enriches Azure resources with security testing commands based on template ID
 func (l *ARGEnrichmentLink) Process(data outputters.NamedOutputData) error {
+	// Check if enrichment is disabled
+	disableEnrichment, err := cfg.As[bool](l.Arg("disable-enrichment"))
+	if err != nil {
+		l.Logger.Debug("Failed to get disable-enrichment parameter, defaulting to enabled", "error", err)
+		disableEnrichment = false
+	}
+	
+	if disableEnrichment {
+		l.Logger.Debug("Enrichment disabled, skipping resource enrichment")
+		l.Send(data)
+		return nil
+	}
+
 	// Extract the Azure resource from the data
 	resource, ok := data.Data.(model.AzureResource)
 	if !ok {

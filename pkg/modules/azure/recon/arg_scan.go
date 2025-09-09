@@ -31,6 +31,8 @@ var AzureARGScan = chain.NewModule(
 	enricher.NewARGEnrichmentLink,
 ).WithInputParam(
 	options.AzureSubscription(),
+).WithParams(
+	options.AzureDisableEnrichment(),
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
 ).WithParams(
