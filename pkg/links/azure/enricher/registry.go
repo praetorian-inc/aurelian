@@ -50,7 +50,7 @@ func NewEnrichmentRegistry() *EnrichmentRegistry {
 			// &DataFactoryEnricher{},
 
 			// Security Services
-			// &KeyVaultEnricher{},
+			&KeyVaultEnricher{},
 		},
 	}
 }
