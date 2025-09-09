@@ -33,7 +33,7 @@ func NewEnrichmentRegistry() *EnrichmentRegistry {
 		enrichers: []ResourceEnricher{
 			// Storage & Data Services
 			&StorageAccountEnricher{},
-			// &CosmosDBEnricher{},
+			&CosmosDBEnricher{},
 			&RedisCacheEnricher{},
 			&SQLServerEnricher{},
 
