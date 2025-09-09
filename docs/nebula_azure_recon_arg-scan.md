@@ -10,6 +10,7 @@ nebula azure recon arg-scan [flags]
 
 ```
   -c, --category string        Category of Azure ARG templates to use
+      --disable-enrichment     Disable enrichment of resources with security testing commands
   -h, --help                   help for arg-scan
       --indent int             the number of spaces to use for the JSON indentation
       --module-name string     name of the module for dynamic file naming
