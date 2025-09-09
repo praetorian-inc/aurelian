@@ -53,7 +53,7 @@ func (a *AWSECRLogin) Process(registryURL string) error {
 		AuthConfig: registry.AuthConfig{
 			Username:      "AWS",
 			Password:      string(jwt),
-			ServerAddress: fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com", account, region),
+			ServerAddress: fmt.Sprintf("https://%s.dkr.ecr.%s.amazonaws.com", account, region),
 		},
 		Image: registryURL,
 	}

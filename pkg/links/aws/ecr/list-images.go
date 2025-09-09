@@ -9,6 +9,7 @@ import (
 	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
@@ -75,12 +76,13 @@ func (e *AWSECRListImages) Process(resource *types.EnrichedResourceDescription) 
 	}
 
 	var uri string
-	if latest.ImageTags != nil && len(latest.ImageTags) > 0 {
+	if len(latest.ImageTags) > 0 {
 		uri = fmt.Sprintf("%s/%s:%s", ecrRegistry, resource.Identifier, latest.ImageTags[0])
 	} else if latest.ImageDigest != nil {
 		uri = fmt.Sprintf("%s/%s@%s", ecrRegistry, resource.Identifier, *latest.ImageDigest)
 	}
 
+	message.Info("Processing image: %s", uri)
 	e.Send(uri)
 
 	return nil
