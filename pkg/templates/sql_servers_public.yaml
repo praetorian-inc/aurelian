@@ -28,6 +28,7 @@ query: |
     | extend publicNetworkAccess = iif(isnotempty(properties.publicNetworkAccess), 
         tolower(properties.publicNetworkAccess), 
         'enabled')
+    | extend resourceGroup
     | where publicNetworkAccess != 'disabled'
     | project
         id,
@@ -35,4 +36,5 @@ query: |
         type,
         location,
         publicNetworkAccess,
-        subscriptionId
+        subscriptionId,
+        resourceGroup
