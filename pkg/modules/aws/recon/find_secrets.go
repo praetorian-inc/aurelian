@@ -45,4 +45,4 @@ var AWSFindSecrets = chain.NewModule(
 	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
 ).WithConfigs(
 	cfg.WithArg("module-name", "find-secrets"),
-)
+).WithStrictness(chain.Lax)
