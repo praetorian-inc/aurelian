@@ -44,7 +44,7 @@ func NewEnrichmentRegistry() *EnrichmentRegistry {
 			// &AKSClusterEnricher{},
 
 			// Messaging & Event Services
-			// &EventHubEnricher{},
+			&EventHubEnricher{},
 			// &ServiceBusEnricher{},
 			// &EventGridEnricher{},
 			// &DataFactoryEnricher{},
