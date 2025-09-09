@@ -151,6 +151,10 @@ func AzureLLMAPIKey() cfg.Param {
 		AsRequired()
 }
 
+func AzureLLMAPIKeyOptional() cfg.Param {
+	return cfg.NewParam[string]("llm-api-key", "API key for LLM provider (required when --enable-llm-analysis is true)")
+}
+
 func AzureLLMProvider() cfg.Param {
 	return cfg.NewParam[string]("llm-provider", "LLM provider to use for analysis").
 		WithDefault("anthropic")
@@ -159,6 +163,11 @@ func AzureLLMProvider() cfg.Param {
 func AzureLLMModel() cfg.Param {
 	return cfg.NewParam[string]("llm-model", "LLM model to use for analysis").
 		WithDefault("claude-opus-4-20250514")
+}
+
+func AzureEnableLLMAnalysis() cfg.Param {
+	return cfg.NewParam[bool]("enable-llm-analysis", "Enable LLM analysis of conditional access policies").
+		WithDefault(false)
 }
 
 

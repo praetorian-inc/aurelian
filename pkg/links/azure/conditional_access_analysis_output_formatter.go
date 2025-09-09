@@ -1,15 +1,19 @@
 package azure
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/outputters"
+
+	msgraphsdk "github.com/microsoftgraph/msgraph-sdk-go"
 )
 
 type AzureConditionalAccessAnalysisOutputFormatterLink struct {
@@ -29,49 +33,53 @@ func (l *AzureConditionalAccessAnalysisOutputFormatterLink) Params() []cfg.Param
 }
 
 func (l *AzureConditionalAccessAnalysisOutputFormatterLink) Process(input any) error {
-	// Expect a single ConditionalAccessAnalysisResult from the LLM analyzer
-	analysisResult, ok := input.(ConditionalAccessAnalysisResult)
-	if !ok {
-		return fmt.Errorf("expected ConditionalAccessAnalysisResult, got %T", input)
-	}
-	
-	l.Logger.Debug("Received policy set analysis result", "policy_set_id", analysisResult.PolicySetID, "policies_analyzed", analysisResult.PoliciesAnalyzed)
+	// Handle both analysis results (when LLM enabled) and passthrough policies (when LLM disabled)
+	switch v := input.(type) {
+	case ConditionalAccessAnalysisResult:
+		// LLM analysis was performed - handle analysis results
+		l.Logger.Debug("Received policy set analysis result", "policy_set_id", v.PolicySetID, "policies_analyzed", v.PoliciesAnalyzed)
 
-	// Generate JSON output
-	if err := l.generateJSONOutput(analysisResult); err != nil {
-		return fmt.Errorf("failed to generate JSON output: %w", err)
-	}
+		// Wrap analysis result with metadata structure for tenant ID filename
+		wrappedAnalysis := l.createAnalysisOutputData(v)
+		
+		if err := l.Send(wrappedAnalysis); err != nil {
+			return fmt.Errorf("failed to send analysis JSON output: %w", err)
+		}
 
-	// Generate console output (directly to stdout, not sent through pipeline)
-	l.generateConsoleOutput(analysisResult)
+		// Generate console output (directly to stdout, not sent through pipeline)
+		l.generateConsoleOutput(v)
+
+	case []EnrichedConditionalAccessPolicy:
+		// LLM analysis was disabled - handle recon data passthrough by creating recon JSON
+		l.Logger.Debug("LLM analysis disabled, creating recon JSON output", "policy_count", len(v))
+
+		// Create recon JSON file with structured metadata
+		reconFilePath := l.generateReconJSONFilename()
+		outputData := l.createStructuredOutputData(v)
+		reconOutputData := outputters.NewNamedOutputData(outputData, reconFilePath)
+		
+		if err := l.Send(reconOutputData); err != nil {
+			return fmt.Errorf("failed to send recon JSON output: %w", err)
+		}
+
+	case nil:
+		// Handle case where analysis failed and returned nil
+		l.Logger.Debug("Received nil input - analysis likely failed")
+		
+		// Create minimal analysis output data with metadata for tenant ID filename
+		emptyAnalysisData := l.createEmptyAnalysisOutputData()
+		
+		if err := l.Send(emptyAnalysisData); err != nil {
+			return fmt.Errorf("failed to send failed analysis JSON output: %w", err)
+		}
+
+	default:
+		return fmt.Errorf("expected ConditionalAccessAnalysisResult or []EnrichedConditionalAccessPolicy, got %T", input)
+	}
 
 	return nil
 }
 
-func (l *AzureConditionalAccessAnalysisOutputFormatterLink) generateJSONOutput(result ConditionalAccessAnalysisResult) error {
-	outputDir, _ := cfg.As[string](l.Arg("output"))
-
-	// Create filename with high precision timestamp
-	timestamp := time.Now().Format("20060102-150405.000")
-	filename := fmt.Sprintf("conditional-access-analysis-%s.json", timestamp)
-	jsonFilePath := filepath.Join(outputDir, filename)
-
-	// Create structured output data with metadata
-	metadata := map[string]interface{}{
-		"collectedAt":     time.Now().UTC().Format(time.RFC3339),
-		"policiesAnalyzed": result.PoliciesAnalyzed,
-		"module":          "conditional-access-analysis",
-	}
-
-	outputData := map[string]interface{}{
-		"metadata": metadata,
-		"result":   result,
-	}
-
-	// Send JSON output
-	jsonOutput := outputters.NewNamedOutputData(outputData, jsonFilePath)
-	return l.Send(jsonOutput)
-}
 
 func (l *AzureConditionalAccessAnalysisOutputFormatterLink) generateConsoleOutput(result ConditionalAccessAnalysisResult) {
 	// Print console summary
@@ -136,22 +144,97 @@ func (l *AzureConditionalAccessAnalysisOutputFormatterLink) formatRiskLevel(leve
 	}
 }
 
-// Helper function to get critical gaps from the policy set analysis
-func (l *AzureConditionalAccessAnalysisOutputFormatterLink) getCriticalObservations(observations []ObservationXML) []ObservationXML {
-	var critical []ObservationXML
-	for _, observation := range observations {
-		if strings.ToLower(observation.Type) == "critical" || strings.ToLower(observation.Type) == "high" {
-			critical = append(critical, observation)
-		}
-	}
-	return critical
+
+func (l *AzureConditionalAccessAnalysisOutputFormatterLink) generateReconJSONFilename() string {
+	outputDir, _ := cfg.As[string](l.Arg("output"))
+
+	// Create filename with timestamp (used when LLM analysis is disabled)
+	timestamp := time.Now().Format("20060102-150405")
+	filename := fmt.Sprintf("conditional-access-policies-%s.json", timestamp)
+	return filepath.Join(outputDir, filename)
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
+func (l *AzureConditionalAccessAnalysisOutputFormatterLink) createStructuredOutputData(policies []EnrichedConditionalAccessPolicy) map[string]any {
+	// Get tenant ID for metadata
+	tenantID, _ := l.getTenantID()
+
+	// Create structured output with metadata wrapper
+	structuredData := map[string]any{
+		"metadata": map[string]any{
+			"tenant_id":       tenantID,
+			"policy_count":    len(policies),
+			"collection_time": time.Now().Format(time.RFC3339),
+			"data_type":       "azure_conditional_access_policies",
+		},
+		"policies": policies,
 	}
-	return b
+
+	return structuredData
+}
+
+func (l *AzureConditionalAccessAnalysisOutputFormatterLink) createAnalysisOutputData(result ConditionalAccessAnalysisResult) map[string]any {
+	// Get tenant ID for metadata
+	tenantID, _ := l.getTenantID()
+
+	// Create structured output with metadata wrapper for RuntimeJSONOutputter
+	analysisData := map[string]any{
+		"metadata": map[string]any{
+			"tenantId":        tenantID,
+			"data_type":       "azure_conditional_access_analysis",
+			"analysis_time":   result.AnalysisTimestamp,
+			"policy_set_id":   result.PolicySetID,
+			"policies_count":  result.PoliciesAnalyzed,
+			"llm_provider":    result.LLMProvider,
+		},
+		"analysis": result,
+	}
+
+	return analysisData
+}
+
+func (l *AzureConditionalAccessAnalysisOutputFormatterLink) createEmptyAnalysisOutputData() map[string]any {
+	// Get tenant ID for metadata
+	tenantID, _ := l.getTenantID()
+
+	// Create empty analysis output with metadata for tenant ID filename
+	emptyAnalysisData := map[string]any{
+		"metadata": map[string]any{
+			"tenantId":   tenantID,
+			"data_type": "azure_conditional_access_analysis",
+			"status":    "analysis_failed",
+		},
+		"analysis": nil,
+	}
+
+	return emptyAnalysisData
+}
+
+// getTenantID retrieves the Azure tenant ID for filename generation
+func (l *AzureConditionalAccessAnalysisOutputFormatterLink) getTenantID() (string, error) {
+	// Get Azure credentials and create Graph client
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return "unknown", err
+	}
+	
+	graphClient, err := msgraphsdk.NewGraphServiceClientWithCredentials(cred, []string{"https://graph.microsoft.com/.default"})
+	if err != nil {
+		return "unknown", err
+	}
+	
+	// Get tenant info
+	org, err := graphClient.Organization().Get(context.Background(), nil)
+	if err != nil {
+		return "unknown", err
+	}
+	
+	if org != nil && org.GetValue() != nil && len(org.GetValue()) > 0 {
+		if id := org.GetValue()[0].GetId(); id != nil {
+			return *id, nil
+		}
+	}
+	
+	return "unknown", fmt.Errorf("no tenant ID available")
 }
 
 // convertNumbersToBullets converts numbered lists (1. 2. 3.) to bullet points (* * *)
@@ -259,3 +342,4 @@ func (l *AzureConditionalAccessAnalysisOutputFormatterLink) convertNumbersToBull
 	
 	return strings.Join(lines, "\n")
 }
+

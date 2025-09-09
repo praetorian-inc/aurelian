@@ -5,12 +5,18 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
+
+	msgraphsdk "github.com/microsoftgraph/msgraph-sdk-go"
 )
 
 type PolicyDescriptionXML struct {
@@ -77,13 +83,27 @@ func NewAzureConditionalAccessLLMAnalyzer(configs ...cfg.Config) chain.Link {
 
 func (l *AzureConditionalAccessLLMAnalyzer) Params() []cfg.Param {
 	return []cfg.Param{
-		options.AzureLLMAPIKey(),
+		options.AzureEnableLLMAnalysis(),
+		options.AzureLLMAPIKeyOptional(),
 		options.AzureLLMProvider(),
 		options.AzureLLMModel(),
+		options.OutputDir(),
 	}
 }
 
 func (l *AzureConditionalAccessLLMAnalyzer) Process(input any) error {
+	// Check if LLM analysis is enabled
+	enableLLM, err := cfg.As[bool](l.Arg("enable-llm-analysis"))
+	if err != nil {
+		enableLLM = false
+	}
+
+	// If LLM analysis is disabled, pass input through unchanged
+	if !enableLLM {
+		return l.Send(input)
+	}
+
+	// LLM analysis is enabled - validate and process
 	var policies []EnrichedConditionalAccessPolicy
 
 	// Handle both single policy and array of policies
@@ -102,7 +122,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) Process(input any) error {
 
 	apiKey, err := cfg.As[string](l.Arg("llm-api-key"))
 	if err != nil || apiKey == "" {
-		return fmt.Errorf("LLM API key is required")
+		return fmt.Errorf("llm-api-key is required when enable-llm-analysis is true")
 	}
 
 	provider, err := cfg.As[string](l.Arg("llm-provider"))
@@ -115,11 +135,19 @@ func (l *AzureConditionalAccessLLMAnalyzer) Process(input any) error {
 		model = "claude-opus-4-20250514"
 	}
 
+	// First: Create and send the recon JSON file (so original policies are preserved)
+	if err := l.createReconJSONFile(policies); err != nil {
+		return fmt.Errorf("failed to create recon JSON file: %w", err)
+	}
+
+	// Second: Perform LLM analysis
+	fmt.Printf("[+] Starting conditional access policy analysis using LLM...\n")
 	analysisResult, err := l.analyzePolicySet(policies, apiKey, provider, model)
 	if err != nil {
 		return fmt.Errorf("failed to analyze policy set: %w", err)
 	}
 
+	// Third: Send analysis result to next link (analysis output formatter)
 	return l.Send(analysisResult)
 }
 
@@ -157,6 +185,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []Enriched
 		},
 	}
 	l.Logger.Debug("Sending request to LLM provider", "provider", provider, "model", model, "request_structure", sanitizedReq)
+	fmt.Printf("[+] Sending policy data to LLM provider (%s) for analysis...\n", provider)
 
 	reqBody, err := json.Marshal(llmReq)
 	if err != nil {
@@ -200,6 +229,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []Enriched
 
 	// Debug logging for response
 	l.Logger.Debug("Raw LLM response received", "provider", provider, "model", model, "response_length", len(analysisText), "raw_response", analysisText)
+	fmt.Printf("[+] LLM analysis completed, processing results...\n")
 
 	// Parse XML response
 	var xmlResponse AnalysisXML
@@ -318,3 +348,97 @@ Provide your summary and analysis in the following XML format. DO NOT return any
 </output_format>
 `, policyCount, policySetJSON)
 }
+
+// createReconJSONFile creates and sends the recon JSON file when LLM analysis is enabled
+func (l *AzureConditionalAccessLLMAnalyzer) createReconJSONFile(policies []EnrichedConditionalAccessPolicy) error {
+	// Generate recon JSON filename
+	reconFilePath, err := l.generateReconJSONFilename()
+	if err != nil {
+		return fmt.Errorf("failed to generate recon JSON filename: %w", err)
+	}
+
+	// Create structured output data with metadata
+	outputData := l.createStructuredOutputData(policies)
+	
+	// Write JSON directly to file (not through pipeline to avoid conflicts)
+	jsonData, err := json.MarshalIndent(outputData, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal recon data: %w", err)
+	}
+	
+	if err := os.WriteFile(reconFilePath, jsonData, 0644); err != nil {
+		return fmt.Errorf("failed to write recon JSON file: %w", err)
+	}
+	
+	l.Logger.Info("Recon JSON file created", "path", reconFilePath)
+	fmt.Printf("[+] Recon JSON output written to: %s\n", reconFilePath)
+	
+	return nil
+}
+
+// generateReconJSONFilename creates filename for recon JSON output
+func (l *AzureConditionalAccessLLMAnalyzer) generateReconJSONFilename() (string, error) {
+	outputDir, _ := cfg.As[string](l.Arg("output"))
+
+	// Get tenant ID for filename
+	tenantID, err := l.getTenantID()
+	if err != nil {
+		slog.Warn("Failed to get tenant ID, using timestamp instead", "error", err)
+		timestamp := time.Now().Format("20060102-150405")
+		filename := fmt.Sprintf("conditional-access-policies-%s.json", timestamp)
+		return filepath.Join(outputDir, filename), nil
+	}
+
+	filename := fmt.Sprintf("conditional-access-policies-%s.json", tenantID)
+	return filepath.Join(outputDir, filename), nil
+}
+
+// createStructuredOutputData creates structured metadata wrapper for recon policies
+func (l *AzureConditionalAccessLLMAnalyzer) createStructuredOutputData(policies []EnrichedConditionalAccessPolicy) map[string]interface{} {
+	// Get tenant ID for metadata
+	tenantID, _ := l.getTenantID()
+
+	// Create structured output data with metadata
+	metadata := map[string]interface{}{
+		"collectedAt": time.Now().UTC().Format(time.RFC3339),
+		"policyCount": len(policies),
+		"module":      "conditional-access-policies",
+	}
+	if tenantID != "" {
+		metadata["tenantId"] = tenantID
+	}
+
+	return map[string]interface{}{
+		"metadata": metadata,
+		"policies": policies,
+	}
+}
+
+// getTenantID retrieves the Azure tenant ID for filename generation
+func (l *AzureConditionalAccessLLMAnalyzer) getTenantID() (string, error) {
+	// Get Azure credentials and create Graph client
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to get Azure credentials: %w", err)
+	}
+
+	graphClient, err := msgraphsdk.NewGraphServiceClientWithCredentials(cred, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create Graph client: %w", err)
+	}
+
+	// Get organization info to extract tenant ID
+	org, err := graphClient.Organization().Get(l.Context(), nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to get organization info: %w", err)
+	}
+
+	if org.GetValue() != nil && len(org.GetValue()) > 0 {
+		if id := org.GetValue()[0].GetId(); id != nil {
+			return *id, nil
+		}
+	}
+
+	return "", fmt.Errorf("unable to extract tenant ID from organization info")
+}
+
