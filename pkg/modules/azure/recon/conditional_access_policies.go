@@ -31,6 +31,7 @@ var AzureConditionalAccessPolicies = chain.NewModule(
 	azure.NewAzureConditionalAccessOutputFormatterLink,
 	azure.NewAzureConditionalAccessLLMAnalyzer,
 	azure.NewAzureConditionalAccessAnalysisOutputFormatterLink,
+	azure.NewAzureConditionalAccessAggregatorLink,
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
 ).WithParams(

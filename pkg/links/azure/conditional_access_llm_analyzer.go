@@ -5,10 +5,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
-	"log/slog"
 	"net/http"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -135,19 +132,20 @@ func (l *AzureConditionalAccessLLMAnalyzer) Process(input any) error {
 		model = "claude-opus-4-20250514"
 	}
 
-	// First: Create and send the recon JSON file (so original policies are preserved)
-	if err := l.createReconJSONFile(policies); err != nil {
-		return fmt.Errorf("failed to create recon JSON file: %w", err)
-	}
-
-	// Second: Perform LLM analysis
+	// Perform LLM analysis
 	fmt.Printf("[+] Starting conditional access policy analysis using LLM...\n")
 	analysisResult, err := l.analyzePolicySet(policies, apiKey, provider, model)
 	if err != nil {
 		return fmt.Errorf("failed to analyze policy set: %w", err)
 	}
 
-	// Third: Send analysis result to next link (analysis output formatter)
+	// Send both policies and analysis result to next link
+	// First send the original policies so aggregator can collect them
+	if err := l.Send(policies); err != nil {
+		return fmt.Errorf("failed to send policies to next link: %w", err)
+	}
+
+	// Then send the analysis result
 	return l.Send(analysisResult)
 }
 
@@ -173,18 +171,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []Enriched
 		},
 	}
 
-	// Debug logging for request (sanitized)
-	sanitizedReq := LLMRequest{
-		Model:     llmReq.Model,
-		MaxTokens: llmReq.MaxTokens,
-		Messages: []Message{
-			{
-				Role:    llmReq.Messages[0].Role,
-				Content: fmt.Sprintf("[CONTENT_LENGTH: %d characters]", len(llmReq.Messages[0].Content)),
-			},
-		},
-	}
-	l.Logger.Debug("Sending request to LLM provider", "provider", provider, "model", model, "request_structure", sanitizedReq)
+	l.Logger.Info("Sending request to LLM provider", "provider", provider, "model", model)
 	fmt.Printf("[+] Sending policy data to LLM provider (%s) for analysis...\n", provider)
 
 	reqBody, err := json.Marshal(llmReq)
@@ -227,8 +214,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []Enriched
 
 	analysisText := llmResp.Content[0].Text
 
-	// Debug logging for response
-	l.Logger.Debug("Raw LLM response received", "provider", provider, "model", model, "response_length", len(analysisText), "raw_response", analysisText)
+	l.Logger.Info("LLM response received", "provider", provider, "model", model, "response_length", len(analysisText))
 	fmt.Printf("[+] LLM analysis completed, processing results...\n")
 
 	// Parse XML response
@@ -238,7 +224,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []Enriched
 		if len(analysisText) < previewLen {
 			previewLen = len(analysisText)
 		}
-		l.Logger.Debug("XML parsing failed", "provider", provider, "error", err.Error(), "response_preview", analysisText[:previewLen])
+		l.Logger.Warn("XML parsing failed", "provider", provider, "error", err.Error())
 		return ConditionalAccessAnalysisResult{}, fmt.Errorf("failed to parse XML response from LLM provider %s: %w", provider, err)
 	}
 
@@ -250,8 +236,8 @@ func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []Enriched
 		PoliciesAnalyzed:     len(policies),
 		PolicyDescriptions:   xmlResponse.PolicyDescriptions,
 		ObservationsDetected: xmlResponse.Observations,
-		OverallRiskLevel:     "Unknown",  // TODO: Parse from XML if added to prompt
-		Recommendations:      []string{}, // TODO: Parse from XML if added to prompt
+		OverallRiskLevel:     "Unknown",
+		Recommendations:      []string{},
 	}
 
 	return analysisResult, nil
@@ -266,6 +252,7 @@ You are analyzing Conditional Access policies as a cohesive security system. Foc
 1. Read the web articles linked for ideas on potential abuse cases
 2. Read each policy one at a time and understand what each policy does 
 3. Analyze all policies as an interconnected security control due to the conditional access policy evaluation logic highlighted in the conditional_access_policy_evaluation_logic section
+4. Highlight any potential gaps, bypasses or security concerns that you have. IMPORTANT: return a minimum of 10 observations.
 
 CRITICAL RESTRICTIONS:
 - NEVER hallucinate vulnerabilities or discoveries
@@ -349,70 +336,6 @@ Provide your summary and analysis in the following XML format. DO NOT return any
 `, policyCount, policySetJSON)
 }
 
-// createReconJSONFile creates and sends the recon JSON file when LLM analysis is enabled
-func (l *AzureConditionalAccessLLMAnalyzer) createReconJSONFile(policies []EnrichedConditionalAccessPolicy) error {
-	// Generate recon JSON filename
-	reconFilePath, err := l.generateReconJSONFilename()
-	if err != nil {
-		return fmt.Errorf("failed to generate recon JSON filename: %w", err)
-	}
-
-	// Create structured output data with metadata
-	outputData := l.createStructuredOutputData(policies)
-	
-	// Write JSON directly to file (not through pipeline to avoid conflicts)
-	jsonData, err := json.MarshalIndent(outputData, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal recon data: %w", err)
-	}
-	
-	if err := os.WriteFile(reconFilePath, jsonData, 0644); err != nil {
-		return fmt.Errorf("failed to write recon JSON file: %w", err)
-	}
-	
-	l.Logger.Info("Recon JSON file created", "path", reconFilePath)
-	fmt.Printf("[+] Recon JSON output written to: %s\n", reconFilePath)
-	
-	return nil
-}
-
-// generateReconJSONFilename creates filename for recon JSON output
-func (l *AzureConditionalAccessLLMAnalyzer) generateReconJSONFilename() (string, error) {
-	outputDir, _ := cfg.As[string](l.Arg("output"))
-
-	// Get tenant ID for filename
-	tenantID, err := l.getTenantID()
-	if err != nil {
-		slog.Warn("Failed to get tenant ID, using timestamp instead", "error", err)
-		timestamp := time.Now().Format("20060102-150405")
-		filename := fmt.Sprintf("conditional-access-policies-%s.json", timestamp)
-		return filepath.Join(outputDir, filename), nil
-	}
-
-	filename := fmt.Sprintf("conditional-access-policies-%s.json", tenantID)
-	return filepath.Join(outputDir, filename), nil
-}
-
-// createStructuredOutputData creates structured metadata wrapper for recon policies
-func (l *AzureConditionalAccessLLMAnalyzer) createStructuredOutputData(policies []EnrichedConditionalAccessPolicy) map[string]interface{} {
-	// Get tenant ID for metadata
-	tenantID, _ := l.getTenantID()
-
-	// Create structured output data with metadata
-	metadata := map[string]interface{}{
-		"collectedAt": time.Now().UTC().Format(time.RFC3339),
-		"policyCount": len(policies),
-		"module":      "conditional-access-policies",
-	}
-	if tenantID != "" {
-		metadata["tenantId"] = tenantID
-	}
-
-	return map[string]interface{}{
-		"metadata": metadata,
-		"policies": policies,
-	}
-}
 
 // getTenantID retrieves the Azure tenant ID for filename generation
 func (l *AzureConditionalAccessLLMAnalyzer) getTenantID() (string, error) {
@@ -441,4 +364,3 @@ func (l *AzureConditionalAccessLLMAnalyzer) getTenantID() (string, error) {
 
 	return "", fmt.Errorf("unable to extract tenant ID from organization info")
 }
-

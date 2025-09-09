@@ -63,6 +63,7 @@ func (l *AzureConditionalAccessOutputFormatterLink) generateConsoleOutput(polici
 			policyName, l.formatPolicyState(policy.State), userCount, groupCount, appCount)
 	}
 	fmt.Printf("\nTotal policies: %d\n", len(policies))
+	fmt.Printf("\nTip: Add --enable-llm-analysis --llm-api-key <key> to get AI-powered security analysis of these policies\n")
 }
 
 func (l *AzureConditionalAccessOutputFormatterLink) formatPolicyState(state string) string {
