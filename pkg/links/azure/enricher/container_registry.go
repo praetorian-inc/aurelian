@@ -104,6 +104,7 @@ func (c *ContainerRegistryEnricher) Enrich(ctx context.Context, resource *model.
 		if catalogErr != nil {
 			catalogCommand.Error = catalogErr.Error()
 			catalogCommand.ActualOutput = fmt.Sprintf("Catalog request failed: %s", catalogErr.Error())
+			catalogCommand.ExitCode = 1
 		} else {
 			defer catalogResp.Body.Close()
 			body, readErr := io.ReadAll(io.LimitReader(catalogResp.Body, 1000))

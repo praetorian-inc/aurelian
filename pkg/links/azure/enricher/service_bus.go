@@ -85,7 +85,7 @@ func (s *ServiceBusEnricher) getNetworkRulesCommand(ctx context.Context, resourc
 	subscriptionID := resource.AccountRef
 	resourceGroupName := resource.ResourceGroup
 
-	azCommand := fmt.Sprintf("az servicebus namespace network-rule list --resource-group %s --namespace-name %s", resourceGroupName, namespaceName)
+	azCommand := fmt.Sprintf("az servicebus namespace network-rule-set list --resource-group %s --namespace-name %s", resourceGroupName, namespaceName)
 
 	if namespaceName == "" || subscriptionID == "" || resourceGroupName == "" {
 		return Command{
@@ -111,7 +111,7 @@ func (s *ServiceBusEnricher) getNetworkRulesCommand(ctx context.Context, resourc
 
 	// Format output with network rules
 	output := s.formatNetworkRules(networkRules)
-	
+
 	return Command{
 		Command:                   azCommand,
 		Description:               "Retrieve Service Bus namespace network rules",
@@ -186,7 +186,7 @@ func (s *ServiceBusEnricher) formatNetworkRules(rules *armservicebus.NetworkRule
 		TrustedServiceAccessEnabled: false,
 		PublicNetworkAccess:         "Enabled",
 	}
-	
+
 	if rules.ID != nil {
 		output.ID = *rules.ID
 	}
@@ -196,7 +196,7 @@ func (s *ServiceBusEnricher) formatNetworkRules(rules *armservicebus.NetworkRule
 	if rules.Location != nil {
 		output.Location = *rules.Location
 	}
-	
+
 	// Extract resource group from ID if available
 	if output.ID != "" {
 		parts := strings.Split(output.ID, "/")
@@ -212,7 +212,7 @@ func (s *ServiceBusEnricher) formatNetworkRules(rules *armservicebus.NetworkRule
 		if rules.Properties.DefaultAction != nil {
 			output.DefaultAction = string(*rules.Properties.DefaultAction)
 		}
-		
+
 		if rules.Properties.TrustedServiceAccessEnabled != nil {
 			output.TrustedServiceAccessEnabled = *rules.Properties.TrustedServiceAccessEnabled
 		}
@@ -257,11 +257,11 @@ func (s *ServiceBusEnricher) formatNetworkRules(rules *armservicebus.NetworkRule
 			}
 		}
 	}
-	
+
 	jsonOutput, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
 		return fmt.Sprintf("Error formatting output: %s", err.Error())
 	}
-	
+
 	return string(jsonOutput)
 }

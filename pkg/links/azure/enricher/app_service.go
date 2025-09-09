@@ -59,7 +59,9 @@ func (a *AppServiceEnricher) Enrich(ctx context.Context, resource *model.AzureRe
 	if err != nil {
 		httpGetCommand.Error = err.Error()
 		httpGetCommand.ActualOutput = fmt.Sprintf("Request failed: %s", err.Error())
+		httpGetCommand.ExitCode = -1
 	} else {
+		defer resp.Body.Close()
 		// Read full response body (limit to first 2000 characters for App Service responses)
 		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 2000))
 		if readErr != nil {
@@ -86,6 +88,7 @@ func (a *AppServiceEnricher) Enrich(ctx context.Context, resource *model.AzureRe
 	if scmErr != nil {
 		scmCommand.Error = scmErr.Error()
 		scmCommand.ActualOutput = fmt.Sprintf("Request failed: %s", scmErr.Error())
+		scmCommand.ExitCode = -1
 	} else {
 		defer scmResp.Body.Close()
 		// Read SCM response body

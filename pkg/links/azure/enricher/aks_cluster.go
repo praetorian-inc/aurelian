@@ -35,7 +35,7 @@ func (a *AKSClusterEnricher) Enrich(ctx context.Context, resource *model.AzureRe
 	}
 
 	// Test 1: Test direct HTTP access to Kubernetes endpoint
-	fqdn := resource.Properties["fqdn"]
+	fqdn, _ := resource.Properties["fqdn"].(string)
 	if fqdn == "" {
 		fqdn = "UNDEFINED_FQDN"
 	}
@@ -64,6 +64,7 @@ func (a *AKSClusterEnricher) Enrich(ctx context.Context, resource *model.AzureRe
 	if err != nil {
 		curlCommand.Error = err.Error()
 		curlCommand.ActualOutput = fmt.Sprintf("Request failed: %s", err.Error())
+		curlCommand.ExitCode = -1
 	} else {
 		defer resp.Body.Close()
 		// Read response body (limit to first 1000 characters for safety)

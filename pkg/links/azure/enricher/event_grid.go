@@ -21,6 +21,14 @@ func (e *EventGridEnricher) Enrich(ctx context.Context, resource *model.AzureRes
 
 	eventGridName := resource.Name
 	location := resource.Region
+	if location == "" {
+		if loc, ok := resource.Properties["location"].(string); ok && loc != "" {
+			location = loc
+		}
+	}
+	if location == "" {
+		return commands // cannot build endpoint reliably
+	}
 	if eventGridName == "" {
 		commands = append(commands, Command{
 			Command:      "",
@@ -29,7 +37,6 @@ func (e *EventGridEnricher) Enrich(ctx context.Context, resource *model.AzureRes
 		})
 		return commands
 	}
-
 	// Construct Event Grid endpoint
 	eventGridEndpoint := fmt.Sprintf("https://%s.%s-1.eventgrid.azure.net", eventGridName, location)
 	client := &http.Client{Timeout: 10 * time.Second}
