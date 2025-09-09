@@ -20,6 +20,7 @@ query: |
     | extend publicNetworkAccess = tolower(properties.publicNetworkAccess)
     | extend networkRuleSet = properties.networkRuleSet
     | extend adminUserEnabled = properties.adminUserEnabled
+    | extend allowAnonymousPull = properties.anonymousPullEnabled
     | extend sku = properties.sku.name
     | extend loginServer = properties.loginServer
     | where publicNetworkAccess != 'disabled'
@@ -38,6 +39,7 @@ query: |
         location,
         publicNetworkAccess,
         adminUserEnabled,
+        allowAnonymousPull,
         sku,
         loginServer,
         subscriptionId
