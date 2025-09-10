@@ -176,6 +176,11 @@ func AzureEnableLLMAnalysis() cfg.Param {
 		WithDefault(false)
 }
 
+func AzureResourceID() cfg.Param {
+	return cfg.NewParam[[]string]("azure-resource-id", "Azure resource ID in full format (/subscriptions/.../resourceGroups/.../providers/...)").
+		WithShortcode("i").
+		AsRequired()
+}
 
 // AzureReconBaseOptions provides common options for Azure reconnaissance modules
 func AzureReconBaseOptions() []cfg.Param {

@@ -1,0 +1,41 @@
+id: key_vault_access_policy_privilege_escalation
+name: Key Vault Access Policy Privilege Escalation
+description: Detects Key Vault instances using legacy access policies that allow privilege escalation by users with Contributor roles
+severity: High
+category: Privilege Escalation
+reportability: Automatic
+triageNotes: |
+ Key Vaults using access policies (enableRbacAuthorization=false) allow users with Key Vault Contributor, Contributor, or Owner roles to modify access policies and grant themselves data access. This bypasses intended RBAC boundaries and violates the principle of least privilege.
+references:
+ - https://securitylabs.datadoghq.com/articles/escalating-privileges-to-read-secrets-with-azure-key-vault-access-policies/
+query: |
+   resources
+   | where type =~ 'Microsoft.KeyVault/vaults'
+   | extend enableRbacAuthorization = coalesce(properties.enableRbacAuthorization, false)
+   | extend accessPolicies = properties.accessPolicies
+   | extend accessPolicyCount = array_length(coalesce(accessPolicies, dynamic([])))
+   | extend vaultUri = properties.vaultUri
+   | extend sku = properties.sku.name
+   | extend privateEndpointConnections = coalesce(array_length(properties.privateEndpointConnections), 0)
+   | extend publicNetworkAccess = properties.publicNetworkAccess
+   | extend networkAcls = properties.networkAcls
+   | extend defaultAction = tolower(coalesce(networkAcls.defaultAction, 'allow'))
+   | where enableRbacAuthorization == false
+   | extend vulnerabilityStatus = 'Vulnerable to Contributor Privilege Escalation'
+   | extend mitigationRequired = 'Migrate to RBAC immediately'
+   | project
+       id,
+       name,
+       type,
+       location,
+       vulnerabilityStatus,
+       mitigationRequired,
+       enableRbacAuthorization,
+       defaultAction,
+       accessPolicyCount,
+       sku,
+       vaultUri,
+       publicNetworkAccess,
+       hasPrivateEndpoints=(privateEndpointConnections > 0),
+       resourceGroup,
+       subscriptionId

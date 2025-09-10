@@ -5,13 +5,16 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	janusDocker "github.com/praetorian-inc/janus-framework/pkg/links/docker"
 	"github.com/praetorian-inc/janus-framework/pkg/links/noseyparker"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudformation"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/ec2"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/ecr"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/lambda"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/stepfunctions"
 	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/tabularium/pkg/model/model"
 )
 
 type AWSFindSecrets struct {
@@ -32,11 +35,11 @@ func (fs *AWSFindSecrets) Initialize() error {
 	return nil
 }
 
-func (fs *AWSFindSecrets) SupportedResourceTypes() []string {
+func (fs *AWSFindSecrets) SupportedResourceTypes() []model.CloudResourceType {
 	resources := fs.ResourceMap()
-	types := make([]string, 0, len(resources))
+	types := make([]model.CloudResourceType, 0, len(resources))
 	for resourceType := range resources {
-		types = append(types, resourceType)
+		types = append(types, model.CloudResourceType(resourceType))
 	}
 	return types
 }
@@ -63,15 +66,14 @@ func (fs *AWSFindSecrets) ResourceMap() map[string]func() chain.Chain {
 		)
 	}
 
-	// resourceMap["AWS::ECR::Repository"] = func() chain.Chain {
-	// 	return chain.NewChain(
-	// 		ecr.NewAWSECRListImages(),
-	// 		ecr.NewAWSECRLogin(),
-	// 		docker.NewDockerPull(),
-	// 		docker.NewDockerSave(),
-	// 		noseyparker.NewConvertToNPInput(),
-	// 	)
-	// }
+	resourceMap["AWS::ECR::Repository"] = func() chain.Chain {
+		return chain.NewChain(
+			ecr.NewAWSECRListImages(),
+			ecr.NewAWSECRLogin(),
+			janusDocker.NewDockerDownload(),
+			noseyparker.NewConvertToNPInput(),
+		)
+	}
 
 	// resourceMap["AWS::ECR::PublicRepository"] = func() chain.Chain {
 	// 	return chain.NewChain(

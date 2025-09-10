@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	quiet     bool
+	quiet     bool = true
 	noColor   bool
 	silent    bool
 	mutex     sync.RWMutex

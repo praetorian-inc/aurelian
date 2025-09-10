@@ -13,6 +13,8 @@ recon commands for aws
 * [nebula aws](nebula_aws.md)	 - aws platform commands
 * [nebula aws recon account-auth-details](nebula_aws_recon_account-auth-details.md)	 - Get authorization details in an AWS account.
 * [nebula aws recon apollo](nebula_aws_recon_apollo.md)	 - Gather AWS access control details and analyze them using graph analysis
+* [nebula aws recon apollo-offline](nebula_aws_recon_apollo-offline.md)	 - Analyze AWS access control details from pre-collected JSON files using graph analysis
+* [nebula aws recon cdk-bucket-takeover](nebula_aws_recon_cdk-bucket-takeover.md)	 - Detects AWS CDK S3 bucket takeover vulnerabilities by identifying missing CDK staging buckets and insecure IAM policies. Scans for CDK bootstrap roles and validates associated S3 buckets for potential account takeover risks.
 * [nebula aws recon ecr-dump](nebula_aws_recon_ecr-dump.md)	 - Dump ECR container filesystems to disk and optionally scan for secrets using NoseyParker.
 * [nebula aws recon find-secrets](nebula_aws_recon_find-secrets.md)	 - Enumerate AWS resources and find secrets using NoseyParker
 * [nebula aws recon find-secrets-resource](nebula_aws_recon_find-secrets-resource.md)	 - Enumerate AWS resources and find secrets using NoseyParker for a specific resource type
@@ -21,6 +23,7 @@ recon commands for aws
 * [nebula aws recon list-all](nebula_aws_recon_list-all.md)	 - List resources in an AWS account using CloudControl API. Supports 'full' scan for all resources or 'summary' scan for key services.
 * [nebula aws recon org-policies](nebula_aws_recon_org-policies.md)	 - Get SCPs and RCPs of an AWS organization and the targets to which they are attached.
 * [nebula aws recon public-resources](nebula_aws_recon_public-resources.md)	 - Enumerate public AWS resources
+* [nebula aws recon resource-policies](nebula_aws_recon_resource-policies.md)	 - Get resource policies for supported AWS resource types and output them keyed by ARN.
 * [nebula aws recon summary](nebula_aws_recon_summary.md)	 - Use Cost Explorer to summarize the services and regions in use, displaying costs in a markdown table.
 * [nebula aws recon whoami](nebula_aws_recon_whoami.md)	 - Performs covert whoami techniques using AWS APIs that don't log to CloudTrail.
 

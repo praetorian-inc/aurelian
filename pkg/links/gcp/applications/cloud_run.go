@@ -2,12 +2,15 @@ package applications
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/utils"
@@ -19,6 +22,7 @@ import (
 // FILE INFO:
 // GcpCloudRunServiceInfoLink - get info of a single Cloud Run service, Process(serviceName string); needs project and region
 // GcpCloudRunServiceListLink - list all Cloud Run services in a project, Process(resource tab.GCPResource)
+// GcpCloudRunSecretsLink - extract secrets from a Cloud Run service, Process(input tab.GCPResource)
 
 type GcpCloudRunServiceInfoLink struct {
 	*base.GcpBaseLink
@@ -155,6 +159,84 @@ func (g *GcpCloudRunServiceListLink) Process(resource tab.GCPResource) error {
 		}(region.Name)
 	}
 	wg.Wait()
+	return nil
+}
+
+type GcpCloudRunSecretsLink struct {
+	*base.GcpBaseLink
+	runService *run.Service
+}
+
+// creates a link to scan Cloud Run service for secrets
+func NewGcpCloudRunSecretsLink(configs ...cfg.Config) chain.Link {
+	g := &GcpCloudRunSecretsLink{}
+	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
+	return g
+}
+
+func (g *GcpCloudRunSecretsLink) Initialize() error {
+	if err := g.GcpBaseLink.Initialize(); err != nil {
+		return err
+	}
+	var err error
+	g.runService, err = run.NewService(context.Background(), g.ClientOptions...)
+	if err != nil {
+		return fmt.Errorf("failed to create cloud run service: %w", err)
+	}
+	return nil
+}
+
+func (g *GcpCloudRunSecretsLink) Process(input tab.GCPResource) error {
+	if input.ResourceType != tab.GCPResourceCloudRunService {
+		return nil
+	}
+	svc, err := g.runService.Projects.Locations.Services.Get(input.Name).Do()
+	if err != nil {
+		return utils.HandleGcpError(err, "failed to get cloud run service for secrets extraction")
+	}
+	if svc.Template != nil {
+		for _, container := range svc.Template.Containers {
+			if container == nil {
+				continue
+			}
+			if len(container.Env) > 0 {
+				if envContent, err := json.Marshal(container.Env); err == nil {
+					g.Send(jtypes.NPInput{
+						Content: string(envContent),
+						Provenance: jtypes.NPProvenance{
+							Platform:     "gcp",
+							ResourceType: fmt.Sprintf("%s::EnvVariables", tab.GCPResourceCloudRunService.String()),
+							ResourceID:   input.Name,
+							Region:       input.Region,
+							AccountID:    input.AccountRef,
+						},
+					})
+				}
+			}
+			var commandContent strings.Builder
+			if len(container.Command) > 0 {
+				commandContent.WriteString(strings.Join(container.Command, " "))
+			}
+			if len(container.Args) > 0 {
+				if commandContent.Len() > 0 {
+					commandContent.WriteString(" ")
+				}
+				commandContent.WriteString(strings.Join(container.Args, " "))
+			}
+			if commandContent.Len() > 0 {
+				g.Send(jtypes.NPInput{
+					Content: commandContent.String(),
+					Provenance: jtypes.NPProvenance{
+						Platform:     "gcp",
+						ResourceType: fmt.Sprintf("%s::Command", tab.GCPResourceCloudRunService.String()),
+						ResourceID:   input.Name,
+						Region:       input.Region,
+						AccountID:    input.AccountRef,
+					},
+				})
+			}
+		}
+	}
 	return nil
 }
 

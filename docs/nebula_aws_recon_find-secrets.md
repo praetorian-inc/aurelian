@@ -17,14 +17,15 @@ nebula aws recon find-secrets [flags]
       --continue_piping                If true, pipes output to next link. If false, saves to datastore file. (default true)
       --datastore string               NoseyParker datastore file (default "datastore.np")
       --disable-cache                  Disable API response caching
-      --file string                    the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -h, --help                           help for find-secrets
       --indent int                     the number of spaces to use for the JSON indentation
       --module-name string             name of the module for dynamic file naming
+      --opsec_level string             Operational security level for AWS operations (default "none")
+      --outfile string                 the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -o, --output string                  output directory (default "nebula-output")
-  -p, --profile string                 AWS profile to use (default "default")
+  -p, --profile string                 AWS profile to use
       --profile-dir string             Set to override the default AWS profile directory
-  -r, --regions strings                AWS regions to scan (required) (default [all])
+  -r, --regions strings                AWS regions to scan (default [all])
   -t, --resource-type strings          AWS Cloud Control resource type (default [all])
 ```
 

@@ -54,7 +54,7 @@ func (a *AWSECRLoginPublic) Process(repositoryURI string) error {
 		AuthConfig: registry.AuthConfig{
 			Username:      "AWS",
 			Password:      string(parsed),
-			ServerAddress: fmt.Sprintf("public.ecr.aws"),
+			ServerAddress: fmt.Sprintf("https://public.ecr.aws"),
 		},
 		Image: repositoryURI,
 	}

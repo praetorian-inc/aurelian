@@ -4,11 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/utils"
@@ -19,6 +22,7 @@ import (
 // FILE INFO:
 // GcpInstanceInfoLink - get info of a single compute instance, Process(instanceName string); needs project and zone
 // GcpInstanceListLink - list all compute instances in a project, Process(resource tab.GCPResource)
+// GcpInstanceSecretsLink - extract secrets from a compute instance, Process(input tab.GCPResource)
 
 type GcpInstanceInfoLink struct {
 	*base.GcpBaseLink
@@ -136,6 +140,7 @@ func (g *GcpInstanceListLink) Process(resource tab.GCPResource) error {
 						continue
 					}
 					gcpInstance.DisplayName = instance.Name
+					slog.Debug("Sending GCP instance", "instance", gcpInstance.DisplayName)
 					g.Send(gcpInstance)
 				}
 				return nil
@@ -146,6 +151,71 @@ func (g *GcpInstanceListLink) Process(resource tab.GCPResource) error {
 		}(zone.Name)
 	}
 	wg.Wait()
+	return nil
+}
+
+type GcpInstanceSecretsLink struct {
+	*base.GcpBaseLink
+	computeService *compute.Service
+}
+
+// creates a link to scan compute instance for secrets
+func NewGcpInstanceSecretsLink(configs ...cfg.Config) chain.Link {
+	g := &GcpInstanceSecretsLink{}
+	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
+	return g
+}
+
+func (g *GcpInstanceSecretsLink) Initialize() error {
+	if err := g.GcpBaseLink.Initialize(); err != nil {
+		return err
+	}
+	var err error
+	g.computeService, err = compute.NewService(context.Background(), g.ClientOptions...)
+	if err != nil {
+		return fmt.Errorf("failed to create compute service: %w", err)
+	}
+	return nil
+}
+
+func (g *GcpInstanceSecretsLink) Process(input tab.GCPResource) error {
+	if input.ResourceType != tab.GCPResourceInstance {
+		return nil
+	}
+	projectId := input.AccountRef
+	instanceName := input.DisplayName
+	zoneURL, _ := input.Properties["zone"].(string)
+	zone := path.Base(zoneURL)
+	if projectId == "" || zone == "" || instanceName == "" {
+		return nil
+	}
+	inst, err := g.computeService.Instances.Get(projectId, zone, instanceName).Do()
+	if err != nil {
+		return utils.HandleGcpError(err, "failed to get instance for secrets extraction")
+	}
+	var metadataContent strings.Builder
+	if inst.Metadata != nil {
+		for _, item := range inst.Metadata.Items {
+			if item == nil || item.Value == nil || *item.Value == "" {
+				continue
+			}
+			metadataContent.WriteString(fmt.Sprintf("GCP Instance Metadata: %s\n", item.Key))
+			metadataContent.WriteString(*item.Value)
+			metadataContent.WriteString("\n\n")
+		}
+	}
+	if metadataContent.Len() > 0 {
+		g.Send(jtypes.NPInput{
+			Content: metadataContent.String(),
+			Provenance: jtypes.NPProvenance{
+				Platform:     "gcp",
+				ResourceType: fmt.Sprintf("%s::Metadata", tab.GCPResourceInstance.String()),
+				ResourceID:   input.Name,
+				Region:       zone,
+				AccountID:    projectId,
+			},
+		})
+	}
 	return nil
 }
 

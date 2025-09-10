@@ -95,8 +95,16 @@ func (o *NPFindingsConsoleOutputter) outputFinding(finding types.NPFinding, inde
 		if finding.Provenance.ResourceID != "" {
 			provenanceDetails = append(provenanceDetails, fmt.Sprintf("Resource: %s", finding.Provenance.ResourceID))
 		}
+
 		if finding.Provenance.RepoPath != "" {
-			provenanceDetails = append(provenanceDetails, fmt.Sprintf("Repository: %s", finding.Provenance.RepoPath))
+			if finding.Provenance.FirstCommit != nil && finding.Provenance.FirstCommit.BlobPath != "" {
+				// For Docker layers: show layer and file within layer
+				provenanceDetails = append(provenanceDetails, fmt.Sprintf("Layer: %s", finding.Provenance.RepoPath))
+				provenanceDetails = append(provenanceDetails, fmt.Sprintf("File: %s", finding.Provenance.FirstCommit.BlobPath))
+			} else {
+				// For regular files: show file path
+				provenanceDetails = append(provenanceDetails, fmt.Sprintf("File: %s", finding.Provenance.RepoPath))
+			}
 		}
 
 		if len(provenanceDetails) > 0 {

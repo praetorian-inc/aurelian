@@ -10,11 +10,11 @@ nebula aws recon summary [flags]
 
 ```
       --days int             Number of days to look back for cost data (default 30)
-      --file string          the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -f, --filename string      Base filename for output (default "aws-summary")
   -h, --help                 help for summary
       --indent int           the number of spaces to use for the JSON indentation
       --module-name string   name of the module for dynamic file naming
+      --outfile string       the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -o, --output string        output directory (default "nebula-output")
   -s, --scan-type string     Scan type - 'full' for all resources or 'summary' for key services (default "full")
 ```

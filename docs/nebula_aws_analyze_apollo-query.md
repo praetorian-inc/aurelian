@@ -10,7 +10,6 @@ nebula aws analyze apollo-query [flags]
 
 ```
       --csvoutfile string       file to write the CSV output to (default "risks.csv")
-      --file string             the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -h, --help                    help for apollo-query
       --indent int              the number of spaces to use for the JSON indentation
       --list                    List the available queries
@@ -18,6 +17,7 @@ nebula aws analyze apollo-query [flags]
       --neo4j-password string   Neo4j authentication password (default "neo4j")
       --neo4j-uri string        Neo4j connection URI (default "bolt://localhost:7687")
       --neo4j-username string   Neo4j authentication username (default "neo4j")
+      --outfile string          the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -o, --output string           output directory (default "nebula-output")
       --query strings           Query to run against the graph database (required) (default [all])
 ```

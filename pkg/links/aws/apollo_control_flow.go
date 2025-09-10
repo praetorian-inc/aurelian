@@ -24,6 +24,7 @@ import (
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/outputters"
 	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/tabularium/pkg/model/model"
 )
 
 type AwsApolloControlFlow struct {
@@ -33,14 +34,14 @@ type AwsApolloControlFlow struct {
 	ctx context.Context
 }
 
-func (a *AwsApolloControlFlow) SupportedResourceTypes() []string {
-	return []string{
-		"AWS::IAM::Role",
-		"AWS::IAM::User",
-		"AWS::IAM::Group",
-		"AWS::Lambda::Function",
-		"AWS::EC2::Instance",
-		"AWS::CloudFormation::Stack",
+func (a *AwsApolloControlFlow) SupportedResourceTypes() []model.CloudResourceType {
+	return []model.CloudResourceType{
+		model.AWSRole,
+		model.AWSUser,
+		model.AWSGroup,
+		model.AWSLambdaFunction,
+		model.AWSEC2Instance,
+		model.AWSCloudFormationStack,
 	}
 }
 

@@ -9,11 +9,11 @@ nebula azure recon list-all [flags]
 ### Options
 
 ```
-      --file string            the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -f, --filename string        Base filename for output
   -h, --help                   help for list-all
       --indent int             the number of spaces to use for the JSON indentation
       --module-name string     name of the module for dynamic file naming
+      --outfile string         the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -o, --output string          output directory (default "nebula-output")
   -s, --subscription strings   The Azure subscription to use. Can be a subscription ID or 'all'. (required)
   -w, --workers int            Number of concurrent workers for processing (default 5)
