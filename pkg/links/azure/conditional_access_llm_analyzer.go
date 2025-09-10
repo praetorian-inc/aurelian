@@ -85,6 +85,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) Params() []cfg.Param {
 		options.AzureLLMAPIKeyOptional(),
 		options.AzureLLMProvider(),
 		options.AzureLLMModel(),
+		options.AzureLLMOutputTokens(),
 		options.OutputDir(),
 	}
 }
@@ -130,12 +131,17 @@ func (l *AzureConditionalAccessLLMAnalyzer) Process(input any) error {
 
 	model, err := cfg.As[string](l.Arg("llm-model"))
 	if err != nil {
-		model = "claude-opus-4-20250514"
+		model = "claude-opus-4-1-20250805"
+	}
+
+	outputTokens, err := cfg.As[int](l.Arg("llm-output-tokens"))
+	if err != nil {
+		outputTokens = 32000
 	}
 
 	// Perform LLM analysis
 	fmt.Printf("[+] Starting conditional access policy analysis using LLM...\n")
-	analysisResult, err := l.analyzePolicySet(policies, apiKey, provider, model)
+	analysisResult, err := l.analyzePolicySet(policies, apiKey, provider, model, outputTokens)
 	if err != nil {
 		return fmt.Errorf("failed to analyze policy set: %w", err)
 	}
@@ -150,7 +156,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) Process(input any) error {
 	return l.Send(analysisResult)
 }
 
-func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []EnrichedConditionalAccessPolicy, apiKey, provider, model string) (ConditionalAccessAnalysisResult, error) {
+func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []EnrichedConditionalAccessPolicy, apiKey, provider, model string, outputTokens int) (ConditionalAccessAnalysisResult, error) {
 	if provider != "anthropic" {
 		return ConditionalAccessAnalysisResult{}, fmt.Errorf("unsupported LLM provider: %s (only 'anthropic' is supported)", provider)
 	}
@@ -163,7 +169,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []Enriched
 
 	llmReq := LLMRequest{
 		Model:     model,
-		MaxTokens: 16000,
+		MaxTokens: outputTokens,
 		Messages: []Message{
 			{
 				Role:    "user",
@@ -189,6 +195,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []Enriched
 	req.Header.Set("X-API-Key", apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("anthropic-beta", "context-1m-2025-08-07")
 
 	client := &http.Client{Timeout: 300 * time.Second}
 	resp, err := client.Do(req)

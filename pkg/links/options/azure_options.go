@@ -162,7 +162,13 @@ func AzureLLMProvider() cfg.Param {
 
 func AzureLLMModel() cfg.Param {
 	return cfg.NewParam[string]("llm-model", "LLM model to use for analysis").
-		WithDefault("claude-opus-4-20250514")
+		WithDefault("claude-opus-4-1-20250805")
+}
+
+
+func AzureLLMOutputTokens() cfg.Param {
+	return cfg.NewParam[int]("llm-output-tokens", "Maximum output tokens for LLM analysis").
+		WithDefault(32000)
 }
 
 func AzureEnableLLMAnalysis() cfg.Param {
