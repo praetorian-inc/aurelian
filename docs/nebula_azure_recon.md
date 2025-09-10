@@ -12,6 +12,7 @@ recon commands for azure
 
 * [nebula azure](nebula_azure.md)	 - azure platform commands
 * [nebula azure recon arg-scan](nebula_azure_recon_arg-scan.md)	 - Scans Azure resources using ARG templates and enriches findings with security testing commands.
+* [nebula azure recon conditional-access-policies](nebula_azure_recon_conditional-access-policies.md)	 - Retrieve and document Azure Conditional Access policies with human-readable formatting, resolving UUIDs to names for users, groups, and applications. Optionally analyze policies using LLM.
 * [nebula azure recon devops-secrets](nebula_azure_recon_devops-secrets.md)	 - Scans Azure DevOps organizations for secrets in repositories, variable groups, pipelines, and service endpoints using NoseyParker.
 * [nebula azure recon find-secrets](nebula_azure_recon_find-secrets.md)	 - Enumerate Azure resources and find secrets using NoseyParker across VMs, web apps, automation accounts, key vaults, and storage accounts
 * [nebula azure recon find-secrets-resource](nebula_azure_recon_find-secrets-resource.md)	 - Find secrets using NoseyParker for a specific Azure resource
