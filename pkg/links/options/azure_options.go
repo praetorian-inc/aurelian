@@ -142,6 +142,40 @@ func AzureWorkerCount() cfg.Param {
 		WithDefault(5)
 }
 
+func AzureConditionalAccessFile() cfg.Param {
+	return cfg.NewParam[string]("conditional-access-file", "Path to JSON file containing conditional access policies")
+}
+
+func AzureLLMAPIKey() cfg.Param {
+	return cfg.NewParam[string]("llm-api-key", "API key for LLM provider").
+		AsRequired()
+}
+
+func AzureLLMAPIKeyOptional() cfg.Param {
+	return cfg.NewParam[string]("llm-api-key", "API key for LLM provider (required when --enable-llm-analysis is true)")
+}
+
+func AzureLLMProvider() cfg.Param {
+	return cfg.NewParam[string]("llm-provider", "LLM provider to use for analysis").
+		WithDefault("anthropic")
+}
+
+func AzureLLMModel() cfg.Param {
+	return cfg.NewParam[string]("llm-model", "LLM model to use for analysis").
+		WithDefault("claude-opus-4-1-20250805")
+}
+
+
+func AzureLLMOutputTokens() cfg.Param {
+	return cfg.NewParam[int]("llm-output-tokens", "Maximum output tokens for LLM analysis").
+		WithDefault(32000)
+}
+
+func AzureEnableLLMAnalysis() cfg.Param {
+	return cfg.NewParam[bool]("enable-llm-analysis", "Enable LLM analysis of conditional access policies").
+		WithDefault(false)
+}
+
 func AzureResourceID() cfg.Param {
 	return cfg.NewParam[[]string]("azure-resource-id", "Azure resource ID in full format (/subscriptions/.../resourceGroups/.../providers/...)").
 		WithShortcode("i").
