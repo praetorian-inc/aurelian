@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
@@ -111,18 +114,8 @@ func (l *AzureConditionalAccessAnalysisOutputFormatterLink) generateConsoleOutpu
 }
 
 func (l *AzureConditionalAccessAnalysisOutputFormatterLink) formatRiskLevel(level string) string {
-	switch strings.ToLower(level) {
-	case "critical":
-		return "Critical"
-	case "high":
-		return "High"
-	case "medium":
-		return "Medium"
-	case "low":
-		return "Low"
-	default:
-		return level
-	}
+	titleCaser := cases.Title(language.English)
+	return titleCaser.String(strings.ToLower(level))
 }
 
 // convertNumbersToBullets converts numbered lists (1. 2. 3.) to bullet points (* * *)

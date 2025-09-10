@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -14,6 +15,8 @@ import (
 	"github.com/microsoftgraph/msgraph-sdk-go/applications"
 	"github.com/microsoftgraph/msgraph-sdk-go/serviceprincipals"
 )
+
+var uuidRegex = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 type AzureConditionalAccessResolverLink struct {
 	*chain.Base
@@ -213,8 +216,8 @@ func (l *AzureConditionalAccessResolverLink) filterValidUUIDs(uuids []string) []
 		if uuid == "All" || uuid == "None" || uuid == "GuestsOrExternalUsers" || uuid == "" {
 			continue
 		}
-		// Basic UUID format check (36 characters with dashes)
-		if len(uuid) == 36 && uuid[8] == '-' && uuid[13] == '-' {
+		// Validate UUID format using regex
+		if uuidRegex.MatchString(uuid) {
 			filtered = append(filtered, uuid)
 		}
 	}

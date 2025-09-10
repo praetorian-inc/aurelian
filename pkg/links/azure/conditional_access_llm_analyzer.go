@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -158,7 +159,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []Enriched
 		return ConditionalAccessAnalysisResult{}, fmt.Errorf("failed to marshal policy set: %w", err)
 	}
 
-	prompt := l.buildAnalysisPrompt(string(policySetJSON), len(policies))
+	prompt := l.buildAnalysisPrompt(string(policySetJSON))
 
 	llmReq := LLMRequest{
 		Model:     model,
@@ -197,9 +198,14 @@ func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []Enriched
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes := make([]byte, 4096)
-		n, _ := resp.Body.Read(bodyBytes)
-		bodySnippet := string(bodyBytes[:n])
+		limitedReader := io.LimitReader(resp.Body, 64*1024) // 64KB limit
+		bodyBytes, readErr := io.ReadAll(limitedReader)
+		var bodySnippet string
+		if readErr != nil {
+			bodySnippet = "" // Fallback to empty snippet on read error
+		} else {
+			bodySnippet = string(bodyBytes)
+		}
 		return ConditionalAccessAnalysisResult{}, fmt.Errorf("LLM API (%s) status %d: %s", provider, resp.StatusCode, bodySnippet)
 	}
 
@@ -243,7 +249,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []Enriched
 	return analysisResult, nil
 }
 
-func (l *AzureConditionalAccessLLMAnalyzer) buildAnalysisPrompt(policySetJSON string, policyCount int) string {
+func (l *AzureConditionalAccessLLMAnalyzer) buildAnalysisPrompt(policySetJSON string) string {
 	return fmt.Sprintf(`
 <main_role>
 You are a cybersecurity expert analyzing a complete set of Azure Conditional Access policies for security vulnerabilities and configuration gaps.
@@ -333,7 +339,7 @@ Provide your summary and analysis in the following XML format. DO NOT return any
     </security_analysis>
   </analysis>
 </output_format>
-`, policyCount, policySetJSON)
+`, policySetJSON)
 }
 
 
