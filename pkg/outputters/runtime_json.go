@@ -192,6 +192,7 @@ func (j *RuntimeJSONOutputter) generateContextualFilename() string {
 		// Profile parameter exists (might be empty for env vars), this is an AWS command
 		slog.Debug("Found AWS profile parameter, generating AWS filename", "moduleName", moduleName)
 		return j.generateAWSFilename(moduleName)
+	}
 
 	// Azure parameters - check for tenant ID in output metadata first, then subscription
 	if tenantID := j.extractTenantFromMetadata(); tenantID != "" {
