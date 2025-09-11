@@ -76,7 +76,9 @@ func (l *ARGEnrichmentLink) Process(data outputters.NamedOutputData) error {
 		resource.Properties["commands"] = commands
 	}
 
-	// Send the enriched resource
+	// Update the data with the enriched resource
+	data.Data = resource
+	// Send the enriched data
 	l.Send(data)
 	return nil
 }
