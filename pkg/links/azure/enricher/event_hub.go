@@ -24,20 +24,28 @@ func (e *EventHubEnricher) CanEnrich(templateID string) bool {
 func (e *EventHubEnricher) Enrich(ctx context.Context, resource *model.AzureResource) []Command {
 	commands := []Command{}
 
-	// Extract Event Hub name
 	eventHubName := resource.Name
 
-	if eventHubName == "" {
-		commands = append(commands, Command{
-			Command:      "",
-			Description:  "Missing Event Hub name",
-			ActualOutput: "Error: Event Hub name is empty",
-		})
-		return commands
+	var serviceEndpoint string
+	if endpoint, exists := resource.Properties["serviceBusEndpoint"].(string); exists && endpoint != "" {
+		serviceEndpoint = endpoint
+		if strings.HasSuffix(serviceEndpoint, "/") {
+			serviceEndpoint = strings.TrimSuffix(serviceEndpoint, "/")
+		}
+		if strings.HasSuffix(serviceEndpoint, ":443") {
+			serviceEndpoint = strings.TrimSuffix(serviceEndpoint, ":443")
+		}
+	} else {
+		if eventHubName == "" {
+			commands = append(commands, Command{
+				Command:      "",
+				Description:  "Missing Event Hub name",
+				ActualOutput: "Error: Event Hub name is empty",
+			})
+			return commands
+		}
+		serviceEndpoint = fmt.Sprintf("https://%s.servicebus.windows.net", eventHubName)
 	}
-
-	// Construct Event Hub service endpoint
-	serviceEndpoint := fmt.Sprintf("https://%s.servicebus.windows.net", eventHubName)
 
 	// Create HTTP client with timeout
 	client := &http.Client{
