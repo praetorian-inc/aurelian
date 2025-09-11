@@ -22,8 +22,8 @@ jobs:
         id: create
         uses: atlassian/gajira-create@v3
         with:
-          project: PS  # ← Your project key
-          issuetype: Task  # Can be Bug, Story, Task, etc.
+          project: PS  # Your project key
+          issuetype: Story  # ← Changed to Story
           summary: "${{ github.event.issue.title }}"
           description: |
             h3. GitHub Issue Information
