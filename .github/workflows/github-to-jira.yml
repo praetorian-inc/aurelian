@@ -35,12 +35,8 @@ jobs:
             h3. Description
             
             ${{ github.event.issue.body }}
-          # Set Team to Nebula Team
-          fields: '{
-            "customfield_10500": {
-              "value": "Nebula Team"
-            }
-          }'
+          # Set Team to Nebula Team using the ID
+          fields: '{"customfield_10500": "a65d263c-f0a0-46a1-aea4-d4624f88245f"}'
       
       # Optional: Comment on GitHub issue with Jira link
       - name: Comment on GitHub Issue
