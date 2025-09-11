@@ -50,7 +50,7 @@ func (s *StorageAccountEnricher) Enrich(ctx context.Context, resource *model.Azu
 	curlCommand := Command{
 		Command:                   command,
 		Description:               "Test anonymous access to storage account container listing",
-		ExpectedOutputDescription: "anonymous access enabled 404 | anonymous access disabled = 401/403 | public access disabled = 409",
+		ExpectedOutputDescription: "anonymous access enabled = 404 | anonymous access disabled = 401/403 | public access disabled = 409",
 	}
 
 	if err != nil {

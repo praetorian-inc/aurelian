@@ -32,6 +32,9 @@ func (e *EventGridEnricher) Enrich(ctx context.Context, resource *model.AzureRes
 	var eventGridEndpoint string
 	if endpoint, exists := resource.Properties["endpoint"].(string); exists && endpoint != "" {
 		eventGridEndpoint = endpoint
+		if !strings.HasSuffix(eventGridEndpoint, "/api/events") {
+			eventGridEndpoint = strings.TrimSuffix(eventGridEndpoint, "/") + "/api/events"
+		}
 	} else {
 		if location == "" {
 			return commands

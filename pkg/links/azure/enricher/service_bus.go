@@ -34,12 +34,35 @@ func (s *ServiceBusEnricher) Enrich(ctx context.Context, resource *model.AzureRe
 		return commands
 	}
 
-	serviceEndpoint := fmt.Sprintf("https://%s.servicebus.windows.net", serviceBusName)
+	var serviceEndpoint string
+	if endpoint, exists := resource.Properties["serviceBusEndpoint"].(string); exists && endpoint != "" {
+		serviceEndpoint = endpoint
+		if strings.HasSuffix(serviceEndpoint, "/") {
+			serviceEndpoint = strings.TrimSuffix(serviceEndpoint, "/")
+		}
+		if strings.HasSuffix(serviceEndpoint, ":443") {
+			serviceEndpoint = strings.TrimSuffix(serviceEndpoint, ":443")
+		}
+	} else {
+		serviceEndpoint = fmt.Sprintf("https://%s.servicebus.windows.net", serviceBusName)
+	}
 	client := &http.Client{Timeout: 10 * time.Second}
 
 	// Test 1: Service Bus management endpoint
 	mgmtURL := fmt.Sprintf("%s/$management", serviceEndpoint)
-	resp, err := client.Get(mgmtURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", mgmtURL, nil)
+	if err != nil {
+		mgmtCommand := Command{
+			Command:                   fmt.Sprintf("curl -i '%s' --max-time 10", mgmtURL),
+			Description:               "Test anonymous access to Service Bus management endpoint",
+			ExpectedOutputDescription: "401 = authentication required | 200 = anonymous access | 404 = not found",
+			Error:                     err.Error(),
+			ActualOutput:              fmt.Sprintf("Request creation failed: %s", err.Error()),
+		}
+		commands = append(commands, mgmtCommand)
+		return commands
+	}
+	resp, err := client.Do(req)
 
 	mgmtCommand := Command{
 		Command:                   fmt.Sprintf("curl -i '%s' --max-time 10", mgmtURL),
