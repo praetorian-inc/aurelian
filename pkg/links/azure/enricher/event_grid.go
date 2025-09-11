@@ -1,9 +1,11 @@
 package enricher
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/praetorian-inc/tabularium/pkg/model/model"
@@ -26,26 +28,38 @@ func (e *EventGridEnricher) Enrich(ctx context.Context, resource *model.AzureRes
 			location = loc
 		}
 	}
-	if location == "" {
-		return commands // cannot build endpoint reliably
+
+	var eventGridEndpoint string
+	if endpoint, exists := resource.Properties["endpoint"].(string); exists && endpoint != "" {
+		eventGridEndpoint = endpoint
+	} else {
+		if location == "" {
+			return commands
+		}
+		if eventGridName == "" {
+			commands = append(commands, Command{
+				Command:      "",
+				Description:  "Missing Event Grid name",
+				ActualOutput: "Error: Event Grid name is empty",
+			})
+			return commands
+		}
+		normalizedLocation := strings.TrimSpace(strings.ToLower(location))
+		eventGridEndpoint = fmt.Sprintf("https://%s.%s-1.eventgrid.azure.net/api/events", eventGridName, normalizedLocation)
 	}
-	if eventGridName == "" {
-		commands = append(commands, Command{
-			Command:      "",
-			Description:  "Missing Event Grid name",
-			ActualOutput: "Error: Event Grid name is empty",
-		})
-		return commands
-	}
-	// Construct Event Grid endpoint
-	eventGridEndpoint := fmt.Sprintf("https://%s.%s-1.eventgrid.azure.net", eventGridName, location)
 	client := &http.Client{Timeout: 10 * time.Second}
 
-	// Test 1: Event Grid topic endpoint
-	resp, err := client.Post(eventGridEndpoint+"/api/events", "application/json", nil)
+	body := bytes.NewBuffer([]byte("[]"))
+	req, err := http.NewRequestWithContext(ctx, "POST", eventGridEndpoint, body)
+	if err != nil {
+		return commands
+	}
+	req.Header.Set("Content-Type", "application/json")
+	
+	resp, err := client.Do(req)
 
 	postCommand := Command{
-		Command:                   fmt.Sprintf("curl -i '%s/api/events' --max-time 10", eventGridEndpoint),
+		Command:                   fmt.Sprintf("curl -X POST -H 'Content-Type: application/json' -d '[]' -i '%s' --max-time 10", eventGridEndpoint),
 		Description:               "Test Event Grid domain POST endpoint",
 		ExpectedOutputDescription: "401/405 = publicly accessible but authentication required | 403 = blocked via firewall rules",
 	}
