@@ -1,0 +1,49 @@
+name: Create Jira Issue from GitHub Issue
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  create-jira-issue:
+    runs-on: ubuntu-latest
+    name: Create Jira Issue
+    steps:
+      # First, we need to log in to Jira
+      - name: Jira Login
+        uses: atlassian/gajira-login@v3
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+      
+      # Then create the issue
+      - name: Create Jira Issue
+        id: create
+        uses: atlassian/gajira-create@v3
+        with:
+          project: PS  # ← Your project key
+          issuetype: Task  # Can be Bug, Story, Task, etc.
+          summary: "${{ github.event.issue.title }}"
+          description: |
+            h3. GitHub Issue Information
+            
+            *GitHub Issue:* [${{ github.event.issue.number }}|${{ github.event.issue.html_url }}]
+            *Created by:* ${{ github.event.issue.user.login }}
+            *Repository:* ${{ github.repository }}
+            
+            h3. Description
+            
+            ${{ github.event.issue.body }}
+      
+      # Optional: Comment on GitHub issue with Jira link
+      - name: Comment on GitHub Issue
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ Jira issue created: ${{ steps.create.outputs.issue }}'
+            })
