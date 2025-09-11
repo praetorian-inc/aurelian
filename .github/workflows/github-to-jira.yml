@@ -22,8 +22,8 @@ jobs:
         id: create
         uses: atlassian/gajira-create@v3
         with:
-          project: PS  # Your project key
-          issuetype: Story  # ← Changed to Story
+          project: PS
+          issuetype: Story
           summary: "${{ github.event.issue.title }}"
           description: |
             h3. GitHub Issue Information
@@ -35,6 +35,12 @@ jobs:
             h3. Description
             
             ${{ github.event.issue.body }}
+          # Set Team to Nebula Team
+          fields: '{
+            "customfield_10500": {
+              "value": "Nebula Team"
+            }
+          }'
       
       # Optional: Comment on GitHub issue with Jira link
       - name: Comment on GitHub Issue
