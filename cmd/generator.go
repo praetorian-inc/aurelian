@@ -216,7 +216,16 @@ func runModule(cmd *cobra.Command, module chain.Module, platform string) error {
 		}
 	})
 
-	message.Section("Running module %s", module.Metadata().Name)
+	// Check if this is the arg-scan module and if enrichment is disabled
+	moduleName := module.Metadata().Name
+	if moduleProps := module.Metadata().Properties(); moduleProps != nil {
+		if id, exists := moduleProps["id"].(string); exists && id == "arg-scan" {
+			if disableEnrichment, _ := cmd.Flags().GetBool("disable-enrichment"); disableEnrichment {
+				moduleName = "Azure ARG Template Scanner WITHOUT ENRICHMENT"
+			}
+		}
+	}
+	message.Section("Running module %s", moduleName)
 
 	module.Run(configs...)
 
