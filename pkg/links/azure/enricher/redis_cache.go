@@ -39,9 +39,12 @@ func (r *RedisCacheEnricher) Enrich(ctx context.Context, resource *model.AzureRe
 		return commands
 	}
 
-	// Test 1: TCP connection to SSL port (6380)
 	sslPort := "6380"
-	conn, err := net.DialTimeout("tcp", hostname+":"+sslPort, 10*time.Second)
+	ctxTimeout, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	
+	dialer := &net.Dialer{}
+	conn, err := dialer.DialContext(ctxTimeout, "tcp", net.JoinHostPort(hostname, sslPort))
 
 	sslConnCommand := Command{
 		Command:                   fmt.Sprintf("nc -zv %s %s", hostname, sslPort),
@@ -61,10 +64,13 @@ func (r *RedisCacheEnricher) Enrich(ctx context.Context, resource *model.AzureRe
 
 	commands = append(commands, sslConnCommand)
 
-	// Test 2: TCP connection to non-SSL port (6379) if enabled
 	if enableNonSslPort {
 		nonSslPort := "6379"
-		conn2, err2 := net.DialTimeout("tcp", hostname+":"+nonSslPort, 10*time.Second)
+		ctxTimeout2, cancel2 := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel2()
+		
+		dialer2 := &net.Dialer{}
+		conn2, err2 := dialer2.DialContext(ctxTimeout2, "tcp", net.JoinHostPort(hostname, nonSslPort))
 
 		nonSslConnCommand := Command{
 			Command:                   fmt.Sprintf("nc -zv %s %s", hostname, nonSslPort),
