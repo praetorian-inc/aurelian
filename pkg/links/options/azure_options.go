@@ -182,6 +182,11 @@ func AzureResourceID() cfg.Param {
 		AsRequired()
 }
 
+func AzureDisableEnrichment() cfg.Param {
+	return cfg.NewParam[bool]("disable-enrichment", "Disable enrichment of resources with security testing commands").
+		WithDefault(false)
+}
+
 // AzureReconBaseOptions provides common options for Azure reconnaissance modules
 func AzureReconBaseOptions() []cfg.Param {
 	return []cfg.Param{

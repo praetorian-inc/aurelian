@@ -40,4 +40,5 @@ query: |
         sku,
         endpoint,
         zoneRedundant,
-        subscriptionId
+        subscriptionId,
+        resourceGroup

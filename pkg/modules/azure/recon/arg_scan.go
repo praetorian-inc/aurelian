@@ -5,6 +5,7 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/azure"
+	"github.com/praetorian-inc/nebula/pkg/links/azure/enricher"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
@@ -27,9 +28,11 @@ var AzureARGScan = chain.NewModule(
 	// Execute the ARG queries and get resources
 	azure.NewARGTemplateQueryLink,
 	// Enrich resources with security testing commands
-	azure.NewARGEnrichmentLink,
+	enricher.NewARGEnrichmentLink,
 ).WithInputParam(
 	options.AzureSubscription(),
+).WithParams(
+	options.AzureDisableEnrichment(),
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
 ).WithParams(

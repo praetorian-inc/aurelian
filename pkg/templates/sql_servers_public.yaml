@@ -35,4 +35,5 @@ query: |
         type,
         location,
         publicNetworkAccess,
-        subscriptionId
+        subscriptionId,
+        resourceGroup

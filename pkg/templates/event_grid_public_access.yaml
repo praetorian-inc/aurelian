@@ -45,7 +45,7 @@ query: |
       DomainName = name,
       name = name,
       type = "microsoft.eventgrid/domains",
-      ResourceGroup = resourceGroup,
+      resourceGroup,
       SubscriptionId = subscriptionId,
       location = location,
       Endpoint = endpoint,
@@ -53,5 +53,6 @@ query: |
       DisableLocalAuth = disableLocalAuth,
       RiskReason = RiskReason,
       IpRestrictionsCount = iff(isempty(inboundIpRules), 0, array_length(inboundIpRules)),
+      inboundIpRules,
       Tags = tags
   | order by DomainName asc

@@ -39,4 +39,5 @@ query: |
         disableLocalAuth,
         kind,
         endpoint,
-        subscriptionId
+        subscriptionId,
+        ipRules
