@@ -108,7 +108,7 @@ func (s *ServiceBusEnricher) getNetworkRulesCommand(ctx context.Context, resourc
 	subscriptionID := resource.AccountRef
 	resourceGroupName := resource.ResourceGroup
 
-	azCommand := fmt.Sprintf("az servicebus namespace network-rule-set list --resource-group %s --namespace-name %s", resourceGroupName, namespaceName)
+	azCommand := fmt.Sprintf("az servicebus namespace network-rule-set show --resource-group %s --namespace-name %s", resourceGroupName, namespaceName)
 
 	if namespaceName == "" || subscriptionID == "" || resourceGroupName == "" {
 		return Command{
