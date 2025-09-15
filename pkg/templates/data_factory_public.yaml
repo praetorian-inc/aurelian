@@ -10,8 +10,10 @@ triageNotes: |-
   - Could lead to unauthorized access to data pipelines and their configurations
   - May expose sensitive connection information in pipeline metadata
   - Potential for unauthorized pipeline execution or modification
+  - DEFAULT BEHAVIOR: Azure Data Factory defaults to public network access when not explicitly configured
   
   Triage Guidance:
+  - Data Factories without explicit publicNetworkAccess setting are treated as publicly accessible (Azure default)
   - Verify additional fields such as ipRules and defaultAction to ensure public access is enabled 
   - This finding confirms the Data Factory is accessible from the internet but not anonymous access
   - Additional manual testing is required to determine if unauthorized access is possible
@@ -22,7 +24,11 @@ references:
 query: |-
     resources
     | where type =~ 'Microsoft.DataFactory/factories'
-    | extend publicNetworkAccess = tolower(properties.publicNetworkAccess)
+    | extend publicNetworkAccess = case(
+        isempty(properties.publicNetworkAccess), 'enabled',  // Azure default behavior
+        tolower(properties.publicNetworkAccess) == 'disabled', 'disabled',
+        'enabled'  // All other cases treated as enabled
+    )
     | extend purviewEnabled = isnotempty(properties.purviewConfiguration.purviewResourceId)
     | extend repoConfigured = isnotempty(properties.repoConfiguration)
     | extend encryptionConfigured = isnotempty(properties.encryption)
