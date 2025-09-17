@@ -54,8 +54,7 @@ func (fs *AWSFindSecrets) ResourceMap() map[string]func() chain.Chain {
 	}
 
 	resourceMap["AWS::Lambda::Function"] = func() chain.Chain {
-		return chain.NewMulti(
-			noseyparker.NewConvertToNPInput(),
+		return chain.NewChain(
 			lambda.NewAWSLambdaFunctionCode(),
 		)
 	}

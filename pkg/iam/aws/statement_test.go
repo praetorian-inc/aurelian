@@ -339,6 +339,301 @@ func TestEvaluateStatement(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "GitHub Actions federated principal exact repository match",
+			stmt: &types.PolicyStatement{
+				Effect:   "Allow",
+				Action:   &types.DynaString{"sts:AssumeRole"},
+				Resource: &types.DynaString{"arn:aws:iam::123456789012:role/github-actions-role"},
+				Principal: &types.Principal{
+					Federated: &types.DynaString{"arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"},
+				},
+				Condition: &types.Condition{
+					"StringEquals": {
+						"token.actions.githubusercontent.com:sub": types.DynaString{"repo:octocat/hello-world:ref:refs/heads/main"},
+						"token.actions.githubusercontent.com:aud": types.DynaString{"sts.amazonaws.com"},
+					},
+				},
+			},
+			requestedAction:   "sts:AssumeRole",
+			requestedResource: "arn:aws:iam::123456789012:role/github-actions-role",
+			context: &RequestContext{
+				PrincipalArn: "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com",
+				RequestParameters: map[string]string{
+					"token.actions.githubusercontent.com:sub": "repo:octocat/hello-world:ref:refs/heads/main",
+					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+				},
+			},
+			expected: &StatementEvaluation{
+				ExplicitAllow:    true,
+				ExplicitDeny:     false,
+				ImplicitDeny:     false,
+				MatchedAction:    true,
+				MatchedResource:  true,
+				MatchedPrincipal: true,
+			},
+		},
+		{
+			name: "GitHub Actions federated principal wildcard repository match",
+			stmt: &types.PolicyStatement{
+				Effect:   "Allow",
+				Action:   &types.DynaString{"sts:AssumeRole"},
+				Resource: &types.DynaString{"arn:aws:iam::123456789012:role/github-actions-role"},
+				Principal: &types.Principal{
+					Federated: &types.DynaString{"arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"},
+				},
+				Condition: &types.Condition{
+					"StringLike": {
+						"token.actions.githubusercontent.com:sub": types.DynaString{"repo:octocat/hello-world:*"},
+						"token.actions.githubusercontent.com:aud": types.DynaString{"sts.amazonaws.com"},
+					},
+				},
+			},
+			requestedAction:   "sts:AssumeRole",
+			requestedResource: "arn:aws:iam::123456789012:role/github-actions-role",
+			context: &RequestContext{
+				PrincipalArn: "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com",
+				RequestParameters: map[string]string{
+					"token.actions.githubusercontent.com:sub": "repo:octocat/hello-world:environment:production",
+					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+				},
+			},
+			expected: &StatementEvaluation{
+				ExplicitAllow:    true,
+				ExplicitDeny:     false,
+				ImplicitDeny:     false,
+				MatchedAction:    true,
+				MatchedResource:  true,
+				MatchedPrincipal: true,
+			},
+		},
+		{
+			name: "GitHub Actions federated principal environment-specific match",
+			stmt: &types.PolicyStatement{
+				Effect:   "Allow",
+				Action:   &types.DynaString{"sts:AssumeRole"},
+				Resource: &types.DynaString{"arn:aws:iam::123456789012:role/prod-deploy-role"},
+				Principal: &types.Principal{
+					Federated: &types.DynaString{"arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"},
+				},
+				Condition: &types.Condition{
+					"StringEquals": {
+						"token.actions.githubusercontent.com:sub": types.DynaString{"repo:company/app:environment:production"},
+						"token.actions.githubusercontent.com:aud": types.DynaString{"sts.amazonaws.com"},
+					},
+				},
+			},
+			requestedAction:   "sts:AssumeRole",
+			requestedResource: "arn:aws:iam::123456789012:role/prod-deploy-role",
+			context: &RequestContext{
+				PrincipalArn: "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com",
+				RequestParameters: map[string]string{
+					"token.actions.githubusercontent.com:sub": "repo:company/app:environment:production",
+					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+				},
+			},
+			expected: &StatementEvaluation{
+				ExplicitAllow:    true,
+				ExplicitDeny:     false,
+				ImplicitDeny:     false,
+				MatchedAction:    true,
+				MatchedResource:  true,
+				MatchedPrincipal: true,
+			},
+		},
+		{
+			name: "GitHub Actions federated principal wrong repository",
+			stmt: &types.PolicyStatement{
+				Effect:   "Allow",
+				Action:   &types.DynaString{"sts:AssumeRole"},
+				Resource: &types.DynaString{"arn:aws:iam::123456789012:role/github-actions-role"},
+				Principal: &types.Principal{
+					Federated: &types.DynaString{"arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"},
+				},
+				Condition: &types.Condition{
+					"StringEquals": {
+						"token.actions.githubusercontent.com:sub": types.DynaString{"repo:octocat/hello-world:ref:refs/heads/main"},
+						"token.actions.githubusercontent.com:aud": types.DynaString{"sts.amazonaws.com"},
+					},
+				},
+			},
+			requestedAction:   "sts:AssumeRole",
+			requestedResource: "arn:aws:iam::123456789012:role/github-actions-role",
+			context: &RequestContext{
+				PrincipalArn: "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com",
+				RequestParameters: map[string]string{
+					"token.actions.githubusercontent.com:sub": "repo:different/repo:ref:refs/heads/main",
+					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+				},
+			},
+			expected: &StatementEvaluation{
+				ExplicitAllow:   false,
+				ExplicitDeny:    false,
+				ImplicitDeny:    true,
+				MatchedAction:   true,
+				MatchedResource: true,
+				MatchedPrincipal: true,
+				ConditionEvaluation: &ConditionEval{
+					Result: ConditionFailed,
+					KeyResults: map[string]KeyEvaluation{
+						"token.actions.githubusercontent.com:sub": {
+							Key:      "token.actions.githubusercontent.com:sub",
+							Operator: "StringEquals",
+							Values:   []string{"repo:octocat/hello-world:ref:refs/heads/main"},
+							Result:   ConditionFailed,
+							Context:  "repo:different/repo:ref:refs/heads/main",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "GitHub Actions federated principal pull request access",
+			stmt: &types.PolicyStatement{
+				Effect:   "Allow",
+				Action:   &types.DynaString{"sts:AssumeRole"},
+				Resource: &types.DynaString{"arn:aws:iam::123456789012:role/pr-test-role"},
+				Principal: &types.Principal{
+					Federated: &types.DynaString{"arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"},
+				},
+				Condition: &types.Condition{
+					"StringLike": {
+						"token.actions.githubusercontent.com:sub": types.DynaString{"repo:company/webapp:pull_request"},
+						"token.actions.githubusercontent.com:aud": types.DynaString{"sts.amazonaws.com"},
+					},
+				},
+			},
+			requestedAction:   "sts:AssumeRole",
+			requestedResource: "arn:aws:iam::123456789012:role/pr-test-role",
+			context: &RequestContext{
+				PrincipalArn: "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com",
+				RequestParameters: map[string]string{
+					"token.actions.githubusercontent.com:sub": "repo:company/webapp:pull_request",
+					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+				},
+			},
+			expected: &StatementEvaluation{
+				ExplicitAllow:    true,
+				ExplicitDeny:     false,
+				ImplicitDeny:     false,
+				MatchedAction:    true,
+				MatchedResource:  true,
+				MatchedPrincipal: true,
+			},
+		},
+		{
+			name: "GitHub Actions federated principal multi-repository wildcard",
+			stmt: &types.PolicyStatement{
+				Effect:   "Allow",
+				Action:   &types.DynaString{"sts:AssumeRole"},
+				Resource: &types.DynaString{"arn:aws:iam::123456789012:role/org-wide-role"},
+				Principal: &types.Principal{
+					Federated: &types.DynaString{"arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"},
+				},
+				Condition: &types.Condition{
+					"StringLike": {
+						"token.actions.githubusercontent.com:sub": types.DynaString{"repo:myorg/*:ref:refs/heads/main"},
+						"token.actions.githubusercontent.com:aud": types.DynaString{"sts.amazonaws.com"},
+					},
+				},
+			},
+			requestedAction:   "sts:AssumeRole",
+			requestedResource: "arn:aws:iam::123456789012:role/org-wide-role",
+			context: &RequestContext{
+				PrincipalArn: "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com",
+				RequestParameters: map[string]string{
+					"token.actions.githubusercontent.com:sub": "repo:myorg/service-a:ref:refs/heads/main",
+					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+				},
+			},
+			expected: &StatementEvaluation{
+				ExplicitAllow:    true,
+				ExplicitDeny:     false,
+				ImplicitDeny:     false,
+				MatchedAction:    true,
+				MatchedResource:  true,
+				MatchedPrincipal: true,
+			},
+		},
+		{
+			name: "GitHub Actions federated principal missing audience",
+			stmt: &types.PolicyStatement{
+				Effect:   "Allow",
+				Action:   &types.DynaString{"sts:AssumeRole"},
+				Resource: &types.DynaString{"arn:aws:iam::123456789012:role/github-actions-role"},
+				Principal: &types.Principal{
+					Federated: &types.DynaString{"arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"},
+				},
+				Condition: &types.Condition{
+					"StringEquals": {
+						"token.actions.githubusercontent.com:sub": types.DynaString{"repo:octocat/hello-world:ref:refs/heads/main"},
+						"token.actions.githubusercontent.com:aud": types.DynaString{"sts.amazonaws.com"},
+					},
+				},
+			},
+			requestedAction:   "sts:AssumeRole",
+			requestedResource: "arn:aws:iam::123456789012:role/github-actions-role",
+			context: &RequestContext{
+				PrincipalArn: "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com",
+				RequestParameters: map[string]string{
+					"token.actions.githubusercontent.com:sub": "repo:octocat/hello-world:ref:refs/heads/main",
+					// Missing audience key
+				},
+			},
+			expected: &StatementEvaluation{
+				ExplicitAllow:   false,
+				ExplicitDeny:    false,
+				ImplicitDeny:    true,
+				MatchedAction:   true,
+				MatchedResource: true,
+				MatchedPrincipal: true,
+				ConditionEvaluation: &ConditionEval{
+					Result: ConditionFailed,
+					KeyResults: map[string]KeyEvaluation{
+						"token.actions.githubusercontent.com:aud": {
+							Key:      "token.actions.githubusercontent.com:aud",
+							Operator: "StringEquals",
+							Values:   []string{"sts.amazonaws.com"},
+							Result:   ConditionFailed,
+							Context:  "",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "GitHub Actions deny statement blocks access",
+			stmt: &types.PolicyStatement{
+				Effect:   "Deny",
+				Action:   &types.DynaString{"sts:AssumeRole"},
+				Resource: &types.DynaString{"arn:aws:iam::123456789012:role/sensitive-role"},
+				Principal: &types.Principal{
+					Federated: &types.DynaString{"arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"},
+				},
+				Condition: &types.Condition{
+					"StringLike": {
+						"token.actions.githubusercontent.com:sub": types.DynaString{"repo:untrusted/*"},
+					},
+				},
+			},
+			requestedAction:   "sts:AssumeRole",
+			requestedResource: "arn:aws:iam::123456789012:role/sensitive-role",
+			context: &RequestContext{
+				PrincipalArn: "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com",
+				RequestParameters: map[string]string{
+					"token.actions.githubusercontent.com:sub": "repo:untrusted/malicious:ref:refs/heads/main",
+					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+				},
+			},
+			expected: &StatementEvaluation{
+				ExplicitAllow:    false,
+				ExplicitDeny:     true,
+				ImplicitDeny:     false,
+				MatchedAction:    true,
+				MatchedResource:  true,
+				MatchedPrincipal: true,
+			},
+		},
 	}
 
 	for _, tt := range tests {

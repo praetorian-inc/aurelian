@@ -118,6 +118,11 @@ func (l *AWSLambdaFunctionCode) processFile(resource *types.EnrichedResourceDesc
 			Platform:     "aws",
 			ResourceType: fmt.Sprintf("%s::Code", resource.TypeName),
 			ResourceID:   resource.Arn.String(),
+			Region:       resource.Region,
+			RepoPath:     file.Name,
+			FirstCommit: &jtypes.NPCommitMetadata{
+				BlobPath: file.Name,
+			},
 		},
 	})
 }
