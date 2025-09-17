@@ -50,8 +50,9 @@ require (
 	github.com/mark3labs/mcp-go v0.29.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/microsoftgraph/msgraph-sdk-go v1.53.0
+	github.com/microsoftgraph/msgraph-sdk-go-core v1.2.1
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de
-	github.com/praetorian-inc/janus-framework v0.0.0-20250909154949-2af6e196b0f2
+	github.com/praetorian-inc/janus-framework v0.0.0-20250917152442-84f9f48ae382
 	github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157
 	github.com/praetorian-inc/tabularium v1.0.43
 	github.com/spf13/cobra v1.9.1
@@ -107,7 +108,6 @@ require (
 	github.com/microsoft/kiota-serialization-json-go v1.0.8 // indirect
 	github.com/microsoft/kiota-serialization-multipart-go v1.0.0 // indirect
 	github.com/microsoft/kiota-serialization-text-go v1.0.0 // indirect
-	github.com/microsoftgraph/msgraph-sdk-go-core v1.2.1 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/sys/user v0.4.0 // indirect
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.1 // indirect
@@ -151,6 +151,6 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/spf13/pflag v1.0.6
 	golang.org/x/sys v0.35.0 // indirect
-	golang.org/x/text v0.28.0 // indirect
+	golang.org/x/text v0.28.0
 	gopkg.in/yaml.v3 v3.0.1
 )

@@ -11,7 +11,7 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/types"
+	dockerTypes "github.com/praetorian-inc/janus-framework/pkg/types/docker"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
 
@@ -48,7 +48,7 @@ func (de *DockerExtractToFS) Initialize() error {
 	return nil
 }
 
-func (de *DockerExtractToFS) Process(imageContext types.DockerImage) error {
+func (de *DockerExtractToFS) Process(imageContext dockerTypes.DockerImage) error {
 	extract, err := cfg.As[bool](de.Arg("extract"))
 	if err != nil || !extract {
 		// Pass through without extraction
@@ -167,7 +167,7 @@ func NewDockerExtractToNP(configs ...cfg.Config) chain.Link {
 	return de
 }
 
-func (de *DockerExtractToNP) Process(imageContext types.DockerImage) error {
+func (de *DockerExtractToNP) Process(imageContext dockerTypes.DockerImage) error {
 	if imageContext.LocalPath == "" {
 		return fmt.Errorf("no local path available for image %s", imageContext.Image)
 	}
@@ -257,8 +257,8 @@ func (dl *DockerImageLoader) processFileInput(fileName string) error {
 	return nil
 }
 
-func (dl *DockerImageLoader) createImageContext(imageName string) types.DockerImage {
-	imageContext := types.DockerImage{
+func (dl *DockerImageLoader) createImageContext(imageName string) dockerTypes.DockerImage {
+	imageContext := dockerTypes.DockerImage{
 		Image: imageName,
 	}
 

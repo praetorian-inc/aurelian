@@ -11,7 +11,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
-	"github.com/praetorian-inc/janus-framework/pkg/types"
+	dockerTypes "github.com/praetorian-inc/janus-framework/pkg/types/docker"
 )
 
 func DockerExtractDomain(rawURL string) (string, error) {
@@ -53,11 +53,11 @@ func unauthenciated(ctx context.Context, retry bool, opts ...client.Opt) (*clien
 	return dockerClient, nil
 }
 
-func NewAuthenticatedClient(ctx context.Context, imageContext types.DockerImage, opts ...client.Opt) (*client.Client, error) {
+func NewAuthenticatedClient(ctx context.Context, imageContext dockerTypes.DockerImage, opts ...client.Opt) (*client.Client, error) {
 	return authenticate(ctx, imageContext, true, opts...)
 }
 
-func authenticate(ctx context.Context, imageContext types.DockerImage, retry bool, opts ...client.Opt) (*client.Client, error) {
+func authenticate(ctx context.Context, imageContext dockerTypes.DockerImage, retry bool, opts ...client.Opt) (*client.Client, error) {
 	dockerClient, err := client.NewClientWithOpts(opts...)
 	if err != nil {
 		return nil, err
