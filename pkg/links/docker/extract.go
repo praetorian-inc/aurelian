@@ -258,6 +258,11 @@ func (dl *DockerImageLoader) processFileInput(fileName string) error {
 }
 
 func (dl *DockerImageLoader) createImageContext(imageName string) dockerTypes.DockerImage {
+	if !strings.Contains(imageName, ":") {
+		// Explicitly specify the default tag to provide more context for what image is being used
+		imageName = fmt.Sprintf("%s:latest", imageName)
+	}
+
 	imageContext := dockerTypes.DockerImage{
 		Image: imageName,
 	}
