@@ -637,7 +637,7 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 			slog.Debug("Failed to get bucket policy", "bucket", bucketName, "error", err)
 			// Continue since we need to evaluate bucket ACL
 		}
-		if resp.Policy != nil {
+		if resp != nil && resp.Policy != nil {
 			bucketPolicy, err = strToPolicy(*resp.Policy)
 			if err != nil {
 				slog.Debug("Error in converting string to policy, continuing to evaluate ACLs", "policy", *resp.Policy, "error", err)
