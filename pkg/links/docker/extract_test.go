@@ -124,7 +124,7 @@ func TestDockerImageLoader_createImageContext(t *testing.T) {
 			expected: dockerTypes.DockerImage{
 				Image:      "backend/api",
 				AuthConfig: registry.AuthConfig{
-					ServerAddress: "https://mycompany.azurecr.io",
+					ServerAddress: "https://company.azurecr.io",
 				},
 			},
 		},
