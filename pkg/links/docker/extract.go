@@ -258,11 +258,6 @@ func (dl *DockerImageLoader) processFileInput(fileName string) error {
 }
 
 func (dl *DockerImageLoader) createImageContext(imageName string) dockerTypes.DockerImage {
-	if !strings.Contains(imageName, ":") {
-		// Explicitly specify the default tag to provide more context for what image is being used
-		imageName = fmt.Sprintf("%s:latest", imageName)
-	}
-
 	imageContext := dockerTypes.DockerImage{
 		Image: imageName,
 	}
@@ -278,7 +273,7 @@ func (dl *DockerImageLoader) createImageContext(imageName string) dockerTypes.Do
 
 	// Extract server address from image name
 	parts := strings.SplitN(imageName, "/", 2)
-	if strings.Contains(parts[0], ".") {
+	if len(parts) == 2 && strings.Contains(parts[0], ".") {
 		imageContext.AuthConfig.ServerAddress = "https://" + parts[0]
 		imageContext.Image = parts[1]
 	}
