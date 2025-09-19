@@ -13,13 +13,12 @@ nebula saas recon docker-dump [flags]
       --datastore string         NoseyParker datastore file (default "datastore.np")
       --docker-password string   Docker registry password
       --docker-user string       Docker registry username
-      --extract                  enable extraction to filesystem (default true)
   -f, --file string              input file path
   -h, --help                     help for docker-dump
   -i, --image string             Docker image name to process. To download an image from a custom registry, prepend the
                                  image name with the registry URL. Example: ghcr.io/oj/gobuster
+      --max-file-size int        maximum file size to scan (in MB) (default 10)
       --module-name string       name of the module for dynamic file naming
-  -o, --output string            output directory (default "docker-images")
 ```
 
 ### SEE ALSO
