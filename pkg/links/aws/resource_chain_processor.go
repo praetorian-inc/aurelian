@@ -1,7 +1,6 @@
 package aws
 
 import (
-	"fmt"
 	"log/slog"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
@@ -51,7 +50,7 @@ func (p *AWSResourceChainProcessor) Process(pair *ResourceChainPair) error {
 
 	// Stream outputs while the chain is running - consume before Wait()
 	for output, ok := chain.RecvAs[jtypes.NPInput](resourceChain); ok; output, ok = chain.RecvAs[jtypes.NPInput](resourceChain) {
-		slog.Debug("Forwarding output", "resource_type", pair.Resource.TypeName, "output_type", fmt.Sprintf("%T", output))
+		// slog.Debug("Forwarding output", "resource_type", pair.Resource.TypeName, "output_type", fmt.Sprintf("%T", output))
 		if err := p.Send(output); err != nil {
 			slog.Error("Failed to send output", "error", err)
 			return err
@@ -76,6 +75,7 @@ func (p *AWSResourceChainProcessor) extractEssentialArgs(args map[string]any) ma
 	// Only include essential AWS parameters that resource chains need
 	essentialParams := map[string]bool{
 		"profile":          true, // AWS profile
+		"profile-dir":      true, // AWS profile directory
 		"regions":          true, // AWS regions
 		"cache-dir":        true, // Cache directory
 		"cache-ttl":        true, // Cache TTL

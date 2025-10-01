@@ -100,14 +100,14 @@ func TestCreateGitHubActionsRelationship(t *testing.T) {
 	require.NoError(t, err)
 
 	tests := []struct {
-		name             string
-		repository       model.GraphModel
-		role             model.GraphModel
-		subjectPatterns  []string
-		conditions       *types.Condition
-		expectedError    bool
-		expectedAction   string
-		expectedCapab    string
+		name            string
+		repository      model.GraphModel
+		role            model.GraphModel
+		subjectPatterns []string
+		conditions      *types.Condition
+		expectedError   bool
+		expectedAction  string
+		expectedCapab   string
 	}{
 		{
 			name:            "Valid repository to role relationship",
@@ -120,9 +120,9 @@ func TestCreateGitHubActionsRelationship(t *testing.T) {
 			expectedCapab:   "apollo-github-actions-federation",
 		},
 		{
-			name:            "Multiple subject patterns",
-			repository:      repo,
-			role:            &role,
+			name:       "Multiple subject patterns",
+			repository: repo,
+			role:       &role,
 			subjectPatterns: []string{
 				"repo:praetorian-inc/nebula:ref:refs/heads/main",
 				"repo:praetorian-inc/nebula:environment:production",

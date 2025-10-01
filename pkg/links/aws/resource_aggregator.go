@@ -44,22 +44,22 @@ func (l *AwsResourceAggregatorLink) Process(resource *types.EnrichedResourceDesc
 func (l *AwsResourceAggregatorLink) Complete() error {
 	profile, _ := cfg.As[string](l.Arg("profile"))
 	filename, _ := cfg.As[string](l.Arg("filename"))
-	
+
 	l.Logger.Info("Aggregation complete", "total_resources", len(l.resources))
-	
+
 	// Generate filename if not provided
 	if filename == "" {
 		// Infer module type from resource types being aggregated
 		moduleName := l.inferModuleName()
 		filename = l.generateAWSFilename(moduleName, profile)
 	}
-	
+
 	l.Logger.Info("Generated filename", "filename", filename, "profile", profile)
-	
+
 	// Send aggregated resources as named output
 	outputData := outputters.NewNamedOutputData(l.resources, filename+".json")
 	l.Send(outputData)
-	
+
 	return nil
 }
 
@@ -69,10 +69,10 @@ func (l *AwsResourceAggregatorLink) inferModuleName() string {
 	if len(l.resources) == 0 {
 		return "recon"
 	}
-	
+
 	// Look at the first resource to see if it has specific attributes that suggest it's public resources
 	firstResource := l.resources[0]
-	
+
 	// If the resource has PublicIp or other public-related properties, it's likely from public-resources
 	if firstResource.Properties != nil {
 		if properties, ok := firstResource.Properties.(map[string]interface{}); ok {
@@ -85,7 +85,7 @@ func (l *AwsResourceAggregatorLink) inferModuleName() string {
 			}
 		}
 	}
-	
+
 	// Default to list-all for unknown cases
 	return "list-all"
 }
@@ -98,12 +98,12 @@ func (l *AwsResourceAggregatorLink) generateAWSFilename(moduleName, profile stri
 			l.Logger.Error("Panic in generateAWSFilename", "recover", r)
 		}
 	}()
-	
+
 	// For now, use profile name as fallback since AWS config setup is complex
 	if profile != "" && profile != "default" {
 		return fmt.Sprintf("%s-%s", moduleName, profile)
 	}
-	
+
 	// Final fallback to timestamp
 	return fmt.Sprintf("%s-%s", moduleName, strconv.FormatInt(time.Now().Unix(), 10))
 }

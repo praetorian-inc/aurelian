@@ -16,7 +16,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage v1.8.1
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.4.0
 	github.com/aws/aws-sdk-go v1.55.5
-	github.com/aws/aws-sdk-go-v2 v1.36.6
+	github.com/aws/aws-sdk-go-v2 v1.39.1
 	github.com/aws/aws-sdk-go-v2/config v1.29.6
 	github.com/aws/aws-sdk-go-v2/service/account v1.24.0
 	github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.23.11
@@ -30,7 +30,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/elasticsearchservice v1.32.3
 	github.com/aws/aws-sdk-go-v2/service/iam v1.34.3
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.57.0
+	github.com/aws/aws-sdk-go-v2/service/opensearch v1.41.2
+	github.com/aws/aws-sdk-go-v2/service/opensearchserverless v1.26.2
 	github.com/aws/aws-sdk-go-v2/service/pinpointsmsvoice v1.24.2
+	github.com/aws/aws-sdk-go-v2/service/route53 v1.58.2
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.66.0
 	github.com/aws/aws-sdk-go-v2/service/serverlessapplicationrepository v1.24.2
 	github.com/aws/aws-sdk-go-v2/service/sfn v1.34.11
@@ -39,7 +42,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.56.10
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.14
 	github.com/aws/aws-sdk-go-v2/service/timestreamquery v1.31.0
-	github.com/aws/smithy-go v1.22.4
+	github.com/aws/smithy-go v1.23.0
 	github.com/docker/docker v28.0.1+incompatible
 	github.com/fatih/color v1.18.0
 	github.com/itchyny/gojq v0.12.17
@@ -47,6 +50,7 @@ require (
 	github.com/mark3labs/mcp-go v0.29.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/microsoftgraph/msgraph-sdk-go v1.53.0
+	github.com/microsoftgraph/msgraph-sdk-go-core v1.2.1
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de
 	github.com/praetorian-inc/janus-framework v0.0.0-20250909154949-2af6e196b0f2
 	github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157
@@ -71,6 +75,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.21 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.42.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.25.3 // indirect
+	github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2 v1.50.5 // indirect
+	github.com/aws/aws-sdk-go-v2/service/inspector2 v1.44.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.4.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.10.15 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.18.2 // indirect
@@ -104,7 +110,6 @@ require (
 	github.com/microsoft/kiota-serialization-json-go v1.0.8 // indirect
 	github.com/microsoft/kiota-serialization-multipart-go v1.0.0 // indirect
 	github.com/microsoft/kiota-serialization-text-go v1.0.0 // indirect
-	github.com/microsoftgraph/msgraph-sdk-go-core v1.2.1 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/sys/user v0.4.0 // indirect
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.1 // indirect
@@ -136,8 +141,8 @@ require (
 require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.59 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.28 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.34 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.34 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.8 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.8 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.12.13 // indirect
@@ -148,6 +153,6 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/spf13/pflag v1.0.6
 	golang.org/x/sys v0.34.0 // indirect
-	golang.org/x/text v0.27.0 // indirect
+	golang.org/x/text v0.27.0
 	gopkg.in/yaml.v3 v3.0.1
 )

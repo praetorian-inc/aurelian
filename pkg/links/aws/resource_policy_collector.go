@@ -15,8 +15,8 @@ import (
 
 // PolicyWithArn wraps a policy with its associated resource ARN for keying
 type PolicyWithArn struct {
-	Policy     *types.Policy `json:"policy"`
-	ResourceArn string       `json:"resource_arn"`
+	Policy      *types.Policy `json:"policy"`
+	ResourceArn string        `json:"resource_arn"`
 }
 
 type AwsResourcePolicyCollector struct {
@@ -52,7 +52,7 @@ func (a *AwsResourcePolicyCollector) Params() []cfg.Param {
 func (a *AwsResourcePolicyCollector) Process(resourceType string) error {
 	a.Logger.Debug(fmt.Sprintf("Processing resource type: %s", resourceType))
 	a.Logger.Debug(fmt.Sprintf("Supported resource types: %v", a.SupportedResourceTypes()))
-	
+
 	// First, gather all resources
 	resourceChain := chain.NewChain(
 		general.NewResourceTypePreprocessor(a)(),
@@ -63,7 +63,7 @@ func (a *AwsResourcePolicyCollector) Process(resourceType string) error {
 	resourceChain.Send(resourceType)
 	resourceChain.Close()
 
-	// Collect resources 
+	// Collect resources
 	var resources []types.EnrichedResourceDescription
 	for {
 		resource, ok := chain.RecvAs[*types.EnrichedResourceDescription](resourceChain)
@@ -76,7 +76,7 @@ func (a *AwsResourcePolicyCollector) Process(resourceType string) error {
 	resourceChain.Wait()
 
 	a.Logger.Info(fmt.Sprintf("Found %d resources to check for policies", len(resources)))
-	
+
 	// Debug: log all resource ARNs and types
 	for i, res := range resources {
 		a.Logger.Debug(fmt.Sprintf("Resource %d: ARN=%s, Type=%s", i, res.Arn.String(), res.TypeName))
@@ -87,13 +87,13 @@ func (a *AwsResourcePolicyCollector) Process(resourceType string) error {
 
 	for _, resource := range resources {
 		a.Logger.Debug(fmt.Sprintf("Processing resource %s (type: %s) for policies", resource.Arn.String(), resource.TypeName))
-		
+
 		// Create policy fetcher chain for this resource
 		policyChain := chain.NewChain(
 			NewAwsResourcePolicyFetcher(cfg.WithArgs(a.Args())),
 		)
 		policyChain.WithConfigs(cfg.WithArgs(a.Args()))
-		
+
 		policyChain.Send(resource)
 		policyChain.Close()
 
@@ -110,11 +110,11 @@ func (a *AwsResourcePolicyCollector) Process(resourceType string) error {
 				policyFound = true
 			}
 		}
-		
+
 		if !policyFound {
 			a.Logger.Debug(fmt.Sprintf("No policy found for resource %s (type: %s)", resource.Arn.String(), resource.TypeName))
 		}
-		
+
 		policyChain.Wait()
 	}
 

@@ -6,17 +6,19 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/konstellation/pkg/graph"
 	"github.com/praetorian-inc/konstellation/pkg/graph/adapters"
-	"github.com/praetorian-inc/konstellation/pkg/graph/queries"
 	iam "github.com/praetorian-inc/nebula/pkg/iam/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/orgpolicies"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/outputters"
 	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/tabularium/pkg/model/model"
 )
 
 type AwsApolloOfflineControlFlow struct {
@@ -247,31 +249,223 @@ func (a *AwsApolloOfflineControlFlow) loadResourcePoliciesFromFile() error {
 
 // Reuse the existing graph method from apollo_control_flow.go
 func (a *AwsApolloOfflineControlFlow) graph(summary *iam.PermissionsSummary) {
-	rels := make([]*graph.Relationship, 0)
-	for range summary.FullResults() {
-		// TODO: This file should be migrated to use the new outputter pattern like apollo_control_flow.go
-		// For now, create a placeholder relationship to avoid compilation errors
-		a.Logger.Warn("apollo_offline_control_flow.go needs migration to new outputter pattern")
-		continue
-	}
+	// Create Neo4j outputter manually and initialize it
+	neo4jOutputter := outputters.NewNeo4jGraphOutputter(cfg.WithArgs(a.Args()))
 
-	res, err := a.db.CreateRelationships(a.ctx, rels)
+	// Initialize the outputter manually
+	err := neo4jOutputter.Initialize()
 	if err != nil {
-		a.Logger.Error("Failed to create relationships: " + err.Error())
+		a.Logger.Error("Failed to initialize Neo4j outputter: " + err.Error())
+		return
+	}
+	a.Logger.Info("Neo4j outputter initialized successfully")
+
+	// Transform and send IAM permission relationships directly to Neo4j outputter
+	fullResults := summary.FullResults()
+	a.Logger.Info(fmt.Sprintf("DEBUG: Found %d full results to process", len(fullResults)))
+
+	for i, result := range fullResults {
+		a.Logger.Debug(fmt.Sprintf("DEBUG: Processing result %d - Principal: %T, Resource: %v, Action: %s",
+			i, result.Principal, result.Resource, result.Action))
+
+		rel, err := TransformResultToRelationship(result)
+		if err != nil {
+			a.Logger.Error("Failed to transform relationship: " + err.Error())
+			continue
+		}
+		a.Logger.Debug(fmt.Sprintf("DEBUG: Successfully transformed result %d, sending directly to Neo4j outputter", i))
+
+		// Send directly to Neo4j outputter bypassing the chain
+		if neo4jOut, ok := neo4jOutputter.(*outputters.Neo4jGraphOutputter); ok {
+			err = neo4jOut.Output(rel)
+			if err != nil {
+				a.Logger.Error("Failed to send relationship to Neo4j outputter: " + err.Error())
+			}
+		}
 	}
 
-	res.PrintSummary()
-
-	// Enrich data
-	eResults, err := queries.EnrichAWS(a.db)
+	// Create assume role relationships between resources and their IAM roles
+	err = a.sendResourceRoleRelationshipsDirectly(neo4jOutputter)
 	if err != nil {
-		a.Logger.Error("Failed to enrich data: " + err.Error())
+		a.Logger.Error("Failed to create assume role relationships: " + err.Error())
 	}
 
-	// Enrich data with org policies and known account IDs
-	a.enrichAccountDetails()
+	// Process GitHub Actions relationships
+	githubRelationships, err := ExtractGitHubActionsRelationships(a.pd.Gaad)
+	if err != nil {
+		a.Logger.Error("Failed to extract GitHub Actions relationships: " + err.Error())
+	} else {
+		a.Logger.Info(fmt.Sprintf("Processing %d GitHub Actions relationships", len(githubRelationships)))
+		for _, rel := range githubRelationships {
+			if neo4jOut, ok := neo4jOutputter.(*outputters.Neo4jGraphOutputter); ok {
+				err = neo4jOut.Output(rel)
+				if err != nil {
+					a.Logger.Error("Failed to send GitHub relationship to Neo4j outputter: " + err.Error())
+				}
+			}
+		}
+	}
 
-	a.Logger.Debug("Enriched results: ", eResults)
+	// Complete the Neo4j outputter to write all data to Neo4j
+	if neo4jOut, ok := neo4jOutputter.(*outputters.Neo4jGraphOutputter); ok {
+		err = neo4jOut.Complete()
+		if err != nil {
+			a.Logger.Error("Failed to complete Neo4j outputter: " + err.Error())
+		}
+	}
+}
+
+// sendResourceRoleRelationships creates assume role relationships using the outputter chain
+func (a *AwsApolloOfflineControlFlow) sendResourceRoleRelationships(outputChain chain.Chain) error {
+	if a.pd.Resources == nil || len(*a.pd.Resources) == 0 {
+		return nil
+	}
+
+	for _, resource := range *a.pd.Resources {
+		roleArn := resource.GetRoleArn()
+		if roleArn == "" {
+			continue
+		}
+
+		var roleName string
+		var accountId string = resource.AccountId
+
+		// Check if we have a full ARN or just a role name
+		if strings.HasPrefix(roleArn, "arn:") {
+			// Parse the ARN for proper role name
+			parsedArn, err := arn.Parse(roleArn)
+			if err != nil {
+				a.Logger.Error(fmt.Sprintf("Failed to parse role ARN %s: %s", roleArn, err.Error()))
+				continue
+			}
+
+			// If we have a valid ARN, use the account ID from it
+			accountId = parsedArn.AccountID
+
+			// Extract role name from resource field
+			roleName = parsedArn.Resource
+			// Handle the case where the resource includes a path like "role/rolename"
+			if strings.Contains(roleName, "/") {
+				parts := strings.Split(roleName, "/")
+				roleName = parts[len(parts)-1]
+			}
+		} else {
+			// If no ARN format, assume it's a direct role name
+			roleName = roleArn
+			// Use the resource's account ID for constructing the role ARN
+			roleArn = fmt.Sprintf("arn:aws:iam::%s:role/%s", accountId, roleName)
+		}
+
+		// Create the resource node using Tabularium transformers
+		resourceNode, err := TransformERDToAWSResource(&resource)
+		if err != nil {
+			a.Logger.Error(fmt.Sprintf("Failed to transform resource %s: %s", resource.Arn.String(), err.Error()))
+			continue
+		}
+
+		// Create the role node using Tabularium types
+		roleProperties := map[string]any{
+			"roleName": roleName,
+		}
+		roleNode, err := model.NewAWSResource(
+			roleArn,
+			accountId,
+			model.AWSRole,
+			roleProperties,
+		)
+		if err != nil {
+			a.Logger.Error(fmt.Sprintf("Failed to create role resource %s: %s", roleArn, err.Error()))
+			continue
+		}
+
+		// Create the assume role relationship
+		assumeRoleRel := model.NewBaseRelationship(resourceNode, &roleNode, "sts:AssumeRole")
+		assumeRoleRel.Capability = "apollo-resource-role-mapping"
+
+		// Send to outputter
+		outputChain.Send(assumeRoleRel)
+	}
+
+	return nil
+}
+
+// sendResourceRoleRelationshipsDirectly creates assume role relationships using the outputter directly
+func (a *AwsApolloOfflineControlFlow) sendResourceRoleRelationshipsDirectly(outputter chain.Outputter) error {
+	if a.pd.Resources == nil || len(*a.pd.Resources) == 0 {
+		return nil
+	}
+
+	for _, resource := range *a.pd.Resources {
+		roleArn := resource.GetRoleArn()
+		if roleArn == "" {
+			continue
+		}
+
+		var roleName string
+		var accountId string = resource.AccountId
+
+		// Check if we have a full ARN or just a role name
+		if strings.HasPrefix(roleArn, "arn:") {
+			// Parse the ARN for proper role name
+			parsedArn, err := arn.Parse(roleArn)
+			if err != nil {
+				a.Logger.Error(fmt.Sprintf("Failed to parse role ARN %s: %s", roleArn, err.Error()))
+				continue
+			}
+
+			// If we have a valid ARN, use the account ID from it
+			accountId = parsedArn.AccountID
+
+			// Extract role name from resource field
+			roleName = parsedArn.Resource
+			// Handle the case where the resource includes a path like "role/rolename"
+			if strings.Contains(roleName, "/") {
+				parts := strings.Split(roleName, "/")
+				roleName = parts[len(parts)-1]
+			}
+		} else {
+			// If no ARN format, assume it's a direct role name
+			roleName = roleArn
+			// Use the resource's account ID for constructing the role ARN
+			roleArn = fmt.Sprintf("arn:aws:iam::%s:role/%s", accountId, roleName)
+		}
+
+		// Create the resource node using Tabularium transformers
+		resourceNode, err := TransformERDToAWSResource(&resource)
+		if err != nil {
+			a.Logger.Error(fmt.Sprintf("Failed to transform resource %s: %s", resource.Arn.String(), err.Error()))
+			continue
+		}
+
+		// Create the role node using Tabularium types
+		roleProperties := map[string]any{
+			"roleName": roleName,
+		}
+		roleNode, err := model.NewAWSResource(
+			roleArn,
+			accountId,
+			model.AWSRole,
+			roleProperties,
+		)
+		if err != nil {
+			a.Logger.Error(fmt.Sprintf("Failed to create role resource %s: %s", roleArn, err.Error()))
+			continue
+		}
+
+		// Create the assume role relationship
+		assumeRoleRel := model.NewBaseRelationship(resourceNode, &roleNode, "sts:AssumeRole")
+		assumeRoleRel.Capability = "apollo-resource-role-mapping"
+
+		// Send directly to outputter
+		if neo4jOut, ok := outputter.(*outputters.Neo4jGraphOutputter); ok {
+			err = neo4jOut.Output(assumeRoleRel)
+			if err != nil {
+				a.Logger.Error(fmt.Sprintf("Failed to send assume role relationship to outputter: %s", err.Error()))
+			}
+		}
+	}
+
+	return nil
 }
 
 // Reuse the existing enrichAccountDetails method from apollo_control_flow.go

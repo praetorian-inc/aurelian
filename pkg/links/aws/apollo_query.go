@@ -105,10 +105,10 @@ func (a *ApolloQuery) Process(query string) error {
 			}
 		}
 	}
-	
+
 	// Analyze query results for chaining opportunities
 	a.findChainablePaths(queryResultPairs)
-	
+
 	return nil
 }
 
@@ -125,7 +125,7 @@ func (a *ApolloQuery) processQueryResult(q queries.Query, r map[string]any) {
 		return
 	}
 
-	sourceARN, err := a.extractARNFromRecord(r, "attacker")  
+	sourceARN, err := a.extractARNFromRecord(r, "attacker")
 	if err != nil {
 		a.Logger.Error("Failed to extract source ARN from record", "error", err, "query", q.ID)
 		return
@@ -161,7 +161,7 @@ func (a *ApolloQuery) processQueryResult(q queries.Query, r map[string]any) {
 	proofFile := risk.Proof([]byte(proofContent))
 	a.Send(proofFile)
 
-	// Create source AWSResource for relationship  
+	// Create source AWSResource for relationship
 	sourceAccountRef, err := extractAccountFromARN(sourceARN)
 	if err != nil {
 		a.Logger.Error("Failed to extract account from source ARN", "error", err, "arn", sourceARN)
@@ -225,7 +225,6 @@ func getSeverityCode(severity string) string {
 		return "L" // Default to Low
 	}
 }
-
 
 // extractPrincipalName extracts a readable name from various principal formats
 func (a *ApolloQuery) extractPrincipalName(principal any) string {
@@ -306,12 +305,12 @@ func (a *ApolloQuery) findChainablePaths(pairs []QueryResultPair) {
 		for j := i + 1; j < len(pairs); j++ {
 			pairA := pairs[i]
 			pairB := pairs[j]
-			
+
 			// Try chaining A -> B: target of A matches attacker of B
 			if a.canChain(pairA, pairB) {
 				a.createAndSendChainedRisk(pairA, pairB)
 			}
-			
+
 			// Try chaining B -> A: target of B matches attacker of A
 			if a.canChain(pairB, pairA) {
 				a.createAndSendChainedRisk(pairB, pairA)
@@ -327,13 +326,13 @@ func (a *ApolloQuery) canChain(first, second QueryResultPair) bool {
 	if err != nil {
 		return false
 	}
-	
+
 	// Extract attacker from second record
 	secondAttacker, err := a.extractARNFromRecord(second.Record, "attacker")
 	if err != nil {
 		return false
 	}
-	
+
 	// Check if they match (using ARN as uniqueness constraint)
 	return firstTarget == secondAttacker
 }
@@ -346,33 +345,33 @@ func (a *ApolloQuery) createAndSendChainedRisk(first, second QueryResultPair) {
 		a.Logger.Error("Failed to extract source from first record", "error", err)
 		return
 	}
-	
+
 	connectingNode, err := a.extractARNFromRecord(first.Record, "target") // This should match attacker of second
 	if err != nil {
-		a.Logger.Error("Failed to extract target from first record", "error", err) 
+		a.Logger.Error("Failed to extract target from first record", "error", err)
 		return
 	}
-	
+
 	secondTarget, err := a.extractARNFromRecord(second.Record, "target")
 	if err != nil {
 		a.Logger.Error("Failed to extract target from second record", "error", err)
 		return
 	}
-	
+
 	// Create target AWSResource using final target
 	accountRef, err := extractAccountFromARN(secondTarget)
 	if err != nil {
 		a.Logger.Error("Failed to extract account from chained target ARN", "error", err, "arn", secondTarget)
 		return
 	}
-	
+
 	resourceType := getResourceTypeFromARN(secondTarget)
 	target, err := model.NewAWSResource(secondTarget, accountRef, resourceType, make(map[string]any))
 	if err != nil {
 		a.Logger.Error("Failed to create AWSResource for chained risk", "error", err, "arn", secondTarget)
 		return
 	}
-	
+
 	// Use higher severity between the two queries
 	severity1 := first.Query.QueryMetadata.Severity
 	severity2 := second.Query.QueryMetadata.Severity
@@ -380,30 +379,30 @@ func (a *ApolloQuery) createAndSendChainedRisk(first, second QueryResultPair) {
 	if getSeverityPriority(severity2) > getSeverityPriority(severity1) {
 		finalSeverity = severity2
 	}
-	
+
 	// Create chained risk
 	severityCode := getSeverityCode(finalSeverity)
 	status := "T" + severityCode
 	riskName := fmt.Sprintf("chained-%s-%s", formatQueryName(first.Query.QueryMetadata.Name), formatQueryName(second.Query.QueryMetadata.Name))
-	
+
 	targetName := a.extractPrincipalName(secondTarget)
 	sourceName := a.extractPrincipalName(firstAttacker)
 	dns := fmt.Sprintf("%s:%s:%s", targetName, riskName, sourceName)
-	
+
 	risk := model.NewRiskWithDNS(&target, riskName, dns, status)
 	risk.Priority = GetPriority(finalSeverity)
 
 	// Create proof content for chained attack
-	chainedProofContent := fmt.Sprintf("CHAINED: (%s)-[%s]->(%s)-[%s]->(%s)", 
-		a.extractPrincipalName(firstAttacker), 
-		first.Query.QueryMetadata.Name, 
+	chainedProofContent := fmt.Sprintf("CHAINED: (%s)-[%s]->(%s)-[%s]->(%s)",
+		a.extractPrincipalName(firstAttacker),
+		first.Query.QueryMetadata.Name,
 		a.extractPrincipalName(connectingNode),
 		second.Query.QueryMetadata.Name,
 		a.extractPrincipalName(secondTarget))
-	
+
 	proofFile := risk.Proof([]byte(chainedProofContent))
 	a.Send(proofFile)
-	
+
 	a.Send(risk)
 }
 

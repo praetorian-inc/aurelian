@@ -133,12 +133,19 @@ func (a *AwsApolloControlFlow) Process(resourceType string) error {
 	)
 
 	// Transform and send IAM permission relationships
-	for _, result := range summary.FullResults() {
+	fullResults := summary.FullResults()
+	a.Logger.Info(fmt.Sprintf("DEBUG: Found %d full results to process", len(fullResults)))
+
+	for i, result := range fullResults {
+		a.Logger.Debug(fmt.Sprintf("DEBUG: Processing result %d - Principal: %T, Resource: %v, Action: %s",
+			i, result.Principal, result.Resource, result.Action))
+
 		rel, err := TransformResultToRelationship(result)
 		if err != nil {
 			a.Logger.Error("Failed to transform relationship: " + err.Error())
 			continue
 		}
+		a.Logger.Debug(fmt.Sprintf("DEBUG: Successfully transformed result %d, sending to outputter", i))
 		outputChain.Send(rel)
 	}
 
