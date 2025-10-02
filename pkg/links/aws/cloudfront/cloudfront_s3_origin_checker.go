@@ -95,7 +95,7 @@ func (c *CloudFrontS3OriginChecker) Process(resource any) error {
 				"missing_bucket", bucketName,
 				"origin_domain", origin.DomainName)
 
-			// Create vulnerability finding
+			// Create vulnerability finding as VulnerableDistribution for Route53 finder
 			vuln := VulnerableDistribution{
 				DistributionID:     distInfo.ID,
 				DistributionDomain: distInfo.DomainName,
@@ -111,7 +111,7 @@ func (c *CloudFrontS3OriginChecker) Process(resource any) error {
 					distInfo.ID, bucketName),
 			}
 
-			// Send vulnerability to next link
+			// Send vulnerability to next link in chain
 			if err := c.Send(vuln); err != nil {
 				return err
 			}
@@ -369,6 +369,8 @@ func extractBucketName(originDomain string) string {
 	// - bucket-name.s3.amazonaws.com
 	// - bucket-name.s3.region.amazonaws.com
 	// - bucket-name.s3-region.amazonaws.com
+	// - bucket-name.s3-website.region.amazonaws.com (S3 website endpoints)
+	// - bucket-name.s3-website-region.amazonaws.com (S3 website endpoints)
 	// - s3.amazonaws.com/bucket-name (path-style, older)
 
 	// Virtual-hosted style patterns (bucket name is first part)
@@ -379,6 +381,8 @@ func extractBucketName(originDomain string) string {
 		{`^([^.]+)\.s3\.amazonaws\.com`, 1},
 		{`^([^.]+)\.s3\.([a-z0-9-]+)\.amazonaws\.com`, 1},
 		{`^([^.]+)\.s3-([a-z0-9-]+)\.amazonaws\.com`, 1},
+		{`^([^.]+)\.s3-website\.([a-z0-9-]+)\.amazonaws\.com`, 1}, // S3 website endpoint
+		{`^([^.]+)\.s3-website-([a-z0-9-]+)\.amazonaws\.com`, 1},  // S3 website endpoint with dash
 	}
 
 	for _, p := range virtualPatterns {

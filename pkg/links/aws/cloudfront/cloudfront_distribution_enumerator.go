@@ -63,9 +63,15 @@ func (c *CloudFrontDistributionEnumerator) Process(resource any) error {
 
 	slog.Info("Enumerating CloudFront distributions")
 
-	paginator := cloudfront.NewListDistributionsPaginator(client, &cloudfront.ListDistributionsInput{})
+	paginator := cloudfront.NewListDistributionsPaginator(client, &cloudfront.ListDistributionsInput{}, func(o *cloudfront.ListDistributionsPaginatorOptions) {
+		o.Limit = 1000
+	})
 
+	pageNum := 0
 	for paginator.HasMorePages() {
+		pageNum++
+		slog.Debug("Fetching distributions page", "page", pageNum)
+
 		page, err := paginator.NextPage(context.TODO())
 		if err != nil {
 			slog.Error("Failed to list distributions", "error", err)
@@ -73,9 +79,11 @@ func (c *CloudFrontDistributionEnumerator) Process(resource any) error {
 		}
 
 		if page.DistributionList == nil || page.DistributionList.Items == nil {
-			slog.Debug("No CloudFront distributions found")
+			slog.Debug("No CloudFront distributions found on page", "page", pageNum)
 			continue
 		}
+
+		slog.Debug("Found distributions on page", "page", pageNum, "count", len(page.DistributionList.Items))
 
 		for _, distSummary := range page.DistributionList.Items {
 			if distSummary.Id == nil {
@@ -124,18 +132,15 @@ func (c *CloudFrontDistributionEnumerator) Process(resource any) error {
 					}
 
 					// Determine origin type
-					if origin.S3OriginConfig != nil {
+					// First check if domain looks like S3 (including S3 website endpoints)
+					domainName := *origin.DomainName
+					if isS3Domain(domainName) {
 						originInfo.OriginType = "s3"
-					} else if origin.CustomOriginConfig != nil {
-						originInfo.OriginType = "custom"
+					} else if origin.S3OriginConfig != nil {
+						// Fallback to checking config type
+						originInfo.OriginType = "s3"
 					} else {
-						// Check if domain looks like S3
-						domainName := *origin.DomainName
-						if isS3Domain(domainName) {
-							originInfo.OriginType = "s3"
-						} else {
-							originInfo.OriginType = "custom"
-						}
+						originInfo.OriginType = "custom"
 					}
 
 					info.Origins = append(info.Origins, originInfo)
@@ -155,6 +160,7 @@ func (c *CloudFrontDistributionEnumerator) Process(resource any) error {
 		}
 	}
 
+	slog.Debug("Finished enumerating CloudFront distributions", "total_pages", pageNum)
 	return nil
 }
 
@@ -168,6 +174,8 @@ func isS3Domain(domain string) bool {
 	// Check for various S3 domain patterns
 	patterns := []string{
 		".s3.amazonaws.com",
+		".s3-website.", // S3 website endpoints
+		".s3-website-", // S3 website endpoints with dash
 		".s3-",
 		".s3.",
 	}

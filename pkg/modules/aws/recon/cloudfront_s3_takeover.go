@@ -33,7 +33,6 @@ var AwsCloudFrontS3Takeover = chain.NewModule(
 	cloudfront.NewCloudFrontS3OriginChecker,
 	cloudfront.NewRoute53DomainFinder,
 ).WithOutputters(
-	outputters.NewRiskConsoleOutputter,
 	outputters.NewRuntimeJSONOutputter,
 	outputters.NewRuntimeMarkdownOutputter,
 ).WithInputParam(
