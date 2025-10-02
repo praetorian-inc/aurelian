@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/route53"
@@ -86,7 +87,7 @@ func (r *Route53DomainFinder) Process(resource any) error {
 
 	// Add aliases as potentially affected domains
 	for _, alias := range vuln.Aliases {
-		if !containsString(affectedDomains, alias) {
+		if !slices.Contains(affectedDomains, alias) {
 			affectedDomains = append(affectedDomains, alias)
 		}
 	}
@@ -202,7 +203,7 @@ func (r *Route53DomainFinder) findRoute53Records(client *route53.Client, cloudfr
 								cnameValue := strings.TrimSuffix(*rr.Value, ".")
 
 								// Check if CNAME points to CloudFront distribution or one of its aliases
-								if cnameValue == cloudfrontDomain || containsString(aliases, cnameValue) {
+								if cnameValue == cloudfrontDomain || slices.Contains(aliases, cnameValue) {
 									matchingRecords = append(matchingRecords, Route53Record{
 										ZoneID:     zoneID,
 										ZoneName:   zoneName,
@@ -224,14 +225,4 @@ func (r *Route53DomainFinder) findRoute53Records(client *route53.Client, cloudfr
 	}
 
 	return matchingRecords, nil
-}
-
-// containsString checks if a string slice contains a string
-func containsString(slice []string, str string) bool {
-	for _, s := range slice {
-		if s == str {
-			return true
-		}
-	}
-	return false
 }
