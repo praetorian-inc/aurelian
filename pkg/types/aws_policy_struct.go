@@ -9,9 +9,10 @@ import (
 
 // https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html
 type Policy struct {
-	Id        string               `json:"Id,omitempty"`
-	Version   string               `json:"Version"`
-	Statement *PolicyStatementList `json:"Statement"`
+	Id          string               `json:"Id,omitempty"`
+	Version     string               `json:"Version"`
+	Statement   *PolicyStatementList `json:"Statement"`
+	ResourceARN string               `json:"ResourceARN,omitempty"`
 }
 
 func NewPolicyFromJSON(data []byte) (*Policy, error) {

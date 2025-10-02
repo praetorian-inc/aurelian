@@ -127,11 +127,6 @@ func (a *AwsApolloControlFlow) Process(resourceType string) error {
 		return err
 	}
 
-	// Create outputter chain for Neo4j graph operations
-	outputChain := chain.NewChain().WithOutputters(
-		outputters.NewNeo4jGraphOutputter(cfg.WithArgs(a.Args())),
-	)
-
 	// Transform and send IAM permission relationships
 	fullResults := summary.FullResults()
 	a.Logger.Info(fmt.Sprintf("DEBUG: Found %d full results to process", len(fullResults)))
@@ -146,29 +141,112 @@ func (a *AwsApolloControlFlow) Process(resourceType string) error {
 			continue
 		}
 		a.Logger.Debug(fmt.Sprintf("DEBUG: Successfully transformed result %d, sending to outputter", i))
-		outputChain.Send(rel)
+		a.Send(rel)
 	}
 
 	// Create assume role relationships between resources and their IAM roles
-	err = a.sendResourceRoleRelationships(outputChain)
+	err = a.sendResourceRoleRelationships()
 	if err != nil {
 		a.Logger.Error("Failed to create assume role relationships: " + err.Error())
 	}
 
 	// Process GitHub Actions federated identity relationships
-	err = a.processGitHubActionsFederation(outputChain)
+	err = a.processGitHubActionsFederation()
 	if err != nil {
 		a.Logger.Error("Failed to process GitHub Actions federation: " + err.Error())
 	}
 
-	// Wait for all outputs to complete
-	outputChain.Wait()
+	return nil
+}
+
+func (a *AwsApolloControlFlow) gatherResources(resourceType string) error {
+	resourceChain := chain.NewChain(
+		general.NewResourceTypePreprocessor(a)(),
+		cloudcontrol.NewAWSCloudControl(cfg.WithArgs(a.Args())),
+	)
+
+	resourceChain.WithConfigs(cfg.WithArgs(a.Args()))
+	resourceChain.Send(resourceType)
+	resourceChain.Close()
+
+	// Collect resources from the resource chain
+	var resource *types.EnrichedResourceDescription
+	var ok bool
+
+	for {
+		resource, ok = chain.RecvAs[*types.EnrichedResourceDescription](resourceChain)
+		if !ok {
+			break
+		}
+		*a.pd.Resources = append(*a.pd.Resources, *resource)
+	}
+
+	return nil
+}
+
+func (a *AwsApolloControlFlow) gatherResourcePolicies() error {
+	// Create policy fetcher chain
+	policyChain := chain.NewChain(
+		NewAwsResourcePolicyFetcher(cfg.WithArgs(a.Args())),
+	)
+	policyChain.WithConfigs(cfg.WithArgs(a.Args()))
+
+	// Initialize map if nil
+	if a.pd.ResourcePolicies == nil {
+		a.pd.ResourcePolicies = make(map[string]*types.Policy)
+	}
+
+	// Send resources to policy fetcher and collect policies
+	for _, resource := range *a.pd.Resources {
+		policyChain.Send(resource)
+	}
+
+	policyChain.Close()
+
+	for {
+		policy, ok := chain.RecvAs[*types.Policy](policyChain)
+		if !ok {
+			break
+		}
+		a.pd.ResourcePolicies[policy.ResourceARN] = policy
+	}
+
+	return nil
+}
+
+func (a *AwsApolloControlFlow) gatherGaadDetails() error {
+	gaadChain := chain.NewChain(
+		NewJanusAWSAuthorizationDetails(cfg.WithArgs(a.Args())),
+	)
+	gaadChain.WithConfigs(cfg.WithArgs(a.Args()))
+	gaadChain.Send("") // GAAD doesn't need a resource type
+	gaadChain.Close()
+
+	// Collect GAAD output
+	var gaadOutput outputters.NamedOutputData
+	var ok bool
+	for {
+		gaadOutput, ok = chain.RecvAs[outputters.NamedOutputData](gaadChain)
+		if !ok {
+			break
+		}
+		// Convert GAAD output to PolicyData.Gaad
+		// First marshal the map to JSON bytes
+		jsonBytes, err := json.Marshal(gaadOutput.Data)
+		if err != nil {
+			return fmt.Errorf("failed to marshal GAAD data: %w", err)
+		}
+		// Then unmarshal into the Gaad struct
+		if err := json.Unmarshal(jsonBytes, &a.pd.Gaad); err != nil {
+			return fmt.Errorf("failed to unmarshal GAAD data: %w", err)
+		}
+	}
 
 	return nil
 }
 
 // sendResourceRoleRelationships creates assume role relationships using the outputter chain
-func (a *AwsApolloControlFlow) sendResourceRoleRelationships(outputChain chain.Chain) error {
+func (a *AwsApolloControlFlow) sendResourceRoleRelationships() error {
 	if a.pd.Resources == nil || len(*a.pd.Resources) == 0 {
 		return nil
 	}
@@ -231,103 +309,18 @@ func (a *AwsApolloControlFlow) sendResourceRoleRelationships(outputChain chain.C
 		}
 
 		// Create the assume role relationship
-		assumeRoleRel := model.NewBaseRelationship(resourceNode, &roleNode, "sts:AssumeRole")
+		assumeRoleRel := model.NewIAMRelationship(resourceNode, &roleNode, "sts:AssumeRole")
 		assumeRoleRel.Capability = "apollo-resource-role-mapping"
 
 		// Send to outputter
-		outputChain.Send(assumeRoleRel)
-	}
-
-	return nil
-}
-
-func (a *AwsApolloControlFlow) gatherResources(resourceType string) error {
-	resourceChain := chain.NewChain(
-		general.NewResourceTypePreprocessor(a)(),
-		cloudcontrol.NewAWSCloudControl(cfg.WithArgs(a.Args())),
-	)
-
-	resourceChain.WithConfigs(cfg.WithArgs(a.Args()))
-	resourceChain.Send(resourceType)
-	resourceChain.Close()
-
-	// Collect resources from the resource chain
-	var resource *types.EnrichedResourceDescription
-	var ok bool
-
-	for {
-		resource, ok = chain.RecvAs[*types.EnrichedResourceDescription](resourceChain)
-		if !ok {
-			break
-		}
-		*a.pd.Resources = append(*a.pd.Resources, *resource)
-	}
-
-	return nil
-}
-
-func (a *AwsApolloControlFlow) gatherResourcePolicies() error {
-	// Create policy fetcher chain
-	policyChain := chain.NewChain(
-		NewAwsResourcePolicyFetcher(cfg.WithArgs(a.Args())),
-	)
-	policyChain.WithConfigs(cfg.WithArgs(a.Args()))
-
-	// Initialize map if nil
-	if a.pd.ResourcePolicies == nil {
-		a.pd.ResourcePolicies = make(map[string]*types.Policy)
-	}
-
-	// Send resources to policy fetcher and collect policies
-	for _, resource := range *a.pd.Resources {
-		policyChain.Send(resource)
-		policyChain.Close()
-
-		for {
-			policy, ok := chain.RecvAs[*types.Policy](policyChain)
-			if !ok {
-				break
-			}
-			a.pd.ResourcePolicies[resource.Arn.String()] = policy
-		}
-	}
-
-	return nil
-}
-
-func (a *AwsApolloControlFlow) gatherGaadDetails() error {
-	gaadChain := chain.NewChain(
-		NewJanusAWSAuthorizationDetails(cfg.WithArgs(a.Args())),
-	)
-	gaadChain.WithConfigs(cfg.WithArgs(a.Args()))
-	gaadChain.Send("") // GAAD doesn't need a resource type
-	gaadChain.Close()
-
-	// Collect GAAD output
-	var gaadOutput outputters.NamedOutputData
-	var ok bool
-	for {
-		gaadOutput, ok = chain.RecvAs[outputters.NamedOutputData](gaadChain)
-		if !ok {
-			break
-		}
-		// Convert GAAD output to PolicyData.Gaad
-		// First marshal the map to JSON bytes
-		jsonBytes, err := json.Marshal(gaadOutput.Data)
-		if err != nil {
-			return fmt.Errorf("failed to marshal GAAD data: %w", err)
-		}
-		// Then unmarshal into the Gaad struct
-		if err := json.Unmarshal(jsonBytes, &a.pd.Gaad); err != nil {
-			return fmt.Errorf("failed to unmarshal GAAD data: %w", err)
-		}
+		a.Send(assumeRoleRel)
 	}
 
 	return nil
 }
 
 // processGitHubActionsFederation processes GitHub Actions federated identity relationships
-func (a *AwsApolloControlFlow) processGitHubActionsFederation(outputChain chain.Chain) error {
+func (a *AwsApolloControlFlow) processGitHubActionsFederation() error {
 	if a.pd == nil || a.pd.Gaad == nil {
 		return nil
 	}
@@ -340,7 +333,7 @@ func (a *AwsApolloControlFlow) processGitHubActionsFederation(outputChain chain.
 
 	// Send all relationships to the outputter chain
 	for _, rel := range relationships {
-		outputChain.Send(rel)
+		a.Send(rel)
 	}
 
 	return nil

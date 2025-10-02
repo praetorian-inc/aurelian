@@ -170,8 +170,8 @@ func TestCreateGitHubActionsRelationship(t *testing.T) {
 				require.NotNil(t, rel)
 
 				// Check relationship properties
-				iamRel, ok := rel.(*model.IamRelationship)
-				require.True(t, ok, "Expected IamRelationship")
+				iamRel, ok := rel.(*model.IAMRelationship)
+				require.True(t, ok, "Expected IAMRelationship")
 				assert.Equal(t, tt.expectedAction, iamRel.Permission)
 				assert.Equal(t, tt.expectedCapab, iamRel.Capability)
 				assert.NotNil(t, iamRel)
@@ -336,8 +336,8 @@ func TestExtractGitHubActionsRelationships(t *testing.T) {
 
 			// If we expect relationships, verify they're IamRelationships
 			for _, rel := range relationships {
-				iamRel, ok := rel.(*model.IamRelationship)
-				require.True(t, ok, "Expected IamRelationship")
+				iamRel, ok := rel.(*model.IAMRelationship)
+				require.True(t, ok, "Expected IAMRelationship")
 				assert.Equal(t, "sts:AssumeRole", iamRel.Permission)
 				assert.Equal(t, "apollo-github-actions-federation", iamRel.Capability)
 			}

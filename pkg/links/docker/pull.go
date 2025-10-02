@@ -12,7 +12,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/types"
+	"github.com/praetorian-inc/janus-framework/pkg/types/docker"
 )
 
 type DockerPull struct {
@@ -26,7 +26,7 @@ func NewDockerPull(configs ...cfg.Config) chain.Link {
 	return dp
 }
 
-func (dp *DockerPull) Process(imageContext types.DockerImage) error {
+func (dp *DockerPull) Process(imageContext docker.DockerImage) error {
 	imageContext.Image = strings.TrimSpace(imageContext.Image)
 	if imageContext.Image == "" {
 		return nil
@@ -67,7 +67,7 @@ func (dp *DockerPull) Process(imageContext types.DockerImage) error {
 	return dp.Send(&imageContext)
 }
 
-func (dp *DockerPull) authenticate(imageContext types.DockerImage, pullOpts *image.PullOptions, opts ...client.Opt) (*client.Client, error) {
+func (dp *DockerPull) authenticate(imageContext docker.DockerImage, pullOpts *image.PullOptions, opts ...client.Opt) (*client.Client, error) {
 	dockerClient, err := NewAuthenticatedClient(dp.Context(), imageContext, opts...)
 
 	if err != nil {

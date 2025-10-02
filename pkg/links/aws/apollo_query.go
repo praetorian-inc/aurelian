@@ -182,7 +182,7 @@ func (a *ApolloQuery) processQueryResult(q queries.Query, r map[string]any) {
 		return
 	}
 
-	iamRel := model.NewIamRelationship(&source, &target, permission)
+	iamRel := model.NewIAMRelationship(&source, &target, permission)
 	a.Send(iamRel)
 
 	a.Send(risk)

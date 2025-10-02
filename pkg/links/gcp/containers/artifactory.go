@@ -10,7 +10,7 @@ import (
 	"github.com/docker/docker/api/types/registry"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
+	"github.com/praetorian-inc/janus-framework/pkg/types/docker"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/utils"
@@ -261,7 +261,7 @@ func (g *GcpContainerImageSecretsLink) Process(input tab.GCPResource) error {
 	if err != nil {
 		return utils.HandleGcpError(err, "failed to get docker image for secrets extraction")
 	}
-	dockerImage := jtypes.DockerImage{
+	dockerImage := docker.DockerImage{
 		Image: image.Uri,
 		AuthConfig: registry.AuthConfig{
 			ServerAddress: g.extractRegistryURL(image.Uri),

@@ -188,7 +188,9 @@ func CreateServicePrincipalResource(principalString string) (*model.AWSResource,
 	// We don't have a specific CloudResourceType for services, so we'll use a generic approach
 	return &model.AWSResource{
 		CloudResource: model.CloudResource{
-			Key:          fmt.Sprintf("#awsresource#%s#%s", accountID, principalString),
+			BaseAsset: model.BaseAsset{
+				Key: fmt.Sprintf("#awsresource#%s#%s", accountID, principalString),
+			},
 			Name:         principalString,
 			DisplayName:  serviceName,
 			Provider:     "aws",
@@ -226,7 +228,9 @@ func CreateGenericPrincipalResource(principalString string) (*model.AWSResource,
 
 	return &model.AWSResource{
 		CloudResource: model.CloudResource{
-			Key:          fmt.Sprintf("#awsresource#%s#%s", accountID, principalString),
+			BaseAsset: model.BaseAsset{
+				Key: fmt.Sprintf("#awsresource#%s#%s", accountID, principalString),
+			},
 			Name:         principalString,
 			DisplayName:  principalName,
 			Provider:     "aws",
@@ -285,7 +289,7 @@ func TransformResultToRelationship(result iam.FullResult) (model.GraphRelationsh
 	}
 
 	// Create the IAM permission relationship
-	rel := model.NewIamRelationship(source, target, result.Action)
+	rel := model.NewIAMRelationship(source, target, result.Action)
 
 	// Add evaluation details to the relationship
 	rel.Capability = "apollo-iam-analysis"
@@ -328,14 +332,14 @@ func CreateGitHubActionsRelationship(repository model.GraphModel, role model.Gra
 		return nil, fmt.Errorf("subject patterns cannot be empty")
 	}
 
-	// Create the assume role relationship using IamRelationship
-	rel := model.NewIamRelationship(repository, role, "sts:AssumeRole")
+	// Create the assume role relationship using IAMRelationship
+	rel := model.NewIAMRelationship(repository, role, "sts:AssumeRole")
 	rel.Capability = "apollo-github-actions-federation"
 	rel.Created = model.Now()
 	rel.Visited = model.Now()
 
 	// For now, store additional GitHub Actions info in the key for traceability
-	// TODO: Extend IamRelationship or create GitHubActionsRelationship for better property support
+	// TODO: Extend IAMRelationship or create GitHubActionsRelationship for better property support
 	rel.Key = fmt.Sprintf("%s#GitHub-Actions#%s", repository.GetKey(), role.GetKey())
 
 	return rel, nil

@@ -1023,7 +1023,12 @@ func (a *AwsResourcePolicyFetcher) Process(resource *types.EnrichedResourceDescr
 		return fmt.Errorf("failed to get policy: %w", err)
 	}
 
+	if policy == nil {
+		return nil
+	}
+
 	// Send the policy downstream
+	policy.ResourceARN = resource.Arn.String()
 	a.Send(policy)
 	return nil
 }

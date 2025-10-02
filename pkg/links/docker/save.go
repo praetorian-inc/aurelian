@@ -10,7 +10,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/types"
+	"github.com/praetorian-inc/janus-framework/pkg/types/docker"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
 
@@ -50,7 +50,7 @@ func (dsl *DockerSave) Initialize() error {
 	return nil
 }
 
-func (dsl *DockerSave) Process(imageContext types.DockerImage) error {
+func (dsl *DockerSave) Process(imageContext docker.DockerImage) error {
 	isPublicImage := strings.Contains(imageContext.AuthConfig.ServerAddress, "public.ecr.aws")
 
 	var dockerClient *client.Client
