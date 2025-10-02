@@ -1,7 +1,6 @@
 package aws
 
 import (
-	"fmt"
 	"log/slog"
 	"sync"
 
@@ -9,7 +8,6 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudfront"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/lambda"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -47,50 +45,40 @@ func (a *AwsPublicResources) Initialize() error {
 	return nil
 }
 
-func (a *AwsPublicResources) Process(input any) error {
-	slog.Debug("AwsPublicResources.Process called", "input_type", fmt.Sprintf("%T", input), "input", input)
-
-	switch v := input.(type) {
-	case *types.EnrichedResourceDescription:
-		// Normal resource processing
-		constructor, ok := a.resourceMap[v.TypeName]
-		if !ok {
-			slog.Error("Unsupported resource type", "resource", v)
-			return nil
-		}
-
-		// Deduplication for S3 buckets - only process each bucket once
-		if v.TypeName == "AWS::S3::Bucket" {
-			// Create unique key using account_id:bucket_name
-			bucketKey := v.AccountId + ":" + v.Identifier
-
-			a.processedS3Mu.Lock()
-			if a.processedS3[bucketKey] {
-				a.processedS3Mu.Unlock()
-				slog.Debug("Skipping already processed S3 bucket", "bucket", v.Identifier, "account", v.AccountId)
-				return nil
-			}
-			a.processedS3[bucketKey] = true
-			a.processedS3Mu.Unlock()
-
-			slog.Debug("Processing S3 bucket for first time", "bucket", v.Identifier, "account", v.AccountId)
-		}
-
-		slog.Debug("Dispatching resource for processing", "resource_type", v.TypeName, "resource_id", v.Identifier)
-
-		// Create pair and send to processor
-		pair := &ResourceChainPair{
-			Resource:         v,
-			ChainConstructor: constructor,
-			Args:             a.Args(),
-		}
-
-		return a.Send(pair)
-
-	default:
-		slog.Debug("Unexpected input type in AwsPublicResources", "type", fmt.Sprintf("%T", input))
+func (a *AwsPublicResources) Process(resource *types.EnrichedResourceDescription) error {
+	constructor, ok := a.resourceMap[resource.TypeName]
+	if !ok {
+		slog.Error("Unsupported resource type", "resource", resource)
 		return nil
 	}
+
+	// Deduplication for S3 buckets - only process each bucket once
+	if resource.TypeName == "AWS::S3::Bucket" {
+		// Create unique key using account_id:bucket_name
+		bucketKey := resource.AccountId + ":" + resource.Identifier
+		
+		a.processedS3Mu.Lock()
+		if a.processedS3[bucketKey] {
+			a.processedS3Mu.Unlock()
+			slog.Debug("Skipping already processed S3 bucket", "bucket", resource.Identifier, "account", resource.AccountId)
+			return nil
+		}
+		a.processedS3[bucketKey] = true
+		a.processedS3Mu.Unlock()
+		
+		slog.Debug("Processing S3 bucket for first time", "bucket", resource.Identifier, "account", resource.AccountId)
+	}
+
+	slog.Debug("Dispatching resource for processing", "resource_type", resource.TypeName, "resource_id", resource.Identifier)
+
+	// Create pair and send to processor
+	pair := &ResourceChainPair{
+		Resource:         resource,
+		ChainConstructor: constructor,
+		Args:             a.Args(),
+	}
+
+	return a.Send(pair)
 }
 
 func (a *AwsPublicResources) SupportedResourceTypes() []model.CloudResourceType {
@@ -158,13 +146,6 @@ func (a *AwsPublicResources) ResourceMap() map[string]func() chain.Chain {
 		return chain.NewChain(
 			cloudcontrol.NewCloudControlGet(),
 			NewPropertyFilterLink(cfg.WithArg("property", "PubliclyAccessible")),
-		)
-	}
-
-	resourceMap["AWS::CloudFront::Distribution"] = func() chain.Chain {
-		return chain.NewChain(
-			cloudcontrol.NewCloudControlGet(),
-			cloudfront.NewCloudFrontMisconfigurationDetector(),
 		)
 	}
 
