@@ -92,6 +92,24 @@ func (r *Route53DomainFinder) Process(resource any) error {
 		}
 	}
 
+	// Set severity and risk based on whether Route53 records were found
+	severity := "MEDIUM"
+	riskDescription := fmt.Sprintf("CloudFront distribution %s points to non-existent S3 bucket '%s'. "+
+		"An attacker could create this bucket to serve malicious content.",
+		vuln.DistributionID, vuln.MissingBucket)
+
+	if len(records) > 0 {
+		severity = "HIGH"
+		riskDescription = fmt.Sprintf("CloudFront distribution %s points to non-existent S3 bucket '%s'. "+
+			"Route53 records are actively pointing to this distribution. "+
+			"An attacker could create this bucket to serve malicious content on %d domain(s): %s",
+			vuln.DistributionID, vuln.MissingBucket, len(affectedDomains), strings.Join(affectedDomains, ", "))
+	} else if len(affectedDomains) > 0 {
+		riskDescription = fmt.Sprintf("CloudFront distribution %s points to non-existent S3 bucket '%s'. "+
+			"An attacker could create this bucket to serve malicious content on the following alias domain(s): %s",
+			vuln.DistributionID, vuln.MissingBucket, strings.Join(affectedDomains, ", "))
+	}
+
 	// Create complete finding
 	finding := S3TakeoverFinding{
 		DistributionID:     vuln.DistributionID,
@@ -104,10 +122,8 @@ func (r *Route53DomainFinder) Process(resource any) error {
 		Region:             vuln.Region,
 		Route53Records:     records,
 		AffectedDomains:    affectedDomains,
-		Severity:           "CRITICAL",
-		Risk: fmt.Sprintf("CloudFront distribution %s points to non-existent S3 bucket '%s'. "+
-			"An attacker could create this bucket to serve malicious content on %d domain(s): %s",
-			vuln.DistributionID, vuln.MissingBucket, len(affectedDomains), strings.Join(affectedDomains, ", ")),
+		Severity:           severity,
+		Risk:               riskDescription,
 		Remediation: fmt.Sprintf("1. Delete the CloudFront distribution %s if no longer needed, OR\n"+
 			"2. Create the S3 bucket '%s' in your account to reclaim ownership, OR\n"+
 			"3. Update the distribution to point to a different origin",
@@ -117,11 +133,13 @@ func (r *Route53DomainFinder) Process(resource any) error {
 	if len(records) > 0 {
 		slog.Info("Found Route53 records pointing to vulnerable distribution",
 			"distribution_id", vuln.DistributionID,
+			"severity", severity,
 			"records", len(records),
 			"affected_domains", affectedDomains)
 	} else {
 		slog.Info("No Route53 records found (DNS may be managed externally)",
-			"distribution_id", vuln.DistributionID)
+			"distribution_id", vuln.DistributionID,
+			"severity", severity)
 	}
 
 	// Send complete finding

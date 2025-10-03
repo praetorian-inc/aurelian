@@ -105,7 +105,7 @@ func (c *CloudFrontS3OriginChecker) Process(resource any) error {
 				OriginID:           origin.ID,
 				AccountID:          distInfo.AccountID,
 				Region:             distInfo.Region,
-				Severity:           "HIGH",
+				Severity:           "MEDIUM",
 				Risk: fmt.Sprintf("CloudFront distribution %s points to non-existent S3 bucket '%s'. "+
 					"An attacker could create this bucket to serve malicious content on your domain.",
 					distInfo.ID, bucketName),
