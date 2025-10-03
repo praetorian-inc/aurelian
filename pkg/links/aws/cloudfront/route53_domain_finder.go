@@ -3,13 +3,13 @@ package cloudfront
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"slices"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 )
 
@@ -59,9 +59,8 @@ func (r *Route53DomainFinder) Process(resource any) error {
 		return r.Send(resource)
 	}
 
-	slog.Info("Searching Route53 for domains pointing to vulnerable CloudFront distribution",
-		"distribution_id", vuln.DistributionID,
-		"distribution_domain", vuln.DistributionDomain)
+	message.Info("Searching Route53 for domains pointing to vulnerable CloudFront distribution %s (domain: %s)",
+		vuln.DistributionID, vuln.DistributionDomain)
 
 	// Route53 is a global service, use us-east-1
 	config, err := r.GetConfigWithRuntimeArgs("us-east-1")
@@ -74,7 +73,7 @@ func (r *Route53DomainFinder) Process(resource any) error {
 	// Find all Route53 records pointing to this distribution
 	records, err := r.findRoute53Records(route53Client, vuln.DistributionDomain, vuln.Aliases)
 	if err != nil {
-		slog.Warn("Error searching Route53 records", "error", err)
+		message.Warning("Error searching Route53 records: %v", err)
 		// Don't fail completely, still report the vulnerability
 		records = []Route53Record{}
 	}
@@ -131,15 +130,11 @@ func (r *Route53DomainFinder) Process(resource any) error {
 	}
 
 	if len(records) > 0 {
-		slog.Info("Found Route53 records pointing to vulnerable distribution",
-			"distribution_id", vuln.DistributionID,
-			"severity", severity,
-			"records", len(records),
-			"affected_domains", affectedDomains)
+		message.Warning("Found Route53 records pointing to vulnerable distribution %s (severity: %s, records: %d, affected domains: %v)",
+			vuln.DistributionID, severity, len(records), affectedDomains)
 	} else {
-		slog.Info("No Route53 records found (DNS may be managed externally)",
-			"distribution_id", vuln.DistributionID,
-			"severity", severity)
+		message.Info("No Route53 records found for distribution %s (DNS may be managed externally, severity: %s)",
+			vuln.DistributionID, severity)
 	}
 
 	// Send complete finding
@@ -159,7 +154,7 @@ func (r *Route53DomainFinder) findRoute53Records(client *route53.Client, cloudfr
 	for zonesPaginator.HasMorePages() {
 		zonesPage, err := zonesPaginator.NextPage(context.TODO())
 		if err != nil {
-			slog.Warn("Failed to list hosted zones", "error", err)
+			message.Warning("Failed to list hosted zones: %v", err)
 			continue
 		}
 
@@ -179,7 +174,7 @@ func (r *Route53DomainFinder) findRoute53Records(client *route53.Client, cloudfr
 			for recordsPaginator.HasMorePages() {
 				recordsPage, err := recordsPaginator.NextPage(context.TODO())
 				if err != nil {
-					slog.Debug("Failed to list records in zone", "zone", zoneName, "error", err)
+					message.Info("Failed to list records in zone %s: %v", zoneName, err)
 					continue
 				}
 
@@ -206,10 +201,7 @@ func (r *Route53DomainFinder) findRoute53Records(client *route53.Client, cloudfr
 									Value:      aliasTarget,
 								})
 
-								slog.Debug("Found Route53 alias record pointing to CloudFront",
-									"record", recordName,
-									"type", recordType,
-									"target", aliasTarget)
+								message.Info("Found Route53 alias record %s (%s) pointing to CloudFront: %s", recordName, recordType, aliasTarget)
 							}
 						}
 					}
@@ -230,9 +222,7 @@ func (r *Route53DomainFinder) findRoute53Records(client *route53.Client, cloudfr
 										Value:      cnameValue,
 									})
 
-									slog.Debug("Found Route53 CNAME record pointing to CloudFront",
-										"record", recordName,
-										"target", cnameValue)
+									message.Info("Found Route53 CNAME record %s pointing to CloudFront: %s", recordName, cnameValue)
 								}
 							}
 						}

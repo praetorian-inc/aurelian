@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/aws/smithy-go"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 )
 
@@ -60,11 +60,11 @@ func NewCloudFrontS3OriginChecker(configs ...cfg.Config) chain.Link {
 func (c *CloudFrontS3OriginChecker) Process(resource any) error {
 	distInfo, ok := resource.(CloudFrontDistributionInfo)
 	if !ok {
-		slog.Debug("Skipping non-CloudFront distribution info")
+		message.Info("Skipping non-CloudFront distribution info")
 		return nil
 	}
 
-	slog.Debug("Checking S3 origins for distribution", "id", distInfo.ID, "origins", len(distInfo.Origins))
+	message.Info("Checking S3 origins for distribution %s (%d origins)", distInfo.ID, len(distInfo.Origins))
 
 	// Check each S3 origin
 	for _, origin := range distInfo.Origins {
@@ -74,26 +74,20 @@ func (c *CloudFrontS3OriginChecker) Process(resource any) error {
 
 		bucketName := extractBucketName(origin.DomainName)
 		if bucketName == "" {
-			slog.Warn("Could not extract bucket name from S3 origin",
-				"distribution_id", distInfo.ID,
-				"origin", origin.DomainName)
+			message.Warning("Could not extract bucket name from S3 origin for distribution %s: %s",
+				distInfo.ID, origin.DomainName)
 			continue
 		}
 
-		slog.Debug("Checking S3 bucket existence",
-			"distribution_id", distInfo.ID,
-			"bucket", bucketName,
-			"origin", origin.DomainName)
+		message.Info("Checking S3 bucket existence for distribution %s, bucket '%s', origin %s",
+			distInfo.ID, bucketName, origin.DomainName)
 
 		state := c.checkBucketExists(bucketName)
 
 		switch state {
 		case BucketNotExists:
-			slog.Info("VULNERABLE: Found CloudFront distribution with non-existent S3 bucket",
-				"distribution_id", distInfo.ID,
-				"distribution_domain", distInfo.DomainName,
-				"missing_bucket", bucketName,
-				"origin_domain", origin.DomainName)
+			message.Warning("VULNERABLE: Found CloudFront distribution %s with non-existent S3 bucket '%s' (domain: %s, origin: %s)",
+				distInfo.ID, bucketName, distInfo.DomainName, origin.DomainName)
 
 			// Create vulnerability finding as VulnerableDistribution for Route53 finder
 			vuln := VulnerableDistribution{
@@ -117,16 +111,11 @@ func (c *CloudFrontS3OriginChecker) Process(resource any) error {
 			}
 
 		case BucketExists:
-			slog.Debug("S3 bucket exists",
-				"distribution_id", distInfo.ID,
-				"bucket", bucketName)
+			message.Info("S3 bucket '%s' exists for distribution %s", bucketName, distInfo.ID)
 
 		case BucketUnknown:
-			slog.Warn("Could not determine S3 bucket existence state",
-				"distribution_id", distInfo.ID,
-				"bucket", bucketName,
-				"origin", origin.DomainName,
-				"message", "Unable to confirm if bucket exists or not due to network/permission issues")
+			message.Warning("Could not determine S3 bucket existence state for distribution %s, bucket '%s': Unable to confirm if bucket exists or not due to network/permission issues",
+				distInfo.ID, bucketName)
 			// Don't report as vulnerable since we're not sure
 		}
 	}
@@ -143,10 +132,8 @@ func (c *CloudFrontS3OriginChecker) checkBucketExists(bucketName string) BucketE
 
 	config, err := c.GetConfigWithRuntimeArgs(initialRegion)
 	if err != nil {
-		slog.Error("Failed to get AWS config",
-			"bucket", bucketName,
-			"region", initialRegion,
-			"error", err)
+		message.Error("Failed to get AWS config for bucket %s in region %s: %v",
+			bucketName, initialRegion, err)
 		return BucketUnknown
 	}
 
@@ -158,10 +145,7 @@ func (c *CloudFrontS3OriginChecker) checkBucketExists(bucketName string) BucketE
 	})
 
 	if err == nil {
-		// Bucket exists and we have access
-		slog.Debug("Bucket exists and is accessible",
-			"bucket", bucketName,
-			"region", initialRegion)
+		message.Info("Bucket '%s' exists and is accessible in region %s", bucketName, initialRegion)
 		return BucketExists
 	}
 
@@ -181,24 +165,17 @@ func (c *CloudFrontS3OriginChecker) checkBucketExists(bucketName string) BucketE
 	}
 
 	if bucketRegion == "" || bucketRegion == initialRegion {
-		slog.Warn("Could not determine bucket region after PermanentRedirect",
-			"bucket", bucketName,
-			"initial_region", initialRegion,
-			"error", err)
+		message.Warning("Could not determine bucket region after PermanentRedirect for bucket %s (initial region: %s)",
+			bucketName, initialRegion)
 		return BucketUnknown
 	}
 
-	// Retry with the correct region
-	slog.Debug("Retrying bucket check with detected region",
-		"bucket", bucketName,
-		"region", bucketRegion)
+	message.Info("Retrying bucket check for '%s' with detected region %s", bucketName, bucketRegion)
 
 	config, err = c.GetConfigWithRuntimeArgs(bucketRegion)
 	if err != nil {
-		slog.Error("Failed to get AWS config for detected region",
-			"bucket", bucketName,
-			"region", bucketRegion,
-			"error", err)
+		message.Error("Failed to get AWS config for detected region %s, bucket %s: %v",
+			bucketRegion, bucketName, err)
 		return BucketUnknown
 	}
 
@@ -208,9 +185,7 @@ func (c *CloudFrontS3OriginChecker) checkBucketExists(bucketName string) BucketE
 	})
 
 	if err == nil {
-		slog.Debug("Bucket exists in different region",
-			"bucket", bucketName,
-			"region", bucketRegion)
+		message.Info("Bucket '%s' exists in different region %s", bucketName, bucketRegion)
 		return BucketExists
 	}
 
@@ -224,18 +199,14 @@ func (c *CloudFrontS3OriginChecker) analyzeS3Error(err error, bucketName string,
 	// Check for NoSuchBucket error
 	var noSuchBucket *s3types.NoSuchBucket
 	if errors.As(err, &noSuchBucket) {
-		slog.Debug("Bucket does not exist",
-			"bucket", bucketName,
-			"region", region)
+		message.Info("Bucket '%s' does not exist in region %s", bucketName, region)
 		return BucketNotExists, false
 	}
 
 	// Check for NotFound error
 	var notFound *s3types.NotFound
 	if errors.As(err, &notFound) {
-		slog.Debug("Bucket not found",
-			"bucket", bucketName,
-			"region", region)
+		message.Info("Bucket '%s' not found in region %s", bucketName, region)
 		return BucketNotExists, false
 	}
 
@@ -244,34 +215,25 @@ func (c *CloudFrontS3OriginChecker) analyzeS3Error(err error, bucketName string,
 
 	// Check for access denied - bucket exists but we can't access it
 	if strings.Contains(errStr, "AccessDenied") || strings.Contains(errStr, "Forbidden") || strings.Contains(errStr, "403") {
-		slog.Debug("Bucket exists but access is denied",
-			"bucket", bucketName,
-			"region", region)
+		message.Info("Bucket '%s' exists but access is denied in region %s", bucketName, region)
 		return BucketExists, false
 	}
 
 	// Check for permanent redirect - bucket is in a different region
 	if strings.Contains(errStr, "PermanentRedirect") || strings.Contains(errStr, "301") {
-		slog.Debug("Bucket exists in a different region",
-			"bucket", bucketName,
-			"attempted_region", region)
+		message.Info("Bucket '%s' exists in a different region (attempted region: %s)", bucketName, region)
 		return BucketUnknown, true // Should retry with different region
 	}
 
 	// Check for 404 Not Found
 	if strings.Contains(errStr, "404") || strings.Contains(errStr, "Not Found") {
-		slog.Debug("Bucket does not exist (404)",
-			"bucket", bucketName,
-			"region", region)
+		message.Info("Bucket '%s' does not exist (404) in region %s", bucketName, region)
 		return BucketNotExists, false
 	}
 
 	// Log unexpected error
-	slog.Warn("Unexpected error checking bucket existence",
-		"bucket", bucketName,
-		"region", region,
-		"error", err,
-		"error_type", fmt.Sprintf("%T", err))
+	message.Warning("Unexpected error checking bucket %s existence in region %s: %v (type: %T)",
+		bucketName, region, err, err)
 
 	return BucketUnknown, false
 }
@@ -287,9 +249,7 @@ func (c *CloudFrontS3OriginChecker) extractBucketRegion(err error, bucketName st
 			if httpErr.Response != nil && httpErr.Response.Header != nil {
 				// Look for x-amz-bucket-region header
 				if region := httpErr.Response.Header.Get("x-amz-bucket-region"); region != "" {
-					slog.Debug("Found bucket region in response header",
-						"bucket", bucketName,
-						"region", region)
+					message.Info("Found bucket region for '%s' in response header: %s", bucketName, region)
 					return region
 				}
 			}
@@ -303,9 +263,7 @@ func (c *CloudFrontS3OriginChecker) extractBucketRegion(err error, bucketName st
 		start := idx + len("bucket is in '")
 		if endIdx := strings.Index(errStr[start:], "'"); endIdx >= 0 {
 			region := errStr[start : start+endIdx]
-			slog.Debug("Extracted bucket region from error message",
-				"bucket", bucketName,
-				"region", region)
+			message.Info("Extracted bucket region for '%s' from error message: %s", bucketName, region)
 			return region
 		}
 	}
@@ -320,9 +278,7 @@ func (c *CloudFrontS3OriginChecker) getBucketRegionViaAPI(bucketName string, ini
 	// GetBucketLocation often works from us-east-1 even for buckets in other regions
 	config, err := c.GetConfigWithRuntimeArgs(initialRegion)
 	if err != nil {
-		slog.Debug("Failed to get AWS config for GetBucketLocation",
-			"bucket", bucketName,
-			"error", err)
+		message.Info("Failed to get AWS config for GetBucketLocation for bucket '%s': %v", bucketName, err)
 		return ""
 	}
 
@@ -336,12 +292,9 @@ func (c *CloudFrontS3OriginChecker) getBucketRegionViaAPI(bucketName string, ini
 		// Check if it's an access issue vs bucket not existing
 		errStr := err.Error()
 		if strings.Contains(errStr, "NoSuchBucket") || strings.Contains(errStr, "NotFound") {
-			slog.Debug("GetBucketLocation confirms bucket does not exist",
-				"bucket", bucketName)
+			message.Info("GetBucketLocation confirms bucket '%s' does not exist", bucketName)
 		} else {
-			slog.Debug("GetBucketLocation failed",
-				"bucket", bucketName,
-				"error", err)
+			message.Info("GetBucketLocation failed for bucket '%s': %v", bucketName, err)
 		}
 		return ""
 	}
@@ -352,9 +305,7 @@ func (c *CloudFrontS3OriginChecker) getBucketRegionViaAPI(bucketName string, ini
 		bucketRegion = string(locationResp.LocationConstraint)
 	}
 
-	slog.Debug("Determined bucket region via GetBucketLocation",
-		"bucket", bucketName,
-		"region", bucketRegion)
+	message.Info("Determined bucket region for '%s' via GetBucketLocation: %s", bucketName, bucketRegion)
 
 	return bucketRegion
 }

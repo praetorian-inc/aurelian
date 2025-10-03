@@ -3,7 +3,6 @@ package cloudfront
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -12,6 +11,7 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/internal/helpers"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 )
 
@@ -56,13 +56,13 @@ func (c *CloudFrontDistributionEnumerator) Process(resource any) error {
 
 	accountID, err := c.GetAccountID(config)
 	if err != nil {
-		slog.Warn("Failed to get account ID", "error", err)
+		message.Warning("Failed to get account ID: %v", err)
 		accountID = "unknown"
 	}
 
 	client := cloudfront.NewFromConfig(config)
 
-	slog.Info("Enumerating CloudFront distributions")
+	message.Info("Enumerating CloudFront distributions")
 
 	paginator := cloudfront.NewListDistributionsPaginator(client, &cloudfront.ListDistributionsInput{}, func(o *cloudfront.ListDistributionsPaginatorOptions) {
 		o.Limit = 1000
@@ -71,20 +71,20 @@ func (c *CloudFrontDistributionEnumerator) Process(resource any) error {
 	pageNum := 0
 	for paginator.HasMorePages() {
 		pageNum++
-		slog.Debug("Fetching distributions page", "page", pageNum)
+		message.Info("Fetching CloudFront distributions page %d", pageNum)
 
 		page, err := paginator.NextPage(context.TODO())
 		if err != nil {
-			slog.Error("Failed to list distributions", "error", err)
+			message.Error("Failed to list distributions: %v", err)
 			return err
 		}
 
 		if page.DistributionList == nil || page.DistributionList.Items == nil {
-			slog.Debug("No CloudFront distributions found on page", "page", pageNum)
+			message.Info("No CloudFront distributions found on page %d", pageNum)
 			continue
 		}
 
-		slog.Debug("Found distributions on page", "page", pageNum, "count", len(page.DistributionList.Items))
+		message.Info("Found %d distributions on page %d", len(page.DistributionList.Items), pageNum)
 
 		for _, distSummary := range page.DistributionList.Items {
 			if distSummary.Id == nil {
@@ -96,7 +96,7 @@ func (c *CloudFrontDistributionEnumerator) Process(resource any) error {
 				Id: distSummary.Id,
 			})
 			if err != nil {
-				slog.Error("Failed to get distribution details", "id", *distSummary.Id, "error", err)
+				message.Error("Failed to get distribution details for %s: %v", *distSummary.Id, err)
 				continue
 			}
 
@@ -148,11 +148,8 @@ func (c *CloudFrontDistributionEnumerator) Process(resource any) error {
 				}
 			}
 
-			slog.Info("Found CloudFront distribution",
-				"id", info.ID,
-				"domain", info.DomainName,
-				"aliases", len(info.Aliases),
-				"origins", len(info.Origins))
+			message.Info("Found CloudFront distribution: %s (domain: %s, aliases: %d, origins: %d)",
+				info.ID, info.DomainName, len(info.Aliases), len(info.Origins))
 
 			// Send distribution info to next link
 			if err := c.Send(info); err != nil {
@@ -161,7 +158,7 @@ func (c *CloudFrontDistributionEnumerator) Process(resource any) error {
 		}
 	}
 
-	slog.Debug("Finished enumerating CloudFront distributions", "total_pages", pageNum)
+	message.Info("Finished enumerating CloudFront distributions (total pages: %d)", pageNum)
 	return nil
 }
 
