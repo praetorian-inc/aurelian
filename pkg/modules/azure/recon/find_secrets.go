@@ -6,7 +6,6 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/links/noseyparker"
 	"github.com/praetorian-inc/nebula/internal/registry"
 	"github.com/praetorian-inc/nebula/pkg/links/azure"
-	"github.com/praetorian-inc/nebula/pkg/links/general"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/outputters"
 )
@@ -28,11 +27,9 @@ var AzureFindSecrets = chain.NewModule(
 			"https://learn.microsoft.com/en-us/azure/azure-resource-graph/overview",
 			"https://learn.microsoft.com/en-us/azure/azure-functions/security-concepts",
 		},
-	}).WithChainInputParam(
-		options.AzureSubscription().Name(),
-	),
+	}),
 ).WithLinks(
-	general.NewResourceTypePreprocessor(&azure.AzureFindSecretsLink{}),
+	azure.NewAzureSubscriptionGeneratorLink,
 	azure.NewARGTemplateLoaderLink,
 	azure.NewARGTemplateQueryLink,
 	azure.NewAzureFindSecretsLink,
@@ -40,6 +37,8 @@ var AzureFindSecrets = chain.NewModule(
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
 	outputters.NewNPFindingsConsoleOutputter,
+).WithInputParam(
+	options.AzureSubscription(),
 ).WithInputParam(
 	options.AzureResourceSecretsTypes(),
 ).WithInputParam(
@@ -50,4 +49,4 @@ var AzureFindSecrets = chain.NewModule(
 ).WithConfigs(
 	cfg.WithArg("module-name", "find-secrets"),
 	cfg.WithArg("category", "secrets"),
-)
+).WithAutoRun()
