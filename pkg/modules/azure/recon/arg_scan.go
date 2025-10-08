@@ -34,7 +34,7 @@ var AzureARGScan = chain.NewModule(
 ).WithParams(
 	options.AzureDisableEnrichment(),
 ).WithOutputters(
-	outputters.NewRuntimeJSONOutputter,
+	outputters.NewARGScanJSONOutputter,
 ).WithParams(
 	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
 ).WithConfigs(
