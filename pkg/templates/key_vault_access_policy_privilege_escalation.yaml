@@ -1,8 +1,8 @@
 id: key_vault_access_policy_privilege_escalation
 name: Key Vault Access Policy Privilege Escalation
 description: Detects Key Vault instances using legacy access policies that allow privilege escalation by users with Contributor roles
+category: ["Privilege Escalation", "arg-scan"]
 severity: High
-category: Privilege Escalation
 reportability: Automatic
 triageNotes: |
  Key Vaults using access policies (enableRbacAuthorization=false) allow users with Key Vault Contributor, Contributor, or Owner roles to modify access policies and grant themselves data access. This bypasses intended RBAC boundaries and violates the principle of least privilege.

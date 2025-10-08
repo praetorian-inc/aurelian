@@ -1,6 +1,6 @@
 id: virtual_machines_all_secrets
 name: All Virtual Machines for Secret Scanning
-category: Secret Scanning
+category: ["Secret Scanning"]
 description: Finds all virtual machines in the subscription for secret scanning in userData, extensions, and configuration
 severity: Medium
 reportability: Automatic

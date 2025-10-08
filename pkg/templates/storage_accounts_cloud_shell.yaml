@@ -1,5 +1,6 @@
 id: cloud_shell_storage_detection
 name: Azure Cloud Shell Storage Accounts
+category: ["arg-scan"]
 description: Identifies storage accounts used for Azure Cloud Shell services which may contain sensitive scripts and data
 severity: Medium
 reportability: Automatic

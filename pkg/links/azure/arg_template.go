@@ -17,6 +17,16 @@ import (
 	"github.com/praetorian-inc/tabularium/pkg/model/model"
 )
 
+// containsCategory checks if a category exists in the list of categories
+func containsCategory(categories []string, target string) bool {
+	for _, cat := range categories {
+		if cat == target {
+			return true
+		}
+	}
+	return false
+}
+
 // ARGTemplateQueryInput is the input struct for the query link
 // Contains a template and a subscription
 
@@ -92,7 +102,7 @@ func (l *ARGTemplateLoaderLink) Process(input interface{}) error {
 	l.Logger.Info("Templates loaded, filtering by category", "template_count", len(templatesList), "category", category)
 
 	for _, t := range templatesList {
-		if category == "" || t.Category == category {
+		if category == "" || containsCategory(t.Category, category) {
 			l.Logger.Debug("Matched template", "template_id", t.ID, "template_category", t.Category)
 			l.Send(ARGTemplateQueryInput{Template: t, Subscription: subscription})
 		}
