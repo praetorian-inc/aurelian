@@ -58,7 +58,7 @@ jobs:
                   ]
                 },
                 issuetype: {
-                  name: "Task"  // Change to "Bug", "Story", etc. as needed
+                  name: "Story"
                 },
                 labels: issue.labels.map(label => label.name),
                 // Custom Team field - using correct team ID
