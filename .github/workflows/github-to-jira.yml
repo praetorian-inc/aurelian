@@ -61,10 +61,8 @@ jobs:
                   name: "Task"  // Change to "Bug", "Story", etc. as needed
                 },
                 labels: issue.labels.map(label => label.name),
-                // Custom Team field
-                "customfield_10500": {
-                  id: "980b203a-5b59-4d4c-8cbc-c05d1b642402"
-                }
+                // Custom Team field - try direct ID format
+                "customfield_10500": "980b203a-5b59-4d4c-8cbc-c05d1b642402"
               }
             };
             
