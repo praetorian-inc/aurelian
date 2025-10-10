@@ -1,0 +1,102 @@
+name: Sync GitHub Issues to Jira
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  create-jira-issue:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Create Jira Issue
+        id: create
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            
+            // Jira configuration
+            const jiraBaseUrl = process.env.JIRA_BASE_URL;
+            const jiraEmail = process.env.JIRA_EMAIL;
+            const jiraApiToken = process.env.JIRA_API_TOKEN;
+            const jiraProjectKey = process.env.JIRA_PROJECT_KEY;
+            
+            // Create Basic Auth token
+            const auth = Buffer.from(`${jiraEmail}:${jiraApiToken}`).toString('base64');
+            
+            // Prepare Jira issue data
+            const jiraIssue = {
+              fields: {
+                project: {
+                  key: jiraProjectKey
+                },
+                summary: issue.title,
+                description: {
+                  type: "doc",
+                  version: 1,
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [
+                        {
+                          type: "text",
+                          text: issue.body || "No description provided"
+                        }
+                      ]
+                    },
+                    {
+                      type: "paragraph",
+                      content: [
+                        {
+                          type: "text",
+                          text: `GitHub Issue: ${issue.html_url}`,
+                          marks: [{ type: "strong" }]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                issuetype: {
+                  name: "Task"  // Change to "Bug", "Story", etc. as needed
+                },
+                labels: issue.labels.map(label => label.name)
+              }
+            };
+            
+            // Create Jira issue
+            const response = await fetch(`${jiraBaseUrl}/rest/api/3/issue`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Basic ${auth}`,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(jiraIssue)
+            });
+            
+            if (!response.ok) {
+              const errorText = await response.text();
+              throw new Error(`Failed to create Jira issue: ${response.status} ${errorText}`);
+            }
+            
+            const result = await response.json();
+            const jiraIssueKey = result.key;
+            const jiraIssueUrl = `${jiraBaseUrl}/browse/${jiraIssueKey}`;
+            
+            console.log(`Created Jira issue: ${jiraIssueKey}`);
+            
+            // Comment on GitHub issue with Jira link
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: `✅ Jira issue created: [${jiraIssueKey}](${jiraIssueUrl})`
+            });
+            
+            return jiraIssueKey;
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          JIRA_PROJECT_KEY: ${{ secrets.JIRA_PROJECT_KEY }}
