@@ -17,18 +17,15 @@ references:
   - https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration
 query: |
     resources
-    | where type =~ 'microsoft.web/sites'
-    | extend publicAccess = iif(
-        isnull(properties.virtualNetworkSubnetId) or properties.virtualNetworkSubnetId == '', 
-        true, 
-        false
-    )
-    | where publicAccess == true
-    | project
-        id,
-        name,
-        type,
-        location,
-        publicNetworkAccess = publicAccess,
-        kind,
-        subscriptionId
+      | where type =~ 'microsoft.web/sites'
+      | extend hasPrivateEndpoint = isnotnull(properties.privateEndpointConnections) and
+      array_length(properties.privateEndpointConnections) > 0
+      | extend hasIpRestrictions = isnotnull(properties.siteConfig.ipSecurityRestrictions) and
+      array_length(properties.siteConfig.ipSecurityRestrictions) > 0
+      | extend publicNetworkAccess = coalesce(properties.publicNetworkAccess, 'Enabled')
+      | extend isPubliclyAccessible = (
+          publicNetworkAccess != 'Disabled' and
+          not(hasPrivateEndpoint) and
+          not(hasIpRestrictions)
+      )
+      | where isPubliclyAccessible == true
