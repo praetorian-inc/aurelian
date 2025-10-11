@@ -80,13 +80,23 @@ func (l *ARGTemplateLoaderLink) Process(input interface{}) error {
 		category, _ = cfg.As[string](l.Arg("category"))
 	}
 
-	loader, err := templates.NewTemplateLoader()
-	if err != nil {
-		return fmt.Errorf("failed to initialize template loader: %v", err)
-	}
+	var loader *templates.TemplateLoader
+	var err error
+
 	if directory != "" {
+		// User specified directory - use ONLY user templates
+		loader, err = templates.NewTemplateLoader(templates.UserTemplatesOnly)
+		if err != nil {
+			return fmt.Errorf("failed to initialize template loader: %v", err)
+		}
 		if err := loader.LoadUserTemplates(directory); err != nil {
 			return fmt.Errorf("failed to load user templates: %v", err)
+		}
+	} else {
+		// No template directory specified - use embedded templates
+		loader, err = templates.NewTemplateLoader(templates.LoadEmbedded)
+		if err != nil {
+			return fmt.Errorf("failed to initialize template loader: %v", err)
 		}
 	}
 	templatesList := loader.GetTemplates()

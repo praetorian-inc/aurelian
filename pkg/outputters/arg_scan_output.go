@@ -142,17 +142,31 @@ func (j *ARGScanJSONOutputter) processFinding(finding any) error {
 // loadTemplateDetails loads template metadata for a given template ID
 func (j *ARGScanJSONOutputter) loadTemplateDetails(templateID string) {
 	// Initialize template loader
-	loader, err := templates.NewTemplateLoader()
-	if err != nil {
-		message.Error("Failed to initialize template loader: %v", err)
-		j.templates[templateID] = nil
-		return
-	}
+	var loader *templates.TemplateLoader
+	var err error
 
-	// Try to get template directory from args (optional)
-	if templateDir, err := cfg.As[string](j.Arg("template-dir")); err == nil && templateDir != "" {
+	// Check if user specified a template directory
+	if templateDir, dirErr := cfg.As[string](j.Arg("template-dir")); dirErr == nil && templateDir != "" {
+		// User specified directory - use ONLY user templates
+		loader, err = templates.NewTemplateLoader(templates.UserTemplatesOnly)
+		if err != nil {
+			message.Error("Failed to initialize template loader: %v", err)
+			j.templates[templateID] = nil
+			return
+		}
+
 		if err := loader.LoadUserTemplates(templateDir); err != nil {
-			message.Error("Failed to load user templates from %s: %v", templateDir, err)
+			message.Error("Failed to load templates from %s: %v", templateDir, err)
+			j.templates[templateID] = nil
+			return
+		}
+	} else {
+		// No template directory specified - use embedded templates
+		loader, err = templates.NewTemplateLoader(templates.LoadEmbedded)
+		if err != nil {
+			message.Error("Failed to initialize template loader: %v", err)
+			j.templates[templateID] = nil
+			return
 		}
 	}
 
