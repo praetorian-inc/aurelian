@@ -16,7 +16,7 @@ nebula azure recon arg-scan [flags]
       --module-name string     name of the module for dynamic file naming
   -o, --output string          output directory (default "nebula-output")
   -s, --subscription strings   The Azure subscription to use. Can be a subscription ID or 'all'. (required)
-  -t, --template-dir string    Directory containing Azure ARG templates
+  -t, --template-dir string    Directory containing Azure ARG templates (replaces embedded templates)
 ```
 
 ### SEE ALSO
