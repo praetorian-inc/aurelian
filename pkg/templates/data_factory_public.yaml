@@ -2,7 +2,7 @@ id: data_factory_public_access
 name: Publicly Accessible Data Factories
 description: Detects Azure Data Factory instances with public network access enabled
 severity: High
-category: Public Access
+category: ["Public Access", "arg-scan"]
 reportability: Manual Triage 
 triageNotes: |-
   Potential Risk:

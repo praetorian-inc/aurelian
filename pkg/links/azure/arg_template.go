@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
@@ -79,20 +80,30 @@ func (l *ARGTemplateLoaderLink) Process(input interface{}) error {
 		category, _ = cfg.As[string](l.Arg("category"))
 	}
 
-	loader, err := templates.NewTemplateLoader()
-	if err != nil {
-		return fmt.Errorf("failed to initialize template loader: %v", err)
-	}
+	var loader *templates.TemplateLoader
+	var err error
+
 	if directory != "" {
+		// User specified directory - use ONLY user templates
+		loader, err = templates.NewTemplateLoader(templates.UserTemplatesOnly)
+		if err != nil {
+			return fmt.Errorf("failed to initialize template loader: %v", err)
+		}
 		if err := loader.LoadUserTemplates(directory); err != nil {
 			return fmt.Errorf("failed to load user templates: %v", err)
+		}
+	} else {
+		// No template directory specified - use embedded templates
+		loader, err = templates.NewTemplateLoader(templates.LoadEmbedded)
+		if err != nil {
+			return fmt.Errorf("failed to initialize template loader: %v", err)
 		}
 	}
 	templatesList := loader.GetTemplates()
 	l.Logger.Info("Templates loaded, filtering by category", "template_count", len(templatesList), "category", category)
 
 	for _, t := range templatesList {
-		if category == "" || t.Category == category {
+		if category == "" || slices.Contains(t.Category, category) {
 			l.Logger.Debug("Matched template", "template_id", t.ID, "template_category", t.Category)
 			l.Send(ARGTemplateQueryInput{Template: t, Subscription: subscription})
 		}

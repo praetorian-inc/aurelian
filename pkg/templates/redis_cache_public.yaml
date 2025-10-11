@@ -2,7 +2,7 @@ id: redis_cache_public_access
 name: Publicly Accessible Redis Caches
 description: Detects Redis Cache instances with public network access enabled
 severity: High
-category: Public Access
+category: ["Public Access", "arg-scan"]
 triageNotes: |
   Potential Risk:
   - Public accessibility exposes the cache endpoint to the entire internet

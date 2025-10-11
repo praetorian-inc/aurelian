@@ -2,7 +2,7 @@ id: cosmos_db_public_access
 name: Publicly Accessible Cosmos DB Accounts
 description: Detects Cosmos DB accounts with public network access enabled
 severity: High
-category: Public Access
+category: ["Public Access", "arg-scan"]
 triageNotes: |
   Potential Risk:
   - Public accessibility exposes the database endpoint to the entire internet

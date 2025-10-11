@@ -11,42 +11,53 @@ import (
 //go:embed *.yaml
 var EmbeddedTemplates embed.FS
 
+// TemplateSource specifies the source of templates to load
+type TemplateSource int
+
+const (
+	LoadEmbedded TemplateSource = iota
+	UserTemplatesOnly
+)
+
 // TemplateLoader loads templates from both embedded files and optional user-supplied directory
 type TemplateLoader struct {
 	templates []*ARGQueryTemplate
 }
 
-// NewTemplateLoader creates a new template loader and loads embedded templates
-func NewTemplateLoader() (*TemplateLoader, error) {
+// NewTemplateLoader creates a new template loader with specified source
+func NewTemplateLoader(source TemplateSource) (*TemplateLoader, error) {
 	loader := &TemplateLoader{}
-	
-	// First load embedded templates
-	entries, err := EmbeddedTemplates.ReadDir(".")
-	if err != nil {
-		return nil, fmt.Errorf("failed to read embedded templates: %v", err)
-	}
 
-	for _, entry := range entries {
-		if !entry.IsDir() && filepath.Ext(entry.Name()) == ".yaml" {
-			data, err := EmbeddedTemplates.ReadFile(entry.Name())
-			if err != nil {
-				return nil, fmt.Errorf("failed to read embedded template %s: %v", entry.Name(), err)
+	if source == LoadEmbedded {
+		// Load embedded templates
+		entries, err := EmbeddedTemplates.ReadDir(".")
+		if err != nil {
+			return nil, fmt.Errorf("failed to read embedded templates: %v", err)
+		}
+
+		for _, entry := range entries {
+			if !entry.IsDir() && filepath.Ext(entry.Name()) == ".yaml" {
+				data, err := EmbeddedTemplates.ReadFile(entry.Name())
+				if err != nil {
+					return nil, fmt.Errorf("failed to read embedded template %s: %v", entry.Name(), err)
+				}
+
+				var template ARGQueryTemplate
+				if err := yaml.Unmarshal(data, &template); err != nil {
+					return nil, fmt.Errorf("failed to parse embedded template %s: %v", entry.Name(), err)
+				}
+
+				// Validate template
+				if err := validateTemplate(&template); err != nil {
+					return nil, fmt.Errorf("invalid embedded template %s: %v", entry.Name(), err)
+				}
+
+				loader.templates = append(loader.templates, &template)
 			}
-
-			var template ARGQueryTemplate
-			if err := yaml.Unmarshal(data, &template); err != nil {
-				return nil, fmt.Errorf("failed to parse embedded template %s: %v", entry.Name(), err)
-			}
-
-			// Validate template
-			if err := validateTemplate(&template); err != nil {
-				return nil, fmt.Errorf("invalid embedded template %s: %v", entry.Name(), err)
-			}
-
-			loader.templates = append(loader.templates, &template)
 		}
 	}
-	
+	// For UserTemplatesOnly, we start with empty templates slice
+
 	return loader, nil
 }
 

@@ -12,7 +12,7 @@ import (
 
 var AzureARGScan = chain.NewModule(
 	cfg.NewMetadata(
-		"Azure ARG Template Scanner with Enrichment",
+		"Azure ARG Template Scanner with Enrichment (only runs templates with arg-scan category)",
 		"Scans Azure resources using ARG templates and enriches findings with security testing commands.",
 	).WithProperties(map[string]any{
 		"id":          "arg-scan",
@@ -34,11 +34,12 @@ var AzureARGScan = chain.NewModule(
 ).WithParams(
 	options.AzureDisableEnrichment(),
 ).WithOutputters(
-	outputters.NewRuntimeJSONOutputter,
+	outputters.NewARGScanJSONOutputter,
 ).WithParams(
 	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
 ).WithConfigs(
 	cfg.WithArg("module-name", "arg-scan"),
+	cfg.WithArg("category", "arg-scan"),
 ).WithAutoRun()
 
 func init() {
