@@ -24,9 +24,21 @@ func NewAWSECRListPublicImages(configs ...cfg.Config) chain.Link {
 	return ep
 }
 
-func (ep *AWSECRListPublicImages) Process(resource *types.EnrichedResourceDescription) error {
+func (ep *AWSECRListPublicImages) Process(input any) error {
+	// If input is a string, it's already an image URL from AWSECRListImages - pass it through
+	if imageURL, ok := input.(string); ok {
+		return ep.Send(imageURL)
+	}
+
+	// Otherwise, process as an EnrichedResourceDescription
+	resource, ok := input.(*types.EnrichedResourceDescription)
+	if !ok {
+		slog.Debug("Unexpected input type", "input", input)
+		return nil
+	}
+
 	if resource.TypeName != "AWS::ECR::PublicRepository" {
-		slog.Debug("Skipping non-ECR resource", "identifier", resource.Identifier, "resource", resource)
+		slog.Debug("Skipping non-ECR public repository", "identifier", resource.Identifier)
 		return nil
 	}
 
