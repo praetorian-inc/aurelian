@@ -339,11 +339,32 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 	},
 	"ecs": {
 		ResourcePatterns: map[string]*regexp.Regexp{
-			"service": regexp.MustCompile(`^ecs.amazonaws.com$`),
+			"service":        regexp.MustCompile(`^ecs.amazonaws.com$`),
+			"cluster":        regexp.MustCompile(`^arn:aws:ecs:[a-z0-9-]+:\d{12}:cluster/.*$`),
+			"task":           regexp.MustCompile(`^arn:aws:ecs:[a-z0-9-]+:\d{12}:task/.*$`),
+			"task-def":       regexp.MustCompile(`^arn:aws:ecs:[a-z0-9-]+:\d{12}:task-definition/.*$`),
+			"container-inst": regexp.MustCompile(`^arn:aws:ecs:[a-z0-9-]+:\d{12}:container-instance/.*$`),
 		},
 		ActionResourceMap: map[string][]string{
-			"runtask":                {"service"},
+			"runtask":                {"cluster", "task-def", "service"},
 			"registertaskdefinition": {"service"},
+			"starttask":              {"cluster", "task-def", "service"},
+			"updateservice":          {"service"},
+		},
+	},
+	"ssm": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"instance":         regexp.MustCompile(`^arn:aws:ec2:[a-z0-9-]+:\d{12}:instance/.*$`),
+			"managed-instance": regexp.MustCompile(`^arn:aws:ssm:[a-z0-9-]+:\d{12}:managed-instance/.*$`),
+			"document":         regexp.MustCompile(`^arn:aws:ssm:[a-z0-9-]+:(\d{12}|aws):document/.*$`),
+			"automation":       regexp.MustCompile(`^arn:aws:ssm:[a-z0-9-]+:\d{12}:automation-definition/.*$`),
+			"service":          regexp.MustCompile(`^ssm.amazonaws.com$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"sendcommand":             {"instance", "managed-instance", "document"},
+			"startsession":            {"instance", "managed-instance"},
+			"resumesession":           {"instance", "managed-instance"},
+			"startautomationexecution": {"automation", "document"},
 		},
 	},
 }
