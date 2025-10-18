@@ -367,4 +367,24 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"startautomationexecution": {"automation", "document"},
 		},
 	},
+	"glue": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"devEndpoint": regexp.MustCompile(`^arn:aws:glue:[a-z0-9-]+:\d{12}:devEndpoint/.*$`),
+			"service":     regexp.MustCompile(`^glue.amazonaws.com$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createdevendpoint": {"service"},
+			"updatedevendpoint": {"devEndpoint"},
+		},
+	},
+	"datapipeline": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"pipeline": regexp.MustCompile(`^arn:aws:datapipeline:[a-z0-9-]+:\d{12}:pipeline/.*$`),
+			"service":  regexp.MustCompile(`^datapipeline.amazonaws.com$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createpipeline":        {"service"},
+			"putpipelinedefinition": {"pipeline"},
+		},
+	},
 }
