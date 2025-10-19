@@ -119,11 +119,11 @@ func addServicesToResourceCache() {
 		"secretsmanager.amazonaws.com",
 		"codebuild.amazonaws.com",
 		"codepipeline.amazonaws.com",
+		"datapipeline.amazonaws.com",
 		"ecs.amazonaws.com",
 		"eks.amazonaws.com",
 		"glue.amazonaws.com",
 		"sagemaker.amazonaws.com",
-		"ecs.amazonaws.com",
 		"apigateway.amazonaws.com",
 	}
 
