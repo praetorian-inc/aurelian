@@ -42,6 +42,7 @@ func (a *AwsApolloControlFlow) SupportedResourceTypes() []model.CloudResourceTyp
 		model.AWSLambdaFunction,
 		model.AWSEC2Instance,
 		model.AWSCloudFormationStack,
+		"AWS::Glue::DevEndpoint", // Add Glue DevEndpoint as a CloudResourceType
 	}
 }
 
