@@ -376,7 +376,7 @@ func (a *AnthropicLLMAnalyzer) parseAnalysisResponse(response string) (*types.LL
 	for _, keyword := range sensitiveKeywords {
 		if strings.Contains(lowerResponse, keyword) {
 			// Only flag as sensitive if not purely about excluded content
-			if !hasExcludedContent || len(lowerResponse) > 200 {
+			if !hasExcludedContent {
 				foundKeywords[keyword] = true
 				result.SensitiveInfoFound = true
 			}
