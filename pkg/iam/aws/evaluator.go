@@ -418,10 +418,10 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 		strings.Contains(req.Resource, ":role/")
 
 	if result.CrossAccountAccess {
-		if isAssumeRoleOperation && result.PolicyResult.hasTypeAllow(EvalTypePermBoundary) {
-			// Special case: For cross-account assume role, the trust policy (permission boundary)
-			// is sufficient if it allows the operation, even without a resource policy
-			result.Allowed = result.PolicyResult.hasTypeAllow(EvalTypeIdentity)
+		if isAssumeRoleOperation {
+			// Special case: For cross-account assume role, the trust policy (resource policy)
+			// must allow the principal, and the principal needs sts:AssumeRole permission
+			result.Allowed = result.PolicyResult.hasTypeAllow(EvalTypeIdentity) && resourceAllowed
 			result.EvaluationDetails = "Cross-account assume role access"
 		} else {
 			// Normal cross-account access requires both identity and resource policy allows
