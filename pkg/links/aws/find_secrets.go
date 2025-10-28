@@ -9,6 +9,7 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/links/noseyparker"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudformation"
+	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudwatchlogs"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/ec2"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/ecr"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/lambda"
@@ -63,6 +64,12 @@ func (fs *AWSFindSecrets) ResourceMap() map[string]func() chain.Chain {
 	resourceMap["AWS::CloudFormation::Stack"] = func() chain.Chain {
 		return chain.NewChain(
 			cloudformation.NewAWSCloudFormationTemplates(),
+		)
+	}
+
+	resourceMap["AWS::Logs::LogGroup"] = func() chain.Chain {
+		return chain.NewChain(
+			cloudwatchlogs.NewAWSCloudWatchLogsEvents(),
 		)
 	}
 
@@ -172,6 +179,10 @@ func (fs *AWSFindSecrets) Permissions() []cfg.Permission {
 		{
 			Platform:   "aws",
 			Permission: "lambda:ListFunctions",
+		},
+		{
+			Platform:   "aws",
+			Permission: "logs:FilterLogEvents",
 		},
 		{
 			Platform:   "aws",
