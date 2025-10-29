@@ -73,6 +73,24 @@ func (fs *AWSFindSecrets) ResourceMap() map[string]func() chain.Chain {
 		)
 	}
 
+	resourceMap["AWS::Logs::LogStream"] = func() chain.Chain {
+		return chain.NewChain(
+			cloudwatchlogs.NewAWSCloudWatchLogsEvents(),
+		)
+	}
+
+	resourceMap["AWS::Logs::MetricFilter"] = func() chain.Chain {
+		return chain.NewChain(
+			cloudwatchlogs.NewAWSCloudWatchLogsEvents(),
+		)
+	}
+
+	resourceMap["AWS::Logs::SubscriptionFilter"] = func() chain.Chain {
+		return chain.NewChain(
+			cloudwatchlogs.NewAWSCloudWatchLogsEvents(),
+		)
+	}
+
 	resourceMap["AWS::ECR::Repository"] = func() chain.Chain {
 		return chain.NewChain(
 			ecr.NewAWSECRListImages(),
