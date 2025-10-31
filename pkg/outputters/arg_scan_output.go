@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 
@@ -356,8 +357,8 @@ func (j *ARGScanJSONOutputter) writeTemplateSectionDetail(writer *os.File, templ
 
 	// Findings table
 	fmt.Fprintf(writer, "### Findings\n\n")
-	fmt.Fprintf(writer, "| Resource Name | Resource Type | Location | Subscription | Details |\n")
-	fmt.Fprintf(writer, "|---------------|---------------|----------|--------------|----------|\n")
+	fmt.Fprintf(writer, "| Resource Name | Resource Type | Location | Subscription | Details | Automated Triage |\n")
+	fmt.Fprintf(writer, "|---------------|---------------|----------|--------------|---------|------------------|\n")
 
 	for _, finding := range findings {
 		if finding == nil {
@@ -371,8 +372,11 @@ func (j *ARGScanJSONOutputter) writeTemplateSectionDetail(writer *os.File, templ
 		// Build details string from relevant properties
 		details := j.buildDetailsString(finding.Properties)
 
-		fmt.Fprintf(writer, "| %s | %s | %s | %s | %s |\n",
-			resourceName, resourceType, location, subscription, details)
+		// Format automated triage information from enricher commands
+		automatedTriage := j.formatAutomatedTriage(finding.Properties)
+
+		fmt.Fprintf(writer, "| %s | %s | %s | %s | %s | %s |\n",
+			resourceName, resourceType, location, subscription, details, automatedTriage)
 	}
 
 	// Triage guide
@@ -436,6 +440,130 @@ func (j *ARGScanJSONOutputter) buildDetailsString(properties map[string]any) str
 	}
 
 	return result
+}
+
+// formatAutomatedTriage formats the commands from enrichers for display in markdown table
+func (j *ARGScanJSONOutputter) formatAutomatedTriage(properties map[string]any) string {
+	// Commands could be either Command structs slice or []any from JSON
+	commandsAny, exists := properties["commands"]
+	if !exists {
+		return "" // Empty cell if no commands
+	}
+
+	var formattedCommands []string
+
+	// Use reflection to handle the Command struct slice
+	commandsValue := reflect.ValueOf(commandsAny)
+	if commandsValue.Kind() == reflect.Slice {
+		for i := 0; i < commandsValue.Len(); i++ {
+			cmd := commandsValue.Index(i)
+			var parts []string
+
+			// Use reflection to get field values from the struct
+			if cmd.Kind() == reflect.Struct {
+				// Handle struct fields using reflection
+				if commandField := cmd.FieldByName("Command"); commandField.IsValid() && commandField.Kind() == reflect.String {
+					if commandVal := commandField.String(); commandVal != "" {
+						// Escape pipe characters and newlines for markdown tables
+						commandVal = escapeForMarkdownTable(commandVal)
+						parts = append(parts, fmt.Sprintf("**Command:** %s", commandVal))
+					}
+				}
+				if descField := cmd.FieldByName("Description"); descField.IsValid() && descField.Kind() == reflect.String {
+					if descVal := descField.String(); descVal != "" {
+						descVal = escapeForMarkdownTable(descVal)
+						parts = append(parts, fmt.Sprintf("**Description:** %s", descVal))
+					}
+				}
+				if expectedField := cmd.FieldByName("ExpectedOutputDescription"); expectedField.IsValid() && expectedField.Kind() == reflect.String {
+					if expectedVal := expectedField.String(); expectedVal != "" {
+						expectedVal = escapeForMarkdownTable(expectedVal)
+						parts = append(parts, fmt.Sprintf("**Expected:** %s", expectedVal))
+					}
+				}
+				if actualField := cmd.FieldByName("ActualOutput"); actualField.IsValid() && actualField.Kind() == reflect.String {
+					if actualVal := actualField.String(); actualVal != "" {
+						// Truncate very long output and escape
+						if len(actualVal) > 500 {
+							actualVal = actualVal[:497] + "..."
+						}
+						actualVal = escapeForMarkdownTable(actualVal)
+						parts = append(parts, fmt.Sprintf("**Actual:** %s", actualVal))
+					}
+				}
+				if exitCodeField := cmd.FieldByName("ExitCode"); exitCodeField.IsValid() && exitCodeField.Kind() == reflect.Int {
+					parts = append(parts, fmt.Sprintf("**Exit Code:** %d", exitCodeField.Int()))
+				}
+				if errorField := cmd.FieldByName("Error"); errorField.IsValid() && errorField.Kind() == reflect.String {
+					if errorVal := errorField.String(); errorVal != "" {
+						errorVal = escapeForMarkdownTable(errorVal)
+						parts = append(parts, fmt.Sprintf("**Error:** %s", errorVal))
+					}
+				}
+			} else if cmdInterface := cmd.Interface(); cmdInterface != nil {
+				// Handle as map[string]any (from JSON unmarshalling)
+				if cmdMap, ok := cmdInterface.(map[string]any); ok {
+					// Format each field if present
+					if command, ok := cmdMap["command"].(string); ok && command != "" {
+						command = escapeForMarkdownTable(command)
+						parts = append(parts, fmt.Sprintf("**Command:** %s", command))
+					}
+					if desc, ok := cmdMap["description"].(string); ok && desc != "" {
+						desc = escapeForMarkdownTable(desc)
+						parts = append(parts, fmt.Sprintf("**Description:** %s", desc))
+					}
+					if expected, ok := cmdMap["expected_output_description"].(string); ok && expected != "" {
+						expected = escapeForMarkdownTable(expected)
+						parts = append(parts, fmt.Sprintf("**Expected:** %s", expected))
+					}
+					if actual, ok := cmdMap["actual_output"].(string); ok && actual != "" {
+						// Truncate very long output and escape
+						if len(actual) > 500 {
+							actual = actual[:497] + "..."
+						}
+						actual = escapeForMarkdownTable(actual)
+						parts = append(parts, fmt.Sprintf("**Actual:** %s", actual))
+					}
+					// Handle exit_code which could be int or float64 from JSON
+					if exitCodeRaw, exists := cmdMap["exit_code"]; exists {
+						switch v := exitCodeRaw.(type) {
+						case int:
+							parts = append(parts, fmt.Sprintf("**Exit Code:** %d", v))
+						case float64:
+							parts = append(parts, fmt.Sprintf("**Exit Code:** %d", int(v)))
+						}
+					}
+					if error, ok := cmdMap["error"].(string); ok && error != "" {
+						error = escapeForMarkdownTable(error)
+						parts = append(parts, fmt.Sprintf("**Error:** %s", error))
+					}
+				}
+			}
+
+			// Join with <br> for line breaks within table cell
+			if len(parts) > 0 {
+				formattedCommands = append(formattedCommands, strings.Join(parts, "<br>"))
+			}
+		}
+	}
+
+	// Join multiple commands with double line break separator
+	if len(formattedCommands) > 0 {
+		return strings.Join(formattedCommands, "<br><br>")
+	}
+	return ""
+}
+
+// escapeForMarkdownTable escapes special characters that break markdown tables
+func escapeForMarkdownTable(s string) string {
+	// Replace newlines with spaces
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", "")
+	// Escape pipe characters
+	s = strings.ReplaceAll(s, "|", "\\|")
+	// Collapse multiple spaces
+	s = strings.Join(strings.Fields(s), " ")
+	return s
 }
 
 // Params defines the parameters accepted by this outputter
