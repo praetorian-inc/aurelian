@@ -5,7 +5,12 @@ description: Detects virtual machines with public IPs and open network security 
 severity: High
 reportability: Automatic
 triageNotes: |
-  No need for manual triage, already cross-references network security group rules of the associated NIC. Check out the open ports to analyze which services may be exposed.
+  Manual review required to assess exposure risk:
+
+  1. Review openPorts per VM - attempt to connect to each open port from the internet
+  2. If openPorts shows "none", this indicates network security group rules are properly configured to prevent internet access, but the VM still has unnecessary public IP exposure
+  3. VMs with open ports represent immediate security risks requiring urgent attention, port scan it and attempt to compromise the service to gain initial access
+  4. Best practice: Remove public IPs from compute resources entirely and use load balancers or API gateways instead
 references:
   - https://learn.microsoft.com/en-us/azure/virtual-machines/network-overview
 query: |
@@ -120,9 +125,6 @@ query: |
   | project
       name = vmName,
       location = vmLocation,
-      osType,
       publicIPs = tostring(publicIPs),
       privateIPs = tostring(privateIPs),
-      openPorts = tostring(allOpenPorts),
-      nsgCount,
-      numberOfPublicIPs = array_length(publicIPs)
+      openPorts = tostring(allOpenPorts)
