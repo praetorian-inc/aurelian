@@ -12,6 +12,7 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
@@ -52,14 +53,17 @@ func (cwl *AWSCloudWatchLogsEvents) Initialize() error {
 
 	// Read max-events parameter
 	maxEvents, err := cfg.As[int](cwl.Arg("max-events"))
+
 	if err == nil {
 		if maxEvents > 0 {
 			cwl.maxEvents = maxEvents
+			message.Info("Setting maxEvents from parameter", "maxEvents", maxEvents)
 		} else {
 			slog.Warn("max-events must be positive, using default", "default", DefaultMaxEvents)
 			cwl.maxEvents = DefaultMaxEvents
 		}
 	} else {
+		message.Info("max-events parameter not found or invalid, using default", "default", DefaultMaxEvents, "error", err)
 		cwl.maxEvents = DefaultMaxEvents
 	}
 
@@ -71,7 +75,7 @@ func (cwl *AWSCloudWatchLogsEvents) Initialize() error {
 		cwl.newestFirst = false
 	}
 
-	slog.Debug("CloudWatch Logs Events initialized",
+	message.Info("CloudWatch Logs Events initialized",
 		"max_events", cwl.maxEvents,
 		"newest_first", cwl.newestFirst)
 
@@ -79,6 +83,7 @@ func (cwl *AWSCloudWatchLogsEvents) Initialize() error {
 }
 
 func (cwl *AWSCloudWatchLogsEvents) Process(resource *types.EnrichedResourceDescription) error {
+
 	// Check if this is a supported CloudWatch Logs resource type
 	supportedTypes := map[string]bool{
 		"AWS::Logs::LogGroup":           true,
@@ -129,13 +134,22 @@ func (cwl *AWSCloudWatchLogsEvents) Process(resource *types.EnrichedResourceDesc
 		return nil
 	}
 
-	slog.Debug("Processed resource for scanning",
+	contentPreview := content
+	if len(content) > 100 {
+		contentPreview = content[:100] + "..."
+	}
+	message.Info("Processed resource for scanning",
 		"resource", resource.Identifier,
 		"type", resource.TypeName,
-		"content_size", len(content))
+		"content_size", len(content),
+		"content_preview", contentPreview)
 
 	// Use Content instead of ContentBase64 for text-based log events
 	// NoseyParker regex patterns are designed to match plain text, not base64-encoded content
+	message.Info("Sending content to NoseyParker for analysis",
+		"resource", resource.Identifier,
+		"content_size", len(content),
+		"max_events_configured", cwl.maxEvents)
 	return cwl.Send(jtypes.NPInput{
 		// previousContentBase64: base64.StdEncoding.EncodeToString([]byte(content)),
 		Content: content,
@@ -150,7 +164,12 @@ func (cwl *AWSCloudWatchLogsEvents) Process(resource *types.EnrichedResourceDesc
 }
 
 func (cwl *AWSCloudWatchLogsEvents) fetchLogEvents(client *cloudwatchlogs.Client, logGroupName string) ([]cwltypes.FilteredLogEvent, error) {
-	// Calculate API limit (max 10k per call, but use min of maxEvents and 10k)
+	message.Info("fetchLogEvents called",
+		"log_group", logGroupName,
+		"max_events", cwl.maxEvents)
+
+	// Calculate API limit per page: AWS API max is 10k per page, but we use min(maxEvents, 10000)
+	// to avoid fetching more than needed when maxEvents is small
 	apiLimit := int32(cwl.maxEvents)
 	if apiLimit > 10000 {
 		apiLimit = 10000
@@ -165,24 +184,59 @@ func (cwl *AWSCloudWatchLogsEvents) fetchLogEvents(client *cloudwatchlogs.Client
 
 	var allEvents []cwltypes.FilteredLogEvent
 	eventCount := 0
+	pageNum := 0
 
 	for paginator.HasMorePages() && eventCount < cwl.maxEvents {
+		pageNum++
+
 		page, err := paginator.NextPage(cwl.Context())
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch log events page: %w", err)
 		}
 
-		for _, event := range page.Events {
+		// Process events from this page, stopping when we reach maxEvents
+		eventsAdded := 0
+		for i, event := range page.Events {
 			if eventCount >= cwl.maxEvents {
-				slog.Debug("Reached max events limit", "log_group", logGroupName, "max_events", cwl.maxEvents)
+				message.Info("Stopping event collection - reached maxEvents limit",
+					"log_group", logGroupName,
+					"event_index_in_page", i,
+					"event_count", eventCount,
+					"max_events", cwl.maxEvents)
 				break
 			}
+
+			if event.Message != nil {
+				msgPreview := *event.Message
+				if len(msgPreview) > 50 {
+					msgPreview = msgPreview[:50] + "..."
+				}
+				message.Info("Adding log event",
+					"log_group", logGroupName,
+					"event_number", eventCount+1,
+					"message_preview", msgPreview,
+					"timestamp", event.Timestamp)
+			}
+
 			allEvents = append(allEvents, event)
 			eventCount++
+			eventsAdded++
 		}
+		// Stop if we've reached or exceeded maxEvents
 		if eventCount >= cwl.maxEvents {
 			break
 		}
+	}
+
+	// Ensure we never return more than maxEvents (safety check)
+	if len(allEvents) > cwl.maxEvents {
+		originalCount := len(allEvents)
+		allEvents = allEvents[:cwl.maxEvents]
+		slog.Debug("Truncated events to maxEvents (safety check)",
+			"log_group", logGroupName,
+			"max_events", cwl.maxEvents,
+			"original_count", originalCount,
+			"truncated_count", len(allEvents))
 	}
 
 	// If newest-first is enabled, reverse sort by timestamp
@@ -194,7 +248,7 @@ func (cwl *AWSCloudWatchLogsEvents) fetchLogEvents(client *cloudwatchlogs.Client
 			// Sort descending (newest first)
 			return *allEvents[i].Timestamp > *allEvents[j].Timestamp
 		})
-		// Truncate to maxEvents after sorting (in case we fetched more than needed)
+		// Truncate to maxEvents after sorting (in case sorting changed the order)
 		if len(allEvents) > cwl.maxEvents {
 			allEvents = allEvents[:cwl.maxEvents]
 		}
@@ -210,6 +264,11 @@ func (cwl *AWSCloudWatchLogsEvents) processLogGroup(client *cloudwatchlogs.Clien
 		return "", fmt.Errorf("failed to fetch log events: %w", err)
 	}
 
+	message.Info("Fetched log events for LogGroup",
+		"log_group", logGroupName,
+		"event_count", len(logEvents),
+		"max_events", cwl.maxEvents)
+
 	if len(logEvents) == 0 {
 		return "", nil
 	}
@@ -218,12 +277,18 @@ func (cwl *AWSCloudWatchLogsEvents) processLogGroup(client *cloudwatchlogs.Clien
 	var logContent strings.Builder
 	for _, event := range logEvents {
 		if event.Message != nil {
+			msgPreview := *event.Message
+			if len(msgPreview) > 50 {
+				msgPreview = msgPreview[:50] + "..."
+			}
 			logContent.WriteString(*event.Message)
 			logContent.WriteString("\n")
 		}
 	}
 
-	return logContent.String(), nil
+	content := logContent.String()
+
+	return content, nil
 }
 
 // processLogStream processes LogStream resources by fetching log events from the specific stream
@@ -236,7 +301,8 @@ func (cwl *AWSCloudWatchLogsEvents) processLogStream(client *cloudwatchlogs.Clie
 	logGroupName := strings.Join(parts[:len(parts)-1], "/")
 	streamName := parts[len(parts)-1]
 
-	// Calculate API limit (max 10k per call, but use min of maxEvents and 10k)
+	// Calculate API limit per page: AWS API max is 10k per page, but we use min(maxEvents, 10000)
+	// to avoid fetching more than needed when maxEvents is small
 	apiLimit := int32(cwl.maxEvents)
 	if apiLimit > 10000 {
 		apiLimit = 10000
@@ -252,27 +318,50 @@ func (cwl *AWSCloudWatchLogsEvents) processLogStream(client *cloudwatchlogs.Clie
 	paginator := cloudwatchlogs.NewFilterLogEventsPaginator(client, input)
 	var allEvents []cwltypes.FilteredLogEvent
 	eventCount := 0
+	pageNum := 0
 
 	for paginator.HasMorePages() && eventCount < cwl.maxEvents {
+		pageNum++
+
 		page, err := paginator.NextPage(cwl.Context())
 		if err != nil {
 			return "", fmt.Errorf("failed to fetch log events page: %w", err)
 		}
 
+		// Process events from this page, stopping when we reach maxEvents
+		eventsAdded := 0
 		for _, event := range page.Events {
 			if eventCount >= cwl.maxEvents {
 				break
 			}
+
+			if event.Message != nil {
+				msgPreview := *event.Message
+				if len(msgPreview) > 50 {
+					msgPreview = msgPreview[:50] + "..."
+				}
+			}
+
 			allEvents = append(allEvents, event)
 			eventCount++
+			eventsAdded++
 		}
+		// Stop if we've reached or exceeded maxEvents
 		if eventCount >= cwl.maxEvents {
 			break
 		}
 	}
 
+	// Ensure we never return more than maxEvents (safety check)
+	if len(allEvents) > cwl.maxEvents {
+		allEvents = allEvents[:cwl.maxEvents]
+	}
+
 	// If newest-first is enabled, reverse sort by timestamp
 	if cwl.newestFirst && len(allEvents) > 0 {
+		slog.Debug("Sorting events by timestamp (newest first) for LogStream",
+			"log_stream", logStreamName,
+			"event_count", len(allEvents))
 		sort.Slice(allEvents, func(i, j int) bool {
 			if allEvents[i].Timestamp == nil || allEvents[j].Timestamp == nil {
 				return false
@@ -280,9 +369,12 @@ func (cwl *AWSCloudWatchLogsEvents) processLogStream(client *cloudwatchlogs.Clie
 			// Sort descending (newest first)
 			return *allEvents[i].Timestamp > *allEvents[j].Timestamp
 		})
-		// Truncate to maxEvents after sorting (in case we fetched more than needed)
+		// Truncate to maxEvents after sorting (in case sorting changed the order)
 		if len(allEvents) > cwl.maxEvents {
 			allEvents = allEvents[:cwl.maxEvents]
+			slog.Debug("Truncated events after sorting",
+				"log_stream", logStreamName,
+				"max_events", cwl.maxEvents)
 		}
 	}
 
@@ -294,12 +386,18 @@ func (cwl *AWSCloudWatchLogsEvents) processLogStream(client *cloudwatchlogs.Clie
 	var logContent strings.Builder
 	for _, event := range allEvents {
 		if event.Message != nil {
+			msgPreview := *event.Message
+			if len(msgPreview) > 50 {
+				msgPreview = msgPreview[:50] + "..."
+			}
 			logContent.WriteString(*event.Message)
 			logContent.WriteString("\n")
 		}
 	}
 
-	return logContent.String(), nil
+	content := logContent.String()
+
+	return content, nil
 }
 
 // processMetricFilter processes MetricFilter resources by extracting filter patterns and configurations
