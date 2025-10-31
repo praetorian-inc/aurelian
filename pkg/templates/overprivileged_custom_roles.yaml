@@ -22,17 +22,26 @@ query: |
     | where properties.type == 'CustomRole'
     | mv-expand permission = properties.permissions
     | mv-expand action = permission.actions
-    | where 
-        action contains 'Microsoft.Authorization/*' or
-        action contains 'Microsoft.Authorization/role*' or
-        action contains 'Microsoft.Authorization/*/write' or
-        action contains 'Microsoft.Authorization/roleAssignments/*' or
-        action contains 'Microsoft.Authorization/roleAssignments/write' or
-        action contains 'Microsoft.Authorization/roleDefinitions/*' or
-        action contains 'Microsoft.Authorization/roleDefinitions/write' or
-        action contains 'Microsoft.Authorization/*/delete' or
-        action contains '*/write' or
-        action contains '*'
+    | where
+        action =~ 'Microsoft.Authorization/*' or
+        action =~ 'Microsoft.Authorization/role*' or
+        action =~ 'Microsoft.Authorization/*/write' or
+        action =~ 'Microsoft.Authorization/*/delete' or
+        action =~ 'Microsoft.Authorization/roleAssignments/*' or
+        action =~ 'Microsoft.Authorization/roleAssignments/write' or
+        action =~ 'Microsoft.Authorization/roleAssignments/delete' or
+        action =~ 'Microsoft.Authorization/roleDefinitions/*' or
+        action =~ 'Microsoft.Authorization/roleDefinitions/write' or
+        action =~ 'Microsoft.Authorization/roleDefinitions/delete' or
+        action =~ 'Microsoft.Authorization/classicAdministrators/*' or
+        action =~ 'Microsoft.Authorization/classicAdministrators/write' or
+        action =~ 'Microsoft.Authorization/denyAssignments/*' or
+        action =~ 'Microsoft.Authorization/denyAssignments/write' or
+        action =~ 'Microsoft.Authorization/denyAssignments/delete' or
+        action =~ 'Microsoft.ManagedIdentity/userAssignedIdentities/*/assign/action' or
+        action =~ 'Microsoft.ManagedIdentity/*/assign/action' or
+        action =~ '*/write' or
+        action =~ '*'
     | extend 
         roleName = properties.roleName,
         roleDescription = properties.description,

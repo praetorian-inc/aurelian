@@ -401,45 +401,45 @@ func (j *ARGScanJSONOutputter) writeTemplateSectionDetail(writer *os.File, templ
 func (j *ARGScanJSONOutputter) buildDetailsString(properties map[string]any) string {
 	var details []string
 
-	// Common interesting properties to include
-	interestingProps := []string{
-		"publicNetworkAccess", "publicAccess", "sku", "kind",
-		"minimumTlsVersion", "enableNonSslPort", "hostname",
-		"defaultAction", "bypass", "tags",
-		"publicNetworkAccessForIngestion", "publicNetworkAccessForQuery",
-		"accessType", "authorizedIPs", "publicIPs", "privateIPs",
+	// Include all properties from the ARG query results
+	// Skip internal/noise properties that aren't useful in markdown output
+	skipProps := map[string]bool{
+		"templateID": true, // Internal tracking, not user-relevant
 	}
 
-	for _, prop := range interestingProps {
-		if value, exists := properties[prop]; exists {
-			// Format the value appropriately
-			switch v := value.(type) {
-			case string:
-				if v != "" {
-					details = append(details, fmt.Sprintf("%s: %s", prop, v))
-				}
-			case bool:
-				details = append(details, fmt.Sprintf("%s: %t", prop, v))
-			case map[string]any:
-				// For complex objects, just indicate presence
-				details = append(details, fmt.Sprintf("%s: [object]", prop))
-			case []any:
-				if len(v) > 0 {
-					details = append(details, fmt.Sprintf("%s: [%d items]", prop, len(v)))
-				}
-			default:
-				details = append(details, fmt.Sprintf("%s: %v", prop, v))
+	for prop, value := range properties {
+		if skipProps[prop] {
+			continue
+		}
+
+		// Format the value appropriately
+		switch v := value.(type) {
+		case string:
+			if v != "" {
+				details = append(details, fmt.Sprintf("%s: %s", prop, v))
 			}
+		case bool:
+			details = append(details, fmt.Sprintf("%s: %t", prop, v))
+		case map[string]any:
+			// For complex objects, just indicate presence
+			details = append(details, fmt.Sprintf("%s: [object]", prop))
+		case []any:
+			if len(v) == 0 {
+				details = append(details, fmt.Sprintf("%s: none", prop))
+			} else {
+				// Format array values as comma-separated list
+				var items []string
+				for _, item := range v {
+					items = append(items, fmt.Sprintf("%v", item))
+				}
+				details = append(details, fmt.Sprintf("%s: %s", prop, strings.Join(items, ", ")))
+			}
+		default:
+			details = append(details, fmt.Sprintf("%s: %v", prop, v))
 		}
 	}
 
-	// Limit to reasonable length for table cell
-	result := strings.Join(details, "; ")
-	if len(result) > 200 {
-		result = result[:197] + "..."
-	}
-
-	return result
+	return strings.Join(details, "<br>")
 }
 
 // formatAutomatedTriage formats the commands from enrichers for display in markdown table
