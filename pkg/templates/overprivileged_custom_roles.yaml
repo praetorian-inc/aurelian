@@ -8,10 +8,12 @@ triageNotes: |
   - Permissions that allow users to modify role assignments or definitions can lead to privilege escalation
   - Users could escalate their own privileges or grant elevated access to others
   - Classic Administrator write permissions are especially dangerous as they grant legacy full access
-  
+
   Triage Guidance:
-  - Check who is currently assigned these roles using role assignments
-  - Validate privilege escalation using a simulated environment with the same permissions assigned
+  - First check assignableScopes - resource-specific scopes may be acceptable, broad scopes are high risk
+  - Identify who is currently assigned these roles (users, service principals, managed identities)
+  - Assess privilege escalation paths and lateral movement opportunities from this position
+  - Validate in a simulated environment with the same permissions assigned
   - Check if role is used in PIM (Privileged Identity Management) for additional controls
 references:
   - https://learn.microsoft.com/en-us/azure/role-based-access-control/custom-roles
