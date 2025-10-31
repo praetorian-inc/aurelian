@@ -1,12 +1,14 @@
 package aws
 
 import (
+	"fmt"
 	"log/slog"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	janusDocker "github.com/praetorian-inc/janus-framework/pkg/links/docker"
 	"github.com/praetorian-inc/janus-framework/pkg/links/noseyparker"
+	"github.com/praetorian-inc/nebula/internal/message"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudformation"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudwatchlogs"
@@ -28,6 +30,16 @@ func NewAWSFindSecrets(configs ...cfg.Config) chain.Link {
 	fs := &AWSFindSecrets{}
 	fs.AwsReconLink = base.NewAwsReconLink(fs, configs...)
 	return fs
+}
+
+func (fs *AWSFindSecrets) Params() []cfg.Param {
+	// Include max-events and newest-first parameters so they can be received from module-level params
+	params := fs.AwsReconLink.Params()
+	params = append(params,
+		cfg.NewParam[int]("max-events", "Maximum number of log events to fetch per log group/stream").WithDefault(10000),
+		cfg.NewParam[bool]("newest-first", "Fetch newest events first instead of oldest").WithDefault(false),
+	)
+	return params
 }
 
 func (fs *AWSFindSecrets) Initialize() error {
@@ -150,10 +162,28 @@ func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) e
 	slog.Debug("Dispatching resource for processing", "resource_type", resource.TypeName, "resource_id", resource.Identifier)
 
 	// Create pair and send to processor
+	args := fs.Args()
+	if maxEvents, ok := args["max-events"]; ok {
+		message.Info("AWSFindSecrets passing max-events in ResourceChainPair",
+			"resource_type", resource.TypeName,
+			"max_events_value", maxEvents,
+			"max_events_type", fmt.Sprintf("%T", maxEvents))
+	} else {
+		message.Info("AWSFindSecrets did not find max-events in Args()",
+			"resource_type", resource.TypeName,
+			"available_keys", func() []string {
+				keys := make([]string, 0, len(args))
+				for k := range args {
+					keys = append(keys, k)
+				}
+				return keys
+			}())
+	}
+
 	pair := &ResourceChainPair{
 		Resource:         resource,
 		ChainConstructor: constructor,
-		Args:             fs.Args(),
+		Args:             args,
 	}
 
 	return fs.Send(pair)
