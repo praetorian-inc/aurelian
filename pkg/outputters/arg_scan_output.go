@@ -376,7 +376,9 @@ func (j *ARGScanJSONOutputter) writeTemplateSectionDetail(writer *os.File, templ
 		automatedTriage := j.formatAutomatedTriage(finding.Properties)
 
 		fmt.Fprintf(writer, "| %s | %s | %s | %s | %s | %s |\n",
-			resourceName, resourceType, location, subscription, details, automatedTriage)
+			escapeForMarkdownTable(resourceName), escapeForMarkdownTable(resourceType),
+			escapeForMarkdownTable(location), escapeForMarkdownTable(subscription),
+			details, automatedTriage)
 	}
 
 	// Triage guide
@@ -405,6 +407,7 @@ func (j *ARGScanJSONOutputter) buildDetailsString(properties map[string]any) str
 	// Skip internal/noise properties that aren't useful in markdown output
 	skipProps := map[string]bool{
 		"templateID": true, // Internal tracking, not user-relevant
+		"commands":   true, // Commands are displayed separately in Automated Triage column
 	}
 
 	for prop, value := range properties {
@@ -416,30 +419,36 @@ func (j *ARGScanJSONOutputter) buildDetailsString(properties map[string]any) str
 		switch v := value.(type) {
 		case string:
 			if v != "" {
-				details = append(details, fmt.Sprintf("%s: %s", prop, v))
+				details = append(details, fmt.Sprintf("%s: %s", escapeForMarkdownTable(prop), escapeForMarkdownTable(v)))
 			}
 		case bool:
-			details = append(details, fmt.Sprintf("%s: %t", prop, v))
+			details = append(details, fmt.Sprintf("%s: %t", escapeForMarkdownTable(prop), v))
 		case map[string]any:
 			// For complex objects, just indicate presence
-			details = append(details, fmt.Sprintf("%s: [object]", prop))
+			details = append(details, fmt.Sprintf("%s: [object]", escapeForMarkdownTable(prop)))
 		case []any:
 			if len(v) == 0 {
-				details = append(details, fmt.Sprintf("%s: none", prop))
+				details = append(details, fmt.Sprintf("%s: none", escapeForMarkdownTable(prop)))
 			} else {
 				// Format array values as comma-separated list
 				var items []string
 				for _, item := range v {
-					items = append(items, fmt.Sprintf("%v", item))
+					items = append(items, escapeForMarkdownTable(fmt.Sprintf("%v", item)))
 				}
-				details = append(details, fmt.Sprintf("%s: %s", prop, strings.Join(items, ", ")))
+				details = append(details, fmt.Sprintf("%s: %s", escapeForMarkdownTable(prop), strings.Join(items, ", ")))
 			}
 		default:
-			details = append(details, fmt.Sprintf("%s: %v", prop, v))
+			details = append(details, fmt.Sprintf("%s: %v", escapeForMarkdownTable(prop), escapeForMarkdownTable(fmt.Sprintf("%v", v))))
 		}
 	}
 
-	return strings.Join(details, "<br>")
+	// Limit to reasonable length for table cell
+	result := strings.Join(details, "<br>")
+	if len(result) > 200 {
+		result = result[:197] + "..."
+	}
+
+	return result
 }
 
 // formatAutomatedTriage formats the commands from enrichers for display in markdown table
