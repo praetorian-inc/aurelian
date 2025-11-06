@@ -38,7 +38,7 @@ func (s *StorageAccountEnricher) Enrich(ctx context.Context, resource *model.Azu
 
 	// Create HTTP client with timeout
 	client := &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: 3 * time.Second,
 	}
 
 	// Test anonymous access via HTTP request
