@@ -23,19 +23,19 @@ type ARGScanOutput struct {
 
 // ARGScanMetadata contains information about the scan and template details
 type ARGScanMetadata struct {
-	ScanDate    time.Time                                `json:"scanDate"`
-	TotalCount  int                                      `json:"totalFindings"`
-	Templates   map[string]*templates.ARGQueryTemplate   `json:"templates"`
+	ScanDate   time.Time                              `json:"scanDate"`
+	TotalCount int                                    `json:"totalFindings"`
+	Templates  map[string]*templates.ARGQueryTemplate `json:"templates"`
 }
 
 // ARGScanJSONOutputter is specialized for ARG scan results with template metadata
 type ARGScanJSONOutputter struct {
 	*BaseFileOutputter
-	indent     int
-	findings   []any
-	templates  map[string]*templates.ARGQueryTemplate
-	outfile    string
-	scanDate   time.Time
+	indent    int
+	findings  []any
+	templates map[string]*templates.ARGQueryTemplate
+	outfile   string
+	scanDate  time.Time
 }
 
 // NewARGScanJSONOutputter creates a new ARGScanJSONOutputter
@@ -565,13 +565,28 @@ func (j *ARGScanJSONOutputter) formatAutomatedTriage(properties map[string]any) 
 
 // escapeForMarkdownTable escapes special characters that break markdown tables
 func escapeForMarkdownTable(s string) string {
-	// Replace newlines with spaces
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.ReplaceAll(s, "\r", "")
-	// Escape pipe characters
-	s = strings.ReplaceAll(s, "|", "\\|")
+	replacer := strings.NewReplacer(
+		`\`, `\\`,
+		`*`, `\*`,
+		`_`, `\_`,
+		"`", "\\`",
+		`[`, `\[`,
+		`]`, `\]`,
+		`(`, `\(`,
+		`)`, `\)`,
+		`#`, `\#`,
+		`+`, `\+`,
+		`-`, `\-`,
+		`.`, `\.`,
+		`!`, `\!`,
+		`{`, `\{`,
+		`}`, `\}`,
+		`|`, `\|`,
+		`>`, `\>`,
+	)
+
 	// Collapse multiple spaces
-	s = strings.Join(strings.Fields(s), " ")
+	s = strings.Join(strings.Fields(replacer.Replace(s)), " ")
 	return s
 }
 
