@@ -36,7 +36,7 @@ func (s *StorageAccountEnricher) Enrich(ctx context.Context, resource *model.Azu
 	// Sanitize the storage account name for URL encoding
 	storageAccountNameForURL := url.QueryEscape(strings.TrimSpace(storageAccountName))
 
-	// Create HTTP client with timeout (reduced from 10s for better performance)
+	// Create HTTP client with timeout
 	client := &http.Client{
 		Timeout: 3 * time.Second,
 	}
