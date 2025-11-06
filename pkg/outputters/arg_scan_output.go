@@ -444,9 +444,6 @@ func (j *ARGScanJSONOutputter) buildDetailsString(properties map[string]any) str
 
 	// Limit to reasonable length for table cell
 	result := strings.Join(details, "<br>")
-	if len(result) > 200 {
-		result = result[:197] + "..."
-	}
 
 	return result
 }
@@ -493,8 +490,8 @@ func (j *ARGScanJSONOutputter) formatAutomatedTriage(properties map[string]any) 
 				if actualField := cmd.FieldByName("ActualOutput"); actualField.IsValid() && actualField.Kind() == reflect.String {
 					if actualVal := actualField.String(); actualVal != "" {
 						// Truncate very long output and escape
-						if len(actualVal) > 500 {
-							actualVal = actualVal[:497] + "..."
+						if len(actualVal) > 1000 {
+							actualVal = actualVal[:997] + "..."
 						}
 						actualVal = escapeForMarkdownTable(actualVal)
 						parts = append(parts, fmt.Sprintf("**Actual:** %s", actualVal))
@@ -527,8 +524,8 @@ func (j *ARGScanJSONOutputter) formatAutomatedTriage(properties map[string]any) 
 					}
 					if actual, ok := cmdMap["actual_output"].(string); ok && actual != "" {
 						// Truncate very long output and escape
-						if len(actual) > 500 {
-							actual = actual[:497] + "..."
+						if len(actual) > 1000 {
+							actual = actual[:997] + "..."
 						}
 						actual = escapeForMarkdownTable(actual)
 						parts = append(parts, fmt.Sprintf("**Actual:** %s", actual))
