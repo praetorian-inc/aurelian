@@ -83,6 +83,9 @@ func (p *AWSResourceChainProcessor) extractEssentialArgs(args map[string]any) ma
 		"disable-cache":    true, // Cache disable flag
 		"cache-ext":        true, // Cache extension
 		"cache-error-resp": true, // Cache error response flag
+		"max-events":       true, // Max log events for CloudWatch Logs resources
+		"max-streams":      true, // Max log streams for CloudWatch Logs resources
+		"newest-first":     true, // Fetch newest events first for CloudWatch Logs resources
 	}
 
 	essential := make(map[string]any)
