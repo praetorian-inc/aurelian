@@ -25,6 +25,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.23.11
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.57.0
 	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.54.4
+	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.58.5
 	github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.46.3
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.38.1
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.202.4
@@ -75,7 +76,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.2 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.18.12 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.21 // indirect
-	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.58.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.42.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.25.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.4.2 // indirect

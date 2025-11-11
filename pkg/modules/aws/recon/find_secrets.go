@@ -44,7 +44,8 @@ var AWSFindSecrets = chain.NewModule(
 ).WithParams(
 	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
 	cfg.NewParam[int]("max-events", "Maximum number of log events to fetch per log group/stream (applies to CloudWatch Logs resources)").WithDefault(10000),
+	cfg.NewParam[int]("max-streams", "Maximum number of log streams to sample per log group (applies to CloudWatch Logs resources)").WithDefault(10),
 	cfg.NewParam[bool]("newest-first", "Fetch newest events first instead of oldest (applies to CloudWatch Logs resources)").WithDefault(false),
 ).WithConfigs(
 	cfg.WithArg("module-name", "find-secrets"),
-).WithStrictness(chain.Lax)
+)
