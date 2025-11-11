@@ -20,6 +20,7 @@ nebula aws recon find-secrets [flags]
   -h, --help                           help for find-secrets
       --indent int                     the number of spaces to use for the JSON indentation
       --max-events int                 Maximum number of log events to fetch per log group/stream (applies to CloudWatch Logs resources) (default 10000)
+      --max-streams int                Maximum number of log streams to sample per log group (applies to CloudWatch Logs resources) (default 10)
       --module-name string             name of the module for dynamic file naming
       --newest-first                   Fetch newest events first instead of oldest (applies to CloudWatch Logs resources)
       --opsec_level string             Operational security level for AWS operations (default "none")
