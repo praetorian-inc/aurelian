@@ -1,153 +1,36 @@
 id: databases_allow_azure_services
-name: Databases Allowing All Azure Services Access
-category: ["Public Access", "arg-scan"]
-description: Detects databases with "Allow Azure services" enabled, which allows ANY Azure resource from ANY subscription to bypass network controls
+name: Database Azure Services Access Detection
+category: ["Access Control", "arg-scan"]
+description: Detects database servers with "Allow Azure services" firewall rules enabled using enrichment analysis
 severity: High
 reportability: Automatic
 triageNotes: |
-  1. **Immediate Threat**: This setting allows ANY Azure-hosted resource from ANY subscription to bypass your firewall rules
-  2. **Attack Scenario**: Attackers can spin up VMs/App Services in their own Azure subscription and directly access your database
-  3. **Network Control Bypass**: Completely bypasses VNet integration, private endpoints, IP restrictions, and firewall rules
-  4. **Defense Weakness**: Only database authentication (often just passwords) stands between attackers and your data
+  This template identifies database resources that may have "Allow Azure services" firewall rules enabled.
+  Enrichment analysis is performed to detect actual firewall rule configurations:
 
-  **Detection Methods by Database Type**:
-  - SQL Server/Synapse: Firewall rule "AllowAllWindowsAzureIps" with 0.0.0.0-0.0.0.0
-  - PostgreSQL/MySQL Flexible: Public network access + firewall rules with 0.0.0.0 source IP
-  - PostgreSQL/MySQL Single: "AllowAllAzureIps" firewall rule with 0.0.0.0-0.0.0.0
-  - Cosmos DB: Public access enabled without IP filtering or VNet restrictions
-  - Redis Cache: Public network access without IP restrictions
+  - SQL Server/Synapse: Checks for AllowAllWindowsAzureIps firewall rule (0.0.0.0-0.0.0.0)
+  - PostgreSQL Flexible: Checks for AllowAllAzureIps rule + public network access
+  - MySQL Flexible: Checks for AllowAllAzureIps rule + public network access
 
-  **Immediate Actions**:
-  1. Disable "Allow Azure services and resources to access this server" setting
-  2. Implement Private Endpoints for secure connectivity
-  3. Use VNet Service Endpoints for legitimate Azure service connections
-  4. Configure specific IP allowlists for legitimate sources only
-  5. Review authentication logs for suspicious activity patterns
+  **Security Risk**: These rules allow ANY Azure resource from ANY subscription to bypass firewall controls.
+  **Recommendation**: Use Private Endpoints, VNet service endpoints, or specific IP allowlists instead.
 references:
   - https://learn.microsoft.com/en-us/azure/azure-sql/database/network-access-controls-overview
   - https://learn.microsoft.com/en-us/azure/azure-sql/database/firewall-configure
   - https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-manage-firewall-portal
   - https://learn.microsoft.com/en-us/azure/mysql/flexible-server/how-to-manage-firewall-portal
-  - https://learn.microsoft.com/en-us/azure/cosmos-db/how-to-configure-firewall
-  - https://learn.microsoft.com/en-us/azure/azure-cache-for-redis/cache-network-isolation
-  - https://www.praetorian.com/blog/migrating-to-azure/
 query: |
   resources
   | where type in~ (
       'Microsoft.Sql/servers',
       'Microsoft.Synapse/workspaces',
-      'Microsoft.DBforPostgreSQL/servers',
       'Microsoft.DBforPostgreSQL/flexibleServers',
-      'Microsoft.DBforMySQL/servers',
-      'Microsoft.DBforMySQL/flexibleServers',
-      'Microsoft.DBforMariaDB/servers',
-      'Microsoft.DocumentDB/databaseAccounts',
-      'Microsoft.Cache/Redis'
+      'Microsoft.DBforMySQL/flexibleServers'
   )
-  | extend serverType = type
-  | extend vulnerabilityType = ''
-  | extend hasAllowAzureServices = false
-  | extend administratorLogin = case(
-      type =~ 'Microsoft.Sql/servers', properties.administratorLogin,
-      type =~ 'Microsoft.Synapse/workspaces', properties.sqlAdministratorLogin,
-      type =~ 'Microsoft.DBforPostgreSQL/servers', properties.administratorLogin,
-      type =~ 'Microsoft.DBforPostgreSQL/flexibleServers', properties.administratorLogin,
-      type =~ 'Microsoft.DBforMySQL/servers', properties.administratorLogin,
-      type =~ 'Microsoft.DBforMySQL/flexibleServers', properties.administratorLogin,
-      type =~ 'Microsoft.DBforMariaDB/servers', properties.administratorLogin,
-      ''
-  )
-  | extend version = case(
-      type =~ 'Microsoft.Sql/servers', properties.version,
-      type =~ 'Microsoft.DBforPostgreSQL/servers', properties.version,
-      type =~ 'Microsoft.DBforPostgreSQL/flexibleServers', properties.version,
-      type =~ 'Microsoft.DBforMySQL/servers', properties.version,
-      type =~ 'Microsoft.DBforMySQL/flexibleServers', properties.version,
-      type =~ 'Microsoft.DBforMariaDB/servers', properties.version,
-      ''
-  )
-  | extend state = case(
-      type =~ 'Microsoft.Sql/servers', properties.state,
-      type =~ 'Microsoft.DBforPostgreSQL/servers', properties.userVisibleState,
-      type =~ 'Microsoft.DBforPostgreSQL/flexibleServers', properties.state,
-      type =~ 'Microsoft.DBforMySQL/servers', properties.userVisibleState,
-      type =~ 'Microsoft.DBforMySQL/flexibleServers', properties.state,
-      type =~ 'Microsoft.DBforMariaDB/servers', properties.userVisibleState,
-      ''
-  )
-  | extend publicNetworkAccess = case(
-      type =~ 'Microsoft.DocumentDB/databaseAccounts', properties.publicNetworkAccess,
-      type =~ 'Microsoft.DBforPostgreSQL/flexibleServers', properties.network.publicNetworkAccess,
-      type =~ 'Microsoft.DBforMySQL/flexibleServers', properties.network.publicNetworkAccess,
-      tolower(properties.publicNetworkAccess)
-  )
-  // Check for SQL/Synapse/Single Server/Flexible Server firewall rules
-  | join kind=leftouter (
-      resources
-      | where type in~ (
-          'Microsoft.Sql/servers/firewallRules',
-          'Microsoft.Synapse/workspaces/firewallRules',
-          'Microsoft.DBforPostgreSQL/servers/firewallRules',
-          'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules',
-          'Microsoft.DBforMySQL/servers/firewallRules',
-          'Microsoft.DBforMySQL/flexibleServers/firewallRules',
-          'Microsoft.DBforMariaDB/servers/firewallRules'
-      )
-      | where (name endswith '/AllowAllWindowsAzureIps' or name endswith '/AllowAllAzureIps')
-          or (properties.startIpAddress == '0.0.0.0' and properties.endIpAddress in ('0.0.0.0', '255.255.255.255'))
-      | project
-          serverId = tostring(split(id, '/firewallRules/')[0]),
-          hasFirewallRule = true,
-          ruleType = case(
-              name endswith '/AllowAllWindowsAzureIps', 'AllowAllWindowsAzureIps',
-              name endswith '/AllowAllAzureIps', 'AllowAllAzureIps',
-              'Open Firewall Rule (0.0.0.0)'
-          )
-  ) on $left.id == $right.serverId
-  // Mark servers with firewall rules as vulnerable
-  | extend hasAllowAzureServices = case(
-      type in~ ('Microsoft.Sql/servers', 'Microsoft.Synapse/workspaces') and hasFirewallRule == true, true,
-      type in~ ('Microsoft.DBforPostgreSQL/servers', 'Microsoft.DBforMySQL/servers', 'Microsoft.DBforMariaDB/servers') and hasFirewallRule == true, true,
-      type in~ ('Microsoft.DBforPostgreSQL/flexibleServers', 'Microsoft.DBforMySQL/flexibleServers') and hasFirewallRule == true and tolower(publicNetworkAccess) != 'disabled', true,
-      hasAllowAzureServices
-  )
-  | extend vulnerabilityType = case(
-      hasFirewallRule == true, ruleType,
-      vulnerabilityType
-  )
-  // Mark Cosmos DB as vulnerable if public access without filtering
-  | extend hasAllowAzureServices = case(
-      type =~ 'Microsoft.DocumentDB/databaseAccounts' and
-      tolower(publicNetworkAccess) == 'enabled' and
-      array_length(properties.ipRules) == 0 and
-      properties.isVirtualNetworkFilterEnabled == false, true,
-      hasAllowAzureServices
-  )
-  | extend vulnerabilityType = case(
-      type =~ 'Microsoft.DocumentDB/databaseAccounts' and hasAllowAzureServices == true,
-      'Public Access Without Filtering',
-      vulnerabilityType
-  )
-  // Mark Redis Cache as vulnerable if public access without IP restrictions
-  | extend hasAllowAzureServices = case(
-      type =~ 'Microsoft.Cache/Redis' and
-      tolower(publicNetworkAccess) != 'disabled' and
-      array_length(properties.ipRules) == 0, true,
-      hasAllowAzureServices
-  )
-  | extend vulnerabilityType = case(
-      type =~ 'Microsoft.Cache/Redis' and hasAllowAzureServices == true,
-      'Public Access Without IP Restrictions',
-      vulnerabilityType
-  )
-  // Only return vulnerable resources
-  | where hasAllowAzureServices == true
   | project
       id,
       name,
       type,
       location,
       resourceGroup,
-      publicNetworkAccess,
-      state,
       subscriptionId
