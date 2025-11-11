@@ -20,17 +20,25 @@ import (
 const (
 	// DefaultMaxEvents is the default maximum number of log events to fetch per log group
 	DefaultMaxEvents = 10000
+	// DefaultMaxStreams is the default maximum number of log streams to fetch per log group
+	DefaultMaxStreams = 10
+	// APIMaxEventsPerPage is the AWS API maximum number of events per page
+	APIMaxEventsPerPage = 10000
+	// EventPreviewLength is the maximum length for event preview in logs
+	EventPreviewLength = 50
 )
 
 type AWSCloudWatchLogsEvents struct {
 	*base.AwsReconLink
 	maxEvents   int
+	maxStreams  int
 	newestFirst bool
 }
 
 func NewAWSCloudWatchLogsEvents(configs ...cfg.Config) chain.Link {
 	cwl := &AWSCloudWatchLogsEvents{
 		maxEvents:   DefaultMaxEvents,
+		maxStreams:  DefaultMaxStreams,
 		newestFirst: false,
 	}
 	cwl.AwsReconLink = base.NewAwsReconLink(cwl, configs...)
@@ -41,6 +49,7 @@ func (cwl *AWSCloudWatchLogsEvents) Params() []cfg.Param {
 	params := cwl.AwsReconLink.Params()
 	params = append(params,
 		cfg.NewParam[int]("max-events", "Maximum number of log events to fetch per log group/stream").WithDefault(DefaultMaxEvents),
+		cfg.NewParam[int]("max-streams", "Maximum number of log streams to sample per log group").WithDefault(DefaultMaxStreams),
 		cfg.NewParam[bool]("newest-first", "Fetch newest events first instead of oldest").WithDefault(false),
 	)
 	return params
@@ -67,6 +76,21 @@ func (cwl *AWSCloudWatchLogsEvents) Initialize() error {
 		cwl.maxEvents = DefaultMaxEvents
 	}
 
+	// Read max-streams parameter
+	maxStreams, err := cfg.As[int](cwl.Arg("max-streams"))
+	if err == nil {
+		if maxStreams > 0 {
+			cwl.maxStreams = maxStreams
+			message.Info("Setting maxStreams from parameter", "maxStreams", maxStreams)
+		} else {
+			slog.Warn("max-streams must be positive, using default", "default", DefaultMaxStreams)
+			cwl.maxStreams = DefaultMaxStreams
+		}
+	} else {
+		message.Info("max-streams parameter not found or invalid, using default", "default", DefaultMaxStreams, "error", err)
+		cwl.maxStreams = DefaultMaxStreams
+	}
+
 	// Read newest-first parameter
 	newestFirst, err := cfg.As[bool](cwl.Arg("newest-first"))
 	if err == nil {
@@ -77,6 +101,7 @@ func (cwl *AWSCloudWatchLogsEvents) Initialize() error {
 
 	message.Info("CloudWatch Logs Events initialized",
 		"max_events", cwl.maxEvents,
+		"max_streams", cwl.maxStreams,
 		"newest_first", cwl.newestFirst)
 
 	return nil
@@ -151,7 +176,6 @@ func (cwl *AWSCloudWatchLogsEvents) Process(resource *types.EnrichedResourceDesc
 		"content_size", len(content),
 		"max_events_configured", cwl.maxEvents)
 	return cwl.Send(jtypes.NPInput{
-		// previousContentBase64: base64.StdEncoding.EncodeToString([]byte(content)),
 		Content: content,
 		Provenance: jtypes.NPProvenance{
 			Platform:     "aws",
@@ -168,11 +192,11 @@ func (cwl *AWSCloudWatchLogsEvents) fetchLogEvents(client *cloudwatchlogs.Client
 		"log_group", logGroupName,
 		"max_events", cwl.maxEvents)
 
-	// Calculate API limit per page: AWS API max is 10k per page, but we use min(maxEvents, 10000)
+	// Calculate API limit per page: AWS API max is APIMaxEventsPerPage per page, but we use min(maxEvents, APIMaxEventsPerPage)
 	// to avoid fetching more than needed when maxEvents is small
 	apiLimit := int32(cwl.maxEvents)
-	if apiLimit > 10000 {
-		apiLimit = 10000
+	if apiLimit > APIMaxEventsPerPage {
+		apiLimit = APIMaxEventsPerPage
 	}
 
 	input := &cloudwatchlogs.FilterLogEventsInput{
@@ -257,36 +281,168 @@ func (cwl *AWSCloudWatchLogsEvents) fetchLogEvents(client *cloudwatchlogs.Client
 	return allEvents, nil
 }
 
-// processLogGroup processes LogGroup resources by fetching log events
+// processLogGroup processes LogGroup resources by discovering and fetching log events from streams
 func (cwl *AWSCloudWatchLogsEvents) processLogGroup(client *cloudwatchlogs.Client, logGroupName string) (string, error) {
-	logEvents, err := cwl.fetchLogEvents(client, logGroupName)
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch log events: %w", err)
-	}
-
-	message.Info("Fetched log events for LogGroup",
+	// First, discover log streams in this log group
+	message.Info("Discovering log streams for LogGroup",
 		"log_group", logGroupName,
-		"event_count", len(logEvents),
-		"max_events", cwl.maxEvents)
+		"max_streams", cwl.maxStreams)
 
-	if len(logEvents) == 0 {
-		return "", nil
+	// Get all log streams, sorted by last event time
+	streamsInput := &cloudwatchlogs.DescribeLogStreamsInput{
+		LogGroupName: aws.String(logGroupName),
+		OrderBy:      cwltypes.OrderByLastEventTime,
+		Descending:   aws.Bool(true), // Get most recently active streams first
 	}
 
-	// Concatenate all log events into a single content string
-	var logContent strings.Builder
-	for _, event := range logEvents {
-		if event.Message != nil {
-			msgPreview := *event.Message
-			if len(msgPreview) > 50 {
-				msgPreview = msgPreview[:50] + "..."
+	var allStreams []cwltypes.LogStream
+	streamPaginator := cloudwatchlogs.NewDescribeLogStreamsPaginator(client, streamsInput)
+
+	for streamPaginator.HasMorePages() {
+		page, err := streamPaginator.NextPage(cwl.Context())
+		if err != nil {
+			// If we can't get streams, fall back to fetching from all streams
+			message.Warning("Failed to describe log streams, falling back to fetch from all streams",
+				"log_group", logGroupName,
+				"error", err)
+
+			// Fallback: fetch events from all streams without filtering
+			logEvents, err := cwl.fetchLogEvents(client, logGroupName)
+			if err != nil {
+				return "", fmt.Errorf("failed to fetch log events: %w", err)
 			}
-			logContent.WriteString(*event.Message)
-			logContent.WriteString("\n")
+
+			if len(logEvents) == 0 {
+				return "", nil
+			}
+
+			var logContent strings.Builder
+			for _, event := range logEvents {
+				if event.Message != nil {
+					logContent.WriteString(*event.Message)
+					logContent.WriteString("\n")
+				}
+			}
+			return logContent.String(), nil
+		}
+
+		allStreams = append(allStreams, page.LogStreams...)
+
+		// If we already have enough streams, stop paginating
+		if len(allStreams) >= cwl.maxStreams {
+			break
 		}
 	}
 
+	if len(allStreams) == 0 {
+		message.Info("No log streams found in LogGroup", "log_group", logGroupName)
+		return "", nil
+	}
+
+	// Limit to maxStreams most recent streams
+	streamsToProcess := allStreams
+	if len(streamsToProcess) > cwl.maxStreams {
+		streamsToProcess = streamsToProcess[:cwl.maxStreams]
+	}
+
+	message.Info("Processing log streams for LogGroup",
+		"log_group", logGroupName,
+		"total_streams", len(allStreams),
+		"processing_streams", len(streamsToProcess))
+
+	// Now fetch events from the selected streams
+	var logContent strings.Builder
+	totalEvents := 0
+	eventsPerStream := cwl.maxEvents / len(streamsToProcess)
+	if eventsPerStream < 100 {
+		eventsPerStream = 100 // Minimum events per stream
+	}
+
+	for i, stream := range streamsToProcess {
+		if stream.LogStreamName == nil {
+			continue
+		}
+
+		streamName := *stream.LogStreamName
+
+		// Calculate events limit for this stream
+		remainingEvents := cwl.maxEvents - totalEvents
+		streamLimit := eventsPerStream
+		if streamLimit > remainingEvents {
+			streamLimit = remainingEvents
+		}
+		if streamLimit <= 0 {
+			break // We've reached the total event limit
+		}
+
+		message.Info("Fetching events from log stream",
+			"stream_number", i+1,
+			"stream_name", streamName,
+			"stream_limit", streamLimit,
+			"last_event_time", stream.LastEventTimestamp)
+
+		// Fetch events from this specific stream
+		apiLimit := int32(streamLimit)
+		if apiLimit > APIMaxEventsPerPage {
+			apiLimit = APIMaxEventsPerPage
+		}
+
+		filterInput := &cloudwatchlogs.FilterLogEventsInput{
+			LogGroupName:   aws.String(logGroupName),
+			LogStreamNames: []string{streamName},
+			Limit:          aws.Int32(apiLimit),
+		}
+
+		paginator := cloudwatchlogs.NewFilterLogEventsPaginator(client, filterInput)
+		streamEventCount := 0
+
+		for paginator.HasMorePages() && streamEventCount < streamLimit {
+			page, err := paginator.NextPage(cwl.Context())
+			if err != nil {
+				message.Warning("Failed to fetch events from stream, continuing with next stream",
+					"stream", streamName,
+					"error", err)
+				break
+			}
+
+			for _, event := range page.Events {
+				if streamEventCount >= streamLimit {
+					break
+				}
+				if event.Message != nil {
+					logContent.WriteString(*event.Message)
+					logContent.WriteString("\n")
+					streamEventCount++
+					totalEvents++
+				}
+			}
+
+			if len(page.Events) == 0 {
+				break // No more events in this stream
+			}
+		}
+
+		message.Info("Fetched events from stream",
+			"stream", streamName,
+			"events_fetched", streamEventCount)
+
+		if totalEvents >= cwl.maxEvents {
+			message.Info("Reached max events limit, stopping stream processing",
+				"total_events", totalEvents,
+				"max_events", cwl.maxEvents)
+			break
+		}
+	}
+
+	message.Info("Completed processing LogGroup",
+		"log_group", logGroupName,
+		"streams_processed", len(streamsToProcess),
+		"total_events", totalEvents)
+
 	content := logContent.String()
+	if len(content) == 0 {
+		return "", nil
+	}
 
 	return content, nil
 }
@@ -301,11 +457,11 @@ func (cwl *AWSCloudWatchLogsEvents) processLogStream(client *cloudwatchlogs.Clie
 	logGroupName := strings.Join(parts[:len(parts)-1], "/")
 	streamName := parts[len(parts)-1]
 
-	// Calculate API limit per page: AWS API max is 10k per page, but we use min(maxEvents, 10000)
+	// Calculate API limit per page: AWS API max is APIMaxEventsPerPage per page, but we use min(maxEvents, APIMaxEventsPerPage)
 	// to avoid fetching more than needed when maxEvents is small
 	apiLimit := int32(cwl.maxEvents)
-	if apiLimit > 10000 {
-		apiLimit = 10000
+	if apiLimit > APIMaxEventsPerPage {
+		apiLimit = APIMaxEventsPerPage
 	}
 
 	// Fetch log events from the specific log stream
@@ -387,8 +543,8 @@ func (cwl *AWSCloudWatchLogsEvents) processLogStream(client *cloudwatchlogs.Clie
 	for _, event := range allEvents {
 		if event.Message != nil {
 			msgPreview := *event.Message
-			if len(msgPreview) > 50 {
-				msgPreview = msgPreview[:50] + "..."
+			if len(msgPreview) > EventPreviewLength {
+				msgPreview = msgPreview[:EventPreviewLength] + "..."
 			}
 			logContent.WriteString(*event.Message)
 			logContent.WriteString("\n")

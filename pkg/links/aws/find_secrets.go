@@ -33,10 +33,11 @@ func NewAWSFindSecrets(configs ...cfg.Config) chain.Link {
 }
 
 func (fs *AWSFindSecrets) Params() []cfg.Param {
-	// Include max-events and newest-first parameters so they can be received from module-level params
+	// Include max-events, max-streams and newest-first parameters so they can be received from module-level params
 	params := fs.AwsReconLink.Params()
 	params = append(params,
 		cfg.NewParam[int]("max-events", "Maximum number of log events to fetch per log group/stream").WithDefault(10000),
+		cfg.NewParam[int]("max-streams", "Maximum number of log streams to sample per log group").WithDefault(10),
 		cfg.NewParam[bool]("newest-first", "Fetch newest events first instead of oldest").WithDefault(false),
 	)
 	return params
@@ -85,11 +86,8 @@ func (fs *AWSFindSecrets) ResourceMap() map[string]func() chain.Chain {
 		)
 	}
 
-	resourceMap["AWS::Logs::LogStream"] = func() chain.Chain {
-		return chain.NewChain(
-			cloudwatchlogs.NewAWSCloudWatchLogsEvents(),
-		)
-	}
+	// AWS::Logs::LogStream is not supported by CloudControl API
+	// LogStreams are discovered and processed inline when processing LogGroups
 
 	resourceMap["AWS::Logs::MetricFilter"] = func() chain.Chain {
 		return chain.NewChain(
@@ -97,7 +95,15 @@ func (fs *AWSFindSecrets) ResourceMap() map[string]func() chain.Chain {
 		)
 	}
 
+	// AWS::Logs::SubscriptionFilter is not currently enumerated in CloudControl
+	// Keeping the chain definition in case it becomes available
 	resourceMap["AWS::Logs::SubscriptionFilter"] = func() chain.Chain {
+		return chain.NewChain(
+			cloudwatchlogs.NewAWSCloudWatchLogsEvents(),
+		)
+	}
+
+	resourceMap["AWS::Logs::Destination"] = func() chain.Chain {
 		return chain.NewChain(
 			cloudwatchlogs.NewAWSCloudWatchLogsEvents(),
 		)
@@ -231,6 +237,22 @@ func (fs *AWSFindSecrets) Permissions() []cfg.Permission {
 		{
 			Platform:   "aws",
 			Permission: "logs:FilterLogEvents",
+		},
+		{
+			Platform:   "aws",
+			Permission: "logs:DescribeLogStreams",
+		},
+		{
+			Platform:   "aws",
+			Permission: "logs:DescribeMetricFilters",
+		},
+		{
+			Platform:   "aws",
+			Permission: "logs:DescribeSubscriptionFilters",
+		},
+		{
+			Platform:   "aws",
+			Permission: "logs:DescribeDestinations",
 		},
 		{
 			Platform:   "aws",
