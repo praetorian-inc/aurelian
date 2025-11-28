@@ -1,6 +1,6 @@
 id: storage_accounts_public_access
 name: Publicly Accessible Storage Accounts
-description: Detects storage accounts with public network access enabled, default allow action, and blob public access not explicitly disabled. Manual triage of IP rules are necessary.
+description: Detects storage accounts with public network access enabled, default allow action, and blob public access not explicitly disabled (null or true). Manual triage of IP rules are necessary.
 severity: High
 category: ["Public Access", "arg-scan"]
 reportability: Automatic
@@ -30,7 +30,7 @@ query: |
   | extend virtualNetworkRules = acls.virtualNetworkRules
   | where publicNetworkAccess != 'Disabled'
   | where defaultAction == 'Allow'
-  | where allowBlobPublicAccess != false
+  | where allowBlobPublicAccess == true or isnull(allowBlobPublicAccess)
   | project
       id,
       name,
