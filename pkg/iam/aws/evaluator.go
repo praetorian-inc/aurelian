@@ -177,6 +177,8 @@ type EvaluationResult struct {
 	EvaluationDetails  string
 	CrossAccountAccess bool
 	Action             Action
+	// SSM-specific fields for tracking document restrictions
+	SSMDocumentRestrictions []string // List of allowed SSM document ARNs/patterns (e.g., ["arn:aws:ssm:*:*:document/AWS-RunShellScript", "*"])
 }
 
 func (er *EvaluationResult) String() string {
@@ -437,6 +439,11 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 		result.EvaluationDetails = "Same-account access"
 	}
 
+	// Extract SSM document restrictions for relevant actions
+	if req.IdentityStatements != nil {
+		result.SSMDocumentRestrictions = extractSSMDocumentRestrictions(req.Action, req.IdentityStatements)
+	}
+
 	return result, nil
 }
 
@@ -632,4 +639,70 @@ func allPoliciesAllow(evals []*StatementEvaluation) bool {
 		}
 	}
 	return true
+}
+
+// extractSSMDocumentRestrictions extracts the allowed SSM document ARNs/patterns from policy statements
+// for SSM actions that require document resources (e.g., ssm:SendCommand, ssm:StartAutomationExecution)
+func extractSSMDocumentRestrictions(action string, statements *types.PolicyStatementList) []string {
+	// Check if this is an SSM action that requires document restrictions
+	if !strings.HasPrefix(strings.ToLower(action), "ssm:") {
+		return nil
+	}
+
+	// Actions that require document resource checks
+	documentActions := map[string]bool{
+		"ssm:sendcommand":             true,
+		"ssm:startautomationexecution": true,
+	}
+
+	if !documentActions[strings.ToLower(action)] {
+		return nil
+	}
+
+	if statements == nil {
+		return nil
+	}
+
+	documentRestrictions := []string{}
+
+	// Iterate through all statements to find document resource restrictions
+	for _, stmt := range *statements {
+		// Only consider Allow statements
+		if !strings.EqualFold(stmt.Effect, "Allow") {
+			continue
+		}
+
+		// Check if this statement grants the requested action
+		actionMatches := false
+		if stmt.Action != nil {
+			for _, stmtAction := range *stmt.Action {
+				if matchesPattern(stmtAction, action) {
+					actionMatches = true
+					break
+				}
+			}
+		}
+
+		if !actionMatches {
+			continue
+		}
+
+		// Extract document resources from the Resource field
+		if stmt.Resource != nil {
+			for _, resource := range *stmt.Resource {
+				// Check if this is an SSM document ARN
+				if strings.Contains(resource, ":document/") ||
+				   strings.Contains(resource, ":automation-definition/") {
+					documentRestrictions = append(documentRestrictions, resource)
+				} else if resource == "*" {
+					// Wildcard means any document is allowed
+					documentRestrictions = append(documentRestrictions, "*")
+				}
+			}
+		}
+	}
+
+	// If no specific documents found but action is allowed, might mean unrestricted
+	// This will be empty array which we can interpret as "checked but no explicit document restriction"
+	return documentRestrictions
 }

@@ -444,6 +444,25 @@ func resultToRelationship(result iam.FullResult) (*graph.Relationship, error) {
 		} else {
 			rel.Properties = flattenedResult
 		}
+
+		// Add SSM shell execution flag if this is an SSM action
+		if len(result.Result.SSMDocumentRestrictions) > 0 {
+			if rel.Properties == nil {
+				rel.Properties = make(map[string]any)
+			}
+
+			// Check if shell execution is allowed (wildcard or RunShellScript/RunPowerShellScript)
+			allowsShellExecution := false
+			for _, doc := range result.Result.SSMDocumentRestrictions {
+				if doc == "*" ||
+				   strings.Contains(doc, "RunShellScript") ||
+				   strings.Contains(doc, "RunPowerShellScript") {
+					allowsShellExecution = true
+					break
+				}
+			}
+			rel.Properties["ssm_allows_shell_execution"] = allowsShellExecution
+		}
 	}
 
 	return &rel, nil
