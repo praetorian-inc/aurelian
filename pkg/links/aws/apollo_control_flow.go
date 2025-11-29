@@ -253,7 +253,7 @@ func (a *AwsApolloControlFlow) graph(summary *iam.PermissionsSummary) {
 
 	rels := make([]*graph.Relationship, 0)
 	for _, result := range summary.FullResults() {
-		rel, err := resultToRelationship(result)
+		rel, err := resultToRelationship(result, a.pd.Gaad)
 		if err != nil {
 			a.Logger.Error("Failed to create relationship: " + err.Error())
 			continue
@@ -361,7 +361,7 @@ func (a *AwsApolloControlFlow) enrichAccountDetails() {
 	}
 }
 
-func resultToRelationship(result iam.FullResult) (*graph.Relationship, error) {
+func resultToRelationship(result iam.FullResult, gaad *types.Gaad) (*graph.Relationship, error) {
 	rel := graph.Relationship{}
 	rel.Type = result.Action
 
@@ -428,9 +428,32 @@ func resultToRelationship(result iam.FullResult) (*graph.Relationship, error) {
 	}
 
 	var err error
-	rel.EndNode, err = transformers.NodeFromEnrichedResourceDescription(result.Resource)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create node from resource: %w", err)
+	// If the resource is a role, try to use full role details from GAAD
+	if result.Resource.TypeName == "AWS::IAM::Role" && gaad != nil {
+		resourceArn := result.Resource.Arn.String()
+		var foundRole *types.RoleDL
+		for i := range gaad.RoleDetailList {
+			role := &gaad.RoleDetailList[i]
+			if role.Arn == resourceArn {
+				foundRole = role
+				break
+			}
+		}
+		if foundRole != nil {
+			rel.EndNode = transformers.NodeFromRoleDL(foundRole)
+			// Add missing labels that NodeFromEnrichedResourceDescription would have
+			rel.EndNode.Labels = append(rel.EndNode.Labels, "IAM::Role", "Resource")
+		} else {
+			rel.EndNode, err = transformers.NodeFromEnrichedResourceDescription(result.Resource)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create node from resource: %w", err)
+			}
+		}
+	} else {
+		rel.EndNode, err = transformers.NodeFromEnrichedResourceDescription(result.Resource)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create node from resource: %w", err)
+		}
 	}
 
 	// Process Result

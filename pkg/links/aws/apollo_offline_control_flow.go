@@ -249,7 +249,7 @@ func (a *AwsApolloOfflineControlFlow) loadResourcePoliciesFromFile() error {
 func (a *AwsApolloOfflineControlFlow) graph(summary *iam.PermissionsSummary) {
 	rels := make([]*graph.Relationship, 0)
 	for _, result := range summary.FullResults() {
-		rel, err := resultToRelationship(result)
+		rel, err := resultToRelationship(result, a.pd.Gaad)
 		if err != nil {
 			a.Logger.Error("Failed to create relationship: " + err.Error())
 			continue
