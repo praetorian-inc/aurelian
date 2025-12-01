@@ -329,10 +329,6 @@ func (e *EnrichedResourceDescription) GetRoleArn() string {
 		if roleArn, ok := props["RoleARN"].(string); ok {
 			return roleArn
 		}
-	case "AWS::Glue::DevEndpoint":
-		if roleArn, ok := props["RoleArn"].(string); ok {
-			return roleArn
-		}
 	}
 
 	return ""
@@ -356,5 +352,4 @@ var ServiceToResourceType = map[string]string{
 	"kms":            "AWS::KMS::Key",
 	"secretsmanager": "AWS::SecretsManager::Secret",
 	"ssm":            "AWS::SSM::Parameter",
-	"glue":           "AWS::Glue::DevEndpoint",
 }

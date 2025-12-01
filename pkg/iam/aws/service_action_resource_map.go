@@ -377,14 +377,4 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"updatedevendpoint": {"devEndpoint"},
 		},
 	},
-	"datapipeline": {
-		ResourcePatterns: map[string]*regexp.Regexp{
-			"pipeline": regexp.MustCompile(`^arn:aws:datapipeline:[a-z0-9-]+:\d{12}:pipeline/.*$`),
-			"service":  regexp.MustCompile(`^datapipeline.amazonaws.com$`),
-		},
-		ActionResourceMap: map[string][]string{
-			"createpipeline":        {"service"},
-			"putpipelinedefinition": {"pipeline"},
-		},
-	},
 }
