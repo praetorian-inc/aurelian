@@ -1,7 +1,7 @@
 id: event_grid_domain_public  
 name: Publicly Accessible Event Grid Domain
 description: Details Event Grid Domain network access configurations and IP restrictions for public domains
-category: Public Access
+category: ["Public Access", "arg-scan"]
 severity: High
 reportability: Manual
 triageNotes: |
@@ -45,7 +45,7 @@ query: |
       DomainName = name,
       name = name,
       type = "microsoft.eventgrid/domains",
-      ResourceGroup = resourceGroup,
+      resourceGroup,
       SubscriptionId = subscriptionId,
       location = location,
       Endpoint = endpoint,
@@ -53,5 +53,6 @@ query: |
       DisableLocalAuth = disableLocalAuth,
       RiskReason = RiskReason,
       IpRestrictionsCount = iff(isempty(inboundIpRules), 0, array_length(inboundIpRules)),
+      inboundIpRules,
       Tags = tags
   | order by DomainName asc

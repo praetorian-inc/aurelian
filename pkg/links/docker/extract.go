@@ -273,7 +273,7 @@ func (dl *DockerImageLoader) createImageContext(imageName string) docker.DockerI
 
 	// Extract server address from image name
 	parts := strings.SplitN(imageName, "/", 2)
-	if strings.Contains(parts[0], ".") {
+	if len(parts) == 2 && strings.Contains(parts[0], ".") {
 		imageContext.AuthConfig.ServerAddress = "https://" + parts[0]
 		imageContext.Image = parts[1]
 	}

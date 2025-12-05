@@ -2,20 +2,22 @@ id: sql_servers_public_access
 name: SQL Servers Without Public Access Block
 description: Detects SQL servers with public network access enabled
 severity: High
-category: Public Access
+category: ["Public Access", "arg-scan"]
 reportability: Manual Triage
 references:
   - https://learn.microsoft.com/en-us/azure/azure-sql/database/network-access-controls
   - https://www.praetorian.com/blog/migrating-to-azure/
 triageNotes: |
+  Firewall rules are automatically retrieved and displayed in the `Automated Triage` column above.
+
   Additional manual verification is required:
-  
+
   1. Check for "Allow Azure services and resources to access this server" as that allows firewall bypass (see references for Praetorian blogpost - Solely Relying on Azure Portal and Not Consulting Azure Documentation).
       az sql server firewall-rule list --resource-group <resource-group-name> --server <server-name> --query "[?name=='AllowAllWindowsAzureIps']"
-  
-  2. Check firewall rules using Azure CLI:
+
+  2. Review firewall rules in the Automated Triage column or manually check using Azure CLI:
      az sql server firewall-rule list --resource-group <resourceGroup> --server <serverName>
-  
+
   3. Look for rules that indicate public access:
      - Rules with startIpAddress='0.0.0.0' and endIpAddress='255.255.255.255'
      - Rules that allow a wide public range (/16)
@@ -35,4 +37,5 @@ query: |
         type,
         location,
         publicNetworkAccess,
-        subscriptionId
+        subscriptionId,
+        resourceGroup

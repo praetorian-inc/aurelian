@@ -7,7 +7,7 @@ type ARGQueryTemplate struct {
 	Description string   `yaml:"description"`
 	Severity    string   `yaml:"severity"`
 	Query       string   `yaml:"query"`
-	Category    string   `yaml:"category"`
+	Category    []string `yaml:"category"`
 	References  []string `yaml:"references"`
 	TriageNotes string   `yaml:"triageNotes,omitempty"`
 }

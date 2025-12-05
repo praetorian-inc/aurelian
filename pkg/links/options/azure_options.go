@@ -89,10 +89,10 @@ var AzureDevOpsProjectOpt = types.Option{
 var AzureARGTemplatesDirOpt = types.Option{
 	Name:        "template-dir",
 	Short:       "T",
-	Description: "Optional directory containing additional ARG query templates (defaults to embedded templates)",
+	Description: "Directory containing ARG query templates (replaces embedded templates when specified)",
 	Required:    false,
 	Type:        types.String,
-	Value:       "", // Empty means use only embedded templates
+	Value:       "", // Empty means use embedded templates
 }
 
 func AzureSubscription() cfg.Param {
@@ -103,7 +103,7 @@ func AzureSubscription() cfg.Param {
 }
 
 func AzureTemplateDir() cfg.Param {
-	return cfg.NewParam[string]("template-dir", "Directory containing Azure ARG templates").
+	return cfg.NewParam[string]("template-dir", "Directory containing Azure ARG templates (replaces embedded templates)").
 		WithShortcode("t")
 }
 
@@ -180,6 +180,11 @@ func AzureResourceID() cfg.Param {
 	return cfg.NewParam[[]string]("azure-resource-id", "Azure resource ID in full format (/subscriptions/.../resourceGroups/.../providers/...)").
 		WithShortcode("i").
 		AsRequired()
+}
+
+func AzureDisableEnrichment() cfg.Param {
+	return cfg.NewParam[bool]("disable-enrichment", "Disable enrichment of resources with security testing commands").
+		WithDefault(false)
 }
 
 // AzureReconBaseOptions provides common options for Azure reconnaissance modules

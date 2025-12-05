@@ -19,7 +19,10 @@ nebula aws recon find-secrets-resource [flags]
       --disable-cache                  Disable API response caching
   -h, --help                           help for find-secrets-resource
       --indent int                     the number of spaces to use for the JSON indentation
+      --max-events int                 Maximum number of log events to fetch per log group/stream (default 10000)
+      --max-streams int                Maximum number of log streams to sample per log group (default 10)
       --module-name string             name of the module for dynamic file naming
+      --newest-first                   Fetch newest events first instead of oldest
       --opsec_level string             Operational security level for AWS operations (default "none")
       --outfile string                 the default file to write the JSON to (can be changed at runtime) (default "out.json")
   -o, --output string                  output directory (default "nebula-output")

@@ -1,6 +1,6 @@
 id: web_apps_all_secrets
 name: All Web Apps for Secret Scanning
-category: secrets
+category: ["secrets"]
 description: Finds all web applications and function apps for secret scanning in configuration, connection strings, and keys
 severity: Medium
 reportability: Automatic

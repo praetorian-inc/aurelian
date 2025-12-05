@@ -41,7 +41,7 @@ func IsValidActionForResource(action, resource string) bool {
 		slog.Debug("Action not found in service map", slog.String("action", actionName), slog.String("service", service))
 		return false
 	}
-	
+
 	// Check each valid resource type
 	for _, resourceType := range validResourceTypes {
 		// Get pattern for resource type
@@ -344,6 +344,14 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 		ActionResourceMap: map[string][]string{
 			"runtask":                {"service"},
 			"registertaskdefinition": {"service"},
+		},
+	},
+	"ssm": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"instance": regexp.MustCompile(`^arn:aws:ec2:[a-z-0-9]+:\d{12}:instance/.*`),
+		},
+		ActionResourceMap: map[string][]string{
+			"sendcommand": {"instance"},
 		},
 	},
 }

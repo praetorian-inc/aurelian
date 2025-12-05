@@ -66,6 +66,7 @@ var privEscActions = []string{
 	"sagemaker:CreatePresignedNotebookInstanceUrl",
 	"sagemaker:CreateProcessingJob",
 	"sagemaker:CreateTrainingJob",
+	"ssm:SendCommand",
 	"sts:AssumeRole",
 	"sts:AssumeRoleWithSAML",
 	"sts:AssumeRoleWithWebIdentity",

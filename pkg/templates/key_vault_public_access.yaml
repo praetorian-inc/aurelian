@@ -1,8 +1,8 @@
 id: key_vault_public_access
 name: Publicly Accessible Key Vaults
 description: Detects Key Vault instances with public network access enabled and permissive network rules
+category: ["Public Access", "arg-scan"]
 severity: High
-category: Public Access
 reportability: Automatic
 triageNotes: |
   No need for additional manual triage, note that this only confirms Internet accessibility not anonymous identity access.

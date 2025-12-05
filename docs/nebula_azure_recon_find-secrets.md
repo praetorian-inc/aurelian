@@ -19,7 +19,7 @@ nebula azure recon find-secrets [flags]
   -o, --output string            output directory (default "nebula-output")
   -r, --resource-types strings   Azure resource types to scan for secrets (default [all])
   -s, --subscription strings     The Azure subscription to use. Can be a subscription ID or 'all'. (required)
-  -t, --template-dir string      Directory containing Azure ARG templates
+  -t, --template-dir string      Directory containing Azure ARG templates (replaces embedded templates)
   -w, --workers int              Number of concurrent workers for processing (default 5)
 ```
 

@@ -22,14 +22,10 @@ var DockerDump = chain.NewModule(
 		"authors":     []string{"Praetorian"},
 	}),
 ).WithLinks(
-	// Load Docker images from file or single image input
 	docker.NewDockerImageLoader,
-	// Download images to local tar files
-	janusDocker.NewDockerDownload,
-	// Extract to filesystem
-	docker.NewDockerExtractToFS,
-	// Convert to NoseyParker inputs and scan
-	docker.NewDockerExtractToNP,
+	janusDocker.NewDockerGetLayers,
+	janusDocker.NewDockerDownloadLayer,
+	janusDocker.NewDockerLayerToNP,
 	chain.ConstructLinkWithConfigs(noseyparker.NewNoseyParkerScanner,
 		cfg.WithArg("continue_piping", true)),
 ).WithInputParam(
@@ -40,8 +36,10 @@ var DockerDump = chain.NewModule(
 	cfg.WithArg("extract", "true"),
 	cfg.WithArg("noseyparker-scan", "true"),
 	cfg.WithArg("module-name", "docker-dump"),
+	cfg.WithArg("max-file-size", 10),
 ).WithParams(
 	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+	cfg.NewParam[int]("max-file-size", "maximum file size to scan (in MB)").WithDefault(10),
 ).WithOutputters(
 	outputters.NewNPFindingsConsoleOutputter,
 ).WithAutoRun()

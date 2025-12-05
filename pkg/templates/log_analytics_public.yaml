@@ -2,15 +2,18 @@ id: log_analytics_public_access
 name: Publicly Accessible Log Analytics Workspaces
 description: Detects Log Analytics workspaces with public network access enabled for ingestion or query
 severity: High
-category: Public Access
+category: ["Public Access", "arg-scan"]
 reportability: Manual Triage
 triageNotes: |
+  Important Context:
+  Microsoft.OperationalInsights/workspaces (Log Analytics Workspaces) does not allow anonymous access; all access is controlled through Azure Active Directory (AAD) authentication and Azure role-based access control (RBAC). There is no supported configuration or documented method to permit unauthenticated or anonymous access to the workspace itself, to the logs within, or to ingestion endpoints.
+
   Potential Risk:
   - Public accessibility exposes log data and queries to potential unauthorized access
   - Could lead to sensitive data exposure if misconfigured
   - May allow unauthorized ingestion of data
   - Potential for excessive resource consumption through public queries
-  
+
   Triage Guidance:
   - This finding confirms the workspace allows public network access for ingestion and/or query operations
   - Review if public access is required for both ingestion and query operations
