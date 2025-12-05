@@ -310,8 +310,8 @@ github.com/praetorian-inc/janus-framework v0.0.0-20250918211123-5f90adc9184b h1:
 github.com/praetorian-inc/janus-framework v0.0.0-20250918211123-5f90adc9184b/go.mod h1:/K/qM9j43mrPe0VsYy5xUDNWT+pnk7ejBE4O7Lcg8RY=
 github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157 h1:Hrov9II6t60IMF9wg8CqySnZi/2fdz/2DkAMcw48bkU=
 github.com/praetorian-inc/konstellation v0.0.0-20250609145306-636c2e50b157/go.mod h1:sbwY5GVsqieoJXogpMMK+5GWZ15UgNnd9nRSkjBG8rQ=
-github.com/praetorian-inc/tabularium v1.0.77 h1:MQe7SfV+kMjjMcQkNJF16W39ZNotj6I6Vgh0Sl0NpyI=
-github.com/praetorian-inc/tabularium v1.0.77/go.mod h1:vj8oiHB0mS8sGs2ZvZlN1UZLWDRp7DC0w6aseSObDe8=
+github.com/praetorian-inc/tabularium v1.0.132-pre-0-jwh-cloud-relations h1:ZNiUHh+2ZVGmO9YiCBC9xm8lTt/0l0ITwTZWxwsvOwI=
+github.com/praetorian-inc/tabularium v1.0.132-pre-0-jwh-cloud-relations/go.mod h1:vj8oiHB0mS8sGs2ZvZlN1UZLWDRp7DC0w6aseSObDe8=
 github.com/redis/go-redis/v9 v9.8.0 h1:q3nRvjrlge/6UD7eTu/DSg2uYiU2mCL0G/uzBWqhicI=
 github.com/redis/go-redis/v9 v9.8.0/go.mod h1:huWgSWd8mW6+m0VPhJjSSQ+d6Nh1VICQ6Q5lHuCH/Iw=
 github.com/rogpeppe/go-internal v1.13.1 h1:KvO1DLK/DRN07sQ1LQKScxyZJuNnedQ5/wKSR38lUII=
