@@ -30,6 +30,7 @@ var Apollo = chain.NewModule(
 	aws.NewAwsApolloControlFlow,
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
+	outputters.NewNeo4jGraphOutputter,
 ).WithParams(
 	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
 ).WithConfigs(

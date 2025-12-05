@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/praetorian-inc/nebula/pkg/types"
@@ -568,6 +569,448 @@ func TestIsAWSPrincipal(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := IsAWSPrincipal(tt.id); got != tt.want {
 				t.Errorf("IsAWSPrincipal() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractGitHubActionsPrincipals(t *testing.T) {
+	tests := []struct {
+		name       string
+		conditions *types.Condition
+		want       []types.Principal
+	}{
+		{
+			name: "GitHub Actions single subject claim",
+			conditions: &types.Condition{
+				"StringEquals": {
+					GitHubActionsSubjectKey:   types.DynaString{"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+					GitHubActionsAudienceKey: types.DynaString{"sts.amazonaws.com"},
+				},
+			},
+			want: []types.Principal{
+				{
+					Federated: types.NewDynaString([]string{"repo:praetorian-inc/nebula:ref:refs/heads/main"}),
+				},
+			},
+		},
+		{
+			name: "GitHub Actions multiple subject claims",
+			conditions: &types.Condition{
+				"StringEquals": {
+					GitHubActionsSubjectKey: types.DynaString{
+						"repo:praetorian-inc/nebula:ref:refs/heads/main",
+						"repo:praetorian-inc/nebula:environment:production",
+					},
+					GitHubActionsAudienceKey: types.DynaString{"sts.amazonaws.com"},
+				},
+			},
+			want: []types.Principal{
+				{
+					Federated: types.NewDynaString([]string{
+						"repo:praetorian-inc/nebula:ref:refs/heads/main",
+						"repo:praetorian-inc/nebula:environment:production",
+					}),
+				},
+			},
+		},
+		{
+			name: "GitHub Actions wildcard subject claim",
+			conditions: &types.Condition{
+				"StringLike": {
+					GitHubActionsSubjectKey:   types.DynaString{"repo:praetorian-inc/nebula:*"},
+					GitHubActionsAudienceKey: types.DynaString{"sts.amazonaws.com"},
+				},
+			},
+			want: []types.Principal{
+				{
+					Federated: types.NewDynaString([]string{"repo:praetorian-inc/nebula:*"}),
+				},
+			},
+		},
+		{
+			name:       "No GitHub Actions conditions",
+			conditions: &types.Condition{
+				"StringEquals": {
+					"aws:PrincipalAccount": types.DynaString{"123456789012"},
+				},
+			},
+			want: []types.Principal{},
+		},
+		{
+			name:       "Nil conditions",
+			conditions: nil,
+			want:       []types.Principal{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractGitHubActionsPrincipals(tt.conditions)
+			if !reflect.DeepEqual(got, tt.want) {
+				gotJSON, _ := json.Marshal(got)
+				wantJSON, _ := json.Marshal(tt.want)
+				t.Errorf("extractGitHubActionsPrincipals() = %v, want %v", string(gotJSON), string(wantJSON))
+			}
+		})
+	}
+}
+
+func TestParseGitHubSubjectClaim(t *testing.T) {
+	tests := []struct {
+		name              string
+		subject           string
+		want              *GitHubSubjectClaim
+		wantErr           bool
+		wantErrContains   string
+	}{
+		{
+			name:    "Branch reference",
+			subject: "repo:praetorian-inc/nebula:ref:refs/heads/main",
+			want: &GitHubSubjectClaim{
+				Original:     "repo:praetorian-inc/nebula:ref:refs/heads/main",
+				Org:          "praetorian-inc",
+				Repo:         "nebula",
+				FullRepoName: "praetorian-inc/nebula",
+				Context:      "ref:refs/heads/main",
+				ContextType:  "ref",
+				ContextValue: "refs/heads/main",
+			},
+			wantErr: false,
+		},
+		{
+			name:    "Environment deployment",
+			subject: "repo:praetorian-inc/nebula:environment:production",
+			want: &GitHubSubjectClaim{
+				Original:     "repo:praetorian-inc/nebula:environment:production",
+				Org:          "praetorian-inc",
+				Repo:         "nebula",
+				FullRepoName: "praetorian-inc/nebula",
+				Context:      "environment:production",
+				ContextType:  "environment",
+				ContextValue: "production",
+			},
+			wantErr: false,
+		},
+		{
+			name:    "Pull request",
+			subject: "repo:praetorian-inc/nebula:pull_request",
+			want: &GitHubSubjectClaim{
+				Original:     "repo:praetorian-inc/nebula:pull_request",
+				Org:          "praetorian-inc",
+				Repo:         "nebula",
+				FullRepoName: "praetorian-inc/nebula",
+				Context:      "pull_request",
+				ContextType:  "pull_request",
+				ContextValue: "pull_request",
+			},
+			wantErr: false,
+		},
+		{
+			name:    "Actor specific",
+			subject: "repo:praetorian-inc/nebula:actor:username",
+			want: &GitHubSubjectClaim{
+				Original:     "repo:praetorian-inc/nebula:actor:username",
+				Org:          "praetorian-inc",
+				Repo:         "nebula",
+				FullRepoName: "praetorian-inc/nebula",
+				Context:      "actor:username",
+				ContextType:  "actor",
+				ContextValue: "username",
+			},
+			wantErr: false,
+		},
+		{
+			name:    "Wildcard context",
+			subject: "repo:praetorian-inc/nebula:*",
+			want: &GitHubSubjectClaim{
+				Original:     "repo:praetorian-inc/nebula:*",
+				Org:          "praetorian-inc",
+				Repo:         "nebula",
+				FullRepoName: "praetorian-inc/nebula",
+				Context:      "*",
+				ContextType:  "*",
+				ContextValue: "*",
+			},
+			wantErr: false,
+		},
+		{
+			name:    "Multi-level repository",
+			subject: "repo:organization/sub-org/repo-name:ref:refs/heads/main",
+			want: &GitHubSubjectClaim{
+				Original:     "repo:organization/sub-org/repo-name:ref:refs/heads/main",
+				Org:          "organization",
+				Repo:         "sub-org/repo-name",
+				FullRepoName: "organization/sub-org/repo-name",
+				Context:      "ref:refs/heads/main",
+				ContextType:  "ref",
+				ContextValue: "refs/heads/main",
+			},
+			wantErr: false,
+		},
+		{
+			name:    "Tag reference",
+			subject: "repo:praetorian-inc/nebula:ref:refs/tags/v1.0.0",
+			want: &GitHubSubjectClaim{
+				Original:     "repo:praetorian-inc/nebula:ref:refs/tags/v1.0.0",
+				Org:          "praetorian-inc",
+				Repo:         "nebula",
+				FullRepoName: "praetorian-inc/nebula",
+				Context:      "ref:refs/tags/v1.0.0",
+				ContextType:  "ref",
+				ContextValue: "refs/tags/v1.0.0",
+			},
+			wantErr: false,
+		},
+		{
+			name:            "Empty subject",
+			subject:         "",
+			want:            nil,
+			wantErr:         true,
+			wantErrContains: "empty subject claim",
+		},
+		{
+			name:            "Invalid format - no repo prefix",
+			subject:         "invalid:praetorian-inc/nebula:ref:refs/heads/main",
+			want:            nil,
+			wantErr:         true,
+			wantErrContains: "must start with 'repo:'",
+		},
+		{
+			name:            "Invalid format - missing org/repo separator",
+			subject:         "repo:praetorian-inc-nebula:ref:refs/heads/main",
+			want:            nil,
+			wantErr:         true,
+			wantErrContains: "must contain org/repo",
+		},
+		{
+			name:            "Invalid format - missing repository part",
+			subject:         "repo:",
+			want:            nil,
+			wantErr:         true,
+			wantErrContains: "must contain org/repo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseGitHubSubjectClaim(tt.subject)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("ParseGitHubSubjectClaim() expected error but got none")
+					return
+				}
+				if tt.wantErrContains != "" && !strings.Contains(err.Error(), tt.wantErrContains) {
+					t.Errorf("ParseGitHubSubjectClaim() error = %v, want error containing %v", err, tt.wantErrContains)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("ParseGitHubSubjectClaim() unexpected error = %v", err)
+				return
+			}
+
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ParseGitHubSubjectClaim() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractRepositoriesFromConditions(t *testing.T) {
+	tests := []struct {
+		name       string
+		conditions *types.Condition
+		want       map[string][]string
+		wantErr    bool
+	}{
+		{
+			name: "Single repository with branch",
+			conditions: &types.Condition{
+				"StringEquals": {
+					GitHubActionsSubjectKey:   types.DynaString{"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+					GitHubActionsAudienceKey: types.DynaString{"sts.amazonaws.com"},
+				},
+			},
+			want: map[string][]string{
+				"praetorian-inc/nebula": {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Single repository with multiple contexts",
+			conditions: &types.Condition{
+				"StringEquals": {
+					GitHubActionsSubjectKey: types.DynaString{
+						"repo:praetorian-inc/nebula:ref:refs/heads/main",
+						"repo:praetorian-inc/nebula:environment:production",
+						"repo:praetorian-inc/nebula:*",
+					},
+					GitHubActionsAudienceKey: types.DynaString{"sts.amazonaws.com"},
+				},
+			},
+			want: map[string][]string{
+				"praetorian-inc/nebula": {
+					"repo:praetorian-inc/nebula:ref:refs/heads/main",
+					"repo:praetorian-inc/nebula:environment:production",
+					"repo:praetorian-inc/nebula:*",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Multiple repositories",
+			conditions: &types.Condition{
+				"StringEquals": {
+					GitHubActionsSubjectKey: types.DynaString{
+						"repo:praetorian-inc/nebula:ref:refs/heads/main",
+						"repo:praetorian-inc/tabularium:environment:production",
+						"repo:organization/other-repo:*",
+					},
+					GitHubActionsAudienceKey: types.DynaString{"sts.amazonaws.com"},
+				},
+			},
+			want: map[string][]string{
+				"praetorian-inc/nebula":     {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+				"praetorian-inc/tabularium": {"repo:praetorian-inc/tabularium:environment:production"},
+				"organization/other-repo":   {"repo:organization/other-repo:*"},
+			},
+			wantErr: false,
+		},
+		{
+			name: "Multi-level repository names",
+			conditions: &types.Condition{
+				"StringLike": {
+					GitHubActionsSubjectKey: types.DynaString{
+						"repo:org/sub-org/repo-name:ref:refs/heads/main",
+						"repo:org/sub-org/repo-name:environment:staging",
+					},
+					GitHubActionsAudienceKey: types.DynaString{"sts.amazonaws.com"},
+				},
+			},
+			want: map[string][]string{
+				"org/sub-org/repo-name": {
+					"repo:org/sub-org/repo-name:ref:refs/heads/main",
+					"repo:org/sub-org/repo-name:environment:staging",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "No GitHub Actions conditions",
+			conditions: &types.Condition{
+				"StringEquals": {
+					"aws:PrincipalAccount": types.DynaString{"123456789012"},
+				},
+			},
+			want:    map[string][]string{},
+			wantErr: false,
+		},
+		{
+			name:       "Nil conditions",
+			conditions: nil,
+			want:       map[string][]string{},
+			wantErr:    false,
+		},
+		{
+			name: "Invalid subject claims ignored",
+			conditions: &types.Condition{
+				"StringEquals": {
+					GitHubActionsSubjectKey: types.DynaString{
+						"repo:praetorian-inc/nebula:ref:refs/heads/main", // Valid
+						"invalid:format:here",                            // Invalid - should be ignored
+						"repo:another-org/repo:environment:prod",         // Valid
+					},
+					GitHubActionsAudienceKey: types.DynaString{"sts.amazonaws.com"},
+				},
+			},
+			want: map[string][]string{
+				"praetorian-inc/nebula": {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+				"another-org/repo":      {"repo:another-org/repo:environment:prod"},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ExtractRepositoriesFromConditions(tt.conditions)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ExtractRepositoriesFromConditions() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if !reflect.DeepEqual(got, tt.want) {
+				gotJSON, _ := json.Marshal(got)
+				wantJSON, _ := json.Marshal(tt.want)
+				t.Errorf("ExtractRepositoriesFromConditions() = %v, want %v", string(gotJSON), string(wantJSON))
+			}
+		})
+	}
+}
+
+func TestIsGitHubActionsFederatedPrincipal(t *testing.T) {
+	tests := []struct {
+		name      string
+		principal *types.Principal
+		want      bool
+	}{
+		{
+			name: "Valid GitHub Actions federated principal",
+			principal: &types.Principal{
+				Federated: types.NewDynaString([]string{"arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"}),
+			},
+			want: true,
+		},
+		{
+			name: "GitHub Actions provider in list",
+			principal: &types.Principal{
+				Federated: types.NewDynaString([]string{
+					"cognito-identity.amazonaws.com",
+					"arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com",
+				}),
+			},
+			want: true,
+		},
+		{
+			name: "Non-GitHub Actions federated principal",
+			principal: &types.Principal{
+				Federated: types.NewDynaString([]string{"cognito-identity.amazonaws.com"}),
+			},
+			want: false,
+		},
+		{
+			name: "AWS principal",
+			principal: &types.Principal{
+				AWS: types.NewDynaString([]string{"arn:aws:iam::123456789012:root"}),
+			},
+			want: false,
+		},
+		{
+			name: "Service principal",
+			principal: &types.Principal{
+				Service: types.NewDynaString([]string{"lambda.amazonaws.com"}),
+			},
+			want: false,
+		},
+		{
+			name:      "Nil principal",
+			principal: nil,
+			want:      false,
+		},
+		{
+			name:      "Principal with nil Federated",
+			principal: &types.Principal{},
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsGitHubActionsFederatedPrincipal(tt.principal)
+			if got != tt.want {
+				t.Errorf("IsGitHubActionsFederatedPrincipal() = %v, want %v", got, tt.want)
 			}
 		})
 	}

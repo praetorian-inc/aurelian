@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
+	"github.com/praetorian-inc/tabularium/pkg/model/model"
 )
 
 type EnrichedResourceDescription struct {
@@ -294,6 +295,42 @@ func (erd *EnrichedResourceDescription) PropertiesAsMap() (map[string]any, error
 	}
 
 	return props, nil
+}
+
+func (e *EnrichedResourceDescription) ToAWSResource() (*model.AWSResource, error) {
+	// Convert resource type string to CloudResourceType
+	resourceType := model.CloudResourceType(e.TypeName)
+
+	// Create properties map - handle string or map types
+	var properties map[string]any
+	if e.Properties != nil {
+		if propsMap, ok := e.Properties.(map[string]any); ok {
+			properties = propsMap
+		} else if propsStr, ok := e.Properties.(string); ok {
+			// Parse JSON string properties
+			if err := json.Unmarshal([]byte(propsStr), &properties); err != nil {
+				slog.Debug("Failed to unmarshal properties string", slog.String("error", err.Error()))
+				properties = make(map[string]any)
+			}
+		} else {
+			properties = make(map[string]any)
+		}
+	} else {
+		properties = make(map[string]any)
+	}
+
+	// Create AWSResource using existing fields
+	awsResource, err := model.NewAWSResource(
+		e.Arn.String(),      // ARN as name
+		e.AccountId,         // account reference
+		resourceType,        // resource type
+		properties,          // properties map
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AWSResource: %w", err)
+	}
+
+	return &awsResource, nil
 }
 
 func (e *EnrichedResourceDescription) GetRoleArn() string {

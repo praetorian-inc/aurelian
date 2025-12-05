@@ -26,20 +26,20 @@ func (l *AwsResourceTypeGeneratorLink) Params() []cfg.Param {
 
 func (l *AwsResourceTypeGeneratorLink) Process(input any) error {
 	scanType, _ := cfg.As[string](l.Arg("scan-type"))
-	
+
 	var resourceTypes []string
 	if scanType == "summary" {
 		resourceTypes = l.getSummaryResourceTypes()
 	} else {
 		resourceTypes = l.getFullResourceTypes()
 	}
-	
+
 	l.Logger.Info("Generating resource types", "scan_type", scanType, "count", len(resourceTypes))
-	
+
 	for _, resourceType := range resourceTypes {
 		l.Send(resourceType)
 	}
-	
+
 	return nil
 }
 

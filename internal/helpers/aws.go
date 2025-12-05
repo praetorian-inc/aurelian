@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -142,6 +143,13 @@ func GetAWSCfg(region string, profile string, opts []*types.Option, opsecLevel s
 	// This allows the standard AWS credential chain to work (env vars -> default profile -> etc.)
 	if profile != "" {
 		options = append(options, config.WithSharedConfigProfile(profile))
+	}
+
+	for _, opt := range opts {
+		if opt.Name == "profile-dir" {
+			credLocation := path.Join(opt.Value, "credentials")
+			options = append(options, config.WithSharedCredentialsFiles([]string{credLocation}))
+		}
 	}
 
 	options = append(options, optFns...)
