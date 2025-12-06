@@ -10,6 +10,50 @@ import (
 	"github.com/praetorian-inc/tabularium/pkg/model/model"
 )
 
+// SSMIAMRelationship extends IAMRelationship with SSM-specific properties
+// This is used for SSM actions (ssm:SendCommand, ssm:StartSession, etc.) to track
+// which SSM documents are allowed and whether shell execution is permitted
+type SSMIAMRelationship struct {
+	*model.IAMRelationship
+	// SSMDocumentRestrictions contains the list of allowed SSM document ARNs/patterns
+	SSMDocumentRestrictions []string `neo4j:"ssmDocumentRestrictions" json:"ssmDocumentRestrictions"`
+	// AllowsShellExecution indicates if the SSM permission allows shell execution
+	// (true if wildcard "*" or RunShellScript/RunPowerShellScript documents are allowed)
+	AllowsShellExecution bool `neo4j:"ssmAllowsShellExecution" json:"ssmAllowsShellExecution"`
+}
+
+// Label returns the sanitized permission as the relationship label
+func (s *SSMIAMRelationship) Label() string {
+	return s.IAMRelationship.Label()
+}
+
+// NewSSMIAMRelationship creates a new SSM IAM relationship with document restrictions
+func NewSSMIAMRelationship(source, target model.GraphModel, permission string, ssmDocRestrictions []string) *SSMIAMRelationship {
+	baseRel := model.NewIAMRelationship(source, target, permission)
+
+	// Check if shell execution is allowed (wildcard or RunShellScript/RunPowerShellScript)
+	allowsShellExecution := false
+	for _, doc := range ssmDocRestrictions {
+		if doc == "*" ||
+			strings.Contains(doc, "RunShellScript") ||
+			strings.Contains(doc, "RunPowerShellScript") {
+			allowsShellExecution = true
+			break
+		}
+	}
+
+	return &SSMIAMRelationship{
+		IAMRelationship:         baseRel,
+		SSMDocumentRestrictions: ssmDocRestrictions,
+		AllowsShellExecution:    allowsShellExecution,
+	}
+}
+
+// isSSMAction checks if the action is an SSM action that may have document restrictions
+func isSSMAction(action string) bool {
+	return strings.HasPrefix(action, "ssm:")
+}
+
 // TransformUserDLToAWSResource converts a UserDL to an AWSResource with AWSUser type
 func TransformUserDLToAWSResource(user *types.UserDL) (*model.AWSResource, error) {
 	if user == nil {
@@ -243,6 +287,7 @@ func CreateGenericPrincipalResource(principalString string) (*model.AWSResource,
 }
 
 // TransformResultToRelationship converts an iam.FullResult to a Tabularium IamPermission relationship
+// For SSM actions with document restrictions, returns an SSMIAMRelationship with additional properties
 func TransformResultToRelationship(result iam.FullResult) (model.GraphRelationship, error) {
 	// Handle Principal (Source)
 	var source model.GraphModel
@@ -288,7 +333,17 @@ func TransformResultToRelationship(result iam.FullResult) (model.GraphRelationsh
 		return nil, fmt.Errorf("failed to transform resource: %w", err)
 	}
 
-	// Create the IAM permission relationship
+	// Check if this is an SSM action with document restrictions
+	if isSSMAction(result.Action) && result.Result != nil && len(result.Result.SSMDocumentRestrictions) > 0 {
+		// Create SSM-specific relationship with document restrictions
+		ssmRel := NewSSMIAMRelationship(source, target, result.Action, result.Result.SSMDocumentRestrictions)
+		ssmRel.Capability = "apollo-iam-analysis"
+		ssmRel.Created = model.Now()
+		ssmRel.Visited = model.Now()
+		return ssmRel, nil
+	}
+
+	// Create the standard IAM permission relationship
 	rel := model.NewIAMRelationship(source, target, result.Action)
 
 	// Add evaluation details to the relationship

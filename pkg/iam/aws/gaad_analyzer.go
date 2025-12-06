@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )
 
@@ -426,12 +427,21 @@ func (ga *GaadAnalyzer) processAssumeRolePolicies(evalChan chan<- *EvaluationReq
 				}
 
 				// Create the evaluation context
-				accountID, tags := getResourceDeets(role.Arn)
+				roleAccountID, tags := getResourceDeets(role.Arn)
+
+				// Extract principal's account ID for proper cross-account detection
+				principalAccountID := roleAccountID // Default to same account
+				if principalArn, err := arn.Parse(principal); err == nil {
+					if principalArn.AccountID != "" {
+						principalAccountID = principalArn.AccountID
+					}
+				}
 
 				rc := &RequestContext{
 					PrincipalArn:     principal,
 					ResourceTags:     tags,
-					PrincipalAccount: accountID,
+					PrincipalAccount: principalAccountID,
+					ResourceAccount:  roleAccountID,
 					CurrentTime:      time.Now(),
 					SecureTransport:  Bool(true),
 				}

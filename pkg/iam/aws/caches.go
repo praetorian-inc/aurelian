@@ -123,7 +123,6 @@ func addServicesToResourceCache() {
 		"eks.amazonaws.com",
 		"glue.amazonaws.com",
 		"sagemaker.amazonaws.com",
-		"ecs.amazonaws.com",
 		"apigateway.amazonaws.com",
 	}
 

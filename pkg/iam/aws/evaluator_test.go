@@ -1354,3 +1354,167 @@ func TestHasExplicitPrincipalAllow(t *testing.T) {
 		})
 	}
 }
+
+func TestPolicyEvaluator_SSMDocumentRestrictions(t *testing.T) {
+	tests := []struct {
+		name                      string
+		action                    string
+		identityStatements        *types.PolicyStatementList
+		wantDocumentRestrictions  []string
+		wantAllowed               bool
+	}{
+		{
+			name:   "SSM SendCommand with wildcard document (HIGH RISK)",
+			action: "ssm:SendCommand",
+			identityStatements: &types.PolicyStatementList{
+				{
+					Effect: "Allow",
+					Action: types.NewDynaString([]string{"ssm:SendCommand"}),
+					Resource: types.NewDynaString([]string{
+						"arn:aws:ec2:us-east-1:111122223333:instance/*",
+						"*", // Wildcard allows any document
+					}),
+				},
+			},
+			wantDocumentRestrictions: []string{"*"},
+			wantAllowed:              true,
+		},
+		{
+			name:   "SSM SendCommand with RunShellScript document (HIGH RISK)",
+			action: "ssm:SendCommand",
+			identityStatements: &types.PolicyStatementList{
+				{
+					Effect: "Allow",
+					Action: types.NewDynaString([]string{"ssm:SendCommand"}),
+					Resource: types.NewDynaString([]string{
+						"arn:aws:ec2:us-east-1:111122223333:instance/*",
+						"arn:aws:ssm:us-east-1::document/AWS-RunShellScript",
+					}),
+				},
+			},
+			wantDocumentRestrictions: []string{"arn:aws:ssm:us-east-1::document/AWS-RunShellScript"},
+			wantAllowed:              true,
+		},
+		{
+			name:   "SSM SendCommand with restricted safe document (LOW RISK)",
+			action: "ssm:SendCommand",
+			identityStatements: &types.PolicyStatementList{
+				{
+					Effect: "Allow",
+					Action: types.NewDynaString([]string{"ssm:SendCommand"}),
+					Resource: types.NewDynaString([]string{
+						"arn:aws:ec2:us-east-1:111122223333:instance/*",
+						"arn:aws:ssm:us-east-1::document/AWS-ConfigureAWSPackage",
+					}),
+				},
+			},
+			wantDocumentRestrictions: []string{"arn:aws:ssm:us-east-1::document/AWS-ConfigureAWSPackage"},
+			wantAllowed:              true,
+		},
+		{
+			name:   "SSM SendCommand with multiple documents including RunShellScript",
+			action: "ssm:SendCommand",
+			identityStatements: &types.PolicyStatementList{
+				{
+					Effect: "Allow",
+					Action: types.NewDynaString([]string{"ssm:SendCommand"}),
+					Resource: types.NewDynaString([]string{
+						"arn:aws:ec2:us-east-1:111122223333:instance/*",
+						"arn:aws:ssm:us-east-1::document/AWS-ConfigureAWSPackage",
+						"arn:aws:ssm:us-east-1::document/AWS-RunShellScript",
+					}),
+				},
+			},
+			wantDocumentRestrictions: []string{
+				"arn:aws:ssm:us-east-1::document/AWS-ConfigureAWSPackage",
+				"arn:aws:ssm:us-east-1::document/AWS-RunShellScript",
+			},
+			wantAllowed: true,
+		},
+		{
+			name:   "SSM SendCommand with only instance resource (no document specified)",
+			action: "ssm:SendCommand",
+			identityStatements: &types.PolicyStatementList{
+				{
+					Effect: "Allow",
+					Action: types.NewDynaString([]string{"ssm:SendCommand"}),
+					Resource: types.NewDynaString([]string{
+						"arn:aws:ec2:us-east-1:111122223333:instance/*",
+					}),
+				},
+			},
+			wantDocumentRestrictions: []string{}, // No documents specified = not explicitly restricted
+			wantAllowed:              true,
+		},
+		{
+			name:   "SSM StartSession (no document restrictions expected)",
+			action: "ssm:StartSession",
+			identityStatements: &types.PolicyStatementList{
+				{
+					Effect: "Allow",
+					Action: types.NewDynaString([]string{"ssm:StartSession"}),
+					Resource: types.NewDynaString([]string{
+						"arn:aws:ec2:us-east-1:111122223333:instance/*",
+					}),
+				},
+			},
+			wantDocumentRestrictions: nil, // StartSession doesn't use documents
+			wantAllowed:              true,
+		},
+		{
+			name:   "Non-SSM action (no document restrictions)",
+			action: "s3:GetObject",
+			identityStatements: &types.PolicyStatementList{
+				{
+					Effect:   "Allow",
+					Action:   types.NewDynaString([]string{"s3:*"}),
+					Resource: types.NewDynaString([]string{"*"}),
+				},
+			},
+			wantDocumentRestrictions: nil,
+			wantAllowed:              true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			evaluator := NewPolicyEvaluator(&PolicyData{})
+
+			// Choose an appropriate resource based on the action
+			resource := "arn:aws:ec2:us-east-1:111122223333:instance/i-1234567890abcdef0"
+			if tt.action == "s3:GetObject" {
+				resource = "arn:aws:s3::111122223333:example-bucket/file.txt"
+			}
+
+			req := &EvaluationRequest{
+				Action:             tt.action,
+				Resource:           resource,
+				Context:            createRequestContext("arn:aws:iam::111122223333:user/test-user"),
+				IdentityStatements: tt.identityStatements,
+			}
+
+			result, err := evaluator.Evaluate(req)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantAllowed, result.Allowed)
+
+			// Check document restrictions
+			if tt.wantDocumentRestrictions == nil {
+				assert.Nil(t, result.SSMDocumentRestrictions, "Expected no SSM document restrictions")
+			} else {
+				assert.Equal(t, len(tt.wantDocumentRestrictions), len(result.SSMDocumentRestrictions),
+					"Document restrictions count mismatch")
+				if len(result.SSMDocumentRestrictions) == len(tt.wantDocumentRestrictions) {
+					for i, expectedDoc := range tt.wantDocumentRestrictions {
+						assert.Equal(t, expectedDoc, result.SSMDocumentRestrictions[i],
+							"Document restriction mismatch at index %d", i)
+					}
+				}
+			}
+
+			// Log for debugging
+			t.Logf("Action: %s", tt.action)
+			t.Logf("Allowed: %v", result.Allowed)
+			t.Logf("Document Restrictions: %v", result.SSMDocumentRestrictions)
+		})
+	}
+}
