@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecrpublic"
 	ecrpublictypes "github.com/aws/aws-sdk-go-v2/service/ecrpublic/types"
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
@@ -76,7 +76,7 @@ func (ep *AWSECRListPublicImages) getRepositoryURI(ecrClient *ecrpublic.Client, 
 	}
 
 	if len(descResp.Repositories) == 0 {
-		return "", fmt.Errorf("no repositories found: " + resource.Identifier)
+		return "", fmt.Errorf("no repositories found: %s", resource.Identifier)
 	}
 
 	repositoryURI := *descResp.Repositories[0].RepositoryUri

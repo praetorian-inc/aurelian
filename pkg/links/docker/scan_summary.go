@@ -34,6 +34,9 @@ func (s *DockerScanSummary) Process(input any) error {
 		// Pass through to other outputters
 		return s.Send(v)
 	case *janusTypes.NPFinding:
+		if v == nil {
+			return nil
+		}
 		s.mu.Lock()
 		s.findings = append(s.findings, *v)
 		s.mu.Unlock()
@@ -47,14 +50,17 @@ func (s *DockerScanSummary) Process(input any) error {
 
 func (s *DockerScanSummary) Complete() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	findingsCount := len(s.findings)
+	findingsCopy := make([]janusTypes.NPFinding, len(s.findings))
+	copy(findingsCopy, s.findings)
+	s.mu.Unlock()
 
-	slog.Info("Docker scan completed", "total_findings", len(s.findings))
+	slog.Info("Docker scan completed", "total_findings", findingsCount)
 
 	// Output summary even if no findings
 	summary := map[string]any{
-		"total_findings": len(s.findings),
-		"findings":       s.findings,
+		"total_findings": findingsCount,
+		"findings":       findingsCopy,
 	}
 
 	return s.Send(summary)
