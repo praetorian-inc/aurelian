@@ -72,6 +72,10 @@ func ExtractPrincipals(policy *types.Policy) ([]types.Principal, error) {
 		if statement.Condition != nil {
 			extractedPrincipals := extractPrincipalFromConditions(statement.Condition)
 			principals = append(principals, extractedPrincipals...)
+
+			// Also extract GitHub Actions federated principals
+			gitHubPrincipals := extractGitHubActionsPrincipals(statement.Condition)
+			principals = append(principals, gitHubPrincipals...)
 		}
 	}
 
@@ -138,6 +142,35 @@ func extractPrincipalFromConditions(conditions *types.Condition) []types.Princip
 						Service: &value,
 					})
 				}
+			}
+			// Handle GitHub Actions federated principals
+			if conditionKey == GitHubActionsSubjectKey {
+				principals = append(principals, types.Principal{
+					Federated: &value,
+				})
+			}
+		}
+	}
+
+	return principals
+}
+
+// extractGitHubActionsPrincipals extracts GitHub Actions federated principals from conditions
+func extractGitHubActionsPrincipals(conditions *types.Condition) []types.Principal {
+	principals := make([]types.Principal, 0)
+
+	if conditions == nil {
+		return principals
+	}
+
+	// Look for GitHub Actions condition keys
+	for _, keyMap := range *conditions {
+		for conditionKey, value := range keyMap {
+			if conditionKey == GitHubActionsSubjectKey {
+				// Create a federated principal for GitHub Actions
+				principals = append(principals, types.Principal{
+					Federated: &value,
+				})
 			}
 		}
 	}

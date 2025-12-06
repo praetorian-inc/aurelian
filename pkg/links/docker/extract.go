@@ -11,7 +11,7 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	dockerTypes "github.com/praetorian-inc/janus-framework/pkg/types/docker"
+	"github.com/praetorian-inc/janus-framework/pkg/types/docker"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 )
 
@@ -48,7 +48,7 @@ func (de *DockerExtractToFS) Initialize() error {
 	return nil
 }
 
-func (de *DockerExtractToFS) Process(imageContext dockerTypes.DockerImage) error {
+func (de *DockerExtractToFS) Process(imageContext docker.DockerImage) error {
 	extract, err := cfg.As[bool](de.Arg("extract"))
 	if err != nil || !extract {
 		// Pass through without extraction
@@ -62,7 +62,7 @@ func (de *DockerExtractToFS) Process(imageContext dockerTypes.DockerImage) error
 	// Create extraction directory for this image
 	imageName := de.sanitizeImageName(imageContext.Image)
 	extractDir := filepath.Join(de.outDir, imageName)
-	
+
 	if err := os.MkdirAll(extractDir, 0755); err != nil {
 		return fmt.Errorf("failed to create image extraction directory: %w", err)
 	}
@@ -73,7 +73,7 @@ func (de *DockerExtractToFS) Process(imageContext dockerTypes.DockerImage) error
 	}
 
 	de.Logger.Info("Extracted Docker image to filesystem", "image", imageContext.Image, "path", extractDir)
-	
+
 	// Send the original imageContext to the next link for NoseyParker processing
 	return de.Send(&imageContext)
 }
@@ -95,7 +95,7 @@ func (de *DockerExtractToFS) extractTar(tarPath, extractDir string) error {
 
 	// Extract Docker image tar using archive/tar
 	tarReader := tar.NewReader(imageFile)
-	
+
 	for {
 		header, err := tarReader.Next()
 		if err == io.EOF {
@@ -107,7 +107,7 @@ func (de *DockerExtractToFS) extractTar(tarPath, extractDir string) error {
 
 		// Create the full path for extraction
 		targetPath := filepath.Join(extractDir, header.Name)
-		
+
 		// Ensure the target directory exists
 		if err := os.MkdirAll(filepath.Dir(targetPath), 0755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", filepath.Dir(targetPath), err)
@@ -130,9 +130,9 @@ func (de *DockerExtractToFS) extractTar(tarPath, extractDir string) error {
 				outFile.Close()
 				return fmt.Errorf("failed to extract file %s: %w", targetPath, err)
 			}
-			
+
 			outFile.Close()
-			
+
 			// Set file permissions
 			if err := os.Chmod(targetPath, os.FileMode(header.Mode)); err != nil {
 				de.Logger.Debug("failed to set file permissions", "file", targetPath, "error", err)
@@ -167,7 +167,7 @@ func NewDockerExtractToNP(configs ...cfg.Config) chain.Link {
 	return de
 }
 
-func (de *DockerExtractToNP) Process(imageContext dockerTypes.DockerImage) error {
+func (de *DockerExtractToNP) Process(imageContext docker.DockerImage) error {
 	if imageContext.LocalPath == "" {
 		return fmt.Errorf("no local path available for image %s", imageContext.Image)
 	}
@@ -178,8 +178,8 @@ func (de *DockerExtractToNP) Process(imageContext dockerTypes.DockerImage) error
 		return fmt.Errorf("failed to convert Docker image to NP inputs: %w", err)
 	}
 
-	de.Logger.Info("Converted Docker image to NoseyParker inputs", 
-		"image", imageContext.Image, 
+	de.Logger.Info("Converted Docker image to NoseyParker inputs",
+		"image", imageContext.Image,
 		"input_count", len(npInputs))
 
 	// Send each NPInput individually
@@ -257,8 +257,8 @@ func (dl *DockerImageLoader) processFileInput(fileName string) error {
 	return nil
 }
 
-func (dl *DockerImageLoader) createImageContext(imageName string) dockerTypes.DockerImage {
-	imageContext := dockerTypes.DockerImage{
+func (dl *DockerImageLoader) createImageContext(imageName string) docker.DockerImage {
+	imageContext := docker.DockerImage{
 		Image: imageName,
 	}
 

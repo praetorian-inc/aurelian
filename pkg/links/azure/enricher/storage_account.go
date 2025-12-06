@@ -36,9 +36,9 @@ func (s *StorageAccountEnricher) Enrich(ctx context.Context, resource *model.Azu
 	// Sanitize the storage account name for URL encoding
 	storageAccountNameForURL := url.QueryEscape(strings.TrimSpace(storageAccountName))
 
-	// Create HTTP client with timeout
+	// Create HTTP client with timeout (reduced from 10s to 3s for faster failure and better responsiveness)
 	client := &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: 3 * time.Second,
 	}
 
 	// Test anonymous access via HTTP request
@@ -46,7 +46,7 @@ func (s *StorageAccountEnricher) Enrich(ctx context.Context, resource *model.Azu
 
 	resp, err := client.Get(testURL)
 
-	command := fmt.Sprintf("curl -i '%s' --max-time 10", testURL)
+	command := fmt.Sprintf("curl -i '%s' --max-time 3", testURL)
 	curlCommand := Command{
 		Command:                   command,
 		Description:               "Test anonymous access to storage account container listing",

@@ -69,6 +69,10 @@ var FindSecretsTypes = []string{
 	"AWS::SSM::Parameter",
 	"AWS::SSM::Document",
 	"AWS::StepFunctions::StateMachine",
+	"AWS::Logs::LogGroup",
+	"AWS::Logs::LogStream",
+	"AWS::Logs::MetricFilter",
+	"AWS::Logs::SubscriptionFilter",
 	"ALL",
 }
 

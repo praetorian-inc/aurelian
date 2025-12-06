@@ -14,6 +14,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/efs"
 	"github.com/aws/aws-sdk-go-v2/service/elasticsearchservice"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	"github.com/aws/aws-sdk-go-v2/service/opensearch"
+	"github.com/aws/aws-sdk-go-v2/service/opensearchserverless"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
@@ -349,6 +351,40 @@ func GetEvaluationContexts(resourceType string) []*iam.RequestContext {
 		}
 		return generator.GenerateAllPermutations()
 
+	case "AWS::OpenSearchService::Domain", "AWS::Elasticsearch::Domain":
+		generator := ContextGenerator{
+			BasePrincipals: []string{
+				"arn:aws:iam::111122223333:role/praetorian", // Generic cross-account
+				"es.amazonaws.com",                          // ElasticSearch service
+				"opensearch.amazonaws.com",                  // OpenSearch service
+			},
+			Conditions: []ConditionPermutation{
+				{"aws:SecureTransport", []string{"true", "false", ""}},
+				{"aws:PrincipalType", []string{"Anonymous", "AssumedRole", "User", "Service", ""}},
+				{"aws:SourceAccount", []string{"111122223333", ""}},
+				{"aws:SourceIp", []string{"0.0.0.0/0", "10.0.0.0/8", ""}},
+				{"es:source", []string{"*", ""}}, // ElasticSearch specific
+			},
+		}
+		return generator.GenerateAllPermutations()
+
+	case "AWS::OpenSearchServerless::Collection":
+		generator := ContextGenerator{
+			BasePrincipals: []string{
+				"arn:aws:iam::111122223333:role/praetorian", // Generic cross-account
+				"aoss.amazonaws.com",                        // OpenSearch Serverless service
+				"opensearch.amazonaws.com",                  // OpenSearch service
+			},
+			Conditions: []ConditionPermutation{
+				{"aws:SecureTransport", []string{"true", "false", ""}},
+				{"aws:PrincipalType", []string{"Anonymous", "AssumedRole", "User", "Service", ""}},
+				{"aws:SourceAccount", []string{"111122223333", ""}},
+				{"aws:SourceIp", []string{"0.0.0.0/0", "10.0.0.0/8", ""}},
+				{"aoss:collection", []string{"*", ""}}, // OpenSearch Serverless specific
+			},
+		}
+		return generator.GenerateAllPermutations()
+
 	default:
 		// Default fallback for unknown resource types
 		return []*iam.RequestContext{
@@ -522,6 +558,16 @@ var ServiceMap = map[string]ServicePolicyConfig{
 	"AWS::ElasticSearch::Domain": {
 		GetPolicy:       ServicePolicyFuncMap["AWS::ElasticSearch::Domain"],
 		IdentifierField: "DomainName",
+		PolicyField:     "AccessPolicy",
+	},
+	"AWS::OpenSearchService::Domain": {
+		GetPolicy:       ServicePolicyFuncMap["AWS::OpenSearchService::Domain"],
+		IdentifierField: "DomainName",
+		PolicyField:     "AccessPolicy",
+	},
+	"AWS::OpenSearchServerless::Collection": {
+		GetPolicy:       ServicePolicyFuncMap["AWS::OpenSearchServerless::Collection"],
+		IdentifierField: "Name",
 		PolicyField:     "AccessPolicy",
 	},
 }
@@ -778,6 +824,96 @@ var ServicePolicyFuncMap = map[string]PolicyGetter{
 
 		return policy, nil
 	},
+	"AWS::OpenSearchService::Domain": func(ctx context.Context, cfg aws.Config, domainName string, allowedRegions []string) (*types.Policy, error) {
+		client := opensearch.NewFromConfig(cfg)
+		resp, err := client.DescribeDomainConfig(ctx, &opensearch.DescribeDomainConfigInput{
+			DomainName: aws.String(domainName),
+		})
+		if err != nil {
+			// Handle "no domain" errors gracefully
+			if strings.Contains(err.Error(), "ResourceNotFoundException") {
+				return nil, err
+			}
+			return nil, err
+		}
+		if resp.DomainConfig.AccessPolicies == nil || resp.DomainConfig.AccessPolicies.Options == nil {
+			return nil, errors.New("no policy found")
+		}
+
+		policy, err := strToPolicy(*resp.DomainConfig.AccessPolicies.Options)
+		if err != nil {
+			return nil, err
+		}
+
+		return policy, nil
+	},
+	"AWS::OpenSearchServerless::Collection": func(ctx context.Context, cfg aws.Config, collectionName string, allowedRegions []string) (*types.Policy, error) {
+		client := opensearchserverless.NewFromConfig(cfg)
+
+		// List access policies to find the one for this collection
+		listResp, err := client.ListAccessPolicies(ctx, &opensearchserverless.ListAccessPoliciesInput{
+			Type: "data",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list access policies: %w", err)
+		}
+
+		// Find policy that matches our collection
+		for _, policySummary := range listResp.AccessPolicySummaries {
+			if policySummary.Name == nil {
+				continue
+			}
+
+			// Get the full policy details
+			getResp, err := client.GetAccessPolicy(ctx, &opensearchserverless.GetAccessPolicyInput{
+				Name: policySummary.Name,
+				Type: "data",
+			})
+			if err != nil {
+				slog.Debug("Failed to get access policy details", "policy", *policySummary.Name, "error", err)
+				continue
+			}
+
+			if getResp.AccessPolicyDetail == nil || getResp.AccessPolicyDetail.Policy == nil {
+				continue
+			}
+
+			// Parse the policy to check if it applies to our collection
+			var policyDoc map[string]any
+			policyBytes, err := json.Marshal(getResp.AccessPolicyDetail.Policy)
+			if err != nil {
+				slog.Debug("Failed to marshal policy document", "policy", *policySummary.Name, "error", err)
+				continue
+			}
+			if err := json.Unmarshal(policyBytes, &policyDoc); err != nil {
+				slog.Debug("Failed to parse policy document", "policy", *policySummary.Name, "error", err)
+				continue
+			}
+
+			// Check if this policy applies to our collection
+			if rules, ok := policyDoc["Rules"].([]any); ok {
+				for _, rule := range rules {
+					if ruleMap, ok := rule.(map[string]any); ok {
+						if resourceTypes, ok := ruleMap["ResourceType"].([]any); ok {
+							for _, resourceType := range resourceTypes {
+								if rt, ok := resourceType.(string); ok && strings.Contains(rt, collectionName) {
+									// Convert the policy document to our Policy type
+									policy, err := strToPolicy(string(policyBytes))
+									if err != nil {
+										return nil, fmt.Errorf("failed to parse policy: %w", err)
+									}
+									return policy, nil
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// No specific access policy found for this collection
+		return nil, nil
+	},
 }
 
 // convertACLGrantsToStatements converts S3 ACL grants to IAM policy statements
@@ -887,7 +1023,12 @@ func (a *AwsResourcePolicyFetcher) Process(resource *types.EnrichedResourceDescr
 		return fmt.Errorf("failed to get policy: %w", err)
 	}
 
+	if policy == nil {
+		return nil
+	}
+
 	// Send the policy downstream
+	policy.ResourceARN = resource.Arn.String()
 	a.Send(policy)
 	return nil
 }

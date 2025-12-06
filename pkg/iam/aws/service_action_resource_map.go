@@ -41,7 +41,7 @@ func IsValidActionForResource(action, resource string) bool {
 		slog.Debug("Action not found in service map", slog.String("action", actionName), slog.String("service", service))
 		return false
 	}
-	
+
 	// Check each valid resource type
 	for _, resourceType := range validResourceTypes {
 		// Get pattern for resource type

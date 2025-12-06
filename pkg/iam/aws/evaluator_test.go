@@ -6,8 +6,8 @@ import (
 
 	"encoding/json"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awstypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/orgpolicies"
 	"github.com/praetorian-inc/nebula/pkg/types"
 	"github.com/stretchr/testify/assert"

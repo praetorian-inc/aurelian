@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aws/aws-sdk-go/aws/arn"
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/nebula/pkg/links/aws/orgpolicies"
 	"github.com/praetorian-inc/nebula/pkg/types"
 )

@@ -691,6 +691,294 @@ func TestEvaluateConditions(t *testing.T) {
 	}
 	testCases = append(testCases, lambdaS3TestCases...)
 
+	// Add GitHub Actions specific condition tests
+	gitHubActionsTestCases := []struct {
+		name       string
+		conditions *types.Condition
+		context    *RequestContext
+		expected   *ConditionEval
+	}{
+		{
+			name: "GitHub Actions subject equals specific repo and branch",
+			conditions: &types.Condition{
+				"StringEquals": {
+					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:ref:refs/heads/main",
+					GitHubActionsAudienceKey: "sts.amazonaws.com",
+				},
+			},
+			expected: &ConditionEval{
+				Result: ConditionMatched,
+			},
+		},
+		{
+			name: "GitHub Actions subject does not match - different branch",
+			conditions: &types.Condition{
+				"StringEquals": {
+					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:ref:refs/heads/develop",
+					GitHubActionsAudienceKey: "sts.amazonaws.com",
+				},
+			},
+			expected: &ConditionEval{
+				Result: ConditionFailed,
+			},
+		},
+		{
+			name: "GitHub Actions subject with wildcard matching any context",
+			conditions: &types.Condition{
+				"StringLike": {
+					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:*"},
+					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:environment:production",
+					GitHubActionsAudienceKey: "sts.amazonaws.com",
+				},
+			},
+			expected: &ConditionEval{
+				Result: ConditionMatched,
+			},
+		},
+		{
+			name: "GitHub Actions subject with wildcard not matching different repo",
+			conditions: &types.Condition{
+				"StringLike": {
+					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:*"},
+					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					GitHubActionsSubjectKey:   "repo:different-org/other-repo:ref:refs/heads/main",
+					GitHubActionsAudienceKey: "sts.amazonaws.com",
+				},
+			},
+			expected: &ConditionEval{
+				Result: ConditionFailed,
+			},
+		},
+		{
+			name: "GitHub Actions environment-specific access",
+			conditions: &types.Condition{
+				"StringEquals": {
+					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:environment:production"},
+					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:environment:production",
+					GitHubActionsAudienceKey: "sts.amazonaws.com",
+				},
+			},
+			expected: &ConditionEval{
+				Result: ConditionMatched,
+			},
+		},
+		{
+			name: "GitHub Actions environment mismatch",
+			conditions: &types.Condition{
+				"StringEquals": {
+					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:environment:production"},
+					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:environment:staging",
+					GitHubActionsAudienceKey: "sts.amazonaws.com",
+				},
+			},
+			expected: &ConditionEval{
+				Result: ConditionFailed,
+			},
+		},
+		{
+			name: "GitHub Actions pull request context",
+			conditions: &types.Condition{
+				"StringEquals": {
+					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:pull_request"},
+					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:pull_request",
+					GitHubActionsAudienceKey: "sts.amazonaws.com",
+				},
+			},
+			expected: &ConditionEval{
+				Result: ConditionMatched,
+			},
+		},
+		{
+			name: "GitHub Actions subject missing should fail",
+			conditions: &types.Condition{
+				"StringEquals": {
+					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					GitHubActionsAudienceKey: "sts.amazonaws.com",
+					// Missing subject key
+				},
+			},
+			expected: &ConditionEval{
+				Result:      ConditionFailed,
+				MissingKeys: []string{GitHubActionsSubjectKey},
+			},
+		},
+		{
+			name: "GitHub Actions audience missing should fail",
+			conditions: &types.Condition{
+				"StringEquals": {
+					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					GitHubActionsSubjectKey: "repo:praetorian-inc/nebula:ref:refs/heads/main",
+					// Missing audience key
+				},
+			},
+			expected: &ConditionEval{
+				Result:      ConditionFailed,
+				MissingKeys: []string{GitHubActionsAudienceKey},
+			},
+		},
+		{
+			name: "GitHub Actions multiple subject patterns - any should match",
+			conditions: &types.Condition{
+				"StringEquals": {
+					GitHubActionsSubjectKey: {
+						"repo:praetorian-inc/nebula:ref:refs/heads/main",
+						"repo:praetorian-inc/nebula:environment:production",
+					},
+					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:environment:production",
+					GitHubActionsAudienceKey: "sts.amazonaws.com",
+				},
+			},
+			expected: &ConditionEval{
+				Result: ConditionMatched,
+			},
+		},
+		{
+			name: "GitHub Actions StringNotEquals - should match different subject",
+			conditions: &types.Condition{
+				"StringNotEquals": {
+					GitHubActionsSubjectKey:   {"repo:blocked-org/blocked-repo:*"},
+					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:ref:refs/heads/main",
+					GitHubActionsAudienceKey: "sts.amazonaws.com",
+				},
+			},
+			expected: &ConditionEval{
+				Result: ConditionMatched,
+			},
+		},
+		{
+			name: "GitHub Actions StringNotEquals - should fail for matching subject",
+			conditions: &types.Condition{
+				"StringNotEquals": {
+					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:*"},
+					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:ref:refs/heads/main",
+					GitHubActionsAudienceKey: "sts.amazonaws.com",
+				},
+			},
+			expected: &ConditionEval{
+				Result: ConditionFailed,
+			},
+		},
+		{
+			name: "GitHub Actions with ForAnyValue modifier",
+			conditions: &types.Condition{
+				"ForAnyValue:StringLike": {
+					GitHubActionsSubjectKey: {
+						"repo:*/nebula:*",
+						"repo:praetorian-inc/*:environment:production",
+					},
+					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:ref:refs/heads/main",
+					GitHubActionsAudienceKey: "sts.amazonaws.com",
+				},
+			},
+			expected: &ConditionEval{
+				Result: ConditionMatched,
+			},
+		},
+		{
+			name: "GitHub Actions multi-level repository name",
+			conditions: &types.Condition{
+				"StringEquals": {
+					GitHubActionsSubjectKey:   {"repo:org/sub-org/repo-name:ref:refs/heads/main"},
+					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					GitHubActionsSubjectKey:   "repo:org/sub-org/repo-name:ref:refs/heads/main",
+					GitHubActionsAudienceKey: "sts.amazonaws.com",
+				},
+			},
+			expected: &ConditionEval{
+				Result: ConditionMatched,
+			},
+		},
+		{
+			name: "GitHub Actions tag-based deployment",
+			conditions: &types.Condition{
+				"StringLike": {
+					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:ref:refs/tags/v*"},
+					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
+				},
+			},
+			context: &RequestContext{
+				RequestParameters: map[string]string{
+					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:ref:refs/tags/v1.2.3",
+					GitHubActionsAudienceKey: "sts.amazonaws.com",
+				},
+			},
+			expected: &ConditionEval{
+				Result: ConditionMatched,
+			},
+		},
+	}
+	testCases = append(testCases, gitHubActionsTestCases...)
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			//tc.context.PopulateDefaultRequestConditionKeys("arn:aws:iam::123456789012:role/test-role")

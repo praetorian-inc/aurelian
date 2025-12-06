@@ -1,24 +1,29 @@
 id: data_factory_public_access
-name: Publicly Accessible Data Factories
-description: Detects Azure Data Factory instances with public network access enabled
-severity: High
+name: Data Factory Self-Hosted Integration Runtime Network Configuration
+description: Identifies Azure Data Factory instances where Self-Hosted Integration Runtime (SHIR) communication is not restricted to private networks. SHIR enables secure hybrid data integration between on-premises systems and Azure, often processing sensitive enterprise data.
+severity: Info
 category: ["Public Access", "arg-scan"]
 reportability: Manual Triage 
 triageNotes: |-
-  Potential Risk:
-  - Public accessibility exposes the Data Factory endpoints to the entire internet
-  - Could lead to unauthorized access to data pipelines and their configurations
-  - May expose sensitive connection information in pipeline metadata
-  - Potential for unauthorized pipeline execution or modification
-  - DEFAULT BEHAVIOR: Azure Data Factory defaults to public network access when not explicitly configured
+  Usually not reportable unless exceptional circumstances as stated below
   
-  Triage Guidance:
-  - Data Factories without explicit publicNetworkAccess setting are treated as publicly accessible (Azure default)
-  - Verify additional fields such as ipRules and defaultAction to ensure public access is enabled 
-  - This finding confirms the Data Factory is accessible from the internet but not anonymous access
-  - Additional manual testing is required to determine if unauthorized access is possible
-  - Review configured integrations and linked services for sensitive connections
+  SHIR Purpose:
+  - Bridges on-premises databases/systems with Azure Data Factory securely
+  - Common data: Financial records, customer PII, compliance-regulated datasets
+  - Network exposure affects SHIR communication only (*.datafactory.azure.net, *.servicebus.windows.net)
+  
+  Risk Assessment:
+  - Data Factory management plane remains publicly accessible regardless of this setting
+  - Many Data Factories don't actually use SHIR - verify deployment before prioritizing
+  - Higher priority for production instances processing sensitive on-premises data
+  - Consider compliance requirements (PCI-DSS, HIPAA) that may mandate private network isolation
+  
+  Validation:
+  1. Confirm SHIR is deployed and active
+  2. Identify sensitive data sources (on-premises databases, SAP, etc.)
+  3. Assess if private endpoints are justified based on data classification and compliance needs
 references:
+  - https://learn.microsoft.com/en-us/azure/data-factory/create-self-hosted-integration-runtime
   - https://learn.microsoft.com/en-us/azure/data-factory/data-movement-security-considerations
   - https://learn.microsoft.com/en-us/azure/data-factory/
 query: |-
