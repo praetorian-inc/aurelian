@@ -1,27 +1,42 @@
 id: log_analytics_public_access
 name: Publicly Accessible Log Analytics Workspaces
-description: Detects Log Analytics workspaces with public network access enabled for ingestion or query
-severity: High
+description: Detects Log Analytics workspaces with public network access enabled for ingestion or query operations. Note that all access still requires Azure AD authentication and appropriate RBAC permissions.
+severity: Low
 category: ["Public Access", "arg-scan"]
 reportability: Manual Triage
 triageNotes: |
   Important Context:
-  Microsoft.OperationalInsights/workspaces (Log Analytics Workspaces) does not allow anonymous access; all access is controlled through Azure Active Directory (AAD) authentication and Azure role-based access control (RBAC). There is no supported configuration or documented method to permit unauthenticated or anonymous access to the workspace itself, to the logs within, or to ingestion endpoints.
+  Azure Log Analytics Workspaces do not support unauthenticated or anonymous access. Every query or API call requires authentication through Azure AD and appropriate permission assignments, regardless of public network access settings. There is no Microsoft-supported configuration to enable unauthenticated access to logs.
 
-  Potential Risk:
-  - Public accessibility exposes log data and queries to potential unauthorized access
-  - Could lead to sensitive data exposure if misconfigured
-  - May allow unauthorized ingestion of data
-  - Potential for excessive resource consumption through public queries
+  Understanding Public Network Access:
+  - "Public network access" refers to network-level connectivity, not authentication bypass
+  - All access still requires valid Azure AD authentication and RBAC permissions
+  - Public access means the workspace endpoints are reachable from the internet (subject to authentication)
+  - Private access restricts network connectivity to private endpoints only
+
+  Potential Considerations:
+  - Increased attack surface through internet-accessible endpoints
+  - Potential for brute force attacks against authentication mechanisms
+  - Network-level exposure may facilitate reconnaissance activities
+  - Consider whether private endpoints would better align with security posture
 
   Triage Guidance:
-  - This finding confirms the workspace allows public network access for ingestion and/or query operations
-  - Review if public access is required for both ingestion and query operations
-  - Validate if any IP restrictions or private endpoints are configured
-  - Check workspace access control and data export settings
+  - Verify if public network access is operationally required
+  - Review authentication and authorization controls (Azure AD and RBAC)
+  - Consider implementing private endpoints if feasible for the environment
+  - Validate any IP restrictions or network security groups in place
+  - Assess if the current configuration aligns with organizational security policies
+  - Check for any conditional access policies that may provide additional protection
+
+  Remediation Considerations:
+  - Disable public network access if not required
+  - Implement private endpoints for secure connectivity
+  - Configure IP allow lists if public access is necessary
+  - Review and validate RBAC assignments
 references:
   - https://learn.microsoft.com/en-us/azure/azure-monitor/logs/log-analytics-workspace-overview
   - https://learn.microsoft.com/en-us/azure/azure-monitor/logs/private-link-security
+  - https://learn.microsoft.com/en-us/azure/azure-monitor/logs/manage-access
 query: |
     resources
     | where type =~ 'Microsoft.OperationalInsights/workspaces'
