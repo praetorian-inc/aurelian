@@ -1,19 +1,48 @@
 id: service_bus_public_access
 name: Publicly Accessible Service Bus Namespaces
-description: Detects Service Bus namespaces with public network access enabled
-severity: High
+description: Detects Service Bus namespaces with public network access enabled. Note that all access still requires authentication via SAS tokens or Azure AD, as anonymous access is not supported.
+severity: Low
 category: ["Public Access", "arg-scan"]
+reportability: Manual Triage
 triageNotes: |
-  Potential Risk:
-  - Public accessibility exposes messaging endpoints to the entire internet
-  - Could lead to unauthorized message interception or injection attempts
-  - May impact service performance from processing unauthorized requests (DoS)
-  
+  Important Context:
+  Azure Service Bus queues and topics cannot be accessed anonymously or without authentication. Access to these messaging entities always requires authentication through supported methods, regardless of public network access settings.
+
+  Authentication Methods:
+  - Shared Access Signatures (SAS): Access controlled via shared access policies that produce time-limited SAS tokens with specific permissions (send, listen, manage)
+  - Microsoft Entra ID (Azure AD): Role-based access control (RBAC) enforced via Azure AD identities with granular OAuth 2.0 permissions
+  - No configuration allows anonymous or unauthenticated access to queues, topics, or subscriptions
+
+  Understanding Public Network Access:
+  - "Public network access" refers to network-level connectivity from the internet, not authentication bypass
+  - All messaging operations still require valid SAS tokens or Azure AD authentication
+  - Public access means Service Bus endpoints are reachable from the internet (subject to authentication)
+  - Private access restricts network connectivity to private endpoints or virtual networks only
+
+  Potential Considerations:
+  - Increased attack surface through internet-accessible messaging endpoints
+  - Potential for authentication brute force attempts or token enumeration
+  - Network-level exposure may facilitate reconnaissance of messaging infrastructure
+  - Consider whether private endpoints would better align with security posture
+
   Triage Guidance:
-  - This finding only confirms the service bus is accessible from the internet and not anonymous access
-  - Additional manual testing is required to determine if anonymous/unauthorized access is possible
+  - Verify if public network access is operationally required for your messaging scenarios
+  - Review authentication methods in use (SAS vs Azure AD) and validate token permissions
+  - Consider implementing private endpoints or virtual network integration if feasible
+  - Validate any IP restrictions or network security groups protecting the namespace
+  - Assess if the current configuration aligns with organizational security policies
+  - Review shared access policies to ensure principle of least privilege
+
+  Remediation Considerations:
+  - Disable public network access if not required for business operations
+  - Implement private endpoints for secure connectivity from Azure resources
+  - Configure IP firewall rules if public access is necessary
+  - Consider disabling SAS authentication and using only Azure AD for enhanced security
+  - Review and validate shared access policy permissions
 references:
   - https://learn.microsoft.com/en-us/azure/service-bus-messaging/network-security
+  - https://learn.microsoft.com/en-us/azure/service-bus-messaging/service-bus-authentication-and-authorization
+  - https://learn.microsoft.com/en-us/azure/service-bus-messaging/private-link-service
 query: |
     resources
     | where type =~ 'Microsoft.ServiceBus/namespaces'
