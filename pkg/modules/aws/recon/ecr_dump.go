@@ -23,7 +23,7 @@ var ECRDump = chain.NewModule(
 		"platform":    "aws",
 		"opsec_level": "moderate",
 		"authors":     []string{"Praetorian"},
-	}),
+}).WithChainInputParam(options.AwsResourceType().Name()),
 ).WithLinks(
 	// First get the resource types for ECR repositories
 	general.NewResourceTypePreprocessor(&AWSECRResourceTypes{}),
@@ -45,6 +45,8 @@ var ECRDump = chain.NewModule(
 	docker.NewDockerExtractToNP,
 	chain.ConstructLinkWithConfigs(noseyparker.NewNoseyParkerScanner,
 		cfg.WithArg("continue_piping", true)),
+	// Output scan summary
+	docker.NewDockerScanSummary,
 ).WithInputParam(
 	options.AwsResourceType().WithDefault([]string{"AWS::ECR::Repository", "AWS::ECR::PublicRepository"}),
 ).WithConfigs(
@@ -56,7 +58,7 @@ var ECRDump = chain.NewModule(
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
 	outputters.NewNPFindingsConsoleOutputter,
-).WithAutoRun()
+).WithStrictness(chain.Lax)
 
 // AWSECRResourceTypes implements the SupportsResourceTypes interface
 type AWSECRResourceTypes struct{}

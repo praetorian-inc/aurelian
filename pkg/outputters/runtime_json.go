@@ -109,10 +109,11 @@ func (j *RuntimeJSONOutputter) Output(val any) error {
 		}
 		// Add the actual data to our output list
 		j.output = append(j.output, outputData.Data)
-	} else {
-		// Handle the original case where just data is provided
-		j.output = append(j.output, val)
+		return nil
 	}
+
+	// Handle the original case where just data is provided
+	j.output = append(j.output, val)
 	return nil
 }
 
