@@ -1,31 +1,72 @@
 id: app_services_public_access
 name: Publicly Accessible App Services
-description: Detects app services without virtual network integration
+description: Detects App Services that are publicly accessible from the internet without private endpoints or IP restrictions. Note that VNet integration provides outbound connectivity but does not restrict inbound public access.
+severity: Medium
 category: ["Public Access", "arg-scan"]
-severity: High
-reportability: Automatic
+reportability: Manual Triage
 triageNotes: |
-  Potential Risks:
-  - Public accessibility exposes the application to the entire internet, increasing the attack surface
-  - Could lead to unauthorized access attempts, DDoS attacks, and potential exploitation of application vulnerabilities
-  - May violate security compliance requirements for internal-only services
+  Important Context:
+  This scan correctly identifies App Services that are accessible from the internet by checking for the absence of private endpoints and IP restrictions. VNet integration is NOT a factor in determining public accessibility, as it only provides outbound connectivity from the App Service to resources in a virtual network.
+
+  Understanding App Service Network Access:
+  - VNet Integration: Enables OUTBOUND connectivity from App Service to VNet resources (does NOT restrict inbound access)
+  - Private Endpoints: Provides private inbound connectivity, making the service accessible only from within the VNet
+  - IP Restrictions: Allows/denies access based on client IP addresses or ranges
+  - Public Network Access: Controls whether the service accepts connections from public internet
+
+  Access Control Mechanisms:
+  - App Services may implement application-level authentication (Azure AD, built-in authentication)
+  - Application-level authorization and access controls independent of network configuration
+  - API keys, authentication tokens, or other application security measures
+  - Network-level restrictions do not determine application-level security posture
 
   Triage Guidance:
-  - This finding only confirms the app service is accessible from the internet
-  - Browse to the application from the Internet to determine anonymous access
+  - Test the application from the internet to determine what level of access is actually available
+  - Browse to the application and attempt any initial access attack vectors
+  - Review application-level authentication and authorization mechanisms
+  - Evaluate if the application is intended for public use vs internal use only
+
+  Common Scenarios:
+  - Public-facing websites and APIs legitimately need internet accessibility
+  - Internal applications may be misconfigured to allow public access
+  - Development/staging environments may not require the same restrictions as production
+  - Legacy applications might lack modern authentication mechanisms
+
+  Remediation Considerations:
+  - Implement private endpoints if the application should only be accessible from within Azure
+  - Configure IP restrictions to limit access to specific networks or IP ranges
+  - Disable public network access if the application is purely internal
+  - Implement or strengthen application-level authentication and authorization
+  - Consider using Azure Front Door or Application Gateway for additional security layers
 references:
   - https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration
+  - https://learn.microsoft.com/en-us/azure/app-service/networking-features
+  - https://learn.microsoft.com/en-us/azure/app-service/app-service-ip-restrictions
+  - https://learn.microsoft.com/en-us/azure/app-service/networking/private-endpoint
 query: |
     resources
-      | where type =~ 'microsoft.web/sites'
-      | extend hasPrivateEndpoint = isnotnull(properties.privateEndpointConnections) and
-      array_length(properties.privateEndpointConnections) > 0
-      | extend hasIpRestrictions = isnotnull(properties.siteConfig.ipSecurityRestrictions) and
-      array_length(properties.siteConfig.ipSecurityRestrictions) > 0
-      | extend publicNetworkAccess = coalesce(properties.publicNetworkAccess, 'Enabled')
-      | extend isPubliclyAccessible = (
-          publicNetworkAccess != 'Disabled' and
-          not(hasPrivateEndpoint) and
-          not(hasIpRestrictions)
-      )
-      | where isPubliclyAccessible == true
+    | where type =~ 'microsoft.web/sites'
+    | extend hasPrivateEndpoint = isnotnull(properties.privateEndpointConnections) and
+        array_length(properties.privateEndpointConnections) > 0
+    | extend hasIpRestrictions = isnotnull(properties.siteConfig.ipSecurityRestrictions) and
+        array_length(properties.siteConfig.ipSecurityRestrictions) > 0
+    | extend publicNetworkAccess = coalesce(properties.publicNetworkAccess, 'Enabled')
+    | extend vnetIntegration = properties.virtualNetworkSubnetId
+    | extend isPubliclyAccessible = (
+        publicNetworkAccess != 'Disabled' and
+        not(hasPrivateEndpoint) and
+        not(hasIpRestrictions)
+    )
+    | where isPubliclyAccessible == true
+    | project
+        id,
+        name,
+        type,
+        location,
+        resourceGroup,
+        publicNetworkAccess,
+        hasPrivateEndpoint,
+        hasIpRestrictions,
+        vnetIntegration,
+        isPubliclyAccessible,
+        subscriptionId
