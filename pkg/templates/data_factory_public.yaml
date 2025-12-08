@@ -30,24 +30,18 @@ triageNotes: |-
   - Increased attack surface through internet-accessible Data Factory endpoints
   - Network-level exposure of SHIR communication endpoints
   - Potential for reconnaissance of data integration infrastructure
-  - Consider whether private endpoints would better align with security posture for sensitive data processing
 
   Triage Guidance:
-  - Verify if public network access is operationally required for your data integration scenarios
   - Confirm if SHIR is actually deployed and active (many Data Factories don't use SHIR)
   - Review authentication methods and validate Azure RBAC assignments
-  - Identify sensitive data sources being processed (on-premises databases, SAP systems, etc.)
-  - Assess if private endpoints are justified based on data classification and compliance requirements
   - Consider compliance mandates (PCI-DSS, HIPAA) that may require private network isolation
-  - Higher priority for production instances processing sensitive on-premises data
 
   Remediation Considerations:
   - Disable public network access if not required for business operations
   - Implement private endpoints for secure connectivity to Data Factory resources
   - Configure IP firewall rules if public access is necessary
   - Review and validate Azure RBAC assignments for Data Factory access
-  - Assess data classification and apply appropriate network isolation based on sensitivity
-  - Consider using managed private endpoints for data source connections
+  
 references:
   - https://learn.microsoft.com/en-us/azure/data-factory/create-self-hosted-integration-runtime
   - https://learn.microsoft.com/en-us/azure/data-factory/data-movement-security-considerations
