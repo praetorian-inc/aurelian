@@ -16,29 +16,19 @@ triageNotes: |
   Understanding Public Network Access:
   - "Public network access" refers to network-level connectivity from the internet, not authentication bypass
   - All messaging operations still require valid SAS tokens or Azure AD authentication
-  - Public access means Service Bus endpoints are reachable from the internet (subject to authentication)
-  - Private access restricts network connectivity to private endpoints or virtual networks only
 
   Potential Considerations:
   - Increased attack surface through internet-accessible messaging endpoints
-  - Potential for authentication brute force attempts or token enumeration
+  - Potential for exposed credentials to be used to authenticate to the messaging endpoints
   - Network-level exposure may facilitate reconnaissance of messaging infrastructure
-  - Consider whether private endpoints would better align with security posture
 
   Triage Guidance:
-  - Verify if public network access is operationally required for your messaging scenarios
-  - Review authentication methods in use (SAS vs Azure AD) and validate token permissions
-  - Consider implementing private endpoints or virtual network integration if feasible
-  - Validate any IP restrictions or network security groups protecting the namespace
-  - Assess if the current configuration aligns with organizational security policies
-  - Review shared access policies to ensure principle of least privilege
+  - Validate any mitigating controls (e.g., IP restrictions or network security groups protecting the namespace)
 
   Remediation Considerations:
   - Disable public network access if not required for business operations
   - Implement private endpoints for secure connectivity from Azure resources
   - Configure IP firewall rules if public access is necessary
-  - Consider disabling SAS authentication and using only Azure AD for enhanced security
-  - Review and validate shared access policy permissions
 references:
   - https://learn.microsoft.com/en-us/azure/service-bus-messaging/network-security
   - https://learn.microsoft.com/en-us/azure/service-bus-messaging/service-bus-authentication-and-authorization
