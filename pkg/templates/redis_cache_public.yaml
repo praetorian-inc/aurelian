@@ -1,19 +1,45 @@
 id: redis_cache_public_access
 name: Publicly Accessible Redis Caches
-description: Detects Redis Cache instances with public network access enabled
-severity: High
+description: Detects Redis Cache instances with public network access enabled that are not integrated with a virtual network. Note that all access still requires authentication via access keys or Azure AD, as anonymous access is not supported.
+severity: Low
 category: ["Public Access", "arg-scan"]
+reportability: Manual Triage
 triageNotes: |
-  Potential Risk:
-  - Public accessibility exposes the cache endpoint to the entire internet
-  - Could lead to unauthorized access attempts and data exposure
-  - May impact performance due to processing unauthorized requests (DoS)
-  
+  Important Context:
+  Azure Cache for Redis does not support truly anonymous or unauthenticated access. Authentication is always required to connect and use the cache, regardless of public network access settings.
+
+  Authentication Methods:
+  - Access Keys: Shared secret keys that provide full access to the cache
+  - Microsoft Entra ID (Azure AD) Authentication: Password-free, token-based authentication with RBAC support via Redis Access Control Lists (ACLs)
+  - Built-in access policies (Data Owner, Data Contributor, Data Reader) can be assigned via Azure RBAC using Microsoft Entra identities
+  - You cannot disable authentication entirely to allow anonymous access
+
+  Understanding Public Network Access:
+  - "Public network access" refers to network-level connectivity from the internet, not authentication bypass
+  - All Redis operations still require valid access keys or Azure AD authentication
+  - Public access means Redis endpoints are reachable from the internet (subject to authentication)
+  - VNet integration automatically makes the cache non-publicly addressable, regardless of public network access settings
+
+  VNet Integration Considerations:
+  - Redis caches configured with virtual network integration are not publicly addressable
+  - VNet integration provides network-level isolation and is only available for Premium tier caches
+  - This scan specifically targets caches WITHOUT VNet integration that have public access enabled
+
+  Potential Considerations:
+  - Increased attack surface through internet-accessible cache endpoints
+  - Potential for usage of compromised credentials to access Redis cache from Internet
+
   Triage Guidance:
-  - This finding only confirms the cache is accessible from the internet and not anonymous access
-  - Additional manual testing is required to determine if anonymous/unauthorized access is possible
+  - Validate any mitigating factors (e.g., firewall rules or IP restrictions protecting the cache)
+
+  Remediation Considerations:
+  - Disable public network access if not required for business operations
+  - Implement VNet integration (requires Premium tier) for secure connectivity
+  - Configure firewall rules to restrict access to specific IP ranges if public access is necessary
 references:
   - https://learn.microsoft.com/en-us/azure/azure-cache-for-redis/cache-network-isolation
+  - https://learn.microsoft.com/en-us/azure/azure-cache-for-redis/cache-how-to-premium-vnet
+  - https://learn.microsoft.com/en-us/azure/azure-cache-for-redis/cache-azure-active-directory-for-authentication
 query: |
     resources
     | where type =~ 'Microsoft.Cache/Redis'
@@ -23,8 +49,8 @@ query: |
     | extend minimumTlsVersion = properties.minimumTlsVersion
     | extend hostname = properties.hostName
     | extend subnetId = properties.subnetId
-    | where isempty(subnetId)
-    | where publicNetworkAccess != 'disabled'
+    | where isempty(subnetId)  // Only caches WITHOUT VNet integration
+    | where publicNetworkAccess != 'disabled'  // Only caches with public access enabled
     | project
         id,
         name,
