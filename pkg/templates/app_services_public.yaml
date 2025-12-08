@@ -20,18 +20,10 @@ triageNotes: |
   - API keys, authentication tokens, or other application security measures
   - Network-level restrictions do not determine application-level security posture
 
-  Potential Considerations:
-  - Increased attack surface through internet-accessible application endpoints
-  - Exposure to automated scanning, brute force attempts, and application-layer attacks
-  - Potential for unintended data exposure if application lacks proper authentication
-  - May not align with organizational security policies for internal applications
-
   Triage Guidance:
-  - Verify if public internet access is operationally required for the application
   - Test the application from the internet to determine what level of access is actually available
+  - Browse to the application and attempt any initial access attack vectors
   - Review application-level authentication and authorization mechanisms
-  - Assess whether the application processes sensitive data or performs critical business functions
-  - Consider if private endpoints or IP restrictions would better align with security requirements
   - Evaluate if the application is intended for public use vs internal use only
 
   Common Scenarios:
@@ -46,7 +38,6 @@ triageNotes: |
   - Disable public network access if the application is purely internal
   - Implement or strengthen application-level authentication and authorization
   - Consider using Azure Front Door or Application Gateway for additional security layers
-  - Review and validate that the current configuration matches the intended use case
 references:
   - https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration
   - https://learn.microsoft.com/en-us/azure/app-service/networking-features
