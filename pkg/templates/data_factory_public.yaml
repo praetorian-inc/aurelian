@@ -1,31 +1,52 @@
 id: data_factory_public_access
-name: Data Factory Self-Hosted Integration Runtime Network Configuration
-description: Identifies Azure Data Factory instances where Self-Hosted Integration Runtime (SHIR) communication is not restricted to private networks. SHIR enables secure hybrid data integration between on-premises systems and Azure, often processing sensitive enterprise data.
-severity: Info
+name: Publicly Accessible Azure Data Factory Instances
+description: Identifies Azure Data Factory instances with public network access enabled. Note that all access to ADF APIs, pipelines, and resources requires authentication via Azure AD or service principals, as anonymous access is not supported.
+severity: Low
 category: ["Public Access", "arg-scan"]
 reportability: Manual Triage 
 triageNotes: |-
-  Usually not reportable unless exceptional circumstances as stated below
+  Important Context:
+  Azure Data Factory instances do not support anonymous or unauthenticated access for any APIs, pipelines, or resources. All access requires proper authentication through Azure AD, service principals, or managed identities, regardless of public network access settings.
+
+  Authentication Requirements:
+  - Data Factory management plane operations require Azure RBAC permissions
+  - Pipeline execution and monitoring require appropriate Data Factory roles
+  - Self-Hosted Integration Runtime (SHIR) communication uses secure authentication tokens
+  - No configuration allows anonymous access to Data Factory resources or data
+
+  Understanding Public Network Access:
+  - "Public network access" refers to network-level connectivity from the internet, not authentication bypass
+  - All Data Factory operations still require valid Azure AD authentication and proper RBAC assignments
+  - Public access means Data Factory endpoints are reachable from the internet (subject to authentication)
+  - Private access restricts network connectivity to private endpoints and virtual networks only
+
+  Self-Hosted Integration Runtime (SHIR) Considerations:
+  - SHIR enables secure hybrid data integration between on-premises systems and Azure
+  - SHIR communication occurs over HTTPS to *.datafactory.azure.net and *.servicebus.windows.net
+  - Authentication tokens and certificates secure all SHIR communications
+  - Public network access affects SHIR communication endpoints but not authentication requirements
+
+  Potential Considerations:
+  - Increased attack surface through internet-accessible Data Factory endpoints
+  - Network-level exposure of SHIR communication endpoints
+  - Potential for reconnaissance of data integration infrastructure
+
+  Triage Guidance:
+  - Confirm if SHIR is actually deployed and active (many Data Factories don't use SHIR)
+  - Review authentication methods and validate Azure RBAC assignments
+  - Consider compliance mandates (PCI-DSS, HIPAA) that may require private network isolation
+
+  Remediation Considerations:
+  - Disable public network access if not required for business operations
+  - Implement private endpoints for secure connectivity to Data Factory resources
+  - Configure IP firewall rules if public access is necessary
+  - Review and validate Azure RBAC assignments for Data Factory access
   
-  SHIR Purpose:
-  - Bridges on-premises databases/systems with Azure Data Factory securely
-  - Common data: Financial records, customer PII, compliance-regulated datasets
-  - Network exposure affects SHIR communication only (*.datafactory.azure.net, *.servicebus.windows.net)
-  
-  Risk Assessment:
-  - Data Factory management plane remains publicly accessible regardless of this setting
-  - Many Data Factories don't actually use SHIR - verify deployment before prioritizing
-  - Higher priority for production instances processing sensitive on-premises data
-  - Consider compliance requirements (PCI-DSS, HIPAA) that may mandate private network isolation
-  
-  Validation:
-  1. Confirm SHIR is deployed and active
-  2. Identify sensitive data sources (on-premises databases, SAP, etc.)
-  3. Assess if private endpoints are justified based on data classification and compliance needs
 references:
   - https://learn.microsoft.com/en-us/azure/data-factory/create-self-hosted-integration-runtime
   - https://learn.microsoft.com/en-us/azure/data-factory/data-movement-security-considerations
-  - https://learn.microsoft.com/en-us/azure/data-factory/
+  - https://learn.microsoft.com/en-us/azure/data-factory/data-factory-private-link
+  - https://learn.microsoft.com/en-us/azure/data-factory/concepts-roles-permissions
 query: |-
     resources
     | where type =~ 'Microsoft.DataFactory/factories'
