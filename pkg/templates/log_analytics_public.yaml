@@ -11,22 +11,13 @@ triageNotes: |
   Understanding Public Network Access:
   - "Public network access" refers to network-level connectivity, not authentication bypass
   - All access still requires valid Azure AD authentication and RBAC permissions
-  - Public access means the workspace endpoints are reachable from the internet (subject to authentication)
-  - Private access restricts network connectivity to private endpoints only
 
   Potential Considerations:
   - Increased attack surface through internet-accessible endpoints
-  - Potential for brute force attacks against authentication mechanisms
-  - Network-level exposure may facilitate reconnaissance activities
   - Consider whether private endpoints would better align with security posture
 
   Triage Guidance:
-  - Verify if public network access is operationally required
-  - Review authentication and authorization controls (Azure AD and RBAC)
-  - Consider implementing private endpoints if feasible for the environment
-  - Validate any IP restrictions or network security groups in place
-  - Assess if the current configuration aligns with organizational security policies
-  - Check for any conditional access policies that may provide additional protection
+  - Validate for mitigating controls (e.g., any IP restrictions or network security groups in place)
 
   Remediation Considerations:
   - Disable public network access if not required
