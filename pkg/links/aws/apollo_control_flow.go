@@ -242,6 +242,10 @@ func (a *AwsApolloControlFlow) gatherGaadDetails() error {
 		}
 	}
 
+	if a.pd.Gaad == nil {
+		return fmt.Errorf("failed to collect GAAD (GetAccountAuthorizationDetails) data - the IAM authorization details chain did not produce output")
+	}
+
 	return nil
 }
 

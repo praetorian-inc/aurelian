@@ -139,15 +139,15 @@ func GetAWSCfg(region string, profile string, opts []*types.Option, opsecLevel s
 		// config.WithAPIOptions(cacheFunc),
 	}
 
-	// Only override profile if user explicitly specified one
-	// This allows the standard AWS credential chain to work (env vars -> default profile -> etc.)
 	if profile != "" {
 		options = append(options, config.WithSharedConfigProfile(profile))
 	}
 
 	for _, opt := range opts {
-		if opt.Name == "profile-dir" {
+		if opt.Name == "profile-dir" && opt.Value != "" {
+			configLocation := path.Join(opt.Value, "config")
 			credLocation := path.Join(opt.Value, "credentials")
+			options = append(options, config.WithSharedConfigFiles([]string{configLocation}))
 			options = append(options, config.WithSharedCredentialsFiles([]string{credLocation}))
 		}
 	}
