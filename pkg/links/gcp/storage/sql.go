@@ -8,8 +8,8 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
+	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/utils"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 	"google.golang.org/api/sqladmin/v1"
 )
@@ -58,7 +58,7 @@ func (g *GcpSQLInstanceInfoLink) Initialize() error {
 func (g *GcpSQLInstanceInfoLink) Process(instanceName string) error {
 	instance, err := g.sqlService.Instances.Get(g.ProjectId, instanceName).Do()
 	if err != nil {
-		return utils.HandleGcpError(err, "failed to get SQL instance")
+		return common.HandleGcpError(err, "failed to get SQL instance")
 	}
 	gcpSQLInstance, err := tab.NewGCPResource(
 		instance.Name,                        // resource name (instance name)
@@ -105,7 +105,7 @@ func (g *GcpSQLInstanceListLink) Process(resource tab.GCPResource) error {
 	listCall := g.sqlService.Instances.List(projectId)
 	resp, err := listCall.Do()
 	if err != nil {
-		return utils.HandleGcpError(err, "failed to list SQL instances in project")
+		return common.HandleGcpError(err, "failed to list SQL instances in project")
 	}
 	for _, instance := range resp.Items {
 		gcpSQLInstance, err := tab.NewGCPResource(

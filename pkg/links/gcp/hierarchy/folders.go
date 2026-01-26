@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
@@ -92,7 +93,8 @@ func (g *GcpFolderSubFolderListLink) Process(resource tab.GCPResource) error {
 		return nil
 	}
 	folderName := resource.Name
-	listReq := g.resourceManagerService.Folders.List().Parent(folderName)
+	folderID := strings.TrimPrefix(folderName, "folders/") // expects ID here
+	listReq := g.resourceManagerService.Folders.List().Parent(folderID)
 	err := listReq.Pages(context.Background(), func(page *cloudresourcemanagerv2.ListFoldersResponse) error {
 		for _, folder := range page.Folders {
 			gcpFolder, err := createGcpFolderResource(folder)
@@ -105,7 +107,7 @@ func (g *GcpFolderSubFolderListLink) Process(resource tab.GCPResource) error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("failed to list folders in folder %s: %w", folderName, err)
+		return fmt.Errorf("failed to list folders in folder %s: %w", folderID, err)
 	}
 	return nil
 }
@@ -113,7 +115,7 @@ func (g *GcpFolderSubFolderListLink) Process(resource tab.GCPResource) error {
 type GcpFolderProjectListLink struct {
 	*base.GcpBaseLink
 	resourceManagerService *cloudresourcemanager.Service
-	FilterSysProjects      bool
+	IncludeSysProjects     bool
 }
 
 // creates a link to list all projects in a folder
@@ -125,7 +127,7 @@ func NewGcpFolderProjectListLink(configs ...cfg.Config) chain.Link {
 
 func (g *GcpFolderProjectListLink) Params() []cfg.Param {
 	params := append(g.GcpBaseLink.Params(),
-		options.GcpFilterSysProjects(),
+		options.GcpIncludeSysProjects(),
 	)
 	return params
 }
@@ -139,11 +141,11 @@ func (g *GcpFolderProjectListLink) Initialize() error {
 	if err != nil {
 		return fmt.Errorf("failed to create resource manager service: %w", err)
 	}
-	filterSysProjects, err := cfg.As[bool](g.Arg("filter-sys-projects"))
+	includeSysProjects, err := cfg.As[bool](g.Arg("include-sys-projects"))
 	if err != nil {
-		return fmt.Errorf("failed to get filter-sys-projects: %w", err)
+		return fmt.Errorf("failed to get include-sys-projects: %w", err)
 	}
-	g.FilterSysProjects = filterSysProjects
+	g.IncludeSysProjects = includeSysProjects
 	return nil
 }
 
@@ -152,10 +154,11 @@ func (g *GcpFolderProjectListLink) Process(resource tab.GCPResource) error {
 		return nil
 	}
 	folderName := resource.Name
-	listReq := g.resourceManagerService.Projects.List().Filter(fmt.Sprintf("parent.id:%s", folderName))
+	folderID := strings.TrimPrefix(folderName, "folders/") // expects ID here
+	listReq := g.resourceManagerService.Projects.List().Filter(fmt.Sprintf("parent.id:%s", folderID))
 	err := listReq.Pages(context.Background(), func(page *cloudresourcemanager.ListProjectsResponse) error {
 		for _, project := range page.Projects {
-			if g.FilterSysProjects && isSysProject(project) {
+			if !g.IncludeSysProjects && isSysProject(project) {
 				continue
 			}
 			gcpProject, err := createGcpProjectResource(project)
@@ -168,7 +171,7 @@ func (g *GcpFolderProjectListLink) Process(resource tab.GCPResource) error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("failed to list projects in folder %s: %w", folderName, err)
+		return fmt.Errorf("failed to list projects in folder %s: %w", folderID, err)
 	}
 	return nil
 }

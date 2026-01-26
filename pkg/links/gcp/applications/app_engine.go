@@ -11,8 +11,8 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
+	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/utils"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 	"google.golang.org/api/appengine/v1"
 )
@@ -131,12 +131,12 @@ func (g *GcpAppEngineApplicationListLink) Process(resource tab.GCPResource) erro
 	projectId := resource.Name
 	app, err := g.appengineService.Apps.Get(projectId).Do()
 	if err != nil {
-		return utils.HandleGcpError(err, "failed to get App Engine application")
+		return common.HandleGcpError(err, "failed to get App Engine application")
 	}
 	servicesCall := g.appengineService.Apps.Services.List(projectId)
 	servicesResp, err := servicesCall.Do()
 	if err != nil {
-		return utils.HandleGcpError(err, "failed to list App Engine services in project")
+		return common.HandleGcpError(err, "failed to list App Engine services in project")
 	}
 	for _, service := range servicesResp.Services {
 		versionsCall := g.appengineService.Apps.Services.Versions.List(projectId, service.Id)
@@ -199,7 +199,7 @@ func (g *GcpAppEngineSecretsLink) Process(input tab.GCPResource) error {
 	}
 	ver, err := g.appengineService.Apps.Services.Versions.Get(projectId, serviceId, versionId).Do()
 	if err != nil {
-		return utils.HandleGcpError(err, "failed to get app engine version for secrets extraction")
+		return common.HandleGcpError(err, "failed to get app engine version for secrets extraction")
 	}
 	if len(ver.EnvVariables) > 0 {
 		if content, err := json.Marshal(ver.EnvVariables); err == nil {

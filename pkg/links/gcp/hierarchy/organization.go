@@ -141,21 +141,18 @@ func (g *GcpOrgFolderListLink) Process(resource tab.GCPResource) error {
 	if resource.ResourceType != tab.GCPResourceOrganization {
 		return nil
 	}
-	orgName := resource.Name
+	orgName := "organizations/" + resource.Name
 	v2Service, err := cloudresourcemanagerv2.NewService(context.Background(), g.ClientOptions...)
 	if err != nil {
 		return fmt.Errorf("failed to create v2 resource manager service: %w", err)
 	}
-	listReq := v2Service.Folders.List().Parent(orgName)
-	err = listReq.Pages(context.Background(), func(page *cloudresourcemanagerv2.ListFoldersResponse) error {
-		for _, folder := range page.Folders {
-			gcpFolder, err := createGcpFolderResource(folder)
-			if err != nil {
-				slog.Error("Failed to create GCP folder resource", "error", err, "folder", folder.Name)
-				continue
-			}
-			g.Send(gcpFolder)
+	err = traverseFolders(orgName, v2Service, func(folder *cloudresourcemanagerv2.Folder) error {
+		gcpFolder, err := createGcpFolderResource(folder)
+		if err != nil {
+			slog.Error("Failed to create GCP folder resource", "error", err, "folder", folder.Name)
+			return nil // continue processing other folders
 		}
+		g.Send(gcpFolder)
 		return nil
 	})
 	if err != nil {
@@ -167,7 +164,7 @@ func (g *GcpOrgFolderListLink) Process(resource tab.GCPResource) error {
 type GcpOrgProjectListLink struct {
 	*base.GcpBaseLink
 	resourceManagerService *cloudresourcemanager.Service
-	FilterSysProjects      bool
+	IncludeSysProjects     bool
 }
 
 // creates a link to list all projects in an organization
@@ -179,7 +176,7 @@ func NewGcpOrgProjectListLink(configs ...cfg.Config) chain.Link {
 
 func (g *GcpOrgProjectListLink) Params() []cfg.Param {
 	params := append(g.GcpBaseLink.Params(),
-		options.GcpFilterSysProjects(),
+		options.GcpIncludeSysProjects(),
 	)
 	return params
 }
@@ -193,11 +190,11 @@ func (g *GcpOrgProjectListLink) Initialize() error {
 	if err != nil {
 		return fmt.Errorf("failed to create resource manager service: %w", err)
 	}
-	filterSysProjects, err := cfg.As[bool](g.Arg("filter-sys-projects"))
+	includeSysProjects, err := cfg.As[bool](g.Arg("include-sys-projects"))
 	if err != nil {
-		return fmt.Errorf("failed to get filter-sys-projects: %w", err)
+		return fmt.Errorf("failed to get include-sys-projects: %w", err)
 	}
-	g.FilterSysProjects = filterSysProjects
+	g.IncludeSysProjects = includeSysProjects
 	return nil
 }
 
@@ -205,11 +202,13 @@ func (g *GcpOrgProjectListLink) Process(resource tab.GCPResource) error {
 	if resource.ResourceType != tab.GCPResourceOrganization {
 		return nil
 	}
-	orgName := resource.Name
-	listReq := g.resourceManagerService.Projects.List() // .Filter(fmt.Sprintf("parent.id:%s", orgName)) -- TODO: add this back if/when we introduce folder filter in CLI
+	orgID := resource.Name
+	listReq := g.resourceManagerService.Projects.List() // .Filter(fmt.Sprintf("parent.id:%s", orgID))
+
+	// list all projects under any parent
 	err := listReq.Pages(context.Background(), func(page *cloudresourcemanager.ListProjectsResponse) error {
 		for _, project := range page.Projects {
-			if g.FilterSysProjects && isSysProject(project) {
+			if !g.IncludeSysProjects && isSysProject(project) {
 				continue
 			}
 			gcpProject, err := createGcpProjectResource(project)
@@ -222,7 +221,7 @@ func (g *GcpOrgProjectListLink) Process(resource tab.GCPResource) error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("failed to list projects in organization %s: %w", orgName, err)
+		return fmt.Errorf("failed to list projects in organization %s: %w", orgID, err)
 	}
 	return nil
 }
@@ -279,4 +278,18 @@ func isSysProject(project *cloudresourcemanager.Project) bool {
 		}
 	}
 	return false
+}
+
+// generic helper to traverse folders with a callback function
+func traverseFolders(parent string, v2Service *cloudresourcemanagerv2.Service, callback func(*cloudresourcemanagerv2.Folder) error) error {
+	listReq := v2Service.Folders.List().Parent(parent)
+	err := listReq.Pages(context.Background(), func(page *cloudresourcemanagerv2.ListFoldersResponse) error {
+		for _, folder := range page.Folders {
+			if err := callback(folder); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return err
 }

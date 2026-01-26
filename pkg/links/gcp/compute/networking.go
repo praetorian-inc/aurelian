@@ -10,6 +10,7 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
+	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
 	"github.com/praetorian-inc/nebula/pkg/utils"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 	"google.golang.org/api/compute/v1"
@@ -76,7 +77,7 @@ func (g *GcpGlobalForwardingRuleListLink) Process(resource tab.GCPResource) erro
 		}
 		return nil
 	})
-	return utils.HandleGcpError(err, "failed to list global forwarding rules")
+	return common.HandleGcpError(err, "failed to list global forwarding rules")
 }
 
 func (g *GcpGlobalForwardingRuleListLink) postProcess(rule *compute.ForwardingRule) map[string]any {
@@ -139,7 +140,7 @@ func (g *GcpRegionalForwardingRuleListLink) Process(resource tab.GCPResource) er
 	regionsListCall := g.computeService.Regions.List(projectId)
 	regionsResp, err := regionsListCall.Do()
 	if err != nil {
-		return utils.HandleGcpError(err, "failed to list regions in project")
+		return common.HandleGcpError(err, "failed to list regions in project")
 	}
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
@@ -251,7 +252,7 @@ func (g *GcpGlobalAddressListLink) Process(resource tab.GCPResource) error {
 		}
 		return nil
 	})
-	return utils.HandleGcpError(err, "failed to list global addresses")
+	return common.HandleGcpError(err, "failed to list global addresses")
 }
 
 func (g *GcpGlobalAddressListLink) postProcess(address *compute.Address) map[string]any {
@@ -313,7 +314,7 @@ func (g *GcpRegionalAddressListLink) Process(resource tab.GCPResource) error {
 	regionsListCall := g.computeService.Regions.List(projectId)
 	regionsResp, err := regionsListCall.Do()
 	if err != nil {
-		return utils.HandleGcpError(err, "failed to list regions in project")
+		return common.HandleGcpError(err, "failed to list regions in project")
 	}
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
@@ -424,7 +425,7 @@ func (g *GcpDnsManagedZoneListLink) Process(resource tab.GCPResource) error {
 		}
 		return nil
 	})
-	return utils.HandleGcpError(err, "failed to list DNS managed zones")
+	return common.HandleGcpError(err, "failed to list DNS managed zones")
 }
 
 func (g *GcpDnsManagedZoneListLink) postProcess(zone *dns.ManagedZone) map[string]any {
@@ -468,6 +469,7 @@ func (g *GCPNetworkingFanOut) Process(project tab.GCPResource) error {
 		chain.NewChain(NewGcpDnsManagedZoneListLink()),
 	)
 	multi.WithConfigs(cfg.WithArgs(g.Args()))
+	multi.WithStrictness(chain.Lax)
 	multi.Send(project)
 	multi.Close()
 	for result, ok := chain.RecvAs[*tab.GCPResource](multi); ok; result, ok = chain.RecvAs[*tab.GCPResource](multi) {

@@ -12,8 +12,8 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus-framework/pkg/types/docker"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
+	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/utils"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 	"google.golang.org/api/artifactregistry/v1"
 )
@@ -72,7 +72,7 @@ func (g *GcpRepositoryInfoLink) Process(repositoryName string) error {
 	repoPath := fmt.Sprintf("projects/%s/locations/%s/repositories/%s", g.ProjectId, g.Location, repositoryName)
 	repo, err := g.artifactService.Projects.Locations.Repositories.Get(repoPath).Do()
 	if err != nil {
-		return utils.HandleGcpError(err, "failed to get repository")
+		return common.HandleGcpError(err, "failed to get repository")
 	}
 	gcpRepo, err := tab.NewGCPResource(
 		repo.Name,   // resource name
@@ -121,7 +121,7 @@ func (g *GcpRepositoryListLink) Process(resource tab.GCPResource) error {
 	locationsReq := g.artifactService.Projects.Locations.List(locationsParent)
 	locations, err := locationsReq.Do()
 	if err != nil {
-		return utils.HandleGcpError(err, "failed to list locations")
+		return common.HandleGcpError(err, "failed to list locations")
 	}
 
 	sem := make(chan struct{}, 10)
@@ -155,7 +155,7 @@ func (g *GcpRepositoryListLink) processLocation(projectId, locationName string) 
 
 	repos, err := reposReq.Do()
 	if err != nil {
-		return utils.HandleGcpError(err, "failed to list repositories")
+		return common.HandleGcpError(err, "failed to list repositories")
 	}
 
 	for _, repo := range repos.Repositories {
@@ -210,7 +210,7 @@ func (g *GcpContainerImageListLink) Process(resource tab.GCPResource) error {
 	imagesReq := g.artifactService.Projects.Locations.Repositories.DockerImages.List(resource.Name)
 	images, err := imagesReq.Do()
 	if err != nil {
-		return utils.HandleGcpError(err, fmt.Sprintf("failed to list docker images in repository %s", resource.Name))
+		return common.HandleGcpError(err, fmt.Sprintf("failed to list docker images in repository %s", resource.Name))
 	}
 	for _, image := range images.DockerImages {
 		gcpImage, err := tab.NewGCPResource(
@@ -259,7 +259,7 @@ func (g *GcpContainerImageSecretsLink) Process(input tab.GCPResource) error {
 	}
 	image, err := g.artifactService.Projects.Locations.Repositories.DockerImages.Get(input.Name).Do()
 	if err != nil {
-		return utils.HandleGcpError(err, "failed to get docker image for secrets extraction")
+		return common.HandleGcpError(err, "failed to get docker image for secrets extraction")
 	}
 	dockerImage := docker.DockerImage{
 		Image: image.Uri,

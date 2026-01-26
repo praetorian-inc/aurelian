@@ -13,6 +13,7 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
 	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
+	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
 	"github.com/praetorian-inc/nebula/pkg/links/options"
 	"github.com/praetorian-inc/nebula/pkg/utils"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
@@ -105,7 +106,7 @@ func (g *GcpInstanceListLink) Initialize() error {
 	}
 	var err error
 	g.computeService, err = compute.NewService(context.Background(), g.ClientOptions...)
-	return utils.HandleGcpError(err, "failed to create compute service")
+	return common.HandleGcpError(err, "failed to create compute service")
 }
 
 func (g *GcpInstanceListLink) Process(resource tab.GCPResource) error {
@@ -116,7 +117,7 @@ func (g *GcpInstanceListLink) Process(resource tab.GCPResource) error {
 	zonesListCall := g.computeService.Zones.List(projectId)
 	zonesResp, err := zonesListCall.Do()
 	if err != nil {
-		return utils.HandleGcpError(err, "failed to list zones in project")
+		return common.HandleGcpError(err, "failed to list zones in project")
 	}
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
@@ -145,7 +146,7 @@ func (g *GcpInstanceListLink) Process(resource tab.GCPResource) error {
 				}
 				return nil
 			})
-			if handledErr := utils.HandleGcpError(err, "failed to list instances in zone"); handledErr != nil {
+			if handledErr := common.HandleGcpError(err, "failed to list instances in zone"); handledErr != nil {
 				slog.Error("error", "error", handledErr, "zone", zoneName)
 			}
 		}(zone.Name)
@@ -191,7 +192,7 @@ func (g *GcpInstanceSecretsLink) Process(input tab.GCPResource) error {
 	}
 	inst, err := g.computeService.Instances.Get(projectId, zone, instanceName).Do()
 	if err != nil {
-		return utils.HandleGcpError(err, "failed to get instance for secrets extraction")
+		return common.HandleGcpError(err, "failed to get instance for secrets extraction")
 	}
 	var metadataContent strings.Builder
 	if inst.Metadata != nil {
