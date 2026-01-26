@@ -13,6 +13,7 @@ recon commands for gcp
 * [nebula gcp](nebula_gcp.md)	 - gcp platform commands
 * [nebula gcp recon default-service-accounts](nebula_gcp_recon_default-service-accounts.md)	 - Detect default service accounts with excessive permissions across a GCP organization that should be replaced with custom service accounts following least privilege principles.
 * [nebula gcp recon find-secrets](nebula_gcp_recon_find-secrets.md)	 - Scan GCP resources for secrets using NoseyParker across organization, folder, or project scope with optional resource type filtering.
+* [nebula gcp recon graph](nebula_gcp_recon_graph.md)	 - Build GCP IAM graph using the hierarchy processor.
 * [nebula gcp recon list-resources](nebula_gcp_recon_list-resources.md)	 - List GCP resources across organization, folder, or project scope with optional resource type filtering.
 * [nebula gcp recon primitive-roles](nebula_gcp_recon_primitive-roles.md)	 - Detect principals using primitive/basic IAM roles (Owner, Editor, Viewer) across a GCP organization that violate the principle of least privilege.
 * [nebula gcp recon summary](nebula_gcp_recon_summary.md)	 - Summarize resources within an organization, folder, or project scope (requires Asset API)
