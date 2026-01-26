@@ -3,6 +3,7 @@ package aws
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/iam"
@@ -40,7 +41,7 @@ func (l *AwsCdkPolicyAnalyzer) Process(input any) error {
 	// This matches the focus of the reference vulnerability scanner
 	if !strings.Contains(cdkRole.RoleType, "file-publishing-role") {
 		l.Logger.Debug("skipping non-file-publishing role", "role_type", cdkRole.RoleType)
-		return l.Send(cdkRole) // Pass through for other processing
+		return nil // Don't output non-file-publishing roles - this is the last link
 	}
 
 	l.Logger.Info("analyzing CDK file publishing role policies", "role", cdkRole.RoleName)
@@ -57,7 +58,7 @@ func (l *AwsCdkPolicyAnalyzer) Process(input any) error {
 	hasAccountRestriction, err := l.analyzeRoleS3Policies(iamClient, cdkRole.RoleName, cdkRole.AccountID)
 	if err != nil {
 		l.Logger.Debug("error analyzing role policies", "role", cdkRole.RoleName, "error", err)
-		return l.Send(cdkRole) // Pass through even if analysis fails
+		return nil // Don't output CDKRoleInfo on error - this is the last link
 	}
 
 	// Generate risk if role lacks proper account restrictions
@@ -69,8 +70,10 @@ func (l *AwsCdkPolicyAnalyzer) Process(input any) error {
 		}
 	}
 
-	// No policy issues found, pass through the role info
-	return l.Send(cdkRole)
+	// No policy issues found - don't output CDKRoleInfo since this is the last link
+	// and we only want to output actual Risk findings
+	l.Logger.Debug("no policy vulnerability found", "role", cdkRole.RoleName)
+	return nil
 }
 
 func (l *AwsCdkPolicyAnalyzer) analyzeRoleS3Policies(iamClient *iam.Client, roleName, accountID string) (bool, error) {
@@ -137,11 +140,22 @@ func (l *AwsCdkPolicyAnalyzer) analyzeRoleS3Policies(iamClient *iam.Client, role
 }
 
 func (l *AwsCdkPolicyAnalyzer) checkPolicyForAccountRestriction(policyDoc, accountID string) bool {
-	// Parse the policy document JSON
+	// Handle both URL-encoded and non-encoded policy documents
+	// AWS SDK typically returns URL-encoded, but we should handle both cases gracefully
 	var policy map[string]any
+
+	// Try parsing as JSON first (handles non-encoded case)
 	if err := json.Unmarshal([]byte(policyDoc), &policy); err != nil {
-		l.Logger.Debug("failed to parse policy document", "error", err)
-		return false
+		// JSON parse failed - try URL-decoding first, then parse
+		decoded, decodeErr := url.QueryUnescape(policyDoc)
+		if decodeErr != nil {
+			l.Logger.Debug("failed to URL-decode policy document", "error", decodeErr)
+			return false
+		}
+		if err := json.Unmarshal([]byte(decoded), &policy); err != nil {
+			l.Logger.Debug("failed to parse policy document after URL-decoding", "error", err)
+			return false
+		}
 	}
 
 	// Check if policy has Statement array
@@ -162,15 +176,14 @@ func (l *AwsCdkPolicyAnalyzer) checkPolicyForAccountRestriction(policyDoc, accou
 			continue
 		}
 
-		// Check for aws:ResourceAccount condition
+		// Check for aws:ResourceAccount condition - this is the ONLY reliable check
+		// Note: We intentionally do NOT check if account ID is in the bucket ARN because:
+		// 1. S3 bucket names are globally unique across ALL AWS accounts
+		// 2. An IAM permission to arn:aws:s3:::bucket-name works regardless of bucket owner
+		// 3. The account ID in CDK bucket names is just a naming convention, not access control
+		// 4. Only aws:ResourceAccount condition actually restricts to same-account buckets
 		if l.hasResourceAccountCondition(statement, accountID) {
 			l.Logger.Debug("found aws:ResourceAccount condition in policy")
-			return true
-		}
-
-		// Check for explicit account restriction in Resource ARNs  
-		if l.hasAccountRestrictedResources(statement, accountID) {
-			l.Logger.Debug("found account-restricted resources in policy")
 			return true
 		}
 	}
@@ -246,48 +259,14 @@ func (l *AwsCdkPolicyAnalyzer) hasResourceAccountCondition(statement map[string]
 	return false
 }
 
-func (l *AwsCdkPolicyAnalyzer) hasAccountRestrictedResources(statement map[string]any, accountID string) bool {
-	resources, ok := statement["Resource"]
-	if !ok {
-		return false
-	}
-
-	// Convert resource to string slice for easier checking
-	var resourceList []string
-	switch r := resources.(type) {
-	case string:
-		resourceList = []string{r}
-	case []any:
-		for _, resource := range r {
-			if resourceStr, ok := resource.(string); ok {
-				resourceList = append(resourceList, resourceStr)
-			}
-		}
-	default:
-		return false
-	}
-
-	// Check if all S3 resources are restricted to our account
-	for _, resource := range resourceList {
-		if strings.HasPrefix(resource, "arn:aws:s3:::") {
-			// If resource contains our account ID or is very specific, it's restricted
-			if strings.Contains(resource, accountID) {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
 func (l *AwsCdkPolicyAnalyzer) generatePolicyRisk(cdkRole CDKRoleInfo) *model.Risk {
 	// Create an AWS account target using AWSResource
 	accountArn := fmt.Sprintf("arn:aws:iam::%s:root", cdkRole.AccountID)
 	awsAccount, err := model.NewAWSResource(accountArn, cdkRole.AccountID, model.CloudResourceType("AWS::IAM::Root"), map[string]any{
-		"RoleName": cdkRole.RoleName,
+		"RoleName":   cdkRole.RoleName,
 		"BucketName": cdkRole.BucketName,
-		"Qualifier": cdkRole.Qualifier,
-		"Region": cdkRole.Region,
+		"Qualifier":  cdkRole.Qualifier,
+		"Region":     cdkRole.Region,
 	})
 	if err != nil {
 		l.Logger.Debug("failed to create AWS resource target", "error", err)
@@ -303,16 +282,43 @@ func (l *AwsCdkPolicyAnalyzer) generatePolicyRisk(cdkRole CDKRoleInfo) *model.Ri
 	risk.Source = "nebula-cdk-scanner"
 
 	riskDef := model.RiskDefinition{
-		Description: fmt.Sprintf("AWS CDK FilePublishingRole '%s' lacks proper account restrictions in S3 permissions. This role can potentially access S3 buckets in other accounts, making it vulnerable to bucket takeover attacks.", cdkRole.RoleName),
-		Impact:      "The role may inadvertently access attacker-controlled S3 buckets with the same predictable name, allowing CloudFormation template injection.",
+		Description:    fmt.Sprintf("AWS CDK FilePublishingRole '%s' lacks proper account restrictions in S3 permissions. This role can potentially access S3 buckets in other accounts, making it vulnerable to bucket takeover attacks.", cdkRole.RoleName),
+		Impact:         "The role may inadvertently access attacker-controlled S3 buckets with the same predictable name, allowing CloudFormation template injection.",
 		Recommendation: fmt.Sprintf("Upgrade to CDK v2.149.0+ and re-run 'cdk bootstrap' in region %s, or manually add 'aws:ResourceAccount' condition to the role's S3 permissions.", cdkRole.Region),
-		References:  "https://www.aquasec.com/blog/aws-cdk-risk-exploiting-a-missing-s3-bucket-allowed-account-takeover/",
+		References:     "https://www.aquasec.com/blog/aws-cdk-risk-exploiting-a-missing-s3-bucket-allowed-account-takeover/",
 	}
 
 	risk.Comment = fmt.Sprintf("Role: %s, Bucket: %s, Qualifier: %s, Region: %s",
 		cdkRole.RoleName, cdkRole.BucketName, cdkRole.Qualifier, cdkRole.Region)
 
 	risk.Definition(riskDef)
+	// Store instance-specific proof with description, impact, remediation, and references
+	proofContent := fmt.Sprintf(`#### Vulnerability Description
+AWS CDK FilePublishingRole '%s' lacks proper account restrictions in S3 permissions. This role can potentially access S3 buckets in other accounts, making it vulnerable to bucket takeover attacks.
+
+#### Impact
+The role may inadvertently access attacker-controlled S3 buckets with the same predictable name, allowing CloudFormation template injection.
+
+#### Remediation
+Upgrade to CDK v2.149.0+ and re-run 'cdk bootstrap' in region %s, or manually add 'aws:ResourceAccount' condition to the role's S3 permissions.
+
+#### References
+https://www.aquasec.com/blog/aws-cdk-risk-exploiting-a-missing-s3-bucket-allowed-account-takeover/
+
+#### Evidence
+- Role Name: %s
+- Bucket: %s
+- Qualifier: %s
+- Region: %s
+- Account ID: %s
+`,
+		cdkRole.RoleName,
+		cdkRole.Region,
+		cdkRole.RoleName, cdkRole.BucketName, cdkRole.Qualifier, cdkRole.Region, cdkRole.AccountID)
+	// Create proof file with unique name including qualifier and region
+	proofFile := model.NewFile(fmt.Sprintf("proofs/%s/%s-%s-%s", cdkRole.AccountID, risk.Name, cdkRole.Qualifier, cdkRole.Region))
+	proofFile.Bytes = []byte(proofContent)
+	l.Send(proofFile)
 
 	return &risk
 }

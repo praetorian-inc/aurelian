@@ -37,6 +37,7 @@ var AwsCdkBucketTakeover = chain.NewModule(
 ).WithOutputters(
 	outputters.NewRiskConsoleOutputter,
 	outputters.NewRuntimeJSONOutputter,
+	outputters.NewProofFileOutputter,
 ).WithInputParam(
 	options.AwsProfile(),
 ).WithInputParam(

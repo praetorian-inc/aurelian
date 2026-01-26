@@ -15,12 +15,12 @@ import (
 
 // CDKBootstrapInfo represents CDK bootstrap version information
 type CDKBootstrapInfo struct {
-	AccountID string `json:"account_id"`
-	Region    string `json:"region"`
-	Qualifier string `json:"qualifier"`
-	Version   int    `json:"version"`
-	HasVersion bool  `json:"has_version"`
-	AccessDenied bool `json:"access_denied"` // True if we got permission denied, not missing parameter
+	AccountID    string `json:"account_id"`
+	Region       string `json:"region"`
+	Qualifier    string `json:"qualifier"`
+	Version      int    `json:"version"`
+	HasVersion   bool   `json:"has_version"`
+	AccessDenied bool   `json:"access_denied"` // True if we got permission denied, not missing parameter
 }
 
 type AwsCdkBootstrapChecker struct {
@@ -58,7 +58,7 @@ func (l *AwsCdkBootstrapChecker) Process(input any) error {
 
 	// Check CDK bootstrap version from SSM parameter
 	bootstrapInfo := l.checkBootstrapVersion(ssmClient, cdkRole.AccountID, cdkRole.Region, cdkRole.Qualifier)
-	
+
 	// Generate risk if version is too old or missing
 	if risk := l.generateBootstrapVersionRisk(cdkRole, bootstrapInfo); risk != nil {
 		l.Logger.Info("found CDK bootstrap version vulnerability", "version", bootstrapInfo.Version, "risk", risk.Name)
@@ -73,21 +73,21 @@ func (l *AwsCdkBootstrapChecker) Process(input any) error {
 
 func (l *AwsCdkBootstrapChecker) checkBootstrapVersion(ssmClient *ssm.Client, accountID, region, qualifier string) CDKBootstrapInfo {
 	parameterName := fmt.Sprintf("/cdk-bootstrap/%s/version", qualifier)
-	
+
 	l.Logger.Debug("checking bootstrap version parameter", "parameter", parameterName, "region", region)
-	
+
 	result, err := ssmClient.GetParameter(l.Context(), &ssm.GetParameterInput{
 		Name: &parameterName,
 	})
-	
+
 	bootstrapInfo := CDKBootstrapInfo{
-		AccountID: accountID,
-		Region:    region,
-		Qualifier: qualifier,
-		HasVersion: false,
+		AccountID:    accountID,
+		Region:       region,
+		Qualifier:    qualifier,
+		HasVersion:   false,
 		AccessDenied: false,
 	}
-	
+
 	if err != nil {
 		// Check if this is a permission error vs parameter not found
 		if isAccessDeniedError(err) {
@@ -101,7 +101,7 @@ func (l *AwsCdkBootstrapChecker) checkBootstrapVersion(ssmClient *ssm.Client, ac
 		}
 		return bootstrapInfo
 	}
-	
+
 	if result.Parameter != nil && result.Parameter.Value != nil {
 		if version, err := strconv.Atoi(*result.Parameter.Value); err == nil {
 			bootstrapInfo.Version = version
@@ -111,7 +111,7 @@ func (l *AwsCdkBootstrapChecker) checkBootstrapVersion(ssmClient *ssm.Client, ac
 			l.Logger.Debug("failed to parse CDK bootstrap version", "value", *result.Parameter.Value, "error", err)
 		}
 	}
-	
+
 	return bootstrapInfo
 }
 
@@ -121,27 +121,27 @@ func (l *AwsCdkBootstrapChecker) generateBootstrapVersionRisk(cdkRole CDKRoleInf
 		l.Logger.Info("skipping bootstrap risk due to SSM access denied", "qualifier", cdkRole.Qualifier, "region", cdkRole.Region)
 		return nil
 	}
-	
+
 	// Only generate risk if version is too old (< 21) or truly missing
 	if bootstrapInfo.HasVersion && bootstrapInfo.Version >= 21 {
 		return nil // Version 21+ has the security fixes
 	}
-	
+
 	// Create an AWS account target using AWSResource
 	accountArn := fmt.Sprintf("arn:aws:iam::%s:root", cdkRole.AccountID)
 	awsAccount, err := model.NewAWSResource(accountArn, cdkRole.AccountID, model.CloudResourceType("AWS::IAM::Root"), map[string]any{
-		"Qualifier": cdkRole.Qualifier,
-		"Region": cdkRole.Region,
+		"Qualifier":        cdkRole.Qualifier,
+		"Region":           cdkRole.Region,
 		"BootstrapVersion": bootstrapInfo.Version,
-		"HasVersion": bootstrapInfo.HasVersion,
+		"HasVersion":       bootstrapInfo.HasVersion,
 	})
 	if err != nil {
 		l.Logger.Debug("failed to create AWS resource target", "error", err)
 		return nil
 	}
-	
+
 	var riskName, description, severity string
-	
+
 	if !bootstrapInfo.HasVersion {
 		riskName = "cdk-bootstrap-missing"
 		description = fmt.Sprintf("AWS CDK bootstrap parameter '/cdk-bootstrap/%s/version' not found in region %s. This indicates CDK was never properly bootstrapped or bootstrap artifacts were deleted.", cdkRole.Qualifier, cdkRole.Region)
@@ -151,7 +151,7 @@ func (l *AwsCdkBootstrapChecker) generateBootstrapVersionRisk(cdkRole CDKRoleInf
 		description = fmt.Sprintf("AWS CDK bootstrap version %d is outdated in region %s (< v21). Versions before v21 lack security protections against S3 bucket takeover attacks.", bootstrapInfo.Version, cdkRole.Region)
 		severity = model.TriageHigh // Outdated version is high risk
 	}
-	
+
 	risk := model.NewRiskWithDNS(
 		&awsAccount,
 		riskName,
@@ -159,22 +159,76 @@ func (l *AwsCdkBootstrapChecker) generateBootstrapVersionRisk(cdkRole CDKRoleInf
 		severity,
 	)
 	risk.Source = "nebula-cdk-scanner"
-	
+
 	riskDef := model.RiskDefinition{
-		Description: description,
-		Impact:      "CDK deployments may be vulnerable to S3 bucket takeover attacks, potentially allowing attackers to inject malicious CloudFormation templates and gain account access.",
+		Description:    description,
+		Impact:         "CDK deployments may be vulnerable to S3 bucket takeover attacks, potentially allowing attackers to inject malicious CloudFormation templates and gain account access.",
 		Recommendation: fmt.Sprintf("Upgrade to CDK v2.149.0+ and re-run 'cdk bootstrap --qualifier %s' in region %s to apply security patches.", cdkRole.Qualifier, cdkRole.Region),
-		References:  "https://www.aquasec.com/blog/aws-cdk-risk-exploiting-a-missing-s3-bucket-allowed-account-takeover/\nhttps://docs.aws.amazon.com/cdk/v2/guide/bootstrapping.html",
+		References:     "https://www.aquasec.com/blog/aws-cdk-risk-exploiting-a-missing-s3-bucket-allowed-account-takeover/\nhttps://docs.aws.amazon.com/cdk/v2/guide/bootstrapping.html",
 	}
-	
+
 	if bootstrapInfo.HasVersion {
 		risk.Comment = fmt.Sprintf("Bootstrap Version: %d, Qualifier: %s, Region: %s", bootstrapInfo.Version, cdkRole.Qualifier, cdkRole.Region)
 	} else {
 		risk.Comment = fmt.Sprintf("Bootstrap Version: Missing, Qualifier: %s, Region: %s", cdkRole.Qualifier, cdkRole.Region)
 	}
-	
+
 	risk.Definition(riskDef)
-	
+
+	// Store instance-specific proof with description, impact, remediation, and references
+	var proofContent string
+	if bootstrapInfo.HasVersion {
+		proofContent = fmt.Sprintf(`#### Vulnerability Description
+AWS CDK bootstrap version %d is outdated in region %s (< v21). Versions before v21 lack security protections against S3 bucket takeover attacks.
+
+#### Impact
+CDK deployments may be vulnerable to S3 bucket takeover attacks, potentially allowing attackers to inject malicious CloudFormation templates and gain account access.
+
+#### Remediation
+Upgrade to CDK v2.149.0+ and re-run 'cdk bootstrap --qualifier %s' in region %s to apply security patches.
+
+#### References
+https://www.aquasec.com/blog/aws-cdk-risk-exploiting-a-missing-s3-bucket-allowed-account-takeover/
+https://docs.aws.amazon.com/cdk/v2/guide/bootstrapping.html
+
+#### Evidence
+- Bootstrap Version: %d
+- Qualifier: %s
+- Region: %s
+- Account ID: %s
+`,
+			bootstrapInfo.Version, cdkRole.Region,
+			cdkRole.Qualifier, cdkRole.Region,
+			bootstrapInfo.Version, cdkRole.Qualifier, cdkRole.Region, cdkRole.AccountID)
+	} else {
+		proofContent = fmt.Sprintf(`#### Vulnerability Description
+AWS CDK bootstrap parameter '/cdk-bootstrap/%s/version' not found in region %s. This indicates CDK was never properly bootstrapped or bootstrap artifacts were deleted.
+
+#### Impact
+CDK deployments may be vulnerable to S3 bucket takeover attacks, potentially allowing attackers to inject malicious CloudFormation templates and gain account access.
+
+#### Remediation
+Run 'cdk bootstrap --qualifier %s' in region %s or upgrade to CDK v2.149.0+ and bootstrap to apply security patches.
+
+#### References
+https://www.aquasec.com/blog/aws-cdk-risk-exploiting-a-missing-s3-bucket-allowed-account-takeover/
+https://docs.aws.amazon.com/cdk/v2/guide/bootstrapping.html
+
+#### Evidence
+- Bootstrap Version: Missing
+- Qualifier: %s
+- Region: %s
+- Account ID: %s
+`,
+			cdkRole.Qualifier, cdkRole.Region,
+			cdkRole.Qualifier, cdkRole.Region,
+			cdkRole.Qualifier, cdkRole.Region, cdkRole.AccountID)
+	}
+	// Create proof file with unique name including qualifier and region
+	proofFile := model.NewFile(fmt.Sprintf("proofs/%s/%s-%s-%s", cdkRole.AccountID, riskName, cdkRole.Qualifier, cdkRole.Region))
+	proofFile.Bytes = []byte(proofContent)
+	l.Send(proofFile)
+
 	return &risk
 }
 
@@ -183,11 +237,11 @@ func isAccessDeniedError(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	errorStr := err.Error()
-	return strings.Contains(errorStr, "AccessDenied") || 
-		   strings.Contains(errorStr, "access denied") ||
-		   strings.Contains(errorStr, "not authorized")
+	return strings.Contains(errorStr, "AccessDenied") ||
+		strings.Contains(errorStr, "access denied") ||
+		strings.Contains(errorStr, "not authorized")
 }
 
 // isParameterNotFoundError checks if the error is due to parameter not existing
@@ -195,10 +249,10 @@ func isParameterNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	// Check for AWS SSM specific parameter not found error
 	var paramNotFound *types.ParameterNotFound
-	return strings.Contains(err.Error(), "ParameterNotFound") || 
-		   strings.Contains(err.Error(), "parameter not found") ||
-		   err == paramNotFound // Type assertion for AWS SDK error
+	return strings.Contains(err.Error(), "ParameterNotFound") ||
+		strings.Contains(err.Error(), "parameter not found") ||
+		err == paramNotFound // Type assertion for AWS SDK error
 }
