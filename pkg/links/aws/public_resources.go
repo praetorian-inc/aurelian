@@ -32,6 +32,7 @@ func (a *AwsPublicResources) Params() []cfg.Param {
 	params := a.AwsReconLink.Params()
 	params = append(params, options.AwsCommonReconOptions()...)
 	params = append(params, options.AwsRegions(), options.AwsResourceType())
+	params = append(params, options.AwsEnableEC2SecurityEnrichment())
 	return params
 }
 
@@ -93,11 +94,28 @@ func (a *AwsPublicResources) SupportedResourceTypes() []model.CloudResourceType 
 func (a *AwsPublicResources) ResourceMap() map[string]func() chain.Chain {
 	resourceMap := make(map[string]func() chain.Chain)
 
+	// Check if EC2 security enrichment is enabled
+	enableEC2SecurityEnrichment := false
+	if args := a.Args(); args != nil {
+		if val, exists := args["enable-ec2-security-enrichment"]; exists {
+			if boolVal, ok := val.(bool); ok {
+				enableEC2SecurityEnrichment = boolVal
+			}
+		}
+	}
+
 	resourceMap["AWS::EC2::Instance"] = func() chain.Chain {
-		return chain.NewChain(
+		links := []chain.Link{
 			cloudcontrol.NewCloudControlGet(),
 			NewPropertyFilterLink(cfg.WithArg("property", "PublicIp")),
-		)
+		}
+
+		// Only add EC2 security enrichment if the flag is enabled
+		if enableEC2SecurityEnrichment {
+			links = append(links, NewEC2SecurityEnrichmentLink())
+		}
+
+		return chain.NewChain(links...)
 	}
 
 	resourceMap["AWS::SNS::Topic"] = func() chain.Chain {
