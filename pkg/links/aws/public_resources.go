@@ -94,25 +94,19 @@ func (a *AwsPublicResources) SupportedResourceTypes() []model.CloudResourceType 
 func (a *AwsPublicResources) ResourceMap() map[string]func() chain.Chain {
 	resourceMap := make(map[string]func() chain.Chain)
 
-	// Check if EC2 security enrichment is enabled
-	enableEC2SecurityEnrichment := false
-	if args := a.Args(); args != nil {
-		if val, exists := args["enable-ec2-security-enrichment"]; exists {
-			if boolVal, ok := val.(bool); ok {
-				enableEC2SecurityEnrichment = boolVal
-			}
-		}
-	}
-
 	resourceMap["AWS::EC2::Instance"] = func() chain.Chain {
 		links := []chain.Link{
 			cloudcontrol.NewCloudControlGet(),
 			NewPropertyFilterLink(cfg.WithArg("property", "PublicIp")),
 		}
 
-		// Only add EC2 security enrichment if the flag is enabled
-		if enableEC2SecurityEnrichment {
-			links = append(links, NewEC2SecurityEnrichmentLink())
+		// Check if EC2 security enrichment is enabled (checked lazily when chain is constructed)
+		if args := a.Args(); args != nil {
+			if val, exists := args["enable-ec2-security-enrichment"]; exists {
+				if boolVal, ok := val.(bool); ok && boolVal {
+					links = append(links, NewEC2SecurityEnrichmentLink())
+				}
+			}
 		}
 
 		return chain.NewChain(links...)
