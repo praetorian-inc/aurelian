@@ -9,10 +9,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/internal/helpers"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 // AzureResourceListerLink lists all Azure resources in a subscription using ARG
@@ -146,7 +146,7 @@ func (l *AzureResourceListerLink) Process(subscription string) error {
 		Resources:        resources,
 	}
 	
-	// Convert to tabularium AzureResource format and send each resource
+	// Convert to output.CloudResource format and send each resource
 	for _, resource := range resources {
 		// Prepare properties map
 		props := make(map[string]any)
@@ -162,18 +162,17 @@ func (l *AzureResourceListerLink) Process(subscription string) error {
 			props["tags"] = resource.Tags
 		}
 		
-		// Create AzureResource using tabularium
-		azureResource, err := model.NewAzureResource(
-			resource.ID,
-			subscription,
-			model.CloudResourceType(resource.Type),
-			props,
-		)
-		if err != nil {
-			l.Logger.Error("Failed to create AzureResource", "resource_id", resource.ID, "error", err)
-			continue
+		// Create CloudResource for Azure
+		azureResource := &output.CloudResource{
+			Platform:     "azure",
+			ResourceType: resource.Type,
+			ResourceID:   resource.ID,
+			AccountRef:   subscription,
+			Region:       resource.Location,
+			DisplayName:  resource.Name,
+			Properties:   props,
 		}
-		
+
 		l.Logger.Debug("Sending Azure resource", "id", resource.ID, "type", resource.Type)
 		l.Send(azureResource)
 	}

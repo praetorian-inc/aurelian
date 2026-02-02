@@ -10,9 +10,9 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/internal/helpers"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 // AzureKeyVaultSecretsLink extracts secrets from Azure Key Vaults
@@ -32,7 +32,7 @@ func (l *AzureKeyVaultSecretsLink) Params() []cfg.Param {
 	}
 }
 
-func (l *AzureKeyVaultSecretsLink) Process(resource *model.AzureResource) error {
+func (l *AzureKeyVaultSecretsLink) Process(resource *output.CloudResource) error {
 	// Extract vault URI from resource properties
 	vaultURI, err := l.getVaultURI(resource)
 	if err != nil {
@@ -96,7 +96,7 @@ func (l *AzureKeyVaultSecretsLink) Process(resource *model.AzureResource) error 
 					Provenance: jtypes.NPProvenance{
 						Platform:     "azure",
 						ResourceType: "Microsoft.KeyVault/vaults/secrets",
-						ResourceID:   fmt.Sprintf("%s/secrets/%s", resource.Key, secretName),
+						ResourceID:   fmt.Sprintf("%s/secrets/%s", resource.ResourceID, secretName),
 						AccountID:    resource.AccountRef,
 					},
 				}
@@ -108,7 +108,7 @@ func (l *AzureKeyVaultSecretsLink) Process(resource *model.AzureResource) error 
 	return nil
 }
 
-func (l *AzureKeyVaultSecretsLink) getVaultURI(resource *model.AzureResource) (string, error) {
+func (l *AzureKeyVaultSecretsLink) getVaultURI(resource *output.CloudResource) (string, error) {
 	if resource.Properties == nil {
 		return "", fmt.Errorf("resource properties are nil")
 	}
@@ -118,7 +118,7 @@ func (l *AzureKeyVaultSecretsLink) getVaultURI(resource *model.AzureResource) (s
 	}
 
 	// Construct vault URI from resource name if not in properties
-	_, vaultName, err := l.parseKeyVaultResourceID(resource.Key)
+	_, vaultName, err := l.parseKeyVaultResourceID(resource.ResourceID)
 	if err != nil {
 		return "", err
 	}

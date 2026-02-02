@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/praetorian-inc/nebula/pkg/utils"
+	"github.com/praetorian-inc/diocletian/pkg/utils"
 )
 
 func TestPerformJqQuery(t *testing.T) {

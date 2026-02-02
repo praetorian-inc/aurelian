@@ -7,18 +7,19 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/konstellation/pkg/graph"
 	"github.com/praetorian-inc/konstellation/pkg/graph/adapters"
-	iam "github.com/praetorian-inc/nebula/pkg/iam/aws"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/orgpolicies"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	iam "github.com/praetorian-inc/diocletian/pkg/iam/aws"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/orgpolicies"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 type AwsApolloOfflineControlFlow struct {
@@ -268,7 +269,7 @@ func (a *AwsApolloOfflineControlFlow) graph(summary *iam.PermissionsSummary) {
 		a.Logger.Debug(fmt.Sprintf("DEBUG: Processing result %d - Principal: %T, Resource: %v, Action: %s",
 			i, result.Principal, result.Resource, result.Action))
 
-		rel, err := TransformResultToRelationship(result)
+		rel, err := TransformResultToPermission(result)
 		if err != nil {
 			a.Logger.Error("Failed to transform relationship: " + err.Error())
 			continue
@@ -291,7 +292,7 @@ func (a *AwsApolloOfflineControlFlow) graph(summary *iam.PermissionsSummary) {
 	}
 
 	// Process GitHub Actions relationships
-	githubRelationships, err := ExtractGitHubActionsRelationships(a.pd.Gaad)
+	githubRelationships, err := ExtractGitHubActionsPermissions(a.pd.Gaad)
 	if err != nil {
 		a.Logger.Error("Failed to extract GitHub Actions relationships: " + err.Error())
 	} else {
@@ -356,34 +357,33 @@ func (a *AwsApolloOfflineControlFlow) sendResourceRoleRelationships(outputChain 
 			roleArn = fmt.Sprintf("arn:aws:iam::%s:role/%s", accountId, roleName)
 		}
 
-		// Create the resource node using Tabularium transformers
-		resourceNode, err := TransformERDToAWSResource(&resource)
+		// Create ResourceRef for the source (resource with the role)
+		sourceRef, err := TransformERDToResourceRef(&resource)
 		if err != nil {
 			a.Logger.Error(fmt.Sprintf("Failed to transform resource %s: %s", resource.Arn.String(), err.Error()))
 			continue
 		}
 
-		// Create the role node using Tabularium types
-		roleProperties := map[string]any{
-			"roleName": roleName,
-		}
-		roleNode, err := model.NewAWSResource(
-			roleArn,
-			accountId,
-			model.AWSRole,
-			roleProperties,
-		)
-		if err != nil {
-			a.Logger.Error(fmt.Sprintf("Failed to create role resource %s: %s", roleArn, err.Error()))
-			continue
+		// Create ResourceRef for the target (IAM role)
+		targetRef := output.ResourceRef{
+			Platform: "aws",
+			Type:     "iam-role",
+			ID:       roleArn,
+			Account:  accountId,
 		}
 
-		// Create the assume role relationship
-		assumeRoleRel := model.NewBaseRelationship(resourceNode, &roleNode, "sts:AssumeRole")
-		assumeRoleRel.Capability = "apollo-resource-role-mapping"
+		// Create the assume role permission (Pure CLI - no Neo4j key knowledge)
+		assumeRolePermission := &output.IAMPermission{
+			Source:     sourceRef,
+			Target:     targetRef,
+			Permission: "sts:AssumeRole",
+			Effect:     "Allow",
+			Capability: "apollo-resource-role-mapping",
+			Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		}
 
 		// Send to outputter
-		outputChain.Send(assumeRoleRel)
+		outputChain.Send(assumeRolePermission)
 	}
 
 	return nil
@@ -430,37 +430,36 @@ func (a *AwsApolloOfflineControlFlow) sendResourceRoleRelationshipsDirectly(outp
 			roleArn = fmt.Sprintf("arn:aws:iam::%s:role/%s", accountId, roleName)
 		}
 
-		// Create the resource node using Tabularium transformers
-		resourceNode, err := TransformERDToAWSResource(&resource)
+		// Create ResourceRef for the source (resource with the role)
+		sourceRef, err := TransformERDToResourceRef(&resource)
 		if err != nil {
 			a.Logger.Error(fmt.Sprintf("Failed to transform resource %s: %s", resource.Arn.String(), err.Error()))
 			continue
 		}
 
-		// Create the role node using Tabularium types
-		roleProperties := map[string]any{
-			"roleName": roleName,
-		}
-		roleNode, err := model.NewAWSResource(
-			roleArn,
-			accountId,
-			model.AWSRole,
-			roleProperties,
-		)
-		if err != nil {
-			a.Logger.Error(fmt.Sprintf("Failed to create role resource %s: %s", roleArn, err.Error()))
-			continue
+		// Create ResourceRef for the target (IAM role)
+		targetRef := output.ResourceRef{
+			Platform: "aws",
+			Type:     "iam-role",
+			ID:       roleArn,
+			Account:  accountId,
 		}
 
-		// Create the assume role relationship
-		assumeRoleRel := model.NewBaseRelationship(resourceNode, &roleNode, "sts:AssumeRole")
-		assumeRoleRel.Capability = "apollo-resource-role-mapping"
+		// Create the assume role permission (Pure CLI - no Neo4j key knowledge)
+		assumeRolePermission := &output.IAMPermission{
+			Source:     sourceRef,
+			Target:     targetRef,
+			Permission: "sts:AssumeRole",
+			Effect:     "Allow",
+			Capability: "apollo-resource-role-mapping",
+			Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		}
 
 		// Send directly to outputter
 		if neo4jOut, ok := outputter.(*outputters.Neo4jGraphOutputter); ok {
-			err = neo4jOut.Output(assumeRoleRel)
+			err = neo4jOut.Output(assumeRolePermission)
 			if err != nil {
-				a.Logger.Error(fmt.Sprintf("Failed to send assume role relationship to outputter: %s", err.Error()))
+				a.Logger.Error(fmt.Sprintf("Failed to send assume role permission to outputter: %s", err.Error()))
 			}
 		}
 	}

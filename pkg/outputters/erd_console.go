@@ -8,8 +8,8 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/diocletian/internal/message"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 // PropertyExtractor defines a function that can extract specific information from a resource's properties

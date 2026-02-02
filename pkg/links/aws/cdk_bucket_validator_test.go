@@ -32,7 +32,7 @@ func TestCDKBucketValidator_RiskGeneration(t *testing.T) {
 			bucketExists:         false,
 			bucketOwnedByAccount: false,
 			expectedRiskName:     "cdk-bucket-takeover",
-			expectedSeverity:     "H", // TriageHigh
+			expectedSeverity:     "TH", // TriageHigh
 			shouldGenerateRisk:   true,
 		},
 		{
@@ -40,7 +40,7 @@ func TestCDKBucketValidator_RiskGeneration(t *testing.T) {
 			bucketExists:         true,
 			bucketOwnedByAccount: false,
 			expectedRiskName:     "cdk-bucket-hijacked",
-			expectedSeverity:     "M", // TriageMedium
+			expectedSeverity:     "TM", // TriageMedium
 			shouldGenerateRisk:   true,
 		},
 		{
@@ -58,7 +58,7 @@ func TestCDKBucketValidator_RiskGeneration(t *testing.T) {
 			if tt.shouldGenerateRisk {
 				require.NotNil(t, risk, "should generate a risk")
 				assert.Equal(t, tt.expectedRiskName, risk.Name)
-				assert.Equal(t, tt.expectedSeverity, risk.Severity())
+				assert.Equal(t, tt.expectedSeverity, risk.Status)
 				assert.Equal(t, "nebula-cdk-scanner", risk.Source)
 				assert.Equal(t, cdkRole.AccountID, risk.DNS)
 			} else {

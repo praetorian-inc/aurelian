@@ -5,7 +5,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 // PrincipalResult represents a single principal's complete permissions

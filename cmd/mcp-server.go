@@ -12,9 +12,9 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus-framework/pkg/output"
-	"github.com/praetorian-inc/nebula/internal/registry"
-	"github.com/praetorian-inc/nebula/pkg/modules/aws/recon"
-	"github.com/praetorian-inc/nebula/version"
+	"github.com/praetorian-inc/diocletian/internal/registry"
+	"github.com/praetorian-inc/diocletian/pkg/modules/aws/recon"
+	"github.com/praetorian-inc/diocletian/version"
 	"github.com/spf13/cobra"
 )
 

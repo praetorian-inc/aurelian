@@ -12,7 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/timestreamquery"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/base"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
 )
 
 type AwsWhoami struct {
@@ -92,7 +93,7 @@ func (l *AwsWhoami) Process(input any) error {
 			"message": "API calls succeeded - covert whoami techniques require API calls to fail due to lack of permissions",
 			"action":  action,
 		}
-		return l.Send(result)
+		return l.Send(outputters.RawOutput{Data: result})
 	}
 
 	l.Logger.Info("successfully extracted ARN", "arn", arnResult)
@@ -101,7 +102,7 @@ func (l *AwsWhoami) Process(input any) error {
 		"arn":    arnResult,
 		"action": action,
 	}
-	return l.Send(result)
+	return l.Send(outputters.RawOutput{Data: result})
 }
 
 func (l *AwsWhoami) timestreamDescribeEndpoints(ctx context.Context, awsConfig aws.Config) (string, error) {

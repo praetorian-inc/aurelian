@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 var AwsAccessKeyIdOpt = types.Option{
@@ -347,16 +347,15 @@ func AwsFederationName() cfg.Param {
 		WithDefault("nebula-federation")
 }
 
-func AwsEnableEC2SecurityEnrichment() cfg.Param {
-	return cfg.NewParam[bool]("enable-ec2-security-enrichment", "Enable EC2 security group enrichment for public resources").
-		WithShortcode("e").
-		WithDefault(false)
-}
-
 func AwsCdkQualifiers() cfg.Param {
 	return cfg.NewParam[[]string]("cdk-qualifiers", "CDK bootstrap qualifiers to check").
 		WithDefault([]string{"hnb659fds"}).
 		WithShortcode("q")
+}
+
+func AwsCdkCheckAllRegions() cfg.Param {
+	return cfg.NewParam[bool]("cdk-check-all-regions", "Check all regions for CDK roles").
+		WithDefault(false)
 }
 
 func AwsOpsecLevel() cfg.Param {

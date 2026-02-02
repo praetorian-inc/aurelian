@@ -1,10 +1,10 @@
-# Nebula Development Guide
+# Diocletian Development Guide
 
-Nebula is built on the [Janus Framework](https://github.com/praetorian-inc/janus-framework), a modular chain-based architecture for building composable workflows that implement go's pipeline pattern. This guide covers developing links, modules, and extending the platform.
+Diocletian is built on the [Janus Framework](https://github.com/praetorian-inc/janus-framework), a modular chain-based architecture for building composable workflows that implement go's pipeline pattern. This guide covers developing links, modules, and extending the platform.
 
 ## Architecture Overview
 
-Nebula uses the Janus framework with these core concepts:
+Diocletian uses the Janus framework with these core concepts:
 
 - **Links**: Individual processing units that can be chained together
 - **Modules**: Pre-configured chains of links for specific use cases  
@@ -205,11 +205,70 @@ func (l *MyLink) Process(input any) error {
 
 ### Built-in Outputters
 
-Nebula provides several outputters in `pkg/outputters/`:
+Diocletian provides several outputters in `pkg/outputters/`:
 - `erd_console.go` - Console output for enriched resource descriptions
 - `markdown_table_console.go` - Console markdown tables
 - `runtime_json.go` - JSON file output
 - `runtime_markdown.go` - Markdown file output
+
+### Output Types
+
+Diocletian supports two types of command output:
+
+#### Security Findings
+
+Commands that produce security findings (vulnerabilities, risks, secrets) should
+return one of the supported finding types:
+
+- `output.Risk` - Security vulnerabilities
+- `output.SecretFinding` - Detected secrets
+- `output.CloudResource` - Cloud resources with security context
+
+These are automatically converted to the standard Finding format with severity,
+remediation, and other security metadata.
+
+**Example:**
+```go
+risk := &output.Risk{
+    Name:           "s3-bucket-public-access",
+    Status:         "TH", // High severity
+    Description:    "S3 bucket allows public access",
+    Recommendation: "Disable public access",
+    Target: &output.CloudResource{
+        ResourceID:   "arn:aws:s3:::my-bucket",
+        ResourceType: "AWS::S3::Bucket",
+    },
+}
+return l.Send(risk)
+```
+
+#### Raw Data Output
+
+Commands that produce non-security data (identity info, resource policies,
+configuration dumps) should wrap their output in `outputters.RawOutput`:
+
+```go
+import "github.com/praetorian-inc/diocletian/pkg/outputters"
+
+result := map[string]any{
+    "status": "success",
+    "data":   actualData,
+}
+return l.Send(outputters.RawOutput{Data: result})
+```
+
+This ensures the data appears in output unchanged, without the Finding wrapper.
+
+**When to use RawOutput:**
+- Identity/authentication commands (whoami)
+- Resource enumeration (list-policies, list-buckets)
+- Configuration queries
+- Any non-security operational data
+
+**When NOT to use RawOutput:**
+- Security vulnerabilities → Use `output.Risk`
+- Secret detection → Use `output.SecretFinding`
+- Misconfigurations with security impact → Use `output.Risk`
 
 ### Custom Outputters
 
@@ -254,7 +313,7 @@ Modules automatically generate CLI commands via the registry:
 
 ```go
 func init() {
-    // This creates: nebula aws recon my-module
+    // This creates: diocletian aws recon my-module
     registry.Register("aws", "recon", "my-module", *MyModule)
 }
 ```

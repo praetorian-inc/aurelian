@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 func WithRequired(option types.Option, required bool) *types.Option {

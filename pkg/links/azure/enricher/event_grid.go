@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 // EventGridEnricher implements enrichment for Event Grid instances
@@ -18,10 +18,10 @@ func (e *EventGridEnricher) CanEnrich(templateID string) bool {
 	return templateID == "event_grid_domain_public"
 }
 
-func (e *EventGridEnricher) Enrich(ctx context.Context, resource *model.AzureResource) []Command {
+func (e *EventGridEnricher) Enrich(ctx context.Context, resource *output.CloudResource) []Command {
 	commands := []Command{}
 
-	eventGridName := resource.Name
+	eventGridName := resource.DisplayName
 	location := resource.Region
 	if location == "" {
 		if loc, ok := resource.Properties["location"].(string); ok && loc != "" {
@@ -79,8 +79,9 @@ func (e *EventGridEnricher) Enrich(ctx context.Context, resource *model.AzureRes
 	commands = append(commands, postCommand)
 
 	// Test 2: Azure CLI Event Grid test
+	resourceGroup, _ := resource.Properties["resourceGroup"].(string)
 	commands = append(commands, Command{
-		Command:                   fmt.Sprintf("az eventgrid domain show --name %s --resource-group %s", eventGridName, resource.ResourceGroup),
+		Command:                   fmt.Sprintf("az eventgrid domain show --name %s --resource-group %s", eventGridName, resourceGroup),
 		Description:               "Azure CLI command to show Event Grid domain details",
 		ExpectedOutputDescription: "Domain details = accessible via Azure API | Error = access denied",
 		ActualOutput:              "Manual execution required - requires Azure CLI authentication",

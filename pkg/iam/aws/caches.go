@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 // Cache maps for faster lookups

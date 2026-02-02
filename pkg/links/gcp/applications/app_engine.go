@@ -10,17 +10,17 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/diocletian/pkg/utils"
 	"google.golang.org/api/appengine/v1"
 )
 
 // FILE INFO:
 // GcpAppEngineApplicationInfoLink - get info of a single App Engine application/service/version, Process(applicationName string); needs project and service and version
-// GcpAppEngineApplicationListLink - list all App Engine applications/services/versions in a project, Process(resource tab.GCPResource)
-// GcpAppEngineSecretsLink - extract secrets from an App Engine application/service/version, Process(input tab.GCPResource)
+// GcpAppEngineApplicationListLink - list all App Engine applications/services/versions in a project, Process(resource output.CloudResource)
+// GcpAppEngineSecretsLink - extract secrets from an App Engine application/service/version, Process(input output.CloudResource)
 
 type GcpAppEngineApplicationInfoLink struct {
 	*base.GcpBaseLink
@@ -86,16 +86,14 @@ func (g *GcpAppEngineApplicationInfoLink) Process(applicationName string) error 
 	if err != nil {
 		return fmt.Errorf("failed to get App Engine version %s: %w", g.VersionId, err)
 	}
-	gcpAppEngineVersion, err := tab.NewGCPResource(
-		fmt.Sprintf("%s-%s", service.Id, version.Id), // resource name
-		g.ProjectId,                         // accountRef (project ID)
-		tab.GCPResourceAppEngineApplication, // resource type
-		linkPostProcessAppEngineApplication(app, service, version), // properties
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create GCP App Engine version resource: %w", err)
+	gcpAppEngineVersion := &output.CloudResource{
+		Platform:     "gcp",
+		ResourceType: "appengine.googleapis.com/Application",
+		ResourceID:   fmt.Sprintf("projects/%s/services/%s/versions/%s", g.ProjectId, service.Id, version.Id),
+		AccountRef:   g.ProjectId,
+		DisplayName:  fmt.Sprintf("%s-%s", service.Id, version.Id),
+		Properties:   linkPostProcessAppEngineApplication(app, service, version),
 	}
-	gcpAppEngineVersion.DisplayName = gcpAppEngineVersion.Name
 	g.Send(gcpAppEngineVersion)
 	return nil
 }
@@ -124,19 +122,19 @@ func (g *GcpAppEngineApplicationListLink) Initialize() error {
 	return nil
 }
 
-func (g *GcpAppEngineApplicationListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceProject {
+func (g *GcpAppEngineApplicationListLink) Process(resource output.CloudResource) error {
+	if resource.ResourceType != "cloudresourcemanager.googleapis.com/Project" {
 		return nil
 	}
-	projectId := resource.Name
+	projectId := resource.AccountRef
 	app, err := g.appengineService.Apps.Get(projectId).Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to get App Engine application")
+		return utils.HandleGcpError(err, "failed to get App Engine application")
 	}
 	servicesCall := g.appengineService.Apps.Services.List(projectId)
 	servicesResp, err := servicesCall.Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to list App Engine services in project")
+		return utils.HandleGcpError(err, "failed to list App Engine services in project")
 	}
 	for _, service := range servicesResp.Services {
 		versionsCall := g.appengineService.Apps.Services.Versions.List(projectId, service.Id)
@@ -146,17 +144,14 @@ func (g *GcpAppEngineApplicationListLink) Process(resource tab.GCPResource) erro
 			continue
 		}
 		for _, version := range versionsResp.Versions {
-			gcpAppEngineVersion, err := tab.NewGCPResource(
-				fmt.Sprintf("%s-%s", service.Id, version.Id), // resource name
-				projectId,                           // accountRef (project ID)
-				tab.GCPResourceAppEngineApplication, // resource type
-				linkPostProcessAppEngineApplication(app, service, version), // properties
-			)
-			if err != nil {
-				slog.Error("Failed to create GCP App Engine version resource", "error", err, "service", service.Id, "version", version.Id)
-				continue
+			gcpAppEngineVersion := &output.CloudResource{
+				Platform:     "gcp",
+				ResourceType: "appengine.googleapis.com/Application",
+				ResourceID:   fmt.Sprintf("projects/%s/services/%s/versions/%s", projectId, service.Id, version.Id),
+				AccountRef:   projectId,
+				DisplayName:  fmt.Sprintf("%s-%s", service.Id, version.Id),
+				Properties:   linkPostProcessAppEngineApplication(app, service, version),
 			}
-			gcpAppEngineVersion.DisplayName = gcpAppEngineVersion.Name
 			g.Send(gcpAppEngineVersion)
 		}
 	}
@@ -187,8 +182,8 @@ func (g *GcpAppEngineSecretsLink) Initialize() error {
 	return nil
 }
 
-func (g *GcpAppEngineSecretsLink) Process(input tab.GCPResource) error {
-	if input.ResourceType != tab.GCPResourceAppEngineApplication {
+func (g *GcpAppEngineSecretsLink) Process(input output.CloudResource) error {
+	if input.ResourceType != "appengine.googleapis.com/Application" {
 		return nil
 	}
 	projectId := input.AccountRef
@@ -199,7 +194,7 @@ func (g *GcpAppEngineSecretsLink) Process(input tab.GCPResource) error {
 	}
 	ver, err := g.appengineService.Apps.Services.Versions.Get(projectId, serviceId, versionId).Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to get app engine version for secrets extraction")
+		return utils.HandleGcpError(err, "failed to get app engine version for secrets extraction")
 	}
 	if len(ver.EnvVariables) > 0 {
 		if content, err := json.Marshal(ver.EnvVariables); err == nil {
@@ -207,7 +202,7 @@ func (g *GcpAppEngineSecretsLink) Process(input tab.GCPResource) error {
 				Content: string(content),
 				Provenance: jtypes.NPProvenance{
 					Platform:     "gcp",
-					ResourceType: fmt.Sprintf("%s::EnvVariables", tab.GCPResourceAppEngineApplication.String()),
+					ResourceType: "appengine.googleapis.com/Application::EnvVariables",
 					ResourceID:   fmt.Sprintf("projects/%s/services/%s/versions/%s", projectId, serviceId, versionId),
 					Region:       input.Region,
 					AccountID:    projectId,

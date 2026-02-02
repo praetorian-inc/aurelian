@@ -6,8 +6,8 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 // AzureContainerRegistrySecretsLink extracts secrets from Azure Container Registries
@@ -27,12 +27,12 @@ func (l *AzureContainerRegistrySecretsLink) Params() []cfg.Param {
 	}
 }
 
-func (l *AzureContainerRegistrySecretsLink) Process(resource *model.AzureResource) error {
+func (l *AzureContainerRegistrySecretsLink) Process(resource *output.CloudResource) error {
 	// For now, just scan the resource properties for potential secrets
 	// This could be expanded to actually pull and scan container images
 	// similar to the AWS ECR implementation
 
-	l.Logger.Debug("Scanning container registry resource", "resource_id", resource.Key)
+	l.Logger.Debug("Scanning container registry resource", "resource_id", resource.ResourceID)
 
 	if resource.Properties != nil {
 		// Convert properties to JSON for scanning
@@ -43,7 +43,7 @@ func (l *AzureContainerRegistrySecretsLink) Process(resource *model.AzureResourc
 				Provenance: jtypes.NPProvenance{
 					Platform:     "azure",
 					ResourceType: "Microsoft.ContainerRegistry/registries",
-					ResourceID:   resource.Key,
+					ResourceID:   resource.ResourceID,
 					AccountID:    resource.AccountRef,
 				},
 			}

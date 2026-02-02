@@ -8,8 +8,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/internal/helpers"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
 )
 
 // AzureEnvironmentDetailsCollectorLink collects Azure environment details including subscription, tenant, and resource counts

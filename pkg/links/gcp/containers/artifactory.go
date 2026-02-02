@@ -11,18 +11,18 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus-framework/pkg/types/docker"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/diocletian/pkg/utils"
 	"google.golang.org/api/artifactregistry/v1"
 )
 
 // FILE INFO:
 // GcpRepositoryInfoLink - get info of a single Artifact Registry repository, Process(repositoryName string); needs project and location
-// GcpRepositoryListLink - list all repositories in a project, Process(resource tab.GCPResource)
-// GcpContainerImageListLink - list all images in a repository, Process(resource tab.GCPResource)
-// GcpContainerImageSecretsLink - scan container image for secrets, Process(input tab.GCPResource)
+// GcpRepositoryListLink - list all repositories in a project, Process(resource output.CloudResource)
+// GcpContainerImageListLink - list all images in a repository, Process(resource output.CloudResource)
+// GcpContainerImageSecretsLink - scan container image for secrets, Process(input output.CloudResource)
 
 type GcpRepositoryInfoLink struct {
 	*base.GcpBaseLink
@@ -72,18 +72,16 @@ func (g *GcpRepositoryInfoLink) Process(repositoryName string) error {
 	repoPath := fmt.Sprintf("projects/%s/locations/%s/repositories/%s", g.ProjectId, g.Location, repositoryName)
 	repo, err := g.artifactService.Projects.Locations.Repositories.Get(repoPath).Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to get repository")
+		return utils.HandleGcpError(err, "failed to get repository")
 	}
-	gcpRepo, err := tab.NewGCPResource(
-		repo.Name,   // resource name
-		g.ProjectId, // accountRef (project ID)
-		"artifactregistry.googleapis.com/Repository", // resource type
-		linkPostProcessRepository(repo),              // properties
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create GCP repository resource: %w", err)
+	gcpRepo := &output.CloudResource{
+		Platform:     "gcp",
+		ResourceType: "artifactregistry.googleapis.com/Repository",
+		ResourceID:   repo.Name,
+		AccountRef:   g.ProjectId,
+		DisplayName:  repo.Name,
+		Properties:   linkPostProcessRepository(repo),
 	}
-	gcpRepo.DisplayName = repo.Name
 	g.Send(gcpRepo)
 	return nil
 }
@@ -112,16 +110,16 @@ func (g *GcpRepositoryListLink) Initialize() error {
 	return nil
 }
 
-func (g *GcpRepositoryListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceProject {
+func (g *GcpRepositoryListLink) Process(resource output.CloudResource) error {
+	if resource.ResourceType != "cloudresourcemanager.googleapis.com/Project" {
 		return nil
 	}
-	projectId := resource.Name
+	projectId := resource.AccountRef
 	locationsParent := fmt.Sprintf("projects/%s", projectId)
 	locationsReq := g.artifactService.Projects.Locations.List(locationsParent)
 	locations, err := locationsReq.Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to list locations")
+		return utils.HandleGcpError(err, "failed to list locations")
 	}
 
 	sem := make(chan struct{}, 10)
@@ -155,21 +153,18 @@ func (g *GcpRepositoryListLink) processLocation(projectId, locationName string) 
 
 	repos, err := reposReq.Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to list repositories")
+		return utils.HandleGcpError(err, "failed to list repositories")
 	}
 
 	for _, repo := range repos.Repositories {
-		gcpRepo, err := tab.NewGCPResource(
-			repo.Name, // resource name
-			projectId, // accountRef (project ID)
-			"artifactregistry.googleapis.com/Repository", // resource type
-			linkPostProcessRepository(repo),              // properties
-		)
-		if err != nil {
-			slog.Error("Failed to create GCP repository resource", "error", err, "repository", repo.Name)
-			continue
+		gcpRepo := &output.CloudResource{
+			Platform:     "gcp",
+			ResourceType: "artifactregistry.googleapis.com/Repository",
+			ResourceID:   repo.Name,
+			AccountRef:   projectId,
+			DisplayName:  repo.Name,
+			Properties:   linkPostProcessRepository(repo),
 		}
-		gcpRepo.DisplayName = repo.Name
 		g.Send(gcpRepo)
 	}
 	return nil
@@ -199,7 +194,7 @@ func (g *GcpContainerImageListLink) Initialize() error {
 	return nil
 }
 
-func (g *GcpContainerImageListLink) Process(resource tab.GCPResource) error {
+func (g *GcpContainerImageListLink) Process(resource output.CloudResource) error {
 	if resource.ResourceType != "artifactregistry.googleapis.com/Repository" {
 		return nil
 	}
@@ -207,23 +202,20 @@ func (g *GcpContainerImageListLink) Process(resource tab.GCPResource) error {
 	if format != "DOCKER" {
 		return nil
 	}
-	imagesReq := g.artifactService.Projects.Locations.Repositories.DockerImages.List(resource.Name)
+	imagesReq := g.artifactService.Projects.Locations.Repositories.DockerImages.List(resource.ResourceID)
 	images, err := imagesReq.Do()
 	if err != nil {
-		return common.HandleGcpError(err, fmt.Sprintf("failed to list docker images in repository %s", resource.Name))
+		return utils.HandleGcpError(err, fmt.Sprintf("failed to list docker images in repository %s", resource.ResourceID))
 	}
 	for _, image := range images.DockerImages {
-		gcpImage, err := tab.NewGCPResource(
-			image.Name,          // resource name
-			resource.AccountRef, // accountRef (project ID)
-			"artifactregistry.googleapis.com/DockerImage", // resource type
-			linkPostProcessContainerImage(image),          // properties
-		)
-		if err != nil {
-			slog.Error("Failed to create GCP container image resource", "error", err, "image", image.Name)
-			continue
+		gcpImage := &output.CloudResource{
+			Platform:     "gcp",
+			ResourceType: "artifactregistry.googleapis.com/DockerImage",
+			ResourceID:   image.Name,
+			AccountRef:   resource.AccountRef,
+			DisplayName:  image.Name,
+			Properties:   linkPostProcessContainerImage(image),
 		}
-		gcpImage.DisplayName = image.Name
 		g.Send(gcpImage)
 	}
 	return nil
@@ -253,13 +245,13 @@ func (g *GcpContainerImageSecretsLink) Initialize() error {
 	return nil
 }
 
-func (g *GcpContainerImageSecretsLink) Process(input tab.GCPResource) error {
+func (g *GcpContainerImageSecretsLink) Process(input output.CloudResource) error {
 	if input.ResourceType != "artifactregistry.googleapis.com/DockerImage" {
 		return nil
 	}
-	image, err := g.artifactService.Projects.Locations.Repositories.DockerImages.Get(input.Name).Do()
+	image, err := g.artifactService.Projects.Locations.Repositories.DockerImages.Get(input.ResourceID).Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to get docker image for secrets extraction")
+		return utils.HandleGcpError(err, "failed to get docker image for secrets extraction")
 	}
 	dockerImage := docker.DockerImage{
 		Image: image.Uri,

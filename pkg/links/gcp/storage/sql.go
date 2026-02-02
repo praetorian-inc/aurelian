@@ -3,20 +3,19 @@ package storage
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/utils"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 	"google.golang.org/api/sqladmin/v1"
 )
 
 // FILE INFO:
 // GcpSQLInstanceInfoLink - get info of a single SQL instance, Process(instanceName string); needs project
-// GcpSQLInstanceListLink - list all SQL instances in a project, Process(resource tab.GCPResource); needs project
+// GcpSQLInstanceListLink - list all SQL instances in a project, Process(resource output.CloudResource); needs project
 
 type GcpSQLInstanceInfoLink struct {
 	*base.GcpBaseLink
@@ -58,16 +57,16 @@ func (g *GcpSQLInstanceInfoLink) Initialize() error {
 func (g *GcpSQLInstanceInfoLink) Process(instanceName string) error {
 	instance, err := g.sqlService.Instances.Get(g.ProjectId, instanceName).Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to get SQL instance")
+		return utils.HandleGcpError(err, "failed to get SQL instance")
 	}
-	gcpSQLInstance, err := tab.NewGCPResource(
-		instance.Name,                        // resource name (instance name)
-		g.ProjectId,                          // accountRef (project ID)
-		tab.GCPResourceSQLInstance,           // resource type
-		linkPostProcessSQLInstance(instance), // properties
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create GCP SQL instance resource: %w", err)
+	gcpSQLInstance := &output.CloudResource{
+		Platform:     "gcp",
+		ResourceType: "sqladmin.googleapis.com/Instance",
+		ResourceID:   fmt.Sprintf("projects/%s/instances/%s", g.ProjectId, instance.Name),
+		AccountRef:   g.ProjectId,
+		Region:       instance.Region,
+		DisplayName:  instance.Name,
+		Properties:   linkPostProcessSQLInstance(instance),
 	}
 	g.Send(gcpSQLInstance)
 	return nil
@@ -97,26 +96,25 @@ func (g *GcpSQLInstanceListLink) Initialize() error {
 	return nil
 }
 
-func (g *GcpSQLInstanceListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceProject {
+func (g *GcpSQLInstanceListLink) Process(resource output.CloudResource) error {
+	if resource.ResourceType != "cloudresourcemanager.googleapis.com/Project" {
 		return nil
 	}
-	projectId := resource.Name
+	projectId := resource.AccountRef
 	listCall := g.sqlService.Instances.List(projectId)
 	resp, err := listCall.Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to list SQL instances in project")
+		return utils.HandleGcpError(err, "failed to list SQL instances in project")
 	}
 	for _, instance := range resp.Items {
-		gcpSQLInstance, err := tab.NewGCPResource(
-			instance.Name,                        // resource name
-			projectId,                            // accountRef (project ID)
-			tab.GCPResourceSQLInstance,           // resource type
-			linkPostProcessSQLInstance(instance), // properties
-		)
-		if err != nil {
-			slog.Error("Failed to create GCP SQL instance resource", "error", err, "instance", instance.Name)
-			continue
+		gcpSQLInstance := &output.CloudResource{
+			Platform:     "gcp",
+			ResourceType: "sqladmin.googleapis.com/Instance",
+			ResourceID:   fmt.Sprintf("projects/%s/instances/%s", projectId, instance.Name),
+			AccountRef:   projectId,
+			Region:       instance.Region,
+			DisplayName:  instance.Name,
+			Properties:   linkPostProcessSQLInstance(instance),
 		}
 		g.Send(gcpSQLInstance)
 	}

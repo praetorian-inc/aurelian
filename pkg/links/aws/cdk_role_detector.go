@@ -7,8 +7,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/base"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
 )
 
 // CDKRoleInfo represents a detected CDK role
@@ -25,6 +25,14 @@ type CDKRoleInfo struct {
 	AssumeRoleDoc   string `json:"assume_role_policy_document,omitempty"`
 }
 
+// ComputeBucketName generates the expected CDK assets bucket name from the role info
+func (r *CDKRoleInfo) ComputeBucketName() string {
+	if r.Qualifier == "" || r.AccountID == "" || r.Region == "" {
+		return ""
+	}
+	return fmt.Sprintf("cdk-%s-assets-%s-%s", r.Qualifier, r.AccountID, r.Region)
+}
+
 type AwsCdkRoleDetector struct {
 	*base.AwsReconBaseLink
 }
@@ -37,8 +45,9 @@ func NewAwsCdkRoleDetector(configs ...cfg.Config) chain.Link {
 }
 
 func (l *AwsCdkRoleDetector) Params() []cfg.Param {
-	return append(options.AwsCommonReconOptions(), 
+	return append(options.AwsCommonReconOptions(),
 		options.AwsCdkQualifiers(),
+		options.AwsCdkCheckAllRegions(),
 	)
 }
 

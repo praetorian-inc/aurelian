@@ -1,20 +1,20 @@
 package aws
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
-	"encoding/json"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awstypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/orgpolicies"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/orgpolicies"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 	"github.com/stretchr/testify/assert"
 )
 
 func createRequestContext(principalArn string) *RequestContext {
-	return &RequestContext{
+	ctx := &RequestContext{
 		PrincipalArn:    principalArn,
 		SourceIP:        "203.0.113.0",
 		UserAgent:       "aws-cli/1.16.312",
@@ -27,12 +27,21 @@ func createRequestContext(principalArn string) *RequestContext {
 		RequestTags: map[string]string{
 			"costcenter": "12345",
 		},
-		PrincipalOrgID:   "o-1234567",
-		PrincipalAccount: "111122223333",
+		PrincipalOrgID: "o-1234567",
 		RequestParameters: map[string]string{
 			"PrincipalOrgPaths": "o-1234567/r-ab12/ou-ab12-11111111/",
 		},
 	}
+
+	// Extract account ID from ARN if present
+	// Expected format: arn:aws:iam::123456789012:user/username
+	// or: arn:aws:iam::123456789012:role/rolename
+	parts := strings.Split(principalArn, ":")
+	if len(parts) >= 5 {
+		ctx.PrincipalAccount = parts[4]
+	}
+
+	return ctx
 }
 
 func TestPolicyEvaluator_BasicIdentityPolicy(t *testing.T) {
@@ -882,7 +891,16 @@ func TestPolicyEvaluator_AssumeRolePolicyDocument(t *testing.T) {
 		},
 	}
 
-	evaluator := NewPolicyEvaluator(&PolicyData{})
+	// Create PolicyData with ResourcePolicies containing the trust policy
+	// For AssumeRole, the evaluator checks ResourcePolicies[roleArn] for the trust policy
+	resourcePolicies := make(map[string]*types.Policy)
+	resourcePolicies["arn:aws:iam::111122223333:role/role-name"] = &types.Policy{
+		Statement: assumeRolePolicy,
+	}
+
+	evaluator := NewPolicyEvaluator(&PolicyData{
+		ResourcePolicies: resourcePolicies,
+	})
 
 	tests := []struct {
 		name             string
@@ -933,7 +951,6 @@ func TestPolicyEvaluator_AssumeRolePolicyDocument(t *testing.T) {
 				Resource:           tt.resource,
 				Context:            createRequestContext(tt.principalArn),
 				IdentityStatements: identity,
-				BoundaryStatements: assumeRolePolicy,
 			}
 
 			result, err := evaluator.Evaluate(req)
@@ -1206,9 +1223,12 @@ func TestPolicyEvaluator_SCPServiceLinkedRole(t *testing.T) {
 	// Test regular principal - should be denied by SCP
 	ctx := createRequestContext("arn:aws:iam::111122223333:user/test-user")
 	ctx.PrincipalOrgID = "o-1234567"
+	ctx.ResourceAccount = "111122223333" // Required for SCP lookup
+	resource := "arn:aws:bedrock:us-east-1:111122223333:agent/QOYTA2YG0G"
+	ctx.PopulateDefaultRequestConditionKeys(resource)
 	req := &EvaluationRequest{
 		Action:             "bedrock:InvokeModel",
-		Resource:           "arn:aws:bedrock:us-east-1:111122223333:agent/QOYTA2YG0G",
+		Resource:           resource,
 		Context:            ctx,
 		IdentityStatements: identityStatements,
 	}
@@ -1222,9 +1242,12 @@ func TestPolicyEvaluator_SCPServiceLinkedRole(t *testing.T) {
 	// Test service-linked role - should be allowed despite SCP deny
 	ctx = createRequestContext("arn:aws:iam::111122223333:role/aws-service-role/bedrock.amazonaws.com/AWSServiceRoleForBedrock")
 	ctx.PrincipalOrgID = "o-1234567"
+	ctx.ResourceAccount = "111122223333" // Required for SCP lookup
+	resource = "arn:aws:bedrock:us-east-1:111122223333:agent/QOYTA2YG0G"
+	ctx.PopulateDefaultRequestConditionKeys(resource)
 	req = &EvaluationRequest{
 		Action:             "bedrock:InvokeModel",
-		Resource:           "arn:aws:bedrock:us-east-1:111122223333:agent/QOYTA2YG0G",
+		Resource:           resource,
 		Context:            ctx,
 		IdentityStatements: identityStatements,
 	}

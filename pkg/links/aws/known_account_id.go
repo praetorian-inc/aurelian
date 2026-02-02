@@ -5,7 +5,8 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/utils"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
+	"github.com/praetorian-inc/diocletian/pkg/utils"
 	"gopkg.in/yaml.v3"
 )
 
@@ -113,7 +114,7 @@ func (l *KnownAccountID) Process(id string) error {
 	// Look for matches
 	for _, account := range accounts {
 		if account.ID == id {
-			return l.Send(account)
+			return l.Send(outputters.RawOutput{Data: account})
 		}
 	}
 
@@ -124,5 +125,5 @@ func (l *KnownAccountID) Process(id string) error {
 		Source:      "None",
 		Description: "Account ID not found in known public accounts",
 	}
-	return l.Send(noMatch)
+	return l.Send(outputters.RawOutput{Data: noMatch})
 }

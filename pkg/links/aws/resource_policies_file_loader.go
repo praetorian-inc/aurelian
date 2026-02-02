@@ -7,9 +7,9 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/base"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 type AwsResourcePoliciesFileLoader struct {

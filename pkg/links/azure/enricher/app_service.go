@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 // AppServiceEnricher implements enrichment for App Service instances
@@ -18,11 +18,11 @@ func (a *AppServiceEnricher) CanEnrich(templateID string) bool {
 	return templateID == "app_services_public_access"
 }
 
-func (a *AppServiceEnricher) Enrich(ctx context.Context, resource *model.AzureResource) []Command {
+func (a *AppServiceEnricher) Enrich(ctx context.Context, resource *output.CloudResource) []Command {
 	commands := []Command{}
 
 	// Extract App Service name
-	appServiceName := resource.Name
+	appServiceName := resource.DisplayName
 	if appServiceName == "" {
 		commands = append(commands, Command{
 			Command:      "",

@@ -10,7 +10,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/sql/armsql/v2"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 // SQLServerEnricher implements enrichment for SQL Server instances
@@ -20,11 +20,11 @@ func (s *SQLServerEnricher) CanEnrich(templateID string) bool {
 	return templateID == "sql_servers_public_access"
 }
 
-func (s *SQLServerEnricher) Enrich(ctx context.Context, resource *model.AzureResource) []Command {
+func (s *SQLServerEnricher) Enrich(ctx context.Context, resource *output.CloudResource) []Command {
 	commands := []Command{}
 
 	// Extract SQL Server name and construct FQDN
-	serverName := resource.Name
+	serverName := resource.DisplayName
 	if serverName == "" {
 		commands = append(commands, Command{
 			Command:      "",
@@ -82,10 +82,10 @@ func (s *SQLServerEnricher) Enrich(ctx context.Context, resource *model.AzureRes
 }
 
 // getFirewallRulesCommand retrieves firewall rules and creates a command with the results
-func (s *SQLServerEnricher) getFirewallRulesCommand(ctx context.Context, resource *model.AzureResource) Command {
-	serverName := resource.Name
+func (s *SQLServerEnricher) getFirewallRulesCommand(ctx context.Context, resource *output.CloudResource) Command {
+	serverName := resource.DisplayName
 	subscriptionID := resource.AccountRef
-	resourceGroupName := resource.ResourceGroup
+	resourceGroupName, _ := resource.Properties["resourceGroup"].(string)
 
 	azCommand := fmt.Sprintf("az sql server firewall-rule list --resource-group %s --server %s", resourceGroupName, serverName)
 

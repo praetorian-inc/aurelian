@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 // VirtualMachineEnricher implements enrichment for virtual machines
@@ -15,7 +15,7 @@ func (v *VirtualMachineEnricher) CanEnrich(templateID string) bool {
 	return templateID == "virtual_machines_public_access"
 }
 
-func (v *VirtualMachineEnricher) Enrich(ctx context.Context, resource *model.AzureResource) []Command {
+func (v *VirtualMachineEnricher) Enrich(ctx context.Context, resource *output.CloudResource) []Command {
 	commands := []Command{}
 
 	// Get public IPs from the resource

@@ -2,12 +2,14 @@ package cmd
 
 import (
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/internal/registry"
+	"github.com/praetorian-inc/diocletian/internal/helpers"
+	"github.com/praetorian-inc/diocletian/internal/message"
+	"github.com/praetorian-inc/diocletian/internal/registry"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -216,6 +218,39 @@ func runModule(cmd *cobra.Command, module chain.Module, platform string) error {
 		}
 	})
 
+	// Get output format and output path from flags
+	outputFormat, _ := cmd.Flags().GetString("output-format")
+	outputPath, _ := cmd.Flags().GetString("output-file")
+
+	// Determine output writer and file cleanup
+	var outputWriter io.Writer = os.Stdout
+	var outputFile *os.File
+	if outputPath != "" {
+		f, err := os.Create(outputPath)
+		if err != nil {
+			return fmt.Errorf("failed to create output file: %w", err)
+		}
+		outputFile = f
+		outputWriter = f
+		defer func() {
+			if closeErr := outputFile.Close(); closeErr != nil {
+				// Log close error but don't override return value
+				message.Warning("failed to close output file: %v", closeErr)
+			}
+		}()
+	}
+
+	// Get the outputter constructor based on format and writer
+	var outputterConstructor chain.OutputterConstructor
+	if outputFormat != "" || outputPath != "" {
+		// If either format or path is specified, use custom outputter
+		format := outputFormat
+		if format == "" {
+			format = "terminal"
+		}
+		outputterConstructor = SelectOutputterWithWriter(format, outputWriter)
+	}
+
 	// Check if this is the arg-scan module and if enrichment is disabled
 	moduleName := module.Metadata().Name
 	if moduleProps := module.Metadata().Properties(); moduleProps != nil {
@@ -227,11 +262,21 @@ func runModule(cmd *cobra.Command, module chain.Module, platform string) error {
 	}
 	message.Section("Running module %s", moduleName)
 
-	module.Run(configs...)
+	// Override module outputters if custom format specified
+	if outputterConstructor != nil {
+		// WithOutputters modifies the receiver in place, no need to capture return value
+		module.WithOutputters(outputterConstructor)
+	}
+
+	// Run module - this properly handles resetParams() internally
+	if err := module.Run(configs...); err != nil {
+		return err
+	}
 
 	if platform == "aws" && !quietFlag {
 		helpers.ShowCacheStat()
 		helpers.PrintAllThrottlingCounts()
 	}
+
 	return module.Error()
 }

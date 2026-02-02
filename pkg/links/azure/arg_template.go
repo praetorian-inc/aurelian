@@ -10,12 +10,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
-	"github.com/praetorian-inc/nebula/pkg/templates"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/internal/helpers"
+	"github.com/praetorian-inc/diocletian/internal/message"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
+	"github.com/praetorian-inc/diocletian/pkg/templates"
 )
 
 // ARGTemplateQueryInput is the input struct for the query link
@@ -169,15 +169,22 @@ func (l *ARGTemplateQueryLink) Process(input ARGTemplateQueryInput) error {
 			}
 			properties["templateID"] = template.ID
 
-			ar, err := model.NewAzureResource(helpers.SafeGetString(item, "id"), input.Subscription, model.CloudResourceType(helpers.SafeGetString(item, "type")), properties)
-			if err != nil {
-				l.Logger.Error("Failed to create Azure resource", "error", err)
-				continue
+			// Extract resource group from ARM ID for Properties
+			armID := helpers.SafeGetString(item, "id")
+			parsedID, _ := helpers.ParseAzureResourceID(armID)
+			if rg, ok := parsedID["resourceGroups"]; ok {
+				properties["resourceGroup"] = rg
 			}
-			ar.Region = helpers.SafeGetString(item, "location")
-			ar.Name = helpers.SafeGetString(item, "name")
-			ar.ResourceType = model.CloudResourceType(helpers.SafeGetString(item, "type"))
-			ar.Properties = properties
+
+			ar := &output.CloudResource{
+				Platform:     "azure",
+				ResourceType: helpers.SafeGetString(item, "type"),
+				ResourceID:   armID,
+				AccountRef:   input.Subscription,
+				Region:       helpers.SafeGetString(item, "location"),
+				DisplayName:  helpers.SafeGetString(item, "name"),
+				Properties:   properties,
+			}
 
 			// Attempt to unmarshal any string value that looks like JSON
 			for k, v := range ar.Properties {
@@ -201,7 +208,7 @@ func (l *ARGTemplateQueryLink) Process(input ARGTemplateQueryInput) error {
 
 			outputDir, _ := cfg.As[string](l.Arg("output"))
 			filename := filepath.Join(outputDir, fmt.Sprintf("public-resources-%s.json", cleanSub))
-			l.Logger.Debug("Sending resource to next link", "template_id", template.ID, "resource_id", ar.Key, "resource_type", ar.ResourceType, "filename", filename)
+			l.Logger.Debug("Sending resource to next link", "template_id", template.ID, "resource_id", ar.ResourceID, "resource_type", ar.ResourceType, "filename", filename)
 			l.Send(outputters.NewNamedOutputData(ar, filename))
 		}
 		return nil

@@ -3,11 +3,11 @@ package recon
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/registry"
-	"github.com/praetorian-inc/nebula/pkg/links/aws"
-	"github.com/praetorian-inc/nebula/pkg/links/general"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
+	"github.com/praetorian-inc/diocletian/internal/registry"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws"
+	"github.com/praetorian-inc/diocletian/pkg/links/general"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
 )
 
 func init() {

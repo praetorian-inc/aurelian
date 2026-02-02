@@ -7,17 +7,17 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	jlinks "github.com/praetorian-inc/janus-framework/pkg/links"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 type SupportsResourceTypes interface {
-	SupportedResourceTypes() []model.CloudResourceType
+	SupportedResourceTypes() []string
 }
 
 func PreprocessResourceTypes(class SupportsResourceTypes) func(chain.Link, string) error {
 	processor := func(self chain.Link, input string) error {
-		resourceTypes := []model.CloudResourceType{model.CloudResourceType(input)}
+		resourceTypes := []string{input}
 
 		if strings.ToLower(input) == "all" {
 			resourceTypes = class.SupportedResourceTypes()
@@ -51,10 +51,10 @@ func NewSingleResourcePreprocessor() func(...cfg.Config) chain.Link {
 	return jlinks.ConstructAdHocLink(preprocessor)
 }
 
-// NewAzureSingleResourcePreprocessor returns a link that accepts an AzureResource and sends it for processing.
+// NewAzureSingleResourcePreprocessor returns a link that accepts a CloudResource and sends it for processing.
 // This is used for processing individual Azure resources from list-all-resources output.
 func NewAzureSingleResourcePreprocessor() func(...cfg.Config) chain.Link {
-	preprocessor := func(self chain.Link, input *model.AzureResource) error {
+	preprocessor := func(self chain.Link, input *output.CloudResource) error {
 		self.Send(input)
 		return nil
 	}
@@ -62,7 +62,7 @@ func NewAzureSingleResourcePreprocessor() func(...cfg.Config) chain.Link {
 }
 
 // NewAzureResourceIDPreprocessor returns a link that accepts an Azure resource ID string,
-// constructs an AzureResource object, and sends it for processing.
+// constructs a CloudResource object, and sends it for processing.
 func NewAzureResourceIDPreprocessor() func(...cfg.Config) chain.Link {
 	preprocessor := func(self chain.Link, input string) error {
 		// The Azure resource ID format is: /subscriptions/{sub}/resourceGroups/{rg}/providers/{type}/{name}
@@ -75,17 +75,15 @@ func NewAzureResourceIDPreprocessor() func(...cfg.Config) chain.Link {
 		subscriptionID := parts[2]
 		resourceType := strings.Join(parts[6:len(parts)-1], "/")
 
-		// Create a basic AzureResource with the resource ID
-		azureResource, err := model.NewAzureResource(
-			input, // Use full resource ID as the name
-			subscriptionID,
-			model.CloudResourceType(resourceType),
-			map[string]any{
+		// Create a basic CloudResource with the resource ID
+		azureResource := output.CloudResource{
+			Platform:     "azure",
+			ResourceType: resourceType,
+			ResourceID:   input,
+			AccountRef:   subscriptionID,
+			Properties: map[string]any{
 				"resourceId": input,
 			},
-		)
-		if err != nil {
-			return fmt.Errorf("failed to create AzureResource from ID: %w", err)
 		}
 
 		self.Send(&azureResource)

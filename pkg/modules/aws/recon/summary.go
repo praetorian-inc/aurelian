@@ -3,10 +3,10 @@ package recon
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/registry" 
-	"github.com/praetorian-inc/nebula/pkg/links/aws"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
+	"github.com/praetorian-inc/diocletian/internal/registry" 
+	"github.com/praetorian-inc/diocletian/pkg/links/aws"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
 )
 
 var AwsSummary = chain.NewModule(
@@ -41,8 +41,7 @@ var AwsSummary = chain.NewModule(
 		WithShortcode("d"),
 ).WithInputParam(
 	cfg.NewParam[string]("filename", "Base filename for output").
-		WithDefault("aws-summary").
-		WithShortcode("f"),
+		WithDefault("aws-summary"),
 ).WithParams(
 	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
 ).WithConfigs(

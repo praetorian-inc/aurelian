@@ -34,8 +34,9 @@ func TestCDKRoleInfo_BucketName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// The bucket name should be set correctly during role detection
-			assert.Equal(t, tt.expected, tt.roleInfo.BucketName)
+			// The bucket name should be computed from the role info fields
+			actual := tt.roleInfo.ComputeBucketName()
+			assert.Equal(t, tt.expected, actual)
 		})
 	}
 }

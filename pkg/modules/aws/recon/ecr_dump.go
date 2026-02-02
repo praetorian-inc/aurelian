@@ -4,14 +4,13 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus-framework/pkg/links/noseyparker"
-	"github.com/praetorian-inc/nebula/internal/registry"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/ecr"
-	"github.com/praetorian-inc/nebula/pkg/links/docker"
-	"github.com/praetorian-inc/nebula/pkg/links/general"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/internal/registry"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/cloudcontrol"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/ecr"
+	"github.com/praetorian-inc/diocletian/pkg/links/docker"
+	"github.com/praetorian-inc/diocletian/pkg/links/general"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
 )
 
 var ECRDump = chain.NewModule(
@@ -63,10 +62,10 @@ var ECRDump = chain.NewModule(
 // AWSECRResourceTypes implements the SupportsResourceTypes interface
 type AWSECRResourceTypes struct{}
 
-func (a *AWSECRResourceTypes) SupportedResourceTypes() []model.CloudResourceType {
-	return []model.CloudResourceType{
-		model.AWSEcrRepository,
-		model.AWSEcrPublicRepository,
+func (a *AWSECRResourceTypes) SupportedResourceTypes() []string {
+	return []string{
+		"AWS::ECR::Repository",
+		"AWS::ECR::PublicRepository",
 	}
 }
 

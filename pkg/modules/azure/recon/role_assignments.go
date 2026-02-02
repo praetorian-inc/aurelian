@@ -1,12 +1,14 @@
 package recon
 
 import (
+	"os"
+
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/registry"
-	"github.com/praetorian-inc/nebula/pkg/links/azure"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
+	"github.com/praetorian-inc/diocletian/internal/registry"
+	"github.com/praetorian-inc/diocletian/pkg/links/azure"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
 )
 
 func init() {
@@ -33,7 +35,9 @@ var AzureRoleAssignments = chain.NewModule(
 	azure.NewAzureRoleAssignmentsOutputFormatterLink,
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
-	outputters.NewRuntimeMarkdownOutputter,
+	func(configs ...cfg.Config) chain.Outputter {
+		return outputters.NewFormatterAdapterConstructor("markdown", os.Stdout)()
+	},
 ).WithInputParam(
 	options.AzureSubscription(),
 ).WithParams(

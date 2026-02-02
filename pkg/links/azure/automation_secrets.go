@@ -9,9 +9,9 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/internal/helpers"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 // AzureAutomationSecretsLink extracts secrets from Azure Automation Accounts
@@ -31,11 +31,11 @@ func (l *AzureAutomationSecretsLink) Params() []cfg.Param {
 	}
 }
 
-func (l *AzureAutomationSecretsLink) Process(resource *model.AzureResource) error {
+func (l *AzureAutomationSecretsLink) Process(resource *output.CloudResource) error {
 	subscriptionID := resource.AccountRef
 
 	// Extract resource group and automation account name from resource ID
-	resourceGroup, accountName, err := l.parseAutomationResourceID(resource.Key)
+	resourceGroup, accountName, err := l.parseAutomationResourceID(resource.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse automation account resource ID: %w", err)
 	}
@@ -47,12 +47,12 @@ func (l *AzureAutomationSecretsLink) Process(resource *model.AzureResource) erro
 	}
 
 	// Scan runbooks
-	if err := l.scanRunbooks(subscriptionID, resourceGroup, accountName, cred, resource.Key); err != nil {
+	if err := l.scanRunbooks(subscriptionID, resourceGroup, accountName, cred, resource.ResourceID); err != nil {
 		l.Logger.Error("Failed to scan runbooks", "error", err.Error())
 	}
 
 	// Scan variables
-	if err := l.scanVariables(subscriptionID, resourceGroup, accountName, cred, resource.Key); err != nil {
+	if err := l.scanVariables(subscriptionID, resourceGroup, accountName, cred, resource.ResourceID); err != nil {
 		l.Logger.Error("Failed to scan variables", "error", err.Error())
 	}
 

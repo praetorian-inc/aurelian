@@ -14,8 +14,9 @@ import (
 	"github.com/aws/smithy-go"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/diocletian/internal/message"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/base"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
 )
 
 // BucketExistenceState represents the state of bucket existence check
@@ -106,7 +107,8 @@ func (c *CloudFrontS3OriginChecker) Process(resource any) error {
 			}
 
 			// Send vulnerability to next link in chain
-			if err := c.Send(vuln); err != nil {
+			// Wrap in RawOutput to prevent Finding wrapper from hiding the actual data
+			if err := c.Send(outputters.RawOutput{Data: vuln}); err != nil {
 				return err
 			}
 

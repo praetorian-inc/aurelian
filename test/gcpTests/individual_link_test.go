@@ -6,7 +6,7 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus-framework/pkg/output"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/applications"
+	"github.com/praetorian-inc/diocletian/pkg/links/gcp/applications"
 )
 
 func TestGcpFunctionInfoLink(t *testing.T) {

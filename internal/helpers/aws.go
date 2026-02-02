@@ -15,9 +15,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go/middleware"
-	"github.com/praetorian-inc/nebula/internal/logs"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/diocletian/internal/logs"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 // TODO this should be combined with roseta
@@ -183,7 +183,7 @@ func GetAWSCfg(region string, profile string, opts []*types.Option, opsecLevel s
 	} else {
 		principal, err := GetCallerIdentity(cfg)
 		if err != nil {
-			slog.Error("Error getting principal", err)
+			slog.Error("Error getting principal", "error", err)
 			return aws.Config{}, err
 		}
 		CachePrep = GetCachePrepWithIdentity(principal, opts)

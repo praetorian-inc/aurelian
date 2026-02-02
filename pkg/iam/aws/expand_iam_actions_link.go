@@ -9,7 +9,8 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/utils"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
+	"github.com/praetorian-inc/diocletian/pkg/utils"
 )
 
 // AWSExpandActions is a link that expands wildcard IAM actions
@@ -43,7 +44,7 @@ func (a *AWSExpandActions) Initialize() error {
 func (a *AWSExpandActions) Process(action string) error {
 	if !strings.Contains(action, "*") {
 		slog.Debug("No wildcard in action, skipping expansion", "action", action)
-		return a.Send(action)
+		return a.Send(outputters.RawOutput{Data: action})
 	}
 
 	slog.Debug("Expanding AWS action pattern", "pattern", action)
@@ -68,7 +69,7 @@ func (a *AWSExpandActions) Process(action string) error {
 	matchCount := 0
 	for _, actionName := range a.allActions {
 		if regex.MatchString(actionName) {
-			if err := a.Send(actionName); err != nil {
+			if err := a.Send(outputters.RawOutput{Data: actionName}); err != nil {
 				return err
 			}
 			matchCount++

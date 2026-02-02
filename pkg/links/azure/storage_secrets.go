@@ -9,9 +9,9 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/internal/helpers"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 // AzureStorageSecretsLink extracts secrets from Azure Storage Accounts
@@ -31,11 +31,11 @@ func (l *AzureStorageSecretsLink) Params() []cfg.Param {
 	}
 }
 
-func (l *AzureStorageSecretsLink) Process(resource *model.AzureResource) error {
+func (l *AzureStorageSecretsLink) Process(resource *output.CloudResource) error {
 	subscriptionID := resource.AccountRef
 
 	// Extract resource group and storage account name from resource ID
-	resourceGroup, accountName, err := l.parseStorageResourceID(resource.Key)
+	resourceGroup, accountName, err := l.parseStorageResourceID(resource.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse storage account resource ID: %w", err)
 	}
@@ -83,7 +83,7 @@ func (l *AzureStorageSecretsLink) Process(resource *model.AzureResource) error {
 				Provenance: jtypes.NPProvenance{
 					Platform:     "azure",
 					ResourceType: "Microsoft.Storage/storageAccounts/keys",
-					ResourceID:   fmt.Sprintf("%s/keys", resource.Key),
+					ResourceID:   fmt.Sprintf("%s/keys", resource.ResourceID),
 					AccountID:    subscriptionID,
 				},
 			}

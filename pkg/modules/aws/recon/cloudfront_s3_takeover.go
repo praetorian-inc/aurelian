@@ -1,12 +1,14 @@
 package recon
 
 import (
+	"os"
+
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/registry"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudfront"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
+	"github.com/praetorian-inc/diocletian/internal/registry"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/cloudfront"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
 )
 
 func init() {
@@ -34,15 +36,16 @@ var AwsCloudFrontS3Takeover = chain.NewModule(
 	cloudfront.NewRoute53DomainFinder,
 ).WithOutputters(
 	outputters.NewRuntimeJSONOutputter,
-	outputters.NewRuntimeMarkdownOutputter,
+	func(configs ...cfg.Config) chain.Outputter {
+		return outputters.NewFormatterAdapterConstructor("markdown", os.Stdout)()
+	},
 ).WithInputParam(
 	options.AwsProfile(),
 ).WithInputParam(
 	options.AwsRegions(),
 ).WithInputParam(
 	cfg.NewParam[string]("filename", "Base filename for output").
-		WithDefault("cloudfront-s3-takeover").
-		WithShortcode("f"),
+		WithDefault("cloudfront-s3-takeover"),
 ).WithParams(
 	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
 ).WithConfigs(

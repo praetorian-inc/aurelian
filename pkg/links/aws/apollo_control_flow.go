@@ -6,19 +6,20 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	iam "github.com/praetorian-inc/nebula/pkg/iam/aws"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/orgpolicies"
-	"github.com/praetorian-inc/nebula/pkg/links/general"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	iam "github.com/praetorian-inc/diocletian/pkg/iam/aws"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/base"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/cloudcontrol"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/orgpolicies"
+	"github.com/praetorian-inc/diocletian/pkg/links/general"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 type AwsApolloControlFlow struct {
@@ -26,14 +27,14 @@ type AwsApolloControlFlow struct {
 	pd *iam.PolicyData
 }
 
-func (a *AwsApolloControlFlow) SupportedResourceTypes() []model.CloudResourceType {
-	return []model.CloudResourceType{
-		model.AWSRole,
-		model.AWSUser,
-		model.AWSGroup,
-		model.AWSLambdaFunction,
-		model.AWSEC2Instance,
-		model.AWSCloudFormationStack,
+func (a *AwsApolloControlFlow) SupportedResourceTypes() []string {
+	return []string{
+		"AWS::IAM::Role",
+		"AWS::IAM::User",
+		"AWS::IAM::Group",
+		"AWS::Lambda::Function",
+		"AWS::EC2::Instance",
+		"AWS::CloudFormation::Stack",
 	}
 }
 
@@ -135,13 +136,13 @@ func (a *AwsApolloControlFlow) Process(resourceType string) error {
 		a.Logger.Debug(fmt.Sprintf("DEBUG: Processing result %d - Principal: %T, Resource: %v, Action: %s",
 			i, result.Principal, result.Resource, result.Action))
 
-		rel, err := TransformResultToRelationship(result)
+		perm, err := TransformResultToPermission(result)
 		if err != nil {
-			a.Logger.Error("Failed to transform relationship: " + err.Error())
+			a.Logger.Error("Failed to transform permission: " + err.Error())
 			continue
 		}
 		a.Logger.Debug(fmt.Sprintf("DEBUG: Successfully transformed result %d, sending to outputter", i))
-		a.Send(rel)
+		a.Send(perm)
 	}
 
 	// Create assume role relationships between resources and their IAM roles
@@ -249,7 +250,7 @@ func (a *AwsApolloControlFlow) gatherGaadDetails() error {
 	return nil
 }
 
-// sendResourceRoleRelationships creates assume role relationships using the outputter chain
+// sendResourceRoleRelationships creates assume role permissions using Pure CLI types
 func (a *AwsApolloControlFlow) sendResourceRoleRelationships() error {
 	if a.pd.Resources == nil || len(*a.pd.Resources) == 0 {
 		return nil
@@ -290,54 +291,53 @@ func (a *AwsApolloControlFlow) sendResourceRoleRelationships() error {
 			roleArn = fmt.Sprintf("arn:aws:iam::%s:role/%s", accountId, roleName)
 		}
 
-		// Create the resource node using Tabularium transformers
-		resourceNode, err := TransformERDToAWSResource(&resource)
+		// Create ResourceRef for the source (resource with the role)
+		sourceRef, err := TransformERDToResourceRef(&resource)
 		if err != nil {
 			a.Logger.Error(fmt.Sprintf("Failed to transform resource %s: %s", resource.Arn.String(), err.Error()))
 			continue
 		}
 
-		// Create the role node using Tabularium types
-		roleProperties := map[string]any{
-			"roleName": roleName,
-		}
-		roleNode, err := model.NewAWSResource(
-			roleArn,
-			accountId,
-			model.AWSRole,
-			roleProperties,
-		)
-		if err != nil {
-			a.Logger.Error(fmt.Sprintf("Failed to create role resource %s: %s", roleArn, err.Error()))
-			continue
+		// Create ResourceRef for the target (IAM role)
+		targetRef := output.ResourceRef{
+			Platform: "aws",
+			Type:     "iam-role",
+			ID:       roleArn,
+			Account:  accountId,
 		}
 
-		// Create the assume role relationship
-		assumeRoleRel := model.NewIAMRelationship(resourceNode, &roleNode, "sts:AssumeRole")
-		assumeRoleRel.Capability = "apollo-resource-role-mapping"
+		// Create the assume role permission (Pure CLI - no Neo4j key knowledge)
+		assumeRolePermission := &output.IAMPermission{
+			Source:     sourceRef,
+			Target:     targetRef,
+			Permission: "sts:AssumeRole",
+			Effect:     "Allow",
+			Capability: "apollo-resource-role-mapping",
+			Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		}
 
 		// Send to outputter
-		a.Send(assumeRoleRel)
+		a.Send(assumeRolePermission)
 	}
 
 	return nil
 }
 
-// processGitHubActionsFederation processes GitHub Actions federated identity relationships
+// processGitHubActionsFederation processes GitHub Actions federated identity permissions
 func (a *AwsApolloControlFlow) processGitHubActionsFederation() error {
 	if a.pd == nil || a.pd.Gaad == nil {
 		return nil
 	}
 
-	// Extract all GitHub Actions Repository→Role relationships from GAAD data
-	relationships, err := ExtractGitHubActionsRelationships(a.pd.Gaad)
+	// Extract all GitHub Actions Repository→Role permissions from GAAD data
+	permissions, err := ExtractGitHubActionsPermissions(a.pd.Gaad)
 	if err != nil {
-		return fmt.Errorf("failed to extract GitHub Actions relationships: %w", err)
+		return fmt.Errorf("failed to extract GitHub Actions permissions: %w", err)
 	}
 
-	// Send all relationships to the outputter chain
-	for _, rel := range relationships {
-		a.Send(rel)
+	// Send all permissions to the outputter chain
+	for _, perm := range permissions {
+		a.Send(perm)
 	}
 
 	return nil

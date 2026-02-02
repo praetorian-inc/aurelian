@@ -7,7 +7,7 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 const defaultMDOutfile = "out.md"
@@ -20,6 +20,9 @@ type RuntimeMarkdownOutputter struct {
 }
 
 // NewRuntimeMarkdownOutputter creates a new RuntimeMarkdownOutputter
+//
+// Deprecated: Use outputters.NewFormatterAdapterConstructor(formatter.FormatMarkdown, writer) instead.
+// This outputter will be removed in v2.0.
 func NewRuntimeMarkdownOutputter(configs ...cfg.Config) chain.Outputter {
 	m := &RuntimeMarkdownOutputter{
 		results: make(map[string][]string),

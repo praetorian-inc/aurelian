@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 type PrincipalType string

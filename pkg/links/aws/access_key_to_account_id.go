@@ -3,12 +3,14 @@ package aws
 import (
 	"encoding/base32"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
 )
 
 type AwsAccessKeyToAccountId struct {
@@ -45,7 +47,7 @@ func (l *AwsAccessKeyToAccountId) Process(input any) error {
 	if !ok {
 		errMsg := fmt.Sprintf("expected string input, got %T", input)
 		l.Logger.Error(errMsg)
-		return fmt.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 
 	return l.processKey(awsKeyId)
@@ -68,7 +70,7 @@ func (l *AwsAccessKeyToAccountId) processKey(awsKeyId string) error {
 	if err != nil {
 		errMsg := fmt.Sprintf("failed to decode AWS key ID: %v", err)
 		l.Logger.Error(errMsg)
-		return fmt.Errorf(errMsg)
+		return errors.New(errMsg)
 	}
 	l.Logger.Info("Decoded bytes", "bytes", fmt.Sprintf("%v", decoded), "length", len(decoded))
 
@@ -89,5 +91,5 @@ func (l *AwsAccessKeyToAccountId) processKey(awsKeyId string) error {
 	accountIdStr := fmt.Sprintf("%d", accountId)
 	l.Logger.Info("Sending account ID", "account_id_str", accountIdStr)
 
-	return l.Send(accountIdStr)
+	return l.Send(outputters.RawOutput{Data: accountIdStr})
 }

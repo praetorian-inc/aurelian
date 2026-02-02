@@ -6,8 +6,8 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/internal/message"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 // AzureResourceOutputter outputs Azure resources to the console with formatted information
@@ -30,66 +30,84 @@ func (o *AzureResourceOutputter) Output(v any) error {
 		v = namedData.Data
 	}
 
-	azureResource, ok := v.(*model.AzureResource)
+	cloudResource, ok := v.(*output.CloudResource)
 	if !ok {
 		// Try without pointer in case it's passed as value
-		if azureResourceValue, ok := v.(model.AzureResource); ok {
-			azureResource = &azureResourceValue
+		if cloudResourceValue, ok := v.(output.CloudResource); ok {
+			cloudResource = &cloudResourceValue
 		} else {
-			return nil // Not an Azure resource, silently ignore
+			return nil // Not a CloudResource, silently ignore
 		}
 	}
 
-	resourceInfo := azureResource.Name
+	resourceInfo := cloudResource.ResourceID
 
-	// If we have a display name different from the key, show it
-	if displayName := azureResource.GetDisplayName(); displayName != "" && displayName != azureResource.Name {
-		resourceInfo = fmt.Sprintf("%s (%s)", resourceInfo, displayName)
+	// Check for display name in properties
+	if cloudResource.Properties != nil {
+		if displayName, ok := cloudResource.Properties["displayName"].(string); ok && displayName != "" && displayName != cloudResource.ResourceID {
+			resourceInfo = fmt.Sprintf("%s (%s)", resourceInfo, displayName)
+		}
 	}
 
 	// Get additional information to display
 	var additionalInfo []string
 
-	// Get IPs using the GetIPs method
-	if ips := azureResource.GetIPs(); len(ips) > 0 {
-		for _, ip := range ips {
-			if ip != "" {
-				additionalInfo = append(additionalInfo, fmt.Sprintf("IP: %s", ip))
+	// Check for IPs in properties
+	if cloudResource.Properties != nil {
+		if ips, ok := cloudResource.Properties["ips"].([]string); ok && len(ips) > 0 {
+			for _, ip := range ips {
+				if ip != "" {
+					additionalInfo = append(additionalInfo, fmt.Sprintf("IP: %s", ip))
+				}
 			}
+		}
+		// Also check for single ip field
+		if ip, ok := cloudResource.Properties["ip"].(string); ok && ip != "" {
+			additionalInfo = append(additionalInfo, fmt.Sprintf("IP: %s", ip))
 		}
 	}
 
-	// Get URL using the GetURL method
-	if urls := azureResource.GetURLs(); len(urls) > 0 {
-		for _, url := range urls {
-			if url != "" {
-				additionalInfo = append(additionalInfo, fmt.Sprintf("URL: %s", url))
+	// Check for URLs in properties
+	if cloudResource.Properties != nil {
+		if urls, ok := cloudResource.Properties["urls"].([]string); ok && len(urls) > 0 {
+			for _, url := range urls {
+				if url != "" {
+					additionalInfo = append(additionalInfo, fmt.Sprintf("URL: %s", url))
+				}
 			}
+		}
+		// Also check for single url field
+		if url, ok := cloudResource.Properties["url"].(string); ok && url != "" {
+			additionalInfo = append(additionalInfo, fmt.Sprintf("URL: %s", url))
 		}
 	}
 
 	// Add region if available
-	if region := azureResource.GetRegion(); region != "" {
-		additionalInfo = append(additionalInfo, fmt.Sprintf("Region: %s", region))
+	if cloudResource.Region != "" {
+		additionalInfo = append(additionalInfo, fmt.Sprintf("Region: %s", cloudResource.Region))
 	}
 
-	// Add resource group if available
-	if resourceGroup := azureResource.GetResourceGroup(); resourceGroup != "" {
-		additionalInfo = append(additionalInfo, fmt.Sprintf("Resource Group: %s", resourceGroup))
+	// Add resource group from properties if available
+	if cloudResource.Properties != nil {
+		if resourceGroup, ok := cloudResource.Properties["resourceGroup"].(string); ok && resourceGroup != "" {
+			additionalInfo = append(additionalInfo, fmt.Sprintf("Resource Group: %s", resourceGroup))
+		}
 	}
 
 	// Add resource type
-	if string(azureResource.ResourceType) != "" {
-		additionalInfo = append(additionalInfo, fmt.Sprintf("Type: %s", azureResource.ResourceType))
+	if cloudResource.ResourceType != "" {
+		additionalInfo = append(additionalInfo, fmt.Sprintf("Type: %s", cloudResource.ResourceType))
 	}
 
-	// Check if resource has public access (not private)
-	if !azureResource.IsPrivate() {
-		additionalInfo = append(additionalInfo, "Public Access: Yes")
+	// Check for public access indicator in properties
+	if cloudResource.Properties != nil {
+		if isPrivate, ok := cloudResource.Properties["isPrivate"].(bool); ok && !isPrivate {
+			additionalInfo = append(additionalInfo, "Public Access: Yes")
+		}
 	}
 
 	// Check for any template ID if it exists in properties
-	if templateID := o.extractTemplateID(azureResource); templateID != "" {
+	if templateID := o.extractTemplateID(cloudResource); templateID != "" {
 		additionalInfo = append(additionalInfo, fmt.Sprintf("Template: %s", templateID))
 	}
 
@@ -99,12 +117,12 @@ func (o *AzureResourceOutputter) Output(v any) error {
 }
 
 // extractTemplateID extracts the template ID from the resource properties if available
-func (o *AzureResourceOutputter) extractTemplateID(azureResource *model.AzureResource) string {
-	if azureResource.Properties == nil {
+func (o *AzureResourceOutputter) extractTemplateID(cloudResource *output.CloudResource) string {
+	if cloudResource.Properties == nil {
 		return ""
 	}
 
-	if templateID, ok := azureResource.Properties["templateID"].(string); ok {
+	if templateID, ok := cloudResource.Properties["templateID"].(string); ok {
 		return templateID
 	}
 

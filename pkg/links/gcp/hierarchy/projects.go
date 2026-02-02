@@ -7,9 +7,9 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 	"google.golang.org/api/cloudresourcemanager/v1"
 )
 
@@ -63,18 +63,15 @@ func (g *GcpProjectInfoLink) Process(projectId string) error {
 // ---------------------------------------------------------------------------------------------------------------------
 // helper functions
 
-func createGcpProjectResource(project *cloudresourcemanager.Project) (*tab.GCPResource, error) {
-	gcpProject, err := tab.NewGCPResource(
-		project.ProjectId, // resource name (project ID)
-		fmt.Sprintf("%s/%s", project.Parent.Type, project.Parent.Id), // accountRef (hierarchy parent)
-		tab.GCPResourceProject,          // resource type
-		linkPostProcessProject(project), // properties
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCP project resource: %w", err)
-	}
-	gcpProject.DisplayName = project.Name
-	return &gcpProject, nil
+func createGcpProjectResource(project *cloudresourcemanager.Project) (*output.CloudResource, error) {
+	return &output.CloudResource{
+		Platform:     "gcp",
+		ResourceType: "cloudresourcemanager.googleapis.com/Project",
+		ResourceID:   fmt.Sprintf("projects/%s", project.ProjectId),
+		AccountRef:   fmt.Sprintf("%s/%s", project.Parent.Type, project.Parent.Id),
+		DisplayName:  project.Name,
+		Properties:   linkPostProcessProject(project),
+	}, nil
 }
 
 func linkPostProcessProject(project *cloudresourcemanager.Project) map[string]any {

@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/fatih/color"
-	"github.com/praetorian-inc/nebula/version"
+	"github.com/praetorian-inc/diocletian/version"
 )
 
 var (
@@ -16,7 +16,7 @@ var (
 	noColor   bool
 	silent    bool
 	mutex     sync.RWMutex
-	outWriter io.Writer = os.Stdout
+	outWriter io.Writer = os.Stderr
 
 	// Color definitions
 	infoColor    = color.New(color.FgCyan)

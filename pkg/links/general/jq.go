@@ -7,7 +7,7 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/utils"
+	"github.com/praetorian-inc/diocletian/pkg/utils"
 )
 
 // JqFilter is a link that filters JSON data using jq.

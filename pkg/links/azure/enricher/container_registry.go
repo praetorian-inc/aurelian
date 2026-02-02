@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 // ContainerRegistryEnricher implements enrichment for Container Registry instances
@@ -50,11 +50,11 @@ func (c *ContainerRegistryEnricher) getAnonymousToken(client *http.Client, login
 	return tokenResp.AccessToken, nil
 }
 
-func (c *ContainerRegistryEnricher) Enrich(ctx context.Context, resource *model.AzureResource) []Command {
+func (c *ContainerRegistryEnricher) Enrich(ctx context.Context, resource *output.CloudResource) []Command {
 	commands := []Command{}
 
 	// Extract Container Registry name and login server
-	registryName := resource.Name
+	registryName := resource.DisplayName
 	var loginServer string
 
 	if loginServerProp, exists := resource.Properties["loginServer"].(string); exists {

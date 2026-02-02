@@ -8,22 +8,20 @@ import (
 	"log/slog"
 	"strings"
 
-	"slices"
-
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/diocletian/pkg/utils"
 	"google.golang.org/api/storage/v1"
 )
 
 // FILE INFO:
 // GcpStorageBucketInfoLink - get info of a single storage bucket, Process(bucketName string); needs project
-// GcpStorageBucketListLink - list all storage buckets in a project, Process(resource tab.GCPResource); needs project
-// GcpStorageObjectListLink - list all objects in a storage bucket, Process(resource tab.GCPResource); needs project
+// GcpStorageBucketListLink - list all storage buckets in a project, Process(resource output.CloudResource); needs project
+// GcpStorageObjectListLink - list all objects in a storage bucket, Process(resource output.CloudResource); needs project
 // GcpStorageObjectSecretsLink - extract and scan objects for secrets, Process(object *GcpStorageObjectRef); needs project
 
 type GcpStorageBucketInfoLink struct {
@@ -66,18 +64,15 @@ func (g *GcpStorageBucketInfoLink) Initialize() error {
 func (g *GcpStorageBucketInfoLink) Process(bucketName string) error {
 	bucket, err := g.storageService.Buckets.Get(bucketName).Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to get bucket")
+		return utils.HandleGcpError(err, "failed to get bucket")
 	}
-	properties := linkPostProcessBucket(bucket, g.storageService)
-	gcpBucket, err := tab.NewGCPResource(
-		bucket.Name,           // resource name (bucket name)
-		g.ProjectId,           // accountRef (project ID)
-		tab.GCPResourceBucket, // resource type
-		properties,            // properties
-	)
-	if err != nil {
-		slog.Error("Failed to create GCP bucket resource", "error", err, "bucket", bucket.Name)
-		return err
+	gcpBucket := &output.CloudResource{
+		Platform:     "gcp",
+		ResourceType: "storage.googleapis.com/Bucket",
+		ResourceID:   fmt.Sprintf("projects/%s/buckets/%s", g.ProjectId, bucket.Name),
+		AccountRef:   g.ProjectId,
+		DisplayName:  bucket.Name,
+		Properties:   linkPostProcessBucket(bucket),
 	}
 	g.Send(gcpBucket)
 	return nil
@@ -107,27 +102,24 @@ func (g *GcpStorageBucketListLink) Initialize() error {
 	return nil
 }
 
-func (g *GcpStorageBucketListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceProject {
+func (g *GcpStorageBucketListLink) Process(resource output.CloudResource) error {
+	if resource.ResourceType != "cloudresourcemanager.googleapis.com/Project" {
 		return nil
 	}
-	projectId := resource.Name
+	projectId := resource.AccountRef
 	listReq := g.storageService.Buckets.List(projectId)
 	buckets, err := listReq.Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to list buckets in project")
+		return utils.HandleGcpError(err, "failed to list buckets in project")
 	}
 	for _, bucket := range buckets.Items {
-		properties := linkPostProcessBucket(bucket, g.storageService)
-		gcpBucket, err := tab.NewGCPResource(
-			bucket.Name,           // resource name (bucket name)
-			projectId,             // accountRef (project ID)
-			tab.GCPResourceBucket, // resource type
-			properties,            // properties (with anonymous access info)
-		)
-		if err != nil {
-			slog.Error("Failed to create GCP bucket resource", "error", err, "bucket", bucket.Name)
-			continue
+		gcpBucket := &output.CloudResource{
+			Platform:     "gcp",
+			ResourceType: "storage.googleapis.com/Bucket",
+			ResourceID:   fmt.Sprintf("projects/%s/buckets/%s", projectId, bucket.Name),
+			AccountRef:   projectId,
+			DisplayName:  bucket.Name,
+			Properties:   linkPostProcessBucket(bucket),
 		}
 		g.Send(gcpBucket)
 	}
@@ -165,17 +157,17 @@ func (g *GcpStorageObjectListLink) Initialize() error {
 	return nil
 }
 
-func (g *GcpStorageObjectListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceBucket {
+func (g *GcpStorageObjectListLink) Process(resource output.CloudResource) error {
+	if resource.ResourceType != "storage.googleapis.com/Bucket" {
 		return nil
 	}
-	bucketName := resource.Name
+	bucketName := resource.DisplayName
 	projectId := resource.AccountRef
 	listReq := g.storageService.Objects.List(bucketName)
 	for {
 		objects, err := listReq.Do()
 		if err != nil {
-			return common.HandleGcpError(err, fmt.Sprintf("failed to list objects in bucket %s", bucketName))
+			return utils.HandleGcpError(err, fmt.Sprintf("failed to list objects in bucket %s", bucketName))
 		}
 		for _, obj := range objects.Items {
 			objRef := &GcpStorageObjectRef{
@@ -245,7 +237,7 @@ func (g *GcpStorageObjectSecretsLink) Process(objRef *GcpStorageObjectRef) error
 	getReq := g.storageService.Objects.Get(objRef.BucketName, objRef.ObjectName)
 	resp, err := getReq.Download()
 	if err != nil {
-		return common.HandleGcpError(err, fmt.Sprintf("failed to download object %s from bucket %s", objRef.ObjectName, objRef.BucketName))
+		return utils.HandleGcpError(err, fmt.Sprintf("failed to download object %s from bucket %s", objRef.ObjectName, objRef.BucketName))
 	}
 	defer resp.Body.Close()
 	content, err := io.ReadAll(resp.Body)
@@ -286,81 +278,7 @@ func (g *GcpStorageObjectSecretsLink) Process(objRef *GcpStorageObjectRef) error
 // ---------------------------------------------------------------------------------------------------------------------
 // helper functions
 
-type AnonymousAccessInfo struct {
-	HasAllUsers                bool     `json:"hasAllUsers"`
-	HasAllAuthenticatedUsers   bool     `json:"hasAllAuthenticatedUsers"`
-	AllUsersRoles              []string `json:"allUsersRoles"`
-	AllAuthenticatedUsersRoles []string `json:"allAuthenticatedUsersRoles"`
-	TotalPublicBindings        int      `json:"totalPublicBindings"`
-	AccessMethods              []string `json:"accessMethods"`
-}
-
-func checkStorageAnonymousAccess(policy *storage.Policy) AnonymousAccessInfo {
-	info := AnonymousAccessInfo{
-		AllUsersRoles:              []string{},
-		AllAuthenticatedUsersRoles: []string{},
-		AccessMethods:              []string{},
-	}
-	if policy == nil || len(policy.Bindings) == 0 {
-		return info
-	}
-	for _, binding := range policy.Bindings {
-		for _, member := range binding.Members {
-			if member == "allUsers" {
-				info.HasAllUsers = true
-				info.AllUsersRoles = append(info.AllUsersRoles, binding.Role)
-				info.TotalPublicBindings++
-			} else if member == "allAuthenticatedUsers" {
-				info.HasAllAuthenticatedUsers = true
-				info.AllAuthenticatedUsersRoles = append(info.AllAuthenticatedUsersRoles, binding.Role)
-				info.TotalPublicBindings++
-			}
-		}
-	}
-	if info.TotalPublicBindings > 0 {
-		info.AccessMethods = append(info.AccessMethods, "IAM")
-	}
-	return info
-}
-
-func checkStorageACLForPublicAccess(info *AnonymousAccessInfo, acl *storage.BucketAccessControls) {
-	if acl == nil || len(acl.Items) == 0 {
-		return
-	}
-	for _, aclEntry := range acl.Items {
-		if aclEntry.Entity == "allUsers" {
-			info.HasAllUsers = true
-			// Convert ACL role to IAM-style role name for consistency
-			role := fmt.Sprintf("roles/storage.%s", aclEntry.Role)
-			if !slices.Contains(info.AllUsersRoles, role) {
-				info.AllUsersRoles = append(info.AllUsersRoles, role)
-				info.TotalPublicBindings++
-			}
-		} else if aclEntry.Entity == "allAuthenticatedUsers" {
-			info.HasAllAuthenticatedUsers = true
-			role := fmt.Sprintf("roles/storage.%s", aclEntry.Role)
-			if !slices.Contains(info.AllAuthenticatedUsersRoles, role) {
-				info.AllAuthenticatedUsersRoles = append(info.AllAuthenticatedUsersRoles, role)
-				info.TotalPublicBindings++
-			}
-		}
-	}
-	// Update access methods if ACL access found
-	if info.TotalPublicBindings > 0 && !slices.Contains(info.AccessMethods, "ACL") {
-		info.AccessMethods = append(info.AccessMethods, "ACL")
-	}
-}
-
-func calculateRiskLevel(info AnonymousAccessInfo) string {
-	if info.HasAllUsers {
-		return "critical"
-	} else if info.HasAllAuthenticatedUsers {
-		return "high"
-	}
-	return "low"
-}
-
-func linkPostProcessBucket(bucket *storage.Bucket, storageService *storage.Service) map[string]any {
+func linkPostProcessBucket(bucket *storage.Bucket) map[string]any {
 	properties := map[string]any{
 		"name":                   bucket.Name,
 		"id":                     bucket.Id,
@@ -375,25 +293,6 @@ func linkPostProcessBucket(bucket *storage.Bucket, storageService *storage.Servi
 		properties["publicAccessPrevention"] = false
 	} else {
 		properties["publicAccessPrevention"] = true
-	}
-
-	// Check IAM policy for anonymous access
-	policy, policyErr := storageService.Buckets.GetIamPolicy(bucket.Name).Do()
-	if policyErr == nil && policy != nil {
-		anonymousInfo := checkStorageAnonymousAccess(policy)
-		// Also check ACL for legacy public access
-		acl, aclErr := storageService.BucketAccessControls.List(bucket.Name).Do()
-		if aclErr == nil {
-			checkStorageACLForPublicAccess(&anonymousInfo, acl)
-		} else {
-			slog.Debug("Failed to get ACL for bucket", "bucket", bucket.Name, "error", aclErr)
-		}
-		if anonymousInfo.TotalPublicBindings > 0 {
-			properties["anonymousAccessInfo"] = anonymousInfo
-			properties["riskLevel"] = calculateRiskLevel(anonymousInfo)
-		}
-	} else {
-		slog.Debug("Failed to get IAM policy for bucket", "bucket", bucket.Name, "error", policyErr)
 	}
 	return properties
 }

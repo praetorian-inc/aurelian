@@ -9,10 +9,9 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
-	"github.com/praetorian-inc/nebula/pkg/utils"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/diocletian/pkg/utils"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/dns/v1"
 )
@@ -54,30 +53,28 @@ func (g *GcpGlobalForwardingRuleListLink) Initialize() error {
 	return nil
 }
 
-func (g *GcpGlobalForwardingRuleListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceProject {
+func (g *GcpGlobalForwardingRuleListLink) Process(resource output.CloudResource) error {
+	if resource.ResourceType != "cloudresourcemanager.googleapis.com/Project" {
 		return nil
 	}
-	projectId := resource.Name
+	projectId := resource.AccountRef
 	globalListReq := g.computeService.GlobalForwardingRules.List(projectId)
 	err := globalListReq.Pages(context.Background(), func(page *compute.ForwardingRuleList) error {
 		for _, rule := range page.Items {
 			properties := g.postProcess(rule)
-			gcpForwardingRule, err := tab.NewGCPResource(
-				rule.Name,                           // resource name
-				projectId,                           // accountRef (project ID)
-				tab.GCPResourceGlobalForwardingRule, // resource type
-				properties,                          // properties
-			)
-			if err != nil {
-				slog.Error("Failed to create GCP global forwarding rule resource", "error", err, "rule", rule.Name)
-				continue
+			gcpForwardingRule := &output.CloudResource{
+				Platform:     "gcp",
+				ResourceType: "compute.googleapis.com/GlobalForwardingRule",
+				ResourceID:   fmt.Sprintf("projects/%s/global/forwardingRules/%s", projectId, rule.Name),
+				AccountRef:   projectId,
+				DisplayName:  rule.Name,
+				Properties:   properties,
 			}
 			g.Send(gcpForwardingRule)
 		}
 		return nil
 	})
-	return common.HandleGcpError(err, "failed to list global forwarding rules")
+	return utils.HandleGcpError(err, "failed to list global forwarding rules")
 }
 
 func (g *GcpGlobalForwardingRuleListLink) postProcess(rule *compute.ForwardingRule) map[string]any {
@@ -132,15 +129,15 @@ func (g *GcpRegionalForwardingRuleListLink) Initialize() error {
 	return nil
 }
 
-func (g *GcpRegionalForwardingRuleListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceProject {
+func (g *GcpRegionalForwardingRuleListLink) Process(resource output.CloudResource) error {
+	if resource.ResourceType != "cloudresourcemanager.googleapis.com/Project" {
 		return nil
 	}
-	projectId := resource.Name
+	projectId := resource.AccountRef
 	regionsListCall := g.computeService.Regions.List(projectId)
 	regionsResp, err := regionsListCall.Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to list regions in project")
+		return utils.HandleGcpError(err, "failed to list regions in project")
 	}
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
@@ -153,17 +150,15 @@ func (g *GcpRegionalForwardingRuleListLink) Process(resource tab.GCPResource) er
 			regionalListReq := g.computeService.ForwardingRules.List(projectId, regionName)
 			err := regionalListReq.Pages(context.Background(), func(page *compute.ForwardingRuleList) error {
 				for _, rule := range page.Items {
-					gcpForwardingRule, err := tab.NewGCPResource(
-						rule.Name,                     // resource name
-						projectId,                     // accountRef (project ID)
-						tab.GCPResourceForwardingRule, // resource type
-						g.postProcess(rule),           // properties
-					)
-					if err != nil {
-						slog.Error("Failed to create GCP regional forwarding rule resource", "error", err, "rule", rule.Name)
-						continue
+					gcpForwardingRule := &output.CloudResource{
+						Platform:     "gcp",
+						ResourceType: "compute.googleapis.com/ForwardingRule",
+						ResourceID:   fmt.Sprintf("projects/%s/regions/%s/forwardingRules/%s", projectId, regionName, rule.Name),
+						AccountRef:   projectId,
+						Region:       regionName,
+						DisplayName:  rule.Name,
+						Properties:   g.postProcess(rule),
 					}
-					gcpForwardingRule.DisplayName = rule.Name
 					g.Send(gcpForwardingRule)
 				}
 				return nil
@@ -229,30 +224,27 @@ func (g *GcpGlobalAddressListLink) Initialize() error {
 	return nil
 }
 
-func (g *GcpGlobalAddressListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceProject {
+func (g *GcpGlobalAddressListLink) Process(resource output.CloudResource) error {
+	if resource.ResourceType != "cloudresourcemanager.googleapis.com/Project" {
 		return nil
 	}
-	projectId := resource.Name
+	projectId := resource.AccountRef
 	globalListReq := g.computeService.GlobalAddresses.List(projectId)
 	err := globalListReq.Pages(context.Background(), func(page *compute.AddressList) error {
 		for _, address := range page.Items {
-			gcpGlobalAddress, err := tab.NewGCPResource(
-				address.Address,        // resource name
-				projectId,              // accountRef (project ID)
-				tab.GCPResourceAddress, // resource type
-				g.postProcess(address), // properties
-			)
-			if err != nil {
-				slog.Error("Failed to create GCP global address resource", "error", err, "address", address.Name)
-				continue
+			gcpGlobalAddress := &output.CloudResource{
+				Platform:     "gcp",
+				ResourceType: "compute.googleapis.com/GlobalAddress",
+				ResourceID:   fmt.Sprintf("projects/%s/global/addresses/%s", projectId, address.Name),
+				AccountRef:   projectId,
+				DisplayName:  address.Name,
+				Properties:   g.postProcess(address),
 			}
-			gcpGlobalAddress.DisplayName = address.Name
 			g.Send(gcpGlobalAddress)
 		}
 		return nil
 	})
-	return common.HandleGcpError(err, "failed to list global addresses")
+	return utils.HandleGcpError(err, "failed to list global addresses")
 }
 
 func (g *GcpGlobalAddressListLink) postProcess(address *compute.Address) map[string]any {
@@ -306,15 +298,15 @@ func (g *GcpRegionalAddressListLink) Initialize() error {
 	return nil
 }
 
-func (g *GcpRegionalAddressListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceProject {
+func (g *GcpRegionalAddressListLink) Process(resource output.CloudResource) error {
+	if resource.ResourceType != "cloudresourcemanager.googleapis.com/Project" {
 		return nil
 	}
-	projectId := resource.Name
+	projectId := resource.AccountRef
 	regionsListCall := g.computeService.Regions.List(projectId)
 	regionsResp, err := regionsListCall.Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to list regions in project")
+		return utils.HandleGcpError(err, "failed to list regions in project")
 	}
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
@@ -327,17 +319,15 @@ func (g *GcpRegionalAddressListLink) Process(resource tab.GCPResource) error {
 			regionalListReq := g.computeService.Addresses.List(projectId, regionName)
 			err := regionalListReq.Pages(context.Background(), func(page *compute.AddressList) error {
 				for _, address := range page.Items {
-					gcpRegionalAddress, err := tab.NewGCPResource(
-						address.Address,        // resource name
-						projectId,              // accountRef (project ID)
-						tab.GCPResourceAddress, // resource type
-						g.postProcess(address), // properties
-					)
-					if err != nil {
-						slog.Error("Failed to create GCP regional address resource", "error", err, "address", address.Name)
-						continue
+					gcpRegionalAddress := &output.CloudResource{
+						Platform:     "gcp",
+						ResourceType: "compute.googleapis.com/Address",
+						ResourceID:   fmt.Sprintf("projects/%s/regions/%s/addresses/%s", projectId, regionName, address.Name),
+						AccountRef:   projectId,
+						Region:       regionName,
+						DisplayName:  address.Name,
+						Properties:   g.postProcess(address),
 					}
-					gcpRegionalAddress.DisplayName = address.Name
 					g.Send(gcpRegionalAddress)
 				}
 				return nil
@@ -402,30 +392,27 @@ func (g *GcpDnsManagedZoneListLink) Initialize() error {
 	return nil
 }
 
-func (g *GcpDnsManagedZoneListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceProject {
+func (g *GcpDnsManagedZoneListLink) Process(resource output.CloudResource) error {
+	if resource.ResourceType != "cloudresourcemanager.googleapis.com/Project" {
 		return nil
 	}
-	projectId := resource.Name
+	projectId := resource.AccountRef
 	listReq := g.dnsService.ManagedZones.List(projectId)
 	err := listReq.Pages(context.Background(), func(page *dns.ManagedZonesListResponse) error {
 		for _, zone := range page.ManagedZones {
-			gcpDnsZone, err := tab.NewGCPResource(
-				zone.Name,                     // resource name
-				projectId,                     // accountRef (project ID)
-				tab.GCPResourceDNSManagedZone, // resource type
-				g.postProcess(zone),           // properties
-			)
-			if err != nil {
-				slog.Error("Failed to create GCP DNS managed zone resource", "error", err, "zone", zone.Name)
-				continue
+			gcpDnsZone := &output.CloudResource{
+				Platform:     "gcp",
+				ResourceType: "dns.googleapis.com/ManagedZone",
+				ResourceID:   fmt.Sprintf("projects/%s/managedZones/%s", projectId, zone.Name),
+				AccountRef:   projectId,
+				DisplayName:  zone.DnsName,
+				Properties:   g.postProcess(zone),
 			}
-			gcpDnsZone.DisplayName = zone.DnsName
 			g.Send(gcpDnsZone)
 		}
 		return nil
 	})
-	return common.HandleGcpError(err, "failed to list DNS managed zones")
+	return utils.HandleGcpError(err, "failed to list DNS managed zones")
 }
 
 func (g *GcpDnsManagedZoneListLink) postProcess(zone *dns.ManagedZone) map[string]any {
@@ -457,8 +444,8 @@ func NewGCPNetworkingFanOut(configs ...cfg.Config) chain.Link {
 	return g
 }
 
-func (g *GCPNetworkingFanOut) Process(project tab.GCPResource) error {
-	if project.ResourceType != tab.GCPResourceProject {
+func (g *GCPNetworkingFanOut) Process(project output.CloudResource) error {
+	if project.ResourceType != "cloudresourcemanager.googleapis.com/Project" {
 		return nil
 	}
 	multi := chain.NewMulti(
@@ -469,10 +456,9 @@ func (g *GCPNetworkingFanOut) Process(project tab.GCPResource) error {
 		chain.NewChain(NewGcpDnsManagedZoneListLink()),
 	)
 	multi.WithConfigs(cfg.WithArgs(g.Args()))
-	multi.WithStrictness(chain.Lax)
 	multi.Send(project)
 	multi.Close()
-	for result, ok := chain.RecvAs[*tab.GCPResource](multi); ok; result, ok = chain.RecvAs[*tab.GCPResource](multi) {
+	for result, ok := chain.RecvAs[*output.CloudResource](multi); ok; result, ok = chain.RecvAs[*output.CloudResource](multi) {
 		g.Send(result)
 	}
 	err := multi.Error()

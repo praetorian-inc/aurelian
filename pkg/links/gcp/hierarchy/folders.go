@@ -4,21 +4,20 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 	"google.golang.org/api/cloudresourcemanager/v1"
 	cloudresourcemanagerv2 "google.golang.org/api/cloudresourcemanager/v2"
 )
 
 // FILE INFO:
 // GcpFolderInfoLink - get info of a single folder, Process(folderName string)
-// GcpFolderSubFolderListLink - list all folders in a folder, Process(resource tab.GCPResource); needs folder
-// GcpFolderProjectListLink - list all projects in a folder, Process(resource tab.GCPResource); needs folder
+// GcpFolderSubFolderListLink - list all folders in a folder, Process(resource output.CloudResource); needs folder
+// GcpFolderProjectListLink - list all projects in a folder, Process(resource output.CloudResource); needs folder
 
 type GcpFolderInfoLink struct {
 	*base.GcpBaseLink
@@ -88,13 +87,12 @@ func (g *GcpFolderSubFolderListLink) Initialize() error {
 	return nil
 }
 
-func (g *GcpFolderSubFolderListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceFolder {
+func (g *GcpFolderSubFolderListLink) Process(resource output.CloudResource) error {
+	if resource.ResourceType != "cloudresourcemanager.googleapis.com/Folder" {
 		return nil
 	}
-	folderName := resource.Name
-	folderID := strings.TrimPrefix(folderName, "folders/") // expects ID here
-	listReq := g.resourceManagerService.Folders.List().Parent(folderID)
+	folderName := resource.ResourceID
+	listReq := g.resourceManagerService.Folders.List().Parent(folderName)
 	err := listReq.Pages(context.Background(), func(page *cloudresourcemanagerv2.ListFoldersResponse) error {
 		for _, folder := range page.Folders {
 			gcpFolder, err := createGcpFolderResource(folder)
@@ -107,7 +105,7 @@ func (g *GcpFolderSubFolderListLink) Process(resource tab.GCPResource) error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("failed to list folders in folder %s: %w", folderID, err)
+		return fmt.Errorf("failed to list folders in folder %s: %w", folderName, err)
 	}
 	return nil
 }
@@ -115,7 +113,7 @@ func (g *GcpFolderSubFolderListLink) Process(resource tab.GCPResource) error {
 type GcpFolderProjectListLink struct {
 	*base.GcpBaseLink
 	resourceManagerService *cloudresourcemanager.Service
-	IncludeSysProjects     bool
+	FilterSysProjects      bool
 }
 
 // creates a link to list all projects in a folder
@@ -127,7 +125,7 @@ func NewGcpFolderProjectListLink(configs ...cfg.Config) chain.Link {
 
 func (g *GcpFolderProjectListLink) Params() []cfg.Param {
 	params := append(g.GcpBaseLink.Params(),
-		options.GcpIncludeSysProjects(),
+		options.GcpFilterSysProjects(),
 	)
 	return params
 }
@@ -141,24 +139,23 @@ func (g *GcpFolderProjectListLink) Initialize() error {
 	if err != nil {
 		return fmt.Errorf("failed to create resource manager service: %w", err)
 	}
-	includeSysProjects, err := cfg.As[bool](g.Arg("include-sys-projects"))
+	filterSysProjects, err := cfg.As[bool](g.Arg("filter-sys-projects"))
 	if err != nil {
-		return fmt.Errorf("failed to get include-sys-projects: %w", err)
+		return fmt.Errorf("failed to get filter-sys-projects: %w", err)
 	}
-	g.IncludeSysProjects = includeSysProjects
+	g.FilterSysProjects = filterSysProjects
 	return nil
 }
 
-func (g *GcpFolderProjectListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceFolder {
+func (g *GcpFolderProjectListLink) Process(resource output.CloudResource) error {
+	if resource.ResourceType != "cloudresourcemanager.googleapis.com/Folder" {
 		return nil
 	}
-	folderName := resource.Name
-	folderID := strings.TrimPrefix(folderName, "folders/") // expects ID here
-	listReq := g.resourceManagerService.Projects.List().Filter(fmt.Sprintf("parent.id:%s", folderID))
+	folderName := resource.ResourceID
+	listReq := g.resourceManagerService.Projects.List().Filter(fmt.Sprintf("parent.id:%s", folderName))
 	err := listReq.Pages(context.Background(), func(page *cloudresourcemanager.ListProjectsResponse) error {
 		for _, project := range page.Projects {
-			if !g.IncludeSysProjects && isSysProject(project) {
+			if g.FilterSysProjects && isSysProject(project) {
 				continue
 			}
 			gcpProject, err := createGcpProjectResource(project)
@@ -171,7 +168,7 @@ func (g *GcpFolderProjectListLink) Process(resource tab.GCPResource) error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("failed to list projects in folder %s: %w", folderID, err)
+		return fmt.Errorf("failed to list projects in folder %s: %w", folderName, err)
 	}
 	return nil
 }
@@ -179,16 +176,13 @@ func (g *GcpFolderProjectListLink) Process(resource tab.GCPResource) error {
 // ---------------------------------------------------------------------------------------------------------------------
 // helper functions
 
-func createGcpFolderResource(folder *cloudresourcemanagerv2.Folder) (*tab.GCPResource, error) {
-	gcpFolder, err := tab.NewGCPResource(
-		folder.Name,                   // resource name
-		folder.Parent,                 // accountRef (hierarchy parent)
-		tab.GCPResourceFolder,         // resource type
-		linkPostProcessFolder(folder), // properties
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCP folder resource: %w", err)
-	}
-	gcpFolder.DisplayName = folder.DisplayName
-	return &gcpFolder, nil
+func createGcpFolderResource(folder *cloudresourcemanagerv2.Folder) (*output.CloudResource, error) {
+	return &output.CloudResource{
+		Platform:     "gcp",
+		ResourceType: "cloudresourcemanager.googleapis.com/Folder",
+		ResourceID:   folder.Name, // "folders/123456789"
+		AccountRef:   folder.Parent,
+		DisplayName:  folder.DisplayName,
+		Properties:   linkPostProcessFolder(folder),
+	}, nil
 }

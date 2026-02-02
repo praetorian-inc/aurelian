@@ -10,9 +10,9 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/templates"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/internal/message"
+	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/diocletian/pkg/templates"
 )
 
 // ARGScanOutput represents the complete output structure with template metadata
@@ -105,18 +105,18 @@ func (j *ARGScanJSONOutputter) processFinding(finding any) error {
 	// Try to extract template information from different types
 	var templateID string
 
-	// Check if it's an AzureResource from the model package (value or pointer)
-	if azureResource, ok := finding.(model.AzureResource); ok {
-		if azureResource.Properties != nil {
-			if id, exists := azureResource.Properties["templateID"]; exists {
+	// Check if it's a CloudResource from the output package (value or pointer)
+	if cloudResource, ok := finding.(output.CloudResource); ok {
+		if cloudResource.Properties != nil {
+			if id, exists := cloudResource.Properties["templateID"]; exists {
 				if templateIDStr, ok := id.(string); ok {
 					templateID = templateIDStr
 				}
 			}
 		}
-	} else if azureResource, ok := finding.(*model.AzureResource); ok {
-		if azureResource.Properties != nil {
-			if id, exists := azureResource.Properties["templateID"]; exists {
+	} else if cloudResource, ok := finding.(*output.CloudResource); ok {
+		if cloudResource.Properties != nil {
+			if id, exists := cloudResource.Properties["templateID"]; exists {
 				if templateIDStr, ok := id.(string); ok {
 					templateID = templateIDStr
 				}
@@ -248,11 +248,11 @@ func (j *ARGScanJSONOutputter) writeMarkdownReport() error {
 	return nil
 }
 
-// extractTemplateIDAndResource extracts template ID and normalizes finding to AzureResource
-// Handles model.AzureResource (value), *model.AzureResource (pointer), and map[string]any (generic maps)
-func (j *ARGScanJSONOutputter) extractTemplateIDAndResource(finding any) (string, *model.AzureResource) {
+// extractTemplateIDAndResource extracts template ID and normalizes finding to CloudResource
+// Handles output.CloudResource (value), *output.CloudResource (pointer), and map[string]any (generic maps)
+func (j *ARGScanJSONOutputter) extractTemplateIDAndResource(finding any) (string, *output.CloudResource) {
 	switch f := finding.(type) {
-	case model.AzureResource:
+	case output.CloudResource:
 		// Handle value type
 		if f.Properties != nil {
 			if id, exists := f.Properties["templateID"]; exists {
@@ -261,7 +261,7 @@ func (j *ARGScanJSONOutputter) extractTemplateIDAndResource(finding any) (string
 				}
 			}
 		}
-	case *model.AzureResource:
+	case *output.CloudResource:
 		// Handle pointer type
 		if f != nil && f.Properties != nil {
 			if id, exists := f.Properties["templateID"]; exists {
@@ -271,7 +271,7 @@ func (j *ARGScanJSONOutputter) extractTemplateIDAndResource(finding any) (string
 			}
 		}
 	case map[string]any:
-		// Handle generic map - convert to AzureResource
+		// Handle generic map - convert to CloudResource
 		templateID := ""
 		if properties, ok := f["properties"].(map[string]any); ok {
 			if id, ok := properties["templateID"].(string); ok {
@@ -279,24 +279,26 @@ func (j *ARGScanJSONOutputter) extractTemplateIDAndResource(finding any) (string
 			}
 		}
 		if templateID != "" {
-			// Convert map to AzureResource struct
-			azureResource := &model.AzureResource{}
+			// Convert map to CloudResource struct
+			cloudResource := &output.CloudResource{
+				Platform: "azure",
+			}
 			if name, ok := f["name"].(string); ok {
-				azureResource.Name = name
+				cloudResource.ResourceID = name // Use ResourceID for name
 			}
 			if resourceType, ok := f["type"].(string); ok {
-				azureResource.ResourceType = model.CloudResourceType(resourceType)
+				cloudResource.ResourceType = resourceType // Pure CLI uses string
 			}
 			if location, ok := f["location"].(string); ok {
-				azureResource.Region = location
+				cloudResource.Region = location
 			}
 			if subscriptionId, ok := f["subscriptionId"].(string); ok {
-				azureResource.AccountRef = subscriptionId
+				cloudResource.AccountRef = subscriptionId
 			}
 			if properties, ok := f["properties"].(map[string]any); ok {
-				azureResource.Properties = properties
+				cloudResource.Properties = properties
 			}
-			return templateID, azureResource
+			return templateID, cloudResource
 		}
 	}
 	return "", nil
@@ -333,10 +335,10 @@ func (j *ARGScanJSONOutputter) writeSummarySection(writer *os.File) {
 // writeTemplateDetails writes detailed sections for each template that has findings
 func (j *ARGScanJSONOutputter) writeTemplateDetails(writer *os.File) {
 	// Group findings by template
-	findingsByTemplate := make(map[string][]*model.AzureResource)
+	findingsByTemplate := make(map[string][]*output.CloudResource)
 	for _, finding := range j.findings {
-		if templateID, azureResource := j.extractTemplateIDAndResource(finding); templateID != "" && azureResource != nil {
-			findingsByTemplate[templateID] = append(findingsByTemplate[templateID], azureResource)
+		if templateID, cloudResource := j.extractTemplateIDAndResource(finding); templateID != "" && cloudResource != nil {
+			findingsByTemplate[templateID] = append(findingsByTemplate[templateID], cloudResource)
 		}
 	}
 
@@ -349,7 +351,7 @@ func (j *ARGScanJSONOutputter) writeTemplateDetails(writer *os.File) {
 }
 
 // writeTemplateSectionDetail writes the detailed section for a specific template
-func (j *ARGScanJSONOutputter) writeTemplateSectionDetail(writer *os.File, template *templates.ARGQueryTemplate, findings []*model.AzureResource) {
+func (j *ARGScanJSONOutputter) writeTemplateSectionDetail(writer *os.File, template *templates.ARGQueryTemplate, findings []*output.CloudResource) {
 	fmt.Fprintf(writer, "## %s\n\n", template.Name)
 	fmt.Fprintf(writer, "**Description:** %s\n\n", template.Description)
 	fmt.Fprintf(writer, "**Severity:** %s\n\n", template.Severity)
@@ -364,8 +366,8 @@ func (j *ARGScanJSONOutputter) writeTemplateSectionDetail(writer *os.File, templ
 		if finding == nil {
 			continue
 		}
-		resourceName := finding.Name
-		resourceType := string(finding.ResourceType)
+		resourceName := finding.ResourceID // Pure CLI uses ResourceID
+		resourceType := finding.ResourceType // Already a string in Pure CLI
 		location := finding.Region
 		subscription := finding.AccountRef
 

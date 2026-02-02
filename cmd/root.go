@@ -9,11 +9,11 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/internal/logs"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/internal/registry"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/internal/helpers"
+	"github.com/praetorian-inc/diocletian/internal/logs"
+	"github.com/praetorian-inc/diocletian/internal/message"
+	"github.com/praetorian-inc/diocletian/internal/registry"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
 	"github.com/spf13/cobra"
 )
 
@@ -26,9 +26,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "nebula",
-	Short: "Nebula - Cloud Security Testing Framework",
-	Long: `Nebula is a cloud security testing framework that helps identify
+	Use:   "diocletian",
+	Short: "Diocletian - Cloud Security Testing Framework",
+	Long: `Diocletian is a cloud security testing framework that helps identify
 potential security issues in cloud environments.`,
 }
 
@@ -44,14 +44,23 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&awsCacheLogFile, options.AwsCacheLogFile().Name(), options.AwsCacheLogFile().Value().(string), "")
 	rootCmd.PersistentFlags().BoolVar(&noColorFlag, "no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&quietFlag, "quiet", false, "Suppress user messages (overrides default verbose CLI mode)")
+	rootCmd.PersistentFlags().String("output-format", "default", "Output format: default|json|markdown")
+	rootCmd.PersistentFlags().StringP("output-file", "f", "", "Output file path (default: stdout)")
 
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
 		logs.ConfigureDefaults(logLevelFlag)
 		helpers.ConfigureAWSCacheLogger(awsCacheLogLevel, awsCacheLogFile)
 
-		// Configure janus-framework logging to match nebula's log level
+		// Configure janus-framework logging to match diocletian's log level
 		if level, err := cfg.LevelFromString(logLevelFlag); err == nil {
 			cfg.SetDefaultLevel(level)
+		}
+
+		// Auto-enable quiet mode for JSON output format
+		outputFormat, _ := cmd.Flags().GetString("output-format")
+		if outputFormat == "json" {
+			quietFlag = true
+			message.SetQuiet(true)
 		}
 
 		message.SetQuiet(quietFlag)
@@ -70,7 +79,7 @@ func Execute() error {
 
 var listModulesCmd = &cobra.Command{
 	Use:   "list-modules",
-	Short: "Display available Nebula modules in a tree structure",
+	Short: "Display available Diocletian modules in a tree structure",
 	Run: func(cmd *cobra.Command, args []string) {
 		displayModuleTree()
 	},

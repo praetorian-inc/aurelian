@@ -5,12 +5,12 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
-	"github.com/praetorian-inc/nebula/pkg/links/general"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/base"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/cloudcontrol"
+	"github.com/praetorian-inc/diocletian/pkg/links/general"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 // PolicyWithArn wraps a policy with its associated resource ARN for keying
@@ -29,17 +29,15 @@ func NewAwsResourcePolicyCollector(configs ...cfg.Config) chain.Link {
 	return r
 }
 
-func (a *AwsResourcePolicyCollector) SupportedResourceTypes() []model.CloudResourceType {
+func (a *AwsResourcePolicyCollector) SupportedResourceTypes() []string {
 	// Return resource types that have resource policies
-	return []model.CloudResourceType{
-		model.AWSS3Bucket,
-		model.AWSSNSTopic,
-		model.AWSSQSQueue,
-		model.AWSLambdaFunction,
-		// Note: EFS and ElasticSearch constants may not be available in model yet
-		// Using string conversion as fallback
-		model.CloudResourceType("AWS::EFS::FileSystem"),
-		model.CloudResourceType("AWS::ElasticSearch::Domain"),
+	return []string{
+		"AWS::S3::Bucket",
+		"AWS::SNS::Topic",
+		"AWS::SQS::Queue",
+		"AWS::Lambda::Function",
+		"AWS::EFS::FileSystem",
+		"AWS::ElasticSearch::Domain",
 	}
 }
 
@@ -121,6 +119,6 @@ func (a *AwsResourcePolicyCollector) Process(resourceType string) error {
 	a.Logger.Info(fmt.Sprintf("Collected %d resource policies", len(policyMap)))
 
 	// Send the complete policy map to outputter
-	a.Send(policyMap)
+	a.Send(outputters.RawOutput{Data: policyMap})
 	return nil
 }

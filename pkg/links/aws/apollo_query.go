@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/konstellation/pkg/graph"
 	"github.com/praetorian-inc/konstellation/pkg/graph/adapters"
 	"github.com/praetorian-inc/konstellation/pkg/graph/queries"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 type ApolloQuery struct {
@@ -131,17 +132,17 @@ func (a *ApolloQuery) processQueryResult(q queries.Query, r map[string]any) {
 		return
 	}
 
-	// Create target AWSResource
-	accountRef, err := extractAccountFromARN(targetARN)
+	// Create target ResourceRef
+	targetRef, err := createResourceRefFromARN(targetARN)
 	if err != nil {
-		a.Logger.Error("Failed to extract account from target ARN", "error", err, "arn", targetARN)
+		a.Logger.Error("Failed to create target ResourceRef", "error", err, "arn", targetARN)
 		return
 	}
 
-	resourceType := getResourceTypeFromARN(targetARN)
-	target, err := model.NewAWSResource(targetARN, accountRef, resourceType, make(map[string]any))
+	// Create source ResourceRef
+	sourceRef, err := createResourceRefFromARN(sourceARN)
 	if err != nil {
-		a.Logger.Error("Failed to create AWSResource", "error", err, "arn", targetARN)
+		a.Logger.Error("Failed to create source ResourceRef", "error", err, "arn", sourceARN)
 		return
 	}
 
@@ -151,40 +152,45 @@ func (a *ApolloQuery) processQueryResult(q queries.Query, r map[string]any) {
 	sourceName := a.extractPrincipalName(sourceARN)
 	dns := fmt.Sprintf("%s:%s:%s", targetName, riskName, sourceName)
 
-	// Create risk using NewRiskWithDNS
-	risk := model.NewRiskWithDNS(&target, riskName, dns, status)
-	risk.Priority = GetPriority(q.QueryMetadata.Severity)
-
-	// Create proof file from record string representation
+	// Create proof content from record string representation
 	recordObj := graph.Record(r)
 	proofContent := recordObj.String()
-	proofFile := risk.Proof([]byte(proofContent))
-	a.Send(proofFile)
 
-	// Create source AWSResource for relationship
-	sourceAccountRef, err := extractAccountFromARN(sourceARN)
-	if err != nil {
-		a.Logger.Error("Failed to extract account from source ARN", "error", err, "arn", sourceARN)
-		return
+	// Create Pure CLI Risk (no Neo4j key knowledge)
+	targetResource := &output.CloudResource{
+		Platform:     "aws",
+		ResourceType: targetRef.Type,
+		ResourceID:   targetRef.ID,
+		AccountRef:   targetRef.Account,
 	}
 
-	sourceResourceType := getResourceTypeFromARN(sourceARN)
-	source, err := model.NewAWSResource(sourceARN, sourceAccountRef, sourceResourceType, make(map[string]any))
-	if err != nil {
-		a.Logger.Error("Failed to create source AWSResource", "error", err, "arn", sourceARN)
-		return
+	risk := &output.Risk{
+		Target:      targetResource,
+		Name:        riskName,
+		DNS:         dns,
+		Status:      status,
+		Source:      "apollo-query-analysis",
+		Description: q.QueryMetadata.Description,
+		Comment:     proofContent, // Include proof in comment field
 	}
 
-	// Create IAM relationship
+	// Create IAM permission relationship
 	permission, ok := r["permission"].(string)
 	if !ok {
 		a.Logger.Error("Failed to extract permission from record", "query", q.ID)
 		return
 	}
 
-	iamRel := model.NewIAMRelationship(&source, &target, permission)
-	a.Send(iamRel)
+	iamPermission := &output.IAMPermission{
+		Source:     sourceRef,
+		Target:     targetRef,
+		Permission: permission,
+		Effect:     "Allow",
+		Capability: "apollo-query-analysis",
+		Timestamp:  time.Now().UTC().Format(time.RFC3339),
+	}
 
+	a.Send(iamPermission)
 	a.Send(risk)
 }
 
@@ -273,15 +279,32 @@ func extractAccountFromARN(arnStr string) (string, error) {
 	return parts[4], nil
 }
 
-// getResourceTypeFromARN determines the CloudResourceType based on ARN pattern
-func getResourceTypeFromARN(arnStr string) model.CloudResourceType {
+// getResourceTypeFromARN determines the resource type string based on ARN pattern
+func getResourceTypeFromARN(arnStr string) string {
 	if strings.Contains(arnStr, ":role/") {
-		return model.AWSRole
+		return "iam-role"
 	} else if strings.Contains(arnStr, ":user/") {
-		return model.AWSUser
+		return "iam-user"
 	}
 	// Default to role if we can't determine
-	return model.AWSRole
+	return "iam-role"
+}
+
+// createResourceRefFromARN creates a Pure CLI ResourceRef from an ARN
+func createResourceRefFromARN(arnStr string) (output.ResourceRef, error) {
+	accountRef, err := extractAccountFromARN(arnStr)
+	if err != nil {
+		return output.ResourceRef{}, fmt.Errorf("failed to extract account from ARN: %w", err)
+	}
+
+	resourceType := getResourceTypeFromARN(arnStr)
+
+	return output.ResourceRef{
+		Platform: "aws",
+		Type:     resourceType,
+		ID:       arnStr,
+		Account:  accountRef,
+	}, nil
 }
 
 // formatQueryName converts query metadata name to risk name format (lowercase, spaces to hyphens)
@@ -358,17 +381,10 @@ func (a *ApolloQuery) createAndSendChainedRisk(first, second QueryResultPair) {
 		return
 	}
 
-	// Create target AWSResource using final target
-	accountRef, err := extractAccountFromARN(secondTarget)
+	// Create target ResourceRef using final target
+	targetRef, err := createResourceRefFromARN(secondTarget)
 	if err != nil {
-		a.Logger.Error("Failed to extract account from chained target ARN", "error", err, "arn", secondTarget)
-		return
-	}
-
-	resourceType := getResourceTypeFromARN(secondTarget)
-	target, err := model.NewAWSResource(secondTarget, accountRef, resourceType, make(map[string]any))
-	if err != nil {
-		a.Logger.Error("Failed to create AWSResource for chained risk", "error", err, "arn", secondTarget)
+		a.Logger.Error("Failed to create target ResourceRef for chained risk", "error", err, "arn", secondTarget)
 		return
 	}
 
@@ -389,9 +405,6 @@ func (a *ApolloQuery) createAndSendChainedRisk(first, second QueryResultPair) {
 	sourceName := a.extractPrincipalName(firstAttacker)
 	dns := fmt.Sprintf("%s:%s:%s", targetName, riskName, sourceName)
 
-	risk := model.NewRiskWithDNS(&target, riskName, dns, status)
-	risk.Priority = GetPriority(finalSeverity)
-
 	// Create proof content for chained attack
 	chainedProofContent := fmt.Sprintf("CHAINED: (%s)-[%s]->(%s)-[%s]->(%s)",
 		a.extractPrincipalName(firstAttacker),
@@ -400,8 +413,26 @@ func (a *ApolloQuery) createAndSendChainedRisk(first, second QueryResultPair) {
 		second.Query.QueryMetadata.Name,
 		a.extractPrincipalName(secondTarget))
 
-	proofFile := risk.Proof([]byte(chainedProofContent))
-	a.Send(proofFile)
+	// Create Pure CLI Risk (no Neo4j key knowledge)
+	targetResource := &output.CloudResource{
+		Platform:     "aws",
+		ResourceType: targetRef.Type,
+		ResourceID:   targetRef.ID,
+		AccountRef:   targetRef.Account,
+	}
+
+	chainedDescription := fmt.Sprintf("Chained attack path combining %s and %s",
+		first.Query.QueryMetadata.Name, second.Query.QueryMetadata.Name)
+
+	risk := &output.Risk{
+		Target:      targetResource,
+		Name:        riskName,
+		DNS:         dns,
+		Status:      status,
+		Source:      "apollo-query-analysis-chained",
+		Description: chainedDescription,
+		Comment:     chainedProofContent, // Include proof in comment field
+	}
 
 	a.Send(risk)
 }

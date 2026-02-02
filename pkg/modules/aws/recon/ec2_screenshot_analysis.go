@@ -3,14 +3,13 @@ package recon
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/registry"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/ec2"
-	"github.com/praetorian-inc/nebula/pkg/links/general"
-	"github.com/praetorian-inc/nebula/pkg/links/llm"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/internal/registry"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/cloudcontrol"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/ec2"
+	"github.com/praetorian-inc/diocletian/pkg/links/general"
+	"github.com/praetorian-inc/diocletian/pkg/links/llm"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
 )
 
 func init() {
@@ -73,9 +72,9 @@ var AWSScreenshotAnalysis = chain.NewModule(
 // AWSScreenshotAnalysis implements the resource type interface for preprocessing
 type AWSScreenshotAnalysisProcessor struct{}
 
-func (p *AWSScreenshotAnalysisProcessor) SupportedResourceTypes() []model.CloudResourceType {
-	return []model.CloudResourceType{
-		model.AWSEC2Instance,
+func (p *AWSScreenshotAnalysisProcessor) SupportedResourceTypes() []string {
+	return []string{
+		"AWS::EC2::Instance",
 	}
 }
 

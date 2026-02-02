@@ -9,9 +9,9 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/internal/helpers"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 // AzureWebAppSecretsLink extracts secrets from Azure Web Apps
@@ -31,11 +31,11 @@ func (l *AzureWebAppSecretsLink) Params() []cfg.Param {
 	}
 }
 
-func (l *AzureWebAppSecretsLink) Process(resource *model.AzureResource) error {
+func (l *AzureWebAppSecretsLink) Process(resource *output.CloudResource) error {
 	subscriptionID := resource.AccountRef
 
 	// Extract resource group and web app name from resource ID
-	resourceGroup, appName, err := l.parseWebAppResourceID(resource.Key)
+	resourceGroup, appName, err := l.parseWebAppResourceID(resource.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse web app resource ID: %w", err)
 	}
@@ -69,7 +69,7 @@ func (l *AzureWebAppSecretsLink) Process(resource *model.AzureResource) error {
 				Provenance: jtypes.NPProvenance{
 					Platform:     "azure",
 					ResourceType: "Microsoft.Web/sites/settings",
-					ResourceID:   fmt.Sprintf("%s/config/appsettings", resource.Key),
+					ResourceID:   fmt.Sprintf("%s/config/appsettings", resource.ResourceID),
 					AccountID:    subscriptionID,
 				},
 			}
@@ -94,7 +94,7 @@ func (l *AzureWebAppSecretsLink) Process(resource *model.AzureResource) error {
 				Provenance: jtypes.NPProvenance{
 					Platform:     "azure",
 					ResourceType: "Microsoft.Web/sites/connectionStrings",
-					ResourceID:   fmt.Sprintf("%s/config/connectionstrings", resource.Key),
+					ResourceID:   fmt.Sprintf("%s/config/connectionstrings", resource.ResourceID),
 					AccountID:    subscriptionID,
 				},
 			}
@@ -119,7 +119,7 @@ func (l *AzureWebAppSecretsLink) Process(resource *model.AzureResource) error {
 				Provenance: jtypes.NPProvenance{
 					Platform:     "azure",
 					ResourceType: "Microsoft.Web/sites/configuration",
-					ResourceID:   fmt.Sprintf("%s/config/web", resource.Key),
+					ResourceID:   fmt.Sprintf("%s/config/web", resource.ResourceID),
 					AccountID:    subscriptionID,
 				},
 			}
@@ -145,7 +145,7 @@ func (l *AzureWebAppSecretsLink) Process(resource *model.AzureResource) error {
 					Provenance: jtypes.NPProvenance{
 						Platform:     "azure",
 						ResourceType: "Microsoft.Web/sites/keys",
-						ResourceID:   fmt.Sprintf("%s/host/default/keys", resource.Key),
+						ResourceID:   fmt.Sprintf("%s/host/default/keys", resource.ResourceID),
 						AccountID:    subscriptionID,
 					},
 				}
@@ -173,7 +173,7 @@ func (l *AzureWebAppSecretsLink) parseWebAppResourceID(resourceID string) (resou
 	return resourceGroup, appName, nil
 }
 
-func (l *AzureWebAppSecretsLink) isFunctionApp(resource *model.AzureResource) bool {
+func (l *AzureWebAppSecretsLink) isFunctionApp(resource *output.CloudResource) bool {
 	// Check if this is a function app by examining properties
 	if resource.Properties != nil {
 		if kind, ok := resource.Properties["kind"].(string); ok {

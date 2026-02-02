@@ -7,10 +7,9 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/internal/message"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 // ScreenshotOutputter handles screenshot data by writing files to disk and displaying analysis results
@@ -125,12 +124,7 @@ func (o *ScreenshotOutputter) writeScreenshotFile(screenshot types.ScreenshotDat
 	filename := screenshot.GetFilename()
 	filePath := filepath.Join(screenshotDir, filename)
 
-	// Use tabularium File model for consistent binary data handling
-	file := model.NewFile(filePath)
-	file.Bytes = model.SmartBytes(screenshot.ImageData) // Automatic base64 encoding if needed
-
 	// Write the raw binary data directly to disk
-	// (The tabularium File model is more for data modeling; for actual file I/O we write directly)
 	if err := os.WriteFile(filePath, screenshot.ImageData, 0644); err != nil {
 		return "", fmt.Errorf("failed to write screenshot file: %w", err)
 	}

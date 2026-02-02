@@ -25,10 +25,10 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 
 # Copy the binary from builder
-COPY --from=builder /app/main ./nebula
+COPY --from=builder /app/main ./diocletian
 
 # Use ENTRYPOINT to specify the binary
-ENTRYPOINT ["./nebula"]
+ENTRYPOINT ["./diocletian"]
 
 # Use CMD to specify default arguments that can be overridden
 CMD []

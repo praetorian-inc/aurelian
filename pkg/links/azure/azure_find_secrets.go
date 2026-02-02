@@ -10,10 +10,10 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/internal/helpers"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
 )
 
 // AzureFindSecretsLink processes Azure resources to find secrets using NoseyParker
@@ -35,22 +35,22 @@ func (l *AzureFindSecretsLink) Params() []cfg.Param {
 	}
 }
 
-func (l *AzureFindSecretsLink) SupportedResourceTypes() []model.CloudResourceType {
-	return []model.CloudResourceType{
-		model.AzureVM,
-		model.AzureVMUserData,
-		model.AzureVMExtensions,
-		model.AzureVMDiskEncryption,
-		model.AzureVMTags,
-		model.AzureWebSite,
-		model.AzureWebSiteConfiguration,
-		model.AzureWebSiteConnectionStrings,
-		model.AzureWebSiteKeys,
-		model.AzureWebSiteSettings,
-		model.AzureWebSiteTags,
-		model.AzureAutomationRunbooks,
-		model.AzureAutomationVariables,
-		model.AzureAutomationJobs,
+func (l *AzureFindSecretsLink) SupportedResourceTypes() []string {
+	return []string{
+		"Microsoft.Compute/virtualMachines",
+		"Microsoft.Compute/virtualMachines/userData",
+		"Microsoft.Compute/virtualMachines/extensions",
+		"Microsoft.Compute/virtualMachines/diskEncryption",
+		"Microsoft.Compute/virtualMachines/tags",
+		"Microsoft.Web/sites",
+		"Microsoft.Web/sites/configuration",
+		"Microsoft.Web/sites/connectionStrings",
+		"Microsoft.Web/sites/keys",
+		"Microsoft.Web/sites/settings",
+		"Microsoft.Web/sites/tags",
+		"Microsoft.Automation/automationAccounts/runbooks",
+		"Microsoft.Automation/automationAccounts/variables",
+		"Microsoft.Automation/automationAccounts/jobs",
 	}
 }
 
@@ -58,33 +58,33 @@ func (l *AzureFindSecretsLink) Process(input any) error {
 	l.Logger.Debug("AzureFindSecretsLink received input", "input_type", fmt.Sprintf("%T", input))
 
 	// Handle NamedOutputData wrapper from ARG template query
-	var resource *model.AzureResource
+	var resource *output.CloudResource
 	if namedData, ok := input.(outputters.NamedOutputData); ok {
 		l.Logger.Debug("Processing NamedOutputData", "data_type", fmt.Sprintf("%T", namedData.Data))
 		// Extract the actual data from the NamedOutputData
-		if azureResource, ok := namedData.Data.(*model.AzureResource); ok {
-			resource = azureResource
-		} else if azureResourceValue, ok := namedData.Data.(model.AzureResource); ok {
-			resource = &azureResourceValue
+		if cloudResource, ok := namedData.Data.(*output.CloudResource); ok {
+			resource = cloudResource
+		} else if cloudResourceValue, ok := namedData.Data.(output.CloudResource); ok {
+			resource = &cloudResourceValue
 		} else {
-			return fmt.Errorf("expected AzureResource in NamedOutputData, got %T", namedData.Data)
+			return fmt.Errorf("expected CloudResource in NamedOutputData, got %T", namedData.Data)
 		}
-	} else if azureResource, ok := input.(*model.AzureResource); ok {
-		resource = azureResource
-	} else if azureResourceValue, ok := input.(model.AzureResource); ok {
-		resource = &azureResourceValue
+	} else if cloudResource, ok := input.(*output.CloudResource); ok {
+		resource = cloudResource
+	} else if cloudResourceValue, ok := input.(output.CloudResource); ok {
+		resource = &cloudResourceValue
 	} else {
-		return fmt.Errorf("expected AzureResource or NamedOutputData, got %T", input)
+		return fmt.Errorf("expected CloudResource or NamedOutputData, got %T", input)
 	}
 
 	l.Logger.Debug("Processing Azure resource for secrets",
 		"resource_type", resource.ResourceType,
-		"resource_id", resource.Key,
+		"resource_id", resource.ResourceID,
 		"template_id", resource.Properties["templateID"])
 
 	switch string(resource.ResourceType) {
 	case "Microsoft.Compute/virtualMachines/userData":
-		l.Logger.Debug("Processing VM userData", "vm_id", resource.Key)
+		l.Logger.Debug("Processing VM userData", "vm_id", resource.ResourceID)
 		return l.processVMUserData(resource)
 	case "Microsoft.Compute/virtualMachines/extensions":
 		return l.processVMExtensions(resource)
@@ -96,47 +96,47 @@ func (l *AzureFindSecretsLink) Process(input any) error {
 		return l.processFunctionAppKeys(resource)
 	case "microsoft.compute/virtualmachines", "Microsoft.Compute/virtualMachines":
 		// Handle top-level VM resources from ARG templates - check userData
-		l.Logger.Debug("Processing top-level VM resource for userData", "vm_id", resource.Key)
+		l.Logger.Debug("Processing top-level VM resource for userData", "vm_id", resource.ResourceID)
 		err := l.processVMUserData(resource)
 		if err != nil {
-			l.Logger.Debug("Failed to process VM user data, skipping", "vm_id", resource.Key, "error", err.Error())
+			l.Logger.Debug("Failed to process VM user data, skipping", "vm_id", resource.ResourceID, "error", err.Error())
 			return nil // Don't fail the whole chain
 		}
-		l.Logger.Debug("Successfully processed VM", "vm_id", resource.Key)
+		l.Logger.Debug("Successfully processed VM", "vm_id", resource.ResourceID)
 		return err
 	case "microsoft.web/sites", "Microsoft.Web/sites":
 		// Handle top-level web app resources from ARG templates - check configuration
-		l.Logger.Debug("Processing top-level Web App resource for configuration", "webapp_id", resource.Key)
+		l.Logger.Debug("Processing top-level Web App resource for configuration", "webapp_id", resource.ResourceID)
 		// Try to process as function app, but don't fail if resource ID parsing fails
 		err := l.processFunctionAppConfig(resource)
 		if err != nil {
-			l.Logger.Debug("Failed to process as function app, skipping", "webapp_id", resource.Key, "error", err.Error())
+			l.Logger.Debug("Failed to process as function app, skipping", "webapp_id", resource.ResourceID, "error", err.Error())
 			return nil // Don't fail the whole chain
 		}
 		return err
 	case "microsoft.automation/automationaccounts", "Microsoft.Automation/automationAccounts":
 		// Handle top-level automation account resources - check variables and runbooks
-		l.Logger.Debug("Processing top-level Automation Account resource", "automation_id", resource.Key)
+		l.Logger.Debug("Processing top-level Automation Account resource", "automation_id", resource.ResourceID)
 		err := l.processAutomationAccount(resource)
 		if err != nil {
-			l.Logger.Debug("Failed to process automation account, skipping", "automation_id", resource.Key, "error", err.Error())
+			l.Logger.Debug("Failed to process automation account, skipping", "automation_id", resource.ResourceID, "error", err.Error())
 			return nil // Don't fail the whole chain
 		}
 		return err
 	default:
 		l.Logger.Debug("Unsupported resource type for secret scanning",
 			"resource_type", resource.ResourceType,
-			"resource_id", resource.Key,
+			"resource_id", resource.ResourceID,
 			"template_id", resource.Properties["templateID"])
 		return nil
 	}
 }
 
-func (l *AzureFindSecretsLink) processVMUserData(resource *model.AzureResource) error {
+func (l *AzureFindSecretsLink) processVMUserData(resource *output.CloudResource) error {
 	subscriptionID := resource.AccountRef
 
 	// Parse resource ID to get resource group and VM name
-	resourceGroup, vmName, err := l.parseVMResourceID(resource.Key)
+	resourceGroup, vmName, err := l.parseVMResourceID(resource.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse VM resource ID: %w", err)
 	}
@@ -170,7 +170,7 @@ func (l *AzureFindSecretsLink) processVMUserData(resource *model.AzureResource) 
 				Provenance: jtypes.NPProvenance{
 					Platform:     "azure",
 					ResourceType: "Microsoft.Compute/virtualMachines::UserData",
-					ResourceID:   resource.Key,
+					ResourceID:   resource.ResourceID,
 					Region:       resource.Region,
 					AccountID:    subscriptionID,
 				},
@@ -188,7 +188,7 @@ func (l *AzureFindSecretsLink) processVMUserData(resource *model.AzureResource) 
 					Provenance: jtypes.NPProvenance{
 						Platform:     "azure",
 						ResourceType: "Microsoft.Compute/virtualMachines::CustomData",
-						ResourceID:   resource.Key,
+						ResourceID:   resource.ResourceID,
 						Region:       resource.Region,
 						AccountID:    subscriptionID,
 					},
@@ -202,7 +202,7 @@ func (l *AzureFindSecretsLink) processVMUserData(resource *model.AzureResource) 
 					Provenance: jtypes.NPProvenance{
 						Platform:     "azure",
 						ResourceType: "Microsoft.Compute/virtualMachines::OSProfile",
-						ResourceID:   resource.Key,
+						ResourceID:   resource.ResourceID,
 						Region:       resource.Region,
 						AccountID:    subscriptionID,
 					},
@@ -215,11 +215,11 @@ func (l *AzureFindSecretsLink) processVMUserData(resource *model.AzureResource) 
 	return nil
 }
 
-func (l *AzureFindSecretsLink) processVMExtensions(resource *model.AzureResource) error {
+func (l *AzureFindSecretsLink) processVMExtensions(resource *output.CloudResource) error {
 	subscriptionID := resource.AccountRef
 
 	// Parse resource ID to get resource group and VM name
-	resourceGroup, vmName, err := l.parseVMResourceID(resource.Key)
+	resourceGroup, vmName, err := l.parseVMResourceID(resource.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse VM resource ID: %w", err)
 	}
@@ -257,7 +257,7 @@ func (l *AzureFindSecretsLink) processVMExtensions(resource *model.AzureResource
 					Provenance: jtypes.NPProvenance{
 						Platform:     "azure",
 						ResourceType: "Microsoft.Compute/virtualMachines::Extensions",
-						ResourceID:   fmt.Sprintf("%s/extensions/%s", resource.Key, *extension.Name),
+						ResourceID:   fmt.Sprintf("%s/extensions/%s", resource.ResourceID, *extension.Name),
 						Region:       resource.Region,
 						AccountID:    subscriptionID,
 					},
@@ -270,11 +270,11 @@ func (l *AzureFindSecretsLink) processVMExtensions(resource *model.AzureResource
 	return nil
 }
 
-func (l *AzureFindSecretsLink) processFunctionAppConfig(resource *model.AzureResource) error {
+func (l *AzureFindSecretsLink) processFunctionAppConfig(resource *output.CloudResource) error {
 	subscriptionID := resource.AccountRef
 
 	// Parse resource ID to get resource group and app name
-	resourceGroup, appName, err := l.parseFunctionAppResourceID(resource.Key)
+	resourceGroup, appName, err := l.parseFunctionAppResourceID(resource.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Function App resource ID: %w", err)
 	}
@@ -303,7 +303,7 @@ func (l *AzureFindSecretsLink) processFunctionAppConfig(resource *model.AzureRes
 				Provenance: jtypes.NPProvenance{
 					Platform:     "azure",
 					ResourceType: "Microsoft.Web/sites::AppSettings",
-					ResourceID:   resource.Key,
+					ResourceID:   resource.ResourceID,
 					Region:       resource.Region,
 					AccountID:    subscriptionID,
 				},
@@ -315,11 +315,11 @@ func (l *AzureFindSecretsLink) processFunctionAppConfig(resource *model.AzureRes
 	return nil
 }
 
-func (l *AzureFindSecretsLink) processFunctionAppConnections(resource *model.AzureResource) error {
+func (l *AzureFindSecretsLink) processFunctionAppConnections(resource *output.CloudResource) error {
 	subscriptionID := resource.AccountRef
 
 	// Parse resource ID to get resource group and app name
-	resourceGroup, appName, err := l.parseFunctionAppResourceID(resource.Key)
+	resourceGroup, appName, err := l.parseFunctionAppResourceID(resource.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Function App resource ID: %w", err)
 	}
@@ -348,7 +348,7 @@ func (l *AzureFindSecretsLink) processFunctionAppConnections(resource *model.Azu
 				Provenance: jtypes.NPProvenance{
 					Platform:     "azure",
 					ResourceType: "Microsoft.Web/sites::ConnectionStrings",
-					ResourceID:   resource.Key,
+					ResourceID:   resource.ResourceID,
 					Region:       resource.Region,
 					AccountID:    subscriptionID,
 				},
@@ -360,11 +360,11 @@ func (l *AzureFindSecretsLink) processFunctionAppConnections(resource *model.Azu
 	return nil
 }
 
-func (l *AzureFindSecretsLink) processFunctionAppKeys(resource *model.AzureResource) error {
+func (l *AzureFindSecretsLink) processFunctionAppKeys(resource *output.CloudResource) error {
 	subscriptionID := resource.AccountRef
 
 	// Parse resource ID to get resource group and app name
-	resourceGroup, appName, err := l.parseFunctionAppResourceID(resource.Key)
+	resourceGroup, appName, err := l.parseFunctionAppResourceID(resource.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Function App resource ID: %w", err)
 	}
@@ -392,7 +392,7 @@ func (l *AzureFindSecretsLink) processFunctionAppKeys(resource *model.AzureResou
 			Provenance: jtypes.NPProvenance{
 				Platform:     "azure",
 				ResourceType: "Microsoft.Web/sites::HostKeys",
-				ResourceID:   resource.Key,
+				ResourceID:   resource.ResourceID,
 				Region:       resource.Region,
 				AccountID:    subscriptionID,
 			},
@@ -450,11 +450,11 @@ func (l *AzureFindSecretsLink) parseFunctionAppResourceID(resourceID string) (re
 	return resourceGroup, appName, nil
 }
 
-func (l *AzureFindSecretsLink) processAutomationAccount(resource *model.AzureResource) error {
+func (l *AzureFindSecretsLink) processAutomationAccount(resource *output.CloudResource) error {
 	subscriptionID := resource.AccountRef
 
 	// Parse resource ID to get resource group and automation account name
-	resourceGroup, automationAccountName, err := l.parseAutomationAccountResourceID(resource.Key)
+	resourceGroup, automationAccountName, err := l.parseAutomationAccountResourceID(resource.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Automation Account resource ID: %w", err)
 	}
@@ -462,13 +462,13 @@ func (l *AzureFindSecretsLink) processAutomationAccount(resource *model.AzureRes
 	l.Logger.Debug("Processing automation account for secrets", "automation_account", automationAccountName, "resource_group", resourceGroup)
 
 	// Process automation variables
-	err = l.processAutomationVariables(subscriptionID, resourceGroup, automationAccountName, resource.Key)
+	err = l.processAutomationVariables(subscriptionID, resourceGroup, automationAccountName, resource.ResourceID)
 	if err != nil {
 		l.Logger.Error("Failed to process automation variables", "error", err.Error())
 	}
 
 	// Process automation runbooks
-	err = l.processAutomationRunbooks(subscriptionID, resourceGroup, automationAccountName, resource.Key)
+	err = l.processAutomationRunbooks(subscriptionID, resourceGroup, automationAccountName, resource.ResourceID)
 	if err != nil {
 		l.Logger.Error("Failed to process automation runbooks", "error", err.Error())
 	}

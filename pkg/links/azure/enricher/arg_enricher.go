@@ -5,9 +5,9 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
 )
 
 // ARGEnrichmentLink enriches Azure resources with additional security testing commands
@@ -48,9 +48,9 @@ func (l *ARGEnrichmentLink) Process(data outputters.NamedOutputData) error {
 	}
 
 	// Extract the Azure resource from the data
-	resource, ok := data.Data.(model.AzureResource)
+	resource, ok := data.Data.(output.CloudResource)
 	if !ok {
-		l.Logger.Debug("Skipping non-AzureResource data in enrichment", "data_type", fmt.Sprintf("%T", data.Data))
+		l.Logger.Debug("Skipping non-CloudResource data in enrichment", "data_type", fmt.Sprintf("%T", data.Data))
 		l.Send(data)
 		return nil
 	}
@@ -58,7 +58,7 @@ func (l *ARGEnrichmentLink) Process(data outputters.NamedOutputData) error {
 	// Get template ID from resource properties
 	templateID, exists := resource.Properties["templateID"].(string)
 	if !exists {
-		l.Logger.Debug("No templateID found in resource properties, skipping enrichment", "resource_id", resource.Key)
+		l.Logger.Debug("No templateID found in resource properties, skipping enrichment", "resource_id", resource.ResourceID)
 		l.Send(data)
 		return nil
 	}
@@ -67,7 +67,7 @@ func (l *ARGEnrichmentLink) Process(data outputters.NamedOutputData) error {
 	commands := l.registry.EnrichResource(l.Context(), templateID, &resource)
 
 	if len(commands) > 0 {
-		l.Logger.Debug("Enriched resource with commands", "resource_id", resource.Key, "template_id", templateID, "command_count", len(commands))
+		l.Logger.Debug("Enriched resource with commands", "resource_id", resource.ResourceID, "template_id", templateID, "command_count", len(commands))
 
 		// Add commands to resource properties
 		if resource.Properties == nil {

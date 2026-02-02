@@ -6,7 +6,8 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/utils"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
+	"github.com/praetorian-inc/diocletian/pkg/utils"
 )
 
 type IPLookup struct {
@@ -77,7 +78,7 @@ func (l *IPLookup) Process(ip string) error {
 				"prefix", prefix.IPPrefix,
 				"region", prefix.Region,
 				"service", prefix.Service)
-			return l.Send(prefix)
+			return l.Send(outputters.RawOutput{Data: prefix})
 		}
 	}
 
@@ -96,7 +97,7 @@ func (l *IPLookup) Process(ip string) error {
 					"prefix", prefix.Ipv6Prefix,
 					"region", prefix.Region,
 					"service", prefix.Service)
-				return l.Send(prefix)
+				return l.Send(outputters.RawOutput{Data: prefix})
 			}
 		}
 	}

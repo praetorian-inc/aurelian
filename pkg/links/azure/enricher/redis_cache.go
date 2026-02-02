@@ -6,7 +6,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 // RedisCacheEnricher implements enrichment for Redis Cache instances
@@ -16,7 +16,7 @@ func (r *RedisCacheEnricher) CanEnrich(templateID string) bool {
 	return templateID == "redis_cache_public_access"
 }
 
-func (r *RedisCacheEnricher) Enrich(ctx context.Context, resource *model.AzureResource) []Command {
+func (r *RedisCacheEnricher) Enrich(ctx context.Context, resource *output.CloudResource) []Command {
 	commands := []Command{}
 
 	// Extract Redis hostname
@@ -24,7 +24,7 @@ func (r *RedisCacheEnricher) Enrich(ctx context.Context, resource *model.AzureRe
 	if hostnameProp, exists := resource.Properties["hostname"].(string); exists {
 		hostname = hostnameProp
 	} else {
-		hostname = resource.Name + ".redis.cache.windows.net"
+		hostname = resource.DisplayName + ".redis.cache.windows.net"
 	}
 
 	// Check if non-SSL port is enabled

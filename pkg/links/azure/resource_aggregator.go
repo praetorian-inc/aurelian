@@ -9,23 +9,23 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/diocletian/pkg/outputters"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 // AzureResourceAggregatorLink collects Azure resources and outputs them with filename generation
 type AzureResourceAggregatorLink struct {
 	*chain.Base
-	resources       []model.AzureResource
+	resources       []output.CloudResource
 	resourceDetails []*types.AzureResourceDetails
 	currentDetails  *types.AzureResourceDetails
 }
 
 func NewAzureResourceAggregatorLink(configs ...cfg.Config) chain.Link {
 	l := &AzureResourceAggregatorLink{
-		resources:       make([]model.AzureResource, 0),
+		resources:       make([]output.CloudResource, 0),
 		resourceDetails: make([]*types.AzureResourceDetails, 0),
 	}
 	l.Base = chain.NewBase(l, configs...)
@@ -43,9 +43,9 @@ func (l *AzureResourceAggregatorLink) Params() []cfg.Param {
 
 func (l *AzureResourceAggregatorLink) Process(input any) error {
 	switch v := input.(type) {
-	case model.AzureResource:
+	case output.CloudResource:
 		l.resources = append(l.resources, v)
-		l.Logger.Debug("Aggregated AzureResource", "type", v.ResourceType, "id", v.Key, "total", len(l.resources))
+		l.Logger.Debug("Aggregated CloudResource", "type", v.ResourceType, "id", v.ResourceID, "total", len(l.resources))
 
 	case *types.AzureResourceDetails:
 		l.resourceDetails = append(l.resourceDetails, v)
@@ -91,7 +91,7 @@ func (l *AzureResourceAggregatorLink) generateOutput(resourceDetails *types.Azur
 
 	l.Logger.Info("Generated filename", "filename", baseFilename, "subscription", resourceDetails.SubscriptionID, "output_dir", outputDir)
 
-	// Convert and send individual AzureResource objects - let the outputter aggregate them
+	// Convert and send individual CloudResource objects - let the outputter aggregate them
 	for i, resource := range resourceDetails.Resources {
 		props := make(map[string]any)
 		maps.Copy(props, resource.Properties)
@@ -101,26 +101,25 @@ func (l *AzureResourceAggregatorLink) generateOutput(resourceDetails *types.Azur
 		props["location"] = resource.Location
 		props["resourceGroup"] = resource.ResourceGroup
 
-		azureResource, err := model.NewAzureResource(
-			resource.ID,
-			resourceDetails.SubscriptionID,
-			model.CloudResourceType(resource.Type),
-			props,
-		)
-		if err != nil {
-			l.Logger.Error("Failed to create AzureResource", "error", err, "id", resource.ID)
-			continue
+		cloudResource := &output.CloudResource{
+			Platform:     "azure",
+			ResourceType: resource.Type,
+			ResourceID:   resource.ID,
+			AccountRef:   resourceDetails.SubscriptionID,
+			Region:       resource.Location,
+			DisplayName:  resource.Name,
+			Properties:   props,
 		}
 
 		// For the first resource, set the filename. For subsequent resources, just send the data
 		if i == 0 {
-			// Create full path with output directory  
+			// Create full path with output directory
 			jsonFilePath := filepath.Join(outputDir, baseFilename+".json")
-			jsonOutputData := outputters.NewNamedOutputData(azureResource, jsonFilePath)
+			jsonOutputData := outputters.NewNamedOutputData(cloudResource, jsonFilePath)
 			l.Send(jsonOutputData)
 		} else {
 			// Send subsequent resources without filename - they'll be added to the same output array
-			l.Send(azureResource)
+			l.Send(cloudResource)
 		}
 	}
 }

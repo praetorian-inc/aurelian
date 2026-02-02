@@ -6,12 +6,11 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/lambda"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/base"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/cloudcontrol"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/lambda"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 type AwsPublicResources struct {
@@ -32,7 +31,6 @@ func (a *AwsPublicResources) Params() []cfg.Param {
 	params := a.AwsReconLink.Params()
 	params = append(params, options.AwsCommonReconOptions()...)
 	params = append(params, options.AwsRegions(), options.AwsResourceType())
-	params = append(params, options.AwsEnableEC2SecurityEnrichment())
 	return params
 }
 
@@ -82,11 +80,11 @@ func (a *AwsPublicResources) Process(resource *types.EnrichedResourceDescription
 	return a.Send(pair)
 }
 
-func (a *AwsPublicResources) SupportedResourceTypes() []model.CloudResourceType {
+func (a *AwsPublicResources) SupportedResourceTypes() []string {
 	resources := a.ResourceMap()
-	types := make([]model.CloudResourceType, 0, len(resources))
+	types := make([]string, 0, len(resources))
 	for resourceType := range resources {
-		types = append(types, model.CloudResourceType(resourceType))
+		types = append(types, resourceType)
 	}
 	return types
 }
@@ -95,21 +93,10 @@ func (a *AwsPublicResources) ResourceMap() map[string]func() chain.Chain {
 	resourceMap := make(map[string]func() chain.Chain)
 
 	resourceMap["AWS::EC2::Instance"] = func() chain.Chain {
-		links := []chain.Link{
+		return chain.NewChain(
 			cloudcontrol.NewCloudControlGet(),
 			NewPropertyFilterLink(cfg.WithArg("property", "PublicIp")),
-		}
-
-		// Check if EC2 security enrichment is enabled (checked lazily when chain is constructed)
-		if args := a.Args(); args != nil {
-			if val, exists := args["enable-ec2-security-enrichment"]; exists {
-				if boolVal, ok := val.(bool); ok && boolVal {
-					links = append(links, NewEC2SecurityEnrichmentLink())
-				}
-			}
-		}
-
-		return chain.NewChain(links...)
+		)
 	}
 
 	resourceMap["AWS::SNS::Topic"] = func() chain.Chain {

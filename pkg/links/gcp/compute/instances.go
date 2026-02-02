@@ -12,18 +12,17 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/utils"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/diocletian/pkg/utils"
 	"google.golang.org/api/compute/v1"
 )
 
 // FILE INFO:
 // GcpInstanceInfoLink - get info of a single compute instance, Process(instanceName string); needs project and zone
-// GcpInstanceListLink - list all compute instances in a project, Process(resource tab.GCPResource)
-// GcpInstanceSecretsLink - extract secrets from a compute instance, Process(input tab.GCPResource)
+// GcpInstanceListLink - list all compute instances in a project, Process(resource output.CloudResource)
+// GcpInstanceSecretsLink - extract secrets from a compute instance, Process(input output.CloudResource)
 
 type GcpInstanceInfoLink struct {
 	*base.GcpBaseLink
@@ -74,16 +73,15 @@ func (g *GcpInstanceInfoLink) Process(instanceName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to get instance %s: %w", instanceName, err)
 	}
-	gcpInstance, err := tab.NewGCPResource(
-		strconv.FormatUint(instance.Id, 10),      // resource name
-		g.ProjectId,                              // accountRef (project ID)
-		tab.GCPResourceInstance,                  // resource type
-		linkPostProcessComputeInstance(instance), // properties
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create GCP instance resource: %w", err)
+	gcpInstance := &output.CloudResource{
+		Platform:     "gcp",
+		ResourceType: "compute.googleapis.com/Instance",
+		ResourceID:   fmt.Sprintf("projects/%s/zones/%s/instances/%s", g.ProjectId, g.Zone, strconv.FormatUint(instance.Id, 10)),
+		AccountRef:   g.ProjectId,
+		Region:       g.Zone,
+		DisplayName:  instance.Name,
+		Properties:   linkPostProcessComputeInstance(instance),
 	}
-	gcpInstance.DisplayName = instance.Name
 	g.Send(gcpInstance)
 	return nil
 }
@@ -106,18 +104,18 @@ func (g *GcpInstanceListLink) Initialize() error {
 	}
 	var err error
 	g.computeService, err = compute.NewService(context.Background(), g.ClientOptions...)
-	return common.HandleGcpError(err, "failed to create compute service")
+	return utils.HandleGcpError(err, "failed to create compute service")
 }
 
-func (g *GcpInstanceListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceProject {
+func (g *GcpInstanceListLink) Process(resource output.CloudResource) error {
+	if resource.ResourceType != "cloudresourcemanager.googleapis.com/Project" {
 		return nil
 	}
-	projectId := resource.Name
+	projectId := resource.AccountRef
 	zonesListCall := g.computeService.Zones.List(projectId)
 	zonesResp, err := zonesListCall.Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to list zones in project")
+		return utils.HandleGcpError(err, "failed to list zones in project")
 	}
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
@@ -130,23 +128,21 @@ func (g *GcpInstanceListLink) Process(resource tab.GCPResource) error {
 			listReq := g.computeService.Instances.List(projectId, zoneName)
 			err := listReq.Pages(context.Background(), func(page *compute.InstanceList) error {
 				for _, instance := range page.Items {
-					gcpInstance, err := tab.NewGCPResource(
-						strconv.FormatUint(instance.Id, 10),      // resource name
-						projectId,                                // accountRef (project ID)
-						tab.GCPResourceInstance,                  // resource type
-						linkPostProcessComputeInstance(instance), // properties
-					)
-					if err != nil {
-						slog.Error("Failed to create GCP instance resource", "error", err, "instance", instance.Name)
-						continue
+					gcpInstance := &output.CloudResource{
+						Platform:     "gcp",
+						ResourceType: "compute.googleapis.com/Instance",
+						ResourceID:   fmt.Sprintf("projects/%s/zones/%s/instances/%s", projectId, zoneName, strconv.FormatUint(instance.Id, 10)),
+						AccountRef:   projectId,
+						Region:       zoneName,
+						DisplayName:  instance.Name,
+						Properties:   linkPostProcessComputeInstance(instance),
 					}
-					gcpInstance.DisplayName = instance.Name
 					slog.Debug("Sending GCP instance", "instance", gcpInstance.DisplayName)
 					g.Send(gcpInstance)
 				}
 				return nil
 			})
-			if handledErr := common.HandleGcpError(err, "failed to list instances in zone"); handledErr != nil {
+			if handledErr := utils.HandleGcpError(err, "failed to list instances in zone"); handledErr != nil {
 				slog.Error("error", "error", handledErr, "zone", zoneName)
 			}
 		}(zone.Name)
@@ -179,8 +175,8 @@ func (g *GcpInstanceSecretsLink) Initialize() error {
 	return nil
 }
 
-func (g *GcpInstanceSecretsLink) Process(input tab.GCPResource) error {
-	if input.ResourceType != tab.GCPResourceInstance {
+func (g *GcpInstanceSecretsLink) Process(input output.CloudResource) error {
+	if input.ResourceType != "compute.googleapis.com/Instance" {
 		return nil
 	}
 	projectId := input.AccountRef
@@ -192,7 +188,7 @@ func (g *GcpInstanceSecretsLink) Process(input tab.GCPResource) error {
 	}
 	inst, err := g.computeService.Instances.Get(projectId, zone, instanceName).Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to get instance for secrets extraction")
+		return utils.HandleGcpError(err, "failed to get instance for secrets extraction")
 	}
 	var metadataContent strings.Builder
 	if inst.Metadata != nil {
@@ -210,8 +206,8 @@ func (g *GcpInstanceSecretsLink) Process(input tab.GCPResource) error {
 			Content: metadataContent.String(),
 			Provenance: jtypes.NPProvenance{
 				Platform:     "gcp",
-				ResourceType: fmt.Sprintf("%s::Metadata", tab.GCPResourceInstance.String()),
-				ResourceID:   input.Name,
+				ResourceType: "compute.googleapis.com/Instance::Metadata",
+				ResourceID:   input.ResourceID,
 				Region:       zone,
 				AccountID:    projectId,
 			},

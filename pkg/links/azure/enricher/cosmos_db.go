@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 // CosmosDBEnricher implements enrichment for Cosmos DB accounts
@@ -18,11 +18,11 @@ func (c *CosmosDBEnricher) CanEnrich(templateID string) bool {
 	return templateID == "cosmos_db_public_access"
 }
 
-func (c *CosmosDBEnricher) Enrich(ctx context.Context, resource *model.AzureResource) []Command {
+func (c *CosmosDBEnricher) Enrich(ctx context.Context, resource *output.CloudResource) []Command {
 	commands := []Command{}
 
 	// Extract Cosmos DB account name and endpoint
-	cosmosName := resource.Name
+	cosmosName := resource.DisplayName
 	var endpoint string
 
 	if endpointProp, exists := resource.Properties["endpoint"].(string); exists {

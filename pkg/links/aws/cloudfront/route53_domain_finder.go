@@ -9,8 +9,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/diocletian/internal/message"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/base"
 )
 
 // Route53DomainFinder finds Route53 records pointing to vulnerable CloudFront distributions

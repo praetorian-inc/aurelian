@@ -3,8 +3,8 @@ package azure
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 // AzureFunctionAppSecretsLink extracts secrets from Azure Function Apps
@@ -31,7 +31,7 @@ func (l *AzureFunctionAppSecretsLink) Params() []cfg.Param {
 	}
 }
 
-func (l *AzureFunctionAppSecretsLink) Process(resource *model.AzureResource) error {
+func (l *AzureFunctionAppSecretsLink) Process(resource *output.CloudResource) error {
 	// Function apps use the same API as web apps, so we can delegate
 	// to the web app secrets link which already handles function app keys
 	return l.webAppLink.Process(resource)

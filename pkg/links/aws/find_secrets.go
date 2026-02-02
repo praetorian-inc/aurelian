@@ -8,16 +8,15 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	janusDocker "github.com/praetorian-inc/janus-framework/pkg/links/docker"
 	"github.com/praetorian-inc/janus-framework/pkg/links/noseyparker"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudformation"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudwatchlogs"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/ec2"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/ecr"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/lambda"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/stepfunctions"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/internal/message"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/base"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/cloudformation"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/cloudwatchlogs"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/ec2"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/ecr"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/lambda"
+	"github.com/praetorian-inc/diocletian/pkg/links/aws/stepfunctions"
+	"github.com/praetorian-inc/diocletian/pkg/types"
 )
 
 type AWSFindSecrets struct {
@@ -49,11 +48,11 @@ func (fs *AWSFindSecrets) Initialize() error {
 	return nil
 }
 
-func (fs *AWSFindSecrets) SupportedResourceTypes() []model.CloudResourceType {
+func (fs *AWSFindSecrets) SupportedResourceTypes() []string {
 	resources := fs.ResourceMap()
-	types := make([]model.CloudResourceType, 0, len(resources))
+	types := make([]string, 0, len(resources))
 	for resourceType := range resources {
-		types = append(types, model.CloudResourceType(resourceType))
+		types = append(types, resourceType)
 	}
 	return types
 }
@@ -169,20 +168,21 @@ func (fs *AWSFindSecrets) Process(resource *types.EnrichedResourceDescription) e
 	// Create pair and send to processor
 	args := fs.Args()
 	if maxEvents, ok := args["max-events"]; ok {
-		message.Info("AWSFindSecrets passing max-events in ResourceChainPair",
-			"resource_type", resource.TypeName,
-			"max_events_value", maxEvents,
-			"max_events_type", fmt.Sprintf("%T", maxEvents))
+		message.Info("AWSFindSecrets passing max-events in ResourceChainPair: resource_type=%s max_events_value=%v max_events_type=%s",
+			resource.TypeName,
+			maxEvents,
+			fmt.Sprintf("%T", maxEvents))
 	} else {
-		message.Info("AWSFindSecrets did not find max-events in Args()",
-			"resource_type", resource.TypeName,
-			"available_keys", func() []string {
-				keys := make([]string, 0, len(args))
-				for k := range args {
-					keys = append(keys, k)
-				}
-				return keys
-			}())
+		availableKeys := func() []string {
+			keys := make([]string, 0, len(args))
+			for k := range args {
+				keys = append(keys, k)
+			}
+			return keys
+		}()
+		message.Info("AWSFindSecrets did not find max-events in Args(): resource_type=%s available_keys=%v",
+			resource.TypeName,
+			availableKeys)
 	}
 
 	pair := &ResourceChainPair{

@@ -7,7 +7,7 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 // AzureResourceChainProcessor processes AzureResourceChainPair objects concurrently
@@ -16,7 +16,7 @@ type AzureResourceChainProcessor struct {
 }
 
 type AzureResourceChainPair struct {
-	Resource         *model.AzureResource
+	Resource         *output.CloudResource
 	ChainConstructor func() chain.Chain
 	Args             map[string]any
 }
@@ -29,8 +29,8 @@ func NewAzureResourceChainProcessor(configs ...cfg.Config) chain.Link {
 
 func (p *AzureResourceChainProcessor) Process(pair *AzureResourceChainPair) error {
 	slog.Debug("Processing Azure resource chain",
-		"resource_type", string(pair.Resource.ResourceType),
-		"resource_id", pair.Resource.Name)
+		"resource_type", pair.Resource.ResourceType,
+		"resource_id", pair.Resource.ResourceID)
 
 	// Build the specific chain for this resource type
 	resourceChain := pair.ChainConstructor()
@@ -50,7 +50,7 @@ func (p *AzureResourceChainProcessor) Process(pair *AzureResourceChainPair) erro
 
 	// Stream outputs while the chain is running - consume before Wait()
 	for output, ok := chain.RecvAs[jtypes.NPInput](resourceChain); ok; output, ok = chain.RecvAs[jtypes.NPInput](resourceChain) {
-		slog.Debug("Forwarding output", "resource_type", string(pair.Resource.ResourceType), "output_type", fmt.Sprintf("%T", output))
+		slog.Debug("Forwarding output", "resource_type", pair.Resource.ResourceType, "output_type", fmt.Sprintf("%T", output))
 		if err := p.Send(output); err != nil {
 			slog.Error("Failed to send output", "error", err)
 			return err
@@ -65,7 +65,7 @@ func (p *AzureResourceChainProcessor) Process(pair *AzureResourceChainPair) erro
 		return err
 	}
 
-	slog.Debug("Completed processing Azure resource chain", "resource_type", string(pair.Resource.ResourceType))
+	slog.Debug("Completed processing Azure resource chain", "resource_type", pair.Resource.ResourceType)
 	return nil
 }
 

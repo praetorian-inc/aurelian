@@ -10,20 +10,20 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/diocletian/internal/message"
+	"github.com/praetorian-inc/diocletian/pkg/output"
 )
 
 type RiskCSVOutputter struct {
 	*chain.BaseOutputter
-	risks      []model.Risk // List to store all risks
+	risks      []output.Risk // List to store all risks
 	outputFile string
 }
 
 // NewRiskCSVOutputter creates a new CSV outputter for Risk types
 func NewRiskCSVOutputter(configs ...cfg.Config) chain.Outputter {
 	o := &RiskCSVOutputter{
-		risks:      []model.Risk{},
+		risks:      []output.Risk{},
 		outputFile: "risks.csv",
 	}
 	o.BaseOutputter = chain.NewBaseOutputter(o, configs...)
@@ -32,19 +32,19 @@ func NewRiskCSVOutputter(configs ...cfg.Config) chain.Outputter {
 
 // Output collects risk items for CSV output
 func (o *RiskCSVOutputter) Output(v any) error {
-	// Try to get a Janus Risk type
-	janusRisk, ok := v.(model.Risk)
+	// Try to get a Risk type
+	risk, ok := v.(output.Risk)
 	if !ok {
 		// Try as pointer
-		janusRiskPtr, ok := v.(*model.Risk)
+		riskPtr, ok := v.(*output.Risk)
 		if !ok {
-			return nil // Not a Janus Risk, silently ignore
+			return nil // Not a Risk, silently ignore
 		}
-		janusRisk = *janusRiskPtr
+		risk = *riskPtr
 	}
 
 	// Store the risk
-	o.risks = append(o.risks, janusRisk)
+	o.risks = append(o.risks, risk)
 
 	return nil
 }
@@ -127,7 +127,7 @@ func (o *RiskCSVOutputter) Complete() error {
 		// Create and write the CSV row
 		row := []string{
 			risk.Name,
-			string(risk.Priority),
+			risk.Status, // Pure CLI uses Status field instead of Priority
 			risk.DNS,
 			description,
 			impactedServices,

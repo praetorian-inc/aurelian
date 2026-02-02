@@ -1,4 +1,7 @@
 ./nebula
+nebula
+diocletian
+*.test
 nebula.log
 nebula-output/*
 .devcontainer
