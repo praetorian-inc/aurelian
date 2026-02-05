@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -268,7 +269,17 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		for _, result := range results {
 			if result.Error != nil {
 				message.Warning("Result error: %v", result.Error)
+				continue
 			}
+
+			encoded, err := json.MarshalIndent(result, "", "  ")
+
+			if err != nil {
+				message.Warning("Failed to encode result: %v", err)
+				continue
+			}
+
+			fmt.Fprintln(outputWriter, string(encoded))
 		}
 	}
 
