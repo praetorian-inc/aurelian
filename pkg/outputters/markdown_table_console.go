@@ -3,21 +3,23 @@ package outputters
 import (
 	"fmt"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // MarkdownTableConsoleOutputter outputs MarkdownTable types to console
 type MarkdownTableConsoleOutputter struct {
-	*chain.BaseOutputter
+	cfg plugin.Config
 }
 
 // NewMarkdownTableConsoleOutputter creates a new console outputter for MarkdownTable types
-func NewMarkdownTableConsoleOutputter(configs ...cfg.Config) chain.Outputter {
-	o := &MarkdownTableConsoleOutputter{}
-	o.BaseOutputter = chain.NewBaseOutputter(o, configs...)
-	return o
+func NewMarkdownTableConsoleOutputter() *MarkdownTableConsoleOutputter {
+	return &MarkdownTableConsoleOutputter{}
+}
+
+func (o *MarkdownTableConsoleOutputter) Initialize(cfg plugin.Config) error {
+	o.cfg = cfg
+	return nil
 }
 
 func (o *MarkdownTableConsoleOutputter) Output(val any) error {
@@ -28,6 +30,6 @@ func (o *MarkdownTableConsoleOutputter) Output(val any) error {
 	return nil
 }
 
-func (o *MarkdownTableConsoleOutputter) Params() []cfg.Param {
-	return []cfg.Param{}
+func (o *MarkdownTableConsoleOutputter) Complete() error {
+	return nil
 }

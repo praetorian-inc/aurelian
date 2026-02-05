@@ -34,8 +34,9 @@ func TestCDKRoleInfo_BucketName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// The bucket name should be set correctly during role detection
-			assert.Equal(t, tt.expected, tt.roleInfo.BucketName)
+			// The bucket name should be computed from the role info fields
+			actual := tt.roleInfo.ComputeBucketName()
+			assert.Equal(t, tt.expected, actual)
 		})
 	}
 }
@@ -82,29 +83,6 @@ func TestCDKRoleInfo_RoleNamingConvention(t *testing.T) {
 			assert.Equal(t, expectedRoleName, roleInfo.RoleName)
 		})
 	}
-}
-
-func TestCDKRoleDetector_DefaultParams(t *testing.T) {
-	// Test that the CDK role detector has the expected default parameters
-	detector := &AwsCdkRoleDetector{}
-	params := detector.Params()
-	
-	// Should include base AWS parameters plus CDK-specific ones
-	assert.NotEmpty(t, params, "should have parameters defined")
-	
-	// Look for CDK-specific parameters
-	var hasCdkQualifiers, hasCdkCheckAllRegions bool
-	for _, param := range params {
-		switch param.Name() {
-		case "cdk-qualifiers":
-			hasCdkQualifiers = true
-		case "cdk-check-all-regions":
-			hasCdkCheckAllRegions = true
-		}
-	}
-	
-	assert.True(t, hasCdkQualifiers, "should have cdk-qualifiers parameter")
-	assert.True(t, hasCdkCheckAllRegions, "should have cdk-check-all-regions parameter")
 }
 
 func TestCDKRoleTypes(t *testing.T) {

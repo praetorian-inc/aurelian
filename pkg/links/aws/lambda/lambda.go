@@ -3,6 +3,7 @@ package lambda
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -11,48 +12,50 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type AWSLambdaFunctionCode struct {
-	*base.AwsReconLink
+	*base.NativeAWSLink
 }
 
-func NewAWSLambdaFunctionCode(configs ...cfg.Config) chain.Link {
-	lambda := &AWSLambdaFunctionCode{}
-	lambda.AwsReconLink = base.NewAwsReconLink(lambda, configs...)
-	return lambda
+func NewAWSLambdaFunctionCode(args map[string]any) *AWSLambdaFunctionCode {
+	return &AWSLambdaFunctionCode{
+		NativeAWSLink: base.NewNativeAWSLink("lambda-function-code", args),
+	}
 }
 
-func (l *AWSLambdaFunctionCode) Process(resource *types.EnrichedResourceDescription) error {
-	if resource.TypeName != "AWS::Lambda::Function" {
-		slog.Debug("Skipping non-Lambda function code", "resource", resource.TypeName)
-		return nil
+func (l *AWSLambdaFunctionCode) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*types.EnrichedResourceDescription)
+	if !ok {
+		return nil, fmt.Errorf("expected *types.EnrichedResourceDescription, got %T", input)
 	}
 
-	codeReader, err := l.downloadCode(resource)
+	if resource.TypeName != "AWS::Lambda::Function" {
+		slog.Debug("Skipping non-Lambda function code", "resource", resource.TypeName)
+		return l.Outputs(), nil
+	}
+
+	codeReader, err := l.downloadCode(ctx, resource)
 	if err != nil {
 		slog.Error("Failed to download code", "error", err)
-		return nil
+		return l.Outputs(), nil
 	}
 
 	for _, file := range codeReader.File {
 		err := l.processFile(resource, file)
 		if err != nil {
 			slog.Error("Failed to process file", "error", err)
-			return nil
+			return l.Outputs(), nil
 		}
 	}
 
-	return nil
+	return l.Outputs(), nil
 }
 
-func (l *AWSLambdaFunctionCode) downloadCode(resource *types.EnrichedResourceDescription) (*zip.Reader, error) {
-	config, err := l.GetConfigWithRuntimeArgs(resource.Region)
+func (l *AWSLambdaFunctionCode) downloadCode(ctx context.Context, resource *types.EnrichedResourceDescription) (*zip.Reader, error) {
+	config, err := l.GetConfig(ctx, resource.Region)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AWS config for region %s: %w", resource.Region, err)
 	}
@@ -63,7 +66,7 @@ func (l *AWSLambdaFunctionCode) downloadCode(resource *types.EnrichedResourceDes
 		FunctionName: aws.String(resource.Identifier),
 	}
 
-	funcOutput, err := lambdaClient.GetFunction(l.Context(), getFuncInput)
+	funcOutput, err := lambdaClient.GetFunction(ctx, getFuncInput)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get function %s: %w", resource.Identifier, err)
 	}
@@ -112,17 +115,18 @@ func (l *AWSLambdaFunctionCode) processFile(resource *types.EnrichedResourceDesc
 		return nil
 	}
 
-	return l.Send(&jtypes.NPInput{
+	l.Send(&types.NpInput{
 		ContentBase64: base64.StdEncoding.EncodeToString(content),
-		Provenance: jtypes.NPProvenance{
+		Provenance: types.NpProvenance{
 			Platform:     "aws",
 			ResourceType: fmt.Sprintf("%s::Code", resource.TypeName),
 			ResourceID:   resource.Arn.String(),
 			Region:       resource.Region,
 			RepoPath:     file.Name,
-			FirstCommit: &jtypes.NPCommitMetadata{
+			FirstCommit: &types.FirstCommit{
 				BlobPath: file.Name,
 			},
 		},
 	})
+	return nil
 }

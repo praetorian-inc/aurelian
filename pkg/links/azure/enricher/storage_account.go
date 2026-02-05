@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 // StorageAccountEnricher implements enrichment for storage accounts
@@ -19,11 +19,11 @@ func (s *StorageAccountEnricher) CanEnrich(templateID string) bool {
 	return templateID == "storage_accounts_public_access"
 }
 
-func (s *StorageAccountEnricher) Enrich(ctx context.Context, resource *model.AzureResource) []Command {
+func (s *StorageAccountEnricher) Enrich(ctx context.Context, resource *output.CloudResource) []Command {
 	commands := []Command{}
 
 	// Extract storage account name from resource
-	storageAccountName := resource.Name
+	storageAccountName := resource.DisplayName
 	if storageAccountName == "" {
 		commands = append(commands, Command{
 			Command:      "",

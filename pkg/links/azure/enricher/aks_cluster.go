@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 // AKSClusterEnricher implements enrichment for AKS Cluster instances
@@ -18,12 +18,12 @@ func (a *AKSClusterEnricher) CanEnrich(templateID string) bool {
 	return templateID == "aks_public_access"
 }
 
-func (a *AKSClusterEnricher) Enrich(ctx context.Context, resource *model.AzureResource) []Command {
+func (a *AKSClusterEnricher) Enrich(ctx context.Context, resource *output.CloudResource) []Command {
 	commands := []Command{}
 
 	// Extract AKS cluster name
-	clusterName := resource.Name
-	resourceGroup := resource.ResourceGroup
+	clusterName := resource.DisplayName
+	resourceGroup, _ := resource.Properties["resourceGroup"].(string)
 
 	if clusterName == "" {
 		commands = append(commands, Command{

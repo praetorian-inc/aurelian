@@ -2,6 +2,7 @@ package docker
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -10,26 +11,30 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/client"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/types/docker"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type DockerPull struct {
-	*chain.Base
+	*plugin.BaseLink
 	Client *client.Client
 }
 
-func NewDockerPull(configs ...cfg.Config) chain.Link {
-	dp := &DockerPull{}
-	dp.Base = chain.NewBase(dp, configs...)
-	return dp
+func NewDockerPull(args map[string]any) *DockerPull {
+	return &DockerPull{
+		BaseLink: plugin.NewBaseLink("docker-pull", args),
+	}
 }
 
-func (dp *DockerPull) Process(imageContext docker.DockerImage) error {
+func (dp *DockerPull) Process(ctx context.Context, input any) ([]any, error) {
+	imageContext, ok := input.(types.DockerImage)
+	if !ok {
+		return nil, fmt.Errorf("expected types.DockerImage input, got %T", input)
+	}
+
 	imageContext.Image = strings.TrimSpace(imageContext.Image)
 	if imageContext.Image == "" {
-		return nil
+		return []any{}, nil
 	}
 
 	isPublicImage := strings.Contains(imageContext.AuthConfig.ServerAddress, "public.ecr.aws")
@@ -39,21 +44,21 @@ func (dp *DockerPull) Process(imageContext docker.DockerImage) error {
 	var pullOpts image.PullOptions
 
 	if !isPublicImage {
-		dockerClient, err = dp.authenticate(imageContext, &pullOpts, client.FromEnv)
+		dockerClient, err = dp.authenticate(ctx, imageContext, &pullOpts, client.FromEnv)
 	} else {
-		dockerClient, err = NewUnauthenticatedClient(dp.Context(), client.FromEnv)
+		dockerClient, err = NewUnauthenticatedClient(ctx, client.FromEnv)
 	}
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer dockerClient.Close()
 
-	reader, err := dockerClient.ImagePull(dp.Context(), imageContext.Image, pullOpts)
+	reader, err := dockerClient.ImagePull(ctx, imageContext.Image, pullOpts)
 	if err != nil {
 		slog.Error("Failed to pull container", "error", err)
-		return nil
+		return []any{}, nil
 	}
 
 	defer reader.Close()
@@ -61,14 +66,14 @@ func (dp *DockerPull) Process(imageContext docker.DockerImage) error {
 	buf := &bytes.Buffer{}
 	if _, err := io.Copy(buf, reader); err != nil {
 		slog.Error("Failed to copy reader", "error", err)
-		return nil
+		return []any{}, nil
 	}
 
-	return dp.Send(&imageContext)
+	return []any{&imageContext}, nil
 }
 
-func (dp *DockerPull) authenticate(imageContext docker.DockerImage, pullOpts *image.PullOptions, opts ...client.Opt) (*client.Client, error) {
-	dockerClient, err := NewAuthenticatedClient(dp.Context(), imageContext, opts...)
+func (dp *DockerPull) authenticate(ctx context.Context, imageContext types.DockerImage, pullOpts *image.PullOptions, opts ...client.Opt) (*client.Client, error) {
+	dockerClient, err := NewAuthenticatedClient(ctx, imageContext, opts...)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to login to Docker registry: %w", err)
@@ -82,4 +87,8 @@ func (dp *DockerPull) authenticate(imageContext docker.DockerImage, pullOpts *im
 	pullOpts.RegistryAuth = encodedAuthConfig
 
 	return dockerClient, nil
+}
+
+func (dp *DockerPull) Parameters() []plugin.Parameter {
+	return nil
 }

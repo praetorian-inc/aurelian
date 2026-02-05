@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 var AwsAccessKeyIdOpt = types.Option{
@@ -155,7 +155,7 @@ var AwsCacheDirOpt = types.Option{
 	Description: "Directory to store API response cache files",
 	Required:    false,
 	Type:        types.String,
-	Value:       filepath.Join(os.TempDir(), "nebula-cache"),
+	Value:       filepath.Join(os.TempDir(), "aurelian-cache"),
 }
 
 var AwsCacheExtOpt = types.Option{
@@ -198,89 +198,95 @@ var AwsCacheErrorRespTypesOpt = types.Option{
 	Value:       "",
 }
 
-// Janus Options
+// Native Plugin Options
 
-func AwsRegions() cfg.Param {
-	return cfg.NewParam[[]string]("regions", "AWS regions to scan").
-		WithDefault([]string{"all"}).
-		WithRegex(regexp.MustCompile(`(?i)^[a-z]{2}\-([a-z]+\-){1,2}\d|all$`)).
-		WithShortcode("r")
+func AwsRegions() plugin.Parameter {
+	return plugin.NewParam[[]string]("regions", "AWS regions to scan",
+		plugin.WithDefault([]string{"all"}),
+		plugin.WithShortcode("r"))
 }
 
-func AwsProfile() cfg.Param {
-	return cfg.NewParam[string]("profile", "AWS profile to use").
-		WithShortcode("p")
+func AwsProfile() plugin.Parameter {
+	return plugin.NewParam[string]("profile", "AWS profile to use",
+		plugin.WithShortcode("p"))
 }
 
-func AwsProfileDir() cfg.Param {
-	return cfg.NewParam[string]("profile-dir", "Set to override the default AWS profile directory")
+func AwsProfileDir() plugin.Parameter {
+	return plugin.NewParam[string]("profile-dir", "Set to override the default AWS profile directory")
 }
 
-func AwsResourceType() cfg.ParamImpl[[]string] {
-	return cfg.NewParam[[]string]("resource-type", "AWS Cloud Control resource type").
-		WithRegex(regexp.MustCompile("^(AWS::[a-zA-Z0-9:]+|all|ALL)$")).
-		WithShortcode("t").
-		WithDefault([]string{"all"})
+func AwsResourceType() plugin.Parameter {
+	return plugin.NewParam[[]string]("resource-type", "AWS Cloud Control resource type",
+		plugin.WithDefault([]string{"all"}),
+		plugin.WithShortcode("t"))
 }
 
-func AwsResourceArn() cfg.Param {
-	return cfg.NewParam[[]string]("resource-arn", "AWS Cloud Control resource ARN").
-		WithShortcode("a").
-		WithRegex(regexp.MustCompile("^arn:aws:.*$")).
-		AsRequired()
+func AwsResourceArn() plugin.Parameter {
+	return plugin.NewParam[[]string]("resource-arn", "AWS Cloud Control resource ARN",
+		plugin.WithShortcode("a"),
+		plugin.WithRequired())
 }
 
-func AwsCacheDir() cfg.Param {
-	return cfg.NewParam[string]("cache-dir", "Directory to store API response cache files").
-		WithDefault(filepath.Join(os.TempDir(), "nebula-cache"))
+func AwsCacheDir() plugin.Parameter {
+	return plugin.NewParam[string]("cache-dir", "Directory to store API response cache files",
+		plugin.WithDefault(filepath.Join(os.TempDir(), "aurelian-cache")),
+	)
 }
 
-func AwsCacheExt() cfg.Param {
-	return cfg.NewParam[string]("cache-ext", "Name of AWS API response cache files extension").
-		WithDefault(".aws-cache")
+func AwsCacheExt() plugin.Parameter {
+	return plugin.NewParam[string]("cache-ext", "Name of AWS API response cache files extension",
+		plugin.WithDefault(".aws-cache"),
+	)
 }
 
-func AwsCacheTTL() cfg.Param {
-	return cfg.NewParam[int]("cache-ttl", "TTL for cached responses in seconds").
-		WithDefault(3600)
+func AwsCacheTTL() plugin.Parameter {
+	return plugin.NewParam[int]("cache-ttl", "TTL for cached responses in seconds",
+		plugin.WithDefault(3600),
+	)
 }
 
-func AwsCacheErrorTypes() cfg.Param {
-	return cfg.NewParam[string]("cache-error-resp-type", "A comma-separated list of strings specifying cache error response types, e.g., TypeNotFoundException, AccessDeniedException. Use all to represent any error.")
+func AwsCacheErrorTypes() plugin.Parameter {
+	return plugin.NewParam[string]("cache-error-resp-type", "A comma-separated list of strings specifying cache error response types, e.g., TypeNotFoundException, AccessDeniedException. Use all to represent any error.")
 }
 
-func AwsOrgPoliciesFile() cfg.Param {
-	return cfg.NewParam[string]("org-policies", "Path to AWS organization policies JSON file from get-org-policies module").
-		WithShortcode("o")
+func AwsOrgPoliciesFile() plugin.Parameter {
+	return plugin.NewParam[string]("org-policies", "Path to AWS organization policies JSON file from get-org-policies module",
+		plugin.WithShortcode("o"),
+	)
 }
 
-func AwsGaadFile() cfg.Param {
-	return cfg.NewParam[string]("gaad-file", "Path to AWS GAAD (GetAccountAuthorizationDetails) JSON file from account-auth-details module").
-		WithShortcode("g")
+func AwsGaadFile() plugin.Parameter {
+	return plugin.NewParam[string]("gaad-file", "Path to AWS GAAD (GetAccountAuthorizationDetails) JSON file from account-auth-details module",
+		plugin.WithShortcode("g"),
+	)
 }
 
-func AwsResourcePoliciesFile() cfg.Param {
-	return cfg.NewParam[string]("resource-policies-file", "Path to AWS resource policies JSON file from resource-policies module").
-		WithShortcode("rp")
+func AwsResourcePoliciesFile() plugin.Parameter {
+	return plugin.NewParam[string]("resource-policies-file", "Path to AWS resource policies JSON file from resource-policies module",
+		plugin.WithShortcode("rp"),
+	)
 }
 
-func AwsCacheErrorResp() cfg.Param {
-	return cfg.NewParam[bool]("cache-error-resp", "Cache error response").
-		WithDefault(false)
+func AwsCacheErrorResp() plugin.Parameter {
+	return plugin.NewParam[bool]("cache-error-resp", "Cache error response",
+		plugin.WithDefault(false),
+	)
 }
 
-func AwsDisableCache() cfg.Param {
-	return cfg.NewParam[bool]("disable-cache", "Disable API response caching").
-		WithDefault(false)
+func AwsDisableCache() plugin.Parameter {
+	return plugin.NewParam[bool]("disable-cache", "Disable API response caching",
+		plugin.WithDefault(false),
+	)
 }
 
-func AwsOrgPolicies() cfg.Param {
-	return cfg.NewParam[string]("org-policies", "Enable organization policies").
-		WithShortcode("op")
+func AwsOrgPolicies() plugin.Parameter {
+	return plugin.NewParam[string]("org-policies", "Enable organization policies",
+		plugin.WithShortcode("op"),
+	)
 }
 
-func AwsReconBaseOptions() []cfg.Param {
-	return []cfg.Param{
+func AwsReconBaseOptions() []plugin.Parameter {
+	return []plugin.Parameter{
 		AwsProfile(),
 		AwsProfileDir(),
 		AwsCacheDir(),
@@ -293,80 +299,88 @@ func AwsReconBaseOptions() []cfg.Param {
 	}
 }
 
-func AwsCommonReconOptions() []cfg.Param {
+func AwsCommonReconOptions() []plugin.Parameter {
 	baseOpts := AwsReconBaseOptions()
-	return append(baseOpts, []cfg.Param{
+	return append(baseOpts, []plugin.Parameter{
 		AwsRegions(),
 		AwsResourceType(),
 	}...)
 }
 
-func AwsAccessKeyId() cfg.Param {
-	return cfg.NewParam[[]string]("access-key-id", "AWS access key ID").
-		WithRegex(regexp.MustCompile("([^A-Z0-9]|^)(AKIA|A3T|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{12,}")).
-		WithShortcode("k").
-		AsRequired()
+func AwsAccessKeyId() plugin.Parameter {
+	return plugin.NewParam[[]string]("access-key-id", "AWS access key ID",
+		plugin.WithShortcode("k"),
+		plugin.WithRequired(),
+	)
 }
 
-func AwsAccountId() cfg.Param {
-	return cfg.NewParam[[]string]("account-id", "AWS account ID").
-		WithRegex(regexp.MustCompile("[0-9]{12}")).
-		WithShortcode("i").
-		AsRequired()
+func AwsAccountId() plugin.Parameter {
+	return plugin.NewParam[[]string]("account-id", "AWS account ID",
+		plugin.WithShortcode("i"),
+		plugin.WithRequired(),
+	)
 }
 
-func AwsAction() cfg.Param {
-	return cfg.NewParam[[]string]("action", "AWS IAM action").
-		WithShortcode("a").
-		AsRequired()
+func AwsAction() plugin.Parameter {
+	return plugin.NewParam[[]string]("action", "AWS IAM action",
+		plugin.WithShortcode("a"),
+		plugin.WithRequired(),
+	)
 }
 
-func AwsRoleArn() cfg.Param {
-	return cfg.NewParam[string]("role-arn", "AWS Role ARN to assume for console access").
-		WithShortcode("R")
+func AwsRoleArn() plugin.Parameter {
+	return plugin.NewParam[string]("role-arn", "AWS Role ARN to assume for console access",
+		plugin.WithShortcode("R"),
+	)
 }
 
-func AwsSessionDuration() cfg.Param {
-	return cfg.NewParam[int]("duration", "Session duration in seconds (900-3600)").
-		WithShortcode("d").
-		WithDefault(3600)
+func AwsSessionDuration() plugin.Parameter {
+	return plugin.NewParam[int]("duration", "Session duration in seconds (900-3600)",
+		plugin.WithShortcode("d"),
+		plugin.WithDefault(3600),
+	)
 }
 
-func AwsMfaToken() cfg.Param {
-	return cfg.NewParam[string]("mfa-token", "MFA token code for role assumption").
-		WithShortcode("m")
+func AwsMfaToken() plugin.Parameter {
+	return plugin.NewParam[string]("mfa-token", "MFA token code for role assumption",
+		plugin.WithShortcode("m"),
+	)
 }
 
-func AwsRoleSessionName() cfg.Param {
-	return cfg.NewParam[string]("role-session-name", "Name for the assumed role session").
-		WithDefault("nebula-console-session")
+func AwsRoleSessionName() plugin.Parameter {
+	return plugin.NewParam[string]("role-session-name", "Name for the assumed role session",
+		plugin.WithDefault("aurelian-console-session"),
+	)
 }
 
-func AwsFederationName() cfg.Param {
-	return cfg.NewParam[string]("federation-name", "Name for federation token").
-		WithDefault("nebula-federation")
+func AwsFederationName() plugin.Parameter {
+	return plugin.NewParam[string]("federation-name", "Name for federation token",
+		plugin.WithDefault("aurelian-federation"),
+	)
 }
 
-func AwsEnableEC2SecurityEnrichment() cfg.Param {
-	return cfg.NewParam[bool]("enable-ec2-security-enrichment", "Enable EC2 security group enrichment for public resources").
-		WithShortcode("e").
-		WithDefault(false)
+func AwsCdkQualifiers() plugin.Parameter {
+	return plugin.NewParam[[]string]("cdk-qualifiers", "CDK bootstrap qualifiers to check",
+		plugin.WithDefault([]string{"hnb659fds"}),
+		plugin.WithShortcode("q"),
+	)
 }
 
-func AwsCdkQualifiers() cfg.Param {
-	return cfg.NewParam[[]string]("cdk-qualifiers", "CDK bootstrap qualifiers to check").
-		WithDefault([]string{"hnb659fds"}).
-		WithShortcode("q")
+func AwsCdkCheckAllRegions() plugin.Parameter {
+	return plugin.NewParam[bool]("cdk-check-all-regions", "Check all regions for CDK roles",
+		plugin.WithDefault(false),
+	)
 }
 
-func AwsOpsecLevel() cfg.Param {
-	return cfg.NewParam[string]("opsec_level", "Operational security level for AWS operations").
-		WithDefault("none")
+func AwsOpsecLevel() plugin.Parameter {
+	return plugin.NewParam[string]("opsec_level", "Operational security level for AWS operations",
+		plugin.WithDefault("none"),
+	)
 }
 
-func AwsApolloOfflineOptions() []cfg.Param {
+func AwsApolloOfflineOptions() []plugin.Parameter {
 	baseOpts := AwsReconBaseOptions()
-	return append(baseOpts, []cfg.Param{
+	return append(baseOpts, []plugin.Parameter{
 		AwsOrgPoliciesFile(),
 		AwsGaadFile(),
 		AwsResourcePoliciesFile(),

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 func TestEvaluateConditions(t *testing.T) {
@@ -884,7 +884,7 @@ func TestEvaluateConditions(t *testing.T) {
 			},
 		},
 		{
-			name: "GitHub Actions StringNotEquals - should match different subject",
+			name: "GitHub Actions StringNotEquals - should fail when audience matches",
 			conditions: &types.Condition{
 				"StringNotEquals": {
 					GitHubActionsSubjectKey:   {"repo:blocked-org/blocked-repo:*"},
@@ -898,7 +898,7 @@ func TestEvaluateConditions(t *testing.T) {
 				},
 			},
 			expected: &ConditionEval{
-				Result: ConditionMatched,
+				Result: ConditionFailed,
 			},
 		},
 		{

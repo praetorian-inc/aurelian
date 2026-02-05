@@ -3,7 +3,7 @@ package enricher
 import (
 	"context"
 
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 // Command represents the input and output of a command that requires manual triage
@@ -19,7 +19,7 @@ type Command struct {
 // ResourceEnricher interface for extensible resource enrichment
 type ResourceEnricher interface {
 	CanEnrich(templateID string) bool
-	Enrich(ctx context.Context, resource *model.AzureResource) []Command
+	Enrich(ctx context.Context, resource *output.CloudResource) []Command
 }
 
 // EnrichmentRegistry holds all available enrichers
@@ -56,7 +56,7 @@ func NewEnrichmentRegistry() *EnrichmentRegistry {
 }
 
 // EnrichResource enriches a resource with security testing commands using all applicable enrichers
-func (r *EnrichmentRegistry) EnrichResource(ctx context.Context, templateID string, resource *model.AzureResource) []Command {
+func (r *EnrichmentRegistry) EnrichResource(ctx context.Context, templateID string, resource *output.CloudResource) []Command {
 	var allCommands []Command
 
 	for _, enricher := range r.enrichers {

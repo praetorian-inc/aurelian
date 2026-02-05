@@ -1,46 +1,47 @@
 package aws
 
 import (
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"context"
+
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 // AwsResourceTypeGeneratorLink generates resource types based on scan type
 type AwsResourceTypeGeneratorLink struct {
-	*chain.Base
+	*base.NativeAWSLink
+	scanType string
 }
 
-func NewAwsResourceTypeGeneratorLink(configs ...cfg.Config) chain.Link {
-	l := &AwsResourceTypeGeneratorLink{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
-}
-
-func (l *AwsResourceTypeGeneratorLink) Params() []cfg.Param {
-	return []cfg.Param{
-		cfg.NewParam[string]("scan-type", "Scan type - 'full' for all resources or 'summary' for key services").
-			WithDefault("full").
-			WithShortcode("s"),
+func NewAwsResourceTypeGeneratorLink(args map[string]any) *AwsResourceTypeGeneratorLink {
+	nativeBase := base.NewNativeAWSLink("aws-resource-type-generator", args)
+	return &AwsResourceTypeGeneratorLink{
+		NativeAWSLink: nativeBase,
+		scanType:      nativeBase.ArgString("scan-type", "full"),
 	}
 }
 
-func (l *AwsResourceTypeGeneratorLink) Process(input any) error {
-	scanType, _ := cfg.As[string](l.Arg("scan-type"))
+func (l *AwsResourceTypeGeneratorLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		plugin.NewParam[string]("scan-type", "Scan type - 'full' for all resources or 'summary' for key services", plugin.WithDefault("full"), plugin.WithShortcode("s")),
+	}
+}
 
+func (l *AwsResourceTypeGeneratorLink) Process(ctx context.Context, input any) ([]any, error) {
 	var resourceTypes []string
-	if scanType == "summary" {
+	if l.scanType == "summary" {
 		resourceTypes = l.getSummaryResourceTypes()
 	} else {
 		resourceTypes = l.getFullResourceTypes()
 	}
 
-	l.Logger.Info("Generating resource types", "scan_type", scanType, "count", len(resourceTypes))
+	l.Logger().Info("Generating resource types", "scan_type", l.scanType, "count", len(resourceTypes))
 
 	for _, resourceType := range resourceTypes {
 		l.Send(resourceType)
 	}
 
-	return nil
+	return l.Outputs(), nil
 }
 
 func (l *AwsResourceTypeGeneratorLink) getSummaryResourceTypes() []string {

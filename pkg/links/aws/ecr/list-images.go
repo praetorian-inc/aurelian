@@ -1,48 +1,57 @@
 package ecr
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type AWSECRListImages struct {
-	*base.AwsReconLink
+	*base.NativeAWSLink
 }
 
-func NewAWSECRListImages(configs ...cfg.Config) chain.Link {
-	e := &AWSECRListImages{}
-	e.AwsReconLink = base.NewAwsReconLink(e, configs...)
-	return e
+func NewAWSECRListImages(args map[string]any) *AWSECRListImages {
+	return &AWSECRListImages{
+		NativeAWSLink: base.NewNativeAWSLink("ecr-list-images", args),
+	}
 }
 
-func (e *AWSECRListImages) Process(resource *types.EnrichedResourceDescription) error {
+func (e *AWSECRListImages) Parameters() []plugin.Parameter {
+	return base.StandardAWSParams()
+}
+
+func (e *AWSECRListImages) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*types.EnrichedResourceDescription)
+	if !ok {
+		return nil, fmt.Errorf("expected *types.EnrichedResourceDescription, got %T", input)
+	}
+
 	if resource.Properties == nil {
 		slog.Debug("Skipping resource with no properties", "identifier", resource.Identifier)
-		return nil
+		return nil, nil
 	}
 
 	if resource.TypeName != "AWS::ECR::Repository" {
 		slog.Debug("Skipping non-ECR resource", "identifier", resource.Identifier)
-		return nil
+		return nil, nil
 	}
 
-	config, err := e.GetConfigWithRuntimeArgs(resource.Region)
+	config, err := e.GetConfig(ctx, resource.Region)
 	if err != nil {
 		slog.Error("Failed to get AWS config", "error", err)
-		return nil
+		return nil, nil
 	}
 
 	ecrClient := ecr.NewFromConfig(config)
-	input := &ecr.DescribeImagesInput{
+	describeInput := &ecr.DescribeImagesInput{
 		RepositoryName: &resource.Identifier,
 		MaxResults:     aws.Int32(1000),
 	}
@@ -51,10 +60,10 @@ func (e *AWSECRListImages) Process(resource *types.EnrichedResourceDescription) 
 	var latest *ecrtypes.ImageDetail
 
 	for {
-		result, err := ecrClient.DescribeImages(e.Context(), input)
+		result, err := ecrClient.DescribeImages(ctx, describeInput)
 		if err != nil {
 			slog.Error("Failed to describe images", "error", err)
-			return nil
+			return nil, nil
 		}
 
 		for _, image := range result.ImageDetails {
@@ -67,12 +76,12 @@ func (e *AWSECRListImages) Process(resource *types.EnrichedResourceDescription) 
 			break
 		}
 
-		input.NextToken = result.NextToken
+		describeInput.NextToken = result.NextToken
 	}
 
 	if latest == nil {
 		slog.Debug("No images found for repository", "identifier", resource.Identifier)
-		return nil
+		return nil, nil
 	}
 
 	var uri string
@@ -83,7 +92,5 @@ func (e *AWSECRListImages) Process(resource *types.EnrichedResourceDescription) 
 	}
 
 	message.Info("Processing image: %s", uri)
-	e.Send(uri)
-
-	return nil
+	return []any{uri}, nil
 }

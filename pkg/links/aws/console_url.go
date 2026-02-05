@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,10 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	ststypes "github.com/aws/aws-sdk-go-v2/service/sts/types"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
 )
 
 // Constants
@@ -39,44 +37,34 @@ var policy = map[string]interface{}{
 }
 
 type AWSConsoleURLLink struct {
-	*base.AwsReconBaseLink
+	*base.NativeAWSLink
 }
 
-func NewAWSConsoleURLLink(configs ...cfg.Config) chain.Link {
-	l := &AWSConsoleURLLink{}
-	l.AwsReconBaseLink = base.NewAwsReconBaseLink(l, configs...)
-	return l
+func NewAWSConsoleURLLink(args map[string]any) *AWSConsoleURLLink {
+	return &AWSConsoleURLLink{
+		NativeAWSLink: base.NewNativeAWSLink("aws-console-url", args),
+	}
 }
 
-func (l *AWSConsoleURLLink) Params() []cfg.Param {
-	return append(l.AwsReconBaseLink.Params(),
-		options.AwsRoleArn(),
-		options.AwsSessionDuration(),
-		options.AwsMfaToken(),
-		options.AwsRoleSessionName(),
-		options.AwsFederationName(),
-	)
-}
-
-func (l *AWSConsoleURLLink) Process(input any) error {
+func (l *AWSConsoleURLLink) Process(ctx context.Context, input any) ([]any, error) {
 	// This link generates console URLs based on configuration, not input
 	// Input is ignored as this is typically used as a generator link
 
-	roleArn, _ := cfg.As[string](l.Arg("role-arn"))
-	duration, _ := cfg.As[int](l.Arg("duration"))
-	mfaToken, _ := cfg.As[string](l.Arg("mfa-token"))
-	roleSessionName, _ := cfg.As[string](l.Arg("role-session-name"))
-	federationName, _ := cfg.As[string](l.Arg("federation-name"))
+	roleArn := l.ArgString("role-arn", "")
+	duration := l.ArgInt("duration", 3600)
+	mfaToken := l.ArgString("mfa-token", "")
+	roleSessionName := l.ArgString("role-session-name", "default-session")
+	federationName := l.ArgString("federation-name", "federation-session")
 
 	// Validate duration
 	if duration < minDuration || duration > maxDuration {
-		return fmt.Errorf("duration must be between %d and %d seconds", minDuration, maxDuration)
+		return nil, fmt.Errorf("duration must be between %d and %d seconds", minDuration, maxDuration)
 	}
 
 	// Get AWS config using base link method
-	cfg, err := l.GetConfigWithRuntimeArgs("us-east-1")
+	cfg, err := l.GetConfig(ctx, "us-east-1")
 	if err != nil {
-		return fmt.Errorf("failed to get AWS config: %w", err)
+		return nil, fmt.Errorf("failed to get AWS config: %w", err)
 	}
 
 	// Create STS client
@@ -86,18 +74,18 @@ func (l *AWSConsoleURLLink) Process(input any) error {
 	var credentials *ststypes.Credentials
 
 	// Check if we're already using temporary credentials
-	identity, err := l.getCallerIdentity(stsClient)
+	identity, err := l.getCallerIdentity(ctx, stsClient)
 	if err != nil {
-		return fmt.Errorf("failed to get caller identity: %w", err)
+		return nil, fmt.Errorf("failed to get caller identity: %w", err)
 	}
 
 	// If the identity ARN contains "assumed-role", we're already using temporary credentials
 	isFederation := false
 	if strings.Contains(*identity.Arn, ":assumed-role/") {
 		// Extract the temporary credentials from the current config
-		creds, err := cfg.Credentials.Retrieve(l.Context())
+		creds, err := cfg.Credentials.Retrieve(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to retrieve credentials: %w", err)
+			return nil, fmt.Errorf("failed to retrieve credentials: %w", err)
 		}
 		credentials = &ststypes.Credentials{
 			AccessKeyId:     aws.String(creds.AccessKeyID),
@@ -107,34 +95,34 @@ func (l *AWSConsoleURLLink) Process(input any) error {
 		}
 	} else if roleArn != "" {
 		// Assume role
-		credentials, err = l.assumeRole(stsClient, roleArn, roleSessionName, duration, mfaToken, identity)
+		credentials, err = l.assumeRole(ctx, stsClient, roleArn, roleSessionName, duration, mfaToken, identity)
 		if err != nil {
-			return fmt.Errorf("failed to assume role: %w", err)
+			return nil, fmt.Errorf("failed to assume role: %w", err)
 		}
 	} else {
 		isFederation = true
 		// Get federation token
-		credentials, err = l.getFederationToken(stsClient, federationName, duration)
+		credentials, err = l.getFederationToken(ctx, stsClient, federationName, duration)
 		if err != nil {
-			return fmt.Errorf("failed to get federation token: %w", err)
+			return nil, fmt.Errorf("failed to get federation token: %w", err)
 		}
 	}
 
 	// Generate console URL
 	consoleURL, err := l.generateConsoleURL(credentials, isFederation, duration)
 	if err != nil {
-		return fmt.Errorf("failed to generate console URL: %w", err)
+		return nil, fmt.Errorf("failed to generate console URL: %w", err)
 	}
 
 	l.Send(consoleURL)
-	return nil
+	return l.Outputs(), nil
 }
 
-func (l *AWSConsoleURLLink) getCallerIdentity(stsClient *sts.Client) (*sts.GetCallerIdentityOutput, error) {
-	return stsClient.GetCallerIdentity(l.Context(), &sts.GetCallerIdentityInput{})
+func (l *AWSConsoleURLLink) getCallerIdentity(ctx context.Context, stsClient *sts.Client) (*sts.GetCallerIdentityOutput, error) {
+	return stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 }
 
-func (l *AWSConsoleURLLink) assumeRole(stsClient *sts.Client, roleArn, roleSessionName string, duration int, mfaToken string, identity *sts.GetCallerIdentityOutput) (*ststypes.Credentials, error) {
+func (l *AWSConsoleURLLink) assumeRole(ctx context.Context, stsClient *sts.Client, roleArn, roleSessionName string, duration int, mfaToken string, identity *sts.GetCallerIdentityOutput) (*ststypes.Credentials, error) {
 	assumeRoleConfig := &sts.AssumeRoleInput{
 		RoleArn:         aws.String(roleArn),
 		RoleSessionName: aws.String(roleSessionName),
@@ -158,20 +146,20 @@ func (l *AWSConsoleURLLink) assumeRole(stsClient *sts.Client, roleArn, roleSessi
 		assumeRoleConfig.TokenCode = aws.String(mfaToken)
 	}
 
-	result, err := stsClient.AssumeRole(l.Context(), assumeRoleConfig)
+	result, err := stsClient.AssumeRole(ctx, assumeRoleConfig)
 	if err != nil {
 		return nil, err
 	}
 	return result.Credentials, nil
 }
 
-func (l *AWSConsoleURLLink) getFederationToken(stsClient *sts.Client, federationName string, duration int) (*ststypes.Credentials, error) {
+func (l *AWSConsoleURLLink) getFederationToken(ctx context.Context, stsClient *sts.Client, federationName string, duration int) (*ststypes.Credentials, error) {
 	policyBytes, err := json.Marshal(policy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal policy: %w", err)
 	}
 
-	result, err := stsClient.GetFederationToken(l.Context(), &sts.GetFederationTokenInput{
+	result, err := stsClient.GetFederationToken(ctx, &sts.GetFederationTokenInput{
 		Name:            aws.String(federationName),
 		Policy:          aws.String(string(policyBytes)),
 		DurationSeconds: aws.Int32(int32(duration)),

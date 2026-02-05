@@ -1,6 +1,7 @@
 package ssm
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -8,41 +9,44 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	ssmtypes "github.com/aws/aws-sdk-go-v2/service/ssm/types"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type AWSListSSMParameters struct {
-	*base.AwsReconLink
+	*base.NativeAWSLink
 }
 
-func NewAWSListSSMParameters(configs ...cfg.Config) chain.Link {
-	ssm := &AWSListSSMParameters{}
-	ssm.AwsReconLink = base.NewAwsReconLink(ssm, configs...)
-	return ssm
+func NewAWSListSSMParameters(args map[string]any) *AWSListSSMParameters {
+	return &AWSListSSMParameters{
+		NativeAWSLink: base.NewNativeAWSLink("ssm-list-parameters", args),
+	}
 }
 
-func (a *AWSListSSMParameters) Process(resource *types.EnrichedResourceDescription) error {
-	config, err := a.GetConfigWithRuntimeArgs(resource.Region)
+func (a *AWSListSSMParameters) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*types.EnrichedResourceDescription)
+	if !ok {
+		return nil, fmt.Errorf("expected *types.EnrichedResourceDescription, got %T", input)
+	}
+
+	config, err := a.GetConfig(ctx, resource.Region)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	ssmClient := ssm.NewFromConfig(config)
-	input := &ssm.DescribeParametersInput{}
+	describeInput := &ssm.DescribeParametersInput{}
 
 	results := []types.EnrichedResourceDescription{}
 	for {
-		result, err := ssmClient.DescribeParameters(a.Context(), input)
+		result, err := ssmClient.DescribeParameters(ctx, describeInput)
 		if err != nil {
 			slog.Debug("Failed to list SSM parameters: " + err.Error())
 			break
 		}
 
 		for _, param := range result.Parameters {
-			erd, err := a.parseParameter(ssmClient, param, resource)
+			erd, err := a.parseParameter(ctx, ssmClient, param, resource)
 			if err != nil {
 				slog.Debug("Failed to parse parameter: " + err.Error())
 				continue
@@ -54,23 +58,24 @@ func (a *AWSListSSMParameters) Process(resource *types.EnrichedResourceDescripti
 		if result.NextToken == nil {
 			break
 		}
-		input.NextToken = result.NextToken
+		describeInput.NextToken = result.NextToken
 	}
 
-	for _, erd := range results {
-		a.Send(erd)
+	outputs := make([]any, len(results))
+	for i, erd := range results {
+		outputs[i] = erd
 	}
 
-	return nil
+	return outputs, nil
 }
 
-func (a *AWSListSSMParameters) parseParameter(ssmClient *ssm.Client, param ssmtypes.ParameterMetadata, resource *types.EnrichedResourceDescription) (types.EnrichedResourceDescription, error) {
+func (a *AWSListSSMParameters) parseParameter(ctx context.Context, ssmClient *ssm.Client, param ssmtypes.ParameterMetadata, resource *types.EnrichedResourceDescription) (types.EnrichedResourceDescription, error) {
 	paramInput := &ssm.GetParameterInput{
 		Name:           param.Name,
 		WithDecryption: aws.Bool(true),
 	}
 
-	paramOutput, err := ssmClient.GetParameter(a.Context(), paramInput)
+	paramOutput, err := ssmClient.GetParameter(ctx, paramInput)
 	if err != nil {
 		return types.EnrichedResourceDescription{}, fmt.Errorf("failed to get parameter %s: %w", *param.Name, err)
 	}

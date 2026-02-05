@@ -9,7 +9,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/mysql/armmysqlflexibleservers"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/postgresql/armpostgresqlflexibleservers"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/sql/armsql/v2"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 type DatabaseAllowAzureServicesEnricher struct{}
@@ -18,7 +18,7 @@ func (d *DatabaseAllowAzureServicesEnricher) CanEnrich(templateID string) bool {
 	return templateID == "databases_allow_azure_services"
 }
 
-func (d *DatabaseAllowAzureServicesEnricher) Enrich(ctx context.Context, resource *model.AzureResource) []Command {
+func (d *DatabaseAllowAzureServicesEnricher) Enrich(ctx context.Context, resource *output.CloudResource) []Command {
 	commands := []Command{}
 
 	resourceType := strings.ToLower(string(resource.ResourceType))
@@ -34,10 +34,10 @@ func (d *DatabaseAllowAzureServicesEnricher) Enrich(ctx context.Context, resourc
 	return commands
 }
 
-func (d *DatabaseAllowAzureServicesEnricher) checkSQLServerFirewall(ctx context.Context, resource *model.AzureResource) []Command {
-	serverName := resource.Name
+func (d *DatabaseAllowAzureServicesEnricher) checkSQLServerFirewall(ctx context.Context, resource *output.CloudResource) []Command {
+	serverName := resource.DisplayName
 	subscriptionID := resource.AccountRef
-	resourceGroupName := resource.ResourceGroup
+	resourceGroupName, _ := resource.Properties["resourceGroup"].(string)
 
 	if serverName == "" || subscriptionID == "" || resourceGroupName == "" {
 		return []Command{{
@@ -125,10 +125,10 @@ func (d *DatabaseAllowAzureServicesEnricher) checkSQLServerFirewall(ctx context.
 	}}
 }
 
-func (d *DatabaseAllowAzureServicesEnricher) checkPostgreSQLFirewall(ctx context.Context, resource *model.AzureResource) []Command {
-	serverName := resource.Name
+func (d *DatabaseAllowAzureServicesEnricher) checkPostgreSQLFirewall(ctx context.Context, resource *output.CloudResource) []Command {
+	serverName := resource.DisplayName
 	subscriptionID := resource.AccountRef
-	resourceGroupName := resource.ResourceGroup
+	resourceGroupName, _ := resource.Properties["resourceGroup"].(string)
 
 	if serverName == "" || subscriptionID == "" || resourceGroupName == "" {
 		return []Command{{
@@ -242,10 +242,10 @@ func (d *DatabaseAllowAzureServicesEnricher) checkPostgreSQLFirewall(ctx context
 	}}
 }
 
-func (d *DatabaseAllowAzureServicesEnricher) checkMySQLFirewall(ctx context.Context, resource *model.AzureResource) []Command {
-	serverName := resource.Name
+func (d *DatabaseAllowAzureServicesEnricher) checkMySQLFirewall(ctx context.Context, resource *output.CloudResource) []Command {
+	serverName := resource.DisplayName
 	subscriptionID := resource.AccountRef
-	resourceGroupName := resource.ResourceGroup
+	resourceGroupName, _ := resource.Properties["resourceGroup"].(string)
 
 	if serverName == "" || subscriptionID == "" || resourceGroupName == "" {
 		return []Command{{

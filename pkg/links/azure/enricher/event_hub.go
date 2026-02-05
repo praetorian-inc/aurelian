@@ -11,7 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/eventhub/armeventhub"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 // EventHubEnricher implements enrichment for Event Hub instances
@@ -21,10 +21,10 @@ func (e *EventHubEnricher) CanEnrich(templateID string) bool {
 	return templateID == "event_hub_public_access"
 }
 
-func (e *EventHubEnricher) Enrich(ctx context.Context, resource *model.AzureResource) []Command {
+func (e *EventHubEnricher) Enrich(ctx context.Context, resource *output.CloudResource) []Command {
 	commands := []Command{}
 
-	eventHubName := resource.Name
+	eventHubName := resource.DisplayName
 
 	var serviceEndpoint string
 	if endpoint, exists := resource.Properties["serviceBusEndpoint"].(string); exists && endpoint != "" {
@@ -88,10 +88,10 @@ func (e *EventHubEnricher) Enrich(ctx context.Context, resource *model.AzureReso
 }
 
 // getNetworkRulesCommand retrieves network rules for the Event Hub namespace
-func (e *EventHubEnricher) getNetworkRulesCommand(ctx context.Context, resource *model.AzureResource) Command {
-	namespaceName := resource.Name
+func (e *EventHubEnricher) getNetworkRulesCommand(ctx context.Context, resource *output.CloudResource) Command {
+	namespaceName := resource.DisplayName
 	subscriptionID := resource.AccountRef
-	resourceGroupName := resource.ResourceGroup
+	resourceGroupName, _ := resource.Properties["resourceGroup"].(string)
 
 	azCommand := fmt.Sprintf("az eventhubs namespace network-rule-set list --resource-group %s --namespace-name %s", resourceGroupName, namespaceName)
 

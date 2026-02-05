@@ -32,7 +32,7 @@ func TestCDKBucketValidator_RiskGeneration(t *testing.T) {
 			bucketExists:         false,
 			bucketOwnedByAccount: false,
 			expectedRiskName:     "cdk-bucket-takeover",
-			expectedSeverity:     "H", // TriageHigh
+			expectedSeverity:     "TH", // TriageHigh
 			shouldGenerateRisk:   true,
 		},
 		{
@@ -40,7 +40,7 @@ func TestCDKBucketValidator_RiskGeneration(t *testing.T) {
 			bucketExists:         true,
 			bucketOwnedByAccount: false,
 			expectedRiskName:     "cdk-bucket-hijacked",
-			expectedSeverity:     "M", // TriageMedium
+			expectedSeverity:     "TM", // TriageMedium
 			shouldGenerateRisk:   true,
 		},
 		{
@@ -58,8 +58,8 @@ func TestCDKBucketValidator_RiskGeneration(t *testing.T) {
 			if tt.shouldGenerateRisk {
 				require.NotNil(t, risk, "should generate a risk")
 				assert.Equal(t, tt.expectedRiskName, risk.Name)
-				assert.Equal(t, tt.expectedSeverity, risk.Severity())
-				assert.Equal(t, "nebula-cdk-scanner", risk.Source)
+				assert.Equal(t, tt.expectedSeverity, risk.Status)
+				assert.Equal(t, "aurelian-cdk-scanner", risk.Source)
 				assert.Equal(t, cdkRole.AccountID, risk.DNS)
 			} else {
 				assert.Nil(t, risk, "should not generate a risk")
@@ -181,12 +181,4 @@ func TestCDKBucketValidator_RiskDefinitions(t *testing.T) {
 	assert.Contains(t, risk.Comment, cdkRole.RoleName, "comment should contain role name")
 	assert.Contains(t, risk.Comment, cdkRole.BucketName, "comment should contain bucket name")
 	assert.Contains(t, risk.Comment, cdkRole.Region, "comment should contain region")
-}
-
-func TestCDKBucketValidator_Params(t *testing.T) {
-	validator := &AwsCdkBucketValidator{}
-	params := validator.Params()
-	
-	// Should inherit base AWS parameters
-	assert.NotEmpty(t, params, "should have parameters from base AWS link")
 }

@@ -1,6 +1,7 @@
 package ecr
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"log/slog"
@@ -9,47 +10,50 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/docker/docker/api/types/registry"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/types/docker"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type AWSECRLogin struct {
-	*base.AwsReconLink
+	*base.NativeAWSLink
 }
 
-func NewAWSECRLogin(configs ...cfg.Config) chain.Link {
-	ecrLogin := &AWSECRLogin{}
-	ecrLogin.AwsReconLink = base.NewAwsReconLink(ecrLogin, configs...)
-	return ecrLogin
+func NewAWSECRLogin(args map[string]any) *AWSECRLogin {
+	return &AWSECRLogin{
+		NativeAWSLink: base.NewNativeAWSLink("ecr-login", args),
+	}
 }
 
-func (a *AWSECRLogin) Process(registryURL string) error {
-	region, err := ExtractRegion(registryURL)
-	if err != nil {
-		return err
+func (a *AWSECRLogin) Process(ctx context.Context, input any) ([]any, error) {
+	registryURL, ok := input.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string, got %T", input)
 	}
 
-	config, err := a.GetConfigWithRuntimeArgs(region)
+	region, err := ExtractRegion(registryURL)
+	if err != nil {
+		return nil, err
+	}
+
+	config, err := a.GetConfig(ctx, region)
 	if err != nil {
 		slog.Error("Failed to get AWS config", "error", err)
-		return nil
+		return nil, err
 	}
 
 	account, err := helpers.GetAccountId(config)
 	if err != nil {
 		slog.Error("Failed to get account ID", "error", err)
-		return nil
+		return nil, err
 	}
 
-	jwt, err := a.authenticate(config)
+	jwt, err := a.authenticate(ctx, config)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	ic := docker.DockerImage{
+	ic := types.DockerImage{
 		AuthConfig: registry.AuthConfig{
 			Username:      "AWS",
 			Password:      string(jwt),
@@ -57,15 +61,14 @@ func (a *AWSECRLogin) Process(registryURL string) error {
 		},
 		Image: registryURL,
 	}
-	a.Send(ic)
 
-	return nil
+	return []any{ic}, nil
 }
 
-func (a *AWSECRLogin) authenticate(config aws.Config) (string, error) {
+func (a *AWSECRLogin) authenticate(ctx context.Context, config aws.Config) (string, error) {
 	client := ecr.NewFromConfig(config)
 	input := &ecr.GetAuthorizationTokenInput{}
-	tokenOutput, err := client.GetAuthorizationToken(a.Context(), input)
+	tokenOutput, err := client.GetAuthorizationToken(ctx, input)
 	if err != nil {
 		return "", fmt.Errorf("authentication error: %w", err)
 	}

@@ -1,72 +1,57 @@
 package aws
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // AWSResourceChainProcessor processes ResourceChainPair objects concurrently
 type AWSResourceChainProcessor struct {
-	*base.AwsReconLink
+	*base.NativeAWSLink
 }
 
 type ResourceChainPair struct {
 	Resource         *types.EnrichedResourceDescription
-	ChainConstructor func() chain.Chain
+	ChainConstructor func() []any // Returns processing chain functions
 	Args             map[string]any
 }
 
-func NewAWSResourceChainProcessor(configs ...cfg.Config) chain.Link {
-	p := &AWSResourceChainProcessor{}
-	p.AwsReconLink = base.NewAwsReconLink(p, configs...)
-	return p
+func NewAWSResourceChainProcessor(args map[string]any) *AWSResourceChainProcessor {
+	return &AWSResourceChainProcessor{
+		NativeAWSLink: base.NewNativeAWSLink("aws-resource-chain-processor", args),
+	}
 }
 
-func (p *AWSResourceChainProcessor) Process(pair *ResourceChainPair) error {
+func (p *AWSResourceChainProcessor) Process(ctx context.Context, input any) ([]any, error) {
+	pair, ok := input.(*ResourceChainPair)
+	if !ok {
+		return nil, fmt.Errorf("expected *ResourceChainPair, got %T", input)
+	}
+
 	slog.Debug("Processing resource chain",
 		"resource_type", pair.Resource.TypeName,
 		"resource_id", pair.Resource.Identifier)
 
-	// Build the specific chain for this resource type
-	resourceChain := pair.ChainConstructor()
-
-	// Only pass essential AWS parameters, not module-level parameters
+	// Extract essential AWS parameters
 	essentialArgs := p.extractEssentialArgs(pair.Args)
-	if len(essentialArgs) > 0 {
-		resourceChain.WithConfigs(cfg.WithArgs(essentialArgs))
+
+	// Process the resource using find_secrets processor
+	processor := AWSFindSecrets{
+		NativeAWSLink: base.NewNativeAWSLink("temp-processor", essentialArgs),
 	}
 
-	// Process the resource
-	if err := resourceChain.Send(pair.Resource); err != nil {
-		slog.Error("Failed to send resource to chain", "error", err)
-		return err
-	}
-	resourceChain.Close()
-
-	// Stream outputs while the chain is running - consume before Wait()
-	for output, ok := chain.RecvAs[jtypes.NPInput](resourceChain); ok; output, ok = chain.RecvAs[jtypes.NPInput](resourceChain) {
-		// slog.Debug("Forwarding output", "resource_type", pair.Resource.TypeName, "output_type", fmt.Sprintf("%T", output))
-		if err := p.Send(output); err != nil {
-			slog.Error("Failed to send output", "error", err)
-			return err
-		}
-	}
-
-	// Wait for chain completion after consuming all outputs
-	resourceChain.Wait()
-
-	if err := resourceChain.Error(); err != nil {
+	outputs, err := processor.Process(ctx, pair.Resource)
+	if err != nil {
 		slog.Error("Error processing resource chain", "resource", pair.Resource, "error", err)
-		return err
+		return nil, err
 	}
 
 	slog.Debug("Completed processing resource chain", "resource_type", pair.Resource.TypeName)
-	return nil
+	return outputs, nil
 }
 
 // extractEssentialArgs extracts only AWS-specific parameters needed by resource chains

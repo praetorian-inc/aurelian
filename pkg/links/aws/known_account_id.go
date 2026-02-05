@@ -1,16 +1,17 @@
 package aws
 
 import (
+	"context"
 	"encoding/json"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/utils"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/outputters"
+	"github.com/praetorian-inc/aurelian/pkg/utils"
 	"gopkg.in/yaml.v3"
 )
 
 type KnownAccountID struct {
-	*chain.Base
+	*base.NativeAWSLink
 }
 
 type cloudmapperAccount struct {
@@ -32,57 +33,52 @@ type AwsKnownAccount struct {
 	Description string `json:"description"`
 }
 
-func NewKnownAccountID(configs ...cfg.Config) chain.Link {
-	l := &KnownAccountID{}
-	l.Base = chain.NewBase(l, configs...)
-	l.Base.SetName("Looks up AWS account IDs against known public accounts")
-	return l
+func NewKnownAccountID(args map[string]any) *KnownAccountID {
+	return &KnownAccountID{
+		NativeAWSLink: base.NewNativeAWSLink("known-account-id", args),
+	}
 }
 
-func (l *KnownAccountID) Process(id string) error {
-
-	l.Logger.Info("Getting known AWS account IDs")
+func (l *KnownAccountID) Process(ctx context.Context, input any) ([]any, error) {
+	id, ok := input.(string)
+	if !ok {
+		return nil, nil
+	}
 
 	// Get accounts from rupertbg's repository
 	body, err := utils.Cached_httpGet("https://raw.githubusercontent.com/rupertbg/aws-public-account-ids/master/accounts.json")
 	if err != nil {
-		l.Logger.Error("Error getting known AWS account IDs", "error", err)
-		return err
+		return nil, err
 	}
 
 	var accounts []AwsKnownAccount
 	err = json.Unmarshal(body, &accounts)
 	if err != nil {
-		l.Logger.Error("Error unmarshalling known AWS account IDs", "error", err)
-		return err
+		return nil, err
 	}
 
 	// Get accounts from fwdcloudsec
 	body, err = utils.Cached_httpGet("https://raw.githubusercontent.com/fwdcloudsec/known_aws_accounts/main/accounts.yaml")
 	if err != nil {
-		l.Logger.Error("Error getting known AWS account IDs", "error", err)
-		return err
+		return nil, err
 	}
 
 	fcsAccounts := []fwdcloudsecAccount{}
 	err = yaml.Unmarshal(body, &fcsAccounts)
 	if err != nil {
-		l.Logger.Error("Error unmarshalling fwdcloudsec known AWS account IDs", "error", err)
-		return err
+		return nil, err
 	}
 
 	// Get accounts from cloudmapper
 	body, err = utils.Cached_httpGet("https://raw.githubusercontent.com/duo-labs/cloudmapper/refs/heads/main/vendor_accounts.yaml")
 	if err != nil {
-		l.Logger.Error("Error getting known AWS account IDs", "error", err)
-		return err
+		return nil, err
 	}
 
 	cmAccounts := []cloudmapperAccount{}
 	err = yaml.Unmarshal(body, &cmAccounts)
 	if err != nil {
-		l.Logger.Error("Error unmarshalling cloudmapper known AWS account IDs", "error", err)
-		return err
+		return nil, err
 	}
 
 	for _, account := range cmAccounts {
@@ -113,7 +109,8 @@ func (l *KnownAccountID) Process(id string) error {
 	// Look for matches
 	for _, account := range accounts {
 		if account.ID == id {
-			return l.Send(account)
+			l.Send(outputters.RawOutput{Data: account})
+			return l.Outputs(), nil
 		}
 	}
 
@@ -124,5 +121,6 @@ func (l *KnownAccountID) Process(id string) error {
 		Source:      "None",
 		Description: "Account ID not found in known public accounts",
 	}
-	return l.Send(noMatch)
+	l.Send(outputters.RawOutput{Data: noMatch})
+	return l.Outputs(), nil
 }

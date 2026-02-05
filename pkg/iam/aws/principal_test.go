@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 func TestExtractPrincipalsLocations(t *testing.T) {
@@ -584,13 +584,13 @@ func TestExtractGitHubActionsPrincipals(t *testing.T) {
 			name: "GitHub Actions single subject claim",
 			conditions: &types.Condition{
 				"StringEquals": {
-					GitHubActionsSubjectKey:   types.DynaString{"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+					GitHubActionsSubjectKey:   types.DynaString{"repo:praetorian-inc/aurelian:ref:refs/heads/main"},
 					GitHubActionsAudienceKey: types.DynaString{"sts.amazonaws.com"},
 				},
 			},
 			want: []types.Principal{
 				{
-					Federated: types.NewDynaString([]string{"repo:praetorian-inc/nebula:ref:refs/heads/main"}),
+					Federated: types.NewDynaString([]string{"repo:praetorian-inc/aurelian:ref:refs/heads/main"}),
 				},
 			},
 		},
@@ -599,8 +599,8 @@ func TestExtractGitHubActionsPrincipals(t *testing.T) {
 			conditions: &types.Condition{
 				"StringEquals": {
 					GitHubActionsSubjectKey: types.DynaString{
-						"repo:praetorian-inc/nebula:ref:refs/heads/main",
-						"repo:praetorian-inc/nebula:environment:production",
+						"repo:praetorian-inc/aurelian:ref:refs/heads/main",
+						"repo:praetorian-inc/aurelian:environment:production",
 					},
 					GitHubActionsAudienceKey: types.DynaString{"sts.amazonaws.com"},
 				},
@@ -608,8 +608,8 @@ func TestExtractGitHubActionsPrincipals(t *testing.T) {
 			want: []types.Principal{
 				{
 					Federated: types.NewDynaString([]string{
-						"repo:praetorian-inc/nebula:ref:refs/heads/main",
-						"repo:praetorian-inc/nebula:environment:production",
+						"repo:praetorian-inc/aurelian:ref:refs/heads/main",
+						"repo:praetorian-inc/aurelian:environment:production",
 					}),
 				},
 			},
@@ -618,13 +618,13 @@ func TestExtractGitHubActionsPrincipals(t *testing.T) {
 			name: "GitHub Actions wildcard subject claim",
 			conditions: &types.Condition{
 				"StringLike": {
-					GitHubActionsSubjectKey:   types.DynaString{"repo:praetorian-inc/nebula:*"},
+					GitHubActionsSubjectKey:   types.DynaString{"repo:praetorian-inc/aurelian:*"},
 					GitHubActionsAudienceKey: types.DynaString{"sts.amazonaws.com"},
 				},
 			},
 			want: []types.Principal{
 				{
-					Federated: types.NewDynaString([]string{"repo:praetorian-inc/nebula:*"}),
+					Federated: types.NewDynaString([]string{"repo:praetorian-inc/aurelian:*"}),
 				},
 			},
 		},
@@ -666,12 +666,12 @@ func TestParseGitHubSubjectClaim(t *testing.T) {
 	}{
 		{
 			name:    "Branch reference",
-			subject: "repo:praetorian-inc/nebula:ref:refs/heads/main",
+			subject: "repo:praetorian-inc/aurelian:ref:refs/heads/main",
 			want: &GitHubSubjectClaim{
-				Original:     "repo:praetorian-inc/nebula:ref:refs/heads/main",
+				Original:     "repo:praetorian-inc/aurelian:ref:refs/heads/main",
 				Org:          "praetorian-inc",
-				Repo:         "nebula",
-				FullRepoName: "praetorian-inc/nebula",
+				Repo:         "aurelian",
+				FullRepoName: "praetorian-inc/aurelian",
 				Context:      "ref:refs/heads/main",
 				ContextType:  "ref",
 				ContextValue: "refs/heads/main",
@@ -680,12 +680,12 @@ func TestParseGitHubSubjectClaim(t *testing.T) {
 		},
 		{
 			name:    "Environment deployment",
-			subject: "repo:praetorian-inc/nebula:environment:production",
+			subject: "repo:praetorian-inc/aurelian:environment:production",
 			want: &GitHubSubjectClaim{
-				Original:     "repo:praetorian-inc/nebula:environment:production",
+				Original:     "repo:praetorian-inc/aurelian:environment:production",
 				Org:          "praetorian-inc",
-				Repo:         "nebula",
-				FullRepoName: "praetorian-inc/nebula",
+				Repo:         "aurelian",
+				FullRepoName: "praetorian-inc/aurelian",
 				Context:      "environment:production",
 				ContextType:  "environment",
 				ContextValue: "production",
@@ -694,12 +694,12 @@ func TestParseGitHubSubjectClaim(t *testing.T) {
 		},
 		{
 			name:    "Pull request",
-			subject: "repo:praetorian-inc/nebula:pull_request",
+			subject: "repo:praetorian-inc/aurelian:pull_request",
 			want: &GitHubSubjectClaim{
-				Original:     "repo:praetorian-inc/nebula:pull_request",
+				Original:     "repo:praetorian-inc/aurelian:pull_request",
 				Org:          "praetorian-inc",
-				Repo:         "nebula",
-				FullRepoName: "praetorian-inc/nebula",
+				Repo:         "aurelian",
+				FullRepoName: "praetorian-inc/aurelian",
 				Context:      "pull_request",
 				ContextType:  "pull_request",
 				ContextValue: "pull_request",
@@ -708,12 +708,12 @@ func TestParseGitHubSubjectClaim(t *testing.T) {
 		},
 		{
 			name:    "Actor specific",
-			subject: "repo:praetorian-inc/nebula:actor:username",
+			subject: "repo:praetorian-inc/aurelian:actor:username",
 			want: &GitHubSubjectClaim{
-				Original:     "repo:praetorian-inc/nebula:actor:username",
+				Original:     "repo:praetorian-inc/aurelian:actor:username",
 				Org:          "praetorian-inc",
-				Repo:         "nebula",
-				FullRepoName: "praetorian-inc/nebula",
+				Repo:         "aurelian",
+				FullRepoName: "praetorian-inc/aurelian",
 				Context:      "actor:username",
 				ContextType:  "actor",
 				ContextValue: "username",
@@ -722,12 +722,12 @@ func TestParseGitHubSubjectClaim(t *testing.T) {
 		},
 		{
 			name:    "Wildcard context",
-			subject: "repo:praetorian-inc/nebula:*",
+			subject: "repo:praetorian-inc/aurelian:*",
 			want: &GitHubSubjectClaim{
-				Original:     "repo:praetorian-inc/nebula:*",
+				Original:     "repo:praetorian-inc/aurelian:*",
 				Org:          "praetorian-inc",
-				Repo:         "nebula",
-				FullRepoName: "praetorian-inc/nebula",
+				Repo:         "aurelian",
+				FullRepoName: "praetorian-inc/aurelian",
 				Context:      "*",
 				ContextType:  "*",
 				ContextValue: "*",
@@ -750,12 +750,12 @@ func TestParseGitHubSubjectClaim(t *testing.T) {
 		},
 		{
 			name:    "Tag reference",
-			subject: "repo:praetorian-inc/nebula:ref:refs/tags/v1.0.0",
+			subject: "repo:praetorian-inc/aurelian:ref:refs/tags/v1.0.0",
 			want: &GitHubSubjectClaim{
-				Original:     "repo:praetorian-inc/nebula:ref:refs/tags/v1.0.0",
+				Original:     "repo:praetorian-inc/aurelian:ref:refs/tags/v1.0.0",
 				Org:          "praetorian-inc",
-				Repo:         "nebula",
-				FullRepoName: "praetorian-inc/nebula",
+				Repo:         "aurelian",
+				FullRepoName: "praetorian-inc/aurelian",
 				Context:      "ref:refs/tags/v1.0.0",
 				ContextType:  "ref",
 				ContextValue: "refs/tags/v1.0.0",
@@ -771,14 +771,14 @@ func TestParseGitHubSubjectClaim(t *testing.T) {
 		},
 		{
 			name:            "Invalid format - no repo prefix",
-			subject:         "invalid:praetorian-inc/nebula:ref:refs/heads/main",
+			subject:         "invalid:praetorian-inc/aurelian:ref:refs/heads/main",
 			want:            nil,
 			wantErr:         true,
 			wantErrContains: "must start with 'repo:'",
 		},
 		{
 			name:            "Invalid format - missing org/repo separator",
-			subject:         "repo:praetorian-inc-nebula:ref:refs/heads/main",
+			subject:         "repo:praetorian-inc-aurelian:ref:refs/heads/main",
 			want:            nil,
 			wantErr:         true,
 			wantErrContains: "must contain org/repo",
@@ -829,12 +829,12 @@ func TestExtractRepositoriesFromConditions(t *testing.T) {
 			name: "Single repository with branch",
 			conditions: &types.Condition{
 				"StringEquals": {
-					GitHubActionsSubjectKey:   types.DynaString{"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+					GitHubActionsSubjectKey:   types.DynaString{"repo:praetorian-inc/aurelian:ref:refs/heads/main"},
 					GitHubActionsAudienceKey: types.DynaString{"sts.amazonaws.com"},
 				},
 			},
 			want: map[string][]string{
-				"praetorian-inc/nebula": {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+				"praetorian-inc/aurelian": {"repo:praetorian-inc/aurelian:ref:refs/heads/main"},
 			},
 			wantErr: false,
 		},
@@ -843,18 +843,18 @@ func TestExtractRepositoriesFromConditions(t *testing.T) {
 			conditions: &types.Condition{
 				"StringEquals": {
 					GitHubActionsSubjectKey: types.DynaString{
-						"repo:praetorian-inc/nebula:ref:refs/heads/main",
-						"repo:praetorian-inc/nebula:environment:production",
-						"repo:praetorian-inc/nebula:*",
+						"repo:praetorian-inc/aurelian:ref:refs/heads/main",
+						"repo:praetorian-inc/aurelian:environment:production",
+						"repo:praetorian-inc/aurelian:*",
 					},
 					GitHubActionsAudienceKey: types.DynaString{"sts.amazonaws.com"},
 				},
 			},
 			want: map[string][]string{
-				"praetorian-inc/nebula": {
-					"repo:praetorian-inc/nebula:ref:refs/heads/main",
-					"repo:praetorian-inc/nebula:environment:production",
-					"repo:praetorian-inc/nebula:*",
+				"praetorian-inc/aurelian": {
+					"repo:praetorian-inc/aurelian:ref:refs/heads/main",
+					"repo:praetorian-inc/aurelian:environment:production",
+					"repo:praetorian-inc/aurelian:*",
 				},
 			},
 			wantErr: false,
@@ -864,7 +864,7 @@ func TestExtractRepositoriesFromConditions(t *testing.T) {
 			conditions: &types.Condition{
 				"StringEquals": {
 					GitHubActionsSubjectKey: types.DynaString{
-						"repo:praetorian-inc/nebula:ref:refs/heads/main",
+						"repo:praetorian-inc/aurelian:ref:refs/heads/main",
 						"repo:praetorian-inc/tabularium:environment:production",
 						"repo:organization/other-repo:*",
 					},
@@ -872,7 +872,7 @@ func TestExtractRepositoriesFromConditions(t *testing.T) {
 				},
 			},
 			want: map[string][]string{
-				"praetorian-inc/nebula":     {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+				"praetorian-inc/aurelian":     {"repo:praetorian-inc/aurelian:ref:refs/heads/main"},
 				"praetorian-inc/tabularium": {"repo:praetorian-inc/tabularium:environment:production"},
 				"organization/other-repo":   {"repo:organization/other-repo:*"},
 			},
@@ -918,7 +918,7 @@ func TestExtractRepositoriesFromConditions(t *testing.T) {
 			conditions: &types.Condition{
 				"StringEquals": {
 					GitHubActionsSubjectKey: types.DynaString{
-						"repo:praetorian-inc/nebula:ref:refs/heads/main", // Valid
+						"repo:praetorian-inc/aurelian:ref:refs/heads/main", // Valid
 						"invalid:format:here",                            // Invalid - should be ignored
 						"repo:another-org/repo:environment:prod",         // Valid
 					},
@@ -926,7 +926,7 @@ func TestExtractRepositoriesFromConditions(t *testing.T) {
 				},
 			},
 			want: map[string][]string{
-				"praetorian-inc/nebula": {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+				"praetorian-inc/aurelian": {"repo:praetorian-inc/aurelian:ref:refs/heads/main"},
 				"another-org/repo":      {"repo:another-org/repo:environment:prod"},
 			},
 			wantErr: false,

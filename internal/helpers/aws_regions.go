@@ -10,9 +10,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/account"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	awstypes "github.com/aws/aws-sdk-go-v2/service/account/types"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/praetorian-inc/nebula/pkg/utils"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/utils"
 )
 
 var Regions = []string{

@@ -3,27 +3,25 @@ package outputters
 import (
 	"fmt"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/message"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 // URLConsoleOutputter outputs URLs to the console with formatting
 type URLConsoleOutputter struct {
-	*chain.BaseOutputter
+	cfg  plugin.Config
 	urls []string
 }
 
-func NewURLConsoleOutputter(configs ...cfg.Config) chain.Outputter {
-	outputter := &URLConsoleOutputter{
+func NewURLConsoleOutputter() *URLConsoleOutputter {
+	return &URLConsoleOutputter{
 		urls: make([]string, 0),
 	}
-	outputter.BaseOutputter = chain.NewBaseOutputter(outputter, configs...)
-	return outputter
 }
 
-func (o *URLConsoleOutputter) Params() []cfg.Param {
-	return []cfg.Param{}
+func (o *URLConsoleOutputter) Initialize(cfg plugin.Config) error {
+	o.cfg = cfg
+	return nil
 }
 
 func (o *URLConsoleOutputter) Output(val any) error {

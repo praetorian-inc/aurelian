@@ -6,8 +6,8 @@ import (
 	"log/slog"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/aurelian/pkg/links/azure/base"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 
 	msgraphsdk "github.com/microsoftgraph/msgraph-sdk-go"
 	"github.com/microsoftgraph/msgraph-sdk-go/models"
@@ -15,17 +15,17 @@ import (
 )
 
 type AzureConditionalAccessCollectorLink struct {
-	*chain.Base
+	*base.NativeAzureLink
 }
 
-func NewAzureConditionalAccessCollectorLink(configs ...cfg.Config) chain.Link {
-	l := &AzureConditionalAccessCollectorLink{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
+func NewAzureConditionalAccessCollectorLink(args map[string]any) *AzureConditionalAccessCollectorLink {
+	return &AzureConditionalAccessCollectorLink{
+		NativeAzureLink: base.NewNativeAzureLink("conditional-access-collector", args),
+	}
 }
 
-func (l *AzureConditionalAccessCollectorLink) Params() []cfg.Param {
-	return []cfg.Param{}
+func (l *AzureConditionalAccessCollectorLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{}
 }
 
 type ConditionalAccessPolicyResult struct {
@@ -69,31 +69,32 @@ type ConditionalAccessApplications struct {
 	ApplicationFilter   map[string]interface{}         `json:"applicationFilter,omitempty"`
 }
 
-func (l *AzureConditionalAccessCollectorLink) Process(input any) error {
+func (l *AzureConditionalAccessCollectorLink) Process(ctx context.Context, input any) ([]any, error) {
 	slog.Info("Starting Azure Conditional Access Policy collection")
 
 	// Get Azure credentials
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		return fmt.Errorf("failed to get Azure credentials: %w", err)
+		return nil, fmt.Errorf("failed to get Azure credentials: %w", err)
 	}
 
 	// Create Graph client
 	graphClient, err := msgraphsdk.NewGraphServiceClientWithCredentials(cred, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create Graph client: %w", err)
+		return nil, fmt.Errorf("failed to create Graph client: %w", err)
 	}
 
 	// Retrieve all conditional access policies
-	policies, err := l.getConditionalAccessPolicies(l.Context(), graphClient)
+	policies, err := l.getConditionalAccessPolicies(ctx, graphClient)
 	if err != nil {
-		return fmt.Errorf("failed to retrieve conditional access policies: %w", err)
+		return nil, fmt.Errorf("failed to retrieve conditional access policies: %w", err)
 	}
 
 	slog.Info("Successfully collected conditional access policies", "count", len(policies))
 
 	// Pass the raw policy data to the next link for UUID resolution
-	return l.Send(policies)
+	l.Send(policies)
+	return l.Outputs(), nil
 }
 
 func (l *AzureConditionalAccessCollectorLink) getConditionalAccessPolicies(ctx context.Context, graphClient *msgraphsdk.GraphServiceClient) ([]ConditionalAccessPolicyResult, error) {

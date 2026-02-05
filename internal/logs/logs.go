@@ -21,7 +21,7 @@ const (
 // Currently used to write the AWS API calls to a log file
 func AwsCliLogger() logging.Logger {
 	return logging.LoggerFunc(func(classification logging.Classification, format string, v ...interface{}) {
-		LOG_FILE := "nebula.log"
+		LOG_FILE := "aurelian.log"
 
 		opts := &slog.HandlerOptions{
 			AddSource: true,

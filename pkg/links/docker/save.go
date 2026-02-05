@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -8,89 +9,92 @@ import (
 	"strings"
 
 	"github.com/docker/docker/client"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/types/docker"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type DockerSave struct {
-	*chain.Base
+	*plugin.BaseLink
 	outDir string
 }
 
-func NewDockerSave(configs ...cfg.Config) chain.Link {
-	dsl := &DockerSave{}
-	dsl.Base = chain.NewBase(dsl, configs...)
-	return dsl
-}
-
-func (dsl *DockerSave) Params() []cfg.Param {
-	return []cfg.Param{
-		options.OutputDir(),
-	}
-}
-
-func (dsl *DockerSave) Initialize() error {
-	dir, err := cfg.As[string](dsl.Arg("output"))
-	if err != nil {
-		return err
+func NewDockerSave(args map[string]any) *DockerSave {
+	ds := &DockerSave{
+		BaseLink: plugin.NewBaseLink("docker-save", args),
 	}
 
+	// Initialize output directory
+	dir := ds.ArgString("output", "")
 	if dir == "" {
 		dir = filepath.Join(os.TempDir(), ".janus-docker-images")
 	}
+	ds.outDir = dir
 
+	// Create output directory
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create output directory: %w", err)
+		ds.Logger().Error("Failed to create output directory", "error", err)
 	}
 
-	dsl.outDir = dir
-
-	return nil
+	return ds
 }
 
-func (dsl *DockerSave) Process(imageContext docker.DockerImage) error {
+func (dsl *DockerSave) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		{
+			Name:        "output",
+			Description: "Output directory for saved Docker images",
+			Required:    false,
+			Type:        "string",
+		},
+	}
+}
+
+func (dsl *DockerSave) Process(ctx context.Context, input any) ([]any, error) {
+	imageContext, ok := input.(types.DockerImage)
+	if !ok {
+		return nil, fmt.Errorf("expected types.DockerImage input, got %T", input)
+	}
+
 	isPublicImage := strings.Contains(imageContext.AuthConfig.ServerAddress, "public.ecr.aws")
 
 	var dockerClient *client.Client
 	var err error
 
 	if !isPublicImage {
-		dockerClient, err = NewAuthenticatedClient(dsl.Context(), imageContext, client.FromEnv)
+		dockerClient, err = NewAuthenticatedClient(ctx, imageContext, client.FromEnv)
 	} else {
-		dockerClient, err = NewUnauthenticatedClient(dsl.Context(), client.FromEnv)
+		dockerClient, err = NewUnauthenticatedClient(ctx, client.FromEnv)
 	}
 
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	defer dockerClient.Close()
 
 	imageID := imageContext.Image
 
-	defer removeImage(dsl.Context(), dockerClient, imageID)
+	defer removeImage(ctx, dockerClient, imageID)
 
 	outFile, err := dsl.createOutputFile(imageID)
 	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
+		return nil, fmt.Errorf("failed to create output file: %w", err)
 	}
 	defer outFile.Close()
 
-	reader, err := dockerClient.ImageSave(dsl.Context(), []string{imageID})
+	reader, err := dockerClient.ImageSave(ctx, []string{imageID})
 	if err != nil {
-		return fmt.Errorf("failed to save image: %w", err)
+		return nil, fmt.Errorf("failed to save image: %w", err)
 	}
 	defer reader.Close()
 
 	if _, err := io.Copy(outFile, reader); err != nil {
-		return fmt.Errorf("failed to copy image to output file: %w", err)
+		return nil, fmt.Errorf("failed to copy image to output file: %w", err)
 	}
 
 	imageContext.LocalPath = outFile.Name()
 
-	return dsl.Send(&imageContext)
+	return []any{&imageContext}, nil
 }
 
 func (dsl *DockerSave) createOutputFile(imageID string) (*os.File, error) {

@@ -2,6 +2,7 @@ package azure
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -10,9 +11,9 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/links/azure/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 
 	msgraphsdk "github.com/microsoftgraph/msgraph-sdk-go"
 )
@@ -50,7 +51,7 @@ type ConditionalAccessAnalysisResult struct {
 }
 
 type AzureConditionalAccessLLMAnalyzer struct {
-	*chain.Base
+	*base.NativeAzureLink
 }
 
 type LLMRequest struct {
@@ -73,14 +74,14 @@ type Content struct {
 	Text string `json:"text"`
 }
 
-func NewAzureConditionalAccessLLMAnalyzer(configs ...cfg.Config) chain.Link {
-	l := &AzureConditionalAccessLLMAnalyzer{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
+func NewAzureConditionalAccessLLMAnalyzer(args map[string]any) *AzureConditionalAccessLLMAnalyzer {
+	return &AzureConditionalAccessLLMAnalyzer{
+		NativeAzureLink: base.NewNativeAzureLink("azure-conditional-access-llm-analyzer", args),
+	}
 }
 
-func (l *AzureConditionalAccessLLMAnalyzer) Params() []cfg.Param {
-	return []cfg.Param{
+func (l *AzureConditionalAccessLLMAnalyzer) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
 		options.AzureEnableLLMAnalysis(),
 		options.AzureLLMAPIKeyOptional(),
 		options.AzureLLMProvider(),
@@ -90,16 +91,14 @@ func (l *AzureConditionalAccessLLMAnalyzer) Params() []cfg.Param {
 	}
 }
 
-func (l *AzureConditionalAccessLLMAnalyzer) Process(input any) error {
+func (l *AzureConditionalAccessLLMAnalyzer) Process(ctx context.Context, input any) ([]any, error) {
 	// Check if LLM analysis is enabled
-	enableLLM, err := cfg.As[bool](l.Arg("enable-llm-analysis"))
-	if err != nil {
-		enableLLM = false
-	}
+	enableLLM := l.ArgBool("enable-llm-analysis", false)
 
 	// If LLM analysis is disabled, pass input through unchanged
 	if !enableLLM {
-		return l.Send(input)
+		l.Send(input)
+		return l.Outputs(), nil
 	}
 
 	// LLM analysis is enabled - validate and process
@@ -112,51 +111,37 @@ func (l *AzureConditionalAccessLLMAnalyzer) Process(input any) error {
 	case []EnrichedConditionalAccessPolicy:
 		policies = v
 	default:
-		return fmt.Errorf("expected EnrichedConditionalAccessPolicy or []EnrichedConditionalAccessPolicy, got %T", input)
+		return nil, fmt.Errorf("expected EnrichedConditionalAccessPolicy or []EnrichedConditionalAccessPolicy, got %T", input)
 	}
 
 	if len(policies) == 0 {
-		return fmt.Errorf("no policies to analyze")
+		return nil, fmt.Errorf("no policies to analyze")
 	}
 
-	apiKey, err := cfg.As[string](l.Arg("llm-api-key"))
-	if err != nil || apiKey == "" {
-		return fmt.Errorf("llm-api-key is required when enable-llm-analysis is true")
+	apiKey := l.ArgString("llm-api-key", "")
+	if apiKey == "" {
+		return nil, fmt.Errorf("llm-api-key is required when enable-llm-analysis is true")
 	}
 
-	provider, err := cfg.As[string](l.Arg("llm-provider"))
-	if err != nil {
-		provider = "anthropic"
-	}
-
-	model, err := cfg.As[string](l.Arg("llm-model"))
-	if err != nil {
-		model = "claude-opus-4-1-20250805"
-	}
-
-	outputTokens, err := cfg.As[int](l.Arg("llm-output-tokens"))
-	if err != nil {
-		outputTokens = 32000
-	}
+	provider := l.ArgString("llm-provider", "anthropic")
+	model := l.ArgString("llm-model", "claude-opus-4-1-20250805")
+	outputTokens := l.ArgInt("llm-output-tokens", 32000)
 
 	// Perform LLM analysis
 	fmt.Printf("[+] Starting conditional access policy analysis using LLM...\n")
-	analysisResult, err := l.analyzePolicySet(policies, apiKey, provider, model, outputTokens)
+	analysisResult, err := l.analyzePolicySet(ctx, policies, apiKey, provider, model, outputTokens)
 	if err != nil {
-		return fmt.Errorf("failed to analyze policy set: %w", err)
+		return nil, fmt.Errorf("failed to analyze policy set: %w", err)
 	}
 
 	// Send both policies and analysis result to next link
-	// First send the original policies so aggregator can collect them
-	if err := l.Send(policies); err != nil {
-		return fmt.Errorf("failed to send policies to next link: %w", err)
-	}
+	l.Send(policies)
+	l.Send(analysisResult)
 
-	// Then send the analysis result
-	return l.Send(analysisResult)
+	return l.Outputs(), nil
 }
 
-func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []EnrichedConditionalAccessPolicy, apiKey, provider, model string, outputTokens int) (ConditionalAccessAnalysisResult, error) {
+func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(ctx context.Context, policies []EnrichedConditionalAccessPolicy, apiKey, provider, model string, outputTokens int) (ConditionalAccessAnalysisResult, error) {
 	if provider != "anthropic" {
 		return ConditionalAccessAnalysisResult{}, fmt.Errorf("unsupported LLM provider: %s (only 'anthropic' is supported)", provider)
 	}
@@ -178,7 +163,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []Enriched
 		},
 	}
 
-	l.Logger.Info("Sending request to LLM provider", "provider", provider, "model", model)
+	l.Logger().Info("Sending request to LLM provider", "provider", provider, "model", model)
 	fmt.Printf("[+] Sending policy data to LLM provider (%s) for analysis...\n", provider)
 
 	reqBody, err := json.Marshal(llmReq)
@@ -187,7 +172,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []Enriched
 	}
 
 	llmURL := "https://api.anthropic.com/v1/messages"
-	req, err := http.NewRequestWithContext(l.Context(), http.MethodPost, llmURL, bytes.NewBuffer(reqBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, llmURL, bytes.NewBuffer(reqBody))
 	if err != nil {
 		return ConditionalAccessAnalysisResult{}, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -227,7 +212,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []Enriched
 
 	analysisText := llmResp.Content[0].Text
 
-	l.Logger.Info("LLM response received", "provider", provider, "model", model, "response_length", len(analysisText))
+	l.Logger().Info("LLM response received", "provider", provider, "model", model, "response_length", len(analysisText))
 	fmt.Printf("[+] LLM analysis completed, processing results...\n")
 
 	// Parse XML response
@@ -237,7 +222,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) analyzePolicySet(policies []Enriched
 		if len(analysisText) > 200 {
 			responsePreview = analysisText[:200]
 		}
-		l.Logger.Warn("XML parsing failed", "provider", provider, "error", err.Error(), "response_preview", responsePreview)
+		l.Logger().Warn("XML parsing failed", "provider", provider, "error", err.Error(), "response_preview", responsePreview)
 		return ConditionalAccessAnalysisResult{}, fmt.Errorf("failed to parse XML response from LLM provider %s: %w", provider, err)
 	}
 
@@ -364,7 +349,7 @@ func (l *AzureConditionalAccessLLMAnalyzer) getTenantID() (string, error) {
 	}
 
 	// Get organization info to extract tenant ID
-	org, err := graphClient.Organization().Get(l.Context(), nil)
+	org, err := graphClient.Organization().Get(context.Background(), nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to get organization info: %w", err)
 	}

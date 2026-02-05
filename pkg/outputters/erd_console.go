@@ -6,27 +6,25 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // PropertyExtractor defines a function that can extract specific information from a resource's properties
 type PropertyExtractor func(properties map[string]any) (string, []string, bool)
 
 type ERDConsoleOutputter struct {
-	*chain.BaseOutputter
+	cfg plugin.Config
 	// Map of resource type to property extractor function
 	extractors map[string]PropertyExtractor
 }
 
 // NewERDConsoleOutputter creates a new console outputter for ERD types
-func NewERDConsoleOutputter(configs ...cfg.Config) chain.Outputter {
+func NewERDConsoleOutputter() *ERDConsoleOutputter {
 	o := &ERDConsoleOutputter{
 		extractors: make(map[string]PropertyExtractor),
 	}
-	o.BaseOutputter = chain.NewBaseOutputter(o, configs...)
 
 	// Register default extractors
 	o.registerDefaultExtractors()
@@ -232,20 +230,14 @@ func (o *ERDConsoleOutputter) outputResource(arn string, extractedValue string, 
 }
 
 // Initialize is called when the outputter is initialized
-func (o *ERDConsoleOutputter) Initialize() error {
+func (o *ERDConsoleOutputter) Initialize(cfg plugin.Config) error {
+	o.cfg = cfg
 	return nil
 }
 
 // Complete is called when the chain is complete
 func (o *ERDConsoleOutputter) Complete() error {
 	return nil
-}
-
-// Params returns the parameters for this outputter
-func (o *ERDConsoleOutputter) Params() []cfg.Param {
-	return []cfg.Param{
-		// No additional parameters needed
-	}
 }
 
 type RDSEndpoint struct {

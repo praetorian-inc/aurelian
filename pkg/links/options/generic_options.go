@@ -3,8 +3,8 @@ package options
 import (
 	"regexp"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 func WithValue(opt types.Option, value string) *types.Option {
@@ -18,7 +18,7 @@ var OutputOpt = types.Option{
 	Description: "output directory",
 	Required:    false,
 	Type:        types.String,
-	Value:       "nebula-output",
+	Value:       "aurelian-output",
 }
 
 var FileNameOpt = types.Option{
@@ -125,37 +125,40 @@ var LogLevelOpt = types.Option{
 	ValueFormat: regexp.MustCompile("^(debug|info|warn|error)$"),
 }
 
-func LogLevel() cfg.Param {
-	return cfg.NewParam[string]("log-level", "log level").
-		WithDefault("none").
-		WithRegex(regexp.MustCompile("^(none|debug|info|warn|error)$"))
+func LogLevel() plugin.Parameter {
+	return plugin.NewParam[string]("log-level", "log level",
+		plugin.WithDefault("none"),
+	)
 }
 
-func AwsCacheLogLevel() cfg.Param {
-	return cfg.NewParam[string]("aws-cache-log-level", "Log level for AWS cache operations (debug, info, warn, error, none). Defaults to 'none' for independent operation.").
-		WithDefault("none").
-		WithRegex(regexp.MustCompile("^(none|debug|info|warn|error)$"))
+func AwsCacheLogLevel() plugin.Parameter {
+	return plugin.NewParam[string]("aws-cache-log-level", "Log level for AWS cache operations (debug, info, warn, error, none). Defaults to 'none' for independent operation.",
+		plugin.WithDefault("none"),
+	)
 }
 
-func AwsCacheLogFile() cfg.Param {
-	return cfg.NewParam[string]("aws-cache-log-file", "File path to redirect AWS cache logs. If not specified, logs will be written to stdout.")
+func AwsCacheLogFile() plugin.Parameter {
+	return plugin.NewParam[string]("aws-cache-log-file", "File path to redirect AWS cache logs. If not specified, logs will be written to stdout.",
+		plugin.WithDefault(""),
+	)
 }
 
-func IP() cfg.Param {
-	return cfg.NewParam[[]string]("ip", "ip address").
-		WithRegex(regexp.MustCompile(`^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$`)).
-		WithShortcode("i").
-		AsRequired()
-
+func IP() plugin.Parameter {
+	return plugin.NewParam[[]string]("ip", "ip address",
+		plugin.WithShortcode("i"),
+		plugin.WithRequired(),
+	)
 }
 
-func OutputDir() cfg.Param {
-	return cfg.NewParam[string]("output", "output directory").
-		WithShortcode("o").
-		WithDefault("nebula-output")
+func OutputDir() plugin.Parameter {
+	return plugin.NewParam[string]("output", "output directory",
+		plugin.WithShortcode("o"),
+		plugin.WithDefault("aurelian-output"),
+	)
 }
 
-func File() cfg.Param {
-	return cfg.NewParam[string]("file", "input file path").
-		WithShortcode("f")
+func File() plugin.Parameter {
+	return plugin.NewParam[string]("file", "input file path",
+		plugin.WithShortcode("f"),
+	)
 }

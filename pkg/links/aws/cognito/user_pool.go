@@ -1,38 +1,42 @@
 package cognito
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
-// CognitoUserPoolGetDomains is a Janus link that adds domain information to Cognito user pools
+// CognitoUserPoolGetDomains adds domain information to Cognito user pools
 type CognitoUserPoolGetDomains struct {
-	*chain.Base
+	*base.NativeAWSLink
 }
 
-func NewCognitoUserPoolGetDomains(configs ...cfg.Config) chain.Link {
-	l := &CognitoUserPoolGetDomains{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
-}
-
-func (l *CognitoUserPoolGetDomains) Params() []cfg.Param {
-	return []cfg.Param{
-		cfg.NewParam[string]("profile", "AWS profile to use").WithDefault("default"),
+func NewCognitoUserPoolGetDomains(args map[string]any) *CognitoUserPoolGetDomains {
+	return &CognitoUserPoolGetDomains{
+		NativeAWSLink: base.NewNativeAWSLink("cognito-user-pool-get-domains", args),
 	}
 }
 
-func (l *CognitoUserPoolGetDomains) Process(resource types.EnrichedResourceDescription) error {
-	config, err := helpers.GetAWSCfg(resource.Region, l.Arg("profile").(string), nil, "none")
+func (l *CognitoUserPoolGetDomains) Parameters() []plugin.Parameter {
+	return base.StandardAWSParams()
+}
+
+func (l *CognitoUserPoolGetDomains) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(types.EnrichedResourceDescription)
+	if !ok {
+		return nil, fmt.Errorf("expected types.EnrichedResourceDescription, got %T", input)
+	}
+
+	config, err := helpers.GetAWSCfg(resource.Region, l.Profile, nil, "none")
 	if err != nil {
-		return fmt.Errorf("could not set up client config: %w", err)
+		return nil, fmt.Errorf("could not set up client config: %w", err)
 	}
 
 	cognitoClient := cognitoidentityprovider.NewFromConfig(config)
@@ -41,11 +45,11 @@ func (l *CognitoUserPoolGetDomains) Process(resource types.EnrichedResourceDescr
 		UserPoolId: aws.String(resource.Identifier),
 	}
 
-	cognitoOutput, err := cognitoClient.DescribeUserPool(l.Context(), cognitoInput)
+	cognitoOutput, err := cognitoClient.DescribeUserPool(ctx, cognitoInput)
 	if err != nil {
 		// Just send the resource along without modification if we can't get domain info
 		l.Send(resource)
-		return nil
+		return l.Outputs(), nil
 	}
 
 	// Convert the properties to a map to make it easier to work with
@@ -111,30 +115,34 @@ func (l *CognitoUserPoolGetDomains) Process(resource types.EnrichedResourceDescr
 		Arn:        resource.Arn,
 	}
 
-	return l.Send(enrichedResource)
+	l.Send(enrichedResource)
+	return l.Outputs(), nil
 }
 
-// CognitoUserPoolDescribeClients is a Janus link that adds client information to Cognito user pools
+// CognitoUserPoolDescribeClients adds client information to Cognito user pools
 type CognitoUserPoolDescribeClients struct {
-	*chain.Base
+	*base.NativeAWSLink
 }
 
-func NewCognitoUserPoolDescribeClients(configs ...cfg.Config) chain.Link {
-	l := &CognitoUserPoolDescribeClients{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
-}
-
-func (l *CognitoUserPoolDescribeClients) Params() []cfg.Param {
-	return []cfg.Param{
-		cfg.NewParam[string]("profile", "AWS profile to use").WithDefault("default"),
+func NewCognitoUserPoolDescribeClients(args map[string]any) *CognitoUserPoolDescribeClients {
+	return &CognitoUserPoolDescribeClients{
+		NativeAWSLink: base.NewNativeAWSLink("cognito-user-pool-describe-clients", args),
 	}
 }
 
-func (l *CognitoUserPoolDescribeClients) Process(resource types.EnrichedResourceDescription) error {
-	config, err := helpers.GetAWSCfg(resource.Region, l.Arg("profile").(string), nil, "none")
+func (l *CognitoUserPoolDescribeClients) Parameters() []plugin.Parameter {
+	return base.StandardAWSParams()
+}
+
+func (l *CognitoUserPoolDescribeClients) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(types.EnrichedResourceDescription)
+	if !ok {
+		return nil, fmt.Errorf("expected types.EnrichedResourceDescription, got %T", input)
+	}
+
+	config, err := helpers.GetAWSCfg(resource.Region, l.Profile, nil, "none")
 	if err != nil {
-		return fmt.Errorf("could not set up client config: %w", err)
+		return nil, fmt.Errorf("could not set up client config: %w", err)
 	}
 
 	cognitoClient := cognitoidentityprovider.NewFromConfig(config)
@@ -159,7 +167,7 @@ func (l *CognitoUserPoolDescribeClients) Process(resource types.EnrichedResource
 	var clientProperties []map[string]interface{}
 
 	for {
-		clientsOutput, err := cognitoClient.ListUserPoolClients(l.Context(), cognitoInput)
+		clientsOutput, err := cognitoClient.ListUserPoolClients(ctx, cognitoInput)
 		if err != nil {
 			// If we can't list clients, just pass the resource through with what we have
 			break
@@ -171,7 +179,7 @@ func (l *CognitoUserPoolDescribeClients) Process(resource types.EnrichedResource
 				ClientId:   client.ClientId,
 			}
 
-			describeClientOutput, err := cognitoClient.DescribeUserPoolClient(l.Context(), describeClientInput)
+			describeClientOutput, err := cognitoClient.DescribeUserPoolClient(ctx, describeClientInput)
 			if err != nil {
 				continue
 			}
@@ -214,5 +222,6 @@ func (l *CognitoUserPoolDescribeClients) Process(resource types.EnrichedResource
 		Arn:        resource.Arn,
 	}
 
-	return l.Send(enrichedResource)
+	l.Send(enrichedResource)
+	return l.Outputs(), nil
 }

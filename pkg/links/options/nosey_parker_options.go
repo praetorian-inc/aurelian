@@ -1,8 +1,8 @@
 package options
 
 import (
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 var NoseyParkerPathOpt = types.Option{
@@ -38,17 +38,20 @@ var NoseyParkerScanOpt = types.Option{
 }
 
 // Janus-compatible NoseyParker parameters
-func NoseyParkerPath() cfg.Param {
-	return cfg.NewParam[string]("nosey-parker-path", "Path to NoseyParker executable").
-		WithDefault("noseyparker")
+func NoseyParkerPath() plugin.Parameter {
+	return plugin.NewParam[string]("nosey-parker-path", "Path to NoseyParker executable",
+		plugin.WithDefault("noseyparker"),
+	)
 }
 
-func NoseyParkerOutput() cfg.Param {
-	return cfg.NewParam[string]("nosey-parker-output", "Output directory for NoseyParker datastore").
-		WithDefault("datastore.np")
+func NoseyParkerOutput() plugin.Parameter {
+	return plugin.NewParam[string]("nosey-parker-output", "Output directory for NoseyParker datastore",
+		plugin.WithDefault("datastore.np"),
+	)
 }
 
-func NoseyParkerArgs() cfg.Param {
-	return cfg.NewParam[string]("nosey-parker-args", "Custom arguments to pass to NoseyParker").
-		WithDefault("")
+func NoseyParkerArgs() plugin.Parameter {
+	return plugin.NewParam[string]("nosey-parker-args", "Custom arguments to pass to NoseyParker",
+		plugin.WithDefault(""),
+	)
 }

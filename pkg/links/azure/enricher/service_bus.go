@@ -11,7 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/servicebus/armservicebus"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 // ServiceBusEnricher implements enrichment for Service Bus instances
@@ -21,10 +21,10 @@ func (s *ServiceBusEnricher) CanEnrich(templateID string) bool {
 	return templateID == "service_bus_public_access"
 }
 
-func (s *ServiceBusEnricher) Enrich(ctx context.Context, resource *model.AzureResource) []Command {
+func (s *ServiceBusEnricher) Enrich(ctx context.Context, resource *output.CloudResource) []Command {
 	commands := []Command{}
 
-	serviceBusName := resource.Name
+	serviceBusName := resource.DisplayName
 	if serviceBusName == "" {
 		commands = append(commands, Command{
 			Command:      "",
@@ -92,8 +92,9 @@ func (s *ServiceBusEnricher) Enrich(ctx context.Context, resource *model.AzureRe
 	commands = append(commands, networkRuleCommand)
 
 	// Test 3: Azure CLI Service Bus test
+	resourceGroup, _ := resource.Properties["resourceGroup"].(string)
 	commands = append(commands, Command{
-		Command:                   fmt.Sprintf("az servicebus namespace show --name %s --resource-group %s", serviceBusName, resource.ResourceGroup),
+		Command:                   fmt.Sprintf("az servicebus namespace show --name %s --resource-group %s", serviceBusName, resourceGroup),
 		Description:               "Azure CLI command to show Service Bus namespace details",
 		ExpectedOutputDescription: "Namespace details = accessible via Azure API | Error = access denied",
 		ActualOutput:              "Manual execution required - requires Azure CLI authentication",
@@ -103,10 +104,10 @@ func (s *ServiceBusEnricher) Enrich(ctx context.Context, resource *model.AzureRe
 }
 
 // getNetworkRulesCommand retrieves network rules for the Service Bus namespace
-func (s *ServiceBusEnricher) getNetworkRulesCommand(ctx context.Context, resource *model.AzureResource) Command {
-	namespaceName := resource.Name
+func (s *ServiceBusEnricher) getNetworkRulesCommand(ctx context.Context, resource *output.CloudResource) Command {
+	namespaceName := resource.DisplayName
 	subscriptionID := resource.AccountRef
-	resourceGroupName := resource.ResourceGroup
+	resourceGroupName, _ := resource.Properties["resourceGroup"].(string)
 
 	azCommand := fmt.Sprintf("az servicebus namespace network-rule-set show --resource-group %s --namespace-name %s", resourceGroupName, namespaceName)
 

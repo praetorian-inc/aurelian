@@ -4,47 +4,47 @@ import (
 	"testing"
 
 	"github.com/docker/docker/api/types/registry"
-	dockerTypes "github.com/praetorian-inc/janus-framework/pkg/types/docker"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 func TestDockerImageLoader_createImageContext(t *testing.T) {
 	tests := []struct {
 		name      string
 		imageName string
-		expected  dockerTypes.DockerImage
+		expected  types.DockerImage
 	}{
 		{
 			name:      "simple image no tag",
 			imageName: "nginx",
-			expected: dockerTypes.DockerImage{
+			expected: types.DockerImage{
 				Image: "nginx",
 			},
 		},
 		{
 			name:      "simple image with tag",
 			imageName: "nginx:1.20",
-			expected: dockerTypes.DockerImage{
+			expected: types.DockerImage{
 				Image: "nginx:1.20",
 			},
 		},
 		{
 			name:      "dockerhub org image no tag",
 			imageName: "library/nginx",
-			expected: dockerTypes.DockerImage{
+			expected: types.DockerImage{
 				Image: "library/nginx",
 			},
 		},
 		{
 			name:      "dockerhub org image with tag",
 			imageName: "library/nginx:alpine",
-			expected: dockerTypes.DockerImage{
+			expected: types.DockerImage{
 				Image: "library/nginx:alpine",
 			},
 		},
 		{
 			name:      "private registry domain no tag",
 			imageName: "registry.company.com/myapp",
-			expected: dockerTypes.DockerImage{
+			expected: types.DockerImage{
 				Image:      "myapp",
 				AuthConfig: registry.AuthConfig{
 					ServerAddress: "https://registry.company.com",
@@ -54,7 +54,7 @@ func TestDockerImageLoader_createImageContext(t *testing.T) {
 		{
 			name:      "private registry with org and tag",
 			imageName: "registry.company.com/backend/api:v2.1.0",
-			expected: dockerTypes.DockerImage{
+			expected: types.DockerImage{
 				Image:      "backend/api:v2.1.0",
 				AuthConfig: registry.AuthConfig{
 					ServerAddress: "https://registry.company.com",
@@ -64,14 +64,14 @@ func TestDockerImageLoader_createImageContext(t *testing.T) {
 		{
 			name:      "with digest",
 			imageName: "nginx@sha256:abc123def456789012345678901234567890123456789012345678901234567890",
-			expected: dockerTypes.DockerImage{
+			expected: types.DockerImage{
 				Image: "nginx@sha256:abc123def456789012345678901234567890123456789012345678901234567890",
 			},
 		},
 		{
 			name:      "registry with digest",
 			imageName: "registry.company.com/nginx@sha256:abc123def456789012345678901234567890123456789012345678901234567890",
-			expected: dockerTypes.DockerImage{
+			expected: types.DockerImage{
 				Image:      "nginx@sha256:abc123def456789012345678901234567890123456789012345678901234567890",
 				AuthConfig: registry.AuthConfig{
 					ServerAddress: "https://registry.company.com",
@@ -81,7 +81,7 @@ func TestDockerImageLoader_createImageContext(t *testing.T) {
 		{
 			name:      "ECR private registry",
 			imageName: "123456789012.dkr.ecr.us-east-1.amazonaws.com/my-web-app",
-			expected: dockerTypes.DockerImage{
+			expected: types.DockerImage{
 				Image:      "my-web-app",
 				AuthConfig: registry.AuthConfig{
 					ServerAddress: "https://123456789012.dkr.ecr.us-east-1.amazonaws.com",
@@ -91,7 +91,7 @@ func TestDockerImageLoader_createImageContext(t *testing.T) {
 		{
 			name:      "ECR private registry with tag",
 			imageName: "123456789012.dkr.ecr.us-east-1.amazonaws.com/my-web-app:production",
-			expected: dockerTypes.DockerImage{
+			expected: types.DockerImage{
 				Image:      "my-web-app:production",
 				AuthConfig: registry.AuthConfig{
 					ServerAddress: "https://123456789012.dkr.ecr.us-east-1.amazonaws.com",
@@ -101,7 +101,7 @@ func TestDockerImageLoader_createImageContext(t *testing.T) {
 		{
 			name:      "ECR public registry",
 			imageName: "public.ecr.aws/nginx/nginx-unprivileged",
-			expected: dockerTypes.DockerImage{
+			expected: types.DockerImage{
 				Image:      "nginx/nginx-unprivileged",
 				AuthConfig: registry.AuthConfig{
 					ServerAddress: "https://public.ecr.aws",
@@ -111,7 +111,7 @@ func TestDockerImageLoader_createImageContext(t *testing.T) {
 		{
 			name:      "Google Container Registry",
 			imageName: "gcr.io/my-project/web-service",
-			expected: dockerTypes.DockerImage{
+			expected: types.DockerImage{
 				Image:      "my-project/web-service",
 				AuthConfig: registry.AuthConfig{
 					ServerAddress: "https://gcr.io",
@@ -121,7 +121,7 @@ func TestDockerImageLoader_createImageContext(t *testing.T) {
 		{
 			name:      "Azure Container Registry",
 			imageName: "company.azurecr.io/backend/api",
-			expected: dockerTypes.DockerImage{
+			expected: types.DockerImage{
 				Image:      "backend/api",
 				AuthConfig: registry.AuthConfig{
 					ServerAddress: "https://company.azurecr.io",
@@ -131,7 +131,7 @@ func TestDockerImageLoader_createImageContext(t *testing.T) {
 		{
 			name:      "Quay registry",
 			imageName: "quay.io/prometheus/prometheus:v2.30.0",
-			expected: dockerTypes.DockerImage{
+			expected: types.DockerImage{
 				Image:      "prometheus/prometheus:v2.30.0",
 				AuthConfig: registry.AuthConfig{
 					ServerAddress: "https://quay.io",
@@ -142,7 +142,7 @@ func TestDockerImageLoader_createImageContext(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dl := NewDockerImageLoader().(*DockerImageLoader)
+			dl := NewDockerImageLoader(map[string]any{})
 
 			result := dl.createImageContext(tt.imageName)
 

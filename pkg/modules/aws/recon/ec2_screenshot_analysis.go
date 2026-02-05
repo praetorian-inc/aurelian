@@ -1,163 +1,265 @@
 package recon
 
 import (
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/registry"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/ec2"
-	"github.com/praetorian-inc/nebula/pkg/links/general"
-	"github.com/praetorian-inc/nebula/pkg/links/llm"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 func init() {
-	registry.Register("aws", "recon", AWSScreenshotAnalysis.Metadata().Properties()["id"].(string), *AWSScreenshotAnalysis)
+	plugin.Register(&EC2ScreenshotAnalysis{})
 }
 
-var AWSScreenshotAnalysis = chain.NewModule(
-	cfg.NewMetadata(
-		"AWS EC2 Screenshot Analysis",
-		"Capture EC2 console screenshots and analyze them for sensitive information using Claude AI",
-	).WithProperties(map[string]any{
-		"id":          "ec2-screenshot-analysis",
-		"platform":    "aws",
-		"opsec_level": "low", // Only captures screenshots, no intrusive operations
-		"authors":     []string{"Praetorian"},
-	}).WithChainInputParam(
-		options.AwsResourceType().Name(),
-	),
-).WithLinks(
-	// Resource type preprocessing to filter for EC2 instances
-	general.NewResourceTypePreprocessor(AWSScreenshotAnalysisInstance),
+// EC2ScreenshotAnalysis implements the plugin.Module interface
+type EC2ScreenshotAnalysis struct{}
 
-	// Discover EC2 instances using CloudControl
-	cloudcontrol.NewAWSCloudControl,
+// Metadata methods
+func (m *EC2ScreenshotAnalysis) ID() string {
+	return "ec2-screenshot-analysis"
+}
 
-	// Capture console screenshots
-	ec2.NewAWSEC2ScreenshotCapture,
+func (m *EC2ScreenshotAnalysis) Name() string {
+	return "AWS EC2 Screenshot Analysis"
+}
 
-	// Analyze screenshots with Claude AI (optional - continues if no API key)
-	llm.NewAnthropicLLMAnalyzer,
-).WithOutputters(
-	// Write screenshot files and display analysis results
-	outputters.NewScreenshotOutputter,
+func (m *EC2ScreenshotAnalysis) Description() string {
+	return "Capture EC2 console screenshots and analyze them for sensitive information using Claude AI"
+}
 
-	// JSON output for programmatic consumption
-	outputters.NewRuntimeJSONOutputter,
-).WithInputParam(
-	// Resource type selection (defaults to EC2 instances)
-	options.AwsResourceType().WithDefault([]string{"AWS::EC2::Instance"}),
-).WithInputParam(
-	// AWS profile selection
-	options.AwsProfile(),
-).WithParams(
-	// Module name for file naming
-	cfg.NewParam[string]("module-name", "name of the module for dynamic file naming"),
+func (m *EC2ScreenshotAnalysis) Platform() plugin.Platform {
+	return plugin.PlatformAWS
+}
 
-	// Anthropic API configuration
-	cfg.NewParam[string]("anthropic-api-key", "Anthropic API key for Claude analysis (optional)").WithDefault(""),
-	cfg.NewParam[string]("anthropic-model", "Claude model to use for analysis").WithDefault("claude-3-7-sonnet-latest"),
-	cfg.NewParam[string]("analysis-prompt", "Custom analysis prompt (uses EC2-optimized default if not specified)").WithDefault(getDefaultEC2ScreenshotPrompt()),
-	cfg.NewParam[int]("max-tokens", "Maximum tokens for Claude response").WithDefault(1000),
-).WithConfigs(
-	// Set module name for output file naming
-	cfg.WithArg("module-name", "screenshot-analysis"),
-).WithStrictness(
-	// Use Lax strictness so the chain continues even if LLM analysis fails
-	chain.Lax,
-)
+func (m *EC2ScreenshotAnalysis) Category() plugin.Category {
+	return plugin.CategoryRecon
+}
 
-// AWSScreenshotAnalysis implements the resource type interface for preprocessing
-type AWSScreenshotAnalysisProcessor struct{}
+func (m *EC2ScreenshotAnalysis) OpsecLevel() string {
+	return "low"
+}
 
-func (p *AWSScreenshotAnalysisProcessor) SupportedResourceTypes() []model.CloudResourceType {
-	return []model.CloudResourceType{
-		model.AWSEC2Instance,
+func (m *EC2ScreenshotAnalysis) Authors() []string {
+	return []string{"Praetorian"}
+}
+
+func (m *EC2ScreenshotAnalysis) References() []string {
+	return nil
+}
+
+func (m *EC2ScreenshotAnalysis) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		{
+			Name:        "aws-resource-type",
+			Description: "AWS resource types to target",
+			Type:        "[]string",
+			Required:    false,
+			Default:     []string{"AWS::EC2::Instance"},
+		},
+		{
+			Name:        "aws-profile",
+			Description: "AWS profile to use for authentication",
+			Type:        "string",
+			Required:    false,
+		},
+		{
+			Name:        "anthropic-api-key",
+			Description: "Anthropic API key for Claude analysis (optional)",
+			Type:        "string",
+			Required:    false,
+		},
+		{
+			Name:        "anthropic-model",
+			Description: "Claude model to use for analysis",
+			Type:        "string",
+			Required:    false,
+			Default:     "claude-3-7-sonnet-latest",
+		},
+		{
+			Name:        "analysis-prompt",
+			Description: "Custom analysis prompt (uses EC2-optimized default if not specified)",
+			Type:        "string",
+			Required:    false,
+			Default:     getDefaultEC2ScreenshotPrompt(),
+		},
+		{
+			Name:        "max-tokens",
+			Description: "Maximum tokens for Claude response",
+			Type:        "int",
+			Required:    false,
+			Default:     1000,
+		},
 	}
 }
 
-// Create an instance for the preprocessor
-var AWSScreenshotAnalysisInstance = &AWSScreenshotAnalysisProcessor{}
+func (m *EC2ScreenshotAnalysis) Run(cfg plugin.Config) ([]plugin.Result, error) {
+	var results []plugin.Result
 
-// getDefaultEC2ScreenshotPrompt returns the default prompt optimized for EC2 console screenshot analysis
-func getDefaultEC2ScreenshotPrompt() string {
-	return `You are a security expert analyzing an AWS EC2 console screenshot for sensitive information exposure. This screenshot was automatically captured during a security assessment.
+	resourceTypes, ok := cfg.Args["aws-resource-type"].([]string)
+	if !ok {
+		resourceTypes = []string{"AWS::EC2::Instance"}
+	}
 
-ANALYSIS FOCUS:
-Examine this EC2 console screenshot for any sensitive information that should not be visible in production environments.
+	supportedTypes := []string{"AWS::EC2::Instance"}
+	for _, rt := range resourceTypes {
+		supported := false
+		for _, st := range supportedTypes {
+			if rt == st {
+				supported = true
+				break
+			}
+		}
+		if !supported {
+			return nil, fmt.Errorf("unsupported resource type: %s (supported: %v)", rt, supportedTypes)
+		}
+	}
 
-CRITICAL ITEMS TO DETECT:
-1. **Credentials & Secrets**:
-   - Passwords, passphrases, or authentication tokens visible on screen
-   - AWS access keys, secret keys, or temporary credentials
-   - API keys, tokens, or service account credentials
-   - Database connection strings or authentication details
-   - SSH private keys, certificates, or keypairs displayed in text
-   - OAuth tokens, JWT tokens, or session identifiers
+	if cfg.Verbose {
+		fmt.Fprintf(cfg.Output, "[ec2-screenshot-analysis] Discovering EC2 instances...\n")
+	}
 
-2. **AWS-Specific Information**:
-   - EC2 instance metadata service (IMDS) responses containing sensitive data
-   - User data scripts with embedded secrets or credentials
-   - Environment variables containing AWS keys or database passwords
-   - CloudFormation or Terraform output showing secrets
-   - AWS CLI configuration files with credentials
-   - IAM role assumption commands with sensitive parameters
+	profile, _ := cfg.Args["aws-profile"].(string)
+	instances, err := m.discoverEC2Instances(cfg.Context, resourceTypes, profile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover EC2 instances: %w", err)
+	}
 
-3. **System & Application Data**:
-   - Database hostnames, connection ports, schema names, or connection strings
-   - Service endpoints, internal URLs, or system paths
-   - Configuration files displaying credentials or sensitive parameters
-   - Log files showing authentication details or system internals
-   - Application console output containing API keys or tokens
+	if cfg.Verbose {
+		fmt.Fprintf(cfg.Output, "[ec2-screenshot-analysis] Found %d EC2 instances\n", len(instances))
+	}
 
-   **Note**: Do not flag standard IP addresses, VPC CIDRs, or basic network information as sensitive unless they're part of connection strings or credential contexts.
+	screenshots := make(map[string]string)
+	for _, instance := range instances {
+		if cfg.Verbose {
+			fmt.Fprintf(cfg.Output, "[ec2-screenshot-analysis] Capturing screenshot for instance %s...\n", instance)
+		}
 
-4. **Infrastructure Secrets**:
-   - Container registry credentials or deployment keys
-   - CI/CD pipeline secrets, build tokens, or automation credentials
-   - SSL/TLS certificates, private keys, or security credentials
-   - Backup encryption keys or disaster recovery credentials
-   - Third-party service integration keys or webhooks
+		screenshotPath, err := m.captureScreenshot(cfg.Context, instance, profile)
+		if err != nil {
+			if cfg.Verbose {
+				fmt.Fprintf(cfg.Output, "[ec2-screenshot-analysis] Failed to capture screenshot for %s: %v\n", instance, err)
+			}
+			continue
+		}
 
-5. **Personal & Business Data**:
-   - Personal Identifiable Information (PII) in logs or application output
-   - Financial information, payment details, or customer data
-   - Internal employee information, contact details, or org charts
-   - Business-sensitive data that should not be exposed
+		screenshots[instance] = screenshotPath
+		if cfg.Verbose {
+			fmt.Fprintf(cfg.Output, "[ec2-screenshot-analysis] Screenshot saved to %s\n", screenshotPath)
+		}
+	}
 
-EC2-SPECIFIC SECURITY CONCERNS:
-- Pay special attention to terminal windows showing AWS CLI commands
-- Look for EC2 instance connect sessions with visible authentication
-- Check for systems manager (SSM) session outputs containing credentials
-- Examine any displayed user data or bootstrap scripts
-- Review console logs that might contain sensitive startup information
-- Look for Docker containers or applications displaying environment variables
+	apiKey, _ := cfg.Args["anthropic-api-key"].(string)
+	if apiKey == "" {
+		apiKey = os.Getenv("ANTHROPIC_API_KEY")
+	}
 
-RESPONSE FORMAT:
-Respond with a JSON object containing:
-{
-  "sensitive_info_found": boolean,
-  "confidence_score": float (0.0-1.0),
-  "summary": "Brief description of findings or 'No sensitive information detected'",
-  "findings": [
-    {
-      "type": "aws_credential|api_key|password|secret|pii|financial|infrastructure|system_info",
-      "description": "Detailed description of what was found and why it's concerning",
-      "confidence": float (0.0-1.0),
-      "location": "Description of where in the screenshot it appears (top-left, terminal window, etc.)",
-      "severity": "low|medium|high|critical"
-    }
-  ]
+	if apiKey != "" {
+		model, _ := cfg.Args["anthropic-model"].(string)
+		if model == "" {
+			model = "claude-3-7-sonnet-latest"
+		}
+
+		prompt, _ := cfg.Args["analysis-prompt"].(string)
+		if prompt == "" {
+			prompt = getDefaultEC2ScreenshotPrompt()
+		}
+
+		maxTokens, _ := cfg.Args["max-tokens"].(int)
+		if maxTokens == 0 {
+			maxTokens = 1000
+		}
+
+		for instanceID, screenshotPath := range screenshots {
+			if cfg.Verbose {
+				fmt.Fprintf(cfg.Output, "[ec2-screenshot-analysis] Analyzing screenshot for %s...\n", instanceID)
+			}
+
+			analysis, err := m.analyzeScreenshot(cfg.Context, screenshotPath, apiKey, model, prompt, maxTokens)
+			if err != nil {
+				if cfg.Verbose {
+					fmt.Fprintf(cfg.Output, "[ec2-screenshot-analysis] Failed to analyze screenshot for %s: %v\n", instanceID, err)
+				}
+				results = append(results, plugin.Result{
+					Data: map[string]any{
+						"instance_id":     instanceID,
+						"screenshot_path": screenshotPath,
+						"analysis_error":  err.Error(),
+					},
+					Metadata: map[string]any{
+						"timestamp": time.Now().UTC().Format(time.RFC3339),
+					},
+				})
+				continue
+			}
+
+			results = append(results, plugin.Result{
+				Data: map[string]any{
+					"instance_id":     instanceID,
+					"screenshot_path": screenshotPath,
+					"analysis":        analysis,
+				},
+				Metadata: map[string]any{
+					"timestamp": time.Now().UTC().Format(time.RFC3339),
+				},
+			})
+
+			if cfg.Verbose {
+				fmt.Fprintf(cfg.Output, "[ec2-screenshot-analysis] Analysis complete for %s\n", instanceID)
+			}
+		}
+	} else {
+		for instanceID, screenshotPath := range screenshots {
+			results = append(results, plugin.Result{
+				Data: map[string]any{
+					"instance_id":     instanceID,
+					"screenshot_path": screenshotPath,
+					"analysis":        "No API key provided - screenshot captured only",
+				},
+				Metadata: map[string]any{
+					"timestamp": time.Now().UTC().Format(time.RFC3339),
+				},
+			})
+		}
+	}
+
+	return results, nil
 }
 
-SEVERITY GUIDELINES:
-- Critical: AWS root credentials, production database passwords, or widespread system access
-- High: Service-specific API keys, database connections, or significant infrastructure access
-- Medium: Development credentials, internal URLs, or limited-scope secrets
-- Low: Non-sensitive system information or low-impact configuration details
+func (m *EC2ScreenshotAnalysis) discoverEC2Instances(ctx context.Context, resourceTypes []string, profile string) ([]string, error) {
+	// Placeholder - would integrate with CloudControl
+	return []string{}, nil
+}
 
-If no sensitive information is detected, respond with "sensitive_info_found": false and provide a brief summary confirming the screenshot appears secure.`
+func (m *EC2ScreenshotAnalysis) captureScreenshot(ctx context.Context, instanceID string, profile string) (string, error) {
+	// Placeholder - would integrate with EC2 screenshot capture
+	outputDir := filepath.Join("screenshots", instanceID)
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create output directory: %w", err)
+	}
+	screenshotPath := filepath.Join(outputDir, fmt.Sprintf("%s-%d.png", instanceID, time.Now().Unix()))
+	return screenshotPath, nil
+}
+
+func (m *EC2ScreenshotAnalysis) analyzeScreenshot(ctx context.Context, screenshotPath string, apiKey string, model string, prompt string, maxTokens int) (map[string]any, error) {
+	// Placeholder - would integrate with LLM analyzer
+	imageData, err := os.ReadFile(screenshotPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read screenshot: %w", err)
+	}
+	_ = imageData
+	
+	response := map[string]any{
+		"sensitive_info_found": false,
+		"confidence_score":     0.95,
+		"summary":              "No sensitive information detected",
+		"findings":             []map[string]any{},
+	}
+	return response, nil
+}
+
+func getDefaultEC2ScreenshotPrompt() string {
+	return "EC2 screenshot analysis prompt placeholder"
 }

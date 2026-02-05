@@ -1,11 +1,13 @@
-./nebula
-nebula.log
-nebula-output/*
+./aurelian
+aurelian
+*.test
+aurelian.log
+aurelian-output/*
 .devcontainer
 .vscode
 .DS_Store
 .go-ignore
-nebula
+aurelian
 np-debug.json
 bin/*
 bin
@@ -14,7 +16,7 @@ test/links/*.json
 .go-version
 out.json
 .idea/modules.xml
-.idea/nebula.iml
+.idea/aurelian.iml
 .idea/vcs.xml
 .idea/workspace.xml
 debug.log*

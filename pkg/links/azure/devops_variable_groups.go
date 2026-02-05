@@ -1,42 +1,42 @@
 package azure
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/links/azure/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // AzureDevOpsVariableGroupsLink scans variable groups for secrets
 type AzureDevOpsVariableGroupsLink struct {
-	*chain.Base
+	*base.NativeAzureLink
 }
 
-func NewAzureDevOpsVariableGroupsLink(configs ...cfg.Config) chain.Link {
-	l := &AzureDevOpsVariableGroupsLink{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
+func NewAzureDevOpsVariableGroupsLink(args map[string]any) *AzureDevOpsVariableGroupsLink {
+	return &AzureDevOpsVariableGroupsLink{
+		NativeAzureLink: base.NewNativeAzureLink("azure-devops-variable-groups", args),
+	}
 }
 
-func (l *AzureDevOpsVariableGroupsLink) Params() []cfg.Param {
-	return []cfg.Param{
+func (l *AzureDevOpsVariableGroupsLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
 		options.AzureDevOpsPAT(),
 	}
 }
 
 // makeDevOpsRequest helper function for authenticated API calls
-func (l *AzureDevOpsVariableGroupsLink) makeDevOpsRequest(method, url string) (*http.Response, error) {
-	pat, _ := cfg.As[string](l.Arg("devops-pat"))
+func (l *AzureDevOpsVariableGroupsLink) makeDevOpsRequest(ctx context.Context, method, url string) (*http.Response, error) {
+	pat := l.ArgString("devops-pat", "")
 
-	req, err := http.NewRequestWithContext(l.Context(), method, url, nil)
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -60,14 +60,19 @@ func (l *AzureDevOpsVariableGroupsLink) makeDevOpsRequest(method, url string) (*
 	return resp, nil
 }
 
-func (l *AzureDevOpsVariableGroupsLink) Process(config types.DevOpsScanConfig) error {
+func (l *AzureDevOpsVariableGroupsLink) Process(ctx context.Context, input any) ([]any, error) {
+	config, ok := input.(types.DevOpsScanConfig)
+	if !ok {
+		return nil, fmt.Errorf("expected types.DevOpsScanConfig, got %T", input)
+	}
+
 	// Get variable groups for the project
 	groupsUrl := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/distributedtask/variablegroups?api-version=7.1-preview.2",
 		config.Organization, config.Project)
 
-	groupsResp, err := l.makeDevOpsRequest(http.MethodGet, groupsUrl)
+	groupsResp, err := l.makeDevOpsRequest(ctx, http.MethodGet, groupsUrl)
 	if err != nil {
-		return fmt.Errorf("failed to get variable groups: %w", err)
+		return nil, fmt.Errorf("failed to get variable groups: %w", err)
 	}
 	defer groupsResp.Body.Close()
 
@@ -84,16 +89,16 @@ func (l *AzureDevOpsVariableGroupsLink) Process(config types.DevOpsScanConfig) e
 
 	body, err := io.ReadAll(groupsResp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	if err := json.Unmarshal(body, &groupsResult); err != nil {
-		return fmt.Errorf("failed to parse groups response: %w", err)
+		return nil, fmt.Errorf("failed to parse groups response: %w", err)
 	}
 
 	if len(groupsResult.Value) == 0 {
-		l.Logger.Info("No variable groups found in project", "project", config.Project)
-		return nil
+		l.Logger().Info("No variable groups found in project", "project", config.Project)
+		return l.Outputs(), nil
 	}
 
 	message.Info("Found %d variable groups to scan in project %s", len(groupsResult.Value), config.Project)
@@ -109,7 +114,7 @@ func (l *AzureDevOpsVariableGroupsLink) Process(config types.DevOpsScanConfig) e
 			}
 		}
 
-		l.Logger.Debug("Processing variable group",
+		l.Logger().Debug("Processing variable group",
 			"id", group.Id,
 			"name", group.Name,
 			"total_vars", len(group.Variables),
@@ -117,9 +122,9 @@ func (l *AzureDevOpsVariableGroupsLink) Process(config types.DevOpsScanConfig) e
 
 		content, _ := json.Marshal(vars)
 
-		npInput := jtypes.NPInput{
+		npInput := types.NpInput{
 			Content: string(content),
-			Provenance: jtypes.NPProvenance{
+			Provenance: types.NpProvenance{
 				Platform:     "azure-devops",
 				ResourceType: "Microsoft.DevOps/VariableGroups",
 				ResourceID: fmt.Sprintf("%s/%s/variablegroup/%d",
@@ -132,7 +137,7 @@ func (l *AzureDevOpsVariableGroupsLink) Process(config types.DevOpsScanConfig) e
 		if len(preview) > 200 {
 			preview = preview[:200] + "..."
 		}
-		l.Logger.Debug("Sending NPInput to next link", 
+		l.Logger().Debug("Sending NPInput to next link",
 			"content_length", len(npInput.Content),
 			"content_preview", preview,
 			"resource_id", npInput.Provenance.ResourceID)
@@ -140,5 +145,5 @@ func (l *AzureDevOpsVariableGroupsLink) Process(config types.DevOpsScanConfig) e
 		l.Send(npInput)
 	}
 
-	return nil
+	return l.Outputs(), nil
 }

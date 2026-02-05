@@ -10,13 +10,9 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 // NamedOutputData represents the structure that should be sent to the RuntimeJSONOutputter
@@ -36,52 +32,33 @@ func NewNamedOutputData(data any, filename string) NamedOutputData {
 
 const defaultOutfile = "out.json"
 
-// OutputSections represents the structured output with resources and errors
-type OutputSections struct {
-	Resources                       []any                   `json:"resources"`
-	Errors                          []*common.ResourceError `json:"errors"`
-	PublicNetworkAccess             []any                   `json:"public_network_access"`
-	AnonymousAccess                 []any                   `json:"anonymous_access"`
-	PublicNetworkAndAnonymousAccess []any                   `json:"public_network_and_anonymous_access"`
-}
-
 // RuntimeJSONOutputter allows specifying the output file at runtime
 // rather than at initialization time
 type RuntimeJSONOutputter struct {
 	*BaseFileOutputter
-	indent   int
-	sections *OutputSections
-	outfile  string
+	cfg     plugin.Config
+	indent  int
+	output  []any
+	outfile string
 }
 
 // NewRuntimeJSONOutputter creates a new RuntimeJSONOutputter
-func NewRuntimeJSONOutputter(configs ...cfg.Config) chain.Outputter {
-	j := &RuntimeJSONOutputter{
-		sections: &OutputSections{
-			Resources:                       make([]any, 0),
-			Errors:                          make([]*common.ResourceError, 0),
-			PublicNetworkAccess:             make([]any, 0),
-			AnonymousAccess:                 make([]any, 0),
-			PublicNetworkAndAnonymousAccess: make([]any, 0),
-		},
-	}
-	j.BaseFileOutputter = NewBaseFileOutputter(j, configs...)
+func NewRuntimeJSONOutputter() *RuntimeJSONOutputter {
+	j := &RuntimeJSONOutputter{}
+	j.BaseFileOutputter = NewBaseFileOutputter()
 	return j
 }
 
 // Initialize sets up the outputter but doesn't open a file yet
-func (j *RuntimeJSONOutputter) Initialize() error {
+func (j *RuntimeJSONOutputter) Initialize(cfg plugin.Config) error {
+	j.cfg = cfg
+	j.BaseFileOutputter.SetConfig(cfg)
+
 	// Get output directory
-	outputDir, err := cfg.As[string](j.Arg("output"))
-	if err != nil {
-		outputDir = "nebula-output" // Fallback default
-	}
+	outputDir := plugin.GetArgOrDefault(j.cfg, "output", "aurelian-output")
 
 	// Get default output file (can be overridden at runtime)
-	outfile, err := cfg.As[string](j.Arg("outfile"))
-	if err != nil {
-		outfile = defaultOutfile // Fallback default
-	}
+	outfile := plugin.GetArgOrDefault(j.cfg, "outfile", defaultOutfile)
 
 	// If custom filename provided, prepend with output directory
 	if outfile != defaultOutfile {
@@ -108,11 +85,7 @@ func (j *RuntimeJSONOutputter) Initialize() error {
 	}
 
 	// Get indentation setting
-	indent, err := cfg.As[int](j.Arg("indent"))
-	if err != nil {
-		indent = 0
-	}
-	j.indent = indent
+	j.indent = plugin.GetArgOrDefault(j.cfg, "indent", 0)
 
 	slog.Debug("initialized runtime JSON outputter", "default_file", j.outfile, "indent", j.indent)
 	return nil
@@ -120,148 +93,27 @@ func (j *RuntimeJSONOutputter) Initialize() error {
 
 // Output stores a value in memory for later writing
 func (j *RuntimeJSONOutputter) Output(val any) error {
-	var dataToProcess any = val
+	// Check for RawOutput marker FIRST (before NamedOutputData)
+	// This ensures raw data is output directly without wrapper
+	if raw, ok := val.(RawOutput); ok {
+		j.output = append(j.output, raw.Data)
+		return nil
+	}
 
 	// Check if we received an OutputData structure
 	if outputData, ok := val.(NamedOutputData); ok {
 		// If filename is provided, update the output file
-		if outputData.OutputFilename != "" && filepath.Base(j.outfile) == defaultOutfile {
+		if outputData.OutputFilename != "" && j.outfile == defaultOutfile {
 			j.SetOutputFile(outputData.OutputFilename)
 		}
-		// Extract the actual data
-		dataToProcess = outputData.Data
+		// Add the actual data to our output list
+		j.output = append(j.output, outputData.Data)
+		return nil
 	}
 
-	// Separate data by type - errors go to errors section, everything else to resources
-	if resourceError, ok := dataToProcess.(*common.ResourceError); ok {
-		j.sections.Errors = append(j.sections.Errors, resourceError)
-	} else {
-		// Add to main resources list
-		j.sections.Resources = append(j.sections.Resources, dataToProcess)
-
-		// Also categorize into specialized sections (allow overlap)
-		hasNetworkAccess := j.hasNetworkAccess(dataToProcess)
-		hasAnonymousAccess := j.hasAnonymousAccess(dataToProcess)
-
-		// Resources can appear in multiple categories
-		if hasNetworkAccess {
-			j.sections.PublicNetworkAccess = append(j.sections.PublicNetworkAccess, dataToProcess)
-		}
-		if hasAnonymousAccess {
-			j.sections.AnonymousAccess = append(j.sections.AnonymousAccess, dataToProcess)
-		}
-		if hasNetworkAccess && hasAnonymousAccess {
-			j.sections.PublicNetworkAndAnonymousAccess = append(j.sections.PublicNetworkAndAnonymousAccess, dataToProcess)
-		}
-	}
-
+	// Handle the original case where just data is provided
+	j.output = append(j.output, val)
 	return nil
-}
-
-// hasNetworkAccess checks if a resource has public network access
-func (j *RuntimeJSONOutputter) hasNetworkAccess(resource any) bool {
-	// Try to handle GCPResource first (both pointer and value)
-	if gcpRes, ok := resource.(*tab.GCPResource); ok {
-		return j.checkNetworkAccessGCP(gcpRes)
-	}
-	if gcpRes, ok := resource.(tab.GCPResource); ok {
-		return j.checkNetworkAccessGCP(&gcpRes)
-	}
-
-	// Fallback: Convert resource to map for property access
-	resourceMap, ok := resource.(map[string]any)
-	if !ok {
-		return false
-	}
-
-	// Check resource-level network fields
-	if ips, ok := resourceMap["ips"].([]any); ok && len(ips) > 0 {
-		return true
-	}
-	if urls, ok := resourceMap["urls"].([]any); ok && len(urls) > 0 {
-		return true
-	}
-
-	// Check properties for network access indicators
-	if properties, ok := resourceMap["properties"].(map[string]any); ok {
-		if publicURL, ok := properties["publicURL"].(string); ok && publicURL != "" {
-			return true
-		}
-		if publicURLs, ok := properties["publicURLs"].([]any); ok && len(publicURLs) > 0 {
-			return true
-		}
-	}
-
-	return false
-}
-
-// checkNetworkAccessGCP checks network access for GCP resources
-func (j *RuntimeJSONOutputter) checkNetworkAccessGCP(gcpRes *tab.GCPResource) bool {
-	// Check resource-level network fields
-	if len(gcpRes.GetIPs()) > 0 {
-		return true
-	}
-	if len(gcpRes.GetURLs()) > 0 {
-		return true
-	}
-	// Check properties for network access indicators
-	if gcpRes.Properties != nil {
-		if publicURL, ok := gcpRes.Properties["publicURL"].(string); ok && publicURL != "" {
-			return true
-		}
-		if publicURLs, ok := gcpRes.Properties["publicURLs"]; ok {
-			if urlSlice, ok := publicURLs.([]string); ok && len(urlSlice) > 0 {
-				return true
-			}
-			if urlSlice, ok := publicURLs.([]any); ok && len(urlSlice) > 0 {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// hasAnonymousAccess checks if a resource has anonymous access permissions
-func (j *RuntimeJSONOutputter) hasAnonymousAccess(resource any) bool {
-	// Try to handle GCPResource first (both pointer and value)
-	if gcpRes, ok := resource.(*tab.GCPResource); ok {
-		return j.checkAnonymousAccessGCP(gcpRes)
-	}
-	if gcpRes, ok := resource.(tab.GCPResource); ok {
-		return j.checkAnonymousAccessGCP(&gcpRes)
-	}
-
-	// Fallback: Convert resource to map for property access
-	resourceMap, ok := resource.(map[string]any)
-	if !ok {
-		return false
-	}
-
-	// Check properties for anonymous access indicators
-	if properties, ok := resourceMap["properties"].(map[string]any); ok {
-		if _, ok := properties["anonymousAccessInfo"]; ok {
-			return true
-		}
-		if riskLevel, ok := properties["riskLevel"].(string); ok && riskLevel != "" {
-			return true
-		}
-	}
-
-	return false
-}
-
-// checkAnonymousAccessGCP checks anonymous access for GCP resources
-func (j *RuntimeJSONOutputter) checkAnonymousAccessGCP(gcpRes *tab.GCPResource) bool {
-	// Check properties for anonymous access indicators
-	if gcpRes.Properties != nil {
-		if _, ok := gcpRes.Properties["anonymousAccessInfo"]; ok {
-			return true
-		}
-		if riskLevel, ok := gcpRes.Properties["riskLevel"].(string); ok && riskLevel != "" {
-			return true
-		}
-	}
-	return false
 }
 
 // SetOutputFile allows changing the output file at runtime
@@ -280,10 +132,7 @@ func (j *RuntimeJSONOutputter) Complete() error {
 	// in case they're available now but weren't during initialization
 	if filepath.Base(j.outfile) == defaultOutfile || strings.Contains(j.outfile, "out-") {
 		// Get output directory
-		outputDir, err := cfg.As[string](j.Arg("output"))
-		if err != nil {
-			outputDir = "nebula-output" // Fallback default
-		}
+		outputDir := plugin.GetArgOrDefault(j.cfg, "output", "aurelian-output")
 
 		// Try to generate a contextual filename now that all parameters are available
 		contextualName := j.generateContextualFilename()
@@ -293,15 +142,7 @@ func (j *RuntimeJSONOutputter) Complete() error {
 		}
 	}
 
-	totalEntries := len(j.sections.Resources) + len(j.sections.Errors)
-	slog.Debug("writing JSON output",
-		"filename", j.outfile,
-		"resources", len(j.sections.Resources),
-		"errors", len(j.sections.Errors),
-		"public_network_access", len(j.sections.PublicNetworkAccess),
-		"anonymous_access", len(j.sections.AnonymousAccess),
-		"public_network_and_anonymous_access", len(j.sections.PublicNetworkAndAnonymousAccess),
-		"total", totalEntries)
+	slog.Debug("writing JSON output", "filename", j.outfile, "entries", len(j.output))
 
 	// Ensure the directory exists (using base functionality)
 	if err := j.EnsureOutputPath(j.outfile); err != nil {
@@ -317,7 +158,7 @@ func (j *RuntimeJSONOutputter) Complete() error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", strings.Repeat(" ", j.indent))
 
-	err = encoder.Encode(j.sections)
+	err = encoder.Encode(j.output)
 	if err != nil {
 		return err
 	}
@@ -330,21 +171,19 @@ func (j *RuntimeJSONOutputter) Complete() error {
 func (j *RuntimeJSONOutputter) generateContextualFilename() string {
 	timestamp := time.Now().Format("20060102-150405")
 
-	// Debug all available parameters
-	slog.Debug("generateContextualFilename: checking available parameters", "allArgs", j.Args())
-
 	// Get module name if provided by the module
-	moduleName, moduleErr := cfg.As[string](j.Arg("module-name"))
-	if moduleErr != nil || moduleName == "" {
-		moduleName = "recon" // fallback for missing or empty module name
-		slog.Debug("module-name not found or empty, using fallback", "fallback", moduleName, "error", moduleErr)
+	moduleName := plugin.GetArgOrDefault(j.cfg, "module-name", "recon")
+	if moduleName == "" {
+		moduleName = "recon"
+		slog.Debug("module-name not found or empty, using fallback", "fallback", moduleName)
 	} else {
 		slog.Debug("found module-name parameter", "moduleName", moduleName)
 	}
 
 	// Try to infer platform from available parameters
 	// AWS parameters - check if profile parameter exists (even if empty)
-	if _, err := cfg.As[string](j.Arg("profile")); err == nil {
+	_, hasProfile := j.cfg.Args["profile"]
+	if profile := plugin.GetArgOrDefault(j.cfg, "profile", ""); profile != "" || hasProfile {
 		// Profile parameter exists (might be empty for env vars), this is an AWS command
 		slog.Debug("Found AWS profile parameter, generating AWS filename", "moduleName", moduleName)
 		return j.generateAWSFilename(moduleName)
@@ -356,14 +195,14 @@ func (j *RuntimeJSONOutputter) generateContextualFilename() string {
 		return fmt.Sprintf("%s-%s.json", moduleName, tenantID)
 	}
 
-	if subscriptions, err := cfg.As[[]string](j.Arg("subscription")); err == nil && len(subscriptions) > 0 && subscriptions[0] != "" {
+	if subscriptions := plugin.GetArgOrDefault(j.cfg, "subscription", []string{}); len(subscriptions) > 0 && subscriptions[0] != "" {
 		slog.Debug("Found Azure subscription, generating Azure filename", "subscription", subscriptions[0], "moduleName", moduleName)
 		// This is an Azure command
 		return j.generateAzureFilename(moduleName)
 	}
 
 	// GCP parameters
-	if project, err := cfg.As[string](j.Arg("project")); err == nil && project != "" {
+	if project := plugin.GetArgOrDefault(j.cfg, "project", ""); project != "" {
 		slog.Debug("Found GCP project, generating GCP filename", "project", project, "moduleName", moduleName)
 		// This is a GCP command
 		return j.generateGCPFilename(moduleName)
@@ -377,10 +216,7 @@ func (j *RuntimeJSONOutputter) generateContextualFilename() string {
 // generateAWSFilename creates AWS-specific filenames in format: {module-name}-{account}.json
 func (j *RuntimeJSONOutputter) generateAWSFilename(moduleName string) string {
 	// Get profile name - might be empty when using environment variables
-	profile, err := cfg.As[string](j.Arg("profile"))
-	if err != nil {
-		profile = "" // No profile specified
-	}
+	profile := plugin.GetArgOrDefault(j.cfg, "profile", "")
 
 	// Use consistent cache key logic - empty profile uses "default" as cache key
 	cacheKey := profile
@@ -428,15 +264,18 @@ func (j *RuntimeJSONOutputter) getAWSAccountFromCache(profile string) string {
 // generateAzureFilename creates Azure-specific filenames in format: {module-name}-{subscription}.json
 func (j *RuntimeJSONOutputter) generateAzureFilename(moduleName string) string {
 	// Handle special DevOps case first
-	if devopsOrg, orgErr := cfg.As[string](j.Arg("devops-org")); orgErr == nil && devopsOrg != "" {
-		if devopsProject, projErr := cfg.As[string](j.Arg("devops-project")); projErr == nil && devopsProject != "" {
+	devopsOrg := plugin.GetArgOrDefault(j.cfg, "devops-org", "")
+	if devopsOrg != "" {
+		devopsProject := plugin.GetArgOrDefault(j.cfg, "devops-project", "")
+		if devopsProject != "" {
 			return fmt.Sprintf("%s-%s-%s.json", moduleName, devopsOrg, devopsProject)
 		}
 		return fmt.Sprintf("%s-%s.json", moduleName, devopsOrg)
 	}
 
 	// Standard Azure subscription format
-	if subscriptions, err := cfg.As[[]string](j.Arg("subscription")); err == nil && len(subscriptions) > 0 {
+	subscriptions := plugin.GetArgOrDefault(j.cfg, "subscription", []string{})
+	if len(subscriptions) > 0 {
 		subscription := subscriptions[0]
 		if subscription == "all" {
 			return fmt.Sprintf("%s-all-subscriptions.json", moduleName)
@@ -451,7 +290,8 @@ func (j *RuntimeJSONOutputter) generateAzureFilename(moduleName string) string {
 // generateGCPFilename creates GCP-specific filenames in format: {module-name}-{project}.json
 func (j *RuntimeJSONOutputter) generateGCPFilename(moduleName string) string {
 	// Try to get GCP project ID
-	if projectId, err := cfg.As[string](j.Arg("project")); err == nil && projectId != "" {
+	projectId := plugin.GetArgOrDefault(j.cfg, "project", "")
+	if projectId != "" {
 		return fmt.Sprintf("%s-%s.json", moduleName, projectId)
 	}
 
@@ -467,7 +307,8 @@ func (j *RuntimeJSONOutputter) enhanceFilenameWithPlatformInfo(filename string) 
 	baseName := strings.TrimSuffix(filename, ext)
 
 	// Check for AWS profile parameter (should be available from module's WithInputParam)
-	if profile, err := cfg.As[string](j.Arg("profile")); err == nil {
+	if _, hasProfile := j.cfg.Args["profile"]; hasProfile {
+		profile := plugin.GetArgOrDefault(j.cfg, "profile", "")
 		// Use consistent cache key logic
 		cacheKey := profile
 		if cacheKey == "" {
@@ -486,7 +327,8 @@ func (j *RuntimeJSONOutputter) enhanceFilenameWithPlatformInfo(filename string) 
 	}
 
 	// Check for Azure subscription (it's a []string, so get the first one)
-	if subscriptions, err := cfg.As[[]string](j.Arg("subscription")); err == nil && len(subscriptions) > 0 && subscriptions[0] != "" {
+	subscriptions := plugin.GetArgOrDefault(j.cfg, "subscription", []string{})
+	if len(subscriptions) > 0 && subscriptions[0] != "" {
 		subscription := subscriptions[0]
 		// Handle "all" case or long subscription IDs by truncating/cleaning
 		if subscription == "all" {
@@ -511,12 +353,12 @@ func (j *RuntimeJSONOutputter) enhanceFilenameWithPlatformInfo(filename string) 
 // extractTenantFromMetadata looks for tenant ID in the output data metadata
 func (j *RuntimeJSONOutputter) extractTenantFromMetadata() string {
 	// Check if we have any output data
-	if len(j.sections.Resources) == 0 {
+	if len(j.output) == 0 {
 		return ""
 	}
 
 	// Check if the first output item has metadata with tenant ID
-	firstOutput := j.sections.Resources[0]
+	firstOutput := j.output[0]
 	outputMap, ok := firstOutput.(map[string]any)
 	if !ok {
 		return ""
@@ -535,14 +377,4 @@ func (j *RuntimeJSONOutputter) extractTenantFromMetadata() string {
 	return tenantID
 }
 
-// Params defines the parameters accepted by this outputter
-func (j *RuntimeJSONOutputter) Params() []cfg.Param {
-	// Note: Platform parameters (profile, subscription, project) are passed from modules
-	// and accessed via j.Arg() but not declared here to avoid conflicts
-	return []cfg.Param{
-		cfg.NewParam[string]("outfile", "the default file to write the JSON to (can be changed at runtime)").WithDefault(defaultOutfile),
-		cfg.NewParam[int]("indent", "the number of spaces to use for the JSON indentation").WithDefault(0),
-		cfg.NewParam[string]("module-name", "the name of the module for dynamic file naming"),
-		options.OutputDir(),
-	}
-}
+

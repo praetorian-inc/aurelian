@@ -21,39 +21,26 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	iam "github.com/praetorian-inc/nebula/pkg/iam/aws"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/orgpolicies"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	iam "github.com/praetorian-inc/aurelian/pkg/iam/aws"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/orgpolicies"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type AwsResourcePolicyChecker struct {
-	*base.AwsReconLink
+	*base.NativeAWSLink
 	orgPolicies *orgpolicies.OrgPolicies
 }
 
-func NewAwsResourcePolicyChecker(configs ...cfg.Config) chain.Link {
-	r := &AwsResourcePolicyChecker{}
-	r.AwsReconLink = base.NewAwsReconLink(r, configs...)
-	return r
-}
-
-func (a *AwsResourcePolicyChecker) Params() []cfg.Param {
-	params := a.AwsReconLink.Params()
-	params = append(params, options.AwsOrgPoliciesFile())
-	return params
-}
-
-func (a *AwsResourcePolicyChecker) Initialize() error {
-	if err := a.AwsReconLink.Initialize(); err != nil {
-		return err
+func NewAwsResourcePolicyChecker(args map[string]any) *AwsResourcePolicyChecker {
+	return &AwsResourcePolicyChecker{
+		NativeAWSLink: base.NewNativeAWSLink("AwsResourcePolicyChecker", args),
 	}
+}
 
+func (a *AwsResourcePolicyChecker) Initialize(ctx context.Context) error {
 	// Load org policies if file is provided
-	orgPoliciesFile, _ := cfg.As[string](a.Arg("org-policies"))
+	orgPoliciesFile, _ := a.Arg("org-policies").(string)
 	if orgPoliciesFile != "" {
 		slog.Debug("Loading organization policies", "file", orgPoliciesFile)
 		orgPolicies, err := loadOrgPoliciesFromFile(orgPoliciesFile)
@@ -83,12 +70,16 @@ func loadOrgPoliciesFromFile(filePath string) (*orgpolicies.OrgPolicies, error) 
 	return &orgPolicies, nil
 }
 
-func (a *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescription) error {
+func (a *AwsResourcePolicyChecker) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*types.EnrichedResourceDescription)
+	if !ok {
+		return nil, fmt.Errorf("expected *types.EnrichedResourceDescription, got %T", input)
+	}
 	// Check if we have a configuration for this resource type
 	serviceConfig, ok := ServiceMap[resource.TypeName]
 	if !ok {
 		// Skip this resource type
-		return nil
+		return a.Outputs(), nil
 	}
 
 	// Parse resource properties
@@ -97,42 +88,42 @@ func (a *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 	case string:
 		err := json.Unmarshal([]byte(p), &props)
 		if err != nil {
-			return fmt.Errorf("failed to unmarshal resource properties: %w", err)
+			return nil, fmt.Errorf("failed to unmarshal resource properties: %w", err)
 		}
 	case map[string]any:
 		props = p
 	default:
-		return fmt.Errorf("unexpected properties type: %T", resource.Properties)
+		return nil, fmt.Errorf("unexpected properties type: %T", resource.Properties)
 	}
 
 	// Extract the identifier
 	identifier, ok := props[serviceConfig.IdentifierField]
 	if !ok {
-		return fmt.Errorf("resource does not have identifier field '%s'", serviceConfig.IdentifierField)
+		return nil, fmt.Errorf("resource does not have identifier field '%s'", serviceConfig.IdentifierField)
 	}
 
 	identifierStr, ok := identifier.(string)
 	if !ok {
-		return fmt.Errorf("identifier is not a string: %v", identifier)
+		return nil, fmt.Errorf("identifier is not a string: %v", identifier)
 	}
 
 	// Get AWS config
-	awsCfg, err := a.GetConfigWithRuntimeArgs(resource.Region)
+	awsCfg, err := a.GetConfig(ctx, resource.Region)
 	if err != nil {
 		slog.Error("Failed to get AWS config", "region", resource.Region, "error", err)
-		return nil // Continue with other resources
+		return a.Outputs(), nil // Continue with other resources
 	}
 
 	// Get the policy
-	policy, err := ServiceMap[resource.TypeName].GetPolicy(context.TODO(), awsCfg, identifierStr, a.Regions)
+	policy, err := ServiceMap[resource.TypeName].GetPolicy(ctx, awsCfg, identifierStr, a.Regions)
 	if err != nil {
 		slog.Debug("Failed to get policy", "resource", identifierStr, "type", resource.TypeName, "error", err)
-		return nil // Continue with other resources
+		return a.Outputs(), nil // Continue with other resources
 	}
 
 	// Skip if no policy
 	if policy == nil {
-		return nil
+		return a.Outputs(), nil
 	}
 
 	policyJson, err := json.MarshalIndent(policy, "", "  ")
@@ -143,15 +134,15 @@ func (a *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 	}
 
 	// Check if the policy allows public access
-	res, err := a.analyzePolicy(resource.Arn.String(), policy, resource.AccountId, resource.TypeName)
+	res, err := a.analyzePolicy(ctx, resource.Arn.String(), policy, resource.AccountId, resource.TypeName)
 	if err != nil {
 		slog.Error("Failed to analyze policy", "resource", identifierStr, "error", err)
-		return err
+		return nil, err
 	}
 
 	// Skip if not public
 	if !isPublic(res) {
-		return nil
+		return a.Outputs(), nil
 	}
 
 	// Add the policy to the properties
@@ -170,9 +161,9 @@ func (a *AwsResourcePolicyChecker) Process(resource *types.EnrichedResourceDescr
 		Arn:        resource.Arn,
 	}
 
-	// Send the enriched resource
+	// Add to outputs
 	a.Send(enriched)
-	return nil
+	return a.Outputs(), nil
 }
 
 // ConditionPermutation represents a condition key and its possible values
@@ -434,7 +425,7 @@ func (a *AwsResourcePolicyChecker) evaluatePolicyWithContext(reqCtx *iam.Request
 }
 
 // analyzePolicy analyzes a policy to determine if it grants public access
-func (a *AwsResourcePolicyChecker) analyzePolicy(resource string, policy *types.Policy, accountId string, resourceType string) ([]*iam.EvaluationResult, error) {
+func (a *AwsResourcePolicyChecker) analyzePolicy(ctx context.Context, resource string, policy *types.Policy, accountId string, resourceType string) ([]*iam.EvaluationResult, error) {
 	allResults := []*iam.EvaluationResult{}
 
 	contexts := GetEvaluationContexts(resourceType)
@@ -993,42 +984,47 @@ func convertACLGrantsToStatements(grants []s3types.Grant, bucketName string) []t
 }
 
 type AwsResourcePolicyFetcher struct {
-	*base.AwsReconLink
+	*base.NativeAWSLink
 }
 
-func NewAwsResourcePolicyFetcher(configs ...cfg.Config) chain.Link {
-	r := &AwsResourcePolicyFetcher{}
-	r.AwsReconLink = base.NewAwsReconLink(r, configs...)
-	return r
+func NewAwsResourcePolicyFetcher(args map[string]any) *AwsResourcePolicyFetcher {
+	return &AwsResourcePolicyFetcher{
+		NativeAWSLink: base.NewNativeAWSLink("AwsResourcePolicyFetcher", args),
+	}
 }
 
-func (a *AwsResourcePolicyFetcher) Process(resource *types.EnrichedResourceDescription) error {
+func (a *AwsResourcePolicyFetcher) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*types.EnrichedResourceDescription)
+	if !ok {
+		return nil, fmt.Errorf("expected *types.EnrichedResourceDescription, got %T", input)
+	}
+
 	// Get the policy getter function for this resource type
 	policyGetter, ok := ServicePolicyFuncMap[resource.TypeName]
 	if !ok {
 		// Silently skip resources that don't have resource policies
 		slog.Debug("Skipping resource type without resource policy", "type", resource.TypeName)
-		return nil
+		return a.Outputs(), nil
 	}
 
 	// Get AWS config from the link parameters
-	awsCfg, err := a.GetConfigWithRuntimeArgs(resource.Region)
+	awsCfg, err := a.GetConfig(ctx, resource.Region)
 	if err != nil {
-		return fmt.Errorf("failed to get AWS config: %w", err)
+		return nil, fmt.Errorf("failed to get AWS config: %w", err)
 	}
 
 	// Get the policy
-	policy, err := policyGetter(a.ContextHolder.Context(), awsCfg, resource.Identifier, a.Regions)
+	policy, err := policyGetter(ctx, awsCfg, resource.Identifier, a.Regions)
 	if err != nil {
-		return fmt.Errorf("failed to get policy: %w", err)
+		return nil, fmt.Errorf("failed to get policy: %w", err)
 	}
 
 	if policy == nil {
-		return nil
+		return a.Outputs(), nil
 	}
 
-	// Send the policy downstream
+	// Add policy to outputs
 	policy.ResourceARN = resource.Arn.String()
 	a.Send(policy)
-	return nil
+	return a.Outputs(), nil
 }

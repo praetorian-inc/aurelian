@@ -1,20 +1,14 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/output"
-	"github.com/praetorian-inc/nebula/internal/registry"
-	"github.com/praetorian-inc/nebula/pkg/modules/aws/recon"
-	"github.com/praetorian-inc/nebula/version"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/version"
 	"github.com/spf13/cobra"
 )
 
@@ -26,8 +20,8 @@ func init() {
 
 var mcpCmd = &cobra.Command{
 	Use:   "mcp-server",
-	Short: "Launch Nebula's MCP server",
-	Long:  `Launch Nebula's MCP server`,
+	Short: "Launch Aurelian's MCP server",
+	Long:  `Launch Aurelian's MCP server`,
 	Run: func(cmd *cobra.Command, args []string) {
 
 		mcpServer(cmd)
@@ -36,26 +30,26 @@ var mcpCmd = &cobra.Command{
 
 func mcpServer(cmd *cobra.Command) {
 	s := server.NewMCPServer(
-		"Nebula Server",
+		"Aurelian Server",
 		version.FullVersion(),
 		server.WithLogging(),
 	)
 
-	// TODO: Tools need to be prefixed with "nebula-platform-"
-	for _, categories := range registry.GetHierarchy() {
-		for _, modules := range categories {
-			for _, moduleName := range modules {
-				module, _ := registry.GetRegistryEntry(moduleName)
-				tool := chainToToolAdpater(&module.Module)
-				s.AddTool(tool, moduleHandler)
+	// Iterate over all registered modules from the new plugin registry
+	hierarchy := plugin.GetHierarchy()
+	for platform, categories := range hierarchy {
+		for category, moduleIDs := range categories {
+			for _, moduleID := range moduleIDs {
+				mod, ok := plugin.Get(platform, category, moduleID)
+				if !ok {
+					slog.Warn("Failed to retrieve module", "platform", platform, "category", category, "id", moduleID)
+					continue
+				}
+				tool := pluginToMCPTool(mod)
+				s.AddTool(tool, pluginModuleHandler)
 			}
 		}
 	}
-
-	tool := chainToToolAdpater(recon.AWSPublicResources)
-
-	// Add tool handler
-	s.AddTool(tool, moduleHandler)
 
 	// Get transport flags
 	useHTTP, _ := cmd.Flags().GetBool("http")
@@ -80,53 +74,92 @@ func mcpServer(cmd *cobra.Command) {
 	}
 }
 
-func moduleHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	var configs []cfg.Config
-	w := &bytes.Buffer{}
-	configs = append(configs, cfg.WithArg("writer", w))
+func pluginModuleHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Parse module identifier from tool name (format: platform-category-id)
+	// For now, we'll search through the registry to find the module
+	// TODO: Optimize this lookup with a reverse index
+	hierarchy := plugin.GetHierarchy()
+	var targetModule plugin.Module
 
-	entry, ok := registry.GetRegistryEntry(request.Params.Name)
-	if !ok {
-		return nil, fmt.Errorf("module not found")
-	}
-
-	mod := entry.Module
-	mod.WithOutputters(output.NewWriterOutputter)
-	configs = append(configs, mcpParamToJanusParam(request, mod.New().Params())...)
-
-	err := mod.Run(configs...)
-	if err != nil {
-		slog.Error("Module run failed", "error", err)
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	slog.Info("Module ran", "output", w.String())
-
-	if mod.Error() != nil {
-		slog.Error("Module run failed", "error", mod.Error())
-		return mcp.NewToolResultError(mod.Error().Error()), nil
-	}
-
-	return mcp.NewToolResultText(w.String()), nil
-}
-
-func chainToToolAdpater(mod *chain.Module) mcp.Tool {
-	metadata := (*mod).Metadata()
-	if metadata == nil {
-		metadata = &cfg.Metadata{
-			Name:        "unknown",
-			Description: "No description available",
+	for platform, categories := range hierarchy {
+		for category, moduleIDs := range categories {
+			for _, moduleID := range moduleIDs {
+				mod, ok := plugin.Get(platform, category, moduleID)
+				if !ok {
+					continue
+				}
+				// Match by ID (tool name should be the module ID)
+				if mod.ID() == request.Params.Name {
+					targetModule = mod
+					break
+				}
+			}
+			if targetModule != nil {
+				break
+			}
+		}
+		if targetModule != nil {
+			break
 		}
 	}
 
-	props := metadata.Properties()
-	description := fmt.Sprintf("%s\n\nPlatform: %s\nOpsec Level: %s\nAuthors: %s\nReferences: %s\nName: %s",
-		metadata.Description,
-		getProp(props, "platform"),
-		getProp(props, "opsec_level"),
-		getProp(props, "authors"),
-		getProp(props, "references"),
-		metadata.Name,
+	if targetModule == nil {
+		return nil, fmt.Errorf("module not found: %s", request.Params.Name)
+	}
+
+	// Convert MCP request parameters to plugin Config
+	cfg := plugin.Config{
+		Args:    make(map[string]any),
+		Context: ctx,
+		Verbose: false, // TODO: Extract from request if available
+	}
+
+	// Extract arguments from MCP request
+	if argsMap, ok := request.Params.Arguments.(map[string]any); ok {
+		cfg.Args = argsMap
+	}
+
+	// Run the module
+	results, err := targetModule.Run(cfg)
+	if err != nil {
+		slog.Error("Module run failed", "module", targetModule.ID(), "error", err)
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	// Format results as text
+	// TODO: Support structured JSON output
+	output := formatResults(results)
+	slog.Info("Module completed", "module", targetModule.ID(), "results", len(results))
+
+	return mcp.NewToolResultText(output), nil
+}
+
+// formatResults converts plugin.Result slice to text output
+func formatResults(results []plugin.Result) string {
+	if len(results) == 0 {
+		return "No results"
+	}
+
+	output := ""
+	for i, result := range results {
+		if result.Error != nil {
+			output += fmt.Sprintf("Result %d: Error: %v\n", i+1, result.Error)
+			continue
+		}
+		output += fmt.Sprintf("Result %d: %v\n", i+1, result.Data)
+	}
+	return output
+}
+
+func pluginToMCPTool(mod plugin.Module) mcp.Tool {
+	// Build formatted description with module metadata
+	description := fmt.Sprintf("%s\n\nPlatform: %s\nCategory: %s\nOpsec Level: %s\nAuthors: %s\nReferences: %s",
+		mod.Description(),
+		mod.Platform(),
+		mod.Category(),
+		mod.OpsecLevel(),
+		formatStringSlice(mod.Authors()),
+		formatStringSlice(mod.References()),
 	)
 
 	openWorldHint := true
@@ -134,89 +167,65 @@ func chainToToolAdpater(mod *chain.Module) mcp.Tool {
 	toolOpts := []mcp.ToolOption{
 		mcp.WithDescription(description),
 		mcp.WithToolAnnotation(mcp.ToolAnnotation{
-			Title:         metadata.Name,
+			Title:         mod.Name(),
 			OpenWorldHint: &openWorldHint,
 		}),
 	}
 
-	instance := (*mod).New()
-	if instance != nil {
-		for _, param := range instance.Params() {
-			switch param.Value().(type) {
-			case string:
-				toolOpts = append(toolOpts, mcp.WithString(param.Name(),
-					mcp.Description(param.Description()),
-					janusReqToMcpReq(param),
-				))
-			case bool:
-				toolOpts = append(toolOpts, mcp.WithBoolean(param.Name(),
-					mcp.Description(param.Description()),
-					janusReqToMcpReq(param),
-				))
-			case int:
-				toolOpts = append(toolOpts, mcp.WithNumber(param.Name(),
-					mcp.Description(param.Description()),
-					janusReqToMcpReq(param),
-				))
-			case []string:
-				toolOpts = append(toolOpts, mcp.WithString(param.Name(),
-					mcp.Description(param.Description()+" that supports comma separated values"),
-					janusReqToMcpReq(param),
-				))
-			default:
-				slog.Warn("Unsupported parameter type", "param", param.Name())
-				continue
-			}
+	// Add parameters to MCP tool schema
+	for _, param := range mod.Parameters() {
+		switch param.Type {
+		case "string":
+			toolOpts = append(toolOpts, mcp.WithString(param.Name,
+				mcp.Description(param.Description),
+				paramRequiredOption(param.Required),
+			))
+		case "bool":
+			toolOpts = append(toolOpts, mcp.WithBoolean(param.Name,
+				mcp.Description(param.Description),
+				paramRequiredOption(param.Required),
+			))
+		case "int":
+			toolOpts = append(toolOpts, mcp.WithNumber(param.Name,
+				mcp.Description(param.Description),
+				paramRequiredOption(param.Required),
+			))
+		case "[]string":
+			toolOpts = append(toolOpts, mcp.WithString(param.Name,
+				mcp.Description(param.Description+" (comma-separated values)"),
+				paramRequiredOption(param.Required),
+			))
+		default:
+			slog.Warn("Unsupported parameter type", "param", param.Name, "type", param.Type)
+			continue
 		}
 	}
 
-	return mcp.NewTool(metadata.Properties()["id"].(string), toolOpts...)
+	return mcp.NewTool(mod.ID(), toolOpts...)
 }
 
-func janusReqToMcpReq(param cfg.Param) mcp.PropertyOption {
-	if param.Required() {
+// formatStringSlice formats a string slice for display
+func formatStringSlice(items []string) string {
+	if len(items) == 0 {
+		return "none"
+	}
+	output := ""
+	for i, item := range items {
+		if i > 0 {
+			output += ", "
+		}
+		output += item
+	}
+	return output
+}
+
+// paramRequiredOption returns the appropriate MCP property option for required flag
+func paramRequiredOption(required bool) mcp.PropertyOption {
+	if required {
 		return mcp.Required()
 	}
-
 	return func(schema map[string]interface{}) {
 		schema["required"] = false
 	}
 }
 
-func mcpParamToJanusParam(request mcp.CallToolRequest, jparams []cfg.Param) []cfg.Config {
-	var configs []cfg.Config
-
-	argsMap, ok := request.Params.Arguments.(map[string]any)
-	if !ok {
-		return configs
-	}
-
-	for _, param := range jparams {
-		p := argsMap[param.Name()]
-		if p == nil {
-			continue
-		}
-		configs = append(configs, cfg.WithArg(param.Name(), p))
-	}
-
-	return configs
-}
-
-func getProp(props map[string]interface{}, key string) string {
-	if v, ok := props[key]; ok && v != nil {
-		switch val := v.(type) {
-		case string:
-			return val
-		case []string:
-			if len(val) == 0 {
-				return "none"
-			}
-			items := make([]string, len(val))
-			for i, item := range val {
-				items[i] = fmt.Sprintf("- %s", item)
-			}
-			return "\n" + strings.Join(items, "\n")
-		}
-	}
-	return "unknown"
-}

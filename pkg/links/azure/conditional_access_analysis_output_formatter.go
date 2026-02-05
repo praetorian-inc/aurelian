@@ -1,34 +1,35 @@
 package azure
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/links/azure/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 type AzureConditionalAccessAnalysisOutputFormatterLink struct {
-	*chain.Base
+	*base.NativeAzureLink
 }
 
-func NewAzureConditionalAccessAnalysisOutputFormatterLink(configs ...cfg.Config) chain.Link {
-	l := &AzureConditionalAccessAnalysisOutputFormatterLink{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
+func NewAzureConditionalAccessAnalysisOutputFormatterLink(args map[string]any) *AzureConditionalAccessAnalysisOutputFormatterLink {
+	return &AzureConditionalAccessAnalysisOutputFormatterLink{
+		NativeAzureLink: base.NewNativeAzureLink("azure-conditional-access-analysis-output-formatter", args),
+	}
 }
 
-func (l *AzureConditionalAccessAnalysisOutputFormatterLink) Params() []cfg.Param {
-	return []cfg.Param{
+func (l *AzureConditionalAccessAnalysisOutputFormatterLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
 		options.OutputDir(),
 	}
 }
 
-func (l *AzureConditionalAccessAnalysisOutputFormatterLink) Process(input any) error {
+func (l *AzureConditionalAccessAnalysisOutputFormatterLink) Process(ctx context.Context, input any) ([]any, error) {
 	// Handle console output only - file output handled by aggregator link
 	switch v := input.(type) {
 	case ConditionalAccessAnalysisResult:
@@ -38,31 +39,25 @@ func (l *AzureConditionalAccessAnalysisOutputFormatterLink) Process(input any) e
 		l.generateConsoleOutput(v)
 
 		// Pass analysis result to aggregator link
-		if err := l.Send(v); err != nil {
-			return fmt.Errorf("failed to send analysis result to aggregator: %w", err)
-		}
+		l.Send(v)
 
 	case []EnrichedConditionalAccessPolicy:
 		// LLM analysis was disabled - pass recon data to aggregator
 
 		// Pass policies directly to aggregator link
-		if err := l.Send(v); err != nil {
-			return fmt.Errorf("failed to send policies to aggregator: %w", err)
-		}
+		l.Send(v)
 
 	case nil:
 		// Handle case where analysis failed - pass nil to aggregator
 
 		// Pass nil to aggregator to indicate failed analysis
-		if err := l.Send(nil); err != nil {
-			return fmt.Errorf("failed to send nil analysis to aggregator: %w", err)
-		}
+		l.Send(nil)
 
 	default:
-		return fmt.Errorf("expected ConditionalAccessAnalysisResult, []EnrichedConditionalAccessPolicy, or nil, got %T", input)
+		return nil, fmt.Errorf("expected ConditionalAccessAnalysisResult, []EnrichedConditionalAccessPolicy, or nil, got %T", input)
 	}
 
-	return nil
+	return l.Outputs(), nil
 }
 
 func (l *AzureConditionalAccessAnalysisOutputFormatterLink) generateConsoleOutput(result ConditionalAccessAnalysisResult) {

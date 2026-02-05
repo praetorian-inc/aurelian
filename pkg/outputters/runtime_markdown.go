@@ -5,34 +5,32 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 const defaultMDOutfile = "out.md"
 
 // RuntimeMarkdownOutputter allows specifying the output file at runtime
 type RuntimeMarkdownOutputter struct {
-	*chain.BaseOutputter
+	cfg     plugin.Config
 	outfile string
 	results map[string][]string
 }
 
 // NewRuntimeMarkdownOutputter creates a new RuntimeMarkdownOutputter
-func NewRuntimeMarkdownOutputter(configs ...cfg.Config) chain.Outputter {
-	m := &RuntimeMarkdownOutputter{
+//
+// Deprecated: Use outputters.NewFormatterAdapterConstructor(formatter.FormatMarkdown, writer) instead.
+// This outputter will be removed in v2.0.
+func NewRuntimeMarkdownOutputter() *RuntimeMarkdownOutputter {
+	return &RuntimeMarkdownOutputter{
 		results: make(map[string][]string),
 	}
-	m.BaseOutputter = chain.NewBaseOutputter(m, configs...)
-	return m
 }
 
-func (m *RuntimeMarkdownOutputter) Initialize() error {
-	outfile, err := cfg.As[string](m.Arg("mdoutfile"))
-	if err != nil {
-		outfile = defaultMDOutfile // Fallback default
-	}
+func (m *RuntimeMarkdownOutputter) Initialize(cfg plugin.Config) error {
+	m.cfg = cfg
+	outfile := plugin.GetArgOrDefault(cfg, "mdoutfile", defaultMDOutfile)
 	m.outfile = outfile
 	slog.Debug("initialized runtime Markdown outputter", "default_file", m.outfile)
 	return nil
@@ -74,8 +72,3 @@ func (m *RuntimeMarkdownOutputter) Complete() error {
 	return nil
 }
 
-func (m *RuntimeMarkdownOutputter) Params() []cfg.Param {
-	return []cfg.Param{
-		cfg.NewParam[string]("mdoutfile", "the default file to write the Markdown to (can be changed at runtime)").WithDefault(defaultMDOutfile),
-	}
-}

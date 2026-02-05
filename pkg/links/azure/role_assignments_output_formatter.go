@@ -1,52 +1,40 @@
 package azure
-
 import (
+	"context"
 	"fmt"
+	"github.com/praetorian-inc/aurelian/pkg/links/azure/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/outputters"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	"path/filepath"
-
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
-	"github.com/praetorian-inc/nebula/pkg/types"
 )
-
 type AzureRoleAssignmentsOutputFormatterLink struct {
-	*chain.Base
+	*base.NativeAzureLink
 }
-
-func NewAzureRoleAssignmentsOutputFormatterLink(configs ...cfg.Config) chain.Link {
-	l := &AzureRoleAssignmentsOutputFormatterLink{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
+func NewAzureRoleAssignmentsOutputFormatterLink(args map[string]any) *AzureRoleAssignmentsOutputFormatterLink {
+	return &AzureRoleAssignmentsOutputFormatterLink{
+		NativeAzureLink: base.NewNativeAzureLink("role-assignments-output-formatter", args),
+	}
 }
-
-func (l *AzureRoleAssignmentsOutputFormatterLink) Process(input any) error {
+func (l *AzureRoleAssignmentsOutputFormatterLink) Process(ctx context.Context, input any) ([]any, error) {
 	assignments, ok := input.([]*types.RoleAssignmentDetails)
 	if !ok {
-		return fmt.Errorf("expected []*types.RoleAssignmentDetails input, got %T", input)
+		return nil, fmt.Errorf("expected []*types.RoleAssignmentDetails input, got %T", input)
 	}
-
 	if len(assignments) == 0 {
-		return nil
+		return l.Outputs(), nil
 	}
-
 	// Get output directory
-	outputDir, _ := cfg.As[string](l.Arg("output"))
-
+	outputDir := l.ArgString("output", "")
 	// Generate base filename - use subscription ID only, no timestamp
 	baseFilename := fmt.Sprintf("role-assignments-%s", assignments[0].SubscriptionID)
-
 	// Create full paths
 	jsonFilePath := filepath.Join(outputDir, baseFilename+".json")
 	mdFilePath := filepath.Join(outputDir, baseFilename+".md")
-
 	// Send JSON output using NamedOutputData
 	jsonOutputData := outputters.NewNamedOutputData(assignments, jsonFilePath)
-	if err := l.Send(jsonOutputData); err != nil {
-		return fmt.Errorf("failed to send JSON output: %w", err)
-	}
-
+	l.Send(jsonOutputData)
 	// Create markdown table for both console and file output
 	table := &AzureRoleAssignmentsTable{
 		TableHeading: fmt.Sprintf("Azure Role Assignments\nSubscription: %s (%s)",
@@ -62,14 +50,12 @@ func (l *AzureRoleAssignmentsOutputFormatterLink) Process(input any) error {
 		Rows:         make([][]string, 0, len(assignments)),
 		assignments:  assignments, // Store for console output
 	}
-
 	// Add rows for each assignment
 	for _, assignment := range assignments {
 		roleName := assignment.RoleDisplayName
 		if roleName == "" {
 			roleName = assignment.RoleDefinitionID
 		}
-
 		table.Rows = append(table.Rows, []string{
 			assignment.PrincipalType,
 			assignment.PrincipalID,
@@ -78,12 +64,8 @@ func (l *AzureRoleAssignmentsOutputFormatterLink) Process(input any) error {
 			assignment.ScopeDisplayName,
 		})
 	}
-
 	// Send markdown table for console output (Markdownable interface)
-	if err := l.Send(table); err != nil {
-		return fmt.Errorf("failed to send console table: %w", err)
-	}
-
+	l.Send(table)
 	// Send markdown file output
 	markdownTable := types.MarkdownTable{
 		TableHeading: table.TableHeading,
@@ -91,13 +73,12 @@ func (l *AzureRoleAssignmentsOutputFormatterLink) Process(input any) error {
 		Rows:         table.Rows,
 	}
 	mdOutputData := outputters.NewNamedOutputData(markdownTable, mdFilePath)
-	return l.Send(mdOutputData)
+	l.Send(mdOutputData)
+	return l.Outputs(), nil
 }
-
-func (l *AzureRoleAssignmentsOutputFormatterLink) Params() []cfg.Param {
+func (l *AzureRoleAssignmentsOutputFormatterLink) Parameters() []plugin.Parameter {
 	return options.AzureReconBaseOptions()
 }
-
 // AzureRoleAssignmentsTable implements the Markdownable interface for console output
 type AzureRoleAssignmentsTable struct {
 	TableHeading string
@@ -105,7 +86,6 @@ type AzureRoleAssignmentsTable struct {
 	Rows         [][]string
 	assignments  []*types.RoleAssignmentDetails
 }
-
 func (t *AzureRoleAssignmentsTable) Values() []any {
 	// Print console table format immediately
 	fmt.Printf("\n%s\n", t.TableHeading)
@@ -113,17 +93,14 @@ func (t *AzureRoleAssignmentsTable) Values() []any {
 		t.Headers[0], t.Headers[1], t.Headers[2], t.Headers[3], t.Headers[4])
 	fmt.Printf("|%s|%s|%s|%s|%s|\n", 
 		"----------------", "-------------------------------------", "-------------------------------", "----------------", "-------------------------------")
-	
 	for _, row := range t.Rows {
 		fmt.Printf("| %-15s | %-36s | %-30s | %-15s | %-30s |\n", 
 			truncate(row[0], 15), truncate(row[1], 36), truncate(row[2], 30), 
 			truncate(row[3], 15), truncate(row[4], 30))
 	}
 	fmt.Printf("\nTotal role assignments: %d\n", len(t.Rows))
-	
 	return []any{} // Console output handled directly
 }
-
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s

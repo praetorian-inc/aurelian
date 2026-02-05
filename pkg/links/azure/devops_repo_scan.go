@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,39 +14,36 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/links/azure/base"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // AzureDevOpsRepoScanLink clones and scans Git repositories with NoseyParker
 type AzureDevOpsRepoScanLink struct {
-	*chain.Base
+	*base.NativeAzureLink
 }
 
-func NewAzureDevOpsRepoScanLink(configs ...cfg.Config) chain.Link {
-	l := &AzureDevOpsRepoScanLink{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
+func NewAzureDevOpsRepoScanLink(args map[string]any) *AzureDevOpsRepoScanLink {
+	return &AzureDevOpsRepoScanLink{
+		NativeAzureLink: base.NewNativeAzureLink("devops-repo-scan", args),
+	}
 }
 
-func (l *AzureDevOpsRepoScanLink) Params() []cfg.Param {
-	return []cfg.Param{
-		options.AzureDevOpsPAT(),
-		options.OutputDir(),
-		options.NoseyParkerPath(),
-		options.NoseyParkerOutput(),
-		options.NoseyParkerArgs(),
+func (l *AzureDevOpsRepoScanLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		{Name: "devops-pat", Type: "string", Required: true, Description: "Azure DevOps PAT"},
+		{Name: "output", Type: "string", Required: true, Description: "Output directory"},
+		{Name: "nosey-parker-path", Type: "string", Required: true, Description: "Path to NoseyParker binary"},
+		{Name: "nosey-parker-output", Type: "string", Required: false, Description: "NoseyParker output directory"},
+		{Name: "nosey-parker-args", Type: "string", Required: false, Description: "Additional NoseyParker arguments"},
 	}
 }
 
 // makeDevOpsRequest helper function for authenticated API calls
-func (l *AzureDevOpsRepoScanLink) makeDevOpsRequest(method, url string) (*http.Response, error) {
-	pat, _ := cfg.As[string](l.Arg("devops-pat"))
-
-	req, err := http.NewRequestWithContext(l.Context(), method, url, nil)
+func (l *AzureDevOpsRepoScanLink) makeDevOpsRequest(ctx context.Context, method, url string, pat string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -70,15 +68,15 @@ func (l *AzureDevOpsRepoScanLink) makeDevOpsRequest(method, url string) (*http.R
 }
 
 // prepareGitRepo clones a Git repository for scanning
-func (l *AzureDevOpsRepoScanLink) prepareGitRepo(cloneUrl, repoPath string) error {
+func (l *AzureDevOpsRepoScanLink) prepareGitRepo(ctx context.Context, cloneUrl, repoPath string) error {
 	if err := os.MkdirAll(filepath.Dir(repoPath), 0755); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	l.Logger.Debug("Cloning repository", "url", cloneUrl, "path", repoPath)
+	l.Logger().Debug("Cloning repository", "url", cloneUrl, "path", repoPath)
 
 	// Clone with full history using --mirror
-	cmd := exec.CommandContext(l.Context(), "git", "clone", "--mirror", cloneUrl, repoPath)
+	cmd := exec.CommandContext(ctx, "git", "clone", "--mirror", cloneUrl, repoPath)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to clone repository: %w\nOutput: %s", err, output)
 	}
@@ -87,12 +85,7 @@ func (l *AzureDevOpsRepoScanLink) prepareGitRepo(cloneUrl, repoPath string) erro
 }
 
 // scanGitRepo scans a Git repository with NoseyParker
-func (l *AzureDevOpsRepoScanLink) scanGitRepo(repoPath string) error {
-	outputDir, _ := cfg.As[string](l.Arg("output"))
-	npOutput, _ := cfg.As[string](l.Arg("nosey-parker-output"))
-	npPath, _ := cfg.As[string](l.Arg("nosey-parker-path"))
-	customArgs, _ := cfg.As[string](l.Arg("nosey-parker-args"))
-
+func (l *AzureDevOpsRepoScanLink) scanGitRepo(ctx context.Context, repoPath, outputDir, npOutput, npPath, customArgs string) error {
 	// Prepare NoseyParker command
 	datastorePath := filepath.Join(outputDir, npOutput)
 
@@ -108,9 +101,9 @@ func (l *AzureDevOpsRepoScanLink) scanGitRepo(repoPath string) error {
 		npArgs = append(npArgs, strings.Split(customArgs, " ")...)
 	}
 
-	l.Logger.Debug("Running NoseyParker scan", "command", npPath, "args", npArgs, "repo", repoPath)
+	l.Logger().Debug("Running NoseyParker scan", "command", npPath, "args", npArgs, "repo", repoPath)
 
-	cmd := exec.CommandContext(l.Context(), npPath, npArgs...)
+	cmd := exec.CommandContext(ctx, npPath, npArgs...)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("NoseyParker scan failed: %w\nOutput: %s", err, output)
 	}
@@ -118,22 +111,30 @@ func (l *AzureDevOpsRepoScanLink) scanGitRepo(repoPath string) error {
 	return nil
 }
 
-func (l *AzureDevOpsRepoScanLink) Process(config types.DevOpsScanConfig) error {
-	pat, _ := cfg.As[string](l.Arg("devops-pat"))
+func (l *AzureDevOpsRepoScanLink) Process(ctx context.Context, input any) ([]any, error) {
+	config, ok := input.(types.DevOpsScanConfig)
+	if !ok {
+		return nil, fmt.Errorf("expected DevOpsScanConfig, got %T", input)
+	}
+
+	pat := l.ArgString("devops-pat", "")
+	if pat == "" {
+		return nil, fmt.Errorf("devops-pat is required")
+	}
 
 	// List repositories in the project
 	reposUrl := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/git/repositories?api-version=7.1-preview.1",
 		config.Organization, config.Project)
 
-	reposResp, err := l.makeDevOpsRequest(http.MethodGet, reposUrl)
+	reposResp, err := l.makeDevOpsRequest(ctx, http.MethodGet, reposUrl, pat)
 	if err != nil {
-		return fmt.Errorf("failed to get repositories: %w", err)
+		return nil, fmt.Errorf("failed to get repositories: %w", err)
 	}
 	defer reposResp.Body.Close()
 
 	body, err := io.ReadAll(reposResp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	var reposResult struct {
@@ -147,12 +148,12 @@ func (l *AzureDevOpsRepoScanLink) Process(config types.DevOpsScanConfig) error {
 	}
 
 	if err := json.Unmarshal(body, &reposResult); err != nil {
-		return fmt.Errorf("failed to parse repos response: %w", err)
+		return nil, fmt.Errorf("failed to parse repos response: %w", err)
 	}
 
 	if reposResult.Count == 0 {
-		l.Logger.Info("No repositories found in project", "project", config.Project)
-		return nil
+		l.Logger().Info("No repositories found in project", "project", config.Project)
+		return l.Outputs(), nil
 	}
 
 	message.Info("Found %d repositories to scan in project %s", reposResult.Count, config.Project)
@@ -179,16 +180,21 @@ func (l *AzureDevOpsRepoScanLink) Process(config types.DevOpsScanConfig) error {
 				url.PathEscape(repo.Name))
 
 			// Clone and prepare repository
-			if err := l.prepareGitRepo(cloneUrl, repoDir); err != nil {
-				l.Logger.Error("Failed to prepare repository", "repo", repo.Name, "error", err.Error())
+			if err := l.prepareGitRepo(ctx, cloneUrl, repoDir); err != nil {
+				l.Logger().Error("Failed to prepare repository", "repo", repo.Name, "error", err.Error())
 				return
 			}
 
+			outputDir := l.ArgString("output", "")
+			npOutput := l.ArgString("nosey-parker-output", "np-output")
+			npPath := l.ArgString("nosey-parker-path", "")
+			npArgs := l.ArgString("nosey-parker-args", "")
+
 			// Scan with NoseyParker
-			if err := l.scanGitRepo(repoDir); err != nil {
-				l.Logger.Error("Failed to scan repository", "repo", repo.Name, "error", err.Error())
+			if err := l.scanGitRepo(ctx, repoDir, outputDir, npOutput, npPath, npArgs); err != nil {
+				l.Logger().Error("Failed to scan repository", "repo", repo.Name, "error", err.Error())
 			} else {
-				l.Logger.Info("Successfully scanned repository", "repo", repo.Name)
+				l.Logger().Info("Successfully scanned repository", "repo", repo.Name)
 			}
 		}(types.DevOpsRepo{
 			Id:            repo.Id,
@@ -199,9 +205,9 @@ func (l *AzureDevOpsRepoScanLink) Process(config types.DevOpsScanConfig) error {
 	}
 
 	wg.Wait()
-	
+
 	// Repository scanning is handled internally with NoseyParker
 	// But still send the config to next links so they can process other data sources
 	l.Send(config)
-	return nil
+	return l.Outputs(), nil
 }

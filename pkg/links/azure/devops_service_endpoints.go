@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -8,36 +9,35 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/links/azure/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // AzureDevOpsServiceEndpointsLink scans service endpoints for secrets
 type AzureDevOpsServiceEndpointsLink struct {
-	*chain.Base
+	*base.NativeAzureLink
 }
 
-func NewAzureDevOpsServiceEndpointsLink(configs ...cfg.Config) chain.Link {
-	l := &AzureDevOpsServiceEndpointsLink{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
+func NewAzureDevOpsServiceEndpointsLink(args map[string]any) *AzureDevOpsServiceEndpointsLink {
+	return &AzureDevOpsServiceEndpointsLink{
+		NativeAzureLink: base.NewNativeAzureLink("azure-devops-service-endpoints", args),
+	}
 }
 
-func (l *AzureDevOpsServiceEndpointsLink) Params() []cfg.Param {
-	return []cfg.Param{
+func (l *AzureDevOpsServiceEndpointsLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
 		options.AzureDevOpsPAT(),
 	}
 }
 
 // makeDevOpsRequest helper function for authenticated API calls
-func (l *AzureDevOpsServiceEndpointsLink) makeDevOpsRequest(method, url string) (*http.Response, error) {
-	pat, _ := cfg.As[string](l.Arg("devops-pat"))
+func (l *AzureDevOpsServiceEndpointsLink) makeDevOpsRequest(ctx context.Context, method, url string) (*http.Response, error) {
+	pat := l.ArgString("devops-pat", "")
 
-	req, err := http.NewRequestWithContext(l.Context(), method, url, nil)
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -61,27 +61,27 @@ func (l *AzureDevOpsServiceEndpointsLink) makeDevOpsRequest(method, url string) 
 	return resp, nil
 }
 
-func (l *AzureDevOpsServiceEndpointsLink) Process(input any) error {
+func (l *AzureDevOpsServiceEndpointsLink) Process(ctx context.Context, input any) ([]any, error) {
 	// Handle both DevOpsScanConfig and NPInput types
 	var config types.DevOpsScanConfig
 	switch v := input.(type) {
 	case types.DevOpsScanConfig:
 		config = v
-	case jtypes.NPInput:
+	case types.NpInput:
 		// Skip NPInput - we only process DevOpsScanConfig for service endpoint discovery
-		l.Logger.Debug("Skipping NPInput in service endpoints link", "resource_id", v.Provenance.ResourceID)
+		l.Logger().Debug("Skipping NPInput in service endpoints link", "resource_id", v.Provenance.ResourceID)
 		l.Send(input) // Pass through to next link
-		return nil
+		return l.Outputs(), nil
 	default:
-		return fmt.Errorf("unsupported input type: %T", input)
+		return nil, fmt.Errorf("unsupported input type: %T", input)
 	}
 	// Get service endpoints for the project
 	endpointsUrl := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/serviceendpoint/endpoints?api-version=7.1-preview.4",
 		config.Organization, config.Project)
 
-	endpointsResp, err := l.makeDevOpsRequest(http.MethodGet, endpointsUrl)
+	endpointsResp, err := l.makeDevOpsRequest(ctx, http.MethodGet, endpointsUrl)
 	if err != nil {
-		return fmt.Errorf("failed to get service endpoints: %w", err)
+		return nil, fmt.Errorf("failed to get service endpoints: %w", err)
 	}
 	defer endpointsResp.Body.Close()
 
@@ -98,16 +98,16 @@ func (l *AzureDevOpsServiceEndpointsLink) Process(input any) error {
 
 	body, err := io.ReadAll(endpointsResp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	if err := json.Unmarshal(body, &endpointsResult); err != nil {
-		return fmt.Errorf("failed to parse endpoints response: %w", err)
+		return nil, fmt.Errorf("failed to parse endpoints response: %w", err)
 	}
 
 	if len(endpointsResult.Value) == 0 {
-		l.Logger.Info("No service endpoints found in project", "project", config.Project)
-		return nil
+		l.Logger().Info("No service endpoints found in project", "project", config.Project)
+		return l.Outputs(), nil
 	}
 
 	message.Info("Found %d service endpoints to scan in project %s", len(endpointsResult.Value), config.Project)
@@ -144,14 +144,14 @@ func (l *AzureDevOpsServiceEndpointsLink) Process(input any) error {
 
 		content, err := json.Marshal(endpointContent)
 		if err != nil {
-			l.Logger.Error("Failed to marshal endpoint content", "error", err.Error(), "endpoint_id", endpoint.Id)
+			l.Logger().Error("Failed to marshal endpoint content", "error", err.Error(), "endpoint_id", endpoint.Id)
 			continue
 		}
 
 		// Send endpoint content for scanning
-		npInput := jtypes.NPInput{
+		npInput := types.NpInput{
 			Content: string(content),
-			Provenance: jtypes.NPProvenance{
+			Provenance: types.NpProvenance{
 				Platform:     "azure-devops",
 				ResourceType: "Microsoft.DevOps/ServiceEndpoints",
 				ResourceID: fmt.Sprintf("%s/%s/serviceendpoint/%s",
@@ -165,9 +165,9 @@ func (l *AzureDevOpsServiceEndpointsLink) Process(input any) error {
 		historyUrl := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/serviceendpoint/%s/executionhistory?api-version=7.1-preview.1",
 			config.Organization, config.Project, endpoint.Id)
 
-		historyResp, err := l.makeDevOpsRequest(http.MethodGet, historyUrl)
+		historyResp, err := l.makeDevOpsRequest(ctx, http.MethodGet, historyUrl)
 		if err != nil {
-			l.Logger.Error("Failed to get endpoint history", "error", err.Error(), "endpoint_id", endpoint.Id)
+			l.Logger().Error("Failed to get endpoint history", "error", err.Error(), "endpoint_id", endpoint.Id)
 			continue
 		}
 
@@ -175,9 +175,9 @@ func (l *AzureDevOpsServiceEndpointsLink) Process(input any) error {
 		historyResp.Body.Close()
 		if err == nil {
 			// Send endpoint history for scanning
-			historyInput := jtypes.NPInput{
+			historyInput := types.NpInput{
 				Content: string(historyBody),
-				Provenance: jtypes.NPProvenance{
+				Provenance: types.NpProvenance{
 					Platform:     "azure-devops",
 					ResourceType: "Microsoft.DevOps/ServiceEndpoints/History",
 					ResourceID: fmt.Sprintf("%s/%s/serviceendpoint/%s/history",
@@ -189,5 +189,5 @@ func (l *AzureDevOpsServiceEndpointsLink) Process(input any) error {
 		}
 	}
 
-	return nil
+	return l.Outputs(), nil
 }

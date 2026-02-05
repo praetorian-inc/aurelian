@@ -1,35 +1,36 @@
 package azure
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/links/azure/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 type AzureConditionalAccessOutputFormatterLink struct {
-	*chain.Base
+	*base.NativeAzureLink
 }
 
-func NewAzureConditionalAccessOutputFormatterLink(configs ...cfg.Config) chain.Link {
-	l := &AzureConditionalAccessOutputFormatterLink{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
+func NewAzureConditionalAccessOutputFormatterLink(args map[string]any) *AzureConditionalAccessOutputFormatterLink {
+	return &AzureConditionalAccessOutputFormatterLink{
+		NativeAzureLink: base.NewNativeAzureLink("conditional-access-output-formatter", args),
+	}
 }
 
-func (l *AzureConditionalAccessOutputFormatterLink) Params() []cfg.Param {
-	return []cfg.Param{
+func (l *AzureConditionalAccessOutputFormatterLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
 		options.AzureWorkerCount(),
 		options.OutputDir(),
 	}
 }
 
-func (l *AzureConditionalAccessOutputFormatterLink) Process(input any) error {
+func (l *AzureConditionalAccessOutputFormatterLink) Process(ctx context.Context, input any) ([]any, error) {
 	// Expect input to be []EnrichedConditionalAccessPolicy from resolver
 	enrichedPolicies, ok := input.([]EnrichedConditionalAccessPolicy)
 	if !ok {
-		return fmt.Errorf("expected []EnrichedConditionalAccessPolicy, got %T", input)
+		return nil, fmt.Errorf("expected []EnrichedConditionalAccessPolicy, got %T", input)
 	}
 
 	// Generate console output (directly to stdout, not sent through pipeline)
@@ -37,7 +38,8 @@ func (l *AzureConditionalAccessOutputFormatterLink) Process(input any) error {
 
 	// Always send policies to next link in chain (LLM analyzer)
 	// LLM analyzer will decide whether to process or pass through based on enable-llm-analysis parameter
-	return l.Send(enrichedPolicies)
+	l.Send(enrichedPolicies)
+	return l.Outputs(), nil
 }
 
 func (l *AzureConditionalAccessOutputFormatterLink) generateConsoleOutput(policies []EnrichedConditionalAccessPolicy) {

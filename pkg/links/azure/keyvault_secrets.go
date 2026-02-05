@@ -1,64 +1,74 @@
 package azure
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/pkg/links/azure/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // AzureKeyVaultSecretsLink extracts secrets from Azure Key Vaults
 type AzureKeyVaultSecretsLink struct {
-	*chain.Base
+	*base.NativeAzureLink
 }
 
-func NewAzureKeyVaultSecretsLink(configs ...cfg.Config) chain.Link {
-	l := &AzureKeyVaultSecretsLink{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
+func NewAzureKeyVaultSecretsLink(args map[string]any) *AzureKeyVaultSecretsLink {
+	return &AzureKeyVaultSecretsLink{
+		NativeAzureLink: base.NewNativeAzureLink("azure-keyvault-secrets", args),
+	}
 }
 
-func (l *AzureKeyVaultSecretsLink) Params() []cfg.Param {
-	return []cfg.Param{
+func (l *AzureKeyVaultSecretsLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
 		options.AzureSubscription(),
 	}
 }
 
-func (l *AzureKeyVaultSecretsLink) Process(resource *model.AzureResource) error {
+func (l *AzureKeyVaultSecretsLink) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*output.CloudResource)
+	if !ok {
+		if resourceValue, ok := input.(output.CloudResource); ok {
+			resource = &resourceValue
+		} else {
+			return nil, fmt.Errorf("expected *output.CloudResource or output.CloudResource, got %T", input)
+		}
+	}
+
 	// Extract vault URI from resource properties
 	vaultURI, err := l.getVaultURI(resource)
 	if err != nil {
-		return fmt.Errorf("failed to get vault URI: %w", err)
+		return nil, fmt.Errorf("failed to get vault URI: %w", err)
 	}
 
 	// Get Azure credentials
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		return fmt.Errorf("failed to get Azure credentials: %w", err)
+		return nil, fmt.Errorf("failed to get Azure credentials: %w", err)
 	}
 
 	// Create Key Vault client
 	client, err := azsecrets.NewClient(vaultURI, cred, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create Key Vault client: %w", err)
+		return nil, fmt.Errorf("failed to create Key Vault client: %w", err)
 	}
 
-	l.Logger.Debug("Scanning Key Vault secrets", "vault_uri", vaultURI)
+	l.Logger().Debug("Scanning Key Vault secrets", "vault_uri", vaultURI)
 
 	// List secrets (metadata only - requires explicit permission to read values)
 	pager := client.NewListSecretPropertiesPager(nil)
 	for pager.More() {
-		page, err := pager.NextPage(l.Context())
+		page, err := pager.NextPage(ctx)
 		if err != nil {
-			l.Logger.Error("Failed to list secrets", "error", err.Error())
+			l.Logger().Error("Failed to list secrets", "error", err.Error())
 			break
 		}
 
@@ -69,9 +79,9 @@ func (l *AzureKeyVaultSecretsLink) Process(resource *model.AzureResource) error 
 
 			// Get secret properties (not the actual secret value for security)
 			secretName := l.extractSecretName(string(*secret.ID))
-			secretProps, err := client.GetSecret(l.Context(), secretName, "", nil)
+			secretProps, err := client.GetSecret(ctx, secretName, "", nil)
 			if err != nil {
-				l.Logger.Debug("Cannot access secret (insufficient permissions)",
+				l.Logger().Debug("Cannot access secret (insufficient permissions)",
 					"secret", secretName,
 					"error", err.Error())
 				continue
@@ -91,12 +101,12 @@ func (l *AzureKeyVaultSecretsLink) Process(resource *model.AzureResource) error 
 			// Convert metadata to JSON for scanning
 			metadataContent, err := json.Marshal(secretMetadata)
 			if err == nil {
-				npInput := jtypes.NPInput{
+				npInput := types.NpInput{
 					Content: string(metadataContent),
-					Provenance: jtypes.NPProvenance{
+					Provenance: types.NpProvenance{
 						Platform:     "azure",
 						ResourceType: "Microsoft.KeyVault/vaults/secrets",
-						ResourceID:   fmt.Sprintf("%s/secrets/%s", resource.Key, secretName),
+						ResourceID:   fmt.Sprintf("%s/secrets/%s", resource.ResourceID, secretName),
 						AccountID:    resource.AccountRef,
 					},
 				}
@@ -105,10 +115,10 @@ func (l *AzureKeyVaultSecretsLink) Process(resource *model.AzureResource) error 
 		}
 	}
 
-	return nil
+	return l.Outputs(), nil
 }
 
-func (l *AzureKeyVaultSecretsLink) getVaultURI(resource *model.AzureResource) (string, error) {
+func (l *AzureKeyVaultSecretsLink) getVaultURI(resource *output.CloudResource) (string, error) {
 	if resource.Properties == nil {
 		return "", fmt.Errorf("resource properties are nil")
 	}
@@ -118,7 +128,7 @@ func (l *AzureKeyVaultSecretsLink) getVaultURI(resource *model.AzureResource) (s
 	}
 
 	// Construct vault URI from resource name if not in properties
-	_, vaultName, err := l.parseKeyVaultResourceID(resource.Key)
+	_, vaultName, err := l.parseKeyVaultResourceID(resource.ResourceID)
 	if err != nil {
 		return "", err
 	}

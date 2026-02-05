@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // ConditionEvalResult represents the outcome of evaluating policy conditions
@@ -499,7 +499,7 @@ func evaluateStringCondition(operator string, values []string, actualValue inter
 		}
 	case "StringNotEquals":
 		for _, v := range values {
-			if actual == v {
+			if matchesPattern(v, actual) {
 				return false
 			}
 		}

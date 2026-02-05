@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 // KeyVaultEnricher implements enrichment for Key Vault instances
@@ -18,10 +18,10 @@ func (k *KeyVaultEnricher) CanEnrich(templateID string) bool {
 	return templateID == "key_vault_public_access"
 }
 
-func (k *KeyVaultEnricher) Enrich(ctx context.Context, resource *model.AzureResource) []Command {
+func (k *KeyVaultEnricher) Enrich(ctx context.Context, resource *output.CloudResource) []Command {
 	commands := []Command{}
 
-	keyVaultName := resource.Name
+	keyVaultName := resource.DisplayName
 	var vaultURI string
 
 	if vaultURIProp, exists := resource.Properties["vaultUri"].(string); exists {

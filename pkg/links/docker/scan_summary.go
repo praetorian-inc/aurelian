@@ -1,57 +1,57 @@
 package docker
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	janusTypes "github.com/praetorian-inc/janus-framework/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/outputters"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 // DockerScanSummary collects scan statistics and outputs a summary at completion
 type DockerScanSummary struct {
-	*chain.Base
+	*plugin.BaseLink
 	mu       sync.Mutex
-	findings []janusTypes.NPFinding
+	findings []types.NPFinding
 }
 
-func NewDockerScanSummary(configs ...cfg.Config) chain.Link {
-	s := &DockerScanSummary{
-		findings: make([]janusTypes.NPFinding, 0),
+func NewDockerScanSummary(args map[string]any) *DockerScanSummary {
+	return &DockerScanSummary{
+		BaseLink: plugin.NewBaseLink("docker-scan-summary", args),
+		findings: make([]types.NPFinding, 0),
 	}
-	s.Base = chain.NewBase(s, configs...)
-	return s
 }
 
-func (s *DockerScanSummary) Process(input any) error {
+func (s *DockerScanSummary) Process(ctx context.Context, input any) ([]any, error) {
 	// Collect NPFindings
 	switch v := input.(type) {
-	case janusTypes.NPFinding:
+	case types.NPFinding:
 		s.mu.Lock()
 		s.findings = append(s.findings, v)
 		s.mu.Unlock()
 		// Pass through to other outputters
-		return s.Send(v)
-	case *janusTypes.NPFinding:
+		return []any{v}, nil
+	case *types.NPFinding:
 		if v == nil {
-			return nil
+			return []any{}, nil
 		}
 		s.mu.Lock()
 		s.findings = append(s.findings, *v)
 		s.mu.Unlock()
 		// Pass through to other outputters
-		return s.Send(v)
+		return []any{v}, nil
 	}
 
 	// Pass through anything else
-	return s.Send(input)
+	return []any{input}, nil
 }
 
-func (s *DockerScanSummary) Complete() error {
+func (s *DockerScanSummary) Complete(ctx context.Context) ([]any, error) {
 	s.mu.Lock()
 	findingsCount := len(s.findings)
-	findingsCopy := make([]janusTypes.NPFinding, len(s.findings))
+	findingsCopy := make([]types.NPFinding, len(s.findings))
 	copy(findingsCopy, s.findings)
 	s.mu.Unlock()
 
@@ -63,5 +63,9 @@ func (s *DockerScanSummary) Complete() error {
 		"findings":       findingsCopy,
 	}
 
-	return s.Send(summary)
+	return []any{outputters.RawOutput{Data: summary}}, nil
+}
+
+func (s *DockerScanSummary) Parameters() []plugin.Parameter {
+	return nil
 }

@@ -5,54 +5,47 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/konstellation/pkg/graph"
 	"github.com/praetorian-inc/konstellation/pkg/graph/adapters"
 	"github.com/praetorian-inc/konstellation/pkg/graph/queries"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
-// Neo4jGraphOutputter outputs GraphModel nodes and GraphRelationship connections to Neo4j
+// Neo4jGraphOutputter outputs Pure CLI nodes and relationships to Neo4j
 type Neo4jGraphOutputter struct {
-	*chain.BaseOutputter
+	cfg             plugin.Config
 	db              graph.GraphDatabase
 	ctx             context.Context
-	nodes           []model.GraphModel
-	relationships   []model.GraphRelationship
-	connectionValid bool // Track if Neo4j connection is available
+	nodes           []any // Pure CLI types (output.CloudResource, output.Risk, etc.)
+	relationships   []any // Pure CLI relationship types
+	connectionValid bool  // Track if Neo4j connection is available
 }
 
 
 // NewNeo4jGraphOutputter creates a new Neo4j graph outputter
-func NewNeo4jGraphOutputter(configs ...cfg.Config) chain.Outputter {
-	o := &Neo4jGraphOutputter{
+func NewNeo4jGraphOutputter() *Neo4jGraphOutputter {
+	return &Neo4jGraphOutputter{
 		ctx:             context.Background(),
-		nodes:           make([]model.GraphModel, 0),
-		relationships:   make([]model.GraphRelationship, 0),
+		nodes:           make([]any, 0),
+		relationships:   make([]any, 0),
 		connectionValid: false,
 	}
-	o.BaseOutputter = chain.NewBaseOutputter(o, configs...)
-	return o
-}
-
-// Params returns the parameters for this outputter
-func (o *Neo4jGraphOutputter) Params() []cfg.Param {
-	return options.Neo4jOptions()
 }
 
 // Initialize is called when the outputter is initialized
-func (o *Neo4jGraphOutputter) Initialize() error {
+func (o *Neo4jGraphOutputter) Initialize(cfg plugin.Config) error {
+	o.cfg = cfg
+
 	// Initialize Neo4j connection using updated Konstellation adapter
 	graphConfig := &graph.Config{
-		URI:      o.Args()[options.Neo4jURI().Name()].(string),
-		Username: o.Args()[options.Neo4jUsername().Name()].(string),
-		Password: o.Args()[options.Neo4jPassword().Name()].(string),
+		URI:      plugin.GetArgOrDefault(o.cfg, options.Neo4jURI().Name, ""),
+		Username: plugin.GetArgOrDefault(o.cfg, options.Neo4jUsername().Name, ""),
+		Password: plugin.GetArgOrDefault(o.cfg, options.Neo4jPassword().Name, ""),
 		Options:  make(map[string]string),
 	}
 
@@ -87,28 +80,40 @@ func (o *Neo4jGraphOutputter) Output(v any) error {
 
 	slog.Info(fmt.Sprintf("DEBUG: Neo4j outputter received data of type: %T", v))
 	switch data := v.(type) {
-	case model.GraphModel:
+	case *output.CloudResource:
 		o.nodes = append(o.nodes, data)
-		slog.Info(fmt.Sprintf("DEBUG: Collected node: %s (labels: %v)", data.GetKey(), data.GetLabels()))
+		slog.Info(fmt.Sprintf("DEBUG: Collected CloudResource node: %s", data.ResourceID))
+	case output.CloudResource:
+		o.nodes = append(o.nodes, &data)
+		slog.Info(fmt.Sprintf("DEBUG: Collected CloudResource node: %s", data.ResourceID))
+	case *output.Risk:
+		o.nodes = append(o.nodes, data)
+		slog.Info(fmt.Sprintf("DEBUG: Collected Risk node: %s", data.Name))
+	case output.Risk:
+		o.nodes = append(o.nodes, &data)
+		slog.Info(fmt.Sprintf("DEBUG: Collected Risk node: %s", data.Name))
 	case *types.EnrichedResourceDescription:
-		// Convert EnrichedResourceDescription to AWSResource for graph compatibility
-		awsResource, err := data.ToAWSResource()
-		if err != nil {
-			slog.Error(fmt.Sprintf("Failed to convert ERD to AWSResource: %s", err.Error()))
-			return err
+		// Convert EnrichedResourceDescription to CloudResource
+		cloudResource := &output.CloudResource{
+			Platform:     "aws",
+			ResourceType: data.TypeName,
+			ResourceID:   data.Arn.String(),
+			AccountRef:   data.AccountId,
+			Region:       data.Region,
+			Properties:   make(map[string]any),
 		}
-		o.nodes = append(o.nodes, awsResource)
-		slog.Info(fmt.Sprintf("DEBUG: Converted ERD to AWSResource: %s", awsResource.Name))
-	case model.GraphRelationship:
+		// Copy relevant properties (Identifier is the resource name)
+		if data.Identifier != "" {
+			cloudResource.Properties["name"] = data.Identifier
+		}
+		o.nodes = append(o.nodes, cloudResource)
+		slog.Info(fmt.Sprintf("DEBUG: Converted ERD to CloudResource: %s", cloudResource.ResourceID))
+	case *output.IAMPermission:
 		o.relationships = append(o.relationships, data)
-		slog.Info(fmt.Sprintf("DEBUG: Collected relationship: %s", data.Label()))
-	case model.File:
-		// Handle proof files - extract attack path information if it's a proof file
-		if strings.Contains(data.Name, "proofs/") {
-			slog.Debug(fmt.Sprintf("Collected proof file: %s", data.Name))
-			// The proof content is stored in data.Bytes and contains the record.String() formatted attack path
-			// For now, we just log it - actual proof processing would be done by other outputters
-		}
+		slog.Info(fmt.Sprintf("DEBUG: Collected IAM permission relationship: %s -> %s", data.Source.ID, data.Target.ID))
+	case output.IAMPermission:
+		o.relationships = append(o.relationships, &data)
+		slog.Info(fmt.Sprintf("DEBUG: Collected IAM permission relationship: %s -> %s", data.Source.ID, data.Target.ID))
 	case NamedOutputData:
 		// Handle wrapped data
 		return o.Output(data.Data)
@@ -127,43 +132,53 @@ func (o *Neo4jGraphOutputter) Complete() error {
 		return nil
 	}
 
-	// Convert Tabularium types to Konstellation types for the adapter
+	// Convert Pure CLI types to Konstellation types for the adapter
 	// Create nodes first
 	if len(o.nodes) > 0 {
-		graphNodes := make([]*graph.Node, len(o.nodes))
-		for i, node := range o.nodes {
-			graphNodes[i] = o.tabullariumNodeToGraphNode(node)
+		graphNodes := make([]*graph.Node, 0, len(o.nodes))
+		for _, node := range o.nodes {
+			graphNode := o.pureCliNodeToGraphNode(node)
+			if graphNode != nil {
+				graphNodes = append(graphNodes, graphNode)
+			}
 		}
 
-		slog.Info(fmt.Sprintf("Creating %d nodes in Neo4j", len(graphNodes)))
-		nodeResult, err := o.db.CreateNodes(o.ctx, graphNodes)
-		if err != nil {
-			return fmt.Errorf("failed to create nodes: %w", err)
-		}
-		slog.Info(fmt.Sprintf("Nodes created: %d, updated: %d", nodeResult.NodesCreated, nodeResult.NodesUpdated))
-		if len(nodeResult.Errors) > 0 {
-			for _, err := range nodeResult.Errors {
-				slog.Error(fmt.Sprintf("Node creation error: %s", err.Error()))
+		if len(graphNodes) > 0 {
+			slog.Info(fmt.Sprintf("Creating %d nodes in Neo4j", len(graphNodes)))
+			nodeResult, err := o.db.CreateNodes(o.ctx, graphNodes)
+			if err != nil {
+				return fmt.Errorf("failed to create nodes: %w", err)
+			}
+			slog.Info(fmt.Sprintf("Nodes created: %d, updated: %d", nodeResult.NodesCreated, nodeResult.NodesUpdated))
+			if len(nodeResult.Errors) > 0 {
+				for _, err := range nodeResult.Errors {
+					slog.Error(fmt.Sprintf("Node creation error: %s", err.Error()))
+				}
 			}
 		}
 	}
 
 	// Create relationships
 	if len(o.relationships) > 0 {
-		graphRels := make([]*graph.Relationship, len(o.relationships))
-		for i, rel := range o.relationships {
-			graphRels[i] = o.tabullariumRelationshipToGraphRelationship(rel)
+		graphRels := make([]*graph.Relationship, 0, len(o.relationships))
+		for _, rel := range o.relationships {
+			graphRel := o.pureCliRelationshipToGraphRelationship(rel)
+			if graphRel != nil {
+				graphRels = append(graphRels, graphRel)
+			}
 		}
 
-		slog.Info(fmt.Sprintf("Creating %d relationships in Neo4j", len(graphRels)))
-		relResult, err := o.db.CreateRelationships(o.ctx, graphRels)
-		if err != nil {
-			return fmt.Errorf("failed to create relationships: %w", err)
-		}
-		slog.Info(fmt.Sprintf("Relationships created: %d, updated: %d", relResult.RelationshipsCreated, relResult.RelationshipsUpdated))
-		if len(relResult.Errors) > 0 {
-			for _, err := range relResult.Errors {
-				slog.Error(fmt.Sprintf("Relationship creation error: %s", err.Error()))
+		if len(graphRels) > 0 {
+			slog.Info(fmt.Sprintf("Creating %d relationships in Neo4j", len(graphRels)))
+			relResult, err := o.db.CreateRelationships(o.ctx, graphRels)
+			if err != nil {
+				return fmt.Errorf("failed to create relationships: %w", err)
+			}
+			slog.Info(fmt.Sprintf("Relationships created: %d, updated: %d", relResult.RelationshipsCreated, relResult.RelationshipsUpdated))
+			if len(relResult.Errors) > 0 {
+				for _, err := range relResult.Errors {
+					slog.Error(fmt.Sprintf("Relationship creation error: %s", err.Error()))
+				}
 			}
 		}
 	}
@@ -254,95 +269,99 @@ func (o *Neo4jGraphOutputter) Close() error {
 	return nil
 }
 
-// tabullariumNodeToGraphNode converts a Tabularium GraphModel to Konstellation graph.Node
-func (o *Neo4jGraphOutputter) tabullariumNodeToGraphNode(node model.GraphModel) *graph.Node {
-	// Extract properties from the model
+// pureCliNodeToGraphNode converts Pure CLI types to Konstellation graph.Node
+func (o *Neo4jGraphOutputter) pureCliNodeToGraphNode(node any) *graph.Node {
 	properties := make(map[string]interface{})
+	var labels []string
+	var uniqueKey []string
 
-	// Add basic properties
-	properties["key"] = node.GetKey()
+	switch n := node.(type) {
+	case *output.CloudResource:
+		// CloudResource node
+		labels = []string{"Resource", n.Platform}
+		properties["resourceId"] = n.ResourceID
+		properties["resourceType"] = n.ResourceType
+		properties["accountId"] = n.AccountRef
+		properties["region"] = n.Region
+		uniqueKey = []string{"resourceId"}
 
-	// For AWSResource, add specific properties
-	if awsResource, ok := node.(*model.AWSResource); ok {
-		properties["arn"] = awsResource.Name
-		properties["name"] = awsResource.DisplayName
-		properties["accountId"] = awsResource.AccountRef
-		properties["region"] = awsResource.Region
-		properties["resourceType"] = string(awsResource.ResourceType)
-
-		// Add any custom properties with Neo4j type sanitization
-		if awsResource.Properties != nil {
-			for k, v := range awsResource.Properties {
+		// Add custom properties
+		if n.Properties != nil {
+			for k, v := range n.Properties {
 				properties[k] = sanitizeNeo4jProperty(v)
 			}
 		}
-	}
 
-	// For Vulnerability, add specific properties
-	if vulnerability, ok := node.(*model.Vulnerability); ok {
-		properties["id"] = vulnerability.Id
-		properties["username"] = vulnerability.Username
-		if vulnerability.CVSS != nil {
-			properties["cvss"] = *vulnerability.CVSS
+	case *output.Risk:
+		// Risk node
+		labels = []string{"Risk"}
+		properties["name"] = n.Name
+		properties["status"] = n.Status
+		properties["dns"] = n.DNS
+		properties["source"] = n.Source
+		if n.Description != "" {
+			properties["description"] = n.Description
 		}
-		if vulnerability.EPSS != nil {
-			properties["epss"] = *vulnerability.EPSS
-		}
-		properties["kev"] = vulnerability.Kev
-		properties["exploit"] = vulnerability.Exploit
-		if vulnerability.Title != nil {
-			properties["title"] = *vulnerability.Title
-		}
-		if vulnerability.WriteupId != nil {
-			properties["writeupId"] = *vulnerability.WriteupId
-		}
-	}
+		uniqueKey = []string{"name", "dns"}
 
-	// Determine unique key - use "arn" for AWS resources, "id" for vulnerabilities, "key" as fallback
-	uniqueKey := []string{"key"}
-	if _, hasArn := properties["arn"]; hasArn {
-		uniqueKey = []string{"arn"}
-	} else if _, hasId := properties["id"]; hasId {
-		// For vulnerabilities, use "id" (CVE ID) as unique key
-		uniqueKey = []string{"id"}
+	default:
+		slog.Warn(fmt.Sprintf("Unsupported node type for Neo4j: %T", node))
+		return nil
 	}
 
 	return &graph.Node{
-		Labels:     node.GetLabels(),
+		Labels:     labels,
 		Properties: properties,
 		UniqueKey:  uniqueKey,
 	}
 }
 
-// tabullariumRelationshipToGraphRelationship converts a Tabularium GraphRelationship to Konstellation graph.Relationship
-func (o *Neo4jGraphOutputter) tabullariumRelationshipToGraphRelationship(rel model.GraphRelationship) *graph.Relationship {
-	source, target := rel.Nodes()
-
-	// Extract properties from the relationship
-	properties := make(map[string]interface{})
-
-	// Add base relationship properties
-	if base := rel.Base(); base != nil {
-		properties["created"] = base.Created
-		properties["visited"] = base.Visited
-		properties["capability"] = base.Capability
-		properties["key"] = base.Key
-		if base.AttachmentPath != "" {
-			properties["attachmentPath"] = base.AttachmentPath
+// pureCliRelationshipToGraphRelationship converts Pure CLI relationship types to Konstellation graph.Relationship
+func (o *Neo4jGraphOutputter) pureCliRelationshipToGraphRelationship(rel any) *graph.Relationship {
+	switch r := rel.(type) {
+	case *output.IAMPermission:
+		// Create nodes from ResourceRefs
+		sourceNode := &graph.Node{
+			Labels: []string{"Resource", r.Source.Platform},
+			Properties: map[string]interface{}{
+				"resourceId":   r.Source.ID,
+				"resourceType": r.Source.Type,
+				"accountId":    r.Source.Account,
+			},
+			UniqueKey: []string{"resourceId"},
 		}
-	}
 
-	// Add specific properties based on relationship type
-	switch rel.(type) {
+		targetNode := &graph.Node{
+			Labels: []string{"Resource", r.Target.Platform},
+			Properties: map[string]interface{}{
+				"resourceId":   r.Target.ID,
+				"resourceType": r.Target.Type,
+				"accountId":    r.Target.Account,
+			},
+			UniqueKey: []string{"resourceId"},
+		}
+
+		properties := map[string]interface{}{
+			"permission": r.Permission,
+			"effect":     r.Effect,
+			"capability": r.Capability,
+			"timestamp":  r.Timestamp,
+		}
+
+		if r.Conditions != nil && len(r.Conditions) > 0 {
+			properties["conditions"] = sanitizeNeo4jProperty(r.Conditions)
+		}
+
+		return &graph.Relationship{
+			StartNode:  sourceNode,
+			EndNode:    targetNode,
+			Type:       "HAS_PERMISSION",
+			Properties: properties,
+		}
+
 	default:
-		// Default case for unknown relationship types
-	}
-
-	return &graph.Relationship{
-		StartNode:  o.tabullariumNodeToGraphNode(source),
-		EndNode:    o.tabullariumNodeToGraphNode(target),
-		Type:       rel.Label(),
-		Properties: properties,
+		slog.Warn(fmt.Sprintf("Unsupported relationship type for Neo4j: %T", rel))
+		return nil
 	}
 }
 

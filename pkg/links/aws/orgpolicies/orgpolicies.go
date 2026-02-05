@@ -11,14 +11,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	awstypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type AWSOrganizationPolicies struct {
-	*base.AwsReconBaseLink
+	*base.NativeAWSLink
 }
 
 type OrgUnit struct {
@@ -293,42 +291,36 @@ type ParentPolicy struct {
 	Policies []string `json:"policies"` // arns
 }
 
-func NewAWSOrganizationPolicies(configs ...cfg.Config) chain.Link {
+func NewAWSOrganizationPolicies(args map[string]any) *AWSOrganizationPolicies {
 	slog.Debug("Creating AWSOrganizationPolicies link")
 	ad := &AWSOrganizationPolicies{}
-	slog.Debug("Config:", "configs", configs)
-	ad.AwsReconBaseLink = base.NewAwsReconBaseLink(ad, configs...)
+	slog.Debug("Config:", "args", args)
+	ad.NativeAWSLink = base.NewNativeAWSLink("AWSOrganizationPolicies", args)
 	return ad
 }
 
-func (ad *AWSOrganizationPolicies) Initialize() error {
-	slog.Debug("Initializing AWSOrganizationPolicies")
-	if err := ad.AwsReconBaseLink.Initialize(); err != nil {
-		return err
-	}
-	return nil
-}
 
-func (ad *AWSOrganizationPolicies) Process(_ string) error {
+
+func (ad *AWSOrganizationPolicies) Process(ctx context.Context, input any) ([]any, error) {
 	// the Process() method signature requires an input even if it is unused
 	slog.Debug("Begin processing AWSOrganizationPolicies", "profile", ad.Profile)
 
-	org_hierarchy, error := ad.CollectOrganizationHierarchy()
+	org_hierarchy, error := ad.CollectOrganizationHierarchy(ctx)
 	if error != nil {
 		slog.Error("Error collecting organization hierarchy", "error", error)
-		return error
+		return nil, error
 	}
 
-	scps, error := ad.CollectPolicies(awstypes.PolicyTypeServiceControlPolicy)
+	scps, error := ad.CollectPolicies(ctx, awstypes.PolicyTypeServiceControlPolicy)
 	if error != nil {
 		slog.Error("Error collecting organization SCPs", "error", error)
-		return error
+		return nil, error
 	}
 
-	rcps, error := ad.CollectPolicies(awstypes.PolicyTypeResourceControlPolicy)
+	rcps, error := ad.CollectPolicies(ctx, awstypes.PolicyTypeResourceControlPolicy)
 	if error != nil {
 		slog.Error("Error collecting organization RCPs", "error", error)
-		return error
+		return nil, error
 	}
 
 	if rcps == nil {
@@ -338,7 +330,7 @@ func (ad *AWSOrganizationPolicies) Process(_ string) error {
 	org_policies := ad.BuildOrgPoliciesFromHierarchy(org_hierarchy, scps, rcps)
 
 	ad.Send(org_policies)
-	return nil
+	return ad.Outputs(), nil
 }
 
 func (ad *AWSOrganizationPolicies) BuildOrgPoliciesFromHierarchy(ou *OrgUnit, scps []PolicyData, rcps []PolicyData) *OrgPolicies {
@@ -415,7 +407,7 @@ func (ad *AWSOrganizationPolicies) BuildOrgPoliciesFromHierarchy(ou *OrgUnit, sc
 	return orgPolicies
 }
 
-func (a *AWSOrganizationPolicies) CollectOrganizationHierarchy() (*OrgUnit, error) {
+func (a *AWSOrganizationPolicies) CollectOrganizationHierarchy(ctx context.Context) (*OrgUnit, error) {
 	slog.Debug("Collecting Organization Hierarchy", "profile", a.Profile)
 	print("Collecting Organization Hierarchy", "profile", a.Profile)
 
@@ -424,7 +416,7 @@ func (a *AWSOrganizationPolicies) CollectOrganizationHierarchy() (*OrgUnit, erro
 
 	slog.Debug("Collecting Organization Hierarchy: Set region to ", "region", region)
 
-	config, err := a.GetConfigWithRuntimeArgs(region)
+	config, err := a.GetConfig(ctx, region)
 	if err != nil {
 		slog.Error("Failed to create AWS config", "error", err)
 		return nil, err
@@ -529,7 +521,7 @@ func processOU(client *organizations.Client, ou *OrgUnit) error {
 	return nil
 }
 
-func (a *AWSOrganizationPolicies) CollectPolicies(policyType awstypes.PolicyType) ([]PolicyData, error) {
+func (a *AWSOrganizationPolicies) CollectPolicies(ctx context.Context, policyType awstypes.PolicyType) ([]PolicyData, error) {
 	slog.Debug("Getting Account Authorization Details", "profile", a.Profile)
 
 	// We'll use us-east-1 for IAM since it's a global service
@@ -537,7 +529,7 @@ func (a *AWSOrganizationPolicies) CollectPolicies(policyType awstypes.PolicyType
 
 	slog.Debug("Getting Account Authorization Details: Set region to ", "region", region)
 
-	config, err := a.GetConfigWithRuntimeArgs(region)
+	config, err := a.GetConfig(ctx, region)
 	if err != nil {
 		slog.Error("Failed to create AWS config", "error", err)
 		return nil, err
@@ -714,3 +706,4 @@ func NewDefaultOrgPolicies() *OrgPolicies {
 		},
 	}
 }
+

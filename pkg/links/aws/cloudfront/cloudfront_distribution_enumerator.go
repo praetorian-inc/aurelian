@@ -8,16 +8,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudfront"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
 )
 
 // CloudFrontDistributionEnumerator enumerates all CloudFront distributions
 type CloudFrontDistributionEnumerator struct {
-	*base.AwsReconLink
+	*base.NativeAWSLink
 }
 
 // CloudFrontDistributionInfo contains information about a CloudFront distribution
@@ -38,20 +36,20 @@ type OriginInfo struct {
 }
 
 // NewCloudFrontDistributionEnumerator creates a new CloudFront distribution enumerator
-func NewCloudFrontDistributionEnumerator(configs ...cfg.Config) chain.Link {
-	enumerator := &CloudFrontDistributionEnumerator{}
-	enumerator.AwsReconLink = base.NewAwsReconLink(enumerator, configs...)
-	return enumerator
+func NewCloudFrontDistributionEnumerator(args map[string]any) *CloudFrontDistributionEnumerator {
+	return &CloudFrontDistributionEnumerator{
+		NativeAWSLink: base.NewNativeAWSLink("cloudfront-distribution-enumerator", args),
+	}
 }
 
 // Process enumerates CloudFront distributions
-func (c *CloudFrontDistributionEnumerator) Process(resource any) error {
+func (c *CloudFrontDistributionEnumerator) Process(ctx context.Context, input any) ([]any, error) {
 	// CloudFront is a global service, always use us-east-1
 	region := "us-east-1"
 
-	config, err := c.GetConfigWithRuntimeArgs(region)
+	config, err := c.GetConfig(ctx, region)
 	if err != nil {
-		return fmt.Errorf("failed to get AWS config: %w", err)
+		return nil, fmt.Errorf("failed to get AWS config: %w", err)
 	}
 
 	accountID, err := c.GetAccountID(config)
@@ -73,10 +71,10 @@ func (c *CloudFrontDistributionEnumerator) Process(resource any) error {
 		pageNum++
 		message.Info("Fetching CloudFront distributions page %d", pageNum)
 
-		page, err := paginator.NextPage(context.TODO())
+		page, err := paginator.NextPage(ctx)
 		if err != nil {
 			message.Error("Failed to list distributions: %v", err)
-			return err
+			return nil, err
 		}
 
 		if page.DistributionList == nil || page.DistributionList.Items == nil {
@@ -92,7 +90,7 @@ func (c *CloudFrontDistributionEnumerator) Process(resource any) error {
 			}
 
 			// Get detailed distribution config
-			distResult, err := client.GetDistribution(context.TODO(), &cloudfront.GetDistributionInput{
+			distResult, err := client.GetDistribution(ctx, &cloudfront.GetDistributionInput{
 				Id: distSummary.Id,
 			})
 			if err != nil {
@@ -152,14 +150,12 @@ func (c *CloudFrontDistributionEnumerator) Process(resource any) error {
 				info.ID, info.DomainName, len(info.Aliases), len(info.Origins))
 
 			// Send distribution info to next link
-			if err := c.Send(info); err != nil {
-				return err
-			}
+			c.Send(info)
 		}
 	}
 
 	message.Info("Finished enumerating CloudFront distributions (total pages: %d)", pageNum)
-	return nil
+	return c.Outputs(), nil
 }
 
 // GetAccountID retrieves the AWS account ID

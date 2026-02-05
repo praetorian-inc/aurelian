@@ -4,24 +4,21 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/internal/message"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type NPFindingsConsoleOutputter struct {
-	*chain.BaseOutputter
+	cfg      plugin.Config
 	findings []types.NPFinding
 }
 
 // NewNPFindingsConsoleOutputter creates a new console outputter for NPFinding types
-func NewNPFindingsConsoleOutputter(configs ...cfg.Config) chain.Outputter {
-	o := &NPFindingsConsoleOutputter{
+func NewNPFindingsConsoleOutputter() *NPFindingsConsoleOutputter {
+	return &NPFindingsConsoleOutputter{
 		findings: make([]types.NPFinding, 0),
 	}
-	o.BaseOutputter = chain.NewBaseOutputter(o, configs...)
-	return o
 }
 
 // Output collects NPFinding items for grouped output
@@ -43,7 +40,8 @@ func (o *NPFindingsConsoleOutputter) Output(v any) error {
 }
 
 // Initialize is called when the outputter is initialized
-func (o *NPFindingsConsoleOutputter) Initialize() error {
+func (o *NPFindingsConsoleOutputter) Initialize(cfg plugin.Config) error {
+	o.cfg = cfg
 	return nil
 }
 
@@ -172,7 +170,3 @@ func (o *NPFindingsConsoleOutputter) outputFinding(finding types.NPFinding, inde
 	}
 }
 
-// Params returns the parameters for this outputter
-func (o *NPFindingsConsoleOutputter) Params() []cfg.Param {
-	return []cfg.Param{}
-}

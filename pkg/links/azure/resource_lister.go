@@ -1,65 +1,71 @@
 package azure
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/pkg/links/azure/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // AzureResourceListerLink lists all Azure resources in a subscription using ARG
 type AzureResourceListerLink struct {
-	*chain.Base
+	*base.NativeAzureLink
 	wg sync.WaitGroup
 }
 
-func NewAzureResourceListerLink(configs ...cfg.Config) chain.Link {
-	l := &AzureResourceListerLink{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
+func NewAzureResourceListerLink(args map[string]any) *AzureResourceListerLink {
+	return &AzureResourceListerLink{
+		NativeAzureLink: base.NewNativeAzureLink("azure-resource-lister", args),
+	}
 }
 
-func (l *AzureResourceListerLink) Params() []cfg.Param {
-	return []cfg.Param{
+func (l *AzureResourceListerLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
 		options.AzureWorkerCount(),
 	}
 }
 
-func (l *AzureResourceListerLink) Process(subscription string) error {
-	l.Logger.Info("Listing Azure resources", "subscription", subscription)
+func (l *AzureResourceListerLink) Process(ctx context.Context, input any) ([]any, error) {
+	subscription, ok := input.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string input, got %T", input)
+	}
+
+	l.Logger().Info("Listing Azure resources", "subscription", subscription)
 	
 	// Get credentials
 	cred, err := helpers.NewAzureCredential()
 	if err != nil {
-		l.Logger.Error("Failed to get Azure credentials", "error", err)
-		return err
+		l.Logger().Error("Failed to get Azure credentials", "error", err)
+		return nil, err
 	}
 	
 	// Create ARG client directly (avoiding helpers that need metadata context)
 	argClient, err := armresourcegraph.NewClient(cred, &arm.ClientOptions{})
 	if err != nil {
-		l.Logger.Error("Failed to create ARG client", "error", err)
-		return err
+		l.Logger().Error("Failed to create ARG client", "error", err)
+		return nil, err
 	}
 	
 	// Get subscription details directly
 	subClient, err := armsubscriptions.NewClient(cred, nil)
 	if err != nil {
-		l.Logger.Error("Failed to create subscription client", "error", err)
-		return err
+		l.Logger().Error("Failed to create subscription client", "error", err)
+		return nil, err
 	}
 	
-	subDetails, err := subClient.Get(l.Context(), subscription, nil)
+	subDetails, err := subClient.Get(ctx, subscription, nil)
 	if err != nil {
-		l.Logger.Debug("Could not get subscription details", "subscription", subscription, "error", err)
+		l.Logger().Debug("Could not get subscription details", "subscription", subscription, "error", err)
 	}
 	
 	subscriptionName := subscription
@@ -72,7 +78,7 @@ func (l *AzureResourceListerLink) Process(subscription string) error {
 	| where subscriptionId == '` + subscription + `'
 	| project id, name, type, location, resourceGroup, tags, properties = pack_all()`
 	
-	l.Logger.Debug("Executing ARG query", "subscription", subscription)
+	l.Logger().Debug("Executing ARG query", "subscription", subscription)
 	
 	// Execute query directly
 	request := armresourcegraph.QueryRequest{
@@ -81,17 +87,17 @@ func (l *AzureResourceListerLink) Process(subscription string) error {
 	}
 	
 	var resources []types.ResourceInfo
-	response, err := argClient.Resources(l.Context(), request, nil)
+	response, err := argClient.Resources(ctx, request, nil)
 	if err != nil {
-		l.Logger.Error("Failed to execute ARG query", "subscription", subscription, "error", err)
-		return err
+		l.Logger().Error("Failed to execute ARG query", "subscription", subscription, "error", err)
+		return nil, err
 	}
 	
 	// Process results
 	if response.Data != nil {
 		rows, ok := response.Data.([]interface{})
 		if !ok {
-			return fmt.Errorf("unexpected response data type")
+			return nil, fmt.Errorf("unexpected response data type")
 		}
 		
 		for _, row := range rows {
@@ -135,7 +141,7 @@ func (l *AzureResourceListerLink) Process(subscription string) error {
 		}
 	}
 	
-	l.Logger.Info("Found resources", "subscription", subscription, "count", len(resources))
+	l.Logger().Info("Found resources", "subscription", subscription, "count", len(resources))
 	
 	// Create resource details structure
 	resourceDetails := &types.AzureResourceDetails{
@@ -146,7 +152,7 @@ func (l *AzureResourceListerLink) Process(subscription string) error {
 		Resources:        resources,
 	}
 	
-	// Convert to tabularium AzureResource format and send each resource
+	// Convert to output.CloudResource format and send each resource
 	for _, resource := range resources {
 		// Prepare properties map
 		props := make(map[string]any)
@@ -162,24 +168,23 @@ func (l *AzureResourceListerLink) Process(subscription string) error {
 			props["tags"] = resource.Tags
 		}
 		
-		// Create AzureResource using tabularium
-		azureResource, err := model.NewAzureResource(
-			resource.ID,
-			subscription,
-			model.CloudResourceType(resource.Type),
-			props,
-		)
-		if err != nil {
-			l.Logger.Error("Failed to create AzureResource", "resource_id", resource.ID, "error", err)
-			continue
+		// Create CloudResource for Azure
+		azureResource := &output.CloudResource{
+			Platform:     "azure",
+			ResourceType: resource.Type,
+			ResourceID:   resource.ID,
+			AccountRef:   subscription,
+			Region:       resource.Location,
+			DisplayName:  resource.Name,
+			Properties:   props,
 		}
-		
-		l.Logger.Debug("Sending Azure resource", "id", resource.ID, "type", resource.Type)
+
+		l.Logger().Debug("Sending Azure resource", "id", resource.ID, "type", resource.Type)
 		l.Send(azureResource)
 	}
-	
+
 	// Also send the complete resource details for legacy compatibility
 	l.Send(resourceDetails)
-	
-	return nil
+
+	return l.Outputs(), nil
 }

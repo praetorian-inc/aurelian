@@ -22,9 +22,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
-	"github.com/praetorian-inc/nebula/internal/logs"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/internal/logs"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 var (
@@ -61,6 +61,16 @@ func isErrorRespCacheable(errStr string) bool {
 		}
 	}
 	return false
+}
+
+// getOptionValueWithDefault safely gets an option value with fallback to default
+// Returns the option's value if found, otherwise returns the default option's value
+func getOptionValueWithDefault(name string, opts []*types.Option, defaultOpt types.Option) string {
+	opt := options.GetOptionByName(name, opts)
+	if opt == nil {
+		return defaultOpt.Value
+	}
+	return opt.Value
 }
 
 func dumpResponse(resp *http.Response) ([]byte, error) {
@@ -326,11 +336,11 @@ var CacheOps = middleware.DeserializeMiddlewareFunc("CacheOps", func(ctx context
 })
 
 func GetCachePrepWithoutIdentity(opts []*types.Option) middleware.InitializeMiddleware {
-	cacheDir := options.GetOptionByName(options.AwsCacheDirOpt.Name, opts).Value
-	cacheExt := options.GetOptionByName(options.AwsCacheExtOpt.Name, opts).Value
-	cacheTTL := options.GetOptionByName(options.AwsCacheTTLOpt.Name, opts).Value
-	cacheErrTypes := options.GetOptionByName(options.AwsCacheErrorRespTypesOpt.Name, opts).Value
-	cacheError := options.GetOptionByName(options.AwsCacheErrorRespOpt.Name, opts).Value
+	cacheDir := getOptionValueWithDefault(options.AwsCacheDirOpt.Name, opts, options.AwsCacheDirOpt)
+	cacheExt := getOptionValueWithDefault(options.AwsCacheExtOpt.Name, opts, options.AwsCacheExtOpt)
+	cacheTTL := getOptionValueWithDefault(options.AwsCacheTTLOpt.Name, opts, options.AwsCacheTTLOpt)
+	cacheErrTypes := getOptionValueWithDefault(options.AwsCacheErrorRespTypesOpt.Name, opts, options.AwsCacheErrorRespTypesOpt)
+	cacheError := getOptionValueWithDefault(options.AwsCacheErrorRespOpt.Name, opts, options.AwsCacheErrorRespOpt)
 	saveAllError := false
 	TTL, err := strconv.Atoi(cacheTTL)
 	if err != nil {
@@ -338,7 +348,7 @@ func GetCachePrepWithoutIdentity(opts []*types.Option) middleware.InitializeMidd
 		logger.Warn("Fallback to default TTL of 3600")
 		TTL = 3600
 	}
-	CacheDisabled := options.GetOptionByName(options.AwsDisableCacheOpt.Name, opts).Value
+	CacheDisabled := getOptionValueWithDefault(options.AwsDisableCacheOpt.Name, opts, options.AwsDisableCacheOpt)
 	CacheEnabled, err := strconv.ParseBool(CacheDisabled)
 	if err != nil {
 		logger.Error("Could not determine cache enabled", "error", err)
@@ -406,11 +416,11 @@ func GetCachePrepWithoutIdentity(opts []*types.Option) middleware.InitializeMidd
 }
 
 func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts []*types.Option) middleware.InitializeMiddleware {
-	cacheDir := options.GetOptionByName(options.AwsCacheDirOpt.Name, opts).Value
-	cacheExt := options.GetOptionByName(options.AwsCacheExtOpt.Name, opts).Value
-	cacheTTL := options.GetOptionByName(options.AwsCacheTTLOpt.Name, opts).Value
-	cacheErrTypes := options.GetOptionByName(options.AwsCacheErrorRespTypesOpt.Name, opts).Value
-	cacheError := options.GetOptionByName(options.AwsCacheErrorRespOpt.Name, opts).Value
+	cacheDir := getOptionValueWithDefault(options.AwsCacheDirOpt.Name, opts, options.AwsCacheDirOpt)
+	cacheExt := getOptionValueWithDefault(options.AwsCacheExtOpt.Name, opts, options.AwsCacheExtOpt)
+	cacheTTL := getOptionValueWithDefault(options.AwsCacheTTLOpt.Name, opts, options.AwsCacheTTLOpt)
+	cacheErrTypes := getOptionValueWithDefault(options.AwsCacheErrorRespTypesOpt.Name, opts, options.AwsCacheErrorRespTypesOpt)
+	cacheError := getOptionValueWithDefault(options.AwsCacheErrorRespOpt.Name, opts, options.AwsCacheErrorRespOpt)
 	saveAllError := false
 	TTL, err := strconv.Atoi(cacheTTL)
 	if err != nil {
@@ -418,7 +428,7 @@ func GetCachePrepWithIdentity(callerIdentity sts.GetCallerIdentityOutput, opts [
 		logger.Warn("Fallback to default TTL of 3600")
 		TTL = 3600
 	}
-	CacheDisabled := options.GetOptionByName(options.AwsDisableCacheOpt.Name, opts).Value
+	CacheDisabled := getOptionValueWithDefault(options.AwsDisableCacheOpt.Name, opts, options.AwsDisableCacheOpt)
 	CacheEnabled, err := strconv.ParseBool(CacheDisabled)
 	if err != nil {
 		logger.Error("Could not determine cache enabled", "error", err)
@@ -598,9 +608,26 @@ func CleanupCacheFiles(cacheDir string, ttl int, cacheExt string) {
 
 // InitCache runs once at the program start to clean up expired cache files.
 func InitCache(opts []*types.Option) {
-	cacheDir := options.GetOptionByName(options.AwsCacheDirOpt.Name, opts).Value
-	cacheExt := options.GetOptionByName(options.AwsCacheExtOpt.Name, opts).Value
-	cacheTTL := options.GetOptionByName(options.AwsCacheTTLOpt.Name, opts).Value
+	// Get cache directory with fallback to default
+	cacheDirOpt := options.GetOptionByName(options.AwsCacheDirOpt.Name, opts)
+	if cacheDirOpt == nil {
+		cacheDirOpt = &options.AwsCacheDirOpt
+	}
+	cacheDir := cacheDirOpt.Value
+
+	// Get cache extension with fallback to default
+	cacheExtOpt := options.GetOptionByName(options.AwsCacheExtOpt.Name, opts)
+	if cacheExtOpt == nil {
+		cacheExtOpt = &options.AwsCacheExtOpt
+	}
+	cacheExt := cacheExtOpt.Value
+
+	// Get cache TTL with fallback to default
+	cacheTTLOpt := options.GetOptionByName(options.AwsCacheTTLOpt.Name, opts)
+	if cacheTTLOpt == nil {
+		cacheTTLOpt = &options.AwsCacheTTLOpt
+	}
+	cacheTTL := cacheTTLOpt.Value
 
 	ttl, err := strconv.Atoi(cacheTTL)
 	if err != nil {

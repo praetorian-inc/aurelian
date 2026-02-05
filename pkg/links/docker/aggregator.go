@@ -1,21 +1,21 @@
 package docker
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	dockerTypes "github.com/praetorian-inc/janus-framework/pkg/types/docker"
-	janusTypes "github.com/praetorian-inc/janus-framework/pkg/types"
+	
+	"github.com/praetorian-inc/aurelian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 // DockerScanResultAggregator aggregates scan results and outputs summary data
 type DockerScanResultAggregator struct {
-	*chain.Base
+	*plugin.BaseLink
 	mu       sync.Mutex
 	images   []ImageScanResult
-	findings []janusTypes.NPFinding
+	findings []types.NPFinding
 }
 
 // ImageScanResult represents the result of scanning a single image
@@ -26,19 +26,18 @@ type ImageScanResult struct {
 	ExtractDir string `json:"extract_dir,omitempty"`
 }
 
-func NewDockerScanResultAggregator(configs ...cfg.Config) chain.Link {
-	a := &DockerScanResultAggregator{
+func NewDockerScanResultAggregator(args map[string]any) *DockerScanResultAggregator {
+	return &DockerScanResultAggregator{
+		BaseLink: plugin.NewBaseLink("docker-scan-aggregator", args),
 		images:   make([]ImageScanResult, 0),
-		findings: make([]janusTypes.NPFinding, 0),
+		findings: make([]types.NPFinding, 0),
 	}
-	a.Base = chain.NewBase(a, configs...)
-	return a
 }
 
-func (a *DockerScanResultAggregator) Process(input any) error {
+func (a *DockerScanResultAggregator) Process(ctx context.Context, input any) ([]any, error) {
 	// Handle different input types
 	switch v := input.(type) {
-	case *dockerTypes.DockerImage:
+	case *types.DockerImage:
 		// Track processed images
 		result := ImageScanResult{
 			Image:     v.Image,
@@ -51,9 +50,9 @@ func (a *DockerScanResultAggregator) Process(input any) error {
 		slog.Debug("Aggregated image scan result", "image", v.Image)
 
 		// Pass through to next link
-		return a.Send(v)
+		return []any{v}, nil
 
-	case janusTypes.NPFinding:
+	case types.NPFinding:
 		// Collect findings
 		a.mu.Lock()
 		a.findings = append(a.findings, v)
@@ -61,11 +60,11 @@ func (a *DockerScanResultAggregator) Process(input any) error {
 		slog.Debug("Aggregated NP finding", "finding_id", v.FindingID)
 
 		// Pass through to outputters
-		return a.Send(v)
+		return []any{v}, nil
 
-	case *janusTypes.NPFinding:
+	case *types.NPFinding:
 		if v == nil {
-			return nil
+			return []any{}, nil
 		}
 		// Collect findings (pointer version)
 		a.mu.Lock()
@@ -74,14 +73,14 @@ func (a *DockerScanResultAggregator) Process(input any) error {
 		slog.Debug("Aggregated NP finding", "finding_id", v.FindingID)
 
 		// Pass through to outputters
-		return a.Send(v)
+		return []any{v}, nil
 	}
 
 	// Pass through anything else
-	return a.Send(input)
+	return []any{input}, nil
 }
 
-func (a *DockerScanResultAggregator) Complete() error {
+func (a *DockerScanResultAggregator) Complete(ctx context.Context) ([]any, error) {
 	a.mu.Lock()
 	imagesCount := len(a.images)
 	findingsCount := len(a.findings)
@@ -102,5 +101,9 @@ func (a *DockerScanResultAggregator) Complete() error {
 		"findings", findingsCount)
 
 	// Send the summary - this will go to outputters
-	return a.Send(summary)
+	return []any{summary}, nil
+}
+
+func (a *DockerScanResultAggregator) Parameters() []plugin.Parameter {
+	return nil
 }

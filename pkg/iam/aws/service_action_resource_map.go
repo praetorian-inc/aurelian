@@ -284,7 +284,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"createalias":                        {"function"},
 			"createcodesigningconfig":            {"function"},
 			"createeventsourcemapping":           {"function", "eventconfig"},
-			"createfunction":                     {"service"},
+			"createfunction":                     {"function"},
 			"deletealias":                        {"function"},
 			"deletecodesigningconfig":            {"function"},
 			"deleteeventsourcemapping":           {"eventconfig"},

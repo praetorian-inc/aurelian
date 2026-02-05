@@ -1,31 +1,37 @@
 package general
 
 import (
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"context"
+
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 // GeneratorLink is a simple link that generates a single trigger value
 // to start a pipeline that doesn't require external input
 type GeneratorLink struct {
-	*chain.Base
+	*plugin.BaseLink
 }
 
-func NewGeneratorLink(configs ...cfg.Config) chain.Link {
-	l := &GeneratorLink{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
-}
-
-func (l *GeneratorLink) Params() []cfg.Param {
-	return []cfg.Param{
-		cfg.NewParam[string]("trigger-value", "Value to send to trigger the pipeline").WithDefault("trigger"),
+func NewGeneratorLink(args map[string]any) *GeneratorLink {
+	return &GeneratorLink{
+		BaseLink: plugin.NewBaseLink("generator", args),
 	}
 }
 
-func (l *GeneratorLink) Process(input any) error {
+func (l *GeneratorLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		{
+			Name:        "trigger-value",
+			Description: "Value to send to trigger the pipeline",
+			Required:    false,
+			Type:        "string",
+			Default:     "trigger",
+		},
+	}
+}
+
+func (l *GeneratorLink) Process(ctx context.Context, input any) ([]any, error) {
 	// This link ignores input and generates a trigger value
-	triggerValue, _ := cfg.As[string](l.Arg("trigger-value"))
-	l.Send(triggerValue)
-	return nil
+	triggerValue := l.ArgString("trigger-value", "trigger")
+	return []any{triggerValue}, nil
 }

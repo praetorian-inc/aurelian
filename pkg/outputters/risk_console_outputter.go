@@ -1,19 +1,17 @@
 package outputters
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 type RiskConsoleOutputter struct {
-	*chain.BaseOutputter
-	riskGroups map[string][]model.Risk // Map to store risks grouped by name
+	cfg        plugin.Config
+	riskGroups map[string][]output.Risk // Map to store risks grouped by name
 }
 
 // RiskInstance represents a single instance of a risk
@@ -24,35 +22,34 @@ type RiskInstance struct {
 }
 
 // NewRiskConsoleOutputter creates a new console outputter for Risk types
-func NewRiskConsoleOutputter(configs ...cfg.Config) chain.Outputter {
-	o := &RiskConsoleOutputter{
-		riskGroups: make(map[string][]model.Risk),
+func NewRiskConsoleOutputter() *RiskConsoleOutputter {
+	return &RiskConsoleOutputter{
+		riskGroups: make(map[string][]output.Risk),
 	}
-	o.BaseOutputter = chain.NewBaseOutputter(o, configs...)
-	return o
 }
 
 // Output collects risk items for grouped output
 func (o *RiskConsoleOutputter) Output(v any) error {
-	// Try to get a Janus Risk type
-	janusRisk, ok := v.(model.Risk)
+	// Try to get a Pure CLI Risk type
+	risk, ok := v.(output.Risk)
 	if !ok {
 		// Try as pointer
-		janusRiskPtr, ok := v.(*model.Risk)
+		riskPtr, ok := v.(*output.Risk)
 		if !ok {
-			return nil // Not a Janus Risk, silently ignore
+			return nil // Not a Pure CLI Risk, silently ignore
 		}
-		janusRisk = *janusRiskPtr
+		risk = *riskPtr
 	}
 
 	// Store the risk in the appropriate group
-	o.riskGroups[janusRisk.Name] = append(o.riskGroups[janusRisk.Name], janusRisk)
+	o.riskGroups[risk.Name] = append(o.riskGroups[risk.Name], risk)
 
 	return nil
 }
 
 // Initialize is called when the outputter is initialized
-func (o *RiskConsoleOutputter) Initialize() error {
+func (o *RiskConsoleOutputter) Initialize(cfg plugin.Config) error {
+	o.cfg = cfg
 	return nil
 }
 
@@ -81,14 +78,14 @@ func (o *RiskConsoleOutputter) Complete() error {
 }
 
 // displayRiskGroup formats and displays a group of risks with the same name
-func (o *RiskConsoleOutputter) displayRiskGroup(riskName string, risks []model.Risk) {
+func (o *RiskConsoleOutputter) displayRiskGroup(riskName string, risks []output.Risk) {
 	if len(risks) == 0 {
 		return
 	}
 
 	// Use the first risk for common properties
 	firstRisk := risks[0]
-	severity := o.formatSeverity(firstRisk.Severity())
+	severity := o.formatSeverity(firstRisk.Status)
 
 	message.Section("%s %s (%d %s)",
 		severity,
@@ -106,7 +103,7 @@ func (o *RiskConsoleOutputter) displayRiskGroup(riskName string, risks []model.R
 }
 
 // displayGroupImpact shows the impact description once for the entire risk group
-func (o *RiskConsoleOutputter) displayGroupImpact(risk model.Risk) {
+func (o *RiskConsoleOutputter) displayGroupImpact(risk output.Risk) {
 	// Look for common privilege escalation patterns in the risk name
 	switch {
 	case strings.Contains(strings.ToLower(risk.Name), "createaccesskey"):
@@ -131,7 +128,7 @@ func (o *RiskConsoleOutputter) displayGroupImpact(risk model.Risk) {
 }
 
 // displayRiskPath shows the actual attack path from proof data
-func (o *RiskConsoleOutputter) displayRiskPath(risk model.Risk, instanceNum, totalInstances int) {
+func (o *RiskConsoleOutputter) displayRiskPath(risk output.Risk, instanceNum, totalInstances int) {
 	// For now, use simple DNS-based display since we can't easily access proof file content in this context
 	// The proper solution would be to either:
 	// 1. Store the original permission in the risk somewhere, or  
@@ -196,7 +193,7 @@ func (o *RiskConsoleOutputter) parseCommentForPath(comment string) string {
 }
 
 // buildPathFromRisk constructs attack path display from risk DNS pattern
-func (o *RiskConsoleOutputter) buildPathFromRisk(risk model.Risk) string {
+func (o *RiskConsoleOutputter) buildPathFromRisk(risk output.Risk) string {
 	// Parse DNS pattern: target.Name:risk-name:source.Name
 	parts := strings.Split(risk.DNS, ":")
 	if len(parts) >= 3 {
@@ -396,10 +393,10 @@ func (o *RiskConsoleOutputter) extractRoleName(arn string) string {
 	return o.extractPrincipalName(arn)
 }
 
-func (o *RiskConsoleOutputter) displayRiskInstance(risk model.Risk, instanceNum, totalInstances int) {
+func (o *RiskConsoleOutputter) displayRiskInstance(risk output.Risk, instanceNum, totalInstances int) {
 	instanceHeader := fmt.Sprintf("Instance %d/%d - Principal: %s", instanceNum, totalInstances, o.extractPrincipalName(risk.DNS))
 
-	switch risk.Severity() {
+	switch risk.Status {
 	case "H", "TH": // TriageHigh
 		message.Success("%s", instanceHeader)
 		o.displayAttackPath(risk)
@@ -457,16 +454,8 @@ func (o *RiskConsoleOutputter) extractPrincipalName(arn string) string {
 }
 
 // displayAttackPath shows the privilege escalation path in a readable format
-func (o *RiskConsoleOutputter) displayAttackPath(risk model.Risk) {
-	// Try to extract attack path information from the risk's raw data
-	rawData := risk.Raw()
-
-	// Parse the raw JSON to extract potential path information
-	var riskData map[string]any
-	if err := json.Unmarshal([]byte(rawData), &riskData); err != nil {
-		return
-	}
-
+func (o *RiskConsoleOutputter) displayAttackPath(risk output.Risk) {
+	// Pure CLI risks don't have Raw() method, use Description/Comment instead
 	// Look for common privilege escalation patterns in the risk name
 	switch {
 	case strings.Contains(strings.ToLower(risk.Name), "createaccesskey"):
@@ -487,28 +476,28 @@ func (o *RiskConsoleOutputter) displayAttackPath(risk model.Risk) {
 }
 
 // displayCreateAccessKeyPath shows CreateAccessKey privilege escalation
-func (o *RiskConsoleOutputter) displayCreateAccessKeyPath(risk model.Risk) {
+func (o *RiskConsoleOutputter) displayCreateAccessKeyPath(risk output.Risk) {
 	attacker := o.extractPrincipalName(risk.DNS)
 	message.Info("  Attack Path: (%s)-[:iam:CreateAccessKey]->(target_user)", attacker)
 	message.Info("  Impact: Can authenticate as other users with potentially higher privileges")
 }
 
 // displayLoginProfilePath shows login profile manipulation
-func (o *RiskConsoleOutputter) displayLoginProfilePath(risk model.Risk) {
+func (o *RiskConsoleOutputter) displayLoginProfilePath(risk output.Risk) {
 	attacker := o.extractPrincipalName(risk.DNS)
 	message.Info("  Attack Path: (%s)-[:iam:CreateLoginProfile|UpdateLoginProfile]->(target_user)", attacker)
 	message.Info("  Impact: Can set/reset console passwords for other users")
 }
 
 // displayPolicyManipulationPath shows policy manipulation attacks
-func (o *RiskConsoleOutputter) displayPolicyManipulationPath(risk model.Risk) {
+func (o *RiskConsoleOutputter) displayPolicyManipulationPath(risk output.Risk) {
 	attacker := o.extractPrincipalName(risk.DNS)
 	message.Info("  Attack Path: (%s)-[:iam:UpdateAssumeRolePolicy|CreatePolicyVersion]->(target)", attacker)
 	message.Info("  Impact: Can modify trust relationships or create elevated policy versions")
 }
 
 // displayLambdaPath shows Lambda-based privilege escalation
-func (o *RiskConsoleOutputter) displayLambdaPath(risk model.Risk) {
+func (o *RiskConsoleOutputter) displayLambdaPath(risk output.Risk) {
 	attacker := o.extractPrincipalName(risk.DNS)
 	if strings.Contains(strings.ToLower(risk.Name), "updatefunctioncode") {
 		message.Info("  Attack Path: (%s)-[:lambda:UpdateFunctionCode]->(function)-[:sts:AssumeRole]->(privileged_role)", attacker)
@@ -520,14 +509,14 @@ func (o *RiskConsoleOutputter) displayLambdaPath(risk model.Risk) {
 }
 
 // displayCloudFormationPath shows CloudFormation-based escalation
-func (o *RiskConsoleOutputter) displayCloudFormationPath(risk model.Risk) {
+func (o *RiskConsoleOutputter) displayCloudFormationPath(risk output.Risk) {
 	attacker := o.extractPrincipalName(risk.DNS)
 	message.Info("  Attack Path: (%s)-[:cloudformation:CreateStack|UpdateStack + iam:PassRole]->(privileged_role)", attacker)
 	message.Info("  Impact: Can deploy infrastructure with elevated permissions via CloudFormation")
 }
 
 // displayMultiHopPath shows complex multi-hop escalation chains
-func (o *RiskConsoleOutputter) displayMultiHopPath(risk model.Risk) {
+func (o *RiskConsoleOutputter) displayMultiHopPath(risk output.Risk) {
 	attacker := o.extractPrincipalName(risk.DNS)
 	message.Info("  Attack Path: (%s)-[*2..3]->(admin_principal)", attacker)
 	message.Info("  Impact: Multi-step privilege escalation chain leading to administrative access")
@@ -553,7 +542,3 @@ func (o *RiskConsoleOutputter) pluralize(word string, count int) string {
 	return word + "s"
 }
 
-// Params returns the parameters for this outputter
-func (o *RiskConsoleOutputter) Params() []cfg.Param {
-	return []cfg.Param{}
-}

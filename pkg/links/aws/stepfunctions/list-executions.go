@@ -1,32 +1,37 @@
 package stepfunctions
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	sfntypes "github.com/aws/aws-sdk-go-v2/service/sfn/types"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type AWSListExecutions struct {
-	*base.AwsReconLink
+	*base.NativeAWSLink
 }
 
-func NewAWSListExecutions(configs ...cfg.Config) chain.Link {
-	le := &AWSListExecutions{}
-	le.AwsReconLink = base.NewAwsReconLink(le, configs...)
-	return le
+func NewAWSListExecutions(args map[string]any) *AWSListExecutions {
+	return &AWSListExecutions{
+		NativeAWSLink: base.NewNativeAWSLink("list-executions", args),
+	}
 }
 
-func (le *AWSListExecutions) Process(resource *types.EnrichedResourceDescription) error {
-	config, err := le.GetConfigWithRuntimeArgs(resource.Region)
+func (le *AWSListExecutions) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*types.EnrichedResourceDescription)
+	if !ok {
+		return nil, fmt.Errorf("expected *types.EnrichedResourceDescription, got %T", input)
+	}
+
+	config, err := le.GetConfig(ctx, resource.Region)
 	if err != nil {
 		slog.Debug("Failed to get AWS config for region", "region", resource.Region, "error", err)
-		return err
+		return nil, fmt.Errorf("failed to get AWS config for region %s: %w", resource.Region, err)
 	}
 
 	var nextToken *string
@@ -34,14 +39,14 @@ func (le *AWSListExecutions) Process(resource *types.EnrichedResourceDescription
 	for {
 		sfnClient := sfn.NewFromConfig(config)
 
-		output, err := sfnClient.ListExecutions(le.Context(), &sfn.ListExecutionsInput{
+		output, err := sfnClient.ListExecutions(ctx, &sfn.ListExecutionsInput{
 			StateMachineArn: aws.String(resource.Identifier),
 			MaxResults:      1000,
 			NextToken:       nextToken,
 		})
 
 		if err != nil {
-			slog.Debug("Could not get Step Functions executions, error: " + err.Error())
+			slog.Debug("Could not get Step Functions executions", "error", err)
 			continue
 		}
 
@@ -58,5 +63,5 @@ func (le *AWSListExecutions) Process(resource *types.EnrichedResourceDescription
 		le.Send(execution)
 	}
 
-	return nil
+	return le.Outputs(), nil
 }

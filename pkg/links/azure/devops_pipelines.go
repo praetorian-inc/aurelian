@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -8,36 +9,35 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/links/azure/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // AzureDevOpsPipelinesLink scans pipelines, their definitions, runs, and logs
 type AzureDevOpsPipelinesLink struct {
-	*chain.Base
+	*base.NativeAzureLink
 }
 
-func NewAzureDevOpsPipelinesLink(configs ...cfg.Config) chain.Link {
-	l := &AzureDevOpsPipelinesLink{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
+func NewAzureDevOpsPipelinesLink(args map[string]any) *AzureDevOpsPipelinesLink {
+	return &AzureDevOpsPipelinesLink{
+		NativeAzureLink: base.NewNativeAzureLink("azure-devops-pipelines", args),
+	}
 }
 
-func (l *AzureDevOpsPipelinesLink) Params() []cfg.Param {
-	return []cfg.Param{
+func (l *AzureDevOpsPipelinesLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
 		options.AzureDevOpsPAT(),
 	}
 }
 
 // makeDevOpsRequest helper function for authenticated API calls
-func (l *AzureDevOpsPipelinesLink) makeDevOpsRequest(method, url string) (*http.Response, error) {
-	pat, _ := cfg.As[string](l.Arg("devops-pat"))
+func (l *AzureDevOpsPipelinesLink) makeDevOpsRequest(ctx context.Context, method, url string) (*http.Response, error) {
+	pat := l.ArgString("devops-pat", "")
 
-	req, err := http.NewRequestWithContext(l.Context(), method, url, nil)
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -62,11 +62,11 @@ func (l *AzureDevOpsPipelinesLink) makeDevOpsRequest(method, url string) (*http.
 }
 
 // processPipelineRunLogs processes pipeline run logs for secret scanning
-func (l *AzureDevOpsPipelinesLink) processPipelineRunLogs(config types.DevOpsScanConfig, pipelineId int, runId int) error {
+func (l *AzureDevOpsPipelinesLink) processPipelineRunLogs(ctx context.Context, config types.DevOpsScanConfig, pipelineId int, runId int) error {
 	logsUrl := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs/%d/logs?api-version=7.1-preview.1",
 		config.Organization, config.Project, pipelineId, runId)
 
-	logsResp, err := l.makeDevOpsRequest(http.MethodGet, logsUrl)
+	logsResp, err := l.makeDevOpsRequest(ctx, http.MethodGet, logsUrl)
 	if err != nil {
 		return fmt.Errorf("failed to get logs: %w", err)
 	}
@@ -93,22 +93,22 @@ func (l *AzureDevOpsPipelinesLink) processPipelineRunLogs(config types.DevOpsSca
 		logContentUrl := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs/%d/logs/%d?api-version=7.1-preview.1",
 			config.Organization, config.Project, pipelineId, runId, log.Id)
 
-		logContentResp, err := l.makeDevOpsRequest(http.MethodGet, logContentUrl)
+		logContentResp, err := l.makeDevOpsRequest(ctx, http.MethodGet, logContentUrl)
 		if err != nil {
-			l.Logger.Error("Failed to get log content", "error", err.Error(), "log_id", log.Id)
+			l.Logger().Error("Failed to get log content", "error", err.Error(), "log_id", log.Id)
 			continue
 		}
 
 		logContent, err := io.ReadAll(logContentResp.Body)
 		logContentResp.Body.Close()
 		if err != nil {
-			l.Logger.Error("Failed to read log content", "error", err.Error())
+			l.Logger().Error("Failed to read log content", "error", err.Error())
 			continue
 		}
 
-		npInput := jtypes.NPInput{
+		npInput := types.NpInput{
 			Content: string(logContent),
-			Provenance: jtypes.NPProvenance{
+			Provenance: types.NpProvenance{
 				Platform:     "azure-devops",
 				ResourceType: "Microsoft.DevOps/Pipelines/Runs/Logs",
 				ResourceID: fmt.Sprintf("%s/%s/pipeline/%d/run/%d/log/%d",
@@ -123,27 +123,27 @@ func (l *AzureDevOpsPipelinesLink) processPipelineRunLogs(config types.DevOpsSca
 	return nil
 }
 
-func (l *AzureDevOpsPipelinesLink) Process(input any) error {
+func (l *AzureDevOpsPipelinesLink) Process(ctx context.Context, input any) ([]any, error) {
 	// Handle both DevOpsScanConfig and NPInput types
 	var config types.DevOpsScanConfig
 	switch v := input.(type) {
 	case types.DevOpsScanConfig:
 		config = v
-	case jtypes.NPInput:
+	case types.NpInput:
 		// Skip NPInput - we only process DevOpsScanConfig for pipeline discovery
-		l.Logger.Debug("Skipping NPInput in pipelines link", "resource_id", v.Provenance.ResourceID)
+		l.Logger().Debug("Skipping NPInput in pipelines link", "resource_id", v.Provenance.ResourceID)
 		l.Send(input) // Pass through to next link
-		return nil
+		return l.Outputs(), nil
 	default:
-		return fmt.Errorf("unsupported input type: %T", input)
+		return nil, fmt.Errorf("unsupported input type: %T", input)
 	}
 	// Get list of pipelines in the project
 	pipelinesUrl := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines?api-version=7.1-preview.1",
 		config.Organization, config.Project)
 
-	pipelinesResp, err := l.makeDevOpsRequest(http.MethodGet, pipelinesUrl)
+	pipelinesResp, err := l.makeDevOpsRequest(ctx, http.MethodGet, pipelinesUrl)
 	if err != nil {
-		return fmt.Errorf("failed to get pipelines: %w", err)
+		return nil, fmt.Errorf("failed to get pipelines: %w", err)
 	}
 	defer pipelinesResp.Body.Close()
 
@@ -157,16 +157,16 @@ func (l *AzureDevOpsPipelinesLink) Process(input any) error {
 
 	body, err := io.ReadAll(pipelinesResp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	if err := json.Unmarshal(body, &pipelinesResult); err != nil {
-		return fmt.Errorf("failed to parse pipelines response: %w", err)
+		return nil, fmt.Errorf("failed to parse pipelines response: %w", err)
 	}
 
 	if len(pipelinesResult.Value) == 0 {
-		l.Logger.Info("No pipelines found in project", "project", config.Project)
-		return nil
+		l.Logger().Info("No pipelines found in project", "project", config.Project)
+		return l.Outputs(), nil
 	}
 
 	message.Info("Found %d pipelines to scan in project %s", len(pipelinesResult.Value), config.Project)
@@ -185,23 +185,23 @@ func (l *AzureDevOpsPipelinesLink) Process(input any) error {
 			defUrl := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d?api-version=7.1-preview.1",
 				config.Organization, config.Project, pipeline.Id)
 
-			defResp, err := l.makeDevOpsRequest(http.MethodGet, defUrl)
+			defResp, err := l.makeDevOpsRequest(ctx, http.MethodGet, defUrl)
 			if err != nil {
-				l.Logger.Error("Failed to get pipeline definition", "error", err.Error(), "pipeline_id", pipeline.Id)
+				l.Logger().Error("Failed to get pipeline definition", "error", err.Error(), "pipeline_id", pipeline.Id)
 				return
 			}
 			defer defResp.Body.Close()
 
 			defBody, err := io.ReadAll(defResp.Body)
 			if err != nil {
-				l.Logger.Error("Failed to read definition", "error", err.Error())
+				l.Logger().Error("Failed to read definition", "error", err.Error())
 				return
 			}
 
 			// Send pipeline definition for scanning
-			npInput := jtypes.NPInput{
+			npInput := types.NpInput{
 				Content: string(defBody),
-				Provenance: jtypes.NPProvenance{
+				Provenance: types.NpProvenance{
 					Platform:     "azure-devops",
 					ResourceType: "Microsoft.DevOps/Pipelines/Definition",
 					ResourceID: fmt.Sprintf("%s/%s/pipeline/%d",
@@ -215,9 +215,9 @@ func (l *AzureDevOpsPipelinesLink) Process(input any) error {
 			runsUrl := fmt.Sprintf("https://dev.azure.com/%s/%s/_apis/pipelines/%d/runs?api-version=7.1-preview.1",
 				config.Organization, config.Project, pipeline.Id)
 
-			runsResp, err := l.makeDevOpsRequest(http.MethodGet, runsUrl)
+			runsResp, err := l.makeDevOpsRequest(ctx, http.MethodGet, runsUrl)
 			if err != nil {
-				l.Logger.Error("Failed to get pipeline runs", "error", err.Error(), "pipeline_id", pipeline.Id)
+				l.Logger().Error("Failed to get pipeline runs", "error", err.Error(), "pipeline_id", pipeline.Id)
 				return
 			}
 			defer runsResp.Body.Close()
@@ -231,7 +231,7 @@ func (l *AzureDevOpsPipelinesLink) Process(input any) error {
 
 			runsBody, _ := io.ReadAll(runsResp.Body)
 			if err := json.Unmarshal(runsBody, &runsResult); err != nil {
-				l.Logger.Error("Failed to parse runs", "error", err.Error())
+				l.Logger().Error("Failed to parse runs", "error", err.Error())
 				return
 			}
 
@@ -240,9 +240,9 @@ func (l *AzureDevOpsPipelinesLink) Process(input any) error {
 				// Send run variables for scanning
 				if len(run.Variables) > 0 {
 					varsJson, _ := json.Marshal(run.Variables)
-					npInput := jtypes.NPInput{
+					npInput := types.NpInput{
 						Content: string(varsJson),
-						Provenance: jtypes.NPProvenance{
+						Provenance: types.NpProvenance{
 							Platform:     "azure-devops",
 							ResourceType: "Microsoft.DevOps/Pipelines/Runs/Variables",
 							ResourceID: fmt.Sprintf("%s/%s/pipeline/%d/run/%d/variables",
@@ -254,8 +254,8 @@ func (l *AzureDevOpsPipelinesLink) Process(input any) error {
 				}
 
 				// Process run logs
-				if err := l.processPipelineRunLogs(config, pipeline.Id, run.Id); err != nil {
-					l.Logger.Error("Failed to process run logs", "error", err.Error(), "run_id", run.Id)
+				if err := l.processPipelineRunLogs(ctx, config, pipeline.Id, run.Id); err != nil {
+					l.Logger().Error("Failed to process run logs", "error", err.Error(), "run_id", run.Id)
 				}
 			}
 		}(types.DevOpsPipeline{
@@ -266,5 +266,5 @@ func (l *AzureDevOpsPipelinesLink) Process(input any) error {
 	}
 
 	wg.Wait()
-	return nil
+	return l.Outputs(), nil
 }

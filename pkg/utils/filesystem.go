@@ -44,7 +44,7 @@ func EnsureDirectoryExists(dirPath string) error {
 // EnsureOutputDirectory creates the standard nebula-output directory
 // This is a convenience function for the most common use case
 func EnsureOutputDirectory() error {
-	return EnsureDirectoryExists("nebula-output")
+	return EnsureDirectoryExists("aurelian-output")
 }
 
 // EnsureFileDirectory creates the directory needed for a given file path
@@ -58,7 +58,7 @@ func EnsureFileDirectory(filePath string) error {
 // and ensures the directory structure exists
 func CreateOutputPath(components ...string) (string, error) {
 	// Start with nebula-output as base
-	parts := append([]string{"nebula-output"}, components...)
+	parts := append([]string{"aurelian-output"}, components...)
 	fullPath := filepath.Join(parts...)
 	
 	// Ensure the directory exists

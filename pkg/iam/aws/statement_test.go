@@ -3,7 +3,7 @@ package aws
 import (
 	"testing"
 
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
 )
 

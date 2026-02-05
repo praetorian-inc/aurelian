@@ -1,13 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"os"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/internal/registry"
+	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -22,24 +23,24 @@ var platformAliases = map[string][]string{
 
 // generateCommands builds the command tree based on registered modules
 func generateCommands(root *cobra.Command) {
-	hierarchy := registry.GetHierarchy()
+	hierarchy := plugin.GetHierarchy()
 
 	// Create the full platform->category->module hierarchy
 	for platform, categories := range hierarchy {
 		platformCmd := &cobra.Command{
-			Use:     platform,
-			Aliases: platformAliases[platform], // Add aliases if they exist
+			Use:     string(platform),
+			Aliases: platformAliases[string(platform)], // Add aliases if they exist
 			Short:   fmt.Sprintf("%s platform commands", platform),
 		}
 
 		for category, modules := range categories {
 			categoryCmd := &cobra.Command{
-				Use:   category,
+				Use:   string(category),
 				Short: fmt.Sprintf("%s commands for %s", category, platform),
 			}
 
-			for _, module := range modules {
-				generateModuleCommand(platform, category, module, categoryCmd)
+			for _, moduleID := range modules {
+				generateModuleCommand(platform, category, moduleID, categoryCmd)
 			}
 
 			platformCmd.AddCommand(categoryCmd)
@@ -49,37 +50,34 @@ func generateCommands(root *cobra.Command) {
 	}
 }
 
-func generateModuleCommand(platform, category, moduleName string, parent *cobra.Command) {
-	entry, ok := registry.GetRegistryEntryByPlatform(platform, category, moduleName)
+func generateModuleCommand(platform plugin.Platform, category plugin.Category, moduleID string, parent *cobra.Command) {
+	module, ok := plugin.Get(platform, category, moduleID)
 	if !ok {
 		return
 	}
 
 	cmd := &cobra.Command{
-		Use:   moduleName,
-		Short: entry.Module.Metadata().Description,
+		Use:   moduleID,
+		Short: module.Description(),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runModule(cmd, entry.Module, platform)
+			return runModule(cmd, module, platform)
 		},
 	}
 
 	// Add flags based on module parameters
 	flagValues := make(map[string]interface{})
 
-	// Here's the issue - you might be collecting duplicate parameters
-	// Let's ensure we only add each parameter once:
-
 	// Create a set of parameter names to track which ones we've seen
 	paramNames := make(map[string]bool)
 
-	for _, param := range entry.Module.Params() {
+	for _, param := range module.Parameters() {
 		// Skip if we've already added this parameter
-		if paramNames[param.Name()] {
+		if paramNames[param.Name] {
 			continue
 		}
 
 		// Mark as seen
-		paramNames[param.Name()] = true
+		paramNames[param.Name] = true
 
 		// Add the flag
 		addFlag(cmd, param, flagValues)
@@ -102,27 +100,29 @@ func isShorthandAvailable(flags *pflag.FlagSet, shorthand string) bool {
 	return !found
 }
 
-func addFlag(cmd *cobra.Command, param cfg.Param, flagValues map[string]interface{}) {
-	name := param.Name()
+func addFlag(cmd *cobra.Command, param plugin.Parameter, flagValues map[string]interface{}) {
+	name := param.Name
 	shorthand := ""
 	// Only use first character of shortcode as shorthand if available
-	if sc := param.Shortcode(); len(sc) > 0 {
-		potentialShorthand := string(sc[0])
+	if len(param.Shortcode) > 0 {
+		potentialShorthand := string(param.Shortcode[0])
 		if isShorthandAvailable(cmd.Flags(), potentialShorthand) {
 			shorthand = potentialShorthand
 		}
 	}
-	description := param.Description()
+	description := param.Description
 
 	// Add (required) to description if param is required
-	if param.Required() {
+	if param.Required {
 		description = description + " (required)"
 	}
 
-	switch param.Type() {
+	hasDefault := param.Default != nil
+
+	switch param.Type {
 	case "string":
-		if param.HasDefault() {
-			defaultVal, _ := cfg.As[string](param.Value())
+		if hasDefault {
+			defaultVal, _ := param.Default.(string)
 			if shorthand != "" {
 				flagValues[name] = cmd.Flags().StringP(name, shorthand, defaultVal, description)
 			} else {
@@ -136,8 +136,8 @@ func addFlag(cmd *cobra.Command, param cfg.Param, flagValues map[string]interfac
 			}
 		}
 	case "int":
-		if param.HasDefault() {
-			defaultVal, _ := cfg.As[int](param.Value())
+		if hasDefault {
+			defaultVal, _ := param.Default.(int)
 			if shorthand != "" {
 				flagValues[name] = cmd.Flags().IntP(name, shorthand, defaultVal, description)
 			} else {
@@ -151,8 +151,8 @@ func addFlag(cmd *cobra.Command, param cfg.Param, flagValues map[string]interfac
 			}
 		}
 	case "bool":
-		if param.HasDefault() {
-			defaultVal, _ := cfg.As[bool](param.Value())
+		if hasDefault {
+			defaultVal, _ := param.Default.(bool)
 			if shorthand != "" {
 				flagValues[name] = cmd.Flags().BoolP(name, shorthand, defaultVal, description)
 			} else {
@@ -166,8 +166,8 @@ func addFlag(cmd *cobra.Command, param cfg.Param, flagValues map[string]interfac
 			}
 		}
 	case "[]string":
-		if param.HasDefault() {
-			defaultVal, _ := cfg.As[[]string](param.Value())
+		if hasDefault {
+			defaultVal, _ := param.Default.([]string)
 			if shorthand != "" {
 				flagValues[name] = cmd.Flags().StringSliceP(name, shorthand, defaultVal, description)
 			} else {
@@ -182,15 +182,15 @@ func addFlag(cmd *cobra.Command, param cfg.Param, flagValues map[string]interfac
 		}
 	}
 
-	if param.Required() {
+	if param.Required {
 		cmd.MarkFlagRequired(name)
 	}
 }
 
 // Update runModule to accept platform string
-func runModule(cmd *cobra.Command, module chain.Module, platform string) error {
-	// Convert flags to configs
-	var configs []cfg.Config
+func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platform) error {
+	// Convert flags to args map
+	argsMap := make(map[string]any)
 	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
 		if flag.Changed {
 			name := flag.Name
@@ -199,39 +199,83 @@ func runModule(cmd *cobra.Command, module chain.Module, platform string) error {
 			switch flag.Value.Type() {
 			case "bool":
 				value, _ := cmd.Flags().GetBool(name)
-				configs = append(configs, cfg.WithArg(name, value))
+				argsMap[name] = value
 			case "int":
 				value, _ := cmd.Flags().GetInt(name)
-				configs = append(configs, cfg.WithArg(name, value))
+				argsMap[name] = value
 			case "stringSlice":
 				value, _ := cmd.Flags().GetStringSlice(name)
-				configs = append(configs, cfg.WithArg(name, value))
+				argsMap[name] = value
 			case "string":
 				value, _ := cmd.Flags().GetString(name)
-				configs = append(configs, cfg.WithArg(name, value))
+				argsMap[name] = value
 			default:
 				// Fallback to string representation
-				configs = append(configs, cfg.WithArg(name, flag.Value.String()))
+				argsMap[name] = flag.Value.String()
 			}
 		}
 	})
 
-	// Check if this is the arg-scan module and if enrichment is disabled
-	moduleName := module.Metadata().Name
-	if moduleProps := module.Metadata().Properties(); moduleProps != nil {
-		if id, exists := moduleProps["id"].(string); exists && id == "arg-scan" {
-			if disableEnrichment, _ := cmd.Flags().GetBool("disable-enrichment"); disableEnrichment {
-				moduleName = "Azure ARG Template Scanner WITHOUT ENRICHMENT"
+	// Get output format and output path from flags
+	outputFormat, _ := cmd.Flags().GetString("output-format")
+	outputPath, _ := cmd.Flags().GetString("output-file")
+
+	// Determine output writer and file cleanup
+	var outputWriter io.Writer = os.Stdout
+	var outputFile *os.File
+	if outputPath != "" {
+		f, err := os.Create(outputPath)
+		if err != nil {
+			return fmt.Errorf("failed to create output file: %w", err)
+		}
+		outputFile = f
+		outputWriter = f
+		defer func() {
+			if closeErr := outputFile.Close(); closeErr != nil {
+				// Log close error but don't override return value
+				message.Warning("failed to close output file: %v", closeErr)
 			}
+		}()
+	}
+
+	// Check if this is the arg-scan module and if enrichment is disabled
+	moduleName := module.Name()
+	if module.ID() == "arg-scan" {
+		if disableEnrichment, _ := cmd.Flags().GetBool("disable-enrichment"); disableEnrichment {
+			moduleName = "Azure ARG Template Scanner WITHOUT ENRICHMENT"
 		}
 	}
 	message.Section("Running module %s", moduleName)
 
-	module.Run(configs...)
+	// Create config with args, context, and output writer
+	cfg := plugin.Config{
+		Args:    argsMap,
+		Context: context.Background(),
+		Output:  outputWriter,
+		Verbose: !quietFlag, // Verbose is inverse of quiet
+	}
 
-	if platform == "aws" && !quietFlag {
+	// Run module with the new plugin API
+	results, err := module.Run(cfg)
+	if err != nil {
+		return err
+	}
+
+	// Handle output formatting if specified
+	if outputFormat != "" {
+		// TODO: Format results based on outputFormat
+		// For now, just write raw results
+		for _, result := range results {
+			if result.Error != nil {
+				message.Warning("Result error: %v", result.Error)
+			}
+		}
+	}
+
+	if platform == plugin.PlatformAWS && !quietFlag {
 		helpers.ShowCacheStat()
 		helpers.PrintAllThrottlingCounts()
 	}
-	return module.Error()
+
+	return nil
 }

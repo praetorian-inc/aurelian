@@ -15,9 +15,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go/middleware"
-	"github.com/praetorian-inc/nebula/internal/logs"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/internal/logs"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // TODO this should be combined with roseta
@@ -48,20 +48,20 @@ type ArnIdentifier struct {
 
 var ProfileIdentity sync.Map
 
-// NebulaConfigSource stores custom metadata in aws.Config.ConfigSources
-type NebulaConfigSource struct {
+// AurelianConfigSource stores custom metadata in aws.Config.ConfigSources
+type AurelianConfigSource struct {
 	Profile    string
 	OpsecLevel string
 }
 
-// extractNebulaConfigSource retrieves NebulaConfigSource from aws.Config.ConfigSources
-func extractNebulaConfigSource(cfg aws.Config) (*NebulaConfigSource, error) {
+// extractAurelianConfigSource retrieves AurelianConfigSource from aws.Config.ConfigSources
+func extractAurelianConfigSource(cfg aws.Config) (*AurelianConfigSource, error) {
 	for _, source := range cfg.ConfigSources {
-		if nebulaSource, ok := source.(*NebulaConfigSource); ok {
-			return nebulaSource, nil
+		if aurelianSource, ok := source.(*AurelianConfigSource); ok {
+			return aurelianSource, nil
 		}
 	}
-	return nil, fmt.Errorf("NebulaConfigSource not found in aws.Config.ConfigSources - this config was not created with helpers.GetAWSCfg(). Use helpers.GetAWSCfg() to create AWS configs with proper caching and OPSEC support")
+	return nil, fmt.Errorf("AurelianConfigSource not found in aws.Config.ConfigSources - this config was not created with helpers.GetAWSCfg(). Use helpers.GetAWSCfg() to create AWS configs with proper caching and OPSEC support")
 }
 
 func NewArn(identifier string) (arn.ARN, error) {
@@ -167,12 +167,12 @@ func GetAWSCfg(region string, profile string, opts []*types.Option, opsecLevel s
 		cacheKey = "default"
 	}
 
-	// Store nebula-specific metadata in ConfigSources early, before any identity calls
-	nebulaSource := &NebulaConfigSource{
+	// Store aurelian-specific metadata in ConfigSources early, before any identity calls
+	aurelianSource := &AurelianConfigSource{
 		Profile:    cacheKey,
 		OpsecLevel: opsecLevel,
 	}
-	cfg.ConfigSources = append(cfg.ConfigSources, nebulaSource)
+	cfg.ConfigSources = append(cfg.ConfigSources, aurelianSource)
 
 	var CachePrep middleware.InitializeMiddleware
 
@@ -183,7 +183,7 @@ func GetAWSCfg(region string, profile string, opts []*types.Option, opsecLevel s
 	} else {
 		principal, err := GetCallerIdentity(cfg)
 		if err != nil {
-			slog.Error("Error getting principal", err)
+			slog.Error("Error getting principal", "error", err)
 			return aws.Config{}, err
 		}
 		CachePrep = GetCachePrepWithIdentity(principal, opts)
@@ -247,18 +247,18 @@ func getCallerIdentityFromCache(cacheKey string, cfg aws.Config) (sts.GetCallerI
 
 func GetCallerIdentity(cfg aws.Config) (sts.GetCallerIdentityOutput, error) {
 	// Extract metadata from ConfigSources
-	nebulaSource, err := extractNebulaConfigSource(cfg)
+	aurelianSource, err := extractAurelianConfigSource(cfg)
 	if err != nil {
 		return sts.GetCallerIdentityOutput{}, err
 	}
 
 	// In stealth mode, avoid making STS calls for OPSEC
-	if nebulaSource.OpsecLevel == "stealth" {
+	if aurelianSource.OpsecLevel == "stealth" {
 		return sts.GetCallerIdentityOutput{}, fmt.Errorf("caller identity not available in stealth mode - STS calls are disabled for OPSEC")
 	}
 
 	// Use the profile from ConfigSources as cache key
-	cacheKey := nebulaSource.Profile
+	cacheKey := aurelianSource.Profile
 
 	return getCallerIdentityFromCache(cacheKey, cfg)
 }

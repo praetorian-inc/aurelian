@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/orgpolicies"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/orgpolicies"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type PolicyData struct {
@@ -376,6 +376,9 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 	// 5. Check if this is a cross-account request
 	result.CrossAccountAccess = e.isCrossAccountRequest(req.Resource, req.Context)
 
+	// Check if this is an AssumeRole operation on an IAM role (needed for early return decision)
+	isAssumeRoleOperation := strings.HasPrefix(req.Action, "sts:AssumeRole")
+
 	// 6. Evaluate resource-based policy if present
 	resourceAllowed := false
 	explicitPrincipalAllow := false
@@ -394,7 +397,9 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 			// Check if principal is explicitly allowed
 			explicitPrincipalAllow = e.hasExplicitPrincipalAllow(resourceStatements, req.Context.PrincipalArn)
 
-			if resourceAllowed && explicitPrincipalAllow && result.PolicyResult.IsAllowed() {
+			// Early return for resource policy allowing access - but NOT for AssumeRole operations
+			// AssumeRole requires special handling to check both identity and trust policies
+			if !isAssumeRoleOperation && resourceAllowed && explicitPrincipalAllow && result.PolicyResult.IsAllowed() {
 				result.Allowed = true
 				result.EvaluationDetails = "Explicitly allowed by resource policy"
 				return result, nil
@@ -415,15 +420,13 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 	// 8. Make final determination based on cross-account status, policy evaluations,
 	//    and special handling for assume role operations
 
-	// Check if this is an AssumeRole operation on an IAM role
-	isAssumeRoleOperation := strings.HasPrefix(req.Action, "sts:AssumeRole") &&
-		strings.Contains(req.Resource, ":role/")
-
 	if result.CrossAccountAccess {
 		if isAssumeRoleOperation {
 			// Special case: For cross-account assume role, the trust policy (resource policy)
 			// must allow the principal, and the principal needs sts:AssumeRole permission
-			result.Allowed = result.PolicyResult.hasTypeAllow(EvalTypeIdentity) && resourceAllowed
+			// The trust policy can be in either ResourcePolicies or BoundaryStatements (for assume role policy documents)
+			trustPolicyAllows := resourceAllowed || result.PolicyResult.hasTypeAllow(EvalTypePermBoundary)
+			result.Allowed = result.PolicyResult.hasTypeAllow(EvalTypeIdentity) && trustPolicyAllows
 			result.EvaluationDetails = "Cross-account assume role access"
 		} else {
 			// Normal cross-account access requires both identity and resource policy allows
@@ -431,12 +434,32 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 			result.EvaluationDetails = "Cross-account access"
 		}
 	} else {
-		// Same account access allows if:
-		// - Principal is explicitly named in resource policy, OR
-		// - Either identity or resource policy allows (when not explicitly named)
-		result.Allowed = explicitPrincipalAllow && result.PolicyResult.hasTypeAllow(EvalTypeResource) ||
-			result.PolicyResult.hasTypeAllow(EvalTypeIdentity)
-		result.EvaluationDetails = "Same-account access"
+		if isAssumeRoleOperation {
+			// Special case: For same-account assume role
+			// Service principals (e.g., lambda.amazonaws.com) don't have identity policies,
+			// so trust policy alone is sufficient for them.
+			// IAM principals (users/roles) require BOTH identity AND trust policy.
+			isServicePrincipal := strings.HasSuffix(req.Context.PrincipalArn, ".amazonaws.com")
+
+			if isServicePrincipal {
+				// Service principals are authorized by trust policy alone
+				result.Allowed = resourceAllowed
+				result.EvaluationDetails = "Same-account service principal assume role"
+			} else {
+				// IAM principals require BOTH:
+				// 1. Identity policy must grant sts:AssumeRole permission
+				// 2. Trust policy must allow the principal (with full statement evaluation including conditions)
+				result.Allowed = result.PolicyResult.hasTypeAllow(EvalTypeIdentity) && resourceAllowed
+				result.EvaluationDetails = "Same-account assume role access"
+			}
+		} else {
+			// Same account access allows if:
+			// - Principal is explicitly named in resource policy, OR
+			// - Either identity or resource policy allows (when not explicitly named)
+			result.Allowed = explicitPrincipalAllow && result.PolicyResult.hasTypeAllow(EvalTypeResource) ||
+				result.PolicyResult.hasTypeAllow(EvalTypeIdentity)
+			result.EvaluationDetails = "Same-account access"
+		}
 	}
 
 	// Extract SSM document restrictions for relevant actions

@@ -2,37 +2,33 @@ package recon
 
 import (
 	"testing"
+
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
-func TestAzureDevOpsSecretsModule(t *testing.T) {
+func TestDevOpsSecretsModuleModule(t *testing.T) {
 	// Test that the module is properly defined
-	if AzureDevOpsSecrets == nil {
-		t.Fatal("AzureDevOpsSecrets module is nil")
+	module := &DevOpsSecretsModule{}
+
+	// Verify it implements plugin.Module
+	var _ plugin.Module = module
+
+	// Check required properties using plugin.Module interface methods
+	if module.ID() != "devops-secrets" {
+		t.Errorf("Expected id 'devops-secrets', got %v", module.ID())
 	}
 
-	// Test metadata
-	metadata := AzureDevOpsSecrets.Metadata()
-	if metadata == nil {
-		t.Fatal("Module metadata is nil")
+	if module.Platform() != plugin.PlatformAzure {
+		t.Errorf("Expected platform 'azure', got %v", module.Platform())
 	}
 
-	// Check required properties
-	props := metadata.Properties()
-	if props["id"] != "devops-secrets" {
-		t.Errorf("Expected id 'devops-secrets', got %v", props["id"])
-	}
-
-	if props["platform"] != "azure" {
-		t.Errorf("Expected platform 'azure', got %v", props["platform"])
-	}
-
-	if props["opsec_level"] != "moderate" {
-		t.Errorf("Expected opsec_level 'moderate', got %v", props["opsec_level"])
+	if module.OpsecLevel() != "moderate" {
+		t.Errorf("Expected opsec_level 'moderate', got %v", module.OpsecLevel())
 	}
 
 	// Check authors
-	authors, ok := props["authors"].([]string)
-	if !ok || len(authors) == 0 {
+	authors := module.Authors()
+	if len(authors) == 0 {
 		t.Error("Module authors not properly set")
 	}
 

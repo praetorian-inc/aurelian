@@ -1,10 +1,10 @@
 package aws
 
 import (
+	"context"
 	"slices"
 	"testing"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -12,14 +12,24 @@ func TestNewAWSExpandActionsLink(t *testing.T) {
 
 	t.Run("Expand Actions wildcard match", func(t *testing.T) {
 		expected := []string{"lambda:InvokeFunction", "lambda:InvokeAsync", "lambda:InvokeFunctionUrl"}
-		c := chain.NewChain(NewAWSExpandActionsLink())
-		c.Send("lambda:i*")
-		c.Close()
+
+		link := NewAWSExpandActionsLink(map[string]any{})
+		if err := link.Initialize(); err != nil {
+			t.Fatalf("Failed to initialize link: %v", err)
+		}
+
+		outputs, err := link.Process(context.Background(), "lambda:i*")
+		if err != nil {
+			t.Fatalf("Process failed: %v", err)
+		}
 
 		expandedActions := []string{}
-		for o, ok := chain.RecvAs[string](c); ok; o, ok = chain.RecvAs[string](c) {
-			expandedActions = append(expandedActions, o)
+		for _, output := range outputs {
+			if action, ok := output.(string); ok {
+				expandedActions = append(expandedActions, action)
+			}
 		}
+
 		slices.Sort(expandedActions)
 		slices.Sort(expected)
 		if !slices.Equal(expected, expandedActions) {
@@ -29,14 +39,24 @@ func TestNewAWSExpandActionsLink(t *testing.T) {
 
 	t.Run("ExpandActions multiple wildcard and case insensitivity", func(t *testing.T) {
 		expected := []string{"lambda:InvokeFunction", "lambda:InvokeAsync", "lambda:InvokeFunctionUrl"}
-		c := chain.NewChain(NewAWSExpandActionsLink())
-		c.Send("lambda:i*voKe*")
-		c.Close()
+
+		link := NewAWSExpandActionsLink(map[string]any{})
+		if err := link.Initialize(); err != nil {
+			t.Fatalf("Failed to initialize link: %v", err)
+		}
+
+		outputs, err := link.Process(context.Background(), "lambda:i*voKe*")
+		if err != nil {
+			t.Fatalf("Process failed: %v", err)
+		}
 
 		expandedActions := []string{}
-		for o, ok := chain.RecvAs[string](c); ok; o, ok = chain.RecvAs[string](c) {
-			expandedActions = append(expandedActions, o)
+		for _, output := range outputs {
+			if action, ok := output.(string); ok {
+				expandedActions = append(expandedActions, action)
+			}
 		}
+
 		slices.Sort(expandedActions)
 		slices.Sort(expected)
 		if !slices.Equal(expected, expandedActions) {
@@ -45,14 +65,23 @@ func TestNewAWSExpandActionsLink(t *testing.T) {
 	})
 
 	t.Run("ExpandActions wildcard", func(t *testing.T) {
-		c := chain.NewChain(NewAWSExpandActionsLink())
-		c.Send("*")
-		c.Close()
+		link := NewAWSExpandActionsLink(map[string]any{})
+		if err := link.Initialize(); err != nil {
+			t.Fatalf("Failed to initialize link: %v", err)
+		}
+
+		outputs, err := link.Process(context.Background(), "*")
+		if err != nil {
+			t.Fatalf("Process failed: %v", err)
+		}
 
 		expandedActions := []string{}
-		for o, ok := chain.RecvAs[string](c); ok; o, ok = chain.RecvAs[string](c) {
-			expandedActions = append(expandedActions, o)
+		for _, output := range outputs {
+			if action, ok := output.(string); ok {
+				expandedActions = append(expandedActions, action)
+			}
 		}
+
 		assert.Greater(t, len(expandedActions), 10000)
 	})
 }

@@ -1,7 +1,6 @@
-<img width="2912" height="1440" alt="aurelian" src="https://github.com/user-attachments/assets/317f3952-7311-429d-9ae0-d76f1a9ea519" />
 # Aurelian
 
-Nebula is a command-line security scanning tool built on the Janus framework for testing cloud environments. It provides modular security testing capabilities across AWS, Azure, and GCP with extensible link-based architecture.
+Aurelian is a command-line security scanning tool built on the Janus framework for testing cloud environments. It provides modular security testing capabilities across AWS, Azure, and GCP with extensible link-based architecture.
 
 For development guidance, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
@@ -21,24 +20,24 @@ For development guidance, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 **From Source:**
 ```bash
-git clone https://github.com/praetorian-inc/nebula
-cd nebula
+git clone https://github.com/praetorian-inc/aurelian
+cd aurelian
 go build
 ```
 
 **Docker:**
 ```bash
-docker build -t nebula .
-docker run --rm -v ~/.aws:/root/.aws nebula aws recon whoami
+docker build -t aurelian .
+docker run --rm -v ~/.aws:/root/.aws aurelian aws recon whoami
 ```
 
-**Pre-built binaries** available in [GitHub Releases](https://github.com/praetorian-inc/nebula/releases).
+**Pre-built binaries** available in [GitHub Releases](https://github.com/praetorian-inc/aurelian/releases).
 
 **Dependencies** secret scanning is done using [https://github.com/praetorian-inc/noseyparker](https://github.com/praetorian-inc/noseyparker) and must be available in your `$PATH`.
 
 ## Authentication
 
-Nebula uses standard cloud provider authentication:
+Aurelian uses standard cloud provider authentication:
 
 - **AWS**: Environment variables, credentials file (~/.aws/credentials), IAM roles
 - **Azure**: Environment variables, Azure CLI, managed identity
@@ -48,28 +47,28 @@ Nebula uses standard cloud provider authentication:
 ## Basic Usage
 
 ```bash
-nebula <provider> <category> <module> [flags]
+aurelian <provider> <category> <module> [flags]
 ```
 
 **Examples:**
 ```bash
 # Check AWS account identity
-nebula aws recon whoami
+aurelian aws recon whoami
 
 # List all S3 buckets across regions
-nebula aws recon list -t AWS::S3::Bucket -r all
+aurelian aws recon list -t AWS::S3::Bucket -r all
 
 # Find secrets in Lambda functions
-nebula aws recon find-secrets -t AWS::Lambda::Function
+aurelian aws recon find-secrets -t AWS::Lambda::Function
 
 # Discover public Azure resources  
-nebula azure recon public-resources -s subscription-id
+aurelian azure recon public-resources -s subscription-id
 
 # Get GCP project information
-nebula gcp recon projects-list
+aurelian gcp recon projects-list
 
 # Analyze Docker container for secrets
-nebula saas recon docker-dump -i nginx:latest
+aurelian saas recon docker-dump -i nginx:latest
 ```
 
 ## Common Commands
@@ -77,59 +76,59 @@ nebula saas recon docker-dump -i nginx:latest
 **AWS Reconnaissance:**
 ```bash
 # Account information and permissions
-nebula aws recon account-auth-details
-nebula aws recon whoami
+aurelian aws recon account-auth-details
+aurelian aws recon whoami
 
 # Resource discovery
-nebula aws recon list-all-resources -r us-east-1
-nebula aws recon public-resources -r all
+aurelian aws recon list-all-resources -r us-east-1
+aurelian aws recon public-resources -r all
 
 # Secrets scanning
-nebula aws recon find-secrets -t all -r all
-nebula aws recon find-secrets -t AWS::Lambda::Function -r us-east-2
+aurelian aws recon find-secrets -t all -r all
+aurelian aws recon find-secrets -t AWS::Lambda::Function -r us-east-2
 ```
 
 **Azure Reconnaissance:**
 ```bash
 # Environment details
-nebula azure recon summary -s subscription-id
+aurelian azure recon summary -s subscription-id
 
 # Resource enumeration  
-nebula azure recon list-all-resources -s subscription-id
-nebula azure recon public-resources -s all
+aurelian azure recon list-all-resources -s subscription-id
+aurelian azure recon public-resources -s all
 
 # DevOps secrets scanning
-nebula azure recon devops-secrets --organization org-name
+aurelian azure recon devops-secrets --organization org-name
 ```
 
 **SaaS Reconnaissance:**
 ```bash
 # Docker container analysis and secret scanning
-nebula saas recon docker-dump -i image-name
+aurelian saas recon docker-dump -i image-name
 ```
 
 **Analysis Modules:**
 ```bash
 # AWS key analysis
-nebula aws analyze access-key-to-account-id -k AKIA...
-nebula aws analyze known-account -a 123456789012
+aurelian aws analyze access-key-to-account-id -k AKIA...
+aurelian aws analyze known-account -a 123456789012
 
 # IP analysis
-nebula aws analyze ip-lookup -i 1.2.3.4
+aurelian aws analyze ip-lookup -i 1.2.3.4
 ```
 
 ## Output and Results
 
 **Output Formats:**
 - **Console**: Real-time progress and summaries
-- **JSON**: Structured data in `nebula-output/` directory
+- **JSON**: Structured data in `aurelian-output/` directory
 - **Markdown**: Human-readable tables
 
 **Common Flags:**
 ```bash
 # Global options
 --log-level string    Log level (debug, info, warn, error)
---output string       Output directory (default "nebula-output")
+--output string       Output directory (default "aurelian-output")
 --quiet              Suppress user messages
 --no-color           Disable colored output
 
@@ -142,24 +141,24 @@ nebula aws analyze ip-lookup -i 1.2.3.4
 
 ## MCP Server
 
-Nebula provides an MCP (Model Context Protocol) server for AI assistants:
+Aurelian provides an MCP (Model Context Protocol) server for AI assistants:
 
 **Stdio Server:**
 ```bash
-nebula mcp-server
+aurelian mcp-server
 ```
 
 **HTTP Server:**
 ```bash
-nebula mcp-server --http --addr :8080
+aurelian mcp-server --http --addr :8080
 ```
 
 **Claude Desktop Configuration:**
 ```json
 {
   "mcpServers": {
-    "nebula": {
-      "command": "/path/to/nebula", 
+    "aurelian": {
+      "command": "/path/to/aurelian", 
       "args": ["mcp-server"]
     }
   }
@@ -173,7 +172,7 @@ nebula mcp-server --http --addr :8080
 
 ## Architecture
 
-Nebula uses Praetorian's  [Janus Framework](https://github.com/praetorian-inc/janus-framework).
+Aurelian uses Praetorian's  [Janus Framework](https://github.com/praetorian-inc/janus-framework).
 - **Links**: Individual processing units that can be chained together
 - **Modules**: Pre-configured chains for specific security testing scenarios
 - **Outputters**: Pluggable output processing for different formats

@@ -2,6 +2,7 @@ package llm
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -11,15 +12,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // AnthropicLLMAnalyzer is a generic link for analyzing content using Anthropic's Claude API.
 // It works with any content that implements the AnalyzableContent interface.
 type AnthropicLLMAnalyzer struct {
-	*chain.Base
+	*plugin.BaseLink
 	apiKey     string
 	model      string
 	basePrompt string
@@ -67,83 +67,59 @@ type Usage struct {
 	OutputTokens int `json:"output_tokens"`
 }
 
-func NewAnthropicLLMAnalyzer(configs ...cfg.Config) chain.Link {
+func NewAnthropicLLMAnalyzer(args map[string]any) *AnthropicLLMAnalyzer {
 	analyzer := &AnthropicLLMAnalyzer{
+		BaseLink: plugin.NewBaseLink("anthropic-llm-analyzer", args),
 		client: &http.Client{
 			Timeout: 60 * time.Second,
 		},
 	}
-	analyzer.Base = chain.NewBase(analyzer, configs...)
+
+	// Initialize from args
+	analyzer.apiKey = analyzer.ArgString("anthropic-api-key", "")
+	analyzer.model = analyzer.ArgString("anthropic-model", "claude-3-7-sonnet-latest")
+	analyzer.maxTokens = analyzer.ArgInt("max-tokens", 1000)
+	
+	prompt := analyzer.ArgString("analysis-prompt", "")
+	if prompt == "" {
+		prompt = analyzer.getDefaultGenericPrompt()
+	}
+	analyzer.basePrompt = prompt
+
+	if analyzer.apiKey == "" {
+		slog.Info("Anthropic API key not provided, skipping LLM analysis")
+	}
+
+	slog.Debug("Initialized Anthropic LLM analyzer",
+		"model", analyzer.model,
+		"max_tokens", analyzer.maxTokens,
+		"api_key_available", analyzer.apiKey != "",
+		"prompt_set", analyzer.basePrompt != "",
+		"prompt_length", len(analyzer.basePrompt))
+
 	return analyzer
 }
 
-func (a *AnthropicLLMAnalyzer) Initialize() error {
-	// Get API key from configuration
-	apiKey, err := cfg.As[string](a.Arg("anthropic-api-key"))
-	if err != nil || apiKey == "" {
-		slog.Info("Anthropic API key not provided, skipping LLM analysis")
-		a.apiKey = ""
-		return nil
-	}
-	a.apiKey = apiKey
-
-	// Get model configuration
-	model, err := cfg.As[string](a.Arg("anthropic-model"))
-	if err != nil {
-		model = "claude-3-7-sonnet-latest" // Default model
-	}
-	a.model = model
-
-	// Get analysis prompt
-	prompt, err := cfg.As[string](a.Arg("analysis-prompt"))
-	if err != nil || prompt == "" {
-		slog.Debug("Failed to get analysis-prompt parameter or empty prompt, using generic default", "error", err, "prompt_empty", prompt == "")
-		prompt = a.getDefaultGenericPrompt() // Generic default
-	} else {
-		slog.Debug("Successfully loaded analysis prompt", "prompt_length", len(prompt))
-	}
-	a.basePrompt = prompt
-
-	// Get max tokens
-	maxTokens, err := cfg.As[int](a.Arg("max-tokens"))
-	if err != nil {
-		maxTokens = 1000 // Default
-	}
-	a.maxTokens = maxTokens
-
-	slog.Debug("Initialized Anthropic LLM analyzer",
-		"model", a.model,
-		"max_tokens", a.maxTokens,
-		"api_key_available", a.apiKey != "",
-		"prompt_set", a.basePrompt != "",
-		"prompt_length", len(a.basePrompt))
-
-	return nil
-}
-
-func (a *AnthropicLLMAnalyzer) Process(input any) error {
+func (a *AnthropicLLMAnalyzer) Process(ctx context.Context, input any) ([]any, error) {
 	// Check if input implements AnalyzableContent interface
 	analyzable, ok := input.(types.AnalyzableContent)
 	if !ok {
 		slog.Debug("Input does not implement AnalyzableContent interface, passing through unchanged",
 			"input_type", fmt.Sprintf("%T", input))
-		a.Send(input)
-		return nil
+		return []any{input}, nil
 	}
 
 	// Skip analysis if no API key available
 	if a.apiKey == "" {
 		slog.Debug("No Anthropic API key available, passing through without analysis")
-		a.Send(input)
-		return nil
+		return []any{input}, nil
 	}
 
 	// Get the data to analyze
 	data := analyzable.GetAnalyzableData()
 	if len(data) == 0 {
 		slog.Debug("No analyzable data found, passing through without analysis")
-		a.Send(input)
-		return nil
+		return []any{input}, nil
 	}
 
 	slog.Info("Starting LLM analysis",
@@ -153,12 +129,11 @@ func (a *AnthropicLLMAnalyzer) Process(input any) error {
 	startTime := time.Now()
 
 	// Perform the analysis
-	result, err := a.analyzeContent(data, analyzable)
+	result, err := a.analyzeContent(ctx, data, analyzable)
 	if err != nil {
 		slog.Error("LLM analysis failed, passing through original content",
 			"error", err)
-		a.Send(input)
-		return nil // Don't fail the chain
+		return []any{input}, nil // Don't fail the chain
 	}
 
 	result.AnalysisDuration = time.Since(startTime).Milliseconds()
@@ -173,12 +148,11 @@ func (a *AnthropicLLMAnalyzer) Process(input any) error {
 		"duration_ms", result.AnalysisDuration)
 
 	// Send the enriched content to the next link
-	a.Send(input)
-	return nil
+	return []any{input}, nil
 }
 
 // analyzeContent sends the data to Anthropic's API for analysis
-func (a *AnthropicLLMAnalyzer) analyzeContent(data []byte, analyzable types.AnalyzableContent) (*types.LLMAnalysisResult, error) {
+func (a *AnthropicLLMAnalyzer) analyzeContent(ctx context.Context, data []byte, analyzable types.AnalyzableContent) (*types.LLMAnalysisResult, error) {
 	// Validate that we have a prompt
 	if a.basePrompt == "" {
 		return nil, fmt.Errorf("analysis prompt is empty")
@@ -256,7 +230,7 @@ func (a *AnthropicLLMAnalyzer) analyzeContent(data []byte, analyzable types.Anal
 		"content_types", contentTypes)
 
 	// Create HTTP request
-	httpReq, err := http.NewRequest("POST", "https://api.anthropic.com/v1/messages", bytes.NewBuffer(requestBody))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewBuffer(requestBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
 	}
@@ -442,17 +416,34 @@ Respond with a JSON object containing:
 If no sensitive information is detected, respond with "sensitive_info_found": false and provide a brief summary.`
 }
 
-func (a *AnthropicLLMAnalyzer) Params() []cfg.Param {
-	return []cfg.Param{
-		cfg.NewParam[string]("anthropic-api-key", "Anthropic API key for Claude analysis").WithDefault(""),
-		cfg.NewParam[string]("anthropic-model", "Anthropic model to use").WithDefault("claude-3-7-sonnet-latest"),
-		cfg.NewParam[string]("analysis-prompt", "Custom prompt for content analysis"),
-		cfg.NewParam[int]("max-tokens", "Maximum tokens for LLM response").WithDefault(1000),
-	}
-}
-
-func (a *AnthropicLLMAnalyzer) Metadata() *cfg.Metadata {
-	return &cfg.Metadata{
-		Name: "Anthropic LLM Analyzer",
+func (a *AnthropicLLMAnalyzer) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		{
+			Name:        "anthropic-api-key",
+			Description: "Anthropic API key for Claude analysis",
+			Required:    false,
+			Type:        "string",
+			Default:     "",
+		},
+		{
+			Name:        "anthropic-model",
+			Description: "Anthropic model to use",
+			Required:    false,
+			Type:        "string",
+			Default:     "claude-3-7-sonnet-latest",
+		},
+		{
+			Name:        "analysis-prompt",
+			Description: "Custom prompt for content analysis",
+			Required:    false,
+			Type:        "string",
+		},
+		{
+			Name:        "max-tokens",
+			Description: "Maximum tokens for LLM response",
+			Required:    false,
+			Type:        "int",
+			Default:     1000,
+		},
 	}
 }

@@ -1,52 +1,58 @@
 package aws
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"regexp"
 	"strings"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/utils"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/utils"
 )
 
 // AWSExpandActions is a link that expands wildcard IAM actions
 // by fetching the complete list of AWS actions from the AWS Policy Generator
 type AWSExpandActions struct {
-	*chain.Base
+	*plugin.BaseLink
 	allActions []string
 }
 
 // NewAWSExpandActionsLink creates a new AWSExpandActions link
-func NewAWSExpandActionsLink(configs ...cfg.Config) chain.Link {
-	a := &AWSExpandActions{}
-	a.Base = chain.NewBase(a, configs...)
+func NewAWSExpandActionsLink(args map[string]any) *AWSExpandActions {
+	a := &AWSExpandActions{
+		BaseLink: plugin.NewBaseLink("aws-expand-actions", args),
+	}
 	return a
 }
 
 // Initialize fetches all AWS actions when the link is created
 func (a *AWSExpandActions) Initialize() error {
-	slog.Debug("Initializing AWS Expand Actions link")
+	a.Logger().Debug("Initializing AWS Expand Actions link")
 	var err error
 	a.allActions, err = fetchAllAWSActions()
 	if err != nil {
-		slog.Error("Error fetching AWS actions during initialization", "error", err)
+		a.Logger().Error("Error fetching AWS actions during initialization", "error", err)
 		return err
 	}
-	slog.Debug("Successfully loaded AWS actions", "count", len(a.allActions))
+	a.Logger().Debug("Successfully loaded AWS actions", "count", len(a.allActions))
 	return nil
 }
 
 // Process expands wildcard IAM actions by matching against all known AWS actions
-func (a *AWSExpandActions) Process(action string) error {
-	if !strings.Contains(action, "*") {
-		slog.Debug("No wildcard in action, skipping expansion", "action", action)
-		return a.Send(action)
+func (a *AWSExpandActions) Process(ctx context.Context, input any) ([]any, error) {
+	action, ok := input.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string input, got %T", input)
 	}
 
-	slog.Debug("Expanding AWS action pattern", "pattern", action)
+	if !strings.Contains(action, "*") {
+		a.Logger().Debug("No wildcard in action, skipping expansion", "action", action)
+		a.Send(action)
+		return a.Outputs(), nil
+	}
+
+	a.Logger().Debug("Expanding AWS action pattern", "pattern", action)
 	var service, act string
 	if action == "*" {
 		service = "*"
@@ -61,22 +67,20 @@ func (a *AWSExpandActions) Process(action string) error {
 	regexPattern := "(?i)^" + service + ":" + pattern + "$"
 	regex, err := regexp.Compile(regexPattern)
 	if err != nil {
-		return fmt.Errorf("invalid regex pattern: %s", err)
+		return nil, fmt.Errorf("invalid regex pattern: %s", err)
 	}
 
 	// Find and send all matching actions
 	matchCount := 0
 	for _, actionName := range a.allActions {
 		if regex.MatchString(actionName) {
-			if err := a.Send(actionName); err != nil {
-				return err
-			}
+			a.Send(actionName)
 			matchCount++
 		}
 	}
 
-	slog.Debug("Expanded AWS action pattern", "pattern", action, "matches", matchCount)
-	return nil
+	a.Logger().Debug("Expanded AWS action pattern", "pattern", action, "matches", matchCount)
+	return a.Outputs(), nil
 }
 
 // fetchAllAWSActions fetches the list of all AWS actions from the AWS Policy Generator

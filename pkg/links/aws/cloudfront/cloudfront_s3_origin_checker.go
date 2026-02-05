@@ -12,10 +12,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/outputters"
 )
 
 // BucketExistenceState represents the state of bucket existence check
@@ -32,7 +31,7 @@ const (
 
 // CloudFrontS3OriginChecker checks if S3 buckets referenced in CloudFront origins exist
 type CloudFrontS3OriginChecker struct {
-	*base.AwsReconLink
+	*base.NativeAWSLink
 }
 
 // VulnerableDistribution contains information about a vulnerable CloudFront distribution
@@ -50,18 +49,18 @@ type VulnerableDistribution struct {
 }
 
 // NewCloudFrontS3OriginChecker creates a new S3 origin checker
-func NewCloudFrontS3OriginChecker(configs ...cfg.Config) chain.Link {
-	checker := &CloudFrontS3OriginChecker{}
-	checker.AwsReconLink = base.NewAwsReconLink(checker, configs...)
-	return checker
+func NewCloudFrontS3OriginChecker(args map[string]any) *CloudFrontS3OriginChecker {
+	return &CloudFrontS3OriginChecker{
+		NativeAWSLink: base.NewNativeAWSLink("cloudfront-s3-origin-checker", args),
+	}
 }
 
 // Process checks if S3 origins exist
-func (c *CloudFrontS3OriginChecker) Process(resource any) error {
-	distInfo, ok := resource.(CloudFrontDistributionInfo)
+func (c *CloudFrontS3OriginChecker) Process(ctx context.Context, input any) ([]any, error) {
+	distInfo, ok := input.(CloudFrontDistributionInfo)
 	if !ok {
 		message.Info("Skipping non-CloudFront distribution info")
-		return nil
+		return c.Outputs(), nil
 	}
 
 	message.Info("Checking S3 origins for distribution %s (%d origins)", distInfo.ID, len(distInfo.Origins))
@@ -106,9 +105,8 @@ func (c *CloudFrontS3OriginChecker) Process(resource any) error {
 			}
 
 			// Send vulnerability to next link in chain
-			if err := c.Send(vuln); err != nil {
-				return err
-			}
+			// Wrap in RawOutput to prevent Finding wrapper from hiding the actual data
+			c.Send(outputters.RawOutput{Data: vuln})
 
 		case BucketExists:
 			message.Info("S3 bucket '%s' exists for distribution %s", bucketName, distInfo.ID)
@@ -120,17 +118,17 @@ func (c *CloudFrontS3OriginChecker) Process(resource any) error {
 		}
 	}
 
-	return nil
+	return c.Outputs(), nil
 }
 
 // checkBucketExists checks if an S3 bucket exists
 func (c *CloudFrontS3OriginChecker) checkBucketExists(bucketName string) BucketExistenceState {
-	ctx := context.TODO()
+	ctx := context.Background()
 
 	// Start with us-east-1 as it's the default region for many buckets
 	initialRegion := "us-east-1"
 
-	config, err := c.GetConfigWithRuntimeArgs(initialRegion)
+	config, err := c.GetConfig(ctx, initialRegion)
 	if err != nil {
 		message.Error("Failed to get AWS config for bucket %s in region %s: %v",
 			bucketName, initialRegion, err)
@@ -172,7 +170,7 @@ func (c *CloudFrontS3OriginChecker) checkBucketExists(bucketName string) BucketE
 
 	message.Info("Retrying bucket check for '%s' with detected region %s", bucketName, bucketRegion)
 
-	config, err = c.GetConfigWithRuntimeArgs(bucketRegion)
+	config, err = c.GetConfig(ctx, bucketRegion)
 	if err != nil {
 		message.Error("Failed to get AWS config for detected region %s, bucket %s: %v",
 			bucketRegion, bucketName, err)
@@ -273,10 +271,10 @@ func (c *CloudFrontS3OriginChecker) extractBucketRegion(err error, bucketName st
 
 // getBucketRegionViaAPI tries to get bucket region using GetBucketLocation API
 func (c *CloudFrontS3OriginChecker) getBucketRegionViaAPI(bucketName string, initialRegion string) string {
-	ctx := context.TODO()
+	ctx := context.Background()
 
 	// GetBucketLocation often works from us-east-1 even for buckets in other regions
-	config, err := c.GetConfigWithRuntimeArgs(initialRegion)
+	config, err := c.GetConfig(ctx, initialRegion)
 	if err != nil {
 		message.Info("Failed to get AWS config for GetBucketLocation for bucket '%s': %v", bucketName, err)
 		return ""

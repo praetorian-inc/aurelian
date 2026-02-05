@@ -1,8 +1,8 @@
 package options
 
 import (
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 var DockerUserOpt = types.Option{
@@ -31,27 +31,30 @@ var DockerExtractOpt = types.Option{
 }
 
 // Janus framework parameters
-func DockerImage() cfg.Param {
-	return cfg.NewParam[string]("image",
+func DockerImage() plugin.Parameter {
+	return plugin.NewParam[string]("image",
 		"Docker image name to process. To download an image from a custom registry, prepend the\n"+
-			"image name with the registry URL. Example: ghcr.io/oj/gobuster").
-		WithShortcode("i")
+			"image name with the registry URL. Example: ghcr.io/oj/gobuster",
+		plugin.WithShortcode("i"),
+	)
 }
 
-func DockerUser() cfg.Param {
-	return cfg.NewParam[string]("docker-user", "Docker registry username")
+func DockerUser() plugin.Parameter {
+	return plugin.NewParam[string]("docker-user", "Docker registry username")
 }
 
-func DockerPassword() cfg.Param {
-	return cfg.NewParam[string]("docker-password", "Docker registry password")
+func DockerPassword() plugin.Parameter {
+	return plugin.NewParam[string]("docker-password", "Docker registry password")
 }
 
-func DockerExtract() cfg.Param {
-	return cfg.NewParam[bool]("extract", "Extract files from Docker image").
-		WithDefault(true)
+func DockerExtract() plugin.Parameter {
+	return plugin.NewParam[bool]("extract", "Extract files from Docker image",
+		plugin.WithDefault(true),
+	)
 }
 
-func NoseyParkerScan() cfg.Param {
-	return cfg.NewParam[bool]("noseyparker-scan", "Enable NoseyParker scanning of extracted files").
-		WithDefault(true)
+func NoseyParkerScan() plugin.Parameter {
+	return plugin.NewParam[bool]("noseyparker-scan", "Enable NoseyParker scanning of extracted files",
+		plugin.WithDefault(true),
+	)
 }

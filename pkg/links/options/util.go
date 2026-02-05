@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 func WithRequired(option types.Option, required bool) *types.Option {
@@ -117,30 +117,30 @@ func ValidateOptions(opts []*types.Option, required []*types.Option) error {
 // JanusParamAdapter converts Janus parameter definitions to legacy options format using default values.
 // This function only uses the default values from parameter definitions.
 // For runtime values, use JanusArgsAdapter instead.
-func JanusParamAdapter(params []cfg.Param) []*types.Option {
+func JanusParamAdapter(params []plugin.Parameter) []*types.Option {
 	options := make([]*types.Option, len(params))
 	for i, param := range params {
 		options[i] = &types.Option{
-			Name:        param.Name(),
-			Description: param.Description(),
-			Required:    param.Required(),
+			Name:        param.Name,
+			Description: param.Description,
+			Required:    param.Required,
 		}
 
-		switch param.Type() {
+		switch param.Type {
 		case "string":
-			options[i].Value = param.Value().(string)
+			options[i].Value = param.Default.(string)
 			options[i].Type = types.String
 		case "int":
-			options[i].Value = strconv.Itoa(param.Value().(int))
+			options[i].Value = strconv.Itoa(param.Default.(int))
 			options[i].Type = types.Int
 		case "bool":
-			options[i].Value = strconv.FormatBool(param.Value().(bool))
+			options[i].Value = strconv.FormatBool(param.Default.(bool))
 			options[i].Type = types.Bool
 		case "[]string":
-			options[i].Value = strings.Join(param.Value().([]string), ",")
+			options[i].Value = strings.Join(param.Default.([]string), ",")
 			options[i].Type = types.String
 		default:
-			options[i].Value = param.Value().(string)
+			options[i].Value = param.Default.(string)
 			options[i].Type = types.String
 
 		}
@@ -153,24 +153,24 @@ func JanusParamAdapter(params []cfg.Param) []*types.Option {
 // JanusArgsAdapter converts runtime Janus arguments to legacy options format.
 // This function uses the actual runtime values that were passed via command line flags.
 // It takes both the parameter definitions and the runtime arguments map.
-func JanusArgsAdapter(params []cfg.Param, args map[string]any) []*types.Option {
+func JanusArgsAdapter(params []plugin.Parameter, args map[string]any) []*types.Option {
 	options := make([]*types.Option, len(params))
 	for i, param := range params {
 		options[i] = &types.Option{
-			Name:        param.Name(),
-			Description: param.Description(),
-			Required:    param.Required(),
+			Name:        param.Name,
+			Description: param.Description,
+			Required:    param.Required,
 		}
 
 		// Get the runtime value from args, fall back to default if not present
 		var runtimeValue any
-		if val, exists := args[param.Name()]; exists {
+		if val, exists := args[param.Name]; exists {
 			runtimeValue = val
 		} else {
-			runtimeValue = param.Value()
+			runtimeValue = param.Default
 		}
 
-		switch param.Type() {
+		switch param.Type {
 		case "string":
 			if runtimeValue != nil {
 				options[i].Value = runtimeValue.(string)

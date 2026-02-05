@@ -1,60 +1,62 @@
 package aws
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"time"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/outputters"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // AwsResourceAggregatorLink collects AWS resources and outputs them with filename generation
 type AwsResourceAggregatorLink struct {
-	*chain.Base
+	*base.NativeAWSLink
 	resources []types.EnrichedResourceDescription
+	filename  string
 }
 
-func NewAwsResourceAggregatorLink(configs ...cfg.Config) chain.Link {
-	l := &AwsResourceAggregatorLink{
-		resources: make([]types.EnrichedResourceDescription, 0),
-	}
-	l.Base = chain.NewBase(l, configs...)
-	return l
-}
-
-func (l *AwsResourceAggregatorLink) Params() []cfg.Param {
-	return []cfg.Param{
-		options.AwsProfile(),
-		cfg.NewParam[string]("filename", "Base filename for output").
-			WithDefault("").
-			WithShortcode("f"),
+func NewAwsResourceAggregatorLink(args map[string]any) *AwsResourceAggregatorLink {
+	nativeBase := base.NewNativeAWSLink("aws-resource-aggregator", args)
+	return &AwsResourceAggregatorLink{
+		NativeAWSLink: nativeBase,
+		resources:     make([]types.EnrichedResourceDescription, 0),
+		filename:      nativeBase.ArgString("filename", ""),
 	}
 }
 
-func (l *AwsResourceAggregatorLink) Process(resource *types.EnrichedResourceDescription) error {
+func (l *AwsResourceAggregatorLink) Parameters() []plugin.Parameter {
+	params := base.StandardAWSParams()
+	params = append(params, plugin.NewParam[string]("filename", "Base filename for output"))
+	return params
+}
+
+func (l *AwsResourceAggregatorLink) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*types.EnrichedResourceDescription)
+	if !ok {
+		return nil, fmt.Errorf("expected *types.EnrichedResourceDescription, got %T", input)
+	}
+
 	l.resources = append(l.resources, *resource)
-	l.Logger.Debug("Aggregated resource", "type", resource.TypeName, "id", resource.Identifier, "total", len(l.resources))
-	return nil
+	l.Logger().Debug("Aggregated resource", "type", resource.TypeName, "id", resource.Identifier, "total", len(l.resources))
+	return l.Outputs(), nil
 }
 
-func (l *AwsResourceAggregatorLink) Complete() error {
-	profile, _ := cfg.As[string](l.Arg("profile"))
-	filename, _ := cfg.As[string](l.Arg("filename"))
+func (l *AwsResourceAggregatorLink) Complete(ctx context.Context) error {
+	l.Logger().Info("Aggregation complete", "total_resources", len(l.resources))
 
-	l.Logger.Info("Aggregation complete", "total_resources", len(l.resources))
-
+	filename := l.filename
 	// Generate filename if not provided
 	if filename == "" {
 		// Infer module type from resource types being aggregated
 		moduleName := l.inferModuleName()
-		filename = l.generateAWSFilename(moduleName, profile)
+		filename = l.generateAWSFilename(moduleName, l.Profile)
 	}
 
-	l.Logger.Info("Generated filename", "filename", filename, "profile", profile)
+	l.Logger().Info("Generated filename", "filename", filename, "profile", l.Profile)
 
 	// Send aggregated resources as named output
 	outputData := outputters.NewNamedOutputData(l.resources, filename+".json")
@@ -95,7 +97,7 @@ func (l *AwsResourceAggregatorLink) generateAWSFilename(moduleName, profile stri
 	// Try to get account ID but fail gracefully
 	defer func() {
 		if r := recover(); r != nil {
-			l.Logger.Error("Panic in generateAWSFilename", "recover", r)
+			l.Logger().Error("Panic in generateAWSFilename", "recover", r)
 		}
 	}()
 

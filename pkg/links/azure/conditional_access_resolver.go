@@ -8,8 +8,8 @@ import (
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/aurelian/pkg/links/azure/base"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 
 	msgraphsdk "github.com/microsoftgraph/msgraph-sdk-go"
 	"github.com/microsoftgraph/msgraph-sdk-go/applications"
@@ -19,17 +19,17 @@ import (
 var uuidRegex = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 type AzureConditionalAccessResolverLink struct {
-	*chain.Base
+	*base.NativeAzureLink
 }
 
-func NewAzureConditionalAccessResolverLink(configs ...cfg.Config) chain.Link {
-	l := &AzureConditionalAccessResolverLink{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
+func NewAzureConditionalAccessResolverLink(args map[string]any) *AzureConditionalAccessResolverLink {
+	return &AzureConditionalAccessResolverLink{
+		NativeAzureLink: base.NewNativeAzureLink("conditional-access-resolver", args),
+	}
 }
 
-func (l *AzureConditionalAccessResolverLink) Params() []cfg.Param {
-	return []cfg.Param{}
+func (l *AzureConditionalAccessResolverLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{}
 }
 
 // ResolvedEntity represents a resolved UUID with its human-readable information
@@ -50,24 +50,24 @@ type EnrichedConditionalAccessPolicy struct {
 	ResolvedRoles        map[string]ResolvedEntity `json:"resolvedRoles,omitempty"`
 }
 
-func (l *AzureConditionalAccessResolverLink) Process(input any) error {
+func (l *AzureConditionalAccessResolverLink) Process(ctx context.Context, input any) ([]any, error) {
 	slog.Info("Starting UUID resolution for Conditional Access Policies")
 
 	// Expect input to be []ConditionalAccessPolicyResult from collector
 	policies, ok := input.([]ConditionalAccessPolicyResult)
 	if !ok {
-		return fmt.Errorf("expected []ConditionalAccessPolicyResult, got %T", input)
+		return nil, fmt.Errorf("expected []ConditionalAccessPolicyResult, got %T", input)
 	}
 
 	// Get Azure credentials and create Graph client
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		return fmt.Errorf("failed to get Azure credentials: %w", err)
+		return nil, fmt.Errorf("failed to get Azure credentials: %w", err)
 	}
 
 	graphClient, err := msgraphsdk.NewGraphServiceClientWithCredentials(cred, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create Graph client: %w", err)
+		return nil, fmt.Errorf("failed to create Graph client: %w", err)
 	}
 
 	// Create UUID resolver
@@ -75,9 +75,9 @@ func (l *AzureConditionalAccessResolverLink) Process(input any) error {
 
 	// Process each policy to resolve UUIDs
 	var enrichedPolicies []EnrichedConditionalAccessPolicy
-	
+
 	for _, policy := range policies {
-		enrichedPolicy, err := l.enrichPolicyWithResolvedUUIDs(l.Context(), resolver, policy)
+		enrichedPolicy, err := l.enrichPolicyWithResolvedUUIDs(ctx, resolver, policy)
 		if err != nil {
 			slog.Warn("Failed to enrich policy with resolved UUIDs", "policy_id", policy.ID, "error", err)
 			// Continue with other policies even if one fails
@@ -86,14 +86,15 @@ func (l *AzureConditionalAccessResolverLink) Process(input any) error {
 			})
 			continue
 		}
-		
+
 		enrichedPolicies = append(enrichedPolicies, enrichedPolicy)
 	}
 
 	slog.Info("Successfully resolved UUIDs for conditional access policies", "count", len(enrichedPolicies))
 
 	// Pass enriched data to output formatter
-	return l.Send(enrichedPolicies)
+	l.Send(enrichedPolicies)
+	return l.Outputs(), nil
 }
 
 func (l *AzureConditionalAccessResolverLink) enrichPolicyWithResolvedUUIDs(ctx context.Context, resolver *UUIDResolver, policy ConditionalAccessPolicyResult) (EnrichedConditionalAccessPolicy, error) {

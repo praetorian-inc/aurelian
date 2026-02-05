@@ -1,165 +1,126 @@
 package aws
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/cloudcontrol"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/lambda"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/cloudcontrol"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/lambda"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type AwsPublicResources struct {
-	*base.AwsReconLink
-	resourceMap     map[string]func() chain.Chain
-	processedS3     map[string]bool // Track processed S3 buckets to avoid duplicates
-	processedS3Mu   sync.RWMutex    // Protect concurrent access to processedS3
+	*base.NativeAWSLink
+	processedS3   map[string]bool // Track processed S3 buckets to avoid duplicates
+	processedS3Mu sync.RWMutex    // Protect concurrent access to processedS3
 }
 
-func NewAwsPublicResources(configs ...cfg.Config) chain.Link {
-	a := &AwsPublicResources{}
-	// Initialize the embedded AwsReconLink with fs as the link
-	a.AwsReconLink = base.NewAwsReconLink(a, configs...)
-	return a
-}
-
-func (a *AwsPublicResources) Params() []cfg.Param {
-	params := a.AwsReconLink.Params()
-	params = append(params, options.AwsCommonReconOptions()...)
-	params = append(params, options.AwsRegions(), options.AwsResourceType())
-	params = append(params, options.AwsEnableEC2SecurityEnrichment())
-	return params
-}
-
-func (a *AwsPublicResources) Initialize() error {
-	if err := a.AwsReconLink.Initialize(); err != nil {
-		return err
+func NewAwsPublicResources(args map[string]any) *AwsPublicResources {
+	return &AwsPublicResources{
+		NativeAWSLink: base.NewNativeAWSLink("aws-public-resources", args),
+		processedS3:   make(map[string]bool),
 	}
-
-	a.resourceMap = a.ResourceMap()
-	a.processedS3 = make(map[string]bool)
-	return nil
 }
 
-func (a *AwsPublicResources) Process(resource *types.EnrichedResourceDescription) error {
-	constructor, ok := a.resourceMap[resource.TypeName]
+func (a *AwsPublicResources) SupportedResourceTypes() []string {
+	return []string{
+		"AWS::EC2::Instance",
+		"AWS::SNS::Topic",
+		"AWS::SQS::Queue",
+		"AWS::Lambda::Function",
+		"AWS::EFS::FileSystem",
+		"AWS::S3::Bucket",
+		"AWS::RDS::DBInstance",
+	}
+}
+
+func (a *AwsPublicResources) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*types.EnrichedResourceDescription)
 	if !ok {
-		slog.Error("Unsupported resource type", "resource", resource)
-		return nil
+		return nil, fmt.Errorf("expected *types.EnrichedResourceDescription, got %T", input)
 	}
 
 	// Deduplication for S3 buckets - only process each bucket once
 	if resource.TypeName == "AWS::S3::Bucket" {
 		// Create unique key using account_id:bucket_name
 		bucketKey := resource.AccountId + ":" + resource.Identifier
-		
+
 		a.processedS3Mu.Lock()
 		if a.processedS3[bucketKey] {
 			a.processedS3Mu.Unlock()
 			slog.Debug("Skipping already processed S3 bucket", "bucket", resource.Identifier, "account", resource.AccountId)
-			return nil
+			return nil, nil
 		}
 		a.processedS3[bucketKey] = true
 		a.processedS3Mu.Unlock()
-		
+
 		slog.Debug("Processing S3 bucket for first time", "bucket", resource.Identifier, "account", resource.AccountId)
 	}
 
 	slog.Debug("Dispatching resource for processing", "resource_type", resource.TypeName, "resource_id", resource.Identifier)
 
-	// Create pair and send to processor
-	pair := &ResourceChainPair{
-		Resource:         resource,
-		ChainConstructor: constructor,
-		Args:             a.Args(),
+	// Create args map for passing to sub-links
+	// Include known parameters that sub-links may need
+	args := map[string]any{
+		"profile":     a.Profile,
+		"profile-dir": a.ProfileDir,
+		"regions":     a.Regions,
 	}
 
-	return a.Send(pair)
-}
+	// TODO: Re-implement PropertyFilterLink and AwsResourcePolicyChecker without cfg.Config dependency
+	// These require new implementations that follow the native link pattern
 
-func (a *AwsPublicResources) SupportedResourceTypes() []model.CloudResourceType {
-	resources := a.ResourceMap()
-	types := make([]model.CloudResourceType, 0, len(resources))
-	for resourceType := range resources {
-		types = append(types, model.CloudResourceType(resourceType))
-	}
-	return types
-}
-
-func (a *AwsPublicResources) ResourceMap() map[string]func() chain.Chain {
-	resourceMap := make(map[string]func() chain.Chain)
-
-	resourceMap["AWS::EC2::Instance"] = func() chain.Chain {
-		links := []chain.Link{
-			cloudcontrol.NewCloudControlGet(),
-			NewPropertyFilterLink(cfg.WithArg("property", "PublicIp")),
+	// Process based on resource type - inline chain execution
+	switch resource.TypeName {
+	case "AWS::EC2::Instance":
+		// CloudControl Get -> Property Filter (PublicIp)
+		outputs, err := cloudcontrol.NewCloudControlGet(args).Process(ctx, resource)
+		if err != nil {
+			return nil, err
 		}
+		// TODO: Property filter needs reimplementation
+		slog.Warn("PropertyFilterLink not yet migrated", "resource_type", resource.TypeName)
+		return outputs, nil
 
-		// Check if EC2 security enrichment is enabled (checked lazily when chain is constructed)
-		if args := a.Args(); args != nil {
-			if val, exists := args["enable-ec2-security-enrichment"]; exists {
-				if boolVal, ok := val.(bool); ok && boolVal {
-					links = append(links, NewEC2SecurityEnrichmentLink())
-				}
-			}
+	case "AWS::SNS::Topic", "AWS::SQS::Queue", "AWS::EFS::FileSystem", "AWS::S3::Bucket":
+		// CloudControl Get -> Resource Policy Checker
+		outputs, err := cloudcontrol.NewCloudControlGet(args).Process(ctx, resource)
+		if err != nil {
+			return nil, err
 		}
+		// TODO: Resource policy checker needs reimplementation
+		slog.Warn("AwsResourcePolicyChecker not yet migrated", "resource_type", resource.TypeName)
+		return outputs, nil
 
-		return chain.NewChain(links...)
+	case "AWS::Lambda::Function":
+		// CloudControl Get -> Function URL -> Resource Policy Checker
+		outputs, err := cloudcontrol.NewCloudControlGet(args).Process(ctx, resource)
+		if err != nil {
+			return nil, err
+		}
+		outputs, err = lambda.NewAWSLambdaFunctionURL(args).Process(ctx, outputs)
+		if err != nil {
+			return nil, err
+		}
+		// TODO: Resource policy checker needs reimplementation
+		slog.Warn("AwsResourcePolicyChecker not yet migrated", "resource_type", resource.TypeName)
+		return outputs, nil
+
+	case "AWS::RDS::DBInstance":
+		// CloudControl Get -> Property Filter (PubliclyAccessible)
+		outputs, err := cloudcontrol.NewCloudControlGet(args).Process(ctx, resource)
+		if err != nil {
+			return nil, err
+		}
+		// TODO: Property filter needs reimplementation
+		slog.Warn("PropertyFilterLink not yet migrated", "resource_type", resource.TypeName)
+		return outputs, nil
+
+	default:
+		slog.Error("Unsupported resource type", "resource", resource)
+		return nil, nil
 	}
-
-	resourceMap["AWS::SNS::Topic"] = func() chain.Chain {
-		return chain.NewChain(
-			cloudcontrol.NewCloudControlGet(),
-			NewAwsResourcePolicyChecker(),
-		)
-	}
-
-	resourceMap["AWS::SQS::Queue"] = func() chain.Chain {
-		return chain.NewChain(
-			cloudcontrol.NewCloudControlGet(),
-			NewAwsResourcePolicyChecker(),
-		)
-	}
-
-	resourceMap["AWS::Lambda::Function"] = func() chain.Chain {
-		return chain.NewChain(
-			cloudcontrol.NewCloudControlGet(),
-			lambda.NewAWSLambdaFunctionURL(),
-			NewAwsResourcePolicyChecker(),
-		)
-	}
-
-	resourceMap["AWS::EFS::FileSystem"] = func() chain.Chain {
-		return chain.NewChain(
-			cloudcontrol.NewCloudControlGet(),
-			NewAwsResourcePolicyChecker(),
-		)
-	}
-
-	// resourceMap["AWS::Elasticsearch::Domain"] = func() chain.Chain {
-	// 	return chain.NewChain(
-	// 		NewAwsResourcePolicyChecker(),
-	// 	)
-	// }
-
-	resourceMap["AWS::S3::Bucket"] = func() chain.Chain {
-		return chain.NewChain(
-			cloudcontrol.NewCloudControlGet(),
-			NewAwsResourcePolicyChecker(),
-		)
-	}
-
-	resourceMap["AWS::RDS::DBInstance"] = func() chain.Chain {
-		return chain.NewChain(
-			cloudcontrol.NewCloudControlGet(),
-			NewPropertyFilterLink(cfg.WithArg("property", "PubliclyAccessible")),
-		)
-	}
-
-	return resourceMap
 }

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 var azureAcceptedSecretsTypes = []string{
@@ -95,101 +95,117 @@ var AzureARGTemplatesDirOpt = types.Option{
 	Value:       "", // Empty means use embedded templates
 }
 
-func AzureSubscription() cfg.Param {
-	return cfg.NewParam[[]string](
+func AzureSubscription() plugin.Parameter {
+	return plugin.NewParam[[]string](
 		"subscription",
 		"The Azure subscription to use. Can be a subscription ID or 'all'.",
-	).WithShortcode("s").AsRequired()
+		plugin.WithShortcode("s"),
+		plugin.WithRequired(),
+	)
 }
 
-func AzureTemplateDir() cfg.Param {
-	return cfg.NewParam[string]("template-dir", "Directory containing Azure ARG templates (replaces embedded templates)").
-		WithShortcode("t")
+func AzureTemplateDir() plugin.Parameter {
+	return plugin.NewParam[string]("template-dir", "Directory containing Azure ARG templates (replaces embedded templates)",
+		plugin.WithShortcode("t"),
+	)
 }
 
-func AzureArgCategory() cfg.Param {
-	return cfg.NewParam[string]("category", "Category of Azure ARG templates to use").
-		WithShortcode("c")
+func AzureArgCategory() plugin.Parameter {
+	return plugin.NewParam[string]("category", "Category of Azure ARG templates to use",
+		plugin.WithShortcode("c"),
+	)
 }
 
 // Azure DevOps parameters for Janus framework
-func AzureDevOpsPAT() cfg.Param {
-	return cfg.NewParam[string]("devops-pat", "Azure DevOps Personal Access Token with read access").
-		WithShortcode("p").
-		AsRequired()
+func AzureDevOpsPAT() plugin.Parameter {
+	return plugin.NewParam[string]("devops-pat", "Azure DevOps Personal Access Token with read access",
+		plugin.WithShortcode("p"),
+		plugin.WithRequired(),
+	)
 }
 
-func AzureDevOpsOrganization() cfg.Param {
-	return cfg.NewParam[string]("devops-org", "Azure DevOps organization name").
-		WithShortcode("o").
-		AsRequired()
+func AzureDevOpsOrganization() plugin.Parameter {
+	return plugin.NewParam[string]("devops-org", "Azure DevOps organization name",
+		plugin.WithShortcode("o"),
+		plugin.WithRequired(),
+	)
 }
 
-func AzureDevOpsProject() cfg.Param {
-	return cfg.NewParam[string]("devops-project", "Azure DevOps project name (optional, defaults to all projects)").
-		WithShortcode("j")
+func AzureDevOpsProject() plugin.Parameter {
+	return plugin.NewParam[string]("devops-project", "Azure DevOps project name (optional, defaults to all projects)",
+		plugin.WithShortcode("j"),
+	)
 }
 
-func AzureResourceSecretsTypes() cfg.Param {
-	return cfg.NewParam[[]string]("resource-types", "Azure resource types to scan for secrets").
-		WithShortcode("r").
-		WithDefault([]string{"all"})
+func AzureResourceSecretsTypes() plugin.Parameter {
+	return plugin.NewParam[[]string]("resource-types", "Azure resource types to scan for secrets",
+		plugin.WithShortcode("r"),
+		plugin.WithDefault([]string{"all"}),
+	)
 }
 
-func AzureWorkerCount() cfg.Param {
-	return cfg.NewParam[int]("workers", "Number of concurrent workers for processing").
-		WithShortcode("w").
-		WithDefault(5)
+func AzureWorkerCount() plugin.Parameter {
+	return plugin.NewParam[int]("workers", "Number of concurrent workers for processing",
+		plugin.WithShortcode("w"),
+		plugin.WithDefault(5),
+	)
 }
 
-func AzureConditionalAccessFile() cfg.Param {
-	return cfg.NewParam[string]("conditional-access-file", "Path to JSON file containing conditional access policies")
+func AzureConditionalAccessFile() plugin.Parameter {
+	return plugin.NewParam[string]("conditional-access-file", "Path to JSON file containing conditional access policies")
 }
 
-func AzureLLMAPIKey() cfg.Param {
-	return cfg.NewParam[string]("llm-api-key", "API key for LLM provider").
-		AsRequired()
+func AzureLLMAPIKey() plugin.Parameter {
+	return plugin.NewParam[string]("llm-api-key", "API key for LLM provider",
+		plugin.WithRequired(),
+	)
 }
 
-func AzureLLMAPIKeyOptional() cfg.Param {
-	return cfg.NewParam[string]("llm-api-key", "API key for LLM provider (required when --enable-llm-analysis is true)")
+func AzureLLMAPIKeyOptional() plugin.Parameter {
+	return plugin.NewParam[string]("llm-api-key", "API key for LLM provider (required when --enable-llm-analysis is true)")
 }
 
-func AzureLLMProvider() cfg.Param {
-	return cfg.NewParam[string]("llm-provider", "LLM provider to use for analysis").
-		WithDefault("anthropic")
+func AzureLLMProvider() plugin.Parameter {
+	return plugin.NewParam[string]("llm-provider", "LLM provider to use for analysis",
+		plugin.WithDefault("anthropic"),
+	)
 }
 
-func AzureLLMModel() cfg.Param {
-	return cfg.NewParam[string]("llm-model", "LLM model to use for analysis").
-		WithDefault("claude-opus-4-1-20250805")
+func AzureLLMModel() plugin.Parameter {
+	return plugin.NewParam[string]("llm-model", "LLM model to use for analysis",
+		plugin.WithDefault("claude-opus-4-1-20250805"),
+	)
 }
 
 
-func AzureLLMOutputTokens() cfg.Param {
-	return cfg.NewParam[int]("llm-output-tokens", "Maximum output tokens for LLM analysis").
-		WithDefault(32000)
+func AzureLLMOutputTokens() plugin.Parameter {
+	return plugin.NewParam[int]("llm-output-tokens", "Maximum output tokens for LLM analysis",
+		plugin.WithDefault(32000),
+	)
 }
 
-func AzureEnableLLMAnalysis() cfg.Param {
-	return cfg.NewParam[bool]("enable-llm-analysis", "Enable LLM analysis of conditional access policies").
-		WithDefault(false)
+func AzureEnableLLMAnalysis() plugin.Parameter {
+	return plugin.NewParam[bool]("enable-llm-analysis", "Enable LLM analysis of conditional access policies",
+		plugin.WithDefault(false),
+	)
 }
 
-func AzureResourceID() cfg.Param {
-	return cfg.NewParam[[]string]("azure-resource-id", "Azure resource ID in full format (/subscriptions/.../resourceGroups/.../providers/...)").
-		WithShortcode("i").
-		AsRequired()
+func AzureResourceID() plugin.Parameter {
+	return plugin.NewParam[[]string]("azure-resource-id", "Azure resource ID in full format (/subscriptions/.../resourceGroups/.../providers/...)",
+		plugin.WithShortcode("i"),
+		plugin.WithRequired(),
+	)
 }
 
-func AzureDisableEnrichment() cfg.Param {
-	return cfg.NewParam[bool]("disable-enrichment", "Disable enrichment of resources with security testing commands").
-		WithDefault(false)
+func AzureDisableEnrichment() plugin.Parameter {
+	return plugin.NewParam[bool]("disable-enrichment", "Disable enrichment of resources with security testing commands",
+		plugin.WithDefault(false),
+	)
 }
 
 // AzureReconBaseOptions provides common options for Azure reconnaissance modules
-func AzureReconBaseOptions() []cfg.Param {
-	return []cfg.Param{
+func AzureReconBaseOptions() []plugin.Parameter {
+	return []plugin.Parameter{
 		AzureSubscription(),
 		AzureWorkerCount(),
 		OutputDir(),

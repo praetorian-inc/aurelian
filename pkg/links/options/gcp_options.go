@@ -1,47 +1,76 @@
 package options
 
 import (
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 // Janus Options
 
-func GcpCredentialsFile() cfg.Param {
-	return cfg.NewParam[string]("creds-file", "Path to GCP credentials JSON file").WithDefault("").WithShortcode("c")
+func GcpCredentialsFile() plugin.Parameter {
+	return plugin.NewParam[string]("creds-file", "Path to GCP credentials JSON file",
+		plugin.WithDefault(""),
+		plugin.WithShortcode("c"),
+		plugin.WithRequired(),
+	)
 }
 
-func GcpProject() cfg.Param {
-	return cfg.NewParam[[]string]("project", "GCP project ID").WithDefault([]string{}).WithShortcode("p")
+func GcpProject() plugin.Parameter {
+	return plugin.NewParam[[]string]("project", "GCP project ID",
+		plugin.WithDefault([]string{}),
+		plugin.WithRequired(),
+		plugin.WithShortcode("p"),
+	)
 }
 
-func GcpIncludeSysProjects() cfg.Param {
-	return cfg.NewParam[bool]("include-sys-projects", "Include system projects like Apps Script projects").WithDefault(false)
+func GcpFilterSysProjects() plugin.Parameter {
+	return plugin.NewParam[bool]("filter-sys-projects", "Filter out system projects like Apps Script projects",
+		plugin.WithDefault(true),
+	)
 }
 
-func GcpOrg() cfg.Param {
-	return cfg.NewParam[[]string]("org", "GCP organization ID").WithDefault([]string{}).WithShortcode("o")
+func GcpOrg() plugin.Parameter {
+	return plugin.NewParam[[]string]("org", "GCP organization ID",
+		plugin.WithDefault([]string{}),
+		plugin.WithRequired(),
+		plugin.WithShortcode("o"),
+	)
 }
 
-func GcpFolder() cfg.Param {
-	return cfg.NewParam[[]string]("folder", "GCP folder ID").WithDefault([]string{}).WithShortcode("f")
+func GcpFolder() plugin.Parameter {
+	return plugin.NewParam[[]string]("folder", "GCP folder ID",
+		plugin.WithDefault([]string{}),
+		plugin.WithRequired(),
+	)
 }
 
-func GcpZone() cfg.Param {
-	return cfg.NewParam[string]("zone", "GCP zone containing the resource").WithDefault("").WithShortcode("z")
+func GcpResourceType() plugin.Parameter {
+	return plugin.NewParam[string]("resource-type", "GCP resource type",
+		plugin.WithDefault(""),
+		plugin.WithRequired(),
+		plugin.WithShortcode("t"),
+	)
 }
 
-func GcpRegion() cfg.Param {
-	return cfg.NewParam[string]("region", "GCP region containing the resource").WithDefault("").WithShortcode("r")
+func GcpZone() plugin.Parameter {
+	return plugin.NewParam[string]("zone", "GCP zone containing the resource",
+		plugin.WithDefault(""),
+		plugin.WithRequired(),
+		plugin.WithShortcode("z"),
+	)
 }
 
-func GcpResource() cfg.Param {
-	return cfg.NewParam[string]("resource", "GCP resource ID").WithDefault("").WithShortcode("r")
+func GcpRegion() plugin.Parameter {
+	return plugin.NewParam[string]("region", "GCP region containing the resource",
+		plugin.WithDefault(""),
+		plugin.WithRequired(),
+		plugin.WithShortcode("r"),
+	)
 }
 
-func GcpResourceTypes() cfg.Param {
-	return cfg.NewParam[[]string]("type", "GCP resource types to list").WithDefault([]string{"all"}).WithShortcode("t")
-}
-
-func GcpAssetAPIProject() cfg.Param {
-	return cfg.NewParam[string]("asset-api-project", "GCP project ID where Asset API is enabled (defaults to ADC project for org/folder, scoped project otherwise)").WithDefault("")
+func GcpResource() plugin.Parameter {
+	return plugin.NewParam[string]("resource", "GCP resource ID",
+		plugin.WithDefault(""),
+		plugin.WithRequired(),
+		plugin.WithShortcode("r"),
+	)
 }

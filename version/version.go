@@ -3,7 +3,7 @@ package version
 import "fmt"
 
 var (
-	// Version is the current version of Nebula, set via build flags
+	// Version is the current version of Aurelian, set via build flags
 	Version = "dev"
 
 	// Commit is the git commit hash, set via build flags
@@ -15,7 +15,7 @@ var (
 
 // FullVersion returns the full version string
 func FullVersion() string {
-	return fmt.Sprintf("Nebula %s, build %s, built at %s", Version, Commit, BuildTime)
+	return fmt.Sprintf("Aurelian %s, build %s, built at %s", Version, Commit, BuildTime)
 }
 
 func AbbreviatedVersion() string {

@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"google.golang.org/api/cloudresourcemanager/v1"
 )
 
@@ -17,64 +15,57 @@ import (
 // GcpProjectInfoLink - get info of a single project, Process(projectId string)
 
 type GcpProjectInfoLink struct {
-	*base.GcpBaseLink
-	resourceManagerService *cloudresourcemanager.Service
+	*base.NativeGCPLink
 }
 
 // creates a link to get info of a single project
-func NewGcpProjectInfoLink(configs ...cfg.Config) chain.Link {
-	g := &GcpProjectInfoLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpProjectInfoLink(args map[string]any) *GcpProjectInfoLink {
+	return &GcpProjectInfoLink{
+		NativeGCPLink: base.NewNativeGCPLink("gcp-project-info", args),
+	}
 }
 
-func (g *GcpProjectInfoLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
-	}
-	var err error
-	g.resourceManagerService, err = cloudresourcemanager.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create resource manager service: %w", err)
-	}
-	return nil
-}
-
-func (g *GcpProjectInfoLink) Params() []cfg.Param {
-	params := append(g.GcpBaseLink.Params(),
-		options.GcpProject(),
+func (g *GcpProjectInfoLink) Parameters() []plugin.Parameter {
+	params := append(base.StandardGCPParams(),
+		plugin.NewParam[string]("project", "GCP project ID", plugin.WithRequired()),
 	)
 	return params
 }
 
-func (g *GcpProjectInfoLink) Process(projectId string) error {
-	project, err := g.resourceManagerService.Projects.Get(projectId).Do()
+func (g *GcpProjectInfoLink) Process(ctx context.Context, input any) ([]any, error) {
+	projectId, ok := input.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string input, got %T", input)
+	}
+
+	resourceManagerService, err := cloudresourcemanager.NewService(ctx, g.ClientOptions()...)
 	if err != nil {
-		return fmt.Errorf("failed to get project %s: %w", projectId, err)
+		return nil, fmt.Errorf("failed to create resource manager service: %w", err)
+	}
+
+	project, err := resourceManagerService.Projects.Get(projectId).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get project %s: %w", projectId, err)
 	}
 	gcpProject, err := createGcpProjectResource(project)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	g.Send(gcpProject)
-	return nil
+	return []any{gcpProject}, nil
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // helper functions
 
-func createGcpProjectResource(project *cloudresourcemanager.Project) (*tab.GCPResource, error) {
-	gcpProject, err := tab.NewGCPResource(
-		project.ProjectId, // resource name (project ID)
-		fmt.Sprintf("%s/%s", project.Parent.Type, project.Parent.Id), // accountRef (hierarchy parent)
-		tab.GCPResourceProject,          // resource type
-		linkPostProcessProject(project), // properties
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCP project resource: %w", err)
-	}
-	gcpProject.DisplayName = project.Name
-	return &gcpProject, nil
+func createGcpProjectResource(project *cloudresourcemanager.Project) (*output.CloudResource, error) {
+	return &output.CloudResource{
+		Platform:     "gcp",
+		ResourceType: "cloudresourcemanager.googleapis.com/Project",
+		ResourceID:   fmt.Sprintf("projects/%s", project.ProjectId),
+		AccountRef:   fmt.Sprintf("%s/%s", project.Parent.Type, project.Parent.Id),
+		DisplayName:  project.Name,
+		Properties:   linkPostProcessProject(project),
+	}, nil
 }
 
 func linkPostProcessProject(project *cloudresourcemanager.Project) map[string]any {

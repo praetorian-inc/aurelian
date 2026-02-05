@@ -6,11 +6,9 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"google.golang.org/api/cloudresourcemanager/v1"
 	cloudresourcemanagerv2 "google.golang.org/api/cloudresourcemanager/v2"
 )
@@ -18,197 +16,190 @@ import (
 // FILE INFO:
 // GcpOrganizationLister - list all organizations
 // GcpOrgInfoLink - get info of a single organization, Process(orgName string)
-// GcpOrgFolderListLink - list all folders in an organization, Process(resource tab.GCPResource); needs organization
-// GcpOrgProjectListLink - list all projects in an organization, Process(resource tab.GCPResource); needs organization
+// GcpOrgFolderListLink - list all folders in an organization, Process(resource output.CloudResource); needs organization
+// GcpOrgProjectListLink - list all projects in an organization, Process(resource output.CloudResource); needs organization
 
 type GcpOrganizationLister struct {
-	*base.GcpBaseLink
-	resourceManagerService *cloudresourcemanager.Service
+	*base.NativeGCPLink
 }
 
 // creates a link to list all organizations
-func NewGcpOrganizationLister(configs ...cfg.Config) chain.Link {
-	g := &GcpOrganizationLister{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpOrganizationLister(args map[string]any) *GcpOrganizationLister {
+	return &GcpOrganizationLister{
+		NativeGCPLink: base.NewNativeGCPLink("gcp-organization-lister", args),
+	}
 }
 
-func (g *GcpOrganizationLister) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
-	}
-	var err error
-	g.resourceManagerService, err = cloudresourcemanager.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create resource manager service: %w", err)
-	}
-	return nil
-}
-
-func (g *GcpOrganizationLister) Process() error {
+func (g *GcpOrganizationLister) Process(ctx context.Context, _ any) ([]any, error) {
 	// no resource input (meant to be non-contextual)
-	searchReq := g.resourceManagerService.Organizations.Search(&cloudresourcemanager.SearchOrganizationsRequest{})
+	resourceManagerService, err := cloudresourcemanager.NewService(ctx, g.ClientOptions()...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create resource manager service: %w", err)
+	}
+
+	searchReq := resourceManagerService.Organizations.Search(&cloudresourcemanager.SearchOrganizationsRequest{})
 	resp, err := searchReq.Do()
 	if err != nil {
-		return fmt.Errorf("failed to search organizations: %w", err)
+		return nil, fmt.Errorf("failed to search organizations: %w", err)
 	}
 	if len(resp.Organizations) == 0 {
-		return nil
+		return []any{}, nil
 	}
+
+	var results []any
 	for _, org := range resp.Organizations {
 		gcpOrg, err := createGcpOrgResource(org)
 		if err != nil {
 			slog.Error("Failed to create GCP organization resource", "error", err, "org", org.Name)
 			continue
 		}
-		g.Send(gcpOrg)
+		results = append(results, gcpOrg)
 	}
-	return nil
+	return results, nil
+}
+
+func (g *GcpOrganizationLister) Parameters() []plugin.Parameter {
+	return base.StandardGCPParams()
 }
 
 type GcpOrgInfoLink struct {
-	*base.GcpBaseLink
-	resourceManagerService *cloudresourcemanager.Service
+	*base.NativeGCPLink
 }
 
 // creates a link to get info of a single organization
-func NewGcpOrgInfoLink(configs ...cfg.Config) chain.Link {
-	g := &GcpOrgInfoLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpOrgInfoLink(args map[string]any) *GcpOrgInfoLink {
+	return &GcpOrgInfoLink{
+		NativeGCPLink: base.NewNativeGCPLink("gcp-org-info", args),
+	}
 }
 
-func (g *GcpOrgInfoLink) Params() []cfg.Param {
-	params := append(g.GcpBaseLink.Params(),
-		options.GcpOrg(),
+func (g *GcpOrgInfoLink) Parameters() []plugin.Parameter {
+	params := append(base.StandardGCPParams(),
+		plugin.NewParam[string]("org", "GCP organization name or ID", plugin.WithRequired()),
 	)
 	return params
 }
 
-func (g *GcpOrgInfoLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
+func (g *GcpOrgInfoLink) Process(ctx context.Context, input any) ([]any, error) {
+	orgName, ok := input.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string input, got %T", input)
 	}
-	var err error
-	g.resourceManagerService, err = cloudresourcemanager.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create resource manager service: %w", err)
-	}
-	return nil
-}
 
-func (g *GcpOrgInfoLink) Process(orgName string) error {
 	if !strings.HasPrefix(orgName, "organizations/") {
 		orgName = "organizations/" + orgName
 	}
-	org, err := g.resourceManagerService.Organizations.Get(orgName).Do()
+
+	resourceManagerService, err := cloudresourcemanager.NewService(ctx, g.ClientOptions()...)
 	if err != nil {
-		return fmt.Errorf("failed to get organization %s: %w", orgName, err)
+		return nil, fmt.Errorf("failed to create resource manager service: %w", err)
+	}
+
+	org, err := resourceManagerService.Organizations.Get(orgName).Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get organization %s: %w", orgName, err)
 	}
 	gcpOrg, err := createGcpOrgResource(org)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	g.Send(gcpOrg)
-	return nil
+	return []any{gcpOrg}, nil
 }
 
 type GcpOrgFolderListLink struct {
-	*base.GcpBaseLink
-	resourceManagerService *cloudresourcemanager.Service
+	*base.NativeGCPLink
 }
 
 // creates a link to list all folders in an organization
-func NewGcpOrgFolderListLink(configs ...cfg.Config) chain.Link {
-	g := &GcpOrgFolderListLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpOrgFolderListLink(args map[string]any) *GcpOrgFolderListLink {
+	return &GcpOrgFolderListLink{
+		NativeGCPLink: base.NewNativeGCPLink("gcp-org-folder-list", args),
+	}
 }
 
-func (g *GcpOrgFolderListLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
-	}
-	var err error
-	g.resourceManagerService, err = cloudresourcemanager.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create resource manager service: %w", err)
-	}
-	return nil
+func (g *GcpOrgFolderListLink) Parameters() []plugin.Parameter {
+	return base.StandardGCPParams()
 }
 
-func (g *GcpOrgFolderListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceOrganization {
-		return nil
+func (g *GcpOrgFolderListLink) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(output.CloudResource)
+	if !ok {
+		return nil, fmt.Errorf("expected output.CloudResource, got %T", input)
 	}
-	orgName := "organizations/" + resource.Name
-	v2Service, err := cloudresourcemanagerv2.NewService(context.Background(), g.ClientOptions...)
+
+	if resource.ResourceType != "cloudresourcemanager.googleapis.com/Organization" {
+		return []any{}, nil
+	}
+
+	orgName := resource.ResourceID
+	v2Service, err := cloudresourcemanagerv2.NewService(ctx, g.ClientOptions()...)
 	if err != nil {
-		return fmt.Errorf("failed to create v2 resource manager service: %w", err)
+		return nil, fmt.Errorf("failed to create v2 resource manager service: %w", err)
 	}
-	err = traverseFolders(orgName, v2Service, func(folder *cloudresourcemanagerv2.Folder) error {
-		gcpFolder, err := createGcpFolderResource(folder)
-		if err != nil {
-			slog.Error("Failed to create GCP folder resource", "error", err, "folder", folder.Name)
-			return nil // continue processing other folders
+
+	var results []any
+	listReq := v2Service.Folders.List().Parent(orgName)
+	err = listReq.Pages(ctx, func(page *cloudresourcemanagerv2.ListFoldersResponse) error {
+		for _, folder := range page.Folders {
+			gcpFolder, err := createGcpFolderResource(folder)
+			if err != nil {
+				slog.Error("Failed to create GCP folder resource", "error", err, "folder", folder.Name)
+				continue
+			}
+			results = append(results, gcpFolder)
 		}
-		g.Send(gcpFolder)
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("failed to list folders in organization %s: %w", orgName, err)
+		return nil, fmt.Errorf("failed to list folders in organization %s: %w", orgName, err)
 	}
-	return nil
+	return results, nil
 }
 
 type GcpOrgProjectListLink struct {
-	*base.GcpBaseLink
-	resourceManagerService *cloudresourcemanager.Service
-	IncludeSysProjects     bool
+	*base.NativeGCPLink
+	FilterSysProjects bool
 }
 
 // creates a link to list all projects in an organization
-func NewGcpOrgProjectListLink(configs ...cfg.Config) chain.Link {
-	g := &GcpOrgProjectListLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpOrgProjectListLink(args map[string]any) *GcpOrgProjectListLink {
+	link := &GcpOrgProjectListLink{
+		NativeGCPLink: base.NewNativeGCPLink("gcp-org-project-list", args),
+	}
+	if filterSysProjects, ok := args["filter-sys-projects"].(bool); ok {
+		link.FilterSysProjects = filterSysProjects
+	}
+	return link
 }
 
-func (g *GcpOrgProjectListLink) Params() []cfg.Param {
-	params := append(g.GcpBaseLink.Params(),
-		options.GcpIncludeSysProjects(),
+func (g *GcpOrgProjectListLink) Parameters() []plugin.Parameter {
+	params := append(base.StandardGCPParams(),
+		plugin.NewParam[bool]("filter-sys-projects", "Filter system projects", plugin.WithDefault(false)),
 	)
 	return params
 }
 
-func (g *GcpOrgProjectListLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
+func (g *GcpOrgProjectListLink) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(output.CloudResource)
+	if !ok {
+		return nil, fmt.Errorf("expected output.CloudResource, got %T", input)
 	}
-	var err error
-	g.resourceManagerService, err = cloudresourcemanager.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create resource manager service: %w", err)
-	}
-	includeSysProjects, err := cfg.As[bool](g.Arg("include-sys-projects"))
-	if err != nil {
-		return fmt.Errorf("failed to get include-sys-projects: %w", err)
-	}
-	g.IncludeSysProjects = includeSysProjects
-	return nil
-}
 
-func (g *GcpOrgProjectListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceOrganization {
-		return nil
+	if resource.ResourceType != "cloudresourcemanager.googleapis.com/Organization" {
+		return []any{}, nil
 	}
-	orgID := resource.Name
-	listReq := g.resourceManagerService.Projects.List() // .Filter(fmt.Sprintf("parent.id:%s", orgID))
 
-	// list all projects under any parent
-	err := listReq.Pages(context.Background(), func(page *cloudresourcemanager.ListProjectsResponse) error {
+	orgName := resource.ResourceID
+	resourceManagerService, err := cloudresourcemanager.NewService(ctx, g.ClientOptions()...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create resource manager service: %w", err)
+	}
+
+	var results []any
+	listReq := resourceManagerService.Projects.List() // .Filter(fmt.Sprintf("parent.id:%s", orgName)) -- TODO: add this back if/when we introduce folder filter in CLI
+	err = listReq.Pages(ctx, func(page *cloudresourcemanager.ListProjectsResponse) error {
 		for _, project := range page.Projects {
-			if !g.IncludeSysProjects && isSysProject(project) {
+			if g.FilterSysProjects && isSysProject(project) {
 				continue
 			}
 			gcpProject, err := createGcpProjectResource(project)
@@ -216,39 +207,28 @@ func (g *GcpOrgProjectListLink) Process(resource tab.GCPResource) error {
 				slog.Error("Failed to create GCP project resource", "error", err, "projectId", project.ProjectId)
 				continue
 			}
-			g.Send(gcpProject)
+			results = append(results, gcpProject)
 		}
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("failed to list projects in organization %s: %w", orgID, err)
+		return nil, fmt.Errorf("failed to list projects in organization %s: %w", orgName, err)
 	}
-	return nil
+	return results, nil
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // helper functions
 
-func createGcpOrgResource(org *cloudresourcemanager.Organization) (*tab.GCPResource, error) {
-	gcpOrg, err := tab.NewGCPResource(
-		strings.Split(org.Name, "/")[1], // resource name
-		org.Name,                        // accountRef (self)
-		tab.GCPResourceOrganization,     // resource type
-		linkPostProcessOrg(org),         // properties
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCP organization resource: %w", err)
-	}
-	gcpOrg.DisplayName = org.DisplayName
-	return &gcpOrg, nil
-}
-
-func linkPostProcessFolder(folder *cloudresourcemanagerv2.Folder) map[string]any {
-	properties := map[string]any{
-		"resourceName":   folder.ManagementProject,
-		"lifecycleState": folder.LifecycleState,
-	}
-	return properties
+func createGcpOrgResource(org *cloudresourcemanager.Organization) (*output.CloudResource, error) {
+	return &output.CloudResource{
+		Platform:     "gcp",
+		ResourceType: "cloudresourcemanager.googleapis.com/Organization",
+		ResourceID:   org.Name, // "organizations/123456789"
+		AccountRef:   org.Name, // Self-reference for top-level organization
+		DisplayName:  org.DisplayName,
+		Properties:   linkPostProcessOrg(org),
+	}, nil
 }
 
 func linkPostProcessOrg(org *cloudresourcemanager.Organization) map[string]any {
@@ -278,18 +258,4 @@ func isSysProject(project *cloudresourcemanager.Project) bool {
 		}
 	}
 	return false
-}
-
-// generic helper to traverse folders with a callback function
-func traverseFolders(parent string, v2Service *cloudresourcemanagerv2.Service, callback func(*cloudresourcemanagerv2.Folder) error) error {
-	listReq := v2Service.Folders.List().Parent(parent)
-	err := listReq.Pages(context.Background(), func(page *cloudresourcemanagerv2.ListFoldersResponse) error {
-		for _, folder := range page.Folders {
-			if err := callback(folder); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	return err
 }

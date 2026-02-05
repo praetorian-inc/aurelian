@@ -6,32 +6,31 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"github.com/praetorian-inc/aurelian/pkg/links/azure/base"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 
 	msgraphsdk "github.com/microsoftgraph/msgraph-sdk-go"
 )
 
 // AzureConditionalAccessAggregatorLink collects both recon policies and LLM analysis into a single comprehensive output
 type AzureConditionalAccessAggregatorLink struct {
-	*chain.Base
+	*base.NativeAzureLink
 	policies []EnrichedConditionalAccessPolicy
 	analysis *ConditionalAccessAnalysisResult
 }
 
-func NewAzureConditionalAccessAggregatorLink(configs ...cfg.Config) chain.Link {
-	l := &AzureConditionalAccessAggregatorLink{
-		policies: make([]EnrichedConditionalAccessPolicy, 0),
+func NewAzureConditionalAccessAggregatorLink(args map[string]any) *AzureConditionalAccessAggregatorLink {
+	return &AzureConditionalAccessAggregatorLink{
+		NativeAzureLink: base.NewNativeAzureLink("conditional-access-aggregator", args),
+		policies:        make([]EnrichedConditionalAccessPolicy, 0),
 	}
-	l.Base = chain.NewBase(l, configs...)
-	return l
 }
 
-func (l *AzureConditionalAccessAggregatorLink) Params() []cfg.Param {
-	return []cfg.Param{}
+func (l *AzureConditionalAccessAggregatorLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{}
 }
 
-func (l *AzureConditionalAccessAggregatorLink) Process(input any) error {
+func (l *AzureConditionalAccessAggregatorLink) Process(ctx context.Context, input any) ([]any, error) {
 	switch v := input.(type) {
 	case []EnrichedConditionalAccessPolicy:
 		// Collect recon policy data
@@ -48,19 +47,17 @@ func (l *AzureConditionalAccessAggregatorLink) Process(input any) error {
 		// Unknown input type - ignored
 	}
 
-	return nil
+	return l.Outputs(), nil
 }
 
-func (l *AzureConditionalAccessAggregatorLink) Complete() error {
-	l.Logger.Info("Creating combined conditional access output", "policies", len(l.policies), "has_analysis", l.analysis != nil)
+func (l *AzureConditionalAccessAggregatorLink) Complete(ctx context.Context) error {
+	l.Logger().Info("Creating combined conditional access output", "policies", len(l.policies), "has_analysis", l.analysis != nil)
 
 	// Create combined output structure
 	combinedOutput := l.createCombinedOutput()
 
-	// Send to RuntimeJSONOutputter for consistent filename generation
-	if err := l.Send(combinedOutput); err != nil {
-		return fmt.Errorf("failed to send combined output: %w", err)
-	}
+	// Add to outputs
+	l.Send(combinedOutput)
 
 	return nil
 }

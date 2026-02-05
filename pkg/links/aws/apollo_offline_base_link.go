@@ -1,23 +1,24 @@
 package aws
 
 import (
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"context"
+
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
 )
 
 // AwsApolloOfflineBaseLink is a minimal base link for offline operations that doesn't require AWS credentials
 type AwsApolloOfflineBaseLink struct {
-	*chain.Base
+	*base.NativeAWSLink
 }
 
-func NewAwsApolloOfflineBaseLink(link chain.Link, configs ...cfg.Config) *AwsApolloOfflineBaseLink {
-	a := &AwsApolloOfflineBaseLink{}
-	a.Base = chain.NewBase(link, configs...)
-	return a
+func NewAwsApolloOfflineBaseLink(args map[string]any) *AwsApolloOfflineBaseLink {
+	return &AwsApolloOfflineBaseLink{
+		NativeAWSLink: base.NewNativeAWSLink("apollo-offline-base", args),
+	}
 }
 
-func (a *AwsApolloOfflineBaseLink) Initialize() error {
-	// Initialize the base chain without AWS-specific operations
-	a.ContextHolder = cfg.NewContextHolder()
-	return nil
+func (a *AwsApolloOfflineBaseLink) Process(ctx context.Context, input any) ([]any, error) {
+	// Passthrough - just forwards input as output
+	a.Send(input)
+	return a.Outputs(), nil
 }

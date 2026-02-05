@@ -1,15 +1,16 @@
 package aws
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 	"sync"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/utils"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/utils"
 )
 
 //https://raw.githubusercontent.com/iann0036/iam-dataset/refs/heads/main/aws/tags.json
@@ -52,17 +53,16 @@ func createActionMap(data *AwsData) map[string][]string {
 }
 
 type AWSActionClassifierLink struct {
-	*chain.Base
+	*base.NativeAWSLink
 	actionMap map[string][]string
 	wg        sync.WaitGroup
 }
 
-func NewAWSActionClassifierLink(configs ...cfg.Config) chain.Link {
-	a := &AWSActionClassifierLink{
-		wg: sync.WaitGroup{},
+func NewAWSActionClassifierLink(args map[string]any) *AWSActionClassifierLink {
+	return &AWSActionClassifierLink{
+		NativeAWSLink: base.NewNativeAWSLink("action-classifier", args),
+		wg:            sync.WaitGroup{},
 	}
-	a.Base = chain.NewBase(a, configs...)
-	return a
 }
 
 func (a *AWSActionClassifierLink) Initialize() error {
@@ -84,14 +84,21 @@ func (a *AWSActionClassifierLink) Initialize() error {
 	return nil
 }
 
-func (a *AWSActionClassifierLink) Process(action string) error {
+func (a *AWSActionClassifierLink) Process(ctx context.Context, input any) ([]any, error) {
+	action, ok := input.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string input, got %T", input)
+	}
+
 	if keys, exists := a.actionMap[strings.ToLower(action)]; exists {
 		m := make(map[string][]string)
 		m[action] = keys
-		if err := a.Send(m); err != nil {
-			return fmt.Errorf("error sending keys: %w", err)
-		}
+		a.Send(m)
 	}
 
-	return nil
+	return a.Outputs(), nil
+}
+
+func (a *AWSActionClassifierLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{}
 }

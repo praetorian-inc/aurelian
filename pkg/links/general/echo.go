@@ -1,22 +1,26 @@
 package general
 
 import (
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
+	"context"
+
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 type Echo[T any] struct {
-	*chain.Base
+	*plugin.BaseLink
 }
 
-func NewEcho[T any](configs ...cfg.Config) chain.Link {
-	e := &Echo[T]{}
-	e.Base = chain.NewBase(e, configs...)
-	return e
+func NewEcho[T any](args map[string]any) *Echo[T] {
+	return &Echo[T]{
+		BaseLink: plugin.NewBaseLink("echo", args),
+	}
 }
 
-func (e *Echo[T]) Process(input T) error {
+func (e *Echo[T]) Process(ctx context.Context, input any) ([]any, error) {
 	// Pass it through
-	e.Send(input)
+	return []any{input}, nil
+}
+
+func (e *Echo[T]) Parameters() []plugin.Parameter {
 	return nil
 }

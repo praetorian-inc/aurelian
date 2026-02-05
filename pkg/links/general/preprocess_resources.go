@@ -1,95 +1,151 @@
 package general
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	jlinks "github.com/praetorian-inc/janus-framework/pkg/links"
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type SupportsResourceTypes interface {
-	SupportedResourceTypes() []model.CloudResourceType
+	SupportedResourceTypes() []string
 }
 
-func PreprocessResourceTypes(class SupportsResourceTypes) func(chain.Link, string) error {
-	processor := func(self chain.Link, input string) error {
-		resourceTypes := []model.CloudResourceType{model.CloudResourceType(input)}
+// ResourceTypePreprocessor expands "all" into specific resource types
+type ResourceTypePreprocessor struct {
+	*plugin.BaseLink
+	class SupportsResourceTypes
+}
 
-		if strings.ToLower(input) == "all" {
-			resourceTypes = class.SupportedResourceTypes()
-		}
+func NewResourceTypePreprocessor(class SupportsResourceTypes, args map[string]any) *ResourceTypePreprocessor {
+	return &ResourceTypePreprocessor{
+		BaseLink: plugin.NewBaseLink("resource-type-preprocessor", args),
+		class:    class,
+	}
+}
 
-		for _, resourceType := range resourceTypes {
-			self.Send(resourceType)
-		}
-
-		return nil
+func (p *ResourceTypePreprocessor) Process(ctx context.Context, input any) ([]any, error) {
+	inputStr, ok := input.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string input, got %T", input)
 	}
 
-	return processor
-}
-
-func NewResourceTypePreprocessor(class SupportsResourceTypes) func(...cfg.Config) chain.Link {
-	preprocessor := PreprocessResourceTypes(class)
-	return jlinks.ConstructAdHocLink(preprocessor)
-}
-
-// NewSingleResourcePreprocessor returns a link that accepts a string (ARN), constructs an EnrichedResourceDescription, and sends it.
-func NewSingleResourcePreprocessor() func(...cfg.Config) chain.Link {
-	preprocessor := func(self chain.Link, input string) error {
-		erd, err := types.NewEnrichedResourceDescriptionFromArn(input)
-		if err != nil {
-			return err
-		}
-		self.Send(erd)
-		return nil
+	var resourceTypes []string
+	if strings.ToLower(inputStr) == "all" {
+		resourceTypes = p.class.SupportedResourceTypes()
+	} else {
+		resourceTypes = []string{inputStr}
 	}
-	return jlinks.ConstructAdHocLink(preprocessor)
+
+	outputs := make([]any, len(resourceTypes))
+	for i, rt := range resourceTypes {
+		outputs[i] = rt
+	}
+
+	return outputs, nil
 }
 
-// NewAzureSingleResourcePreprocessor returns a link that accepts an AzureResource and sends it for processing.
-// This is used for processing individual Azure resources from list-all-resources output.
-func NewAzureSingleResourcePreprocessor() func(...cfg.Config) chain.Link {
-	preprocessor := func(self chain.Link, input *model.AzureResource) error {
-		self.Send(input)
-		return nil
-	}
-	return jlinks.ConstructAdHocLink(preprocessor)
+func (p *ResourceTypePreprocessor) Parameters() []plugin.Parameter {
+	return nil
 }
 
-// NewAzureResourceIDPreprocessor returns a link that accepts an Azure resource ID string,
-// constructs an AzureResource object, and sends it for processing.
-func NewAzureResourceIDPreprocessor() func(...cfg.Config) chain.Link {
-	preprocessor := func(self chain.Link, input string) error {
-		// The Azure resource ID format is: /subscriptions/{sub}/resourceGroups/{rg}/providers/{type}/{name}
-		// We need to parse this to extract subscription, type, etc.
-		parts := strings.Split(input, "/")
-		if len(parts) < 9 || parts[1] != "subscriptions" || parts[3] != "resourceGroups" || parts[5] != "providers" {
-			return fmt.Errorf("invalid Azure resource ID format: %s", input)
-		}
+// SingleResourcePreprocessor converts ARN string to EnrichedResourceDescription
+type SingleResourcePreprocessor struct {
+	*plugin.BaseLink
+}
 
-		subscriptionID := parts[2]
-		resourceType := strings.Join(parts[6:len(parts)-1], "/")
-
-		// Create a basic AzureResource with the resource ID
-		azureResource, err := model.NewAzureResource(
-			input, // Use full resource ID as the name
-			subscriptionID,
-			model.CloudResourceType(resourceType),
-			map[string]any{
-				"resourceId": input,
-			},
-		)
-		if err != nil {
-			return fmt.Errorf("failed to create AzureResource from ID: %w", err)
-		}
-
-		self.Send(&azureResource)
-		return nil
+func NewSingleResourcePreprocessor(args map[string]any) *SingleResourcePreprocessor {
+	return &SingleResourcePreprocessor{
+		BaseLink: plugin.NewBaseLink("single-resource-preprocessor", args),
 	}
-	return jlinks.ConstructAdHocLink(preprocessor)
+}
+
+func (p *SingleResourcePreprocessor) Process(ctx context.Context, input any) ([]any, error) {
+	inputStr, ok := input.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string input, got %T", input)
+	}
+
+	erd, err := types.NewEnrichedResourceDescriptionFromArn(inputStr)
+	if err != nil {
+		return nil, err
+	}
+
+	return []any{erd}, nil
+}
+
+func (p *SingleResourcePreprocessor) Parameters() []plugin.Parameter {
+	return nil
+}
+
+// AzureSingleResourcePreprocessor passes through CloudResource
+type AzureSingleResourcePreprocessor struct {
+	*plugin.BaseLink
+}
+
+func NewAzureSingleResourcePreprocessor(args map[string]any) *AzureSingleResourcePreprocessor {
+	return &AzureSingleResourcePreprocessor{
+		BaseLink: plugin.NewBaseLink("azure-single-resource-preprocessor", args),
+	}
+}
+
+func (p *AzureSingleResourcePreprocessor) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*output.CloudResource)
+	if !ok {
+		return nil, fmt.Errorf("expected *output.CloudResource input, got %T", input)
+	}
+
+	return []any{resource}, nil
+}
+
+func (p *AzureSingleResourcePreprocessor) Parameters() []plugin.Parameter {
+	return nil
+}
+
+// AzureResourceIDPreprocessor converts Azure resource ID string to CloudResource
+type AzureResourceIDPreprocessor struct {
+	*plugin.BaseLink
+}
+
+func NewAzureResourceIDPreprocessor(args map[string]any) *AzureResourceIDPreprocessor {
+	return &AzureResourceIDPreprocessor{
+		BaseLink: plugin.NewBaseLink("azure-resource-id-preprocessor", args),
+	}
+}
+
+func (p *AzureResourceIDPreprocessor) Process(ctx context.Context, input any) ([]any, error) {
+	inputStr, ok := input.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string input, got %T", input)
+	}
+
+	// The Azure resource ID format is: /subscriptions/{sub}/resourceGroups/{rg}/providers/{type}/{name}
+	// We need to parse this to extract subscription, type, etc.
+	parts := strings.Split(inputStr, "/")
+	if len(parts) < 9 || parts[1] != "subscriptions" || parts[3] != "resourceGroups" || parts[5] != "providers" {
+		return nil, fmt.Errorf("invalid Azure resource ID format: %s", inputStr)
+	}
+
+	subscriptionID := parts[2]
+	resourceType := strings.Join(parts[6:len(parts)-1], "/")
+
+	// Create a basic CloudResource with the resource ID
+	azureResource := output.CloudResource{
+		Platform:     "azure",
+		ResourceType: resourceType,
+		ResourceID:   inputStr,
+		AccountRef:   subscriptionID,
+		Properties: map[string]any{
+			"resourceId": inputStr,
+		},
+	}
+
+	return []any{&azureResource}, nil
+}
+
+func (p *AzureResourceIDPreprocessor) Parameters() []plugin.Parameter {
+	return nil
 }

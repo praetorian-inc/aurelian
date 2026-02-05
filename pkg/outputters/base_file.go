@@ -4,35 +4,48 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/utils"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/utils"
 )
 
 // BaseFileOutputter provides common file handling functionality for outputters
 // that need to write to files. It handles directory creation and path management.
 type BaseFileOutputter struct {
-	*chain.BaseOutputter
+	cfg        plugin.Config
 	outputPath string
 }
 
 // NewBaseFileOutputter creates a new BaseFileOutputter
-func NewBaseFileOutputter(outputter chain.Outputter, configs ...cfg.Config) *BaseFileOutputter {
-	return &BaseFileOutputter{
-		BaseOutputter: chain.NewBaseOutputter(outputter, configs...),
+func NewBaseFileOutputter() *BaseFileOutputter {
+	return &BaseFileOutputter{}
+}
+
+// SetConfig stores the configuration for later parameter access
+func (b *BaseFileOutputter) SetConfig(cfg plugin.Config) {
+	b.cfg = cfg
+}
+
+// GetArg retrieves a typed argument from the stored configuration
+func (b *BaseFileOutputter) GetArg(name string, defaultValue any) any {
+	if b.cfg.Args == nil {
+		return defaultValue
 	}
+	if val, ok := b.cfg.Args[name]; ok {
+		return val
+	}
+	return defaultValue
 }
 
 // EnsureOutputPath creates the output path and ensures all necessary directories exist
 func (b *BaseFileOutputter) EnsureOutputPath(filePath string) error {
 	// Store the output path
 	b.outputPath = filePath
-	
+
 	// Ensure the file's directory exists
 	if err := utils.EnsureFileDirectory(filePath); err != nil {
 		return fmt.Errorf("failed to create directory for output file %s: %w", filePath, err)
 	}
-	
+
 	return nil
 }
 

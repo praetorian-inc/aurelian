@@ -1,41 +1,39 @@
 package azure
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/links/azure/base"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // AzureDevOpsProjectDiscoveryLink discovers projects in an Azure DevOps organization
 type AzureDevOpsProjectDiscoveryLink struct {
-	*chain.Base
+	*base.NativeAzureLink
 }
 
-func NewAzureDevOpsProjectDiscoveryLink(configs ...cfg.Config) chain.Link {
-	l := &AzureDevOpsProjectDiscoveryLink{}
-	l.Base = chain.NewBase(l, configs...)
-	return l
+func NewAzureDevOpsProjectDiscoveryLink(args map[string]any) *AzureDevOpsProjectDiscoveryLink {
+	return &AzureDevOpsProjectDiscoveryLink{
+		NativeAzureLink: base.NewNativeAzureLink("devops-project-discovery", args),
+	}
 }
 
-func (l *AzureDevOpsProjectDiscoveryLink) Params() []cfg.Param {
-	return []cfg.Param{
-		options.AzureDevOpsPAT(),
-		options.AzureDevOpsProject(),
+func (l *AzureDevOpsProjectDiscoveryLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		{Name: "devops-pat", Type: "string", Required: true, Description: "Azure DevOps Personal Access Token"},
+		{Name: "devops-project", Type: "string", Required: false, Description: "Specific project to scan (optional, discovers all if not provided)"},
 	}
 }
 
 // makeDevOpsRequest helper function for authenticated API calls
-func (l *AzureDevOpsProjectDiscoveryLink) makeDevOpsRequest(method, url string) (*http.Response, error) {
-	pat, _ := cfg.As[string](l.Arg("devops-pat"))
-
-	req, err := http.NewRequestWithContext(l.Context(), method, url, nil)
+func (l *AzureDevOpsProjectDiscoveryLink) makeDevOpsRequest(ctx context.Context, method, url string, pat string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -46,7 +44,7 @@ func (l *AzureDevOpsProjectDiscoveryLink) makeDevOpsRequest(method, url string) 
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
 
-	l.Logger.Debug("Making Azure DevOps API request", "method", method, "url", url)
+	l.Logger().Debug("Making Azure DevOps API request", "method", method, "url", url)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -61,22 +59,28 @@ func (l *AzureDevOpsProjectDiscoveryLink) makeDevOpsRequest(method, url string) 
 	return resp, nil
 }
 
-func (l *AzureDevOpsProjectDiscoveryLink) Process(config types.DevOpsScanConfig) error {
-	specificProject, _ := cfg.As[string](l.Arg("devops-project"))
+func (l *AzureDevOpsProjectDiscoveryLink) Process(ctx context.Context, input any) ([]any, error) {
+	config, ok := input.(types.DevOpsScanConfig)
+	if !ok {
+		return nil, fmt.Errorf("expected DevOpsScanConfig, got %T", input)
+	}
+
+	pat := l.ArgString("devops-pat", "")
+	specificProject := l.ArgString("devops-project", "")
 
 	// If a specific project is requested, use it directly
 	if specificProject != "" {
 		config.Project = specificProject
 		l.Send(config)
-		return nil
+		return l.Outputs(), nil
 	}
 
 	// Otherwise, discover all projects in the organization
 	projectsUrl := fmt.Sprintf("https://dev.azure.com/%s/_apis/projects?api-version=7.1-preview.1", config.Organization)
 
-	projectsResp, err := l.makeDevOpsRequest(http.MethodGet, projectsUrl)
+	projectsResp, err := l.makeDevOpsRequest(ctx, http.MethodGet, projectsUrl, pat)
 	if err != nil {
-		return fmt.Errorf("failed to get projects: %w", err)
+		return nil, fmt.Errorf("failed to get projects: %w", err)
 	}
 	defer projectsResp.Body.Close()
 
@@ -88,7 +92,7 @@ func (l *AzureDevOpsProjectDiscoveryLink) Process(config types.DevOpsScanConfig)
 	}
 
 	if err := json.NewDecoder(projectsResp.Body).Decode(&projectsResult); err != nil {
-		return fmt.Errorf("failed to parse projects response: %w", err)
+		return nil, fmt.Errorf("failed to parse projects response: %w", err)
 	}
 
 	message.Info("Found %d projects in organization %s", projectsResult.Count, config.Organization)
@@ -100,9 +104,9 @@ func (l *AzureDevOpsProjectDiscoveryLink) Process(config types.DevOpsScanConfig)
 			Project:      project.Name,
 		}
 
-		l.Logger.Debug("Discovered project", "project", project.Name, "organization", config.Organization)
+		l.Logger().Debug("Discovered project", "project", project.Name, "organization", config.Organization)
 		l.Send(projectConfig)
 	}
 
-	return nil
+	return l.Outputs(), nil
 }

@@ -1,8 +1,9 @@
 package outputproviders
 
 import (
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"fmt"
+
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type ConsoleProvider struct {
@@ -19,7 +20,7 @@ func (cp *ConsoleProvider) Write(result types.Result) error {
 	//helpers.PrintResult(result)
 	res := result.Data.(string)
 	if res != "" {
-		message.Success(res)
+		fmt.Println(res)
 	}
 	return nil
 }

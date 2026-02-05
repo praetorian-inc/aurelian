@@ -7,15 +7,13 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/route53"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
 )
 
 // Route53DomainFinder finds Route53 records pointing to vulnerable CloudFront distributions
 type Route53DomainFinder struct {
-	*base.AwsReconLink
+	*base.NativeAWSLink
 }
 
 // Route53Record contains information about a Route53 record
@@ -45,27 +43,28 @@ type S3TakeoverFinding struct {
 }
 
 // NewRoute53DomainFinder creates a new Route53 domain finder
-func NewRoute53DomainFinder(configs ...cfg.Config) chain.Link {
-	finder := &Route53DomainFinder{}
-	finder.AwsReconLink = base.NewAwsReconLink(finder, configs...)
-	return finder
+func NewRoute53DomainFinder(args map[string]any) *Route53DomainFinder {
+	return &Route53DomainFinder{
+		NativeAWSLink: base.NewNativeAWSLink("route53-domain-finder", args),
+	}
 }
 
 // Process finds Route53 records pointing to vulnerable distributions
-func (r *Route53DomainFinder) Process(resource any) error {
-	vuln, ok := resource.(VulnerableDistribution)
+func (r *Route53DomainFinder) Process(ctx context.Context, input any) ([]any, error) {
+	vuln, ok := input.(VulnerableDistribution)
 	if !ok {
 		// Not a vulnerable distribution, pass through
-		return r.Send(resource)
+		r.Send(input)
+		return r.Outputs(), nil
 	}
 
 	message.Info("Searching Route53 for domains pointing to vulnerable CloudFront distribution %s (domain: %s)",
 		vuln.DistributionID, vuln.DistributionDomain)
 
 	// Route53 is a global service, use us-east-1
-	config, err := r.GetConfigWithRuntimeArgs("us-east-1")
+	config, err := r.GetConfig(ctx, "us-east-1")
 	if err != nil {
-		return fmt.Errorf("failed to get AWS config: %w", err)
+		return nil, fmt.Errorf("failed to get AWS config: %w", err)
 	}
 
 	route53Client := route53.NewFromConfig(config)
@@ -138,7 +137,8 @@ func (r *Route53DomainFinder) Process(resource any) error {
 	}
 
 	// Send complete finding
-	return r.Send(finding)
+	r.Send(finding)
+	return r.Outputs(), nil
 }
 
 // findRoute53Records finds all Route53 records pointing to a CloudFront distribution

@@ -8,38 +8,31 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/praetorian-inc/nebula/pkg/outputters"
+	"github.com/praetorian-inc/aurelian/pkg/outputters"
 
 	"github.com/aws/aws-sdk-go-v2/service/iam"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
 )
 
 type JanusAWSAuthorizationDetails struct {
-	*base.AwsReconBaseLink
+	*base.NativeAWSLink
 }
 
-func NewJanusAWSAuthorizationDetails(configs ...cfg.Config) chain.Link {
+func NewJanusAWSAuthorizationDetails(args map[string]any) *JanusAWSAuthorizationDetails {
 	slog.Debug("Creating JanusAWSAuthorizationDetails link")
-	ad := &JanusAWSAuthorizationDetails{}
-	slog.Debug("config:", "config", configs)
-	ad.AwsReconBaseLink = base.NewAwsReconBaseLink(ad, configs...)
-	return ad
-}
-
-func (ad *JanusAWSAuthorizationDetails) Initialize() error {
-	slog.Debug("Initializing JanusAWSAuthorizationDetails")
-	if err := ad.AwsReconBaseLink.Initialize(); err != nil {
-		return err
+	return &JanusAWSAuthorizationDetails{
+		NativeAWSLink: base.NewNativeAWSLink("account-auth-details", args),
 	}
-	return nil
 }
 
-func (ad *JanusAWSAuthorizationDetails) Process(resource string) error {
-	slog.Debug("Beging processing JanusAWSAuthorizationDetails", "profile", ad.Profile)
-	return ad.GetAccountAuthorizationDetails()
+func (ad *JanusAWSAuthorizationDetails) Process(ctx context.Context, input any) ([]any, error) {
+	slog.Debug("Beginning processing JanusAWSAuthorizationDetails", "profile", ad.Profile)
+	err := ad.GetAccountAuthorizationDetails(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return ad.Outputs(), nil
 }
 
 // replaceURLEncodedPolicies decodes URL-encoded JSON policy strings in AWS IAM policy documents
@@ -81,15 +74,7 @@ func replaceURLEncodedPolicies(data []byte) ([]byte, error) {
 	return json.Marshal(jsonData)
 }
 
-// GetOutputterFromContext safely extracts the JSONOutputter from the context
-func GetOutputterFromContext(ctx context.Context) (chain.Outputter, bool) {
-	// Simply try to get the outputter directly from the context
-	outputter, ok := ctx.Value("jsonOutputter").(chain.Outputter)
-
-	return outputter, ok
-}
-
-func (a *JanusAWSAuthorizationDetails) GetAccountAuthorizationDetails() error {
+func (a *JanusAWSAuthorizationDetails) GetAccountAuthorizationDetails(ctx context.Context) error {
 	slog.Debug("Getting Account Authorization Details", "profile", a.Profile)
 	print("Getting Account Authorization Details", "profile", a.Profile)
 
@@ -98,7 +83,7 @@ func (a *JanusAWSAuthorizationDetails) GetAccountAuthorizationDetails() error {
 
 	slog.Debug("Getting Account Authorization Details: Set region to ", "region", region)
 
-	config, err := a.GetConfigWithRuntimeArgs(region)
+	config, err := a.GetConfig(ctx, region)
 	if err != nil {
 		slog.Error("Failed to create AWS config", "error", err)
 		return err
@@ -173,13 +158,4 @@ func (a *JanusAWSAuthorizationDetails) GetAccountAuthorizationDetails() error {
 	slog.Info("Generated authorization details", "filename", filename)
 
 	return nil
-}
-
-func (ad *JanusAWSAuthorizationDetails) Permissions() []cfg.Permission {
-	return []cfg.Permission{
-		{
-			Platform:   "aws",
-			Permission: "iam:GetAccountAuthorizationDetails",
-		},
-	}
 }

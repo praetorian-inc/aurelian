@@ -1,11 +1,11 @@
 package aws
 
 import (
+	"context"
 	"slices"
 	"strings"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type Action string
@@ -75,19 +75,35 @@ var privEscActions = []string{
 	"sts:GetFederationToken",
 }
 
-// Helper function to use AwsExpandActionsStage
+// Helper function to expand wildcard actions
 func expandActionsWithStage(actions types.DynaString) []string {
 	expandedActions := make([]string, 0)
 
+	// Create the link once and initialize it
+	link := NewAWSExpandActionsLink(map[string]any{})
+	if err := link.Initialize(); err != nil {
+		// If initialization fails, return actions as-is
+		return actions
+	}
+
 	// Process each action
+	ctx := context.Background()
 	for _, action := range actions {
 		if strings.Contains(action, "*") {
-			c := chain.NewChain(NewAWSExpandActionsLink())
-			c.Send(action)
-			c.Close()
+			// Use the link to expand wildcards
+			link.ClearOutputs()
+			_, err := link.Process(ctx, action)
+			if err != nil {
+				// On error, add the original action
+				expandedActions = append(expandedActions, action)
+				continue
+			}
 
-			for o, ok := chain.RecvAs[string](c); ok; o, ok = chain.RecvAs[string](c) {
-				expandedActions = append(expandedActions, o)
+			// Collect expanded actions from link outputs
+			for _, output := range link.Outputs() {
+				if expanded, ok := output.(string); ok {
+					expandedActions = append(expandedActions, expanded)
+				}
 			}
 		} else {
 			// Add non-wildcard actions directly

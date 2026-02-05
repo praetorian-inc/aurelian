@@ -1,56 +1,61 @@
 package lambda
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type AWSLambdaFunctionURL struct {
-	*base.AwsReconLink
+	*base.NativeAWSLink
 }
 
-func NewAWSLambdaFunctionURL(configs ...cfg.Config) chain.Link {
-	l := &AWSLambdaFunctionURL{}
-	l.AwsReconLink = base.NewAwsReconLink(l, configs...)
-	return l
+func NewAWSLambdaFunctionURL(args map[string]any) *AWSLambdaFunctionURL {
+	return &AWSLambdaFunctionURL{
+		NativeAWSLink: base.NewNativeAWSLink("lambda-function-url", args),
+	}
 }
 
-func (l *AWSLambdaFunctionURL) Process(resource *types.EnrichedResourceDescription) error {
+func (l *AWSLambdaFunctionURL) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*types.EnrichedResourceDescription)
+	if !ok {
+		return nil, fmt.Errorf("expected *types.EnrichedResourceDescription, got %T", input)
+	}
 	if resource.TypeName != "AWS::Lambda::Function" {
 		slog.Debug("Skipping non-Lambda function", "resource", resource.TypeName)
-		return nil
+		return l.Outputs(), nil
 	}
 
-	functionURL, err := l.getFunctionURL(resource)
+	functionURL, err := l.getFunctionURL(ctx, resource)
 	if err != nil {
 		slog.Debug("No function URL configured or error retrieving URL", "resource", resource.Identifier, "error", err)
-		return nil
+		return l.Outputs(), nil
 	}
 
 	if functionURL == "" {
-		return nil
+		return l.Outputs(), nil
 	}
 
 	// Add the function URL to the resource properties
 	updatedERD, err := l.addFunctionURLToProperties(resource, functionURL)
 	if err != nil {
 		slog.Error("Failed to add function URL to properties", "error", err)
-		return l.Send(resource)
+		l.Send(resource)
+		return l.Outputs(), nil
 	}
 
-	return l.Send(updatedERD)
+	l.Send(updatedERD)
+	return l.Outputs(), nil
 }
 
-func (l *AWSLambdaFunctionURL) getFunctionURL(resource *types.EnrichedResourceDescription) (string, error) {
-	config, err := l.GetConfigWithRuntimeArgs(resource.Region)
+func (l *AWSLambdaFunctionURL) getFunctionURL(ctx context.Context, resource *types.EnrichedResourceDescription) (string, error) {
+	config, err := l.GetConfig(ctx, resource.Region)
 	if err != nil {
 		return "", fmt.Errorf("failed to get AWS config for region %s: %w", resource.Region, err)
 	}
@@ -61,7 +66,7 @@ func (l *AWSLambdaFunctionURL) getFunctionURL(resource *types.EnrichedResourceDe
 		FunctionName: aws.String(resource.Identifier),
 	}
 
-	output, err := lambdaClient.GetFunctionUrlConfig(l.Context(), input)
+	output, err := lambdaClient.GetFunctionUrlConfig(ctx, input)
 	if err != nil {
 		return "", fmt.Errorf("failed to get function URL config for %s: %w", resource.Identifier, err)
 	}

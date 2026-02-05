@@ -2,61 +2,74 @@ package docker
 
 import (
 	"archive/tar"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/types/docker"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // DockerExtractToFS extracts Docker image files to the filesystem
 type DockerExtractToFS struct {
-	*chain.Base
+	*plugin.BaseLink
 	outDir string
 }
 
-func NewDockerExtractToFS(configs ...cfg.Config) chain.Link {
-	de := &DockerExtractToFS{}
-	de.Base = chain.NewBase(de, configs...)
+func NewDockerExtractToFS(args map[string]any) *DockerExtractToFS {
+	de := &DockerExtractToFS{
+		BaseLink: plugin.NewBaseLink("docker-extract-fs", args),
+	}
+
+	// Initialize output directory
+	dir := de.ArgString("output", "")
+	de.outDir = dir
+
+	// Create output directory
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		de.Logger().Error("Failed to create extraction directory", "error", err)
+	}
+
 	return de
 }
 
-func (de *DockerExtractToFS) Params() []cfg.Param {
-	return []cfg.Param{
-		options.OutputDir(),
-		cfg.NewParam[bool]("extract", "enable extraction to filesystem").WithDefault(true),
+func (de *DockerExtractToFS) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		{
+			Name:        "output",
+			Description: "Output directory for extracted files",
+			Required:    true,
+			Type:        "string",
+		},
+		{
+			Name:        "extract",
+			Description: "Enable extraction to filesystem",
+			Required:    false,
+			Type:        "bool",
+			Default:     true,
+		},
 	}
 }
 
-func (de *DockerExtractToFS) Initialize() error {
-	dir, err := cfg.As[string](de.Arg("output"))
-	if err != nil {
-		return err
+func (de *DockerExtractToFS) Process(ctx context.Context, input any) ([]any, error) {
+	imageContext, ok := input.(types.DockerImage)
+	if !ok {
+		return nil, fmt.Errorf("expected types.DockerImage input, got %T", input)
 	}
 
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create extraction directory: %w", err)
-	}
-
-	de.outDir = dir
-	return nil
-}
-
-func (de *DockerExtractToFS) Process(imageContext docker.DockerImage) error {
-	extract, err := cfg.As[bool](de.Arg("extract"))
-	if err != nil || !extract {
+	extract := de.ArgBool("extract", true)
+	if !extract {
 		// Pass through without extraction
-		return de.Send(&imageContext)
+		return []any{&imageContext}, nil
 	}
 
 	if imageContext.LocalPath == "" {
-		return fmt.Errorf("no local path available for image %s", imageContext.Image)
+		return nil, fmt.Errorf("no local path available for image %s", imageContext.Image)
 	}
 
 	// Create extraction directory for this image
@@ -64,18 +77,18 @@ func (de *DockerExtractToFS) Process(imageContext docker.DockerImage) error {
 	extractDir := filepath.Join(de.outDir, imageName)
 
 	if err := os.MkdirAll(extractDir, 0755); err != nil {
-		return fmt.Errorf("failed to create image extraction directory: %w", err)
+		return nil, fmt.Errorf("failed to create image extraction directory: %w", err)
 	}
 
 	// Extract the Docker image tar file
 	if err := de.extractTar(imageContext.LocalPath, extractDir); err != nil {
-		return fmt.Errorf("failed to extract Docker image: %w", err)
+		return nil, fmt.Errorf("failed to extract Docker image: %w", err)
 	}
 
-	de.Logger.Info("Extracted Docker image to filesystem", "image", imageContext.Image, "path", extractDir)
+	de.Logger().Info("Extracted Docker image to filesystem", "image", imageContext.Image, "path", extractDir)
 
 	// Send the original imageContext to the next link for NoseyParker processing
-	return de.Send(&imageContext)
+	return []any{&imageContext}, nil
 }
 
 func (de *DockerExtractToFS) sanitizeImageName(imageName string) string {
@@ -135,7 +148,7 @@ func (de *DockerExtractToFS) extractTar(tarPath, extractDir string) error {
 
 			// Set file permissions
 			if err := os.Chmod(targetPath, os.FileMode(header.Mode)); err != nil {
-				de.Logger.Debug("failed to set file permissions", "file", targetPath, "error", err)
+				slog.Debug("failed to set file permissions", "file", targetPath, "error", err)
 			}
 		}
 	}
@@ -158,90 +171,121 @@ func (de *DockerExtractToFS) extractTar(tarPath, extractDir string) error {
 
 // DockerExtractToNP converts Docker images to NoseyParker inputs
 type DockerExtractToNP struct {
-	*chain.Base
+	*plugin.BaseLink
 }
 
-func NewDockerExtractToNP(configs ...cfg.Config) chain.Link {
-	de := &DockerExtractToNP{}
-	de.Base = chain.NewBase(de, configs...)
-	return de
+func NewDockerExtractToNP(args map[string]any) *DockerExtractToNP {
+	return &DockerExtractToNP{
+		BaseLink: plugin.NewBaseLink("docker-extract-np", args),
+	}
 }
 
-func (de *DockerExtractToNP) Process(imageContext docker.DockerImage) error {
+func (de *DockerExtractToNP) Process(ctx context.Context, input any) ([]any, error) {
+	imageContext, ok := input.(types.DockerImage)
+	if !ok {
+		return nil, fmt.Errorf("expected types.DockerImage input, got %T", input)
+	}
+
 	if imageContext.LocalPath == "" {
-		return fmt.Errorf("no local path available for image %s", imageContext.Image)
+		return nil, fmt.Errorf("no local path available for image %s", imageContext.Image)
 	}
 
 	// Convert Docker image to NoseyParker inputs
 	npInputs, err := imageContext.ToNPInputs()
 	if err != nil {
-		return fmt.Errorf("failed to convert Docker image to NP inputs: %w", err)
+		return nil, fmt.Errorf("failed to convert Docker image to NP inputs: %w", err)
 	}
 
-	de.Logger.Info("Converted Docker image to NoseyParker inputs",
+	de.Logger().Info("Converted Docker image to NoseyParker inputs",
 		"image", imageContext.Image,
 		"input_count", len(npInputs))
 
 	// Send each NPInput individually
-	for _, npInput := range npInputs {
-		if err := de.Send(&npInput); err != nil {
-			return err
-		}
+	outputs := make([]any, len(npInputs))
+	for i, npInput := range npInputs {
+		outputs[i] = &npInput
 	}
 
+	return outputs, nil
+}
+
+func (de *DockerExtractToNP) Parameters() []plugin.Parameter {
 	return nil
 }
 
 // DockerImageLoader loads Docker images from various sources
 type DockerImageLoader struct {
-	*chain.Base
+	*plugin.BaseLink
 }
 
-func NewDockerImageLoader(configs ...cfg.Config) chain.Link {
-	dl := &DockerImageLoader{}
-	dl.Base = chain.NewBase(dl, configs...)
-	return dl
-}
-
-func (dl *DockerImageLoader) Params() []cfg.Param {
-	return []cfg.Param{
-		options.DockerImage(),
-		options.File(),
-		options.DockerUser(),
-		options.DockerPassword(),
+func NewDockerImageLoader(args map[string]any) *DockerImageLoader {
+	return &DockerImageLoader{
+		BaseLink: plugin.NewBaseLink("docker-image-loader", args),
 	}
 }
 
-func (dl *DockerImageLoader) Process(input string) error {
+func (dl *DockerImageLoader) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		{
+			Name:        "image",
+			Description: "Docker image name",
+			Required:    false,
+			Type:        "string",
+		},
+		{
+			Name:        "file",
+			Description: "File containing list of images",
+			Required:    false,
+			Type:        "string",
+		},
+		{
+			Name:        "docker-user",
+			Description: "Docker registry username",
+			Required:    false,
+			Type:        "string",
+		},
+		{
+			Name:        "docker-password",
+			Description: "Docker registry password",
+			Required:    false,
+			Type:        "string",
+		},
+	}
+}
+
+func (dl *DockerImageLoader) Process(ctx context.Context, input any) ([]any, error) {
 	// Handle single image input
-	imageName, err := cfg.As[string](dl.Arg("image"))
-	if err == nil && imageName != "" {
+	imageName := dl.ArgString("image", "")
+	if imageName != "" {
 		imageContext := dl.createImageContext(imageName)
-		return dl.Send(&imageContext)
+		return []any{&imageContext}, nil
 	}
 
 	// Handle file input
-	fileName, err := cfg.As[string](dl.Arg("file"))
-	if err == nil && fileName != "" {
+	fileName := dl.ArgString("file", "")
+	if fileName != "" {
 		return dl.processFileInput(fileName)
 	}
 
 	// Process input string as image name if provided
-	if input != "" {
-		imageContext := dl.createImageContext(input)
-		return dl.Send(&imageContext)
+	inputStr, ok := input.(string)
+	if ok && inputStr != "" {
+		imageContext := dl.createImageContext(inputStr)
+		return []any{&imageContext}, nil
 	}
 
-	return fmt.Errorf("no image name or file provided")
+	return nil, fmt.Errorf("no image name or file provided")
 }
 
-func (dl *DockerImageLoader) processFileInput(fileName string) error {
+func (dl *DockerImageLoader) processFileInput(fileName string) ([]any, error) {
 	fileContents, err := os.ReadFile(fileName)
 	if err != nil {
-		return fmt.Errorf("failed to read file %s: %w", fileName, err)
+		return nil, fmt.Errorf("failed to read file %s: %w", fileName, err)
 	}
 
 	lines := strings.Split(string(fileContents), "\n")
+	outputs := []any{}
+	
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -249,22 +293,20 @@ func (dl *DockerImageLoader) processFileInput(fileName string) error {
 		}
 
 		imageContext := dl.createImageContext(line)
-		if err := dl.Send(&imageContext); err != nil {
-			return err
-		}
+		outputs = append(outputs, &imageContext)
 	}
 
-	return nil
+	return outputs, nil
 }
 
-func (dl *DockerImageLoader) createImageContext(imageName string) docker.DockerImage {
-	imageContext := docker.DockerImage{
+func (dl *DockerImageLoader) createImageContext(imageName string) types.DockerImage {
+	imageContext := types.DockerImage{
 		Image: imageName,
 	}
 
 	// Add authentication if provided
-	username, _ := cfg.As[string](dl.Arg("docker-user"))
-	password, _ := cfg.As[string](dl.Arg("docker-password"))
+	username := dl.ArgString("docker-user", "")
+	password := dl.ArgString("docker-password", "")
 
 	if username != "" && password != "" {
 		imageContext.AuthConfig.Username = username
