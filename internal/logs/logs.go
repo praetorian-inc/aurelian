@@ -1,0 +1,136 @@
+package logs
+
+import (
+	"log/slog"
+	"os"
+	"strings"
+
+	"github.com/aws/smithy-go/logging"
+	"github.com/lmittmann/tint"
+	"github.com/mattn/go-isatty"
+)
+
+var (
+	logLevel string
+)
+
+const (
+	LevelNone = slog.Level(12)
+)
+
+// Currently used to write the AWS API calls to a log file
+func AwsCliLogger() logging.Logger {
+	return logging.LoggerFunc(func(classification logging.Classification, format string, v ...interface{}) {
+		LOG_FILE := "aurelian.log"
+
+		opts := &slog.HandlerOptions{
+			AddSource: true,
+			Level:     getLevelFromString(logLevel),
+		}
+
+		var f *os.File
+		var err error
+
+		if getLevelFromString(logLevel) != LevelNone {
+			f, err = os.OpenFile(LOG_FILE, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+			if err != nil {
+				panic(err)
+			}
+			defer f.Close()
+		}
+
+		handler := slog.NewJSONHandler(f, opts)
+		logger := slog.New(handler)
+
+		// TODO: The key for the request is `!BADKEY`, need to fix
+		switch classification {
+		case logging.Debug:
+			logger.Debug(format, v...)
+		case logging.Warn:
+			logger.Warn(format, v...)
+		default:
+			logger.Debug(format, v...)
+		}
+
+	})
+}
+
+func getLevelFromString(level string) slog.Level {
+	switch strings.ToLower(level) {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	case "none":
+		return LevelNone
+	default:
+		return LevelNone
+	}
+}
+
+func NewLogger() *slog.Logger {
+	w := os.Stderr
+	handler := tint.NewHandler(w,
+		&tint.Options{
+			Level:   getLevelFromString(logLevel),
+			NoColor: !isatty.IsTerminal(w.Fd()),
+		},
+	)
+	logger := slog.New(handler)
+
+	return logger
+}
+
+func NewLoggerWithLevel(level string) *slog.Logger {
+	w := os.Stderr
+	handler := tint.NewHandler(w,
+		&tint.Options{
+			Level:   getLevelFromString(level),
+			NoColor: !isatty.IsTerminal(w.Fd()),
+		},
+	)
+	logger := slog.New(handler)
+
+	return logger
+}
+
+func NewLoggerWithFile(level, filename string) *slog.Logger {
+	f, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		// If we can't open the file, fall back to stderr
+		if level == "" {
+			return NewLogger()
+		}
+		return NewLoggerWithLevel(level)
+	}
+
+	var targetLevel slog.Level
+	if level == "" {
+		// Use global log level if no specific level provided
+		targetLevel = getLevelFromString(logLevel)
+	} else {
+		targetLevel = getLevelFromString(level)
+	}
+
+	opts := &slog.HandlerOptions{
+		Level: targetLevel,
+	}
+	handler := slog.NewJSONHandler(f, opts)
+	logger := slog.New(handler)
+
+	return logger
+}
+
+func SetLogLevel(level string) {
+	logLevel = level
+}
+
+func ConfigureDefaults(level string) {
+	SetLogLevel(level)
+	logger := NewLogger()
+	slog.SetDefault(logger)
+}
