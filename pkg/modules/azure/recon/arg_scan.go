@@ -1,9 +1,16 @@
 package recon
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
+	"slices"
+	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
+	"github.com/praetorian-inc/aurelian/internal/helpers"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/templates"
 )
 
 func init() {
@@ -78,9 +85,15 @@ func (m *ARGScan) Parameters() []plugin.Parameter {
 }
 
 func (m *ARGScan) Run(cfg plugin.Config) ([]plugin.Result, error) {
+	// Get context
+	ctx := cfg.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	// Get parameters from config
-	subscription, _ := cfg.Args["subscription"].(string)
-	if subscription == "" {
+	subscriptionParam, _ := cfg.Args["subscription"].(string)
+	if subscriptionParam == "" {
 		return nil, fmt.Errorf("subscription parameter is required")
 	}
 
@@ -96,29 +109,173 @@ func (m *ARGScan) Run(cfg plugin.Config) ([]plugin.Result, error) {
 	}
 
 	// Check context cancellation
-	if cfg.Context != nil {
-		select {
-		case <-cfg.Context.Done():
-			return nil, cfg.Context.Err()
-		default:
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	// Resolve subscriptions
+	var subscriptions []string
+	if strings.EqualFold(subscriptionParam, "all") {
+		subs, err := helpers.ListSubscriptions(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list subscriptions: %w", err)
+		}
+		subscriptions = subs
+
+		if cfg.Verbose {
+			fmt.Fprintf(cfg.Output, "Resolved 'all' to %d subscriptions\n", len(subscriptions))
+		}
+	} else {
+		subscriptions = []string{subscriptionParam}
+	}
+
+	// Load templates with category filter
+	loader, err := templates.NewTemplateLoader(templates.LoadEmbedded)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load templates: %w", err)
+	}
+
+	templatesList := loader.GetTemplates()
+	var filteredTemplates []*templates.ARGQueryTemplate
+	for _, t := range templatesList {
+		if slices.Contains(t.Category, category) {
+			filteredTemplates = append(filteredTemplates, t)
 		}
 	}
 
-	// TODO: Implement the actual module logic
-	// This is a placeholder that returns an error indicating the module needs implementation
-	// The original Janus implementation used chains and links which need to be refactored
-	// into direct function calls:
-	//
-	// 1. NewAzureSubscriptionGeneratorLink - Generate subscription IDs (resolve "all" to actual GUIDs)
-	// 2. NewARGTemplateLoaderLink - Load ARG templates and create queries for each subscription
-	// 3. NewARGTemplateQueryLink - Execute ARG queries and get resources
-	// 4. NewARGEnrichmentLink - Enrich resources with security testing commands
+	if len(filteredTemplates) == 0 {
+		return nil, fmt.Errorf("no templates found for category: %s", category)
+	}
 
 	if cfg.Verbose {
-		fmt.Fprintf(cfg.Output, "Scanning Azure subscription: %s\n", subscription)
+		fmt.Fprintf(cfg.Output, "Scanning Azure subscriptions: %v\n", subscriptions)
 		fmt.Fprintf(cfg.Output, "Module name: %s, Category: %s\n", moduleName, category)
+		fmt.Fprintf(cfg.Output, "Loaded %d templates for category '%s'\n", len(filteredTemplates), category)
 		fmt.Fprintf(cfg.Output, "Enrichment: %v\n", !disableEnrichment)
 	}
 
-	return nil, fmt.Errorf("module implementation pending: arg-scan needs to be migrated from Janus chain/link architecture to direct function calls")
+	// Create ARG client
+	argClient, err := helpers.NewARGClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ARG client: %w", err)
+	}
+
+	var allResults []plugin.Result
+
+	// Execute queries for each subscription x template
+	for _, subscription := range subscriptions {
+		for _, template := range filteredTemplates {
+			// Check context cancellation
+			select {
+			case <-ctx.Done():
+				return allResults, ctx.Err()
+			default:
+			}
+
+			if cfg.Verbose {
+				fmt.Fprintf(cfg.Output, "Executing template '%s' on subscription %s\n", template.Name, subscription)
+			}
+
+			opts := &helpers.ARGQueryOptions{
+				Subscriptions: []string{subscription},
+			}
+
+			err := argClient.ExecutePaginatedQuery(ctx, template.Query, opts, func(response *armresourcegraph.ClientResourcesResponse) error {
+				if response == nil || response.Data == nil {
+					return nil
+				}
+
+				rows, ok := response.Data.([]interface{})
+				if !ok {
+					return nil
+				}
+
+				for _, row := range rows {
+					item, ok := row.(map[string]interface{})
+					if !ok {
+						continue
+					}
+
+					resultData := map[string]any{
+						"id":            helpers.SafeGetString(item, "id"),
+						"name":          helpers.SafeGetString(item, "name"),
+						"type":          helpers.SafeGetString(item, "type"),
+						"location":      helpers.SafeGetString(item, "location"),
+						"subscription":  subscription,
+						"template_id":   template.ID,
+						"template_name": template.Name,
+						"severity":      template.Severity,
+						"properties":    item,
+					}
+
+					// Add enrichment if enabled
+					if !disableEnrichment {
+						resultData["enrichment"] = generateEnrichment(template, item)
+					}
+
+					result := plugin.Result{
+						Data: resultData,
+						Metadata: map[string]any{
+							"module":   moduleName,
+							"category": category,
+							"platform": "azure",
+						},
+					}
+
+					allResults = append(allResults, result)
+				}
+				return nil
+			})
+
+			if err != nil {
+				slog.Warn("Failed to execute template query",
+					"template", template.ID,
+					"subscription", subscription,
+					"error", err)
+				if cfg.Verbose {
+					fmt.Fprintf(cfg.Output, "Warning: query failed for template %s: %v\n", template.ID, err)
+				}
+				continue
+			}
+		}
+	}
+
+	if cfg.Verbose {
+		fmt.Fprintf(cfg.Output, "Scan complete. Total results: %d\n", len(allResults))
+	}
+
+	return allResults, nil
+}
+
+// generateEnrichment creates security testing commands for a finding
+func generateEnrichment(template *templates.ARGQueryTemplate, resource map[string]any) map[string]any {
+	enrichment := map[string]any{
+		"triage_notes": template.TriageNotes,
+		"references":   template.References,
+	}
+
+	// Add resource-type specific commands
+	resourceType := helpers.SafeGetString(resource, "type")
+	resourceName := helpers.SafeGetString(resource, "name")
+
+	switch {
+	case strings.Contains(strings.ToLower(resourceType), "storage"):
+		enrichment["test_commands"] = []string{
+			fmt.Sprintf("az storage account show --name %s", resourceName),
+			fmt.Sprintf("az storage container list --account-name %s", resourceName),
+		}
+	case strings.Contains(strings.ToLower(resourceType), "keyvault"):
+		enrichment["test_commands"] = []string{
+			fmt.Sprintf("az keyvault secret list --vault-name %s", resourceName),
+		}
+	case strings.Contains(strings.ToLower(resourceType), "web"):
+		enrichment["test_commands"] = []string{
+			fmt.Sprintf("az webapp show --name %s", resourceName),
+			fmt.Sprintf("az webapp config appsettings list --name %s", resourceName),
+		}
+	}
+
+	return enrichment
 }

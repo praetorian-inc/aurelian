@@ -1,9 +1,15 @@
 package recon
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 
+	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 func init() {
@@ -61,6 +67,12 @@ func (m *FindSecrets) Parameters() []plugin.Parameter {
 			Required:    false,
 		},
 		{
+			Name:        "profile-dir",
+			Description: "AWS profile directory",
+			Type:        "string",
+			Required:    false,
+		},
+		{
 			Name:        "max-events",
 			Description: "Maximum number of log events to fetch per log group/stream (applies to CloudWatch Logs resources)",
 			Type:        "int",
@@ -85,6 +97,12 @@ func (m *FindSecrets) Parameters() []plugin.Parameter {
 }
 
 func (m *FindSecrets) Run(cfg plugin.Config) ([]plugin.Result, error) {
+	// Get context
+	ctx := cfg.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	// Get parameters from config
 	resourceType, _ := cfg.Args["resource-type"].([]string)
 	if resourceType == nil {
@@ -92,6 +110,7 @@ func (m *FindSecrets) Run(cfg plugin.Config) ([]plugin.Result, error) {
 	}
 
 	profile, _ := cfg.Args["profile"].(string)
+	profileDir, _ := cfg.Args["profile-dir"].(string)
 	maxEvents, _ := cfg.Args["max-events"].(int)
 	if maxEvents == 0 {
 		maxEvents = 10000
@@ -105,26 +124,116 @@ func (m *FindSecrets) Run(cfg plugin.Config) ([]plugin.Result, error) {
 	newestFirst, _ := cfg.Args["newest-first"].(bool)
 
 	// Check context cancellation
-	if cfg.Context != nil {
-		select {
-		case <-cfg.Context.Done():
-			return nil, cfg.Context.Err()
-		default:
-		}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
 	}
 
-	// TODO: Implement the actual module logic
-	// This is a placeholder that returns an error indicating the module needs implementation
-	// The original Janus implementation used chains and links which need to be refactored
-	// into direct function calls.
+	// Build args map for links
+	args := map[string]any{
+		"profile":       profile,
+		"profile-dir":   profileDir,
+		"max-events":    maxEvents,
+		"max-streams":   maxStreams,
+		"newest-first":  newestFirst,
+	}
+
+	// Parse regions
+	regions, err := helpers.ParseRegionsOption("all", profile, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse regions: %w", err)
+	}
+	args["regions"] = regions
+
+	// Initialize FindSecrets processor
+	fsLink := aws.NewAWSFindSecrets(args)
+
+	// Resolve "all" to actual resource types
+	if len(resourceType) == 1 && resourceType[0] == "all" {
+		resourceType = fsLink.SupportedResourceTypes()
+	}
 
 	if cfg.Verbose {
 		fmt.Fprintf(cfg.Output, "Scanning AWS resources: %v\n", resourceType)
 		if profile != "" {
 			fmt.Fprintf(cfg.Output, "Using AWS profile: %s\n", profile)
 		}
+		fmt.Fprintf(cfg.Output, "Regions: %v\n", regions)
 		fmt.Fprintf(cfg.Output, "Max events: %d, Max streams: %d, Newest first: %v\n", maxEvents, maxStreams, newestFirst)
 	}
 
-	return nil, fmt.Errorf("module implementation pending: find-secrets needs to be migrated from Janus chain/link architecture to direct function calls")
+	var allResults []plugin.Result
+
+	// Initialize CloudControl enumerator
+	ccLink := cloudcontrol.NewAWSCloudControl(args)
+
+	// For each resource type, enumerate and process
+	for _, resType := range resourceType {
+		// Check context cancellation
+		select {
+		case <-ctx.Done():
+			return allResults, ctx.Err()
+		default:
+		}
+
+		if cfg.Verbose {
+			fmt.Fprintf(cfg.Output, "Processing resource type: %s\n", resType)
+		}
+
+		// Enumerate resources via CloudControl
+		_, err := ccLink.Process(ctx, resType)
+		if err != nil {
+			slog.Warn("Failed to enumerate resources", "type", resType, "error", err)
+			if cfg.Verbose {
+				fmt.Fprintf(cfg.Output, "Warning: failed to enumerate %s: %v\n", resType, err)
+			}
+			continue
+		}
+
+		// Get enumerated resources from CloudControl outputs
+		resources := ccLink.Outputs()
+		ccLink.ClearOutputs()
+
+		// Process each resource through FindSecrets
+		for _, resource := range resources {
+			erd, ok := resource.(*types.EnrichedResourceDescription)
+			if !ok {
+				continue
+			}
+
+			outputs, err := fsLink.Process(ctx, erd)
+			if err != nil {
+				slog.Warn("Failed to process resource", "id", erd.Identifier, "error", err)
+				if cfg.Verbose {
+					fmt.Fprintf(cfg.Output, "Warning: failed to process resource %s: %v\n", erd.Identifier, err)
+				}
+				continue
+			}
+
+			// Convert outputs to Results
+			for _, output := range outputs {
+				allResults = append(allResults, plugin.Result{
+					Data: output,
+					Metadata: map[string]any{
+						"resource_type": resType,
+						"resource_id":   erd.Identifier,
+						"region":        erd.Region,
+						"module":        "find-secrets",
+						"platform":      "aws",
+					},
+				})
+			}
+		}
+
+		if cfg.Verbose {
+			fmt.Fprintf(cfg.Output, "Completed processing resource type: %s (%d resources found)\n", resType, len(resources))
+		}
+	}
+
+	if cfg.Verbose {
+		fmt.Fprintf(cfg.Output, "Scan complete. Total results: %d\n", len(allResults))
+	}
+
+	return allResults, nil
 }
