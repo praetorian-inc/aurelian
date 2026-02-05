@@ -59,7 +59,7 @@ require (
 	github.com/microsoftgraph/msgraph-sdk-go v1.53.0
 	github.com/microsoftgraph/msgraph-sdk-go-core v1.2.1
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de
-	github.com/praetorian-inc/capability-sdk v0.0.0
+	github.com/praetorian-inc/capability-sdk v0.0.0-20260121174214-23f1d4c5e2bd
 	github.com/praetorian-inc/konstellation v0.0.0-20251205230404-ed78bd75cfb8
 	github.com/spf13/cobra v1.9.1
 	github.com/stretchr/testify v1.11.1
@@ -167,5 +167,3 @@ require (
 	golang.org/x/text v0.32.0
 	gopkg.in/yaml.v3 v3.0.1
 )
-
-replace github.com/praetorian-inc/capability-sdk => ../capability-sdk
