@@ -1,9 +1,0 @@
-@@ -139,7 +139,7 @@
- 	var err error
- 
- 	// Check if user specified a template directory
--	templateDir, dirErr := plugin.GetArg[string](j.BaseFileOutputter.cfg, "template-dir")
-+	templateDir, dirErr := plugin.GetArg[string](j.cfg, "template-dir")
- 	if dirErr == nil && templateDir != "" {
- 		// User specified directory - use ONLY user templates
- 		loader, err = templates.NewTemplateLoader(templates.UserTemplatesOnly)
