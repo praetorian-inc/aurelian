@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/fatih/color"
-	"github.com/praetorian-inc/diocletian/version"
+	"github.com/praetorian-inc/aurelian/version"
 )
 
 var (

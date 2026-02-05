@@ -23,11 +23,11 @@ import (
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	iam "github.com/praetorian-inc/diocletian/pkg/iam/aws"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/base"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/orgpolicies"
-	"github.com/praetorian-inc/diocletian/pkg/links/options"
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	iam "github.com/praetorian-inc/aurelian/pkg/iam/aws"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/orgpolicies"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type AwsResourcePolicyChecker struct {

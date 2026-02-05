@@ -7,7 +7,7 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/diocletian/internal/message"
+	"github.com/praetorian-inc/aurelian/internal/message"
 )
 
 type NPFindingsConsoleOutputter struct {

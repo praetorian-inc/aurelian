@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // Mock implementations for testing

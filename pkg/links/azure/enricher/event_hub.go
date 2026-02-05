@@ -11,7 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/eventhub/armeventhub"
-	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 // EventHubEnricher implements enrichment for Event Hub instances

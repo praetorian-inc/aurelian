@@ -8,8 +8,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/diocletian/internal/helpers"
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // CognitoUserPoolGetDomains is a Janus link that adds domain information to Cognito user pools

@@ -8,9 +8,9 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/diocletian/pkg/links/gcp/base"
-	"github.com/praetorian-inc/diocletian/pkg/links/options"
-	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"google.golang.org/api/cloudresourcemanager/v1"
 	cloudresourcemanagerv2 "google.golang.org/api/cloudresourcemanager/v2"
 )

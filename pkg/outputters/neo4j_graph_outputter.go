@@ -11,10 +11,10 @@ import (
 	"github.com/praetorian-inc/konstellation/pkg/graph"
 	"github.com/praetorian-inc/konstellation/pkg/graph/adapters"
 	"github.com/praetorian-inc/konstellation/pkg/graph/queries"
-	"github.com/praetorian-inc/diocletian/internal/message"
-	"github.com/praetorian-inc/diocletian/pkg/links/options"
-	"github.com/praetorian-inc/diocletian/pkg/output"
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // Neo4jGraphOutputter outputs Pure CLI nodes and relationships to Neo4j

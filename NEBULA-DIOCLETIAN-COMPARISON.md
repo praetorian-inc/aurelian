@@ -1,44 +1,44 @@
-# Nebula vs Diocletian: Architectural Comparison
+# Nebula vs aurelian: Architectural Comparison
 
 **Date:** 2026-01-23
-**Purpose:** Document the key differences between Nebula and Diocletian cloud security scanning tools
+**Purpose:** Document the key differences between Nebula and aurelian cloud security scanning tools
 
 ---
 
 ## Executive Summary
 
-Diocletian is a complete rewrite of Nebula following the standalone CLI pattern used by `fingerprintx`, `nuclei`, and `go-cicd`. The core difference is **separation of concerns**:
+aurelian is a complete rewrite of Nebula following the standalone CLI pattern used by `fingerprintx`, `nuclei`, and `go-cicd`. The core difference is **separation of concerns**:
 
 - **Nebula**: Tightly coupled to Chariot via shared Tabularium types and Neo4j key generation
-- **Diocletian**: Loosely coupled via CLI interface, outputs pure domain data, graph concerns live in Chariot
+- **aurelian**: Loosely coupled via CLI interface, outputs pure domain data, graph concerns live in Chariot
 
-This allows Diocletian to run as a completely standalone security scanning tool while Chariot handles all graph database integration.
+This allows aurelian to run as a completely standalone security scanning tool while Chariot handles all graph database integration.
 
 ---
 
 ## 1. Architectural Pattern
 
-| Aspect | Nebula | Diocletian |
+| Aspect | Nebula | aurelian |
 |--------|--------|------------|
 | **Integration Model** | Embedded library (imported by Chariot) | Standalone CLI (invoked via `exec.Command`) |
 | **Type Dependencies** | Uses **Tabularium** types directly (`model.AWSResource`, `model.GraphModel`) | Uses **pure domain types** in `pkg/output/` - NO Tabularium imports |
 | **Neo4j Key Generation** | Keys generated inside tool via `GetKey()` methods | **NO key generation** - Chariot generates keys from pure domain data |
-| **Output Destination** | Returns Go structs to caller | Outputs JSON to stdout, files to `diocletian-output/` |
+| **Output Destination** | Returns Go structs to caller | Outputs JSON to stdout, files to `aurelian-output/` |
 
 ### Invocation Pattern
 
 **Nebula (Embedded Library):**
 ```go
-// Chariot imports Diocletian as library
-import diocletianMods "github.com/praetorian-inc/diocletian/pkg/modules"
-mod := diocletianMods.AWSPublicResourcesSingle
+// Chariot imports aurelian as library
+import aurelianMods "github.com/praetorian-inc/aurelian/pkg/modules"
+mod := aurelianMods.AWSPublicResourcesSingle
 mod.Run(cfg)
 ```
 
-**Diocletian (Standalone CLI):**
+**aurelian (Standalone CLI):**
 ```bash
-# Chariot invokes Diocletian as CLI
-diocletian aws public-resources --profile prod --output-format json | chariot-parser
+# Chariot invokes aurelian as CLI
+aurelian aws public-resources --profile prod --output-format json | chariot-parser
 ```
 
 ---
@@ -69,7 +69,7 @@ func (e *EnrichedResourceDescription) ToAWSResource() (*model.AWSResource, error
 }
 ```
 
-### Diocletian Type System
+### aurelian Type System
 
 **Location:** `pkg/output/types.go`
 
@@ -119,7 +119,7 @@ type Risk struct {
 
 Uses `model.GraphRelationship` from Tabularium with pre-computed keys.
 
-### Diocletian Relationships
+### aurelian Relationships
 
 **Location:** `pkg/output/relationships.go`
 
@@ -163,16 +163,16 @@ type GitHubActionsPermission struct {
 
 ## 4. CLI Output Flags
 
-| Flag | Nebula | Diocletian | Notes |
+| Flag | Nebula | aurelian | Notes |
 |------|--------|------------|-------|
 | `--output` | Directory path | N/A | Different approach |
 | `--outfile` | Filename | N/A | Different approach |
-| `--output-format` | N/A | `json`/`markdown`/`default` | Diocletian-specific |
+| `--output-format` | N/A | `json`/`markdown`/`default` | aurelian-specific |
 | `--indent` | JSON indentation | N/A | Nebula only |
 | `--log-level` | Yes | Yes | Same |
 | `--quiet` | Yes | Yes | Same |
 | `--no-color` | Yes | Yes | Same |
-| Output location | `nebula-output/` | `diocletian-output/` | Default directories |
+| Output location | `nebula-output/` | `aurelian-output/` | Default directories |
 
 ### AWS-Specific Flags (Identical)
 
@@ -214,14 +214,14 @@ nebula/pkg/links/aws/cdk_policy_analyzer.go
 ...
 ```
 
-### Diocletian: ZERO Production Code Imports
+### aurelian: ZERO Production Code Imports
 
 - Only indirect dependency via janus-framework
 - All 57 migrated files use pure domain types from `pkg/output/`
 
 **Verification:**
 ```bash
-cd modules/diocletian
+cd modules/aurelian
 grep -r "tabularium" pkg --include="*.go" | grep -v "_test.go"
 # Expected: empty output
 ```
@@ -241,11 +241,11 @@ func (o *Neo4jGraphOutputter) tabullariumNodeToGraphNode(node model.GraphModel) 
 }
 ```
 
-### Diocletian: Chariot Generates Keys
+### aurelian: Chariot Generates Keys
 
 ```go
-// From diocletian STATUS.md - Key generation happens in Chariot parser
-// Location: modules/chariot/backend/pkg/lib/diocletian_cli/parser.go (to be created)
+// From aurelian STATUS.md - Key generation happens in Chariot parser
+// Location: modules/chariot/backend/pkg/lib/aurelian_cli/parser.go (to be created)
 
 func generateKey(ref ResourceRef) string {
     return fmt.Sprintf("#%sresource#%s#%s", ref.Platform, ref.Account, ref.ID)
@@ -264,7 +264,7 @@ func generateKey(ref ResourceRef) string {
 ## 7. Project Structure Comparison
 
 ```
-nebula/pkg/                              diocletian/pkg/
+nebula/pkg/                              aurelian/pkg/
 ├── types/                               ├── output/
 │   ├── enriched_resource_description.go │   ├── types.go          # Pure domain types
 │   ├── aws_gaad_struct.go               │   ├── types_test.go
@@ -335,9 +335,9 @@ Both tools have **22 identical AWS modules**:
 
 | Phase | Task | Status | Location |
 |-------|------|--------|----------|
-| Phase 0 | Task 3: Create Chariot Parser | Not Started | `modules/chariot/backend/pkg/lib/diocletian_cli/` |
+| Phase 0 | Task 3: Create Chariot Parser | Not Started | `modules/chariot/backend/pkg/lib/aurelian_cli/` |
 | Phase 1 | Capability Wrapper Migration | Not Started | `modules/chariot/backend/pkg/tasks/capabilities/` |
-| Phase 2 | Cleanup Old Adapter Layer | Not Started | Delete `modules/chariot/backend/pkg/lib/diocletian/` |
+| Phase 2 | Cleanup Old Adapter Layer | Not Started | Delete `modules/chariot/backend/pkg/lib/aurelian/` |
 
 ---
 
@@ -356,11 +356,11 @@ Both tools have **22 identical AWS modules**:
 └─────────────────┘                  └─────────────────┘                   └─────────────────┘
 ```
 
-### Diocletian Data Flow (Standalone)
+### aurelian Data Flow (Standalone)
 
 ```
 ┌─────────────────┐     NDJSON      ┌─────────────────┐    Graph ops     ┌─────────────────┐
-│   Diocletian    │ ──────────────> │   Chariot       │ ───────────────> │   Neo4j         │
+│   aurelian    │ ──────────────> │   Chariot       │ ───────────────> │   Neo4j         │
 │   CLI           │   Pure Domain   │   Parser        │                  │   Database      │
 │                 │   Data          │                 │                  │                 │
 │ NO Neo4j keys   │                 │ Generates keys  │                  │ Keys from       │
@@ -370,7 +370,7 @@ Both tools have **22 identical AWS modules**:
 
 ---
 
-## 11. Benefits of Diocletian Architecture
+## 11. Benefits of aurelian Architecture
 
 | Benefit | Description |
 |---------|-------------|
@@ -386,8 +386,8 @@ Both tools have **22 identical AWS modules**:
 
 ## 12. Related Documentation
 
-- **Comparison Test Plan:** `NEBULA-DIOCLETIAN-AWS-COMPARISON-PLAN.md`
+- **Comparison Test Plan:** `NEBULA-aurelian-AWS-COMPARISON-PLAN.md`
 - **Migration Status:** `STATUS.md`
 - **Handoff Document:** `HANDOFF.md`
-- **Master Plan:** `.claude/.output/capabilities/20260104-195038-diocletian-refactoring-analysis/MASTER-REFACTORING-PLAN.md`
-- **Architecture Decision:** `.claude/.output/capabilities/20260104-195038-diocletian-refactoring-analysis/ARCHITECTURE-QA.md`
+- **Master Plan:** `.claude/.output/capabilities/20260104-195038-aurelian-refactoring-analysis/MASTER-REFACTORING-PLAN.md`
+- **Architecture Decision:** `.claude/.output/capabilities/20260104-195038-aurelian-refactoring-analysis/ARCHITECTURE-QA.md`

@@ -8,8 +8,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awstypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/orgpolicies"
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/orgpolicies"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
 )
 

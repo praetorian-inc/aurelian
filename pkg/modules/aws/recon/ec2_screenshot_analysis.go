@@ -3,19 +3,21 @@ package recon
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/diocletian/internal/registry"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/cloudcontrol"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/ec2"
-	"github.com/praetorian-inc/diocletian/pkg/links/general"
-	"github.com/praetorian-inc/diocletian/pkg/links/llm"
-	"github.com/praetorian-inc/diocletian/pkg/links/options"
-	"github.com/praetorian-inc/diocletian/pkg/outputters"
+	"github.com/praetorian-inc/aurelian/internal/registry"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/cloudcontrol"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/ec2"
+	"github.com/praetorian-inc/aurelian/pkg/links/general"
+	"github.com/praetorian-inc/aurelian/pkg/links/llm"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/outputters"
 )
 
 func init() {
 	registry.Register("aws", "recon", AWSScreenshotAnalysis.Metadata().Properties()["id"].(string), *AWSScreenshotAnalysis)
 }
 
+// Deprecated: Use EC2ScreenshotAnalysisV2 instead.
+// Deprecated: Use EC2ScreenshotAnalysisV2 instead.
 var AWSScreenshotAnalysis = chain.NewModule(
 	cfg.NewMetadata(
 		"AWS EC2 Screenshot Analysis",

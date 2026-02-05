@@ -10,12 +10,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/diocletian/internal/helpers"
-	"github.com/praetorian-inc/diocletian/internal/message"
-	"github.com/praetorian-inc/diocletian/pkg/links/options"
-	"github.com/praetorian-inc/diocletian/pkg/output"
-	"github.com/praetorian-inc/diocletian/pkg/outputters"
-	"github.com/praetorian-inc/diocletian/pkg/templates"
+	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/outputters"
+	"github.com/praetorian-inc/aurelian/pkg/templates"
 )
 
 // ARGTemplateQueryInput is the input struct for the query link

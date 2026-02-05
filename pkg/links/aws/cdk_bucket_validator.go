@@ -9,9 +9,9 @@ import (
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/base"
-	"github.com/praetorian-inc/diocletian/pkg/output"
-	"github.com/praetorian-inc/diocletian/pkg/outputters"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/outputters"
 )
 
 type AwsCdkBucketValidator struct {

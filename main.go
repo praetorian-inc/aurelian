@@ -4,7 +4,7 @@ import (
 	"os"
 	"runtime/debug"
 
-	"github.com/praetorian-inc/diocletian/cmd"
+	"github.com/praetorian-inc/aurelian/cmd"
 )
 
 func main() {

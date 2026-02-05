@@ -9,7 +9,7 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/diocletian/pkg/utils"
+	"github.com/praetorian-inc/aurelian/pkg/utils"
 )
 
 //https://raw.githubusercontent.com/iann0036/iam-dataset/refs/heads/main/aws/tags.json

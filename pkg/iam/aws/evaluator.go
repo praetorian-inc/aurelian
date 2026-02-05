@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/orgpolicies"
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/orgpolicies"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type PolicyData struct {

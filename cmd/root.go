@@ -9,11 +9,11 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/diocletian/internal/helpers"
-	"github.com/praetorian-inc/diocletian/internal/logs"
-	"github.com/praetorian-inc/diocletian/internal/message"
-	"github.com/praetorian-inc/diocletian/internal/registry"
-	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/internal/logs"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/internal/registry"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
 	"github.com/spf13/cobra"
 )
 
@@ -26,9 +26,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "diocletian",
-	Short: "Diocletian - Cloud Security Testing Framework",
-	Long: `Diocletian is a cloud security testing framework that helps identify
+	Use:   "aurelian",
+	Short: "aurelian - Cloud Security Testing Framework",
+	Long: `aurelian is a cloud security testing framework that helps identify
 potential security issues in cloud environments.`,
 }
 
@@ -51,7 +51,7 @@ func init() {
 		logs.ConfigureDefaults(logLevelFlag)
 		helpers.ConfigureAWSCacheLogger(awsCacheLogLevel, awsCacheLogFile)
 
-		// Configure janus-framework logging to match diocletian's log level
+		// Configure janus-framework logging to match aurelian's log level
 		if level, err := cfg.LevelFromString(logLevelFlag); err == nil {
 			cfg.SetDefaultLevel(level)
 		}
@@ -79,7 +79,7 @@ func Execute() error {
 
 var listModulesCmd = &cobra.Command{
 	Use:   "list-modules",
-	Short: "Display available Diocletian modules in a tree structure",
+	Short: "Display available aurelian modules in a tree structure",
 	Run: func(cmd *cobra.Command, args []string) {
 		displayModuleTree()
 	},

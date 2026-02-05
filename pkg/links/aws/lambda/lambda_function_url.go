@@ -9,8 +9,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/base"
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type AWSLambdaFunctionURL struct {

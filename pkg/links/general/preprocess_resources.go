@@ -7,8 +7,8 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	jlinks "github.com/praetorian-inc/janus-framework/pkg/links"
-	"github.com/praetorian-inc/diocletian/pkg/output"
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type SupportsResourceTypes interface {

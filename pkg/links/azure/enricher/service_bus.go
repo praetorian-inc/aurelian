@@ -11,7 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/servicebus/armservicebus"
-	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 // ServiceBusEnricher implements enrichment for Service Bus instances

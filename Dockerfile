@@ -25,10 +25,10 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 
 # Copy the binary from builder
-COPY --from=builder /app/main ./diocletian
+COPY --from=builder /app/main ./aurelian
 
 # Use ENTRYPOINT to specify the binary
-ENTRYPOINT ["./diocletian"]
+ENTRYPOINT ["./aurelian"]
 
 # Use CMD to specify default arguments that can be overridden
 CMD []

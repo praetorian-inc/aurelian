@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 const (

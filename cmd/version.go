@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"github.com/praetorian-inc/diocletian/internal/message"
-	"github.com/praetorian-inc/diocletian/version"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/version"
 	"github.com/spf13/cobra"
 )
 

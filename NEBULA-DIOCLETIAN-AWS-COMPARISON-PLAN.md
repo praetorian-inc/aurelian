@@ -1,8 +1,8 @@
-# Nebula vs Diocletian AWS Command Comparison Plan
+# Nebula vs aurelian AWS Command Comparison Plan
 
 ## Executive Summary
 
-This plan validates that **modules/diocletian** produces equivalent outputs to **modules/nebula** for all AWS commands. Both tools share the same Janus Framework foundation and have identical module counts (22 AWS modules each), but differ in implementation details.
+This plan validates that **modules/aurelian** produces equivalent outputs to **modules/nebula** for all AWS commands. Both tools share the same Janus Framework foundation and have identical module counts (22 AWS modules each), but differ in implementation details.
 
 ---
 
@@ -10,33 +10,33 @@ This plan validates that **modules/diocletian** produces equivalent outputs to *
 
 ### AWS Commands (22 total per tool)
 
-| Category | Module ID | Nebula Command | Diocletian Command | Type |
+| Category | Module ID | Nebula Command | aurelian Command | Type |
 |----------|-----------|----------------|-------------------|------|
-| **recon** | whoami | `nebula aws recon whoami` | `diocletian aws recon whoami` | auto-run |
-| **recon** | account-auth-details | `nebula aws recon account-auth-details` | `diocletian aws recon account-auth-details` | auto-run |
-| **recon** | list | `nebula aws recon list` | `diocletian aws recon list` | input |
-| **recon** | list-all | `nebula aws recon list-all` | `diocletian aws recon list-all` | input |
-| **recon** | summary | `nebula aws recon summary` | `diocletian aws recon summary` | auto-run |
-| **recon** | public-resources | `nebula aws recon public-resources` | `diocletian aws recon public-resources` | input |
-| **recon** | public-resources-single | `nebula aws recon public-resources-single` | `diocletian aws recon public-resources-single` | input |
-| **recon** | apollo | `nebula aws recon apollo` | `diocletian aws recon apollo` | input |
-| **recon** | apollo-offline | `nebula aws recon apollo-offline` | `diocletian aws recon apollo-offline` | input |
-| **recon** | find-secrets | `nebula aws recon find-secrets` | `diocletian aws recon find-secrets` | input |
-| **recon** | find-secrets-resource | `nebula aws recon find-secrets-resource` | `diocletian aws recon find-secrets-resource` | input |
-| **recon** | resource-policies | `nebula aws recon resource-policies` | `diocletian aws recon resource-policies` | auto-run |
-| **recon** | org-policies | `nebula aws recon org-policies` | `diocletian aws recon org-policies` | auto-run |
-| **recon** | get-console | `nebula aws recon get-console` | `diocletian aws recon get-console` | input |
-| **recon** | ecr-dump | `nebula aws recon ecr-dump` | `diocletian aws recon ecr-dump` | auto-run |
-| **recon** | cdk-bucket-takeover | `nebula aws recon cdk-bucket-takeover` | `diocletian aws recon cdk-bucket-takeover` | auto-run |
-| **recon** | cloudfront-s3-takeover | `nebula aws recon cloudfront-s3-takeover` | `diocletian aws recon cloudfront-s3-takeover` | auto-run |
-| **recon** | ec2-screenshot-analysis | `nebula aws recon ec2-screenshot-analysis` | `diocletian aws recon ec2-screenshot-analysis` | input |
-| **analyze** | ip-lookup | `nebula aws analyze ip-lookup` | `diocletian aws analyze ip-lookup` | input |
-| **analyze** | access-key-to-account-id | `nebula aws analyze access-key-to-account-id` | `diocletian aws analyze access-key-to-account-id` | input |
-| **analyze** | known-account-id | `nebula aws analyze known-account-id` | `diocletian aws analyze known-account-id` | input |
-| **analyze** | apollo-query | `nebula aws analyze apollo-query` | `diocletian aws analyze apollo-query` | input |
-| **analyze** | expand-actions | `nebula aws analyze expand-actions` | `diocletian aws analyze expand-actions` | input |
+| **recon** | whoami | `nebula aws recon whoami` | `aurelian aws recon whoami` | auto-run |
+| **recon** | account-auth-details | `nebula aws recon account-auth-details` | `aurelian aws recon account-auth-details` | auto-run |
+| **recon** | list | `nebula aws recon list` | `aurelian aws recon list` | input |
+| **recon** | list-all | `nebula aws recon list-all` | `aurelian aws recon list-all` | input |
+| **recon** | summary | `nebula aws recon summary` | `aurelian aws recon summary` | auto-run |
+| **recon** | public-resources | `nebula aws recon public-resources` | `aurelian aws recon public-resources` | input |
+| **recon** | public-resources-single | `nebula aws recon public-resources-single` | `aurelian aws recon public-resources-single` | input |
+| **recon** | apollo | `nebula aws recon apollo` | `aurelian aws recon apollo` | input |
+| **recon** | apollo-offline | `nebula aws recon apollo-offline` | `aurelian aws recon apollo-offline` | input |
+| **recon** | find-secrets | `nebula aws recon find-secrets` | `aurelian aws recon find-secrets` | input |
+| **recon** | find-secrets-resource | `nebula aws recon find-secrets-resource` | `aurelian aws recon find-secrets-resource` | input |
+| **recon** | resource-policies | `nebula aws recon resource-policies` | `aurelian aws recon resource-policies` | auto-run |
+| **recon** | org-policies | `nebula aws recon org-policies` | `aurelian aws recon org-policies` | auto-run |
+| **recon** | get-console | `nebula aws recon get-console` | `aurelian aws recon get-console` | input |
+| **recon** | ecr-dump | `nebula aws recon ecr-dump` | `aurelian aws recon ecr-dump` | auto-run |
+| **recon** | cdk-bucket-takeover | `nebula aws recon cdk-bucket-takeover` | `aurelian aws recon cdk-bucket-takeover` | auto-run |
+| **recon** | cloudfront-s3-takeover | `nebula aws recon cloudfront-s3-takeover` | `aurelian aws recon cloudfront-s3-takeover` | auto-run |
+| **recon** | ec2-screenshot-analysis | `nebula aws recon ec2-screenshot-analysis` | `aurelian aws recon ec2-screenshot-analysis` | input |
+| **analyze** | ip-lookup | `nebula aws analyze ip-lookup` | `aurelian aws analyze ip-lookup` | input |
+| **analyze** | access-key-to-account-id | `nebula aws analyze access-key-to-account-id` | `aurelian aws analyze access-key-to-account-id` | input |
+| **analyze** | known-account-id | `nebula aws analyze known-account-id` | `aurelian aws analyze known-account-id` | input |
+| **analyze** | apollo-query | `nebula aws analyze apollo-query` | `aurelian aws analyze apollo-query` | input |
+| **analyze** | expand-actions | `nebula aws analyze expand-actions` | `aurelian aws analyze expand-actions` | input |
 
-**Note**: All command names are identical between nebula and diocletian. Go filenames may differ (e.g., `list_all_resources.go`) but the CLI command IDs (defined via `"id"` in module metadata) are the same.
+**Note**: All command names are identical between nebula and aurelian. Go filenames may differ (e.g., `list_all_resources.go`) but the CLI command IDs (defined via `"id"` in module metadata) are the same.
 
 ---
 
@@ -47,11 +47,11 @@ This plan validates that **modules/diocletian** produces equivalent outputs to *
 ```bash
 # Build both binaries
 cd modules/nebula && go build -o nebula .
-cd modules/diocletian && go build -o diocletian .
+cd modules/aurelian && go build -o aurelian .
 
 # Verify builds
 ./modules/nebula/nebula --version
-./modules/diocletian/diocletian version
+./modules/aurelian/aurelian version
 
 # AWS credentials (use same profile for both)
 export AWS_PROFILE=test-profile
@@ -61,9 +61,9 @@ aws sts get-caller-identity  # Verify credentials work
 ### 2.2 Output Directory Structure
 
 ```bash
-mkdir -p comparison-tests/{nebula,diocletian,diffs}
+mkdir -p comparison-tests/{nebula,aurelian,diffs}
 export NEBULA_OUT="comparison-tests/nebula"
-export DIOCLETIAN_OUT="comparison-tests/diocletian"
+export aurelian_OUT="comparison-tests/aurelian"
 export DIFF_OUT="comparison-tests/diffs"
 ```
 
@@ -117,14 +117,14 @@ for cmd in "${AUTORUN_COMMANDS[@]}"; do
         --quiet \
         2>&1 | tee "$NEBULA_OUT/${cmd}.log"
 
-    # Diocletian - outputs to diocletian-output/ directory by default
-    # Note: --output-format is NOT a valid flag, Diocletian auto-outputs JSON
-    ./modules/diocletian/diocletian aws recon "$cmd" \
+    # aurelian - outputs to aurelian-output/ directory by default
+    # Note: --output-format is NOT a valid flag, aurelian auto-outputs JSON
+    ./modules/aurelian/aurelian aws recon "$cmd" \
         --quiet \
-        2>&1 | tee "$DIOCLETIAN_OUT/${cmd}.log"
+        2>&1 | tee "$aurelian_OUT/${cmd}.log"
 
-    # Move diocletian output to comparison dir
-    mv diocletian-output/*.json "$DIOCLETIAN_OUT/${cmd}.json" 2>/dev/null || true
+    # Move aurelian output to comparison dir
+    mv aurelian-output/*.json "$aurelian_OUT/${cmd}.json" 2>/dev/null || true
 done
 ```
 
@@ -136,7 +136,7 @@ Commands requiring region and/or resource type parameters:
 > - `list`: Only accepts `-t` (resource-type), NO regions flag
 > - `public-resources`: Uses chain input for resource-type, only has `-p` (profile) and `-o` (org-policies)
 > - `apollo`: Uses chain input for resource-type, NO direct flags
-> - Diocletian: Does NOT have `--output-format` flag, outputs to `diocletian-output/` automatically
+> - aurelian: Does NOT have `--output-format` flag, outputs to `aurelian-output/` automatically
 
 ```bash
 # Test script: phase2_resource_commands.sh
@@ -148,10 +148,10 @@ Commands requiring region and/or resource type parameters:
     --outfile "list.json" \
     --quiet
 
-./modules/diocletian/diocletian aws recon list \
+./modules/aurelian/aurelian aws recon list \
     -t "$TEST_RESOURCE_TYPE" \
     --quiet
-mv diocletian-output/*.json "$DIOCLETIAN_OUT/list.json" 2>/dev/null || true
+mv aurelian-output/*.json "$aurelian_OUT/list.json" 2>/dev/null || true
 
 # list-all - has -s (scan-type), -r (regions), -p (profile), -f (filename)
 ./modules/nebula/nebula aws recon list-all \
@@ -161,11 +161,11 @@ mv diocletian-output/*.json "$DIOCLETIAN_OUT/list.json" 2>/dev/null || true
     --outfile "list-all.json" \
     --quiet
 
-./modules/diocletian/diocletian aws recon list-all \
+./modules/aurelian/aurelian aws recon list-all \
     -s summary \
     -r "$TEST_REGIONS" \
     --quiet
-mv diocletian-output/*.json "$DIOCLETIAN_OUT/list-all.json" 2>/dev/null || true
+mv aurelian-output/*.json "$aurelian_OUT/list-all.json" 2>/dev/null || true
 
 # public-resources - CORRECTED: Uses chain input for resource-type
 # Available flags: -p (profile), -o (org-policies file)
@@ -177,10 +177,10 @@ mv diocletian-output/*.json "$DIOCLETIAN_OUT/list-all.json" 2>/dev/null || true
     --outfile "public-resources.json" \
     --quiet
 
-./modules/diocletian/diocletian aws recon public-resources \
+./modules/aurelian/aurelian aws recon public-resources \
     -p "$AWS_PROFILE" \
     --quiet
-mv diocletian-output/*.json "$DIOCLETIAN_OUT/public-resources.json" 2>/dev/null || true
+mv aurelian-output/*.json "$aurelian_OUT/public-resources.json" 2>/dev/null || true
 
 # apollo - CORRECTED: Uses chain input for resource-type, NO -t flag
 # This command typically runs as part of a chain: list -> apollo
@@ -191,9 +191,9 @@ echo "WARNING: apollo uses chain input. Standalone test may behave differently."
     --outfile "apollo.json" \
     --quiet 2>&1 || echo "Nebula apollo standalone: requires chain input"
 
-./modules/diocletian/diocletian aws recon apollo \
-    --quiet 2>&1 || echo "Diocletian apollo standalone: requires chain input"
-mv diocletian-output/*.json "$DIOCLETIAN_OUT/apollo.json" 2>/dev/null || true
+./modules/aurelian/aurelian aws recon apollo \
+    --quiet 2>&1 || echo "aurelian apollo standalone: requires chain input"
+mv aurelian-output/*.json "$aurelian_OUT/apollo.json" 2>/dev/null || true
 
 # find-secrets - CORRECT: has -t (resource-type), -p (profile), --max-events, --max-streams
 ./modules/nebula/nebula aws recon find-secrets \
@@ -202,15 +202,15 @@ mv diocletian-output/*.json "$DIOCLETIAN_OUT/apollo.json" 2>/dev/null || true
     --outfile "find-secrets.json" \
     --quiet
 
-./modules/diocletian/diocletian aws recon find-secrets \
+./modules/aurelian/aurelian aws recon find-secrets \
     -t "AWS::Lambda::Function" \
     --quiet
-mv diocletian-output/*.json "$DIOCLETIAN_OUT/find-secrets.json" 2>/dev/null || true
+mv aurelian-output/*.json "$aurelian_OUT/find-secrets.json" 2>/dev/null || true
 ```
 
 ### 3.3 Phase 3: Analyze Commands (Input-Specific)
 
-> **⚠️ CORRECTED**: Use short flags for consistency and remove invalid `--output-format` from Diocletian.
+> **⚠️ CORRECTED**: Use short flags for consistency and remove invalid `--output-format` from aurelian.
 > Both tools use the same short flags: `-i` (ip/account-id), `-k` (access-key-id), `-a` (action), `-q` (query).
 
 ```bash
@@ -223,10 +223,10 @@ mv diocletian-output/*.json "$DIOCLETIAN_OUT/find-secrets.json" 2>/dev/null || t
     --outfile "ip-lookup.json" \
     --quiet
 
-./modules/diocletian/diocletian aws analyze ip-lookup \
+./modules/aurelian/aurelian aws analyze ip-lookup \
     -i "$TEST_IP" \
     --quiet
-mv diocletian-output/*.json "$DIOCLETIAN_OUT/ip-lookup.json" 2>/dev/null || true
+mv aurelian-output/*.json "$aurelian_OUT/ip-lookup.json" 2>/dev/null || true
 
 # access-key-to-account-id - uses -k for access key
 ./modules/nebula/nebula aws analyze access-key-to-account-id \
@@ -235,10 +235,10 @@ mv diocletian-output/*.json "$DIOCLETIAN_OUT/ip-lookup.json" 2>/dev/null || true
     --outfile "access-key-to-account-id.json" \
     --quiet
 
-./modules/diocletian/diocletian aws analyze access-key-to-account-id \
+./modules/aurelian/aurelian aws analyze access-key-to-account-id \
     -k "$TEST_ACCESS_KEY" \
     --quiet
-mv diocletian-output/*.json "$DIOCLETIAN_OUT/access-key-to-account-id.json" 2>/dev/null || true
+mv aurelian-output/*.json "$aurelian_OUT/access-key-to-account-id.json" 2>/dev/null || true
 
 # known-account-id - uses -i for account ID
 ./modules/nebula/nebula aws analyze known-account-id \
@@ -247,22 +247,22 @@ mv diocletian-output/*.json "$DIOCLETIAN_OUT/access-key-to-account-id.json" 2>/d
     --outfile "known-account-id.json" \
     --quiet
 
-./modules/diocletian/diocletian aws analyze known-account-id \
+./modules/aurelian/aurelian aws analyze known-account-id \
     -i "$TEST_ACCOUNT_ID" \
     --quiet
-mv diocletian-output/*.json "$DIOCLETIAN_OUT/known-account-id.json" 2>/dev/null || true
+mv aurelian-output/*.json "$aurelian_OUT/known-account-id.json" 2>/dev/null || true
 
-# apollo-query - uses -q for query (Nebula) or --query (Diocletian has no short form)
+# apollo-query - uses -q for query (Nebula) or --query (aurelian has no short form)
 ./modules/nebula/nebula aws analyze apollo-query \
     -q "$TEST_QUERY" \
     --output "$NEBULA_OUT" \
     --outfile "apollo-query.json" \
     --quiet
 
-./modules/diocletian/diocletian aws analyze apollo-query \
+./modules/aurelian/aurelian aws analyze apollo-query \
     --query "$TEST_QUERY" \
     --quiet
-mv diocletian-output/*.json "$DIOCLETIAN_OUT/apollo-query.json" 2>/dev/null || true
+mv aurelian-output/*.json "$aurelian_OUT/apollo-query.json" 2>/dev/null || true
 
 # expand-actions - uses -a for action
 ./modules/nebula/nebula aws analyze expand-actions \
@@ -271,10 +271,10 @@ mv diocletian-output/*.json "$DIOCLETIAN_OUT/apollo-query.json" 2>/dev/null || t
     --outfile "expand-actions.json" \
     --quiet
 
-./modules/diocletian/diocletian aws analyze expand-actions \
+./modules/aurelian/aurelian aws analyze expand-actions \
     -a "$TEST_ACTION" \
     --quiet
-mv diocletian-output/*.json "$DIOCLETIAN_OUT/expand-actions.json" 2>/dev/null || true
+mv aurelian-output/*.json "$aurelian_OUT/expand-actions.json" 2>/dev/null || true
 ```
 
 ### 3.4 Phase 4: Complex/Optional Commands
@@ -284,7 +284,7 @@ Commands requiring special setup or optional parameters:
 > **⚠️ CORRECTED**:
 > - `get-console` uses `-p` (profile) and `-r` (regions), NOT `--role-arn`
 > - `apollo-offline` uses chain input, not explicit file flags when run standalone
-> - Removed invalid `--output-format` from Diocletian commands
+> - Removed invalid `--output-format` from aurelian commands
 
 ```bash
 # Test script: phase4_special_commands.sh
@@ -298,11 +298,11 @@ Commands requiring special setup or optional parameters:
     --outfile "get-console.json" \
     --quiet
 
-./modules/diocletian/diocletian aws recon get-console \
+./modules/aurelian/aurelian aws recon get-console \
     -p "$AWS_PROFILE" \
     -r "$TEST_REGIONS" \
     --quiet
-mv diocletian-output/*.json "$DIOCLETIAN_OUT/get-console.json" 2>/dev/null || true
+mv aurelian-output/*.json "$aurelian_OUT/get-console.json" 2>/dev/null || true
 
 # apollo-offline - CORRECTED: Uses chain input parameters
 # Available flags: -o (org-policies), -g (gaad-file), -rp (resource-policies-file)
@@ -314,10 +314,10 @@ if [[ -f "test-data/gaad.json" ]]; then
         --outfile "apollo-offline.json" \
         --quiet
 
-    ./modules/diocletian/diocletian aws recon apollo-offline \
+    ./modules/aurelian/aurelian aws recon apollo-offline \
         -g "test-data/gaad.json" \
         --quiet
-    mv diocletian-output/*.json "$DIOCLETIAN_OUT/apollo-offline.json" 2>/dev/null || true
+    mv aurelian-output/*.json "$aurelian_OUT/apollo-offline.json" 2>/dev/null || true
 else
     echo "SKIP: apollo-offline - test-data/gaad.json not found"
 fi
@@ -330,10 +330,10 @@ if [[ -n "$ANTHROPIC_API_KEY" ]]; then
         --outfile "ec2-screenshot-analysis.json" \
         --quiet
 
-    ./modules/diocletian/diocletian aws recon ec2-screenshot-analysis \
+    ./modules/aurelian/aurelian aws recon ec2-screenshot-analysis \
         --anthropic-api-key "$ANTHROPIC_API_KEY" \
         --quiet
-    mv diocletian-output/*.json "$DIOCLETIAN_OUT/ec2-screenshot-analysis.json" 2>/dev/null || true
+    mv aurelian-output/*.json "$aurelian_OUT/ec2-screenshot-analysis.json" 2>/dev/null || true
 else
     echo "SKIP: ec2-screenshot-analysis - ANTHROPIC_API_KEY not set"
 fi
@@ -347,10 +347,10 @@ if [[ -n "$TEST_RESOURCE_ARN" ]]; then
         --outfile "public-resources-single.json" \
         --quiet
 
-    ./modules/diocletian/diocletian aws recon public-resources-single \
+    ./modules/aurelian/aurelian aws recon public-resources-single \
         -a "$TEST_RESOURCE_ARN" \
         --quiet
-    mv diocletian-output/*.json "$DIOCLETIAN_OUT/public-resources-single.json" 2>/dev/null || true
+    mv aurelian-output/*.json "$aurelian_OUT/public-resources-single.json" 2>/dev/null || true
 else
     echo "SKIP: public-resources-single - TEST_RESOURCE_ARN not set"
 fi
@@ -363,10 +363,10 @@ if [[ -n "$TEST_RESOURCE_ARN" ]]; then
         --outfile "find-secrets-resource.json" \
         --quiet
 
-    ./modules/diocletian/diocletian aws recon find-secrets-resource \
+    ./modules/aurelian/aurelian aws recon find-secrets-resource \
         -a "$TEST_RESOURCE_ARN" \
         --quiet
-    mv diocletian-output/*.json "$DIOCLETIAN_OUT/find-secrets-resource.json" 2>/dev/null || true
+    mv aurelian-output/*.json "$aurelian_OUT/find-secrets-resource.json" 2>/dev/null || true
 else
     echo "SKIP: find-secrets-resource - TEST_RESOURCE_ARN not set"
 fi
@@ -416,7 +416,7 @@ normalize_json() {
 
 ```bash
 #!/bin/bash
-# compare_outputs.sh - Compare nebula vs diocletian outputs
+# compare_outputs.sh - Compare nebula vs aurelian outputs
 
 COMMANDS=(
     "whoami"
@@ -444,7 +444,7 @@ COMMANDS=(
     "expand-actions"
 )
 
-echo "=== Nebula vs Diocletian Output Comparison ==="
+echo "=== Nebula vs aurelian Output Comparison ==="
 echo ""
 
 PASS=0
@@ -453,9 +453,9 @@ SKIP=0
 
 for cmd in "${COMMANDS[@]}"; do
     nebula_file="$NEBULA_OUT/${cmd}.json"
-    diocletian_file="$DIOCLETIAN_OUT/${cmd}.json"
+    aurelian_file="$aurelian_OUT/${cmd}.json"
 
-    if [[ ! -f "$nebula_file" ]] || [[ ! -f "$diocletian_file" ]]; then
+    if [[ ! -f "$nebula_file" ]] || [[ ! -f "$aurelian_file" ]]; then
         echo "SKIP: $cmd - missing output file(s)"
         ((SKIP++))
         continue
@@ -463,15 +463,15 @@ for cmd in "${COMMANDS[@]}"; do
 
     # Normalize both files
     normalize_json "$nebula_file" "/tmp/nebula_norm.json"
-    normalize_json "$diocletian_file" "/tmp/diocletian_norm.json"
+    normalize_json "$aurelian_file" "/tmp/aurelian_norm.json"
 
     # Compare
-    if diff -q "/tmp/nebula_norm.json" "/tmp/diocletian_norm.json" > /dev/null 2>&1; then
+    if diff -q "/tmp/nebula_norm.json" "/tmp/aurelian_norm.json" > /dev/null 2>&1; then
         echo "PASS: $cmd"
         ((PASS++))
     else
         echo "FAIL: $cmd"
-        diff "/tmp/nebula_norm.json" "/tmp/diocletian_norm.json" > "$DIFF_OUT/${cmd}.diff"
+        diff "/tmp/nebula_norm.json" "/tmp/aurelian_norm.json" > "$DIFF_OUT/${cmd}.diff"
         echo "  -> Diff saved to: $DIFF_OUT/${cmd}.diff"
         ((FAIL++))
     fi
@@ -496,7 +496,7 @@ For commands that fail simple JSON diff, use structural comparison:
 deep_compare() {
     local cmd="$1"
     local nebula_file="$NEBULA_OUT/${cmd}.json"
-    local diocletian_file="$DIOCLETIAN_OUT/${cmd}.json"
+    local aurelian_file="$aurelian_OUT/${cmd}.json"
 
     echo "=== Deep Comparison: $cmd ==="
 
@@ -504,19 +504,19 @@ deep_compare() {
     echo "Top-level keys (nebula):"
     jq -r 'keys[]' "$nebula_file" | sort
 
-    echo "Top-level keys (diocletian):"
-    jq -r 'keys[]' "$diocletian_file" | sort
+    echo "Top-level keys (aurelian):"
+    jq -r 'keys[]' "$aurelian_file" | sort
 
     # Compare record counts
     echo "Record counts:"
     echo "  Nebula: $(jq 'if type == "array" then length else 1 end' "$nebula_file")"
-    echo "  Diocletian: $(jq 'if type == "array" then length else 1 end' "$diocletian_file")"
+    echo "  aurelian: $(jq 'if type == "array" then length else 1 end' "$aurelian_file")"
 
     # Compare data types
     echo "Schema comparison:"
     jq 'paths(scalars) | map(tostring) | join(".")' "$nebula_file" | sort | uniq > /tmp/nebula_schema
-    jq 'paths(scalars) | map(tostring) | join(".")' "$diocletian_file" | sort | uniq > /tmp/diocletian_schema
-    diff /tmp/nebula_schema /tmp/diocletian_schema || true
+    jq 'paths(scalars) | map(tostring) | join(".")' "$aurelian_file" | sort | uniq > /tmp/aurelian_schema
+    diff /tmp/nebula_schema /tmp/aurelian_schema || true
 }
 ```
 
@@ -526,7 +526,7 @@ deep_compare() {
 
 ### 5.1 Global Flags Comparison
 
-| Flag | Nebula | Diocletian | Notes |
+| Flag | Nebula | aurelian | Notes |
 |------|--------|------------|-------|
 | `--log-level` | ✓ | ✓ | Same |
 | `--quiet` | ✓ | ✓ | Same |
@@ -538,7 +538,7 @@ deep_compare() {
 
 ### 5.2 AWS-Specific Flags Comparison
 
-| Flag | Nebula | Diocletian | Notes |
+| Flag | Nebula | aurelian | Notes |
 |------|--------|------------|-------|
 | `-r, --regions` | ✓ | ✓ | Same |
 | `-t, --resource-type` | ✓ | ✓ | Same |
@@ -601,7 +601,7 @@ Some commands accept chain input but also have fallback behavior:
 ### 7.1 Recommended Execution Sequence
 
 1. **Build Both Tools** (5 min)
-   - Compile nebula and diocletian binaries
+   - Compile nebula and aurelian binaries
    - Verify versions
 
 2. **Setup Test Environment** (5 min)
@@ -639,7 +639,7 @@ Some commands accept chain input but also have fallback behavior:
 
 ### 7.1 Command Names
 
-All command names are identical between nebula and diocletian. No mapping required.
+All command names are identical between nebula and aurelian. No mapping required.
 
 ### 7.2 Expected Output Differences
 
@@ -649,7 +649,7 @@ These fields should be excluded from comparison:
 - `request_id` / `trace_id` - Request identifiers
 - `cache_hit` - Cache status (varies by run order)
 - `version` - Tool version strings
-- File paths containing tool name (`nebula-output` vs `diocletian-output`)
+- File paths containing tool name (`nebula-output` vs `aurelian-output`)
 
 ### 7.3 Structural Differences to Investigate
 
@@ -713,7 +713,7 @@ The comparison suite **PASSES** if:
 
 # Check tool versions
 ./modules/nebula/nebula --version
-./modules/diocletian/diocletian version
+./modules/aurelian/aurelian version
 ```
 
 ---
@@ -731,7 +731,7 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 
 # Configuration
 export NEBULA_OUT="$REPO_ROOT/comparison-tests/nebula"
-export DIOCLETIAN_OUT="$REPO_ROOT/comparison-tests/diocletian"
+export aurelian_OUT="$REPO_ROOT/comparison-tests/aurelian"
 export DIFF_OUT="$REPO_ROOT/comparison-tests/diffs"
 
 # Test parameters
@@ -739,7 +739,7 @@ export TEST_REGIONS="${TEST_REGIONS:-us-east-1}"
 export TEST_RESOURCE_TYPE="${TEST_RESOURCE_TYPE:-AWS::S3::Bucket}"
 export AWS_PROFILE="${AWS_PROFILE:-default}"
 
-echo "=== Nebula vs Diocletian AWS Comparison Suite ==="
+echo "=== Nebula vs aurelian AWS Comparison Suite ==="
 echo "Regions: $TEST_REGIONS"
 echo "Resource Type: $TEST_RESOURCE_TYPE"
 echo "AWS Profile: $AWS_PROFILE"
@@ -747,12 +747,12 @@ echo ""
 
 # Step 1: Setup
 echo "Step 1: Setting up test environment..."
-mkdir -p "$NEBULA_OUT" "$DIOCLETIAN_OUT" "$DIFF_OUT"
+mkdir -p "$NEBULA_OUT" "$aurelian_OUT" "$DIFF_OUT"
 
 # Step 2: Build
 echo "Step 2: Building tools..."
 (cd "$REPO_ROOT/modules/nebula" && go build -o nebula .)
-(cd "$REPO_ROOT/modules/diocletian" && go build -o diocletian .)
+(cd "$REPO_ROOT/modules/aurelian" && go build -o aurelian .)
 
 # Step 3: Verify AWS credentials
 echo "Step 3: Verifying AWS credentials..."
@@ -772,7 +772,7 @@ echo "Step 5: Comparing outputs..."
 # Step 6: Generate report
 echo "Step 6: Generating comparison report..."
 cat > "$REPO_ROOT/comparison-tests/REPORT.md" << EOF
-# Nebula vs Diocletian Comparison Report
+# Nebula vs aurelian Comparison Report
 
 **Date**: $(date -Iseconds)
 **Regions Tested**: $TEST_REGIONS

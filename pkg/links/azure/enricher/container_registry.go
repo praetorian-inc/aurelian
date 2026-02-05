@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 // ContainerRegistryEnricher implements enrichment for Container Registry instances

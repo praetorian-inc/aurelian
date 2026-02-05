@@ -2,7 +2,7 @@ package options
 
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 var NoseyParkerPathOpt = types.Option{

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 // VirtualMachineEnricher implements enrichment for virtual machines

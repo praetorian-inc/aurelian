@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 // StorageAccountEnricher implements enrichment for storage accounts

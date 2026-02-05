@@ -3,7 +3,7 @@ package enricher
 import (
 	"context"
 
-	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 // Command represents the input and output of a command that requires manual triage

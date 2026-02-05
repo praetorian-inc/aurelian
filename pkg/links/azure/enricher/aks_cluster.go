@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 // AKSClusterEnricher implements enrichment for AKS Cluster instances

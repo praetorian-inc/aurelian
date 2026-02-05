@@ -4,9 +4,9 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus-framework/pkg/output"
-	"github.com/praetorian-inc/diocletian/internal/registry"
-	"github.com/praetorian-inc/diocletian/pkg/iam/aws"
-	"github.com/praetorian-inc/diocletian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/internal/registry"
+	"github.com/praetorian-inc/aurelian/pkg/iam/aws"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
 )
 
 func init() {

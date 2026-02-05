@@ -1,3 +1,6 @@
+// Deprecated: This file uses janus-framework chains to process ResourceChainPair objects.
+// Use the V2 implementation with dispatcher/orchestrator instead (see find_secrets_v2.go).
+// This file will be removed in a future version once the migration is complete.
 package aws
 
 import (
@@ -6,8 +9,8 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/base"
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // AWSResourceChainProcessor processes ResourceChainPair objects concurrently

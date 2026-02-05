@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
-	iam "github.com/praetorian-inc/diocletian/pkg/iam/aws"
-	"github.com/praetorian-inc/diocletian/pkg/output"
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	iam "github.com/praetorian-inc/aurelian/pkg/iam/aws"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // TransformUserDLToCloudResource converts a UserDL to a CloudResource with IAM User type

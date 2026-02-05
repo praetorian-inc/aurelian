@@ -1,0 +1,20 @@
+feature_name: "Find Secrets V2 Nil Pointer Fix Review"
+feature_slug: "find-secrets-v2-nil-fix-review"
+created_at: "2026-02-04T16:10:24Z"
+created_by: "capability-reviewer"
+description: |
+  Review of bug fix for nil pointer dereference in find_secrets_v2.go.
+  The fix adds defaultCacheOptions() helper and passes options to GetAWSCfg calls.
+
+status: "complete"
+
+agents_contributed:
+  - agent: "capability-reviewer"
+    artifact: "code-review.md"
+    timestamp: "2026-02-04T16:10:24Z"
+    status: "complete"
+
+artifacts:
+  - path: "code-review.md"
+    type: "code-review"
+    agent: "capability-reviewer"

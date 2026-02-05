@@ -1,10 +1,10 @@
-# Diocletian Development Guide
+# aurelian Development Guide
 
-Diocletian is built on the [Janus Framework](https://github.com/praetorian-inc/janus-framework), a modular chain-based architecture for building composable workflows that implement go's pipeline pattern. This guide covers developing links, modules, and extending the platform.
+aurelian is built on the [Janus Framework](https://github.com/praetorian-inc/janus-framework), a modular chain-based architecture for building composable workflows that implement go's pipeline pattern. This guide covers developing links, modules, and extending the platform.
 
 ## Architecture Overview
 
-Diocletian uses the Janus framework with these core concepts:
+aurelian uses the Janus framework with these core concepts:
 
 - **Links**: Individual processing units that can be chained together
 - **Modules**: Pre-configured chains of links for specific use cases  
@@ -205,7 +205,7 @@ func (l *MyLink) Process(input any) error {
 
 ### Built-in Outputters
 
-Diocletian provides several outputters in `pkg/outputters/`:
+aurelian provides several outputters in `pkg/outputters/`:
 - `erd_console.go` - Console output for enriched resource descriptions
 - `markdown_table_console.go` - Console markdown tables
 - `runtime_json.go` - JSON file output
@@ -213,7 +213,7 @@ Diocletian provides several outputters in `pkg/outputters/`:
 
 ### Output Types
 
-Diocletian supports two types of command output:
+aurelian supports two types of command output:
 
 #### Security Findings
 
@@ -248,7 +248,7 @@ Commands that produce non-security data (identity info, resource policies,
 configuration dumps) should wrap their output in `outputters.RawOutput`:
 
 ```go
-import "github.com/praetorian-inc/diocletian/pkg/outputters"
+import "github.com/praetorian-inc/aurelian/pkg/outputters"
 
 result := map[string]any{
     "status": "success",
@@ -313,7 +313,7 @@ Modules automatically generate CLI commands via the registry:
 
 ```go
 func init() {
-    // This creates: diocletian aws recon my-module
+    // This creates: aurelian aws recon my-module
     registry.Register("aws", "recon", "my-module", *MyModule)
 }
 ```

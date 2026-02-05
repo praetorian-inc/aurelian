@@ -3,10 +3,10 @@
 
 set -e
 
-DIOCLETIAN="./diocletian"
+aurelian="./aurelian"
 OUTPUT_FORMAT="--output-format json"
 
-echo "Testing Diocletian AWS Modules"
+echo "Testing aurelian AWS Modules"
 echo "================================"
 
 # Quick/Safe modules (fast to run)
@@ -36,7 +36,7 @@ test_module() {
     local cmd=$1
     echo -n "Testing: $cmd ... "
 
-    if $DIOCLETIAN $cmd $OUTPUT_FORMAT 2>/dev/null >/dev/null; then
+    if $aurelian $cmd $OUTPUT_FORMAT 2>/dev/null >/dev/null; then
         echo "✅ PASS"
         return 0
     else

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/arn"
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // GaadAnalyzer handles efficient analysis of GAAD policy data

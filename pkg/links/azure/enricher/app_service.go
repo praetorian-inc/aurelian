@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 // AppServiceEnricher implements enrichment for App Service instances

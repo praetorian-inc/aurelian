@@ -1,4 +1,4 @@
-# Diocletian vs Nebula List Performance Analysis
+# aurelian vs Nebula List Performance Analysis
 
 **Date:** 2026-01-06
 **Analyst:** backend-developer
@@ -8,7 +8,7 @@
 
 **Investigation Result:** **NO PERFORMANCE ISSUE FOUND**
 
-Contrary to the initial report, Diocletian is **NOT slower** than Nebula. In fact, both tools perform nearly identically, completing in approximately **0.23-0.24 seconds** for listing 109 S3 buckets in us-east-1.
+Contrary to the initial report, aurelian is **NOT slower** than Nebula. In fact, both tools perform nearly identically, completing in approximately **0.23-0.24 seconds** for listing 109 S3 buckets in us-east-1.
 
 ## Timing Test Results
 
@@ -24,10 +24,10 @@ Contrary to the initial report, Diocletian is **NOT slower** than Nebula. In fac
 | Tool       | Run 1 (cold) | Run 2 (warm) | Run 3 (warm) | Average (warm) |
 |------------|-------------|-------------|-------------|----------------|
 | Nebula     | 0.654s      | 0.23s       | 0.23s       | **0.23s**      |
-| Diocletian | 0.376s      | 0.24s       | 0.24s       | **0.24s**      |
+| aurelian | 0.376s      | 0.24s       | 0.24s       | **0.24s**      |
 
 **Key Findings:**
-1. **Cold cache:** First run shows higher latency (0.65s for Nebula, 0.38s for Diocletian)
+1. **Cold cache:** First run shows higher latency (0.65s for Nebula, 0.38s for aurelian)
 2. **Warm cache:** Subsequent runs are nearly identical (~0.23-0.24s)
 3. **No timeout observed:** Both tools complete successfully
 4. **Identical output:** Both returned 109 buckets with 32KB JSON output
@@ -36,9 +36,9 @@ Contrary to the initial report, Diocletian is **NOT slower** than Nebula. In fac
 
 ### Implementation Comparison
 
-Both Diocletian and Nebula use **virtually identical** code for the Cloud Control API list operation:
+Both aurelian and Nebula use **virtually identical** code for the Cloud Control API list operation:
 
-#### Diocletian
+#### aurelian
 **File:** `pkg/links/aws/cloudcontrol/cloud_control_list.go`
 
 ```go
@@ -92,11 +92,11 @@ func (a *AWSCloudControl) Process(resourceType model.CloudResourceType) error {
 }
 
 func (a *AWSCloudControl) listResourcesInRegion(resourceType, region string) {
-    // ... identical implementation to Diocletian ...
+    // ... identical implementation to aurelian ...
 }
 ```
 
-**The only difference:** Nebula uses `model.CloudResourceType` type (from Tabularium) vs Diocletian uses `string`.
+**The only difference:** Nebula uses `model.CloudResourceType` type (from Tabularium) vs aurelian uses `string`.
 
 ### Concurrency & Pagination
 
@@ -118,7 +118,7 @@ func (a *AWSCloudControl) initializeSemaphores() {
 
 ### SDK Versions
 
-| SDK Component                | Diocletian | Nebula   | Impact        |
+| SDK Component                | aurelian | Nebula   | Impact        |
 |------------------------------|------------|----------|---------------|
 | `aws-sdk-go-v2`              | v1.40.0    | v1.39.4  | Negligible    |
 | `service/cloudcontrol`       | v1.23.11   | v1.23.11 | **Identical** |
@@ -259,11 +259,11 @@ a.semaphores[region] = make(chan struct{}, 20)
 
 ```bash
 # Code location
-find modules/{diocletian,nebula} -name "*cloudcontrol*.go"
+find modules/{aurelian,nebula} -name "*cloudcontrol*.go"
 
 # Timing tests
 time ./nebula aws recon list -t AWS::S3::Bucket -r us-east-1
-time ./diocletian aws recon list -t AWS::S3::Bucket -r us-east-1
+time ./aurelian aws recon list -t AWS::S3::Bucket -r us-east-1
 
 # SDK version check
 grep "github.com/aws/aws-sdk-go-v2/service/cloudcontrol" go.mod
@@ -274,7 +274,7 @@ jq '. | length' nebula-output/out-*.json
 
 ## Conclusion
 
-**No performance issue exists between Diocletian and Nebula for S3::Bucket listing.**
+**No performance issue exists between aurelian and Nebula for S3::Bucket listing.**
 
 Both tools:
 - Complete in ~0.24 seconds (warm cache)
@@ -302,7 +302,7 @@ If slowness is observed with other resource types, apply the optimization strate
   "agent": "backend-developer",
   "output_type": "performance-analysis",
   "timestamp": "2026-01-06T03:12:22Z",
-  "feature_directory": "/Users/nathansportsman/chariot-development-platform2/modules/diocletian/comparison-tests/analysis/2026-01-06-031222-diocletian-nebula-list-performance",
+  "feature_directory": "/Users/nathansportsman/chariot-development-platform2/modules/aurelian/comparison-tests/analysis/2026-01-06-031222-aurelian-nebula-list-performance",
   "skills_invoked": [
     "using-skills",
     "semantic-code-operations",
@@ -315,17 +315,17 @@ If slowness is observed with other resource types, apply the optimization strate
     "verifying-before-completion"
   ],
   "source_files_verified": [
-    "modules/diocletian/pkg/links/aws/cloudcontrol/cloud_control_list.go",
+    "modules/aurelian/pkg/links/aws/cloudcontrol/cloud_control_list.go",
     "modules/nebula/pkg/links/aws/cloudcontrol/cloud_control_list.go",
-    "modules/diocletian/go.mod",
+    "modules/aurelian/go.mod",
     "modules/nebula/go.mod"
   ],
   "status": "complete",
   "test_results": {
     "nebula_cold_cache": "0.654s",
-    "diocletian_cold_cache": "0.376s",
+    "aurelian_cold_cache": "0.376s",
     "nebula_warm_cache_avg": "0.23s",
-    "diocletian_warm_cache_avg": "0.24s",
+    "aurelian_warm_cache_avg": "0.24s",
     "resource_count": 109,
     "output_size": "32KB"
   }

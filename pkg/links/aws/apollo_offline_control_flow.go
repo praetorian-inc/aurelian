@@ -14,12 +14,12 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/konstellation/pkg/graph"
 	"github.com/praetorian-inc/konstellation/pkg/graph/adapters"
-	iam "github.com/praetorian-inc/diocletian/pkg/iam/aws"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/orgpolicies"
-	"github.com/praetorian-inc/diocletian/pkg/links/options"
-	"github.com/praetorian-inc/diocletian/pkg/output"
-	"github.com/praetorian-inc/diocletian/pkg/outputters"
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	iam "github.com/praetorian-inc/aurelian/pkg/iam/aws"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/orgpolicies"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/outputters"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type AwsApolloOfflineControlFlow struct {

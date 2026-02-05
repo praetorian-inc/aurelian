@@ -1,6 +1,6 @@
-# Diocletian CLI Migration - Handoff Document
+# aurelian CLI Migration - Handoff Document
 
-**Project:** Migrate Diocletian to standalone CLI pattern
+**Project:** Migrate aurelian to standalone CLI pattern
 **Current Phase:** Phase 0 COMPLETE (Standalone CLI ready)
 **Next Task:** Phase 0, Task 3 - Create Chariot parser library (for integration)
 
@@ -10,30 +10,30 @@
 
 ### 1. Understand the Goal
 
-Transform Diocletian from:
+Transform aurelian from:
 ```go
-// BEFORE: Chariot imports Diocletian as library
-import diocletianMods "github.com/praetorian-inc/diocletian/pkg/modules"
-mod := diocletianMods.AWSPublicResourcesSingle
+// BEFORE: Chariot imports aurelian as library
+import aurelianMods "github.com/praetorian-inc/aurelian/pkg/modules"
+mod := aurelianMods.AWSPublicResourcesSingle
 mod.Run(cfg)
 ```
 
 To:
 ```bash
-# AFTER: Chariot invokes Diocletian as CLI
-diocletian aws public-resources --profile prod --output-format json | chariot-parser
+# AFTER: Chariot invokes aurelian as CLI
+aurelian aws public-resources --profile prod --output-format json | chariot-parser
 ```
 
 ### 2. Read Key Documents
 
-1. **Master Plan:** `.claude/.output/capabilities/20260104-195038-diocletian-refactoring-analysis/MASTER-REFACTORING-PLAN.md`
-2. **Architecture Q&A:** `.claude/.output/capabilities/20260104-195038-diocletian-refactoring-analysis/ARCHITECTURE-QA.md`
-3. **This status:** `modules/diocletian/STATUS.md`
+1. **Master Plan:** `.claude/.output/capabilities/20260104-195038-aurelian-refactoring-analysis/MASTER-REFACTORING-PLAN.md`
+2. **Architecture Q&A:** `.claude/.output/capabilities/20260104-195038-aurelian-refactoring-analysis/ARCHITECTURE-QA.md`
+3. **This status:** `modules/aurelian/STATUS.md`
 
 ### 3. Verify Current State
 
 ```bash
-cd modules/diocletian
+cd modules/aurelian
 
 # Should return EMPTY (no Tabularium imports)
 grep -r "tabularium" pkg --include="*.go" | grep -v "_test.go"
@@ -50,7 +50,7 @@ go build ./...
 
 ```
 ┌─────────────────┐     NDJSON      ┌─────────────────┐
-│   Diocletian CLI    │ ──────────────> │   Chariot       │
+│   aurelian CLI    │ ──────────────> │   Chariot       │
 │                 │   Pure Domain   │   Parser        │
 │ NO Neo4j keys   │   Data          │ Generates keys  │
 │ NO Tabularium   │                 │ Creates models  │
@@ -59,7 +59,7 @@ go build ./...
 
 ### Key Types
 
-**Diocletian outputs** (`pkg/output/`):
+**aurelian outputs** (`pkg/output/`):
 ```go
 type CloudResource struct {
     Platform     string            `json:"platform"`      // "aws"
@@ -119,7 +119,7 @@ c.WithConfigs(append(module.Configs(), configs...)...)  // Apply configs
 runChainWithInput(c, module)                   // Execute chain
 ```
 
-**Diocletian is now standalone-ready:** `diocletian aws recon list --output-format json` outputs NDJSON to stdout.
+**aurelian is now standalone-ready:** `aurelian aws recon list --output-format json` outputs NDJSON to stdout.
 
 ---
 
@@ -127,13 +127,13 @@ runChainWithInput(c, module)                   // Execute chain
 
 ### Task 3: Create Chariot Parser Library
 
-**Goal:** Parse Diocletian JSON output and convert to Tabularium types
+**Goal:** Parse aurelian JSON output and convert to Tabularium types
 
-**Location:** `modules/chariot/backend/pkg/lib/diocletian_cli/`
+**Location:** `modules/chariot/backend/pkg/lib/aurelian_cli/`
 
 **Files to create:**
 
-1. `types.go` - Mirror Diocletian's output types
+1. `types.go` - Mirror aurelian's output types
 2. `parser.go` - Parse NDJSON, convert to Tabularium
 3. `relationships.go` - Convert IAMPermission to model.IAMRelationship
 4. `parser_test.go` - Tests
@@ -145,10 +145,10 @@ func ParseResources(data []byte) ([]model.Assetlike, error) {
     var results []model.Assetlike
 
     for scanner.Scan() {
-        var nr DiocletianResource
+        var nr aurelianResource
         json.Unmarshal(scanner.Bytes(), &nr)
 
-        // Generate key HERE (not in Diocletian)
+        // Generate key HERE (not in aurelian)
         key := generateKey(nr.Platform, nr.AccountRef, nr.ResourceID)
 
         // Convert to Tabularium type
@@ -163,9 +163,9 @@ func ParseResources(data []byte) ([]model.Assetlike, error) {
 
 ## File Locations
 
-### Diocletian (this repo)
+### aurelian (this repo)
 ```
-modules/diocletian/
+modules/aurelian/
 ├── cmd/                          # CLI commands
 ├── pkg/
 │   ├── output/
@@ -188,14 +188,14 @@ modules/diocletian/
 modules/chariot/backend/
 ├── pkg/
 │   ├── lib/
-│   │   └── diocletian_cli/           # TO CREATE
+│   │   └── aurelian_cli/           # TO CREATE
 │   │       ├── types.go
 │   │       ├── parser.go
 │   │       ├── relationships.go
 │   │       └── parser_test.go
 │   └── tasks/
 │       └── capabilities/
-│           └── diocletian_*/         # Capability wrappers (Phase 1)
+│           └── aurelian_*/         # Capability wrappers (Phase 1)
 ```
 
 ---
@@ -246,7 +246,7 @@ go test ./pkg/output/... -v
 
 ### Neo4j keys don't match
 
-Keys are generated in Chariot parser, not Diocletian. Format:
+Keys are generated in Chariot parser, not aurelian. Format:
 ```
 #awsresource#{account}#{arn}
 #azureresource#{subscription}#{resource_id}
@@ -263,20 +263,20 @@ When continuing this work with Claude Code agents:
 ```
 Use backend-developer agent
 Mandatory skills: developing-with-tdd, gateway-backend, verifying-before-completion
-Output directory: .claude/.output/capabilities/20260104-195038-diocletian-refactoring-analysis/
+Output directory: .claude/.output/capabilities/20260104-195038-aurelian-refactoring-analysis/
 ```
 
 **For Phase 1 (Capability wrappers):**
 ```
 Use capability-developer agent
 Mandatory skills: developing-with-tdd, gateway-capabilities, verifying-before-completion
-Output directory: .claude/.output/capabilities/20260104-195038-diocletian-refactoring-analysis/
+Output directory: .claude/.output/capabilities/20260104-195038-aurelian-refactoring-analysis/
 ```
 
 ---
 
 ## Contact & Resources
 
-- **Master Plan:** `.claude/.output/capabilities/20260104-195038-diocletian-refactoring-analysis/MASTER-REFACTORING-PLAN.md`
+- **Master Plan:** `.claude/.output/capabilities/20260104-195038-aurelian-refactoring-analysis/MASTER-REFACTORING-PLAN.md`
 - **Architecture Decision:** Pure CLI (Option A) per `ARCHITECTURE-QA.md`
 - **Reference Implementations:** `fingerprintx`, `go-cicd`, `nuclei`

@@ -1,7 +1,7 @@
 services:
-  diocletian:
-    image: diocletian:latest
-    container_name: diocletian
+  aurelian:
+    image: aurelian:latest
+    container_name: aurelian
     build:
       context: .
       dockerfile: Dockerfile
@@ -10,7 +10,7 @@ services:
       - ~/.azure:/root/.azure:ro  # Azure credentials
       - ~/.config/gcloud:/root/.config/gcloud:ro  # GCP credentials
       - ${GOOGLE_APPLICATION_CREDENTIALS:-$HOME/.config/gcloud/application_default_credentials.json}:/gcp-credentials.json:ro  # GCP credentials
-      - ./diocletian-output/:/root/diocletian-output # default output folder
+      - ./aurelian-output/:/root/aurelian-output # default output folder
     environment:
       # AWS Configuration
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}

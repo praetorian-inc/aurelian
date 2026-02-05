@@ -1,3 +1,6 @@
+// Deprecated: This file uses janus-framework chains with ResourceMap pattern.
+// Use the V2 implementation (find_secrets_v2.go) with dispatcher/orchestrator instead.
+// This file will be removed in a future version once the migration is complete.
 package aws
 
 import (
@@ -8,15 +11,15 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	janusDocker "github.com/praetorian-inc/janus-framework/pkg/links/docker"
 	"github.com/praetorian-inc/janus-framework/pkg/links/noseyparker"
-	"github.com/praetorian-inc/diocletian/internal/message"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/base"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/cloudformation"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/cloudwatchlogs"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/ec2"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/ecr"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/lambda"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/stepfunctions"
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/cloudformation"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/cloudwatchlogs"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/ec2"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/ecr"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/lambda"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/stepfunctions"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type AWSFindSecrets struct {

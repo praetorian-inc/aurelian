@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/capability-sdk/pkg/formatter"
-	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 func TestFormatterAdapter_OutputRisk(t *testing.T) {

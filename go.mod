@@ -1,4 +1,4 @@
-module github.com/praetorian-inc/diocletian
+module github.com/praetorian-inc/aurelian
 
 go 1.24.6
 
@@ -21,18 +21,19 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage v1.8.1
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.4.0
 	github.com/aws/aws-sdk-go v1.55.8
-	github.com/aws/aws-sdk-go-v2 v1.40.0
+	github.com/aws/aws-sdk-go-v2 v1.41.1
 	github.com/aws/aws-sdk-go-v2/config v1.31.12
 	github.com/aws/aws-sdk-go-v2/service/account v1.24.0
 	github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.23.11
-	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.57.0
+	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.5
 	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.54.4
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.61.1
 	github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.57.7
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.38.1
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.202.4
-	github.com/aws/aws-sdk-go-v2/service/ecr v1.36.2
+	github.com/aws/aws-sdk-go-v2/service/ecr v1.55.1
 	github.com/aws/aws-sdk-go-v2/service/ecrpublic v1.27.2
+	github.com/aws/aws-sdk-go-v2/service/ecs v1.71.0
 	github.com/aws/aws-sdk-go-v2/service/efs v1.33.2
 	github.com/aws/aws-sdk-go-v2/service/elasticsearchservice v1.32.3
 	github.com/aws/aws-sdk-go-v2/service/iam v1.34.3
@@ -43,18 +44,17 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/route53 v1.58.5
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.88.0
 	github.com/aws/aws-sdk-go-v2/service/serverlessapplicationrepository v1.24.2
-	github.com/aws/aws-sdk-go-v2/service/sfn v1.34.11
+	github.com/aws/aws-sdk-go-v2/service/sfn v1.40.6
 	github.com/aws/aws-sdk-go-v2/service/sns v1.38.2
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.42.8
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.64.3
 	github.com/aws/aws-sdk-go-v2/service/sts v1.38.6
 	github.com/aws/aws-sdk-go-v2/service/timestreamquery v1.31.0
-	github.com/aws/smithy-go v1.23.2
-	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/aws/smithy-go v1.24.0
 	github.com/docker/docker v28.0.1+incompatible
 	github.com/fatih/color v1.18.0
 	github.com/itchyny/gojq v0.12.17
-	github.com/lmittmann/tint v1.1.2
+	github.com/lmittmann/tint v1.1.3
 	github.com/mark3labs/mcp-go v0.29.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/microsoftgraph/msgraph-sdk-go v1.53.0
@@ -63,9 +63,10 @@ require (
 	github.com/praetorian-inc/capability-sdk v0.0.0
 	github.com/praetorian-inc/janus-framework v0.0.0-20250918211123-5f90adc9184b
 	github.com/praetorian-inc/konstellation v0.0.0-20251205230404-ed78bd75cfb8
-	github.com/spf13/cobra v1.9.1
+	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/oauth2 v0.34.0
+	golang.org/x/sync v0.19.0
 	google.golang.org/api v0.257.0
 )
 
@@ -89,11 +90,15 @@ require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.2 // indirect
-	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
-	github.com/charmbracelet/x/ansi v0.8.0 // indirect
-	github.com/charmbracelet/x/cellbuf v0.0.13-0.20250311204145-2c3ea96c31dd // indirect
-	github.com/charmbracelet/x/term v0.2.1 // indirect
+	github.com/charmbracelet/colorprofile v0.4.1 // indirect
+	github.com/charmbracelet/lipgloss v1.1.0 // indirect
+	github.com/charmbracelet/x/ansi v0.11.5 // indirect
+	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
+	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/cjlapao/common-go v0.0.39 // indirect
+	github.com/clipperhouse/displaywidth v0.9.0 // indirect
+	github.com/clipperhouse/stringish v0.1.1 // indirect
+	github.com/clipperhouse/uax29/v2 v2.5.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.6 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/distribution/reference v0.6.0 // indirect
@@ -114,9 +119,9 @@ require (
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/knqyf263/go-cpe v0.0.0-20230627041855-cb0794d06872 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
-	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
+	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-runewidth v0.0.16 // indirect
+	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/microsoft/kiota-abstractions-go v1.8.1 // indirect
 	github.com/microsoft/kiota-authentication-azure-go v1.1.0 // indirect
 	github.com/microsoft/kiota-http-go v1.4.4 // indirect
@@ -148,6 +153,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.37.0 // indirect
 	go.opentelemetry.io/otel/metric v1.38.0 // indirect
 	go.opentelemetry.io/otel/trace v1.38.0 // indirect
+	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.46.0 // indirect
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
 	golang.org/x/net v0.47.0 // indirect
@@ -159,8 +165,8 @@ require (
 require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.16 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.9 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.14 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.14 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.17 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.17 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.9 // indirect
@@ -168,8 +174,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.29.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.35.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	github.com/spf13/pflag v1.0.6
+	github.com/spf13/pflag v1.0.9
 	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.32.0
 	gopkg.in/yaml.v3 v3.0.1

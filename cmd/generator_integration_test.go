@@ -8,7 +8,7 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	"github.com/praetorian-inc/janus-framework/pkg/output"
 	"github.com/praetorian-inc/janus-framework/pkg/testutils/mocks/basics"
-	"github.com/praetorian-inc/diocletian/pkg/outputters"
+	"github.com/praetorian-inc/aurelian/pkg/outputters"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

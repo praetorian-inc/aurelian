@@ -13,7 +13,7 @@ import (
 	"github.com/praetorian-inc/capability-sdk/pkg/formatter"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 // FormatterAdapter bridges Janus Outputter interface with new Formatter.
@@ -73,7 +73,7 @@ func NewFormatterAdapterConstructor(formatStr string, writers ...io.Writer) chai
 // Initialize prepares the formatter.
 func (a *FormatterAdapter) Initialize() error {
 	info := formatter.ToolInfo{
-		Name:    "diocletian",
+		Name:    "aurelian",
 		Version: "1.0.0",
 	}
 	return a.formatter.Initialize(a.ctx, info)
@@ -161,7 +161,7 @@ func (a *FormatterAdapter) convertToFinding(val any) formatter.Finding {
 		return formatter.Finding{
 			ID:     v.ResourceID,
 			Title:  v.DisplayName,
-			Source: "diocletian",
+			Source: "aurelian",
 			Location: formatter.Location{
 				ResourceARN:  v.ResourceID,
 				ResourceType: v.ResourceType,
@@ -179,7 +179,7 @@ func (a *FormatterAdapter) convertToFinding(val any) formatter.Finding {
 		return formatter.Finding{
 			ID:     "unknown",
 			Title:  "Unknown finding type",
-			Source: "diocletian",
+			Source: "aurelian",
 			Raw:    v,
 		}
 	}

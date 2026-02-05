@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 func TestEvaluateConditions(t *testing.T) {

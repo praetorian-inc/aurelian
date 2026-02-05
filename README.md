@@ -1,6 +1,6 @@
-# Diocletian
+# aurelian
 
-Diocletian is a command-line security scanning tool built on the Janus framework for testing cloud environments. It provides modular security testing capabilities across AWS, Azure, and GCP with extensible link-based architecture.
+aurelian is a command-line security scanning tool built on the Janus framework for testing cloud environments. It provides modular security testing capabilities across AWS, Azure, and GCP with extensible link-based architecture.
 
 For development guidance, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
@@ -20,24 +20,24 @@ For development guidance, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 **From Source:**
 ```bash
-git clone https://github.com/praetorian-inc/diocletian
-cd diocletian
+git clone https://github.com/praetorian-inc/aurelian
+cd aurelian
 go build
 ```
 
 **Docker:**
 ```bash
-docker build -t diocletian .
-docker run --rm -v ~/.aws:/root/.aws diocletian aws recon whoami
+docker build -t aurelian .
+docker run --rm -v ~/.aws:/root/.aws aurelian aws recon whoami
 ```
 
-**Pre-built binaries** available in [GitHub Releases](https://github.com/praetorian-inc/diocletian/releases).
+**Pre-built binaries** available in [GitHub Releases](https://github.com/praetorian-inc/aurelian/releases).
 
 **Dependencies** secret scanning is done using [https://github.com/praetorian-inc/noseyparker](https://github.com/praetorian-inc/noseyparker) and must be available in your `$PATH`.
 
 ## Authentication
 
-Diocletian uses standard cloud provider authentication:
+aurelian uses standard cloud provider authentication:
 
 - **AWS**: Environment variables, credentials file (~/.aws/credentials), IAM roles
 - **Azure**: Environment variables, Azure CLI, managed identity
@@ -47,28 +47,28 @@ Diocletian uses standard cloud provider authentication:
 ## Basic Usage
 
 ```bash
-diocletian <provider> <category> <module> [flags]
+aurelian <provider> <category> <module> [flags]
 ```
 
 **Examples:**
 ```bash
 # Check AWS account identity
-diocletian aws recon whoami
+aurelian aws recon whoami
 
 # List all S3 buckets across regions
-diocletian aws recon list -t AWS::S3::Bucket -r all
+aurelian aws recon list -t AWS::S3::Bucket -r all
 
 # Find secrets in Lambda functions
-diocletian aws recon find-secrets -t AWS::Lambda::Function
+aurelian aws recon find-secrets -t AWS::Lambda::Function
 
 # Discover public Azure resources  
-diocletian azure recon public-resources -s subscription-id
+aurelian azure recon public-resources -s subscription-id
 
 # Get GCP project information
-diocletian gcp recon projects-list
+aurelian gcp recon projects-list
 
 # Analyze Docker container for secrets
-diocletian saas recon docker-dump -i nginx:latest
+aurelian saas recon docker-dump -i nginx:latest
 ```
 
 ## Common Commands
@@ -76,59 +76,59 @@ diocletian saas recon docker-dump -i nginx:latest
 **AWS Reconnaissance:**
 ```bash
 # Account information and permissions
-diocletian aws recon account-auth-details
-diocletian aws recon whoami
+aurelian aws recon account-auth-details
+aurelian aws recon whoami
 
 # Resource discovery
-diocletian aws recon list-all-resources -r us-east-1
-diocletian aws recon public-resources -r all
+aurelian aws recon list-all-resources -r us-east-1
+aurelian aws recon public-resources -r all
 
 # Secrets scanning
-diocletian aws recon find-secrets -t all -r all
-diocletian aws recon find-secrets -t AWS::Lambda::Function -r us-east-2
+aurelian aws recon find-secrets -t all -r all
+aurelian aws recon find-secrets -t AWS::Lambda::Function -r us-east-2
 ```
 
 **Azure Reconnaissance:**
 ```bash
 # Environment details
-diocletian azure recon summary -s subscription-id
+aurelian azure recon summary -s subscription-id
 
 # Resource enumeration  
-diocletian azure recon list-all-resources -s subscription-id
-diocletian azure recon public-resources -s all
+aurelian azure recon list-all-resources -s subscription-id
+aurelian azure recon public-resources -s all
 
 # DevOps secrets scanning
-diocletian azure recon devops-secrets --organization org-name
+aurelian azure recon devops-secrets --organization org-name
 ```
 
 **SaaS Reconnaissance:**
 ```bash
 # Docker container analysis and secret scanning
-diocletian saas recon docker-dump -i image-name
+aurelian saas recon docker-dump -i image-name
 ```
 
 **Analysis Modules:**
 ```bash
 # AWS key analysis
-diocletian aws analyze access-key-to-account-id -k AKIA...
-diocletian aws analyze known-account -a 123456789012
+aurelian aws analyze access-key-to-account-id -k AKIA...
+aurelian aws analyze known-account -a 123456789012
 
 # IP analysis
-diocletian aws analyze ip-lookup -i 1.2.3.4
+aurelian aws analyze ip-lookup -i 1.2.3.4
 ```
 
 ## Output and Results
 
 **Output Formats:**
 - **Console**: Real-time progress and summaries
-- **JSON**: Structured data in `diocletian-output/` directory
+- **JSON**: Structured data in `aurelian-output/` directory
 - **Markdown**: Human-readable tables
 
 **Common Flags:**
 ```bash
 # Global options
 --log-level string    Log level (debug, info, warn, error)
---output string       Output directory (default "diocletian-output")
+--output string       Output directory (default "aurelian-output")
 --quiet              Suppress user messages
 --no-color           Disable colored output
 
@@ -141,24 +141,24 @@ diocletian aws analyze ip-lookup -i 1.2.3.4
 
 ## MCP Server
 
-Diocletian provides an MCP (Model Context Protocol) server for AI assistants:
+aurelian provides an MCP (Model Context Protocol) server for AI assistants:
 
 **Stdio Server:**
 ```bash
-diocletian mcp-server
+aurelian mcp-server
 ```
 
 **HTTP Server:**
 ```bash
-diocletian mcp-server --http --addr :8080
+aurelian mcp-server --http --addr :8080
 ```
 
 **Claude Desktop Configuration:**
 ```json
 {
   "mcpServers": {
-    "diocletian": {
-      "command": "/path/to/diocletian", 
+    "aurelian": {
+      "command": "/path/to/aurelian", 
       "args": ["mcp-server"]
     }
   }
@@ -172,7 +172,7 @@ diocletian mcp-server --http --addr :8080
 
 ## Architecture
 
-Diocletian uses Praetorian's  [Janus Framework](https://github.com/praetorian-inc/janus-framework).
+aurelian uses Praetorian's  [Janus Framework](https://github.com/praetorian-inc/janus-framework).
 - **Links**: Individual processing units that can be chained together
 - **Modules**: Pre-configured chains for specific security testing scenarios
 - **Outputters**: Pluggable output processing for different formats

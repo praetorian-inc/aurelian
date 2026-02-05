@@ -3,7 +3,7 @@ package outputproviders
 import (
 	"fmt"
 
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type ConsoleProvider struct {

@@ -2,7 +2,7 @@
 
 ## Result: NO PERFORMANCE ISSUE FOUND ✅
 
-**Diocletian and Nebula perform identically for `list -t AWS::S3::Bucket -r us-east-1`**
+**aurelian and Nebula perform identically for `list -t AWS::S3::Bucket -r us-east-1`**
 
 ## Timing Comparison
 
@@ -11,10 +11,10 @@
 │                 Performance Results                     │
 │                                                         │
 │  Nebula (cold):      ████████████████ 0.654s           │
-│  Diocletian (cold):  █████████ 0.376s                  │
+│  aurelian (cold):  █████████ 0.376s                  │
 │                                                         │
 │  Nebula (warm):      █████ 0.23s                       │
-│  Diocletian (warm):  █████ 0.24s                       │
+│  aurelian (warm):  █████ 0.24s                       │
 │                                                         │
 │  ⚠️  NO SIGNIFICANT DIFFERENCE IN WARM CACHE           │
 └─────────────────────────────────────────────────────────┘
@@ -67,8 +67,8 @@ Consider optimizations:
 # Nebula
 time ./nebula aws recon list -t AWS::S3::Bucket -r us-east-1
 
-# Diocletian
-time ./diocletian aws recon list -t AWS::S3::Bucket -r us-east-1
+# aurelian
+time ./aurelian aws recon list -t AWS::S3::Bucket -r us-east-1
 ```
 
 ---

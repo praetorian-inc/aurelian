@@ -5,8 +5,8 @@ import (
 
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/diocletian/pkg/outputters"
-	"github.com/praetorian-inc/diocletian/pkg/utils"
+	"github.com/praetorian-inc/aurelian/pkg/outputters"
+	"github.com/praetorian-inc/aurelian/pkg/utils"
 	"gopkg.in/yaml.v3"
 )
 

@@ -5,10 +5,10 @@ import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 	janusDocker "github.com/praetorian-inc/janus-framework/pkg/links/docker"
 	"github.com/praetorian-inc/janus-framework/pkg/links/noseyparker"
-	"github.com/praetorian-inc/diocletian/internal/registry"
-	"github.com/praetorian-inc/diocletian/pkg/links/docker"
-	"github.com/praetorian-inc/diocletian/pkg/links/options"
-	"github.com/praetorian-inc/diocletian/pkg/outputters"
+	"github.com/praetorian-inc/aurelian/internal/registry"
+	"github.com/praetorian-inc/aurelian/pkg/links/docker"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/outputters"
 )
 
 var DockerDump = chain.NewModule(

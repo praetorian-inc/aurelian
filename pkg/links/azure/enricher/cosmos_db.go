@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/praetorian-inc/diocletian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 // CosmosDBEnricher implements enrichment for Cosmos DB accounts

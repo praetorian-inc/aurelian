@@ -3,10 +3,10 @@ package recon
 import (
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws"
-	"github.com/praetorian-inc/diocletian/pkg/links/general"
-	"github.com/praetorian-inc/diocletian/pkg/links/options"
-	"github.com/praetorian-inc/diocletian/pkg/outputters"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws"
+	"github.com/praetorian-inc/aurelian/pkg/links/general"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/outputters"
 )
 
 var AWSPublicResourcesSingle = chain.NewModule(

@@ -1,14 +1,14 @@
-# Diocletian CLI Migration - Status Report
+# aurelian CLI Migration - Status Report
 
 **Date:** 2026-01-04
-**Project:** Migrate Diocletian from embedded library to standalone CLI
-**Architecture:** Option A (Pure CLI) - Diocletian outputs domain data, Chariot handles graph concerns
+**Project:** Migrate aurelian from embedded library to standalone CLI
+**Architecture:** Option A (Pure CLI) - aurelian outputs domain data, Chariot handles graph concerns
 
 ---
 
 ## Executive Summary
 
-Diocletian is being migrated from an embedded Go library pattern (imported by Chariot) to a standalone CLI tool pattern (invoked via `exec.Command`), matching `fingerprintx`, `nuclei`, and `go-cicd`.
+aurelian is being migrated from an embedded Go library pattern (imported by Chariot) to a standalone CLI tool pattern (invoked via `exec.Command`), matching `fingerprintx`, `nuclei`, and `go-cicd`.
 
 **Current Status:** Phase 0 COMPLETE (Standalone CLI ready). Task 3 (Chariot parser) pending for integration only.
 
@@ -29,7 +29,7 @@ Diocletian is being migrated from an embedded Go library pattern (imported by Ch
 | Migrate Outputters | ✅ Complete | 6 files |
 | Remove Tabularium imports | ✅ Complete | 0 imports in production code |
 
-**Key Achievement:** Diocletian production code has ZERO direct Tabularium imports.
+**Key Achievement:** aurelian production code has ZERO direct Tabularium imports.
 
 ### Phase 0, Task 2: Add JSON CLI Output Mode ✅
 
@@ -92,7 +92,7 @@ Diocletian is being migrated from an embedded Go library pattern (imported by Ch
 
 | Aspect | Hybrid (Rejected) | Pure CLI (Implemented) |
 |--------|-------------------|------------------------|
-| Neo4j key knowledge | In Diocletian (`GetKey()`) | In Chariot only |
+| Neo4j key knowledge | In aurelian (`GetKey()`) | In Chariot only |
 | Output format | Pre-computed keys | Pure domain data |
 | Standalone capability | Partial | Full |
 | Matches fingerprintx/go-cicd | No | Yes |
@@ -103,13 +103,13 @@ Diocletian is being migrated from an embedded Go library pattern (imported by Ch
 
 ### Phase 0, Task 3: Create Chariot Parser Library (Not Started)
 
-**Objective:** Chariot-side parser to convert Diocletian JSON to Tabularium types
+**Objective:** Chariot-side parser to convert aurelian JSON to Tabularium types
 
 **Files to create:**
-- `modules/chariot/backend/pkg/lib/diocletian_cli/types.go`
-- `modules/chariot/backend/pkg/lib/diocletian_cli/parser.go`
-- `modules/chariot/backend/pkg/lib/diocletian_cli/relationships.go`
-- `modules/chariot/backend/pkg/lib/diocletian_cli/parser_test.go`
+- `modules/chariot/backend/pkg/lib/aurelian_cli/types.go`
+- `modules/chariot/backend/pkg/lib/aurelian_cli/parser.go`
+- `modules/chariot/backend/pkg/lib/aurelian_cli/relationships.go`
+- `modules/chariot/backend/pkg/lib/aurelian_cli/parser_test.go`
 
 **Key responsibility:** Generate Neo4j keys from ResourceRef data
 ```go
@@ -122,11 +122,11 @@ func generateKey(ref ResourceRef) string {
 
 ### Phase 1: Capability Wrapper Migration (Not Started)
 
-**Objective:** Migrate Chariot capabilities from `mod.Run()` to `exec.Command("diocletian", ...)`
+**Objective:** Migrate Chariot capabilities from `mod.Run()` to `exec.Command("aurelian", ...)`
 
 | Task | Capability | Priority | Coupling Score |
 |------|------------|----------|----------------|
-| 4 | diocletian_aws_public_resources | P0 | 9/10 |
+| 4 | aurelian_aws_public_resources | P0 | 9/10 |
 | 5 | Feature flag for rollout | P0 | - |
 | 6-13 | 8 P1 capabilities | P1 | 5-7/10 |
 
@@ -137,11 +137,11 @@ func generateKey(ref ResourceRef) string {
 **Objective:** Remove old embedded adapter layer from Chariot
 
 **Files to delete:**
-- `modules/chariot/backend/pkg/lib/diocletian/diocletian.go`
-- `modules/chariot/backend/pkg/lib/diocletian/outputter.go`
-- `modules/chariot/backend/pkg/lib/diocletian/azure.go`
-- `modules/chariot/backend/pkg/lib/diocletian/noseyparker.go`
-- `modules/chariot/backend/pkg/lib/diocletian/gcp-helpers.go`
+- `modules/chariot/backend/pkg/lib/aurelian/aurelian.go`
+- `modules/chariot/backend/pkg/lib/aurelian/outputter.go`
+- `modules/chariot/backend/pkg/lib/aurelian/azure.go`
+- `modules/chariot/backend/pkg/lib/aurelian/noseyparker.go`
+- `modules/chariot/backend/pkg/lib/aurelian/gcp-helpers.go`
 
 **Estimated effort:** 2-4 hours
 
@@ -150,7 +150,7 @@ func generateKey(ref ResourceRef) string {
 ## Build Status
 
 ```bash
-cd modules/diocletian
+cd modules/aurelian
 go build ./...   # ✅ PASSES
 go test ./...    # ✅ PASSES (where tests exist)
 ```
@@ -176,7 +176,7 @@ go test ./...    # ✅ PASSES (where tests exist)
 
 All work documented in:
 ```
-.claude/.output/capabilities/20260104-195038-diocletian-refactoring-analysis/
+.claude/.output/capabilities/20260104-195038-aurelian-refactoring-analysis/
 ├── MASTER-REFACTORING-PLAN.md          # Original 4-agent consensus plan
 ├── IAM-RELATIONSHIP-ARCHITECTURE.md     # Hybrid architecture (superseded)
 ├── ARCHITECTURE-QA.md                   # Q&A leading to Pure CLI decision
@@ -191,7 +191,7 @@ All work documented in:
 
 ```bash
 # Verify ZERO Tabularium imports in production code
-cd modules/diocletian
+cd modules/aurelian
 grep -r "tabularium" pkg --include="*.go" | grep -v "_test.go"
 # Expected: empty output
 

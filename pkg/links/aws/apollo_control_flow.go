@@ -11,17 +11,18 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/janus-framework/pkg/chain"
 	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	iam "github.com/praetorian-inc/diocletian/pkg/iam/aws"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/base"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/cloudcontrol"
-	"github.com/praetorian-inc/diocletian/pkg/links/aws/orgpolicies"
-	"github.com/praetorian-inc/diocletian/pkg/links/general"
-	"github.com/praetorian-inc/diocletian/pkg/links/options"
-	"github.com/praetorian-inc/diocletian/pkg/output"
-	"github.com/praetorian-inc/diocletian/pkg/outputters"
-	"github.com/praetorian-inc/diocletian/pkg/types"
+	iam "github.com/praetorian-inc/aurelian/pkg/iam/aws"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/cloudcontrol"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/orgpolicies"
+	"github.com/praetorian-inc/aurelian/pkg/links/general"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/outputters"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
+// Deprecated: Use ApolloV2 instead.
 type AwsApolloControlFlow struct {
 	*base.AwsReconLink
 	pd *iam.PolicyData
