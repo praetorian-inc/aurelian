@@ -45,6 +45,23 @@ type CloudResource struct {
 	IPs []string `json:"ips,omitempty"`
 }
 
+// NewCloudResource constructs a CloudResource with the required core fields.
+// Additional optional fields should be set by the caller as needed.
+func NewCloudResource(platform, region, resourceType, accountRef, resourceID string) CloudResource {
+	return CloudResource{
+		Platform:     platform,
+		Region:       region,
+		ResourceType: resourceType,
+		AccountRef:   accountRef,
+		ResourceID:   resourceID,
+	}
+}
+
+// NewAWSResource constructs a CloudResource for AWS resources.
+func NewAWSResource(region, resourceType, accountRef, resourceID string) CloudResource {
+	return NewCloudResource("aws", region, resourceType, accountRef, resourceID)
+}
+
 // SecretFinding represents a secret detection result from scanning cloud resources.
 // This type is used by secret scanning capabilities (e.g., scanning S3 buckets,
 // Azure storage, GCP buckets) to report discovered secrets.
