@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
@@ -14,19 +13,18 @@ import (
 	"github.com/praetorian-inc/aurelian/internal/message"
 	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
 	"github.com/praetorian-inc/aurelian/pkg/types"
+	"golang.org/x/sync/errgroup"
 )
 
 type AWSCloudControl struct {
 	*base.NativeAWSLink
 	semaphores          map[string]chan struct{}
-	wg                  sync.WaitGroup
 	cloudControlClients map[string]*cloudcontrol.Client
 }
 
 func NewAWSCloudControl(args map[string]any) *AWSCloudControl {
 	return &AWSCloudControl{
 		NativeAWSLink: base.NewNativeAWSLink("CloudControlList", args),
-		wg:            sync.WaitGroup{},
 	}
 }
 
@@ -65,28 +63,44 @@ func (a *AWSCloudControl) Process(ctx context.Context, input any) ([]any, error)
 			return nil, err
 		}
 	}
+
+	g, ctx := errgroup.WithContext(ctx)
+
 	for _, region := range a.Regions {
 		if a.isGlobalService(resourceType, region) {
 			slog.Debug("Skipping global service", "type", resourceType, "region", region)
 			continue
 		}
 
-		a.wg.Add(1)
-		go a.listResourcesInRegion(ctx, resourceType, region)
+		region := region // Capture loop variable
+
+		// Acquire per-region semaphore with context awareness
+		select {
+		case a.semaphores[region] <- struct{}{}:
+		case <-ctx.Done():
+			break // Context cancelled, stop spawning
+		}
+
+		g.Go(func() error {
+			defer func() { <-a.semaphores[region] }()
+			err := a.listResourcesInRegion(ctx, resourceType, region)
+			if err != nil {
+				slog.Warn("region failed", "region", region, "error", err)
+				return nil // Continue scanning, don't cancel others
+			}
+			return nil
+		})
 	}
 
-	a.wg.Wait()
 	slog.Debug("cloudcontrol complete")
-	return nil, nil
+	return a.Outputs(), g.Wait()
 }
 
 func (a *AWSCloudControl) isGlobalService(resourceType, region string) bool {
 	return helpers.IsGlobalService(resourceType) && region != "us-east-1"
 }
 
-func (a *AWSCloudControl) listResourcesInRegion(ctx context.Context, resourceType, region string) {
-	defer a.wg.Done()
-
+func (a *AWSCloudControl) listResourcesInRegion(ctx context.Context, resourceType, region string) error {
 	message.Info("Listing %s resources in %s (profile: %s)", resourceType, region, a.Profile)
 	slog.Debug("Listing resources in region", "type", resourceType, "region", region, "profile", a.Profile)
 
@@ -94,13 +108,13 @@ func (a *AWSCloudControl) listResourcesInRegion(ctx context.Context, resourceTyp
 
 	if err != nil {
 		slog.Error("Failed to create AWS config", "error", err)
-		return
+		return fmt.Errorf("failed to create AWS config for region %s: %w", region, err)
 	}
 
 	accountId, err := helpers.GetAccountId(config)
 	if err != nil {
 		slog.Error("Failed to get account ID", "error", err, "region", region)
-		return
+		return fmt.Errorf("failed to get account ID for region %s: %w", region, err)
 	}
 
 	cc := a.cloudControlClients[region]
@@ -117,7 +131,7 @@ func (a *AWSCloudControl) listResourcesInRegion(ctx context.Context, resourceTyp
 			err, shouldBreak := a.processError(resourceType, region, err)
 			if err != nil {
 				slog.Error("Failed to list resources", "error", err)
-				return
+				return err
 			}
 
 			if shouldBreak {
@@ -131,6 +145,7 @@ func (a *AWSCloudControl) listResourcesInRegion(ctx context.Context, resourceTyp
 		}
 
 	}
+	return nil
 }
 
 func (a *AWSCloudControl) processError(resourceType, region string, err error) (error, bool) {
@@ -184,7 +199,7 @@ func (a *AWSCloudControl) sendResource(region string, resource *types.EnrichedRe
 }
 
 func (a *AWSCloudControl) Complete() error {
-	a.wg.Wait()
+	// errgroup.Wait() is now called in Process()
 	return nil
 }
 
