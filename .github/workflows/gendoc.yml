@@ -26,7 +26,10 @@ jobs:
         with:
           go-version: '1.22'
           cache: true
-          
+
+      - name: Configure Git for private modules
+        run: git config --global url."https://${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
       - name: Generate CLI Documentation
         run: |
           set -e  # Exit immediately if any command fails
