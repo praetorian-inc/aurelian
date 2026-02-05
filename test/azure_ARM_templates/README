@@ -1,0 +1,37 @@
+## Applying ARM Template
+
+After exporting an ARM template, you can apply it to deploy resources in Azure using the following steps:
+
+a. Azure Portal:
+
+```
+In the Azure Portal, search for "Deploy a custom template"6.
+Select "Build your own template in the editor" or "Load a file" to upload your main template file2.
+Fill in the required parameters or load your parameters file2.
+Select the target resource group and review the deployment settings.
+Click "Review + Create" and then "Create" to start the deployment2.
+```
+
+b. Azure PowerShell:
+
+```
+powershell
+$templateFile = "path/to/your/azuredeploy.json"
+$parameterFile = "path/to/your/azuredeploy.parameters.json"
+New-AzResourceGroupDeployment `
+  -Name YourDeploymentName `
+  -ResourceGroupName YourResourceGroup `
+  -TemplateFile $templateFile `
+  -TemplateParameterFile $parameterFile
+```
+
+c. Azure CLI:
+
+```
+bash
+az deployment group create \
+  --name YourDeploymentName \
+  --resource-group YourResourceGroup \
+  --template-file path/to/your/azuredeploy.json \
+  --parameters @path/to/your/azuredeploy.parameters.json
+```

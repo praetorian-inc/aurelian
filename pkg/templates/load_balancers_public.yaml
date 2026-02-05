@@ -1,0 +1,117 @@
+id: load_balancers_public
+name: Publicly Accessible Load Balancers
+description: Identifies Azure Load Balancers with public IP addresses and their backend configurations
+category: ["Public Access", "arg-scan"]
+severity: High
+reportability: Automatic
+triageNotes: |
+  This finding shows publicly accessible Azure Load Balancers and their configurations:
+  
+  1. Public load balancers expose services to the internet and should be reviewed for necessity
+  2. Backend pool members should be evaluated for security posture
+  3. Load balancing rules and NAT rules should be reviewed for appropriate access controls
+  4. Consider implementing Network Security Groups (NSGs) to restrict traffic
+
+  Review criteria:
+  - Verify if public access is required for the service
+  - Review backend pool members for security vulnerabilities
+  - Check if load balancing rules have appropriate health probes
+  - Ensure NSGs are properly configured to restrict traffic
+  - Consider using Application Gateway or Front Door for additional security layers
+references:
+  - https://learn.microsoft.com/en-us/azure/load-balancer/load-balancer-overview
+  - https://learn.microsoft.com/en-us/azure/load-balancer/load-balancer-standard-overview
+  - https://learn.microsoft.com/en-us/azure/load-balancer/load-balancer-network-security-groups
+query: |
+    resources
+    | where type =~ "microsoft.network/loadbalancers"
+    | extend lbId = tostring(id)
+    | extend lbName = tostring(name)
+    | extend lbRg = tostring(resourceGroup)
+    | extend lbSub = tostring(subscriptionId)
+    | extend lbLocation = tostring(location)
+    | extend lbSku = tostring(sku.name)
+    | extend frontendIPConfigs = properties.frontendIPConfigurations
+    | extend backendPools = properties.backendAddressPools
+    | extend loadBalancingRules = properties.loadBalancingRules
+    | extend inboundNatRules = properties.inboundNatRules
+    | extend lbTags = tags
+    | extend isPublic = tobool(array_length(frontendIPConfigs) > 0 and isnotempty(frontendIPConfigs[0].properties.publicIPAddress.id))
+    | where isPublic == true
+    | extend frontendPublicIPIds = extract_all(@'"publicIPAddress":\{"id":"([^"]+)"', tostring(frontendIPConfigs))
+    | extend frontendPrivateIPs = extract_all(@'"privateIPAddress":"([^"]+)"', tostring(frontendIPConfigs))
+    | extend frontendNames = extract_all(@'"name":"([^"]+)"', tostring(frontendIPConfigs))
+    | join kind=leftouter (
+        resources
+        | where type =~ "microsoft.network/publicipaddresses"
+        | project publicIPId = tostring(id), publicIPAddress = tostring(properties.ipAddress)
+        | join kind=inner (
+            resources
+            | where type =~ "microsoft.network/loadbalancers"
+            | extend lbId = tostring(id)
+            | mv-expand frontendConfig = properties.frontendIPConfigurations
+            | extend publicIPId = tostring(frontendConfig.properties.publicIPAddress.id)
+            | where isnotempty(publicIPId)
+            | distinct lbId, publicIPId
+        ) on publicIPId
+        | summarize publicIPAddresses = make_list(publicIPAddress) by lbId
+    ) on lbId
+    | join kind=leftouter (
+        resources
+        | where type =~ "microsoft.network/loadbalancers"
+        | extend lbId = tostring(id)
+        | mv-expand backendPool = properties.backendAddressPools
+        | extend backendPoolName = tostring(backendPool.name)
+        | extend backendPoolId = tostring(backendPool.id)
+        | join kind=leftouter (
+            resources
+            | where type =~ "microsoft.network/networkinterfaces"
+            | mv-expand ipconfig = properties.ipConfigurations
+            | mv-expand backendPool = ipconfig.properties.loadBalancerBackendAddressPools
+            | extend backendPoolId = tostring(backendPool.id)
+            | extend nicPrivateIP = tostring(ipconfig.properties.privateIPAddress)
+            | extend nicName = tostring(name)
+            | extend vmId = tostring(properties.virtualMachine.id)
+            | join kind=leftouter (
+                resources
+                | where type =~ "microsoft.compute/virtualmachines"
+                | project vmId = tostring(id), vmName = tostring(name), 
+                         vmSize = tostring(properties.hardwareProfile.vmSize), 
+                         powerState = tostring(properties.extended.instanceView.powerState.displayStatus)
+            ) on vmId
+            | project backendPoolId, nicName, nicPrivateIP, vmName, vmSize, powerState
+        ) on backendPoolId
+        | summarize 
+            members = make_list(pack(
+                "vmName", vmName,
+                "nicName", nicName,
+                "privateIP", nicPrivateIP,
+                "vmSize", vmSize,
+                "powerState", powerState
+            ))
+            by lbId, backendPoolName, backendPoolId
+        | summarize 
+            backendPoolDetails = make_list(pack(
+                "poolName", backendPoolName,
+                "memberCount", array_length(members),
+                "members", members
+            ))
+            by lbId
+    ) on lbId
+    | project
+        id,
+        name,
+        type,
+        subscriptionId = lbSub,
+        resourceGroup = lbRg,
+        loadBalancerName = lbName,
+        location = lbLocation,
+        sku = lbSku,
+        publicIPAddresses = tostring(iff(isnotempty(publicIPAddresses), publicIPAddresses, dynamic([]))),
+        frontendConfigNames = tostring(frontendNames),
+        frontendPrivateIPs = tostring(frontendPrivateIPs),
+        backendPoolDetails = tostring(iff(isnotempty(backendPoolDetails), backendPoolDetails, dynamic([]))),
+        loadBalancingRules = tostring(loadBalancingRules),
+        inboundNatRules = tostring(inboundNatRules),
+        tags = lbTags
+    | order by subscriptionId, resourceGroup, loadBalancerName 
