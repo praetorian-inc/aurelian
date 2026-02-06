@@ -121,7 +121,7 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, err
 	}
 
 	// Enumerate resources concurrently
-	results, err := m.enumerateResources(cfg.Context, awsCfg, resourceTypes)
+	results, err := m.enumerateResources(cfg.Context, awsCfg, resourceTypes, region)
 	if err != nil {
 		return nil, fmt.Errorf("failed to enumerate resources: %w", err)
 	}
@@ -192,8 +192,13 @@ func (m *AWSListAllResourcesModule) getAllResourceTypes() []string {
 	}
 }
 
-func (m *AWSListAllResourcesModule) enumerateResources(ctx context.Context, awsCfg aws.Config, resourceTypes []string) (map[string]any, error) {
+func (m *AWSListAllResourcesModule) enumerateResources(ctx context.Context, awsCfg aws.Config, resourceTypes []string, region string) (map[string]any, error) {
 	client := cloudcontrol.NewFromConfig(awsCfg)
+
+	accountID, err := helpers.GetAccountId(awsCfg)
+	if err != nil {
+		accountID = ""
+	}
 
 	results := make(map[string]any)
 	var mu sync.Mutex
@@ -205,7 +210,7 @@ func (m *AWSListAllResourcesModule) enumerateResources(ctx context.Context, awsC
 		go func(rt string) {
 			defer wg.Done()
 
-			resources, err := m.listResourcesByType(ctx, client, rt)
+			resources, err := listResourcesByType(ctx, client, rt, accountID, region)
 			if err != nil {
 				// Log error but continue with other resource types
 				errChan <- fmt.Errorf("failed to list %s: %w", rt, err)
@@ -235,43 +240,6 @@ func (m *AWSListAllResourcesModule) enumerateResources(ctx context.Context, awsC
 	}
 
 	return results, nil
-}
-
-func (m *AWSListAllResourcesModule) listResourcesByType(ctx context.Context, client *cloudcontrol.Client, resourceType string) ([]map[string]any, error) {
-	var allResources []map[string]any
-	var nextToken *string
-
-	for {
-		input := &cloudcontrol.ListResourcesInput{
-			TypeName: &resourceType,
-		}
-		if nextToken != nil {
-			input.NextToken = nextToken
-		}
-
-		output, err := client.ListResources(ctx, input)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, desc := range output.ResourceDescriptions {
-			resource := map[string]any{}
-			if desc.Identifier != nil {
-				resource["identifier"] = *desc.Identifier
-			}
-			if desc.Properties != nil {
-				resource["properties"] = *desc.Properties
-			}
-			allResources = append(allResources, resource)
-		}
-
-		nextToken = output.NextToken
-		if nextToken == nil {
-			break
-		}
-	}
-
-	return allResources, nil
 }
 
 func (m *AWSListAllResourcesModule) countTotalResources(results map[string]any) int {

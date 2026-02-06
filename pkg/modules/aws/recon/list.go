@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
@@ -109,8 +110,13 @@ func (m *AWSListResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, error)
 		return nil, fmt.Errorf("failed to get AWS config: %w", err)
 	}
 
+	accountID, err := helpers.GetAccountId(awsCfg)
+	if err != nil {
+		accountID = ""
+	}
+
 	// List resources using Cloud Control API
-	resources, err := m.listResources(cfg.Context, awsCfg, resourceType)
+	resources, err := m.listResources(cfg.Context, awsCfg, resourceType, accountID, region)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list resources: %w", err)
 	}
@@ -132,42 +138,7 @@ func (m *AWSListResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, error)
 	}, nil
 }
 
-func (m *AWSListResourcesModule) listResources(ctx context.Context, awsCfg aws.Config, resourceType string) ([]map[string]any, error) {
+func (m *AWSListResourcesModule) listResources(ctx context.Context, awsCfg aws.Config, resourceType, accountID, region string) ([]output.CloudResource, error) {
 	client := cloudcontrol.NewFromConfig(awsCfg)
-
-	var allResources []map[string]any
-	var nextToken *string
-
-	for {
-		input := &cloudcontrol.ListResourcesInput{
-			TypeName: &resourceType,
-		}
-		if nextToken != nil {
-			input.NextToken = nextToken
-		}
-
-		output, err := client.ListResources(ctx, input)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list resources of type %s: %w", resourceType, err)
-		}
-
-		// Process resource descriptions
-		for _, desc := range output.ResourceDescriptions {
-			resource := map[string]any{}
-			if desc.Identifier != nil {
-				resource["identifier"] = *desc.Identifier
-			}
-			if desc.Properties != nil {
-				resource["properties"] = *desc.Properties
-			}
-			allResources = append(allResources, resource)
-		}
-
-		nextToken = output.NextToken
-		if nextToken == nil {
-			break
-		}
-	}
-
-	return allResources, nil
+	return listResourcesByType(ctx, client, resourceType, accountID, region)
 }
