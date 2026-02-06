@@ -56,6 +56,7 @@ require (
 	github.com/aws/smithy-go v1.23.2
 	github.com/docker/docker v28.0.1+incompatible
 	github.com/fatih/color v1.18.0
+	github.com/google/cel-go v0.27.0
 	github.com/itchyny/gojq v0.12.17
 	github.com/lmittmann/tint v1.1.2
 	github.com/mark3labs/mcp-go v0.29.0
@@ -63,8 +64,8 @@ require (
 	github.com/microsoftgraph/msgraph-sdk-go v1.53.0
 	github.com/microsoftgraph/msgraph-sdk-go-core v1.2.1
 	github.com/mpvl/unique v0.0.0-20150818121801-cbe035fff7de
+	github.com/neo4j/neo4j-go-driver/v5 v5.28.3
 	github.com/praetorian-inc/capability-sdk v0.0.0-20260121174214-23f1d4c5e2bd
-	github.com/praetorian-inc/janus-framework v0.0.0-20250918211123-5f90adc9184b
 	github.com/praetorian-inc/konstellation v0.0.0-20251205230404-ed78bd75cfb8
 	github.com/praetorian-inc/tabularium v1.0.167
 	github.com/spf13/cobra v1.9.1
@@ -117,13 +118,11 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
-	github.com/google/cel-go v0.27.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.7 // indirect
 	github.com/googleapis/gax-go/v2 v2.15.0 // indirect
 	github.com/itchyny/timefmt-go v0.1.6 // indirect
-	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/knqyf263/go-cpe v0.0.0-20230627041855-cb0794d06872 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
@@ -141,7 +140,6 @@ require (
 	github.com/moby/sys/user v0.4.0 // indirect
 	github.com/moby/term v0.5.2 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
-	github.com/neo4j/neo4j-go-driver/v5 v5.28.3 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
