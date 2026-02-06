@@ -1,5 +1,12 @@
 package output
 
+import (
+	"fmt"
+	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
+)
+
 // CloudResource represents a universal cloud resource across AWS, Azure, and GCP.
 // This type replaces the Tabularium GCPResource/AWSResource/AzureResource types
 // to eliminate the dependency on Tabularium in Aurelian.
@@ -20,6 +27,9 @@ type CloudResource struct {
 	//   Azure: Resource ID ("/subscriptions/.../resourceGroups/...")
 	//   GCP: Full resource path ("projects/my-project-123")
 	ResourceID string `json:"resource_id"`
+
+	// ARN is the AWS ARN for this resource when applicable
+	ARN string `json:"arn,omitempty"`
 
 	// AccountRef is the account/subscription/project identifier
 	// Examples:
@@ -48,18 +58,138 @@ type CloudResource struct {
 // NewCloudResource constructs a CloudResource with the required core fields.
 // Additional optional fields should be set by the caller as needed.
 func NewCloudResource(platform, region, resourceType, accountRef, resourceID string) CloudResource {
-	return CloudResource{
+	resource := CloudResource{
 		Platform:     platform,
 		Region:       region,
 		ResourceType: resourceType,
 		AccountRef:   accountRef,
 		ResourceID:   resourceID,
 	}
+
+	return resource
 }
 
 // NewAWSResource constructs a CloudResource for AWS resources.
 func NewAWSResource(region, resourceType, accountRef, resourceID string) CloudResource {
-	return NewCloudResource("aws", region, resourceType, accountRef, resourceID)
+	cr := NewCloudResource("aws", region, resourceType, accountRef, resourceID)
+	enrichAWSCloudResource(&cr)
+	return cr
+}
+
+func enrichAWSCloudResource(resource *CloudResource) {
+	if resource == nil || resource.ResourceID == "" {
+		return
+	}
+
+	arnString := buildAWSArn(resource.ResourceType, resource.ResourceID, resource.Region, resource.AccountRef)
+	if arnString != "" {
+		resource.ARN = arnString
+	}
+}
+
+func buildAWSArn(resourceType, identifier, region, accountRef string) string {
+	if parsed, err := arn.Parse(identifier); err == nil {
+		return parsed.String()
+	}
+
+	var a arn.ARN
+	switch resourceType {
+	case "AWS::SQS::Queue":
+		parsed, err := sqsURLToArn(identifier)
+		if err == nil {
+			return parsed.String()
+		}
+		a = arn.ARN{
+			Partition: "aws",
+			Service:   "sqs",
+			Region:    region,
+			AccountID: accountRef,
+			Resource:  identifier,
+		}
+	case "AWS::EC2::Instance":
+		a = arn.ARN{
+			Partition: "aws",
+			Service:   "ec2",
+			Region:    region,
+			AccountID: accountRef,
+			Resource:  "instance/" + identifier,
+		}
+	case "AWS::S3::Bucket":
+		a = arn.ARN{
+			Partition: "aws",
+			Service:   "s3",
+			Resource:  identifier,
+		}
+	case "AWS::Lambda::Function":
+		a = arn.ARN{
+			Partition: "aws",
+			Service:   "lambda",
+			Region:    region,
+			AccountID: accountRef,
+			Resource:  "function:" + identifier,
+		}
+	case "AWS::Service":
+		service := strings.Split(identifier, ".")[0]
+		a = arn.ARN{
+			Partition: "aws",
+			Service:   service,
+			Region:    "*",
+			AccountID: "*",
+			Resource:  "*",
+		}
+	default:
+		service := extractServiceFromTypeName(resourceType)
+		if service == "" {
+			return ""
+		}
+		a = arn.ARN{
+			Partition: "aws",
+			Service:   service,
+			Region:    region,
+			AccountID: accountRef,
+			Resource:  identifier,
+		}
+	}
+
+	if a.Partition == "" || a.Service == "" {
+		return ""
+	}
+
+	return a.String()
+}
+
+func extractServiceFromTypeName(typeName string) string {
+	split := strings.Split(typeName, "::")
+	if len(split) < 3 {
+		return ""
+	}
+
+	return strings.ToLower(split[1])
+}
+
+func sqsURLToArn(sqsURL string) (arn.ARN, error) {
+	// Format: https://sqs.{region}.amazonaws.com/{accountId}/{queueName}
+	parts := strings.Split(sqsURL, ".")
+	if len(parts) < 4 || !strings.HasPrefix(sqsURL, "https://sqs.") {
+		return arn.ARN{}, fmt.Errorf("invalid SQS URL format: %s", sqsURL)
+	}
+
+	region := parts[1]
+	pathParts := strings.Split(parts[3], "/")
+	if len(pathParts) < 3 {
+		return arn.ARN{}, fmt.Errorf("invalid SQS URL path format: %s", sqsURL)
+	}
+
+	accountID := pathParts[1]
+	queueName := pathParts[2]
+
+	return arn.ARN{
+		Partition: "aws",
+		Service:   "sqs",
+		Region:    region,
+		AccountID: accountID,
+		Resource:  queueName,
+	}, nil
 }
 
 // SecretFinding represents a secret detection result from scanning cloud resources.
