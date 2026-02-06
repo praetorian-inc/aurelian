@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/titus/pkg/scanner"
+	"github.com/praetorian-inc/titus/pkg/types"
 )
 
 type DevOpsSecretsModule struct{}
@@ -407,60 +409,55 @@ func (m *DevOpsSecretsModule) scanServiceEndpoints(ctx context.Context, pat, org
 }
 
 func (m *DevOpsSecretsModule) runNoseyParker(ctx context.Context, path string, verbose bool, output io.Writer) ([]map[string]any, error) {
-	// Create temp output file
-	tmpFile, err := os.CreateTemp("", "noseyparker-output-*.json")
+	// Read file content
+	content, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp file: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-	tmpFile.Close()
-
-	// Run NoseyParker
-	cmd := exec.CommandContext(ctx, "noseyparker",
-		"scan",
-		"--datastore", filepath.Join(os.TempDir(), "np-datastore"),
-		"--git-url", path,
-		"--output", tmpFile.Name(),
-	)
-
-	if verbose {
-		cmd.Stdout = output
-		cmd.Stderr = output
+		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("noseyparker scan failed: %w", err)
-	}
-
-	// Parse results
-	data, err := os.ReadFile(tmpFile.Name())
+	// Create scanner with builtin rules
+	core, err := scanner.NewCore("builtin", nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read noseyparker output: %w", err)
+		return nil, fmt.Errorf("failed to create scanner: %w", err)
+	}
+	defer core.Close()
+
+	// Scan content
+	result, err := core.Scan(string(content), path)
+	if err != nil {
+		return nil, fmt.Errorf("scan failed: %w", err)
 	}
 
+	// Convert result.Matches to existing []map[string]any format
 	var results []map[string]any
-	if err := json.Unmarshal(data, &results); err != nil {
-		return nil, fmt.Errorf("failed to parse noseyparker output: %w", err)
+	for _, match := range result.Matches {
+		results = append(results, m.convertMatchToMap(match))
 	}
 
 	return results, nil
 }
 
 func (m *DevOpsSecretsModule) scanTextWithNoseyParker(ctx context.Context, text string, verbose bool, output io.Writer) ([]map[string]any, error) {
-	// Write text to temp file
-	tmpFile, err := os.CreateTemp("", "devops-text-*.txt")
+	// Create scanner with builtin rules
+	core, err := scanner.NewCore("builtin", nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp file: %w", err)
+		return nil, fmt.Errorf("failed to create scanner: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer core.Close()
 
-	if _, err := tmpFile.WriteString(text); err != nil {
-		tmpFile.Close()
-		return nil, fmt.Errorf("failed to write temp file: %w", err)
+	// Scan content directly
+	result, err := core.Scan(text, "inline-text")
+	if err != nil {
+		return nil, fmt.Errorf("scan failed: %w", err)
 	}
-	tmpFile.Close()
 
-	return m.runNoseyParker(ctx, tmpFile.Name(), verbose, output)
+	// Convert result.Matches to existing []map[string]any format
+	var results []map[string]any
+	for _, match := range result.Matches {
+		results = append(results, m.convertMatchToMap(match))
+	}
+
+	return results, nil
 }
 
 func (m *DevOpsSecretsModule) listRepositories(ctx context.Context, pat, org, project string) ([]map[string]any, error) {
@@ -491,6 +488,24 @@ func (m *DevOpsSecretsModule) listServiceEndpoints(ctx context.Context, pat, org
 	// Placeholder: would use Azure DevOps REST API
 	// https://dev.azure.com/{organization}/{project}/_apis/serviceendpoint/endpoints
 	return []map[string]any{}, nil
+}
+
+func (m *DevOpsSecretsModule) convertMatchToMap(match *types.Match) map[string]any {
+	return map[string]any{
+		"rule":     match.RuleName,
+		"rule_id":  match.RuleID,
+		"location": fmt.Sprintf("%d:%d-%d:%d",
+			match.Location.Source.Start.Line,
+			match.Location.Source.Start.Column,
+			match.Location.Source.End.Line,
+			match.Location.Source.End.Column,
+		),
+		"offset_start": match.Location.Offset.Start,
+		"offset_end":   match.Location.Offset.End,
+		"snippet":      string(match.Snippet.Matching),
+		"before":       string(match.Snippet.Before),
+		"after":        string(match.Snippet.After),
+	}
 }
 
 func (m *DevOpsSecretsModule) writeFindings(findings []SecretFinding, outputFile string) error {
