@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/common"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"google.golang.org/api/cloudresourcemanager/v1"
 )
 
@@ -26,45 +25,51 @@ type IAMPolicyData struct {
 }
 
 type GcpProjectIamPolicyLink struct {
-	*base.GcpBaseLink
+	*base.NativeGCPLink
 	resourceManagerService *cloudresourcemanager.Service
 }
 
 // creates a link to extract IAM policy from a GCP project
-func NewGcpProjectIamPolicyLink(configs ...cfg.Config) chain.Link {
-	g := &GcpProjectIamPolicyLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
-}
-
-func (g *GcpProjectIamPolicyLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
+func NewGcpProjectIamPolicyLink(args map[string]any) *GcpProjectIamPolicyLink {
+	link := &GcpProjectIamPolicyLink{
+		NativeGCPLink: base.NewNativeGCPLink("gcp-project-iam-policy", args),
 	}
-	var err error
-	g.resourceManagerService, err = cloudresourcemanager.NewService(context.Background(), g.ClientOptions...)
+
+	// Initialize resource manager service
+	resourceManagerService, err := cloudresourcemanager.NewService(context.Background(), link.ClientOptions()...)
 	if err != nil {
-		return fmt.Errorf("failed to create resource manager service: %w", err)
+		slog.Error("Failed to create resource manager service", "error", err)
 	}
-	return nil
+	link.resourceManagerService = resourceManagerService
+
+	return link
 }
 
-func (g *GcpProjectIamPolicyLink) Process(resource tab.GCPResource) error {
-	slog.Debug("GcpProjectIamPolicyLink received resource", "type", resource.ResourceType, "name", resource.Name)
+func (g *GcpProjectIamPolicyLink) Parameters() []plugin.Parameter {
+	return base.StandardGCPParams()
+}
+
+func (g *GcpProjectIamPolicyLink) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*output.CloudResource)
+	if !ok {
+		return nil, fmt.Errorf("expected *output.CloudResource, got %T", input)
+	}
+
+	slog.Debug("GcpProjectIamPolicyLink received resource", "type", resource.ResourceType, "name", resource.ResourceID)
 
 	// Only process project resources
-	if resource.ResourceType != tab.GCPResourceProject {
-		slog.Debug("Skipping non-project resource", "type", resource.ResourceType, "name", resource.Name)
-		return nil
+	if resource.ResourceType != "gcp_project" {
+		slog.Debug("Skipping non-project resource", "type", resource.ResourceType, "name", resource.ResourceID)
+		return nil, nil
 	}
 
-	projectId := resource.Name
+	projectId := resource.ResourceID
 	slog.Debug("Extracting IAM policy for project", "project", projectId)
 
 	// Get IAM policy for the project
 	policy, err := g.resourceManagerService.Projects.GetIamPolicy(projectId, &cloudresourcemanager.GetIamPolicyRequest{}).Do()
 	if err != nil {
-		return common.HandleGcpError(err, fmt.Sprintf("failed to get IAM policy for project %s", projectId))
+		return nil, common.HandleGcpError(err, fmt.Sprintf("failed to get IAM policy for project %s", projectId))
 	}
 
 	// Create IAM policy data structure
@@ -76,29 +81,25 @@ func (g *GcpProjectIamPolicyLink) Process(resource tab.GCPResource) error {
 		AccountRef:  resource.AccountRef,
 	}
 
-	// Create a new GCP resource for the IAM policy data
-	iamResource, err := tab.NewGCPResource(
-		fmt.Sprintf("%s-iam-policy", projectId), // resource name
-		resource.AccountRef,                     // accountRef (organization or parent)
-		tab.CloudResourceType("IAMPolicy"),      // custom resource type for IAM policies
-		map[string]any{ // properties
+	// Create a new cloud resource for the IAM policy data
+	iamResource := &output.CloudResource{
+		ResourceID:   fmt.Sprintf("%s-iam-policy", projectId),
+		DisplayName:  fmt.Sprintf("IAM Policy - %s", projectId),
+		ResourceType: "IAMPolicy",
+		Region:       resource.Region,
+		Platform:     "gcp",
+		AccountRef:   resource.AccountRef,
+		Properties: map[string]any{
 			"project_id":   projectId,
 			"project_name": resource.DisplayName,
 			"policy_data":  policyData,
 			"bindings":     policy.Bindings,
 		},
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create IAM policy resource: %w", err)
 	}
-
-	iamResource.DisplayName = fmt.Sprintf("IAM Policy - %s", projectId)
-	iamResource.Region = resource.Region
 
 	slog.Debug("Extracted IAM policy",
 		"project", projectId,
 		"bindings_count", len(policy.Bindings))
 
-	g.Send(iamResource)
-	return nil
+	return []any{iamResource}, nil
 }

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	gcptypes "github.com/praetorian-inc/nebula/pkg/types/gcp"
+	gcptypes "github.com/praetorian-inc/aurelian/pkg/types/gcp"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/option"
 	"google.golang.org/api/run/v2"

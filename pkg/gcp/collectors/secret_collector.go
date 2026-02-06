@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	gcptypes "github.com/praetorian-inc/nebula/pkg/types/gcp"
+	gcptypes "github.com/praetorian-inc/aurelian/pkg/types/gcp"
 	"google.golang.org/api/option"
 	"google.golang.org/api/secretmanager/v1"
 )
@@ -24,7 +24,7 @@ func NewSecretCollector(ctx context.Context, clientOptions ...option.ClientOptio
 
 	return &SecretCollector{
 		ctx:           ctx,
-		clientOptions:  clientOptions,
+		clientOptions: clientOptions,
 		secretService: secretService,
 	}, nil
 }

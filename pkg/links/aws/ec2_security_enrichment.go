@@ -5,10 +5,8 @@ import (
 	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/aws/base"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // EC2SecurityEnrichmentLink enriches EC2 instances with security group and NACL details
@@ -16,25 +14,28 @@ type EC2SecurityEnrichmentLink struct {
 	*base.AwsReconLink
 }
 
-func NewEC2SecurityEnrichmentLink(configs ...cfg.Config) chain.Link {
-	e := &EC2SecurityEnrichmentLink{}
-	e.AwsReconLink = base.NewAwsReconLink(e, configs...)
-	return e
+func NewEC2SecurityEnrichmentLink(name string, args map[string]any) *EC2SecurityEnrichmentLink {
+	return &EC2SecurityEnrichmentLink{
+		AwsReconLink: base.NewAwsReconLink(name, args),
+	}
 }
 
-func (e *EC2SecurityEnrichmentLink) Process(resource *types.EnrichedResourceDescription) error {
-	if resource.TypeName != "AWS::EC2::Instance" {
-		// Pass through non-EC2 resources unchanged
-		e.Send(resource)
-		return nil
+func (e *EC2SecurityEnrichmentLink) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*types.EnrichedResourceDescription)
+	if !ok {
+		return nil, nil
 	}
 
-	config, err := e.GetConfigWithRuntimeArgs(resource.Region)
+	if resource.TypeName != "AWS::EC2::Instance" {
+		// Pass through non-EC2 resources unchanged
+		return []any{resource}, nil
+	}
+
+	config, err := e.GetConfigWithRuntimeArgs(ctx, resource.Region)
 	if err != nil {
 		slog.Error("Failed to get AWS config for region", "region", resource.Region, "error", err)
 		// Pass through the resource even if we can't enrich it
-		e.Send(resource)
-		return nil
+		return []any{resource}, nil
 	}
 
 	ec2Client := ec2.NewFromConfig(config)
@@ -47,14 +48,12 @@ func (e *EC2SecurityEnrichmentLink) Process(resource *types.EnrichedResourceDesc
 	instanceOutput, err := ec2Client.DescribeInstances(context.TODO(), instanceInput)
 	if err != nil {
 		slog.Error("Failed to describe EC2 instance", "instance", resource.Identifier, "error", err)
-		e.Send(resource)
-		return nil
+		return []any{resource}, nil
 	}
 
 	if len(instanceOutput.Reservations) == 0 || len(instanceOutput.Reservations[0].Instances) == 0 {
 		slog.Error("No instance found", "instance", resource.Identifier)
-		e.Send(resource)
-		return nil
+		return []any{resource}, nil
 	}
 
 	instance := instanceOutput.Reservations[0].Instances[0]
@@ -91,8 +90,7 @@ func (e *EC2SecurityEnrichmentLink) Process(resource *types.EnrichedResourceDesc
 	props["NetworkInterfaceIds"] = networkInterfaceIds
 	props["SubnetIds"] = subnetIds
 
-	e.Send(resource)
-	return nil
+	return []any{resource}, nil
 }
 
 func (e *EC2SecurityEnrichmentLink) getSecurityGroupDetails(client *ec2.Client, groupIds []string) []map[string]interface{} {

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	gcptypes "github.com/praetorian-inc/nebula/pkg/types/gcp"
+	gcptypes "github.com/praetorian-inc/aurelian/pkg/types/gcp"
 )
 
 // OfflineData represents all collected data for serialization

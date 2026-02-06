@@ -9,6 +9,7 @@ type NpInput struct {
 
 // Provenance contains metadata about the scanned content
 type NpProvenance struct {
+	Kind         string       `json:"kind,omitempty"`
 	Platform     string       `json:"platform"`
 	ResourceType string       `json:"resource_type"`
 	ResourceID   string       `json:"resource_id"`

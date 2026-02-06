@@ -6,9 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/tabularium/pkg/model/model"
 )
 
@@ -20,19 +18,19 @@ type ProofFileOutputter struct {
 }
 
 // NewProofFileOutputter creates a new proof file outputter
-func NewProofFileOutputter(configs ...cfg.Config) chain.Outputter {
-	o := &ProofFileOutputter{}
-	o.BaseFileOutputter = NewBaseFileOutputter(o, configs...)
+func NewProofFileOutputter() plugin.Outputter {
+	o := &ProofFileOutputter{
+		BaseFileOutputter: NewBaseFileOutputter(),
+	}
 	return o
 }
 
 // Initialize sets up the outputter and determines the output directory
-func (o *ProofFileOutputter) Initialize() error {
+func (o *ProofFileOutputter) Initialize(cfg plugin.Config) error {
+	o.SetConfig(cfg)
+
 	// Get base output directory
-	outputDir, err := cfg.As[string](o.Arg("output"))
-	if err != nil {
-		outputDir = "nebula-output"
-	}
+	outputDir := o.GetArg("output", "aurelian-output").(string)
 	o.outputDirectory = outputDir
 
 	return nil
@@ -75,11 +73,4 @@ func (o *ProofFileOutputter) Complete() error {
 		slog.Debug("proof file outputter complete", "files_written", o.filesWritten)
 	}
 	return nil
-}
-
-// Params defines the parameters accepted by this outputter
-func (o *ProofFileOutputter) Params() []cfg.Param {
-	return []cfg.Param{
-		options.OutputDir(),
-	}
 }

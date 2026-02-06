@@ -1,15 +1,15 @@
 package iam
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 // FILE INFO:
@@ -36,14 +36,14 @@ type RiskMetric struct {
 
 // IAMPrincipalViolation represents a violation by an IAM principal
 type IAMPrincipalViolation struct {
-	Principal       string   `json:"principal"`
-	PrincipalType   string   `json:"principal_type"`
-	ProjectId       string   `json:"project_id"`
-	ProjectName     string   `json:"project_name"`
-	ViolationType   string   `json:"violation_type"`
-	Roles           []string `json:"roles"`
-	RiskLevel       string   `json:"risk_level"`
-	Description     string   `json:"description"`
+	Principal     string   `json:"principal"`
+	PrincipalType string   `json:"principal_type"`
+	ProjectId     string   `json:"project_id"`
+	ProjectName   string   `json:"project_name"`
+	ViolationType string   `json:"violation_type"`
+	Roles         []string `json:"roles"`
+	RiskLevel     string   `json:"risk_level"`
+	Description   string   `json:"description"`
 }
 
 // ComputeInstanceViolation represents a violation by a compute instance
@@ -66,75 +66,79 @@ type OverprivilegedPrincipalsFinding struct {
 		Title          string `json:"title"`
 		AttackCategory string `json:"attack_category"`
 	} `json:"finding_data"`
-	RiskData         []RiskMetric                   `json:"risk_data"`
-	CVSS             string                         `json:"cvss"`
-	Meta             string                         `json:"meta"`
-	Principals       []IAMPrincipalViolation        `json:"principals"`
-	ComputeInstances []ComputeInstanceViolation     `json:"compute_instances"`
-	Summary          OverprivilegedSummary          `json:"summary"`
+	RiskData         []RiskMetric               `json:"risk_data"`
+	CVSS             string                     `json:"cvss"`
+	Meta             string                     `json:"meta"`
+	Principals       []IAMPrincipalViolation    `json:"principals"`
+	ComputeInstances []ComputeInstanceViolation `json:"compute_instances"`
+	Summary          OverprivilegedSummary      `json:"summary"`
 }
 
 // OverprivilegedSummary provides summary statistics
 type OverprivilegedSummary struct {
-	TotalViolations       int `json:"total_violations"`
-	BasicRoleViolations   int `json:"basic_role_violations"`
+	TotalViolations              int `json:"total_violations"`
+	BasicRoleViolations          int `json:"basic_role_violations"`
 	ServiceAccountUserViolations int `json:"service_account_user_violations"`
-	DefaultComputeSAViolations int `json:"default_compute_sa_violations"`
-	ProjectsAffected      int `json:"projects_affected"`
+	DefaultComputeSAViolations   int `json:"default_compute_sa_violations"`
+	ProjectsAffected             int `json:"projects_affected"`
 }
 
 type GcpIamPrincipalsAnalyzer struct {
-	*base.GcpBaseLink
-	iamPolicyData     map[string]*IAMPolicyData
+	*base.NativeGCPLink
+	iamPolicyData      map[string]*IAMPolicyData
 	serviceAccountData map[string]*ComputeServiceAccountData
-	violations        []IAMPrincipalViolation
+	violations         []IAMPrincipalViolation
 	instanceViolations []ComputeInstanceViolation
 	projectsProcessed  map[string]string // projectId -> projectName
 }
 
 // creates a link to analyze IAM principals for overprivileged access
-func NewGcpIamPrincipalsAnalyzer(configs ...cfg.Config) chain.Link {
-	g := &GcpIamPrincipalsAnalyzer{
-		iamPolicyData:     make(map[string]*IAMPolicyData),
+func NewGcpIamPrincipalsAnalyzer(args map[string]any) *GcpIamPrincipalsAnalyzer {
+	return &GcpIamPrincipalsAnalyzer{
+		NativeGCPLink:      base.NewNativeGCPLink("gcp-iam-principals-analyzer", args),
+		iamPolicyData:      make(map[string]*IAMPolicyData),
 		serviceAccountData: make(map[string]*ComputeServiceAccountData),
-		violations:        make([]IAMPrincipalViolation, 0),
+		violations:         make([]IAMPrincipalViolation, 0),
 		instanceViolations: make([]ComputeInstanceViolation, 0),
-		projectsProcessed: make(map[string]string),
+		projectsProcessed:  make(map[string]string),
 	}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
 }
 
-func (g *GcpIamPrincipalsAnalyzer) Params() []cfg.Param {
-	params := append(g.GcpBaseLink.Params(),
-		cfg.NewParam[bool]("debug-violations", "generate test violations for debugging").WithDefault(false),
+func (g *GcpIamPrincipalsAnalyzer) Parameters() []plugin.Parameter {
+	params := append(base.StandardGCPParams(),
+		plugin.NewParam[bool]("debug-violations", "generate test violations for debugging", plugin.WithDefault(false)),
 	)
 	return params
 }
 
-func (g *GcpIamPrincipalsAnalyzer) Initialize() error {
-	return g.GcpBaseLink.Initialize()
-}
+func (g *GcpIamPrincipalsAnalyzer) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*output.CloudResource)
+	if !ok {
+		return nil, fmt.Errorf("expected *output.CloudResource, got %T", input)
+	}
 
-func (g *GcpIamPrincipalsAnalyzer) Process(resource tab.GCPResource) error {
-	slog.Debug("GcpIamPrincipalsAnalyzer received resource", "type", string(resource.ResourceType), "name", resource.Name)
+	slog.Debug("GcpIamPrincipalsAnalyzer received resource", "type", resource.ResourceType, "key", resource.ResourceID)
 
-	switch string(resource.ResourceType) {
+	switch resource.ResourceType {
 	case "IAMPolicy":
-		return g.processIAMPolicy(resource)
+		if err := g.processIAMPolicy(resource); err != nil {
+			return nil, err
+		}
 	case "ComputeServiceAccount":
-		return g.processComputeServiceAccount(resource)
+		if err := g.processComputeServiceAccount(resource); err != nil {
+			return nil, err
+		}
 	}
-	return nil
+	return nil, nil
 }
 
-func (g *GcpIamPrincipalsAnalyzer) processIAMPolicy(resource tab.GCPResource) error {
-	properties := resource.Properties
-	if properties == nil {
-		return fmt.Errorf("no properties found for IAM policy resource")
+func (g *GcpIamPrincipalsAnalyzer) processIAMPolicy(resource *output.CloudResource) error {
+	data := resource.Properties
+	if data == nil {
+		return fmt.Errorf("properties is nil for IAM policy resource")
 	}
 
-	policyDataRaw, ok := properties["policy_data"]
+	policyDataRaw, ok := data["policy_data"]
 	if !ok {
 		return fmt.Errorf("missing policy_data in IAM policy resource")
 	}
@@ -155,13 +159,13 @@ func (g *GcpIamPrincipalsAnalyzer) processIAMPolicy(resource tab.GCPResource) er
 	return nil
 }
 
-func (g *GcpIamPrincipalsAnalyzer) processComputeServiceAccount(resource tab.GCPResource) error {
-	properties := resource.Properties
-	if properties == nil {
-		return fmt.Errorf("no properties found for service account resource")
+func (g *GcpIamPrincipalsAnalyzer) processComputeServiceAccount(resource *output.CloudResource) error {
+	data := resource.Properties
+	if data == nil {
+		return fmt.Errorf("properties is nil for service account resource")
 	}
 
-	saDataRaw, ok := properties["sa_data"]
+	saDataRaw, ok := data["sa_data"]
 	if !ok {
 		return fmt.Errorf("missing sa_data in service account resource")
 	}
@@ -187,14 +191,14 @@ func (g *GcpIamPrincipalsAnalyzer) analyzeIAMPolicy(policyData *IAMPolicyData) {
 		if roleName, isBasicRole := basicRoles[binding.Role]; isBasicRole {
 			for _, member := range binding.Members {
 				violation := IAMPrincipalViolation{
-					Principal:       member,
-					PrincipalType:   categorizePrincipal(member),
-					ProjectId:       policyData.ProjectId,
-					ProjectName:     policyData.ProjectName,
-					ViolationType:   "basic_role",
-					Roles:           []string{binding.Role},
-					RiskLevel:       "high",
-					Description:     fmt.Sprintf("Principal has basic role '%s' (%s) which violates least privilege principle", binding.Role, roleName),
+					Principal:     member,
+					PrincipalType: categorizePrincipal(member),
+					ProjectId:     policyData.ProjectId,
+					ProjectName:   policyData.ProjectName,
+					ViolationType: "basic_role",
+					Roles:         []string{binding.Role},
+					RiskLevel:     "high",
+					Description:   fmt.Sprintf("Principal has basic role '%s' (%s) which violates least privilege principle", binding.Role, roleName),
 				}
 				g.violations = append(g.violations, violation)
 
@@ -209,14 +213,14 @@ func (g *GcpIamPrincipalsAnalyzer) analyzeIAMPolicy(policyData *IAMPolicyData) {
 		if roleName, isOverprivileged := overprivilegedProjectRoles[binding.Role]; isOverprivileged {
 			for _, member := range binding.Members {
 				violation := IAMPrincipalViolation{
-					Principal:       member,
-					PrincipalType:   categorizePrincipal(member),
-					ProjectId:       policyData.ProjectId,
-					ProjectName:     policyData.ProjectName,
-					ViolationType:   "service_account_user",
-					Roles:           []string{binding.Role},
-					RiskLevel:       "high",
-					Description:     fmt.Sprintf("Principal has '%s' (%s) role at project level, allowing access to all service accounts", binding.Role, roleName),
+					Principal:     member,
+					PrincipalType: categorizePrincipal(member),
+					ProjectId:     policyData.ProjectId,
+					ProjectName:   policyData.ProjectName,
+					ViolationType: "service_account_user",
+					Roles:         []string{binding.Role},
+					RiskLevel:     "high",
+					Description:   fmt.Sprintf("Principal has '%s' (%s) role at project level, allowing access to all service accounts", binding.Role, roleName),
 				}
 				g.violations = append(g.violations, violation)
 
@@ -271,10 +275,10 @@ func (g *GcpIamPrincipalsAnalyzer) hasEditorRole(policyData *IAMPolicyData, memb
 	return false
 }
 
-func (g *GcpIamPrincipalsAnalyzer) Complete() error {
+func (g *GcpIamPrincipalsAnalyzer) Complete(ctx context.Context) ([]any, error) {
 	// Debug mode: Generate test violations to verify data flow
-	debugMode, err := cfg.As[bool](g.Arg("debug-violations"))
-	if err == nil && debugMode {
+	debugMode := g.ArgBool("debug-violations", false)
+	if debugMode {
 		slog.Info("Debug mode enabled: generating test violations")
 		g.generateTestViolations()
 	}
@@ -282,7 +286,7 @@ func (g *GcpIamPrincipalsAnalyzer) Complete() error {
 	// Generate the complete finding only if we have violations
 	if len(g.violations) == 0 && len(g.instanceViolations) == 0 {
 		slog.Info("No overprivileged principals found")
-		return nil
+		return nil, nil
 	}
 
 	summary := g.calculateSummary()
@@ -315,8 +319,16 @@ func (g *GcpIamPrincipalsAnalyzer) Complete() error {
 		"sa_user_violations", summary.ServiceAccountUserViolations,
 		"compute_sa_violations", summary.DefaultComputeSAViolations)
 
-	g.Send(finding)
-	return nil
+	resource := &output.CloudResource{
+		ResourceID:   fmt.Sprintf("gcp-iam-principals-finding-%s", finding.Meta),
+		DisplayName:  "Overprivileged GCP IAM Principals",
+		ResourceType: "gcp_iam_principals_finding",
+		Region:       "global",
+		Platform:     "gcp",
+		Properties:   map[string]any{"finding": finding},
+	}
+
+	return []any{resource}, nil
 }
 
 func (g *GcpIamPrincipalsAnalyzer) calculateSummary() OverprivilegedSummary {
@@ -369,25 +381,25 @@ func generateUUID() string {
 func (g *GcpIamPrincipalsAnalyzer) generateTestViolations() {
 	// Generate test IAM principal violations
 	g.violations = append(g.violations, IAMPrincipalViolation{
-		Principal:       "user:test-admin@example.com",
-		PrincipalType:   "user",
-		ProjectId:       "test-project-123",
-		ProjectName:     "Test Project",
-		ViolationType:   "basic_role",
-		Roles:           []string{"roles/owner"},
-		RiskLevel:       "high",
-		Description:     "Principal has basic role 'roles/owner' (Owner) which violates least privilege principle",
+		Principal:     "user:test-admin@example.com",
+		PrincipalType: "user",
+		ProjectId:     "test-project-123",
+		ProjectName:   "Test Project",
+		ViolationType: "basic_role",
+		Roles:         []string{"roles/owner"},
+		RiskLevel:     "high",
+		Description:   "Principal has basic role 'roles/owner' (Owner) which violates least privilege principle",
 	})
 
 	g.violations = append(g.violations, IAMPrincipalViolation{
-		Principal:       "serviceAccount:automation@test-project-123.iam.gserviceaccount.com",
-		PrincipalType:   "service_account",
-		ProjectId:       "test-project-123",
-		ProjectName:     "Test Project",
-		ViolationType:   "sa_user_project",
-		Roles:           []string{"roles/iam.serviceAccountUser"},
-		RiskLevel:       "medium",
-		Description:     "Principal has Service Account User role at project level which enables broad privilege escalation",
+		Principal:     "serviceAccount:automation@test-project-123.iam.gserviceaccount.com",
+		PrincipalType: "service_account",
+		ProjectId:     "test-project-123",
+		ProjectName:   "Test Project",
+		ViolationType: "sa_user_project",
+		Roles:         []string{"roles/iam.serviceAccountUser"},
+		RiskLevel:     "medium",
+		Description:   "Principal has Service Account User role at project level which enables broad privilege escalation",
 	})
 
 	// Generate test compute instance violations

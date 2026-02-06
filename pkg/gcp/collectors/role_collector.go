@@ -6,7 +6,7 @@ import (
 
 	iamadmin "cloud.google.com/go/iam/admin/apiv1"
 	iamadminpb "cloud.google.com/go/iam/admin/apiv1/adminpb"
-	gcptypes "github.com/praetorian-inc/nebula/pkg/types/gcp"
+	gcptypes "github.com/praetorian-inc/aurelian/pkg/types/gcp"
 	"google.golang.org/api/option"
 )
 

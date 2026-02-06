@@ -1,19 +1,22 @@
 package hierarchy
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/utils"
 )
 
 type GcpResourceSummary struct {
@@ -34,55 +37,62 @@ type GcpSummaryOutput struct {
 }
 
 type GcpSummaryOutputFormatterLink struct {
-	*chain.Base
+	*base.NativeGCPLink
 	envDetails []*helpers.GCPEnvironmentDetails
+	outputDir  string
+	filename   string
 }
 
 // link to format GCP details into JSON and MD
-func NewGcpSummaryOutputFormatterLink(configs ...cfg.Config) chain.Link {
-	l := &GcpSummaryOutputFormatterLink{
-		envDetails: make([]*helpers.GCPEnvironmentDetails, 0),
+func NewGcpSummaryOutputFormatterLink(args map[string]any) *GcpSummaryOutputFormatterLink {
+	link := &GcpSummaryOutputFormatterLink{
+		NativeGCPLink: base.NewNativeGCPLink("gcp-summary-output-formatter", args),
+		envDetails:    make([]*helpers.GCPEnvironmentDetails, 0),
 	}
-	l.Base = chain.NewBase(l, configs...)
-	return l
+	link.outputDir = link.ArgString("output", "")
+	link.filename = link.ArgString("filename", "")
+	return link
 }
 
-func (l *GcpSummaryOutputFormatterLink) Params() []cfg.Param {
-	return []cfg.Param{
-		options.OutputDir(),
-		cfg.NewParam[string]("filename", "Base filename for output").WithDefault("").WithShortcode("f"),
-	}
+func (l *GcpSummaryOutputFormatterLink) Parameters() []plugin.Parameter {
+	params := append(base.StandardGCPParams(),
+		plugin.NewParam[string]("output", "Output directory for generated files"),
+		plugin.NewParam[string]("filename", "Base filename for output", plugin.WithShortcode("f")),
+	)
+	return params
 }
 
-func (l *GcpSummaryOutputFormatterLink) Process(input any) error {
+func (l *GcpSummaryOutputFormatterLink) Process(ctx context.Context, input any) ([]any, error) {
 	switch v := input.(type) {
 	case *helpers.GCPEnvironmentDetails:
 		l.envDetails = append(l.envDetails, v)
-		l.Logger.Debug("Collected environment details", "scope", v.ScopeID, "resource_types", len(v.Resources))
+		slog.Debug("Collected environment details", "scope", v.ScopeID, "resource_types", len(v.Resources))
 	default:
-		l.Logger.Debug("Received unknown input type", "type", fmt.Sprintf("%T", input))
+		slog.Debug("Received unknown input type", "type", fmt.Sprintf("%T", input))
 	}
-	return nil
+	return nil, nil
 }
 
-func (l *GcpSummaryOutputFormatterLink) Complete() error {
-	l.Logger.Info("Formatting outputs", "environment_count", len(l.envDetails))
+func (l *GcpSummaryOutputFormatterLink) Complete(ctx context.Context) error {
+	slog.Info("Formatting outputs", "environment_count", len(l.envDetails))
 	for _, env := range l.envDetails {
-		l.generateOutput(env)
+		if err := l.generateOutput(env); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func (l *GcpSummaryOutputFormatterLink) generateOutput(env *helpers.GCPEnvironmentDetails) {
-	outputDir, _ := cfg.As[string](l.Arg("output"))
-	baseFilename, _ := cfg.As[string](l.Arg("filename"))
+func (l *GcpSummaryOutputFormatterLink) generateOutput(env *helpers.GCPEnvironmentDetails) error {
+	baseFilename := l.filename
 	if baseFilename == "" {
 		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 		baseFilename = fmt.Sprintf("summary-%s-%s", env.ScopeID, timestamp)
 	} else {
 		baseFilename = baseFilename + "-" + env.ScopeID
 	}
-	l.Logger.Info("Generated filename", "filename", baseFilename, "scope", env.ScopeID, "output_dir", outputDir)
+	slog.Info("Generated filename", "filename", baseFilename, "scope", env.ScopeID, "output_dir", l.outputDir)
+
 	var resources []GcpResourceSummary
 	summary := make(map[string]int)
 	totalCount := 0
@@ -106,11 +116,34 @@ func (l *GcpSummaryOutputFormatterLink) generateOutput(env *helpers.GCPEnvironme
 		Summary:   summary,
 		Total:     totalCount,
 	}
-	jsonFilePath := filepath.Join(outputDir, baseFilename+".json")
-	jsonOutputData := outputters.NewNamedOutputData(outputData, jsonFilePath)
-	l.Send(jsonOutputData)
+
+	// Write JSON output
+	jsonFilePath := filepath.Join(l.outputDir, baseFilename+".json")
+	if err := utils.EnsureFileDirectory(jsonFilePath); err != nil {
+		return fmt.Errorf("failed to create directory for JSON output: %w", err)
+	}
+	jsonData, err := json.MarshalIndent(outputData, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON data: %w", err)
+	}
+	if err := os.WriteFile(jsonFilePath, jsonData, 0644); err != nil {
+		return fmt.Errorf("failed to write JSON output: %w", err)
+	}
+	slog.Info("Wrote JSON output", "file", jsonFilePath)
+
+	// Write Markdown table
 	table := l.createSummaryTable(env, summary, totalCount)
-	l.Send(table)
+	mdFilePath := filepath.Join(l.outputDir, baseFilename+".md")
+	if err := utils.EnsureFileDirectory(mdFilePath); err != nil {
+		return fmt.Errorf("failed to create directory for Markdown output: %w", err)
+	}
+	mdContent := table.ToString()
+	if err := os.WriteFile(mdFilePath, []byte(mdContent), 0644); err != nil {
+		return fmt.Errorf("failed to write Markdown output: %w", err)
+	}
+	slog.Info("Wrote Markdown output", "file", mdFilePath)
+
+	return nil
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

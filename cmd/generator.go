@@ -261,14 +261,32 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		return err
 	}
 
-	// Handle output formatting if specified
-	if outputFormat != "" {
-		// TODO: Format results based on outputFormat
-		// For now, just write raw results
-		for _, result := range results {
-			if result.Error != nil {
-				message.Warning("Result error: %v", result.Error)
+	// Output results if there are any
+	if len(results) > 0 {
+		var formatter plugin.Formatter
+
+		switch outputFormat {
+		case "json":
+			// Clean JSON output
+			formatter = &plugin.JSONFormatter{
+				Writer: outputWriter,
+				Pretty: false,
 			}
+		default:
+			// Default/pretty format: summary message + pretty JSON
+			if outputFormat == "" || outputFormat == "default" {
+				// Show summary message for default format
+				message.Section("Module results:")
+			}
+			formatter = &plugin.JSONFormatter{
+				Writer: outputWriter,
+				Pretty: true,
+			}
+		}
+
+		// Format and output results
+		if err := formatter.Format(results); err != nil {
+			return fmt.Errorf("failed to format output: %w", err)
 		}
 	}
 

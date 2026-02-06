@@ -9,10 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/message"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/internal/message"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 const defaultSecurityOutfile = "security-findings.json"
@@ -27,27 +25,23 @@ type SecurityFindingsJSONOutputter struct {
 }
 
 // NewSecurityFindingsJSONOutputter creates a new SecurityFindingsJSONOutputter
-func NewSecurityFindingsJSONOutputter(configs ...cfg.Config) chain.Outputter {
+func NewSecurityFindingsJSONOutputter() plugin.Outputter {
 	j := &SecurityFindingsJSONOutputter{
-		findings: make([]any, 0),
+		BaseFileOutputter: NewBaseFileOutputter(),
+		findings:          make([]any, 0),
 	}
-	j.BaseFileOutputter = NewBaseFileOutputter(j, configs...)
 	return j
 }
 
 // Initialize sets up the outputter
-func (j *SecurityFindingsJSONOutputter) Initialize() error {
+func (j *SecurityFindingsJSONOutputter) Initialize(cfg plugin.Config) error {
+	j.SetConfig(cfg)
+
 	// Get output directory
-	outputDir, err := cfg.As[string](j.Arg("output"))
-	if err != nil {
-		outputDir = "nebula-output" // Fallback default
-	}
+	outputDir := j.GetArg("output", "aurelian-output").(string)
 
 	// Get default output file (can be overridden at runtime)
-	outfile, err := cfg.As[string](j.Arg("outfile"))
-	if err != nil {
-		outfile = defaultSecurityOutfile // Fallback default
-	}
+	outfile := j.GetArg("outfile", defaultSecurityOutfile).(string)
 
 	// If custom filename provided, prepend with output directory
 	if outfile != defaultSecurityOutfile {
@@ -72,10 +66,7 @@ func (j *SecurityFindingsJSONOutputter) Initialize() error {
 	}
 
 	// Get indentation setting
-	indent, err := cfg.As[int](j.Arg("indent"))
-	if err != nil {
-		indent = 2 // Default to pretty-printed JSON for security findings
-	}
+	indent := j.GetArg("indent", 2).(int)
 	j.indent = indent
 
 	slog.Debug("initialized security findings JSON outputter", "file", j.outfile, "indent", j.indent)
@@ -94,10 +85,7 @@ func (j *SecurityFindingsJSONOutputter) Output(val any) error {
 func (j *SecurityFindingsJSONOutputter) Complete() error {
 	// Update filename at completion if needed
 	if filepath.Base(j.outfile) == defaultSecurityOutfile || strings.Contains(j.outfile, "security-findings") {
-		outputDir, err := cfg.As[string](j.Arg("output"))
-		if err != nil {
-			outputDir = "nebula-output"
-		}
+		outputDir := j.GetArg("output", "aurelian-output").(string)
 
 		contextualName := j.generateSecurityFilename()
 		if contextualName != "" && !strings.Contains(contextualName, "security-findings") {
@@ -146,33 +134,33 @@ func (j *SecurityFindingsJSONOutputter) generateSecurityFilename() string {
 	timestamp := time.Now().Format("20060102-150405")
 
 	// Get module name if provided
-	moduleName, moduleErr := cfg.As[string](j.Arg("module-name"))
-	if moduleErr != nil || moduleName == "" {
+	moduleName := j.GetArg("module-name", "security-findings").(string)
+	if moduleName == "" {
 		moduleName = "security-findings"
 		slog.Debug("module-name not found, using fallback", "fallback", moduleName)
 	}
 
 	// Try to determine platform context
 	// GCP parameters
-	if orgs, err := cfg.As[[]string](j.Arg("org")); err == nil && len(orgs) > 0 && orgs[0] != "" {
+	if orgs, ok := j.GetArg("org", nil).([]string); ok && len(orgs) > 0 && orgs[0] != "" {
 		orgId := orgs[0]
 		slog.Debug("Found GCP org, generating GCP security filename", "org", orgId, "module", moduleName)
 		return fmt.Sprintf("%s-gcp-%s.json", moduleName, orgId)
 	}
 
-	if project, err := cfg.As[string](j.Arg("project")); err == nil && project != "" {
+	if project, ok := j.GetArg("project", "").(string); ok && project != "" {
 		slog.Debug("Found GCP project, generating GCP security filename", "project", project, "module", moduleName)
 		return fmt.Sprintf("%s-gcp-%s.json", moduleName, project)
 	}
 
 	// AWS parameters
-	if _, err := cfg.As[string](j.Arg("profile")); err == nil {
+	if _, ok := j.GetArg("profile", "").(string); ok {
 		slog.Debug("Found AWS profile, generating AWS security filename", "module", moduleName)
 		return fmt.Sprintf("%s-aws.json", moduleName)
 	}
 
 	// Azure parameters
-	if subscriptions, err := cfg.As[[]string](j.Arg("subscription")); err == nil && len(subscriptions) > 0 && subscriptions[0] != "" {
+	if subscriptions, ok := j.GetArg("subscription", nil).([]string); ok && len(subscriptions) > 0 && subscriptions[0] != "" {
 		slog.Debug("Found Azure subscription, generating Azure security filename", "subscription", subscriptions[0], "module", moduleName)
 		return fmt.Sprintf("%s-azure.json", moduleName)
 	}
@@ -180,14 +168,4 @@ func (j *SecurityFindingsJSONOutputter) generateSecurityFilename() string {
 	// Fallback to timestamp
 	slog.Debug("No platform parameters found, using timestamp fallback for security findings")
 	return fmt.Sprintf("%s-%s.json", moduleName, timestamp)
-}
-
-// Params defines the parameters accepted by this outputter
-func (j *SecurityFindingsJSONOutputter) Params() []cfg.Param {
-	return []cfg.Param{
-		cfg.NewParam[string]("outfile", "the file to write security findings to").WithDefault(defaultSecurityOutfile),
-		cfg.NewParam[int]("indent", "the number of spaces to use for JSON indentation").WithDefault(2),
-		cfg.NewParam[string]("module-name", "the name of the security module for dynamic file naming"),
-		options.OutputDir(),
-	}
 }

@@ -1,7 +1,7 @@
 package gcloudiam
 
 import (
-	gcptypes "github.com/praetorian-inc/nebula/pkg/types/gcp"
+	gcptypes "github.com/praetorian-inc/aurelian/pkg/types/gcp"
 )
 
 // PrivescPermissions contains all permissions relevant for privilege escalation analysis

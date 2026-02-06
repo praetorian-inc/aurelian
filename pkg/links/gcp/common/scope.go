@@ -2,8 +2,6 @@ package common
 
 import (
 	"fmt"
-
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
 )
 
 type ScopeConfig struct {
@@ -11,10 +9,36 @@ type ScopeConfig struct {
 	Value string
 }
 
+// getStringSlice extracts a []string from map[string]any, supporting both []string and []any
+func getStringSlice(args map[string]any, key string) []string {
+	val, exists := args[key]
+	if !exists {
+		return nil
+	}
+
+	// Direct []string case
+	if strSlice, ok := val.([]string); ok {
+		return strSlice
+	}
+
+	// []any case - convert to []string
+	if anySlice, ok := val.([]any); ok {
+		result := make([]string, 0, len(anySlice))
+		for _, item := range anySlice {
+			if str, ok := item.(string); ok {
+				result = append(result, str)
+			}
+		}
+		return result
+	}
+
+	return nil
+}
+
 func ParseScopeArgs(args map[string]any) (*ScopeConfig, error) {
-	orgList, _ := cfg.As[[]string](args["org"])
-	folderList, _ := cfg.As[[]string](args["folder"])
-	projectList, _ := cfg.As[[]string](args["project"])
+	orgList := getStringSlice(args, "org")
+	folderList := getStringSlice(args, "folder")
+	projectList := getStringSlice(args, "project")
 
 	scopeCount := 0
 	scope := &ScopeConfig{}

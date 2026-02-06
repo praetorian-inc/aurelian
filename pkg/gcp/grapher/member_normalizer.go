@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	gcptypes "github.com/praetorian-inc/nebula/pkg/types/gcp"
+	gcptypes "github.com/praetorian-inc/aurelian/pkg/types/gcp"
 )
 
 var (

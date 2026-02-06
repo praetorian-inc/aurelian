@@ -7,14 +7,13 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
-	"github.com/praetorian-inc/nebula/pkg/utils"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/common"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/utils"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/dns/v1"
+	"google.golang.org/api/option"
 )
 
 // NOTE: placing zones and dns in the same package though they're technically outside compute scope
@@ -31,36 +30,51 @@ import (
 // ------------------------------------------------------------------------------------------------
 
 type GcpGlobalForwardingRuleListLink struct {
-	*base.GcpBaseLink
+	*plugin.BaseLink
 	computeService *compute.Service
+	ClientOptions  []option.ClientOption
 }
 
 // creates a link to list all global forwarding rules in a project
-func NewGcpGlobalForwardingRuleListLink(configs ...cfg.Config) chain.Link {
-	g := &GcpGlobalForwardingRuleListLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpGlobalForwardingRuleListLink(args map[string]any) *GcpGlobalForwardingRuleListLink {
+	return &GcpGlobalForwardingRuleListLink{
+		BaseLink: plugin.NewBaseLink("gcp-global-forwarding-rule-list", args),
+	}
 }
 
-func (g *GcpGlobalForwardingRuleListLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
+func (g *GcpGlobalForwardingRuleListLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		plugin.NewParam[string]("credentials", "Path to GCP credentials file"),
 	}
-	var err error
-	g.computeService, err = compute.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create compute service: %w", err)
-	}
-	return nil
 }
 
-func (g *GcpGlobalForwardingRuleListLink) Process(resource tab.GCPResource) error {
+func (g *GcpGlobalForwardingRuleListLink) Process(ctx context.Context, input any) ([]any, error) {
+	// Initialize service on first call
+	if g.computeService == nil {
+		if creds, ok := g.Arg("credentials").(string); ok && creds != "" {
+			g.ClientOptions = []option.ClientOption{option.WithCredentialsFile(creds)}
+		}
+		var err error
+		g.computeService, err = compute.NewService(ctx, g.ClientOptions...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create compute service: %w", err)
+		}
+	}
+
+	resource, ok := input.(tab.GCPResource)
+	if !ok {
+		return nil, fmt.Errorf("expected tab.GCPResource input, got %T", input)
+	}
+
 	if resource.ResourceType != tab.GCPResourceProject {
-		return nil
+		return nil, nil
 	}
+
 	projectId := resource.Name
 	globalListReq := g.computeService.GlobalForwardingRules.List(projectId)
-	err := globalListReq.Pages(context.Background(), func(page *compute.ForwardingRuleList) error {
+
+	var outputs []any
+	err := globalListReq.Pages(ctx, func(page *compute.ForwardingRuleList) error {
 		for _, rule := range page.Items {
 			properties := g.postProcess(rule)
 			gcpForwardingRule, err := tab.NewGCPResource(
@@ -73,11 +87,16 @@ func (g *GcpGlobalForwardingRuleListLink) Process(resource tab.GCPResource) erro
 				slog.Error("Failed to create GCP global forwarding rule resource", "error", err, "rule", rule.Name)
 				continue
 			}
-			g.Send(gcpForwardingRule)
+			outputs = append(outputs, gcpForwardingRule)
 		}
 		return nil
 	})
-	return common.HandleGcpError(err, "failed to list global forwarding rules")
+
+	if err != nil {
+		return nil, common.HandleGcpError(err, "failed to list global forwarding rules")
+	}
+
+	return outputs, nil
 }
 
 func (g *GcpGlobalForwardingRuleListLink) postProcess(rule *compute.ForwardingRule) map[string]any {
@@ -109,49 +128,67 @@ func (g *GcpGlobalForwardingRuleListLink) postProcess(rule *compute.ForwardingRu
 }
 
 type GcpRegionalForwardingRuleListLink struct {
-	*base.GcpBaseLink
+	*plugin.BaseLink
 	computeService *compute.Service
+	ClientOptions  []option.ClientOption
 }
 
 // creates a link to list all regional forwarding rules in a project
-func NewGcpRegionalForwardingRuleListLink(configs ...cfg.Config) chain.Link {
-	g := &GcpRegionalForwardingRuleListLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpRegionalForwardingRuleListLink(args map[string]any) *GcpRegionalForwardingRuleListLink {
+	return &GcpRegionalForwardingRuleListLink{
+		BaseLink: plugin.NewBaseLink("gcp-regional-forwarding-rule-list", args),
+	}
 }
 
-func (g *GcpRegionalForwardingRuleListLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
+func (g *GcpRegionalForwardingRuleListLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		plugin.NewParam[string]("credentials", "Path to GCP credentials file"),
 	}
-	var err error
-	g.computeService, err = compute.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create compute service: %w", err)
-	}
-	return nil
 }
 
-func (g *GcpRegionalForwardingRuleListLink) Process(resource tab.GCPResource) error {
+func (g *GcpRegionalForwardingRuleListLink) Process(ctx context.Context, input any) ([]any, error) {
+	// Initialize service on first call
+	if g.computeService == nil {
+		if creds, ok := g.Arg("credentials").(string); ok && creds != "" {
+			g.ClientOptions = []option.ClientOption{option.WithCredentialsFile(creds)}
+		}
+		var err error
+		g.computeService, err = compute.NewService(ctx, g.ClientOptions...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create compute service: %w", err)
+		}
+	}
+
+	resource, ok := input.(tab.GCPResource)
+	if !ok {
+		return nil, fmt.Errorf("expected tab.GCPResource input, got %T", input)
+	}
+
 	if resource.ResourceType != tab.GCPResourceProject {
-		return nil
+		return nil, nil
 	}
+
 	projectId := resource.Name
 	regionsListCall := g.computeService.Regions.List(projectId)
 	regionsResp, err := regionsListCall.Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to list regions in project")
+		return nil, common.HandleGcpError(err, "failed to list regions in project")
 	}
+
+	var outputs []any
+	var mu sync.Mutex
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
+
 	for _, region := range regionsResp.Items {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(regionName string) {
 			defer wg.Done()
 			defer func() { <-sem }()
+
 			regionalListReq := g.computeService.ForwardingRules.List(projectId, regionName)
-			err := regionalListReq.Pages(context.Background(), func(page *compute.ForwardingRuleList) error {
+			err := regionalListReq.Pages(ctx, func(page *compute.ForwardingRuleList) error {
 				for _, rule := range page.Items {
 					gcpForwardingRule, err := tab.NewGCPResource(
 						rule.Name,                     // resource name
@@ -164,7 +201,10 @@ func (g *GcpRegionalForwardingRuleListLink) Process(resource tab.GCPResource) er
 						continue
 					}
 					gcpForwardingRule.DisplayName = rule.Name
-					g.Send(gcpForwardingRule)
+
+					mu.Lock()
+					outputs = append(outputs, gcpForwardingRule)
+					mu.Unlock()
 				}
 				return nil
 			})
@@ -174,7 +214,8 @@ func (g *GcpRegionalForwardingRuleListLink) Process(resource tab.GCPResource) er
 		}(region.Name)
 	}
 	wg.Wait()
-	return nil
+
+	return outputs, nil
 }
 
 func (g *GcpRegionalForwardingRuleListLink) postProcess(rule *compute.ForwardingRule) map[string]any {
@@ -206,36 +247,51 @@ func (g *GcpRegionalForwardingRuleListLink) postProcess(rule *compute.Forwarding
 }
 
 type GcpGlobalAddressListLink struct {
-	*base.GcpBaseLink
+	*plugin.BaseLink
 	computeService *compute.Service
+	ClientOptions  []option.ClientOption
 }
 
 // creates a link to list all global addresses in a project
-func NewGcpGlobalAddressListLink(configs ...cfg.Config) chain.Link {
-	g := &GcpGlobalAddressListLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpGlobalAddressListLink(args map[string]any) *GcpGlobalAddressListLink {
+	return &GcpGlobalAddressListLink{
+		BaseLink: plugin.NewBaseLink("gcp-global-address-list", args),
+	}
 }
 
-func (g *GcpGlobalAddressListLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
+func (g *GcpGlobalAddressListLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		plugin.NewParam[string]("credentials", "Path to GCP credentials file"),
 	}
-	var err error
-	g.computeService, err = compute.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create compute service: %w", err)
-	}
-	return nil
 }
 
-func (g *GcpGlobalAddressListLink) Process(resource tab.GCPResource) error {
+func (g *GcpGlobalAddressListLink) Process(ctx context.Context, input any) ([]any, error) {
+	// Initialize service on first call
+	if g.computeService == nil {
+		if creds, ok := g.Arg("credentials").(string); ok && creds != "" {
+			g.ClientOptions = []option.ClientOption{option.WithCredentialsFile(creds)}
+		}
+		var err error
+		g.computeService, err = compute.NewService(ctx, g.ClientOptions...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create compute service: %w", err)
+		}
+	}
+
+	resource, ok := input.(tab.GCPResource)
+	if !ok {
+		return nil, fmt.Errorf("expected tab.GCPResource input, got %T", input)
+	}
+
 	if resource.ResourceType != tab.GCPResourceProject {
-		return nil
+		return nil, nil
 	}
+
 	projectId := resource.Name
 	globalListReq := g.computeService.GlobalAddresses.List(projectId)
-	err := globalListReq.Pages(context.Background(), func(page *compute.AddressList) error {
+
+	var outputs []any
+	err := globalListReq.Pages(ctx, func(page *compute.AddressList) error {
 		for _, address := range page.Items {
 			gcpGlobalAddress, err := tab.NewGCPResource(
 				address.Address,        // resource name
@@ -248,11 +304,16 @@ func (g *GcpGlobalAddressListLink) Process(resource tab.GCPResource) error {
 				continue
 			}
 			gcpGlobalAddress.DisplayName = address.Name
-			g.Send(gcpGlobalAddress)
+			outputs = append(outputs, gcpGlobalAddress)
 		}
 		return nil
 	})
-	return common.HandleGcpError(err, "failed to list global addresses")
+
+	if err != nil {
+		return nil, common.HandleGcpError(err, "failed to list global addresses")
+	}
+
+	return outputs, nil
 }
 
 func (g *GcpGlobalAddressListLink) postProcess(address *compute.Address) map[string]any {
@@ -283,49 +344,67 @@ func (g *GcpGlobalAddressListLink) postProcess(address *compute.Address) map[str
 }
 
 type GcpRegionalAddressListLink struct {
-	*base.GcpBaseLink
+	*plugin.BaseLink
 	computeService *compute.Service
+	ClientOptions  []option.ClientOption
 }
 
 // creates a link to list all regional addresses in a project
-func NewGcpRegionalAddressListLink(configs ...cfg.Config) chain.Link {
-	g := &GcpRegionalAddressListLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpRegionalAddressListLink(args map[string]any) *GcpRegionalAddressListLink {
+	return &GcpRegionalAddressListLink{
+		BaseLink: plugin.NewBaseLink("gcp-regional-address-list", args),
+	}
 }
 
-func (g *GcpRegionalAddressListLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
+func (g *GcpRegionalAddressListLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		plugin.NewParam[string]("credentials", "Path to GCP credentials file"),
 	}
-	var err error
-	g.computeService, err = compute.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create compute service: %w", err)
-	}
-	return nil
 }
 
-func (g *GcpRegionalAddressListLink) Process(resource tab.GCPResource) error {
+func (g *GcpRegionalAddressListLink) Process(ctx context.Context, input any) ([]any, error) {
+	// Initialize service on first call
+	if g.computeService == nil {
+		if creds, ok := g.Arg("credentials").(string); ok && creds != "" {
+			g.ClientOptions = []option.ClientOption{option.WithCredentialsFile(creds)}
+		}
+		var err error
+		g.computeService, err = compute.NewService(ctx, g.ClientOptions...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create compute service: %w", err)
+		}
+	}
+
+	resource, ok := input.(tab.GCPResource)
+	if !ok {
+		return nil, fmt.Errorf("expected tab.GCPResource input, got %T", input)
+	}
+
 	if resource.ResourceType != tab.GCPResourceProject {
-		return nil
+		return nil, nil
 	}
+
 	projectId := resource.Name
 	regionsListCall := g.computeService.Regions.List(projectId)
 	regionsResp, err := regionsListCall.Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to list regions in project")
+		return nil, common.HandleGcpError(err, "failed to list regions in project")
 	}
+
+	var outputs []any
+	var mu sync.Mutex
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
+
 	for _, region := range regionsResp.Items {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(regionName string) {
 			defer wg.Done()
 			defer func() { <-sem }()
+
 			regionalListReq := g.computeService.Addresses.List(projectId, regionName)
-			err := regionalListReq.Pages(context.Background(), func(page *compute.AddressList) error {
+			err := regionalListReq.Pages(ctx, func(page *compute.AddressList) error {
 				for _, address := range page.Items {
 					gcpRegionalAddress, err := tab.NewGCPResource(
 						address.Address,        // resource name
@@ -338,7 +417,10 @@ func (g *GcpRegionalAddressListLink) Process(resource tab.GCPResource) error {
 						continue
 					}
 					gcpRegionalAddress.DisplayName = address.Name
-					g.Send(gcpRegionalAddress)
+
+					mu.Lock()
+					outputs = append(outputs, gcpRegionalAddress)
+					mu.Unlock()
 				}
 				return nil
 			})
@@ -348,7 +430,8 @@ func (g *GcpRegionalAddressListLink) Process(resource tab.GCPResource) error {
 		}(region.Name)
 	}
 	wg.Wait()
-	return nil
+
+	return outputs, nil
 }
 
 func (g *GcpRegionalAddressListLink) postProcess(address *compute.Address) map[string]any {
@@ -379,36 +462,51 @@ func (g *GcpRegionalAddressListLink) postProcess(address *compute.Address) map[s
 }
 
 type GcpDnsManagedZoneListLink struct {
-	*base.GcpBaseLink
-	dnsService *dns.Service
+	*plugin.BaseLink
+	dnsService    *dns.Service
+	ClientOptions []option.ClientOption
 }
 
 // creates a link to list all DNS managed zones in a project
-func NewGcpDnsManagedZoneListLink(configs ...cfg.Config) chain.Link {
-	g := &GcpDnsManagedZoneListLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpDnsManagedZoneListLink(args map[string]any) *GcpDnsManagedZoneListLink {
+	return &GcpDnsManagedZoneListLink{
+		BaseLink: plugin.NewBaseLink("gcp-dns-managed-zone-list", args),
+	}
 }
 
-func (g *GcpDnsManagedZoneListLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
+func (g *GcpDnsManagedZoneListLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		plugin.NewParam[string]("credentials", "Path to GCP credentials file"),
 	}
-	var err error
-	g.dnsService, err = dns.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create dns service: %w", err)
-	}
-	return nil
 }
 
-func (g *GcpDnsManagedZoneListLink) Process(resource tab.GCPResource) error {
+func (g *GcpDnsManagedZoneListLink) Process(ctx context.Context, input any) ([]any, error) {
+	// Initialize service on first call
+	if g.dnsService == nil {
+		if creds, ok := g.Arg("credentials").(string); ok && creds != "" {
+			g.ClientOptions = []option.ClientOption{option.WithCredentialsFile(creds)}
+		}
+		var err error
+		g.dnsService, err = dns.NewService(ctx, g.ClientOptions...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create dns service: %w", err)
+		}
+	}
+
+	resource, ok := input.(tab.GCPResource)
+	if !ok {
+		return nil, fmt.Errorf("expected tab.GCPResource input, got %T", input)
+	}
+
 	if resource.ResourceType != tab.GCPResourceProject {
-		return nil
+		return nil, nil
 	}
+
 	projectId := resource.Name
 	listReq := g.dnsService.ManagedZones.List(projectId)
-	err := listReq.Pages(context.Background(), func(page *dns.ManagedZonesListResponse) error {
+
+	var outputs []any
+	err := listReq.Pages(ctx, func(page *dns.ManagedZonesListResponse) error {
 		for _, zone := range page.ManagedZones {
 			gcpDnsZone, err := tab.NewGCPResource(
 				zone.Name,                     // resource name
@@ -421,11 +519,16 @@ func (g *GcpDnsManagedZoneListLink) Process(resource tab.GCPResource) error {
 				continue
 			}
 			gcpDnsZone.DisplayName = zone.DnsName
-			g.Send(gcpDnsZone)
+			outputs = append(outputs, gcpDnsZone)
 		}
 		return nil
 	})
-	return common.HandleGcpError(err, "failed to list DNS managed zones")
+
+	if err != nil {
+		return nil, common.HandleGcpError(err, "failed to list DNS managed zones")
+	}
+
+	return outputs, nil
 }
 
 func (g *GcpDnsManagedZoneListLink) postProcess(zone *dns.ManagedZone) map[string]any {
@@ -447,37 +550,51 @@ func (g *GcpDnsManagedZoneListLink) postProcess(zone *dns.ManagedZone) map[strin
 }
 
 type GCPNetworkingFanOut struct {
-	*base.GcpBaseLink
+	*plugin.BaseLink
 }
 
 // creates a link to fan out to all networking resources list links in a project
-func NewGCPNetworkingFanOut(configs ...cfg.Config) chain.Link {
-	g := &GCPNetworkingFanOut{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGCPNetworkingFanOut(args map[string]any) *GCPNetworkingFanOut {
+	return &GCPNetworkingFanOut{
+		BaseLink: plugin.NewBaseLink("gcp-networking-fanout", args),
+	}
 }
 
-func (g *GCPNetworkingFanOut) Process(project tab.GCPResource) error {
+func (g *GCPNetworkingFanOut) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		plugin.NewParam[string]("credentials", "Path to GCP credentials file"),
+	}
+}
+
+func (g *GCPNetworkingFanOut) Process(ctx context.Context, input any) ([]any, error) {
+	project, ok := input.(tab.GCPResource)
+	if !ok {
+		return nil, fmt.Errorf("expected tab.GCPResource input, got %T", input)
+	}
+
 	if project.ResourceType != tab.GCPResourceProject {
-		return nil
+		return nil, nil
 	}
-	multi := chain.NewMulti(
-		chain.NewChain(NewGcpGlobalForwardingRuleListLink()),
-		chain.NewChain(NewGcpRegionalForwardingRuleListLink()),
-		chain.NewChain(NewGcpGlobalAddressListLink()),
-		chain.NewChain(NewGcpRegionalAddressListLink()),
-		chain.NewChain(NewGcpDnsManagedZoneListLink()),
-	)
-	multi.WithConfigs(cfg.WithArgs(g.Args()))
-	multi.WithStrictness(chain.Lax)
-	multi.Send(project)
-	multi.Close()
-	for result, ok := chain.RecvAs[*tab.GCPResource](multi); ok; result, ok = chain.RecvAs[*tab.GCPResource](multi) {
-		g.Send(result)
+
+	// Create child links with same args
+	links := []plugin.Link{
+		NewGcpGlobalForwardingRuleListLink(g.BaseLink.Args()),
+		NewGcpRegionalForwardingRuleListLink(g.BaseLink.Args()),
+		NewGcpGlobalAddressListLink(g.BaseLink.Args()),
+		NewGcpRegionalAddressListLink(g.BaseLink.Args()),
+		NewGcpDnsManagedZoneListLink(g.BaseLink.Args()),
 	}
-	err := multi.Error()
-	if err != nil {
-		slog.Error("Error in GCP networking fan out", "error", err)
+
+	var allOutputs []any
+	for _, link := range links {
+		outputs, err := link.Process(ctx, project)
+		if err != nil {
+			slog.Error("Error in GCP networking fan out", "error", err, "link", link)
+			// Continue processing other links even if one fails (lax strictness)
+			continue
+		}
+		allOutputs = append(allOutputs, outputs...)
 	}
-	return nil
+
+	return allOutputs, nil
 }

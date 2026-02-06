@@ -4,15 +4,15 @@ import (
 	"context"
 	"fmt"
 
-	gcptypes "github.com/praetorian-inc/nebula/pkg/types/gcp"
+	gcptypes "github.com/praetorian-inc/aurelian/pkg/types/gcp"
 	"google.golang.org/api/deploymentmanager/v2"
 	"google.golang.org/api/option"
 )
 
 type DeploymentManagerCollector struct {
-	ctx          context.Context
+	ctx           context.Context
 	clientOptions []option.ClientOption
-	dmService    *deploymentmanager.Service
+	dmService     *deploymentmanager.Service
 }
 
 func NewDeploymentManagerCollector(ctx context.Context, clientOptions ...option.ClientOption) (*DeploymentManagerCollector, error) {
@@ -22,9 +22,9 @@ func NewDeploymentManagerCollector(ctx context.Context, clientOptions ...option.
 	}
 
 	return &DeploymentManagerCollector{
-		ctx:          ctx,
+		ctx:           ctx,
 		clientOptions: clientOptions,
-		dmService:    dmService,
+		dmService:     dmService,
 	}, nil
 }
 

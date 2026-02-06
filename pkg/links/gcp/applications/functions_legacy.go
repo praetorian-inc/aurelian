@@ -12,14 +12,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/common"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 	"google.golang.org/api/cloudfunctions/v1"
+	"google.golang.org/api/option"
 )
 
 // FILE INFO:
@@ -35,47 +33,38 @@ type GcpFunctionInfoLink struct {
 }
 
 // creates a link to get info of a single cloud function
-func NewGcpFunctionInfoLink(configs ...cfg.Config) chain.Link {
-	g := &GcpFunctionInfoLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpFunctionInfoLink(projectId, region string, clientOpts ...option.ClientOption) *GcpFunctionInfoLink {
+	link := &GcpFunctionInfoLink{
+		GcpBaseLink: base.NewGcpBaseLink("GcpFunctionInfoLink", nil),
+		ProjectId:   projectId,
+		Region:      region,
+	}
+	link.ClientOptions = clientOpts
+	return link
 }
 
-func (g *GcpFunctionInfoLink) Params() []cfg.Param {
-	params := append(g.GcpBaseLink.Params(),
-		options.GcpProject(),
-		options.GcpRegion(),
-	)
-	return params
-}
-
-func (g *GcpFunctionInfoLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
+func (g *GcpFunctionInfoLink) Initialize(ctx context.Context) error {
+	if err := g.GcpBaseLink.Initialize(ctx); err != nil {
 		return err
 	}
 	var err error
-	g.functionsService, err = cloudfunctions.NewService(context.Background(), g.ClientOptions...)
+	g.functionsService, err = cloudfunctions.NewService(ctx, g.ClientOptions...)
 	if err != nil {
 		return fmt.Errorf("failed to create cloud functions service: %w", err)
 	}
-	projectId, err := cfg.As[string](g.Arg("project"))
-	if err != nil {
-		return fmt.Errorf("failed to get project: %w", err)
-	}
-	g.ProjectId = projectId
-	region, err := cfg.As[string](g.Arg("region"))
-	if err != nil {
-		return fmt.Errorf("failed to get region: %w", err)
-	}
-	g.Region = region
 	return nil
 }
 
-func (g *GcpFunctionInfoLink) Process(functionName string) error {
+func (g *GcpFunctionInfoLink) Process(ctx context.Context, input any) ([]any, error) {
+	functionName, ok := input.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string input, got %T", input)
+	}
+
 	functionPath := fmt.Sprintf("projects/%s/locations/%s/functions/%s", g.ProjectId, g.Region, functionName)
 	function, err := g.functionsService.Projects.Locations.Functions.Get(functionPath).Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to get function")
+		return nil, common.HandleGcpError(err, "failed to get function")
 	}
 	gcpFunction, err := tab.NewGCPResource(
 		function.Name,                     // resource name
@@ -84,11 +73,10 @@ func (g *GcpFunctionInfoLink) Process(functionName string) error {
 		linkPostProcessFunction(function), // properties
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create GCP function resource: %w", err)
+		return nil, fmt.Errorf("failed to create GCP function resource: %w", err)
 	}
 	gcpFunction.DisplayName = function.Name
-	g.Send(gcpFunction)
-	return nil
+	return []any{gcpFunction}, nil
 }
 
 type GcpFunctionListLink struct {
@@ -97,31 +85,41 @@ type GcpFunctionListLink struct {
 }
 
 // creates a link to list all cloud functions in a project
-func NewGcpFunctionListLink(configs ...cfg.Config) chain.Link {
-	g := &GcpFunctionListLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpFunctionListLink(clientOpts ...option.ClientOption) *GcpFunctionListLink {
+	link := &GcpFunctionListLink{
+		GcpBaseLink: base.NewGcpBaseLink("GcpFunctionListLink", nil),
+	}
+	link.ClientOptions = clientOpts
+	return link
 }
 
-func (g *GcpFunctionListLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
+func (g *GcpFunctionListLink) Initialize(ctx context.Context) error {
+	if err := g.GcpBaseLink.Initialize(ctx); err != nil {
 		return err
 	}
 	var err error
-	g.functionsService, err = cloudfunctions.NewService(context.Background(), g.ClientOptions...)
+	g.functionsService, err = cloudfunctions.NewService(ctx, g.ClientOptions...)
 	if err != nil {
 		return fmt.Errorf("failed to create cloud functions service: %w", err)
 	}
 	return nil
 }
 
-func (g *GcpFunctionListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceProject {
-		return nil
+func (g *GcpFunctionListLink) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(tab.GCPResource)
+	if !ok {
+		return nil, fmt.Errorf("expected tab.GCPResource input, got %T", input)
 	}
+
+	if resource.ResourceType != tab.GCPResourceProject {
+		return nil, nil
+	}
+
 	parent := fmt.Sprintf("projects/%s/locations/%s", resource.Name, "-")
 	listReq := g.functionsService.Projects.Locations.Functions.List(parent)
-	err := listReq.Pages(context.Background(), func(page *cloudfunctions.ListFunctionsResponse) error {
+
+	var results []any
+	err := listReq.Pages(ctx, func(page *cloudfunctions.ListFunctionsResponse) error {
 		for _, function := range page.Functions {
 			slog.Debug("Found function", "function", function.Name)
 			properties := linkPostProcessFunction(function)
@@ -149,11 +147,14 @@ func (g *GcpFunctionListLink) Process(resource tab.GCPResource) error {
 				continue
 			}
 			gcpFunction.DisplayName = function.Name
-			g.Send(gcpFunction)
+			results = append(results, gcpFunction)
 		}
 		return nil
 	})
-	return common.HandleGcpError(err, "failed to list functions in location")
+	if err != nil {
+		return nil, common.HandleGcpError(err, "failed to list functions in location")
+	}
+	return results, nil
 }
 
 type GcpFunctionSecretsLink struct {
@@ -162,78 +163,100 @@ type GcpFunctionSecretsLink struct {
 }
 
 // creates a link to scan cloud function for secrets
-func NewGcpFunctionSecretsLink(configs ...cfg.Config) chain.Link {
-	g := &GcpFunctionSecretsLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpFunctionSecretsLink(clientOpts ...option.ClientOption) *GcpFunctionSecretsLink {
+	link := &GcpFunctionSecretsLink{
+		GcpBaseLink: base.NewGcpBaseLink("GcpFunctionSecretsLink", nil),
+	}
+	link.ClientOptions = clientOpts
+	return link
 }
 
-func (g *GcpFunctionSecretsLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
+func (g *GcpFunctionSecretsLink) Initialize(ctx context.Context) error {
+	if err := g.GcpBaseLink.Initialize(ctx); err != nil {
 		return err
 	}
 	var err error
-	g.functionsService, err = cloudfunctions.NewService(context.Background(), g.ClientOptions...)
+	g.functionsService, err = cloudfunctions.NewService(ctx, g.ClientOptions...)
 	if err != nil {
 		return fmt.Errorf("failed to create cloud functions service: %w", err)
 	}
 	return nil
 }
 
-func (g *GcpFunctionSecretsLink) Process(input tab.GCPResource) error {
-	if input.ResourceType != tab.GCPResourceFunction {
-		return nil
+func (g *GcpFunctionSecretsLink) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(tab.GCPResource)
+	if !ok {
+		return nil, fmt.Errorf("expected tab.GCPResource input, got %T", input)
 	}
-	fn, err := g.functionsService.Projects.Locations.Functions.Get(input.Name).Do()
+
+	if resource.ResourceType != tab.GCPResourceFunction {
+		return nil, nil
+	}
+
+	fn, err := g.functionsService.Projects.Locations.Functions.Get(resource.Name).Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to get cloud function for secrets extraction")
+		return nil, common.HandleGcpError(err, "failed to get cloud function for secrets extraction")
 	}
+
+	var results []any
 	if len(fn.EnvironmentVariables) > 0 {
 		if content, err := json.Marshal(fn.EnvironmentVariables); err == nil {
-			g.Send(jtypes.NPInput{
+			results = append(results, types.NpInput{
 				Content: string(content),
-				Provenance: jtypes.NPProvenance{
+				Provenance: types.NpProvenance{
 					Platform:     "gcp",
 					ResourceType: fmt.Sprintf("%s::EnvVariables", tab.GCPResourceFunction.String()),
-					ResourceID:   input.Name,
-					Region:       input.Region,
-					AccountID:    input.AccountRef,
+					ResourceID:   resource.Name,
+					Region:       resource.Region,
+					AccountID:    resource.AccountRef,
 				},
 			})
 		}
 	}
+
 	if fn.SourceArchiveUrl != "" {
-		if err := g.scanFunctionSourceCode(fn.SourceArchiveUrl, input); err != nil {
-			slog.Error("Failed to scan function source code", "error", err, "function", input.Name)
+		sourceResults, err := g.scanFunctionSourceCode(ctx, fn.SourceArchiveUrl, resource)
+		if err != nil {
+			slog.Error("Failed to scan function source code", "error", err, "function", resource.Name)
+		} else {
+			results = append(results, sourceResults...)
 		}
 	}
-	return nil
+
+	return results, nil
 }
 
-func (g *GcpFunctionSecretsLink) scanFunctionSourceCode(sourceArchiveUrl string, input tab.GCPResource) error {
+func (g *GcpFunctionSecretsLink) scanFunctionSourceCode(ctx context.Context, sourceArchiveUrl string, input tab.GCPResource) ([]any, error) {
 	resp, err := http.Get(sourceArchiveUrl)
 	if err != nil {
-		return fmt.Errorf("failed to download source archive: %w", err)
+		return nil, fmt.Errorf("failed to download source archive: %w", err)
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download source archive: status %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to download source archive: status %d", resp.StatusCode)
 	}
+
 	archiveData, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read archive data: %w", err)
+		return nil, fmt.Errorf("failed to read archive data: %w", err)
 	}
-	if err := g.extractAndScanZipFiles(archiveData, input); err != nil {
-		return fmt.Errorf("failed to extract and scan files: %w", err)
+
+	results, err := g.extractAndScanZipFiles(archiveData, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract and scan files: %w", err)
 	}
-	return nil
+
+	return results, nil
 }
 
-func (g *GcpFunctionSecretsLink) extractAndScanZipFiles(archiveData []byte, input tab.GCPResource) error {
+func (g *GcpFunctionSecretsLink) extractAndScanZipFiles(archiveData []byte, input tab.GCPResource) ([]any, error) {
 	reader, err := zip.NewReader(bytes.NewReader(archiveData), int64(len(archiveData)))
 	if err != nil {
-		return fmt.Errorf("failed to create zip reader: %w", err)
+		return nil, fmt.Errorf("failed to create zip reader: %w", err)
 	}
+
+	var results []any
 	for _, file := range reader.File {
 		if file.FileInfo().IsDir() || g.isSkippableFile(file.Name) {
 			continue
@@ -241,6 +264,7 @@ func (g *GcpFunctionSecretsLink) extractAndScanZipFiles(archiveData []byte, inpu
 		if file.UncompressedSize64 > 1*1024*1024 {
 			continue
 		}
+
 		rc, err := file.Open()
 		if err != nil {
 			slog.Error("Failed to open file in archive", "file", file.Name, "error", err)
@@ -252,9 +276,10 @@ func (g *GcpFunctionSecretsLink) extractAndScanZipFiles(archiveData []byte, inpu
 			slog.Error("Failed to read file content", "file", file.Name, "error", err)
 			continue
 		}
-		g.Send(jtypes.NPInput{
+
+		results = append(results, types.NpInput{
 			Content: string(content),
-			Provenance: jtypes.NPProvenance{
+			Provenance: types.NpProvenance{
 				Platform:     "gcp",
 				ResourceType: fmt.Sprintf("%s::SourceCode", tab.GCPResourceFunction.String()),
 				ResourceID:   fmt.Sprintf("%s/%s", input.Name, file.Name),
@@ -264,7 +289,7 @@ func (g *GcpFunctionSecretsLink) extractAndScanZipFiles(archiveData []byte, inpu
 		})
 	}
 
-	return nil
+	return results, nil
 }
 
 // doing this for heurestic purposes, np might already be removing

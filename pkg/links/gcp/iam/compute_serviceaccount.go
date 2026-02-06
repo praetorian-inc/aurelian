@@ -7,11 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/common"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"google.golang.org/api/compute/v1"
 )
 
@@ -31,52 +30,61 @@ type ComputeServiceAccountData struct {
 }
 
 type GcpComputeServiceAccountLink struct {
-	*base.GcpBaseLink
+	*base.NativeGCPLink
 	computeService *compute.Service
 }
 
 // creates a link to extract service account information from compute instances
-func NewGcpComputeServiceAccountLink(configs ...cfg.Config) chain.Link {
-	g := &GcpComputeServiceAccountLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
-}
-
-func (g *GcpComputeServiceAccountLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
+func NewGcpComputeServiceAccountLink(args map[string]any) *GcpComputeServiceAccountLink {
+	link := &GcpComputeServiceAccountLink{
+		NativeGCPLink: base.NewNativeGCPLink("gcp-compute-serviceaccount", args),
 	}
-	var err error
-	g.computeService, err = compute.NewService(context.Background(), g.ClientOptions...)
-	return common.HandleGcpError(err, "failed to create compute service")
+
+	// Initialize compute service
+	computeService, err := compute.NewService(context.Background(), link.ClientOptions()...)
+	if err != nil {
+		slog.Error("Failed to create compute service", "error", common.HandleGcpError(err, "failed to create compute service"))
+	}
+	link.computeService = computeService
+
+	return link
 }
 
-func (g *GcpComputeServiceAccountLink) Process(resource tab.GCPResource) error {
-	slog.Debug("GcpComputeServiceAccountLink received resource", "type", resource.ResourceType, "name", resource.Name)
+func (g *GcpComputeServiceAccountLink) Parameters() []plugin.Parameter {
+	return base.StandardGCPParams()
+}
+
+func (g *GcpComputeServiceAccountLink) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*output.CloudResource)
+	if !ok {
+		return nil, fmt.Errorf("expected *output.CloudResource, got %T", input)
+	}
+
+	slog.Debug("GcpComputeServiceAccountLink received resource", "type", resource.ResourceType, "name", resource.ResourceID)
 
 	// Only process compute instance resources
-	if resource.ResourceType != tab.GCPResourceInstance {
-		slog.Debug("Skipping non-instance resource", "type", resource.ResourceType, "name", resource.Name)
-		return nil
+	if resource.ResourceType != "compute_instance" {
+		slog.Debug("Skipping non-instance resource", "type", resource.ResourceType, "name", resource.ResourceID)
+		return nil, nil
 	}
 
 	// Extract instance details from properties
-	properties := resource.Properties
-	if properties == nil {
-		slog.Debug("No properties found for instance", "instance", resource.Name)
-		return nil
+	data := resource.Properties
+	if data == nil {
+		slog.Debug("No data found for instance", "instance", resource.ResourceID)
+		return nil, nil
 	}
 
-	instanceName, ok := properties["name"].(string)
+	instanceName, ok := data["name"].(string)
 	if !ok {
-		slog.Debug("Missing instance name in properties", "resource", resource.Name)
-		return nil
+		slog.Debug("Missing instance name in data", "resource", resource.ResourceID)
+		return nil, nil
 	}
 
-	zone, ok := properties["zone"].(string)
+	zone, ok := data["zone"].(string)
 	if !ok {
-		slog.Debug("Missing zone in properties", "instance", instanceName)
-		return nil
+		slog.Debug("Missing zone in data", "instance", instanceName)
+		return nil, nil
 	}
 
 	// Extract project ID from the resource
@@ -86,7 +94,7 @@ func (g *GcpComputeServiceAccountLink) Process(resource tab.GCPResource) error {
 	zoneName := extractZoneFromURL(zone)
 	if zoneName == "" {
 		slog.Debug("Could not extract zone name", "zone_url", zone)
-		return nil
+		return nil, nil
 	}
 
 	slog.Debug("Processing compute instance for service account info",
@@ -97,8 +105,10 @@ func (g *GcpComputeServiceAccountLink) Process(resource tab.GCPResource) error {
 	// Get detailed instance information to extract service account data
 	instance, err := g.computeService.Instances.Get(projectId, zoneName, instanceName).Do()
 	if err != nil {
-		return common.HandleGcpError(err, fmt.Sprintf("failed to get instance details for %s", instanceName))
+		return nil, common.HandleGcpError(err, fmt.Sprintf("failed to get instance details for %s", instanceName))
 	}
+
+	results := make([]any, 0, len(instance.ServiceAccounts))
 
 	// Process service accounts attached to the instance
 	for _, serviceAccount := range instance.ServiceAccounts {
@@ -114,11 +124,14 @@ func (g *GcpComputeServiceAccountLink) Process(resource tab.GCPResource) error {
 		}
 
 		// Create a new resource for the service account data
-		saResource, err := tab.NewGCPResource(
-			fmt.Sprintf("%d-sa-%s", instance.Id, sanitizeEmail(serviceAccount.Email)),
-			resource.AccountRef,
-			tab.CloudResourceType("ComputeServiceAccount"),
-			map[string]any{
+		saResource := &output.CloudResource{
+			ResourceID:   fmt.Sprintf("%s/serviceaccounts/%s", projectId, serviceAccount.Email),
+			DisplayName:  fmt.Sprintf("SA: %s (%s)", serviceAccount.Email, instanceName),
+			ResourceType: "ComputeServiceAccount",
+			Region:       resource.Region,
+			Platform:     "gcp",
+			AccountRef:   projectId,
+			Properties: map[string]any{
 				"instance_id":           saData.InstanceId,
 				"instance_name":         saData.InstanceName,
 				"project_id":            saData.ProjectId,
@@ -129,14 +142,7 @@ func (g *GcpComputeServiceAccountLink) Process(resource tab.GCPResource) error {
 				"service_account_type":  saData.ServiceAccountType,
 				"sa_data":               saData,
 			},
-		)
-		if err != nil {
-			slog.Error("Failed to create service account resource", "error", err, "instance", instanceName)
-			continue
 		}
-
-		saResource.DisplayName = fmt.Sprintf("SA: %s (%s)", serviceAccount.Email, instanceName)
-		saResource.Region = resource.Region
 
 		slog.Debug("Extracted service account info",
 			"instance", instanceName,
@@ -144,10 +150,10 @@ func (g *GcpComputeServiceAccountLink) Process(resource tab.GCPResource) error {
 			"is_default", saData.IsDefaultSA,
 			"type", saData.ServiceAccountType)
 
-		g.Send(saResource)
+		results = append(results, saResource)
 	}
 
-	return nil
+	return results, nil
 }
 
 // Helper function to extract zone name from full zone URL

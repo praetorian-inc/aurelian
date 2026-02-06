@@ -10,128 +10,136 @@ import (
 
 	"slices"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/common"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	"google.golang.org/api/storage/v1"
 )
 
 // FILE INFO:
 // GcpStorageBucketInfoLink - get info of a single storage bucket, Process(bucketName string); needs project
-// GcpStorageBucketListLink - list all storage buckets in a project, Process(resource tab.GCPResource); needs project
-// GcpStorageObjectListLink - list all objects in a storage bucket, Process(resource tab.GCPResource); needs project
+// GcpStorageBucketListLink - list all storage buckets in a project, Process(resource *output.CloudResource); needs project
+// GcpStorageObjectListLink - list all objects in a storage bucket, Process(resource *output.CloudResource); needs project
 // GcpStorageObjectSecretsLink - extract and scan objects for secrets, Process(object *GcpStorageObjectRef); needs project
 
+const (
+	gcpStorageBucketInfoName    = "gcp-storage-bucket-info"
+	gcpStorageBucketListName    = "gcp-storage-bucket-list"
+	gcpStorageObjectListName    = "gcp-storage-object-list"
+	gcpStorageObjectSecretsName = "gcp-storage-object-secrets"
+)
+
 type GcpStorageBucketInfoLink struct {
-	*base.GcpBaseLink
+	*base.NativeGCPLink
 	storageService *storage.Service
 	ProjectId      string
 }
 
 // creates a link to get info of a single storage bucket
-func NewGcpStorageBucketInfoLink(configs ...cfg.Config) chain.Link {
-	g := &GcpStorageBucketInfoLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpStorageBucketInfoLink(args map[string]any) plugin.Link {
+	return &GcpStorageBucketInfoLink{
+		NativeGCPLink: base.NewNativeGCPLink(gcpStorageBucketInfoName, args),
+	}
 }
 
-func (g *GcpStorageBucketInfoLink) Params() []cfg.Param {
-	params := append(g.GcpBaseLink.Params(),
-		options.GcpProject(),
+func (g *GcpStorageBucketInfoLink) Parameters() []plugin.Parameter {
+	params := append(base.StandardGCPParams(),
+		plugin.NewParam[string]("project", "GCP project ID", plugin.WithRequired()),
 	)
 	return params
 }
 
-func (g *GcpStorageBucketInfoLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
+func (g *GcpStorageBucketInfoLink) Process(ctx context.Context, input any) ([]any, error) {
+	bucketName, ok := input.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string input, got %T", input)
 	}
-	var err error
-	g.storageService, err = storage.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create storage service: %w", err)
-	}
-	projectId, err := cfg.As[string](g.Arg("project"))
-	if err != nil {
-		return fmt.Errorf("failed to get project: %w", err)
-	}
-	g.ProjectId = projectId
-	return nil
-}
 
-func (g *GcpStorageBucketInfoLink) Process(bucketName string) error {
-	bucket, err := g.storageService.Buckets.Get(bucketName).Do()
-	if err != nil {
-		return common.HandleGcpError(err, "failed to get bucket")
+	// Lazy initialization
+	if g.storageService == nil {
+		var err error
+		g.storageService, err = storage.NewService(ctx, g.ClientOptions()...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create storage service: %w", err)
+		}
+		if projectVal, ok := g.Args()["project"].(string); ok {
+			g.ProjectId = projectVal
+		}
 	}
-	properties := linkPostProcessBucket(bucket, g.storageService)
-	gcpBucket, err := tab.NewGCPResource(
-		bucket.Name,           // resource name (bucket name)
-		g.ProjectId,           // accountRef (project ID)
-		tab.GCPResourceBucket, // resource type
-		properties,            // properties
-	)
+
+	bucket, err := g.storageService.Buckets.Get(bucketName).Context(ctx).Do()
 	if err != nil {
-		slog.Error("Failed to create GCP bucket resource", "error", err, "bucket", bucket.Name)
-		return err
+		return nil, common.HandleGcpError(err, "failed to get bucket")
 	}
-	g.Send(gcpBucket)
-	return nil
+	properties := linkPostProcessBucket(ctx, bucket, g.storageService)
+	gcpBucket := &output.CloudResource{
+		Platform:     "gcp",
+		ResourceID:   bucket.Name,
+		AccountRef:   g.ProjectId,
+		ResourceType: "storage.googleapis.com/Bucket",
+		DisplayName:  bucket.Name,
+		Properties:   properties,
+	}
+	return []any{gcpBucket}, nil
 }
 
 type GcpStorageBucketListLink struct {
-	*base.GcpBaseLink
+	*base.NativeGCPLink
 	storageService *storage.Service
 }
 
 // creates a link to list all storage buckets in a project
-func NewGcpStorageBucketListLink(configs ...cfg.Config) chain.Link {
-	g := &GcpStorageBucketListLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpStorageBucketListLink(args map[string]any) plugin.Link {
+	return &GcpStorageBucketListLink{
+		NativeGCPLink: base.NewNativeGCPLink(gcpStorageBucketListName, args),
+	}
 }
 
-func (g *GcpStorageBucketListLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
-	}
-	var err error
-	g.storageService, err = storage.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create storage service: %w", err)
-	}
-	return nil
+func (g *GcpStorageBucketListLink) Parameters() []plugin.Parameter {
+	return base.StandardGCPParams()
 }
 
-func (g *GcpStorageBucketListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceProject {
-		return nil
+func (g *GcpStorageBucketListLink) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*output.CloudResource)
+	if !ok {
+		return nil, fmt.Errorf("expected *output.CloudResource input, got %T", input)
 	}
-	projectId := resource.Name
-	listReq := g.storageService.Buckets.List(projectId)
-	buckets, err := listReq.Do()
-	if err != nil {
-		return common.HandleGcpError(err, "failed to list buckets in project")
+	if resource.ResourceType != "cloudresourcemanager.googleapis.com/Project" {
+		return nil, nil
 	}
-	for _, bucket := range buckets.Items {
-		properties := linkPostProcessBucket(bucket, g.storageService)
-		gcpBucket, err := tab.NewGCPResource(
-			bucket.Name,           // resource name (bucket name)
-			projectId,             // accountRef (project ID)
-			tab.GCPResourceBucket, // resource type
-			properties,            // properties (with anonymous access info)
-		)
+
+	// Lazy initialization
+	if g.storageService == nil {
+		var err error
+		g.storageService, err = storage.NewService(ctx, g.ClientOptions()...)
 		if err != nil {
-			slog.Error("Failed to create GCP bucket resource", "error", err, "bucket", bucket.Name)
-			continue
+			return nil, fmt.Errorf("failed to create storage service: %w", err)
 		}
-		g.Send(gcpBucket)
 	}
-	return nil
+
+	projectId := resource.ResourceID
+	listReq := g.storageService.Buckets.List(projectId)
+	buckets, err := listReq.Context(ctx).Do()
+	if err != nil {
+		return nil, common.HandleGcpError(err, "failed to list buckets in project")
+	}
+
+	var results []any
+	for _, bucket := range buckets.Items {
+		properties := linkPostProcessBucket(ctx, bucket, g.storageService)
+		gcpBucket := &output.CloudResource{
+			Platform:     "gcp",
+			ResourceID:   bucket.Name,
+			AccountRef:   projectId,
+			ResourceType: "storage.googleapis.com/Bucket",
+			DisplayName:  bucket.Name,
+			Properties:   properties,
+		}
+		results = append(results, gcpBucket)
+	}
+	return results, nil
 }
 
 type GcpStorageObjectRef struct {
@@ -142,40 +150,48 @@ type GcpStorageObjectRef struct {
 }
 
 type GcpStorageObjectListLink struct {
-	*base.GcpBaseLink
+	*base.NativeGCPLink
 	storageService *storage.Service
 }
 
 // creates a link to list all objects in a storage bucket
-func NewGcpStorageObjectListLink(configs ...cfg.Config) chain.Link {
-	g := &GcpStorageObjectListLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpStorageObjectListLink(args map[string]any) plugin.Link {
+	return &GcpStorageObjectListLink{
+		NativeGCPLink: base.NewNativeGCPLink(gcpStorageObjectListName, args),
+	}
 }
 
-func (g *GcpStorageObjectListLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
-	}
-	var err error
-	g.storageService, err = storage.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create storage service: %w", err)
-	}
-	return nil
+func (g *GcpStorageObjectListLink) Parameters() []plugin.Parameter {
+	return base.StandardGCPParams()
 }
 
-func (g *GcpStorageObjectListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceBucket {
-		return nil
+func (g *GcpStorageObjectListLink) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*output.CloudResource)
+	if !ok {
+		return nil, fmt.Errorf("expected *output.CloudResource input, got %T", input)
 	}
-	bucketName := resource.Name
+	if resource.ResourceType != "storage.googleapis.com/Bucket" {
+		return nil, nil
+	}
+
+	// Lazy initialization
+	if g.storageService == nil {
+		var err error
+		g.storageService, err = storage.NewService(ctx, g.ClientOptions()...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create storage service: %w", err)
+		}
+	}
+
+	bucketName := resource.ResourceID
 	projectId := resource.AccountRef
 	listReq := g.storageService.Objects.List(bucketName)
+
+	var results []any
 	for {
-		objects, err := listReq.Do()
+		objects, err := listReq.Context(ctx).Do()
 		if err != nil {
-			return common.HandleGcpError(err, fmt.Sprintf("failed to list objects in bucket %s", bucketName))
+			return nil, common.HandleGcpError(err, fmt.Sprintf("failed to list objects in bucket %s", bucketName))
 		}
 		for _, obj := range objects.Items {
 			objRef := &GcpStorageObjectRef{
@@ -184,79 +200,81 @@ func (g *GcpStorageObjectListLink) Process(resource tab.GCPResource) error {
 				ProjectId:  projectId,
 				Object:     obj,
 			}
-			if err := g.Send(objRef); err != nil {
-				slog.Error("Failed to send object reference", "error", err, "bucket", bucketName, "object", obj.Name)
-				continue
-			}
+			results = append(results, objRef)
 		}
 		if objects.NextPageToken == "" {
 			break
 		}
 		listReq.PageToken(objects.NextPageToken)
 	}
-	return nil
+	return results, nil
 }
 
 type GcpStorageObjectSecretsLink struct {
-	*base.GcpBaseLink
+	*base.NativeGCPLink
 	storageService *storage.Service
 	maxFileSize    int64
 }
 
 // creates a link to extract and scan storage objects for secrets
-func NewGcpStorageObjectSecretsLink(configs ...cfg.Config) chain.Link {
-	g := &GcpStorageObjectSecretsLink{
-		maxFileSize: 10 * 1024 * 1024, // 10MB default limit
+func NewGcpStorageObjectSecretsLink(args map[string]any) plugin.Link {
+	return &GcpStorageObjectSecretsLink{
+		NativeGCPLink: base.NewNativeGCPLink(gcpStorageObjectSecretsName, args),
+		maxFileSize:   10 * 1024 * 1024, // 10MB default limit
 	}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
 }
 
-func (g *GcpStorageObjectSecretsLink) Params() []cfg.Param {
-	return append(g.GcpBaseLink.Params(),
-		cfg.NewParam[int64]("max-file-size", "Maximum file size to scan for secrets (bytes)").WithDefault(10*1024*1024),
+func (g *GcpStorageObjectSecretsLink) Parameters() []plugin.Parameter {
+	return append(base.StandardGCPParams(),
+		plugin.NewParam[int]("max-file-size", "Maximum file size to scan for secrets (bytes)",
+			plugin.WithDefault(10485760)),
 	)
 }
 
-func (g *GcpStorageObjectSecretsLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
+func (g *GcpStorageObjectSecretsLink) Process(ctx context.Context, input any) ([]any, error) {
+	objRef, ok := input.(*GcpStorageObjectRef)
+	if !ok {
+		return nil, fmt.Errorf("expected *GcpStorageObjectRef input, got %T", input)
 	}
-	var err error
-	g.storageService, err = storage.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create storage service: %w", err)
-	}
-	if maxSize, err := cfg.As[int64](g.Arg("max-file-size")); err == nil {
-		g.maxFileSize = maxSize
-	}
-	return nil
-}
 
-func (g *GcpStorageObjectSecretsLink) Process(objRef *GcpStorageObjectRef) error {
+	// Lazy initialization
+	if g.storageService == nil {
+		var err error
+		g.storageService, err = storage.NewService(ctx, g.ClientOptions()...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create storage service: %w", err)
+		}
+		// Parse max-file-size from args if provided
+		if maxSizeVal, ok := g.Args()["max-file-size"]; ok {
+			if maxSize, ok := maxSizeVal.(int); ok {
+				g.maxFileSize = int64(maxSize)
+			}
+		}
+	}
+
 	if objRef.Object.Size > uint64(g.maxFileSize) {
 		slog.Debug("Skipping large object", "bucket", objRef.BucketName, "object", objRef.ObjectName, "size", objRef.Object.Size)
-		return nil
+		return nil, nil
 	}
 	if g.isSkippableFile(objRef.ObjectName) {
 		slog.Debug("Skipping binary file", "bucket", objRef.BucketName, "object", objRef.ObjectName)
-		return nil
+		return nil, nil
 	}
 	getReq := g.storageService.Objects.Get(objRef.BucketName, objRef.ObjectName)
-	resp, err := getReq.Download()
+	resp, err := getReq.Context(ctx).Download()
 	if err != nil {
-		return common.HandleGcpError(err, fmt.Sprintf("failed to download object %s from bucket %s", objRef.ObjectName, objRef.BucketName))
+		return nil, common.HandleGcpError(err, fmt.Sprintf("failed to download object %s from bucket %s", objRef.ObjectName, objRef.BucketName))
 	}
 	defer resp.Body.Close()
 	content, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read object content: %w", err)
+		return nil, fmt.Errorf("failed to read object content: %w", err)
 	}
-	var npInput types.NPInput
+	var npInput types.NpInput
 	if g.isBinaryContent(content) {
-		npInput = types.NPInput{
+		npInput = types.NpInput{
 			ContentBase64: base64.StdEncoding.EncodeToString(content),
-			Provenance: types.NPProvenance{
+			Provenance: types.NpProvenance{
 				Kind:         "file",
 				Platform:     "gcp",
 				ResourceType: "storage.googleapis.com/Object",
@@ -267,9 +285,9 @@ func (g *GcpStorageObjectSecretsLink) Process(objRef *GcpStorageObjectRef) error
 			},
 		}
 	} else {
-		npInput = types.NPInput{
+		npInput = types.NpInput{
 			Content: string(content),
-			Provenance: types.NPProvenance{
+			Provenance: types.NpProvenance{
 				Kind:         "file",
 				Platform:     "gcp",
 				ResourceType: "storage.googleapis.com/Object",
@@ -280,7 +298,7 @@ func (g *GcpStorageObjectSecretsLink) Process(objRef *GcpStorageObjectRef) error
 			},
 		}
 	}
-	return g.Send(npInput)
+	return []any{npInput}, nil
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -360,36 +378,38 @@ func calculateRiskLevel(info AnonymousAccessInfo) string {
 	return "low"
 }
 
-func linkPostProcessBucket(bucket *storage.Bucket, storageService *storage.Service) map[string]any {
+func linkPostProcessBucket(ctx context.Context, bucket *storage.Bucket, storageService *storage.Service) map[string]any {
 	properties := map[string]any{
-		"name":                   bucket.Name,
-		"id":                     bucket.Id,
-		"location":               bucket.Location,
-		"selfLink":               bucket.SelfLink,
-		"gsUtilURL":              fmt.Sprintf("gs://%s", bucket.Name),
-		"publicURL":              fmt.Sprintf("https://storage.googleapis.com/%s", bucket.Name), // also <bucket-name>.storage.googleapis.com
-		"labels":                 bucket.Labels,
-		"publicAccessPrevention": bucket.IamConfiguration.PublicAccessPrevention,
+		"name":      bucket.Name,
+		"id":        bucket.Id,
+		"location":  bucket.Location,
+		"selfLink":  bucket.SelfLink,
+		"gsUtilURL": fmt.Sprintf("gs://%s", bucket.Name),
+		"publicURL": fmt.Sprintf("https://storage.googleapis.com/%s", bucket.Name), // also <bucket-name>.storage.googleapis.com
 	}
+
 	if bucket.IamConfiguration != nil && bucket.IamConfiguration.PublicAccessPrevention == "inherited" {
-		properties["publicAccessPrevention"] = false
+		properties["publicAccessPrevention"] = "false"
 	} else {
-		properties["publicAccessPrevention"] = true
+		properties["publicAccessPrevention"] = "true"
 	}
 
 	// Check IAM policy for anonymous access
-	policy, policyErr := storageService.Buckets.GetIamPolicy(bucket.Name).Do()
+	policy, policyErr := storageService.Buckets.GetIamPolicy(bucket.Name).Context(ctx).Do()
 	if policyErr == nil && policy != nil {
 		anonymousInfo := checkStorageAnonymousAccess(policy)
 		// Also check ACL for legacy public access
-		acl, aclErr := storageService.BucketAccessControls.List(bucket.Name).Do()
+		acl, aclErr := storageService.BucketAccessControls.List(bucket.Name).Context(ctx).Do()
 		if aclErr == nil {
 			checkStorageACLForPublicAccess(&anonymousInfo, acl)
 		} else {
 			slog.Debug("Failed to get ACL for bucket", "bucket", bucket.Name, "error", aclErr)
 		}
 		if anonymousInfo.TotalPublicBindings > 0 {
-			properties["anonymousAccessInfo"] = anonymousInfo
+			// Convert anonymousInfo to string representation for Properties map
+			properties["hasAllUsers"] = fmt.Sprintf("%v", anonymousInfo.HasAllUsers)
+			properties["hasAllAuthenticatedUsers"] = fmt.Sprintf("%v", anonymousInfo.HasAllAuthenticatedUsers)
+			properties["totalPublicBindings"] = fmt.Sprintf("%d", anonymousInfo.TotalPublicBindings)
 			properties["riskLevel"] = calculateRiskLevel(anonymousInfo)
 		}
 	} else {
@@ -429,3 +449,5 @@ func (g *GcpStorageObjectSecretsLink) isBinaryContent(content []byte) bool {
 	}
 	return false
 }
+
+// Note: init() registration removed - native plugins register via Parameters() method

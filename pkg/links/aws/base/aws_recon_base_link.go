@@ -1,67 +1,52 @@
 package base
 
 import (
-	"fmt"
+	"context"
 	"log/slog"
 	"path/filepath"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/helpers"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	"github.com/praetorian-inc/nebula/pkg/types"
+	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
+// AwsReconBaseLink is the native plugin version for AWS recon
 type AwsReconBaseLink struct {
-	*chain.Base
+	*plugin.BaseLink
 	Profile    string
 	ProfileDir string
 }
 
-func NewAwsReconBaseLink(link chain.Link, configs ...cfg.Config) *AwsReconBaseLink {
-	a := &AwsReconBaseLink{}
-	a.Base = chain.NewBase(link, configs...)
-	return a
+func NewAwsReconBaseLink(name string, args map[string]any) *AwsReconBaseLink {
+	base := plugin.NewBaseLink(name, args)
+	return &AwsReconBaseLink{
+		BaseLink:   base,
+		Profile:    base.ArgString("profile", ""),
+		ProfileDir: base.ArgString("profile-dir", ""),
+	}
 }
 
-func (a *AwsReconBaseLink) Params() []cfg.Param {
-	return options.AwsReconBaseOptions()
+func (a *AwsReconBaseLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		plugin.NewParam[string]("profile", "AWS profile name", plugin.WithShortcode("p")),
+		plugin.NewParam[string]("profile-dir", "AWS profile directory"),
+		plugin.NewParam[string]("opsec_level", "OPSEC level", plugin.WithDefault("none")),
+	}
 }
 
-func (a *AwsReconBaseLink) Initialize() error {
-	a.ContextHolder = cfg.NewContextHolder()
-
-	profile, err := cfg.As[string](a.Arg("profile"))
-	slog.Debug("AWS recon profile", "profile", profile)
-	if err != nil {
-		return fmt.Errorf("failed to get profile: %w", err)
-	}
-	a.Profile = profile
-
-	profileDir, err := cfg.As[string](a.Arg("profile-dir"))
-	slog.Debug("AWS recon profile dir", "profile-dir", profileDir)
-	if err != nil {
-		return fmt.Errorf("failed to get profile dir: %w", err)
-	}
-	a.ProfileDir = profileDir
-
+func (a *AwsReconBaseLink) Initialize(ctx context.Context) error {
+	// Profile and ProfileDir are already set in constructor
 	slog.Debug("AWS recon global link initialized", "profile", a.Profile, "profile-dir", a.ProfileDir)
-
 	return nil
 }
 
 func (a *AwsReconBaseLink) GetOpsecLevel() string {
-	if val := a.Arg("opsec_level"); val != nil {
-		if level, ok := val.(string); ok {
-			return level
-		}
-	}
-	return "none"
+	return a.ArgString("opsec_level", "none")
 }
 
-func (a *AwsReconBaseLink) GetConfig(region string, opts []*types.Option) (aws.Config, error) {
+func (a *AwsReconBaseLink) GetConfig(ctx context.Context, region string, opts []*types.Option) (aws.Config, error) {
 	optFns := []func(*config.LoadOptions) error{}
 	if a.ProfileDir != "" {
 		optFns = append(optFns, config.WithSharedConfigFiles([]string{filepath.Join(a.ProfileDir, "config")}))
@@ -72,7 +57,11 @@ func (a *AwsReconBaseLink) GetConfig(region string, opts []*types.Option) (aws.C
 }
 
 // GetConfigWithRuntimeArgs gets AWS config using runtime arguments instead of default values
-func (a *AwsReconBaseLink) GetConfigWithRuntimeArgs(region string) (aws.Config, error) {
-	opts := options.JanusArgsAdapter(a.Params(), a.Args())
-	return a.GetConfig(region, opts)
+func (a *AwsReconBaseLink) GetConfigWithRuntimeArgs(ctx context.Context, region string) (aws.Config, error) {
+	// Convert args to Options - since we're using native plugin, extract from BaseLink args
+	var opts []*types.Option
+	if profileDir := a.ArgString("profile-dir", ""); profileDir != "" {
+		opts = append(opts, &types.Option{Name: "profile-dir", Value: profileDir})
+	}
+	return a.GetConfig(ctx, region, opts)
 }
