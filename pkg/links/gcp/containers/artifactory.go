@@ -7,15 +7,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/docker/docker/api/types/registry"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/janus-framework/pkg/types/docker"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/common"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 	"google.golang.org/api/artifactregistry/v1"
+	"google.golang.org/api/option"
 )
 
 // FILE INFO:
@@ -25,54 +21,62 @@ import (
 // GcpContainerImageSecretsLink - scan container image for secrets, Process(input tab.GCPResource)
 
 type GcpRepositoryInfoLink struct {
-	*base.GcpBaseLink
+	*plugin.BaseLink
 	artifactService *artifactregistry.Service
 	ProjectId       string
 	Location        string
+	ClientOptions   []option.ClientOption
 }
 
 // creates a link to get info of a single Artifact Registry repository
-func NewGcpRepositoryInfoLink(configs ...cfg.Config) chain.Link {
-	g := &GcpRepositoryInfoLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpRepositoryInfoLink(args map[string]any) *GcpRepositoryInfoLink {
+	return &GcpRepositoryInfoLink{
+		BaseLink: plugin.NewBaseLink("gcp-repository-info", args),
+	}
 }
 
-func (g *GcpRepositoryInfoLink) Params() []cfg.Param {
-	params := append(g.GcpBaseLink.Params(),
-		options.GcpProject(),
-		cfg.NewParam[string]("location", "GCP location/region for Artifact Registry").WithDefault("us-central1").AsRequired(),
-	)
-	return params
+func (g *GcpRepositoryInfoLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		plugin.NewParam[string]("project", "GCP project ID", plugin.WithRequired()),
+		plugin.NewParam[string]("location", "GCP location", plugin.WithRequired()),
+		plugin.NewParam[string]("credentials", "Path to GCP credentials file"),
+	}
 }
 
-func (g *GcpRepositoryInfoLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
-	}
-	var err error
-	g.artifactService, err = artifactregistry.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create artifact registry service: %w", err)
-	}
-	projectId, err := cfg.As[string](g.Arg("project"))
-	if err != nil {
-		return fmt.Errorf("failed to get project: %w", err)
-	}
-	g.ProjectId = projectId
-	location, err := cfg.As[string](g.Arg("location"))
-	if err != nil {
-		return fmt.Errorf("failed to get location: %w", err)
-	}
-	g.Location = location
-	return nil
-}
+func (g *GcpRepositoryInfoLink) Process(ctx context.Context, input any) ([]any, error) {
+	// Initialize service on first call
+	if g.artifactService == nil {
+		if creds, ok := g.Arg("credentials").(string); ok && creds != "" {
+			g.ClientOptions = []option.ClientOption{option.WithCredentialsFile(creds)}
+		}
+		var err error
+		g.artifactService, err = artifactregistry.NewService(ctx, g.ClientOptions...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create artifact registry service: %w", err)
+		}
 
-func (g *GcpRepositoryInfoLink) Process(repositoryName string) error {
+		projectId := g.ArgString("project", "")
+		if projectId == "" {
+			return nil, fmt.Errorf("project parameter is required")
+		}
+		g.ProjectId = projectId
+
+		location := g.ArgString("location", "")
+		if location == "" {
+			return nil, fmt.Errorf("location parameter is required")
+		}
+		g.Location = location
+	}
+
+	repositoryName, ok := input.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string input (repository name), got %T", input)
+	}
+
 	repoPath := fmt.Sprintf("projects/%s/locations/%s/repositories/%s", g.ProjectId, g.Location, repositoryName)
 	repo, err := g.artifactService.Projects.Locations.Repositories.Get(repoPath).Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to get repository")
+		return nil, common.HandleGcpError(err, "failed to get repository")
 	}
 	gcpRepo, err := tab.NewGCPResource(
 		repo.Name,   // resource name
@@ -81,49 +85,63 @@ func (g *GcpRepositoryInfoLink) Process(repositoryName string) error {
 		linkPostProcessRepository(repo),              // properties
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create GCP repository resource: %w", err)
+		return nil, fmt.Errorf("failed to create GCP repository resource: %w", err)
 	}
 	gcpRepo.DisplayName = repo.Name
-	g.Send(gcpRepo)
-	return nil
+	return []any{gcpRepo}, nil
 }
 
 type GcpRepositoryListLink struct {
-	*base.GcpBaseLink
+	*plugin.BaseLink
 	artifactService *artifactregistry.Service
+	ClientOptions   []option.ClientOption
 }
 
 // creates a link to list all repositories in a project
-func NewGcpRepositoryListLink(configs ...cfg.Config) chain.Link {
-	g := &GcpRepositoryListLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpRepositoryListLink(args map[string]any) *GcpRepositoryListLink {
+	return &GcpRepositoryListLink{
+		BaseLink: plugin.NewBaseLink("gcp-repository-list", args),
+	}
 }
 
-func (g *GcpRepositoryListLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
+func (g *GcpRepositoryListLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		plugin.NewParam[string]("project", "GCP project ID", plugin.WithRequired()),
+		plugin.NewParam[string]("credentials", "Path to GCP credentials file"),
 	}
-	var err error
-	g.artifactService, err = artifactregistry.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create artifact registry service: %w", err)
-	}
-	return nil
 }
 
-func (g *GcpRepositoryListLink) Process(resource tab.GCPResource) error {
+func (g *GcpRepositoryListLink) Process(ctx context.Context, input any) ([]any, error) {
+	// Initialize service on first call
+	if g.artifactService == nil {
+		if creds, ok := g.Arg("credentials").(string); ok && creds != "" {
+			g.ClientOptions = []option.ClientOption{option.WithCredentialsFile(creds)}
+		}
+		var err error
+		g.artifactService, err = artifactregistry.NewService(ctx, g.ClientOptions...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create artifact registry service: %w", err)
+		}
+	}
+
+	resource, ok := input.(tab.GCPResource)
+	if !ok {
+		return nil, fmt.Errorf("expected tab.GCPResource input, got %T", input)
+	}
+
 	if resource.ResourceType != tab.GCPResourceProject {
-		return nil
+		return nil, nil
 	}
 	projectId := resource.Name
 	locationsParent := fmt.Sprintf("projects/%s", projectId)
 	locationsReq := g.artifactService.Projects.Locations.List(locationsParent)
 	locations, err := locationsReq.Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to list locations")
+		return nil, common.HandleGcpError(err, "failed to list locations")
 	}
 
+	var results []any
+	var mu sync.Mutex
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
 	for _, location := range locations.Locations {
@@ -132,20 +150,25 @@ func (g *GcpRepositoryListLink) Process(resource tab.GCPResource) error {
 		go func(locationName string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			if err := g.processLocation(projectId, locationName); err != nil {
+			repos, err := g.processLocation(projectId, locationName)
+			if err != nil {
 				slog.Error("Failed to process location", "location", locationName, "error", err)
+				return
 			}
+			mu.Lock()
+			results = append(results, repos...)
+			mu.Unlock()
 		}(location.Name)
 	}
 	wg.Wait()
-	return nil
+	return results, nil
 }
 
-func (g *GcpRepositoryListLink) processLocation(projectId, locationName string) error {
+func (g *GcpRepositoryListLink) processLocation(projectId, locationName string) ([]any, error) {
 	// Extract location ID from full path (projects/PROJECT/locations/LOCATION)
 	locationParts := strings.Split(locationName, "/")
 	if len(locationParts) < 4 {
-		return fmt.Errorf("invalid location name format: %s", locationName)
+		return nil, fmt.Errorf("invalid location name format: %s", locationName)
 	}
 	locationId := locationParts[3]
 
@@ -155,9 +178,10 @@ func (g *GcpRepositoryListLink) processLocation(projectId, locationName string) 
 
 	repos, err := reposReq.Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to list repositories")
+		return nil, common.HandleGcpError(err, "failed to list repositories")
 	}
 
+	var results []any
 	for _, repo := range repos.Repositories {
 		gcpRepo, err := tab.NewGCPResource(
 			repo.Name, // resource name
@@ -170,48 +194,62 @@ func (g *GcpRepositoryListLink) processLocation(projectId, locationName string) 
 			continue
 		}
 		gcpRepo.DisplayName = repo.Name
-		g.Send(gcpRepo)
+		results = append(results, gcpRepo)
 	}
-	return nil
+	return results, nil
 }
 
 type GcpContainerImageListLink struct {
-	*base.GcpBaseLink
+	*plugin.BaseLink
 	artifactService *artifactregistry.Service
+	ClientOptions   []option.ClientOption
 }
 
 // creates a link to list all images in a repository
-func NewGcpContainerImageListLink(configs ...cfg.Config) chain.Link {
-	g := &GcpContainerImageListLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpContainerImageListLink(args map[string]any) *GcpContainerImageListLink {
+	return &GcpContainerImageListLink{
+		BaseLink: plugin.NewBaseLink("gcp-container-image-list", args),
+	}
 }
 
-func (g *GcpContainerImageListLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
+func (g *GcpContainerImageListLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		plugin.NewParam[string]("credentials", "Path to GCP credentials file"),
 	}
-	var err error
-	g.artifactService, err = artifactregistry.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create artifact registry service: %w", err)
-	}
-	return nil
 }
 
-func (g *GcpContainerImageListLink) Process(resource tab.GCPResource) error {
+func (g *GcpContainerImageListLink) Process(ctx context.Context, input any) ([]any, error) {
+	// Initialize service on first call
+	if g.artifactService == nil {
+		if creds, ok := g.Arg("credentials").(string); ok && creds != "" {
+			g.ClientOptions = []option.ClientOption{option.WithCredentialsFile(creds)}
+		}
+		var err error
+		g.artifactService, err = artifactregistry.NewService(ctx, g.ClientOptions...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create artifact registry service: %w", err)
+		}
+	}
+
+	resource, ok := input.(tab.GCPResource)
+	if !ok {
+		return nil, fmt.Errorf("expected tab.GCPResource input, got %T", input)
+	}
+
 	if resource.ResourceType != "artifactregistry.googleapis.com/Repository" {
-		return nil
+		return nil, nil
 	}
 	format, _ := resource.Properties["format"].(string)
 	if format != "DOCKER" {
-		return nil
+		return nil, nil
 	}
 	imagesReq := g.artifactService.Projects.Locations.Repositories.DockerImages.List(resource.Name)
 	images, err := imagesReq.Do()
 	if err != nil {
-		return common.HandleGcpError(err, fmt.Sprintf("failed to list docker images in repository %s", resource.Name))
+		return nil, common.HandleGcpError(err, fmt.Sprintf("failed to list docker images in repository %s", resource.Name))
 	}
+
+	var results []any
 	for _, image := range images.DockerImages {
 		gcpImage, err := tab.NewGCPResource(
 			image.Name,          // resource name
@@ -224,52 +262,63 @@ func (g *GcpContainerImageListLink) Process(resource tab.GCPResource) error {
 			continue
 		}
 		gcpImage.DisplayName = image.Name
-		g.Send(gcpImage)
+		results = append(results, gcpImage)
 	}
-	return nil
+	return results, nil
 }
 
 type GcpContainerImageSecretsLink struct {
-	*base.GcpBaseLink
+	*plugin.BaseLink
 	artifactService *artifactregistry.Service
+	ClientOptions   []option.ClientOption
 }
 
 // creates a link to scan container image for secrets
-func NewGcpContainerImageSecretsLink(configs ...cfg.Config) chain.Link {
-	g := &GcpContainerImageSecretsLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpContainerImageSecretsLink(args map[string]any) *GcpContainerImageSecretsLink {
+	return &GcpContainerImageSecretsLink{
+		BaseLink: plugin.NewBaseLink("gcp-container-image-secrets", args),
+	}
 }
 
-func (g *GcpContainerImageSecretsLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
+func (g *GcpContainerImageSecretsLink) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		plugin.NewParam[string]("credentials", "Path to GCP credentials file"),
 	}
-	var err error
-	g.artifactService, err = artifactregistry.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create artifact registry service: %w", err)
-	}
-	return nil
 }
 
-func (g *GcpContainerImageSecretsLink) Process(input tab.GCPResource) error {
-	if input.ResourceType != "artifactregistry.googleapis.com/DockerImage" {
-		return nil
-	}
-	image, err := g.artifactService.Projects.Locations.Repositories.DockerImages.Get(input.Name).Do()
-	if err != nil {
-		return common.HandleGcpError(err, "failed to get docker image for secrets extraction")
-	}
-	dockerImage := docker.DockerImage{
-		Image: image.Uri,
-		AuthConfig: registry.AuthConfig{
-			ServerAddress: g.extractRegistryURL(image.Uri),
-		},
+func (g *GcpContainerImageSecretsLink) Process(ctx context.Context, input any) ([]any, error) {
+	// Initialize service on first call
+	if g.artifactService == nil {
+		if creds, ok := g.Arg("credentials").(string); ok && creds != "" {
+			g.ClientOptions = []option.ClientOption{option.WithCredentialsFile(creds)}
+		}
+		var err error
+		g.artifactService, err = artifactregistry.NewService(ctx, g.ClientOptions...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create artifact registry service: %w", err)
+		}
 	}
 
-	// send to Docker framework chain
-	return g.Send(&dockerImage)
+	resource, ok := input.(tab.GCPResource)
+	if !ok {
+		return nil, fmt.Errorf("expected tab.GCPResource input, got %T", input)
+	}
+
+	if resource.ResourceType != "artifactregistry.googleapis.com/DockerImage" {
+		return nil, nil
+	}
+	image, err := g.artifactService.Projects.Locations.Repositories.DockerImages.Get(resource.Name).Do()
+	if err != nil {
+		return nil, common.HandleGcpError(err, "failed to get docker image for secrets extraction")
+	}
+
+	// Create a map with image information for downstream processing
+	dockerImage := map[string]any{
+		"uri":     image.Uri,
+		"address": g.extractRegistryURL(image.Uri),
+	}
+
+	return []any{dockerImage}, nil
 }
 
 func (g *GcpContainerImageSecretsLink) extractRegistryURL(imageURI string) string {
@@ -288,7 +337,7 @@ func linkPostProcessRepository(repo *artifactregistry.Repository) map[string]any
 		"name":        repo.Name,
 		"format":      repo.Format,
 		"description": repo.Description,
-		"labels":      repo.Labels,
+"labels":      repo.Labels,
 		"createTime":  repo.CreateTime,
 		"updateTime":  repo.UpdateTime,
 		"sizeBytes":   repo.SizeBytes,

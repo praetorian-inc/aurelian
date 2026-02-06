@@ -7,8 +7,8 @@ import (
 	asset "cloud.google.com/go/asset/apiv1"
 	assetpb "cloud.google.com/go/asset/apiv1/assetpb"
 	iampb "cloud.google.com/go/iam/apiv1/iampb"
-	gcperrors "github.com/praetorian-inc/nebula/pkg/gcp/errors"
-	gcptypes "github.com/praetorian-inc/nebula/pkg/types/gcp"
+	gcperrors "github.com/praetorian-inc/aurelian/pkg/gcp/errors"
+	gcptypes "github.com/praetorian-inc/aurelian/pkg/types/gcp"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )

@@ -8,15 +8,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	jtypes "github.com/praetorian-inc/janus-framework/pkg/types"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/common"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/iam/v1"
+	"google.golang.org/api/option"
 	"google.golang.org/api/run/v2"
 )
 
@@ -33,47 +31,38 @@ type GcpCloudRunServiceInfoLink struct {
 }
 
 // creates a link to get info of a single Cloud Run service
-func NewGcpCloudRunServiceInfoLink(configs ...cfg.Config) chain.Link {
-	g := &GcpCloudRunServiceInfoLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpCloudRunServiceInfoLink(projectId, region string, clientOpts ...option.ClientOption) *GcpCloudRunServiceInfoLink {
+	link := &GcpCloudRunServiceInfoLink{
+		GcpBaseLink: base.NewGcpBaseLink("GcpCloudRunServiceInfoLink", nil),
+		ProjectId:   projectId,
+		Region:      region,
+	}
+	link.ClientOptions = clientOpts
+	return link
 }
 
-func (g *GcpCloudRunServiceInfoLink) Params() []cfg.Param {
-	params := append(g.GcpBaseLink.Params(),
-		options.GcpProject(),
-		options.GcpRegion(),
-	)
-	return params
-}
-
-func (g *GcpCloudRunServiceInfoLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
+func (g *GcpCloudRunServiceInfoLink) Initialize(ctx context.Context) error {
+	if err := g.GcpBaseLink.Initialize(ctx); err != nil {
 		return err
 	}
 	var err error
-	g.runService, err = run.NewService(context.Background(), g.ClientOptions...)
+	g.runService, err = run.NewService(ctx, g.ClientOptions...)
 	if err != nil {
 		return fmt.Errorf("failed to create cloud run service: %w", err)
 	}
-	projectId, err := cfg.As[string](g.Arg("project"))
-	if err != nil {
-		return fmt.Errorf("failed to get project: %w", err)
-	}
-	g.ProjectId = projectId
-	region, err := cfg.As[string](g.Arg("region"))
-	if err != nil {
-		return fmt.Errorf("failed to get region: %w", err)
-	}
-	g.Region = region
 	return nil
 }
 
-func (g *GcpCloudRunServiceInfoLink) Process(serviceName string) error {
+func (g *GcpCloudRunServiceInfoLink) Process(ctx context.Context, input any) ([]any, error) {
+	serviceName, ok := input.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string input, got %T", input)
+	}
+
 	name := fmt.Sprintf("projects/%s/locations/%s/services/%s", g.ProjectId, g.Region, serviceName)
 	service, err := g.runService.Projects.Locations.Services.Get(name).Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to get Cloud Run service")
+		return nil, common.HandleGcpError(err, "failed to get Cloud Run service")
 	}
 	gcpCloudRunService, err := tab.NewGCPResource(
 		service.Name,                            // resource name
@@ -82,11 +71,10 @@ func (g *GcpCloudRunServiceInfoLink) Process(serviceName string) error {
 		linkPostProcessCloudRunService(service), // properties
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create GCP Cloud Run service resource: %w", err)
+		return nil, fmt.Errorf("failed to create GCP Cloud Run service resource: %w", err)
 	}
 	gcpCloudRunService.DisplayName = gcpCloudRunService.Name
-	g.Send(gcpCloudRunService)
-	return nil
+	return []any{gcpCloudRunService}, nil
 }
 
 type GcpCloudRunServiceListLink struct {
@@ -97,42 +85,52 @@ type GcpCloudRunServiceListLink struct {
 }
 
 // creates a link to list all Cloud Run services in a project
-func NewGcpCloudRunServiceListLink(configs ...cfg.Config) chain.Link {
-	g := &GcpCloudRunServiceListLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpCloudRunServiceListLink(clientOpts ...option.ClientOption) *GcpCloudRunServiceListLink {
+	link := &GcpCloudRunServiceListLink{
+		GcpBaseLink: base.NewGcpBaseLink("GcpCloudRunServiceListLink", nil),
+	}
+	link.ClientOptions = clientOpts
+	return link
 }
 
-func (g *GcpCloudRunServiceListLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
+func (g *GcpCloudRunServiceListLink) Initialize(ctx context.Context) error {
+	if err := g.GcpBaseLink.Initialize(ctx); err != nil {
 		return err
 	}
 	var err error
-	g.runService, err = run.NewService(context.Background(), g.ClientOptions...)
+	g.runService, err = run.NewService(ctx, g.ClientOptions...)
 	if err != nil {
 		return fmt.Errorf("failed to create cloud run service: %w", err)
 	}
-	g.regionService, err = compute.NewService(context.Background(), g.ClientOptions...)
+	g.regionService, err = compute.NewService(ctx, g.ClientOptions...)
 	if err != nil {
 		return fmt.Errorf("failed to create compute service: %w", err)
 	}
-	g.iamService, err = iam.NewService(context.Background(), g.ClientOptions...)
+	g.iamService, err = iam.NewService(ctx, g.ClientOptions...)
 	if err != nil {
 		return fmt.Errorf("failed to create iam service: %w", err)
 	}
 	return nil
 }
 
-func (g *GcpCloudRunServiceListLink) Process(resource tab.GCPResource) error {
+func (g *GcpCloudRunServiceListLink) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(tab.GCPResource)
+	if !ok {
+		return nil, fmt.Errorf("expected tab.GCPResource input, got %T", input)
+	}
+
 	if resource.ResourceType != tab.GCPResourceProject {
-		return nil
+		return nil, nil
 	}
 	projectId := resource.Name
 	regionsCall := g.regionService.Regions.List(projectId)
 	regionsResp, err := regionsCall.Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to list regions in project")
+		return nil, common.HandleGcpError(err, "failed to list regions in project")
 	}
+
+	var results []any
+	var mu sync.Mutex
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
 	for _, region := range regionsResp.Items {
@@ -171,7 +169,9 @@ func (g *GcpCloudRunServiceListLink) Process(resource tab.GCPResource) error {
 						continue
 					}
 					gcpCloudRunService.DisplayName = gcpCloudRunService.Name
-					g.Send(gcpCloudRunService)
+					mu.Lock()
+					results = append(results, gcpCloudRunService)
+					mu.Unlock()
 				}
 			} else if err != nil {
 				slog.Error("Failed to list Cloud Run services in region", "error", err, "region", regionId)
@@ -179,7 +179,7 @@ func (g *GcpCloudRunServiceListLink) Process(resource tab.GCPResource) error {
 		}(region.Name)
 	}
 	wg.Wait()
-	return nil
+	return results, nil
 }
 
 type GcpCloudRunSecretsLink struct {
@@ -188,32 +188,41 @@ type GcpCloudRunSecretsLink struct {
 }
 
 // creates a link to scan Cloud Run service for secrets
-func NewGcpCloudRunSecretsLink(configs ...cfg.Config) chain.Link {
-	g := &GcpCloudRunSecretsLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpCloudRunSecretsLink(clientOpts ...option.ClientOption) *GcpCloudRunSecretsLink {
+	link := &GcpCloudRunSecretsLink{
+		GcpBaseLink: base.NewGcpBaseLink("GcpCloudRunSecretsLink", nil),
+	}
+	link.ClientOptions = clientOpts
+	return link
 }
 
-func (g *GcpCloudRunSecretsLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
+func (g *GcpCloudRunSecretsLink) Initialize(ctx context.Context) error {
+	if err := g.GcpBaseLink.Initialize(ctx); err != nil {
 		return err
 	}
 	var err error
-	g.runService, err = run.NewService(context.Background(), g.ClientOptions...)
+	g.runService, err = run.NewService(ctx, g.ClientOptions...)
 	if err != nil {
 		return fmt.Errorf("failed to create cloud run service: %w", err)
 	}
 	return nil
 }
 
-func (g *GcpCloudRunSecretsLink) Process(input tab.GCPResource) error {
-	if input.ResourceType != tab.GCPResourceCloudRunService {
-		return nil
+func (g *GcpCloudRunSecretsLink) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(tab.GCPResource)
+	if !ok {
+		return nil, fmt.Errorf("expected tab.GCPResource input, got %T", input)
 	}
-	svc, err := g.runService.Projects.Locations.Services.Get(input.Name).Do()
+
+	if resource.ResourceType != tab.GCPResourceCloudRunService {
+		return nil, nil
+	}
+	svc, err := g.runService.Projects.Locations.Services.Get(resource.Name).Do()
 	if err != nil {
-		return common.HandleGcpError(err, "failed to get cloud run service for secrets extraction")
+		return nil, common.HandleGcpError(err, "failed to get cloud run service for secrets extraction")
 	}
+
+	var results []any
 	if svc.Template != nil {
 		for _, container := range svc.Template.Containers {
 			if container == nil {
@@ -221,14 +230,14 @@ func (g *GcpCloudRunSecretsLink) Process(input tab.GCPResource) error {
 			}
 			if len(container.Env) > 0 {
 				if envContent, err := json.Marshal(container.Env); err == nil {
-					g.Send(jtypes.NPInput{
+					results = append(results, types.NpInput{
 						Content: string(envContent),
-						Provenance: jtypes.NPProvenance{
+						Provenance: types.NpProvenance{
 							Platform:     "gcp",
 							ResourceType: fmt.Sprintf("%s::EnvVariables", tab.GCPResourceCloudRunService.String()),
-							ResourceID:   input.Name,
-							Region:       input.Region,
-							AccountID:    input.AccountRef,
+							ResourceID:   resource.Name,
+							Region:       resource.Region,
+							AccountID:    resource.AccountRef,
 						},
 					})
 				}
@@ -244,20 +253,20 @@ func (g *GcpCloudRunSecretsLink) Process(input tab.GCPResource) error {
 				commandContent.WriteString(strings.Join(container.Args, " "))
 			}
 			if commandContent.Len() > 0 {
-				g.Send(jtypes.NPInput{
+				results = append(results, types.NpInput{
 					Content: commandContent.String(),
-					Provenance: jtypes.NPProvenance{
+					Provenance: types.NpProvenance{
 						Platform:     "gcp",
 						ResourceType: fmt.Sprintf("%s::Command", tab.GCPResourceCloudRunService.String()),
-						ResourceID:   input.Name,
-						Region:       input.Region,
-						AccountID:    input.AccountRef,
+						ResourceID:   resource.Name,
+						Region:       resource.Region,
+						AccountID:    resource.AccountRef,
 					},
 				})
 			}
 		}
 	}
-	return nil
+	return results, nil
 }
 
 // ------------------------------------------------------------------------------------------------

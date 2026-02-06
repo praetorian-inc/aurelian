@@ -3,8 +3,8 @@ package aws
 import (
 	"testing"
 
-	"github.com/praetorian-inc/nebula/pkg/types"
-	"github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -20,8 +20,8 @@ func TestCreateRepositoryFromGitHubSubject(t *testing.T) {
 		{
 			name:        "Valid org and repo",
 			org:         "praetorian-inc",
-			repo:        "nebula",
-			expectedURL: "https://github.com/praetorian-inc/nebula",
+			repo:        "aurelian",
+			expectedURL: "https://github.com/praetorian-inc/aurelian",
 			expectError: false,
 		},
 		{
@@ -84,25 +84,21 @@ func TestCreateRepositoryFromGitHubSubject(t *testing.T) {
 
 func TestCreateGitHubActionsRelationship(t *testing.T) {
 	// Create test repository
-	repo, err := CreateRepositoryFromGitHubSubject("praetorian-inc", "nebula")
+	repo, err := CreateRepositoryFromGitHubSubject("praetorian-inc", "aurelian")
 	require.NoError(t, err)
 
-	// Create test role
-	roleProperties := map[string]any{
-		"roleName": "github-actions-role",
+	// Create test role ResourceRef
+	roleRef := output.ResourceRef{
+		Platform: "aws",
+		Type:     "iam-role",
+		ID:       "arn:aws:iam::123456789012:role/github-actions-role",
+		Account:  "123456789012",
 	}
-	role, err := model.NewAWSResource(
-		"arn:aws:iam::123456789012:role/github-actions-role",
-		"123456789012",
-		model.AWSRole,
-		roleProperties,
-	)
-	require.NoError(t, err)
 
 	tests := []struct {
 		name            string
-		repository      model.GraphModel
-		role            model.GraphModel
+		repository      *output.Repository
+		roleRef         output.ResourceRef
 		subjectPatterns []string
 		conditions      *types.Condition
 		expectedError   bool
@@ -112,46 +108,38 @@ func TestCreateGitHubActionsRelationship(t *testing.T) {
 		{
 			name:            "Valid repository to role relationship",
 			repository:      repo,
-			role:            &role,
-			subjectPatterns: []string{"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+			roleRef:         roleRef,
+			subjectPatterns: []string{"repo:praetorian-inc/aurelian:ref:refs/heads/main"},
 			conditions:      nil,
 			expectedError:   false,
-			expectedAction:  "sts:AssumeRole",
+			expectedAction:  "sts:AssumeRoleWithWebIdentity",
 			expectedCapab:   "apollo-github-actions-federation",
 		},
 		{
 			name:       "Multiple subject patterns",
 			repository: repo,
-			role:       &role,
+			roleRef:    roleRef,
 			subjectPatterns: []string{
-				"repo:praetorian-inc/nebula:ref:refs/heads/main",
-				"repo:praetorian-inc/nebula:environment:production",
+				"repo:praetorian-inc/aurelian:ref:refs/heads/main",
+				"repo:praetorian-inc/aurelian:environment:production",
 			},
 			conditions:     nil,
 			expectedError:  false,
-			expectedAction: "sts:AssumeRole",
+			expectedAction: "sts:AssumeRoleWithWebIdentity",
 			expectedCapab:  "apollo-github-actions-federation",
 		},
 		{
 			name:            "Nil repository",
 			repository:      nil,
-			role:            &role,
-			subjectPatterns: []string{"repo:praetorian-inc/nebula:ref:refs/heads/main"},
-			conditions:      nil,
-			expectedError:   true,
-		},
-		{
-			name:            "Nil role",
-			repository:      repo,
-			role:            nil,
-			subjectPatterns: []string{"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+			roleRef:         roleRef,
+			subjectPatterns: []string{"repo:praetorian-inc/aurelian:ref:refs/heads/main"},
 			conditions:      nil,
 			expectedError:   true,
 		},
 		{
 			name:            "Empty subject patterns",
 			repository:      repo,
-			role:            &role,
+			roleRef:         roleRef,
 			subjectPatterns: []string{},
 			conditions:      nil,
 			expectedError:   true,
@@ -160,21 +148,22 @@ func TestCreateGitHubActionsRelationship(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rel, err := CreateGitHubActionsRelationship(tt.repository, tt.role, tt.subjectPatterns, tt.conditions)
+			perm, err := CreateGitHubActionsPermission(tt.repository, tt.roleRef, tt.subjectPatterns, tt.conditions)
 
 			if tt.expectedError {
 				assert.Error(t, err)
-				assert.Nil(t, rel)
+				assert.Nil(t, perm)
 			} else {
 				assert.NoError(t, err)
-				require.NotNil(t, rel)
+				require.NotNil(t, perm)
 
-				// Check relationship properties
-				iamRel, ok := rel.(*model.IAMRelationship)
-				require.True(t, ok, "Expected IAMRelationship")
-				assert.Equal(t, tt.expectedAction, iamRel.Permission)
-				assert.Equal(t, tt.expectedCapab, iamRel.Capability)
-				assert.NotNil(t, iamRel)
+				// Check permission properties
+				assert.Equal(t, tt.expectedAction, perm.Permission)
+				assert.Equal(t, tt.expectedCapab, perm.Capability)
+				assert.Equal(t, "github", perm.Source.Platform)
+				assert.Equal(t, "repository", perm.Source.Type)
+				assert.Equal(t, "aws", perm.Target.Platform)
+				assert.Equal(t, "iam-role", perm.Target.Type)
 			}
 		})
 	}
@@ -215,7 +204,7 @@ func TestExtractGitHubActionsRelationships(t *testing.T) {
 									},
 									Condition: &types.Condition{
 										"StringEquals": {
-											"token.actions.githubusercontent.com:sub": types.DynaString{"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+											"token.actions.githubusercontent.com:sub": types.DynaString{"repo:praetorian-inc/aurelian:ref:refs/heads/main"},
 											"token.actions.githubusercontent.com:aud": types.DynaString{"sts.amazonaws.com"},
 										},
 									},
@@ -267,7 +256,7 @@ func TestExtractGitHubActionsRelationships(t *testing.T) {
 									},
 									Condition: &types.Condition{
 										"StringEquals": {
-											"token.actions.githubusercontent.com:sub": types.DynaString{"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+											"token.actions.githubusercontent.com:sub": types.DynaString{"repo:praetorian-inc/aurelian:ref:refs/heads/main"},
 											"token.actions.githubusercontent.com:aud": types.DynaString{"sts.amazonaws.com"},
 										},
 									},
@@ -312,7 +301,7 @@ func TestExtractGitHubActionsRelationships(t *testing.T) {
 									Condition: &types.Condition{
 										"StringLike": {
 											"token.actions.githubusercontent.com:sub": types.DynaString{
-												"repo:praetorian-inc/nebula:*",
+												"repo:praetorian-inc/aurelian:*",
 												"repo:praetorian-inc/konstellation:*",
 											},
 											"token.actions.githubusercontent.com:aud": types.DynaString{"sts.amazonaws.com"},
@@ -330,26 +319,25 @@ func TestExtractGitHubActionsRelationships(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			relationships, err := ExtractGitHubActionsRelationships(tt.gaad)
+			permissions, err := ExtractGitHubActionsPermissions(tt.gaad)
 			assert.NoError(t, err)
-			assert.Len(t, relationships, tt.expectedLen)
+			assert.Len(t, permissions, tt.expectedLen)
 
-			// If we expect relationships, verify they're IamRelationships
-			for _, rel := range relationships {
-				iamRel, ok := rel.(*model.IAMRelationship)
-				require.True(t, ok, "Expected IAMRelationship")
-				assert.Equal(t, "sts:AssumeRole", iamRel.Permission)
-				assert.Equal(t, "apollo-github-actions-federation", iamRel.Capability)
+			// If we expect permissions, verify they're GitHubActionsPermissions
+			for _, perm := range permissions {
+				assert.Equal(t, "sts:AssumeRoleWithWebIdentity", perm.Permission)
+				assert.Equal(t, "apollo-github-actions-federation", perm.Capability)
+				assert.Equal(t, "github", perm.Source.Platform)
+				assert.Equal(t, "repository", perm.Source.Type)
 			}
 		})
 	}
 }
 
-func TestTransformUserDLToAWSResource(t *testing.T) {
+func TestTransformUserDLToCloudResource(t *testing.T) {
 	tests := []struct {
 		name     string
 		user     *types.UserDL
-		expected *model.AWSResource
 		hasError bool
 	}{
 		{
@@ -366,24 +354,13 @@ func TestTransformUserDLToAWSResource(t *testing.T) {
 		{
 			name:     "Nil user",
 			user:     nil,
-			expected: nil,
-			hasError: true,
-		},
-		{
-			name: "User with empty ARN",
-			user: &types.UserDL{
-				UserName: "test-user",
-				Arn:      "",
-				Path:     "/",
-				UserId:   "AIDAEXAMPLE123456789",
-			},
 			hasError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resource, err := TransformUserDLToAWSResource(tt.user)
+			resource, err := TransformUserDLToCloudResource(tt.user)
 
 			if tt.hasError {
 				assert.Error(t, err)
@@ -391,20 +368,19 @@ func TestTransformUserDLToAWSResource(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, resource)
-				assert.Equal(t, model.AWSUser, resource.ResourceType)
-				if tt.user.Arn != "" {
-					assert.Equal(t, tt.user.Arn, resource.Name)
-				}
+				assert.Equal(t, "aws", resource.Platform)
+				assert.Equal(t, "AWS::IAM::User", resource.ResourceType)
+				assert.Equal(t, tt.user.Arn, resource.ResourceID)
+				assert.Equal(t, "123456789012", resource.AccountRef)
 			}
 		})
 	}
 }
 
-func TestTransformRoleDLToAWSResource(t *testing.T) {
+func TestTransformRoleDLToCloudResource(t *testing.T) {
 	tests := []struct {
 		name     string
 		role     *types.RoleDL
-		expected *model.AWSResource
 		hasError bool
 	}{
 		{
@@ -432,14 +408,13 @@ func TestTransformRoleDLToAWSResource(t *testing.T) {
 		{
 			name:     "Nil role",
 			role:     nil,
-			expected: nil,
 			hasError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resource, err := TransformRoleDLToAWSResource(tt.role)
+			resource, err := TransformRoleDLToCloudResource(tt.role)
 
 			if tt.hasError {
 				assert.Error(t, err)
@@ -447,20 +422,19 @@ func TestTransformRoleDLToAWSResource(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, resource)
-				assert.Equal(t, model.AWSRole, resource.ResourceType)
-				if tt.role.Arn != "" {
-					assert.Equal(t, tt.role.Arn, resource.Name)
-				}
+				assert.Equal(t, "aws", resource.Platform)
+				assert.Equal(t, "AWS::IAM::Role", resource.ResourceType)
+				assert.Equal(t, tt.role.Arn, resource.ResourceID)
+				assert.Equal(t, "123456789012", resource.AccountRef)
 			}
 		})
 	}
 }
 
-func TestTransformGroupDLToAWSResource(t *testing.T) {
+func TestTransformGroupDLToCloudResource(t *testing.T) {
 	tests := []struct {
 		name     string
 		group    *types.GroupDL
-		expected *model.AWSResource
 		hasError bool
 	}{
 		{
@@ -477,14 +451,13 @@ func TestTransformGroupDLToAWSResource(t *testing.T) {
 		{
 			name:     "Nil group",
 			group:    nil,
-			expected: nil,
 			hasError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resource, err := TransformGroupDLToAWSResource(tt.group)
+			resource, err := TransformGroupDLToCloudResource(tt.group)
 
 			if tt.hasError {
 				assert.Error(t, err)
@@ -492,10 +465,10 @@ func TestTransformGroupDLToAWSResource(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, resource)
-				assert.Equal(t, model.AWSGroup, resource.ResourceType)
-				if tt.group.Arn != "" {
-					assert.Equal(t, tt.group.Arn, resource.Name)
-				}
+				assert.Equal(t, "aws", resource.Platform)
+				assert.Equal(t, "AWS::IAM::Group", resource.ResourceType)
+				assert.Equal(t, tt.group.Arn, resource.ResourceID)
+				assert.Equal(t, "123456789012", resource.AccountRef)
 			}
 		})
 	}

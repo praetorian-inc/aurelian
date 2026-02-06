@@ -94,3 +94,8 @@ func (b *BaseLink) Logger() *slog.Logger {
 func (b *BaseLink) Name() string {
 	return b.name
 }
+
+// Args returns the args map (for creating child links with same args)
+func (b *BaseLink) Args() map[string]any {
+	return b.args
+}

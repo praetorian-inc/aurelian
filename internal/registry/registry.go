@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 type ModuleHeriarchy struct {
@@ -15,7 +15,7 @@ type ModuleHeriarchy struct {
 }
 
 type RegistryEntry struct {
-	Module          chain.Module
+	Module          plugin.Module
 	ModuleHeriarchy ModuleHeriarchy
 }
 
@@ -30,13 +30,13 @@ var Registry = &ModuleRegistry{
 	hierarchy: make(map[string]map[string][]string),
 }
 
-func Register(platform, category, name string, module chain.Module) {
+func Register(platform, category, name string, module plugin.Module) {
 	Registry.mu.Lock()
 	defer Registry.mu.Unlock()
 
 	// Create composite key: platform/category/name
 	key := platform + "/" + category + "/" + name
-	
+
 	// Store the module itself
 	Registry.modules[key] = RegistryEntry{
 		Module: module,
@@ -59,11 +59,11 @@ func Register(platform, category, name string, module chain.Module) {
 }
 
 // GetModules retrieves all modules for a given platform
-func GetModules(platform string) []chain.Module {
+func GetModules(platform string) []plugin.Module {
 	Registry.mu.RLock()
 	defer Registry.mu.RUnlock()
 
-	var modules []chain.Module
+	var modules []plugin.Module
 
 	if categoryMap, exists := Registry.hierarchy[platform]; exists {
 		for _, names := range categoryMap {
@@ -77,7 +77,7 @@ func GetModules(platform string) []chain.Module {
 }
 
 // GetModule gets a specific module by name (legacy - searches all platforms)
-func GetModule(name string) (chain.Module, bool) {
+func GetModule(name string) (plugin.Module, bool) {
 	Registry.mu.RLock()
 	defer Registry.mu.RUnlock()
 
@@ -88,18 +88,18 @@ func GetModule(name string) (chain.Module, bool) {
 		}
 	}
 
-	return chain.Module{}, false
+	return nil, false
 }
 
 // GetModuleByPlatform gets a specific module by platform, category, and name
-func GetModuleByPlatform(platform, category, name string) (chain.Module, bool) {
+func GetModuleByPlatform(platform, category, name string) (plugin.Module, bool) {
 	Registry.mu.RLock()
 	defer Registry.mu.RUnlock()
 
 	key := platform + "/" + category + "/" + name
 	entry, exists := Registry.modules[key]
 	if !exists {
-		return chain.Module{}, false
+		return nil, false
 	}
 
 	return entry.Module, true

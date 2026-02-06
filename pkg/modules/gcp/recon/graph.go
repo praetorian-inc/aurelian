@@ -8,82 +8,149 @@ import (
 	"strings"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/internal/registry"
-	gcloudiam "github.com/praetorian-inc/nebula/pkg/gcp/grapher"
-	"github.com/praetorian-inc/nebula/pkg/outputters"
-	gcptypes "github.com/praetorian-inc/nebula/pkg/types/gcp"
+	gcloudiam "github.com/praetorian-inc/aurelian/pkg/gcp/grapher"
+	gcptypes "github.com/praetorian-inc/aurelian/pkg/types/gcp"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 func init() {
-	registry.Register("gcp", "recon", GcpGraph.Metadata().Properties()["id"].(string), *GcpGraph)
+	plugin.Register(&GcpGraph{})
 }
 
-var GcpGraph = chain.NewModule(
-	cfg.NewMetadata(
-		"GCP Graph",
-		"Build GCP IAM graph using the hierarchy processor.",
-	).WithProperties(map[string]any{
-		"id":          "graph",
-		"platform":    "gcp",
-		"opsec_level": "moderate",
-		"authors":     []string{"Praetorian"},
-		"references":  []string{},
-	}),
-).WithLinks(
-	NewGcpGrapherLink,
-).WithOutputters(
-	outputters.NewRuntimeJSONOutputter,
-).WithAutoRun()
+// GcpGraph builds GCP IAM graph using the hierarchy processor
+type GcpGraph struct{}
 
-// GcpGrapherLink is an inline link that calls the GCP grapher
-type GcpGrapherLink struct {
-	*chain.Base
-	orgID               string
-	neo4jURI            string
-	neo4jUser           string
-	neo4jPass           string
-	collectPABs         bool
-	collectDenyPolicies bool
-	mode                string
-	dataDirectory       string
+// Metadata methods
+func (m *GcpGraph) ID() string {
+	return "graph"
 }
 
-func NewGcpGrapherLink(configs ...cfg.Config) chain.Link {
-	g := &GcpGrapherLink{
-		// Hardcoded values
-		orgID:               "1053837431852",
-		neo4jURI:            "neo4j://localhost:7687",
-		neo4jUser:           "neo4j",
-		neo4jPass:           "Tanishq16@",
-		collectPABs:         true,
-		collectDenyPolicies: true,
-		mode:                "online",
-		dataDirectory:       "./gcp-grapher-data",
+func (m *GcpGraph) Name() string {
+	return "GCP Graph"
+}
+
+func (m *GcpGraph) Description() string {
+	return "Build GCP IAM graph using the hierarchy processor."
+}
+
+func (m *GcpGraph) Platform() plugin.Platform {
+	return plugin.PlatformGCP
+}
+
+func (m *GcpGraph) Category() plugin.Category {
+	return plugin.CategoryRecon
+}
+
+func (m *GcpGraph) OpsecLevel() string {
+	return "moderate"
+}
+
+func (m *GcpGraph) Authors() []string {
+	return []string{"Praetorian"}
+}
+
+func (m *GcpGraph) References() []string {
+	return []string{}
+}
+
+func (m *GcpGraph) Parameters() []plugin.Parameter {
+	return []plugin.Parameter{
+		{
+			Name:        "org-id",
+			Description: "GCP organization ID",
+			Type:        "string",
+			Required:    true,
+		},
+		{
+			Name:        "neo4j-uri",
+			Description: "Neo4j connection URI",
+			Type:        "string",
+			Required:    false,
+			Default:     "neo4j://localhost:7687",
+		},
+		{
+			Name:        "neo4j-user",
+			Description: "Neo4j username",
+			Type:        "string",
+			Required:    false,
+			Default:     "neo4j",
+		},
+		{
+			Name:        "neo4j-password",
+			Description: "Neo4j password",
+			Type:        "string",
+			Required:    false,
+		},
+		{
+			Name:        "collect-pabs",
+			Description: "Collect PAB (Principal Access Boundary) policies",
+			Type:        "bool",
+			Required:    false,
+			Default:     true,
+		},
+		{
+			Name:        "collect-deny-policies",
+			Description: "Collect Deny policies",
+			Type:        "bool",
+			Required:    false,
+			Default:     true,
+		},
+		{
+			Name:        "mode",
+			Description: "Operation mode: online, offline-collect, offline-analyze",
+			Type:        "string",
+			Required:    false,
+			Default:     "online",
+		},
+		{
+			Name:        "data-directory",
+			Description: "Directory for offline data storage",
+			Type:        "string",
+			Required:    false,
+			Default:     "./gcp-grapher-data",
+		},
 	}
-	g.Base = chain.NewBase(g, configs...)
-	return g
 }
 
-func (g *GcpGrapherLink) Initialize() error {
-	if err := g.Base.Initialize(); err != nil {
-		return err
+// Run executes the GCP graph building module
+func (m *GcpGraph) Run(cfg plugin.Config) ([]plugin.Result, error) {
+	ctx := cfg.Context
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	return nil
-}
 
-func (g *GcpGrapherLink) Process(input string) error {
-	ctx := context.Background()
+	// Get parameters with defaults
+	orgID, _ := cfg.Args["org-id"].(string)
+	neo4jURI, _ := cfg.Args["neo4j-uri"].(string)
+	neo4jUser, _ := cfg.Args["neo4j-user"].(string)
+	neo4jPass, _ := cfg.Args["neo4j-password"].(string)
+	collectPABs, _ := cfg.Args["collect-pabs"].(bool)
+	collectDenyPolicies, _ := cfg.Args["collect-deny-policies"].(bool)
+	mode, _ := cfg.Args["mode"].(string)
+	dataDirectory, _ := cfg.Args["data-directory"].(string)
+
+	// Apply defaults if not provided
+	if neo4jURI == "" {
+		neo4jURI = "neo4j://localhost:7687"
+	}
+	if neo4jUser == "" {
+		neo4jUser = "neo4j"
+	}
+	if mode == "" {
+		mode = "online"
+	}
+	if dataDirectory == "" {
+		dataDirectory = "./gcp-grapher-data"
+	}
 
 	// Prompt user for configuration options
-	if err := g.promptUserOptions(); err != nil {
-		return fmt.Errorf("failed to get user options: %w", err)
+	if err := m.promptUserOptions(&orgID, &neo4jURI, &neo4jUser, &neo4jPass, &collectPABs, &collectDenyPolicies, &mode); err != nil {
+		return nil, fmt.Errorf("failed to get user options: %w", err)
 	}
 
 	// Parse mode
 	var opMode gcloudiam.OperationMode
-	switch g.mode {
+	switch mode {
 	case "offline-collect":
 		opMode = gcloudiam.ModeOfflineCollect
 	case "offline-analyze":
@@ -95,35 +162,35 @@ func (g *GcpGrapherLink) Process(input string) error {
 	// Create hierarchy processor with new parameters
 	hp, err := gcloudiam.NewHierarchyProcessor(
 		ctx,
-		g.collectPABs,
-		g.collectDenyPolicies,
+		collectPABs,
+		collectDenyPolicies,
 		opMode,
-		g.dataDirectory,
+		dataDirectory,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create hierarchy processor: %w", err)
+		return nil, fmt.Errorf("failed to create hierarchy processor: %w", err)
 	}
 	defer hp.Close()
 
 	// Process based on mode
-	fmt.Printf("Processing GCP organization: %s (mode: %s)\n", g.orgID, g.mode)
-	if err := hp.Process(g.orgID, []string{}); err != nil {
-		return fmt.Errorf("failed to process hierarchy: %w", err)
+	fmt.Printf("Processing GCP organization: %s (mode: %s)\n", orgID, mode)
+	if err := hp.Process(orgID, []string{}); err != nil {
+		return nil, fmt.Errorf("failed to process hierarchy: %w", err)
 	}
 
 	// Only write to Neo4j in online and offline-analyze modes
 	if opMode == gcloudiam.ModeOnline || opMode == gcloudiam.ModeOfflineAnalyze {
 		// Connect to Neo4j
 		fmt.Println("Connecting to Neo4j...")
-		driver, err := neo4j.NewDriverWithContext(g.neo4jURI, neo4j.BasicAuth(g.neo4jUser, g.neo4jPass, ""))
+		driver, err := neo4j.NewDriverWithContext(neo4jURI, neo4j.BasicAuth(neo4jUser, neo4jPass, ""))
 		if err != nil {
-			return fmt.Errorf("failed to create Neo4j driver: %w", err)
+			return nil, fmt.Errorf("failed to create Neo4j driver: %w", err)
 		}
 		defer driver.Close(ctx)
 
 		// Verify connectivity
 		if err := driver.VerifyConnectivity(ctx); err != nil {
-			return fmt.Errorf("failed to verify Neo4j connectivity: %w", err)
+			return nil, fmt.Errorf("failed to verify Neo4j connectivity: %w", err)
 		}
 		fmt.Println("Connected to Neo4j successfully")
 
@@ -139,16 +206,33 @@ func (g *GcpGrapherLink) Process(input string) error {
 
 		// Write to Neo4j
 		fmt.Println("Writing data to Neo4j...")
-		if err := g.writeToNeo4j(ctx, driver, hierarchy, allResources, tuples, containsEdges); err != nil {
-			return fmt.Errorf("failed to write to Neo4j: %w", err)
+		if err := m.writeToNeo4j(ctx, driver, hierarchy, allResources, tuples, containsEdges); err != nil {
+			return nil, fmt.Errorf("failed to write to Neo4j: %w", err)
 		}
 	}
 
 	fmt.Println("GCP graph processing completed successfully")
-	return nil
+	return []plugin.Result{
+		{
+			Data: map[string]any{
+				"status":           "success",
+				"organization":     orgID,
+				"mode":             mode,
+				"resources_count":  len(hp.GetAllResources()),
+				"tuples_count":     len(hp.GetTuples()),
+				"contains_count":   len(hp.GetContainsEdges()),
+			},
+			Metadata: map[string]any{
+				"module":      "graph",
+				"platform":    "gcp",
+				"category":    "recon",
+				"opsec_level": "moderate",
+			},
+		},
+	}, nil
 }
 
-func (g *GcpGrapherLink) promptUserOptions() error {
+func (m *GcpGraph) promptUserOptions(orgID, neo4jURI, neo4jUser, neo4jPass *string, collectPABs, collectDenyPolicies *bool, mode *string) error {
 	reader := bufio.NewReader(os.Stdin)
 
 	// Prompt for operation mode
@@ -164,33 +248,33 @@ func (g *GcpGrapherLink) promptUserOptions() error {
 	}
 	switch modeChoice {
 	case "2":
-		g.mode = "offline-collect"
+		*mode = "offline-collect"
 	case "3":
-		g.mode = "offline-analyze"
+		*mode = "offline-analyze"
 	default:
-		g.mode = "online"
+		*mode = "online"
 	}
 
 	// Only prompt for collection options if not in offline-analyze mode
-	if g.mode != "offline-analyze" {
+	if *mode != "offline-analyze" {
 		// Prompt for PAB collection
 		fmt.Print("\nCollect PAB (Principal Access Boundary) policies? (y/n) [y]: ")
 		pabChoice, _ := reader.ReadString('\n')
 		pabChoice = strings.TrimSpace(strings.ToLower(pabChoice))
-		g.collectPABs = pabChoice == "" || pabChoice == "y" || pabChoice == "yes"
+		*collectPABs = pabChoice == "" || pabChoice == "y" || pabChoice == "yes"
 
 		// Prompt for Deny policy collection
 		fmt.Print("Collect Deny policies? (y/n) [y]: ")
 		denyChoice, _ := reader.ReadString('\n')
 		denyChoice = strings.TrimSpace(strings.ToLower(denyChoice))
-		g.collectDenyPolicies = denyChoice == "" || denyChoice == "y" || denyChoice == "yes"
+		*collectDenyPolicies = denyChoice == "" || denyChoice == "y" || denyChoice == "yes"
 	}
 
 	fmt.Println()
 	return nil
 }
 
-func (g *GcpGrapherLink) writeToNeo4j(ctx context.Context, driver neo4j.DriverWithContext, hierarchy *gcptypes.Hierarchy, allResources []*gcptypes.Resource, tuples []*gcptypes.PermissionTuple, containsEdges []*gcptypes.ContainsEdge) error {
+func (m *GcpGraph) writeToNeo4j(ctx context.Context, driver neo4j.DriverWithContext, hierarchy *gcptypes.Hierarchy, allResources []*gcptypes.Resource, tuples []*gcptypes.PermissionTuple, containsEdges []*gcptypes.ContainsEdge) error {
 	session := driver.NewSession(ctx, neo4j.SessionConfig{DatabaseName: "neo4j"})
 	defer session.Close(ctx)
 
@@ -200,22 +284,22 @@ func (g *GcpGrapherLink) writeToNeo4j(ctx context.Context, driver neo4j.DriverWi
 	}
 
 	fmt.Println("Inserting hierarchy...")
-	if err := g.insertHierarchy(ctx, session, hierarchy); err != nil {
+	if err := m.insertHierarchy(ctx, session, hierarchy); err != nil {
 		return fmt.Errorf("failed to insert hierarchy: %w", err)
 	}
 
 	fmt.Printf("Inserting %d resource nodes...\n", len(allResources))
-	if err := g.insertAllResources(ctx, session, allResources); err != nil {
+	if err := m.insertAllResources(ctx, session, allResources); err != nil {
 		return fmt.Errorf("failed to insert resources: %w", err)
 	}
 
 	fmt.Printf("Inserting %d CONTAINS edges...\n", len(containsEdges))
-	if err := g.insertContainsEdges(ctx, session, containsEdges); err != nil {
+	if err := m.insertContainsEdges(ctx, session, containsEdges); err != nil {
 		return fmt.Errorf("failed to insert CONTAINS edges: %w", err)
 	}
 
 	fmt.Printf("Inserting %d permission tuples...\n", len(tuples))
-	if err := g.insertPermissionTuples(ctx, session, tuples); err != nil {
+	if err := m.insertPermissionTuples(ctx, session, tuples); err != nil {
 		return fmt.Errorf("failed to insert permission tuples: %w", err)
 	}
 
@@ -223,7 +307,7 @@ func (g *GcpGrapherLink) writeToNeo4j(ctx context.Context, driver neo4j.DriverWi
 	return nil
 }
 
-func (g *GcpGrapherLink) insertHierarchy(ctx context.Context, session neo4j.SessionWithContext, hierarchy *gcptypes.Hierarchy) error {
+func (m *GcpGraph) insertHierarchy(ctx context.Context, session neo4j.SessionWithContext, hierarchy *gcptypes.Hierarchy) error {
 	for _, org := range hierarchy.Organizations {
 		// Create organization node
 		_, err := session.Run(ctx, `
@@ -246,19 +330,19 @@ func (g *GcpGrapherLink) insertHierarchy(ctx context.Context, session neo4j.Sess
 		}
 
 		// Insert folders recursively
-		if err := g.insertFolders(ctx, session, org.URI, org.Folders); err != nil {
+		if err := m.insertFolders(ctx, session, org.URI, org.Folders); err != nil {
 			return err
 		}
 
 		// Insert projects
-		if err := g.insertProjects(ctx, session, org.URI, org.Projects); err != nil {
+		if err := m.insertProjects(ctx, session, org.URI, org.Projects); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (g *GcpGrapherLink) insertFolders(ctx context.Context, session neo4j.SessionWithContext, parentURI string, folders []*gcptypes.Folder) error {
+func (m *GcpGraph) insertFolders(ctx context.Context, session neo4j.SessionWithContext, parentURI string, folders []*gcptypes.Folder) error {
 	for _, folder := range folders {
 		// Create folder node
 		_, err := session.Run(ctx, `
@@ -296,19 +380,19 @@ func (g *GcpGrapherLink) insertFolders(ctx context.Context, session neo4j.Sessio
 		}
 
 		// Recursively insert subfolders
-		if err := g.insertFolders(ctx, session, folder.URI, folder.Folders); err != nil {
+		if err := m.insertFolders(ctx, session, folder.URI, folder.Folders); err != nil {
 			return err
 		}
 
 		// Insert projects in this folder
-		if err := g.insertProjects(ctx, session, folder.URI, folder.Projects); err != nil {
+		if err := m.insertProjects(ctx, session, folder.URI, folder.Projects); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (g *GcpGrapherLink) insertProjects(ctx context.Context, session neo4j.SessionWithContext, parentURI string, projects []*gcptypes.Project) error {
+func (m *GcpGraph) insertProjects(ctx context.Context, session neo4j.SessionWithContext, parentURI string, projects []*gcptypes.Project) error {
 	for _, project := range projects {
 		// Create project node
 		_, err := session.Run(ctx, `
@@ -350,7 +434,7 @@ func (g *GcpGrapherLink) insertProjects(ctx context.Context, session neo4j.Sessi
 	return nil
 }
 
-func (g *GcpGrapherLink) insertAllResources(ctx context.Context, session neo4j.SessionWithContext, resources []*gcptypes.Resource) error {
+func (m *GcpGraph) insertAllResources(ctx context.Context, session neo4j.SessionWithContext, resources []*gcptypes.Resource) error {
 	resourcesByLabels := make(map[string][]map[string]any)
 
 	for _, resource := range resources {
@@ -422,7 +506,7 @@ func isPrincipal(assetType string) bool {
 	return false
 }
 
-func (g *GcpGrapherLink) insertPermissionTuples(ctx context.Context, session neo4j.SessionWithContext, tuples []*gcptypes.PermissionTuple) error {
+func (m *GcpGraph) insertPermissionTuples(ctx context.Context, session neo4j.SessionWithContext, tuples []*gcptypes.PermissionTuple) error {
 	batchSize := 1000
 	totalBatches := (len(tuples) + batchSize - 1) / batchSize
 
@@ -437,14 +521,14 @@ func (g *GcpGrapherLink) insertPermissionTuples(ctx context.Context, session neo
 		fmt.Printf("Processing batch %d/%d (%d-%d of %d tuples)...\n",
 			batchNum+1, totalBatches, start+1, end, len(tuples))
 
-		if err := g.insertPermissionBatch(ctx, session, batch); err != nil {
+		if err := m.insertPermissionBatch(ctx, session, batch); err != nil {
 			return fmt.Errorf("failed to insert batch %d: %w", batchNum+1, err)
 		}
 	}
 	return nil
 }
 
-func (g *GcpGrapherLink) insertPermissionBatch(ctx context.Context, session neo4j.SessionWithContext, batch []*gcptypes.PermissionTuple) error {
+func (m *GcpGraph) insertPermissionBatch(ctx context.Context, session neo4j.SessionWithContext, batch []*gcptypes.PermissionTuple) error {
 	// Group principals by their label combinations
 	principalsByLabels := make(map[string][]map[string]any)
 	resourcesByLabels := make(map[string][]map[string]any)
@@ -538,7 +622,7 @@ func (g *GcpGrapherLink) insertPermissionBatch(ctx context.Context, session neo4
 	return nil
 }
 
-func (g *GcpGrapherLink) insertContainsEdges(ctx context.Context, session neo4j.SessionWithContext, edges []*gcptypes.ContainsEdge) error {
+func (m *GcpGraph) insertContainsEdges(ctx context.Context, session neo4j.SessionWithContext, edges []*gcptypes.ContainsEdge) error {
 	batchSize := 1000
 	totalBatches := (len(edges) + batchSize - 1) / batchSize
 
@@ -572,10 +656,6 @@ func (g *GcpGrapherLink) insertContainsEdges(ctx context.Context, session neo4j.
 		}
 	}
 	return nil
-}
-
-func (g *GcpGrapherLink) getResourceID(r *gcptypes.Resource) string {
-	return r.URI
 }
 
 func getResourceLabels(assetType string) []string {

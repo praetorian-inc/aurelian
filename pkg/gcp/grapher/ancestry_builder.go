@@ -1,6 +1,6 @@
 package gcloudiam
 
-import gcptypes "github.com/praetorian-inc/nebula/pkg/types/gcp"
+import gcptypes "github.com/praetorian-inc/aurelian/pkg/types/gcp"
 
 type AncestryBuilder struct {
 	nodeByURI map[string]any

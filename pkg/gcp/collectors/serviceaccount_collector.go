@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	gcptypes "github.com/praetorian-inc/nebula/pkg/types/gcp"
+	gcptypes "github.com/praetorian-inc/aurelian/pkg/types/gcp"
 	"google.golang.org/api/iam/v1"
 	"google.golang.org/api/option"
 )

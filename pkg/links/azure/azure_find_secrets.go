@@ -413,7 +413,7 @@ func (l *AzureFindSecretsLink) processFunctionAppKeys(ctx context.Context, resou
 }
 
 func (l *AzureFindSecretsLink) parseVMResourceID(resourceID string) (resourceGroup, vmName string, err error) {
-	// Extract actual Azure resource ID from nebula key format
+	// Extract actual Azure resource ID from aurelian key format
 	// Format: #azureresource#subscription#/subscriptions/...
 	parts := strings.Split(resourceID, "#")
 	if len(parts) < 4 {
@@ -437,7 +437,7 @@ func (l *AzureFindSecretsLink) parseVMResourceID(resourceID string) (resourceGro
 }
 
 func (l *AzureFindSecretsLink) parseFunctionAppResourceID(resourceID string) (resourceGroup, appName string, err error) {
-	// Extract actual Azure resource ID from nebula key format
+	// Extract actual Azure resource ID from aurelian key format
 	parts := strings.Split(resourceID, "#")
 	if len(parts) < 4 {
 		return "", "", fmt.Errorf("invalid aurelian resource key format")
@@ -525,7 +525,7 @@ func (l *AzureFindSecretsLink) processAutomationRunbooks(subscriptionID, resourc
 }
 
 func (l *AzureFindSecretsLink) parseAutomationAccountResourceID(resourceID string) (resourceGroup, automationAccountName string, err error) {
-	// Extract actual Azure resource ID from nebula key format
+	// Extract actual Azure resource ID from aurelian key format
 	parts := strings.Split(resourceID, "#")
 	if len(parts) < 4 {
 		return "", "", fmt.Errorf("invalid aurelian resource key format")

@@ -11,8 +11,8 @@ import (
 	iampoliciespb "cloud.google.com/go/iam/apiv2/iampb"
 	resourcemanager "cloud.google.com/go/resourcemanager/apiv3"
 	resourcemanagerpb "cloud.google.com/go/resourcemanager/apiv3/resourcemanagerpb"
-	gcperrors "github.com/praetorian-inc/nebula/pkg/gcp/errors"
-	gcptypes "github.com/praetorian-inc/nebula/pkg/types/gcp"
+	gcperrors "github.com/praetorian-inc/aurelian/pkg/gcp/errors"
+	gcptypes "github.com/praetorian-inc/aurelian/pkg/types/gcp"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )

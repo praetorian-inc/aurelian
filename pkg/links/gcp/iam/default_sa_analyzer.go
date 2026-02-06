@@ -6,11 +6,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/common"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"google.golang.org/api/iam/v1"
 )
 
@@ -46,7 +45,7 @@ type DefaultServiceAccountSummary struct {
 }
 
 type GcpDefaultServiceAccountAnalyzer struct {
-	*base.GcpBaseLink
+	*base.NativeGCPLink
 	iamService        *iam.Service
 	violations        []DefaultServiceAccountViolation
 	projectsProcessed map[string]string // projectId -> projectName
@@ -59,46 +58,54 @@ var defaultServiceAccountPatterns = map[string]string{
 }
 
 // NewGcpDefaultServiceAccountAnalyzer creates a link to analyze default service account violations
-func NewGcpDefaultServiceAccountAnalyzer(configs ...cfg.Config) chain.Link {
-	g := &GcpDefaultServiceAccountAnalyzer{
+func NewGcpDefaultServiceAccountAnalyzer(args map[string]any) *GcpDefaultServiceAccountAnalyzer {
+	link := &GcpDefaultServiceAccountAnalyzer{
+		NativeGCPLink:     base.NewNativeGCPLink("gcp-default-sa-analyzer", args),
 		violations:        make([]DefaultServiceAccountViolation, 0),
 		projectsProcessed: make(map[string]string),
 	}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
-}
 
-func (g *GcpDefaultServiceAccountAnalyzer) Params() []cfg.Param {
-	return g.GcpBaseLink.Params()
-}
-
-func (g *GcpDefaultServiceAccountAnalyzer) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
+	// Initialize IAM service
+	iamService, err := iam.NewService(context.Background(), link.ClientOptions()...)
+	if err != nil {
+		slog.Error("Failed to create IAM service", "error", common.HandleGcpError(err, "failed to create IAM service"))
 	}
-	var err error
-	g.iamService, err = iam.NewService(context.Background(), g.ClientOptions...)
-	return common.HandleGcpError(err, "failed to create IAM service")
+	link.iamService = iamService
+
+	return link
 }
 
-func (g *GcpDefaultServiceAccountAnalyzer) Process(resource tab.GCPResource) error {
-	slog.Debug("GcpDefaultServiceAccountAnalyzer received resource", "type", string(resource.ResourceType), "name", resource.Name)
+func (g *GcpDefaultServiceAccountAnalyzer) Parameters() []plugin.Parameter {
+	return base.StandardGCPParams()
+}
 
-	if string(resource.ResourceType) == "IAMPolicy" {
-		return g.processIAMPolicy(resource)
+func (g *GcpDefaultServiceAccountAnalyzer) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*output.CloudResource)
+	if !ok {
+		return nil, fmt.Errorf("expected *output.CloudResource, got %T", input)
 	}
 
-	slog.Debug("Skipping unsupported resource type", "type", string(resource.ResourceType), "name", resource.Name)
-	return nil
-}
+	slog.Debug("GcpDefaultServiceAccountAnalyzer received resource", "type", resource.ResourceType, "name", resource.ResourceID)
 
-func (g *GcpDefaultServiceAccountAnalyzer) processIAMPolicy(resource tab.GCPResource) error {
-	properties := resource.Properties
-	if properties == nil {
-		return fmt.Errorf("no properties found for IAM policy resource")
+	if resource.ResourceType == "IAMPolicy" {
+		if err := g.processIAMPolicy(resource); err != nil {
+			return nil, err
+		}
+	} else {
+		slog.Debug("Skipping unsupported resource type", "type", resource.ResourceType, "name", resource.ResourceID)
 	}
 
-	policyDataRaw, ok := properties["policy_data"]
+	return nil, nil
+}
+
+func (g *GcpDefaultServiceAccountAnalyzer) processIAMPolicy(resource *output.CloudResource) error {
+	// resource.Properties is already map[string]any, no type assertion needed
+	data := resource.Properties
+	if data == nil {
+		return fmt.Errorf("nil properties for IAM policy resource")
+	}
+
+	policyDataRaw, ok := data["policy_data"]
 	if !ok {
 		return fmt.Errorf("missing policy_data in IAM policy resource")
 	}
@@ -219,11 +226,11 @@ func (g *GcpDefaultServiceAccountAnalyzer) generateDescriptionFromRole(member, r
 	}
 }
 
-func (g *GcpDefaultServiceAccountAnalyzer) Complete() error {
+func (g *GcpDefaultServiceAccountAnalyzer) Complete(ctx context.Context) ([]any, error) {
 	// Generate the complete finding only if we have violations
 	if len(g.violations) == 0 {
 		slog.Info("No default service account violations found")
-		return nil
+		return nil, nil
 	}
 
 	summary := g.calculateSummary()
@@ -246,8 +253,16 @@ func (g *GcpDefaultServiceAccountAnalyzer) Complete() error {
 		"appengine_default", summary.AppEngineDefaultSAs,
 		"active_accounts", summary.ActiveServiceAccounts)
 
-	g.Send(finding)
-	return nil
+	resource := &output.CloudResource{
+		ResourceID:   fmt.Sprintf("gcp-default-sa-finding-%s", finding.FindingData.Title),
+		DisplayName:  finding.FindingData.Title,
+		ResourceType: "gcp_default_sa_finding",
+		Region:       "global",
+		Platform:     "gcp",
+		Properties:   map[string]any{"finding": finding},
+	}
+
+	return []any{resource}, nil
 }
 
 func (g *GcpDefaultServiceAccountAnalyzer) calculateSummary() DefaultServiceAccountSummary {

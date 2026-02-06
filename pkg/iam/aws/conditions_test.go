@@ -702,13 +702,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions subject equals specific repo and branch",
 			conditions: &types.Condition{
 				"StringEquals": {
-					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+					GitHubActionsSubjectKey:  {"repo:praetorian-inc/aurelian:ref:refs/heads/main"},
 					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:ref:refs/heads/main",
+					GitHubActionsSubjectKey:  "repo:praetorian-inc/aurelian:ref:refs/heads/main",
 					GitHubActionsAudienceKey: "sts.amazonaws.com",
 				},
 			},
@@ -720,13 +720,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions subject does not match - different branch",
 			conditions: &types.Condition{
 				"StringEquals": {
-					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+					GitHubActionsSubjectKey:  {"repo:praetorian-inc/aurelian:ref:refs/heads/main"},
 					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:ref:refs/heads/develop",
+					GitHubActionsSubjectKey:  "repo:praetorian-inc/aurelian:ref:refs/heads/develop",
 					GitHubActionsAudienceKey: "sts.amazonaws.com",
 				},
 			},
@@ -738,13 +738,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions subject with wildcard matching any context",
 			conditions: &types.Condition{
 				"StringLike": {
-					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:*"},
+					GitHubActionsSubjectKey:  {"repo:praetorian-inc/aurelian:*"},
 					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:environment:production",
+					GitHubActionsSubjectKey:  "repo:praetorian-inc/aurelian:environment:production",
 					GitHubActionsAudienceKey: "sts.amazonaws.com",
 				},
 			},
@@ -756,13 +756,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions subject with wildcard not matching different repo",
 			conditions: &types.Condition{
 				"StringLike": {
-					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:*"},
+					GitHubActionsSubjectKey:  {"repo:praetorian-inc/aurelian:*"},
 					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					GitHubActionsSubjectKey:   "repo:different-org/other-repo:ref:refs/heads/main",
+					GitHubActionsSubjectKey:  "repo:different-org/other-repo:ref:refs/heads/main",
 					GitHubActionsAudienceKey: "sts.amazonaws.com",
 				},
 			},
@@ -774,13 +774,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions environment-specific access",
 			conditions: &types.Condition{
 				"StringEquals": {
-					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:environment:production"},
+					GitHubActionsSubjectKey:  {"repo:praetorian-inc/aurelian:environment:production"},
 					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:environment:production",
+					GitHubActionsSubjectKey:  "repo:praetorian-inc/aurelian:environment:production",
 					GitHubActionsAudienceKey: "sts.amazonaws.com",
 				},
 			},
@@ -792,13 +792,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions environment mismatch",
 			conditions: &types.Condition{
 				"StringEquals": {
-					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:environment:production"},
+					GitHubActionsSubjectKey:  {"repo:praetorian-inc/aurelian:environment:production"},
 					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:environment:staging",
+					GitHubActionsSubjectKey:  "repo:praetorian-inc/aurelian:environment:staging",
 					GitHubActionsAudienceKey: "sts.amazonaws.com",
 				},
 			},
@@ -810,13 +810,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions pull request context",
 			conditions: &types.Condition{
 				"StringEquals": {
-					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:pull_request"},
+					GitHubActionsSubjectKey:  {"repo:praetorian-inc/aurelian:pull_request"},
 					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:pull_request",
+					GitHubActionsSubjectKey:  "repo:praetorian-inc/aurelian:pull_request",
 					GitHubActionsAudienceKey: "sts.amazonaws.com",
 				},
 			},
@@ -828,7 +828,7 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions subject missing should fail",
 			conditions: &types.Condition{
 				"StringEquals": {
-					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+					GitHubActionsSubjectKey:  {"repo:praetorian-inc/aurelian:ref:refs/heads/main"},
 					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
 				},
 			},
@@ -847,13 +847,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions audience missing should fail",
 			conditions: &types.Condition{
 				"StringEquals": {
-					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+					GitHubActionsSubjectKey:  {"repo:praetorian-inc/aurelian:ref:refs/heads/main"},
 					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					GitHubActionsSubjectKey: "repo:praetorian-inc/nebula:ref:refs/heads/main",
+					GitHubActionsSubjectKey: "repo:praetorian-inc/aurelian:ref:refs/heads/main",
 					// Missing audience key
 				},
 			},
@@ -867,15 +867,15 @@ func TestEvaluateConditions(t *testing.T) {
 			conditions: &types.Condition{
 				"StringEquals": {
 					GitHubActionsSubjectKey: {
-						"repo:praetorian-inc/nebula:ref:refs/heads/main",
-						"repo:praetorian-inc/nebula:environment:production",
+						"repo:praetorian-inc/aurelian:ref:refs/heads/main",
+						"repo:praetorian-inc/aurelian:environment:production",
 					},
 					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:environment:production",
+					GitHubActionsSubjectKey:  "repo:praetorian-inc/aurelian:environment:production",
 					GitHubActionsAudienceKey: "sts.amazonaws.com",
 				},
 			},
@@ -887,13 +887,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions StringNotEquals - should fail when audience matches",
 			conditions: &types.Condition{
 				"StringNotEquals": {
-					GitHubActionsSubjectKey:   {"repo:blocked-org/blocked-repo:*"},
+					GitHubActionsSubjectKey:  {"repo:blocked-org/blocked-repo:*"},
 					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:ref:refs/heads/main",
+					GitHubActionsSubjectKey:  "repo:praetorian-inc/aurelian:ref:refs/heads/main",
 					GitHubActionsAudienceKey: "sts.amazonaws.com",
 				},
 			},
@@ -905,13 +905,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions StringNotEquals - should fail for matching subject",
 			conditions: &types.Condition{
 				"StringNotEquals": {
-					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:*"},
+					GitHubActionsSubjectKey:  {"repo:praetorian-inc/aurelian:*"},
 					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:ref:refs/heads/main",
+					GitHubActionsSubjectKey:  "repo:praetorian-inc/aurelian:ref:refs/heads/main",
 					GitHubActionsAudienceKey: "sts.amazonaws.com",
 				},
 			},
@@ -924,7 +924,7 @@ func TestEvaluateConditions(t *testing.T) {
 			conditions: &types.Condition{
 				"ForAnyValue:StringLike": {
 					GitHubActionsSubjectKey: {
-						"repo:*/nebula:*",
+						"repo:*/aurelian:*",
 						"repo:praetorian-inc/*:environment:production",
 					},
 					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
@@ -932,7 +932,7 @@ func TestEvaluateConditions(t *testing.T) {
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:ref:refs/heads/main",
+					GitHubActionsSubjectKey:  "repo:praetorian-inc/aurelian:ref:refs/heads/main",
 					GitHubActionsAudienceKey: "sts.amazonaws.com",
 				},
 			},
@@ -944,13 +944,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions multi-level repository name",
 			conditions: &types.Condition{
 				"StringEquals": {
-					GitHubActionsSubjectKey:   {"repo:org/sub-org/repo-name:ref:refs/heads/main"},
+					GitHubActionsSubjectKey:  {"repo:org/sub-org/repo-name:ref:refs/heads/main"},
 					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					GitHubActionsSubjectKey:   "repo:org/sub-org/repo-name:ref:refs/heads/main",
+					GitHubActionsSubjectKey:  "repo:org/sub-org/repo-name:ref:refs/heads/main",
 					GitHubActionsAudienceKey: "sts.amazonaws.com",
 				},
 			},
@@ -962,13 +962,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions tag-based deployment",
 			conditions: &types.Condition{
 				"StringLike": {
-					GitHubActionsSubjectKey:   {"repo:praetorian-inc/nebula:ref:refs/tags/v*"},
+					GitHubActionsSubjectKey:  {"repo:praetorian-inc/aurelian:ref:refs/tags/v*"},
 					GitHubActionsAudienceKey: {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					GitHubActionsSubjectKey:   "repo:praetorian-inc/nebula:ref:refs/tags/v1.2.3",
+					GitHubActionsSubjectKey:  "repo:praetorian-inc/aurelian:ref:refs/tags/v1.2.3",
 					GitHubActionsAudienceKey: "sts.amazonaws.com",
 				},
 			},

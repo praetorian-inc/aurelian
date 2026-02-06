@@ -6,9 +6,9 @@ import (
 	"strings"
 	"sync"
 
-	gcloudcollectors "github.com/praetorian-inc/nebula/pkg/gcp/collectors"
-	gcperrors "github.com/praetorian-inc/nebula/pkg/gcp/errors"
-	gcptypes "github.com/praetorian-inc/nebula/pkg/types/gcp"
+	gcloudcollectors "github.com/praetorian-inc/aurelian/pkg/gcp/collectors"
+	gcperrors "github.com/praetorian-inc/aurelian/pkg/gcp/errors"
+	gcptypes "github.com/praetorian-inc/aurelian/pkg/types/gcp"
 	"google.golang.org/api/option"
 )
 

@@ -1,15 +1,16 @@
 package azure
 
 import (
+	"context"
+	"slices"
 	"testing"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/templates"
+	"github.com/praetorian-inc/aurelian/pkg/templates"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestNewARGTemplateLoaderLink(t *testing.T) {
+func TestARGTemplateLoaderLink(t *testing.T) {
 	tests := []struct {
 		name      string
 		sub       string
@@ -33,41 +34,39 @@ func TestNewARGTemplateLoaderLink(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Dynamically determine expected results
-			loader, _ := templates.NewTemplateLoader()
+			loader, err := templates.NewTemplateLoader(templates.LoadEmbedded)
+			require.NoError(t, err)
+
 			if tt.directory != "" {
-				_ = loader.LoadUserTemplates(tt.directory)
+				err = loader.LoadUserTemplates(tt.directory)
+				require.NoError(t, err)
 			}
+
 			templatesList := loader.GetTemplates()
 			expected := 0
-			for _, t := range templatesList {
-				if tt.category == "" || t.Category == tt.category {
-					expected += 1
+			for _, tmpl := range templatesList {
+				if tt.category == "" || slices.Contains(tmpl.Category, tt.category) {
+					expected++
 				}
 			}
 
-			link := NewARGTemplateLoaderLink(
-				cfg.WithArg("template-dir", tt.directory),
-				cfg.WithArg("category", tt.category),
-			)
+			link := NewARGTemplateLoaderLink(tt.directory, tt.category, "")
 
-			c := chain.NewChain(link)
-			c.Send(tt.sub)
-			c.Close()
+			results, err := link.Process(context.Background(), tt.sub)
+			require.NoError(t, err)
 
-			results := 0
-			for v, ok := chain.RecvAs[ARGTemplateQueryInput](c); ok; v, ok = chain.RecvAs[ARGTemplateQueryInput](c) {
-				if tt.category != "" && v.Template.Category != tt.category {
-					continue // Only count/assert those matching the filter
-				}
-				results++
+			require.Equal(t, expected, len(results))
+
+			for _, result := range results {
+				v, ok := result.(ARGTemplateQueryInput)
+				require.True(t, ok, "expected ARGTemplateQueryInput, got %T", result)
+
 				assert.NotNil(t, v.Template)
 				assert.Equal(t, tt.sub, v.Subscription)
 				if tt.category != "" {
-					assert.Equal(t, tt.category, v.Template.Category)
+					assert.True(t, slices.Contains(v.Template.Category, tt.category))
 				}
 			}
-			assert.NoError(t, c.Error())
-			assert.Equal(t, expected, results)
 		})
 	}
 }

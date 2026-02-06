@@ -1,13 +1,13 @@
 package iam
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 // PrimitiveRoleViolation represents a single primitive role violation
@@ -28,21 +28,21 @@ type PrimitiveRolesFinding struct {
 		Title          string `json:"title"`
 		AttackCategory string `json:"attack_category"`
 	} `json:"finding_data"`
-	Violations  []PrimitiveRoleViolation `json:"violations"`
-	Summary     PrimitiveRolesSummary    `json:"summary"`
+	Violations []PrimitiveRoleViolation `json:"violations"`
+	Summary    PrimitiveRolesSummary    `json:"summary"`
 }
 
 // PrimitiveRolesSummary provides summary statistics
 type PrimitiveRolesSummary struct {
-	TotalViolations   int `json:"total_violations"`
-	OwnerRoles        int `json:"owner_roles"`
-	EditorRoles       int `json:"editor_roles"`
-	ViewerRoles       int `json:"viewer_roles"`
-	ProjectsAffected  int `json:"projects_affected"`
+	TotalViolations  int `json:"total_violations"`
+	OwnerRoles       int `json:"owner_roles"`
+	EditorRoles      int `json:"editor_roles"`
+	ViewerRoles      int `json:"viewer_roles"`
+	ProjectsAffected int `json:"projects_affected"`
 }
 
 type GcpPrimitiveRolesAnalyzer struct {
-	*base.GcpBaseLink
+	*base.NativeGCPLink
 	violations        []PrimitiveRoleViolation
 	projectsProcessed map[string]string // projectId -> projectName
 }
@@ -54,47 +54,50 @@ var primitiveRoles = map[string]string{
 	"roles/viewer": "Viewer",
 }
 
-
 // NewGcpPrimitiveRolesAnalyzer creates a link to analyze primitive roles violations
-func NewGcpPrimitiveRolesAnalyzer(configs ...cfg.Config) chain.Link {
-	g := &GcpPrimitiveRolesAnalyzer{
+func NewGcpPrimitiveRolesAnalyzer(args map[string]any) *GcpPrimitiveRolesAnalyzer {
+	return &GcpPrimitiveRolesAnalyzer{
+		NativeGCPLink:     base.NewNativeGCPLink("gcp-primitive-roles-analyzer", args),
 		violations:        make([]PrimitiveRoleViolation, 0),
 		projectsProcessed: make(map[string]string),
 	}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
 }
 
-func (g *GcpPrimitiveRolesAnalyzer) Params() []cfg.Param {
-	params := append(g.GcpBaseLink.Params(),
-		cfg.NewParam[bool]("exclude-default-service-accounts", "exclude default service accounts from primitive role detection").WithDefault(false),
+func (g *GcpPrimitiveRolesAnalyzer) Parameters() []plugin.Parameter {
+	params := append(base.StandardGCPParams(),
+		plugin.NewParam[bool]("exclude-default-service-accounts", "exclude default service accounts from primitive role detection", plugin.WithDefault(false)),
 	)
 	return params
 }
 
-func (g *GcpPrimitiveRolesAnalyzer) Initialize() error {
-	return g.GcpBaseLink.Initialize()
-}
+func (g *GcpPrimitiveRolesAnalyzer) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*output.CloudResource)
+	if !ok {
+		return nil, fmt.Errorf("expected *output.CloudResource, got %T", input)
+	}
 
-func (g *GcpPrimitiveRolesAnalyzer) Process(resource tab.GCPResource) error {
-	slog.Debug("GcpPrimitiveRolesAnalyzer received resource", "type", string(resource.ResourceType), "name", resource.Name)
+	slog.Debug("GcpPrimitiveRolesAnalyzer received resource", "type", resource.ResourceType, "name", resource.ResourceID)
 
 	// Only process IAM policy resources
-	if string(resource.ResourceType) != "IAMPolicy" {
-		slog.Debug("Skipping non-IAM policy resource", "type", string(resource.ResourceType), "name", resource.Name)
-		return nil
+	if resource.ResourceType != "IAMPolicy" {
+		slog.Debug("Skipping non-IAM policy resource", "type", resource.ResourceType, "name", resource.ResourceID)
+		return nil, nil
 	}
 
-	return g.processIAMPolicy(resource)
+	if err := g.processIAMPolicy(resource); err != nil {
+		return nil, err
+	}
+
+	return nil, nil
 }
 
-func (g *GcpPrimitiveRolesAnalyzer) processIAMPolicy(resource tab.GCPResource) error {
-	properties := resource.Properties
-	if properties == nil {
-		return fmt.Errorf("no properties found for IAM policy resource")
+func (g *GcpPrimitiveRolesAnalyzer) processIAMPolicy(resource *output.CloudResource) error {
+	data := resource.Properties
+	if data == nil {
+		return fmt.Errorf("properties is nil for IAM policy resource")
 	}
 
-	policyDataRaw, ok := properties["policy_data"]
+	policyDataRaw, ok := data["policy_data"]
 	if !ok {
 		return fmt.Errorf("missing policy_data in IAM policy resource")
 	}
@@ -116,10 +119,7 @@ func (g *GcpPrimitiveRolesAnalyzer) processIAMPolicy(resource tab.GCPResource) e
 
 func (g *GcpPrimitiveRolesAnalyzer) analyzeIAMPolicy(policyData *IAMPolicyData) {
 	// Check if default service accounts should be excluded
-	excludeDefaultServiceAccounts, err := cfg.As[bool](g.Arg("exclude-default-service-accounts"))
-	if err != nil {
-		excludeDefaultServiceAccounts = false // Default to false if config error
-	}
+	excludeDefaultServiceAccounts := g.ArgBool("exclude-default-service-accounts", false)
 
 	for _, binding := range policyData.Bindings {
 		// Check for primitive roles violations
@@ -154,11 +154,11 @@ func (g *GcpPrimitiveRolesAnalyzer) analyzeIAMPolicy(policyData *IAMPolicyData) 
 	}
 }
 
-func (g *GcpPrimitiveRolesAnalyzer) Complete() error {
+func (g *GcpPrimitiveRolesAnalyzer) Complete(ctx context.Context) ([]any, error) {
 	// Generate the complete finding only if we have violations
 	if len(g.violations) == 0 {
 		slog.Info("No primitive role violations found")
-		return nil
+		return nil, nil
 	}
 
 	summary := g.calculateSummary()
@@ -181,8 +181,16 @@ func (g *GcpPrimitiveRolesAnalyzer) Complete() error {
 		"editor_roles", summary.EditorRoles,
 		"viewer_roles", summary.ViewerRoles)
 
-	g.Send(finding)
-	return nil
+	resource := &output.CloudResource{
+		ResourceID:   fmt.Sprintf("gcp-primitive-roles-finding-%s", finding.FindingData.Title),
+		DisplayName:  finding.FindingData.Title,
+		ResourceType: "gcp_primitive_roles_finding",
+		Region:       "global",
+		Platform:     "gcp",
+		Properties:   map[string]any{"finding": finding},
+	}
+
+	return []any{resource}, nil
 }
 
 func (g *GcpPrimitiveRolesAnalyzer) calculateSummary() PrimitiveRolesSummary {
@@ -204,7 +212,6 @@ func (g *GcpPrimitiveRolesAnalyzer) calculateSummary() PrimitiveRolesSummary {
 
 	return summary
 }
-
 
 // Helper functions
 

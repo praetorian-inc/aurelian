@@ -1,4 +1,4 @@
-## nebula aws recon
+## aurelian aws recon
 
 recon commands for aws
 
@@ -10,23 +10,23 @@ recon commands for aws
 
 ### SEE ALSO
 
-* [nebula aws](nebula_aws.md)	 - aws platform commands
-* [nebula aws recon account-auth-details](nebula_aws_recon_account-auth-details.md)	 - Get authorization details in an AWS account.
-* [nebula aws recon apollo](nebula_aws_recon_apollo.md)	 - Gather AWS access control details and analyze them using graph analysis
-* [nebula aws recon apollo-offline](nebula_aws_recon_apollo-offline.md)	 - Analyze AWS access control details from pre-collected JSON files using graph analysis
-* [nebula aws recon cdk-bucket-takeover](nebula_aws_recon_cdk-bucket-takeover.md)	 - Detects AWS CDK S3 bucket takeover vulnerabilities by identifying missing CDK staging buckets and insecure IAM policies. Scans for CDK bootstrap roles and validates associated S3 buckets for potential account takeover risks.
-* [nebula aws recon cloudfront-s3-takeover](nebula_aws_recon_cloudfront-s3-takeover.md)	 - Detects CloudFront distributions with S3 origins pointing to non-existent buckets, which could allow attackers to take over the domain by creating the missing bucket. Also identifies Route53 records pointing to vulnerable distributions.
-* [nebula aws recon ec2-screenshot-analysis](nebula_aws_recon_ec2-screenshot-analysis.md)	 - Capture EC2 console screenshots and analyze them for sensitive information using Claude AI
-* [nebula aws recon ecr-dump](nebula_aws_recon_ecr-dump.md)	 - Dump ECR container filesystems to disk and optionally scan for secrets using NoseyParker.
-* [nebula aws recon find-secrets](nebula_aws_recon_find-secrets.md)	 - Enumerate AWS resources and find secrets using NoseyParker
-* [nebula aws recon find-secrets-resource](nebula_aws_recon_find-secrets-resource.md)	 - Enumerate AWS resources and find secrets using NoseyParker for a specific resource type
-* [nebula aws recon get-console](nebula_aws_recon_get-console.md)	 - Generate a federated sign-in URL for the AWS Console using temporary credentials
-* [nebula aws recon list](nebula_aws_recon_list.md)	 - List resources in an AWS account using Cloud Control API.
-* [nebula aws recon list-all](nebula_aws_recon_list-all.md)	 - List resources in an AWS account using CloudControl API. Supports 'full' scan for all resources or 'summary' scan for key services.
-* [nebula aws recon org-policies](nebula_aws_recon_org-policies.md)	 - Get SCPs and RCPs of an AWS organization and the targets to which they are attached.
-* [nebula aws recon public-resources](nebula_aws_recon_public-resources.md)	 - Enumerate public AWS resources
-* [nebula aws recon resource-policies](nebula_aws_recon_resource-policies.md)	 - Get resource policies for supported AWS resource types and output them keyed by ARN.
-* [nebula aws recon summary](nebula_aws_recon_summary.md)	 - Use Cost Explorer to summarize the services and regions in use, displaying costs in a markdown table.
-* [nebula aws recon whoami](nebula_aws_recon_whoami.md)	 - Performs covert whoami techniques using AWS APIs that don't log to CloudTrail.
+* [aurelian aws](aurelian_aws.md)	 - aws platform commands
+* [aurelian aws recon account-auth-details](aurelian_aws_recon_account-auth-details.md)	 - Get authorization details in an AWS account.
+* [aurelian aws recon apollo](aurelian_aws_recon_apollo.md)	 - Gather AWS access control details and analyze them using graph analysis
+* [aurelian aws recon apollo-offline](aurelian_aws_recon_apollo-offline.md)	 - Analyze AWS access control details from pre-collected JSON files using graph analysis
+* [aurelian aws recon cdk-bucket-takeover](aurelian_aws_recon_cdk-bucket-takeover.md)	 - Detects AWS CDK S3 bucket takeover vulnerabilities by identifying missing CDK staging buckets and insecure IAM policies. Scans for CDK bootstrap roles and validates associated S3 buckets for potential account takeover risks.
+* [aurelian aws recon cloudfront-s3-takeover](aurelian_aws_recon_cloudfront-s3-takeover.md)	 - Detects CloudFront distributions with S3 origins pointing to non-existent buckets, which could allow attackers to take over the domain by creating the missing bucket. Also identifies Route53 records pointing to vulnerable distributions.
+* [aurelian aws recon ec2-screenshot-analysis](aurelian_aws_recon_ec2-screenshot-analysis.md)	 - Capture EC2 console screenshots and analyze them for sensitive information using Claude AI
+* [aurelian aws recon ecr-dump](aurelian_aws_recon_ecr-dump.md)	 - Dump ECR container filesystems to disk and optionally scan for secrets using NoseyParker.
+* [aurelian aws recon find-secrets](aurelian_aws_recon_find-secrets.md)	 - Enumerate AWS resources and find secrets using NoseyParker
+* [aurelian aws recon find-secrets-resource](aurelian_aws_recon_find-secrets-resource.md)	 - Enumerate AWS resources and find secrets using NoseyParker for a specific resource type
+* [aurelian aws recon get-console](aurelian_aws_recon_get-console.md)	 - Generate a federated sign-in URL for the AWS Console using temporary credentials
+* [aurelian aws recon list](aurelian_aws_recon_list.md)	 - List resources in an AWS account using Cloud Control API.
+* [aurelian aws recon list-all](aurelian_aws_recon_list-all.md)	 - List resources in an AWS account using CloudControl API. Supports 'full' scan for all resources or 'summary' scan for key services.
+* [aurelian aws recon org-policies](aurelian_aws_recon_org-policies.md)	 - Get SCPs and RCPs of an AWS organization and the targets to which they are attached.
+* [aurelian aws recon public-resources](aurelian_aws_recon_public-resources.md)	 - Enumerate public AWS resources
+* [aurelian aws recon resource-policies](aurelian_aws_recon_resource-policies.md)	 - Get resource policies for supported AWS resource types and output them keyed by ARN.
+* [aurelian aws recon summary](aurelian_aws_recon_summary.md)	 - Use Cost Explorer to summarize the services and regions in use, displaying costs in a markdown table.
+* [aurelian aws recon whoami](aurelian_aws_recon_whoami.md)	 - Performs covert whoami techniques using AWS APIs that don't log to CloudTrail.
 
 ###### Auto generated by spf13/cobra

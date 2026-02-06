@@ -6,7 +6,7 @@ import (
 
 	iamv3 "cloud.google.com/go/iam/apiv3"
 	iamv3pb "cloud.google.com/go/iam/apiv3/iampb"
-	gcptypes "github.com/praetorian-inc/nebula/pkg/types/gcp"
+	gcptypes "github.com/praetorian-inc/aurelian/pkg/types/gcp"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )

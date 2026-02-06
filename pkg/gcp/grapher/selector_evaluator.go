@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/google/cel-go/cel"
-	gcptypes "github.com/praetorian-inc/nebula/pkg/types/gcp"
+	gcptypes "github.com/praetorian-inc/aurelian/pkg/types/gcp"
 )
 
 type SelectorEvaluator struct {

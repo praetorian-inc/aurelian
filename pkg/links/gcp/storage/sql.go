@@ -3,124 +3,132 @@ package storage
 import (
 	"context"
 	"fmt"
-	"log/slog"
 
-	"github.com/praetorian-inc/janus-framework/pkg/chain"
-	"github.com/praetorian-inc/janus-framework/pkg/chain/cfg"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/base"
-	"github.com/praetorian-inc/nebula/pkg/links/gcp/common"
-	"github.com/praetorian-inc/nebula/pkg/links/options"
-	tab "github.com/praetorian-inc/tabularium/pkg/model/model"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/base"
+	"github.com/praetorian-inc/aurelian/pkg/links/gcp/common"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"google.golang.org/api/sqladmin/v1"
 )
 
 // FILE INFO:
 // GcpSQLInstanceInfoLink - get info of a single SQL instance, Process(instanceName string); needs project
-// GcpSQLInstanceListLink - list all SQL instances in a project, Process(resource tab.GCPResource); needs project
+// GcpSQLInstanceListLink - list all SQL instances in a project, Process(resource *output.CloudResource); needs project
+
+const (
+	gcpSQLInstanceInfoName = "gcp-sql-instance-info"
+	gcpSQLInstanceListName = "gcp-sql-instance-list"
+)
 
 type GcpSQLInstanceInfoLink struct {
-	*base.GcpBaseLink
+	*base.NativeGCPLink
 	sqlService *sqladmin.Service
 	ProjectId  string
 }
 
 // creates a link to get info of a single SQL instance
-func NewGcpSQLInstanceInfoLink(configs ...cfg.Config) chain.Link {
-	g := &GcpSQLInstanceInfoLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpSQLInstanceInfoLink(args map[string]any) plugin.Link {
+	return &GcpSQLInstanceInfoLink{
+		NativeGCPLink: base.NewNativeGCPLink(gcpSQLInstanceInfoName, args),
+	}
 }
 
-func (g *GcpSQLInstanceInfoLink) Params() []cfg.Param {
-	params := append(g.GcpBaseLink.Params(),
-		options.GcpProject(),
+func (g *GcpSQLInstanceInfoLink) Parameters() []plugin.Parameter {
+	params := append(base.StandardGCPParams(),
+		plugin.NewParam[string]("project", "GCP project ID", plugin.WithRequired()),
 	)
 	return params
 }
 
-func (g *GcpSQLInstanceInfoLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
+func (g *GcpSQLInstanceInfoLink) Process(ctx context.Context, input any) ([]any, error) {
+	instanceName, ok := input.(string)
+	if !ok {
+		return nil, fmt.Errorf("expected string input, got %T", input)
 	}
-	var err error
-	g.sqlService, err = sqladmin.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create SQL admin service: %w", err)
-	}
-	projectId, err := cfg.As[string](g.Arg("project"))
-	if err != nil {
-		return fmt.Errorf("failed to get project: %w", err)
-	}
-	g.ProjectId = projectId
-	return nil
-}
 
-func (g *GcpSQLInstanceInfoLink) Process(instanceName string) error {
-	instance, err := g.sqlService.Instances.Get(g.ProjectId, instanceName).Do()
-	if err != nil {
-		return common.HandleGcpError(err, "failed to get SQL instance")
+	// Lazy initialization
+	if g.sqlService == nil {
+		var err error
+		g.sqlService, err = sqladmin.NewService(ctx, g.ClientOptions()...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create SQL admin service: %w", err)
+		}
+		if projectVal, ok := g.Args()["project"].(string); ok {
+			g.ProjectId = projectVal
+		}
 	}
-	gcpSQLInstance, err := tab.NewGCPResource(
-		instance.Name,                        // resource name (instance name)
-		g.ProjectId,                          // accountRef (project ID)
-		tab.GCPResourceSQLInstance,           // resource type
-		linkPostProcessSQLInstance(instance), // properties
-	)
+
+	instance, err := g.sqlService.Instances.Get(g.ProjectId, instanceName).Context(ctx).Do()
 	if err != nil {
-		return fmt.Errorf("failed to create GCP SQL instance resource: %w", err)
+		return nil, common.HandleGcpError(err, "failed to get SQL instance")
 	}
-	g.Send(gcpSQLInstance)
-	return nil
+	gcpSQLInstance := &output.CloudResource{
+		Platform:     "gcp",
+		ResourceID:   fmt.Sprintf("projects/%s/instances/%s", g.ProjectId, instance.Name),
+		AccountRef:   g.ProjectId,
+		ResourceType: "sqladmin.googleapis.com/Instance",
+		DisplayName:  instance.Name,
+		Region:       instance.Region,
+		Properties:   linkPostProcessSQLInstance(instance),
+	}
+	return []any{gcpSQLInstance}, nil
 }
 
 type GcpSQLInstanceListLink struct {
-	*base.GcpBaseLink
+	*base.NativeGCPLink
 	sqlService *sqladmin.Service
 }
 
 // creates a link to list all SQL instances in a project
-func NewGcpSQLInstanceListLink(configs ...cfg.Config) chain.Link {
-	g := &GcpSQLInstanceListLink{}
-	g.GcpBaseLink = base.NewGcpBaseLink(g, configs...)
-	return g
+func NewGcpSQLInstanceListLink(args map[string]any) plugin.Link {
+	return &GcpSQLInstanceListLink{
+		NativeGCPLink: base.NewNativeGCPLink(gcpSQLInstanceListName, args),
+	}
 }
 
-func (g *GcpSQLInstanceListLink) Initialize() error {
-	if err := g.GcpBaseLink.Initialize(); err != nil {
-		return err
-	}
-	var err error
-	g.sqlService, err = sqladmin.NewService(context.Background(), g.ClientOptions...)
-	if err != nil {
-		return fmt.Errorf("failed to create SQL admin service: %w", err)
-	}
-	return nil
+func (g *GcpSQLInstanceListLink) Parameters() []plugin.Parameter {
+	return base.StandardGCPParams()
 }
 
-func (g *GcpSQLInstanceListLink) Process(resource tab.GCPResource) error {
-	if resource.ResourceType != tab.GCPResourceProject {
-		return nil
+func (g *GcpSQLInstanceListLink) Process(ctx context.Context, input any) ([]any, error) {
+	resource, ok := input.(*output.CloudResource)
+	if !ok {
+		return nil, fmt.Errorf("expected *output.CloudResource input, got %T", input)
 	}
-	projectId := resource.Name
-	listCall := g.sqlService.Instances.List(projectId)
-	resp, err := listCall.Do()
-	if err != nil {
-		return common.HandleGcpError(err, "failed to list SQL instances in project")
+	if resource.ResourceType != "cloudresourcemanager.googleapis.com/Project" {
+		return nil, nil
 	}
-	for _, instance := range resp.Items {
-		gcpSQLInstance, err := tab.NewGCPResource(
-			instance.Name,                        // resource name
-			projectId,                            // accountRef (project ID)
-			tab.GCPResourceSQLInstance,           // resource type
-			linkPostProcessSQLInstance(instance), // properties
-		)
+
+	// Lazy initialization
+	if g.sqlService == nil {
+		var err error
+		g.sqlService, err = sqladmin.NewService(ctx, g.ClientOptions()...)
 		if err != nil {
-			slog.Error("Failed to create GCP SQL instance resource", "error", err, "instance", instance.Name)
-			continue
+			return nil, fmt.Errorf("failed to create SQL admin service: %w", err)
 		}
-		g.Send(gcpSQLInstance)
 	}
-	return nil
+
+	projectId := resource.ResourceID
+	listCall := g.sqlService.Instances.List(projectId)
+	resp, err := listCall.Context(ctx).Do()
+	if err != nil {
+		return nil, common.HandleGcpError(err, "failed to list SQL instances in project")
+	}
+
+	var results []any
+	for _, instance := range resp.Items {
+		gcpSQLInstance := &output.CloudResource{
+			Platform:     "gcp",
+			ResourceID:   fmt.Sprintf("projects/%s/instances/%s", projectId, instance.Name),
+			AccountRef:   projectId,
+			ResourceType: "sqladmin.googleapis.com/Instance",
+			DisplayName:  instance.Name,
+			Region:       instance.Region,
+			Properties:   linkPostProcessSQLInstance(instance),
+		}
+		results = append(results, gcpSQLInstance)
+	}
+	return results, nil
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -138,33 +146,39 @@ func linkPostProcessSQLInstance(instance *sqladmin.DatabaseInstance) map[string]
 		"connectionName":  instance.ConnectionName,
 		"selfLink":        instance.SelfLink,
 	}
-	// minior information for now, additional info can be added later
+	// minor information for now, additional info can be added later
 	if instance.Settings != nil {
 		if instance.Settings.IpConfiguration != nil {
-			ipConfig := map[string]any{
-				"ipv4Enabled":    instance.Settings.IpConfiguration.Ipv4Enabled,
-				"requireSsl":     instance.Settings.IpConfiguration.RequireSsl,
-				"privateNetwork": instance.Settings.IpConfiguration.PrivateNetwork,
+			properties["ipv4Enabled"] = fmt.Sprintf("%v", instance.Settings.IpConfiguration.Ipv4Enabled)
+			properties["requireSsl"] = fmt.Sprintf("%v", instance.Settings.IpConfiguration.RequireSsl)
+			if instance.Settings.IpConfiguration.PrivateNetwork != "" {
+				properties["privateNetwork"] = instance.Settings.IpConfiguration.PrivateNetwork
 			}
-			properties["ipConfig"] = ipConfig
 		}
 	}
 	if len(instance.IpAddresses) > 0 {
-		var publicIPs []string
-		var privateIPs []string
-		for _, ip := range instance.IpAddresses {
+		var publicIPs, privateIPs string
+		for i, ip := range instance.IpAddresses {
 			if ip.Type == "PRIMARY" {
-				publicIPs = append(publicIPs, ip.IpAddress)
+				if publicIPs != "" {
+					publicIPs += ","
+				}
+				publicIPs += ip.IpAddress
 			} else if ip.Type == "PRIVATE" {
-				privateIPs = append(privateIPs, ip.IpAddress)
+				if i > 0 {
+					privateIPs += ","
+				}
+				privateIPs += ip.IpAddress
 			}
 		}
-		if len(publicIPs) > 0 {
+		if publicIPs != "" {
 			properties["publicIPs"] = publicIPs
 		}
-		if len(privateIPs) > 0 {
+		if privateIPs != "" {
 			properties["privateIPs"] = privateIPs
 		}
 	}
 	return properties
 }
+
+// Note: init() registration removed - native plugins register via Parameters() method
