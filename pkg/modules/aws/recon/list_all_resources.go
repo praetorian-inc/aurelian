@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
@@ -128,13 +129,7 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, err
 
 	return []plugin.Result{
 		{
-			Data: map[string]any{
-				"scan_type":       scanType,
-				"region":          region,
-				"resource_types":  len(resourceTypes),
-				"total_resources": m.countTotalResources(results),
-				"resources":       results,
-			},
+			Data: results,
 			Metadata: map[string]any{
 				"module":      "list-all",
 				"platform":    "aws",
@@ -192,7 +187,7 @@ func (m *AWSListAllResourcesModule) getAllResourceTypes() []string {
 	}
 }
 
-func (m *AWSListAllResourcesModule) enumerateResources(ctx context.Context, awsCfg aws.Config, resourceTypes []string, region string) (map[string]any, error) {
+func (m *AWSListAllResourcesModule) enumerateResources(ctx context.Context, awsCfg aws.Config, resourceTypes []string, region string) (map[string][]output.CloudResource, error) {
 	client := cloudcontrol.NewFromConfig(awsCfg)
 
 	accountID, err := helpers.GetAccountId(awsCfg)
@@ -200,10 +195,9 @@ func (m *AWSListAllResourcesModule) enumerateResources(ctx context.Context, awsC
 		accountID = ""
 	}
 
-	results := make(map[string]any)
+	results := make(map[string][]output.CloudResource)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	errChan := make(chan error, len(resourceTypes))
 
 	for _, resourceType := range resourceTypes {
 		wg.Add(1)
@@ -212,47 +206,17 @@ func (m *AWSListAllResourcesModule) enumerateResources(ctx context.Context, awsC
 
 			resources, err := listResourcesByType(ctx, client, rt, accountID, region)
 			if err != nil {
-				// Log error but continue with other resource types
-				errChan <- fmt.Errorf("failed to list %s: %w", rt, err)
+				// Ignore error but continue with other resource types
 				return
 			}
 
 			mu.Lock()
-			results[rt] = map[string]any{
-				"count":     len(resources),
-				"resources": resources,
-			}
+			results[rt] = resources
 			mu.Unlock()
 		}(resourceType)
 	}
 
 	wg.Wait()
-	close(errChan)
-
-	// Collect errors (non-fatal)
-	var errors []string
-	for err := range errChan {
-		errors = append(errors, err.Error())
-	}
-
-	if len(errors) > 0 {
-		results["errors"] = errors
-	}
 
 	return results, nil
-}
-
-func (m *AWSListAllResourcesModule) countTotalResources(results map[string]any) int {
-	total := 0
-	for key, val := range results {
-		if key == "errors" {
-			continue
-		}
-		if resourceMap, ok := val.(map[string]any); ok {
-			if count, ok := resourceMap["count"].(int); ok {
-				total += count
-			}
-		}
-	}
-	return total
 }
