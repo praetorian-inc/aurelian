@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/scanner"
 	"github.com/praetorian-inc/titus/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -154,8 +155,12 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 		err := os.WriteFile(testFile, []byte(testContent), 0644)
 		require.NoError(t, err)
 
+		// Create persistent scanner for test
+		scanner := createTestScanner(t)
+		defer scanner.Close()
+
 		// Run scanner
-		findings, err := module.runNoseyParker(ctx, testFile, false, io.Discard)
+		findings, err := module.runNoseyParker(ctx, scanner, testFile, false, io.Discard)
 
 		// Should not error
 		assert.NoError(t, err)
@@ -169,7 +174,7 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 			assert.Contains(t, finding, "rule")
 			assert.Contains(t, finding, "rule_id")
 			assert.Contains(t, finding, "location")
-			assert.NotEmpty(t, finding["rule"], "Expected rule name to be populated")
+			assert.NotEmpty(t, finding["rule_id"], "Expected rule ID to be populated")
 		}
 	})
 
@@ -183,8 +188,12 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 		err := os.WriteFile(testFile, []byte(testContent), 0644)
 		require.NoError(t, err)
 
+		// Create persistent scanner for test
+		scanner := createTestScanner(t)
+		defer scanner.Close()
+
 		// Run scanner
-		findings, err := module.runNoseyParker(ctx, testFile, false, io.Discard)
+		findings, err := module.runNoseyParker(ctx, scanner, testFile, false, io.Discard)
 
 		// Should not error
 		assert.NoError(t, err)
@@ -194,8 +203,12 @@ AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 	})
 
 	t.Run("nonexistent file returns error", func(t *testing.T) {
+		// Create persistent scanner for test
+		scanner := createTestScanner(t)
+		defer scanner.Close()
+
 		// Try to scan nonexistent file
-		findings, err := module.runNoseyParker(ctx, "/nonexistent/path/file.txt", false, io.Discard)
+		findings, err := module.runNoseyParker(ctx, scanner, "/nonexistent/path/file.txt", false, io.Discard)
 
 		// Should error
 		assert.Error(t, err)
@@ -220,8 +233,12 @@ data:
   password: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
 `
 
+		// Create persistent scanner for test
+		scanner := createTestScanner(t)
+		defer scanner.Close()
+
 		// Run scanner
-		findings, err := module.scanTextWithNoseyParker(ctx, testText, false, io.Discard)
+		findings, err := module.scanTextWithNoseyParker(ctx, scanner, testText, false, io.Discard)
 
 		// Should not error
 		assert.NoError(t, err)
@@ -232,14 +249,14 @@ data:
 		// Verify finding structure
 		if len(findings) > 0 {
 			finding := findings[0]
-			assert.Contains(t, finding, "rule")
+			assert.Contains(t, finding, "rule_id")
 			assert.Contains(t, finding, "snippet")
 
-			// Should detect an AWS-related rule
-			ruleName := finding["rule"].(string)
-			assert.True(t, strings.Contains(strings.ToLower(ruleName), "aws") ||
-				strings.Contains(strings.ToLower(ruleName), "key"),
-				"Expected AWS or key-related rule name, got: %s", ruleName)
+			// Should detect an AWS-related rule ID
+			ruleID := finding["rule_id"].(string)
+			assert.True(t, strings.HasPrefix(ruleID, "np.aws") ||
+				strings.HasPrefix(ruleID, "np.generic"),
+				"Expected AWS or generic rule ID, got: %s", ruleID)
 		}
 	})
 
@@ -247,8 +264,12 @@ data:
 		// Clean text without secrets
 		testText := "This is just regular text with no sensitive information."
 
+		// Create persistent scanner for test
+		scanner := createTestScanner(t)
+		defer scanner.Close()
+
 		// Run scanner
-		findings, err := module.scanTextWithNoseyParker(ctx, testText, false, io.Discard)
+		findings, err := module.scanTextWithNoseyParker(ctx, scanner, testText, false, io.Discard)
 
 		// Should not error
 		assert.NoError(t, err)
@@ -261,8 +282,12 @@ data:
 		// Empty text
 		testText := ""
 
+		// Create persistent scanner for test
+		scanner := createTestScanner(t)
+		defer scanner.Close()
+
 		// Run scanner
-		findings, err := module.scanTextWithNoseyParker(ctx, testText, false, io.Discard)
+		findings, err := module.scanTextWithNoseyParker(ctx, scanner, testText, false, io.Discard)
 
 		// Should not error
 		assert.NoError(t, err)
@@ -270,4 +295,30 @@ data:
 		// Should find no secrets
 		assert.Empty(t, findings)
 	})
+}
+
+// createTestScanner creates a persistent scanner for testing
+// The scanner uses a test-specific temp directory to avoid conflicts
+func createTestScanner(t *testing.T) *scanner.PersistentScanner {
+	t.Helper()
+
+	// Create a test-specific temp directory
+	tmpDir := t.TempDir()
+
+	// Override the output directory for this test
+	origDir := os.Getenv("AURELIAN_OUTPUT_DIR")
+	os.Setenv("AURELIAN_OUTPUT_DIR", tmpDir)
+	t.Cleanup(func() {
+		if origDir == "" {
+			os.Unsetenv("AURELIAN_OUTPUT_DIR")
+		} else {
+			os.Setenv("AURELIAN_OUTPUT_DIR", origDir)
+		}
+	})
+
+	// Create scanner
+	s, err := scanner.NewPersistentScanner()
+	require.NoError(t, err, "Failed to create test scanner")
+
+	return s
 }
