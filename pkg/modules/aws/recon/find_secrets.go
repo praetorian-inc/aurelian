@@ -8,6 +8,7 @@ import (
 	"github.com/praetorian-inc/aurelian/internal/helpers"
 	"github.com/praetorian-inc/aurelian/pkg/links/aws"
 	"github.com/praetorian-inc/aurelian/pkg/links/aws/cloudcontrol"
+	"github.com/praetorian-inc/aurelian/pkg/links/aws/ssm"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
@@ -93,6 +94,20 @@ func (m *FindSecrets) Parameters() []plugin.Parameter {
 			Required:    false,
 			Default:     false,
 		},
+		{
+			Name:        "verify",
+			Description: "Validate detected secrets against their source APIs",
+			Type:        "bool",
+			Required:    false,
+			Default:     false,
+		},
+		{
+			Name:        "datastore",
+			Description: "Path to Titus SQLite database",
+			Type:        "string",
+			Required:    false,
+			Default:     "aurelian-output/titus.db",
+		},
 	}
 }
 
@@ -123,6 +138,12 @@ func (m *FindSecrets) Run(cfg plugin.Config) ([]plugin.Result, error) {
 
 	newestFirst, _ := cfg.Args["newest-first"].(bool)
 
+	verify, _ := cfg.Args["verify"].(bool)
+	datastore, _ := cfg.Args["datastore"].(string)
+	if datastore == "" {
+		datastore = "aurelian-output/titus.db"
+	}
+
 	// Check context cancellation
 	select {
 	case <-ctx.Done():
@@ -137,6 +158,8 @@ func (m *FindSecrets) Run(cfg plugin.Config) ([]plugin.Result, error) {
 		"max-events":    maxEvents,
 		"max-streams":   maxStreams,
 		"newest-first":  newestFirst,
+		"verify":        verify,
+		"datastore":     datastore,
 	}
 
 	// Parse regions
@@ -181,25 +204,56 @@ func (m *FindSecrets) Run(cfg plugin.Config) ([]plugin.Result, error) {
 			fmt.Fprintf(cfg.Output, "Processing resource type: %s\n", resType)
 		}
 
-		// Enumerate resources via CloudControl
-		_, err := ccLink.Process(ctx, resType)
-		if err != nil {
-			slog.Warn("Failed to enumerate resources", "type", resType, "error", err)
-			if cfg.Verbose {
-				fmt.Fprintf(cfg.Output, "Warning: failed to enumerate %s: %v\n", resType, err)
-			}
-			continue
-		}
+		var resources []any
 
-		// Get enumerated resources from CloudControl outputs
-		resources := ccLink.Outputs()
-		ccLink.ClearOutputs()
+		// Use SSM-specific lister for documents (with Owner=Self filter)
+		if resType == "AWS::SSM::Document" {
+			// Use SSM native lister with Owner=Self filter
+			ssmDocLister := ssm.NewAWSListSSMDocuments(args)
+
+			// For each region, list documents
+			for _, region := range regions {
+				placeholder := &types.EnrichedResourceDescription{
+					TypeName: resType,
+					Region:   region,
+				}
+
+				regionDocs, err := ssmDocLister.Process(ctx, placeholder)
+				if err != nil {
+					slog.Warn("Failed to list SSM documents", "region", region, "error", err)
+					if cfg.Verbose {
+						fmt.Fprintf(cfg.Output, "Warning: failed to list SSM documents in %s: %v\n", region, err)
+					}
+					continue
+				}
+
+				resources = append(resources, regionDocs...)
+			}
+		} else {
+			// Enumerate resources via CloudControl
+			_, err := ccLink.Process(ctx, resType)
+			if err != nil {
+				slog.Warn("Failed to enumerate resources", "type", resType, "error", err)
+				if cfg.Verbose {
+					fmt.Fprintf(cfg.Output, "Warning: failed to enumerate %s: %v\n", resType, err)
+				}
+				continue
+			}
+
+			// Get enumerated resources from CloudControl outputs
+			resources = ccLink.Outputs()
+			ccLink.ClearOutputs()
+		}
 
 		// Process each resource through FindSecrets
 		for _, resource := range resources {
 			erd, ok := resource.(*types.EnrichedResourceDescription)
 			if !ok {
 				continue
+			}
+
+			if cfg.Verbose {
+				fmt.Fprintf(cfg.Output, "  Processing: %s (region: %s)\n", erd.Identifier, erd.Region)
 			}
 
 			outputs, err := fsLink.Process(ctx, erd)
