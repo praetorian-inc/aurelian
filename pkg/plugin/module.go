@@ -71,3 +71,18 @@ type Module interface {
 	// Execution
 	Run(cfg Config) ([]Result, error)
 }
+
+// SupportedResourceTypesProvider is an optional interface for modules that scope
+// their supported resource types.
+type SupportedResourceTypesProvider interface {
+	SupportedResourceTypes() []string
+}
+
+// SupportedResourceTypes returns the resource types supported by a module, if declared.
+func SupportedResourceTypes(m Module) []string {
+	if provider, ok := m.(SupportedResourceTypesProvider); ok {
+		return provider.SupportedResourceTypes()
+	}
+
+	return []string{}
+}
