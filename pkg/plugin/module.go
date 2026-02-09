@@ -5,7 +5,6 @@ package plugin
 
 import (
 	"context"
-	"github.com/praetorian-inc/aurelian/pkg/output"
 	"io"
 )
 
@@ -41,11 +40,10 @@ type Parameter struct {
 
 // Config holds runtime configuration for a module
 type Config struct {
-	Args    map[string]any        // Runtime arguments
-	Context context.Context       // Execution context
-	Target  *output.CloudResource // Optional target
-	Output  io.Writer             // Output destination
-	Verbose bool                  // Verbose logging
+	Args    map[string]any  // Runtime arguments
+	Context context.Context // Execution context
+	Output  io.Writer       // Output destination
+	Verbose bool            // Verbose logging
 }
 
 // Result is the standardized output type for all modules
