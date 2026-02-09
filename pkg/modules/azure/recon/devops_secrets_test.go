@@ -317,7 +317,7 @@ func createTestScanner(t *testing.T) *scanner.PersistentScanner {
 	})
 
 	// Create scanner
-	s, err := scanner.NewPersistentScanner()
+	s, err := scanner.NewPersistentScanner("")
 	require.NoError(t, err, "Failed to create test scanner")
 
 	return s
