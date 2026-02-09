@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/scanner"
+	"github.com/praetorian-inc/titus/pkg/types"
 )
 
 type DevOpsSecretsModule struct{}
@@ -136,8 +138,15 @@ func (m *DevOpsSecretsModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
 		}
 	}
 
+	// Create persistent scanner (module-level, one per Run)
+	titusScanner, err := scanner.NewPersistentScanner("")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create scanner: %w", err)
+	}
+	defer titusScanner.Close()
+
 	// Run the secret scan
-	findings, err := m.scanDevOpsSecrets(ctx, pat, org, project, verbose, output)
+	findings, err := m.scanDevOpsSecrets(ctx, titusScanner, pat, org, project, verbose, output)
 	if err != nil {
 		return nil, fmt.Errorf("scan failed: %w", err)
 	}
@@ -176,11 +185,11 @@ type SecretFinding struct {
 	Location    string `json:"location"`     // Specific location within source
 }
 
-func (m *DevOpsSecretsModule) scanDevOpsSecrets(ctx context.Context, pat, org, project string, verbose bool, output io.Writer) ([]SecretFinding, error) {
+func (m *DevOpsSecretsModule) scanDevOpsSecrets(ctx context.Context, titusScanner *scanner.PersistentScanner, pat, org, project string, verbose bool, output io.Writer) ([]SecretFinding, error) {
 	var findings []SecretFinding
 
 	// 1. Scan repositories
-	repoFindings, err := m.scanRepositories(ctx, pat, org, project, verbose, output)
+	repoFindings, err := m.scanRepositories(ctx, titusScanner, pat, org, project, verbose, output)
 	if err != nil {
 		if verbose {
 			fmt.Fprintf(output, "[devops-secrets] Repository scan error: %v\n", err)
@@ -200,7 +209,7 @@ func (m *DevOpsSecretsModule) scanDevOpsSecrets(ctx context.Context, pat, org, p
 	}
 
 	// 3. Scan pipelines
-	pipelineFindings, err := m.scanPipelines(ctx, pat, org, project, verbose, output)
+	pipelineFindings, err := m.scanPipelines(ctx, titusScanner, pat, org, project, verbose, output)
 	if err != nil {
 		if verbose {
 			fmt.Fprintf(output, "[devops-secrets] Pipeline scan error: %v\n", err)
@@ -222,7 +231,7 @@ func (m *DevOpsSecretsModule) scanDevOpsSecrets(ctx context.Context, pat, org, p
 	return findings, nil
 }
 
-func (m *DevOpsSecretsModule) scanRepositories(ctx context.Context, pat, org, project string, verbose bool, output io.Writer) ([]SecretFinding, error) {
+func (m *DevOpsSecretsModule) scanRepositories(ctx context.Context, titusScanner *scanner.PersistentScanner, pat, org, project string, verbose bool, output io.Writer) ([]SecretFinding, error) {
 	if verbose {
 		fmt.Fprintf(output, "[devops-secrets] Scanning repositories...\n")
 	}
@@ -260,7 +269,7 @@ func (m *DevOpsSecretsModule) scanRepositories(ctx context.Context, pat, org, pr
 		}
 
 		// Scan with NoseyParker
-		repoFindings, err := m.runNoseyParker(ctx, repoPath, verbose, output)
+		repoFindings, err := m.runNoseyParker(ctx, titusScanner, repoPath, verbose, output)
 		if err != nil {
 			if verbose {
 				fmt.Fprintf(output, "[devops-secrets] NoseyParker scan failed for %s: %v\n", repo["name"], err)
@@ -321,7 +330,7 @@ func (m *DevOpsSecretsModule) scanVariableGroups(ctx context.Context, pat, org, 
 	return findings, nil
 }
 
-func (m *DevOpsSecretsModule) scanPipelines(ctx context.Context, pat, org, project string, verbose bool, output io.Writer) ([]SecretFinding, error) {
+func (m *DevOpsSecretsModule) scanPipelines(ctx context.Context, titusScanner *scanner.PersistentScanner, pat, org, project string, verbose bool, output io.Writer) ([]SecretFinding, error) {
 	if verbose {
 		fmt.Fprintf(output, "[devops-secrets] Scanning pipelines...\n")
 	}
@@ -348,7 +357,7 @@ func (m *DevOpsSecretsModule) scanPipelines(ctx context.Context, pat, org, proje
 		}
 
 		// Scan YAML content with NoseyParker
-		yamlFindings, err := m.scanTextWithNoseyParker(ctx, yamlContent, verbose, output)
+		yamlFindings, err := m.scanTextWithNoseyParker(ctx, titusScanner, yamlContent, verbose, output)
 		if err != nil {
 			if verbose {
 				fmt.Fprintf(output, "[devops-secrets] NoseyParker scan failed for pipeline %s: %v\n", pipeline["name"], err)
@@ -406,61 +415,70 @@ func (m *DevOpsSecretsModule) scanServiceEndpoints(ctx context.Context, pat, org
 	return findings, nil
 }
 
-func (m *DevOpsSecretsModule) runNoseyParker(ctx context.Context, path string, verbose bool, output io.Writer) ([]map[string]any, error) {
-	// Create temp output file
-	tmpFile, err := os.CreateTemp("", "noseyparker-output-*.json")
+func (m *DevOpsSecretsModule) runNoseyParker(ctx context.Context, titusScanner *scanner.PersistentScanner, path string, verbose bool, output io.Writer) ([]map[string]any, error) {
+	// Read file content
+	content, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp file: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-	tmpFile.Close()
-
-	// Run NoseyParker
-	cmd := exec.CommandContext(ctx, "noseyparker",
-		"scan",
-		"--datastore", filepath.Join(os.TempDir(), "np-datastore"),
-		"--git-url", path,
-		"--output", tmpFile.Name(),
-	)
-
-	if verbose {
-		cmd.Stdout = output
-		cmd.Stderr = output
+		return nil, fmt.Errorf("failed to read file: %w", err)
 	}
 
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("noseyparker scan failed: %w", err)
+	// Compute BlobID from content
+	blobID := types.ComputeBlobID(content)
+
+	// Create Azure DevOps provenance
+	prov := types.ExtendedProvenance{
+		Payload: map[string]interface{}{
+			"platform":      "azure",
+			"resource_type": "AzureDevOps::Repository::File",
+			"resource_id":   path,
+			"file_path":     path,
+		},
 	}
 
-	// Parse results
-	data, err := os.ReadFile(tmpFile.Name())
+	// Scan content using persistent scanner
+	matches, err := titusScanner.ScanContent(content, blobID, prov)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read noseyparker output: %w", err)
+		return nil, fmt.Errorf("scan failed: %w", err)
 	}
 
+	// Convert matches to existing []map[string]any format
 	var results []map[string]any
-	if err := json.Unmarshal(data, &results); err != nil {
-		return nil, fmt.Errorf("failed to parse noseyparker output: %w", err)
+	for _, match := range matches {
+		results = append(results, m.convertMatchToMap(match))
 	}
 
 	return results, nil
 }
 
-func (m *DevOpsSecretsModule) scanTextWithNoseyParker(ctx context.Context, text string, verbose bool, output io.Writer) ([]map[string]any, error) {
-	// Write text to temp file
-	tmpFile, err := os.CreateTemp("", "devops-text-*.txt")
+func (m *DevOpsSecretsModule) scanTextWithNoseyParker(ctx context.Context, titusScanner *scanner.PersistentScanner, text string, verbose bool, output io.Writer) ([]map[string]any, error) {
+	// Convert text to bytes
+	content := []byte(text)
+
+	// Compute BlobID from content
+	blobID := types.ComputeBlobID(content)
+
+	// Create Azure DevOps provenance for inline text
+	prov := types.ExtendedProvenance{
+		Payload: map[string]interface{}{
+			"platform":      "azure",
+			"resource_type": "AzureDevOps::InlineText",
+			"resource_id":   "inline-text",
+		},
+	}
+
+	// Scan content using persistent scanner
+	matches, err := titusScanner.ScanContent(content, blobID, prov)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp file: %w", err)
+		return nil, fmt.Errorf("scan failed: %w", err)
 	}
-	defer os.Remove(tmpFile.Name())
 
-	if _, err := tmpFile.WriteString(text); err != nil {
-		tmpFile.Close()
-		return nil, fmt.Errorf("failed to write temp file: %w", err)
+	// Convert matches to existing []map[string]any format
+	var results []map[string]any
+	for _, match := range matches {
+		results = append(results, m.convertMatchToMap(match))
 	}
-	tmpFile.Close()
 
-	return m.runNoseyParker(ctx, tmpFile.Name(), verbose, output)
+	return results, nil
 }
 
 func (m *DevOpsSecretsModule) listRepositories(ctx context.Context, pat, org, project string) ([]map[string]any, error) {
@@ -491,6 +509,24 @@ func (m *DevOpsSecretsModule) listServiceEndpoints(ctx context.Context, pat, org
 	// Placeholder: would use Azure DevOps REST API
 	// https://dev.azure.com/{organization}/{project}/_apis/serviceendpoint/endpoints
 	return []map[string]any{}, nil
+}
+
+func (m *DevOpsSecretsModule) convertMatchToMap(match *types.Match) map[string]any {
+	return map[string]any{
+		"rule":     match.RuleName,
+		"rule_id":  match.RuleID,
+		"location": fmt.Sprintf("%d:%d-%d:%d",
+			match.Location.Source.Start.Line,
+			match.Location.Source.Start.Column,
+			match.Location.Source.End.Line,
+			match.Location.Source.End.Column,
+		),
+		"offset_start": match.Location.Offset.Start,
+		"offset_end":   match.Location.Offset.End,
+		"snippet":      string(match.Snippet.Matching),
+		"before":       string(match.Snippet.Before),
+		"after":        string(match.Snippet.After),
+	}
 }
 
 func (m *DevOpsSecretsModule) writeFindings(findings []SecretFinding, outputFile string) error {
