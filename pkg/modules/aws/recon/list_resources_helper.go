@@ -41,10 +41,6 @@ func listResourcesByType(ctx context.Context, client *cloudcontrol.Client, resou
 				}
 			}
 
-			if resourceID == "subnet-069a1f55fded757a1" {
-				fmt.Println("foo")
-			}
-
 			resource := output.NewAWSResource(region, resourceType, accountID, resourceID)
 			resource.Properties = props
 			allResources = append(allResources, resource)
