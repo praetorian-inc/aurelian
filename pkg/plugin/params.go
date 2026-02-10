@@ -1,6 +1,8 @@
 // Package plugin provides the core plugin architecture for Aurelian modules.
 package plugin
 
+import "regexp"
+
 // ParamOption allows building parameters fluently
 type ParamOption func(*Parameter)
 
@@ -43,6 +45,27 @@ func WithShortcode(s string) ParamOption {
 func WithHidden() ParamOption {
 	return func(p *Parameter) {
 		p.Hidden = true
+	}
+}
+
+// WithPattern sets a regex validation pattern for string values
+func WithPattern(re *regexp.Regexp) ParamOption {
+	return func(p *Parameter) {
+		p.Pattern = re
+	}
+}
+
+// WithEnum sets the allowed values (case-insensitive)
+func WithEnum(values ...string) ParamOption {
+	return func(p *Parameter) {
+		p.Enum = values
+	}
+}
+
+// WithSensitive marks the parameter as sensitive (masked in logs and help text)
+func WithSensitive() ParamOption {
+	return func(p *Parameter) {
+		p.Sensitive = true
 	}
 }
 
