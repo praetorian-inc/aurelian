@@ -69,7 +69,7 @@ require (
 	github.com/praetorian-inc/janus-framework v0.0.0-20250918211123-5f90adc9184b
 	github.com/praetorian-inc/konstellation v0.0.0-20251205230404-ed78bd75cfb8
 	github.com/praetorian-inc/tabularium v1.0.167
-	github.com/praetorian-inc/titus v0.2.0
+	github.com/praetorian-inc/titus v0.2.1-0.20260209183805-c8afc7ab1631
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/oauth2 v0.34.0
