@@ -27,6 +27,10 @@ const (
 	CategorySecrets Category = "secrets"
 )
 
+const (
+	AnyResourceType = "any"
+)
+
 // Parameter describes a module parameter
 type Parameter struct {
 	Name        string

@@ -51,7 +51,7 @@ func (m *AWSListResourcesModule) References() []string {
 }
 
 func (m *AWSListResourcesModule) SupportedResourceTypes() []string {
-	return []string{"any"}
+	return []string{plugin.AnyResourceType}
 }
 
 func (m *AWSListResourcesModule) Parameters() []plugin.Parameter {
