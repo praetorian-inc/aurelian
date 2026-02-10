@@ -77,6 +77,21 @@ type Parameters struct {
 	mutualExclusive  [][]string
 }
 
+// SupportedResourceTypesProvider is an optional interface for modules that scope
+// their supported resource types.
+type SupportedResourceTypesProvider interface {
+	SupportedResourceTypes() []string
+}
+
+// SupportedResourceTypes returns the resource types supported by a module, if declared.
+func SupportedResourceTypes(m Module) []string {
+	if provider, ok := m.(SupportedResourceTypesProvider); ok {
+		return provider.SupportedResourceTypes()
+	}
+
+	return []string{}
+}
+
 // NewParameters creates a Parameters set from the given parameters.
 func NewParameters(params ...Parameter) Parameters {
 	return Parameters{params: params}
