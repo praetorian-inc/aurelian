@@ -186,7 +186,12 @@ func TestListAll_MultipleTypes(t *testing.T) {
 	})
 
 	resourceTypes := []string{"AWS::EC2::Instance", "AWS::S3::Bucket", "AWS::Lambda::Function"}
-	results, err := ListAll(context.Background(), client, resourceTypes, "123456789012", "us-east-1", 3)
+	results, err := ListAll(context.Background(), client, ListOptions{
+		ResourceTypes: resourceTypes,
+		AccountID:     "123456789012",
+		Region:        "us-east-1",
+		Concurrency:   3,
+	})
 	require.NoError(t, err)
 
 	// All 3 types should be in results
@@ -224,7 +229,12 @@ func TestListAll_SkippableErrorsSkipped(t *testing.T) {
 	})
 
 	resourceTypes := []string{"AWS::EC2::Instance", "AWS::Unsupported::Type", "AWS::S3::Bucket"}
-	results, err := ListAll(context.Background(), client, resourceTypes, "123456789012", "us-east-1", 3)
+	results, err := ListAll(context.Background(), client, ListOptions{
+		ResourceTypes: resourceTypes,
+		AccountID:     "123456789012",
+		Region:        "us-east-1",
+		Concurrency:   3,
+	})
 	require.NoError(t, err)
 
 	// Supported types should be in results
@@ -258,7 +268,12 @@ func TestListAll_ContextCancellation(t *testing.T) {
 		resourceTypes[i] = fmt.Sprintf("AWS::Type%d::Resource", i)
 	}
 
-	_, err := ListAll(ctx, client, resourceTypes, "123456789012", "us-east-1", 2)
+	_, err := ListAll(ctx, client, ListOptions{
+		ResourceTypes: resourceTypes,
+		AccountID:     "123456789012",
+		Region:        "us-east-1",
+		Concurrency:   2,
+	})
 	assert.Error(t, err)
 }
 
@@ -269,7 +284,12 @@ func TestListAll_EmptyResourceTypes(t *testing.T) {
 		return 200, nil
 	})
 
-	results, err := ListAll(context.Background(), client, []string{}, "123456789012", "us-east-1", 3)
+	results, err := ListAll(context.Background(), client, ListOptions{
+		ResourceTypes: []string{},
+		AccountID:     "123456789012",
+		Region:        "us-east-1",
+		Concurrency:   3,
+	})
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
@@ -305,7 +325,12 @@ func TestListAll_ConcurrencyLimitRespected(t *testing.T) {
 	}
 
 	const maxConcurrency = 3
-	results, err := ListAll(context.Background(), client, resourceTypes, "123456789012", "us-east-1", maxConcurrency)
+	results, err := ListAll(context.Background(), client, ListOptions{
+		ResourceTypes: resourceTypes,
+		AccountID:     "123456789012",
+		Region:        "us-east-1",
+		Concurrency:   maxConcurrency,
+	})
 	require.NoError(t, err)
 	assert.Len(t, results, 20)
 

@@ -14,27 +14,34 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type ListOptions struct {
+	ResourceTypes []string
+	AccountID     string
+	Region        string
+	Concurrency   int
+}
+
 // ListAll enumerates multiple resource types concurrently with rate limiting.
 // Uses best-effort enumeration: skippable errors (access denied, unsupported types)
 // are logged and skipped. Only context cancellation propagates as an error.
-func ListAll(ctx context.Context, client *cloudcontrol.Client, resourceTypes []string, accountID, region string, concurrency int) (map[string][]output.CloudResource, error) {
+func ListAll(ctx context.Context, client *cloudcontrol.Client, opts ListOptions) (map[string][]output.CloudResource, error) {
 	results := make(map[string][]output.CloudResource)
 	var mu sync.Mutex
 
-	limiter := ratelimit.NewAWSRegionLimiter(concurrency)
+	limiter := ratelimit.NewAWSRegionLimiter(opts.Concurrency)
 
 	g := errgroup.Group{}
-	g.SetLimit(concurrency)
+	g.SetLimit(opts.Concurrency)
 
-	for _, rt := range resourceTypes {
+	for _, rt := range opts.ResourceTypes {
 		g.Go(func() error {
-			release, err := limiter.Acquire(ctx, region)
+			release, err := limiter.Acquire(ctx, opts.Region)
 			if err != nil {
 				return err
 			}
 			defer release()
 
-			resources, err := ListByType(ctx, client, rt, accountID, region)
+			resources, err := ListByType(ctx, client, rt, opts.AccountID, opts.Region)
 			if err != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()
