@@ -3,13 +3,14 @@ package recon
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
+	"github.com/praetorian-inc/aurelian/internal/helpers"
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcetypes"
-	"github.com/praetorian-inc/aurelian/internal/helpers"
 	"github.com/praetorian-inc/aurelian/pkg/links/options"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -171,7 +172,6 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, err
 	g.SetLimit(concurrency)
 
 	for _, region := range resolvedRegions {
-		region := region // capture loop variable
 
 		g.Go(func() error {
 			// Acquire rate limit for this region
@@ -195,9 +195,7 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, err
 			if allResults[region] == nil {
 				allResults[region] = make(map[string][]output.CloudResource)
 			}
-			for rt, resources := range results {
-				allResults[region][rt] = resources
-			}
+			maps.Copy(allResults[region], results)
 			mu.Unlock()
 
 			return nil
