@@ -9,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/internal/helpers"
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
-	"github.com/praetorian-inc/aurelian/pkg/aws/resourcetypes"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
@@ -48,35 +47,14 @@ func (m *AWSListAllResourcesModule) References() []string {
 }
 
 func (m *AWSListAllResourcesModule) SupportedResourceTypes() []string {
-	return resourcetypes.GetAll()
+	return []string{
+		"AWS::Organizations::Account",
+		"AWS::Organizations::Organization",
+	}
 }
 
 func (m *AWSListAllResourcesModule) Parameters() []plugin.Parameter {
 	return plugin.ParametersFrom(ListAllConfig{})
-}
-
-func (m *AWSListAllResourcesModule) processRegion(
-	ctx context.Context,
-	c *ListAllConfig,
-	region string,
-	resourceTypes []string,
-) (map[string][]output.CloudResource, error) {
-	awsCfg, err := helpers.GetAWSCfg(region, c.Profile, c.HelperOpts(), c.OpsecLevel)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get AWS config for region %s: %w", region, err)
-	}
-
-	accountID, _ := helpers.GetAccountId(awsCfg)
-
-	client := cloudcontrol.NewFromConfig(awsCfg)
-
-	// List all resources in this region
-	return cclist.ListAll(ctx, client, cclist.ListOptions{
-		ResourceTypes: resourceTypes,
-		AccountID:     accountID,
-		Region:        region,
-		Concurrency:   c.Concurrency,
-	})
 }
 
 func (m *AWSListAllResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
@@ -143,4 +121,28 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, err
 			},
 		},
 	}, nil
+}
+
+func (m *AWSListAllResourcesModule) processRegion(
+	ctx context.Context,
+	c *ListAllConfig,
+	region string,
+	resourceTypes []string,
+) (map[string][]output.CloudResource, error) {
+	awsCfg, err := helpers.GetAWSCfg(region, c.Profile, c.HelperOpts(), c.OpsecLevel)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get AWS config for region %s: %w", region, err)
+	}
+
+	accountID, _ := helpers.GetAccountId(awsCfg)
+
+	client := cloudcontrol.NewFromConfig(awsCfg)
+
+	// List all resources in this region
+	return cclist.ListAll(ctx, client, cclist.ListOptions{
+		ResourceTypes: resourceTypes,
+		AccountID:     accountID,
+		Region:        region,
+		Concurrency:   c.Concurrency,
+	})
 }
