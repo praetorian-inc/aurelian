@@ -3,50 +3,41 @@ package recon
 import (
 	"context"
 	"fmt"
-	"strings"
+	"maps"
 	"sync"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/internal/helpers"
+	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
+	"github.com/praetorian-inc/aurelian/pkg/aws/resourcetypes"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
-	"github.com/praetorian-inc/aurelian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
+	"golang.org/x/sync/errgroup"
 )
 
 func init() {
 	plugin.Register(&AWSListAllResourcesModule{})
 }
 
+// ListAllConfig holds the typed parameters for list-all module.
+type ListAllConfig struct {
+	plugin.AWSCommonRecon
+	ScanType string `param:"scan-type"   desc:"Scan type - 'full' for all resources or 'summary' for key services" default:"full" shortcode:"s" enum:"full,summary"`
+}
+
 // AWSListAllResourcesModule enumerates all resources using Cloud Control API
 type AWSListAllResourcesModule struct{}
 
-func (m *AWSListAllResourcesModule) ID() string {
-	return "list-all"
-}
-
-func (m *AWSListAllResourcesModule) Name() string {
-	return "AWS List All Resources"
-}
+func (m *AWSListAllResourcesModule) ID() string                { return "list-all" }
+func (m *AWSListAllResourcesModule) Name() string              { return "AWS List All Resources" }
+func (m *AWSListAllResourcesModule) Platform() plugin.Platform { return plugin.PlatformAWS }
+func (m *AWSListAllResourcesModule) Category() plugin.Category { return plugin.CategoryRecon }
+func (m *AWSListAllResourcesModule) OpsecLevel() string        { return "moderate" }
+func (m *AWSListAllResourcesModule) Authors() []string         { return []string{"Praetorian"} }
 
 func (m *AWSListAllResourcesModule) Description() string {
-	return "List resources in an AWS account using CloudControl API. Supports 'full' scan for all resources or 'summary' scan for key services."
-}
-
-func (m *AWSListAllResourcesModule) Platform() plugin.Platform {
-	return plugin.PlatformAWS
-}
-
-func (m *AWSListAllResourcesModule) Category() plugin.Category {
-	return plugin.CategoryRecon
-}
-
-func (m *AWSListAllResourcesModule) OpsecLevel() string {
-	return "moderate"
-}
-
-func (m *AWSListAllResourcesModule) Authors() []string {
-	return []string{"Praetorian"}
+	return "List resources in an AWS account using CloudControl API. Supports 'full' scan for all resources or 'summary' scan for key services. Can scan multiple regions concurrently."
 }
 
 func (m *AWSListAllResourcesModule) References() []string {
@@ -57,173 +48,99 @@ func (m *AWSListAllResourcesModule) References() []string {
 }
 
 func (m *AWSListAllResourcesModule) SupportedResourceTypes() []string {
-	return []string{
-		"AWS::Organizations::Account",
-		"AWS::Organizations::Organization",
-	}
+	return resourcetypes.GetAll()
 }
 
 func (m *AWSListAllResourcesModule) Parameters() []plugin.Parameter {
-	return []plugin.Parameter{
-		{
-			Name:        "scan-type",
-			Description: "Scan type - 'full' for all resources or 'summary' for key services",
-			Type:        "string",
-			Default:     "full",
-			Shortcode:   "s",
-		},
-		{
-			Name:        "region",
-			Description: "AWS region",
-			Type:        "string",
-			Default:     "us-east-1",
-		},
-		{
-			Name:        "profile",
-			Description: "AWS profile name",
-			Type:        "string",
-		},
-		{
-			Name:        "profile-dir",
-			Description: "AWS profile directory",
-			Type:        "string",
-		},
+	return plugin.ParametersFrom(ListAllConfig{})
+}
+
+func (m *AWSListAllResourcesModule) processRegion(
+	ctx context.Context,
+	c *ListAllConfig,
+	region string,
+	resourceTypes []string,
+) (map[string][]output.CloudResource, error) {
+	awsCfg, err := helpers.GetAWSCfg(region, c.Profile, c.HelperOpts(), c.OpsecLevel)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get AWS config for region %s: %w", region, err)
 	}
+
+	accountID, _ := helpers.GetAccountId(awsCfg)
+
+	client := cloudcontrol.NewFromConfig(awsCfg)
+
+	// List all resources in this region
+	return cclist.ListAll(ctx, client, cclist.ListOptions{
+		ResourceTypes: resourceTypes,
+		AccountID:     accountID,
+		Region:        region,
+		Concurrency:   c.Concurrency,
+	})
 }
 
 func (m *AWSListAllResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
-	// Get parameters
-	scanType, ok := cfg.Args["scan-type"].(string)
-	if !ok || scanType == "" {
-		scanType = "full"
+	var c ListAllConfig
+	if err := plugin.Bind(cfg, &c); err != nil {
+		return nil, fmt.Errorf("parameter validation failed: %w", err)
 	}
 
-	region, ok := cfg.Args["region"].(string)
-	if !ok || region == "" {
-		region = "us-east-1"
-	}
-
-	profile, _ := cfg.Args["profile"].(string)
-	profileDir, _ := cfg.Args["profile-dir"].(string)
-
-	// Build opts slice for GetAWSCfg
-	var opts []*types.Option
-	if profileDir != "" {
-		opts = append(opts, &types.Option{
-			Name:  "profile-dir",
-			Value: profileDir,
-		})
-	}
-
-	awsCfg, err := helpers.GetAWSCfg(region, profile, opts, "moderate")
+	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.HelperOpts())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get AWS config: %w", err)
+		return nil, fmt.Errorf("failed to resolve regions: %w", err)
 	}
 
-	// Get resource types to enumerate
-	var resourceTypes []string
-	if strings.ToLower(scanType) == "summary" {
-		resourceTypes = m.getKeySummaryResourceTypes()
-	} else {
-		resourceTypes = m.getAllResourceTypes()
-	}
+	resourceTypes := selectResourceTypes(c.ScanType)
+	limiter := ratelimit.NewAWSRegionLimiter(c.Concurrency)
 
-	// Enumerate resources concurrently
-	results, err := m.enumerateResources(cfg.Context, awsCfg, resourceTypes, region)
-	if err != nil {
-		return nil, fmt.Errorf("failed to enumerate resources: %w", err)
-	}
-
-	return []plugin.Result{
-		{
-			Data: results,
-			Metadata: map[string]any{
-				"module":      "list-all",
-				"platform":    "aws",
-				"opsec_level": "moderate",
-			},
-		},
-	}, nil
-}
-
-func (m *AWSListAllResourcesModule) getKeySummaryResourceTypes() []string {
-	return []string{
-		"AWS::EC2::Instance",
-		"AWS::S3::Bucket",
-		"AWS::Lambda::Function",
-		"AWS::DynamoDB::Table",
-		"AWS::RDS::DBInstance",
-		"AWS::IAM::Role",
-		"AWS::IAM::User",
-		"AWS::ECS::Cluster",
-		"AWS::EKS::Cluster",
-		"AWS::SNS::Topic",
-		"AWS::SQS::Queue",
-	}
-}
-
-func (m *AWSListAllResourcesModule) getAllResourceTypes() []string {
-	// Comprehensive list of Cloud Control supported resource types
-	return []string{
-		"AWS::EC2::Instance",
-		"AWS::EC2::VPC",
-		"AWS::EC2::Subnet",
-		"AWS::EC2::SecurityGroup",
-		"AWS::EC2::Volume",
-		"AWS::S3::Bucket",
-		"AWS::Lambda::Function",
-		"AWS::DynamoDB::Table",
-		"AWS::RDS::DBInstance",
-		"AWS::RDS::DBCluster",
-		"AWS::IAM::Role",
-		"AWS::IAM::User",
-		"AWS::IAM::Policy",
-		"AWS::ECS::Cluster",
-		"AWS::ECS::Service",
-		"AWS::EKS::Cluster",
-		"AWS::SNS::Topic",
-		"AWS::SQS::Queue",
-		"AWS::CloudFormation::Stack",
-		"AWS::KMS::Key",
-		"AWS::SecretsManager::Secret",
-		"AWS::CloudWatch::Alarm",
-		"AWS::ApiGateway::RestApi",
-		"AWS::ApiGatewayV2::Api",
-		"AWS::ElasticLoadBalancingV2::LoadBalancer",
-		"AWS::AutoScaling::AutoScalingGroup",
-	}
-}
-
-func (m *AWSListAllResourcesModule) enumerateResources(ctx context.Context, awsCfg aws.Config, resourceTypes []string, region string) (map[string][]output.CloudResource, error) {
-	client := cloudcontrol.NewFromConfig(awsCfg)
-
-	accountID, err := helpers.GetAccountId(awsCfg)
-	if err != nil {
-		accountID = ""
-	}
-
-	results := make(map[string][]output.CloudResource)
+	allResults := make(map[string]map[string][]output.CloudResource)
 	var mu sync.Mutex
-	var wg sync.WaitGroup
 
-	for _, resourceType := range resourceTypes {
-		wg.Add(1)
-		go func(rt string) {
-			defer wg.Done()
+	g, ctx := errgroup.WithContext(cfg.Context)
+	g.SetLimit(c.Concurrency)
 
-			resources, err := listResourcesByType(ctx, client, rt, accountID, region)
+	for _, region := range resolvedRegions {
+
+		g.Go(func() error {
+			release, err := limiter.Acquire(ctx, region)
 			if err != nil {
-				// Ignore error but continue with other resource types
-				return
+				return nil // Context cancelled
+			}
+			defer release()
+
+			results, err := m.processRegion(ctx, &c, region, resourceTypes)
+			if err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				return fmt.Errorf("failed to enumerate resources in region %s: %w", region, err)
 			}
 
 			mu.Lock()
-			results[rt] = resources
+			if allResults[region] == nil {
+				allResults[region] = make(map[string][]output.CloudResource)
+			}
+			maps.Copy(allResults[region], results)
 			mu.Unlock()
-		}(resourceType)
+
+			return nil
+		})
 	}
 
-	wg.Wait()
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
 
-	return results, nil
+	flatResults := flattenResults(allResults)
+
+	return []plugin.Result{
+		{
+			Data: flatResults,
+			Metadata: map[string]any{
+				"module":   m.ID(),
+				"platform": m.Platform(),
+				"regions":  resolvedRegions,
+			},
+		},
+	}, nil
 }

@@ -8,7 +8,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
-	cctypes "github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
 	"github.com/praetorian-inc/aurelian/internal/helpers"
 	"github.com/praetorian-inc/aurelian/internal/message"
 	"github.com/praetorian-inc/aurelian/pkg/links/aws/base"
@@ -140,7 +139,7 @@ func (a *AWSCloudControl) listResourcesInRegion(ctx context.Context, resourceTyp
 		}
 
 		for _, resource := range res.ResourceDescriptions {
-			erd := a.resourceDescriptionToERD(resource, resourceType, accountId, region)
+			erd := helpers.CloudControlToERD(resource, resourceType, accountId, region)
 			a.sendResource(region, erd)
 		}
 
@@ -167,26 +166,6 @@ func (a *AWSCloudControl) processError(resourceType, region string, err error) (
 	default:
 		return fmt.Errorf("failed to ListResources of type %s in region %s: %w", resourceType, region, err), false
 	}
-}
-
-func (a *AWSCloudControl) resourceDescriptionToERD(resource cctypes.ResourceDescription, rType, accountId, region string) *types.EnrichedResourceDescription {
-	var erdRegion string
-	if helpers.IsGlobalService(rType) {
-		erdRegion = ""
-	} else {
-		erdRegion = region
-	}
-
-	erd := types.NewEnrichedResourceDescription(
-		*resource.Identifier,
-		rType,
-		erdRegion,
-		accountId,
-		*resource.Properties,
-	)
-
-	return &erd
-
 }
 
 func (a *AWSCloudControl) sendResource(region string, resource *types.EnrichedResourceDescription) {

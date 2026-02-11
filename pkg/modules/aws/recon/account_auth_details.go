@@ -2,78 +2,77 @@ package recon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/praetorian-inc/aurelian/internal/helpers"
+	"github.com/praetorian-inc/aurelian/pkg/links/options"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 func init() {
-	plugin.Register(&AWSAccountAuthDetailsModule{})
+	plugin.Register(&AccountAuthDetailsModule{})
 }
 
-// AWSAccountAuthDetailsModule retrieves IAM authorization details
-type AWSAccountAuthDetailsModule struct{}
+type AccountAuthDetailsModule struct{}
 
-func (m *AWSAccountAuthDetailsModule) ID() string {
-	return "account-auth-details"
-}
+func (m *AccountAuthDetailsModule) ID() string { return "account-auth-details" }
 
-func (m *AWSAccountAuthDetailsModule) Name() string {
-	return "AWS Get Account Authorization Details"
-}
+func (m *AccountAuthDetailsModule) Name() string { return "AWS Get Account Authorization Details" }
 
-func (m *AWSAccountAuthDetailsModule) Description() string {
+func (m *AccountAuthDetailsModule) Description() string {
 	return "Get authorization details in an AWS account."
 }
 
-func (m *AWSAccountAuthDetailsModule) Platform() plugin.Platform {
-	return plugin.PlatformAWS
-}
+func (m *AccountAuthDetailsModule) Platform() plugin.Platform { return plugin.PlatformAWS }
 
-func (m *AWSAccountAuthDetailsModule) Category() plugin.Category {
-	return plugin.CategoryRecon
-}
+func (m *AccountAuthDetailsModule) Category() plugin.Category { return plugin.CategoryRecon }
 
-func (m *AWSAccountAuthDetailsModule) OpsecLevel() string {
-	return "moderate"
-}
+func (m *AccountAuthDetailsModule) OpsecLevel() string { return "moderate" }
 
-func (m *AWSAccountAuthDetailsModule) Authors() []string {
-	return []string{"Praetorian"}
-}
+func (m *AccountAuthDetailsModule) Authors() []string { return []string{"Praetorian"} }
 
-func (m *AWSAccountAuthDetailsModule) References() []string {
+func (m *AccountAuthDetailsModule) References() []string {
 	return []string{
 		"https://docs.aws.amazon.com/IAM/latest/APIReference/API_GetAccountAuthorizationDetails.html",
 		"https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/iam#Client.GetAccountAuthorizationDetails",
 	}
 }
 
-func (m *AWSAccountAuthDetailsModule) Parameters() []plugin.Parameter {
+func (m *AccountAuthDetailsModule) Parameters() []plugin.Parameter {
 	return []plugin.Parameter{
-		{
-			Name:        "profile",
-			Description: "AWS profile name",
-			Type:        "string",
-		},
-		{
-			Name:        "profile-dir",
-			Description: "AWS profile directory",
-			Type:        "string",
-		},
+		options.AwsProfile(),
+		options.AwsProfileDir(),
 	}
 }
 
-func (m *AWSAccountAuthDetailsModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
-	// Get parameters
-	profile, _ := cfg.Args["profile"].(string)
-	profileDir, _ := cfg.Args["profile-dir"].(string)
+func (m *AccountAuthDetailsModule) SupportedResourceTypes() []string {
+	return []string{plugin.AnyResourceType} // IAM authorization details aren't tied to specific resource types
+}
 
-	// Build opts slice for GetAWSCfg
+func (m *AccountAuthDetailsModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
+	// Build parameters
+	params := plugin.NewParameters(m.Parameters()...)
+	for k, v := range cfg.Args {
+		params.Set(k, v)
+	}
+	if err := params.Validate(); err != nil {
+		return nil, fmt.Errorf("parameter validation failed: %w", err)
+	}
+
+	profile := params.String("profile")
+	profileDir := params.String("profile-dir")
+
+	// IAM is a global service - use us-east-1
+	region := "us-east-1"
+
+	// Build opts for GetAWSCfg
 	var opts []*types.Option
 	if profileDir != "" {
 		opts = append(opts, &types.Option{
@@ -82,203 +81,126 @@ func (m *AWSAccountAuthDetailsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 		})
 	}
 
-	// IAM is a global service, use us-east-1
-	awsCfg, err := helpers.GetAWSCfg("us-east-1", profile, opts, "moderate")
+	awsCfg, err := helpers.GetAWSCfg(region, profile, opts, "moderate")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get AWS config: %w", err)
 	}
 
-	// Get account authorization details
-	details, err := m.getAccountAuthDetails(cfg.Context, awsCfg)
+	// Get account ID
+	accountID, err := helpers.GetAccountId(awsCfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get account authorization details: %w", err)
+		return nil, fmt.Errorf("failed to get account ID: %w", err)
 	}
 
-	return []plugin.Result{
-		{
-			Data: details,
-			Metadata: map[string]any{
-				"module":      "account-auth-details",
-				"platform":    "aws",
-				"opsec_level": "moderate",
-			},
-		},
-	}, nil
+	// Get authorization details with pagination
+	authDetails, err := m.getAccountAuthDetails(cfg.Context, awsCfg, profile, accountID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Return as CloudResource
+	resource := output.CloudResource{
+		Platform:     "aws",
+		ResourceType: "AWS::IAM::AccountAuthorizationDetails",
+		ResourceID:   accountID,
+		Region:       region,
+		AccountRef:   accountID,
+		Properties:   authDetails,
+	}
+
+	return []plugin.Result{{Data: resource}}, nil
 }
 
-func (m *AWSAccountAuthDetailsModule) getAccountAuthDetails(ctx context.Context, awsCfg aws.Config) (map[string]any, error) {
+// getAccountAuthDetails retrieves IAM authorization details with full pagination
+func (m *AccountAuthDetailsModule) getAccountAuthDetails(
+	ctx context.Context,
+	awsCfg aws.Config,
+	profile string,
+	accountID string,
+) (map[string]any, error) {
 	client := iam.NewFromConfig(awsCfg)
 
-	result := map[string]any{
-		"users":        []any{},
-		"groups":       []any{},
-		"roles":        []any{},
-		"policies":     []any{},
-	}
+	var completeOutput *iam.GetAccountAuthorizationDetailsOutput
+	maxItems := int32(1000)
+	paginator := iam.NewGetAccountAuthorizationDetailsPaginator(client, &iam.GetAccountAuthorizationDetailsInput{
+		MaxItems: &maxItems,
+	})
 
-	var marker *string
-	for {
-		input := &iam.GetAccountAuthorizationDetailsInput{
-			Filter: nil, // Get all entity types
-		}
-		if marker != nil {
-			input.Marker = marker
-		}
-
-		output, err := client.GetAccountAuthorizationDetails(ctx, input)
+	// Paginate through all results
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to call GetAccountAuthorizationDetails: %w", err)
+			return nil, fmt.Errorf("error retrieving authorization details page: %w", err)
 		}
 
-		// Process users
-		for _, user := range output.UserDetailList {
-			userInfo := map[string]any{
-				"user_name": aws.ToString(user.UserName),
-				"user_id":   aws.ToString(user.UserId),
-				"arn":       aws.ToString(user.Arn),
-				"path":      aws.ToString(user.Path),
-			}
-			if user.CreateDate != nil {
-				userInfo["create_date"] = user.CreateDate.String()
-			}
-
-			// Add attached policies
-			var attachedPolicies []string
-			for _, policy := range user.AttachedManagedPolicies {
-				attachedPolicies = append(attachedPolicies, aws.ToString(policy.PolicyArn))
-			}
-			userInfo["attached_policies"] = attachedPolicies
-
-			// Add inline policies
-			var inlinePolicies []string
-			for _, policy := range user.UserPolicyList {
-				inlinePolicies = append(inlinePolicies, aws.ToString(policy.PolicyName))
-			}
-			userInfo["inline_policies"] = inlinePolicies
-
-			// Add groups
-			var groups []string
-			for _, group := range user.GroupList {
-				groups = append(groups, group)
-			}
-			userInfo["groups"] = groups
-
-			result["users"] = append(result["users"].([]any), userInfo)
-		}
-
-		// Process groups
-		for _, group := range output.GroupDetailList {
-			groupInfo := map[string]any{
-				"group_name": aws.ToString(group.GroupName),
-				"group_id":   aws.ToString(group.GroupId),
-				"arn":        aws.ToString(group.Arn),
-				"path":       aws.ToString(group.Path),
-			}
-			if group.CreateDate != nil {
-				groupInfo["create_date"] = group.CreateDate.String()
-			}
-
-			// Add attached policies
-			var attachedPolicies []string
-			for _, policy := range group.AttachedManagedPolicies {
-				attachedPolicies = append(attachedPolicies, aws.ToString(policy.PolicyArn))
-			}
-			groupInfo["attached_policies"] = attachedPolicies
-
-			// Add inline policies
-			var inlinePolicies []string
-			for _, policy := range group.GroupPolicyList {
-				inlinePolicies = append(inlinePolicies, aws.ToString(policy.PolicyName))
-			}
-			groupInfo["inline_policies"] = inlinePolicies
-
-			result["groups"] = append(result["groups"].([]any), groupInfo)
-		}
-
-		// Process roles
-		for _, role := range output.RoleDetailList {
-			roleInfo := map[string]any{
-				"role_name": aws.ToString(role.RoleName),
-				"role_id":   aws.ToString(role.RoleId),
-				"arn":       aws.ToString(role.Arn),
-				"path":      aws.ToString(role.Path),
-			}
-			if role.CreateDate != nil {
-				roleInfo["create_date"] = role.CreateDate.String()
-			}
-
-			// Add trust policy
-			if role.AssumeRolePolicyDocument != nil {
-				roleInfo["assume_role_policy"] = aws.ToString(role.AssumeRolePolicyDocument)
-			}
-
-			// Add attached policies
-			var attachedPolicies []string
-			for _, policy := range role.AttachedManagedPolicies {
-				attachedPolicies = append(attachedPolicies, aws.ToString(policy.PolicyArn))
-			}
-			roleInfo["attached_policies"] = attachedPolicies
-
-			// Add inline policies
-			var inlinePolicies []string
-			for _, policy := range role.RolePolicyList {
-				inlinePolicies = append(inlinePolicies, aws.ToString(policy.PolicyName))
-			}
-			roleInfo["inline_policies"] = inlinePolicies
-
-			result["roles"] = append(result["roles"].([]any), roleInfo)
-		}
-
-		// Process policies
-		for _, policy := range output.Policies {
-			policyInfo := map[string]any{
-				"policy_name": aws.ToString(policy.PolicyName),
-				"policy_id":   aws.ToString(policy.PolicyId),
-				"arn":         aws.ToString(policy.Arn),
-				"path":        aws.ToString(policy.Path),
-				"is_attachable": policy.IsAttachable,
-			}
-			if policy.CreateDate != nil {
-				policyInfo["create_date"] = policy.CreateDate.String()
-			}
-			if policy.UpdateDate != nil {
-				policyInfo["update_date"] = policy.UpdateDate.String()
-			}
-
-			// Add policy versions
-			var versions []map[string]any
-			for _, version := range policy.PolicyVersionList {
-				versionInfo := map[string]any{
-					"version_id":         aws.ToString(version.VersionId),
-					"is_default_version": version.IsDefaultVersion,
-				}
-				if version.CreateDate != nil {
-					versionInfo["create_date"] = version.CreateDate.String()
-				}
-				if version.Document != nil {
-					versionInfo["document"] = aws.ToString(version.Document)
-				}
-				versions = append(versions, versionInfo)
-			}
-			policyInfo["versions"] = versions
-
-			result["policies"] = append(result["policies"].([]any), policyInfo)
-		}
-
-		// Check for more data
-		marker = output.Marker
-		if marker == nil || !output.IsTruncated {
-			break
+		if completeOutput == nil {
+			completeOutput = page
+		} else {
+			// Accumulate results from all pages
+			completeOutput.UserDetailList = append(completeOutput.UserDetailList, page.UserDetailList...)
+			completeOutput.GroupDetailList = append(completeOutput.GroupDetailList, page.GroupDetailList...)
+			completeOutput.RoleDetailList = append(completeOutput.RoleDetailList, page.RoleDetailList...)
+			completeOutput.Policies = append(completeOutput.Policies, page.Policies...)
 		}
 	}
 
-	// Add summary counts
-	result["summary"] = map[string]any{
-		"user_count":   len(result["users"].([]any)),
-		"group_count":  len(result["groups"].([]any)),
-		"role_count":   len(result["roles"].([]any)),
-		"policy_count": len(result["policies"].([]any)),
+	// Marshal to JSON
+	rawData, err := json.Marshal(completeOutput)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling authorization details: %w", err)
 	}
 
-	return result, nil
+	// Decode URL-encoded policies
+	decodedData, err := replaceURLEncodedPolicies(rawData)
+	if err != nil {
+		return nil, fmt.Errorf("error replacing URL-encoded policies: %w", err)
+	}
+
+	// Unmarshal decoded data
+	var authDetails map[string]any
+	if err := json.Unmarshal(decodedData, &authDetails); err != nil {
+		return nil, fmt.Errorf("error unmarshaling decoded data: %w", err)
+	}
+
+	return authDetails, nil
+}
+
+// replaceURLEncodedPolicies decodes URL-encoded JSON policy strings in AWS IAM policy documents
+// This is CRITICAL because AWS returns policy documents URL-encoded (starting with %7B)
+func replaceURLEncodedPolicies(data []byte) ([]byte, error) {
+	var jsonData interface{}
+	if err := json.Unmarshal(data, &jsonData); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal data: %w", err)
+	}
+
+	var decode func(interface{}) interface{}
+	decode = func(v interface{}) interface{} {
+		switch val := v.(type) {
+		case map[string]interface{}:
+			for k, v := range val {
+				if str, ok := v.(string); ok && strings.HasPrefix(str, "%7B") {
+					decoded, err := url.QueryUnescape(str)
+					if err == nil {
+						var policy interface{}
+						if err := json.Unmarshal([]byte(decoded), &policy); err == nil {
+							val[k] = policy
+						}
+					}
+				} else {
+					val[k] = decode(v)
+				}
+			}
+			return val
+		case []interface{}:
+			for i, item := range val {
+				val[i] = decode(item)
+			}
+			return val
+		default:
+			return v
+		}
+	}
+
+	jsonData = decode(jsonData)
+	return json.Marshal(jsonData)
 }

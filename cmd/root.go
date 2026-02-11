@@ -43,8 +43,9 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&awsCacheLogFile, options.AwsCacheLogFile().Name, options.AwsCacheLogFile().Default.(string), "")
 	rootCmd.PersistentFlags().BoolVar(&noColorFlag, "no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&quietFlag, "quiet", false, "Suppress user messages (overrides default verbose CLI mode)")
-	rootCmd.PersistentFlags().String("output-format", "default", "Output format: default|json|markdown")
-	rootCmd.PersistentFlags().StringP("output-file", "f", "", "Output file path (default: stdout)")
+	rootCmd.PersistentFlags().String("output-format", "default", "Output format: default|json|terminal|ndjson|markdown|sarif")
+	rootCmd.PersistentFlags().String("output-dir", "aurelian-output", "Output directory (default: aurelian-output)")
+	rootCmd.PersistentFlags().StringP("output-file", "f", "", "Output file path (overrides --output-dir)")
 
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
 		logs.ConfigureDefaults(logLevelFlag)
