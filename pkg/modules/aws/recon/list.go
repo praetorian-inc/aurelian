@@ -3,6 +3,8 @@ package recon
 import (
 	"fmt"
 
+	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
+	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/internal/helpers"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
@@ -15,32 +17,15 @@ func init() {
 // AWSListResourcesModule lists resources by type using Cloud Control API
 type AWSListResourcesModule struct{}
 
-func (m *AWSListResourcesModule) ID() string {
-	return "list"
-}
-
-func (m *AWSListResourcesModule) Name() string {
-	return "AWS List Resources"
-}
+func (m *AWSListResourcesModule) ID() string                { return "list" }
+func (m *AWSListResourcesModule) Name() string              { return "AWS List Resources" }
+func (m *AWSListResourcesModule) Platform() plugin.Platform { return plugin.PlatformAWS }
+func (m *AWSListResourcesModule) Category() plugin.Category { return plugin.CategoryRecon }
+func (m *AWSListResourcesModule) OpsecLevel() string        { return "moderate" }
+func (m *AWSListResourcesModule) Authors() []string         { return []string{"Praetorian"} }
 
 func (m *AWSListResourcesModule) Description() string {
 	return "List resources in an AWS account using Cloud Control API."
-}
-
-func (m *AWSListResourcesModule) Platform() plugin.Platform {
-	return plugin.PlatformAWS
-}
-
-func (m *AWSListResourcesModule) Category() plugin.Category {
-	return plugin.CategoryRecon
-}
-
-func (m *AWSListResourcesModule) OpsecLevel() string {
-	return "moderate"
-}
-
-func (m *AWSListResourcesModule) Authors() []string {
-	return []string{"Praetorian"}
 }
 
 func (m *AWSListResourcesModule) References() []string {
@@ -48,10 +33,6 @@ func (m *AWSListResourcesModule) References() []string {
 		"https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/what-is-cloudcontrol.html",
 		"https://docs.aws.amazon.com/cloudcontrolapi/latest/userguide/supported-resources.html",
 	}
-}
-
-func (m *AWSListResourcesModule) SupportedResourceTypes() []string {
-	return []string{plugin.AnyResourceType}
 }
 
 func (m *AWSListResourcesModule) Parameters() []plugin.Parameter {
@@ -82,7 +63,6 @@ func (m *AWSListResourcesModule) Parameters() []plugin.Parameter {
 }
 
 func (m *AWSListResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
-	// Get parameters
 	resourceType, ok := cfg.Args["resource-type"].(string)
 	if !ok || resourceType == "" {
 		return nil, fmt.Errorf("resource-type parameter is required")
@@ -96,7 +76,6 @@ func (m *AWSListResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, error)
 	profile, _ := cfg.Args["profile"].(string)
 	profileDir, _ := cfg.Args["profile-dir"].(string)
 
-	// Build opts slice for GetAWSCfg
 	var opts []*types.Option
 	if profileDir != "" {
 		opts = append(opts, &types.Option{
@@ -115,8 +94,9 @@ func (m *AWSListResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, error)
 		accountID = ""
 	}
 
-	// List resources using Cloud Control API
-	resources, err := listResources(cfg.Context, awsCfg, resourceType, accountID, region)
+	client := cloudcontrol.NewFromConfig(awsCfg)
+
+	resources, err := cclist.ListByType(cfg.Context, client, resourceType, accountID, region)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list resources: %w", err)
 	}

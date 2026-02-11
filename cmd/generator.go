@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/praetorian-inc/aurelian/internal/helpers"
 	"github.com/praetorian-inc/aurelian/internal/message"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/utils"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -216,27 +219,10 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		}
 	})
 
-	// Get output format and output path from flags
+	// Get output flags
 	outputFormat, _ := cmd.Flags().GetString("output-format")
-	outputPath, _ := cmd.Flags().GetString("output-file")
-
-	// Determine output writer and file cleanup
-	var outputWriter io.Writer = os.Stdout
-	var outputFile *os.File
-	if outputPath != "" {
-		f, err := os.Create(outputPath)
-		if err != nil {
-			return fmt.Errorf("failed to create output file: %w", err)
-		}
-		outputFile = f
-		outputWriter = f
-		defer func() {
-			if closeErr := outputFile.Close(); closeErr != nil {
-				// Log close error but don't override return value
-				message.Warning("failed to close output file: %v", closeErr)
-			}
-		}()
-	}
+	outputDir, _ := cmd.Flags().GetString("output-dir")
+	outputFile, _ := cmd.Flags().GetString("output-file")
 
 	// Check if this is the arg-scan module and if enrichment is disabled
 	moduleName := module.Name()
@@ -247,15 +233,18 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 	}
 	message.Section("Running module %s", moduleName)
 
-	// Create config with args, context, and output writer
+	// Inject module ID into args for downstream outputters
+	argsMap["module-name"] = module.ID()
+
+	// Create config with args, context, and output writer (initially discard, will be set per-format)
 	cfg := plugin.Config{
 		Args:    argsMap,
 		Context: context.Background(),
-		Output:  outputWriter,
-		Verbose: !quietFlag, // Verbose is inverse of quiet
+		Output:  io.Discard,
+		Verbose: !quietFlag,
 	}
 
-	// Run module with the new plugin API
+	// Run module
 	results, err := module.Run(cfg)
 	if err != nil {
 		return err
@@ -263,30 +252,59 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 
 	// Output results if there are any
 	if len(results) > 0 {
-		var formatter plugin.Formatter
+		// Determine output file path
+		var outputPath string
+		if outputFile != "" {
+			// User specified explicit file — use as-is
+			outputPath = outputFile
+		} else {
+			// Auto-generate: {output-dir}/{moduleID}-{timestamp}.{ext}
+			timestamp := time.Now().Format("20060102-150405")
+			ext := formatExtension(outputFormat)
+			filename := fmt.Sprintf("%s-%s%s", module.ID(), timestamp, ext)
+			outputPath = filepath.Join(outputDir, filename)
+		}
 
-		switch outputFormat {
-		case "json":
-			// Clean JSON output
-			formatter = &plugin.JSONFormatter{
-				Writer: outputWriter,
-				Pretty: false,
+		// Ensure the output directory exists
+		if err := utils.EnsureFileDirectory(outputPath); err != nil {
+			return fmt.Errorf("failed to create output directory: %w", err)
+		}
+
+		f, err := os.Create(outputPath)
+		if err != nil {
+			return fmt.Errorf("failed to create output file: %w", err)
+		}
+		defer f.Close()
+
+		// Route formatting through the selector for non-default formats
+		constructor := SelectOutputterWithWriter(outputFormat, f)
+		if constructor != nil {
+			// Non-default format: use the Outputter lifecycle
+			outputter := constructor()
+			outputCfg := plugin.Config{Args: argsMap, Context: context.Background(), Output: f, Verbose: !quietFlag}
+			if err := outputter.Initialize(outputCfg); err != nil {
+				return fmt.Errorf("failed to initialize outputter: %w", err)
 			}
-		default:
-			// Default/pretty format: summary message + pretty JSON
-			if outputFormat == "" || outputFormat == "default" {
-				// Show summary message for default format
-				message.Section("Module results:")
+			for _, result := range results {
+				if result.Data != nil {
+					if err := outputter.Output(result.Data); err != nil {
+						return fmt.Errorf("output error: %w", err)
+					}
+				}
 			}
-			formatter = &plugin.JSONFormatter{
-				Writer: outputWriter,
-				Pretty: true,
+			if err := outputter.Complete(); err != nil {
+				return fmt.Errorf("failed to complete output: %w", err)
+			}
+		} else {
+			// Default format: pretty JSON (existing behavior)
+			formatter := &plugin.JSONFormatter{Writer: f, Pretty: true}
+			if err := formatter.Format(results); err != nil {
+				return fmt.Errorf("failed to format output: %w", err)
 			}
 		}
 
-		// Format and output results
-		if err := formatter.Format(results); err != nil {
-			return fmt.Errorf("failed to format output: %w", err)
+		if !quietFlag {
+			message.Success("Output written to: %s", outputPath)
 		}
 	}
 
@@ -296,4 +314,15 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 	}
 
 	return nil
+}
+
+func formatExtension(format string) string {
+	switch format {
+	case OutputFormatMarkdown:
+		return ".md"
+	case OutputFormatSARIF:
+		return ".sarif.json"
+	default:
+		return ".json"
+	}
 }

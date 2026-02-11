@@ -31,23 +31,28 @@ const (
 	AnyResourceType = "any"
 )
 
-// Parameter describes a module parameter
-type Parameter struct {
-	Name        string
-	Description string
-	Type        string // "string", "int", "bool", "[]string"
-	Required    bool
-	Default     any
-	Shortcode   string
-	Hidden      bool // Hide from help output
-}
-
 // Config holds runtime configuration for a module
 type Config struct {
-	Args    map[string]any  // Runtime arguments
+	Args    map[string]any  // Runtime arguments (backward compat)
+	Params  Parameters      // Typed parameter set
 	Context context.Context // Execution context
 	Output  io.Writer       // Output destination
 	Verbose bool            // Verbose logging
+}
+
+// SupportedResourceTypesProvider is an optional interface for modules that scope
+// their supported resource types.
+type SupportedResourceTypesProvider interface {
+	SupportedResourceTypes() []string
+}
+
+// SupportedResourceTypes returns the resource types supported by a module, if declared.
+func SupportedResourceTypes(m Module) []string {
+	if provider, ok := m.(SupportedResourceTypesProvider); ok {
+		return provider.SupportedResourceTypes()
+	}
+
+	return []string{}
 }
 
 // Result is the standardized output type for all modules
@@ -74,19 +79,4 @@ type Module interface {
 
 	// Execution
 	Run(cfg Config) ([]Result, error)
-}
-
-// SupportedResourceTypesProvider is an optional interface for modules that scope
-// their supported resource types.
-type SupportedResourceTypesProvider interface {
-	SupportedResourceTypes() []string
-}
-
-// SupportedResourceTypes returns the resource types supported by a module, if declared.
-func SupportedResourceTypes(m Module) []string {
-	if provider, ok := m.(SupportedResourceTypesProvider); ok {
-		return provider.SupportedResourceTypes()
-	}
-
-	return []string{}
 }

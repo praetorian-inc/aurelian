@@ -23,16 +23,16 @@ var (
 	successColor = color.New(color.FgGreen)
 	warningColor = color.New(color.FgYellow)
 	errorColor   = color.New(color.FgRed)
-	bannerColor  = color.RGB(95, 71, 183)
-	sectionColor = color.RGB(95, 71, 183)
+	bannerColor  = color.RGB(230, 57, 72)
+	sectionColor = color.RGB(17, 195, 219)
 )
 
-const asciiBanner = `
-▗▖  ▗▖▗▄▄▄▖▗▄▄▖ ▗▖ ▗▖▗▖    ▗▄▖ 
-▐▛▚▖▐▌▐▌   ▐▌ ▐▌▐▌ ▐▌▐▌   ▐▌ ▐▌
-▐▌ ▝▜▌▐▛▀▀▘▐▛▀▚▖▐▌ ▐▌▐▌   ▐▛▀▜▌
-▐▌  ▐▌▐▙▄▄▖▐▙▄▞▘▝▚▄▞▘▐▙▄▄▖▐▌ ▐▌
-`
+var asciiBanner = "\n" +
+	"                      _ _             \n" +
+	"  __ _ _   _ _ __ ___| (_) __ _ _ __  \n" +
+	" / _` | | | | '__/ _ \\ | |/ _` | '_ \\ \n" +
+	"| (_| | |_| | | |  __/ | | (_| | | | |\n" +
+	" \\__,_|\\__,_|_|  \\___|_|_|\\__,_|_| |_|\n"
 
 // SetQuiet enables/disables user messages
 func SetQuiet(q bool) {
