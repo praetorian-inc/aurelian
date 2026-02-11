@@ -191,6 +191,17 @@ func (ps *Parameters) Len() int {
 	return len(ps.params)
 }
 
+// ToArgs returns a map of parameter names to their effective values.
+func (ps *Parameters) ToArgs() map[string]any {
+	args := make(map[string]any)
+	for _, p := range ps.params {
+		if val := p.EffectiveValue(); val != nil {
+			args[p.Name] = val
+		}
+	}
+	return args
+}
+
 // get is a generic helper that retrieves the effective value for a named parameter.
 func get[T any](ps *Parameters, name string) T {
 	for i := range ps.params {
@@ -279,18 +290,6 @@ func (ps *Parameters) Validate() error {
 	}
 
 	return nil
-}
-
-// ToArgs converts the parameter set to a map for backward compatibility.
-func (ps *Parameters) ToArgs() map[string]any {
-	args := make(map[string]any, len(ps.params))
-	for _, p := range ps.params {
-		v := p.EffectiveValue()
-		if v != nil {
-			args[p.Name] = v
-		}
-	}
-	return args
 }
 
 func checkEnum(name string, value any, allowed []string) error {
