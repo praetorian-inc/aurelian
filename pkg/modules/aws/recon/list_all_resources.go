@@ -214,10 +214,9 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, err
 		{
 			Data: flatResults,
 			Metadata: map[string]any{
-				"module":      "list-all",
-				"platform":    "aws",
-				"opsec_level": "moderate",
-				"regions":     resolvedRegions,
+				"module":   m.ID(),
+				"platform": m.Platform(),
+				"regions":  resolvedRegions,
 			},
 		},
 	}, nil
