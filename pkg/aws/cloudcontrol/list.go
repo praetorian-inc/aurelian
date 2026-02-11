@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/internal/helpers"
@@ -73,6 +75,10 @@ func ListByType(ctx context.Context, client *cloudcontrol.Client, resourceType, 
 	var all []output.CloudResource
 	var nextToken *string
 
+	backoffWait := 5 * time.Second
+	maxAttempts := 5
+	retryAttempt := 0
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -89,8 +95,16 @@ func ListByType(ctx context.Context, client *cloudcontrol.Client, resourceType, 
 
 		result, err := client.ListResources(ctx, input)
 		if err != nil {
+			if strings.Contains(err.Error(), "ThrottlingException: Rate exceeded") && retryAttempt < maxAttempts {
+				time.Sleep(backoffWait * time.Duration(math.Pow(2, float64(retryAttempt))))
+				retryAttempt++
+				continue
+			}
+
 			return nil, fmt.Errorf("list %s: %w", resourceType, err)
 		}
+
+		retryAttempt = 0
 
 		for _, desc := range result.ResourceDescriptions {
 			cr := helpers.CloudControlToERD(desc, resourceType, accountID, region).ToCloudResource()
