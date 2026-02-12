@@ -1,64 +1,38 @@
-package plugin
+package plugin_test
 
 import (
 	"fmt"
 	"testing"
+
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/testutils"
 )
-
-// mockModule is a test implementation of the Module interface
-type mockModule struct {
-	id          string
-	name        string
-	description string
-	platform    Platform
-	category    Category
-	opsecLevel  string
-	authors     []string
-	references  []string
-	parameters  []Parameter
-}
-
-func (m *mockModule) ID() string                { return m.id }
-func (m *mockModule) Name() string              { return m.name }
-func (m *mockModule) Description() string       { return m.description }
-func (m *mockModule) Platform() Platform        { return m.platform }
-func (m *mockModule) Category() Category        { return m.category }
-func (m *mockModule) OpsecLevel() string        { return m.opsecLevel }
-func (m *mockModule) Authors() []string         { return m.authors }
-func (m *mockModule) References() []string      { return m.references }
-func (m *mockModule) Parameters() []Parameter   { return m.parameters }
-func (m *mockModule) Run(cfg Config) ([]Result, error) {
-	return []Result{{Data: "test"}}, nil
-}
 
 func TestRegister(t *testing.T) {
 	// Create a fresh registry for testing
-	Registry = &registry{
-		modules:   make(map[string]RegistryEntry),
-		hierarchy: make(map[Platform]map[Category][]string),
+	plugin.ResetRegistry()
+
+	module := &testutils.MockModule{
+		IDValue:          "test-module",
+		NameValue:        "Test Module",
+		DescriptionValue: "A test module",
+		PlatformValue:    plugin.PlatformAWS,
+		CategoryValue:    plugin.CategoryRecon,
+		OpsecLevelValue:  "stealth",
+		AuthorsValue:     []string{"Test Author"},
+		ReferencesValue:  []string{"https://example.com"},
+		ParametersValue:  []plugin.Parameter{},
 	}
 
-	module := &mockModule{
-		id:          "test-module",
-		name:        "Test Module",
-		description: "A test module",
-		platform:    PlatformAWS,
-		category:    CategoryRecon,
-		opsecLevel:  "stealth",
-		authors:     []string{"Test Author"},
-		references:  []string{"https://example.com"},
-		parameters:  []Parameter{},
-	}
-
-	Register(module)
+	plugin.Register(module)
 
 	// Verify registration
-	if Count() != 1 {
-		t.Errorf("Expected 1 registered module, got %d", Count())
+	if plugin.Count() != 1 {
+		t.Errorf("Expected 1 registered module, got %d", plugin.Count())
 	}
 
 	// Verify retrieval
-	retrieved, ok := Get(PlatformAWS, CategoryRecon, "test-module")
+	retrieved, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "test-module")
 	if !ok {
 		t.Fatal("Failed to retrieve registered module")
 	}
@@ -70,18 +44,15 @@ func TestRegister(t *testing.T) {
 
 func TestRegisterDuplicate(t *testing.T) {
 	// Create a fresh registry for testing
-	Registry = &registry{
-		modules:   make(map[string]RegistryEntry),
-		hierarchy: make(map[Platform]map[Category][]string),
+	plugin.ResetRegistry()
+
+	module := &testutils.MockModule{
+		IDValue:       "duplicate",
+		PlatformValue: plugin.PlatformAWS,
+		CategoryValue: plugin.CategoryRecon,
 	}
 
-	module := &mockModule{
-		id:       "duplicate",
-		platform: PlatformAWS,
-		category: CategoryRecon,
-	}
-
-	Register(module)
+	plugin.Register(module)
 
 	// Attempt to register duplicate should panic
 	defer func() {
@@ -90,17 +61,14 @@ func TestRegisterDuplicate(t *testing.T) {
 		}
 	}()
 
-	Register(module)
+	plugin.Register(module)
 }
 
 func TestGetNonExistent(t *testing.T) {
 	// Create a fresh registry for testing
-	Registry = &registry{
-		modules:   make(map[string]RegistryEntry),
-		hierarchy: make(map[Platform]map[Category][]string),
-	}
+	plugin.ResetRegistry()
 
-	_, ok := Get(PlatformAWS, CategoryRecon, "nonexistent")
+	_, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "nonexistent")
 	if ok {
 		t.Error("Expected false when retrieving nonexistent module")
 	}
@@ -108,88 +76,79 @@ func TestGetNonExistent(t *testing.T) {
 
 func TestGetHierarchy(t *testing.T) {
 	// Create a fresh registry for testing
-	Registry = &registry{
-		modules:   make(map[string]RegistryEntry),
-		hierarchy: make(map[Platform]map[Category][]string),
-	}
+	plugin.ResetRegistry()
 
 	// Register multiple modules
-	modules := []*mockModule{
-		{id: "aws-recon-1", platform: PlatformAWS, category: CategoryRecon},
-		{id: "aws-recon-2", platform: PlatformAWS, category: CategoryRecon},
-		{id: "aws-analyze-1", platform: PlatformAWS, category: CategoryAnalyze},
-		{id: "azure-recon-1", platform: PlatformAzure, category: CategoryRecon},
+	modules := []*testutils.MockModule{
+		{IDValue: "aws-recon-1", PlatformValue: plugin.PlatformAWS, CategoryValue: plugin.CategoryRecon},
+		{IDValue: "aws-recon-2", PlatformValue: plugin.PlatformAWS, CategoryValue: plugin.CategoryRecon},
+		{IDValue: "aws-analyze-1", PlatformValue: plugin.PlatformAWS, CategoryValue: plugin.CategoryAnalyze},
+		{IDValue: "azure-recon-1", PlatformValue: plugin.PlatformAzure, CategoryValue: plugin.CategoryRecon},
 	}
 
 	for _, m := range modules {
-		Register(m)
+		plugin.Register(m)
 	}
 
-	hierarchy := GetHierarchy()
+	hierarchy := plugin.GetHierarchy()
 
 	// Verify AWS recon has 2 modules
-	awsRecon := hierarchy[PlatformAWS][CategoryRecon]
+	awsRecon := hierarchy[plugin.PlatformAWS][plugin.CategoryRecon]
 	if len(awsRecon) != 2 {
 		t.Errorf("Expected 2 AWS recon modules, got %d", len(awsRecon))
 	}
 
 	// Verify AWS analyze has 1 module
-	awsAnalyze := hierarchy[PlatformAWS][CategoryAnalyze]
+	awsAnalyze := hierarchy[plugin.PlatformAWS][plugin.CategoryAnalyze]
 	if len(awsAnalyze) != 1 {
 		t.Errorf("Expected 1 AWS analyze module, got %d", len(awsAnalyze))
 	}
 
 	// Verify Azure recon has 1 module
-	azureRecon := hierarchy[PlatformAzure][CategoryRecon]
+	azureRecon := hierarchy[plugin.PlatformAzure][plugin.CategoryRecon]
 	if len(azureRecon) != 1 {
 		t.Errorf("Expected 1 Azure recon module, got %d", len(azureRecon))
 	}
 
 	// Verify total count
-	if Count() != 4 {
-		t.Errorf("Expected 4 total modules, got %d", Count())
+	if plugin.Count() != 4 {
+		t.Errorf("Expected 4 total modules, got %d", plugin.Count())
 	}
 }
 
 func TestCount(t *testing.T) {
 	// Create a fresh registry for testing
-	Registry = &registry{
-		modules:   make(map[string]RegistryEntry),
-		hierarchy: make(map[Platform]map[Category][]string),
+	plugin.ResetRegistry()
+
+	if plugin.Count() != 0 {
+		t.Errorf("Expected 0 modules in empty registry, got %d", plugin.Count())
 	}
 
-	if Count() != 0 {
-		t.Errorf("Expected 0 modules in empty registry, got %d", Count())
+	plugin.Register(&testutils.MockModule{IDValue: "test1", PlatformValue: plugin.PlatformAWS, CategoryValue: plugin.CategoryRecon})
+	if plugin.Count() != 1 {
+		t.Errorf("Expected 1 module after first registration, got %d", plugin.Count())
 	}
 
-	Register(&mockModule{id: "test1", platform: PlatformAWS, category: CategoryRecon})
-	if Count() != 1 {
-		t.Errorf("Expected 1 module after first registration, got %d", Count())
-	}
-
-	Register(&mockModule{id: "test2", platform: PlatformAWS, category: CategoryRecon})
-	if Count() != 2 {
-		t.Errorf("Expected 2 modules after second registration, got %d", Count())
+	plugin.Register(&testutils.MockModule{IDValue: "test2", PlatformValue: plugin.PlatformAWS, CategoryValue: plugin.CategoryRecon})
+	if plugin.Count() != 2 {
+		t.Errorf("Expected 2 modules after second registration, got %d", plugin.Count())
 	}
 }
 
 func TestThreadSafety(t *testing.T) {
 	// Create a fresh registry for testing
-	Registry = &registry{
-		modules:   make(map[string]RegistryEntry),
-		hierarchy: make(map[Platform]map[Category][]string),
-	}
+	plugin.ResetRegistry()
 
 	// Test concurrent registration
 	done := make(chan bool)
 	for i := 0; i < 10; i++ {
 		go func(id int) {
-			module := &mockModule{
-				id:       fmt.Sprintf("concurrent-%d", id),
-				platform: PlatformAWS,
-				category: CategoryRecon,
+			module := &testutils.MockModule{
+				IDValue:       fmt.Sprintf("concurrent-%d", id),
+				PlatformValue: plugin.PlatformAWS,
+				CategoryValue: plugin.CategoryRecon,
 			}
-			Register(module)
+			plugin.Register(module)
 			done <- true
 		}(i)
 	}
@@ -199,7 +158,7 @@ func TestThreadSafety(t *testing.T) {
 		<-done
 	}
 
-	if Count() != 10 {
-		t.Errorf("Expected 10 modules after concurrent registration, got %d", Count())
+	if plugin.Count() != 10 {
+		t.Errorf("Expected 10 modules after concurrent registration, got %d", plugin.Count())
 	}
 }

@@ -88,3 +88,11 @@ func Count() int {
 	defer Registry.mu.RUnlock()
 	return len(Registry.modules)
 }
+
+// ResetRegistry clears the global registry. Intended for tests.
+func ResetRegistry() {
+	Registry = &registry{
+		modules:   make(map[string]RegistryEntry),
+		hierarchy: make(map[Platform]map[Category][]string),
+	}
+}
