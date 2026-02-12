@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/praetorian-inc/aurelian/internal/helpers"
-	"github.com/praetorian-inc/aurelian/internal/message"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/utils"
 	"github.com/spf13/cobra"
@@ -231,7 +229,7 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 			moduleName = "Azure ARG Template Scanner WITHOUT ENRICHMENT"
 		}
 	}
-	message.Section("Running module %s", moduleName)
+	fmt.Printf("Running module %s", moduleName)
 
 	// Inject module ID into args for downstream outputters
 	argsMap["module-name"] = module.ID()
@@ -304,13 +302,8 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		}
 
 		if !quietFlag {
-			message.Success("Output written to: %s", outputPath)
+			fmt.Printf("Output written to: %s\n", outputPath)
 		}
-	}
-
-	if platform == plugin.PlatformAWS && !quietFlag {
-		helpers.ShowCacheStat()
-		helpers.PrintAllThrottlingCounts()
 	}
 
 	return nil

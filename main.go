@@ -7,12 +7,7 @@ import (
 	"github.com/praetorian-inc/aurelian/cmd"
 
 	// Import all modules to trigger init() registration
-	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/analyze"
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/recon"
-	_ "github.com/praetorian-inc/aurelian/pkg/modules/azure/recon"
-	_ "github.com/praetorian-inc/aurelian/pkg/modules/gcp/recon"
-	_ "github.com/praetorian-inc/aurelian/pkg/modules/gcp/secrets"
-	_ "github.com/praetorian-inc/aurelian/pkg/modules/saas/recon"
 )
 
 func main() {

@@ -5,11 +5,5 @@
 package loader
 
 import (
-	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/analyze"
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/recon"
-	_ "github.com/praetorian-inc/aurelian/pkg/modules/azure/recon"
-	_ "github.com/praetorian-inc/aurelian/pkg/modules/gcp/compute"
-	_ "github.com/praetorian-inc/aurelian/pkg/modules/gcp/recon"
-	_ "github.com/praetorian-inc/aurelian/pkg/modules/gcp/secrets"
-	_ "github.com/praetorian-inc/aurelian/pkg/modules/saas/recon"
 )

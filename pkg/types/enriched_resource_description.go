@@ -1,7 +1,6 @@
 package types
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -125,53 +124,53 @@ func NewEnrichedResourceDescriptionFromArn(a string) (EnrichedResourceDescriptio
 	}, nil
 }
 
-func NewEnrichedResourceDescriptionFromRoleDL(roleDL RoleDL) *EnrichedResourceDescription {
-	arn, _ := arn.Parse(roleDL.Arn)
+// func NewEnrichedResourceDescriptionFromRoleDL(roleDL RoleDL) *EnrichedResourceDescription {
+// 	arn, _ := arn.Parse(roleDL.Arn)
 
-	return &EnrichedResourceDescription{
-		Identifier: roleDL.RoleName,
-		TypeName:   "AWS::IAM::Role",
-		Region:     "",
-		AccountId:  arn.AccountID,
-		Arn:        arn,
-	}
-}
+// 	return &EnrichedResourceDescription{
+// 		Identifier: roleDL.RoleName,
+// 		TypeName:   "AWS::IAM::Role",
+// 		Region:     "",
+// 		AccountId:  arn.AccountID,
+// 		Arn:        arn,
+// 	}
+// }
 
-func NewEnrichedResourceDescriptionFromPolicyDL(policyDL PoliciesDL) *EnrichedResourceDescription {
-	arn, _ := arn.Parse(policyDL.Arn)
+// func NewEnrichedResourceDescriptionFromPolicyDL(policyDL PoliciesDL) *EnrichedResourceDescription {
+// 	arn, _ := arn.Parse(policyDL.Arn)
 
-	return &EnrichedResourceDescription{
-		Identifier: policyDL.PolicyName,
-		TypeName:   "AWS::IAM::ManagedPolicy",
-		Region:     "",
-		AccountId:  arn.AccountID,
-		Arn:        arn,
-	}
-}
+// 	return &EnrichedResourceDescription{
+// 		Identifier: policyDL.PolicyName,
+// 		TypeName:   "AWS::IAM::ManagedPolicy",
+// 		Region:     "",
+// 		AccountId:  arn.AccountID,
+// 		Arn:        arn,
+// 	}
+// }
 
-func NewEnrichedResourceDescriptionFromUserDL(userDL UserDL) *EnrichedResourceDescription {
-	arn, _ := arn.Parse(userDL.Arn)
+// func NewEnrichedResourceDescriptionFromUserDL(userDL UserDL) *EnrichedResourceDescription {
+// 	arn, _ := arn.Parse(userDL.Arn)
 
-	return &EnrichedResourceDescription{
-		Identifier: userDL.UserName,
-		TypeName:   "AWS::IAM::User",
-		Region:     "",
-		AccountId:  arn.AccountID,
-		Arn:        arn,
-	}
-}
+// 	return &EnrichedResourceDescription{
+// 		Identifier: userDL.UserName,
+// 		TypeName:   "AWS::IAM::User",
+// 		Region:     "",
+// 		AccountId:  arn.AccountID,
+// 		Arn:        arn,
+// 	}
+// }
 
-func NewEnrichedResourceDescriptionFromGroupDL(groupDL GroupDL) *EnrichedResourceDescription {
-	arn, _ := arn.Parse(groupDL.Arn)
+// func NewEnrichedResourceDescriptionFromGroupDL(groupDL GroupDL) *EnrichedResourceDescription {
+// 	arn, _ := arn.Parse(groupDL.Arn)
 
-	return &EnrichedResourceDescription{
-		Identifier: groupDL.GroupName,
-		TypeName:   "AWS::IAM::Group",
-		Region:     "",
-		AccountId:  arn.AccountID,
-		Arn:        arn,
-	}
-}
+// 	return &EnrichedResourceDescription{
+// 		Identifier: groupDL.GroupName,
+// 		TypeName:   "AWS::IAM::Group",
+// 		Region:     "",
+// 		AccountId:  arn.AccountID,
+// 		Arn:        arn,
+// 	}
+// }
 
 type resourceProperties struct {
 	Tags []struct {
@@ -223,26 +222,27 @@ func extractServiceFromTypeName(typeName string) string {
 	return service
 }
 
-func (erd *EnrichedResourceDescription) ToNPInputs() ([]NpInput, error) {
-	propsJson, err := json.Marshal(erd.Properties)
-	if err != nil {
-		return nil, err
-	}
+// func (erd *EnrichedResourceDescription) ToNPInputs() ([]NpInput, error) {
+// 	propsJson, err := json.Marshal(erd.Properties)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return []NpInput{
-		{
-			ContentBase64: base64.StdEncoding.EncodeToString(propsJson),
-			Provenance: NpProvenance{
-				Platform:     "aws",
-				ResourceType: erd.TypeName,
-				ResourceID:   erd.Arn.String(),
-				Region:       erd.Region,
-				AccountID:    erd.AccountId,
-			},
-		},
-	}, nil
+// 	return []NpInput{
+// 		{
+// 			ContentBase64: base64.StdEncoding.EncodeToString(propsJson),
+// 			Provenance: NpProvenance{
+// 				Platform:     "aws",
+// 				ResourceType: erd.TypeName,
+// 				ResourceID:   erd.Arn.String(),
+// 				Region:       erd.Region,
+// 				AccountID:    erd.AccountId,
+// 			},
+// 		},
+// 	}, nil
 
-}
+// }
+
 func (e *EnrichedResourceDescription) Type() string {
 	split := strings.Split(e.TypeName, "::")
 	if len(split) < 3 {
