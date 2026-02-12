@@ -3,6 +3,7 @@ package plugin_test
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -156,4 +157,27 @@ func TestGetEnrichersUnknownType(t *testing.T) {
 	// Verify empty slice returned (not nil, not error)
 	assert.NotNil(t, enrichers)
 	assert.Len(t, enrichers, 0)
+}
+
+func TestEnricherRegistryConcurrency(t *testing.T) {
+	plugin.ResetEnricherRegistry()
+
+	// Register enrichers concurrently
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			enricher := func(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+				r.Properties[fmt.Sprintf("Enricher%d", id)] = "ran"
+				return nil
+			}
+			plugin.RegisterEnricher("AWS::Lambda::Function", enricher)
+		}(i)
+	}
+	wg.Wait()
+
+	// Verify all 100 enrichers registered
+	enrichers := plugin.GetEnrichers("AWS::Lambda::Function")
+	assert.Len(t, enrichers, 100, "All 100 concurrent registrations should succeed")
 }
