@@ -51,7 +51,11 @@ func GetEnrichers(resourceType string) []EnricherFunc {
 	globalEnricherRegistry.mu.RLock()
 	defer globalEnricherRegistry.mu.RUnlock()
 
-	return globalEnricherRegistry.enrichers[resourceType]
+	enrichers := globalEnricherRegistry.enrichers[resourceType]
+	if enrichers == nil {
+		return []EnricherFunc{}
+	}
+	return enrichers
 }
 
 // ResetEnricherRegistry clears all registered enrichers (for testing only).

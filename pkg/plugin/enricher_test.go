@@ -2,6 +2,7 @@ package plugin_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -80,4 +81,79 @@ func TestMultipleEnrichersPerType(t *testing.T) {
 	// Verify both ran
 	assert.Equal(t, "ran", resource.Properties["Enricher1"])
 	assert.Equal(t, "ran", resource.Properties["Enricher2"])
+}
+
+func TestEnricherErrorHandling(t *testing.T) {
+	plugin.ResetEnricherRegistry()
+
+	// Enricher that returns an error
+	enricher := func(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+		return fmt.Errorf("enrichment failed")
+	}
+
+	plugin.RegisterEnricher("AWS::S3::Bucket", enricher)
+
+	// Execute enricher
+	resource := &output.CloudResource{
+		ResourceType: "AWS::S3::Bucket",
+		Properties:   make(map[string]any),
+	}
+	cfg := plugin.EnricherConfig{Context: context.Background(), AWSConfig: aws.Config{}}
+
+	enrichers := plugin.GetEnrichers("AWS::S3::Bucket")
+	err := enrichers[0](cfg, resource)
+
+	// Verify error is returned (caller decides whether to log or fail)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "enrichment failed")
+}
+
+func TestEnricherPropertiesMutation(t *testing.T) {
+	plugin.ResetEnricherRegistry()
+
+	// Enricher that adds multiple properties
+	enricher := func(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+		r.Properties["FunctionUrl"] = "https://abc123.lambda-url.us-east-1.on.aws/"
+		r.Properties["FunctionUrlAuthType"] = "AWS_IAM"
+		r.Properties["EnrichedAt"] = "2026-02-11T23:23:08Z"
+		return nil
+	}
+
+	plugin.RegisterEnricher("AWS::Lambda::Function", enricher)
+
+	// Execute enricher
+	resource := &output.CloudResource{
+		ResourceType: "AWS::Lambda::Function",
+		ResourceID:   "my-function",
+		Properties:   map[string]any{"ExistingProp": "value"},
+	}
+	cfg := plugin.EnricherConfig{Context: context.Background(), AWSConfig: aws.Config{}}
+
+	enrichers := plugin.GetEnrichers("AWS::Lambda::Function")
+	err := enrichers[0](cfg, resource)
+
+	assert.NoError(t, err)
+	// Verify all properties added
+	assert.Equal(t, "https://abc123.lambda-url.us-east-1.on.aws/", resource.Properties["FunctionUrl"])
+	assert.Equal(t, "AWS_IAM", resource.Properties["FunctionUrlAuthType"])
+	assert.Equal(t, "2026-02-11T23:23:08Z", resource.Properties["EnrichedAt"])
+	// Verify existing properties preserved
+	assert.Equal(t, "value", resource.Properties["ExistingProp"])
+}
+
+func TestGetEnrichersUnknownType(t *testing.T) {
+	plugin.ResetEnricherRegistry()
+
+	// Register enricher for Lambda
+	enricher := func(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+		return nil
+	}
+	plugin.RegisterEnricher("AWS::Lambda::Function", enricher)
+
+	// Request enrichers for different type
+	enrichers := plugin.GetEnrichers("AWS::S3::Bucket")
+
+	// Verify empty slice returned (not nil, not error)
+	assert.NotNil(t, enrichers)
+	assert.Len(t, enrichers, 0)
 }
