@@ -8,6 +8,9 @@ import (
 
 	// Import all modules to trigger init() registration
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/recon"
+
+	// Import enrichers to trigger init() registration
+	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/enrichers"
 )
 
 func main() {
