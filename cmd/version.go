@@ -1,7 +1,8 @@
 package cmd
 
 import (
-	"github.com/praetorian-inc/aurelian/internal/message"
+	"fmt"
+
 	"github.com/praetorian-inc/aurelian/version"
 	"github.com/spf13/cobra"
 )
@@ -11,7 +12,7 @@ var versionCmd = &cobra.Command{
 	Short: "Print the version number of Aurelian",
 	Long:  `All software has versions. This is Aurelian's`,
 	Run: func(cmd *cobra.Command, args []string) {
-		message.Info("%s", version.FullVersion())
+		fmt.Printf("%s\n", version.FullVersion())
 	},
 }
 

@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/praetorian-inc/capability-sdk/pkg/formatter"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/capability-sdk/pkg/formatter"
 )
 
 // FormatterAdapter bridges plugin.Outputter interface with capability-sdk Formatter.

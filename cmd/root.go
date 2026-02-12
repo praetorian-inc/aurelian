@@ -8,10 +8,7 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
-	"github.com/praetorian-inc/aurelian/internal/helpers"
-	"github.com/praetorian-inc/aurelian/internal/logs"
-	"github.com/praetorian-inc/aurelian/internal/message"
-	"github.com/praetorian-inc/aurelian/pkg/links/options"
+
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/spf13/cobra"
 )
@@ -38,9 +35,9 @@ func initCommands() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&logLevelFlag, options.LogLevel().Name, options.LogLevel().Default.(string), "Log level (debug, info, warn, error)")
-	rootCmd.PersistentFlags().StringVar(&awsCacheLogLevel, options.AwsCacheLogLevel().Name, options.AwsCacheLogLevel().Default.(string), "Log level (debug, info, warn, error)")
-	rootCmd.PersistentFlags().StringVar(&awsCacheLogFile, options.AwsCacheLogFile().Name, options.AwsCacheLogFile().Default.(string), "")
+	rootCmd.PersistentFlags().StringVar(&logLevelFlag, "log-level", "none", "Log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().StringVar(&awsCacheLogLevel, "aws-cache-log-level", "none", "Log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().StringVar(&awsCacheLogFile, "aws-cache-log-file", "", "")
 	rootCmd.PersistentFlags().BoolVar(&noColorFlag, "no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&quietFlag, "quiet", false, "Suppress user messages (overrides default verbose CLI mode)")
 	rootCmd.PersistentFlags().String("output-format", "default", "Output format: default|json|terminal|ndjson|markdown|sarif")
@@ -48,21 +45,14 @@ func init() {
 	rootCmd.PersistentFlags().StringP("output-file", "f", "", "Output file path (overrides --output-dir)")
 
 	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
-		logs.ConfigureDefaults(logLevelFlag)
-		helpers.ConfigureAWSCacheLogger(awsCacheLogLevel, awsCacheLogFile)
 
 		// Auto-enable quiet mode for JSON output format
 		outputFormat, _ := cmd.Flags().GetString("output-format")
 		if outputFormat == "json" {
 			quietFlag = true
-			message.SetQuiet(true)
 		}
 
-		message.SetQuiet(quietFlag)
-		message.SetNoColor(noColorFlag)
-
 		if !strings.Contains(strings.Join(os.Args, " "), "mcp-server") {
-			message.Banner(plugin.Count())
 		}
 	}
 }
