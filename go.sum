@@ -369,7 +369,7 @@ github.com/praetorian-inc/konstellation v0.0.0-20251205230404-ed78bd75cfb8 h1:Go
 github.com/praetorian-inc/konstellation v0.0.0-20251205230404-ed78bd75cfb8/go.mod h1:sbwY5GVsqieoJXogpMMK+5GWZ15UgNnd9nRSkjBG8rQ=
 github.com/praetorian-inc/tabularium v1.0.167 h1:TyU1pYZkZ0vTmS4DOwtsiSf23VrMLWtn6mAwpmd7nDs=
 github.com/praetorian-inc/tabularium v1.0.167/go.mod h1:vj8oiHB0mS8sGs2ZvZlN1UZLWDRp7DC0w6aseSObDe8=
-github.com/praetorian-inc/titus v0.3.0 h1:ninx0Skb47oZCKjqGIF8Ky1BvAVZZn92QW+LSKXSJu0=
+github.com/praetorian-inc/titus v0.3.0 h1:qMXM84VxnmbLsVMu1tZiZ4gBtNXlRN3d7GKwDbK98oc=
 github.com/praetorian-inc/titus v0.3.0/go.mod h1:gL6Sv7FYnPJ+ew8dPo/CYHosUlVh+0B8w0eaTrRPteg=
 github.com/rivo/uniseg v0.2.0/go.mod h1:J6wj4VEh+S6ZtnVlnTBMWIodfgj8LQOQFoIToxlJtxc=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=
