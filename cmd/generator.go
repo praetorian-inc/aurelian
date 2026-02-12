@@ -218,7 +218,6 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 	})
 
 	// Get output flags
-	outputFormat, _ := cmd.Flags().GetString("output-format")
 	outputDir, _ := cmd.Flags().GetString("output-dir")
 	outputFile, _ := cmd.Flags().GetString("output-file")
 
@@ -258,8 +257,7 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		} else {
 			// Auto-generate: {output-dir}/{moduleID}-{timestamp}.{ext}
 			timestamp := time.Now().Format("20060102-150405")
-			ext := formatExtension(outputFormat)
-			filename := fmt.Sprintf("%s-%s%s", module.ID(), timestamp, ext)
+			filename := fmt.Sprintf("%s-%s%s", module.ID(), timestamp, ".json")
 			outputPath = filepath.Join(outputDir, filename)
 		}
 
@@ -274,31 +272,9 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		}
 		defer f.Close()
 
-		// Route formatting through the selector for non-default formats
-		constructor := SelectOutputterWithWriter(outputFormat, f)
-		if constructor != nil {
-			// Non-default format: use the Outputter lifecycle
-			outputter := constructor()
-			outputCfg := plugin.Config{Args: argsMap, Context: context.Background(), Output: f, Verbose: !quietFlag}
-			if err := outputter.Initialize(outputCfg); err != nil {
-				return fmt.Errorf("failed to initialize outputter: %w", err)
-			}
-			for _, result := range results {
-				if result.Data != nil {
-					if err := outputter.Output(result.Data); err != nil {
-						return fmt.Errorf("output error: %w", err)
-					}
-				}
-			}
-			if err := outputter.Complete(); err != nil {
-				return fmt.Errorf("failed to complete output: %w", err)
-			}
-		} else {
-			// Default format: pretty JSON (existing behavior)
-			formatter := &plugin.JSONFormatter{Writer: f, Pretty: true}
-			if err := formatter.Format(results); err != nil {
-				return fmt.Errorf("failed to format output: %w", err)
-			}
+		formatter := &plugin.JSONFormatter{Writer: f, Pretty: true}
+		if err := formatter.Format(results); err != nil {
+			return fmt.Errorf("failed to format output: %w", err)
 		}
 
 		if !quietFlag {
@@ -307,15 +283,4 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 	}
 
 	return nil
-}
-
-func formatExtension(format string) string {
-	switch format {
-	case OutputFormatMarkdown:
-		return ".md"
-	case OutputFormatSARIF:
-		return ".sarif.json"
-	default:
-		return ".json"
-	}
 }
