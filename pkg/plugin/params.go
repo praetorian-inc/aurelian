@@ -67,6 +67,43 @@ func (ps *Parameters) IsSet(name string) bool {
 	return false
 }
 
+// String returns the effective string value for the named parameter.
+func (ps *Parameters) String(name string) string {
+	return get[string](ps, name)
+}
+
+// Int returns the effective int value for the named parameter.
+func (ps *Parameters) Int(name string) int {
+	return get[int](ps, name)
+}
+
+// Bool returns the effective bool value for the named parameter.
+func (ps *Parameters) Bool(name string) bool {
+	return get[bool](ps, name)
+}
+
+// StringSlice returns the effective []string value for the named parameter.
+func (ps *Parameters) StringSlice(name string) []string {
+	return get[[]string](ps, name)
+}
+
+// get is a generic helper that retrieves the effective value for a named parameter.
+func get[T any](ps *Parameters, name string) T {
+	for i := range ps.params {
+		if ps.params[i].Name == name {
+			v := ps.params[i].EffectiveValue()
+			if v == nil {
+				var zero T
+				return zero
+			}
+			t, _ := v.(T)
+			return t
+		}
+	}
+	var zero T
+	return zero
+}
+
 // Validate checks all constraints: required fields, patterns, enums, and group rules.
 func (ps *Parameters) Validate() error {
 	for _, p := range ps.params {
