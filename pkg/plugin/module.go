@@ -40,21 +40,6 @@ type Config struct {
 	Verbose bool            // Verbose logging
 }
 
-// SupportedResourceTypesProvider is an optional interface for modules that scope
-// their supported resource types.
-type SupportedResourceTypesProvider interface {
-	SupportedResourceTypes() []string
-}
-
-// SupportedResourceTypes returns the resource types supported by a module, if declared.
-func SupportedResourceTypes(m Module) []string {
-	if provider, ok := m.(SupportedResourceTypesProvider); ok {
-		return provider.SupportedResourceTypes()
-	}
-
-	return []string{}
-}
-
 // Result is the standardized output type for all modules
 type Result struct {
 	Data     any            // The actual result data
@@ -73,6 +58,7 @@ type Module interface {
 	OpsecLevel() string
 	Authors() []string
 	References() []string
+	SupportedResourceTypes() []string
 
 	// Parameters
 	Parameters() []Parameter
