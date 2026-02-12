@@ -9,15 +9,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/internal/helpers"
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 	"golang.org/x/sync/errgroup"
 )
 
-type clientFactory func(ctx context.Context, region string) (*cloudcontrol.Client, string, error)
+type clientFactory func(ctx context.Context, region string) (*cloudcontrol.Client, string, aws.Config, error)
 
 type ListAllOptions struct {
 	ResourceTypes []string
@@ -28,18 +30,18 @@ type ListAllOptions struct {
 }
 
 func ListAll(ctx context.Context, opts ListAllOptions) (map[string][]output.CloudResource, error) {
-	factory := func(ctx context.Context, region string) (*cloudcontrol.Client, string, error) {
+	factory := func(ctx context.Context, region string) (*cloudcontrol.Client, string, aws.Config, error) {
 		awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
 			Region:     region,
 			Profile:    opts.Profile,
 			ProfileDir: opts.ProfileDir,
 		})
 		if err != nil {
-			return nil, "", err
+			return nil, "", aws.Config{}, err
 		}
 		accountID, _ := awshelpers.GetAccountId(awsCfg)
 		client := cloudcontrol.NewFromConfig(awsCfg)
-		return client, accountID, nil
+		return client, accountID, awsCfg, nil
 	}
 	return listAll(ctx, factory, opts)
 }
@@ -61,12 +63,12 @@ func listAll(ctx context.Context, factory clientFactory, opts ListAllOptions) (m
 			}
 			defer release()
 
-			client, accountID, err := factory(ctx, region)
+			client, accountID, awsCfg, err := factory(ctx, region)
 			if err != nil {
 				return fmt.Errorf("region %s: create client: %w", region, err)
 			}
 
-			regionResults, err := listRegion(ctx, client, limiter, accountID, region, opts.ResourceTypes, opts.Concurrency)
+			regionResults, err := listRegion(ctx, client, limiter, accountID, region, opts.ResourceTypes, opts.Concurrency, awsCfg)
 			if err != nil {
 				return fmt.Errorf("region %s: %w", region, err)
 			}
@@ -95,6 +97,7 @@ func listRegion(
 	accountID, region string,
 	resourceTypes []string,
 	concurrency int,
+	awsCfg aws.Config,
 ) (map[string][]output.CloudResource, error) {
 	results := make(map[string][]output.CloudResource)
 	var mu sync.Mutex
@@ -123,6 +126,24 @@ func listRegion(
 				}
 				slog.Warn("error listing resources", "type", resourceType, "region", region, "error", err)
 				return nil
+			}
+
+			// Apply registered enrichers
+			enrichers := plugin.GetEnrichers(resourceType)
+			for i := range resources {
+				enrichCfg := plugin.EnricherConfig{
+					Context:   ctx,
+					AWSConfig: awsCfg,
+				}
+				for _, enrich := range enrichers {
+					if err := enrich(enrichCfg, &resources[i]); err != nil {
+						slog.Warn("enricher failed",
+							"type", resourceType,
+							"resource", resources[i].ResourceID,
+							"error", err,
+						)
+					}
+				}
 			}
 
 			// Use region/resourceType format for keys

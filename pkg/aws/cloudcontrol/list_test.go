@@ -51,8 +51,8 @@ func testCloudControlServer(t *testing.T, handler func(body map[string]any) (int
 
 // testFactory creates a clientFactory for testing that returns a pre-configured client.
 func testFactory(client *cloudcontrol.Client, accountID string) clientFactory {
-	return func(ctx context.Context, region string) (*cloudcontrol.Client, string, error) {
-		return client, accountID, nil
+	return func(ctx context.Context, region string) (*cloudcontrol.Client, string, aws.Config, error) {
+		return client, accountID, aws.Config{}, nil
 	}
 }
 
@@ -367,7 +367,7 @@ func TestListAll_AppliesEnrichers(t *testing.T) {
 	results, err := listAll(context.Background(), testFactory(client, "123456789012"), ListAllOptions{
 		ResourceTypes: []string{"AWS::Lambda::Function"},
 		Regions:       []string{"us-east-1"},
-		Concurrency:   1,
+		Concurrency:   3,
 	})
 	require.NoError(t, err)
 
