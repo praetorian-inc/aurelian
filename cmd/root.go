@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"runtime"
 	"sort"
 	"strings"
@@ -40,21 +39,8 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&awsCacheLogFile, "aws-cache-log-file", "", "")
 	rootCmd.PersistentFlags().BoolVar(&noColorFlag, "no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&quietFlag, "quiet", false, "Suppress user messages (overrides default verbose CLI mode)")
-	rootCmd.PersistentFlags().String("output-format", "default", "Output format: default|json|terminal|ndjson|markdown|sarif")
 	rootCmd.PersistentFlags().String("output-dir", "aurelian-output", "Output directory (default: aurelian-output)")
 	rootCmd.PersistentFlags().StringP("output-file", "f", "", "Output file path (overrides --output-dir)")
-
-	rootCmd.PersistentPreRun = func(cmd *cobra.Command, args []string) {
-
-		// Auto-enable quiet mode for JSON output format
-		outputFormat, _ := cmd.Flags().GetString("output-format")
-		if outputFormat == "json" {
-			quietFlag = true
-		}
-
-		if !strings.Contains(strings.Join(os.Args, " "), "mcp-server") {
-		}
-	}
 }
 
 func Execute() error {
