@@ -1,18 +1,10 @@
 package recon
 
 import (
-	"context"
 	"fmt"
-	"maps"
-	"sync"
 
-	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
-	"github.com/praetorian-inc/aurelian/internal/helpers"
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
-	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
-	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
-	"golang.org/x/sync/errgroup"
 )
 
 func init() {
@@ -63,57 +55,25 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, err
 		return nil, fmt.Errorf("parameter validation failed: %w", err)
 	}
 
-	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.HelperOpts())
+	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve regions: %w", err)
 	}
 
-	resourceTypes := selectResourceTypes(c.ScanType)
-	limiter := ratelimit.NewAWSRegionLimiter(c.Concurrency)
-
-	allResults := make(map[string]map[string][]output.CloudResource)
-	var mu sync.Mutex
-
-	g, ctx := errgroup.WithContext(cfg.Context)
-	g.SetLimit(c.Concurrency)
-
-	for _, region := range resolvedRegions {
-
-		g.Go(func() error {
-			release, err := limiter.Acquire(ctx, region)
-			if err != nil {
-				return nil // Context cancelled
-			}
-			defer release()
-
-			results, err := m.processRegion(ctx, &c, region, resourceTypes)
-			if err != nil {
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-				return fmt.Errorf("failed to enumerate resources in region %s: %w", region, err)
-			}
-
-			mu.Lock()
-			if allResults[region] == nil {
-				allResults[region] = make(map[string][]output.CloudResource)
-			}
-			maps.Copy(allResults[region], results)
-			mu.Unlock()
-
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
+	results, err := cclist.ListAll(cfg.Context, cclist.ListAllOptions{
+		ResourceTypes: selectResourceTypes(c.ScanType),
+		Regions:       resolvedRegions,
+		Concurrency:   c.Concurrency,
+		Profile:       c.Profile,
+		ProfileDir:    c.ProfileDir,
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	flatResults := flattenResults(allResults)
-
 	return []plugin.Result{
 		{
-			Data: flatResults,
+			Data: results,
 			Metadata: map[string]any{
 				"module":   m.ID(),
 				"platform": m.Platform(),
@@ -121,28 +81,4 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, err
 			},
 		},
 	}, nil
-}
-
-func (m *AWSListAllResourcesModule) processRegion(
-	ctx context.Context,
-	c *ListAllConfig,
-	region string,
-	resourceTypes []string,
-) (map[string][]output.CloudResource, error) {
-	awsCfg, err := helpers.GetAWSCfg(region, c.Profile, c.HelperOpts(), c.OpsecLevel)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get AWS config for region %s: %w", region, err)
-	}
-
-	accountID, _ := helpers.GetAccountId(awsCfg)
-
-	client := cloudcontrol.NewFromConfig(awsCfg)
-
-	// List all resources in this region
-	return cclist.ListAll(ctx, client, cclist.ListOptions{
-		ResourceTypes: resourceTypes,
-		AccountID:     accountID,
-		Region:        region,
-		Concurrency:   c.Concurrency,
-	})
 }

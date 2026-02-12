@@ -12,8 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,6 +47,13 @@ func testCloudControlServer(t *testing.T, handler func(body map[string]any) (int
 	})
 
 	return client, server
+}
+
+// testFactory creates a clientFactory for testing that returns a pre-configured client.
+func testFactory(client *cloudcontrol.Client, accountID string) clientFactory {
+	return func(ctx context.Context, region string) (*cloudcontrol.Client, string, error) {
+		return client, accountID, nil
+	}
 }
 
 // Task 1: IsSkippableError -- Comprehensive Edge Cases
@@ -186,23 +196,23 @@ func TestListAll_MultipleTypes(t *testing.T) {
 	})
 
 	resourceTypes := []string{"AWS::EC2::Instance", "AWS::S3::Bucket", "AWS::Lambda::Function"}
-	results, err := ListAll(context.Background(), client, ListOptions{
+	results, err := listAll(context.Background(), testFactory(client, "123456789012"), ListAllOptions{
 		ResourceTypes: resourceTypes,
-		AccountID:     "123456789012",
-		Region:        "us-east-1",
+		Regions:       []string{"us-east-1"},
 		Concurrency:   3,
 	})
 	require.NoError(t, err)
 
-	// All 3 types should be in results
+	// All 3 types should be in results with region prefix
 	assert.Len(t, results, 3)
-	assert.Contains(t, results, "AWS::EC2::Instance")
-	assert.Contains(t, results, "AWS::S3::Bucket")
-	assert.Contains(t, results, "AWS::Lambda::Function")
+	assert.Contains(t, results, "us-east-1/AWS::EC2::Instance")
+	assert.Contains(t, results, "us-east-1/AWS::S3::Bucket")
+	assert.Contains(t, results, "us-east-1/AWS::Lambda::Function")
 
 	// Each type should have 1 resource
 	for _, rt := range resourceTypes {
-		assert.Len(t, results[rt], 1, "type %s should have 1 resource", rt)
+		key := "us-east-1/" + rt
+		assert.Len(t, results[key], 1, "type %s should have 1 resource", key)
 	}
 
 	// All types should have been requested
@@ -229,20 +239,19 @@ func TestListAll_SkippableErrorsSkipped(t *testing.T) {
 	})
 
 	resourceTypes := []string{"AWS::EC2::Instance", "AWS::Unsupported::Type", "AWS::S3::Bucket"}
-	results, err := ListAll(context.Background(), client, ListOptions{
+	results, err := listAll(context.Background(), testFactory(client, "123456789012"), ListAllOptions{
 		ResourceTypes: resourceTypes,
-		AccountID:     "123456789012",
-		Region:        "us-east-1",
+		Regions:       []string{"us-east-1"},
 		Concurrency:   3,
 	})
 	require.NoError(t, err)
 
 	// Supported types should be in results
-	assert.Contains(t, results, "AWS::EC2::Instance")
-	assert.Contains(t, results, "AWS::S3::Bucket")
+	assert.Contains(t, results, "us-east-1/AWS::EC2::Instance")
+	assert.Contains(t, results, "us-east-1/AWS::S3::Bucket")
 
 	// Unsupported type should NOT be in results (skipped, not errored)
-	assert.NotContains(t, results, "AWS::Unsupported::Type")
+	assert.NotContains(t, results, "us-east-1/AWS::Unsupported::Type")
 }
 
 // Task 9: ListAll -- Context Cancellation Propagates
@@ -268,10 +277,9 @@ func TestListAll_ContextCancellation(t *testing.T) {
 		resourceTypes[i] = fmt.Sprintf("AWS::Type%d::Resource", i)
 	}
 
-	_, err := ListAll(ctx, client, ListOptions{
+	_, err := listAll(ctx, testFactory(client, "123456789012"), ListAllOptions{
 		ResourceTypes: resourceTypes,
-		AccountID:     "123456789012",
-		Region:        "us-east-1",
+		Regions:       []string{"us-east-1"},
 		Concurrency:   2,
 	})
 	assert.Error(t, err)
@@ -284,10 +292,9 @@ func TestListAll_EmptyResourceTypes(t *testing.T) {
 		return 200, nil
 	})
 
-	results, err := ListAll(context.Background(), client, ListOptions{
+	results, err := listAll(context.Background(), testFactory(client, "123456789012"), ListAllOptions{
 		ResourceTypes: []string{},
-		AccountID:     "123456789012",
-		Region:        "us-east-1",
+		Regions:       []string{"us-east-1"},
 		Concurrency:   3,
 	})
 	require.NoError(t, err)
@@ -325,10 +332,9 @@ func TestListAll_ConcurrencyLimitRespected(t *testing.T) {
 	}
 
 	const maxConcurrency = 3
-	results, err := ListAll(context.Background(), client, ListOptions{
+	results, err := listAll(context.Background(), testFactory(client, "123456789012"), ListAllOptions{
 		ResourceTypes: resourceTypes,
-		AccountID:     "123456789012",
-		Region:        "us-east-1",
+		Regions:       []string{"us-east-1"},
 		Concurrency:   maxConcurrency,
 	})
 	require.NoError(t, err)
@@ -337,4 +343,35 @@ func TestListAll_ConcurrencyLimitRespected(t *testing.T) {
 	// Peak should not exceed the concurrency limit
 	assert.LessOrEqual(t, int(peak.Load()), maxConcurrency,
 		"peak concurrent requests (%d) should not exceed limit (%d)", peak.Load(), maxConcurrency)
+}
+
+// Task 12: ListAll -- Enrichers Applied During Listing
+func TestListAll_AppliesEnrichers(t *testing.T) {
+	plugin.ResetEnricherRegistry()
+	defer plugin.ResetEnricherRegistry()
+
+	// Register a test enricher for Lambda functions
+	plugin.RegisterEnricher("AWS::Lambda::Function", func(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+		r.Properties["Enriched"] = true
+		return nil
+	})
+
+	client, _ := testCloudControlServer(t, func(body map[string]any) (int, map[string]any) {
+		return 200, map[string]any{
+			"ResourceDescriptions": []map[string]any{
+				{"Identifier": "my-function", "Properties": `{}`},
+			},
+		}
+	})
+
+	results, err := listAll(context.Background(), testFactory(client, "123456789012"), ListAllOptions{
+		ResourceTypes: []string{"AWS::Lambda::Function"},
+		Regions:       []string{"us-east-1"},
+		Concurrency:   1,
+	})
+	require.NoError(t, err)
+
+	resources := results["us-east-1/AWS::Lambda::Function"]
+	require.Len(t, resources, 1)
+	assert.Equal(t, true, resources[0].Properties["Enriched"], "Enricher should have been applied")
 }

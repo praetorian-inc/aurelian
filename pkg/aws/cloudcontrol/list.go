@@ -11,54 +11,126 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/internal/helpers"
+	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 	"golang.org/x/sync/errgroup"
 )
 
-type ListOptions struct {
+type clientFactory func(ctx context.Context, region string) (*cloudcontrol.Client, string, error)
+
+type ListAllOptions struct {
 	ResourceTypes []string
-	AccountID     string
-	Region        string
+	Regions       []string
 	Concurrency   int
+	Profile       string
+	ProfileDir    string
 }
 
-// ListAll enumerates multiple resource types concurrently with rate limiting.
-// Uses best-effort enumeration: skippable errors (access denied, unsupported types)
-// are logged and skipped. Only context cancellation propagates as an error.
-func ListAll(ctx context.Context, client *cloudcontrol.Client, opts ListOptions) (map[string][]output.CloudResource, error) {
+func ListAll(ctx context.Context, opts ListAllOptions) (map[string][]output.CloudResource, error) {
+	factory := func(ctx context.Context, region string) (*cloudcontrol.Client, string, error) {
+		awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
+			Region:     region,
+			Profile:    opts.Profile,
+			ProfileDir: opts.ProfileDir,
+		})
+		if err != nil {
+			return nil, "", err
+		}
+		accountID, _ := awshelpers.GetAccountId(awsCfg)
+		client := cloudcontrol.NewFromConfig(awsCfg)
+		return client, accountID, nil
+	}
+	return listAll(ctx, factory, opts)
+}
+
+func listAll(ctx context.Context, factory clientFactory, opts ListAllOptions) (map[string][]output.CloudResource, error) {
+	limiter := ratelimit.NewAWSRegionLimiter(opts.Concurrency)
 	results := make(map[string][]output.CloudResource)
 	var mu sync.Mutex
-
-	limiter := ratelimit.NewAWSRegionLimiter(opts.Concurrency)
 
 	g := errgroup.Group{}
 	g.SetLimit(opts.Concurrency)
 
-	for _, rt := range opts.ResourceTypes {
+	for _, region := range opts.Regions {
+		region := region // Capture loop variable
 		g.Go(func() error {
-			release, err := limiter.Acquire(ctx, opts.Region)
+			release, err := limiter.Acquire(ctx, region)
 			if err != nil {
 				return err
 			}
 			defer release()
 
-			resources, err := ListByType(ctx, client, rt, opts.AccountID, opts.Region)
+			client, accountID, err := factory(ctx, region)
+			if err != nil {
+				return fmt.Errorf("region %s: create client: %w", region, err)
+			}
+
+			regionResults, err := listRegion(ctx, client, limiter, accountID, region, opts.ResourceTypes, opts.Concurrency)
+			if err != nil {
+				return fmt.Errorf("region %s: %w", region, err)
+			}
+
+			mu.Lock()
+			for key, records := range regionResults {
+				results[key] = append(results[key], records...)
+			}
+			mu.Unlock()
+
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}
+
+func listRegion(
+	ctx context.Context,
+	client *cloudcontrol.Client,
+	limiter *ratelimit.AWSRegionLimiter,
+	accountID, region string,
+	resourceTypes []string,
+	concurrency int,
+) (map[string][]output.CloudResource, error) {
+	results := make(map[string][]output.CloudResource)
+	var mu sync.Mutex
+
+	g := errgroup.Group{}
+	g.SetLimit(concurrency)
+
+	for _, resourceType := range resourceTypes {
+		resourceType := resourceType // Capture loop variable
+		g.Go(func() error {
+			// Acquire rate limit token for this type enumeration
+			release, err := limiter.Acquire(ctx, region)
+			if err != nil {
+				return err
+			}
+			defer release()
+
+			resources, err := ListByType(ctx, client, resourceType, accountID, region)
 			if err != nil {
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
 				if IsSkippableError(err) {
-					slog.Debug("skipping resource type", "type", rt, "error", err)
+					slog.Debug("skipping resource type", "type", resourceType, "region", region, "error", err)
 					return nil
 				}
-				slog.Warn("error listing resources", "type", rt, "error", err)
+				slog.Warn("error listing resources", "type", resourceType, "region", region, "error", err)
 				return nil
 			}
 
+			// Use region/resourceType format for keys
+			key := fmt.Sprintf("%s/%s", region, resourceType)
 			mu.Lock()
-			results[rt] = resources
+			results[key] = resources
 			mu.Unlock()
+
 			return nil
 		})
 	}
@@ -120,8 +192,6 @@ func ListByType(ctx context.Context, client *cloudcontrol.Client, resourceType, 
 	return all, nil
 }
 
-// IsSkippableError returns true for CloudControl errors that should be logged
-// and skipped rather than treated as fatal (e.g., unsupported types, access denied).
 func IsSkippableError(err error) bool {
 	if err == nil {
 		return false
