@@ -3,90 +3,87 @@
 package cloudcontrol
 
 import (
+	_ "embed"
+	"encoding/json"
+	"fmt"
+
 	helpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcetypes"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/testutils"
 	"github.com/stretchr/testify/require"
-	"strings"
 	"testing"
 )
 
-var (
-	EXPECTED_REGIONS = []string{
-		"ap-northeast-1",
-		"ap-northeast-2",
-		"ap-northeast-3",
-		"ap-south-1",
-		"ap-southeast-1",
-		"ap-southeast-2",
-		"ca-central-1",
-		"eu-central-1",
-		"eu-north-1",
-		"eu-west-1",
-		"eu-west-2",
-		"eu-west-3",
-		"sa-east-1",
-		"us-east-1",
-		"us-east-2",
-		"us-west-1",
-		"us-west-2",
-	}
-)
+//go:embed cloud-control-output.json
+var expectedCloudControlOutput string
 
-//func Test_CloudControl_ListAllInAllRegions(t *testing.T) {
-//	regions, err := helpers.EnabledRegions("nebula", "")
-//	require.NoError(t, err)
-//
-//	results, err := ListAll(context.Background(), ListAllOptions{
-//		ResourceTypes: resourcetypes.GetAll(),
-//		Regions:       regions,
-//		Concurrency:   5,
-//		Profile:       "nebula",
-//	})
-//	require.NoError(t, err)
-//	require.NotNil(t, results)
-//
-//	verifyRegionsPresent(t, results, EXPECTED_REGIONS...)
-//}
+type expectedCloudControlResult struct {
+	Data map[string][]output.CloudResource `json:"Data"`
+}
 
 func Test_CloudControl_ListAllInAllRegions(t *testing.T) {
-	regions, err := helpers.EnabledRegions("nebula", "")
+	cfg := testutils.SetupIntegrationConfig(t)
+
+	regions, err := helpers.EnabledRegions(cfg.Profile, cfg.ProfileDir)
 	require.NoError(t, err)
 
-	lister := NewCloudControlLister(5, "nebula", "")
+	lister := NewCloudControlLister(5, cfg.Profile, cfg.ProfileDir)
 	results, err := lister.List(regions, resourcetypes.GetAll())
 	require.NoError(t, err)
 	require.NotNil(t, results)
 
-	verifyRegionsPresent(t, results, EXPECTED_REGIONS...)
-}
+	var expectedResults []expectedCloudControlResult
+	require.NoError(t, json.Unmarshal([]byte(expectedCloudControlOutput), &expectedResults))
+	require.Len(t, expectedResults, 1, "cloud-control-output.json must contain exactly one result")
+	require.NotNil(t, expectedResults[0].Data)
 
-func verifyRegionsPresent(t *testing.T, results map[string][]output.CloudResource, regions ...string) {
-	t.Helper()
-
-	for _, region := range regions {
-		verifyRegionPresent(t, results, region)
-	}
-}
-
-func verifyRegionPresent(t *testing.T, results map[string][]output.CloudResource, region string) {
-	t.Helper()
-
-	regionFound := false
-	for key, result := range results {
-		if !strings.HasPrefix(key, region) {
+	for key, expectedResources := range expectedResults[0].Data {
+		if len(expectedResources) == 0 {
+			continue
 		}
 
-		regionFound = true
-		if len(result) > 0 {
-			return
+		actualResources, ok := results[key]
+		require.Truef(t, ok, "expected key %q to exist in live results", key)
+		requireResourcesContained(t, key, expectedResources, actualResources)
+	}
+}
+
+// Useful method to debug specific resource failures from the above test
+func VerifyResourceFound(t *testing.T, resourceARN string, results map[string][]output.CloudResource) {
+	t.Helper()
+
+	for _, resources := range results {
+		for _, resource := range resources {
+			if resource.ARN == resourceARN {
+				return
+			}
 		}
 	}
 
-	if regionFound {
-		t.Fatalf("region %s found, but with zero results", region)
-		return
+	require.Failf(t, "resource not found", "expected ARN %q was not found in live results", resourceARN)
+}
+
+func requireResourcesContained(t *testing.T, key string, expected []output.CloudResource, actual []output.CloudResource) {
+	t.Helper()
+
+	actualFingerprints := make(map[string]bool, len(actual))
+	for _, resource := range actual {
+		actualFingerprints[resourceFingerprint(t, resource)] = true
 	}
 
-	t.Fatalf("region %q not found in output", region)
+	for _, expectedResource := range expected {
+		fp := resourceFingerprint(t, expectedResource)
+		found := actualFingerprints[fp]
+		require.True(t, found, "missing expected resource for key %q: %s", key, fp)
+	}
+}
+
+func resourceFingerprint(t *testing.T, resource output.CloudResource) string {
+	t.Helper()
+
+	raw, err := json.Marshal(resource)
+	require.NoError(t, err)
+
+	return fmt.Sprintf("%s|%s", resource.ResourceID, string(raw))
 }
