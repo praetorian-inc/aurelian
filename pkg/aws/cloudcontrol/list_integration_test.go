@@ -15,7 +15,7 @@ import (
 	"testing"
 )
 
-//go:embed cloud-control-output.json
+//go:embed cloud-control-integration-output
 var expectedCloudControlOutput string
 
 type expectedCloudControlResult struct {
