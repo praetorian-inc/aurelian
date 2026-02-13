@@ -52,7 +52,7 @@ func (p *Paginator) backoff(retryAttempt int) {
 		return
 	}
 	// default backoff
-	time.Sleep(5 * time.Duration(1<<retryAttempt))
+	time.Sleep(5 * time.Second * time.Duration(1<<retryAttempt))
 }
 
 func (p *Paginator) maxAttemptsOrDefault() int {
