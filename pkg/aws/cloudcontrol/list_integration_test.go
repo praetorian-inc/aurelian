@@ -75,6 +75,7 @@ func verifyRegionPresent(t *testing.T, results map[string][]output.CloudResource
 	regionFound := false
 	for key, result := range results {
 		if !strings.HasPrefix(key, region) {
+		    continue
 		}
 
 		regionFound = true
