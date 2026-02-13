@@ -17,9 +17,7 @@ import (
 )
 
 type CloudControlLister struct {
-	Concurrency      int
-	Profile          string
-	ProfileDir       string
+	AWSCommonRecon
 	CrossRegionActor *ratelimit.CrossRegionActor
 	AWSConfigs       map[string]*aws.Config
 }
