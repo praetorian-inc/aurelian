@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
@@ -128,12 +126,10 @@ func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID,
 	var all []output.CloudResource
 	var nextToken *string
 
-	backoffWait := 5 * time.Second
-	maxAttempts := 5
-	retryAttempt := 0
 	enrich := cc.generateEnricherMethod(region, resourceType)
+	paginator := ratelimit.NewPaginator()
 
-	for {
+	err := paginator.Paginate(func() (bool, error) {
 		input := &cloudcontrol.ListResourcesInput{
 			TypeName: &resourceType,
 		}
@@ -143,15 +139,8 @@ func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID,
 
 		result, err := client.ListResources(context.Background(), input)
 		if err != nil {
-			if strings.Contains(err.Error(), "ThrottlingException: Rate exceeded") && retryAttempt < maxAttempts {
-				time.Sleep(backoffWait * time.Duration(math.Pow(2, float64(retryAttempt))))
-				retryAttempt++
-				continue
-			}
-			return nil, fmt.Errorf("list %s: %w", resourceType, err)
+			return true, fmt.Errorf("list %s: %w", resourceType, err)
 		}
-
-		retryAttempt = 0
 
 		for _, desc := range result.ResourceDescriptions {
 			cr := helpers.CloudControlToERD(desc, resourceType, accountID, region).ToCloudResource()
@@ -160,9 +149,10 @@ func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID,
 		}
 
 		nextToken = result.NextToken
-		if nextToken == nil {
-			break
-		}
+		return nextToken != nil, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return all, nil
