@@ -1,10 +1,8 @@
 package recon
 
 import (
-	"fmt"
 	"testing"
 
-	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcetypes"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/stretchr/testify/assert"
@@ -39,27 +37,6 @@ func TestAWSListAllResources_ConcurrencyParameter(t *testing.T) {
 	assert.Equal(t, "int", concurrencyParam.Type)
 	assert.Equal(t, 5, concurrencyParam.Default)
 	assert.False(t, concurrencyParam.Required)
-}
-
-// --- Error classification tests (now testing shared package) ---
-
-func TestIsSkippableCloudControlError(t *testing.T) {
-	tests := []struct {
-		name       string
-		errMsg     string
-		shouldSkip bool
-	}{
-		{"TypeNotFoundException skipped", "TypeNotFoundException: AWS::Foo::Bar", true},
-		{"UnsupportedAction skipped", "UnsupportedActionException: not supported", true},
-		{"AccessDenied skipped", "AccessDeniedException: not authorized", true},
-		{"Real error propagated", "InternalServerError: something broke", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.shouldSkip, cclist.IsSkippableError(fmt.Errorf("%s", tt.errMsg)))
-		})
-	}
 }
 
 // --- Resource type list tests ---

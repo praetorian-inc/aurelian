@@ -60,13 +60,8 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, err
 		return nil, fmt.Errorf("failed to resolve regions: %w", err)
 	}
 
-	results, err := cclist.ListAll(cfg.Context, cclist.ListAllOptions{
-		ResourceTypes: selectResourceTypes(c.ScanType),
-		Regions:       resolvedRegions,
-		Concurrency:   c.Concurrency,
-		Profile:       c.Profile,
-		ProfileDir:    c.ProfileDir,
-	})
+	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
+	results, err := lister.List(resolvedRegions, selectResourceTypes(c.ScanType))
 	if err != nil {
 		return nil, err
 	}
