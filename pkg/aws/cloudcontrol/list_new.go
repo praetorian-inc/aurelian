@@ -16,25 +16,27 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
-	"golang.org/x/sync/errgroup"
 )
 
 type CloudControlLister struct {
-	Concurrency int
-	Profile     string
-	ProfileDir  string
-	Limiters    map[string]*ratelimit.AWSRegionLimiter
-	AWSConfigs  map[string]*aws.Config
-	mu          sync.RWMutex
+	Concurrency      int
+	Profile          string
+	ProfileDir       string
+	CrossRegionActor *ratelimit.CrossRegionActor
+	AWSConfigs       map[string]*aws.Config
 }
 
 func NewCloudControlLister(concurrency int, profile, profileDir string) *CloudControlLister {
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+
 	return &CloudControlLister{
-		Concurrency: concurrency,
-		Profile:     profile,
-		ProfileDir:  profileDir,
-		Limiters:    make(map[string]*ratelimit.AWSRegionLimiter),
-		AWSConfigs:  make(map[string]*aws.Config),
+		Concurrency:      concurrency,
+		Profile:          profile,
+		ProfileDir:       profileDir,
+		CrossRegionActor: ratelimit.NewCrossRegionActor(concurrency),
+		AWSConfigs:       make(map[string]*aws.Config),
 	}
 }
 
@@ -43,63 +45,42 @@ func (cc *CloudControlLister) List(regions, resourceTypes []string) (map[string]
 		return map[string][]output.CloudResource{}, nil
 	}
 
-	limit := cc.concurrencyOrDefault()
-	if cc.Limiters == nil {
-		cc.Limiters = make(map[string]*ratelimit.AWSRegionLimiter)
-	}
-	for _, region := range regions {
-		if _, ok := cc.Limiters[region]; !ok {
-			cc.Limiters[region] = ratelimit.NewAWSRegionLimiter(limit)
-		}
-	}
-
 	results := make(map[string][]output.CloudResource)
 	var mu sync.Mutex
 
-	g := errgroup.Group{}
-	g.SetLimit(limit)
+	actor := ratelimit.NewCrossRegionActor(cc.Concurrency)
+	err := actor.ActInRegions(regions, func(region string) error {
+		regionResources, err := cc.ListInRegion(region, resourceTypes...)
+		if err != nil {
+			return fmt.Errorf("region %s: %w", region, err)
+		}
 
-	for _, region := range regions {
-		region := region
-		g.Go(func() error {
-			limiter := cc.Limiters[region]
-			release, err := limiter.Acquire(context.Background(), region)
-			if err != nil {
-				return err
-			}
-			defer release()
+		mu.Lock()
+		defer mu.Unlock()
 
-			client, err := cc.newClient(region)
-			if err != nil {
-				return fmt.Errorf("region %s: create client: %w", region, err)
-			}
+		for _, resource := range regionResources {
+			key := fmt.Sprintf("%s/%s", region, resource.ResourceType)
+			results[key] = append(results[key], resource)
+		}
 
-			regionResources, err := cc.ListInRegion(client, region, resourceTypes...)
-			if err != nil {
-				return fmt.Errorf("region %s: %w", region, err)
-			}
+		return nil
+	})
 
-			mu.Lock()
-			for _, resource := range regionResources {
-				key := fmt.Sprintf("%s/%s", region, resource.ResourceType)
-				results[key] = append(results[key], resource)
-			}
-			mu.Unlock()
-
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
+	if err != nil {
 		return nil, err
 	}
 
 	return results, nil
 }
 
-func (cc *CloudControlLister) ListInRegion(client *cloudcontrol.Client, region string, resourceTypes ...string) ([]output.CloudResource, error) {
+func (cc *CloudControlLister) ListInRegion(region string, resourceTypes ...string) ([]output.CloudResource, error) {
 	if len(resourceTypes) == 0 {
 		return nil, nil
+	}
+
+	client, err := cc.newCloudControlClient(region)
+	if err != nil {
+		return nil, fmt.Errorf("create client: %w", err)
 	}
 
 	accountID, err := cc.getAccountID(region)
@@ -110,21 +91,32 @@ func (cc *CloudControlLister) ListInRegion(client *cloudcontrol.Client, region s
 	var all []output.CloudResource
 	for _, resourceType := range resourceTypes {
 		resources, err := cc.listByType(client, accountID, region, resourceType)
-		if err != nil {
-			if IsSkippableError(err) {
-				slog.Debug("skipping resource type", "type", resourceType, "region", region, "error", err)
-				continue
-			}
+
+		if cc.isSkippableError(err) {
+			slog.Debug("skipping resource type", "type", resourceType, "region", region, "error", err)
+			continue
+		} else if err != nil {
 			slog.Warn("error listing resources", "type", resourceType, "region", region, "error", err)
 			return nil, err
 		}
+
 		all = append(all, resources...)
 	}
 
 	return all, nil
 }
 
-func (cc *CloudControlLister) newClient(region string) (*cloudcontrol.Client, error) {
+func (cc *CloudControlLister) isSkippableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "TypeNotFoundException") ||
+		strings.Contains(s, "UnsupportedActionException") ||
+		strings.Contains(s, "AccessDeniedException")
+}
+
+func (cc *CloudControlLister) newCloudControlClient(region string) (*cloudcontrol.Client, error) {
 	awsCfg, err := cc.getAWSConfig(region)
 	if err != nil {
 		return nil, err
@@ -139,11 +131,7 @@ func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID,
 	backoffWait := 5 * time.Second
 	maxAttempts := 5
 	retryAttempt := 0
-	enrichers := plugin.GetEnrichers(resourceType)
-	enrich := func(_ *output.CloudResource) {}
-	if len(enrichers) > 0 {
-		enrich = cc.generateEnricherMethod(region, resourceType, enrichers)
-	}
+	enrich := cc.generateEnricherMethod(region, resourceType)
 
 	for {
 		input := &cloudcontrol.ListResourcesInput{
@@ -180,7 +168,12 @@ func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID,
 	return all, nil
 }
 
-func (cc *CloudControlLister) generateEnricherMethod(region, resourceType string, enrichers []plugin.EnricherFunc) func(resource *output.CloudResource) {
+func (cc *CloudControlLister) generateEnricherMethod(region, resourceType string) func(resource *output.CloudResource) {
+	enrichers := plugin.GetEnrichers(resourceType)
+	if len(enrichers) == 0 {
+		return func(_ *output.CloudResource) {} // no-op
+	}
+
 	awsCfg, err := cc.getAWSConfig(region)
 	if err != nil {
 		slog.Warn("failed to fetch AWS config for enricher", "region", region, "type", resourceType, "error", err)
@@ -191,27 +184,31 @@ func (cc *CloudControlLister) generateEnricherMethod(region, resourceType string
 		Context:   context.Background(),
 		AWSConfig: *awsCfg,
 	}
+
 	return func(resource *output.CloudResource) {
 		for _, enrichFn := range enrichers {
 			if err := enrichFn(enrichCfg, resource); err != nil {
-				slog.Warn("enricher failed",
-					"type", resourceType,
-					"resource", resource.ResourceID,
-					"error", err,
-				)
+				slog.Warn("enricher failed", "type", resourceType, "resource", resource.ResourceID, "error", err)
 			}
 		}
 	}
 }
 
-func (cc *CloudControlLister) getAWSConfig(region string) (*aws.Config, error) {
-	cc.mu.RLock()
-	if awsCfg, ok := cc.AWSConfigs[region]; ok {
-		cc.mu.RUnlock()
-		return awsCfg, nil
+func (cc *CloudControlLister) getAccountID(region string) (string, error) {
+	awsCfg, err := cc.getAWSConfig(region)
+	if err != nil {
+		return "", err
 	}
-	cc.mu.RUnlock()
 
+	accountID, err := awshelpers.GetAccountId(*awsCfg)
+	if err != nil {
+		return "", err
+	}
+
+	return accountID, nil
+}
+
+func (cc *CloudControlLister) getAWSConfig(region string) (*aws.Config, error) {
 	awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
 		Region:     region,
 		Profile:    cc.Profile,
@@ -221,30 +218,5 @@ func (cc *CloudControlLister) getAWSConfig(region string) (*aws.Config, error) {
 		return nil, err
 	}
 
-	cc.mu.Lock()
-	defer cc.mu.Unlock()
-	if existing, ok := cc.AWSConfigs[region]; ok {
-		return existing, nil
-	}
-	cc.AWSConfigs[region] = &awsCfg
 	return &awsCfg, nil
-}
-
-func (cc *CloudControlLister) getAccountID(region string) (string, error) {
-	awsCfg, err := cc.getAWSConfig(region)
-	if err != nil {
-		return "", err
-	}
-	accountID, err := awshelpers.GetAccountId(*awsCfg)
-	if err != nil {
-		return "", err
-	}
-	return accountID, nil
-}
-
-func (cc *CloudControlLister) concurrencyOrDefault() int {
-	if cc.Concurrency <= 0 {
-		return 1
-	}
-	return cc.Concurrency
 }

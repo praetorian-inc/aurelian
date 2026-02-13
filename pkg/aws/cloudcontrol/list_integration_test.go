@@ -3,7 +3,6 @@
 package cloudcontrol
 
 import (
-	"context"
 	helpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcetypes"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -34,23 +33,23 @@ var (
 	}
 )
 
+//func Test_CloudControl_ListAllInAllRegions(t *testing.T) {
+//	regions, err := helpers.EnabledRegions("nebula", "")
+//	require.NoError(t, err)
+//
+//	results, err := ListAll(context.Background(), ListAllOptions{
+//		ResourceTypes: resourcetypes.GetAll(),
+//		Regions:       regions,
+//		Concurrency:   5,
+//		Profile:       "nebula",
+//	})
+//	require.NoError(t, err)
+//	require.NotNil(t, results)
+//
+//	verifyRegionsPresent(t, results, EXPECTED_REGIONS...)
+//}
+
 func Test_CloudControl_ListAllInAllRegions(t *testing.T) {
-	regions, err := helpers.EnabledRegions("nebula", "")
-	require.NoError(t, err)
-
-	results, err := ListAll(context.Background(), ListAllOptions{
-		ResourceTypes: resourcetypes.GetAll(),
-		Regions:       regions,
-		Concurrency:   5,
-		Profile:       "nebula",
-	})
-	require.NoError(t, err)
-	require.NotNil(t, results)
-
-	verifyRegionsPresent(t, results, EXPECTED_REGIONS...)
-}
-
-func Test_CloudControlNew_ListAllInAllRegions(t *testing.T) {
 	regions, err := helpers.EnabledRegions("nebula", "")
 	require.NoError(t, err)
 
