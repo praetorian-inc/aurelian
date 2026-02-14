@@ -9,7 +9,6 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
-	"github.com/praetorian-inc/aurelian/internal/helpers"
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -139,7 +138,7 @@ func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID,
 		}
 
 		for _, desc := range result.ResourceDescriptions {
-			cr := helpers.CloudControlToERD(desc, resourceType, accountID, region).ToCloudResource()
+			cr := awshelpers.CloudControlToERD(desc, resourceType, accountID, region).ToCloudResource()
 			enrich(&cr)
 			all = append(all, cr)
 		}
