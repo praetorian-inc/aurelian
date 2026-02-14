@@ -57,10 +57,7 @@ func (m *AWSAccountAuthDetailsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 	}
 
 	// Delegate to shared IAM package
-	gaad, accountID, err := iampkg.GetAccountAuthorizationDetails(cfg.Context, iampkg.GetAuthDetailsOptions{
-		Profile:    c.Profile,
-		ProfileDir: c.ProfileDir,
-	})
+	gaad, accountID, err := iampkg.GetAccountAuthorizationDetails(cfg.Context, c.AWSReconBase)
 	if err != nil {
 		return nil, err
 	}

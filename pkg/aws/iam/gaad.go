@@ -9,17 +9,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
-type GetAuthDetailsOptions struct {
-	Profile    string
-	ProfileDir string
-}
-
 // GetAccountAuthorizationDetails retrieves all IAM authorization details
 // and returns them as a typed Gaad struct with URL-decoded policies
-func GetAccountAuthorizationDetails(ctx context.Context, opts GetAuthDetailsOptions) (*types.Gaad, string, error) {
+func GetAccountAuthorizationDetails(ctx context.Context, opts plugin.AWSReconBase) (*types.Gaad, string, error) {
 	// IAM is a global service - always use us-east-1
 	region := "us-east-1"
 
