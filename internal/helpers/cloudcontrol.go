@@ -1,14 +1,15 @@
 package helpers
 
 import (
-	"strings"
-
 	cctypes "github.com/aws/aws-sdk-go-v2/service/cloudcontrol/types"
+	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
+// CloudControlToERD converts a CloudControl ResourceDescription to an EnrichedResourceDescription.
+// Handles global service region normalization and SDK pointer dereferencing.
 func CloudControlToERD(desc cctypes.ResourceDescription, resourceType, accountID, region string) *types.EnrichedResourceDescription {
-	if IsGlobalService(resourceType) {
+	if awshelpers.IsGlobalService(resourceType) {
 		region = ""
 	}
 
@@ -21,21 +22,4 @@ func CloudControlToERD(desc cctypes.ResourceDescription, resourceType, accountID
 	)
 
 	return &erd
-}
-
-var GlobalServices = []string{
-	"AWS::IAM::",
-	"AWS::CloudFront::",
-	"AWS::Route53::",
-	"AWS::Organizations::",
-	"AWS::ECR::PublicRepository",
-}
-
-func IsGlobalService(resourceType string) bool {
-	for _, prefix := range GlobalServices {
-		if strings.HasPrefix(resourceType, prefix) {
-			return true
-		}
-	}
-	return false
 }
