@@ -1,4 +1,4 @@
-package iam
+package gaad
 
 import (
 	"context"
@@ -9,13 +9,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
+	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
-	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // GetAccountAuthorizationDetails retrieves all IAM authorization details
 // and returns them as a typed Gaad struct with URL-decoded policies
-func GetAccountAuthorizationDetails(ctx context.Context, opts plugin.AWSReconBase) (*types.Gaad, string, error) {
+func GetAccountAuthorizationDetails(ctx context.Context, opts plugin.AWSReconBase) (*iampkg.Gaad, string, error) {
 	// IAM is a global service - always use us-east-1
 	region := "us-east-1"
 
@@ -77,7 +77,7 @@ func convertToGaad(
 	groups []iamtypes.GroupDetail,
 	roles []iamtypes.RoleDetail,
 	policies []iamtypes.ManagedPolicyDetail,
-) (*types.Gaad, error) {
+) (*iampkg.Gaad, error) {
 	// Marshal AWS SDK types to JSON
 	usersJSON, err := json.Marshal(users)
 	if err != nil {
@@ -121,27 +121,27 @@ func convertToGaad(
 	}
 
 	// Unmarshal into our enhanced types
-	var userDL []types.UserDL
+	var userDL []iampkg.UserDL
 	if err := json.Unmarshal(usersJSON, &userDL); err != nil {
 		return nil, fmt.Errorf("error unmarshaling users: %w", err)
 	}
 
-	var groupDL []types.GroupDL
+	var groupDL []iampkg.GroupDL
 	if err := json.Unmarshal(groupsJSON, &groupDL); err != nil {
 		return nil, fmt.Errorf("error unmarshaling groups: %w", err)
 	}
 
-	var roleDL []types.RoleDL
+	var roleDL []iampkg.RoleDL
 	if err := json.Unmarshal(rolesJSON, &roleDL); err != nil {
 		return nil, fmt.Errorf("error unmarshaling roles: %w", err)
 	}
 
-	var policiesDL []types.PoliciesDL
+	var policiesDL []iampkg.PoliciesDL
 	if err := json.Unmarshal(policiesJSON, &policiesDL); err != nil {
 		return nil, fmt.Errorf("error unmarshaling policies: %w", err)
 	}
 
-	return &types.Gaad{
+	return &iampkg.Gaad{
 		UserDetailList:  userDL,
 		GroupDetailList: groupDL,
 		RoleDetailList:  roleDL,

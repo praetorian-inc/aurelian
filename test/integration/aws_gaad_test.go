@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
-	"github.com/praetorian-inc/aurelian/pkg/types"
+	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/recon"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,7 +33,7 @@ func TestAWSAccountAuthDetails(t *testing.T) {
 	// Parse the GAAD data from results
 	raw, err := json.Marshal(results[0].Data)
 	require.NoError(t, err)
-	var gaad types.Gaad
+	var gaad iam.Gaad
 	require.NoError(t, json.Unmarshal(raw, &gaad))
 
 	// Get expected names/ARNs from terraform outputs

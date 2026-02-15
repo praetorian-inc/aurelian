@@ -1,4 +1,6 @@
-package types
+package iam
+
+import "github.com/praetorian-inc/aurelian/pkg/types"
 
 type Gaad struct {
 	UserDetailList  []UserDL     `json:"UserDetailList"`
@@ -8,8 +10,8 @@ type Gaad struct {
 }
 
 type PrincipalPL struct {
-	PolicyName     string `json:"PolicyName"`
-	PolicyDocument Policy `json:"PolicyDocument"`
+	PolicyName     string       `json:"PolicyName"`
+	PolicyDocument types.Policy `json:"PolicyDocument"`
 }
 
 type ManagedPL struct {
@@ -40,12 +42,12 @@ type InstanceProfile struct {
 }
 
 type InstanceProfileRole struct {
-	Path                     string `json:"Path"`
-	RoleName                 string `json:"RoleName"`
-	RoleId                   string `json:"RoleId"`
-	Arn                      string `json:"Arn"`
-	CreateDate               string `json:"CreateDate"`
-	AssumeRolePolicyDocument Policy `json:"AssumeRolePolicyDocument"`
+	Path                     string       `json:"Path"`
+	RoleName                 string       `json:"RoleName"`
+	RoleId                   string       `json:"RoleId"`
+	Arn                      string       `json:"Arn"`
+	CreateDate               string       `json:"CreateDate"`
+	AssumeRolePolicyDocument types.Policy `json:"AssumeRolePolicyDocument"`
 }
 
 type RoleDL struct {
@@ -55,7 +57,7 @@ type RoleDL struct {
 	Path                     string            `json:"Path"`
 	CreateDate               string            `json:"CreateDate"`
 	RoleLastUsed             map[string]string `json:"RoleLastUsed"`
-	AssumeRolePolicyDocument Policy            `json:"AssumeRolePolicyDocument"`
+	AssumeRolePolicyDocument types.Policy      `json:"AssumeRolePolicyDocument"`
 	Tags                     []Tag             `json:"Tags"`
 	RolePolicyList           []PrincipalPL     `json:"RolePolicyList"`
 	AttachedManagedPolicies  []ManagedPL       `json:"AttachedManagedPolicies"`
@@ -88,7 +90,7 @@ type PoliciesDL struct {
 }
 
 // DefaultPolicyDocument retrieves the default policy version document
-func (policy *PoliciesDL) DefaultPolicyDocument() *Policy {
+func (policy *PoliciesDL) DefaultPolicyDocument() *types.Policy {
 	for _, version := range policy.PolicyVersionList {
 		if version.IsDefaultVersion {
 			return &version.Document
@@ -101,7 +103,7 @@ type PoliciesVL struct {
 	VersionId        string `json:"VersionId"`
 	IsDefaultVersion bool   `json:"IsDefaultVersion"`
 	CreateDate       string `json:"CreateDate"`
-	Document         Policy `json:"Document"`
+	Document         types.Policy `json:"Document"`
 }
 
 type Tag struct {

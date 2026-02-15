@@ -124,54 +124,6 @@ func NewEnrichedResourceDescriptionFromArn(a string) (EnrichedResourceDescriptio
 	}, nil
 }
 
-// func NewEnrichedResourceDescriptionFromRoleDL(roleDL RoleDL) *EnrichedResourceDescription {
-// 	arn, _ := arn.Parse(roleDL.Arn)
-
-// 	return &EnrichedResourceDescription{
-// 		Identifier: roleDL.RoleName,
-// 		TypeName:   "AWS::IAM::Role",
-// 		Region:     "",
-// 		AccountId:  arn.AccountID,
-// 		Arn:        arn,
-// 	}
-// }
-
-// func NewEnrichedResourceDescriptionFromPolicyDL(policyDL PoliciesDL) *EnrichedResourceDescription {
-// 	arn, _ := arn.Parse(policyDL.Arn)
-
-// 	return &EnrichedResourceDescription{
-// 		Identifier: policyDL.PolicyName,
-// 		TypeName:   "AWS::IAM::ManagedPolicy",
-// 		Region:     "",
-// 		AccountId:  arn.AccountID,
-// 		Arn:        arn,
-// 	}
-// }
-
-// func NewEnrichedResourceDescriptionFromUserDL(userDL UserDL) *EnrichedResourceDescription {
-// 	arn, _ := arn.Parse(userDL.Arn)
-
-// 	return &EnrichedResourceDescription{
-// 		Identifier: userDL.UserName,
-// 		TypeName:   "AWS::IAM::User",
-// 		Region:     "",
-// 		AccountId:  arn.AccountID,
-// 		Arn:        arn,
-// 	}
-// }
-
-// func NewEnrichedResourceDescriptionFromGroupDL(groupDL GroupDL) *EnrichedResourceDescription {
-// 	arn, _ := arn.Parse(groupDL.Arn)
-
-// 	return &EnrichedResourceDescription{
-// 		Identifier: groupDL.GroupName,
-// 		TypeName:   "AWS::IAM::Group",
-// 		Region:     "",
-// 		AccountId:  arn.AccountID,
-// 		Arn:        arn,
-// 	}
-// }
-
 type resourceProperties struct {
 	Tags []struct {
 		Key   string `json:"Key"`
@@ -376,3 +328,4 @@ var ServiceToResourceType = map[string]string{
 	"secretsmanager": "AWS::SecretsManager::Secret",
 	"ssm":            "AWS::SSM::Parameter",
 }
+

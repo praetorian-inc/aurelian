@@ -9,6 +9,9 @@ import (
 	// Import all modules to trigger init() registration
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/recon"
 
+	// Import analyze modules to trigger init() registration
+	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/analyze"
+
 	// Import enrichers to trigger init() registration
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/enrichers"
 )
