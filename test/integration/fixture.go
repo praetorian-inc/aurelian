@@ -20,6 +20,14 @@ import (
 	"github.com/hashicorp/terraform-exec/tfexec"
 )
 
+const (
+	// stateBucket is the shared S3 bucket for all integration test Terraform state.
+	stateBucket = "aurelian-integration-tests"
+
+	// stateRegion is the AWS region where the state bucket lives.
+	stateRegion = "us-east-2"
+)
+
 // TerraformFixture manages terraform lifecycle for integration tests.
 // Infrastructure is automatically created on Setup and destroyed when the test completes.
 type TerraformFixture struct {
@@ -27,10 +35,8 @@ type TerraformFixture struct {
 	outputs map[string]tfexec.OutputMeta
 	t       *testing.T
 
-	// Remote state fields (populated when AURELIAN_TF_STATE_BUCKET is set)
-	stateBucket string
-	stateRegion string
-	stateKey    string
+	// stateKey is the S3 object key for this test run's Terraform state.
+	stateKey string
 }
 
 // NewFixture creates a fixture for a terraform module directory.
@@ -50,29 +56,18 @@ func NewFixture(t *testing.T, moduleDir string) *TerraformFixture {
 		t.Fatalf("failed to create terraform instance for %s: %v", moduleDir, err)
 	}
 
-	f := &TerraformFixture{tf: tf, t: t}
+	// Verify the state bucket is accessible with the current AWS credentials.
+	verifyStateBucket(t)
 
-	// Configure remote state if the shared bucket is set.
-	if bucket := os.Getenv("AURELIAN_TF_STATE_BUCKET"); bucket != "" {
-		region := os.Getenv("AURELIAN_TF_STATE_REGION")
-		if region == "" {
-			t.Fatalf("AURELIAN_TF_STATE_REGION must be set when AURELIAN_TF_STATE_BUCKET is set")
-		}
-
-		runID, err := randomHex(8)
-		if err != nil {
-			t.Fatalf("failed to generate run ID: %v", err)
-		}
-
-		timestamp := time.Now().UTC().Format("20060102T150405")
-		stateKey := fmt.Sprintf("integration-tests/%s/%s-%s/terraform.tfstate", moduleDir, timestamp, runID)
-
-		f.stateBucket = bucket
-		f.stateRegion = region
-		f.stateKey = stateKey
+	runID, err := randomHex(8)
+	if err != nil {
+		t.Fatalf("failed to generate run ID: %v", err)
 	}
 
-	return f
+	timestamp := time.Now().UTC().Format("20060102T150405")
+	stateKey := fmt.Sprintf("integration-tests/%s/%s-%s/terraform.tfstate", moduleDir, timestamp, runID)
+
+	return &TerraformFixture{tf: tf, t: t, stateKey: stateKey}
 }
 
 // Setup initializes terraform, applies infrastructure, reads outputs, and
@@ -82,7 +77,12 @@ func (f *TerraformFixture) Setup() {
 	f.t.Helper()
 	ctx := context.Background()
 
-	initOpts := f.buildInitOptions()
+	initOpts := []tfexec.InitOption{
+		tfexec.BackendConfig("bucket=" + stateBucket),
+		tfexec.BackendConfig("region=" + stateRegion),
+		tfexec.BackendConfig("key=" + f.stateKey),
+		tfexec.Reconfigure(true),
+	}
 	if err := f.tf.Init(ctx, initOpts...); err != nil {
 		f.t.Fatalf("terraform init: %v", err)
 	}
@@ -103,9 +103,7 @@ func (f *TerraformFixture) Setup() {
 			f.t.Logf("terraform prefix: %s", p)
 		}
 	}
-	if f.stateKey != "" {
-		f.t.Logf("terraform state: s3://%s/%s", f.stateBucket, f.stateKey)
-	}
+	f.t.Logf("terraform state: s3://%s/%s", stateBucket, f.stateKey)
 
 	if os.Getenv("AURELIAN_KEEP_INFRA") == "" {
 		f.t.Cleanup(func() {
@@ -146,47 +144,59 @@ func (f *TerraformFixture) OutputList(key string) []string {
 	return result
 }
 
-// buildInitOptions returns the tfexec.InitOption slice for terraform init.
-// When remote state is configured, it passes -backend-config and -reconfigure flags.
-func (f *TerraformFixture) buildInitOptions() []tfexec.InitOption {
-	if f.stateBucket == "" {
-		return nil
+// verifyStateBucket checks that the S3 state bucket exists and is accessible
+// with the current AWS credentials. Fails the test immediately if not.
+func verifyStateBucket(t *testing.T) {
+	t.Helper()
+	ctx := context.Background()
+
+	opts := []func(*config.LoadOptions) error{config.WithRegion(stateRegion)}
+	if profile := os.Getenv("AWS_PROFILE"); profile != "" {
+		opts = append(opts, config.WithSharedConfigProfile(profile))
 	}
 
-	return []tfexec.InitOption{
-		tfexec.BackendConfig("bucket=" + f.stateBucket),
-		tfexec.BackendConfig("region=" + f.stateRegion),
-		tfexec.BackendConfig("key=" + f.stateKey),
-		tfexec.Reconfigure(true),
+	cfg, err := config.LoadDefaultConfig(ctx, opts...)
+	if err != nil {
+		t.Fatalf("failed to load AWS config: %v (ensure AWS_PROFILE is set correctly)", err)
+	}
+
+	client := s3.NewFromConfig(cfg)
+	_, err = client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: strPtr(stateBucket),
+	})
+	if err != nil {
+		t.Fatalf("state bucket %q is not accessible: %v (ensure AWS_PROFILE is set and has access to the bucket)", stateBucket, err)
 	}
 }
 
 // cleanupRemoteState deletes the state object from S3 after terraform destroy.
 // This is best-effort; failures are logged but do not fail the test.
 func (f *TerraformFixture) cleanupRemoteState() {
-	if f.stateBucket == "" {
-		return
-	}
-
 	ctx := context.Background()
 
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(f.stateRegion))
+	opts := []func(*config.LoadOptions) error{config.WithRegion(stateRegion)}
+	if profile := os.Getenv("AWS_PROFILE"); profile != "" {
+		opts = append(opts, config.WithSharedConfigProfile(profile))
+	}
+
+	cfg, err := config.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
 		f.t.Logf("warning: failed to load AWS config for state cleanup: %v", err)
 		return
 	}
 
 	client := s3.NewFromConfig(cfg)
+	bucket := stateBucket
 	_, err = client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: &f.stateBucket,
+		Bucket: &bucket,
 		Key:    &f.stateKey,
 	})
 	if err != nil {
-		f.t.Logf("warning: failed to delete remote state s3://%s/%s: %v", f.stateBucket, f.stateKey, err)
+		f.t.Logf("warning: failed to delete remote state s3://%s/%s: %v", stateBucket, f.stateKey, err)
 		return
 	}
 
-	f.t.Logf("cleaned up remote state s3://%s/%s", f.stateBucket, f.stateKey)
+	f.t.Logf("cleaned up remote state s3://%s/%s", stateBucket, f.stateKey)
 }
 
 // randomHex returns a hex-encoded string of n random bytes (2n characters).
@@ -197,3 +207,5 @@ func randomHex(n int) (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
+
+func strPtr(s string) *string { return &s }
