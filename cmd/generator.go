@@ -70,18 +70,23 @@ func generateModuleCommand(platform plugin.Platform, category plugin.Category, m
 	flagValues := make(map[string]interface{})
 	paramNames := make(map[string]bool)
 
-	if target := module.Parameters(); target != nil {
-		params, err := plugin.ParametersFrom(target)
-		if err != nil {
-			panic(fmt.Sprintf("module %q has invalid parameter struct: %v", moduleID, err))
+	target := module.Parameters()
+	if target == nil { // no parameters
+		parent.AddCommand(cmd)
+		return
+	}
+
+	params, err := plugin.ParametersFrom(target)
+	if err != nil {
+		panic(fmt.Sprintf("module %q has invalid parameter struct: %v", moduleID, err))
+	}
+
+	for _, param := range params {
+		if paramNames[param.Name] {
+			continue
 		}
-		for _, param := range params {
-			if paramNames[param.Name] {
-				continue
-			}
-			paramNames[param.Name] = true
-			addFlag(cmd, param, flagValues)
-		}
+		paramNames[param.Name] = true
+		addFlag(cmd, param, flagValues)
 	}
 
 	parent.AddCommand(cmd)

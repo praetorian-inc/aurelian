@@ -32,7 +32,7 @@ const (
 	statePrefix = "integration-tests/"
 
 	// reaperMaxAge is the age threshold beyond which stale stacks are destroyed.
-	reaperMaxAge = 5 * time.Minute //3 * 24 * time.Hour
+	reaperMaxAge = 3 * 24 * time.Hour
 )
 
 // TerraformFixture manages terraform lifecycle for integration tests.
