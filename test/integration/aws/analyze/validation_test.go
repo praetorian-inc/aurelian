@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	// Register graph module
-	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/analyze"
+	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/recon"
 )
 
 // TestGraphValidation_PrivescDetection runs the full graph pipeline against
