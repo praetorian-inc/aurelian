@@ -1,0 +1,16 @@
+id: aws/enrich/set_admin_administrator_access
+name: Flag AdministratorAccess Principals
+platform: aws
+type: enrich
+category: admin-detection
+description: |
+  Flags principals with the AWS managed AdministratorAccess policy as admin.
+severity: high
+order: 10
+cypher: |
+  MATCH (p:Principal)
+  WHERE ANY(policy IN p.AttachedManagedPolicies
+    WHERE policy CONTAINS 'AdministratorAccess')
+  SET p._is_admin = true,
+      p._admin_reason = 'AdministratorAccess managed policy'
+  RETURN count(p) as admin_principals

@@ -1,9 +1,7 @@
 package analyze
 
 import (
-	"encoding/json"
 	"fmt"
-	"os"
 
 	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
@@ -62,7 +60,7 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 	}
 
 	// Load GAAD data
-	gaad, err := loadJSONFile[iampkg.Gaad](c.GaadFile)
+	gaad, err := iampkg.LoadJSONFile[iampkg.Gaad](c.GaadFile)
 	if err != nil {
 		return nil, fmt.Errorf("loading GAAD file: %w", err)
 	}
@@ -70,7 +68,7 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 	// Load optional org policies
 	var orgPols *orgpolicies.OrgPolicies
 	if c.OrgPoliciesFile != "" {
-		op, err := loadJSONFile[orgpolicies.OrgPolicies](c.OrgPoliciesFile)
+		op, err := iampkg.LoadJSONFile[orgpolicies.OrgPolicies](c.OrgPoliciesFile)
 		if err != nil {
 			return nil, fmt.Errorf("loading org policies file: %w", err)
 		}
@@ -82,7 +80,7 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 	// Load optional resource policies
 	var resourcePolicies map[string]*types.Policy
 	if c.ResourcePoliciesFile != "" {
-		rp, err := loadJSONFile[map[string]*types.Policy](c.ResourcePoliciesFile)
+		rp, err := iampkg.LoadJSONFile[map[string]*types.Policy](c.ResourcePoliciesFile)
 		if err != nil {
 			return nil, fmt.Errorf("loading resource policies file: %w", err)
 		}
@@ -92,7 +90,7 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 	// Load optional resources
 	var resources *[]types.EnrichedResourceDescription
 	if c.ResourcesFile != "" {
-		r, err := loadJSONFile[[]types.EnrichedResourceDescription](c.ResourcesFile)
+		r, err := iampkg.LoadJSONFile[[]types.EnrichedResourceDescription](c.ResourcesFile)
 		if err != nil {
 			return nil, fmt.Errorf("loading resources file: %w", err)
 		}
@@ -121,16 +119,4 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 			},
 		},
 	}, nil
-}
-
-func loadJSONFile[T any](path string) (*T, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", path, err)
-	}
-	var result T
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", path, err)
-	}
-	return &result, nil
 }

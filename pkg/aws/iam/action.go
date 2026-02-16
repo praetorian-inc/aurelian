@@ -34,6 +34,7 @@ var privEscActions = []string{
 	"codestar:CreateProject",
 	"ec2:CreateLaunchTemplate",
 	"ec2:RunInstances",
+	"ecs:RegisterTaskDefinition",
 	"ecs:RunTask",
 	"glue:CreateDevEndpoint",
 	"glue:UpdateDevEndpoint",

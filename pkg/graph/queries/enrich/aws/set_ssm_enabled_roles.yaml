@@ -1,0 +1,15 @@
+id: aws/enrich/set_ssm_enabled_roles
+name: Flag SSM-Enabled Roles
+platform: aws
+type: enrich
+category: ssm
+description: |
+  Identifies roles with SSM-related trusted services or permissions.
+severity: info
+order: 13
+cypher: |
+  MATCH (role:Role)
+  WHERE role.trusted_services IS NOT NULL
+  AND ANY(svc IN role.trusted_services WHERE svc CONTAINS 'ssm')
+  SET role._ssm_enabled = true
+  RETURN count(role) as ssm_roles

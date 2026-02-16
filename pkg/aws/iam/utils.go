@@ -3,6 +3,7 @@ package iam
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/aurelian/pkg/types"
@@ -36,4 +37,16 @@ func getIdentifierForEvalRequest(erd *types.EnrichedResourceDescription) string 
 		return erd.Identifier
 	}
 	return erd.Arn.String()
+}
+
+func LoadJSONFile[T any](path string) (*T, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	var result T
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	return &result, nil
 }
