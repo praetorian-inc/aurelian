@@ -1,0 +1,16 @@
+id: aws/enrich/extract_role_trusted_services
+name: Extract Role Trusted Services
+platform: aws
+type: enrich
+category: trust-extraction
+description: |
+  Creates SERVICE_TRUSTS relationships from roles to their trusted service principals.
+severity: info
+order: 3
+cypher: |
+  MATCH (role:Role)
+  WHERE role.trusted_services IS NOT NULL
+  UNWIND role.trusted_services AS service
+  MERGE (sp:ServicePrincipal {service: service})
+  MERGE (sp)-[:CAN_ASSUME]->(role)
+  RETURN count(*) as service_trusts

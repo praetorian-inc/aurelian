@@ -1,0 +1,16 @@
+id: aws/enrich/set_admin_inline_wildcard
+name: Flag Inline Wildcard Principals
+platform: aws
+type: enrich
+category: admin-detection
+description: |
+  Flags principals with inline policies granting * on * as admin.
+severity: high
+order: 11
+cypher: |
+  MATCH (p:Principal)-[perm]->(resource)
+  WHERE perm.action = '*'
+  AND type(perm) = 'IAM_WILDCARD'
+  SET p._is_admin = true,
+      p._admin_reason = 'Inline wildcard policy (*:*)'
+  RETURN count(p) as wildcard_admins

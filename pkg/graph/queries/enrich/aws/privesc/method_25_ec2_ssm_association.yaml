@@ -1,0 +1,22 @@
+id: aws/enrich/privesc/method_25
+name: EC2 SSM Association Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with ssm:CreateAssociation permission that can create 
+  State Manager associations to execute commands on EC2 instances.
+severity: high
+order: 125
+cypher: |
+  MATCH (attacker:Principal)-[perm]->(target)
+  WHERE type(perm) = 'SSM_CREATEASSOCIATION'
+  WITH attacker
+  MATCH (victim:Principal)
+  WHERE victim.Arn <> attacker.Arn
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  SET pe.method = 'ssm:CreateAssociation',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  ON CREATE SET pe._created = timestamp()
+  RETURN count(pe) as edges_created

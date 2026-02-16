@@ -3,7 +3,7 @@ package recon
 import (
 	"fmt"
 
-	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
+	"github.com/praetorian-inc/aurelian/pkg/aws/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
@@ -56,15 +56,15 @@ func (m *AWSAccountAuthDetailsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 		return nil, fmt.Errorf("parameter validation failed: %w", err)
 	}
 
-	// Delegate to shared IAM package
-	gaad, accountID, err := iampkg.GetAccountAuthorizationDetails(cfg.Context, c.AWSReconBase)
+	// Delegate to shared GAAD package
+	result, accountID, err := gaad.GetAccountAuthorizationDetails(cfg.Context, c.AWSReconBase)
 	if err != nil {
 		return nil, err
 	}
 
 	return []plugin.Result{
 		{
-			Data: gaad,
+			Data: result,
 			Metadata: map[string]any{
 				"module":    m.ID(),
 				"platform":  m.Platform(),
