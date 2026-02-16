@@ -16,7 +16,7 @@ type AccountAuthDetailsConfig struct {
 
 // AWSAccountAuthDetailsModule retrieves IAM account authorization details
 type AWSAccountAuthDetailsModule struct {
-	config AccountAuthDetailsConfig
+	AccountAuthDetailsConfig
 }
 
 func (m *AWSAccountAuthDetailsModule) ID() string                { return "account-auth-details" }
@@ -47,11 +47,11 @@ func (m *AWSAccountAuthDetailsModule) SupportedResourceTypes() []string {
 }
 
 func (m *AWSAccountAuthDetailsModule) Parameters() any {
-	return &m.config
+	return &m.AccountAuthDetailsConfig
 }
 
 func (m *AWSAccountAuthDetailsModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
-	c := m.config
+	c := m.AccountAuthDetailsConfig
 
 	// Delegate to shared GAAD package
 	result, accountID, err := gaad.GetAccountAuthorizationDetails(cfg.Context, c.AWSReconBase)

@@ -29,7 +29,8 @@ func TestAWSGraphModuleMetadata(t *testing.T) {
 
 func TestAWSGraphModuleParameters(t *testing.T) {
 	m := &AWSGraphModule{}
-	params := plugin.ParametersFrom(m.Parameters())
+	params, err := plugin.ParametersFrom(m.Parameters())
+	require.NoError(t, err)
 
 	paramNames := make(map[string]bool)
 	for _, p := range params {

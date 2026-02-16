@@ -14,7 +14,7 @@ type OrgPoliciesConfig struct {
 }
 
 type AWSOrgPoliciesModule struct {
-	config OrgPoliciesConfig
+	OrgPoliciesConfig
 }
 
 func (m *AWSOrgPoliciesModule) ID() string                { return "org-policies" }
@@ -45,11 +45,11 @@ func (m *AWSOrgPoliciesModule) SupportedResourceTypes() []string {
 }
 
 func (m *AWSOrgPoliciesModule) Parameters() any {
-	return &m.config
+	return &m.OrgPoliciesConfig
 }
 
 func (m *AWSOrgPoliciesModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
-	c := m.config
+	c := m.OrgPoliciesConfig
 
 	orgPols, err := orgpolicies.CollectOrgPolicies(cfg.Context, orgpolicies.CollectorOptions{
 		Profile:    c.Profile,

@@ -21,7 +21,7 @@ type AnalyzeIAMPermissionsConfig struct {
 }
 
 type AnalyzeIAMPermissionsModule struct {
-	config AnalyzeIAMPermissionsConfig
+	AnalyzeIAMPermissionsConfig
 }
 
 func (m *AnalyzeIAMPermissionsModule) ID() string                { return "analyze-iam-permissions" }
@@ -52,11 +52,11 @@ func (m *AnalyzeIAMPermissionsModule) SupportedResourceTypes() []string {
 }
 
 func (m *AnalyzeIAMPermissionsModule) Parameters() any {
-	return &m.config
+	return &m.AnalyzeIAMPermissionsConfig
 }
 
 func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
-	c := m.config
+	c := m.AnalyzeIAMPermissionsConfig
 
 	// Load GAAD data
 	gaad, err := iampkg.LoadJSONFile[iampkg.Gaad](c.GaadFile)

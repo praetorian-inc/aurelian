@@ -19,7 +19,7 @@ type ListAllConfig struct {
 
 // AWSListAllResourcesModule enumerates all resources using Cloud Control API
 type AWSListAllResourcesModule struct {
-	config ListAllConfig
+	ListAllConfig
 }
 
 func (m *AWSListAllResourcesModule) ID() string                { return "list-all" }
@@ -48,11 +48,11 @@ func (m *AWSListAllResourcesModule) SupportedResourceTypes() []string {
 }
 
 func (m *AWSListAllResourcesModule) Parameters() any {
-	return &m.config
+	return &m.ListAllConfig
 }
 
 func (m *AWSListAllResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
-	c := m.config
+	c := m.ListAllConfig
 
 	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
 	if err != nil {

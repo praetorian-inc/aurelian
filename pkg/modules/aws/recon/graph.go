@@ -31,7 +31,7 @@ type GraphConfig struct {
 
 // AWSGraphModule collects AWS IAM data and evaluates permissions for graph analysis
 type AWSGraphModule struct {
-	config GraphConfig
+	GraphConfig
 }
 
 func (m *AWSGraphModule) ID() string                { return "graph" }
@@ -63,11 +63,11 @@ func (m *AWSGraphModule) SupportedResourceTypes() []string {
 }
 
 func (m *AWSGraphModule) Parameters() any {
-	return &m.config
+	return &m.GraphConfig
 }
 
 func (m *AWSGraphModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
-	c := m.config
+	c := m.GraphConfig
 
 	ctx := cfg.Context
 	if ctx == nil {

@@ -23,7 +23,8 @@ func TestAWSListAllResources_Platform(t *testing.T) {
 
 func TestAWSListAllResources_ConcurrencyParameter(t *testing.T) {
 	m := &AWSListAllResourcesModule{}
-	params := plugin.ParametersFrom(m.Parameters())
+	params, err := plugin.ParametersFrom(m.Parameters())
+	require.NoError(t, err)
 
 	var concurrencyParam *plugin.Parameter
 	for i := range params {

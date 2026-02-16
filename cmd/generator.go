@@ -71,7 +71,11 @@ func generateModuleCommand(platform plugin.Platform, category plugin.Category, m
 	paramNames := make(map[string]bool)
 
 	if target := module.Parameters(); target != nil {
-		for _, param := range plugin.ParametersFrom(target) {
+		params, err := plugin.ParametersFrom(target)
+		if err != nil {
+			panic(fmt.Sprintf("module %q has invalid parameter struct: %v", moduleID, err))
+		}
+		for _, param := range params {
 			if paramNames[param.Name] {
 				continue
 			}
