@@ -35,7 +35,7 @@ type AWSGraphModule struct{}
 func (m *AWSGraphModule) ID() string                { return "graph" }
 func (m *AWSGraphModule) Name() string              { return "AWS Graph Analysis" }
 func (m *AWSGraphModule) Platform() plugin.Platform { return plugin.PlatformAWS }
-func (m *AWSGraphModule) Category() plugin.Category { return plugin.CategoryAnalyze }
+func (m *AWSGraphModule) Category() plugin.Category { return plugin.CategoryRecon }
 func (m *AWSGraphModule) OpsecLevel() string        { return "moderate" }
 func (m *AWSGraphModule) Authors() []string         { return []string{"Praetorian"} }
 
