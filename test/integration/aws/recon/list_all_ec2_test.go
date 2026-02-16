@@ -8,13 +8,13 @@ import (
 
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/recon" // register modules
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
-	"github.com/praetorian-inc/aurelian/test/integration/testutil"
+	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAWSListAllEC2Instances(t *testing.T) {
 	// Step 1: Create fixture and provision infrastructure
-	fixture := testutil.NewFixture(t, "aws/list")
+	fixture := testutil.NewFixture(t, "aws/recon/list")
 	fixture.Setup()
 
 	// Step 2: Retrieve module from registry

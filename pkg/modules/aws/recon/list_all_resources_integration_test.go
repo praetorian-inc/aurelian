@@ -4,7 +4,7 @@ package recon
 
 import (
 	"context"
-	"github.com/praetorian-inc/aurelian/test/integration/testutil"
+	"github.com/praetorian-inc/aurelian/test/testutil"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -12,7 +12,7 @@ import (
 )
 
 func TestAWSList(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/list")
+	fixture := testutil.NewFixture(t, "aws/recon/list")
 	fixture.Setup()
 
 	t.Run("EC2 instances", func(t *testing.T) {

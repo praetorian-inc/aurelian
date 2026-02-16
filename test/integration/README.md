@@ -5,27 +5,31 @@ Terraform-backed integration tests for Aurelian modules. Infrastructure is autom
 ## Directory Structure
 
 ```
-test/integration/
+test/
   testutil/                    # Shared helpers (non-test Go files)
     fixture.go                 # TerraformFixture
     assertions.go              # AssertResultContains*
     neo4j.go                   # StartNeo4jContainer, ClearNeo4jDatabase
 
-  aws/
-    recon/                     # Tests for pkg/modules/aws/recon (Terraform only, NO Neo4j)
-      list_test.go             # TestAWSList
-      ec2_test.go              # TestAWSEC2Enumeration*
-      gaad_test.go             # TestAWSAccountAuthDetails
-      terraform/aws/
+  terraform/                   # Terraform modules (follows Aurelian command structure)
+    aws/
+      recon/
         list/                  # EC2, S3, Lambda test infrastructure
         gaad/                  # IAM user, role, group, policy test infrastructure
-
-    analyze/                   # Tests for pkg/modules/aws/analyze + pkg/graph (WITH Neo4j)
-      testmain_test.go         # TestMain: starts shared Neo4j container
-      neo4j_test.go            # TestNeo4jAdapter_*, TestGraphFormatter_*, TestEnrichmentQueries
-      validation_test.go       # TestGraphValidation_PrivescDetection (18 subtests)
-      terraform/aws/
+      analyze/
         graph/                 # IAM privilege escalation test infrastructure
+
+  integration/
+    aws/
+      recon/                   # Tests for pkg/modules/aws/recon (Terraform only, NO Neo4j)
+        list_test.go           # TestAWSList
+        ec2_test.go            # TestAWSEC2Enumeration*
+        gaad_test.go           # TestAWSAccountAuthDetails
+
+      analyze/                 # Tests for pkg/modules/aws/analyze + pkg/graph (WITH Neo4j)
+        testmain_test.go       # TestMain: starts shared Neo4j container
+        neo4j_test.go          # TestNeo4jAdapter_*, TestGraphFormatter_*, TestEnrichmentQueries
+        validation_test.go     # TestGraphValidation_PrivescDetection (18 subtests)
 ```
 
 ## Usage
@@ -53,19 +57,19 @@ Requires AWS credentials and `terraform` in PATH. Analyze tests additionally req
 
 ### Recon test (no Neo4j)
 
-1. Create terraform in `aws/recon/terraform/aws/<module-name>/` with `main.tf`, `outputs.tf`, `variables.tf`
+1. Create terraform in `test/terraform/aws/recon/<module-name>/` with `main.tf`, `outputs.tf`, `variables.tf`
 2. Use `random_id` prefix to avoid name collisions:
    ```hcl
    resource "random_id" "run" { byte_length = 4 }
    locals { prefix = "aurelian-test-${random_id.run.hex}" }
    ```
 3. Export resource identifiers in `outputs.tf`
-4. Write the test in `aws/recon/`:
+4. Write the test in `test/integration/aws/recon/`:
    ```go
    package recon
 
    func TestAWSMyModule(t *testing.T) {
-       fixture := testutil.NewFixture(t, "aws/my-module")
+       fixture := testutil.NewFixture(t, "aws/recon/my-module")
        fixture.Setup()
 
        mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "my-module")
@@ -82,13 +86,13 @@ Requires AWS credentials and `terraform` in PATH. Analyze tests additionally req
 
 ### Analyze test (with Neo4j)
 
-1. Create terraform in `aws/analyze/terraform/aws/<module-name>/`
-2. Write the test in `aws/analyze/` — use `sharedNeo4jBoltURL` and `testutil.ClearNeo4jDatabase()`
+1. Create terraform in `test/terraform/aws/analyze/<module-name>/`
+2. Write the test in `test/integration/aws/analyze/` — use `sharedNeo4jBoltURL` and `testutil.ClearNeo4jDatabase()`
 
 ## Terraform Modules
 
 | Directory | Resources | Purpose |
 |-----------|-----------|---------|
-| `aws/recon/terraform/aws/list` | 2x EC2, S3, Lambda | Test resource enumeration |
-| `aws/recon/terraform/aws/gaad` | IAM user, role, group, policy | Test account auth details |
-| `aws/analyze/terraform/aws/graph` | 18 IAM privilege escalation scenarios | Test graph analysis pipeline |
+| `test/terraform/aws/recon/list` | 2x EC2, S3, Lambda | Test resource enumeration |
+| `test/terraform/aws/recon/gaad` | IAM user, role, group, policy | Test account auth details |
+| `test/terraform/aws/analyze/graph` | 18 IAM privilege escalation scenarios | Test graph analysis pipeline |

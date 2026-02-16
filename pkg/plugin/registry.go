@@ -5,19 +5,6 @@ import (
 	"sync"
 )
 
-// RunModule is the central entry point for executing a module. It handles
-// parameter binding automatically: if the module's Parameters() returns a
-// non-nil config struct pointer, Bind is called to populate it from cfg.Args
-// before the module's Run method is invoked.
-func RunModule(m Module, cfg Config) ([]Result, error) {
-	if target := m.Parameters(); target != nil {
-		if err := Bind(cfg, target); err != nil {
-			return nil, fmt.Errorf("parameter validation failed: %w", err)
-		}
-	}
-	return m.Run(cfg)
-}
-
 // RegistryEntry holds a module and its platform/category metadata
 type RegistryEntry struct {
 	Module   Module
@@ -51,7 +38,7 @@ func Register(m Module) {
 	}
 
 	Registry.modules[key] = RegistryEntry{
-		Module:   m,
+		Module:   &ModuleWrapper{Module: m},
 		Platform: m.Platform(),
 		Category: m.Category(),
 	}

@@ -246,8 +246,8 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		Verbose: !quietFlag,
 	}
 
-	// Run module (handles parameter binding centrally)
-	results, err := plugin.RunModule(module, cfg)
+	// Run module (parameter binding is handled automatically by ModuleWrapper)
+	results, err := module.Run(cfg)
 	if err != nil {
 		return err
 	}

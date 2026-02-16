@@ -126,7 +126,7 @@ func (r *Reaper) listStaleStacks() ([]staleStack, error) {
 // concurrent terraform working directory.
 func (r *Reaper) destroyStack(stack staleStack) {
 	_, thisFile, _, _ := runtime.Caller(0)
-	srcDir := filepath.Join(filepath.Dir(thisFile), "terraform", stack.moduleDir)
+	srcDir := filepath.Join(filepath.Dir(thisFile), "..", "terraform", stack.moduleDir)
 
 	if _, err := os.Stat(srcDir); err != nil {
 		r.t.Logf("reaper: skipping %s — module dir %q not found: %v", stack.stateKey, stack.moduleDir, err)

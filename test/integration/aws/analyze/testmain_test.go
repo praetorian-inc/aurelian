@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/praetorian-inc/aurelian/test/integration/testutil"
+	"github.com/praetorian-inc/aurelian/test/testutil"
 )
 
 // sharedNeo4jBoltURL holds the bolt URL for the shared Neo4j container.
