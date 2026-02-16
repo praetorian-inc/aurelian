@@ -1,47 +1,83 @@
-// +build integration
+//go:build integration
 
 package recon
 
 import (
 	"context"
+	"github.com/praetorian-inc/aurelian/test/integration"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// TestListAllResources_ActuallyReadsRegionsAsSlice is an integration test
-// that will fail with the current broken code because it tries to read
-// regions as String() instead of StringSlice()
-func TestListAllResources_ActuallyReadsRegionsAsSlice(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+func TestAWSList(t *testing.T) {
+	fixture := integration.NewFixture(t, "aws/list")
+	fixture.Setup()
 
-	m := &AWSListAllResourcesModule{}
+	t.Run("EC2 instances", func(t *testing.T) {
+		mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "list-all")
+		if !ok {
+			t.Skip("list-all module not registered in plugin system")
+		}
 
-	cfg := plugin.Config{
-		Context: context.Background(),
-		Args: map[string]any{
-			"regions":     []string{"us-east-1", "us-west-2"},
-			"scan-type":   "summary",
-			"profile":     "default",
-			"concurrency": 2,
-		},
-	}
+		results, err := mod.Run(plugin.Config{
+			Args: map[string]any{
+				"resource-type": []string{"AWS::EC2::Instance"},
+				"regions":       []string{"us-east-2"},
+				"scan-type":     "full",
+			},
+			Context: context.Background(),
+		})
+		require.NoError(t, err)
+		integration.AssertMinResults(t, results, 1)
 
-	// This will panic or fail in the current broken code at line 73
-	// because it tries params.String("region") on a []string parameter
-	results, err := m.Run(cfg)
+		for _, id := range fixture.OutputList("instance_ids") {
+			integration.AssertResultContainsString(t, results, id)
+		}
+	})
 
-	// With the fix, this should not error out on parameter reading
-	// (it may error on AWS API calls if credentials aren't configured, which is fine)
-	if err != nil {
-		assert.NotContains(t, err.Error(), "parameter validation failed",
-			"Should not fail on parameter validation after fix")
-		assert.NotContains(t, err.Error(), "type assertion",
-			"Should not fail on type assertion after fix")
-	}
+	t.Run("S3 buckets", func(t *testing.T) {
+		mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "list-all")
+		if !ok {
+			t.Skip("list-all module not registered in plugin system")
+		}
 
-	_ = results
+		results, err := mod.Run(plugin.Config{
+			Args: map[string]any{
+				"resource-type": []string{"AWS::S3::Bucket"},
+				"regions":       []string{"us-east-2"},
+				"scan-type":     "full",
+			},
+			Context: context.Background(),
+		})
+		require.NoError(t, err)
+		integration.AssertMinResults(t, results, 1)
+
+		for _, name := range fixture.OutputList("bucket_names") {
+			integration.AssertResultContainsString(t, results, name)
+		}
+	})
+
+	t.Run("Lambda functions", func(t *testing.T) {
+		mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "list-all")
+		if !ok {
+			t.Skip("list-all module not registered in plugin system")
+		}
+
+		results, err := mod.Run(plugin.Config{
+			Args: map[string]any{
+				"resource-type": []string{"AWS::Lambda::Function"},
+				"regions":       []string{"us-east-2"},
+				"scan-type":     "full",
+			},
+			Context: context.Background(),
+		})
+		require.NoError(t, err)
+		integration.AssertMinResults(t, results, 1)
+
+		for _, arn := range fixture.OutputList("function_arns") {
+			integration.AssertResultContainsARN(t, results, arn)
+		}
+	})
 }
