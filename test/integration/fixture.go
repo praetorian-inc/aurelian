@@ -25,7 +25,7 @@ const (
 	stateBucket = "aurelian-integration-tests"
 
 	// stateRegion is the AWS region where the state bucket lives.
-	stateRegion = "us-east-2"
+	stateRegion = "us-east-1"
 )
 
 // TerraformFixture manages terraform lifecycle for integration tests.
