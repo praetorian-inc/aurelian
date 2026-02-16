@@ -9,6 +9,10 @@ terraform {
       version = "~> 3.0"
     }
   }
+
+  backend "s3" {
+    # All configured via -backend-config at init time
+  }
 }
 
 provider "aws" {
