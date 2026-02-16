@@ -65,23 +65,19 @@ func generateModuleCommand(platform plugin.Platform, category plugin.Category, m
 		},
 	}
 
-	// Add flags based on module parameters
+	// Add flags based on module parameters.
+	// Derive []Parameter from the module's config struct (or nil).
 	flagValues := make(map[string]interface{})
-
-	// Create a set of parameter names to track which ones we've seen
 	paramNames := make(map[string]bool)
 
-	for _, param := range module.Parameters() {
-		// Skip if we've already added this parameter
-		if paramNames[param.Name] {
-			continue
+	if target := module.Parameters(); target != nil {
+		for _, param := range plugin.ParametersFrom(target) {
+			if paramNames[param.Name] {
+				continue
+			}
+			paramNames[param.Name] = true
+			addFlag(cmd, param, flagValues)
 		}
-
-		// Mark as seen
-		paramNames[param.Name] = true
-
-		// Add the flag
-		addFlag(cmd, param, flagValues)
 	}
 
 	parent.AddCommand(cmd)
@@ -241,8 +237,8 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		Verbose: !quietFlag,
 	}
 
-	// Run module
-	results, err := module.Run(cfg)
+	// Run module (handles parameter binding centrally)
+	results, err := plugin.RunModule(module, cfg)
 	if err != nil {
 		return err
 	}

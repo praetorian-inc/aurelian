@@ -20,7 +20,9 @@ type AnalyzeIAMPermissionsConfig struct {
 	ResourcesFile        string `param:"resources-file"         desc:"Path to Resources JSON file (from list-all module)"`
 }
 
-type AnalyzeIAMPermissionsModule struct{}
+type AnalyzeIAMPermissionsModule struct {
+	config AnalyzeIAMPermissionsConfig
+}
 
 func (m *AnalyzeIAMPermissionsModule) ID() string                { return "analyze-iam-permissions" }
 func (m *AnalyzeIAMPermissionsModule) Name() string              { return "AWS Analyze IAM Permissions" }
@@ -49,15 +51,12 @@ func (m *AnalyzeIAMPermissionsModule) SupportedResourceTypes() []string {
 	}
 }
 
-func (m *AnalyzeIAMPermissionsModule) Parameters() []plugin.Parameter {
-	return plugin.ParametersFrom(AnalyzeIAMPermissionsConfig{})
+func (m *AnalyzeIAMPermissionsModule) Parameters() any {
+	return &m.config
 }
 
 func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
-	var c AnalyzeIAMPermissionsConfig
-	if err := plugin.Bind(cfg, &c); err != nil {
-		return nil, fmt.Errorf("parameter validation failed: %w", err)
-	}
+	c := m.config
 
 	// Load GAAD data
 	gaad, err := iampkg.LoadJSONFile[iampkg.Gaad](c.GaadFile)

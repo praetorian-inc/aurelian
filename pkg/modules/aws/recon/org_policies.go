@@ -1,8 +1,6 @@
 package recon
 
 import (
-	"fmt"
-
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
@@ -15,7 +13,9 @@ type OrgPoliciesConfig struct {
 	plugin.AWSReconBase
 }
 
-type AWSOrgPoliciesModule struct{}
+type AWSOrgPoliciesModule struct {
+	config OrgPoliciesConfig
+}
 
 func (m *AWSOrgPoliciesModule) ID() string                { return "org-policies" }
 func (m *AWSOrgPoliciesModule) Name() string              { return "AWS Organization Policies" }
@@ -44,15 +44,12 @@ func (m *AWSOrgPoliciesModule) SupportedResourceTypes() []string {
 	}
 }
 
-func (m *AWSOrgPoliciesModule) Parameters() []plugin.Parameter {
-	return plugin.ParametersFrom(OrgPoliciesConfig{})
+func (m *AWSOrgPoliciesModule) Parameters() any {
+	return &m.config
 }
 
 func (m *AWSOrgPoliciesModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
-	var c OrgPoliciesConfig
-	if err := plugin.Bind(cfg, &c); err != nil {
-		return nil, fmt.Errorf("parameter validation failed: %w", err)
-	}
+	c := m.config
 
 	orgPols, err := orgpolicies.CollectOrgPolicies(cfg.Context, orgpolicies.CollectorOptions{
 		Profile:    c.Profile,

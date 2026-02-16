@@ -18,7 +18,9 @@ type ListAllConfig struct {
 }
 
 // AWSListAllResourcesModule enumerates all resources using Cloud Control API
-type AWSListAllResourcesModule struct{}
+type AWSListAllResourcesModule struct {
+	config ListAllConfig
+}
 
 func (m *AWSListAllResourcesModule) ID() string                { return "list-all" }
 func (m *AWSListAllResourcesModule) Name() string              { return "AWS List All Resources" }
@@ -45,15 +47,12 @@ func (m *AWSListAllResourcesModule) SupportedResourceTypes() []string {
 	}
 }
 
-func (m *AWSListAllResourcesModule) Parameters() []plugin.Parameter {
-	return plugin.ParametersFrom(ListAllConfig{})
+func (m *AWSListAllResourcesModule) Parameters() any {
+	return &m.config
 }
 
 func (m *AWSListAllResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
-	var c ListAllConfig
-	if err := plugin.Bind(cfg, &c); err != nil {
-		return nil, fmt.Errorf("parameter validation failed: %w", err)
-	}
+	c := m.config
 
 	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
 	if err != nil {

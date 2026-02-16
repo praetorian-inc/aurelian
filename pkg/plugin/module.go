@@ -60,8 +60,11 @@ type Module interface {
 	References() []string
 	SupportedResourceTypes() []string
 
-	// Parameters
-	Parameters() []Parameter
+	// Parameters returns a pointer to the module's config struct for parameter
+	// binding, or nil if the module has no parameters. The returned value is
+	// used both for deriving CLI flags (via ParametersFrom) and as the bind
+	// target for Bind before Run is called.
+	Parameters() any
 
 	// Execution
 	Run(cfg Config) ([]Result, error)

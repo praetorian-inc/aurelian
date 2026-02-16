@@ -1,8 +1,6 @@
 package recon
 
 import (
-	"fmt"
-
 	"github.com/praetorian-inc/aurelian/pkg/aws/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
@@ -17,7 +15,9 @@ type AccountAuthDetailsConfig struct {
 }
 
 // AWSAccountAuthDetailsModule retrieves IAM account authorization details
-type AWSAccountAuthDetailsModule struct{}
+type AWSAccountAuthDetailsModule struct {
+	config AccountAuthDetailsConfig
+}
 
 func (m *AWSAccountAuthDetailsModule) ID() string                { return "account-auth-details" }
 func (m *AWSAccountAuthDetailsModule) Name() string              { return "AWS Get Account Authorization Details" }
@@ -46,15 +46,12 @@ func (m *AWSAccountAuthDetailsModule) SupportedResourceTypes() []string {
 	}
 }
 
-func (m *AWSAccountAuthDetailsModule) Parameters() []plugin.Parameter {
-	return plugin.ParametersFrom(AccountAuthDetailsConfig{})
+func (m *AWSAccountAuthDetailsModule) Parameters() any {
+	return &m.config
 }
 
 func (m *AWSAccountAuthDetailsModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
-	var c AccountAuthDetailsConfig
-	if err := plugin.Bind(cfg, &c); err != nil {
-		return nil, fmt.Errorf("parameter validation failed: %w", err)
-	}
+	c := m.config
 
 	// Delegate to shared GAAD package
 	result, accountID, err := gaad.GetAccountAuthorizationDetails(cfg.Context, c.AWSReconBase)

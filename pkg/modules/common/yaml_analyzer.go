@@ -26,7 +26,7 @@ func (m *YAMLAnalyzer) Category() plugin.Category { return plugin.CategoryAnalyz
 func (m *YAMLAnalyzer) OpsecLevel() string        { return "passive" }
 func (m *YAMLAnalyzer) Authors() []string         { return []string{"Praetorian"} }
 func (m *YAMLAnalyzer) References() []string      { return []string{} }
-func (m *YAMLAnalyzer) Parameters() []plugin.Parameter { return []plugin.Parameter{} }
+func (m *YAMLAnalyzer) Parameters() any { return nil }
 
 // Run evaluates all rules against the provided resource.
 func (m *YAMLAnalyzer) Run(cfg plugin.Config) ([]plugin.Result, error) {
