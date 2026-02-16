@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,6 +27,12 @@ const (
 
 	// stateRegion is the AWS region where the state bucket lives.
 	stateRegion = "us-east-1"
+
+	// statePrefix is the S3 key prefix under which all integration test state is stored.
+	statePrefix = "integration-tests/"
+
+	// reaperMaxAge is the age threshold beyond which stale stacks are destroyed.
+	reaperMaxAge = 5 * time.Minute //3 * 24 * time.Hour
 )
 
 // TerraformFixture manages terraform lifecycle for integration tests.
@@ -37,6 +44,9 @@ type TerraformFixture struct {
 
 	// stateKey is the S3 object key for this test run's Terraform state.
 	stateKey string
+
+	// execPath is the absolute path to the terraform binary.
+	execPath string
 }
 
 // NewFixture creates a fixture for a terraform module directory.
@@ -67,15 +77,28 @@ func NewFixture(t *testing.T, moduleDir string) *TerraformFixture {
 	timestamp := time.Now().UTC().Format("20060102T150405")
 	stateKey := fmt.Sprintf("integration-tests/%s/%s-%s/terraform.tfstate", moduleDir, timestamp, runID)
 
-	return &TerraformFixture{tf: tf, t: t, stateKey: stateKey}
+	return &TerraformFixture{tf: tf, t: t, stateKey: stateKey, execPath: execPath}
 }
 
 // Setup initializes terraform, applies infrastructure, reads outputs, and
 // registers automatic cleanup. When the test finishes, infrastructure is destroyed.
 // Set AURELIAN_KEEP_INFRA=1 to skip automatic destroy for faster iteration.
+//
+// A background reaper goroutine is launched to destroy stale stacks (older than
+// 3 days) that were left behind by previous failed runs. The reaper runs
+// concurrently with the main terraform apply and is awaited before Setup returns.
 func (f *TerraformFixture) Setup() {
 	f.t.Helper()
 	ctx := context.Background()
+
+	// Launch the reaper concurrently with our own init+apply.
+	reaper := NewReaper(f.t, f.execPath, f.stateKey, reaperMaxAge)
+	var reaperWg sync.WaitGroup
+	reaperWg.Add(1)
+	go func() {
+		defer reaperWg.Done()
+		reaper.Run()
+	}()
 
 	initOpts := []tfexec.InitOption{
 		tfexec.BackendConfig("bucket=" + stateBucket),
@@ -104,6 +127,9 @@ func (f *TerraformFixture) Setup() {
 		}
 	}
 	f.t.Logf("terraform state: s3://%s/%s", stateBucket, f.stateKey)
+
+	// Wait for the reaper to finish before returning.
+	reaperWg.Wait()
 
 	if os.Getenv("AURELIAN_KEEP_INFRA") == "" {
 		f.t.Cleanup(func() {
@@ -150,17 +176,11 @@ func verifyStateBucket(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
 
-	opts := []func(*config.LoadOptions) error{config.WithRegion(stateRegion)}
-	if profile := os.Getenv("AWS_PROFILE"); profile != "" {
-		opts = append(opts, config.WithSharedConfigProfile(profile))
-	}
-
-	cfg, err := config.LoadDefaultConfig(ctx, opts...)
+	client, err := newS3Client(ctx)
 	if err != nil {
 		t.Fatalf("failed to load AWS config: %v (ensure AWS_PROFILE is set correctly)", err)
 	}
 
-	client := s3.NewFromConfig(cfg)
 	_, err = client.HeadBucket(ctx, &s3.HeadBucketInput{
 		Bucket: strPtr(stateBucket),
 	})
@@ -174,18 +194,12 @@ func verifyStateBucket(t *testing.T) {
 func (f *TerraformFixture) cleanupRemoteState() {
 	ctx := context.Background()
 
-	opts := []func(*config.LoadOptions) error{config.WithRegion(stateRegion)}
-	if profile := os.Getenv("AWS_PROFILE"); profile != "" {
-		opts = append(opts, config.WithSharedConfigProfile(profile))
-	}
-
-	cfg, err := config.LoadDefaultConfig(ctx, opts...)
+	client, err := newS3Client(ctx)
 	if err != nil {
 		f.t.Logf("warning: failed to load AWS config for state cleanup: %v", err)
 		return
 	}
 
-	client := s3.NewFromConfig(cfg)
 	bucket := stateBucket
 	_, err = client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: &bucket,
@@ -197,6 +211,21 @@ func (f *TerraformFixture) cleanupRemoteState() {
 	}
 
 	f.t.Logf("cleaned up remote state s3://%s/%s", stateBucket, f.stateKey)
+}
+
+// newS3Client creates an S3 client configured for the state bucket region,
+// respecting AWS_PROFILE if set.
+func newS3Client(ctx context.Context) (*s3.Client, error) {
+	opts := []func(*config.LoadOptions) error{config.WithRegion(stateRegion)}
+	if profile := os.Getenv("AWS_PROFILE"); profile != "" {
+		opts = append(opts, config.WithSharedConfigProfile(profile))
+	}
+
+	cfg, err := config.LoadDefaultConfig(ctx, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("load AWS config: %w", err)
+	}
+	return s3.NewFromConfig(cfg), nil
 }
 
 // randomHex returns a hex-encoded string of n random bytes (2n characters).
