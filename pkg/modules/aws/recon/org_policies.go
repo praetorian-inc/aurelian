@@ -38,9 +38,7 @@ func (m *AWSOrgPoliciesModule) References() []string {
 
 func (m *AWSOrgPoliciesModule) SupportedResourceTypes() []string {
 	return []string{
-		"AWS::Organizations::Policy",
-		"AWS::Organizations::OrganizationalUnit",
-		"AWS::Organizations::Account",
+		"AWS::Organizations::Organization",
 	}
 }
 
