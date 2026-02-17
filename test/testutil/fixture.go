@@ -32,7 +32,7 @@ const (
 	statePrefix = "integration-tests/"
 
 	// reaperMaxAge is the age threshold beyond which stale stacks are destroyed.
-	reaperMaxAge = 5 * time.Minute //3 * 24 * time.Hour
+	reaperMaxAge = 3 * 24 * time.Hour
 )
 
 // TerraformFixture manages terraform lifecycle for integration tests.
@@ -50,7 +50,7 @@ type TerraformFixture struct {
 }
 
 // NewFixture creates a fixture for a terraform module directory.
-// moduleDir is relative to terraform/, e.g. "aws/find-secrets".
+// moduleDir is relative to test/terraform/, e.g. "aws/recon/list".
 func NewFixture(t *testing.T, moduleDir string) *TerraformFixture {
 	t.Helper()
 
@@ -60,7 +60,7 @@ func NewFixture(t *testing.T, moduleDir string) *TerraformFixture {
 	}
 
 	_, thisFile, _, _ := runtime.Caller(0)
-	dir := filepath.Join(filepath.Dir(thisFile), "terraform", moduleDir)
+	dir := filepath.Join(filepath.Dir(thisFile), "..", "terraform", moduleDir)
 	tf, err := tfexec.NewTerraform(dir, execPath)
 	if err != nil {
 		t.Fatalf("failed to create terraform instance for %s: %v", moduleDir, err)

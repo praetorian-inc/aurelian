@@ -38,7 +38,7 @@ func Register(m Module) {
 	}
 
 	Registry.modules[key] = RegistryEntry{
-		Module:   m,
+		Module:   &ModuleWrapper{Module: m},
 		Platform: m.Platform(),
 		Category: m.Category(),
 	}

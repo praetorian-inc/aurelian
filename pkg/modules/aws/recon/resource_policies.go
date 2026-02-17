@@ -20,7 +20,9 @@ type ResourcePoliciesConfig struct {
 }
 
 // AWSResourcePoliciesModule retrieves resource policies for supported AWS services
-type AWSResourcePoliciesModule struct{}
+type AWSResourcePoliciesModule struct {
+	ResourcePoliciesConfig
+}
 
 func (m *AWSResourcePoliciesModule) ID() string                { return "resource-policies" }
 func (m *AWSResourcePoliciesModule) Name() string              { return "AWS Get Resource Policies" }
@@ -45,15 +47,12 @@ func (m *AWSResourcePoliciesModule) SupportedResourceTypes() []string {
 	return resourcepolicies.SupportedResourceTypes()
 }
 
-func (m *AWSResourcePoliciesModule) Parameters() []plugin.Parameter {
-	return plugin.ParametersFrom(ResourcePoliciesConfig{})
+func (m *AWSResourcePoliciesModule) Parameters() any {
+	return &m.ResourcePoliciesConfig
 }
 
 func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
-	var c ResourcePoliciesConfig
-	if err := plugin.Bind(cfg, &c); err != nil {
-		return nil, fmt.Errorf("parameter validation failed: %w", err)
-	}
+	c := m.ResourcePoliciesConfig
 
 	// Resolve regions
 	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)

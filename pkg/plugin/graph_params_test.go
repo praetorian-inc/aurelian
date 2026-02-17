@@ -5,13 +5,15 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGraphOutputBase_StructTags(t *testing.T) {
 	// Test that GraphOutputBase has correct struct tags for parameter binding
 	var base plugin.GraphOutputBase
 
-	params := plugin.ParametersFrom(base)
+	params, err := plugin.ParametersFrom(base)
+	require.NoError(t, err)
 
 	// Verify we have exactly 3 parameters
 	assert.Len(t, params, 3, "GraphOutputBase should define 3 parameters")
@@ -64,7 +66,8 @@ func TestGraphOutputBase_Embedding(t *testing.T) {
 	}
 
 	var cfg TestModuleConfig
-	params := plugin.ParametersFrom(cfg)
+	params, err := plugin.ParametersFrom(cfg)
+	require.NoError(t, err)
 
 	// Should have 4 parameters total (3 from GraphOutputBase + 1 from TestModuleConfig)
 	assert.Len(t, params, 4, "Embedded GraphOutputBase parameters should be extracted")
@@ -102,7 +105,8 @@ func TestGraphOutputBase_UsageExample(t *testing.T) {
 	}
 
 	var cfg GraphExportConfig
-	params := plugin.ParametersFrom(cfg)
+	params, err := plugin.ParametersFrom(cfg)
+	require.NoError(t, err)
 
 	// Should have 5 parameters (3 from GraphOutputBase + 2 from GraphExportConfig)
 	assert.Len(t, params, 5)
@@ -117,4 +121,59 @@ func TestGraphOutputBase_UsageExample(t *testing.T) {
 	assert.Contains(t, paramNames, "neo4j-password")
 	assert.Contains(t, paramNames, "format")
 	assert.Contains(t, paramNames, "batch-size")
+}
+
+func TestParametersFrom_RejectsUntaggedExportedField(t *testing.T) {
+	type BadConfig struct {
+		Tagged   string `param:"tagged" desc:"This is fine"`
+		Untagged string // exported, no param tag — should error
+	}
+
+	_, err := plugin.ParametersFrom(BadConfig{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Untagged")
+	assert.Contains(t, err.Error(), "no `param` tag")
+}
+
+func TestParametersFrom_AllowsExplicitSkip(t *testing.T) {
+	type SkipConfig struct {
+		Tagged  string `param:"tagged" desc:"This is fine"`
+		Skipped string `param:"-"`
+	}
+
+	params, err := plugin.ParametersFrom(SkipConfig{})
+	require.NoError(t, err)
+	assert.Len(t, params, 1)
+	assert.Equal(t, "tagged", params[0].Name)
+}
+
+func TestParametersFrom_AllowsUnexportedFields(t *testing.T) {
+	type InternalConfig struct {
+		Tagged   string `param:"tagged" desc:"This is fine"`
+		internal string //nolint:unused // unexported, no tag — should be fine
+	}
+
+	params, err := plugin.ParametersFrom(InternalConfig{})
+	require.NoError(t, err)
+	assert.Len(t, params, 1)
+}
+
+func TestParametersFrom_RejectsUntaggedInEmbeddedStruct(t *testing.T) {
+	type EmbeddedBase struct {
+		Good    string `param:"good" desc:"tagged"`
+		BadField string // exported, no param tag
+	}
+	type Config struct {
+		EmbeddedBase
+	}
+
+	_, err := plugin.ParametersFrom(Config{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "BadField")
+}
+
+func TestParametersFrom_NilReturnsNil(t *testing.T) {
+	params, err := plugin.ParametersFrom(nil)
+	require.NoError(t, err)
+	assert.Nil(t, params)
 }

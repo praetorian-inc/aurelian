@@ -10,13 +10,13 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/recon"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
-	"github.com/praetorian-inc/aurelian/test/integration/testutil"
+	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAWSAccountAuthDetails(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/gaad")
+	fixture := testutil.NewFixture(t, "aws/recon/gaad")
 	fixture.Setup()
 
 	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "account-auth-details")

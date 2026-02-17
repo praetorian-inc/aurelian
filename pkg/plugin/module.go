@@ -5,6 +5,7 @@ package plugin
 
 import (
 	"context"
+	"fmt"
 	"io"
 )
 
@@ -60,9 +61,29 @@ type Module interface {
 	References() []string
 	SupportedResourceTypes() []string
 
-	// Parameters
-	Parameters() []Parameter
+	// Parameters returns a pointer to the module's config struct for parameter
+	// binding, or nil if the module has no parameters. The returned value is
+	// used both for deriving CLI flags (via ParametersFrom) and as the bind
+	// target for Bind before Run is called.
+	Parameters() any
 
 	// Execution
 	Run(cfg Config) ([]Result, error)
+}
+
+// ModuleWrapper wraps a Module so that Run automatically binds cfg.Args into
+// the module's Parameters struct before delegating to the inner Run method.
+// All modules retrieved from the registry are wrapped, ensuring callers never
+// need to call Bind manually.
+type ModuleWrapper struct {
+	Module
+}
+
+func (m *ModuleWrapper) Run(cfg Config) ([]Result, error) {
+	if target := m.Parameters(); target != nil {
+		if err := Bind(cfg, target); err != nil {
+			return nil, fmt.Errorf("parameter validation failed: %w", err)
+		}
+	}
+	return m.Module.Run(cfg)
 }

@@ -14,29 +14,47 @@ type Defaulter interface {
 
 // ParametersFrom derives []Parameter from a struct's field tags.
 // Supported tags: param, desc, default, enum, shortcode, required, hidden, sensitive.
-func ParametersFrom(v any) []Parameter {
+//
+// Every exported, non-embedded field in the struct must have a `param` tag
+// (use `param:"-"` to explicitly skip a field). This prevents silent
+// misconfiguration where a module author adds a field but forgets to tag it.
+func ParametersFrom(v any) ([]Parameter, error) {
+	if v == nil {
+		return nil, nil
+	}
 	t := reflect.TypeOf(v)
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
-		return nil
+		return nil, nil
 	}
 	return collectFields(t)
 }
 
-func collectFields(t reflect.Type) []Parameter {
+func collectFields(t reflect.Type) ([]Parameter, error) {
 	var params []Parameter
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 
 		// Walk embedded structs
 		if f.Anonymous && f.Type.Kind() == reflect.Struct {
-			params = append(params, collectFields(f.Type)...)
+			embedded, err := collectFields(f.Type)
+			if err != nil {
+				return nil, err
+			}
+			params = append(params, embedded...)
 			continue
 		}
 
 		name := f.Tag.Get("param")
+
+		// Exported, non-embedded fields without a param tag are an error.
+		// Use `param:"-"` to explicitly opt out.
+		if name == "" && f.IsExported() {
+			return nil, fmt.Errorf("field %q in %s is exported but has no `param` tag (use `param:\"-\"` to skip)", f.Name, t.Name())
+		}
+
 		if name == "" || name == "-" {
 			continue
 		}
@@ -68,12 +86,16 @@ func collectFields(t reflect.Type) []Parameter {
 
 		params = append(params, p)
 	}
-	return params
+	return params, nil
 }
 
 // Bind populates dst from cfg.Args, validates, and sets struct fields.
 func Bind(cfg Config, dst any) error {
-	params := NewParameters(ParametersFrom(dst)...)
+	paramSlice, err := ParametersFrom(dst)
+	if err != nil {
+		return err
+	}
+	params := NewParameters(paramSlice...)
 
 	for k, v := range cfg.Args {
 		params.Set(k, v)

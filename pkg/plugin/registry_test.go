@@ -21,7 +21,7 @@ func TestRegister(t *testing.T) {
 		OpsecLevelValue:  "stealth",
 		AuthorsValue:     []string{"Test Author"},
 		ReferencesValue:  []string{"https://example.com"},
-		ParametersValue:  []plugin.Parameter{},
+		ParametersValue:  nil,
 	}
 
 	plugin.Register(module)

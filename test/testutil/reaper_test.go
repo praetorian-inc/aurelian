@@ -1,6 +1,6 @@
 //go:build integration
 
-package integration
+package testutil
 
 import (
 	"testing"
@@ -9,11 +9,11 @@ import (
 
 func TestParseStateKey(t *testing.T) {
 	tests := []struct {
-		name      string
-		key       string
-		wantOK    bool
-		wantMod   string
-		wantTime  time.Time
+		name     string
+		key      string
+		wantOK   bool
+		wantMod  string
+		wantTime time.Time
 	}{
 		{
 			name:     "valid aws/list key",

@@ -10,7 +10,7 @@ import (
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/recon" // register modules
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
-	"github.com/praetorian-inc/aurelian/test/integration/testutil"
+	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +32,7 @@ func flattenCloudResources(t *testing.T, data any) []output.CloudResource {
 
 // TestAWSEC2Enumeration verifies comprehensive EC2 instance enumeration capabilities.
 func TestAWSEC2Enumeration(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/list")
+	fixture := testutil.NewFixture(t, "aws/recon/list")
 	fixture.Setup()
 
 	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "list-all")
@@ -235,7 +235,7 @@ func TestAWSEC2Enumeration(t *testing.T) {
 
 // TestAWSEC2EnumerationMultiRegion validates multi-region enumeration capabilities
 func TestAWSEC2EnumerationMultiRegion(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/list")
+	fixture := testutil.NewFixture(t, "aws/recon/list")
 	fixture.Setup()
 
 	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "list-all")

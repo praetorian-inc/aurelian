@@ -4,7 +4,7 @@ package recon
 
 import (
 	"context"
-	"github.com/praetorian-inc/aurelian/test/integration"
+	"github.com/praetorian-inc/aurelian/test/testutil"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -12,7 +12,7 @@ import (
 )
 
 func TestAWSList(t *testing.T) {
-	fixture := integration.NewFixture(t, "aws/list")
+	fixture := testutil.NewFixture(t, "aws/recon/list")
 	fixture.Setup()
 
 	t.Run("EC2 instances", func(t *testing.T) {
@@ -30,10 +30,10 @@ func TestAWSList(t *testing.T) {
 			Context: context.Background(),
 		})
 		require.NoError(t, err)
-		integration.AssertMinResults(t, results, 1)
+		testutil.AssertMinResults(t, results, 1)
 
 		for _, id := range fixture.OutputList("instance_ids") {
-			integration.AssertResultContainsString(t, results, id)
+			testutil.AssertResultContainsString(t, results, id)
 		}
 	})
 
@@ -52,10 +52,10 @@ func TestAWSList(t *testing.T) {
 			Context: context.Background(),
 		})
 		require.NoError(t, err)
-		integration.AssertMinResults(t, results, 1)
+		testutil.AssertMinResults(t, results, 1)
 
 		for _, name := range fixture.OutputList("bucket_names") {
-			integration.AssertResultContainsString(t, results, name)
+			testutil.AssertResultContainsString(t, results, name)
 		}
 	})
 
@@ -74,10 +74,10 @@ func TestAWSList(t *testing.T) {
 			Context: context.Background(),
 		})
 		require.NoError(t, err)
-		integration.AssertMinResults(t, results, 1)
+		testutil.AssertMinResults(t, results, 1)
 
 		for _, arn := range fixture.OutputList("function_arns") {
-			integration.AssertResultContainsARN(t, results, arn)
+			testutil.AssertResultContainsARN(t, results, arn)
 		}
 	})
 }

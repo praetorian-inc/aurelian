@@ -10,7 +10,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/graph"
 	"github.com/praetorian-inc/aurelian/pkg/graph/adapters"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
-	"github.com/praetorian-inc/aurelian/test/integration/testutil"
+	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -32,7 +32,7 @@ func TestGraphValidation_PrivescDetection(t *testing.T) {
 	ctx := context.Background()
 
 	// Step 1: Provision IAM infrastructure via Terraform
-	fixture := testutil.NewFixture(t, "aws/graph")
+	fixture := testutil.NewFixture(t, "aws/analyze/graph")
 	fixture.Setup()
 
 	suffix := fixture.Output("random_suffix")

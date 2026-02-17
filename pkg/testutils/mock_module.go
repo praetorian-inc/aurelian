@@ -12,7 +12,7 @@ type MockModule struct {
 	OpsecLevelValue             string
 	AuthorsValue                []string
 	ReferencesValue             []string
-	ParametersValue             []plugin.Parameter
+	ParametersValue             any
 	SupportedResourceTypesValue []string
 	RunFn                       func(plugin.Config) ([]plugin.Result, error)
 }
@@ -30,7 +30,7 @@ func (m *MockModule) OpsecLevel() string {
 }
 func (m *MockModule) Authors() []string              { return m.AuthorsValue }
 func (m *MockModule) References() []string           { return m.ReferencesValue }
-func (m *MockModule) Parameters() []plugin.Parameter { return m.ParametersValue }
+func (m *MockModule) Parameters() any { return m.ParametersValue }
 func (m *MockModule) SupportedResourceTypes() []string {
 	return m.SupportedResourceTypesValue
 }
