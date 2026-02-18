@@ -13,7 +13,7 @@ func FromUserDL(user UserDL, accountID string) output.AWSIAMResource {
 	}
 
 	r := output.AWSIAMResource{
-		CloudResource: output.CloudResource{
+		AWSResource: output.AWSResource{
 			Platform:     "aws",
 			ResourceType: "AWS::IAM::User",
 			ResourceID:   user.Arn,
@@ -46,7 +46,7 @@ func FromRoleDL(role RoleDL) output.AWSIAMResource {
 	a, _ := arn.Parse(role.Arn)
 
 	r := output.AWSIAMResource{
-		CloudResource: output.CloudResource{
+		AWSResource: output.AWSResource{
 			Platform:     "aws",
 			ResourceType: "AWS::IAM::Role",
 			ResourceID:   role.Arn,
@@ -82,7 +82,7 @@ func FromGroupDL(group GroupDL) output.AWSIAMResource {
 	a, _ := arn.Parse(group.Arn)
 
 	r := output.AWSIAMResource{
-		CloudResource: output.CloudResource{
+		AWSResource: output.AWSResource{
 			Platform:     "aws",
 			ResourceType: "AWS::IAM::Group",
 			ResourceID:   group.Arn,
@@ -108,7 +108,7 @@ func FromPolicyDL(policy PoliciesDL) output.AWSIAMResource {
 	a, _ := arn.Parse(policy.Arn)
 
 	r := output.AWSIAMResource{
-		CloudResource: output.CloudResource{
+		AWSResource: output.AWSResource{
 			Platform:     "aws",
 			ResourceType: "AWS::IAM::ManagedPolicy",
 			ResourceID:   policy.Arn,
@@ -127,7 +127,7 @@ func FromPolicyDL(policy PoliciesDL) output.AWSIAMResource {
 }
 
 // DeduplicateByARN deduplicates AWSIAMResources by ARN.
-// Earlier entries win (GAAD entities should be added before CloudResources).
+// Earlier entries win (GAAD entities should be added before AWSResources).
 func DeduplicateByARN(entities []output.AWSIAMResource) []output.AWSIAMResource {
 	seen := make(map[string]bool, len(entities))
 	result := make([]output.AWSIAMResource, 0, len(entities))

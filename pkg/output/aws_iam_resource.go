@@ -1,10 +1,10 @@
 package output
 
-// AWSIAMResource wraps CloudResource with typed IAM fields.
+// AWSIAMResource wraps AWSResource with typed IAM fields.
 // For non-IAM resources, all IAM-specific fields are nil/empty.
 // This is an output-boundary type — internal analyzer types remain unchanged.
 type AWSIAMResource struct {
-	CloudResource
+	AWSResource
 
 	// IAM-specific typed fields (nil/empty for non-IAM resources)
 	InlinePolicies          any      `json:"inline_policies,omitempty"`
@@ -31,7 +31,13 @@ func (r *AWSIAMResource) IsIAMResource() bool {
 		len(r.GroupMemberships) > 0
 }
 
-// FromCloudResource wraps a plain CloudResource as an AWSIAMResource with nil IAM fields.
-func FromCloudResource(cr CloudResource) AWSIAMResource {
-	return AWSIAMResource{CloudResource: cr}
+// FromAWSResource wraps a plain AWSResource as an AWSIAMResource with nil IAM fields.
+func FromAWSResource(cr AWSResource) AWSIAMResource {
+	return AWSIAMResource{AWSResource: cr}
+}
+
+// FromCloudResource is a deprecated alias for FromAWSResource.
+// Deprecated: Use FromAWSResource instead.
+func FromCloudResource(cr AWSResource) AWSIAMResource {
+	return FromAWSResource(cr)
 }

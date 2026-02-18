@@ -81,7 +81,7 @@ func TestGraphValidation_PrivescDetection(t *testing.T) {
 	// Each test validates that a specific privilege escalation path was detected
 	// in the graph. Relationship types are normalized: iam:Action → IAM_ACTION.
 	// Property names: GAAD nodes use PascalCase (Arn, UserName, RoleName),
-	// CloudResource nodes use lowercase (arn) from JSON tags.
+	// AWSResource nodes use lowercase (arn) from JSON tags.
 	//
 	// Queries include the Terraform suffix to isolate from leftover infrastructure
 	// in shared AWS accounts.

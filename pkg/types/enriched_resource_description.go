@@ -248,9 +248,9 @@ func (erd *EnrichedResourceDescription) PropertiesAsMap() (map[string]any, error
 	return props, nil
 }
 
-// ToCloudResource converts the EnrichedResourceDescription to an output.CloudResource
-func (erd *EnrichedResourceDescription) ToCloudResource() output.CloudResource {
-	resource := output.CloudResource{
+// ToAWSResource converts the EnrichedResourceDescription to an output.AWSResource
+func (erd *EnrichedResourceDescription) ToAWSResource() output.AWSResource {
+	resource := output.AWSResource{
 		Platform:     "aws",
 		ResourceType: erd.TypeName,
 		ResourceID:   erd.Identifier,

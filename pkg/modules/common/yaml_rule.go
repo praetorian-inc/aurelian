@@ -1,7 +1,7 @@
 package common
 
 // YAMLRule represents a declarative security analysis rule.
-// Rules are loaded from YAML files and evaluated against CloudResource properties.
+// Rules are loaded from YAML files and evaluated against AWSResource properties.
 type YAMLRule struct {
 	// ID is the machine-readable rule identifier
 	ID string `yaml:"id"`

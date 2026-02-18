@@ -33,7 +33,7 @@ func TestFetchFunctionURLs(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "my-function",
 		Properties:   make(map[string]any),
@@ -60,7 +60,7 @@ func TestFetchFunctionURLsNoURL(t *testing.T) {
 		urlError: &lambdatypes.ResourceNotFoundException{},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "no-url-function",
 		Properties:   make(map[string]any),

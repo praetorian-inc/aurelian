@@ -80,7 +80,7 @@ func TestGraphFormatterFormatWithGaadData(t *testing.T) {
 
 	// Create test data as AWSIAMResource entities
 	userEntity := output.AWSIAMResource{
-		CloudResource: output.CloudResource{
+		AWSResource: output.AWSResource{
 			Platform: "aws", ResourceType: "AWS::IAM::User",
 			ResourceID: "arn:aws:iam::123456789012:user/testuser",
 			ARN: "arn:aws:iam::123456789012:user/testuser",
@@ -88,7 +88,7 @@ func TestGraphFormatterFormatWithGaadData(t *testing.T) {
 		},
 	}
 	roleEntity := output.AWSIAMResource{
-		CloudResource: output.CloudResource{
+		AWSResource: output.AWSResource{
 			Platform: "aws", ResourceType: "AWS::IAM::Role",
 			ResourceID: "arn:aws:iam::123456789012:role/testrole",
 			ARN: "arn:aws:iam::123456789012:role/testrole",
@@ -96,14 +96,14 @@ func TestGraphFormatterFormatWithGaadData(t *testing.T) {
 		},
 	}
 	groupEntity := output.AWSIAMResource{
-		CloudResource: output.CloudResource{
+		AWSResource: output.AWSResource{
 			Platform: "aws", ResourceType: "AWS::IAM::Group",
 			ResourceID: "arn:aws:iam::123456789012:group/testgroup",
 			ARN: "arn:aws:iam::123456789012:group/testgroup",
 			AccountRef: "123456789012", DisplayName: "testgroup",
 		},
 	}
-	bucketEntity := output.FromCloudResource(output.CloudResource{
+	bucketEntity := output.FromAWSResource(output.AWSResource{
 		ARN: "arn:aws:s3:::mybucket", ResourceType: "AWS::S3::Bucket",
 		Properties: map[string]any{"Name": "mybucket"},
 	})
@@ -151,22 +151,22 @@ func TestGraphFormatterFormatNoGaadError(t *testing.T) {
 	assert.Contains(t, err.Error(), "no entity data found")
 }
 
-// TestGraphFormatterFormatFlattenMap tests flattening map[string][]CloudResource
+// TestGraphFormatterFormatFlattenMap tests flattening map[string][]AWSResource
 func TestGraphFormatterFormatFlattenMap(t *testing.T) {
 	mockDB := &mockGraphDB{}
 	formatter := &GraphFormatter{db: mockDB, config: &graph.Config{URI: "bolt://localhost:7687"}}
 
 	entities := []output.AWSIAMResource{
-		{CloudResource: output.CloudResource{
+		{AWSResource: output.AWSResource{
 			Platform: "aws", ResourceType: "AWS::IAM::User",
 			ResourceID: "arn:aws:iam::123456789012:user/testuser",
 			ARN: "arn:aws:iam::123456789012:user/testuser",
 			AccountRef: "123456789012", DisplayName: "testuser",
 		}},
-		output.FromCloudResource(output.CloudResource{
+		output.FromAWSResource(output.AWSResource{
 			ARN: "arn:aws:s3:::bucket1", ResourceType: "AWS::S3::Bucket",
 		}),
-		output.FromCloudResource(output.CloudResource{
+		output.FromAWSResource(output.AWSResource{
 			ARN: "arn:aws:s3:::bucket2", ResourceType: "AWS::S3::Bucket",
 		}),
 	}

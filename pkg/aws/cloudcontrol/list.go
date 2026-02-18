@@ -33,12 +33,12 @@ func NewCloudControlLister(options plugin.AWSCommonRecon) *CloudControlLister {
 	}
 }
 
-func (cc *CloudControlLister) List(regions, resourceTypes []string) (map[string][]output.CloudResource, error) {
+func (cc *CloudControlLister) List(regions, resourceTypes []string) (map[string][]output.AWSResource, error) {
 	if len(regions) == 0 || len(resourceTypes) == 0 {
-		return map[string][]output.CloudResource{}, nil
+		return map[string][]output.AWSResource{}, nil
 	}
 
-	results := make(map[string][]output.CloudResource)
+	results := make(map[string][]output.AWSResource)
 	var mu sync.Mutex
 
 	actor := ratelimit.NewCrossRegionActor(cc.Concurrency)
@@ -66,7 +66,7 @@ func (cc *CloudControlLister) List(regions, resourceTypes []string) (map[string]
 	return results, nil
 }
 
-func (cc *CloudControlLister) ListInRegion(region string, resourceTypes ...string) ([]output.CloudResource, error) {
+func (cc *CloudControlLister) ListInRegion(region string, resourceTypes ...string) ([]output.AWSResource, error) {
 	if len(resourceTypes) == 0 {
 		return nil, nil
 	}
@@ -81,7 +81,7 @@ func (cc *CloudControlLister) ListInRegion(region string, resourceTypes ...strin
 		return nil, err
 	}
 
-	var all []output.CloudResource
+	var all []output.AWSResource
 	for _, resourceType := range resourceTypes {
 		resources, err := cc.listByType(client, accountID, region, resourceType)
 
@@ -117,8 +117,8 @@ func (cc *CloudControlLister) newCloudControlClient(region string) (*cloudcontro
 	return cloudcontrol.NewFromConfig(*awsCfg), nil
 }
 
-func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID, region, resourceType string) ([]output.CloudResource, error) {
-	var all []output.CloudResource
+func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID, region, resourceType string) ([]output.AWSResource, error) {
+	var all []output.AWSResource
 	var nextToken *string
 
 	enrich := cc.generateEnricherMethod(region, resourceType)
@@ -138,7 +138,7 @@ func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID,
 		}
 
 		for _, desc := range result.ResourceDescriptions {
-			cr := awshelpers.CloudControlToERD(desc, resourceType, accountID, region).ToCloudResource()
+			cr := awshelpers.CloudControlToERD(desc, resourceType, accountID, region).ToAWSResource()
 			enrich(&cr)
 			all = append(all, cr)
 		}
@@ -153,16 +153,16 @@ func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID,
 	return all, nil
 }
 
-func (cc *CloudControlLister) generateEnricherMethod(region, resourceType string) func(resource *output.CloudResource) {
+func (cc *CloudControlLister) generateEnricherMethod(region, resourceType string) func(resource *output.AWSResource) {
 	enrichers := plugin.GetEnrichers(resourceType)
 	if len(enrichers) == 0 {
-		return func(_ *output.CloudResource) {} // no-op
+		return func(_ *output.AWSResource) {} // no-op
 	}
 
 	awsCfg, err := cc.getAWSConfig(region)
 	if err != nil {
 		slog.Warn("failed to fetch AWS config for enricher", "region", region, "type", resourceType, "error", err)
-		return func(_ *output.CloudResource) {}
+		return func(_ *output.AWSResource) {}
 	}
 
 	enrichCfg := plugin.EnricherConfig{
@@ -170,7 +170,7 @@ func (cc *CloudControlLister) generateEnricherMethod(region, resourceType string
 		AWSConfig: *awsCfg,
 	}
 
-	return func(resource *output.CloudResource) {
+	return func(resource *output.AWSResource) {
 		for _, enrichFn := range enrichers {
 			if err := enrichFn(enrichCfg, resource); err != nil {
 				slog.Warn("enricher failed", "type", resourceType, "resource", resource.ResourceID, "error", err)

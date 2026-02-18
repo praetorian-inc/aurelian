@@ -68,10 +68,10 @@ func NodeFromGaadGroup(group iampkg.GroupDL) *graph.Node {
 	}
 }
 
-// NodeFromCloudResource creates a graph node from a CloudResource
+// NodeFromAWSResource creates a graph node from an AWSResource
 // Labels derived from ResourceType: ["ShortName", "Resource", "AWS::S3::Bucket"]
 // UniqueKey: ["ARN"]
-func NodeFromCloudResource(cr output.CloudResource) *graph.Node {
+func NodeFromAWSResource(cr output.AWSResource) *graph.Node {
 	props := flattenStruct(cr)
 	props["_type"] = "Resource"
 	props["_resourceType"] = cr.ResourceType
@@ -95,7 +95,7 @@ func NodeFromCloudResource(cr output.CloudResource) *graph.Node {
 // NodeFromAWSIAMResource creates a graph node from an AWSIAMResource.
 // For IAM types with OriginalData, it delegates to the existing NodeFromGaad*
 // functions to preserve property naming (PascalCase). For non-IAM resources,
-// it falls back to NodeFromCloudResource.
+// it falls back to NodeFromAWSResource.
 func NodeFromAWSIAMResource(resource output.AWSIAMResource) *graph.Node {
 	// If we have the original GAAD data, use the existing typed converters
 	if resource.OriginalData != nil {
@@ -107,13 +107,13 @@ func NodeFromAWSIAMResource(resource output.AWSIAMResource) *graph.Node {
 		case iampkg.GroupDL:
 			return NodeFromGaadGroup(data)
 		case iampkg.PoliciesDL:
-			// Policies don't have a GAAD node type; use CloudResource style
-			return NodeFromCloudResource(resource.CloudResource)
+			// Policies don't have a GAAD node type; use AWSResource style
+			return NodeFromAWSResource(resource.AWSResource)
 		}
 	}
 
 	// Fallback: non-IAM resources or missing OriginalData
-	return NodeFromCloudResource(resource.CloudResource)
+	return NodeFromAWSResource(resource.AWSResource)
 }
 
 // NodeFromServicePrincipal creates a graph node from a service principal string
@@ -132,7 +132,7 @@ func NodeFromServicePrincipal(serviceName string) *graph.Node {
 
 // RelationshipFromFullResult creates a relationship from a FullResult
 // Type-switches on Principal to create principal node
-// Converts Resource to node via ToCloudResource()
+// Converts Resource to node via ToAWSResource()
 // Relationship type from normalizeActionToRelType(action)
 func RelationshipFromFullResult(result iampkg.FullResult) *graph.Relationship {
 	var startNode *graph.Node
@@ -157,7 +157,7 @@ func RelationshipFromFullResult(result iampkg.FullResult) *graph.Relationship {
 		}
 	}
 
-	// Convert resource to CloudResource and create end node
+	// Convert resource to AWSResource and create end node
 	var endNode *graph.Node
 	if result.Resource != nil {
 		// For IAM principals, use GAAD-style nodes to match existing GAAD-created nodes
@@ -182,12 +182,12 @@ func RelationshipFromFullResult(result iampkg.FullResult) *graph.Relationship {
 			}
 		case "AWS::IAM::Policy":
 			// IAM Policies are discovered via CloudControl, not GAAD
-			// Use CloudResource style with Resource label
-			cloudResource := result.Resource.ToCloudResource()
-			endNode = NodeFromCloudResource(cloudResource)
+			// Use AWSResource style with Resource label
+			cloudResource := result.Resource.ToAWSResource()
+			endNode = NodeFromAWSResource(cloudResource)
 		default:
-			cloudResource := result.Resource.ToCloudResource()
-			endNode = NodeFromCloudResource(cloudResource)
+			cloudResource := result.Resource.ToAWSResource()
+			endNode = NodeFromAWSResource(cloudResource)
 		}
 	} else {
 		// Fallback for nil resource

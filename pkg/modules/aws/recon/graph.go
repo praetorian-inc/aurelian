@@ -101,16 +101,16 @@ func (m *AWSGraphModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
 	}
 
 	// Flatten resource map
-	var resourcesList []output.CloudResource
+	var resourcesList []output.AWSResource
 	for _, resources := range allResources {
 		resourcesList = append(resourcesList, resources...)
 	}
 	slog.Info("resources enumerated", "count", len(resourcesList))
 
 	// Step 4: Collect resource policies per region
-	var resourcesWithPolicies []output.CloudResource
+	var resourcesWithPolicies []output.AWSResource
 	for _, region := range resolvedRegions {
-		var regionResources []output.CloudResource
+		var regionResources []output.AWSResource
 		for _, resource := range resourcesList {
 			if resource.Region == region {
 				regionResources = append(regionResources, resource)
@@ -206,7 +206,7 @@ func (m *AWSGraphModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
 
 	// Convert cloud resources to AWSIAMResource (IAM fields nil)
 	for _, cr := range resourcesList {
-		entities = append(entities, output.FromCloudResource(cr))
+		entities = append(entities, output.FromAWSResource(cr))
 	}
 
 	// Deduplicate: GAAD version wins (has typed IAM fields)

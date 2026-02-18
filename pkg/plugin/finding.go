@@ -21,7 +21,7 @@ type Finding struct {
 	Description string
 
 	// Resource is the cloud resource with the vulnerability
-	Resource output.CloudResource
+	Resource output.AWSResource
 
 	// References contains external documentation links (optional)
 	References []string

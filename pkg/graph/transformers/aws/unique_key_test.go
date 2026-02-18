@@ -8,11 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestNodeFromCloudResource_UniqueKeyMatchesProperty verifies that the UniqueKey
+// TestNodeFromAWSResource_UniqueKeyMatchesProperty verifies that the UniqueKey
 // references a property that actually exists in the node's Properties map.
 // This prevents Neo4j errors like "Cannot merge node because of null property value for 'ARN'"
-func TestNodeFromCloudResource_UniqueKeyMatchesProperty(t *testing.T) {
-	resource := output.CloudResource{
+func TestNodeFromAWSResource_UniqueKeyMatchesProperty(t *testing.T) {
+	resource := output.AWSResource{
 		Platform:     "aws",
 		ResourceType: "AWS::S3::Bucket",
 		ResourceID:   "test-bucket",
@@ -21,7 +21,7 @@ func TestNodeFromCloudResource_UniqueKeyMatchesProperty(t *testing.T) {
 		Region:       "us-east-1",
 	}
 
-	node := NodeFromCloudResource(resource)
+	node := NodeFromAWSResource(resource)
 
 	require.NotNil(t, node)
 	require.NotEmpty(t, node.UniqueKey, "UniqueKey must not be empty")

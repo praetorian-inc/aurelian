@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestCloudResourceJSONSerialization tests that CloudResource can be marshaled and unmarshaled to/from JSON
-func TestCloudResourceJSONSerialization(t *testing.T) {
-	resource := CloudResource{
+// TestAWSResourceJSONSerialization tests that AWSResource can be marshaled and unmarshaled to/from JSON
+func TestAWSResourceJSONSerialization(t *testing.T) {
+	resource := AWSResource{
 		Platform:     "aws",
 		ResourceType: "AWS::S3::Bucket",
 		ResourceID:   "arn:aws:s3:::test-bucket",
@@ -27,7 +27,7 @@ func TestCloudResourceJSONSerialization(t *testing.T) {
 	assert.NotEmpty(t, data)
 
 	// Unmarshal back
-	var decoded CloudResource
+	var decoded AWSResource
 	err = json.Unmarshal(data, &decoded)
 	assert.NoError(t, err)
 
@@ -44,9 +44,9 @@ func TestCloudResourceJSONSerialization(t *testing.T) {
 	assert.Equal(t, []string{"52.218.224.1"}, decoded.IPs)
 }
 
-// TestCloudResourceGCPFormat tests GCP-specific resource format
-func TestCloudResourceGCPFormat(t *testing.T) {
-	resource := CloudResource{
+// TestAWSResourceGCPFormat tests GCP-specific resource format
+func TestAWSResourceGCPFormat(t *testing.T) {
+	resource := AWSResource{
 		Platform:     "gcp",
 		ResourceType: "cloudresourcemanager.googleapis.com/Project",
 		ResourceID:   "projects/my-project-123",
@@ -58,7 +58,7 @@ func TestCloudResourceGCPFormat(t *testing.T) {
 	data, err := json.Marshal(resource)
 	assert.NoError(t, err)
 
-	var decoded CloudResource
+	var decoded AWSResource
 	err = json.Unmarshal(data, &decoded)
 	assert.NoError(t, err)
 
@@ -67,9 +67,9 @@ func TestCloudResourceGCPFormat(t *testing.T) {
 	assert.Equal(t, "projects/my-project-123", decoded.ResourceID)
 }
 
-// TestCloudResourceAzureFormat tests Azure-specific resource format
-func TestCloudResourceAzureFormat(t *testing.T) {
-	resource := CloudResource{
+// TestAWSResourceAzureFormat tests Azure-specific resource format
+func TestAWSResourceAzureFormat(t *testing.T) {
+	resource := AWSResource{
 		Platform:     "azure",
 		ResourceType: "Microsoft.Storage/storageAccounts",
 		ResourceID:   "/subscriptions/sub-123/resourceGroups/rg-test/providers/Microsoft.Storage/storageAccounts/testacct",
@@ -82,7 +82,7 @@ func TestCloudResourceAzureFormat(t *testing.T) {
 	data, err := json.Marshal(resource)
 	assert.NoError(t, err)
 
-	var decoded CloudResource
+	var decoded AWSResource
 	err = json.Unmarshal(data, &decoded)
 	assert.NoError(t, err)
 
@@ -90,9 +90,9 @@ func TestCloudResourceAzureFormat(t *testing.T) {
 	assert.Equal(t, "Microsoft.Storage/storageAccounts", decoded.ResourceType)
 }
 
-// TestCloudResourceMinimal tests minimal required fields
-func TestCloudResourceMinimal(t *testing.T) {
-	resource := CloudResource{
+// TestAWSResourceMinimal tests minimal required fields
+func TestAWSResourceMinimal(t *testing.T) {
+	resource := AWSResource{
 		Platform:     "aws",
 		ResourceType: "AWS::EC2::Instance",
 		ResourceID:   "i-1234567890abcdef0",
@@ -102,7 +102,7 @@ func TestCloudResourceMinimal(t *testing.T) {
 	data, err := json.Marshal(resource)
 	assert.NoError(t, err)
 
-	var decoded CloudResource
+	var decoded AWSResource
 	err = json.Unmarshal(data, &decoded)
 	assert.NoError(t, err)
 
@@ -201,7 +201,7 @@ func TestSecretFindingConfidenceLevels(t *testing.T) {
 
 // TestRiskJSONSerialization tests that Risk can be marshaled and unmarshaled to/from JSON
 func TestRiskJSONSerialization(t *testing.T) {
-	target := &CloudResource{
+	target := &AWSResource{
 		Platform:     "aws",
 		ResourceType: "AWS::S3::Bucket",
 		ResourceID:   "arn:aws:s3:::vulnerable-bucket",
@@ -252,7 +252,7 @@ func TestRiskJSONSerialization(t *testing.T) {
 
 // TestRiskMinimal tests minimal required fields
 func TestRiskMinimal(t *testing.T) {
-	target := &CloudResource{
+	target := &AWSResource{
 		Platform:     "aws",
 		ResourceType: "AWS::IAM::Role",
 		ResourceID:   "arn:aws:iam::123456789012:role/test-role",
@@ -289,7 +289,7 @@ func TestRiskSeverityLevels(t *testing.T) {
 	severityLevels := []string{"TL", "TM", "TH", "TC"}
 
 	for _, severity := range severityLevels {
-		target := &CloudResource{
+		target := &AWSResource{
 			Platform:     "aws",
 			ResourceType: "AWS::Lambda::Function",
 			ResourceID:   "arn:aws:lambda:us-west-2:123456789012:function:test",

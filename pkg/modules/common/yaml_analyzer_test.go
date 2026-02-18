@@ -29,7 +29,7 @@ func TestYAMLAnalyzerMatchesRule(t *testing.T) {
 	analyzer := common.NewYAMLAnalyzer([]common.YAMLRule{rule})
 
 	// Test resource that SHOULD match
-	vulnerable := output.CloudResource{
+	vulnerable := output.AWSResource{
 		Platform:     "aws",
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "vulnerable-function",
@@ -70,7 +70,7 @@ func TestYAMLAnalyzerNoMatch(t *testing.T) {
 	analyzer := common.NewYAMLAnalyzer([]common.YAMLRule{rule})
 
 	// Secure resource - should NOT match
-	secure := output.CloudResource{
+	secure := output.AWSResource{
 		ResourceType: "AWS::Lambda::Function",
 		Properties: map[string]any{
 			"FunctionUrl":         "https://abc123.lambda-url.us-east-1.on.aws/",

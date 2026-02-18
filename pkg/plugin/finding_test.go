@@ -9,7 +9,7 @@ import (
 )
 
 func TestFindingCreation(t *testing.T) {
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		Platform:     "aws",
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "my-function",

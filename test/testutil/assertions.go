@@ -43,7 +43,7 @@ func AssertMinResults(t *testing.T, results []plugin.Result, min int) {
 
 // containsString recursively searches a value for a substring match.
 func containsString(data any, substr string) bool {
-	// JSON round-trip normalizes concrete types (e.g., map[string][]CloudResource)
+	// JSON round-trip normalizes concrete types (e.g., map[string][]AWSResource)
 	// to interface types (map[string]any, []any) for reliable recursive traversal.
 	raw, err := json.Marshal(data)
 	if err == nil {

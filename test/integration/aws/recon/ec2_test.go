@@ -15,15 +15,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// flattenCloudResources converts results[0].Data (which is map[string][]CloudResource)
-// into a flat slice of CloudResource for assertion convenience.
-func flattenCloudResources(t *testing.T, data any) []output.CloudResource {
+// flattenAWSResources converts results[0].Data (which is map[string][]AWSResource)
+// into a flat slice of AWSResource for assertion convenience.
+func flattenAWSResources(t *testing.T, data any) []output.AWSResource {
 	t.Helper()
 	raw, err := json.Marshal(data)
 	require.NoError(t, err)
-	var resourceMap map[string][]output.CloudResource
-	require.NoError(t, json.Unmarshal(raw, &resourceMap), "Data should be map[string][]CloudResource")
-	var all []output.CloudResource
+	var resourceMap map[string][]output.AWSResource
+	require.NoError(t, json.Unmarshal(raw, &resourceMap), "Data should be map[string][]AWSResource")
+	var all []output.AWSResource
 	for _, resources := range resourceMap {
 		all = append(all, resources...)
 	}
@@ -73,11 +73,11 @@ func TestAWSEC2Enumeration(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, results, "should return results")
 
-		// Parse CloudResource data from results — Data is map[string][]CloudResource keyed by region/type
-		resources := flattenCloudResources(t, results[0].Data)
+		// Parse AWSResource data from results — Data is map[string][]AWSResource keyed by region/type
+		resources := flattenAWSResources(t, results[0].Data)
 
 		// Filter to EC2 instances only
-		var ec2Instances []output.CloudResource
+		var ec2Instances []output.AWSResource
 		for _, r := range resources {
 			if r.ResourceType == "AWS::EC2::Instance" {
 				ec2Instances = append(ec2Instances, r)
@@ -94,7 +94,7 @@ func TestAWSEC2Enumeration(t *testing.T) {
 		}
 
 		// Filter to only test instances (shared account may have others)
-		var testInstances []output.CloudResource
+		var testInstances []output.AWSResource
 		for _, instance := range ec2Instances {
 			if instanceIDSet[instance.ResourceID] {
 				testInstances = append(testInstances, instance)
@@ -126,7 +126,7 @@ func TestAWSEC2Enumeration(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		resources := flattenCloudResources(t, results[0].Data)
+		resources := flattenAWSResources(t, results[0].Data)
 
 		// Count EC2 instances
 		ec2Count := 0
@@ -174,7 +174,7 @@ func TestAWSEC2Enumeration(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, results)
 
-		resources := flattenCloudResources(t, results[0].Data)
+		resources := flattenAWSResources(t, results[0].Data)
 
 		// Verify we have multiple resource types
 		resourceTypes := make(map[string]bool)

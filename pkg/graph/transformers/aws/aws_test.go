@@ -96,16 +96,16 @@ func TestNodeFromGaadGroup(t *testing.T) {
 	assert.Equal(t, "developers", node.Properties["GroupName"])
 }
 
-func TestNodeFromCloudResource(t *testing.T) {
+func TestNodeFromAWSResource(t *testing.T) {
 	tests := []struct {
 		name         string
-		resource     output.CloudResource
+		resource     output.AWSResource
 		wantLabels   []string
 		wantShortName string
 	}{
 		{
 			name: "S3 Bucket",
-			resource: output.CloudResource{
+			resource: output.AWSResource{
 				Platform:     "aws",
 				ResourceType: "AWS::S3::Bucket",
 				ResourceID:   "test-bucket",
@@ -118,7 +118,7 @@ func TestNodeFromCloudResource(t *testing.T) {
 		},
 		{
 			name: "Lambda Function",
-			resource: output.CloudResource{
+			resource: output.AWSResource{
 				Platform:     "aws",
 				ResourceType: "AWS::Lambda::Function",
 				ResourceID:   "my-function",
@@ -133,7 +133,7 @@ func TestNodeFromCloudResource(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			node := NodeFromCloudResource(tt.resource)
+			node := NodeFromAWSResource(tt.resource)
 
 			require.NotNil(t, node)
 			assert.Equal(t, tt.wantLabels, node.Labels)

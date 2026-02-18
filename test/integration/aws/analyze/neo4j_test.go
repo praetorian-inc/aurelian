@@ -164,8 +164,8 @@ func TestGraphFormatter_FullPipeline(t *testing.T) {
 		},
 	}
 
-	// Create mock CloudResources
-	resources := []output.CloudResource{
+	// Create mock AWSResources
+	resources := []output.AWSResource{
 		{
 			ARN:          "arn:aws:s3:::test-bucket-123",
 			ResourceType: "AWS::S3::Bucket",

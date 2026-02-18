@@ -16,7 +16,7 @@ import (
 
 func TestEnricherAnalyzerFlow(t *testing.T) {
 	// Step 1: Start with raw resource (as CloudControl would return)
-	resource := output.CloudResource{
+	resource := output.AWSResource{
 		Platform:     "aws",
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "my-function",
@@ -33,7 +33,7 @@ func TestEnricherAnalyzerFlow(t *testing.T) {
 	}
 
 	// Mock enricher for testing
-	mockEnricher := func(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+	mockEnricher := func(cfg plugin.EnricherConfig, r *output.AWSResource) error {
 		r.Properties["FunctionUrl"] = "https://abc123.lambda-url.us-east-1.on.aws/"
 		r.Properties["FunctionUrlAuthType"] = "NONE"
 		return nil
@@ -79,7 +79,7 @@ func TestEnricherAnalyzerFlow(t *testing.T) {
 
 func TestEnricherAnalyzerFlowNoFinding(t *testing.T) {
 	// Secure resource (authenticated function URL)
-	resource := output.CloudResource{
+	resource := output.AWSResource{
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "secure-function",
 		Properties: map[string]any{

@@ -69,17 +69,17 @@ func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config) ([]plugin.Result, err
 		return nil, fmt.Errorf("failed to list resources: %w", err)
 	}
 
-	// Flatten the map[string][]CloudResource to []CloudResource
-	var resourcesList []output.CloudResource
+	// Flatten the map[string][]AWSResource to []AWSResource
+	var resourcesList []output.AWSResource
 	for _, resources := range allResources {
 		resourcesList = append(resourcesList, resources...)
 	}
 
 	// For each region, collect policies
-	var allResults []output.CloudResource
+	var allResults []output.AWSResource
 	for _, region := range resolvedRegions {
 		// Filter resources for this region
-		var regionResources []output.CloudResource
+		var regionResources []output.AWSResource
 		for _, resource := range resourcesList {
 			if resource.Region == region {
 				regionResources = append(regionResources, resource)

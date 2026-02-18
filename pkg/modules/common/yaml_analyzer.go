@@ -20,7 +20,7 @@ func NewYAMLAnalyzer(rules []YAMLRule) *YAMLAnalyzer {
 // Module interface implementation
 func (m *YAMLAnalyzer) ID() string                { return "yaml-analyzer" }
 func (m *YAMLAnalyzer) Name() string              { return "YAML Rule Analyzer" }
-func (m *YAMLAnalyzer) Description() string       { return "Evaluates declarative YAML rules against CloudResource properties" }
+func (m *YAMLAnalyzer) Description() string       { return "Evaluates declarative YAML rules against AWSResource properties" }
 func (m *YAMLAnalyzer) Platform() plugin.Platform { return plugin.Platform("any") }
 func (m *YAMLAnalyzer) Category() plugin.Category { return plugin.CategoryAnalyze }
 func (m *YAMLAnalyzer) OpsecLevel() string        { return "passive" }
@@ -36,9 +36,9 @@ func (m *YAMLAnalyzer) Run(cfg plugin.Config) ([]plugin.Result, error) {
 		return nil, fmt.Errorf("resource not provided in config")
 	}
 
-	resource, ok := resourceAny.(output.CloudResource)
+	resource, ok := resourceAny.(output.AWSResource)
 	if !ok {
-		return nil, fmt.Errorf("resource is not a CloudResource")
+		return nil, fmt.Errorf("resource is not a AWSResource")
 	}
 
 	// Evaluate all rules against the resource

@@ -55,7 +55,7 @@ func TestFetchS3BucketPolicy_Success(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::S3::Bucket",
 		ResourceID:   "my-bucket",
 		Properties: map[string]any{
@@ -75,7 +75,7 @@ func TestFetchS3BucketPolicy_NoPolicy(t *testing.T) {
 		err: &s3types.NoSuchBucket{},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::S3::Bucket",
 		ResourceID:   "my-bucket",
 		Properties: map[string]any{
@@ -91,7 +91,7 @@ func TestFetchS3BucketPolicy_NoPolicy(t *testing.T) {
 func TestFetchS3BucketPolicy_MissingBucketName(t *testing.T) {
 	client := &mockS3Client{}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::S3::Bucket",
 		ResourceID:   "my-bucket",
 		Properties:   map[string]any{},
@@ -120,7 +120,7 @@ func TestFetchLambdaPolicy_Success(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "my-function",
 		Properties: map[string]any{
@@ -139,7 +139,7 @@ func TestFetchLambdaPolicy_NotFound(t *testing.T) {
 		err: &lambdatypes.ResourceNotFoundException{},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "my-function",
 		Properties: map[string]any{
@@ -172,7 +172,7 @@ func TestFetchSNSTopicPolicy_Success(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::SNS::Topic",
 		ResourceID:   "arn:aws:sns:us-east-1:123456789012:my-topic",
 		Properties: map[string]any{
@@ -193,7 +193,7 @@ func TestFetchSNSTopicPolicy_NoPolicy(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::SNS::Topic",
 		ResourceID:   "arn:aws:sns:us-east-1:123456789012:my-topic",
 		Properties: map[string]any{
@@ -226,7 +226,7 @@ func TestFetchSQSQueuePolicy_Success(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::SQS::Queue",
 		ResourceID:   "my-queue",
 		Properties: map[string]any{
@@ -258,7 +258,7 @@ func TestFetchEFSPolicy_Success(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::EFS::FileSystem",
 		ResourceID:   "fs-12345678",
 		Properties: map[string]any{
@@ -277,7 +277,7 @@ func TestFetchEFSPolicy_PolicyNotFound(t *testing.T) {
 		err: &efstypes.PolicyNotFound{},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::EFS::FileSystem",
 		ResourceID:   "fs-12345678",
 		Properties: map[string]any{
@@ -312,7 +312,7 @@ func TestFetchOpenSearchPolicy_Success(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::OpenSearchService::Domain",
 		ResourceID:   "my-domain",
 		Properties: map[string]any{
@@ -348,7 +348,7 @@ func TestFetchElasticsearchPolicy_Success(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::Elasticsearch::Domain",
 		ResourceID:   "my-domain",
 		Properties: map[string]any{
@@ -365,7 +365,7 @@ func TestFetchElasticsearchPolicy_Success(t *testing.T) {
 func TestCollectPolicies_Success(t *testing.T) {
 	// We'll test this after adding the dependencies
 	// For now, ensure the function signature is correct
-	resources := []output.CloudResource{
+	resources := []output.AWSResource{
 		{
 			ResourceType: "AWS::EC2::Instance", // Unsupported type
 			ResourceID:   "i-12345",
@@ -386,7 +386,7 @@ func TestFetchS3BucketPolicy_NoSuchBucketPolicy(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::S3::Bucket",
 		ResourceID:   "my-bucket",
 		Properties: map[string]any{
@@ -404,7 +404,7 @@ func TestFetchSNSTopicPolicy_NotFound(t *testing.T) {
 		err: &snstypes.NotFoundException{},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::SNS::Topic",
 		ResourceID:   "arn:aws:sns:us-east-1:123456789012:my-topic",
 		Properties: map[string]any{
@@ -422,7 +422,7 @@ func TestFetchSQSQueuePolicy_NotFound(t *testing.T) {
 		err: &sqstypes.QueueDoesNotExist{},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::SQS::Queue",
 		ResourceID:   "my-queue",
 		Properties: map[string]any{
@@ -440,7 +440,7 @@ func TestFetchOpenSearchPolicy_NotFound(t *testing.T) {
 		err: &ostypes.ResourceNotFoundException{},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::OpenSearchService::Domain",
 		ResourceID:   "my-domain",
 		Properties: map[string]any{
@@ -458,7 +458,7 @@ func TestFetchElasticsearchPolicy_NotFound(t *testing.T) {
 		err: &estypes.ResourceNotFoundException{},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::Elasticsearch::Domain",
 		ResourceID:   "my-domain",
 		Properties: map[string]any{
