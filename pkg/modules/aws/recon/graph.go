@@ -55,10 +55,7 @@ func (m *AWSGraphModule) References() []string {
 
 func (m *AWSGraphModule) SupportedResourceTypes() []string {
 	return []string{
-		"AWS::IAM::User",
-		"AWS::IAM::Role",
-		"AWS::IAM::Group",
-		"AWS::IAM::Policy",
+		"AWS::Organizations::Account",
 	}
 }
 

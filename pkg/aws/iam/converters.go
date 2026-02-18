@@ -110,7 +110,7 @@ func FromPolicyDL(policy PoliciesDL) output.AWSIAMResource {
 	r := output.AWSIAMResource{
 		CloudResource: output.CloudResource{
 			Platform:     "aws",
-			ResourceType: "AWS::IAM::Policy",
+			ResourceType: "AWS::IAM::ManagedPolicy",
 			ResourceID:   policy.Arn,
 			ARN:          policy.Arn,
 			AccountRef:   a.AccountID,

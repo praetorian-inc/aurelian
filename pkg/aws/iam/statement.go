@@ -96,11 +96,22 @@ func matchesRegexPattern(pattern *regexp.Regexp, input string) bool {
 
 // matchesPattern handles basic glob pattern matching (case insensitive)
 func matchesPattern(pattern, input string) bool {
-	// Convert AWS pattern to regex
+	// Escape regex metacharacters, preserving * and ? for glob conversion
 	pattern = strings.ReplaceAll(pattern, ".", "\\.")
+	pattern = strings.ReplaceAll(pattern, "+", "\\+")
+	pattern = strings.ReplaceAll(pattern, "(", "\\(")
+	pattern = strings.ReplaceAll(pattern, ")", "\\)")
+	pattern = strings.ReplaceAll(pattern, "[", "\\[")
+	pattern = strings.ReplaceAll(pattern, "]", "\\]")
+	pattern = strings.ReplaceAll(pattern, "{", "\\{")
+	pattern = strings.ReplaceAll(pattern, "}", "\\}")
+	pattern = strings.ReplaceAll(pattern, "^", "\\^")
+	pattern = strings.ReplaceAll(pattern, "$", "\\$")
+	pattern = strings.ReplaceAll(pattern, "|", "\\|")
+	// Convert glob wildcards to regex
 	pattern = strings.ReplaceAll(pattern, "*", ".*")
 	pattern = strings.ReplaceAll(pattern, "?", ".")
-	pattern = "(?i)^" + pattern + "$" // Add case insensitive flag
+	pattern = "(?i)^" + pattern + "$"
 
 	p := regexp.MustCompile(pattern)
 	return matchesRegexPattern(p, input)
