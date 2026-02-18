@@ -92,6 +92,30 @@ func NodeFromCloudResource(cr output.CloudResource) *graph.Node {
 	}
 }
 
+// NodeFromAWSIAMResource creates a graph node from an AWSIAMResource.
+// For IAM types with OriginalData, it delegates to the existing NodeFromGaad*
+// functions to preserve property naming (PascalCase). For non-IAM resources,
+// it falls back to NodeFromCloudResource.
+func NodeFromAWSIAMResource(resource output.AWSIAMResource) *graph.Node {
+	// If we have the original GAAD data, use the existing typed converters
+	if resource.OriginalData != nil {
+		switch data := resource.OriginalData.(type) {
+		case iampkg.UserDL:
+			return NodeFromGaadUser(data)
+		case iampkg.RoleDL:
+			return NodeFromGaadRole(data)
+		case iampkg.GroupDL:
+			return NodeFromGaadGroup(data)
+		case iampkg.PoliciesDL:
+			// Policies don't have a GAAD node type; use CloudResource style
+			return NodeFromCloudResource(resource.CloudResource)
+		}
+	}
+
+	// Fallback: non-IAM resources or missing OriginalData
+	return NodeFromCloudResource(resource.CloudResource)
+}
+
 // NodeFromServicePrincipal creates a graph node from a service principal string
 // Labels: ["ServicePrincipal", "Principal"]
 // UniqueKey: ["service"]

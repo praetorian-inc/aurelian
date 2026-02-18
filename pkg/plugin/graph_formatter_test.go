@@ -78,33 +78,48 @@ func TestGraphFormatterFormatWithGaadData(t *testing.T) {
 	mockDB := &mockGraphDB{}
 	formatter := &GraphFormatter{db: mockDB, config: &graph.Config{URI: "bolt://localhost:7687"}}
 
-	// Create test data
-	gaad := &iampkg.Gaad{
-		UserDetailList: []iampkg.UserDL{
-			{Arn: "arn:aws:iam::123456789012:user/testuser", UserName: "testuser", UserId: "AIDAI123456"},
-		},
-		RoleDetailList: []iampkg.RoleDL{
-			{Arn: "arn:aws:iam::123456789012:role/testrole", RoleName: "testrole", RoleId: "AROAI123456"},
-		},
-		GroupDetailList: []iampkg.GroupDL{
-			{Arn: "arn:aws:iam::123456789012:group/testgroup", GroupName: "testgroup", GroupId: "AGPAI123456"},
+	// Create test data as AWSIAMResource entities
+	userEntity := output.AWSIAMResource{
+		CloudResource: output.CloudResource{
+			Platform: "aws", ResourceType: "AWS::IAM::User",
+			ResourceID: "arn:aws:iam::123456789012:user/testuser",
+			ARN: "arn:aws:iam::123456789012:user/testuser",
+			AccountRef: "123456789012", DisplayName: "testuser",
 		},
 	}
-
-	resources := []output.CloudResource{
-		{ARN: "arn:aws:s3:::mybucket", ResourceType: "AWS::S3::Bucket", Properties: map[string]any{"Name": "mybucket"}},
+	roleEntity := output.AWSIAMResource{
+		CloudResource: output.CloudResource{
+			Platform: "aws", ResourceType: "AWS::IAM::Role",
+			ResourceID: "arn:aws:iam::123456789012:role/testrole",
+			ARN: "arn:aws:iam::123456789012:role/testrole",
+			AccountRef: "123456789012", DisplayName: "testrole",
+		},
 	}
+	groupEntity := output.AWSIAMResource{
+		CloudResource: output.CloudResource{
+			Platform: "aws", ResourceType: "AWS::IAM::Group",
+			ResourceID: "arn:aws:iam::123456789012:group/testgroup",
+			ARN: "arn:aws:iam::123456789012:group/testgroup",
+			AccountRef: "123456789012", DisplayName: "testgroup",
+		},
+	}
+	bucketEntity := output.FromCloudResource(output.CloudResource{
+		ARN: "arn:aws:s3:::mybucket", ResourceType: "AWS::S3::Bucket",
+		Properties: map[string]any{"Name": "mybucket"},
+	})
 
+	entities := []output.AWSIAMResource{userEntity, roleEntity, groupEntity, bucketEntity}
+
+	user := iampkg.UserDL{Arn: "arn:aws:iam::123456789012:user/testuser", UserName: "testuser", UserId: "AIDAI123456"}
 	fullResults := []iampkg.FullResult{
 		{
-			Principal: &gaad.UserDetailList[0],
+			Principal: &user,
 			Action:    "s3:GetObject",
 		},
 	}
 
 	results := []Result{
-		{Data: gaad, Metadata: map[string]any{"type": "gaad"}},
-		{Data: resources, Metadata: map[string]any{"type": "resources"}},
+		{Data: entities, Metadata: map[string]any{"type": "entities"}},
 		{Data: fullResults, Metadata: map[string]any{"type": "iam_relationships"}},
 	}
 
@@ -126,14 +141,14 @@ func TestGraphFormatterFormatNoGaadError(t *testing.T) {
 	mockDB := &mockGraphDB{}
 	formatter := &GraphFormatter{db: mockDB}
 
-	// Results without GAAD data
+	// Results without entity data
 	results := []Result{
-		{Data: []output.CloudResource{}, Metadata: map[string]any{"type": "resources"}},
+		{Data: []iampkg.FullResult{}, Metadata: map[string]any{"type": "iam_relationships"}},
 	}
 
 	err := formatter.Format(results)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no GAAD data found")
+	assert.Contains(t, err.Error(), "no entity data found")
 }
 
 // TestGraphFormatterFormatFlattenMap tests flattening map[string][]CloudResource
@@ -141,32 +156,30 @@ func TestGraphFormatterFormatFlattenMap(t *testing.T) {
 	mockDB := &mockGraphDB{}
 	formatter := &GraphFormatter{db: mockDB, config: &graph.Config{URI: "bolt://localhost:7687"}}
 
-	gaad := &iampkg.Gaad{
-		UserDetailList: []iampkg.UserDL{
-			{Arn: "arn:aws:iam::123456789012:user/testuser", UserName: "testuser", UserId: "AIDAI123456"},
-		},
-	}
-
-	// Map format (by region)
-	resourceMap := map[string][]output.CloudResource{
-		"us-east-1": {
-			{ARN: "arn:aws:s3:::bucket1", ResourceType: "AWS::S3::Bucket"},
-		},
-		"us-west-2": {
-			{ARN: "arn:aws:s3:::bucket2", ResourceType: "AWS::S3::Bucket"},
-		},
+	entities := []output.AWSIAMResource{
+		{CloudResource: output.CloudResource{
+			Platform: "aws", ResourceType: "AWS::IAM::User",
+			ResourceID: "arn:aws:iam::123456789012:user/testuser",
+			ARN: "arn:aws:iam::123456789012:user/testuser",
+			AccountRef: "123456789012", DisplayName: "testuser",
+		}},
+		output.FromCloudResource(output.CloudResource{
+			ARN: "arn:aws:s3:::bucket1", ResourceType: "AWS::S3::Bucket",
+		}),
+		output.FromCloudResource(output.CloudResource{
+			ARN: "arn:aws:s3:::bucket2", ResourceType: "AWS::S3::Bucket",
+		}),
 	}
 
 	results := []Result{
-		{Data: gaad, Metadata: map[string]any{"type": "gaad"}},
-		{Data: resourceMap, Metadata: map[string]any{"type": "resources"}},
+		{Data: entities, Metadata: map[string]any{"type": "entities"}},
 		{Data: []iampkg.FullResult{}, Metadata: map[string]any{"type": "iam_relationships"}},
 	}
 
 	err := formatter.Format(results)
 	require.NoError(t, err)
 
-	// Verify all resources were flattened and created
+	// Verify all entities were created as nodes
 	// 1 user + 2 resources = 3 nodes
-	assert.Equal(t, 3, len(mockDB.nodesCreated), "Expected 3 nodes after flattening map")
+	assert.Equal(t, 3, len(mockDB.nodesCreated), "Expected 3 nodes")
 }

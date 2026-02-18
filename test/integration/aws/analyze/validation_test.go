@@ -46,7 +46,7 @@ func TestGraphValidation_PrivescDetection(t *testing.T) {
 	t.Logf("Using shared Neo4j container at %s", boltURL)
 
 	// Step 3: Run graph module against the AWS account
-	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryAnalyze, "graph")
+	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "graph")
 	if !ok {
 		t.Fatal("graph module not registered in plugin system")
 	}

@@ -192,23 +192,38 @@ func (m *AWSGraphModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
 	fullResults := analyzer.FullResults(summary)
 	slog.Info("IAM analysis complete", "relationships", len(fullResults))
 
-	// Return neutral raw data (3 results)
+	// Convert GAAD entities to AWSIAMResource (GAAD first so they win dedup)
+	var entities []output.AWSIAMResource
+	for _, user := range gaadData.UserDetailList {
+		entities = append(entities, iampkg.FromUserDL(user, accountID))
+	}
+	for _, role := range gaadData.RoleDetailList {
+		entities = append(entities, iampkg.FromRoleDL(role))
+	}
+	for _, group := range gaadData.GroupDetailList {
+		entities = append(entities, iampkg.FromGroupDL(group))
+	}
+	for _, policy := range gaadData.Policies {
+		entities = append(entities, iampkg.FromPolicyDL(policy))
+	}
+
+	// Convert cloud resources to AWSIAMResource (IAM fields nil)
+	for _, cr := range resourcesList {
+		entities = append(entities, output.FromCloudResource(cr))
+	}
+
+	// Deduplicate: GAAD version wins (has typed IAM fields)
+	entities = iampkg.DeduplicateByARN(entities)
+
+	// Return 2 results: entities + relationships
 	return []plugin.Result{
 		{
-			Data: gaadData,
+			Data: entities,
 			Metadata: map[string]any{
 				"module":    m.ID(),
-				"type":      "gaad",
+				"type":      "entities",
 				"accountID": accountID,
-			},
-		},
-		{
-			Data: allResources,
-			Metadata: map[string]any{
-				"module":  m.ID(),
-				"type":    "resources",
-				"regions": resolvedRegions,
-				"count":   len(resourcesList),
+				"count":     len(entities),
 			},
 		},
 		{

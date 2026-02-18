@@ -38,42 +38,26 @@ func (f *GraphFormatter) Format(results []Result) error {
 	ctx := context.Background()
 
 	// Type-switch on Result.Data to identify structure
-	var gaad *iampkg.Gaad
-	var resources []output.CloudResource
+	var entities []output.AWSIAMResource
 	var fullResults []iampkg.FullResult
 
 	for _, result := range results {
 		switch data := result.Data.(type) {
-		case *iampkg.Gaad:
-			gaad = data
-		case []output.CloudResource:
-			resources = data
+		case []output.AWSIAMResource:
+			entities = append(entities, data...)
 		case []iampkg.FullResult:
 			fullResults = data
-		case map[string][]output.CloudResource:
-			for _, resList := range data {
-				resources = append(resources, resList...)
-			}
 		}
 	}
 
-	if gaad == nil {
-		return fmt.Errorf("no GAAD data found in results")
+	if len(entities) == 0 {
+		return fmt.Errorf("no entity data found in results")
 	}
 
-	// Transform GAAD principals to nodes
+	// Transform entities to nodes
 	var nodes []*graph.Node
-	for _, user := range gaad.UserDetailList {
-		nodes = append(nodes, awstransformers.NodeFromGaadUser(user))
-	}
-	for _, role := range gaad.RoleDetailList {
-		nodes = append(nodes, awstransformers.NodeFromGaadRole(role))
-	}
-	for _, group := range gaad.GroupDetailList {
-		nodes = append(nodes, awstransformers.NodeFromGaadGroup(group))
-	}
-	for _, resource := range resources {
-		nodes = append(nodes, awstransformers.NodeFromCloudResource(resource))
+	for _, entity := range entities {
+		nodes = append(nodes, awstransformers.NodeFromAWSIAMResource(entity))
 	}
 
 	// Create nodes in Neo4j
