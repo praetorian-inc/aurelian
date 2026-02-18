@@ -21,6 +21,7 @@ out.json
 .idea/workspace.xml
 debug.log*
 *.json
+lambda.zip
 docker-images
 .claude/.output
 .worktrees/
