@@ -32,7 +32,7 @@ func FromUserDL(user UserDL, accountID string) output.AWSIAMResource {
 		r.AttachedManagedPolicies = user.AttachedManagedPolicies
 	}
 	if user.PermissionsBoundary.PolicyArn != "" {
-		r.PermissionsBoundary = user.PermissionsBoundary
+		r.PermissionsBoundary = &user.PermissionsBoundary
 	}
 	if len(user.Tags) > 0 {
 		r.IAMTags = user.Tags
@@ -65,7 +65,7 @@ func FromRoleDL(role RoleDL) output.AWSIAMResource {
 		r.AttachedManagedPolicies = role.AttachedManagedPolicies
 	}
 	if role.PermissionsBoundary.PolicyArn != "" {
-		r.PermissionsBoundary = role.PermissionsBoundary
+		r.PermissionsBoundary = &role.PermissionsBoundary
 	}
 	if len(role.InstanceProfileList) > 0 {
 		r.InstanceProfiles = role.InstanceProfileList

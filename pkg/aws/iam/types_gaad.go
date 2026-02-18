@@ -9,15 +9,11 @@ type Gaad struct {
 	Policies        []PoliciesDL `json:"Policies"`
 }
 
-type PrincipalPL struct {
-	PolicyName     string       `json:"PolicyName"`
-	PolicyDocument types.Policy `json:"PolicyDocument"`
-}
+// PrincipalPL is an alias for types.PrincipalPL, kept here for backward compatibility.
+type PrincipalPL = types.PrincipalPL
 
-type ManagedPL struct {
-	PolicyName string `json:"PolicyName"`
-	PolicyArn  string `json:"PolicyArn"`
-}
+// ManagedPL is an alias for types.ManagedPL, kept here for backward compatibility.
+type ManagedPL = types.ManagedPL
 
 type UserDL struct {
 	Arn                     string        `json:"Arn"`
@@ -32,23 +28,11 @@ type UserDL struct {
 	AttachedManagedPolicies []ManagedPL   `json:"AttachedManagedPolicies"`
 }
 
-type InstanceProfile struct {
-	Path                string                `json:"Path"`
-	InstanceProfileName string                `json:"InstanceProfileName"`
-	InstanceProfileId   string                `json:"InstanceProfileId"`
-	Arn                 string                `json:"Arn"`
-	CreateDate          string                `json:"CreateDate"`
-	Roles               []InstanceProfileRole `json:"Roles"`
-}
+// InstanceProfile is an alias for types.InstanceProfile, kept here for backward compatibility.
+type InstanceProfile = types.InstanceProfile
 
-type InstanceProfileRole struct {
-	Path                     string       `json:"Path"`
-	RoleName                 string       `json:"RoleName"`
-	RoleId                   string       `json:"RoleId"`
-	Arn                      string       `json:"Arn"`
-	CreateDate               string       `json:"CreateDate"`
-	AssumeRolePolicyDocument types.Policy `json:"AssumeRolePolicyDocument"`
-}
+// InstanceProfileRole is an alias for types.InstanceProfileRole, kept here for backward compatibility.
+type InstanceProfileRole = types.InstanceProfileRole
 
 type RoleDL struct {
 	Arn                      string            `json:"Arn"`
@@ -99,14 +83,8 @@ func (policy *PoliciesDL) DefaultPolicyDocument() *types.Policy {
 	return nil
 }
 
-type PoliciesVL struct {
-	VersionId        string `json:"VersionId"`
-	IsDefaultVersion bool   `json:"IsDefaultVersion"`
-	CreateDate       string `json:"CreateDate"`
-	Document         types.Policy `json:"Document"`
-}
+// PoliciesVL is an alias for types.PoliciesVL, kept here for backward compatibility.
+type PoliciesVL = types.PoliciesVL
 
-type Tag struct {
-	Key   string `json:"Key"`
-	Value string `json:"Value"`
-}
+// Tag is an alias for types.Tag, kept here for backward compatibility.
+type Tag = types.Tag

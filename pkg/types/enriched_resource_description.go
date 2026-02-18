@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
-	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
 type EnrichedResourceDescription struct {
@@ -246,29 +245,6 @@ func (erd *EnrichedResourceDescription) PropertiesAsMap() (map[string]any, error
 	}
 
 	return props, nil
-}
-
-// ToAWSResource converts the EnrichedResourceDescription to an output.AWSResource
-func (erd *EnrichedResourceDescription) ToAWSResource() output.AWSResource {
-	resource := output.AWSResource{
-		Platform:     "aws",
-		ResourceType: erd.TypeName,
-		ResourceID:   erd.Identifier,
-		ARN:          erd.Arn.String(),
-		AccountRef:   erd.AccountId,
-		Region:       erd.Region,
-	}
-
-	// Use PropertiesAsMap for proper conversion
-	if propsMap, err := erd.PropertiesAsMap(); err == nil {
-		resource.Properties = propsMap
-	} else if m, ok := erd.Properties.(map[string]any); ok {
-		resource.Properties = m
-	} else {
-		resource.Properties = map[string]any{"raw_properties": erd.Properties}
-	}
-
-	return resource
 }
 
 func (e *EnrichedResourceDescription) GetRoleArn() string {

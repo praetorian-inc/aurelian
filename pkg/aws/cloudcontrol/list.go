@@ -138,7 +138,8 @@ func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID,
 		}
 
 		for _, desc := range result.ResourceDescriptions {
-			cr := awshelpers.CloudControlToERD(desc, resourceType, accountID, region).ToAWSResource()
+			erd := awshelpers.CloudControlToERD(desc, resourceType, accountID, region)
+			cr := output.AWSResourceFromERD(erd)
 			enrich(&cr)
 			all = append(all, cr)
 		}

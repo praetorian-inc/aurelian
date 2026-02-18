@@ -183,10 +183,10 @@ func RelationshipFromFullResult(result iampkg.FullResult) *graph.Relationship {
 		case "AWS::IAM::Policy":
 			// IAM Policies are discovered via CloudControl, not GAAD
 			// Use AWSResource style with Resource label
-			cloudResource := result.Resource.ToAWSResource()
+			cloudResource := output.AWSResourceFromERD(result.Resource)
 			endNode = NodeFromAWSResource(cloudResource)
 		default:
-			cloudResource := result.Resource.ToAWSResource()
+			cloudResource := output.AWSResourceFromERD(result.Resource)
 			endNode = NodeFromAWSResource(cloudResource)
 		}
 	} else {
