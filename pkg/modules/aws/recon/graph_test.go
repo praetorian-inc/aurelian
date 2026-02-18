@@ -9,7 +9,7 @@ import (
 )
 
 func TestAWSGraphModuleRegistration(t *testing.T) {
-	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryAnalyze, "graph")
+	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "graph")
 	require.True(t, ok, "graph module should be registered")
 	require.NotNil(t, mod)
 }
@@ -19,7 +19,7 @@ func TestAWSGraphModuleMetadata(t *testing.T) {
 	assert.Equal(t, "graph", m.ID())
 	assert.Equal(t, "AWS Graph Analysis", m.Name())
 	assert.Equal(t, plugin.PlatformAWS, m.Platform())
-	assert.Equal(t, plugin.CategoryAnalyze, m.Category())
+	assert.Equal(t, plugin.CategoryRecon, m.Category())
 	assert.Equal(t, "moderate", m.OpsecLevel())
 
 	authors := m.Authors()
