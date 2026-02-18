@@ -169,6 +169,7 @@ func (m *mockS3ExtendedClient) GetBucketLocation(ctx context.Context, params *s3
 
 func TestFetchS3BucketPolicyExtended_BlockPublicAccess(t *testing.T) {
 	client := &mockS3ExtendedClient{
+		locationOutput: &s3.GetBucketLocationOutput{},
 		blockOutput: &s3.GetPublicAccessBlockOutput{
 			PublicAccessBlockConfiguration: &s3types.PublicAccessBlockConfiguration{
 				IgnorePublicAcls:      aws.Bool(true),
@@ -191,6 +192,7 @@ func TestFetchS3BucketPolicyExtended_BlockPublicAccess(t *testing.T) {
 
 func TestFetchS3BucketPolicyExtended_PublicACL(t *testing.T) {
 	client := &mockS3ExtendedClient{
+		locationOutput: &s3.GetBucketLocationOutput{},
 		blockError: &smithy.GenericAPIError{
 			Code:    "NoSuchPublicAccessBlockConfiguration",
 			Message: "The public access block configuration was not found",
@@ -318,6 +320,7 @@ func TestMergeS3Policies_BothPolicyAndACL(t *testing.T) {
 
 func TestFetchS3BucketPolicyExtended_BlockPublicAccessPartial(t *testing.T) {
 	client := &mockS3ExtendedClient{
+		locationOutput: &s3.GetBucketLocationOutput{},
 		blockOutput: &s3.GetPublicAccessBlockOutput{
 			PublicAccessBlockConfiguration: &s3types.PublicAccessBlockConfiguration{
 				BlockPublicAcls:       aws.Bool(true),

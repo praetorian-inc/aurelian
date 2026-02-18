@@ -30,29 +30,32 @@ func FetchS3BucketPolicyExtended(ctx context.Context, client S3ExtendedClient, r
 		return nil, nil
 	}
 
-	// Check bucket location if allowed regions are specified
-	if len(allowedRegions) > 0 {
-		locOut, err := client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
-			Bucket: &bucketName,
-		})
-		if err != nil {
-			return nil, handleS3Error(err, "get bucket location")
-		}
+	// Always resolve the bucket's region so subsequent API calls use the correct endpoint
+	locOut, err := client.GetBucketLocation(ctx, &s3.GetBucketLocationInput{
+		Bucket: &bucketName,
+	})
+	if err != nil {
+		return nil, handleS3Error(err, "get bucket location")
+	}
 
-		bucketRegion := string(locOut.LocationConstraint)
-		if bucketRegion == "" {
-			bucketRegion = "us-east-1" // Default region if not set
-		}
+	bucketRegion := string(locOut.LocationConstraint)
+	if bucketRegion == "" {
+		bucketRegion = "us-east-1" // Default region if not set
+	}
 
-		if !contains(allowedRegions, bucketRegion) {
-			return nil, nil // Skip bucket outside allowed regions
-		}
+	// Filter by allowed regions if specified
+	if len(allowedRegions) > 0 && !contains(allowedRegions, bucketRegion) {
+		return nil, nil // Skip bucket outside allowed regions
+	}
+
+	withRegion := func(o *s3.Options) {
+		o.Region = bucketRegion
 	}
 
 	// Check Block Public Access
 	blockOut, err := client.GetPublicAccessBlock(ctx, &s3.GetPublicAccessBlockInput{
 		Bucket: &bucketName,
-	})
+	}, withRegion)
 	if err != nil {
 		// NoSuchPublicAccessBlockConfiguration means no block is configured
 		var apiErr smithy.APIError
@@ -77,13 +80,13 @@ func FetchS3BucketPolicyExtended(ctx context.Context, client S3ExtendedClient, r
 	}
 
 	// Get bucket policy
-	bucketPolicy, err := FetchS3BucketPolicy(ctx, client, resource)
+	bucketPolicy, err := FetchS3BucketPolicy(ctx, client, resource, withRegion)
 	if err != nil {
 		return nil, err
 	}
 
 	// Get bucket ACL and convert public grants to policy statements
-	aclStatements, err := fetchAndConvertACL(ctx, client, bucketName)
+	aclStatements, err := fetchAndConvertACL(ctx, client, bucketName, withRegion)
 	if err != nil {
 		return nil, err
 	}
@@ -93,10 +96,10 @@ func FetchS3BucketPolicyExtended(ctx context.Context, client S3ExtendedClient, r
 }
 
 // fetchAndConvertACL fetches the bucket ACL and converts public grants to policy statements.
-func fetchAndConvertACL(ctx context.Context, client S3ExtendedClient, bucketName string) ([]types.PolicyStatement, error) {
+func fetchAndConvertACL(ctx context.Context, client S3ExtendedClient, bucketName string, optFns ...func(*s3.Options)) ([]types.PolicyStatement, error) {
 	aclOut, err := client.GetBucketAcl(ctx, &s3.GetBucketAclInput{
 		Bucket: &bucketName,
-	})
+	}, optFns...)
 	if err != nil {
 		return nil, handleS3Error(err, "get bucket ACL")
 	}
