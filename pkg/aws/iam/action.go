@@ -15,7 +15,7 @@ func (a *Action) Service() string {
 	return split[0]
 }
 
-func isPrivEscAction(action string) bool {
+func IsPrivEscAction(action string) bool {
 	return slices.Contains(privEscActions, action)
 }
 
