@@ -26,11 +26,11 @@ func New(opts plugin.AWSReconBase) *GAAD {
 
 // Get collects all IAM users, roles, groups,
 // and policies for the AWS account.
-func (g *GAAD) Get() error {
+func (g *GAAD) Get() (*iampkg.AuthorizationAccountDetails, error) {
 	ctx := context.Background()
 
-	if err := g.initializeIAMClient(); err != nil {
-		return err
+	if err := g.initializeGAADClient(); err != nil {
+		return nil, err
 	}
 
 	var iamUserDLs []iamtypes.UserDetail
@@ -57,27 +57,27 @@ func (g *GAAD) Get() error {
 		return g.iamPaginator.HasMorePages(), nil
 	})
 	if err != nil {
-		return fmt.Errorf("error retrieving authorization details: %w", err)
+		return nil, fmt.Errorf("error retrieving authorization details: %w", err)
 	}
 
 	// Convert AWS SDK types to our internal types
 	userDLs, groupDLs, roleDLs, policies, err := convertToInternalTypes(iamUserDLs, iamGroupDLs, iamRoleDLs, iamPolicies)
 	if err != nil {
-		return fmt.Errorf("error converting to internal types: %w", err)
+		return nil, fmt.Errorf("error converting to internal types: %w", err)
 	}
-	_ = &iampkg.AuthorizationAccountDetails{
+
+	return &iampkg.AuthorizationAccountDetails{
+		AccountID:       g.accountID,
 		UserDetailList:  userDLs,
 		GroupDetailList: groupDLs,
 		RoleDetailList:  roleDLs,
 		Policies:        policies,
-	}
-
-	return nil
+	}, nil
 }
 
-// initializeIAMClient sets up the AWS config, resolves the account ID,
-// and creates the IAM paginator.
-func (g *GAAD) initializeIAMClient() error {
+// initializeGAADClient sets up the AWS config, resolves the account ID,
+// and creates the IAM GAAD paginator.
+func (g *GAAD) initializeGAADClient() error {
 	// IAM is a global service - always use us-east-1
 	region := "us-east-1"
 

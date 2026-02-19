@@ -1,6 +1,7 @@
 package types
 
 type AuthorizationAccountDetails struct {
+	AccountID       string                `json:"accountId"`
 	UserDetailList  []UserDetail          `json:"UserDetailList"`
 	GroupDetailList []GroupDetail         `json:"GroupDetailList"`
 	RoleDetailList  []RoleDetail          `json:"RoleDetailList"`
