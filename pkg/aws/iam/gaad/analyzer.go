@@ -64,7 +64,14 @@ func (ga *GaadAnalyzer) Analyze(
 			processResourcePolicy(r, state, evalChan)
 		}(resource)
 	}
-	// TODO (4f): processAssumeRolePolicies
+
+	for _, role := range gaad.RoleDetailList {
+		producerWg.Add(1)
+		go func(r types.RoleDetail) {
+			defer producerWg.Done()
+			processAssumeRolePolicies(r, state, evalChan)
+		}(role)
+	}
 
 	// Wait for all producers, then close eval channel
 	producerWg.Wait()

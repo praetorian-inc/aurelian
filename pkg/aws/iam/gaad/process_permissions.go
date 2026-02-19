@@ -1,8 +1,12 @@
 package gaad
 
 import (
+	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
@@ -96,7 +100,10 @@ func processResourcePolicy(resource output.AWSResource, state AnalyzerState, eva
 					PrincipalAccount: accountID,
 					CurrentTime:      time.Now(),
 				}
-				rc.PopulateDefaultRequestConditionKeys(resourceArn)
+				if err := rc.PopulateDefaultRequestConditionKeys(resourceArn); err != nil {
+					slog.Warn("Skipping evaluation: failed to populate request context", "resource", resourceArn, "error", err)
+					continue
+				}
 
 				evalChan <- &iam.EvaluationRequest{
 					Action:             action,
@@ -104,6 +111,67 @@ func processResourcePolicy(resource output.AWSResource, state AnalyzerState, eva
 					IdentityStatements: &stmts,
 					Context:            rc,
 				}
+			}
+		}
+	}
+}
+
+// processAssumeRolePolicies evaluates a role's trust policy (AssumeRolePolicyDocument),
+// emitting an EvaluationRequest per principal that the trust policy allows to assume
+// the role. These are resource-side evaluations — IdentityStatements is empty.
+func processAssumeRolePolicies(role types.RoleDetail, state AnalyzerState, evalChan chan<- *iam.EvaluationRequest) {
+	if role.AssumeRolePolicyDocument.Statement == nil || len(*role.AssumeRolePolicyDocument.Statement) == 0 {
+		return
+	}
+
+	for _, stmt := range *role.AssumeRolePolicyDocument.Statement {
+		if strings.ToLower(stmt.Effect) != "allow" {
+			continue
+		}
+		if stmt.Principal == nil {
+			slog.Debug(fmt.Sprintf("Skipping statement with nil Principal for role %s", role.Arn))
+			continue
+		}
+
+		principals := stmt.ExtractPrincipals()
+		if len(principals) == 0 {
+			slog.Debug(fmt.Sprintf("No principals found in statement for role %s", role.Arn))
+			continue
+		}
+
+		for _, principal := range principals {
+			if principal == "" {
+				slog.Debug("Skipping empty principal")
+				continue
+			}
+
+			roleAccountID, tags := state.GetResourceDetails(role.Arn)
+
+			principalAccountID := roleAccountID
+			if principalArn, err := arn.Parse(principal); err == nil {
+				if principalArn.AccountID != "" {
+					principalAccountID = principalArn.AccountID
+				}
+			}
+
+			rc := &iam.RequestContext{
+				PrincipalArn:     principal,
+				ResourceTags:     tags,
+				PrincipalAccount: principalAccountID,
+				ResourceAccount:  roleAccountID,
+				CurrentTime:      time.Now(),
+				SecureTransport:  iam.Bool(true),
+			}
+			if err := rc.PopulateDefaultRequestConditionKeys(role.Arn); err != nil {
+				slog.Warn("Skipping assume role evaluation: failed to populate request context", "role", role.Arn, "principal", principal, "error", err)
+				continue
+			}
+
+			evalChan <- &iam.EvaluationRequest{
+				Action:             "sts:AssumeRole",
+				Resource:           role.Arn,
+				IdentityStatements: &types.PolicyStatementList{},
+				Context:            rc,
 			}
 		}
 	}
@@ -135,7 +203,10 @@ func generatePrincipalEvalRequests(
 				PrincipalAccount: accountID,
 				CurrentTime:      time.Now(),
 			}
-			rc.PopulateDefaultRequestConditionKeys(resource.ARN)
+			if err := rc.PopulateDefaultRequestConditionKeys(resource.ARN); err != nil {
+				slog.Warn("Skipping evaluation: failed to populate request context", "principal", principalArn, "resource", resource.ARN, "error", err)
+				continue
+			}
 
 			evalChan <- &iam.EvaluationRequest{
 				Action:             action,
