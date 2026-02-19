@@ -3,10 +3,11 @@ package iam
 import (
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // FromUserDL converts a GAAD UserDetail to an AWSIAMResource.
-func FromUserDL(user UserDetail, accountID string) output.AWSIAMResource {
+func FromUserDL(user types.UserDetail, accountID string) output.AWSIAMResource {
 	a, _ := arn.Parse(user.Arn)
 	if accountID == "" {
 		accountID = a.AccountID
@@ -42,7 +43,7 @@ func FromUserDL(user UserDetail, accountID string) output.AWSIAMResource {
 }
 
 // FromRoleDL converts a GAAD RoleDetail to an AWSIAMResource.
-func FromRoleDL(role RoleDetail) output.AWSIAMResource {
+func FromRoleDL(role types.RoleDetail) output.AWSIAMResource {
 	a, _ := arn.Parse(role.Arn)
 
 	r := output.AWSIAMResource{
@@ -78,7 +79,7 @@ func FromRoleDL(role RoleDetail) output.AWSIAMResource {
 }
 
 // FromGroupDL converts a GAAD GroupDetail to an AWSIAMResource.
-func FromGroupDL(group GroupDetail) output.AWSIAMResource {
+func FromGroupDL(group types.GroupDetail) output.AWSIAMResource {
 	a, _ := arn.Parse(group.Arn)
 
 	r := output.AWSIAMResource{
@@ -104,7 +105,7 @@ func FromGroupDL(group GroupDetail) output.AWSIAMResource {
 }
 
 // FromPolicyDL converts a GAAD ManagedPolicyDetail to an AWSIAMResource.
-func FromPolicyDL(policy ManagedPolicyDetail) output.AWSIAMResource {
+func FromPolicyDL(policy types.ManagedPolicyDetail) output.AWSIAMResource {
 	a, _ := arn.Parse(policy.Arn)
 
 	r := output.AWSIAMResource{

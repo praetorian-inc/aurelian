@@ -140,22 +140,22 @@ func TestGraphFormatter_FullPipeline(t *testing.T) {
 	defer formatter.Close()
 
 	// Create mock GAAD data
-	gaad := &iampkg.AuthorizationAccountDetails{
-		UserDetailList: []iampkg.UserDetail{
+	gaad := &types.AuthorizationAccountDetails{
+		UserDetailList: []types.UserDetail{
 			{
 				Arn:      "arn:aws:iam::123456789012:user/charlie",
 				UserName: "charlie",
 				UserId:   "AIDAI12345EXAMPLE",
 			},
 		},
-		RoleDetailList: []iampkg.RoleDetail{
+		RoleDetailList: []types.RoleDetail{
 			{
 				Arn:      "arn:aws:iam::123456789012:role/admin-role",
 				RoleName: "admin-role",
 				RoleId:   "AROAI12345EXAMPLE",
 			},
 		},
-		GroupDetailList: []iampkg.GroupDetail{
+		GroupDetailList: []types.GroupDetail{
 			{
 				Arn:       "arn:aws:iam::123456789012:group/admins",
 				GroupName: "admins",
@@ -181,7 +181,7 @@ func TestGraphFormatter_FullPipeline(t *testing.T) {
 	targetArn, _ := arn.Parse("arn:aws:iam::123456789012:role/admin-role")
 	fullResults := []iampkg.FullResult{
 		{
-			Principal: &iampkg.UserDetail{
+			Principal: &types.UserDetail{
 				Arn:      "arn:aws:iam::123456789012:user/charlie",
 				UserName: "charlie",
 				UserId:   "AIDAI12345EXAMPLE",

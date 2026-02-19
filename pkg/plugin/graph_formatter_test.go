@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	"testing"
 
 	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
@@ -110,7 +111,7 @@ func TestGraphFormatterFormatWithGaadData(t *testing.T) {
 
 	entities := []output.AWSIAMResource{userEntity, roleEntity, groupEntity, bucketEntity}
 
-	user := iampkg.UserDetail{Arn: "arn:aws:iam::123456789012:user/testuser", UserName: "testuser", UserId: "AIDAI123456"}
+	user := types.UserDetail{Arn: "arn:aws:iam::123456789012:user/testuser", UserName: "testuser", UserId: "AIDAI123456"}
 	fullResults := []iampkg.FullResult{
 		{
 			Principal: &user,

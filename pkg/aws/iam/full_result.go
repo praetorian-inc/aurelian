@@ -50,7 +50,7 @@ func (fr *FullResult) UnmarshalJSON(data []byte) error {
 
 	// Check for distinguishing fields to determine the type
 	if _, hasUserName := principalMap["UserName"]; hasUserName {
-		var user UserDetail
+		var user types.UserDetail
 		if err := json.Unmarshal(intermediate.Principal, &user); err != nil {
 			return fmt.Errorf("failed to unmarshal user: %w", err)
 		}
@@ -59,7 +59,7 @@ func (fr *FullResult) UnmarshalJSON(data []byte) error {
 	}
 
 	if _, hasRoleName := principalMap["RoleName"]; hasRoleName {
-		var role RoleDetail
+		var role types.RoleDetail
 		if err := json.Unmarshal(intermediate.Principal, &role); err != nil {
 			return fmt.Errorf("failed to unmarshal role: %w", err)
 		}
@@ -68,7 +68,7 @@ func (fr *FullResult) UnmarshalJSON(data []byte) error {
 	}
 
 	if _, hasGroupName := principalMap["GroupName"]; hasGroupName {
-		var group GroupDetail
+		var group types.GroupDetail
 		if err := json.Unmarshal(intermediate.Principal, &group); err != nil {
 			return fmt.Errorf("failed to unmarshal group: %w", err)
 		}

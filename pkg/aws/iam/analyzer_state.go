@@ -12,10 +12,10 @@ import (
 
 // AnalyzerState holds all caches formerly stored as package-level globals.
 type AnalyzerState struct {
-	PolicyCache    map[string]*ManagedPolicyDetail
-	RoleCache      map[string]*RoleDetail
-	UserCache      map[string]*UserDetail
-	GroupCache     map[string]*GroupDetail
+	PolicyCache    map[string]*types.ManagedPolicyDetail
+	RoleCache      map[string]*types.RoleDetail
+	UserCache      map[string]*types.UserDetail
+	GroupCache     map[string]*types.GroupDetail
 	ResourceCache  map[string]*types.EnrichedResourceDescription
 	ActionExpander *ActionExpander
 }
@@ -42,7 +42,7 @@ func (s *AnalyzerState) initializeCaches(pd *PolicyData) {
 
 func (s *AnalyzerState) initializePolicyCache(wg *sync.WaitGroup, pd *PolicyData) {
 	defer wg.Done()
-	s.PolicyCache = make(map[string]*ManagedPolicyDetail)
+	s.PolicyCache = make(map[string]*types.ManagedPolicyDetail)
 	for i := range pd.Gaad.Policies {
 		policy := &pd.Gaad.Policies[i]
 		s.PolicyCache[policy.Arn] = policy
@@ -51,7 +51,7 @@ func (s *AnalyzerState) initializePolicyCache(wg *sync.WaitGroup, pd *PolicyData
 
 func (s *AnalyzerState) initializeRoleCache(wg *sync.WaitGroup, pd *PolicyData) {
 	defer wg.Done()
-	s.RoleCache = make(map[string]*RoleDetail)
+	s.RoleCache = make(map[string]*types.RoleDetail)
 	for i := range pd.Gaad.RoleDetailList {
 		role := &pd.Gaad.RoleDetailList[i]
 		s.RoleCache[role.Arn] = role
@@ -60,7 +60,7 @@ func (s *AnalyzerState) initializeRoleCache(wg *sync.WaitGroup, pd *PolicyData) 
 
 func (s *AnalyzerState) initializeUserCache(wg *sync.WaitGroup, pd *PolicyData) {
 	defer wg.Done()
-	s.UserCache = make(map[string]*UserDetail)
+	s.UserCache = make(map[string]*types.UserDetail)
 	for i := range pd.Gaad.UserDetailList {
 		user := &pd.Gaad.UserDetailList[i]
 		s.UserCache[user.Arn] = user
@@ -69,7 +69,7 @@ func (s *AnalyzerState) initializeUserCache(wg *sync.WaitGroup, pd *PolicyData) 
 
 func (s *AnalyzerState) initializeGroupCache(wg *sync.WaitGroup, pd *PolicyData) {
 	defer wg.Done()
-	s.GroupCache = make(map[string]*GroupDetail)
+	s.GroupCache = make(map[string]*types.GroupDetail)
 	for i := range pd.Gaad.GroupDetailList {
 		group := &pd.Gaad.GroupDetailList[i]
 		s.GroupCache[group.Arn] = group
@@ -150,7 +150,7 @@ func (s *AnalyzerState) addServicesToResourceCache() {
 }
 
 // getPolicyByArn retrieves a policy using the cache
-func (s *AnalyzerState) getPolicyByArn(arn string) *ManagedPolicyDetail {
+func (s *AnalyzerState) getPolicyByArn(arn string) *types.ManagedPolicyDetail {
 	if policy, ok := s.PolicyCache[arn]; ok {
 		return policy
 	}
@@ -195,7 +195,7 @@ func (s *AnalyzerState) getResourceDeets(resourceArn string) (string, map[string
 	return resource.AccountId, resource.Tags()
 }
 
-func (s *AnalyzerState) getUserAttachedManagedPolicies(user UserDetail) types.PolicyStatementList {
+func (s *AnalyzerState) getUserAttachedManagedPolicies(user types.UserDetail) types.PolicyStatementList {
 	identityStatements := types.PolicyStatementList{}
 	for _, attachedPolicy := range user.AttachedManagedPolicies {
 		if policy := s.getPolicyByArn(attachedPolicy.PolicyArn); policy != nil {
@@ -213,7 +213,7 @@ func (s *AnalyzerState) getUserAttachedManagedPolicies(user UserDetail) types.Po
 	return identityStatements
 }
 
-func (s *AnalyzerState) getRoleAttachedManagedPolicies(role RoleDetail) types.PolicyStatementList {
+func (s *AnalyzerState) getRoleAttachedManagedPolicies(role types.RoleDetail) types.PolicyStatementList {
 	identityStatements := types.PolicyStatementList{}
 	// Iterate over the attached managed policies
 	// and add their statements to the identityStatements list

@@ -173,16 +173,16 @@ func strResourcetoType[T any](str string) T {
 }
 
 func Test_AssumeRole(t *testing.T) {
-	acmeGlueRole := strResourcetoType[RoleDetail](acmeGlueRoleStr)
-	aaPolicy := strResourcetoType[ManagedPolicyDetail](administratorAccessStr)
+	acmeGlueRole := strResourcetoType[types.RoleDetail](acmeGlueRoleStr)
+	aaPolicy := strResourcetoType[types.ManagedPolicyDetail](administratorAccessStr)
 
-	gaad := AuthorizationAccountDetails{
-		UserDetailList: []UserDetail{},
-		RoleDetailList: []RoleDetail{
+	gaad := types.AuthorizationAccountDetails{
+		UserDetailList: []types.UserDetail{},
+		RoleDetailList: []types.RoleDetail{
 			acmeGlueRole,
 		},
-		GroupDetailList: []GroupDetail{},
-		Policies: []ManagedPolicyDetail{
+		GroupDetailList: []types.GroupDetail{},
+		Policies: []types.ManagedPolicyDetail{
 			aaPolicy,
 		},
 	}
@@ -246,15 +246,15 @@ var lambdaCreate = `
 // CreateMapsToService is a test function to verify the mapping of create actions to services
 // It verifies lambda:CreateFunction maps to lambda.amazonaws.com
 func Test_CreateMapsToService(t *testing.T) {
-	lambdaCreateRole := strResourcetoType[RoleDetail](lambdaCreate)
+	lambdaCreateRole := strResourcetoType[types.RoleDetail](lambdaCreate)
 
-	gaad := AuthorizationAccountDetails{
-		UserDetailList: []UserDetail{},
-		RoleDetailList: []RoleDetail{
+	gaad := types.AuthorizationAccountDetails{
+		UserDetailList: []types.UserDetail{},
+		RoleDetailList: []types.RoleDetail{
 			lambdaCreateRole,
 		},
-		GroupDetailList: []GroupDetail{},
-		Policies:        []ManagedPolicyDetail{},
+		GroupDetailList: []types.GroupDetail{},
+		Policies:        []types.ManagedPolicyDetail{},
 	}
 
 	resources := strResourcetoType[[]types.EnrichedResourceDescription](erdStr)
@@ -364,11 +364,11 @@ func Test_PrivilegeEscalation(t *testing.T) {
 }`
 
 	// Parse the AdministratorAccess policy
-	administratorAccessPolicy := strResourcetoType[ManagedPolicyDetail](administratorAccessStr)
+	administratorAccessPolicy := strResourcetoType[types.ManagedPolicyDetail](administratorAccessStr)
 
 	// Parse the roles
-	adminRole := strResourcetoType[RoleDetail](adminRoleStr)
-	lowPrivRole := strResourcetoType[RoleDetail](lowPrivRoleStr)
+	adminRole := strResourcetoType[types.RoleDetail](adminRoleStr)
+	lowPrivRole := strResourcetoType[types.RoleDetail](lowPrivRoleStr)
 
 	// Create resource descriptions for both roles
 	resources := []types.EnrichedResourceDescription{
@@ -403,14 +403,14 @@ func Test_PrivilegeEscalation(t *testing.T) {
 	}
 
 	// Create GAAD with the roles and policy
-	gaad := AuthorizationAccountDetails{
-		UserDetailList: []UserDetail{},
-		RoleDetailList: []RoleDetail{
+	gaad := types.AuthorizationAccountDetails{
+		UserDetailList: []types.UserDetail{},
+		RoleDetailList: []types.RoleDetail{
 			adminRole,
 			lowPrivRole,
 		},
-		GroupDetailList: []GroupDetail{},
-		Policies: []ManagedPolicyDetail{
+		GroupDetailList: []types.GroupDetail{},
+		Policies: []types.ManagedPolicyDetail{
 			administratorAccessPolicy,
 		},
 	}
@@ -431,7 +431,7 @@ func Test_PrivilegeEscalation(t *testing.T) {
 	var privilegeEscalationFound bool
 	for _, result := range fr {
 		// Check if it's the low-priv role
-		lowPrivRole, ok := result.Principal.(*RoleDetail)
+		lowPrivRole, ok := result.Principal.(*types.RoleDetail)
 		if !ok || lowPrivRole.RoleName != "low-priv" {
 			continue
 		}

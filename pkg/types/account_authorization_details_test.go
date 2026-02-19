@@ -1,10 +1,9 @@
-package iam
+package types
 
 import (
 	"encoding/json"
 	"testing"
 
-	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -106,8 +105,8 @@ func TestGaadUnmarshal(t *testing.T) {
 
 func TestDefaultPolicyDocument(t *testing.T) {
 	t.Run("returns default version document", func(t *testing.T) {
-		stmts := types.PolicyStatementList{
-			{Effect: "Allow", Action: types.NewDynaString([]string{"s3:*"}), Resource: types.NewDynaString([]string{"*"})},
+		stmts := PolicyStatementList{
+			{Effect: "Allow", Action: NewDynaString([]string{"s3:*"}), Resource: NewDynaString([]string{"*"})},
 		}
 		policy := ManagedPolicyDetail{
 			PolicyName:       "TestPolicy",
@@ -116,15 +115,15 @@ func TestDefaultPolicyDocument(t *testing.T) {
 				{
 					VersionId:        "v1",
 					IsDefaultVersion: false,
-					Document: types.Policy{
+					Document: Policy{
 						Version:   "2012-10-17",
-						Statement: &types.PolicyStatementList{{Effect: "Deny", Action: types.NewDynaString([]string{"*"}), Resource: types.NewDynaString([]string{"*"})}},
+						Statement: &PolicyStatementList{{Effect: "Deny", Action: NewDynaString([]string{"*"}), Resource: NewDynaString([]string{"*"})}},
 					},
 				},
 				{
 					VersionId:        "v2",
 					IsDefaultVersion: true,
-					Document: types.Policy{
+					Document: Policy{
 						Version:   "2012-10-17",
 						Statement: &stmts,
 					},
@@ -146,9 +145,9 @@ func TestDefaultPolicyDocument(t *testing.T) {
 				{
 					VersionId:        "v1",
 					IsDefaultVersion: false,
-					Document: types.Policy{
+					Document: Policy{
 						Version:   "2012-10-17",
-						Statement: &types.PolicyStatementList{{Effect: "Deny", Action: types.NewDynaString([]string{"*"}), Resource: types.NewDynaString([]string{"*"})}},
+						Statement: &PolicyStatementList{{Effect: "Deny", Action: NewDynaString([]string{"*"}), Resource: NewDynaString([]string{"*"})}},
 					},
 				},
 			},
@@ -200,7 +199,7 @@ func TestRoleDLAssumeRolePolicyDocument(t *testing.T) {
 		assert.Equal(t, "Allow", stmts[0].Effect)
 		require.NotNil(t, stmts[0].Principal)
 		require.NotNil(t, stmts[0].Principal.Service)
-		assert.Equal(t, types.DynaString{"lambda.amazonaws.com"}, *stmts[0].Principal.Service)
+		assert.Equal(t, DynaString{"lambda.amazonaws.com"}, *stmts[0].Principal.Service)
 	})
 }
 

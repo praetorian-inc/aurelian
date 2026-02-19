@@ -3,7 +3,7 @@ package gaad
 import (
 	"context"
 	"fmt"
-	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
+	iampkg "github.com/praetorian-inc/aurelian/pkg/types"
 
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
@@ -24,9 +24,9 @@ func New(opts plugin.AWSReconBase) *GAAD {
 	return &GAAD{opts: opts}
 }
 
-// GetAccountAuthorizationDetails collects all IAM users, roles, groups,
+// Get collects all IAM users, roles, groups,
 // and policies for the AWS account.
-func (g *GAAD) GetAccountAuthorizationDetails() error {
+func (g *GAAD) Get() error {
 	ctx := context.Background()
 
 	if err := g.initializeIAMClient(); err != nil {

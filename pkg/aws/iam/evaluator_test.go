@@ -1482,8 +1482,8 @@ func TestPolicyEvaluator_SameAccountAssumeRole_WithGaadFlow(t *testing.T) {
 	assumableAdminRoleArn := "arn:aws:iam::" + accountID + ":role/privesc-shared-assumable-admin-role-55gvbw"
 
 	// Create a GAAD with the real structure
-	gaad := &AuthorizationAccountDetails{
-		RoleDetailList: []RoleDetail{
+	gaad := &types.AuthorizationAccountDetails{
+		RoleDetailList: []types.RoleDetail{
 			{
 				Arn:      attackerRoleArn,
 				RoleName: "privesc-method24-sts-assumerole-attacker-55gvbw",

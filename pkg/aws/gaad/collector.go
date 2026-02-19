@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	iampkg "github.com/praetorian-inc/aurelian/pkg/types"
 	"net/url"
 
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
-	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 

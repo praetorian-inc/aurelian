@@ -51,7 +51,7 @@ func (ga *GaadAnalyzer) AnalyzePrincipalPermissions() (*PermissionsSummary, erro
 	// Process users
 	for _, user := range ga.policyData.Gaad.UserDetailList {
 		wg.Add(1)
-		go func(u UserDetail) {
+		go func(u types.UserDetail) {
 			defer wg.Done()
 			ga.processUserPermissions(u, evalChan)
 		}(user)
@@ -59,7 +59,7 @@ func (ga *GaadAnalyzer) AnalyzePrincipalPermissions() (*PermissionsSummary, erro
 
 	for _, role := range ga.policyData.Gaad.RoleDetailList {
 		wg.Add(1)
-		go func(r RoleDetail) {
+		go func(r types.RoleDetail) {
 			defer wg.Done()
 			ga.processRolePermissions(r, evalChan)
 		}(role)
@@ -141,7 +141,7 @@ func (ga *GaadAnalyzer) generateServiceEvaluations(resourceArn string, policy *t
 }
 
 // Modified process methods to gather all policies
-func (ga *GaadAnalyzer) processUserPermissions(user UserDetail, evalChan chan<- *EvaluationRequest) {
+func (ga *GaadAnalyzer) processUserPermissions(user types.UserDetail, evalChan chan<- *EvaluationRequest) {
 	// Create identity statements list
 	identityStatements := types.PolicyStatementList{}
 	boundaryStatements := types.PolicyStatementList{}
@@ -273,7 +273,7 @@ func (ga *GaadAnalyzer) startEvaluationWorkers(evalChan <-chan *EvaluationReques
 	}
 }
 
-func (ga *GaadAnalyzer) processRolePermissions(role RoleDetail, evalChan chan<- *EvaluationRequest) {
+func (ga *GaadAnalyzer) processRolePermissions(role types.RoleDetail, evalChan chan<- *EvaluationRequest) {
 	identityStatements := types.PolicyStatementList{}
 	boundaryStatements := types.PolicyStatementList{}
 
@@ -469,7 +469,7 @@ func (ga *GaadAnalyzer) processAssumeRolePolicies(evalChan chan<- *EvaluationReq
 }
 
 // getGroupByName retrieves a group by name
-func (ga *GaadAnalyzer) getGroupByName(name string) (*GroupDetail, bool) {
+func (ga *GaadAnalyzer) getGroupByName(name string) (*types.GroupDetail, bool) {
 	for _, group := range ga.policyData.Gaad.GroupDetailList {
 		if group.GroupName == name {
 			return &group, true
