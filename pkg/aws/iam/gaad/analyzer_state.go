@@ -17,14 +17,13 @@ import (
 // Methods are used by the GaadAnalyzer's process methods (processUserPermissions,
 // processRolePermissions, etc.) to look up cached data and evaluate permissions.
 type AnalyzerState interface {
-	GetUserAttachedManagedPolicies(user types.UserDetail) types.PolicyStatementList
-	GetRoleAttachedManagedPolicies(role types.RoleDetail) types.PolicyStatementList
 	GetPolicyByArn(policyArn string) *types.ManagedPolicyDetail
 	ExtractActions(psl *types.PolicyStatementList) []string
 	GetResourcesByAction(action iam.Action) []*output.AWSResource
 	GetResourceDetails(resourceArn string) (string, map[string]string)
 	GetRole(arn string) *types.RoleDetail
 	GetResource(arn string) *output.AWSResource
+	GetGroupByName(name string) *types.GroupDetail
 }
 
 // AnalyzerMemoryState is the in-memory implementation of AnalyzerState.
@@ -37,6 +36,7 @@ type AnalyzerMemoryState struct {
 	roleCache      map[string]*types.RoleDetail
 	userCache      map[string]*types.UserDetail
 	groupCache     map[string]*types.GroupDetail
+	groupNameCache map[string]*types.GroupDetail // keyed by GroupName
 	resourceCache  map[string]*output.AWSResource
 	actionExpander *iam.ActionExpander
 }
@@ -98,9 +98,11 @@ func (s *AnalyzerMemoryState) initializeUserCache(wg *sync.WaitGroup) {
 func (s *AnalyzerMemoryState) initializeGroupCache(wg *sync.WaitGroup) {
 	defer wg.Done()
 	s.groupCache = make(map[string]*types.GroupDetail)
+	s.groupNameCache = make(map[string]*types.GroupDetail)
 	for i := range s.Gaad.GroupDetailList {
 		group := &s.Gaad.GroupDetailList[i]
 		s.groupCache[group.Arn] = group
+		s.groupNameCache[group.GroupName] = group
 	}
 }
 
@@ -238,38 +240,9 @@ func (s *AnalyzerMemoryState) GetResource(resourceArn string) *output.AWSResourc
 	return s.resourceCache[resourceArn]
 }
 
-// GetUserAttachedManagedPolicies returns decorated identity statements from a user's attached managed policies.
-func (s *AnalyzerMemoryState) GetUserAttachedManagedPolicies(user types.UserDetail) types.PolicyStatementList {
-	identityStatements := types.PolicyStatementList{}
-	for _, attachedPolicy := range user.AttachedManagedPolicies {
-		if policy := s.GetPolicyByArn(attachedPolicy.PolicyArn); policy != nil {
-			for i := range policy.PolicyVersionList {
-				if policy.PolicyVersionList[i].IsDefaultVersion {
-					for j := range *policy.PolicyVersionList[i].Document.Statement {
-						(*policy.PolicyVersionList[i].Document.Statement)[j].OriginArn = attachedPolicy.PolicyArn
-					}
-					identityStatements = append(identityStatements, *policy.PolicyVersionList[i].Document.Statement...)
-				}
-			}
-		}
-	}
-	return identityStatements
-}
-
-// GetRoleAttachedManagedPolicies returns decorated identity statements from a role's attached managed policies.
-func (s *AnalyzerMemoryState) GetRoleAttachedManagedPolicies(role types.RoleDetail) types.PolicyStatementList {
-	identityStatements := types.PolicyStatementList{}
-	for _, attachedPolicy := range role.AttachedManagedPolicies {
-		if policy := s.GetPolicyByArn(attachedPolicy.PolicyArn); policy != nil {
-			if doc := policy.DefaultPolicyDocument(); doc != nil {
-				for stmt := range *doc.Statement {
-					(*doc.Statement)[stmt].OriginArn = attachedPolicy.PolicyArn
-				}
-				identityStatements = append(identityStatements, *doc.Statement...)
-			}
-		}
-	}
-	return identityStatements
+// GetGroupByName returns a group by name, or nil if not found.
+func (s *AnalyzerMemoryState) GetGroupByName(name string) *types.GroupDetail {
+	return s.groupNameCache[name]
 }
 
 // ExtractActions expands wildcard actions from policy statements using the ActionExpander.
