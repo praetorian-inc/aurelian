@@ -86,41 +86,25 @@ func TestResourcePolicyCollector_Integration(t *testing.T) {
 	t.Run("S3 bucket policy collected", func(t *testing.T) {
 		r, ok := byType["AWS::S3::Bucket"]
 		require.True(t, ok, "S3 bucket should have a policy")
-
-		policy := parseResourcePolicy(t, r)
-		assert.Equal(t, "2012-10-17", policy.Version)
-		require.NotNil(t, policy.Statement)
-		assert.NotEmpty(t, *policy.Statement)
+		requireValidPolicy(t, r)
 	})
 
 	t.Run("SQS queue policy collected", func(t *testing.T) {
 		r, ok := byType["AWS::SQS::Queue"]
 		require.True(t, ok, "SQS queue should have a policy")
-
-		policy := parseResourcePolicy(t, r)
-		assert.Equal(t, "2012-10-17", policy.Version)
-		require.NotNil(t, policy.Statement)
-		assert.NotEmpty(t, *policy.Statement)
+		requireValidPolicy(t, r)
 	})
 
 	t.Run("SNS topic policy collected", func(t *testing.T) {
 		r, ok := byType["AWS::SNS::Topic"]
 		require.True(t, ok, "SNS topic should have a policy")
-
-		policy := parseResourcePolicy(t, r)
-		assert.Equal(t, "2012-10-17", policy.Version)
-		require.NotNil(t, policy.Statement)
-		assert.NotEmpty(t, *policy.Statement)
+		requireValidPolicy(t, r)
 	})
 
 	t.Run("Lambda function policy collected", func(t *testing.T) {
 		r, ok := byType["AWS::Lambda::Function"]
 		require.True(t, ok, "Lambda function should have a policy")
-
-		policy := parseResourcePolicy(t, r)
-		assert.Equal(t, "2012-10-17", policy.Version)
-		require.NotNil(t, policy.Statement)
-		assert.NotEmpty(t, *policy.Statement)
+		requireValidPolicy(t, r)
 	})
 
 	t.Run("unsupported resource types are skipped", func(t *testing.T) {
@@ -183,41 +167,42 @@ func TestResourcePolicyCollector_Integration(t *testing.T) {
 		}
 		assert.Equal(t, legacyARNs, newARNs, "resource ARN sets should match")
 
-		// Compare ResourcePolicy JSON per ARN.
-		legacyByARN := make(map[string]string)
+		// Compare policies per ARN: legacy stores JSON in Properties, new uses typed field.
+		legacyByARN := make(map[string]*types.Policy)
 		for _, r := range legacyResults {
-			legacyByARN[r.ARN] = r.Properties["ResourcePolicy"].(string)
+			policyJSON, ok := r.Properties["ResourcePolicy"].(string)
+			require.True(t, ok, "legacy result for %s should have ResourcePolicy string", r.ARN)
+			var policy types.Policy
+			require.NoError(t, json.Unmarshal([]byte(policyJSON), &policy))
+			legacyByARN[r.ARN] = &policy
 		}
-		newByARN := make(map[string]string)
+
+		newByARN := make(map[string]*types.Policy)
 		for _, r := range results {
-			newByARN[r.ARN] = r.Properties["ResourcePolicy"].(string)
+			require.NotNil(t, r.ResourcePolicy, "new result for %s should have typed ResourcePolicy", r.ARN)
+			newByARN[r.ARN] = r.ResourcePolicy
 		}
+
 		for arn, legacyPolicy := range legacyByARN {
 			newPolicy, ok := newByARN[arn]
 			require.True(t, ok, "new results should contain ARN %s", arn)
 
-			// Compare as parsed JSON to avoid ordering differences.
-			var legacyParsed, newParsed types.Policy
-			require.NoError(t, json.Unmarshal([]byte(legacyPolicy), &legacyParsed))
-			require.NoError(t, json.Unmarshal([]byte(newPolicy), &newParsed))
-			assert.Equal(t, legacyParsed.Version, newParsed.Version, "policy version mismatch for %s", arn)
-			assert.Equal(t, len(*legacyParsed.Statement), len(*newParsed.Statement),
+			assert.Equal(t, legacyPolicy.Version, newPolicy.Version,
+				"policy version mismatch for %s", arn)
+			require.NotNil(t, legacyPolicy.Statement, "legacy policy for %s should have statements", arn)
+			require.NotNil(t, newPolicy.Statement, "new policy for %s should have statements", arn)
+			assert.Equal(t, len(*legacyPolicy.Statement), len(*newPolicy.Statement),
 				"statement count mismatch for %s", arn)
 		}
 	})
 }
 
-// parseResourcePolicy extracts and parses the ResourcePolicy from Properties.
-func parseResourcePolicy(t *testing.T, r output.AWSResource) types.Policy {
+// requireValidPolicy asserts that a resource has a non-nil typed ResourcePolicy
+// with a valid version and at least one statement.
+func requireValidPolicy(t *testing.T, r output.AWSResource) {
 	t.Helper()
-	raw, ok := r.Properties["ResourcePolicy"]
-	require.True(t, ok, "resource %s should have ResourcePolicy in Properties", r.ResourceID)
-
-	policyStr, ok := raw.(string)
-	require.True(t, ok, "ResourcePolicy should be a string")
-
-	var policy types.Policy
-	err := json.Unmarshal([]byte(policyStr), &policy)
-	require.NoError(t, err, "ResourcePolicy should be valid JSON")
-	return policy
+	require.NotNil(t, r.ResourcePolicy, "resource %s should have ResourcePolicy set", r.ResourceID)
+	assert.Equal(t, "2012-10-17", r.ResourcePolicy.Version)
+	require.NotNil(t, r.ResourcePolicy.Statement)
+	assert.NotEmpty(t, *r.ResourcePolicy.Statement)
 }

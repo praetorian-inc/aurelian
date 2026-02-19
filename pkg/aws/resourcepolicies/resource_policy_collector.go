@@ -2,7 +2,6 @@ package resourcepolicies
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -138,11 +137,7 @@ func (c *ResourcePolicyCollector) collectInRegion(reg map[string]policyMethod, a
 			continue
 		}
 
-		policyJSON, err := json.Marshal(policy)
-		if err != nil {
-			return nil, fmt.Errorf("marshal policy for %s: %w", resource.ResourceID, err)
-		}
-		resource.Properties["ResourcePolicy"] = string(policyJSON)
+		resource.ResourcePolicy = policy
 		results = append(results, resource)
 	}
 
