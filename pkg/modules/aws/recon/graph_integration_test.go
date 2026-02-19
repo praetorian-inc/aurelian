@@ -75,7 +75,7 @@ func TestAWSGraph(t *testing.T) {
 				foundGroups[e.DisplayName] = true
 			case "AWS::IAM::Role":
 				foundRoles[e.DisplayName] = true
-			case "AWS::IAM::Policy":
+			case "AWS::IAM::ManagedPolicy":
 				foundPolicyARNs[e.ARN] = true
 			}
 		}
