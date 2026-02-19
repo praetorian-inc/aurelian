@@ -151,7 +151,7 @@ func (s *AnalyzerState) getStmtResources(principalArn, action string) []string {
 		}
 	}
 
-	collectFromManagedPolicies := func(attachedPolicies []ManagedPL) {
+	collectFromManagedPolicies := func(attachedPolicies []types.ManagedPolicy) {
 		for _, attached := range attachedPolicies {
 			if pol := s.getPolicyByArn(attached.PolicyArn); pol != nil {
 				if doc := pol.DefaultPolicyDocument(); doc != nil {

@@ -161,7 +161,7 @@ func (ga *GaadAnalyzer) processUserPermissions(user types.UserDetail, evalChan c
 	identityStatements = append(identityStatements, ga.state.getUserAttachedManagedPolicies(user)...)
 
 	// Add permissions boundary
-	if user.PermissionsBoundary != (ManagedPL{}) {
+	if user.PermissionsBoundary != (types.ManagedPolicy{}) {
 		if boundaryPolicy := ga.state.getPolicyByArn(user.PermissionsBoundary.PolicyArn); boundaryPolicy != nil {
 			if boundaryDoc := boundaryPolicy.DefaultPolicyDocument(); boundaryDoc != nil {
 				for i := range *boundaryDoc.Statement {
@@ -297,7 +297,7 @@ func (ga *GaadAnalyzer) processRolePermissions(role types.RoleDetail, evalChan c
 	identityStatements = append(identityStatements, ga.state.getRoleAttachedManagedPolicies(role)...)
 
 	//Set permissions boundary if present
-	if role.PermissionsBoundary != (ManagedPL{}) {
+	if role.PermissionsBoundary != (types.ManagedPolicy{}) {
 		if boundaryPolicy := ga.state.getPolicyByArn(role.PermissionsBoundary.PolicyArn); boundaryPolicy != nil {
 			if boundaryDoc := boundaryPolicy.DefaultPolicyDocument(); boundaryDoc != nil {
 				if boundaryDoc.Statement != nil && len(*boundaryDoc.Statement) > 0 {
