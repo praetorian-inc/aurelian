@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
@@ -51,6 +52,61 @@ func processRolePermissions(role types.RoleDetail, state AnalyzerState, evalChan
 	boundaryStatements := collectBoundaryStatements(state, role.PermissionsBoundary)
 
 	generatePrincipalEvalRequests(role.Arn, identityStatements, boundaryStatements, state, evalChan)
+}
+
+// processResourcePolicy processes a single resource's policy,
+// emitting an EvaluationRequest for each (service principal, priv-esc action)
+// pair found in the policy statements.
+//
+// Unlike the old implementation, this emits ALL matching pairs per resource
+// policy, fixing the first-match-only bug.
+func processResourcePolicy(resource output.AWSResource, state AnalyzerState, evalChan chan<- *iam.EvaluationRequest) {
+	policy := resource.ResourcePolicy
+	if policy == nil || policy.Statement == nil {
+		return
+	}
+
+	resourceArn := resource.ARN
+	stmtsCopied := false
+	var stmts types.PolicyStatementList
+
+	for _, stmt := range *policy.Statement {
+		if stmt.Principal == nil || stmt.Principal.Service == nil {
+			continue
+		}
+		if stmt.Action == nil {
+			continue
+		}
+		for _, service := range *stmt.Principal.Service {
+			for _, action := range *stmt.Action {
+				if !iam.IsPrivEscAction(action) {
+					continue
+				}
+
+				// Lazy copy: only allocate when we find a match
+				if !stmtsCopied {
+					stmts = copyStatementsWithOrigin(policy.Statement, resourceArn)
+					stmtsCopied = true
+				}
+
+				accountID, tags := state.GetResourceDetails(resourceArn)
+				rc := &iam.RequestContext{
+					PrincipalArn:     service,
+					ResourceTags:     tags,
+					PrincipalAccount: accountID,
+					CurrentTime:      time.Now(),
+				}
+				rc.PopulateDefaultRequestConditionKeys(resourceArn)
+
+				evalChan <- &iam.EvaluationRequest{
+					Action:             action,
+					Resource:           resourceArn,
+					IdentityStatements: &stmts,
+					Context:            rc,
+				}
+			}
+		}
+	}
 }
 
 // generatePrincipalEvalRequests is the shared core for user and role processing.

@@ -57,7 +57,13 @@ func (ga *GaadAnalyzer) Analyze(
 		}(role)
 	}
 
-	// TODO (4e): generateServicePrincipalEvaluations
+	for _, resource := range resources {
+		producerWg.Add(1)
+		go func(r output.AWSResource) {
+			defer producerWg.Done()
+			processResourcePolicy(r, state, evalChan)
+		}(resource)
+	}
 	// TODO (4f): processAssumeRolePolicies
 
 	// Wait for all producers, then close eval channel
