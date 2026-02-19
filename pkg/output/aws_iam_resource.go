@@ -38,8 +38,3 @@ func FromAWSResource(cr AWSResource) AWSIAMResource {
 	return AWSIAMResource{AWSResource: cr}
 }
 
-// FromCloudResource is a deprecated alias for FromAWSResource.
-// Deprecated: Use FromAWSResource instead.
-func FromCloudResource(cr AWSResource) AWSIAMResource {
-	return FromAWSResource(cr)
-}

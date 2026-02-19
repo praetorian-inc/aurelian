@@ -13,7 +13,6 @@ import (
 // This prevents Neo4j errors like "Cannot merge node because of null property value for 'ARN'"
 func TestNodeFromAWSResource_UniqueKeyMatchesProperty(t *testing.T) {
 	resource := output.AWSResource{
-		Platform:     "aws",
 		ResourceType: "AWS::S3::Bucket",
 		ResourceID:   "test-bucket",
 		ARN:          "arn:aws:s3:::test-bucket",

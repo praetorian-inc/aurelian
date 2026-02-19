@@ -5,7 +5,6 @@ import "github.com/praetorian-inc/aurelian/pkg/types"
 // AWSResourceFromERD converts an EnrichedResourceDescription to an AWSResource.
 func AWSResourceFromERD(erd *types.EnrichedResourceDescription) AWSResource {
 	resource := AWSResource{
-		Platform:     "aws",
 		ResourceType: erd.TypeName,
 		ResourceID:   erd.Identifier,
 		ARN:          erd.Arn.String(),

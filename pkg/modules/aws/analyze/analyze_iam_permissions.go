@@ -5,7 +5,6 @@ import (
 
 	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
-	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
@@ -110,19 +109,7 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 	results := analyzer.FullResults(summary)
 
 	// Convert GAAD entities to AWSIAMResource
-	var entities []output.AWSIAMResource
-	for _, user := range gaad.UserDetailList {
-		entities = append(entities, iampkg.FromUserDL(user, ""))
-	}
-	for _, role := range gaad.RoleDetailList {
-		entities = append(entities, iampkg.FromRoleDL(role))
-	}
-	for _, group := range gaad.GroupDetailList {
-		entities = append(entities, iampkg.FromGroupDL(group))
-	}
-	for _, policy := range gaad.Policies {
-		entities = append(entities, iampkg.FromPolicyDL(policy))
-	}
+	entities := iampkg.FromGAAD(gaad, "")
 
 	return []plugin.Result{
 		{

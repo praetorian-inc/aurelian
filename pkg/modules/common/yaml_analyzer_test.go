@@ -16,7 +16,6 @@ func TestYAMLAnalyzerMatchesRule(t *testing.T) {
 	rule := common.YAMLRule{
 		ID:           "test-lambda-no-auth",
 		Name:         "Lambda Function URL Without Authentication",
-		Platform:     "aws",
 		ResourceType: "AWS::Lambda::Function",
 		Severity:     "high",
 		Description:  "Test rule",
@@ -30,7 +29,6 @@ func TestYAMLAnalyzerMatchesRule(t *testing.T) {
 
 	// Test resource that SHOULD match
 	vulnerable := output.AWSResource{
-		Platform:     "aws",
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "vulnerable-function",
 		Properties: map[string]any{

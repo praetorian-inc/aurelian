@@ -81,7 +81,7 @@ func TestGraphFormatterFormatWithGaadData(t *testing.T) {
 	// Create test data as AWSIAMResource entities
 	userEntity := output.AWSIAMResource{
 		AWSResource: output.AWSResource{
-			Platform: "aws", ResourceType: "AWS::IAM::User",
+			ResourceType: "AWS::IAM::User",
 			ResourceID: "arn:aws:iam::123456789012:user/testuser",
 			ARN: "arn:aws:iam::123456789012:user/testuser",
 			AccountRef: "123456789012", DisplayName: "testuser",
@@ -89,7 +89,7 @@ func TestGraphFormatterFormatWithGaadData(t *testing.T) {
 	}
 	roleEntity := output.AWSIAMResource{
 		AWSResource: output.AWSResource{
-			Platform: "aws", ResourceType: "AWS::IAM::Role",
+			ResourceType: "AWS::IAM::Role",
 			ResourceID: "arn:aws:iam::123456789012:role/testrole",
 			ARN: "arn:aws:iam::123456789012:role/testrole",
 			AccountRef: "123456789012", DisplayName: "testrole",
@@ -97,7 +97,7 @@ func TestGraphFormatterFormatWithGaadData(t *testing.T) {
 	}
 	groupEntity := output.AWSIAMResource{
 		AWSResource: output.AWSResource{
-			Platform: "aws", ResourceType: "AWS::IAM::Group",
+			ResourceType: "AWS::IAM::Group",
 			ResourceID: "arn:aws:iam::123456789012:group/testgroup",
 			ARN: "arn:aws:iam::123456789012:group/testgroup",
 			AccountRef: "123456789012", DisplayName: "testgroup",
@@ -158,7 +158,7 @@ func TestGraphFormatterFormatFlattenMap(t *testing.T) {
 
 	entities := []output.AWSIAMResource{
 		{AWSResource: output.AWSResource{
-			Platform: "aws", ResourceType: "AWS::IAM::User",
+			ResourceType: "AWS::IAM::User",
 			ResourceID: "arn:aws:iam::123456789012:user/testuser",
 			ARN: "arn:aws:iam::123456789012:user/testuser",
 			AccountRef: "123456789012", DisplayName: "testuser",

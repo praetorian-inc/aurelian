@@ -190,19 +190,7 @@ func (m *AWSGraphModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
 	slog.Info("IAM analysis complete", "relationships", len(fullResults))
 
 	// Convert GAAD entities to AWSIAMResource (GAAD first so they win dedup)
-	var entities []output.AWSIAMResource
-	for _, user := range gaadData.UserDetailList {
-		entities = append(entities, iampkg.FromUserDL(user, accountID))
-	}
-	for _, role := range gaadData.RoleDetailList {
-		entities = append(entities, iampkg.FromRoleDL(role))
-	}
-	for _, group := range gaadData.GroupDetailList {
-		entities = append(entities, iampkg.FromGroupDL(group))
-	}
-	for _, policy := range gaadData.Policies {
-		entities = append(entities, iampkg.FromPolicyDL(policy))
-	}
+	entities := iampkg.FromGAAD(gaadData, accountID)
 
 	// Convert cloud resources to AWSIAMResource (IAM fields nil)
 	for _, cr := range resourcesList {

@@ -14,7 +14,6 @@ func FromUserDL(user UserDL, accountID string) output.AWSIAMResource {
 
 	r := output.AWSIAMResource{
 		AWSResource: output.AWSResource{
-			Platform:     "aws",
 			ResourceType: "AWS::IAM::User",
 			ResourceID:   user.Arn,
 			ARN:          user.Arn,
@@ -41,13 +40,13 @@ func FromUserDL(user UserDL, accountID string) output.AWSIAMResource {
 	return r
 }
 
+
 // FromRoleDL converts a GAAD RoleDL to an AWSIAMResource.
 func FromRoleDL(role RoleDL) output.AWSIAMResource {
 	a, _ := arn.Parse(role.Arn)
 
 	r := output.AWSIAMResource{
 		AWSResource: output.AWSResource{
-			Platform:     "aws",
 			ResourceType: "AWS::IAM::Role",
 			ResourceID:   role.Arn,
 			ARN:          role.Arn,
@@ -77,13 +76,13 @@ func FromRoleDL(role RoleDL) output.AWSIAMResource {
 	return r
 }
 
+
 // FromGroupDL converts a GAAD GroupDL to an AWSIAMResource.
 func FromGroupDL(group GroupDL) output.AWSIAMResource {
 	a, _ := arn.Parse(group.Arn)
 
 	r := output.AWSIAMResource{
 		AWSResource: output.AWSResource{
-			Platform:     "aws",
 			ResourceType: "AWS::IAM::Group",
 			ResourceID:   group.Arn,
 			ARN:          group.Arn,
@@ -103,13 +102,13 @@ func FromGroupDL(group GroupDL) output.AWSIAMResource {
 	return r
 }
 
+
 // FromPolicyDL converts a GAAD PoliciesDL to an AWSIAMResource.
 func FromPolicyDL(policy PoliciesDL) output.AWSIAMResource {
 	a, _ := arn.Parse(policy.Arn)
 
 	r := output.AWSIAMResource{
 		AWSResource: output.AWSResource{
-			Platform:     "aws",
 			ResourceType: "AWS::IAM::ManagedPolicy",
 			ResourceID:   policy.Arn,
 			ARN:          policy.Arn,
@@ -124,6 +123,25 @@ func FromPolicyDL(policy PoliciesDL) output.AWSIAMResource {
 	}
 
 	return r
+}
+
+// FromGAAD converts all GAAD entities to AWSIAMResources.
+// The accountID is passed to FromUserDL for user account resolution.
+func FromGAAD(gaad *Gaad, accountID string) []output.AWSIAMResource {
+	var entities []output.AWSIAMResource
+	for _, user := range gaad.UserDetailList {
+		entities = append(entities, FromUserDL(user, accountID))
+	}
+	for _, role := range gaad.RoleDetailList {
+		entities = append(entities, FromRoleDL(role))
+	}
+	for _, group := range gaad.GroupDetailList {
+		entities = append(entities, FromGroupDL(group))
+	}
+	for _, policy := range gaad.Policies {
+		entities = append(entities, FromPolicyDL(policy))
+	}
+	return entities
 }
 
 // DeduplicateByARN deduplicates AWSIAMResources by ARN.
@@ -146,3 +164,4 @@ func DeduplicateByARN(entities []output.AWSIAMResource) []output.AWSIAMResource 
 
 	return result
 }
+

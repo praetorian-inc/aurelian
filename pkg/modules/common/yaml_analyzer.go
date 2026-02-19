@@ -38,7 +38,7 @@ func (m *YAMLAnalyzer) Run(cfg plugin.Config) ([]plugin.Result, error) {
 
 	resource, ok := resourceAny.(output.AWSResource)
 	if !ok {
-		return nil, fmt.Errorf("resource is not a AWSResource")
+		return nil, fmt.Errorf("resource is not an AWSResource")
 	}
 
 	// Evaluate all rules against the resource
