@@ -285,18 +285,8 @@ func TestAWSGraphNewVsOld(t *testing.T) {
 			}
 		}
 
-		assert.Empty(t, missing,
+		assert.True(t, len(missing) == 0,
 			"new module is missing %d relationship triples that old module found (out of %d old, %d new)",
 			len(missing), len(oldSet), len(newSet))
-
-		// Also report new relationships not in old (expected due to bug fixes)
-		var extra int
-		for tri := range newSet {
-			if !oldSet[tri] {
-				extra++
-			}
-		}
-		t.Logf("Old relationships: %d unique triples, New relationships: %d unique triples, Extra in new: %d",
-			len(oldSet), len(newSet), extra)
 	})
 }
