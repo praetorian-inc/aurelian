@@ -52,6 +52,7 @@ func (m *AWSGraphNewModule) Parameters() any {
 
 func (m *AWSGraphNewModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
 	c := m.GraphConfig
+	policyCollector := resourcepolicies.New(c.Profile, c.ProfileDir)
 
 	gaadData, err := m.collectAccountAuthorizationDetails(c)
 	if err != nil {
@@ -59,11 +60,16 @@ func (m *AWSGraphNewModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
 	}
 	_ = gaadData
 
-	resourcesByRegion, err := m.collectResources(c)
+	resourcesByRegion, err := m.collectResources(c, policyCollector)
 	if err != nil {
 		return nil, err
 	}
-	_ = resourcesByRegion
+
+	resourcesWithPolicies, err := m.collectResourcePolicies(policyCollector, resourcesByRegion)
+	if err != nil {
+		return nil, err
+	}
+	_ = resourcesWithPolicies
 
 	return nil, nil
 }
@@ -83,7 +89,7 @@ func (m *AWSGraphNewModule) collectAccountAuthorizationDetails(c GraphConfig) (*
 	return gaadData, nil
 }
 
-func (m *AWSGraphNewModule) collectResources(c GraphConfig) (map[string][]output.AWSResource, error) {
+func (m *AWSGraphNewModule) collectResources(c GraphConfig, policyCollector *resourcepolicies.ResourcePolicyCollector) (map[string][]output.AWSResource, error) {
 	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolving regions: %w", err)
@@ -91,7 +97,7 @@ func (m *AWSGraphNewModule) collectResources(c GraphConfig) (map[string][]output
 	slog.Info("resolved regions", "regions", resolvedRegions)
 
 	lister := cloudcontrol.NewCloudControlLister(c.AWSCommonRecon)
-	resourceTypesToScan := resourcepolicies.SupportedResourceTypes()
+	resourceTypesToScan := policyCollector.SupportedResourceTypes()
 
 	slog.Info("enumerating cloud resources", "types", len(resourceTypesToScan), "regions", len(resolvedRegions))
 	allResources, err := lister.List(resolvedRegions, resourceTypesToScan)
@@ -111,4 +117,14 @@ func (m *AWSGraphNewModule) collectResources(c GraphConfig) (map[string][]output
 
 	slog.Info("resources enumerated", "count", total, "regions", len(byRegion))
 	return byRegion, nil
+}
+
+func (m *AWSGraphNewModule) collectResourcePolicies(policyCollector *resourcepolicies.ResourcePolicyCollector, resourcesByRegion map[string][]output.AWSResource) ([]output.AWSResource, error) {
+	slog.Info("collecting resource policies")
+	resourcesWithPolicies, err := policyCollector.Collect(resourcesByRegion)
+	if err != nil {
+		return nil, fmt.Errorf("collecting resource policies: %w", err)
+	}
+	slog.Info("resource policies collected", "count", len(resourcesWithPolicies))
+	return resourcesWithPolicies, nil
 }
