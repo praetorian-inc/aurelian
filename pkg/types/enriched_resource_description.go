@@ -30,67 +30,11 @@ func (e *EnrichedResourceDescription) ToArn() arn.ARN {
 }
 
 func NewEnrichedResourceDescription(identifier, typeName, region, accountId string, properties interface{}) EnrichedResourceDescription {
-	a := arn.ARN{}
-	switch typeName {
-	case "AWS::SQS::Queue":
-		arn, err := SQSUrlToArn(identifier)
-		if err == nil {
-			a = arn
-			// Extract queue name from the ARN resource to use as identifier
-			identifier = arn.Resource
-		}
-	case "AWS::EC2::Instance":
-		a = arn.ARN{
-			Partition: "aws",
-			Service:   "ec2",
-			Region:    region,
-			AccountID: accountId,
-			Resource:  "instance/" + identifier,
-		}
-	case "AWS::S3::Bucket":
-		a = arn.ARN{
-			Partition: "aws",
-			Service:   "s3",
-			Region:    "",
-			AccountID: "",
-			Resource:  identifier,
-		}
-	case "AWS::Lambda::Function":
-		parsed, err := arn.Parse(identifier)
-		if err == nil {
-			a = parsed
-		} else {
-			a = arn.ARN{
-				Partition: "aws",
-				Service:   "lambda",
-				Region:    region,
-				AccountID: accountId,
-				Resource:  "function:" + identifier,
-			}
-		}
-	case "AWS::Service":
-		a = arn.ARN{
-			Partition: "aws",
-			Service:   strings.Split(identifier, ".")[0],
-			Region:    "*",
-			AccountID: "*",
-			Resource:  "*",
-		}
-	default:
-		parsed, err := arn.Parse(identifier)
-		if err == nil {
-			a = parsed
-		} else {
-			serviceName := extractServiceFromTypeName(typeName)
-			a = arn.ARN{
-				Partition: "aws",
-				Service:   serviceName,
-				Region:    region,
-				AccountID: accountId,
-				Resource:  identifier,
-			}
-		}
+	a := BuildResourceARN(identifier, typeName, region, accountId)
 
+	// SQS special case: extract queue name from the parsed ARN
+	if typeName == "AWS::SQS::Queue" && a.Resource != "" {
+		identifier = a.Resource
 	}
 
 	return EnrichedResourceDescription{
@@ -100,6 +44,68 @@ func NewEnrichedResourceDescription(identifier, typeName, region, accountId stri
 		Properties: properties,
 		AccountId:  accountId,
 		Arn:        a,
+	}
+}
+
+// BuildResourceARN constructs an ARN from a resource's identifier, type, region,
+// and account. It encodes AWS-specific conventions (e.g., S3 buckets are regionless,
+// SQS identifiers are URLs, service entries get wildcard ARNs).
+func BuildResourceARN(identifier, typeName, region, accountId string) arn.ARN {
+	switch typeName {
+	case "AWS::SQS::Queue":
+		parsed, err := SQSUrlToArn(identifier)
+		if err == nil {
+			return parsed
+		}
+		return arn.ARN{}
+	case "AWS::EC2::Instance":
+		return arn.ARN{
+			Partition: "aws",
+			Service:   "ec2",
+			Region:    region,
+			AccountID: accountId,
+			Resource:  "instance/" + identifier,
+		}
+	case "AWS::S3::Bucket":
+		return arn.ARN{
+			Partition: "aws",
+			Service:   "s3",
+			Region:    "",
+			AccountID: "",
+			Resource:  identifier,
+		}
+	case "AWS::Lambda::Function":
+		parsed, err := arn.Parse(identifier)
+		if err == nil {
+			return parsed
+		}
+		return arn.ARN{
+			Partition: "aws",
+			Service:   "lambda",
+			Region:    region,
+			AccountID: accountId,
+			Resource:  "function:" + identifier,
+		}
+	case "AWS::Service":
+		return arn.ARN{
+			Partition: "aws",
+			Service:   strings.Split(identifier, ".")[0],
+			Region:    "*",
+			AccountID: "*",
+			Resource:  "*",
+		}
+	default:
+		parsed, err := arn.Parse(identifier)
+		if err == nil {
+			return parsed
+		}
+		return arn.ARN{
+			Partition: "aws",
+			Service:   extractServiceFromTypeName(typeName),
+			Region:    region,
+			AccountID: accountId,
+			Resource:  identifier,
+		}
 	}
 }
 
@@ -304,4 +310,3 @@ var ServiceToResourceType = map[string]string{
 	"secretsmanager": "AWS::SecretsManager::Secret",
 	"ssm":            "AWS::SSM::Parameter",
 }
-

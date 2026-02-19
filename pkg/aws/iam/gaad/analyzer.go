@@ -73,6 +73,19 @@ func (ga *GaadAnalyzer) Analyze(
 		}(role)
 	}
 
+	// Drain results concurrently to avoid deadlock when resultChan buffer fills.
+	// Workers send to resultChan; if we don't drain it before waiting on evalWg,
+	// workers block on send → evalWg.Wait() never returns.
+	var results []output.AWSIAMRelationship
+	var collectWg sync.WaitGroup
+	collectWg.Add(1)
+	go func() {
+		defer collectWg.Done()
+		for rel := range resultChan {
+			results = append(results, rel)
+		}
+	}()
+
 	// Wait for all producers, then close eval channel
 	producerWg.Wait()
 	close(evalChan)
@@ -81,11 +94,8 @@ func (ga *GaadAnalyzer) Analyze(
 	evalWg.Wait()
 	close(resultChan)
 
-	// Collect results
-	var results []output.AWSIAMRelationship
-	for rel := range resultChan {
-		results = append(results, rel)
-	}
+	// Wait for collector to finish draining
+	collectWg.Wait()
 
 	// Add synthetic permission edges for attack patterns the evaluator can't discover
 	results = ga.generateSyntheticPermissions(results, state)

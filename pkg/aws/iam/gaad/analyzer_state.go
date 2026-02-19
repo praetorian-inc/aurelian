@@ -173,15 +173,18 @@ func (s *AnalyzerMemoryState) addServicesToResourceCache() {
 
 	for _, service := range commonServices {
 		svc := strings.Split(service, ".")[0]
-		s.resourceCache[service] = &output.AWSResource{
+		serviceArn := types.BuildResourceARN(service, "AWS::Service", "*", "*").String()
+		r := &output.AWSResource{
 			Platform:     "aws",
 			ResourceType: "AWS::Service",
 			ResourceID:   service,
-			ARN:          service,
+			ARN:          serviceArn,
 			Region:       "*",
 			AccountRef:   "*",
 			DisplayName:  svc,
 		}
+		s.resourceCache[service] = r
+		s.resourceCache[serviceArn] = r
 	}
 }
 
@@ -194,9 +197,11 @@ func (s *AnalyzerMemoryState) GetPolicyByArn(policyArn string) *types.ManagedPol
 }
 
 func (s *AnalyzerMemoryState) getResources(pattern *regexp.Regexp) []*output.AWSResource {
+	seen := make(map[*output.AWSResource]bool)
 	var resources []*output.AWSResource
 	for key, r := range s.resourceCache {
-		if pattern.MatchString(key) {
+		if pattern.MatchString(key) && !seen[r] {
+			seen[r] = true
 			resources = append(resources, r)
 		}
 	}
