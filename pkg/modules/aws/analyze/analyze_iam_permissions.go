@@ -99,7 +99,7 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 
 	// Create PolicyData and analyzer
 	pd := iampkg.NewPolicyData(gaad, orgPols, resourcePolicies, resources)
-	analyzer := iampkg.NewGaadAnalyzer(pd)
+	analyzer := iampkg.NewGaadAnalyzerOld(pd)
 
 	// Run analysis
 	summary, err := analyzer.AnalyzePrincipalPermissions()

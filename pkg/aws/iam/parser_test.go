@@ -190,7 +190,7 @@ func Test_AssumeRole(t *testing.T) {
 	resources := strResourcetoType[[]types.EnrichedResourceDescription](erdStr)
 
 	pd := NewPolicyData(&gaad, nil, make(map[string]*types.Policy), &resources)
-	ga := NewGaadAnalyzer(pd)
+	ga := NewGaadAnalyzerOld(pd)
 	ps, err := ga.AnalyzePrincipalPermissions()
 	assert.NoError(t, err)
 
@@ -272,7 +272,7 @@ func Test_CreateMapsToService(t *testing.T) {
 	))
 
 	pd := NewPolicyData(&gaad, nil, make(map[string]*types.Policy), &resources)
-	ga := NewGaadAnalyzer(pd)
+	ga := NewGaadAnalyzerOld(pd)
 	ps, err := ga.AnalyzePrincipalPermissions()
 	assert.NoError(t, err)
 
@@ -417,7 +417,7 @@ func Test_PrivilegeEscalation(t *testing.T) {
 
 	// Create policy data and analyzer
 	pd := NewPolicyData(&gaad, nil, make(map[string]*types.Policy), &resources)
-	ga := NewGaadAnalyzer(pd)
+	ga := NewGaadAnalyzerOld(pd)
 	ps, err := ga.AnalyzePrincipalPermissions()
 	assert.NoError(t, err)
 
