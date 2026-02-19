@@ -1,7 +1,15 @@
 package recon
 
 import (
+	"fmt"
+	"log/slog"
+
+	"github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
+	"github.com/praetorian-inc/aurelian/pkg/aws/gaad"
+	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 func init() {
@@ -43,5 +51,64 @@ func (m *AWSGraphNewModule) Parameters() any {
 }
 
 func (m *AWSGraphNewModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
+	c := m.GraphConfig
+
+	gaadData, err := m.collectAccountAuthorizationDetails(c)
+	if err != nil {
+		return nil, err
+	}
+	_ = gaadData
+
+	resourcesByRegion, err := m.collectResources(c)
+	if err != nil {
+		return nil, err
+	}
+	_ = resourcesByRegion
+
 	return nil, nil
+}
+
+func (m *AWSGraphNewModule) collectAccountAuthorizationDetails(c GraphConfig) (*types.AuthorizationAccountDetails, error) {
+	slog.Info("collecting account authorization details")
+	g := gaad.New(c.AWSReconBase)
+	gaadData, err := g.Get()
+	if err != nil {
+		return nil, fmt.Errorf("collecting GAAD: %w", err)
+	}
+	slog.Info("GAAD collected",
+		"account", gaadData.AccountID,
+		"users", len(gaadData.UserDetailList),
+		"roles", len(gaadData.RoleDetailList),
+		"groups", len(gaadData.GroupDetailList))
+	return gaadData, nil
+}
+
+func (m *AWSGraphNewModule) collectResources(c GraphConfig) (map[string][]output.AWSResource, error) {
+	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolving regions: %w", err)
+	}
+	slog.Info("resolved regions", "regions", resolvedRegions)
+
+	lister := cloudcontrol.NewCloudControlLister(c.AWSCommonRecon)
+	resourceTypesToScan := resourcepolicies.SupportedResourceTypes()
+
+	slog.Info("enumerating cloud resources", "types", len(resourceTypesToScan), "regions", len(resolvedRegions))
+	allResources, err := lister.List(resolvedRegions, resourceTypesToScan)
+	if err != nil {
+		return nil, fmt.Errorf("listing resources: %w", err)
+	}
+
+	// Re-key by region (CloudControl returns keys as "region/type")
+	total := 0
+	byRegion := make(map[string][]output.AWSResource)
+	for _, resources := range allResources {
+		for _, r := range resources {
+			byRegion[r.Region] = append(byRegion[r.Region], r)
+		}
+		total += len(resources)
+	}
+
+	slog.Info("resources enumerated", "count", total, "regions", len(byRegion))
+	return byRegion, nil
 }
