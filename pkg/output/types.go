@@ -33,6 +33,14 @@ type SecretFinding struct {
 	// Confidence indicates the detection confidence level
 	// Valid values: "low", "medium", "high", "critical"
 	Confidence string `json:"confidence"`
+
+	// Verified indicates whether the secret was validated against its source API
+	// Empty string means not verified, "valid" means active, "invalid" means inactive,
+	// "undetermined" means validation was attempted but inconclusive
+	Verified string `json:"verified,omitempty"`
+
+	// VerifiedMessage provides additional context about the validation result
+	VerifiedMessage string `json:"verified_message,omitempty"`
 }
 
 // Risk represents a security vulnerability or configuration issue discovered

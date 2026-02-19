@@ -15,6 +15,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 	"github.com/praetorian-inc/aurelian/pkg/scanner"
 	titusTypes "github.com/praetorian-inc/titus/pkg/types"
+	"github.com/praetorian-inc/titus/pkg/validator"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -50,6 +51,14 @@ func FindSecrets(ctx context.Context, opts ScanOptions) ([]output.SecretFinding,
 	concurrency := opts.Concurrency
 	if concurrency <= 0 {
 		concurrency = 5
+	}
+
+	// Set up validator engine if verification is enabled
+	var validatorEngine *validator.Engine
+	if opts.Verify {
+		validatorEngine = validator.NewEngine(concurrency,
+			validator.NewAWSValidator(),
+		)
 	}
 
 	// Enumerate resources using CloudControl
@@ -131,7 +140,7 @@ func FindSecrets(ctx context.Context, opts ScanOptions) ([]output.SecretFinding,
 		for _, resource := range resources {
 			resource := resource
 			g.Go(func() error {
-				regionFindings, err := extractAndScan(gCtx, cfg, resource, opts, ps)
+				regionFindings, err := extractAndScan(gCtx, cfg, resource, opts, ps, validatorEngine)
 				if err != nil {
 					slog.Warn("extract and scan failed",
 						"type", resource.ResourceType,
@@ -163,7 +172,7 @@ func FindSecrets(ctx context.Context, opts ScanOptions) ([]output.SecretFinding,
 }
 
 // extractAndScan extracts content from a resource and scans it for secrets.
-func extractAndScan(ctx context.Context, cfg aws.Config, resource output.CloudResource, opts ScanOptions, ps *scanner.PersistentScanner) ([]output.SecretFinding, error) {
+func extractAndScan(ctx context.Context, cfg aws.Config, resource output.CloudResource, opts ScanOptions, ps *scanner.PersistentScanner, ve *validator.Engine) ([]output.SecretFinding, error) {
 	extractor := GetExtractor(resource.ResourceType)
 	if extractor == nil {
 		return nil, nil
@@ -195,7 +204,7 @@ func extractAndScan(ctx context.Context, cfg aws.Config, resource output.CloudRe
 		}
 
 		for _, match := range matches {
-			findings = append(findings, output.SecretFinding{
+			finding := output.SecretFinding{
 				ResourceRef: ec.Provenance.ResourceID,
 				RuleName:    match.RuleName,
 				RuleTextID:  match.RuleID,
@@ -203,7 +212,17 @@ func extractAndScan(ctx context.Context, cfg aws.Config, resource output.CloudRe
 				FilePath:    ec.Provenance.FilePath,
 				LineNumber:  match.Location.Source.Start.Line,
 				Confidence:  "high",
-			})
+			}
+
+			if ve != nil {
+				result, err := ve.ValidateMatch(ctx, match)
+				if err == nil && result != nil {
+					finding.Verified = string(result.Status)
+					finding.VerifiedMessage = result.Message
+				}
+			}
+
+			findings = append(findings, finding)
 		}
 	}
 

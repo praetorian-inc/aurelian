@@ -18,6 +18,7 @@ type FindSecretsConfig struct {
 	MaxStreams  int  `param:"max-streams"   desc:"Maximum number of log streams to sample per log group (CloudWatch Logs)" default:"10"`
 	NewestFirst bool `param:"newest-first"  desc:"Fetch newest events first instead of oldest (CloudWatch Logs)" default:"false"`
 	DBPath      string `param:"db-path"      desc:"Path for the Titus SQLite database (default: aurelian-output/titus.db)" default:""`
+	Verify      bool   `param:"verify"       desc:"Validate detected secrets against their source APIs" default:"false"`
 }
 
 // AWSFindSecretsModule enumerates AWS resources and scans them for secrets.
@@ -63,6 +64,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
 		MaxStreams:     c.MaxStreams,
 		NewestFirst:   c.NewestFirst,
 		DBPath:        c.DBPath,
+		Verify:        c.Verify,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("find-secrets: %w", err)
