@@ -3,9 +3,11 @@
 package resourcepolicies
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
+	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/praetorian-inc/aurelian/test/testutil"
@@ -148,6 +150,59 @@ func TestResourcePolicyCollector_Integration(t *testing.T) {
 		assert.True(t, resultARNs[sqsQueueARN], "SQS ARN should be in results")
 		assert.True(t, resultARNs[snsTopicARN], "SNS ARN should be in results")
 		assert.True(t, resultARNs[lambdaFunctionARN], "Lambda ARN should be in results")
+	})
+
+	t.Run("matches legacy CollectPolicies", func(t *testing.T) {
+		// Build an aws.Config for the legacy function (it takes one config per region).
+		awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
+			Region: region,
+		})
+		require.NoError(t, err)
+
+		// Flatten region-keyed map into the flat slice that CollectPolicies expects.
+		var flat []output.AWSResource
+		for _, resources := range resourcesByRegion {
+			flat = append(flat, resources...)
+		}
+
+		legacyResults, err := CollectPolicies(context.Background(), awsCfg, flat)
+		require.NoError(t, err)
+
+		require.NotEmpty(t, results, "new collector results should not be empty")
+		require.NotEmpty(t, legacyResults, "legacy CollectPolicies results should not be empty")
+
+		// Compare by ARN set.
+		newARNs := make(map[string]bool)
+		for _, r := range results {
+			newARNs[r.ARN] = true
+		}
+		legacyARNs := make(map[string]bool)
+		for _, r := range legacyResults {
+			legacyARNs[r.ARN] = true
+		}
+		assert.Equal(t, legacyARNs, newARNs, "resource ARN sets should match")
+
+		// Compare ResourcePolicy JSON per ARN.
+		legacyByARN := make(map[string]string)
+		for _, r := range legacyResults {
+			legacyByARN[r.ARN] = r.Properties["ResourcePolicy"].(string)
+		}
+		newByARN := make(map[string]string)
+		for _, r := range results {
+			newByARN[r.ARN] = r.Properties["ResourcePolicy"].(string)
+		}
+		for arn, legacyPolicy := range legacyByARN {
+			newPolicy, ok := newByARN[arn]
+			require.True(t, ok, "new results should contain ARN %s", arn)
+
+			// Compare as parsed JSON to avoid ordering differences.
+			var legacyParsed, newParsed types.Policy
+			require.NoError(t, json.Unmarshal([]byte(legacyPolicy), &legacyParsed))
+			require.NoError(t, json.Unmarshal([]byte(newPolicy), &newParsed))
+			assert.Equal(t, legacyParsed.Version, newParsed.Version, "policy version mismatch for %s", arn)
+			assert.Equal(t, len(*legacyParsed.Statement), len(*newParsed.Statement),
+				"statement count mismatch for %s", arn)
+		}
 	})
 }
 
