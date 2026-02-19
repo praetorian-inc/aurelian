@@ -14,14 +14,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-//go:embed enrich/**/*.yaml
-var queriesFS embed.FS
+//go:embed enrich
+var enrichFS embed.FS
+
+//go:embed analysis
+var analysisFS embed.FS
 
 var queryRegistry map[string]*Query
 
 func init() {
 	queryRegistry = make(map[string]*Query)
-	loadFromFS(queriesFS, "enrich")
+	loadFromFS(enrichFS, "enrich")
+	loadFromFS(analysisFS, "analysis")
 }
 
 func loadFromFS(fs embed.FS, rootDir string) {
@@ -98,6 +102,40 @@ func EnrichAWS(ctx context.Context, db graph.GraphDatabase) error {
 	}
 
 	return nil
+}
+
+// AnalyzeAWS runs all AWS analysis queries in order and returns results
+func AnalyzeAWS(ctx context.Context, db graph.GraphDatabase) ([]*graph.QueryResult, error) {
+	var analysisQueries []*Query
+	for _, query := range queryRegistry {
+		if query.Metadata.Type == "analysis" && query.Metadata.Platform == "aws" {
+			analysisQueries = append(analysisQueries, query)
+		}
+	}
+
+	sort.Slice(analysisQueries, func(i, j int) bool {
+		return analysisQueries[i].Metadata.Order < analysisQueries[j].Metadata.Order
+	})
+
+	slog.Info("running AWS analysis queries", "count", len(analysisQueries))
+
+	var results []*graph.QueryResult
+	for _, query := range analysisQueries {
+		slog.Debug("executing analysis query", "id", query.Metadata.ID, "name", query.Metadata.Name)
+
+		result, err := db.Query(ctx, query.Cypher, nil)
+		if err != nil {
+			return nil, fmt.Errorf("query %s failed: %w", query.Metadata.ID, err)
+		}
+
+		results = append(results, result)
+
+		slog.Debug("query completed",
+			"id", query.Metadata.ID,
+			"records", len(result.Records))
+	}
+
+	return results, nil
 }
 
 // RunPlatformQuery executes a specific query by ID

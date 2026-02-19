@@ -1,22 +1,22 @@
-id: aws/enrich/privesc/method_18
-name: IAM PassRole + Glue Privilege Escalation
+id: aws/enrich/privesc/method_32
+name: IAM PassRole + ECS RunTask Privilege Escalation
 platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with both iam:PassRole and glue:CreateJob permissions 
-  that can create Glue jobs with elevated IAM roles.
+  Detects principals with both iam:PassRole and ecs:RunTask permissions
+  that can run ECS tasks with elevated IAM roles.
 severity: high
-order: 118
+order: 132
 cypher: |
   MATCH (attacker:Principal)-[passrole]->(target)
   WHERE type(passrole) = 'IAM_PASSROLE'
   WITH attacker
-  MATCH (attacker)-[create]->(service_resource)
-  WHERE type(create) = 'GLUE_CREATEJOB'
+  MATCH (attacker)-[run]->(service_resource)
+  WHERE type(run) = 'ECS_RUNTASK'
   MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:PassRole + glue:CreateJob',
+  SET pe.method = 'iam:PassRole + ecs:RunTask',
       pe.severity = 'high',
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

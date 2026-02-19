@@ -15,8 +15,8 @@ cypher: |
   MATCH (attacker)-[create]->(service_resource)
   WHERE type(create) = 'CLOUDFORMATION_CREATESTACK'
   MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+  ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + cloudformation:CreateStack',
       pe.severity = 'high',
       pe._updated = timestamp()
-  ON CREATE SET pe._created = timestamp()
   RETURN count(pe) as edges_created

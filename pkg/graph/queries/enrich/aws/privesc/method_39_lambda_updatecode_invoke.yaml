@@ -1,0 +1,26 @@
+id: aws/enrich/privesc/method_39
+name: Lambda UpdateFunctionCode + InvokeFunction Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both lambda:UpdateFunctionCode and lambda:InvokeFunction
+  permissions that can modify a Lambda function's code and directly invoke it to
+  execute with the function's IAM role.
+severity: high
+order: 139
+cypher: |
+  MATCH (attacker:Principal)-[update]->(target)
+  WHERE type(update) = 'LAMBDA_UPDATEFUNCTIONCODE'
+  WITH attacker, target
+  MATCH (attacker)-[invoke]->(target)
+  WHERE type(invoke) = 'LAMBDA_INVOKEFUNCTION'
+  WITH attacker
+  MATCH (victim:Principal)
+  WHERE victim.Arn <> attacker.Arn
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'lambda:UpdateFunctionCode + lambda:InvokeFunction',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

@@ -198,10 +198,15 @@ func TestGraphFormatter_FullPipeline(t *testing.T) {
 		},
 	}
 
+	// Convert GAAD and AWSResources to []output.AWSIAMResource (the type GraphFormatter expects)
+	entities := iampkg.FromGAAD(gaad, "123456789012")
+	for _, res := range resources {
+		entities = append(entities, output.FromAWSResource(res))
+	}
+
 	// Create Results array
 	results := []plugin.Result{
-		{Data: gaad},
-		{Data: resources},
+		{Data: entities},
 		{Data: fullResults},
 	}
 
