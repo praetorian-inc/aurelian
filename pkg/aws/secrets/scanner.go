@@ -41,7 +41,7 @@ func FindSecrets(ctx context.Context, opts ScanOptions) ([]output.SecretFinding,
 	)
 
 	// Set up the persistent scanner
-	ps, err := scanner.NewPersistentScanner("")
+	ps, err := scanner.NewPersistentScanner(opts.DBPath)
 	if err != nil {
 		return nil, fmt.Errorf("create scanner: %w", err)
 	}

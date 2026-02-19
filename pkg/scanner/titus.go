@@ -37,6 +37,14 @@ func NewPersistentScanner(dbPath string) (*PersistentScanner, error) {
 		return nil, fmt.Errorf("failed to load builtin rules: %w", err)
 	}
 
+	// Seed rules into the store so SQLite foreign key constraints are satisfied
+	for _, r := range rules {
+		if err := s.AddRule(r); err != nil {
+			s.Close()
+			return nil, fmt.Errorf("failed to store rule %s: %w", r.ID, err)
+		}
+	}
+
 	// Create matcher
 	m, err := matcher.New(matcher.Config{
 		Rules:        rules,
