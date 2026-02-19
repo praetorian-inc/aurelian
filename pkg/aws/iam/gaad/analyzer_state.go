@@ -24,6 +24,7 @@ type AnalyzerState interface {
 	GetRole(arn string) *types.RoleDetail
 	GetResource(arn string) *output.AWSResource
 	GetGroupByName(name string) *types.GroupDetail
+	GetUser(arn string) *types.UserDetail
 }
 
 // AnalyzerMemoryState is the in-memory implementation of AnalyzerState.
@@ -238,6 +239,11 @@ func (s *AnalyzerMemoryState) GetRole(roleArn string) *types.RoleDetail {
 // GetResource returns a resource by ARN, or nil if not found.
 func (s *AnalyzerMemoryState) GetResource(resourceArn string) *output.AWSResource {
 	return s.resourceCache[resourceArn]
+}
+
+// GetUser returns a user by ARN, or nil if not found.
+func (s *AnalyzerMemoryState) GetUser(userArn string) *types.UserDetail {
+	return s.userCache[userArn]
 }
 
 // GetGroupByName returns a group by name, or nil if not found.

@@ -704,7 +704,7 @@ func TestMatchesPattern(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.pattern+"_"+tc.input, func(t *testing.T) {
-			result := matchesPattern(tc.pattern, tc.input)
+			result := MatchesPattern(tc.pattern, tc.input)
 			if result != tc.matched {
 				t.Errorf("Expected %v, but got %v for pattern %s and input %s", tc.matched, result, tc.pattern, tc.input)
 			}

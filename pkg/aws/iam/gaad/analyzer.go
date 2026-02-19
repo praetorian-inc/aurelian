@@ -87,9 +87,18 @@ func (ga *GaadAnalyzer) Analyze(
 		results = append(results, rel)
 	}
 
-	// TODO (4g): applyCreateThenUseEdges
+	// Add synthetic permission edges for attack patterns the evaluator can't discover
+	results = ga.generateSyntheticPermissions(results, state)
 
 	return results, nil
+}
+
+// generateSyntheticPermissions appends synthetic permission edges that cannot be
+// discovered by the evaluator alone (because the target resources don't exist yet
+// but could be created by the principal). Additional synthetic techniques can be
+// added here in the future.
+func (ga *GaadAnalyzer) generateSyntheticPermissions(results []output.AWSIAMRelationship, state AnalyzerState) []output.AWSIAMRelationship {
+	return synthesizeCreateThenUsePermissions(results, state)
 }
 
 // buildPolicyData constructs an iam.PolicyData for the evaluator.

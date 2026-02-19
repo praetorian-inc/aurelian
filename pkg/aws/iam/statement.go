@@ -94,8 +94,8 @@ func matchesRegexPattern(pattern *regexp.Regexp, input string) bool {
 	return pattern.MatchString(input)
 }
 
-// matchesPattern handles basic glob pattern matching (case insensitive)
-func matchesPattern(pattern, input string) bool {
+// MatchesPattern handles basic glob pattern matching (case insensitive)
+func MatchesPattern(pattern, input string) bool {
 	// Escape regex metacharacters, preserving * and ? for glob conversion
 	pattern = strings.ReplaceAll(pattern, ".", "\\.")
 	pattern = strings.ReplaceAll(pattern, "+", "\\+")
@@ -120,7 +120,7 @@ func matchesPattern(pattern, input string) bool {
 // matchesActions checks if an action matches any in the DynaString
 func matchesActions(actions *types.DynaString, requestedAction string) bool {
 	for _, action := range *actions {
-		if matchesPattern(action, requestedAction) {
+		if MatchesPattern(action, requestedAction) {
 			return true
 		}
 	}
@@ -130,7 +130,7 @@ func matchesActions(actions *types.DynaString, requestedAction string) bool {
 // MatchesResources checks if a resource matches any in the DynaString
 func MatchesResources(resources *types.DynaString, requestedResource string) bool {
 	for _, resource := range *resources {
-		if matchesPattern(resource, requestedResource) {
+		if MatchesPattern(resource, requestedResource) {
 			return true
 		}
 	}
@@ -539,7 +539,7 @@ func matchesPrincipal(principal *types.Principal, requestedPrincipal string) boo
 			if strings.HasSuffix(aws, ":root") {
 				aws = strings.Replace(aws, ":root", "*", 1)
 			}
-			if matchesPattern(aws, requestedPrincipal) {
+			if MatchesPattern(aws, requestedPrincipal) {
 				return true
 			}
 		}
@@ -547,7 +547,7 @@ func matchesPrincipal(principal *types.Principal, requestedPrincipal string) boo
 
 	if principal.Service != nil {
 		for _, service := range *principal.Service {
-			if matchesPattern(service, requestedPrincipal) {
+			if MatchesPattern(service, requestedPrincipal) {
 				return true
 			}
 		}
@@ -555,7 +555,7 @@ func matchesPrincipal(principal *types.Principal, requestedPrincipal string) boo
 
 	if principal.Federated != nil {
 		for _, federated := range *principal.Federated {
-			if matchesPattern(federated, requestedPrincipal) {
+			if MatchesPattern(federated, requestedPrincipal) {
 				return true
 			}
 		}
@@ -563,7 +563,7 @@ func matchesPrincipal(principal *types.Principal, requestedPrincipal string) boo
 
 	if principal.CanonicalUser != nil {
 		for _, canonicalUser := range *principal.CanonicalUser {
-			if matchesPattern(canonicalUser, requestedPrincipal) {
+			if MatchesPattern(canonicalUser, requestedPrincipal) {
 				return true
 			}
 		}
