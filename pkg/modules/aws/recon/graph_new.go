@@ -52,7 +52,7 @@ func (m *AWSGraphNewModule) Parameters() any {
 
 func (m *AWSGraphNewModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
 	c := m.GraphConfig
-	policyCollector := resourcepolicies.New(c.Profile, c.ProfileDir)
+	policyCollector := resourcepolicies.New(c.AWSCommonRecon)
 
 	gaadData, err := m.collectAccountAuthorizationDetails(c)
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
@@ -68,7 +69,7 @@ func TestResourcePolicyCollector_Integration(t *testing.T) {
 		},
 	}
 
-	collector := New("", "")
+	collector := New(plugin.AWSCommonRecon{})
 	results, err := collector.Collect(resourcesByRegion)
 	require.NoError(t, err)
 

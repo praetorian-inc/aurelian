@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
@@ -26,25 +27,18 @@ type policyMethod func(ctx context.Context, cfg aws.Config, r *output.AWSResourc
 
 // ResourcePolicyCollector collects resource policies for AWS resources.
 type ResourcePolicyCollector struct {
-	profile          string
-	profileDir       string
+	opts             plugin.AWSCommonRecon
 	crossRegionActor *ratelimit.CrossRegionActor
 }
 
 // New creates a new ResourcePolicyCollector.
-func New(profile, profileDir string) *ResourcePolicyCollector {
-	return &ResourcePolicyCollector{
-		profile:          profile,
-		profileDir:       profileDir,
-		crossRegionActor: ratelimit.NewCrossRegionActor(5),
+func New(opts plugin.AWSCommonRecon) *ResourcePolicyCollector {
+	concurrency := opts.Concurrency
+	if concurrency <= 0 {
+		concurrency = 5
 	}
-}
-
-// NewWithConcurrency creates a new ResourcePolicyCollector with a custom concurrency limit.
-func NewWithConcurrency(profile, profileDir string, concurrency int) *ResourcePolicyCollector {
 	return &ResourcePolicyCollector{
-		profile:          profile,
-		profileDir:       profileDir,
+		opts:             opts,
 		crossRegionActor: ratelimit.NewCrossRegionActor(concurrency),
 	}
 }
@@ -96,8 +90,8 @@ func (c *ResourcePolicyCollector) Collect(resourcesByRegion map[string][]output.
 	err := c.crossRegionActor.ActInRegions(regions, func(region string) error {
 		awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
 			Region:     region,
-			Profile:    c.profile,
-			ProfileDir: c.profileDir,
+			Profile:    c.opts.Profile,
+			ProfileDir: c.opts.ProfileDir,
 		})
 		if err != nil {
 			slog.Warn("creating AWS config for resource policies, skipping region",

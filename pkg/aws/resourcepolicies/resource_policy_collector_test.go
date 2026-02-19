@@ -4,11 +4,12 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestResourcePolicyCollector_SupportedResourceTypes(t *testing.T) {
-	c := New("", "")
+	c := New(plugin.AWSCommonRecon{})
 	types := c.SupportedResourceTypes()
 
 	assert.Len(t, types, 7)
@@ -28,7 +29,7 @@ func TestResourcePolicyCollector_SupportedResourceTypes(t *testing.T) {
 }
 
 func TestResourcePolicyCollector_SupportedResourceTypes_MatchesLegacy(t *testing.T) {
-	collector := New("", "")
+	collector := New(plugin.AWSCommonRecon{})
 	newTypes := collector.SupportedResourceTypes()
 	legacyTypes := SupportedResourceTypes()
 
@@ -37,7 +38,7 @@ func TestResourcePolicyCollector_SupportedResourceTypes_MatchesLegacy(t *testing
 }
 
 func TestResourcePolicyCollector_RegistryHasAllMethods(t *testing.T) {
-	c := New("test-profile", "/test/dir")
+	c := New(plugin.AWSCommonRecon{AWSReconBase: plugin.AWSReconBase{Profile: "test-profile", ProfileDir: "/test/dir"}})
 	reg := c.registry()
 
 	// Every entry in the registry should be a non-nil function
@@ -47,7 +48,7 @@ func TestResourcePolicyCollector_RegistryHasAllMethods(t *testing.T) {
 }
 
 func TestResourcePolicyCollector_Collect_EmptyInput(t *testing.T) {
-	c := New("", "")
+	c := New(plugin.AWSCommonRecon{})
 
 	results, err := c.Collect(map[string][]output.AWSResource{})
 	assert.NoError(t, err)
@@ -55,7 +56,7 @@ func TestResourcePolicyCollector_Collect_EmptyInput(t *testing.T) {
 }
 
 func TestResourcePolicyCollector_Collect_NilRegionSkipped(t *testing.T) {
-	c := New("", "")
+	c := New(plugin.AWSCommonRecon{})
 
 	resources := map[string][]output.AWSResource{
 		"us-east-1": {},
