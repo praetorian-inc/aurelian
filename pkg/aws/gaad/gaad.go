@@ -3,11 +3,13 @@ package gaad
 import (
 	"context"
 	"fmt"
+	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
 // GAAD wraps the collection of AWS IAM Account Authorization Details.
@@ -31,30 +33,44 @@ func (g *GAAD) GetAccountAuthorizationDetails() error {
 		return err
 	}
 
-	var userDetailList []iamtypes.UserDetail
-	var groupDetailList []iamtypes.GroupDetail
-	var roleDetailList []iamtypes.RoleDetail
-	var policies []iamtypes.ManagedPolicyDetail
+	var iamUserDLs []iamtypes.UserDetail
+	var iamGroupDLs []iamtypes.GroupDetail
+	var iamRoleDLs []iamtypes.RoleDetail
+	var iamPolicies []iamtypes.ManagedPolicyDetail
 
-	pageNum := 0
-	for g.iamPaginator.HasMorePages() {
-		pageNum++
-		page, err := g.iamPaginator.NextPage(ctx)
-		if err != nil {
-			return fmt.Errorf("error retrieving authorization details page %d: %w", pageNum, err)
+	paginator := ratelimit.NewPaginator()
+	err := paginator.Paginate(func() (bool, error) {
+		if !g.iamPaginator.HasMorePages() {
+			return false, nil
 		}
 
-		userDetailList = append(userDetailList, page.UserDetailList...)
-		groupDetailList = append(groupDetailList, page.GroupDetailList...)
-		roleDetailList = append(roleDetailList, page.RoleDetailList...)
-		policies = append(policies, page.Policies...)
+		page, err := g.iamPaginator.NextPage(ctx)
+		if err != nil {
+			return false, err
+		}
+
+		iamUserDLs = append(iamUserDLs, page.UserDetailList...)
+		iamGroupDLs = append(iamGroupDLs, page.GroupDetailList...)
+		iamRoleDLs = append(iamRoleDLs, page.RoleDetailList...)
+		iamPolicies = append(iamPolicies, page.Policies...)
+
+		return g.iamPaginator.HasMorePages(), nil
+	})
+	if err != nil {
+		return fmt.Errorf("error retrieving authorization details: %w", err)
 	}
 
-	gaad, err := convertToGaad(userDetailList, groupDetailList, roleDetailList, policies)
+	// Convert AWS SDK types to our internal types
+	userDLs, groupDLs, roleDLs, policies, err := convertToInternalTypes(iamUserDLs, iamGroupDLs, iamRoleDLs, iamPolicies)
 	if err != nil {
-		return fmt.Errorf("error converting to Gaad types: %w", err)
+		return fmt.Errorf("error converting to internal types: %w", err)
 	}
-	_ = gaad
+	_ = &iampkg.AuthorizationAccountDetails{
+		UserDetailList:  userDLs,
+		GroupDetailList: groupDLs,
+		RoleDetailList:  roleDLs,
+		Policies:        policies,
+	}
 
 	return nil
 }

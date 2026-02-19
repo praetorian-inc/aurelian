@@ -34,7 +34,7 @@ func TestAWSAccountAuthDetails(t *testing.T) {
 	// Parse the GAAD data from results
 	raw, err := json.Marshal(results[0].Data)
 	require.NoError(t, err)
-	var gaad iam.Gaad
+	var gaad iam.AuthorizationAccountDetails
 	require.NoError(t, json.Unmarshal(raw, &gaad))
 
 	// Get expected names/ARNs from terraform outputs

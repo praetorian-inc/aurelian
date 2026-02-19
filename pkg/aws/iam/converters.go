@@ -5,8 +5,8 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
-// FromUserDL converts a GAAD UserDL to an AWSIAMResource.
-func FromUserDL(user UserDL, accountID string) output.AWSIAMResource {
+// FromUserDL converts a GAAD UserDetail to an AWSIAMResource.
+func FromUserDL(user UserDetail, accountID string) output.AWSIAMResource {
 	a, _ := arn.Parse(user.Arn)
 	if accountID == "" {
 		accountID = a.AccountID
@@ -41,8 +41,8 @@ func FromUserDL(user UserDL, accountID string) output.AWSIAMResource {
 	return r
 }
 
-// FromRoleDL converts a GAAD RoleDL to an AWSIAMResource.
-func FromRoleDL(role RoleDL) output.AWSIAMResource {
+// FromRoleDL converts a GAAD RoleDetail to an AWSIAMResource.
+func FromRoleDL(role RoleDetail) output.AWSIAMResource {
 	a, _ := arn.Parse(role.Arn)
 
 	r := output.AWSIAMResource{
@@ -77,8 +77,8 @@ func FromRoleDL(role RoleDL) output.AWSIAMResource {
 	return r
 }
 
-// FromGroupDL converts a GAAD GroupDL to an AWSIAMResource.
-func FromGroupDL(group GroupDL) output.AWSIAMResource {
+// FromGroupDL converts a GAAD GroupDetail to an AWSIAMResource.
+func FromGroupDL(group GroupDetail) output.AWSIAMResource {
 	a, _ := arn.Parse(group.Arn)
 
 	r := output.AWSIAMResource{
@@ -103,8 +103,8 @@ func FromGroupDL(group GroupDL) output.AWSIAMResource {
 	return r
 }
 
-// FromPolicyDL converts a GAAD PoliciesDL to an AWSIAMResource.
-func FromPolicyDL(policy PoliciesDL) output.AWSIAMResource {
+// FromPolicyDL converts a GAAD ManagedPolicyDetail to an AWSIAMResource.
+func FromPolicyDL(policy ManagedPolicyDetail) output.AWSIAMResource {
 	a, _ := arn.Parse(policy.Arn)
 
 	r := output.AWSIAMResource{

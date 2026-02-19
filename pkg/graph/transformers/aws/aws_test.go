@@ -11,7 +11,7 @@ import (
 )
 
 func TestNodeFromGaadUser(t *testing.T) {
-	user := iam.UserDL{
+	user := iam.UserDetail{
 		Arn:        "arn:aws:iam::123456789012:user/test-user",
 		UserName:   "test-user",
 		UserId:     "AIDACKCEVSQ6C2EXAMPLE",
@@ -38,7 +38,7 @@ func TestNodeFromGaadUser(t *testing.T) {
 }
 
 func TestNodeFromGaadRole(t *testing.T) {
-	role := iam.RoleDL{
+	role := iam.RoleDetail{
 		Arn:      "arn:aws:iam::123456789012:role/test-role",
 		RoleName: "test-role",
 		RoleId:   "AIDACKCEVSQ6C2EXAMPLE",
@@ -76,7 +76,7 @@ func TestNodeFromGaadRole(t *testing.T) {
 }
 
 func TestNodeFromGaadGroup(t *testing.T) {
-	group := iam.GroupDL{
+	group := iam.GroupDetail{
 		Arn:       "arn:aws:iam::123456789012:group/developers",
 		GroupName: "developers",
 		GroupId:   "AIDACKCEVSQ6C2EXAMPLE",
@@ -98,9 +98,9 @@ func TestNodeFromGaadGroup(t *testing.T) {
 
 func TestNodeFromAWSResource(t *testing.T) {
 	tests := []struct {
-		name         string
-		resource     output.AWSResource
-		wantLabels   []string
+		name          string
+		resource      output.AWSResource
+		wantLabels    []string
 		wantShortName string
 	}{
 		{
@@ -113,7 +113,7 @@ func TestNodeFromAWSResource(t *testing.T) {
 				AccountRef:   "123456789012",
 				Region:       "us-east-1",
 			},
-			wantLabels:   []string{"Bucket", "Resource", "AWS::S3::Bucket"},
+			wantLabels:    []string{"Bucket", "Resource", "AWS::S3::Bucket"},
 			wantShortName: "Bucket",
 		},
 		{
@@ -126,7 +126,7 @@ func TestNodeFromAWSResource(t *testing.T) {
 				AccountRef:   "123456789012",
 				Region:       "us-east-1",
 			},
-			wantLabels:   []string{"Function", "Resource", "AWS::Lambda::Function"},
+			wantLabels:    []string{"Function", "Resource", "AWS::Lambda::Function"},
 			wantShortName: "Function",
 		},
 	}
@@ -165,7 +165,7 @@ func TestRelationshipFromFullResult(t *testing.T) {
 		{
 			name: "User principal",
 			result: iam.FullResult{
-				Principal: &iam.UserDL{
+				Principal: &iam.UserDetail{
 					Arn:      "arn:aws:iam::123456789012:user/test-user",
 					UserName: "test-user",
 				},
@@ -183,7 +183,7 @@ func TestRelationshipFromFullResult(t *testing.T) {
 		{
 			name: "Role principal",
 			result: iam.FullResult{
-				Principal: &iam.RoleDL{
+				Principal: &iam.RoleDetail{
 					Arn:      "arn:aws:iam::123456789012:role/test-role",
 					RoleName: "test-role",
 				},
@@ -201,7 +201,7 @@ func TestRelationshipFromFullResult(t *testing.T) {
 		{
 			name: "Group principal",
 			result: iam.FullResult{
-				Principal: &iam.GroupDL{
+				Principal: &iam.GroupDetail{
 					Arn:       "arn:aws:iam::123456789012:group/developers",
 					GroupName: "developers",
 				},

@@ -83,7 +83,7 @@ func TestGraphFormatterFormatWithGaadData(t *testing.T) {
 		AWSResource: output.AWSResource{
 			Platform: "aws", ResourceType: "AWS::IAM::User",
 			ResourceID: "arn:aws:iam::123456789012:user/testuser",
-			ARN: "arn:aws:iam::123456789012:user/testuser",
+			ARN:        "arn:aws:iam::123456789012:user/testuser",
 			AccountRef: "123456789012", DisplayName: "testuser",
 		},
 	}
@@ -91,7 +91,7 @@ func TestGraphFormatterFormatWithGaadData(t *testing.T) {
 		AWSResource: output.AWSResource{
 			Platform: "aws", ResourceType: "AWS::IAM::Role",
 			ResourceID: "arn:aws:iam::123456789012:role/testrole",
-			ARN: "arn:aws:iam::123456789012:role/testrole",
+			ARN:        "arn:aws:iam::123456789012:role/testrole",
 			AccountRef: "123456789012", DisplayName: "testrole",
 		},
 	}
@@ -99,7 +99,7 @@ func TestGraphFormatterFormatWithGaadData(t *testing.T) {
 		AWSResource: output.AWSResource{
 			Platform: "aws", ResourceType: "AWS::IAM::Group",
 			ResourceID: "arn:aws:iam::123456789012:group/testgroup",
-			ARN: "arn:aws:iam::123456789012:group/testgroup",
+			ARN:        "arn:aws:iam::123456789012:group/testgroup",
 			AccountRef: "123456789012", DisplayName: "testgroup",
 		},
 	}
@@ -110,7 +110,7 @@ func TestGraphFormatterFormatWithGaadData(t *testing.T) {
 
 	entities := []output.AWSIAMResource{userEntity, roleEntity, groupEntity, bucketEntity}
 
-	user := iampkg.UserDL{Arn: "arn:aws:iam::123456789012:user/testuser", UserName: "testuser", UserId: "AIDAI123456"}
+	user := iampkg.UserDetail{Arn: "arn:aws:iam::123456789012:user/testuser", UserName: "testuser", UserId: "AIDAI123456"}
 	fullResults := []iampkg.FullResult{
 		{
 			Principal: &user,
@@ -160,7 +160,7 @@ func TestGraphFormatterFormatFlattenMap(t *testing.T) {
 		{AWSResource: output.AWSResource{
 			Platform: "aws", ResourceType: "AWS::IAM::User",
 			ResourceID: "arn:aws:iam::123456789012:user/testuser",
-			ARN: "arn:aws:iam::123456789012:user/testuser",
+			ARN:        "arn:aws:iam::123456789012:user/testuser",
 			AccountRef: "123456789012", DisplayName: "testuser",
 		}},
 		output.FromAWSResource(output.AWSResource{

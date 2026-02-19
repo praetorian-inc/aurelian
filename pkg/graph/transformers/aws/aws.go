@@ -12,7 +12,7 @@ import (
 // NodeFromGaadUser creates a graph node from an IAM User
 // Labels: ["User", "Principal", "AWS::IAM::User"]
 // UniqueKey: ["Arn"]
-func NodeFromGaadUser(user iampkg.UserDL) *graph.Node {
+func NodeFromGaadUser(user iampkg.UserDetail) *graph.Node {
 	props := flattenStruct(user)
 	props["_type"] = "User"
 	props["_resourceType"] = "AWS::IAM::User"
@@ -28,7 +28,7 @@ func NodeFromGaadUser(user iampkg.UserDL) *graph.Node {
 // Labels: ["Role", "Principal", "AWS::IAM::Role"]
 // UniqueKey: ["Arn"]
 // Extracts trusted_services from AssumeRolePolicyDocument if present
-func NodeFromGaadRole(role iampkg.RoleDL) *graph.Node {
+func NodeFromGaadRole(role iampkg.RoleDetail) *graph.Node {
 	props := flattenStruct(role)
 	props["_type"] = "Role"
 	props["_resourceType"] = "AWS::IAM::Role"
@@ -56,7 +56,7 @@ func NodeFromGaadRole(role iampkg.RoleDL) *graph.Node {
 // NodeFromGaadGroup creates a graph node from an IAM Group
 // Labels: ["Group", "Principal", "AWS::IAM::Group"]
 // UniqueKey: ["Arn"]
-func NodeFromGaadGroup(group iampkg.GroupDL) *graph.Node {
+func NodeFromGaadGroup(group iampkg.GroupDetail) *graph.Node {
 	props := flattenStruct(group)
 	props["_type"] = "Group"
 	props["_resourceType"] = "AWS::IAM::Group"
@@ -100,13 +100,13 @@ func NodeFromAWSIAMResource(resource output.AWSIAMResource) *graph.Node {
 	// If we have the original GAAD data, use the existing typed converters
 	if resource.OriginalData != nil {
 		switch data := resource.OriginalData.(type) {
-		case iampkg.UserDL:
+		case iampkg.UserDetail:
 			return NodeFromGaadUser(data)
-		case iampkg.RoleDL:
+		case iampkg.RoleDetail:
 			return NodeFromGaadRole(data)
-		case iampkg.GroupDL:
+		case iampkg.GroupDetail:
 			return NodeFromGaadGroup(data)
-		case iampkg.PoliciesDL:
+		case iampkg.ManagedPolicyDetail:
 			// Policies don't have a GAAD node type; use AWSResource style
 			return NodeFromAWSResource(resource.AWSResource)
 		}
@@ -139,11 +139,11 @@ func RelationshipFromFullResult(result iampkg.FullResult) *graph.Relationship {
 
 	// Type-switch on Principal to create the appropriate node
 	switch p := result.Principal.(type) {
-	case *iampkg.UserDL:
+	case *iampkg.UserDetail:
 		startNode = NodeFromGaadUser(*p)
-	case *iampkg.RoleDL:
+	case *iampkg.RoleDetail:
 		startNode = NodeFromGaadRole(*p)
-	case *iampkg.GroupDL:
+	case *iampkg.GroupDetail:
 		startNode = NodeFromGaadGroup(*p)
 	case string:
 		// Service principal

@@ -1482,8 +1482,8 @@ func TestPolicyEvaluator_SameAccountAssumeRole_WithGaadFlow(t *testing.T) {
 	assumableAdminRoleArn := "arn:aws:iam::" + accountID + ":role/privesc-shared-assumable-admin-role-55gvbw"
 
 	// Create a GAAD with the real structure
-	gaad := &Gaad{
-		RoleDetailList: []RoleDL{
+	gaad := &AuthorizationAccountDetails{
+		RoleDetailList: []RoleDetail{
 			{
 				Arn:      attackerRoleArn,
 				RoleName: "privesc-method24-sts-assumerole-attacker-55gvbw",
@@ -1749,11 +1749,11 @@ func TestPolicyEvaluator_CrossAccountAssumeRole_TrustPolicyValidation(t *testing
 
 func TestPolicyEvaluator_SSMDocumentRestrictions(t *testing.T) {
 	tests := []struct {
-		name                      string
-		action                    string
-		identityStatements        *types.PolicyStatementList
-		wantDocumentRestrictions  []string
-		wantAllowed               bool
+		name                     string
+		action                   string
+		identityStatements       *types.PolicyStatementList
+		wantDocumentRestrictions []string
+		wantAllowed              bool
 	}{
 		{
 			name:   "SSM SendCommand with wildcard document (HIGH RISK)",

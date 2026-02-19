@@ -61,7 +61,7 @@ func TestGaadUnmarshal(t *testing.T) {
 			"Policies": []
 		}`
 
-		var gaad Gaad
+		var gaad AuthorizationAccountDetails
 		err := json.Unmarshal([]byte(input), &gaad)
 		require.NoError(t, err)
 
@@ -94,7 +94,7 @@ func TestGaadUnmarshal(t *testing.T) {
 			"Policies": []
 		}`
 
-		var gaad Gaad
+		var gaad AuthorizationAccountDetails
 		err := json.Unmarshal([]byte(input), &gaad)
 		require.NoError(t, err)
 		assert.Empty(t, gaad.UserDetailList)
@@ -109,7 +109,7 @@ func TestDefaultPolicyDocument(t *testing.T) {
 		stmts := types.PolicyStatementList{
 			{Effect: "Allow", Action: types.NewDynaString([]string{"s3:*"}), Resource: types.NewDynaString([]string{"*"})},
 		}
-		policy := PoliciesDL{
+		policy := ManagedPolicyDetail{
 			PolicyName:       "TestPolicy",
 			DefaultVersionId: "v2",
 			PolicyVersionList: []PoliciesVL{
@@ -140,7 +140,7 @@ func TestDefaultPolicyDocument(t *testing.T) {
 	})
 
 	t.Run("returns nil when no default version exists", func(t *testing.T) {
-		policy := PoliciesDL{
+		policy := ManagedPolicyDetail{
 			PolicyName: "NoDefault",
 			PolicyVersionList: []PoliciesVL{
 				{
@@ -159,7 +159,7 @@ func TestDefaultPolicyDocument(t *testing.T) {
 	})
 
 	t.Run("returns nil for empty version list", func(t *testing.T) {
-		policy := PoliciesDL{
+		policy := ManagedPolicyDetail{
 			PolicyName:        "EmptyVersions",
 			PolicyVersionList: []PoliciesVL{},
 		}
@@ -190,7 +190,7 @@ func TestRoleDLAssumeRolePolicyDocument(t *testing.T) {
 			"InstanceProfileList": []
 		}`
 
-		var role RoleDL
+		var role RoleDetail
 		err := json.Unmarshal([]byte(input), &role)
 		require.NoError(t, err)
 		assert.Equal(t, "LambdaExec", role.RoleName)
@@ -246,7 +246,7 @@ func TestRoleDLWithInstanceProfiles(t *testing.T) {
 			}]
 		}`
 
-		var role RoleDL
+		var role RoleDetail
 		err := json.Unmarshal([]byte(input), &role)
 		require.NoError(t, err)
 		require.Len(t, role.InstanceProfileList, 1)
@@ -280,7 +280,7 @@ func TestUserDLWithInlinePolicies(t *testing.T) {
 			"AttachedManagedPolicies": []
 		}`
 
-		var user UserDL
+		var user UserDetail
 		err := json.Unmarshal([]byte(input), &user)
 		require.NoError(t, err)
 		assert.Equal(t, "developer", user.UserName)
@@ -319,7 +319,7 @@ func TestGroupDLWithPolicies(t *testing.T) {
 			]
 		}`
 
-		var group GroupDL
+		var group GroupDetail
 		err := json.Unmarshal([]byte(input), &group)
 		require.NoError(t, err)
 		assert.Equal(t, "Developers", group.GroupName)
@@ -366,7 +366,7 @@ func TestPoliciesDLWithVersions(t *testing.T) {
 			]
 		}`
 
-		var pol PoliciesDL
+		var pol ManagedPolicyDetail
 		err := json.Unmarshal([]byte(input), &pol)
 		require.NoError(t, err)
 		assert.Equal(t, "CustomPolicy", pol.PolicyName)

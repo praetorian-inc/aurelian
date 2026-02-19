@@ -11,13 +11,13 @@ import (
 )
 
 type PolicyData struct {
-	Gaad             *Gaad
+	Gaad             *AuthorizationAccountDetails
 	OrgPolicies      *orgpolicies.OrgPolicies
 	ResourcePolicies map[string]*types.Policy
 	Resources        *[]types.EnrichedResourceDescription
 }
 
-func NewPolicyData(gaad *Gaad, orgPolicies *orgpolicies.OrgPolicies, resourcePolicies map[string]*types.Policy, resources *[]types.EnrichedResourceDescription) *PolicyData {
+func NewPolicyData(gaad *AuthorizationAccountDetails, orgPolicies *orgpolicies.OrgPolicies, resourcePolicies map[string]*types.Policy, resources *[]types.EnrichedResourceDescription) *PolicyData {
 	if resourcePolicies == nil {
 		resourcePolicies = make(map[string]*types.Policy, 0)
 	}
