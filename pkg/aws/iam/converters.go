@@ -15,7 +15,6 @@ func FromUserDL(user types.UserDetail, accountID string) output.AWSIAMResource {
 
 	r := output.AWSIAMResource{
 		AWSResource: output.AWSResource{
-			Platform:     "aws",
 			ResourceType: "AWS::IAM::User",
 			ResourceID:   user.Arn,
 			ARN:          user.Arn,
@@ -48,7 +47,6 @@ func FromRoleDL(role types.RoleDetail) output.AWSIAMResource {
 
 	r := output.AWSIAMResource{
 		AWSResource: output.AWSResource{
-			Platform:     "aws",
 			ResourceType: "AWS::IAM::Role",
 			ResourceID:   role.Arn,
 			ARN:          role.Arn,
@@ -84,7 +82,6 @@ func FromGroupDL(group types.GroupDetail) output.AWSIAMResource {
 
 	r := output.AWSIAMResource{
 		AWSResource: output.AWSResource{
-			Platform:     "aws",
 			ResourceType: "AWS::IAM::Group",
 			ResourceID:   group.Arn,
 			ARN:          group.Arn,
@@ -110,7 +107,6 @@ func FromPolicyDL(policy types.ManagedPolicyDetail) output.AWSIAMResource {
 
 	r := output.AWSIAMResource{
 		AWSResource: output.AWSResource{
-			Platform:     "aws",
 			ResourceType: "AWS::IAM::ManagedPolicy",
 			ResourceID:   policy.Arn,
 			ARN:          policy.Arn,
@@ -125,6 +121,25 @@ func FromPolicyDL(policy types.ManagedPolicyDetail) output.AWSIAMResource {
 	}
 
 	return r
+}
+
+// FromGAAD converts all GAAD entities to AWSIAMResources.
+// The accountID is passed to FromUserDL for user account resolution.
+func FromGAAD(gaad *types.AuthorizationAccountDetails, accountID string) []output.AWSIAMResource {
+	var entities []output.AWSIAMResource
+	for _, user := range gaad.UserDetailList {
+		entities = append(entities, FromUserDL(user, accountID))
+	}
+	for _, role := range gaad.RoleDetailList {
+		entities = append(entities, FromRoleDL(role))
+	}
+	for _, group := range gaad.GroupDetailList {
+		entities = append(entities, FromGroupDL(group))
+	}
+	for _, policy := range gaad.Policies {
+		entities = append(entities, FromPolicyDL(policy))
+	}
+	return entities
 }
 
 // DeduplicateByARN deduplicates AWSIAMResources by ARN.
@@ -147,3 +162,4 @@ func DeduplicateByARN(entities []output.AWSIAMResource) []output.AWSIAMResource 
 
 	return result
 }
+

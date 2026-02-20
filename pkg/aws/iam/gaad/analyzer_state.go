@@ -137,7 +137,6 @@ func (s *AnalyzerMemoryState) initializeResourceCache(wg *sync.WaitGroup) {
 
 	// Attacker resources used to identify cross-account access
 	s.resourceCache["attacker"] = &output.AWSResource{
-		Platform:     "aws",
 		ResourceType: "AWS::API::Gateway",
 		ResourceID:   "attacker",
 		ARN:          "attacker",
@@ -175,7 +174,6 @@ func (s *AnalyzerMemoryState) addServicesToResourceCache() {
 		svc := strings.Split(service, ".")[0]
 		serviceArn := types.BuildResourceARN(service, "AWS::Service", "*", "*").String()
 		r := &output.AWSResource{
-			Platform:     "aws",
 			ResourceType: "AWS::Service",
 			ResourceID:   service,
 			ARN:          serviceArn,

@@ -17,7 +17,6 @@ import (
 func TestEnricherAnalyzerFlow(t *testing.T) {
 	// Step 1: Start with raw resource (as CloudControl would return)
 	resource := output.AWSResource{
-		Platform:     "aws",
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "my-function",
 		ARN:          "arn:aws:lambda:us-east-1:123456789012:function:my-function",

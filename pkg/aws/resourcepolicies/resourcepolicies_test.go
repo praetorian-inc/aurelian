@@ -64,7 +64,6 @@ func TestResourcePoliciesCollectPoliciesFlow(t *testing.T) {
 
 	// Step 1: Create mock resources for different types
 	s3Resource := output.AWSResource{
-		Platform:     "aws",
 		ResourceType: "AWS::S3::Bucket",
 		ResourceID:   "test-bucket",
 		ARN:          "arn:aws:s3:::test-bucket",
@@ -76,7 +75,6 @@ func TestResourcePoliciesCollectPoliciesFlow(t *testing.T) {
 	}
 
 	lambdaResource := output.AWSResource{
-		Platform:     "aws",
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "test-function",
 		ARN:          "arn:aws:lambda:us-east-1:123456789012:function:test-function",
@@ -88,7 +86,6 @@ func TestResourcePoliciesCollectPoliciesFlow(t *testing.T) {
 	}
 
 	snsResource := output.AWSResource{
-		Platform:     "aws",
 		ResourceType: "AWS::SNS::Topic",
 		ResourceID:   "test-topic",
 		ARN:          "arn:aws:sns:us-east-1:123456789012:test-topic",
@@ -100,7 +97,6 @@ func TestResourcePoliciesCollectPoliciesFlow(t *testing.T) {
 	}
 
 	sqsResource := output.AWSResource{
-		Platform:     "aws",
 		ResourceType: "AWS::SQS::Queue",
 		ResourceID:   "test-queue",
 		ARN:          "arn:aws:sqs:us-east-1:123456789012:test-queue",

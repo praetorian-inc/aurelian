@@ -107,7 +107,6 @@ func TestAWSEC2Enumeration(t *testing.T) {
 			assert.NotEmpty(t, instance.ResourceID, "instance should have ID")
 			assert.NotEmpty(t, instance.ARN, "instance should have ARN")
 			assert.Equal(t, "AWS::EC2::Instance", instance.ResourceType, "resource type should be EC2 Instance")
-			assert.Equal(t, string(plugin.PlatformAWS), instance.Platform, "platform should be AWS")
 			assert.Equal(t, "us-east-2", instance.Region, "region should match scan target")
 			assert.NotNil(t, instance.Properties, "instance should have properties")
 			assert.Contains(t, instance.Properties, "InstanceType", "should include instance type")
@@ -187,7 +186,6 @@ func TestAWSEC2Enumeration(t *testing.T) {
 		// Verify each instance is properly typed
 		for _, r := range resources {
 			if r.ResourceType == "AWS::EC2::Instance" {
-				assert.Equal(t, string(plugin.PlatformAWS), r.Platform)
 				assert.NotEmpty(t, r.ResourceID)
 			}
 		}

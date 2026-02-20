@@ -35,7 +35,6 @@ func TestResourcePolicyCollector_Integration(t *testing.T) {
 	resourcesByRegion := map[string][]output.AWSResource{
 		region: {
 			{
-				Platform:     "aws",
 				ResourceType: "AWS::S3::Bucket",
 				ResourceID:   s3BucketName,
 				ARN:          s3BucketARN,
@@ -43,7 +42,6 @@ func TestResourcePolicyCollector_Integration(t *testing.T) {
 				Properties:   map[string]any{"BucketName": s3BucketName},
 			},
 			{
-				Platform:     "aws",
 				ResourceType: "AWS::SQS::Queue",
 				ResourceID:   sqsQueueARN,
 				ARN:          sqsQueueARN,
@@ -51,7 +49,6 @@ func TestResourcePolicyCollector_Integration(t *testing.T) {
 				Properties:   map[string]any{"QueueUrl": sqsQueueURL},
 			},
 			{
-				Platform:     "aws",
 				ResourceType: "AWS::SNS::Topic",
 				ResourceID:   snsTopicARN,
 				ARN:          snsTopicARN,
@@ -59,7 +56,6 @@ func TestResourcePolicyCollector_Integration(t *testing.T) {
 				Properties:   map[string]any{"TopicArn": snsTopicARN},
 			},
 			{
-				Platform:     "aws",
 				ResourceType: "AWS::Lambda::Function",
 				ResourceID:   lambdaFunctionARN,
 				ARN:          lambdaFunctionARN,
@@ -111,7 +107,6 @@ func TestResourcePolicyCollector_Integration(t *testing.T) {
 		// Add an EC2 instance (unsupported) alongside the real resources.
 		mixed := map[string][]output.AWSResource{
 			region: append(resourcesByRegion[region], output.AWSResource{
-				Platform:     "aws",
 				ResourceType: "AWS::EC2::Instance",
 				ResourceID:   "i-fake",
 				ARN:          "arn:aws:ec2:us-east-1:123456789012:instance/i-fake",

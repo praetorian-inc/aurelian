@@ -1,0 +1,22 @@
+id: aws/enrich/privesc/method_37
+name: IAM PassRole + SageMaker CreateProcessingJob Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both iam:PassRole and sagemaker:CreateProcessingJob permissions
+  that can create SageMaker processing jobs with elevated IAM roles.
+severity: high
+order: 137
+cypher: |
+  MATCH (attacker:Principal)-[passrole]->(target)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+  WITH attacker
+  MATCH (attacker)-[create]->(service_resource)
+  WHERE type(create) = 'SAGEMAKER_CREATEPROCESSINGJOB'
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:PassRole + sagemaker:CreateProcessingJob',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

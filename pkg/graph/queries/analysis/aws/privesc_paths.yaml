@@ -1,0 +1,21 @@
+id: aws/analysis/privesc_paths
+name: Privilege Escalation Paths
+platform: aws
+type: analysis
+category: privesc-analysis
+description: |
+  Identifies principals that can escalate to admin privileges through
+  CAN_PRIVESC relationships. Maps privilege escalation chains of 1-3 hops
+  from non-admin principals to admin targets.
+severity: high
+order: 2
+cypher: |
+  MATCH path = (attacker:Principal)-[:CAN_PRIVESC*1..3]->(target:Principal)
+  WHERE target._is_admin = true
+  AND NOT attacker._is_admin = true
+  AND attacker.Arn <> target.Arn
+  WITH attacker, target, length(path) AS hops, path
+  ORDER BY hops ASC
+  RETURN DISTINCT attacker.Arn AS attacker_arn,
+         target.Arn AS target_arn,
+         hops AS hop_count

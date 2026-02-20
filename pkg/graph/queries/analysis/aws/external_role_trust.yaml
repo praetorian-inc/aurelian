@@ -1,0 +1,23 @@
+id: aws/analysis/external_role_trust
+name: Externally-Trusted IAM Roles
+platform: aws
+type: analysis
+category: trust-analysis
+description: |
+  Identifies IAM roles that trust external AWS accounts or public principals.
+  Highlights roles where trust relationships extend beyond the current account,
+  which may indicate cross-account access or potential misconfiguration.
+severity: high
+order: 1
+cypher: |
+  MATCH (role:Role)
+  WHERE role.AssumeRolePolicyDocument IS NOT NULL
+  WITH role,
+    CASE WHEN role.AssumeRolePolicyDocument CONTAINS '"*"' THEN true ELSE false END AS trustsPublic,
+    CASE WHEN role.AssumeRolePolicyDocument CONTAINS ':root"' THEN true ELSE false END AS trustsAccountRoot
+  WHERE trustsPublic OR trustsAccountRoot
+  RETURN role.Arn AS role_arn,
+         role.RoleName AS role_name,
+         trustsPublic AS trusts_public,
+         trustsAccountRoot AS trusts_account_root,
+         role._is_admin AS is_admin
