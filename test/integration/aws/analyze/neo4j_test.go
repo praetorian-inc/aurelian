@@ -139,40 +139,61 @@ func TestGraphFormatter_FullPipeline(t *testing.T) {
 	require.NoError(t, err)
 	defer formatter.Close()
 
-	// Create mock GAAD data
-	gaad := &iampkg.Gaad{
-		UserDetailList: []iampkg.UserDL{
-			{
-				Arn:      "arn:aws:iam::123456789012:user/charlie",
-				UserName: "charlie",
-				UserId:   "AIDAI12345EXAMPLE",
-			},
-		},
-		RoleDetailList: []iampkg.RoleDL{
-			{
-				Arn:      "arn:aws:iam::123456789012:role/admin-role",
-				RoleName: "admin-role",
-				RoleId:   "AROAI12345EXAMPLE",
-			},
-		},
-		GroupDetailList: []iampkg.GroupDL{
-			{
-				Arn:       "arn:aws:iam::123456789012:group/admins",
-				GroupName: "admins",
-				GroupId:   "AGPAI12345EXAMPLE",
-			},
-		},
+	// Create mock AWSIAMResources with OriginalData for GAAD types
+	user := types.UserDetail{
+		Arn:      "arn:aws:iam::123456789012:user/charlie",
+		UserName: "charlie",
+		UserId:   "AIDAI12345EXAMPLE",
+	}
+	role := types.RoleDetail{
+		Arn:      "arn:aws:iam::123456789012:role/admin-role",
+		RoleName: "admin-role",
+		RoleId:   "AROAI12345EXAMPLE",
+	}
+	group := types.GroupDetail{
+		Arn:       "arn:aws:iam::123456789012:group/admins",
+		GroupName: "admins",
+		GroupId:   "AGPAI12345EXAMPLE",
 	}
 
-	// Create mock AWSResources
-	resources := []output.AWSResource{
+	entities := []output.AWSIAMResource{
 		{
-			ARN:          "arn:aws:s3:::test-bucket-123",
-			ResourceType: "AWS::S3::Bucket",
-			Region:       "us-east-1",
-			AccountRef:   "123456789012",
-			Properties: map[string]interface{}{
-				"BucketName": "test-bucket-123",
+			AWSResource: output.AWSResource{
+				ARN:          "arn:aws:iam::123456789012:user/charlie",
+				ResourceType: "AWS::IAM::User",
+				ResourceID:   "arn:aws:iam::123456789012:user/charlie",
+				AccountRef:   "123456789012",
+			},
+			OriginalData: user,
+		},
+		{
+			AWSResource: output.AWSResource{
+				ARN:          "arn:aws:iam::123456789012:role/admin-role",
+				ResourceType: "AWS::IAM::Role",
+				ResourceID:   "arn:aws:iam::123456789012:role/admin-role",
+				AccountRef:   "123456789012",
+			},
+			OriginalData: role,
+		},
+		{
+			AWSResource: output.AWSResource{
+				ARN:          "arn:aws:iam::123456789012:group/admins",
+				ResourceType: "AWS::IAM::Group",
+				ResourceID:   "arn:aws:iam::123456789012:group/admins",
+				AccountRef:   "123456789012",
+			},
+			OriginalData: group,
+		},
+		{
+			AWSResource: output.AWSResource{
+				ARN:          "arn:aws:s3:::test-bucket-123",
+				ResourceType: "AWS::S3::Bucket",
+				ResourceID:   "arn:aws:s3:::test-bucket-123",
+				Region:       "us-east-1",
+				AccountRef:   "123456789012",
+				Properties: map[string]interface{}{
+					"BucketName": "test-bucket-123",
+				},
 			},
 		},
 	}
@@ -181,7 +202,7 @@ func TestGraphFormatter_FullPipeline(t *testing.T) {
 	targetArn, _ := arn.Parse("arn:aws:iam::123456789012:role/admin-role")
 	fullResults := []iampkg.FullResult{
 		{
-			Principal: &iampkg.UserDL{
+			Principal: &types.UserDetail{
 				Arn:      "arn:aws:iam::123456789012:user/charlie",
 				UserName: "charlie",
 				UserId:   "AIDAI12345EXAMPLE",
@@ -198,10 +219,9 @@ func TestGraphFormatter_FullPipeline(t *testing.T) {
 		},
 	}
 
-	// Create Results array
+	// Create Results array — Format expects []output.AWSIAMResource
 	results := []plugin.Result{
-		{Data: gaad},
-		{Data: resources},
+		{Data: entities},
 		{Data: fullResults},
 	}
 

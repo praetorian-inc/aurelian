@@ -5,7 +5,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
-func NewEnrichedResourceDescriptionFromRoleDL(roleDL RoleDL) *types.EnrichedResourceDescription {
+func NewEnrichedResourceDescriptionFromRoleDL(roleDL types.RoleDetail) *types.EnrichedResourceDescription {
 	a, _ := arn.Parse(roleDL.Arn)
 
 	return &types.EnrichedResourceDescription{
@@ -17,7 +17,7 @@ func NewEnrichedResourceDescriptionFromRoleDL(roleDL RoleDL) *types.EnrichedReso
 	}
 }
 
-func NewEnrichedResourceDescriptionFromPolicyDL(policyDL PoliciesDL) *types.EnrichedResourceDescription {
+func NewEnrichedResourceDescriptionFromPolicyDL(policyDL types.ManagedPolicyDetail) *types.EnrichedResourceDescription {
 	a, _ := arn.Parse(policyDL.Arn)
 
 	return &types.EnrichedResourceDescription{
@@ -29,7 +29,7 @@ func NewEnrichedResourceDescriptionFromPolicyDL(policyDL PoliciesDL) *types.Enri
 	}
 }
 
-func NewEnrichedResourceDescriptionFromUserDL(userDL UserDL) *types.EnrichedResourceDescription {
+func NewEnrichedResourceDescriptionFromUserDL(userDL types.UserDetail) *types.EnrichedResourceDescription {
 	a, _ := arn.Parse(userDL.Arn)
 
 	return &types.EnrichedResourceDescription{
@@ -41,7 +41,7 @@ func NewEnrichedResourceDescriptionFromUserDL(userDL UserDL) *types.EnrichedReso
 	}
 }
 
-func NewEnrichedResourceDescriptionFromGroupDL(groupDL GroupDL) *types.EnrichedResourceDescription {
+func NewEnrichedResourceDescriptionFromGroupDL(groupDL types.GroupDetail) *types.EnrichedResourceDescription {
 	a, _ := arn.Parse(groupDL.Arn)
 
 	return &types.EnrichedResourceDescription{

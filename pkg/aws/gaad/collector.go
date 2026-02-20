@@ -4,18 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	iampkg "github.com/praetorian-inc/aurelian/pkg/types"
 	"net/url"
 
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
-	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
 // GetAccountAuthorizationDetails retrieves all IAM authorization details
 // and returns them as a typed Gaad struct with URL-decoded policies
-func GetAccountAuthorizationDetails(ctx context.Context, opts plugin.AWSReconBase) (*iampkg.Gaad, string, error) {
+func GetAccountAuthorizationDetails(ctx context.Context, opts plugin.AWSReconBase) (*iampkg.AuthorizationAccountDetails, string, error) {
 	// IAM is a global service - always use us-east-1
 	region := "us-east-1"
 
@@ -43,10 +43,10 @@ func GetAccountAuthorizationDetails(ctx context.Context, opts plugin.AWSReconBas
 	})
 
 	// Accumulate results across pages
-	var userDetailList []iamtypes.UserDetail
-	var groupDetailList []iamtypes.GroupDetail
-	var roleDetailList []iamtypes.RoleDetail
-	var policies []iamtypes.ManagedPolicyDetail
+	var iamUserDLs []iamtypes.UserDetail
+	var iamGroupDLs []iamtypes.GroupDetail
+	var iamRoleDLs []iamtypes.RoleDetail
+	var iamPolicies []iamtypes.ManagedPolicyDetail
 
 	pageNum := 0
 	for paginator.HasMorePages() {
@@ -56,97 +56,97 @@ func GetAccountAuthorizationDetails(ctx context.Context, opts plugin.AWSReconBas
 			return nil, "", fmt.Errorf("error retrieving authorization details page %d: %w", pageNum, err)
 		}
 
-		userDetailList = append(userDetailList, page.UserDetailList...)
-		groupDetailList = append(groupDetailList, page.GroupDetailList...)
-		roleDetailList = append(roleDetailList, page.RoleDetailList...)
-		policies = append(policies, page.Policies...)
+		iamUserDLs = append(iamUserDLs, page.UserDetailList...)
+		iamGroupDLs = append(iamGroupDLs, page.GroupDetailList...)
+		iamRoleDLs = append(iamRoleDLs, page.RoleDetailList...)
+		iamPolicies = append(iamPolicies, page.Policies...)
 	}
 
-	// Convert AWS SDK types to our enhanced Gaad types
-	gaad, err := convertToGaad(userDetailList, groupDetailList, roleDetailList, policies)
+	// Convert AWS SDK types to our internal types
+	userDLs, groupDLs, roleDLs, policies, err := convertToInternalTypes(iamUserDLs, iamGroupDLs, iamRoleDLs, iamPolicies)
 	if err != nil {
-		return nil, "", fmt.Errorf("error converting to Gaad types: %w", err)
+		return nil, "", fmt.Errorf("error converting to internal types: %w", err)
 	}
 
-	return gaad, accountID, nil
+	return &iampkg.AuthorizationAccountDetails{
+		UserDetailList:  userDLs,
+		RoleDetailList:  roleDLs,
+		GroupDetailList: groupDLs,
+		Policies:        policies,
+	}, accountID, nil
 }
 
-// convertToGaad converts AWS SDK types to our enhanced Gaad struct with URL-decoded policies
-func convertToGaad(
+// convertToInternalTypes converts AWS SDK types to our enhanced Gaad struct with URL-decoded policies
+func convertToInternalTypes(
 	users []iamtypes.UserDetail,
 	groups []iamtypes.GroupDetail,
 	roles []iamtypes.RoleDetail,
 	policies []iamtypes.ManagedPolicyDetail,
-) (*iampkg.Gaad, error) {
+) ([]iampkg.UserDetail, []iampkg.GroupDetail, []iampkg.RoleDetail, []iampkg.ManagedPolicyDetail, error) {
 	// Marshal AWS SDK types to JSON
 	usersJSON, err := json.Marshal(users)
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling users: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("error marshaling users: %w", err)
 	}
 
 	groupsJSON, err := json.Marshal(groups)
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling groups: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("error marshaling groups: %w", err)
 	}
 
 	rolesJSON, err := json.Marshal(roles)
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling roles: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("error marshaling roles: %w", err)
 	}
 
 	policiesJSON, err := json.Marshal(policies)
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling policies: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("error marshaling policies: %w", err)
 	}
 
 	// URL-decode policy documents
 	usersJSON, err = decodeURLEncodedPolicies(usersJSON)
 	if err != nil {
-		return nil, fmt.Errorf("error decoding user policies: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("error decoding user policies: %w", err)
 	}
 
 	groupsJSON, err = decodeURLEncodedPolicies(groupsJSON)
 	if err != nil {
-		return nil, fmt.Errorf("error decoding group policies: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("error decoding group policies: %w", err)
 	}
 
 	rolesJSON, err = decodeURLEncodedPolicies(rolesJSON)
 	if err != nil {
-		return nil, fmt.Errorf("error decoding role policies: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("error decoding role policies: %w", err)
 	}
 
 	policiesJSON, err = decodeURLEncodedPolicies(policiesJSON)
 	if err != nil {
-		return nil, fmt.Errorf("error decoding managed policies: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("error decoding managed policies: %w", err)
 	}
 
 	// Unmarshal into our enhanced types
-	var userDL []iampkg.UserDL
+	var userDL []iampkg.UserDetail
 	if err := json.Unmarshal(usersJSON, &userDL); err != nil {
-		return nil, fmt.Errorf("error unmarshaling users: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("error unmarshaling users: %w", err)
 	}
 
-	var groupDL []iampkg.GroupDL
+	var groupDL []iampkg.GroupDetail
 	if err := json.Unmarshal(groupsJSON, &groupDL); err != nil {
-		return nil, fmt.Errorf("error unmarshaling groups: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("error unmarshaling groups: %w", err)
 	}
 
-	var roleDL []iampkg.RoleDL
+	var roleDL []iampkg.RoleDetail
 	if err := json.Unmarshal(rolesJSON, &roleDL); err != nil {
-		return nil, fmt.Errorf("error unmarshaling roles: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("error unmarshaling roles: %w", err)
 	}
 
-	var policiesDL []iampkg.PoliciesDL
+	var policiesDL []iampkg.ManagedPolicyDetail
 	if err := json.Unmarshal(policiesJSON, &policiesDL); err != nil {
-		return nil, fmt.Errorf("error unmarshaling policies: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("error unmarshaling policies: %w", err)
 	}
 
-	return &iampkg.Gaad{
-		UserDetailList:  userDL,
-		GroupDetailList: groupDL,
-		RoleDetailList:  roleDL,
-		Policies:        policiesDL,
-	}, nil
+	return userDL, groupDL, roleDL, policiesDL, nil
 }
 
 // decodeURLEncodedPolicies recursively finds and decodes URL-encoded policy documents

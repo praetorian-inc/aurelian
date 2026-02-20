@@ -25,7 +25,7 @@ func TestExtractPrincipalsLocations(t *testing.T) {
                 "Version": "2012-10-17",
                 "Statement": [{
                     "Effect": "Allow",
-                    "types.Principal": {
+                    "Principal": {
                         "Service": "lambda.amazonaws.com",
                         "AWS": [
                             "arn:aws:iam::111122223333:root",
@@ -56,14 +56,14 @@ func TestExtractPrincipalsLocations(t *testing.T) {
                 "Statement": [{
                     "Sid": "CrossAccountAccess",
                     "Effect": "Allow",
-                    "types.Principal": {
+                    "Principal": {
                         "AWS": "arn:aws:iam::111122223333:root"
                     },
                     "Action": "s3:GetObject",
                     "Resource": "arn:aws:s3:::mybucket/*",
                     "Condition": {
                         "StringEquals": {
-                            "aws:types.PrincipalOrgID": "o-abcdef123456",
+                            "aws:PrincipalOrgID": "o-abcdef123456",
                             "aws:SourceAccount": "111122223333"
                         }
                     }
@@ -90,7 +90,7 @@ func TestExtractPrincipalsLocations(t *testing.T) {
                 "Statement": [{
                     "Sid": "Enable IAM User Permissions",
                     "Effect": "Allow",
-                    "types.Principal": {
+                    "Principal": {
                         "AWS": "arn:aws:iam::111122223333:root"
                     },
                     "Action": "kms:*",
@@ -99,7 +99,7 @@ func TestExtractPrincipalsLocations(t *testing.T) {
                 {
                     "Sid": "Allow CloudWatch Logs",
                     "Effect": "Allow",
-                    "types.Principal": {
+                    "Principal": {
                         "Service": "logs.amazonaws.com"
                     },
                     "Action": [
@@ -137,7 +137,7 @@ func TestExtractPrincipalsLocations(t *testing.T) {
                 "Version": "2012-10-17",
                 "Statement": [{
                     "Effect": "Allow",
-                    "types.Principal": {
+                    "Principal": {
                         "Service": "sns.amazonaws.com",
                         "AWS": "arn:aws:iam::111122223333:root"
                     },
@@ -170,7 +170,7 @@ func TestExtractPrincipalsLocations(t *testing.T) {
                 "Version": "2012-10-17",
                 "Statement": [{
                     "Effect": "Allow",
-                    "types.Principal": {
+                    "Principal": {
                         "Service": ["s3.amazonaws.com", "apigateway.amazonaws.com"]
                     },
                     "Action": "lambda:InvokeFunction",
@@ -214,7 +214,7 @@ func TestExtractPrincipalsLocations(t *testing.T) {
                 "Version": "2012-10-17",
                 "Statement": [{
                     "Effect": "Allow",
-                    "types.Principal": {
+                    "Principal": {
                         "Federated": ["cognito-identity.amazonaws.com", "accounts.google.com"]
                     },
                     "Action": "sts:AssumeRoleWithWebIdentity",
@@ -242,7 +242,7 @@ func TestExtractPrincipalsLocations(t *testing.T) {
                 "Version": "2012-10-17",
                 "Statement": [{
                     "Effect": "Allow",
-                    "types.Principal": {
+                    "Principal": {
                         "AWS": "arn:aws:iam::111122223333:role/service-role",
                         "Service": "lambda.amazonaws.com"
                     },
@@ -250,7 +250,7 @@ func TestExtractPrincipalsLocations(t *testing.T) {
                     "Resource": "*",
                     "Condition": {
                         "StringEquals": {
-                            "aws:types.PrincipalServiceName": "lambda.amazonaws.com",
+                            "aws:PrincipalServiceName": "lambda.amazonaws.com",
                             "aws:SourceAccount": "111122223333"
                         }
                     }
@@ -276,7 +276,7 @@ func TestExtractPrincipalsLocations(t *testing.T) {
                 "Version": "2012-10-17",
                 "Statement": [{
                     "Effect": "Allow",
-                    "types.Principal": {
+                    "Principal": {
                         "AWS": [
                             "arn:aws:iam::111122223333:root",
                             "arn:aws:iam::444455556666:root"
@@ -315,13 +315,13 @@ func TestExtractPrincipalsLocations(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name:        "Nottypes.Principal Policy",
-			description: "Policy using Nottypes.Principal to deny specific identities",
+			name:        "NotPrincipal Policy",
+			description: "Policy using NotPrincipal to deny specific identities",
 			policyJSON: `{
                 "Version": "2012-10-17",
                 "Statement": [{
                     "Effect": "Allow",
-                    "Nottypes.Principal": {
+                    "NotPrincipal": {
                         "AWS": [
                             "arn:aws:iam::111122223333:role/blocked-role",
                             "arn:aws:iam::444455556666:user/blocked-user"
@@ -352,7 +352,7 @@ func TestExtractPrincipalsLocations(t *testing.T) {
                 "Version": "2012-10-17",
                 "Statement": [{
                     "Effect": "Allow",
-                    "types.Principal": {
+                    "Principal": {
                         "CanonicalUser": "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be"
                     },
                     "Action": [
@@ -632,7 +632,7 @@ func TestExtractGitHubActionsPrincipals(t *testing.T) {
 			name:       "No GitHub Actions conditions",
 			conditions: &types.Condition{
 				"StringEquals": {
-					"aws:types.PrincipalAccount": types.DynaString{"123456789012"},
+					"aws:PrincipalAccount": types.DynaString{"123456789012"},
 				},
 			},
 			want: []types.Principal{},
@@ -901,7 +901,7 @@ func TestExtractRepositoriesFromConditions(t *testing.T) {
 			name: "No GitHub Actions conditions",
 			conditions: &types.Condition{
 				"StringEquals": {
-					"aws:types.PrincipalAccount": types.DynaString{"123456789012"},
+					"aws:PrincipalAccount": types.DynaString{"123456789012"},
 				},
 			},
 			want:    map[string][]string{},
@@ -1000,7 +1000,7 @@ func TestIsGitHubActionsFederatedPrincipal(t *testing.T) {
 			want:      false,
 		},
 		{
-			name:      "types.Principal with nil Federated",
+			name:      "Principal with nil Federated",
 			principal: &types.Principal{},
 			want:      false,
 		},

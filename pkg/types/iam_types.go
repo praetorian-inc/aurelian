@@ -1,14 +1,14 @@
 package types
 
-// PrincipalPL represents an inline policy attached to an IAM principal
+// InlinePolicy represents an inline policy attached to an IAM principal
 // (user, role, or group) in a GAAD report.
-type PrincipalPL struct {
+type InlinePolicy struct {
 	PolicyName     string `json:"PolicyName"`
 	PolicyDocument Policy `json:"PolicyDocument"`
 }
 
-// ManagedPL represents a managed policy attachment reference.
-type ManagedPL struct {
+// ManagedPolicy represents a managed policy attachment reference.
+type ManagedPolicy struct {
 	PolicyName string `json:"PolicyName"`
 	PolicyArn  string `json:"PolicyArn"`
 }
@@ -33,8 +33,8 @@ type InstanceProfileRole struct {
 	AssumeRolePolicyDocument Policy `json:"AssumeRolePolicyDocument"`
 }
 
-// PoliciesVL represents a policy version entry in a GAAD report.
-type PoliciesVL struct {
+// PolicyVersion represents a policy version entry in a GAAD report.
+type PolicyVersion struct {
 	VersionId        string `json:"VersionId"`
 	IsDefaultVersion bool   `json:"IsDefaultVersion"`
 	CreateDate       string `json:"CreateDate"`

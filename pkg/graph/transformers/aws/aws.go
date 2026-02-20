@@ -2,6 +2,7 @@ package aws
 
 import (
 	"encoding/json"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	"strings"
 
 	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
@@ -12,7 +13,7 @@ import (
 // NodeFromGaadUser creates a graph node from an IAM User
 // Labels: ["User", "Principal", "AWS::IAM::User"]
 // UniqueKey: ["Arn"]
-func NodeFromGaadUser(user iampkg.UserDL) *graph.Node {
+func NodeFromGaadUser(user types.UserDetail) *graph.Node {
 	props := flattenStruct(user)
 	props["_type"] = "User"
 	props["_resourceType"] = "AWS::IAM::User"
@@ -28,7 +29,7 @@ func NodeFromGaadUser(user iampkg.UserDL) *graph.Node {
 // Labels: ["Role", "Principal", "AWS::IAM::Role"]
 // UniqueKey: ["Arn"]
 // Extracts trusted_services from AssumeRolePolicyDocument if present
-func NodeFromGaadRole(role iampkg.RoleDL) *graph.Node {
+func NodeFromGaadRole(role types.RoleDetail) *graph.Node {
 	props := flattenStruct(role)
 	props["_type"] = "Role"
 	props["_resourceType"] = "AWS::IAM::Role"
@@ -56,7 +57,7 @@ func NodeFromGaadRole(role iampkg.RoleDL) *graph.Node {
 // NodeFromGaadGroup creates a graph node from an IAM Group
 // Labels: ["Group", "Principal", "AWS::IAM::Group"]
 // UniqueKey: ["Arn"]
-func NodeFromGaadGroup(group iampkg.GroupDL) *graph.Node {
+func NodeFromGaadGroup(group types.GroupDetail) *graph.Node {
 	props := flattenStruct(group)
 	props["_type"] = "Group"
 	props["_resourceType"] = "AWS::IAM::Group"
@@ -100,13 +101,13 @@ func NodeFromAWSIAMResource(resource output.AWSIAMResource) *graph.Node {
 	// If we have the original GAAD data, use the existing typed converters
 	if resource.OriginalData != nil {
 		switch data := resource.OriginalData.(type) {
-		case iampkg.UserDL:
+		case types.UserDetail:
 			return NodeFromGaadUser(data)
-		case iampkg.RoleDL:
+		case types.RoleDetail:
 			return NodeFromGaadRole(data)
-		case iampkg.GroupDL:
+		case types.GroupDetail:
 			return NodeFromGaadGroup(data)
-		case iampkg.PoliciesDL:
+		case types.ManagedPolicyDetail:
 			// Policies don't have a GAAD node type; use AWSResource style
 			return NodeFromAWSResource(resource.AWSResource)
 		}
@@ -139,11 +140,11 @@ func RelationshipFromFullResult(result iampkg.FullResult) *graph.Relationship {
 
 	// Type-switch on Principal to create the appropriate node
 	switch p := result.Principal.(type) {
-	case *iampkg.UserDL:
+	case *types.UserDetail:
 		startNode = NodeFromGaadUser(*p)
-	case *iampkg.RoleDL:
+	case *types.RoleDetail:
 		startNode = NodeFromGaadRole(*p)
-	case *iampkg.GroupDL:
+	case *types.GroupDetail:
 		startNode = NodeFromGaadGroup(*p)
 	case string:
 		// Service principal
