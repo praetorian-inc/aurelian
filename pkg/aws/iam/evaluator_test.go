@@ -153,7 +153,7 @@ func TestPolicyEvaluator_PermissionBoundary(t *testing.T) {
 	// Test 2: Action denied - allowed by identity but not boundary
 	req2 := &EvaluationRequest{
 		Action:             "ec2:RunInstances",
-		Resource:           "ec2.amazonaws.com",
+		Resource:           "arn:aws:ec2:*:*:*",
 		Context:            createRequestContext("arn:aws:iam::111122223333:user/test-user"),
 		IdentityStatements: identityStatements,
 		BoundaryStatements: boundaryStatements,
@@ -167,7 +167,7 @@ func TestPolicyEvaluator_PermissionBoundary(t *testing.T) {
 	// Test 3: No boundary - falls back to identity policy evaluation
 	req3 := &EvaluationRequest{
 		Action:             "ec2:RunInstances",
-		Resource:           "ec2.amazonaws.com",
+		Resource:           "arn:aws:ec2:*:*:*",
 		Context:            createRequestContext("arn:aws:iam::111122223333:user/test-user"),
 		IdentityStatements: identityStatements,
 	}
@@ -176,10 +176,10 @@ func TestPolicyEvaluator_PermissionBoundary(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, result3.Allowed) // Allowed by identity policy
 
-	// Test 3: No boundary - falls back to identity policy evaluation
+	// Test 4: Empty boundary - falls back to identity policy evaluation
 	req4 := &EvaluationRequest{
 		Action:             "ec2:RunInstances",
-		Resource:           "ec2.amazonaws.com",
+		Resource:           "arn:aws:ec2:*:*:*",
 		Context:            createRequestContext("arn:aws:iam::111122223333:user/test-user"),
 		IdentityStatements: identityStatements,
 		BoundaryStatements: &types.PolicyStatementList{},
@@ -1087,7 +1087,7 @@ func TestPolicyEvaluator_CreateWithServiceAsResource(t *testing.T) {
 	evaluator := NewPolicyEvaluator(&PolicyData{})
 	req := &EvaluationRequest{
 		Action:             "lambda:CreateFunction",
-		Resource:           "lambda.amazonaws.com",
+		Resource:           "arn:aws:lambda:*:*:*",
 		Context:            createRequestContext("arn:aws:iam::111122223333:user/test-user"),
 		IdentityStatements: identityStatements,
 	}
@@ -1095,7 +1095,7 @@ func TestPolicyEvaluator_CreateWithServiceAsResource(t *testing.T) {
 	result, err := evaluator.Evaluate(req)
 	t.Log(result)
 	assert.NoError(t, err)
-	// CreateFunction targets the service resource (lambda.amazonaws.com) because the function
+	// CreateFunction targets the service resource (arn:aws:lambda:*:*:*) because the function
 	// doesn't exist yet during creation. With Resource: "*" in identity policy, this is allowed.
 	assert.True(t, result.Allowed)
 	assert.False(t, result.CrossAccountAccess)
@@ -1499,7 +1499,7 @@ func TestPolicyEvaluator_SameAccountAssumeRole_WithGaadFlow(t *testing.T) {
 						},
 					},
 				},
-				RolePolicyList: []PrincipalPL{
+				RolePolicyList: []types.InlinePolicy{
 					{
 						PolicyName: "privesc-method24-assumerole-policy",
 						PolicyDocument: types.Policy{
