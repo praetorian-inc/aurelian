@@ -169,7 +169,7 @@ func (s *AnalyzerState) getResources(pattern *regexp.Regexp) []*types.EnrichedRe
 
 func (s *AnalyzerState) getResourcesByAction(action Action) []*types.EnrichedResourceDescription {
 	resources := make([]*types.EnrichedResourceDescription, 0)
-	patterns := getResourcePatternsFromAction(action)
+	patterns := GetResourcePatternsFromAction(action)
 
 	for _, pattern := range patterns {
 		resources = append(resources, s.getResources(pattern)...)

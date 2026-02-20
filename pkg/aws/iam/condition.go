@@ -513,13 +513,13 @@ func evaluateStringCondition(operator string, values []string, actualValue inter
 		}
 	case "StringLike":
 		for _, v := range values {
-			if matchesPattern(v, actual) {
+			if MatchesPattern(v, actual) {
 				return true
 			}
 		}
 	case "StringNotLike":
 		for _, v := range values {
-			if matchesPattern(v, actual) {
+			if MatchesPattern(v, actual) {
 				return false
 			}
 		}
@@ -636,7 +636,7 @@ func evaluateArnCondition(operator string, values []string, actualValue interfac
 	}
 
 	for _, v := range values {
-		matches := matchesPattern(v, actual)
+		matches := MatchesPattern(v, actual)
 
 		switch operator {
 		case "ArnEquals", "ArnLike":

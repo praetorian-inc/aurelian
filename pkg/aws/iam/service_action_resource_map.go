@@ -60,7 +60,7 @@ func IsValidActionForResource(action, resource string) bool {
 	return false
 }
 
-func getResourcePatternsFromAction(action Action) []*regexp.Regexp {
+func GetResourcePatternsFromAction(action Action) []*regexp.Regexp {
 	patterns := []*regexp.Regexp{}
 	service := action.Service()
 	act := strings.ToLower(strings.Split(string(action), ":")[1])

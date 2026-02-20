@@ -6,6 +6,9 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/gaad"
+	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
+	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
+	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -54,24 +57,81 @@ func (m *AWSGraphNewModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
 	c := m.GraphConfig
 	policyCollector := resourcepolicies.New(c.AWSCommonRecon)
 
+	// Step 1: Collect GAAD
 	gaadData, err := m.collectAccountAuthorizationDetails(c)
 	if err != nil {
 		return nil, err
 	}
-	_ = gaadData
 
+	// Step 2: Enumerate cloud resources
 	resourcesByRegion, err := m.collectResources(c, policyCollector)
 	if err != nil {
 		return nil, err
 	}
 
+	// Step 3: Collect resource policies
 	resourcesWithPolicies, err := m.collectResourcePolicies(policyCollector, resourcesByRegion)
 	if err != nil {
 		return nil, err
 	}
-	_ = resourcesWithPolicies
 
-	return nil, nil
+	// Step 4: Load org policies
+	orgPols, err := m.loadOrgPolicies(c)
+	if err != nil {
+		return nil, err
+	}
+
+	// Step 5: Analyze IAM permissions
+	slog.Info("analyzing IAM permissions")
+	analyzer := gaadpkg.NewGaadAnalyzer()
+	relationships, err := analyzer.Analyze(gaadData, orgPols, resourcesWithPolicies)
+	if err != nil {
+		return nil, fmt.Errorf("analyzing permissions: %w", err)
+	}
+	slog.Info("IAM analysis complete", "relationships", len(relationships))
+
+	// Step 6: Build entity list from GAAD + cloud resources
+	var entities []output.AWSIAMResource
+	for _, user := range gaadData.UserDetailList {
+		entities = append(entities, iampkg.FromUserDL(user, gaadData.AccountID))
+	}
+	for _, role := range gaadData.RoleDetailList {
+		entities = append(entities, iampkg.FromRoleDL(role))
+	}
+	for _, group := range gaadData.GroupDetailList {
+		entities = append(entities, iampkg.FromGroupDL(group))
+	}
+	for _, policy := range gaadData.Policies {
+		entities = append(entities, iampkg.FromPolicyDL(policy))
+	}
+
+	// Flatten all cloud resources (not just those with policies)
+	for _, regionResources := range resourcesByRegion {
+		for _, cr := range regionResources {
+			entities = append(entities, output.FromAWSResource(cr))
+		}
+	}
+	entities = iampkg.DeduplicateByARN(entities)
+
+	return []plugin.Result{
+		{
+			Data: entities,
+			Metadata: map[string]any{
+				"module":    m.ID(),
+				"type":      "entities",
+				"accountID": gaadData.AccountID,
+				"count":     len(entities),
+			},
+		},
+		{
+			Data: relationships,
+			Metadata: map[string]any{
+				"module": m.ID(),
+				"type":   "iam_relationships",
+				"count":  len(relationships),
+			},
+		},
+	}, nil
 }
 
 func (m *AWSGraphNewModule) collectAccountAuthorizationDetails(c GraphConfig) (*types.AuthorizationAccountDetails, error) {
@@ -127,4 +187,16 @@ func (m *AWSGraphNewModule) collectResourcePolicies(policyCollector *resourcepol
 	}
 	slog.Info("resource policies collected", "count", len(resourcesWithPolicies))
 	return resourcesWithPolicies, nil
+}
+
+func (m *AWSGraphNewModule) loadOrgPolicies(c GraphConfig) (*orgpolicies.OrgPolicies, error) {
+	if c.OrgPoliciesFile != "" {
+		slog.Info("loading org policies", "file", c.OrgPoliciesFile)
+		op, err := iampkg.LoadJSONFile[orgpolicies.OrgPolicies](c.OrgPoliciesFile)
+		if err != nil {
+			return nil, fmt.Errorf("loading org policies: %w", err)
+		}
+		return op, nil
+	}
+	return orgpolicies.NewDefaultOrgPolicies(), nil
 }

@@ -679,7 +679,7 @@ func extractSSMDocumentRestrictions(action string, statements *types.PolicyState
 		actionMatches := false
 		if stmt.Action != nil {
 			for _, stmtAction := range *stmt.Action {
-				if matchesPattern(stmtAction, action) {
+				if MatchesPattern(stmtAction, action) {
 					actionMatches = true
 					break
 				}

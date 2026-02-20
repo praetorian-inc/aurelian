@@ -44,7 +44,7 @@ func TestSSMSendCommandMapping(t *testing.T) {
 
 func TestSSMSendCommandPrivilegeEscalation(t *testing.T) {
 	// Test that ssm:SendCommand is in the privilege escalation list
-	if !isPrivEscAction("ssm:SendCommand") {
+	if !IsPrivEscAction("ssm:SendCommand") {
 		t.Error("ssm:SendCommand should be recognized as a privilege escalation action")
 	}
 }
@@ -52,7 +52,7 @@ func TestSSMSendCommandPrivilegeEscalation(t *testing.T) {
 func TestSSMSendCommandResourcePatterns(t *testing.T) {
 	// Test that ssm:SendCommand returns EC2 instance patterns
 	action := Action("ssm:SendCommand")
-	patterns := getResourcePatternsFromAction(action)
+	patterns := GetResourcePatternsFromAction(action)
 
 	if len(patterns) == 0 {
 		t.Fatal("ssm:SendCommand should return at least one resource pattern")

@@ -112,7 +112,7 @@ func (ga *GaadAnalyzerOld) generateServiceEvaluations(resourceArn string, policy
 			if (*policy.Statement)[i].Principal != nil && (*policy.Statement)[i].Principal.Service != nil {
 				for _, service := range *(*policy.Statement)[i].Principal.Service {
 					for _, action := range *(*policy.Statement)[i].Action {
-						if isPrivEscAction(action) {
+						if IsPrivEscAction(action) {
 
 							accountID, tags := ga.state.getResourceDeets(resourceArn)
 
@@ -203,7 +203,7 @@ func (ga *GaadAnalyzerOld) processUserPermissions(user types.UserDetail, evalCha
 
 	// Generate evaluation requests
 	for _, action := range allActions {
-		if isPrivEscAction(action) {
+		if IsPrivEscAction(action) {
 
 			for _, resource := range ga.state.getResourcesByAction(Action(action)) {
 
@@ -315,7 +315,7 @@ func (ga *GaadAnalyzerOld) processRolePermissions(role types.RoleDetail, evalCha
 
 	// Generate evaluation requests
 	for _, action := range allActions {
-		if isPrivEscAction(action) {
+		if IsPrivEscAction(action) {
 
 			tempBoundary := make(types.PolicyStatementList, 0)
 			deepCopy(boundaryStatements, &tempBoundary)

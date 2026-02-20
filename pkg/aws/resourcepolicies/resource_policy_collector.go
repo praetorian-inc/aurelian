@@ -129,8 +129,11 @@ func (c *ResourcePolicyCollector) collectInRegion(reg map[string]policyMethod, a
 
 		policy, err := method(ctx, awsCfg, &resource)
 		if err != nil {
-			return nil, fmt.Errorf("fetch policy for %s (%s): %w",
-				resource.ResourceID, resource.ResourceType, err)
+			slog.Warn("fetching resource policy, skipping resource",
+				"resource", resource.ResourceID,
+				"type", resource.ResourceType,
+				"error", err)
+			continue
 		}
 
 		if policy == nil {
