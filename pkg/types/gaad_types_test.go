@@ -111,7 +111,7 @@ func TestDefaultPolicyDocument(t *testing.T) {
 		policy := ManagedPolicyDetail{
 			PolicyName:       "TestPolicy",
 			DefaultVersionId: "v2",
-			PolicyVersionList: []PoliciesVL{
+			PolicyVersionList: []PolicyVersion{
 				{
 					VersionId:        "v1",
 					IsDefaultVersion: false,
@@ -141,7 +141,7 @@ func TestDefaultPolicyDocument(t *testing.T) {
 	t.Run("returns nil when no default version exists", func(t *testing.T) {
 		policy := ManagedPolicyDetail{
 			PolicyName: "NoDefault",
-			PolicyVersionList: []PoliciesVL{
+			PolicyVersionList: []PolicyVersion{
 				{
 					VersionId:        "v1",
 					IsDefaultVersion: false,
@@ -160,7 +160,7 @@ func TestDefaultPolicyDocument(t *testing.T) {
 	t.Run("returns nil for empty version list", func(t *testing.T) {
 		policy := ManagedPolicyDetail{
 			PolicyName:        "EmptyVersions",
-			PolicyVersionList: []PoliciesVL{},
+			PolicyVersionList: []PolicyVersion{},
 		}
 
 		result := policy.DefaultPolicyDocument()
