@@ -167,7 +167,7 @@ func TestGetResourcePatternsFromAction(t *testing.T) {
 		{
 			name:     "Valid action with EC2 service",
 			action:   "ec2:RunInstances",
-			expected: []*regexp.Regexp{regexp.MustCompile(`^ec2.amazonaws.com$`)},
+			expected: []*regexp.Regexp{regexp.MustCompile(`^arn:aws:ec2:\*:\*:\*$`)},
 		},
 		{
 			name:     "sts:AssumeRole",
@@ -177,7 +177,7 @@ func TestGetResourcePatternsFromAction(t *testing.T) {
 		{
 			name:     "lambda:CreateFunction returns lambda service pattern",
 			action:   "lambda:CreateFunction",
-			expected: []*regexp.Regexp{regexp.MustCompile(`^lambda.amazonaws.com$`)},
+			expected: []*regexp.Regexp{regexp.MustCompile(`^arn:aws:lambda:\*:\*:\*$`)},
 		},
 	}
 
@@ -209,7 +209,7 @@ func TestResourcePatterns(t *testing.T) {
 		"arn:aws:iam::aws:policy/AdministratorAccess",
 		"arn:aws:iam::123456789012:policy/test",
 		"arn:aws:cloudformation:us-east-2:123456789012:stack/foo/bar",
-		"cloudformation.amazonaws.com",
+		"arn:aws:cloudformation:*:*:*",
 	}
 
 	testCases := []struct {

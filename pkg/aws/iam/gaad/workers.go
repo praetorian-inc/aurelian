@@ -72,17 +72,10 @@ func doEvaluationWork(
 
 // buildPrincipal looks up a principal ARN in the state and wraps it as an
 // AWSIAMResource. If not found, returns a minimal AWSIAMResource with just
-// the ARN populated. For service principals (non-ARN like "lambda.amazonaws.com"),
-// the principal ARN is preserved as-is to match the old module's behavior.
+// the ARN populated.
 func buildPrincipal(principalArn string, state AnalyzerState) output.AWSIAMResource {
 	if r := state.GetResource(principalArn); r != nil {
-		result := output.FromAWSResource(*r)
-		// For service principals, preserve the service name as the ARN
-		// (e.g., "lambda.amazonaws.com" not "arn:aws:lambda:*:*:*")
-		if r.ResourceType == "AWS::Service" {
-			result.ARN = principalArn
-		}
-		return result
+		return output.FromAWSResource(*r)
 	}
 	return output.AWSIAMResource{
 		AWSResource: output.AWSResource{

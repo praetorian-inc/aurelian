@@ -77,7 +77,6 @@ func (idx *relIndex) countByAction(action string) int {
 }
 
 func TestAWSGraphNew(t *testing.T) {
-	t.Setenv("AWS_PROFILE", "aurelian")
 	fixture := testutil.NewFixture(t, "aws/recon/graph")
 	fixture.Setup()
 
@@ -235,24 +234,24 @@ func TestAWSGraphNew(t *testing.T) {
 
 		checks := []categoryCheck{
 			// User -> *
-			{"AWS::IAM::User", "AWS::IAM::Role", 320},       // baseline 640
-			{"AWS::IAM::User", "AWS::IAM::User", 270},       // baseline 540
-			{"AWS::IAM::User", "AWS::Lambda::Function", 140}, // baseline 287
+			{"AWS::IAM::User", "AWS::IAM::Role", 320},         // baseline 640
+			{"AWS::IAM::User", "AWS::IAM::User", 270},         // baseline 540
+			{"AWS::IAM::User", "AWS::Lambda::Function", 140},  // baseline 287
 			{"AWS::IAM::User", "AWS::IAM::ManagedPolicy", 40}, // baseline 82
-			{"AWS::IAM::User", "AWS::Service", 25},           // baseline 50
-			{"AWS::IAM::User", "AWS::IAM::Group", 12},        // baseline 24
+			{"AWS::IAM::User", "AWS::Service", 25},            // baseline 50
+			{"AWS::IAM::User", "AWS::IAM::Group", 12},         // baseline 24
 
 			// Role -> *
-			{"AWS::IAM::Role", "AWS::IAM::Role", 1700},       // baseline 3463
-			{"AWS::IAM::Role", "AWS::IAM::User", 880},        // baseline 1770
+			{"AWS::IAM::Role", "AWS::IAM::Role", 1700},         // baseline 3463
+			{"AWS::IAM::Role", "AWS::IAM::User", 880},          // baseline 1770
 			{"AWS::IAM::Role", "AWS::IAM::ManagedPolicy", 440}, // baseline 880
-			{"AWS::IAM::Role", "AWS::Lambda::Function", 280}, // baseline 572
-			{"AWS::IAM::Role", "AWS::IAM::Group", 140},       // baseline 288
-			{"AWS::IAM::Role", "AWS::Service", 125},          // baseline 250
+			{"AWS::IAM::Role", "AWS::Lambda::Function", 280},   // baseline 572
+			{"AWS::IAM::Role", "AWS::IAM::Group", 140},         // baseline 288
+			{"AWS::IAM::Role", "AWS::Service", 125},            // baseline 250
 
 			// Service -> * (from trust policies and resource policies)
-			{"AWS::Service", "AWS::IAM::Role", 15},           // baseline 31
-			{"AWS::Service", "AWS::Lambda::Function", 2},     // baseline 4
+			{"AWS::Service", "AWS::IAM::Role", 15},       // baseline 31
+			{"AWS::Service", "AWS::Lambda::Function", 2}, // baseline 4
 		}
 
 		for _, c := range checks {
@@ -276,26 +275,26 @@ func TestAWSGraphNew(t *testing.T) {
 		}
 
 		checks := []actionCheck{
-			{"iam:PassRole", 560},                      // baseline 1128
-			{"iam:AttachRolePolicy", 450},              // baseline 910
-			{"iam:PutRolePolicy", 450},                 // baseline 910
-			{"iam:UpdateAssumeRolePolicy", 450},        // baseline 910
-			{"iam:CreatePolicyVersion", 240},            // baseline 481
-			{"iam:AttachUserPolicy", 240},               // baseline 480
-			{"iam:CreateAccessKey", 240},                // baseline 480
-			{"iam:CreateLoginProfile", 240},             // baseline 480
-			{"iam:PutUserPolicy", 240},                  // baseline 480
-			{"sts:AssumeRole", 140},                     // baseline 294
-			{"lambda:InvokeFunction", 130},              // baseline 270
-			{"lambda:UpdateFunctionCode", 100},          // baseline 209
-			{"lambda:CreateFunction", 10},               // baseline 23
-			{"ec2:RunInstances", 9},                     // baseline 19
-			{"cloudformation:CreateStack", 8},           // baseline 17
-			{"codebuild:CreateProject", 6},              // baseline 12
-			{"glue:CreateDevEndpoint", 6},               // baseline 12
-			{"sagemaker:CreateNotebookInstance", 6},     // baseline 12
-			{"autoscaling:CreateAutoScalingGroup", 7},   // baseline 14
-			{"ecs:RunTask", 7},                          // baseline 15
+			{"iam:PassRole", 560},                     // baseline 1128
+			{"iam:AttachRolePolicy", 450},             // baseline 910
+			{"iam:PutRolePolicy", 450},                // baseline 910
+			{"iam:UpdateAssumeRolePolicy", 450},       // baseline 910
+			{"iam:CreatePolicyVersion", 240},          // baseline 481
+			{"iam:AttachUserPolicy", 240},             // baseline 480
+			{"iam:CreateAccessKey", 240},              // baseline 480
+			{"iam:CreateLoginProfile", 240},           // baseline 480
+			{"iam:PutUserPolicy", 240},                // baseline 480
+			{"sts:AssumeRole", 140},                   // baseline 294
+			{"lambda:InvokeFunction", 130},            // baseline 270
+			{"lambda:UpdateFunctionCode", 100},        // baseline 209
+			{"lambda:CreateFunction", 10},             // baseline 23
+			{"ec2:RunInstances", 9},                   // baseline 19
+			{"cloudformation:CreateStack", 8},         // baseline 17
+			{"codebuild:CreateProject", 6},            // baseline 12
+			{"glue:CreateDevEndpoint", 6},             // baseline 12
+			{"sagemaker:CreateNotebookInstance", 6},   // baseline 12
+			{"autoscaling:CreateAutoScalingGroup", 7}, // baseline 14
+			{"ecs:RunTask", 7},                        // baseline 15
 		}
 
 		for _, c := range checks {
@@ -356,14 +355,17 @@ func TestAWSGraphNew(t *testing.T) {
 	t.Run("Service principal AssumeRole relationships", func(t *testing.T) {
 		// Service principals (e.g., lambda.amazonaws.com) should be able to
 		// AssumeRole on roles that have matching trust policies.
+		// Service principals use pseudo-ARNs (e.g., arn:aws:lambda:*:*:*)
+		// consistently throughout the platform.
 		lambdaRoleARN := fixture.Output("lambda_role_arn")
+		lambdaServiceARN := "arn:aws:lambda:*:*:*"
 
-		assert.True(t, idx.contains("lambda.amazonaws.com", lambdaRoleARN, "sts:AssumeRole"),
-			"lambda.amazonaws.com should be able to AssumeRole the fixture lambda role %s", lambdaRoleARN)
+		assert.True(t, idx.contains(lambdaServiceARN, lambdaRoleARN, "sts:AssumeRole"),
+			"%s should be able to AssumeRole the fixture lambda role %s", lambdaServiceARN, lambdaRoleARN)
 
 		// Verify service principals appear with correct resource_type
 		for _, r := range relationships {
-			if r.Principal.ARN == "lambda.amazonaws.com" && r.Action == "sts:AssumeRole" {
+			if r.Principal.ARN == lambdaServiceARN && r.Action == "sts:AssumeRole" {
 				assert.Equal(t, "AWS::Service", r.Principal.ResourceType,
 					"service principal should have resource_type AWS::Service")
 				break

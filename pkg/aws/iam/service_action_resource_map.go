@@ -97,7 +97,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"oidc-provider":      regexp.MustCompile(`^arn:aws:iam::\d{12}:oidc-provider/.*`),
 			"saml-provider":      regexp.MustCompile(`^arn:aws:iam::\d{12}:saml-provider/.*`),
 			"server-certificate": regexp.MustCompile(`^arn:aws:iam::\d{12}:server-certificate/.*`),
-			"service":            regexp.MustCompile(`^iam.amazonaws.com$`),
+			"service":            regexp.MustCompile(`^arn:aws:iam:\*:\*:\*$`),
 		},
 		ActionResourceMap: map[string][]string{
 			"addclientidtoopenidconnectprovider":      {"oidc-provider"},
@@ -234,7 +234,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 	},
 	"ec2": {
 		ResourcePatterns: map[string]*regexp.Regexp{
-			"service":         regexp.MustCompile(`^ec2.amazonaws.com$`),
+			"service":         regexp.MustCompile(`^arn:aws:ec2:\*:\*:\*$`),
 			"instance":        regexp.MustCompile(`^arn:aws:ec2:[a-z-0-9]+:\d{12}:instance/.*`),
 			"volume":          regexp.MustCompile(`^arn:aws:ec2:[a-z-0-9]+:\d{12}:volume/.*`),
 			"snapshot":        regexp.MustCompile(`^arn:aws:ec2:[a-z-0-9]+:\d{12}:snapshot/.*`),
@@ -248,7 +248,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 	},
 	"cloudformation": {
 		ResourcePatterns: map[string]*regexp.Regexp{
-			"service":  regexp.MustCompile(`^cloudformation.amazonaws.com$`),
+			"service":  regexp.MustCompile(`^arn:aws:cloudformation:\*:\*:\*$`),
 			"stack":    regexp.MustCompile(`^arn:aws:cloudformation:[a-z-0-9]+:\d{12}:stack/.*`),
 			"stackset": regexp.MustCompile(`^arn:aws:cloudformation:[a-z-0-9]+:\d{12}:stackset/.*`),
 		},
@@ -278,7 +278,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"function":    regexp.MustCompile(`^arn:aws:lambda:[a-z-0-9]+:\d{12}:function:.*$`),
 			"layer":       regexp.MustCompile(`^arn:aws:lambda:[a-z-0-9]+:\d{12}:layer:.*$`),
 			"eventconfig": regexp.MustCompile(`^arn:aws:lambda:[a-z-0-9]+:\d{12}:event-source-mapping:.*$`),
-			"service":     regexp.MustCompile(`^lambda.amazonaws.com$`),
+			"service":     regexp.MustCompile(`^arn:aws:lambda:\*:\*:\*$`),
 		},
 		ActionResourceMap: map[string][]string{
 			"addlayerversionpermission":          {"layer"},
@@ -341,7 +341,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 	},
 	"ecs": {
 		ResourcePatterns: map[string]*regexp.Regexp{
-			"service":        regexp.MustCompile(`^ecs.amazonaws.com$`),
+			"service":        regexp.MustCompile(`^arn:aws:ecs:\*:\*:\*$`),
 			"cluster":        regexp.MustCompile(`^arn:aws:ecs:[a-z0-9-]+:\d{12}:cluster/.*$`),
 			"task":           regexp.MustCompile(`^arn:aws:ecs:[a-z0-9-]+:\d{12}:task/.*$`),
 			"task-def":       regexp.MustCompile(`^arn:aws:ecs:[a-z0-9-]+:\d{12}:task-definition/.*$`),
@@ -360,7 +360,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"managed-instance": regexp.MustCompile(`^arn:aws:ssm:[a-z0-9-]+:\d{12}:managed-instance/.*$`),
 			"document":         regexp.MustCompile(`^arn:aws:ssm:[a-z0-9-]+:(\d{12}|aws):document/.*$`),
 			"automation":       regexp.MustCompile(`^arn:aws:ssm:[a-z0-9-]+:\d{12}:automation-definition/.*$`),
-			"service":          regexp.MustCompile(`^ssm.amazonaws.com$`),
+			"service":          regexp.MustCompile(`^arn:aws:ssm:\*:\*:\*$`),
 		},
 		ActionResourceMap: map[string][]string{
 			"sendcommand":              {"instance", "managed-instance", "document"},
@@ -372,7 +372,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 	"glue": {
 		ResourcePatterns: map[string]*regexp.Regexp{
 			"devEndpoint": regexp.MustCompile(`^arn:aws:glue:[a-z0-9-]+:\d{12}:devEndpoint/.*$`),
-			"service":     regexp.MustCompile(`^glue.amazonaws.com$`),
+			"service":     regexp.MustCompile(`^arn:aws:glue:\*:\*:\*$`),
 		},
 		ActionResourceMap: map[string][]string{
 			"createdevendpoint": {"service"},
@@ -382,7 +382,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 	"codebuild": {
 		ResourcePatterns: map[string]*regexp.Regexp{
 			"project": regexp.MustCompile(`^arn:aws:codebuild:[a-z0-9-]+:\d{12}:project/.*$`),
-			"service": regexp.MustCompile(`^codebuild.amazonaws.com$`),
+			"service": regexp.MustCompile(`^arn:aws:codebuild:\*:\*:\*$`),
 		},
 		ActionResourceMap: map[string][]string{
 			"createproject":   {"service"},
@@ -396,7 +396,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"notebook-instance": regexp.MustCompile(`^arn:aws:sagemaker:[a-z0-9-]+:\d{12}:notebook-instance/.*$`),
 			"training-job":      regexp.MustCompile(`^arn:aws:sagemaker:[a-z0-9-]+:\d{12}:training-job/.*$`),
 			"processing-job":    regexp.MustCompile(`^arn:aws:sagemaker:[a-z0-9-]+:\d{12}:processing-job/.*$`),
-			"service":           regexp.MustCompile(`^sagemaker.amazonaws.com$`),
+			"service":           regexp.MustCompile(`^arn:aws:sagemaker:\*:\*:\*$`),
 		},
 		ActionResourceMap: map[string][]string{
 			"createnotebookinstance":             {"service"},
@@ -411,7 +411,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"autoScalingGroup":    regexp.MustCompile(`^arn:aws:autoscaling:[a-z0-9-]+:\d{12}:autoScalingGroup:.*$`),
 			"launchTemplate":      regexp.MustCompile(`^arn:aws:ec2:[a-z0-9-]+:\d{12}:launch-template/.*$`),
 			"launchConfiguration": regexp.MustCompile(`^arn:aws:autoscaling:[a-z0-9-]+:\d{12}:launchConfiguration:.*$`),
-			"service":             regexp.MustCompile(`^autoscaling.amazonaws.com$`),
+			"service":             regexp.MustCompile(`^arn:aws:autoscaling:\*:\*:\*$`),
 		},
 		ActionResourceMap: map[string][]string{
 			"createautoscalinggroup":    {"service", "launchTemplate"},
