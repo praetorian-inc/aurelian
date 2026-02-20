@@ -13,7 +13,6 @@ import (
 func newAWSResourceFromRole(role types.RoleDetail) *output.AWSResource {
 	a, _ := arn.Parse(role.Arn)
 	return &output.AWSResource{
-		Platform:     "aws",
 		ResourceType: "AWS::IAM::Role",
 		ResourceID:   role.Arn,
 		ARN:          role.Arn,
@@ -25,7 +24,6 @@ func newAWSResourceFromRole(role types.RoleDetail) *output.AWSResource {
 func newAWSResourceFromUser(user types.UserDetail) *output.AWSResource {
 	a, _ := arn.Parse(user.Arn)
 	return &output.AWSResource{
-		Platform:     "aws",
 		ResourceType: "AWS::IAM::User",
 		ResourceID:   user.Arn,
 		ARN:          user.Arn,
@@ -37,7 +35,6 @@ func newAWSResourceFromUser(user types.UserDetail) *output.AWSResource {
 func newAWSResourceFromGroup(group types.GroupDetail) *output.AWSResource {
 	a, _ := arn.Parse(group.Arn)
 	return &output.AWSResource{
-		Platform:     "aws",
 		ResourceType: "AWS::IAM::Group",
 		ResourceID:   group.Arn,
 		ARN:          group.Arn,
@@ -49,7 +46,6 @@ func newAWSResourceFromGroup(group types.GroupDetail) *output.AWSResource {
 func newAWSResourceFromPolicy(policy types.ManagedPolicyDetail) *output.AWSResource {
 	a, _ := arn.Parse(policy.Arn)
 	return &output.AWSResource{
-		Platform:     "aws",
 		ResourceType: "AWS::IAM::ManagedPolicy",
 		ResourceID:   policy.Arn,
 		ARN:          policy.Arn,

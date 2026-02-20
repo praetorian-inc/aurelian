@@ -10,7 +10,7 @@ import (
 )
 
 func TestFromUserDL(t *testing.T) {
-	baseUser := UserDL{
+	baseUser := types.UserDetail{
 		Arn:      "arn:aws:iam::111122223333:user/alice",
 		UserName: "alice",
 		UserId:   "AIDA1234567890",
@@ -42,7 +42,7 @@ func TestFromUserDL(t *testing.T) {
 
 	t.Run("with inline policies", func(t *testing.T) {
 		user := baseUser
-		user.UserPolicyList = []PrincipalPL{
+		user.UserPolicyList = []types.InlinePolicy{
 			{PolicyName: "inline1", PolicyDocument: types.Policy{Version: "2012-10-17"}},
 		}
 		result := FromUserDL(user, "")
@@ -52,7 +52,7 @@ func TestFromUserDL(t *testing.T) {
 
 	t.Run("with managed policies", func(t *testing.T) {
 		user := baseUser
-		user.AttachedManagedPolicies = []ManagedPL{
+		user.AttachedManagedPolicies = []types.ManagedPolicy{
 			{PolicyName: "ReadOnlyAccess", PolicyArn: "arn:aws:iam::aws:policy/ReadOnlyAccess"},
 		}
 		result := FromUserDL(user, "")
@@ -62,7 +62,7 @@ func TestFromUserDL(t *testing.T) {
 
 	t.Run("with permissions boundary", func(t *testing.T) {
 		user := baseUser
-		user.PermissionsBoundary = ManagedPL{
+		user.PermissionsBoundary = types.ManagedPolicy{
 			PolicyName: "Boundary",
 			PolicyArn:  "arn:aws:iam::111122223333:policy/Boundary",
 		}
@@ -74,7 +74,7 @@ func TestFromUserDL(t *testing.T) {
 
 	t.Run("with tags", func(t *testing.T) {
 		user := baseUser
-		user.Tags = []Tag{
+		user.Tags = []types.Tag{
 			{Key: "env", Value: "prod"},
 			{Key: "team", Value: "security"},
 		}
@@ -98,7 +98,7 @@ func TestFromRoleDL(t *testing.T) {
 	stmts := types.PolicyStatementList{
 		{Effect: "Allow", Sid: "AllowAssumeRole"},
 	}
-	baseRole := RoleDL{
+	baseRole := types.RoleDetail{
 		Arn:      "arn:aws:iam::111122223333:role/my-role",
 		RoleName: "my-role",
 		RoleId:   "AROA1234567890",
@@ -131,7 +131,7 @@ func TestFromRoleDL(t *testing.T) {
 
 	t.Run("with inline policies", func(t *testing.T) {
 		role := baseRole
-		role.RolePolicyList = []PrincipalPL{
+		role.RolePolicyList = []types.InlinePolicy{
 			{PolicyName: "role-inline", PolicyDocument: types.Policy{Version: "2012-10-17"}},
 		}
 		result := FromRoleDL(role)
@@ -141,7 +141,7 @@ func TestFromRoleDL(t *testing.T) {
 
 	t.Run("with managed policies", func(t *testing.T) {
 		role := baseRole
-		role.AttachedManagedPolicies = []ManagedPL{
+		role.AttachedManagedPolicies = []types.ManagedPolicy{
 			{PolicyName: "AdminAccess", PolicyArn: "arn:aws:iam::aws:policy/AdministratorAccess"},
 		}
 		result := FromRoleDL(role)
@@ -151,7 +151,7 @@ func TestFromRoleDL(t *testing.T) {
 
 	t.Run("with instance profiles", func(t *testing.T) {
 		role := baseRole
-		role.InstanceProfileList = []InstanceProfile{
+		role.InstanceProfileList = []types.InstanceProfile{
 			{
 				InstanceProfileName: "my-profile",
 				Arn:                 "arn:aws:iam::111122223333:instance-profile/my-profile",
@@ -164,7 +164,7 @@ func TestFromRoleDL(t *testing.T) {
 
 	t.Run("with permissions boundary", func(t *testing.T) {
 		role := baseRole
-		role.PermissionsBoundary = ManagedPL{
+		role.PermissionsBoundary = types.ManagedPolicy{
 			PolicyName: "RoleBoundary",
 			PolicyArn:  "arn:aws:iam::111122223333:policy/RoleBoundary",
 		}
@@ -175,7 +175,7 @@ func TestFromRoleDL(t *testing.T) {
 
 	t.Run("with tags", func(t *testing.T) {
 		role := baseRole
-		role.Tags = []Tag{
+		role.Tags = []types.Tag{
 			{Key: "service", Value: "lambda"},
 		}
 		result := FromRoleDL(role)
@@ -186,7 +186,7 @@ func TestFromRoleDL(t *testing.T) {
 }
 
 func TestFromGroupDL(t *testing.T) {
-	baseGroup := GroupDL{
+	baseGroup := types.GroupDetail{
 		Arn:       "arn:aws:iam::111122223333:group/developers",
 		GroupName: "developers",
 		GroupId:   "AGPA1234567890",
@@ -209,7 +209,7 @@ func TestFromGroupDL(t *testing.T) {
 
 	t.Run("with inline policies", func(t *testing.T) {
 		group := baseGroup
-		group.GroupPolicyList = []PrincipalPL{
+		group.GroupPolicyList = []types.InlinePolicy{
 			{PolicyName: "group-inline", PolicyDocument: types.Policy{Version: "2012-10-17"}},
 		}
 		result := FromGroupDL(group)
@@ -219,7 +219,7 @@ func TestFromGroupDL(t *testing.T) {
 
 	t.Run("with managed policies", func(t *testing.T) {
 		group := baseGroup
-		group.AttachedManagedPolicies = []ManagedPL{
+		group.AttachedManagedPolicies = []types.ManagedPolicy{
 			{PolicyName: "ViewOnlyAccess", PolicyArn: "arn:aws:iam::aws:policy/ViewOnlyAccess"},
 		}
 		result := FromGroupDL(group)
@@ -229,7 +229,7 @@ func TestFromGroupDL(t *testing.T) {
 }
 
 func TestFromPolicyDL(t *testing.T) {
-	basePolicy := PoliciesDL{
+	basePolicy := types.ManagedPolicyDetail{
 		PolicyName:       "MyPolicy",
 		PolicyId:         "ANPA1234567890",
 		Arn:              "arn:aws:iam::111122223333:policy/MyPolicy",
@@ -254,7 +254,7 @@ func TestFromPolicyDL(t *testing.T) {
 
 	t.Run("with policy versions", func(t *testing.T) {
 		policy := basePolicy
-		policy.PolicyVersionList = []PoliciesVL{
+		policy.PolicyVersionList = []types.PolicyVersion{
 			{
 				VersionId:        "v1",
 				IsDefaultVersion: true,
@@ -281,12 +281,12 @@ func TestFromGAAD(t *testing.T) {
 	}
 
 	t.Run("full GAAD with multiple entities", func(t *testing.T) {
-		gaad := &Gaad{
-			UserDetailList: []UserDL{
+		gaad := &types.AuthorizationAccountDetails{
+			UserDetailList: []types.UserDetail{
 				{Arn: "arn:aws:iam::111122223333:user/alice", UserName: "alice"},
 				{Arn: "arn:aws:iam::111122223333:user/bob", UserName: "bob"},
 			},
-			RoleDetailList: []RoleDL{
+			RoleDetailList: []types.RoleDetail{
 				{
 					Arn:      "arn:aws:iam::111122223333:role/role1",
 					RoleName: "role1",
@@ -304,10 +304,10 @@ func TestFromGAAD(t *testing.T) {
 					},
 				},
 			},
-			GroupDetailList: []GroupDL{
+			GroupDetailList: []types.GroupDetail{
 				{Arn: "arn:aws:iam::111122223333:group/devs", GroupName: "devs"},
 			},
-			Policies: []PoliciesDL{
+			Policies: []types.ManagedPolicyDetail{
 				{Arn: "arn:aws:iam::111122223333:policy/pol1", PolicyName: "pol1"},
 			},
 		}
@@ -331,8 +331,8 @@ func TestFromGAAD(t *testing.T) {
 	})
 
 	t.Run("accountID is passed through to user conversion", func(t *testing.T) {
-		gaad := &Gaad{
-			UserDetailList: []UserDL{
+		gaad := &types.AuthorizationAccountDetails{
+			UserDetailList: []types.UserDetail{
 				{Arn: "arn:aws:iam::111122223333:user/alice", UserName: "alice"},
 			},
 		}
@@ -342,7 +342,7 @@ func TestFromGAAD(t *testing.T) {
 	})
 
 	t.Run("empty GAAD returns empty slice", func(t *testing.T) {
-		gaad := &Gaad{}
+		gaad := &types.AuthorizationAccountDetails{}
 		result := FromGAAD(gaad, "123456789012")
 		require.Empty(t, result)
 	})

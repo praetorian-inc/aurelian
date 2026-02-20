@@ -79,7 +79,6 @@ func buildPrincipal(principalArn string, state AnalyzerState) output.AWSIAMResou
 	}
 	return output.AWSIAMResource{
 		AWSResource: output.AWSResource{
-			Platform:   "aws",
 			ARN:        principalArn,
 			ResourceID: principalArn,
 		},

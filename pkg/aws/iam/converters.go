@@ -125,7 +125,7 @@ func FromPolicyDL(policy types.ManagedPolicyDetail) output.AWSIAMResource {
 
 // FromGAAD converts all GAAD entities to AWSIAMResources.
 // The accountID is passed to FromUserDL for user account resolution.
-func FromGAAD(gaad *Gaad, accountID string) []output.AWSIAMResource {
+func FromGAAD(gaad *types.AuthorizationAccountDetails, accountID string) []output.AWSIAMResource {
 	var entities []output.AWSIAMResource
 	for _, user := range gaad.UserDetailList {
 		entities = append(entities, FromUserDL(user, accountID))
