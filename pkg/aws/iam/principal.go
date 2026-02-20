@@ -24,7 +24,7 @@ const (
 	PrincipalTypeUnknown        PrincipalType = "Unknown"
 )
 
-func ExtractPrincipalsFromPrincipalPolicyList(policyList []PrincipalPL) ([]types.Principal, error) {
+func ExtractPrincipalsFromPrincipalPolicyList(policyList []types.InlinePolicy) ([]types.Principal, error) {
 	principals := make([]types.Principal, 0)
 	for _, policy := range policyList {
 		extracted, err := ExtractPrincipals(&policy.PolicyDocument)

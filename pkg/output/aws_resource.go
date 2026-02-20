@@ -1,5 +1,7 @@
 package output
 
+import "github.com/praetorian-inc/aurelian/pkg/types"
+
 // AWSResource represents an AWS cloud resource discovered during scanning.
 // This type replaces the Tabularium AWSResource type to eliminate the
 // dependency on Tabularium in Aurelian.
@@ -30,6 +32,10 @@ type AWSResource struct {
 
 	// IPs are associated IP addresses for this resource (optional)
 	IPs []string `json:"ips,omitempty"`
+
+	// ResourcePolicy is the parsed IAM resource policy attached to this resource (optional).
+	// Set by the resource policy collector for resources like S3 buckets, SQS queues, etc.
+	ResourcePolicy *types.Policy `json:"resource_policy,omitempty"`
 }
 
 // NewAWSResource constructs an AWSResource with the required core fields.

@@ -151,7 +151,7 @@ func (s *AnalyzerState) getStmtResources(principalArn, action string) []string {
 		}
 	}
 
-	collectFromManagedPolicies := func(attachedPolicies []ManagedPL) {
+	collectFromManagedPolicies := func(attachedPolicies []types.ManagedPolicy) {
 		for _, attached := range attachedPolicies {
 			if pol := s.getPolicyByArn(attached.PolicyArn); pol != nil {
 				if doc := pol.DefaultPolicyDocument(); doc != nil {
@@ -235,7 +235,7 @@ func arnPatternsCompatible(a, b string) bool {
 
 	// Check segments 0-4: arn, partition, service, region, account
 	for i := 0; i < 5; i++ {
-		if !matchesPattern(aParts[i], bParts[i]) && !matchesPattern(bParts[i], aParts[i]) {
+		if !MatchesPattern(aParts[i], bParts[i]) && !MatchesPattern(bParts[i], aParts[i]) {
 			return false
 		}
 	}
@@ -251,7 +251,7 @@ func stmtAllowsAction(stmt *types.PolicyStatement, action string) bool {
 	// Check Action field
 	if stmt.Action != nil {
 		for _, policyAction := range *stmt.Action {
-			if matchesPattern(policyAction, action) {
+			if MatchesPattern(policyAction, action) {
 				return true
 			}
 		}
@@ -260,7 +260,7 @@ func stmtAllowsAction(stmt *types.PolicyStatement, action string) bool {
 	// Check NotAction field — allows everything except the listed actions
 	if stmt.NotAction != nil {
 		for _, excluded := range *stmt.NotAction {
-			if matchesPattern(excluded, action) {
+			if MatchesPattern(excluded, action) {
 				return false
 			}
 		}

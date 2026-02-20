@@ -11,13 +11,13 @@ import (
 )
 
 type PolicyData struct {
-	Gaad             *Gaad
+	Gaad             *types.AuthorizationAccountDetails
 	OrgPolicies      *orgpolicies.OrgPolicies
 	ResourcePolicies map[string]*types.Policy
 	Resources        *[]types.EnrichedResourceDescription
 }
 
-func NewPolicyData(gaad *Gaad, orgPolicies *orgpolicies.OrgPolicies, resourcePolicies map[string]*types.Policy, resources *[]types.EnrichedResourceDescription) *PolicyData {
+func NewPolicyData(gaad *types.AuthorizationAccountDetails, orgPolicies *orgpolicies.OrgPolicies, resourcePolicies map[string]*types.Policy, resources *[]types.EnrichedResourceDescription) *PolicyData {
 	if resourcePolicies == nil {
 		resourcePolicies = make(map[string]*types.Policy, 0)
 	}
@@ -679,7 +679,7 @@ func extractSSMDocumentRestrictions(action string, statements *types.PolicyState
 		actionMatches := false
 		if stmt.Action != nil {
 			for _, stmtAction := range *stmt.Action {
-				if matchesPattern(stmtAction, action) {
+				if MatchesPattern(stmtAction, action) {
 					actionMatches = true
 					break
 				}

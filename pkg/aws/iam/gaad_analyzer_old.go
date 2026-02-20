@@ -1,8 +1,8 @@
 package iam
 
 import (
-	"github.com/praetorian-inc/aurelian/pkg/types"
 	"fmt"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	"log/slog"
 	"runtime"
 	"strings"
@@ -12,18 +12,18 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 )
 
-// GaadAnalyzer handles efficient analysis of GAAD policy data
-type GaadAnalyzer struct {
+// GaadAnalyzerOld handles efficient analysis of GAAD policy data
+type GaadAnalyzerOld struct {
 	policyData *PolicyData
 	evaluator  *PolicyEvaluator
 	state      *AnalyzerState
 }
 
-// NewGaadAnalyzer creates a new analyzer and initializes caches
-func NewGaadAnalyzer(pd *PolicyData) *GaadAnalyzer {
+// NewGaadAnalyzerOld creates a new analyzer and initializes caches
+func NewGaadAnalyzerOld(pd *PolicyData) *GaadAnalyzerOld {
 	evaluator := NewPolicyEvaluator(pd)
 	state := NewAnalyzerState(pd)
-	ga := &GaadAnalyzer{
+	ga := &GaadAnalyzerOld{
 		policyData: pd,
 		evaluator:  evaluator,
 		state:      state,
@@ -31,13 +31,13 @@ func NewGaadAnalyzer(pd *PolicyData) *GaadAnalyzer {
 	return ga
 }
 
-// FullResults exposes PermissionsSummary.FullResults via GaadAnalyzer
-func (ga *GaadAnalyzer) FullResults(summary *PermissionsSummary) []FullResult {
+// FullResults exposes PermissionsSummary.FullResults via GaadAnalyzerOld
+func (ga *GaadAnalyzerOld) FullResults(summary *PermissionsSummary) []FullResult {
 	return summary.FullResults(ga.state)
 }
 
 // AnalyzePrincipalPermissions processes permissions for IAM principals concurrently
-func (ga *GaadAnalyzer) AnalyzePrincipalPermissions() (*PermissionsSummary, error) {
+func (ga *GaadAnalyzerOld) AnalyzePrincipalPermissions() (*PermissionsSummary, error) {
 	summary := NewPermissionsSummary()
 	var wg sync.WaitGroup
 
@@ -51,7 +51,7 @@ func (ga *GaadAnalyzer) AnalyzePrincipalPermissions() (*PermissionsSummary, erro
 	// Process users
 	for _, user := range ga.policyData.Gaad.UserDetailList {
 		wg.Add(1)
-		go func(u UserDL) {
+		go func(u types.UserDetail) {
 			defer wg.Done()
 			ga.processUserPermissions(u, evalChan)
 		}(user)
@@ -59,7 +59,7 @@ func (ga *GaadAnalyzer) AnalyzePrincipalPermissions() (*PermissionsSummary, erro
 
 	for _, role := range ga.policyData.Gaad.RoleDetailList {
 		wg.Add(1)
-		go func(r RoleDL) {
+		go func(r types.RoleDetail) {
 			defer wg.Done()
 			ga.processRolePermissions(r, evalChan)
 		}(role)
@@ -93,7 +93,7 @@ func (ga *GaadAnalyzer) AnalyzePrincipalPermissions() (*PermissionsSummary, erro
 	return summary, nil
 }
 
-func (ga *GaadAnalyzer) generateServicePrincipalEvaluations(evalChan chan *EvaluationRequest) {
+func (ga *GaadAnalyzerOld) generateServicePrincipalEvaluations(evalChan chan *EvaluationRequest) {
 
 	// Process resource policies
 	for resourceArn := range ga.policyData.ResourcePolicies {
@@ -105,14 +105,14 @@ func (ga *GaadAnalyzer) generateServicePrincipalEvaluations(evalChan chan *Evalu
 	}
 }
 
-func (ga *GaadAnalyzer) generateServiceEvaluations(resourceArn string, policy *types.Policy) *EvaluationRequest {
+func (ga *GaadAnalyzerOld) generateServiceEvaluations(resourceArn string, policy *types.Policy) *EvaluationRequest {
 	if policy.Statement != nil {
 		for i := range *policy.Statement {
 			(*policy.Statement)[i].OriginArn = resourceArn
 			if (*policy.Statement)[i].Principal != nil && (*policy.Statement)[i].Principal.Service != nil {
 				for _, service := range *(*policy.Statement)[i].Principal.Service {
 					for _, action := range *(*policy.Statement)[i].Action {
-						if isPrivEscAction(action) {
+						if IsPrivEscAction(action) {
 
 							accountID, tags := ga.state.getResourceDeets(resourceArn)
 
@@ -141,7 +141,7 @@ func (ga *GaadAnalyzer) generateServiceEvaluations(resourceArn string, policy *t
 }
 
 // Modified process methods to gather all policies
-func (ga *GaadAnalyzer) processUserPermissions(user UserDL, evalChan chan<- *EvaluationRequest) {
+func (ga *GaadAnalyzerOld) processUserPermissions(user types.UserDetail, evalChan chan<- *EvaluationRequest) {
 	// Create identity statements list
 	identityStatements := types.PolicyStatementList{}
 	boundaryStatements := types.PolicyStatementList{}
@@ -161,7 +161,7 @@ func (ga *GaadAnalyzer) processUserPermissions(user UserDL, evalChan chan<- *Eva
 	identityStatements = append(identityStatements, ga.state.getUserAttachedManagedPolicies(user)...)
 
 	// Add permissions boundary
-	if user.PermissionsBoundary != (ManagedPL{}) {
+	if user.PermissionsBoundary != (types.ManagedPolicy{}) {
 		if boundaryPolicy := ga.state.getPolicyByArn(user.PermissionsBoundary.PolicyArn); boundaryPolicy != nil {
 			if boundaryDoc := boundaryPolicy.DefaultPolicyDocument(); boundaryDoc != nil {
 				for i := range *boundaryDoc.Statement {
@@ -203,7 +203,7 @@ func (ga *GaadAnalyzer) processUserPermissions(user UserDL, evalChan chan<- *Eva
 
 	// Generate evaluation requests
 	for _, action := range allActions {
-		if isPrivEscAction(action) {
+		if IsPrivEscAction(action) {
 
 			for _, resource := range ga.state.getResourcesByAction(Action(action)) {
 
@@ -242,7 +242,7 @@ func (ga *GaadAnalyzer) processUserPermissions(user UserDL, evalChan chan<- *Eva
 	}
 }
 
-func (ga *GaadAnalyzer) startEvaluationWorkers(evalChan <-chan *EvaluationRequest, summary *PermissionsSummary, wg *sync.WaitGroup) {
+func (ga *GaadAnalyzerOld) startEvaluationWorkers(evalChan <-chan *EvaluationRequest, summary *PermissionsSummary, wg *sync.WaitGroup) {
 	numWorkers := runtime.NumCPU() * 3
 	slog.Debug(fmt.Sprintf("Starting %d evaluation workers", numWorkers))
 
@@ -273,7 +273,7 @@ func (ga *GaadAnalyzer) startEvaluationWorkers(evalChan <-chan *EvaluationReques
 	}
 }
 
-func (ga *GaadAnalyzer) processRolePermissions(role RoleDL, evalChan chan<- *EvaluationRequest) {
+func (ga *GaadAnalyzerOld) processRolePermissions(role types.RoleDetail, evalChan chan<- *EvaluationRequest) {
 	identityStatements := types.PolicyStatementList{}
 	boundaryStatements := types.PolicyStatementList{}
 
@@ -297,7 +297,7 @@ func (ga *GaadAnalyzer) processRolePermissions(role RoleDL, evalChan chan<- *Eva
 	identityStatements = append(identityStatements, ga.state.getRoleAttachedManagedPolicies(role)...)
 
 	//Set permissions boundary if present
-	if role.PermissionsBoundary != (ManagedPL{}) {
+	if role.PermissionsBoundary != (types.ManagedPolicy{}) {
 		if boundaryPolicy := ga.state.getPolicyByArn(role.PermissionsBoundary.PolicyArn); boundaryPolicy != nil {
 			if boundaryDoc := boundaryPolicy.DefaultPolicyDocument(); boundaryDoc != nil {
 				if boundaryDoc.Statement != nil && len(*boundaryDoc.Statement) > 0 {
@@ -315,7 +315,7 @@ func (ga *GaadAnalyzer) processRolePermissions(role RoleDL, evalChan chan<- *Eva
 
 	// Generate evaluation requests
 	for _, action := range allActions {
-		if isPrivEscAction(action) {
+		if IsPrivEscAction(action) {
 
 			tempBoundary := make(types.PolicyStatementList, 0)
 			deepCopy(boundaryStatements, &tempBoundary)
@@ -397,7 +397,7 @@ func (ga *GaadAnalyzer) processRolePermissions(role RoleDL, evalChan chan<- *Eva
 	}
 }
 
-func (ga *GaadAnalyzer) processAssumeRolePolicies(evalChan chan<- *EvaluationRequest) {
+func (ga *GaadAnalyzerOld) processAssumeRolePolicies(evalChan chan<- *EvaluationRequest) {
 	// Process all roles' assume role policy documents
 	for _, role := range ga.policyData.Gaad.RoleDetailList {
 		// Skip if there's no policy document or statements
@@ -469,7 +469,7 @@ func (ga *GaadAnalyzer) processAssumeRolePolicies(evalChan chan<- *EvaluationReq
 }
 
 // getGroupByName retrieves a group by name
-func (ga *GaadAnalyzer) getGroupByName(name string) (*GroupDL, bool) {
+func (ga *GaadAnalyzerOld) getGroupByName(name string) (*types.GroupDetail, bool) {
 	for _, group := range ga.policyData.Gaad.GroupDetailList {
 		if group.GroupName == name {
 			return &group, true

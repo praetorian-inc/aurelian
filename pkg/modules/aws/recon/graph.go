@@ -179,7 +179,7 @@ func (m *AWSGraphModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
 	// Step 8: Run IAM permission analysis
 	slog.Info("analyzing IAM permissions")
 	pd := iampkg.NewPolicyData(gaadData, orgPols, resourcePoliciesMap, &enrichedResources)
-	analyzer := iampkg.NewGaadAnalyzer(pd)
+	analyzer := iampkg.NewGaadAnalyzerOld(pd)
 
 	summary, err := analyzer.AnalyzePrincipalPermissions()
 	if err != nil {

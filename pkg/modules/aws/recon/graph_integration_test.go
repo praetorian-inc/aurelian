@@ -4,6 +4,7 @@ package recon
 
 import (
 	"context"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	"testing"
 
 	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
@@ -141,11 +142,11 @@ func TestAWSGraph(t *testing.T) {
 		for _, fr := range fullResults {
 			var arn string
 			switch p := fr.Principal.(type) {
-			case *iampkg.UserDL:
+			case *types.UserDetail:
 				arn = p.Arn
-			case *iampkg.RoleDL:
+			case *types.RoleDetail:
 				arn = p.Arn
-			case *iampkg.GroupDL:
+			case *types.GroupDetail:
 				arn = p.Arn
 			case string:
 				arn = p
