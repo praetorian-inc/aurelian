@@ -51,10 +51,8 @@ func (m *AWSAccountAuthDetailsModule) Parameters() any {
 }
 
 func (m *AWSAccountAuthDetailsModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
-	c := m.AccountAuthDetailsConfig
-
-	// Delegate to shared GAAD package
-	result, accountID, err := gaad.GetAccountAuthorizationDetails(cfg.Context, c.AWSReconBase)
+	g := gaad.New(m.AWSReconBase)
+	result, err := g.Get()
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +63,7 @@ func (m *AWSAccountAuthDetailsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 			Metadata: map[string]any{
 				"module":    m.ID(),
 				"platform":  m.Platform(),
-				"accountID": accountID,
+				"accountID": result.AccountID,
 				"region":    "us-east-1",
 			},
 		},
