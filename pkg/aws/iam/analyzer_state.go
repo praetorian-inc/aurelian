@@ -133,7 +133,10 @@ func (s *AnalyzerState) addServicesToResourceCache() {
 		"autoscaling.amazonaws.com",
 	}
 
-	// Add services to the cache
+	// Add services to the cache under both DNS name and ARN keys.
+	// The DNS name (e.g. "ec2.amazonaws.com") is used for direct lookups,
+	// while the ARN (e.g. "arn:aws:ec2:*:*:*") is needed so that
+	// getResources() can match regex patterns from serviceResourceMaps.
 	for _, service := range commonServices {
 		// Create an EnrichedResourceDescription for the service
 		resourceDescription := types.NewEnrichedResourceDescription(
@@ -144,8 +147,9 @@ func (s *AnalyzerState) addServicesToResourceCache() {
 			make(map[string]string),
 		)
 
-		// Add to resource cache
+		// Add to resource cache under both keys
 		s.ResourceCache[service] = &resourceDescription
+		s.ResourceCache[resourceDescription.Arn.String()] = &resourceDescription
 	}
 }
 
