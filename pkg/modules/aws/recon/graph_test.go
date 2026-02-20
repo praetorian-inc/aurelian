@@ -49,15 +49,3 @@ func TestAWSGraphModuleParameters(t *testing.T) {
 	// Must include org-policies-file
 	assert.True(t, paramNames["org-policies-file"], "should have org-policies-file param")
 }
-
-func TestGraphResolveRegions(t *testing.T) {
-	// Non-"all" should pass through unchanged
-	regions, err := graphResolveRegions([]string{"us-east-1", "us-west-2"}, "", "")
-	require.NoError(t, err)
-	assert.Equal(t, []string{"us-east-1", "us-west-2"}, regions)
-
-	// Single non-all region
-	regions, err = graphResolveRegions([]string{"eu-west-1"}, "", "")
-	require.NoError(t, err)
-	assert.Equal(t, []string{"eu-west-1"}, regions)
-}
