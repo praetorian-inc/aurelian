@@ -120,7 +120,7 @@ func TestGetIdentifierForEvalRequest(t *testing.T) {
 		{
 			name:     "TypeName is AWS::Service",
 			erd:      &cfErd,
-			expected: "cloudformation.amazonaws.com",
+			expected: "arn:aws:cloudformation:*:*:*",
 		},
 		{
 			name:     "TypeName is not AWS::Service",

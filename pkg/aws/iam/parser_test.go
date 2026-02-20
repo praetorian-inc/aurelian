@@ -258,10 +258,13 @@ func Test_CreateMapsToService(t *testing.T) {
 	}
 
 	resources := strResourcetoType[[]types.EnrichedResourceDescription](erdStr)
-	resources = append(resources, types.EnrichedResourceDescription{
-		Identifier: "lambda.amazonaws.com",
-		TypeName:   "AWS::Service",
-	})
+	resources = append(resources, types.NewEnrichedResourceDescription(
+		"lambda.amazonaws.com",
+		"AWS::Service",
+		"",
+		"",
+		make(map[string]string),
+	))
 
 	resources = append(resources, types.NewEnrichedResourceDescription(
 		"arn:aws:lambda:us-east-1:123456789012:function:my-function",
@@ -279,11 +282,9 @@ func Test_CreateMapsToService(t *testing.T) {
 	fr := ga.FullResults(ps)
 	// Expected results:
 	// 1. lambda.amazonaws.com can assume LambdaCreationRole (trust policy allows)
-	// Note: LambdaCreationRole's lambda:CreateFunction on the service resource is NOT evaluated
-	// by GaadAnalyzerOld because getIdentifierForEvalRequest returns service names
-	// (e.g. "lambda.amazonaws.com") which don't match the ARN-based resource patterns.
-	// The new GaadAnalyzer in pkg/aws/iam/gaad correctly uses ARN-format resource identifiers.
-	assert.Len(t, fr, 1)
+	// 2. LambdaCreationRole can lambda:CreateFunction on the lambda service resource
+	//    (now correctly evaluated using ARN-format identifiers)
+	assert.Len(t, fr, 2)
 
 }
 

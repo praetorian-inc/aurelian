@@ -33,9 +33,6 @@ func deepCopy(src, dst any) error {
 }
 
 func getIdentifierForEvalRequest(erd *types.EnrichedResourceDescription) string {
-	if erd.TypeName == "AWS::Service" {
-		return erd.Identifier
-	}
 	return erd.Arn.String()
 }
 
