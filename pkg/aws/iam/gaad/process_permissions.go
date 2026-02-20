@@ -167,10 +167,29 @@ func processAssumeRolePolicies(role types.RoleDetail, state AnalyzerState, evalC
 				continue
 			}
 
+			// For service principals (non-ARN), the evaluator requires both
+			// identity and resource policy allows for AssumeRole. Service
+			// principals don't have identity policies, so we pass the trust
+			// policy statements as IdentityStatements (matching old behavior
+			// from generateServicePrincipalEvaluations). The statements need
+			// Resource set to the role ARN (matching AddResourcePolicies behavior)
+			// and OriginArn set for tracing.
+			identityStmts := &types.PolicyStatementList{}
+			if _, parseErr := arn.Parse(principal); parseErr != nil {
+				// Non-ARN principal (service principal like "lambda.amazonaws.com")
+				if role.AssumeRolePolicyDocument.Statement != nil {
+					stmts := copyStatementsWithOrigin(role.AssumeRolePolicyDocument.Statement, role.Arn)
+					for i := range stmts {
+						stmts[i].Resource = &types.DynaString{role.Arn}
+					}
+					identityStmts = &stmts
+				}
+			}
+
 			evalChan <- &iam.EvaluationRequest{
 				Action:             "sts:AssumeRole",
 				Resource:           role.Arn,
-				IdentityStatements: &types.PolicyStatementList{},
+				IdentityStatements: identityStmts,
 				Context:            rc,
 			}
 		}
@@ -195,7 +214,18 @@ func generatePrincipalEvalRequests(
 		}
 
 		for _, resource := range state.GetResourcesByAction(iam.Action(action)) {
-			accountID, tags := state.GetResourceDetails(resource.ARN)
+			// For service resources, use the service name (e.g., "codebuild.amazonaws.com")
+			// as the eval request resource. The evaluator's IsValidActionForResource expects
+			// service names for "service" resource type patterns. For all other resources,
+			// use the ARN. But always use the ARN for PopulateDefaultRequestConditionKeys
+			// which needs a parseable ARN.
+			evalResource := resource.ARN
+			contextResource := resource.ARN
+			if resource.ResourceType == "AWS::Service" {
+				evalResource = resource.ResourceID
+			}
+
+			accountID, tags := state.GetResourceDetails(evalResource)
 
 			rc := &iam.RequestContext{
 				PrincipalArn:     principalArn,
@@ -203,14 +233,14 @@ func generatePrincipalEvalRequests(
 				PrincipalAccount: accountID,
 				CurrentTime:      time.Now(),
 			}
-			if err := rc.PopulateDefaultRequestConditionKeys(resource.ARN); err != nil {
-				slog.Warn("Skipping evaluation: failed to populate request context", "principal", principalArn, "resource", resource.ARN, "error", err)
+			if err := rc.PopulateDefaultRequestConditionKeys(contextResource); err != nil {
+				slog.Warn("Skipping evaluation: failed to populate request context", "principal", principalArn, "resource", contextResource, "error", err)
 				continue
 			}
 
 			evalChan <- &iam.EvaluationRequest{
 				Action:             action,
-				Resource:           resource.ARN,
+				Resource:           evalResource,
 				IdentityStatements: &identityStatements,
 				BoundaryStatements: &boundaryStatements,
 				Context:            rc,
