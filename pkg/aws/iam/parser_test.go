@@ -1,9 +1,11 @@
-package iam
+package iam_test
 
 import (
 	"encoding/json"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
 )
@@ -129,39 +131,6 @@ var administratorAccessStr = `
 }
 `
 
-var erdStr = `
-[
-{
-    "Identifier": "acme-sa-role",
-    "TypeName": "AWS::IAM::Role",
-    "Region": "",
-    "Properties": "{\"RoleName\":\"acme-sa-role\"}",
-    "AccountId": "123456789012",
-    "Arn": {
-      "Partition": "aws",
-      "Service": "iam",
-      "Region": "",
-      "AccountID": "123456789012",
-      "Resource": "role/acme-sa-role"
-    }
-  },
-  {
-    "Identifier": "AcmeBuild",
-    "TypeName": "AWS::IAM::Role",
-    "Region": "",
-    "Properties": "{\"RoleName\":\"AcmeBuild\"}",
-    "AccountId": "123456789012",
-    "Arn": {
-      "Partition": "aws",
-      "Service": "iam",
-      "Region": "",
-      "AccountID": "123456789012",
-      "Resource": "role/AcmeBuild"
-    }
-  }
-]
-`
-
 func strResourcetoType[T any](str string) T {
 	var res T
 
@@ -176,7 +145,7 @@ func Test_AssumeRole(t *testing.T) {
 	acmeGlueRole := strResourcetoType[types.RoleDetail](acmeGlueRoleStr)
 	aaPolicy := strResourcetoType[types.ManagedPolicyDetail](administratorAccessStr)
 
-	gaad := types.AuthorizationAccountDetails{
+	gaadData := &types.AuthorizationAccountDetails{
 		UserDetailList: []types.UserDetail{},
 		RoleDetailList: []types.RoleDetail{
 			acmeGlueRole,
@@ -187,14 +156,15 @@ func Test_AssumeRole(t *testing.T) {
 		},
 	}
 
-	resources := strResourcetoType[[]types.EnrichedResourceDescription](erdStr)
+	resources := []output.AWSResource{
+		{ResourceType: "AWS::IAM::Role", ResourceID: "acme-sa-role", ARN: "arn:aws:iam:123456789012:role/acme-sa-role", AccountRef: "123456789012"},
+		{ResourceType: "AWS::IAM::Role", ResourceID: "AcmeBuild", ARN: "arn:aws:iam:123456789012:role/AcmeBuild", AccountRef: "123456789012"},
+	}
 
-	pd := NewPolicyData(&gaad, nil, make(map[string]*types.Policy), &resources)
-	ga := NewGaadAnalyzerOld(pd)
-	ps, err := ga.AnalyzePrincipalPermissions()
+	analyzer := gaad.NewGaadAnalyzer()
+	fr, err := analyzer.Analyze(gaadData, nil, resources)
 	assert.NoError(t, err)
 
-	fr := ga.FullResults(ps)
 	// After the AssumeRole trust policy fix, only valid edges are created:
 	// - glue.amazonaws.com can assume acme-glue-role (trust policy allows service principal)
 	// - acme-glue-role CANNOT assume other roles because:
@@ -203,8 +173,8 @@ func Test_AssumeRole(t *testing.T) {
 	assert.Len(t, fr, 1)
 }
 
-var lambdaCreate = `
-
+func Test_CreateMapsToService(t *testing.T) {
+	lambdaCreate := `
 {
   "Path": "/",
   "RoleName": "LambdaCreationRole",
@@ -242,13 +212,9 @@ var lambdaCreate = `
   ]
 }
 `
-
-// CreateMapsToService is a test function to verify the mapping of create actions to services
-// It verifies lambda:CreateFunction maps to lambda.amazonaws.com
-func Test_CreateMapsToService(t *testing.T) {
 	lambdaCreateRole := strResourcetoType[types.RoleDetail](lambdaCreate)
 
-	gaad := types.AuthorizationAccountDetails{
+	gaadData := &types.AuthorizationAccountDetails{
 		UserDetailList: []types.UserDetail{},
 		RoleDetailList: []types.RoleDetail{
 			lambdaCreateRole,
@@ -257,39 +223,25 @@ func Test_CreateMapsToService(t *testing.T) {
 		Policies:        []types.ManagedPolicyDetail{},
 	}
 
-	resources := strResourcetoType[[]types.EnrichedResourceDescription](erdStr)
-	resources = append(resources, types.NewEnrichedResourceDescription(
-		"lambda.amazonaws.com",
-		"AWS::Service",
-		"",
-		"",
-		make(map[string]string),
-	))
+	resources := []output.AWSResource{
+		{ResourceType: "AWS::IAM::Role", ResourceID: "acme-sa-role", ARN: "arn:aws:iam:123456789012:role/acme-sa-role", AccountRef: "123456789012"},
+		{ResourceType: "AWS::IAM::Role", ResourceID: "AcmeBuild", ARN: "arn:aws:iam:123456789012:role/AcmeBuild", AccountRef: "123456789012"},
+		{ResourceType: "AWS::Service", ResourceID: "lambda.amazonaws.com", ARN: "arn:aws:lambda:*:*:*"},
+		{ResourceType: "AWS::Lambda::Function", ResourceID: "arn:aws:lambda:us-east-1:123456789012:function:my-function", ARN: "arn:aws:lambda:us-east-1:123456789012:function:my-function", Region: "us-east-1", AccountRef: "123456789012"},
+	}
 
-	resources = append(resources, types.NewEnrichedResourceDescription(
-		"arn:aws:lambda:us-east-1:123456789012:function:my-function",
-		"AWS::Lambda::Function",
-		"us-east-1",
-		"123456789012",
-		make(map[string]string),
-	))
-
-	pd := NewPolicyData(&gaad, nil, make(map[string]*types.Policy), &resources)
-	ga := NewGaadAnalyzerOld(pd)
-	ps, err := ga.AnalyzePrincipalPermissions()
+	analyzer := gaad.NewGaadAnalyzer()
+	fr, err := analyzer.Analyze(gaadData, nil, resources)
 	assert.NoError(t, err)
 
-	fr := ga.FullResults(ps)
 	// Expected results:
 	// 1. lambda.amazonaws.com can assume LambdaCreationRole (trust policy allows)
 	// 2. LambdaCreationRole can lambda:CreateFunction on the lambda service resource
 	//    (now correctly evaluated using ARN-format identifiers)
 	assert.Len(t, fr, 2)
-
 }
 
 func Test_PrivilegeEscalation(t *testing.T) {
-	// Define the admin role with AdministratorAccess policy attached
 	adminRoleStr := `
 {
   "Path": "/",
@@ -324,8 +276,6 @@ func Test_PrivilegeEscalation(t *testing.T) {
   }
 }`
 
-	// Define the low-priv role with sts:AssumeRole permission
-	// This role can escalate privileges by assuming the admin role
 	lowPrivRoleStr := `
 {
   "Path": "/",
@@ -366,47 +316,11 @@ func Test_PrivilegeEscalation(t *testing.T) {
   "RoleLastUsed": {}
 }`
 
-	// Parse the AdministratorAccess policy
 	administratorAccessPolicy := strResourcetoType[types.ManagedPolicyDetail](administratorAccessStr)
-
-	// Parse the roles
 	adminRole := strResourcetoType[types.RoleDetail](adminRoleStr)
 	lowPrivRole := strResourcetoType[types.RoleDetail](lowPrivRoleStr)
 
-	// Create resource descriptions for both roles
-	resources := []types.EnrichedResourceDescription{
-		{
-			Identifier: "admin",
-			TypeName:   "AWS::IAM::Role",
-			Region:     "",
-			Properties: "{\"RoleName\":\"admin\"}",
-			AccountId:  "123456789012",
-			Arn: strResourcetoType[types.EnrichedResourceDescription](`{
-				"Partition": "aws",
-				"Service": "iam",
-				"Region": "",
-				"AccountID": "123456789012",
-				"Resource": "role/admin"
-			}`).Arn,
-		},
-		{
-			Identifier: "low-priv",
-			TypeName:   "AWS::IAM::Role",
-			Region:     "",
-			Properties: "{\"RoleName\":\"low-priv\"}",
-			AccountId:  "123456789012",
-			Arn: strResourcetoType[types.EnrichedResourceDescription](`{
-				"Partition": "aws",
-				"Service": "iam",
-				"Region": "",
-				"AccountID": "123456789012",
-				"Resource": "role/low-priv"
-			}`).Arn,
-		},
-	}
-
-	// Create GAAD with the roles and policy
-	gaad := types.AuthorizationAccountDetails{
+	gaadData := &types.AuthorizationAccountDetails{
 		UserDetailList: []types.UserDetail{},
 		RoleDetailList: []types.RoleDetail{
 			adminRole,
@@ -418,39 +332,27 @@ func Test_PrivilegeEscalation(t *testing.T) {
 		},
 	}
 
-	// Create policy data and analyzer
-	pd := NewPolicyData(&gaad, nil, make(map[string]*types.Policy), &resources)
-	ga := NewGaadAnalyzerOld(pd)
-	ps, err := ga.AnalyzePrincipalPermissions()
+	resources := []output.AWSResource{
+		{ResourceType: "AWS::IAM::Role", ResourceID: "admin", ARN: "arn:aws:iam:123456789012:role/admin", AccountRef: "123456789012", Properties: map[string]any{"RoleName": "admin"}},
+		{ResourceType: "AWS::IAM::Role", ResourceID: "low-priv", ARN: "arn:aws:iam:123456789012:role/low-priv", AccountRef: "123456789012", Properties: map[string]any{"RoleName": "low-priv"}},
+	}
+
+	analyzer := gaad.NewGaadAnalyzer()
+	fr, err := analyzer.Analyze(gaadData, nil, resources)
 	assert.NoError(t, err)
 
-	// Get full results
-	fr := ga.FullResults(ps)
-
-	// Verify results
 	assert.GreaterOrEqual(t, len(fr), 1, "Expected at least one result")
 
 	// Find the specific result for low-priv assuming admin role
 	var privilegeEscalationFound bool
-	for _, result := range fr {
-		// Check if it's the low-priv role
-		lowPrivRole, ok := result.Principal.(*types.RoleDetail)
-		if !ok || lowPrivRole.RoleName != "low-priv" {
-			continue
+	for _, rel := range fr {
+		if rel.Principal.DisplayName == "low-priv" &&
+			rel.Action == "sts:AssumeRole" &&
+			rel.Resource.ResourceType == "AWS::IAM::Role" &&
+			rel.Resource.DisplayName == "admin" {
+			privilegeEscalationFound = true
+			break
 		}
-
-		// Check if the action is AssumeRole
-		if result.Action != "sts:AssumeRole" {
-			continue
-		}
-
-		// Check if the resource is the admin role
-		if result.Resource.TypeName != "AWS::IAM::Role" || result.Resource.Identifier != "admin" {
-			continue
-		}
-
-		privilegeEscalationFound = true
-		break
 	}
 
 	assert.True(t, privilegeEscalationFound, "low-priv role should be able to assume the admin role")
