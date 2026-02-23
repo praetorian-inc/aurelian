@@ -44,7 +44,7 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          direct_prompt: |
+          prompt: |
             You are an advisory code reviewer for the Aurelian repository, a modular cloud security framework built in Go. You provide technical feedback. You do NOT approve or reject PRs — that is the human reviewer's job.
 
             REPO: ${{ github.repository }}
