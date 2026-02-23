@@ -115,6 +115,32 @@ func NodeFromAWSIAMResource(resource output.AWSIAMResource) *graph.Node {
 		}
 	}
 
+	// For IAM types without OriginalData, create minimal GAAD-style nodes
+	// with PascalCase "Arn" so they merge with existing GAAD-created nodes.
+	// Without this, buildPrincipal's output (which lacks OriginalData) would
+	// fall through to NodeFromAWSResource producing lowercase "arn", causing
+	// duplicate nodes instead of merging.
+	switch resource.AWSResource.ResourceType {
+	case "AWS::IAM::User":
+		return &graph.Node{
+			Labels:     []string{"User", "Principal", "AWS::IAM::User"},
+			Properties: map[string]interface{}{"Arn": resource.AWSResource.ARN},
+			UniqueKey:  []string{"Arn"},
+		}
+	case "AWS::IAM::Role":
+		return &graph.Node{
+			Labels:     []string{"Role", "Principal", "AWS::IAM::Role"},
+			Properties: map[string]interface{}{"Arn": resource.AWSResource.ARN},
+			UniqueKey:  []string{"Arn"},
+		}
+	case "AWS::IAM::Group":
+		return &graph.Node{
+			Labels:     []string{"Group", "Principal", "AWS::IAM::Group"},
+			Properties: map[string]interface{}{"Arn": resource.AWSResource.ARN},
+			UniqueKey:  []string{"Arn"},
+		}
+	}
+
 	// Fallback: non-IAM resources or missing OriginalData
 	return NodeFromAWSResource(resource.AWSResource)
 }

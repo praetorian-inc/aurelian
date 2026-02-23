@@ -96,6 +96,101 @@ func TestNodeFromGaadGroup(t *testing.T) {
 	assert.Equal(t, "developers", node.Properties["GroupName"])
 }
 
+func TestNodeFromAWSIAMResource(t *testing.T) {
+	tests := []struct {
+		name         string
+		resource     output.AWSIAMResource
+		wantLabels   []string
+		wantArnKey   string // "Arn" (PascalCase) or "arn" (lowercase)
+		wantArnValue string
+	}{
+		{
+			name: "IAM User without OriginalData produces PascalCase Arn",
+			resource: output.AWSIAMResource{
+				AWSResource: output.AWSResource{
+					ResourceType: "AWS::IAM::User",
+					ARN:          "arn:aws:iam::123456789012:user/test-user",
+				},
+				OriginalData: nil,
+			},
+			wantLabels:   []string{"User", "Principal", "AWS::IAM::User"},
+			wantArnKey:   "Arn",
+			wantArnValue: "arn:aws:iam::123456789012:user/test-user",
+		},
+		{
+			name: "IAM Role without OriginalData produces PascalCase Arn",
+			resource: output.AWSIAMResource{
+				AWSResource: output.AWSResource{
+					ResourceType: "AWS::IAM::Role",
+					ARN:          "arn:aws:iam::123456789012:role/test-role",
+				},
+				OriginalData: nil,
+			},
+			wantLabels:   []string{"Role", "Principal", "AWS::IAM::Role"},
+			wantArnKey:   "Arn",
+			wantArnValue: "arn:aws:iam::123456789012:role/test-role",
+		},
+		{
+			name: "IAM Group without OriginalData produces PascalCase Arn",
+			resource: output.AWSIAMResource{
+				AWSResource: output.AWSResource{
+					ResourceType: "AWS::IAM::Group",
+					ARN:          "arn:aws:iam::123456789012:group/developers",
+				},
+				OriginalData: nil,
+			},
+			wantLabels:   []string{"Group", "Principal", "AWS::IAM::Group"},
+			wantArnKey:   "Arn",
+			wantArnValue: "arn:aws:iam::123456789012:group/developers",
+		},
+		{
+			name: "Non-IAM type without OriginalData falls back to NodeFromAWSResource",
+			resource: output.AWSIAMResource{
+				AWSResource: output.AWSResource{
+					ResourceType: "AWS::S3::Bucket",
+					ARN:          "arn:aws:s3:::test-bucket",
+					ResourceID:   "test-bucket",
+					AccountRef:   "123456789012",
+					Region:       "us-east-1",
+				},
+				OriginalData: nil,
+			},
+			wantLabels:   []string{"Bucket", "Resource", "AWS::S3::Bucket"},
+			wantArnKey:   "arn",
+			wantArnValue: "arn:aws:s3:::test-bucket",
+		},
+		{
+			name: "IAM User with OriginalData delegates to NodeFromGaadUser",
+			resource: output.AWSIAMResource{
+				AWSResource: output.AWSResource{
+					ResourceType: "AWS::IAM::User",
+					ARN:          "arn:aws:iam::123456789012:user/test-user",
+				},
+				OriginalData: types.UserDetail{
+					Arn:      "arn:aws:iam::123456789012:user/test-user",
+					UserName: "test-user",
+					UserId:   "AIDACKCEVSQ6C2EXAMPLE",
+				},
+			},
+			wantLabels:   []string{"User", "Principal", "AWS::IAM::User"},
+			wantArnKey:   "Arn",
+			wantArnValue: "arn:aws:iam::123456789012:user/test-user",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := NodeFromAWSIAMResource(tt.resource)
+
+			require.NotNil(t, node)
+			assert.Equal(t, tt.wantLabels, node.Labels)
+			assert.Equal(t, []string{tt.wantArnKey}, node.UniqueKey)
+			assert.Equal(t, tt.wantArnValue, node.Properties[tt.wantArnKey],
+				"Expected property %q to be %q", tt.wantArnKey, tt.wantArnValue)
+		})
+	}
+}
+
 func TestNodeFromAWSResource(t *testing.T) {
 	tests := []struct {
 		name          string
