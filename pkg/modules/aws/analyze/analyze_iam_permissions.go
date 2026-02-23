@@ -107,7 +107,7 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 	}
 
 	// Convert GAAD entities to AWSIAMResource
-	entities := iampkg.FromGAAD(gaad, "")
+	entities := gaadpkg.FromGAAD(gaad, "")
 
 	return []plugin.Result{
 		{

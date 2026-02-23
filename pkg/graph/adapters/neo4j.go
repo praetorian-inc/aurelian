@@ -142,7 +142,9 @@ func (a *Neo4jAdapter) buildNodeMergeQuery(node *graph.Node) string {
 	// Build labels string
 	labels := ""
 	for _, label := range node.Labels {
-		labels += ":" + escapeLabel(label)
+		if label != "" {
+			labels += ":" + escapeLabel(label)
+		}
 	}
 
 	// Build MERGE pattern with unique key properties
@@ -301,13 +303,17 @@ func (a *Neo4jAdapter) buildRelationshipMergeQuery(rel *graph.Relationship) stri
 	// Build start node labels
 	startLabels := ""
 	for _, label := range rel.StartNode.Labels {
-		startLabels += ":" + escapeLabel(label)
+		if label != "" {
+			startLabels += ":" + escapeLabel(label)
+		}
 	}
 
 	// Build end node labels
 	endLabels := ""
 	for _, label := range rel.EndNode.Labels {
-		endLabels += ":" + escapeLabel(label)
+		if label != "" {
+			endLabels += ":" + escapeLabel(label)
+		}
 	}
 
 	// Build MATCH patterns for start and end nodes

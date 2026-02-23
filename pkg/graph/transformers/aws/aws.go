@@ -78,12 +78,14 @@ func NodeFromAWSResource(cr output.AWSResource) *graph.Node {
 	props["_resourceType"] = cr.ResourceType
 
 	// Parse resource type to get short name
-	parts := parseResourceType(cr.ResourceType)
 	var labels []string
-	if len(parts) >= 3 {
+	parts := parseResourceType(cr.ResourceType)
+	if len(parts) >= 3 && parts[2] != "" {
 		labels = []string{parts[2], "Resource", cr.ResourceType}
-	} else {
+	} else if cr.ResourceType != "" {
 		labels = []string{"Resource", cr.ResourceType}
+	} else {
+		labels = []string{"Resource"}
 	}
 
 	return &graph.Node{
@@ -128,6 +130,53 @@ func NodeFromServicePrincipal(serviceName string) *graph.Node {
 			"_type":   "ServicePrincipal",
 		},
 		UniqueKey: []string{"service"},
+	}
+}
+
+// RelationshipFromAWSIAMRelationship creates a graph relationship from an
+// AWSIAMRelationship (the output type produced by the GAAD analyzer).
+// The start node is derived from the Principal's OriginalData when available.
+// For IAM target resources, minimal GAAD-style nodes are created to merge
+// with existing GAAD-created nodes (using PascalCase "Arn" as unique key).
+func RelationshipFromAWSIAMRelationship(rel output.AWSIAMRelationship) *graph.Relationship {
+	startNode := NodeFromAWSIAMResource(rel.Principal)
+	endNode := endNodeFromAWSResource(rel.Resource)
+	relType := normalizeActionToRelType(rel.Action)
+
+	return &graph.Relationship{
+		Type:       relType,
+		Properties: map[string]interface{}{"action": rel.Action},
+		StartNode:  startNode,
+		EndNode:    endNode,
+	}
+}
+
+// endNodeFromAWSResource creates a graph node for a relationship target.
+// For IAM resource types (User, Role, Group), it creates minimal GAAD-style
+// nodes with PascalCase "Arn" so they merge with existing GAAD-created nodes.
+// For all other types, it delegates to NodeFromAWSResource.
+func endNodeFromAWSResource(resource output.AWSResource) *graph.Node {
+	switch resource.ResourceType {
+	case "AWS::IAM::User":
+		return &graph.Node{
+			Labels:     []string{"User", "Principal", "AWS::IAM::User"},
+			Properties: map[string]interface{}{"Arn": resource.ARN},
+			UniqueKey:  []string{"Arn"},
+		}
+	case "AWS::IAM::Role":
+		return &graph.Node{
+			Labels:     []string{"Role", "Principal", "AWS::IAM::Role"},
+			Properties: map[string]interface{}{"Arn": resource.ARN},
+			UniqueKey:  []string{"Arn"},
+		}
+	case "AWS::IAM::Group":
+		return &graph.Node{
+			Labels:     []string{"Group", "Principal", "AWS::IAM::Group"},
+			Properties: map[string]interface{}{"Arn": resource.ARN},
+			UniqueKey:  []string{"Arn"},
+		}
+	default:
+		return NodeFromAWSResource(resource)
 	}
 }
 

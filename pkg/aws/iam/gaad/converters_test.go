@@ -1,4 +1,4 @@
-package iam
+package gaad
 
 import (
 	"testing"
@@ -392,4 +392,91 @@ func TestDeduplicateByARN(t *testing.T) {
 		result := DeduplicateByARN([]output.AWSIAMResource{})
 		require.Empty(t, result)
 	})
+}
+
+func TestExtractResourceTags(t *testing.T) {
+	tests := []struct {
+		name string
+		r    *output.AWSResource
+		want map[string]string
+	}{
+		{
+			name: "nil resource returns empty map",
+			r:    nil,
+			want: map[string]string{},
+		},
+		{
+			name: "nil Properties returns empty map",
+			r:    &output.AWSResource{},
+			want: map[string]string{},
+		},
+		{
+			name: "no Tags key in Properties returns empty map",
+			r: &output.AWSResource{
+				Properties: map[string]any{
+					"OtherKey": "some-value",
+				},
+			},
+			want: map[string]string{},
+		},
+		{
+			name: "invalid Tags type returns empty map",
+			r: &output.AWSResource{
+				Properties: map[string]any{
+					"Tags": "not-a-list",
+				},
+			},
+			want: map[string]string{},
+		},
+		{
+			name: "valid tags extracted correctly",
+			r: &output.AWSResource{
+				Properties: map[string]any{
+					"Tags": []any{
+						map[string]any{"Key": "env", "Value": "prod"},
+						map[string]any{"Key": "team", "Value": "security"},
+					},
+				},
+			},
+			want: map[string]string{
+				"env":  "prod",
+				"team": "security",
+			},
+		},
+		{
+			name: "tag with empty Key is skipped",
+			r: &output.AWSResource{
+				Properties: map[string]any{
+					"Tags": []any{
+						map[string]any{"Key": "", "Value": "orphan"},
+						map[string]any{"Key": "valid", "Value": "value"},
+					},
+				},
+			},
+			want: map[string]string{
+				"valid": "value",
+			},
+		},
+		{
+			name: "tag item is not a map is skipped",
+			r: &output.AWSResource{
+				Properties: map[string]any{
+					"Tags": []any{
+						"not-a-map",
+						map[string]any{"Key": "ok", "Value": "fine"},
+					},
+				},
+			},
+			want: map[string]string{
+				"ok": "fine",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractResourceTags(tt.r)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

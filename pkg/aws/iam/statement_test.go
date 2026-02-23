@@ -712,6 +712,96 @@ func TestMatchesPattern(t *testing.T) {
 	}
 }
 
+func TestMatchesPattern_RegexMetacharacterEscaping(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		input   string
+		want    bool
+	}{
+		// Parentheses
+		{
+			name:    "parentheses match literal",
+			pattern: "arn:aws:iam::*:role/my-role(prod)",
+			input:   "arn:aws:iam::123:role/my-role(prod)",
+			want:    true,
+		},
+		// Plus sign
+		{
+			name:    "plus sign matches literal",
+			pattern: "prefix+suffix",
+			input:   "prefix+suffix",
+			want:    true,
+		},
+		{
+			name:    "plus sign not treated as regex quantifier",
+			pattern: "prefix+suffix",
+			input:   "prefixsuffix",
+			want:    false,
+		},
+		// Square brackets
+		{
+			name:    "brackets match literal",
+			pattern: "value[0]",
+			input:   "value[0]",
+			want:    true,
+		},
+		{
+			name:    "brackets not treated as character class",
+			pattern: "value[0]",
+			input:   "value0",
+			want:    false,
+		},
+		// Curly braces
+		{
+			name:    "braces match literal",
+			pattern: "name{env}",
+			input:   "name{env}",
+			want:    true,
+		},
+		// Caret
+		{
+			name:    "caret matches literal",
+			pattern: "start^end",
+			input:   "start^end",
+			want:    true,
+		},
+		// Dollar sign
+		{
+			name:    "dollar matches literal",
+			pattern: "price$100",
+			input:   "price$100",
+			want:    true,
+		},
+		// Pipe
+		{
+			name:    "pipe matches literal",
+			pattern: "a|b",
+			input:   "a|b",
+			want:    true,
+		},
+		{
+			name:    "pipe not treated as alternation - a only",
+			pattern: "a|b",
+			input:   "a",
+			want:    false,
+		},
+		{
+			name:    "pipe not treated as alternation - b only",
+			pattern: "a|b",
+			input:   "b",
+			want:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := MatchesPattern(tt.pattern, tt.input)
+			assert.Equal(t, tt.want, got, "MatchesPattern(%q, %q)", tt.pattern, tt.input)
+		})
+	}
+}
+
 func TestMatchesActions(t *testing.T) {
 	testCases := []struct {
 		actions         *types.DynaString
@@ -765,6 +855,253 @@ func TestMatchesActions(t *testing.T) {
 		})
 	}
 }
+func TestDeterminePrincipalType(t *testing.T) {
+	tests := []struct {
+		name     string
+		arn      string
+		expected PrincipalType
+	}{
+		{"empty ARN", "", PrincipalTypeUnknown},
+		{"invalid ARN", "not-an-arn", PrincipalTypeUnknown},
+		{"IAM user", "arn:aws:iam::123456789012:user/alice", PrincipalTypeUser},
+		{"IAM role", "arn:aws:iam::123456789012:role/my-role", PrincipalTypeRole},
+		{"IAM root", "arn:aws:iam::123456789012:root/account", PrincipalTypeRoot},
+		{"STS assumed role", "arn:aws:sts::123456789012:assumed-role/my-role/session", PrincipalTypeRoleSession},
+		{"STS federated user", "arn:aws:sts::123456789012:federated-user/my-user", PrincipalTypeFederatedUser},
+		{"service principal", "arn:aws:iam:us-east-1:lambda.amazonaws.com:function/my-func", PrincipalTypeService},
+		{"canonical user", "arn:aws:iam::123456789012:canonical-user/abc123", PrincipalTypeCanonicalUser},
+		{"IAM short resource", "arn:aws:iam::123456789012:policy", PrincipalTypeUnknown},
+		{"STS short resource", "arn:aws:sts::123456789012:token", PrincipalTypeUnknown},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := determinePrincipalType(tt.arn)
+			if result != tt.expected {
+				t.Errorf("determinePrincipalType(%q) = %q, want %q", tt.arn, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetServiceNameFromArn(t *testing.T) {
+	tests := []struct {
+		name     string
+		arn      string
+		expected string
+	}{
+		{"empty ARN", "", ""},
+		{"invalid ARN", "not-an-arn", ""},
+		{"service in service field", "arn:aws:lambda.amazonaws.com::123456789012:function/my-func", "lambda.amazonaws.com"},
+		{"non-service ARN", "arn:aws:iam::123456789012:user/alice", ""},
+		// Legacy resource format: service name is in the resource section
+		{"legacy format - service in resource", "arn:aws:iam::123456789012:s3.amazonaws.com/bucket", "s3.amazonaws.com"},
+		{"legacy format - lambda in resource", "arn:aws:iam::123456789012:lambda.amazonaws.com/function/foo", "lambda.amazonaws.com"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getServiceNameFromArn(tt.arn)
+			if result != tt.expected {
+				t.Errorf("getServiceNameFromArn(%q) = %q, want %q", tt.arn, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestNewRequestContext(t *testing.T) {
+	ctx := NewRequestContext()
+	assert.NotNil(t, ctx)
+	assert.NotNil(t, ctx.PrincipalTags)
+	assert.NotNil(t, ctx.ResourceTags)
+	assert.NotNil(t, ctx.RequestTags)
+	assert.NotNil(t, ctx.RequestParameters)
+	assert.Empty(t, ctx.PrincipalTags)
+	assert.Empty(t, ctx.ResourceTags)
+	assert.Empty(t, ctx.RequestTags)
+	assert.Empty(t, ctx.RequestParameters)
+}
+
+func TestGetUsernameFromArn(t *testing.T) {
+	tests := []struct {
+		name string
+		arn  string
+		want string
+	}{
+		{
+			name: "valid user ARN",
+			arn:  "arn:aws:iam::123456789012:user/alice",
+			want: "alice",
+		},
+		{
+			name: "user ARN with path",
+			arn:  "arn:aws:iam::123456789012:user/path/to/bob",
+			want: "path/to/bob",
+		},
+		{
+			name: "non-user ARN (role)",
+			arn:  "arn:aws:iam::123456789012:role/my-role",
+			want: "",
+		},
+		{
+			name: "non-user ARN (group)",
+			arn:  "arn:aws:iam::123456789012:group/admins",
+			want: "",
+		},
+		{
+			name: "empty ARN",
+			arn:  "",
+			want: "",
+		},
+		{
+			name: "invalid ARN",
+			arn:  "not-an-arn",
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getUsernameFromArn(tt.arn)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestMatchesPrincipal(t *testing.T) {
+	tests := []struct {
+		name               string
+		principal          *types.Principal
+		requestedPrincipal string
+		want               bool
+	}{
+		{
+			name:               "nil principal returns false",
+			principal:          nil,
+			requestedPrincipal: "arn:aws:iam::123456789012:user/alice",
+			want:               false,
+		},
+		{
+			name: "Federated principal match",
+			principal: &types.Principal{
+				Federated: &types.DynaString{"arn:aws:iam::123456789012:oidc-provider/accounts.google.com"},
+			},
+			requestedPrincipal: "arn:aws:iam::123456789012:oidc-provider/accounts.google.com",
+			want:               true,
+		},
+		{
+			name: "Federated principal no match",
+			principal: &types.Principal{
+				Federated: &types.DynaString{"arn:aws:iam::123456789012:oidc-provider/accounts.google.com"},
+			},
+			requestedPrincipal: "arn:aws:iam::123456789012:oidc-provider/different-provider",
+			want:               false,
+		},
+		{
+			name: "CanonicalUser principal match",
+			principal: &types.Principal{
+				CanonicalUser: &types.DynaString{"79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be"},
+			},
+			requestedPrincipal: "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be",
+			want:               true,
+		},
+		{
+			name: "CanonicalUser principal no match",
+			principal: &types.Principal{
+				CanonicalUser: &types.DynaString{"79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be"},
+			},
+			requestedPrincipal: "arn:aws:iam::123456789012:user/alice",
+			want:               false,
+		},
+		{
+			name: "Service principal match",
+			principal: &types.Principal{
+				Service: &types.DynaString{"lambda.amazonaws.com"},
+			},
+			requestedPrincipal: "lambda.amazonaws.com",
+			want:               true,
+		},
+		{
+			name: "AWS principal with :root match",
+			principal: &types.Principal{
+				AWS: &types.DynaString{"arn:aws:iam::123456789012:root"},
+			},
+			requestedPrincipal: "arn:aws:iam::123456789012:user/alice",
+			want:               true,
+		},
+		{
+			name: "empty principal fields returns false",
+			principal: &types.Principal{
+				// All fields nil
+			},
+			requestedPrincipal: "arn:aws:iam::123456789012:user/alice",
+			want:               false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := matchesPrincipal(tt.principal, tt.requestedPrincipal)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestPopulateDefaultRequestConditionKeys_ServicePrincipal(t *testing.T) {
+	// Service principal should set ViaAWSService and CalledVia
+	// Use an ARN with the service name in the service field so getServiceNameFromArn finds it
+	ctx := &RequestContext{
+		PrincipalArn: "arn:aws:lambda.amazonaws.com:us-east-1:lambda.amazonaws.com:function/my-func",
+	}
+	err := ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:my-bucket")
+	assert.NoError(t, err)
+	assert.NotNil(t, ctx.ViaAWSService)
+	assert.True(t, *ctx.ViaAWSService)
+	assert.NotEmpty(t, ctx.CalledVia)
+	assert.Equal(t, "lambda.amazonaws.com", ctx.CalledVia[0])
+}
+
+func TestPopulateDefaultRequestConditionKeys_FederatedUser(t *testing.T) {
+	ctx := &RequestContext{
+		PrincipalArn: "arn:aws:sts::123456789012:federated-user/my-user",
+	}
+	err := ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:my-bucket")
+	assert.NoError(t, err)
+	// FederatedProvider should be set from resource parts
+	assert.Equal(t, "federated-user", ctx.FederatedProvider)
+}
+
+func TestPopulateDefaultRequestConditionKeys_RoleTokenIssueTime(t *testing.T) {
+	ctx := &RequestContext{
+		PrincipalArn: "arn:aws:iam::123456789012:role/my-role",
+	}
+	err := ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:my-bucket")
+	assert.NoError(t, err)
+	// TokenIssueTime should be set for role principals
+	assert.False(t, ctx.TokenIssueTime.IsZero())
+}
+
+func TestPopulateDefaultRequestConditionKeys_RoleSessionTokenIssueTime(t *testing.T) {
+	ctx := &RequestContext{
+		PrincipalArn: "arn:aws:sts::123456789012:assumed-role/my-role/session-name",
+	}
+	err := ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:my-bucket")
+	assert.NoError(t, err)
+	// TokenIssueTime should be set for role session principals
+	assert.False(t, ctx.TokenIssueTime.IsZero())
+}
+
+func TestPopulateDefaultRequestConditionKeys_ZeroCurrentTimeDefaultsToNow(t *testing.T) {
+	ctx := &RequestContext{
+		PrincipalArn: "arn:aws:iam::123456789012:user/test-user",
+		// CurrentTime is zero value
+	}
+	err := ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:my-bucket")
+	assert.NoError(t, err)
+	// CurrentTime should be set to approximately now
+	assert.False(t, ctx.CurrentTime.IsZero())
+}
+
 func TestMatchesResources(t *testing.T) {
 	testCases := []struct {
 		name              string

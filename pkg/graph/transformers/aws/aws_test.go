@@ -127,6 +127,24 @@ func TestNodeFromAWSResource(t *testing.T) {
 			wantLabels:    []string{"Function", "Resource", "AWS::Lambda::Function"},
 			wantShortName: "Function",
 		},
+		{
+			name: "empty ResourceType",
+			resource: output.AWSResource{
+				ResourceType: "",
+				ARN:          "arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0",
+			},
+			wantLabels:    []string{"Resource"},
+			wantShortName: "",
+		},
+		{
+			name: "malformed ResourceType with only two parts",
+			resource: output.AWSResource{
+				ResourceType: "AWS::S3",
+				ARN:          "arn:aws:s3:::test-bucket",
+			},
+			wantLabels:    []string{"Resource", "AWS::S3"},
+			wantShortName: "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -139,6 +157,11 @@ func TestNodeFromAWSResource(t *testing.T) {
 			assert.Equal(t, tt.resource.ARN, node.Properties["arn"])
 			assert.Equal(t, "Resource", node.Properties["_type"])
 			assert.Equal(t, tt.resource.ResourceType, node.Properties["_resourceType"])
+
+			// Verify no empty labels (would cause Neo4j syntax errors)
+			for _, label := range node.Labels {
+				assert.NotEmpty(t, label, "labels must not contain empty strings")
+			}
 		})
 	}
 }
