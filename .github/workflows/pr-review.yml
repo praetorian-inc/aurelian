@@ -135,4 +135,7 @@ jobs:
           claude_args: |
             --model claude-opus-4-6
             --max-turns 25
-            --allowedTools "Read,Glob,Grep,Write,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),mcp__github_inline_comment__create_inline_comment"
+            # TODO: Remove Bash(gh api:*) once anthropics/claude-code-action#635 is fixed.
+            # workflow_dispatch events don't initialize the inline comment MCP server,
+            # so gh api is needed as a fallback for posting inline PR comments.
+            --allowedTools "Read,Glob,Grep,Write,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*),mcp__github_inline_comment__create_inline_comment"
