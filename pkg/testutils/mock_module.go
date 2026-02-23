@@ -1,6 +1,9 @@
 package testutils
 
-import "github.com/praetorian-inc/aurelian/pkg/plugin"
+import (
+	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+)
 
 // MockModule is a test implementation of plugin.Module.
 type MockModule struct {
@@ -14,7 +17,7 @@ type MockModule struct {
 	ReferencesValue             []string
 	ParametersValue             any
 	SupportedResourceTypesValue []string
-	RunFn                       func(plugin.Config) ([]plugin.Result, error)
+	RunFn                       func(plugin.Config, func(models ...model.AurelianModel)) error
 }
 
 func (m *MockModule) ID() string                { return m.IDValue }
@@ -28,15 +31,16 @@ func (m *MockModule) OpsecLevel() string {
 	}
 	return m.OpsecLevelValue
 }
-func (m *MockModule) Authors() []string              { return m.AuthorsValue }
-func (m *MockModule) References() []string           { return m.ReferencesValue }
-func (m *MockModule) Parameters() any { return m.ParametersValue }
+func (m *MockModule) Authors() []string    { return m.AuthorsValue }
+func (m *MockModule) References() []string { return m.ReferencesValue }
+func (m *MockModule) Parameters() any      { return m.ParametersValue }
 func (m *MockModule) SupportedResourceTypes() []string {
 	return m.SupportedResourceTypesValue
 }
-func (m *MockModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
+func (m *MockModule) Run(cfg plugin.Config, output func(models ...model.AurelianModel)) error {
 	if m.RunFn != nil {
-		return m.RunFn(cfg)
+		return m.RunFn(cfg, output)
 	}
-	return []plugin.Result{{Data: "test"}}, nil
+	output(model.BaseAurelianModel{})
+	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/graph"
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -81,25 +82,25 @@ func TestGraphFormatterFormatWithGaadData(t *testing.T) {
 	userEntity := output.AWSIAMResource{
 		AWSResource: output.AWSResource{
 			ResourceType: "AWS::IAM::User",
-			ResourceID: "arn:aws:iam::123456789012:user/testuser",
-			ARN:        "arn:aws:iam::123456789012:user/testuser",
-			AccountRef: "123456789012", DisplayName: "testuser",
+			ResourceID:   "arn:aws:iam::123456789012:user/testuser",
+			ARN:          "arn:aws:iam::123456789012:user/testuser",
+			AccountRef:   "123456789012", DisplayName: "testuser",
 		},
 	}
 	roleEntity := output.AWSIAMResource{
 		AWSResource: output.AWSResource{
 			ResourceType: "AWS::IAM::Role",
-			ResourceID: "arn:aws:iam::123456789012:role/testrole",
-			ARN:        "arn:aws:iam::123456789012:role/testrole",
-			AccountRef: "123456789012", DisplayName: "testrole",
+			ResourceID:   "arn:aws:iam::123456789012:role/testrole",
+			ARN:          "arn:aws:iam::123456789012:role/testrole",
+			AccountRef:   "123456789012", DisplayName: "testrole",
 		},
 	}
 	groupEntity := output.AWSIAMResource{
 		AWSResource: output.AWSResource{
 			ResourceType: "AWS::IAM::Group",
-			ResourceID: "arn:aws:iam::123456789012:group/testgroup",
-			ARN:        "arn:aws:iam::123456789012:group/testgroup",
-			AccountRef: "123456789012", DisplayName: "testgroup",
+			ResourceID:   "arn:aws:iam::123456789012:group/testgroup",
+			ARN:          "arn:aws:iam::123456789012:group/testgroup",
+			AccountRef:   "123456789012", DisplayName: "testgroup",
 		},
 	}
 	bucketEntity := output.FromAWSResource(output.AWSResource{
@@ -127,9 +128,12 @@ func TestGraphFormatterFormatWithGaadData(t *testing.T) {
 		},
 	}
 
-	results := []Result{
-		{Data: entities, Metadata: map[string]any{"type": "entities"}},
-		{Data: iamRelationships, Metadata: map[string]any{"type": "iam_relationships"}},
+	var results []model.AurelianModel
+	for _, e := range entities {
+		results = append(results, e)
+	}
+	for _, r := range iamRelationships {
+		results = append(results, r)
 	}
 
 	err := formatter.Format(results)
@@ -150,9 +154,9 @@ func TestGraphFormatterFormatNoGaadError(t *testing.T) {
 	mockDB := &mockGraphDB{}
 	formatter := &GraphFormatter{db: mockDB}
 
-	// Results without entity data
-	results := []Result{
-		{Data: []output.AWSIAMRelationship{}, Metadata: map[string]any{"type": "iam_relationships"}},
+	// Results without entity data — no entities, just a relationship
+	results := []model.AurelianModel{
+		output.AWSIAMRelationship{},
 	}
 
 	err := formatter.Format(results)
@@ -160,7 +164,7 @@ func TestGraphFormatterFormatNoGaadError(t *testing.T) {
 	assert.Contains(t, err.Error(), "no entity data found")
 }
 
-// TestGraphFormatterFormatFlattenMap tests flattening map[string][]AWSResource
+// TestGraphFormatterFormatFlattenMap tests individual entity emission
 func TestGraphFormatterFormatFlattenMap(t *testing.T) {
 	mockDB := &mockGraphDB{}
 	formatter := &GraphFormatter{db: mockDB, config: &graph.Config{URI: "bolt://localhost:7687"}}
@@ -168,9 +172,9 @@ func TestGraphFormatterFormatFlattenMap(t *testing.T) {
 	entities := []output.AWSIAMResource{
 		{AWSResource: output.AWSResource{
 			ResourceType: "AWS::IAM::User",
-			ResourceID: "arn:aws:iam::123456789012:user/testuser",
-			ARN:        "arn:aws:iam::123456789012:user/testuser",
-			AccountRef: "123456789012", DisplayName: "testuser",
+			ResourceID:   "arn:aws:iam::123456789012:user/testuser",
+			ARN:          "arn:aws:iam::123456789012:user/testuser",
+			AccountRef:   "123456789012", DisplayName: "testuser",
 		}},
 		output.FromAWSResource(output.AWSResource{
 			ARN: "arn:aws:s3:::bucket1", ResourceType: "AWS::S3::Bucket",
@@ -180,9 +184,9 @@ func TestGraphFormatterFormatFlattenMap(t *testing.T) {
 		}),
 	}
 
-	results := []Result{
-		{Data: entities, Metadata: map[string]any{"type": "entities"}},
-		{Data: []output.AWSIAMRelationship{}, Metadata: map[string]any{"type": "iam_relationships"}},
+	var results []model.AurelianModel
+	for _, e := range entities {
+		results = append(results, e)
 	}
 
 	err := formatter.Format(results)

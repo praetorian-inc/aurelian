@@ -3,6 +3,7 @@ package common
 import (
 	"fmt"
 
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
@@ -18,27 +19,29 @@ func NewYAMLAnalyzer(rules []YAMLRule) *YAMLAnalyzer {
 }
 
 // Module interface implementation
-func (m *YAMLAnalyzer) ID() string                { return "yaml-analyzer" }
-func (m *YAMLAnalyzer) Name() string              { return "YAML Rule Analyzer" }
-func (m *YAMLAnalyzer) Description() string       { return "Evaluates declarative YAML rules against AWSResource properties" }
+func (m *YAMLAnalyzer) ID() string   { return "yaml-analyzer" }
+func (m *YAMLAnalyzer) Name() string { return "YAML Rule Analyzer" }
+func (m *YAMLAnalyzer) Description() string {
+	return "Evaluates declarative YAML rules against AWSResource properties"
+}
 func (m *YAMLAnalyzer) Platform() plugin.Platform { return plugin.Platform("any") }
 func (m *YAMLAnalyzer) Category() plugin.Category { return plugin.CategoryAnalyze }
 func (m *YAMLAnalyzer) OpsecLevel() string        { return "passive" }
 func (m *YAMLAnalyzer) Authors() []string         { return []string{"Praetorian"} }
 func (m *YAMLAnalyzer) References() []string      { return []string{} }
-func (m *YAMLAnalyzer) Parameters() any { return nil }
+func (m *YAMLAnalyzer) Parameters() any           { return nil }
 
 // Run evaluates all rules against the provided resource.
-func (m *YAMLAnalyzer) Run(cfg plugin.Config) ([]plugin.Result, error) {
+func (m *YAMLAnalyzer) Run(cfg plugin.Config, out func(models ...model.AurelianModel)) error {
 	// Extract resource from config
 	resourceAny, ok := cfg.Args["resource"]
 	if !ok {
-		return nil, fmt.Errorf("resource not provided in config")
+		return fmt.Errorf("resource not provided in config")
 	}
 
 	resource, ok := resourceAny.(output.AWSResource)
 	if !ok {
-		return nil, fmt.Errorf("resource is not an AWSResource")
+		return fmt.Errorf("resource is not an AWSResource")
 	}
 
 	// Evaluate all rules against the resource
@@ -63,5 +66,8 @@ func (m *YAMLAnalyzer) Run(cfg plugin.Config) ([]plugin.Result, error) {
 		}
 	}
 
-	return []plugin.Result{{Data: findings}}, nil
+	for _, f := range findings {
+		out(f)
+	}
+	return nil
 }

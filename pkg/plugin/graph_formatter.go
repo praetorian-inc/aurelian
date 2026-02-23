@@ -9,6 +9,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/graph/adapters"
 	"github.com/praetorian-inc/aurelian/pkg/graph/queries"
 	awstransformers "github.com/praetorian-inc/aurelian/pkg/graph/transformers/aws"
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
@@ -33,19 +34,19 @@ func NewGraphFormatter(uri, username, password string) (*GraphFormatter, error) 
 }
 
 // Format processes module results and writes to Neo4j
-func (f *GraphFormatter) Format(results []Result) error {
+func (f *GraphFormatter) Format(results []model.AurelianModel) error {
 	ctx := context.Background()
 
-	// Type-switch on Result.Data to identify structure
+	// Collect entities and relationships from individual emitted models.
 	var entities []output.AWSIAMResource
 	var iamRelationships []output.AWSIAMRelationship
 
 	for _, result := range results {
-		switch data := result.Data.(type) {
-		case []output.AWSIAMResource:
-			entities = append(entities, data...)
-		case []output.AWSIAMRelationship:
-			iamRelationships = append(iamRelationships, data...)
+		switch data := result.(type) {
+		case output.AWSIAMResource:
+			entities = append(entities, data)
+		case output.AWSIAMRelationship:
+			iamRelationships = append(iamRelationships, data)
 		}
 	}
 

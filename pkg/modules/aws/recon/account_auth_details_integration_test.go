@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/praetorian-inc/aurelian/test/testutil"
@@ -22,16 +23,18 @@ func TestAWSAccountAuthDetails(t *testing.T) {
 		t.Fatal("account-auth-details module not registered in plugin system")
 	}
 
-	results, err := mod.Run(plugin.Config{
+	var results []model.AurelianModel
+	err := mod.Run(plugin.Config{
 		Args:    map[string]any{},
 		Context: context.Background(),
+	}, func(models ...model.AurelianModel) {
+		results = append(results, models...)
 	})
 	require.NoError(t, err)
-	require.Len(t, results, 1, "account-auth-details module should return exactly 1 result")
+	require.Len(t, results, 1, "account-auth-details module should output exactly 1 model")
 
-	result := results[0]
-	details, ok := result.Data.(*types.AuthorizationAccountDetails)
-	require.True(t, ok, "result data should be *types.AuthorizationAccountDetails, got %T", result.Data)
+	details, ok := results[0].(*types.AuthorizationAccountDetails)
+	require.True(t, ok, "output should be *types.AuthorizationAccountDetails, got %T", results[0])
 
 	// Fixture outputs.
 	userNames := fixture.OutputList("user_names")
@@ -40,14 +43,6 @@ func TestAWSAccountAuthDetails(t *testing.T) {
 	lambdaRoleName := fixture.Output("lambda_role_name")
 	assumableRoleName := fixture.Output("assumable_role_name")
 	customPolicyARN := fixture.Output("custom_policy_arn")
-
-	t.Run("result metadata is correct", func(t *testing.T) {
-		assert.Equal(t, "account-auth-details", result.Metadata["module"])
-		assert.Equal(t, plugin.PlatformAWS, result.Metadata["platform"])
-		assert.Equal(t, "us-east-1", result.Metadata["region"])
-		assert.NotEmpty(t, result.Metadata["accountID"])
-		assert.Equal(t, details.AccountID, result.Metadata["accountID"])
-	})
 
 	t.Run("account ID is populated", func(t *testing.T) {
 		assert.NotEmpty(t, details.AccountID)

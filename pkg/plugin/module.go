@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+
+	"github.com/praetorian-inc/aurelian/pkg/model"
 )
 
 // Platform represents the cloud platform or service category
@@ -41,13 +43,6 @@ type Config struct {
 	Verbose bool            // Verbose logging
 }
 
-// Result is the standardized output type for all modules
-type Result struct {
-	Data     any            // The actual result data
-	Metadata map[string]any // Additional metadata
-	Error    error          // Any error that occurred
-}
-
 // Module is the core interface that all Aurelian modules implement
 type Module interface {
 	// Metadata
@@ -67,8 +62,8 @@ type Module interface {
 	// target for Bind before Run is called.
 	Parameters() any
 
-	// Execution
-	Run(cfg Config) ([]Result, error)
+	// Execution — call emit() to emit results incrementally.
+	Run(cfg Config, emit func(models ...model.AurelianModel)) error
 }
 
 // ModuleWrapper wraps a Module so that Run automatically binds cfg.Args into
@@ -79,11 +74,11 @@ type ModuleWrapper struct {
 	Module
 }
 
-func (m *ModuleWrapper) Run(cfg Config) ([]Result, error) {
+func (m *ModuleWrapper) Run(cfg Config, emit func(models ...model.AurelianModel)) error {
 	if target := m.Parameters(); target != nil {
 		if err := Bind(cfg, target); err != nil {
-			return nil, fmt.Errorf("parameter validation failed: %w", err)
+			return fmt.Errorf("parameter validation failed: %w", err)
 		}
 	}
-	return m.Module.Run(cfg)
+	return m.Module.Run(cfg, emit)
 }

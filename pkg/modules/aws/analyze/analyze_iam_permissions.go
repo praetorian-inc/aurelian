@@ -6,6 +6,7 @@ import (
 	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
@@ -57,13 +58,13 @@ func (m *AnalyzeIAMPermissionsModule) Parameters() any {
 	return &m.AnalyzeIAMPermissionsConfig
 }
 
-func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
+func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config, emit func(models ...model.AurelianModel)) error {
 	c := m.AnalyzeIAMPermissionsConfig
 
 	// Load GAAD data
 	gaad, err := iampkg.LoadJSONFile[types.AuthorizationAccountDetails](c.GaadFile)
 	if err != nil {
-		return nil, fmt.Errorf("loading GAAD file: %w", err)
+		return fmt.Errorf("loading GAAD file: %w", err)
 	}
 
 	// Load optional org policies
@@ -71,7 +72,7 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 	if c.OrgPoliciesFile != "" {
 		op, err := iampkg.LoadJSONFile[orgpolicies.OrgPolicies](c.OrgPoliciesFile)
 		if err != nil {
-			return nil, fmt.Errorf("loading org policies file: %w", err)
+			return fmt.Errorf("loading org policies file: %w", err)
 		}
 		orgPols = op
 	} else {
@@ -83,7 +84,7 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 	if c.ResourcesFile != "" {
 		r, err := iampkg.LoadJSONFile[[]output.AWSResource](c.ResourcesFile)
 		if err != nil {
-			return nil, fmt.Errorf("loading resources file: %w", err)
+			return fmt.Errorf("loading resources file: %w", err)
 		}
 		resources = *r
 	}
@@ -94,7 +95,7 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 	if c.ResourcePoliciesFile != "" {
 		rp, err := iampkg.LoadJSONFile[map[string]*types.Policy](c.ResourcePoliciesFile)
 		if err != nil {
-			return nil, fmt.Errorf("loading resource policies file: %w", err)
+			return fmt.Errorf("loading resource policies file: %w", err)
 		}
 		resources = attachResourcePolicies(resources, *rp)
 	}
@@ -103,32 +104,19 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 	analyzer := gaadpkg.NewGaadAnalyzer()
 	relationships, err := analyzer.Analyze(gaad, orgPols, resources)
 	if err != nil {
-		return nil, fmt.Errorf("analyzing permissions: %w", err)
+		return fmt.Errorf("analyzing permissions: %w", err)
 	}
 
 	// Convert GAAD entities to AWSIAMResource
 	entities := gaadpkg.FromGAAD(gaad, "")
 
-	return []plugin.Result{
-		{
-			Data: entities,
-			Metadata: map[string]any{
-				"module":   m.ID(),
-				"platform": m.Platform(),
-				"type":     "entities",
-				"count":    len(entities),
-			},
-		},
-		{
-			Data: relationships,
-			Metadata: map[string]any{
-				"module":   m.ID(),
-				"platform": m.Platform(),
-				"type":     "iam_relationships",
-				"count":    len(relationships),
-			},
-		},
-	}, nil
+	for _, e := range entities {
+		emit(e)
+	}
+	for _, r := range relationships {
+		emit(r)
+	}
+	return nil
 }
 
 // attachResourcePolicies merges resource policies into the resource list.

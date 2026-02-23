@@ -1,6 +1,9 @@
 package types
 
+import "github.com/praetorian-inc/aurelian/pkg/model"
+
 type AuthorizationAccountDetails struct {
+	model.BaseAurelianModel
 	AccountID       string                `json:"accountId"`
 	UserDetailList  []UserDetail          `json:"UserDetailList"`
 	GroupDetailList []GroupDetail         `json:"GroupDetailList"`

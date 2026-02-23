@@ -10,6 +10,7 @@ import (
 	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
@@ -59,32 +60,32 @@ func (m *AWSGraphModule) Parameters() any {
 	return &m.GraphConfig
 }
 
-func (m *AWSGraphModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
+func (m *AWSGraphModule) Run(cfg plugin.Config, emit func(models ...model.AurelianModel)) error {
 	c := m.GraphConfig
 	policyCollector := resourcepolicies.New(c.AWSCommonRecon)
 
 	// Step 1: Collect GAAD
 	gaadData, err := m.collectAccountAuthorizationDetails(c)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Step 2: Enumerate cloud resources
 	resourcesByRegion, err := m.collectResources(c, policyCollector)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Step 3: Collect resource policies
 	resourcesWithPolicies, err := m.collectResourcePolicies(policyCollector, resourcesByRegion)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Step 4: Load org policies
 	orgPols, err := m.loadOrgPolicies(c)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Step 5: Analyze IAM permissions
@@ -92,7 +93,7 @@ func (m *AWSGraphModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
 	analyzer := gaadpkg.NewGaadAnalyzer()
 	relationships, err := analyzer.Analyze(gaadData, orgPols, resourcesWithPolicies)
 	if err != nil {
-		return nil, fmt.Errorf("analyzing permissions: %w", err)
+		return fmt.Errorf("analyzing permissions: %w", err)
 	}
 	slog.Info("IAM analysis complete", "relationships", len(relationships))
 
@@ -111,42 +112,18 @@ func (m *AWSGraphModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
 		iamEntities = append(iamEntities, gaadpkg.FromManagedPolicyDetail(policy))
 	}
 
-	// Flatten all cloud resources (not just those with policies)
-	for _, regionResources := range resourcesByRegion {
-		for _, cr := range regionResources {
-			iamEntities = append(iamEntities, output.FromAWSResource(cr))
-		}
-	}
 	iamEntities = gaadpkg.DeduplicateByARN(iamEntities)
 
-	return []plugin.Result{
-		{
-			Data: iamEntities,
-			Metadata: map[string]any{
-				"module":    m.ID(),
-				"type":      "iam_entities",
-				"accountID": gaadData.AccountID,
-				"count":     len(iamEntities),
-			},
-		},
-		{
-			Data: resourcesWithPolicies,
-			Metadata: map[string]any{
-				"module":    m.ID(),
-				"type":      "resources",
-				"accountID": gaadData.AccountID,
-				"count":     len(resourcesWithPolicies),
-			},
-		},
-		{
-			Data: relationships,
-			Metadata: map[string]any{
-				"module": m.ID(),
-				"type":   "iam_relationships",
-				"count":  len(relationships),
-			},
-		},
-	}, nil
+	for _, e := range iamEntities {
+		emit(e)
+	}
+	for _, r := range resourcesWithPolicies {
+		emit(r)
+	}
+	for _, r := range relationships {
+		emit(r)
+	}
+	return nil
 }
 
 func (m *AWSGraphModule) collectAccountAuthorizationDetails(c GraphConfig) (*types.AuthorizationAccountDetails, error) {

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/utils"
 	"github.com/spf13/cobra"
@@ -247,7 +248,10 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 	}
 
 	// Run module (parameter binding is handled automatically by ModuleWrapper)
-	results, err := module.Run(cfg)
+	var results []model.AurelianModel
+	err := module.Run(cfg, func(models ...model.AurelianModel) {
+		results = append(results, models...)
+	})
 	if err != nil {
 		return err
 	}

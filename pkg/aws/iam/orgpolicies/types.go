@@ -1,6 +1,7 @@
 package orgpolicies
 
 import (
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
@@ -42,7 +43,8 @@ type PolicyTarget struct {
 }
 
 type OrgPolicies struct {
-	SCPs    []PolicyData      `json:"scps"`
+	model.BaseAurelianModel
+	SCPs []PolicyData `json:"scps"`
 	RCPs    []PolicyData      `json:"rcps"`
 	Targets []OrgPolicyTarget `json:"targets"`
 }

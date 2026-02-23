@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
@@ -112,39 +113,29 @@ func TestAWSGraph(t *testing.T) {
 		t.Fatal("graph module not registered in plugin system")
 	}
 
-	results, err := mod.Run(plugin.Config{
+	var entities []output.AWSIAMResource
+	var resources []output.AWSResource
+	var relationships []output.AWSIAMRelationship
+
+	err := mod.Run(plugin.Config{
 		Args: map[string]any{
 			"regions": []string{"us-east-2"},
 		},
 		Context: context.Background(),
+	}, func(models ...model.AurelianModel) {
+		for _, m := range models {
+			switch v := m.(type) {
+			case output.AWSIAMResource:
+				entities = append(entities, v)
+			case output.AWSResource:
+				resources = append(resources, v)
+			case output.AWSIAMRelationship:
+				relationships = append(relationships, v)
+			}
+		}
 	})
 	require.NoError(t, err)
-	require.Len(t, results, 3, "graph module should return exactly 3 results")
-
-	var (
-		entitiesResult      plugin.Result
-		resourcesResult     plugin.Result
-		relationshipsResult plugin.Result
-	)
-	for _, r := range results {
-		switch r.Metadata["type"] {
-		case "iam_entities":
-			entitiesResult = r
-		case "resources":
-			resourcesResult = r
-		case "iam_relationships":
-			relationshipsResult = r
-		}
-	}
-
-	entities, ok := entitiesResult.Data.([]output.AWSIAMResource)
-	require.True(t, ok, "entities result should be []output.AWSIAMResource, got %T", entitiesResult.Data)
-
-	resources, ok := resourcesResult.Data.([]output.AWSResource)
-	require.True(t, ok, "resources result should be []output.AWSResource, got %T", resourcesResult.Data)
-
-	relationships, ok := relationshipsResult.Data.([]output.AWSIAMRelationship)
-	require.True(t, ok, "relationships result should be []output.AWSIAMRelationship, got %T", relationshipsResult.Data)
+	require.NotEmpty(t, entities, "should have at least some IAM entities")
 	require.NotEmpty(t, relationships, "should have at least some IAM relationships")
 
 	// Build fixture ARN set from terraform outputs.
@@ -225,42 +216,12 @@ func TestAWSGraph(t *testing.T) {
 		assert.True(t, arnSet[lambdaARN], "resources should contain Lambda function %s", lambdaARN)
 	})
 
-	// -------------------------------------------------------------------------
-	// Result metadata validation
-	// -------------------------------------------------------------------------
-	t.Run("Result metadata is correct", func(t *testing.T) {
-		assert.Equal(t, "graph", entitiesResult.Metadata["module"])
-		assert.Equal(t, "iam_entities", entitiesResult.Metadata["type"])
-		assert.NotEmpty(t, entitiesResult.Metadata["accountID"])
-
-		assert.Equal(t, "graph", resourcesResult.Metadata["module"])
-		assert.Equal(t, "resources", resourcesResult.Metadata["type"])
-
-		assert.Equal(t, "graph", relationshipsResult.Metadata["module"])
-		assert.Equal(t, "iam_relationships", relationshipsResult.Metadata["type"])
-
-		relCount, ok := relationshipsResult.Metadata["count"].(int)
-		if ok {
-			assert.Greater(t, relCount, 0, "relationship count should be positive")
-		}
-	})
-
 	// =========================================================================
 	// Relationship count regression gate (fixture-scoped)
 	// =========================================================================
 	t.Run("Relationship count regression gate", func(t *testing.T) {
-		// The fixture creates 2 users, 2 roles, 1 group, 1 lambda, 1 S3 bucket,
-		// 1 SQS queue, 1 SNS topic, and 1 custom policy. Given their policies,
-		// we expect a minimum number of relationships involving fixture ARNs.
-		// This is deterministic because it only depends on the fixture's own
-		// IAM policies, not on other resources in the account.
 		total := len(fixtureRels)
 		t.Logf("Fixture relationships: %d", total)
-
-		// Minimum: each of the 2 users should generate several relationships
-		// (AssumeRole, PassRole, InvokeFunction, CreateAccessKey, etc.) plus
-		// the 2 roles get relationships from the account-wide IAM analysis.
-		// 20 is a conservative floor.
 		assert.GreaterOrEqual(t, total, 20,
 			"fixture relationship count %d is below minimum expected 20 — likely a regression", total)
 	})
@@ -269,10 +230,6 @@ func TestAWSGraph(t *testing.T) {
 	// Relationship category counts (fixture-scoped)
 	// =========================================================================
 	t.Run("Relationship category counts", func(t *testing.T) {
-		// Verify that each major (principal_type, resource_type) pair produces
-		// relationships involving fixture ARNs. Since the fixture explicitly
-		// creates IAM policies granting these access patterns, we can assert
-		// on minimum counts deterministically.
 		type categoryCheck struct {
 			principalType string
 			resourceType  string
@@ -281,20 +238,15 @@ func TestAWSGraph(t *testing.T) {
 		}
 
 		checks := []categoryCheck{
-			// User -> * (2 fixture users with explicit policies)
 			{"AWS::IAM::User", "AWS::IAM::Role", 1, "user policies grant sts:AssumeRole, iam:PassRole"},
 			{"AWS::IAM::User", "AWS::IAM::User", 1, "user policies grant iam:CreateAccessKey, etc. on *"},
 			{"AWS::IAM::User", "AWS::Lambda::Function", 1, "user1 has lambda:InvokeFunction on *"},
 			{"AWS::IAM::User", "AWS::IAM::ManagedPolicy", 1, "user0 has iam:CreatePolicyVersion on *"},
 			{"AWS::IAM::User", "AWS::IAM::Group", 1, "user0 is a member of the fixture group"},
-
-			// Role -> * (assumable-role has PassRole, CreateAccessKey, CreatePolicyVersion, InvokeFunction)
 			{"AWS::IAM::Role", "AWS::IAM::Role", 1, "assumable-role has iam:PassRole, iam:AttachRolePolicy on *"},
 			{"AWS::IAM::Role", "AWS::IAM::User", 1, "assumable-role has iam:CreateAccessKey on *"},
 			{"AWS::IAM::Role", "AWS::IAM::ManagedPolicy", 1, "assumable-role has iam:CreatePolicyVersion on *"},
 			{"AWS::IAM::Role", "AWS::Lambda::Function", 1, "assumable-role has lambda:InvokeFunction on *"},
-
-			// Service -> * (lambda.amazonaws.com trust policy + apigateway resource policy)
 			{"AWS::Service", "AWS::IAM::Role", 1, "lambda.amazonaws.com can AssumeRole the lambda role"},
 			{"AWS::Service", "AWS::Lambda::Function", 1, "apigateway has lambda:InvokeFunction via resource policy"},
 		}
@@ -312,8 +264,6 @@ func TestAWSGraph(t *testing.T) {
 	// Action distribution (fixture-scoped)
 	// =========================================================================
 	t.Run("Action distribution", func(t *testing.T) {
-		// Verify key actions appear in fixture relationships. These are
-		// deterministic because the fixture's IAM policies explicitly grant them.
 		type actionCheck struct {
 			action   string
 			minCount int
@@ -321,14 +271,11 @@ func TestAWSGraph(t *testing.T) {
 		}
 
 		checks := []actionCheck{
-			// From user0 inline policy: sts:AssumeRole on *
 			{"sts:AssumeRole", 1, "user0 has sts:AssumeRole on * + lambda trust policy"},
-			// From user0 inline policy: iam:CreateAccessKey, iam:CreateLoginProfile, iam:AttachUserPolicy, iam:PutUserPolicy on *
 			{"iam:CreateAccessKey", 1, "user0 has iam:CreateAccessKey on *"},
 			{"iam:CreateLoginProfile", 1, "user0 has iam:CreateLoginProfile on *"},
 			{"iam:AttachUserPolicy", 1, "user0 has iam:AttachUserPolicy on *"},
 			{"iam:PutUserPolicy", 1, "user0 has iam:PutUserPolicy on *"},
-			// From user1 inline policy: iam:PassRole, lambda:CreateFunction, lambda:InvokeFunction on *
 			{"iam:PassRole", 1, "user1 has iam:PassRole on *"},
 			{"lambda:CreateFunction", 1, "user1 has lambda:CreateFunction on *"},
 			{"lambda:InvokeFunction", 1, "user1 has lambda:InvokeFunction on * + SNS resource policy"},
@@ -347,15 +294,11 @@ func TestAWSGraph(t *testing.T) {
 	// Specific fixture relationship spot-checks
 	// =========================================================================
 	t.Run("User to resource relationships", func(t *testing.T) {
-		// Verify that fixture users have expected relationships with
-		// fixture resources. These are stable because the terraform
-		// fixture defines exact IAM policies.
 		userARNs := fixture.OutputList("user_arns")
 		assumableRoleARN := fixture.Output("assumable_role_arn")
 		lambdaRoleARN := fixture.Output("lambda_role_arn")
 		lambdaFunctionARN := fixture.Output("lambda_function_arn")
 
-		// At least one fixture user should be able to assume the fixture role
 		foundAssumeRole := false
 		for _, userARN := range userARNs {
 			if idx.contains(userARN, assumableRoleARN, "sts:AssumeRole") {
@@ -366,7 +309,6 @@ func TestAWSGraph(t *testing.T) {
 		}
 		assert.True(t, foundAssumeRole, "at least one fixture user should be able to AssumeRole the fixture assumable role")
 
-		// At least one fixture user should be able to PassRole the lambda role
 		foundPassRole := false
 		for _, userARN := range userARNs {
 			if idx.contains(userARN, lambdaRoleARN, "iam:PassRole") {
@@ -377,7 +319,6 @@ func TestAWSGraph(t *testing.T) {
 		}
 		assert.True(t, foundPassRole, "at least one fixture user should be able to PassRole the fixture lambda role")
 
-		// At least one fixture user should be able to invoke the lambda function
 		foundInvoke := false
 		for _, userARN := range userARNs {
 			if idx.contains(userARN, lambdaFunctionARN, "lambda:InvokeFunction") {
@@ -390,15 +331,12 @@ func TestAWSGraph(t *testing.T) {
 	})
 
 	t.Run("Service principal AssumeRole relationships", func(t *testing.T) {
-		// Service principals (e.g., lambda.amazonaws.com) should be able to
-		// AssumeRole on roles that have matching trust policies.
 		lambdaRoleARN := fixture.Output("lambda_role_arn")
 		lambdaServiceARN := "arn:aws:lambda:*:*:*"
 
 		assert.True(t, idx.contains(lambdaServiceARN, lambdaRoleARN, "sts:AssumeRole"),
 			"%s should be able to AssumeRole the fixture lambda role %s", lambdaServiceARN, lambdaRoleARN)
 
-		// Verify service principals appear with correct resource_type
 		for _, r := range relationships {
 			if r.Principal.ARN == lambdaServiceARN && r.Action == "sts:AssumeRole" {
 				assert.Equal(t, "AWS::Service", r.Principal.ResourceType,
@@ -409,10 +347,8 @@ func TestAWSGraph(t *testing.T) {
 	})
 
 	t.Run("Service principal resource policy relationships", func(t *testing.T) {
-		// The fixture's lambda has a resource policy allowing SNS to invoke it.
 		lambdaFunctionARN := fixture.Output("lambda_function_arn")
 
-		// Log all Service -> Lambda relationships to debug ARN matching.
 		for _, r := range idx.byPT["AWS::Service"] {
 			if r.Resource.ResourceType == "AWS::Lambda::Function" {
 				t.Logf("  Service->Lambda: %s -> %s via %s (matches fixture: %v)",
@@ -421,8 +357,6 @@ func TestAWSGraph(t *testing.T) {
 			}
 		}
 
-		// Check that SNS service can invoke the fixture lambda (use prefix match
-		// since the relationship ARN may differ slightly from terraform output).
 		prefix := fixture.Output("prefix")
 		foundSNSInvoke := false
 		for _, r := range idx.byPT["AWS::Service"] {
@@ -435,25 +369,14 @@ func TestAWSGraph(t *testing.T) {
 			}
 		}
 		if !foundSNSInvoke {
-			// This is a known issue: resource policy-based relationships for
-			// newly-created Lambda functions may not appear if the policy hasn't
-			// propagated by the time the analyzer runs. Log rather than fail.
 			t.Logf("NOTE: no service principal -> fixture lambda %s InvokeFunction found (resource policy may not have propagated)",
 				lambdaFunctionARN)
 		}
 	})
 
 	t.Run("Synthetic service resource relationships", func(t *testing.T) {
-		// "Synthetic" relationships are where a principal can perform a
-		// create-type action against a service resource (e.g., lambda:CreateFunction
-		// on the lambda service). The resource ARN is a wildcard service ARN
-		// like "arn:aws:lambda:*:*:*".
-		//
-		// Check that fixture users have these synthetic relationships based on
-		// their explicit policies.
 		userARNs := fixture.OutputList("user_arns")
 
-		// user1 has lambda:CreateFunction on * → should produce synthetic relationship
 		foundCreateFunction := false
 		for _, userARN := range userARNs {
 			if idx.contains(userARN, "arn:aws:lambda:*:*:*", "lambda:CreateFunction") {
@@ -465,9 +388,6 @@ func TestAWSGraph(t *testing.T) {
 		assert.True(t, foundCreateFunction,
 			"at least one fixture user should have lambda:CreateFunction on the lambda service resource")
 
-		// Also verify that the broader set of synthetic actions exist in the
-		// full result set (not fixture-scoped, since these come from account-wide
-		// roles/users that aren't part of the fixture).
 		syntheticActions := []string{
 			"lambda:CreateFunction",
 			"ec2:RunInstances",
@@ -481,26 +401,14 @@ func TestAWSGraph(t *testing.T) {
 	})
 
 	t.Run("Wildcard principal relationships", func(t *testing.T) {
-		// Relationships where the principal is "*" (anonymous/public access)
-		// come from resource policies that grant public access.
-		// NOTE: The current fixture does not create any public resource policies,
-		// so we only check account-wide. If the fixture is extended with a
-		// public bucket policy, this should be scoped to fixture ARNs.
 		wildcardCount := idx.countByPrincipalType("")
 		t.Logf("Wildcard principal relationships (account-wide): %d", wildcardCount)
-		// This is informational only — we can't assert on account-wide counts
-		// because they depend on what other resources exist in the account.
 	})
 
 	t.Run("Role to role relationships", func(t *testing.T) {
-		// Verify that fixture roles have relationships with other roles.
-		// The assumable role has iam:ListUsers which doesn't produce role->role,
-		// but account-wide roles with broad policies will target fixture roles.
 		fixtureRoleToRole := fixIdx.countByPair("AWS::IAM::Role", "AWS::IAM::Role")
 		t.Logf("Fixture Role -> Role relationships: %d", fixtureRoleToRole)
 
-		// Check that role -> role includes key IAM management actions (account-wide,
-		// since these come from roles that aren't part of the fixture).
 		roleToRoleActions := make(map[string]int)
 		for _, r := range idx.byPT["AWS::IAM::Role"] {
 			if r.Resource.ResourceType == "AWS::IAM::Role" {
@@ -525,7 +433,6 @@ func TestAWSGraph(t *testing.T) {
 		t.Logf("=== Fixture-Scoped Summary ===")
 		t.Logf("Fixture relationships: %d", len(fixtureRels))
 
-		// Count by principal type (fixture-scoped)
 		for _, pt := range []string{"AWS::IAM::User", "AWS::IAM::Role", "AWS::Service", ""} {
 			label := pt
 			if label == "" {
@@ -534,7 +441,6 @@ func TestAWSGraph(t *testing.T) {
 			t.Logf("  Principal %s: %d", label, fixIdx.countByPrincipalType(pt))
 		}
 
-		// Count by action (top 10, fixture-scoped)
 		actionCounts := make(map[string]int)
 		for _, r := range fixtureRels {
 			actionCounts[r.Action]++
@@ -556,14 +462,12 @@ func TestAWSGraph(t *testing.T) {
 			t.Logf("    %s: %d", a.action, a.count)
 		}
 
-		// Count unique fixture principals
 		uniquePrincipals := make(map[string]bool)
 		for _, r := range fixtureRels {
 			uniquePrincipals[r.Principal.ARN] = true
 		}
 		t.Logf("  Unique fixture principals: %d", len(uniquePrincipals))
 
-		// AssumeRole breakdown (fixture-scoped)
 		t.Logf("  AssumeRole breakdown:")
 		assumeByPT := make(map[string]int)
 		for _, r := range fixtureRels {

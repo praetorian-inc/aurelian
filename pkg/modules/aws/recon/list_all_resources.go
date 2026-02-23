@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
@@ -51,28 +52,24 @@ func (m *AWSListAllResourcesModule) Parameters() any {
 	return &m.ListAllConfig
 }
 
-func (m *AWSListAllResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
+func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, output func(models ...model.AurelianModel)) error {
 	c := m.ListAllConfig
 
 	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve regions: %w", err)
+		return fmt.Errorf("failed to resolve regions: %w", err)
 	}
 
 	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
 	results, err := lister.List(resolvedRegions, selectResourceTypes(c.ScanType))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return []plugin.Result{
-		{
-			Data: results,
-			Metadata: map[string]any{
-				"module":   m.ID(),
-				"platform": m.Platform(),
-				"regions":  resolvedRegions,
-			},
-		},
-	}, nil
+	for _, resources := range results {
+		for _, r := range resources {
+			output(r)
+		}
+	}
+	return nil
 }

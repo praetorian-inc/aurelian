@@ -1,11 +1,16 @@
 package output
 
-import "github.com/praetorian-inc/aurelian/pkg/types"
+import (
+	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/types"
+)
 
 // AWSResource represents an AWS cloud resource discovered during scanning.
 // This type replaces the Tabularium AWSResource type to eliminate the
 // dependency on Tabularium in Aurelian.
 type AWSResource struct {
+	model.BaseAurelianModel
+
 	// ResourceType is the AWS resource type identifier (e.g. "AWS::Lambda::Function", "AWS::S3::Bucket")
 	ResourceType string `json:"resource_type"`
 

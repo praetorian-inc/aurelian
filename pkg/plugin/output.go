@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+
+	"github.com/praetorian-inc/aurelian/pkg/model"
 )
 
 // Formatter handles output formatting for module results
 type Formatter interface {
-	Format(results []Result) error
+	Format(results []model.AurelianModel) error
 }
 
 // JSONFormatter outputs results as JSON
@@ -18,7 +20,7 @@ type JSONFormatter struct {
 }
 
 // Format implements the Formatter interface for JSON output
-func (f *JSONFormatter) Format(results []Result) error {
+func (f *JSONFormatter) Format(results []model.AurelianModel) error {
 	encoder := json.NewEncoder(f.Writer)
 	if f.Pretty {
 		encoder.SetIndent("", "  ")
@@ -32,32 +34,9 @@ type ConsoleFormatter struct {
 }
 
 // Format implements the Formatter interface for console output
-func (f *ConsoleFormatter) Format(results []Result) error {
+func (f *ConsoleFormatter) Format(results []model.AurelianModel) error {
 	for _, r := range results {
-		if r.Error != nil {
-			fmt.Fprintf(f.Writer, "ERROR: %v\n", r.Error)
-			continue
-		}
-		fmt.Fprintf(f.Writer, "%+v\n", r.Data)
-	}
-	return nil
-}
-
-// MarkdownFormatter outputs results as Markdown (stub for future implementation)
-type MarkdownFormatter struct {
-	Writer io.Writer
-}
-
-// Format implements the Formatter interface for Markdown output
-func (f *MarkdownFormatter) Format(results []Result) error {
-	// TODO: Implement markdown formatting
-	fmt.Fprintf(f.Writer, "# Results\n\n")
-	for i, r := range results {
-		if r.Error != nil {
-			fmt.Fprintf(f.Writer, "## Error %d\n\n```\n%v\n```\n\n", i+1, r.Error)
-			continue
-		}
-		fmt.Fprintf(f.Writer, "## Result %d\n\n```json\n%+v\n```\n\n", i+1, r.Data)
+		fmt.Fprintf(f.Writer, "%+v\n", r)
 	}
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
@@ -51,13 +52,13 @@ func (m *AWSResourcePoliciesModule) Parameters() any {
 	return &m.ResourcePoliciesConfig
 }
 
-func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
+func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, emit func(models ...model.AurelianModel)) error {
 	c := m.ResourcePoliciesConfig
 
 	// Resolve regions
 	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve regions: %w", err)
+		return fmt.Errorf("failed to resolve regions: %w", err)
 	}
 
 	// Create the resource policy collector (handles concurrency and rate limiting)
@@ -69,7 +70,7 @@ func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config) ([]plugin.Result, err
 	// List all supported resource types (returns map[region/resourceType][]AWSResource)
 	resourcesByKey, err := lister.List(resolvedRegions, collector.SupportedResourceTypes())
 	if err != nil {
-		return nil, fmt.Errorf("failed to list resources: %w", err)
+		return fmt.Errorf("failed to list resources: %w", err)
 	}
 
 	// Re-key from "region/resourceType" to just "region" for the collector.
@@ -82,18 +83,11 @@ func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config) ([]plugin.Result, err
 	// Collect policies across all regions concurrently
 	results, err := collector.Collect(resourcesByRegion)
 	if err != nil {
-		return nil, fmt.Errorf("failed to collect resource policies: %w", err)
+		return fmt.Errorf("failed to collect resource policies: %w", err)
 	}
 
-	return []plugin.Result{
-		{
-			Data: results,
-			Metadata: map[string]any{
-				"module":   m.ID(),
-				"platform": m.Platform(),
-				"regions":  resolvedRegions,
-				"count":    len(results),
-			},
-		},
-	}, nil
+	for _, r := range results {
+		emit(r)
+	}
+	return nil
 }

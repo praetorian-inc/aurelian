@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
@@ -22,18 +23,21 @@ func TestAWSResourcePolicies(t *testing.T) {
 		t.Fatal("resource-policies module not registered in plugin system")
 	}
 
-	results, err := mod.Run(plugin.Config{
+	var resources []output.AWSResource
+	err := mod.Run(plugin.Config{
 		Args: map[string]any{
 			"regions": []string{"us-east-2"},
 		},
 		Context: context.Background(),
+	}, func(models ...model.AurelianModel) {
+		for _, m := range models {
+			if r, ok := m.(output.AWSResource); ok {
+				resources = append(resources, r)
+			}
+		}
 	})
 	require.NoError(t, err)
-	require.Len(t, results, 1, "resource-policies module should return exactly 1 result")
-
-	result := results[0]
-	resources, ok := result.Data.([]output.AWSResource)
-	require.True(t, ok, "result data should be []output.AWSResource, got %T", result.Data)
+	require.NotEmpty(t, resources, "should have collected resource policies")
 
 	// Index results by resource type.
 	byType := make(map[string]output.AWSResource)
@@ -84,17 +88,6 @@ func TestAWSResourcePolicies(t *testing.T) {
 		assert.True(t, resultARNs[sqsQueueARN], "SQS ARN should be in results")
 		assert.True(t, resultARNs[snsTopicARN], "SNS ARN should be in results")
 		assert.True(t, resultARNs[lambdaFunctionARN], "Lambda ARN should be in results")
-	})
-
-	t.Run("result metadata is correct", func(t *testing.T) {
-		assert.Equal(t, "resource-policies", result.Metadata["module"])
-		assert.Equal(t, plugin.PlatformAWS, result.Metadata["platform"])
-
-		count, ok := result.Metadata["count"].(int)
-		if ok {
-			assert.Greater(t, count, 0, "count should be positive")
-			assert.Equal(t, len(resources), count, "count metadata should match actual result length")
-		}
 	})
 }
 

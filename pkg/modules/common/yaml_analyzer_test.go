@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/modules/common"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -12,7 +13,6 @@ import (
 )
 
 func TestYAMLAnalyzerMatchesRule(t *testing.T) {
-	// Create analyzer with inline rule for testing
 	rule := common.YAMLRule{
 		ID:           "test-lambda-no-auth",
 		Name:         "Lambda Function URL Without Authentication",
@@ -27,7 +27,6 @@ func TestYAMLAnalyzerMatchesRule(t *testing.T) {
 
 	analyzer := common.NewYAMLAnalyzer([]common.YAMLRule{rule})
 
-	// Test resource that SHOULD match
 	vulnerable := output.AWSResource{
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "vulnerable-function",
@@ -42,17 +41,19 @@ func TestYAMLAnalyzerMatchesRule(t *testing.T) {
 		Args:    map[string]any{"resource": vulnerable},
 	}
 
-	results, err := analyzer.Run(cfg)
+	var results []model.AurelianModel
+	err := analyzer.Run(cfg, func(models ...model.AurelianModel) {
+		results = append(results, models...)
+	})
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
-	findings, ok := results[0].Data.([]plugin.Finding)
+	finding, ok := results[0].(plugin.Finding)
 	require.True(t, ok)
-	require.Len(t, findings, 1)
 
-	assert.Equal(t, "test-lambda-no-auth", findings[0].RuleID)
-	assert.Equal(t, "high", findings[0].Severity)
-	assert.Equal(t, "vulnerable-function", findings[0].Resource.ResourceID)
+	assert.Equal(t, "test-lambda-no-auth", finding.RuleID)
+	assert.Equal(t, "high", finding.Severity)
+	assert.Equal(t, "vulnerable-function", finding.Resource.ResourceID)
 }
 
 func TestYAMLAnalyzerNoMatch(t *testing.T) {
@@ -67,12 +68,11 @@ func TestYAMLAnalyzerNoMatch(t *testing.T) {
 
 	analyzer := common.NewYAMLAnalyzer([]common.YAMLRule{rule})
 
-	// Secure resource - should NOT match
 	secure := output.AWSResource{
 		ResourceType: "AWS::Lambda::Function",
 		Properties: map[string]any{
 			"FunctionUrl":         "https://abc123.lambda-url.us-east-1.on.aws/",
-			"FunctionUrlAuthType": "AWS_IAM", // <- Authenticated
+			"FunctionUrlAuthType": "AWS_IAM",
 		},
 	}
 
@@ -81,13 +81,12 @@ func TestYAMLAnalyzerNoMatch(t *testing.T) {
 		Args:    map[string]any{"resource": secure},
 	}
 
-	results, err := analyzer.Run(cfg)
+	var results []model.AurelianModel
+	err := analyzer.Run(cfg, func(models ...model.AurelianModel) {
+		results = append(results, models...)
+	})
 	require.NoError(t, err)
-	require.Len(t, results, 1)
-
-	findings, ok := results[0].Data.([]plugin.Finding)
-	require.True(t, ok)
-	assert.Empty(t, findings, "Secure resource should produce no findings")
+	assert.Empty(t, results, "Secure resource should produce no findings")
 }
 
 func boolPtr(b bool) *bool {

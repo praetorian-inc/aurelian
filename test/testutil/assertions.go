@@ -8,14 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/model"
 )
 
 // AssertResultContainsARN checks that at least one result references the given ARN.
-func AssertResultContainsARN(t *testing.T, results []plugin.Result, arn string) {
+func AssertResultContainsARN(t *testing.T, results []model.AurelianModel, arn string) {
 	t.Helper()
 	for _, r := range results {
-		if containsString(r.Data, arn) {
+		if containsString(r, arn) {
 			return
 		}
 	}
@@ -23,10 +23,10 @@ func AssertResultContainsARN(t *testing.T, results []plugin.Result, arn string) 
 }
 
 // AssertResultContainsString checks that at least one result contains the substring.
-func AssertResultContainsString(t *testing.T, results []plugin.Result, substr string) {
+func AssertResultContainsString(t *testing.T, results []model.AurelianModel, substr string) {
 	t.Helper()
 	for _, r := range results {
-		if containsString(r.Data, substr) {
+		if containsString(r, substr) {
 			return
 		}
 	}
@@ -34,7 +34,7 @@ func AssertResultContainsString(t *testing.T, results []plugin.Result, substr st
 }
 
 // AssertMinResults checks that at least min results were returned.
-func AssertMinResults(t *testing.T, results []plugin.Result, min int) {
+func AssertMinResults(t *testing.T, results []model.AurelianModel, min int) {
 	t.Helper()
 	if len(results) < min {
 		t.Errorf("expected at least %d results, got %d", min, len(results))
@@ -44,7 +44,7 @@ func AssertMinResults(t *testing.T, results []plugin.Result, min int) {
 // containsString recursively searches a value for a substring match.
 func containsString(data any, substr string) bool {
 	// JSON round-trip normalizes concrete types (e.g., map[string][]AWSResource)
-	// to interface types (map[string]any, []any) for reliable recursive traversal.
+	// to interface types (map[string]any, []model.AurelianModel) for reliable recursive traversal.
 	raw, err := json.Marshal(data)
 	if err == nil {
 		var normalized any
@@ -66,7 +66,7 @@ func searchNormalized(data any, substr string) bool {
 				return true
 			}
 		}
-	case []any:
+	case []model.AurelianModel:
 		for _, val := range v {
 			if searchNormalized(val, substr) {
 				return true

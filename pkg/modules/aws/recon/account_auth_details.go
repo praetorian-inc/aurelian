@@ -2,6 +2,7 @@ package recon
 
 import (
 	"github.com/praetorian-inc/aurelian/pkg/aws/gaad"
+	"github.com/praetorian-inc/aurelian/pkg/model" // AurelianModel
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
@@ -50,22 +51,13 @@ func (m *AWSAccountAuthDetailsModule) Parameters() any {
 	return &m.AccountAuthDetailsConfig
 }
 
-func (m *AWSAccountAuthDetailsModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
+func (m *AWSAccountAuthDetailsModule) Run(cfg plugin.Config, output func(models ...model.AurelianModel)) error {
 	g := gaad.New(m.AWSReconBase)
 	result, err := g.Get()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return []plugin.Result{
-		{
-			Data: result,
-			Metadata: map[string]any{
-				"module":    m.ID(),
-				"platform":  m.Platform(),
-				"accountID": result.AccountID,
-				"region":    "us-east-1",
-			},
-		},
-	}, nil
+	output(result)
+	return nil
 }

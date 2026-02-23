@@ -9,6 +9,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/graph"
 	"github.com/praetorian-inc/aurelian/pkg/graph/adapters"
 	"github.com/praetorian-inc/aurelian/pkg/graph/queries"
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
@@ -218,10 +219,13 @@ func TestGraphFormatter_FullPipeline(t *testing.T) {
 		},
 	}
 
-	// Create Results array
-	results := []plugin.Result{
-		{Data: entities},
-		{Data: iamRelationships},
+	// Create Results array — emit individual models
+	var results []model.AurelianModel
+	for _, e := range entities {
+		results = append(results, e)
+	}
+	for _, r := range iamRelationships {
+		results = append(results, r)
 	}
 
 	// Format to graph
