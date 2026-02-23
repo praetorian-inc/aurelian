@@ -66,7 +66,7 @@ func (s *AnalyzerState) initializeCaches() {
 
 func (s *AnalyzerState) initializePolicyCache(wg *sync.WaitGroup) {
 	defer wg.Done()
-	s.policyCache = cache.NewMemoryMap[*types.ManagedPolicyDetail]()
+	s.policyCache = cache.NewMap[*types.ManagedPolicyDetail]()
 	for i := range s.Gaad.Policies {
 		policy := &s.Gaad.Policies[i]
 		s.policyCache.Set(policy.Arn, policy)
@@ -75,7 +75,7 @@ func (s *AnalyzerState) initializePolicyCache(wg *sync.WaitGroup) {
 
 func (s *AnalyzerState) initializeRoleCache(wg *sync.WaitGroup) {
 	defer wg.Done()
-	s.roleCache = cache.NewMemoryMap[*types.RoleDetail]()
+	s.roleCache = cache.NewMap[*types.RoleDetail]()
 	for i := range s.Gaad.RoleDetailList {
 		role := &s.Gaad.RoleDetailList[i]
 		s.roleCache.Set(role.Arn, role)
@@ -84,7 +84,7 @@ func (s *AnalyzerState) initializeRoleCache(wg *sync.WaitGroup) {
 
 func (s *AnalyzerState) initializeUserCache(wg *sync.WaitGroup) {
 	defer wg.Done()
-	s.userCache = cache.NewMemoryMap[*types.UserDetail]()
+	s.userCache = cache.NewMap[*types.UserDetail]()
 	for i := range s.Gaad.UserDetailList {
 		user := &s.Gaad.UserDetailList[i]
 		s.userCache.Set(user.Arn, user)
@@ -93,8 +93,8 @@ func (s *AnalyzerState) initializeUserCache(wg *sync.WaitGroup) {
 
 func (s *AnalyzerState) initializeGroupCache(wg *sync.WaitGroup) {
 	defer wg.Done()
-	s.groupCache = cache.NewMemoryMap[*types.GroupDetail]()
-	s.groupNameCache = cache.NewMemoryMap[*types.GroupDetail]()
+	s.groupCache = cache.NewMap[*types.GroupDetail]()
+	s.groupNameCache = cache.NewMap[*types.GroupDetail]()
 	for i := range s.Gaad.GroupDetailList {
 		group := &s.Gaad.GroupDetailList[i]
 		s.groupCache.Set(group.Arn, group)
@@ -104,7 +104,7 @@ func (s *AnalyzerState) initializeGroupCache(wg *sync.WaitGroup) {
 
 func (s *AnalyzerState) initializeResourceCache(wg *sync.WaitGroup) {
 	defer wg.Done()
-	s.resourceCache = cache.NewMemoryMap[*output.AWSResource]()
+	s.resourceCache = cache.NewMap[*output.AWSResource]()
 
 	// Cloud resources from CloudControl
 	for i := range s.Resources {

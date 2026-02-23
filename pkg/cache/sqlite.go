@@ -189,6 +189,34 @@ func (m *SQLiteMap[T]) Set(key string, value T) {
 	}
 }
 
+func (m *SQLiteMap[T]) Range(fn func(string, T) bool) {
+	m.flush()
+
+	rows, err := m.db.Query(fmt.Sprintf("SELECT key, value FROM %s", m.table))
+	if err != nil {
+		slog.Error("cache: range query", "table", m.table, "error", err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var key string
+		var raw []byte
+		if err := rows.Scan(&key, &raw); err != nil {
+			slog.Error("cache: range scan", "table", m.table, "error", err)
+			continue
+		}
+		var v T
+		if err := json.Unmarshal(raw, &v); err != nil {
+			slog.Error("cache: range unmarshal", "table", m.table, "key", key, "error", err)
+			continue
+		}
+		if !fn(key, v) {
+			return
+		}
+	}
+}
+
 func (m *SQLiteMap[T]) Len() int {
 	return m.count
 }

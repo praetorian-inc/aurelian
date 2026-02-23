@@ -19,6 +19,14 @@ func (m *MemoryMap[T]) Set(key string, value T) {
 	m.data[key] = value
 }
 
+func (m *MemoryMap[T]) Range(fn func(string, T) bool) {
+	for k, v := range m.data {
+		if !fn(k, v) {
+			return
+		}
+	}
+}
+
 func (m *MemoryMap[T]) Len() int {
 	return len(m.data)
 }
