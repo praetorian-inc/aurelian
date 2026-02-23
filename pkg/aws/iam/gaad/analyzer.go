@@ -29,7 +29,7 @@ func (ga *GaadAnalyzer) Analyze(
 	orgPolicies *orgpolicies.OrgPolicies,
 	resources []output.AWSResource,
 ) ([]output.AWSIAMRelationship, error) {
-	state := NewAnalyzerMemoryState(gaad, orgPolicies, resources)
+	state := NewAnalyzerState(gaad, orgPolicies, resources)
 	policyData := buildPolicyData(gaad, orgPolicies, resources)
 	evaluator := iam.NewPolicyEvaluator(policyData)
 
@@ -107,7 +107,7 @@ func (ga *GaadAnalyzer) Analyze(
 // discovered by the evaluator alone (because the target resources don't exist yet
 // but could be created by the principal). Additional synthetic techniques can be
 // added here in the future.
-func (ga *GaadAnalyzer) generateSyntheticPermissions(results []output.AWSIAMRelationship, state AnalyzerState) []output.AWSIAMRelationship {
+func (ga *GaadAnalyzer) generateSyntheticPermissions(results []output.AWSIAMRelationship, state *AnalyzerState) []output.AWSIAMRelationship {
 	return synthesizeCreateThenUsePermissions(results, state)
 }
 

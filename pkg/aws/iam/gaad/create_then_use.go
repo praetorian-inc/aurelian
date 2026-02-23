@@ -92,7 +92,7 @@ func (idx *permissionIndex) hasActionOnAnyResource(principalArn, action string) 
 // that matches their resource pattern. However, the evaluator may not find a
 // matching existing resource and thus never produces the "use" edge. This
 // function fills that gap.
-func synthesizeCreateThenUsePermissions(results []output.AWSIAMRelationship, state AnalyzerState) []output.AWSIAMRelationship {
+func synthesizeCreateThenUsePermissions(results []output.AWSIAMRelationship, state *AnalyzerState) []output.AWSIAMRelationship {
 	idx := newPermissionIndex(results)
 	var synthetic []output.AWSIAMRelationship
 
@@ -153,7 +153,7 @@ func synthesizeCreateThenUsePermissions(results []output.AWSIAMRelationship, sta
 
 // getStmtResources returns the Resource patterns from all Allow statements in a
 // principal's raw IAM policies that grant the given action.
-func getStmtResources(principalArn, action string, state AnalyzerState) []string {
+func getStmtResources(principalArn, action string, state *AnalyzerState) []string {
 	var resources []string
 
 	collectFromStatements := func(stmts *types.PolicyStatementList) {

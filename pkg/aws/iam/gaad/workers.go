@@ -18,7 +18,7 @@ func startEvaluationWorkers(
 	evalChan <-chan *iam.EvaluationRequest,
 	resultChan chan<- output.AWSIAMRelationship,
 	evaluator *iam.PolicyEvaluator,
-	state AnalyzerState,
+	state *AnalyzerState,
 	wg *sync.WaitGroup,
 ) {
 	numWorkers := runtime.NumCPU() * 3
@@ -39,7 +39,7 @@ func doEvaluationWork(
 	evalChan <-chan *iam.EvaluationRequest,
 	resultChan chan<- output.AWSIAMRelationship,
 	evaluator *iam.PolicyEvaluator,
-	state AnalyzerState,
+	state *AnalyzerState,
 ) {
 	for req := range evalChan {
 		result, err := evaluator.Evaluate(req)
@@ -76,7 +76,7 @@ func doEvaluationWork(
 // AWSIAMResource. If not found, returns a minimal AWSIAMResource. For service
 // principals (non-ARN strings like "lambda.amazonaws.com"), a pseudo-ARN is
 // synthesized so downstream consumers always receive a valid ARN.
-func buildPrincipal(principalArn string, state AnalyzerState) output.AWSIAMResource {
+func buildPrincipal(principalArn string, state *AnalyzerState) output.AWSIAMResource {
 	if r := state.GetResource(principalArn); r != nil {
 		return output.FromAWSResource(*r)
 	}

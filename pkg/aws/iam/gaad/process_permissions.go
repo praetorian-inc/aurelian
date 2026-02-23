@@ -15,7 +15,7 @@ import (
 // processUserPermissions collects all identity and boundary statements for a
 // user (inline, managed, and group policies) then generates evaluation requests
 // for priv-esc actions.
-func processUserPermissions(user types.UserDetail, state AnalyzerState, evalChan chan<- *iam.EvaluationRequest) {
+func processUserPermissions(user types.UserDetail, state *AnalyzerState, evalChan chan<- *iam.EvaluationRequest) {
 	// Inline policies
 	identityStatements := collectInlineStatements(user.UserPolicyList, user.Arn)
 
@@ -45,7 +45,7 @@ func processUserPermissions(user types.UserDetail, state AnalyzerState, evalChan
 // Unlike the old implementation, this does NOT mutate the ARPD for AssumeRole
 // actions (that was a bug) — trust policy evaluation is handled separately by
 // processAssumeRolePolicies (step 4f).
-func processRolePermissions(role types.RoleDetail, state AnalyzerState, evalChan chan<- *iam.EvaluationRequest) {
+func processRolePermissions(role types.RoleDetail, state *AnalyzerState, evalChan chan<- *iam.EvaluationRequest) {
 	// Inline policies
 	identityStatements := collectInlineStatements(role.RolePolicyList, role.Arn)
 
@@ -64,7 +64,7 @@ func processRolePermissions(role types.RoleDetail, state AnalyzerState, evalChan
 //
 // Unlike the old implementation, this emits ALL matching pairs per resource
 // policy, fixing the first-match-only bug.
-func processResourcePolicy(resource output.AWSResource, state AnalyzerState, evalChan chan<- *iam.EvaluationRequest) {
+func processResourcePolicy(resource output.AWSResource, state *AnalyzerState, evalChan chan<- *iam.EvaluationRequest) {
 	policy := resource.ResourcePolicy
 	if policy == nil || policy.Statement == nil {
 		return
@@ -119,7 +119,7 @@ func processResourcePolicy(resource output.AWSResource, state AnalyzerState, eva
 // processAssumeRolePolicies evaluates a role's trust policy (AssumeRolePolicyDocument),
 // emitting an EvaluationRequest per principal that the trust policy allows to assume
 // the role. These are resource-side evaluations — IdentityStatements is empty.
-func processAssumeRolePolicies(role types.RoleDetail, state AnalyzerState, evalChan chan<- *iam.EvaluationRequest) {
+func processAssumeRolePolicies(role types.RoleDetail, state *AnalyzerState, evalChan chan<- *iam.EvaluationRequest) {
 	if role.AssumeRolePolicyDocument.Statement == nil || len(*role.AssumeRolePolicyDocument.Statement) == 0 {
 		return
 	}
@@ -203,7 +203,7 @@ func generatePrincipalEvalRequests(
 	principalArn string,
 	identityStatements types.PolicyStatementList,
 	boundaryStatements types.PolicyStatementList,
-	state AnalyzerState,
+	state *AnalyzerState,
 	evalChan chan<- *iam.EvaluationRequest,
 ) {
 	allActions := state.ExtractActions(&identityStatements)
