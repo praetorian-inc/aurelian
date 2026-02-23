@@ -88,8 +88,8 @@ func extractResourceTags(r *output.AWSResource) map[string]string {
 // GAAD entity → output.AWSIAMResource converters
 // ---------------------------------------------------------------------------
 
-// FromUserDL converts a GAAD UserDetail to an AWSIAMResource.
-func FromUserDL(user types.UserDetail, accountID string) output.AWSIAMResource {
+// FromUserDetail converts a GAAD UserDetail to an AWSIAMResource.
+func FromUserDetail(user types.UserDetail, accountID string) output.AWSIAMResource {
 	a, _ := arn.Parse(user.Arn)
 	if accountID == "" {
 		accountID = a.AccountID
@@ -123,8 +123,8 @@ func FromUserDL(user types.UserDetail, accountID string) output.AWSIAMResource {
 	return r
 }
 
-// FromRoleDL converts a GAAD RoleDetail to an AWSIAMResource.
-func FromRoleDL(role types.RoleDetail) output.AWSIAMResource {
+// FromRoleDetail converts a GAAD RoleDetail to an AWSIAMResource.
+func FromRoleDetail(role types.RoleDetail) output.AWSIAMResource {
 	a, _ := arn.Parse(role.Arn)
 
 	r := output.AWSIAMResource{
@@ -158,8 +158,8 @@ func FromRoleDL(role types.RoleDetail) output.AWSIAMResource {
 	return r
 }
 
-// FromGroupDL converts a GAAD GroupDetail to an AWSIAMResource.
-func FromGroupDL(group types.GroupDetail) output.AWSIAMResource {
+// FromGroupDetail converts a GAAD GroupDetail to an AWSIAMResource.
+func FromGroupDetail(group types.GroupDetail) output.AWSIAMResource {
 	a, _ := arn.Parse(group.Arn)
 
 	r := output.AWSIAMResource{
@@ -183,8 +183,8 @@ func FromGroupDL(group types.GroupDetail) output.AWSIAMResource {
 	return r
 }
 
-// FromPolicyDL converts a GAAD ManagedPolicyDetail to an AWSIAMResource.
-func FromPolicyDL(policy types.ManagedPolicyDetail) output.AWSIAMResource {
+// FromManagedPolicyDetail converts a GAAD ManagedPolicyDetail to an AWSIAMResource.
+func FromManagedPolicyDetail(policy types.ManagedPolicyDetail) output.AWSIAMResource {
 	a, _ := arn.Parse(policy.Arn)
 
 	r := output.AWSIAMResource{
@@ -206,20 +206,20 @@ func FromPolicyDL(policy types.ManagedPolicyDetail) output.AWSIAMResource {
 }
 
 // FromGAAD converts all GAAD entities to AWSIAMResources.
-// The accountID is passed to FromUserDL for user account resolution.
+// The accountID is passed to FromUserDetail for user account resolution.
 func FromGAAD(gaad *types.AuthorizationAccountDetails, accountID string) []output.AWSIAMResource {
 	var entities []output.AWSIAMResource
 	for _, user := range gaad.UserDetailList {
-		entities = append(entities, FromUserDL(user, accountID))
+		entities = append(entities, FromUserDetail(user, accountID))
 	}
 	for _, role := range gaad.RoleDetailList {
-		entities = append(entities, FromRoleDL(role))
+		entities = append(entities, FromRoleDetail(role))
 	}
 	for _, group := range gaad.GroupDetailList {
-		entities = append(entities, FromGroupDL(group))
+		entities = append(entities, FromGroupDetail(group))
 	}
 	for _, policy := range gaad.Policies {
-		entities = append(entities, FromPolicyDL(policy))
+		entities = append(entities, FromManagedPolicyDetail(policy))
 	}
 	return entities
 }

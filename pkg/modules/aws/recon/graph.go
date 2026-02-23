@@ -99,16 +99,16 @@ func (m *AWSGraphModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
 	// Step 6: Build entity list from GAAD + cloud resources
 	var iamEntities []output.AWSIAMResource
 	for _, user := range gaadData.UserDetailList {
-		iamEntities = append(iamEntities, gaadpkg.FromUserDL(user, gaadData.AccountID))
+		iamEntities = append(iamEntities, gaadpkg.FromUserDetail(user, gaadData.AccountID))
 	}
 	for _, role := range gaadData.RoleDetailList {
-		iamEntities = append(iamEntities, gaadpkg.FromRoleDL(role))
+		iamEntities = append(iamEntities, gaadpkg.FromRoleDetail(role))
 	}
 	for _, group := range gaadData.GroupDetailList {
-		iamEntities = append(iamEntities, gaadpkg.FromGroupDL(group))
+		iamEntities = append(iamEntities, gaadpkg.FromGroupDetail(group))
 	}
 	for _, policy := range gaadData.Policies {
-		iamEntities = append(iamEntities, gaadpkg.FromPolicyDL(policy))
+		iamEntities = append(iamEntities, gaadpkg.FromManagedPolicyDetail(policy))
 	}
 
 	// Flatten all cloud resources (not just those with policies)
@@ -124,7 +124,7 @@ func (m *AWSGraphModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
 			Data: iamEntities,
 			Metadata: map[string]any{
 				"module":    m.ID(),
-				"type":      "iamEntities",
+				"type":      "iam_entities",
 				"accountID": gaadData.AccountID,
 				"count":     len(iamEntities),
 			},

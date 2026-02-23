@@ -40,7 +40,7 @@ resource "aws_iam_user" "test" {
 }
 
 # Inline policy on user 0 — privesc-relevant actions so the IAM analyzer
-# produces FullResult relationships for this user.
+# produces relationships for this user across multiple resource types.
 resource "aws_iam_user_policy" "inline" {
   name = "${local.prefix}-inline-policy"
   user = aws_iam_user.test[0].name
@@ -61,6 +61,8 @@ resource "aws_iam_user_policy" "inline" {
           "iam:AttachUserPolicy",
           "iam:PutUserPolicy",
           "sts:AssumeRole",
+          # User -> ManagedPolicy relationship
+          "iam:CreatePolicyVersion",
         ]
         Resource = "*"
       }
@@ -166,8 +168,18 @@ resource "aws_iam_role_policy" "assumable_inline" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = ["iam:ListUsers"]
+      Effect = "Allow"
+      Action = [
+        # Role -> Role relationships (PassRole, AttachRolePolicy)
+        "iam:PassRole",
+        "iam:AttachRolePolicy",
+        # Role -> User relationships (CreateAccessKey)
+        "iam:CreateAccessKey",
+        # Role -> ManagedPolicy relationships (CreatePolicyVersion)
+        "iam:CreatePolicyVersion",
+        # Role -> Lambda relationships (InvokeFunction)
+        "lambda:InvokeFunction",
+      ]
       Resource = "*"
     }]
   })
@@ -306,4 +318,13 @@ resource "aws_lambda_permission" "sns" {
   function_name = aws_lambda_function.test.function_name
   principal     = "sns.amazonaws.com"
   source_arn    = aws_sns_topic.test.arn
+}
+
+# Lambda resource policy allowing API Gateway to invoke it
+# (generates Service -> Lambda::Function relationship via resource policy)
+resource "aws_lambda_permission" "apigw" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.test.function_name
+  principal     = "apigateway.amazonaws.com"
 }

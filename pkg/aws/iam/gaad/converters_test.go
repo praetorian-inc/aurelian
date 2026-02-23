@@ -18,17 +18,17 @@ func TestFromUserDL(t *testing.T) {
 	}
 
 	t.Run("with explicit accountID", func(t *testing.T) {
-		result := FromUserDL(baseUser, "999988887777")
+		result := FromUserDetail(baseUser, "999988887777")
 		assert.Equal(t, "999988887777", result.AccountRef)
 	})
 
 	t.Run("with empty accountID falls back to ARN", func(t *testing.T) {
-		result := FromUserDL(baseUser, "")
+		result := FromUserDetail(baseUser, "")
 		assert.Equal(t, "111122223333", result.AccountRef)
 	})
 
 	t.Run("resource fields", func(t *testing.T) {
-		result := FromUserDL(baseUser, "111122223333")
+		result := FromUserDetail(baseUser, "111122223333")
 		assert.Equal(t, "AWS::IAM::User", result.ResourceType)
 		assert.Equal(t, baseUser.Arn, result.ResourceID)
 		assert.Equal(t, baseUser.Arn, result.ARN)
@@ -36,7 +36,7 @@ func TestFromUserDL(t *testing.T) {
 	})
 
 	t.Run("OriginalData is set to user", func(t *testing.T) {
-		result := FromUserDL(baseUser, "")
+		result := FromUserDetail(baseUser, "")
 		assert.Equal(t, baseUser, result.OriginalData)
 	})
 
@@ -45,7 +45,7 @@ func TestFromUserDL(t *testing.T) {
 		user.UserPolicyList = []types.InlinePolicy{
 			{PolicyName: "inline1", PolicyDocument: types.Policy{Version: "2012-10-17"}},
 		}
-		result := FromUserDL(user, "")
+		result := FromUserDetail(user, "")
 		require.Len(t, result.InlinePolicies, 1)
 		assert.Equal(t, "inline1", result.InlinePolicies[0].PolicyName)
 	})
@@ -55,7 +55,7 @@ func TestFromUserDL(t *testing.T) {
 		user.AttachedManagedPolicies = []types.ManagedPolicy{
 			{PolicyName: "ReadOnlyAccess", PolicyArn: "arn:aws:iam::aws:policy/ReadOnlyAccess"},
 		}
-		result := FromUserDL(user, "")
+		result := FromUserDetail(user, "")
 		require.Len(t, result.AttachedManagedPolicies, 1)
 		assert.Equal(t, "ReadOnlyAccess", result.AttachedManagedPolicies[0].PolicyName)
 	})
@@ -66,7 +66,7 @@ func TestFromUserDL(t *testing.T) {
 			PolicyName: "Boundary",
 			PolicyArn:  "arn:aws:iam::111122223333:policy/Boundary",
 		}
-		result := FromUserDL(user, "")
+		result := FromUserDetail(user, "")
 		require.NotNil(t, result.PermissionsBoundary)
 		assert.Equal(t, "Boundary", result.PermissionsBoundary.PolicyName)
 		assert.Equal(t, "arn:aws:iam::111122223333:policy/Boundary", result.PermissionsBoundary.PolicyArn)
@@ -78,7 +78,7 @@ func TestFromUserDL(t *testing.T) {
 			{Key: "env", Value: "prod"},
 			{Key: "team", Value: "security"},
 		}
-		result := FromUserDL(user, "")
+		result := FromUserDetail(user, "")
 		require.Len(t, result.IAMTags, 2)
 		assert.Equal(t, "env", result.IAMTags[0].Key)
 		assert.Equal(t, "prod", result.IAMTags[0].Value)
@@ -87,7 +87,7 @@ func TestFromUserDL(t *testing.T) {
 	t.Run("with group memberships", func(t *testing.T) {
 		user := baseUser
 		user.GroupList = []string{"admins", "developers"}
-		result := FromUserDL(user, "")
+		result := FromUserDetail(user, "")
 		require.Len(t, result.GroupMemberships, 2)
 		assert.Equal(t, "admins", result.GroupMemberships[0])
 		assert.Equal(t, "developers", result.GroupMemberships[1])
@@ -110,7 +110,7 @@ func TestFromRoleDL(t *testing.T) {
 	}
 
 	t.Run("resource fields and AccountRef parsed from ARN", func(t *testing.T) {
-		result := FromRoleDL(baseRole)
+		result := FromRoleDetail(baseRole)
 		assert.Equal(t, "AWS::IAM::Role", result.ResourceType)
 		assert.Equal(t, baseRole.Arn, result.ResourceID)
 		assert.Equal(t, baseRole.Arn, result.ARN)
@@ -119,12 +119,12 @@ func TestFromRoleDL(t *testing.T) {
 	})
 
 	t.Run("OriginalData is set to role", func(t *testing.T) {
-		result := FromRoleDL(baseRole)
+		result := FromRoleDetail(baseRole)
 		assert.Equal(t, baseRole, result.OriginalData)
 	})
 
 	t.Run("with assume role policy", func(t *testing.T) {
-		result := FromRoleDL(baseRole)
+		result := FromRoleDetail(baseRole)
 		require.NotNil(t, result.AssumeRolePolicy)
 		assert.Equal(t, "2012-10-17", result.AssumeRolePolicy.Version)
 	})
@@ -134,7 +134,7 @@ func TestFromRoleDL(t *testing.T) {
 		role.RolePolicyList = []types.InlinePolicy{
 			{PolicyName: "role-inline", PolicyDocument: types.Policy{Version: "2012-10-17"}},
 		}
-		result := FromRoleDL(role)
+		result := FromRoleDetail(role)
 		require.Len(t, result.InlinePolicies, 1)
 		assert.Equal(t, "role-inline", result.InlinePolicies[0].PolicyName)
 	})
@@ -144,7 +144,7 @@ func TestFromRoleDL(t *testing.T) {
 		role.AttachedManagedPolicies = []types.ManagedPolicy{
 			{PolicyName: "AdminAccess", PolicyArn: "arn:aws:iam::aws:policy/AdministratorAccess"},
 		}
-		result := FromRoleDL(role)
+		result := FromRoleDetail(role)
 		require.Len(t, result.AttachedManagedPolicies, 1)
 		assert.Equal(t, "AdminAccess", result.AttachedManagedPolicies[0].PolicyName)
 	})
@@ -157,7 +157,7 @@ func TestFromRoleDL(t *testing.T) {
 				Arn:                 "arn:aws:iam::111122223333:instance-profile/my-profile",
 			},
 		}
-		result := FromRoleDL(role)
+		result := FromRoleDetail(role)
 		require.Len(t, result.InstanceProfiles, 1)
 		assert.Equal(t, "my-profile", result.InstanceProfiles[0].InstanceProfileName)
 	})
@@ -168,7 +168,7 @@ func TestFromRoleDL(t *testing.T) {
 			PolicyName: "RoleBoundary",
 			PolicyArn:  "arn:aws:iam::111122223333:policy/RoleBoundary",
 		}
-		result := FromRoleDL(role)
+		result := FromRoleDetail(role)
 		require.NotNil(t, result.PermissionsBoundary)
 		assert.Equal(t, "RoleBoundary", result.PermissionsBoundary.PolicyName)
 	})
@@ -178,7 +178,7 @@ func TestFromRoleDL(t *testing.T) {
 		role.Tags = []types.Tag{
 			{Key: "service", Value: "lambda"},
 		}
-		result := FromRoleDL(role)
+		result := FromRoleDetail(role)
 		require.Len(t, result.IAMTags, 1)
 		assert.Equal(t, "service", result.IAMTags[0].Key)
 		assert.Equal(t, "lambda", result.IAMTags[0].Value)
@@ -194,7 +194,7 @@ func TestFromGroupDL(t *testing.T) {
 	}
 
 	t.Run("resource fields", func(t *testing.T) {
-		result := FromGroupDL(baseGroup)
+		result := FromGroupDetail(baseGroup)
 		assert.Equal(t, "AWS::IAM::Group", result.ResourceType)
 		assert.Equal(t, baseGroup.Arn, result.ResourceID)
 		assert.Equal(t, baseGroup.Arn, result.ARN)
@@ -203,7 +203,7 @@ func TestFromGroupDL(t *testing.T) {
 	})
 
 	t.Run("OriginalData is set to group", func(t *testing.T) {
-		result := FromGroupDL(baseGroup)
+		result := FromGroupDetail(baseGroup)
 		assert.Equal(t, baseGroup, result.OriginalData)
 	})
 
@@ -212,7 +212,7 @@ func TestFromGroupDL(t *testing.T) {
 		group.GroupPolicyList = []types.InlinePolicy{
 			{PolicyName: "group-inline", PolicyDocument: types.Policy{Version: "2012-10-17"}},
 		}
-		result := FromGroupDL(group)
+		result := FromGroupDetail(group)
 		require.Len(t, result.InlinePolicies, 1)
 		assert.Equal(t, "group-inline", result.InlinePolicies[0].PolicyName)
 	})
@@ -222,7 +222,7 @@ func TestFromGroupDL(t *testing.T) {
 		group.AttachedManagedPolicies = []types.ManagedPolicy{
 			{PolicyName: "ViewOnlyAccess", PolicyArn: "arn:aws:iam::aws:policy/ViewOnlyAccess"},
 		}
-		result := FromGroupDL(group)
+		result := FromGroupDetail(group)
 		require.Len(t, result.AttachedManagedPolicies, 1)
 		assert.Equal(t, "ViewOnlyAccess", result.AttachedManagedPolicies[0].PolicyName)
 	})
@@ -239,7 +239,7 @@ func TestFromPolicyDL(t *testing.T) {
 	}
 
 	t.Run("resource fields", func(t *testing.T) {
-		result := FromPolicyDL(basePolicy)
+		result := FromManagedPolicyDetail(basePolicy)
 		assert.Equal(t, "AWS::IAM::ManagedPolicy", result.ResourceType)
 		assert.Equal(t, basePolicy.Arn, result.ResourceID)
 		assert.Equal(t, basePolicy.Arn, result.ARN)
@@ -248,7 +248,7 @@ func TestFromPolicyDL(t *testing.T) {
 	})
 
 	t.Run("OriginalData is set to policy", func(t *testing.T) {
-		result := FromPolicyDL(basePolicy)
+		result := FromManagedPolicyDetail(basePolicy)
 		assert.Equal(t, basePolicy, result.OriginalData)
 	})
 
@@ -266,7 +266,7 @@ func TestFromPolicyDL(t *testing.T) {
 				Document:         types.Policy{Version: "2012-10-17"},
 			},
 		}
-		result := FromPolicyDL(policy)
+		result := FromManagedPolicyDetail(policy)
 		require.Len(t, result.PolicyVersions, 2)
 		assert.Equal(t, "v1", result.PolicyVersions[0].VersionId)
 		assert.True(t, result.PolicyVersions[0].IsDefaultVersion)
