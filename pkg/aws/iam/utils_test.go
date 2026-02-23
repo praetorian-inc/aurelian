@@ -1,11 +1,97 @@
 package iam
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestActionService(t *testing.T) {
+	tests := []struct {
+		name   string
+		action Action
+		want   string
+	}{
+		{
+			name:   "standard action with colon",
+			action: Action("s3:GetObject"),
+			want:   "s3",
+		},
+		{
+			name:   "action with no colon",
+			action: Action("NoColon"),
+			want:   "",
+		},
+		{
+			name:   "action with multiple colons",
+			action: Action("sts:AssumeRole:Extra"),
+			want:   "",
+		},
+		{
+			name:   "empty action",
+			action: Action(""),
+			want:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.action.Service()
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestLoadJSONFile(t *testing.T) {
+	t.Run("valid JSON file", func(t *testing.T) {
+		type TestStruct struct {
+			Name  string `json:"name"`
+			Value int    `json:"value"`
+		}
+
+		dir := t.TempDir()
+		path := filepath.Join(dir, "test.json")
+		err := os.WriteFile(path, []byte(`{"name":"hello","value":42}`), 0644)
+		require.NoError(t, err)
+
+		result, err := LoadJSONFile[TestStruct](path)
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, "hello", result.Name)
+		assert.Equal(t, 42, result.Value)
+	})
+
+	t.Run("file not found", func(t *testing.T) {
+		type TestStruct struct {
+			Name string `json:"name"`
+		}
+
+		result, err := LoadJSONFile[TestStruct]("/nonexistent/path/does-not-exist.json")
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "reading")
+	})
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		type TestStruct struct {
+			Name string `json:"name"`
+		}
+
+		dir := t.TempDir()
+		path := filepath.Join(dir, "invalid.json")
+		err := os.WriteFile(path, []byte(`{invalid json`), 0644)
+		require.NoError(t, err)
+
+		result, err := LoadJSONFile[TestStruct](path)
+		assert.Error(t, err)
+		assert.Nil(t, result)
+		assert.Contains(t, err.Error(), "parsing")
+	})
+}
 
 func TestGetAccountFromArn(t *testing.T) {
 	tests := []struct {

@@ -1747,6 +1747,380 @@ func TestPolicyEvaluator_CrossAccountAssumeRole_TrustPolicyValidation(t *testing
 	}
 }
 
+func TestPolicyToStatementList(t *testing.T) {
+	t.Run("nil policy returns nil", func(t *testing.T) {
+		result := policyToStatementList(nil)
+		assert.Nil(t, result)
+	})
+
+	t.Run("policy with nil statement returns nil", func(t *testing.T) {
+		p := &types.Policy{Version: "2012-10-17"}
+		result := policyToStatementList(p)
+		assert.Nil(t, result)
+	})
+
+	t.Run("valid policy returns statement list", func(t *testing.T) {
+		stmts := &types.PolicyStatementList{
+			{Effect: "Allow", Action: types.NewDynaString([]string{"s3:GetObject"})},
+		}
+		p := &types.Policy{Statement: stmts}
+		result := policyToStatementList(p)
+		assert.NotNil(t, result)
+		assert.Equal(t, 1, len(*result))
+	})
+}
+
+func TestPolicyEvaluator_InvalidActionForResource(t *testing.T) {
+	evaluator := NewPolicyEvaluator(&PolicyData{})
+
+	identityStatements := &types.PolicyStatementList{
+		{
+			Effect:   "Allow",
+			Action:   types.NewDynaString([]string{"*"}),
+			Resource: types.NewDynaString([]string{"*"}),
+		},
+	}
+
+	req := &EvaluationRequest{
+		Action:             "lambda:CreateFunction",
+		Resource:           "arn:aws:lambda:us-east-1:111122223333:function:my-function",
+		Context:            createRequestContext("arn:aws:iam::111122223333:user/test-user"),
+		IdentityStatements: identityStatements,
+	}
+
+	result, err := evaluator.Evaluate(req)
+	assert.NoError(t, err)
+	assert.False(t, result.Allowed)
+	assert.Contains(t, result.EvaluationDetails, "is not valid for resource")
+}
+
+func TestPolicyEvaluator_CrossAccountAssumeRole(t *testing.T) {
+	sourceAccountID := "111122223333"
+	targetAccountID := "999988887777"
+	targetRoleArn := "arn:aws:iam::" + targetAccountID + ":role/target-role"
+
+	// Identity policy allows sts:AssumeRole on any role
+	identityStatements := &types.PolicyStatementList{
+		{
+			Effect:   "Allow",
+			Action:   types.NewDynaString([]string{"sts:AssumeRole"}),
+			Resource: types.NewDynaString([]string{"*"}),
+		},
+	}
+
+	// Trust policy allows the source account
+	trustPolicy := &types.Policy{
+		Statement: &types.PolicyStatementList{
+			{
+				Effect: "Allow",
+				Principal: &types.Principal{
+					AWS: types.NewDynaString([]string{"arn:aws:iam::" + sourceAccountID + ":root"}),
+				},
+				Action:   types.NewDynaString([]string{"sts:AssumeRole"}),
+				Resource: types.NewDynaString([]string{targetRoleArn}),
+			},
+		},
+	}
+
+	evaluator := NewPolicyEvaluator(&PolicyData{
+		ResourcePolicies: map[string]*types.Policy{
+			targetRoleArn: trustPolicy,
+		},
+	})
+
+	ctx := createRequestContext("arn:aws:iam::" + sourceAccountID + ":user/test-user")
+	ctx.PopulateDefaultRequestConditionKeys(targetRoleArn)
+
+	req := &EvaluationRequest{
+		Action:             "sts:AssumeRole",
+		Resource:           targetRoleArn,
+		Context:            ctx,
+		IdentityStatements: identityStatements,
+	}
+
+	result, err := evaluator.Evaluate(req)
+	assert.NoError(t, err)
+	assert.True(t, result.Allowed)
+	assert.True(t, result.CrossAccountAccess)
+	assert.Equal(t, "Cross-account assume role access", result.EvaluationDetails)
+}
+
+func TestPolicyEvaluator_SameAccountNonAssumeRole_ExplicitPrincipalAllow(t *testing.T) {
+	resource := "arn:aws:s3::111122223333:my-bucket/file.txt"
+
+	// Resource policy explicitly allows the principal
+	resourcePolicy := &types.Policy{
+		Statement: &types.PolicyStatementList{
+			{
+				Effect: "Allow",
+				Principal: &types.Principal{
+					AWS: types.NewDynaString([]string{"arn:aws:iam::111122223333:user/test-user"}),
+				},
+				Action:   types.NewDynaString([]string{"s3:GetObject"}),
+				Resource: types.NewDynaString([]string{resource}),
+			},
+		},
+	}
+
+	evaluator := NewPolicyEvaluator(&PolicyData{
+		ResourcePolicies: map[string]*types.Policy{
+			resource: resourcePolicy,
+		},
+	})
+
+	// No identity statements at all - resource policy alone with explicit principal should work
+	ctx := createRequestContext("arn:aws:iam::111122223333:user/test-user")
+	ctx.PopulateDefaultRequestConditionKeys(resource)
+
+	req := &EvaluationRequest{
+		Action:   "s3:GetObject",
+		Resource: resource,
+		Context:  ctx,
+	}
+
+	result, err := evaluator.Evaluate(req)
+	assert.NoError(t, err)
+	assert.True(t, result.Allowed)
+	assert.Equal(t, "Explicitly allowed by resource policy", result.EvaluationDetails)
+}
+
+func TestPolicyEvaluator_RCPDenyPath(t *testing.T) {
+	identityStatements := &types.PolicyStatementList{
+		{
+			Effect:   "Allow",
+			Action:   types.NewDynaString([]string{"s3:*"}),
+			Resource: types.NewDynaString([]string{"*"}),
+		},
+	}
+
+	// Create an RCP that does NOT allow s3:PutObject (only allows s3:GetObject)
+	orgPolicies := orgpolicies.NewDefaultOrgPolicies()
+	orgPolicies.RCPs = []orgpolicies.PolicyData{
+		{
+			PolicySummary: orgpolicies.PolicySummaryRef{
+				Name: aws.String("RestrictiveRCP"),
+				Id:   aws.String("p-restrictive"),
+				Arn:  aws.String("arn:aws:organizations::aws:policy/resource_control_policy/p-restrictive"),
+			},
+			PolicyContent: types.Policy{
+				Version: "2012-10-17",
+				Statement: &types.PolicyStatementList{
+					{
+						Effect:   "Allow",
+						Action:   types.NewDynaString([]string{"s3:GetObject"}),
+						Resource: types.NewDynaString([]string{"*"}),
+					},
+				},
+			},
+			Targets: []orgpolicies.PolicyTarget{
+				{
+					TargetID: "111122223333",
+					Name:     "Test Account",
+					Type:     "ACCOUNT",
+				},
+			},
+		},
+	}
+
+	orgPolicies.Targets = append(orgPolicies.Targets, orgpolicies.OrgPolicyTarget{
+		Name: "Test Account",
+		ID:   "111122223333",
+		Type: "ACCOUNT",
+		Account: &orgpolicies.Account{
+			ID:     "111122223333",
+			Name:   "Test Account",
+			Email:  "test@example.com",
+			Status: "ACTIVE",
+		},
+		RCPs: orgpolicies.OrgPolicyTargetPolicies{
+			DirectPolicies: []string{"arn:aws:organizations::aws:policy/resource_control_policy/p-restrictive"},
+			ParentPolicies: []orgpolicies.ParentPolicy{},
+		},
+	})
+
+	evaluator := NewPolicyEvaluator(&PolicyData{
+		OrgPolicies: orgPolicies,
+	})
+
+	ctx := createRequestContext("arn:aws:iam::111122223333:user/test-user")
+	ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:my-bucket/file.txt")
+
+	// s3:PutObject should be denied by RCP (not in allow list)
+	req := &EvaluationRequest{
+		Action:             "s3:PutObject",
+		Resource:           "arn:aws:s3::111122223333:my-bucket/file.txt",
+		Context:            ctx,
+		IdentityStatements: identityStatements,
+	}
+
+	result, err := evaluator.Evaluate(req)
+	assert.NoError(t, err)
+	assert.False(t, result.Allowed)
+	assert.Equal(t, "Denied by RCP", result.EvaluationDetails)
+}
+
+func TestPolicyEvaluator_ParentSCPNoAllowPath(t *testing.T) {
+	identityStatements := &types.PolicyStatementList{
+		{
+			Effect:   "Allow",
+			Action:   types.NewDynaString([]string{"s3:*"}),
+			Resource: types.NewDynaString([]string{"*"}),
+		},
+	}
+
+	// Create org policies where parent SCP does NOT allow the action
+	orgPolicies := &orgpolicies.OrgPolicies{
+		SCPs: []orgpolicies.PolicyData{
+			{
+				PolicySummary: orgpolicies.PolicySummaryRef{
+					Name: aws.String("RestrictSCP"),
+					Id:   aws.String("p-restrict"),
+					Arn:  aws.String("arn:aws:organizations::aws:policy/service_control_policy/p-restrict"),
+				},
+				PolicyContent: types.Policy{
+					Version: "2012-10-17",
+					Statement: &types.PolicyStatementList{
+						{
+							Effect:   "Allow",
+							Action:   types.NewDynaString([]string{"ec2:*"}),
+							Resource: types.NewDynaString([]string{"*"}),
+						},
+					},
+				},
+				Targets: []orgpolicies.PolicyTarget{
+					{
+						TargetID: "ou-root",
+						Name:     "OU",
+						Type:     "ORGANIZATIONAL_UNIT",
+					},
+				},
+			},
+		},
+		Targets: []orgpolicies.OrgPolicyTarget{
+			{
+				Name: "Test Account",
+				ID:   "111122223333",
+				Type: "ACCOUNT",
+				Account: &orgpolicies.Account{
+					ID:     "111122223333",
+					Name:   "Test Account",
+					Email:  "test@example.com",
+					Status: "ACTIVE",
+				},
+				SCPs: orgpolicies.OrgPolicyTargetPolicies{
+					DirectPolicies: []string{},
+					ParentPolicies: []orgpolicies.ParentPolicy{
+						{
+							Name:     "OU",
+							ID:       "ou-root",
+							Policies: []string{"arn:aws:organizations::aws:policy/service_control_policy/p-restrict"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	evaluator := NewPolicyEvaluator(&PolicyData{
+		OrgPolicies: orgPolicies,
+	})
+
+	ctx := createRequestContext("arn:aws:iam::111122223333:user/test-user")
+	ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:my-bucket")
+
+	req := &EvaluationRequest{
+		Action:             "s3:GetObject",
+		Resource:           "arn:aws:s3::111122223333:my-bucket",
+		Context:            ctx,
+		IdentityStatements: identityStatements,
+	}
+
+	result, err := evaluator.Evaluate(req)
+	assert.NoError(t, err)
+	assert.False(t, result.Allowed)
+	assert.Contains(t, result.EvaluationDetails, "No explicit allow in parent SCP from")
+}
+
+func TestPolicyEvaluator_ParentRCPNoAllowPath(t *testing.T) {
+	identityStatements := &types.PolicyStatementList{
+		{
+			Effect:   "Allow",
+			Action:   types.NewDynaString([]string{"s3:*"}),
+			Resource: types.NewDynaString([]string{"*"}),
+		},
+	}
+
+	// Parent RCP that only allows ec2, not s3
+	orgPolicies := orgpolicies.NewDefaultOrgPolicies()
+	orgPolicies.RCPs = []orgpolicies.PolicyData{
+		{
+			PolicySummary: orgpolicies.PolicySummaryRef{
+				Name: aws.String("ParentRCP"),
+				Id:   aws.String("p-parentrcp"),
+				Arn:  aws.String("arn:aws:organizations::aws:policy/resource_control_policy/p-parentrcp"),
+			},
+			PolicyContent: types.Policy{
+				Version: "2012-10-17",
+				Statement: &types.PolicyStatementList{
+					{
+						Effect:   "Allow",
+						Action:   types.NewDynaString([]string{"ec2:*"}),
+						Resource: types.NewDynaString([]string{"*"}),
+					},
+				},
+			},
+			Targets: []orgpolicies.PolicyTarget{
+				{
+					TargetID: "ou-root",
+					Name:     "Root OU",
+					Type:     "ROOT",
+				},
+			},
+		},
+	}
+
+	orgPolicies.Targets = append(orgPolicies.Targets, orgpolicies.OrgPolicyTarget{
+		Name: "Test Account",
+		ID:   "111122223333",
+		Type: "ACCOUNT",
+		Account: &orgpolicies.Account{
+			ID:     "111122223333",
+			Name:   "Test Account",
+			Email:  "test@example.com",
+			Status: "ACTIVE",
+		},
+		RCPs: orgpolicies.OrgPolicyTargetPolicies{
+			DirectPolicies: []string{},
+			ParentPolicies: []orgpolicies.ParentPolicy{
+				{
+					Name:     "Root OU",
+					ID:       "ou-root",
+					Policies: []string{"arn:aws:organizations::aws:policy/resource_control_policy/p-parentrcp"},
+				},
+			},
+		},
+	})
+
+	evaluator := NewPolicyEvaluator(&PolicyData{
+		OrgPolicies: orgPolicies,
+	})
+
+	ctx := createRequestContext("arn:aws:iam::111122223333:user/test-user")
+	ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:my-bucket")
+
+	req := &EvaluationRequest{
+		Action:             "s3:GetObject",
+		Resource:           "arn:aws:s3::111122223333:my-bucket",
+		Context:            ctx,
+		IdentityStatements: identityStatements,
+	}
+
+	result, err := evaluator.Evaluate(req)
+	assert.NoError(t, err)
+	assert.False(t, result.Allowed)
+	assert.Contains(t, result.EvaluationDetails, "No explicit allow in parent RCP from")
+}
+
 func TestPolicyEvaluator_SSMDocumentRestrictions(t *testing.T) {
 	tests := []struct {
 		name                     string

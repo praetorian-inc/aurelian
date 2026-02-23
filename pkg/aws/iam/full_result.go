@@ -3,8 +3,6 @@ package iam
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
-
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
@@ -79,73 +77,4 @@ func (fr *FullResult) UnmarshalJSON(data []byte) error {
 	// If we can't determine the type, store it as a generic map
 	fr.Principal = principalMap
 	return nil
-}
-
-func (ps *PermissionsSummary) FullResults(state *AnalyzerState) []FullResult {
-	results := make([]FullResult, 0)
-
-	ps.Permissions.Range(func(key, value interface{}) bool {
-		if perms, ok := value.(*PrincipalPermissions); ok {
-			// Convert ResourcePerms sync.Map to map, skipping empty resources
-			perms.ResourcePerms.Range(func(resKey, resValue interface{}) bool {
-				resPerm, ok := resValue.(*ResourcePermission)
-
-				if !ok {
-					slog.Error("Resource permission not found", "resource", resKey)
-					return false
-				}
-
-				// Only include resources that have allowed or denied actions
-				if len(resPerm.AllowedActions) > 0 {
-					resArn := resKey.(string)
-
-					// Get the resource from the cache
-					resource, ok := state.ResourceCache[resArn]
-					if !ok {
-						slog.Error("Resource not found in cache", "resource", resArn)
-						return false
-					}
-
-					for _, action := range resPerm.AllowedActions {
-						if principal, ok := state.UserCache[perms.PrincipalArn]; ok {
-							results = append(results, FullResult{
-								Principal: principal,
-								Resource:  resource,
-								Action:    action.Name,
-								Result:    action.EvaluationResult,
-							})
-						} else if principal, ok := state.RoleCache[perms.PrincipalArn]; ok {
-							results = append(results, FullResult{
-								Principal: principal,
-								Resource:  resource,
-								Action:    action.Name,
-								Result:    action.EvaluationResult,
-							})
-						} else if principal, ok := state.GroupCache[perms.PrincipalArn]; ok {
-							results = append(results, FullResult{
-								Principal: principal,
-								Resource:  resource,
-								Action:    action.Name,
-								Result:    action.EvaluationResult,
-							})
-						} else {
-							results = append(results, FullResult{
-								Principal: perms.PrincipalArn,
-								Resource:  resource,
-								Action:    action.Name,
-								Result:    action.EvaluationResult,
-							})
-						}
-
-					}
-
-				}
-
-				return true
-			})
-		}
-		return true
-	})
-
-	return results
 }

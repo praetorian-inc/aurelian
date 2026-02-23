@@ -4,7 +4,9 @@ import (
 	"fmt"
 
 	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
+	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
@@ -76,40 +78,36 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 		orgPols = orgpolicies.NewDefaultOrgPolicies()
 	}
 
-	// Load optional resource policies
-	var resourcePolicies map[string]*types.Policy
+	// Load optional resources as []output.AWSResource
+	var resources []output.AWSResource
+	if c.ResourcesFile != "" {
+		r, err := iampkg.LoadJSONFile[[]output.AWSResource](c.ResourcesFile)
+		if err != nil {
+			return nil, fmt.Errorf("loading resources file: %w", err)
+		}
+		resources = *r
+	}
+
+	// Load optional resource policies and attach them to matching resources.
+	// If a policy references an ARN not in the resources list, create a
+	// minimal AWSResource so the analyzer can still evaluate it.
 	if c.ResourcePoliciesFile != "" {
 		rp, err := iampkg.LoadJSONFile[map[string]*types.Policy](c.ResourcePoliciesFile)
 		if err != nil {
 			return nil, fmt.Errorf("loading resource policies file: %w", err)
 		}
-		resourcePolicies = *rp
+		resources = attachResourcePolicies(resources, *rp)
 	}
 
-	// Load optional resources
-	var resources *[]types.EnrichedResourceDescription
-	if c.ResourcesFile != "" {
-		r, err := iampkg.LoadJSONFile[[]types.EnrichedResourceDescription](c.ResourcesFile)
-		if err != nil {
-			return nil, fmt.Errorf("loading resources file: %w", err)
-		}
-		resources = r
-	}
-
-	// Create PolicyData and analyzer
-	pd := iampkg.NewPolicyData(gaad, orgPols, resourcePolicies, resources)
-	analyzer := iampkg.NewGaadAnalyzerOld(pd)
-
-	// Run analysis
-	summary, err := analyzer.AnalyzePrincipalPermissions()
+	// Analyze IAM permissions
+	analyzer := gaadpkg.NewGaadAnalyzer()
+	relationships, err := analyzer.Analyze(gaad, orgPols, resources)
 	if err != nil {
 		return nil, fmt.Errorf("analyzing permissions: %w", err)
 	}
 
-	results := analyzer.FullResults(summary)
-
 	// Convert GAAD entities to AWSIAMResource
-	entities := iampkg.FromGAAD(gaad, "")
+	entities := gaadpkg.FromGAAD(gaad, "")
 
 	return []plugin.Result{
 		{
@@ -122,13 +120,36 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config) ([]plugin.Result, e
 			},
 		},
 		{
-			Data: results,
+			Data: relationships,
 			Metadata: map[string]any{
 				"module":   m.ID(),
 				"platform": m.Platform(),
 				"type":     "iam_relationships",
-				"count":    len(results),
+				"count":    len(relationships),
 			},
 		},
 	}, nil
+}
+
+// attachResourcePolicies merges resource policies into the resource list.
+// For each ARN in the policy map, if a matching resource exists its
+// ResourcePolicy field is set; otherwise a minimal AWSResource is created.
+func attachResourcePolicies(resources []output.AWSResource, policies map[string]*types.Policy) []output.AWSResource {
+	byARN := make(map[string]int, len(resources))
+	for i := range resources {
+		byARN[resources[i].ARN] = i
+	}
+
+	for arn, policy := range policies {
+		if idx, ok := byARN[arn]; ok {
+			resources[idx].ResourcePolicy = policy
+		} else {
+			resources = append(resources, output.AWSResource{
+				ARN:            arn,
+				ResourcePolicy: policy,
+			})
+		}
+	}
+
+	return resources
 }

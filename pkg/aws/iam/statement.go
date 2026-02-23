@@ -406,40 +406,6 @@ func determinePrincipalType(principalArn string) PrincipalType {
 	return PrincipalTypeUnknown
 }
 
-// getUserIdFromArn extracts the user ID portion from ARN
-func getUserIdFromArn(principalArn string) string {
-	if principalArn == "" {
-		return ""
-	}
-
-	arnParsed, err := arn.Parse(principalArn)
-	if err != nil {
-		return ""
-	}
-
-	// Extract UserID based on ARN type
-	resource := arnParsed.Resource
-
-	switch {
-	case strings.HasPrefix(resource, "user/"):
-		// For IAM users, the ID is the full ARN
-		return principalArn
-	case strings.HasPrefix(resource, "role/"):
-		// For IAM roles, the ID is the full ARN
-		return principalArn
-	case strings.HasPrefix(resource, "assumed-role/"):
-		// For assumed roles, parse out the role name and session
-		parts := strings.Split(strings.TrimPrefix(resource, "assumed-role/"), "/")
-		if len(parts) >= 2 {
-			return arnParsed.AccountID + ":" + parts[0] + ":" + parts[1]
-		}
-	case resource == "root":
-		// For root users, the ID is account-id
-		return arnParsed.AccountID
-	}
-
-	return ""
-}
 
 // getUsernameFromArn extracts the username from an ARN
 func getUsernameFromArn(principalArn string) string {
@@ -493,39 +459,6 @@ func getServiceNameFromArn(principalArn string) string {
 	return ""
 }
 
-// GetPrincipalType parses the ARN to determine the principal type
-func (rc *RequestContext) GetPrincipalType() PrincipalType {
-	if rc.PrincipalArn == "" {
-		return PrincipalTypeUnknown
-	}
-
-	// Parse ARN components
-	parts := strings.Split(rc.PrincipalArn, ":")
-	if len(parts) < 6 {
-		return PrincipalTypeUnknown
-	}
-
-	// Get the resource section
-	resource := parts[5]
-	resourceParts := strings.Split(resource, "/")
-
-	switch {
-	case strings.HasPrefix(resourceParts[1], "user/"):
-		return PrincipalTypeUser
-	case strings.HasPrefix(resourceParts[1], "role/"):
-		return PrincipalTypeRole
-	case strings.HasPrefix(resourceParts[1], "assumed-role/"):
-		return PrincipalTypeRoleSession
-	case strings.HasPrefix(resourceParts[1], "federated-user/"):
-		return PrincipalTypeFederatedUser
-	case strings.Contains(rc.PrincipalArn, ":root"):
-		return PrincipalTypeRoot
-	case strings.Contains(resource, ".amazonaws.com"):
-		return PrincipalTypeServiceAccount
-	default:
-		return PrincipalTypeUnknown
-	}
-}
 
 // matchesPrincipal checks if the requestedPrincipal matches the principal definition
 func matchesPrincipal(principal *types.Principal, requestedPrincipal string) bool {
