@@ -6,8 +6,10 @@ import (
 	"runtime"
 	"sync"
 
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 // startEvaluationWorkers launches a pool of goroutines that consume
@@ -71,12 +73,28 @@ func doEvaluationWork(
 }
 
 // buildPrincipal looks up a principal ARN in the state and wraps it as an
-// AWSIAMResource. If not found, returns a minimal AWSIAMResource with just
-// the ARN populated.
+// AWSIAMResource. If not found, returns a minimal AWSIAMResource. For service
+// principals (non-ARN strings like "lambda.amazonaws.com"), a pseudo-ARN is
+// synthesized so downstream consumers always receive a valid ARN.
 func buildPrincipal(principalArn string, state AnalyzerState) output.AWSIAMResource {
 	if r := state.GetResource(principalArn); r != nil {
 		return output.FromAWSResource(*r)
 	}
+
+	// If it's not a valid ARN, treat it as a service principal and synthesize one.
+	if !arn.IsARN(principalArn) {
+		serviceArn := types.BuildResourceARN(principalArn, "AWS::Service", "*", "*").String()
+		return output.AWSIAMResource{
+			AWSResource: output.AWSResource{
+				ARN:          serviceArn,
+				ResourceID:   principalArn,
+				ResourceType: "AWS::Service",
+				Region:       "*",
+				AccountRef:   "*",
+			},
+		}
+	}
+
 	return output.AWSIAMResource{
 		AWSResource: output.AWSResource{
 			ARN:        principalArn,

@@ -97,36 +97,45 @@ func (m *AWSGraphModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
 	slog.Info("IAM analysis complete", "relationships", len(relationships))
 
 	// Step 6: Build entity list from GAAD + cloud resources
-	var entities []output.AWSIAMResource
+	var iamEntities []output.AWSIAMResource
 	for _, user := range gaadData.UserDetailList {
-		entities = append(entities, gaadpkg.FromUserDL(user, gaadData.AccountID))
+		iamEntities = append(iamEntities, gaadpkg.FromUserDL(user, gaadData.AccountID))
 	}
 	for _, role := range gaadData.RoleDetailList {
-		entities = append(entities, gaadpkg.FromRoleDL(role))
+		iamEntities = append(iamEntities, gaadpkg.FromRoleDL(role))
 	}
 	for _, group := range gaadData.GroupDetailList {
-		entities = append(entities, gaadpkg.FromGroupDL(group))
+		iamEntities = append(iamEntities, gaadpkg.FromGroupDL(group))
 	}
 	for _, policy := range gaadData.Policies {
-		entities = append(entities, gaadpkg.FromPolicyDL(policy))
+		iamEntities = append(iamEntities, gaadpkg.FromPolicyDL(policy))
 	}
 
 	// Flatten all cloud resources (not just those with policies)
 	for _, regionResources := range resourcesByRegion {
 		for _, cr := range regionResources {
-			entities = append(entities, output.FromAWSResource(cr))
+			iamEntities = append(iamEntities, output.FromAWSResource(cr))
 		}
 	}
-	entities = gaadpkg.DeduplicateByARN(entities)
+	iamEntities = gaadpkg.DeduplicateByARN(iamEntities)
 
 	return []plugin.Result{
 		{
-			Data: entities,
+			Data: iamEntities,
 			Metadata: map[string]any{
 				"module":    m.ID(),
-				"type":      "entities",
+				"type":      "iamEntities",
 				"accountID": gaadData.AccountID,
-				"count":     len(entities),
+				"count":     len(iamEntities),
+			},
+		},
+		{
+			Data: resourcesWithPolicies,
+			Metadata: map[string]any{
+				"module":    m.ID(),
+				"type":      "resources",
+				"accountID": gaadData.AccountID,
+				"count":     len(resourcesWithPolicies),
 			},
 		},
 		{
