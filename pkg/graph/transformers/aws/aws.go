@@ -78,12 +78,14 @@ func NodeFromAWSResource(cr output.AWSResource) *graph.Node {
 	props["_resourceType"] = cr.ResourceType
 
 	// Parse resource type to get short name
-	parts := parseResourceType(cr.ResourceType)
 	var labels []string
-	if len(parts) >= 3 {
+	parts := parseResourceType(cr.ResourceType)
+	if len(parts) >= 3 && parts[2] != "" {
 		labels = []string{parts[2], "Resource", cr.ResourceType}
-	} else {
+	} else if cr.ResourceType != "" {
 		labels = []string{"Resource", cr.ResourceType}
+	} else {
+		labels = []string{"Resource"}
 	}
 
 	return &graph.Node{
