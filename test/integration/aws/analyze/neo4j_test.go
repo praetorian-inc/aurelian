@@ -6,8 +6,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/aws/arn"
-	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/graph"
 	"github.com/praetorian-inc/aurelian/pkg/graph/adapters"
 	"github.com/praetorian-inc/aurelian/pkg/graph/queries"
@@ -198,37 +196,32 @@ func TestGraphFormatter_FullPipeline(t *testing.T) {
 		},
 	}
 
-	// Create mock FullResult (privilege escalation relationship)
-	targetArn, _ := arn.Parse("arn:aws:iam::123456789012:role/admin-role")
-	fullResults := []iampkg.FullResult{
+	// Create mock AWSIAMRelationship (privilege escalation relationship)
+	iamRelationships := []output.AWSIAMRelationship{
 		{
-			Principal: &types.UserDetail{
-				Arn:      "arn:aws:iam::123456789012:user/charlie",
-				UserName: "charlie",
-				UserId:   "AIDAI12345EXAMPLE",
+			Principal: output.AWSIAMResource{
+				AWSResource: output.AWSResource{
+					ARN:          "arn:aws:iam::123456789012:user/charlie",
+					ResourceType: "AWS::IAM::User",
+					ResourceID:   "arn:aws:iam::123456789012:user/charlie",
+					AccountRef:   "123456789012",
+				},
+				OriginalData: user,
 			},
-			Resource: &types.EnrichedResourceDescription{
-				Identifier: "admin-role",
-				TypeName:   "AWS::IAM::Role",
-				Region:     "us-east-1",
-				AccountId:  "123456789012",
-				Arn:        targetArn,
+			Resource: output.AWSResource{
+				ARN:          "arn:aws:iam::123456789012:role/admin-role",
+				ResourceType: "AWS::IAM::Role",
+				ResourceID:   "arn:aws:iam::123456789012:role/admin-role",
+				AccountRef:   "123456789012",
 			},
 			Action: "iam:PassRole",
-			Result: &iampkg.EvaluationResult{Allowed: true},
 		},
-	}
-
-	// Convert GAAD and AWSResources to []output.AWSIAMResource (the type GraphFormatter expects)
-	entities := iampkg.FromGAAD(gaad, "123456789012")
-	for _, res := range resources {
-		entities = append(entities, output.FromAWSResource(res))
 	}
 
 	// Create Results array
 	results := []plugin.Result{
 		{Data: entities},
-		{Data: fullResults},
+		{Data: iamRelationships},
 	}
 
 	// Format to graph

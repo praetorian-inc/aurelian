@@ -131,6 +131,53 @@ func NodeFromServicePrincipal(serviceName string) *graph.Node {
 	}
 }
 
+// RelationshipFromAWSIAMRelationship creates a graph relationship from an
+// AWSIAMRelationship (the output type produced by the GAAD analyzer).
+// The start node is derived from the Principal's OriginalData when available.
+// For IAM target resources, minimal GAAD-style nodes are created to merge
+// with existing GAAD-created nodes (using PascalCase "Arn" as unique key).
+func RelationshipFromAWSIAMRelationship(rel output.AWSIAMRelationship) *graph.Relationship {
+	startNode := NodeFromAWSIAMResource(rel.Principal)
+	endNode := endNodeFromAWSResource(rel.Resource)
+	relType := normalizeActionToRelType(rel.Action)
+
+	return &graph.Relationship{
+		Type:       relType,
+		Properties: map[string]interface{}{"action": rel.Action},
+		StartNode:  startNode,
+		EndNode:    endNode,
+	}
+}
+
+// endNodeFromAWSResource creates a graph node for a relationship target.
+// For IAM resource types (User, Role, Group), it creates minimal GAAD-style
+// nodes with PascalCase "Arn" so they merge with existing GAAD-created nodes.
+// For all other types, it delegates to NodeFromAWSResource.
+func endNodeFromAWSResource(resource output.AWSResource) *graph.Node {
+	switch resource.ResourceType {
+	case "AWS::IAM::User":
+		return &graph.Node{
+			Labels:     []string{"User", "Principal", "AWS::IAM::User"},
+			Properties: map[string]interface{}{"Arn": resource.ARN},
+			UniqueKey:  []string{"Arn"},
+		}
+	case "AWS::IAM::Role":
+		return &graph.Node{
+			Labels:     []string{"Role", "Principal", "AWS::IAM::Role"},
+			Properties: map[string]interface{}{"Arn": resource.ARN},
+			UniqueKey:  []string{"Arn"},
+		}
+	case "AWS::IAM::Group":
+		return &graph.Node{
+			Labels:     []string{"Group", "Principal", "AWS::IAM::Group"},
+			Properties: map[string]interface{}{"Arn": resource.ARN},
+			UniqueKey:  []string{"Arn"},
+		}
+	default:
+		return NodeFromAWSResource(resource)
+	}
+}
+
 // RelationshipFromFullResult creates a relationship from a FullResult
 // Type-switches on Principal to create principal node
 // Converts Resource to node via ToAWSResource()

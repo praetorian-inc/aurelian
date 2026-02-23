@@ -2,10 +2,8 @@ package plugin
 
 import (
 	"context"
-	"github.com/praetorian-inc/aurelian/pkg/types"
 	"testing"
 
-	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/graph"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/stretchr/testify/assert"
@@ -111,17 +109,27 @@ func TestGraphFormatterFormatWithGaadData(t *testing.T) {
 
 	entities := []output.AWSIAMResource{userEntity, roleEntity, groupEntity, bucketEntity}
 
-	user := types.UserDetail{Arn: "arn:aws:iam::123456789012:user/testuser", UserName: "testuser", UserId: "AIDAI123456"}
-	fullResults := []iampkg.FullResult{
+	iamRelationships := []output.AWSIAMRelationship{
 		{
-			Principal: &user,
-			Action:    "s3:GetObject",
+			Principal: output.AWSIAMResource{
+				AWSResource: output.AWSResource{
+					ARN:          "arn:aws:iam::123456789012:user/testuser",
+					ResourceType: "AWS::IAM::User",
+					ResourceID:   "arn:aws:iam::123456789012:user/testuser",
+					AccountRef:   "123456789012",
+				},
+			},
+			Resource: output.AWSResource{
+				ARN:          "arn:aws:s3:::mybucket",
+				ResourceType: "AWS::S3::Bucket",
+			},
+			Action: "s3:GetObject",
 		},
 	}
 
 	results := []Result{
 		{Data: entities, Metadata: map[string]any{"type": "entities"}},
-		{Data: fullResults, Metadata: map[string]any{"type": "iam_relationships"}},
+		{Data: iamRelationships, Metadata: map[string]any{"type": "iam_relationships"}},
 	}
 
 	err := formatter.Format(results)
@@ -144,7 +152,7 @@ func TestGraphFormatterFormatNoGaadError(t *testing.T) {
 
 	// Results without entity data
 	results := []Result{
-		{Data: []iampkg.FullResult{}, Metadata: map[string]any{"type": "iam_relationships"}},
+		{Data: []output.AWSIAMRelationship{}, Metadata: map[string]any{"type": "iam_relationships"}},
 	}
 
 	err := formatter.Format(results)
@@ -174,7 +182,7 @@ func TestGraphFormatterFormatFlattenMap(t *testing.T) {
 
 	results := []Result{
 		{Data: entities, Metadata: map[string]any{"type": "entities"}},
-		{Data: []iampkg.FullResult{}, Metadata: map[string]any{"type": "iam_relationships"}},
+		{Data: []output.AWSIAMRelationship{}, Metadata: map[string]any{"type": "iam_relationships"}},
 	}
 
 	err := formatter.Format(results)

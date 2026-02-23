@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/graph"
 	"github.com/praetorian-inc/aurelian/pkg/graph/adapters"
 	"github.com/praetorian-inc/aurelian/pkg/graph/queries"
@@ -39,14 +38,14 @@ func (f *GraphFormatter) Format(results []Result) error {
 
 	// Type-switch on Result.Data to identify structure
 	var entities []output.AWSIAMResource
-	var fullResults []iampkg.FullResult
+	var iamRelationships []output.AWSIAMRelationship
 
 	for _, result := range results {
 		switch data := result.Data.(type) {
 		case []output.AWSIAMResource:
 			entities = append(entities, data...)
-		case []iampkg.FullResult:
-			fullResults = data
+		case []output.AWSIAMRelationship:
+			iamRelationships = append(iamRelationships, data...)
 		}
 	}
 
@@ -68,10 +67,10 @@ func (f *GraphFormatter) Format(results []Result) error {
 	}
 	slog.Info("nodes created", "created", nodeResult.NodesCreated, "duration_ms", nodeResult.ExecutionTimeMs)
 
-	// Transform FullResults to relationships
+	// Transform AWSIAMRelationships to graph relationships
 	var relationships []*graph.Relationship
-	for _, fr := range fullResults {
-		relationships = append(relationships, awstransformers.RelationshipFromFullResult(fr))
+	for _, rel := range iamRelationships {
+		relationships = append(relationships, awstransformers.RelationshipFromAWSIAMRelationship(rel))
 	}
 
 	// Create relationships in Neo4j
