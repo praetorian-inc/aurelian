@@ -253,15 +253,18 @@ func DeduplicateByARN(entities []output.AWSIAMResource) []output.AWSIAMResource 
 // EmitGAADEntities iterates all GAAD entity maps (users, roles, groups, policies),
 // converts each to an AWSIAMResource, and calls emit for entities with unseen ARNs.
 // The seen map is used for deduplication and can be shared across calls.
-func EmitGAADEntities(gaad *types.AuthorizationAccountDetails, accountID string, seen cache.Map[string], emit func(output.AWSIAMResource)) {
+func EmitGAADEntities(gaad *types.AuthorizationAccountDetails, accountID string, emit func(output.AWSIAMResource)) {
+	seen := cache.NewMap[string]()
 	emitOnce := func(entity output.AWSIAMResource) {
 		key := entity.ARN
 		if key == "" {
 			key = entity.ResourceID
 		}
+
 		if _, ok := seen.Get(key); ok {
 			return
 		}
+
 		seen.Set(key, key)
 		emit(entity)
 	}

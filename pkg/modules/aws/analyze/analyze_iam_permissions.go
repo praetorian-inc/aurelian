@@ -115,8 +115,7 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config, emit func(models ..
 	}
 
 	// Convert GAAD entities to AWSIAMResource
-	seen := cache.NewMap[string]()
-	gaadpkg.EmitGAADEntities(gaad, "", seen, func(e output.AWSIAMResource) {
+	gaadpkg.EmitGAADEntities(gaad, "", func(e output.AWSIAMResource) {
 		emit(e)
 	})
 	relationships.Range(func(_ string, r output.AWSIAMRelationship) bool {

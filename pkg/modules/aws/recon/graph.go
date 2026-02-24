@@ -36,6 +36,8 @@ type AWSGraphModule struct {
 
 	gaadData              *types.AuthorizationAccountDetails
 	resourcesWithPolicies cache.Map[output.AWSResource]
+	orgPols               *orgpolicies.OrgPolicies
+	relationships         cache.Map[output.AWSIAMRelationship]
 }
 
 func (m *AWSGraphModule) ID() string                { return "graph" }
@@ -68,50 +70,39 @@ func (m *AWSGraphModule) Parameters() any {
 }
 
 func (m *AWSGraphModule) Run(cfg plugin.Config, emit func(models ...model.AurelianModel)) error {
-	c := m.GraphConfig
-	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
+	resolvedRegions, err := resolveRegions(m.Regions, m.Profile, m.ProfileDir)
 	if err != nil {
 		return fmt.Errorf("resolving regions: %w", err)
 	}
-	c.AWSCommonRecon.Regions = resolvedRegions
-	policyCollector := resourcepolicies.New(c.AWSCommonRecon)
+	m.Regions = resolvedRegions
 
-	// Step 1 + Steps 2+3 run concurrently
+	if err := m.collectInputs(); err != nil {
+		return fmt.Errorf("collecting inputs: %w", err)
+	}
+
+	if err := m.loadOrgPolicies(m.GraphConfig); err != nil {
+		return fmt.Errorf("loading org policies: %w", err)
+	}
+
+	if err := m.analyzeIAMPermissions(); err != nil {
+		return fmt.Errorf("analyzing IAM permissions: %w", err)
+	}
+
+	m.emitOutputs(emit)
+	return nil
+}
+
+func (m *AWSGraphModule) collectInputs() error {
+	policyCollector := resourcepolicies.New(m.AWSCommonRecon)
+	regions := m.Regions
+
 	var eg errgroup.Group
-	m.collectAccountAuthorizationDetails(&eg, c)
-	m.collectResourcesWithPolicies(&eg, c, policyCollector, resolvedRegions)
+	m.collectAccountAuthorizationDetails(&eg, m.GraphConfig)
+	m.collectResourcesWithPolicies(&eg, m.GraphConfig, policyCollector, regions)
 	if err := eg.Wait(); err != nil {
 		return err
 	}
 
-	// Step 4: Load org policies
-	orgPols, err := m.loadOrgPolicies(c)
-	if err != nil {
-		return err
-	}
-
-	// Step 5: Analyze IAM permissions
-	slog.Info("analyzing IAM permissions")
-	analyzer := gaadpkg.NewGaadAnalyzer()
-	relationships, err := analyzer.Analyze(m.gaadData, orgPols, m.resourcesWithPolicies)
-	if err != nil {
-		return fmt.Errorf("analyzing permissions: %w", err)
-	}
-	slog.Info("IAM analysis complete", "relationships", relationships.Len())
-
-	// Step 6: Build entity list from GAAD + cloud resources
-	seen := cache.NewMap[string]()
-	gaadpkg.EmitGAADEntities(m.gaadData, m.gaadData.AccountID, seen, func(e output.AWSIAMResource) {
-		emit(e)
-	})
-	m.resourcesWithPolicies.Range(func(_ string, r output.AWSResource) bool {
-		emit(r)
-		return true
-	})
-	relationships.Range(func(_ string, r output.AWSIAMRelationship) bool {
-		emit(r)
-		return true
-	})
 	return nil
 }
 
@@ -164,14 +155,47 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 	})
 }
 
-func (m *AWSGraphModule) loadOrgPolicies(c GraphConfig) (*orgpolicies.OrgPolicies, error) {
+func (m *AWSGraphModule) loadOrgPolicies(c GraphConfig) error {
+	orgPols := orgpolicies.NewDefaultOrgPolicies()
+
 	if c.OrgPoliciesFile != "" {
 		slog.Info("loading org policies", "file", c.OrgPoliciesFile)
 		op, err := iampkg.LoadJSONFile[orgpolicies.OrgPolicies](c.OrgPoliciesFile)
 		if err != nil {
-			return nil, fmt.Errorf("loading org policies: %w", err)
+			return fmt.Errorf("loading org policies: %w", err)
 		}
-		return op, nil
+		orgPols = op
 	}
-	return orgpolicies.NewDefaultOrgPolicies(), nil
+
+	m.orgPols = orgPols
+	return nil
+}
+
+func (m *AWSGraphModule) analyzeIAMPermissions() error {
+	slog.Info("analyzing IAM permissions")
+	analyzer := gaadpkg.NewGaadAnalyzer()
+	relationships, err := analyzer.Analyze(m.gaadData, m.orgPols, m.resourcesWithPolicies)
+	if err != nil {
+		return fmt.Errorf("analyzing permissions: %w", err)
+	}
+
+	slog.Info("IAM analysis complete", "relationships", relationships.Len())
+	m.relationships = relationships
+	return nil
+}
+
+func (m *AWSGraphModule) emitOutputs(emit func(models ...model.AurelianModel)) {
+	gaadpkg.EmitGAADEntities(m.gaadData, m.gaadData.AccountID, func(i output.AWSIAMResource) {
+		emit(i)
+	})
+
+	m.resourcesWithPolicies.Range(func(_ string, r output.AWSResource) bool {
+		emit(r)
+		return true
+	})
+
+	m.relationships.Range(func(_ string, r output.AWSIAMRelationship) bool {
+		emit(r)
+		return true
+	})
 }
