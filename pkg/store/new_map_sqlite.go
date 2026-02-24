@@ -1,4 +1,4 @@
-//go:build aurelian_sqlite_cache
+//go:build compute
 
 package store
 
