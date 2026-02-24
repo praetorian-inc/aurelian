@@ -4,15 +4,15 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
-	"github.com/praetorian-inc/aurelian/pkg/cache"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 // collectRelationships returns all values from a relationship map as a slice (test helper).
-func collectRelationships(m cache.Map[output.AWSIAMRelationship]) []output.AWSIAMRelationship {
+func collectRelationships(m store.Map[output.AWSIAMRelationship]) []output.AWSIAMRelationship {
 	var out []output.AWSIAMRelationship
 	m.Range(func(_ string, rel output.AWSIAMRelationship) bool {
 		out = append(out, rel)
@@ -52,7 +52,7 @@ func TestAnalyze_EmptyGAAD(t *testing.T) {
 	gaad := types.NewAuthorizationAccountDetails("", nil, nil, nil, nil)
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 	assert.Equal(t, 0, results.Len())
 }
@@ -118,7 +118,7 @@ func TestAnalyze_UserWithPassRolePermission(t *testing.T) {
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	// Find PassRole result
@@ -197,7 +197,7 @@ func TestAnalyze_RoleWithManagedPolicy(t *testing.T) {
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	foundPassRole := false
@@ -271,7 +271,7 @@ func TestAnalyze_UserWithGroupPolicy(t *testing.T) {
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	foundCreateKey := false
@@ -318,7 +318,7 @@ func TestAnalyze_AssumeRoleTrustPolicy(t *testing.T) {
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	foundAssumeRole := false
@@ -357,8 +357,8 @@ func TestAnalyze_ResourcePolicy(t *testing.T) {
 		accountID: "111122223333",
 		roles: []types.RoleDetail{
 			{
-				Arn:      "arn:aws:iam::111122223333:role/dummy",
-				RoleName: "dummy",
+				Arn:                      "arn:aws:iam::111122223333:role/dummy",
+				RoleName:                 "dummy",
 				AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts},
 			},
 		},
@@ -452,7 +452,7 @@ func TestAnalyze_UserWithPermissionsBoundary(t *testing.T) {
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	// The boundary restricts to iam:PassRole only, so CreateAccessKey etc should NOT appear
@@ -480,8 +480,8 @@ func TestBuildPolicyData(t *testing.T) {
 	gaad := newTestGAADFromOpts(newTestGAADOpts{
 		roles: []types.RoleDetail{
 			{
-				Arn:      "arn:aws:iam::111122223333:role/test",
-				RoleName: "test",
+				Arn:                      "arn:aws:iam::111122223333:role/test",
+				RoleName:                 "test",
 				AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts},
 			},
 		},
@@ -518,7 +518,7 @@ func TestBuildPolicyData(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBuildPrincipal_Found(t *testing.T) {
-	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
+	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
 	principal := buildPrincipal("arn:aws:iam::111122223333:user/alice", state)
 	assert.Equal(t, "arn:aws:iam::111122223333:user/alice", principal.ARN)
@@ -526,7 +526,7 @@ func TestBuildPrincipal_Found(t *testing.T) {
 }
 
 func TestBuildPrincipal_NotFound(t *testing.T) {
-	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
+	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
 	principal := buildPrincipal("arn:aws:iam::999988887777:user/unknown", state)
 	assert.Equal(t, "arn:aws:iam::999988887777:user/unknown", principal.ARN)
@@ -559,9 +559,9 @@ func TestAnalyze_CreateThenUseSynthetic(t *testing.T) {
 		accountID: "111122223333",
 		roles: []types.RoleDetail{
 			{
-				Arn:      "arn:aws:iam::111122223333:role/cb-role",
-				RoleName: "cb-role",
-				RoleId:   "AROA777",
+				Arn:                      "arn:aws:iam::111122223333:role/cb-role",
+				RoleName:                 "cb-role",
+				RoleId:                   "AROA777",
 				AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts},
 				RolePolicyList: []types.InlinePolicy{
 					{PolicyName: "CB", PolicyDocument: types.Policy{Version: "2012-10-17", Statement: &cbStmts}},
@@ -572,7 +572,7 @@ func TestAnalyze_CreateThenUseSynthetic(t *testing.T) {
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	// Check for synthetic edges
@@ -627,7 +627,7 @@ func TestAnalyze_AssumeRoleDenyStatementInTrustPolicy(t *testing.T) {
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	for _, rel := range collectRelationships(results) {
@@ -661,7 +661,7 @@ func TestAnalyze_TrustPolicyNilPrincipal(t *testing.T) {
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 	// Should not panic, might or might not produce results depending on evaluator
 	_ = results
@@ -779,7 +779,7 @@ func TestAnalyze_MultipleUsersAndRoles(t *testing.T) {
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	assert.Greater(t, results.Len(), 0, "Expected at least some results from concurrent processing")

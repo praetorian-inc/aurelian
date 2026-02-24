@@ -1,4 +1,6 @@
-package cache
+package store
+
+import "encoding/json"
 
 // MemoryMap is an in-memory Map backed by a plain Go map.
 type MemoryMap[T any] struct {
@@ -29,4 +31,12 @@ func (m *MemoryMap[T]) Range(fn func(string, T) bool) {
 
 func (m *MemoryMap[T]) Len() int {
 	return len(m.data)
+}
+
+func (m *MemoryMap[T]) MarshalJSON() ([]byte, error) {
+	return json.Marshal(m.data)
+}
+
+func (m *MemoryMap[T]) UnmarshalJSON(data []byte) error {
+	return json.Unmarshal(data, &m.data)
 }

@@ -7,7 +7,7 @@
 //
 //	go build                    # default: in-memory
 //	go build -tags cache_sqlite # SQLite-backed (disk, lower memory)
-package cache
+package store
 
 // MapMethods is the backend interface for key-value storage.
 // Implementations must be safe for sequential use; concurrent access
@@ -24,6 +24,12 @@ type MapMethods[T any] interface {
 
 	// Len returns the number of entries.
 	Len() int
+
+	// MarshalJSON returns the JSON encoding of the map.
+	MarshalJSON() ([]byte, error)
+
+	// UnmarshalJSON replaces the map contents from JSON.
+	UnmarshalJSON(data []byte) error
 }
 
 // Map is a concrete wrapper around a MapMethods backend.
@@ -77,4 +83,20 @@ func (m Map[T]) Len() int {
 // IsZero returns true if the Map has no backend (zero value).
 func (m Map[T]) IsZero() bool {
 	return m.m == nil
+}
+
+// MarshalJSON implements json.Marshaler.
+func (m Map[T]) MarshalJSON() ([]byte, error) {
+	if m.m == nil {
+		return []byte("{}"), nil
+	}
+	return m.m.MarshalJSON()
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (m *Map[T]) UnmarshalJSON(data []byte) error {
+	if m.m == nil {
+		m.m = NewMapMethods[T]()
+	}
+	return m.m.UnmarshalJSON(data)
 }

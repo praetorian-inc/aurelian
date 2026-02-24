@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
-	"github.com/praetorian-inc/aurelian/pkg/cache"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
@@ -35,7 +35,7 @@ type permissionIndex struct {
 	principalResources map[string]map[string]map[string]bool
 }
 
-func newPermissionIndex(results cache.Map[output.AWSIAMRelationship]) *permissionIndex {
+func newPermissionIndex(results store.Map[output.AWSIAMRelationship]) *permissionIndex {
 	idx := &permissionIndex{
 		principalResources: make(map[string]map[string]map[string]bool),
 	}
@@ -94,7 +94,7 @@ func (idx *permissionIndex) hasActionOnAnyResource(principalArn, action string) 
 // that matches their resource pattern. However, the evaluator may not find a
 // matching existing resource and thus never produces the "use" edge. This
 // function fills that gap.
-func synthesizeCreateThenUsePermissions(results cache.Map[output.AWSIAMRelationship], state *AnalyzerState) {
+func synthesizeCreateThenUsePermissions(results store.Map[output.AWSIAMRelationship], state *AnalyzerState) {
 	idx := newPermissionIndex(results)
 
 	for _, pair := range createThenUsePairs {

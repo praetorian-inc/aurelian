@@ -2,8 +2,8 @@ package gaad
 
 import (
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
-	"github.com/praetorian-inc/aurelian/pkg/cache"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
@@ -206,29 +206,6 @@ func FromManagedPolicyDetail(policy types.ManagedPolicyDetail) output.AWSIAMReso
 	return r
 }
 
-// FromGAAD converts all GAAD entities to AWSIAMResources.
-// The accountID is passed to FromUserDetail for user account resolution.
-func FromGAAD(gaad *types.AuthorizationAccountDetails, accountID string) []output.AWSIAMResource {
-	var entities []output.AWSIAMResource
-	gaad.Users.Range(func(_ string, user types.UserDetail) bool {
-		entities = append(entities, FromUserDetail(user, accountID))
-		return true
-	})
-	gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {
-		entities = append(entities, FromRoleDetail(role))
-		return true
-	})
-	gaad.Groups.Range(func(_ string, group types.GroupDetail) bool {
-		entities = append(entities, FromGroupDetail(group))
-		return true
-	})
-	gaad.Policies.Range(func(_ string, policy types.ManagedPolicyDetail) bool {
-		entities = append(entities, FromManagedPolicyDetail(policy))
-		return true
-	})
-	return entities
-}
-
 // DeduplicateByARN deduplicates AWSIAMResources by ARN.
 // Earlier entries win (GAAD entities should be added before AWSResources).
 func DeduplicateByARN(entities []output.AWSIAMResource) []output.AWSIAMResource {
@@ -254,7 +231,7 @@ func DeduplicateByARN(entities []output.AWSIAMResource) []output.AWSIAMResource 
 // converts each to an AWSIAMResource, and calls emit for entities with unseen ARNs.
 // The seen map is used for deduplication and can be shared across calls.
 func EmitGAADEntities(gaad *types.AuthorizationAccountDetails, accountID string, emit func(output.AWSIAMResource)) {
-	seen := cache.NewMap[string]()
+	seen := store.NewMap[string]()
 	emitOnce := func(entity output.AWSIAMResource) {
 		key := entity.ARN
 		if key == "" {

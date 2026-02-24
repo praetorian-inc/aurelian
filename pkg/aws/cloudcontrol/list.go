@@ -36,7 +36,7 @@ func NewCloudControlLister(options plugin.AWSCommonRecon) *CloudControlLister {
 // List enumerates a single resource type across all regions, emitting each
 // resource into out as pages are fetched. Its signature matches the fn
 // parameter of pipeline.Pipe[string, output.AWSResource].
-func (cc *CloudControlLister) List(resourceType string, out *pipeline.Pipeline[output.AWSResource]) error {
+func (cc *CloudControlLister) List(resourceType string, out *pipeline.P[output.AWSResource]) error {
 	if len(cc.AWSCommonRecon.Regions) == 0 {
 		return fmt.Errorf("no regions configured")
 	}
@@ -47,7 +47,7 @@ func (cc *CloudControlLister) List(resourceType string, out *pipeline.Pipeline[o
 	})
 }
 
-func (cc *CloudControlLister) listInRegion(region, resourceType string, out *pipeline.Pipeline[output.AWSResource]) error {
+func (cc *CloudControlLister) listInRegion(region, resourceType string, out *pipeline.P[output.AWSResource]) error {
 	client, err := cc.newCloudControlClient(region)
 	if err != nil {
 		return fmt.Errorf("create client: %w", err)
@@ -75,7 +75,7 @@ func (cc *CloudControlLister) listByType(
 	accountID,
 	region,
 	resourceType string,
-	out *pipeline.Pipeline[output.AWSResource],
+	out *pipeline.P[output.AWSResource],
 ) error {
 	var nextToken *string
 
@@ -96,8 +96,7 @@ func (cc *CloudControlLister) listByType(
 		}
 
 		for _, desc := range result.ResourceDescriptions {
-			erd := awshelpers.CloudControlToERD(desc, resourceType, accountID, region)
-			cr := output.AWSResourceFromERD(erd)
+			cr := awshelpers.CloudControlToAWSResource(desc, resourceType, accountID, region)
 			enrich(&cr)
 			out.Send(cr)
 		}

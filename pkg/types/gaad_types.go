@@ -3,17 +3,17 @@ package types
 import (
 	"encoding/json"
 
-	"github.com/praetorian-inc/aurelian/pkg/cache"
 	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/store"
 )
 
 type AuthorizationAccountDetails struct {
 	model.BaseAurelianModel
 	AccountID string                         `json:"-"`
-	Users     cache.Map[UserDetail]          `json:"-"`
-	Groups    cache.Map[GroupDetail]         `json:"-"`
-	Roles     cache.Map[RoleDetail]          `json:"-"`
-	Policies  cache.Map[ManagedPolicyDetail] `json:"-"`
+	Users     store.Map[UserDetail]          `json:"-"`
+	Groups    store.Map[GroupDetail]         `json:"-"`
+	Roles     store.Map[RoleDetail]          `json:"-"`
+	Policies  store.Map[ManagedPolicyDetail] `json:"-"`
 }
 
 // NewAuthorizationAccountDetails constructs an AuthorizationAccountDetails from
@@ -28,10 +28,10 @@ func NewAuthorizationAccountDetails(
 ) *AuthorizationAccountDetails {
 	a := &AuthorizationAccountDetails{
 		AccountID: accountID,
-		Users:     cache.NewMap[UserDetail](),
-		Groups:    cache.NewMap[GroupDetail](),
-		Roles:     cache.NewMap[RoleDetail](),
-		Policies:  cache.NewMap[ManagedPolicyDetail](),
+		Users:     store.NewMap[UserDetail](),
+		Groups:    store.NewMap[GroupDetail](),
+		Roles:     store.NewMap[RoleDetail](),
+		Policies:  store.NewMap[ManagedPolicyDetail](),
 	}
 	for _, u := range users {
 		a.Users.Set(u.Arn, u)
@@ -87,10 +87,10 @@ func (a *AuthorizationAccountDetails) UnmarshalJSON(data []byte) error {
 	}
 
 	a.AccountID = wire.AccountID
-	a.Users = cache.NewMap[UserDetail]()
-	a.Groups = cache.NewMap[GroupDetail]()
-	a.Roles = cache.NewMap[RoleDetail]()
-	a.Policies = cache.NewMap[ManagedPolicyDetail]()
+	a.Users = store.NewMap[UserDetail]()
+	a.Groups = store.NewMap[GroupDetail]()
+	a.Roles = store.NewMap[RoleDetail]()
+	a.Policies = store.NewMap[ManagedPolicyDetail]()
 
 	for _, u := range wire.UserDetailList {
 		a.Users.Set(u.Arn, u)

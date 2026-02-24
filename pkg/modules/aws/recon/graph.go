@@ -12,11 +12,11 @@ import (
 	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
-	"github.com/praetorian-inc/aurelian/pkg/cache"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
@@ -35,9 +35,9 @@ type AWSGraphModule struct {
 	GraphConfig
 
 	gaadData              *types.AuthorizationAccountDetails
-	resourcesWithPolicies cache.Map[output.AWSResource]
+	resourcesWithPolicies store.Map[output.AWSResource]
 	orgPols               *orgpolicies.OrgPolicies
-	relationships         cache.Map[output.AWSIAMRelationship]
+	relationships         store.Map[output.AWSIAMRelationship]
 }
 
 func (m *AWSGraphModule) ID() string                { return "graph" }
@@ -137,7 +137,7 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 		pipeline.Pipe(p1, lister.List, p2)
 		pipeline.Pipe(p2, collector.Collect, p3)
 
-		results := cache.NewMap[output.AWSResource]()
+		results := store.NewMap[output.AWSResource]()
 		for r := range p3.Range() {
 			key := r.ARN
 			if key == "" {

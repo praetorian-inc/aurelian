@@ -7,11 +7,10 @@ import (
 	"net/url"
 
 	"github.com/aws/aws-sdk-go-v2/service/iam"
-	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
-	"github.com/praetorian-inc/aurelian/pkg/cache"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
+	"github.com/praetorian-inc/aurelian/pkg/store"
 	iampkg "github.com/praetorian-inc/aurelian/pkg/types"
 )
 
@@ -38,10 +37,10 @@ func (g *GAAD) Get() (*iampkg.AuthorizationAccountDetails, error) {
 
 	gaadData := &iampkg.AuthorizationAccountDetails{
 		AccountID: g.accountID,
-		Users:     cache.NewMap[iampkg.UserDetail](),
-		Groups:    cache.NewMap[iampkg.GroupDetail](),
-		Roles:     cache.NewMap[iampkg.RoleDetail](),
-		Policies:  cache.NewMap[iampkg.ManagedPolicyDetail](),
+		Users:     store.NewMap[iampkg.UserDetail](),
+		Groups:    store.NewMap[iampkg.GroupDetail](),
+		Roles:     store.NewMap[iampkg.RoleDetail](),
+		Policies:  store.NewMap[iampkg.ManagedPolicyDetail](),
 	}
 
 	paginator := ratelimit.NewPaginator()
@@ -55,33 +54,17 @@ func (g *GAAD) Get() (*iampkg.AuthorizationAccountDetails, error) {
 			return false, err
 		}
 
-		for _, u := range page.UserDetailList {
-			converted, err := convertOne[iamtypes.UserDetail, iampkg.UserDetail](u)
-			if err != nil {
-				return false, fmt.Errorf("converting user %s: %w", safeDeref(u.UserName), err)
-			}
-			gaadData.Users.Set(converted.Arn, converted)
+		if err := convertSDKItems(page.UserDetailList, gaadData.Users, func(u iampkg.UserDetail) string { return u.Arn }); err != nil {
+			return false, err
 		}
-		for _, g := range page.GroupDetailList {
-			converted, err := convertOne[iamtypes.GroupDetail, iampkg.GroupDetail](g)
-			if err != nil {
-				return false, fmt.Errorf("converting group %s: %w", safeDeref(g.GroupName), err)
-			}
-			gaadData.Groups.Set(converted.Arn, converted)
+		if err := convertSDKItems(page.GroupDetailList, gaadData.Groups, func(g iampkg.GroupDetail) string { return g.Arn }); err != nil {
+			return false, err
 		}
-		for _, r := range page.RoleDetailList {
-			converted, err := convertOne[iamtypes.RoleDetail, iampkg.RoleDetail](r)
-			if err != nil {
-				return false, fmt.Errorf("converting role %s: %w", safeDeref(r.RoleName), err)
-			}
-			gaadData.Roles.Set(converted.Arn, converted)
+		if err := convertSDKItems(page.RoleDetailList, gaadData.Roles, func(r iampkg.RoleDetail) string { return r.Arn }); err != nil {
+			return false, err
 		}
-		for _, p := range page.Policies {
-			converted, err := convertOne[iamtypes.ManagedPolicyDetail, iampkg.ManagedPolicyDetail](p)
-			if err != nil {
-				return false, fmt.Errorf("converting policy %s: %w", safeDeref(p.PolicyName), err)
-			}
-			gaadData.Policies.Set(converted.Arn, converted)
+		if err := convertSDKItems(page.Policies, gaadData.Policies, func(p iampkg.ManagedPolicyDetail) string { return p.Arn }); err != nil {
+			return false, err
 		}
 
 		return g.iamPaginator.HasMorePages(), nil
@@ -91,14 +74,6 @@ func (g *GAAD) Get() (*iampkg.AuthorizationAccountDetails, error) {
 	}
 
 	return gaadData, nil
-}
-
-// safeDeref dereferences a string pointer, returning "<nil>" if nil.
-func safeDeref(s *string) string {
-	if s == nil {
-		return "<nil>"
-	}
-	return *s
 }
 
 // initializeGAADClient sets up the AWS config, resolves the account ID,
@@ -128,6 +103,20 @@ func (g *GAAD) initializeGAADClient() error {
 		MaxItems: &maxItems,
 	})
 
+	return nil
+}
+
+// convertSDKItems converts a slice of AWS SDK types into internal types and stores
+// them in the destination cache, keyed by ARN. The getArn function extracts the
+// map key from each converted item.
+func convertSDKItems[From any, To any](source []From, dest store.Map[To], getArn func(To) string) error {
+	for _, item := range source {
+		converted, err := convertOne[From, To](item)
+		if err != nil {
+			return err
+		}
+		dest.Set(getArn(converted), converted)
+	}
 	return nil
 }
 

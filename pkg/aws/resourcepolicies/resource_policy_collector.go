@@ -67,7 +67,7 @@ func (c *ResourcePolicyCollector) SupportedResourceTypes() []string {
 
 // Collect fetches the resource policy for a single resource and sends it into
 // out if a policy exists. Its signature matches pipeline.Pipe's fn parameter.
-func (c *ResourcePolicyCollector) Collect(resource output.AWSResource, out *pipeline.Pipeline[output.AWSResource]) error {
+func (c *ResourcePolicyCollector) Collect(resource output.AWSResource, out *pipeline.P[output.AWSResource]) error {
 	if len(c.opts.Regions) == 0 {
 		return fmt.Errorf("no regions configured")
 	}

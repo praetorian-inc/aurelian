@@ -1,6 +1,6 @@
 //go:build aurelian_sqlite_cache
 
-package cache
+package store
 
 import (
 	"database/sql"
@@ -31,14 +31,14 @@ func sharedDB() *sql.DB {
 func NewMapMethods[T any]() MapMethods[T] {
 	db := sharedDB()
 	if db == nil {
-		slog.Warn("cache: sqlite unavailable, falling back to memory")
-		return NewMemoryMap[T]()
+		panic("store: failed to initialize sqlite db")
 	}
+
 	m, err := NewSQLiteMap[T](db)
 	if err != nil {
-		slog.Error("cache: failed to create sqlite map, falling back to memory", "error", err)
-		return NewMemoryMap[T]()
+		panic(fmt.Sprintf("store: failed to create sqlite map: %v", err))
 	}
+
 	return m
 }
 

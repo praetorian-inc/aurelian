@@ -1,4 +1,4 @@
-package cache
+package store
 
 import (
 	"database/sql"
@@ -219,6 +219,14 @@ func (m *SQLiteMap[T]) Range(fn func(string, T) bool) {
 
 func (m *SQLiteMap[T]) Len() int {
 	return m.count
+}
+
+func (m *SQLiteMap[T]) MarshalJSON() ([]byte, error) {
+	panic("SQLiteMap does not support JSON marshaling")
+}
+
+func (m *SQLiteMap[T]) UnmarshalJSON([]byte) error {
+	panic("SQLiteMap does not support JSON unmarshaling")
 }
 
 func (m *SQLiteMap[T]) Close() error {

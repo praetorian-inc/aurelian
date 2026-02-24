@@ -6,10 +6,10 @@ import (
 	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
-	"github.com/praetorian-inc/aurelian/pkg/cache"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
@@ -81,7 +81,7 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config, emit func(models ..
 	}
 
 	// Load optional resources as cache.Map[output.AWSResource]
-	resourceMap := cache.NewMap[output.AWSResource]()
+	resourceMap := store.NewMap[output.AWSResource]()
 	if c.ResourcesFile != "" {
 		r, err := iampkg.LoadJSONFile[[]output.AWSResource](c.ResourcesFile)
 		if err != nil {
@@ -128,7 +128,7 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config, emit func(models ..
 // attachResourcePolicies merges resource policies into the resource map.
 // For each ARN in the policy map, if a matching resource exists its
 // ResourcePolicy field is set; otherwise a minimal AWSResource is created.
-func attachResourcePolicies(resources cache.Map[output.AWSResource], policies map[string]*types.Policy) {
+func attachResourcePolicies(resources store.Map[output.AWSResource], policies map[string]*types.Policy) {
 	for resARN, policy := range policies {
 		if existing, ok := resources.Get(resARN); ok {
 			existing.ResourcePolicy = policy

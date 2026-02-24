@@ -8,8 +8,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
-	"github.com/praetorian-inc/aurelian/pkg/cache"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
@@ -19,9 +19,9 @@ import (
 type AnalyzerState struct {
 	Gaad        *types.AuthorizationAccountDetails
 	OrgPolicies *orgpolicies.OrgPolicies
-	Resources   cache.Map[output.AWSResource]
+	Resources   store.Map[output.AWSResource]
 
-	resourceCache  cache.Map[*output.AWSResource]
+	resourceStore  store.Map[*output.AWSResource]
 	actionExpander *iam.ActionExpander
 }
 
@@ -34,7 +34,7 @@ var NewAnalyzerMemoryState = NewAnalyzerState
 func NewAnalyzerState(
 	gaad *types.AuthorizationAccountDetails,
 	orgPolicies *orgpolicies.OrgPolicies,
-	resources cache.Map[output.AWSResource],
+	resources store.Map[output.AWSResource],
 ) *AnalyzerState {
 	state := &AnalyzerState{
 		Gaad:           gaad,
@@ -52,39 +52,37 @@ func (s *AnalyzerState) initializeCaches() {
 }
 
 func (s *AnalyzerState) initializeResourceCache() {
-	s.resourceCache = cache.NewMap[*output.AWSResource]()
+	s.resourceStore = store.NewMap[*output.AWSResource]()
 
 	// Cloud resources from CloudControl
 	s.Resources.Range(func(key string, r output.AWSResource) bool {
-		s.resourceCache.Set(key, &r)
+		s.resourceStore.Set(key, &r)
 		return true
 	})
 
 	// IAM entities from GAAD (overwrite CloudControl versions; GAAD is authoritative for IAM)
-	s.Gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {
-		s.resourceCache.Set(role.Arn, newAWSResourceFromRole(role))
-		return true
-	})
-	s.Gaad.Policies.Range(func(_ string, policy types.ManagedPolicyDetail) bool {
-		s.resourceCache.Set(policy.Arn, newAWSResourceFromPolicy(policy))
-		return true
-	})
-	s.Gaad.Users.Range(func(_ string, user types.UserDetail) bool {
-		s.resourceCache.Set(user.Arn, newAWSResourceFromUser(user))
-		return true
-	})
-	s.Gaad.Groups.Range(func(_ string, group types.GroupDetail) bool {
-		s.resourceCache.Set(group.Arn, newAWSResourceFromGroup(group))
-		return true
-	})
+	convertAndStore(s.Gaad.Roles, s.resourceStore, newAWSResourceFromRole)
+	convertAndStore(s.Gaad.Policies, s.resourceStore, newAWSResourceFromPolicy)
+	convertAndStore(s.Gaad.Users, s.resourceStore, newAWSResourceFromUser)
+	convertAndStore(s.Gaad.Groups, s.resourceStore, newAWSResourceFromGroup)
 
 	// Attacker resources used to identify cross-account access
-	s.resourceCache.Set("attacker", &output.AWSResource{
+	s.resourceStore.Set("attacker", &output.AWSResource{
 		ResourceType: "AWS::API::Gateway",
 		ResourceID:   "attacker",
 		ARN:          "attacker",
 		Region:       "us-east-1",
 		AccountRef:   "123456789012",
+	})
+}
+
+// convertAndStore iterates over a store.Map, converts each item to an
+// *output.AWSResource, and stores it in dest keyed by the resource's ARN.
+func convertAndStore[T any](src store.Map[T], dest store.Map[*output.AWSResource], convert func(T) *output.AWSResource) {
+	src.Range(func(_ string, item T) bool {
+		r := convert(item)
+		dest.Set(r.ARN, r)
+		return true
 	})
 }
 
@@ -124,8 +122,8 @@ func (s *AnalyzerState) addServicesToResourceCache() {
 			AccountRef:   "*",
 			DisplayName:  svc,
 		}
-		s.resourceCache.Set(service, r)
-		s.resourceCache.Set(serviceArn, r)
+		s.resourceStore.Set(service, r)
+		s.resourceStore.Set(serviceArn, r)
 	}
 }
 
@@ -141,11 +139,8 @@ func (s *AnalyzerState) GetPolicyByArn(policyArn string) *types.ManagedPolicyDet
 func (s *AnalyzerState) getResources(pattern *regexp.Regexp) []*output.AWSResource {
 	seen := make(map[string]bool)
 	var resources []*output.AWSResource
-	s.resourceCache.Range(func(key string, r *output.AWSResource) bool {
+	s.resourceStore.Range(func(key string, r *output.AWSResource) bool {
 		id := r.ARN
-		if id == "" {
-			id = r.ResourceID
-		}
 		if pattern.MatchString(key) && !seen[id] {
 			seen[id] = true
 			resources = append(resources, r)
@@ -170,7 +165,7 @@ func (s *AnalyzerState) GetResourceDetails(resourceArn string) (string, map[stri
 	if strings.Contains(resourceArn, "amazonaws") {
 		slog.Debug("Getting resource details for service", "service", resourceArn)
 	}
-	resource, ok := s.resourceCache.Get(resourceArn)
+	resource, ok := s.resourceStore.Get(resourceArn)
 	if !ok {
 		slog.Debug("Resource not found for ARN", "arn", resourceArn)
 		parsed, err := arn.Parse(resourceArn)
@@ -194,7 +189,7 @@ func (s *AnalyzerState) GetRole(roleArn string) *types.RoleDetail {
 
 // GetResource returns a resource by ARN, or nil if not found.
 func (s *AnalyzerState) GetResource(resourceArn string) *output.AWSResource {
-	v, _ := s.resourceCache.Get(resourceArn)
+	v, _ := s.resourceStore.Get(resourceArn)
 	return v
 }
 

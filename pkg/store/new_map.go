@@ -1,6 +1,6 @@
 //go:build !aurelian_sqlite_cache
 
-package cache
+package store
 
 // NewMapMethods creates a new MapMethods backend.
 // With the default build, this returns an in-memory map.

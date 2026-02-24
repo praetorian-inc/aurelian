@@ -8,8 +8,8 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
-	"github.com/praetorian-inc/aurelian/pkg/cache"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
@@ -28,8 +28,8 @@ func NewGaadAnalyzer() *GaadAnalyzer {
 func (ga *GaadAnalyzer) Analyze(
 	gaad *types.AuthorizationAccountDetails,
 	orgPolicies *orgpolicies.OrgPolicies,
-	resources cache.Map[output.AWSResource],
-) (cache.Map[output.AWSIAMRelationship], error) {
+	resources store.Map[output.AWSResource],
+) (store.Map[output.AWSIAMRelationship], error) {
 	state := NewAnalyzerState(gaad, orgPolicies, resources)
 	policyData := buildPolicyData(gaad, orgPolicies, resources)
 	evaluator := iam.NewPolicyEvaluator(policyData)
@@ -43,45 +43,15 @@ func (ga *GaadAnalyzer) Analyze(
 
 	// Launch producers
 	var producerWg sync.WaitGroup
-	gaad.Users.Range(func(_ string, user types.UserDetail) bool {
-		producerWg.Add(1)
-		go func(u types.UserDetail) {
-			defer producerWg.Done()
-			processUserPermissions(u, state, evalChan)
-		}(user)
-		return true
-	})
-	gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {
-		producerWg.Add(1)
-		go func(r types.RoleDetail) {
-			defer producerWg.Done()
-			processRolePermissions(r, state, evalChan)
-		}(role)
-		return true
-	})
-
-	resources.Range(func(_ string, resource output.AWSResource) bool {
-		producerWg.Add(1)
-		go func(r output.AWSResource) {
-			defer producerWg.Done()
-			processResourcePolicy(r, state, evalChan)
-		}(resource)
-		return true
-	})
-
-	gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {
-		producerWg.Add(1)
-		go func(r types.RoleDetail) {
-			defer producerWg.Done()
-			processAssumeRolePolicies(r, state, evalChan)
-		}(role)
-		return true
-	})
+	spawnProducers(gaad.Users, &producerWg, func(u types.UserDetail) { processUserPermissions(u, state, evalChan) })
+	spawnProducers(gaad.Roles, &producerWg, func(r types.RoleDetail) { processRolePermissions(r, state, evalChan) })
+	spawnProducers(resources, &producerWg, func(r output.AWSResource) { processResourcePolicy(r, state, evalChan) })
+	spawnProducers(gaad.Roles, &producerWg, func(r types.RoleDetail) { processAssumeRolePolicies(r, state, evalChan) })
 
 	// Drain results concurrently to avoid deadlock when resultChan buffer fills.
 	// Workers send to resultChan; if we don't drain it before waiting on evalWg,
 	// workers block on send → evalWg.Wait() never returns.
-	results := cache.NewMap[output.AWSIAMRelationship]()
+	results := store.NewMap[output.AWSIAMRelationship]()
 	var collectWg sync.WaitGroup
 	collectWg.Add(1)
 	go func() {
@@ -108,10 +78,23 @@ func (ga *GaadAnalyzer) Analyze(
 	return results, nil
 }
 
+// spawnProducers iterates over a store.Map and launches a goroutine per item,
+// tracking completion via the provided WaitGroup.
+func spawnProducers[T any](m store.Map[T], wg *sync.WaitGroup, fn func(T)) {
+	m.Range(func(_ string, item T) bool {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fn(item)
+		}()
+		return true
+	})
+}
+
 // generateSyntheticPermissions inserts synthetic permission edges that cannot be
 // discovered by the evaluator alone (because the target resources don't exist yet
 // but could be created by the principal). It mutates results in place.
-func (ga *GaadAnalyzer) generateSyntheticPermissions(results cache.Map[output.AWSIAMRelationship], state *AnalyzerState) {
+func (ga *GaadAnalyzer) generateSyntheticPermissions(results store.Map[output.AWSIAMRelationship], state *AnalyzerState) {
 	synthesizeCreateThenUsePermissions(results, state)
 }
 
@@ -127,7 +110,7 @@ func RelationshipKey(rel output.AWSIAMRelationship) string {
 func buildPolicyData(
 	gaad *types.AuthorizationAccountDetails,
 	orgPolicies *orgpolicies.OrgPolicies,
-	resources cache.Map[output.AWSResource],
+	resources store.Map[output.AWSResource],
 ) *iam.PolicyData {
 	resourcePolicies := make(map[string]*types.Policy)
 	resources.Range(func(_ string, r output.AWSResource) bool {

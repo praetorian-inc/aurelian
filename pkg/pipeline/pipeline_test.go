@@ -46,7 +46,7 @@ func TestPipe(t *testing.T) {
 	in := From(1, 2, 3)
 	out := New[string]()
 
-	Pipe(in, func(v int, o *Pipeline[string]) error {
+	Pipe(in, func(v int, o *P[string]) error {
 		o.Send(fmt.Sprintf("item-%d", v))
 		return nil
 	}, out)
@@ -74,7 +74,7 @@ func TestPipe_FnError(t *testing.T) {
 	in := From(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
 	out := New[int]()
 
-	Pipe(in, func(v int, o *Pipeline[int]) error {
+	Pipe(in, func(v int, o *P[int]) error {
 		if v == 3 {
 			return fmt.Errorf("bad value")
 		}
@@ -105,7 +105,7 @@ func TestPipe_UpstreamErrorPropagates(t *testing.T) {
 		in.Close()
 	}()
 
-	Pipe(in, func(v int, o *Pipeline[int]) error {
+	Pipe(in, func(v int, o *P[int]) error {
 		o.Send(v)
 		return nil
 	}, out)
