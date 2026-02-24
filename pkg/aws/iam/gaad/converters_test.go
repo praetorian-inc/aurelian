@@ -281,12 +281,15 @@ func TestFromGAAD(t *testing.T) {
 	}
 
 	t.Run("full GAAD with multiple entities", func(t *testing.T) {
-		gaad := &types.AuthorizationAccountDetails{
-			UserDetailList: []types.UserDetail{
+		gaad := types.NewAuthorizationAccountDetails("",
+			[]types.UserDetail{
 				{Arn: "arn:aws:iam::111122223333:user/alice", UserName: "alice"},
 				{Arn: "arn:aws:iam::111122223333:user/bob", UserName: "bob"},
 			},
-			RoleDetailList: []types.RoleDetail{
+			[]types.GroupDetail{
+				{Arn: "arn:aws:iam::111122223333:group/devs", GroupName: "devs"},
+			},
+			[]types.RoleDetail{
 				{
 					Arn:      "arn:aws:iam::111122223333:role/role1",
 					RoleName: "role1",
@@ -304,45 +307,38 @@ func TestFromGAAD(t *testing.T) {
 					},
 				},
 			},
-			GroupDetailList: []types.GroupDetail{
-				{Arn: "arn:aws:iam::111122223333:group/devs", GroupName: "devs"},
-			},
-			Policies: []types.ManagedPolicyDetail{
+			[]types.ManagedPolicyDetail{
 				{Arn: "arn:aws:iam::111122223333:policy/pol1", PolicyName: "pol1"},
 			},
-		}
+		)
 
 		result := FromGAAD(gaad, "999988887777")
 		require.Len(t, result, 6)
 
-		// Verify ordering: users first, then roles, then groups, then policies
-		assert.Equal(t, "AWS::IAM::User", result[0].ResourceType)
-		assert.Equal(t, "alice", result[0].DisplayName)
-		assert.Equal(t, "AWS::IAM::User", result[1].ResourceType)
-		assert.Equal(t, "bob", result[1].DisplayName)
-		assert.Equal(t, "AWS::IAM::Role", result[2].ResourceType)
-		assert.Equal(t, "role1", result[2].DisplayName)
-		assert.Equal(t, "AWS::IAM::Role", result[3].ResourceType)
-		assert.Equal(t, "role2", result[3].DisplayName)
-		assert.Equal(t, "AWS::IAM::Group", result[4].ResourceType)
-		assert.Equal(t, "devs", result[4].DisplayName)
-		assert.Equal(t, "AWS::IAM::ManagedPolicy", result[5].ResourceType)
-		assert.Equal(t, "pol1", result[5].DisplayName)
+		// Verify all entities are present (order within type groups is non-deterministic)
+		byType := map[string][]string{}
+		for _, r := range result {
+			byType[r.ResourceType] = append(byType[r.ResourceType], r.DisplayName)
+		}
+		assert.ElementsMatch(t, []string{"alice", "bob"}, byType["AWS::IAM::User"])
+		assert.ElementsMatch(t, []string{"role1", "role2"}, byType["AWS::IAM::Role"])
+		assert.ElementsMatch(t, []string{"devs"}, byType["AWS::IAM::Group"])
+		assert.ElementsMatch(t, []string{"pol1"}, byType["AWS::IAM::ManagedPolicy"])
 	})
 
 	t.Run("accountID is passed through to user conversion", func(t *testing.T) {
-		gaad := &types.AuthorizationAccountDetails{
-			UserDetailList: []types.UserDetail{
+		gaad := types.NewAuthorizationAccountDetails("",
+			[]types.UserDetail{
 				{Arn: "arn:aws:iam::111122223333:user/alice", UserName: "alice"},
-			},
-		}
+			}, nil, nil, nil,
+		)
 		result := FromGAAD(gaad, "explicit-account")
 		require.Len(t, result, 1)
 		assert.Equal(t, "explicit-account", result[0].AccountRef)
 	})
 
 	t.Run("empty GAAD returns empty slice", func(t *testing.T) {
-		gaad := &types.AuthorizationAccountDetails{}
+		gaad := types.NewAuthorizationAccountDetails("", nil, nil, nil, nil)
 		result := FromGAAD(gaad, "123456789012")
 		require.Empty(t, result)
 	})

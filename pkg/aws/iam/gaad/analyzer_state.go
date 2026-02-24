@@ -4,7 +4,6 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
-	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
@@ -22,11 +21,6 @@ type AnalyzerState struct {
 	OrgPolicies *orgpolicies.OrgPolicies
 	Resources   []output.AWSResource
 
-	policyCache    cache.Map[*types.ManagedPolicyDetail]
-	roleCache      cache.Map[*types.RoleDetail]
-	userCache      cache.Map[*types.UserDetail]
-	groupCache     cache.Map[*types.GroupDetail]
-	groupNameCache cache.Map[*types.GroupDetail] // keyed by GroupName
 	resourceCache  cache.Map[*output.AWSResource]
 	actionExpander *iam.ActionExpander
 }
@@ -54,56 +48,10 @@ func NewAnalyzerState(
 }
 
 func (s *AnalyzerState) initializeCaches() {
-	var wg sync.WaitGroup
-	wg.Add(5)
-	go s.initializePolicyCache(&wg)
-	go s.initializeRoleCache(&wg)
-	go s.initializeUserCache(&wg)
-	go s.initializeGroupCache(&wg)
-	go s.initializeResourceCache(&wg)
-	wg.Wait()
+	s.initializeResourceCache()
 }
 
-func (s *AnalyzerState) initializePolicyCache(wg *sync.WaitGroup) {
-	defer wg.Done()
-	s.policyCache = cache.NewMap[*types.ManagedPolicyDetail]()
-	for i := range s.Gaad.Policies {
-		policy := &s.Gaad.Policies[i]
-		s.policyCache.Set(policy.Arn, policy)
-	}
-}
-
-func (s *AnalyzerState) initializeRoleCache(wg *sync.WaitGroup) {
-	defer wg.Done()
-	s.roleCache = cache.NewMap[*types.RoleDetail]()
-	for i := range s.Gaad.RoleDetailList {
-		role := &s.Gaad.RoleDetailList[i]
-		s.roleCache.Set(role.Arn, role)
-	}
-}
-
-func (s *AnalyzerState) initializeUserCache(wg *sync.WaitGroup) {
-	defer wg.Done()
-	s.userCache = cache.NewMap[*types.UserDetail]()
-	for i := range s.Gaad.UserDetailList {
-		user := &s.Gaad.UserDetailList[i]
-		s.userCache.Set(user.Arn, user)
-	}
-}
-
-func (s *AnalyzerState) initializeGroupCache(wg *sync.WaitGroup) {
-	defer wg.Done()
-	s.groupCache = cache.NewMap[*types.GroupDetail]()
-	s.groupNameCache = cache.NewMap[*types.GroupDetail]()
-	for i := range s.Gaad.GroupDetailList {
-		group := &s.Gaad.GroupDetailList[i]
-		s.groupCache.Set(group.Arn, group)
-		s.groupNameCache.Set(group.GroupName, group)
-	}
-}
-
-func (s *AnalyzerState) initializeResourceCache(wg *sync.WaitGroup) {
-	defer wg.Done()
+func (s *AnalyzerState) initializeResourceCache() {
 	s.resourceCache = cache.NewMap[*output.AWSResource]()
 
 	// Cloud resources from CloudControl
@@ -117,18 +65,22 @@ func (s *AnalyzerState) initializeResourceCache(wg *sync.WaitGroup) {
 	}
 
 	// IAM entities from GAAD (overwrite CloudControl versions; GAAD is authoritative for IAM)
-	for _, role := range s.Gaad.RoleDetailList {
+	s.Gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {
 		s.resourceCache.Set(role.Arn, newAWSResourceFromRole(role))
-	}
-	for _, policy := range s.Gaad.Policies {
+		return true
+	})
+	s.Gaad.Policies.Range(func(_ string, policy types.ManagedPolicyDetail) bool {
 		s.resourceCache.Set(policy.Arn, newAWSResourceFromPolicy(policy))
-	}
-	for _, user := range s.Gaad.UserDetailList {
+		return true
+	})
+	s.Gaad.Users.Range(func(_ string, user types.UserDetail) bool {
 		s.resourceCache.Set(user.Arn, newAWSResourceFromUser(user))
-	}
-	for _, group := range s.Gaad.GroupDetailList {
+		return true
+	})
+	s.Gaad.Groups.Range(func(_ string, group types.GroupDetail) bool {
 		s.resourceCache.Set(group.Arn, newAWSResourceFromGroup(group))
-	}
+		return true
+	})
 
 	// Attacker resources used to identify cross-account access
 	s.resourceCache.Set("attacker", &output.AWSResource{
@@ -183,8 +135,11 @@ func (s *AnalyzerState) addServicesToResourceCache() {
 
 // GetPolicyByArn retrieves a managed policy by its ARN.
 func (s *AnalyzerState) GetPolicyByArn(policyArn string) *types.ManagedPolicyDetail {
-	policy, _ := s.policyCache.Get(policyArn)
-	return policy
+	policy, ok := s.Gaad.Policies.Get(policyArn)
+	if !ok {
+		return nil
+	}
+	return &policy
 }
 
 func (s *AnalyzerState) getResources(pattern *regexp.Regexp) []*output.AWSResource {
@@ -234,8 +189,11 @@ func (s *AnalyzerState) GetResourceDetails(resourceArn string) (string, map[stri
 
 // GetRole returns a role by ARN, or nil if not found.
 func (s *AnalyzerState) GetRole(roleArn string) *types.RoleDetail {
-	v, _ := s.roleCache.Get(roleArn)
-	return v
+	v, ok := s.Gaad.Roles.Get(roleArn)
+	if !ok {
+		return nil
+	}
+	return &v
 }
 
 // GetResource returns a resource by ARN, or nil if not found.
@@ -246,14 +204,24 @@ func (s *AnalyzerState) GetResource(resourceArn string) *output.AWSResource {
 
 // GetUser returns a user by ARN, or nil if not found.
 func (s *AnalyzerState) GetUser(userArn string) *types.UserDetail {
-	v, _ := s.userCache.Get(userArn)
-	return v
+	v, ok := s.Gaad.Users.Get(userArn)
+	if !ok {
+		return nil
+	}
+	return &v
 }
 
 // GetGroupByName returns a group by name, or nil if not found.
 func (s *AnalyzerState) GetGroupByName(name string) *types.GroupDetail {
-	v, _ := s.groupNameCache.Get(name)
-	return v
+	var result *types.GroupDetail
+	s.Gaad.Groups.Range(func(_ string, g types.GroupDetail) bool {
+		if g.GroupName == name {
+			result = &g
+			return false
+		}
+		return true
+	})
+	return result
 }
 
 // ExtractActions expands wildcard actions from policy statements using the ActionExpander.

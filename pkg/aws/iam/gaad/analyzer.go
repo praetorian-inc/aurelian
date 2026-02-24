@@ -42,20 +42,22 @@ func (ga *GaadAnalyzer) Analyze(
 
 	// Launch producers
 	var producerWg sync.WaitGroup
-	for _, user := range gaad.UserDetailList {
+	gaad.Users.Range(func(_ string, user types.UserDetail) bool {
 		producerWg.Add(1)
 		go func(u types.UserDetail) {
 			defer producerWg.Done()
 			processUserPermissions(u, state, evalChan)
 		}(user)
-	}
-	for _, role := range gaad.RoleDetailList {
+		return true
+	})
+	gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {
 		producerWg.Add(1)
 		go func(r types.RoleDetail) {
 			defer producerWg.Done()
 			processRolePermissions(r, state, evalChan)
 		}(role)
-	}
+		return true
+	})
 
 	for _, resource := range resources {
 		producerWg.Add(1)
@@ -65,13 +67,14 @@ func (ga *GaadAnalyzer) Analyze(
 		}(resource)
 	}
 
-	for _, role := range gaad.RoleDetailList {
+	gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {
 		producerWg.Add(1)
 		go func(r types.RoleDetail) {
 			defer producerWg.Done()
 			processAssumeRolePolicies(r, state, evalChan)
 		}(role)
-	}
+		return true
+	})
 
 	// Drain results concurrently to avoid deadlock when resultChan buffer fills.
 	// Workers send to resultChan; if we don't drain it before waiting on evalWg,

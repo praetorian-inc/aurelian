@@ -174,8 +174,7 @@ func TestCollectManagedPolicyStatements_PolicyFound(t *testing.T) {
 	}
 
 	policyArn := "arn:aws:iam::111122223333:policy/TestPolicy"
-	gaad := &types.AuthorizationAccountDetails{
-		Policies: []types.ManagedPolicyDetail{
+	gaad := types.NewAuthorizationAccountDetails("", nil, nil, nil, []types.ManagedPolicyDetail{
 			{
 				PolicyName: "TestPolicy",
 				Arn:        policyArn,
@@ -191,7 +190,7 @@ func TestCollectManagedPolicyStatements_PolicyFound(t *testing.T) {
 				},
 			},
 		},
-	}
+	)
 	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
 
 	attached := []types.ManagedPolicy{
@@ -205,8 +204,7 @@ func TestCollectManagedPolicyStatements_PolicyFound(t *testing.T) {
 
 func TestCollectManagedPolicyStatements_PolicyWithNoDefaultVersion(t *testing.T) {
 	policyArn := "arn:aws:iam::111122223333:policy/NoDefault"
-	gaad := &types.AuthorizationAccountDetails{
-		Policies: []types.ManagedPolicyDetail{
+	gaad := types.NewAuthorizationAccountDetails("", nil, nil, nil, []types.ManagedPolicyDetail{
 			{
 				PolicyName: "NoDefault",
 				Arn:        policyArn,
@@ -219,7 +217,7 @@ func TestCollectManagedPolicyStatements_PolicyWithNoDefaultVersion(t *testing.T)
 				},
 			},
 		},
-	}
+	)
 	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
 
 	attached := []types.ManagedPolicy{
@@ -256,8 +254,7 @@ func TestCollectBoundaryStatements_Found(t *testing.T) {
 	}
 
 	boundaryArn := "arn:aws:iam::111122223333:policy/Boundary"
-	gaad := &types.AuthorizationAccountDetails{
-		Policies: []types.ManagedPolicyDetail{
+	gaad := types.NewAuthorizationAccountDetails("", nil, nil, nil, []types.ManagedPolicyDetail{
 			{
 				PolicyName: "Boundary",
 				Arn:        boundaryArn,
@@ -273,7 +270,7 @@ func TestCollectBoundaryStatements_Found(t *testing.T) {
 				},
 			},
 		},
-	}
+	)
 	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
 
 	result := collectBoundaryStatements(state, types.ManagedPolicy{
@@ -290,6 +287,6 @@ func TestCollectBoundaryStatements_Found(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func buildMinimalState() *AnalyzerMemoryState {
-	gaad := &types.AuthorizationAccountDetails{}
+	gaad := types.NewAuthorizationAccountDetails("", nil, nil, nil, nil)
 	return NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), []output.AWSResource{})
 }

@@ -3,10 +3,10 @@
 package gaad
 
 import (
-	"context"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,9 +29,10 @@ func TestGAAD(t *testing.T) {
 		userNames := fixture.OutputList("user_names")
 
 		foundUsers := make(map[string]bool)
-		for _, u := range result.UserDetailList {
+		result.Users.Range(func(_ string, u types.UserDetail) bool {
 			foundUsers[u.UserName] = true
-		}
+			return true
+		})
 
 		for _, name := range userNames {
 			assert.True(t, foundUsers[name], "GAAD should contain user %s", name)
@@ -42,9 +43,10 @@ func TestGAAD(t *testing.T) {
 		groupName := fixture.Output("group_name")
 
 		foundGroups := make(map[string]bool)
-		for _, g := range result.GroupDetailList {
+		result.Groups.Range(func(_ string, g types.GroupDetail) bool {
 			foundGroups[g.GroupName] = true
-		}
+			return true
+		})
 
 		assert.True(t, foundGroups[groupName], "GAAD should contain group %s", groupName)
 	})
@@ -54,9 +56,10 @@ func TestGAAD(t *testing.T) {
 		assumableRoleName := fixture.Output("assumable_role_name")
 
 		foundRoles := make(map[string]bool)
-		for _, r := range result.RoleDetailList {
+		result.Roles.Range(func(_ string, r types.RoleDetail) bool {
 			foundRoles[r.RoleName] = true
-		}
+			return true
+		})
 
 		assert.True(t, foundRoles[lambdaRoleName], "GAAD should contain role %s", lambdaRoleName)
 		assert.True(t, foundRoles[assumableRoleName], "GAAD should contain role %s", assumableRoleName)
@@ -66,9 +69,10 @@ func TestGAAD(t *testing.T) {
 		customPolicyARN := fixture.Output("custom_policy_arn")
 
 		foundPolicies := make(map[string]bool)
-		for _, p := range result.Policies {
+		result.Policies.Range(func(_ string, p types.ManagedPolicyDetail) bool {
 			foundPolicies[p.Arn] = true
-		}
+			return true
+		})
 
 		assert.True(t, foundPolicies[customPolicyARN], "GAAD should contain policy %s", customPolicyARN)
 	})
@@ -76,106 +80,72 @@ func TestGAAD(t *testing.T) {
 	t.Run("inline policies are present on users", func(t *testing.T) {
 		userNames := fixture.OutputList("user_names")
 
-		// user 0 should have an inline policy
-		for _, u := range result.UserDetailList {
+		var found bool
+		result.Users.Range(func(_ string, u types.UserDetail) bool {
 			if u.UserName == userNames[0] {
 				assert.NotEmpty(t, u.UserPolicyList, "user %s should have inline policies", u.UserName)
-				return
+				found = true
+				return false
 			}
+			return true
+		})
+		if !found {
+			t.Errorf("user %s not found in GAAD results", userNames[0])
 		}
-		t.Errorf("user %s not found in GAAD results", userNames[0])
 	})
 
 	t.Run("group memberships are present", func(t *testing.T) {
 		userNames := fixture.OutputList("user_names")
 		groupName := fixture.Output("group_name")
 
-		// user 0 should be a member of the test group
-		for _, u := range result.UserDetailList {
+		var found bool
+		result.Users.Range(func(_ string, u types.UserDetail) bool {
 			if u.UserName == userNames[0] {
 				assert.Contains(t, u.GroupList, groupName, "user %s should be in group %s", u.UserName, groupName)
-				return
+				found = true
+				return false
 			}
+			return true
+		})
+		if !found {
+			t.Errorf("user %s not found in GAAD results", userNames[0])
 		}
-		t.Errorf("user %s not found in GAAD results", userNames[0])
 	})
 
 	t.Run("role trust policies are present", func(t *testing.T) {
 		lambdaRoleName := fixture.Output("lambda_role_name")
 
-		for _, r := range result.RoleDetailList {
+		var found bool
+		result.Roles.Range(func(_ string, r types.RoleDetail) bool {
 			if r.RoleName == lambdaRoleName {
 				assert.NotEmpty(t, r.AssumeRolePolicyDocument.Statement,
 					"role %s should have a trust policy with statements", r.RoleName)
-				return
+				found = true
+				return false
 			}
+			return true
+		})
+		if !found {
+			t.Errorf("role %s not found in GAAD results", lambdaRoleName)
 		}
-		t.Errorf("role %s not found in GAAD results", lambdaRoleName)
 	})
 
 	t.Run("managed policy versions are present", func(t *testing.T) {
 		customPolicyARN := fixture.Output("custom_policy_arn")
 
-		for _, p := range result.Policies {
+		var found bool
+		result.Policies.Range(func(_ string, p types.ManagedPolicyDetail) bool {
 			if p.Arn == customPolicyARN {
 				assert.NotEmpty(t, p.PolicyVersionList, "policy %s should have versions", p.Arn)
 				doc := p.DefaultPolicyDocument()
 				assert.NotNil(t, doc, "policy %s should have a default version document", p.Arn)
-				return
+				found = true
+				return false
 			}
+			return true
+		})
+		if !found {
+			t.Errorf("policy %s not found in GAAD results", customPolicyARN)
 		}
-		t.Errorf("policy %s not found in GAAD results", customPolicyARN)
-	})
-
-	t.Run("matches legacy GetAccountAuthorizationDetails", func(t *testing.T) {
-		opts := plugin.AWSReconBase{}
-		legacyResult, legacyAccountID, err := GetAccountAuthorizationDetails(context.Background(), opts)
-		require.NoError(t, err)
-
-		assert.Equal(t, result.AccountID, legacyAccountID, "account IDs should match")
-
-		// Compare users by ARN
-		legacyUserARNs := make(map[string]bool)
-		for _, u := range legacyResult.UserDetailList {
-			legacyUserARNs[u.Arn] = true
-		}
-		newUserARNs := make(map[string]bool)
-		for _, u := range result.UserDetailList {
-			newUserARNs[u.Arn] = true
-		}
-		assert.Equal(t, legacyUserARNs, newUserARNs, "user ARNs should match")
-
-		// Compare groups by ARN
-		legacyGroupARNs := make(map[string]bool)
-		for _, g := range legacyResult.GroupDetailList {
-			legacyGroupARNs[g.Arn] = true
-		}
-		newGroupARNs := make(map[string]bool)
-		for _, g := range result.GroupDetailList {
-			newGroupARNs[g.Arn] = true
-		}
-		assert.Equal(t, legacyGroupARNs, newGroupARNs, "group ARNs should match")
-
-		// Compare roles by ARN
-		legacyRoleARNs := make(map[string]bool)
-		for _, r := range legacyResult.RoleDetailList {
-			legacyRoleARNs[r.Arn] = true
-		}
-		newRoleARNs := make(map[string]bool)
-		for _, r := range result.RoleDetailList {
-			newRoleARNs[r.Arn] = true
-		}
-		assert.Equal(t, legacyRoleARNs, newRoleARNs, "role ARNs should match")
-
-		// Compare managed policies by ARN
-		legacyPolicyARNs := make(map[string]bool)
-		for _, p := range legacyResult.Policies {
-			legacyPolicyARNs[p.Arn] = true
-		}
-		newPolicyARNs := make(map[string]bool)
-		for _, p := range result.Policies {
-			newPolicyARNs[p.Arn] = true
-		}
-		assert.Equal(t, legacyPolicyARNs, newPolicyARNs, "managed policy ARNs should match")
 	})
 }

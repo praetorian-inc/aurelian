@@ -3,6 +3,7 @@ package recon
 import (
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/gaad"
@@ -17,9 +18,9 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
-//func init() {
-//	plugin.Register(&AWSGraphModule{})
-//}
+func init() {
+	plugin.Register(&AWSGraphModule{})
+}
 
 type GraphConfig struct {
 	plugin.AWSCommonRecon
@@ -70,16 +71,27 @@ func (m *AWSGraphModule) Run(cfg plugin.Config, emit func(models ...model.Aureli
 	c.AWSCommonRecon.Regions = resolvedRegions
 	policyCollector := resourcepolicies.New(c.AWSCommonRecon)
 
-	// Step 1: Collect GAAD
-	gaadData, err := m.collectAccountAuthorizationDetails(c)
-	if err != nil {
-		return err
-	}
+	// Step 1 + Steps 2+3 run concurrently
+	var gaadData *types.AuthorizationAccountDetails
+	var gaadErr error
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		gaadData, gaadErr = m.collectAccountAuthorizationDetails(c)
+	}()
 
 	// Step 2+3: Enumerate cloud resources and collect resource policies (streaming)
 	resourcesWithPolicies, err := m.collectResourcesWithPolicies(c, policyCollector, resolvedRegions)
 	if err != nil {
 		return err
+	}
+
+	// Wait for GAAD collection
+	wg.Wait()
+	if gaadErr != nil {
+		return gaadErr
 	}
 
 	// Step 4: Load org policies
@@ -98,20 +110,7 @@ func (m *AWSGraphModule) Run(cfg plugin.Config, emit func(models ...model.Aureli
 	slog.Info("IAM analysis complete", "relationships", len(relationships))
 
 	// Step 6: Build entity list from GAAD + cloud resources
-	var iamEntities []output.AWSIAMResource
-	for _, user := range gaadData.UserDetailList {
-		iamEntities = append(iamEntities, gaadpkg.FromUserDetail(user, gaadData.AccountID))
-	}
-	for _, role := range gaadData.RoleDetailList {
-		iamEntities = append(iamEntities, gaadpkg.FromRoleDetail(role))
-	}
-	for _, group := range gaadData.GroupDetailList {
-		iamEntities = append(iamEntities, gaadpkg.FromGroupDetail(group))
-	}
-	for _, policy := range gaadData.Policies {
-		iamEntities = append(iamEntities, gaadpkg.FromManagedPolicyDetail(policy))
-	}
-
+	iamEntities := gaadpkg.FromGAAD(gaadData, gaadData.AccountID)
 	iamEntities = gaadpkg.DeduplicateByARN(iamEntities)
 
 	for _, e := range iamEntities {
@@ -135,9 +134,9 @@ func (m *AWSGraphModule) collectAccountAuthorizationDetails(c GraphConfig) (*typ
 	}
 	slog.Info("GAAD collected",
 		"account", gaadData.AccountID,
-		"users", len(gaadData.UserDetailList),
-		"roles", len(gaadData.RoleDetailList),
-		"groups", len(gaadData.GroupDetailList))
+		"users", gaadData.Users.Len(),
+		"roles", gaadData.Roles.Len(),
+		"groups", gaadData.Groups.Len())
 	return gaadData, nil
 }
 

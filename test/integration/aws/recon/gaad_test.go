@@ -49,54 +49,57 @@ func TestAWSAccountAuthDetails(t *testing.T) {
 
 	t.Run("contains test user", func(t *testing.T) {
 		var found bool
-		for _, user := range gaad.UserDetailList {
+		gaad.Users.Range(func(_ string, user types.UserDetail) bool {
 			if user.UserName == userName {
 				found = true
 				assert.Equal(t, userArn, user.Arn)
 				assert.Contains(t, user.GroupList, groupName)
-				break
+				return false
 			}
-		}
-		assert.True(t, found, "expected user %s in UserDetailList", userName)
+			return true
+		})
+		assert.True(t, found, "expected user %s in Users", userName)
 	})
 
 	t.Run("contains test role", func(t *testing.T) {
 		var found bool
-		for _, role := range gaad.RoleDetailList {
+		gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {
 			if role.RoleName == roleName {
 				found = true
 				assert.Equal(t, roleArn, role.Arn)
-				break
+				return false
 			}
-		}
-		assert.True(t, found, "expected role %s in RoleDetailList", roleName)
+			return true
+		})
+		assert.True(t, found, "expected role %s in Roles", roleName)
 	})
 
 	t.Run("contains test group", func(t *testing.T) {
 		var found bool
-		for _, group := range gaad.GroupDetailList {
+		gaad.Groups.Range(func(_ string, group types.GroupDetail) bool {
 			if group.GroupName == groupName {
 				found = true
 				assert.Equal(t, groupArn, group.Arn)
-				break
+				return false
 			}
-		}
-		assert.True(t, found, "expected group %s in GroupDetailList", groupName)
+			return true
+		})
+		assert.True(t, found, "expected group %s in Groups", groupName)
 	})
 
 	t.Run("contains test policy", func(t *testing.T) {
 		var found bool
-		for _, policy := range gaad.Policies {
+		gaad.Policies.Range(func(_ string, policy types.ManagedPolicyDetail) bool {
 			if policy.PolicyName == policyName {
 				found = true
 				assert.Equal(t, policyArn, policy.Arn)
 				assert.True(t, policy.IsAttachable)
-				// Verify policy has version list with a default version
 				doc := policy.DefaultPolicyDocument()
 				assert.NotNil(t, doc, "expected default policy document")
-				break
+				return false
 			}
-		}
+			return true
+		})
 		assert.True(t, found, "expected policy %s in Policies", policyName)
 	})
 

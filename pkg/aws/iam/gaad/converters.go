@@ -209,18 +209,22 @@ func FromManagedPolicyDetail(policy types.ManagedPolicyDetail) output.AWSIAMReso
 // The accountID is passed to FromUserDetail for user account resolution.
 func FromGAAD(gaad *types.AuthorizationAccountDetails, accountID string) []output.AWSIAMResource {
 	var entities []output.AWSIAMResource
-	for _, user := range gaad.UserDetailList {
+	gaad.Users.Range(func(_ string, user types.UserDetail) bool {
 		entities = append(entities, FromUserDetail(user, accountID))
-	}
-	for _, role := range gaad.RoleDetailList {
+		return true
+	})
+	gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {
 		entities = append(entities, FromRoleDetail(role))
-	}
-	for _, group := range gaad.GroupDetailList {
+		return true
+	})
+	gaad.Groups.Range(func(_ string, group types.GroupDetail) bool {
 		entities = append(entities, FromGroupDetail(group))
-	}
-	for _, policy := range gaad.Policies {
+		return true
+	})
+	gaad.Policies.Range(func(_ string, policy types.ManagedPolicyDetail) bool {
 		entities = append(entities, FromManagedPolicyDetail(policy))
-	}
+		return true
+	})
 	return entities
 }
 

@@ -38,9 +38,9 @@ func testGAAD() *types.AuthorizationAccountDetails {
 		{Effect: "Allow", Action: &s3Action, Resource: &s3Resource},
 	}
 
-	return &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		UserDetailList: []types.UserDetail{
+	return types.NewAuthorizationAccountDetails(
+		"111122223333",
+		[]types.UserDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:user/alice",
 				UserName: "alice",
@@ -61,7 +61,15 @@ func testGAAD() *types.AuthorizationAccountDetails {
 				},
 			},
 		},
-		RoleDetailList: []types.RoleDetail{
+		[]types.GroupDetail{
+			{
+				Arn:       "arn:aws:iam::111122223333:group/developers",
+				GroupName: "developers",
+				GroupId:   "AGPA1234567890",
+				Path:      "/",
+			},
+		},
+		[]types.RoleDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:role/test-role",
 				RoleName: "test-role",
@@ -76,15 +84,7 @@ func testGAAD() *types.AuthorizationAccountDetails {
 				},
 			},
 		},
-		GroupDetailList: []types.GroupDetail{
-			{
-				Arn:       "arn:aws:iam::111122223333:group/developers",
-				GroupName: "developers",
-				GroupId:   "AGPA1234567890",
-				Path:      "/",
-			},
-		},
-		Policies: []types.ManagedPolicyDetail{
+		[]types.ManagedPolicyDetail{
 			{
 				PolicyName: "PassRolePolicy",
 				Arn:        "arn:aws:iam::111122223333:policy/PassRolePolicy",
@@ -100,7 +100,7 @@ func testGAAD() *types.AuthorizationAccountDetails {
 				},
 			},
 		},
-	}
+	)
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +279,7 @@ func TestGetResource_FallbackToResourceID(t *testing.T) {
 		},
 	}
 	state := NewAnalyzerMemoryState(
-		&types.AuthorizationAccountDetails{},
+		types.NewAuthorizationAccountDetails("", nil, nil, nil, nil),
 		orgpolicies.NewDefaultOrgPolicies(),
 		resources,
 	)
@@ -307,7 +307,7 @@ func TestGetResourceDetails_Found(t *testing.T) {
 			},
 		},
 	}
-	state := NewAnalyzerMemoryState(&types.AuthorizationAccountDetails{}, orgpolicies.NewDefaultOrgPolicies(), resources)
+	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), resources)
 
 	accountID, tags := state.GetResourceDetails("arn:aws:s3:::my-bucket")
 	assert.Equal(t, "111122223333", accountID)
@@ -315,7 +315,7 @@ func TestGetResourceDetails_Found(t *testing.T) {
 }
 
 func TestGetResourceDetails_NotFoundFallsBackToARNParsing(t *testing.T) {
-	state := NewAnalyzerMemoryState(&types.AuthorizationAccountDetails{}, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), nil)
 
 	accountID, tags := state.GetResourceDetails("arn:aws:iam::999988887777:role/some-role")
 	assert.Equal(t, "999988887777", accountID)
@@ -323,7 +323,7 @@ func TestGetResourceDetails_NotFoundFallsBackToARNParsing(t *testing.T) {
 }
 
 func TestGetResourceDetails_InvalidARN(t *testing.T) {
-	state := NewAnalyzerMemoryState(&types.AuthorizationAccountDetails{}, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), nil)
 
 	accountID, tags := state.GetResourceDetails("not-an-arn")
 	assert.Equal(t, "", accountID)
@@ -370,7 +370,7 @@ func TestExtractActions_SpecificAction(t *testing.T) {
 		{Effect: "Allow", Action: &action, Resource: &resource},
 	}
 
-	state := NewAnalyzerMemoryState(&types.AuthorizationAccountDetails{}, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), nil)
 	actions := state.ExtractActions(&stmts)
 	require.Len(t, actions, 1)
 	assert.Equal(t, "iam:PassRole", actions[0])
@@ -385,7 +385,7 @@ func TestExtractActions_MultipleStatements(t *testing.T) {
 		{Effect: "Allow", Action: &action2, Resource: &resource},
 	}
 
-	state := NewAnalyzerMemoryState(&types.AuthorizationAccountDetails{}, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), nil)
 	actions := state.ExtractActions(&stmts)
 	require.Len(t, actions, 3)
 	assert.Contains(t, actions, "iam:PassRole")
@@ -401,7 +401,7 @@ func TestExtractActions_NilActionField(t *testing.T) {
 		{Effect: "Allow", NotAction: &notAction, Resource: &resource},
 	}
 
-	state := NewAnalyzerMemoryState(&types.AuthorizationAccountDetails{}, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), nil)
 	actions := state.ExtractActions(&stmts)
 	assert.Empty(t, actions)
 }
@@ -416,7 +416,7 @@ func TestExtractActions_WildcardAction(t *testing.T) {
 		{Effect: "Allow", Action: &action, Resource: &resource},
 	}
 
-	state := NewAnalyzerMemoryState(&types.AuthorizationAccountDetails{}, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), nil)
 	actions := state.ExtractActions(&stmts)
 	// The action expander for "iam:*" should return many iam:* actions
 	// At minimum it should contain PassRole
@@ -428,7 +428,7 @@ func TestExtractActions_WildcardAction(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAddServicesToResourceCache(t *testing.T) {
-	state := NewAnalyzerMemoryState(&types.AuthorizationAccountDetails{}, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(types.NewAuthorizationAccountDetails("", nil, nil, nil, nil), orgpolicies.NewDefaultOrgPolicies(), nil)
 
 	// Check a few common services are in the cache
 	services := []string{

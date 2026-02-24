@@ -309,9 +309,9 @@ func TestSynthesizeCreateThenUsePermissions_AddsEdge(t *testing.T) {
 	}
 
 	roleArn := "arn:aws:iam::111122223333:role/build-role"
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		roles: []types.RoleDetail{
 			{
 				Arn:      roleArn,
 				RoleName: "build-role",
@@ -330,7 +330,7 @@ func TestSynthesizeCreateThenUsePermissions_AddsEdge(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
 
 	// Existing results: only codebuild:CreateProject was matched
@@ -372,9 +372,9 @@ func TestSynthesizeCreateThenUsePermissions_NoUseStatement(t *testing.T) {
 	}
 
 	roleArn := "arn:aws:iam::111122223333:role/limited-role"
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		roles: []types.RoleDetail{
 			{
 				Arn:      roleArn,
 				RoleName: "limited-role",
@@ -393,7 +393,7 @@ func TestSynthesizeCreateThenUsePermissions_NoUseStatement(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
 
 	results := []output.AWSIAMRelationship{
@@ -433,9 +433,9 @@ func TestSynthesizeCreateThenUsePermissions_NonOverlappingRegions(t *testing.T) 
 	}
 
 	roleArn := "arn:aws:iam::111122223333:role/region-split-role"
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		roles: []types.RoleDetail{
 			{
 				Arn:      roleArn,
 				RoleName: "region-split-role",
@@ -461,7 +461,7 @@ func TestSynthesizeCreateThenUsePermissions_NonOverlappingRegions(t *testing.T) 
 				},
 			},
 		},
-	}
+	})
 	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
 
 	results := []output.AWSIAMRelationship{
@@ -495,8 +495,8 @@ func TestGetStmtResources_Role(t *testing.T) {
 	}
 
 	roleArn := "arn:aws:iam::111122223333:role/test-role"
-	gaad := &types.AuthorizationAccountDetails{
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		roles: []types.RoleDetail{
 			{
 				Arn:      roleArn,
 				RoleName: "test-role",
@@ -509,7 +509,7 @@ func TestGetStmtResources_Role(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
 
 	resources := getStmtResources(roleArn, "codebuild:CreateProject", state)
@@ -533,8 +533,8 @@ func TestGetStmtResources_RoleManagedPolicy(t *testing.T) {
 
 	policyArn := "arn:aws:iam::111122223333:policy/StartBuild"
 	roleArn := "arn:aws:iam::111122223333:role/test-role"
-	gaad := &types.AuthorizationAccountDetails{
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		roles: []types.RoleDetail{
 			{
 				Arn:                      roleArn,
 				RoleName:                 "test-role",
@@ -542,7 +542,7 @@ func TestGetStmtResources_RoleManagedPolicy(t *testing.T) {
 				AttachedManagedPolicies:  []types.ManagedPolicy{{PolicyName: "StartBuild", PolicyArn: policyArn}},
 			},
 		},
-		Policies: []types.ManagedPolicyDetail{
+		policies: []types.ManagedPolicyDetail{
 			{
 				PolicyName: "StartBuild",
 				Arn:        policyArn,
@@ -551,7 +551,7 @@ func TestGetStmtResources_RoleManagedPolicy(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
 
 	resources := getStmtResources(roleArn, "codebuild:StartBuild", state)
@@ -567,8 +567,8 @@ func TestGetStmtResources_User(t *testing.T) {
 	}
 
 	userArn := "arn:aws:iam::111122223333:user/alice"
-	gaad := &types.AuthorizationAccountDetails{
-		UserDetailList: []types.UserDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		users: []types.UserDetail{
 			{
 				Arn:      userArn,
 				UserName: "alice",
@@ -577,7 +577,7 @@ func TestGetStmtResources_User(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
 
 	resources := getStmtResources(userArn, "codebuild:CreateProject", state)
@@ -593,15 +593,15 @@ func TestGetStmtResources_UserGroupPolicy(t *testing.T) {
 	}
 
 	userArn := "arn:aws:iam::111122223333:user/alice"
-	gaad := &types.AuthorizationAccountDetails{
-		UserDetailList: []types.UserDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		users: []types.UserDetail{
 			{
 				Arn:       userArn,
 				UserName:  "alice",
 				GroupList: []string{"builders"},
 			},
 		},
-		GroupDetailList: []types.GroupDetail{
+		groups: []types.GroupDetail{
 			{
 				Arn:       "arn:aws:iam::111122223333:group/builders",
 				GroupName: "builders",
@@ -610,7 +610,7 @@ func TestGetStmtResources_UserGroupPolicy(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
 
 	resources := getStmtResources(userArn, "codebuild:StartBuild", state)
@@ -633,8 +633,8 @@ func TestGetStmtResources_NilResource(t *testing.T) {
 	}
 
 	roleArn := "arn:aws:iam::111122223333:role/test"
-	gaad := &types.AuthorizationAccountDetails{
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		roles: []types.RoleDetail{
 			{
 				Arn:                      roleArn,
 				RoleName:                 "test",
@@ -644,7 +644,7 @@ func TestGetStmtResources_NilResource(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
 
 	resources := getStmtResources(roleArn, "codebuild:CreateProject", state)

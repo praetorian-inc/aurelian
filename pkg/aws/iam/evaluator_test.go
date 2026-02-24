@@ -1482,8 +1482,7 @@ func TestPolicyEvaluator_SameAccountAssumeRole_WithGaadFlow(t *testing.T) {
 	assumableAdminRoleArn := "arn:aws:iam::" + accountID + ":role/privesc-shared-assumable-admin-role-55gvbw"
 
 	// Create a GAAD with the real structure
-	gaad := &types.AuthorizationAccountDetails{
-		RoleDetailList: []types.RoleDetail{
+	gaad := types.NewAuthorizationAccountDetails("", nil, nil, []types.RoleDetail{
 			{
 				Arn:      attackerRoleArn,
 				RoleName: "privesc-method24-sts-assumerole-attacker-55gvbw",
@@ -1565,8 +1564,7 @@ func TestPolicyEvaluator_SameAccountAssumeRole_WithGaadFlow(t *testing.T) {
 					},
 				},
 			},
-		},
-	}
+		}, nil)
 
 	// Use NewPolicyData which calls AddResourcePolicies() - this is the real flow
 	policyData := NewPolicyData(gaad, nil, nil, nil)
@@ -1582,7 +1580,7 @@ func TestPolicyEvaluator_SameAccountAssumeRole_WithGaadFlow(t *testing.T) {
 
 	// Extract identity statements from the attacker role using the same method as production
 	// (processRolePermissions in gaad_analyzer.go)
-	attackerRole := gaad.RoleDetailList[0] // First role is the attacker
+	attackerRole, _ := gaad.Roles.Get(attackerRoleArn)
 	identityStatements := types.PolicyStatementList{}
 
 	// Add inline policies (from RolePolicyList)

@@ -10,6 +10,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// newTestGAADOpts holds optional fields for building test GAAD data.
+type newTestGAADOpts struct {
+	accountID string
+	users     []types.UserDetail
+	groups    []types.GroupDetail
+	roles     []types.RoleDetail
+	policies  []types.ManagedPolicyDetail
+}
+
+func newTestGAADFromOpts(o newTestGAADOpts) *types.AuthorizationAccountDetails {
+	return types.NewAuthorizationAccountDetails(o.accountID, o.users, o.groups, o.roles, o.policies)
+}
+
 // ---------------------------------------------------------------------------
 // NewGaadAnalyzer
 // ---------------------------------------------------------------------------
@@ -25,7 +38,7 @@ func TestNewGaadAnalyzer(t *testing.T) {
 
 func TestAnalyze_EmptyGAAD(t *testing.T) {
 	ga := NewGaadAnalyzer()
-	gaad := &types.AuthorizationAccountDetails{}
+	gaad := types.NewAuthorizationAccountDetails("", nil, nil, nil, nil)
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
 	results, err := ga.Analyze(gaad, orgPol, nil)
@@ -58,9 +71,9 @@ func TestAnalyze_UserWithPassRolePermission(t *testing.T) {
 		},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		UserDetailList: []types.UserDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		users: []types.UserDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:user/alice",
 				UserName: "alice",
@@ -77,7 +90,7 @@ func TestAnalyze_UserWithPassRolePermission(t *testing.T) {
 				},
 			},
 		},
-		RoleDetailList: []types.RoleDetail{
+		roles: []types.RoleDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:role/target-role",
 				RoleName: "target-role",
@@ -89,7 +102,7 @@ func TestAnalyze_UserWithPassRolePermission(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
@@ -125,9 +138,9 @@ func TestAnalyze_RoleWithManagedPolicy(t *testing.T) {
 	}
 
 	policyArn := "arn:aws:iam::111122223333:policy/PassRolePolicy"
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		roles: []types.RoleDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:role/source-role",
 				RoleName: "source-role",
@@ -152,7 +165,7 @@ func TestAnalyze_RoleWithManagedPolicy(t *testing.T) {
 				},
 			},
 		},
-		Policies: []types.ManagedPolicyDetail{
+		policies: []types.ManagedPolicyDetail{
 			{
 				PolicyName: "PassRolePolicy",
 				Arn:        policyArn,
@@ -168,7 +181,7 @@ func TestAnalyze_RoleWithManagedPolicy(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
@@ -202,9 +215,9 @@ func TestAnalyze_UserWithGroupPolicy(t *testing.T) {
 		{Effect: "Allow", Action: &trustAction, Resource: &trustResource, Principal: &types.Principal{AWS: &trustPrincipal}},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		UserDetailList: []types.UserDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		users: []types.UserDetail{
 			{
 				Arn:       "arn:aws:iam::111122223333:user/bob",
 				UserName:  "bob",
@@ -213,7 +226,7 @@ func TestAnalyze_UserWithGroupPolicy(t *testing.T) {
 				GroupList: []string{"admins"},
 			},
 		},
-		GroupDetailList: []types.GroupDetail{
+		groups: []types.GroupDetail{
 			{
 				Arn:       "arn:aws:iam::111122223333:group/admins",
 				GroupName: "admins",
@@ -230,7 +243,7 @@ func TestAnalyze_UserWithGroupPolicy(t *testing.T) {
 				},
 			},
 		},
-		RoleDetailList: []types.RoleDetail{
+		roles: []types.RoleDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:role/some-role",
 				RoleName: "some-role",
@@ -242,7 +255,7 @@ func TestAnalyze_UserWithGroupPolicy(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
@@ -275,9 +288,9 @@ func TestAnalyze_AssumeRoleTrustPolicy(t *testing.T) {
 		},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		roles: []types.RoleDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:role/lambda-exec-role",
 				RoleName: "lambda-exec-role",
@@ -289,7 +302,7 @@ func TestAnalyze_AssumeRoleTrustPolicy(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
@@ -329,16 +342,16 @@ func TestAnalyze_ResourcePolicy(t *testing.T) {
 		},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		roles: []types.RoleDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:role/dummy",
 				RoleName: "dummy",
 				AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts},
 			},
 		},
-	}
+	})
 
 	resources := []output.AWSResource{
 		{
@@ -391,9 +404,9 @@ func TestAnalyze_UserWithPermissionsBoundary(t *testing.T) {
 	}
 
 	boundaryArn := "arn:aws:iam::111122223333:policy/PassRoleBoundary"
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		UserDetailList: []types.UserDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		users: []types.UserDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:user/bounded-user",
 				UserName: "bounded-user",
@@ -407,7 +420,7 @@ func TestAnalyze_UserWithPermissionsBoundary(t *testing.T) {
 				},
 			},
 		},
-		RoleDetailList: []types.RoleDetail{
+		roles: []types.RoleDetail{
 			{
 				Arn:                      "arn:aws:iam::111122223333:role/target-role",
 				RoleName:                 "target-role",
@@ -415,7 +428,7 @@ func TestAnalyze_UserWithPermissionsBoundary(t *testing.T) {
 				AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts},
 			},
 		},
-		Policies: []types.ManagedPolicyDetail{
+		policies: []types.ManagedPolicyDetail{
 			{
 				PolicyName: "PassRoleBoundary",
 				Arn:        boundaryArn,
@@ -424,7 +437,7 @@ func TestAnalyze_UserWithPermissionsBoundary(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
@@ -453,15 +466,15 @@ func TestBuildPolicyData(t *testing.T) {
 		{Effect: "Allow", Action: &trustAction, Resource: &trustResource, Principal: &types.Principal{AWS: &trustPrincipal}},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		roles: []types.RoleDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:role/test",
 				RoleName: "test",
 				AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts},
 			},
 		},
-	}
+	})
 
 	lambdaAction := types.DynaString{"lambda:InvokeFunction"}
 	lambdaResource := types.DynaString{"*"}
@@ -531,9 +544,9 @@ func TestAnalyze_CreateThenUseSynthetic(t *testing.T) {
 		{Effect: "Allow", Action: &trustAction, Resource: &allResource, Principal: &types.Principal{AWS: &trustPrincipal}},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		roles: []types.RoleDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:role/cb-role",
 				RoleName: "cb-role",
@@ -544,7 +557,7 @@ func TestAnalyze_CreateThenUseSynthetic(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
@@ -586,12 +599,12 @@ func TestAnalyze_AssumeRoleDenyStatementInTrustPolicy(t *testing.T) {
 		},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		UserDetailList: []types.UserDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		users: []types.UserDetail{
 			{Arn: "arn:aws:iam::111122223333:user/alice", UserName: "alice", UserId: "AIDA444"},
 		},
-		RoleDetailList: []types.RoleDetail{
+		roles: []types.RoleDetail{
 			{
 				Arn:                      "arn:aws:iam::111122223333:role/deny-role",
 				RoleName:                 "deny-role",
@@ -599,7 +612,7 @@ func TestAnalyze_AssumeRoleDenyStatementInTrustPolicy(t *testing.T) {
 				AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts},
 			},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
@@ -623,9 +636,9 @@ func TestAnalyze_TrustPolicyNilPrincipal(t *testing.T) {
 		{Effect: "Allow", Action: &trustAction, Resource: &trustResource, Principal: nil},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		roles: []types.RoleDetail{
 			{
 				Arn:                      "arn:aws:iam::111122223333:role/nil-principal-role",
 				RoleName:                 "nil-principal-role",
@@ -633,7 +646,7 @@ func TestAnalyze_TrustPolicyNilPrincipal(t *testing.T) {
 				AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts},
 			},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
@@ -652,9 +665,9 @@ func TestAnalyze_ResourcePolicyNoPrivEscActions(t *testing.T) {
 		{Effect: "Allow", Action: &s3Action, Resource: &s3Resource, Principal: &types.Principal{Service: &s3Service}},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-	}
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+	})
 
 	resources := []output.AWSResource{
 		{
@@ -682,7 +695,7 @@ func TestAnalyze_ResourcePolicyNoPrivEscActions(t *testing.T) {
 
 func TestAnalyze_ResourcePolicyNilStatements(t *testing.T) {
 	// Resource with nil resource policy or nil statements should be handled gracefully
-	gaad := &types.AuthorizationAccountDetails{AccountID: "111122223333"}
+	gaad := types.NewAuthorizationAccountDetails("111122223333", nil, nil, nil, nil)
 
 	resources := []output.AWSResource{
 		{
@@ -729,9 +742,9 @@ func TestAnalyze_MultipleUsersAndRoles(t *testing.T) {
 		{Effect: "Allow", Action: &trustAction, Resource: &allResource, Principal: &types.Principal{AWS: &trustPrincipal}},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		UserDetailList: []types.UserDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		users: []types.UserDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:user/alice",
 				UserName: "alice",
@@ -747,11 +760,11 @@ func TestAnalyze_MultipleUsersAndRoles(t *testing.T) {
 				},
 			},
 		},
-		RoleDetailList: []types.RoleDetail{
+		roles: []types.RoleDetail{
 			{Arn: "arn:aws:iam::111122223333:role/r1", RoleName: "r1", AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts}},
 			{Arn: "arn:aws:iam::111122223333:role/r2", RoleName: "r2", AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts}},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
