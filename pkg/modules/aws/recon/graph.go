@@ -10,9 +10,9 @@ import (
 	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
-	"github.com/praetorian-inc/aurelian/pkg/emitter"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
@@ -154,9 +154,9 @@ func (m *AWSGraphModule) collectResources(c GraphConfig, policyCollector *resour
 	slog.Info("enumerating cloud resources", "types", len(resourceTypesToScan), "regions", len(resolvedRegions))
 	lister := cloudcontrol.NewCloudControlLister(c.AWSCommonRecon, resolvedRegions)
 
-	e1 := emitter.From(resourceTypesToScan...)
-	e2 := emitter.New[output.AWSResource]()
-	emitter.Pipe(e1, e2, lister.List)
+	e1 := pipeline.From(resourceTypesToScan...)
+	e2 := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(e1, e2, lister.List)
 
 	byRegion := make(map[string][]output.AWSResource)
 	for r := range e2.Range() {

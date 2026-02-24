@@ -1,4 +1,4 @@
-package emitter
+package pipeline
 
 import (
 	"fmt"
@@ -29,8 +29,9 @@ func TestEmitter_BasicProduceConsume(t *testing.T) {
 func TestEmitter_ErrorPropagation(t *testing.T) {
 	e := New[int]()
 	go func() {
-		e.Emit(1)
-		e.CloseWithError(fmt.Errorf("producer failed"))
+		e.Send(1)
+		e.err = fmt.Errorf("producer failed")
+		e.Close()
 	}()
 
 	for range e.Range() {
@@ -45,10 +46,10 @@ func TestPipe(t *testing.T) {
 	in := From(1, 2, 3)
 	out := New[string]()
 
-	Pipe(in, out, func(v int, o *Emitter[string]) error {
-		o.Emit(fmt.Sprintf("item-%d", v))
+	Pipe(in, func(v int, o *Pipeline[string]) error {
+		o.Send(fmt.Sprintf("item-%d", v))
 		return nil
-	})
+	}, out)
 
 	var got []string
 	for v := range out.Range() {
@@ -73,13 +74,13 @@ func TestPipe_FnError(t *testing.T) {
 	in := From(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
 	out := New[int]()
 
-	Pipe(in, out, func(v int, o *Emitter[int]) error {
+	Pipe(in, func(v int, o *Pipeline[int]) error {
 		if v == 3 {
 			return fmt.Errorf("bad value")
 		}
-		o.Emit(v * 2)
+		o.Send(v * 2)
 		return nil
-	})
+	}, out)
 
 	var got []int
 	for v := range out.Range() {
@@ -99,14 +100,15 @@ func TestPipe_UpstreamErrorPropagates(t *testing.T) {
 	out := New[int]()
 
 	go func() {
-		in.Emit(1)
-		in.CloseWithError(fmt.Errorf("upstream failed"))
+		in.Send(1)
+		in.err = fmt.Errorf("upstream failed")
+		in.Close()
 	}()
 
-	Pipe(in, out, func(v int, o *Emitter[int]) error {
-		o.Emit(v)
+	Pipe(in, func(v int, o *Pipeline[int]) error {
+		o.Send(v)
 		return nil
-	})
+	}, out)
 
 	for range out.Range() {
 	}

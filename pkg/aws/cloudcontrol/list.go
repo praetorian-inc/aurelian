@@ -9,8 +9,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
-	"github.com/praetorian-inc/aurelian/pkg/emitter"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
@@ -37,8 +37,8 @@ func NewCloudControlLister(options plugin.AWSCommonRecon, regions []string) *Clo
 
 // List enumerates a single resource type across all regions, emitting each
 // resource into out as pages are fetched. Its signature matches the fn
-// parameter of emitter.Pipe[string, output.AWSResource].
-func (cc *CloudControlLister) List(resourceType string, out *emitter.Emitter[output.AWSResource]) error {
+// parameter of pipeline.Pipe[string, output.AWSResource].
+func (cc *CloudControlLister) List(resourceType string, out *pipeline.Pipeline[output.AWSResource]) error {
 	if len(cc.Regions) == 0 {
 		return nil
 	}
@@ -49,7 +49,7 @@ func (cc *CloudControlLister) List(resourceType string, out *emitter.Emitter[out
 	})
 }
 
-func (cc *CloudControlLister) listInRegion(region, resourceType string, out *emitter.Emitter[output.AWSResource]) error {
+func (cc *CloudControlLister) listInRegion(region, resourceType string, out *pipeline.Pipeline[output.AWSResource]) error {
 	client, err := cc.newCloudControlClient(region)
 	if err != nil {
 		return fmt.Errorf("create client: %w", err)
@@ -72,7 +72,7 @@ func (cc *CloudControlLister) listInRegion(region, resourceType string, out *emi
 	return nil
 }
 
-func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID, region, resourceType string, out *emitter.Emitter[output.AWSResource]) error {
+func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID, region, resourceType string, out *pipeline.Pipeline[output.AWSResource]) error {
 	var nextToken *string
 
 	enrich := cc.generateEnricherMethod(region, resourceType)
@@ -95,7 +95,7 @@ func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID,
 			erd := awshelpers.CloudControlToERD(desc, resourceType, accountID, region)
 			cr := output.AWSResourceFromERD(erd)
 			enrich(&cr)
-			out.Emit(cr)
+			out.Send(cr)
 		}
 
 		nextToken = result.NextToken

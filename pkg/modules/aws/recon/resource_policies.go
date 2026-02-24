@@ -5,9 +5,9 @@ import (
 
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
-	"github.com/praetorian-inc/aurelian/pkg/emitter"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
@@ -67,9 +67,9 @@ func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, emit func(models ...m
 	// List all supported resource types, streaming into a regional map.
 	lister := cclist.NewCloudControlLister(c.AWSCommonRecon, resolvedRegions)
 
-	e1 := emitter.From(collector.SupportedResourceTypes()...)
-	e2 := emitter.New[output.AWSResource]()
-	emitter.Pipe(e1, e2, lister.List)
+	e1 := pipeline.From(collector.SupportedResourceTypes()...)
+	e2 := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(e1, lister.List, e2)
 
 	resourcesByRegion := make(map[string][]output.AWSResource)
 	for r := range e2.Range() {

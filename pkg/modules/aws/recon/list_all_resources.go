@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
-	"github.com/praetorian-inc/aurelian/pkg/emitter"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
@@ -64,13 +64,13 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, emit func(models ...m
 
 	lister := cclist.NewCloudControlLister(c.AWSCommonRecon, resolvedRegions)
 
-	e1 := emitter.From(selectResourceTypes(c.ScanType)...)
-	e2 := emitter.New[output.AWSResource]()
-	emitter.Pipe(e1, e2, lister.List)
+	p1 := pipeline.From(selectResourceTypes(c.ScanType)...)
+	p2 := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(p1, lister.List, p2)
 
-	for r := range e2.Range() {
+	for r := range p2.Range() {
 		emit(r)
 	}
 
-	return e2.Wait()
+	return p2.Wait()
 }
