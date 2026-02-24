@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
+	"github.com/praetorian-inc/aurelian/pkg/cache"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
@@ -331,7 +332,7 @@ func TestSynthesizeCreateThenUsePermissions_AddsEdge(t *testing.T) {
 			},
 		},
 	})
-	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 
 	// Existing results: only codebuild:CreateProject was matched
 	results := []output.AWSIAMRelationship{
@@ -394,7 +395,7 @@ func TestSynthesizeCreateThenUsePermissions_NoUseStatement(t *testing.T) {
 			},
 		},
 	})
-	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 
 	results := []output.AWSIAMRelationship{
 		{
@@ -462,7 +463,7 @@ func TestSynthesizeCreateThenUsePermissions_NonOverlappingRegions(t *testing.T) 
 			},
 		},
 	})
-	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 
 	results := []output.AWSIAMRelationship{
 		{
@@ -510,7 +511,7 @@ func TestGetStmtResources_Role(t *testing.T) {
 			},
 		},
 	})
-	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 
 	resources := getStmtResources(roleArn, "codebuild:CreateProject", state)
 	require.Len(t, resources, 1)
@@ -552,7 +553,7 @@ func TestGetStmtResources_RoleManagedPolicy(t *testing.T) {
 			},
 		},
 	})
-	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 
 	resources := getStmtResources(roleArn, "codebuild:StartBuild", state)
 	require.Len(t, resources, 1)
@@ -578,7 +579,7 @@ func TestGetStmtResources_User(t *testing.T) {
 			},
 		},
 	})
-	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 
 	resources := getStmtResources(userArn, "codebuild:CreateProject", state)
 	require.Len(t, resources, 1)
@@ -611,7 +612,7 @@ func TestGetStmtResources_UserGroupPolicy(t *testing.T) {
 			},
 		},
 	})
-	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 
 	resources := getStmtResources(userArn, "codebuild:StartBuild", state)
 	require.Len(t, resources, 1)
@@ -645,7 +646,7 @@ func TestGetStmtResources_NilResource(t *testing.T) {
 			},
 		},
 	})
-	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 
 	resources := getStmtResources(roleArn, "codebuild:CreateProject", state)
 	require.Len(t, resources, 1)

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
+	"github.com/praetorian-inc/aurelian/pkg/cache"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
@@ -191,7 +192,7 @@ func TestCollectManagedPolicyStatements_PolicyFound(t *testing.T) {
 			},
 		},
 	)
-	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 
 	attached := []types.ManagedPolicy{
 		{PolicyName: "TestPolicy", PolicyArn: policyArn},
@@ -218,7 +219,7 @@ func TestCollectManagedPolicyStatements_PolicyWithNoDefaultVersion(t *testing.T)
 			},
 		},
 	)
-	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 
 	attached := []types.ManagedPolicy{
 		{PolicyName: "NoDefault", PolicyArn: policyArn},
@@ -271,7 +272,7 @@ func TestCollectBoundaryStatements_Found(t *testing.T) {
 			},
 		},
 	)
-	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 
 	result := collectBoundaryStatements(state, types.ManagedPolicy{
 		PolicyName: "Boundary",
@@ -288,5 +289,5 @@ func TestCollectBoundaryStatements_Found(t *testing.T) {
 
 func buildMinimalState() *AnalyzerMemoryState {
 	gaad := types.NewAuthorizationAccountDetails("", nil, nil, nil, nil)
-	return NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), []output.AWSResource{})
+	return NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 }

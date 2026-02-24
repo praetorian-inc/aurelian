@@ -19,7 +19,7 @@ import (
 type AnalyzerState struct {
 	Gaad        *types.AuthorizationAccountDetails
 	OrgPolicies *orgpolicies.OrgPolicies
-	Resources   []output.AWSResource
+	Resources   cache.Map[output.AWSResource]
 
 	resourceCache  cache.Map[*output.AWSResource]
 	actionExpander *iam.ActionExpander
@@ -34,7 +34,7 @@ var NewAnalyzerMemoryState = NewAnalyzerState
 func NewAnalyzerState(
 	gaad *types.AuthorizationAccountDetails,
 	orgPolicies *orgpolicies.OrgPolicies,
-	resources []output.AWSResource,
+	resources cache.Map[output.AWSResource],
 ) *AnalyzerState {
 	state := &AnalyzerState{
 		Gaad:           gaad,
@@ -55,14 +55,10 @@ func (s *AnalyzerState) initializeResourceCache() {
 	s.resourceCache = cache.NewMap[*output.AWSResource]()
 
 	// Cloud resources from CloudControl
-	for i := range s.Resources {
-		r := &s.Resources[i]
-		key := r.ARN
-		if key == "" {
-			key = r.ResourceID
-		}
-		s.resourceCache.Set(key, r)
-	}
+	s.Resources.Range(func(key string, r output.AWSResource) bool {
+		s.resourceCache.Set(key, &r)
+		return true
+	})
 
 	// IAM entities from GAAD (overwrite CloudControl versions; GAAD is authoritative for IAM)
 	s.Gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {

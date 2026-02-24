@@ -25,9 +25,10 @@ func sharedDB() *sql.DB {
 	return sqliteDB
 }
 
-// NewMap creates a new Map. With the cache_sqlite build tag, this returns a
-// disk-backed SQLite map. Falls back to in-memory if the database cannot be opened.
-func NewMap[T any]() Map[T] {
+// NewMapMethods creates a new MapMethods backend. With the cache_sqlite build tag,
+// this returns a disk-backed SQLite map. Falls back to in-memory if the database
+// cannot be opened.
+func NewMapMethods[T any]() MapMethods[T] {
 	db := sharedDB()
 	if db == nil {
 		slog.Warn("cache: sqlite unavailable, falling back to memory")

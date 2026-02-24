@@ -60,30 +60,22 @@ type gaadJSON struct {
 func (a *AuthorizationAccountDetails) MarshalJSON() ([]byte, error) {
 	wire := gaadJSON{AccountID: a.AccountID}
 
-	if a.Users != nil {
-		a.Users.Range(func(_ string, v UserDetail) bool {
-			wire.UserDetailList = append(wire.UserDetailList, v)
-			return true
-		})
-	}
-	if a.Groups != nil {
-		a.Groups.Range(func(_ string, v GroupDetail) bool {
-			wire.GroupDetailList = append(wire.GroupDetailList, v)
-			return true
-		})
-	}
-	if a.Roles != nil {
-		a.Roles.Range(func(_ string, v RoleDetail) bool {
-			wire.RoleDetailList = append(wire.RoleDetailList, v)
-			return true
-		})
-	}
-	if a.Policies != nil {
-		a.Policies.Range(func(_ string, v ManagedPolicyDetail) bool {
-			wire.Policies = append(wire.Policies, v)
-			return true
-		})
-	}
+	a.Users.Range(func(_ string, v UserDetail) bool {
+		wire.UserDetailList = append(wire.UserDetailList, v)
+		return true
+	})
+	a.Groups.Range(func(_ string, v GroupDetail) bool {
+		wire.GroupDetailList = append(wire.GroupDetailList, v)
+		return true
+	})
+	a.Roles.Range(func(_ string, v RoleDetail) bool {
+		wire.RoleDetailList = append(wire.RoleDetailList, v)
+		return true
+	})
+	a.Policies.Range(func(_ string, v ManagedPolicyDetail) bool {
+		wire.Policies = append(wire.Policies, v)
+		return true
+	})
 
 	return json.Marshal(wire)
 }

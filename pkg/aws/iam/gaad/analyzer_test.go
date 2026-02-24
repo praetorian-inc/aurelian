@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
+	"github.com/praetorian-inc/aurelian/pkg/cache"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
@@ -41,7 +42,7 @@ func TestAnalyze_EmptyGAAD(t *testing.T) {
 	gaad := types.NewAuthorizationAccountDetails("", nil, nil, nil, nil)
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
 	require.NoError(t, err)
 	assert.Empty(t, results)
 }
@@ -107,7 +108,7 @@ func TestAnalyze_UserWithPassRolePermission(t *testing.T) {
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	// Find PassRole result
@@ -186,7 +187,7 @@ func TestAnalyze_RoleWithManagedPolicy(t *testing.T) {
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	foundPassRole := false
@@ -260,7 +261,7 @@ func TestAnalyze_UserWithGroupPolicy(t *testing.T) {
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	foundCreateKey := false
@@ -307,7 +308,7 @@ func TestAnalyze_AssumeRoleTrustPolicy(t *testing.T) {
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	foundAssumeRole := false
@@ -370,7 +371,7 @@ func TestAnalyze_ResourcePolicy(t *testing.T) {
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, resources)
+	results, err := ga.Analyze(gaad, orgPol, newResourceMap(resources))
 	require.NoError(t, err)
 
 	foundInvoke := false
@@ -441,7 +442,7 @@ func TestAnalyze_UserWithPermissionsBoundary(t *testing.T) {
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	// The boundary restricts to iam:PassRole only, so CreateAccessKey etc should NOT appear
@@ -498,7 +499,7 @@ func TestBuildPolicyData(t *testing.T) {
 	}
 
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	pd := buildPolicyData(gaad, orgPol, resources)
+	pd := buildPolicyData(gaad, orgPol, newResourceMap(resources))
 	require.NotNil(t, pd)
 }
 
@@ -507,7 +508,7 @@ func TestBuildPolicyData(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBuildPrincipal_Found(t *testing.T) {
-	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 
 	principal := buildPrincipal("arn:aws:iam::111122223333:user/alice", state)
 	assert.Equal(t, "arn:aws:iam::111122223333:user/alice", principal.ARN)
@@ -515,7 +516,7 @@ func TestBuildPrincipal_Found(t *testing.T) {
 }
 
 func TestBuildPrincipal_NotFound(t *testing.T) {
-	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 
 	principal := buildPrincipal("arn:aws:iam::999988887777:user/unknown", state)
 	assert.Equal(t, "arn:aws:iam::999988887777:user/unknown", principal.ARN)
@@ -561,7 +562,7 @@ func TestAnalyze_CreateThenUseSynthetic(t *testing.T) {
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	// Check for synthetic edges
@@ -616,7 +617,7 @@ func TestAnalyze_AssumeRoleDenyStatementInTrustPolicy(t *testing.T) {
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	for _, rel := range results {
@@ -650,7 +651,7 @@ func TestAnalyze_TrustPolicyNilPrincipal(t *testing.T) {
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
 	require.NoError(t, err)
 	// Should not panic, might or might not produce results depending on evaluator
 	_ = results
@@ -683,7 +684,7 @@ func TestAnalyze_ResourcePolicyNoPrivEscActions(t *testing.T) {
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, resources)
+	results, err := ga.Analyze(gaad, orgPol, newResourceMap(resources))
 	require.NoError(t, err)
 
 	for _, rel := range results {
@@ -717,7 +718,7 @@ func TestAnalyze_ResourcePolicyNilStatements(t *testing.T) {
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, resources)
+	results, err := ga.Analyze(gaad, orgPol, newResourceMap(resources))
 	require.NoError(t, err)
 	// Should not panic
 	_ = results
@@ -768,7 +769,7 @@ func TestAnalyze_MultipleUsersAndRoles(t *testing.T) {
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	assert.Greater(t, len(results), 0, "Expected at least some results from concurrent processing")

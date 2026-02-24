@@ -11,6 +11,7 @@ import (
 	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
+	"github.com/praetorian-inc/aurelian/pkg/cache"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -72,26 +73,30 @@ func (m *AWSGraphModule) Run(cfg plugin.Config, emit func(models ...model.Aureli
 	policyCollector := resourcepolicies.New(c.AWSCommonRecon)
 
 	// Step 1 + Steps 2+3 run concurrently
-	var gaadData *types.AuthorizationAccountDetails
-	var gaadErr error
-	var wg sync.WaitGroup
+	var (
+		gaadData              *types.AuthorizationAccountDetails
+		gaadErr               error
+		resourcesWithPolicies cache.Map[output.AWSResource]
+		resErr                error
+		wg                    sync.WaitGroup
+	)
 
-	wg.Add(1)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		gaadData, gaadErr = m.collectAccountAuthorizationDetails(c)
 	}()
-
-	// Step 2+3: Enumerate cloud resources and collect resource policies (streaming)
-	resourcesWithPolicies, err := m.collectResourcesWithPolicies(c, policyCollector, resolvedRegions)
-	if err != nil {
-		return err
-	}
-
-	// Wait for GAAD collection
+	go func() {
+		defer wg.Done()
+		resourcesWithPolicies, resErr = m.collectResourcesWithPolicies(c, policyCollector, resolvedRegions)
+	}()
 	wg.Wait()
+
 	if gaadErr != nil {
 		return gaadErr
+	}
+	if resErr != nil {
+		return resErr
 	}
 
 	// Step 4: Load org policies
@@ -116,9 +121,10 @@ func (m *AWSGraphModule) Run(cfg plugin.Config, emit func(models ...model.Aureli
 	for _, e := range iamEntities {
 		emit(e)
 	}
-	for _, r := range resourcesWithPolicies {
+	resourcesWithPolicies.Range(func(_ string, r output.AWSResource) bool {
 		emit(r)
-	}
+		return true
+	})
 	for _, r := range relationships {
 		emit(r)
 	}
@@ -140,7 +146,7 @@ func (m *AWSGraphModule) collectAccountAuthorizationDetails(c GraphConfig) (*typ
 	return gaadData, nil
 }
 
-func (m *AWSGraphModule) collectResourcesWithPolicies(c GraphConfig, collector *resourcepolicies.ResourcePolicyCollector, resolvedRegions []string) ([]output.AWSResource, error) {
+func (m *AWSGraphModule) collectResourcesWithPolicies(c GraphConfig, collector *resourcepolicies.ResourcePolicyCollector, resolvedRegions []string) (cache.Map[output.AWSResource], error) {
 	slog.Info("enumerating cloud resources and collecting policies",
 		"types", len(collector.SupportedResourceTypes()), "regions", len(resolvedRegions))
 
@@ -152,15 +158,19 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(c GraphConfig, collector *
 	pipeline.Pipe(p1, lister.List, p2)
 	pipeline.Pipe(p2, collector.Collect, p3)
 
-	var results []output.AWSResource
+	results := cache.NewMap[output.AWSResource]()
 	for r := range p3.Range() {
-		results = append(results, r)
+		key := r.ARN
+		if key == "" {
+			key = r.ResourceID
+		}
+		results.Set(key, r)
 	}
 	if err := p3.Wait(); err != nil {
-		return nil, fmt.Errorf("collecting resources with policies: %w", err)
+		return cache.Map[output.AWSResource]{}, fmt.Errorf("collecting resources with policies: %w", err)
 	}
 
-	slog.Info("resources with policies collected", "count", len(results))
+	slog.Info("resources with policies collected", "count", results.Len())
 	return results, nil
 }
 

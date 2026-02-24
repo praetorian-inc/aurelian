@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-// testMapImplementation runs the same suite against any Map[string] impl.
+// testMapImplementation runs the same suite against any Map[string].
 func testMapImplementation(t *testing.T, m Map[string]) {
 	t.Helper()
 
@@ -59,7 +59,7 @@ func testMapImplementation(t *testing.T, m Map[string]) {
 }
 
 func TestMemoryMap(t *testing.T) {
-	testMapImplementation(t, NewMemoryMap[string]())
+	testMapImplementation(t, WrapMap[string](NewMemoryMap[string]()))
 }
 
 func TestSQLiteMap(t *testing.T) {
@@ -75,7 +75,34 @@ func TestSQLiteMap(t *testing.T) {
 	}
 	defer m.Close()
 
-	testMapImplementation(t, m)
+	testMapImplementation(t, WrapMap[string](m))
+}
+
+func TestNewMap(t *testing.T) {
+	m := NewMap[string]()
+	m.Set("x", "y")
+	v, ok := m.Get("x")
+	if !ok || v != "y" {
+		t.Fatalf("NewMap round-trip failed: %q, %v", v, ok)
+	}
+}
+
+func TestZeroMap(t *testing.T) {
+	var m Map[string]
+	if !m.IsZero() {
+		t.Fatal("expected zero map")
+	}
+	if m.Len() != 0 {
+		t.Fatalf("expected len 0, got %d", m.Len())
+	}
+	if _, ok := m.Get("x"); ok {
+		t.Fatal("expected miss on zero map")
+	}
+	// Range should be a no-op
+	m.Range(func(k, v string) bool {
+		t.Fatal("should not iterate on zero map")
+		return true
+	})
 }
 
 // Test with pointer types (matching AnalyzerState usage).
@@ -105,7 +132,7 @@ func testMapPointers(t *testing.T, m Map[*testStruct]) {
 }
 
 func TestMemoryMapPointers(t *testing.T) {
-	testMapPointers(t, NewMemoryMap[*testStruct]())
+	testMapPointers(t, WrapMap[*testStruct](NewMemoryMap[*testStruct]()))
 }
 
 func TestSQLiteMapPointers(t *testing.T) {
@@ -121,7 +148,7 @@ func TestSQLiteMapPointers(t *testing.T) {
 	}
 	defer m.Close()
 
-	testMapPointers(t, m)
+	testMapPointers(t, WrapMap[*testStruct](m))
 }
 
 // Verify writes are batched and flushed correctly.
@@ -133,11 +160,13 @@ func TestSQLiteMapBatchedWrites(t *testing.T) {
 	defer db.Close()
 
 	// Small threshold to exercise flush within test.
-	m, err := NewSQLiteMapWithThreshold[string](db, 3)
+	sm, err := NewSQLiteMapWithThreshold[string](db, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer m.Close()
+	defer sm.Close()
+
+	m := WrapMap[string](sm)
 
 	// Two writes — still buffered (below threshold of 3).
 	m.Set("a", "1")
@@ -145,7 +174,7 @@ func TestSQLiteMapBatchedWrites(t *testing.T) {
 
 	// Direct DB query should show 0 rows (not flushed yet).
 	var count int
-	db.QueryRow("SELECT COUNT(*) FROM " + m.table).Scan(&count)
+	db.QueryRow("SELECT COUNT(*) FROM " + sm.table).Scan(&count)
 	if count != 0 {
 		t.Fatalf("expected 0 rows in DB before flush, got %d", count)
 	}
@@ -158,7 +187,7 @@ func TestSQLiteMapBatchedWrites(t *testing.T) {
 
 	// Third write triggers flush (threshold=3).
 	m.Set("c", "3")
-	db.QueryRow("SELECT COUNT(*) FROM " + m.table).Scan(&count)
+	db.QueryRow("SELECT COUNT(*) FROM " + sm.table).Scan(&count)
 	if count != 3 {
 		t.Fatalf("expected 3 rows after threshold flush, got %d", count)
 	}
@@ -166,7 +195,7 @@ func TestSQLiteMapBatchedWrites(t *testing.T) {
 	// Overwrite buffered key before flush.
 	m.Set("d", "old")
 	m.Set("d", "new")
-	m.flush()
+	sm.flush()
 	v, ok = m.Get("d")
 	if !ok || v != "new" {
 		t.Fatalf("overwrite in buffer: got %q, %v", v, ok)
@@ -191,17 +220,20 @@ func TestSQLiteMapMultipleTables(t *testing.T) {
 	}
 	defer db.Close()
 
-	m1, err := NewSQLiteMap[string](db)
+	sm1, err := NewSQLiteMap[string](db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer m1.Close()
+	defer sm1.Close()
 
-	m2, err := NewSQLiteMap[int](db)
+	sm2, err := NewSQLiteMap[int](db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer m2.Close()
+	defer sm2.Close()
+
+	m1 := WrapMap[string](sm1)
+	m2 := WrapMap[int](sm2)
 
 	m1.Set("key", "value")
 	m2.Set("key", 123)

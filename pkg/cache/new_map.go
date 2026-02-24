@@ -2,9 +2,10 @@
 
 package cache
 
-// NewMap creates a new Map. With the default build, this returns an in-memory map.
+// NewMapMethods creates a new MapMethods backend.
+// With the default build, this returns an in-memory map.
 // Build with -tags aurelian_sqlite_cache to use a disk-backed SQLite map instead.
-func NewMap[T any]() Map[T] {
+func NewMapMethods[T any]() MapMethods[T] {
 	return NewMemoryMap[T]()
 }
 

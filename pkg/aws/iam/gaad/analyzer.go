@@ -8,6 +8,7 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
+	"github.com/praetorian-inc/aurelian/pkg/cache"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
@@ -27,7 +28,7 @@ func NewGaadAnalyzer() *GaadAnalyzer {
 func (ga *GaadAnalyzer) Analyze(
 	gaad *types.AuthorizationAccountDetails,
 	orgPolicies *orgpolicies.OrgPolicies,
-	resources []output.AWSResource,
+	resources cache.Map[output.AWSResource],
 ) ([]output.AWSIAMRelationship, error) {
 	state := NewAnalyzerState(gaad, orgPolicies, resources)
 	policyData := buildPolicyData(gaad, orgPolicies, resources)
@@ -59,13 +60,14 @@ func (ga *GaadAnalyzer) Analyze(
 		return true
 	})
 
-	for _, resource := range resources {
+	resources.Range(func(_ string, resource output.AWSResource) bool {
 		producerWg.Add(1)
 		go func(r output.AWSResource) {
 			defer producerWg.Done()
 			processResourcePolicy(r, state, evalChan)
 		}(resource)
-	}
+		return true
+	})
 
 	gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {
 		producerWg.Add(1)
@@ -120,13 +122,14 @@ func (ga *GaadAnalyzer) generateSyntheticPermissions(results []output.AWSIAMRela
 func buildPolicyData(
 	gaad *types.AuthorizationAccountDetails,
 	orgPolicies *orgpolicies.OrgPolicies,
-	resources []output.AWSResource,
+	resources cache.Map[output.AWSResource],
 ) *iam.PolicyData {
 	resourcePolicies := make(map[string]*types.Policy)
-	for i := range resources {
-		if resources[i].ResourcePolicy != nil {
-			resourcePolicies[resources[i].ARN] = resources[i].ResourcePolicy
+	resources.Range(func(_ string, r output.AWSResource) bool {
+		if r.ResourcePolicy != nil {
+			resourcePolicies[r.ARN] = r.ResourcePolicy
 		}
-	}
+		return true
+	})
 	return iam.NewPolicyData(gaad, orgPolicies, resourcePolicies, nil)
 }
