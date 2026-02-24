@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
+	"github.com/praetorian-inc/aurelian/pkg/emitter"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
@@ -17,86 +17,90 @@ import (
 
 type CloudControlLister struct {
 	plugin.AWSCommonRecon
+	Regions          []string
 	CrossRegionActor *ratelimit.CrossRegionActor
 	AWSConfigs       map[string]*aws.Config
 }
 
-func NewCloudControlLister(options plugin.AWSCommonRecon) *CloudControlLister {
+func NewCloudControlLister(options plugin.AWSCommonRecon, regions []string) *CloudControlLister {
 	if options.Concurrency <= 0 {
 		options.Concurrency = 1
 	}
 
 	return &CloudControlLister{
 		AWSCommonRecon:   options,
+		Regions:          regions,
 		CrossRegionActor: ratelimit.NewCrossRegionActor(options.Concurrency),
 		AWSConfigs:       make(map[string]*aws.Config),
 	}
 }
 
-func (cc *CloudControlLister) List(regions, resourceTypes []string) (map[string][]output.AWSResource, error) {
-	if len(regions) == 0 || len(resourceTypes) == 0 {
-		return map[string][]output.AWSResource{}, nil
+// List enumerates a single resource type across all regions, emitting each
+// resource into out as pages are fetched. Its signature matches the fn
+// parameter of emitter.Pipe[string, output.AWSResource].
+func (cc *CloudControlLister) List(resourceType string, out *emitter.Emitter[output.AWSResource]) error {
+	if len(cc.Regions) == 0 {
+		return nil
 	}
-
-	results := make(map[string][]output.AWSResource)
-	var mu sync.Mutex
 
 	actor := ratelimit.NewCrossRegionActor(cc.Concurrency)
-	err := actor.ActInRegions(regions, func(region string) error {
-		regionResources, err := cc.ListInRegion(region, resourceTypes...)
-		if err != nil {
-			return fmt.Errorf("region %s: %w", region, err)
-		}
-
-		mu.Lock()
-		defer mu.Unlock()
-
-		for _, resource := range regionResources {
-			key := fmt.Sprintf("%s/%s", region, resource.ResourceType)
-			results[key] = append(results[key], resource)
-		}
-
-		return nil
+	return actor.ActInRegions(cc.Regions, func(region string) error {
+		return cc.listInRegion(region, resourceType, out)
 	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return results, nil
 }
 
-func (cc *CloudControlLister) ListInRegion(region string, resourceTypes ...string) ([]output.AWSResource, error) {
-	if len(resourceTypes) == 0 {
-		return nil, nil
-	}
-
+func (cc *CloudControlLister) listInRegion(region, resourceType string, out *emitter.Emitter[output.AWSResource]) error {
 	client, err := cc.newCloudControlClient(region)
 	if err != nil {
-		return nil, fmt.Errorf("create client: %w", err)
+		return fmt.Errorf("create client: %w", err)
 	}
 
 	accountID, err := cc.getAccountID(region)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	var all []output.AWSResource
-	for _, resourceType := range resourceTypes {
-		resources, err := cc.listByType(client, accountID, region, resourceType)
+	err = cc.listByType(client, accountID, region, resourceType, out)
+	if cc.isSkippableError(err) {
+		slog.Debug("skipping resource type", "type", resourceType, "region", region, "error", err)
+		return nil
+	} else if err != nil {
+		slog.Warn("error listing resources", "type", resourceType, "region", region, "error", err)
+		return err
+	}
 
-		if cc.isSkippableError(err) {
-			slog.Debug("skipping resource type", "type", resourceType, "region", region, "error", err)
-			continue
-		} else if err != nil {
-			slog.Warn("error listing resources", "type", resourceType, "region", region, "error", err)
-			return nil, err
+	return nil
+}
+
+func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID, region, resourceType string, out *emitter.Emitter[output.AWSResource]) error {
+	var nextToken *string
+
+	enrich := cc.generateEnricherMethod(region, resourceType)
+	paginator := ratelimit.NewPaginator()
+
+	return paginator.Paginate(func() (bool, error) {
+		input := &cloudcontrol.ListResourcesInput{
+			TypeName: &resourceType,
+		}
+		if nextToken != nil {
+			input.NextToken = nextToken
 		}
 
-		all = append(all, resources...)
-	}
+		result, err := client.ListResources(context.Background(), input)
+		if err != nil {
+			return true, fmt.Errorf("list %s: %w", resourceType, err)
+		}
 
-	return all, nil
+		for _, desc := range result.ResourceDescriptions {
+			erd := awshelpers.CloudControlToERD(desc, resourceType, accountID, region)
+			cr := output.AWSResourceFromERD(erd)
+			enrich(&cr)
+			out.Emit(cr)
+		}
+
+		nextToken = result.NextToken
+		return nextToken != nil, nil
+	})
 }
 
 func (cc *CloudControlLister) isSkippableError(err error) bool {
@@ -115,43 +119,6 @@ func (cc *CloudControlLister) newCloudControlClient(region string) (*cloudcontro
 		return nil, err
 	}
 	return cloudcontrol.NewFromConfig(*awsCfg), nil
-}
-
-func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID, region, resourceType string) ([]output.AWSResource, error) {
-	var all []output.AWSResource
-	var nextToken *string
-
-	enrich := cc.generateEnricherMethod(region, resourceType)
-	paginator := ratelimit.NewPaginator()
-
-	err := paginator.Paginate(func() (bool, error) {
-		input := &cloudcontrol.ListResourcesInput{
-			TypeName: &resourceType,
-		}
-		if nextToken != nil {
-			input.NextToken = nextToken
-		}
-
-		result, err := client.ListResources(context.Background(), input)
-		if err != nil {
-			return true, fmt.Errorf("list %s: %w", resourceType, err)
-		}
-
-		for _, desc := range result.ResourceDescriptions {
-			erd := awshelpers.CloudControlToERD(desc, resourceType, accountID, region)
-			cr := output.AWSResourceFromERD(erd)
-			enrich(&cr)
-			all = append(all, cr)
-		}
-
-		nextToken = result.NextToken
-		return nextToken != nil, nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return all, nil
 }
 
 func (cc *CloudControlLister) generateEnricherMethod(region, resourceType string) func(resource *output.AWSResource) {

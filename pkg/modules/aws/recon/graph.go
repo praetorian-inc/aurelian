@@ -10,15 +10,16 @@ import (
 	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
+	"github.com/praetorian-inc/aurelian/pkg/emitter"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
-func init() {
-	plugin.Register(&AWSGraphModule{})
-}
+//func init() {
+//	plugin.Register(&AWSGraphModule{})
+//}
 
 type GraphConfig struct {
 	plugin.AWSCommonRecon
@@ -148,23 +149,26 @@ func (m *AWSGraphModule) collectResources(c GraphConfig, policyCollector *resour
 	}
 	slog.Info("resolved regions", "regions", resolvedRegions)
 
-	lister := cloudcontrol.NewCloudControlLister(c.AWSCommonRecon)
 	resourceTypesToScan := policyCollector.SupportedResourceTypes()
 
 	slog.Info("enumerating cloud resources", "types", len(resourceTypesToScan), "regions", len(resolvedRegions))
-	allResources, err := lister.List(resolvedRegions, resourceTypesToScan)
-	if err != nil {
+	lister := cloudcontrol.NewCloudControlLister(c.AWSCommonRecon, resolvedRegions)
+
+	e1 := emitter.From(resourceTypesToScan...)
+	e2 := emitter.New[output.AWSResource]()
+	emitter.Pipe(e1, e2, lister.List)
+
+	byRegion := make(map[string][]output.AWSResource)
+	for r := range e2.Range() {
+		byRegion[r.Region] = append(byRegion[r.Region], r)
+	}
+	if err := e2.Wait(); err != nil {
 		return nil, fmt.Errorf("listing resources: %w", err)
 	}
 
-	// Re-key by region (CloudControl returns keys as "region/type")
 	total := 0
-	byRegion := make(map[string][]output.AWSResource)
-	for _, resources := range allResources {
-		for _, r := range resources {
-			byRegion[r.Region] = append(byRegion[r.Region], r)
-		}
-		total += len(resources)
+	for _, rs := range byRegion {
+		total += len(rs)
 	}
 
 	slog.Info("resources enumerated", "count", total, "regions", len(byRegion))

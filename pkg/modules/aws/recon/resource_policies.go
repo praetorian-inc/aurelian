@@ -2,18 +2,18 @@ package recon
 
 import (
 	"fmt"
-	"strings"
 
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
+	"github.com/praetorian-inc/aurelian/pkg/emitter"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
-func init() {
-	plugin.Register(&AWSResourcePoliciesModule{})
-}
+// func init() {
+// 	plugin.Register(&AWSResourcePoliciesModule{})
+// }
 
 // ResourcePoliciesConfig holds the typed parameters for resource-policies module.
 type ResourcePoliciesConfig struct {
@@ -64,20 +64,19 @@ func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, emit func(models ...m
 	// Create the resource policy collector (handles concurrency and rate limiting)
 	collector := resourcepolicies.New(c.AWSCommonRecon)
 
-	// Create CloudControl lister to enumerate resources
-	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
+	// List all supported resource types, streaming into a regional map.
+	lister := cclist.NewCloudControlLister(c.AWSCommonRecon, resolvedRegions)
 
-	// List all supported resource types (returns map[region/resourceType][]AWSResource)
-	resourcesByKey, err := lister.List(resolvedRegions, collector.SupportedResourceTypes())
-	if err != nil {
-		return fmt.Errorf("failed to list resources: %w", err)
-	}
+	e1 := emitter.From(collector.SupportedResourceTypes()...)
+	e2 := emitter.New[output.AWSResource]()
+	emitter.Pipe(e1, e2, lister.List)
 
-	// Re-key from "region/resourceType" to just "region" for the collector.
 	resourcesByRegion := make(map[string][]output.AWSResource)
-	for key, resources := range resourcesByKey {
-		region, _, _ := strings.Cut(key, "/")
-		resourcesByRegion[region] = append(resourcesByRegion[region], resources...)
+	for r := range e2.Range() {
+		resourcesByRegion[r.Region] = append(resourcesByRegion[r.Region], r)
+	}
+	if err := e2.Wait(); err != nil {
+		return fmt.Errorf("failed to list resources: %w", err)
 	}
 
 	// Collect policies across all regions concurrently
