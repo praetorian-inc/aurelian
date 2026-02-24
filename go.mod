@@ -128,3 +128,5 @@ require (
 	golang.org/x/text v0.34.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+replace github.com/praetorian-inc/titus v0.3.0 => github.com/praetorian-inc/titus v1.0.5
