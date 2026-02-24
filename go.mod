@@ -14,6 +14,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.88.0
 	github.com/aws/aws-sdk-go-v2/service/opensearch v1.57.1
 	github.com/aws/aws-sdk-go-v2/service/organizations v1.50.2
+	github.com/aws/aws-sdk-go-v2/service/route53 v1.62.2
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.96.0
 	github.com/aws/aws-sdk-go-v2/service/sns v1.39.11
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.42.21
