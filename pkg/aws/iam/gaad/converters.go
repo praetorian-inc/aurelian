@@ -2,6 +2,7 @@ package gaad
 
 import (
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
+	"github.com/praetorian-inc/aurelian/pkg/cache"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
@@ -247,4 +248,38 @@ func DeduplicateByARN(entities []output.AWSIAMResource) []output.AWSIAMResource 
 	}
 
 	return result
+}
+
+// EmitGAADEntities iterates all GAAD entity maps (users, roles, groups, policies),
+// converts each to an AWSIAMResource, and calls emit for entities with unseen ARNs.
+// The seen map is used for deduplication and can be shared across calls.
+func EmitGAADEntities(gaad *types.AuthorizationAccountDetails, accountID string, seen cache.Map[string], emit func(output.AWSIAMResource)) {
+	emitOnce := func(entity output.AWSIAMResource) {
+		key := entity.ARN
+		if key == "" {
+			key = entity.ResourceID
+		}
+		if _, ok := seen.Get(key); ok {
+			return
+		}
+		seen.Set(key, key)
+		emit(entity)
+	}
+
+	gaad.Users.Range(func(_ string, user types.UserDetail) bool {
+		emitOnce(FromUserDetail(user, accountID))
+		return true
+	})
+	gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {
+		emitOnce(FromRoleDetail(role))
+		return true
+	})
+	gaad.Groups.Range(func(_ string, group types.GroupDetail) bool {
+		emitOnce(FromGroupDetail(group))
+		return true
+	})
+	gaad.Policies.Range(func(_ string, policy types.ManagedPolicyDetail) bool {
+		emitOnce(FromManagedPolicyDetail(policy))
+		return true
+	})
 }

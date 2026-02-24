@@ -115,12 +115,10 @@ func (m *AWSGraphModule) Run(cfg plugin.Config, emit func(models ...model.Aureli
 	slog.Info("IAM analysis complete", "relationships", relationships.Len())
 
 	// Step 6: Build entity list from GAAD + cloud resources
-	iamEntities := gaadpkg.FromGAAD(gaadData, gaadData.AccountID)
-	iamEntities = gaadpkg.DeduplicateByARN(iamEntities)
-
-	for _, e := range iamEntities {
+	seen := cache.NewMap[string]()
+	gaadpkg.EmitGAADEntities(gaadData, gaadData.AccountID, seen, func(e output.AWSIAMResource) {
 		emit(e)
-	}
+	})
 	resourcesWithPolicies.Range(func(_ string, r output.AWSResource) bool {
 		emit(r)
 		return true
