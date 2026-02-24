@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/praetorian-inc/aurelian/test/testutil"
@@ -23,13 +24,15 @@ func TestAWSAccountAuthDetails(t *testing.T) {
 		t.Fatal("account-auth-details module not registered in plugin system")
 	}
 
-	var results []model.AurelianModel
-	err := mod.Run(plugin.Config{
+	cfg := plugin.Config{
 		Args:    map[string]any{},
 		Context: context.Background(),
-	}, func(models ...model.AurelianModel) {
-		results = append(results, models...)
-	})
+	}
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	results, err := p2.Collect()
 	require.NoError(t, err)
 	require.Len(t, results, 1, "account-auth-details module should output exactly 1 model")
 

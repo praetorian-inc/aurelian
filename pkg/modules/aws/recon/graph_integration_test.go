@@ -10,6 +10,7 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
@@ -117,24 +118,27 @@ func TestAWSGraph(t *testing.T) {
 	var resources []output.AWSResource
 	var relationships []output.AWSIAMRelationship
 
-	err := mod.Run(plugin.Config{
+	cfg := plugin.Config{
 		Args: map[string]any{
 			"regions": []string{"us-east-2"},
 		},
 		Context: context.Background(),
-	}, func(models ...model.AurelianModel) {
-		for _, m := range models {
-			switch v := m.(type) {
-			case output.AWSIAMResource:
-				entities = append(entities, v)
-			case output.AWSResource:
-				resources = append(resources, v)
-			case output.AWSIAMRelationship:
-				relationships = append(relationships, v)
-			}
+	}
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	for m := range p2.Range() {
+		switch v := m.(type) {
+		case output.AWSIAMResource:
+			entities = append(entities, v)
+		case output.AWSResource:
+			resources = append(resources, v)
+		case output.AWSIAMRelationship:
+			relationships = append(relationships, v)
 		}
-	})
-	require.NoError(t, err)
+	}
+	require.NoError(t, p2.Wait())
 	require.NotEmpty(t, entities, "should have at least some IAM entities")
 	require.NotEmpty(t, relationships, "should have at least some IAM relationships")
 

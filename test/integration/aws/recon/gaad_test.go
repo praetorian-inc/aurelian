@@ -4,12 +4,13 @@ package recon
 
 import (
 	"context"
-	"encoding/json"
-	"github.com/praetorian-inc/aurelian/pkg/types"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/recon"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,18 +25,22 @@ func TestAWSAccountAuthDetails(t *testing.T) {
 		t.Fatal("account-auth-details module not registered")
 	}
 
-	results, err := mod.Run(plugin.Config{
+	cfg := plugin.Config{
 		Args:    map[string]any{},
 		Context: context.Background(),
-	})
+	}
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	results, err := p2.Collect()
 	require.NoError(t, err)
 	testutil.AssertMinResults(t, results, 1)
 
-	// Parse the GAAD data from results
-	raw, err := json.Marshal(results[0].Data)
-	require.NoError(t, err)
-	var gaad types.AuthorizationAccountDetails
-	require.NoError(t, json.Unmarshal(raw, &gaad))
+	// The first result should be the GAAD data
+	gaadPtr, ok := results[0].(*types.AuthorizationAccountDetails)
+	require.True(t, ok, "expected *types.AuthorizationAccountDetails, got %T", results[0])
+	gaad := *gaadPtr
 
 	// Get expected names/ARNs from terraform outputs
 	userName := fixture.Output("user_name")

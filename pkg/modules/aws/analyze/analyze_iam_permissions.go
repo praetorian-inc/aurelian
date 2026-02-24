@@ -8,6 +8,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
@@ -59,7 +60,7 @@ func (m *AnalyzeIAMPermissionsModule) Parameters() any {
 	return &m.AnalyzeIAMPermissionsConfig
 }
 
-func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config, emit func(models ...model.AurelianModel)) error {
+func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.AnalyzeIAMPermissionsConfig
 
 	// Load GAAD data
@@ -116,10 +117,10 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config, emit func(models ..
 
 	// Convert GAAD entities to AWSIAMResource
 	gaadpkg.EmitGAADEntities(gaad, "", func(e output.AWSIAMResource) {
-		emit(e)
+		out.Send(e)
 	})
 	relationships.Range(func(_ string, r output.AWSIAMRelationship) bool {
-		emit(r)
+		out.Send(r)
 		return true
 	})
 	return nil

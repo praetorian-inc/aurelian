@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/utils"
 	"github.com/spf13/cobra"
@@ -248,10 +249,11 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 	}
 
 	// Run module (parameter binding is handled automatically by ModuleWrapper)
-	var results []model.AurelianModel
-	err := module.Run(cfg, func(models ...model.AurelianModel) {
-		results = append(results, models...)
-	})
+	p1 := pipeline.From[plugin.Config](cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, module.Run, p2)
+
+	results, err := p2.Collect()
 	if err != nil {
 		return err
 	}

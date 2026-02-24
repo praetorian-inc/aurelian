@@ -69,7 +69,7 @@ func (m *AWSGraphModule) Parameters() any {
 	return &m.GraphConfig
 }
 
-func (m *AWSGraphModule) Run(cfg plugin.Config, emit func(models ...model.AurelianModel)) error {
+func (m *AWSGraphModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	resolvedRegions, err := resolveRegions(m.Regions, m.Profile, m.ProfileDir)
 	if err != nil {
 		return fmt.Errorf("resolving regions: %w", err)
@@ -88,7 +88,7 @@ func (m *AWSGraphModule) Run(cfg plugin.Config, emit func(models ...model.Aureli
 		return fmt.Errorf("analyzing IAM permissions: %w", err)
 	}
 
-	m.emitOutputs(emit)
+	m.emitOutputs(out)
 	return nil
 }
 
@@ -184,18 +184,18 @@ func (m *AWSGraphModule) analyzeIAMPermissions() error {
 	return nil
 }
 
-func (m *AWSGraphModule) emitOutputs(emit func(models ...model.AurelianModel)) {
+func (m *AWSGraphModule) emitOutputs(out *pipeline.P[model.AurelianModel]) {
 	gaadpkg.EmitGAADEntities(m.gaadData, m.gaadData.AccountID, func(i output.AWSIAMResource) {
-		emit(i)
+		out.Send(i)
 	})
 
 	m.resourcesWithPolicies.Range(func(_ string, r output.AWSResource) bool {
-		emit(r)
+		out.Send(r)
 		return true
 	})
 
 	m.relationships.Range(func(_ string, r output.AWSIAMRelationship) bool {
-		emit(r)
+		out.Send(r)
 		return true
 	})
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
@@ -23,20 +24,23 @@ func TestAWSResourcePolicies(t *testing.T) {
 		t.Fatal("resource-policies module not registered in plugin system")
 	}
 
-	var resources []output.AWSResource
-	err := mod.Run(plugin.Config{
+	cfg := plugin.Config{
 		Args: map[string]any{
 			"regions": []string{"us-east-2"},
 		},
 		Context: context.Background(),
-	}, func(models ...model.AurelianModel) {
-		for _, m := range models {
-			if r, ok := m.(output.AWSResource); ok {
-				resources = append(resources, r)
-			}
+	}
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	var resources []output.AWSResource
+	for m := range p2.Range() {
+		if r, ok := m.(output.AWSResource); ok {
+			resources = append(resources, r)
 		}
-	})
-	require.NoError(t, err)
+	}
+	require.NoError(t, p2.Wait())
 	require.NotEmpty(t, resources, "should have collected resource policies")
 
 	// Index results by resource type.

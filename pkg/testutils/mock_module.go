@@ -2,6 +2,7 @@ package testutils
 
 import (
 	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
@@ -17,7 +18,7 @@ type MockModule struct {
 	ReferencesValue             []string
 	ParametersValue             any
 	SupportedResourceTypesValue []string
-	RunFn                       func(plugin.Config, func(models ...model.AurelianModel)) error
+	RunFn                       func(plugin.Config, *pipeline.P[model.AurelianModel]) error
 }
 
 func (m *MockModule) ID() string                { return m.IDValue }
@@ -37,10 +38,10 @@ func (m *MockModule) Parameters() any      { return m.ParametersValue }
 func (m *MockModule) SupportedResourceTypes() []string {
 	return m.SupportedResourceTypesValue
 }
-func (m *MockModule) Run(cfg plugin.Config, output func(models ...model.AurelianModel)) error {
+func (m *MockModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	if m.RunFn != nil {
-		return m.RunFn(cfg, output)
+		return m.RunFn(cfg, out)
 	}
-	output(model.BaseAurelianModel{})
+	out.Send(model.BaseAurelianModel{})
 	return nil
 }

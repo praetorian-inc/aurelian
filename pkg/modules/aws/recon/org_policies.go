@@ -3,6 +3,7 @@ package recon
 import (
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
@@ -47,7 +48,7 @@ func (m *AWSOrgPoliciesModule) Parameters() any {
 	return &m.OrgPoliciesConfig
 }
 
-func (m *AWSOrgPoliciesModule) Run(cfg plugin.Config, output func(models ...model.AurelianModel)) error {
+func (m *AWSOrgPoliciesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.OrgPoliciesConfig
 
 	orgPols, err := orgpolicies.CollectOrgPolicies(cfg.Context, orgpolicies.CollectorOptions{
@@ -58,6 +59,6 @@ func (m *AWSOrgPoliciesModule) Run(cfg plugin.Config, output func(models ...mode
 		return err
 	}
 
-	output(orgPols)
+	out.Send(orgPols)
 	return nil
 }

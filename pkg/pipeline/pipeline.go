@@ -57,6 +57,16 @@ func (e *P[T]) Range() <-chan T {
 	return e.ch
 }
 
+// Collect drains the pipeline into a slice and returns it along with any
+// pipeline error. It blocks until the producer closes the pipeline.
+func (e *P[T]) Collect() ([]T, error) {
+	var items []T
+	for item := range e.ch {
+		items = append(items, item)
+	}
+	return items, e.Wait()
+}
+
 // Pipe reads from in, calls fn for each item (which must send into out), and
 // closes out when in is drained. Runs in a goroutine. Errors from fn or from
 // the upstream producer are propagated to out.Wait().

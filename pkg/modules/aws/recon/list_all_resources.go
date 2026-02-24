@@ -54,7 +54,7 @@ func (m *AWSListAllResourcesModule) Parameters() any {
 	return &m.ListAllConfig
 }
 
-func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, emit func(models ...model.AurelianModel)) error {
+func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.ListAllConfig
 
 	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
@@ -70,7 +70,7 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, emit func(models ...m
 	pipeline.Pipe(p1, lister.List, p2)
 
 	for r := range p2.Range() {
-		emit(r)
+		out.Send(r)
 	}
 
 	return p2.Wait()

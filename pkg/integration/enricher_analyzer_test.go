@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/modules/common"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/stretchr/testify/assert"
@@ -61,15 +62,17 @@ func TestEnricherAnalyzerFlow(t *testing.T) {
 		Args:    map[string]any{"resource": resource},
 	}
 
+	p1 := pipeline.From(analysisConfig)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, analyzer.Run, p2)
+
 	var findings []plugin.Finding
-	err = analyzer.Run(analysisConfig, func(models ...model.AurelianModel) {
-		for _, m := range models {
-			if f, ok := m.(plugin.Finding); ok {
-				findings = append(findings, f)
-			}
+	for m := range p2.Range() {
+		if f, ok := m.(plugin.Finding); ok {
+			findings = append(findings, f)
 		}
-	})
-	require.NoError(t, err)
+	}
+	require.NoError(t, p2.Wait())
 	require.Len(t, findings, 1)
 
 	// Step 5: Verify finding
@@ -101,18 +104,21 @@ func TestEnricherAnalyzerFlowNoFinding(t *testing.T) {
 
 	// Run analyzer
 	analyzer := common.NewYAMLAnalyzer([]common.YAMLRule{rule})
-	var findings []plugin.Finding
-	err = analyzer.Run(plugin.Config{
+	cfg2 := plugin.Config{
 		Context: context.Background(),
 		Args:    map[string]any{"resource": resource},
-	}, func(models ...model.AurelianModel) {
-		for _, m := range models {
-			if f, ok := m.(plugin.Finding); ok {
-				findings = append(findings, f)
-			}
-		}
-	})
+	}
+	p3 := pipeline.From(cfg2)
+	p4 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p3, analyzer.Run, p4)
 
-	require.NoError(t, err)
+	var findings []plugin.Finding
+	for m := range p4.Range() {
+		if f, ok := m.(plugin.Finding); ok {
+			findings = append(findings, f)
+		}
+	}
+
+	require.NoError(t, p4.Wait())
 	assert.Empty(t, findings, "Secure resource should produce no findings")
 }

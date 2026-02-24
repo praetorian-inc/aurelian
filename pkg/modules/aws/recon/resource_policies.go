@@ -52,7 +52,7 @@ func (m *AWSResourcePoliciesModule) Parameters() any {
 	return &m.ResourcePoliciesConfig
 }
 
-func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, emit func(models ...model.AurelianModel)) error {
+func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.ResourcePoliciesConfig
 
 	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
@@ -71,7 +71,7 @@ func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, emit func(models ...m
 	pipeline.Pipe(p2, collector.Collect, p3)
 
 	for r := range p3.Range() {
-		emit(r)
+		out.Send(r)
 	}
 
 	return p3.Wait()
