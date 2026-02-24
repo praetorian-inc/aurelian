@@ -10,6 +10,7 @@ var all = []string{
 	"AWS::ApiGatewayV2::Api",
 	"AWS::AutoScaling::AutoScalingGroup",
 	"AWS::CloudFormation::Stack",
+	"AWS::CloudFront::Distribution",
 	"AWS::CloudWatch::Alarm",
 	"AWS::DynamoDB::Table",
 	"AWS::EC2::Instance",
