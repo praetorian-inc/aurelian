@@ -11,18 +11,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// newRelationshipMap builds a cache.Map from a slice of relationships for testing.
+func newRelationshipMap(rels []output.AWSIAMRelationship) cache.Map[output.AWSIAMRelationship] {
+	m := cache.NewMap[output.AWSIAMRelationship]()
+	for _, r := range rels {
+		m.Set(RelationshipKey(r), r)
+	}
+	return m
+}
+
 // ---------------------------------------------------------------------------
 // newPermissionIndex
 // ---------------------------------------------------------------------------
 
 func TestNewPermissionIndex_Empty(t *testing.T) {
-	idx := newPermissionIndex(nil)
+	idx := newPermissionIndex(cache.Map[output.AWSIAMRelationship]{})
 	assert.NotNil(t, idx.principalResources)
 	assert.Len(t, idx.principalResources, 0)
 }
 
 func TestNewPermissionIndex_PopulatesCorrectly(t *testing.T) {
-	results := []output.AWSIAMRelationship{
+	results := newRelationshipMap([]output.AWSIAMRelationship{
 		{
 			Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: "arn:aws:iam::111122223333:user/alice"}},
 			Resource:  output.AWSResource{ARN: "arn:aws:s3:::my-bucket"},
@@ -38,7 +47,7 @@ func TestNewPermissionIndex_PopulatesCorrectly(t *testing.T) {
 			Resource:  output.AWSResource{ARN: "arn:aws:lambda:us-east-1:111122223333:function:my-func"},
 			Action:    "lambda:InvokeFunction",
 		},
-	}
+	})
 
 	idx := newPermissionIndex(results)
 	assert.Len(t, idx.principalResources, 2, "Expected two distinct principals")
@@ -51,13 +60,13 @@ func TestNewPermissionIndex_PopulatesCorrectly(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHasActionOnResource(t *testing.T) {
-	results := []output.AWSIAMRelationship{
+	results := newRelationshipMap([]output.AWSIAMRelationship{
 		{
 			Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: "user-a"}},
 			Resource:  output.AWSResource{ARN: "resource-1"},
 			Action:    "s3:GetObject",
 		},
-	}
+	})
 	idx := newPermissionIndex(results)
 
 	assert.True(t, idx.hasActionOnResource("user-a", "s3:GetObject", "resource-1"))
@@ -71,7 +80,7 @@ func TestHasActionOnResource(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHasActionOnAnyResource(t *testing.T) {
-	results := []output.AWSIAMRelationship{
+	results := newRelationshipMap([]output.AWSIAMRelationship{
 		{
 			Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: "user-a"}},
 			Resource:  output.AWSResource{ARN: "resource-1"},
@@ -82,7 +91,7 @@ func TestHasActionOnAnyResource(t *testing.T) {
 			Resource:  output.AWSResource{ARN: "resource-2"},
 			Action:    "s3:PutObject",
 		},
-	}
+	})
 	idx := newPermissionIndex(results)
 
 	assert.True(t, idx.hasActionOnAnyResource("user-a", "s3:GetObject"))
@@ -258,22 +267,22 @@ func TestArnPatternsCompatible_TooFewParts(t *testing.T) {
 
 func TestSynthesizeCreateThenUsePermissions_NoPrincipalWithCreate(t *testing.T) {
 	// No one has codebuild:CreateProject, so no synthetic edges
-	results := []output.AWSIAMRelationship{
+	results := newRelationshipMap([]output.AWSIAMRelationship{
 		{
 			Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: "arn:aws:iam::111122223333:user/alice"}},
 			Resource:  output.AWSResource{ARN: "arn:aws:s3:::my-bucket"},
 			Action:    "s3:GetObject",
 		},
-	}
+	})
 	state := buildMinimalState()
-	out := synthesizeCreateThenUsePermissions(results, state)
-	// Should return same results, no synthetic additions
-	assert.Len(t, out, 1)
+	synthesizeCreateThenUsePermissions(results, state)
+	// Should have same count, no synthetic additions
+	assert.Equal(t, 1, results.Len())
 }
 
 func TestSynthesizeCreateThenUsePermissions_HasCreateButAlreadyHasUse(t *testing.T) {
 	// User has codebuild:CreateProject and already has codebuild:StartBuild, so no synthetic edge
-	results := []output.AWSIAMRelationship{
+	results := newRelationshipMap([]output.AWSIAMRelationship{
 		{
 			Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: "arn:aws:iam::111122223333:role/build-role"}},
 			Resource:  output.AWSResource{ARN: "codebuild.amazonaws.com"},
@@ -284,10 +293,10 @@ func TestSynthesizeCreateThenUsePermissions_HasCreateButAlreadyHasUse(t *testing
 			Resource:  output.AWSResource{ARN: "arn:aws:codebuild:us-east-1:111122223333:project/existing"},
 			Action:    "codebuild:StartBuild",
 		},
-	}
+	})
 	state := buildMinimalState()
-	out := synthesizeCreateThenUsePermissions(results, state)
-	assert.Len(t, out, 2, "No synthetic edges should be added when use already exists")
+	synthesizeCreateThenUsePermissions(results, state)
+	assert.Equal(t, 2, results.Len(), "No synthetic edges should be added when use already exists")
 }
 
 func TestSynthesizeCreateThenUsePermissions_AddsEdge(t *testing.T) {
@@ -335,24 +344,27 @@ func TestSynthesizeCreateThenUsePermissions_AddsEdge(t *testing.T) {
 	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 
 	// Existing results: only codebuild:CreateProject was matched
-	results := []output.AWSIAMRelationship{
+	results := newRelationshipMap([]output.AWSIAMRelationship{
 		{
 			Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: roleArn}},
 			Resource:  output.AWSResource{ARN: "codebuild.amazonaws.com"},
 			Action:    "codebuild:CreateProject",
 		},
-	}
+	})
 
-	out := synthesizeCreateThenUsePermissions(results, state)
+	synthesizeCreateThenUsePermissions(results, state)
 
 	// Should add synthetic edges for codebuild:StartBuild and codebuild:StartBuildBatch
-	assert.Greater(t, len(out), 1, "Expected synthetic edges to be added")
+	assert.Greater(t, results.Len(), 1, "Expected synthetic edges to be added")
 
 	syntheticActions := map[string]bool{}
-	for _, rel := range out[1:] {
-		syntheticActions[rel.Action] = true
-		assert.Equal(t, roleArn, rel.Principal.ARN)
-	}
+	results.Range(func(_ string, rel output.AWSIAMRelationship) bool {
+		if rel.Action != "codebuild:CreateProject" {
+			syntheticActions[rel.Action] = true
+			assert.Equal(t, roleArn, rel.Principal.ARN)
+		}
+		return true
+	})
 	assert.True(t, syntheticActions["codebuild:StartBuild"], "Expected codebuild:StartBuild synthetic edge")
 	assert.True(t, syntheticActions["codebuild:StartBuildBatch"], "Expected codebuild:StartBuildBatch synthetic edge")
 }
@@ -397,16 +409,16 @@ func TestSynthesizeCreateThenUsePermissions_NoUseStatement(t *testing.T) {
 	})
 	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 
-	results := []output.AWSIAMRelationship{
+	results := newRelationshipMap([]output.AWSIAMRelationship{
 		{
 			Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: roleArn}},
 			Resource:  output.AWSResource{ARN: "codebuild.amazonaws.com"},
 			Action:    "codebuild:CreateProject",
 		},
-	}
+	})
 
-	out := synthesizeCreateThenUsePermissions(results, state)
-	assert.Len(t, out, 1, "No synthetic edges when principal lacks use action in policies")
+	synthesizeCreateThenUsePermissions(results, state)
+	assert.Equal(t, 1, results.Len(), "No synthetic edges when principal lacks use action in policies")
 }
 
 func TestSynthesizeCreateThenUsePermissions_NonOverlappingRegions(t *testing.T) {
@@ -465,16 +477,16 @@ func TestSynthesizeCreateThenUsePermissions_NonOverlappingRegions(t *testing.T) 
 	})
 	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), cache.Map[output.AWSResource]{})
 
-	results := []output.AWSIAMRelationship{
+	results := newRelationshipMap([]output.AWSIAMRelationship{
 		{
 			Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: roleArn}},
 			Resource:  output.AWSResource{ARN: "codebuild.amazonaws.com"},
 			Action:    "codebuild:CreateProject",
 		},
-	}
+	})
 
-	out := synthesizeCreateThenUsePermissions(results, state)
-	assert.Len(t, out, 1, "No synthetic edges when resource regions don't overlap")
+	synthesizeCreateThenUsePermissions(results, state)
+	assert.Equal(t, 1, results.Len(), "No synthetic edges when resource regions don't overlap")
 }
 
 // ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
+	"github.com/praetorian-inc/aurelian/pkg/cache"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
@@ -34,11 +35,11 @@ type permissionIndex struct {
 	principalResources map[string]map[string]map[string]bool
 }
 
-func newPermissionIndex(results []output.AWSIAMRelationship) *permissionIndex {
+func newPermissionIndex(results cache.Map[output.AWSIAMRelationship]) *permissionIndex {
 	idx := &permissionIndex{
 		principalResources: make(map[string]map[string]map[string]bool),
 	}
-	for _, rel := range results {
+	results.Range(func(_ string, rel output.AWSIAMRelationship) bool {
 		principalArn := rel.Principal.ARN
 		resourceArn := rel.Resource.ARN
 		action := rel.Action
@@ -50,7 +51,8 @@ func newPermissionIndex(results []output.AWSIAMRelationship) *permissionIndex {
 			idx.principalResources[principalArn][resourceArn] = make(map[string]bool)
 		}
 		idx.principalResources[principalArn][resourceArn][action] = true
-	}
+		return true
+	})
 	return idx
 }
 
@@ -92,9 +94,8 @@ func (idx *permissionIndex) hasActionOnAnyResource(principalArn, action string) 
 // that matches their resource pattern. However, the evaluator may not find a
 // matching existing resource and thus never produces the "use" edge. This
 // function fills that gap.
-func synthesizeCreateThenUsePermissions(results []output.AWSIAMRelationship, state *AnalyzerState) []output.AWSIAMRelationship {
+func synthesizeCreateThenUsePermissions(results cache.Map[output.AWSIAMRelationship], state *AnalyzerState) {
 	idx := newPermissionIndex(results)
-	var synthetic []output.AWSIAMRelationship
 
 	for _, pair := range createThenUsePairs {
 		for principalArn := range idx.principalResources {
@@ -139,16 +140,15 @@ func synthesizeCreateThenUsePermissions(results []output.AWSIAMRelationship, sta
 					continue
 				}
 
-				synthetic = append(synthetic, output.AWSIAMRelationship{
+				rel := output.AWSIAMRelationship{
 					Principal: principal,
 					Resource:  *resource,
 					Action:    useAction,
-				})
+				}
+				results.Set(RelationshipKey(rel), rel)
 			}
 		}
 	}
-
-	return append(results, synthetic...)
 }
 
 // getStmtResources returns the Resource patterns from all Allow statements in a

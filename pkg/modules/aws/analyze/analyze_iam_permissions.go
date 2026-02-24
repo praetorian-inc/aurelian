@@ -120,9 +120,10 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config, emit func(models ..
 	for _, e := range entities {
 		emit(e)
 	}
-	for _, r := range relationships {
+	relationships.Range(func(_ string, r output.AWSIAMRelationship) bool {
 		emit(r)
-	}
+		return true
+	})
 	return nil
 }
 

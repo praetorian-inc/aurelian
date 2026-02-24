@@ -11,6 +11,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// collectRelationships returns all values from a relationship map as a slice (test helper).
+func collectRelationships(m cache.Map[output.AWSIAMRelationship]) []output.AWSIAMRelationship {
+	var out []output.AWSIAMRelationship
+	m.Range(func(_ string, rel output.AWSIAMRelationship) bool {
+		out = append(out, rel)
+		return true
+	})
+	return out
+}
+
 // newTestGAADOpts holds optional fields for building test GAAD data.
 type newTestGAADOpts struct {
 	accountID string
@@ -44,7 +54,7 @@ func TestAnalyze_EmptyGAAD(t *testing.T) {
 
 	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
 	require.NoError(t, err)
-	assert.Empty(t, results)
+	assert.Equal(t, 0, results.Len())
 }
 
 func TestAnalyze_UserWithPassRolePermission(t *testing.T) {
@@ -113,7 +123,7 @@ func TestAnalyze_UserWithPassRolePermission(t *testing.T) {
 
 	// Find PassRole result
 	foundPassRole := false
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Action == "iam:PassRole" &&
 			rel.Principal.ARN == "arn:aws:iam::111122223333:user/alice" &&
 			rel.Resource.ARN == "arn:aws:iam::111122223333:role/target-role" {
@@ -191,7 +201,7 @@ func TestAnalyze_RoleWithManagedPolicy(t *testing.T) {
 	require.NoError(t, err)
 
 	foundPassRole := false
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Action == "iam:PassRole" &&
 			rel.Principal.ARN == "arn:aws:iam::111122223333:role/source-role" {
 			foundPassRole = true
@@ -265,7 +275,7 @@ func TestAnalyze_UserWithGroupPolicy(t *testing.T) {
 	require.NoError(t, err)
 
 	foundCreateKey := false
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Action == "iam:CreateAccessKey" &&
 			rel.Principal.ARN == "arn:aws:iam::111122223333:user/bob" {
 			foundCreateKey = true
@@ -312,7 +322,7 @@ func TestAnalyze_AssumeRoleTrustPolicy(t *testing.T) {
 	require.NoError(t, err)
 
 	foundAssumeRole := false
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Action == "sts:AssumeRole" &&
 			rel.Resource.ARN == "arn:aws:iam::111122223333:role/lambda-exec-role" {
 			foundAssumeRole = true
@@ -375,7 +385,7 @@ func TestAnalyze_ResourcePolicy(t *testing.T) {
 	require.NoError(t, err)
 
 	foundInvoke := false
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Action == "lambda:InvokeFunction" &&
 			rel.Resource.ARN == "arn:aws:lambda:us-east-1:111122223333:function:my-func" {
 			foundInvoke = true
@@ -446,7 +456,7 @@ func TestAnalyze_UserWithPermissionsBoundary(t *testing.T) {
 	require.NoError(t, err)
 
 	// The boundary restricts to iam:PassRole only, so CreateAccessKey etc should NOT appear
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Principal.ARN == "arn:aws:iam::111122223333:user/bounded-user" {
 			if rel.Action == "iam:CreateAccessKey" || rel.Action == "iam:CreateUser" || rel.Action == "iam:AttachUserPolicy" {
 				t.Errorf("Expected boundary to restrict %s, but it was allowed", rel.Action)
@@ -569,7 +579,7 @@ func TestAnalyze_CreateThenUseSynthetic(t *testing.T) {
 	hasCreate := false
 	hasStartBuild := false
 	hasStartBuildBatch := false
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Principal.ARN == "arn:aws:iam::111122223333:role/cb-role" {
 			switch rel.Action {
 			case "codebuild:CreateProject":
@@ -620,7 +630,7 @@ func TestAnalyze_AssumeRoleDenyStatementInTrustPolicy(t *testing.T) {
 	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Action == "sts:AssumeRole" &&
 			rel.Principal.ARN == "arn:aws:iam::111122223333:user/alice" &&
 			rel.Resource.ARN == "arn:aws:iam::111122223333:role/deny-role" {
@@ -687,7 +697,7 @@ func TestAnalyze_ResourcePolicyNoPrivEscActions(t *testing.T) {
 	results, err := ga.Analyze(gaad, orgPol, newResourceMap(resources))
 	require.NoError(t, err)
 
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Action == "s3:GetObject" {
 			t.Error("s3:GetObject is not a priv-esc action; should not appear in results")
 		}
@@ -772,5 +782,5 @@ func TestAnalyze_MultipleUsersAndRoles(t *testing.T) {
 	results, err := ga.Analyze(gaad, orgPol, cache.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
-	assert.Greater(t, len(results), 0, "Expected at least some results from concurrent processing")
+	assert.Greater(t, results.Len(), 0, "Expected at least some results from concurrent processing")
 }

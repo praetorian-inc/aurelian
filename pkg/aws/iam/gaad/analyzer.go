@@ -24,12 +24,12 @@ func NewGaadAnalyzer() *GaadAnalyzer {
 
 // Analyze evaluates all principal permissions against resources and org policies,
 // detecting privilege escalation paths. Returns the set of allowed permission
-// edges (principal → action → resource).
+// edges (principal → action → resource) keyed by "principalARN|action|resourceARN".
 func (ga *GaadAnalyzer) Analyze(
 	gaad *types.AuthorizationAccountDetails,
 	orgPolicies *orgpolicies.OrgPolicies,
 	resources cache.Map[output.AWSResource],
-) ([]output.AWSIAMRelationship, error) {
+) (cache.Map[output.AWSIAMRelationship], error) {
 	state := NewAnalyzerState(gaad, orgPolicies, resources)
 	policyData := buildPolicyData(gaad, orgPolicies, resources)
 	evaluator := iam.NewPolicyEvaluator(policyData)
@@ -81,13 +81,13 @@ func (ga *GaadAnalyzer) Analyze(
 	// Drain results concurrently to avoid deadlock when resultChan buffer fills.
 	// Workers send to resultChan; if we don't drain it before waiting on evalWg,
 	// workers block on send → evalWg.Wait() never returns.
-	var results []output.AWSIAMRelationship
+	results := cache.NewMap[output.AWSIAMRelationship]()
 	var collectWg sync.WaitGroup
 	collectWg.Add(1)
 	go func() {
 		defer collectWg.Done()
 		for rel := range resultChan {
-			results = append(results, rel)
+			results.Set(RelationshipKey(rel), rel)
 		}
 	}()
 
@@ -103,17 +103,22 @@ func (ga *GaadAnalyzer) Analyze(
 	collectWg.Wait()
 
 	// Add synthetic permission edges for attack patterns the evaluator can't discover
-	results = ga.generateSyntheticPermissions(results, state)
+	ga.generateSyntheticPermissions(results, state)
 
 	return results, nil
 }
 
-// generateSyntheticPermissions appends synthetic permission edges that cannot be
+// generateSyntheticPermissions inserts synthetic permission edges that cannot be
 // discovered by the evaluator alone (because the target resources don't exist yet
-// but could be created by the principal). Additional synthetic techniques can be
-// added here in the future.
-func (ga *GaadAnalyzer) generateSyntheticPermissions(results []output.AWSIAMRelationship, state *AnalyzerState) []output.AWSIAMRelationship {
-	return synthesizeCreateThenUsePermissions(results, state)
+// but could be created by the principal). It mutates results in place.
+func (ga *GaadAnalyzer) generateSyntheticPermissions(results cache.Map[output.AWSIAMRelationship], state *AnalyzerState) {
+	synthesizeCreateThenUsePermissions(results, state)
+}
+
+// RelationshipKey returns a composite map key for an AWSIAMRelationship:
+// "principalARN|action|resourceARN".
+func RelationshipKey(rel output.AWSIAMRelationship) string {
+	return rel.Principal.ARN + "|" + rel.Action + "|" + rel.Resource.ARN
 }
 
 // buildPolicyData constructs an iam.PolicyData for the evaluator.

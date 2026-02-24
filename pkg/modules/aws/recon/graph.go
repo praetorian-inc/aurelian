@@ -112,7 +112,7 @@ func (m *AWSGraphModule) Run(cfg plugin.Config, emit func(models ...model.Aureli
 	if err != nil {
 		return fmt.Errorf("analyzing permissions: %w", err)
 	}
-	slog.Info("IAM analysis complete", "relationships", len(relationships))
+	slog.Info("IAM analysis complete", "relationships", relationships.Len())
 
 	// Step 6: Build entity list from GAAD + cloud resources
 	iamEntities := gaadpkg.FromGAAD(gaadData, gaadData.AccountID)
@@ -125,9 +125,10 @@ func (m *AWSGraphModule) Run(cfg plugin.Config, emit func(models ...model.Aureli
 		emit(r)
 		return true
 	})
-	for _, r := range relationships {
+	relationships.Range(func(_ string, r output.AWSIAMRelationship) bool {
 		emit(r)
-	}
+		return true
+	})
 	return nil
 }
 
