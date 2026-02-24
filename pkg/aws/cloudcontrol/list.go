@@ -17,19 +17,17 @@ import (
 
 type CloudControlLister struct {
 	plugin.AWSCommonRecon
-	Regions          []string
 	CrossRegionActor *ratelimit.CrossRegionActor
 	AWSConfigs       map[string]*aws.Config
 }
 
-func NewCloudControlLister(options plugin.AWSCommonRecon, regions []string) *CloudControlLister {
+func NewCloudControlLister(options plugin.AWSCommonRecon) *CloudControlLister {
 	if options.Concurrency <= 0 {
 		options.Concurrency = 1
 	}
 
 	return &CloudControlLister{
 		AWSCommonRecon:   options,
-		Regions:          regions,
 		CrossRegionActor: ratelimit.NewCrossRegionActor(options.Concurrency),
 		AWSConfigs:       make(map[string]*aws.Config),
 	}
@@ -39,12 +37,12 @@ func NewCloudControlLister(options plugin.AWSCommonRecon, regions []string) *Clo
 // resource into out as pages are fetched. Its signature matches the fn
 // parameter of pipeline.Pipe[string, output.AWSResource].
 func (cc *CloudControlLister) List(resourceType string, out *pipeline.Pipeline[output.AWSResource]) error {
-	if len(cc.Regions) == 0 {
-		return nil
+	if len(cc.AWSCommonRecon.Regions) == 0 {
+		return fmt.Errorf("no regions configured")
 	}
 
 	actor := ratelimit.NewCrossRegionActor(cc.Concurrency)
-	return actor.ActInRegions(cc.Regions, func(region string) error {
+	return actor.ActInRegions(cc.AWSCommonRecon.Regions, func(region string) error {
 		return cc.listInRegion(region, resourceType, out)
 	})
 }
@@ -72,7 +70,13 @@ func (cc *CloudControlLister) listInRegion(region, resourceType string, out *pip
 	return nil
 }
 
-func (cc *CloudControlLister) listByType(client *cloudcontrol.Client, accountID, region, resourceType string, out *pipeline.Pipeline[output.AWSResource]) error {
+func (cc *CloudControlLister) listByType(
+	client *cloudcontrol.Client,
+	accountID,
+	region,
+	resourceType string,
+	out *pipeline.Pipeline[output.AWSResource],
+) error {
 	var nextToken *string
 
 	enrich := cc.generateEnricherMethod(region, resourceType)

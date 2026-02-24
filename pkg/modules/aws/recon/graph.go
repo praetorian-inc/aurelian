@@ -63,6 +63,11 @@ func (m *AWSGraphModule) Parameters() any {
 
 func (m *AWSGraphModule) Run(cfg plugin.Config, emit func(models ...model.AurelianModel)) error {
 	c := m.GraphConfig
+	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
+	if err != nil {
+		return fmt.Errorf("resolving regions: %w", err)
+	}
+	c.AWSCommonRecon.Regions = resolvedRegions
 	policyCollector := resourcepolicies.New(c.AWSCommonRecon)
 
 	// Step 1: Collect GAAD
@@ -71,14 +76,8 @@ func (m *AWSGraphModule) Run(cfg plugin.Config, emit func(models ...model.Aureli
 		return err
 	}
 
-	// Step 2: Enumerate cloud resources
-	resourcesByRegion, err := m.collectResources(c, policyCollector)
-	if err != nil {
-		return err
-	}
-
-	// Step 3: Collect resource policies
-	resourcesWithPolicies, err := m.collectResourcePolicies(policyCollector, resourcesByRegion)
+	// Step 2+3: Enumerate cloud resources and collect resource policies (streaming)
+	resourcesWithPolicies, err := m.collectResourcesWithPolicies(c, policyCollector, resolvedRegions)
 	if err != nil {
 		return err
 	}
@@ -142,47 +141,28 @@ func (m *AWSGraphModule) collectAccountAuthorizationDetails(c GraphConfig) (*typ
 	return gaadData, nil
 }
 
-func (m *AWSGraphModule) collectResources(c GraphConfig, policyCollector *resourcepolicies.ResourcePolicyCollector) (map[string][]output.AWSResource, error) {
-	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
-	if err != nil {
-		return nil, fmt.Errorf("resolving regions: %w", err)
+func (m *AWSGraphModule) collectResourcesWithPolicies(c GraphConfig, collector *resourcepolicies.ResourcePolicyCollector, resolvedRegions []string) ([]output.AWSResource, error) {
+	slog.Info("enumerating cloud resources and collecting policies",
+		"types", len(collector.SupportedResourceTypes()), "regions", len(resolvedRegions))
+
+	lister := cloudcontrol.NewCloudControlLister(c.AWSCommonRecon)
+
+	p1 := pipeline.From(collector.SupportedResourceTypes()...)
+	p2 := pipeline.New[output.AWSResource]()
+	p3 := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(p1, lister.List, p2)
+	pipeline.Pipe(p2, collector.Collect, p3)
+
+	var results []output.AWSResource
+	for r := range p3.Range() {
+		results = append(results, r)
 	}
-	slog.Info("resolved regions", "regions", resolvedRegions)
-
-	resourceTypesToScan := policyCollector.SupportedResourceTypes()
-
-	slog.Info("enumerating cloud resources", "types", len(resourceTypesToScan), "regions", len(resolvedRegions))
-	lister := cloudcontrol.NewCloudControlLister(c.AWSCommonRecon, resolvedRegions)
-
-	e1 := pipeline.From(resourceTypesToScan...)
-	e2 := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(e1, e2, lister.List)
-
-	byRegion := make(map[string][]output.AWSResource)
-	for r := range e2.Range() {
-		byRegion[r.Region] = append(byRegion[r.Region], r)
-	}
-	if err := e2.Wait(); err != nil {
-		return nil, fmt.Errorf("listing resources: %w", err)
+	if err := p3.Wait(); err != nil {
+		return nil, fmt.Errorf("collecting resources with policies: %w", err)
 	}
 
-	total := 0
-	for _, rs := range byRegion {
-		total += len(rs)
-	}
-
-	slog.Info("resources enumerated", "count", total, "regions", len(byRegion))
-	return byRegion, nil
-}
-
-func (m *AWSGraphModule) collectResourcePolicies(policyCollector *resourcepolicies.ResourcePolicyCollector, resourcesByRegion map[string][]output.AWSResource) ([]output.AWSResource, error) {
-	slog.Info("collecting resource policies")
-	resourcesWithPolicies, err := policyCollector.Collect(resourcesByRegion)
-	if err != nil {
-		return nil, fmt.Errorf("collecting resource policies: %w", err)
-	}
-	slog.Info("resource policies collected", "count", len(resourcesWithPolicies))
-	return resourcesWithPolicies, nil
+	slog.Info("resources with policies collected", "count", len(results))
+	return results, nil
 }
 
 func (m *AWSGraphModule) loadOrgPolicies(c GraphConfig) (*orgpolicies.OrgPolicies, error) {

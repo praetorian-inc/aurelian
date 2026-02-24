@@ -62,7 +62,8 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, emit func(models ...m
 		return fmt.Errorf("failed to resolve regions: %w", err)
 	}
 
-	lister := cclist.NewCloudControlLister(c.AWSCommonRecon, resolvedRegions)
+	c.AWSCommonRecon.Regions = resolvedRegions
+	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
 
 	p1 := pipeline.From(selectResourceTypes(c.ScanType)...)
 	p2 := pipeline.New[output.AWSResource]()

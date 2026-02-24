@@ -11,9 +11,9 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
-// func init() {
-// 	plugin.Register(&AWSResourcePoliciesModule{})
-// }
+func init() {
+	plugin.Register(&AWSResourcePoliciesModule{})
+}
 
 // ResourcePoliciesConfig holds the typed parameters for resource-policies module.
 type ResourcePoliciesConfig struct {
@@ -55,38 +55,24 @@ func (m *AWSResourcePoliciesModule) Parameters() any {
 func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, emit func(models ...model.AurelianModel)) error {
 	c := m.ResourcePoliciesConfig
 
-	// Resolve regions
 	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
 	if err != nil {
 		return fmt.Errorf("failed to resolve regions: %w", err)
 	}
 
-	// Create the resource policy collector (handles concurrency and rate limiting)
+	c.AWSCommonRecon.Regions = resolvedRegions
+	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
 	collector := resourcepolicies.New(c.AWSCommonRecon)
 
-	// List all supported resource types, streaming into a regional map.
-	lister := cclist.NewCloudControlLister(c.AWSCommonRecon, resolvedRegions)
+	p1 := pipeline.From(collector.SupportedResourceTypes()...)
+	p2 := pipeline.New[output.AWSResource]()
+	p3 := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(p1, lister.List, p2)
+	pipeline.Pipe(p2, collector.Collect, p3)
 
-	e1 := pipeline.From(collector.SupportedResourceTypes()...)
-	e2 := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(e1, lister.List, e2)
-
-	resourcesByRegion := make(map[string][]output.AWSResource)
-	for r := range e2.Range() {
-		resourcesByRegion[r.Region] = append(resourcesByRegion[r.Region], r)
-	}
-	if err := e2.Wait(); err != nil {
-		return fmt.Errorf("failed to list resources: %w", err)
-	}
-
-	// Collect policies across all regions concurrently
-	results, err := collector.Collect(resourcesByRegion)
-	if err != nil {
-		return fmt.Errorf("failed to collect resource policies: %w", err)
-	}
-
-	for _, r := range results {
+	for r := range p3.Range() {
 		emit(r)
 	}
-	return nil
+
+	return p3.Wait()
 }
