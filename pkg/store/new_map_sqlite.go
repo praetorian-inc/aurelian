@@ -4,6 +4,7 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"sync"
 )

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"sync/atomic"
 
 	_ "modernc.org/sqlite"
@@ -25,6 +26,8 @@ type pendingWrite struct {
 // and flushed in a single transaction when the buffer reaches a threshold
 // or when a read operation requires consistent data.
 type SQLiteMap[T any] struct {
+	mu sync.Mutex
+
 	db    *sql.DB
 	table string
 	count int
@@ -32,9 +35,10 @@ type SQLiteMap[T any] struct {
 	// Prepared statements for hot paths.
 	stmtGet    *sql.Stmt
 	stmtInsert *sql.Stmt
+	insertSQL  string
 
 	// Transaction state.
-	inTransaction bool
+	tx *sql.Tx
 
 	// Write buffer. Flushed on reads or when len(pending) >= flushThreshold.
 	pending        []pendingWrite
@@ -59,20 +63,21 @@ func NewSQLiteMapWithThreshold[T any](db *sql.DB, flushThreshold int) (*SQLiteMa
 		value BLOB NOT NULL
 	)`, table)
 	if _, err := db.Exec(ddl); err != nil {
-		return nil, fmt.Errorf("cache: create table %s: %w", table, err)
+		return nil, fmt.Errorf("store: create table %s: %w", table, err)
 	}
 
 	stmtGet, err := db.Prepare(fmt.Sprintf("SELECT value FROM %s WHERE key = ?", table))
 	if err != nil {
-		return nil, fmt.Errorf("cache: prepare get: %w", err)
+		return nil, fmt.Errorf("store: prepare get: %w", err)
 	}
 
-	stmtInsert, err := db.Prepare(fmt.Sprintf(
+	insertSQL := fmt.Sprintf(
 		"INSERT INTO %s (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
 		table,
-	))
+	)
+	stmtInsert, err := db.Prepare(insertSQL)
 	if err != nil {
-		return nil, fmt.Errorf("cache: prepare insert: %w", err)
+		return nil, fmt.Errorf("store: prepare insert: %w", err)
 	}
 
 	if flushThreshold <= 0 {
@@ -84,6 +89,7 @@ func NewSQLiteMapWithThreshold[T any](db *sql.DB, flushThreshold int) (*SQLiteMa
 		table:          table,
 		stmtGet:        stmtGet,
 		stmtInsert:     stmtInsert,
+		insertSQL:      insertSQL,
 		pending:        make([]pendingWrite, 0, flushThreshold),
 		pendingKeys:    make(map[string]int),
 		flushThreshold: flushThreshold,
@@ -91,46 +97,56 @@ func NewSQLiteMapWithThreshold[T any](db *sql.DB, flushThreshold int) (*SQLiteMa
 }
 
 func (m *SQLiteMap[T]) ensureTransaction() error {
-	if m.inTransaction {
+	if m.tx != nil {
 		return nil
 	}
-	if _, err := m.db.Exec("BEGIN IMMEDIATE"); err != nil {
-		return fmt.Errorf("cache: begin immediate: %w", err)
+	tx, err := m.db.Begin()
+	if err != nil {
+		return fmt.Errorf("store: begin: %w", err)
 	}
-	m.inTransaction = true
+	m.tx = tx
 	return nil
 }
 
 func (m *SQLiteMap[T]) commitTransaction() error {
-	if !m.inTransaction {
+	if m.tx == nil {
 		return nil
 	}
-	if _, err := m.db.Exec("COMMIT"); err != nil {
-		return fmt.Errorf("cache: commit: %w", err)
+	err := m.tx.Commit()
+	m.tx = nil
+	if err != nil {
+		return fmt.Errorf("store: commit: %w", err)
 	}
-	m.inTransaction = false
 	return nil
 }
 
 // flush writes all buffered entries to SQLite in a single transaction.
+// Caller must hold m.mu.
 func (m *SQLiteMap[T]) flush() {
 	if len(m.pending) == 0 {
 		return
 	}
 
 	if err := m.ensureTransaction(); err != nil {
-		slog.Error("cache: flush ensure tx", "table", m.table, "error", err)
+		slog.Error("store: flush ensure tx", "table", m.table, "error", err)
 		return
 	}
 
+	txStmt, err := m.tx.Prepare(m.insertSQL)
+	if err != nil {
+		slog.Error("store: flush prepare", "table", m.table, "error", err)
+		return
+	}
+	defer txStmt.Close()
+
 	for _, w := range m.pending {
-		if _, err := m.stmtInsert.Exec(w.key, w.raw); err != nil {
-			slog.Error("cache: tx insert", "table", m.table, "key", w.key, "error", err)
+		if _, err := txStmt.Exec(w.key, w.raw); err != nil {
+			slog.Error("store: tx insert", "table", m.table, "key", w.key, "error", err)
 		}
 	}
 
 	if err := m.commitTransaction(); err != nil {
-		slog.Error("cache: flush commit", "table", m.table, "error", err)
+		slog.Error("store: flush commit", "table", m.table, "error", err)
 	}
 
 	m.pending = m.pending[:0]
@@ -138,17 +154,27 @@ func (m *SQLiteMap[T]) flush() {
 }
 
 func (m *SQLiteMap[T]) Get(key string) (T, bool) {
+	m.mu.Lock()
+
 	// Check the write buffer first (unflushed data).
 	if idx, ok := m.pendingKeys[key]; ok {
+		// Copy the raw bytes so we can unmarshal outside the lock.
+		raw := m.pending[idx].raw
+		m.mu.Unlock()
 		var v T
-		if err := json.Unmarshal(m.pending[idx].raw, &v); err != nil {
-			slog.Error("cache: unmarshal pending", "table", m.table, "key", key, "error", err)
+		if err := json.Unmarshal(raw, &v); err != nil {
+			slog.Error("store: unmarshal pending", "table", m.table, "key", key, "error", err)
 			var zero T
 			return zero, false
 		}
 		return v, true
 	}
 
+	// Flush pending writes so the DB query sees all data.
+	m.flush()
+	m.mu.Unlock()
+
+	// stmtGet is safe for concurrent use after flush.
 	var raw []byte
 	err := m.stmtGet.QueryRow(key).Scan(&raw)
 	if err != nil {
@@ -157,7 +183,7 @@ func (m *SQLiteMap[T]) Get(key string) (T, bool) {
 	}
 	var v T
 	if err := json.Unmarshal(raw, &v); err != nil {
-		slog.Error("cache: unmarshal", "table", m.table, "key", key, "error", err)
+		slog.Error("store: unmarshal", "table", m.table, "key", key, "error", err)
 		var zero T
 		return zero, false
 	}
@@ -167,9 +193,12 @@ func (m *SQLiteMap[T]) Get(key string) (T, bool) {
 func (m *SQLiteMap[T]) Set(key string, value T) {
 	raw, err := json.Marshal(value)
 	if err != nil {
-		slog.Error("cache: marshal", "table", m.table, "key", key, "error", err)
+		slog.Error("store: marshal", "table", m.table, "key", key, "error", err)
 		return
 	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	if idx, ok := m.pendingKeys[key]; ok {
 		// Overwrite existing buffered entry in place.
@@ -190,11 +219,17 @@ func (m *SQLiteMap[T]) Set(key string, value T) {
 }
 
 func (m *SQLiteMap[T]) Range(fn func(string, T) bool) {
+	m.mu.Lock()
 	m.flush()
+	m.mu.Unlock()
 
+	// Row iteration runs outside the lock. The callback may call Get/Set on
+	// *other* SQLiteMap instances (same shared DB), so holding the lock here
+	// would risk deadlock. This map's own data is stable after flush — any
+	// concurrent Set on this map will buffer until the next flush.
 	rows, err := m.db.Query(fmt.Sprintf("SELECT key, value FROM %s", m.table))
 	if err != nil {
-		slog.Error("cache: range query", "table", m.table, "error", err)
+		slog.Error("store: range query", "table", m.table, "error", err)
 		return
 	}
 	defer rows.Close()
@@ -203,12 +238,12 @@ func (m *SQLiteMap[T]) Range(fn func(string, T) bool) {
 		var key string
 		var raw []byte
 		if err := rows.Scan(&key, &raw); err != nil {
-			slog.Error("cache: range scan", "table", m.table, "error", err)
+			slog.Error("store: range scan", "table", m.table, "error", err)
 			continue
 		}
 		var v T
 		if err := json.Unmarshal(raw, &v); err != nil {
-			slog.Error("cache: range unmarshal", "table", m.table, "key", key, "error", err)
+			slog.Error("store: range unmarshal", "table", m.table, "key", key, "error", err)
 			continue
 		}
 		if !fn(key, v) {
@@ -218,6 +253,8 @@ func (m *SQLiteMap[T]) Range(fn func(string, T) bool) {
 }
 
 func (m *SQLiteMap[T]) Len() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	return m.count
 }
 
@@ -230,7 +267,9 @@ func (m *SQLiteMap[T]) UnmarshalJSON([]byte) error {
 }
 
 func (m *SQLiteMap[T]) Close() error {
+	m.mu.Lock()
 	m.flush()
+	m.mu.Unlock()
 	var firstErr error
 	if m.stmtGet != nil {
 		if err := m.stmtGet.Close(); err != nil && firstErr == nil {
@@ -252,27 +291,19 @@ func OpenSQLiteDB(path string) (*sql.DB, error) {
 	if path == "" {
 		f, err := os.CreateTemp("", "cache-*.db")
 		if err != nil {
-			return nil, fmt.Errorf("cache: create temp db: %w", err)
+			return nil, fmt.Errorf("store: create temp db: %w", err)
 		}
 		path = f.Name()
 		f.Close()
 	}
 
-	db, err := sql.Open("sqlite", path)
+	// Use DSN pragma syntax so every pooled connection gets the same settings.
+	// db.Exec("PRAGMA ...") only applies to one connection; new pool connections
+	// start with defaults, causing SQLITE_BUSY on connections without busy_timeout.
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=synchronous(OFF)&_pragma=temp_store(MEMORY)&_pragma=busy_timeout(5000)", path)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("cache: open sqlite %s: %w", path, err)
-	}
-
-	// Performance pragmas for write-heavy ephemeral data.
-	for _, pragma := range []string{
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA synchronous=OFF",
-		"PRAGMA temp_store=MEMORY",
-	} {
-		if _, err := db.Exec(pragma); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("cache: %s: %w", pragma, err)
-		}
+		return nil, fmt.Errorf("store: open sqlite %s: %w", path, err)
 	}
 
 	return db, nil
