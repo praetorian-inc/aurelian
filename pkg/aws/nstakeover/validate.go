@@ -91,10 +91,11 @@ func checkDelegation(d NSDelegation) (*DanglingNSDelegation, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Query the delegated subdomain directly against the delegated nameserver.
-	// If the zone exists, the server should answer authoritatively with records
-	// or NOERROR. If the zone is gone, we expect SERVFAIL, REFUSED, or NXDOMAIN.
-	_, err := resolver.LookupHost(ctx, d.RecordName)
+	// Query the delegated subdomain's NS records directly against the delegated
+	// nameserver. NS records always exist at a zone apex, so this correctly
+	// distinguishes "zone exists" from "zone deleted". Using LookupHost (A/AAAA)
+	// would false-positive on zones that have no A records at the apex.
+	_, err := resolver.LookupNS(ctx, d.RecordName)
 	if err == nil {
 		// The nameserver responded with a result — zone exists, not dangling.
 		return nil, nil
@@ -163,6 +164,10 @@ func classifyDNSError(dnsErr *net.DNSError, errMsg string) string {
 		return "SERVFAIL"
 	}
 	if strings.Contains(errMsg, "REFUSED") {
+		return "REFUSED"
+	}
+	// Go's pure resolver translates REFUSED (and other non-standard rcodes) to "server misbehaving"
+	if strings.Contains(errMsg, "SERVER MISBEHAVING") {
 		return "REFUSED"
 	}
 	if strings.Contains(errMsg, "NXDOMAIN") || strings.Contains(errMsg, "NO SUCH HOST") {
