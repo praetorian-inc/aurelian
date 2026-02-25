@@ -105,6 +105,77 @@ func TestZeroMap(t *testing.T) {
 	})
 }
 
+// testRangeWithKeyFilter verifies RangeWithKeyFilter on any Map[string].
+func testRangeWithKeyFilter(t *testing.T, m Map[string]) {
+	t.Helper()
+
+	m.Set("arn:aws:iam::123456789012:role/admin", "iam-role")
+	m.Set("arn:aws:s3:::my-bucket", "s3-bucket")
+	m.Set("arn:aws:iam::123456789012:user/dev", "iam-user")
+	m.Set("arn:aws:lambda:us-east-1:123456789012:function:foo", "lambda-fn")
+
+	// Filter to IAM resources only.
+	filter := func(key string) bool {
+		return len(key) > 12 && key[:12] == "arn:aws:iam:"
+	}
+
+	seen := make(map[string]string)
+	m.RangeWithKeyFilter(filter, func(k, v string) bool {
+		seen[k] = v
+		return true
+	})
+
+	if len(seen) != 2 {
+		t.Fatalf("expected 2 IAM entries, got %d: %v", len(seen), seen)
+	}
+	if seen["arn:aws:iam::123456789012:role/admin"] != "iam-role" {
+		t.Fatal("missing role entry")
+	}
+	if seen["arn:aws:iam::123456789012:user/dev"] != "iam-user" {
+		t.Fatal("missing user entry")
+	}
+
+	// Early stop.
+	count := 0
+	m.RangeWithKeyFilter(filter, func(k, v string) bool {
+		count++
+		return false
+	})
+	if count != 1 {
+		t.Fatalf("early stop: saw %d, want 1", count)
+	}
+
+	// Filter that matches nothing.
+	count = 0
+	m.RangeWithKeyFilter(func(string) bool { return false }, func(k, v string) bool {
+		count++
+		return true
+	})
+	if count != 0 {
+		t.Fatalf("no-match filter: saw %d, want 0", count)
+	}
+}
+
+func TestMemoryMapRangeWithKeyFilter(t *testing.T) {
+	testRangeWithKeyFilter(t, WrapMap[string](NewMemoryMap[string]()))
+}
+
+func TestSQLiteMapRangeWithKeyFilter(t *testing.T) {
+	db, err := OpenSQLiteDB("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	m, err := NewSQLiteMap[string](db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+
+	testRangeWithKeyFilter(t, WrapMap[string](m))
+}
+
 // Test with pointer types (matching AnalyzerState usage).
 type testStruct struct {
 	Name string `json:"name"`

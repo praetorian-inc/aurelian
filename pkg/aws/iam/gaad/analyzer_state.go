@@ -139,9 +139,9 @@ func (s *AnalyzerState) GetPolicyByArn(policyArn string) *types.ManagedPolicyDet
 func (s *AnalyzerState) getResources(pattern *regexp.Regexp) []*output.AWSResource {
 	seen := make(map[string]bool)
 	var resources []*output.AWSResource
-	s.resourceStore.Range(func(key string, r *output.AWSResource) bool {
+	s.resourceStore.RangeWithKeyFilter(pattern.MatchString, func(key string, r *output.AWSResource) bool {
 		id := r.ARN
-		if pattern.MatchString(key) && !seen[id] {
+		if !seen[id] {
 			seen[id] = true
 			resources = append(resources, r)
 		}

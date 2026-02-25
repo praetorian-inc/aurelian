@@ -30,11 +30,11 @@ type SQLiteMap[T any] struct {
 
 	db    *sql.DB
 	table string
-	count int
 
 	// Prepared statements for hot paths.
 	stmtGet    *sql.Stmt
 	stmtInsert *sql.Stmt
+	stmtCount  *sql.Stmt
 	insertSQL  string
 
 	// Transaction state.
@@ -80,6 +80,11 @@ func NewSQLiteMapWithThreshold[T any](db *sql.DB, flushThreshold int) (*SQLiteMa
 		return nil, fmt.Errorf("store: prepare insert: %w", err)
 	}
 
+	stmtCount, err := db.Prepare(fmt.Sprintf("SELECT COUNT(*) FROM %s", table))
+	if err != nil {
+		return nil, fmt.Errorf("store: prepare count: %w", err)
+	}
+
 	if flushThreshold <= 0 {
 		flushThreshold = defaultFlushThreshold
 	}
@@ -89,6 +94,7 @@ func NewSQLiteMapWithThreshold[T any](db *sql.DB, flushThreshold int) (*SQLiteMa
 		table:          table,
 		stmtGet:        stmtGet,
 		stmtInsert:     stmtInsert,
+		stmtCount:      stmtCount,
 		insertSQL:      insertSQL,
 		pending:        make([]pendingWrite, 0, flushThreshold),
 		pendingKeys:    make(map[string]int),
@@ -204,11 +210,6 @@ func (m *SQLiteMap[T]) Set(key string, value T) {
 		// Overwrite existing buffered entry in place.
 		m.pending[idx].raw = raw
 	} else {
-		// Track count for new keys. Check both buffer and DB.
-		var dummy []byte
-		if err := m.stmtGet.QueryRow(key).Scan(&dummy); err != nil {
-			m.count++
-		}
 		m.pendingKeys[key] = len(m.pending)
 		m.pending = append(m.pending, pendingWrite{key: key, raw: raw})
 	}
@@ -252,10 +253,50 @@ func (m *SQLiteMap[T]) Range(fn func(string, T) bool) {
 	}
 }
 
+func (m *SQLiteMap[T]) RangeWithKeyFilter(filter func(string) bool, fn func(string, T) bool) {
+	m.mu.Lock()
+	m.flush()
+	m.mu.Unlock()
+
+	rows, err := m.db.Query(fmt.Sprintf("SELECT key, value FROM %s", m.table))
+	if err != nil {
+		slog.Error("store: range query", "table", m.table, "error", err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var key string
+		var raw []byte
+		if err := rows.Scan(&key, &raw); err != nil {
+			slog.Error("store: range scan", "table", m.table, "error", err)
+			continue
+		}
+		if !filter(key) {
+			continue
+		}
+		var v T
+		if err := json.Unmarshal(raw, &v); err != nil {
+			slog.Error("store: range unmarshal", "table", m.table, "key", key, "error", err)
+			continue
+		}
+		if !fn(key, v) {
+			return
+		}
+	}
+}
+
 func (m *SQLiteMap[T]) Len() int {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.count
+	m.flush()
+	m.mu.Unlock()
+
+	var count int
+	if err := m.stmtCount.QueryRow().Scan(&count); err != nil {
+		slog.Error("store: count", "table", m.table, "error", err)
+		return 0
+	}
+	return count
 }
 
 func (m *SQLiteMap[T]) MarshalJSON() ([]byte, error) {
@@ -278,6 +319,11 @@ func (m *SQLiteMap[T]) Close() error {
 	}
 	if m.stmtInsert != nil {
 		if err := m.stmtInsert.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	if m.stmtCount != nil {
+		if err := m.stmtCount.Close(); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
