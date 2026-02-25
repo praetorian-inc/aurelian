@@ -1,0 +1,25 @@
+id: aws/enrich/privesc/method_31
+name: IAM PassRole + CloudFormation ChangeSet Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with iam:PassRole, cloudformation:CreateChangeSet, and
+  cloudformation:ExecuteChangeSet permissions that can deploy changes with elevated IAM roles.
+severity: high
+order: 131
+cypher: |
+  MATCH (attacker:Principal)-[passrole]->(target)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+  WITH attacker
+  MATCH (attacker)-[create]->(service_resource)
+  WHERE type(create) = 'CLOUDFORMATION_CREATECHANGESET'
+  WITH attacker, service_resource
+  MATCH (attacker)-[execute]->(exec_resource)
+  WHERE type(execute) = 'CLOUDFORMATION_EXECUTECHANGESET'
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:PassRole + cloudformation:CreateChangeSet + cloudformation:ExecuteChangeSet',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

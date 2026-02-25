@@ -15,8 +15,8 @@ cypher: |
   MATCH (attacker)-[create]->(service_resource)
   WHERE type(create) = 'GLUE_CREATEJOB'
   MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+  ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + glue:CreateJob',
       pe.severity = 'high',
       pe._updated = timestamp()
-  ON CREATE SET pe._created = timestamp()
   RETURN count(pe) as edges_created

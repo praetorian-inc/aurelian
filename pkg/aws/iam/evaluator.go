@@ -1,7 +1,6 @@
 package iam
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -11,13 +10,13 @@ import (
 )
 
 type PolicyData struct {
-	Gaad             *Gaad
+	Gaad             *types.AuthorizationAccountDetails
 	OrgPolicies      *orgpolicies.OrgPolicies
 	ResourcePolicies map[string]*types.Policy
 	Resources        *[]types.EnrichedResourceDescription
 }
 
-func NewPolicyData(gaad *Gaad, orgPolicies *orgpolicies.OrgPolicies, resourcePolicies map[string]*types.Policy, resources *[]types.EnrichedResourceDescription) *PolicyData {
+func NewPolicyData(gaad *types.AuthorizationAccountDetails, orgPolicies *orgpolicies.OrgPolicies, resourcePolicies map[string]*types.Policy, resources *[]types.EnrichedResourceDescription) *PolicyData {
 	if resourcePolicies == nil {
 		resourcePolicies = make(map[string]*types.Policy, 0)
 	}
@@ -36,7 +35,7 @@ func NewPolicyData(gaad *Gaad, orgPolicies *orgpolicies.OrgPolicies, resourcePol
 func (pd *PolicyData) AddResourcePolicies() {
 	// Create resource polices from role assume role policies
 	if pd.Gaad != nil {
-		for _, role := range pd.Gaad.RoleDetailList {
+		pd.Gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {
 			if role.AssumeRolePolicyDocument.Statement != nil {
 				// Create copy of statements to avoid modifying original
 				stmtCopy := make(types.PolicyStatementList, len(*role.AssumeRolePolicyDocument.Statement))
@@ -53,7 +52,8 @@ func (pd *PolicyData) AddResourcePolicies() {
 					Statement: &stmtCopy,
 				}
 			}
-		}
+			return true
+		})
 	}
 }
 
@@ -121,19 +121,6 @@ func (pr *PolicyResult) hasTypeAllow(evalType EvaluationType) bool {
 	return false
 }
 
-// allPoliciesHaveAllow checks if all policies of a specific type have an explicit allow
-// This is used for special cases like SCPs
-func (pr *PolicyResult) allPoliciesHaveAllow(evalType EvaluationType) bool {
-	if evals, exists := pr.Evaluations[evalType]; exists {
-		for _, eval := range evals {
-			if !eval.ExplicitAllow {
-				return false
-			}
-		}
-	}
-	return true
-}
-
 // IsAllowed determines if the overall policy evaluations result in an allow
 func (pr *PolicyResult) IsAllowed() bool {
 	if pr.HasDeny() {
@@ -154,9 +141,6 @@ type EvaluationRequest struct {
 	BoundaryStatements *types.PolicyStatementList // Optional permission boundary
 }
 
-func (er *EvaluationRequest) String() string {
-	return fmt.Sprintf("Principal: %s, Action: %s, Resource: %s, Context: %v", er.Context.PrincipalArn, er.Action, er.Resource, er.Context)
-}
 
 // EvaluationResult represents the final evaluation outcome
 type EvaluationResult struct {
@@ -169,32 +153,7 @@ type EvaluationResult struct {
 	SSMDocumentRestrictions []string // List of allowed SSM document ARNs/patterns (e.g., ["arn:aws:ssm:*:*:document/AWS-RunShellScript", "*"])
 }
 
-func (er *EvaluationResult) String() string {
-	jsonResult, err := json.MarshalIndent(er, "", "  ")
-	if err != nil {
-		fmt.Printf("Error marshalling EvaluationResult to JSON: %v\n", err)
-		return ""
-	}
-	return string(jsonResult)
-}
 
-func (er *EvaluationResult) HasInconclusiveCondition() bool {
-	if er.PolicyResult == nil {
-		return false
-	}
-
-	// Iterate through all evaluation types
-	for _, statements := range er.PolicyResult.Evaluations {
-		for _, statement := range statements {
-			if statement.ConditionEvaluation != nil &&
-				statement.ConditionEvaluation.Result == ConditionInconclusive {
-				return true
-			}
-		}
-	}
-
-	return false
-}
 
 // PolicyEvaluator handles AWS IAM policy evaluation
 type PolicyEvaluator struct {
@@ -629,20 +588,6 @@ type StatementEvaluation struct {
 	Origin              string
 }
 
-func (eval *StatementEvaluation) IsAllowed() bool {
-	return eval.ExplicitAllow && !eval.ExplicitDeny && !eval.ImplicitDeny
-}
-
-// allPoliciesAllow checks if all policies of a specific type have an explicit allow
-// This is used for special cases like SCPs and RCPs
-func allPoliciesAllow(evals []*StatementEvaluation) bool {
-	for _, eval := range evals {
-		if !eval.IsAllowed() {
-			return false
-		}
-	}
-	return true
-}
 
 // extractSSMDocumentRestrictions extracts the allowed SSM document ARNs/patterns from policy statements
 // for SSM actions that require document resources (e.g., ssm:SendCommand, ssm:StartAutomationExecution)
@@ -679,7 +624,7 @@ func extractSSMDocumentRestrictions(action string, statements *types.PolicyState
 		actionMatches := false
 		if stmt.Action != nil {
 			for _, stmtAction := range *stmt.Action {
-				if matchesPattern(stmtAction, action) {
+				if MatchesPattern(stmtAction, action) {
 					actionMatches = true
 					break
 				}

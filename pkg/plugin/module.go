@@ -7,6 +7,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+
+	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
 
 // Platform represents the cloud platform or service category
@@ -41,13 +44,6 @@ type Config struct {
 	Verbose bool            // Verbose logging
 }
 
-// Result is the standardized output type for all modules
-type Result struct {
-	Data     any            // The actual result data
-	Metadata map[string]any // Additional metadata
-	Error    error          // Any error that occurred
-}
-
 // Module is the core interface that all Aurelian modules implement
 type Module interface {
 	// Metadata
@@ -67,8 +63,9 @@ type Module interface {
 	// target for Bind before Run is called.
 	Parameters() any
 
-	// Execution
-	Run(cfg Config) ([]Result, error)
+	// Execution — send results into the pipeline via out.Send().
+	// The caller owns the pipeline lifecycle (including Close).
+	Run(cfg Config, out *pipeline.P[model.AurelianModel]) error
 }
 
 // ModuleWrapper wraps a Module so that Run automatically binds cfg.Args into
@@ -79,11 +76,11 @@ type ModuleWrapper struct {
 	Module
 }
 
-func (m *ModuleWrapper) Run(cfg Config) ([]Result, error) {
+func (m *ModuleWrapper) Run(cfg Config, out *pipeline.P[model.AurelianModel]) error {
 	if target := m.Parameters(); target != nil {
 		if err := Bind(cfg, target); err != nil {
-			return nil, fmt.Errorf("parameter validation failed: %w", err)
+			return fmt.Errorf("parameter validation failed: %w", err)
 		}
 	}
-	return m.Module.Run(cfg)
+	return m.Module.Run(cfg, out)
 }

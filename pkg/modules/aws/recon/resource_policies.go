@@ -5,8 +5,9 @@ import (
 
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
-	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
@@ -44,76 +45,34 @@ func (m *AWSResourcePoliciesModule) References() []string {
 }
 
 func (m *AWSResourcePoliciesModule) SupportedResourceTypes() []string {
-	return resourcepolicies.SupportedResourceTypes()
+	return resourcepolicies.New(m.AWSCommonRecon).SupportedResourceTypes()
 }
 
 func (m *AWSResourcePoliciesModule) Parameters() any {
 	return &m.ResourcePoliciesConfig
 }
 
-func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
+func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.ResourcePoliciesConfig
 
-	// Resolve regions
 	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve regions: %w", err)
+		return fmt.Errorf("failed to resolve regions: %w", err)
 	}
 
-	// Create CloudControl lister to enumerate resources
+	c.AWSCommonRecon.Regions = resolvedRegions
 	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
+	collector := resourcepolicies.New(c.AWSCommonRecon)
 
-	// List all supported resource types
-	allResources, err := lister.List(resolvedRegions, resourcepolicies.SupportedResourceTypes())
-	if err != nil {
-		return nil, fmt.Errorf("failed to list resources: %w", err)
+	p1 := pipeline.From(collector.SupportedResourceTypes()...)
+	p2 := pipeline.New[output.AWSResource]()
+	p3 := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(p1, lister.List, p2)
+	pipeline.Pipe(p2, collector.Collect, p3)
+
+	for r := range p3.Range() {
+		out.Send(r)
 	}
 
-	// Flatten the map[string][]CloudResource to []CloudResource
-	var resourcesList []output.CloudResource
-	for _, resources := range allResources {
-		resourcesList = append(resourcesList, resources...)
-	}
-
-	// For each region, collect policies
-	var allResults []output.CloudResource
-	for _, region := range resolvedRegions {
-		// Filter resources for this region
-		var regionResources []output.CloudResource
-		for _, resource := range resourcesList {
-			if resource.Region == region {
-				regionResources = append(regionResources, resource)
-			}
-		}
-
-		// Get AWS config for this region
-		awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
-			Region:     region,
-			Profile:    c.Profile,
-			ProfileDir: c.ProfileDir,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create AWS config for %s: %w", region, err)
-		}
-
-		// Collect policies for resources in this region
-		resourcesWithPolicies, err := resourcepolicies.CollectPolicies(cfg.Context, awsCfg, regionResources)
-		if err != nil {
-			return nil, fmt.Errorf("failed to collect policies in %s: %w", region, err)
-		}
-
-		allResults = append(allResults, resourcesWithPolicies...)
-	}
-
-	return []plugin.Result{
-		{
-			Data: allResults,
-			Metadata: map[string]any{
-				"module":   m.ID(),
-				"platform": m.Platform(),
-				"regions":  resolvedRegions,
-				"count":    len(allResults),
-			},
-		},
-	}, nil
+	return p3.Wait()
 }

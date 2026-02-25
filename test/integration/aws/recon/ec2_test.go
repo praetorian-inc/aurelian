@@ -4,30 +4,42 @@ package recon
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/recon" // register modules
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// flattenCloudResources converts results[0].Data (which is map[string][]CloudResource)
-// into a flat slice of CloudResource for assertion convenience.
-func flattenCloudResources(t *testing.T, data any) []output.CloudResource {
+// runModule executes a module and collects all emitted results.
+func runModule(t *testing.T, mod plugin.Module, cfg plugin.Config) ([]model.AurelianModel, error) {
 	t.Helper()
-	raw, err := json.Marshal(data)
-	require.NoError(t, err)
-	var resourceMap map[string][]output.CloudResource
-	require.NoError(t, json.Unmarshal(raw, &resourceMap), "Data should be map[string][]CloudResource")
-	var all []output.CloudResource
-	for _, resources := range resourceMap {
-		all = append(all, resources...)
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	return p2.Collect()
+}
+
+// collectAWSResources runs a module and returns only AWSResource results.
+func collectAWSResources(t *testing.T, mod plugin.Module, cfg plugin.Config) ([]output.AWSResource, error) {
+	t.Helper()
+	results, err := runModule(t, mod, cfg)
+	if err != nil {
+		return nil, err
 	}
-	return all
+	var resources []output.AWSResource
+	for _, m := range results {
+		if r, ok := m.(output.AWSResource); ok {
+			resources = append(resources, r)
+		}
+	}
+	return resources, nil
 }
 
 // TestAWSEC2Enumeration verifies comprehensive EC2 instance enumeration capabilities.
@@ -41,7 +53,7 @@ func TestAWSEC2Enumeration(t *testing.T) {
 	}
 
 	t.Run("enumerates EC2 instances in single region", func(t *testing.T) {
-		results, err := mod.Run(plugin.Config{
+		results, err := runModule(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::EC2::Instance"},
 				"regions":       []string{"us-east-2"},
@@ -62,7 +74,7 @@ func TestAWSEC2Enumeration(t *testing.T) {
 	})
 
 	t.Run("validates EC2 instance metadata", func(t *testing.T) {
-		results, err := mod.Run(plugin.Config{
+		resources, err := collectAWSResources(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::EC2::Instance"},
 				"regions":       []string{"us-east-2"},
@@ -71,19 +83,15 @@ func TestAWSEC2Enumeration(t *testing.T) {
 			Context: context.Background(),
 		})
 		require.NoError(t, err)
-		require.NotEmpty(t, results, "should return results")
-
-		// Parse CloudResource data from results — Data is map[string][]CloudResource keyed by region/type
-		resources := flattenCloudResources(t, results[0].Data)
+		require.NotEmpty(t, resources, "should return resources")
 
 		// Filter to EC2 instances only
-		var ec2Instances []output.CloudResource
+		var ec2Instances []output.AWSResource
 		for _, r := range resources {
 			if r.ResourceType == "AWS::EC2::Instance" {
 				ec2Instances = append(ec2Instances, r)
 			}
 		}
-
 		require.NotEmpty(t, ec2Instances, "should find EC2 instances")
 
 		// Build set of fixture instance IDs for filtering
@@ -94,7 +102,7 @@ func TestAWSEC2Enumeration(t *testing.T) {
 		}
 
 		// Filter to only test instances (shared account may have others)
-		var testInstances []output.CloudResource
+		var testInstances []output.AWSResource
 		for _, instance := range ec2Instances {
 			if instanceIDSet[instance.ResourceID] {
 				testInstances = append(testInstances, instance)
@@ -107,7 +115,6 @@ func TestAWSEC2Enumeration(t *testing.T) {
 			assert.NotEmpty(t, instance.ResourceID, "instance should have ID")
 			assert.NotEmpty(t, instance.ARN, "instance should have ARN")
 			assert.Equal(t, "AWS::EC2::Instance", instance.ResourceType, "resource type should be EC2 Instance")
-			assert.Equal(t, string(plugin.PlatformAWS), instance.Platform, "platform should be AWS")
 			assert.Equal(t, "us-east-2", instance.Region, "region should match scan target")
 			assert.NotNil(t, instance.Properties, "instance should have properties")
 			assert.Contains(t, instance.Properties, "InstanceType", "should include instance type")
@@ -116,7 +123,7 @@ func TestAWSEC2Enumeration(t *testing.T) {
 	})
 
 	t.Run("enumerates instances with correct count", func(t *testing.T) {
-		results, err := mod.Run(plugin.Config{
+		resources, err := collectAWSResources(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::EC2::Instance"},
 				"regions":       []string{"us-east-2"},
@@ -125,8 +132,6 @@ func TestAWSEC2Enumeration(t *testing.T) {
 			Context: context.Background(),
 		})
 		require.NoError(t, err)
-
-		resources := flattenCloudResources(t, results[0].Data)
 
 		// Count EC2 instances
 		ec2Count := 0
@@ -142,8 +147,7 @@ func TestAWSEC2Enumeration(t *testing.T) {
 	})
 
 	t.Run("handles empty results gracefully", func(t *testing.T) {
-		// Test region without test resources
-		results, err := mod.Run(plugin.Config{
+		results, err := runModule(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::EC2::Instance"},
 				"regions":       []string{"us-west-1"}, // Different region
@@ -151,15 +155,12 @@ func TestAWSEC2Enumeration(t *testing.T) {
 			},
 			Context: context.Background(),
 		})
-		// Should not error even if no instances found
 		require.NoError(t, err)
-		// Results should still be valid (may be empty or contain other resources)
 		require.NotNil(t, results)
 	})
 
 	t.Run("filters EC2 instances correctly from mixed resources", func(t *testing.T) {
-		// Scan multiple resource types
-		results, err := mod.Run(plugin.Config{
+		resources, err := collectAWSResources(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{
 					"AWS::EC2::Instance",
@@ -172,9 +173,7 @@ func TestAWSEC2Enumeration(t *testing.T) {
 			Context: context.Background(),
 		})
 		require.NoError(t, err)
-		require.NotEmpty(t, results)
-
-		resources := flattenCloudResources(t, results[0].Data)
+		require.NotEmpty(t, resources)
 
 		// Verify we have multiple resource types
 		resourceTypes := make(map[string]bool)
@@ -187,14 +186,13 @@ func TestAWSEC2Enumeration(t *testing.T) {
 		// Verify each instance is properly typed
 		for _, r := range resources {
 			if r.ResourceType == "AWS::EC2::Instance" {
-				assert.Equal(t, string(plugin.PlatformAWS), r.Platform)
 				assert.NotEmpty(t, r.ResourceID)
 			}
 		}
 	})
 
 	t.Run("includes instance tags in enumeration", func(t *testing.T) {
-		results, err := mod.Run(plugin.Config{
+		results, err := runModule(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::EC2::Instance"},
 				"regions":       []string{"us-east-2"},
@@ -207,29 +205,6 @@ func TestAWSEC2Enumeration(t *testing.T) {
 		// Verify that the Name tag prefix from terraform is present
 		prefix := fixture.Output("prefix")
 		testutil.AssertResultContainsString(t, results, prefix)
-	})
-
-	t.Run("validates result metadata", func(t *testing.T) {
-		results, err := mod.Run(plugin.Config{
-			Args: map[string]any{
-				"resource-type": []string{"AWS::EC2::Instance"},
-				"regions":       []string{"us-east-2"},
-				"scan-type":     "full",
-			},
-			Context: context.Background(),
-		})
-		require.NoError(t, err)
-		require.NotEmpty(t, results)
-
-		// Verify result metadata
-		result := results[0]
-		assert.NotNil(t, result.Metadata, "result should have metadata")
-		assert.Equal(t, "list-all", result.Metadata["module"])
-		assert.Equal(t, plugin.PlatformAWS, result.Metadata["platform"])
-
-		regions, ok := result.Metadata["regions"].([]string)
-		assert.True(t, ok, "regions should be string slice")
-		assert.Contains(t, regions, "us-east-2")
 	})
 }
 
@@ -244,7 +219,7 @@ func TestAWSEC2EnumerationMultiRegion(t *testing.T) {
 	}
 
 	t.Run("enumerates across multiple regions", func(t *testing.T) {
-		results, err := mod.Run(plugin.Config{
+		results, err := runModule(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::EC2::Instance"},
 				"regions":       []string{"us-east-1", "us-east-2", "us-west-2"},
@@ -262,8 +237,7 @@ func TestAWSEC2EnumerationMultiRegion(t *testing.T) {
 	})
 
 	t.Run("handles concurrent region scanning", func(t *testing.T) {
-		// Test with high concurrency
-		results, err := mod.Run(plugin.Config{
+		results, err := runModule(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::EC2::Instance"},
 				"regions":       []string{"us-east-1", "us-east-2", "us-west-1", "us-west-2"},
@@ -285,7 +259,7 @@ func TestAWSEC2EnumerationErrorHandling(t *testing.T) {
 	}
 
 	t.Run("handles invalid region gracefully", func(t *testing.T) {
-		results, err := mod.Run(plugin.Config{
+		results, err := runModule(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::EC2::Instance"},
 				"regions":       []string{"invalid-region-xyz"},
@@ -300,15 +274,13 @@ func TestAWSEC2EnumerationErrorHandling(t *testing.T) {
 	})
 
 	t.Run("validates required parameters", func(t *testing.T) {
-		// Missing resource-type should use defaults
-		results, err := mod.Run(plugin.Config{
+		results, err := runModule(t, mod, plugin.Config{
 			Args: map[string]any{
 				"regions":   []string{"us-east-2"},
 				"scan-type": "full",
 			},
 			Context: context.Background(),
 		})
-		// Should succeed with default resource types
 		require.NoError(t, err)
 		require.NotNil(t, results)
 	})
@@ -317,7 +289,7 @@ func TestAWSEC2EnumerationErrorHandling(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel immediately
 
-		_, err := mod.Run(plugin.Config{
+		_, err := runModule(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::EC2::Instance"},
 				"regions":       []string{"us-east-2"},
@@ -325,8 +297,6 @@ func TestAWSEC2EnumerationErrorHandling(t *testing.T) {
 			},
 			Context: ctx,
 		})
-		// Should handle cancelled context appropriately
-		// May error or return partial results depending on timing
 		t.Logf("Cancellation result: %v", err)
 	})
 }

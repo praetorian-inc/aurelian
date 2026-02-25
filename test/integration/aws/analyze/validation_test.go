@@ -9,6 +9,8 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/graph"
 	"github.com/praetorian-inc/aurelian/pkg/graph/adapters"
+	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
@@ -46,17 +48,22 @@ func TestGraphValidation_PrivescDetection(t *testing.T) {
 	t.Logf("Using shared Neo4j container at %s", boltURL)
 
 	// Step 3: Run graph module against the AWS account
-	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryAnalyze, "graph")
+	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "graph")
 	if !ok {
 		t.Fatal("graph module not registered in plugin system")
 	}
 
-	results, err := mod.Run(plugin.Config{
+	cfg := plugin.Config{
 		Args: map[string]any{
 			"regions": []string{region},
 		},
 		Context: ctx,
-	})
+	}
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	results, err := p2.Collect()
 	require.NoError(t, err)
 	require.NotEmpty(t, results, "graph module should return results")
 	t.Logf("Graph module returned %d result sets", len(results))
@@ -81,7 +88,7 @@ func TestGraphValidation_PrivescDetection(t *testing.T) {
 	// Each test validates that a specific privilege escalation path was detected
 	// in the graph. Relationship types are normalized: iam:Action → IAM_ACTION.
 	// Property names: GAAD nodes use PascalCase (Arn, UserName, RoleName),
-	// CloudResource nodes use lowercase (arn) from JSON tags.
+	// AWSResource nodes use lowercase (arn) from JSON tags.
 	//
 	// Queries include the Terraform suffix to isolate from leftover infrastructure
 	// in shared AWS accounts.

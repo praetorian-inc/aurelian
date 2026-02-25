@@ -53,10 +53,14 @@ resource "null_resource" "create_dangerous_policy_version" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      aws iam create-policy-version \
-        --policy-arn ${aws_iam_policy.vuln_iam_setdefaultpolicyversion_target_policy.arn} \
-        --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}' \
-        --no-set-as-default
+      for i in 1 2 3 4 5; do
+        aws iam create-policy-version \
+          --policy-arn ${aws_iam_policy.vuln_iam_setdefaultpolicyversion_target_policy.arn} \
+          --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}' \
+          --no-set-as-default && break
+        echo "Attempt $i failed, retrying in $((i * 2))s..."
+        sleep $((i * 2))
+      done
     EOT
   }
 }
@@ -67,10 +71,14 @@ resource "null_resource" "create_moderate_policy_version" {
 
   provisioner "local-exec" {
     command = <<-EOT
-      aws iam create-policy-version \
-        --policy-arn ${aws_iam_policy.vuln_iam_setdefaultpolicyversion_target_policy.arn} \
-        --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:ListAllMyBuckets","s3:GetBucketLocation","s3:ListBucket"],"Resource":"*"}]}' \
-        --set-as-default
+      for i in 1 2 3 4 5; do
+        aws iam create-policy-version \
+          --policy-arn ${aws_iam_policy.vuln_iam_setdefaultpolicyversion_target_policy.arn} \
+          --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:ListAllMyBuckets","s3:GetBucketLocation","s3:ListBucket"],"Resource":"*"}]}' \
+          --set-as-default && break
+        echo "Attempt $i failed, retrying in $((i * 2))s..."
+        sleep $((i * 2))
+      done
     EOT
   }
 }

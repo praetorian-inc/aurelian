@@ -45,7 +45,7 @@ func Test_CloudControl_ListAllInAllRegions(t *testing.T) {
 	verifyRegionsPresent(t, results, EXPECTED_REGIONS...)
 }
 
-func verifyRegionsPresent(t *testing.T, results map[string][]output.CloudResource, regions ...string) {
+func verifyRegionsPresent(t *testing.T, results map[string][]output.AWSResource, regions ...string) {
 	t.Helper()
 
 	for _, region := range regions {
@@ -53,7 +53,7 @@ func verifyRegionsPresent(t *testing.T, results map[string][]output.CloudResourc
 	}
 }
 
-func verifyRegionPresent(t *testing.T, results map[string][]output.CloudResource, region string) {
+func verifyRegionPresent(t *testing.T, results map[string][]output.AWSResource, region string) {
 	t.Helper()
 
 	regionFound := false

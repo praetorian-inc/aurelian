@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 
-	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/graph"
 	"github.com/praetorian-inc/aurelian/pkg/graph/adapters"
 	"github.com/praetorian-inc/aurelian/pkg/graph/queries"
 	awstransformers "github.com/praetorian-inc/aurelian/pkg/graph/transformers/aws"
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 )
 
@@ -34,46 +34,30 @@ func NewGraphFormatter(uri, username, password string) (*GraphFormatter, error) 
 }
 
 // Format processes module results and writes to Neo4j
-func (f *GraphFormatter) Format(results []Result) error {
+func (f *GraphFormatter) Format(results []model.AurelianModel) error {
 	ctx := context.Background()
 
-	// Type-switch on Result.Data to identify structure
-	var gaad *iampkg.Gaad
-	var resources []output.CloudResource
-	var fullResults []iampkg.FullResult
+	// Collect entities and relationships from individual emitted models.
+	var entities []output.AWSIAMResource
+	var iamRelationships []output.AWSIAMRelationship
 
 	for _, result := range results {
-		switch data := result.Data.(type) {
-		case *iampkg.Gaad:
-			gaad = data
-		case []output.CloudResource:
-			resources = data
-		case []iampkg.FullResult:
-			fullResults = data
-		case map[string][]output.CloudResource:
-			for _, resList := range data {
-				resources = append(resources, resList...)
-			}
+		switch data := result.(type) {
+		case output.AWSIAMResource:
+			entities = append(entities, data)
+		case output.AWSIAMRelationship:
+			iamRelationships = append(iamRelationships, data)
 		}
 	}
 
-	if gaad == nil {
-		return fmt.Errorf("no GAAD data found in results")
+	if len(entities) == 0 {
+		return fmt.Errorf("no entity data found in results")
 	}
 
-	// Transform GAAD principals to nodes
+	// Transform entities to nodes
 	var nodes []*graph.Node
-	for _, user := range gaad.UserDetailList {
-		nodes = append(nodes, awstransformers.NodeFromGaadUser(user))
-	}
-	for _, role := range gaad.RoleDetailList {
-		nodes = append(nodes, awstransformers.NodeFromGaadRole(role))
-	}
-	for _, group := range gaad.GroupDetailList {
-		nodes = append(nodes, awstransformers.NodeFromGaadGroup(group))
-	}
-	for _, resource := range resources {
-		nodes = append(nodes, awstransformers.NodeFromCloudResource(resource))
+	for _, entity := range entities {
+		nodes = append(nodes, awstransformers.NodeFromAWSIAMResource(entity))
 	}
 
 	// Create nodes in Neo4j
@@ -84,10 +68,10 @@ func (f *GraphFormatter) Format(results []Result) error {
 	}
 	slog.Info("nodes created", "created", nodeResult.NodesCreated, "duration_ms", nodeResult.ExecutionTimeMs)
 
-	// Transform FullResults to relationships
+	// Transform AWSIAMRelationships to graph relationships
 	var relationships []*graph.Relationship
-	for _, fr := range fullResults {
-		relationships = append(relationships, awstransformers.RelationshipFromFullResult(fr))
+	for _, rel := range iamRelationships {
+		relationships = append(relationships, awstransformers.RelationshipFromAWSIAMRelationship(rel))
 	}
 
 	// Create relationships in Neo4j

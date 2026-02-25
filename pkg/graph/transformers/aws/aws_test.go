@@ -11,14 +11,14 @@ import (
 )
 
 func TestNodeFromGaadUser(t *testing.T) {
-	user := iam.UserDL{
+	user := types.UserDetail{
 		Arn:        "arn:aws:iam::123456789012:user/test-user",
 		UserName:   "test-user",
 		UserId:     "AIDACKCEVSQ6C2EXAMPLE",
 		Path:       "/",
 		CreateDate: "2024-01-15T10:30:00Z",
 		GroupList:  []string{"developers", "admins"},
-		Tags: []iam.Tag{
+		Tags: []types.Tag{
 			{Key: "Environment", Value: "production"},
 		},
 	}
@@ -38,7 +38,7 @@ func TestNodeFromGaadUser(t *testing.T) {
 }
 
 func TestNodeFromGaadRole(t *testing.T) {
-	role := iam.RoleDL{
+	role := types.RoleDetail{
 		Arn:      "arn:aws:iam::123456789012:role/test-role",
 		RoleName: "test-role",
 		RoleId:   "AIDACKCEVSQ6C2EXAMPLE",
@@ -76,7 +76,7 @@ func TestNodeFromGaadRole(t *testing.T) {
 }
 
 func TestNodeFromGaadGroup(t *testing.T) {
-	group := iam.GroupDL{
+	group := types.GroupDetail{
 		Arn:       "arn:aws:iam::123456789012:group/developers",
 		GroupName: "developers",
 		GroupId:   "AIDACKCEVSQ6C2EXAMPLE",
@@ -96,44 +96,60 @@ func TestNodeFromGaadGroup(t *testing.T) {
 	assert.Equal(t, "developers", node.Properties["GroupName"])
 }
 
-func TestNodeFromCloudResource(t *testing.T) {
+func TestNodeFromAWSResource(t *testing.T) {
 	tests := []struct {
-		name         string
-		resource     output.CloudResource
-		wantLabels   []string
+		name          string
+		resource      output.AWSResource
+		wantLabels    []string
 		wantShortName string
 	}{
 		{
 			name: "S3 Bucket",
-			resource: output.CloudResource{
-				Platform:     "aws",
+			resource: output.AWSResource{
 				ResourceType: "AWS::S3::Bucket",
 				ResourceID:   "test-bucket",
 				ARN:          "arn:aws:s3:::test-bucket",
 				AccountRef:   "123456789012",
 				Region:       "us-east-1",
 			},
-			wantLabels:   []string{"Bucket", "Resource", "AWS::S3::Bucket"},
+			wantLabels:    []string{"Bucket", "Resource", "AWS::S3::Bucket"},
 			wantShortName: "Bucket",
 		},
 		{
 			name: "Lambda Function",
-			resource: output.CloudResource{
-				Platform:     "aws",
+			resource: output.AWSResource{
 				ResourceType: "AWS::Lambda::Function",
 				ResourceID:   "my-function",
 				ARN:          "arn:aws:lambda:us-east-1:123456789012:function:my-function",
 				AccountRef:   "123456789012",
 				Region:       "us-east-1",
 			},
-			wantLabels:   []string{"Function", "Resource", "AWS::Lambda::Function"},
+			wantLabels:    []string{"Function", "Resource", "AWS::Lambda::Function"},
 			wantShortName: "Function",
+		},
+		{
+			name: "empty ResourceType",
+			resource: output.AWSResource{
+				ResourceType: "",
+				ARN:          "arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0",
+			},
+			wantLabels:    []string{"Resource"},
+			wantShortName: "",
+		},
+		{
+			name: "malformed ResourceType with only two parts",
+			resource: output.AWSResource{
+				ResourceType: "AWS::S3",
+				ARN:          "arn:aws:s3:::test-bucket",
+			},
+			wantLabels:    []string{"Resource", "AWS::S3"},
+			wantShortName: "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			node := NodeFromCloudResource(tt.resource)
+			node := NodeFromAWSResource(tt.resource)
 
 			require.NotNil(t, node)
 			assert.Equal(t, tt.wantLabels, node.Labels)
@@ -141,6 +157,11 @@ func TestNodeFromCloudResource(t *testing.T) {
 			assert.Equal(t, tt.resource.ARN, node.Properties["arn"])
 			assert.Equal(t, "Resource", node.Properties["_type"])
 			assert.Equal(t, tt.resource.ResourceType, node.Properties["_resourceType"])
+
+			// Verify no empty labels (would cause Neo4j syntax errors)
+			for _, label := range node.Labels {
+				assert.NotEmpty(t, label, "labels must not contain empty strings")
+			}
 		})
 	}
 }
@@ -165,7 +186,7 @@ func TestRelationshipFromFullResult(t *testing.T) {
 		{
 			name: "User principal",
 			result: iam.FullResult{
-				Principal: &iam.UserDL{
+				Principal: &types.UserDetail{
 					Arn:      "arn:aws:iam::123456789012:user/test-user",
 					UserName: "test-user",
 				},
@@ -183,7 +204,7 @@ func TestRelationshipFromFullResult(t *testing.T) {
 		{
 			name: "Role principal",
 			result: iam.FullResult{
-				Principal: &iam.RoleDL{
+				Principal: &types.RoleDetail{
 					Arn:      "arn:aws:iam::123456789012:role/test-role",
 					RoleName: "test-role",
 				},
@@ -201,7 +222,7 @@ func TestRelationshipFromFullResult(t *testing.T) {
 		{
 			name: "Group principal",
 			result: iam.FullResult{
-				Principal: &iam.GroupDL{
+				Principal: &types.GroupDetail{
 					Arn:       "arn:aws:iam::123456789012:group/developers",
 					GroupName: "developers",
 				},

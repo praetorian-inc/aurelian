@@ -7,10 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestCloudResourceJSONSerialization tests that CloudResource can be marshaled and unmarshaled to/from JSON
-func TestCloudResourceJSONSerialization(t *testing.T) {
-	resource := CloudResource{
-		Platform:     "aws",
+// TestAWSResourceJSONSerialization tests that AWSResource can be marshaled and unmarshaled to/from JSON
+func TestAWSResourceJSONSerialization(t *testing.T) {
+	resource := AWSResource{
 		ResourceType: "AWS::S3::Bucket",
 		ResourceID:   "arn:aws:s3:::test-bucket",
 		AccountRef:   "123456789012",
@@ -27,12 +26,11 @@ func TestCloudResourceJSONSerialization(t *testing.T) {
 	assert.NotEmpty(t, data)
 
 	// Unmarshal back
-	var decoded CloudResource
+	var decoded AWSResource
 	err = json.Unmarshal(data, &decoded)
 	assert.NoError(t, err)
 
 	// Verify fields
-	assert.Equal(t, "aws", decoded.Platform)
 	assert.Equal(t, "AWS::S3::Bucket", decoded.ResourceType)
 	assert.Equal(t, "arn:aws:s3:::test-bucket", decoded.ResourceID)
 	assert.Equal(t, "123456789012", decoded.AccountRef)
@@ -44,56 +42,10 @@ func TestCloudResourceJSONSerialization(t *testing.T) {
 	assert.Equal(t, []string{"52.218.224.1"}, decoded.IPs)
 }
 
-// TestCloudResourceGCPFormat tests GCP-specific resource format
-func TestCloudResourceGCPFormat(t *testing.T) {
-	resource := CloudResource{
-		Platform:     "gcp",
-		ResourceType: "cloudresourcemanager.googleapis.com/Project",
-		ResourceID:   "projects/my-project-123",
-		AccountRef:   "organizations/123456789",
-		DisplayName:  "My Project",
-		Properties:   map[string]any{"projectNumber": "987654321", "lifecycleState": "ACTIVE"},
-	}
 
-	data, err := json.Marshal(resource)
-	assert.NoError(t, err)
-
-	var decoded CloudResource
-	err = json.Unmarshal(data, &decoded)
-	assert.NoError(t, err)
-
-	assert.Equal(t, "gcp", decoded.Platform)
-	assert.Equal(t, "cloudresourcemanager.googleapis.com/Project", decoded.ResourceType)
-	assert.Equal(t, "projects/my-project-123", decoded.ResourceID)
-}
-
-// TestCloudResourceAzureFormat tests Azure-specific resource format
-func TestCloudResourceAzureFormat(t *testing.T) {
-	resource := CloudResource{
-		Platform:     "azure",
-		ResourceType: "Microsoft.Storage/storageAccounts",
-		ResourceID:   "/subscriptions/sub-123/resourceGroups/rg-test/providers/Microsoft.Storage/storageAccounts/testacct",
-		AccountRef:   "sub-123",
-		Region:       "westus2",
-		DisplayName:  "testacct",
-		Properties:   map[string]any{"sku": "Standard_LRS", "kind": "StorageV2"},
-	}
-
-	data, err := json.Marshal(resource)
-	assert.NoError(t, err)
-
-	var decoded CloudResource
-	err = json.Unmarshal(data, &decoded)
-	assert.NoError(t, err)
-
-	assert.Equal(t, "azure", decoded.Platform)
-	assert.Equal(t, "Microsoft.Storage/storageAccounts", decoded.ResourceType)
-}
-
-// TestCloudResourceMinimal tests minimal required fields
-func TestCloudResourceMinimal(t *testing.T) {
-	resource := CloudResource{
-		Platform:     "aws",
+// TestAWSResourceMinimal tests minimal required fields
+func TestAWSResourceMinimal(t *testing.T) {
+	resource := AWSResource{
 		ResourceType: "AWS::EC2::Instance",
 		ResourceID:   "i-1234567890abcdef0",
 		AccountRef:   "123456789012",
@@ -102,11 +54,10 @@ func TestCloudResourceMinimal(t *testing.T) {
 	data, err := json.Marshal(resource)
 	assert.NoError(t, err)
 
-	var decoded CloudResource
+	var decoded AWSResource
 	err = json.Unmarshal(data, &decoded)
 	assert.NoError(t, err)
 
-	assert.Equal(t, "aws", decoded.Platform)
 	assert.Equal(t, "AWS::EC2::Instance", decoded.ResourceType)
 	assert.Equal(t, "i-1234567890abcdef0", decoded.ResourceID)
 	assert.Equal(t, "123456789012", decoded.AccountRef)
@@ -201,8 +152,7 @@ func TestSecretFindingConfidenceLevels(t *testing.T) {
 
 // TestRiskJSONSerialization tests that Risk can be marshaled and unmarshaled to/from JSON
 func TestRiskJSONSerialization(t *testing.T) {
-	target := &CloudResource{
-		Platform:     "aws",
+	target := &AWSResource{
 		ResourceType: "AWS::S3::Bucket",
 		ResourceID:   "arn:aws:s3:::vulnerable-bucket",
 		AccountRef:   "123456789012",
@@ -245,15 +195,13 @@ func TestRiskJSONSerialization(t *testing.T) {
 
 	// Verify Target resource
 	assert.NotNil(t, decoded.Target)
-	assert.Equal(t, "aws", decoded.Target.Platform)
 	assert.Equal(t, "AWS::S3::Bucket", decoded.Target.ResourceType)
 	assert.Equal(t, "arn:aws:s3:::vulnerable-bucket", decoded.Target.ResourceID)
 }
 
 // TestRiskMinimal tests minimal required fields
 func TestRiskMinimal(t *testing.T) {
-	target := &CloudResource{
-		Platform:     "aws",
+	target := &AWSResource{
 		ResourceType: "AWS::IAM::Role",
 		ResourceID:   "arn:aws:iam::123456789012:role/test-role",
 		AccountRef:   "123456789012",
@@ -289,8 +237,7 @@ func TestRiskSeverityLevels(t *testing.T) {
 	severityLevels := []string{"TL", "TM", "TH", "TC"}
 
 	for _, severity := range severityLevels {
-		target := &CloudResource{
-			Platform:     "aws",
+		target := &AWSResource{
 			ResourceType: "AWS::Lambda::Function",
 			ResourceID:   "arn:aws:lambda:us-west-2:123456789012:function:test",
 			AccountRef:   "123456789012",

@@ -4,6 +4,9 @@ import (
 	"fmt"
 
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
+	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
@@ -51,28 +54,24 @@ func (m *AWSListAllResourcesModule) Parameters() any {
 	return &m.ListAllConfig
 }
 
-func (m *AWSListAllResourcesModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
+func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.ListAllConfig
 
 	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve regions: %w", err)
+		return fmt.Errorf("failed to resolve regions: %w", err)
 	}
 
+	c.AWSCommonRecon.Regions = resolvedRegions
 	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
-	results, err := lister.List(resolvedRegions, selectResourceTypes(c.ScanType))
-	if err != nil {
-		return nil, err
+
+	p1 := pipeline.From(selectResourceTypes(c.ScanType)...)
+	p2 := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(p1, lister.List, p2)
+
+	for r := range p2.Range() {
+		out.Send(r)
 	}
 
-	return []plugin.Result{
-		{
-			Data: results,
-			Metadata: map[string]any{
-				"module":   m.ID(),
-				"platform": m.Platform(),
-				"regions":  resolvedRegions,
-			},
-		},
-	}, nil
+	return p2.Wait()
 }

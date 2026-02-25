@@ -1,0 +1,25 @@
+id: aws/enrich/privesc/method_42
+name: UpdateAssumeRolePolicy + PassRole + Service Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals that can update a role's trust policy, pass the role,
+  and invoke a service to assume it. This compound method covers scenarios
+  where the attacker modifies a trust policy to allow a service, passes the
+  role to that service, then uses the service to assume the now-trusted role.
+severity: high
+order: 142
+cypher: |
+  MATCH (attacker:Principal)-[update]->(target:Role)
+  WHERE type(update) = 'IAM_UPDATEASSUMEROLEPOLICY'
+  AND target.Arn <> attacker.Arn
+  WITH attacker, target
+  MATCH (attacker)-[passrole]->(target)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(target)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:UpdateAssumeRolePolicy + iam:PassRole + service',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

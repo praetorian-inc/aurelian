@@ -63,8 +63,7 @@ func TestResourcePoliciesCollectPoliciesFlow(t *testing.T) {
 	validPolicyJSON := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"*"},"Action":"s3:GetObject","Resource":"arn:aws:s3:::test-bucket/*"}]}`
 
 	// Step 1: Create mock resources for different types
-	s3Resource := output.CloudResource{
-		Platform:     "aws",
+	s3Resource := output.AWSResource{
 		ResourceType: "AWS::S3::Bucket",
 		ResourceID:   "test-bucket",
 		ARN:          "arn:aws:s3:::test-bucket",
@@ -75,8 +74,7 @@ func TestResourcePoliciesCollectPoliciesFlow(t *testing.T) {
 		},
 	}
 
-	lambdaResource := output.CloudResource{
-		Platform:     "aws",
+	lambdaResource := output.AWSResource{
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "test-function",
 		ARN:          "arn:aws:lambda:us-east-1:123456789012:function:test-function",
@@ -87,8 +85,7 @@ func TestResourcePoliciesCollectPoliciesFlow(t *testing.T) {
 		},
 	}
 
-	snsResource := output.CloudResource{
-		Platform:     "aws",
+	snsResource := output.AWSResource{
 		ResourceType: "AWS::SNS::Topic",
 		ResourceID:   "test-topic",
 		ARN:          "arn:aws:sns:us-east-1:123456789012:test-topic",
@@ -99,8 +96,7 @@ func TestResourcePoliciesCollectPoliciesFlow(t *testing.T) {
 		},
 	}
 
-	sqsResource := output.CloudResource{
-		Platform:     "aws",
+	sqsResource := output.AWSResource{
 		ResourceType: "AWS::SQS::Queue",
 		ResourceID:   "test-queue",
 		ARN:          "arn:aws:sqs:us-east-1:123456789012:test-queue",
@@ -188,7 +184,7 @@ func TestResourcePoliciesNoPolicy(t *testing.T) {
 	ctx := context.Background()
 
 	// Test S3 bucket with NoSuchBucketPolicy error
-	s3Resource := output.CloudResource{
+	s3Resource := output.AWSResource{
 		ResourceType: "AWS::S3::Bucket",
 		ResourceID:   "no-policy-bucket",
 		Properties: map[string]any{
@@ -205,7 +201,7 @@ func TestResourcePoliciesNoPolicy(t *testing.T) {
 	assert.Nil(t, policy)
 
 	// Test Lambda with ResourceNotFoundException (returns nil, not error)
-	lambdaResource := output.CloudResource{
+	lambdaResource := output.AWSResource{
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "no-policy-function",
 		Properties: map[string]any{
@@ -222,7 +218,7 @@ func TestResourcePoliciesNoPolicy(t *testing.T) {
 	assert.Nil(t, policy)
 
 	// Test SNS topic with empty Policy attribute
-	snsResource := output.CloudResource{
+	snsResource := output.AWSResource{
 		ResourceType: "AWS::SNS::Topic",
 		ResourceID:   "no-policy-topic",
 		Properties: map[string]any{

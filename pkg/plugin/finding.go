@@ -1,10 +1,14 @@
 package plugin
 
-import "github.com/praetorian-inc/aurelian/pkg/output"
+import (
+	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+)
 
 // Finding represents a security vulnerability or misconfiguration discovered by an analyzer.
 // Analyzers (both YAML rules and Go modules) return []Finding from their Run() method.
 type Finding struct {
+	model.BaseAurelianModel
 	// RuleID is the machine-readable identifier for the detection rule
 	// Examples: "lambda-no-auth-function-url", "s3-public-bucket"
 	RuleID string
@@ -21,7 +25,7 @@ type Finding struct {
 	Description string
 
 	// Resource is the cloud resource with the vulnerability
-	Resource output.CloudResource
+	Resource output.AWSResource
 
 	// References contains external documentation links (optional)
 	References []string

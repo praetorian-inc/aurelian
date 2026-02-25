@@ -19,7 +19,7 @@ func TestRegisterEnricher(t *testing.T) {
 
 	// Register enricher for Lambda functions
 	called := false
-	enricher := func(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+	enricher := func(cfg plugin.EnricherConfig, r *output.AWSResource) error {
 		called = true
 		r.Properties["TestProperty"] = "value"
 		return nil
@@ -32,7 +32,7 @@ func TestRegisterEnricher(t *testing.T) {
 	require.Len(t, enrichers, 1, "Should have 1 enricher registered")
 
 	// Execute enricher
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::Lambda::Function",
 		Properties:   make(map[string]any),
 	}
@@ -51,11 +51,11 @@ func TestMultipleEnrichersPerType(t *testing.T) {
 	plugin.ResetEnricherRegistry()
 
 	// Register two enrichers for the same resource type
-	enricher1 := func(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+	enricher1 := func(cfg plugin.EnricherConfig, r *output.AWSResource) error {
 		r.Properties["Enricher1"] = "ran"
 		return nil
 	}
-	enricher2 := func(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+	enricher2 := func(cfg plugin.EnricherConfig, r *output.AWSResource) error {
 		r.Properties["Enricher2"] = "ran"
 		return nil
 	}
@@ -68,7 +68,7 @@ func TestMultipleEnrichersPerType(t *testing.T) {
 	require.Len(t, enrichers, 2, "Should have 2 enrichers registered")
 
 	// Execute both enrichers
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::Lambda::Function",
 		Properties:   make(map[string]any),
 	}
@@ -88,14 +88,14 @@ func TestEnricherErrorHandling(t *testing.T) {
 	plugin.ResetEnricherRegistry()
 
 	// Enricher that returns an error
-	enricher := func(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+	enricher := func(cfg plugin.EnricherConfig, r *output.AWSResource) error {
 		return fmt.Errorf("enrichment failed")
 	}
 
 	plugin.RegisterEnricher("AWS::S3::Bucket", enricher)
 
 	// Execute enricher
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::S3::Bucket",
 		Properties:   make(map[string]any),
 	}
@@ -113,7 +113,7 @@ func TestEnricherPropertiesMutation(t *testing.T) {
 	plugin.ResetEnricherRegistry()
 
 	// Enricher that adds multiple properties
-	enricher := func(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+	enricher := func(cfg plugin.EnricherConfig, r *output.AWSResource) error {
 		r.Properties["FunctionUrl"] = "https://abc123.lambda-url.us-east-1.on.aws/"
 		r.Properties["FunctionUrlAuthType"] = "AWS_IAM"
 		r.Properties["EnrichedAt"] = "2026-02-11T23:23:08Z"
@@ -123,7 +123,7 @@ func TestEnricherPropertiesMutation(t *testing.T) {
 	plugin.RegisterEnricher("AWS::Lambda::Function", enricher)
 
 	// Execute enricher
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "my-function",
 		Properties:   map[string]any{"ExistingProp": "value"},
@@ -146,7 +146,7 @@ func TestGetEnrichersUnknownType(t *testing.T) {
 	plugin.ResetEnricherRegistry()
 
 	// Register enricher for Lambda
-	enricher := func(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+	enricher := func(cfg plugin.EnricherConfig, r *output.AWSResource) error {
 		return nil
 	}
 	plugin.RegisterEnricher("AWS::Lambda::Function", enricher)
@@ -168,7 +168,7 @@ func TestEnricherRegistryConcurrency(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			enricher := func(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+			enricher := func(cfg plugin.EnricherConfig, r *output.AWSResource) error {
 				r.Properties[fmt.Sprintf("Enricher%d", id)] = "ran"
 				return nil
 			}

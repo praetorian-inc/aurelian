@@ -94,13 +94,24 @@ func matchesRegexPattern(pattern *regexp.Regexp, input string) bool {
 	return pattern.MatchString(input)
 }
 
-// matchesPattern handles basic glob pattern matching (case insensitive)
-func matchesPattern(pattern, input string) bool {
-	// Convert AWS pattern to regex
+// MatchesPattern handles basic glob pattern matching (case insensitive)
+func MatchesPattern(pattern, input string) bool {
+	// Escape regex metacharacters, preserving * and ? for glob conversion
 	pattern = strings.ReplaceAll(pattern, ".", "\\.")
+	pattern = strings.ReplaceAll(pattern, "+", "\\+")
+	pattern = strings.ReplaceAll(pattern, "(", "\\(")
+	pattern = strings.ReplaceAll(pattern, ")", "\\)")
+	pattern = strings.ReplaceAll(pattern, "[", "\\[")
+	pattern = strings.ReplaceAll(pattern, "]", "\\]")
+	pattern = strings.ReplaceAll(pattern, "{", "\\{")
+	pattern = strings.ReplaceAll(pattern, "}", "\\}")
+	pattern = strings.ReplaceAll(pattern, "^", "\\^")
+	pattern = strings.ReplaceAll(pattern, "$", "\\$")
+	pattern = strings.ReplaceAll(pattern, "|", "\\|")
+	// Convert glob wildcards to regex
 	pattern = strings.ReplaceAll(pattern, "*", ".*")
 	pattern = strings.ReplaceAll(pattern, "?", ".")
-	pattern = "(?i)^" + pattern + "$" // Add case insensitive flag
+	pattern = "(?i)^" + pattern + "$"
 
 	p := regexp.MustCompile(pattern)
 	return matchesRegexPattern(p, input)
@@ -109,7 +120,7 @@ func matchesPattern(pattern, input string) bool {
 // matchesActions checks if an action matches any in the DynaString
 func matchesActions(actions *types.DynaString, requestedAction string) bool {
 	for _, action := range *actions {
-		if matchesPattern(action, requestedAction) {
+		if MatchesPattern(action, requestedAction) {
 			return true
 		}
 	}
@@ -119,7 +130,7 @@ func matchesActions(actions *types.DynaString, requestedAction string) bool {
 // MatchesResources checks if a resource matches any in the DynaString
 func MatchesResources(resources *types.DynaString, requestedResource string) bool {
 	for _, resource := range *resources {
-		if matchesPattern(resource, requestedResource) {
+		if MatchesPattern(resource, requestedResource) {
 			return true
 		}
 	}
@@ -395,40 +406,6 @@ func determinePrincipalType(principalArn string) PrincipalType {
 	return PrincipalTypeUnknown
 }
 
-// getUserIdFromArn extracts the user ID portion from ARN
-func getUserIdFromArn(principalArn string) string {
-	if principalArn == "" {
-		return ""
-	}
-
-	arnParsed, err := arn.Parse(principalArn)
-	if err != nil {
-		return ""
-	}
-
-	// Extract UserID based on ARN type
-	resource := arnParsed.Resource
-
-	switch {
-	case strings.HasPrefix(resource, "user/"):
-		// For IAM users, the ID is the full ARN
-		return principalArn
-	case strings.HasPrefix(resource, "role/"):
-		// For IAM roles, the ID is the full ARN
-		return principalArn
-	case strings.HasPrefix(resource, "assumed-role/"):
-		// For assumed roles, parse out the role name and session
-		parts := strings.Split(strings.TrimPrefix(resource, "assumed-role/"), "/")
-		if len(parts) >= 2 {
-			return arnParsed.AccountID + ":" + parts[0] + ":" + parts[1]
-		}
-	case resource == "root":
-		// For root users, the ID is account-id
-		return arnParsed.AccountID
-	}
-
-	return ""
-}
 
 // getUsernameFromArn extracts the username from an ARN
 func getUsernameFromArn(principalArn string) string {
@@ -482,39 +459,6 @@ func getServiceNameFromArn(principalArn string) string {
 	return ""
 }
 
-// GetPrincipalType parses the ARN to determine the principal type
-func (rc *RequestContext) GetPrincipalType() PrincipalType {
-	if rc.PrincipalArn == "" {
-		return PrincipalTypeUnknown
-	}
-
-	// Parse ARN components
-	parts := strings.Split(rc.PrincipalArn, ":")
-	if len(parts) < 6 {
-		return PrincipalTypeUnknown
-	}
-
-	// Get the resource section
-	resource := parts[5]
-	resourceParts := strings.Split(resource, "/")
-
-	switch {
-	case strings.HasPrefix(resourceParts[1], "user/"):
-		return PrincipalTypeUser
-	case strings.HasPrefix(resourceParts[1], "role/"):
-		return PrincipalTypeRole
-	case strings.HasPrefix(resourceParts[1], "assumed-role/"):
-		return PrincipalTypeRoleSession
-	case strings.HasPrefix(resourceParts[1], "federated-user/"):
-		return PrincipalTypeFederatedUser
-	case strings.Contains(rc.PrincipalArn, ":root"):
-		return PrincipalTypeRoot
-	case strings.Contains(resource, ".amazonaws.com"):
-		return PrincipalTypeServiceAccount
-	default:
-		return PrincipalTypeUnknown
-	}
-}
 
 // matchesPrincipal checks if the requestedPrincipal matches the principal definition
 func matchesPrincipal(principal *types.Principal, requestedPrincipal string) bool {
@@ -528,7 +472,7 @@ func matchesPrincipal(principal *types.Principal, requestedPrincipal string) boo
 			if strings.HasSuffix(aws, ":root") {
 				aws = strings.Replace(aws, ":root", "*", 1)
 			}
-			if matchesPattern(aws, requestedPrincipal) {
+			if MatchesPattern(aws, requestedPrincipal) {
 				return true
 			}
 		}
@@ -536,7 +480,7 @@ func matchesPrincipal(principal *types.Principal, requestedPrincipal string) boo
 
 	if principal.Service != nil {
 		for _, service := range *principal.Service {
-			if matchesPattern(service, requestedPrincipal) {
+			if MatchesPattern(service, requestedPrincipal) {
 				return true
 			}
 		}
@@ -544,7 +488,7 @@ func matchesPrincipal(principal *types.Principal, requestedPrincipal string) boo
 
 	if principal.Federated != nil {
 		for _, federated := range *principal.Federated {
-			if matchesPattern(federated, requestedPrincipal) {
+			if MatchesPattern(federated, requestedPrincipal) {
 				return true
 			}
 		}
@@ -552,7 +496,7 @@ func matchesPrincipal(principal *types.Principal, requestedPrincipal string) boo
 
 	if principal.CanonicalUser != nil {
 		for _, canonicalUser := range *principal.CanonicalUser {
-			if matchesPattern(canonicalUser, requestedPrincipal) {
+			if MatchesPattern(canonicalUser, requestedPrincipal) {
 				return true
 			}
 		}

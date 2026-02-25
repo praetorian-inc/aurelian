@@ -19,12 +19,12 @@ type LambdaClient interface {
 	GetFunctionUrlConfig(ctx context.Context, input *lambda.GetFunctionUrlConfigInput, opts ...func(*lambda.Options)) (*lambda.GetFunctionUrlConfigOutput, error)
 }
 
-func fetchFunctionURLsWrapper(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+func fetchFunctionURLsWrapper(cfg plugin.EnricherConfig, r *output.AWSResource) error {
 	client := lambda.NewFromConfig(cfg.AWSConfig)
 	return FetchFunctionURLs(cfg, r, client)
 }
 
-func FetchFunctionURLs(cfg plugin.EnricherConfig, r *output.CloudResource, client LambdaClient) error {
+func FetchFunctionURLs(cfg plugin.EnricherConfig, r *output.AWSResource, client LambdaClient) error {
 	out, err := client.GetFunctionUrlConfig(cfg.Context, &lambda.GetFunctionUrlConfigInput{
 		FunctionName: &r.ResourceID,
 	})

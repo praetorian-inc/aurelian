@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/graph"
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,34 +78,62 @@ func TestGraphFormatterFormatWithGaadData(t *testing.T) {
 	mockDB := &mockGraphDB{}
 	formatter := &GraphFormatter{db: mockDB, config: &graph.Config{URI: "bolt://localhost:7687"}}
 
-	// Create test data
-	gaad := &iampkg.Gaad{
-		UserDetailList: []iampkg.UserDL{
-			{Arn: "arn:aws:iam::123456789012:user/testuser", UserName: "testuser", UserId: "AIDAI123456"},
-		},
-		RoleDetailList: []iampkg.RoleDL{
-			{Arn: "arn:aws:iam::123456789012:role/testrole", RoleName: "testrole", RoleId: "AROAI123456"},
-		},
-		GroupDetailList: []iampkg.GroupDL{
-			{Arn: "arn:aws:iam::123456789012:group/testgroup", GroupName: "testgroup", GroupId: "AGPAI123456"},
+	// Create test data as AWSIAMResource entities
+	userEntity := output.AWSIAMResource{
+		AWSResource: output.AWSResource{
+			ResourceType: "AWS::IAM::User",
+			ResourceID:   "arn:aws:iam::123456789012:user/testuser",
+			ARN:          "arn:aws:iam::123456789012:user/testuser",
+			AccountRef:   "123456789012", DisplayName: "testuser",
 		},
 	}
-
-	resources := []output.CloudResource{
-		{ARN: "arn:aws:s3:::mybucket", ResourceType: "AWS::S3::Bucket", Properties: map[string]any{"Name": "mybucket"}},
+	roleEntity := output.AWSIAMResource{
+		AWSResource: output.AWSResource{
+			ResourceType: "AWS::IAM::Role",
+			ResourceID:   "arn:aws:iam::123456789012:role/testrole",
+			ARN:          "arn:aws:iam::123456789012:role/testrole",
+			AccountRef:   "123456789012", DisplayName: "testrole",
+		},
 	}
+	groupEntity := output.AWSIAMResource{
+		AWSResource: output.AWSResource{
+			ResourceType: "AWS::IAM::Group",
+			ResourceID:   "arn:aws:iam::123456789012:group/testgroup",
+			ARN:          "arn:aws:iam::123456789012:group/testgroup",
+			AccountRef:   "123456789012", DisplayName: "testgroup",
+		},
+	}
+	bucketEntity := output.FromAWSResource(output.AWSResource{
+		ARN: "arn:aws:s3:::mybucket", ResourceType: "AWS::S3::Bucket",
+		Properties: map[string]any{"Name": "mybucket"},
+	})
 
-	fullResults := []iampkg.FullResult{
+	entities := []output.AWSIAMResource{userEntity, roleEntity, groupEntity, bucketEntity}
+
+	iamRelationships := []output.AWSIAMRelationship{
 		{
-			Principal: &gaad.UserDetailList[0],
-			Action:    "s3:GetObject",
+			Principal: output.AWSIAMResource{
+				AWSResource: output.AWSResource{
+					ARN:          "arn:aws:iam::123456789012:user/testuser",
+					ResourceType: "AWS::IAM::User",
+					ResourceID:   "arn:aws:iam::123456789012:user/testuser",
+					AccountRef:   "123456789012",
+				},
+			},
+			Resource: output.AWSResource{
+				ARN:          "arn:aws:s3:::mybucket",
+				ResourceType: "AWS::S3::Bucket",
+			},
+			Action: "s3:GetObject",
 		},
 	}
 
-	results := []Result{
-		{Data: gaad, Metadata: map[string]any{"type": "gaad"}},
-		{Data: resources, Metadata: map[string]any{"type": "resources"}},
-		{Data: fullResults, Metadata: map[string]any{"type": "iam_relationships"}},
+	var results []model.AurelianModel
+	for _, e := range entities {
+		results = append(results, e)
+	}
+	for _, r := range iamRelationships {
+		results = append(results, r)
 	}
 
 	err := formatter.Format(results)
@@ -126,47 +154,45 @@ func TestGraphFormatterFormatNoGaadError(t *testing.T) {
 	mockDB := &mockGraphDB{}
 	formatter := &GraphFormatter{db: mockDB}
 
-	// Results without GAAD data
-	results := []Result{
-		{Data: []output.CloudResource{}, Metadata: map[string]any{"type": "resources"}},
+	// Results without entity data — no entities, just a relationship
+	results := []model.AurelianModel{
+		output.AWSIAMRelationship{},
 	}
 
 	err := formatter.Format(results)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no GAAD data found")
+	assert.Contains(t, err.Error(), "no entity data found")
 }
 
-// TestGraphFormatterFormatFlattenMap tests flattening map[string][]CloudResource
+// TestGraphFormatterFormatFlattenMap tests individual entity emission
 func TestGraphFormatterFormatFlattenMap(t *testing.T) {
 	mockDB := &mockGraphDB{}
 	formatter := &GraphFormatter{db: mockDB, config: &graph.Config{URI: "bolt://localhost:7687"}}
 
-	gaad := &iampkg.Gaad{
-		UserDetailList: []iampkg.UserDL{
-			{Arn: "arn:aws:iam::123456789012:user/testuser", UserName: "testuser", UserId: "AIDAI123456"},
-		},
+	entities := []output.AWSIAMResource{
+		{AWSResource: output.AWSResource{
+			ResourceType: "AWS::IAM::User",
+			ResourceID:   "arn:aws:iam::123456789012:user/testuser",
+			ARN:          "arn:aws:iam::123456789012:user/testuser",
+			AccountRef:   "123456789012", DisplayName: "testuser",
+		}},
+		output.FromAWSResource(output.AWSResource{
+			ARN: "arn:aws:s3:::bucket1", ResourceType: "AWS::S3::Bucket",
+		}),
+		output.FromAWSResource(output.AWSResource{
+			ARN: "arn:aws:s3:::bucket2", ResourceType: "AWS::S3::Bucket",
+		}),
 	}
 
-	// Map format (by region)
-	resourceMap := map[string][]output.CloudResource{
-		"us-east-1": {
-			{ARN: "arn:aws:s3:::bucket1", ResourceType: "AWS::S3::Bucket"},
-		},
-		"us-west-2": {
-			{ARN: "arn:aws:s3:::bucket2", ResourceType: "AWS::S3::Bucket"},
-		},
-	}
-
-	results := []Result{
-		{Data: gaad, Metadata: map[string]any{"type": "gaad"}},
-		{Data: resourceMap, Metadata: map[string]any{"type": "resources"}},
-		{Data: []iampkg.FullResult{}, Metadata: map[string]any{"type": "iam_relationships"}},
+	var results []model.AurelianModel
+	for _, e := range entities {
+		results = append(results, e)
 	}
 
 	err := formatter.Format(results)
 	require.NoError(t, err)
 
-	// Verify all resources were flattened and created
+	// Verify all entities were created as nodes
 	// 1 user + 2 resources = 3 nodes
-	assert.Equal(t, 3, len(mockDB.nodesCreated), "Expected 3 nodes after flattening map")
+	assert.Equal(t, 3, len(mockDB.nodesCreated), "Expected 3 nodes")
 }

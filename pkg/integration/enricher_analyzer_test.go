@@ -6,7 +6,9 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/modules/common"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/stretchr/testify/assert"
@@ -16,8 +18,7 @@ import (
 
 func TestEnricherAnalyzerFlow(t *testing.T) {
 	// Step 1: Start with raw resource (as CloudControl would return)
-	resource := output.CloudResource{
-		Platform:     "aws",
+	resource := output.AWSResource{
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "my-function",
 		ARN:          "arn:aws:lambda:us-east-1:123456789012:function:my-function",
@@ -33,7 +34,7 @@ func TestEnricherAnalyzerFlow(t *testing.T) {
 	}
 
 	// Mock enricher for testing
-	mockEnricher := func(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+	mockEnricher := func(cfg plugin.EnricherConfig, r *output.AWSResource) error {
 		r.Properties["FunctionUrl"] = "https://abc123.lambda-url.us-east-1.on.aws/"
 		r.Properties["FunctionUrlAuthType"] = "NONE"
 		return nil
@@ -61,12 +62,17 @@ func TestEnricherAnalyzerFlow(t *testing.T) {
 		Args:    map[string]any{"resource": resource},
 	}
 
-	results, err := analyzer.Run(analysisConfig)
-	require.NoError(t, err)
-	require.Len(t, results, 1)
+	p1 := pipeline.From(analysisConfig)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, analyzer.Run, p2)
 
-	findings, ok := results[0].Data.([]plugin.Finding)
-	require.True(t, ok)
+	var findings []plugin.Finding
+	for m := range p2.Range() {
+		if f, ok := m.(plugin.Finding); ok {
+			findings = append(findings, f)
+		}
+	}
+	require.NoError(t, p2.Wait())
 	require.Len(t, findings, 1)
 
 	// Step 5: Verify finding
@@ -79,7 +85,7 @@ func TestEnricherAnalyzerFlow(t *testing.T) {
 
 func TestEnricherAnalyzerFlowNoFinding(t *testing.T) {
 	// Secure resource (authenticated function URL)
-	resource := output.CloudResource{
+	resource := output.AWSResource{
 		ResourceType: "AWS::Lambda::Function",
 		ResourceID:   "secure-function",
 		Properties: map[string]any{
@@ -98,12 +104,21 @@ func TestEnricherAnalyzerFlowNoFinding(t *testing.T) {
 
 	// Run analyzer
 	analyzer := common.NewYAMLAnalyzer([]common.YAMLRule{rule})
-	results, err := analyzer.Run(plugin.Config{
+	cfg2 := plugin.Config{
 		Context: context.Background(),
 		Args:    map[string]any{"resource": resource},
-	})
+	}
+	p3 := pipeline.From(cfg2)
+	p4 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p3, analyzer.Run, p4)
 
-	require.NoError(t, err)
-	findings, _ := results[0].Data.([]plugin.Finding)
+	var findings []plugin.Finding
+	for m := range p4.Range() {
+		if f, ok := m.(plugin.Finding); ok {
+			findings = append(findings, f)
+		}
+	}
+
+	require.NoError(t, p4.Wait())
 	assert.Empty(t, findings, "Secure resource should produce no findings")
 }

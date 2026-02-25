@@ -13,7 +13,7 @@ type EnricherConfig struct {
 	AWSConfig aws.Config
 }
 
-type EnricherFunc func(cfg EnricherConfig, r *output.CloudResource) error
+type EnricherFunc func(cfg EnricherConfig, r *output.AWSResource) error
 
 type enricherRegistry struct {
 	mu        sync.RWMutex

@@ -1,20 +1,22 @@
 package recon
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 
-	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/gaad"
 	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
+	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
@@ -22,16 +24,20 @@ func init() {
 	plugin.Register(&AWSGraphModule{})
 }
 
-// GraphConfig holds parameters for the graph module
 type GraphConfig struct {
 	plugin.AWSCommonRecon
 	plugin.GraphOutputBase
 	OrgPoliciesFile string `param:"org-policies-file" desc:"Path to Org Policies JSON file (optional)"`
 }
 
-// AWSGraphModule collects AWS IAM data and evaluates permissions for graph analysis
+// AWSGraphModule is a refactored version of AWSGraphModule.
 type AWSGraphModule struct {
 	GraphConfig
+
+	gaadData              *types.AuthorizationAccountDetails
+	resourcesWithPolicies store.Map[output.AWSResource]
+	orgPols               *orgpolicies.OrgPolicies
+	relationships         store.Map[output.AWSIAMRelationship]
 }
 
 func (m *AWSGraphModule) ID() string                { return "graph" }
@@ -55,10 +61,7 @@ func (m *AWSGraphModule) References() []string {
 
 func (m *AWSGraphModule) SupportedResourceTypes() []string {
 	return []string{
-		"AWS::IAM::User",
-		"AWS::IAM::Role",
-		"AWS::IAM::Group",
-		"AWS::IAM::Policy",
+		"AWS::Organizations::Account",
 	}
 }
 
@@ -66,166 +69,133 @@ func (m *AWSGraphModule) Parameters() any {
 	return &m.GraphConfig
 }
 
-func (m *AWSGraphModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
-	c := m.GraphConfig
-
-	ctx := cfg.Context
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	// Step 1: Collect GAAD
-	slog.Info("collecting account authorization details")
-	gaadData, accountID, err := gaad.GetAccountAuthorizationDetails(ctx, c.AWSReconBase)
+func (m *AWSGraphModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
+	resolvedRegions, err := resolveRegions(m.Regions, m.Profile, m.ProfileDir)
 	if err != nil {
-		return nil, fmt.Errorf("collecting GAAD: %w", err)
+		return fmt.Errorf("resolving regions: %w", err)
 	}
-	slog.Info("GAAD collected",
-		"account", accountID,
-		"users", len(gaadData.UserDetailList),
-		"roles", len(gaadData.RoleDetailList),
-		"groups", len(gaadData.GroupDetailList))
+	m.Regions = resolvedRegions
 
-	// Step 2: Resolve regions
-	resolvedRegions, err := graphResolveRegions(c.Regions, c.Profile, c.ProfileDir)
-	if err != nil {
-		return nil, fmt.Errorf("resolving regions: %w", err)
-	}
-	slog.Info("resolved regions", "regions", resolvedRegions)
-
-	// Step 3: Enumerate CloudControl resources
-	lister := cloudcontrol.NewCloudControlLister(c.AWSCommonRecon)
-	resourceTypesToScan := resourcepolicies.SupportedResourceTypes()
-
-	slog.Info("enumerating cloud resources", "types", len(resourceTypesToScan), "regions", len(resolvedRegions))
-	allResources, err := lister.List(resolvedRegions, resourceTypesToScan)
-	if err != nil {
-		return nil, fmt.Errorf("listing resources: %w", err)
+	if err := m.collectInputs(); err != nil {
+		return fmt.Errorf("collecting inputs: %w", err)
 	}
 
-	// Flatten resource map
-	var resourcesList []output.CloudResource
-	for _, resources := range allResources {
-		resourcesList = append(resourcesList, resources...)
-	}
-	slog.Info("resources enumerated", "count", len(resourcesList))
-
-	// Step 4: Collect resource policies per region
-	var resourcesWithPolicies []output.CloudResource
-	for _, region := range resolvedRegions {
-		var regionResources []output.CloudResource
-		for _, resource := range resourcesList {
-			if resource.Region == region {
-				regionResources = append(regionResources, resource)
-			}
-		}
-		if len(regionResources) == 0 {
-			continue
-		}
-
-		awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
-			Region:     region,
-			Profile:    c.Profile,
-			ProfileDir: c.ProfileDir,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("creating AWS config for %s: %w", region, err)
-		}
-
-		regionPolicied, err := resourcepolicies.CollectPolicies(ctx, awsCfg, regionResources)
-		if err != nil {
-			slog.Warn("collecting policies failed", "region", region, "error", err)
-			continue // Non-fatal: continue with other regions
-		}
-		resourcesWithPolicies = append(resourcesWithPolicies, regionPolicied...)
-	}
-	slog.Info("resource policies collected", "count", len(resourcesWithPolicies))
-
-	// Step 5: Build EnrichedResourceDescriptions for IAM analysis
-	var enrichedResources []types.EnrichedResourceDescription
-	for _, cr := range resourcesWithPolicies {
-		erd := types.NewEnrichedResourceDescription(
-			cr.ResourceID,
-			cr.ResourceType,
-			cr.Region,
-			cr.AccountRef,
-			cr.Properties,
-		)
-		enrichedResources = append(enrichedResources, erd)
+	if err := m.loadOrgPolicies(m.GraphConfig); err != nil {
+		return fmt.Errorf("loading org policies: %w", err)
 	}
 
-	// Step 6: Load optional org policies
-	var orgPols *orgpolicies.OrgPolicies
-	if c.OrgPoliciesFile != "" {
-		op, err := iampkg.LoadJSONFile[orgpolicies.OrgPolicies](c.OrgPoliciesFile)
-		if err != nil {
-			return nil, fmt.Errorf("loading org policies: %w", err)
-		}
-		orgPols = op
-	} else {
-		orgPols = orgpolicies.NewDefaultOrgPolicies()
+	if err := m.analyzeIAMPermissions(); err != nil {
+		return fmt.Errorf("analyzing IAM permissions: %w", err)
 	}
 
-	// Step 7: Extract resource policies map
-	resourcePoliciesMap := make(map[string]*types.Policy)
-	for _, resource := range resourcesWithPolicies {
-		if policyData, ok := resource.Properties["ResourcePolicy"]; ok {
-			if policyJSON, ok := policyData.(string); ok {
-				var policy types.Policy
-				if err := json.Unmarshal([]byte(policyJSON), &policy); err == nil {
-					resourcePoliciesMap[resource.ARN] = &policy
-				}
-			}
-		}
-	}
-
-	// Step 8: Run IAM permission analysis
-	slog.Info("analyzing IAM permissions")
-	pd := iampkg.NewPolicyData(gaadData, orgPols, resourcePoliciesMap, &enrichedResources)
-	analyzer := iampkg.NewGaadAnalyzer(pd)
-
-	summary, err := analyzer.AnalyzePrincipalPermissions()
-	if err != nil {
-		return nil, fmt.Errorf("analyzing permissions: %w", err)
-	}
-
-	fullResults := analyzer.FullResults(summary)
-	slog.Info("IAM analysis complete", "relationships", len(fullResults))
-
-	// Return neutral raw data (3 results)
-	return []plugin.Result{
-		{
-			Data: gaadData,
-			Metadata: map[string]any{
-				"module":    m.ID(),
-				"type":      "gaad",
-				"accountID": accountID,
-			},
-		},
-		{
-			Data: allResources,
-			Metadata: map[string]any{
-				"module":  m.ID(),
-				"type":    "resources",
-				"regions": resolvedRegions,
-				"count":   len(resourcesList),
-			},
-		},
-		{
-			Data: fullResults,
-			Metadata: map[string]any{
-				"module": m.ID(),
-				"type":   "iam_relationships",
-				"count":  len(fullResults),
-			},
-		},
-	}, nil
+	m.emitOutputs(out)
+	return nil
 }
 
-// graphResolveRegions resolves "all" to actual enabled regions
-func graphResolveRegions(regions []string, profile, profileDir string) ([]string, error) {
-	if len(regions) == 1 && strings.ToLower(regions[0]) == "all" {
-		return awshelpers.EnabledRegions(profile, profileDir)
+func (m *AWSGraphModule) collectInputs() error {
+	policyCollector := resourcepolicies.New(m.AWSCommonRecon)
+	regions := m.Regions
+
+	var eg errgroup.Group
+	m.collectAccountAuthorizationDetails(&eg, m.GraphConfig)
+	m.collectResourcesWithPolicies(&eg, m.GraphConfig, policyCollector, regions)
+	if err := eg.Wait(); err != nil {
+		return err
 	}
-	return regions, nil
+
+	return nil
+}
+
+func (m *AWSGraphModule) collectAccountAuthorizationDetails(eg *errgroup.Group, c GraphConfig) {
+	eg.Go(func() error {
+		slog.Info("collecting account authorization details")
+		g := gaad.New(c.AWSReconBase)
+		gaadData, err := g.Get()
+		if err != nil {
+			return fmt.Errorf("collecting GAAD: %w", err)
+		}
+		slog.Info("GAAD collected",
+			"account", gaadData.AccountID,
+			"users", gaadData.Users.Len(),
+			"roles", gaadData.Roles.Len(),
+			"groups", gaadData.Groups.Len())
+		m.gaadData = gaadData
+		return nil
+	})
+}
+
+func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c GraphConfig, collector *resourcepolicies.ResourcePolicyCollector, resolvedRegions []string) {
+	eg.Go(func() error {
+		slog.Info("enumerating cloud resources and collecting policies",
+			"types", len(collector.SupportedResourceTypes()), "regions", len(resolvedRegions))
+
+		lister := cloudcontrol.NewCloudControlLister(c.AWSCommonRecon)
+
+		p1 := pipeline.From(collector.SupportedResourceTypes()...)
+		p2 := pipeline.New[output.AWSResource]()
+		p3 := pipeline.New[output.AWSResource]()
+		pipeline.Pipe(p1, lister.List, p2)
+		pipeline.Pipe(p2, collector.Collect, p3)
+
+		results := store.NewMap[output.AWSResource]()
+		for r := range p3.Range() {
+			key := r.ARN
+			if key == "" {
+				key = r.ResourceID
+			}
+			results.Set(key, r)
+		}
+		if err := p3.Wait(); err != nil {
+			return fmt.Errorf("collecting resources with policies: %w", err)
+		}
+
+		slog.Info("resources with policies collected", "count", results.Len())
+		m.resourcesWithPolicies = results
+		return nil
+	})
+}
+
+func (m *AWSGraphModule) loadOrgPolicies(c GraphConfig) error {
+	orgPols := orgpolicies.NewDefaultOrgPolicies()
+
+	if c.OrgPoliciesFile != "" {
+		slog.Info("loading org policies", "file", c.OrgPoliciesFile)
+		op, err := iampkg.LoadJSONFile[orgpolicies.OrgPolicies](c.OrgPoliciesFile)
+		if err != nil {
+			return fmt.Errorf("loading org policies: %w", err)
+		}
+		orgPols = op
+	}
+
+	m.orgPols = orgPols
+	return nil
+}
+
+func (m *AWSGraphModule) analyzeIAMPermissions() error {
+	slog.Info("analyzing IAM permissions")
+	analyzer := gaadpkg.NewGaadAnalyzer()
+	relationships, err := analyzer.Analyze(m.gaadData, m.orgPols, m.resourcesWithPolicies)
+	if err != nil {
+		return fmt.Errorf("analyzing permissions: %w", err)
+	}
+
+	slog.Info("IAM analysis complete", "relationships", relationships.Len())
+	m.relationships = relationships
+	return nil
+}
+
+func (m *AWSGraphModule) emitOutputs(out *pipeline.P[model.AurelianModel]) {
+	gaadpkg.EmitGAADEntities(m.gaadData, m.gaadData.AccountID, func(i output.AWSIAMResource) {
+		out.Send(i)
+	})
+
+	m.resourcesWithPolicies.Range(func(_ string, r output.AWSResource) bool {
+		out.Send(r)
+		return true
+	})
+
+	m.relationships.Range(func(_ string, r output.AWSIAMRelationship) bool {
+		out.Send(r)
+		return true
+	})
 }

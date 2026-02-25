@@ -6,11 +6,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/aws/arn"
-	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/graph"
 	"github.com/praetorian-inc/aurelian/pkg/graph/adapters"
 	"github.com/praetorian-inc/aurelian/pkg/graph/queries"
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
@@ -139,70 +138,94 @@ func TestGraphFormatter_FullPipeline(t *testing.T) {
 	require.NoError(t, err)
 	defer formatter.Close()
 
-	// Create mock GAAD data
-	gaad := &iampkg.Gaad{
-		UserDetailList: []iampkg.UserDL{
-			{
-				Arn:      "arn:aws:iam::123456789012:user/charlie",
-				UserName: "charlie",
-				UserId:   "AIDAI12345EXAMPLE",
+	// Create mock AWSIAMResources with OriginalData for GAAD types
+	user := types.UserDetail{
+		Arn:      "arn:aws:iam::123456789012:user/charlie",
+		UserName: "charlie",
+		UserId:   "AIDAI12345EXAMPLE",
+	}
+	role := types.RoleDetail{
+		Arn:      "arn:aws:iam::123456789012:role/admin-role",
+		RoleName: "admin-role",
+		RoleId:   "AROAI12345EXAMPLE",
+	}
+	group := types.GroupDetail{
+		Arn:       "arn:aws:iam::123456789012:group/admins",
+		GroupName: "admins",
+		GroupId:   "AGPAI12345EXAMPLE",
+	}
+
+	entities := []output.AWSIAMResource{
+		{
+			AWSResource: output.AWSResource{
+				ARN:          "arn:aws:iam::123456789012:user/charlie",
+				ResourceType: "AWS::IAM::User",
+				ResourceID:   "arn:aws:iam::123456789012:user/charlie",
+				AccountRef:   "123456789012",
 			},
+			OriginalData: user,
 		},
-		RoleDetailList: []iampkg.RoleDL{
-			{
-				Arn:      "arn:aws:iam::123456789012:role/admin-role",
-				RoleName: "admin-role",
-				RoleId:   "AROAI12345EXAMPLE",
+		{
+			AWSResource: output.AWSResource{
+				ARN:          "arn:aws:iam::123456789012:role/admin-role",
+				ResourceType: "AWS::IAM::Role",
+				ResourceID:   "arn:aws:iam::123456789012:role/admin-role",
+				AccountRef:   "123456789012",
 			},
+			OriginalData: role,
 		},
-		GroupDetailList: []iampkg.GroupDL{
-			{
-				Arn:       "arn:aws:iam::123456789012:group/admins",
-				GroupName: "admins",
-				GroupId:   "AGPAI12345EXAMPLE",
+		{
+			AWSResource: output.AWSResource{
+				ARN:          "arn:aws:iam::123456789012:group/admins",
+				ResourceType: "AWS::IAM::Group",
+				ResourceID:   "arn:aws:iam::123456789012:group/admins",
+				AccountRef:   "123456789012",
+			},
+			OriginalData: group,
+		},
+		{
+			AWSResource: output.AWSResource{
+				ARN:          "arn:aws:s3:::test-bucket-123",
+				ResourceType: "AWS::S3::Bucket",
+				ResourceID:   "arn:aws:s3:::test-bucket-123",
+				Region:       "us-east-1",
+				AccountRef:   "123456789012",
+				Properties: map[string]interface{}{
+					"BucketName": "test-bucket-123",
+				},
 			},
 		},
 	}
 
-	// Create mock CloudResources
-	resources := []output.CloudResource{
+	// Create mock AWSIAMRelationship (privilege escalation relationship)
+	iamRelationships := []output.AWSIAMRelationship{
 		{
-			ARN:          "arn:aws:s3:::test-bucket-123",
-			ResourceType: "AWS::S3::Bucket",
-			Region:       "us-east-1",
-			AccountRef:   "123456789012",
-			Properties: map[string]interface{}{
-				"BucketName": "test-bucket-123",
+			Principal: output.AWSIAMResource{
+				AWSResource: output.AWSResource{
+					ARN:          "arn:aws:iam::123456789012:user/charlie",
+					ResourceType: "AWS::IAM::User",
+					ResourceID:   "arn:aws:iam::123456789012:user/charlie",
+					AccountRef:   "123456789012",
+				},
+				OriginalData: user,
 			},
-		},
-	}
-
-	// Create mock FullResult (privilege escalation relationship)
-	targetArn, _ := arn.Parse("arn:aws:iam::123456789012:role/admin-role")
-	fullResults := []iampkg.FullResult{
-		{
-			Principal: &iampkg.UserDL{
-				Arn:      "arn:aws:iam::123456789012:user/charlie",
-				UserName: "charlie",
-				UserId:   "AIDAI12345EXAMPLE",
-			},
-			Resource: &types.EnrichedResourceDescription{
-				Identifier: "admin-role",
-				TypeName:   "AWS::IAM::Role",
-				Region:     "us-east-1",
-				AccountId:  "123456789012",
-				Arn:        targetArn,
+			Resource: output.AWSResource{
+				ARN:          "arn:aws:iam::123456789012:role/admin-role",
+				ResourceType: "AWS::IAM::Role",
+				ResourceID:   "arn:aws:iam::123456789012:role/admin-role",
+				AccountRef:   "123456789012",
 			},
 			Action: "iam:PassRole",
-			Result: &iampkg.EvaluationResult{Allowed: true},
 		},
 	}
 
-	// Create Results array
-	results := []plugin.Result{
-		{Data: gaad},
-		{Data: resources},
-		{Data: fullResults},
+	// Create Results array — emit individual models
+	var results []model.AurelianModel
+	for _, e := range entities {
+		results = append(results, e)
+	}
+	for _, r := range iamRelationships {
+		results = append(results, r)
 	}
 
 	// Format to graph

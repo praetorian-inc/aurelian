@@ -46,16 +46,7 @@ func (c *ConditionEval) Allowed() bool {
 	return false
 }
 
-func (c *ConditionEval) String() string {
-	return fmt.Sprintf("ConditionEval{Result: %s, Conditions: %v, MissingKeys: %v, KeyResults: %v}",
-		c.Result, c.Conditions, c.MissingKeys, c.KeyResults)
-}
 
-// Not defines the behavior of the ! operator for ConditionEval
-func (c *ConditionEval) Not() bool {
-	// Return true if the condition evaluation failed
-	return c.Result == ConditionFailed
-}
 
 // KeyEvaluation represents the evaluation of a single condition key
 type KeyEvaluation struct {
@@ -353,11 +344,11 @@ func findContextKeyValue(key string, ctx *RequestContext) (exists bool, value in
 		return false, nil
 	case "aws:multifactorauthpresent":
 		return true, ctx.MultiFactorAuthPresent
-	case "aws:Ec2InstanceSourceVpc":
+	case "aws:ec2instancesourcevpc":
 		return ctx.Ec2InstanceSourceVpc != "", ctx.Ec2InstanceSourceVpc
-	case "aws:Ec2InstanceSourcePrivateIPv4":
+	case "aws:ec2instancesourceprivateipv4":
 		return ctx.Ec2InstanceSourcePrivateIPv4 != "", ctx.Ec2InstanceSourcePrivateIPv4
-	case "ec2:RoleDelivery":
+	case "ec2:roledelivery":
 		return ctx.ec2_RoleDelivery != "", ctx.ec2_RoleDelivery
 	case "ec2:sourceinstancearn":
 		return ctx.ec2_SourceInstanceArn != "", ctx.ec2_SourceInstanceArn
@@ -455,37 +446,15 @@ func findContextKeyValue(key string, ctx *RequestContext) (exists bool, value in
 
 	// Check the request parameters for any other keys not handled above
 	if ctx.RequestParameters != nil {
-		if val, ok := ctx.RequestParameters[key]; ok {
-			return true, val
+		for k, val := range ctx.RequestParameters {
+			if strings.EqualFold(k, key) {
+				return true, val
+			}
 		}
 	}
-
 	return false, nil
 }
 
-// getTagKeys is a helper function to get all tag keys from all tag maps
-func getTagKeys(ctx *RequestContext) []string {
-	// Use a map to deduplicate keys
-	keyMap := make(map[string]bool)
-
-	for k := range ctx.PrincipalTags {
-		keyMap[k] = true
-	}
-	for k := range ctx.ResourceTags {
-		keyMap[k] = true
-	}
-	for k := range ctx.RequestTags {
-		keyMap[k] = true
-	}
-
-	// Convert to slice
-	keys := make([]string, 0, len(keyMap))
-	for k := range keyMap {
-		keys = append(keys, k)
-	}
-
-	return keys
-}
 
 func evaluateStringCondition(operator string, values []string, actualValue interface{}) bool {
 	actual := fmt.Sprintf("%v", actualValue) // Convert any type to string
@@ -513,13 +482,13 @@ func evaluateStringCondition(operator string, values []string, actualValue inter
 		}
 	case "StringLike":
 		for _, v := range values {
-			if matchesPattern(v, actual) {
+			if MatchesPattern(v, actual) {
 				return true
 			}
 		}
 	case "StringNotLike":
 		for _, v := range values {
-			if matchesPattern(v, actual) {
+			if MatchesPattern(v, actual) {
 				return false
 			}
 		}
@@ -636,7 +605,7 @@ func evaluateArnCondition(operator string, values []string, actualValue interfac
 	}
 
 	for _, v := range values {
-		matches := matchesPattern(v, actual)
+		matches := MatchesPattern(v, actual)
 
 		switch operator {
 		case "ArnEquals", "ArnLike":
