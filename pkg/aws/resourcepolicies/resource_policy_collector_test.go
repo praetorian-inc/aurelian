@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/stretchr/testify/assert"
 )
@@ -41,28 +42,23 @@ func TestResourcePolicyCollector_RegistryHasAllMethods(t *testing.T) {
 	c := New(plugin.AWSCommonRecon{AWSReconBase: plugin.AWSReconBase{Profile: "test-profile", ProfileDir: "/test/dir"}})
 	reg := c.registry()
 
-	// Every entry in the registry should be a non-nil function
 	for rt, method := range reg {
 		assert.NotNil(t, method, "registry entry for %s should not be nil", rt)
 	}
 }
 
-func TestResourcePolicyCollector_Collect_EmptyInput(t *testing.T) {
-	c := New(plugin.AWSCommonRecon{})
+func TestResourcePolicyCollector_Collect_UnsupportedType(t *testing.T) {
+	c := New(plugin.AWSCommonRecon{Regions: []string{"us-east-1"}})
 
-	results, err := c.Collect(map[string][]output.AWSResource{})
+	out := pipeline.New[output.AWSResource]()
+	err := c.Collect(output.AWSResource{ResourceType: "AWS::Unsupported::Thing"}, out)
+	out.Close()
+
 	assert.NoError(t, err)
-	assert.Empty(t, results)
-}
 
-func TestResourcePolicyCollector_Collect_NilRegionSkipped(t *testing.T) {
-	c := New(plugin.AWSCommonRecon{})
-
-	resources := map[string][]output.AWSResource{
-		"us-east-1": {},
+	var results []output.AWSResource
+	for r := range out.Range() {
+		results = append(results, r)
 	}
-
-	results, err := c.Collect(resources)
-	assert.NoError(t, err)
 	assert.Empty(t, results)
 }

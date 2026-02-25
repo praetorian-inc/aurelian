@@ -7,6 +7,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/modules/common"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,10 +42,11 @@ func TestYAMLAnalyzerMatchesRule(t *testing.T) {
 		Args:    map[string]any{"resource": vulnerable},
 	}
 
-	var results []model.AurelianModel
-	err := analyzer.Run(cfg, func(models ...model.AurelianModel) {
-		results = append(results, models...)
-	})
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, analyzer.Run, p2)
+
+	results, err := p2.Collect()
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
@@ -81,10 +83,11 @@ func TestYAMLAnalyzerNoMatch(t *testing.T) {
 		Args:    map[string]any{"resource": secure},
 	}
 
-	var results []model.AurelianModel
-	err := analyzer.Run(cfg, func(models ...model.AurelianModel) {
-		results = append(results, models...)
-	})
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, analyzer.Run, p2)
+
+	results, err := p2.Collect()
 	require.NoError(t, err)
 	assert.Empty(t, results, "Secure resource should produce no findings")
 }

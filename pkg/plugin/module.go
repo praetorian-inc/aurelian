@@ -9,6 +9,7 @@ import (
 	"io"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
 
 // Platform represents the cloud platform or service category
@@ -62,8 +63,9 @@ type Module interface {
 	// target for Bind before Run is called.
 	Parameters() any
 
-	// Execution — call emit() to emit results incrementally.
-	Run(cfg Config, emit func(models ...model.AurelianModel)) error
+	// Execution — send results into the pipeline via out.Send().
+	// The caller owns the pipeline lifecycle (including Close).
+	Run(cfg Config, out *pipeline.P[model.AurelianModel]) error
 }
 
 // ModuleWrapper wraps a Module so that Run automatically binds cfg.Args into
@@ -74,11 +76,11 @@ type ModuleWrapper struct {
 	Module
 }
 
-func (m *ModuleWrapper) Run(cfg Config, emit func(models ...model.AurelianModel)) error {
+func (m *ModuleWrapper) Run(cfg Config, out *pipeline.P[model.AurelianModel]) error {
 	if target := m.Parameters(); target != nil {
 		if err := Bind(cfg, target); err != nil {
 			return fmt.Errorf("parameter validation failed: %w", err)
 		}
 	}
-	return m.Module.Run(cfg, emit)
+	return m.Module.Run(cfg, out)
 }

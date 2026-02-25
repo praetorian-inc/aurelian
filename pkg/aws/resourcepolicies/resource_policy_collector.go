@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/efs"
@@ -16,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 	"github.com/praetorian-inc/aurelian/pkg/types"
@@ -65,86 +65,48 @@ func (c *ResourcePolicyCollector) SupportedResourceTypes() []string {
 	return out
 }
 
-// Collect fetches resource policies for all supported resources, grouped by region.
-// Regions are processed concurrently using a CrossRegionActor for rate limiting.
-// It returns only resources that have a policy, with Properties["ResourcePolicy"] populated.
-func (c *ResourcePolicyCollector) Collect(resourcesByRegion map[string][]output.AWSResource) ([]output.AWSResource, error) {
+// Collect fetches the resource policy for a single resource and sends it into
+// out if a policy exists. Its signature matches pipeline.Pipe's fn parameter.
+func (c *ResourcePolicyCollector) Collect(resource output.AWSResource, out *pipeline.P[output.AWSResource]) error {
+	if len(c.opts.Regions) == 0 {
+		return fmt.Errorf("no regions configured")
+	}
+
 	reg := c.registry()
 
-	// Build the list of regions that have resources to process.
-	var regions []string
-	for region, resources := range resourcesByRegion {
-		if len(resources) > 0 {
-			regions = append(regions, region)
-		}
+	method, ok := reg[resource.ResourceType]
+	if !ok {
+		return nil
 	}
 
-	if len(regions) == 0 {
-		return nil, nil
-	}
-
-	var mu sync.Mutex
-	var results []output.AWSResource
-
-	err := c.crossRegionActor.ActInRegions(regions, func(region string) error {
+	return c.crossRegionActor.ActInRegion(resource.Region, func() error {
 		awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
-			Region:     region,
+			Region:     resource.Region,
 			Profile:    c.opts.Profile,
 			ProfileDir: c.opts.ProfileDir,
 		})
 		if err != nil {
-			slog.Warn("creating AWS config for resource policies, skipping region",
-				"region", region, "error", err)
+			slog.Warn("creating AWS config for resource policies, skipping resource",
+				"resource", resource.ResourceID, "region", resource.Region, "error", err)
 			return nil
 		}
 
-		regionResults, err := c.collectInRegion(reg, awsCfg, resourcesByRegion[region])
-		if err != nil {
-			return fmt.Errorf("region %s: %w", region, err)
-		}
-
-		mu.Lock()
-		results = append(results, regionResults...)
-		mu.Unlock()
-
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return results, nil
-}
-
-// collectInRegion fetches policies for all supported resources in a single region.
-func (c *ResourcePolicyCollector) collectInRegion(reg map[string]policyMethod, awsCfg aws.Config, resources []output.AWSResource) ([]output.AWSResource, error) {
-	ctx := context.Background()
-	var results []output.AWSResource
-
-	for _, resource := range resources {
-		method, ok := reg[resource.ResourceType]
-		if !ok {
-			continue
-		}
-
-		policy, err := method(ctx, awsCfg, &resource)
+		policy, err := method(context.Background(), awsCfg, &resource)
 		if err != nil {
 			slog.Warn("fetching resource policy, skipping resource",
 				"resource", resource.ResourceID,
 				"type", resource.ResourceType,
 				"error", err)
-			continue
+			return nil
 		}
 
-		if policy == nil {
-			continue
+		if policy != nil {
+			resource.ResourcePolicy = policy
+			out.Send(resource)
 		}
 
-		resource.ResourcePolicy = policy
-		results = append(results, resource)
-	}
-
-	return results, nil
+		return nil
+	})
 }
 
 // --- per-service methods (private) ---

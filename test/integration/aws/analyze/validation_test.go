@@ -9,6 +9,8 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/graph"
 	"github.com/praetorian-inc/aurelian/pkg/graph/adapters"
+	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
@@ -51,12 +53,17 @@ func TestGraphValidation_PrivescDetection(t *testing.T) {
 		t.Fatal("graph module not registered in plugin system")
 	}
 
-	results, err := mod.Run(plugin.Config{
+	cfg := plugin.Config{
 		Args: map[string]any{
 			"regions": []string{region},
 		},
 		Context: ctx,
-	})
+	}
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	results, err := p2.Collect()
 	require.NoError(t, err)
 	require.NotEmpty(t, results, "graph module should return results")
 	t.Logf("Graph module returned %d result sets", len(results))

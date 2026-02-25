@@ -27,18 +27,24 @@ func (c *CrossRegionActor) ActInRegions(regions []string, action func(region str
 	for _, region := range regions {
 		region := region
 		g.Go(func() error {
-			limiter := c.getLimiter(region)
-			release, err := limiter.Acquire(context.Background(), region)
-			if err != nil {
-				return err
-			}
-			defer release()
-
-			return action(region)
+			return c.ActInRegion(region, func() error {
+				return action(region)
+			})
 		})
 	}
 
 	return g.Wait()
+}
+
+// ActInRegion acquires the per-region rate limiter, runs action, then releases.
+func (c *CrossRegionActor) ActInRegion(region string, action func() error) error {
+	limiter := c.getLimiter(region)
+	release, err := limiter.Acquire(context.Background(), region)
+	if err != nil {
+		return err
+	}
+	defer release()
+	return action()
 }
 
 func (c *CrossRegionActor) getLimiter(region string) *AWSRegionLimiter {

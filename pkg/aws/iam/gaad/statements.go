@@ -34,7 +34,7 @@ func collectInlineStatements(policies []types.InlinePolicy, originArn string) ty
 // collectManagedPolicyStatements extracts and copies statements from attached
 // managed policies. Each statement's OriginArn is set to the managed policy's
 // ARN. Works for user, role, and group attached managed policies.
-func collectManagedPolicyStatements(state AnalyzerState, policies []types.ManagedPolicy) types.PolicyStatementList {
+func collectManagedPolicyStatements(state *AnalyzerState, policies []types.ManagedPolicy) types.PolicyStatementList {
 	var stmts types.PolicyStatementList
 	for _, attached := range policies {
 		policy := state.GetPolicyByArn(attached.PolicyArn)
@@ -51,7 +51,7 @@ func collectManagedPolicyStatements(state AnalyzerState, policies []types.Manage
 }
 
 // collectBoundaryStatements extracts and copies permission boundary statements.
-func collectBoundaryStatements(state AnalyzerState, boundary types.ManagedPolicy) types.PolicyStatementList {
+func collectBoundaryStatements(state *AnalyzerState, boundary types.ManagedPolicy) types.PolicyStatementList {
 	if boundary == (types.ManagedPolicy{}) {
 		return nil
 	}

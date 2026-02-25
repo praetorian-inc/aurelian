@@ -5,6 +5,7 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -174,25 +175,24 @@ func TestCollectManagedPolicyStatements_PolicyFound(t *testing.T) {
 	}
 
 	policyArn := "arn:aws:iam::111122223333:policy/TestPolicy"
-	gaad := &types.AuthorizationAccountDetails{
-		Policies: []types.ManagedPolicyDetail{
-			{
-				PolicyName: "TestPolicy",
-				Arn:        policyArn,
-				PolicyVersionList: []types.PolicyVersion{
-					{
-						VersionId:        "v1",
-						IsDefaultVersion: true,
-						Document: types.Policy{
-							Version:   "2012-10-17",
-							Statement: &stmts,
-						},
+	gaad := types.NewAuthorizationAccountDetails("", nil, nil, nil, []types.ManagedPolicyDetail{
+		{
+			PolicyName: "TestPolicy",
+			Arn:        policyArn,
+			PolicyVersionList: []types.PolicyVersion{
+				{
+					VersionId:        "v1",
+					IsDefaultVersion: true,
+					Document: types.Policy{
+						Version:   "2012-10-17",
+						Statement: &stmts,
 					},
 				},
 			},
 		},
-	}
-	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
+	},
+	)
+	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
 	attached := []types.ManagedPolicy{
 		{PolicyName: "TestPolicy", PolicyArn: policyArn},
@@ -205,22 +205,21 @@ func TestCollectManagedPolicyStatements_PolicyFound(t *testing.T) {
 
 func TestCollectManagedPolicyStatements_PolicyWithNoDefaultVersion(t *testing.T) {
 	policyArn := "arn:aws:iam::111122223333:policy/NoDefault"
-	gaad := &types.AuthorizationAccountDetails{
-		Policies: []types.ManagedPolicyDetail{
-			{
-				PolicyName: "NoDefault",
-				Arn:        policyArn,
-				PolicyVersionList: []types.PolicyVersion{
-					{
-						VersionId:        "v1",
-						IsDefaultVersion: false,
-						Document:         types.Policy{Version: "2012-10-17"},
-					},
+	gaad := types.NewAuthorizationAccountDetails("", nil, nil, nil, []types.ManagedPolicyDetail{
+		{
+			PolicyName: "NoDefault",
+			Arn:        policyArn,
+			PolicyVersionList: []types.PolicyVersion{
+				{
+					VersionId:        "v1",
+					IsDefaultVersion: false,
+					Document:         types.Policy{Version: "2012-10-17"},
 				},
 			},
 		},
-	}
-	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
+	},
+	)
+	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
 	attached := []types.ManagedPolicy{
 		{PolicyName: "NoDefault", PolicyArn: policyArn},
@@ -256,25 +255,24 @@ func TestCollectBoundaryStatements_Found(t *testing.T) {
 	}
 
 	boundaryArn := "arn:aws:iam::111122223333:policy/Boundary"
-	gaad := &types.AuthorizationAccountDetails{
-		Policies: []types.ManagedPolicyDetail{
-			{
-				PolicyName: "Boundary",
-				Arn:        boundaryArn,
-				PolicyVersionList: []types.PolicyVersion{
-					{
-						VersionId:        "v1",
-						IsDefaultVersion: true,
-						Document: types.Policy{
-							Version:   "2012-10-17",
-							Statement: &stmts,
-						},
+	gaad := types.NewAuthorizationAccountDetails("", nil, nil, nil, []types.ManagedPolicyDetail{
+		{
+			PolicyName: "Boundary",
+			Arn:        boundaryArn,
+			PolicyVersionList: []types.PolicyVersion{
+				{
+					VersionId:        "v1",
+					IsDefaultVersion: true,
+					Document: types.Policy{
+						Version:   "2012-10-17",
+						Statement: &stmts,
 					},
 				},
 			},
 		},
-	}
-	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), nil)
+	},
+	)
+	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
 	result := collectBoundaryStatements(state, types.ManagedPolicy{
 		PolicyName: "Boundary",
@@ -290,6 +288,6 @@ func TestCollectBoundaryStatements_Found(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func buildMinimalState() *AnalyzerMemoryState {
-	gaad := &types.AuthorizationAccountDetails{}
-	return NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), []output.AWSResource{})
+	gaad := types.NewAuthorizationAccountDetails("", nil, nil, nil, nil)
+	return NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 }

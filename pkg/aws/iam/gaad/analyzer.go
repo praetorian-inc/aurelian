@@ -9,6 +9,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
@@ -23,13 +24,13 @@ func NewGaadAnalyzer() *GaadAnalyzer {
 
 // Analyze evaluates all principal permissions against resources and org policies,
 // detecting privilege escalation paths. Returns the set of allowed permission
-// edges (principal → action → resource).
+// edges (principal → action → resource) keyed by "principalARN|action|resourceARN".
 func (ga *GaadAnalyzer) Analyze(
 	gaad *types.AuthorizationAccountDetails,
 	orgPolicies *orgpolicies.OrgPolicies,
-	resources []output.AWSResource,
-) ([]output.AWSIAMRelationship, error) {
-	state := NewAnalyzerMemoryState(gaad, orgPolicies, resources)
+	resources store.Map[output.AWSResource],
+) (store.Map[output.AWSIAMRelationship], error) {
+	state := NewAnalyzerState(gaad, orgPolicies, resources)
 	policyData := buildPolicyData(gaad, orgPolicies, resources)
 	evaluator := iam.NewPolicyEvaluator(policyData)
 
@@ -42,47 +43,21 @@ func (ga *GaadAnalyzer) Analyze(
 
 	// Launch producers
 	var producerWg sync.WaitGroup
-	for _, user := range gaad.UserDetailList {
-		producerWg.Add(1)
-		go func(u types.UserDetail) {
-			defer producerWg.Done()
-			processUserPermissions(u, state, evalChan)
-		}(user)
-	}
-	for _, role := range gaad.RoleDetailList {
-		producerWg.Add(1)
-		go func(r types.RoleDetail) {
-			defer producerWg.Done()
-			processRolePermissions(r, state, evalChan)
-		}(role)
-	}
-
-	for _, resource := range resources {
-		producerWg.Add(1)
-		go func(r output.AWSResource) {
-			defer producerWg.Done()
-			processResourcePolicy(r, state, evalChan)
-		}(resource)
-	}
-
-	for _, role := range gaad.RoleDetailList {
-		producerWg.Add(1)
-		go func(r types.RoleDetail) {
-			defer producerWg.Done()
-			processAssumeRolePolicies(r, state, evalChan)
-		}(role)
-	}
+	spawnProducers(gaad.Users, &producerWg, func(u types.UserDetail) { processUserPermissions(u, state, evalChan) })
+	spawnProducers(gaad.Roles, &producerWg, func(r types.RoleDetail) { processRolePermissions(r, state, evalChan) })
+	spawnProducers(resources, &producerWg, func(r output.AWSResource) { processResourcePolicy(r, state, evalChan) })
+	spawnProducers(gaad.Roles, &producerWg, func(r types.RoleDetail) { processAssumeRolePolicies(r, state, evalChan) })
 
 	// Drain results concurrently to avoid deadlock when resultChan buffer fills.
 	// Workers send to resultChan; if we don't drain it before waiting on evalWg,
 	// workers block on send → evalWg.Wait() never returns.
-	var results []output.AWSIAMRelationship
+	results := store.NewMap[output.AWSIAMRelationship]()
 	var collectWg sync.WaitGroup
 	collectWg.Add(1)
 	go func() {
 		defer collectWg.Done()
 		for rel := range resultChan {
-			results = append(results, rel)
+			results.Set(RelationshipKey(rel), rel)
 		}
 	}()
 
@@ -98,17 +73,35 @@ func (ga *GaadAnalyzer) Analyze(
 	collectWg.Wait()
 
 	// Add synthetic permission edges for attack patterns the evaluator can't discover
-	results = ga.generateSyntheticPermissions(results, state)
+	ga.generateSyntheticPermissions(results, state)
 
 	return results, nil
 }
 
-// generateSyntheticPermissions appends synthetic permission edges that cannot be
+// spawnProducers iterates over a store.Map and launches a goroutine per item,
+// tracking completion via the provided WaitGroup.
+func spawnProducers[T any](m store.Map[T], wg *sync.WaitGroup, fn func(T)) {
+	m.Range(func(_ string, item T) bool {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fn(item)
+		}()
+		return true
+	})
+}
+
+// generateSyntheticPermissions inserts synthetic permission edges that cannot be
 // discovered by the evaluator alone (because the target resources don't exist yet
-// but could be created by the principal). Additional synthetic techniques can be
-// added here in the future.
-func (ga *GaadAnalyzer) generateSyntheticPermissions(results []output.AWSIAMRelationship, state AnalyzerState) []output.AWSIAMRelationship {
-	return synthesizeCreateThenUsePermissions(results, state)
+// but could be created by the principal). It mutates results in place.
+func (ga *GaadAnalyzer) generateSyntheticPermissions(results store.Map[output.AWSIAMRelationship], state *AnalyzerState) {
+	synthesizeCreateThenUsePermissions(results, state)
+}
+
+// RelationshipKey returns a composite map key for an AWSIAMRelationship:
+// "principalARN|action|resourceARN".
+func RelationshipKey(rel output.AWSIAMRelationship) string {
+	return rel.Principal.ARN + "|" + rel.Action + "|" + rel.Resource.ARN
 }
 
 // buildPolicyData constructs an iam.PolicyData for the evaluator.
@@ -117,13 +110,14 @@ func (ga *GaadAnalyzer) generateSyntheticPermissions(results []output.AWSIAMRela
 func buildPolicyData(
 	gaad *types.AuthorizationAccountDetails,
 	orgPolicies *orgpolicies.OrgPolicies,
-	resources []output.AWSResource,
+	resources store.Map[output.AWSResource],
 ) *iam.PolicyData {
 	resourcePolicies := make(map[string]*types.Policy)
-	for i := range resources {
-		if resources[i].ResourcePolicy != nil {
-			resourcePolicies[resources[i].ARN] = resources[i].ResourcePolicy
+	resources.Range(func(_ string, r output.AWSResource) bool {
+		if r.ResourcePolicy != nil {
+			resourcePolicies[r.ARN] = r.ResourcePolicy
 		}
-	}
+		return true
+	})
 	return iam.NewPolicyData(gaad, orgPolicies, resourcePolicies, nil)
 }

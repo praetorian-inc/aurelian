@@ -8,7 +8,9 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
@@ -58,7 +60,7 @@ func (m *AnalyzeIAMPermissionsModule) Parameters() any {
 	return &m.AnalyzeIAMPermissionsConfig
 }
 
-func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config, emit func(models ...model.AurelianModel)) error {
+func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.AnalyzeIAMPermissionsConfig
 
 	// Load GAAD data
@@ -79,14 +81,20 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config, emit func(models ..
 		orgPols = orgpolicies.NewDefaultOrgPolicies()
 	}
 
-	// Load optional resources as []output.AWSResource
-	var resources []output.AWSResource
+	// Load optional resources as cache.Map[output.AWSResource]
+	resourceMap := store.NewMap[output.AWSResource]()
 	if c.ResourcesFile != "" {
 		r, err := iampkg.LoadJSONFile[[]output.AWSResource](c.ResourcesFile)
 		if err != nil {
 			return fmt.Errorf("loading resources file: %w", err)
 		}
-		resources = *r
+		for _, res := range *r {
+			key := res.ARN
+			if key == "" {
+				key = res.ResourceID
+			}
+			resourceMap.Set(key, res)
+		}
 	}
 
 	// Load optional resource policies and attach them to matching resources.
@@ -97,47 +105,40 @@ func (m *AnalyzeIAMPermissionsModule) Run(cfg plugin.Config, emit func(models ..
 		if err != nil {
 			return fmt.Errorf("loading resource policies file: %w", err)
 		}
-		resources = attachResourcePolicies(resources, *rp)
+		attachResourcePolicies(resourceMap, *rp)
 	}
 
 	// Analyze IAM permissions
 	analyzer := gaadpkg.NewGaadAnalyzer()
-	relationships, err := analyzer.Analyze(gaad, orgPols, resources)
+	relationships, err := analyzer.Analyze(gaad, orgPols, resourceMap)
 	if err != nil {
 		return fmt.Errorf("analyzing permissions: %w", err)
 	}
 
 	// Convert GAAD entities to AWSIAMResource
-	entities := gaadpkg.FromGAAD(gaad, "")
-
-	for _, e := range entities {
-		emit(e)
-	}
-	for _, r := range relationships {
-		emit(r)
-	}
+	gaadpkg.EmitGAADEntities(gaad, "", func(e output.AWSIAMResource) {
+		out.Send(e)
+	})
+	relationships.Range(func(_ string, r output.AWSIAMRelationship) bool {
+		out.Send(r)
+		return true
+	})
 	return nil
 }
 
-// attachResourcePolicies merges resource policies into the resource list.
+// attachResourcePolicies merges resource policies into the resource map.
 // For each ARN in the policy map, if a matching resource exists its
 // ResourcePolicy field is set; otherwise a minimal AWSResource is created.
-func attachResourcePolicies(resources []output.AWSResource, policies map[string]*types.Policy) []output.AWSResource {
-	byARN := make(map[string]int, len(resources))
-	for i := range resources {
-		byARN[resources[i].ARN] = i
-	}
-
-	for arn, policy := range policies {
-		if idx, ok := byARN[arn]; ok {
-			resources[idx].ResourcePolicy = policy
+func attachResourcePolicies(resources store.Map[output.AWSResource], policies map[string]*types.Policy) {
+	for resARN, policy := range policies {
+		if existing, ok := resources.Get(resARN); ok {
+			existing.ResourcePolicy = policy
+			resources.Set(resARN, existing)
 		} else {
-			resources = append(resources, output.AWSResource{
-				ARN:            arn,
+			resources.Set(resARN, output.AWSResource{
+				ARN:            resARN,
 				ResourcePolicy: policy,
 			})
 		}
 	}
-
-	return resources
 }

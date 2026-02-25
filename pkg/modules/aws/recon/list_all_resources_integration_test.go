@@ -9,9 +9,19 @@ import (
 	"github.com/praetorian-inc/aurelian/test/testutil"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/stretchr/testify/require"
 )
+
+func runAndCollect(t *testing.T, mod plugin.Module, cfg plugin.Config) ([]model.AurelianModel, error) {
+	t.Helper()
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	return p2.Collect()
+}
 
 func TestAWSList(t *testing.T) {
 	fixture := testutil.NewFixture(t, "aws/recon/list")
@@ -23,16 +33,13 @@ func TestAWSList(t *testing.T) {
 			t.Skip("list-all module not registered in plugin system")
 		}
 
-		var results []model.AurelianModel
-		err := mod.Run(plugin.Config{
+		results, err := runAndCollect(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::EC2::Instance"},
 				"regions":       []string{"us-east-2"},
 				"scan-type":     "full",
 			},
 			Context: context.Background(),
-		}, func(models ...model.AurelianModel) {
-			results = append(results, models...)
 		})
 		require.NoError(t, err)
 		testutil.AssertMinResults(t, results, 1)
@@ -48,16 +55,13 @@ func TestAWSList(t *testing.T) {
 			t.Skip("list-all module not registered in plugin system")
 		}
 
-		var results []model.AurelianModel
-		err := mod.Run(plugin.Config{
+		results, err := runAndCollect(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::S3::Bucket"},
 				"regions":       []string{"us-east-2"},
 				"scan-type":     "full",
 			},
 			Context: context.Background(),
-		}, func(models ...model.AurelianModel) {
-			results = append(results, models...)
 		})
 		require.NoError(t, err)
 		testutil.AssertMinResults(t, results, 1)
@@ -73,16 +77,13 @@ func TestAWSList(t *testing.T) {
 			t.Skip("list-all module not registered in plugin system")
 		}
 
-		var results []model.AurelianModel
-		err := mod.Run(plugin.Config{
+		results, err := runAndCollect(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::Lambda::Function"},
 				"regions":       []string{"us-east-2"},
 				"scan-type":     "full",
 			},
 			Context: context.Background(),
-		}, func(models ...model.AurelianModel) {
-			results = append(results, models...)
 		})
 		require.NoError(t, err)
 		testutil.AssertMinResults(t, results, 1)

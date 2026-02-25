@@ -35,7 +35,7 @@ func NewPolicyData(gaad *types.AuthorizationAccountDetails, orgPolicies *orgpoli
 func (pd *PolicyData) AddResourcePolicies() {
 	// Create resource polices from role assume role policies
 	if pd.Gaad != nil {
-		for _, role := range pd.Gaad.RoleDetailList {
+		pd.Gaad.Roles.Range(func(_ string, role types.RoleDetail) bool {
 			if role.AssumeRolePolicyDocument.Statement != nil {
 				// Create copy of statements to avoid modifying original
 				stmtCopy := make(types.PolicyStatementList, len(*role.AssumeRolePolicyDocument.Statement))
@@ -52,7 +52,8 @@ func (pd *PolicyData) AddResourcePolicies() {
 					Statement: &stmtCopy,
 				}
 			}
-		}
+			return true
+		})
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
@@ -32,7 +33,7 @@ func (m *YAMLAnalyzer) References() []string      { return []string{} }
 func (m *YAMLAnalyzer) Parameters() any           { return nil }
 
 // Run evaluates all rules against the provided resource.
-func (m *YAMLAnalyzer) Run(cfg plugin.Config, out func(models ...model.AurelianModel)) error {
+func (m *YAMLAnalyzer) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	// Extract resource from config
 	resourceAny, ok := cfg.Args["resource"]
 	if !ok {
@@ -67,7 +68,7 @@ func (m *YAMLAnalyzer) Run(cfg plugin.Config, out func(models ...model.AurelianM
 	}
 
 	for _, f := range findings {
-		out(f)
+		out.Send(f)
 	}
 	return nil
 }

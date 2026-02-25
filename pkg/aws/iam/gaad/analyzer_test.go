@@ -5,10 +5,34 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// collectRelationships returns all values from a relationship map as a slice (test helper).
+func collectRelationships(m store.Map[output.AWSIAMRelationship]) []output.AWSIAMRelationship {
+	var out []output.AWSIAMRelationship
+	m.Range(func(_ string, rel output.AWSIAMRelationship) bool {
+		out = append(out, rel)
+		return true
+	})
+	return out
+}
+
+// newTestGAADOpts holds optional fields for building test GAAD data.
+type newTestGAADOpts struct {
+	accountID string
+	users     []types.UserDetail
+	groups    []types.GroupDetail
+	roles     []types.RoleDetail
+	policies  []types.ManagedPolicyDetail
+}
+
+func newTestGAADFromOpts(o newTestGAADOpts) *types.AuthorizationAccountDetails {
+	return types.NewAuthorizationAccountDetails(o.accountID, o.users, o.groups, o.roles, o.policies)
+}
 
 // ---------------------------------------------------------------------------
 // NewGaadAnalyzer
@@ -25,12 +49,12 @@ func TestNewGaadAnalyzer(t *testing.T) {
 
 func TestAnalyze_EmptyGAAD(t *testing.T) {
 	ga := NewGaadAnalyzer()
-	gaad := &types.AuthorizationAccountDetails{}
+	gaad := types.NewAuthorizationAccountDetails("", nil, nil, nil, nil)
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
-	assert.Empty(t, results)
+	assert.Equal(t, 0, results.Len())
 }
 
 func TestAnalyze_UserWithPassRolePermission(t *testing.T) {
@@ -58,9 +82,9 @@ func TestAnalyze_UserWithPassRolePermission(t *testing.T) {
 		},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		UserDetailList: []types.UserDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		users: []types.UserDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:user/alice",
 				UserName: "alice",
@@ -77,7 +101,7 @@ func TestAnalyze_UserWithPassRolePermission(t *testing.T) {
 				},
 			},
 		},
-		RoleDetailList: []types.RoleDetail{
+		roles: []types.RoleDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:role/target-role",
 				RoleName: "target-role",
@@ -89,17 +113,17 @@ func TestAnalyze_UserWithPassRolePermission(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	// Find PassRole result
 	foundPassRole := false
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Action == "iam:PassRole" &&
 			rel.Principal.ARN == "arn:aws:iam::111122223333:user/alice" &&
 			rel.Resource.ARN == "arn:aws:iam::111122223333:role/target-role" {
@@ -125,9 +149,9 @@ func TestAnalyze_RoleWithManagedPolicy(t *testing.T) {
 	}
 
 	policyArn := "arn:aws:iam::111122223333:policy/PassRolePolicy"
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		roles: []types.RoleDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:role/source-role",
 				RoleName: "source-role",
@@ -152,7 +176,7 @@ func TestAnalyze_RoleWithManagedPolicy(t *testing.T) {
 				},
 			},
 		},
-		Policies: []types.ManagedPolicyDetail{
+		policies: []types.ManagedPolicyDetail{
 			{
 				PolicyName: "PassRolePolicy",
 				Arn:        policyArn,
@@ -168,16 +192,16 @@ func TestAnalyze_RoleWithManagedPolicy(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	foundPassRole := false
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Action == "iam:PassRole" &&
 			rel.Principal.ARN == "arn:aws:iam::111122223333:role/source-role" {
 			foundPassRole = true
@@ -202,9 +226,9 @@ func TestAnalyze_UserWithGroupPolicy(t *testing.T) {
 		{Effect: "Allow", Action: &trustAction, Resource: &trustResource, Principal: &types.Principal{AWS: &trustPrincipal}},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		UserDetailList: []types.UserDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		users: []types.UserDetail{
 			{
 				Arn:       "arn:aws:iam::111122223333:user/bob",
 				UserName:  "bob",
@@ -213,7 +237,7 @@ func TestAnalyze_UserWithGroupPolicy(t *testing.T) {
 				GroupList: []string{"admins"},
 			},
 		},
-		GroupDetailList: []types.GroupDetail{
+		groups: []types.GroupDetail{
 			{
 				Arn:       "arn:aws:iam::111122223333:group/admins",
 				GroupName: "admins",
@@ -230,7 +254,7 @@ func TestAnalyze_UserWithGroupPolicy(t *testing.T) {
 				},
 			},
 		},
-		RoleDetailList: []types.RoleDetail{
+		roles: []types.RoleDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:role/some-role",
 				RoleName: "some-role",
@@ -242,16 +266,16 @@ func TestAnalyze_UserWithGroupPolicy(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	foundCreateKey := false
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Action == "iam:CreateAccessKey" &&
 			rel.Principal.ARN == "arn:aws:iam::111122223333:user/bob" {
 			foundCreateKey = true
@@ -275,9 +299,9 @@ func TestAnalyze_AssumeRoleTrustPolicy(t *testing.T) {
 		},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		roles: []types.RoleDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:role/lambda-exec-role",
 				RoleName: "lambda-exec-role",
@@ -289,16 +313,16 @@ func TestAnalyze_AssumeRoleTrustPolicy(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	foundAssumeRole := false
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Action == "sts:AssumeRole" &&
 			rel.Resource.ARN == "arn:aws:iam::111122223333:role/lambda-exec-role" {
 			foundAssumeRole = true
@@ -329,16 +353,16 @@ func TestAnalyze_ResourcePolicy(t *testing.T) {
 		},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		roles: []types.RoleDetail{
 			{
-				Arn:      "arn:aws:iam::111122223333:role/dummy",
-				RoleName: "dummy",
+				Arn:                      "arn:aws:iam::111122223333:role/dummy",
+				RoleName:                 "dummy",
 				AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts},
 			},
 		},
-	}
+	})
 
 	resources := []output.AWSResource{
 		{
@@ -357,11 +381,11 @@ func TestAnalyze_ResourcePolicy(t *testing.T) {
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
 
-	results, err := ga.Analyze(gaad, orgPol, resources)
+	results, err := ga.Analyze(gaad, orgPol, newResourceMap(resources))
 	require.NoError(t, err)
 
 	foundInvoke := false
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Action == "lambda:InvokeFunction" &&
 			rel.Resource.ARN == "arn:aws:lambda:us-east-1:111122223333:function:my-func" {
 			foundInvoke = true
@@ -391,9 +415,9 @@ func TestAnalyze_UserWithPermissionsBoundary(t *testing.T) {
 	}
 
 	boundaryArn := "arn:aws:iam::111122223333:policy/PassRoleBoundary"
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		UserDetailList: []types.UserDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		users: []types.UserDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:user/bounded-user",
 				UserName: "bounded-user",
@@ -407,7 +431,7 @@ func TestAnalyze_UserWithPermissionsBoundary(t *testing.T) {
 				},
 			},
 		},
-		RoleDetailList: []types.RoleDetail{
+		roles: []types.RoleDetail{
 			{
 				Arn:                      "arn:aws:iam::111122223333:role/target-role",
 				RoleName:                 "target-role",
@@ -415,7 +439,7 @@ func TestAnalyze_UserWithPermissionsBoundary(t *testing.T) {
 				AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts},
 			},
 		},
-		Policies: []types.ManagedPolicyDetail{
+		policies: []types.ManagedPolicyDetail{
 			{
 				PolicyName: "PassRoleBoundary",
 				Arn:        boundaryArn,
@@ -424,15 +448,15 @@ func TestAnalyze_UserWithPermissionsBoundary(t *testing.T) {
 				},
 			},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	// The boundary restricts to iam:PassRole only, so CreateAccessKey etc should NOT appear
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Principal.ARN == "arn:aws:iam::111122223333:user/bounded-user" {
 			if rel.Action == "iam:CreateAccessKey" || rel.Action == "iam:CreateUser" || rel.Action == "iam:AttachUserPolicy" {
 				t.Errorf("Expected boundary to restrict %s, but it was allowed", rel.Action)
@@ -453,15 +477,15 @@ func TestBuildPolicyData(t *testing.T) {
 		{Effect: "Allow", Action: &trustAction, Resource: &trustResource, Principal: &types.Principal{AWS: &trustPrincipal}},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		roles: []types.RoleDetail{
 			{
-				Arn:      "arn:aws:iam::111122223333:role/test",
-				RoleName: "test",
+				Arn:                      "arn:aws:iam::111122223333:role/test",
+				RoleName:                 "test",
 				AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts},
 			},
 		},
-	}
+	})
 
 	lambdaAction := types.DynaString{"lambda:InvokeFunction"}
 	lambdaResource := types.DynaString{"*"}
@@ -485,7 +509,7 @@ func TestBuildPolicyData(t *testing.T) {
 	}
 
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	pd := buildPolicyData(gaad, orgPol, resources)
+	pd := buildPolicyData(gaad, orgPol, newResourceMap(resources))
 	require.NotNil(t, pd)
 }
 
@@ -494,7 +518,7 @@ func TestBuildPolicyData(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBuildPrincipal_Found(t *testing.T) {
-	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
 	principal := buildPrincipal("arn:aws:iam::111122223333:user/alice", state)
 	assert.Equal(t, "arn:aws:iam::111122223333:user/alice", principal.ARN)
@@ -502,7 +526,7 @@ func TestBuildPrincipal_Found(t *testing.T) {
 }
 
 func TestBuildPrincipal_NotFound(t *testing.T) {
-	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), nil)
+	state := NewAnalyzerMemoryState(testGAAD(), orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
 	principal := buildPrincipal("arn:aws:iam::999988887777:user/unknown", state)
 	assert.Equal(t, "arn:aws:iam::999988887777:user/unknown", principal.ARN)
@@ -531,31 +555,31 @@ func TestAnalyze_CreateThenUseSynthetic(t *testing.T) {
 		{Effect: "Allow", Action: &trustAction, Resource: &allResource, Principal: &types.Principal{AWS: &trustPrincipal}},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		roles: []types.RoleDetail{
 			{
-				Arn:      "arn:aws:iam::111122223333:role/cb-role",
-				RoleName: "cb-role",
-				RoleId:   "AROA777",
+				Arn:                      "arn:aws:iam::111122223333:role/cb-role",
+				RoleName:                 "cb-role",
+				RoleId:                   "AROA777",
 				AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts},
 				RolePolicyList: []types.InlinePolicy{
 					{PolicyName: "CB", PolicyDocument: types.Policy{Version: "2012-10-17", Statement: &cbStmts}},
 				},
 			},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
 	// Check for synthetic edges
 	hasCreate := false
 	hasStartBuild := false
 	hasStartBuildBatch := false
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Principal.ARN == "arn:aws:iam::111122223333:role/cb-role" {
 			switch rel.Action {
 			case "codebuild:CreateProject":
@@ -586,12 +610,12 @@ func TestAnalyze_AssumeRoleDenyStatementInTrustPolicy(t *testing.T) {
 		},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		UserDetailList: []types.UserDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		users: []types.UserDetail{
 			{Arn: "arn:aws:iam::111122223333:user/alice", UserName: "alice", UserId: "AIDA444"},
 		},
-		RoleDetailList: []types.RoleDetail{
+		roles: []types.RoleDetail{
 			{
 				Arn:                      "arn:aws:iam::111122223333:role/deny-role",
 				RoleName:                 "deny-role",
@@ -599,14 +623,14 @@ func TestAnalyze_AssumeRoleDenyStatementInTrustPolicy(t *testing.T) {
 				AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts},
 			},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Action == "sts:AssumeRole" &&
 			rel.Principal.ARN == "arn:aws:iam::111122223333:user/alice" &&
 			rel.Resource.ARN == "arn:aws:iam::111122223333:role/deny-role" {
@@ -623,9 +647,9 @@ func TestAnalyze_TrustPolicyNilPrincipal(t *testing.T) {
 		{Effect: "Allow", Action: &trustAction, Resource: &trustResource, Principal: nil},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		RoleDetailList: []types.RoleDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		roles: []types.RoleDetail{
 			{
 				Arn:                      "arn:aws:iam::111122223333:role/nil-principal-role",
 				RoleName:                 "nil-principal-role",
@@ -633,11 +657,11 @@ func TestAnalyze_TrustPolicyNilPrincipal(t *testing.T) {
 				AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts},
 			},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 	// Should not panic, might or might not produce results depending on evaluator
 	_ = results
@@ -652,9 +676,9 @@ func TestAnalyze_ResourcePolicyNoPrivEscActions(t *testing.T) {
 		{Effect: "Allow", Action: &s3Action, Resource: &s3Resource, Principal: &types.Principal{Service: &s3Service}},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-	}
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+	})
 
 	resources := []output.AWSResource{
 		{
@@ -670,10 +694,10 @@ func TestAnalyze_ResourcePolicyNoPrivEscActions(t *testing.T) {
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, resources)
+	results, err := ga.Analyze(gaad, orgPol, newResourceMap(resources))
 	require.NoError(t, err)
 
-	for _, rel := range results {
+	for _, rel := range collectRelationships(results) {
 		if rel.Action == "s3:GetObject" {
 			t.Error("s3:GetObject is not a priv-esc action; should not appear in results")
 		}
@@ -682,7 +706,7 @@ func TestAnalyze_ResourcePolicyNoPrivEscActions(t *testing.T) {
 
 func TestAnalyze_ResourcePolicyNilStatements(t *testing.T) {
 	// Resource with nil resource policy or nil statements should be handled gracefully
-	gaad := &types.AuthorizationAccountDetails{AccountID: "111122223333"}
+	gaad := types.NewAuthorizationAccountDetails("111122223333", nil, nil, nil, nil)
 
 	resources := []output.AWSResource{
 		{
@@ -704,7 +728,7 @@ func TestAnalyze_ResourcePolicyNilStatements(t *testing.T) {
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, resources)
+	results, err := ga.Analyze(gaad, orgPol, newResourceMap(resources))
 	require.NoError(t, err)
 	// Should not panic
 	_ = results
@@ -729,9 +753,9 @@ func TestAnalyze_MultipleUsersAndRoles(t *testing.T) {
 		{Effect: "Allow", Action: &trustAction, Resource: &allResource, Principal: &types.Principal{AWS: &trustPrincipal}},
 	}
 
-	gaad := &types.AuthorizationAccountDetails{
-		AccountID: "111122223333",
-		UserDetailList: []types.UserDetail{
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: "111122223333",
+		users: []types.UserDetail{
 			{
 				Arn:      "arn:aws:iam::111122223333:user/alice",
 				UserName: "alice",
@@ -747,16 +771,16 @@ func TestAnalyze_MultipleUsersAndRoles(t *testing.T) {
 				},
 			},
 		},
-		RoleDetailList: []types.RoleDetail{
+		roles: []types.RoleDetail{
 			{Arn: "arn:aws:iam::111122223333:role/r1", RoleName: "r1", AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts}},
 			{Arn: "arn:aws:iam::111122223333:role/r2", RoleName: "r2", AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &trustStmts}},
 		},
-	}
+	})
 
 	ga := NewGaadAnalyzer()
 	orgPol := orgpolicies.NewDefaultOrgPolicies()
-	results, err := ga.Analyze(gaad, orgPol, nil)
+	results, err := ga.Analyze(gaad, orgPol, store.Map[output.AWSResource]{})
 	require.NoError(t, err)
 
-	assert.Greater(t, len(results), 0, "Expected at least some results from concurrent processing")
+	assert.Greater(t, results.Len(), 0, "Expected at least some results from concurrent processing")
 }

@@ -2,12 +2,12 @@ package recon
 
 import (
 	"fmt"
-	"strings"
 
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
@@ -52,42 +52,27 @@ func (m *AWSResourcePoliciesModule) Parameters() any {
 	return &m.ResourcePoliciesConfig
 }
 
-func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, emit func(models ...model.AurelianModel)) error {
+func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.ResourcePoliciesConfig
 
-	// Resolve regions
 	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
 	if err != nil {
 		return fmt.Errorf("failed to resolve regions: %w", err)
 	}
 
-	// Create the resource policy collector (handles concurrency and rate limiting)
+	c.AWSCommonRecon.Regions = resolvedRegions
+	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
 	collector := resourcepolicies.New(c.AWSCommonRecon)
 
-	// Create CloudControl lister to enumerate resources
-	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
+	p1 := pipeline.From(collector.SupportedResourceTypes()...)
+	p2 := pipeline.New[output.AWSResource]()
+	p3 := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(p1, lister.List, p2)
+	pipeline.Pipe(p2, collector.Collect, p3)
 
-	// List all supported resource types (returns map[region/resourceType][]AWSResource)
-	resourcesByKey, err := lister.List(resolvedRegions, collector.SupportedResourceTypes())
-	if err != nil {
-		return fmt.Errorf("failed to list resources: %w", err)
+	for r := range p3.Range() {
+		out.Send(r)
 	}
 
-	// Re-key from "region/resourceType" to just "region" for the collector.
-	resourcesByRegion := make(map[string][]output.AWSResource)
-	for key, resources := range resourcesByKey {
-		region, _, _ := strings.Cut(key, "/")
-		resourcesByRegion[region] = append(resourcesByRegion[region], resources...)
-	}
-
-	// Collect policies across all regions concurrently
-	results, err := collector.Collect(resourcesByRegion)
-	if err != nil {
-		return fmt.Errorf("failed to collect resource policies: %w", err)
-	}
-
-	for _, r := range results {
-		emit(r)
-	}
-	return nil
+	return p3.Wait()
 }

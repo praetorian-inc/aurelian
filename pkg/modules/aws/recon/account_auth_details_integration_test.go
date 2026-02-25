@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/praetorian-inc/aurelian/test/testutil"
@@ -23,13 +24,15 @@ func TestAWSAccountAuthDetails(t *testing.T) {
 		t.Fatal("account-auth-details module not registered in plugin system")
 	}
 
-	var results []model.AurelianModel
-	err := mod.Run(plugin.Config{
+	cfg := plugin.Config{
 		Args:    map[string]any{},
 		Context: context.Background(),
-	}, func(models ...model.AurelianModel) {
-		results = append(results, models...)
-	})
+	}
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	results, err := p2.Collect()
 	require.NoError(t, err)
 	require.Len(t, results, 1, "account-auth-details module should output exactly 1 model")
 
@@ -51,10 +54,11 @@ func TestAWSAccountAuthDetails(t *testing.T) {
 	t.Run("fixture users present", func(t *testing.T) {
 		foundNames := make(map[string]bool)
 		foundARNs := make(map[string]bool)
-		for _, u := range details.UserDetailList {
+		details.Users.Range(func(_ string, u types.UserDetail) bool {
 			foundNames[u.UserName] = true
 			foundARNs[u.Arn] = true
-		}
+			return true
+		})
 
 		for _, name := range userNames {
 			assert.True(t, foundNames[name], "GAAD should contain user %s", name)
@@ -66,46 +70,49 @@ func TestAWSAccountAuthDetails(t *testing.T) {
 
 	t.Run("fixture group present", func(t *testing.T) {
 		foundGroups := make(map[string]bool)
-		for _, g := range details.GroupDetailList {
+		details.Groups.Range(func(_ string, g types.GroupDetail) bool {
 			foundGroups[g.GroupName] = true
-		}
+			return true
+		})
 		assert.True(t, foundGroups[groupName], "GAAD should contain group %s", groupName)
 	})
 
 	t.Run("fixture roles present", func(t *testing.T) {
 		foundRoles := make(map[string]bool)
-		for _, r := range details.RoleDetailList {
+		details.Roles.Range(func(_ string, r types.RoleDetail) bool {
 			foundRoles[r.RoleName] = true
-		}
+			return true
+		})
 		assert.True(t, foundRoles[lambdaRoleName], "GAAD should contain role %s", lambdaRoleName)
 		assert.True(t, foundRoles[assumableRoleName], "GAAD should contain role %s", assumableRoleName)
 	})
 
 	t.Run("fixture managed policy present", func(t *testing.T) {
 		foundPolicies := make(map[string]bool)
-		for _, p := range details.Policies {
+		details.Policies.Range(func(_ string, p types.ManagedPolicyDetail) bool {
 			foundPolicies[p.Arn] = true
-		}
+			return true
+		})
 		assert.True(t, foundPolicies[customPolicyARN], "GAAD should contain policy %s", customPolicyARN)
 	})
 
 	t.Run("non-trivial entity counts", func(t *testing.T) {
-		assert.GreaterOrEqual(t, len(details.UserDetailList), len(userNames),
+		assert.GreaterOrEqual(t, details.Users.Len(), len(userNames),
 			"should have at least as many users as the fixture creates")
-		assert.GreaterOrEqual(t, len(details.RoleDetailList), 2,
+		assert.GreaterOrEqual(t, details.Roles.Len(), 2,
 			"should have at least the 2 fixture roles")
-		assert.GreaterOrEqual(t, len(details.GroupDetailList), 1,
+		assert.GreaterOrEqual(t, details.Groups.Len(), 1,
 			"should have at least the fixture group")
-		assert.GreaterOrEqual(t, len(details.Policies), 1,
+		assert.GreaterOrEqual(t, details.Policies.Len(), 1,
 			"should have at least the fixture managed policy")
 	})
 
 	t.Run("diagnostic summary", func(t *testing.T) {
 		t.Logf("=== Account Auth Details Summary ===")
 		t.Logf("Account ID: %s", details.AccountID)
-		t.Logf("Users:    %d", len(details.UserDetailList))
-		t.Logf("Roles:    %d", len(details.RoleDetailList))
-		t.Logf("Groups:   %d", len(details.GroupDetailList))
-		t.Logf("Policies: %d", len(details.Policies))
+		t.Logf("Users:    %d", details.Users.Len())
+		t.Logf("Roles:    %d", details.Roles.Len())
+		t.Logf("Groups:   %d", details.Groups.Len())
+		t.Logf("Policies: %d", details.Policies.Len())
 	})
 }
