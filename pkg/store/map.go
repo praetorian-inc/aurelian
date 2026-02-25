@@ -22,6 +22,11 @@ type MapMethods[T any] interface {
 	// Range iterates over all entries. Return false from fn to stop early.
 	Range(fn func(key string, value T) bool)
 
+	// RangeWithKeyFilter iterates over all entries but only calls fn for entries
+	// where filter(key) returns true. This allows backends to skip expensive
+	// deserialization for non-matching keys.
+	RangeWithKeyFilter(filter func(key string) bool, fn func(key string, value T) bool)
+
 	// Len returns the number of entries.
 	Len() int
 
@@ -70,6 +75,15 @@ func (m Map[T]) Range(fn func(key string, value T) bool) {
 		return
 	}
 	m.m.Range(fn)
+}
+
+// RangeWithKeyFilter iterates over entries where filter(key) returns true.
+// Does nothing if the backend is nil.
+func (m Map[T]) RangeWithKeyFilter(filter func(key string) bool, fn func(key string, value T) bool) {
+	if m.m == nil {
+		return
+	}
+	m.m.RangeWithKeyFilter(filter, fn)
 }
 
 // Len returns the number of entries, or 0 if the backend is nil.

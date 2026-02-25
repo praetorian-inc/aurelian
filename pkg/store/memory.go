@@ -29,6 +29,17 @@ func (m *MemoryMap[T]) Range(fn func(string, T) bool) {
 	}
 }
 
+func (m *MemoryMap[T]) RangeWithKeyFilter(filter func(string) bool, fn func(string, T) bool) {
+	for k, v := range m.data {
+		if !filter(k) {
+			continue
+		}
+		if !fn(k, v) {
+			return
+		}
+	}
+}
+
 func (m *MemoryMap[T]) Len() int {
 	return len(m.data)
 }
