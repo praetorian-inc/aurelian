@@ -109,31 +109,31 @@ func (a *AuthorizationAccountDetails) UnmarshalJSON(data []byte) error {
 }
 
 type UserDetail struct {
-	Arn                     string          `json:"Arn"`
-	UserName                string          `json:"UserName"`
-	UserId                  string          `json:"UserId"`
-	Path                    string          `json:"Path"`
-	CreateDate              string          `json:"CreateDate"`
-	GroupList               []string        `json:"GroupList"`
-	Tags                    []Tag           `json:"Tags"`
-	UserPolicyList          []InlinePolicy  `json:"UserPolicyList"`
-	PermissionsBoundary     ManagedPolicy   `json:"PermissionsBoundary"`
-	AttachedManagedPolicies []ManagedPolicy `json:"AttachedManagedPolicies"`
+	Arn                     string              `json:"Arn"`
+	UserName                string              `json:"UserName"`
+	UserId                  string              `json:"UserId"`
+	Path                    string              `json:"Path"`
+	CreateDate              string              `json:"CreateDate"`
+	GroupList               []string            `json:"GroupList"`
+	Tags                    []Tag               `json:"Tags"`
+	UserPolicyList          []InlinePolicy      `json:"UserPolicyList"`
+	PermissionsBoundary     PermissionsBoundary `json:"PermissionsBoundary"`
+	AttachedManagedPolicies []ManagedPolicy     `json:"AttachedManagedPolicies"`
 }
 
 type RoleDetail struct {
-	Arn                      string            `json:"Arn"`
-	RoleName                 string            `json:"RoleName"`
-	RoleId                   string            `json:"RoleId"`
-	Path                     string            `json:"Path"`
-	CreateDate               string            `json:"CreateDate"`
-	RoleLastUsed             map[string]string `json:"RoleLastUsed"`
-	AssumeRolePolicyDocument Policy            `json:"AssumeRolePolicyDocument"`
-	Tags                     []Tag             `json:"Tags"`
-	RolePolicyList           []InlinePolicy    `json:"RolePolicyList"`
-	AttachedManagedPolicies  []ManagedPolicy   `json:"AttachedManagedPolicies"`
-	PermissionsBoundary      ManagedPolicy     `json:"PermissionsBoundary"`
-	InstanceProfileList      []InstanceProfile `json:"InstanceProfileList"`
+	Arn                      string              `json:"Arn"`
+	RoleName                 string              `json:"RoleName"`
+	RoleId                   string              `json:"RoleId"`
+	Path                     string              `json:"Path"`
+	CreateDate               string              `json:"CreateDate"`
+	RoleLastUsed             map[string]string   `json:"RoleLastUsed"`
+	AssumeRolePolicyDocument Policy              `json:"AssumeRolePolicyDocument"`
+	Tags                     []Tag               `json:"Tags"`
+	RolePolicyList           []InlinePolicy      `json:"RolePolicyList"`
+	AttachedManagedPolicies  []ManagedPolicy     `json:"AttachedManagedPolicies"`
+	PermissionsBoundary      PermissionsBoundary `json:"PermissionsBoundary"`
+	InstanceProfileList      []InstanceProfile   `json:"InstanceProfileList"`
 }
 
 type GroupDetail struct {

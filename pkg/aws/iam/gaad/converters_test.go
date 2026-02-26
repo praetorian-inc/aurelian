@@ -62,14 +62,14 @@ func TestFromUserDL(t *testing.T) {
 
 	t.Run("with permissions boundary", func(t *testing.T) {
 		user := baseUser
-		user.PermissionsBoundary = types.ManagedPolicy{
-			PolicyName: "Boundary",
-			PolicyArn:  "arn:aws:iam::111122223333:policy/Boundary",
+		user.PermissionsBoundary = types.PermissionsBoundary{
+			PermissionsBoundaryType: "Policy",
+			PermissionsBoundaryArn:  "arn:aws:iam::111122223333:policy/Boundary",
 		}
 		result := FromUserDetail(user, "")
 		require.NotNil(t, result.PermissionsBoundary)
-		assert.Equal(t, "Boundary", result.PermissionsBoundary.PolicyName)
-		assert.Equal(t, "arn:aws:iam::111122223333:policy/Boundary", result.PermissionsBoundary.PolicyArn)
+		assert.Equal(t, "Policy", result.PermissionsBoundary.PermissionsBoundaryType)
+		assert.Equal(t, "arn:aws:iam::111122223333:policy/Boundary", result.PermissionsBoundary.PermissionsBoundaryArn)
 	})
 
 	t.Run("with tags", func(t *testing.T) {
@@ -164,13 +164,13 @@ func TestFromRoleDL(t *testing.T) {
 
 	t.Run("with permissions boundary", func(t *testing.T) {
 		role := baseRole
-		role.PermissionsBoundary = types.ManagedPolicy{
-			PolicyName: "RoleBoundary",
-			PolicyArn:  "arn:aws:iam::111122223333:policy/RoleBoundary",
+		role.PermissionsBoundary = types.PermissionsBoundary{
+			PermissionsBoundaryType: "Policy",
+			PermissionsBoundaryArn:  "arn:aws:iam::111122223333:policy/RoleBoundary",
 		}
 		result := FromRoleDetail(role)
 		require.NotNil(t, result.PermissionsBoundary)
-		assert.Equal(t, "RoleBoundary", result.PermissionsBoundary.PolicyName)
+		assert.Equal(t, "arn:aws:iam::111122223333:policy/RoleBoundary", result.PermissionsBoundary.PermissionsBoundaryArn)
 	})
 
 	t.Run("with tags", func(t *testing.T) {

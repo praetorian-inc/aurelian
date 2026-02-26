@@ -13,6 +13,14 @@ type ManagedPolicy struct {
 	PolicyArn  string `json:"PolicyArn"`
 }
 
+// PermissionsBoundary represents a permissions boundary attached to an IAM
+// user or role. It acts as a ceiling on the effective permissions the entity
+// can have, regardless of its identity-based policies.
+type PermissionsBoundary struct {
+	PermissionsBoundaryType string `json:"PermissionsBoundaryType"`
+	PermissionsBoundaryArn  string `json:"PermissionsBoundaryArn"`
+}
+
 // InstanceProfile represents an IAM instance profile from a GAAD report.
 type InstanceProfile struct {
 	Path                string                `json:"Path"`

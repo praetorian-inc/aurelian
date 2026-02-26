@@ -425,9 +425,9 @@ func TestAnalyze_UserWithPermissionsBoundary(t *testing.T) {
 				UserPolicyList: []types.InlinePolicy{
 					{PolicyName: "AllIAM", PolicyDocument: types.Policy{Version: "2012-10-17", Statement: &identityStmts}},
 				},
-				PermissionsBoundary: types.ManagedPolicy{
-					PolicyName: "PassRoleBoundary",
-					PolicyArn:  boundaryArn,
+				PermissionsBoundary: types.PermissionsBoundary{
+					PermissionsBoundaryType: "Policy",
+					PermissionsBoundaryArn:  boundaryArn,
 				},
 			},
 		},

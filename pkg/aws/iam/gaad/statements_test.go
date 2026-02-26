@@ -234,15 +234,15 @@ func TestCollectManagedPolicyStatements_PolicyWithNoDefaultVersion(t *testing.T)
 
 func TestCollectBoundaryStatements_ZeroValue(t *testing.T) {
 	state := buildMinimalState()
-	result := collectBoundaryStatements(state, types.ManagedPolicy{})
+	result := collectBoundaryStatements(state, types.PermissionsBoundary{})
 	assert.Nil(t, result)
 }
 
 func TestCollectBoundaryStatements_PolicyNotFound(t *testing.T) {
 	state := buildMinimalState()
-	result := collectBoundaryStatements(state, types.ManagedPolicy{
-		PolicyName: "Missing",
-		PolicyArn:  "arn:aws:iam::111122223333:policy/Missing",
+	result := collectBoundaryStatements(state, types.PermissionsBoundary{
+		PermissionsBoundaryType: "Policy",
+		PermissionsBoundaryArn:  "arn:aws:iam::111122223333:policy/Missing",
 	})
 	assert.Nil(t, result)
 }
@@ -274,9 +274,9 @@ func TestCollectBoundaryStatements_Found(t *testing.T) {
 	)
 	state := NewAnalyzerMemoryState(gaad, orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
 
-	result := collectBoundaryStatements(state, types.ManagedPolicy{
-		PolicyName: "Boundary",
-		PolicyArn:  boundaryArn,
+	result := collectBoundaryStatements(state, types.PermissionsBoundary{
+		PermissionsBoundaryType: "Policy",
+		PermissionsBoundaryArn:  boundaryArn,
 	})
 
 	require.Len(t, result, 1)

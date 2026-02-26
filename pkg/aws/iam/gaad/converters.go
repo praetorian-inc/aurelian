@@ -114,7 +114,7 @@ func FromUserDetail(user types.UserDetail, accountID string) output.AWSIAMResour
 	if len(user.AttachedManagedPolicies) > 0 {
 		r.AttachedManagedPolicies = user.AttachedManagedPolicies
 	}
-	if user.PermissionsBoundary.PolicyArn != "" {
+	if user.PermissionsBoundary.PermissionsBoundaryArn != "" {
 		r.PermissionsBoundary = &user.PermissionsBoundary
 	}
 	if len(user.Tags) > 0 {
@@ -146,7 +146,7 @@ func FromRoleDetail(role types.RoleDetail) output.AWSIAMResource {
 	if len(role.AttachedManagedPolicies) > 0 {
 		r.AttachedManagedPolicies = role.AttachedManagedPolicies
 	}
-	if role.PermissionsBoundary.PolicyArn != "" {
+	if role.PermissionsBoundary.PermissionsBoundaryArn != "" {
 		r.PermissionsBoundary = &role.PermissionsBoundary
 	}
 	if len(role.InstanceProfileList) > 0 {

@@ -51,11 +51,11 @@ func collectManagedPolicyStatements(state *AnalyzerState, policies []types.Manag
 }
 
 // collectBoundaryStatements extracts and copies permission boundary statements.
-func collectBoundaryStatements(state *AnalyzerState, boundary types.ManagedPolicy) types.PolicyStatementList {
-	if boundary == (types.ManagedPolicy{}) {
+func collectBoundaryStatements(state *AnalyzerState, boundary types.PermissionsBoundary) types.PolicyStatementList {
+	if boundary == (types.PermissionsBoundary{}) {
 		return nil
 	}
-	policy := state.GetPolicyByArn(boundary.PolicyArn)
+	policy := state.GetPolicyByArn(boundary.PermissionsBoundaryArn)
 	if policy == nil {
 		return nil
 	}
@@ -63,5 +63,5 @@ func collectBoundaryStatements(state *AnalyzerState, boundary types.ManagedPolic
 	if doc == nil || doc.Statement == nil {
 		return nil
 	}
-	return copyStatementsWithOrigin(doc.Statement, boundary.PolicyArn)
+	return copyStatementsWithOrigin(doc.Statement, boundary.PermissionsBoundaryArn)
 }

@@ -9,14 +9,14 @@ type AWSIAMResource struct {
 	AWSResource
 
 	// IAM-specific typed fields (nil/empty for non-IAM resources)
-	InlinePolicies          []types.InlinePolicy    `json:"inline_policies,omitempty"`
-	AttachedManagedPolicies []types.ManagedPolicy   `json:"attached_managed_policies,omitempty"`
-	PermissionsBoundary     *types.ManagedPolicy    `json:"permissions_boundary,omitempty"`
-	AssumeRolePolicy        *types.Policy           `json:"assume_role_policy,omitempty"`
-	InstanceProfiles        []types.InstanceProfile `json:"instance_profiles,omitempty"`
-	PolicyVersions          []types.PolicyVersion   `json:"policy_versions,omitempty"`
-	GroupMemberships        []string                `json:"group_memberships,omitempty"`
-	IAMTags                 []types.Tag             `json:"iam_tags,omitempty"`
+	InlinePolicies          []types.InlinePolicy       `json:"inline_policies,omitempty"`
+	AttachedManagedPolicies []types.ManagedPolicy      `json:"attached_managed_policies,omitempty"`
+	PermissionsBoundary     *types.PermissionsBoundary `json:"permissions_boundary,omitempty"`
+	AssumeRolePolicy        *types.Policy              `json:"assume_role_policy,omitempty"`
+	InstanceProfiles        []types.InstanceProfile    `json:"instance_profiles,omitempty"`
+	PolicyVersions          []types.PolicyVersion      `json:"policy_versions,omitempty"`
+	GroupMemberships        []string                   `json:"group_memberships,omitempty"`
+	IAMTags                 []types.Tag                `json:"iam_tags,omitempty"`
 
 	// OriginalData holds the original GAAD struct (UserDL, RoleDL, etc.)
 	// for lossless conversion back to graph nodes. Not serialized to JSON.
@@ -37,4 +37,3 @@ func (r *AWSIAMResource) IsIAMResource() bool {
 func FromAWSResource(cr AWSResource) AWSIAMResource {
 	return AWSIAMResource{AWSResource: cr}
 }
-
