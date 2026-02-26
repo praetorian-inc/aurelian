@@ -11,7 +11,6 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/store"
 	iampkg "github.com/praetorian-inc/aurelian/pkg/types"
 	"net/url"
-	"strings"
 )
 
 // GAAD wraps the collection of AWS IAM Account Authorization Details.
@@ -125,9 +124,6 @@ func convertSDKItems[From any, To any](source []From, dest store.Map[To], getArn
 func convertOne[From any, To any](src From) (To, error) {
 	var zero To
 	data, err := json.Marshal(src)
-	if strings.Contains(string(data), "michael.jordan") {
-		fmt.Println("foo")
-	}
 	if err != nil {
 		return zero, fmt.Errorf("marshaling: %w", err)
 	}
