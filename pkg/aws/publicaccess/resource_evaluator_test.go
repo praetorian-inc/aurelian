@@ -1,11 +1,13 @@
 package publicaccess
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -320,4 +322,303 @@ func TestEvaluateLambdaAccess_FetchError_NoFunctionUrl(t *testing.T) {
 	result := e.evaluateLambdaAccess(resource, nil, fmt.Errorf("access denied"), testAccountID)
 
 	assert.Nil(t, result, "policy fetch error with no FunctionUrl should return nil")
+}
+
+// --- evaluateCore pipeline flow tests ---
+//
+// These tests exercise the core evaluation pipeline: evaluator lookup,
+// result filtering, PublicAccessResult attachment, and downstream sending.
+// Property-based evaluators (EC2, RDS, Cognito) are used because they
+// don't require AWS API calls.
+
+// collectCore runs evaluateCore and collects the pipeline output.
+func collectCore(e *ResourceEvaluator, resource *output.AWSResource) []output.AWSResource {
+	out := pipeline.New[output.AWSResource]()
+	go func() {
+		defer out.Close()
+		e.evaluateCore(resource, aws.Config{}, testAccountID, out)
+	}()
+	results, _ := out.Collect()
+	return results
+}
+
+func TestEvaluateCore_PublicResource_SentDownstream(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::EC2::Instance",
+		ResourceID:   "i-abc123",
+		Region:       "us-east-1",
+		Properties:   map[string]any{"PublicIpAddress": "54.1.2.3"},
+	}
+
+	results := collectCore(e, resource)
+
+	require.Len(t, results, 1, "public resource should be sent downstream")
+	assert.Equal(t, "i-abc123", results[0].ResourceID)
+	// Verify PublicAccessResult was attached
+	raw, ok := results[0].Properties["PublicAccessResult"]
+	require.True(t, ok, "PublicAccessResult should be set")
+	var par PublicAccessResult
+	require.NoError(t, json.Unmarshal(raw.(json.RawMessage), &par))
+	assert.True(t, par.IsPublic)
+	assert.Contains(t, par.AllowedActions, "ec2:NetworkAccess")
+}
+
+func TestEvaluateCore_NonPublicResource_Filtered(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::EC2::Instance",
+		ResourceID:   "i-private",
+		Region:       "us-east-1",
+		Properties:   map[string]any{},
+	}
+
+	results := collectCore(e, resource)
+
+	assert.Empty(t, results, "non-public resource should not be sent downstream")
+}
+
+func TestEvaluateCore_NeedsManualTriage_SentDownstream(t *testing.T) {
+	e := newTestEvaluator()
+	// EC2 with public IP produces NeedsManualTriage=true
+	resource := &output.AWSResource{
+		ResourceType: "AWS::EC2::Instance",
+		ResourceID:   "i-triage",
+		Region:       "us-east-1",
+		Properties:   map[string]any{"PublicIp": "3.4.5.6"},
+	}
+
+	results := collectCore(e, resource)
+
+	require.Len(t, results, 1)
+	var par PublicAccessResult
+	require.NoError(t, json.Unmarshal(results[0].Properties["PublicAccessResult"].(json.RawMessage), &par))
+	assert.True(t, par.NeedsManualTriage, "triage resource should be sent downstream")
+}
+
+func TestEvaluateCore_UnsupportedType_Skipped(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::DynamoDB::Table",
+		ResourceID:   "my-table",
+		Region:       "us-east-1",
+		Properties:   map[string]any{},
+	}
+
+	results := collectCore(e, resource)
+
+	assert.Empty(t, results, "unsupported resource type should be silently skipped")
+}
+
+func TestEvaluateCore_NilProperties_Initialized(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::EC2::Instance",
+		ResourceID:   "i-nilprops",
+		Region:       "us-east-1",
+		Properties:   nil,
+	}
+
+	_ = collectCore(e, resource)
+
+	assert.NotNil(t, resource.Properties, "nil Properties should be initialized")
+}
+
+func TestEvaluateCore_RDS_Public(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::RDS::DBInstance",
+		ResourceID:   "mydb",
+		Region:       "us-east-1",
+		Properties:   map[string]any{"IsPubliclyAccessible": true},
+	}
+
+	results := collectCore(e, resource)
+
+	require.Len(t, results, 1)
+	var par PublicAccessResult
+	require.NoError(t, json.Unmarshal(results[0].Properties["PublicAccessResult"].(json.RawMessage), &par))
+	assert.True(t, par.IsPublic)
+}
+
+func TestEvaluateCore_RDS_Private(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::RDS::DBInstance",
+		ResourceID:   "mydb-private",
+		Region:       "us-east-1",
+		Properties:   map[string]any{"IsPubliclyAccessible": false},
+	}
+
+	results := collectCore(e, resource)
+
+	assert.Empty(t, results, "private RDS should not be sent downstream")
+}
+
+func TestEvaluateCore_Cognito_SelfSignup(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::Cognito::UserPool",
+		ResourceID:   "us-east-1_abc",
+		Region:       "us-east-1",
+		Properties:   map[string]any{"SelfSignupEnabled": true},
+	}
+
+	results := collectCore(e, resource)
+
+	require.Len(t, results, 1)
+	var par PublicAccessResult
+	require.NoError(t, json.Unmarshal(results[0].Properties["PublicAccessResult"].(json.RawMessage), &par))
+	assert.True(t, par.IsPublic)
+}
+
+// --- evaluatePolicy tests ---
+//
+// These test the shared helper that handles fetch errors, nil policies,
+// ARN fallback, and policy evaluation delegation.
+
+func TestEvaluatePolicy_FetchError(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::S3::Bucket",
+		ResourceID:   "my-bucket",
+		ARN:          "arn:aws:s3:::my-bucket",
+		Properties:   map[string]any{},
+	}
+
+	result := e.evaluatePolicy(resource, nil, fmt.Errorf("access denied"), testAccountID)
+
+	assert.Nil(t, result, "fetch error should return nil")
+}
+
+func TestEvaluatePolicy_NilPolicy(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::S3::Bucket",
+		ResourceID:   "my-bucket",
+		ARN:          "arn:aws:s3:::my-bucket",
+		Properties:   map[string]any{},
+	}
+
+	result := e.evaluatePolicy(resource, nil, nil, testAccountID)
+
+	assert.Nil(t, result, "nil policy should return nil")
+}
+
+func TestEvaluatePolicy_PublicPolicy(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::SNS::Topic",
+		ResourceID:   "arn:aws:sns:us-east-1:123456789012:my-topic",
+		ARN:          "arn:aws:sns:us-east-1:123456789012:my-topic",
+		Properties:   map[string]any{},
+	}
+
+	policy := &types.Policy{
+		Version: "2012-10-17",
+		Statement: &types.PolicyStatementList{
+			{
+				Effect: "Allow",
+				Principal: &types.Principal{
+					AWS: types.NewDynaString([]string{"*"}),
+				},
+				Action:   types.NewDynaString([]string{"sns:Publish"}),
+				Resource: types.NewDynaString([]string{"arn:aws:sns:us-east-1:123456789012:my-topic"}),
+			},
+		},
+	}
+
+	result := e.evaluatePolicy(resource, policy, nil, testAccountID)
+
+	require.NotNil(t, result)
+	assert.True(t, result.IsPublic)
+	assert.Contains(t, result.AllowedActions, "sns:Publish")
+}
+
+func TestEvaluatePolicy_PrivatePolicy(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::SQS::Queue",
+		ResourceID:   "arn:aws:sqs:us-east-1:123456789012:my-queue",
+		ARN:          "arn:aws:sqs:us-east-1:123456789012:my-queue",
+		Properties:   map[string]any{},
+	}
+
+	policy := &types.Policy{
+		Version: "2012-10-17",
+		Statement: &types.PolicyStatementList{
+			{
+				Effect: "Allow",
+				Principal: &types.Principal{
+					AWS: types.NewDynaString([]string{"arn:aws:iam::123456789012:root"}),
+				},
+				Action:   types.NewDynaString([]string{"sqs:SendMessage"}),
+				Resource: types.NewDynaString([]string{"arn:aws:sqs:us-east-1:123456789012:my-queue"}),
+			},
+		},
+	}
+
+	result := e.evaluatePolicy(resource, policy, nil, testAccountID)
+
+	require.NotNil(t, result)
+	assert.False(t, result.IsPublic, "same-account policy should not be public")
+}
+
+func TestEvaluatePolicy_ARNFallbackToResourceID(t *testing.T) {
+	e := newTestEvaluator()
+	// ARN is empty — evaluatePolicy should fall back to ResourceID
+	resource := &output.AWSResource{
+		ResourceType: "AWS::SNS::Topic",
+		ResourceID:   "arn:aws:sns:us-east-1:123456789012:fallback-topic",
+		ARN:          "",
+		Properties:   map[string]any{},
+	}
+
+	policy := &types.Policy{
+		Version: "2012-10-17",
+		Statement: &types.PolicyStatementList{
+			{
+				Effect: "Allow",
+				Principal: &types.Principal{
+					AWS: types.NewDynaString([]string{"*"}),
+				},
+				Action:   types.NewDynaString([]string{"sns:Publish"}),
+				Resource: types.NewDynaString([]string{"arn:aws:sns:us-east-1:123456789012:fallback-topic"}),
+			},
+		},
+	}
+
+	result := e.evaluatePolicy(resource, policy, nil, testAccountID)
+
+	require.NotNil(t, result)
+	assert.True(t, result.IsPublic, "should work with ResourceID when ARN is empty")
+}
+
+func TestEvaluatePolicy_EvaluationError(t *testing.T) {
+	e := newTestEvaluator()
+	// Use an unsupported resource type to trigger evaluation error
+	resource := &output.AWSResource{
+		ResourceType: "AWS::Foo::Bar",
+		ResourceID:   "my-resource",
+		ARN:          "arn:aws:foo:us-east-1:123456789012:bar/my-resource",
+		Properties:   map[string]any{},
+	}
+
+	policy := &types.Policy{
+		Version: "2012-10-17",
+		Statement: &types.PolicyStatementList{
+			{
+				Effect: "Allow",
+				Principal: &types.Principal{
+					AWS: types.NewDynaString([]string{"*"}),
+				},
+				Action:   types.NewDynaString([]string{"foo:GetBar"}),
+				Resource: types.NewDynaString([]string{"*"}),
+			},
+		},
+	}
+
+	result := e.evaluatePolicy(resource, policy, nil, testAccountID)
+
+	assert.Nil(t, result, "evaluation error should return nil")
 }

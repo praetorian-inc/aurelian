@@ -86,10 +86,6 @@ func (e *ResourceEvaluator) SupportedResourceTypes() []string {
 // public access and sends it downstream if public or needing triage.
 func (e *ResourceEvaluator) Evaluate(resource output.AWSResource, out *pipeline.P[output.AWSResource]) error {
 	return e.crossRegionActor.ActInRegion(resource.Region, func() error {
-		if resource.Properties == nil {
-			resource.Properties = make(map[string]any)
-		}
-
 		awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
 			Region:     resource.Region,
 			Profile:    e.opts.Profile,
@@ -108,19 +104,28 @@ func (e *ResourceEvaluator) Evaluate(resource output.AWSResource, out *pipeline.
 			return nil
 		}
 
-		eval, ok := e.evaluators()[resource.ResourceType]
-		if !ok {
-			return nil
-		}
-
-		result := eval(&resource, awsCfg, accountID)
-		if result != nil && (result.IsPublic || result.NeedsManualTriage) {
-			setResult(&resource, result)
-			out.Send(resource)
-		}
-
+		e.evaluateCore(&resource, awsCfg, accountID, out)
 		return nil
 	})
+}
+
+// evaluateCore performs the core evaluation logic: looks up the evaluator for
+// the resource type, runs it, and sends public/triage results downstream.
+func (e *ResourceEvaluator) evaluateCore(resource *output.AWSResource, awsCfg aws.Config, accountID string, out *pipeline.P[output.AWSResource]) {
+	if resource.Properties == nil {
+		resource.Properties = make(map[string]any)
+	}
+
+	eval, ok := e.evaluators()[resource.ResourceType]
+	if !ok {
+		return
+	}
+
+	result := eval(resource, awsCfg, accountID)
+	if result != nil && (result.IsPublic || result.NeedsManualTriage) {
+		setResult(resource, result)
+		out.Send(*resource)
+	}
 }
 
 // --- property-based evaluators ---
