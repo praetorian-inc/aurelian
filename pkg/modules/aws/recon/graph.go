@@ -130,22 +130,23 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 			"types", len(collector.SupportedResourceTypes()), "regions", len(resolvedRegions))
 
 		lister := cloudcontrol.NewCloudControlLister(c.AWSCommonRecon)
+		listed, err := lister.Enumerate(collector.SupportedResourceTypes())
+		if err != nil {
+			return fmt.Errorf("enumerating resources: %w", err)
+		}
 
-		p1 := pipeline.From(collector.SupportedResourceTypes()...)
-		p2 := pipeline.New[output.AWSResource]()
-		p3 := pipeline.New[output.AWSResource]()
-		pipeline.Pipe(p1, lister.List, p2)
-		pipeline.Pipe(p2, collector.Collect, p3)
+		collected := pipeline.New[output.AWSResource]()
+		pipeline.Pipe(listed, collector.Collect, collected)
 
 		results := store.NewMap[output.AWSResource]()
-		for r := range p3.Range() {
+		for r := range collected.Range() {
 			key := r.ARN
 			if key == "" {
 				key = r.ResourceID
 			}
 			results.Set(key, r)
 		}
-		if err := p3.Wait(); err != nil {
+		if err := collected.Wait(); err != nil {
 			return fmt.Errorf("collecting resources with policies: %w", err)
 		}
 

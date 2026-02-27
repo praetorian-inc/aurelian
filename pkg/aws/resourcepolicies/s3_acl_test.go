@@ -180,7 +180,7 @@ func TestFetchS3BucketPolicyExtended_BlockPublicAccess(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		Properties: map[string]any{"BucketName": "my-bucket"},
 	}
 
@@ -214,7 +214,7 @@ func TestFetchS3BucketPolicyExtended_PublicACL(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		Properties: map[string]any{"BucketName": "my-bucket"},
 	}
 
@@ -226,7 +226,7 @@ func TestFetchS3BucketPolicyExtended_PublicACL(t *testing.T) {
 }
 
 func TestFetchS3BucketPolicyExtended_NoBucketName(t *testing.T) {
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		Properties: map[string]any{},
 	}
 
@@ -242,7 +242,7 @@ func TestFetchS3BucketPolicyExtended_RegionFiltering_SkipOutsideRegion(t *testin
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		Properties: map[string]any{"BucketName": "my-bucket"},
 	}
 
@@ -271,7 +271,7 @@ func TestFetchS3BucketPolicyExtended_RegionFiltering_DefaultUsEast1(t *testing.T
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		Properties: map[string]any{"BucketName": "my-bucket"},
 	}
 
@@ -346,7 +346,7 @@ func TestFetchS3BucketPolicyExtended_BlockPublicAccessPartial(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		Properties: map[string]any{"BucketName": "my-bucket"},
 	}
 

@@ -4,10 +4,11 @@ package recon
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
@@ -44,28 +45,28 @@ func TestPublicResources(t *testing.T) {
 		t.Fatal("public-resources module not registered")
 	}
 
-	results, err := mod.Run(plugin.Config{
+	cfg := plugin.Config{
 		Context: context.Background(),
 		Args: map[string]any{
 			"regions": []string{"us-east-1"},
 		},
-	})
+	}
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	results, err := p2.Collect()
 	require.NoError(t, err, "module run should succeed")
 
 	if len(results) == 0 {
 		t.Fatal("expected at least one result")
 	}
 
-	// Extract cloud resources from results
-	var resources []output.CloudResource
-	for _, result := range results {
-		raw, err := json.Marshal(result.Data)
-		if err != nil {
-			continue
-		}
-		var list []output.CloudResource
-		if json.Unmarshal(raw, &list) == nil && len(list) > 0 {
-			resources = append(resources, list...)
+	// Extract AWSResource instances from results
+	var resources []output.AWSResource
+	for _, r := range results {
+		if ar, ok := r.(output.AWSResource); ok {
+			resources = append(resources, ar)
 		}
 	}
 
@@ -160,6 +161,6 @@ func TestPublicResources(t *testing.T) {
 		}
 	})
 
-	// Check minimum results - we should have at least 9 public resources
+	// Check minimum results - we should have at least 1 public resource
 	testutil.AssertMinResults(t, results, 1)
 }

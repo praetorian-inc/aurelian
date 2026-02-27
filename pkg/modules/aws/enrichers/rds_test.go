@@ -13,7 +13,7 @@ import (
 )
 
 func TestEnrichRDSInstance_PubliclyAccessible(t *testing.T) {
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::RDS::DBInstance",
 		ResourceID:   "my-db",
 		Properties:   map[string]any{"PubliclyAccessible": true},
@@ -26,7 +26,7 @@ func TestEnrichRDSInstance_PubliclyAccessible(t *testing.T) {
 }
 
 func TestEnrichRDSInstance_NotPubliclyAccessible(t *testing.T) {
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::RDS::DBInstance",
 		ResourceID:   "my-db",
 		Properties:   map[string]any{"PubliclyAccessible": false},
@@ -39,7 +39,7 @@ func TestEnrichRDSInstance_NotPubliclyAccessible(t *testing.T) {
 }
 
 func TestEnrichRDSInstance_MissingProperty(t *testing.T) {
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::RDS::DBInstance",
 		ResourceID:   "my-db",
 		Properties:   map[string]any{},

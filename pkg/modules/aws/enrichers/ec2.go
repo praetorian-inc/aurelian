@@ -20,13 +20,13 @@ type EC2Client interface {
 	DescribeNetworkAcls(ctx context.Context, params *ec2.DescribeNetworkAclsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkAclsOutput, error)
 }
 
-func enrichEC2InstanceWrapper(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+func enrichEC2InstanceWrapper(cfg plugin.EnricherConfig, r *output.AWSResource) error {
 	client := ec2.NewFromConfig(cfg.AWSConfig)
 	return EnrichEC2Instance(cfg, r, client)
 }
 
 // EnrichEC2Instance adds security group and NACL information to EC2 instances with public IPs.
-func EnrichEC2Instance(cfg plugin.EnricherConfig, r *output.CloudResource, client EC2Client) error {
+func EnrichEC2Instance(cfg plugin.EnricherConfig, r *output.AWSResource, client EC2Client) error {
 	// Check if instance has a public IP
 	// CloudControl uses "PublicIp", CloudFormation uses "PublicIpAddress"
 	publicIP, _ := r.Properties["PublicIp"].(string)
@@ -127,7 +127,7 @@ func EnrichEC2Instance(cfg plugin.EnricherConfig, r *output.CloudResource, clien
 	return nil
 }
 
-func extractSecurityGroupIDs(r *output.CloudResource) []string {
+func extractSecurityGroupIDs(r *output.AWSResource) []string {
 	// CloudControl returns "SecurityGroupIds" as []string
 	if sgIDs, ok := r.Properties["SecurityGroupIds"].([]any); ok {
 		var ids []string

@@ -31,7 +31,7 @@ func (m *mockEC2Client) DescribeNetworkAcls(ctx context.Context, params *ec2.Des
 }
 
 func TestEnrichEC2Instance_NoPublicIP(t *testing.T) {
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::EC2::Instance",
 		ResourceID:   "i-1234567890abcdef0",
 		Properties:   map[string]any{},
@@ -67,7 +67,7 @@ func TestEnrichEC2Instance_WithPublicIP(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::EC2::Instance",
 		ResourceID:   "i-1234567890abcdef0",
 		Properties: map[string]any{
@@ -141,7 +141,7 @@ func TestEnrichEC2Instance_WithNACLRules(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::EC2::Instance",
 		ResourceID:   "i-abc",
 		Properties: map[string]any{
@@ -182,7 +182,7 @@ func TestEnrichEC2Instance_SecurityGroupError(t *testing.T) {
 		sgError: fmt.Errorf("access denied"),
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::EC2::Instance",
 		ResourceID:   "i-1234567890abcdef0",
 		Properties: map[string]any{

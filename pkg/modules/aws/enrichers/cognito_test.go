@@ -50,7 +50,7 @@ func TestEnrichCognitoUserPool_SelfSignupEnabled(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::Cognito::UserPool",
 		ResourceID:   "us-east-1_abcdef",
 		Properties:   map[string]any{"UserPoolId": "us-east-1_abcdef"},
@@ -78,7 +78,7 @@ func TestEnrichCognitoUserPool_SelfSignupDisabled(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::Cognito::UserPool",
 		ResourceID:   "us-east-1_abcdef",
 		Properties:   map[string]any{"UserPoolId": "us-east-1_abcdef"},
@@ -92,7 +92,7 @@ func TestEnrichCognitoUserPool_SelfSignupDisabled(t *testing.T) {
 }
 
 func TestEnrichCognitoUserPool_NoPoolID(t *testing.T) {
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::Cognito::UserPool",
 		ResourceID:   "us-east-1_abcdef",
 		Properties:   map[string]any{},
@@ -108,7 +108,7 @@ func TestEnrichCognitoUserPool_NotFound(t *testing.T) {
 		describePoolError: &cognitotypes.ResourceNotFoundException{},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::Cognito::UserPool",
 		ResourceID:   "us-east-1_abcdef",
 		Properties:   map[string]any{"UserPoolId": "us-east-1_abcdef"},
@@ -144,7 +144,7 @@ func TestEnrichCognitoUserPool_WithClients(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::Cognito::UserPool",
 		ResourceID:   "us-east-1_abc123",
 		Properties:   map[string]any{"UserPoolId": "us-east-1_abc123"},
@@ -177,7 +177,7 @@ func TestEnrichCognitoUserPool_NilAdminConfig(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::Cognito::UserPool",
 		ResourceID:   "us-east-1_abcdef",
 		Properties:   map[string]any{"UserPoolId": "us-east-1_abcdef"},
@@ -207,7 +207,7 @@ func TestEnrichCognitoUserPool_BothDomains(t *testing.T) {
 		},
 	}
 
-	resource := &output.CloudResource{
+	resource := &output.AWSResource{
 		ResourceType: "AWS::Cognito::UserPool",
 		ResourceID:   "us-east-1_abc123",
 		Properties:   map[string]any{"UserPoolId": "us-east-1_abc123"},

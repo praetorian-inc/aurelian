@@ -25,7 +25,8 @@ func (c *AWSReconBase) ApplyDefaults() {
 
 type AWSCommonRecon struct {
 	AWSReconBase
-	Concurrency  int      `param:"concurrency" desc:"Maximum concurrent API requests" default:"5"`
-	Regions      []string `param:"regions"       desc:"AWS regions to scan" default:"all" shortcode:"r"`
-	ResourceType []string `param:"resource-type" desc:"AWS Cloud Control resource type" default:"all" shortcode:"t"`
+	Concurrency  int      `param:"concurrency"   desc:"Maximum concurrent API requests" default:"5"`
+	Regions      []string `param:"regions"        desc:"AWS regions to scan" default:"all" shortcode:"r"`
+	ResourceType []string `param:"resource-type"  desc:"AWS Cloud Control resource type" default:"all" shortcode:"t"`
+	ResourceID   string   `param:"resource-id"    desc:"Single resource ARN to evaluate (skips enumeration)" shortcode:"i"`
 }

@@ -23,13 +23,13 @@ type CognitoClient interface {
 	DescribeUserPoolClient(ctx context.Context, params *cognitoidentityprovider.DescribeUserPoolClientInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.DescribeUserPoolClientOutput, error)
 }
 
-func enrichCognitoUserPoolWrapper(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+func enrichCognitoUserPoolWrapper(cfg plugin.EnricherConfig, r *output.AWSResource) error {
 	client := cognitoidentityprovider.NewFromConfig(cfg.AWSConfig)
 	return EnrichCognitoUserPool(cfg, r, client)
 }
 
 // EnrichCognitoUserPool adds self-signup status, domains, and client configuration to Cognito user pools.
-func EnrichCognitoUserPool(cfg plugin.EnricherConfig, r *output.CloudResource, client CognitoClient) error {
+func EnrichCognitoUserPool(cfg plugin.EnricherConfig, r *output.AWSResource, client CognitoClient) error {
 	poolID, ok := r.Properties["UserPoolId"].(string)
 	if !ok || poolID == "" {
 		return nil

@@ -73,17 +73,35 @@ func EvaluateResourcePolicy(policy *types.Policy, resourceARN, accountID, resour
 				result.AllowedActions = appendUnique(result.AllowedActions, evalCtx.Action)
 				result.EvaluationReasons = append(result.EvaluationReasons,
 					fmt.Sprintf("action %s allowed for principal %s", evalCtx.Action, evalCtx.Context.PrincipalArn))
+
+				// Check if the allow was due to inconclusive conditions
+				if hasInconclusiveConditions(evalResult.PolicyResult) {
+					result.NeedsManualTriage = true
+					result.EvaluationReasons = append(result.EvaluationReasons,
+						fmt.Sprintf("action %s has conditions that could not be fully evaluated", evalCtx.Action))
+				}
 			}
 
-			if evalResult.HasInconclusiveCondition() {
-				result.NeedsManualTriage = true
-				result.EvaluationReasons = append(result.EvaluationReasons,
-					fmt.Sprintf("action %s has inconclusive conditions for principal %s", evalCtx.Action, evalCtx.Context.PrincipalArn))
-			}
 		}
 	}
 
 	return result, nil
+}
+
+// hasInconclusiveConditions checks whether any statement evaluation in the policy
+// result had inconclusive conditions (missing context keys that couldn't be evaluated).
+func hasInconclusiveConditions(pr *iam.PolicyResult) bool {
+	if pr == nil {
+		return false
+	}
+	for _, evals := range pr.Evaluations {
+		for _, eval := range evals {
+			if eval.ConditionEvaluation != nil && eval.ConditionEvaluation.Result == iam.ConditionInconclusive {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // extractPolicyResources extracts unique resource ARNs from policy statements.

@@ -24,7 +24,7 @@ type S3ExtendedClient interface {
 // 1. Block Public Access settings (if restricting, return a virtual deny policy)
 // 2. Bucket policy
 // 3. Bucket ACL (converted to policy statements if public grants exist)
-func FetchS3BucketPolicyExtended(ctx context.Context, client S3ExtendedClient, resource *output.CloudResource, allowedRegions []string) (*types.Policy, error) {
+func FetchS3BucketPolicyExtended(ctx context.Context, client S3ExtendedClient, resource *output.AWSResource, allowedRegions []string) (*types.Policy, error) {
 	bucketName, ok := resource.Properties["BucketName"].(string)
 	if !ok || bucketName == "" {
 		return nil, nil
