@@ -22,42 +22,40 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
-// propertyBasedTypes are checked via resource properties (set by enrichers).
-var propertyBasedTypes = map[string]bool{
-	"AWS::EC2::Instance":     true,
-	"AWS::Cognito::UserPool": true,
-	"AWS::RDS::DBInstance":   true,
-}
+// evaluator is a function that checks a single resource for public access.
+type evaluator func(resource *output.AWSResource, awsCfg aws.Config, accountID string) *PublicAccessResult
 
-// policyBasedTypes are checked via resource policy evaluation.
-var policyBasedTypes = map[string]bool{
-	"AWS::S3::Bucket":       true,
-	"AWS::SNS::Topic":       true,
-	"AWS::SQS::Queue":       true,
-	"AWS::Lambda::Function": true,
-	"AWS::EFS::FileSystem":  true,
-}
-
-// supportedTypes is the combined list of all evaluated resource types.
-var supportedTypes = []string{
-	"AWS::EC2::Instance",
-	"AWS::S3::Bucket",
-	"AWS::SNS::Topic",
-	"AWS::SQS::Queue",
-	"AWS::Lambda::Function",
-	"AWS::EFS::FileSystem",
-	"AWS::Cognito::UserPool",
-	"AWS::RDS::DBInstance",
+// evaluators maps resource types to their evaluation functions.
+func (e *ResourceEvaluator) evaluators() map[string]evaluator {
+	return map[string]evaluator{
+		"AWS::EC2::Instance":     e.evaluateEC2,
+		"AWS::RDS::DBInstance":   e.evaluateRDS,
+		"AWS::Cognito::UserPool": e.evaluateCognito,
+		"AWS::Lambda::Function":  e.evaluateLambda,
+		"AWS::S3::Bucket":        e.evaluateS3,
+		"AWS::SNS::Topic":        e.evaluateSNS,
+		"AWS::SQS::Queue":        e.evaluateSQS,
+		"AWS::EFS::FileSystem":   e.evaluateEFS,
+	}
 }
 
 // SupportedResourceTypes returns all resource types the evaluator handles.
 func SupportedResourceTypes() []string {
-	return supportedTypes
+	// Stable ordering — not derived from map iteration.
+	return []string{
+		"AWS::EC2::Instance",
+		"AWS::S3::Bucket",
+		"AWS::SNS::Topic",
+		"AWS::SQS::Queue",
+		"AWS::Lambda::Function",
+		"AWS::EFS::FileSystem",
+		"AWS::Cognito::UserPool",
+		"AWS::RDS::DBInstance",
+	}
 }
 
 // ResourceEvaluator evaluates AWS resources for public access using property
-// inspection and policy evaluation. It follows the same pattern as
-// resourcepolicies.ResourcePolicyCollector.
+// inspection and policy evaluation.
 type ResourceEvaluator struct {
 	opts             plugin.AWSCommonRecon
 	crossRegionActor *ratelimit.CrossRegionActor
@@ -81,7 +79,7 @@ func NewResourceEvaluator(opts plugin.AWSCommonRecon, regions []string, orgPolic
 
 // SupportedResourceTypes returns all resource types this evaluator handles.
 func (e *ResourceEvaluator) SupportedResourceTypes() []string {
-	return supportedTypes
+	return SupportedResourceTypes()
 }
 
 // Evaluate is a pipeline-compatible method that evaluates a single resource for
@@ -110,7 +108,12 @@ func (e *ResourceEvaluator) Evaluate(resource output.AWSResource, out *pipeline.
 			return nil
 		}
 
-		result := e.evaluate(&resource, awsCfg, accountID)
+		eval, ok := e.evaluators()[resource.ResourceType]
+		if !ok {
+			return nil
+		}
+
+		result := eval(&resource, awsCfg, accountID)
 		if result != nil && (result.IsPublic || result.NeedsManualTriage) {
 			setResult(&resource, result)
 			out.Send(resource)
@@ -120,120 +123,123 @@ func (e *ResourceEvaluator) Evaluate(resource output.AWSResource, out *pipeline.
 	})
 }
 
-// evaluate consolidates property-based, policy-based, and Lambda FunctionUrl
-// checks into a single evaluation that returns the first positive result.
-func (e *ResourceEvaluator) evaluate(resource *output.AWSResource, awsCfg aws.Config, accountID string) *PublicAccessResult {
-	resourceType := resource.ResourceType
+// --- property-based evaluators ---
 
-	if propertyBasedTypes[resourceType] {
-		if result := checkPropertyAccess(resource); result != nil {
-			return result
-		}
+func (e *ResourceEvaluator) evaluateEC2(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	publicIP, _ := resource.Properties["PublicIp"].(string)
+	if publicIP == "" {
+		publicIP, _ = resource.Properties["PublicIpAddress"].(string)
 	}
-
-	if policyBasedTypes[resourceType] {
-		result := e.evaluatePolicyAccess(resource, resourceType, awsCfg, accountID)
-		if result != nil && (result.IsPublic || result.NeedsManualTriage) {
-			return result
-		}
-	}
-
-	// Special case: Lambda with FunctionUrl and AuthType NONE
-	if resourceType == "AWS::Lambda::Function" {
-		if authType, ok := resource.Properties["FunctionUrlAuthType"].(string); ok && authType == "NONE" {
-			return &PublicAccessResult{
-				IsPublic:          true,
-				AllowedActions:    []string{"lambda:InvokeFunctionUrl"},
-				EvaluationReasons: []string{"Lambda function URL has AuthType NONE (unauthenticated access)"},
-			}
-		}
-	}
-
-	return nil
-}
-
-// checkPropertyAccess evaluates property-based resource types for public access.
-func checkPropertyAccess(resource *output.AWSResource) *PublicAccessResult {
-	switch resource.ResourceType {
-	case "AWS::EC2::Instance":
-		publicIP, _ := resource.Properties["PublicIp"].(string)
-		if publicIP == "" {
-			publicIP, _ = resource.Properties["PublicIpAddress"].(string)
-		}
-		if publicIP != "" {
-			return &PublicAccessResult{
-				IsPublic:          true,
-				NeedsManualTriage: true,
-				AllowedActions:    []string{"ec2:NetworkAccess"},
-				EvaluationReasons: []string{
-					fmt.Sprintf("EC2 instance has public IP %s; security groups and NACLs require manual review", publicIP),
-				},
-			}
-		}
-
-	case "AWS::RDS::DBInstance":
-		isPublic, _ := resource.Properties["IsPubliclyAccessible"].(bool)
-		if isPublic {
-			return &PublicAccessResult{
-				IsPublic: true,
-				EvaluationReasons: []string{
-					"RDS instance is publicly accessible (PubliclyAccessible=true)",
-				},
-			}
-		}
-
-	case "AWS::Cognito::UserPool":
-		selfSignup, _ := resource.Properties["SelfSignupEnabled"].(bool)
-		if selfSignup {
-			return &PublicAccessResult{
-				IsPublic: true,
-				EvaluationReasons: []string{
-					"Cognito user pool allows self-signup (AdminCreateUserOnly=false)",
-				},
-			}
-		}
-	}
-
-	return nil
-}
-
-// evaluatePolicyAccess fetches the resource policy and evaluates it for public access.
-func (e *ResourceEvaluator) evaluatePolicyAccess(
-	resource *output.AWSResource,
-	resourceType string,
-	awsCfg aws.Config,
-	accountID string,
-) *PublicAccessResult {
-	ctx := context.Background()
-
-	var policy *types.Policy
-	var err error
-
-	switch resourceType {
-	case "AWS::S3::Bucket":
-		client := s3.NewFromConfig(awsCfg)
-		policy, err = resourcepolicies.FetchS3BucketPolicyExtended(ctx, client, resource, e.regions)
-	case "AWS::Lambda::Function":
-		client := lambda.NewFromConfig(awsCfg)
-		policy, err = resourcepolicies.FetchLambdaPolicy(ctx, client, resource)
-	case "AWS::SNS::Topic":
-		client := sns.NewFromConfig(awsCfg)
-		policy, err = resourcepolicies.FetchSNSTopicPolicy(ctx, client, resource)
-	case "AWS::SQS::Queue":
-		client := sqs.NewFromConfig(awsCfg)
-		policy, err = resourcepolicies.FetchSQSQueuePolicy(ctx, client, resource)
-	case "AWS::EFS::FileSystem":
-		client := efs.NewFromConfig(awsCfg)
-		policy, err = resourcepolicies.FetchEFSPolicy(ctx, client, resource)
-	default:
+	if publicIP == "" {
 		return nil
 	}
+	return &PublicAccessResult{
+		IsPublic:          true,
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"ec2:NetworkAccess"},
+		EvaluationReasons: []string{
+			fmt.Sprintf("EC2 instance has public IP %s; security groups and NACLs require manual review", publicIP),
+		},
+	}
+}
 
-	if err != nil {
+func (e *ResourceEvaluator) evaluateRDS(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	isPublic, _ := resource.Properties["IsPubliclyAccessible"].(bool)
+	if !isPublic {
+		return nil
+	}
+	return &PublicAccessResult{
+		IsPublic: true,
+		EvaluationReasons: []string{
+			"RDS instance is publicly accessible (PubliclyAccessible=true)",
+		},
+	}
+}
+
+func (e *ResourceEvaluator) evaluateCognito(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	selfSignup, _ := resource.Properties["SelfSignupEnabled"].(bool)
+	if !selfSignup {
+		return nil
+	}
+	return &PublicAccessResult{
+		IsPublic: true,
+		EvaluationReasons: []string{
+			"Cognito user pool allows self-signup (AdminCreateUserOnly=false)",
+		},
+	}
+}
+
+// --- policy-based evaluators ---
+
+func (e *ResourceEvaluator) evaluateS3(resource *output.AWSResource, awsCfg aws.Config, accountID string) *PublicAccessResult {
+	client := s3.NewFromConfig(awsCfg)
+	policy, err := resourcepolicies.FetchS3BucketPolicyExtended(context.Background(), client, resource, e.regions)
+	return e.evaluatePolicy(resource, policy, err, accountID)
+}
+
+func (e *ResourceEvaluator) evaluateSNS(resource *output.AWSResource, awsCfg aws.Config, accountID string) *PublicAccessResult {
+	client := sns.NewFromConfig(awsCfg)
+	policy, err := resourcepolicies.FetchSNSTopicPolicy(context.Background(), client, resource)
+	return e.evaluatePolicy(resource, policy, err, accountID)
+}
+
+func (e *ResourceEvaluator) evaluateSQS(resource *output.AWSResource, awsCfg aws.Config, accountID string) *PublicAccessResult {
+	client := sqs.NewFromConfig(awsCfg)
+	policy, err := resourcepolicies.FetchSQSQueuePolicy(context.Background(), client, resource)
+	return e.evaluatePolicy(resource, policy, err, accountID)
+}
+
+func (e *ResourceEvaluator) evaluateEFS(resource *output.AWSResource, awsCfg aws.Config, accountID string) *PublicAccessResult {
+	client := efs.NewFromConfig(awsCfg)
+	policy, err := resourcepolicies.FetchEFSPolicy(context.Background(), client, resource)
+	return e.evaluatePolicy(resource, policy, err, accountID)
+}
+
+func (e *ResourceEvaluator) evaluateLambda(resource *output.AWSResource, awsCfg aws.Config, accountID string) *PublicAccessResult {
+	client := lambda.NewFromConfig(awsCfg)
+	policy, err := resourcepolicies.FetchLambdaPolicy(context.Background(), client, resource)
+	return e.evaluateLambdaAccess(resource, policy, err, accountID)
+}
+
+// evaluateLambdaAccess checks both the resource policy and Function URL AuthType
+// independently. Function URL endpoints bypass the Lambda resource policy, so a
+// permissive policy must not short-circuit the AuthType=NONE check.
+func (e *ResourceEvaluator) evaluateLambdaAccess(resource *output.AWSResource, policy *types.Policy, fetchErr error, accountID string) *PublicAccessResult {
+	var result *PublicAccessResult
+
+	// Check resource policy.
+	if policyResult := e.evaluatePolicy(resource, policy, fetchErr, accountID); policyResult != nil && (policyResult.IsPublic || policyResult.NeedsManualTriage) {
+		result = policyResult
+	}
+
+	// Check FunctionUrl with AuthType NONE — Function URL endpoints are independent
+	// of the Lambda resource policy, so both checks must always run.
+	if authType, ok := resource.Properties["FunctionUrlAuthType"].(string); ok && authType == "NONE" {
+		urlResult := &PublicAccessResult{
+			IsPublic:          true,
+			AllowedActions:    []string{"lambda:InvokeFunctionUrl"},
+			EvaluationReasons: []string{"Lambda function URL has AuthType NONE (unauthenticated access)"},
+		}
+		if result == nil {
+			result = urlResult
+		} else {
+			// Merge: both policy and FunctionUrl findings apply.
+			result.AllowedActions = append(result.AllowedActions, urlResult.AllowedActions...)
+			result.EvaluationReasons = append(result.EvaluationReasons, urlResult.EvaluationReasons...)
+		}
+	}
+
+	return result
+}
+
+// evaluatePolicy is a shared helper that handles the fetch-error / nil-policy /
+// evaluate-policy pattern common to all policy-based evaluators.
+func (e *ResourceEvaluator) evaluatePolicy(resource *output.AWSResource, policy *types.Policy, fetchErr error, accountID string) *PublicAccessResult {
+	if fetchErr != nil {
 		slog.Warn("failed to fetch policy",
-			"type", resourceType,
+			"type", resource.ResourceType,
 			"resource", resource.ResourceID,
-			"error", err,
+			"error", fetchErr,
 		)
 		return nil
 	}
@@ -247,10 +253,10 @@ func (e *ResourceEvaluator) evaluatePolicyAccess(
 		resourceARN = resource.ResourceID
 	}
 
-	result, err := EvaluateResourcePolicy(policy, resourceARN, accountID, resourceType, e.orgPolicies)
+	result, err := EvaluateResourcePolicy(policy, resourceARN, accountID, resource.ResourceType, e.orgPolicies)
 	if err != nil {
 		slog.Warn("failed to evaluate resource policy",
-			"type", resourceType,
+			"type", resource.ResourceType,
 			"resource", resource.ResourceID,
 			"error", err,
 		)

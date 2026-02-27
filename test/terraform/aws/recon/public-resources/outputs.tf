@@ -22,6 +22,18 @@ output "public_function_arn" {
   value = aws_lambda_function.public.arn
 }
 
+output "lambda_policy_and_url_name" {
+  value = aws_lambda_function.public_policy_and_url.function_name
+}
+
+output "lambda_policy_only_name" {
+  value = aws_lambda_function.public_policy_only.function_name
+}
+
+output "lambda_private_name" {
+  value = aws_lambda_function.private.function_name
+}
+
 output "public_instance_id" {
   value = aws_instance.public.id
 }

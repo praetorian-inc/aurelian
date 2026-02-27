@@ -115,7 +115,7 @@ resource "aws_sqs_queue_policy" "public" {
 }
 
 # ============================================================
-# Lambda function with public function URL (property-based)
+# Lambda shared resources
 # ============================================================
 resource "aws_iam_role" "lambda" {
   name = "${local.prefix}-lambda-role"
@@ -142,6 +142,10 @@ data "archive_file" "dummy" {
   }
 }
 
+# ============================================================
+# Lambda: function URL only (AuthType=NONE, no public resource policy)
+# Detected via FunctionUrlAuthType property check only.
+# ============================================================
 resource "aws_lambda_function" "public" {
   filename         = data.archive_file.dummy.output_path
   function_name    = "${local.prefix}-public-function"
@@ -154,6 +158,70 @@ resource "aws_lambda_function" "public" {
 resource "aws_lambda_function_url" "public" {
   function_name      = aws_lambda_function.public.function_name
   authorization_type = "NONE"
+}
+
+# ============================================================
+# Lambda: public resource policy + AuthType=NONE function URL
+# Both findings should be reported and merged. This is the
+# scenario that was broken before the evaluateLambdaAccess fix.
+# ============================================================
+resource "aws_lambda_function" "public_policy_and_url" {
+  filename         = data.archive_file.dummy.output_path
+  function_name    = "${local.prefix}-policy-url-fn"
+  role             = aws_iam_role.lambda.arn
+  handler          = "index.handler"
+  runtime          = "python3.12"
+  source_code_hash = data.archive_file.dummy.output_base64sha256
+}
+
+resource "aws_lambda_permission" "public_policy_and_url" {
+  statement_id  = "AllowPublicInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.public_policy_and_url.function_name
+  principal     = "*"
+}
+
+resource "aws_lambda_function_url" "public_policy_and_url" {
+  function_name      = aws_lambda_function.public_policy_and_url.function_name
+  authorization_type = "NONE"
+}
+
+# ============================================================
+# Lambda: public resource policy only (no function URL)
+# Detected via resource policy evaluation only.
+# ============================================================
+resource "aws_lambda_function" "public_policy_only" {
+  filename         = data.archive_file.dummy.output_path
+  function_name    = "${local.prefix}-policy-only-fn"
+  role             = aws_iam_role.lambda.arn
+  handler          = "index.handler"
+  runtime          = "python3.12"
+  source_code_hash = data.archive_file.dummy.output_base64sha256
+}
+
+resource "aws_lambda_permission" "public_policy_only" {
+  statement_id  = "AllowPublicInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.public_policy_only.function_name
+  principal     = "*"
+}
+
+# ============================================================
+# Lambda: private (AuthType=AWS_IAM, no public resource policy)
+# Should NOT appear in results.
+# ============================================================
+resource "aws_lambda_function" "private" {
+  filename         = data.archive_file.dummy.output_path
+  function_name    = "${local.prefix}-private-function"
+  role             = aws_iam_role.lambda.arn
+  handler          = "index.handler"
+  runtime          = "python3.12"
+  source_code_hash = data.archive_file.dummy.output_base64sha256
+}
+
+resource "aws_lambda_function_url" "private" {
+  function_name      = aws_lambda_function.private.function_name
+  authorization_type = "AWS_IAM"
 }
 
 # ============================================================
