@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 
@@ -14,10 +15,41 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
 
-// QueryResources executes an Azure Resource Graph query against a single
-// subscription, handling pagination. Each result row is parsed into an
-// AzureResource and sent to the pipeline.
-func QueryResources(ctx context.Context, client *armresourcegraph.Client, subscriptionID string, query string, out *pipeline.P[model.AurelianModel]) error {
+const listAllQuery = "Resources | project id, name, type, location, resourceGroup, tags, properties"
+
+// ResourceGraphLister enumerates Azure resources via the Resource Graph API.
+type ResourceGraphLister struct {
+	client *armresourcegraph.Client
+}
+
+// NewResourceGraphLister creates a lister with an initialized ARG client.
+func NewResourceGraphLister(cred azcore.TokenCredential) (*ResourceGraphLister, error) {
+	client, err := armresourcegraph.NewClient(cred, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create resource graph client: %w", err)
+	}
+	return &ResourceGraphLister{client: client}, nil
+}
+
+// List enumerates all resources across the given subscriptions, emitting each
+// as an AzureResource into out.
+func (l *ResourceGraphLister) List(ctx context.Context, subscriptionIDs []string, out *pipeline.P[model.AurelianModel]) error {
+	for _, sub := range subscriptionIDs {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		if err := l.querySubscription(ctx, sub, out); err != nil {
+			return fmt.Errorf("failed to query subscription %s: %w", sub, err)
+		}
+	}
+	return nil
+}
+
+func (l *ResourceGraphLister) querySubscription(ctx context.Context, subscriptionID string, out *pipeline.P[model.AurelianModel]) error {
+	query := listAllQuery
 	request := armresourcegraph.QueryRequest{
 		Query:         &query,
 		Subscriptions: []*string{&subscriptionID},
@@ -34,7 +66,7 @@ func QueryResources(ctx context.Context, client *armresourcegraph.Client, subscr
 		default:
 		}
 
-		resp, err := client.Resources(ctx, request, nil)
+		resp, err := l.client.Resources(ctx, request, nil)
 		if err != nil {
 			return fmt.Errorf("resource graph query failed: %w", err)
 		}

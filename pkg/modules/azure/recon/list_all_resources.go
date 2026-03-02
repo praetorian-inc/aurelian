@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
-
 	azurehelpers "github.com/praetorian-inc/aurelian/internal/helpers/azure"
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
 	"github.com/praetorian-inc/aurelian/pkg/model"
@@ -53,8 +51,6 @@ func (m *AzureListAllResourcesModule) Parameters() any {
 	return &m.ListAllConfig
 }
 
-const argListAllQuery = "Resources | project id, name, type, location, resourceGroup, tags, properties"
-
 func (m *AzureListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.ListAllConfig
 	ctx := cfg.Context
@@ -72,22 +68,10 @@ func (m *AzureListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[mod
 		return fmt.Errorf("failed to resolve subscriptions: %w", err)
 	}
 
-	client, err := armresourcegraph.NewClient(cred, nil)
+	lister, err := resourcegraph.NewResourceGraphLister(cred)
 	if err != nil {
-		return fmt.Errorf("failed to create resource graph client: %w", err)
+		return fmt.Errorf("failed to create resource graph lister: %w", err)
 	}
 
-	for _, sub := range subs {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		if err := resourcegraph.QueryResources(ctx, client, sub, argListAllQuery, out); err != nil {
-			return fmt.Errorf("failed to query subscription %s: %w", sub, err)
-		}
-	}
-
-	return nil
+	return lister.List(ctx, subs, out)
 }
