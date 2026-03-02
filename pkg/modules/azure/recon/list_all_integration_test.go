@@ -79,8 +79,18 @@ func TestAzureListAllResourceEnumeration(t *testing.T) {
 		}
 
 		if allFound {
+			t.Logf("attempt %d: all %d expected resources found", attempt, len(allResourceIDs))
 			break
 		}
+
+		// Log which resources are still missing for debugging.
+		var missing []string
+		for _, id := range allResourceIDs {
+			if !resultsContainString(results, id) {
+				missing = append(missing, id)
+			}
+		}
+		t.Logf("attempt %d: %d/%d found, missing %d: %v", attempt, len(allResourceIDs)-len(missing), len(allResourceIDs), len(missing), missing)
 	}
 
 	require.NoError(t, lastErr)
@@ -92,6 +102,7 @@ func TestAzureListAllResourceEnumeration(t *testing.T) {
 	for _, id := range allResourceIDs {
 		assertResultContainsStringIgnoreCase(t, results, id)
 	}
+	t.Logf("all %d expected resources verified in results", len(allResourceIDs))
 }
 
 // assertResultContainsStringIgnoreCase fails the test if no result contains

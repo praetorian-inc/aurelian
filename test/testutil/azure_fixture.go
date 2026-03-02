@@ -94,10 +94,13 @@ func (f *AzureFixture) Setup() {
 
 	if os.Getenv("AURELIAN_KEEP_INFRA") == "" {
 		f.t.Cleanup(func() {
+			f.t.Log("terraform destroy: starting infrastructure teardown...")
+			start := time.Now()
 			if err := f.tf.Destroy(context.Background()); err != nil {
 				f.t.Errorf("terraform destroy failed (state at %s for manual cleanup): %v", f.stateDir, err)
 				return
 			}
+			f.t.Logf("terraform destroy: completed in %s", time.Since(start).Round(time.Second))
 			os.RemoveAll(f.stateDir)
 		})
 	}
