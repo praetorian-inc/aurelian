@@ -4,6 +4,7 @@ package recon
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -64,11 +65,19 @@ func TestAWSPublicResources(t *testing.T) {
 	}
 
 	// resourceMatches checks whether a resource matches any of the given identifiers
-	// by checking ARN, ResourceID, and DisplayName fields.
+	// by checking ARN, ResourceID, DisplayName, and string-valued property fields.
 	resourceMatches := func(r output.AWSResource, identifiers ...string) bool {
 		for _, id := range identifiers {
-			if id != "" && (r.ARN == id || r.ResourceID == id || r.DisplayName == id) {
+			if id == "" {
+				continue
+			}
+			if r.ARN == id || r.ResourceID == id || r.DisplayName == id {
 				return true
+			}
+			for _, v := range r.Properties {
+				if s, ok := v.(string); ok && s == id {
+					return true
+				}
 			}
 		}
 		return false
@@ -81,6 +90,48 @@ func TestAWSPublicResources(t *testing.T) {
 			}
 		}
 		return false
+	}
+
+	findLambda := func(functionName string) *output.AWSResource {
+		for i, r := range resources {
+			if r.ResourceType != "AWS::Lambda::Function" {
+				continue
+			}
+			if r.ResourceID == functionName || r.DisplayName == functionName {
+				return &resources[i]
+			}
+			if name, _ := r.Properties["FunctionName"].(string); name == functionName {
+				return &resources[i]
+			}
+		}
+		return nil
+	}
+
+	lambdaAllowedActions := func(r *output.AWSResource) []string {
+		raw, ok := r.Properties["PublicAccessResult"]
+		if !ok {
+			return nil
+		}
+		var data []byte
+		switch v := raw.(type) {
+		case json.RawMessage:
+			data = v
+		case string:
+			data = []byte(v)
+		default:
+			b, err := json.Marshal(v)
+			if err != nil {
+				return nil
+			}
+			data = b
+		}
+		var result struct {
+			AllowedActions []string `json:"allowed_actions"`
+		}
+		if json.Unmarshal(data, &result) != nil {
+			return nil
+		}
+		return result.AllowedActions
 	}
 
 	// -------------------------------------------------------------------------
@@ -110,8 +161,9 @@ func TestAWSPublicResources(t *testing.T) {
 			"public EFS %s should be detected", id)
 	})
 
-	// OpenSearch is not yet a supported resource type in the evaluator.
-	// t.Run("OpenSearch domain with public policy is detected", ...)
+	t.Run("OpenSearch domain with public policy is not currently enumerable", func(t *testing.T) {
+		t.Skip("OpenSearch domains do not support CloudControl LIST action")
+	})
 
 	// -------------------------------------------------------------------------
 	// Property-based public resources
@@ -140,20 +192,38 @@ func TestAWSPublicResources(t *testing.T) {
 	t.Run("Lambda with function URL (AuthType=NONE) is detected", func(t *testing.T) {
 		name := fixture.Output("public_function_name")
 		arn := fixture.Output("public_function_arn")
+		r := findLambda(name)
+		require.NotNil(t, r, "Lambda with public function URL %s should be detected", name)
 		assert.True(t, findResource("AWS::Lambda::Function", name, arn),
-			"Lambda with public function URL %s should be detected", name)
+			"Lambda with public function URL %s should be detectable by identity fields", name)
+
+		actions := lambdaAllowedActions(r)
+		assert.Contains(t, actions, "lambda:InvokeFunctionUrl",
+			"function URL lambda should include lambda:InvokeFunctionUrl")
 	})
 
-	t.Run("Lambda with public policy and function URL is detected", func(t *testing.T) {
+	t.Run("Lambda with public policy and function URL includes both allowed actions", func(t *testing.T) {
 		name := fixture.Output("lambda_policy_and_url_name")
-		assert.True(t, findResource("AWS::Lambda::Function", name),
-			"Lambda with public policy + URL %s should be detected", name)
+		r := findLambda(name)
+		require.NotNil(t, r, "Lambda with public policy + URL %s should be detected", name)
+
+		actions := lambdaAllowedActions(r)
+		assert.Contains(t, actions, "lambda:InvokeFunction",
+			"policy+URL lambda should include policy-based invoke action")
+		assert.Contains(t, actions, "lambda:InvokeFunctionUrl",
+			"policy+URL lambda should include function URL invoke action")
 	})
 
-	t.Run("Lambda with public policy only is detected", func(t *testing.T) {
+	t.Run("Lambda with public policy only excludes function URL action", func(t *testing.T) {
 		name := fixture.Output("lambda_policy_only_name")
-		assert.True(t, findResource("AWS::Lambda::Function", name),
-			"Lambda with public policy only %s should be detected", name)
+		r := findLambda(name)
+		require.NotNil(t, r, "Lambda with public policy only %s should be detected", name)
+
+		actions := lambdaAllowedActions(r)
+		assert.Contains(t, actions, "lambda:InvokeFunction",
+			"policy-only lambda should include policy-based invoke action")
+		assert.NotContains(t, actions, "lambda:InvokeFunctionUrl",
+			"policy-only lambda should not include function URL invoke action")
 	})
 
 	// -------------------------------------------------------------------------

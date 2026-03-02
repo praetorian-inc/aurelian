@@ -201,12 +201,6 @@ func (e *ResourceEvaluator) evaluateEFS(resource *output.AWSResource, awsCfg aws
 }
 
 func (e *ResourceEvaluator) evaluateLambda(resource *output.AWSResource, awsCfg aws.Config, accountID string) *PublicAccessResult {
-	slog.Info("lambda evaluator: starting evaluation",
-		"resource_id", resource.ResourceID,
-		"arn", resource.ARN,
-		"function_url_auth_type", resource.Properties["FunctionUrlAuthType"],
-		"function_url", resource.Properties["FunctionUrl"],
-	)
 	client := lambda.NewFromConfig(awsCfg)
 	policy, err := resourcepolicies.FetchLambdaPolicy(context.Background(), client, resource)
 	return e.evaluateLambdaAccess(resource, policy, err, accountID)
