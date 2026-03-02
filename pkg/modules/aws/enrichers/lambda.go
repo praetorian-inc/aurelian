@@ -51,11 +51,3 @@ func FetchFunctionURLs(cfg plugin.EnricherConfig, r *output.AWSResource, client 
 
 	return nil
 }
-
-func propertyKeys(props map[string]any) []string {
-	keys := make([]string, 0, len(props))
-	for k := range props {
-		keys = append(keys, k)
-	}
-	return keys
-}

@@ -114,7 +114,7 @@ func TestSetResult(t *testing.T) {
 		Properties:   map[string]any{},
 	}
 
-	result := &PublicAccessResult{
+	result := &publicAccessResult{
 		IsPublic:          true,
 		NeedsManualTriage: true,
 		AllowedActions:    []string{"ec2:NetworkAccess"},
@@ -134,8 +134,8 @@ func TestSetResult(t *testing.T) {
 // their results are merged correctly.
 
 const (
-	testAccountID   = "123456789012"
-	testLambdaARN   = "arn:aws:lambda:us-east-1:123456789012:function:my-function"
+	testAccountID    = "123456789012"
+	testLambdaARN    = "arn:aws:lambda:us-east-1:123456789012:function:my-function"
 	testFunctionName = "my-function"
 )
 
@@ -358,7 +358,7 @@ func TestEvaluateCore_PublicResource_SentDownstream(t *testing.T) {
 	// Verify PublicAccessResult was attached
 	raw, ok := results[0].Properties["PublicAccessResult"]
 	require.True(t, ok, "PublicAccessResult should be set")
-	var par PublicAccessResult
+	var par publicAccessResult
 	require.NoError(t, json.Unmarshal(raw.(json.RawMessage), &par))
 	assert.True(t, par.IsPublic)
 	assert.Contains(t, par.AllowedActions, "ec2:NetworkAccess")
@@ -391,7 +391,7 @@ func TestEvaluateCore_NeedsManualTriage_SentDownstream(t *testing.T) {
 	results := collectCore(e, resource)
 
 	require.Len(t, results, 1)
-	var par PublicAccessResult
+	var par publicAccessResult
 	require.NoError(t, json.Unmarshal(results[0].Properties["PublicAccessResult"].(json.RawMessage), &par))
 	assert.True(t, par.NeedsManualTriage, "triage resource should be sent downstream")
 }
@@ -436,7 +436,7 @@ func TestEvaluateCore_RDS_Public(t *testing.T) {
 	results := collectCore(e, resource)
 
 	require.Len(t, results, 1)
-	var par PublicAccessResult
+	var par publicAccessResult
 	require.NoError(t, json.Unmarshal(results[0].Properties["PublicAccessResult"].(json.RawMessage), &par))
 	assert.True(t, par.IsPublic)
 }
@@ -467,7 +467,7 @@ func TestEvaluateCore_Cognito_SelfSignup(t *testing.T) {
 	results := collectCore(e, resource)
 
 	require.Len(t, results, 1)
-	var par PublicAccessResult
+	var par publicAccessResult
 	require.NoError(t, json.Unmarshal(results[0].Properties["PublicAccessResult"].(json.RawMessage), &par))
 	assert.True(t, par.IsPublic)
 }

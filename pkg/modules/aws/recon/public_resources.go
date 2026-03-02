@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 
+	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/aws/publicaccess"
-	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -88,7 +88,7 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	enriched := pipeline.New[output.AWSResource]()
 	pipeline.Pipe(listed, enrichResource(c.AWSCommonRecon), enriched)
 
-	evaluator := publicaccess.NewResourceEvaluator(c.AWSCommonRecon, lister.Regions, orgPolicies)
+	evaluator := publicaccess.NewResourceEvaluator(c.AWSCommonRecon, orgPolicies)
 	evaluated := pipeline.New[output.AWSResource]()
 	pipeline.Pipe(enriched, evaluator.Evaluate, evaluated)
 

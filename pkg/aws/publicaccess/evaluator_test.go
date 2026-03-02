@@ -9,7 +9,7 @@ import (
 )
 
 func TestEvaluateResourcePolicy_NilPolicy(t *testing.T) {
-	result, err := EvaluateResourcePolicy(nil, "arn:aws:s3:::my-bucket", "123456789012", "AWS::S3::Bucket", nil)
+	result, err := evaluateResourcePolicy(nil, "arn:aws:s3:::my-bucket", "123456789012", "AWS::S3::Bucket", nil)
 	require.NoError(t, err)
 	assert.False(t, result.IsPublic)
 }
@@ -30,7 +30,7 @@ func TestEvaluateResourcePolicy_PublicS3Policy(t *testing.T) {
 		},
 	}
 
-	result, err := EvaluateResourcePolicy(policy, "arn:aws:s3:::my-bucket/*", "123456789012", "AWS::S3::Bucket", nil)
+	result, err := evaluateResourcePolicy(policy, "arn:aws:s3:::my-bucket/*", "123456789012", "AWS::S3::Bucket", nil)
 	require.NoError(t, err)
 	assert.True(t, result.IsPublic)
 	assert.Contains(t, result.AllowedActions, "s3:GetObject")
@@ -52,7 +52,7 @@ func TestEvaluateResourcePolicy_PrivateS3Policy(t *testing.T) {
 		},
 	}
 
-	result, err := EvaluateResourcePolicy(policy, "arn:aws:s3:::my-bucket/*", "123456789012", "AWS::S3::Bucket", nil)
+	result, err := evaluateResourcePolicy(policy, "arn:aws:s3:::my-bucket/*", "123456789012", "AWS::S3::Bucket", nil)
 	require.NoError(t, err)
 	assert.False(t, result.IsPublic)
 }
@@ -73,7 +73,7 @@ func TestEvaluateResourcePolicy_PublicSNSPolicy(t *testing.T) {
 		},
 	}
 
-	result, err := EvaluateResourcePolicy(policy, "arn:aws:sns:us-east-1:123456789012:my-topic", "123456789012", "AWS::SNS::Topic", nil)
+	result, err := evaluateResourcePolicy(policy, "arn:aws:sns:us-east-1:123456789012:my-topic", "123456789012", "AWS::SNS::Topic", nil)
 	require.NoError(t, err)
 	assert.True(t, result.IsPublic)
 	assert.Contains(t, result.AllowedActions, "sns:Publish")
@@ -95,7 +95,7 @@ func TestEvaluateResourcePolicy_PublicSQSPolicy(t *testing.T) {
 		},
 	}
 
-	result, err := EvaluateResourcePolicy(policy, "arn:aws:sqs:us-east-1:123456789012:my-queue", "123456789012", "AWS::SQS::Queue", nil)
+	result, err := evaluateResourcePolicy(policy, "arn:aws:sqs:us-east-1:123456789012:my-queue", "123456789012", "AWS::SQS::Queue", nil)
 	require.NoError(t, err)
 	assert.True(t, result.IsPublic)
 	assert.Contains(t, result.AllowedActions, "sqs:SendMessage")
@@ -126,7 +126,7 @@ func TestEvaluateResourcePolicy_DenyOverridesAllow(t *testing.T) {
 		},
 	}
 
-	result, err := EvaluateResourcePolicy(policy, "arn:aws:s3:::my-bucket/*", "123456789012", "AWS::S3::Bucket", nil)
+	result, err := evaluateResourcePolicy(policy, "arn:aws:s3:::my-bucket/*", "123456789012", "AWS::S3::Bucket", nil)
 	require.NoError(t, err)
 	assert.False(t, result.IsPublic)
 }
@@ -137,7 +137,7 @@ func TestEvaluateResourcePolicy_UnsupportedResourceType(t *testing.T) {
 		Statement: &types.PolicyStatementList{},
 	}
 
-	_, err := EvaluateResourcePolicy(policy, "arn:aws:foo:us-east-1:123456789012:bar", "123456789012", "AWS::Foo::Bar", nil)
+	_, err := evaluateResourcePolicy(policy, "arn:aws:foo:us-east-1:123456789012:bar", "123456789012", "AWS::Foo::Bar", nil)
 	assert.Error(t, err)
 }
 
@@ -172,7 +172,7 @@ func TestEvaluateResourcePolicy_InconclusiveCondition(t *testing.T) {
 		},
 	}
 
-	result, err := EvaluateResourcePolicy(policy, "arn:aws:s3:::my-bucket/*", "123456789012", "AWS::S3::Bucket", nil)
+	result, err := evaluateResourcePolicy(policy, "arn:aws:s3:::my-bucket/*", "123456789012", "AWS::S3::Bucket", nil)
 	require.NoError(t, err)
 	// The policy has a condition with a critical key that can't be fully evaluated
 	assert.True(t, result.NeedsManualTriage, "should flag inconclusive conditions for manual triage")
