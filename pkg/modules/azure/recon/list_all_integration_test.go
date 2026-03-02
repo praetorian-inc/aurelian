@@ -15,9 +15,6 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
-
-	// Register Azure modules so plugin.Get can find them.
-	_ "github.com/praetorian-inc/aurelian/pkg/modules/azure/recon"
 )
 
 // TestAzureListAllResourceEnumeration provisions 16 Azure resource types via
