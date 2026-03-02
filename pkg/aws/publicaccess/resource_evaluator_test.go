@@ -1,7 +1,6 @@
 package publicaccess
 
 import (
-	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -105,26 +104,6 @@ func TestEvaluateCognito_NoSelfSignup(t *testing.T) {
 
 	result := e.evaluateCognito(resource, aws.Config{}, "")
 	assert.Nil(t, result)
-}
-
-func TestSetResult(t *testing.T) {
-	resource := &output.AWSResource{
-		ResourceType: "AWS::EC2::Instance",
-		ResourceID:   "i-123",
-		Properties:   map[string]any{},
-	}
-
-	result := &publicAccessResult{
-		IsPublic:          true,
-		NeedsManualTriage: true,
-		AllowedActions:    []string{"ec2:NetworkAccess"},
-		EvaluationReasons: []string{"has public IP"},
-	}
-
-	setResult(resource, result)
-
-	_, ok := resource.Properties["PublicAccessResult"]
-	assert.True(t, ok, "PublicAccessResult should be set in properties")
 }
 
 // --- Lambda evaluateLambdaAccess integration tests ---
@@ -332,8 +311,8 @@ func TestEvaluateLambdaAccess_FetchError_NoFunctionUrl(t *testing.T) {
 // don't require AWS API calls.
 
 // collectCore runs evaluateCore and collects the pipeline output.
-func collectCore(e *ResourceEvaluator, resource *output.AWSResource) []output.AWSResource {
-	out := pipeline.New[output.AWSResource]()
+func collectCore(e *ResourceEvaluator, resource *output.AWSResource) []PublicAccessResult {
+	out := pipeline.New[PublicAccessResult]()
 	go func() {
 		defer out.Close()
 		e.evaluateCore(resource, aws.Config{}, testAccountID, out)
@@ -354,14 +333,10 @@ func TestEvaluateCore_PublicResource_SentDownstream(t *testing.T) {
 	results := collectCore(e, resource)
 
 	require.Len(t, results, 1, "public resource should be sent downstream")
-	assert.Equal(t, "i-abc123", results[0].ResourceID)
-	// Verify PublicAccessResult was attached
-	raw, ok := results[0].Properties["PublicAccessResult"]
-	require.True(t, ok, "PublicAccessResult should be set")
-	var par publicAccessResult
-	require.NoError(t, json.Unmarshal(raw.(json.RawMessage), &par))
-	assert.True(t, par.IsPublic)
-	assert.Contains(t, par.AllowedActions, "ec2:NetworkAccess")
+	assert.Equal(t, "i-abc123", results[0].AWSResource.ResourceID)
+	assert.Equal(t, output.AccessLevelNeedsTriage, results[0].AWSResource.AccessLevel)
+	assert.True(t, results[0].IsPublic)
+	assert.Contains(t, results[0].AllowedActions, "ec2:NetworkAccess")
 }
 
 func TestEvaluateCore_NonPublicResource_Filtered(t *testing.T) {
@@ -375,7 +350,9 @@ func TestEvaluateCore_NonPublicResource_Filtered(t *testing.T) {
 
 	results := collectCore(e, resource)
 
-	assert.Empty(t, results, "non-public resource should not be sent downstream")
+	require.Len(t, results, 1, "supported non-public resource should be sent downstream as private")
+	assert.Equal(t, output.AccessLevelPrivate, results[0].AWSResource.AccessLevel)
+	assert.False(t, results[0].IsPublic)
 }
 
 func TestEvaluateCore_NeedsManualTriage_SentDownstream(t *testing.T) {
@@ -391,9 +368,8 @@ func TestEvaluateCore_NeedsManualTriage_SentDownstream(t *testing.T) {
 	results := collectCore(e, resource)
 
 	require.Len(t, results, 1)
-	var par publicAccessResult
-	require.NoError(t, json.Unmarshal(results[0].Properties["PublicAccessResult"].(json.RawMessage), &par))
-	assert.True(t, par.NeedsManualTriage, "triage resource should be sent downstream")
+	assert.True(t, results[0].NeedsManualTriage, "triage resource should be sent downstream")
+	assert.Equal(t, output.AccessLevelNeedsTriage, results[0].AWSResource.AccessLevel)
 }
 
 func TestEvaluateCore_UnsupportedType_Skipped(t *testing.T) {
@@ -436,9 +412,8 @@ func TestEvaluateCore_RDS_Public(t *testing.T) {
 	results := collectCore(e, resource)
 
 	require.Len(t, results, 1)
-	var par publicAccessResult
-	require.NoError(t, json.Unmarshal(results[0].Properties["PublicAccessResult"].(json.RawMessage), &par))
-	assert.True(t, par.IsPublic)
+	assert.True(t, results[0].IsPublic)
+	assert.Equal(t, output.AccessLevelPublic, results[0].AWSResource.AccessLevel)
 }
 
 func TestEvaluateCore_RDS_Private(t *testing.T) {
@@ -452,7 +427,9 @@ func TestEvaluateCore_RDS_Private(t *testing.T) {
 
 	results := collectCore(e, resource)
 
-	assert.Empty(t, results, "private RDS should not be sent downstream")
+	require.Len(t, results, 1)
+	assert.Equal(t, output.AccessLevelPrivate, results[0].AWSResource.AccessLevel)
+	assert.False(t, results[0].IsPublic)
 }
 
 func TestEvaluateCore_Cognito_SelfSignup(t *testing.T) {
@@ -467,9 +444,8 @@ func TestEvaluateCore_Cognito_SelfSignup(t *testing.T) {
 	results := collectCore(e, resource)
 
 	require.Len(t, results, 1)
-	var par publicAccessResult
-	require.NoError(t, json.Unmarshal(results[0].Properties["PublicAccessResult"].(json.RawMessage), &par))
-	assert.True(t, par.IsPublic)
+	assert.True(t, results[0].IsPublic)
+	assert.Equal(t, output.AccessLevelPublic, results[0].AWSResource.AccessLevel)
 }
 
 // --- evaluatePolicy tests ---

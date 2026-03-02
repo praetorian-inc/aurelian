@@ -2,6 +2,7 @@ package recon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -89,11 +90,22 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	pipeline.Pipe(listed, enrichResource(c.AWSCommonRecon), enriched)
 
 	evaluator := publicaccess.NewResourceEvaluator(c.AWSCommonRecon, orgPolicies)
-	evaluated := pipeline.New[output.AWSResource]()
+	evaluated := pipeline.New[publicaccess.PublicAccessResult]()
 	pipeline.Pipe(enriched, evaluator.Evaluate, evaluated)
 
 	for r := range evaluated.Range() {
-		out.Send(r)
+		risk, ok, err := riskFromResult(r)
+		if err != nil {
+			resourceID := ""
+			if r.AWSResource != nil {
+				resourceID = r.AWSResource.ResourceID
+			}
+			slog.Warn("failed to build risk context", "resource", resourceID, "error", err)
+			continue
+		}
+		if ok {
+			out.Send(*risk)
+		}
 	}
 
 	return evaluated.Wait()
@@ -133,4 +145,37 @@ func enrichResource(opts plugin.AWSCommonRecon) func(output.AWSResource, *pipeli
 		out.Send(r)
 		return nil
 	}
+}
+
+func riskFromResult(r publicaccess.PublicAccessResult) (*output.AurelianRisk, bool, error) {
+	var severity output.RiskSeverity
+	if r.AWSResource == nil {
+		return nil, false, nil
+	}
+	switch r.AWSResource.AccessLevel {
+	case output.AccessLevelPublic:
+		severity = output.RiskSeverityHigh
+	case output.AccessLevelNeedsTriage:
+		severity = output.RiskSeverityMedium
+	default:
+		return nil, false, nil
+	}
+
+	impactedARN := r.AWSResource.ARN
+	if impactedARN == "" {
+		impactedARN = r.AWSResource.ResourceID
+	}
+
+	r.AWSResource = nil
+	ctx, err := json.Marshal(r)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return &output.AurelianRisk{
+		Name:        "public-aws-resource",
+		Severity:    severity,
+		ImpactedARN: impactedARN,
+		Context:     ctx,
+	}, true, nil
 }

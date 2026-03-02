@@ -1,8 +1,11 @@
 package recon
 
 import (
+	"encoding/json"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/aws/publicaccess"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,4 +68,44 @@ func TestPublicResourcesParameters(t *testing.T) {
 
 	// Must include org-policies param
 	assert.True(t, paramNames["org-policies"], "should have org-policies param")
+}
+
+func TestRiskFromResult_Public(t *testing.T) {
+	risk, ok, err := riskFromResult(publicaccess.PublicAccessResult{
+		AWSResource: &output.AWSResource{AccessLevel: output.AccessLevelPublic, ResourceID: "example-bucket", ARN: "arn:aws:s3:::example-bucket"},
+		IsPublic:    true,
+	})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NotNil(t, risk)
+	assert.Equal(t, output.RiskSeverityHigh, risk.Severity)
+	assert.Equal(t, "public-aws-resource", risk.Name)
+	assert.Equal(t, "arn:aws:s3:::example-bucket", risk.ImpactedARN)
+	assert.NotContains(t, string(risk.Context), "aws_resource")
+}
+
+func TestRiskFromResult_NeedsTriage(t *testing.T) {
+	risk, ok, err := riskFromResult(publicaccess.PublicAccessResult{
+		AWSResource:       &output.AWSResource{AccessLevel: output.AccessLevelNeedsTriage, ResourceID: "fn-name"},
+		IsPublic:          true,
+		NeedsManualTriage: true,
+	})
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NotNil(t, risk)
+	assert.Equal(t, output.RiskSeverityMedium, risk.Severity)
+	assert.Equal(t, "fn-name", risk.ImpactedARN)
+
+	var ctx map[string]any
+	require.NoError(t, json.Unmarshal(risk.Context, &ctx))
+	assert.Equal(t, true, ctx["needs_manual_triage"])
+}
+
+func TestRiskFromResult_PrivateFiltered(t *testing.T) {
+	risk, ok, err := riskFromResult(publicaccess.PublicAccessResult{
+		AWSResource: &output.AWSResource{AccessLevel: output.AccessLevelPrivate},
+	})
+	require.NoError(t, err)
+	assert.False(t, ok)
+	assert.Nil(t, risk)
 }
