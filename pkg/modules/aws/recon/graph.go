@@ -130,10 +130,14 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 			"types", len(collector.SupportedResourceTypes()), "regions", len(resolvedRegions))
 
 		lister := cloudcontrol.NewCloudControlLister(c.AWSCommonRecon)
-		listed, err := lister.Enumerate(collector.SupportedResourceTypes())
+		resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, collector.SupportedResourceTypes())
 		if err != nil {
-			return fmt.Errorf("enumerating resources: %w", err)
+			return fmt.Errorf("resolving resource types: %w", err)
 		}
+
+		resourceTypePipeline := pipeline.From(resourceTypes...)
+		listed := pipeline.New[output.AWSResource]()
+		pipeline.Pipe(resourceTypePipeline, lister.List, listed)
 
 		collected := pipeline.New[output.AWSResource]()
 		pipeline.Pipe(listed, collector.Collect, collected)

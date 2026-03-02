@@ -74,11 +74,14 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	}
 
 	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
-
-	listed, err := lister.Enumerate(publicaccess.SupportedResourceTypes())
+	resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, publicaccess.SupportedResourceTypes())
 	if err != nil {
 		return err
 	}
+
+	resourceTypePipeline := pipeline.From(resourceTypes...)
+	listed := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(resourceTypePipeline, lister.List, listed)
 
 	// Enrich resources with properties not available from CloudControl
 	// (e.g. RDS PubliclyAccessible, Cognito self-signup, Lambda function URL auth type).

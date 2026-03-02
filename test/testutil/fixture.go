@@ -115,33 +115,14 @@ func (f *TerraformFixture) Setup() {
 		f.t.Fatalf("terraform init: %v", err)
 	}
 
-	switch {
-	case remoteHash == "":
-		// No remote state — fresh deploy.
+	if remoteHash == "" {
 		f.t.Log("fixture: no cached state found, deploying fresh infrastructure")
-		if err := f.tf.Apply(ctx); err != nil {
-			f.t.Fatalf("terraform apply: %v", err)
-		}
-		if err := f.putRemoteHash(ctx, localHash); err != nil {
-			f.t.Fatalf("upload fixture hash: %v", err)
-		}
-
-	case remoteHash == localHash:
-		// Hashes match — reuse existing infrastructure.
+		f.deployStack(ctx, localHash)
+	} else if remoteHash == localHash {
 		f.t.Log("fixture: cached infrastructure is up-to-date, reusing")
-
-	default:
-		// Hashes differ — destroy stale infrastructure and redeploy.
+	} else {
 		f.t.Logf("fixture: hash mismatch (remote=%s, local=%s), tearing down and redeploying", remoteHash, localHash)
-		if err := f.tf.Destroy(ctx); err != nil {
-			f.t.Fatalf("terraform destroy (stale): %v", err)
-		}
-		if err := f.tf.Apply(ctx); err != nil {
-			f.t.Fatalf("terraform apply (redeploy): %v", err)
-		}
-		if err := f.putRemoteHash(ctx, localHash); err != nil {
-			f.t.Fatalf("upload fixture hash: %v", err)
-		}
+		f.redeployStack(ctx, localHash)
 	}
 
 	outputs, err := f.tf.Output(ctx)
@@ -168,6 +149,22 @@ func (f *TerraformFixture) Setup() {
 			f.deleteRemoteHash(context.Background())
 		})
 	}
+}
+
+func (f *TerraformFixture) deployStack(ctx context.Context, localHash string) {
+	if err := f.tf.Apply(ctx); err != nil {
+		f.t.Fatalf("terraform apply: %v", err)
+	}
+	if err := f.putRemoteHash(ctx, localHash); err != nil {
+		f.t.Fatalf("upload fixture hash: %v", err)
+	}
+}
+
+func (f *TerraformFixture) redeployStack(ctx context.Context, localHash string) {
+	if err := f.tf.Destroy(ctx); err != nil {
+		f.t.Fatalf("terraform destroy (stale): %v", err)
+	}
+	f.deployStack(ctx, localHash)
 }
 
 // Output returns a string output value by key.

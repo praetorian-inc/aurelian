@@ -55,11 +55,14 @@ func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, out *pipeline.P[model
 
 	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
 	collector := resourcepolicies.New(c.AWSCommonRecon)
-
-	listed, err := lister.Enumerate(collector.SupportedResourceTypes())
+	resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, collector.SupportedResourceTypes())
 	if err != nil {
 		return err
 	}
+
+	resourceTypePipeline := pipeline.From(resourceTypes...)
+	listed := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(resourceTypePipeline, lister.List, listed)
 
 	collected := pipeline.New[output.AWSResource]()
 	pipeline.Pipe(listed, collector.Collect, collected)

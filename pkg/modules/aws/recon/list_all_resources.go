@@ -3,6 +3,7 @@ package recon
 import (
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
@@ -55,10 +56,14 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model
 	c := m.ListAllConfig
 
 	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
-	listed, err := lister.Enumerate(selectResourceTypes(c.ScanType))
+	resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, selectResourceTypes(c.ScanType))
 	if err != nil {
 		return err
 	}
+
+	resourceTypePipeline := pipeline.From(resourceTypes...)
+	listed := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(resourceTypePipeline, lister.List, listed)
 
 	for r := range listed.Range() {
 		out.Send(r)
