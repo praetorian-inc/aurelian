@@ -3,9 +3,16 @@ package resourcegraph
 import (
 	"testing"
 
+	azurehelpers "github.com/praetorian-inc/aurelian/internal/helpers/azure"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+var testSub = azurehelpers.SubscriptionInfo{
+	ID:          "sub-1",
+	DisplayName: "Test Subscription",
+	TenantID:    "tenant-1",
+}
 
 func TestParseARGRow_ValidRow(t *testing.T) {
 	row := map[string]any{
@@ -18,9 +25,11 @@ func TestParseARGRow_ValidRow(t *testing.T) {
 		"properties":    map[string]any{"vmId": "abc-123", "hardwareProfile": map[string]any{"vmSize": "Standard_B2s"}},
 	}
 
-	resource, err := parseARGRow(row, "sub-1")
+	resource, err := parseARGRow(row, testSub)
 	require.NoError(t, err)
 	assert.Equal(t, "sub-1", resource.SubscriptionID)
+	assert.Equal(t, "Test Subscription", resource.SubscriptionName)
+	assert.Equal(t, "tenant-1", resource.TenantID)
 	assert.Equal(t, "microsoft.compute/virtualmachines", resource.ResourceType)
 	assert.Equal(t, "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm-1", resource.ResourceID)
 	assert.Equal(t, "vm-1", resource.DisplayName)
@@ -41,7 +50,7 @@ func TestParseARGRow_NilTags(t *testing.T) {
 		"properties":    map[string]any{},
 	}
 
-	resource, err := parseARGRow(row, "sub-1")
+	resource, err := parseARGRow(row, testSub)
 	require.NoError(t, err)
 	assert.Nil(t, resource.Tags)
 }
@@ -52,17 +61,19 @@ func TestParseARGRow_MissingFields(t *testing.T) {
 		"type": "microsoft.network/networkinterfaces",
 	}
 
-	resource, err := parseARGRow(row, "sub-1")
+	resource, err := parseARGRow(row, testSub)
 	require.NoError(t, err)
 	assert.Equal(t, "", resource.DisplayName)
 	assert.Equal(t, "", resource.Location)
 	assert.Equal(t, "", resource.ResourceGroup)
 	assert.Nil(t, resource.Tags)
 	assert.Nil(t, resource.Properties)
+	assert.Equal(t, "Test Subscription", resource.SubscriptionName)
+	assert.Equal(t, "tenant-1", resource.TenantID)
 }
 
 func TestParseARGRow_InvalidType(t *testing.T) {
-	_, err := parseARGRow("not a map", "sub-1")
+	_, err := parseARGRow("not a map", testSub)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unexpected row type")
 }

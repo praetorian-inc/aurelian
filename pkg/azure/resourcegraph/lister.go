@@ -10,6 +10,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 
+	azurehelpers "github.com/praetorian-inc/aurelian/internal/helpers/azure"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -33,14 +34,14 @@ func NewResourceGraphLister(cred azcore.TokenCredential) (*ResourceGraphLister, 
 
 // ListAll enumerates all resources across the given subscriptions using the
 // default KQL query, emitting each as an AzureResource into out.
-func (l *ResourceGraphLister) ListAll(ctx context.Context, subscriptionIDs []string, out *pipeline.P[model.AurelianModel]) error {
-	return l.List(ctx, subscriptionIDs, listAllQuery, out)
+func (l *ResourceGraphLister) ListAll(ctx context.Context, subs []azurehelpers.SubscriptionInfo, out *pipeline.P[model.AurelianModel]) error {
+	return l.List(ctx, subs, listAllQuery, out)
 }
 
 // List runs a custom KQL query across the given subscriptions, emitting each
 // result as an AzureResource into out.
-func (l *ResourceGraphLister) List(ctx context.Context, subscriptionIDs []string, query string, out *pipeline.P[model.AurelianModel]) error {
-	for _, sub := range subscriptionIDs {
+func (l *ResourceGraphLister) List(ctx context.Context, subs []azurehelpers.SubscriptionInfo, query string, out *pipeline.P[model.AurelianModel]) error {
+	for _, sub := range subs {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -48,16 +49,16 @@ func (l *ResourceGraphLister) List(ctx context.Context, subscriptionIDs []string
 		}
 
 		if err := l.querySubscription(ctx, sub, query, out); err != nil {
-			return fmt.Errorf("failed to query subscription %s: %w", sub, err)
+			return fmt.Errorf("failed to query subscription %s: %w", sub.ID, err)
 		}
 	}
 	return nil
 }
 
-func (l *ResourceGraphLister) querySubscription(ctx context.Context, subscriptionID string, query string, out *pipeline.P[model.AurelianModel]) error {
+func (l *ResourceGraphLister) querySubscription(ctx context.Context, sub azurehelpers.SubscriptionInfo, query string, out *pipeline.P[model.AurelianModel]) error {
 	request := armresourcegraph.QueryRequest{
 		Query:         &query,
-		Subscriptions: []*string{&subscriptionID},
+		Subscriptions: []*string{&sub.ID},
 		Options: &armresourcegraph.QueryRequestOptions{
 			Top:          to.Ptr(int32(1000)),
 			ResultFormat: to.Ptr(armresourcegraph.ResultFormatObjectArray),
@@ -82,7 +83,7 @@ func (l *ResourceGraphLister) querySubscription(ctx context.Context, subscriptio
 		}
 
 		for _, row := range rows {
-			resource, err := parseARGRow(row, subscriptionID)
+			resource, err := parseARGRow(row, sub)
 			if err != nil {
 				slog.Debug("skipping malformed ARG row", "error", err)
 				continue
@@ -99,17 +100,19 @@ func (l *ResourceGraphLister) querySubscription(ctx context.Context, subscriptio
 	return nil
 }
 
-func parseARGRow(row any, subscriptionID string) (output.AzureResource, error) {
+func parseARGRow(row any, sub azurehelpers.SubscriptionInfo) (output.AzureResource, error) {
 	rowMap, ok := row.(map[string]any)
 	if !ok {
 		return output.AzureResource{}, fmt.Errorf("unexpected row type: %T", row)
 	}
 
 	resource := output.NewAzureResource(
-		subscriptionID,
+		sub.ID,
 		stringFromMap(rowMap, "type"),
 		stringFromMap(rowMap, "id"),
 	)
+	resource.SubscriptionName = sub.DisplayName
+	resource.TenantID = sub.TenantID
 	resource.DisplayName = stringFromMap(rowMap, "name")
 	resource.Location = stringFromMap(rowMap, "location")
 	resource.ResourceGroup = stringFromMap(rowMap, "resourceGroup")

@@ -27,14 +27,17 @@ func TestNewAzureResource(t *testing.T) {
 
 func TestAzureResource_JSONRoundTrip(t *testing.T) {
 	r := AzureResource{
-		ResourceType:   "Microsoft.Compute/virtualMachines",
-		ResourceID:     "/subscriptions/sub-123/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1",
-		SubscriptionID: "sub-123",
-		ResourceGroup:  "rg",
-		Location:       "westus2",
-		DisplayName:    "vm1",
-		Tags:           map[string]string{"env": "test"},
-		Properties:     map[string]any{"vmSize": "Standard_B1ls"},
+		ResourceType:     "Microsoft.Compute/virtualMachines",
+		ResourceID:       "/subscriptions/sub-123/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1",
+		SubscriptionID:   "sub-123",
+		SubscriptionName: "My Subscription",
+		TenantID:         "tenant-abc",
+		TenantName:       "My Tenant",
+		ResourceGroup:    "rg",
+		Location:         "westus2",
+		DisplayName:      "vm1",
+		Tags:             map[string]string{"env": "test"},
+		Properties:       map[string]any{"vmSize": "Standard_B1ls"},
 	}
 	data, err := json.Marshal(r)
 	require.NoError(t, err)
@@ -44,6 +47,9 @@ func TestAzureResource_JSONRoundTrip(t *testing.T) {
 	assert.Equal(t, r.ResourceType, got.ResourceType)
 	assert.Equal(t, r.ResourceID, got.ResourceID)
 	assert.Equal(t, r.SubscriptionID, got.SubscriptionID)
+	assert.Equal(t, r.SubscriptionName, got.SubscriptionName)
+	assert.Equal(t, r.TenantID, got.TenantID)
+	assert.Equal(t, r.TenantName, got.TenantName)
 	assert.Equal(t, r.ResourceGroup, got.ResourceGroup)
 	assert.Equal(t, r.Location, got.Location)
 	assert.Equal(t, r.DisplayName, got.DisplayName)
