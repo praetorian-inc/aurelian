@@ -1,9 +1,13 @@
 package output
 
+import "github.com/praetorian-inc/aurelian/pkg/model"
+
 // SecretFinding represents a secret detection result from scanning cloud resources.
 // This type is used by secret scanning capabilities (e.g., scanning S3 buckets,
 // Azure storage, GCP buckets) to report discovered secrets.
 type SecretFinding struct {
+	model.BaseAurelianModel
+
 	// ResourceRef is a reference to the cloud resource where the secret was found
 	// Examples:
 	//   AWS S3: "arn:aws:s3:::bucket-name/path/to/file"
