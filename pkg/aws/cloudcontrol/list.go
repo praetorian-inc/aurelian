@@ -84,8 +84,6 @@ func (cc *CloudControlLister) listByType(
 	out *pipeline.P[output.AWSResource],
 ) error {
 	var nextToken *string
-
-	enrich := cc.generateEnricherMethod(region, resourceType)
 	paginator := ratelimit.NewPaginator()
 
 	return paginator.Paginate(func() (bool, error) {
@@ -103,7 +101,6 @@ func (cc *CloudControlLister) listByType(
 
 		for _, desc := range result.ResourceDescriptions {
 			cr := awshelpers.CloudControlToAWSResource(desc, resourceType, accountID, region)
-			enrich(&cr)
 			out.Send(cr)
 		}
 
@@ -128,32 +125,6 @@ func (cc *CloudControlLister) newCloudControlClient(region string) (*cloudcontro
 		return nil, err
 	}
 	return cloudcontrol.NewFromConfig(*awsCfg), nil
-}
-
-func (cc *CloudControlLister) generateEnricherMethod(region, resourceType string) func(resource *output.AWSResource) {
-	enrichers := plugin.GetEnrichers(resourceType)
-	if len(enrichers) == 0 {
-		return func(_ *output.AWSResource) {} // no-op
-	}
-
-	awsCfg, err := cc.getAWSConfig(region)
-	if err != nil {
-		slog.Warn("failed to fetch AWS config for enricher", "region", region, "type", resourceType, "error", err)
-		return func(_ *output.AWSResource) {}
-	}
-
-	enrichCfg := plugin.EnricherConfig{
-		Context:   context.Background(),
-		AWSConfig: *awsCfg,
-	}
-
-	return func(resource *output.AWSResource) {
-		for _, enrichFn := range enrichers {
-			if err := enrichFn(enrichCfg, resource); err != nil {
-				slog.Warn("enricher failed", "type", resourceType, "resource", resource.ResourceID, "error", err)
-			}
-		}
-	}
 }
 
 func (cc *CloudControlLister) getAccountID(region string) (string, error) {
