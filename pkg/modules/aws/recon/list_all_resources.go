@@ -1,8 +1,6 @@
 package recon
 
 import (
-	"fmt"
-
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -57,21 +55,19 @@ func (m *AWSListAllResourcesModule) Parameters() any {
 func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.ListAllConfig
 
-	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
+	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
+	resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, selectResourceTypes(c.ScanType))
 	if err != nil {
-		return fmt.Errorf("failed to resolve regions: %w", err)
+		return err
 	}
 
-	c.AWSCommonRecon.Regions = resolvedRegions
-	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
+	resourceTypePipeline := pipeline.From(resourceTypes...)
+	listed := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(resourceTypePipeline, lister.List, listed)
 
-	p1 := pipeline.From(selectResourceTypes(c.ScanType)...)
-	p2 := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(p1, lister.List, p2)
-
-	for r := range p2.Range() {
+	for r := range listed.Range() {
 		out.Send(r)
 	}
 
-	return p2.Wait()
+	return listed.Wait()
 }

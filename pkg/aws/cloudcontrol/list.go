@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
@@ -19,6 +20,10 @@ type CloudControlLister struct {
 	plugin.AWSCommonRecon
 	CrossRegionActor *ratelimit.CrossRegionActor
 	AWSConfigs       map[string]*aws.Config
+	configMu         sync.RWMutex
+	accountID        string
+	accountIDOnce    sync.Once
+	accountIDErr     error
 }
 
 func NewCloudControlLister(options plugin.AWSCommonRecon) *CloudControlLister {
@@ -32,6 +37,7 @@ func NewCloudControlLister(options plugin.AWSCommonRecon) *CloudControlLister {
 		AWSConfigs:       make(map[string]*aws.Config),
 	}
 }
+
 
 // List enumerates a single resource type across all regions, emitting each
 // resource into out as pages are fetched. Its signature matches the fn
@@ -78,8 +84,6 @@ func (cc *CloudControlLister) listByType(
 	out *pipeline.P[output.AWSResource],
 ) error {
 	var nextToken *string
-
-	enrich := cc.generateEnricherMethod(region, resourceType)
 	paginator := ratelimit.NewPaginator()
 
 	return paginator.Paginate(func() (bool, error) {
@@ -97,7 +101,6 @@ func (cc *CloudControlLister) listByType(
 
 		for _, desc := range result.ResourceDescriptions {
 			cr := awshelpers.CloudControlToAWSResource(desc, resourceType, accountID, region)
-			enrich(&cr)
 			out.Send(cr)
 		}
 
@@ -124,47 +127,26 @@ func (cc *CloudControlLister) newCloudControlClient(region string) (*cloudcontro
 	return cloudcontrol.NewFromConfig(*awsCfg), nil
 }
 
-func (cc *CloudControlLister) generateEnricherMethod(region, resourceType string) func(resource *output.AWSResource) {
-	enrichers := plugin.GetEnrichers(resourceType)
-	if len(enrichers) == 0 {
-		return func(_ *output.AWSResource) {} // no-op
-	}
-
-	awsCfg, err := cc.getAWSConfig(region)
-	if err != nil {
-		slog.Warn("failed to fetch AWS config for enricher", "region", region, "type", resourceType, "error", err)
-		return func(_ *output.AWSResource) {}
-	}
-
-	enrichCfg := plugin.EnricherConfig{
-		Context:   context.Background(),
-		AWSConfig: *awsCfg,
-	}
-
-	return func(resource *output.AWSResource) {
-		for _, enrichFn := range enrichers {
-			if err := enrichFn(enrichCfg, resource); err != nil {
-				slog.Warn("enricher failed", "type", resourceType, "resource", resource.ResourceID, "error", err)
-			}
-		}
-	}
-}
-
 func (cc *CloudControlLister) getAccountID(region string) (string, error) {
-	awsCfg, err := cc.getAWSConfig(region)
-	if err != nil {
-		return "", err
-	}
-
-	accountID, err := awshelpers.GetAccountId(*awsCfg)
-	if err != nil {
-		return "", err
-	}
-
-	return accountID, nil
+	cc.accountIDOnce.Do(func() {
+		awsCfg, err := cc.getAWSConfig(region)
+		if err != nil {
+			cc.accountIDErr = err
+			return
+		}
+		cc.accountID, cc.accountIDErr = awshelpers.GetAccountId(*awsCfg)
+	})
+	return cc.accountID, cc.accountIDErr
 }
 
 func (cc *CloudControlLister) getAWSConfig(region string) (*aws.Config, error) {
+	cc.configMu.RLock()
+	if cfg, ok := cc.AWSConfigs[region]; ok {
+		cc.configMu.RUnlock()
+		return cfg, nil
+	}
+	cc.configMu.RUnlock()
+
 	awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
 		Region:     region,
 		Profile:    cc.Profile,
@@ -173,6 +155,10 @@ func (cc *CloudControlLister) getAWSConfig(region string) (*aws.Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	cc.configMu.Lock()
+	cc.AWSConfigs[region] = &awsCfg
+	cc.configMu.Unlock()
 
 	return &awsCfg, nil
 }

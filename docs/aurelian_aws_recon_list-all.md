@@ -21,6 +21,7 @@ aurelian aws recon list-all [flags]
   -p, --profile string                 AWS profile to use
       --profile-dir string             Set to override the default AWS profile directory
   -r, --regions strings                AWS regions to scan (default [all])
+  -i, --resource-id string             Single resource ARN to evaluate (skips enumeration)
   -t, --resource-type strings          AWS Cloud Control resource type (default [all])
   -s, --scan-type string               Scan type - 'full' for all resources or 'summary' for key services (default "full")
 ```

@@ -308,5 +308,7 @@ var ServiceToResourceType = map[string]string{
 	"apigateway":     "AWS::ApiGateway::RestApi",
 	"kms":            "AWS::KMS::Key",
 	"secretsmanager": "AWS::SecretsManager::Secret",
-	"ssm":            "AWS::SSM::Parameter",
+	"ssm":                "AWS::SSM::Parameter",
+	"elasticfilesystem":  "AWS::EFS::FileSystem",
+	"cognito-idp":        "AWS::Cognito::UserPool",
 }

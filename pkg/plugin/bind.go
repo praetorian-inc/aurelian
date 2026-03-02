@@ -7,11 +7,6 @@ import (
 	"strings"
 )
 
-// Defaulter is implemented by config structs that need runtime-computed defaults.
-type Defaulter interface {
-	ApplyDefaults()
-}
-
 // ParametersFrom derives []Parameter from a struct's field tags.
 // Supported tags: param, desc, default, enum, shortcode, required, hidden, sensitive.
 //
@@ -107,11 +102,6 @@ func Bind(cfg Config, dst any) error {
 
 	if err := populateStruct(&params, dst); err != nil {
 		return err
-	}
-
-	// Apply runtime-computed defaults after struct population
-	if d, ok := dst.(Defaulter); ok {
-		d.ApplyDefaults()
 	}
 
 	return nil

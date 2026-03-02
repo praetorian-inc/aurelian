@@ -1,8 +1,14 @@
 package plugin
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+
+	helpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
+	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
+	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 )
 
 type AWSReconBase struct {
@@ -17,15 +23,53 @@ type AWSReconBase struct {
 	OpsecLevel      string `param:"opsec_level"          desc:"Operational security level for AWS operations" default:"none"`
 }
 
-func (c *AWSReconBase) ApplyDefaults() {
+func (c *AWSReconBase) PostBind(_ Config, _ Module) error {
 	if c.CacheDir == "" {
 		c.CacheDir = filepath.Join(os.TempDir(), "aurelian-cache")
 	}
+	return nil
 }
 
 type AWSCommonRecon struct {
 	AWSReconBase
-	Concurrency  int      `param:"concurrency" desc:"Maximum concurrent API requests" default:"5"`
-	Regions      []string `param:"regions"       desc:"AWS regions to scan" default:"all" shortcode:"r"`
-	ResourceType []string `param:"resource-type" desc:"AWS Cloud Control resource type" default:"all" shortcode:"t"`
+	Concurrency  int      `param:"concurrency"   desc:"Maximum concurrent API requests" default:"5"`
+	Regions      []string `param:"regions"        desc:"AWS regions to scan" default:"all" shortcode:"r"`
+	ResourceType []string `param:"resource-type"  desc:"AWS Cloud Control resource type" default:"all" shortcode:"t"`
+	ResourceID   string   `param:"resource-id"    desc:"Single resource ARN to evaluate (skips enumeration)" shortcode:"i"`
+}
+
+func (c *AWSCommonRecon) PostBind(_ Config, _ Module) error {
+	if len(c.Regions) == 1 && strings.EqualFold(c.Regions[0], "all") {
+		resolved, err := helpers.EnabledRegions(c.Profile, c.ProfileDir)
+		if err != nil {
+			return fmt.Errorf("resolving regions: %w", err)
+		}
+		c.Regions = resolved
+	}
+	return nil
+}
+
+type OrgPoliciesParam struct {
+	OrgPoliciesFile       string                   `param:"org-policies-file" desc:"Path to Org Policies JSON file"`
+	OrgPoliciesFileLegacy string                   `param:"org-policies" hidden:"true" desc:"Deprecated: use org-policies-file"`
+	OrgPolicies           *orgpolicies.OrgPolicies `param:"-"`
+}
+
+func (c *OrgPoliciesParam) PostBind(_ Config, _ Module) error {
+	orgPoliciesPath := c.OrgPoliciesFile
+	if orgPoliciesPath == "" {
+		orgPoliciesPath = c.OrgPoliciesFileLegacy
+	}
+
+	if orgPoliciesPath != "" {
+		op, err := iam.LoadJSONFile[orgpolicies.OrgPolicies](orgPoliciesPath)
+		if err != nil {
+			return fmt.Errorf("loading org policies: %w", err)
+		}
+		c.OrgPolicies = op
+		return nil
+	}
+
+	c.OrgPolicies = orgpolicies.NewDefaultOrgPolicies()
+	return nil
 }

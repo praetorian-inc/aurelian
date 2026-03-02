@@ -37,7 +37,7 @@ type S3Client interface {
 }
 
 // FetchS3BucketPolicy retrieves the bucket policy for an S3 bucket
-func FetchS3BucketPolicy(ctx context.Context, client S3Client, resource *output.AWSResource) (*types.Policy, error) {
+func FetchS3BucketPolicy(ctx context.Context, client S3Client, resource *output.AWSResource, optFns ...func(*s3.Options)) (*types.Policy, error) {
 	bucketName, ok := resource.Properties["BucketName"].(string)
 	if !ok || bucketName == "" {
 		return nil, nil
@@ -45,7 +45,7 @@ func FetchS3BucketPolicy(ctx context.Context, client S3Client, resource *output.
 
 	out, err := client.GetBucketPolicy(ctx, &s3.GetBucketPolicyInput{
 		Bucket: &bucketName,
-	})
+	}, optFns...)
 	if err != nil {
 		var noSuchBucket *s3types.NoSuchBucket
 		if errors.As(err, &noSuchBucket) {
