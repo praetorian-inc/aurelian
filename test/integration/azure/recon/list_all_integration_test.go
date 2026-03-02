@@ -90,22 +90,33 @@ func TestAzureListAllResourceEnumeration(t *testing.T) {
 	testutil.AssertMinResults(t, results, len(allResourceIDs))
 
 	// Final assertion: every Terraform-created resource must appear in results.
+	// Uses case-insensitive matching because Azure Resource Graph normalizes
+	// resource type casing differently than Terraform outputs.
 	for _, id := range allResourceIDs {
-		testutil.AssertResultContainsString(t, results, id)
+		assertResultContainsStringIgnoreCase(t, results, id)
+	}
+}
+
+// assertResultContainsStringIgnoreCase fails the test if no result contains
+// the given substring (case-insensitive). Azure Resource Graph normalizes
+// resource type casing, so exact matching against Terraform outputs breaks.
+func assertResultContainsStringIgnoreCase(t *testing.T, results []model.AurelianModel, substr string) {
+	t.Helper()
+	if !resultsContainString(results, substr) {
+		t.Errorf("expected %q in results (case-insensitive, %d results checked)", substr, len(results))
 	}
 }
 
 // resultsContainString checks whether any result in the slice contains the
-// given substring when serialized to JSON. This is used in the retry loop
-// to determine if ARG has propagated all resources. It mirrors the logic of
-// testutil.AssertResultContainsString but returns a bool instead of failing.
+// given substring (case-insensitive) when serialized to JSON. Used in the
+// retry loop to determine if ARG has propagated all resources.
 func resultsContainString(results []model.AurelianModel, substr string) bool {
 	for _, r := range results {
 		raw, err := json.Marshal(r)
 		if err != nil {
 			continue
 		}
-		if strings.Contains(string(raw), substr) {
+		if strings.Contains(strings.ToLower(string(raw)), strings.ToLower(substr)) {
 			return true
 		}
 	}
