@@ -16,16 +16,16 @@
 // | 2  | ${prefix}-vnet               | VNet        | Microsoft.Network/virtualNetworks                 | DISCOVERED      |
 // | 3  | ${prefix}-subnet             | Subnet      | (child of VNet, may not appear in ARG)            | DISCOVERED*     |
 // | 4  | ${prefix}-nsg                | NSG         | Microsoft.Network/networkSecurityGroups            | DISCOVERED      |
-// | 5  | ${prefix}sa                  | Storage     | Microsoft.Storage/storageAccounts                  | DISCOVERED      |
+// | 5  | ${prefix_san}sa              | Storage     | Microsoft.Storage/storageAccounts                  | DISCOVERED      |
 // | 6  | ${prefix}-kv                 | KeyVault    | Microsoft.KeyVault/vaults                          | DISCOVERED      |
 // | 7  | ${prefix}-law                | LogAnalytic | Microsoft.OperationalInsights/workspaces            | DISCOVERED      |
-// | 8  | ${prefix}acr                 | ACR         | Microsoft.ContainerRegistry/registries              | DISCOVERED      |
+// | 8  | ${prefix_san}acr             | ACR         | Microsoft.ContainerRegistry/registries              | DISCOVERED      |
 // | 9  | ${prefix}-adf                | DataFactory | Microsoft.DataFactory/factories                     | DISCOVERED      |
 // | 10 | ${prefix}-egt                | EventGrid   | Microsoft.EventGrid/topics                          | DISCOVERED      |
 // | 11 | ${prefix}-sbns               | ServiceBus  | Microsoft.ServiceBus/namespaces                     | DISCOVERED      |
 // | 12 | ${prefix}-asp                | AppSvcPlan  | Microsoft.Web/serverFarms                           | DISCOVERED      |
 // | 13 | ${prefix}-webapp             | WebApp      | Microsoft.Web/sites                                 | DISCOVERED      |
-// | 14 | ${prefix}fsa                 | Storage     | Microsoft.Storage/storageAccounts                   | DISCOVERED      |
+// | 14 | ${prefix_san}fsa             | Storage     | Microsoft.Storage/storageAccounts                   | DISCOVERED      |
 // | 15 | ${prefix}-func-asp           | AppSvcPlan  | Microsoft.Web/serverFarms                           | DISCOVERED      |
 // | 16 | ${prefix}-func               | FuncApp     | Microsoft.Web/sites                                 | DISCOVERED      |
 // | 17 | ${prefix}-aa                 | Automation  | Microsoft.Automation/automationAccounts             | DISCOVERED      |
@@ -73,8 +73,9 @@ resource "random_string" "suffix" {
 }
 
 locals {
-  prefix   = "aurtest${random_string.suffix.result}"
-  location = var.location
+  prefix     = "aurelian-itest-${random_string.suffix.result}"
+  prefix_san = "aurelianitest${random_string.suffix.result}" # alphanumeric only, for storage accounts and ACR
+  location   = var.location
   tags = {
     ManagedBy = "terraform"
     Purpose   = "aurelian-list-all-testing"
@@ -126,7 +127,7 @@ resource "azurerm_network_security_group" "test" {
 # RESOURCE 05: Storage Account
 #==============================================================================
 resource "azurerm_storage_account" "test" {
-  name                     = "${local.prefix}sa"
+  name                     = "${local.prefix_san}sa"
   resource_group_name      = azurerm_resource_group.test.name
   location                 = azurerm_resource_group.test.location
   account_tier             = "Standard"
@@ -164,7 +165,7 @@ resource "azurerm_log_analytics_workspace" "test" {
 # RESOURCE 08: Container Registry (Basic SKU -- cheapest)
 #==============================================================================
 resource "azurerm_container_registry" "test" {
-  name                = "${local.prefix}acr"
+  name                = "${local.prefix_san}acr"
   resource_group_name = azurerm_resource_group.test.name
   location            = azurerm_resource_group.test.location
   sku                 = "Basic"
@@ -232,7 +233,7 @@ resource "azurerm_linux_web_app" "test" {
 # RESOURCE 14: Storage Account for Function App
 #==============================================================================
 resource "azurerm_storage_account" "funcsa" {
-  name                     = "${local.prefix}fsa"
+  name                     = "${local.prefix_san}fsa"
   resource_group_name      = azurerm_resource_group.test.name
   location                 = azurerm_resource_group.test.location
   account_tier             = "Standard"
