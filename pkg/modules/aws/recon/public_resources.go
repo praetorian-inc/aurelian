@@ -1,15 +1,11 @@
 package recon
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 
-	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
-	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
-	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
+	"github.com/praetorian-inc/aurelian/pkg/aws/enrichment"
 	"github.com/praetorian-inc/aurelian/pkg/aws/publicaccess"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -24,7 +20,7 @@ func init() {
 // PublicResourcesConfig holds the typed parameters for public-resources module.
 type PublicResourcesConfig struct {
 	plugin.AWSCommonRecon
-	OrgPoliciesFile string `param:"org-policies" desc:"Path to org policies JSON file"`
+	plugin.OrgPoliciesParam
 }
 
 // AWSPublicResourcesModule finds publicly accessible AWS resources through
@@ -64,16 +60,6 @@ func (m *AWSPublicResourcesModule) Parameters() any {
 func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.PublicResourcesConfig
 
-	// Load org policies if specified
-	var orgPolicies *orgpolicies.OrgPolicies
-	if c.OrgPoliciesFile != "" {
-		var err error
-		orgPolicies, err = iam.LoadJSONFile[orgpolicies.OrgPolicies](c.OrgPoliciesFile)
-		if err != nil {
-			return fmt.Errorf("failed to load org policies file: %w", err)
-		}
-	}
-
 	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
 	resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, publicaccess.SupportedResourceTypes())
 	if err != nil {
@@ -86,96 +72,51 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 
 	// Enrich resources with properties not available from CloudControl
 	// (e.g. RDS PubliclyAccessible, Cognito self-signup, Lambda function URL auth type).
+	enricher := enrichment.NewAWSEnricher(c.AWSCommonRecon)
 	enriched := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(listed, enrichResource(c.AWSCommonRecon), enriched)
+	pipeline.Pipe(listed, enricher.Enrich, enriched)
 
-	evaluator := publicaccess.NewResourceEvaluator(c.AWSCommonRecon, orgPolicies)
+	evaluator := publicaccess.NewResourceEvaluator(c.AWSCommonRecon, c.OrgPolicies)
 	evaluated := pipeline.New[publicaccess.PublicAccessResult]()
 	pipeline.Pipe(enriched, evaluator.Evaluate, evaluated)
+	pipeline.Pipe(evaluated, riskFromResult, out)
 
-	for r := range evaluated.Range() {
-		risk, ok, err := riskFromResult(r)
-		if err != nil {
-			resourceID := ""
-			if r.AWSResource != nil {
-				resourceID = r.AWSResource.ResourceID
-			}
-			slog.Warn("failed to build risk context", "resource", resourceID, "error", err)
-			continue
-		}
-		if ok {
-			out.Send(*risk)
-		}
-	}
-
-	return evaluated.Wait()
+	return out.Wait()
 }
 
-// enrichResource returns a pipeline-compatible function that runs all registered
-// enrichers for a resource's type before forwarding it downstream.
-func enrichResource(opts plugin.AWSCommonRecon) func(output.AWSResource, *pipeline.P[output.AWSResource]) error {
-	return func(r output.AWSResource, out *pipeline.P[output.AWSResource]) error {
-		enrichers := plugin.GetEnrichers(r.ResourceType)
-		if len(enrichers) > 0 {
-			awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
-				Region:     r.Region,
-				Profile:    opts.Profile,
-				ProfileDir: opts.ProfileDir,
-			})
-			if err != nil {
-				slog.Warn("failed to create AWS config for enrichment, skipping enrichers",
-					"resource", r.ResourceID, "region", r.Region, "error", err)
-				out.Send(r)
-				return nil
-			}
-
-			ecfg := plugin.EnricherConfig{
-				Context:   context.Background(),
-				AWSConfig: awsCfg,
-			}
-			for _, enrich := range enrichers {
-				if err := enrich(ecfg, &r); err != nil {
-					slog.Warn("enricher failed",
-						"type", r.ResourceType,
-						"resource", r.ResourceID,
-						"error", err)
-				}
-			}
-		}
-		out.Send(r)
+func riskFromResult(r publicaccess.PublicAccessResult, out *pipeline.P[model.AurelianModel]) error {
+	if r.AWSResource == nil {
 		return nil
 	}
-}
 
-func riskFromResult(r publicaccess.PublicAccessResult) (*output.AurelianRisk, bool, error) {
 	var severity output.RiskSeverity
-	if r.AWSResource == nil {
-		return nil, false, nil
-	}
 	switch r.AWSResource.AccessLevel {
 	case output.AccessLevelPublic:
 		severity = output.RiskSeverityHigh
 	case output.AccessLevelNeedsTriage:
 		severity = output.RiskSeverityMedium
 	default:
-		return nil, false, nil
+		return nil
 	}
 
+	resourceID := r.AWSResource.ResourceID
 	impactedARN := r.AWSResource.ARN
 	if impactedARN == "" {
-		impactedARN = r.AWSResource.ResourceID
+		impactedARN = resourceID
 	}
 
 	r.AWSResource = nil
 	ctx, err := json.Marshal(r)
 	if err != nil {
-		return nil, false, err
+		slog.Warn("failed to build risk context", "resource", resourceID, "error", err)
+		return nil
 	}
 
-	return &output.AurelianRisk{
+	out.Send(output.AurelianRisk{
 		Name:        "public-aws-resource",
 		Severity:    severity,
 		ImpactedARN: impactedARN,
 		Context:     ctx,
-	}, true, nil
+	})
+	return nil
 }

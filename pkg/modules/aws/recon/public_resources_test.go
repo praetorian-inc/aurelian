@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/publicaccess"
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -71,13 +73,19 @@ func TestPublicResourcesParameters(t *testing.T) {
 }
 
 func TestRiskFromResult_Public(t *testing.T) {
-	risk, ok, err := riskFromResult(publicaccess.PublicAccessResult{
+	in := pipeline.From(publicaccess.PublicAccessResult{
 		AWSResource: &output.AWSResource{AccessLevel: output.AccessLevelPublic, ResourceID: "example-bucket", ARN: "arn:aws:s3:::example-bucket"},
 		IsPublic:    true,
 	})
+	out := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(in, riskFromResult, out)
+
+	results, err := out.Collect()
 	require.NoError(t, err)
+	require.Len(t, results, 1)
+
+	risk, ok := results[0].(output.AurelianRisk)
 	require.True(t, ok)
-	require.NotNil(t, risk)
 	assert.Equal(t, output.RiskSeverityHigh, risk.Severity)
 	assert.Equal(t, "public-aws-resource", risk.Name)
 	assert.Equal(t, "arn:aws:s3:::example-bucket", risk.ImpactedARN)
@@ -85,14 +93,20 @@ func TestRiskFromResult_Public(t *testing.T) {
 }
 
 func TestRiskFromResult_NeedsTriage(t *testing.T) {
-	risk, ok, err := riskFromResult(publicaccess.PublicAccessResult{
+	in := pipeline.From(publicaccess.PublicAccessResult{
 		AWSResource:       &output.AWSResource{AccessLevel: output.AccessLevelNeedsTriage, ResourceID: "fn-name"},
 		IsPublic:          true,
 		NeedsManualTriage: true,
 	})
+	out := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(in, riskFromResult, out)
+
+	results, err := out.Collect()
 	require.NoError(t, err)
+	require.Len(t, results, 1)
+
+	risk, ok := results[0].(output.AurelianRisk)
 	require.True(t, ok)
-	require.NotNil(t, risk)
 	assert.Equal(t, output.RiskSeverityMedium, risk.Severity)
 	assert.Equal(t, "fn-name", risk.ImpactedARN)
 
@@ -102,10 +116,13 @@ func TestRiskFromResult_NeedsTriage(t *testing.T) {
 }
 
 func TestRiskFromResult_PrivateFiltered(t *testing.T) {
-	risk, ok, err := riskFromResult(publicaccess.PublicAccessResult{
+	in := pipeline.From(publicaccess.PublicAccessResult{
 		AWSResource: &output.AWSResource{AccessLevel: output.AccessLevelPrivate},
 	})
+	out := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(in, riskFromResult, out)
+
+	results, err := out.Collect()
 	require.NoError(t, err)
-	assert.False(t, ok)
-	assert.Nil(t, risk)
+	assert.Empty(t, results)
 }
