@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
@@ -25,16 +26,36 @@ func fetchFunctionURLsWrapper(cfg plugin.EnricherConfig, r *output.AWSResource) 
 }
 
 func FetchFunctionURLs(cfg plugin.EnricherConfig, r *output.AWSResource, client LambdaClient) error {
+	slog.Info("lambda enricher: fetching function URL config",
+		"resource_id", r.ResourceID,
+		"arn", r.ARN,
+		"region", r.Region,
+		"properties_keys", propertyKeys(r.Properties),
+	)
+
 	out, err := client.GetFunctionUrlConfig(cfg.Context, &lambda.GetFunctionUrlConfigInput{
 		FunctionName: &r.ResourceID,
 	})
 	if err != nil {
 		var notFound *lambdatypes.ResourceNotFoundException
 		if errors.As(err, &notFound) {
+			slog.Info("lambda enricher: no function URL configured",
+				"resource_id", r.ResourceID)
 			return nil
 		}
+		slog.Warn("lambda enricher: unexpected error",
+			"resource_id", r.ResourceID,
+			"error", err,
+			"error_type", fmt.Sprintf("%T", err),
+		)
 		return fmt.Errorf("failed to get function URL config: %w", err)
 	}
+
+	slog.Info("lambda enricher: got function URL config",
+		"resource_id", r.ResourceID,
+		"auth_type", string(out.AuthType),
+		"function_url", out.FunctionUrl,
+	)
 
 	if out.FunctionUrl != nil {
 		r.Properties["FunctionUrl"] = *out.FunctionUrl
@@ -44,4 +65,12 @@ func FetchFunctionURLs(cfg plugin.EnricherConfig, r *output.AWSResource, client 
 	}
 
 	return nil
+}
+
+func propertyKeys(props map[string]any) []string {
+	keys := make([]string, 0, len(props))
+	for k := range props {
+		keys = append(keys, k)
+	}
+	return keys
 }

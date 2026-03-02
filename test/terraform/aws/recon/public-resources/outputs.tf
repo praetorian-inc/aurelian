@@ -10,8 +10,8 @@ output "public_topic_arn" {
   value = aws_sns_topic.public.arn
 }
 
-output "public_queue_url" {
-  value = aws_sqs_queue.public.id
+output "public_queue_name" {
+  value = aws_sqs_queue.public.name
 }
 
 output "public_function_name" {
