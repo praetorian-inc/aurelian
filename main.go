@@ -14,6 +14,9 @@ import (
 
 	// Import enrichers to trigger init() registration
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/enrichers"
+
+	// Import Azure modules to trigger init() registration
+	_ "github.com/praetorian-inc/aurelian/pkg/modules/azure/recon"
 )
 
 func main() {
