@@ -1,9 +1,12 @@
 package output
 
+import "github.com/praetorian-inc/aurelian/pkg/model"
+
 // SecretFinding represents a secret detection result from scanning cloud resources.
 // This type is used by secret scanning capabilities (e.g., scanning S3 buckets,
 // Azure storage, GCP buckets) to report discovered secrets.
 type SecretFinding struct {
+	model.BaseAurelianModel
 	// ResourceRef is a reference to the cloud resource where the secret was found
 	// Examples:
 	//   AWS S3: "arn:aws:s3:::bucket-name/path/to/file"
@@ -34,12 +37,10 @@ type SecretFinding struct {
 	// Valid values: "low", "medium", "high", "critical"
 	Confidence string `json:"confidence"`
 
-	// Verified indicates whether the secret was validated against its source API
-	// Empty string means not verified, "valid" means active, "invalid" means inactive,
-	// "undetermined" means validation was attempted but inconclusive
+	// Verified is the validation status from secret verification (e.g., "valid", "invalid", "undetermined")
 	Verified string `json:"verified,omitempty"`
 
-	// VerifiedMessage provides additional context about the validation result
+	// VerifiedMessage provides details about the verification result
 	VerifiedMessage string `json:"verified_message,omitempty"`
 }
 

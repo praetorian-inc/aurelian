@@ -25,7 +25,7 @@ import (
 
 // Extractor defines the interface for extracting scannable content from AWS resources.
 type Extractor interface {
-	Extract(ctx context.Context, cfg aws.Config, resource output.CloudResource, opts ScanOptions) ([]ExtractedContent, error)
+	Extract(ctx context.Context, cfg aws.Config, resource output.AWSResource, opts ScanOptions) ([]ExtractedContent, error)
 }
 
 // SupportedResourceTypes returns the list of resource types that have extractors.
@@ -72,7 +72,7 @@ func isSkippableError(err error) bool {
 
 type ec2UserDataExtractor struct{}
 
-func (e *ec2UserDataExtractor) Extract(ctx context.Context, cfg aws.Config, resource output.CloudResource, _ ScanOptions) ([]ExtractedContent, error) {
+func (e *ec2UserDataExtractor) Extract(ctx context.Context, cfg aws.Config, resource output.AWSResource, _ ScanOptions) ([]ExtractedContent, error) {
 	client := ec2.NewFromConfig(cfg)
 
 	resp, err := client.DescribeInstanceAttribute(ctx, &ec2.DescribeInstanceAttributeInput{
@@ -120,7 +120,7 @@ func (e *ec2UserDataExtractor) Extract(ctx context.Context, cfg aws.Config, reso
 
 type lambdaCodeExtractor struct{}
 
-func (e *lambdaCodeExtractor) Extract(ctx context.Context, cfg aws.Config, resource output.CloudResource, _ ScanOptions) ([]ExtractedContent, error) {
+func (e *lambdaCodeExtractor) Extract(ctx context.Context, cfg aws.Config, resource output.AWSResource, _ ScanOptions) ([]ExtractedContent, error) {
 	client := lambda.NewFromConfig(cfg)
 
 	resp, err := client.GetFunction(ctx, &lambda.GetFunctionInput{
@@ -149,7 +149,7 @@ func (e *lambdaCodeExtractor) Extract(ctx context.Context, cfg aws.Config, resou
 }
 
 // extractZipContents reads a ZIP archive and returns ExtractedContent for each file.
-func extractZipContents(zipData []byte, resource output.CloudResource) ([]ExtractedContent, error) {
+func extractZipContents(zipData []byte, resource output.AWSResource) ([]ExtractedContent, error) {
 	reader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
 	if err != nil {
 		slog.Warn("failed to open Lambda ZIP", "id", resource.ResourceID, "error", err)
@@ -199,7 +199,7 @@ func extractZipContents(zipData []byte, resource output.CloudResource) ([]Extrac
 
 type cloudFormationTemplateExtractor struct{}
 
-func (e *cloudFormationTemplateExtractor) Extract(ctx context.Context, cfg aws.Config, resource output.CloudResource, _ ScanOptions) ([]ExtractedContent, error) {
+func (e *cloudFormationTemplateExtractor) Extract(ctx context.Context, cfg aws.Config, resource output.AWSResource, _ ScanOptions) ([]ExtractedContent, error) {
 	client := cloudformation.NewFromConfig(cfg)
 
 	resp, err := client.GetTemplate(ctx, &cloudformation.GetTemplateInput{
@@ -237,7 +237,7 @@ func (e *cloudFormationTemplateExtractor) Extract(ctx context.Context, cfg aws.C
 
 type cloudWatchLogsExtractor struct{}
 
-func (e *cloudWatchLogsExtractor) Extract(ctx context.Context, cfg aws.Config, resource output.CloudResource, opts ScanOptions) ([]ExtractedContent, error) {
+func (e *cloudWatchLogsExtractor) Extract(ctx context.Context, cfg aws.Config, resource output.AWSResource, opts ScanOptions) ([]ExtractedContent, error) {
 	client := cloudwatchlogs.NewFromConfig(cfg)
 	logGroupName := resource.ResourceID
 
@@ -346,7 +346,7 @@ type cloudControlPropertiesExtractor struct {
 	label string
 }
 
-func (e *cloudControlPropertiesExtractor) Extract(_ context.Context, _ aws.Config, resource output.CloudResource, _ ScanOptions) ([]ExtractedContent, error) {
+func (e *cloudControlPropertiesExtractor) Extract(_ context.Context, _ aws.Config, resource output.AWSResource, _ ScanOptions) ([]ExtractedContent, error) {
 	if resource.Properties == nil || len(resource.Properties) == 0 {
 		return nil, nil
 	}
@@ -381,7 +381,7 @@ func (e *cloudControlPropertiesExtractor) Extract(_ context.Context, _ aws.Confi
 
 type stepFunctionsExtractor struct{}
 
-func (e *stepFunctionsExtractor) Extract(ctx context.Context, cfg aws.Config, resource output.CloudResource, _ ScanOptions) ([]ExtractedContent, error) {
+func (e *stepFunctionsExtractor) Extract(ctx context.Context, cfg aws.Config, resource output.AWSResource, _ ScanOptions) ([]ExtractedContent, error) {
 	client := sfn.NewFromConfig(cfg)
 
 	// Get the state machine definition

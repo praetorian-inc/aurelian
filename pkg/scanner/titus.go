@@ -2,14 +2,17 @@ package scanner
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
+	"github.com/praetorian-inc/aurelian/pkg/utils"
 	"github.com/praetorian-inc/titus/pkg/matcher"
 	"github.com/praetorian-inc/titus/pkg/rule"
 	"github.com/praetorian-inc/titus/pkg/store"
 	"github.com/praetorian-inc/titus/pkg/types"
 )
 
-// PersistentScanner wraps Titus matcher and store
+// PersistentScanner wraps Titus matcher and store with persistent SQLite database
 type PersistentScanner struct {
 	matcher matcher.Matcher
 	store   store.Store
@@ -17,13 +20,28 @@ type PersistentScanner struct {
 	ruleMap map[string]*types.Rule // map of RuleID to Rule for finding creation
 }
 
-// NewPersistentScanner creates a new Titus scanner with in-memory storage
-// The dbPath parameter is accepted for API compatibility but ignored;
-// storage is always in-memory.
+// NewPersistentScanner creates a new persistent Titus scanner
+// If dbPath is empty, defaults to aurelian-output/titus.db
 func NewPersistentScanner(dbPath string) (*PersistentScanner, error) {
-	// Always use in-memory storage (file-based SQLite was removed in titus v0.3.0)
+	// Use default path if empty
+	if dbPath == "" {
+		dbPath = "aurelian-output/titus.db"
+	}
+
+	// Ensure output directory exists (for default path)
+	if err := utils.EnsureOutputDirectory(); err != nil {
+		return nil, fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	// Create parent directories for custom database path
+	dbDir := filepath.Dir(dbPath)
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create database directory: %w", err)
+	}
+
+	// Create persistent store at specified path
 	s, err := store.New(store.Config{
-		Path: ":memory:",
+		Path: dbPath,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create store: %w", err)
@@ -37,7 +55,7 @@ func NewPersistentScanner(dbPath string) (*PersistentScanner, error) {
 		return nil, fmt.Errorf("failed to load builtin rules: %w", err)
 	}
 
-	// Seed rules into the store so SQLite foreign key constraints are satisfied
+	// Store rules in the database (required for foreign key constraints)
 	for _, r := range rules {
 		if err := s.AddRule(r); err != nil {
 			s.Close()
@@ -64,7 +82,7 @@ func NewPersistentScanner(dbPath string) (*PersistentScanner, error) {
 	return &PersistentScanner{
 		matcher: m,
 		store:   s,
-		dbPath:  ":memory:",
+		dbPath:  dbPath,
 		ruleMap: ruleMap,
 	}, nil
 }
@@ -149,7 +167,7 @@ func (ps *PersistentScanner) Close() error {
 	return nil
 }
 
-// DBPath returns the configured database path
+// DBPath returns the path to the SQLite database
 func (ps *PersistentScanner) DBPath() string {
 	return ps.dbPath
 }

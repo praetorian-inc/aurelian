@@ -20,14 +20,7 @@ type Provenance struct {
 type ScanOptions struct {
 	Profile     string
 	ProfileDir  string
-	Regions     []string
 	Concurrency int
-	// DBPath is the path for the Titus SQLite database (empty = default)
-	DBPath string
-	// Verify enables secret validation against source APIs
-	Verify bool
-	// Resource types to scan (or ["all"] for all supported types)
-	ResourceTypes []string
 	// CloudWatch-specific options
 	MaxEvents   int
 	MaxStreams  int
