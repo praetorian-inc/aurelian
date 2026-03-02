@@ -10,6 +10,10 @@ output "resource_group_id" {
   value = azurerm_resource_group.test.id
 }
 
+output "func_resource_group_id" {
+  value = azurerm_resource_group.func.id
+}
+
 output "vnet_id" {
   value = azurerm_virtual_network.test.id
 }
@@ -87,6 +91,7 @@ output "func_storage_account_id" {
 # since ARG may handle them differently.
 output "all_resource_ids" {
   value = [
+    azurerm_resource_group.func.id,
     azurerm_virtual_network.test.id,
     azurerm_network_security_group.test.id,
     azurerm_storage_account.test.id,

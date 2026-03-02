@@ -13,6 +13,7 @@
 // | #  | Resource Name                | Type        | Azure Resource Type                              | Expected Result |
 // |----|------------------------------|-------------|--------------------------------------------------|-----------------|
 // | 1  | ${prefix}-rg                 | ResourceGrp | Microsoft.Resources/resourceGroups                | DISCOVERED      |
+// | 1b | ${prefix}-func-rg            | ResourceGrp | Microsoft.Resources/resourceGroups                | DISCOVERED      |
 // | 2  | ${prefix}-vnet               | VNet        | Microsoft.Network/virtualNetworks                 | DISCOVERED      |
 // | 3  | ${prefix}-subnet             | Subnet      | (child of VNet, may not appear in ARG)            | DISCOVERED*     |
 // | 4  | ${prefix}-nsg                | NSG         | Microsoft.Network/networkSecurityGroups            | DISCOVERED      |
@@ -88,6 +89,17 @@ locals {
 #==============================================================================
 resource "azurerm_resource_group" "test" {
   name     = "${local.prefix}-rg"
+  location = local.location
+  tags     = local.tags
+}
+
+#==============================================================================
+# RESOURCE GROUP for Function App resources.
+# Azure forbids Linux Consumption (Y1) and Linux non-Consumption (B1) App
+# Service Plans in the same resource group, so Function App resources live here.
+#==============================================================================
+resource "azurerm_resource_group" "func" {
+  name     = "${local.prefix}-func-rg"
   location = local.location
   tags     = local.tags
 }
@@ -234,8 +246,8 @@ resource "azurerm_linux_web_app" "test" {
 #==============================================================================
 resource "azurerm_storage_account" "funcsa" {
   name                     = "${local.prefix_san}fsa"
-  resource_group_name      = azurerm_resource_group.test.name
-  location                 = azurerm_resource_group.test.location
+  resource_group_name      = azurerm_resource_group.func.name
+  location                 = azurerm_resource_group.func.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
   tags                     = local.tags
@@ -246,8 +258,8 @@ resource "azurerm_storage_account" "funcsa" {
 #==============================================================================
 resource "azurerm_service_plan" "func" {
   name                = "${local.prefix}-func-asp"
-  resource_group_name = azurerm_resource_group.test.name
-  location            = azurerm_resource_group.test.location
+  resource_group_name = azurerm_resource_group.func.name
+  location            = azurerm_resource_group.func.location
   os_type             = "Linux"
   sku_name            = "Y1"
   tags                = local.tags
@@ -258,8 +270,8 @@ resource "azurerm_service_plan" "func" {
 #==============================================================================
 resource "azurerm_linux_function_app" "test" {
   name                       = "${local.prefix}-func"
-  resource_group_name        = azurerm_resource_group.test.name
-  location                   = azurerm_resource_group.test.location
+  resource_group_name        = azurerm_resource_group.func.name
+  location                   = azurerm_resource_group.func.location
   service_plan_id            = azurerm_service_plan.func.id
   storage_account_name       = azurerm_storage_account.funcsa.name
   storage_account_access_key = azurerm_storage_account.funcsa.primary_access_key
