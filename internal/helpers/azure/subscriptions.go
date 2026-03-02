@@ -33,6 +33,12 @@ func ListSubscriptions(ctx context.Context, cred azcore.TokenCredential) ([]stri
 	var subs []string
 	pager := client.NewListPager(nil)
 	for pager.More() {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list subscriptions: %w", err)
