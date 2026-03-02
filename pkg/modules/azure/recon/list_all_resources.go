@@ -73,5 +73,5 @@ func (m *AzureListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[mod
 		return fmt.Errorf("failed to create resource graph lister: %w", err)
 	}
 
-	return lister.List(ctx, subs, out)
+	return lister.ListAll(ctx, subs, out)
 }

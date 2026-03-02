@@ -31,9 +31,15 @@ func NewResourceGraphLister(cred azcore.TokenCredential) (*ResourceGraphLister, 
 	return &ResourceGraphLister{client: client}, nil
 }
 
-// List enumerates all resources across the given subscriptions, emitting each
-// as an AzureResource into out.
-func (l *ResourceGraphLister) List(ctx context.Context, subscriptionIDs []string, out *pipeline.P[model.AurelianModel]) error {
+// ListAll enumerates all resources across the given subscriptions using the
+// default KQL query, emitting each as an AzureResource into out.
+func (l *ResourceGraphLister) ListAll(ctx context.Context, subscriptionIDs []string, out *pipeline.P[model.AurelianModel]) error {
+	return l.List(ctx, subscriptionIDs, listAllQuery, out)
+}
+
+// List runs a custom KQL query across the given subscriptions, emitting each
+// result as an AzureResource into out.
+func (l *ResourceGraphLister) List(ctx context.Context, subscriptionIDs []string, query string, out *pipeline.P[model.AurelianModel]) error {
 	for _, sub := range subscriptionIDs {
 		select {
 		case <-ctx.Done():
@@ -41,15 +47,14 @@ func (l *ResourceGraphLister) List(ctx context.Context, subscriptionIDs []string
 		default:
 		}
 
-		if err := l.querySubscription(ctx, sub, out); err != nil {
+		if err := l.querySubscription(ctx, sub, query, out); err != nil {
 			return fmt.Errorf("failed to query subscription %s: %w", sub, err)
 		}
 	}
 	return nil
 }
 
-func (l *ResourceGraphLister) querySubscription(ctx context.Context, subscriptionID string, out *pipeline.P[model.AurelianModel]) error {
-	query := listAllQuery
+func (l *ResourceGraphLister) querySubscription(ctx context.Context, subscriptionID string, query string, out *pipeline.P[model.AurelianModel]) error {
 	request := armresourcegraph.QueryRequest{
 		Query:         &query,
 		Subscriptions: []*string{&subscriptionID},
