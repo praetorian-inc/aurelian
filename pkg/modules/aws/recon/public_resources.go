@@ -1,8 +1,11 @@
 package recon
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 
+	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
@@ -71,19 +74,63 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	}
 
 	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
-
-	listed, err := lister.Enumerate(publicaccess.SupportedResourceTypes())
+	resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, publicaccess.SupportedResourceTypes())
 	if err != nil {
 		return err
 	}
 
-	evaluator := publicaccess.NewResourceEvaluator(c.AWSCommonRecon, lister.Regions, orgPolicies)
+	resourceTypePipeline := pipeline.From(resourceTypes...)
+	listed := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(resourceTypePipeline, lister.List, listed)
+
+	// Enrich resources with properties not available from CloudControl
+	// (e.g. RDS PubliclyAccessible, Cognito self-signup, Lambda function URL auth type).
+	enriched := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(listed, enrichResource(c.AWSCommonRecon), enriched)
+
+	evaluator := publicaccess.NewResourceEvaluator(c.AWSCommonRecon, orgPolicies)
 	evaluated := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(listed, evaluator.Evaluate, evaluated)
+	pipeline.Pipe(enriched, evaluator.Evaluate, evaluated)
 
 	for r := range evaluated.Range() {
 		out.Send(r)
 	}
 
 	return evaluated.Wait()
+}
+
+// enrichResource returns a pipeline-compatible function that runs all registered
+// enrichers for a resource's type before forwarding it downstream.
+func enrichResource(opts plugin.AWSCommonRecon) func(output.AWSResource, *pipeline.P[output.AWSResource]) error {
+	return func(r output.AWSResource, out *pipeline.P[output.AWSResource]) error {
+		enrichers := plugin.GetEnrichers(r.ResourceType)
+		if len(enrichers) > 0 {
+			awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
+				Region:     r.Region,
+				Profile:    opts.Profile,
+				ProfileDir: opts.ProfileDir,
+			})
+			if err != nil {
+				slog.Warn("failed to create AWS config for enrichment, skipping enrichers",
+					"resource", r.ResourceID, "region", r.Region, "error", err)
+				out.Send(r)
+				return nil
+			}
+
+			ecfg := plugin.EnricherConfig{
+				Context:   context.Background(),
+				AWSConfig: awsCfg,
+			}
+			for _, enrich := range enrichers {
+				if err := enrich(ecfg, &r); err != nil {
+					slog.Warn("enricher failed",
+						"type", r.ResourceType,
+						"resource", r.ResourceID,
+						"error", err)
+				}
+			}
+		}
+		out.Send(r)
+		return nil
+	}
 }

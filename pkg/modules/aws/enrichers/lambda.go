@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
@@ -33,6 +34,11 @@ func FetchFunctionURLs(cfg plugin.EnricherConfig, r *output.AWSResource, client 
 		if errors.As(err, &notFound) {
 			return nil
 		}
+		slog.Warn("lambda enricher: unexpected error",
+			"resource_id", r.ResourceID,
+			"error", err,
+			"error_type", fmt.Sprintf("%T", err),
+		)
 		return fmt.Errorf("failed to get function URL config: %w", err)
 	}
 
