@@ -2,7 +2,7 @@
 aurelian
 *.test
 aurelian.log
-aurelian-output/*
+aurelian-output/
 .devcontainer
 .vscode
 .DS_Store
