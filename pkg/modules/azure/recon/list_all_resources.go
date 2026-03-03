@@ -68,7 +68,7 @@ func (m *AzureListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[mod
 		return fmt.Errorf("failed to resolve subscriptions: %w", err)
 	}
 
-	lister, err := resourcegraph.NewResourceGraphLister(cred)
+	lister, err := resourcegraph.NewResourceGraphLister(cred, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create resource graph lister: %w", err)
 	}

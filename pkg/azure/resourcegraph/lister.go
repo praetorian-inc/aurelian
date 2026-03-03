@@ -18,18 +18,29 @@ import (
 
 const listAllQuery = "Resources | project id, name, type, location, resourceGroup, tags, properties"
 
+// Options configures the ResourceGraphLister behavior.
+type Options struct {
+	PageSize int32 // Maximum results per ARG request. Defaults to 1000 if <= 0.
+}
+
 // ResourceGraphLister enumerates Azure resources via the Resource Graph API.
 type ResourceGraphLister struct {
-	client *armresourcegraph.Client
+	client  *armresourcegraph.Client
+	options Options
 }
 
 // NewResourceGraphLister creates a lister with an initialized ARG client.
-func NewResourceGraphLister(cred azcore.TokenCredential) (*ResourceGraphLister, error) {
+// Pass nil for opts to use defaults.
+func NewResourceGraphLister(cred azcore.TokenCredential, opts *Options) (*ResourceGraphLister, error) {
 	client, err := armresourcegraph.NewClient(cred, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create resource graph client: %w", err)
 	}
-	return &ResourceGraphLister{client: client}, nil
+	o := Options{PageSize: 1000}
+	if opts != nil && opts.PageSize > 0 {
+		o = *opts
+	}
+	return &ResourceGraphLister{client: client, options: o}, nil
 }
 
 // ListAll enumerates all resources across the given subscriptions using the
@@ -60,7 +71,7 @@ func (l *ResourceGraphLister) querySubscription(ctx context.Context, sub azurehe
 		Query:         &query,
 		Subscriptions: []*string{&sub.ID},
 		Options: &armresourcegraph.QueryRequestOptions{
-			Top:          to.Ptr(int32(1000)),
+			Top:          to.Ptr(l.options.PageSize),
 			ResultFormat: to.Ptr(armresourcegraph.ResultFormatObjectArray),
 		},
 	}
