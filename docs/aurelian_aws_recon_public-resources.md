@@ -18,7 +18,8 @@ aurelian aws recon public-resources [flags]
       --disable-cache                  Disable API response caching
   -h, --help                           help for public-resources
       --opsec_level string             Operational security level for AWS operations (default "none")
-      --org-policies string            Path to org policies JSON file
+      --org-policies string            Deprecated: use org-policies-file
+      --org-policies-file string       Path to Org Policies JSON file
   -p, --profile string                 AWS profile to use
       --profile-dir string             Set to override the default AWS profile directory
   -r, --regions strings                AWS regions to scan (default [all])

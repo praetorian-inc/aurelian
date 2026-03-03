@@ -32,7 +32,7 @@ func (c *AWSReconBase) PostBind(_ Config, _ Module) error {
 
 type AWSCommonRecon struct {
 	AWSReconBase
-	Concurrency  int      `param:"concurrency"   desc:"Maximum concurrent API requests" default:"5"`
+	Concurrency  int      `param:"concurrency"    desc:"Maximum concurrent API requests" default:"5"`
 	Regions      []string `param:"regions"        desc:"AWS regions to scan" default:"all" shortcode:"r"`
 	ResourceType []string `param:"resource-type"  desc:"AWS Cloud Control resource type" default:"all" shortcode:"t"`
 	ResourceID   string   `param:"resource-id"    desc:"Single resource ARN to evaluate (skips enumeration)" shortcode:"i"`
@@ -50,26 +50,36 @@ func (c *AWSCommonRecon) PostBind(_ Config, _ Module) error {
 }
 
 type OrgPoliciesParam struct {
-	OrgPoliciesFile       string                   `param:"org-policies-file" desc:"Path to Org Policies JSON file"`
-	OrgPoliciesFileLegacy string                   `param:"org-policies" hidden:"true" desc:"Deprecated: use org-policies-file"`
-	OrgPolicies           *orgpolicies.OrgPolicies `param:"-"`
+	OrgPoliciesFile string                   `param:"org-policies-file" desc:"Path to Org Policies JSON file"`
+	OrgPolicies     *orgpolicies.OrgPolicies `param:"-"`
 }
 
 func (c *OrgPoliciesParam) PostBind(_ Config, _ Module) error {
 	orgPoliciesPath := c.OrgPoliciesFile
 	if orgPoliciesPath == "" {
-		orgPoliciesPath = c.OrgPoliciesFileLegacy
-	}
-
-	if orgPoliciesPath != "" {
-		op, err := iam.LoadJSONFile[orgpolicies.OrgPolicies](orgPoliciesPath)
-		if err != nil {
-			return fmt.Errorf("loading org policies: %w", err)
-		}
-		c.OrgPolicies = op
+		c.OrgPolicies = orgpolicies.NewDefaultOrgPolicies()
 		return nil
 	}
 
-	c.OrgPolicies = orgpolicies.NewDefaultOrgPolicies()
+	fi, err := os.Stat(orgPoliciesPath)
+	if err != nil {
+		return fmt.Errorf("error reading org policies file %q: %w", orgPoliciesPath, err)
+	}
+
+	if fi.Size() == 0 {
+		c.OrgPolicies = orgpolicies.NewDefaultOrgPolicies()
+		return nil
+	}
+
+	op, err := iam.LoadJSONFile[orgpolicies.OrgPolicies](orgPoliciesPath)
+	if err != nil {
+		return fmt.Errorf("loading org policies: %w", err)
+	}
+
+	c.OrgPolicies = op
 	return nil
+}
+
+type ResourceARNParam struct {
+	ResourceARN []string `param:"resource-arn"   desc:"AWS target resource ARN" shortcode:"a"`
 }

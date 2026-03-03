@@ -62,7 +62,7 @@ func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, out *pipeline.P[model
 
 	resourceTypePipeline := pipeline.From(resourceTypes...)
 	listed := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(resourceTypePipeline, lister.List, listed)
+	pipeline.Pipe(resourceTypePipeline, lister.ListByType, listed)
 
 	collected := pipeline.New[output.AWSResource]()
 	pipeline.Pipe(listed, collector.Collect, collected)

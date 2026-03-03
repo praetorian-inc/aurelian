@@ -63,7 +63,7 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model
 
 	resourceTypePipeline := pipeline.From(resourceTypes...)
 	listed := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(resourceTypePipeline, lister.List, listed)
+	pipeline.Pipe(resourceTypePipeline, lister.ListByType, listed)
 
 	for r := range listed.Range() {
 		out.Send(r)
