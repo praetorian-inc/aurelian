@@ -63,7 +63,7 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 
 	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
 
-	inputs, err := m.collectInputs()
+	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
 	if err != nil {
 		return fmt.Errorf("failed to collect inputs: %v", err)
 	}
@@ -84,19 +84,6 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	pipeline.Pipe(evaluated, riskFromResult, out)
 
 	return out.Wait()
-}
-
-func (m *AWSPublicResourcesModule) collectInputs() ([]string, error) {
-	if len(m.ResourceARN) > 0 {
-		return m.ResourceARN, nil
-	}
-
-	resourceTypes, err := resolveRequestedResourceTypes(m.ResourceType, publicaccess.SupportedResourceTypes())
-	if err != nil {
-		return nil, err
-	}
-
-	return resourceTypes, nil
 }
 
 func riskFromResult(r publicaccess.PublicAccessResult, out *pipeline.P[model.AurelianModel]) error {

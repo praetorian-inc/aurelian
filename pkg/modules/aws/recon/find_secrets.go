@@ -85,7 +85,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		}
 	}()
 
-	inputs, err := m.collectInputs()
+	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
 	if err != nil {
 		return fmt.Errorf("failed to collect inputs: %v", err)
 	}
@@ -98,7 +98,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	extractor := extraction.NewAWSExtractor(c.AWSCommonRecon, extraction.Config{
 		MaxEvents:  c.MaxEvents,
 		MaxStreams: c.MaxStreams,
-	}, c.AWSCommonRecon.Concurrency)
+	})
 
 	extracted := pipeline.New[output.ScanInput]()
 	pipeline.Pipe(listed, extractor.Extract, extracted)
@@ -108,19 +108,6 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	pipeline.Pipe(scanned, riskFromScanResult, out)
 
 	return out.Wait()
-}
-
-func (m *AWSFindSecretsModule) collectInputs() ([]string, error) {
-	if len(m.ResourceARN) > 0 {
-		return m.ResourceARN, nil
-	}
-
-	resourceTypes, err := resolveRequestedResourceTypes(m.ResourceType, m.SupportedResourceTypes())
-	if err != nil {
-		return nil, err
-	}
-
-	return resourceTypes, nil
 }
 
 func riskFromScanResult(result secrets.SecretScanResult, out *pipeline.P[model.AurelianModel]) error {

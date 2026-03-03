@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsaarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -104,26 +104,91 @@ func (cc *CloudControlLister) resolveARNTarget(resourceARN string) (string, stri
 		return "", "", "", fmt.Errorf("unsupported arn service %q", parsed.Service)
 	}
 
-	region := parsed.Region
-	if awshelpers.IsGlobalService(resourceType) {
-		region = "us-east-1"
-	}
-	if region == "" {
-		return "", "", "", fmt.Errorf("region not found in arn %q", resourceARN)
+	region, err := cc.resolveResourceRegion(parsed, resourceType)
+	if err != nil {
+		return "", "", "", fmt.Errorf("resolve region for %q: %w", resourceARN, err)
 	}
 
 	identifier := parsed.Resource
-	if cc.arnIsIdentifier(resourceType) {
-		identifier = resourceARN
+	if newID, ok := cc.requiresSpecialIdentifier(resourceType, resourceARN, identifier); ok {
+		identifier = newID
 	}
 
 	return region, resourceType, identifier, nil
 }
 
-func (cc *CloudControlLister) arnIsIdentifier(resourceType string) bool {
-	return slices.Contains([]string{
-		"AWS::SNS::Topic",
-	}, resourceType)
+// resolveResourceRegion determines the region for a parsed ARN. It handles
+// global services, S3 (which omits region from its ARN), and standard ARNs.
+func (cc *CloudControlLister) resolveResourceRegion(parsed awsaarn.ARN, resourceType string) (string, error) {
+	region := parsed.Region
+	if awshelpers.IsGlobalService(resourceType) {
+		region = "us-east-1"
+	}
+
+	if region == "" && parsed.Service == "s3" {
+		resolved, err := cc.resolveS3BucketRegion(parsed.Resource)
+		if err != nil {
+			return "", fmt.Errorf("resolve s3 bucket region: %w", err)
+		}
+		region = resolved
+	}
+
+	if region == "" {
+		return "", fmt.Errorf("region not found for arn %q", parsed.String())
+	}
+
+	return region, nil
+}
+
+// resolveS3BucketRegion uses the S3 GetBucketLocation API to determine the
+// region of a bucket, since S3 ARNs do not contain a region component.
+func (cc *CloudControlLister) resolveS3BucketRegion(bucketName string) (string, error) {
+	// GetBucketLocation can be called from any region.
+	awsCfg, err := cc.getAWSConfig("us-east-1")
+	if err != nil {
+		return "", err
+	}
+
+	client := s3.NewFromConfig(*awsCfg)
+	locOut, err := client.GetBucketLocation(context.Background(), &s3.GetBucketLocationInput{
+		Bucket: &bucketName,
+	})
+	if err != nil {
+		return "", fmt.Errorf("get bucket location: %w", err)
+	}
+
+	region := string(locOut.LocationConstraint)
+	if region == "" {
+		region = "us-east-1"
+	}
+	return region, nil
+}
+
+func (cc *CloudControlLister) requiresSpecialIdentifier(resourceType, resourceARN, resourceID string) (string, bool) {
+	parsers := map[string]func(string, string) string{
+		"AWS::SNS::Topic":    cc.parseSNSTopicID,
+		"AWS::EC2::Instance": cc.parseEC2InstanceID,
+	}
+
+	parser, ok := parsers[resourceType]
+	if !ok {
+		return "", false
+	}
+
+	return parser(resourceARN, resourceID), ok
+}
+
+func (cc *CloudControlLister) parseSNSTopicID(resourceARN, _ string) string {
+	return resourceARN
+}
+
+func (cc *CloudControlLister) parseEC2InstanceID(_, instanceID string) string {
+	parts := strings.Split(instanceID, "/")
+	if len(parts) != 2 {
+		return instanceID
+	}
+
+	return parts[1]
 }
 
 // ListByType enumerates a single resource type across all regions, emitting each
