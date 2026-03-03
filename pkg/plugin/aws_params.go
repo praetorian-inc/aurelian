@@ -32,7 +32,7 @@ func (c *AWSReconBase) PostBind(_ Config, _ Module) error {
 
 type AWSCommonRecon struct {
 	AWSReconBase
-	Concurrency  int      `param:"concurrency"   desc:"Maximum concurrent API requests" default:"5"`
+	Concurrency  int      `param:"concurrency"    desc:"Maximum concurrent API requests" default:"5"`
 	Regions      []string `param:"regions"        desc:"AWS regions to scan" default:"all" shortcode:"r"`
 	ResourceType []string `param:"resource-type"  desc:"AWS Cloud Control resource type" default:"all" shortcode:"t"`
 	ResourceID   string   `param:"resource-id"    desc:"Single resource ARN to evaluate (skips enumeration)" shortcode:"i"`
@@ -78,4 +78,8 @@ func (c *OrgPoliciesParam) PostBind(_ Config, _ Module) error {
 
 	c.OrgPolicies = op
 	return nil
+}
+
+type ResourceARNParam struct {
+	ResourceARN []string `param:"resource-arn"   desc:"AWS target resource ARN" shortcode:"a"`
 }

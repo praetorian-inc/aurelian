@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 
@@ -20,13 +21,12 @@ import (
 
 type CloudControlLister struct {
 	plugin.AWSCommonRecon
-	CrossRegionActor   *ratelimit.CrossRegionActor
-	AWSConfigs         map[string]*aws.Config
-	configMu           sync.RWMutex
-	accountID          string
-	accountIDOnce      sync.Once
-	accountIDErr       error
-	getInRegionByARNFn func(region, resourceType, identifier string, out *pipeline.P[output.AWSResource]) error
+	CrossRegionActor *ratelimit.CrossRegionActor
+	AWSConfigs       map[string]*aws.Config
+	configMu         sync.RWMutex
+	accountID        string
+	accountIDOnce    sync.Once
+	accountIDErr     error
 }
 
 func NewCloudControlLister(options plugin.AWSCommonRecon) *CloudControlLister {
@@ -54,18 +54,43 @@ func (cc *CloudControlLister) List(identifier string, out *pipeline.P[output.AWS
 }
 
 func (cc *CloudControlLister) ListByARN(resourceARN string, out *pipeline.P[output.AWSResource]) error {
-	region, resourceType, identifier, err := cc.resolveARNTarget(resourceARN)
-	if err != nil {
-		return err
-	}
-
-	err = cc.getInRegionByARN(region, resourceType, identifier, out)
+	resource, err := cc.getResourceByARN(resourceARN)
 	if cc.isSkippableError(err) {
-		slog.Debug("skipping arn", "arn", resourceARN, "type", resourceType, "region", region, "error", err)
+		slog.Debug("skipping arn", "arn", resourceARN, "error", err)
 		return nil
 	}
 
+	out.Send(resource)
+
 	return err
+}
+
+func (cc *CloudControlLister) getResourceByARN(arn string) (output.AWSResource, error) {
+	region, resourceType, identifier, err := cc.resolveARNTarget(arn)
+	if err != nil {
+		return output.AWSResource{}, err
+	}
+
+	client, err := cc.newCloudControlClient(region)
+	if err != nil {
+		return output.AWSResource{}, fmt.Errorf("create client: %w", err)
+	}
+
+	accountID, err := cc.getAccountID(region)
+	if err != nil {
+		return output.AWSResource{}, err
+	}
+
+	result, err := client.GetResource(context.Background(), &cloudcontrol.GetResourceInput{
+		TypeName:   aws.String(resourceType),
+		Identifier: aws.String(identifier),
+	})
+	if err != nil {
+		return output.AWSResource{}, fmt.Errorf("get %s %s: %w", resourceType, identifier, err)
+	}
+
+	cr := awshelpers.CloudControlToAWSResource(*result.ResourceDescription, resourceType, accountID, region)
+	return cr, nil
 }
 
 func (cc *CloudControlLister) resolveARNTarget(resourceARN string) (string, string, string, error) {
@@ -87,35 +112,18 @@ func (cc *CloudControlLister) resolveARNTarget(resourceARN string) (string, stri
 		return "", "", "", fmt.Errorf("region not found in arn %q", resourceARN)
 	}
 
-	return region, resourceType, parsed.Resource, nil
+	identifier := parsed.Resource
+	if cc.arnIsIdentifier(resourceType) {
+		identifier = resourceARN
+	}
+
+	return region, resourceType, identifier, nil
 }
 
-func (cc *CloudControlLister) getInRegionByARN(region, resourceType, identifier string, out *pipeline.P[output.AWSResource]) error {
-	if cc.getInRegionByARNFn != nil {
-		return cc.getInRegionByARNFn(region, resourceType, identifier, out)
-	}
-
-	client, err := cc.newCloudControlClient(region)
-	if err != nil {
-		return fmt.Errorf("create client: %w", err)
-	}
-
-	accountID, err := cc.getAccountID(region)
-	if err != nil {
-		return err
-	}
-
-	result, err := client.GetResource(context.Background(), &cloudcontrol.GetResourceInput{
-		TypeName:   aws.String(resourceType),
-		Identifier: aws.String(identifier),
-	})
-	if err != nil {
-		return fmt.Errorf("get %s %s: %w", resourceType, identifier, err)
-	}
-
-	cr := awshelpers.CloudControlToAWSResource(*result.ResourceDescription, resourceType, accountID, region)
-	out.Send(cr)
-	return nil
+func (cc *CloudControlLister) arnIsIdentifier(resourceType string) bool {
+	return slices.Contains([]string{
+		"AWS::SNS::Topic",
+	}, resourceType)
 }
 
 // ListByType enumerates a single resource type across all regions, emitting each
