@@ -7,6 +7,29 @@ import (
 	"strings"
 )
 
+// Bind populates dst from cfg.Args, validates, and sets struct fields.
+func Bind(cfg Config, dst any) error {
+	paramSlice, err := ParametersFrom(dst)
+	if err != nil {
+		return err
+	}
+	params := NewParameters(paramSlice...)
+
+	for k, v := range cfg.Args {
+		params.Set(k, v)
+	}
+
+	if err := params.Validate(); err != nil {
+		return err
+	}
+
+	if err := populateStruct(&params, dst); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // ParametersFrom derives []Parameter from a struct's field tags.
 // Supported tags: param, desc, default, enum, shortcode, required, hidden, sensitive.
 //
@@ -82,29 +105,6 @@ func collectFields(t reflect.Type) ([]Parameter, error) {
 		params = append(params, p)
 	}
 	return params, nil
-}
-
-// Bind populates dst from cfg.Args, validates, and sets struct fields.
-func Bind(cfg Config, dst any) error {
-	paramSlice, err := ParametersFrom(dst)
-	if err != nil {
-		return err
-	}
-	params := NewParameters(paramSlice...)
-
-	for k, v := range cfg.Args {
-		params.Set(k, v)
-	}
-
-	if err := params.Validate(); err != nil {
-		return err
-	}
-
-	if err := populateStruct(&params, dst); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func populateStruct(ps *Parameters, dst any) error {

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -31,7 +32,6 @@ const (
 
 	// statePrefix is the S3 key prefix under which all integration test state is stored.
 	statePrefix = "integration-tests/"
-
 )
 
 var (
