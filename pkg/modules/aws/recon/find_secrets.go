@@ -20,21 +20,10 @@ func init() {
 	plugin.Register(&AWSFindSecretsModule{})
 }
 
-// supportedSecretResourceTypes lists the resource types this module can scan for secrets.
-var supportedSecretResourceTypes = []string{
-	"AWS::EC2::Instance",
-	"AWS::Lambda::Function",
-	"AWS::CloudFormation::Stack",
-	"AWS::Logs::LogGroup",
-	"AWS::ECS::TaskDefinition",
-	"AWS::SSM::Document",
-	"AWS::StepFunctions::StateMachine",
-	// TODO: AWS::ECR::Repository — container image scanning deferred to follow-up PR.
-}
-
 // FindSecretsConfig holds the typed parameters for the find-secrets module.
 type FindSecretsConfig struct {
 	plugin.AWSCommonRecon
+	plugin.ResourceARNParam
 	DBPath     string `param:"db-path" desc:"Path for Titus SQLite database" default:""`
 	MaxEvents  int    `param:"max-events" desc:"Max log events per log group" default:"10000"`
 	MaxStreams int    `param:"max-streams" desc:"Max streams to sample per log group" default:"10"`
@@ -65,7 +54,16 @@ func (m *AWSFindSecretsModule) References() []string {
 }
 
 func (m *AWSFindSecretsModule) SupportedResourceTypes() []string {
-	return supportedSecretResourceTypes
+	return []string{
+		"AWS::EC2::Instance",
+		"AWS::Lambda::Function",
+		"AWS::CloudFormation::Stack",
+		"AWS::Logs::LogGroup",
+		"AWS::ECS::TaskDefinition",
+		"AWS::SSM::Document",
+		"AWS::StepFunctions::StateMachine",
+		// TODO: AWS::ECR::Repository — container image scanning deferred to follow-up PR.
+	}
 }
 
 func (m *AWSFindSecretsModule) Parameters() any {
@@ -85,15 +83,15 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		}
 	}()
 
-	resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, supportedSecretResourceTypes)
+	inputs, err := m.collectInputs()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to collect inputs: %v", err)
 	}
 
 	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
-	resourceTypePipeline := pipeline.From(resourceTypes...)
+	inputPipeline := pipeline.From(inputs...)
 	listed := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(resourceTypePipeline, lister.List, listed)
+	pipeline.Pipe(inputPipeline, lister.List, listed)
 
 	extractor := extraction.NewAWSExtractor(c.AWSCommonRecon, extraction.Config{
 		MaxEvents:  c.MaxEvents,
@@ -108,6 +106,19 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	pipeline.Pipe(scanned, riskFromScanResult, out)
 
 	return out.Wait()
+}
+
+func (m *AWSFindSecretsModule) collectInputs() ([]string, error) {
+	if len(m.ResourceARN) > 0 {
+		return m.ResourceARN, nil
+	}
+
+	resourceTypes, err := resolveRequestedResourceTypes(m.ResourceType, m.SupportedResourceTypes())
+	if err != nil {
+		return nil, err
+	}
+
+	return resourceTypes, nil
 }
 
 func riskFromScanResult(result secrets.SecretScanResult, out *pipeline.P[model.AurelianModel]) error {
@@ -159,7 +170,7 @@ func riskSeverityFromMatch(match *types.Match) output.RiskSeverity {
 }
 
 // buildProofData constructs proof JSON matching Guard's secrets proof format.
-// Omits provenance and repository_url (not applicable for cloud resource scanning).
+// Includes provenance with cloud resource context so the UI can render findings.
 func buildProofData(resourceRef string, match *types.Match) map[string]interface{} {
 	proof := map[string]interface{}{
 		"finding_id":   match.FindingID,
@@ -169,6 +180,13 @@ func buildProofData(resourceRef string, match *types.Match) map[string]interface
 		"num_matches":  1,
 		"matches": []map[string]interface{}{
 			{
+				"provenance": []map[string]interface{}{
+					{
+						"kind":        "cloud_resource",
+						"platform":    "aws",
+						"resource_id": resourceRef,
+					},
+				},
 				"snippet": map[string]string{
 					"before":   string(match.Snippet.Before),
 					"matching": string(match.Snippet.Matching),
