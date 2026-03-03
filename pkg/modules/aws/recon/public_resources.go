@@ -68,7 +68,7 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 
 	resourceTypePipeline := pipeline.From(resourceTypes...)
 	listed := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(resourceTypePipeline, lister.ListByType, listed)
+	pipeline.Pipe(resourceTypePipeline, lister.List, listed)
 
 	// Enrich resources with properties not available from CloudControl
 	// (e.g. RDS PubliclyAccessible, Cognito self-signup, Lambda function URL auth type).

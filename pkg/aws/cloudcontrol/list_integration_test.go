@@ -65,6 +65,46 @@ func Test_CloudControl_ListByARN_UsesReconListFixture(t *testing.T) {
 	}
 }
 
+func Test_CloudControl_List_DispatchesToTypeAndARN_UsesReconListFixture(t *testing.T) {
+	fixture := testutil.NewFixture(t, "aws/recon/list")
+	fixture.Setup()
+
+	lister := NewCloudControlLister(plugin.AWSCommonRecon{
+		Regions:     []string{"us-east-2"},
+		Concurrency: 2,
+	})
+
+	t.Run("resource type", func(t *testing.T) {
+		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+			return lister.List("AWS::S3::Bucket", out)
+		})
+		require.NoError(t, err)
+		require.NotEmpty(t, results)
+		for _, name := range fixture.OutputList("bucket_names") {
+			require.True(t, resultsContainResourceID(results, name), "expected bucket name %q in CloudControl output", name)
+		}
+	})
+
+	t.Run("arn", func(t *testing.T) {
+		for _, arn := range fixture.OutputList("function_arns") {
+			results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+				return lister.List(arn, out)
+			})
+			require.NoError(t, err)
+			require.Len(t, results, 1)
+			require.Equal(t, arn, results[0].ARN)
+		}
+	})
+
+	t.Run("invalid identifier", func(t *testing.T) {
+		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+			return lister.List("not-an-arn-or-resource-type", out)
+		})
+		require.Error(t, err)
+		require.Empty(t, results)
+	})
+}
+
 func collectResources(run func(out *pipeline.P[output.AWSResource]) error) ([]output.AWSResource, error) {
 	out := pipeline.New[output.AWSResource]()
 

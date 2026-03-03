@@ -39,6 +39,20 @@ func NewCloudControlLister(options plugin.AWSCommonRecon) *CloudControlLister {
 	}
 }
 
+func (cc *CloudControlLister) List(identifier string, out *pipeline.P[output.AWSResource]) error {
+	_, err := awsaarn.Parse(identifier)
+	if err == nil {
+		return cc.ListByARN(identifier, out)
+	}
+
+	isResourceType := strings.HasPrefix(identifier, "AWS::")
+	if isResourceType {
+		return cc.ListByType(identifier, out)
+	}
+
+	return fmt.Errorf("identifier must be either an ARN or CloudControl resource type: %q", identifier)
+}
+
 func (cc *CloudControlLister) ListByARN(resourceARN string, out *pipeline.P[output.AWSResource]) error {
 	region, resourceType, identifier, err := cc.resolveARNTarget(resourceARN)
 	if err != nil {
