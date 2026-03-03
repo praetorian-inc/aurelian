@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -13,6 +14,8 @@ import (
 )
 
 const maxLambdaZipSize = 250 * 1024 * 1024
+
+var httpClient = &http.Client{Timeout: 10 * time.Minute}
 
 func init() {
 	mustRegister("AWS::Lambda::Function", "lambda-code", extractLambda)
@@ -35,7 +38,7 @@ func extractLambda(ctx extractContext, r output.AWSResource, out *pipeline.P[out
 		return nil
 	}
 
-	httpResp, err := http.DefaultClient.Get(*resp.Code.Location)
+	httpResp, err := httpClient.Get(*resp.Code.Location)
 	if err != nil {
 		return fmt.Errorf("failed to download Lambda code for %s: %w", functionName, err)
 	}

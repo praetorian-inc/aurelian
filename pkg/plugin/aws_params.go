@@ -12,6 +12,7 @@ import (
 )
 
 type AWSReconBase struct {
+	OutputDir       string `param:"output-dir"           desc:"Base output directory" default:"aurelian-output"`
 	Profile         string `param:"profile"              desc:"AWS profile to use" shortcode:"p"`
 	ProfileDir      string `param:"profile-dir"          desc:"Set to override the default AWS profile directory"`
 	CacheDir        string `param:"cache-dir"            desc:"Directory to store API response cache files"`

@@ -2,7 +2,6 @@ package extraction
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	logstypes "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
@@ -45,7 +44,6 @@ func extractLogs(ctx extractContext, r output.AWSResource, out *pipeline.P[outpu
 		return nil
 	}
 
-	var messages []string
 	eventCount := 0
 	var nextToken *string
 	for eventCount < ctx.Config.MaxEvents {
@@ -60,8 +58,12 @@ func extractLogs(ctx extractContext, r output.AWSResource, out *pipeline.P[outpu
 		}
 
 		for _, event := range eventsResp.Events {
-			if event.Message != nil {
-				messages = append(messages, *event.Message)
+			if event.Message != nil && *event.Message != "" {
+				label := "log-event"
+				if event.EventId != nil {
+					label = "log-event:" + *event.EventId
+				}
+				out.Send(output.ScanInputFromAWSResource(r, label, []byte(*event.Message)))
 				eventCount++
 			}
 		}
@@ -73,11 +75,5 @@ func extractLogs(ctx extractContext, r output.AWSResource, out *pipeline.P[outpu
 		nextToken = eventsResp.NextToken
 	}
 
-	noMessages := len(messages) == 0
-	if noMessages {
-		return nil
-	}
-
-	out.Send(output.ScanInputFromAWSResource(r, "logs", []byte(strings.Join(messages, ""))))
 	return nil
 }
