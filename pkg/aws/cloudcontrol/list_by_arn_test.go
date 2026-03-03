@@ -13,7 +13,7 @@ func TestResolveARNTarget_ServiceMappedRegionKept(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "us-west-2", region)
 	require.Equal(t, "AWS::EC2::Instance", typ)
-	require.Equal(t, "instance/i-1234567890abcdef0", id)
+	require.Equal(t, "i-1234567890abcdef0", id)
 }
 
 func TestResolveARNTarget_GlobalTypeForcesUsEast1(t *testing.T) {
