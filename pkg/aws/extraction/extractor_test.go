@@ -12,7 +12,7 @@ import (
 )
 
 func TestExtract_UnknownTypeReturnsError(t *testing.T) {
-	ex := NewAWSExtractor(plugin.AWSCommonRecon{}, Config{}, 1)
+	ex := NewAWSExtractor(plugin.AWSCommonRecon{Concurrency: 1}, Config{})
 	out := pipeline.New[output.ScanInput]()
 	err := ex.Extract(output.AWSResource{ResourceType: "AWS::S3::Bucket"}, out)
 	require.Error(t, err)
@@ -45,7 +45,7 @@ func TestExtract_FirstExtractorFailsSecondSucceeds(t *testing.T) {
 		return nil
 	})
 
-	ex := NewAWSExtractor(plugin.AWSCommonRecon{}, Config{}, 1)
+	ex := NewAWSExtractor(plugin.AWSCommonRecon{Concurrency: 1}, Config{})
 	out := pipeline.New[output.ScanInput]()
 	go func() {
 		defer out.Close()
@@ -60,7 +60,7 @@ func TestExtract_FirstExtractorFailsSecondSucceeds(t *testing.T) {
 }
 
 func TestExtract_ECSPropertiesExtractor(t *testing.T) {
-	ex := NewAWSExtractor(plugin.AWSCommonRecon{}, Config{}, 1)
+	ex := NewAWSExtractor(plugin.AWSCommonRecon{Concurrency: 1}, Config{})
 	out := pipeline.New[output.ScanInput]()
 	resource := output.AWSResource{
 		ResourceType: "AWS::ECS::TaskDefinition",
