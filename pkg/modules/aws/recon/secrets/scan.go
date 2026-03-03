@@ -11,10 +11,21 @@ type Scanner interface {
 	ScanContent(content []byte, blobID types.BlobID, provenance types.Provenance) ([]*types.Match, error)
 }
 
-// ScanForSecrets returns a pipeline-compatible function that scans each ScanInput
-// for secrets using the provided Scanner and emits SecretFinding results.
-func ScanForSecrets(s Scanner) func(ScanInput, *pipeline.P[output.SecretFinding]) error {
-	return func(input ScanInput, out *pipeline.P[output.SecretFinding]) error {
+// SecretScanResult represents a secret detection result emitted by the scanner stage.
+type SecretScanResult struct {
+	ResourceRef string `json:"resource_ref"`
+	RuleName    string `json:"rule_name"`
+	RuleTextID  string `json:"rule_text_id"`
+	Match       string `json:"match,omitempty"`
+	FilePath    string `json:"file_path,omitempty"`
+	LineNumber  int    `json:"line_number,omitempty"`
+	Confidence  string `json:"confidence"`
+}
+
+// ScanForSecrets returns a pipeline-compatible function that scans each output.ScanInput
+// for secrets using the provided Scanner and emits SecretScanResult values.
+func ScanForSecrets(s Scanner) func(output.ScanInput, *pipeline.P[SecretScanResult]) error {
+	return func(input output.ScanInput, out *pipeline.P[SecretScanResult]) error {
 		blobID := types.ComputeBlobID(input.Content)
 
 		provenance := types.FileProvenance{
@@ -28,11 +39,12 @@ func ScanForSecrets(s Scanner) func(ScanInput, *pipeline.P[output.SecretFinding]
 
 		for _, match := range matches {
 			confidence := "medium"
-			if match.ValidationResult != nil && match.ValidationResult.Status == types.StatusValid {
+			hasValidValidationResult := match.ValidationResult != nil && match.ValidationResult.Status == types.StatusValid
+			if hasValidValidationResult {
 				confidence = "high"
 			}
 
-			finding := output.SecretFinding{
+			finding := SecretScanResult{
 				ResourceRef: input.ResourceID,
 				RuleName:    match.RuleName,
 				RuleTextID:  match.RuleID,

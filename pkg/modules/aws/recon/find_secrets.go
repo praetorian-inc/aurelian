@@ -1,11 +1,11 @@
 package recon
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
+	"github.com/praetorian-inc/aurelian/pkg/aws/extraction"
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/modules/aws/recon/secrets"
@@ -96,27 +96,52 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	listed := pipeline.New[output.AWSResource]()
 	pipeline.Pipe(resourceTypePipeline, lister.List, listed)
 
-	extractorCfg := secrets.ExtractorConfig{
-		AWSConfigFactory: func(region string) (aws.Config, error) {
-			return awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
-				Region:     region,
-				Profile:    c.Profile,
-				ProfileDir: c.ProfileDir,
-			})
-		},
+	extractor := extraction.NewAWSExtractor(c.AWSCommonRecon, extraction.Config{
 		MaxEvents:  c.MaxEvents,
 		MaxStreams: c.MaxStreams,
-	}
+	})
 
-	extracted := pipeline.New[secrets.ScanInput]()
-	pipeline.Pipe(listed, secrets.ExtractContent(extractorCfg), extracted)
+	extracted := pipeline.New[output.ScanInput]()
+	pipeline.Pipe(listed, extractor.Extract, extracted)
 
-	scanned := pipeline.New[output.SecretFinding]()
+	scanned := pipeline.New[secrets.SecretScanResult]()
 	pipeline.Pipe(extracted, secrets.ScanForSecrets(ps), scanned)
+	pipeline.Pipe(scanned, riskFromScanResult, out)
 
-	for finding := range scanned.Range() {
-		out.Send(finding)
+	return out.Wait()
+}
+
+func riskFromScanResult(result secrets.SecretScanResult, out *pipeline.P[model.AurelianModel]) error {
+	contextBytes, err := json.Marshal(result)
+	if err != nil {
+		slog.Warn("failed to marshal secret scan result context", "resource", result.ResourceRef, "error", err)
+		return nil
 	}
 
-	return scanned.Wait()
+	out.Send(output.AurelianRisk{
+		Name:        formatSecretRiskName(result.RuleName),
+		Severity:    riskSeverityFromConfidence(result.Confidence),
+		ImpactedARN: result.ResourceRef,
+		Context:     contextBytes,
+	})
+	return nil
+}
+
+func formatSecretRiskName(ruleName string) string {
+	return fmt.Sprintf("aws-secret-%s", ruleName)
+}
+
+func riskSeverityFromConfidence(confidence string) output.RiskSeverity {
+	switch confidence {
+	case "low":
+		return output.RiskSeverityLow
+	case "medium":
+		return output.RiskSeverityMedium
+	case "high":
+		return output.RiskSeverityHigh
+	case "critical":
+		return output.RiskSeverityCritical
+	default:
+		return output.RiskSeverityLow
+	}
 }

@@ -1,4 +1,4 @@
-package secrets
+package output
 
 // ScanInput represents extracted content from an AWS resource ready for secret scanning.
 type ScanInput struct {

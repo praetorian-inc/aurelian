@@ -41,7 +41,7 @@ func TestScanStage_WithMatches(t *testing.T) {
 		},
 	}
 
-	input := ScanInput{
+	input := output.ScanInput{
 		Content:      []byte("export KEY=AKIAIOSFODNN7EXAMPLE\n"),
 		ResourceID:   "arn:aws:ec2:us-east-1:123456789012:instance/i-abc",
 		ResourceType: "AWS::EC2::Instance",
@@ -50,7 +50,7 @@ func TestScanStage_WithMatches(t *testing.T) {
 		Label:        "UserData",
 	}
 
-	out := pipeline.New[output.SecretFinding]()
+	out := pipeline.New[SecretScanResult]()
 	scanFn := ScanForSecrets(scanner)
 
 	go func() {
@@ -66,14 +66,54 @@ func TestScanStage_WithMatches(t *testing.T) {
 	assert.Equal(t, "arn:aws:ec2:us-east-1:123456789012:instance/i-abc", items[0].ResourceRef)
 	assert.Equal(t, "np.aws.1", items[0].RuleTextID)
 	assert.Equal(t, "AWS Access Key", items[0].RuleName)
+	assert.Equal(t, "AKIAIOSFODNN7EXAMPLE", items[0].Match)
 	assert.Equal(t, "UserData", items[0].FilePath)
 	assert.Equal(t, 1, items[0].LineNumber)
+	assert.Equal(t, "medium", items[0].Confidence)
+}
+
+func TestScanStage_WithValidMatch_HasHighConfidence(t *testing.T) {
+	scanner := &mockScanner{
+		matches: []*types.Match{
+			{
+				RuleID:   "np.aws.1",
+				RuleName: "AWS Access Key",
+				Snippet: types.Snippet{
+					Matching: []byte("AKIAIOSFODNN7EXAMPLE"),
+				},
+				Location: types.Location{
+					Source: types.SourceSpan{Start: types.SourcePoint{Line: 42}},
+				},
+				ValidationResult: &types.ValidationResult{Status: types.StatusValid},
+			},
+		},
+	}
+
+	input := output.ScanInput{
+		Content:    []byte("export KEY=AKIAIOSFODNN7EXAMPLE\n"),
+		ResourceID: "arn:aws:lambda:us-east-1:123456789012:function:demo",
+		Label:      "main.py",
+	}
+
+	out := pipeline.New[SecretScanResult]()
+	scanFn := ScanForSecrets(scanner)
+
+	go func() {
+		defer out.Close()
+		err := scanFn(input, out)
+		require.NoError(t, err)
+	}()
+
+	items, err := out.Collect()
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "high", items[0].Confidence)
 }
 
 func TestScanStage_NoMatches(t *testing.T) {
 	scanner := &mockScanner{matches: nil}
 
-	input := ScanInput{
+	input := output.ScanInput{
 		Content:      []byte("just some regular text\n"),
 		ResourceID:   "arn:aws:ec2:us-east-1:123456789012:instance/i-abc",
 		ResourceType: "AWS::EC2::Instance",
@@ -82,7 +122,7 @@ func TestScanStage_NoMatches(t *testing.T) {
 		Label:        "UserData",
 	}
 
-	out := pipeline.New[output.SecretFinding]()
+	out := pipeline.New[SecretScanResult]()
 	scanFn := ScanForSecrets(scanner)
 
 	go func() {
