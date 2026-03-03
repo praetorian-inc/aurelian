@@ -22,7 +22,6 @@ func init() {
 type PublicResourcesConfig struct {
 	plugin.AWSCommonRecon
 	plugin.OrgPoliciesParam
-	plugin.ResourceARNParam
 }
 
 // AWSPublicResourcesModule finds publicly accessible AWS resources through

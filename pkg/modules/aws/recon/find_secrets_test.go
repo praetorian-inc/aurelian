@@ -127,9 +127,9 @@ func TestRiskSeverityFromMatch(t *testing.T) {
 
 func TestBuildProofData(t *testing.T) {
 	match := &types.Match{
-		FindingID: "abc123def456",
 		RuleID:    "np.aws.1",
 		RuleName:  "AWS API Key",
+		FindingID: "abc123def456",
 		Snippet: types.Snippet{
 			Before:   []byte("key="),
 			Matching: []byte("AKIAIOSFODNN7EXAMPLE"),
@@ -176,9 +176,9 @@ func TestBuildProofData(t *testing.T) {
 
 func TestBuildProofData_WithValidation(t *testing.T) {
 	match := &types.Match{
-		FindingID: "abc123",
 		RuleID:    "np.aws.1",
 		RuleName:  "AWS API Key",
+		FindingID: "abc123",
 		ValidationResult: &types.ValidationResult{
 			Status:     types.StatusValid,
 			Confidence: 0.95,
@@ -196,9 +196,9 @@ func TestBuildProofData_WithValidation(t *testing.T) {
 
 func TestBuildRiskContextRoundTrip(t *testing.T) {
 	match := &types.Match{
-		FindingID: "abc123def456",
 		RuleID:    "np.aws.1",
 		RuleName:  "AWS API Key",
+		FindingID: "abc123def456",
 		Snippet: types.Snippet{
 			Before:   []byte("key="),
 			Matching: []byte("AKIAIOSFODNN7EXAMPLE"),
@@ -229,9 +229,9 @@ func TestBuildRiskContextRoundTrip(t *testing.T) {
 
 func TestRiskFromScanResult_ImpactedARN_IncludesFindingID(t *testing.T) {
 	match := &types.Match{
+		RuleID:   "np.aws.1",
+		RuleName: "AWS API Key",
 		FindingID: "abc123def456",
-		RuleID:    "np.aws.1",
-		RuleName:  "AWS API Key",
 	}
 
 	result := secrets.SecretScanResult{

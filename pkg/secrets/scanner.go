@@ -59,7 +59,8 @@ func (s *SecretScanner) Scan(input output.ScanInput, out *pipeline.P[SecretScanR
 
 	matches, err := s.ps.scanContent(input.Content, blobID, provenance)
 	if err != nil {
-		return nil // skip content that fails to scan
+		slog.Warn("failed to scan content for secrets", "resource", input.ResourceID, "label", input.Label, "error", err)
+		return nil
 	}
 
 	for _, match := range matches {

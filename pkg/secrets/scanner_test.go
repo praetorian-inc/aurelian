@@ -75,7 +75,6 @@ func TestSecretScanner_ScanPipelineNoSecrets(t *testing.T) {
 
 func TestToScanResult_CarriesFullMatch(t *testing.T) {
 	match := &types.Match{
-		FindingID: "abc123def456",
 		RuleID:    "np.aws.1",
 		RuleName:  "AWS API Key",
 		Snippet: types.Snippet{
@@ -108,17 +107,16 @@ func TestToScanResult_CarriesFullMatch(t *testing.T) {
 // Persistent scanner creation tests (ported from pkg/scanner/titus_test.go)
 // ---------------------------------------------------------------------------
 
-func TestStart_DefaultPath(t *testing.T) {
-	defer os.RemoveAll("aurelian-output")
+func TestStart_ExplicitPath(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "titus.db")
 
 	var s SecretScanner
-	require.NoError(t, s.Start(""))
+	require.NoError(t, s.Start(dbPath))
 	defer s.Close()
 
-	expectedPath := "aurelian-output/titus.db"
-	assert.Equal(t, expectedPath, s.DBPath(), "DBPath should return default path")
-	_, err := os.Stat(expectedPath)
-	assert.NoError(t, err, "database file should exist at default path")
+	assert.Equal(t, dbPath, s.DBPath(), "DBPath should return the provided path")
+	_, err := os.Stat(dbPath)
+	assert.NoError(t, err, "database file should exist at provided path")
 }
 
 func TestStart_CustomPath(t *testing.T) {
@@ -146,18 +144,18 @@ func TestStart_CreatesParentDirectories(t *testing.T) {
 	assert.NoError(t, err, "database file should exist")
 }
 
-func TestStart_OutputDirectory(t *testing.T) {
-	defer os.RemoveAll("aurelian-output")
+func TestStart_OutputDirectoryCreated(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "output", "titus.db")
 
 	var s SecretScanner
-	require.NoError(t, s.Start(""))
+	require.NoError(t, s.Start(dbPath))
 	defer s.Close()
 
-	_, err := os.Stat("aurelian-output")
-	require.NoError(t, err, "aurelian-output directory should exist")
+	_, err := os.Stat(filepath.Join(tmpDir, "output"))
+	require.NoError(t, err, "output directory should exist")
 
-	expectedPath := filepath.Join("aurelian-output", "titus.db")
-	assert.Equal(t, expectedPath, s.DBPath(), "database should be in aurelian-output")
+	assert.Equal(t, dbPath, s.DBPath(), "database should be at the provided path")
 }
 
 // ---------------------------------------------------------------------------
@@ -261,41 +259,41 @@ func TestScanContent_FindingID_PopulatedOnCachedPath(t *testing.T) {
 	blobID := types.ComputeBlobID(content)
 	provenance := types.FileProvenance{FilePath: "test/credentials.txt"}
 
-	// First scan — matcher populates FindingID directly
+	// First scan — fresh match
 	firstMatches, err := s.ps.scanContent(content, blobID, provenance)
 	require.NoError(t, err)
 	require.NotEmpty(t, firstMatches)
 	for _, match := range firstMatches {
-		assert.NotEmpty(t, match.FindingID, "FindingID should be set on first scan")
+		assert.NotEmpty(t, match.FindingID, "FindingID should be populated on first scan")
 	}
 
-	// Second scan — hits cached path (store.GetMatches)
+	// Second scan — hits cached path (store.GetMatches + populateFindingIDs)
 	cachedMatches, err := s.ps.scanContent(content, blobID, provenance)
 	require.NoError(t, err)
 	require.NotEmpty(t, cachedMatches)
-	for _, match := range cachedMatches {
-		assert.NotEmpty(t, match.FindingID, "FindingID should be set on cached scan")
+	for i, match := range cachedMatches {
+		assert.NotEmpty(t, match.FindingID, "FindingID should be populated on cached path")
+		if i < len(firstMatches) {
+			assert.Equal(t, firstMatches[i].FindingID, match.FindingID,
+				"FindingID should be identical between first and cached scan")
+		}
 	}
-
-	assert.Equal(t, firstMatches[0].FindingID, cachedMatches[0].FindingID,
-		"FindingID should be identical between first and cached scan")
 }
 
 // ---------------------------------------------------------------------------
 // Custom path / datastore tests (ported from pkg/scanner/titus_datastore_test.go)
 // ---------------------------------------------------------------------------
 
-func TestEmptyPathUsesDefault(t *testing.T) {
-	defer os.RemoveAll("aurelian-output")
+func TestExplicitPathUsed(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "titus.db")
 
 	var s SecretScanner
-	require.NoError(t, s.Start(""))
+	require.NoError(t, s.Start(dbPath))
 	defer s.Close()
 
-	defaultPath := "aurelian-output/titus.db"
-	assert.Equal(t, defaultPath, s.DBPath(), "DBPath should return default path")
-	_, err := os.Stat(defaultPath)
-	assert.NoError(t, err, "database file should exist at default path")
+	assert.Equal(t, dbPath, s.DBPath(), "DBPath should return provided path")
+	_, err := os.Stat(dbPath)
+	assert.NoError(t, err, "database file should exist at provided path")
 }
 
 func TestCustomPathPersistence(t *testing.T) {
@@ -347,11 +345,6 @@ func TestFindingsCreation(t *testing.T) {
 	matches, err := s.ps.scanContent(content, blobID, provenance)
 	require.NoError(t, err, "scanContent should succeed")
 	require.NotEmpty(t, matches, "should detect at least one match")
-
-	// Verify FindingID is populated on each match (not just stored in the DB)
-	for _, match := range matches {
-		assert.NotEmpty(t, match.FindingID, "match.FindingID should be set after scanning")
-	}
 
 	// Verify findings were created in the database
 	findings, err := s.ps.store.GetFindings()

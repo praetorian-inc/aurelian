@@ -12,6 +12,7 @@ import (
 )
 
 type AWSReconBase struct {
+	OutputDir       string `param:"output-dir"           desc:"Base output directory" default:"aurelian-output"`
 	Profile         string `param:"profile"              desc:"AWS profile to use" shortcode:"p"`
 	ProfileDir      string `param:"profile-dir"          desc:"Set to override the default AWS profile directory"`
 	CacheDir        string `param:"cache-dir"            desc:"Directory to store API response cache files"`
@@ -35,7 +36,7 @@ type AWSCommonRecon struct {
 	Concurrency  int      `param:"concurrency"    desc:"Maximum concurrent API requests" default:"5"`
 	Regions      []string `param:"regions"        desc:"AWS regions to scan" default:"all" shortcode:"r"`
 	ResourceType []string `param:"resource-type"  desc:"AWS Cloud Control resource type" default:"all" shortcode:"t"`
-	ResourceID   string   `param:"resource-id"    desc:"Single resource ARN to evaluate (skips enumeration)" shortcode:"i"`
+	ResourceARN  []string `param:"resource-arn"   desc:"AWS target resource ARN" shortcode:"a"`
 }
 
 func (c *AWSCommonRecon) PostBind(_ Config, _ Module) error {
@@ -78,8 +79,4 @@ func (c *OrgPoliciesParam) PostBind(_ Config, _ Module) error {
 
 	c.OrgPolicies = op
 	return nil
-}
-
-type ResourceARNParam struct {
-	ResourceARN []string `param:"resource-arn"   desc:"AWS target resource ARN" shortcode:"a"`
 }

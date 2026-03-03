@@ -2,7 +2,6 @@ package secrets
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 
 	"github.com/praetorian-inc/aurelian/pkg/utils"
@@ -21,18 +20,9 @@ type persistentScanner struct {
 }
 
 // newPersistentScanner creates a new persistent Titus scanner.
-// If dbPath is empty, defaults to aurelian-output/titus.db.
+// The caller is responsible for providing a valid dbPath.
 func newPersistentScanner(dbPath string) (*persistentScanner, error) {
-	if dbPath == "" {
-		dbPath = "aurelian-output/titus.db"
-	}
-
-	if err := utils.EnsureOutputDirectory(); err != nil {
-		return nil, fmt.Errorf("failed to create output directory: %w", err)
-	}
-
-	dbDir := filepath.Dir(dbPath)
-	if err := os.MkdirAll(dbDir, 0755); err != nil {
+	if err := utils.EnsureDirectoryExists(filepath.Dir(dbPath)); err != nil {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
 
@@ -145,9 +135,6 @@ func (ps *persistentScanner) storeMatchAndFinding(match *types.Match) error {
 }
 
 // populateFindingIDs recomputes FindingID on cached matches.
-// The SQLite store currently stores finding_id as NullInt64 (wrong type for a
-// SHA-1 hex string), so cached matches always have an empty FindingID. This
-// recomputes it from the rule's StructuralID and the match's capture groups.
 func (ps *persistentScanner) populateFindingIDs(matches []*types.Match) {
 	for _, match := range matches {
 		if match.FindingID != "" {

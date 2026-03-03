@@ -23,10 +23,9 @@ func init() {
 // FindSecretsConfig holds the typed parameters for the find-secrets module.
 type FindSecretsConfig struct {
 	plugin.AWSCommonRecon
-	plugin.ResourceARNParam
-	DBPath     string `param:"db-path" desc:"Path for Titus SQLite database" default:""`
-	MaxEvents  int    `param:"max-events" desc:"Max log events per log group" default:"10000"`
-	MaxStreams int    `param:"max-streams" desc:"Max streams to sample per log group" default:"10"`
+	secrets.ScannerConfig
+	MaxEvents  int `param:"max-events" desc:"Max log events per log group" default:"10000"`
+	MaxStreams int `param:"max-streams" desc:"Max streams to sample per log group" default:"10"`
 }
 
 // AWSFindSecretsModule scans AWS resources for hardcoded secrets using Titus.
@@ -72,6 +71,9 @@ func (m *AWSFindSecretsModule) Parameters() any {
 
 func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.FindSecretsConfig
+	if c.DBPath == "" {
+		c.DBPath = secrets.DefaultDBPath(c.OutputDir)
+	}
 
 	var s secrets.SecretScanner
 	if err := s.Start(c.DBPath); err != nil {
