@@ -142,7 +142,41 @@ func parseARGRow(row any, sub azurehelpers.SubscriptionInfo) (output.AzureResour
 		}
 	}
 
+	// Capture any additional projected fields (e.g. from extend/project) into Properties.
+	for k, v := range rowMap {
+		switch k {
+		case "id", "name", "type", "location", "resourceGroup", "tags", "properties", "subscriptionId":
+			continue
+		default:
+			if resource.Properties == nil {
+				resource.Properties = make(map[string]any)
+			}
+			resource.Properties[k] = v
+		}
+	}
+
+	if resource.Properties != nil {
+		tryUnmarshalJSONStrings(resource.Properties)
+	}
+
 	return resource, nil
+}
+
+// tryUnmarshalJSONStrings walks a map and replaces string values that are
+// valid JSON objects or arrays with their unmarshaled form.
+func tryUnmarshalJSONStrings(m map[string]any) {
+	for k, v := range m {
+		s, ok := v.(string)
+		if !ok || len(s) < 2 {
+			continue
+		}
+		if (s[0] == '{' && s[len(s)-1] == '}') || (s[0] == '[' && s[len(s)-1] == ']') {
+			var parsed any
+			if json.Unmarshal([]byte(s), &parsed) == nil {
+				m[k] = parsed
+			}
+		}
+	}
 }
 
 func stringFromMap(m map[string]any, key string) string {
