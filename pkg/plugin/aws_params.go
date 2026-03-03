@@ -47,6 +47,8 @@ func (c *AWSCommonRecon) PostBind(_ Config, _ Module) error {
 		}
 		c.Regions = resolved
 	}
+	
+	c.Concurrency = max(1, c.Concurrency)
 	return nil
 }
 

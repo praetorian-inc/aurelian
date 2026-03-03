@@ -98,7 +98,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	extractor := extraction.NewAWSExtractor(c.AWSCommonRecon, extraction.Config{
 		MaxEvents:  c.MaxEvents,
 		MaxStreams: c.MaxStreams,
-	})
+	}, c.AWSCommonRecon.Concurrency)
 
 	extracted := pipeline.New[output.ScanInput]()
 	pipeline.Pipe(listed, extractor.Extract, extracted)
