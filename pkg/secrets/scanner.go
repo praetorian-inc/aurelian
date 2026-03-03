@@ -1,0 +1,90 @@
+package secrets
+
+import (
+	"fmt"
+	"log/slog"
+
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/titus/pkg/types"
+)
+
+// SecretScanner provides an object-oriented interface for scanning content for secrets.
+type SecretScanner struct {
+	ps *persistentScanner
+}
+
+// SecretScanResult represents a secret detection result emitted by the scanner.
+type SecretScanResult struct {
+	ResourceRef string `json:"resource_ref"`
+	RuleName    string `json:"rule_name"`
+	RuleTextID  string `json:"rule_text_id"`
+	Match       string `json:"match,omitempty"`
+	FilePath    string `json:"file_path,omitempty"`
+	LineNumber  int    `json:"line_number,omitempty"`
+	Confidence  string `json:"confidence"`
+}
+
+// Start creates a new persistent scanner and stores it as a field.
+// The dbPath parameter specifies the SQLite database path; if empty, a default is used.
+func (s *SecretScanner) Start(dbPath string) error {
+	ps, err := newPersistentScanner(dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to create Titus scanner: %w", err)
+	}
+	s.ps = ps
+	slog.Info("secret scanner started", "db", ps.dbPath)
+	return nil
+}
+
+// Close closes the underlying persistent scanner and releases resources.
+func (s *SecretScanner) Close() error {
+	if s.ps == nil {
+		return nil
+	}
+	err := s.ps.close()
+	s.ps = nil
+	return err
+}
+
+// DBPath returns the path to the SQLite database, or empty string if not started.
+func (s *SecretScanner) DBPath() string {
+	if s.ps == nil {
+		return ""
+	}
+	return s.ps.dbPath
+}
+
+// Scan is a pipeline-compatible method that scans a ScanInput for secrets
+// and sends SecretScanResult values to the output pipeline.
+func (s *SecretScanner) Scan(input output.ScanInput, out *pipeline.P[SecretScanResult]) error {
+	blobID := types.ComputeBlobID(input.Content)
+	provenance := types.FileProvenance{FilePath: input.Label}
+
+	matches, err := s.ps.scanContent(input.Content, blobID, provenance)
+	if err != nil {
+		return nil // skip content that fails to scan
+	}
+
+	for _, match := range matches {
+		out.Send(toScanResult(input, match))
+	}
+	return nil
+}
+
+func toScanResult(input output.ScanInput, match *types.Match) SecretScanResult {
+	confidence := "medium"
+	if match.ValidationResult != nil && match.ValidationResult.Status == types.StatusValid {
+		confidence = "high"
+	}
+
+	return SecretScanResult{
+		ResourceRef: input.ResourceID,
+		RuleName:    match.RuleName,
+		RuleTextID:  match.RuleID,
+		Match:       string(match.Snippet.Matching),
+		FilePath:    input.Label,
+		LineNumber:  match.Location.Source.Start.Line,
+		Confidence:  confidence,
+	}
+}

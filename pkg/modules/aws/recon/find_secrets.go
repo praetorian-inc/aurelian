@@ -8,11 +8,10 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/aws/extraction"
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/model"
-	"github.com/praetorian-inc/aurelian/pkg/modules/aws/recon/secrets"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
-	"github.com/praetorian-inc/aurelian/pkg/scanner"
+	"github.com/praetorian-inc/aurelian/pkg/secrets"
 )
 
 func init() {
@@ -74,17 +73,15 @@ func (m *AWSFindSecretsModule) Parameters() any {
 func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.FindSecretsConfig
 
-	ps, err := scanner.NewPersistentScanner(c.DBPath)
-	if err != nil {
+	var s secrets.SecretScanner
+	if err := s.Start(c.DBPath); err != nil {
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
 	}
 	defer func() {
-		if closeErr := ps.Close(); closeErr != nil {
+		if closeErr := s.Close(); closeErr != nil {
 			slog.Warn("failed to close Titus scanner", "error", closeErr)
 		}
 	}()
-
-	slog.Info("find-secrets: Titus scanner initialized", "db", ps.DBPath())
 
 	resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, supportedSecretResourceTypes)
 	if err != nil {
@@ -105,7 +102,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	pipeline.Pipe(listed, extractor.Extract, extracted)
 
 	scanned := pipeline.New[secrets.SecretScanResult]()
-	pipeline.Pipe(extracted, secrets.ScanForSecrets(ps), scanned)
+	pipeline.Pipe(extracted, s.Scan, scanned)
 	pipeline.Pipe(scanned, riskFromScanResult, out)
 
 	return out.Wait()

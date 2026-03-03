@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/extraction"
-	"github.com/praetorian-inc/aurelian/pkg/modules/aws/recon/secrets"
+	"github.com/praetorian-inc/aurelian/pkg/secrets"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/stretchr/testify/assert"
