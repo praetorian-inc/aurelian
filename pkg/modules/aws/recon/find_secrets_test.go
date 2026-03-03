@@ -144,7 +144,7 @@ func TestBuildProofData(t *testing.T) {
 		},
 	}
 
-	proof := buildProofData("arn:aws:lambda:us-east-1:123:function:demo", match)
+	proof := buildProofData("arn:aws:lambda:us-east-1:123:function:demo", "handler.py", match)
 
 	assert.Equal(t, "abc123def456", proof["finding_id"])
 	assert.Equal(t, "AWS API Key", proof["rule_name"])
@@ -186,7 +186,7 @@ func TestBuildProofData_WithValidation(t *testing.T) {
 		},
 	}
 
-	proof := buildProofData("arn:aws:s3:::bucket", match)
+	proof := buildProofData("arn:aws:s3:::bucket", "config.yaml", match)
 
 	validation := proof["validation"].(map[string]interface{})
 	assert.Equal(t, string(types.StatusValid), validation["status"])
@@ -213,7 +213,7 @@ func TestBuildRiskContextRoundTrip(t *testing.T) {
 		},
 	}
 
-	proof := buildProofData("arn:aws:lambda:us-east-1:123456789012:function:demo", match)
+	proof := buildProofData("arn:aws:lambda:us-east-1:123456789012:function:demo", "index.js", match)
 	proofBytes, err := json.MarshalIndent(proof, "", "  ")
 	require.NoError(t, err)
 

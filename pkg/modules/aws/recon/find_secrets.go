@@ -111,7 +111,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 }
 
 func riskFromScanResult(result secrets.SecretScanResult, out *pipeline.P[model.AurelianModel]) error {
-	proof := buildProofData(result.ResourceRef, result.Match)
+	proof := buildProofData(result.ResourceRef, result.Label, result.Match)
 	proofBytes, err := json.MarshalIndent(proof, "", "  ")
 	if err != nil {
 		slog.Warn("failed to marshal proof", "resource", result.ResourceRef, "error", err)
@@ -160,7 +160,7 @@ func riskSeverityFromMatch(match *types.Match) output.RiskSeverity {
 
 // buildProofData constructs proof JSON matching Guard's secrets proof format.
 // Includes provenance with cloud resource context so the UI can render findings.
-func buildProofData(resourceRef string, match *types.Match) map[string]interface{} {
+func buildProofData(resourceRef string, label string, match *types.Match) map[string]interface{} {
 	proof := map[string]interface{}{
 		"finding_id":   match.FindingID,
 		"rule_name":    match.RuleName,
@@ -174,6 +174,9 @@ func buildProofData(resourceRef string, match *types.Match) map[string]interface
 						"kind":        "cloud_resource",
 						"platform":    "aws",
 						"resource_id": resourceRef,
+						"first_commit": map[string]interface{}{
+							"blob_path": label,
+						},
 					},
 				},
 				"snippet": map[string]string{
