@@ -136,7 +136,6 @@ func TestStart_OutputDirectory(t *testing.T) {
 func TestScanContent(t *testing.T) {
 	// Pre-existing failure: Titus FK constraint error when storing matches for this content.
 	// See: "failed to store match: constraint failed: FOREIGN KEY constraint failed (787)"
-	t.Skip("skipped: pre-existing Titus FK constraint failure on AKIAIOSFODNN7EXAMPLE content")
 
 	s := startScanner(t)
 
@@ -279,7 +278,6 @@ func TestCustomPathPersistence(t *testing.T) {
 
 func TestFindingsCreation(t *testing.T) {
 	// Pre-existing failure: Titus FK constraint error when storing matches for this content.
-	t.Skip("skipped: pre-existing Titus FK constraint failure on AKIAIOSFODNN7EXAMPLE content")
 
 	s := startScanner(t)
 
@@ -307,7 +305,6 @@ func TestFindingsCreation(t *testing.T) {
 
 func TestFindingsDeduplication(t *testing.T) {
 	// Pre-existing failure: Titus FK constraint error when storing matches for this content.
-	t.Skip("skipped: pre-existing Titus FK constraint failure on AKIAIOSFODNN7EXAMPLE content")
 
 	s := startScanner(t)
 

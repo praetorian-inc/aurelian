@@ -60,6 +60,11 @@ func newPersistentScanner(dbPath string) (*persistentScanner, error) {
 	ruleMap := make(map[string]*types.Rule)
 	for _, r := range rules {
 		ruleMap[r.ID] = r
+		if err := s.AddRule(r); err != nil {
+			m.Close()
+			s.Close()
+			return nil, fmt.Errorf("failed to store rule %s: %w", r.ID, err)
+		}
 	}
 
 	return &persistentScanner{
