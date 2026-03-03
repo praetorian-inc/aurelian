@@ -5,15 +5,17 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
-// publicAccessResult contains the result of a public access evaluation.
-type publicAccessResult struct {
-	IsPublic          bool     `json:"is_public"`
-	NeedsManualTriage bool     `json:"needs_manual_triage,omitempty"`
-	AllowedActions    []string `json:"allowed_actions,omitempty"`
-	EvaluationReasons []string `json:"evaluation_reasons,omitempty"`
+// PublicAccessResult contains the result of a public access evaluation.
+type PublicAccessResult struct {
+	AWSResource       *output.AWSResource `json:"aws_resource,omitempty"`
+	IsPublic          bool                `json:"is_public"`
+	NeedsManualTriage bool                `json:"needs_manual_triage,omitempty"`
+	AllowedActions    []string            `json:"allowed_actions,omitempty"`
+	EvaluationReasons []string            `json:"evaluation_reasons,omitempty"`
 }
 
 // evaluateResourcePolicy evaluates whether a resource policy allows public access.
@@ -24,9 +26,9 @@ type publicAccessResult struct {
 // This is necessary because the IAM evaluator requires the request resource to match the
 // statement's Resource field (e.g., S3 policies use "arn:aws:s3:::bucket/*" for object-level
 // actions, not the bucket ARN itself).
-func evaluateResourcePolicy(policy *types.Policy, resourceARN, accountID, resourceType string, orgPolicies *orgpolicies.OrgPolicies) (*publicAccessResult, error) {
+func evaluateResourcePolicy(policy *types.Policy, resourceARN, accountID, resourceType string, orgPolicies *orgpolicies.OrgPolicies) (*PublicAccessResult, error) {
 	if policy == nil {
-		return &publicAccessResult{IsPublic: false}, nil
+		return &PublicAccessResult{IsPublic: false}, nil
 	}
 
 	contexts, err := GetEvaluationContexts(resourceType, resourceARN, accountID)
@@ -44,7 +46,7 @@ func evaluateResourcePolicy(policy *types.Policy, resourceARN, accountID, resour
 		testResources = []string{resourceARN}
 	}
 
-	result := &publicAccessResult{}
+	result := &PublicAccessResult{}
 
 	for _, testResource := range testResources {
 		resourcePolicies := map[string]*types.Policy{
@@ -66,7 +68,7 @@ func evaluatePolicyContexts(
 	evaluator *iam.PolicyEvaluator,
 	testResource string,
 	contexts []EvaluationContext,
-	result *publicAccessResult,
+	result *PublicAccessResult,
 ) {
 	for _, evalCtx := range contexts {
 		req := &iam.EvaluationRequest{

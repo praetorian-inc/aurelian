@@ -18,12 +18,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/hashicorp/terraform-exec/tfexec"
 )
 
 const (
-	// stateBucket is the shared S3 bucket for all integration test Terraform state.
-	stateBucket = "aurelian-integration-tests"
+	// stateBucketPrefix is joined with the AWS account ID to form the bucket name.
+	stateBucketPrefix = "aurelian-integration-tests-"
 
 	// stateRegion is the AWS region where the state bucket lives.
 	stateRegion = "us-east-1"
@@ -31,6 +32,15 @@ const (
 	// statePrefix is the S3 key prefix under which all integration test state is stored.
 	statePrefix = "integration-tests/"
 
+)
+
+var (
+	// stateBucket is resolved dynamically via STS GetCallerIdentity.
+	// Set once by resolveStateBucket and then accessed as a package-level var
+	// by both fixture.go and reaper.go.
+	stateBucket string
+	bucketOnce  sync.Once
+	bucketErr   error
 )
 
 // TerraformFixture manages terraform lifecycle for integration tests.
@@ -67,8 +77,8 @@ func NewFixture(t *testing.T, moduleDir string) *TerraformFixture {
 		t.Fatalf("failed to create terraform instance for %s: %v", moduleDir, err)
 	}
 
-	// Verify the state bucket is accessible with the current AWS credentials.
-	verifyStateBucket(t)
+	// Ensure the state bucket exists, creating it if necessary.
+	ensureStateBucket(t)
 
 	stateKey := fmt.Sprintf("integration-tests/%s/terraform.tfstate", moduleDir)
 
@@ -195,23 +205,62 @@ func (f *TerraformFixture) OutputList(key string) []string {
 	return result
 }
 
-// verifyStateBucket checks that the S3 state bucket exists and is accessible
-// with the current AWS credentials. Fails the test immediately if not.
-func verifyStateBucket(t *testing.T) {
+// resolveStateBucket determines the S3 state bucket name by appending the
+// AWS account ID (via STS GetCallerIdentity) to stateBucketPrefix.
+// The result is cached for the lifetime of the process.
+func resolveStateBucket(ctx context.Context) (string, error) {
+	bucketOnce.Do(func() {
+		opts := []func(*config.LoadOptions) error{config.WithRegion(stateRegion)}
+		if profile := os.Getenv("AWS_PROFILE"); profile != "" {
+			opts = append(opts, config.WithSharedConfigProfile(profile))
+		}
+		cfg, err := config.LoadDefaultConfig(ctx, opts...)
+		if err != nil {
+			bucketErr = fmt.Errorf("load AWS config: %w", err)
+			return
+		}
+		identity, err := sts.NewFromConfig(cfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+		if err != nil {
+			bucketErr = fmt.Errorf("STS GetCallerIdentity: %w", err)
+			return
+		}
+		stateBucket = stateBucketPrefix + *identity.Account
+	})
+	return stateBucket, bucketErr
+}
+
+// ensureStateBucket resolves the state bucket name (via STS) and creates
+// the bucket if it does not already exist.
+func ensureStateBucket(t *testing.T) {
 	t.Helper()
 	ctx := context.Background()
 
-	client, err := newS3Client(ctx)
+	bucket, err := resolveStateBucket(ctx)
 	if err != nil {
-		t.Fatalf("failed to load AWS config: %v (ensure AWS_PROFILE is set correctly)", err)
+		t.Fatalf("failed to resolve state bucket name: %v", err)
 	}
 
-	_, err = client.HeadBucket(ctx, &s3.HeadBucketInput{
-		Bucket: strPtr(stateBucket),
-	})
+	client, err := newS3Client(ctx)
 	if err != nil {
-		t.Fatalf("state bucket %q is not accessible: %v (ensure AWS_PROFILE is set and has access to the bucket)", stateBucket, err)
+		t.Fatalf("failed to create S3 client: %v", err)
 	}
+
+	_, headErr := client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: &bucket,
+	})
+	if headErr == nil {
+		return
+	}
+
+	// Bucket not accessible — attempt to create it.
+	t.Logf("state bucket %q not found, creating...", bucket)
+	_, createErr := client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: &bucket,
+	})
+	if createErr != nil {
+		t.Fatalf("state bucket %q not accessible (head: %v) and creation failed: %v", bucket, headErr, createErr)
+	}
+	t.Logf("created state bucket %q in %s", bucket, stateRegion)
 }
 
 // cleanupRemoteState deletes the state object from S3 after terraform destroy.
