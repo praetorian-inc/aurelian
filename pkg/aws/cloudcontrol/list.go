@@ -8,12 +8,15 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsaarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 type CloudControlLister struct {
@@ -27,9 +30,7 @@ type CloudControlLister struct {
 }
 
 func NewCloudControlLister(options plugin.AWSCommonRecon) *CloudControlLister {
-	if options.Concurrency <= 0 {
-		options.Concurrency = 1
-	}
+	options.Concurrency = max(1, options.Concurrency)
 
 	return &CloudControlLister{
 		AWSCommonRecon:   options,
@@ -38,22 +39,173 @@ func NewCloudControlLister(options plugin.AWSCommonRecon) *CloudControlLister {
 	}
 }
 
+func (cc *CloudControlLister) List(identifier string, out *pipeline.P[output.AWSResource]) error {
+	_, err := awsaarn.Parse(identifier)
+	if err == nil {
+		return cc.ListByARN(identifier, out)
+	}
 
-// List enumerates a single resource type across all regions, emitting each
+	isResourceType := strings.HasPrefix(identifier, "AWS::")
+	if isResourceType {
+		return cc.ListByType(identifier, out)
+	}
+
+	return fmt.Errorf("identifier must be either an ARN or CloudControl resource type: %q", identifier)
+}
+
+func (cc *CloudControlLister) ListByARN(resourceARN string, out *pipeline.P[output.AWSResource]) error {
+	resource, err := cc.getResourceByARN(resourceARN)
+	if cc.isSkippableError(err) {
+		slog.Debug("skipping arn", "arn", resourceARN, "error", err)
+		return nil
+	}
+
+	out.Send(resource)
+
+	return err
+}
+
+func (cc *CloudControlLister) getResourceByARN(arn string) (output.AWSResource, error) {
+	region, resourceType, identifier, err := cc.resolveARNTarget(arn)
+	if err != nil {
+		return output.AWSResource{}, err
+	}
+
+	client, err := cc.newCloudControlClient(region)
+	if err != nil {
+		return output.AWSResource{}, fmt.Errorf("create client: %w", err)
+	}
+
+	accountID, err := cc.getAccountID(region)
+	if err != nil {
+		return output.AWSResource{}, err
+	}
+
+	result, err := client.GetResource(context.Background(), &cloudcontrol.GetResourceInput{
+		TypeName:   aws.String(resourceType),
+		Identifier: aws.String(identifier),
+	})
+	if err != nil {
+		return output.AWSResource{}, fmt.Errorf("get %s %s: %w", resourceType, identifier, err)
+	}
+
+	cr := awshelpers.CloudControlToAWSResource(*result.ResourceDescription, resourceType, accountID, region)
+	return cr, nil
+}
+
+func (cc *CloudControlLister) resolveARNTarget(resourceARN string) (string, string, string, error) {
+	parsed, err := awsaarn.Parse(resourceARN)
+	if err != nil {
+		return "", "", "", fmt.Errorf("parse arn %q: %w", resourceARN, err)
+	}
+
+	resourceType, ok := types.ServiceToResourceType[parsed.Service]
+	if !ok {
+		return "", "", "", fmt.Errorf("unsupported arn service %q", parsed.Service)
+	}
+
+	region, err := cc.resolveResourceRegion(parsed, resourceType)
+	if err != nil {
+		return "", "", "", fmt.Errorf("resolve region for %q: %w", resourceARN, err)
+	}
+
+	identifier := parsed.Resource
+	if newID, ok := cc.requiresSpecialIdentifier(resourceType, resourceARN, identifier); ok {
+		identifier = newID
+	}
+
+	return region, resourceType, identifier, nil
+}
+
+// resolveResourceRegion determines the region for a parsed ARN. It handles
+// global services, S3 (which omits region from its ARN), and standard ARNs.
+func (cc *CloudControlLister) resolveResourceRegion(parsed awsaarn.ARN, resourceType string) (string, error) {
+	region := parsed.Region
+	if awshelpers.IsGlobalService(resourceType) {
+		region = "us-east-1"
+	}
+
+	if region == "" && parsed.Service == "s3" {
+		resolved, err := cc.resolveS3BucketRegion(parsed.Resource)
+		if err != nil {
+			return "", fmt.Errorf("resolve s3 bucket region: %w", err)
+		}
+		region = resolved
+	}
+
+	if region == "" {
+		return "", fmt.Errorf("region not found for arn %q", parsed.String())
+	}
+
+	return region, nil
+}
+
+// resolveS3BucketRegion uses the S3 GetBucketLocation API to determine the
+// region of a bucket, since S3 ARNs do not contain a region component.
+func (cc *CloudControlLister) resolveS3BucketRegion(bucketName string) (string, error) {
+	// GetBucketLocation can be called from any region.
+	awsCfg, err := cc.getAWSConfig("us-east-1")
+	if err != nil {
+		return "", err
+	}
+
+	client := s3.NewFromConfig(*awsCfg)
+	locOut, err := client.GetBucketLocation(context.Background(), &s3.GetBucketLocationInput{
+		Bucket: &bucketName,
+	})
+	if err != nil {
+		return "", fmt.Errorf("get bucket location: %w", err)
+	}
+
+	region := string(locOut.LocationConstraint)
+	if region == "" {
+		region = "us-east-1"
+	}
+	return region, nil
+}
+
+func (cc *CloudControlLister) requiresSpecialIdentifier(resourceType, resourceARN, resourceID string) (string, bool) {
+	parsers := map[string]func(string, string) string{
+		"AWS::SNS::Topic":    cc.parseSNSTopicID,
+		"AWS::EC2::Instance": cc.parseEC2InstanceID,
+	}
+
+	parser, ok := parsers[resourceType]
+	if !ok {
+		return "", false
+	}
+
+	return parser(resourceARN, resourceID), ok
+}
+
+func (cc *CloudControlLister) parseSNSTopicID(resourceARN, _ string) string {
+	return resourceARN
+}
+
+func (cc *CloudControlLister) parseEC2InstanceID(_, instanceID string) string {
+	parts := strings.Split(instanceID, "/")
+	if len(parts) != 2 {
+		return instanceID
+	}
+
+	return parts[1]
+}
+
+// ListByType enumerates a single resource type across all regions, emitting each
 // resource into out as pages are fetched. Its signature matches the fn
 // parameter of pipeline.Pipe[string, output.AWSResource].
-func (cc *CloudControlLister) List(resourceType string, out *pipeline.P[output.AWSResource]) error {
+func (cc *CloudControlLister) ListByType(resourceType string, out *pipeline.P[output.AWSResource]) error {
 	if len(cc.AWSCommonRecon.Regions) == 0 {
 		return fmt.Errorf("no regions configured")
 	}
 
 	actor := ratelimit.NewCrossRegionActor(cc.Concurrency)
 	return actor.ActInRegions(cc.AWSCommonRecon.Regions, func(region string) error {
-		return cc.listInRegion(region, resourceType, out)
+		return cc.listInRegionByType(region, resourceType, out)
 	})
 }
 
-func (cc *CloudControlLister) listInRegion(region, resourceType string, out *pipeline.P[output.AWSResource]) error {
+func (cc *CloudControlLister) listInRegionByType(region, resourceType string, out *pipeline.P[output.AWSResource]) error {
 	client, err := cc.newCloudControlClient(region)
 	if err != nil {
 		return fmt.Errorf("create client: %w", err)
@@ -68,7 +220,8 @@ func (cc *CloudControlLister) listInRegion(region, resourceType string, out *pip
 	if cc.isSkippableError(err) {
 		slog.Debug("skipping resource type", "type", resourceType, "region", region, "error", err)
 		return nil
-	} else if err != nil {
+	}
+	if err != nil {
 		slog.Warn("error listing resources", "type", resourceType, "region", region, "error", err)
 		return err
 	}

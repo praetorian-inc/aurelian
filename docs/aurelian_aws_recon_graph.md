@@ -21,10 +21,11 @@ aurelian aws recon graph [flags]
       --neo4j-uri string               Neo4j connection URI (e.g., bolt://localhost:7687)
       --neo4j-username string          Neo4j username (default "neo4j")
       --opsec_level string             Operational security level for AWS operations (default "none")
-      --org-policies-file string       Path to Org Policies JSON file (optional)
+      --org-policies-file string       Path to Org Policies JSON file
   -p, --profile string                 AWS profile to use
       --profile-dir string             Set to override the default AWS profile directory
   -r, --regions strings                AWS regions to scan (default [all])
+  -a, --resource-arn strings           AWS target resource ARN
   -i, --resource-id string             Single resource ARN to evaluate (skips enumeration)
   -t, --resource-type strings          AWS Cloud Control resource type (default [all])
 ```

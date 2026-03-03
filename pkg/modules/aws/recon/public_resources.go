@@ -2,6 +2,7 @@ package recon
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
@@ -61,14 +62,15 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	c := m.PublicResourcesConfig
 
 	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
-	resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, publicaccess.SupportedResourceTypes())
+
+	inputs, err := m.collectInputs()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to collect inputs: %v", err)
 	}
 
-	resourceTypePipeline := pipeline.From(resourceTypes...)
+	inputPipeline := pipeline.From(inputs...)
 	listed := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(resourceTypePipeline, lister.List, listed)
+	pipeline.Pipe(inputPipeline, lister.List, listed)
 
 	// Enrich resources with properties not available from CloudControl
 	// (e.g. RDS PubliclyAccessible, Cognito self-signup, Lambda function URL auth type).
@@ -82,6 +84,19 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	pipeline.Pipe(evaluated, riskFromResult, out)
 
 	return out.Wait()
+}
+
+func (m *AWSPublicResourcesModule) collectInputs() ([]string, error) {
+	if len(m.ResourceARN) > 0 {
+		return m.ResourceARN, nil
+	}
+
+	resourceTypes, err := resolveRequestedResourceTypes(m.ResourceType, publicaccess.SupportedResourceTypes())
+	if err != nil {
+		return nil, err
+	}
+
+	return resourceTypes, nil
 }
 
 func riskFromResult(r publicaccess.PublicAccessResult, out *pipeline.P[model.AurelianModel]) error {

@@ -3,75 +3,100 @@
 package cloudcontrol
 
 import (
-	helpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
-	"github.com/praetorian-inc/aurelian/pkg/aws/resourcetypes"
-	"github.com/praetorian-inc/aurelian/pkg/output"
-	"github.com/stretchr/testify/require"
-	"strings"
 	"testing"
+
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/test/testutil"
+	"github.com/stretchr/testify/require"
 )
 
-var (
-	EXPECTED_REGIONS = []string{
-		"ap-northeast-1",
-		"ap-northeast-2",
-		"ap-northeast-3",
-		"ap-south-1",
-		"ap-southeast-1",
-		"ap-southeast-2",
-		"ca-central-1",
-		"eu-central-1",
-		"eu-north-1",
-		"eu-west-1",
-		"eu-west-2",
-		"eu-west-3",
-		"sa-east-1",
-		"us-east-1",
-		"us-east-2",
-		"us-west-1",
-		"us-west-2",
+func Test_CloudControl_ListByType_UsesReconListFixture(t *testing.T) {
+	fixture := testutil.NewFixture(t, "aws/recon/list")
+	fixture.Setup()
+
+	lister := NewCloudControlLister(plugin.AWSCommonRecon{
+		Regions:     []string{"us-east-2"},
+		Concurrency: 2,
+	})
+
+	instanceResults, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+		return lister.ListByType("AWS::EC2::Instance", out)
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, instanceResults)
+	for _, id := range fixture.OutputList("instance_ids") {
+		require.True(t, resultsContainResourceID(instanceResults, id), "expected instance id %q in CloudControl output", id)
 	}
-)
 
-func Test_CloudControl_ListAllInAllRegions(t *testing.T) {
-	regions, err := helpers.EnabledRegions("nebula", "")
+	bucketResults, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+		return lister.ListByType("AWS::S3::Bucket", out)
+	})
 	require.NoError(t, err)
+	require.NotEmpty(t, bucketResults)
+	for _, name := range fixture.OutputList("bucket_names") {
+		require.True(t, resultsContainResourceID(bucketResults, name), "expected bucket name %q in CloudControl output", name)
+	}
 
-	lister := NewCloudControlLister(5, "nebula", "")
-	results, err := lister.List(regions, resourcetypes.GetAll())
+	lambdaResults, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+		return lister.ListByType("AWS::Lambda::Function", out)
+	})
 	require.NoError(t, err)
-	require.NotNil(t, results)
-
-	verifyRegionsPresent(t, results, EXPECTED_REGIONS...)
-}
-
-func verifyRegionsPresent(t *testing.T, results map[string][]output.AWSResource, regions ...string) {
-	t.Helper()
-
-	for _, region := range regions {
-		verifyRegionPresent(t, results, region)
+	require.NotEmpty(t, lambdaResults)
+	for _, arn := range fixture.OutputList("function_arns") {
+		require.True(t, resultsContainARN(lambdaResults, arn), "expected lambda arn %q in CloudControl output", arn)
 	}
 }
 
-func verifyRegionPresent(t *testing.T, results map[string][]output.AWSResource, region string) {
-	t.Helper()
+func Test_CloudControl_ListByARN_UsesReconListFixture(t *testing.T) {
+	fixture := testutil.NewFixture(t, "aws/recon/list")
+	fixture.Setup()
 
-	regionFound := false
-	for key, result := range results {
-		if !strings.HasPrefix(key, region) {
-		    continue
+	lister := NewCloudControlLister(plugin.AWSCommonRecon{Concurrency: 1})
+
+	for _, arn := range fixture.OutputList("function_arns") {
+		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+			return lister.ListByARN(arn, out)
+		})
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		require.Equal(t, arn, results[0].ARN)
+	}
+}
+
+func collectResources(run func(out *pipeline.P[output.AWSResource]) error) ([]output.AWSResource, error) {
+	out := pipeline.New[output.AWSResource]()
+
+	resultCh := make(chan []output.AWSResource, 1)
+	go func() {
+		var results []output.AWSResource
+		for r := range out.Range() {
+			results = append(results, r)
 		}
+		resultCh <- results
+	}()
 
-		regionFound = true
-		if len(result) > 0 {
-			return
+	err := run(out)
+	out.Close()
+	results := <-resultCh
+	return results, err
+}
+
+func resultsContainResourceID(results []output.AWSResource, resourceID string) bool {
+	for _, result := range results {
+		if result.ResourceID == resourceID {
+			return true
 		}
 	}
+	return false
+}
 
-	if regionFound {
-		t.Fatalf("region %s found, but with zero results", region)
-		return
+func resultsContainARN(results []output.AWSResource, arn string) bool {
+	for _, result := range results {
+		if result.ARN == arn {
+			return true
+		}
 	}
-
-	t.Fatalf("region %q not found in output", region)
+	return false
 }
