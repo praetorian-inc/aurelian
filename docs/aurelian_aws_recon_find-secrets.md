@@ -1,9 +1,9 @@
-## aurelian aws recon list-all
+## aurelian aws recon find-secrets
 
-List resources in an AWS account using CloudControl API. Supports 'full' scan for all resources or 'summary' scan for key services. Can scan multiple regions concurrently.
+Enumerates AWS resources via Cloud Control, extracts content likely to contain hardcoded secrets (EC2 user data, Lambda code, CloudFormation templates, CloudWatch logs, ECS task definitions, SSM documents, Step Functions executions), and scans with Titus.
 
 ```
-aurelian aws recon list-all [flags]
+aurelian aws recon find-secrets [flags]
 ```
 
 ### Options
@@ -15,8 +15,11 @@ aurelian aws recon list-all [flags]
       --cache-ext string               Name of AWS API response cache files extension (default ".aws-cache")
       --cache-ttl int                  TTL for cached responses in seconds (default 3600)
       --concurrency int                Maximum concurrent API requests (default 5)
+      --db-path string                 Path for Titus SQLite database
       --disable-cache                  Disable API response caching
-  -h, --help                           help for list-all
+  -h, --help                           help for find-secrets
+      --max-events int                 Max log events per log group (default 10000)
+      --max-streams int                Max streams to sample per log group (default 10)
       --opsec_level string             Operational security level for AWS operations (default "none")
       --output-dir string              Base output directory (default "aurelian-output")
   -p, --profile string                 AWS profile to use
@@ -24,7 +27,6 @@ aurelian aws recon list-all [flags]
   -r, --regions strings                AWS regions to scan (default [all])
   -a, --resource-arn strings           AWS target resource ARN
   -t, --resource-type strings          AWS Cloud Control resource type (default [all])
-  -s, --scan-type string               Scan type - 'full' for all resources or 'summary' for key services (default "full")
 ```
 
 ### SEE ALSO
