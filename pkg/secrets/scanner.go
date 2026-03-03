@@ -16,13 +16,9 @@ type SecretScanner struct {
 
 // SecretScanResult represents a secret detection result emitted by the scanner.
 type SecretScanResult struct {
-	ResourceRef string `json:"resource_ref"`
-	RuleName    string `json:"rule_name"`
-	RuleTextID  string `json:"rule_text_id"`
-	Match       string `json:"match,omitempty"`
-	FilePath    string `json:"file_path,omitempty"`
-	LineNumber  int    `json:"line_number,omitempty"`
-	Confidence  string `json:"confidence"`
+	ResourceRef string       `json:"resource_ref"`
+	Label       string       `json:"label"`
+	Match       *types.Match `json:"match"`
 }
 
 // Start creates a new persistent scanner and stores it as a field.
@@ -73,18 +69,9 @@ func (s *SecretScanner) Scan(input output.ScanInput, out *pipeline.P[SecretScanR
 }
 
 func toScanResult(input output.ScanInput, match *types.Match) SecretScanResult {
-	confidence := "medium"
-	if match.ValidationResult != nil && match.ValidationResult.Status == types.StatusValid {
-		confidence = "high"
-	}
-
 	return SecretScanResult{
 		ResourceRef: input.ResourceID,
-		RuleName:    match.RuleName,
-		RuleTextID:  match.RuleID,
-		Match:       string(match.Snippet.Matching),
-		FilePath:    input.Label,
-		LineNumber:  match.Location.Source.Start.Line,
-		Confidence:  confidence,
+		Label:       input.Label,
+		Match:       match,
 	}
 }

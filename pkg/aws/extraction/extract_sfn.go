@@ -53,7 +53,7 @@ func extractSFN(ctx extractContext, r output.AWSResource, out *pipeline.P[output
 		}
 
 		label := sfnExecutionLabel(*exec.ExecutionArn)
-		out.Send(output.ScanInput{Content: []byte(strings.Join(parts, "\n")), ResourceID: r.ResourceID, ResourceType: r.ResourceType, Region: r.Region, AccountID: r.AccountRef, Label: label})
+		out.Send(output.ScanInputFromAWSResource(r, label, []byte(strings.Join(parts, "\n"))))
 	}
 
 	return nil

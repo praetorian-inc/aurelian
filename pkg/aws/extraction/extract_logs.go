@@ -78,6 +78,6 @@ func extractLogs(ctx extractContext, r output.AWSResource, out *pipeline.P[outpu
 		return nil
 	}
 
-	out.Send(output.ScanInput{Content: []byte(strings.Join(messages, "")), ResourceID: r.ResourceID, ResourceType: r.ResourceType, Region: r.Region, AccountID: r.AccountRef, Label: "logs"})
+	out.Send(output.ScanInputFromAWSResource(r, "logs", []byte(strings.Join(messages, ""))))
 	return nil
 }

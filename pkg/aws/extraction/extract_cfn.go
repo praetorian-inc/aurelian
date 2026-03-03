@@ -29,6 +29,6 @@ func extractCFN(ctx extractContext, r output.AWSResource, out *pipeline.P[output
 		return nil
 	}
 
-	out.Send(output.ScanInput{Content: []byte(*resp.TemplateBody), ResourceID: r.ResourceID, ResourceType: r.ResourceType, Region: r.Region, AccountID: r.AccountRef, Label: "template.yaml"})
+	out.Send(output.ScanInputFromAWSResource(r, "template.yaml", []byte(*resp.TemplateBody)))
 	return nil
 }

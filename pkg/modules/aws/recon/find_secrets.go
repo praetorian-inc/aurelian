@@ -4,14 +4,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
-	"github.com/praetorian-inc/aurelian/pkg/aws/extraction"
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
+	"github.com/praetorian-inc/aurelian/pkg/aws/extraction"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/secrets"
+	"github.com/praetorian-inc/titus/pkg/types"
 )
 
 func init() {
@@ -109,36 +111,96 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 }
 
 func riskFromScanResult(result secrets.SecretScanResult, out *pipeline.P[model.AurelianModel]) error {
-	contextBytes, err := json.Marshal(result)
+	proof := buildProofData(result.ResourceRef, result.Match)
+	proofBytes, err := json.MarshalIndent(proof, "", "  ")
 	if err != nil {
-		slog.Warn("failed to marshal secret scan result context", "resource", result.ResourceRef, "error", err)
+		slog.Warn("failed to marshal proof", "resource", result.ResourceRef, "error", err)
 		return nil
 	}
 
+	impactedARN := result.ResourceRef
+	if result.Match.FindingID != "" {
+		findingPrefix := result.Match.FindingID
+		if len(findingPrefix) > 8 {
+			findingPrefix = findingPrefix[:8]
+		}
+		impactedARN = fmt.Sprintf("%s:%s", result.ResourceRef, findingPrefix)
+	}
+
 	out.Send(output.AurelianRisk{
-		Name:        formatSecretRiskName(result.RuleName),
-		Severity:    riskSeverityFromConfidence(result.Confidence),
-		ImpactedARN: result.ResourceRef,
-		Context:     contextBytes,
+		Name:        formatSecretRiskName(result.Match.RuleID),
+		Severity:    riskSeverityFromMatch(result.Match),
+		ImpactedARN: impactedARN,
+		Context:     proofBytes,
 	})
 	return nil
 }
 
-func formatSecretRiskName(ruleName string) string {
-	return fmt.Sprintf("aws-secret-%s", ruleName)
+// extractRuleShortName extracts the short rule identifier from a Titus rule ID.
+// For IDs like "np.aws.1", returns "aws". For single-segment IDs, returns the
+// full ID lowercased.
+func extractRuleShortName(ruleID string) string {
+	parts := strings.Split(ruleID, ".")
+	if len(parts) >= 2 {
+		return parts[1]
+	}
+	return strings.ToLower(ruleID)
 }
 
-func riskSeverityFromConfidence(confidence string) output.RiskSeverity {
-	switch confidence {
-	case "low":
-		return output.RiskSeverityLow
-	case "medium":
-		return output.RiskSeverityMedium
-	case "high":
+func formatSecretRiskName(ruleID string) string {
+	return fmt.Sprintf("aws-secret-%s", extractRuleShortName(ruleID))
+}
+
+func riskSeverityFromMatch(match *types.Match) output.RiskSeverity {
+	if match.ValidationResult != nil && match.ValidationResult.Status == types.StatusValid {
 		return output.RiskSeverityHigh
-	case "critical":
-		return output.RiskSeverityCritical
-	default:
-		return output.RiskSeverityLow
 	}
+	return output.RiskSeverityMedium
+}
+
+// buildProofData constructs proof JSON matching Guard's secrets proof format.
+// Omits provenance and repository_url (not applicable for cloud resource scanning).
+func buildProofData(resourceRef string, match *types.Match) map[string]interface{} {
+	proof := map[string]interface{}{
+		"finding_id":   match.FindingID,
+		"rule_name":    match.RuleName,
+		"rule_text_id": match.RuleID,
+		"resource_ref": resourceRef,
+		"num_matches":  1,
+		"matches": []map[string]interface{}{
+			{
+				"snippet": map[string]string{
+					"before":   string(match.Snippet.Before),
+					"matching": string(match.Snippet.Matching),
+					"after":    string(match.Snippet.After),
+				},
+				"location": map[string]interface{}{
+					"offset_span": map[string]interface{}{
+						"start": match.Location.Offset.Start,
+						"end":   match.Location.Offset.End,
+					},
+					"source_span": map[string]interface{}{
+						"start": map[string]interface{}{
+							"line":   match.Location.Source.Start.Line,
+							"column": match.Location.Source.Start.Column,
+						},
+						"end": map[string]interface{}{
+							"line":   match.Location.Source.End.Line,
+							"column": match.Location.Source.End.Column,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if match.ValidationResult != nil {
+		proof["validation"] = map[string]interface{}{
+			"status":     string(match.ValidationResult.Status),
+			"confidence": match.ValidationResult.Confidence,
+			"message":    match.ValidationResult.Message,
+		}
+	}
+
+	return proof
 }

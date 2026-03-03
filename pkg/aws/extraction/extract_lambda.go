@@ -73,7 +73,7 @@ func extractLambda(ctx extractContext, r output.AWSResource, out *pipeline.P[out
 			continue
 		}
 
-		out.Send(output.ScanInput{Content: content, ResourceID: r.ResourceID, ResourceType: r.ResourceType, Region: r.Region, AccountID: r.AccountRef, Label: f.Name})
+		out.Send(output.ScanInputFromAWSResource(r, f.Name, content))
 	}
 
 	return nil

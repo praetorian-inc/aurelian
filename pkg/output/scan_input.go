@@ -20,3 +20,15 @@ type ScanInput struct {
 	// Label describes what this content is (e.g. "UserData", "handler.py", "template.yaml").
 	Label string
 }
+
+// ScanInputFromAWSResource creates a ScanInput by mapping common fields from an AWSResource.
+func ScanInputFromAWSResource(r AWSResource, label string, content []byte) ScanInput {
+	return ScanInput{
+		Content:      content,
+		ResourceID:   r.ARN,
+		ResourceType: r.ResourceType,
+		Region:       r.Region,
+		AccountID:    r.AccountRef,
+		Label:        label,
+	}
+}

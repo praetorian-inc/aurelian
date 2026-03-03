@@ -84,7 +84,12 @@ func (ps *persistentScanner) scanContent(content []byte, blobID types.BlobID, pr
 	}
 
 	if exists {
-		return ps.store.GetMatches(blobID)
+		matches, err := ps.store.GetMatches(blobID)
+		if err != nil {
+			return nil, err
+		}
+		ps.populateFindingIDs(matches)
+		return matches, nil
 	}
 
 	if err := ps.store.AddBlob(blobID, int64(len(content))); err != nil {
@@ -137,6 +142,23 @@ func (ps *persistentScanner) storeMatchAndFinding(match *types.Match) error {
 	}
 
 	return nil
+}
+
+// populateFindingIDs recomputes FindingID on cached matches.
+// The SQLite store currently stores finding_id as NullInt64 (wrong type for a
+// SHA-1 hex string), so cached matches always have an empty FindingID. This
+// recomputes it from the rule's StructuralID and the match's capture groups.
+func (ps *persistentScanner) populateFindingIDs(matches []*types.Match) {
+	for _, match := range matches {
+		if match.FindingID != "" {
+			continue
+		}
+		r, ok := ps.ruleMap[match.RuleID]
+		if !ok {
+			continue
+		}
+		match.FindingID = types.ComputeFindingID(r.StructuralID, match.Groups)
+	}
 }
 
 // close closes the matcher and store, releasing resources.

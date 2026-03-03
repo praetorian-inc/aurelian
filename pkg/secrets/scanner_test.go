@@ -73,6 +73,37 @@ func TestSecretScanner_ScanPipelineNoSecrets(t *testing.T) {
 	assert.Empty(t, items)
 }
 
+func TestToScanResult_CarriesFullMatch(t *testing.T) {
+	match := &types.Match{
+		FindingID: "abc123def456",
+		RuleID:    "np.aws.1",
+		RuleName:  "AWS API Key",
+		Snippet: types.Snippet{
+			Before:   []byte("before"),
+			Matching: []byte("AKIAIOSFODNN7EXAMPLE"),
+			After:    []byte("after"),
+		},
+		Location: types.Location{
+			Offset: types.OffsetSpan{Start: 10, End: 30},
+			Source: types.SourceSpan{
+				Start: types.SourcePoint{Line: 5, Column: 1},
+				End:   types.SourcePoint{Line: 5, Column: 21},
+			},
+		},
+	}
+
+	input := output.ScanInput{
+		ResourceID: "arn:aws:lambda:us-east-1:123456789012:function:demo",
+		Label:      "main.py",
+	}
+
+	result := toScanResult(input, match)
+
+	assert.Equal(t, input.ResourceID, result.ResourceRef)
+	assert.Equal(t, "main.py", result.Label)
+	assert.Same(t, match, result.Match, "Match should be the original *types.Match pointer")
+}
+
 // ---------------------------------------------------------------------------
 // Persistent scanner creation tests (ported from pkg/scanner/titus_test.go)
 // ---------------------------------------------------------------------------
@@ -223,6 +254,33 @@ func TestClose(t *testing.T) {
 	assert.NoError(t, err, "second Close should not panic")
 }
 
+func TestScanContent_FindingID_PopulatedOnCachedPath(t *testing.T) {
+	s := startScanner(t)
+
+	content := []byte("aws_access_key_id=AKIAIOSFODNN7EXAMPLE")
+	blobID := types.ComputeBlobID(content)
+	provenance := types.FileProvenance{FilePath: "test/credentials.txt"}
+
+	// First scan — matcher populates FindingID directly
+	firstMatches, err := s.ps.scanContent(content, blobID, provenance)
+	require.NoError(t, err)
+	require.NotEmpty(t, firstMatches)
+	for _, match := range firstMatches {
+		assert.NotEmpty(t, match.FindingID, "FindingID should be set on first scan")
+	}
+
+	// Second scan — hits cached path (store.GetMatches)
+	cachedMatches, err := s.ps.scanContent(content, blobID, provenance)
+	require.NoError(t, err)
+	require.NotEmpty(t, cachedMatches)
+	for _, match := range cachedMatches {
+		assert.NotEmpty(t, match.FindingID, "FindingID should be set on cached scan")
+	}
+
+	assert.Equal(t, firstMatches[0].FindingID, cachedMatches[0].FindingID,
+		"FindingID should be identical between first and cached scan")
+}
+
 // ---------------------------------------------------------------------------
 // Custom path / datastore tests (ported from pkg/scanner/titus_datastore_test.go)
 // ---------------------------------------------------------------------------
@@ -289,6 +347,11 @@ func TestFindingsCreation(t *testing.T) {
 	matches, err := s.ps.scanContent(content, blobID, provenance)
 	require.NoError(t, err, "scanContent should succeed")
 	require.NotEmpty(t, matches, "should detect at least one match")
+
+	// Verify FindingID is populated on each match (not just stored in the DB)
+	for _, match := range matches {
+		assert.NotEmpty(t, match.FindingID, "match.FindingID should be set after scanning")
+	}
 
 	// Verify findings were created in the database
 	findings, err := s.ps.store.GetFindings()
