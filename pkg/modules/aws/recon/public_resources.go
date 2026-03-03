@@ -87,9 +87,8 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 }
 
 func (m *AWSPublicResourcesModule) collectInputs() ([]string, error) {
-	inputs := m.ResourceARN
-	if len(m.ResourceType) == 0 {
-		return inputs, nil
+	if len(m.ResourceARN) > 0 {
+		return m.ResourceARN, nil
 	}
 
 	resourceTypes, err := resolveRequestedResourceTypes(m.ResourceType, publicaccess.SupportedResourceTypes())
@@ -97,8 +96,7 @@ func (m *AWSPublicResourcesModule) collectInputs() ([]string, error) {
 		return nil, err
 	}
 
-	inputs = append(inputs, resourceTypes...)
-	return inputs, nil
+	return resourceTypes, nil
 }
 
 func riskFromResult(r publicaccess.PublicAccessResult, out *pipeline.P[model.AurelianModel]) error {

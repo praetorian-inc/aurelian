@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"slices"
 	"strings"
 	"sync"
 
@@ -113,17 +112,38 @@ func (cc *CloudControlLister) resolveARNTarget(resourceARN string) (string, stri
 	}
 
 	identifier := parsed.Resource
-	if cc.arnIsIdentifier(resourceType) {
-		identifier = resourceARN
+	if newID, ok := cc.requiresSpecialIdentifier(resourceType, resourceARN, identifier); ok {
+		identifier = newID
 	}
 
 	return region, resourceType, identifier, nil
 }
 
-func (cc *CloudControlLister) arnIsIdentifier(resourceType string) bool {
-	return slices.Contains([]string{
-		"AWS::SNS::Topic",
-	}, resourceType)
+func (cc *CloudControlLister) requiresSpecialIdentifier(resourceType, resourceARN, resourceID string) (string, bool) {
+	parsers := map[string]func(string, string) string{
+		"AWS::SNS::Topic":    cc.parseSNSTopicID,
+		"AWS::EC2::Instance": cc.parseEC2InstanceID,
+	}
+
+	parser, ok := parsers[resourceType]
+	if !ok {
+		return "", false
+	}
+
+	return parser(resourceARN, resourceID), ok
+}
+
+func (cc *CloudControlLister) parseSNSTopicID(resourceARN, _ string) string {
+	return resourceARN
+}
+
+func (cc *CloudControlLister) parseEC2InstanceID(_, instanceID string) string {
+	parts := strings.Split(instanceID, "/")
+	if len(parts) != 2 {
+		return instanceID
+	}
+
+	return parts[1]
 }
 
 // ListByType enumerates a single resource type across all regions, emitting each
