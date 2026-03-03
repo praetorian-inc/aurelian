@@ -23,7 +23,6 @@ func init() {
 // FindSecretsConfig holds the typed parameters for the find-secrets module.
 type FindSecretsConfig struct {
 	plugin.AWSCommonRecon
-	plugin.ResourceARNParam
 	secrets.ScannerConfig
 	MaxEvents  int `param:"max-events" desc:"Max log events per log group" default:"10000"`
 	MaxStreams int `param:"max-streams" desc:"Max streams to sample per log group" default:"10"`
