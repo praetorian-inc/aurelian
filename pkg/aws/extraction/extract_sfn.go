@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"strings"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
+	sfntypes "github.com/aws/aws-sdk-go-v2/service/sfn/types"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
@@ -28,35 +31,46 @@ func extractSFN(ctx extractContext, r output.AWSResource, out *pipeline.P[output
 		return nil
 	}
 
+	g := new(errgroup.Group)
+	g.SetLimit(ctx.Concurrency)
+
 	for _, exec := range listResp.Executions {
+		exec := exec
 		missingExecutionArn := exec.ExecutionArn == nil
 		if missingExecutionArn {
 			continue
 		}
 
-		descResp, err := client.DescribeExecution(ctx.Context, &sfn.DescribeExecutionInput{ExecutionArn: exec.ExecutionArn})
-		if err != nil {
-			continue
-		}
-
-		var parts []string
-		if descResp.Input != nil && *descResp.Input != "" {
-			parts = append(parts, *descResp.Input)
-		}
-		if descResp.Output != nil && *descResp.Output != "" {
-			parts = append(parts, *descResp.Output)
-		}
-
-		emptyParts := len(parts) == 0
-		if emptyParts {
-			continue
-		}
-
-		label := sfnExecutionLabel(*exec.ExecutionArn)
-		out.Send(output.ScanInputFromAWSResource(r, label, []byte(strings.Join(parts, "\n"))))
+		g.Go(func() error {
+			describeExecution(ctx, client, exec, r, out)
+			return nil
+		})
 	}
 
-	return nil
+	return g.Wait()
+}
+
+func describeExecution(ctx extractContext, client *sfn.Client, exec sfntypes.ExecutionListItem, r output.AWSResource, out *pipeline.P[output.ScanInput]) {
+	descResp, err := client.DescribeExecution(ctx.Context, &sfn.DescribeExecutionInput{ExecutionArn: exec.ExecutionArn})
+	if err != nil {
+		return
+	}
+
+	var parts []string
+	if descResp.Input != nil && *descResp.Input != "" {
+		parts = append(parts, *descResp.Input)
+	}
+	if descResp.Output != nil && *descResp.Output != "" {
+		parts = append(parts, *descResp.Output)
+	}
+
+	emptyParts := len(parts) == 0
+	if emptyParts {
+		return
+	}
+
+	label := sfnExecutionLabel(*exec.ExecutionArn)
+	out.Send(output.ScanInputFromAWSResource(r, label, []byte(strings.Join(parts, "\n"))))
 }
 
 func sfnExecutionLabel(arn string) string {

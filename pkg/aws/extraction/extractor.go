@@ -49,7 +49,7 @@ func (e *AWSExtractor) Extract(r output.AWSResource, out *pipeline.P[output.Scan
 			return nil
 		}
 
-		ec := extractContext{Context: context.Background(), AWSConfig: awsCfg, Config: e.cfg}
+		ec := extractContext{Context: context.Background(), AWSConfig: awsCfg, Config: e.cfg, Concurrency: max(1, e.opts.Concurrency)}
 		for _, ext := range extractors {
 			if err := ext.Fn(ec, r, out); err != nil {
 				slog.Warn("extractor failed", "name", ext.Name, "type", r.ResourceType, "resource", r.ResourceID, "error", err)

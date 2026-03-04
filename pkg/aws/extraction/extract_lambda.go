@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"golang.org/x/sync/errgroup"
 )
 
 const maxLambdaZipSize = 250 * 1024 * 1024
@@ -54,30 +55,35 @@ func extractLambda(ctx extractContext, r output.AWSResource, out *pipeline.P[out
 		return fmt.Errorf("failed to open Lambda code zip for %s: %w", functionName, err)
 	}
 
+	g := new(errgroup.Group)
+	g.SetLimit(ctx.Concurrency)
+
 	for _, f := range reader.File {
-		isDirectory := f.FileInfo().IsDir()
-		if isDirectory {
+		if f.FileInfo().IsDir() {
 			continue
 		}
 
-		rc, err := f.Open()
-		if err != nil {
-			continue
-		}
+		f := f
+		g.Go(func() error {
+			rc, err := f.Open()
+			if err != nil {
+				return nil
+			}
 
-		content, err := io.ReadAll(rc)
-		rc.Close()
-		if err != nil {
-			continue
-		}
+			content, err := io.ReadAll(rc)
+			rc.Close()
+			if err != nil {
+				return nil
+			}
 
-		emptyContent := len(content) == 0
-		if emptyContent {
-			continue
-		}
+			if len(content) == 0 {
+				return nil
+			}
 
-		out.Send(output.ScanInputFromAWSResource(r, f.Name, content))
+			out.Send(output.ScanInputFromAWSResource(r, f.Name, content))
+			return nil
+		})
 	}
 
-	return nil
+	return g.Wait()
 }
