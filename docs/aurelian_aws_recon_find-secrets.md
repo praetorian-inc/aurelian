@@ -17,6 +17,7 @@ aurelian aws recon find-secrets [flags]
       --concurrency int                Maximum concurrent API requests (default 5)
       --db-path string                 Path for Titus SQLite database
       --disable-cache                  Disable API response caching
+      --disabled-titus-rules strings   Rule IDs to exclude from scanning
   -h, --help                           help for find-secrets
       --max-events int                 Max log events per log group (default 10000)
       --max-streams int                Max streams to sample per log group (default 10)
