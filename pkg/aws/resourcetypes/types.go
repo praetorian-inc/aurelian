@@ -19,6 +19,7 @@ var all = []string{
 	"AWS::EC2::Volume",
 	"AWS::ECS::Cluster",
 	"AWS::ECS::Service",
+	"AWS::ECS::TaskDefinition",
 	"AWS::EKS::Cluster",
 	"AWS::ElasticLoadBalancingV2::LoadBalancer",
 	"AWS::IAM::Policy",
@@ -26,12 +27,14 @@ var all = []string{
 	"AWS::IAM::User",
 	"AWS::KMS::Key",
 	"AWS::Lambda::Function",
+	"AWS::Logs::LogGroup",
 	"AWS::RDS::DBCluster",
 	"AWS::RDS::DBInstance",
 	"AWS::S3::Bucket",
 	"AWS::SNS::Topic",
 	"AWS::SQS::Queue",
 	"AWS::SecretsManager::Secret",
+	"AWS::StepFunctions::StateMachine",
 }
 
 // summary is the subset of key resource types used for quick scans.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/account"
 	awstypes "github.com/aws/aws-sdk-go-v2/service/account/types"
@@ -141,6 +142,15 @@ func (r *RegionResolver) getEnabledRegionsFromEC2(ctx context.Context) ([]string
 		return nil, fmt.Errorf("no regions found from EC2 API")
 	}
 
+	return regions, nil
+}
+
+// ResolveRegions expands a regions slice, replacing ["all"] with the actual
+// enabled region list via STS. Returns the input unchanged if not ["all"].
+func ResolveRegions(regions []string, profile, profileDir string) ([]string, error) {
+	if len(regions) == 1 && strings.ToLower(regions[0]) == "all" {
+		return EnabledRegions(profile, profileDir)
+	}
 	return regions, nil
 }
 
