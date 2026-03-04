@@ -1,6 +1,7 @@
 package extraction
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
@@ -52,40 +53,53 @@ func extractLogs(ctx extractContext, r output.AWSResource, out *pipeline.P[outpu
 
 	for _, streamName := range streamNames {
 		g.Go(func() error {
-			eventCount := 0
-			var nextToken *string
-			for eventCount < maxPerStream {
-				limit := int32(maxPerStream - eventCount)
-				if limit > 10000 {
-					limit = 10000
-				}
-
-				eventsResp, err := client.FilterLogEvents(gctx, &cloudwatchlogs.FilterLogEventsInput{LogGroupName: &logGroupName, LogStreamNames: []string{streamName}, Limit: &limit, NextToken: nextToken})
-				if err != nil {
-					return fmt.Errorf("FilterLogEvents failed for %s stream %s: %w", logGroupName, streamName, err)
-				}
-
-				for _, event := range eventsResp.Events {
-					if event.Message != nil && *event.Message != "" {
-						label := "log-event"
-						if event.EventId != nil {
-							label = "log-event:" + *event.EventId
-						}
-						out.Send(output.ScanInputFromAWSResource(r, label, []byte(*event.Message)))
-						eventCount++
-					}
-				}
-
-				reachedEnd := eventsResp.NextToken == nil || len(eventsResp.Events) == 0
-				if reachedEnd {
-					break
-				}
-				nextToken = eventsResp.NextToken
-			}
-
-			return nil
+			return extractLogStream(gctx, client, r, out, maxPerStream, streamName, logGroupName)
 		})
 	}
 
 	return g.Wait()
+}
+
+func extractLogStream(
+	ctx context.Context,
+	client *cloudwatchlogs.Client,
+	r output.AWSResource,
+	out *pipeline.P[output.ScanInput],
+	maxPerStream int,
+	streamName,
+	logGroupName string,
+) error {
+	eventCount := 0
+	var nextToken *string
+
+	for eventCount < maxPerStream {
+		limit := int32(maxPerStream - eventCount)
+		if limit > 10000 {
+			limit = 10000
+		}
+
+		eventsResp, err := client.FilterLogEvents(ctx, &cloudwatchlogs.FilterLogEventsInput{LogGroupName: &logGroupName, LogStreamNames: []string{streamName}, Limit: &limit, NextToken: nextToken})
+		if err != nil {
+			return fmt.Errorf("FilterLogEvents failed for %s stream %s: %w", logGroupName, streamName, err)
+		}
+
+		for _, event := range eventsResp.Events {
+			if event.Message != nil && *event.Message != "" {
+				label := "log-event"
+				if event.EventId != nil {
+					label = "log-event:" + *event.EventId
+				}
+				out.Send(output.ScanInputFromAWSResource(r, label, []byte(*event.Message)))
+				eventCount++
+			}
+		}
+
+		reachedEnd := eventsResp.NextToken == nil || len(eventsResp.Events) == 0
+		if reachedEnd {
+			break
+		}
+		nextToken = eventsResp.NextToken
+	}
+
+	return nil
 }
