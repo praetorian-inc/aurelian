@@ -43,13 +43,32 @@ const (
 )
 
 type fixtureConfig struct {
-	provider    fixtureProvider
-	moduleDir   string
-	fixtureDir  string
-	execPath    string
-	containerID string
-	stateKey    string
-	initOpts    []tfexec.InitOption
+	provider      fixtureProvider
+	moduleDir     string
+	fixtureDir    string
+	execPath      string
+	containerID   string
+	stateKey      string
+	stateURI      string
+	artifactsURI  string
+	initOpts      []tfexec.InitOption
+}
+
+type Fixture interface {
+	Setup()
+	Output(string) string
+	OutputList(string) []string
+}
+
+type fixtureOps interface {
+	GetRemoteHash(context.Context) (string, error)
+	PutRemoteHash(context.Context, string) error
+	Init(context.Context, ...tfexec.InitOption) error
+	Destroy(context.Context, ...tfexec.DestroyOption) error
+	Apply(context.Context, ...tfexec.ApplyOption) error
+	Output(context.Context, ...tfexec.OutputOption) (map[string]tfexec.OutputMeta, error)
+	UploadArtifacts(context.Context) error
+	DeleteArtifacts(context.Context) error
 }
 
 type BaseFixture struct {
@@ -57,19 +76,17 @@ type BaseFixture struct {
 	outputs map[string]tfexec.OutputMeta
 	t       *testing.T
 	cfg     fixtureConfig
+	ops     fixtureOps
+}
 
-	getRemoteHashFn func(context.Context) (string, error)
-	putRemoteHashFn func(context.Context, string) error
-	initFn          func(context.Context, ...tfexec.InitOption) error
-	destroyFn       func(context.Context, ...tfexec.DestroyOption) error
-	applyFn         func(context.Context, ...tfexec.ApplyOption) error
-	outputFn           func(context.Context, ...tfexec.OutputOption) (map[string]tfexec.OutputMeta, error)
-	uploadArtifactsFn  func(context.Context) error
-	deleteArtifactsFn  func(context.Context) error
+type baseFixtureOps struct {
+	fixture *BaseFixture
 }
 
 func newBaseFixture(t *testing.T, cfg fixtureConfig) *BaseFixture {
 	t.Helper()
+
+	cfg = initializeStorageConfig(cfg)
 
 	tf, err := tfexec.NewTerraform(cfg.fixtureDir, cfg.execPath)
 	if err != nil {
@@ -77,16 +94,63 @@ func newBaseFixture(t *testing.T, cfg fixtureConfig) *BaseFixture {
 	}
 
 	fixture := &BaseFixture{tf: tf, t: t, cfg: cfg}
-	fixture.getRemoteHashFn = fixture.getRemoteHash
-	fixture.putRemoteHashFn = fixture.putRemoteHash
-	fixture.initFn = fixture.tf.Init
-	fixture.destroyFn = fixture.tf.Destroy
-	fixture.applyFn = fixture.tf.Apply
-	fixture.outputFn = fixture.tf.Output
-	fixture.uploadArtifactsFn = fixture.uploadFixtureArtifacts
-	fixture.deleteArtifactsFn = fixture.deleteFixtureArtifacts
+	fixture.ops = baseFixtureOps{fixture: fixture}
 
 	return fixture
+}
+
+func initializeStorageConfig(cfg fixtureConfig) fixtureConfig {
+	if cfg.stateURI == "" {
+		cfg.stateURI = fmt.Sprintf("s3://%s/%s", stateBucket, cfg.stateKey)
+	}
+
+	if cfg.artifactsURI == "" {
+		artifactsPath := filepath.ToSlash(filepath.Dir(cfg.stateKey))
+		cfg.artifactsURI = fmt.Sprintf("s3://%s/%s/artifacts/", stateBucket, artifactsPath)
+	}
+
+	if len(cfg.initOpts) == 0 {
+		cfg.initOpts = []tfexec.InitOption{
+			tfexec.BackendConfig("bucket=" + stateBucket),
+			tfexec.BackendConfig("region=" + stateRegion),
+			tfexec.BackendConfig("key=" + cfg.stateKey),
+			tfexec.Reconfigure(true),
+		}
+	}
+
+	return cfg
+}
+
+func (o baseFixtureOps) GetRemoteHash(ctx context.Context) (string, error) {
+	return o.fixture.getRemoteHash(ctx)
+}
+
+func (o baseFixtureOps) PutRemoteHash(ctx context.Context, hash string) error {
+	return o.fixture.putRemoteHash(ctx, hash)
+}
+
+func (o baseFixtureOps) Init(ctx context.Context, opts ...tfexec.InitOption) error {
+	return o.fixture.tf.Init(ctx, opts...)
+}
+
+func (o baseFixtureOps) Destroy(ctx context.Context, opts ...tfexec.DestroyOption) error {
+	return o.fixture.tf.Destroy(ctx, opts...)
+}
+
+func (o baseFixtureOps) Apply(ctx context.Context, opts ...tfexec.ApplyOption) error {
+	return o.fixture.tf.Apply(ctx, opts...)
+}
+
+func (o baseFixtureOps) Output(ctx context.Context, opts ...tfexec.OutputOption) (map[string]tfexec.OutputMeta, error) {
+	return o.fixture.tf.Output(ctx, opts...)
+}
+
+func (o baseFixtureOps) UploadArtifacts(ctx context.Context) error {
+	return o.fixture.uploadFixtureArtifacts(ctx)
+}
+
+func (o baseFixtureOps) DeleteArtifacts(ctx context.Context) error {
+	return o.fixture.deleteFixtureArtifacts(ctx)
 }
 
 func (f *BaseFixture) Setup() {
@@ -99,6 +163,9 @@ func (f *BaseFixture) Setup() {
 }
 
 func (f *BaseFixture) runLifecycle(ctx context.Context) error {
+	f.t.Logf("terraform fixture state location: %s", f.cfg.stateURI)
+	f.t.Logf("terraform fixture artifacts location: %s", f.cfg.artifactsURI)
+
 	fixtureHash, err := computeFixtureHash(f.cfg.fixtureDir)
 	if err != nil {
 		return fmt.Errorf("compute fixture hash: %w", err)
@@ -106,12 +173,12 @@ func (f *BaseFixture) runLifecycle(ctx context.Context) error {
 	f.t.Logf("terraform fixture local hash: %s", fixtureHash)
 
 	effectiveHash := computeEffectiveHash(fixtureHash, f.cfg.containerID)
-	remoteHash, err := f.getRemoteHashFn(ctx)
+	remoteHash, err := f.ops.GetRemoteHash(ctx)
 	if err != nil {
 		return fmt.Errorf("get remote hash: %w", err)
 	}
 
-	err = f.initFn(ctx, f.cfg.initOpts...)
+	err = f.ops.Init(ctx, f.cfg.initOpts...)
 	if err != nil {
 		return fmt.Errorf("terraform init: %w", err)
 	}
@@ -144,7 +211,7 @@ func (f *BaseFixture) runLifecycle(ctx context.Context) error {
 }
 
 func (f *BaseFixture) loadOutputs(ctx context.Context) error {
-	outputs, err := f.outputFn(ctx)
+	outputs, err := f.ops.Output(ctx)
 	if err != nil {
 		return fmt.Errorf("terraform output: %w", err)
 	}
@@ -155,18 +222,18 @@ func (f *BaseFixture) loadOutputs(ctx context.Context) error {
 
 func (f *BaseFixture) deployStack(ctx context.Context, hash string) error {
 	f.t.Log("terraform fixture action: deploy start")
-	err := f.applyFn(ctx)
+	err := f.ops.Apply(ctx)
 	if err != nil {
 		return fmt.Errorf("terraform apply: %w", err)
 	}
 	f.t.Log("terraform fixture action: deploy complete")
 
-	err = f.uploadArtifactsFn(ctx)
+	err = f.ops.UploadArtifacts(ctx)
 	if err != nil {
 		return fmt.Errorf("upload fixture artifacts: %w", err)
 	}
 
-	err = f.putRemoteHashFn(ctx, hash)
+	err = f.ops.PutRemoteHash(ctx, hash)
 	if err != nil {
 		return fmt.Errorf("put remote hash: %w", err)
 	}
@@ -176,12 +243,12 @@ func (f *BaseFixture) deployStack(ctx context.Context, hash string) error {
 
 func (f *BaseFixture) redeployStack(ctx context.Context, hash string) error {
 	f.t.Log("terraform fixture action: teardown start")
-	err := f.destroyFn(ctx)
+	err := f.ops.Destroy(ctx)
 	if err != nil {
 		return fmt.Errorf("terraform destroy (stale): %w", err)
 	}
 
-	err = f.deleteArtifactsFn(ctx)
+	err = f.ops.DeleteArtifacts(ctx)
 	if err != nil {
 		return fmt.Errorf("delete fixture artifacts: %w", err)
 	}
@@ -308,11 +375,6 @@ func newS3Client(ctx context.Context) (*s3.Client, error) {
 }
 
 func (f *BaseFixture) uploadFixtureArtifacts(ctx context.Context) error {
-	isAWSFixture := f.cfg.provider == providerAWS
-	if !isAWSFixture {
-		return nil
-	}
-
 	client, err := newS3Client(ctx)
 	if err != nil {
 		return fmt.Errorf("create S3 client: %w", err)
@@ -364,11 +426,6 @@ func (f *BaseFixture) uploadFixtureArtifacts(ctx context.Context) error {
 }
 
 func (f *BaseFixture) deleteFixtureArtifacts(ctx context.Context) error {
-	isAWSFixture := f.cfg.provider == providerAWS
-	if !isAWSFixture {
-		return nil
-	}
-
 	client, err := newS3Client(ctx)
 	if err != nil {
 		return fmt.Errorf("create S3 client: %w", err)
@@ -424,18 +481,6 @@ func (f *BaseFixture) hashKey() string {
 }
 
 func (f *BaseFixture) getRemoteHash(ctx context.Context) (string, error) {
-	if f.cfg.provider == providerAzure {
-		data, err := os.ReadFile(f.hashKey())
-		if errors.Is(err, os.ErrNotExist) {
-			return "", nil
-		}
-		if err != nil {
-			return "", fmt.Errorf("read local hash: %w", err)
-		}
-
-		return strings.TrimSpace(string(data)), nil
-	}
-
 	client, err := newS3Client(ctx)
 	if err != nil {
 		return "", fmt.Errorf("create S3 client: %w", err)
@@ -468,15 +513,6 @@ func (f *BaseFixture) getRemoteHash(ctx context.Context) (string, error) {
 }
 
 func (f *BaseFixture) putRemoteHash(ctx context.Context, hash string) error {
-	if f.cfg.provider == providerAzure {
-		hashPath := f.hashKey()
-		err := os.WriteFile(hashPath, []byte(hash+"\n"), 0o644)
-		if err != nil {
-			return fmt.Errorf("write local hash: %w", err)
-		}
-		return nil
-	}
-
 	client, err := newS3Client(ctx)
 	if err != nil {
 		return fmt.Errorf("create S3 client: %w", err)

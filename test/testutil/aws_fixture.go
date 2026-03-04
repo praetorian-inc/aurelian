@@ -9,11 +9,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
-
-	"github.com/hashicorp/terraform-exec/tfexec"
 )
 
-func NewAWSFixture(t *testing.T, moduleDir string) *BaseFixture {
+func NewAWSFixture(t *testing.T, moduleDir string) Fixture {
 	t.Helper()
 
 	execPath, err := exec.LookPath("terraform")
@@ -31,12 +29,6 @@ func NewAWSFixture(t *testing.T, moduleDir string) *BaseFixture {
 	}
 
 	stateKey := fmt.Sprintf("integration-tests/%s/terraform.tfstate", moduleDir)
-	initOpts := []tfexec.InitOption{
-		tfexec.BackendConfig("bucket=" + stateBucket),
-		tfexec.BackendConfig("region=" + stateRegion),
-		tfexec.BackendConfig("key=" + stateKey),
-		tfexec.Reconfigure(true),
-	}
 
 	return newBaseFixture(t, fixtureConfig{
 		provider:    providerAWS,
@@ -45,6 +37,5 @@ func NewAWSFixture(t *testing.T, moduleDir string) *BaseFixture {
 		execPath:    execPath,
 		containerID: containerID,
 		stateKey:    stateKey,
-		initOpts:    initOpts,
 	})
 }

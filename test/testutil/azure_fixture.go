@@ -10,11 +10,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
-
-	"github.com/hashicorp/terraform-exec/tfexec"
 )
 
-func NewAzureFixture(t *testing.T, moduleDir string) *BaseFixture {
+func NewAzureFixture(t *testing.T, moduleDir string) Fixture {
 	t.Helper()
 
 	execPath, err := exec.LookPath("terraform")
@@ -30,16 +28,8 @@ func NewAzureFixture(t *testing.T, moduleDir string) *BaseFixture {
 		t.Fatalf("resolve azure subscription id: %v", err)
 	}
 
-	statePath := filepath.Join(os.TempDir(), "aurelian-terraform-state", "azure", moduleDir, "terraform.tfstate")
-	err = os.MkdirAll(filepath.Dir(statePath), 0o755)
-	if err != nil {
-		t.Fatalf("create azure state directory: %v", err)
-	}
-
-	initOpts := []tfexec.InitOption{
-		tfexec.Reconfigure(true),
-		tfexec.BackendConfig(fmt.Sprintf("path=%s", statePath)),
-	}
+	ensureStateBucket(t)
+	stateKey := fmt.Sprintf("integration-tests/azure/%s/terraform.tfstate", moduleDir)
 
 	return newBaseFixture(t, fixtureConfig{
 		provider:    providerAzure,
@@ -47,8 +37,7 @@ func NewAzureFixture(t *testing.T, moduleDir string) *BaseFixture {
 		fixtureDir:  fixtureDir,
 		execPath:    execPath,
 		containerID: subscriptionID,
-		stateKey:    statePath,
-		initOpts:    initOpts,
+		stateKey:    stateKey,
 	})
 }
 
