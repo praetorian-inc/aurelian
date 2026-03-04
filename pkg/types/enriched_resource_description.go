@@ -58,7 +58,7 @@ func BuildResourceARN(identifier, typeName, region, accountId string) arn.ARN {
 		if err == nil {
 			return parsed
 		}
-		
+
 		return arn.ARN{
 			Partition: "aws",
 			Service:   "sqs",
@@ -123,8 +123,8 @@ func NewEnrichedResourceDescriptionFromArn(a string) (EnrichedResourceDescriptio
 		return EnrichedResourceDescription{}, err
 	}
 
-	typename := ServiceToResourceType[parsed.Service]
-	if _, ok := ServiceToResourceType[parsed.Service]; !ok {
+	typename, ok := ResolveResourceType(parsed.Service, parsed.Resource)
+	if !ok {
 		typename = fmt.Sprintf("AWS::%s::Unknown", parsed.Service)
 	}
 
@@ -299,7 +299,64 @@ func (e *EnrichedResourceDescription) GetRoleArn() string {
 	return ""
 }
 
-var ServiceToResourceType = map[string]string{
+// ResolveResourceType determines the CloudControl resource type from an ARN's
+// service and resource components. The resource identifier is used to
+// disambiguate services that expose multiple resource types (e.g. ECS clusters
+// vs task definitions, IAM roles vs users vs policies).
+func ResolveResourceType(service, resource string) (string, bool) {
+	// Check service+resource prefix rules first for ambiguous services.
+	if prefixes, ok := serviceResourcePrefixes[service]; ok {
+		for _, entry := range prefixes {
+			if strings.HasPrefix(resource, entry.prefix) {
+				return entry.resourceType, true
+			}
+		}
+	}
+
+	// Fall back to default service mapping.
+	rt, ok := serviceDefaultResourceType[service]
+	return rt, ok
+}
+
+type resourcePrefixEntry struct {
+	prefix       string
+	resourceType string
+}
+
+// serviceResourcePrefixes maps services with multiple resource types to
+// prefix-based disambiguation rules. Entries are checked in order; the first
+// matching prefix wins.
+var serviceResourcePrefixes = map[string][]resourcePrefixEntry{
+	"ecs": {
+		{prefix: "task-definition/", resourceType: "AWS::ECS::TaskDefinition"},
+		{prefix: "service/", resourceType: "AWS::ECS::Service"},
+		{prefix: "cluster/", resourceType: "AWS::ECS::Cluster"},
+	},
+	"iam": {
+		{prefix: "role/", resourceType: "AWS::IAM::Role"},
+		{prefix: "user/", resourceType: "AWS::IAM::User"},
+		{prefix: "policy/", resourceType: "AWS::IAM::Policy"},
+		{prefix: "group/", resourceType: "AWS::IAM::Group"},
+		{prefix: "instance-profile/", resourceType: "AWS::IAM::InstanceProfile"},
+	},
+	"ec2": {
+		{prefix: "instance/", resourceType: "AWS::EC2::Instance"},
+		{prefix: "security-group/", resourceType: "AWS::EC2::SecurityGroup"},
+		{prefix: "subnet/", resourceType: "AWS::EC2::Subnet"},
+		{prefix: "vpc/", resourceType: "AWS::EC2::VPC"},
+	},
+	"ssm": {
+		{prefix: "document/", resourceType: "AWS::SSM::Document"},
+		{prefix: "parameter/", resourceType: "AWS::SSM::Parameter"},
+	},
+	"rds": {
+		{prefix: "cluster:", resourceType: "AWS::RDS::DBCluster"},
+		{prefix: "db:", resourceType: "AWS::RDS::DBInstance"},
+	},
+}
+
+// serviceDefaultResourceType is the fallback when no prefix rule matches.
+var serviceDefaultResourceType = map[string]string{
 	"ec2":               "AWS::EC2::Instance",
 	"s3":                "AWS::S3::Bucket",
 	"lambda":            "AWS::Lambda::Function",
@@ -319,4 +376,6 @@ var ServiceToResourceType = map[string]string{
 	"ssm":               "AWS::SSM::Parameter",
 	"elasticfilesystem": "AWS::EFS::FileSystem",
 	"cognito-idp":       "AWS::Cognito::UserPool",
+	"states":            "AWS::StepFunctions::StateMachine",
+	"logs":              "AWS::Logs::LogGroup",
 }
