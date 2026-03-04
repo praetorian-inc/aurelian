@@ -19,7 +19,7 @@ import (
 )
 
 func TestAWSPublicResources(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/recon/public-resources")
+	fixture := testutil.NewAWSFixture(t, "aws/recon/public-resources")
 	fixture.Setup()
 
 	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "public-resources")

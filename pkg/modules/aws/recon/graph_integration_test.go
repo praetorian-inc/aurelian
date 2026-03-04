@@ -106,7 +106,7 @@ func filterRelationships(rels []output.AWSIAMRelationship, arns fixtureARNSet) [
 }
 
 func TestAWSGraph(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/recon/graph")
+	fixture := testutil.NewAWSFixture(t, "aws/recon/graph")
 	fixture.Setup()
 
 	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "graph")

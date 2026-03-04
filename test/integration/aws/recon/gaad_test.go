@@ -17,7 +17,7 @@ import (
 )
 
 func TestAWSAccountAuthDetails(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/recon/gaad")
+	fixture := testutil.NewAWSFixture(t, "aws/recon/gaad")
 	fixture.Setup()
 
 	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "account-auth-details")

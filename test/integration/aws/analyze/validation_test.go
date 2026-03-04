@@ -34,7 +34,7 @@ func TestGraphValidation_PrivescDetection(t *testing.T) {
 	ctx := context.Background()
 
 	// Step 1: Provision IAM infrastructure via Terraform
-	fixture := testutil.NewFixture(t, "aws/analyze/graph")
+	fixture := testutil.NewAWSFixture(t, "aws/analyze/graph")
 	fixture.Setup()
 
 	suffix := fixture.Output("random_suffix")

@@ -16,6 +16,7 @@ potential security issues in cloud environments.
 ### SEE ALSO
 
 * [aurelian aws](aurelian_aws.md)	 - aws platform commands
+* [aurelian azure](aurelian_azure.md)	 - azure platform commands
 * [aurelian help](aurelian_help.md)	 - Help about any command
 * [aurelian list-modules](aurelian_list-modules.md)	 - Display available Diocletian modules in a tree structure
 * [aurelian version](aurelian_version.md)	 - Print the version number of Aurelian
