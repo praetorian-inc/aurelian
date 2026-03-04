@@ -13,7 +13,7 @@ import (
 )
 
 func TestResourcePolicyCollector_Integration(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/recon/graph")
+	fixture := testutil.NewAWSFixture(t, "aws/recon/graph")
 	fixture.Setup()
 
 	region := "us-east-2"

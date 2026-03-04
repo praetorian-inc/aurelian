@@ -13,7 +13,7 @@ import (
 )
 
 func TestAWSList(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/recon/list")
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
 	t.Run("EC2 instances", func(t *testing.T) {

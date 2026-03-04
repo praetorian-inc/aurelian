@@ -69,7 +69,7 @@ Requires AWS credentials and `terraform` in PATH. Analyze tests additionally req
    package recon
 
    func TestAWSMyModule(t *testing.T) {
-       fixture := testutil.NewFixture(t, "aws/recon/my-module")
+       fixture := testutil.NewAWSFixture(t, "aws/recon/my-module")
        fixture.Setup()
 
        mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "my-module")
