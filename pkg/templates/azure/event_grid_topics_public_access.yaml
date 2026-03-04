@@ -1,0 +1,51 @@
+id: event_grid_topics_public_access
+name: "Publicly Accessible Event Grid Topics"
+description: "Detects Event Grid Topics with public network access enabled"
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - Event publishing endpoints exposed to the internet
+  - Could enable unauthorized event injection or data interception
+  - May allow event deletion or manipulation
+  - Sensitive event data could be exposed
+
+  Triage Guidance:
+  - This finding confirms network-level accessibility from internet
+  - Event Grid Topic access is protected by authentication keys
+  - Manual testing required:
+    1. Verify topic endpoint is accessible
+    2. Check if authentication is enforced
+    3. Review shared access policies
+  - Consider: Does this topic need internet access?
+
+  Remediation Considerations:
+  - Disable public network access if not required
+  - Implement IP restrictions for known event publishers
+  - Use Azure Private Link for internal access
+  - Rotate access keys regularly
+  - Monitor event publishing attempts
+
+references:
+  - https://learn.microsoft.com/en-us/azure/event-grid/configure-firewall
+  - https://learn.microsoft.com/en-us/azure/event-grid/network-security
+
+query: |
+  resources
+  | where type =~ 'Microsoft.EventGrid/topics'
+  | extend publicNetworkAccess = tolower(coalesce(properties.publicNetworkAccess, 'enabled'))
+  | extend sku = sku.name
+  | extend endpoint = properties.endpoint
+  | extend location_prop = properties.location
+  | where publicNetworkAccess != 'disabled'
+  | project
+      id,
+      name,
+      type,
+      location,
+      publicNetworkAccess,
+      sku,
+      endpoint,
+      subscriptionId,
+      resourceGroup
