@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	azureauth "github.com/praetorian-inc/aurelian/pkg/azure/auth"
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
 	"github.com/praetorian-inc/aurelian/pkg/azure/subscriptions"
@@ -18,16 +17,6 @@ import (
 func init() {
 	plugin.Register(&AzureListAllResourcesModule{})
 }
-
-var (
-	newCredential = azureauth.NewAzureCredential
-	newResolver   = func(cred azcore.TokenCredential) subscriptionResolver {
-		return subscriptions.NewSubscriptionResolver(cred)
-	}
-	newLister = func(cred azcore.TokenCredential) resourceLister {
-		return resourcegraph.NewResourceGraphLister(cred, nil)
-	}
-)
 
 type subscriptionResolver interface {
 	Resolve(id string, out *pipeline.P[azuretypes.SubscriptionInfo]) error
@@ -76,14 +65,13 @@ func (m *AzureListAllResourcesModule) Parameters() any {
 	return &m.ListAllConfig
 }
 
-func (m *AzureListAllResourcesModule) Run(_ plugin.Config, out *pipeline.P[model.AurelianModel]) error {
-	cred, err := newCredential()
+func (m *AzureListAllResourcesModule) Run(_ plugin.Config, resources *pipeline.P[model.AurelianModel]) error {
+	cred, err := azureauth.NewAzureCredential()
 	if err != nil {
 		return fmt.Errorf("azure authentication failed: %w", err)
 	}
 
-	resolver := newResolver(cred)
-	lister := newLister(cred)
+	resolver := subscriptions.NewSubscriptionResolver(cred)
 
 	subscriptionIDs, err := m.resolveSubscriptionIDs(resolver)
 	if err != nil {
@@ -92,16 +80,17 @@ func (m *AzureListAllResourcesModule) Run(_ plugin.Config, out *pipeline.P[model
 
 	if len(subscriptionIDs) == 0 {
 		slog.Warn("no accessible Azure subscriptions found")
-		out.Close()
-		return out.Wait()
+		return nil
 	}
 
 	idStream := pipeline.From(subscriptionIDs...)
 	resolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
 	pipeline.Pipe(idStream, resolver.Resolve, resolvedSubs)
-	pipeline.Pipe(resolvedSubs, lister.ListAll, out)
 
-	return out.Wait()
+	lister := resourcegraph.NewResourceGraphLister(cred, nil)
+	pipeline.Pipe(resolvedSubs, lister.ListAll, resources)
+
+	return resources.Wait()
 }
 
 func (m *AzureListAllResourcesModule) resolveSubscriptionIDs(resolver subscriptionResolver) ([]string, error) {
