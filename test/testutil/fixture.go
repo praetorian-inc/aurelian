@@ -3,6 +3,7 @@
 package testutil
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/json"
@@ -62,7 +63,9 @@ type BaseFixture struct {
 	initFn          func(context.Context, ...tfexec.InitOption) error
 	destroyFn       func(context.Context, ...tfexec.DestroyOption) error
 	applyFn         func(context.Context, ...tfexec.ApplyOption) error
-	outputFn        func(context.Context, ...tfexec.OutputOption) (map[string]tfexec.OutputMeta, error)
+	outputFn           func(context.Context, ...tfexec.OutputOption) (map[string]tfexec.OutputMeta, error)
+	uploadArtifactsFn  func(context.Context) error
+	deleteArtifactsFn  func(context.Context) error
 }
 
 func newBaseFixture(t *testing.T, cfg fixtureConfig) *BaseFixture {
@@ -80,6 +83,8 @@ func newBaseFixture(t *testing.T, cfg fixtureConfig) *BaseFixture {
 	fixture.destroyFn = fixture.tf.Destroy
 	fixture.applyFn = fixture.tf.Apply
 	fixture.outputFn = fixture.tf.Output
+	fixture.uploadArtifactsFn = fixture.uploadFixtureArtifacts
+	fixture.deleteArtifactsFn = fixture.deleteFixtureArtifacts
 
 	return fixture
 }
@@ -156,6 +161,11 @@ func (f *BaseFixture) deployStack(ctx context.Context, hash string) error {
 	}
 	f.t.Log("terraform fixture action: deploy complete")
 
+	err = f.uploadArtifactsFn(ctx)
+	if err != nil {
+		return fmt.Errorf("upload fixture artifacts: %w", err)
+	}
+
 	err = f.putRemoteHashFn(ctx, hash)
 	if err != nil {
 		return fmt.Errorf("put remote hash: %w", err)
@@ -169,6 +179,11 @@ func (f *BaseFixture) redeployStack(ctx context.Context, hash string) error {
 	err := f.destroyFn(ctx)
 	if err != nil {
 		return fmt.Errorf("terraform destroy (stale): %w", err)
+	}
+
+	err = f.deleteArtifactsFn(ctx)
+	if err != nil {
+		return fmt.Errorf("delete fixture artifacts: %w", err)
 	}
 	f.t.Log("terraform fixture action: teardown complete")
 
@@ -290,6 +305,117 @@ func newS3Client(ctx context.Context) (*s3.Client, error) {
 	}
 
 	return s3.NewFromConfig(cfg), nil
+}
+
+func (f *BaseFixture) uploadFixtureArtifacts(ctx context.Context) error {
+	isAWSFixture := f.cfg.provider == providerAWS
+	if !isAWSFixture {
+		return nil
+	}
+
+	client, err := newS3Client(ctx)
+	if err != nil {
+		return fmt.Errorf("create S3 client: %w", err)
+	}
+
+	bucket := stateBucket
+	prefix := filepath.ToSlash(filepath.Dir(f.cfg.stateKey) + "/artifacts")
+
+	err = filepath.WalkDir(f.cfg.fixtureDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+
+		if d.IsDir() && d.Name() == ".terraform" {
+			return filepath.SkipDir
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		relPath, err := filepath.Rel(f.cfg.fixtureDir, path)
+		if err != nil {
+			return fmt.Errorf("relative path for %s: %w", path, err)
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read artifact %s: %w", path, err)
+		}
+
+		artifactKey := filepath.ToSlash(prefix + "/" + relPath)
+		_, err = client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket: &bucket,
+			Key:    &artifactKey,
+			Body:   bytes.NewReader(data),
+		})
+		if err != nil {
+			return fmt.Errorf("put artifact %s: %w", artifactKey, err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (f *BaseFixture) deleteFixtureArtifacts(ctx context.Context) error {
+	isAWSFixture := f.cfg.provider == providerAWS
+	if !isAWSFixture {
+		return nil
+	}
+
+	client, err := newS3Client(ctx)
+	if err != nil {
+		return fmt.Errorf("create S3 client: %w", err)
+	}
+
+	bucket := stateBucket
+	prefix := filepath.ToSlash(filepath.Dir(f.cfg.stateKey) + "/artifacts/")
+	var continuationToken *string
+
+	for {
+		listInput := &s3.ListObjectsV2Input{
+			Bucket:            &bucket,
+			Prefix:            &prefix,
+			ContinuationToken: continuationToken,
+		}
+		listOutput, err := client.ListObjectsV2(ctx, listInput)
+		if err != nil {
+			return fmt.Errorf("list artifact objects: %w", err)
+		}
+
+		if len(listOutput.Contents) > 0 {
+			objects := make([]types.ObjectIdentifier, 0, len(listOutput.Contents))
+			for _, object := range listOutput.Contents {
+				if object.Key == nil {
+					continue
+				}
+				objects = append(objects, types.ObjectIdentifier{Key: object.Key})
+			}
+
+			if len(objects) > 0 {
+				_, err = client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+					Bucket: &bucket,
+					Delete: &types.Delete{Objects: objects, Quiet: aws.Bool(true)},
+				})
+				if err != nil {
+					return fmt.Errorf("delete artifact objects: %w", err)
+				}
+			}
+		}
+
+		isTruncated := listOutput.IsTruncated != nil && *listOutput.IsTruncated
+		if !isTruncated {
+			return nil
+		}
+
+		continuationToken = listOutput.NextContinuationToken
+	}
 }
 
 func (f *BaseFixture) hashKey() string {

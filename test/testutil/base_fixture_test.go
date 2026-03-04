@@ -35,7 +35,7 @@ func TestRunLifecycle_RemoteHashMissing_AppliesAndStoresHash(t *testing.T) {
 		t.Fatalf("run lifecycle: %v", err)
 	}
 
-	expected := []string{"init", "apply", "put", "output"}
+	expected := []string{"init", "apply", "upload", "put", "output"}
 	if !slices.Equal(*calls, expected) {
 		t.Fatalf("unexpected calls: got=%v want=%v", *calls, expected)
 	}
@@ -65,7 +65,7 @@ func TestRunLifecycle_RemoteHashMismatch_DestroysThenApplies(t *testing.T) {
 		t.Fatalf("run lifecycle: %v", err)
 	}
 
-	expected := []string{"init", "destroy", "apply", "put", "output"}
+	expected := []string{"init", "destroy", "delete", "apply", "upload", "put", "output"}
 	if !slices.Equal(*calls, expected) {
 		t.Fatalf("unexpected calls: got=%v want=%v", *calls, expected)
 	}
@@ -115,6 +115,14 @@ func newLifecycleFixture(t *testing.T, remoteHash string, hashErr error, outputE
 	}
 	fixture.putRemoteHashFn = func(context.Context, string) error {
 		calls = append(calls, "put")
+		return nil
+	}
+	fixture.uploadArtifactsFn = func(context.Context) error {
+		calls = append(calls, "upload")
+		return nil
+	}
+	fixture.deleteArtifactsFn = func(context.Context) error {
+		calls = append(calls, "delete")
 		return nil
 	}
 	fixture.initFn = func(context.Context, ...tfexec.InitOption) error {
