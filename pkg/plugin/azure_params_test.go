@@ -29,8 +29,20 @@ func TestAzureCommonRecon_ParameterTags(t *testing.T) {
 	for _, param := range p {
 		if param.Name == "subscription-id" {
 			found = true
-			assert.True(t, param.Required)
+			assert.False(t, param.Required)
+			assert.Equal(t, []string{"all"}, param.Default)
 		}
 	}
 	assert.True(t, found, "subscription-id parameter not found")
+}
+
+func TestAzureCommonRecon_DefaultSubscriptionID(t *testing.T) {
+	cfg := Config{
+		Args: map[string]any{},
+	}
+
+	var params AzureCommonRecon
+	err := Bind(cfg, &params)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"all"}, params.SubscriptionID)
 }
