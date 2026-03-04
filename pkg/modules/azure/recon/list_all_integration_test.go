@@ -4,15 +4,12 @@ package recon
 
 import (
 	"context"
-	"encoding/json"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
-	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
 )
@@ -57,11 +54,7 @@ func TestAzureListAllResourceEnumeration(t *testing.T) {
 			time.Sleep(delay)
 		}
 
-		p1 := pipeline.From(cfg)
-		p2 := pipeline.New[model.AurelianModel]()
-		pipeline.Pipe(p1, mod.Run, p2)
-
-		results, lastErr = p2.Collect()
+		results, lastErr = testutil.RunAndCollect(t, mod, cfg)
 		if lastErr != nil {
 			t.Logf("attempt %d: module returned error: %v", attempt, lastErr)
 			continue
@@ -72,7 +65,7 @@ func TestAzureListAllResourceEnumeration(t *testing.T) {
 		// Check if all expected resources are present.
 		allFound := true
 		for _, id := range allResourceIDs {
-			if !resultsContainString(results, id) {
+			if !testutil.ResultsContainString(results, id) {
 				allFound = false
 				break
 			}
@@ -86,7 +79,7 @@ func TestAzureListAllResourceEnumeration(t *testing.T) {
 		// Log which resources are still missing for debugging.
 		var missing []string
 		for _, id := range allResourceIDs {
-			if !resultsContainString(results, id) {
+			if !testutil.ResultsContainString(results, id) {
 				missing = append(missing, id)
 			}
 		}
@@ -97,36 +90,10 @@ func TestAzureListAllResourceEnumeration(t *testing.T) {
 	testutil.AssertMinResults(t, results, len(allResourceIDs))
 
 	// Final assertion: every Terraform-created resource must appear in results.
-	// Uses case-insensitive matching because Azure Resource Graph normalizes
-	// resource type casing differently than Terraform outputs.
+	// testutil assertions use case-insensitive matching, which handles Azure
+	// Resource Graph's casing normalization vs Terraform outputs.
 	for _, id := range allResourceIDs {
-		assertResultContainsStringIgnoreCase(t, results, id)
+		testutil.AssertResultContainsString(t, results, id)
 	}
 	t.Logf("all %d expected resources verified in results", len(allResourceIDs))
-}
-
-// assertResultContainsStringIgnoreCase fails the test if no result contains
-// the given substring (case-insensitive). Azure Resource Graph normalizes
-// resource type casing, so exact matching against Terraform outputs breaks.
-func assertResultContainsStringIgnoreCase(t *testing.T, results []model.AurelianModel, substr string) {
-	t.Helper()
-	if !resultsContainString(results, substr) {
-		t.Errorf("expected %q in results (case-insensitive, %d results checked)", substr, len(results))
-	}
-}
-
-// resultsContainString checks whether any result in the slice contains the
-// given substring (case-insensitive) when serialized to JSON. Used in the
-// retry loop to determine if ARG has propagated all resources.
-func resultsContainString(results []model.AurelianModel, substr string) bool {
-	for _, r := range results {
-		raw, err := json.Marshal(r)
-		if err != nil {
-			continue
-		}
-		if strings.Contains(strings.ToLower(string(raw)), strings.ToLower(substr)) {
-			return true
-		}
-	}
-	return false
 }

@@ -9,7 +9,18 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
+
+// RunAndCollect executes a module with the given config and collects all results.
+func RunAndCollect(t *testing.T, mod plugin.Module, cfg plugin.Config) ([]model.AurelianModel, error) {
+	t.Helper()
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+	return p2.Collect()
+}
 
 // AssertResultContainsARN checks that at least one result references the given ARN.
 func AssertResultContainsARN(t *testing.T, results []model.AurelianModel, arn string) {
@@ -41,7 +52,18 @@ func AssertMinResults(t *testing.T, results []model.AurelianModel, min int) {
 	}
 }
 
-// containsString recursively searches a value for a substring match.
+// ResultsContainString reports whether any result contains substr
+// (case-insensitive). Useful in retry loops where a testing.T is not appropriate.
+func ResultsContainString(results []model.AurelianModel, substr string) bool {
+	for _, r := range results {
+		if containsString(r, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsString searches a value for a case-insensitive substring match.
 func containsString(data any, substr string) bool {
 	// JSON round-trip normalizes concrete types (e.g., map[string][]AWSResource)
 	// to interface types (map[string]any, []model.AurelianModel) for reliable recursive traversal.
@@ -49,31 +71,32 @@ func containsString(data any, substr string) bool {
 	if err == nil {
 		var normalized any
 		if json.Unmarshal(raw, &normalized) == nil {
-			return searchNormalized(normalized, substr)
+			return searchNormalized(normalized, strings.ToLower(substr))
 		}
 	}
-	return strings.Contains(fmt.Sprintf("%v", data), substr)
+	return strings.Contains(strings.ToLower(fmt.Sprintf("%v", data)), strings.ToLower(substr))
 }
 
-// searchNormalized recursively searches JSON-normalized data for a substring.
-func searchNormalized(data any, substr string) bool {
+// searchNormalized recursively searches JSON-normalized data for a
+// case-insensitive substring. The substr parameter must already be lowercased.
+func searchNormalized(data any, lowerSubstr string) bool {
 	switch v := data.(type) {
 	case string:
-		return strings.Contains(v, substr)
+		return strings.Contains(strings.ToLower(v), lowerSubstr)
 	case map[string]any:
 		for _, val := range v {
-			if searchNormalized(val, substr) {
+			if searchNormalized(val, lowerSubstr) {
 				return true
 			}
 		}
 	case []model.AurelianModel:
 		for _, val := range v {
-			if searchNormalized(val, substr) {
+			if searchNormalized(val, lowerSubstr) {
 				return true
 			}
 		}
 	default:
-		return strings.Contains(fmt.Sprintf("%v", v), substr)
+		return strings.Contains(strings.ToLower(fmt.Sprintf("%v", v)), lowerSubstr)
 	}
 	return false
 }
