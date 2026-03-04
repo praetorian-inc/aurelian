@@ -10,9 +10,10 @@ import (
 
 // extractContext holds per-resource AWS config and extraction settings.
 type extractContext struct {
-	Context   context.Context
-	AWSConfig aws.Config
-	Config    Config
+	Context     context.Context
+	AWSConfig   aws.Config
+	Config      Config
+	Concurrency int
 }
 
 // extractorFunc is the signature for per-resource extraction functions.

@@ -30,8 +30,6 @@ type CloudControlLister struct {
 }
 
 func NewCloudControlLister(options plugin.AWSCommonRecon) *CloudControlLister {
-	options.Concurrency = max(1, options.Concurrency)
-
 	return &CloudControlLister{
 		AWSCommonRecon:   options,
 		CrossRegionActor: ratelimit.NewCrossRegionActor(options.Concurrency),

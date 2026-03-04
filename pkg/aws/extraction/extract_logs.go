@@ -1,12 +1,14 @@
 package extraction
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs"
 	logstypes "github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs/types"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"golang.org/x/sync/errgroup"
 )
 
 func init() {
@@ -44,17 +46,41 @@ func extractLogs(ctx extractContext, r output.AWSResource, out *pipeline.P[outpu
 		return nil
 	}
 
+	maxPerStream := max(1, ctx.Config.MaxEvents/len(streamNames))
+
+	g, gctx := errgroup.WithContext(ctx.Context)
+	g.SetLimit(ctx.Concurrency)
+
+	for _, streamName := range streamNames {
+		g.Go(func() error {
+			return extractLogStream(gctx, client, r, out, maxPerStream, streamName, logGroupName)
+		})
+	}
+
+	return g.Wait()
+}
+
+func extractLogStream(
+	ctx context.Context,
+	client *cloudwatchlogs.Client,
+	r output.AWSResource,
+	out *pipeline.P[output.ScanInput],
+	maxPerStream int,
+	streamName,
+	logGroupName string,
+) error {
 	eventCount := 0
 	var nextToken *string
-	for eventCount < ctx.Config.MaxEvents {
-		limit := int32(ctx.Config.MaxEvents - eventCount)
+
+	for eventCount < maxPerStream {
+		limit := int32(maxPerStream - eventCount)
 		if limit > 10000 {
 			limit = 10000
 		}
 
-		eventsResp, err := client.FilterLogEvents(ctx.Context, &cloudwatchlogs.FilterLogEventsInput{LogGroupName: &logGroupName, LogStreamNames: streamNames, Limit: &limit, NextToken: nextToken})
+		eventsResp, err := client.FilterLogEvents(ctx, &cloudwatchlogs.FilterLogEventsInput{LogGroupName: &logGroupName, LogStreamNames: []string{streamName}, Limit: &limit, NextToken: nextToken})
 		if err != nil {
-			return fmt.Errorf("FilterLogEvents failed for %s: %w", logGroupName, err)
+			return fmt.Errorf("FilterLogEvents failed for %s stream %s: %w", logGroupName, streamName, err)
 		}
 
 		for _, event := range eventsResp.Events {
