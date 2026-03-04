@@ -87,10 +87,10 @@ output "func_storage_account_id" {
 }
 
 # All resource IDs for bulk assertion in the integration test.
-# Excludes the subnet (child resource) and the resource group itself
-# since ARG may handle them differently.
+# Excludes the subnet (child resource) since ARG may not list it as top-level.
 output "all_resource_ids" {
   value = [
+    azurerm_resource_group.test.id,
     azurerm_resource_group.func.id,
     azurerm_virtual_network.test.id,
     azurerm_network_security_group.test.id,
