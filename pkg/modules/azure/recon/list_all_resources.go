@@ -1,11 +1,13 @@
 package recon
 
 import (
-	"context"
 	"fmt"
+	"log/slog"
+	"strings"
 
-	azurehelpers "github.com/praetorian-inc/aurelian/internal/helpers/azure"
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
+	"github.com/praetorian-inc/aurelian/pkg/azure/subscriptions"
+	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -13,6 +15,15 @@ import (
 
 func init() {
 	plugin.Register(&AzureListAllResourcesModule{})
+}
+
+type subscriptionResolver interface {
+	Resolve(id string, out *pipeline.P[azuretypes.SubscriptionInfo]) error
+	ListAllSubscriptions() ([]azuretypes.SubscriptionInfo, error)
+}
+
+type resourceLister interface {
+	ListAll(sub azuretypes.SubscriptionInfo, out *pipeline.P[model.AurelianModel]) error
 }
 
 // ListAllConfig holds parameters for the Azure list-all module.
@@ -44,34 +55,53 @@ func (m *AzureListAllResourcesModule) References() []string {
 }
 
 func (m *AzureListAllResourcesModule) SupportedResourceTypes() []string {
-	return []string{"Azure::Resources::Resource"}
+	return []string{
+		"Microsoft.Resources/subscriptions",
+	}
 }
 
 func (m *AzureListAllResourcesModule) Parameters() any {
 	return &m.ListAllConfig
 }
 
-func (m *AzureListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
-	c := m.ListAllConfig
-	ctx := cfg.Context
-	if ctx == nil {
-		ctx = context.Background()
-	}
+func (m *AzureListAllResourcesModule) Run(_ plugin.Config, resources *pipeline.P[model.AurelianModel]) error {
+	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential)
 
-	cred, err := azurehelpers.NewAzureCredential()
+	subscriptionIDs, err := m.resolveSubscriptionIDs(resolver)
 	if err != nil {
-		return fmt.Errorf("azure authentication failed: %w", err)
+		return err
 	}
 
-	subs, err := azurehelpers.ResolveSubscriptions(ctx, cred, c.SubscriptionID)
+	if len(subscriptionIDs) == 0 {
+		slog.Warn("no accessible Azure subscriptions found")
+		return nil
+	}
+
+	idStream := pipeline.From(subscriptionIDs...)
+	resolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
+	pipeline.Pipe(idStream, resolver.Resolve, resolvedSubs)
+
+	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, nil)
+	pipeline.Pipe(resolvedSubs, lister.ListAll, resources)
+
+	return resources.Wait()
+}
+
+func (m *AzureListAllResourcesModule) resolveSubscriptionIDs(resolver subscriptionResolver) ([]string, error) {
+	ids := m.SubscriptionID
+	requestsAllSubscriptions := len(ids) == 1 && strings.EqualFold(ids[0], "all")
+	if !requestsAllSubscriptions {
+		return ids, nil
+	}
+
+	subs, err := resolver.ListAllSubscriptions()
 	if err != nil {
-		return fmt.Errorf("failed to resolve subscriptions: %w", err)
+		return nil, fmt.Errorf("failed to list subscriptions: %w", err)
 	}
 
-	lister, err := resourcegraph.NewResourceGraphLister(cred, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create resource graph lister: %w", err)
+	resolvedIDs := make([]string, 0, len(subs))
+	for _, sub := range subs {
+		resolvedIDs = append(resolvedIDs, sub.ID)
 	}
-
-	return lister.ListAll(ctx, subs, out)
+	return resolvedIDs, nil
 }
