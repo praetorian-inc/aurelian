@@ -81,5 +81,5 @@ func TestExtract_ECSPropertiesExtractor(t *testing.T) {
 	items, err := out.Collect()
 	require.NoError(t, err)
 	require.NotEmpty(t, items)
-	assert.Equal(t, "TaskDefinition", items[0].Label)
+	assert.Equal(t, "ECS Task Definition", items[0].Label)
 }

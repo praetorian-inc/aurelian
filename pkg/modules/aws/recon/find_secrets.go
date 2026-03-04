@@ -62,8 +62,7 @@ func (m *AWSFindSecretsModule) SupportedResourceTypes() []string {
 		"AWS::SSM::Document",
 		"AWS::StepFunctions::StateMachine",
 		// TODO: AWS::ECR::Repository — container image scanning deferred to follow-up PR.
-		// TODO: add collection modules for
-		//  AWS::SSM::Document
+		// TODO: add collection module for AWS::SSM::Document
 	}
 }
 
@@ -78,7 +77,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	}
 
 	var s secrets.SecretScanner
-	if err := s.Start(c.DBPath); err != nil {
+	if err := s.Start(c.DBPath, c.DisabledTitusRules); err != nil {
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
 	}
 	defer func() {

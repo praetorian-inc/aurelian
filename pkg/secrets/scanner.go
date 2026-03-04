@@ -26,8 +26,9 @@ type SecretScanResult struct {
 
 // Start creates a new persistent scanner and stores it as a field.
 // The dbPath parameter specifies the SQLite database path; if empty, a default is used.
-func (s *SecretScanner) Start(dbPath string) error {
-	ps, err := newPersistentScanner(dbPath)
+// Any rules whose IDs appear in disabledRules are excluded from scanning.
+func (s *SecretScanner) Start(dbPath string, disabledRules []string) error {
+	ps, err := newPersistentScanner(dbPath, disabledRules)
 	if err != nil {
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
 	}

@@ -273,12 +273,8 @@ func (cc *CloudControlLister) listByType(
 			return true, fmt.Errorf("list %s: %w", resourceType, err)
 		}
 
-		filter := resourceFilters[resourceType]
 		for _, desc := range result.ResourceDescriptions {
 			cr := awshelpers.CloudControlToAWSResource(desc, resourceType, accountID, region)
-			if filter != nil && !filter(cr) {
-				continue
-			}
 			out.Send(cr)
 		}
 

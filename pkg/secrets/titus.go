@@ -21,7 +21,8 @@ type persistentScanner struct {
 
 // newPersistentScanner creates a new persistent Titus scanner.
 // The caller is responsible for providing a valid dbPath.
-func newPersistentScanner(dbPath string) (*persistentScanner, error) {
+// Any rules whose IDs appear in disabledRules are excluded from scanning.
+func newPersistentScanner(dbPath string, disabledRules []string) (*persistentScanner, error) {
 	if err := utils.EnsureDirectoryExists(filepath.Dir(dbPath)); err != nil {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
@@ -32,10 +33,23 @@ func newPersistentScanner(dbPath string) (*persistentScanner, error) {
 	}
 
 	loader := rule.NewLoader()
-	rules, err := loader.LoadBuiltinRules()
+	allRules, err := loader.LoadBuiltinRules()
 	if err != nil {
 		s.Close()
 		return nil, fmt.Errorf("failed to load builtin rules: %w", err)
+	}
+
+	disabled := make(map[string]bool, len(disabledRules))
+	for _, id := range disabledRules {
+		disabled[id] = true
+	}
+
+	rules := make([]*types.Rule, 0, len(allRules))
+	for _, r := range allRules {
+		if disabled[r.ID] {
+			continue
+		}
+		rules = append(rules, r)
 	}
 
 	m, err := matcher.New(matcher.Config{
