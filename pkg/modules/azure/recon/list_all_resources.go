@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"strings"
 
-	azureauth "github.com/praetorian-inc/aurelian/pkg/azure/auth"
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
 	"github.com/praetorian-inc/aurelian/pkg/azure/subscriptions"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
@@ -66,12 +65,7 @@ func (m *AzureListAllResourcesModule) Parameters() any {
 }
 
 func (m *AzureListAllResourcesModule) Run(_ plugin.Config, resources *pipeline.P[model.AurelianModel]) error {
-	cred, err := azureauth.NewAzureCredential()
-	if err != nil {
-		return fmt.Errorf("azure authentication failed: %w", err)
-	}
-
-	resolver := subscriptions.NewSubscriptionResolver(cred)
+	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential)
 
 	subscriptionIDs, err := m.resolveSubscriptionIDs(resolver)
 	if err != nil {
@@ -87,7 +81,7 @@ func (m *AzureListAllResourcesModule) Run(_ plugin.Config, resources *pipeline.P
 	resolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
 	pipeline.Pipe(idStream, resolver.Resolve, resolvedSubs)
 
-	lister := resourcegraph.NewResourceGraphLister(cred, nil)
+	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, nil)
 	pipeline.Pipe(resolvedSubs, lister.ListAll, resources)
 
 	return resources.Wait()
