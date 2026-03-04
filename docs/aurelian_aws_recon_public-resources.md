@@ -1,9 +1,9 @@
-## aurelian aws recon graph
+## aurelian aws recon public-resources
 
-Collects AWS IAM data (GAAD, resources, policies), evaluates permissions, and detects privilege escalation paths. Outputs JSON by default; use --neo4j-uri to populate graph database with relationships.
+Finds publicly accessible AWS resources through policy evaluation, property inspection, and enrichment. Combines resource listing, enrichment, policy fetching, and public access evaluation to identify resources that are exposed to the internet or allow anonymous access.
 
 ```
-aurelian aws recon graph [flags]
+aurelian aws recon public-resources [flags]
 ```
 
 ### Options
@@ -16,10 +16,7 @@ aurelian aws recon graph [flags]
       --cache-ttl int                  TTL for cached responses in seconds (default 3600)
       --concurrency int                Maximum concurrent API requests (default 5)
       --disable-cache                  Disable API response caching
-  -h, --help                           help for graph
-      --neo4j-password string          Neo4j password (default "neo4j")
-      --neo4j-uri string               Neo4j connection URI (e.g., bolt://localhost:7687)
-      --neo4j-username string          Neo4j username (default "neo4j")
+  -h, --help                           help for public-resources
       --opsec_level string             Operational security level for AWS operations (default "none")
       --org-policies-file string       Path to Org Policies JSON file
   -p, --profile string                 AWS profile to use

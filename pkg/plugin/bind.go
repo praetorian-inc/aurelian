@@ -7,9 +7,27 @@ import (
 	"strings"
 )
 
-// Defaulter is implemented by config structs that need runtime-computed defaults.
-type Defaulter interface {
-	ApplyDefaults()
+// Bind populates dst from cfg.Args, validates, and sets struct fields.
+func Bind(cfg Config, dst any) error {
+	paramSlice, err := ParametersFrom(dst)
+	if err != nil {
+		return err
+	}
+	params := NewParameters(paramSlice...)
+
+	for k, v := range cfg.Args {
+		params.Set(k, v)
+	}
+
+	if err := params.Validate(); err != nil {
+		return err
+	}
+
+	if err := populateStruct(&params, dst); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // ParametersFrom derives []Parameter from a struct's field tags.
@@ -87,34 +105,6 @@ func collectFields(t reflect.Type) ([]Parameter, error) {
 		params = append(params, p)
 	}
 	return params, nil
-}
-
-// Bind populates dst from cfg.Args, validates, and sets struct fields.
-func Bind(cfg Config, dst any) error {
-	paramSlice, err := ParametersFrom(dst)
-	if err != nil {
-		return err
-	}
-	params := NewParameters(paramSlice...)
-
-	for k, v := range cfg.Args {
-		params.Set(k, v)
-	}
-
-	if err := params.Validate(); err != nil {
-		return err
-	}
-
-	if err := populateStruct(&params, dst); err != nil {
-		return err
-	}
-
-	// Apply runtime-computed defaults after struct population
-	if d, ok := dst.(Defaulter); ok {
-		d.ApplyDefaults()
-	}
-
-	return nil
 }
 
 func populateStruct(ps *Parameters, dst any) error {

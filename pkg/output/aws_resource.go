@@ -5,6 +5,14 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
+type AccessLevel string
+
+const (
+	AccessLevelPublic      AccessLevel = "public"
+	AccessLevelPrivate     AccessLevel = "private"
+	AccessLevelNeedsTriage AccessLevel = "needs_triage"
+)
+
 // AWSResource represents an AWS cloud resource discovered during scanning.
 // This type replaces the Tabularium AWSResource type to eliminate the
 // dependency on Tabularium in Aurelian.
@@ -41,6 +49,9 @@ type AWSResource struct {
 	// ResourcePolicy is the parsed IAM resource policy attached to this resource (optional).
 	// Set by the resource policy collector for resources like S3 buckets, SQS queues, etc.
 	ResourcePolicy *types.Policy `json:"resource_policy,omitempty"`
+
+	// AccessLevel is a typed result of public access evaluation for this resource.
+	AccessLevel AccessLevel `json:"access_level,omitempty"`
 }
 
 // NewAWSResource constructs an AWSResource with the required core fields.

@@ -53,11 +53,19 @@ func NewEnrichedResourceDescription(identifier, typeName, region, accountId stri
 func BuildResourceARN(identifier, typeName, region, accountId string) arn.ARN {
 	switch typeName {
 	case "AWS::SQS::Queue":
+		// first, check if SQS URL
 		parsed, err := SQSUrlToArn(identifier)
 		if err == nil {
 			return parsed
 		}
-		return arn.ARN{}
+		
+		return arn.ARN{
+			Partition: "aws",
+			Service:   "sqs",
+			Region:    region,
+			AccountID: accountId,
+			Resource:  identifier,
+		}
 	case "AWS::EC2::Instance":
 		return arn.ARN{
 			Partition: "aws",
@@ -292,21 +300,23 @@ func (e *EnrichedResourceDescription) GetRoleArn() string {
 }
 
 var ServiceToResourceType = map[string]string{
-	"ec2":            "AWS::EC2::Instance",
-	"s3":             "AWS::S3::Bucket",
-	"lambda":         "AWS::Lambda::Function",
-	"iam":            "AWS::IAM::Role",
-	"cloudformation": "AWS::CloudFormation::Stack",
-	"sqs":            "AWS::SQS::Queue",
-	"sns":            "AWS::SNS::Topic",
-	"rds":            "AWS::RDS::DBInstance",
-	"dynamodb":       "AWS::DynamoDB::Table",
-	"ecr":            "AWS::ECR::Repository",
-	"ecs":            "AWS::ECS::Cluster",
-	"elasticache":    "AWS::ElastiCache::CacheCluster",
-	"elasticsearch":  "AWS::Elasticsearch::Domain",
-	"apigateway":     "AWS::ApiGateway::RestApi",
-	"kms":            "AWS::KMS::Key",
-	"secretsmanager": "AWS::SecretsManager::Secret",
-	"ssm":            "AWS::SSM::Parameter",
+	"ec2":               "AWS::EC2::Instance",
+	"s3":                "AWS::S3::Bucket",
+	"lambda":            "AWS::Lambda::Function",
+	"iam":               "AWS::IAM::Role",
+	"cloudformation":    "AWS::CloudFormation::Stack",
+	"sqs":               "AWS::SQS::Queue",
+	"sns":               "AWS::SNS::Topic",
+	"rds":               "AWS::RDS::DBInstance",
+	"dynamodb":          "AWS::DynamoDB::Table",
+	"ecr":               "AWS::ECR::Repository",
+	"ecs":               "AWS::ECS::Cluster",
+	"elasticache":       "AWS::ElastiCache::CacheCluster",
+	"elasticsearch":     "AWS::Elasticsearch::Domain",
+	"apigateway":        "AWS::ApiGateway::RestApi",
+	"kms":               "AWS::KMS::Key",
+	"secretsmanager":    "AWS::SecretsManager::Secret",
+	"ssm":               "AWS::SSM::Parameter",
+	"elasticfilesystem": "AWS::EFS::FileSystem",
+	"cognito-idp":       "AWS::Cognito::UserPool",
 }

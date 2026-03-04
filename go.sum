@@ -52,6 +52,8 @@ github.com/aws/aws-sdk-go-v2/service/account v1.24.0 h1:bxsS3BE+wpRBd4B0//h/ZOo8
 github.com/aws/aws-sdk-go-v2/service/account v1.24.0/go.mod h1:BwMkMxZPTVtRT9zRKpB92ljsRFX0EXk2WoLQmCnNuRs=
 github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.23.11 h1:vsDNkqiXTCeTaSt1qNtri0RzTBDAXV1VQ4L5c5lvW2k=
 github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.23.11/go.mod h1:aH+Z4h+QZfJ2iEP+EITPDP8nZI1eFUJu38V6c9Nq9uQ=
+github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.58.0 h1:FQQi7oGHGAn3aJJcq0rntRCy3xOfNw7u0FUUm2+6+AU=
+github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.58.0/go.mod h1:bBgsO3htjygdyPTgT0Fou14A5VAQaLqiJ8YE2SW4NKw=
 github.com/aws/aws-sdk-go-v2/service/ec2 v1.202.4 h1:gdFRXlTMgV0+yrhQLAJKb+vX2K32Vw3n2TntDd+8AEM=
 github.com/aws/aws-sdk-go-v2/service/ec2 v1.202.4/go.mod h1:nSbxgPGhyI9j/cMVSHUEEtNQzEYeNOkbHnHNeTuQqt0=
 github.com/aws/aws-sdk-go-v2/service/efs v1.41.10 h1:7ixaaFyZ8xXJWPcK3qQKFf1k1HgME9rtCY7S6Unih8I=

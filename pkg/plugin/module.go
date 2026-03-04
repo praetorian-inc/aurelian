@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"reflect"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -72,6 +73,10 @@ type Module interface {
 // the module's Parameters struct before delegating to the inner Run method.
 // All modules retrieved from the registry are wrapped, ensuring callers never
 // need to call Bind manually.
+type PostBinder interface {
+	PostBind(cfg Config, m Module) error
+}
+
 type ModuleWrapper struct {
 	Module
 }
@@ -81,6 +86,50 @@ func (m *ModuleWrapper) Run(cfg Config, out *pipeline.P[model.AurelianModel]) er
 		if err := Bind(cfg, target); err != nil {
 			return fmt.Errorf("parameter validation failed: %w", err)
 		}
+		if err := runPostBinders(cfg, m.Module, target); err != nil {
+			return fmt.Errorf("parameter post-bind failed: %w", err)
+		}
 	}
 	return m.Module.Run(cfg, out)
+}
+
+func runPostBinders(cfg Config, mod Module, target any) error {
+	v := reflect.ValueOf(target)
+	if !v.IsValid() {
+		return nil
+	}
+	return runPostBindersValue(cfg, mod, v)
+}
+
+func runPostBindersValue(cfg Config, mod Module, v reflect.Value) error {
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return nil
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return nil
+	}
+
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		fieldType := t.Field(i)
+		if !fieldType.Anonymous {
+			continue
+		}
+		fieldValue := v.Field(i)
+		if err := runPostBindersValue(cfg, mod, fieldValue); err != nil {
+			return err
+		}
+	}
+
+	if !v.CanAddr() {
+		return nil
+	}
+	if pb, ok := v.Addr().Interface().(PostBinder); ok {
+		return pb.PostBind(cfg, mod)
+	}
+
+	return nil
 }

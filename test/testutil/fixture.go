@@ -4,20 +4,21 @@ package testutil
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/hashicorp/terraform-exec/tfexec"
 )
@@ -31,9 +32,6 @@ const (
 
 	// statePrefix is the S3 key prefix under which all integration test state is stored.
 	statePrefix = "integration-tests/"
-
-	// reaperMaxAge is the age threshold beyond which stale stacks are destroyed.
-	reaperMaxAge = 3 * 24 * time.Hour
 )
 
 var (
@@ -57,6 +55,9 @@ type TerraformFixture struct {
 
 	// execPath is the absolute path to the terraform binary.
 	execPath string
+
+	// fixtureDir is the absolute path to the terraform module directory on disk.
+	fixtureDir string
 }
 
 // NewFixture creates a fixture for a terraform module directory.
@@ -79,36 +80,40 @@ func NewFixture(t *testing.T, moduleDir string) *TerraformFixture {
 	// Ensure the state bucket exists, creating it if necessary.
 	ensureStateBucket(t)
 
-	runID, err := randomHex(8)
-	if err != nil {
-		t.Fatalf("failed to generate run ID: %v", err)
+	stateKey := fmt.Sprintf("integration-tests/%s/terraform.tfstate", moduleDir)
+
+	return &TerraformFixture{
+		tf:         tf,
+		t:          t,
+		stateKey:   stateKey,
+		execPath:   execPath,
+		fixtureDir: dir,
 	}
-
-	timestamp := time.Now().UTC().Format("20060102T150405")
-	stateKey := fmt.Sprintf("integration-tests/%s/%s-%s/terraform.tfstate", moduleDir, timestamp, runID)
-
-	return &TerraformFixture{tf: tf, t: t, stateKey: stateKey, execPath: execPath}
 }
 
-// Setup initializes terraform, applies infrastructure, reads outputs, and
-// registers automatic cleanup. When the test finishes, infrastructure is destroyed.
-// Set AURELIAN_KEEP_INFRA=1 to skip automatic destroy for faster iteration.
+// Setup initializes terraform and manages infrastructure lifecycle using hash-based caching.
 //
-// A background reaper goroutine is launched to destroy stale stacks (older than
-// 3 days) that were left behind by previous failed runs. The reaper runs
-// concurrently with the main terraform apply and is awaited before Setup returns.
+// Three cases:
+//  1. No remote state exists → fresh deploy (init + apply + upload hash).
+//  2. Remote state exists, hashes match → reuse (init + read outputs only).
+//  3. Remote state exists, hashes differ → teardown + redeploy (init + destroy + apply + upload hash).
+//
+// By default, infrastructure persists after the test completes.
+// Set AURELIAN_DESTROY_FIXTURES=1 to destroy infrastructure when the test finishes.
 func (f *TerraformFixture) Setup() {
 	f.t.Helper()
 	ctx := context.Background()
 
-	// Launch the reaper concurrently with our own init+apply.
-	reaper := NewReaper(f.t, f.execPath, f.stateKey, reaperMaxAge)
-	var reaperWg sync.WaitGroup
-	reaperWg.Add(1)
-	go func() {
-		defer reaperWg.Done()
-		reaper.Run()
-	}()
+	localHash, err := computeFixtureHash(f.fixtureDir)
+	if err != nil {
+		f.t.Fatalf("compute fixture hash: %v", err)
+	}
+	f.t.Logf("fixture local hash: %s", localHash)
+
+	remoteHash, err := f.getRemoteHash(ctx)
+	if err != nil {
+		f.t.Fatalf("get remote hash: %v", err)
+	}
 
 	initOpts := []tfexec.InitOption{
 		tfexec.BackendConfig("bucket=" + stateBucket),
@@ -120,8 +125,14 @@ func (f *TerraformFixture) Setup() {
 		f.t.Fatalf("terraform init: %v", err)
 	}
 
-	if err := f.tf.Apply(ctx); err != nil {
-		f.t.Fatalf("terraform apply: %v", err)
+	if remoteHash == "" {
+		f.t.Log("fixture: no cached state found, deploying fresh infrastructure")
+		f.deployStack(ctx, localHash)
+	} else if remoteHash == localHash {
+		f.t.Log("fixture: cached infrastructure is up-to-date, reusing")
+	} else {
+		f.t.Logf("fixture: hash mismatch (remote=%s, local=%s), tearing down and redeploying", remoteHash, localHash)
+		f.redeployStack(ctx, localHash)
 	}
 
 	outputs, err := f.tf.Output(ctx)
@@ -138,18 +149,32 @@ func (f *TerraformFixture) Setup() {
 	}
 	f.t.Logf("terraform state: s3://%s/%s", stateBucket, f.stateKey)
 
-	// Wait for the reaper to finish before returning.
-	reaperWg.Wait()
-
-	if os.Getenv("AURELIAN_KEEP_INFRA") == "" {
+	if os.Getenv("AURELIAN_DESTROY_FIXTURES") == "1" {
 		f.t.Cleanup(func() {
 			if err := f.tf.Destroy(context.Background()); err != nil {
 				f.t.Errorf("terraform destroy failed (state preserved for manual cleanup): %v", err)
 				return
 			}
 			f.cleanupRemoteState()
+			f.deleteRemoteHash(context.Background())
 		})
 	}
+}
+
+func (f *TerraformFixture) deployStack(ctx context.Context, localHash string) {
+	if err := f.tf.Apply(ctx); err != nil {
+		f.t.Fatalf("terraform apply: %v", err)
+	}
+	if err := f.putRemoteHash(ctx, localHash); err != nil {
+		f.t.Fatalf("upload fixture hash: %v", err)
+	}
+}
+
+func (f *TerraformFixture) redeployStack(ctx context.Context, localHash string) {
+	if err := f.tf.Destroy(ctx); err != nil {
+		f.t.Fatalf("terraform destroy (stale): %v", err)
+	}
+	f.deployStack(ctx, localHash)
 }
 
 // Output returns a string output value by key.
@@ -277,13 +302,80 @@ func newS3Client(ctx context.Context) (*s3.Client, error) {
 	return s3.NewFromConfig(cfg), nil
 }
 
-// randomHex returns a hex-encoded string of n random bytes (2n characters).
-func randomHex(n int) (string, error) {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
+// hashKey returns the S3 key for the fixture's hash file.
+func (f *TerraformFixture) hashKey() string {
+	dir := filepath.Dir(f.stateKey)
+	return dir + "/fixture.md5"
+}
+
+// getRemoteHash reads the fixture.md5 file from S3. Returns ("", nil) if the
+// file does not exist.
+func (f *TerraformFixture) getRemoteHash(ctx context.Context) (string, error) {
+	client, err := newS3Client(ctx)
+	if err != nil {
+		return "", fmt.Errorf("create S3 client: %w", err)
 	}
-	return hex.EncodeToString(b), nil
+
+	key := f.hashKey()
+	bucket := stateBucket
+	out, err := client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	})
+	if err != nil {
+		var nsk *types.NoSuchKey
+		if errors.As(err, &nsk) {
+			return "", nil
+		}
+		if strings.Contains(err.Error(), "NoSuchKey") || strings.Contains(err.Error(), "404") {
+			return "", nil
+		}
+		return "", fmt.Errorf("get remote hash: %w", err)
+	}
+	defer out.Body.Close()
+
+	data, err := io.ReadAll(out.Body)
+	if err != nil {
+		return "", fmt.Errorf("read remote hash body: %w", err)
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+// putRemoteHash uploads the fixture hash to S3.
+func (f *TerraformFixture) putRemoteHash(ctx context.Context, hash string) error {
+	client, err := newS3Client(ctx)
+	if err != nil {
+		return fmt.Errorf("create S3 client: %w", err)
+	}
+
+	key := f.hashKey()
+	bucket := stateBucket
+	body := strings.NewReader(hash + "\n")
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+		Body:   body,
+	})
+	if err != nil {
+		return fmt.Errorf("put remote hash: %w", err)
+	}
+	return nil
+}
+
+// deleteRemoteHash removes the fixture.md5 file from S3. Best-effort.
+func (f *TerraformFixture) deleteRemoteHash(ctx context.Context) {
+	client, err := newS3Client(ctx)
+	if err != nil {
+		f.t.Logf("warning: failed to create S3 client for hash cleanup: %v", err)
+		return
+	}
+
+	key := f.hashKey()
+	bucket := stateBucket
+	_, _ = client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	})
 }
 
 func strPtr(s string) *string { return &s }

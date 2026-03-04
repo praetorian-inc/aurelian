@@ -7,6 +7,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
 	github.com/aws/aws-sdk-go-v2/service/account v1.24.0
 	github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.23.11
+	github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.58.0
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.202.4
 	github.com/aws/aws-sdk-go-v2/service/efs v1.41.10
 	github.com/aws/aws-sdk-go-v2/service/elasticsearchservice v1.37.19

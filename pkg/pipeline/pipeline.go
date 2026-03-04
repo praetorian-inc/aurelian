@@ -4,13 +4,16 @@
 // process them concurrently.
 package pipeline
 
+import "sync"
+
 // P[T] is a typed, channel-based producer. Producers call Send() to
 // send items; consumers range over Range(). The underlying channel is
 // unbuffered, providing natural backpressure.
 type P[T any] struct {
-	ch   chan T
-	done chan struct{}
-	err  error
+	ch        chan T
+	done      chan struct{}
+	err       error
+	closeOnce sync.Once
 }
 
 // New creates an P with an unbuffered channel.
@@ -39,11 +42,13 @@ func (e *P[T]) Send(item T) {
 	e.ch <- item
 }
 
-// Close signals that no more items will be emitted. Must be called exactly
-// once by the producer when it is finished.
+// Close signals that no more items will be emitted.
+// It is safe to call multiple times.
 func (e *P[T]) Close() {
-	close(e.ch)
-	close(e.done)
+	e.closeOnce.Do(func() {
+		close(e.ch)
+		close(e.done)
+	})
 }
 
 // Wait blocks until the producer signals completion and returns its error.

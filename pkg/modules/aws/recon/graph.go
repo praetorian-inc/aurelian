@@ -8,9 +8,7 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/gaad"
-	iampkg "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
-	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -27,7 +25,7 @@ func init() {
 type GraphConfig struct {
 	plugin.AWSCommonRecon
 	plugin.GraphOutputBase
-	OrgPoliciesFile string `param:"org-policies-file" desc:"Path to Org Policies JSON file (optional)"`
+	plugin.OrgPoliciesParam
 }
 
 // AWSGraphModule is a refactored version of AWSGraphModule.
@@ -36,7 +34,6 @@ type AWSGraphModule struct {
 
 	gaadData              *types.AuthorizationAccountDetails
 	resourcesWithPolicies store.Map[output.AWSResource]
-	orgPols               *orgpolicies.OrgPolicies
 	relationships         store.Map[output.AWSIAMRelationship]
 }
 
@@ -70,18 +67,8 @@ func (m *AWSGraphModule) Parameters() any {
 }
 
 func (m *AWSGraphModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
-	resolvedRegions, err := resolveRegions(m.Regions, m.Profile, m.ProfileDir)
-	if err != nil {
-		return fmt.Errorf("resolving regions: %w", err)
-	}
-	m.Regions = resolvedRegions
-
 	if err := m.collectInputs(); err != nil {
 		return fmt.Errorf("collecting inputs: %w", err)
-	}
-
-	if err := m.loadOrgPolicies(m.GraphConfig); err != nil {
-		return fmt.Errorf("loading org policies: %w", err)
 	}
 
 	if err := m.analyzeIAMPermissions(); err != nil {
@@ -130,22 +117,27 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 			"types", len(collector.SupportedResourceTypes()), "regions", len(resolvedRegions))
 
 		lister := cloudcontrol.NewCloudControlLister(c.AWSCommonRecon)
+		resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, collector.SupportedResourceTypes())
+		if err != nil {
+			return fmt.Errorf("resolving resource types: %w", err)
+		}
 
-		p1 := pipeline.From(collector.SupportedResourceTypes()...)
-		p2 := pipeline.New[output.AWSResource]()
-		p3 := pipeline.New[output.AWSResource]()
-		pipeline.Pipe(p1, lister.List, p2)
-		pipeline.Pipe(p2, collector.Collect, p3)
+		resourceTypePipeline := pipeline.From(resourceTypes...)
+		listed := pipeline.New[output.AWSResource]()
+		pipeline.Pipe(resourceTypePipeline, lister.ListByType, listed)
+
+		collected := pipeline.New[output.AWSResource]()
+		pipeline.Pipe(listed, collector.Collect, collected)
 
 		results := store.NewMap[output.AWSResource]()
-		for r := range p3.Range() {
+		for r := range collected.Range() {
 			key := r.ARN
 			if key == "" {
 				key = r.ResourceID
 			}
 			results.Set(key, r)
 		}
-		if err := p3.Wait(); err != nil {
+		if err := collected.Wait(); err != nil {
 			return fmt.Errorf("collecting resources with policies: %w", err)
 		}
 
@@ -155,26 +147,10 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 	})
 }
 
-func (m *AWSGraphModule) loadOrgPolicies(c GraphConfig) error {
-	orgPols := orgpolicies.NewDefaultOrgPolicies()
-
-	if c.OrgPoliciesFile != "" {
-		slog.Info("loading org policies", "file", c.OrgPoliciesFile)
-		op, err := iampkg.LoadJSONFile[orgpolicies.OrgPolicies](c.OrgPoliciesFile)
-		if err != nil {
-			return fmt.Errorf("loading org policies: %w", err)
-		}
-		orgPols = op
-	}
-
-	m.orgPols = orgPols
-	return nil
-}
-
 func (m *AWSGraphModule) analyzeIAMPermissions() error {
 	slog.Info("analyzing IAM permissions")
 	analyzer := gaadpkg.NewGaadAnalyzer()
-	relationships, err := analyzer.Analyze(m.gaadData, m.orgPols, m.resourcesWithPolicies)
+	relationships, err := analyzer.Analyze(m.gaadData, m.OrgPolicies, m.resourcesWithPolicies)
 	if err != nil {
 		return fmt.Errorf("analyzing permissions: %w", err)
 	}

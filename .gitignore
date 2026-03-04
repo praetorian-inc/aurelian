@@ -23,3 +23,4 @@ debug.log*
 *.json
 docker-images
 .claude/.output
+.worktrees/

@@ -1,8 +1,6 @@
 package recon
 
 import (
-	"fmt"
-
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
 	"github.com/praetorian-inc/aurelian/pkg/model"
@@ -55,24 +53,23 @@ func (m *AWSResourcePoliciesModule) Parameters() any {
 func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.ResourcePoliciesConfig
 
-	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
-	if err != nil {
-		return fmt.Errorf("failed to resolve regions: %w", err)
-	}
-
-	c.AWSCommonRecon.Regions = resolvedRegions
 	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
 	collector := resourcepolicies.New(c.AWSCommonRecon)
+	resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, collector.SupportedResourceTypes())
+	if err != nil {
+		return err
+	}
 
-	p1 := pipeline.From(collector.SupportedResourceTypes()...)
-	p2 := pipeline.New[output.AWSResource]()
-	p3 := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(p1, lister.List, p2)
-	pipeline.Pipe(p2, collector.Collect, p3)
+	resourceTypePipeline := pipeline.From(resourceTypes...)
+	listed := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(resourceTypePipeline, lister.ListByType, listed)
 
-	for r := range p3.Range() {
+	collected := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(listed, collector.Collect, collected)
+
+	for r := range collected.Range() {
 		out.Send(r)
 	}
 
-	return p3.Wait()
+	return collected.Wait()
 }
