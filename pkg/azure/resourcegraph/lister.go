@@ -9,11 +9,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
-
-	azurehelpers "github.com/praetorian-inc/aurelian/internal/helpers/azure"
+	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
 const listAllQuery = "Resources | project id, name, type, location, resourceGroup, tags, properties"
@@ -25,48 +25,32 @@ type Options struct {
 
 // ResourceGraphLister enumerates Azure resources via the Resource Graph API.
 type ResourceGraphLister struct {
-	client  *armresourcegraph.Client
+	cred    azcore.TokenCredential
 	options Options
 }
 
-// NewResourceGraphLister creates a lister with an initialized ARG client.
-// Pass nil for opts to use defaults.
-func NewResourceGraphLister(cred azcore.TokenCredential, opts *Options) (*ResourceGraphLister, error) {
-	client, err := armresourcegraph.NewClient(cred, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create resource graph client: %w", err)
-	}
+// NewResourceGraphLister creates a lister. Pass nil for opts to use defaults.
+func NewResourceGraphLister(cred azcore.TokenCredential, opts *Options) *ResourceGraphLister {
 	o := Options{PageSize: 1000}
 	if opts != nil && opts.PageSize > 0 {
 		o = *opts
 	}
-	return &ResourceGraphLister{client: client, options: o}, nil
+
+	lister := &ResourceGraphLister{cred: cred, options: o}
+	return lister
 }
 
-// ListAll enumerates all resources across the given subscriptions using the
-// default KQL query, emitting each as an AzureResource into out.
-func (l *ResourceGraphLister) ListAll(ctx context.Context, subs []azurehelpers.SubscriptionInfo, out *pipeline.P[model.AurelianModel]) error {
-	return l.List(ctx, subs, listAllQuery, out)
-}
-
-// List runs a custom KQL query across the given subscriptions, emitting each
-// result as an AzureResource into out.
-func (l *ResourceGraphLister) List(ctx context.Context, subs []azurehelpers.SubscriptionInfo, query string, out *pipeline.P[model.AurelianModel]) error {
-	for _, sub := range subs {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		if err := l.querySubscription(ctx, sub, query, out); err != nil {
-			return fmt.Errorf("failed to query subscription %s: %w", sub.ID, err)
-		}
+// ListAll enumerates all resources for a subscription using the default KQL query.
+func (l *ResourceGraphLister) ListAll(sub azuretypes.SubscriptionInfo, out *pipeline.P[model.AurelianModel]) error {
+	err := l.querySubscription(sub, listAllQuery, out)
+	if err != nil {
+		return fmt.Errorf("failed to query subscription %s: %w", sub.ID, err)
 	}
+
 	return nil
 }
 
-func (l *ResourceGraphLister) querySubscription(ctx context.Context, sub azurehelpers.SubscriptionInfo, query string, out *pipeline.P[model.AurelianModel]) error {
+func (l *ResourceGraphLister) querySubscription(sub azuretypes.SubscriptionInfo, query string, out *pipeline.P[model.AurelianModel]) error {
 	request := armresourcegraph.QueryRequest{
 		Query:         &query,
 		Subscriptions: []*string{&sub.ID},
@@ -76,42 +60,44 @@ func (l *ResourceGraphLister) querySubscription(ctx context.Context, sub azurehe
 		},
 	}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		resp, err := l.client.Resources(ctx, request, nil)
+	paginator := ratelimit.NewPaginator()
+	return paginator.Paginate(func() (bool, error) {
+		resp, err := l.queryResources(request)
 		if err != nil {
-			return fmt.Errorf("resource graph query failed: %w", err)
+			return false, fmt.Errorf("resource graph query failed: %w", err)
 		}
 
 		rows, ok := resp.Data.([]any)
 		if !ok {
-			return fmt.Errorf("unexpected response data type: %T", resp.Data)
+			return false, fmt.Errorf("unexpected response data type: %T", resp.Data)
 		}
 
 		for _, row := range rows {
-			resource, err := parseARGRow(row, sub)
-			if err != nil {
-				slog.Debug("skipping malformed ARG row", "error", err)
+			resource, parseErr := parseARGRow(row, sub)
+			if parseErr != nil {
+				slog.Debug("skipping malformed ARG row", "error", parseErr)
 				continue
 			}
 			out.Send(resource)
 		}
 
-		if resp.SkipToken == nil || *resp.SkipToken == "" {
-			break
+		hasMorePages := resp.SkipToken != nil && *resp.SkipToken != ""
+		if hasMorePages {
+			request.Options.SkipToken = resp.SkipToken
 		}
-		request.Options.SkipToken = resp.SkipToken
-	}
-
-	return nil
+		return hasMorePages, nil
+	})
 }
 
-func parseARGRow(row any, sub azurehelpers.SubscriptionInfo) (output.AzureResource, error) {
+func (l *ResourceGraphLister) queryResources(request armresourcegraph.QueryRequest) (armresourcegraph.ClientResourcesResponse, error) {
+	client, err := armresourcegraph.NewClient(l.cred, nil)
+	if err != nil {
+		return armresourcegraph.ClientResourcesResponse{}, fmt.Errorf("failed to create resource graph client: %w", err)
+	}
+	return client.Resources(context.Background(), request, nil)
+}
+
+func parseARGRow(row any, sub azuretypes.SubscriptionInfo) (output.AzureResource, error) {
 	rowMap, ok := row.(map[string]any)
 	if !ok {
 		return output.AzureResource{}, fmt.Errorf("unexpected row type: %T", row)
@@ -132,9 +118,11 @@ func parseARGRow(row any, sub azurehelpers.SubscriptionInfo) (output.AzureResour
 		if tagMap, ok := tags.(map[string]any); ok {
 			resource.Tags = make(map[string]string, len(tagMap))
 			for k, v := range tagMap {
-				if s, ok := v.(string); ok {
-					resource.Tags[k] = s
+				s, valueIsString := v.(string)
+				if !valueIsString {
+					continue
 				}
+				resource.Tags[k] = s
 			}
 		}
 	}
@@ -153,7 +141,6 @@ func parseARGRow(row any, sub azurehelpers.SubscriptionInfo) (output.AzureResour
 		}
 	}
 
-	// Capture any additional projected fields (e.g. from extend/project) into Properties.
 	for k, v := range rowMap {
 		switch k {
 		case "id", "name", "type", "location", "resourceGroup", "tags", "properties", "subscriptionId":
@@ -173,8 +160,6 @@ func parseARGRow(row any, sub azurehelpers.SubscriptionInfo) (output.AzureResour
 	return resource, nil
 }
 
-// tryUnmarshalJSONStrings walks a map and replaces string values that are
-// valid JSON objects or arrays with their unmarshaled form.
 func tryUnmarshalJSONStrings(m map[string]any) {
 	for k, v := range m {
 		s, ok := v.(string)
@@ -191,10 +176,15 @@ func tryUnmarshalJSONStrings(m map[string]any) {
 }
 
 func stringFromMap(m map[string]any, key string) string {
-	if v, ok := m[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
+	v, ok := m[key]
+	if !ok {
+		return ""
 	}
-	return ""
+
+	s, ok := v.(string)
+	if !ok {
+		return ""
+	}
+
+	return s
 }
