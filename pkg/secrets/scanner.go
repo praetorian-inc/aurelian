@@ -16,9 +16,12 @@ type SecretScanner struct {
 
 // SecretScanResult represents a secret detection result emitted by the scanner.
 type SecretScanResult struct {
-	ResourceRef string       `json:"resource_ref"`
-	Label       string       `json:"label"`
-	Match       *types.Match `json:"match"`
+	ResourceRef  string       `json:"resource_ref"`
+	ResourceType string       `json:"resource_type"`
+	Region       string       `json:"region"`
+	AccountID    string       `json:"account_id"`
+	Label        string       `json:"label"`
+	Match        *types.Match `json:"match"`
 }
 
 // Start creates a new persistent scanner and stores it as a field.
@@ -71,8 +74,11 @@ func (s *SecretScanner) Scan(input output.ScanInput, out *pipeline.P[SecretScanR
 
 func toScanResult(input output.ScanInput, match *types.Match) SecretScanResult {
 	return SecretScanResult{
-		ResourceRef: input.ResourceID,
-		Label:       input.Label,
-		Match:       match,
+		ResourceRef:  input.ResourceID,
+		ResourceType: input.ResourceType,
+		Region:       input.Region,
+		AccountID:    input.AccountID,
+		Label:        input.Label,
+		Match:        match,
 	}
 }

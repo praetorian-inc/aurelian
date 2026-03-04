@@ -40,6 +40,6 @@ func extractEC2(ctx extractContext, r output.AWSResource, out *pipeline.P[output
 		return nil
 	}
 
-	out.Send(output.ScanInputFromAWSResource(r, "UserData", decoded))
+	out.Send(output.ScanInputFromAWSResource(r, "EC2 UserData script", decoded))
 	return nil
 }

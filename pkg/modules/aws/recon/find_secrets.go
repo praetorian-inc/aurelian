@@ -62,6 +62,8 @@ func (m *AWSFindSecretsModule) SupportedResourceTypes() []string {
 		"AWS::SSM::Document",
 		"AWS::StepFunctions::StateMachine",
 		// TODO: AWS::ECR::Repository — container image scanning deferred to follow-up PR.
+		// TODO: add collection modules for
+		//  AWS::SSM::Document
 	}
 }
 
@@ -111,7 +113,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 }
 
 func riskFromScanResult(result secrets.SecretScanResult, out *pipeline.P[model.AurelianModel]) error {
-	proof := buildProofData(result.ResourceRef, result.Label, result.Match)
+	proof := buildProofData(result, result.Match)
 	proofBytes, err := json.MarshalIndent(proof, "", "  ")
 	if err != nil {
 		slog.Warn("failed to marshal proof", "resource", result.ResourceRef, "error", err)
@@ -160,22 +162,25 @@ func riskSeverityFromMatch(match *types.Match) output.RiskSeverity {
 
 // buildProofData constructs proof JSON matching Guard's secrets proof format.
 // Includes provenance with cloud resource context so the UI can render findings.
-func buildProofData(resourceRef string, label string, match *types.Match) map[string]interface{} {
+func buildProofData(result secrets.SecretScanResult, match *types.Match) map[string]interface{} {
 	proof := map[string]interface{}{
 		"finding_id":   match.FindingID,
 		"rule_name":    match.RuleName,
 		"rule_text_id": match.RuleID,
-		"resource_ref": resourceRef,
+		"resource_ref": result.ResourceRef,
 		"num_matches":  1,
 		"matches": []map[string]interface{}{
 			{
 				"provenance": []map[string]interface{}{
 					{
-						"kind":        "cloud_resource",
-						"platform":    "aws",
-						"resource_id": resourceRef,
+						"kind":          "cloud_resource",
+						"platform":      "aws",
+						"resource_id":   result.ResourceRef,
+						"resource_type": result.ResourceType,
+						"region":        result.Region,
+						"account_id":    result.AccountID,
 						"first_commit": map[string]interface{}{
-							"blob_path": label,
+							"blob_path": result.Label,
 						},
 					},
 				},

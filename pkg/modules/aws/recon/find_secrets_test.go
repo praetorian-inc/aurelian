@@ -144,7 +144,14 @@ func TestBuildProofData(t *testing.T) {
 		},
 	}
 
-	proof := buildProofData("arn:aws:lambda:us-east-1:123:function:demo", "handler.py", match)
+	result := secrets.SecretScanResult{
+		ResourceRef:  "arn:aws:lambda:us-east-1:123:function:demo",
+		ResourceType: "AWS::Lambda::Function",
+		Region:       "us-east-1",
+		AccountID:    "123",
+		Label:        "handler.py",
+	}
+	proof := buildProofData(result, match)
 
 	assert.Equal(t, "abc123def456", proof["finding_id"])
 	assert.Equal(t, "AWS API Key", proof["rule_name"])
@@ -186,7 +193,12 @@ func TestBuildProofData_WithValidation(t *testing.T) {
 		},
 	}
 
-	proof := buildProofData("arn:aws:s3:::bucket", "config.yaml", match)
+	result := secrets.SecretScanResult{
+		ResourceRef:  "arn:aws:s3:::bucket",
+		ResourceType: "AWS::S3::Bucket",
+		Label:        "config.yaml",
+	}
+	proof := buildProofData(result, match)
 
 	validation := proof["validation"].(map[string]interface{})
 	assert.Equal(t, string(types.StatusValid), validation["status"])
@@ -213,7 +225,14 @@ func TestBuildRiskContextRoundTrip(t *testing.T) {
 		},
 	}
 
-	proof := buildProofData("arn:aws:lambda:us-east-1:123456789012:function:demo", "index.js", match)
+	result := secrets.SecretScanResult{
+		ResourceRef:  "arn:aws:lambda:us-east-1:123456789012:function:demo",
+		ResourceType: "AWS::Lambda::Function",
+		Region:       "us-east-1",
+		AccountID:    "123456789012",
+		Label:        "index.js",
+	}
+	proof := buildProofData(result, match)
 	proofBytes, err := json.MarshalIndent(proof, "", "  ")
 	require.NoError(t, err)
 

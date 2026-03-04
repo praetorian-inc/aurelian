@@ -22,6 +22,6 @@ func extractECS(_ extractContext, r output.AWSResource, out *pipeline.P[output.S
 		return fmt.Errorf("failed to marshal ECS task definition properties: %w", err)
 	}
 
-	out.Send(output.ScanInputFromAWSResource(r, "TaskDefinition", data))
+	out.Send(output.ScanInputFromAWSResource(r, "ECS Task Definition", data))
 	return nil
 }

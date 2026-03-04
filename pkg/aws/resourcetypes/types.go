@@ -33,7 +33,6 @@ var all = []string{
 	"AWS::S3::Bucket",
 	"AWS::SNS::Topic",
 	"AWS::SQS::Queue",
-	"AWS::SSM::Document",
 	"AWS::SecretsManager::Secret",
 	"AWS::StepFunctions::StateMachine",
 }
