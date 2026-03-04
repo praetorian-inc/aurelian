@@ -5,22 +5,15 @@ package recon
 import (
 	"context"
 	"testing"
-	"time"
 
-	"github.com/stretchr/testify/require"
-
-	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
+	"github.com/stretchr/testify/require"
 )
 
-// TestAzureListAllResourceEnumeration provisions 16 Azure resource types via
-// Terraform, then runs the azure/recon/list-all module and asserts every
-// provisioned resource ID appears in the results.
-//
-// Azure Resource Graph has eventual consistency -- newly created resources may
-// take up to a few minutes to appear. The test includes a retry loop with
-// increasing delays to handle this propagation window.
+// TestAzureListAllResourceEnumeration provisions Azure resources via Terraform,
+// runs the azure/recon/list-all module, and asserts every provisioned resource
+// appears in the results.
 func TestAzureListAllResourceEnumeration(t *testing.T) {
 	fixture := testutil.NewAzureFixture(t, "azure/recon/list-all")
 	fixture.Setup()
@@ -31,69 +24,84 @@ func TestAzureListAllResourceEnumeration(t *testing.T) {
 	}
 
 	subscriptionID := fixture.Output("subscription_id")
-	allResourceIDs := fixture.OutputList("all_resource_ids")
-	t.Logf("subscription: %s, expecting %d resource IDs", subscriptionID, len(allResourceIDs))
 
-	cfg := plugin.Config{
+	results, err := testutil.RunAndCollect(t, mod, plugin.Config{
 		Args: map[string]any{
 			"subscription-id": []string{subscriptionID},
 		},
 		Context: context.Background(),
-	}
+	})
+	require.NoError(t, err)
+	testutil.AssertMinResults(t, results, 1)
 
-	// Retry loop to handle ARG propagation delay.
-	// Delays: 0s, 10s, 20s, 30s, 40s, 50s (total max ~2.5 minutes).
-	var results []model.AurelianModel
-	var lastErr error
-	const maxAttempts = 6
+	t.Run("discovers resource groups", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("resource_group_id"))
+		testutil.AssertResultContainsString(t, results, fixture.Output("func_resource_group_id"))
+	})
 
-	for attempt := 0; attempt < maxAttempts; attempt++ {
-		if attempt > 0 {
-			delay := time.Duration(attempt*10) * time.Second
-			t.Logf("ARG propagation retry %d/%d, waiting %s...", attempt, maxAttempts-1, delay)
-			time.Sleep(delay)
-		}
+	t.Run("discovers virtual network", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("vnet_id"))
+	})
 
-		results, lastErr = testutil.RunAndCollect(t, mod, cfg)
-		if lastErr != nil {
-			t.Logf("attempt %d: module returned error: %v", attempt, lastErr)
-			continue
-		}
+	t.Run("discovers network security group", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("nsg_id"))
+	})
 
-		t.Logf("attempt %d: got %d results", attempt, len(results))
+	t.Run("discovers storage accounts", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("storage_account_id"))
+		testutil.AssertResultContainsString(t, results, fixture.Output("func_storage_account_id"))
+	})
 
-		// Check if all expected resources are present.
-		allFound := true
-		for _, id := range allResourceIDs {
-			if !testutil.ResultsContainString(results, id) {
-				allFound = false
-				break
-			}
-		}
+	t.Run("discovers key vault", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("key_vault_id"))
+	})
 
-		if allFound {
-			t.Logf("attempt %d: all %d expected resources found", attempt, len(allResourceIDs))
-			break
-		}
+	t.Run("discovers log analytics workspace", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("log_analytics_id"))
+	})
 
-		// Log which resources are still missing for debugging.
-		var missing []string
-		for _, id := range allResourceIDs {
-			if !testutil.ResultsContainString(results, id) {
-				missing = append(missing, id)
-			}
-		}
-		t.Logf("attempt %d: %d/%d found, missing %d: %v", attempt, len(allResourceIDs)-len(missing), len(allResourceIDs), len(missing), missing)
-	}
+	t.Run("discovers container registry", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("acr_id"))
+	})
 
-	require.NoError(t, lastErr)
-	testutil.AssertMinResults(t, results, len(allResourceIDs))
+	t.Run("discovers data factory", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("data_factory_id"))
+	})
 
-	// Final assertion: every Terraform-created resource must appear in results.
-	// testutil assertions use case-insensitive matching, which handles Azure
-	// Resource Graph's casing normalization vs Terraform outputs.
-	for _, id := range allResourceIDs {
-		testutil.AssertResultContainsString(t, results, id)
-	}
-	t.Logf("all %d expected resources verified in results", len(allResourceIDs))
+	t.Run("discovers event grid topic", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("event_grid_topic_id"))
+	})
+
+	t.Run("discovers service bus namespace", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("service_bus_id"))
+	})
+
+	t.Run("discovers app service plans", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("service_plan_id"))
+		testutil.AssertResultContainsString(t, results, fixture.Output("func_service_plan_id"))
+	})
+
+	t.Run("discovers web app", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("web_app_id"))
+	})
+
+	t.Run("discovers function app", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("function_app_id"))
+	})
+
+	t.Run("discovers automation account", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("automation_account_id"))
+	})
+
+	t.Run("discovers sql server", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("sql_server_id"))
+	})
+
+	t.Run("discovers network interface", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("nic_id"))
+	})
+
+	t.Run("discovers virtual machine", func(t *testing.T) {
+		testutil.AssertResultContainsString(t, results, fixture.Output("vm_id"))
+	})
 }

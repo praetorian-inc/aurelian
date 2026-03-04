@@ -49,9 +49,9 @@ terraform {
     }
   }
 
-  # Local state by default. The Azure fixture passes -backend-config="path=..."
-  # at init time to store state in a stable temp directory.
-  backend "local" {}
+  # State is configured via the shared fixture using S3 backend-config flags
+  # (bucket, region, key) at init time.
+  backend "s3" {}
 }
 
 provider "azurerm" {
