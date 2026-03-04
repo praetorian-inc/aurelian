@@ -2,6 +2,7 @@ package recon
 
 import (
 	"fmt"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"slices"
 	"strings"
 
@@ -27,4 +28,17 @@ func resolveRequestedResourceTypes(requested []string, supported []string) ([]st
 	}
 
 	return requested, nil
+}
+
+func collectInputs(opts plugin.AWSCommonRecon, resolvedTypes []string) ([]string, error) {
+	if len(opts.ResourceARN) > 0 {
+		return opts.ResourceARN, nil
+	}
+
+	resourceTypes, err := resolveRequestedResourceTypes(opts.ResourceType, resolvedTypes)
+	if err != nil {
+		return nil, err
+	}
+
+	return resourceTypes, nil
 }

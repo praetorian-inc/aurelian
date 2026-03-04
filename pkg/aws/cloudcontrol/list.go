@@ -30,8 +30,6 @@ type CloudControlLister struct {
 }
 
 func NewCloudControlLister(options plugin.AWSCommonRecon) *CloudControlLister {
-	options.Concurrency = max(1, options.Concurrency)
-
 	return &CloudControlLister{
 		AWSCommonRecon:   options,
 		CrossRegionActor: ratelimit.NewCrossRegionActor(options.Concurrency),
@@ -99,7 +97,7 @@ func (cc *CloudControlLister) resolveARNTarget(resourceARN string) (string, stri
 		return "", "", "", fmt.Errorf("parse arn %q: %w", resourceARN, err)
 	}
 
-	resourceType, ok := types.ServiceToResourceType[parsed.Service]
+	resourceType, ok := types.ResolveResourceType(parsed.Service, parsed.Resource)
 	if !ok {
 		return "", "", "", fmt.Errorf("unsupported arn service %q", parsed.Service)
 	}
@@ -166,8 +164,11 @@ func (cc *CloudControlLister) resolveS3BucketRegion(bucketName string) (string, 
 
 func (cc *CloudControlLister) requiresSpecialIdentifier(resourceType, resourceARN, resourceID string) (string, bool) {
 	parsers := map[string]func(string, string) string{
-		"AWS::SNS::Topic":    cc.parseSNSTopicID,
-		"AWS::EC2::Instance": cc.parseEC2InstanceID,
+		"AWS::SNS::Topic":                  cc.parseAsARN,
+		"AWS::EC2::Instance":               cc.parseEC2InstanceID,
+		"AWS::CloudFormation::Stack":       cc.parseCloudFormationStackID,
+		"AWS::StepFunctions::StateMachine": cc.parseAsARN,
+		"AWS::ECS::TaskDefinition":         cc.parseTaskDefinition,
 	}
 
 	parser, ok := parsers[resourceType]
@@ -178,16 +179,36 @@ func (cc *CloudControlLister) requiresSpecialIdentifier(resourceType, resourceAR
 	return parser(resourceARN, resourceID), ok
 }
 
-func (cc *CloudControlLister) parseSNSTopicID(resourceARN, _ string) string {
+func (cc *CloudControlLister) parseAsARN(resourceARN, _ string) string {
 	return resourceARN
 }
 
 func (cc *CloudControlLister) parseEC2InstanceID(_, instanceID string) string {
+	// example: instance/i-123456789012
 	parts := strings.Split(instanceID, "/")
 	if len(parts) != 2 {
 		return instanceID
 	}
 
+	return parts[1]
+}
+
+func (cc *CloudControlLister) parseCloudFormationStackID(_, stackID string) string {
+	// example: stack/StackSet-Chariot-Deployment-a00b9d08-b877-4781-a772-c3f798f5eeac/f6eecfa0-837a-11f0-aa31-0affe997852d
+	parts := strings.Split(stackID, "/")
+	if len(parts) < 2 {
+		return stackID
+	}
+
+	return parts[1]
+}
+
+func (cc *CloudControlLister) parseTaskDefinition(_, taskDefinition string) string {
+	// example: task-definition/aurelian-sec-c22f7fe9-secret-task:1
+	parts := strings.Split(taskDefinition, "/")
+	if len(parts) < 2 {
+		return taskDefinition
+	}
 	return parts[1]
 }
 
