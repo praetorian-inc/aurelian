@@ -35,7 +35,6 @@ func extractSFN(ctx extractContext, r output.AWSResource, out *pipeline.P[output
 	g.SetLimit(ctx.Concurrency)
 
 	for _, exec := range listResp.Executions {
-		exec := exec
 		missingExecutionArn := exec.ExecutionArn == nil
 		if missingExecutionArn {
 			continue
