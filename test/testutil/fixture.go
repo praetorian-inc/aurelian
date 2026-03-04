@@ -4,18 +4,18 @@ package testutil
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -24,217 +24,229 @@ import (
 )
 
 const (
-	// stateBucketPrefix is joined with the AWS account ID to form the bucket name.
 	stateBucketPrefix = "aurelian-integration-tests-"
-
-	// stateRegion is the AWS region where the state bucket lives.
-	stateRegion = "us-east-1"
-
-	// statePrefix is the S3 key prefix under which all integration test state is stored.
-	statePrefix = "integration-tests/"
+	stateRegion       = "us-east-1"
 )
 
 var (
-	// stateBucket is resolved dynamically via STS GetCallerIdentity.
-	// Set once by resolveStateBucket and then accessed as a package-level var
-	// by both fixture.go and reaper.go.
 	stateBucket string
 	bucketOnce  sync.Once
 	bucketErr   error
 )
 
-// TerraformFixture manages terraform lifecycle for integration tests.
-// Infrastructure is automatically created on Setup and destroyed when the test completes.
-type TerraformFixture struct {
+type fixtureProvider string
+
+const (
+	providerAWS   fixtureProvider = "aws"
+	providerAzure fixtureProvider = "azure"
+)
+
+type fixtureConfig struct {
+	provider    fixtureProvider
+	moduleDir   string
+	fixtureDir  string
+	execPath    string
+	containerID string
+	stateKey    string
+	initOpts    []tfexec.InitOption
+}
+
+type BaseFixture struct {
 	tf      *tfexec.Terraform
 	outputs map[string]tfexec.OutputMeta
 	t       *testing.T
+	cfg     fixtureConfig
 
-	// stateKey is the S3 object key for this test run's Terraform state.
-	stateKey string
-
-	// execPath is the absolute path to the terraform binary.
-	execPath string
-
-	// fixtureDir is the absolute path to the terraform module directory on disk.
-	fixtureDir string
+	getRemoteHashFn func(context.Context) (string, error)
+	putRemoteHashFn func(context.Context, string) error
+	initFn          func(context.Context, ...tfexec.InitOption) error
+	destroyFn       func(context.Context, ...tfexec.DestroyOption) error
+	applyFn         func(context.Context, ...tfexec.ApplyOption) error
+	outputFn        func(context.Context, ...tfexec.OutputOption) (map[string]tfexec.OutputMeta, error)
 }
 
-// NewFixture creates a fixture for a terraform module directory.
-// moduleDir is relative to test/terraform/, e.g. "aws/recon/list".
-func NewFixture(t *testing.T, moduleDir string) *TerraformFixture {
+func newBaseFixture(t *testing.T, cfg fixtureConfig) *BaseFixture {
 	t.Helper()
 
-	execPath, err := exec.LookPath("terraform")
+	tf, err := tfexec.NewTerraform(cfg.fixtureDir, cfg.execPath)
 	if err != nil {
-		t.Fatalf("terraform not found in PATH: %v", err)
+		t.Fatalf("failed to create terraform instance for %s: %v", cfg.moduleDir, err)
 	}
 
-	_, thisFile, _, _ := runtime.Caller(0)
-	dir := filepath.Join(filepath.Dir(thisFile), "..", "terraform", moduleDir)
-	tf, err := tfexec.NewTerraform(dir, execPath)
+	fixture := &BaseFixture{tf: tf, t: t, cfg: cfg}
+	fixture.getRemoteHashFn = fixture.getRemoteHash
+	fixture.putRemoteHashFn = fixture.putRemoteHash
+	fixture.initFn = fixture.tf.Init
+	fixture.destroyFn = fixture.tf.Destroy
+	fixture.applyFn = fixture.tf.Apply
+	fixture.outputFn = fixture.tf.Output
+
+	return fixture
+}
+
+func (f *BaseFixture) Setup() {
+	f.t.Helper()
+
+	err := f.runLifecycle(context.Background())
 	if err != nil {
-		t.Fatalf("failed to create terraform instance for %s: %v", moduleDir, err)
-	}
-
-	// Ensure the state bucket exists, creating it if necessary.
-	ensureStateBucket(t)
-
-	stateKey := fmt.Sprintf("integration-tests/%s/terraform.tfstate", moduleDir)
-
-	return &TerraformFixture{
-		tf:         tf,
-		t:          t,
-		stateKey:   stateKey,
-		execPath:   execPath,
-		fixtureDir: dir,
+		f.t.Fatalf("fixture setup failed: %v", err)
 	}
 }
 
-// Setup initializes terraform and manages infrastructure lifecycle using hash-based caching.
-//
-// Three cases:
-//  1. No remote state exists → fresh deploy (init + apply + upload hash).
-//  2. Remote state exists, hashes match → reuse (init + read outputs only).
-//  3. Remote state exists, hashes differ → teardown + redeploy (init + destroy + apply + upload hash).
-//
-// By default, infrastructure persists after the test completes.
-// Set AURELIAN_DESTROY_FIXTURES=1 to destroy infrastructure when the test finishes.
-func (f *TerraformFixture) Setup() {
-	f.t.Helper()
-	ctx := context.Background()
-
-	localHash, err := computeFixtureHash(f.fixtureDir)
+func (f *BaseFixture) runLifecycle(ctx context.Context) error {
+	fixtureHash, err := computeFixtureHash(f.cfg.fixtureDir)
 	if err != nil {
-		f.t.Fatalf("compute fixture hash: %v", err)
+		return fmt.Errorf("compute fixture hash: %w", err)
 	}
-	f.t.Logf("fixture local hash: %s", localHash)
+	f.t.Logf("terraform fixture local hash: %s", fixtureHash)
 
-	remoteHash, err := f.getRemoteHash(ctx)
+	effectiveHash := computeEffectiveHash(fixtureHash, f.cfg.containerID)
+	remoteHash, err := f.getRemoteHashFn(ctx)
 	if err != nil {
-		f.t.Fatalf("get remote hash: %v", err)
+		return fmt.Errorf("get remote hash: %w", err)
 	}
 
-	initOpts := []tfexec.InitOption{
-		tfexec.BackendConfig("bucket=" + stateBucket),
-		tfexec.BackendConfig("region=" + stateRegion),
-		tfexec.BackendConfig("key=" + f.stateKey),
-		tfexec.Reconfigure(true),
-	}
-	if err := f.tf.Init(ctx, initOpts...); err != nil {
-		f.t.Fatalf("terraform init: %v", err)
-	}
-
-	if remoteHash == "" {
-		f.t.Log("fixture: no cached state found, deploying fresh infrastructure")
-		f.deployStack(ctx, localHash)
-	} else if remoteHash == localHash {
-		f.t.Log("fixture: cached infrastructure is up-to-date, reusing")
-	} else {
-		f.t.Logf("fixture: hash mismatch (remote=%s, local=%s), tearing down and redeploying", remoteHash, localHash)
-		f.redeployStack(ctx, localHash)
-	}
-
-	outputs, err := f.tf.Output(ctx)
+	err = f.initFn(ctx, f.cfg.initOpts...)
 	if err != nil {
-		f.t.Fatalf("terraform output: %v", err)
+		return fmt.Errorf("terraform init: %w", err)
 	}
-	f.outputs = outputs
 
-	if prefix, ok := f.outputs["prefix"]; ok {
-		var p string
-		if err := json.Unmarshal(prefix.Value, &p); err == nil {
-			f.t.Logf("terraform prefix: %s", p)
+	missingRemoteHash := remoteHash == ""
+	if missingRemoteHash {
+		f.t.Log("terraform fixture hash check: remote hash empty")
+		f.t.Log("terraform fixture decision: deploy")
+		if err := f.deployStack(ctx, effectiveHash); err != nil {
+			return err
 		}
-	}
-	f.t.Logf("terraform state: s3://%s/%s", stateBucket, f.stateKey)
 
-	if os.Getenv("AURELIAN_DESTROY_FIXTURES") == "1" {
-		f.t.Cleanup(func() {
-			if err := f.tf.Destroy(context.Background()); err != nil {
-				f.t.Errorf("terraform destroy failed (state preserved for manual cleanup): %v", err)
-				return
-			}
-			f.cleanupRemoteState()
-			f.deleteRemoteHash(context.Background())
-		})
+		return f.loadOutputs(ctx)
 	}
+
+	hashMatches := remoteHash == effectiveHash
+	if hashMatches {
+		f.t.Log("terraform fixture hash check: hashes match")
+		f.t.Log("terraform fixture decision: reuse existing fixture")
+		return f.loadOutputs(ctx)
+	}
+
+	f.t.Logf("terraform fixture hash check: hashes differ (remote=%s local_effective=%s)", remoteHash, effectiveHash)
+	f.t.Log("terraform fixture decision: teardown + redeploy")
+	if err := f.redeployStack(ctx, effectiveHash); err != nil {
+		return err
+	}
+
+	return f.loadOutputs(ctx)
 }
 
-func (f *TerraformFixture) deployStack(ctx context.Context, localHash string) {
-	if err := f.tf.Apply(ctx); err != nil {
-		f.t.Fatalf("terraform apply: %v", err)
+func (f *BaseFixture) loadOutputs(ctx context.Context) error {
+	outputs, err := f.outputFn(ctx)
+	if err != nil {
+		return fmt.Errorf("terraform output: %w", err)
 	}
-	if err := f.putRemoteHash(ctx, localHash); err != nil {
-		f.t.Fatalf("upload fixture hash: %v", err)
-	}
+
+	f.outputs = outputs
+	return nil
 }
 
-func (f *TerraformFixture) redeployStack(ctx context.Context, localHash string) {
-	if err := f.tf.Destroy(ctx); err != nil {
-		f.t.Fatalf("terraform destroy (stale): %v", err)
+func (f *BaseFixture) deployStack(ctx context.Context, hash string) error {
+	f.t.Log("terraform fixture action: deploy start")
+	err := f.applyFn(ctx)
+	if err != nil {
+		return fmt.Errorf("terraform apply: %w", err)
 	}
-	f.deployStack(ctx, localHash)
+	f.t.Log("terraform fixture action: deploy complete")
+
+	err = f.putRemoteHashFn(ctx, hash)
+	if err != nil {
+		return fmt.Errorf("put remote hash: %w", err)
+	}
+
+	return nil
 }
 
-// Output returns a string output value by key.
-func (f *TerraformFixture) Output(key string) string {
+func (f *BaseFixture) redeployStack(ctx context.Context, hash string) error {
+	f.t.Log("terraform fixture action: teardown start")
+	err := f.destroyFn(ctx)
+	if err != nil {
+		return fmt.Errorf("terraform destroy (stale): %w", err)
+	}
+	f.t.Log("terraform fixture action: teardown complete")
+
+	return f.deployStack(ctx, hash)
+}
+
+func (f *BaseFixture) Output(key string) string {
 	f.t.Helper()
+
 	meta, ok := f.outputs[key]
 	if !ok {
 		f.t.Fatalf("terraform output %q not found", key)
 	}
+
 	var s string
-	if err := json.Unmarshal(meta.Value, &s); err != nil {
+	err := json.Unmarshal(meta.Value, &s)
+	if err != nil {
 		f.t.Fatalf("terraform output %q is not a string: %s", key, string(meta.Value))
 	}
+
 	return s
 }
 
-// OutputList returns a []string output value by key.
-func (f *TerraformFixture) OutputList(key string) []string {
+func (f *BaseFixture) OutputList(key string) []string {
 	f.t.Helper()
+
 	meta, ok := f.outputs[key]
 	if !ok {
 		f.t.Fatalf("terraform output %q not found", key)
 	}
+
 	var result []string
-	if err := json.Unmarshal(meta.Value, &result); err != nil {
+	err := json.Unmarshal(meta.Value, &result)
+	if err != nil {
 		f.t.Fatalf("terraform output %q is not a string list: %s", key, string(meta.Value))
 	}
+
 	return result
 }
 
-// resolveStateBucket determines the S3 state bucket name by appending the
-// AWS account ID (via STS GetCallerIdentity) to stateBucketPrefix.
-// The result is cached for the lifetime of the process.
+func computeEffectiveHash(fixtureHash, containerID string) string {
+	h := md5.New()
+	_, _ = fmt.Fprintf(h, "fixture=%s\ncontainer=%s\n", fixtureHash, containerID)
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
 func resolveStateBucket(ctx context.Context) (string, error) {
 	bucketOnce.Do(func() {
-		opts := []func(*config.LoadOptions) error{config.WithRegion(stateRegion)}
-		if profile := os.Getenv("AWS_PROFILE"); profile != "" {
-			opts = append(opts, config.WithSharedConfigProfile(profile))
-		}
-		cfg, err := config.LoadDefaultConfig(ctx, opts...)
+		accountID, err := resolveAWSAccountID(ctx)
 		if err != nil {
-			bucketErr = fmt.Errorf("load AWS config: %w", err)
+			bucketErr = err
 			return
 		}
-		identity, err := sts.NewFromConfig(cfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
-		if err != nil {
-			bucketErr = fmt.Errorf("STS GetCallerIdentity: %w", err)
-			return
-		}
-		stateBucket = stateBucketPrefix + *identity.Account
+
+		stateBucket = stateBucketPrefix + accountID
 	})
+
 	return stateBucket, bucketErr
 }
 
-// ensureStateBucket resolves the state bucket name (via STS) and creates
-// the bucket if it does not already exist.
+func resolveAWSAccountID(ctx context.Context) (string, error) {
+	cfg, err := loadAWSConfig(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	identity, err := sts.NewFromConfig(cfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return "", fmt.Errorf("STS GetCallerIdentity: %w", err)
+	}
+
+	return *identity.Account, nil
+}
+
 func ensureStateBucket(t *testing.T) {
 	t.Helper()
-	ctx := context.Background()
 
+	ctx := context.Background()
 	bucket, err := resolveStateBucket(ctx)
 	if err != nil {
 		t.Fatalf("failed to resolve state bucket name: %v", err)
@@ -245,51 +257,19 @@ func ensureStateBucket(t *testing.T) {
 		t.Fatalf("failed to create S3 client: %v", err)
 	}
 
-	_, headErr := client.HeadBucket(ctx, &s3.HeadBucketInput{
-		Bucket: &bucket,
-	})
+	_, headErr := client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &bucket})
 	if headErr == nil {
 		return
 	}
 
-	// Bucket not accessible — attempt to create it.
 	t.Logf("state bucket %q not found, creating...", bucket)
-	_, createErr := client.CreateBucket(ctx, &s3.CreateBucketInput{
-		Bucket: &bucket,
-	})
+	_, createErr := client.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: &bucket})
 	if createErr != nil {
 		t.Fatalf("state bucket %q not accessible (head: %v) and creation failed: %v", bucket, headErr, createErr)
 	}
-	t.Logf("created state bucket %q in %s", bucket, stateRegion)
 }
 
-// cleanupRemoteState deletes the state object from S3 after terraform destroy.
-// This is best-effort; failures are logged but do not fail the test.
-func (f *TerraformFixture) cleanupRemoteState() {
-	ctx := context.Background()
-
-	client, err := newS3Client(ctx)
-	if err != nil {
-		f.t.Logf("warning: failed to load AWS config for state cleanup: %v", err)
-		return
-	}
-
-	bucket := stateBucket
-	_, err = client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: &bucket,
-		Key:    &f.stateKey,
-	})
-	if err != nil {
-		f.t.Logf("warning: failed to delete remote state s3://%s/%s: %v", stateBucket, f.stateKey, err)
-		return
-	}
-
-	f.t.Logf("cleaned up remote state s3://%s/%s", stateBucket, f.stateKey)
-}
-
-// newS3Client creates an S3 client configured for the state bucket region,
-// respecting AWS_PROFILE if set.
-func newS3Client(ctx context.Context) (*s3.Client, error) {
+func loadAWSConfig(ctx context.Context) (aws.Config, error) {
 	opts := []func(*config.LoadOptions) error{config.WithRegion(stateRegion)}
 	if profile := os.Getenv("AWS_PROFILE"); profile != "" {
 		opts = append(opts, config.WithSharedConfigProfile(profile))
@@ -297,20 +277,39 @@ func newS3Client(ctx context.Context) (*s3.Client, error) {
 
 	cfg, err := config.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("load AWS config: %w", err)
+		return aws.Config{}, fmt.Errorf("load AWS config: %w", err)
 	}
+
+	return cfg, nil
+}
+
+func newS3Client(ctx context.Context) (*s3.Client, error) {
+	cfg, err := loadAWSConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return s3.NewFromConfig(cfg), nil
 }
 
-// hashKey returns the S3 key for the fixture's hash file.
-func (f *TerraformFixture) hashKey() string {
-	dir := filepath.Dir(f.stateKey)
+func (f *BaseFixture) hashKey() string {
+	dir := filepath.Dir(f.cfg.stateKey)
 	return dir + "/fixture.md5"
 }
 
-// getRemoteHash reads the fixture.md5 file from S3. Returns ("", nil) if the
-// file does not exist.
-func (f *TerraformFixture) getRemoteHash(ctx context.Context) (string, error) {
+func (f *BaseFixture) getRemoteHash(ctx context.Context) (string, error) {
+	if f.cfg.provider == providerAzure {
+		data, err := os.ReadFile(f.hashKey())
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		if err != nil {
+			return "", fmt.Errorf("read local hash: %w", err)
+		}
+
+		return strings.TrimSpace(string(data)), nil
+	}
+
 	client, err := newS3Client(ctx)
 	if err != nil {
 		return "", fmt.Errorf("create S3 client: %w", err)
@@ -318,18 +317,18 @@ func (f *TerraformFixture) getRemoteHash(ctx context.Context) (string, error) {
 
 	key := f.hashKey()
 	bucket := stateBucket
-	out, err := client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: &bucket,
-		Key:    &key,
-	})
+	out, err := client.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &key})
 	if err != nil {
-		var nsk *types.NoSuchKey
-		if errors.As(err, &nsk) {
+		var noSuchKey *types.NoSuchKey
+		if errors.As(err, &noSuchKey) {
 			return "", nil
 		}
-		if strings.Contains(err.Error(), "NoSuchKey") || strings.Contains(err.Error(), "404") {
+
+		errText := err.Error()
+		if strings.Contains(errText, "NoSuchKey") || strings.Contains(errText, "404") {
 			return "", nil
 		}
+
 		return "", fmt.Errorf("get remote hash: %w", err)
 	}
 	defer out.Body.Close()
@@ -338,11 +337,20 @@ func (f *TerraformFixture) getRemoteHash(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read remote hash body: %w", err)
 	}
+
 	return strings.TrimSpace(string(data)), nil
 }
 
-// putRemoteHash uploads the fixture hash to S3.
-func (f *TerraformFixture) putRemoteHash(ctx context.Context, hash string) error {
+func (f *BaseFixture) putRemoteHash(ctx context.Context, hash string) error {
+	if f.cfg.provider == providerAzure {
+		hashPath := f.hashKey()
+		err := os.WriteFile(hashPath, []byte(hash+"\n"), 0o644)
+		if err != nil {
+			return fmt.Errorf("write local hash: %w", err)
+		}
+		return nil
+	}
+
 	client, err := newS3Client(ctx)
 	if err != nil {
 		return fmt.Errorf("create S3 client: %w", err)
@@ -351,31 +359,10 @@ func (f *TerraformFixture) putRemoteHash(ctx context.Context, hash string) error
 	key := f.hashKey()
 	bucket := stateBucket
 	body := strings.NewReader(hash + "\n")
-	_, err = client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: &bucket,
-		Key:    &key,
-		Body:   body,
-	})
+	_, err = client.PutObject(ctx, &s3.PutObjectInput{Bucket: &bucket, Key: &key, Body: body})
 	if err != nil {
 		return fmt.Errorf("put remote hash: %w", err)
 	}
+
 	return nil
 }
-
-// deleteRemoteHash removes the fixture.md5 file from S3. Best-effort.
-func (f *TerraformFixture) deleteRemoteHash(ctx context.Context) {
-	client, err := newS3Client(ctx)
-	if err != nil {
-		f.t.Logf("warning: failed to create S3 client for hash cleanup: %v", err)
-		return
-	}
-
-	key := f.hashKey()
-	bucket := stateBucket
-	_, _ = client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: &bucket,
-		Key:    &key,
-	})
-}
-
-func strPtr(s string) *string { return &s }

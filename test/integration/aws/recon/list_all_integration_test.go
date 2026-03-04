@@ -15,7 +15,7 @@ import (
 )
 
 func TestAWSListAllEC2Enumeration(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/recon/list")
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
 	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "list-all")

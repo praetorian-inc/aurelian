@@ -44,7 +44,7 @@ func collectAWSResources(t *testing.T, mod plugin.Module, cfg plugin.Config) ([]
 
 // TestAWSEC2Enumeration verifies comprehensive EC2 instance enumeration capabilities.
 func TestAWSEC2Enumeration(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/recon/list")
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
 	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "list-all")
@@ -210,7 +210,7 @@ func TestAWSEC2Enumeration(t *testing.T) {
 
 // TestAWSEC2EnumerationMultiRegion validates multi-region enumeration capabilities
 func TestAWSEC2EnumerationMultiRegion(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/recon/list")
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
 	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "list-all")

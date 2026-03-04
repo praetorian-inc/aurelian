@@ -13,7 +13,7 @@ import (
 )
 
 func Test_CloudControl_ListByType_UsesReconListFixture(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/recon/list")
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
 	lister := NewCloudControlLister(plugin.AWSCommonRecon{
@@ -50,7 +50,7 @@ func Test_CloudControl_ListByType_UsesReconListFixture(t *testing.T) {
 }
 
 func Test_CloudControl_ListByARN_UsesReconListFixture(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/recon/list")
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
 	lister := NewCloudControlLister(plugin.AWSCommonRecon{Concurrency: 1})
