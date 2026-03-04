@@ -10,7 +10,7 @@ aurelian azure recon list-all [flags]
 
 ```
   -h, --help                      help for list-all
-  -s, --subscription-id strings   Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions (required)
+  -s, --subscription-id strings   Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions (default [all])
 ```
 
 ### SEE ALSO
