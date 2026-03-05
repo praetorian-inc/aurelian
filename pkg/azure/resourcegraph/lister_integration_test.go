@@ -7,7 +7,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
-	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/test/testutil"
@@ -29,41 +28,43 @@ func TestResourceGraphListerListAll(t *testing.T) {
 		ID: subscriptionID,
 	}
 
-	out := pipeline.New[model.AurelianModel]()
+	input := ListerInput{Subscription: sub}
+
+	out := pipeline.New[output.AzureResource]()
 	go func() {
 		defer out.Close()
-		err := lister.ListAll(sub, out)
+		err := lister.List(input, out)
 		require.NoError(t, err)
 	}()
 
 	results, err := out.Collect()
 	require.NoError(t, err)
-	testutil.AssertMinResults(t, results, 1)
+	require.GreaterOrEqual(t, len(results), 1, "expected at least 1 resource")
 
-	t.Run("discovers resource groups", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("resource_group_id"))
-		testutil.AssertResultContainsString(t, results, fixture.Output("func_resource_group_id"))
-	})
+	resourceIDs := make(map[string]bool, len(results))
+	for _, r := range results {
+		resourceIDs[r.ResourceID] = true
+	}
 
 	t.Run("discovers virtual network", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("vnet_id"))
+		assert.True(t, resourceIDs[fixture.Output("vnet_id")])
 	})
 
 	t.Run("discovers network security group", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("nsg_id"))
+		assert.True(t, resourceIDs[fixture.Output("nsg_id")])
 	})
 
 	t.Run("discovers storage accounts", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("storage_account_id"))
-		testutil.AssertResultContainsString(t, results, fixture.Output("func_storage_account_id"))
+		assert.True(t, resourceIDs[fixture.Output("storage_account_id")])
+		assert.True(t, resourceIDs[fixture.Output("func_storage_account_id")])
 	})
 
 	t.Run("discovers key vault", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("key_vault_id"))
+		assert.True(t, resourceIDs[fixture.Output("key_vault_id")])
 	})
 
 	t.Run("discovers virtual machine", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("vm_id"))
+		assert.True(t, resourceIDs[fixture.Output("vm_id")])
 	})
 }
 
@@ -89,10 +90,12 @@ func TestResourceGraphListerListByTypes(t *testing.T) {
 		"microsoft.network/networksecuritygroups",
 	}
 
+	input := ListerInput{Subscription: sub, ResourceTypes: resourceTypes}
+
 	out := pipeline.New[output.AzureResource]()
 	go func() {
 		defer out.Close()
-		err := lister.ListByTypes(sub, resourceTypes, out)
+		err := lister.List(input, out)
 		require.NoError(t, err)
 	}()
 

@@ -95,9 +95,12 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 	resolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
 	pipeline.Pipe(idStream, resolver.Resolve, resolvedSubs)
 
+	inputs := pipeline.New[resourcegraph.ListerInput]()
+	pipeline.Pipe(resolvedSubs, m.toListerInput, inputs)
+
 	lister := resourcegraph.NewResourceGraphLister(c.AzureCredential, nil)
 	listed := pipeline.New[output.AzureResource]()
-	pipeline.Pipe(resolvedSubs, m.listSupportedResources(lister), listed)
+	pipeline.Pipe(inputs, lister.List, listed)
 
 	extractor := extraction.NewAzureExtractor(c.AzureCredential)
 	extracted := pipeline.New[output.ScanInput]()
@@ -110,10 +113,12 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 	return out.Wait()
 }
 
-func (m *AzureFindSecretsModule) listSupportedResources(lister *resourcegraph.ResourceGraphLister) func(azuretypes.SubscriptionInfo, *pipeline.P[output.AzureResource]) error {
-	return func(sub azuretypes.SubscriptionInfo, resourceOut *pipeline.P[output.AzureResource]) error {
-		return lister.ListByTypes(sub, m.SupportedResourceTypes(), resourceOut)
-	}
+func (m *AzureFindSecretsModule) toListerInput(sub azuretypes.SubscriptionInfo, out *pipeline.P[resourcegraph.ListerInput]) error {
+	out.Send(resourcegraph.ListerInput{
+		Subscription:  sub,
+		ResourceTypes: m.SupportedResourceTypes(),
+	})
+	return nil
 }
 
 func resolveSubscriptionIDs(opts plugin.AzureCommonRecon, resolver *subscriptions.SubscriptionResolver) ([]string, error) {
