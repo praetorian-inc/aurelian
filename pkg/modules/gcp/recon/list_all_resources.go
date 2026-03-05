@@ -3,6 +3,7 @@ package recon
 import (
 	"context"
 	"log/slog"
+	"slices"
 
 	"golang.org/x/sync/errgroup"
 
@@ -143,12 +144,7 @@ func buildListers(co []option.ClientOption, requestedTypes []string) map[string]
 	listers := make(map[string]resourceLister)
 
 	includes := func(canonical string) bool {
-		for _, rt := range requestedTypes {
-			if rt == canonical {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(requestedTypes, canonical)
 	}
 
 	if includes("storage.googleapis.com/Bucket") {

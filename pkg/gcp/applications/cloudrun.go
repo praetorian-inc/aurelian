@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 
+	"golang.org/x/sync/errgroup"
 	computeapi "google.golang.org/api/compute/v1"
 	"google.golang.org/api/option"
 	runapi "google.golang.org/api/run/v2"
@@ -53,22 +53,13 @@ func (l *CloudRunLister) List(projectID string, out *pipeline.P[output.GCPResour
 		return fmt.Errorf("listing regions for cloud run: %w", err)
 	}
 
-	// Fan out per location with a semaphore.
-	var (
-		wg       sync.WaitGroup
-		sem      = make(chan struct{}, 10)
-		mu       sync.Mutex
-		firstErr error
-	)
+	// Fan out per location with bounded concurrency.
+	g := errgroup.Group{}
+	g.SetLimit(10)
 
 	for _, location := range locations {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(locationName string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			err := svc.Projects.Locations.Services.List(locationName).Pages(nil, func(resp *runapi.GoogleCloudRunV2ListServicesResponse) error {
+		g.Go(func() error {
+			err := svc.Projects.Locations.Services.List(location).Pages(nil, func(resp *runapi.GoogleCloudRunV2ListServicesResponse) error {
 				for _, service := range resp.Services {
 					r := output.NewGCPResource(projectID, "run.googleapis.com/Service", service.Name)
 					r.DisplayName = service.Name
@@ -94,18 +85,14 @@ func (l *CloudRunLister) List(projectID string, out *pipeline.P[output.GCPResour
 			})
 			if err != nil {
 				if gcperrors.ShouldSkip(err) {
-					slog.Debug("skipping cloud run services in location", "project", projectID, "location", locationName, "reason", err)
-					return
+					slog.Debug("skipping cloud run services in location", "project", projectID, "location", location, "reason", err)
+					return nil
 				}
-				mu.Lock()
-				if firstErr == nil {
-					firstErr = fmt.Errorf("listing cloud run services in %s: %w", locationName, err)
-				}
-				mu.Unlock()
+				return fmt.Errorf("listing cloud run services in %s: %w", location, err)
 			}
-		}(location)
+			return nil
+		})
 	}
 
-	wg.Wait()
-	return firstErr
+	return g.Wait()
 }

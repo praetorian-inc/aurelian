@@ -4,8 +4,6 @@ import (
 	"context"
 	"log/slog"
 
-	"golang.org/x/sync/errgroup"
-
 	"github.com/praetorian-inc/aurelian/pkg/gcp/enrichment"
 	"github.com/praetorian-inc/aurelian/pkg/gcp/hierarchy"
 	"github.com/praetorian-inc/aurelian/pkg/gcp/publicaccess"
@@ -106,7 +104,7 @@ func (m *GCPPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	// Stage 2: List resources per project
 	listed := pipeline.New[output.GCPResource]()
 	projectStream := pipeline.From(projects...)
-	pipeline.Pipe(projectStream, publicListForProject(c.GCPCommonRecon, requestedTypes), listed)
+	pipeline.Pipe(projectStream, listForProject(c.GCPCommonRecon, requestedTypes), listed)
 
 	// Stage 3: Enrich
 	enricher := enrichment.NewGCPEnricher(c.GCPCommonRecon)
@@ -120,27 +118,3 @@ func (m *GCPPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	return out.Wait()
 }
 
-func publicListForProject(opts plugin.GCPCommonRecon, requestedTypes []string) func(string, *pipeline.P[output.GCPResource]) error {
-	return func(projectID string, out *pipeline.P[output.GCPResource]) error {
-		listers := buildListers(opts.ClientOptions, requestedTypes)
-		if len(listers) == 0 {
-			return nil
-		}
-
-		g := errgroup.Group{}
-		g.SetLimit(opts.Concurrency)
-
-		for name, lister := range listers {
-			g.Go(func() error {
-				if err := lister(projectID, out); err != nil {
-					slog.Warn("resource listing failed",
-						"type", name,
-						"project", projectID,
-						"error", err)
-				}
-				return nil
-			})
-		}
-		return g.Wait()
-	}
-}

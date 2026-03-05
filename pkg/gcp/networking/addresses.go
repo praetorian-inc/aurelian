@@ -3,8 +3,8 @@ package networking
 import (
 	"fmt"
 	"log/slog"
-	"sync"
 
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/option"
 	computeapi "google.golang.org/api/compute/v1"
 
@@ -73,21 +73,12 @@ func (l *AddressLister) List(projectID string, out *pipeline.P[output.GCPResourc
 		return fmt.Errorf("listing regions: %w", err)
 	}
 
-	// Fan out per region.
-	var (
-		wg       sync.WaitGroup
-		sem      = make(chan struct{}, 10)
-		mu       sync.Mutex
-		firstErr error
-	)
+	// Fan out per region with bounded concurrency.
+	g := errgroup.Group{}
+	g.SetLimit(10)
 
 	for _, region := range regions {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(region string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
+		g.Go(func() error {
 			err := svc.Addresses.List(projectID, region).Pages(nil, func(resp *computeapi.AddressList) error {
 				for _, addr := range resp.Items {
 					r := output.NewGCPResource(projectID, "compute.googleapis.com/Address", fmt.Sprintf("%d", addr.Id))
@@ -109,17 +100,13 @@ func (l *AddressLister) List(projectID string, out *pipeline.P[output.GCPResourc
 			if err != nil {
 				if gcperrors.ShouldSkip(err) {
 					slog.Debug("skipping addresses in region", "project", projectID, "region", region, "reason", err)
-					return
+					return nil
 				}
-				mu.Lock()
-				if firstErr == nil {
-					firstErr = fmt.Errorf("listing addresses in region %s: %w", region, err)
-				}
-				mu.Unlock()
+				return fmt.Errorf("listing addresses in region %s: %w", region, err)
 			}
-		}(region)
+			return nil
+		})
 	}
 
-	wg.Wait()
-	return firstErr
+	return g.Wait()
 }

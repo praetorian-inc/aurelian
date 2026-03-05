@@ -3,8 +3,8 @@ package compute
 import (
 	"fmt"
 	"log/slog"
-	"sync"
 
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/option"
 	computeapi "google.golang.org/api/compute/v1"
 
@@ -46,21 +46,12 @@ func (l *InstanceLister) List(projectID string, out *pipeline.P[output.GCPResour
 		return fmt.Errorf("listing compute zones: %w", err)
 	}
 
-	// Fan out per zone with a semaphore.
-	var (
-		wg      sync.WaitGroup
-		sem     = make(chan struct{}, 10)
-		mu      sync.Mutex
-		firstErr error
-	)
+	// Fan out per zone with bounded concurrency.
+	g := errgroup.Group{}
+	g.SetLimit(10)
 
 	for _, zone := range zones {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(zone string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
+		g.Go(func() error {
 			err := svc.Instances.List(projectID, zone).Pages(nil, func(resp *computeapi.InstanceList) error {
 				for _, inst := range resp.Items {
 					r := output.NewGCPResource(projectID, "compute.googleapis.com/Instance", fmt.Sprintf("%d", inst.Id))
@@ -89,17 +80,13 @@ func (l *InstanceLister) List(projectID string, out *pipeline.P[output.GCPResour
 			if err != nil {
 				if gcperrors.ShouldSkip(err) {
 					slog.Debug("skipping compute instances in zone", "project", projectID, "zone", zone, "reason", err)
-					return
+					return nil
 				}
-				mu.Lock()
-				if firstErr == nil {
-					firstErr = fmt.Errorf("listing instances in zone %s: %w", zone, err)
-				}
-				mu.Unlock()
+				return fmt.Errorf("listing instances in zone %s: %w", zone, err)
 			}
-		}(zone)
+			return nil
+		})
 	}
 
-	wg.Wait()
-	return firstErr
+	return g.Wait()
 }
