@@ -15,6 +15,7 @@ import (
 func TestConstructorSymbolsExist(t *testing.T) {
 	_ = NewAWSFixture
 	_ = NewAzureFixture
+	_ = NewGCPFixture
 }
 
 func TestComputeEffectiveHash_IncludesContainerID(t *testing.T) {
