@@ -14,6 +14,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
+	"github.com/praetorian-inc/aurelian/pkg/templates"
 )
 
 const listAllQuery = "Resources | project id, name, type, location, resourceGroup, tags, properties"
@@ -173,6 +174,86 @@ func tryUnmarshalJSONStrings(m map[string]any) {
 			}
 		}
 	}
+}
+
+// QueryInput is the pipeline-compatible input for running a template query against a subscription.
+type QueryInput struct {
+	Sub      azuretypes.SubscriptionInfo
+	Template *templates.ARGQueryTemplate
+}
+
+// Query executes a template's KQL query against a subscription and emits ARGQueryResult items.
+func (l *ResourceGraphLister) Query(input QueryInput, out *pipeline.P[templates.ARGQueryResult]) error {
+	query := input.Template.Query
+	request := armresourcegraph.QueryRequest{
+		Query:         &query,
+		Subscriptions: []*string{&input.Sub.ID},
+		Options: &armresourcegraph.QueryRequestOptions{
+			Top:          to.Ptr(l.options.PageSize),
+			ResultFormat: to.Ptr(armresourcegraph.ResultFormatObjectArray),
+		},
+	}
+
+	paginator := ratelimit.NewPaginator()
+	return paginator.Paginate(func() (bool, error) {
+		resp, err := l.queryResources(request)
+		if err != nil {
+			return false, fmt.Errorf("ARG query failed for template %s: %w", input.Template.ID, err)
+		}
+
+		rows, ok := resp.Data.([]any)
+		if !ok {
+			return false, fmt.Errorf("unexpected response data type: %T", resp.Data)
+		}
+
+		for _, row := range rows {
+			result, err := parseQueryRow(row, input.Sub, input.Template)
+			if err != nil {
+				slog.Debug("skipping malformed ARG row", "template", input.Template.ID, "error", err)
+				continue
+			}
+			out.Send(result)
+		}
+
+		hasMorePages := resp.SkipToken != nil && *resp.SkipToken != ""
+		if hasMorePages {
+			request.Options.SkipToken = resp.SkipToken
+		}
+		return hasMorePages, nil
+	})
+}
+
+func parseQueryRow(row any, sub azuretypes.SubscriptionInfo, tmpl *templates.ARGQueryTemplate) (templates.ARGQueryResult, error) {
+	rowMap, ok := row.(map[string]any)
+	if !ok {
+		return templates.ARGQueryResult{}, fmt.Errorf("unexpected row type: %T", row)
+	}
+
+	result := templates.ARGQueryResult{
+		TemplateID:      tmpl.ID,
+		TemplateDetails: tmpl,
+		Name:            tmpl.Name,
+		ResourceID:      stringFromMap(rowMap, "id"),
+		ResourceName:    stringFromMap(rowMap, "name"),
+		ResourceType:    stringFromMap(rowMap, "type"),
+		Location:        stringFromMap(rowMap, "location"),
+		SubscriptionID:  sub.ID,
+	}
+
+	props := make(map[string]any)
+	for k, v := range rowMap {
+		switch k {
+		case "id", "name", "type", "location", "subscriptionId":
+			continue
+		default:
+			props[k] = v
+		}
+	}
+	if len(props) > 0 {
+		result.Properties = props
+	}
+
+	return result, nil
 }
 
 func stringFromMap(m map[string]any, key string) string {

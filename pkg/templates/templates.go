@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"gopkg.in/yaml.v3"
 )
 
@@ -118,7 +119,7 @@ func (l *TemplateLoader) GetTemplates() []*ARGQueryTemplate {
 	return l.templates
 }
 
-// validateTemplate performs basic validation of a template
+// validateTemplate performs basic validation and normalizes severity to lowercase.
 func validateTemplate(template *ARGQueryTemplate) error {
 	if template.ID == "" {
 		return fmt.Errorf("template ID is required")
@@ -132,5 +133,6 @@ func validateTemplate(template *ARGQueryTemplate) error {
 	if template.Severity == "" {
 		return fmt.Errorf("template severity is required")
 	}
+	template.Severity = output.NormalizeSeverity(template.Severity)
 	return nil
 }

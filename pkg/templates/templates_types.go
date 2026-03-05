@@ -1,15 +1,17 @@
 package templates
 
+import "github.com/praetorian-inc/aurelian/pkg/output"
+
 // ARGQueryTemplate represents a single Azure Resource Graph query template
 type ARGQueryTemplate struct {
-	ID          string   `yaml:"id"`
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	Severity    string   `yaml:"severity"`
-	Query       string   `yaml:"query"`
-	Category    []string `yaml:"category"`
-	References  []string `yaml:"references"`
-	TriageNotes string   `yaml:"triageNotes,omitempty"`
+	ID          string              `yaml:"id"`
+	Name        string              `yaml:"name"`
+	Description string              `yaml:"description"`
+	Severity    output.RiskSeverity `yaml:"severity"`
+	Query       string              `yaml:"query"`
+	Category    []string            `yaml:"category"`
+	References  []string            `yaml:"references"`
+	TriageNotes string              `yaml:"triageNotes,omitempty"`
 }
 
 // ARGQueryResult represents a standardized result from an ARG query

@@ -153,6 +153,7 @@ query: |
   )
   // Format the output
   | project
+      id = vmId,
       name = vmName,
       location = vmLocation,
       publicIPs = tostring(publicIPs),
