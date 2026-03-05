@@ -50,7 +50,7 @@ func TestResourcePolicyCollector_Integration(t *testing.T) {
 				ResourceID:   s3BucketName,
 				ARN:          s3BucketARN,
 				Region:       region,
-				Properties:   map[string]any{"BucketName": s3BucketName},
+
 			},
 			{
 				ResourceType: "AWS::SQS::Queue",

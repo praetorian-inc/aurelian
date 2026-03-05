@@ -1,6 +1,6 @@
 //go:build integration
 
-package cloudcontrol
+package enumeration
 
 import (
 	"testing"
@@ -12,52 +12,52 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_CloudControl_ListByType_UsesReconListFixture(t *testing.T) {
+func Test_Enumerator_EnumerateByType_UsesReconListFixture(t *testing.T) {
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
-	lister := NewCloudControlLister(plugin.AWSCommonRecon{
+	enumerator := NewEnumerator(plugin.AWSCommonRecon{
 		Regions:     []string{"us-east-2"},
 		Concurrency: 2,
 	})
 
 	instanceResults, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
-		return lister.ListByType("AWS::EC2::Instance", out)
+		return enumerator.List("AWS::EC2::Instance", out)
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, instanceResults)
 	for _, id := range fixture.OutputList("instance_ids") {
-		require.True(t, resultsContainResourceID(instanceResults, id), "expected instance id %q in CloudControl output", id)
+		require.True(t, resultsContainResourceID(instanceResults, id), "expected instance id %q in Enumerator output", id)
 	}
 
 	bucketResults, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
-		return lister.ListByType("AWS::S3::Bucket", out)
+		return enumerator.List("AWS::S3::Bucket", out)
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, bucketResults)
 	for _, name := range fixture.OutputList("bucket_names") {
-		require.True(t, resultsContainResourceID(bucketResults, name), "expected bucket name %q in CloudControl output", name)
+		require.True(t, resultsContainResourceID(bucketResults, name), "expected bucket name %q in Enumerator output", name)
 	}
 
 	lambdaResults, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
-		return lister.ListByType("AWS::Lambda::Function", out)
+		return enumerator.List("AWS::Lambda::Function", out)
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, lambdaResults)
 	for _, arn := range fixture.OutputList("function_arns") {
-		require.True(t, resultsContainARN(lambdaResults, arn), "expected lambda arn %q in CloudControl output", arn)
+		require.True(t, resultsContainARN(lambdaResults, arn), "expected lambda arn %q in Enumerator output", arn)
 	}
 }
 
-func Test_CloudControl_ListByARN_UsesReconListFixture(t *testing.T) {
+func Test_Enumerator_EnumerateByARN_UsesReconListFixture(t *testing.T) {
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
-	lister := NewCloudControlLister(plugin.AWSCommonRecon{Concurrency: 1})
+	enumerator := NewEnumerator(plugin.AWSCommonRecon{Concurrency: 1})
 
 	for _, arn := range fixture.OutputList("function_arns") {
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
-			return lister.ListByARN(arn, out)
+			return enumerator.List(arn, out)
 		})
 		require.NoError(t, err)
 		require.Len(t, results, 1)
