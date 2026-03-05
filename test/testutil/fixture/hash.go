@@ -1,4 +1,4 @@
-package testutil
+package fixture
 
 import (
 	"crypto/md5"
@@ -8,6 +8,15 @@ import (
 	"path/filepath"
 	"sort"
 )
+
+// computeEffectiveHash combines a fixture's content hash with a container ID
+// (e.g., AWS account ID, Azure subscription ID) so that the same fixture
+// deployed in different accounts produces different effective hashes.
+func computeEffectiveHash(fixtureHash, containerID string) string {
+	h := md5.New()
+	_, _ = fmt.Fprintf(h, "fixture=%s\ncontainer=%s\n", fixtureHash, containerID)
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
 
 // computeFixtureHash computes a deterministic MD5 hash of all files in the
 // given directory. Files are sorted lexicographically by relative path, and
@@ -48,7 +57,6 @@ func computeFixtureHash(dir string) (string, error) {
 
 	h := md5.New()
 	for _, e := range entries {
-		// Hash the relative path so renames/additions/deletions are detected.
 		fmt.Fprintf(h, "path:%s\n", e.relPath)
 
 		data, err := os.ReadFile(e.absPath)
