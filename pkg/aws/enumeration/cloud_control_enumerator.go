@@ -1,12 +1,8 @@
-package cloudcontrol
+package enumeration
 
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"strings"
-	"sync"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsaarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
@@ -17,41 +13,43 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 	"github.com/praetorian-inc/aurelian/pkg/types"
+	"log/slog"
+	"strings"
 )
 
-type CloudControlLister struct {
+type CloudControlEnumerator struct {
 	plugin.AWSCommonRecon
 	CrossRegionActor *ratelimit.CrossRegionActor
-	AWSConfigs       map[string]*aws.Config
-	configMu         sync.RWMutex
-	accountID        string
-	accountIDOnce    sync.Once
-	accountIDErr     error
+	provider         *AWSConfigProvider
 }
 
-func NewCloudControlLister(options plugin.AWSCommonRecon) *CloudControlLister {
-	return &CloudControlLister{
+func NewCloudControlEnumerator(options plugin.AWSCommonRecon) *CloudControlEnumerator {
+	return NewCloudControlEnumeratorWithProvider(options, NewAWSConfigProvider(options))
+}
+
+func NewCloudControlEnumeratorWithProvider(options plugin.AWSCommonRecon, provider *AWSConfigProvider) *CloudControlEnumerator {
+	return &CloudControlEnumerator{
 		AWSCommonRecon:   options,
 		CrossRegionActor: ratelimit.NewCrossRegionActor(options.Concurrency),
-		AWSConfigs:       make(map[string]*aws.Config),
+		provider:         provider,
 	}
 }
 
-func (cc *CloudControlLister) List(identifier string, out *pipeline.P[output.AWSResource]) error {
+func (cc *CloudControlEnumerator) List(identifier string, out *pipeline.P[output.AWSResource]) error {
 	_, err := awsaarn.Parse(identifier)
 	if err == nil {
-		return cc.ListByARN(identifier, out)
+		return cc.EnumerateByARN(identifier, out)
 	}
 
 	isResourceType := strings.HasPrefix(identifier, "AWS::")
 	if isResourceType {
-		return cc.ListByType(identifier, out)
+		return cc.EnumerateByType(identifier, out)
 	}
 
 	return fmt.Errorf("identifier must be either an ARN or CloudControl resource type: %q", identifier)
 }
 
-func (cc *CloudControlLister) ListByARN(resourceARN string, out *pipeline.P[output.AWSResource]) error {
+func (cc *CloudControlEnumerator) EnumerateByARN(resourceARN string, out *pipeline.P[output.AWSResource]) error {
 	resource, err := cc.getResourceByARN(resourceARN)
 	if cc.isSkippableError(err) {
 		slog.Debug("skipping arn", "arn", resourceARN, "error", err)
@@ -63,7 +61,7 @@ func (cc *CloudControlLister) ListByARN(resourceARN string, out *pipeline.P[outp
 	return err
 }
 
-func (cc *CloudControlLister) getResourceByARN(arn string) (output.AWSResource, error) {
+func (cc *CloudControlEnumerator) getResourceByARN(arn string) (output.AWSResource, error) {
 	region, resourceType, identifier, err := cc.resolveARNTarget(arn)
 	if err != nil {
 		return output.AWSResource{}, err
@@ -74,7 +72,7 @@ func (cc *CloudControlLister) getResourceByARN(arn string) (output.AWSResource, 
 		return output.AWSResource{}, fmt.Errorf("create client: %w", err)
 	}
 
-	accountID, err := cc.getAccountID(region)
+	accountID, err := cc.provider.GetAccountID(region)
 	if err != nil {
 		return output.AWSResource{}, err
 	}
@@ -91,7 +89,7 @@ func (cc *CloudControlLister) getResourceByARN(arn string) (output.AWSResource, 
 	return cr, nil
 }
 
-func (cc *CloudControlLister) resolveARNTarget(resourceARN string) (string, string, string, error) {
+func (cc *CloudControlEnumerator) resolveARNTarget(resourceARN string) (string, string, string, error) {
 	parsed, err := awsaarn.Parse(resourceARN)
 	if err != nil {
 		return "", "", "", fmt.Errorf("parse arn %q: %w", resourceARN, err)
@@ -117,7 +115,7 @@ func (cc *CloudControlLister) resolveARNTarget(resourceARN string) (string, stri
 
 // resolveResourceRegion determines the region for a parsed ARN. It handles
 // global services, S3 (which omits region from its ARN), and standard ARNs.
-func (cc *CloudControlLister) resolveResourceRegion(parsed awsaarn.ARN, resourceType string) (string, error) {
+func (cc *CloudControlEnumerator) resolveResourceRegion(parsed awsaarn.ARN, resourceType string) (string, error) {
 	region := parsed.Region
 	if awshelpers.IsGlobalService(resourceType) {
 		region = "us-east-1"
@@ -140,9 +138,9 @@ func (cc *CloudControlLister) resolveResourceRegion(parsed awsaarn.ARN, resource
 
 // resolveS3BucketRegion uses the S3 GetBucketLocation API to determine the
 // region of a bucket, since S3 ARNs do not contain a region component.
-func (cc *CloudControlLister) resolveS3BucketRegion(bucketName string) (string, error) {
+func (cc *CloudControlEnumerator) resolveS3BucketRegion(bucketName string) (string, error) {
 	// GetBucketLocation can be called from any region.
-	awsCfg, err := cc.getAWSConfig("us-east-1")
+	awsCfg, err := cc.provider.GetAWSConfig("us-east-1")
 	if err != nil {
 		return "", err
 	}
@@ -162,7 +160,7 @@ func (cc *CloudControlLister) resolveS3BucketRegion(bucketName string) (string, 
 	return region, nil
 }
 
-func (cc *CloudControlLister) requiresSpecialIdentifier(resourceType, resourceARN, resourceID string) (string, bool) {
+func (cc *CloudControlEnumerator) requiresSpecialIdentifier(resourceType, resourceARN, resourceID string) (string, bool) {
 	parsers := map[string]func(string, string) string{
 		"AWS::SNS::Topic":                  cc.parseAsARN,
 		"AWS::EC2::Instance":               cc.parseEC2InstanceID,
@@ -179,11 +177,11 @@ func (cc *CloudControlLister) requiresSpecialIdentifier(resourceType, resourceAR
 	return parser(resourceARN, resourceID), ok
 }
 
-func (cc *CloudControlLister) parseAsARN(resourceARN, _ string) string {
+func (cc *CloudControlEnumerator) parseAsARN(resourceARN, _ string) string {
 	return resourceARN
 }
 
-func (cc *CloudControlLister) parseEC2InstanceID(_, instanceID string) string {
+func (cc *CloudControlEnumerator) parseEC2InstanceID(_, instanceID string) string {
 	// example: instance/i-123456789012
 	parts := strings.Split(instanceID, "/")
 	if len(parts) != 2 {
@@ -193,7 +191,7 @@ func (cc *CloudControlLister) parseEC2InstanceID(_, instanceID string) string {
 	return parts[1]
 }
 
-func (cc *CloudControlLister) parseCloudFormationStackID(_, stackID string) string {
+func (cc *CloudControlEnumerator) parseCloudFormationStackID(_, stackID string) string {
 	// example: stack/StackSet-Chariot-Deployment-a00b9d08-b877-4781-a772-c3f798f5eeac/f6eecfa0-837a-11f0-aa31-0affe997852d
 	parts := strings.Split(stackID, "/")
 	if len(parts) < 2 {
@@ -203,7 +201,7 @@ func (cc *CloudControlLister) parseCloudFormationStackID(_, stackID string) stri
 	return parts[1]
 }
 
-func (cc *CloudControlLister) parseTaskDefinition(_, taskDefinition string) string {
+func (cc *CloudControlEnumerator) parseTaskDefinition(_, taskDefinition string) string {
 	// example: task-definition/aurelian-sec-c22f7fe9-secret-task:1
 	parts := strings.Split(taskDefinition, "/")
 	if len(parts) < 2 {
@@ -212,10 +210,10 @@ func (cc *CloudControlLister) parseTaskDefinition(_, taskDefinition string) stri
 	return parts[1]
 }
 
-// ListByType enumerates a single resource type across all regions, emitting each
+// EnumerateByType enumerates a single resource type across all regions, emitting each
 // resource into out as pages are fetched. Its signature matches the fn
 // parameter of pipeline.Pipe[string, output.AWSResource].
-func (cc *CloudControlLister) ListByType(resourceType string, out *pipeline.P[output.AWSResource]) error {
+func (cc *CloudControlEnumerator) EnumerateByType(resourceType string, out *pipeline.P[output.AWSResource]) error {
 	if len(cc.AWSCommonRecon.Regions) == 0 {
 		return fmt.Errorf("no regions configured")
 	}
@@ -226,13 +224,13 @@ func (cc *CloudControlLister) ListByType(resourceType string, out *pipeline.P[ou
 	})
 }
 
-func (cc *CloudControlLister) listInRegionByType(region, resourceType string, out *pipeline.P[output.AWSResource]) error {
+func (cc *CloudControlEnumerator) listInRegionByType(region, resourceType string, out *pipeline.P[output.AWSResource]) error {
 	client, err := cc.newCloudControlClient(region)
 	if err != nil {
 		return fmt.Errorf("create client: %w", err)
 	}
 
-	accountID, err := cc.getAccountID(region)
+	accountID, err := cc.provider.GetAccountID(region)
 	if err != nil {
 		return err
 	}
@@ -250,7 +248,7 @@ func (cc *CloudControlLister) listInRegionByType(region, resourceType string, ou
 	return nil
 }
 
-func (cc *CloudControlLister) listByType(
+func (cc *CloudControlEnumerator) listByType(
 	client *cloudcontrol.Client,
 	accountID,
 	region,
@@ -283,7 +281,7 @@ func (cc *CloudControlLister) listByType(
 	})
 }
 
-func (cc *CloudControlLister) isSkippableError(err error) bool {
+func (cc *CloudControlEnumerator) isSkippableError(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -293,46 +291,10 @@ func (cc *CloudControlLister) isSkippableError(err error) bool {
 		strings.Contains(s, "AccessDeniedException")
 }
 
-func (cc *CloudControlLister) newCloudControlClient(region string) (*cloudcontrol.Client, error) {
-	awsCfg, err := cc.getAWSConfig(region)
+func (cc *CloudControlEnumerator) newCloudControlClient(region string) (*cloudcontrol.Client, error) {
+	awsCfg, err := cc.provider.GetAWSConfig(region)
 	if err != nil {
 		return nil, err
 	}
 	return cloudcontrol.NewFromConfig(*awsCfg), nil
-}
-
-func (cc *CloudControlLister) getAccountID(region string) (string, error) {
-	cc.accountIDOnce.Do(func() {
-		awsCfg, err := cc.getAWSConfig(region)
-		if err != nil {
-			cc.accountIDErr = err
-			return
-		}
-		cc.accountID, cc.accountIDErr = awshelpers.GetAccountId(*awsCfg)
-	})
-	return cc.accountID, cc.accountIDErr
-}
-
-func (cc *CloudControlLister) getAWSConfig(region string) (*aws.Config, error) {
-	cc.configMu.RLock()
-	if cfg, ok := cc.AWSConfigs[region]; ok {
-		cc.configMu.RUnlock()
-		return cfg, nil
-	}
-	cc.configMu.RUnlock()
-
-	awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
-		Region:     region,
-		Profile:    cc.Profile,
-		ProfileDir: cc.ProfileDir,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	cc.configMu.Lock()
-	cc.AWSConfigs[region] = &awsCfg
-	cc.configMu.Unlock()
-
-	return &awsCfg, nil
 }

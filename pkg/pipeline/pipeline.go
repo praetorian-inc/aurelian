@@ -4,7 +4,10 @@
 // process them concurrently.
 package pipeline
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 // P[T] is a typed, channel-based producer. Producers call Send() to
 // send items; consumers range over Range(). The underlying channel is
@@ -76,6 +79,10 @@ func (e *P[T]) Collect() ([]T, error) {
 // closes out when in is drained. Runs in a goroutine. Errors from fn or from
 // the upstream producer are propagated to out.Wait().
 func Pipe[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[Out]) {
+	var dummyIn In
+	var dummyOut Out
+	fmt.Printf("starting pipe: %T -%T-> %T\n", dummyIn, out, dummyOut)
+	
 	go func() {
 		defer out.Close()
 		for item := range in.ch {
@@ -91,5 +98,6 @@ func Pipe[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[Out]) {
 		if err := in.Wait(); err != nil && out.err == nil {
 			out.err = err
 		}
+		fmt.Printf("closing pipe: %T -%T-> %T\n", dummyIn, out, dummyOut)
 	}()
 }

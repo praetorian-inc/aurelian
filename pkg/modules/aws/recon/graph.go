@@ -6,7 +6,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
+	"github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/aws/gaad"
 	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
@@ -116,7 +116,7 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 		slog.Info("enumerating cloud resources and collecting policies",
 			"types", len(collector.SupportedResourceTypes()), "regions", len(resolvedRegions))
 
-		lister := cloudcontrol.NewCloudControlLister(c.AWSCommonRecon)
+		lister := enumeration.NewEnumerator(c.AWSCommonRecon)
 		resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, collector.SupportedResourceTypes())
 		if err != nil {
 			return fmt.Errorf("resolving resource types: %w", err)
@@ -124,7 +124,7 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 
 		resourceTypePipeline := pipeline.From(resourceTypes...)
 		listed := pipeline.New[output.AWSResource]()
-		pipeline.Pipe(resourceTypePipeline, lister.ListByType, listed)
+		pipeline.Pipe(resourceTypePipeline, lister.List, listed)
 
 		collected := pipeline.New[output.AWSResource]()
 		pipeline.Pipe(listed, collector.Collect, collected)

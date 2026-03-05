@@ -1,7 +1,7 @@
 package recon
 
 import (
-	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
+	cclist "github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -55,7 +55,7 @@ func (m *AWSListAllResourcesModule) Parameters() any {
 func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.ListAllConfig
 
-	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
+	lister := cclist.NewEnumerator(c.AWSCommonRecon)
 	resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, selectResourceTypes(c.ScanType))
 	if err != nil {
 		return err
@@ -63,7 +63,7 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model
 
 	resourceTypePipeline := pipeline.From(resourceTypes...)
 	listed := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(resourceTypePipeline, lister.ListByType, listed)
+	pipeline.Pipe(resourceTypePipeline, lister.List, listed)
 
 	for r := range listed.Range() {
 		out.Send(r)
