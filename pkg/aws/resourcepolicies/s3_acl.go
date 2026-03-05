@@ -25,8 +25,8 @@ type S3ExtendedClient interface {
 // 2. Bucket policy
 // 3. Bucket ACL (converted to policy statements if public grants exist)
 func FetchS3BucketPolicyExtended(ctx context.Context, client S3ExtendedClient, resource *output.AWSResource, allowedRegions []string) (*types.Policy, error) {
-	bucketName, ok := resource.Properties["BucketName"].(string)
-	if !ok || bucketName == "" {
+	bucketName := resource.ResourceID
+	if bucketName == "" {
 		return nil, nil
 	}
 
@@ -66,6 +66,9 @@ func FetchS3BucketPolicyExtended(ctx context.Context, client S3ExtendedClient, r
 	} else if blockOut.PublicAccessBlockConfiguration != nil {
 		config := blockOut.PublicAccessBlockConfiguration
 		if boolPtrVal(config.IgnorePublicAcls) || boolPtrVal(config.RestrictPublicBuckets) {
+			if resource.Properties == nil {
+				resource.Properties = make(map[string]any)
+			}
 			resource.Properties["BlockPublicAccess"] = map[string]bool{
 				"BlockPublicAcls":       boolPtrVal(config.BlockPublicAcls),
 				"IgnorePublicAcls":      boolPtrVal(config.IgnorePublicAcls),
