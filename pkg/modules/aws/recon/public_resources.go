@@ -68,6 +68,8 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 		return fmt.Errorf("failed to collect inputs: %v", err)
 	}
 
+	pipeOpts := &pipeline.PipeOpts{Concurrency: m.Concurrency}
+
 	inputPipeline := pipeline.From(inputs...)
 	listed := pipeline.New[output.AWSResource]()
 	pipeline.Pipe(inputPipeline, lister.List, listed)
@@ -76,11 +78,11 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	// (e.g. RDS PubliclyAccessible, Cognito self-signup, Lambda function URL auth type).
 	enricher := enrichment.NewAWSEnricher(c.AWSCommonRecon)
 	enriched := pipeline.New[output.AWSResource]()
-	pipeline.PipeParallel(listed, enricher.Enrich, enriched, c.Concurrency)
+	pipeline.Pipe(listed, enricher.Enrich, enriched, pipeOpts)
 
 	evaluator := publicaccess.NewResourceEvaluator(c.AWSCommonRecon, c.OrgPolicies)
 	evaluated := pipeline.New[publicaccess.PublicAccessResult]()
-	pipeline.PipeParallel(enriched, evaluator.Evaluate, evaluated, c.Concurrency)
+	pipeline.Pipe(enriched, evaluator.Evaluate, evaluated, pipeOpts)
 	pipeline.Pipe(evaluated, riskFromResult, out)
 
 	return out.Wait()

@@ -91,6 +91,8 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		return fmt.Errorf("failed to collect inputs: %v", err)
 	}
 
+	pipeOpts := &pipeline.PipeOpts{Concurrency: m.Concurrency}
+
 	lister := cclist.NewEnumerator(c.AWSCommonRecon)
 	inputPipeline := pipeline.From(inputs...)
 	listed := pipeline.New[output.AWSResource]()
@@ -102,7 +104,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	})
 
 	extracted := pipeline.New[output.ScanInput]()
-	pipeline.PipeParallel(listed, extractor.Extract, extracted, c.Concurrency)
+	pipeline.Pipe(listed, extractor.Extract, extracted, pipeOpts)
 
 	scanned := pipeline.New[secrets.SecretScanResult]()
 	pipeline.Pipe(extracted, s.Scan, scanned)
