@@ -113,7 +113,7 @@ output "databricks_public_id" {
 }
 
 output "databricks_private_id" {
-  value = var.enable_tier4a ? azurerm_databricks_workspace.private[0].id : ""
+  value = ""
 }
 
 # ============================================================================

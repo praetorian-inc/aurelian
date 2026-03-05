@@ -6,9 +6,9 @@
 #
 # Cost estimate (all tiers): ~$1.90/hr (includes TN/private variants)
 #   Tier 1:  ~$0.80/hr  (MySQL + PostgreSQL B1 servers, public + private)
-#   Tier 2:  ~$0.11/hr  (Cognitive S, Search basic+free, Function Apps consumption)
+#   Tier 2:  ~$0.11/hr  (Cognitive S, Search basic, Function Apps consumption)
 #   Tier 3:  ~$0.07/hr  (IoT Hub B1 x2, Event Grid free, Notification Hubs free)
-#   Tier 4A: ~$0.40/hr  (App Config, Kusto dev x2, Container Instance, Databricks trial+premium)
+#   Tier 4A: ~$0.40/hr  (App Config, Kusto dev x2, Container Instance, Databricks trial)
 #   Tier 4B: ~$0.18/hr  (Synapse x2, ML Workspace x2)
 #   Tier 4C: ~$0.26/hr  (Container App x2, Logic App, App Gateway Standard_v2)
 #   Tier 5A: ~$0.08/hr  (Storage, Key Vault, App Service, Data Factory, Log Analytics, ACR Basic+Premium)
@@ -32,6 +32,9 @@ terraform {
 
 provider "azurerm" {
   features {
+    cognitive_account {
+      purge_soft_delete_on_destroy = true
+    }
     key_vault {
       purge_soft_delete_on_destroy = true
     }
@@ -225,14 +228,14 @@ resource "azurerm_private_dns_zone_virtual_network_link" "postgresql" {
 
 # PostgreSQL - Private (SHOULD NOT DETECT)
 resource "azurerm_postgresql_flexible_server" "private" {
-  count                  = var.enable_tier1 ? 1 : 0
-  name                   = "${local.pfx}-pg-prv-${local.sfx}"
-  resource_group_name    = azurerm_resource_group.main.name
-  location               = local.loc
-  administrator_login    = "pgadmin"
-  administrator_password = random_password.db[0].result
-  sku_name               = "B_Standard_B1ms"
-  version                = "16"
+  count                         = var.enable_tier1 ? 1 : 0
+  name                          = "${local.pfx}-pg-prv-${local.sfx}"
+  resource_group_name           = azurerm_resource_group.main.name
+  location                      = local.loc
+  administrator_login           = "pgadmin"
+  administrator_password        = random_password.db[0].result
+  sku_name                      = "B_Standard_B1ms"
+  version                       = "16"
   delegated_subnet_id           = azurerm_subnet.postgresql[0].id
   private_dns_zone_id           = azurerm_private_dns_zone.postgresql[0].id
   public_network_access_enabled = false
@@ -268,7 +271,7 @@ resource "azurerm_search_service" "public" {
   name                          = "${local.pfx}-search-${local.sfx}"
   resource_group_name           = azurerm_resource_group.main.name
   location                      = local.loc
-  sku                           = "free"
+  sku                           = "basic"
   public_network_access_enabled = true
 
   tags = merge(local.tags, { ExpectedFind = "true", ResourceType = "SearchService-Public" })
@@ -449,24 +452,24 @@ resource "azurerm_iothub" "private" {
 
 # App Configuration - Public (SHOULD DETECT)
 resource "azurerm_app_configuration" "public" {
-  count                  = var.enable_tier4a ? 1 : 0
-  name                   = "${local.pfx}-appconf-pub-${local.sfx}"
-  resource_group_name    = azurerm_resource_group.main.name
-  location               = local.loc
-  sku                    = "free"
-  public_network_access  = "Enabled"
+  count                 = var.enable_tier4a ? 1 : 0
+  name                  = "${local.pfx}-appconf-pub-${local.sfx}"
+  resource_group_name   = azurerm_resource_group.main.name
+  location              = local.loc
+  sku                   = "free"
+  public_network_access = "Enabled"
 
   tags = merge(local.tags, { ExpectedFind = "true", ResourceType = "AppConfiguration-Public" })
 }
 
 # App Configuration - Private (SHOULD NOT DETECT)
 resource "azurerm_app_configuration" "private" {
-  count                  = var.enable_tier4a ? 1 : 0
-  name                   = "${local.pfx}-appconf-prv-${local.sfx}"
-  resource_group_name    = azurerm_resource_group.main.name
-  location               = local.loc
-  sku                    = "standard"
-  public_network_access  = "Disabled"
+  count                 = var.enable_tier4a ? 1 : 0
+  name                  = "${local.pfx}-appconf-prv-${local.sfx}"
+  resource_group_name   = azurerm_resource_group.main.name
+  location              = local.loc
+  sku                   = "standard"
+  public_network_access = "Disabled"
 
   tags = merge(local.tags, { ExpectedFind = "false", ResourceType = "AppConfiguration-Private" })
 }
@@ -563,18 +566,9 @@ resource "azurerm_kusto_cluster" "private" {
   tags = merge(local.tags, { ExpectedFind = "false", ResourceType = "DataExplorer-Private" })
 }
 
-# Databricks - Private (SHOULD NOT DETECT by databricks_public_access)
-# TN: publicNetworkAccess=disabled (premium SKU required to disable public access)
-resource "azurerm_databricks_workspace" "private" {
-  count                         = var.enable_tier4a ? 1 : 0
-  name                          = "${local.pfx}-dbw-prv-${local.sfx}"
-  resource_group_name           = azurerm_resource_group.main.name
-  location                      = local.loc
-  sku                           = "premium"
-  public_network_access_enabled = false
-
-  tags = merge(local.tags, { ExpectedFind = "false", ResourceType = "Databricks-Private" })
-}
+# Databricks - Private: REMOVED
+# Disabling public_network_access requires VNet injection (custom_parameters) which
+# this fixture doesn't set up. Without it, Terraform fails to provision the resource.
 
 # ============================================================================
 # TIER 4B: Synapse Analytics, ML Workspace
@@ -627,13 +621,15 @@ resource "azurerm_storage_account" "ml" {
 }
 
 resource "azurerm_key_vault" "ml" {
-  count               = var.enable_tier4b ? 1 : 0
-  name                = "${local.pfx}-mlkv-${local.sfx}"
-  resource_group_name = azurerm_resource_group.main.name
-  location            = local.loc
-  tenant_id           = data.azurerm_client_config.current.tenant_id
-  sku_name            = "standard"
-  tags                = local.tags
+  count                      = var.enable_tier4b ? 1 : 0
+  name                       = "${local.pfx}-mlkv-${local.sfx}"
+  resource_group_name        = azurerm_resource_group.main.name
+  location                   = local.loc
+  tenant_id                  = data.azurerm_client_config.current.tenant_id
+  sku_name                   = "standard"
+  soft_delete_retention_days = 7
+  purge_protection_enabled   = false
+  tags                       = local.tags
 }
 
 resource "azurerm_log_analytics_workspace" "ml" {
@@ -933,26 +929,30 @@ resource "azurerm_storage_account" "private" {
 
 # Key Vault - Public (SHOULD DETECT)
 resource "azurerm_key_vault" "public" {
-  count                       = var.enable_tier5a ? 1 : 0
-  name                        = "${local.pfx}-kv-pub-${local.sfx}"
-  resource_group_name         = azurerm_resource_group.main.name
-  location                    = local.loc
-  tenant_id                   = data.azurerm_client_config.current.tenant_id
-  sku_name                    = "standard"
+  count                         = var.enable_tier5a ? 1 : 0
+  name                          = "${local.pfx}-kv-pub-${local.sfx}"
+  resource_group_name           = azurerm_resource_group.main.name
+  location                      = local.loc
+  tenant_id                     = data.azurerm_client_config.current.tenant_id
+  sku_name                      = "standard"
   public_network_access_enabled = true
+  soft_delete_retention_days    = 7
+  purge_protection_enabled      = false
 
   tags = merge(local.tags, { ExpectedFind = "true", ResourceType = "KeyVault-Public" })
 }
 
 # Key Vault - Private (SHOULD NOT DETECT)
 resource "azurerm_key_vault" "private" {
-  count                       = var.enable_tier5a ? 1 : 0
-  name                        = "${local.pfx}-kv-prv-${local.sfx}"
-  resource_group_name         = azurerm_resource_group.main.name
-  location                    = local.loc
-  tenant_id                   = data.azurerm_client_config.current.tenant_id
-  sku_name                    = "standard"
+  count                         = var.enable_tier5a ? 1 : 0
+  name                          = "${local.pfx}-kv-prv-${local.sfx}"
+  resource_group_name           = azurerm_resource_group.main.name
+  location                      = local.loc
+  tenant_id                     = data.azurerm_client_config.current.tenant_id
+  sku_name                      = "standard"
   public_network_access_enabled = false
+  soft_delete_retention_days    = 7
+  purge_protection_enabled      = false
 
   tags = merge(local.tags, { ExpectedFind = "false", ResourceType = "KeyVault-Private" })
 }
