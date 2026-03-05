@@ -1,0 +1,54 @@
+id: cognitive_services_public_access
+name: "Publicly Accessible Azure Cognitive Services / OpenAI API"
+description: "Detects Azure Cognitive Services accounts with public network access enabled and defaultAction set to 'allow' in network ACLs"
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - Direct API exposure to the internet without network restrictions
+  - API key theft through request interception
+  - Rate limiting bypass and service abuse (DDoS potential)
+  - OpenAI API abuse (model usage costs, token generation)
+  - Data exposure if sensitive content processed through API
+  - Business impact: unexpected charges, service disruption, data compromise
+
+  Triage Guidance:
+  - This finding confirms network-level accessibility from internet
+  - Does NOT confirm API key compromise or unauthorized access
+  - Manual verification required:
+    1. Check API endpoint accessibility: curl -v https://<service>.openai.azure.com/openai/deployments
+    2. Test API key validation: curl -H "api-key: <KEY>" https://<service>.openai.azure.com/openai/deployments
+    3. Review Azure Cognitive Services firewall rules
+    4. Check if authentication is enforced (API key required)
+  - Consider: Does this Cognitive Services need internet access? Can it use private endpoints?
+
+  Remediation Considerations:
+  - Disable public network access (requires VNet integration)
+  - Implement private endpoints (Azure Private Link)
+  - Configure IP restrictions to known safe ranges
+  - Use API key rotation and strong access control
+  - Enable Azure AD authentication where supported
+  - Monitor API usage for anomalies
+
+references:
+  - https://learn.microsoft.com/en-us/azure/ai-services/cognitive-services-virtual-networks
+  - https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/managed-identity
+
+query: |
+  resources
+  | where type =~ 'Microsoft.CognitiveServices/accounts'
+  | extend publicNetworkAccess = tolower(coalesce(properties.publicNetworkAccess, 'enabled'))
+  | extend defaultAction = tolower(coalesce(properties.networkAcls.defaultAction, 'allow'))
+  | where publicNetworkAccess != 'disabled'
+  | where defaultAction == 'allow'
+  | project
+      id,
+      name,
+      type,
+      location,
+      resourceGroup,
+      subscriptionId,
+      serviceKind = properties.kind,
+      publicNetworkAccess,
+      networkAclsDefaultAction = defaultAction

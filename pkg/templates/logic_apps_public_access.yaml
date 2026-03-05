@@ -1,0 +1,58 @@
+id: logic_apps_public_access
+name: "Publicly Accessible Logic Apps"
+description: "Detects Azure Logic Apps workflows without access control restrictions on triggers"
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - Logic App trigger endpoints accessible without IP restrictions
+  - Could enable unauthorized workflow invocation
+  - May allow injection of malicious data into automated pipelines
+  - Sensitive business process data could be exposed
+  - Workflow execution could be abused for resource exhaustion or lateral movement
+
+  Triage Guidance:
+  - This finding detects Logic Apps lacking accessControl.triggers IP restrictions
+  - Logic Apps with HTTP triggers are publicly invokable by default
+  - Manual testing required:
+    1. Verify access endpoint is reachable
+    2. Check if SAS token authentication is enforced on triggers
+    3. Review trigger types (HTTP, webhook, recurrence)
+    4. Test if workflow can be invoked without authentication
+  - Consider: Should this workflow restrict trigger access to known IPs?
+
+  Remediation Considerations:
+  - Add IP restrictions via accessControl.triggers.allowedCallerIpAddresses
+  - Use SAS token authentication for HTTP triggers
+  - Implement Azure API Management in front of Logic Apps
+  - Use Integration Service Environment (ISE) for network isolation
+  - Enable diagnostic logging for trigger invocations
+  - Monitor for unexpected workflow executions
+  - Review connector permissions and managed identity access
+  - Consider restricting to Azure-only traffic
+
+references:
+  - https://learn.microsoft.com/en-us/azure/logic-apps/logic-apps-securing-a-logic-app
+  - https://learn.microsoft.com/en-us/azure/logic-apps/logic-apps-securing-a-logic-app#restrict-inbound-ip-addresses
+
+query: |
+  resources
+  | where type =~ 'Microsoft.Logic/workflows'
+  | extend state = properties.state
+  | extend accessEndpoint = properties.accessEndpoint
+  | extend hasAccessControl = isnotnull(properties.accessControl)
+    and isnotnull(properties.accessControl.triggers)
+    and isnotnull(properties.accessControl.triggers.allowedCallerIpAddresses)
+  | where state =~ 'Enabled'
+  | where not(hasAccessControl)
+  | project
+      id,
+      name,
+      type,
+      location,
+      state,
+      accessEndpoint,
+      hasAccessControl,
+      subscriptionId,
+      resourceGroup
