@@ -1,0 +1,140 @@
+id: function_app_http_anonymous_access
+name: Function App HTTP Triggers Without Access Keys
+description: Detects Azure Function Apps with HTTP triggers configured for anonymous access (authLevel=anonymous), allowing unauthenticated public execution. HTTP-triggered functions without authentication requirements can be invoked by anyone with knowledge of the function URL, potentially exposing sensitive business logic and data.
+severity: High
+category: ["Access Control", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Security Risk:
+  Azure Function Apps with HTTP triggers set to anonymous access (authLevel: anonymous) allow unauthenticated
+  execution from the internet. This configuration exposes function endpoints to public access without requiring
+  function keys or other authentication mechanisms, creating potential security vulnerabilities.
+
+  Attack Vector:
+  - Unauthenticated users can invoke function endpoints directly
+  - Business logic and data processing exposed without access control
+  - Potential for abuse, data exfiltration, or resource exhaustion
+  - Function URLs are predictable: https://{app-name}.azurewebsites.net/api/{function-name}
+  - Anonymous functions can be discovered through enumeration or information disclosure
+
+  Understanding HTTP Trigger Authentication Levels:
+  - anonymous: No authentication required (VULNERABLE - this finding)
+  - function: Requires function-specific key or host-level key
+  - admin: Requires master/admin key only (most restrictive)
+
+  Function Key Hierarchy:
+  - Host keys: Apply to all functions in the Function App
+  - Function keys: Apply to specific functions only
+  - Master key: Administrative access to all functions
+  - System keys: Used by system components
+
+  Detection Method:
+  This detection uses the Azure Management API to retrieve function configurations:
+  - ARG Query: Identifies all Function Apps (microsoft.web/sites with kind=functionapp)
+  - Enricher: Calls Management API to list functions and parse authLevel from config.bindings
+  - Requires: Reader permission (Microsoft.Web/sites/functions/read)
+  - No elevated permissions or Kudu access required
+
+  Common Scenarios:
+  - Development/testing configurations copied to production without hardening
+  - Quick prototypes or webhooks deployed without security review
+  - Public APIs intentionally exposed but without rate limiting or monitoring
+  - Legacy functions created before security policies were established
+  - Misunderstanding of authentication requirements in Azure Functions
+
+  Legitimate Use Cases:
+  - Public webhooks designed for external integration (GitHub, Stripe, etc.)
+  - Public APIs intended for anonymous consumption (weather data, public info)
+  - Functions behind API Management or other gateway with authentication
+  - Development/testing environments (but should still be evaluated for exposure)
+
+  Triage Guidance:
+  1. Verify if the function is intentionally public (legitimate webhook/API)
+  2. Test actual accessibility by making unauthenticated HTTP request to function URL
+  3. Review function code to determine if sensitive operations or data are exposed
+  4. Check if IP restrictions or network isolation are configured at App Service level
+  5. Verify if the function is behind API Management or Application Gateway with auth
+  6. Assess potential impact: Does function access databases, call APIs, or process sensitive data?
+  7. Check if function has rate limiting or other protective measures
+  8. Review function app logs for evidence of unexpected or malicious invocations
+
+  Remediation Steps:
+  1. Change authLevel to "function" or "admin" in function.json for sensitive functions:
+     ```json
+     {
+       "bindings": [{
+         "authLevel": "function",  // or "admin"
+         "type": "httpTrigger",
+         "direction": "in",
+         "name": "req",
+         "methods": ["get", "post"]
+       }]
+     }
+     ```
+
+  2. For legitimate public functions, implement application-level authentication:
+     - Validate API tokens in function code
+     - Implement rate limiting and throttling
+     - Add request validation and input sanitization
+     - Enable comprehensive logging and monitoring
+
+  3. Configure network-level protections:
+     - Set up IP restrictions to limit access to known sources
+     - Use private endpoints for internal-only functions
+     - Deploy behind API Management with authentication policies
+     - Configure Azure Front Door or Application Gateway with WAF
+
+  4. Enable monitoring and alerting:
+     - Set up Application Insights with custom metrics
+     - Create alerts for unusual invocation patterns or errors
+     - Monitor function execution counts and failure rates
+     - Review logs regularly for suspicious activity
+
+  Azure CLI Commands:
+  ```bash
+  # List all functions in a Function App with authentication levels
+  az functionapp function show --resource-group <rg> --name <app> --function-name <function>
+
+  # View function.json configuration (requires Website Contributor)
+  az rest --method GET --uri "https://<app>.scm.azurewebsites.net/api/vfs/site/wwwroot/<function>/function.json"
+
+  # List functions via Management API (Reader permission)
+  az rest --method GET \
+    --uri "https://management.azure.com/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Web/sites/<app>/functions?api-version=2023-12-01"
+
+  # Test anonymous access to function
+  curl "https://<app>.azurewebsites.net/api/<function-name>"
+
+  # Get host-level function keys
+  az functionapp keys list --resource-group <rg> --name <app>
+  ```
+
+  Compliance Impact:
+  - Violates least privilege access control principles
+  - May fail compliance audits (PCI-DSS, HIPAA, SOC 2, ISO 27001)
+  - Increases attack surface and unauthorized access risks
+  - May violate data protection regulations (GDPR, CCPA) if sensitive data exposed
+
+references:
+  - https://learn.microsoft.com/en-us/azure/azure-functions/functions-bindings-http-webhook-trigger
+  - https://learn.microsoft.com/en-us/azure/azure-functions/security-concepts
+  - https://learn.microsoft.com/en-us/azure/azure-functions/functions-how-to-use-azure-function-app-settings
+  - https://learn.microsoft.com/en-us/rest/api/appservice/web-apps/list-functions
+  - https://github.com/projectdiscovery/nuclei-templates/blob/main/cloud/azure/functions/azure-functionapp-access-keys-missing.yaml
+query: |
+  resources
+  | where type =~ 'microsoft.web/sites'
+  // Scope to Function Apps only; enricher handles anonymous auth detection
+  | where kind contains 'functionapp'
+  | extend publicNetworkAccess = tolower(coalesce(properties.publicNetworkAccess, 'Enabled'))
+  | extend httpsOnly = coalesce(tobool(properties.httpsOnly), false)
+  | project
+      id,
+      name,
+      type,
+      kind,
+      location,
+      resourceGroup,
+      publicNetworkAccess,
+      httpsOnly,
+      subscriptionId
