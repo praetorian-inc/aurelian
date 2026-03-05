@@ -76,11 +76,11 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	// (e.g. RDS PubliclyAccessible, Cognito self-signup, Lambda function URL auth type).
 	enricher := enrichment.NewAWSEnricher(c.AWSCommonRecon)
 	enriched := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(listed, enricher.Enrich, enriched)
+	pipeline.PipeParallel(listed, enricher.Enrich, enriched, c.Concurrency)
 
 	evaluator := publicaccess.NewResourceEvaluator(c.AWSCommonRecon, c.OrgPolicies)
 	evaluated := pipeline.New[publicaccess.PublicAccessResult]()
-	pipeline.Pipe(enriched, evaluator.Evaluate, evaluated)
+	pipeline.PipeParallel(enriched, evaluator.Evaluate, evaluated, c.Concurrency)
 	pipeline.Pipe(evaluated, riskFromResult, out)
 
 	return out.Wait()

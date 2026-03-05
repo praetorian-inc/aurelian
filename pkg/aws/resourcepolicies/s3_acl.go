@@ -10,6 +10,7 @@ import (
 	smithy "github.com/aws/smithy-go"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
+	"golang.org/x/sync/errgroup"
 )
 
 // S3ExtendedClient extends the S3Client interface with ACL and Block Public Access operations.
@@ -79,15 +80,25 @@ func FetchS3BucketPolicyExtended(ctx context.Context, client S3ExtendedClient, r
 		}
 	}
 
-	// Get bucket policy
-	bucketPolicy, err := FetchS3BucketPolicy(ctx, client, resource, withRegion)
-	if err != nil {
-		return nil, err
-	}
+	// Fetch bucket policy and ACL in parallel — they are independent calls
+	g, gCtx := errgroup.WithContext(ctx)
 
-	// Get bucket ACL and convert public grants to policy statements
-	aclStatements, err := fetchAndConvertACL(ctx, client, bucketName, withRegion)
-	if err != nil {
+	var bucketPolicy *types.Policy
+	var aclStatements []types.PolicyStatement
+
+	g.Go(func() error {
+		var err error
+		bucketPolicy, err = FetchS3BucketPolicy(gCtx, client, resource, withRegion)
+		return err
+	})
+
+	g.Go(func() error {
+		var err error
+		aclStatements, err = fetchAndConvertACL(gCtx, client, bucketName, withRegion)
+		return err
+	})
+
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 

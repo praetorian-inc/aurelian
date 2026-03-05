@@ -102,7 +102,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	})
 
 	extracted := pipeline.New[output.ScanInput]()
-	pipeline.Pipe(listed, extractor.Extract, extracted)
+	pipeline.PipeParallel(listed, extractor.Extract, extracted, c.Concurrency)
 
 	scanned := pipeline.New[secrets.SecretScanResult]()
 	pipeline.Pipe(extracted, s.Scan, scanned)

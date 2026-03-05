@@ -4,7 +4,12 @@
 // process them concurrently.
 package pipeline
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+
+	"golang.org/x/sync/errgroup"
+)
 
 // P[T] is a typed, channel-based producer. Producers call Send() to
 // send items; consumers range over Range(). The underlying channel is
@@ -87,6 +92,55 @@ func Pipe[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[Out]) {
 				return
 			}
 		}
+		// Propagate upstream errors.
+		if err := in.Wait(); err != nil && out.err == nil {
+			out.err = err
+		}
+	}()
+}
+
+// PipeParallel is like Pipe but processes items concurrently. It uses an
+// errgroup with SetLimit to cap the number of concurrent goroutines.
+// If concurrency <= 0 it defaults to 1. The first error from any worker
+// is captured, remaining input is drained so upstream doesn't block, and
+// out is closed once all workers finish. Runs in a goroutine so it does
+// not block the caller.
+func PipeParallel[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[Out], concurrency int) {
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+	go func() {
+		defer out.Close()
+
+		var (
+			g       errgroup.Group
+			failed  atomic.Bool
+			errOnce sync.Once
+		)
+		g.SetLimit(concurrency)
+
+		for item := range in.ch {
+			if failed.Load() {
+				// An earlier worker failed; drain remaining input
+				// so upstream doesn't block.
+				for range in.ch {
+				}
+				break
+			}
+			item := item // capture loop variable
+			g.Go(func() error {
+				if err := fn(item, out); err != nil {
+					errOnce.Do(func() { out.err = err })
+					failed.Store(true)
+					return err
+				}
+				return nil
+			})
+		}
+
+		// Wait for all in-flight goroutines to finish.
+		g.Wait()
+
 		// Propagate upstream errors.
 		if err := in.Wait(); err != nil && out.err == nil {
 			out.err = err

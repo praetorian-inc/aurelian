@@ -1,8 +1,15 @@
 package pipeline
 
 import (
+	"errors"
 	"fmt"
+	"sort"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEmitter_BasicProduceConsume(t *testing.T) {
@@ -132,4 +139,96 @@ func TestFrom_Empty(t *testing.T) {
 	if len(got) != 0 {
 		t.Fatalf("expected 0 items, got %d", len(got))
 	}
+}
+
+func TestPipeParallel_ProcessesAllItems(t *testing.T) {
+	in := From(1, 2, 3, 4, 5)
+	out := New[int]()
+
+	PipeParallel(in, func(item int, o *P[int]) error {
+		o.Send(item * 2)
+		return nil
+	}, out, 3)
+
+	results, err := out.Collect()
+	require.NoError(t, err)
+
+	sort.Ints(results)
+	assert.Equal(t, []int{2, 4, 6, 8, 10}, results)
+}
+
+func TestPipeParallel_RespectsConcurrencyLimit(t *testing.T) {
+	in := From(1, 2, 3, 4, 5, 6, 7, 8)
+	out := New[int]()
+
+	var active atomic.Int32
+	var maxActive atomic.Int32
+
+	concurrency := 2
+	PipeParallel(in, func(item int, o *P[int]) error {
+		cur := active.Add(1)
+		// Track the maximum number of concurrent workers.
+		for {
+			old := maxActive.Load()
+			if cur <= old || maxActive.CompareAndSwap(old, cur) {
+				break
+			}
+		}
+		// Simulate work so goroutines overlap.
+		time.Sleep(50 * time.Millisecond)
+		active.Add(-1)
+		o.Send(item)
+		return nil
+	}, out, concurrency)
+
+	results, err := out.Collect()
+	require.NoError(t, err)
+	assert.Len(t, results, 8)
+	assert.LessOrEqual(t, int32(maxActive.Load()), int32(concurrency))
+}
+
+func TestPipeParallel_PropagatesErrors(t *testing.T) {
+	in := From(1, 2, 3, 4, 5)
+	out := New[int]()
+
+	expectedErr := errors.New("processing failed")
+
+	PipeParallel(in, func(item int, o *P[int]) error {
+		if item == 3 {
+			return expectedErr
+		}
+		o.Send(item)
+		return nil
+	}, out, 1)
+
+	_, err := out.Collect()
+	require.Error(t, err)
+	assert.Equal(t, expectedErr, err)
+}
+
+func TestPipeParallel_DefaultsConcurrencyToOne(t *testing.T) {
+	in := From(1, 2, 3)
+	out := New[int]()
+
+	var active atomic.Int32
+	var maxActive atomic.Int32
+
+	PipeParallel(in, func(item int, o *P[int]) error {
+		cur := active.Add(1)
+		for {
+			old := maxActive.Load()
+			if cur <= old || maxActive.CompareAndSwap(old, cur) {
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+		active.Add(-1)
+		o.Send(item)
+		return nil
+	}, out, 0) // concurrency <= 0 should default to 1
+
+	results, err := out.Collect()
+	require.NoError(t, err)
+	assert.Len(t, results, 3)
+	assert.Equal(t, int32(1), maxActive.Load())
 }
