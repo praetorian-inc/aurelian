@@ -3,6 +3,7 @@ package enumeration
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -12,12 +13,18 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
+// s3HeadBucketAPI is the subset of the S3 client used by EnumerateByARN.
+type s3HeadBucketAPI interface {
+	HeadBucket(ctx context.Context, params *s3.HeadBucketInput, optFns ...func(*s3.Options)) (*s3.HeadBucketOutput, error)
+}
+
 // S3Enumerator enumerates S3 buckets using the native SDK with server-side
 // region filtering, avoiding the duplicate enumeration that CloudControl causes.
 type S3Enumerator struct {
 	plugin.AWSCommonRecon
-	provider  *AWSConfigProvider
-	accountID string
+	provider         *AWSConfigProvider
+	accountID        string
+	headBucketClient s3HeadBucketAPI // optional; if nil, created from provider
 }
 
 // NewS3Enumerator creates an S3Enumerator that uses the native S3 SDK.
@@ -50,9 +57,49 @@ func (l *S3Enumerator) EnumerateAll(out *pipeline.P[output.AWSResource]) error {
 	})
 }
 
-// EnumerateByARN delegates to CloudControl for richer single-resource detail.
-func (l *S3Enumerator) EnumerateByARN(_ string, _ *pipeline.P[output.AWSResource]) error {
-	return errFallbackToCloudControl
+// EnumerateByARN resolves a single S3 bucket by ARN using HeadBucket.
+func (l *S3Enumerator) EnumerateByARN(arn string, out *pipeline.P[output.AWSResource]) error {
+	const arnPrefix = "arn:aws:s3:::"
+	hasValidPrefix := strings.HasPrefix(arn, arnPrefix)
+	if !hasValidPrefix {
+		return fmt.Errorf("invalid S3 ARN: %s", arn)
+	}
+	bucketName := strings.TrimPrefix(arn, arnPrefix)
+
+	if len(l.Regions) == 0 {
+		return fmt.Errorf("no regions configured")
+	}
+
+	if err := l.resolveAccountID(); err != nil {
+		return err
+	}
+
+	client := l.headBucketClient
+	if client == nil {
+		cfg, err := l.provider.GetAWSConfig(l.Regions[0])
+		if err != nil {
+			return fmt.Errorf("create S3 client: %w", err)
+		}
+		client = s3.NewFromConfig(*cfg)
+	}
+
+	result, err := client.HeadBucket(context.Background(), &s3.HeadBucketInput{
+		Bucket: &bucketName,
+	})
+	if err != nil {
+		return fmt.Errorf("head bucket %s: %w", bucketName, err)
+	}
+
+	region := aws.ToString(result.BucketRegion)
+	out.Send(output.AWSResource{
+		ResourceType: "AWS::S3::Bucket",
+		ResourceID:   bucketName,
+		ARN:          arn,
+		AccountRef:   l.accountID,
+		Region:       region,
+	})
+
+	return nil
 }
 
 func (l *S3Enumerator) resolveAccountID() error {
