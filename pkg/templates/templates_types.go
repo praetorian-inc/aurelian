@@ -11,7 +11,8 @@ type ARGQueryTemplate struct {
 	Query       string              `yaml:"query"`
 	Category    []string            `yaml:"category"`
 	References  []string            `yaml:"references"`
-	TriageNotes string              `yaml:"triageNotes,omitempty"`
+	TriageNotes   string              `yaml:"triageNotes,omitempty"`
+	Reportability string              `yaml:"reportability,omitempty"`
 }
 
 // ARGQueryResult represents a standardized result from an ARG query
