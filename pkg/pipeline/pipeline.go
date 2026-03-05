@@ -6,6 +6,9 @@ package pipeline
 
 import (
 	"sync"
+	"sync/atomic"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // P[T] is a typed, channel-based producer. Producers call Send() to
@@ -74,22 +77,81 @@ func (e *P[T]) Collect() ([]T, error) {
 	return items, e.Wait()
 }
 
+// Opts configures optional behavior for Pipe.
+type PipeOpts struct {
+	Concurrency int
+}
+
 // Pipe reads from in, calls fn for each item (which must send into out), and
 // closes out when in is drained. Runs in a goroutine. Errors from fn or from
 // the upstream producer are propagated to out.Wait().
-func Pipe[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[Out]) {
+//
+// When opts is provided with Concurrency > 1, items are processed concurrently
+// using an errgroup with the specified concurrency limit. The first error from
+// any worker is captured and remaining input is drained.
+func Pipe[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[Out], opts ...*PipeOpts) {
+	concurrency := 1
+	if len(opts) > 0 && opts[0] != nil && opts[0].Concurrency > 1 {
+		concurrency = opts[0].Concurrency
+	}
+
+	if concurrency > 1 {
+		pipeParallel(in, fn, out, concurrency)
+	} else {
+		pipeSequential(in, fn, out)
+	}
+}
+
+// pipeSequential processes items one at a time, stopping immediately on error.
+func pipeSequential[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[Out]) {
 	go func() {
 		defer out.Close()
 		for item := range in.ch {
 			if err := fn(item, out); err != nil {
 				out.err = err
-				// Drain remaining input so upstream doesn't block.
 				for range in.ch {
 				}
 				return
 			}
 		}
-		// Propagate upstream errors.
+		if err := in.Wait(); err != nil && out.err == nil {
+			out.err = err
+		}
+	}()
+}
+
+// pipeParallel processes items concurrently using an errgroup with the
+// specified concurrency limit. The first error from any worker is captured,
+// remaining input is drained so upstream doesn't block.
+func pipeParallel[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[Out], concurrency int) {
+	go func() {
+		defer out.Close()
+
+		var (
+			g       errgroup.Group
+			failed  atomic.Bool
+			errOnce sync.Once
+		)
+		g.SetLimit(concurrency)
+
+		for item := range in.ch {
+			if failed.Load() {
+				for range in.ch {
+				}
+				break
+			}
+			g.Go(func() error {
+				if err := fn(item, out); err != nil {
+					errOnce.Do(func() { out.err = err })
+					failed.Store(true)
+					return err
+				}
+				return nil
+			})
+		}
+
+		g.Wait()
+
 		if err := in.Wait(); err != nil && out.err == nil {
 			out.err = err
 		}

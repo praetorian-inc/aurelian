@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/efs"
@@ -59,6 +60,10 @@ type ResourceEvaluator struct {
 	opts             plugin.AWSCommonRecon
 	crossRegionActor *ratelimit.CrossRegionActor
 	orgPolicies      *orgpolicies.OrgPolicies
+
+	accountID     string
+	accountIDOnce sync.Once
+	accountIDErr  error
 }
 
 // NewResourceEvaluator creates a new ResourceEvaluator.
@@ -94,7 +99,7 @@ func (e *ResourceEvaluator) Evaluate(resource output.AWSResource, out *pipeline.
 			return nil
 		}
 
-		accountID, err := awshelpers.GetAccountId(awsCfg)
+		accountID, err := e.getAccountID(awsCfg)
 		if err != nil {
 			slog.Warn("failed to get account ID, skipping resource",
 				"resource", resource.ResourceID, "region", resource.Region, "error", err)
@@ -104,6 +109,13 @@ func (e *ResourceEvaluator) Evaluate(resource output.AWSResource, out *pipeline.
 		e.evaluateCore(&resource, awsCfg, accountID, out)
 		return nil
 	})
+}
+
+func (e *ResourceEvaluator) getAccountID(awsCfg aws.Config) (string, error) {
+	e.accountIDOnce.Do(func() {
+		e.accountID, e.accountIDErr = awshelpers.GetAccountId(awsCfg)
+	})
+	return e.accountID, e.accountIDErr
 }
 
 // evaluateCore performs the core evaluation logic: looks up the evaluator for
