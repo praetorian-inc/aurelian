@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -23,7 +24,7 @@ func init() {
 }
 
 func extractStorageBlobs(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, _, segments, err := parseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse storage account resource ID: %w", err)
 	}
@@ -33,10 +34,9 @@ func extractStorageBlobs(ctx extractContext, r output.AzureResource, out *pipeli
 		return fmt.Errorf("no storageAccounts segment in resource ID %s", r.ResourceID)
 	}
 
-	serviceURL := fmt.Sprintf("https://%s.blob.core.windows.net", accountName)
-	client, err := azblob.NewClient(serviceURL, ctx.Cred, nil)
+	client, err := newBlobClientWithAccountKey(ctx, r.SubscriptionID, resourceGroup, accountName)
 	if err != nil {
-		return fmt.Errorf("failed to create blob client: %w", err)
+		return fmt.Errorf("failed to create blob client for %s: %w", accountName, err)
 	}
 
 	containerPager := client.NewListContainersPager(nil)
@@ -57,6 +57,44 @@ func extractStorageBlobs(ctx extractContext, r output.AzureResource, out *pipeli
 		}
 		return containerPager.More(), nil
 	})
+}
+
+// newBlobClientWithAccountKey fetches storage account keys via the management plane
+// and returns a blob client authenticated with a shared key. This avoids requiring
+// the "Storage Blob Data Reader" data-plane RBAC role.
+func newBlobClientWithAccountKey(ctx extractContext, subscriptionID, resourceGroup, accountName string) (*azblob.Client, error) {
+	accountsClient, err := armstorage.NewAccountsClient(subscriptionID, ctx.Cred, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create storage accounts client: %w", err)
+	}
+
+	keys, err := accountsClient.ListKeys(ctx.Context, resourceGroup, accountName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list storage account keys: %w", err)
+	}
+
+	if keys.Keys == nil || len(keys.Keys) == 0 {
+		return nil, fmt.Errorf("no keys returned for storage account %s", accountName)
+	}
+
+	accountKey := ""
+	for _, k := range keys.Keys {
+		if k.Value != nil && *k.Value != "" {
+			accountKey = *k.Value
+			break
+		}
+	}
+	if accountKey == "" {
+		return nil, fmt.Errorf("no valid key found for storage account %s", accountName)
+	}
+
+	sharedKeyCred, err := azblob.NewSharedKeyCredential(accountName, accountKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create shared key credential: %w", err)
+	}
+
+	serviceURL := fmt.Sprintf("https://%s.blob.core.windows.net", accountName)
+	return azblob.NewClientWithSharedKeyCredential(serviceURL, sharedKeyCred, nil)
 }
 
 func extractBlobsFromContainer(ctx extractContext, client *azblob.Client, r output.AzureResource, containerName string, out *pipeline.P[output.ScanInput]) error {
