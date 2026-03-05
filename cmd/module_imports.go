@@ -5,4 +5,6 @@ package cmd
 import (
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/enrichers"
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/recon"
+	_ "github.com/praetorian-inc/aurelian/pkg/modules/gcp/enrichers"
+	_ "github.com/praetorian-inc/aurelian/pkg/modules/gcp/recon"
 )
