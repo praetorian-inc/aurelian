@@ -1,3 +1,4 @@
+.env.integration
 ./aurelian
 aurelian
 *.test

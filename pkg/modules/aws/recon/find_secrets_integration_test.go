@@ -17,7 +17,7 @@ import (
 )
 
 func TestAWSFindSecrets(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/recon/find-secrets")
+	fixture := testutil.NewAWSFixture(t, "aws/recon/find-secrets")
 	fixture.Setup()
 
 	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "find-secrets")
