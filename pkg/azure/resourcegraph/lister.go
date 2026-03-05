@@ -14,6 +14,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
+	"github.com/praetorian-inc/aurelian/pkg/templates"
 )
 
 const listAllQuery = "Resources | project id, name, type, location, resourceGroup, tags, properties"
@@ -38,6 +39,56 @@ func NewResourceGraphLister(cred azcore.TokenCredential, opts *Options) *Resourc
 
 	lister := &ResourceGraphLister{cred: cred, options: o}
 	return lister
+}
+
+// QueryTemplateInput pairs a subscription with a template for querying.
+type QueryTemplateInput struct {
+	Subscription azuretypes.SubscriptionInfo
+	Template     *templates.ARGQueryTemplate
+}
+
+// QueryTemplate executes an ARG query template against a subscription and emits results.
+func (l *ResourceGraphLister) QueryTemplate(input QueryTemplateInput, out *pipeline.P[templates.ARGQueryResult]) error {
+	query := input.Template.Query
+	sub := input.Subscription
+
+	request := armresourcegraph.QueryRequest{
+		Query:         &query,
+		Subscriptions: []*string{&sub.ID},
+		Options: &armresourcegraph.QueryRequestOptions{
+			Top:          to.Ptr(l.options.PageSize),
+			ResultFormat: to.Ptr(armresourcegraph.ResultFormatObjectArray),
+		},
+	}
+
+	paginator := ratelimit.NewPaginator()
+	return paginator.Paginate(func() (bool, error) {
+		resp, err := l.queryResources(request)
+		if err != nil {
+			return false, fmt.Errorf("resource graph query failed for template %s: %w", input.Template.ID, err)
+		}
+
+		rows, ok := resp.Data.([]any)
+		if !ok {
+			return false, fmt.Errorf("unexpected response data type: %T", resp.Data)
+		}
+
+		for _, row := range rows {
+			result, parseErr := parseARGTemplateRow(row, input.Template)
+			if parseErr != nil {
+				slog.Debug("skipping malformed ARG template row", "template", input.Template.ID, "error", parseErr)
+				continue
+			}
+			result.SubscriptionID = sub.ID
+			out.Send(result)
+		}
+
+		hasMorePages := resp.SkipToken != nil && *resp.SkipToken != ""
+		if hasMorePages {
+			request.Options.SkipToken = resp.SkipToken
+		}
+		return hasMorePages, nil
+	})
 }
 
 // ListAll enumerates all resources for a subscription using the default KQL query.
@@ -158,6 +209,43 @@ func parseARGRow(row any, sub azuretypes.SubscriptionInfo) (output.AzureResource
 	}
 
 	return resource, nil
+}
+
+// parseARGTemplateRow converts a raw ARG response row into an ARGQueryResult.
+// Standard fields (id, name, type, location, subscriptionId) are extracted;
+// all other projected columns go into Properties.
+func parseARGTemplateRow(row any, tmpl *templates.ARGQueryTemplate) (templates.ARGQueryResult, error) {
+	rowMap, ok := row.(map[string]any)
+	if !ok {
+		return templates.ARGQueryResult{}, fmt.Errorf("unexpected row type: %T", row)
+	}
+
+	result := templates.ARGQueryResult{
+		TemplateID:      tmpl.ID,
+		TemplateDetails: tmpl,
+		ResourceID:      stringFromMap(rowMap, "id"),
+		ResourceName:    stringFromMap(rowMap, "name"),
+		ResourceType:    stringFromMap(rowMap, "type"),
+		Location:        stringFromMap(rowMap, "location"),
+		SubscriptionID:  stringFromMap(rowMap, "subscriptionId"),
+		Name:            tmpl.Name,
+	}
+
+	props := make(map[string]any)
+	for k, v := range rowMap {
+		switch k {
+		case "id", "name", "type", "location", "subscriptionId":
+			continue
+		default:
+			props[k] = v
+		}
+	}
+	if len(props) > 0 {
+		tryUnmarshalJSONStrings(props)
+		result.Properties = props
+	}
+
+	return result, nil
 }
 
 func tryUnmarshalJSONStrings(m map[string]any) {
