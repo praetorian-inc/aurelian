@@ -181,7 +181,7 @@ func TestFetchS3BucketPolicyExtended_BlockPublicAccess(t *testing.T) {
 	}
 
 	resource := &output.AWSResource{
-		Properties: map[string]any{"BucketName": "my-bucket"},
+		ResourceID: "my-bucket",
 	}
 
 	policy, err := FetchS3BucketPolicyExtended(context.Background(), client, resource, nil)
@@ -215,7 +215,7 @@ func TestFetchS3BucketPolicyExtended_PublicACL(t *testing.T) {
 	}
 
 	resource := &output.AWSResource{
-		Properties: map[string]any{"BucketName": "my-bucket"},
+		ResourceID: "my-bucket",
 	}
 
 	policy, err := FetchS3BucketPolicyExtended(context.Background(), client, resource, nil)
@@ -226,9 +226,7 @@ func TestFetchS3BucketPolicyExtended_PublicACL(t *testing.T) {
 }
 
 func TestFetchS3BucketPolicyExtended_NoBucketName(t *testing.T) {
-	resource := &output.AWSResource{
-		Properties: map[string]any{},
-	}
+	resource := &output.AWSResource{}
 
 	policy, err := FetchS3BucketPolicyExtended(context.Background(), &mockS3ExtendedClient{}, resource, nil)
 	require.NoError(t, err)
@@ -243,7 +241,7 @@ func TestFetchS3BucketPolicyExtended_RegionFiltering_SkipOutsideRegion(t *testin
 	}
 
 	resource := &output.AWSResource{
-		Properties: map[string]any{"BucketName": "my-bucket"},
+		ResourceID: "my-bucket",
 	}
 
 	// Only allow us-east-1, bucket is in eu-west-1 => should return nil
@@ -272,7 +270,7 @@ func TestFetchS3BucketPolicyExtended_RegionFiltering_DefaultUsEast1(t *testing.T
 	}
 
 	resource := &output.AWSResource{
-		Properties: map[string]any{"BucketName": "my-bucket"},
+		ResourceID: "my-bucket",
 	}
 
 	// Allow us-east-1, bucket has empty location (defaults to us-east-1) => should proceed
@@ -347,7 +345,7 @@ func TestFetchS3BucketPolicyExtended_BlockPublicAccessPartial(t *testing.T) {
 	}
 
 	resource := &output.AWSResource{
-		Properties: map[string]any{"BucketName": "my-bucket"},
+		ResourceID: "my-bucket",
 	}
 
 	policy, err := FetchS3BucketPolicyExtended(context.Background(), client, resource, nil)

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/enrichment"
+	cclist "github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/aws/publicaccess"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -61,7 +61,7 @@ func (m *AWSPublicResourcesModule) Parameters() any {
 func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.PublicResourcesConfig
 
-	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
+	lister := cclist.NewEnumerator(c.AWSCommonRecon)
 
 	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
 	if err != nil {

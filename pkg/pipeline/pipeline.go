@@ -4,7 +4,9 @@
 // process them concurrently.
 package pipeline
 
-import "sync"
+import (
+	"sync"
+)
 
 // P[T] is a typed, channel-based producer. Producers call Send() to
 // send items; consumers range over Range(). The underlying channel is
