@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -187,4 +188,65 @@ func stringFromMap(m map[string]any, key string) string {
 	}
 
 	return s
+}
+
+// buildListByTypesQuery generates a KQL query that filters resources to specific types.
+func buildListByTypesQuery(resourceTypes []string) string {
+	quoted := make([]string, len(resourceTypes))
+	for i, rt := range resourceTypes {
+		quoted[i] = "'" + strings.ToLower(rt) + "'"
+	}
+	return "Resources | where type in~ (" + strings.Join(quoted, ",") + ") | project id, name, type, location, resourceGroup, tags, properties"
+}
+
+// ListByTypes queries resources filtered to specific types within a subscription.
+// Unlike ListAll which emits model.AurelianModel, this emits typed AzureResource
+// for use in extraction pipelines.
+func (l *ResourceGraphLister) ListByTypes(query azuretypes.SubscriptionQuery, out *pipeline.P[output.AzureResource]) error {
+	if len(query.ResourceTypes) == 0 {
+		return nil
+	}
+
+	kql := buildListByTypesQuery(query.ResourceTypes)
+	return l.querySubscriptionTyped(query.Subscription, kql, out)
+}
+
+// querySubscriptionTyped is like querySubscription but emits output.AzureResource directly.
+func (l *ResourceGraphLister) querySubscriptionTyped(sub azuretypes.SubscriptionInfo, query string, out *pipeline.P[output.AzureResource]) error {
+	request := armresourcegraph.QueryRequest{
+		Query:         &query,
+		Subscriptions: []*string{&sub.ID},
+		Options: &armresourcegraph.QueryRequestOptions{
+			Top:          to.Ptr(l.options.PageSize),
+			ResultFormat: to.Ptr(armresourcegraph.ResultFormatObjectArray),
+		},
+	}
+
+	paginator := ratelimit.NewPaginator()
+	return paginator.Paginate(func() (bool, error) {
+		resp, err := l.queryResources(request)
+		if err != nil {
+			return false, fmt.Errorf("resource graph query failed: %w", err)
+		}
+
+		rows, ok := resp.Data.([]any)
+		if !ok {
+			return false, fmt.Errorf("unexpected response data type: %T", resp.Data)
+		}
+
+		for _, row := range rows {
+			resource, parseErr := parseARGRow(row, sub)
+			if parseErr != nil {
+				slog.Debug("skipping malformed ARG row", "error", parseErr)
+				continue
+			}
+			out.Send(resource)
+		}
+
+		hasMorePages := resp.SkipToken != nil && *resp.SkipToken != ""
+		if hasMorePages {
+			request.Options.SkipToken = resp.SkipToken
+		}
+		return hasMorePages, nil
+	})
 }

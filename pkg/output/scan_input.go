@@ -32,3 +32,15 @@ func ScanInputFromAWSResource(r AWSResource, label string, content []byte) ScanI
 		Label:        label,
 	}
 }
+
+// ScanInputFromAzureResource creates a ScanInput by mapping common fields from an AzureResource.
+func ScanInputFromAzureResource(r AzureResource, label string, content []byte) ScanInput {
+	return ScanInput{
+		Content:      content,
+		ResourceID:   r.ResourceID,
+		ResourceType: r.ResourceType,
+		Region:       r.Location,
+		AccountID:    r.SubscriptionID,
+		Label:        label,
+	}
+}
