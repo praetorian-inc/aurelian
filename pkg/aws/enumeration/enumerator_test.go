@@ -31,7 +31,7 @@ func (m *mockResourceEnumerator) EnumerateByARN(_ string, out *pipeline.P[output
 func TestEnumerator_enumerateByType_DispatchesToRegisteredLister(t *testing.T) {
 	mock := &mockResourceEnumerator{resourceType: "AWS::S3::Bucket"}
 	e := &Enumerator{
-		listers: map[string]ResourceEnumerator{"AWS::S3::Bucket": mock},
+		enumerators: map[string]ResourceEnumerator{"AWS::S3::Bucket": mock},
 		cc:      &CloudControlEnumerator{},
 	}
 
@@ -50,15 +50,15 @@ func TestEnumerator_enumerateByType_DispatchesToRegisteredLister(t *testing.T) {
 
 func TestEnumerator_enumerateByType_FallsBackForUnregisteredType(t *testing.T) {
 	e := &Enumerator{
-		listers: map[string]ResourceEnumerator{},
+		enumerators: map[string]ResourceEnumerator{},
 	}
 
-	_, ok := e.listers["AWS::EC2::Instance"]
-	require.False(t, ok, "unregistered type should not be in listers map")
+	_, ok := e.enumerators["AWS::EC2::Instance"]
+	require.False(t, ok, "unregistered type should not be in enumerators map")
 }
 
 func TestEnumerator_List_InvalidIdentifier(t *testing.T) {
-	e := &Enumerator{listers: make(map[string]ResourceEnumerator)}
+	e := &Enumerator{enumerators: make(map[string]ResourceEnumerator)}
 
 	out := pipeline.New[output.AWSResource]()
 	go func() {

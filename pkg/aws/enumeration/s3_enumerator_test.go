@@ -43,7 +43,7 @@ func TestS3Enumerator_EnumerateAll_SingleRegion_NoPagination(t *testing.T) {
 		},
 	}
 
-	lister := &S3Enumerator{
+	enumerator := &S3Enumerator{
 		AWSCommonRecon: plugin.AWSCommonRecon{
 			Regions:     []string{"us-east-1"},
 			Concurrency: 1,
@@ -62,7 +62,7 @@ func TestS3Enumerator_EnumerateAll_SingleRegion_NoPagination(t *testing.T) {
 		close(done)
 	}()
 
-	err := lister.EnumerateAll(out)
+	err := enumerator.EnumerateAll(out)
 	out.Close()
 	<-done
 
@@ -91,7 +91,7 @@ func TestS3Enumerator_EnumerateAll_Pagination(t *testing.T) {
 		},
 	}
 
-	lister := &S3Enumerator{
+	enumerator := &S3Enumerator{
 		AWSCommonRecon: plugin.AWSCommonRecon{
 			Regions:     []string{"us-west-2"},
 			Concurrency: 1,
@@ -110,7 +110,7 @@ func TestS3Enumerator_EnumerateAll_Pagination(t *testing.T) {
 		close(done)
 	}()
 
-	err := lister.EnumerateAll(out)
+	err := enumerator.EnumerateAll(out)
 	out.Close()
 	<-done
 
@@ -133,7 +133,7 @@ func TestS3Enumerator_EnumerateAll_MultiRegion(t *testing.T) {
 		},
 	}
 
-	lister := &S3Enumerator{
+	enumerator := &S3Enumerator{
 		AWSCommonRecon: plugin.AWSCommonRecon{
 			Regions:     []string{"us-east-1", "us-west-2"},
 			Concurrency: 1,
@@ -155,7 +155,7 @@ func TestS3Enumerator_EnumerateAll_MultiRegion(t *testing.T) {
 		close(done)
 	}()
 
-	err := lister.EnumerateAll(out)
+	err := enumerator.EnumerateAll(out)
 	out.Close()
 	<-done
 
@@ -165,7 +165,7 @@ func TestS3Enumerator_EnumerateAll_MultiRegion(t *testing.T) {
 }
 
 func TestS3Enumerator_EnumerateByARN_ReturnsFallback(t *testing.T) {
-	lister := &S3Enumerator{}
-	err := lister.EnumerateByARN("arn:aws:s3:::my-bucket", nil)
+	enumerator := &S3Enumerator{}
+	err := enumerator.EnumerateByARN("arn:aws:s3:::my-bucket", nil)
 	require.ErrorIs(t, err, errFallbackToCloudControl)
 }
