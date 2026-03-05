@@ -53,13 +53,13 @@ func TestGCPListAllResources(t *testing.T) {
 	require.NoError(t, p2.Wait())
 	require.NotEmpty(t, resources, "should discover at least one GCP resource")
 
-	// Assert at least 5 distinct resource types are discovered.
+	// Assert at least 8 distinct resource types are discovered.
 	resourceTypes := make(map[string]bool)
 	for _, r := range resources {
 		resourceTypes[r.ResourceType] = true
 	}
-	assert.GreaterOrEqual(t, len(resourceTypes), 5,
-		"expected at least 5 distinct resource types, got %d: %v", len(resourceTypes), resourceTypes)
+	assert.GreaterOrEqual(t, len(resourceTypes), 8,
+		"expected at least 8 distinct resource types, got %d: %v", len(resourceTypes), resourceTypes)
 
 	t.Run("discovers storage buckets", func(t *testing.T) {
 		publicBucket := fixture.Output("public_bucket_name")
@@ -127,6 +127,76 @@ func TestGCPListAllResources(t *testing.T) {
 		}
 		require.NotEmpty(t, found, "expected at least 1 cloud function")
 		assertResourceByName(t, found, functionName, projectID, "cloudfunctions.googleapis.com/Function")
+	})
+
+	t.Run("discovers cloud run services", func(t *testing.T) {
+		publicRunName := fixture.Output("cloud_run_public_name")
+		privateRunName := fixture.Output("cloud_run_private_name")
+
+		var found []output.GCPResource
+		for _, r := range resources {
+			if r.ResourceType == "run.googleapis.com/Service" {
+				found = append(found, r)
+			}
+		}
+		require.GreaterOrEqual(t, len(found), 2, "expected at least 2 cloud run services")
+
+		assertResourceByName(t, found, publicRunName, projectID, "run.googleapis.com/Service")
+		assertResourceByName(t, found, privateRunName, projectID, "run.googleapis.com/Service")
+	})
+
+	t.Run("discovers addresses", func(t *testing.T) {
+		globalAddr := fixture.Output("global_address_name")
+		regionalAddr := fixture.Output("regional_address_name")
+
+		var found []output.GCPResource
+		for _, r := range resources {
+			if r.ResourceType == "compute.googleapis.com/GlobalAddress" || r.ResourceType == "compute.googleapis.com/Address" {
+				found = append(found, r)
+			}
+		}
+		require.GreaterOrEqual(t, len(found), 2, "expected at least 2 addresses")
+
+		assertResourceByName(t, found, globalAddr, projectID, "compute.googleapis.com/GlobalAddress")
+		assertResourceByName(t, found, regionalAddr, projectID, "compute.googleapis.com/Address")
+	})
+
+	t.Run("discovers forwarding rules", func(t *testing.T) {
+		fwdRuleName := fixture.Output("regional_forwarding_rule_name")
+
+		var found []output.GCPResource
+		for _, r := range resources {
+			if r.ResourceType == "compute.googleapis.com/ForwardingRule" || r.ResourceType == "compute.googleapis.com/GlobalForwardingRule" {
+				found = append(found, r)
+			}
+		}
+		require.GreaterOrEqual(t, len(found), 1, "expected at least 1 forwarding rule")
+
+		assertResourceByName(t, found, fwdRuleName, projectID, "compute.googleapis.com/ForwardingRule")
+	})
+
+	t.Run("discovers private compute instances", func(t *testing.T) {
+		privateInstanceName := fixture.Output("private_instance_name")
+
+		var found []output.GCPResource
+		for _, r := range resources {
+			if r.ResourceType == "compute.googleapis.com/Instance" {
+				found = append(found, r)
+			}
+		}
+		assertResourceByName(t, found, privateInstanceName, projectID, "compute.googleapis.com/Instance")
+	})
+
+	t.Run("discovers private dns zones", func(t *testing.T) {
+		privateDNSZone := fixture.Output("private_dns_zone_name")
+
+		var found []output.GCPResource
+		for _, r := range resources {
+			if r.ResourceType == "dns.googleapis.com/ManagedZone" {
+				found = append(found, r)
+			}
+		}
+		assertResourceByName(t, found, privateDNSZone, projectID, "dns.googleapis.com/ManagedZone")
 	})
 
 	t.Run("all resources have required fields", func(t *testing.T) {

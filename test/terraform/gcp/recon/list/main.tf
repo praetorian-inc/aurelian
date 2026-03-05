@@ -14,6 +14,13 @@
 // | 4  | ${prefix}-sql                 | sqladmin.googleapis.com/Instance            | YES    | DISCOVERED + RISK  |
 // | 5  | ${prefix}-zone                | dns.googleapis.com/ManagedZone              | NO     | DISCOVERED         |
 // | 6  | ${prefix}-public-fn           | cloudfunctions.googleapis.com/Function      | YES    | DISCOVERED + RISK  |
+// | 7  | ${prefix}-public-run          | run.googleapis.com/Service                  | YES    | DISCOVERED + RISK  |
+// | 8  | ${prefix}-private-run         | run.googleapis.com/Service                  | NO     | DISCOVERED         |
+// | 9  | ${prefix}-global-addr         | compute.googleapis.com/GlobalAddress        | YES    | DISCOVERED + RISK  |
+// | 10 | ${prefix}-regional-addr       | compute.googleapis.com/Address              | YES    | DISCOVERED + RISK  |
+// | 11 | ${prefix}-fwd-rule            | compute.googleapis.com/ForwardingRule       | YES    | DISCOVERED + RISK  |
+// | 12 | ${prefix}-private-instance    | compute.googleapis.com/Instance             | NO     | DISCOVERED         |
+// | 13 | ${prefix}-private-zone        | dns.googleapis.com/ManagedZone              | NO     | DISCOVERED         |
 
 terraform {
   required_providers {
@@ -175,4 +182,118 @@ resource "google_cloudfunctions_function_iam_member" "public_invoker" {
   region         = var.region
   role           = "roles/cloudfunctions.invoker"
   member         = "allUsers"
+}
+
+#==============================================================================
+# RESOURCE 07: Cloud Run Service (public, allUsers invoker)
+#==============================================================================
+resource "google_cloud_run_v2_service" "public" {
+  name     = "${local.prefix}-public-run"
+  location = var.region
+
+  template {
+    containers {
+      image = "us-docker.pkg.dev/cloudrun/container/hello:latest"
+    }
+  }
+
+  labels = local.labels
+}
+
+resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
+  name     = google_cloud_run_v2_service.public.name
+  location = var.region
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
+#==============================================================================
+# RESOURCE 08: Cloud Run Service (private)
+#==============================================================================
+resource "google_cloud_run_v2_service" "private" {
+  name     = "${local.prefix}-private-run"
+  location = var.region
+
+  template {
+    containers {
+      image = "us-docker.pkg.dev/cloudrun/container/hello:latest"
+    }
+  }
+
+  labels = local.labels
+}
+
+#==============================================================================
+# RESOURCE 09: Global External IP Address
+#==============================================================================
+resource "google_compute_global_address" "test" {
+  name         = "${local.prefix}-global-addr"
+  address_type = "EXTERNAL"
+}
+
+#==============================================================================
+# RESOURCE 10: Regional External IP Address
+#==============================================================================
+resource "google_compute_address" "test" {
+  name         = "${local.prefix}-regional-addr"
+  region       = var.region
+  address_type = "EXTERNAL"
+}
+
+#==============================================================================
+# RESOURCE 11: Regional Forwarding Rule (with target pool)
+#==============================================================================
+resource "google_compute_http_health_check" "test" {
+  name = "${local.prefix}-health-check"
+}
+
+resource "google_compute_target_pool" "test" {
+  name          = "${local.prefix}-target-pool"
+  region        = var.region
+  health_checks = [google_compute_http_health_check.test.name]
+}
+
+resource "google_compute_forwarding_rule" "test" {
+  name       = "${local.prefix}-fwd-rule"
+  region     = var.region
+  target     = google_compute_target_pool.test.self_link
+  port_range = "80"
+}
+
+#==============================================================================
+# RESOURCE 12: Compute Engine Instance (private, no external IP)
+#==============================================================================
+resource "google_compute_instance" "private" {
+  name         = "${local.prefix}-private-instance"
+  machine_type = "e2-micro"
+  zone         = var.zone
+
+  boot_disk {
+    initialize_params {
+      image = "debian-cloud/debian-12"
+    }
+  }
+
+  network_interface {
+    network = "default"
+  }
+
+  labels = local.labels
+}
+
+#==============================================================================
+# RESOURCE 13: Cloud DNS Managed Zone (private)
+#==============================================================================
+resource "google_dns_managed_zone" "private" {
+  name        = "${local.prefix}-private-zone"
+  dns_name    = "${local.prefix}-private.example.com."
+  description = "Aurelian integration test private DNS zone"
+  visibility  = "private"
+  labels      = local.labels
+
+  private_visibility_config {
+    networks {
+      network_url = "projects/${data.google_project.current.project_id}/global/networks/default"
+    }
+  }
 }

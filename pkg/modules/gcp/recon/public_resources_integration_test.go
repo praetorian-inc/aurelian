@@ -37,6 +37,10 @@ func TestGCPPublicResources(t *testing.T) {
 				"compute.googleapis.com/Instance",
 				"sqladmin.googleapis.com/Instance",
 				"cloudfunctions.googleapis.com/Function",
+				"run.googleapis.com/Service",
+				"compute.googleapis.com/Address",
+				"compute.googleapis.com/GlobalAddress",
+				"compute.googleapis.com/ForwardingRule",
 			},
 		},
 		Context: context.Background(),
@@ -109,6 +113,32 @@ func TestGCPPublicResources(t *testing.T) {
 		functionName := fixture.Output("function_name")
 		assert.Truef(t, hasRiskForGCPResource(risks, functionName),
 			"expected risk for cloud function %q with allUsers invoker", functionName)
+	})
+
+	t.Run("detects public cloud run service", func(t *testing.T) {
+		publicRunName := fixture.Output("cloud_run_public_name")
+		assert.Truef(t, hasRiskForGCPResource(risks, publicRunName),
+			"expected risk for public cloud run service %q", publicRunName)
+
+		privateRunName := fixture.Output("cloud_run_private_name")
+		assert.Falsef(t, hasRiskForGCPResource(risks, privateRunName),
+			"private cloud run service %q should NOT have a risk", privateRunName)
+	})
+
+	t.Run("detects public addresses", func(t *testing.T) {
+		globalAddr := fixture.Output("global_address_name")
+		regionalAddr := fixture.Output("regional_address_name")
+
+		assert.Truef(t, hasRiskForGCPResource(risks, globalAddr),
+			"expected risk for global address %q", globalAddr)
+		assert.Truef(t, hasRiskForGCPResource(risks, regionalAddr),
+			"expected risk for regional address %q", regionalAddr)
+	})
+
+	t.Run("private compute instance has no risk", func(t *testing.T) {
+		privateInstance := fixture.Output("private_instance_name")
+		assert.Falsef(t, hasRiskForGCPResource(risks, privateInstance),
+			"private compute instance %q should NOT have a risk", privateInstance)
 	})
 
 	t.Run("risk names follow gcp naming convention", func(t *testing.T) {
