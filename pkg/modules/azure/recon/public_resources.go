@@ -53,21 +53,7 @@ func (m *AzurePublicResourcesModule) References() []string {
 
 func (m *AzurePublicResourcesModule) SupportedResourceTypes() []string {
 	return []string{
-		"Microsoft.Storage/storageAccounts",
-		"Microsoft.Sql/servers",
-		"Microsoft.KeyVault/vaults",
-		"Microsoft.Web/sites",
-		"Microsoft.ContainerRegistry/registries",
-		"Microsoft.Network/loadBalancers",
-		"Microsoft.Cache/Redis",
-		"Microsoft.DocumentDB/databaseAccounts",
-		"Microsoft.Compute/virtualMachines",
-		"Microsoft.DataFactory/factories",
-		"Microsoft.EventGrid/topics",
-		"Microsoft.ServiceBus/namespaces",
-		"Microsoft.EventHub/namespaces",
-		"Microsoft.OperationalInsights/workspaces",
-		"Microsoft.ContainerService/managedClusters",
+		"Microsoft.Resources/subscriptions",
 	}
 }
 
