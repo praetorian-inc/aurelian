@@ -1,19 +1,15 @@
 package resourcegraph
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
-	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
 const listAllQuery = "Resources | project id, name, type, location, resourceGroup, tags, properties"
@@ -51,50 +47,15 @@ func (l *ResourceGraphLister) ListAll(sub azuretypes.SubscriptionInfo, out *pipe
 }
 
 func (l *ResourceGraphLister) querySubscription(sub azuretypes.SubscriptionInfo, query string, out *pipeline.P[model.AurelianModel]) error {
-	request := armresourcegraph.QueryRequest{
-		Query:         &query,
-		Subscriptions: []*string{&sub.ID},
-		Options: &armresourcegraph.QueryRequestOptions{
-			Top:          to.Ptr(l.options.PageSize),
-			ResultFormat: to.Ptr(armresourcegraph.ResultFormatObjectArray),
-		},
-	}
-
-	paginator := ratelimit.NewPaginator()
-	return paginator.Paginate(func() (bool, error) {
-		resp, err := l.queryResources(request)
+	return queryARG(l.cred, query, []string{sub.ID}, l.options.PageSize, func(row map[string]any) error {
+		resource, err := parseARGRow(row, sub)
 		if err != nil {
-			return false, fmt.Errorf("resource graph query failed: %w", err)
+			slog.Debug("skipping malformed ARG row", "error", err)
+			return nil
 		}
-
-		rows, ok := resp.Data.([]any)
-		if !ok {
-			return false, fmt.Errorf("unexpected response data type: %T", resp.Data)
-		}
-
-		for _, row := range rows {
-			resource, parseErr := parseARGRow(row, sub)
-			if parseErr != nil {
-				slog.Debug("skipping malformed ARG row", "error", parseErr)
-				continue
-			}
-			out.Send(resource)
-		}
-
-		hasMorePages := resp.SkipToken != nil && *resp.SkipToken != ""
-		if hasMorePages {
-			request.Options.SkipToken = resp.SkipToken
-		}
-		return hasMorePages, nil
+		out.Send(resource)
+		return nil
 	})
-}
-
-func (l *ResourceGraphLister) queryResources(request armresourcegraph.QueryRequest) (armresourcegraph.ClientResourcesResponse, error) {
-	client, err := armresourcegraph.NewClient(l.cred, nil)
-	if err != nil {
-		return armresourcegraph.ClientResourcesResponse{}, fmt.Errorf("failed to create resource graph client: %w", err)
-	}
-	return client.Resources(context.Background(), request, nil)
 }
 
 func parseARGRow(row any, sub azuretypes.SubscriptionInfo) (output.AzureResource, error) {

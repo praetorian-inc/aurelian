@@ -1,9 +1,7 @@
 package recon
 
 import (
-	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
 	"github.com/praetorian-inc/aurelian/pkg/azure/subscriptions"
@@ -15,11 +13,6 @@ import (
 
 func init() {
 	plugin.Register(&AzureListAllResourcesModule{})
-}
-
-type subscriptionResolver interface {
-	Resolve(id string, out *pipeline.P[azuretypes.SubscriptionInfo]) error
-	ListAllSubscriptions() ([]azuretypes.SubscriptionInfo, error)
 }
 
 type resourceLister interface {
@@ -88,20 +81,5 @@ func (m *AzureListAllResourcesModule) Run(_ plugin.Config, resources *pipeline.P
 }
 
 func (m *AzureListAllResourcesModule) resolveSubscriptionIDs(resolver subscriptionResolver) ([]string, error) {
-	ids := m.SubscriptionID
-	requestsAllSubscriptions := len(ids) == 1 && strings.EqualFold(ids[0], "all")
-	if !requestsAllSubscriptions {
-		return ids, nil
-	}
-
-	subs, err := resolver.ListAllSubscriptions()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list subscriptions: %w", err)
-	}
-
-	resolvedIDs := make([]string, 0, len(subs))
-	for _, sub := range subs {
-		resolvedIDs = append(resolvedIDs, sub.ID)
-	}
-	return resolvedIDs, nil
+	return resolveSubscriptionIDs(m.SubscriptionID, resolver)
 }

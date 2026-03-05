@@ -111,6 +111,6 @@ func validateTemplate(t *templates.ARGQueryTemplate) error {
 	if t.Severity == "" {
 		return fmt.Errorf("template severity is required")
 	}
-	t.Severity = output.NormalizeSeverity(t.Severity)
+	t.Severity = string(output.NormalizeSeverity(t.Severity))
 	return nil
 }
