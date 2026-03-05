@@ -1,0 +1,57 @@
+id: container_instances_public_access
+name: "Publicly Accessible Container Instances"
+description: "Detects Azure Container Instances with public IP addresses"
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - Container application exposed directly to the internet
+  - Could enable unauthorized access to containerized services
+  - May expose application vulnerabilities
+  - Container management endpoints could be accessible
+  - Sensitive data processed by container could be at risk
+
+  Triage Guidance:
+  - This finding confirms container has public IP address
+  - Container access depends on exposed ports and application authentication
+  - Manual testing required:
+    1. Identify exposed ports from container configuration
+    2. Test connectivity to public IP on exposed ports
+    3. Verify application authentication is enforced
+    4. Review container image for vulnerabilities
+  - Consider: Does this container need direct internet access?
+
+  Remediation Considerations:
+  - Use private IP addresses with VNet integration
+  - Place containers behind Application Gateway or Load Balancer
+  - Implement network security groups (NSGs)
+  - Restrict exposed ports to minimum required
+  - Enable container monitoring and logging
+  - Use managed identities for container authentication
+  - Regularly update container images
+  - Consider Azure Container Apps for better network isolation
+
+references:
+  - https://learn.microsoft.com/en-us/azure/container-instances/container-instances-virtual-network-concepts
+  - https://learn.microsoft.com/en-us/azure/container-instances/container-instances-vnet
+
+query: |
+  resources
+  | where type =~ 'Microsoft.ContainerInstance/containerGroups'
+  | extend ipAddressType = properties.ipAddress.type
+  | extend ipAddress = properties.ipAddress.ip
+  | extend ports = properties.ipAddress.ports
+  | extend osType = properties.osType
+  | where ipAddressType =~ 'Public'
+  | project
+      id,
+      name,
+      type,
+      location,
+      ipAddressType,
+      ipAddress,
+      ports,
+      osType,
+      subscriptionId,
+      resourceGroup

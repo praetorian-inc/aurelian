@@ -1,0 +1,83 @@
+id: apim_cross_tenant_signup_bypass
+name: Azure APIM Cross-Tenant Signup Bypass (GHSA-vcwf-73jp-r7mv)
+description: Detects Azure API Management instances vulnerable to cross-tenant signup bypass. When signup is disabled in the UI, the underlying API endpoint remains active and attackers can register accounts by directly calling the signup API with a modified Host header. This vulnerability exists regardless of identity provider configuration.
+severity: Medium
+category: ["Public Access", "arg-scan", "Authentication Bypass"]
+reportability: Manual Triage
+triageNotes: |
+  Vulnerability Overview:
+  This check identifies APIM instances vulnerable to GHSA-vcwf-73jp-r7mv - a cross-tenant signup bypass
+  that allows attackers to register accounts even when administrators have disabled signup in the portal UI.
+  Microsoft considers this behavior "by design" and has not patched it.
+
+  Root Cause:
+  - Disabling signup only hides the form in the portal UI
+  - The underlying signup API endpoint (/signup) remains active and accepts registration requests
+  - The signup API does not validate that requests originate from the same tenant's portal
+  - Attackers can craft requests from any source to register on any vulnerable instance
+
+  Attack Vector:
+  1. Attacker accesses their own APIM Developer Portal (or any with signup enabled)
+  2. Attacker fills in the signup form and intercepts the request
+  3. Attacker changes the Host header to the target instance
+  4. Account is created on the target despite signup being "disabled"
+
+  Vulnerable Configuration:
+  - Developer Portal is Enabled (properties.developerPortalStatus == 'Enabled')
+  - Signup API endpoint is active (tested by enricher)
+  - Non-Consumption SKU tier (Consumption has limited portal features)
+
+  NOT Vulnerable If:
+  - Developer Portal is completely disabled
+  - Signup API endpoint returns HTTP 404 (disabled)
+
+  Note: Identity provider configuration (Basic Auth vs Azure AD) does NOT affect this vulnerability.
+  The signup API works regardless of which authentication methods are configured.
+
+  Impact:
+  - Cross-tenant account creation on any APIM instance with Basic Auth
+  - Bypass of administrative signup restrictions
+  - Access to API documentation that may contain sensitive information
+  - Potential to request API subscription keys
+  - External attackers can register on "internal" portals
+
+  Triage Steps:
+  1. Review the enrichment output - it tests the signup API endpoint directly
+  2. If signup API responds with captcha/validation errors, the instance IS VULNERABLE
+  3. Check if signup is intentionally enabled (attack source) vs disabled in UI (bypass target)
+  4. Audit existing Developer Portal user accounts for unauthorized signups
+
+  Remediation:
+  Simply disabling signup in the Azure Portal UI is NOT sufficient! The signup API remains active.
+
+  1. DISABLE the Developer Portal completely if not needed:
+     - Navigate to APIM instance -> Developer Portal -> Portal Overview
+     - Disable the entire Developer Portal feature
+  2. OR verify signup API is truly disabled:
+     - Test POST to {developerPortalUrl}/signup
+     - Must return HTTP 404 (not 400 with validation errors)
+  3. Audit all existing Developer Portal accounts for unauthorized signups
+  4. Review user creation logs for API-based (non-UI) registrations
+  5. Consider migrating to Azure AD authentication and restricting signup to specific domains
+
+  Note: Removing identity providers alone does NOT fix this issue. The signup API must be disabled.
+references:
+  - https://github.com/bountyyfi/Azure-APIM-Cross-Tenant-Signup-Bypass/security/advisories/GHSA-vcwf-73jp-r7mv
+query: |
+  resources
+  | where type == "microsoft.apimanagement/service"
+  | where properties.developerPortalStatus == "Enabled"
+  | where sku.name != "Consumption"
+  | project
+      id,
+      name,
+      type,
+      location,
+      resourceGroup,
+      subscriptionId,
+      developerPortalStatus = tostring(properties.developerPortalStatus),
+      skuName = tostring(sku.name),
+      skuCapacity = toint(sku.capacity),
+      gatewayUrl = tostring(properties.gatewayUrl),
+      developerPortalUrl = tostring(properties.developerPortalUrl),
+      publicNetworkAccess = tostring(properties.publicNetworkAccess)

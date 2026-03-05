@@ -1,0 +1,50 @@
+id: app_configuration_public_access
+name: "Publicly Accessible App Configuration"
+description: "Detects Azure App Configuration stores with public network access enabled"
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - App Configuration endpoint exposed to the internet
+  - Could enable unauthorized access to application configuration secrets
+  - May allow configuration data exfiltration or manipulation
+  - Sensitive feature flags and connection strings could be exposed
+
+  Triage Guidance:
+  - This finding confirms network-level accessibility from internet
+  - App Configuration access is protected by access keys or Azure AD
+  - Manual testing required:
+    1. Verify configuration endpoint is accessible
+    2. Check if authentication is enforced
+    3. Review stored configuration values for sensitive data
+  - Consider: Can configuration store be restricted to known networks?
+
+  Remediation Considerations:
+  - Disable public network access if not required
+  - Implement IP restrictions for known application sources
+  - Use Azure Private Link for internal access
+  - Enable Azure AD authentication instead of access keys
+  - Rotate access keys regularly
+  - Use managed identities for application access
+  - Monitor configuration access attempts
+
+references:
+  - https://learn.microsoft.com/en-us/azure/azure-app-configuration/concept-enable-rbac
+  - https://learn.microsoft.com/en-us/azure/azure-app-configuration/howto-disable-access-key-authentication
+
+query: |
+  resources
+  | where type =~ 'Microsoft.AppConfiguration/configurationStores'
+  | extend publicNetworkAccess = tolower(coalesce(properties.publicNetworkAccess, 'enabled'))
+  | extend sku = sku.name
+  | where publicNetworkAccess != 'disabled'
+  | project
+      id,
+      name,
+      type,
+      location,
+      publicNetworkAccess,
+      sku,
+      subscriptionId,
+      resourceGroup

@@ -1,0 +1,89 @@
+id: openai_public_access
+name: Azure OpenAI Services Publicly Accessible
+description: Detects Azure OpenAI services with public network access enabled and no private endpoint connections. Azure OpenAI services are high-value LLM endpoints that should be restricted to private networks. Public exposure enables unauthorized API usage, cost exploitation, prompt injection attacks, and potential data exfiltration.
+severity: High
+category: ["Public Access", "arg-scan"]
+reportability: Manual Triage
+triageNotes: |
+  Important Context:
+  This scan identifies Azure OpenAI services that have public network access enabled AND no private endpoint connections.
+
+  Understanding Azure OpenAI Network Access:
+  - Azure OpenAI services are Azure Cognitive Services accounts with kind='OpenAI'
+  - These provide access to GPT-4, GPT-3.5, and other large language models
+  - API calls are authenticated via API keys or Azure AD
+  - Public network access means the service is accessible from the internet
+  - Private endpoints provide secure, private access from within a VNet
+
+  Key Security Concerns:
+  - High-value targets: LLM endpoints are expensive and contain sensitive business logic
+  - Cost exploitation: GPT-4 API costs $0.03-0.12 per 1K tokens; compromised keys can rack up thousands in hours
+  - Prompt injection: Attackers can use prompt injection techniques to exfiltrate data or manipulate responses
+  - Data leakage: Prompts may contain sensitive business data or PII
+  - Model abuse: Reputation damage from misuse of your OpenAI endpoints
+  - API quota exhaustion: Malicious usage can exhaust rate limits
+
+  Authentication Requirements:
+  - Azure OpenAI always requires authentication (API keys or Azure AD)
+  - However, if API keys are compromised or leaked, public access enables unlimited abuse
+  - Key rotation is not always immediate or comprehensive
+  - API keys may be inadvertently exposed in logs, code, or documentation
+
+  Triage Guidance:
+  1. Verify if this OpenAI service is intended for public API access (rare)
+  2. Check if API keys have been rotated recently or potentially exposed
+  3. Review Azure Monitor logs for unusual API usage patterns or spikes
+  4. Assess the sensitivity of models and data processed by this service
+  5. Determine if private endpoint access would be more appropriate
+  6. Check for IP restrictions or other network controls configured
+  7. Review API rate limits and cost alerts
+
+  Common Scenarios:
+  - Development/testing OpenAI services may not have private endpoints configured
+  - Public-facing chatbots or APIs may legitimately need public access
+  - Internal applications misconfigured for public access
+  - Legacy deployments before private endpoint adoption
+  - Services deployed without network security review
+
+  Risk Assessment:
+  - HIGH: Public access + no IP restrictions + powerful models (GPT-4)
+  - MEDIUM: Public access + IP restrictions or lower-tier models
+  - Consider: Data sensitivity, API key management, monitoring capabilities
+
+  Remediation Considerations:
+  - Deploy private endpoints for internal-only OpenAI services
+  - Set publicNetworkAccess to 'Disabled' if private endpoint is the only intended access path
+  - Configure network ACLs to restrict access to specific IP ranges if public access is necessary
+  - Implement Azure Private Link for secure connectivity from on-premises networks
+  - Enable Azure Monitor alerts for unusual API usage or cost spikes
+  - Rotate API keys regularly and audit key usage
+  - Consider using Azure AD authentication with managed identities instead of API keys
+  - Implement application-level rate limiting and input validation
+  - Review and strengthen prompt injection defenses
+  - Use Azure Cost Management to set spending limits and alerts
+references:
+  - https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/managed-identity
+  - https://learn.microsoft.com/en-us/azure/ai-services/openai/how-to/use-your-data-securely
+  - https://learn.microsoft.com/en-us/azure/ai-services/cognitive-services-virtual-networks
+  - https://learn.microsoft.com/en-us/azure/private-link/private-endpoint-overview
+  - https://learn.microsoft.com/en-us/azure/templates/microsoft.cognitiveservices/accounts
+  - https://github.com/projectdiscovery/nuclei-templates/blob/main/cloud/azure/aiservices/azure-openai-public-access-disabled.yaml
+query: |
+  resources
+  | where type =~ 'microsoft.cognitiveservices/accounts'
+  | where kind =~ 'OpenAI'
+  | extend publicNetworkAccess = tolower(coalesce(properties.publicNetworkAccess, 'Enabled'))
+  | extend hasPrivateEndpoint = isnotnull(properties.privateEndpointConnections) and
+      array_length(properties.privateEndpointConnections) > 0
+  | where publicNetworkAccess == 'enabled'
+  | where hasPrivateEndpoint == false
+  | project
+      id,
+      name,
+      type,
+      kind,
+      location,
+      resourceGroup,
+      publicNetworkAccess,
+      hasPrivateEndpoint,
+      subscriptionId

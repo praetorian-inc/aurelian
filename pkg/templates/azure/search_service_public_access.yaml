@@ -1,0 +1,53 @@
+id: search_service_public_access
+name: "Publicly Accessible Azure Search Service"
+description: "Detects Azure Search Services with public network access enabled and no IP restrictions"
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - Search index exposure to internet without access control
+  - Unauthorized search queries and data exfiltration
+  - Index modification or deletion attacks
+  - Information disclosure through search suggestions
+  - Resource exhaustion through excessive queries
+  - Business impact: data exposure, service disruption
+
+  Triage Guidance:
+  - This finding confirms network-level accessibility from internet
+  - Does NOT confirm authentication bypass
+  - Manual verification required:
+    1. Check Search Service endpoint: curl -v https://<service>.search.windows.net
+    2. Test index accessibility: curl -H "api-key: <QUERY-KEY>" https://<service>.search.windows.net/indexes
+    3. Review networkRuleSet configuration
+    4. Check if API keys are required (they should be)
+  - Consider: Does this Search Service need internet access? Can it use private endpoints?
+
+  Remediation Considerations:
+  - Disable public network access (requires private endpoints)
+  - Implement IP restrictions for known API consumers
+  - Use Azure Private Link for internal access
+  - Rotate API keys regularly
+  - Implement API key access control policies
+  - Monitor unusual search patterns
+
+references:
+  - https://learn.microsoft.com/en-us/azure/search/service-configure-firewall
+  - https://learn.microsoft.com/en-us/azure/search/conceptual-network-security-concepts
+
+query: |
+  resources
+  | where type =~ 'Microsoft.Search/searchServices'
+  | extend publicNetworkAccess = tolower(coalesce(properties.publicNetworkAccess, 'enabled'))
+  | extend hasNetworkRules = isnotnull(properties.networkRuleSet) and isnotnull(properties.networkRuleSet.ipRules)
+  | where publicNetworkAccess != 'disabled'
+  | where hasNetworkRules == false or array_length(properties.networkRuleSet.ipRules) == 0
+  | project
+      id,
+      name,
+      type,
+      location,
+      resourceGroup,
+      subscriptionId,
+      publicNetworkAccess,
+      skuName = properties.sku.name
