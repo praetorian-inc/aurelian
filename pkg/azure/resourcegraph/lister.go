@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -48,6 +49,59 @@ func (l *ResourceGraphLister) ListAll(sub azuretypes.SubscriptionInfo, out *pipe
 	}
 
 	return nil
+}
+
+// ListByTypes enumerates resources matching specific types for a subscription.
+func (l *ResourceGraphLister) ListByTypes(sub azuretypes.SubscriptionInfo, resourceTypes []string, out *pipeline.P[output.AzureResource]) error {
+	query := buildFilteredQuery(resourceTypes)
+	return l.querySubscriptionForResources(sub, query, out)
+}
+
+func (l *ResourceGraphLister) querySubscriptionForResources(sub azuretypes.SubscriptionInfo, query string, out *pipeline.P[output.AzureResource]) error {
+	request := armresourcegraph.QueryRequest{
+		Query:         &query,
+		Subscriptions: []*string{&sub.ID},
+		Options: &armresourcegraph.QueryRequestOptions{
+			Top:          to.Ptr(l.options.PageSize),
+			ResultFormat: to.Ptr(armresourcegraph.ResultFormatObjectArray),
+		},
+	}
+
+	paginator := ratelimit.NewPaginator()
+	return paginator.Paginate(func() (bool, error) {
+		resp, err := l.queryResources(request)
+		if err != nil {
+			return false, fmt.Errorf("resource graph query failed: %w", err)
+		}
+
+		rows, ok := resp.Data.([]any)
+		if !ok {
+			return false, fmt.Errorf("unexpected response data type: %T", resp.Data)
+		}
+
+		for _, row := range rows {
+			resource, parseErr := parseARGRow(row, sub)
+			if parseErr != nil {
+				slog.Debug("skipping malformed ARG row", "error", parseErr)
+				continue
+			}
+			out.Send(resource)
+		}
+
+		hasMorePages := resp.SkipToken != nil && *resp.SkipToken != ""
+		if hasMorePages {
+			request.Options.SkipToken = resp.SkipToken
+		}
+		return hasMorePages, nil
+	})
+}
+
+func buildFilteredQuery(resourceTypes []string) string {
+	quoted := make([]string, len(resourceTypes))
+	for i, rt := range resourceTypes {
+		quoted[i] = "'" + strings.ToLower(rt) + "'"
+	}
+	return "Resources | where type in~ (" + strings.Join(quoted, ",") + ") | project id, name, type, location, resourceGroup, tags, properties"
 }
 
 func (l *ResourceGraphLister) querySubscription(sub azuretypes.SubscriptionInfo, query string, out *pipeline.P[model.AurelianModel]) error {
