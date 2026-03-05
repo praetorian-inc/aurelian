@@ -12,28 +12,20 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
-// ListBucketsAPI abstracts the S3 ListBuckets call for testing.
-type ListBucketsAPI interface {
-	ListBuckets(ctx context.Context, input *s3.ListBucketsInput, opts ...func(*s3.Options)) (*s3.ListBucketsOutput, error)
-}
-
 // S3Enumerator enumerates S3 buckets using the native SDK with server-side
 // region filtering, avoiding the duplicate enumeration that CloudControl causes.
 type S3Enumerator struct {
 	plugin.AWSCommonRecon
-	provider      *AWSConfigProvider
-	accountID     string
-	clientFactory func(region string) (ListBucketsAPI, error)
+	provider  *AWSConfigProvider
+	accountID string
 }
 
 // NewS3Enumerator creates an S3Enumerator that uses the native S3 SDK.
 func NewS3Enumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider) *S3Enumerator {
-	l := &S3Enumerator{
+	return &S3Enumerator{
 		AWSCommonRecon: opts,
 		provider:       provider,
 	}
-	l.clientFactory = l.defaultClientFactory
-	return l
 }
 
 // ResourceType returns the CloudControl type string for S3 buckets.
@@ -80,10 +72,11 @@ func (l *S3Enumerator) resolveAccountID() error {
 }
 
 func (l *S3Enumerator) listBucketsInRegion(region string, out *pipeline.P[output.AWSResource]) error {
-	client, err := l.clientFactory(region)
+	cfg, err := l.provider.GetAWSConfig(region)
 	if err != nil {
 		return fmt.Errorf("create S3 client for %s: %w", region, err)
 	}
+	client := s3.NewFromConfig(*cfg)
 
 	var continuationToken *string
 	for {
@@ -117,12 +110,4 @@ func (l *S3Enumerator) listBucketsInRegion(region string, out *pipeline.P[output
 	}
 
 	return nil
-}
-
-func (l *S3Enumerator) defaultClientFactory(region string) (ListBucketsAPI, error) {
-	cfg, err := l.provider.GetAWSConfig(region)
-	if err != nil {
-		return nil, err
-	}
-	return s3.NewFromConfig(*cfg), nil
 }
