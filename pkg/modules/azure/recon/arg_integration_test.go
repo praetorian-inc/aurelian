@@ -68,12 +68,6 @@ func TestARG_OpenAIPublicAccess(t *testing.T) {
 	t.Skip("skeleton — enricher/module implementation pending")
 }
 
-func TestARG_NebulaPublicAccess(t *testing.T) {
-	fixture := testutil.NewAzureFixture(t, "azure/recon/arg/nebula-public-access")
-	fixture.Setup()
-	t.Skip("skeleton — enricher/module implementation pending")
-}
-
 func TestARG_AutomationSecrets(t *testing.T) {
 	fixture := testutil.NewAzureFixture(t, "azure/recon/arg/automation-secrets")
 	fixture.Setup()
