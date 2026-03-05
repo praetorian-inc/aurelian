@@ -126,7 +126,8 @@ func (l *S3Enumerator) listBucketsInRegion(region string, out *pipeline.P[output
 	client := s3.NewFromConfig(*cfg)
 
 	var continuationToken *string
-	for {
+	paginator := ratelimit.NewPaginator()
+	return paginator.Paginate(func() (bool, error) {
 		input := &s3.ListBucketsInput{
 			BucketRegion: &region,
 		}
@@ -136,7 +137,7 @@ func (l *S3Enumerator) listBucketsInRegion(region string, out *pipeline.P[output
 
 		result, err := client.ListBuckets(context.Background(), input)
 		if err != nil {
-			return fmt.Errorf("list buckets in %s: %w", region, err)
+			return false, fmt.Errorf("list buckets in %s: %w", region, err)
 		}
 
 		for _, bucket := range result.Buckets {
@@ -151,10 +152,7 @@ func (l *S3Enumerator) listBucketsInRegion(region string, out *pipeline.P[output
 		}
 
 		continuationToken = result.ContinuationToken
-		if continuationToken == nil {
-			break
-		}
-	}
-
-	return nil
+		hasMorePages := continuationToken != nil
+		return hasMorePages, nil
+	})
 }
