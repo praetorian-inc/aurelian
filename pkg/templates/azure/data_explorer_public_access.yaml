@@ -1,0 +1,57 @@
+id: data_explorer_public_access
+name: "Publicly Accessible Data Explorer (Kusto) Cluster"
+description: "Detects Azure Data Explorer (Kusto) clusters with public network access enabled"
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - Data Explorer query endpoint exposed to the internet
+  - Could enable unauthorized access to analytics databases
+  - May allow data exfiltration or manipulation
+  - Sensitive telemetry and time-series data could be exposed
+  - Query execution could be abused for resource exhaustion
+
+  Triage Guidance:
+  - This finding confirms network-level accessibility from internet
+  - Data Explorer access is protected by Azure AD authentication
+  - Manual testing required:
+    1. Verify cluster URI is accessible
+    2. Check if Azure AD authentication is enforced
+    3. Review database access permissions
+    4. Test query endpoint accessibility
+  - Consider: Can cluster be restricted to known networks?
+
+  Remediation Considerations:
+  - Disable public network access if not required
+  - Implement IP restrictions for known data sources
+  - Use Azure Private Link for internal access
+  - Enforce Azure AD authentication
+  - Enable database-level access controls
+  - Use managed identities for application access
+  - Monitor query execution attempts
+  - Review and restrict database permissions
+
+references:
+  - https://learn.microsoft.com/en-us/azure/data-explorer/security-network-overview
+  - https://learn.microsoft.com/en-us/azure/data-explorer/security-network-private-endpoint
+
+query: |
+  resources
+  | where type =~ 'Microsoft.Kusto/clusters'
+  | extend publicNetworkAccess = coalesce(properties.publicNetworkAccess, 'Enabled')
+  | extend sku = sku.name
+  | extend state = properties.state
+  | extend uri = properties.uri
+  | where publicNetworkAccess != 'Disabled'
+  | project
+      id,
+      name,
+      type,
+      location,
+      publicNetworkAccess,
+      sku,
+      state,
+      uri,
+      subscriptionId,
+      resourceGroup

@@ -1,0 +1,55 @@
+id: container_apps_public_access
+name: "Publicly Accessible Container Apps"
+description: "Detects Azure Container Apps with external ingress enabled"
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - Container App ingress exposed directly to the internet
+  - Could enable unauthorized access to containerized applications
+  - May expose application vulnerabilities or sensitive APIs
+  - Application data could be intercepted or exfiltrated
+  - Potential for abuse of application compute resources
+
+  Triage Guidance:
+  - This finding confirms container app has external ingress enabled
+  - Container App access depends on application-level authentication
+  - Manual testing required:
+    1. Verify FQDN is accessible from internet
+    2. Check if application authentication is enforced
+    3. Review exposed endpoints and API routes
+    4. Test for common web application vulnerabilities
+  - Consider: Does this app need direct internet access?
+
+  Remediation Considerations:
+  - Set ingress to internal-only if not required externally
+  - Implement authentication via Easy Auth or custom middleware
+  - Use IP restrictions on the Container App Environment
+  - Enable traffic splitting for controlled deployments
+  - Implement CORS policies appropriately
+  - Monitor application access logs
+  - Use managed identities for backend service access
+  - Consider Azure Front Door for WAF protection
+
+references:
+  - https://learn.microsoft.com/en-us/azure/container-apps/ingress-overview
+  - https://learn.microsoft.com/en-us/azure/container-apps/vnet-custom-internal
+
+query: |
+  resources
+  | where type =~ 'Microsoft.App/containerApps'
+  | extend ingressExternal = properties.configuration.ingress.external
+  | extend ingressFqdn = properties.configuration.ingress.fqdn
+  | extend targetPort = properties.configuration.ingress.targetPort
+  | where ingressExternal == true
+  | project
+      id,
+      name,
+      type,
+      location,
+      ingressExternal,
+      ingressFqdn,
+      targetPort,
+      subscriptionId,
+      resourceGroup

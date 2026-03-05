@@ -1,0 +1,59 @@
+id: ml_workspace_public_access
+name: "Publicly Accessible Machine Learning Workspace"
+description: "Detects Azure Machine Learning workspaces with public network access enabled"
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - ML workspace endpoints exposed to the internet
+  - Could enable unauthorized access to ML models and training data
+  - May expose model endpoints, compute instances, and notebooks
+  - Sensitive training data and model intellectual property could be exposed
+  - Compute resources could be abused for unauthorized workloads
+
+  Triage Guidance:
+  - This finding confirms network-level accessibility from internet
+  - ML workspace access is protected by Azure AD authentication
+  - Manual testing required:
+    1. Verify workspace discovery URL is accessible
+    2. Check if Azure AD authentication is enforced
+    3. Review workspace access controls
+    4. Test REST API endpoint accessibility
+  - Consider: Can workspace be restricted to corporate networks?
+
+  Remediation Considerations:
+  - Disable public network access if not required
+  - Use Azure Private Link for internal access
+  - Implement managed virtual network isolation
+  - Enable Azure AD Conditional Access policies
+  - Use managed identities for compute access
+  - Monitor workspace access and experiment runs
+  - Review and restrict workspace role assignments
+  - Secure model endpoints with authentication
+
+references:
+  - https://learn.microsoft.com/en-us/azure/machine-learning/how-to-configure-private-link
+  - https://learn.microsoft.com/en-us/azure/machine-learning/how-to-secure-workspace-vnet
+
+query: |
+  resources
+  | where type =~ 'Microsoft.MachineLearningServices/workspaces'
+  | extend publicNetworkAccess = tolower(coalesce(properties.publicNetworkAccess, 'enabled'))
+  | extend sku = sku.name
+  | extend discoveryUrl = properties.discoveryUrl
+  | extend notebookFqdn = properties.notebookInfo.fqdn
+  | extend isPrivateLinkEnabled = properties.notebookInfo.isPrivateLinkEnabled
+  | where publicNetworkAccess != 'disabled'
+  | project
+      id,
+      name,
+      type,
+      location,
+      publicNetworkAccess,
+      sku,
+      discoveryUrl,
+      notebookFqdn,
+      isPrivateLinkEnabled,
+      subscriptionId,
+      resourceGroup

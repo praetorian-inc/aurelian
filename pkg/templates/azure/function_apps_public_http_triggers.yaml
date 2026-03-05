@@ -1,0 +1,118 @@
+id: function_apps_public_http_triggers
+name: "Publicly Accessible Azure Function Apps with HTTP Triggers"
+description: Detects Azure Function Apps with public network access enabled and HTTP-triggered functions accessible from the internet. The enricher uses the Management API to check IP restrictions, EasyAuth, deployment slots, and trigger auth levels — properties that ARG does not index.
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Important Context:
+  This scan identifies Azure Function Apps that are publicly accessible from the internet.
+  NOTE: ARG does not index siteConfig.ipSecurityRestrictions, so IP restriction filtering
+  is handled by the enricher via the Management API (not KQL). The enricher uses the Azure Management API
+  (Reader access) to enumerate all functions and HTTP trigger metadata (auth levels, invoke URLs,
+  custom routes, disabled state) across both the production slot and any deployment slots. It then
+  selectively probes only anonymous HTTP triggers at their actual invoke URLs, checks SCM/Kudu
+  exposure, and cross-references EasyAuth platform authentication status as a compensating control.
+
+  Potential Risk:
+  - Public HTTP endpoints allow anonymous function invocation
+  - Potential for code execution through malicious input
+  - Function key exposure through URL parameters or headers
+  - Resource exhaustion through excessive function calls
+  - Information disclosure through function responses or error messages
+  - Business impact: unauthorized code execution, data exposure, unexpected charges
+  - Direct internet exposure of backend functions not intended for public access
+
+  Hosting Plan and Private Endpoint Context:
+  - Consumption plan Function Apps CANNOT use private endpoints — this is an Azure platform constraint.
+    Findings on Consumption plan apps (identifiable by hostingPlan referencing a Consumption server farm)
+    may be expected/unavoidable and should be triaged as lower priority unless auth controls are weak.
+  - Premium (EP1/EP2/EP3) and Dedicated (App Service Plan) Function Apps fully support private endpoints.
+    These findings are higher priority for remediation.
+  - hasPrivateEndpoint is projected as an enrichment column — it does NOT affect the filter logic.
+    Use it during triage to assess whether the Function App has any private connectivity fallback.
+
+  Escalate to High Priority If:
+  - The function has ANY trigger with Anonymous auth level (no function key or AAD token required)
+    AND the function's managed identity has broad RBAC assignments (Contributor, Owner, high-privilege
+    data plane roles) — this combination allows unauthenticated callers to indirectly abuse cloud permissions
+  - The Function App processes sensitive data (PII, financial, healthcare) without network isolation
+
+  Triage Guidance:
+  - This finding confirms network-level accessibility from internet
+  - Does NOT confirm code execution vulnerability (depends on function logic)
+  - The enricher checks IP restrictions via Management API — if restrictions are present,
+    the enricher reports them as context (ARG cannot filter on this property)
+  - Steps:
+    1. Check the hosting plan (hostingPlan field) — Consumption plan = lower remediation priority
+    2. Check enricher IP restriction results — if restrictions are present, severity is lower
+    3. Check enricher HTTP probe results for actual reachability (status codes)
+    4. Review Authorization level (Anonymous, Function, Admin) per trigger
+    5. Check if function keys are properly protected
+    6. Review hasPrivateEndpoint — if false on a Premium/Dedicated plan, flag for PE remediation
+    7. Check if fronted by APIM or Azure Front Door with WAF policies
+    8. Verify EasyAuth/AAD configuration as a compensating control
+  - Consider: Does this function need internet access? Should it require authentication?
+
+  Compensating Controls to Evaluate:
+  - Function Keys (host/function-level keys): Require a valid key in the request — weaker than
+    identity-based auth (keys can be leaked or shared), but meaningful for public webhook scenarios
+  - Azure AD / Entra ID Authentication (EasyAuth): Callers must present a valid AAD token — strong
+    compensating control; verify via the Authentication blade in the portal
+  - API Management (APIM) fronting: If the function is only callable via APIM with restrictive
+    network policies, direct public access may be intentionally blocked at the APIM layer
+
+  Known Limitation — Private Endpoint Connection State:
+  The hasPrivateEndpoint field counts any entry in privateEndpointConnections, including connections
+  in "Pending" or "Rejected" state. A pending PE provides no actual network isolation. During triage,
+  verify that any private endpoint shown is in "Approved" state via the Azure portal or
+  az network private-endpoint-connection list.
+
+  Remediation Considerations:
+  - Private: Set publicNetworkAccess to 'Disabled' + configure private endpoint (requires Premium/Dedicated plan)
+  - Public but hardened: Enable EasyAuth with Entra ID, enforce HTTPS-only, restrict trigger auth level
+    to Function or Admin key minimum, configure IP restrictions for known source ranges
+  - Consumption plan: Enforce Entra ID auth or function keys, enable HTTPS-only, add IP restrictions
+    where source IPs are known; private endpoint isolation requires plan upgrade
+  - Rotate function keys regularly
+  - Implement API Management in front of functions for rate limiting
+
+references:
+  - https://learn.microsoft.com/en-us/azure/azure-functions/functions-networking-options
+  - https://learn.microsoft.com/en-us/azure/azure-functions/functions-bindings-http-webhook
+  - https://learn.microsoft.com/en-us/azure/azure-functions/security-concepts
+  - https://learn.microsoft.com/en-us/azure/azure-functions/functions-create-private-site-access
+  - https://learn.microsoft.com/en-us/azure/app-service/networking-features
+  - https://learn.microsoft.com/en-us/azure/templates/microsoft.web/sites
+  - https://github.com/projectdiscovery/nuclei-templates/blob/main/cloud/azure/functions/azure-functionapp-public-exposure.yaml
+
+query: |
+  resources
+  | where type =~ 'Microsoft.Web/sites'
+  | where kind contains 'functionapp'
+  | where kind !contains 'workflowapp'
+  | extend publicNetworkAccess = tolower(coalesce(properties.publicNetworkAccess, 'enabled'))
+  | where publicNetworkAccess != 'disabled'
+  // NOTE: ARG does NOT index siteConfig.ipSecurityRestrictions (always null).
+  // IP restriction checks are performed by the enricher via Management API.
+  // Enrichment columns — provide architectural context without affecting filter logic
+  // Pattern C: coalesce array_length to 0 when property is null, making null-safety explicit.
+  // Note: this counts PE connections in any state (Pending/Rejected/Approved); verify PE
+  // state during triage as only Approved connections provide actual network isolation.
+  | extend peCount = coalesce(array_length(properties.privateEndpointConnections), 0)
+  | extend hasPrivateEndpoint = peCount > 0
+  | extend hostingPlan = tostring(properties.serverFarmId)
+  | extend httpsOnly = coalesce(tobool(properties.httpsOnly), false)
+  | project
+      id,
+      name,
+      type,
+      kind,
+      location,
+      resourceGroup,
+      subscriptionId,
+      publicNetworkAccess,
+      hasPrivateEndpoint,
+      hostingPlan,
+      httpsOnly,
+      defaultHostName = properties.defaultHostName

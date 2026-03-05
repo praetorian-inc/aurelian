@@ -1,0 +1,60 @@
+id: api_management_public_access
+name: "Publicly Accessible Azure API Management Gateway"
+description: "Detects Azure API Management instances not protected by internal virtual network isolation (publicNetworkAccess enabled and virtualNetworkType != 'Internal')"
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - API gateway exposed directly to the internet
+  - Potential for API enumeration and abuse
+  - Threat actor can discover upstream backend services
+  - API key and subscription key exposure
+  - Denial of service attacks against gateway
+  - API gateway credential theft and reuse
+  - Business impact: API service disruption, backend exposure, data breach
+
+  Triage Guidance:
+  - This finding confirms network-level accessibility from internet
+  - Does NOT confirm authentication bypass (APIM has built-in auth)
+  - Manual verification required:
+    1. Check gateway accessibility: curl -v https://<apim-name>.azure-api.net
+    2. Test API endpoint: curl -H "Ocp-Apim-Subscription-Key: <KEY>" https://<apim-name>.azure-api.net/api/endpoint
+    3. Verify virtualNetworkType: should be 'Internal' for true private deployment
+    4. Check if publicNetworkAccess is explicitly disabled
+    5. Review backend target URLs (may expose internal services)
+  - Consider: Is this APIM serving external APIs or internal only? Should it use private endpoints?
+
+  Remediation Considerations:
+  - Implement as 'Internal' deployment (requires Premium SKU + VNet)
+  - Use private endpoints and Azure Private Link
+  - Disable public network access if internal only
+  - Implement API throttling and rate limiting
+  - Rotate subscription keys regularly
+  - Use managed identity for backend authentication
+  - Implement API versioning and backward compatibility management
+  - Add Azure DDoS Protection for additional resilience
+
+references:
+  - https://learn.microsoft.com/en-us/azure/api-management/virtual-network-concepts
+  - https://learn.microsoft.com/en-us/azure/api-management/api-management-using-with-internal-vnet
+  - https://learn.microsoft.com/en-us/azure/api-management/security-baseline
+
+query: |
+  resources
+  | where type =~ 'Microsoft.ApiManagement/service'
+  | extend publicNetworkAccess = tolower(coalesce(properties.publicNetworkAccess, 'enabled'))
+  | extend virtualNetworkType = tolower(coalesce(properties.virtualNetworkType, 'none'))
+  | where publicNetworkAccess != 'disabled'
+  | where virtualNetworkType != 'internal'
+  | project
+      id,
+      name,
+      type,
+      location,
+      resourceGroup,
+      subscriptionId,
+      publicNetworkAccess,
+      virtualNetworkType,
+      skuName = properties.sku.name,
+      skuCapacity = properties.sku.capacity
