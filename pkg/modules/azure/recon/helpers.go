@@ -2,6 +2,11 @@ package recon
 
 import (
 	"fmt"
+	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
+	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
+	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"strings"
 )
 
@@ -20,4 +25,14 @@ func resolveSubscriptionIDs(ids []string, resolver subscriptionResolver) ([]stri
 		return resolved, nil
 	}
 	return ids, nil
+}
+
+func subscriptionToListerInput(sub azuretypes.SubscriptionInfo, out *pipeline.P[resourcegraph.ListerInput]) error {
+	out.Send(resourcegraph.ListerInput{Subscription: sub})
+	return nil
+}
+
+func toAurelianModel(r output.AzureResource, out *pipeline.P[model.AurelianModel]) error {
+	out.Send(r)
+	return nil
 }

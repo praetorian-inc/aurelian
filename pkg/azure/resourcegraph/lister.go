@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
-	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
@@ -18,6 +18,14 @@ import (
 )
 
 const listAllQuery = "Resources | project id, name, type, location, resourceGroup, tags, properties"
+
+// ListerInput provides the subscription and optional resource type filter for
+// a Resource Graph query. When ResourceTypes is nil or empty, all resources are
+// returned. This mirrors the CloudControlLister pattern from pkg/aws/cloudcontrol.
+type ListerInput struct {
+	Subscription  azuretypes.SubscriptionInfo
+	ResourceTypes []string // optional — when set, only these types are queried
+}
 
 // Options configures the ResourceGraphLister behavior.
 type Options struct {
@@ -41,17 +49,26 @@ func NewResourceGraphLister(cred azcore.TokenCredential, opts *Options) *Resourc
 	return lister
 }
 
-// ListAll enumerates all resources for a subscription using the default KQL query.
-func (l *ResourceGraphLister) ListAll(sub azuretypes.SubscriptionInfo, out *pipeline.P[model.AurelianModel]) error {
-	err := l.querySubscription(sub, listAllQuery, out)
-	if err != nil {
-		return fmt.Errorf("failed to query subscription %s: %w", sub.ID, err)
+// List is a pipeline-compatible method that enumerates Azure resources for a
+// subscription. When input.ResourceTypes is set, only matching types are
+// returned; otherwise all resources are listed.
+func (l *ResourceGraphLister) List(input ListerInput, out *pipeline.P[output.AzureResource]) error {
+	query := listAllQuery
+	if len(input.ResourceTypes) > 0 {
+		query = buildFilteredQuery(input.ResourceTypes)
 	}
-
-	return nil
+	return l.querySubscription(input.Subscription, query, out)
 }
 
-func (l *ResourceGraphLister) querySubscription(sub azuretypes.SubscriptionInfo, query string, out *pipeline.P[model.AurelianModel]) error {
+func buildFilteredQuery(resourceTypes []string) string {
+	quoted := make([]string, len(resourceTypes))
+	for i, rt := range resourceTypes {
+		quoted[i] = "'" + strings.ToLower(rt) + "'"
+	}
+	return "Resources | where type in~ (" + strings.Join(quoted, ",") + ") | project id, name, type, location, resourceGroup, tags, properties"
+}
+
+func (l *ResourceGraphLister) querySubscription(sub azuretypes.SubscriptionInfo, query string, out *pipeline.P[output.AzureResource]) error {
 	request := armresourcegraph.QueryRequest{
 		Query:         &query,
 		Subscriptions: []*string{&sub.ID},

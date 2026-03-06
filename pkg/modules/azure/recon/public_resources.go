@@ -95,7 +95,7 @@ func (m *AzurePublicResourcesModule) Run(_ plugin.Config, out *pipeline.P[model.
 	}
 
 	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential)
-	subscriptionIDs, err := resolveSubscriptionIDs(m.SubscriptionID, resolver)
+	subscriptionIDs, err := resolveSubscriptionIDs(m.SubscriptionIDs, resolver)
 	if err != nil {
 		return err
 	}

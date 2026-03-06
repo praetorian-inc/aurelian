@@ -7,6 +7,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/azure/subscriptions"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
@@ -21,7 +22,7 @@ type subscriptionResolver interface {
 }
 
 type resourceLister interface {
-	ListAll(sub azuretypes.SubscriptionInfo, out *pipeline.P[model.AurelianModel]) error
+	List(input resourcegraph.ListerInput, out *pipeline.P[output.AzureResource]) error
 }
 
 // ListAllConfig holds parameters for the Azure list-all module.
@@ -65,7 +66,7 @@ func (m *AzureListAllResourcesModule) Parameters() any {
 func (m *AzureListAllResourcesModule) Run(_ plugin.Config, resources *pipeline.P[model.AurelianModel]) error {
 	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential)
 
-	subscriptionIDs, err := resolveSubscriptionIDs(m.SubscriptionID, resolver)
+	subscriptionIDs, err := resolveSubscriptionIDs(m.SubscriptionIDs, resolver)
 	if err != nil {
 		return err
 	}
@@ -79,10 +80,14 @@ func (m *AzureListAllResourcesModule) Run(_ plugin.Config, resources *pipeline.P
 	resolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
 	pipeline.Pipe(idStream, resolver.Resolve, resolvedSubs)
 
+	inputs := pipeline.New[resourcegraph.ListerInput]()
+	pipeline.Pipe(resolvedSubs, subscriptionToListerInput, inputs)
+
 	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, nil)
-	pipeline.Pipe(resolvedSubs, lister.ListAll, resources)
+	listed := pipeline.New[output.AzureResource]()
+	pipeline.Pipe(inputs, lister.List, listed)
+
+	pipeline.Pipe(listed, toAurelianModel, resources)
 
 	return resources.Wait()
 }
-
-
