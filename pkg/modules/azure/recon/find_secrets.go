@@ -82,7 +82,7 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 	}()
 
 	resolver := subscriptions.NewSubscriptionResolver(c.AzureCredential)
-	subscriptionIDs, err := resolveSubscriptionIDs(c.AzureCommonRecon, resolver)
+	subscriptionIDs, err := resolveSubscriptionIDs(c.SubscriptionIDs, resolver)
 	if err != nil {
 		return fmt.Errorf("failed to resolve subscriptions: %w", err)
 	}

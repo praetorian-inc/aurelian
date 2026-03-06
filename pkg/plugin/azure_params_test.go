@@ -10,14 +10,14 @@ import (
 func TestAzureCommonRecon_ParameterBinding(t *testing.T) {
 	cfg := Config{
 		Args: map[string]any{
-			"subscription-id": []string{"sub-123", "sub-456"},
+			"subscription-ids": []string{"sub-123", "sub-456"},
 		},
 	}
 
 	var params AzureCommonRecon
 	err := Bind(cfg, &params)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"sub-123", "sub-456"}, params.SubscriptionID)
+	assert.Equal(t, []string{"sub-123", "sub-456"}, params.SubscriptionIDs)
 }
 
 func TestAzureCommonRecon_ParameterTags(t *testing.T) {
@@ -27,7 +27,7 @@ func TestAzureCommonRecon_ParameterTags(t *testing.T) {
 
 	found := false
 	for _, param := range p {
-		if param.Name == "subscription-id" {
+		if param.Name == "subscription-ids" {
 			found = true
 			assert.False(t, param.Required)
 			assert.Equal(t, []string{"all"}, param.Default)
@@ -44,5 +44,5 @@ func TestAzureCommonRecon_DefaultSubscriptionID(t *testing.T) {
 	var params AzureCommonRecon
 	err := Bind(cfg, &params)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"all"}, params.SubscriptionID)
+	assert.Equal(t, []string{"all"}, params.SubscriptionIDs)
 }

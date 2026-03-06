@@ -113,11 +113,11 @@ func TestResourceGraphListerListByTypes(t *testing.T) {
 
 	t.Run("returns only requested resource types", func(t *testing.T) {
 		allowed := map[string]bool{
-			"microsoft.compute/virtualmachines":         true,
-			"microsoft.storage/storageaccounts":         true,
-			"microsoft.network/virtualnetworks":         true,
-			"microsoft.keyvault/vaults":                 true,
-			"microsoft.network/networksecuritygroups":   true,
+			"microsoft.compute/virtualmachines":       true,
+			"microsoft.storage/storageaccounts":       true,
+			"microsoft.network/virtualnetworks":       true,
+			"microsoft.keyvault/vaults":               true,
+			"microsoft.network/networksecuritygroups": true,
 		}
 		for _, r := range results {
 			assert.True(t, allowed[r.ResourceType],
@@ -156,7 +156,7 @@ func TestResourceGraphListerListByTypes(t *testing.T) {
 		for _, r := range results {
 			assert.NotEmpty(t, r.ResourceID, "ResourceID should be populated")
 			assert.NotEmpty(t, r.ResourceType, "ResourceType should be populated")
-			assert.NotEmpty(t, r.SubscriptionID, "SubscriptionID should be populated")
+			assert.NotEmpty(t, r.SubscriptionID, "SubscriptionIDs should be populated")
 			assert.NotEmpty(t, r.DisplayName, "DisplayName should be populated")
 			assert.NotEmpty(t, r.Location, "Location should be populated")
 			assert.NotEmpty(t, r.ResourceGroup, "ResourceGroup should be populated")

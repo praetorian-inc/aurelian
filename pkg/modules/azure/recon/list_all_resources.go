@@ -66,7 +66,7 @@ func (m *AzureListAllResourcesModule) Parameters() any {
 func (m *AzureListAllResourcesModule) Run(_ plugin.Config, resources *pipeline.P[model.AurelianModel]) error {
 	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential)
 
-	subscriptionIDs, err := resolveSubscriptionIDs(m.SubscriptionID, resolver)
+	subscriptionIDs, err := resolveSubscriptionIDs(m.SubscriptionIDs, resolver)
 	if err != nil {
 		return err
 	}

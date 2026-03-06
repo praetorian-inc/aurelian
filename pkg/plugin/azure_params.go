@@ -16,7 +16,7 @@ type AzureReconBase struct {
 // AzureCommonRecon contains common parameters for Azure reconnaissance modules.
 type AzureCommonRecon struct {
 	AzureReconBase
-	SubscriptionID  []string               `param:"subscription-id" desc:"Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions" default:"all" shortcode:"s"`
+	SubscriptionIDs []string               `param:"subscription-ids" desc:"Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions" default:"all" shortcode:"s"`
 	AzureCredential azcore.TokenCredential `param:"-"`
 }
 
