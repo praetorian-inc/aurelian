@@ -152,6 +152,10 @@ func enrichResult(cfg plugin.AzureEnricherConfig) func(templates.ARGQueryResult,
 				result.Properties["enrichmentCommands"] = allCommands
 			}
 		}
+		if result.Suppressed {
+			slog.Info("suppressed false positive", "template", result.TemplateID, "resource", result.ResourceID, "reason", result.SuppressReason)
+			return nil
+		}
 		out.Send(result)
 		return nil
 	}
