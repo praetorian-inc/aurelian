@@ -30,7 +30,7 @@ type ResourceEnumerator interface {
 // falling back to CloudControlEnumerator for unregistered types.
 type Enumerator struct {
 	enumerators map[string]ResourceEnumerator
-	cc      *CloudControlEnumerator
+	cc          *CloudControlEnumerator
 }
 
 // NewEnumerator creates an Enumerator with CloudControl fallback and registers
@@ -40,10 +40,16 @@ func NewEnumerator(opts plugin.AWSCommonRecon) *Enumerator {
 	cc := NewCloudControlEnumeratorWithProvider(opts, provider)
 	e := &Enumerator{
 		enumerators: make(map[string]ResourceEnumerator),
-		cc:      cc,
+		cc:          cc,
 	}
 	// Register built-in enumerators here as they are implemented.
 	e.Register(NewS3Enumerator(opts, provider))
+
+	iamEnum := NewIAMEnumerator(opts, provider)
+	e.Register(iamEnum.RoleEnumerator())
+	e.Register(iamEnum.PolicyEnumerator())
+	e.Register(iamEnum.UserEnumerator())
+
 	return e
 }
 
