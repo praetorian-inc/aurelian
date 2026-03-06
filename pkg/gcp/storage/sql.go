@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
@@ -24,7 +25,7 @@ func NewSQLInstanceLister(clientOptions []option.ClientOption) *SQLInstanceListe
 
 // List enumerates all Cloud SQL instances for the given project.
 func (l *SQLInstanceLister) List(projectID string, out *pipeline.P[output.GCPResource]) error {
-	svc, err := sqladmin.NewService(nil, l.clientOptions...)
+	svc, err := sqladmin.NewService(context.Background(), l.clientOptions...)
 	if err != nil {
 		return fmt.Errorf("creating sqladmin client: %w", err)
 	}
@@ -77,3 +78,5 @@ func (l *SQLInstanceLister) List(projectID string, out *pipeline.P[output.GCPRes
 
 	return nil
 }
+
+func (l *SQLInstanceLister) ResourceType() string { return "sqladmin.googleapis.com/Instance" }

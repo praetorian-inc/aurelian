@@ -33,8 +33,26 @@ func TestResolveResourceTypes_InvalidType(t *testing.T) {
 	assert.Contains(t, err.Error(), "unsupported resource type")
 }
 
-func TestValidateResourceTypes(t *testing.T) {
-	assert.NoError(t, validateResourceTypes([]string{"vm", "bucket"}))
-	assert.NoError(t, validateResourceTypes([]string{"all"}))
-	assert.Error(t, validateResourceTypes([]string{"bogus"}))
+func TestResolveAlias_CanonicalMatch(t *testing.T) {
+	got, err := resolveAlias("compute.googleapis.com/Instance")
+	assert.NoError(t, err)
+	assert.Equal(t, "compute.googleapis.com/Instance", got)
 }
+
+func TestResolveAlias_AliasMatch(t *testing.T) {
+	got, err := resolveAlias("vm")
+	assert.NoError(t, err)
+	assert.Equal(t, "compute.googleapis.com/Instance", got)
+}
+
+func TestResolveAlias_CaseInsensitive(t *testing.T) {
+	got, err := resolveAlias("VM")
+	assert.NoError(t, err)
+	assert.Equal(t, "compute.googleapis.com/Instance", got)
+}
+
+func TestResolveAlias_Unknown(t *testing.T) {
+	_, err := resolveAlias("nonexistent")
+	assert.Error(t, err)
+}
+

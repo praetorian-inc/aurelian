@@ -1,6 +1,7 @@
 package applications
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
@@ -24,7 +25,7 @@ func NewAppEngineLister(clientOptions []option.ClientOption) *AppEngineLister {
 
 // List enumerates all App Engine services and their versions for the given project.
 func (l *AppEngineLister) List(projectID string, out *pipeline.P[output.GCPResource]) error {
-	svc, err := appengine.NewService(nil, l.clientOptions...)
+	svc, err := appengine.NewService(context.Background(), l.clientOptions...)
 	if err != nil {
 		return fmt.Errorf("creating appengine client: %w", err)
 	}
@@ -40,7 +41,7 @@ func (l *AppEngineLister) List(projectID string, out *pipeline.P[output.GCPResou
 	}
 
 	// List services.
-	err = svc.Apps.Services.List(projectID).Pages(nil, func(resp *appengine.ListServicesResponse) error {
+	err = svc.Apps.Services.List(projectID).Pages(context.Background(), func(resp *appengine.ListServicesResponse) error {
 		for _, service := range resp.Services {
 			r := output.NewGCPResource(projectID, "appengine.googleapis.com/Service", service.Id)
 			r.DisplayName = service.Id
@@ -55,7 +56,7 @@ func (l *AppEngineLister) List(projectID string, out *pipeline.P[output.GCPResou
 			out.Send(r)
 
 			// List versions for each service.
-			err := svc.Apps.Services.Versions.List(projectID, service.Id).Pages(nil, func(vResp *appengine.ListVersionsResponse) error {
+			err := svc.Apps.Services.Versions.List(projectID, service.Id).Pages(context.Background(), func(vResp *appengine.ListVersionsResponse) error {
 				for _, version := range vResp.Versions {
 					vr := output.NewGCPResource(projectID, "appengine.googleapis.com/Version", version.Id)
 					vr.DisplayName = version.Id
@@ -93,3 +94,5 @@ func (l *AppEngineLister) List(projectID string, out *pipeline.P[output.GCPResou
 	}
 	return nil
 }
+
+func (l *AppEngineLister) ResourceType() string { return "appengine.googleapis.com/Service" }

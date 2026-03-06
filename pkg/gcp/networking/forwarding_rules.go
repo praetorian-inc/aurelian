@@ -1,12 +1,13 @@
 package networking
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/api/option"
 	computeapi "google.golang.org/api/compute/v1"
+	"google.golang.org/api/option"
 
 	"github.com/praetorian-inc/aurelian/pkg/gcp/gcperrors"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -25,13 +26,13 @@ func NewForwardingRuleLister(clientOptions []option.ClientOption) *ForwardingRul
 
 // List enumerates all forwarding rules (global and regional) for the given project.
 func (l *ForwardingRuleLister) List(projectID string, out *pipeline.P[output.GCPResource]) error {
-	svc, err := computeapi.NewService(nil, l.clientOptions...)
+	svc, err := computeapi.NewService(context.Background(), l.clientOptions...)
 	if err != nil {
 		return fmt.Errorf("creating compute client: %w", err)
 	}
 
 	// Global forwarding rules.
-	err = svc.GlobalForwardingRules.List(projectID).Pages(nil, func(resp *computeapi.ForwardingRuleList) error {
+	err = svc.GlobalForwardingRules.List(projectID).Pages(context.Background(), func(resp *computeapi.ForwardingRuleList) error {
 		for _, rule := range resp.Items {
 			r := output.NewGCPResource(projectID, "compute.googleapis.com/GlobalForwardingRule", fmt.Sprintf("%d", rule.Id))
 			r.DisplayName = rule.Name
@@ -57,7 +58,7 @@ func (l *ForwardingRuleLister) List(projectID string, out *pipeline.P[output.GCP
 
 	// List regions for regional forwarding rules.
 	var regions []string
-	err = svc.Regions.List(projectID).Pages(nil, func(resp *computeapi.RegionList) error {
+	err = svc.Regions.List(projectID).Pages(context.Background(), func(resp *computeapi.RegionList) error {
 		for _, region := range resp.Items {
 			regions = append(regions, region.Name)
 		}
@@ -77,7 +78,7 @@ func (l *ForwardingRuleLister) List(projectID string, out *pipeline.P[output.GCP
 
 	for _, region := range regions {
 		g.Go(func() error {
-			err := svc.ForwardingRules.List(projectID, region).Pages(nil, func(resp *computeapi.ForwardingRuleList) error {
+			err := svc.ForwardingRules.List(projectID, region).Pages(context.Background(), func(resp *computeapi.ForwardingRuleList) error {
 				for _, rule := range resp.Items {
 					r := output.NewGCPResource(projectID, "compute.googleapis.com/ForwardingRule", fmt.Sprintf("%d", rule.Id))
 					r.DisplayName = rule.Name
@@ -106,3 +107,5 @@ func (l *ForwardingRuleLister) List(projectID string, out *pipeline.P[output.GCP
 
 	return g.Wait()
 }
+
+func (l *ForwardingRuleLister) ResourceType() string { return "compute.googleapis.com/ForwardingRule" }

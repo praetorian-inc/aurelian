@@ -1,12 +1,13 @@
 package networking
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/api/option"
 	computeapi "google.golang.org/api/compute/v1"
+	"google.golang.org/api/option"
 
 	"github.com/praetorian-inc/aurelian/pkg/gcp/gcperrors"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -25,13 +26,13 @@ func NewAddressLister(clientOptions []option.ClientOption) *AddressLister {
 
 // List enumerates all addresses (global and regional) for the given project.
 func (l *AddressLister) List(projectID string, out *pipeline.P[output.GCPResource]) error {
-	svc, err := computeapi.NewService(nil, l.clientOptions...)
+	svc, err := computeapi.NewService(context.Background(), l.clientOptions...)
 	if err != nil {
 		return fmt.Errorf("creating compute client: %w", err)
 	}
 
 	// Global addresses.
-	err = svc.GlobalAddresses.List(projectID).Pages(nil, func(resp *computeapi.AddressList) error {
+	err = svc.GlobalAddresses.List(projectID).Pages(context.Background(), func(resp *computeapi.AddressList) error {
 		for _, addr := range resp.Items {
 			r := output.NewGCPResource(projectID, "compute.googleapis.com/GlobalAddress", fmt.Sprintf("%d", addr.Id))
 			r.DisplayName = addr.Name
@@ -59,7 +60,7 @@ func (l *AddressLister) List(projectID string, out *pipeline.P[output.GCPResourc
 
 	// List regions for regional addresses.
 	var regions []string
-	err = svc.Regions.List(projectID).Pages(nil, func(resp *computeapi.RegionList) error {
+	err = svc.Regions.List(projectID).Pages(context.Background(), func(resp *computeapi.RegionList) error {
 		for _, region := range resp.Items {
 			regions = append(regions, region.Name)
 		}
@@ -79,7 +80,7 @@ func (l *AddressLister) List(projectID string, out *pipeline.P[output.GCPResourc
 
 	for _, region := range regions {
 		g.Go(func() error {
-			err := svc.Addresses.List(projectID, region).Pages(nil, func(resp *computeapi.AddressList) error {
+			err := svc.Addresses.List(projectID, region).Pages(context.Background(), func(resp *computeapi.AddressList) error {
 				for _, addr := range resp.Items {
 					r := output.NewGCPResource(projectID, "compute.googleapis.com/Address", fmt.Sprintf("%d", addr.Id))
 					r.DisplayName = addr.Name
@@ -110,3 +111,5 @@ func (l *AddressLister) List(projectID string, out *pipeline.P[output.GCPResourc
 
 	return g.Wait()
 }
+
+func (l *AddressLister) ResourceType() string { return "compute.googleapis.com/Address" }

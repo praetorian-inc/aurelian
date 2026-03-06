@@ -5,7 +5,6 @@ package recon_test
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
@@ -186,11 +185,3 @@ func findRiskForNamedResource(resources []output.GCPResource, risks []output.Aur
 	return nil
 }
 
-func hasRiskForGCPResource(risks []output.AurelianRisk, name string) bool {
-	for _, risk := range risks {
-		if strings.Contains(risk.ImpactedARN, name) {
-			return true
-		}
-	}
-	return false
-}

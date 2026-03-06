@@ -1,12 +1,13 @@
 package compute
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/api/option"
 	computeapi "google.golang.org/api/compute/v1"
+	"google.golang.org/api/option"
 
 	"github.com/praetorian-inc/aurelian/pkg/gcp/gcperrors"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -25,14 +26,14 @@ func NewInstanceLister(clientOptions []option.ClientOption) *InstanceLister {
 
 // List enumerates all Compute Engine instances for the given project.
 func (l *InstanceLister) List(projectID string, out *pipeline.P[output.GCPResource]) error {
-	svc, err := computeapi.NewService(nil, l.clientOptions...)
+	svc, err := computeapi.NewService(context.Background(), l.clientOptions...)
 	if err != nil {
 		return fmt.Errorf("creating compute client: %w", err)
 	}
 
 	// List all zones.
 	var zones []string
-	err = svc.Zones.List(projectID).Pages(nil, func(resp *computeapi.ZoneList) error {
+	err = svc.Zones.List(projectID).Pages(context.Background(), func(resp *computeapi.ZoneList) error {
 		for _, z := range resp.Items {
 			zones = append(zones, z.Name)
 		}
@@ -52,7 +53,7 @@ func (l *InstanceLister) List(projectID string, out *pipeline.P[output.GCPResour
 
 	for _, zone := range zones {
 		g.Go(func() error {
-			err := svc.Instances.List(projectID, zone).Pages(nil, func(resp *computeapi.InstanceList) error {
+			err := svc.Instances.List(projectID, zone).Pages(context.Background(), func(resp *computeapi.InstanceList) error {
 				for _, inst := range resp.Items {
 					r := output.NewGCPResource(projectID, "compute.googleapis.com/Instance", fmt.Sprintf("%d", inst.Id))
 					r.DisplayName = inst.Name
@@ -90,3 +91,5 @@ func (l *InstanceLister) List(projectID string, out *pipeline.P[output.GCPResour
 
 	return g.Wait()
 }
+
+func (l *InstanceLister) ResourceType() string { return "compute.googleapis.com/Instance" }

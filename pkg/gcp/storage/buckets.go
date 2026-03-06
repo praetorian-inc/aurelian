@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
@@ -24,13 +25,13 @@ func NewBucketLister(clientOptions []option.ClientOption) *BucketLister {
 
 // List enumerates all Cloud Storage buckets for the given project.
 func (l *BucketLister) List(projectID string, out *pipeline.P[output.GCPResource]) error {
-	svc, err := gcsapi.NewService(nil, l.clientOptions...)
+	svc, err := gcsapi.NewService(context.Background(), l.clientOptions...)
 	if err != nil {
 		return fmt.Errorf("creating storage client: %w", err)
 	}
 
 	call := svc.Buckets.List(projectID)
-	err = call.Pages(nil, func(resp *gcsapi.Buckets) error {
+	err = call.Pages(context.Background(), func(resp *gcsapi.Buckets) error {
 		for _, bucket := range resp.Items {
 			r := output.NewGCPResource(projectID, "storage.googleapis.com/Bucket", bucket.Id)
 			r.DisplayName = bucket.Name
@@ -55,3 +56,5 @@ func (l *BucketLister) List(projectID string, out *pipeline.P[output.GCPResource
 	}
 	return nil
 }
+
+func (l *BucketLister) ResourceType() string { return "storage.googleapis.com/Bucket" }

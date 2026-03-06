@@ -16,7 +16,7 @@ func TestEnrichCloudRunIAM_AnonymousAccess(t *testing.T) {
 	bindings := []iamBinding{
 		{Role: "roles/run.invoker", Members: []string{"allUsers"}},
 	}
-	enrichCloudRunIAMWithBindings(r, bindings)
+	enrichIAMBindings(r, bindings)
 
 	assert.Equal(t, true, r.Properties["AnonymousAccess"])
 	info := r.Properties["AnonymousAccessInfo"].(map[string]any)
@@ -34,7 +34,7 @@ func TestEnrichCloudRunIAM_NoAnonymousAccess(t *testing.T) {
 	bindings := []iamBinding{
 		{Role: "roles/run.invoker", Members: []string{"serviceAccount:sa@proj.iam.gserviceaccount.com"}},
 	}
-	enrichCloudRunIAMWithBindings(r, bindings)
+	enrichIAMBindings(r, bindings)
 
 	_, hasAnon := r.Properties["AnonymousAccess"]
 	assert.False(t, hasAnon)
@@ -50,7 +50,7 @@ func TestEnrichCloudRunIAM_AllAuthenticatedUsers(t *testing.T) {
 	bindings := []iamBinding{
 		{Role: "roles/run.invoker", Members: []string{"allAuthenticatedUsers"}},
 	}
-	enrichCloudRunIAMWithBindings(r, bindings)
+	enrichIAMBindings(r, bindings)
 
 	assert.Equal(t, true, r.Properties["AnonymousAccess"])
 	info := r.Properties["AnonymousAccessInfo"].(map[string]any)
@@ -65,7 +65,7 @@ func TestEnrichCloudRunIAM_NilProperties(t *testing.T) {
 	bindings := []iamBinding{
 		{Role: "roles/viewer", Members: []string{"user:viewer@example.com"}},
 	}
-	enrichCloudRunIAMWithBindings(r, bindings)
+	enrichIAMBindings(r, bindings)
 
 	assert.NotNil(t, r.Properties)
 	assert.NotNil(t, r.Properties["IAMBindings"])

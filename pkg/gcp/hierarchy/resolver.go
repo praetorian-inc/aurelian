@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -57,6 +58,32 @@ func (r *Resolver) ResolveProjects(
 
 	allProjects = append(allProjects, projectIDs...)
 	return allProjects, nil
+}
+
+// ResolveAndEmit resolves projects from org/folder/project scopes, emitting
+// hierarchy resources into out as they're discovered. Returns the resolved
+// project IDs.
+func (r *Resolver) ResolveAndEmit(
+	orgIDs, folderIDs, projectIDs []string,
+	out *pipeline.P[model.AurelianModel],
+) ([]string, error) {
+	hierarchyOut := pipeline.New[output.GCPResource]()
+
+	var projects []string
+	var resolveErr error
+	go func() {
+		defer hierarchyOut.Close()
+		projects, resolveErr = r.ResolveProjects(
+			context.Background(),
+			orgIDs, folderIDs, projectIDs,
+			hierarchyOut,
+		)
+	}()
+
+	for res := range hierarchyOut.Range() {
+		out.Send(res)
+	}
+	return projects, resolveErr
 }
 
 func (r *Resolver) resolveOrg(ctx context.Context, orgID string, out *pipeline.P[output.GCPResource]) ([]string, error) {

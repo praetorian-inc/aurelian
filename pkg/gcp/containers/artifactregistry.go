@@ -1,6 +1,7 @@
 package containers
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
@@ -24,13 +25,13 @@ func NewArtifactRegistryLister(clientOptions []option.ClientOption) *ArtifactReg
 
 // List enumerates all Artifact Registry repositories and Docker images for the given project.
 func (l *ArtifactRegistryLister) List(projectID string, out *pipeline.P[output.GCPResource]) error {
-	svc, err := artifactregistry.NewService(nil, l.clientOptions...)
+	svc, err := artifactregistry.NewService(context.Background(), l.clientOptions...)
 	if err != nil {
 		return fmt.Errorf("creating artifact registry client: %w", err)
 	}
 
 	parent := "projects/" + projectID + "/locations/-"
-	err = svc.Projects.Locations.Repositories.List(parent).Pages(nil, func(resp *artifactregistry.ListRepositoriesResponse) error {
+	err = svc.Projects.Locations.Repositories.List(parent).Pages(context.Background(), func(resp *artifactregistry.ListRepositoriesResponse) error {
 		for _, repo := range resp.Repositories {
 			r := output.NewGCPResource(projectID, "artifactregistry.googleapis.com/Repository", repo.Name)
 			r.DisplayName = repo.Name
@@ -66,7 +67,7 @@ func (l *ArtifactRegistryLister) List(projectID string, out *pipeline.P[output.G
 }
 
 func (l *ArtifactRegistryLister) listDockerImages(svc *artifactregistry.Service, projectID, repoName string, out *pipeline.P[output.GCPResource]) error {
-	return svc.Projects.Locations.Repositories.DockerImages.List(repoName).Pages(nil, func(resp *artifactregistry.ListDockerImagesResponse) error {
+	return svc.Projects.Locations.Repositories.DockerImages.List(repoName).Pages(context.Background(), func(resp *artifactregistry.ListDockerImagesResponse) error {
 		for _, img := range resp.DockerImages {
 			r := output.NewGCPResource(projectID, "artifactregistry.googleapis.com/DockerImage", img.Name)
 			r.DisplayName = img.Uri
@@ -81,3 +82,5 @@ func (l *ArtifactRegistryLister) listDockerImages(svc *artifactregistry.Service,
 		return nil
 	})
 }
+
+func (l *ArtifactRegistryLister) ResourceType() string { return "artifactregistry.googleapis.com/Repository" }

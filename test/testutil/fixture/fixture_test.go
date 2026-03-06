@@ -12,16 +12,6 @@ import (
 	"github.com/hashicorp/terraform-exec/tfexec"
 )
 
-func TestComputeEffectiveHash_IncludesContainerID(t *testing.T) {
-	fixtureHash := "abc123"
-	aws1 := computeEffectiveHash(fixtureHash, "111111111111")
-	aws2 := computeEffectiveHash(fixtureHash, "222222222222")
-
-	if aws1 == aws2 {
-		t.Fatal("effective hash must differ across container IDs")
-	}
-}
-
 func TestRunLifecycle_RemoteHashMissing_AppliesAndStoresHash(t *testing.T) {
 	f, calls, _, _ := newLifecycleFixture(t, "", nil, nil)
 

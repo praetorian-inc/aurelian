@@ -1,10 +1,11 @@
 package firebase
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
-	"google.golang.org/api/firebasehosting/v1beta1"
+	firebasehosting "google.golang.org/api/firebasehosting/v1beta1"
 	"google.golang.org/api/option"
 
 	"github.com/praetorian-inc/aurelian/pkg/gcp/gcperrors"
@@ -24,7 +25,7 @@ func NewHostingLister(clientOptions []option.ClientOption) *HostingLister {
 
 // List enumerates all Firebase Hosting sites for the given project.
 func (l *HostingLister) List(projectID string, out *pipeline.P[output.GCPResource]) error {
-	svc, err := firebasehosting.NewService(nil, l.clientOptions...)
+	svc, err := firebasehosting.NewService(context.Background(), l.clientOptions...)
 	if err != nil {
 		return fmt.Errorf("creating firebase hosting client: %w", err)
 	}
@@ -54,3 +55,5 @@ func (l *HostingLister) List(projectID string, out *pipeline.P[output.GCPResourc
 	}
 	return nil
 }
+
+func (l *HostingLister) ResourceType() string { return "firebasehosting.googleapis.com/Site" }

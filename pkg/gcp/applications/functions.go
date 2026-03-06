@@ -1,6 +1,7 @@
 package applications
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
@@ -24,13 +25,13 @@ func NewFunctionLister(clientOptions []option.ClientOption) *FunctionLister {
 
 // List enumerates all Cloud Functions across all locations for the given project.
 func (l *FunctionLister) List(projectID string, out *pipeline.P[output.GCPResource]) error {
-	svc, err := cloudfunctions.NewService(nil, l.clientOptions...)
+	svc, err := cloudfunctions.NewService(context.Background(), l.clientOptions...)
 	if err != nil {
 		return fmt.Errorf("creating cloudfunctions client: %w", err)
 	}
 
 	parent := "projects/" + projectID + "/locations/-"
-	err = svc.Projects.Locations.Functions.List(parent).Pages(nil, func(resp *cloudfunctions.ListFunctionsResponse) error {
+	err = svc.Projects.Locations.Functions.List(parent).Pages(context.Background(), func(resp *cloudfunctions.ListFunctionsResponse) error {
 		for _, fn := range resp.Functions {
 			r := output.NewGCPResource(projectID, "cloudfunctions.googleapis.com/Function", fn.Name)
 			r.DisplayName = fn.Name
@@ -59,3 +60,5 @@ func (l *FunctionLister) List(projectID string, out *pipeline.P[output.GCPResour
 	}
 	return nil
 }
+
+func (l *FunctionLister) ResourceType() string { return "cloudfunctions.googleapis.com/Function" }

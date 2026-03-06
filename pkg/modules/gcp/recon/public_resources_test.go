@@ -11,6 +11,15 @@ func TestGCPPublicResourcesModule_Metadata(t *testing.T) {
 	m := &GCPPublicResourcesModule{}
 	assert.Equal(t, "public-resources", m.ID())
 	assert.Equal(t, plugin.PlatformGCP, m.Platform())
-	// Should have fewer supported types than list-all
-	assert.Less(t, len(m.SupportedResourceTypes()), len(allResourceTypes()))
+}
+
+func TestPublicResources_SupportedResourceTypes(t *testing.T) {
+	m := &GCPPublicResourcesModule{}
+	types := m.SupportedResourceTypes()
+	expected := []string{
+		"cloudresourcemanager.googleapis.com/Organization",
+		"cloudresourcemanager.googleapis.com/Folder",
+		"cloudresourcemanager.googleapis.com/Project",
+	}
+	assert.ElementsMatch(t, expected, types)
 }

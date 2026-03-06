@@ -31,6 +31,13 @@ var listResourceMap = map[string]resourceTypeInfo{
 
 var hierarchyTypes = []string{"organizations", "folders", "projects"}
 
+// supportedInputTypes are the GCP resource types that modules accept as input scope.
+var supportedInputTypes = []string{
+	"cloudresourcemanager.googleapis.com/Organization",
+	"cloudresourcemanager.googleapis.com/Folder",
+	"cloudresourcemanager.googleapis.com/Project",
+}
+
 func resolveResourceTypes(requested []string) ([]string, error) {
 	if len(requested) == 1 && strings.EqualFold(requested[0], "all") {
 		return allResourceTypes(), nil
@@ -50,29 +57,29 @@ func resolveResourceTypes(requested []string) ([]string, error) {
 
 func resolveAlias(alias string) (string, error) {
 	lower := strings.ToLower(alias)
-	for canonical := range listResourceMap {
-		if strings.EqualFold(canonical, alias) {
-			return canonical, nil
-		}
-	}
 	for canonical, info := range listResourceMap {
-		if slices.Contains(info.aliases, lower) {
+		if strings.EqualFold(canonical, alias) || slices.Contains(info.aliases, lower) {
 			return canonical, nil
 		}
 	}
 	return "", fmt.Errorf("unsupported resource type %q", alias)
 }
 
-func validateResourceTypes(types []string) error {
-	if len(types) == 1 && strings.EqualFold(types[0], "all") {
-		return nil
+func filterResourceTypes(requested []string, supported []string) []string {
+	if len(requested) == 1 && strings.EqualFold(requested[0], "all") {
+		return supported
 	}
-	for _, t := range types {
-		if _, err := resolveAlias(t); err != nil {
-			return err
+	var filtered []string
+	for _, r := range requested {
+		canonical, err := resolveAlias(r)
+		if err != nil {
+			continue
+		}
+		if slices.Contains(supported, canonical) {
+			filtered = append(filtered, canonical)
 		}
 	}
-	return nil
+	return filtered
 }
 
 func allResourceTypes() []string {
@@ -84,27 +91,9 @@ func allResourceTypes() []string {
 	return types
 }
 
-func nonHierarchyTypes() []string {
-	var types []string
-	for k := range listResourceMap {
-		if !slices.Contains(hierarchyTypes, k) {
-			types = append(types, k)
-		}
-	}
-	slices.Sort(types)
-	return types
-}
-
 func shouldFanOutToResources(requestedTypes []string) bool {
-	if len(requestedTypes) == 1 && strings.EqualFold(requestedTypes[0], "all") {
-		return true
-	}
 	for _, t := range requestedTypes {
-		canonical, err := resolveAlias(t)
-		if err != nil {
-			continue
-		}
-		if !slices.Contains(hierarchyTypes, canonical) {
+		if !slices.Contains(hierarchyTypes, t) {
 			return true
 		}
 	}

@@ -1,11 +1,12 @@
 package networking
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
-	"google.golang.org/api/option"
 	dnsapi "google.golang.org/api/dns/v1"
+	"google.golang.org/api/option"
 
 	"github.com/praetorian-inc/aurelian/pkg/gcp/gcperrors"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -24,13 +25,13 @@ func NewDNSZoneLister(clientOptions []option.ClientOption) *DNSZoneLister {
 
 // List enumerates all Cloud DNS managed zones for the given project.
 func (l *DNSZoneLister) List(projectID string, out *pipeline.P[output.GCPResource]) error {
-	svc, err := dnsapi.NewService(nil, l.clientOptions...)
+	svc, err := dnsapi.NewService(context.Background(), l.clientOptions...)
 	if err != nil {
 		return fmt.Errorf("creating dns client: %w", err)
 	}
 
 	call := svc.ManagedZones.List(projectID)
-	err = call.Pages(nil, func(resp *dnsapi.ManagedZonesListResponse) error {
+	err = call.Pages(context.Background(), func(resp *dnsapi.ManagedZonesListResponse) error {
 		for _, zone := range resp.ManagedZones {
 			r := output.NewGCPResource(projectID, "dns.googleapis.com/ManagedZone", zone.Name)
 			r.DisplayName = zone.Name
@@ -52,3 +53,5 @@ func (l *DNSZoneLister) List(projectID string, out *pipeline.P[output.GCPResourc
 	}
 	return nil
 }
+
+func (l *DNSZoneLister) ResourceType() string { return "dns.googleapis.com/ManagedZone" }

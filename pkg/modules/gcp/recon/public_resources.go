@@ -1,10 +1,10 @@
 package recon
 
 import (
-	"context"
 	"log/slog"
 
 	"github.com/praetorian-inc/aurelian/pkg/gcp/enrichment"
+	"github.com/praetorian-inc/aurelian/pkg/gcp/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/gcp/hierarchy"
 	"github.com/praetorian-inc/aurelian/pkg/gcp/publicaccess"
 	"github.com/praetorian-inc/aurelian/pkg/model"
@@ -58,7 +58,7 @@ var publicResourceTypes = []string{
 }
 
 func (m *GCPPublicResourcesModule) SupportedResourceTypes() []string {
-	return publicResourceTypes
+	return supportedInputTypes
 }
 
 func (m *GCPPublicResourcesModule) Parameters() any {
@@ -72,39 +72,25 @@ func (m *GCPPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	requestedTypes := filterResourceTypes(c.ResourceType, publicResourceTypes)
 	if len(requestedTypes) == 0 {
 		slog.Info("no supported resource types requested for public access evaluation")
-		return nil
+		return out.Wait()
 	}
 
 	// Stage 1: Resolve hierarchy (blocking).
 	resolver := hierarchy.NewResolver(c.GCPCommonRecon)
-	hierarchyOut := pipeline.New[output.GCPResource]()
-
-	var projects []string
-	var resolveErr error
-	go func() {
-		defer hierarchyOut.Close()
-		projects, resolveErr = resolver.ResolveProjects(
-			context.Background(),
-			c.OrgID, c.FolderID, c.ProjectID,
-			hierarchyOut,
-		)
-	}()
-
-	for r := range hierarchyOut.Range() {
-		out.Send(r)
-	}
-	if resolveErr != nil {
-		return resolveErr
+	projects, err := resolver.ResolveAndEmit(c.OrgID, c.FolderID, c.ProjectID, out)
+	if err != nil {
+		return err
 	}
 
 	if len(projects) == 0 {
-		return nil
+		return out.Wait()
 	}
 
 	// Stage 2: List resources per project
+	enumerator := enumeration.NewEnumerator(c.GCPCommonRecon).ForTypes(requestedTypes)
 	listed := pipeline.New[output.GCPResource]()
 	projectStream := pipeline.From(projects...)
-	pipeline.Pipe(projectStream, listForProject(c.GCPCommonRecon, requestedTypes), listed)
+	pipeline.Pipe(projectStream, enumerator.ListForProject, listed)
 
 	// Stage 3: Enrich
 	enricher := enrichment.NewGCPEnricher(c.GCPCommonRecon)

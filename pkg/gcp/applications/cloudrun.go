@@ -1,6 +1,7 @@
 package applications
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -27,19 +28,19 @@ func NewCloudRunLister(clientOptions []option.ClientOption) *CloudRunLister {
 
 // List enumerates all Cloud Run services across all locations for the given project.
 func (l *CloudRunLister) List(projectID string, out *pipeline.P[output.GCPResource]) error {
-	svc, err := runapi.NewService(nil, l.clientOptions...)
+	svc, err := runapi.NewService(context.Background(), l.clientOptions...)
 	if err != nil {
 		return fmt.Errorf("creating cloud run client: %w", err)
 	}
 
 	// Use compute API to list regions for fan-out.
-	computeSvc, err := computeapi.NewService(nil, l.clientOptions...)
+	computeSvc, err := computeapi.NewService(context.Background(), l.clientOptions...)
 	if err != nil {
 		return fmt.Errorf("creating compute client for regions: %w", err)
 	}
 
 	var locations []string
-	err = computeSvc.Regions.List(projectID).Pages(nil, func(resp *computeapi.RegionList) error {
+	err = computeSvc.Regions.List(projectID).Pages(context.Background(), func(resp *computeapi.RegionList) error {
 		for _, region := range resp.Items {
 			locations = append(locations, "projects/"+projectID+"/locations/"+region.Name)
 		}
@@ -59,7 +60,7 @@ func (l *CloudRunLister) List(projectID string, out *pipeline.P[output.GCPResour
 
 	for _, location := range locations {
 		g.Go(func() error {
-			err := svc.Projects.Locations.Services.List(location).Pages(nil, func(resp *runapi.GoogleCloudRunV2ListServicesResponse) error {
+			err := svc.Projects.Locations.Services.List(location).Pages(context.Background(), func(resp *runapi.GoogleCloudRunV2ListServicesResponse) error {
 				for _, service := range resp.Services {
 					r := output.NewGCPResource(projectID, "run.googleapis.com/Service", service.Name)
 					r.DisplayName = service.Name
@@ -96,3 +97,5 @@ func (l *CloudRunLister) List(projectID string, out *pipeline.P[output.GCPResour
 
 	return g.Wait()
 }
+
+func (l *CloudRunLister) ResourceType() string { return "run.googleapis.com/Service" }
