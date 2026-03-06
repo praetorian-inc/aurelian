@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENV_FILE="$PROJECT_DIR/.env.integration"
+
+GO_FLAGS=""
+TARGET="./..."
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --go-flags)
+      GO_FLAGS="$2"
+      shift 2
+      ;;
+    --go-flags=*)
+      GO_FLAGS="${1#*=}"
+      shift
+      ;;
+    -h|--help)
+      echo "Usage: $0 [TARGET] [--go-flags '<additional go test flags>']"
+      echo ""
+      echo "Runs Aurelian integration tests."
+      echo ""
+      echo "Arguments:"
+      echo "  TARGET        Go test target pattern (default: ./...)"
+      echo ""
+      echo "Options:"
+      echo "  --go-flags    Additional flags to pass to 'go test' (e.g. '--go-flags \"-v -timeout 30m\"')"
+      echo ""
+      echo "Examples:"
+      echo "  $0                              # run all integration tests"
+      echo "  $0 ./pkg/azure/...              # run just azure component tests"
+      echo "  $0 ./pkg/modules/aws/recon/...  # run just aws recon module tests"
+      exit 0
+      ;;
+    -*)
+      echo "Unknown argument: $1"
+      echo "Run $0 --help for usage."
+      exit 1
+      ;;
+    *)
+      TARGET="$1"
+      shift
+      ;;
+  esac
+done
+
+# Load existing env file if present
+AZURE_SUBSCRIPTION_ID=""
+AWS_PROFILE=""
+
+if [[ -f "$ENV_FILE" ]]; then
+  # Source the file to pick up existing values
+  set +u
+  source "$ENV_FILE"
+  set -u
+fi
+
+# Prompt for missing values
+if [[ -z "$AZURE_SUBSCRIPTION_ID" ]]; then
+  read -rp "Enter AZURE_SUBSCRIPTION_ID: " AZURE_SUBSCRIPTION_ID
+  if [[ -z "$AZURE_SUBSCRIPTION_ID" ]]; then
+    echo "ERROR: AZURE_SUBSCRIPTION_ID is required." >&2
+    exit 1
+  fi
+fi
+
+if [[ -z "$AWS_PROFILE" ]]; then
+  read -rp "Enter AWS_PROFILE: " AWS_PROFILE
+  if [[ -z "$AWS_PROFILE" ]]; then
+    echo "ERROR: AWS_PROFILE is required." >&2
+    exit 1
+  fi
+fi
+
+# Save back to .env.integration
+cat > "$ENV_FILE" <<EOF
+AZURE_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION_ID
+AWS_PROFILE=$AWS_PROFILE
+EOF
+echo "Saved credentials to $ENV_FILE"
+
+# Validate Azure subscription
+echo "Validating Azure subscription $AZURE_SUBSCRIPTION_ID..."
+if ! az account show --subscription "$AZURE_SUBSCRIPTION_ID" &>/dev/null; then
+  echo "ERROR: Unable to access Azure subscription $AZURE_SUBSCRIPTION_ID with current 'az' credentials." >&2
+  echo "Run 'az login' and try again." >&2
+  exit 1
+fi
+echo "Azure subscription OK."
+
+# Validate AWS profile
+echo "Validating AWS profile $AWS_PROFILE..."
+if ! AWS_PROFILE="$AWS_PROFILE" aws sts get-caller-identity &>/dev/null; then
+  echo "ERROR: Unable to authenticate with AWS profile '$AWS_PROFILE'." >&2
+  echo "Check your AWS credentials and try again." >&2
+  exit 1
+fi
+echo "AWS profile OK."
+
+# Run tests
+echo ""
+echo "Running integration tests..."
+cd "$PROJECT_DIR"
+export AZURE_SUBSCRIPTION_ID
+export AWS_PROFILE
+
+set -x
+go test -tags compute,integration -p=1 $GO_FLAGS "$TARGET"

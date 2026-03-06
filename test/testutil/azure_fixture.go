@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/praetorian-inc/aurelian/test/testutil/fixture"
 )
 
 func NewAzureFixture(t *testing.T, moduleDir string) Fixture {
@@ -28,16 +30,16 @@ func NewAzureFixture(t *testing.T, moduleDir string) Fixture {
 		t.Fatalf("resolve azure subscription id: %v", err)
 	}
 
-	ensureStateBucket(t)
+	fixture.EnsureStateBucket(t)
 	stateKey := fmt.Sprintf("integration-tests/azure/%s/terraform.tfstate", moduleDir)
 
-	return newBaseFixture(t, fixtureConfig{
-		provider:    providerAzure,
-		moduleDir:   moduleDir,
-		fixtureDir:  fixtureDir,
-		execPath:    execPath,
-		containerID: subscriptionID,
-		stateKey:    stateKey,
+	return fixture.NewBase(t, fixture.Config{
+		Provider:    fixture.ProviderAzure,
+		ModuleDir:   moduleDir,
+		FixtureDir:  fixtureDir,
+		ExecPath:    execPath,
+		ContainerID: subscriptionID,
+		StateKey:    stateKey,
 	})
 }
 

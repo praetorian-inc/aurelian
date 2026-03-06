@@ -1,9 +1,7 @@
 package recon
 
 import (
-	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
 	"github.com/praetorian-inc/aurelian/pkg/azure/subscriptions"
@@ -68,7 +66,7 @@ func (m *AzureListAllResourcesModule) Parameters() any {
 func (m *AzureListAllResourcesModule) Run(_ plugin.Config, resources *pipeline.P[model.AurelianModel]) error {
 	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential)
 
-	subscriptionIDs, err := m.resolveSubscriptionIDs(resolver)
+	subscriptionIDs, err := resolveSubscriptionIDs(m.SubscriptionID, resolver)
 	if err != nil {
 		return err
 	}
@@ -92,33 +90,4 @@ func (m *AzureListAllResourcesModule) Run(_ plugin.Config, resources *pipeline.P
 	pipeline.Pipe(listed, toAurelianModel, resources)
 
 	return resources.Wait()
-}
-
-func subscriptionToListerInput(sub azuretypes.SubscriptionInfo, out *pipeline.P[resourcegraph.ListerInput]) error {
-	out.Send(resourcegraph.ListerInput{Subscription: sub})
-	return nil
-}
-
-func toAurelianModel(r output.AzureResource, out *pipeline.P[model.AurelianModel]) error {
-	out.Send(r)
-	return nil
-}
-
-func (m *AzureListAllResourcesModule) resolveSubscriptionIDs(resolver subscriptionResolver) ([]string, error) {
-	ids := m.SubscriptionID
-	requestsAllSubscriptions := len(ids) == 1 && strings.EqualFold(ids[0], "all")
-	if !requestsAllSubscriptions {
-		return ids, nil
-	}
-
-	subs, err := resolver.ListAllSubscriptions()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list subscriptions: %w", err)
-	}
-
-	resolvedIDs := make([]string, 0, len(subs))
-	for _, sub := range subs {
-		resolvedIDs = append(resolvedIDs, sub.ID)
-	}
-	return resolvedIDs, nil
 }

@@ -1,0 +1,56 @@
+id: application_gateway_public_access
+name: "Publicly Accessible Application Gateway"
+description: "Detects Azure Application Gateways with public IP frontend configurations"
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - Application Gateway frontend exposed to the internet via public IP
+  - Could enable direct attacks against backend application pools
+  - WAF bypass attempts possible against exposed endpoints
+  - SSL/TLS termination point may expose certificate details
+  - Backend pool health and configuration may be probed
+
+  Triage Guidance:
+  - This finding detects Application Gateways with public IP frontends
+  - Application Gateway is designed for public-facing scenarios; assess context
+  - Manual testing required:
+    1. Verify public IP is accessible
+    2. Check WAF policy enforcement and rule configuration
+    3. Test backend pool health probe responses
+    4. Review listener configurations and routing rules
+  - Consider: Is WAF enabled and properly configured?
+
+  Remediation Considerations:
+  - Enable WAF v2 with prevention mode
+  - Configure custom WAF rules for application-specific protection
+  - Implement rate limiting and bot protection
+  - Use private frontend IP for internal-only traffic
+  - Enable diagnostic logging for access and WAF events
+  - Review and restrict backend pool targets
+  - Implement SSL/TLS best practices
+  - Monitor for attack patterns and anomalous traffic
+
+references:
+  - https://learn.microsoft.com/en-us/azure/application-gateway/overview
+  - https://learn.microsoft.com/en-us/azure/web-application-firewall/ag/ag-overview
+
+query: |
+  resources
+  | where type =~ 'Microsoft.Network/applicationGateways'
+  | mv-expand frontendIPConfig = properties.frontendIPConfigurations
+  | where isnotnull(frontendIPConfig.properties.publicIPAddress)
+  | extend publicIpId = tostring(frontendIPConfig.properties.publicIPAddress.id)
+  | extend sku = properties.sku.name
+  | extend wafEnabled = properties.webApplicationFirewallConfiguration.enabled
+  | project
+      id,
+      name,
+      type,
+      location,
+      sku,
+      publicIpId,
+      wafEnabled,
+      subscriptionId,
+      resourceGroup

@@ -108,7 +108,7 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 
 	scanned := pipeline.New[secrets.SecretScanResult]()
 	pipeline.Pipe(extracted, s.Scan, scanned)
-	pipeline.Pipe(scanned, azureRiskFromScanResult, out)
+	pipeline.Pipe(scanned, m.riskFromScanResult, out)
 
 	return out.Wait()
 }
@@ -121,27 +121,8 @@ func (m *AzureFindSecretsModule) toListerInput(sub azuretypes.SubscriptionInfo, 
 	return nil
 }
 
-func resolveSubscriptionIDs(opts plugin.AzureCommonRecon, resolver *subscriptions.SubscriptionResolver) ([]string, error) {
-	ids := opts.SubscriptionID
-	requestsAll := len(ids) == 1 && strings.EqualFold(ids[0], "all")
-	if !requestsAll {
-		return ids, nil
-	}
-
-	subs, err := resolver.ListAllSubscriptions()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list subscriptions: %w", err)
-	}
-
-	resolvedIDs := make([]string, 0, len(subs))
-	for _, sub := range subs {
-		resolvedIDs = append(resolvedIDs, sub.ID)
-	}
-	return resolvedIDs, nil
-}
-
-func azureRiskFromScanResult(result secrets.SecretScanResult, out *pipeline.P[model.AurelianModel]) error {
-	proof := buildAzureProofData(result, result.Match)
+func (m *AzureFindSecretsModule) riskFromScanResult(result secrets.SecretScanResult, out *pipeline.P[model.AurelianModel]) error {
+	proof := m.buildProofData(result, result.Match)
 	proofBytes, err := json.MarshalIndent(proof, "", "  ")
 	if err != nil {
 		slog.Warn("failed to marshal proof", "resource", result.ResourceRef, "error", err)
@@ -158,15 +139,15 @@ func azureRiskFromScanResult(result secrets.SecretScanResult, out *pipeline.P[mo
 	}
 
 	out.Send(output.AurelianRisk{
-		Name:        formatAzureSecretRiskName(result.Match.RuleID),
-		Severity:    azureRiskSeverityFromMatch(result.Match),
+		Name:        m.formatSecretRiskName(result.Match.RuleID),
+		Severity:    m.riskSeverityFromMatch(result.Match),
 		ImpactedARN: impactedARN,
 		Context:     proofBytes,
 	})
 	return nil
 }
 
-func formatAzureSecretRiskName(ruleID string) string {
+func (m *AzureFindSecretsModule) formatSecretRiskName(ruleID string) string {
 	parts := strings.Split(ruleID, ".")
 	shortName := strings.ToLower(ruleID)
 	if len(parts) >= 2 {
@@ -175,14 +156,14 @@ func formatAzureSecretRiskName(ruleID string) string {
 	return fmt.Sprintf("azure-secret-%s", shortName)
 }
 
-func azureRiskSeverityFromMatch(match *types.Match) output.RiskSeverity {
+func (m *AzureFindSecretsModule) riskSeverityFromMatch(match *types.Match) output.RiskSeverity {
 	if match.ValidationResult != nil && match.ValidationResult.Status == types.StatusValid {
 		return output.RiskSeverityHigh
 	}
 	return output.RiskSeverityMedium
 }
 
-func buildAzureProofData(result secrets.SecretScanResult, match *types.Match) map[string]interface{} {
+func (m *AzureFindSecretsModule) buildProofData(result secrets.SecretScanResult, match *types.Match) map[string]interface{} {
 	proof := map[string]interface{}{
 		"finding_id":   match.FindingID,
 		"rule_name":    match.RuleName,

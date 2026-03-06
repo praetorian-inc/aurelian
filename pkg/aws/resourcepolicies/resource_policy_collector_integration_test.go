@@ -6,11 +6,26 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// collectPolicies feeds all resources from the map through the collector pipeline
+// and returns the collected results.
+func collectPolicies(t *testing.T, collector *ResourcePolicyCollector, resourcesByRegion map[string][]output.AWSResource) ([]output.AWSResource, error) {
+	t.Helper()
+	var allResources []output.AWSResource
+	for _, resources := range resourcesByRegion {
+		allResources = append(allResources, resources...)
+	}
+	in := pipeline.From(allResources...)
+	out := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(in, collector.Collect, out)
+	return out.Collect()
+}
 
 func TestResourcePolicyCollector_Integration(t *testing.T) {
 	fixture := testutil.NewAWSFixture(t, "aws/recon/graph")
@@ -35,7 +50,7 @@ func TestResourcePolicyCollector_Integration(t *testing.T) {
 				ResourceID:   s3BucketName,
 				ARN:          s3BucketARN,
 				Region:       region,
-				Properties:   map[string]any{"BucketName": s3BucketName},
+
 			},
 			{
 				ResourceType: "AWS::SQS::Queue",
@@ -61,8 +76,8 @@ func TestResourcePolicyCollector_Integration(t *testing.T) {
 		},
 	}
 
-	collector := New(plugin.AWSCommonRecon{})
-	results, err := collector.Collect(resourcesByRegion)
+	collector := New(plugin.AWSCommonRecon{Regions: []string{region}})
+	results, err := collectPolicies(t, collector, resourcesByRegion)
 	require.NoError(t, err)
 
 	// Index results by resource type.
@@ -111,7 +126,7 @@ func TestResourcePolicyCollector_Integration(t *testing.T) {
 			}),
 		}
 
-		mixedResults, err := collector.Collect(mixed)
+		mixedResults, err := collectPolicies(t, collector, mixed)
 		require.NoError(t, err)
 		// Should still get exactly 4 — the EC2 instance is skipped.
 		assert.Len(t, mixedResults, 4)

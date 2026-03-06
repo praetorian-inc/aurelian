@@ -1,0 +1,55 @@
+id: databricks_public_access
+name: "Publicly Accessible Databricks Workspace"
+description: "Detects Azure Databricks workspaces with public network access enabled"
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - Databricks workspace accessible from the internet
+  - Could enable unauthorized access to data analytics environment
+  - May expose notebooks, data, and code execution capabilities
+  - Sensitive data processing pipelines could be compromised
+  - Cluster compute resources could be abused
+
+  Triage Guidance:
+  - This finding confirms network-level accessibility from internet
+  - Databricks access is protected by Azure AD authentication
+  - Manual testing required:
+    1. Verify workspace URL is accessible
+    2. Check if Azure AD authentication is enforced
+    3. Review workspace access controls and permissions
+    4. Test REST API endpoint accessibility
+  - Consider: Can workspace be restricted to corporate networks?
+
+  Remediation Considerations:
+  - Disable public network access if not required
+  - Enable No Public IP (NPIP) for cluster nodes
+  - Use Azure Private Link for internal access
+  - Implement IP access lists for workspace access
+  - Enable Azure AD Conditional Access policies
+  - Use VNet injection for cluster isolation
+  - Monitor workspace access and query execution
+  - Review and restrict workspace permissions
+
+references:
+  - https://learn.microsoft.com/en-us/azure/databricks/security/network/
+  - https://learn.microsoft.com/en-us/azure/databricks/security/network/private-link-standard
+
+query: |
+  resources
+  | where type =~ 'Microsoft.Databricks/workspaces'
+  | extend publicNetworkAccess = tolower(coalesce(properties.publicNetworkAccess, 'enabled'))
+  | extend sku = sku.name
+  | extend workspaceUrl = properties.workspaceUrl
+  | where publicNetworkAccess != 'disabled'
+  | project
+      id,
+      name,
+      type,
+      location,
+      publicNetworkAccess,
+      sku,
+      workspaceUrl,
+      subscriptionId,
+      resourceGroup

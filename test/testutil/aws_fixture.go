@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/praetorian-inc/aurelian/test/testutil/fixture"
 )
 
 func NewAWSFixture(t *testing.T, moduleDir string) Fixture {
@@ -22,20 +24,20 @@ func NewAWSFixture(t *testing.T, moduleDir string) Fixture {
 	_, thisFile, _, _ := runtime.Caller(0)
 	fixtureDir := filepath.Join(filepath.Dir(thisFile), "..", "terraform", moduleDir)
 
-	ensureStateBucket(t)
-	containerID, err := resolveAWSAccountID(context.Background())
+	fixture.EnsureStateBucket(t)
+	containerID, err := fixture.ResolveAWSAccountID(context.Background())
 	if err != nil {
 		t.Fatalf("resolve aws account id: %v", err)
 	}
 
 	stateKey := fmt.Sprintf("integration-tests/%s/terraform.tfstate", moduleDir)
 
-	return newBaseFixture(t, fixtureConfig{
-		provider:    providerAWS,
-		moduleDir:   moduleDir,
-		fixtureDir:  fixtureDir,
-		execPath:    execPath,
-		containerID: containerID,
-		stateKey:    stateKey,
+	return fixture.NewBase(t, fixture.Config{
+		Provider:    fixture.ProviderAWS,
+		ModuleDir:   moduleDir,
+		FixtureDir:  fixtureDir,
+		ExecPath:    execPath,
+		ContainerID: containerID,
+		StateKey:    stateKey,
 	})
 }

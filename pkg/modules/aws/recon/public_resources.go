@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/enrichment"
+	cclist "github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/aws/publicaccess"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -61,12 +61,14 @@ func (m *AWSPublicResourcesModule) Parameters() any {
 func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.PublicResourcesConfig
 
-	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
+	lister := cclist.NewEnumerator(c.AWSCommonRecon)
 
 	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
 	if err != nil {
 		return fmt.Errorf("failed to collect inputs: %v", err)
 	}
+
+	pipeOpts := &pipeline.PipeOpts{Concurrency: m.Concurrency}
 
 	inputPipeline := pipeline.From(inputs...)
 	listed := pipeline.New[output.AWSResource]()
@@ -76,11 +78,11 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	// (e.g. RDS PubliclyAccessible, Cognito self-signup, Lambda function URL auth type).
 	enricher := enrichment.NewAWSEnricher(c.AWSCommonRecon)
 	enriched := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(listed, enricher.Enrich, enriched)
+	pipeline.Pipe(listed, enricher.Enrich, enriched, pipeOpts)
 
 	evaluator := publicaccess.NewResourceEvaluator(c.AWSCommonRecon, c.OrgPolicies)
 	evaluated := pipeline.New[publicaccess.PublicAccessResult]()
-	pipeline.Pipe(enriched, evaluator.Evaluate, evaluated)
+	pipeline.Pipe(enriched, evaluator.Evaluate, evaluated, pipeOpts)
 	pipeline.Pipe(evaluated, riskFromResult, out)
 
 	return out.Wait()

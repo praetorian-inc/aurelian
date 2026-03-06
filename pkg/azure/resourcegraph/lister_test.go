@@ -3,6 +3,7 @@ package resourcegraph
 import (
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/templates"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -20,4 +21,16 @@ func TestBuildFilteredQuery_Single(t *testing.T) {
 	query := buildFilteredQuery([]string{"Microsoft.Storage/storageAccounts"})
 	expected := "Resources | where type in~ ('microsoft.storage/storageaccounts') | project id, name, type, location, resourceGroup, tags, properties"
 	assert.Equal(t, expected, query)
+}
+
+func TestQueryInput_HasRequiredFields(t *testing.T) {
+	input := QueryInput{
+		Template: &templates.ARGQueryTemplate{
+			ID:       "test",
+			Name:     "Test",
+			Query:    "resources | limit 1",
+			Severity: "Low",
+		},
+	}
+	assert.Equal(t, "test", input.Template.ID)
 }

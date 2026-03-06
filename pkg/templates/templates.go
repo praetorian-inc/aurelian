@@ -5,58 +5,49 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"gopkg.in/yaml.v3"
 )
 
 //go:embed *.yaml
 var EmbeddedTemplates embed.FS
 
-// TemplateSource specifies the source of templates to load
-type TemplateSource int
-
-const (
-	LoadEmbedded TemplateSource = iota
-	UserTemplatesOnly
-)
-
 // TemplateLoader loads templates from both embedded files and optional user-supplied directory
 type TemplateLoader struct {
 	templates []*ARGQueryTemplate
 }
 
-// NewTemplateLoader creates a new template loader with specified source
-func NewTemplateLoader(source TemplateSource) (*TemplateLoader, error) {
+// NewTemplateLoader creates a new template loader that reads YAML templates from the given embed.FS.
+func NewTemplateLoader(fs embed.FS) (*TemplateLoader, error) {
 	loader := &TemplateLoader{}
 
-	if source == LoadEmbedded {
-		// Load embedded templates
-		entries, err := EmbeddedTemplates.ReadDir(".")
-		if err != nil {
-			return nil, fmt.Errorf("failed to read embedded templates: %v", err)
-		}
-
-		for _, entry := range entries {
-			if !entry.IsDir() && filepath.Ext(entry.Name()) == ".yaml" {
-				data, err := EmbeddedTemplates.ReadFile(entry.Name())
-				if err != nil {
-					return nil, fmt.Errorf("failed to read embedded template %s: %v", entry.Name(), err)
-				}
-
-				var template ARGQueryTemplate
-				if err := yaml.Unmarshal(data, &template); err != nil {
-					return nil, fmt.Errorf("failed to parse embedded template %s: %v", entry.Name(), err)
-				}
-
-				// Validate template
-				if err := validateTemplate(&template); err != nil {
-					return nil, fmt.Errorf("invalid embedded template %s: %v", entry.Name(), err)
-				}
-
-				loader.templates = append(loader.templates, &template)
-			}
-		}
+	entries, err := fs.ReadDir(".")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read embedded templates: %w", err)
 	}
-	// For UserTemplatesOnly, we start with empty templates slice
+
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".yaml" {
+			continue
+		}
+
+		data, err := fs.ReadFile(entry.Name())
+		if err != nil {
+			return nil, fmt.Errorf("failed to read embedded template %s: %w", entry.Name(), err)
+		}
+
+		var template ARGQueryTemplate
+		if err := yaml.Unmarshal(data, &template); err != nil {
+			return nil, fmt.Errorf("failed to parse embedded template %s: %w", entry.Name(), err)
+		}
+
+		if err := ValidateTemplate(&template); err != nil {
+			return nil, fmt.Errorf("invalid embedded template %s: %w", entry.Name(), err)
+		}
+
+		loader.templates = append(loader.templates, &template)
+	}
 
 	return loader, nil
 }
@@ -99,7 +90,7 @@ func (l *TemplateLoader) LoadUserTemplates(templateDir string) error {
 		}
 
 		// Validate template
-		if err := validateTemplate(&template); err != nil {
+		if err := ValidateTemplate(&template); err != nil {
 			return fmt.Errorf("invalid template %s: %v", file, err)
 		}
 
@@ -118,8 +109,8 @@ func (l *TemplateLoader) GetTemplates() []*ARGQueryTemplate {
 	return l.templates
 }
 
-// validateTemplate performs basic validation of a template
-func validateTemplate(template *ARGQueryTemplate) error {
+// ValidateTemplate performs basic validation and normalizes severity to lowercase.
+func ValidateTemplate(template *ARGQueryTemplate) error {
 	if template.ID == "" {
 		return fmt.Errorf("template ID is required")
 	}
@@ -132,5 +123,6 @@ func validateTemplate(template *ARGQueryTemplate) error {
 	if template.Severity == "" {
 		return fmt.Errorf("template severity is required")
 	}
+	template.Severity = output.NormalizeSeverity(template.Severity)
 	return nil
 }
