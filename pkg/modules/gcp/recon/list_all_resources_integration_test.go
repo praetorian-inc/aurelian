@@ -199,6 +199,18 @@ func TestGCPListAllResources(t *testing.T) {
 		assertResourceByName(t, found, privateDNSZone, projectID, "dns.googleapis.com/ManagedZone")
 	})
 
+	t.Run("no duplicate resources", func(t *testing.T) {
+		// Convert GCPResources to AurelianModel for the shared assertion helper.
+		var allResults []model.AurelianModel
+		for _, r := range resources {
+			allResults = append(allResults, r)
+		}
+		for _, r := range risks {
+			allResults = append(allResults, r)
+		}
+		testutil.AssertNoDuplicateResults(t, allResults)
+	})
+
 	t.Run("all resources have required fields", func(t *testing.T) {
 		for _, r := range resources {
 			assert.NotEmpty(t, r.ResourceType, "ResourceType must be set")
