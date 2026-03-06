@@ -128,7 +128,7 @@ func (e *IAMEnumerator) listRoles(out *pipeline.P[output.AWSResource]) error {
 	}
 
 	var marker *string
-	paginator := ratelimit.NewPaginator()
+	paginator := ratelimit.NewAWSPaginator()
 	return paginator.Paginate(func() (bool, error) {
 		input := &iam.ListRolesInput{}
 		if marker != nil {
@@ -175,7 +175,7 @@ func (e *IAMEnumerator) listPolicies(out *pipeline.P[output.AWSResource]) error 
 	}
 
 	var marker *string
-	paginator := ratelimit.NewPaginator()
+	paginator := ratelimit.NewAWSPaginator()
 	return paginator.Paginate(func() (bool, error) {
 		input := &iam.ListPoliciesInput{
 			Scope: types.PolicyScopeTypeLocal,
@@ -224,7 +224,7 @@ func (e *IAMEnumerator) listUsers(out *pipeline.P[output.AWSResource]) error {
 	}
 
 	var marker *string
-	paginator := ratelimit.NewPaginator()
+	paginator := ratelimit.NewAWSPaginator()
 	return paginator.Paginate(func() (bool, error) {
 		input := &iam.ListUsersInput{}
 		if marker != nil {
