@@ -32,6 +32,7 @@ func TestAWSList(t *testing.T) {
 		})
 		require.NoError(t, err)
 		testutil.AssertMinResults(t, results, 1)
+		testutil.AssertNoDuplicateResults(t, results)
 
 		for _, id := range fixture.OutputList("instance_ids") {
 			testutil.AssertResultContainsString(t, results, id)
@@ -54,6 +55,7 @@ func TestAWSList(t *testing.T) {
 		})
 		require.NoError(t, err)
 		testutil.AssertMinResults(t, results, 1)
+		testutil.AssertNoDuplicateResults(t, results)
 
 		for _, name := range fixture.OutputList("bucket_names") {
 			testutil.AssertResultContainsString(t, results, name)
@@ -76,6 +78,7 @@ func TestAWSList(t *testing.T) {
 		})
 		require.NoError(t, err)
 		testutil.AssertMinResults(t, results, 1)
+		testutil.AssertNoDuplicateResults(t, results)
 
 		for _, arn := range fixture.OutputList("function_arns") {
 			testutil.AssertResultContainsARN(t, results, arn)

@@ -273,6 +273,7 @@ func (cc *CloudControlEnumerator) listByType(
 
 		for _, desc := range result.ResourceDescriptions {
 			cr := awshelpers.CloudControlToAWSResource(desc, resourceType, accountID, region)
+			fmt.Printf("enumerated resource: region [%s] arn: %s\n", cr.Region, cr.ARN)
 			out.Send(cr)
 		}
 

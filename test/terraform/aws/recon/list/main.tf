@@ -80,6 +80,35 @@ data "archive_file" "dummy" {
   }
 }
 
+# IAM resources for IAMEnumerator integration tests
+resource "aws_iam_role" "test" {
+  name = "${local.prefix}-test-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Deny"
+      Principal = { Service = "ec2.amazonaws.com" }
+    }]
+  })
+}
+
+resource "aws_iam_policy" "test" {
+  name = "${local.prefix}-test-policy"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action   = "s3:GetObject"
+      Effect   = "Deny"
+      Resource = "*"
+    }]
+  })
+}
+
+resource "aws_iam_user" "test" {
+  name = "${local.prefix}-test-user"
+}
+
 resource "aws_lambda_function" "test" {
   count            = 2
   filename         = data.archive_file.dummy.output_path

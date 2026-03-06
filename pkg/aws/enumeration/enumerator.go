@@ -44,6 +44,12 @@ func NewEnumerator(opts plugin.AWSCommonRecon) *Enumerator {
 	}
 	// Register built-in enumerators here as they are implemented.
 	e.Register(NewS3Enumerator(opts, provider))
+
+	iamEnum := NewIAMEnumerator(opts, provider)
+	e.Register(iamEnum.RoleEnumerator())
+	e.Register(iamEnum.PolicyEnumerator())
+	e.Register(iamEnum.UserEnumerator())
+
 	return e
 }
 

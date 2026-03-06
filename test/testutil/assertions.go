@@ -52,6 +52,24 @@ func AssertMinResults(t *testing.T, results []model.AurelianModel, min int) {
 	}
 }
 
+// AssertNoDuplicateResults checks that no two results serialize to the same JSON.
+func AssertNoDuplicateResults(t *testing.T, results []model.AurelianModel) {
+	t.Helper()
+	seen := make(map[string]int)
+	for _, r := range results {
+		raw, err := json.Marshal(r)
+		if err != nil {
+			continue
+		}
+		seen[string(raw)]++
+	}
+	for key, count := range seen {
+		if count > 1 {
+			t.Errorf("result appears %d times: %s", count, key[:min(len(key), 200)])
+		}
+	}
+}
+
 // ResultsContainString reports whether any result contains substr
 // (case-insensitive). Useful in retry loops where a testing.T is not appropriate.
 func ResultsContainString(results []model.AurelianModel, substr string) bool {
