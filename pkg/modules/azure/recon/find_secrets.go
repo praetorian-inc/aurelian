@@ -54,10 +54,7 @@ func (m *AzureFindSecretsModule) References() []string {
 
 func (m *AzureFindSecretsModule) SupportedResourceTypes() []string {
 	return []string{
-		"Microsoft.Compute/virtualMachines",
-		"Microsoft.Web/sites",
-		"Microsoft.Automation/automationAccounts",
-		"Microsoft.Storage/storageAccounts",
+		"Microsoft.Resources/subscriptions",
 	}
 }
 
@@ -115,8 +112,13 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 
 func (m *AzureFindSecretsModule) toListerInput(sub azuretypes.SubscriptionInfo, out *pipeline.P[resourcegraph.ListerInput]) error {
 	out.Send(resourcegraph.ListerInput{
-		Subscription:  sub,
-		ResourceTypes: m.SupportedResourceTypes(),
+		Subscription: sub,
+		ResourceTypes: []string{
+			"Microsoft.Compute/virtualMachines",
+			"Microsoft.Web/sites",
+			"Microsoft.Automation/automationAccounts",
+			"Microsoft.Storage/storageAccounts",
+		},
 	})
 	return nil
 }
