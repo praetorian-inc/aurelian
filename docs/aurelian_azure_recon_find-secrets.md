@@ -13,7 +13,7 @@ aurelian azure recon find-secrets [flags]
       --disabled-titus-rules strings   Rule IDs to exclude from scanning
   -h, --help                           help for find-secrets
       --output-dir string              Base output directory (default "aurelian-output")
-  -s, --subscription-id strings        Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions (default [all])
+  -s, --subscription-ids strings       Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions (default [all])
 ```
 
 ### SEE ALSO

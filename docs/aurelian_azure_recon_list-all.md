@@ -9,9 +9,9 @@ aurelian azure recon list-all [flags]
 ### Options
 
 ```
-  -h, --help                      help for list-all
-      --output-dir string         Base output directory (default "aurelian-output")
-  -s, --subscription-id strings   Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions (default [all])
+  -h, --help                       help for list-all
+      --output-dir string          Base output directory (default "aurelian-output")
+  -s, --subscription-ids strings   Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions (default [all])
 ```
 
 ### SEE ALSO
