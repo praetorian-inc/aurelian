@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/praetorian-inc/aurelian/test/testutil/fixture"
 )
 
 func NewGCPFixture(t *testing.T, moduleDir string) Fixture {
@@ -33,16 +35,16 @@ func NewGCPFixture(t *testing.T, moduleDir string) Fixture {
 		os.Setenv("GOOGLE_PROJECT", projectID)
 	}
 
-	ensureStateBucket(t)
+	fixture.EnsureStateBucket(t)
 	stateKey := fmt.Sprintf("integration-tests/gcp/%s/terraform.tfstate", moduleDir)
 
-	return newBaseFixture(t, fixtureConfig{
-		provider:    fixtureProvider("gcp"),
-		moduleDir:   moduleDir,
-		fixtureDir:  fixtureDir,
-		execPath:    execPath,
-		containerID: projectID,
-		stateKey:    stateKey,
+	return fixture.NewBase(t, fixture.Config{
+		Provider:    fixture.ProviderGCP,
+		ModuleDir:   moduleDir,
+		FixtureDir:  fixtureDir,
+		ExecPath:    execPath,
+		ContainerID: projectID,
+		StateKey:    stateKey,
 	})
 }
 
