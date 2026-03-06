@@ -1,4 +1,4 @@
-package testutil
+package fixture
 
 import (
 	"os"
@@ -9,7 +9,6 @@ import (
 func TestComputeFixtureHash_DeterministicAndContentSensitive(t *testing.T) {
 	dir := t.TempDir()
 
-	// Create two files
 	if err := os.WriteFile(filepath.Join(dir, "main.tf"), []byte("resource {}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +86,6 @@ func TestComputeFixtureHash_FileAdditionChangesHash(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Add a new file
 	if err := os.WriteFile(filepath.Join(dir, "lambda.zip"), []byte("zipdata"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -98,5 +96,15 @@ func TestComputeFixtureHash_FileAdditionChangesHash(t *testing.T) {
 	}
 	if h1 == h2 {
 		t.Fatal("hash should change when a file is added")
+	}
+}
+
+func TestComputeEffectiveHash_IncludesContainerID(t *testing.T) {
+	fixtureHash := "abc123"
+	aws1 := computeEffectiveHash(fixtureHash, "111111111111")
+	aws2 := computeEffectiveHash(fixtureHash, "222222222222")
+
+	if aws1 == aws2 {
+		t.Fatal("effective hash must differ across container IDs")
 	}
 }

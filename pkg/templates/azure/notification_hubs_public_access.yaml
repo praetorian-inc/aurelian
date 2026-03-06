@@ -1,0 +1,50 @@
+id: notification_hubs_public_access
+name: "Publicly Accessible Notification Hubs"
+description: "Detects Notification Hub namespaces with public network access enabled"
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - Push notification endpoints exposed to the internet
+  - Could enable unauthorized notification injection or interception
+  - May allow notification deletion or manipulation
+  - Could be used for spam or phishing campaigns
+
+  Triage Guidance:
+  - This finding confirms network-level accessibility from internet
+  - Notification Hub access is protected by connection strings
+  - Manual testing required:
+    1. Verify namespace endpoint is accessible
+    2. Check if authentication is enforced
+    3. Review shared access policies
+  - Consider: Does this namespace need internet access?
+
+  Remediation Considerations:
+  - Disable public network access if not required
+  - Implement IP restrictions for known notification senders
+  - Use Azure Private Link for internal access
+  - Rotate shared access policies regularly
+  - Monitor notification sending attempts
+
+references:
+  - https://learn.microsoft.com/en-us/azure/notification-hubs/notification-hubs-push-notification-security
+  - https://learn.microsoft.com/en-us/azure/notification-hubs/configure-notification-hub-portal-pns-settings
+
+query: |
+  resources
+  | where type =~ 'Microsoft.NotificationHubs/namespaces'
+  | extend publicNetworkAccess = tolower(coalesce(properties.publicNetworkAccess, 'enabled'))
+  | extend sku = sku.name
+  | extend namespaceType = properties.namespaceType
+  | where publicNetworkAccess != 'disabled'
+  | project
+      id,
+      name,
+      type,
+      location,
+      publicNetworkAccess,
+      sku,
+      namespaceType,
+      subscriptionId,
+      resourceGroup
