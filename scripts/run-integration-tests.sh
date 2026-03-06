@@ -53,6 +53,7 @@ done
 AZURE_SUBSCRIPTION_ID=""
 AWS_PROFILE=""
 GCP_PROJECT_ID=""
+GCP_ACCOUNT=""
 
 if [[ -f "$ENV_FILE" ]]; then
   # Source the file to pick up existing values
@@ -86,11 +87,20 @@ if [[ -z "$GCP_PROJECT_ID" ]]; then
   fi
 fi
 
+if [[ -z "$GCP_ACCOUNT" ]]; then
+  read -rp "Enter GCP_ACCOUNT (gcloud account email): " GCP_ACCOUNT
+  if [[ -z "$GCP_ACCOUNT" ]]; then
+    echo "ERROR: GCP_ACCOUNT is required." >&2
+    exit 1
+  fi
+fi
+
 # Save back to .env.integration
 cat > "$ENV_FILE" <<EOF
 AZURE_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION_ID
 AWS_PROFILE=$AWS_PROFILE
 GCP_PROJECT_ID=$GCP_PROJECT_ID
+GCP_ACCOUNT=$GCP_ACCOUNT
 EOF
 echo "Saved credentials to $ENV_FILE"
 
@@ -112,11 +122,24 @@ if ! AWS_PROFILE="$AWS_PROFILE" aws sts get-caller-identity &>/dev/null; then
 fi
 echo "AWS profile OK."
 
-# Validate GCP project
+# Configure and validate GCP
+echo "Setting gcloud account to $GCP_ACCOUNT..."
+if ! gcloud config set account "$GCP_ACCOUNT" &>/dev/null; then
+  echo "ERROR: Unable to set gcloud account to '$GCP_ACCOUNT'." >&2
+  echo "Run 'gcloud auth login' and try again." >&2
+  exit 1
+fi
+
+echo "Setting gcloud project to $GCP_PROJECT_ID..."
+if ! gcloud config set project "$GCP_PROJECT_ID" &>/dev/null; then
+  echo "ERROR: Unable to set gcloud project to '$GCP_PROJECT_ID'." >&2
+  exit 1
+fi
+
 echo "Validating GCP project $GCP_PROJECT_ID..."
 if ! gcloud projects describe "$GCP_PROJECT_ID" &>/dev/null; then
-  echo "ERROR: Unable to access GCP project '$GCP_PROJECT_ID' with current credentials." >&2
-  echo "Run 'gcloud auth application-default login' and try again." >&2
+  echo "ERROR: Unable to access GCP project '$GCP_PROJECT_ID' with account '$GCP_ACCOUNT'." >&2
+  echo "Run 'gcloud auth login' and try again." >&2
   exit 1
 fi
 echo "GCP project OK."
