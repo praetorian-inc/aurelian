@@ -61,7 +61,8 @@ terraform {
 provider "azurerm" {
   features {
     key_vault {
-      purge_soft_delete_on_destroy = false
+      purge_soft_delete_on_destroy    = true
+      recover_soft_deleted_key_vaults = false
     }
     resource_group {
       prevent_deletion_if_contains_resources = false
@@ -94,9 +95,15 @@ locals {
 }
 
 variable "location" {
-  description = "Azure region for test resources"
+  description = "Primary Azure region for test resources"
   type        = string
-  default     = "eastus2"
+  default     = "westus2"
+}
+
+variable "sql_location" {
+  description = "Azure region for SQL-dependent resources (SQL Server, Synapse) to avoid per-region provisioning quotas"
+  type        = string
+  default     = "centralus"
 }
 
 # ============================================================================
@@ -184,7 +191,7 @@ resource "azurerm_key_vault" "public" {
 resource "azurerm_mssql_server" "public" {
   name                          = "${local.prefix}-sql"
   resource_group_name           = azurerm_resource_group.test.name
-  location                      = local.location
+  location                      = var.sql_location
   version                       = "12.0"
   administrator_login           = "aurelianadmin"
   administrator_login_password  = "P@ssw0rd${random_string.suffix.result}!"
@@ -362,7 +369,7 @@ resource "azurerm_databricks_workspace" "public" {
 resource "azurerm_storage_account" "synapse" {
   name                     = "${local.prefix_san}syn"
   resource_group_name      = azurerm_resource_group.test.name
-  location                 = local.location
+  location                 = var.sql_location
   account_tier             = "Standard"
   account_replication_type = "LRS"
   account_kind             = "StorageV2"
@@ -378,7 +385,7 @@ resource "azurerm_storage_data_lake_gen2_filesystem" "synapse" {
 resource "azurerm_synapse_workspace" "public" {
   name                                 = "${local.prefix}-syn"
   resource_group_name                  = azurerm_resource_group.test.name
-  location                             = local.location
+  location                             = var.sql_location
   storage_data_lake_gen2_filesystem_id = azurerm_storage_data_lake_gen2_filesystem.synapse.id
   sql_administrator_login              = "sqladminuser"
   sql_administrator_login_password     = "P@ssw0rd1234!"
@@ -403,12 +410,14 @@ resource "azurerm_storage_account" "ml" {
 }
 
 resource "azurerm_key_vault" "ml" {
-  name                = "${local.prefix}-mlkv"
-  resource_group_name = azurerm_resource_group.test.name
-  location            = local.location
-  tenant_id           = data.azurerm_client_config.current.tenant_id
-  sku_name            = "standard"
-  tags                = local.tags
+  name                       = "${local.prefix}-mlkv"
+  resource_group_name        = azurerm_resource_group.test.name
+  location                   = local.location
+  tenant_id                  = data.azurerm_client_config.current.tenant_id
+  sku_name                   = "standard"
+  purge_protection_enabled   = false
+  soft_delete_retention_days = 7
+  tags                       = local.tags
 }
 
 resource "azurerm_log_analytics_workspace" "ml" {
