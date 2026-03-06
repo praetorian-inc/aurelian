@@ -20,6 +20,14 @@ func TestAWSFindSecrets(t *testing.T) {
 	fixture := testutil.NewAWSFixture(t, "aws/recon/find-secrets")
 	fixture.Setup()
 
+	// Log events expire with 1-day retention. Re-inject if missing so the
+	// CloudWatch Logs subtest passes on long-lived fixtures.
+	testutil.EnsureLogEvent(t, "us-east-2",
+		fixture.Output("log_group_name"),
+		fixture.Output("log_stream_name"),
+		fixture.Output("log_event_message"),
+	)
+
 	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "find-secrets")
 	if !ok {
 		t.Fatal("find-secrets module not registered in plugin system")

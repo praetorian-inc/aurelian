@@ -22,6 +22,14 @@ output "log_group_name" {
   value = aws_cloudwatch_log_group.with_secret.name
 }
 
+output "log_stream_name" {
+  value = aws_cloudwatch_log_stream.with_secret.name
+}
+
+output "log_event_message" {
+  value = "AWS_ACCESS_KEY_ID=${local.fake_aws_key} AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}"
+}
+
 output "task_definition_arn" {
   value = aws_ecs_task_definition.with_secret.arn
 }
