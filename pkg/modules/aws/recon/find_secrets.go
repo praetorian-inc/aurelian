@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
-	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
+	cclist "github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/aws/extraction"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -91,7 +91,9 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		return fmt.Errorf("failed to collect inputs: %v", err)
 	}
 
-	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
+	pipeOpts := &pipeline.PipeOpts{Concurrency: m.Concurrency}
+
+	lister := cclist.NewEnumerator(c.AWSCommonRecon)
 	inputPipeline := pipeline.From(inputs...)
 	listed := pipeline.New[output.AWSResource]()
 	pipeline.Pipe(inputPipeline, lister.List, listed)
@@ -102,7 +104,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	})
 
 	extracted := pipeline.New[output.ScanInput]()
-	pipeline.Pipe(listed, extractor.Extract, extracted)
+	pipeline.Pipe(listed, extractor.Extract, extracted, pipeOpts)
 
 	scanned := pipeline.New[secrets.SecretScanResult]()
 	pipeline.Pipe(extracted, s.Scan, scanned)

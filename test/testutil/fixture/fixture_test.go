@@ -1,6 +1,6 @@
 //go:build integration
 
-package testutil
+package fixture
 
 import (
 	"context"
@@ -11,12 +11,6 @@ import (
 
 	"github.com/hashicorp/terraform-exec/tfexec"
 )
-
-func TestConstructorSymbolsExist(t *testing.T) {
-	_ = NewAWSFixture
-	_ = NewAzureFixture
-	_ = NewGCPFixture
-}
 
 func TestComputeEffectiveHash_IncludesContainerID(t *testing.T) {
 	fixtureHash := "abc123"
@@ -29,9 +23,9 @@ func TestComputeEffectiveHash_IncludesContainerID(t *testing.T) {
 }
 
 func TestRunLifecycle_RemoteHashMissing_AppliesAndStoresHash(t *testing.T) {
-	fixture, calls, _, _ := newLifecycleFixture(t, "", nil, nil)
+	f, calls, _, _ := newLifecycleFixture(t, "", nil, nil)
 
-	err := fixture.runLifecycle(context.Background())
+	err := f.runLifecycle(context.Background())
 	if err != nil {
 		t.Fatalf("run lifecycle: %v", err)
 	}
@@ -43,10 +37,10 @@ func TestRunLifecycle_RemoteHashMissing_AppliesAndStoresHash(t *testing.T) {
 }
 
 func TestRunLifecycle_RemoteHashMatch_ReusesWithoutApply(t *testing.T) {
-	fixture, calls, effectiveHash, ops := newLifecycleFixture(t, "", nil, nil)
-	ops.remoteHash = effectiveHash
+	f, calls, effectiveHash, mock := newLifecycleFixture(t, "", nil, nil)
+	mock.remoteHash = effectiveHash
 
-	err := fixture.runLifecycle(context.Background())
+	err := f.runLifecycle(context.Background())
 	if err != nil {
 		t.Fatalf("run lifecycle: %v", err)
 	}
@@ -57,16 +51,16 @@ func TestRunLifecycle_RemoteHashMatch_ReusesWithoutApply(t *testing.T) {
 	}
 }
 
-func TestRunLifecycle_RemoteHashMismatch_DestroysThenApplies(t *testing.T) {
-	fixture, calls, effectiveHash, ops := newLifecycleFixture(t, "", nil, nil)
-	ops.remoteHash = effectiveHash + "-stale"
+func TestRunLifecycle_RemoteHashMismatch_ReApplies(t *testing.T) {
+	f, calls, effectiveHash, mock := newLifecycleFixture(t, "", nil, nil)
+	mock.remoteHash = effectiveHash + "-stale"
 
-	err := fixture.runLifecycle(context.Background())
+	err := f.runLifecycle(context.Background())
 	if err != nil {
 		t.Fatalf("run lifecycle: %v", err)
 	}
 
-	expected := []string{"init", "destroy", "delete", "apply", "upload", "put", "output"}
+	expected := []string{"init", "apply", "upload", "put", "output"}
 	if !slices.Equal(*calls, expected) {
 		t.Fatalf("unexpected calls: got=%v want=%v", *calls, expected)
 	}
@@ -74,9 +68,9 @@ func TestRunLifecycle_RemoteHashMismatch_DestroysThenApplies(t *testing.T) {
 
 func TestRunLifecycle_GetRemoteHashError_Fails(t *testing.T) {
 	expectedErr := errors.New("hash read failed")
-	fixture, _, _, _ := newLifecycleFixture(t, "", expectedErr, nil)
+	f, _, _, _ := newLifecycleFixture(t, "", expectedErr, nil)
 
-	err := fixture.runLifecycle(context.Background())
+	err := f.runLifecycle(context.Background())
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -84,49 +78,49 @@ func TestRunLifecycle_GetRemoteHashError_Fails(t *testing.T) {
 
 func TestRunLifecycle_OutputError_Fails(t *testing.T) {
 	expectedErr := errors.New("output failed")
-	fixture, _, _, _ := newLifecycleFixture(t, "", nil, expectedErr)
+	f, _, _, _ := newLifecycleFixture(t, "", nil, expectedErr)
 
-	err := fixture.runLifecycle(context.Background())
+	err := f.runLifecycle(context.Background())
 	if err == nil {
 		t.Fatal("expected error")
 	}
 }
 
-type mockFixtureOps struct {
-	calls     *[]string
+type mockOps struct {
+	calls      *[]string
 	remoteHash string
-	hashErr   error
-	outputErr error
+	hashErr    error
+	outputErr  error
 }
 
-func (m *mockFixtureOps) GetRemoteHash(context.Context) (string, error) {
+func (m *mockOps) GetRemoteHash(context.Context) (string, error) {
 	if m.hashErr != nil {
 		return "", m.hashErr
 	}
 	return m.remoteHash, nil
 }
 
-func (m *mockFixtureOps) PutRemoteHash(context.Context, string) error {
+func (m *mockOps) PutRemoteHash(context.Context, string) error {
 	*m.calls = append(*m.calls, "put")
 	return nil
 }
 
-func (m *mockFixtureOps) Init(context.Context, ...tfexec.InitOption) error {
+func (m *mockOps) Init(context.Context, ...tfexec.InitOption) error {
 	*m.calls = append(*m.calls, "init")
 	return nil
 }
 
-func (m *mockFixtureOps) Destroy(context.Context, ...tfexec.DestroyOption) error {
+func (m *mockOps) Destroy(context.Context, ...tfexec.DestroyOption) error {
 	*m.calls = append(*m.calls, "destroy")
 	return nil
 }
 
-func (m *mockFixtureOps) Apply(context.Context, ...tfexec.ApplyOption) error {
+func (m *mockOps) Apply(context.Context, ...tfexec.ApplyOption) error {
 	*m.calls = append(*m.calls, "apply")
 	return nil
 }
 
-func (m *mockFixtureOps) Output(context.Context, ...tfexec.OutputOption) (map[string]tfexec.OutputMeta, error) {
+func (m *mockOps) Output(context.Context, ...tfexec.OutputOption) (map[string]tfexec.OutputMeta, error) {
 	*m.calls = append(*m.calls, "output")
 	if m.outputErr != nil {
 		return nil, m.outputErr
@@ -134,21 +128,21 @@ func (m *mockFixtureOps) Output(context.Context, ...tfexec.OutputOption) (map[st
 	return map[string]tfexec.OutputMeta{}, nil
 }
 
-func (m *mockFixtureOps) UploadArtifacts(context.Context) error {
+func (m *mockOps) UploadArtifacts(context.Context) error {
 	*m.calls = append(*m.calls, "upload")
 	return nil
 }
 
-func (m *mockFixtureOps) DeleteArtifacts(context.Context) error {
+func (m *mockOps) DeleteArtifacts(context.Context) error {
 	*m.calls = append(*m.calls, "delete")
 	return nil
 }
 
-func newLifecycleFixture(t *testing.T, remoteHash string, hashErr error, outputErr error) (*BaseFixture, *[]string, string, *mockFixtureOps) {
+func newLifecycleFixture(t *testing.T, remoteHash string, hashErr error, outputErr error) (*BaseFixture, *[]string, string, *mockOps) {
 	t.Helper()
 
 	dir := t.TempDir()
-	if err := createFixtureFiles(dir); err != nil {
+	if err := os.WriteFile(dir+"/main.tf", []byte("resource {}"), 0o644); err != nil {
 		t.Fatalf("create fixture files: %v", err)
 	}
 
@@ -159,16 +153,18 @@ func newLifecycleFixture(t *testing.T, remoteHash string, hashErr error, outputE
 	effectiveHash := computeEffectiveHash(fixtureHash, "container")
 
 	calls := []string{}
-	ops := &mockFixtureOps{calls: &calls, remoteHash: remoteHash, hashErr: hashErr, outputErr: outputErr}
-	fixture := &BaseFixture{
+	mock := &mockOps{calls: &calls, remoteHash: remoteHash, hashErr: hashErr, outputErr: outputErr}
+	f := &BaseFixture{
 		t: t,
-		cfg: fixtureConfig{fixtureDir: dir, containerID: "container", stateURI: "test://state", artifactsURI: "test://artifacts/", initOpts: []tfexec.InitOption{}},
-		ops: ops,
+		cfg: Config{
+			FixtureDir:   dir,
+			ContainerID:  "container",
+			StateURI:     "test://state",
+			ArtifactsURI: "test://artifacts/",
+			InitOpts:     []tfexec.InitOption{},
+		},
+		ops: mock,
 	}
 
-	return fixture, &calls, effectiveHash, ops
-}
-
-func createFixtureFiles(dir string) error {
-	return os.WriteFile(dir+"/main.tf", []byte("resource {}"), 0o644)
+	return f, &calls, effectiveHash, mock
 }

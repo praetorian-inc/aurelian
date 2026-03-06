@@ -1,0 +1,63 @@
+id: acr_anonymous_pull_access
+name: ACR Anonymous Pull Access Enabled
+description: Detects Azure Container Registry (ACR) instances with anonymous pull access enabled, allowing unauthenticated users to pull container images without authentication.
+severity: High
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Security Risk:
+  Azure Container Registry with anonymous pull enabled allows anyone on the internet to pull container images without any authentication. This is a critical security misconfiguration that can lead to:
+
+  - Unauthorized access to proprietary container images
+  - Exposure of secrets, credentials, or sensitive data embedded in images
+  - Intellectual property theft
+  - Compliance violations (HIPAA, PCI-DSS, SOC 2)
+  - Potential for reverse engineering of application logic
+
+  Understanding Anonymous Pull:
+  - Anonymous pull access (anonymousPullEnabled) allows public read access to all images in the registry
+  - This is different from "public network access" which only controls network-level connectivity
+  - Even with firewall rules, anonymous pull bypass authentication entirely
+  - This setting is typically used for open-source projects, NOT production environments
+
+  Triage Guidance:
+  1. Verify if the ACR contains production images or sensitive workloads
+  2. Check if the registry stores images with embedded secrets, API keys, or credentials
+  3. Determine if this is intentional for open-source/public container images
+  4. Review image pull logs to identify if unauthorized access has occurred
+  5. Validate if network security groups or firewall rules provide any protection (they don't prevent anonymous pull)
+
+  Remediation Considerations:
+  - Disable anonymous pull access immediately for production registries
+  - Use Azure AD authentication or repository-scoped tokens instead
+  - Enable admin user only if necessary (not recommended for production)
+  - Implement network restrictions with private endpoints or VNet integration
+  - Audit all images for embedded secrets before disabling anonymous access
+  - Review and rotate any credentials that may have been exposed
+
+  Additional Context:
+  - Anonymous pull is disabled by default on new ACR instances
+  - This finding indicates explicit configuration or legacy migration
+  - High severity due to complete authentication bypass
+references:
+  - https://learn.microsoft.com/en-us/azure/container-registry/anonymous-pull-access
+  - https://learn.microsoft.com/en-us/azure/templates/microsoft.containerregistry/registries
+  - https://learn.microsoft.com/en-us/azure/container-registry/container-registry-authentication
+query: |
+  resources
+  | where type =~ 'Microsoft.ContainerRegistry/registries'
+  | extend anonymousPullEnabled = coalesce(properties.anonymousPullEnabled, false)
+  | extend adminUserEnabled = coalesce(properties.adminUserEnabled, false)
+  | extend publicNetworkAccess = tolower(properties.publicNetworkAccess)
+  | where anonymousPullEnabled == true
+  | project
+      id,
+      name,
+      type,
+      location,
+      loginServer = properties.loginServer,
+      anonymousPullEnabled,
+      adminUserEnabled,
+      publicNetworkAccess,
+      subscriptionId,
+      resourceGroup

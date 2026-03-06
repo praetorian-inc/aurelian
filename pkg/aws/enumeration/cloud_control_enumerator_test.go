@@ -1,4 +1,4 @@
-package cloudcontrol
+package enumeration
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 )
 
 func TestResolveARNTarget_ServiceMappedRegionKept(t *testing.T) {
-	cc := &CloudControlLister{}
+	cc := &CloudControlEnumerator{}
 
 	region, typ, id, err := cc.resolveARNTarget("arn:aws:ec2:us-west-2:123456789012:instance/i-1234567890abcdef0")
 	require.NoError(t, err)
@@ -17,7 +17,7 @@ func TestResolveARNTarget_ServiceMappedRegionKept(t *testing.T) {
 }
 
 func TestResolveARNTarget_GlobalTypeForcesUsEast1(t *testing.T) {
-	cc := &CloudControlLister{}
+	cc := &CloudControlEnumerator{}
 
 	region, typ, _, err := cc.resolveARNTarget("arn:aws:iam::123456789012:role/Admin")
 	require.NoError(t, err)
@@ -26,14 +26,14 @@ func TestResolveARNTarget_GlobalTypeForcesUsEast1(t *testing.T) {
 }
 
 func TestResolveARNTarget_UnknownServiceFails(t *testing.T) {
-	cc := &CloudControlLister{}
+	cc := &CloudControlEnumerator{}
 
 	_, _, _, err := cc.resolveARNTarget("arn:aws:definitelynotreal:us-east-1:123456789012:thing/id")
 	require.Error(t, err)
 }
 
 func TestResolveARNTarget_InvalidARNFails(t *testing.T) {
-	cc := &CloudControlLister{}
+	cc := &CloudControlEnumerator{}
 
 	_, _, _, err := cc.resolveARNTarget("not-an-arn")
 	require.Error(t, err)

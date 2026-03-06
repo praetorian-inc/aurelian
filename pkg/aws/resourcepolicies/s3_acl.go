@@ -10,6 +10,7 @@ import (
 	smithy "github.com/aws/smithy-go"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
+	"golang.org/x/sync/errgroup"
 )
 
 // S3ExtendedClient extends the S3Client interface with ACL and Block Public Access operations.
@@ -25,8 +26,8 @@ type S3ExtendedClient interface {
 // 2. Bucket policy
 // 3. Bucket ACL (converted to policy statements if public grants exist)
 func FetchS3BucketPolicyExtended(ctx context.Context, client S3ExtendedClient, resource *output.AWSResource, allowedRegions []string) (*types.Policy, error) {
-	bucketName, ok := resource.Properties["BucketName"].(string)
-	if !ok || bucketName == "" {
+	bucketName := resource.ResourceID
+	if bucketName == "" {
 		return nil, nil
 	}
 
@@ -66,6 +67,9 @@ func FetchS3BucketPolicyExtended(ctx context.Context, client S3ExtendedClient, r
 	} else if blockOut.PublicAccessBlockConfiguration != nil {
 		config := blockOut.PublicAccessBlockConfiguration
 		if boolPtrVal(config.IgnorePublicAcls) || boolPtrVal(config.RestrictPublicBuckets) {
+			if resource.Properties == nil {
+				resource.Properties = make(map[string]any)
+			}
 			resource.Properties["BlockPublicAccess"] = map[string]bool{
 				"BlockPublicAcls":       boolPtrVal(config.BlockPublicAcls),
 				"IgnorePublicAcls":      boolPtrVal(config.IgnorePublicAcls),
@@ -79,15 +83,25 @@ func FetchS3BucketPolicyExtended(ctx context.Context, client S3ExtendedClient, r
 		}
 	}
 
-	// Get bucket policy
-	bucketPolicy, err := FetchS3BucketPolicy(ctx, client, resource, withRegion)
-	if err != nil {
-		return nil, err
-	}
+	// Fetch bucket policy and ACL in parallel — they are independent calls
+	g, gCtx := errgroup.WithContext(ctx)
 
-	// Get bucket ACL and convert public grants to policy statements
-	aclStatements, err := fetchAndConvertACL(ctx, client, bucketName, withRegion)
-	if err != nil {
+	var bucketPolicy *types.Policy
+	var aclStatements []types.PolicyStatement
+
+	g.Go(func() error {
+		var err error
+		bucketPolicy, err = FetchS3BucketPolicy(gCtx, client, resource, withRegion)
+		return err
+	})
+
+	g.Go(func() error {
+		var err error
+		aclStatements, err = fetchAndConvertACL(gCtx, client, bucketName, withRegion)
+		return err
+	})
+
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 
