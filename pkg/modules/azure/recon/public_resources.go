@@ -1,6 +1,7 @@
 package recon
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/azure/subscriptions"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/model"
+	_ "github.com/praetorian-inc/aurelian/pkg/modules/azure/enrichers"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -116,9 +118,43 @@ func (m *AzurePublicResourcesModule) Run(_ plugin.Config, out *pipeline.P[model.
 	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, nil)
 	pipeline.Pipe(inputStream, lister.Query, results)
 
-	pipeline.Pipe(results, resultToRisk, out)
+	// Enrichment stage
+	enricherCfg := plugin.AzureEnricherConfig{
+		Context:    context.Background(),
+		Credential: m.AzureCredential,
+	}
+	enriched := pipeline.New[templates.ARGQueryResult]()
+	pipeline.Pipe(results, enrichResult(enricherCfg), enriched, &pipeline.PipeOpts{Concurrency: 10})
+
+	pipeline.Pipe(enriched, resultToRisk, out)
 
 	return out.Wait()
+}
+
+// enrichResult returns a pipeline function that runs registered enrichers for each result.
+func enrichResult(cfg plugin.AzureEnricherConfig) func(templates.ARGQueryResult, *pipeline.P[templates.ARGQueryResult]) error {
+	return func(result templates.ARGQueryResult, out *pipeline.P[templates.ARGQueryResult]) error {
+		enrichers := plugin.GetAzureEnrichers(result.TemplateID)
+		if len(enrichers) > 0 {
+			var allCommands []plugin.AzureEnrichmentCommand
+			for _, fn := range enrichers {
+				commands, err := fn(cfg, &result)
+				if err != nil {
+					slog.Warn("enricher failed", "template", result.TemplateID, "resource", result.ResourceID, "error", err)
+					continue
+				}
+				allCommands = append(allCommands, commands...)
+			}
+			if len(allCommands) > 0 {
+				if result.Properties == nil {
+					result.Properties = make(map[string]interface{})
+				}
+				result.Properties["enrichmentCommands"] = allCommands
+			}
+		}
+		out.Send(result)
+		return nil
+	}
 }
 
 func resultToRisk(result templates.ARGQueryResult, out *pipeline.P[model.AurelianModel]) error {
