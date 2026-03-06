@@ -28,6 +28,11 @@ func NewGCPFixture(t *testing.T, moduleDir string) Fixture {
 		t.Fatalf("resolve gcp project id: %v", err)
 	}
 
+	// Ensure GOOGLE_PROJECT is set so the Terraform Google provider picks it up.
+	if os.Getenv("GOOGLE_PROJECT") == "" {
+		os.Setenv("GOOGLE_PROJECT", projectID)
+	}
+
 	ensureStateBucket(t)
 	stateKey := fmt.Sprintf("integration-tests/gcp/%s/terraform.tfstate", moduleDir)
 
