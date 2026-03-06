@@ -3,7 +3,6 @@ package extraction
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -29,8 +28,7 @@ func extractWebAppSettings(ctx extractContext, r output.AzureResource, out *pipe
 
 	settings, err := client.ListApplicationSettings(ctx.Context, resourceGroup, appName, nil)
 	if err != nil {
-		slog.Warn("failed to list app settings", "app", appName, "error", err)
-		return nil
+		return handleExtractError(err, "webapp-settings", r.ResourceID)
 	}
 
 	if len(settings.Properties) > 0 {
@@ -54,8 +52,7 @@ func extractWebAppConnections(ctx extractContext, r output.AzureResource, out *p
 
 	connStrings, err := client.ListConnectionStrings(ctx.Context, resourceGroup, appName, nil)
 	if err != nil {
-		slog.Warn("failed to list connection strings", "app", appName, "error", err)
-		return nil
+		return handleExtractError(err, "webapp-connections", r.ResourceID)
 	}
 
 	if connStrings.Properties != nil {
@@ -79,8 +76,7 @@ func extractWebAppHostKeys(ctx extractContext, r output.AzureResource, out *pipe
 
 	hostKeys, err := client.ListHostKeys(ctx.Context, resourceGroup, appName, nil)
 	if err != nil {
-		slog.Warn("failed to list host keys", "app", appName, "error", err)
-		return nil
+		return handleExtractError(err, "webapp-hostkeys", r.ResourceID)
 	}
 
 	if data, err := json.Marshal(hostKeys); err == nil && len(data) > 2 {

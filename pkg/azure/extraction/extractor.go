@@ -2,7 +2,6 @@ package extraction
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strings"
 
@@ -28,7 +27,9 @@ func (e *AzureExtractor) Extract(r output.AzureResource, out *pipeline.P[output.
 	normalizedType := strings.ToLower(r.ResourceType)
 	extractors := getExtractors(normalizedType)
 	if len(extractors) == 0 {
-		return fmt.Errorf("no extractor registered for Azure resource type %s", r.ResourceType)
+		slog.Debug("no extractor registered for resource type, skipping",
+			"type", r.ResourceType, "resource", r.ResourceID)
+		return nil
 	}
 
 	ctx := extractContext{

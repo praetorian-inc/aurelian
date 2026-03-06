@@ -11,7 +11,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/automation/armautomation"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
-	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
 func init() {
@@ -35,8 +34,8 @@ func extractAutomationVariables(ctx extractContext, r output.AzureResource, out 
 	}
 
 	pager := client.NewListByAutomationAccountPager(resourceGroup, accountName, nil)
-	paginator := ratelimit.NewAzurePaginator()
-	return paginator.Paginate(func() (bool, error) {
+	paginator := newAzurePaginator()
+	err = paginator.Paginate(func() (bool, error) {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
 			return true, err
@@ -58,6 +57,7 @@ func extractAutomationVariables(ctx extractContext, r output.AzureResource, out 
 		}
 		return pager.More(), nil
 	})
+	return handleExtractError(err, "automation-variables", r.ResourceID)
 }
 
 func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
@@ -76,8 +76,8 @@ func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *
 	}
 
 	pager := client.NewListByAutomationAccountPager(resourceGroup, accountName, nil)
-	paginator := ratelimit.NewAzurePaginator()
-	return paginator.Paginate(func() (bool, error) {
+	paginator := newAzurePaginator()
+	err = paginator.Paginate(func() (bool, error) {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
 			return true, err
@@ -99,6 +99,7 @@ func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *
 		}
 		return pager.More(), nil
 	})
+	return handleExtractError(err, "automation-runbooks", r.ResourceID)
 }
 
 // fetchRunbookContent retrieves the actual content of a runbook via the REST API.
