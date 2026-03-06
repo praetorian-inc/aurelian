@@ -121,3 +121,19 @@ output "application_gateway_id" {
 output "kusto_cluster_id" {
   value = azurerm_kusto_cluster.public.id
 }
+
+output "app_service_id" {
+  value = azurerm_linux_web_app.public.id
+}
+
+output "function_app_id" {
+  value = azurerm_linux_function_app.public.id
+}
+
+output "mysql_server_id" {
+  value = azurerm_mysql_flexible_server.public.id
+}
+
+output "event_grid_domain_id" {
+  value = azurerm_eventgrid_domain.public.id
+}

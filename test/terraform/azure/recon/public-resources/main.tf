@@ -42,6 +42,10 @@
 // | 31 | Virtual Machine              | virtual_machines_public                    | DETECTED |
 // | 32 | Application Gateway          | application_gateway_public_access          | DETECTED |
 // | 33 | Data Explorer (Kusto)        | data_explorer_public_access                | DETECTED |
+// | 34 | App Service (Linux Web App)  | app_services_public_access                 | DETECTED |
+// | 35 | Function App                 | function_apps_public_http_triggers          | DETECTED |
+// | 36 | MySQL Flexible Server        | mysql_flexible_server_public_access         | DETECTED |
+// | 37 | Event Grid Domain            | event_grid_domain_public                   | DETECTED |
 
 terraform {
   required_providers {
@@ -858,4 +862,119 @@ resource "azurerm_kusto_cluster" "public" {
   }
 
   tags = local.tags
+}
+
+# ============================================================================
+# 34. App Service (Linux Web App) — publicly accessible
+# ============================================================================
+
+resource "azurerm_service_plan" "appservice" {
+  name                = "${local.prefix}-asp"
+  resource_group_name = azurerm_resource_group.test.name
+  location            = local.location
+  os_type             = "Linux"
+  sku_name            = "B1"
+  tags                = local.tags
+}
+
+resource "azurerm_linux_web_app" "public" {
+  name                          = "${local.prefix}-webapp"
+  resource_group_name           = azurerm_resource_group.test.name
+  location                      = local.location
+  service_plan_id               = azurerm_service_plan.appservice.id
+  public_network_access_enabled = true
+  https_only                    = false
+
+  site_config {
+    always_on = false
+    application_stack {
+      node_version = "18-lts"
+    }
+  }
+
+  tags = local.tags
+}
+
+# ============================================================================
+# 35. Function App — publicly accessible with HTTP trigger
+# Note: Linux Consumption (Y1) requires a separate resource group from B1 plans.
+# ============================================================================
+
+resource "azurerm_resource_group" "funcapp" {
+  name     = "${local.prefix}-func-rg"
+  location = local.location
+  tags     = local.tags
+}
+
+resource "azurerm_storage_account" "funcapp" {
+  name                     = "${local.prefix_san}func"
+  resource_group_name      = azurerm_resource_group.funcapp.name
+  location                 = local.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+  tags                     = local.tags
+}
+
+resource "azurerm_service_plan" "funcapp" {
+  name                = "${local.prefix}-func-asp"
+  resource_group_name = azurerm_resource_group.funcapp.name
+  location            = local.location
+  os_type             = "Linux"
+  sku_name            = "Y1"
+  tags                = local.tags
+}
+
+resource "azurerm_linux_function_app" "public" {
+  name                          = "${local.prefix}-func"
+  resource_group_name           = azurerm_resource_group.funcapp.name
+  location                      = local.location
+  service_plan_id               = azurerm_service_plan.funcapp.id
+  storage_account_name          = azurerm_storage_account.funcapp.name
+  storage_account_access_key    = azurerm_storage_account.funcapp.primary_access_key
+  public_network_access_enabled = true
+
+  site_config {
+    application_stack {
+      node_version = "18"
+    }
+  }
+
+  tags = local.tags
+}
+
+# ============================================================================
+# 36. MySQL Flexible Server — publicly accessible
+# ============================================================================
+
+resource "azurerm_mysql_flexible_server" "public" {
+  name                   = "${local.prefix}-mysql"
+  resource_group_name    = azurerm_resource_group.test.name
+  location               = local.location
+  administrator_login    = "mysqladmin"
+  administrator_password = random_password.db.result
+  sku_name               = "B_Standard_B1ms"
+  version                = "8.0.21"
+  tags                   = local.tags
+
+  lifecycle { ignore_changes = [zone] }
+}
+
+resource "azurerm_mysql_flexible_server_firewall_rule" "allow_all" {
+  name                = "AllowAll"
+  resource_group_name = azurerm_resource_group.test.name
+  server_name         = azurerm_mysql_flexible_server.public.name
+  start_ip_address    = "0.0.0.0"
+  end_ip_address      = "255.255.255.255"
+}
+
+# ============================================================================
+# 37. Event Grid Domain — publicly accessible
+# ============================================================================
+
+resource "azurerm_eventgrid_domain" "public" {
+  name                          = "${local.prefix}-egd"
+  resource_group_name           = azurerm_resource_group.test.name
+  location                      = local.location
+  public_network_access_enabled = true
+  tags                          = local.tags
 }
