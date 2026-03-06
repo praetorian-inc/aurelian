@@ -1,4 +1,4 @@
-package applications
+package enumeration
 
 import (
 	"context"

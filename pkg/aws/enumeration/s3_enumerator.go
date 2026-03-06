@@ -117,7 +117,7 @@ func (l *S3Enumerator) listBucketsInRegion(region string, out *pipeline.P[output
 	client := s3.NewFromConfig(*cfg)
 
 	var continuationToken *string
-	paginator := ratelimit.NewPaginator()
+	paginator := ratelimit.NewAWSPaginator()
 	return paginator.Paginate(func() (bool, error) {
 		input := &s3.ListBucketsInput{
 			BucketRegion: &region,

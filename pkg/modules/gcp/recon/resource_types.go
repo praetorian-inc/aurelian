@@ -11,22 +11,22 @@ type resourceTypeInfo struct {
 }
 
 var listResourceMap = map[string]resourceTypeInfo{
-	"organizations":                                {aliases: []string{"organization", "org"}},
-	"folders":                                      {aliases: []string{"folder"}},
-	"projects":                                     {aliases: []string{"project"}},
-	"compute.googleapis.com/Instance":              {aliases: []string{"vm", "instance"}},
-	"compute.googleapis.com/ForwardingRule":        {aliases: []string{"forwardingrule"}},
-	"compute.googleapis.com/GlobalForwardingRule":  {aliases: []string{"globalforwardingrule"}},
-	"compute.googleapis.com/Address":               {aliases: []string{"address"}},
-	"dns.googleapis.com/ManagedZone":               {aliases: []string{"dnszone", "managedzone"}},
-	"storage.googleapis.com/Bucket":                {aliases: []string{"bucket"}},
-	"sqladmin.googleapis.com/Instance":             {aliases: []string{"sql"}},
-	"cloudfunctions.googleapis.com/Function":       {aliases: []string{"function", "cloudfunction"}},
-	"run.googleapis.com/Service":                   {aliases: []string{"runservice", "cloudrunservice"}},
-	"appengine.googleapis.com/Service":             {aliases: []string{"appengineservice"}},
-	"artifactregistry.googleapis.com/Repository":   {aliases: []string{"artifactrepo"}},
-	"artifactregistry.googleapis.com/DockerImage":  {aliases: []string{"dockerimage"}},
-	"firebasehosting.googleapis.com/Site":          {aliases: []string{"firebase", "hostingsite"}},
+	"organizations":                         {aliases: []string{"organization", "org"}},
+	"folders":                               {aliases: []string{"folder"}},
+	"projects":                              {aliases: []string{"project"}},
+	"compute.googleapis.com/Instance":       {aliases: []string{"vm", "instance"}},
+	"compute.googleapis.com/ForwardingRule": {aliases: []string{"forwardingrule"}},
+	"compute.googleapis.com/GlobalForwardingRule": {aliases: []string{"globalforwardingrule"}},
+	"compute.googleapis.com/Address":              {aliases: []string{"address"}},
+	"dns.googleapis.com/ManagedZone":              {aliases: []string{"dnszone", "managedzone"}},
+	"storage.googleapis.com/Bucket":               {aliases: []string{"bucket"}},
+	"sqladmin.googleapis.com/Instance":            {aliases: []string{"sql"}},
+	"cloudfunctions.googleapis.com/Function":      {aliases: []string{"function", "cloudfunction"}},
+	"run.googleapis.com/Service":                  {aliases: []string{"runservice", "cloudrunservice"}},
+	"appengine.googleapis.com/Service":            {aliases: []string{"appengineservice"}},
+	"artifactregistry.googleapis.com/Repository":  {aliases: []string{"artifactrepo"}},
+	"artifactregistry.googleapis.com/DockerImage": {aliases: []string{"dockerimage"}},
+	"firebasehosting.googleapis.com/Site":         {aliases: []string{"firebase", "hostingsite"}},
 }
 
 var hierarchyTypes = []string{"organizations", "folders", "projects"}
@@ -91,7 +91,7 @@ func allResourceTypes() []string {
 	return types
 }
 
-func shouldFanOutToResources(requestedTypes []string) bool {
+func hasNonHierarchyResourceTypes(requestedTypes []string) bool {
 	for _, t := range requestedTypes {
 		if !slices.Contains(hierarchyTypes, t) {
 			return true

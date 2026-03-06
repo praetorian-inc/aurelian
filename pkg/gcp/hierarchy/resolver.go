@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 	crmv1 "google.golang.org/api/cloudresourcemanager/v1"
 	crmv2 "google.golang.org/api/cloudresourcemanager/v2"
 	"google.golang.org/api/option"
@@ -31,70 +31,47 @@ func NewResolver(opts plugin.GCPCommonRecon) *Resolver {
 	}
 }
 
-// ResolveProjects resolves all scope inputs (org IDs, folder IDs, project IDs) into
-// a flat list of project IDs, emitting hierarchy resources along the way.
-func (r *Resolver) ResolveProjects(
-	ctx context.Context,
-	orgIDs, folderIDs, projectIDs []string,
-	out *pipeline.P[output.GCPResource],
-) ([]string, error) {
-	var allProjects []string
-
-	for _, orgID := range orgIDs {
-		projects, err := r.resolveOrg(ctx, orgID, out)
-		if err != nil {
-			return nil, fmt.Errorf("resolve org %s: %w", orgID, err)
-		}
-		allProjects = append(allProjects, projects...)
-	}
-
-	for _, folderID := range folderIDs {
-		projects, err := r.resolveFolder(ctx, folderID, out)
-		if err != nil {
-			return nil, fmt.Errorf("resolve folder %s: %w", folderID, err)
-		}
-		allProjects = append(allProjects, projects...)
-	}
-
-	allProjects = append(allProjects, projectIDs...)
-	return allProjects, nil
+// HierarchyResolverInput specifies the GCP scopes to resolve.
+type HierarchyResolverInput struct {
+	OrgIDs     []string
+	FolderIDs  []string
+	ProjectIDs []string
 }
 
-// ResolveAndEmit resolves projects from org/folder/project scopes, emitting
-// hierarchy resources into out as they're discovered. Returns the resolved
-// project IDs.
-func (r *Resolver) ResolveAndEmit(
-	orgIDs, folderIDs, projectIDs []string,
-	out *pipeline.P[model.AurelianModel],
-) ([]string, error) {
-	hierarchyOut := pipeline.New[output.GCPResource]()
-
-	var projects []string
-	var resolveErr error
-	go func() {
-		defer hierarchyOut.Close()
-		projects, resolveErr = r.ResolveProjects(
-			context.Background(),
-			orgIDs, folderIDs, projectIDs,
-			hierarchyOut,
-		)
-	}()
-
-	for res := range hierarchyOut.Range() {
-		out.Send(res)
+// Resolve discovers all orgs, folders, and projects from the given input,
+// emitting each as a GCPResource into the pipeline.
+func (r *Resolver) Resolve(input HierarchyResolverInput, out *pipeline.P[output.GCPResource]) error {
+	for _, orgID := range input.OrgIDs {
+		if err := r.resolveOrg(orgID, out); err != nil {
+			return fmt.Errorf("resolve org %s: %w", orgID, err)
+		}
 	}
-	return projects, resolveErr
+
+	for _, folderID := range input.FolderIDs {
+		if err := r.resolveFolder(folderID, out); err != nil {
+			return fmt.Errorf("resolve folder %s: %w", folderID, err)
+		}
+	}
+
+	for _, projectID := range input.ProjectIDs {
+		if err := r.resolveProject(projectID, out); err != nil {
+			return fmt.Errorf("resolve project %s: %w", projectID, err)
+		}
+	}
+
+	return nil
 }
 
-func (r *Resolver) resolveOrg(ctx context.Context, orgID string, out *pipeline.P[output.GCPResource]) ([]string, error) {
+func (r *Resolver) resolveOrg(orgID string, out *pipeline.P[output.GCPResource]) error {
+	ctx := context.Background()
 	svc, err := crmv1.NewService(ctx, r.clientOptions...)
 	if err != nil {
-		return nil, fmt.Errorf("create CRM service: %w", err)
+		return fmt.Errorf("create CRM service: %w", err)
 	}
 
 	org, err := svc.Organizations.Get("organizations/" + orgID).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("get organization: %w", err)
+		return fmt.Errorf("get organization: %w", err)
 	}
 	out.Send(output.GCPResource{
 		ResourceType: "organizations",
@@ -105,31 +82,31 @@ func (r *Resolver) resolveOrg(ctx context.Context, orgID string, out *pipeline.P
 
 	folderSvc, err := crmv2.NewService(ctx, r.clientOptions...)
 	if err != nil {
-		return nil, fmt.Errorf("create CRM v2 service: %w", err)
+		return fmt.Errorf("create CRM v2 service: %w", err)
 	}
-	_, err = r.listFoldersRecursive(ctx, folderSvc, "organizations/"+orgID, out)
-	if err != nil {
+	if err := r.listFoldersRecursive(folderSvc, "organizations/"+orgID, out); err != nil {
 		slog.Warn("failed to list folders", "org", orgID, "error", err)
 	}
 
-	return r.listProjectsUnderParent(ctx, svc, "organizations/"+orgID, out)
+	return r.listProjectsUnderParent(svc, "organizations/"+orgID, out)
 }
 
-func (r *Resolver) resolveFolder(ctx context.Context, folderID string, out *pipeline.P[output.GCPResource]) ([]string, error) {
+func (r *Resolver) resolveFolder(folderID string, out *pipeline.P[output.GCPResource]) error {
+	ctx := context.Background()
 	svc, err := crmv1.NewService(ctx, r.clientOptions...)
 	if err != nil {
-		return nil, fmt.Errorf("create CRM service: %w", err)
+		return fmt.Errorf("create CRM service: %w", err)
 	}
 
 	folderSvc, err := crmv2.NewService(ctx, r.clientOptions...)
 	if err != nil {
-		return nil, fmt.Errorf("create CRM v2 service: %w", err)
+		return fmt.Errorf("create CRM v2 service: %w", err)
 	}
 
 	parent := "folders/" + folderID
 	folder, err := folderSvc.Folders.Get(parent).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("get folder: %w", err)
+		return fmt.Errorf("get folder: %w", err)
 	}
 	out.Send(output.GCPResource{
 		ResourceType: "folders",
@@ -138,17 +115,54 @@ func (r *Resolver) resolveFolder(ctx context.Context, folderID string, out *pipe
 		Properties:   map[string]any{"lifecycleState": folder.LifecycleState},
 	})
 
-	_, err = r.listFoldersRecursive(ctx, folderSvc, parent, out)
-	if err != nil {
+	if err := r.listFoldersRecursive(folderSvc, parent, out); err != nil {
 		slog.Warn("failed to list subfolders", "folder", folderID, "error", err)
 	}
 
-	return r.listProjectsUnderParent(ctx, svc, parent, out)
+	return r.listProjectsUnderParent(svc, parent, out)
 }
 
-func (r *Resolver) listFoldersRecursive(ctx context.Context, svc *crmv2.Service, parent string, out *pipeline.P[output.GCPResource]) ([]string, error) {
-	var folderIDs []string
-	err := svc.Folders.List().Parent(parent).Context(ctx).Pages(ctx, func(resp *crmv2.ListFoldersResponse) error {
+// resolveProject hydrates a bare project ID via the CRM API, emitting it as a
+// GCPResource. On API failure, warns and emits a minimal resource with just the ID.
+func (r *Resolver) resolveProject(projectID string, out *pipeline.P[output.GCPResource]) error {
+	ctx := context.Background()
+
+	svc, err := crmv1.NewService(ctx, r.clientOptions...)
+	if err != nil {
+		return fmt.Errorf("create CRM service: %w", err)
+	}
+
+	p, err := svc.Projects.Get(projectID).Context(ctx).Do()
+	if err != nil {
+		slog.Warn("failed to hydrate project metadata, emitting minimal resource", "project", projectID, "error", err)
+		out.Send(output.GCPResource{
+			ResourceType: "projects",
+			ResourceID:   "projects/" + projectID,
+			ProjectID:    projectID,
+		})
+		return nil
+	}
+
+	out.Send(output.GCPResource{
+		ResourceType: "projects",
+		ResourceID:   "projects/" + p.ProjectId,
+		ProjectID:    p.ProjectId,
+		DisplayName:  p.Name,
+		Properties:   map[string]any{"projectNumber": p.ProjectNumber},
+	})
+	return nil
+}
+
+func (r *Resolver) listFoldersRecursive(svc *crmv2.Service, parent string, out *pipeline.P[output.GCPResource]) error {
+	ctx := context.Background()
+	paginator := ratelimit.NewGCPPaginator()
+	var pageToken string
+
+	return paginator.Paginate(func() (bool, error) {
+		resp, err := svc.Folders.List().Parent(parent).PageToken(pageToken).Context(ctx).Do()
+		if err != nil {
+			return false, err
+		}
 		for _, f := range resp.Folders {
 			out.Send(output.GCPResource{
 				ResourceType: "folders",
@@ -156,20 +170,18 @@ func (r *Resolver) listFoldersRecursive(ctx context.Context, svc *crmv2.Service,
 				DisplayName:  f.DisplayName,
 				Properties:   map[string]any{"lifecycleState": f.LifecycleState, "parent": f.Parent},
 			})
-			folderIDs = append(folderIDs, f.Name)
-			subFolders, err := r.listFoldersRecursive(ctx, svc, f.Name, out)
-			if err != nil {
+			if err := r.listFoldersRecursive(svc, f.Name, out); err != nil {
 				slog.Warn("failed to list subfolders", "folder", f.Name, "error", err)
 			}
-			folderIDs = append(folderIDs, subFolders...)
 		}
-		return nil
+		pageToken = resp.NextPageToken
+		return pageToken != "", nil
 	})
-	return folderIDs, err
 }
 
-func (r *Resolver) listProjectsUnderParent(ctx context.Context, svc *crmv1.Service, parent string, out *pipeline.P[output.GCPResource]) ([]string, error) {
-	var projectIDs []string
+func (r *Resolver) listProjectsUnderParent(svc *crmv1.Service, parent string, out *pipeline.P[output.GCPResource]) error {
+	ctx := context.Background()
+	paginator := ratelimit.NewGCPPaginator()
 
 	var filter string
 	if strings.HasPrefix(parent, "organizations/") {
@@ -178,7 +190,12 @@ func (r *Resolver) listProjectsUnderParent(ctx context.Context, svc *crmv1.Servi
 		filter = fmt.Sprintf("parent.type:folder parent.id:%s", extractID(parent))
 	}
 
-	err := svc.Projects.List().Filter(filter).Context(ctx).Pages(ctx, func(resp *crmv1.ListProjectsResponse) error {
+	var pageToken string
+	return paginator.Paginate(func() (bool, error) {
+		resp, err := svc.Projects.List().Filter(filter).PageToken(pageToken).Context(ctx).Do()
+		if err != nil {
+			return false, err
+		}
 		for _, p := range resp.Projects {
 			if p.LifecycleState != "ACTIVE" {
 				continue
@@ -194,11 +211,10 @@ func (r *Resolver) listProjectsUnderParent(ctx context.Context, svc *crmv1.Servi
 				DisplayName:  p.Name,
 				Properties:   map[string]any{"projectNumber": p.ProjectNumber},
 			})
-			projectIDs = append(projectIDs, p.ProjectId)
 		}
-		return nil
+		pageToken = resp.NextPageToken
+		return pageToken != "", nil
 	})
-	return projectIDs, err
 }
 
 func extractID(resourceName string) string {

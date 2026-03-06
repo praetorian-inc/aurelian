@@ -102,6 +102,10 @@ func TestEnumeratorIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("no duplicate resources", func(t *testing.T) {
+		requireNoDuplicateResourceIDs(t, resources)
+	})
+
 	t.Run("all resources have required fields", func(t *testing.T) {
 		for _, r := range resources {
 			assert.NotEmpty(t, r.ResourceType, "ResourceType must be set")
@@ -119,4 +123,17 @@ func assertContainsResource(t *testing.T, resources []output.GCPResource, resour
 		}
 	}
 	t.Errorf("expected resource of type %q containing %q in %d results", resourceType, nameSubstr, len(resources))
+}
+
+func requireNoDuplicateResourceIDs(t *testing.T, resources []output.GCPResource) {
+	t.Helper()
+	seen := make(map[string]int)
+	for _, r := range resources {
+		seen[r.ResourceID]++
+	}
+	for id, count := range seen {
+		if count > 1 {
+			t.Errorf("resource %s emitted %d times, expected once", id, count)
+		}
+	}
 }
