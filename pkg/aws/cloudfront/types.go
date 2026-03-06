@@ -1,7 +1,5 @@
 package cloudfront
 
-import "github.com/praetorian-inc/aurelian/pkg/output"
-
 // ScanOptions configures the CloudFront S3 takeover scan.
 type ScanOptions struct {
 	Profile    string
@@ -10,8 +8,14 @@ type ScanOptions struct {
 
 // ScanResult contains the findings from a CloudFront S3 takeover scan.
 type ScanResult struct {
-	Risks     []output.Risk
+	Findings  []Finding
 	AccountID string
+}
+
+// Finding pairs a vulnerable distribution with its associated Route53 records.
+type Finding struct {
+	VulnerableDistribution
+	Route53Records []Route53Record
 }
 
 // DistributionInfo contains information about a CloudFront distribution.

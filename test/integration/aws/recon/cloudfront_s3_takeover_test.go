@@ -4,6 +4,7 @@ package recon
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -17,7 +18,7 @@ import (
 )
 
 func TestAWSCloudFrontS3Takeover(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/recon/cloudfront-s3-takeover")
+	fixture := testutil.NewAWSFixture(t, "aws/recon/cloudfront-s3-takeover")
 	fixture.Setup()
 
 	vulnBucket := fixture.Output("vulnerable_bucket_name")
@@ -32,30 +33,32 @@ func TestAWSCloudFrontS3Takeover(t *testing.T) {
 		t.Fatal("cloudfront-s3-takeover module not registered")
 	}
 
-	results, err := mod.Run(plugin.Config{
+	results, err := testutil.RunAndCollect(t, mod, plugin.Config{
 		Args:    map[string]any{},
 		Context: context.Background(),
 	})
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, len(results), 1)
+	testutil.AssertMinResults(t, results, 1)
 
 	// Extract risks from results
-	var risks []output.Risk
+	var risks []output.AurelianRisk
 	for _, r := range results {
-		if riskSlice, ok := r.Data.([]output.Risk); ok {
-			risks = append(risks, riskSlice...)
+		if risk, ok := r.(output.AurelianRisk); ok {
+			risks = append(risks, risk)
 		}
 	}
 
 	t.Run("detects missing bucket", func(t *testing.T) {
 		found := false
 		for _, risk := range risks {
-			if risk.DNS == vulnDistID {
+			if risk.ImpactedARN == vulnDistID {
 				found = true
 				assert.Equal(t, "cloudfront-s3-takeover", risk.Name)
-				assert.Contains(t, []string{"TM", "TH"}, risk.Status)
-				assert.Equal(t, "aurelian-cloudfront-scanner", risk.Source)
-				assert.Contains(t, risk.Description, vulnBucket)
+				assert.Contains(t, []output.RiskSeverity{output.RiskSeverityMedium, output.RiskSeverityHigh}, risk.Severity)
+
+				var ctx map[string]any
+				require.NoError(t, json.Unmarshal(risk.Context, &ctx))
+				assert.Equal(t, vulnBucket, ctx["missing_bucket"])
 			}
 		}
 		assert.True(t, found, "expected risk for vulnerable distribution %s", vulnDistID)
@@ -63,17 +66,9 @@ func TestAWSCloudFrontS3Takeover(t *testing.T) {
 
 	t.Run("does not flag healthy distribution", func(t *testing.T) {
 		for _, risk := range risks {
-			assert.NotEqual(t, healthyDistID, risk.DNS,
+			assert.NotEqual(t, healthyDistID, risk.ImpactedARN,
 				"healthy distribution %s should not produce a risk", healthyDistID)
 		}
-	})
-
-	t.Run("result metadata contains expected fields", func(t *testing.T) {
-		require.GreaterOrEqual(t, len(results), 1)
-		meta := results[0].Metadata
-		assert.Equal(t, "cloudfront-s3-takeover", meta["module"])
-		assert.Equal(t, "aws", meta["platform"])
-		assert.NotEmpty(t, meta["accountID"])
 	})
 }
 
