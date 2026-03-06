@@ -19,6 +19,7 @@ type Provider string
 const (
 	ProviderAWS   Provider = "aws"
 	ProviderAzure Provider = "azure"
+	ProviderGCP   Provider = "gcp"
 )
 
 // Config holds the parameters needed to set up a Terraform fixture.

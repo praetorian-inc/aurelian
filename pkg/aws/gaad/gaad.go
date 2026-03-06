@@ -43,7 +43,7 @@ func (g *GAAD) Get() (*iampkg.AuthorizationAccountDetails, error) {
 		Policies:  store.NewMap[iampkg.ManagedPolicyDetail](),
 	}
 
-	paginator := ratelimit.NewPaginator()
+	paginator := ratelimit.NewAWSPaginator()
 	err := paginator.Paginate(func() (bool, error) {
 		if !g.iamPaginator.HasMorePages() {
 			return false, nil

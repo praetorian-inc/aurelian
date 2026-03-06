@@ -7,4 +7,5 @@ import "testing"
 func TestConstructorSymbolsExist(t *testing.T) {
 	_ = NewAWSFixture
 	_ = NewAzureFixture
+	_ = NewGCPFixture
 }

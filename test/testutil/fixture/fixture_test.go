@@ -147,11 +147,11 @@ func newLifecycleFixture(t *testing.T, remoteHash string, hashErr error, outputE
 	f := &BaseFixture{
 		t: t,
 		cfg: Config{
-			FixtureDir:  dir,
-			ContainerID: "container",
-			StateURI:    "test://state",
+			FixtureDir:   dir,
+			ContainerID:  "container",
+			StateURI:     "test://state",
 			ArtifactsURI: "test://artifacts/",
-			InitOpts:    []tfexec.InitOption{},
+			InitOpts:     []tfexec.InitOption{},
 		},
 		ops: mock,
 	}

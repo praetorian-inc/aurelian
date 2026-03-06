@@ -67,6 +67,16 @@ func (e *P[T]) Range() <-chan T {
 	return e.ch
 }
 
+// Drain consumes and discards all items in a background goroutine, then
+// blocks until the pipeline closes and returns any upstream error.
+func (e *P[T]) Drain() error {
+	go func() {
+		for range e.ch {
+		}
+	}()
+	return e.Wait()
+}
+
 // Collect drains the pipeline into a slice and returns it along with any
 // pipeline error. It blocks until the producer closes the pipeline.
 func (e *P[T]) Collect() ([]T, error) {

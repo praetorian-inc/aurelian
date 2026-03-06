@@ -61,7 +61,7 @@ func (l *ResourceGraphLister) querySubscription(sub azuretypes.SubscriptionInfo,
 		},
 	}
 
-	paginator := ratelimit.NewPaginator()
+	paginator := ratelimit.NewAzurePaginator()
 	return paginator.Paginate(func() (bool, error) {
 		resp, err := l.queryResources(request)
 		if err != nil {
@@ -194,7 +194,7 @@ func (l *ResourceGraphLister) Query(input QueryInput, out *pipeline.P[templates.
 		},
 	}
 
-	paginator := ratelimit.NewPaginator()
+	paginator := ratelimit.NewAzurePaginator()
 	return paginator.Paginate(func() (bool, error) {
 		resp, err := l.queryResources(request)
 		if err != nil {
