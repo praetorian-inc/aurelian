@@ -17,4 +17,6 @@ func TestExtractWebApp_RegisteredTypes(t *testing.T) {
 	assert.Contains(t, names, "webapp-settings")
 	assert.Contains(t, names, "webapp-connections")
 	assert.Contains(t, names, "webapp-hostkeys")
+	assert.Contains(t, names, "webapp-slots")
+	assert.Contains(t, names, "webapp-siteconfig")
 }
