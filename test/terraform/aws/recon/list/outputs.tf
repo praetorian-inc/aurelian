@@ -13,3 +13,27 @@ output "function_arns" {
 output "prefix" {
   value = local.prefix
 }
+
+output "iam_role_arn" {
+  value = aws_iam_role.test.arn
+}
+
+output "iam_role_name" {
+  value = aws_iam_role.test.name
+}
+
+output "iam_policy_arn" {
+  value = aws_iam_policy.test.arn
+}
+
+output "iam_policy_name" {
+  value = aws_iam_policy.test.name
+}
+
+output "iam_user_arn" {
+  value = aws_iam_user.test.arn
+}
+
+output "iam_user_name" {
+  value = aws_iam_user.test.name
+}
