@@ -42,8 +42,9 @@ func (m *AzureFindSecretsModule) Authors() []string         { return []string{"P
 
 func (m *AzureFindSecretsModule) Description() string {
 	return "Enumerates Azure resources via Resource Graph, extracts content likely to contain " +
-		"hardcoded secrets (VM user data, web app settings, automation account variables, " +
-		"storage account blobs), and scans with Titus."
+		"hardcoded secrets (VM user data, web app settings, automation variables, storage blobs, " +
+		"container env vars, Cosmos DB, APIM named values, Key Vault, and 30+ other sources), " +
+		"and scans with Titus."
 }
 
 func (m *AzureFindSecretsModule) References() []string {
@@ -110,15 +111,49 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 	return out.Wait()
 }
 
+// argResourceTypes lists all Azure resource types discoverable via Resource Graph
+// that have registered extractors.
+var argResourceTypes = []string{
+	// Compute
+	"Microsoft.Compute/virtualMachines",
+	"Microsoft.Compute/virtualMachineScaleSets",
+	"Microsoft.ContainerInstance/containerGroups",
+	"Microsoft.App/containerApps",
+	"Microsoft.HybridCompute/machines",
+
+	// Web & App
+	"Microsoft.Web/sites",
+	"Microsoft.Web/staticSites",
+	"Microsoft.Logic/workflows",
+	"Microsoft.ApiManagement/service",
+
+	// Automation
+	"Microsoft.Automation/automationAccounts",
+
+	// Storage & Data
+	"Microsoft.Storage/storageAccounts",
+	"Microsoft.AppConfiguration/configurationStores",
+	"Microsoft.DocumentDB/databaseAccounts",
+	"Microsoft.DataFactory/factories",
+	"Microsoft.DigitalTwins/digitalTwinsInstances",
+	"Microsoft.Synapse/workspaces",
+
+	// DevOps & Analytics
+	"Microsoft.ContainerRegistry/registries",
+	"Microsoft.Insights/components",
+	"Microsoft.Batch/batchAccounts",
+
+	// IaC & Governance
+	"Microsoft.Resources/deployments",
+	"Microsoft.Resources/templateSpecs",
+	"Microsoft.Blueprint/blueprints",
+	"Microsoft.Authorization/policyDefinitions",
+}
+
 func (m *AzureFindSecretsModule) toListerInput(sub azuretypes.SubscriptionInfo, out *pipeline.P[resourcegraph.ListerInput]) error {
 	out.Send(resourcegraph.ListerInput{
-		Subscription: sub,
-		ResourceTypes: []string{
-			"Microsoft.Compute/virtualMachines",
-			"Microsoft.Web/sites",
-			"Microsoft.Automation/automationAccounts",
-			"Microsoft.Storage/storageAccounts",
-		},
+		Subscription:  sub,
+		ResourceTypes: argResourceTypes,
 	})
 	return nil
 }
