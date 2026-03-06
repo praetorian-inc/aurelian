@@ -1,4 +1,4 @@
-package firebase
+package enumeration
 
 import (
 	"context"

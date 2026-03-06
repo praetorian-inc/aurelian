@@ -256,7 +256,7 @@ func (cc *CloudControlEnumerator) listByType(
 	out *pipeline.P[output.AWSResource],
 ) error {
 	var nextToken *string
-	paginator := ratelimit.NewPaginator()
+	paginator := ratelimit.NewAWSPaginator()
 
 	return paginator.Paginate(func() (bool, error) {
 		input := &cloudcontrol.ListResourcesInput{

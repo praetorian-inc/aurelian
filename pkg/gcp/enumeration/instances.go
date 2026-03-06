@@ -1,4 +1,4 @@
-package compute
+package enumeration
 
 import (
 	"context"

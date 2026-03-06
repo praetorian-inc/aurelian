@@ -161,6 +161,43 @@ func TestPipe_Parallel_PropagatesErrors(t *testing.T) {
 	assert.Equal(t, expectedErr, err)
 }
 
+func TestDrain_DoesNotDeadlock(t *testing.T) {
+	in := From(1, 2, 3)
+	out := New[int]()
+
+	Pipe(in, func(v int, o *P[int]) error {
+		o.Send(v)
+		return nil
+	}, out)
+
+	done := make(chan error, 1)
+	go func() { done <- out.Drain() }()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("Drain deadlocked")
+	}
+}
+
+func TestDrain_PropagatesError(t *testing.T) {
+	in := From(1, 2, 3)
+	out := New[int]()
+
+	expectedErr := errors.New("upstream failed")
+	Pipe(in, func(v int, o *P[int]) error {
+		if v == 2 {
+			return expectedErr
+		}
+		o.Send(v)
+		return nil
+	}, out)
+
+	err := out.Drain()
+	require.ErrorIs(t, err, expectedErr)
+}
+
 func TestPipe_Parallel_DefaultsConcurrencyToOne(t *testing.T) {
 	in := From(1, 2, 3)
 	out := New[int]()

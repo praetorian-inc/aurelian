@@ -6,12 +6,6 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/praetorian-inc/aurelian/pkg/gcp/applications"
-	"github.com/praetorian-inc/aurelian/pkg/gcp/compute"
-	"github.com/praetorian-inc/aurelian/pkg/gcp/containers"
-	"github.com/praetorian-inc/aurelian/pkg/gcp/firebase"
-	"github.com/praetorian-inc/aurelian/pkg/gcp/networking"
-	"github.com/praetorian-inc/aurelian/pkg/gcp/storage"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -71,16 +65,16 @@ func (e *Enumerator) ListForProject(projectID string, out *pipeline.P[output.GCP
 
 func buildDefaultListers(co []option.ClientOption) []ResourceLister {
 	return []ResourceLister{
-		storage.NewBucketLister(co),
-		storage.NewSQLInstanceLister(co),
-		compute.NewInstanceLister(co),
-		networking.NewForwardingRuleLister(co),
-		networking.NewAddressLister(co),
-		networking.NewDNSZoneLister(co),
-		applications.NewFunctionLister(co),
-		applications.NewCloudRunLister(co),
-		applications.NewAppEngineLister(co),
-		containers.NewArtifactRegistryLister(co),
-		firebase.NewHostingLister(co),
+		NewBucketLister(co),
+		NewSQLInstanceLister(co),
+		NewInstanceLister(co),
+		NewForwardingRuleLister(co),
+		NewAddressLister(co),
+		NewDNSZoneLister(co),
+		NewFunctionLister(co),
+		NewCloudRunLister(co),
+		NewAppEngineLister(co),
+		NewArtifactRegistryLister(co),
+		NewHostingLister(co),
 	}
 }

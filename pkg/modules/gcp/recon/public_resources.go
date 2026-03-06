@@ -75,32 +75,38 @@ func (m *GCPPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 		return out.Wait()
 	}
 
-	// Stage 1: Resolve hierarchy (blocking).
 	resolver := hierarchy.NewResolver(c.GCPCommonRecon)
-	projects, err := resolver.ResolveAndEmit(c.OrgID, c.FolderID, c.ProjectID, out)
-	if err != nil {
-		return err
+	input := hierarchy.HierarchyResolverInput{
+		OrgIDs:     c.OrgID,
+		FolderIDs:  c.FolderID,
+		ProjectIDs: c.ProjectID,
 	}
+	hierarchyStream := pipeline.From(input)
+	resolved := pipeline.New[output.GCPResource]()
+	pipeline.Pipe(hierarchyStream, resolver.Resolve, resolved)
 
-	if len(projects) == 0 {
-		return out.Wait()
-	}
+	projects := pipeline.New[string]()
+	pipeline.Pipe(resolved, filterProjects, projects)
 
-	// Stage 2: List resources per project
 	enumerator := enumeration.NewEnumerator(c.GCPCommonRecon).ForTypes(requestedTypes)
 	listed := pipeline.New[output.GCPResource]()
-	projectStream := pipeline.From(projects...)
-	pipeline.Pipe(projectStream, enumerator.ListForProject, listed)
+	pipeline.Pipe(projects, enumerator.ListForProject, listed)
 
-	// Stage 3: Enrich
 	enricher := enrichment.NewGCPEnricher(c.GCPCommonRecon)
 	enriched := pipeline.New[output.GCPResource]()
 	pipeline.Pipe(listed, enricher.Enrich, enriched)
 
-	// Stage 4: Evaluate and emit
 	evaluator := publicaccess.AccessEvaluator{}
 	pipeline.Pipe(enriched, evaluator.Evaluate, out)
 
 	return out.Wait()
 }
 
+// filterProjects extracts project IDs from the hierarchy stream, discarding
+// non-project resources.
+func filterProjects(res output.GCPResource, p *pipeline.P[string]) error {
+	if res.ResourceType == "projects" {
+		p.Send(res.ProjectID)
+	}
+	return nil
+}

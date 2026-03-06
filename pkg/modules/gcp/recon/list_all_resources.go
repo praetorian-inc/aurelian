@@ -57,34 +57,46 @@ func (m *GCPListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model
 		return err
 	}
 
-	// Stage 1: Resolve hierarchy (blocking). Hierarchy resources are collected
-	// and emitted before the pipeline stages start.
 	resolver := hierarchy.NewResolver(c.GCPCommonRecon)
-	projects, err := resolver.ResolveAndEmit(c.OrgID, c.FolderID, c.ProjectID, out)
-	if err != nil {
-		return err
+	input := hierarchy.HierarchyResolverInput{
+		OrgIDs:     c.OrgID,
+		FolderIDs:  c.FolderID,
+		ProjectIDs: c.ProjectID,
 	}
+	hierarchyStream := pipeline.From(input)
+	resolved := pipeline.New[output.GCPResource]()
+	pipeline.Pipe(hierarchyStream, resolver.Resolve, resolved)
 
-	if !shouldFanOutToResources(requestedTypes) || len(projects) == 0 {
+	projects := pipeline.New[string]()
+	pipeline.Pipe(resolved, m.splitHierarchyResources(out), projects)
+
+	if !hasNonHierarchyResourceTypes(requestedTypes) {
+		projects.Drain()
 		return out.Wait()
 	}
 
-	// Stage 2: List resources per project
 	enumerator := enumeration.NewEnumerator(c.GCPCommonRecon).ForTypes(requestedTypes)
 	listed := pipeline.New[output.GCPResource]()
-	projectStream := pipeline.From(projects...)
-	pipeline.Pipe(projectStream, enumerator.ListForProject, listed)
+	pipeline.Pipe(projects, enumerator.ListForProject, listed)
 
-	// Stage 3: Enrich
 	enricher := enrichment.NewGCPEnricher(c.GCPCommonRecon)
 	enriched := pipeline.New[output.GCPResource]()
 	pipeline.Pipe(listed, enricher.Enrich, enriched)
 
-	// Stage 4: Evaluate and emit
 	evaluator := publicaccess.AccessEvaluator{}
 	pipeline.Pipe(enriched, evaluator.Evaluate, out)
 
 	return out.Wait()
 }
 
-
+// splitHierarchyResources returns a pipeline function that sends all hierarchy
+// resources to the module output and routes projects into the next stage.
+func (m *GCPListAllResourcesModule) splitHierarchyResources(out *pipeline.P[model.AurelianModel]) func(output.GCPResource, *pipeline.P[string]) error {
+	return func(res output.GCPResource, p *pipeline.P[string]) error {
+		out.Send(res)
+		if res.ResourceType == "projects" {
+			p.Send(res.ProjectID)
+		}
+		return nil
+	}
+}
