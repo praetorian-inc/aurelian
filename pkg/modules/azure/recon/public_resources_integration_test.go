@@ -26,7 +26,7 @@ func TestAzurePublicResources(t *testing.T) {
 
 	results, err := testutil.RunAndCollect(t, mod, plugin.Config{
 		Args: map[string]any{
-			"subscription-id": []string{subscriptionID},
+			"subscription-ids": []string{subscriptionID},
 		},
 		Context: context.Background(),
 	})

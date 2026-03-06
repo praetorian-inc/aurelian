@@ -29,8 +29,8 @@ func TestAzureFindSecrets(t *testing.T) {
 
 	cfg := plugin.Config{
 		Args: map[string]any{
-			"subscription-id": []string{subscriptionID},
-			"scan-mode":       "all",
+			"subscription-ids": []string{subscriptionID},
+			"scan-mode":        "all",
 		},
 		Context: context.Background(),
 	}
