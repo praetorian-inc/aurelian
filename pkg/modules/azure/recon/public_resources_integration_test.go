@@ -4,6 +4,7 @@ package recon
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -184,5 +185,50 @@ func TestAzurePublicResources(t *testing.T) {
 
 	t.Run("detects public application gateway", func(t *testing.T) {
 		testutil.AssertResultContainsString(t, results, fixture.Output("application_gateway_id"))
+	})
+
+	// --- Enrichment validation ---
+
+	t.Run("enrichment commands present", func(t *testing.T) {
+		enrichedCount := 0
+		for _, risk := range risks {
+			var ctx map[string]any
+			if err := json.Unmarshal(risk.Context, &ctx); err != nil {
+				continue
+			}
+			if props, ok := ctx["properties"].(map[string]any); ok {
+				if _, hasCommands := props["enrichmentCommands"]; hasCommands {
+					enrichedCount++
+				}
+			}
+		}
+		assert.Greater(t, enrichedCount, 0, "at least some results should have enrichment commands")
+		t.Logf("enriched %d/%d risks", enrichedCount, len(risks))
+	})
+
+	t.Run("enrichment command structure valid", func(t *testing.T) {
+		for _, risk := range risks {
+			var ctx map[string]any
+			if err := json.Unmarshal(risk.Context, &ctx); err != nil {
+				continue
+			}
+			props, _ := ctx["properties"].(map[string]any)
+			if props == nil {
+				continue
+			}
+			cmdsRaw, ok := props["enrichmentCommands"]
+			if !ok {
+				continue
+			}
+			cmds, ok := cmdsRaw.([]any)
+			if !ok || len(cmds) == 0 {
+				continue
+			}
+			firstCmd, ok := cmds[0].(map[string]any)
+			require.True(t, ok, "enrichment command should be a map")
+			assert.NotEmpty(t, firstCmd["description"], "enrichment command should have description")
+			return
+		}
+		t.Skip("no enriched results found to validate structure")
 	})
 }
