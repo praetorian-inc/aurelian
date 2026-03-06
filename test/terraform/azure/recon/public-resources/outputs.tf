@@ -18,10 +18,6 @@ output "acr_id" {
   value = azurerm_container_registry.public.id
 }
 
-output "mysql_server_id" {
-  value = azurerm_mysql_flexible_server.public.id
-}
-
 output "postgresql_server_id" {
   value = azurerm_postgresql_flexible_server.public.id
 }
@@ -32,10 +28,6 @@ output "cognitive_account_id" {
 
 output "search_service_id" {
   value = azurerm_search_service.public.id
-}
-
-output "function_app_id" {
-  value = azurerm_linux_function_app.public.id
 }
 
 output "iot_hub_id" {
@@ -76,10 +68,6 @@ output "container_app_id" {
 
 output "logic_app_id" {
   value = azurerm_logic_app_workflow.public.id
-}
-
-output "app_service_id" {
-  value = azurerm_linux_web_app.public.id
 }
 
 output "data_factory_id" {

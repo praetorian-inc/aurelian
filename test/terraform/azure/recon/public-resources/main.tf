@@ -207,29 +207,7 @@ resource "azurerm_container_registry" "public" {
 }
 
 # ============================================================================
-# 5. MySQL Flexible Server — publicly accessible
-# ============================================================================
-
-resource "azurerm_mysql_flexible_server" "public" {
-  name                   = "${local.prefix}-mysql"
-  resource_group_name    = azurerm_resource_group.test.name
-  location               = local.location
-  administrator_login    = "mysqladmin"
-  administrator_password = random_password.db.result
-  sku_name               = "B_Standard_B1s"
-  tags                   = local.tags
-}
-
-resource "azurerm_mysql_flexible_server_firewall_rule" "allow_all" {
-  name                = "AllowAll"
-  resource_group_name = azurerm_resource_group.test.name
-  server_name         = azurerm_mysql_flexible_server.public.name
-  start_ip_address    = "0.0.0.0"
-  end_ip_address      = "255.255.255.255"
-}
-
-# ============================================================================
-# 6. PostgreSQL Flexible Server — publicly accessible
+# 5. PostgreSQL Flexible Server — publicly accessible
 # ============================================================================
 
 resource "azurerm_postgresql_flexible_server" "public" {
@@ -284,47 +262,7 @@ resource "azurerm_search_service" "public" {
 }
 
 # ============================================================================
-# 9. Function App — publicly accessible
-# ============================================================================
-
-resource "azurerm_storage_account" "func" {
-  name                     = "${local.prefix_san}func"
-  resource_group_name      = azurerm_resource_group.test.name
-  location                 = local.location
-  account_tier             = "Standard"
-  account_replication_type = "LRS"
-  tags                     = local.tags
-}
-
-resource "azurerm_service_plan" "func" {
-  name                = "${local.prefix}-funcplan"
-  resource_group_name = azurerm_resource_group.test.name
-  location            = local.location
-  os_type             = "Linux"
-  sku_name            = "Y1"
-  tags                = local.tags
-}
-
-resource "azurerm_linux_function_app" "public" {
-  name                          = "${local.prefix}-func"
-  resource_group_name           = azurerm_resource_group.test.name
-  location                      = local.location
-  storage_account_name          = azurerm_storage_account.func.name
-  storage_account_access_key    = azurerm_storage_account.func.primary_access_key
-  service_plan_id               = azurerm_service_plan.func.id
-  public_network_access_enabled = true
-
-  site_config {
-    application_stack { python_version = "3.11" }
-  }
-
-  app_settings = { "FUNCTIONS_WORKER_RUNTIME" = "python" }
-
-  tags = local.tags
-}
-
-# ============================================================================
-# 10. IoT Hub — publicly accessible
+# 9. IoT Hub — publicly accessible
 # ============================================================================
 
 resource "azurerm_iothub" "public" {
@@ -565,32 +503,7 @@ resource "azurerm_logic_app_workflow" "public" {
 }
 
 # ============================================================================
-# 20. App Service — publicly accessible
-# ============================================================================
-
-resource "azurerm_service_plan" "appservice" {
-  name                = "${local.prefix}-asp"
-  resource_group_name = azurerm_resource_group.test.name
-  location            = local.location
-  os_type             = "Linux"
-  sku_name            = "F1"
-  tags                = local.tags
-}
-
-resource "azurerm_linux_web_app" "public" {
-  name                          = "${local.prefix}-app"
-  resource_group_name           = azurerm_resource_group.test.name
-  location                      = local.location
-  service_plan_id               = azurerm_service_plan.appservice.id
-  public_network_access_enabled = true
-
-  site_config { always_on = false }
-
-  tags = local.tags
-}
-
-# ============================================================================
-# 21. Data Factory — publicly accessible
+# 20. Data Factory — publicly accessible
 # ============================================================================
 
 resource "azurerm_data_factory" "public" {

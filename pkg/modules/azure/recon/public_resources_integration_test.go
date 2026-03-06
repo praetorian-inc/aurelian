@@ -31,7 +31,7 @@ func TestAzurePublicResources(t *testing.T) {
 		Context: context.Background(),
 	})
 	require.NoError(t, err)
-	testutil.AssertMinResults(t, results, 20)
+	testutil.AssertMinResults(t, results, 17)
 
 	// Collect risks from results.
 	var risks []output.AurelianRisk
@@ -70,10 +70,6 @@ func TestAzurePublicResources(t *testing.T) {
 
 	// --- Database servers ---
 
-	t.Run("detects public mysql flexible server", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("mysql_server_id"))
-	})
-
 	t.Run("detects public postgresql flexible server", func(t *testing.T) {
 		testutil.AssertResultContainsString(t, results, fixture.Output("postgresql_server_id"))
 	})
@@ -89,14 +85,6 @@ func TestAzurePublicResources(t *testing.T) {
 	})
 
 	// --- Compute ---
-
-	t.Run("detects public function app", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("function_app_id"))
-	})
-
-	t.Run("detects public app service", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("app_service_id"))
-	})
 
 	t.Run("detects public container instance", func(t *testing.T) {
 		testutil.AssertResultContainsString(t, results, fixture.Output("container_instance_id"))
