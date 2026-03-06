@@ -42,5 +42,11 @@ func (e *AzureExtractor) Extract(r output.AzureResource, out *pipeline.P[output.
 			slog.Warn("azure extractor failed", "name", ext.Name, "type", r.ResourceType, "resource", r.ResourceID, "error", err)
 		}
 	}
+
+	// Cross-cutting: scan tags on all resources (zero API cost, tags from ARG).
+	if err := extractTags(ctx, r, out); err != nil {
+		slog.Warn("tag extraction failed", "resource", r.ResourceID, "error", err)
+	}
+
 	return nil
 }
