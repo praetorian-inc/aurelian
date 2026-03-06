@@ -44,7 +44,7 @@ func TestResultToRisk(t *testing.T) {
 	require.Len(t, risks, 1)
 
 	risk := risks[0]
-	assert.Equal(t, "storage_accounts_public_access", risk.Name)
+	assert.Equal(t, "public-azure-resource", risk.Name)
 	assert.Equal(t, output.RiskSeverityHigh, risk.Severity)
 	assert.Contains(t, risk.ImpactedARN, "mystorage")
 
