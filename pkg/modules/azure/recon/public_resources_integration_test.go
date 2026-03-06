@@ -475,7 +475,6 @@ func TestAzurePublicResources(t *testing.T) {
 		{
 			name:       "virtual machine enricher produces nmap command",
 			templateID: "virtual_machines_public_access",
-			optional:   true, // ARG template returns publicIPs/openPorts as JSON strings, enricher expects []any
 			checkCmd: func(t *testing.T, cmds []map[string]any) {
 				assertCommandContains(t, cmds, "nmap")
 			},

@@ -1,6 +1,7 @@
 package enrichers
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -13,28 +14,12 @@ func init() {
 }
 
 func enrichVirtualMachinePublicAccess(cfg plugin.AzureEnricherConfig, result *templates.ARGQueryResult) ([]plugin.AzureEnrichmentCommand, error) {
-	// Extract public IPs from properties
-	var targetIPs []string
-	if publicIPs, ok := result.Properties["publicIPs"].([]any); ok {
-		for _, ip := range publicIPs {
-			if ipStr, ok := ip.(string); ok && ipStr != "" {
-				targetIPs = append(targetIPs, ipStr)
-			}
-		}
-	}
+	targetIPs := extractStringSlice(result.Properties, "publicIPs")
 	if len(targetIPs) == 0 {
 		return nil, nil
 	}
 
-	// Extract open ports from properties
-	var openPorts []string
-	if ports, ok := result.Properties["openPorts"].([]any); ok {
-		for _, port := range ports {
-			if portStr, ok := port.(string); ok && portStr != "" {
-				openPorts = append(openPorts, portStr)
-			}
-		}
-	}
+	openPorts := extractStringSlice(result.Properties, "openPorts")
 	if len(openPorts) == 0 {
 		return nil, nil
 	}
@@ -50,4 +35,40 @@ func enrichVirtualMachinePublicAccess(cfg plugin.AzureEnricherConfig, result *te
 	}
 
 	return []plugin.AzureEnrichmentCommand{cmd}, nil
+}
+
+// extractStringSlice extracts a string slice from a properties map.
+// Handles both []any (direct) and string (JSON-encoded from ARG tostring(make_set(...))).
+func extractStringSlice(props map[string]any, key string) []string {
+	val, ok := props[key]
+	if !ok {
+		return nil
+	}
+
+	// Direct []any slice (standard case).
+	if slice, ok := val.([]any); ok {
+		var result []string
+		for _, v := range slice {
+			if s, ok := v.(string); ok && s != "" {
+				result = append(result, s)
+			}
+		}
+		return result
+	}
+
+	// JSON string from ARG tostring(make_set(...)).
+	if s, ok := val.(string); ok && strings.HasPrefix(s, "[") {
+		var result []string
+		if err := json.Unmarshal([]byte(s), &result); err == nil {
+			var filtered []string
+			for _, v := range result {
+				if v != "" {
+					filtered = append(filtered, v)
+				}
+			}
+			return filtered
+		}
+	}
+
+	return nil
 }
