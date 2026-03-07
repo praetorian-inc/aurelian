@@ -81,3 +81,19 @@ output "batch_account_id" {
 output "acr_id" {
   value = azurerm_container_registry.test.id
 }
+
+output "cosmos_account_id" {
+  value = azurerm_cosmosdb_account.test.id
+}
+
+output "digital_twins_id" {
+  value = azurerm_digital_twins_instance.test.id
+}
+
+output "synapse_workspace_id" {
+  value = azurerm_synapse_workspace.test.id
+}
+
+output "apim_id" {
+  value = azurerm_api_management.test.id
+}

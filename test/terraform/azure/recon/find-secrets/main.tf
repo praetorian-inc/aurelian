@@ -13,7 +13,7 @@
 // | 5  | Container Instance      | environment variable                 | DETECTED        |
 // | 6  | App Configuration Store | key-value pair                       | DETECTED        |
 // | 7  | Logic App (Consumption) | workflow parameter                   | DETECTED        |
-// | 8  | Data Factory            | linked service URL                   | DETECTED        |
+// | 8  | Data Factory            | linked service Basic auth + pipeline | DETECTED        |
 // | 9  | Storage Account         | resource tag                         | DETECTED        |
 // | 10 | Policy Definition       | metadata field                       | DETECTED        |
 // | 11 | ARM Template Deployment | parameters_content                   | DETECTED        |
@@ -24,6 +24,10 @@
 // | 16 | Application Insights    | (shared Log Analytics workspace)     | DETECTED        |
 // | 17 | Batch Account + Pool    | start task env var + command line     | DETECTED        |
 // | 18 | Container Registry Task | encoded task content (azapi)         | DETECTED        |
+// | 19 | Cosmos DB               | stored proc, trigger, UDF            | DETECTED        |
+// | 20 | Digital Twins           | resource tag                         | DETECTED        |
+// | 21 | Synapse Workspace       | resource tag                         | DETECTED        |
+// | 22 | APIM                    | named value, backend, policy         | DETECTED        |
 
 terraform {
   required_providers {
@@ -386,8 +390,37 @@ resource "azurerm_data_factory" "test" {
 resource "azurerm_data_factory_linked_service_web" "test" {
   name                = "test-web-linked-service"
   data_factory_id     = azurerm_data_factory.test.id
-  authentication_type = "Anonymous"
-  url                 = "https://example.com/api?key=${local.fake_aws_secret}"
+  authentication_type = "Basic"
+  url                 = "https://example.com/api"
+  username            = local.fake_aws_key
+  password            = local.fake_aws_secret
+}
+
+resource "azapi_resource" "adf_pipeline" {
+  type      = "Microsoft.DataFactory/factories/pipelines@2018-06-01"
+  name      = "test-pipeline"
+  parent_id = azurerm_data_factory.test.id
+
+  body = jsonencode({
+    properties = {
+      activities = [
+        {
+          name = "SetSecret"
+          type = "SetVariable"
+          typeProperties = {
+            variableName = "secretVar"
+            value        = "AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}"
+          }
+        }
+      ]
+      variables = {
+        secretVar = {
+          type         = "String"
+          defaultValue = ""
+        }
+      }
+    }
+  })
 }
 
 # ============================================================
@@ -711,4 +744,178 @@ resource "azapi_resource" "acr_task" {
       }
     }
   })
+}
+
+# ============================================================
+# 20. Cosmos DB Serverless — stored proc, trigger, UDF
+# ============================================================
+resource "azurerm_cosmosdb_account" "test" {
+  name                = "${local.prefix}-cosmos"
+  resource_group_name = azurerm_resource_group.test.name
+  location            = azurerm_resource_group.test.location
+  offer_type          = "Standard"
+  kind                = "GlobalDocumentDB"
+
+  capabilities {
+    name = "EnableServerless"
+  }
+
+  consistency_policy {
+    consistency_level = "Session"
+  }
+
+  geo_location {
+    location          = azurerm_resource_group.test.location
+    failover_priority = 0
+  }
+
+  tags = local.tags
+}
+
+resource "azurerm_cosmosdb_sql_database" "test" {
+  name                = "testdb"
+  resource_group_name = azurerm_resource_group.test.name
+  account_name        = azurerm_cosmosdb_account.test.name
+}
+
+resource "azurerm_cosmosdb_sql_container" "config" {
+  name                = "config"
+  resource_group_name = azurerm_resource_group.test.name
+  account_name        = azurerm_cosmosdb_account.test.name
+  database_name       = azurerm_cosmosdb_sql_database.test.name
+  partition_key_path  = "/id"
+}
+
+resource "azurerm_cosmosdb_sql_stored_procedure" "test" {
+  name                = "getSecret"
+  resource_group_name = azurerm_resource_group.test.name
+  account_name        = azurerm_cosmosdb_account.test.name
+  database_name       = azurerm_cosmosdb_sql_database.test.name
+  container_name      = azurerm_cosmosdb_sql_container.config.name
+
+  body = <<-EOF
+    function getSecret() {
+      var key = "AWS_SECRET_ACCESS_KEY";
+      var secret = "${local.fake_aws_secret}";
+      var response = getContext().getResponse();
+      response.setBody({key: key, secret: secret});
+    }
+  EOF
+}
+
+resource "azurerm_cosmosdb_sql_trigger" "test" {
+  name         = "auditSecret"
+  container_id = azurerm_cosmosdb_sql_container.config.id
+  body         = <<-EOF
+    function auditSecret() {
+      var doc = getContext().getRequest().getBody();
+      doc.auditKey = "${local.fake_aws_secret}";
+      getContext().getRequest().setBody(doc);
+    }
+  EOF
+  operation    = "Create"
+  type         = "Pre"
+}
+
+resource "azurerm_cosmosdb_sql_function" "test" {
+  name         = "decryptSecret"
+  container_id = azurerm_cosmosdb_sql_container.config.id
+  body         = <<-EOF
+    function decryptSecret(input) {
+      var secret = "${local.fake_aws_secret}";
+      return input + secret;
+    }
+  EOF
+}
+
+# ============================================================
+# 21. Digital Twins — secret in tag
+# ============================================================
+resource "azurerm_digital_twins_instance" "test" {
+  name                = "${local.prefix}-dt"
+  resource_group_name = azurerm_resource_group.test.name
+  location            = azurerm_resource_group.test.location
+  tags                = merge(local.tags, { "api-secret" = local.fake_aws_secret })
+}
+
+# ============================================================
+# 22. Synapse Workspace — secret in tag + ADLS Gen2
+# ============================================================
+resource "azurerm_storage_account" "synapse" {
+  name                     = "${local.prefix_san}sy"
+  resource_group_name      = azurerm_resource_group.test.name
+  location                 = azurerm_resource_group.test.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+  account_kind             = "StorageV2"
+  is_hns_enabled           = true
+  tags                     = local.tags
+}
+
+resource "azurerm_storage_data_lake_gen2_filesystem" "test" {
+  name               = "synapsefs"
+  storage_account_id = azurerm_storage_account.synapse.id
+}
+
+resource "azurerm_synapse_workspace" "test" {
+  name                                 = "${local.prefix}-synapse"
+  resource_group_name                  = azurerm_resource_group.test.name
+  location                             = azurerm_resource_group.test.location
+  storage_data_lake_gen2_filesystem_id = azurerm_storage_data_lake_gen2_filesystem.test.id
+  sql_administrator_login              = "sqladmin"
+  sql_administrator_login_password     = "P@ssw0rd${random_string.suffix.result}!"
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  tags = merge(local.tags, { "db-password" = local.fake_aws_secret })
+}
+
+# ============================================================
+# 23. APIM Consumption — named values, backend, policy
+# ============================================================
+resource "azurerm_api_management" "test" {
+  name                = "${local.prefix}-apim"
+  resource_group_name = azurerm_resource_group.test.name
+  location            = azurerm_resource_group.test.location
+  publisher_name      = "Aurelian Testing"
+  publisher_email     = "test@example.com"
+  sku_name            = "Consumption_0"
+  tags                = local.tags
+}
+
+resource "azurerm_api_management_named_value" "secret" {
+  name                = "test-secret-key"
+  resource_group_name = azurerm_resource_group.test.name
+  api_management_name = azurerm_api_management.test.name
+  display_name        = "test-secret-key"
+  value               = "AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}"
+  secret              = false
+}
+
+resource "azurerm_api_management_backend" "test" {
+  name                = "test-backend"
+  resource_group_name = azurerm_resource_group.test.name
+  api_management_name = azurerm_api_management.test.name
+  protocol            = "http"
+  url                 = "https://example.com/api"
+  description         = "Backend with secret: AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}"
+}
+
+resource "azurerm_api_management_policy" "test" {
+  api_management_id = azurerm_api_management.test.id
+
+  xml_content = <<-EOF
+    <policies>
+      <inbound>
+        <set-header name="X-Api-Key" exists-action="override">
+          <value>${local.fake_aws_secret}</value>
+        </set-header>
+      </inbound>
+      <backend><forward-request /></backend>
+      <outbound />
+      <on-error />
+    </policies>
+  EOF
 }
