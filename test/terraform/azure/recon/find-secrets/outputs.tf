@@ -45,3 +45,19 @@ output "function_app_id" {
 output "web_app_slot_id" {
   value = azurerm_linux_web_app_slot.staging.id
 }
+
+output "policy_definition_id" {
+  value = azurerm_policy_definition.test.id
+}
+
+output "arm_deployment_id" {
+  value = azurerm_resource_group_template_deployment.test.id
+}
+
+output "template_spec_id" {
+  value = azapi_resource.template_spec.id
+}
+
+output "vmss_id" {
+  value = azurerm_linux_virtual_machine_scale_set.test.id
+}

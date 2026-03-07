@@ -15,6 +15,10 @@
 // | 7  | Logic App (Consumption) | workflow parameter                   | DETECTED        |
 // | 8  | Data Factory            | linked service URL                   | DETECTED        |
 // | 9  | Storage Account         | resource tag                         | DETECTED        |
+// | 10 | Policy Definition       | metadata field                       | DETECTED        |
+// | 11 | ARM Template Deployment | parameters_content                   | DETECTED        |
+// | 12 | Template Spec (azapi)   | defaultValue in ARM template         | DETECTED        |
+// | 13 | VMSS                    | user_data + extension                | DETECTED        |
 
 terraform {
   required_providers {
@@ -29,6 +33,10 @@ terraform {
     time = {
       source  = "hashicorp/time"
       version = "~> 0.9"
+    }
+    azapi = {
+      source  = "azure/azapi"
+      version = "~> 1.0"
     }
   }
 
@@ -375,4 +383,156 @@ resource "azurerm_data_factory_linked_service_web" "test" {
   data_factory_id     = azurerm_data_factory.test.id
   authentication_type = "Anonymous"
   url                 = "https://example.com/api?key=${local.fake_aws_secret}"
+}
+
+# ============================================================
+# 10. Policy Definition — secret in metadata
+# ============================================================
+resource "azurerm_policy_definition" "test" {
+  name         = "${local.prefix}-policy"
+  policy_type  = "Custom"
+  mode         = "All"
+  display_name = "Test policy with embedded secret"
+
+  policy_rule = jsonencode({
+    if = {
+      field  = "type"
+      equals = "Microsoft.Resources/subscriptions"
+    }
+    then = {
+      effect = "audit"
+    }
+  })
+
+  metadata = jsonencode({
+    category    = "Testing"
+    description = "AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}"
+  })
+}
+
+# ============================================================
+# 11. ARM Template Deployment — secret in parameters
+# ============================================================
+resource "azurerm_resource_group_template_deployment" "test" {
+  name                = "${local.prefix}-deploy"
+  resource_group_name = azurerm_resource_group.test.name
+  deployment_mode     = "Incremental"
+
+  parameters_content = jsonencode({
+    secretParam = {
+      value = "AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}"
+    }
+  })
+
+  template_content = jsonencode({
+    "$schema"      = "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#"
+    contentVersion = "1.0.0.0"
+    parameters = {
+      secretParam = {
+        type = "string"
+      }
+    }
+    resources = []
+    outputs = {
+      result = {
+        type  = "string"
+        value = "[parameters('secretParam')]"
+      }
+    }
+  })
+}
+
+# ============================================================
+# 12. Template Spec (azapi) — secret in ARM template default
+# ============================================================
+resource "azapi_resource" "template_spec" {
+  type      = "Microsoft.Resources/templateSpecs@2022-02-01"
+  name      = "${local.prefix}-tspec"
+  parent_id = azurerm_resource_group.test.id
+  location  = local.location
+  tags      = local.tags
+
+  body = jsonencode({
+    properties = {
+      description = "Test template spec"
+    }
+  })
+}
+
+resource "azapi_resource" "template_spec_version" {
+  type      = "Microsoft.Resources/templateSpecs/versions@2022-02-01"
+  name      = "v1.0"
+  parent_id = azapi_resource.template_spec.id
+  location  = local.location
+  tags      = local.tags
+
+  body = jsonencode({
+    properties = {
+      mainTemplate = {
+        "$schema"      = "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#"
+        contentVersion = "1.0.0.0"
+        parameters = {
+          dbPassword = { type = "string", defaultValue = local.fake_aws_secret }
+        }
+        resources = []
+      }
+    }
+  })
+}
+
+# ============================================================
+# 13. VMSS — secret in user_data and extension (0 instances)
+# ============================================================
+resource "azurerm_linux_virtual_machine_scale_set" "test" {
+  name                            = "${local.prefix}-vmss"
+  resource_group_name             = azurerm_resource_group.test.name
+  location                        = azurerm_resource_group.test.location
+  sku                             = "Standard_B1ls"
+  instances                       = 0
+  admin_username                  = "aurelianadmin"
+  admin_password                  = "P@ssw0rd${random_string.suffix.result}!"
+  disable_password_authentication = false
+
+  user_data = base64encode(<<-EOF
+    #!/bin/bash
+    export AWS_ACCESS_KEY_ID="${local.fake_aws_key}"
+    export AWS_SECRET_ACCESS_KEY="${local.fake_aws_secret}"
+  EOF
+  )
+
+  source_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts-gen2"
+    version   = "latest"
+  }
+
+  os_disk {
+    caching              = "ReadWrite"
+    storage_account_type = "Standard_LRS"
+  }
+
+  network_interface {
+    name    = "vmss-nic"
+    primary = true
+
+    ip_configuration {
+      name      = "internal"
+      primary   = true
+      subnet_id = azurerm_subnet.test.id
+    }
+  }
+
+  extension {
+    name                 = "test-script"
+    publisher            = "Microsoft.Azure.Extensions"
+    type                 = "CustomScript"
+    type_handler_version = "2.1"
+
+    settings = jsonencode({
+      commandToExecute = "echo AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}"
+    })
+  }
+
+  tags = local.tags
 }
