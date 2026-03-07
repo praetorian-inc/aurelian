@@ -21,7 +21,7 @@ func TestIsPermissionOrNotFound(t *testing.T) {
 		{"401 Unauthorized", &azcore.ResponseError{StatusCode: http.StatusUnauthorized}, true},
 		{"404 NotFound", &azcore.ResponseError{StatusCode: http.StatusNotFound}, true},
 		{"429 TooManyRequests", &azcore.ResponseError{StatusCode: http.StatusTooManyRequests}, true},
-		{"409 Conflict", &azcore.ResponseError{StatusCode: http.StatusConflict}, false},
+		{"409 Conflict", &azcore.ResponseError{StatusCode: http.StatusConflict}, true},
 		{"wrapped 403", fmt.Errorf("outer: %w", &azcore.ResponseError{StatusCode: http.StatusForbidden}), true},
 		{"AuthorizationFailed in message", errors.New("AuthorizationFailed: no authorization"), true},
 		{"AuthenticationFailed in message", errors.New("AuthenticationFailed: invalid token"), true},

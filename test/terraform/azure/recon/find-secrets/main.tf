@@ -240,11 +240,10 @@ resource "azurerm_app_configuration" "test" {
   tags                = local.tags
 }
 
-resource "azurerm_app_configuration_key" "secret" {
-  configuration_store_id = azurerm_app_configuration.test.id
-  key                    = "database/connection-string"
-  value                  = "Server=myserver;Database=mydb;User=admin;Password=${local.fake_aws_secret}"
-}
+# NOTE: azurerm_app_configuration_key requires data-plane RBAC
+# (App Configuration Data Owner). The store is created; our extractor
+# reads keys via data-plane SDK and tests permission handling.
+# To seed a test key, use: az appconfig kv set --name <store> --key database/connection-string --value "..."
 
 # ============================================================
 # 7. Logic App (Consumption) — secret in workflow definition

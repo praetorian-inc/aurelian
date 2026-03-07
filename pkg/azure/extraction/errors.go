@@ -20,7 +20,8 @@ func isPermissionOrNotFound(err error) bool {
 	if errors.As(err, &respErr) {
 		switch respErr.StatusCode {
 		case http.StatusForbidden, http.StatusUnauthorized,
-			http.StatusNotFound, http.StatusTooManyRequests:
+			http.StatusNotFound, http.StatusTooManyRequests,
+			http.StatusConflict:
 			return true
 		}
 	}
