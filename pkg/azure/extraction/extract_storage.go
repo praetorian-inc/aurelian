@@ -3,6 +3,7 @@ package extraction
 import (
 	"bytes"
 	"fmt"
+	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 	"io"
 	"log/slog"
 
@@ -40,7 +41,7 @@ func extractStorageBlobs(ctx extractContext, r output.AzureResource, out *pipeli
 	}
 
 	containerPager := client.NewListContainersPager(nil)
-	paginator := newAzurePaginator()
+	paginator := ratelimit.NewAzurePaginator()
 	return paginator.Paginate(func() (bool, error) {
 		page, err := containerPager.NextPage(ctx.Context)
 		if err != nil {
@@ -100,7 +101,7 @@ func newBlobClientWithAccountKey(ctx extractContext, subscriptionID, resourceGro
 func extractBlobsFromContainer(ctx extractContext, client *azblob.Client, r output.AzureResource, containerName string, out *pipeline.P[output.ScanInput]) error {
 	blobPager := client.NewListBlobsFlatPager(containerName, nil)
 	count := 0
-	paginator := newAzurePaginator()
+	paginator := ratelimit.NewAzurePaginator()
 
 	return paginator.Paginate(func() (bool, error) {
 		page, err := blobPager.NextPage(ctx.Context)

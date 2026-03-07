@@ -3,6 +3,7 @@ package extraction
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 	"io"
 	"log/slog"
 	"net/http"
@@ -34,7 +35,7 @@ func extractAutomationVariables(ctx extractContext, r output.AzureResource, out 
 	}
 
 	pager := client.NewListByAutomationAccountPager(resourceGroup, accountName, nil)
-	paginator := newAzurePaginator()
+	paginator := ratelimit.NewAzurePaginator()
 	return paginator.Paginate(func() (bool, error) {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
@@ -75,7 +76,7 @@ func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *
 	}
 
 	pager := client.NewListByAutomationAccountPager(resourceGroup, accountName, nil)
-	paginator := newAzurePaginator()
+	paginator := ratelimit.NewAzurePaginator()
 	return paginator.Paginate(func() (bool, error) {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
