@@ -26,6 +26,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.0"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.9"
+    }
   }
 
   backend "s3" {}
@@ -101,6 +105,15 @@ resource "azurerm_network_interface" "test" {
   tags = local.tags
 }
 
+resource "azurerm_storage_account" "bootdiag" {
+  name                     = "${local.prefix_san}bd"
+  resource_group_name      = azurerm_resource_group.test.name
+  location                 = azurerm_resource_group.test.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+  tags                     = local.tags
+}
+
 resource "azurerm_linux_virtual_machine" "test" {
   name                            = "${local.prefix}-vm"
   resource_group_name             = azurerm_resource_group.test.name
@@ -124,12 +137,29 @@ resource "azurerm_linux_virtual_machine" "test" {
     storage_account_type = "Standard_LRS"
   }
 
+  boot_diagnostics {
+    storage_account_uri = azurerm_storage_account.bootdiag.primary_blob_endpoint
+  }
+
   source_image_reference {
     publisher = "Canonical"
     offer     = "0001-com-ubuntu-server-jammy"
     sku       = "22_04-lts-gen2"
     version   = "latest"
   }
+  tags = local.tags
+}
+
+resource "azurerm_virtual_machine_extension" "test" {
+  name                 = "${local.prefix}-vmext"
+  virtual_machine_id   = azurerm_linux_virtual_machine.test.id
+  publisher            = "Microsoft.Azure.Extensions"
+  type                 = "CustomScript"
+  type_handler_version = "2.1"
+
+  settings = jsonencode({
+    commandToExecute = "echo AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}"
+  })
   tags = local.tags
 }
 
@@ -141,7 +171,7 @@ resource "azurerm_service_plan" "test" {
   resource_group_name = azurerm_resource_group.test.name
   location            = azurerm_resource_group.test.location
   os_type             = "Linux"
-  sku_name            = "B1"
+  sku_name            = "S1"
   tags                = local.tags
 }
 
@@ -156,6 +186,42 @@ resource "azurerm_linux_web_app" "test" {
   app_settings = {
     "AWS_ACCESS_KEY_ID"     = local.fake_aws_key
     "AWS_SECRET_ACCESS_KEY" = local.fake_aws_secret
+  }
+
+  connection_string {
+    name  = "Database"
+    type  = "SQLAzure"
+    value = "Server=tcp:example.database.windows.net;Database=mydb;User ID=admin;Password=${local.fake_aws_secret};Encrypt=true;"
+  }
+
+  tags = local.tags
+}
+
+resource "azurerm_linux_web_app_slot" "staging" {
+  name           = "staging"
+  app_service_id = azurerm_linux_web_app.test.id
+
+  site_config {}
+
+  app_settings = {
+    "STAGING_SECRET_KEY" = local.fake_aws_secret
+  }
+
+  tags = local.tags
+}
+
+resource "azurerm_linux_function_app" "test" {
+  name                       = "${local.prefix}-func"
+  resource_group_name        = azurerm_resource_group.test.name
+  location                   = azurerm_resource_group.test.location
+  service_plan_id            = azurerm_service_plan.test.id
+  storage_account_name       = azurerm_storage_account.test.name
+  storage_account_access_key = azurerm_storage_account.test.primary_access_key
+
+  site_config {
+    application_stack {
+      node_version = "18"
+    }
   }
 
   tags = local.tags
@@ -177,6 +243,25 @@ resource "azurerm_automation_variable_string" "secret" {
   resource_group_name     = azurerm_resource_group.test.name
   automation_account_name = azurerm_automation_account.test.name
   value                   = "AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}"
+}
+
+resource "azurerm_automation_runbook" "test" {
+  name                    = "${local.prefix}-runbook"
+  resource_group_name     = azurerm_resource_group.test.name
+  location                = azurerm_resource_group.test.location
+  automation_account_name = azurerm_automation_account.test.name
+  log_verbose             = false
+  log_progress            = false
+  runbook_type            = "PowerShell"
+
+  content = <<-PS
+    # PowerShell runbook with embedded credentials
+    $awsKey    = "${local.fake_aws_key}"
+    $awsSecret = "${local.fake_aws_secret}"
+    Write-Output "Configured AWS credentials"
+  PS
+
+  tags = local.tags
 }
 
 # ============================================================
@@ -240,10 +325,23 @@ resource "azurerm_app_configuration" "test" {
   tags                = local.tags
 }
 
-# NOTE: azurerm_app_configuration_key requires data-plane RBAC
-# (App Configuration Data Owner). The store is created; our extractor
-# reads keys via data-plane SDK and tests permission handling.
-# To seed a test key, use: az appconfig kv set --name <store> --key database/connection-string --value "..."
+resource "azurerm_role_assignment" "appconfig_data_owner" {
+  scope                = azurerm_app_configuration.test.id
+  role_definition_name = "App Configuration Data Owner"
+  principal_id         = data.azurerm_client_config.current.object_id
+}
+
+resource "time_sleep" "appconfig_rbac_propagation" {
+  depends_on      = [azurerm_role_assignment.appconfig_data_owner]
+  create_duration = "60s"
+}
+
+resource "azurerm_app_configuration_key" "secret" {
+  configuration_store_id = azurerm_app_configuration.test.id
+  key                    = "database/connection-string"
+  value                  = "Server=tcp:example.database.windows.net;Password=${local.fake_aws_secret};Encrypt=true;"
+  depends_on             = [time_sleep.appconfig_rbac_propagation]
+}
 
 # ============================================================
 # 7. Logic App (Consumption) — secret in workflow definition

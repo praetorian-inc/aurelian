@@ -37,3 +37,11 @@ output "logic_app_id" {
 output "data_factory_id" {
   value = azurerm_data_factory.test.id
 }
+
+output "function_app_id" {
+  value = azurerm_linux_function_app.test.id
+}
+
+output "web_app_slot_id" {
+  value = azurerm_linux_web_app_slot.staging.id
+}
