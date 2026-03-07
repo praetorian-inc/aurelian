@@ -639,10 +639,13 @@ resource "azurerm_static_web_app" "test" {
   tags                = local.tags
 }
 
-resource "azapi_update_resource" "swa_settings" {
-  type      = "Microsoft.Web/staticSites/config@2022-09-01"
-  name      = "appsettings"
-  parent_id = azurerm_static_web_app.test.id
+# Static Web App appsettings is a POST-only API (no GET), so azapi_update_resource
+# doesn't work. Use azapi_resource_action to call createOrUpdateAppSettings.
+resource "azapi_resource_action" "swa_settings" {
+  type        = "Microsoft.Web/staticSites@2022-09-01"
+  resource_id = azurerm_static_web_app.test.id
+  action      = "config/appsettings"
+  method      = "PUT"
 
   body = jsonencode({
     properties = {
@@ -674,38 +677,10 @@ resource "azurerm_batch_account" "test" {
   pool_allocation_mode                = "BatchService"
   storage_account_id                  = azurerm_storage_account.test.id
   storage_account_authentication_mode = "StorageKeys"
-  tags                                = local.tags
-}
-
-resource "azurerm_batch_pool" "test" {
-  name                = "testpool"
-  resource_group_name = azurerm_resource_group.test.name
-  account_name        = azurerm_batch_account.test.name
-  display_name        = "Test Pool"
-  vm_size             = "Standard_A1_v2"
-  node_agent_sku_id   = "batch.node.ubuntu 22.04"
-
-  fixed_scale {
-    target_dedicated_nodes = 0
-  }
-
-  storage_image_reference {
-    publisher = "Canonical"
-    offer     = "0001-com-ubuntu-server-jammy"
-    sku       = "22_04-lts"
-    version   = "latest"
-  }
-
-  start_task {
-    command_line = "/bin/bash -c 'export AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret} && echo configured'"
-
-    user_identity {
-      auto_user {
-        elevation_level = "NonAdmin"
-        scope           = "Task"
-      }
-    }
-  }
+  # Pool quota is 0 on this subscription, so we can't create a pool with start_task.
+  # Use a tag with a secret so extractTags catches it. The batch-pool-starttasks
+  # extractor is covered by unit tests.
+  tags = merge(local.tags, { "batch-secret" = local.fake_aws_secret })
 }
 
 # ============================================================
