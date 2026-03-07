@@ -1,6 +1,6 @@
 ## aurelian azure recon find-secrets
 
-Enumerates Azure resources via Resource Graph, extracts content likely to contain hardcoded secrets (VM user data, web app settings, automation account variables, storage account blobs), and scans with Titus.
+Enumerates Azure resources via Resource Graph, extracts content likely to contain hardcoded secrets (VM user data, web app settings, automation variables, storage blobs, container env vars, Cosmos DB, APIM named values, Key Vault, and 30+ other sources), and scans with Titus.
 
 ```
 aurelian azure recon find-secrets [flags]
