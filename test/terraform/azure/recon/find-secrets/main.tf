@@ -19,6 +19,11 @@
 // | 11 | ARM Template Deployment | parameters_content                   | DETECTED        |
 // | 12 | Template Spec (azapi)   | defaultValue in ARM template         | DETECTED        |
 // | 13 | VMSS                    | user_data + extension                | DETECTED        |
+// | 14 | Container App           | environment variable                 | DETECTED        |
+// | 15 | Static Web App          | app settings (azapi)                 | DETECTED        |
+// | 16 | Application Insights    | (shared Log Analytics workspace)     | DETECTED        |
+// | 17 | Batch Account + Pool    | start task env var + command line     | DETECTED        |
+// | 18 | Container Registry Task | encoded task content (azapi)         | DETECTED        |
 
 terraform {
   required_providers {
@@ -535,4 +540,175 @@ resource "azurerm_linux_virtual_machine_scale_set" "test" {
   }
 
   tags = local.tags
+}
+
+# ============================================================
+# 14. Log Analytics Workspace (shared by Container App + App Insights)
+# ============================================================
+resource "azurerm_log_analytics_workspace" "test" {
+  name                = "${local.prefix}-law"
+  resource_group_name = azurerm_resource_group.test.name
+  location            = azurerm_resource_group.test.location
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+  tags                = local.tags
+}
+
+# ============================================================
+# 15. Container App Environment + Container App with env vars
+# ============================================================
+resource "azurerm_container_app_environment" "test" {
+  name                       = "${local.prefix}-cae"
+  resource_group_name        = azurerm_resource_group.test.name
+  location                   = azurerm_resource_group.test.location
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.test.id
+  tags                       = local.tags
+}
+
+resource "azurerm_container_app" "test" {
+  name                         = "${local.prefix}-ca"
+  resource_group_name          = azurerm_resource_group.test.name
+  container_app_environment_id = azurerm_container_app_environment.test.id
+  revision_mode                = "Single"
+  tags                         = local.tags
+
+  template {
+    min_replicas = 0
+    max_replicas = 0
+
+    container {
+      name   = "test"
+      image  = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+      cpu    = 0.25
+      memory = "0.5Gi"
+
+      env {
+        name  = "AWS_ACCESS_KEY_ID"
+        value = local.fake_aws_key
+      }
+      env {
+        name  = "AWS_SECRET_ACCESS_KEY"
+        value = local.fake_aws_secret
+      }
+    }
+  }
+}
+
+# ============================================================
+# 16. Static Web App + app settings via azapi
+# ============================================================
+resource "azurerm_static_web_app" "test" {
+  name                = "${local.prefix}-swa"
+  resource_group_name = azurerm_resource_group.test.name
+  location            = azurerm_resource_group.test.location
+  sku_tier            = "Free"
+  sku_size            = "Free"
+  tags                = local.tags
+}
+
+resource "azapi_update_resource" "swa_settings" {
+  type      = "Microsoft.Web/staticSites/config@2022-09-01"
+  name      = "appsettings"
+  parent_id = azurerm_static_web_app.test.id
+
+  body = jsonencode({
+    properties = {
+      AWS_ACCESS_KEY_ID     = local.fake_aws_key
+      AWS_SECRET_ACCESS_KEY = local.fake_aws_secret
+    }
+  })
+}
+
+# ============================================================
+# 17. Application Insights
+# ============================================================
+resource "azurerm_application_insights" "test" {
+  name                = "${local.prefix}-ai"
+  resource_group_name = azurerm_resource_group.test.name
+  location            = azurerm_resource_group.test.location
+  workspace_id        = azurerm_log_analytics_workspace.test.id
+  application_type    = "web"
+  tags                = local.tags
+}
+
+# ============================================================
+# 18. Batch Account + Pool with start task containing secrets
+# ============================================================
+resource "azurerm_batch_account" "test" {
+  name                                = "${local.prefix_san}ba"
+  resource_group_name                 = azurerm_resource_group.test.name
+  location                            = azurerm_resource_group.test.location
+  pool_allocation_mode                = "BatchService"
+  storage_account_id                  = azurerm_storage_account.test.id
+  storage_account_authentication_mode = "StorageKeys"
+  tags                                = local.tags
+}
+
+resource "azurerm_batch_pool" "test" {
+  name                = "testpool"
+  resource_group_name = azurerm_resource_group.test.name
+  account_name        = azurerm_batch_account.test.name
+  display_name        = "Test Pool"
+  vm_size             = "Standard_A1_v2"
+  node_agent_sku_id   = "batch.node.ubuntu 22.04"
+
+  fixed_scale {
+    target_dedicated_nodes = 0
+  }
+
+  storage_image_reference {
+    publisher = "Canonical"
+    offer     = "0001-com-ubuntu-server-jammy"
+    sku       = "22_04-lts"
+    version   = "latest"
+  }
+
+  start_task {
+    command_line = "/bin/bash -c 'export AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret} && echo configured'"
+
+    environment = {
+      AWS_ACCESS_KEY_ID     = local.fake_aws_key
+      AWS_SECRET_ACCESS_KEY = local.fake_aws_secret
+    }
+
+    user_identity {
+      auto_user {
+        elevation_level = "NonAdmin"
+        scope           = "Task"
+      }
+    }
+  }
+}
+
+# ============================================================
+# 19. ACR Basic + Task via azapi
+# ============================================================
+resource "azurerm_container_registry" "test" {
+  name                = "${local.prefix_san}acr"
+  resource_group_name = azurerm_resource_group.test.name
+  location            = azurerm_resource_group.test.location
+  sku                 = "Basic"
+  admin_enabled       = false
+  tags                = local.tags
+}
+
+resource "azapi_resource" "acr_task" {
+  type      = "Microsoft.ContainerRegistry/registries/tasks@2019-06-01-preview"
+  name      = "test-task"
+  parent_id = azurerm_container_registry.test.id
+  location  = local.location
+  tags      = local.tags
+
+  body = jsonencode({
+    properties = {
+      platform = {
+        os           = "Linux"
+        architecture = "amd64"
+      }
+      step = {
+        type               = "EncodedTask"
+        encodedTaskContent = base64encode("version: v1.1.0\nsteps:\n  - cmd: bash -c 'echo AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}'\n")
+      }
+    }
+  })
 }

@@ -61,3 +61,23 @@ output "template_spec_id" {
 output "vmss_id" {
   value = azurerm_linux_virtual_machine_scale_set.test.id
 }
+
+output "container_app_id" {
+  value = azurerm_container_app.test.id
+}
+
+output "static_web_app_id" {
+  value = azurerm_static_web_app.test.id
+}
+
+output "app_insights_id" {
+  value = azurerm_application_insights.test.id
+}
+
+output "batch_account_id" {
+  value = azurerm_batch_account.test.id
+}
+
+output "acr_id" {
+  value = azurerm_container_registry.test.id
+}
