@@ -55,6 +55,10 @@ func TestAzureFindSecrets(t *testing.T) {
 		"Web App":            fixture.Output("web_app_id"),
 		"Automation Account": fixture.Output("automation_account_id"),
 		"Storage Account":    fixture.Output("storage_account_id"),
+		"Container Instance": fixture.Output("container_instance_id"),
+		"App Config":         fixture.Output("app_config_id"),
+		"Logic App":          fixture.Output("logic_app_id"),
+		"Data Factory":       fixture.Output("data_factory_id"),
 	}
 
 	for label, resourceID := range expectedResources {

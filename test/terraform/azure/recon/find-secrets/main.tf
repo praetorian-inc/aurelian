@@ -10,6 +10,11 @@
 // | 2  | Linux Web App           | app setting                          | DETECTED        |
 // | 3  | Automation Account      | automation variable                  | DETECTED        |
 // | 4  | Storage Account         | blob containing secret               | DETECTED        |
+// | 5  | Container Instance      | environment variable                 | DETECTED        |
+// | 6  | App Configuration Store | key-value pair                       | DETECTED        |
+// | 7  | Logic App (Consumption) | workflow parameter                   | DETECTED        |
+// | 8  | Data Factory            | linked service URL                   | DETECTED        |
+// | 9  | Storage Account         | resource tag                         | DETECTED        |
 
 terraform {
   required_providers {
@@ -183,7 +188,7 @@ resource "azurerm_storage_account" "test" {
   location                 = azurerm_resource_group.test.location
   account_tier             = "Standard"
   account_replication_type = "LRS"
-  tags                     = local.tags
+  tags                     = merge(local.tags, { "api-key" = local.fake_aws_secret })
 }
 
 resource "azurerm_storage_container" "test" {
@@ -198,4 +203,79 @@ resource "azurerm_storage_blob" "secret" {
   storage_container_name = azurerm_storage_container.test.name
   type                   = "Block"
   source_content         = "AWS_ACCESS_KEY_ID=${local.fake_aws_key}\nAWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}\n"
+}
+
+# ============================================================
+# 5. Container Instance — secret in env var
+# ============================================================
+resource "azurerm_container_group" "test" {
+  name                = "${local.prefix}-ci"
+  resource_group_name = azurerm_resource_group.test.name
+  location            = azurerm_resource_group.test.location
+  os_type             = "Linux"
+  ip_address_type     = "None"
+
+  container {
+    name   = "test"
+    image  = "mcr.microsoft.com/azuredocs/aci-helloworld:latest"
+    cpu    = "0.5"
+    memory = "0.5"
+
+    environment_variables = {
+      AWS_ACCESS_KEY_ID     = local.fake_aws_key
+      AWS_SECRET_ACCESS_KEY = local.fake_aws_secret
+    }
+  }
+  tags = local.tags
+}
+
+# ============================================================
+# 6. App Configuration Store — key-value with secret
+# ============================================================
+resource "azurerm_app_configuration" "test" {
+  name                = "${local.prefix}-appconfig"
+  resource_group_name = azurerm_resource_group.test.name
+  location            = azurerm_resource_group.test.location
+  sku                 = "free"
+  tags                = local.tags
+}
+
+resource "azurerm_app_configuration_key" "secret" {
+  configuration_store_id = azurerm_app_configuration.test.id
+  key                    = "database/connection-string"
+  value                  = "Server=myserver;Database=mydb;User=admin;Password=${local.fake_aws_secret}"
+}
+
+# ============================================================
+# 7. Logic App (Consumption) — secret in workflow definition
+# ============================================================
+resource "azurerm_logic_app_workflow" "test" {
+  name                = "${local.prefix}-logic"
+  resource_group_name = azurerm_resource_group.test.name
+  location            = azurerm_resource_group.test.location
+  tags                = local.tags
+
+  workflow_parameters = {
+    "secretParam" = jsonencode({
+      type         = "String"
+      defaultValue = "AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}"
+    })
+  }
+}
+
+# ============================================================
+# 8. Data Factory — linked service with connection string
+# ============================================================
+resource "azurerm_data_factory" "test" {
+  name                = "${local.prefix}-adf"
+  resource_group_name = azurerm_resource_group.test.name
+  location            = azurerm_resource_group.test.location
+  tags                = local.tags
+}
+
+resource "azurerm_data_factory_linked_service_web" "test" {
+  name                = "test-web-linked-service"
+  data_factory_id     = azurerm_data_factory.test.id
+  authentication_type = "Anonymous"
+  url                 = "https://example.com/api?key=${local.fake_aws_secret}"
 }
