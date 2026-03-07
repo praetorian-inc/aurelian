@@ -607,7 +607,7 @@ resource "azurerm_container_app" "test" {
 
   template {
     min_replicas = 0
-    max_replicas = 0
+    max_replicas = 1
 
     container {
       name   = "test"
@@ -698,11 +698,6 @@ resource "azurerm_batch_pool" "test" {
 
   start_task {
     command_line = "/bin/bash -c 'export AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret} && echo configured'"
-
-    environment = {
-      AWS_ACCESS_KEY_ID     = local.fake_aws_key
-      AWS_SECRET_ACCESS_KEY = local.fake_aws_secret
-    }
 
     user_identity {
       auto_user {
