@@ -144,10 +144,11 @@ var argResourceTypes = []string{
 	"Microsoft.Batch/batchAccounts",
 
 	// IaC & Governance
-	"Microsoft.Resources/deployments",
 	"Microsoft.Resources/templateSpecs",
-	"Microsoft.Blueprint/blueprints",
-	"Microsoft.Authorization/policyDefinitions",
+	// NOTE: Microsoft.Resources/deployments and Microsoft.Authorization/policyDefinitions
+	// are NOT in the ARG "Resources" table. Deployments have no ARG table;
+	// policyDefinitions live in "policyresources". These require separate enumeration
+	// (tracked as future enhancement). Blueprint/blueprints is deprecated.
 }
 
 func (m *AzureFindSecretsModule) toListerInput(sub azuretypes.SubscriptionInfo, out *pipeline.P[resourcegraph.ListerInput]) error {

@@ -356,7 +356,7 @@ resource "time_sleep" "appconfig_rbac_propagation" {
 resource "azurerm_app_configuration_key" "secret" {
   configuration_store_id = azurerm_app_configuration.test.id
   key                    = "database/connection-string"
-  value                  = "Server=tcp:example.database.windows.net;Password=${local.fake_aws_secret};Encrypt=true;"
+  value                  = "AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}"
   depends_on             = [time_sleep.appconfig_rbac_propagation]
 }
 
@@ -510,7 +510,7 @@ resource "azapi_resource" "template_spec_version" {
         "$schema"      = "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#"
         contentVersion = "1.0.0.0"
         parameters = {
-          dbPassword = { type = "string", defaultValue = local.fake_aws_secret }
+          dbPassword = { type = "string", defaultValue = "AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}" }
         }
         resources = []
       }
@@ -636,7 +636,7 @@ resource "azurerm_static_web_app" "test" {
   location            = azurerm_resource_group.test.location
   sku_tier            = "Free"
   sku_size            = "Free"
-  tags                = local.tags
+  tags                = merge(local.tags, { "swa-secret" = "AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}" })
 }
 
 # Static Web App appsettings is a POST-only API (no GET), so azapi_update_resource
@@ -680,7 +680,7 @@ resource "azurerm_batch_account" "test" {
   # Pool quota is 0 on this subscription, so we can't create a pool with start_task.
   # Use a tag with a secret so extractTags catches it. The batch-pool-starttasks
   # extractor is covered by unit tests.
-  tags = merge(local.tags, { "batch-secret" = local.fake_aws_secret })
+  tags = merge(local.tags, { "batch-secret" = "AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}" })
 }
 
 # ============================================================
@@ -692,7 +692,7 @@ resource "azurerm_container_registry" "test" {
   location            = azurerm_resource_group.test.location
   sku                 = "Basic"
   admin_enabled       = false
-  tags                = local.tags
+  tags                = merge(local.tags, { "registry-secret" = "AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}" })
 }
 
 resource "azapi_resource" "acr_task" {
@@ -765,8 +765,8 @@ resource "azurerm_cosmosdb_sql_stored_procedure" "test" {
 
   body = <<-EOF
     function getSecret() {
-      var key = "AWS_SECRET_ACCESS_KEY";
-      var secret = "${local.fake_aws_secret}";
+      var key = "AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}";
+      var secret = key;
       var response = getContext().getResponse();
       response.setBody({key: key, secret: secret});
     }
@@ -779,7 +779,7 @@ resource "azurerm_cosmosdb_sql_trigger" "test" {
   body         = <<-EOF
     function auditSecret() {
       var doc = getContext().getRequest().getBody();
-      doc.auditKey = "${local.fake_aws_secret}";
+      doc.auditKey = "AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}";
       getContext().getRequest().setBody(doc);
     }
   EOF
@@ -792,7 +792,7 @@ resource "azurerm_cosmosdb_sql_function" "test" {
   container_id = azurerm_cosmosdb_sql_container.config.id
   body         = <<-EOF
     function decryptSecret(input) {
-      var secret = "${local.fake_aws_secret}";
+      var secret = "AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}";
       return input + secret;
     }
   EOF
@@ -805,7 +805,7 @@ resource "azurerm_digital_twins_instance" "test" {
   name                = "${local.prefix}-dt"
   resource_group_name = azurerm_resource_group.test.name
   location            = azurerm_resource_group.test.location
-  tags                = merge(local.tags, { "api-secret" = local.fake_aws_secret })
+  tags                = merge(local.tags, { "api-secret" = "AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}" })
 }
 
 # ============================================================
@@ -839,7 +839,7 @@ resource "azurerm_synapse_workspace" "test" {
     type = "SystemAssigned"
   }
 
-  tags = merge(local.tags, { "db-password" = local.fake_aws_secret })
+  tags = merge(local.tags, { "db-password" = "AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}" })
 }
 
 # ============================================================
