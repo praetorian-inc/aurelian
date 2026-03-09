@@ -173,7 +173,7 @@ func RelationshipFromGroupMembership(gm types.GroupMembership) *graph.Relationsh
 	return &graph.Relationship{
 		Type:       "MEMBER_OF",
 		Properties: map[string]interface{}{"memberType": gm.MemberType},
-		StartNode:  minimalPrincipalNode(gm.MemberID),
+		StartNode:  principalNodeByType(gm.MemberID, gm.MemberType),
 		EndNode:    minimalGroupNode(gm.GroupID),
 	}
 }
@@ -190,7 +190,7 @@ func RelationshipFromDirectoryRoleAssignment(dra types.DirectoryRoleAssignment) 
 	return &graph.Relationship{
 		Type:       "HAS_ROLE",
 		Properties: props,
-		StartNode:  minimalPrincipalNode(dra.PrincipalID),
+		StartNode:  minimalUserNode(dra.PrincipalID), // Principal type unknown; default to User
 		EndNode:    minimalRoleDefinitionNode(dra.RoleDefinitionID),
 	}
 }
@@ -199,15 +199,32 @@ func RelationshipFromDirectoryRoleAssignment(dra types.DirectoryRoleAssignment) 
 // StartNode: minimal Principal node with ID = o.OwnerID
 // EndNode: minimal node with ID = o.ResourceID
 func RelationshipFromOwnership(o types.OwnershipRelationship) *graph.Relationship {
-	return &graph.Relationship{
-		Type:       "OWNS",
-		Properties: map[string]interface{}{"resourceType": o.ResourceType},
-		StartNode:  minimalPrincipalNode(o.OwnerID),
-		EndNode: &graph.Node{
+	// Resolve end node labels based on resource type to match full node labels.
+	var endNode *graph.Node
+	switch strings.ToLower(o.ResourceType) {
+	case "application":
+		endNode = &graph.Node{
+			Labels:     []string{"Application", "Azure::EntraID::Application"},
+			Properties: map[string]interface{}{"id": o.ResourceID},
+			UniqueKey:  []string{"id"},
+		}
+	case "group":
+		endNode = minimalGroupNode(o.ResourceID)
+	case "serviceprincipal":
+		endNode = minimalServicePrincipalNode(o.ResourceID)
+	default:
+		endNode = &graph.Node{
 			Labels:     []string{"Resource"},
 			Properties: map[string]interface{}{"id": o.ResourceID},
 			UniqueKey:  []string{"id"},
-		},
+		}
+	}
+
+	return &graph.Relationship{
+		Type:       "OWNS",
+		Properties: map[string]interface{}{"resourceType": o.ResourceType},
+		StartNode:  minimalUserNode(o.OwnerID), // Owner type unknown; default to User
+		EndNode:    endNode,
 	}
 }
 
@@ -221,7 +238,7 @@ func RelationshipFromAppRoleAssignment(ara types.AppRoleAssignment) *graph.Relat
 			"id":        ara.ID,
 			"appRoleId": ara.AppRoleID,
 		},
-		StartNode: minimalPrincipalNode(ara.PrincipalID),
+		StartNode: minimalUserNode(ara.PrincipalID), // Principal type unknown; default to User
 		EndNode:   minimalServicePrincipalNode(ara.ResourceID),
 	}
 }
@@ -267,7 +284,7 @@ func RelationshipFromRBACAssignment(ra types.RoleAssignment) *graph.Relationship
 	return &graph.Relationship{
 		Type:       "HAS_RBAC_ROLE",
 		Properties: props,
-		StartNode:  minimalPrincipalNode(ra.PrincipalID),
+		StartNode:  minimalUserNode(ra.PrincipalID), // Principal type unknown; default to User
 		EndNode:    endNode,
 	}
 }
@@ -322,7 +339,7 @@ func RelationshipFromPIMAssignment(pa types.PIMRoleAssignment) *graph.Relationsh
 	return &graph.Relationship{
 		Type:       relType,
 		Properties: props,
-		StartNode:  minimalPrincipalNode(pa.PrincipalID),
+		StartNode:  minimalUserNode(pa.PrincipalID), // Principal type unknown; default to User
 		EndNode:    minimalRoleDefinitionNode(pa.RoleDefinitionID),
 	}
 }
@@ -509,16 +526,22 @@ func TransformAll(data *types.AzureIAMConsolidated) ([]*graph.Node, []*graph.Rel
 
 // ---------------------------------------------------------------------------
 // Minimal node helpers (for relationship endpoints)
+//
+// IMPORTANT: Minimal nodes MUST use the SAME label set as the corresponding
+// full node constructor. Neo4j MERGE matches on ALL labels + unique key.
+// If labels differ, MERGE creates duplicate nodes instead of reusing.
 // ---------------------------------------------------------------------------
 
-func minimalPrincipalNode(id string) *graph.Node {
+// minimalUserNode creates a User node with the same labels as NodeFromEntraUser.
+func minimalUserNode(id string) *graph.Node {
 	return &graph.Node{
-		Labels:     []string{"Principal"},
+		Labels:     []string{"User", "Principal", "Azure::EntraID::User"},
 		Properties: map[string]interface{}{"id": id},
 		UniqueKey:  []string{"id"},
 	}
 }
 
+// minimalGroupNode creates a Group node with the same labels as NodeFromEntraGroup.
 func minimalGroupNode(id string) *graph.Node {
 	return &graph.Node{
 		Labels:     []string{"Group", "Azure::EntraID::Group"},
@@ -527,6 +550,7 @@ func minimalGroupNode(id string) *graph.Node {
 	}
 }
 
+// minimalServicePrincipalNode creates an SP node with the same labels as NodeFromEntraServicePrincipal.
 func minimalServicePrincipalNode(id string) *graph.Node {
 	return &graph.Node{
 		Labels:     []string{"ServicePrincipal", "Principal", "Azure::EntraID::ServicePrincipal"},
@@ -535,11 +559,28 @@ func minimalServicePrincipalNode(id string) *graph.Node {
 	}
 }
 
+// minimalRoleDefinitionNode creates a RoleDefinition node with the same labels as NodeFromEntraRoleDefinition.
 func minimalRoleDefinitionNode(id string) *graph.Node {
 	return &graph.Node{
 		Labels:     []string{"RoleDefinition", "Azure::EntraID::RoleDefinition"},
 		Properties: map[string]interface{}{"id": id},
 		UniqueKey:  []string{"id"},
+	}
+}
+
+// principalNodeByType creates a minimal principal node with the correct labels
+// based on the OData type string from Microsoft Graph (e.g., "#microsoft.graph.user").
+// Falls back to User labels for unknown types (most common principal type).
+func principalNodeByType(id string, odataType string) *graph.Node {
+	lower := strings.ToLower(odataType)
+	switch {
+	case strings.Contains(lower, "group"):
+		return minimalGroupNode(id)
+	case strings.Contains(lower, "serviceprincipal"):
+		return minimalServicePrincipalNode(id)
+	default:
+		// Default to User — the most common principal type in Entra
+		return minimalUserNode(id)
 	}
 }
 
