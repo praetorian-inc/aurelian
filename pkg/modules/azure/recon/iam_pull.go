@@ -3,6 +3,7 @@ package recon
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/praetorian-inc/aurelian/pkg/azure/iam"
 	"github.com/praetorian-inc/aurelian/pkg/azure/subscriptions"
@@ -126,6 +127,39 @@ func (m *AzureIAMPullModule) Run(_ plugin.Config, out *pipeline.P[model.Aurelian
 		)
 	}
 
+	// Populate collection metadata
+	consolidated.Metadata = &types.CollectionMetadata{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Counts:    buildEntityCounts(consolidated),
+	}
+
 	out.Send(consolidated)
 	return nil
+}
+
+// buildEntityCounts summarizes entity counts from the consolidated data.
+func buildEntityCounts(c *types.AzureIAMConsolidated) map[string]int {
+	counts := make(map[string]int)
+	if c.EntraID != nil {
+		counts["users"] = c.EntraID.Users.Len()
+		counts["groups"] = c.EntraID.Groups.Len()
+		counts["servicePrincipals"] = c.EntraID.ServicePrincipals.Len()
+		counts["applications"] = c.EntraID.Applications.Len()
+		counts["devices"] = len(c.EntraID.Devices)
+		counts["directoryRoles"] = len(c.EntraID.DirectoryRoles)
+		counts["groupMemberships"] = len(c.EntraID.GroupMemberships)
+		counts["ownershipRelationships"] = len(c.EntraID.OwnershipRelationships)
+	}
+	if c.PIM != nil {
+		counts["pimActiveAssignments"] = len(c.PIM.ActiveAssignments)
+		counts["pimEligibleAssignments"] = len(c.PIM.EligibleAssignments)
+	}
+	if c.RBAC != nil {
+		counts["rbacSubscriptions"] = len(c.RBAC)
+	}
+	if c.ManagementGroups != nil {
+		counts["managementGroups"] = len(c.ManagementGroups.Groups)
+		counts["mgmtGroupRelationships"] = len(c.ManagementGroups.Relationships)
+	}
+	return counts
 }

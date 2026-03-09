@@ -68,17 +68,11 @@ func (c *azureMgmtGroupClient) Get(ctx context.Context, url string) ([]byte, err
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("ARM API error %d: %s", resp.StatusCode, truncateMgmt(string(body), 512))
+		return nil, fmt.Errorf("ARM API error %d: %s", resp.StatusCode, truncate(string(body), 512))
 	}
 	return body, nil
 }
 
-func truncateMgmt(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
-}
 
 // ---------------------------------------------------------------------------
 // API response types for deserialization
