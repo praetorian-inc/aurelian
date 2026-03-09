@@ -186,6 +186,52 @@ func TestRelationshipFromRBACAssignment(t *testing.T) {
 	if rel.EndNode.Properties["id"] != "sub-123" {
 		t.Errorf("EndNode id = %v, want %q", rel.EndNode.Properties["id"], "sub-123")
 	}
+	// StartNode should use User labels since PrincipalType = "User"
+	expectedUserLabels := []string{"User", "Principal", "Azure::EntraID::User"}
+	if !equalStringSlices(rel.StartNode.Labels, expectedUserLabels) {
+		t.Errorf("StartNode labels = %v, want %v", rel.StartNode.Labels, expectedUserLabels)
+	}
+
+	// ServicePrincipal RBAC assignment should resolve to SP labels
+	spRA := types.RoleAssignment{
+		ID:               "rbac-002",
+		PrincipalID:      "sp-001",
+		RoleDefinitionID: "role-def-001",
+		Scope:            "/subscriptions/sub-123",
+		PrincipalType:    "ServicePrincipal",
+	}
+	spRel := RelationshipFromRBACAssignment(spRA)
+	expectedSPLabels := []string{"ServicePrincipal", "Principal", "Azure::EntraID::ServicePrincipal"}
+	if !equalStringSlices(spRel.StartNode.Labels, expectedSPLabels) {
+		t.Errorf("SP StartNode labels = %v, want %v", spRel.StartNode.Labels, expectedSPLabels)
+	}
+
+	// Group RBAC assignment should resolve to Group labels
+	grpRA := types.RoleAssignment{
+		ID:               "rbac-003",
+		PrincipalID:      "grp-001",
+		RoleDefinitionID: "role-def-001",
+		Scope:            "/subscriptions/sub-123",
+		PrincipalType:    "Group",
+	}
+	grpRel := RelationshipFromRBACAssignment(grpRA)
+	expectedGrpLabels := []string{"Group", "Azure::EntraID::Group"}
+	if !equalStringSlices(grpRel.StartNode.Labels, expectedGrpLabels) {
+		t.Errorf("Group StartNode labels = %v, want %v", grpRel.StartNode.Labels, expectedGrpLabels)
+	}
+}
+
+// equalStringSlices checks if two string slices have the same elements (order-sensitive).
+func equalStringSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestRelationshipFromMgmtGroupHierarchy(t *testing.T) {

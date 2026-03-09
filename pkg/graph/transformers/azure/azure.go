@@ -2,6 +2,7 @@ package azure
 
 import (
 	"encoding/json"
+	"log/slog"
 	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/graph"
@@ -284,7 +285,7 @@ func RelationshipFromRBACAssignment(ra types.RoleAssignment) *graph.Relationship
 	return &graph.Relationship{
 		Type:       "HAS_RBAC_ROLE",
 		Properties: props,
-		StartNode:  minimalUserNode(ra.PrincipalID), // Principal type unknown; default to User
+		StartNode:  principalNodeByAzureType(ra.PrincipalID, ra.PrincipalType),
 		EndNode:    endNode,
 	}
 }
@@ -579,7 +580,25 @@ func principalNodeByType(id string, odataType string) *graph.Node {
 	case strings.Contains(lower, "serviceprincipal"):
 		return minimalServicePrincipalNode(id)
 	default:
-		// Default to User — the most common principal type in Entra
+		if odataType != "" && !strings.Contains(lower, "user") {
+			slog.Debug("unknown OData principal type, defaulting to User", "id", id, "odataType", odataType)
+		}
+		return minimalUserNode(id)
+	}
+}
+
+// principalNodeByAzureType creates a minimal principal node based on the Azure
+// ARM principalType string (e.g., "User", "Group", "ServicePrincipal").
+func principalNodeByAzureType(id string, principalType string) *graph.Node {
+	switch strings.ToLower(principalType) {
+	case "group":
+		return minimalGroupNode(id)
+	case "serviceprincipal":
+		return minimalServicePrincipalNode(id)
+	default:
+		if principalType != "" && !strings.EqualFold(principalType, "user") {
+			slog.Debug("unknown ARM principal type, defaulting to User", "id", id, "principalType", principalType)
+		}
 		return minimalUserNode(id)
 	}
 }
