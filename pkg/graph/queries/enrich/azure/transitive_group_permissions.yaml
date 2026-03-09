@@ -1,0 +1,15 @@
+id: azure/enrich/transitive-group-permissions
+name: Transitive Group Permission Materialization
+platform: azure
+type: enrich
+category: permissions
+description: |
+  Materializes transitive permissions through group membership.
+  If a group has a role assignment and a user is a member of that group,
+  the user inherits that permission. Creates _hasTransitiveRole marker.
+severity: medium
+order: 40
+cypher: |
+  MATCH (member)-[:MEMBER_OF]->(group:Group)-[r:HAS_ROLE]->(roleDef:RoleDefinition)
+  SET member._hasTransitiveRole = true
+  RETURN count(DISTINCT member) AS membersWithTransitiveRoles

@@ -1,0 +1,16 @@
+id: azure/enrich/can-escalate-priv-role-admin
+name: Privileged Role Administrator Escalation
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Privileged Role Administrators can assign any Azure AD role to any user,
+  including Global Administrator. Creates CAN_ESCALATE marker on these principals.
+severity: critical
+order: 51
+cypher: |
+  MATCH (principal)-[r:HAS_ROLE]->(roleDef:RoleDefinition)
+  WHERE roleDef.displayName = 'Privileged Role Administrator'
+     OR roleDef.templateId = 'e8611ab8-c189-46e8-94e1-60213ab1f814'
+  SET principal._canEscalateViaRoleAssignment = true, principal._canEscalate = true
+  RETURN count(principal) AS privRoleAdmins

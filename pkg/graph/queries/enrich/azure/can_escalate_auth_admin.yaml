@@ -1,0 +1,29 @@
+id: azure/enrich/can-escalate-auth-admin
+name: Authentication Administrator Escalation
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Authentication Administrators and Privileged Authentication Administrators
+  can reset MFA and passwords for users, enabling account takeover.
+  Auth Admin targets non-admin users; Priv Auth Admin targets all users.
+severity: high
+order: 53
+cypher: |
+  MATCH (principal)-[r:HAS_ROLE]->(roleDef:RoleDefinition)
+  WHERE roleDef.displayName IN [
+    'Authentication Administrator',
+    'Privileged Authentication Administrator',
+    'User Administrator',
+    'Helpdesk Administrator',
+    'Password Administrator'
+  ]
+  OR roleDef.templateId IN [
+    'c4e39bd9-1100-46d3-8c65-fb160da0071f',
+    '7be44c8a-adaf-4e2a-84d6-ab2649e08a13',
+    'fe930be7-5e62-47db-91af-98c3a49a38b1',
+    '729827e3-9c14-49f7-bb1b-9608f156bbb8',
+    '966707d0-3269-4727-9be2-8c3a10f19b9d'
+  ]
+  SET principal._canEscalateViaPasswordReset = true, principal._canEscalate = true
+  RETURN count(principal) AS authAdmins

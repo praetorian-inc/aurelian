@@ -1,0 +1,17 @@
+id: azure/enrich/dangerous-graph-permissions
+name: Dangerous Graph API Permissions
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Identifies service principals with dangerous Microsoft Graph API permissions
+  such as RoleManagement.ReadWrite.All, AppRoleAssignment.ReadWrite.All, or
+  Application.ReadWrite.All that could be abused for privilege escalation.
+severity: high
+order: 56
+cypher: |
+  MATCH (sp:ServicePrincipal)-[r:HAS_APP_ROLE]->(resource:ServicePrincipal)
+  WHERE resource.displayName = 'Microsoft Graph'
+     OR resource.appId = '00000003-0000-0000-c000-000000000000'
+  SET sp._hasGraphApiPermissions = true
+  RETURN count(DISTINCT sp) AS spsWithGraphPermissions

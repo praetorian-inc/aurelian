@@ -1,0 +1,17 @@
+id: azure/enrich/can-escalate-app-admin
+name: Application Administrator Escalation
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Application Administrators and Cloud Application Administrators can create
+  and manage application registrations and service principals, potentially
+  adding credentials to privileged apps for escalation.
+severity: high
+order: 52
+cypher: |
+  MATCH (principal)-[r:HAS_ROLE]->(roleDef:RoleDefinition)
+  WHERE roleDef.displayName IN ['Application Administrator', 'Cloud Application Administrator']
+     OR roleDef.templateId IN ['9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3', '158c047a-c907-4556-b7ef-446551a6b5f7']
+  SET principal._canEscalateViaAppCreds = true, principal._canEscalate = true
+  RETURN count(principal) AS appAdmins

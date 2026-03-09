@@ -1,0 +1,17 @@
+id: azure/enrich/can-escalate-conditional-access
+name: Conditional Access Administrator Escalation
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Conditional Access Administrators can modify or disable security policies
+  (MFA, device compliance, IP restrictions), weakening the security posture
+  for all users and enabling further attacks.
+severity: high
+order: 54
+cypher: |
+  MATCH (principal)-[r:HAS_ROLE]->(roleDef:RoleDefinition)
+  WHERE roleDef.displayName = 'Conditional Access Administrator'
+     OR roleDef.templateId = 'b1be1c3e-b65d-4f19-8427-f6fa0d97feb9'
+  SET principal._canEscalateViaPolicyBypass = true, principal._canEscalate = true
+  RETURN count(principal) AS condAccessAdmins

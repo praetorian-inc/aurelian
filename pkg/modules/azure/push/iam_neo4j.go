@@ -98,12 +98,29 @@ func (m *AzureIAMPushModule) Run(_ plugin.Config, out *pipeline.P[model.Aurelian
 		slog.Info("database cleared")
 	}
 
-	// 4. Transform to graph nodes and relationships
+	// 4. Create constraints and indexes for performance
+	slog.Info("creating constraints and indexes")
+	constraints := []string{
+		"CREATE CONSTRAINT IF NOT EXISTS FOR (n:User) REQUIRE n.id IS UNIQUE",
+		"CREATE CONSTRAINT IF NOT EXISTS FOR (n:Group) REQUIRE n.id IS UNIQUE",
+		"CREATE CONSTRAINT IF NOT EXISTS FOR (n:ServicePrincipal) REQUIRE n.id IS UNIQUE",
+		"CREATE CONSTRAINT IF NOT EXISTS FOR (n:Application) REQUIRE n.id IS UNIQUE",
+		"CREATE CONSTRAINT IF NOT EXISTS FOR (n:RoleDefinition) REQUIRE n.id IS UNIQUE",
+		"CREATE CONSTRAINT IF NOT EXISTS FOR (n:ManagementGroup) REQUIRE n.id IS UNIQUE",
+		"CREATE CONSTRAINT IF NOT EXISTS FOR (n:Subscription) REQUIRE n.id IS UNIQUE",
+	}
+	for _, c := range constraints {
+		if _, err := db.Query(ctx, c, nil); err != nil {
+			slog.Warn("constraint creation failed (may already exist)", "error", err)
+		}
+	}
+
+	// 5. Transform to graph nodes and relationships
 	slog.Info("transforming IAM data to graph model")
 	nodes, rels := azuretransform.TransformAll(data)
 	slog.Info("transformation complete", "nodes", len(nodes), "relationships", len(rels))
 
-	// 5. Push nodes
+	// 6. Push nodes
 	if len(nodes) > 0 {
 		slog.Info("creating nodes", "count", len(nodes))
 		nodeResult, err := db.CreateNodes(ctx, nodes)
@@ -116,7 +133,7 @@ func (m *AzureIAMPushModule) Run(_ plugin.Config, out *pipeline.P[model.Aurelian
 			"durationMs", nodeResult.ExecutionTimeMs)
 	}
 
-	// 6. Push relationships
+	// 7. Push relationships
 	if len(rels) > 0 {
 		slog.Info("creating relationships", "count", len(rels))
 		relResult, err := db.CreateRelationships(ctx, rels)
@@ -129,7 +146,7 @@ func (m *AzureIAMPushModule) Run(_ plugin.Config, out *pipeline.P[model.Aurelian
 			"durationMs", relResult.ExecutionTimeMs)
 	}
 
-	// 7. Run enrichment queries
+	// 8. Run enrichment queries
 	if m.Enrich {
 		slog.Info("running enrichment queries")
 		if err := queries.EnrichAzure(ctx, db); err != nil {
