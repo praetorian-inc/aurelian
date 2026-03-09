@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/automation/armautomation"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
 func init() {
@@ -34,7 +35,7 @@ func extractAutomationVariables(ctx extractContext, r output.AzureResource, out 
 	}
 
 	pager := client.NewListByAutomationAccountPager(resourceGroup, accountName, nil)
-	paginator := newAzurePaginator()
+	paginator := ratelimit.NewAzurePaginator()
 	return paginator.Paginate(func() (bool, error) {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
@@ -75,7 +76,7 @@ func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *
 	}
 
 	pager := client.NewListByAutomationAccountPager(resourceGroup, accountName, nil)
-	paginator := newAzurePaginator()
+	paginator := ratelimit.NewAzurePaginator()
 	return paginator.Paginate(func() (bool, error) {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {

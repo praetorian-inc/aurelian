@@ -44,3 +44,15 @@ func ScanInputFromAzureResource(r AzureResource, label string, content []byte) S
 		Label:        label,
 	}
 }
+
+// ScanInputFromGCPResource creates a ScanInput by mapping common fields from a GCPResource.
+func ScanInputFromGCPResource(r GCPResource, label string, content []byte) ScanInput {
+	return ScanInput{
+		Content:      content,
+		ResourceID:   r.ResourceID,
+		ResourceType: r.ResourceType,
+		Region:       r.Location,
+		AccountID:    r.ProjectID,
+		Label:        label,
+	}
+}

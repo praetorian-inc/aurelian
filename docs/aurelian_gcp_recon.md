@@ -11,6 +11,7 @@ recon commands for gcp
 ### SEE ALSO
 
 * [aurelian gcp](aurelian_gcp.md)	 - gcp platform commands
+* [aurelian gcp recon find-secrets](aurelian_gcp_recon_find-secrets.md)	 - Enumerates GCP resources via project hierarchy, extracts content likely to contain hardcoded secrets (Compute metadata/startup scripts, Cloud Functions source, Cloud Run environment variables, App Engine environment variables), and scans with Titus.
 * [aurelian gcp recon list-all](aurelian_gcp_recon_list-all.md)	 - List GCP resources across organization, folder, or project scope. Supports filtering by resource type and evaluates public/anonymous access.
 * [aurelian gcp recon public-resources](aurelian_gcp_recon_public-resources.md)	 - List GCP resources with public network exposure or anonymous access. Focuses on resource types with meaningful public access indicators.
 
