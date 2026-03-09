@@ -62,8 +62,19 @@ if [[ -f "$ENV_FILE" ]]; then
   set -u
 fi
 
+# Determine which platforms are needed based on target path.
+# AWS is always required (S3 remote state for Terraform fixtures).
+NEED_AZURE=false
+NEED_GCP=false
+case "$TARGET" in
+  *azure*) NEED_AZURE=true ;;
+  *gcp*)   NEED_GCP=true ;;
+  *aws*)   ;; # AWS is already always required
+  *)       NEED_AZURE=true; NEED_GCP=true ;; # ./... or unrecognized — require all
+esac
+
 # Prompt for missing values
-if [[ -z "$AZURE_SUBSCRIPTION_ID" ]]; then
+if $NEED_AZURE && [[ -z "$AZURE_SUBSCRIPTION_ID" ]]; then
   read -rp "Enter AZURE_SUBSCRIPTION_ID: " AZURE_SUBSCRIPTION_ID
   if [[ -z "$AZURE_SUBSCRIPTION_ID" ]]; then
     echo "ERROR: AZURE_SUBSCRIPTION_ID is required." >&2
@@ -79,7 +90,7 @@ if [[ -z "$AWS_PROFILE" ]]; then
   fi
 fi
 
-if [[ -z "$GCP_PROJECT_ID" ]]; then
+if $NEED_GCP && [[ -z "$GCP_PROJECT_ID" ]]; then
   read -rp "Enter GCP_PROJECT_ID: " GCP_PROJECT_ID
   if [[ -z "$GCP_PROJECT_ID" ]]; then
     echo "ERROR: GCP_PROJECT_ID is required." >&2
@@ -87,7 +98,7 @@ if [[ -z "$GCP_PROJECT_ID" ]]; then
   fi
 fi
 
-if [[ -z "$GCP_ACCOUNT" ]]; then
+if $NEED_GCP && [[ -z "$GCP_ACCOUNT" ]]; then
   read -rp "Enter GCP_ACCOUNT (gcloud account email): " GCP_ACCOUNT
   if [[ -z "$GCP_ACCOUNT" ]]; then
     echo "ERROR: GCP_ACCOUNT is required." >&2
@@ -105,13 +116,15 @@ EOF
 echo "Saved credentials to $ENV_FILE"
 
 # Validate Azure subscription
-echo "Validating Azure subscription $AZURE_SUBSCRIPTION_ID..."
-if ! az account show --subscription "$AZURE_SUBSCRIPTION_ID" &>/dev/null; then
-  echo "ERROR: Unable to access Azure subscription $AZURE_SUBSCRIPTION_ID with current 'az' credentials." >&2
-  echo "Run 'az login' and try again." >&2
-  exit 1
+if $NEED_AZURE; then
+  echo "Validating Azure subscription $AZURE_SUBSCRIPTION_ID..."
+  if ! az account show --subscription "$AZURE_SUBSCRIPTION_ID" &>/dev/null; then
+    echo "ERROR: Unable to access Azure subscription $AZURE_SUBSCRIPTION_ID with current 'az' credentials." >&2
+    echo "Run 'az login' and try again." >&2
+    exit 1
+  fi
+  echo "Azure subscription OK."
 fi
-echo "Azure subscription OK."
 
 # Validate AWS profile
 echo "Validating AWS profile $AWS_PROFILE..."
@@ -123,34 +136,40 @@ fi
 echo "AWS profile OK."
 
 # Configure and validate GCP
-echo "Setting gcloud account to $GCP_ACCOUNT..."
-if ! gcloud config set account "$GCP_ACCOUNT" &>/dev/null; then
-  echo "ERROR: Unable to set gcloud account to '$GCP_ACCOUNT'." >&2
-  echo "Run 'gcloud auth login' and try again." >&2
-  exit 1
-fi
+if $NEED_GCP; then
+  echo "Setting gcloud account to $GCP_ACCOUNT..."
+  if ! gcloud config set account "$GCP_ACCOUNT" &>/dev/null; then
+    echo "ERROR: Unable to set gcloud account to '$GCP_ACCOUNT'." >&2
+    echo "Run 'gcloud auth login' and try again." >&2
+    exit 1
+  fi
 
-echo "Setting gcloud project to $GCP_PROJECT_ID..."
-if ! gcloud config set project "$GCP_PROJECT_ID" &>/dev/null; then
-  echo "ERROR: Unable to set gcloud project to '$GCP_PROJECT_ID'." >&2
-  exit 1
-fi
+  echo "Setting gcloud project to $GCP_PROJECT_ID..."
+  if ! gcloud config set project "$GCP_PROJECT_ID" &>/dev/null; then
+    echo "ERROR: Unable to set gcloud project to '$GCP_PROJECT_ID'." >&2
+    exit 1
+  fi
 
-echo "Validating GCP project $GCP_PROJECT_ID..."
-if ! gcloud projects describe "$GCP_PROJECT_ID" &>/dev/null; then
-  echo "ERROR: Unable to access GCP project '$GCP_PROJECT_ID' with account '$GCP_ACCOUNT'." >&2
-  echo "Run 'gcloud auth login' and try again." >&2
-  exit 1
+  echo "Validating GCP project $GCP_PROJECT_ID..."
+  if ! gcloud projects describe "$GCP_PROJECT_ID" &>/dev/null; then
+    echo "ERROR: Unable to access GCP project '$GCP_PROJECT_ID' with account '$GCP_ACCOUNT'." >&2
+    echo "Run 'gcloud auth login' and try again." >&2
+    exit 1
+  fi
+  echo "GCP project OK."
 fi
-echo "GCP project OK."
 
 # Run tests
 echo ""
 echo "Running integration tests..."
 cd "$PROJECT_DIR"
-export AZURE_SUBSCRIPTION_ID
+if $NEED_AZURE; then
+  export AZURE_SUBSCRIPTION_ID
+fi
 export AWS_PROFILE
-export GCP_PROJECT_ID
+if $NEED_GCP; then
+  export GCP_PROJECT_ID
+fi
 
 set -x
 go test -tags compute,integration -p=1 $GO_FLAGS "$TARGET"

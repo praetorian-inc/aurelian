@@ -55,6 +55,18 @@ func TestGCPFindSecrets(t *testing.T) {
 		assert.True(t, found, "expected a risk referencing Cloud Function %s", functionName)
 	})
 
+	t.Run("detects secret in Compute Instance", func(t *testing.T) {
+		instanceName := fixture.Output("instance_name")
+		found := hasGCPRiskForIdentifier(risks, instanceName)
+		assert.True(t, found, "expected a risk referencing Compute Instance %s", instanceName)
+	})
+
+	t.Run("detects secret in Storage Bucket", func(t *testing.T) {
+		bucketName := fixture.Output("bucket_name")
+		found := hasGCPRiskForIdentifier(risks, bucketName)
+		assert.True(t, found, "expected a risk referencing Storage Bucket %s", bucketName)
+	})
+
 	// Cloud Run ResourceIDs contain the full resource path including the service name.
 	t.Run("detects secret in Cloud Run Service", func(t *testing.T) {
 		serviceName := fixture.Output("cloud_run_service_name")
