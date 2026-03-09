@@ -1,0 +1,15 @@
+id: azure/enrich/global-admin-detection
+name: Global Administrator Detection
+platform: azure
+type: enrich
+category: privesc
+description: |
+  Identifies principals assigned the Global Administrator role in Entra ID.
+  Global Administrators have unrestricted access to all Azure AD resources.
+severity: critical
+order: 10
+cypher: |
+  MATCH (p:Principal)-[r:HAS_ROLE]->(rd:RoleDefinition)
+  WHERE rd.displayName = 'Global Administrator' OR rd.id = '62e90394-69f5-4237-9190-012177145e10'
+  SET p._isGlobalAdmin = true
+  RETURN p.id AS principalId, p.displayName AS principalName

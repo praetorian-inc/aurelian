@@ -1,0 +1,16 @@
+id: azure/enrich/owner-to-privileged-app
+name: Application Ownership Privilege Escalation
+platform: azure
+type: enrich
+category: privesc
+description: |
+  Identifies owners of applications or service principals that have privileged
+  role assignments. An owner can add credentials to the application and
+  authenticate as the service principal, inheriting its privileges.
+severity: critical
+order: 20
+cypher: |
+  MATCH (owner:Principal)-[:OWNS]->(app:Application)
+  MATCH (sp:ServicePrincipal {appId: app.appId})-[:HAS_ROLE|HAS_RBAC_ROLE]->(role)
+  SET owner._canEscalateViaApp = true
+  RETURN owner.id AS ownerId, app.displayName AS appName, sp.displayName AS spName

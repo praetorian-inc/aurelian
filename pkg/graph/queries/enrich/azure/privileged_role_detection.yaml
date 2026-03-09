@@ -1,0 +1,27 @@
+id: azure/enrich/privileged-role-detection
+name: Privileged Role Detection
+platform: azure
+type: enrich
+category: privesc
+description: |
+  Identifies principals with privileged Entra ID directory roles including
+  Global Admin, Privileged Role Admin, Application Admin, and Cloud App Admin.
+severity: high
+order: 11
+cypher: |
+  MATCH (p:Principal)-[r:HAS_ROLE]->(rd:RoleDefinition)
+  WHERE rd.displayName IN [
+    'Global Administrator',
+    'Privileged Role Administrator',
+    'Application Administrator',
+    'Cloud Application Administrator',
+    'Authentication Administrator',
+    'User Administrator',
+    'Exchange Administrator',
+    'SharePoint Administrator',
+    'Intune Administrator',
+    'Azure DevOps Administrator',
+    'Security Administrator'
+  ]
+  SET p._hasPrivilegedRole = true, r._isPrivileged = true
+  RETURN p.id AS principalId, rd.displayName AS roleName

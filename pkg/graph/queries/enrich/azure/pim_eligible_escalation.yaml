@@ -1,0 +1,22 @@
+id: azure/enrich/pim-eligible-escalation
+name: PIM Eligible Role Escalation Paths
+platform: azure
+type: enrich
+category: privesc
+description: |
+  Identifies principals with PIM eligible assignments to privileged roles.
+  These principals can activate their role assignment on demand, gaining
+  temporary elevated privileges.
+severity: high
+order: 15
+cypher: |
+  MATCH (p:Principal)-[r:ELIGIBLE_FOR_PIM_ROLE]->(rd:RoleDefinition)
+  WHERE rd.displayName IN [
+    'Global Administrator',
+    'Privileged Role Administrator',
+    'Application Administrator',
+    'User Administrator',
+    'Security Administrator'
+  ]
+  SET p._hasPIMEscalation = true, r._isPrivilegedEligible = true
+  RETURN p.id AS principalId, rd.displayName AS roleName
