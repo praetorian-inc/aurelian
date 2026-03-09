@@ -11,6 +11,7 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
 const (
@@ -49,11 +50,19 @@ func extractBucketObjects(ctx extractContext, r output.GCPResource, out *pipelin
 		bucketName = r.ResourceID
 	}
 
+	paginator := ratelimit.NewGCPPaginator()
+	var pageToken string
 	count := 0
-	err = svc.Objects.List(bucketName).Context(ctx.Context).Pages(ctx.Context, func(resp *gcsapi.Objects) error {
+
+	err = paginator.Paginate(func() (bool, error) {
+		call := svc.Objects.List(bucketName).Context(ctx.Context).PageToken(pageToken)
+		resp, err := call.Do()
+		if err != nil {
+			return false, err
+		}
 		for _, obj := range resp.Items {
 			if count >= maxObjectsPerBucket {
-				return nil
+				return false, nil
 			}
 
 			if isBinaryContentType(obj.ContentType) {
@@ -66,9 +75,9 @@ func extractBucketObjects(ctx extractContext, r output.GCPResource, out *pipelin
 				continue
 			}
 
-			content, err := downloadObject(svc, bucketName, obj.Name)
-			if err != nil {
-				slog.Warn("failed to download object", "bucket", bucketName, "object", obj.Name, "error", err)
+			content, dlErr := downloadObject(svc, bucketName, obj.Name)
+			if dlErr != nil {
+				slog.Warn("failed to download object", "bucket", bucketName, "object", obj.Name, "error", dlErr)
 				continue
 			}
 			if len(content) == 0 {
@@ -78,7 +87,8 @@ func extractBucketObjects(ctx extractContext, r output.GCPResource, out *pipelin
 			out.Send(output.ScanInputFromGCPResource(r, obj.Name, content))
 			count++
 		}
-		return nil
+		pageToken = resp.NextPageToken
+		return pageToken != "", nil
 	})
 	if err != nil {
 		return fmt.Errorf("listing objects in bucket %s: %w", bucketName, err)
