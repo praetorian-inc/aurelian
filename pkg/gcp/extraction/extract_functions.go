@@ -20,6 +20,7 @@ var httpClient = &http.Client{Timeout: 10 * time.Minute}
 
 func init() {
 	mustRegister("cloudfunctions.googleapis.com/Function", "source", extractFunctionSource)
+	mustRegister("cloudfunctions.googleapis.com/Function", "env-vars", extractFunctionEnvVars)
 }
 
 // extractFunctionSource downloads the function's source archive, extracts each file,
@@ -39,7 +40,12 @@ func extractFunctionSource(ctx extractContext, r output.GCPResource, out *pipeli
 		return nil
 	}
 
-	httpResp, err := httpClient.Get(resp.DownloadUrl)
+	return downloadAndExtractZip(r, resp.DownloadUrl, out)
+}
+
+// downloadAndExtractZip downloads a zip from the given URL and emits each file as a ScanInput.
+func downloadAndExtractZip(r output.GCPResource, downloadURL string, out *pipeline.P[output.ScanInput]) error {
+	httpResp, err := httpClient.Get(downloadURL)
 	if err != nil {
 		return fmt.Errorf("downloading source for %s: %w", r.ResourceID, err)
 	}
@@ -73,5 +79,29 @@ func extractFunctionSource(ctx extractContext, r output.GCPResource, out *pipeli
 
 		out.Send(output.ScanInputFromGCPResource(r, f.Name, content))
 	}
+	return nil
+}
+
+// extractFunctionEnvVars extracts environment variables from a Gen 1 Cloud Function.
+func extractFunctionEnvVars(ctx extractContext, r output.GCPResource, out *pipeline.P[output.ScanInput]) error {
+	svc, err := cloudfunctions.NewService(ctx.Context, ctx.ClientOptions...)
+	if err != nil {
+		return fmt.Errorf("creating cloudfunctions client: %w", err)
+	}
+
+	fn, err := svc.Projects.Locations.Functions.Get(r.ResourceID).Context(ctx.Context).Do()
+	if err != nil {
+		return fmt.Errorf("getting function %s: %w", r.ResourceID, err)
+	}
+
+	if len(fn.EnvironmentVariables) == 0 {
+		return nil
+	}
+
+	var envContent []byte
+	for k, v := range fn.EnvironmentVariables {
+		envContent = fmt.Appendf(envContent, "%s=%s\n", k, v)
+	}
+	out.Send(output.ScanInputFromGCPResource(r, "env-vars", envContent))
 	return nil
 }

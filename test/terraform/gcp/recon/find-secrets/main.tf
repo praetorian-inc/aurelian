@@ -9,6 +9,7 @@
 // | 1  | ${prefix}-secret-vm                  | compute.googleapis.com/Instance        | startup-script metadata|
 // | 2  | ${prefix}-secret-fn                  | cloudfunctions.googleapis.com/Function | source code            |
 // | 3  | ${prefix}-secret-run                 | run.googleapis.com/Service             | environment variables  |
+// | 4  | ${prefix}-secret-bucket              | storage.googleapis.com/Bucket          | object content         |
 
 terraform {
   required_providers {
@@ -148,4 +149,23 @@ resource "google_cloud_run_v2_service" "with_secret" {
   }
 
   labels = local.labels
+}
+
+#==============================================================================
+# RESOURCE 4: Storage Bucket with secret in object content
+#==============================================================================
+resource "google_storage_bucket" "with_secret" {
+  name          = "${local.prefix}-secret-bucket"
+  location      = var.region
+  labels        = local.labels
+  force_destroy = true
+}
+
+resource "google_storage_bucket_object" "secret_config" {
+  name    = "config/app.env"
+  bucket  = google_storage_bucket.with_secret.name
+  content = <<-EOF
+    AWS_ACCESS_KEY_ID=${local.fake_aws_key}
+    AWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}
+  EOF
 }

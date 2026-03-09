@@ -55,7 +55,7 @@ func (l *InstanceLister) List(projectID string, out *pipeline.P[output.GCPResour
 		g.Go(func() error {
 			err := svc.Instances.List(projectID, zone).Pages(context.Background(), func(resp *computeapi.InstanceList) error {
 				for _, inst := range resp.Items {
-					r := output.NewGCPResource(projectID, "compute.googleapis.com/Instance", fmt.Sprintf("%d", inst.Id))
+					r := output.NewGCPResource(projectID, "compute.googleapis.com/Instance", fmt.Sprintf("projects/%s/zones/%s/instances/%s", projectID, zone, inst.Name))
 					r.DisplayName = inst.Name
 					r.Location = zone
 					r.Labels = inst.Labels

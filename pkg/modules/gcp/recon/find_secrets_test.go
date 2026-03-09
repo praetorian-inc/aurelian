@@ -3,6 +3,7 @@ package recon
 import (
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/titus/pkg/types"
 )
 
@@ -37,15 +38,15 @@ func TestRiskSeverityFromMatch_Validated(t *testing.T) {
 		},
 	}
 	got := riskSeverityFromMatch(m)
-	if got != "high" {
-		t.Errorf("severity = %q, want %q", got, "high")
+	if got != output.RiskSeverityHigh {
+		t.Errorf("severity = %q, want %q", got, output.RiskSeverityHigh)
 	}
 }
 
 func TestRiskSeverityFromMatch_Unvalidated(t *testing.T) {
 	m := &types.Match{}
 	got := riskSeverityFromMatch(m)
-	if got != "medium" {
-		t.Errorf("severity = %q, want %q", got, "medium")
+	if got != output.RiskSeverityMedium {
+		t.Errorf("severity = %q, want %q", got, output.RiskSeverityMedium)
 	}
 }

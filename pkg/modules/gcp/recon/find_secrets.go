@@ -66,6 +66,7 @@ var secretsResourceTypes = []string{
 	"cloudfunctions.googleapis.com/Function",
 	"run.googleapis.com/Service",
 	"appengine.googleapis.com/Version",
+	"storage.googleapis.com/Bucket",
 }
 
 func (m *GCPFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.AurelianModel]) error {
@@ -169,16 +170,16 @@ func riskSeverityFromMatch(match *types.Match) output.RiskSeverity {
 	return output.RiskSeverityMedium
 }
 
-func buildProofData(result secrets.SecretScanResult, match *types.Match) map[string]interface{} {
-	proof := map[string]interface{}{
+func buildProofData(result secrets.SecretScanResult, match *types.Match) map[string]any {
+	proof := map[string]any{
 		"finding_id":   match.FindingID,
 		"rule_name":    match.RuleName,
 		"rule_text_id": match.RuleID,
 		"resource_ref": result.ResourceRef,
 		"num_matches":  1,
-		"matches": []map[string]interface{}{
+		"matches": []map[string]any{
 			{
-				"provenance": []map[string]interface{}{
+				"provenance": []map[string]any{
 					{
 						"kind":          "cloud_resource",
 						"platform":      "gcp",
@@ -186,7 +187,7 @@ func buildProofData(result secrets.SecretScanResult, match *types.Match) map[str
 						"resource_type": result.ResourceType,
 						"region":        result.Region,
 						"account_id":    result.AccountID,
-						"first_commit": map[string]interface{}{
+						"first_commit": map[string]any{
 							"blob_path": result.Label,
 						},
 					},
@@ -196,17 +197,17 @@ func buildProofData(result secrets.SecretScanResult, match *types.Match) map[str
 					"matching": string(match.Snippet.Matching),
 					"after":    string(match.Snippet.After),
 				},
-				"location": map[string]interface{}{
-					"offset_span": map[string]interface{}{
+				"location": map[string]any{
+					"offset_span": map[string]any{
 						"start": match.Location.Offset.Start,
 						"end":   match.Location.Offset.End,
 					},
-					"source_span": map[string]interface{}{
-						"start": map[string]interface{}{
+					"source_span": map[string]any{
+						"start": map[string]any{
 							"line":   match.Location.Source.Start.Line,
 							"column": match.Location.Source.Start.Column,
 						},
-						"end": map[string]interface{}{
+						"end": map[string]any{
 							"line":   match.Location.Source.End.Line,
 							"column": match.Location.Source.End.Column,
 						},
@@ -217,7 +218,7 @@ func buildProofData(result secrets.SecretScanResult, match *types.Match) map[str
 	}
 
 	if match.ValidationResult != nil {
-		proof["validation"] = map[string]interface{}{
+		proof["validation"] = map[string]any{
 			"status":     string(match.ValidationResult.Status),
 			"confidence": match.ValidationResult.Confidence,
 			"message":    match.ValidationResult.Message,

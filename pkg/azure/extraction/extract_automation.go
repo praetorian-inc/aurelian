@@ -3,7 +3,6 @@ package extraction
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/automation/armautomation"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
 func init() {

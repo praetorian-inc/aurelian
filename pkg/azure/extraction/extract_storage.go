@@ -3,7 +3,6 @@ package extraction
 import (
 	"bytes"
 	"fmt"
-	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 	"io"
 	"log/slog"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
 const (

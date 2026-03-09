@@ -17,3 +17,7 @@ output "cloud_run_service_name" {
 output "prefix" {
   value = local.prefix
 }
+
+output "bucket_name" {
+  value = google_storage_bucket.with_secret.name
+}
