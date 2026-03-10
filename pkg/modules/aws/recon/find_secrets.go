@@ -85,17 +85,19 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		}
 	}()
 
+	cfg.Info("scanning %d resource types for secrets", len(m.SupportedResourceTypes()))
+
 	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
 	if err != nil {
 		return fmt.Errorf("failed to collect inputs: %v", err)
 	}
 
-	pipeOpts := &pipeline.PipeOpts{Concurrency: m.Concurrency}
-
 	lister := cclist.NewEnumerator(c.AWSCommonRecon)
 	inputPipeline := pipeline.From(inputs...)
 	listed := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(inputPipeline, lister.List, listed)
+	pipeline.Pipe(inputPipeline, lister.List, listed, &pipeline.PipeOpts{
+		Progress: func(c, t int64) { cfg.Log.RenderProgress("listing resources", c, t) },
+	})
 
 	extractor := extraction.NewAWSExtractor(c.AWSCommonRecon, extraction.Config{
 		MaxEvents:  c.MaxEvents,
@@ -103,13 +105,22 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	})
 
 	extracted := pipeline.New[output.ScanInput]()
-	pipeline.Pipe(listed, extractor.Extract, extracted, pipeOpts)
+	pipeline.Pipe(listed, extractor.Extract, extracted, &pipeline.PipeOpts{
+		Progress:    func(c, t int64) { cfg.Log.RenderProgress("extracting content", c, t) },
+		Concurrency: m.Concurrency,
+	})
 
 	scanned := pipeline.New[secrets.SecretScanResult]()
-	pipeline.Pipe(extracted, s.Scan, scanned)
+	pipeline.Pipe(extracted, s.Scan, scanned, &pipeline.PipeOpts{
+		Progress: func(c, t int64) { cfg.Log.RenderProgress("scanning for secrets", c, t) },
+	})
 	pipeline.Pipe(scanned, riskFromScanResult, out)
 
-	return out.Wait()
+	if err := out.Wait(); err != nil {
+		return err
+	}
+	cfg.Success("secret scanning complete")
+	return nil
 }
 
 func riskFromScanResult(result secrets.SecretScanResult, out *pipeline.P[model.AurelianModel]) error {

@@ -60,16 +60,26 @@ func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, out *pipeline.P[model
 		return err
 	}
 
+	cfg.Info("collecting resource policies for %d resource types across %d regions", len(resourceTypes), len(c.Regions))
+
 	resourceTypePipeline := pipeline.From(resourceTypes...)
 	listed := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(resourceTypePipeline, lister.List, listed)
+	pipeline.Pipe(resourceTypePipeline, lister.List, listed, &pipeline.PipeOpts{
+		Progress: func(c, t int64) { cfg.Log.RenderProgress("listing resources", c, t) },
+	})
 
 	collected := pipeline.New[output.AWSResource]()
 	pipeline.Pipe(listed, collector.Collect, collected)
 
+	count := 0
 	for r := range collected.Range() {
+		count++
 		out.Send(r)
 	}
 
-	return collected.Wait()
+	if err := collected.Wait(); err != nil {
+		return err
+	}
+	cfg.Success("collected %d resources with policies", count)
+	return nil
 }

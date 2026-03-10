@@ -43,6 +43,35 @@ type Config struct {
 	Context context.Context // Execution context
 	Output  io.Writer       // Output destination
 	Verbose bool            // Verbose logging
+	Log     *Logger         // User-facing terminal logger
+}
+
+// Info logs an informational message if a Logger is configured.
+func (c Config) Info(format string, args ...any) {
+	if c.Log != nil {
+		c.Log.Info(format, args...)
+	}
+}
+
+// Success logs a success message if a Logger is configured.
+func (c Config) Success(format string, args ...any) {
+	if c.Log != nil {
+		c.Log.Success(format, args...)
+	}
+}
+
+// Warn logs a warning message if a Logger is configured.
+func (c Config) Warn(format string, args ...any) {
+	if c.Log != nil {
+		c.Log.Warn(format, args...)
+	}
+}
+
+// Fail logs a failure message if a Logger is configured.
+func (c Config) Fail(format string, args ...any) {
+	if c.Log != nil {
+		c.Log.Fail(format, args...)
+	}
 }
 
 // Module is the core interface that all Aurelian modules implement
@@ -82,6 +111,9 @@ type ModuleWrapper struct {
 }
 
 func (m *ModuleWrapper) Run(cfg Config, out *pipeline.P[model.AurelianModel]) error {
+	if cfg.Log == nil {
+		cfg.Log = DiscardLogger()
+	}
 	if target := m.Parameters(); target != nil {
 		if err := Bind(cfg, target); err != nil {
 			return fmt.Errorf("parameter validation failed: %w", err)
