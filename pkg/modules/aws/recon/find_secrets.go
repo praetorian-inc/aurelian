@@ -96,7 +96,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	inputPipeline := pipeline.From(inputs...)
 	listed := pipeline.New[output.AWSResource]()
 	pipeline.Pipe(inputPipeline, lister.List, listed, &pipeline.PipeOpts{
-		Progress: func(c, t int64) { cfg.Log.RenderProgress("listing resources", c, t) },
+		Progress: cfg.Log.ProgressFunc("listing resources"),
 	})
 
 	extractor := extraction.NewAWSExtractor(c.AWSCommonRecon, extraction.Config{
@@ -106,13 +106,13 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 
 	extracted := pipeline.New[output.ScanInput]()
 	pipeline.Pipe(listed, extractor.Extract, extracted, &pipeline.PipeOpts{
-		Progress:    func(c, t int64) { cfg.Log.RenderProgress("extracting content", c, t) },
+		Progress:    cfg.Log.ProgressFunc("extracting content"),
 		Concurrency: m.Concurrency,
 	})
 
 	scanned := pipeline.New[secrets.SecretScanResult]()
 	pipeline.Pipe(extracted, s.Scan, scanned, &pipeline.PipeOpts{
-		Progress: func(c, t int64) { cfg.Log.RenderProgress("scanning for secrets", c, t) },
+		Progress: cfg.Log.ProgressFunc("scanning for secrets"),
 	})
 	pipeline.Pipe(scanned, riskFromScanResult, out)
 

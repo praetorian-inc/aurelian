@@ -73,7 +73,7 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	inputPipeline := pipeline.From(inputs...)
 	listed := pipeline.New[output.AWSResource]()
 	pipeline.Pipe(inputPipeline, lister.List, listed, &pipeline.PipeOpts{
-		Progress: func(c, t int64) { cfg.Log.RenderProgress("listing resources", c, t) },
+		Progress: cfg.Log.ProgressFunc("listing resources"),
 	})
 
 	// Enrich resources with properties not available from CloudControl
@@ -81,14 +81,14 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	enricher := enrichment.NewAWSEnricher(c.AWSCommonRecon)
 	enriched := pipeline.New[output.AWSResource]()
 	pipeline.Pipe(listed, enricher.Enrich, enriched, &pipeline.PipeOpts{
-		Progress:    func(c, t int64) { cfg.Log.RenderProgress("enriching resources", c, t) },
+		Progress:    cfg.Log.ProgressFunc("enriching resources"),
 		Concurrency: m.Concurrency,
 	})
 
 	evaluator := publicaccess.NewResourceEvaluator(c.AWSCommonRecon, c.OrgPolicies)
 	evaluated := pipeline.New[publicaccess.PublicAccessResult]()
 	pipeline.Pipe(enriched, evaluator.Evaluate, evaluated, &pipeline.PipeOpts{
-		Progress:    func(c, t int64) { cfg.Log.RenderProgress("evaluating public access", c, t) },
+		Progress:    cfg.Log.ProgressFunc("evaluating public access"),
 		Concurrency: m.Concurrency,
 	})
 	pipeline.Pipe(evaluated, riskFromResult, out)

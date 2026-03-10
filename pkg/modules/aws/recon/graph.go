@@ -124,7 +124,7 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 		resourceTypePipeline := pipeline.From(resourceTypes...)
 		listed := pipeline.New[output.AWSResource]()
 		pipeline.Pipe(resourceTypePipeline, lister.List, listed, &pipeline.PipeOpts{
-			Progress: func(c, t int64) { m.log.RenderProgress("listing resources", c, t) },
+			Progress: m.log.ProgressFunc("listing resources"),
 		})
 
 		collected := pipeline.New[output.AWSResource]()

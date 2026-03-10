@@ -164,6 +164,14 @@ func (l *Logger) Status(format string, args ...any) {
 	l.hasStatus = true
 }
 
+// ProgressFunc returns a callback bound to the given label, suitable for
+// passing directly to pipeline.PipeOpts.Progress.
+func (l *Logger) ProgressFunc(label string) func(completed, total int64) {
+	return func(completed, total int64) {
+		l.RenderProgress(label, completed, total)
+	}
+}
+
 // RenderProgress renders a progress bar for the given label.
 // Each unique label gets its own dedicated line in a multi-line progress area.
 //
@@ -313,8 +321,8 @@ func (l *Logger) redrawProgress() {
 		doneWidth = 1
 	}
 	pendingDigits := len(fmt.Sprintf("%d", maxPending))
-	// " N queued" suffix width
-	queuedSuffix := 1 + pendingDigits + 7 // space + digits + " queued"
+	// " N processing" suffix width
+	queuedSuffix := 1 + pendingDigits + 11 // space + digits + " processing"
 
 	// Layout: [~] <label> <done> <bar> N queued
 	// Ensure bar fits in 80 cols; shrink if labels are very long.
@@ -338,7 +346,7 @@ func (l *Logger) redrawProgress() {
 		pct := float64(min(pending, int64(barWidth))) / float64(barWidth)
 		bar := l.progressBar.ViewAs(pct)
 		doneStr := fmt.Sprintf("%*d", doneWidth, entry.completed)
-		queuedStr := fmt.Sprintf("%*d queued", pendingDigits, pending)
+		queuedStr := fmt.Sprintf("%*d processing", pendingDigits, pending)
 
 		fmt.Fprintf(l.w, "%s %s %s %s %s\n", l.statusPrefix, padded, doneStr, bar, queuedStr)
 	}

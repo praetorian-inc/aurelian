@@ -66,7 +66,7 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model
 	resourceTypePipeline := pipeline.From(resourceTypes...)
 	listed := pipeline.New[output.AWSResource]()
 	pipeline.Pipe(resourceTypePipeline, lister.List, listed, &pipeline.PipeOpts{
-		Progress: func(c, t int64) { cfg.Log.RenderProgress("listing resources", c, t) },
+		Progress: cfg.Log.ProgressFunc("listing resources"),
 	})
 
 	count := 0
