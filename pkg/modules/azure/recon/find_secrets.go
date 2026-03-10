@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/praetorian-inc/aurelian/pkg/azure/armenum"
 	"github.com/praetorian-inc/aurelian/pkg/azure/extraction"
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
 	"github.com/praetorian-inc/aurelian/pkg/azure/subscriptions"
@@ -89,16 +90,26 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 		return nil
 	}
 
-	idStream := pipeline.From(subscriptionIDs...)
-	resolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
-	pipeline.Pipe(idStream, resolver.Resolve, resolvedSubs)
-
-	inputs := pipeline.New[resourcegraph.ListerInput]()
-	pipeline.Pipe(resolvedSubs, m.toListerInput, inputs)
-
+	// ARG path: enumerate resources discoverable via Resource Graph.
+	argIDStream := pipeline.From(subscriptionIDs...)
+	argResolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
+	pipeline.Pipe(argIDStream, resolver.Resolve, argResolvedSubs)
+	argInputs := pipeline.New[resourcegraph.ListerInput]()
+	pipeline.Pipe(argResolvedSubs, m.toListerInput, argInputs)
 	lister := resourcegraph.NewResourceGraphLister(c.AzureCredential, nil)
-	listed := pipeline.New[output.AzureResource]()
-	pipeline.Pipe(inputs, lister.List, listed)
+	argListed := pipeline.New[output.AzureResource]()
+	pipeline.Pipe(argInputs, lister.List, argListed)
+
+	// ARM path: enumerate resource types not indexed by ARG.
+	armIDStream := pipeline.From(subscriptionIDs...)
+	armResolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
+	pipeline.Pipe(armIDStream, resolver.Resolve, armResolvedSubs)
+	armEnumerator := armenum.NewARMEnumerator(c.AzureCredential)
+	armListed := pipeline.New[output.AzureResource]()
+	pipeline.Pipe(armResolvedSubs, armEnumerator.List, armListed)
+
+	// Merge both enumeration paths into a single stream.
+	listed := pipeline.Merge(argListed, armListed)
 
 	extractor := extraction.NewAzureExtractor(c.AzureCredential)
 	extracted := pipeline.New[output.ScanInput]()
@@ -145,10 +156,9 @@ var argResourceTypes = []string{
 
 	// IaC & Governance
 	"Microsoft.Resources/templateSpecs",
-	// NOTE: Microsoft.Resources/deployments and Microsoft.Authorization/policyDefinitions
-	// are NOT in the ARG "Resources" table. Deployments have no ARG table;
-	// policyDefinitions live in "policyresources". These require separate enumeration
-	// (tracked as future enhancement). Blueprint/blueprints is deprecated.
+	// NOTE: Microsoft.Resources/deployments, Microsoft.Authorization/policyDefinitions,
+	// and Microsoft.Blueprint/blueprints are enumerated via the ARM direct path
+	// (pkg/azure/armenum), not via ARG, since they are absent from the ARG "Resources" table.
 }
 
 func (m *AzureFindSecretsModule) toListerInput(sub azuretypes.SubscriptionInfo, out *pipeline.P[resourcegraph.ListerInput]) error {
