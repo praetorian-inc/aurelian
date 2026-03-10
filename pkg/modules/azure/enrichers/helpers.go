@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -85,7 +86,7 @@ func HTTPProbe(client *http.Client, url, curlEquiv, description, expectedOutput 
 // TCPProbe tests TCP connectivity to host:port with the given timeout and
 // returns an AzureEnrichmentCommand with the result.
 func TCPProbe(host string, port int, timeout time.Duration) plugin.AzureEnrichmentCommand {
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	cmd := plugin.AzureEnrichmentCommand{
 		Command:                   fmt.Sprintf("nc -zv %s %d", host, port),
 		Description:               fmt.Sprintf("TCP connectivity check to %s", addr),
