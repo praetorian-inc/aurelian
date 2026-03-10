@@ -14,6 +14,7 @@ aurelian azure recon find-secrets [flags]
   -h, --help                           help for find-secrets
       --output-dir string              Base output directory (default "aurelian-output")
   -s, --subscription-ids strings       Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions (default [all])
+      --validate                       Validate detected secrets against their source APIs
 ```
 
 ### SEE ALSO

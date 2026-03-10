@@ -28,6 +28,7 @@ aurelian aws recon find-secrets [flags]
   -r, --regions strings                AWS regions to scan (default [all])
   -a, --resource-arn strings           AWS target resource ARN
   -t, --resource-type strings          AWS Cloud Control resource type (default [all])
+      --validate                       Validate detected secrets against their source APIs
 ```
 
 ### SEE ALSO
