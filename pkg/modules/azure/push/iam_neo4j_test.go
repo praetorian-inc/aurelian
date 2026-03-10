@@ -152,9 +152,48 @@ func TestIntegration_PushToNeo4j(t *testing.T) {
 	}
 
 	t.Log("Relationship counts in Neo4j:")
-	for _, relType := range []string{"MEMBER_OF", "HAS_ROLE", "OWNS", "HAS_APP_ROLE",
-		"HAS_OAUTH2_GRANT", "HAS_RBAC_ROLE", "CONTAINS", "HAS_PIM_ROLE", "ELIGIBLE_FOR_PIM_ROLE"} {
+	for _, relType := range []string{"MEMBER_OF", "HAS_PERMISSION", "OWNS", "CONTAINS", "CAN_ESCALATE"} {
 		count := relCountQuery(relType)
 		t.Logf("  %-25s %d", relType, count)
+	}
+
+	// Validate CAN_ESCALATE edges were created by enrichment
+	canEscalateCount := relCountQuery("CAN_ESCALATE")
+	t.Logf("CAN_ESCALATE edges created: %d", canEscalateCount)
+
+	// Validate CAN_ESCALATE methods
+	methodResult, err := db.Query(ctx, "MATCH ()-[r:CAN_ESCALATE]->() RETURN r.method AS method, count(r) AS c ORDER BY c DESC", nil)
+	if err != nil {
+		t.Logf("WARNING: CAN_ESCALATE method query failed: %v", err)
+	} else {
+		t.Log("CAN_ESCALATE methods:")
+		for _, rec := range methodResult.Records {
+			t.Logf("  %-45s %v", rec["method"], rec["c"])
+		}
+	}
+
+	// Validate enrichment markers
+	markerResult, err := db.Query(ctx, "MATCH (p:Principal) WHERE p._isGlobalAdmin = true RETURN count(p) AS c", nil)
+	if err == nil && len(markerResult.Records) > 0 {
+		t.Logf("Global Admins detected: %v", markerResult.Records[0]["c"])
+	}
+
+	markerResult, err = db.Query(ctx, "MATCH (p:Principal) WHERE p._hasPrivilegedRole = true RETURN count(p) AS c", nil)
+	if err == nil && len(markerResult.Records) > 0 {
+		t.Logf("Privileged role holders: %v", markerResult.Records[0]["c"])
+	}
+
+	markerResult, err = db.Query(ctx, "MATCH (p:Principal) WHERE p._canEscalate = true RETURN count(p) AS c", nil)
+	if err == nil && len(markerResult.Records) > 0 {
+		t.Logf("Principals that can escalate: %v", markerResult.Records[0]["c"])
+	}
+
+	// Validate HAS_PERMISSION sources
+	sourceResult, err := db.Query(ctx, "MATCH ()-[r:HAS_PERMISSION]->() RETURN r.source AS source, count(r) AS c ORDER BY c DESC", nil)
+	if err == nil {
+		t.Log("HAS_PERMISSION by source:")
+		for _, rec := range sourceResult.Records {
+			t.Logf("  %-35s %v", rec["source"], rec["c"])
+		}
 	}
 }

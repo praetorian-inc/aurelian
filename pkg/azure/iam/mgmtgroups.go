@@ -4,14 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"strings"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
@@ -38,39 +34,7 @@ type azureMgmtGroupClient struct {
 }
 
 func (c *azureMgmtGroupClient) Get(ctx context.Context, url string) ([]byte, error) {
-	if !strings.HasPrefix(url, "https://") {
-		url = mgmtBaseURL + url
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-
-	token, err := c.cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://management.azure.com/.default"},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("acquiring token: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token.Token)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("HTTP request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("ARM API error %d: %s", resp.StatusCode, truncate(string(body), 512))
-	}
-	return body, nil
+	return doWithRetry(ctx, c.cred, "https://management.azure.com/.default", nil, url, mgmtBaseURL)
 }
 
 
@@ -133,16 +97,14 @@ const (
 
 // MgmtGroupsCollector collects Azure management group hierarchy data.
 type MgmtGroupsCollector struct {
-	client     MgmtGroupClient
-	batchDelay time.Duration
+	client MgmtGroupClient
 }
 
 // NewMgmtGroupsCollector creates a collector that authenticates with the
 // given Azure credential.
 func NewMgmtGroupsCollector(cred azcore.TokenCredential) *MgmtGroupsCollector {
 	return &MgmtGroupsCollector{
-		client:     &azureMgmtGroupClient{cred: cred},
-		batchDelay: 200 * time.Millisecond,
+		client: &azureMgmtGroupClient{cred: newCachedCredential(cred)},
 	}
 }
 
@@ -150,8 +112,7 @@ func NewMgmtGroupsCollector(cred azcore.TokenCredential) *MgmtGroupsCollector {
 // MgmtGroupClient. This is the primary constructor used by tests.
 func newMgmtGroupsCollectorWithClient(client MgmtGroupClient) *MgmtGroupsCollector {
 	return &MgmtGroupsCollector{
-		client:     client,
-		batchDelay: 0,
+		client: client,
 	}
 }
 

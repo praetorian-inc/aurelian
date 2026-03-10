@@ -10,6 +10,6 @@ description: |
 severity: medium
 order: 40
 cypher: |
-  MATCH (member)-[:MEMBER_OF]->(group:Group)-[r:HAS_ROLE]->(roleDef:RoleDefinition)
+  MATCH (member)-[:MEMBER_OF]->(group:Group)-[r:HAS_PERMISSION]->(roleDef:RoleDefinition)
   SET member._hasTransitiveRole = true
   RETURN count(DISTINCT member) AS membersWithTransitiveRoles

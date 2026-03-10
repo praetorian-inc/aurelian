@@ -9,7 +9,7 @@ description: |
 severity: high
 order: 11
 cypher: |
-  MATCH (p:Principal)-[r:HAS_ROLE]->(rd:RoleDefinition)
+  MATCH (p:Principal)-[r:HAS_PERMISSION]->(rd:RoleDefinition)
   WHERE rd.displayName IN [
     'Global Administrator',
     'Privileged Role Administrator',

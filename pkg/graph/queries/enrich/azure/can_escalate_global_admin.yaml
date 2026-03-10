@@ -11,8 +11,17 @@ description: |
 severity: critical
 order: 50
 cypher: |
-  MATCH (principal)-[r:HAS_ROLE]->(roleDef:RoleDefinition)
-  WHERE roleDef.displayName = 'Global Administrator'
-     OR roleDef.templateId = '62e90394-69f5-4237-9190-012177145e10'
-  SET principal._isGlobalAdmin = true, principal._canEscalate = true
-  RETURN count(principal) AS globalAdmins
+  MATCH (attacker)-[perm:HAS_PERMISSION]->(rd:RoleDefinition)
+  WHERE rd.displayName = 'Global Administrator'
+     OR rd.templateId = '62e90394-69f5-4237-9190-012177145e10'
+  SET attacker._isGlobalAdmin = true, attacker._canEscalate = true
+  WITH attacker, perm
+  MATCH (target:Principal)
+  WHERE target <> attacker
+  WITH DISTINCT attacker, target, perm
+  MERGE (attacker)-[r:CAN_ESCALATE {method: 'GlobalAdministrator'}]->(target)
+  ON CREATE SET
+    r.condition = 'Global Administrator role provides complete tenant control and can escalate to all resources',
+    r.category = 'DirectoryRole',
+    r.source = perm.source
+  RETURN count(r) AS created

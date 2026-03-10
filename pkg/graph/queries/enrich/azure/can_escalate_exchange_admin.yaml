@@ -9,22 +9,22 @@ description: |
   Intune Administrators can push scripts to managed devices.
   Security Administrators can modify security policies.
 severity: high
-order: 57
+order: 56
 cypher: |
-  MATCH (principal)-[r:HAS_ROLE]->(roleDef:RoleDefinition)
-  WHERE roleDef.displayName IN [
+  MATCH (attacker)-[perm:HAS_PERMISSION]->(rd:RoleDefinition)
+  WHERE rd.displayName IN [
     'Exchange Administrator',
     'SharePoint Administrator',
     'Teams Administrator',
     'Intune Administrator',
     'Security Administrator'
   ]
-  OR roleDef.templateId IN [
+  OR rd.templateId IN [
     '29232cdf-9323-42fd-ade2-1d097af3e4de',
     'f28a1f50-f6e7-4571-818b-6a12f2af6b6c',
     '69091246-20e8-4a56-aa4d-066075b2a7a8',
     '3a2c62db-5318-420d-8d74-23affee5d9d5',
     '194ae4cb-b126-40b2-bd5b-6091b380977d'
   ]
-  SET principal._canEscalateViaServiceAdmin = true, principal._canEscalate = true
-  RETURN count(principal) AS serviceAdmins
+  SET attacker._canEscalateViaServiceAdmin = true, attacker._canEscalate = true
+  RETURN count(attacker) AS serviceAdmins

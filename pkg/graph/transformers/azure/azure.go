@@ -179,19 +179,21 @@ func RelationshipFromGroupMembership(gm types.GroupMembership) *graph.Relationsh
 	}
 }
 
-// RelationshipFromDirectoryRoleAssignment creates a HAS_ROLE relationship.
-// StartNode: minimal Principal node with ID = dra.PrincipalID
-// EndNode: minimal RoleDefinition node with ID = dra.RoleDefinitionID
+// RelationshipFromDirectoryRoleAssignment creates a HAS_PERMISSION relationship
+// for Entra ID directory role assignments.
 func RelationshipFromDirectoryRoleAssignment(dra types.DirectoryRoleAssignment) *graph.Relationship {
-	props := map[string]interface{}{"id": dra.ID}
+	props := map[string]interface{}{
+		"id":     dra.ID,
+		"source": "Entra ID Directory Role",
+	}
 	if dra.DirectoryScopeID != "" {
 		props["directoryScopeId"] = dra.DirectoryScopeID
 	}
 
 	return &graph.Relationship{
-		Type:       "HAS_ROLE",
+		Type:       "HAS_PERMISSION",
 		Properties: props,
-		StartNode:  minimalUserNode(dra.PrincipalID), // Principal type unknown; default to User
+		StartNode:  principalNodeByAzureType(dra.PrincipalID, dra.PrincipalType),
 		EndNode:    minimalRoleDefinitionNode(dra.RoleDefinitionID),
 	}
 }
@@ -229,49 +231,58 @@ func RelationshipFromOwnership(o types.OwnershipRelationship) *graph.Relationshi
 	}
 }
 
-// RelationshipFromAppRoleAssignment creates a HAS_APP_ROLE relationship.
-// StartNode: minimal Principal node with ID = ara.PrincipalID
-// EndNode: minimal ServicePrincipal node with ID = ara.ResourceID
+// RelationshipFromAppRoleAssignment creates a HAS_PERMISSION relationship
+// for Microsoft Graph app role assignments.
 func RelationshipFromAppRoleAssignment(ara types.AppRoleAssignment) *graph.Relationship {
+	var startNode *graph.Node
+	switch ara.PrincipalType {
+	case "ServicePrincipal":
+		startNode = minimalServicePrincipalNode(ara.PrincipalID)
+	case "Group":
+		startNode = minimalGroupNode(ara.PrincipalID)
+	default:
+		startNode = minimalUserNode(ara.PrincipalID)
+	}
 	return &graph.Relationship{
-		Type: "HAS_APP_ROLE",
+		Type: "HAS_PERMISSION",
 		Properties: map[string]interface{}{
 			"id":        ara.ID,
 			"appRoleId": ara.AppRoleID,
+			"source":    "Microsoft Graph App Role",
 		},
-		StartNode: minimalUserNode(ara.PrincipalID), // Principal type unknown; default to User
+		StartNode: startNode,
 		EndNode:   minimalServicePrincipalNode(ara.ResourceID),
 	}
 }
 
-// RelationshipFromOAuth2Grant creates a HAS_OAUTH2_GRANT relationship.
-// StartNode: minimal ServicePrincipal node with ID = grant.ClientID
-// EndNode: minimal ServicePrincipal node with ID = grant.ResourceID
+// RelationshipFromOAuth2Grant creates a HAS_PERMISSION relationship
+// for Microsoft Graph OAuth2 delegated permission grants.
 func RelationshipFromOAuth2Grant(grant types.OAuth2PermissionGrant) *graph.Relationship {
 	props := map[string]interface{}{
-		"id":    grant.ID,
-		"scope": grant.Scope,
+		"id":     grant.ID,
+		"scope":  grant.Scope,
+		"source": "Microsoft Graph OAuth2",
 	}
 	if grant.ConsentType != "" {
 		props["consentType"] = grant.ConsentType
 	}
 
 	return &graph.Relationship{
-		Type:       "HAS_OAUTH2_GRANT",
+		Type:       "HAS_PERMISSION",
 		Properties: props,
 		StartNode:  minimalServicePrincipalNode(grant.ClientID),
 		EndNode:    minimalServicePrincipalNode(grant.ResourceID),
 	}
 }
 
-// RelationshipFromRBACAssignment creates a HAS_RBAC_ROLE relationship.
-// StartNode: minimal Principal node with ID = ra.PrincipalID
-// EndNode: scope node (subscription or generic resource)
+// RelationshipFromRBACAssignment creates a HAS_PERMISSION relationship
+// for Azure RBAC role assignments.
 func RelationshipFromRBACAssignment(ra types.RoleAssignment) *graph.Relationship {
 	props := map[string]interface{}{
 		"id":               ra.ID,
 		"roleDefinitionId": ra.RoleDefinitionID,
 		"scope":            ra.Scope,
+		"source":           "Azure RBAC",
 	}
 	if ra.PrincipalType != "" {
 		props["principalType"] = ra.PrincipalType
@@ -283,7 +294,7 @@ func RelationshipFromRBACAssignment(ra types.RoleAssignment) *graph.Relationship
 	endNode := scopeNode(ra.Scope)
 
 	return &graph.Relationship{
-		Type:       "HAS_RBAC_ROLE",
+		Type:       "HAS_PERMISSION",
 		Properties: props,
 		StartNode:  principalNodeByAzureType(ra.PrincipalID, ra.PrincipalType),
 		EndNode:    endNode,
@@ -317,18 +328,14 @@ func RelationshipFromMgmtGroupHierarchy(rel types.ManagementGroupRelationship) *
 	}
 }
 
-// RelationshipFromPIMAssignment creates a HAS_PIM_ROLE or ELIGIBLE_FOR_PIM_ROLE relationship.
-// The relationship type depends on pa.AssignmentType: "active" -> HAS_PIM_ROLE, "eligible" -> ELIGIBLE_FOR_PIM_ROLE.
+// RelationshipFromPIMAssignment creates a HAS_PERMISSION relationship for PIM role assignments.
+// The assignmentType property distinguishes active vs eligible assignments.
 func RelationshipFromPIMAssignment(pa types.PIMRoleAssignment) *graph.Relationship {
-	relType := "HAS_PIM_ROLE"
-	if strings.EqualFold(pa.AssignmentType, "eligible") {
-		relType = "ELIGIBLE_FOR_PIM_ROLE"
-	}
-
 	props := map[string]interface{}{
 		"id":             pa.ID,
 		"scope":          pa.Scope,
 		"assignmentType": pa.AssignmentType,
+		"source":         "PIM",
 	}
 	if pa.StartDateTime != "" {
 		props["startDateTime"] = pa.StartDateTime
@@ -338,7 +345,7 @@ func RelationshipFromPIMAssignment(pa types.PIMRoleAssignment) *graph.Relationsh
 	}
 
 	return &graph.Relationship{
-		Type:       relType,
+		Type:       "HAS_PERMISSION",
 		Properties: props,
 		StartNode:  minimalUserNode(pa.PrincipalID), // Principal type unknown; default to User
 		EndNode:    minimalRoleDefinitionNode(pa.RoleDefinitionID),
@@ -402,8 +409,28 @@ func TransformEntraIDData(data *types.EntraIDData) ([]*graph.Node, []*graph.Rela
 		rels = append(rels, RelationshipFromGroupMembership(gm))
 	}
 
-	// Directory Role Assignments
+	// Directory Role Assignments — resolve principal types from collected entities
+	groupIDs := make(map[string]bool)
+	data.Groups.Range(func(_ string, g types.EntraGroup) bool {
+		groupIDs[g.ObjectID] = true
+		return true
+	})
+	spIDs := make(map[string]bool)
+	data.ServicePrincipals.Range(func(_ string, sp types.EntraServicePrincipal) bool {
+		spIDs[sp.ObjectID] = true
+		return true
+	})
 	for _, dra := range data.DirectoryRoleAssignments {
+		if dra.PrincipalType == "" {
+			switch {
+			case groupIDs[dra.PrincipalID]:
+				dra.PrincipalType = "Group"
+			case spIDs[dra.PrincipalID]:
+				dra.PrincipalType = "ServicePrincipal"
+			default:
+				dra.PrincipalType = "User"
+			}
+		}
 		rels = append(rels, RelationshipFromDirectoryRoleAssignment(dra))
 	}
 
@@ -490,6 +517,133 @@ func TransformManagementGroupData(data *types.ManagementGroupData) ([]*graph.Nod
 	return nodes, rels
 }
 
+// NodeFromManagedIdentity creates a graph node from an Azure managed identity.
+// Labels: ["ManagedIdentity", "Principal", "Azure::ManagedIdentity"]
+// UniqueKey: ["id"]
+func NodeFromManagedIdentity(mi types.ManagedIdentity) *graph.Node {
+	props := flattenStruct(mi)
+	props["_type"] = "ManagedIdentity"
+	props["_resourceType"] = "Azure::ManagedIdentity"
+
+	return &graph.Node{
+		Labels:     []string{"ManagedIdentity", "Principal", "Azure::ManagedIdentity"},
+		Properties: props,
+		UniqueKey:  []string{"id"},
+	}
+}
+
+// NodeFromResourceWithIdentity creates a graph node from a resource with a managed identity.
+// Labels: ["AzureResource", "Azure::Resource"]
+// UniqueKey: ["id"]
+func NodeFromResourceWithIdentity(att types.ResourceIdentityAttachment) *graph.Node {
+	return &graph.Node{
+		Labels: []string{"AzureResource", "Azure::Resource"},
+		Properties: map[string]interface{}{
+			"id":           att.ResourceID,
+			"displayName":  att.ResourceName,
+			"resourceType": att.ResourceType,
+			"_type":        "AzureResource",
+		},
+		UniqueKey: []string{"id"},
+	}
+}
+
+// RelationshipFromMIToServicePrincipal creates a CONTAINS relationship from a
+// managed identity to its underlying service principal (linked by principalId).
+func RelationshipFromMIToServicePrincipal(mi types.ManagedIdentity) *graph.Relationship {
+	return &graph.Relationship{
+		Type:       "CONTAINS",
+		Properties: map[string]interface{}{"relationship": "identity"},
+		StartNode: &graph.Node{
+			Labels:     []string{"ManagedIdentity", "Principal", "Azure::ManagedIdentity"},
+			Properties: map[string]interface{}{"id": mi.ID},
+			UniqueKey:  []string{"id"},
+		},
+		EndNode: minimalServicePrincipalNode(mi.PrincipalID),
+	}
+}
+
+// RelationshipFromResourceToMI creates a CONTAINS relationship from an Azure
+// resource to its attached managed identity (system-assigned or user-assigned).
+func RelationshipFromResourceToMI(resourceID, miID, identityType string) *graph.Relationship {
+	return &graph.Relationship{
+		Type: "CONTAINS",
+		Properties: map[string]interface{}{
+			"identityType": identityType,
+		},
+		StartNode: &graph.Node{
+			Labels:     []string{"AzureResource", "Azure::Resource"},
+			Properties: map[string]interface{}{"id": resourceID},
+			UniqueKey:  []string{"id"},
+		},
+		EndNode: &graph.Node{
+			Labels:     []string{"ManagedIdentity", "Principal", "Azure::ManagedIdentity"},
+			Properties: map[string]interface{}{"id": miID},
+			UniqueKey:  []string{"id"},
+		},
+	}
+}
+
+// TransformManagedIdentityData converts ManagedIdentityData into nodes and relationships.
+func TransformManagedIdentityData(data *types.ManagedIdentityData) ([]*graph.Node, []*graph.Relationship) {
+	if data == nil {
+		return nil, nil
+	}
+
+	var nodes []*graph.Node
+	var rels []*graph.Relationship
+
+	// User-assigned managed identities
+	for _, mi := range data.Identities {
+		nodes = append(nodes, NodeFromManagedIdentity(mi))
+		if mi.PrincipalID != "" {
+			rels = append(rels, RelationshipFromMIToServicePrincipal(mi))
+		}
+	}
+
+	// Resource identity attachments
+	for _, att := range data.Attachments {
+		nodes = append(nodes, NodeFromResourceWithIdentity(att))
+
+		// System-assigned: create synthetic MI node + resource → MI relationship
+		if att.PrincipalID != "" && strings.Contains(strings.ToLower(att.IdentityType), "systemassigned") {
+			syntheticMIID := "/virtual/managedidentity/system/" + att.PrincipalID
+			syntheticMI := &graph.Node{
+				Labels: []string{"ManagedIdentity", "Principal", "Azure::ManagedIdentity"},
+				Properties: map[string]interface{}{
+					"id":          syntheticMIID,
+					"displayName": att.ResourceName + " (System-Assigned)",
+					"principalId": att.PrincipalID,
+					"_type":       "ManagedIdentity",
+					"_synthetic":  true,
+				},
+				UniqueKey: []string{"id"},
+			}
+			nodes = append(nodes, syntheticMI)
+			rels = append(rels, RelationshipFromResourceToMI(att.ResourceID, syntheticMIID, "SystemAssigned"))
+
+			// MI → SP link
+			rels = append(rels, &graph.Relationship{
+				Type:       "CONTAINS",
+				Properties: map[string]interface{}{"relationship": "identity"},
+				StartNode: &graph.Node{
+					Labels:     []string{"ManagedIdentity", "Principal", "Azure::ManagedIdentity"},
+					Properties: map[string]interface{}{"id": syntheticMIID},
+					UniqueKey:  []string{"id"},
+				},
+				EndNode: minimalServicePrincipalNode(att.PrincipalID),
+			})
+		}
+
+		// User-assigned: resource → MI relationships
+		for _, uaID := range att.UserAssignedIDs {
+			rels = append(rels, RelationshipFromResourceToMI(att.ResourceID, uaID, "UserAssigned"))
+		}
+	}
+
+	return nodes, rels
+}
+
 // TransformAll converts consolidated Azure IAM data into nodes and relationships.
 func TransformAll(data *types.AzureIAMConsolidated) ([]*graph.Node, []*graph.Relationship) {
 	if data == nil {
@@ -518,6 +672,12 @@ func TransformAll(data *types.AzureIAMConsolidated) ([]*graph.Node, []*graph.Rel
 
 	// Management Groups
 	if nodes, rels := TransformManagementGroupData(data.ManagementGroups); nodes != nil || rels != nil {
+		allNodes = append(allNodes, nodes...)
+		allRels = append(allRels, rels...)
+	}
+
+	// Managed Identities
+	if nodes, rels := TransformManagedIdentityData(data.ManagedIdentities); nodes != nil || rels != nil {
 		allNodes = append(allNodes, nodes...)
 		allRels = append(allRels, rels...)
 	}

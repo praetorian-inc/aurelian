@@ -3,7 +3,6 @@ package iam
 import (
 	"context"
 	"log/slog"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/praetorian-inc/aurelian/pkg/types"
@@ -51,16 +50,14 @@ const (
 // PIMCollector collects PIM role assignment data from Microsoft Graph.
 // It reuses the GraphClient interface and paginate helper from entra.go.
 type PIMCollector struct {
-	client     GraphClient
-	batchDelay time.Duration
+	client GraphClient
 }
 
 // NewPIMCollector creates a collector that authenticates with the given
 // Azure credential.
 func NewPIMCollector(cred azcore.TokenCredential) *PIMCollector {
 	return &PIMCollector{
-		client:     &azureGraphClient{cred: cred},
-		batchDelay: 200 * time.Millisecond,
+		client: &azureGraphClient{cred: newCachedCredential(cred)},
 	}
 }
 
@@ -68,8 +65,7 @@ func NewPIMCollector(cred azcore.TokenCredential) *PIMCollector {
 // This is the primary constructor used by tests.
 func newPIMCollectorWithClient(client GraphClient) *PIMCollector {
 	return &PIMCollector{
-		client:     client,
-		batchDelay: 0, // no delay in tests
+		client: client,
 	}
 }
 
@@ -88,10 +84,6 @@ func (c *PIMCollector) Collect(ctx context.Context) (*types.PIMData, error) {
 		for _, inst := range activeInstances {
 			data.ActiveAssignments = append(data.ActiveAssignments, inst.toRoleAssignment("active"))
 		}
-	}
-
-	if c.batchDelay > 0 {
-		time.Sleep(c.batchDelay)
 	}
 
 	// 2. Eligible PIM assignments

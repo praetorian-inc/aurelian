@@ -1,38 +1,41 @@
-id: azure/enrich/can-escalate-auth-admin
-name: Authentication Administrator Escalation
+id: azure/enrich/can-escalate-user-admin
+name: User Administrator Password Reset Escalation
 platform: azure
 type: enrich
 category: escalation
 description: |
-  Authentication Administrators can reset MFA and passwords for non-admin users.
-  Creates CAN_ESCALATE edges to users without privileged directory roles.
+  User Administrators can reset passwords for non-admin users and users with
+  specific low-privilege admin roles. Creates CAN_ESCALATE edges to eligible
+  target users.
 severity: high
-order: 53
+order: 59
 cypher: |
   MATCH (attacker)-[perm:HAS_PERMISSION]->(rd:RoleDefinition)
-  WHERE rd.displayName = 'Authentication Administrator'
-     OR rd.templateId = 'c4e39bd9-1100-46d3-8c65-fb160da0071f'
-  SET attacker._canEscalateViaPasswordReset = true, attacker._canEscalate = true
+  WHERE rd.displayName = 'User Administrator'
+     OR rd.templateId = 'fe930be7-5e62-47db-91af-98c3a49a38b1'
+  SET attacker._canEscalate = true
   WITH attacker, perm
   MATCH (target:User)
   WHERE target <> attacker
     AND NOT EXISTS {
       MATCH (target)-[:HAS_PERMISSION]->(adminRd:RoleDefinition)
       WHERE NOT adminRd.templateId IN [
-        'c4e39bd9-1100-46d3-8c65-fb160da0071f',
         '88d8e3e3-8f55-4a1e-953a-9b9898b8876b',
+        'fdd7a751-b60b-444a-984c-02652fe8fa1c',
         '95e79109-95c0-4d8e-aee3-d01accf2d47b',
+        '729827e3-9c14-49f7-bb1b-9608f156bbb8',
         '790c1fb9-7f7d-4f88-86a1-ef1f95c05c1b',
         '966707d0-3269-4727-9be2-8c3a10f19b9d',
         '4a5d8f65-41da-4de4-8968-e035b65339cf',
+        'fe930be7-5e62-47db-91af-98c3a49a38b1',
         '27460883-1df1-4691-b032-3b79643e5e63',
         '75934031-6c7e-415a-99d7-48dbd49e875e'
       ]
     }
   WITH DISTINCT attacker, target, perm
-  MERGE (attacker)-[r:CAN_ESCALATE {method: 'PasswordResetViaAuthAdmin'}]->(target)
+  MERGE (attacker)-[r:CAN_ESCALATE {method: 'PasswordResetViaUserAdmin'}]->(target)
   ON CREATE SET
-    r.condition = 'Can reset passwords and authentication methods for users with no admin roles or specific low-privilege admin roles',
+    r.condition = 'Can reset passwords for users with no admin roles or specific low-privilege roles',
     r.category = 'DirectoryRole',
     r.source = perm.source
   RETURN count(r) AS created

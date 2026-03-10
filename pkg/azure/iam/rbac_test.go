@@ -63,6 +63,20 @@ func (m *mockARMClient) Get(_ context.Context, path string) ([]byte, error) {
 	return nil, fmt.Errorf("no mock response for path: %s", path)
 }
 
+func (m *mockARMClient) Post(_ context.Context, path string, _ []byte) ([]byte, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls["POST:"+path]++
+
+	if err, ok := m.errors[path]; ok {
+		return nil, err
+	}
+	if data, ok := m.responses[path]; ok {
+		return data, nil
+	}
+	return nil, fmt.Errorf("no mock response for POST path: %s", path)
+}
+
 func (m *mockARMClient) callCount(path string) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -244,6 +258,40 @@ func TestRBACCollect_Pagination(t *testing.T) {
 	assert.Len(t, results[0].Assignments, 2, "both pages should be collected")
 	assert.Equal(t, "p-1", results[0].Assignments[0].PrincipalID)
 	assert.Equal(t, "p-2", results[0].Assignments[1].PrincipalID)
+}
+
+func TestRBACCollect_DefinitionFailure_StillReturnsAssignments(t *testing.T) {
+	mock := newMockARMClient()
+
+	subID := "sub-def-fail"
+	assignPath := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01", subID)
+	defPath := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions?api-version=2022-04-01", subID)
+
+	roleDefID := "/subscriptions/sub-def-fail/providers/Microsoft.Authorization/roleDefinitions/def-1"
+
+	// Assignments succeed
+	mock.onGet(assignPath, armListBody([]any{
+		makeARMRoleAssignment("/subscriptions/sub-def-fail/roleAssignments/a-1", "p-1", roleDefID, "/subscriptions/sub-def-fail", "User"),
+		makeARMRoleAssignment("/subscriptions/sub-def-fail/roleAssignments/a-2", "p-2", roleDefID, "/subscriptions/sub-def-fail", "Group"),
+	}, ""))
+
+	// Definitions fail
+	mock.onGetError(defPath, fmt.Errorf("role definitions unavailable"))
+
+	collector := newRBACCollectorWithClient(mock)
+	results, err := collector.Collect(context.Background(), []string{subID})
+	require.NoError(t, err)
+	require.Len(t, results, 1, "subscription should still be returned despite definition failure")
+
+	data := results[0]
+	assert.Equal(t, subID, data.SubscriptionID)
+	assert.Len(t, data.Assignments, 2, "assignments should be present")
+	assert.Equal(t, "p-1", data.Assignments[0].PrincipalID)
+	assert.Equal(t, "p-2", data.Assignments[1].PrincipalID)
+	assert.Equal(t, roleDefID, data.Assignments[0].RoleDefinitionID)
+
+	// Definitions map should be initialized but empty
+	assert.Equal(t, 0, data.Definitions.Len(), "definitions map should be empty when fetch fails")
 }
 
 func TestPaginateARM_SinglePage(t *testing.T) {

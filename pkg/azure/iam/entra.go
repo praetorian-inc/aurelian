@@ -7,13 +7,17 @@
 package iam
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -51,44 +55,212 @@ type graphResponse struct {
 const graphBaseURL = "https://graph.microsoft.com/v1.0"
 
 type azureGraphClient struct {
-	cred azcore.TokenCredential
+	cred   azcore.TokenCredential
+	client *http.Client
+}
+
+var graphHTTPClient = &http.Client{
+	Timeout: 30 * time.Second,
+	Transport: &http.Transport{
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+		ForceAttemptHTTP2:     false,
+		MaxIdleConns:          10,
+		IdleConnTimeout:       30 * time.Second,
+		// Explicitly disable HTTP/2 — Azure endpoints sometimes stall
+		// on HTTP/2 frame reads, causing indefinite hangs.
+		TLSNextProto: make(map[string]func(string, *tls.Conn) http.RoundTripper),
+	},
 }
 
 func (c *azureGraphClient) Get(ctx context.Context, path string) ([]byte, error) {
+	return doWithRetry(ctx, c.cred, "https://graph.microsoft.com/.default", c.client, path, graphBaseURL)
+}
+
+// ---------------------------------------------------------------------------
+// cachedCredential — avoids shelling out to `az` for every API call
+// ---------------------------------------------------------------------------
+
+// cachedCredential wraps an azcore.TokenCredential and caches the token
+// per scope, only refreshing when the token is within 5 minutes of expiry.
+// This is critical for AzureCLICredential which spawns a subprocess per call.
+type cachedCredential struct {
+	inner  azcore.TokenCredential
+	mu     sync.Mutex
+	tokens map[string]azcore.AccessToken
+}
+
+func newCachedCredential(cred azcore.TokenCredential) *cachedCredential {
+	return &cachedCredential{
+		inner:  cred,
+		tokens: make(map[string]azcore.AccessToken),
+	}
+}
+
+func (c *cachedCredential) GetToken(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	key := strings.Join(opts.Scopes, ",")
+
+	c.mu.Lock()
+	if tok, ok := c.tokens[key]; ok {
+		// Reuse if token won't expire for at least 5 minutes.
+		if time.Until(tok.ExpiresOn) > 5*time.Minute {
+			c.mu.Unlock()
+			return tok, nil
+		}
+	}
+	c.mu.Unlock()
+
+	// Fetch a fresh token.
+	tok, err := c.inner.GetToken(ctx, opts)
+	if err != nil {
+		return azcore.AccessToken{}, err
+	}
+
+	c.mu.Lock()
+	c.tokens[key] = tok
+	c.mu.Unlock()
+
+	return tok, nil
+}
+
+// doWithRetry executes an HTTP GET with automatic retry on 429 (throttling).
+// It respects the Retry-After header from Azure APIs.
+func doWithRetry(ctx context.Context, cred azcore.TokenCredential, scope string, client *http.Client, path, baseURL string) ([]byte, error) {
 	url := path
 	if !strings.HasPrefix(path, "https://") {
-		url = graphBaseURL + path
+		url = baseURL + path
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
+	httpClient := client
+	if httpClient == nil {
+		httpClient = graphHTTPClient
 	}
 
-	token, err := c.cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://graph.microsoft.com/.default"},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("acquiring token: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token.Token)
-	req.Header.Set("Content-Type", "application/json")
+	const maxRetries = 3
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("HTTP request: %w", err)
-	}
-	defer resp.Body.Close()
+		tokenCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		token, err := cred.GetToken(tokenCtx, policy.TokenRequestOptions{
+			Scopes: []string{scope},
+		})
+		cancel()
+		if err != nil {
+			return nil, fmt.Errorf("acquiring token: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token.Token)
+		req.Header.Set("Content-Type", "application/json")
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("HTTP request: %w", err)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("reading response: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests && attempt < maxRetries {
+			wait := retryAfterDuration(resp.Header)
+			slog.Warn("throttled by API, backing off", "attempt", attempt+1, "wait", wait, "url", truncate(url, 80))
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(wait):
+				continue
+			}
+		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			apiName := "API"
+			if strings.Contains(baseURL, "graph") {
+				apiName = "Graph API"
+			} else {
+				apiName = "ARM API"
+			}
+			return nil, fmt.Errorf("%s error %d: %s", apiName, resp.StatusCode, truncate(string(body), 512))
+		}
+		return body, nil
+	}
+	return nil, fmt.Errorf("exhausted retries for %s", truncate(url, 80))
+}
+
+// doWithRetryPost is like doWithRetry but for POST requests.
+func doWithRetryPost(ctx context.Context, cred azcore.TokenCredential, scope string, client *http.Client, path, baseURL string, reqBody []byte) ([]byte, error) {
+	url := path
+	if !strings.HasPrefix(path, "https://") {
+		url = baseURL + path
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("Graph API error %d: %s", resp.StatusCode, truncate(string(body), 512))
+	httpClient := client
+	if httpClient == nil {
+		httpClient = graphHTTPClient
 	}
-	return body, nil
+
+	const maxRetries = 3
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(reqBody))
+		if err != nil {
+			return nil, fmt.Errorf("creating request: %w", err)
+		}
+
+		tokenCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		token, err := cred.GetToken(tokenCtx, policy.TokenRequestOptions{
+			Scopes: []string{scope},
+		})
+		cancel()
+		if err != nil {
+			return nil, fmt.Errorf("acquiring token: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token.Token)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("HTTP request: %w", err)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("reading response: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests && attempt < maxRetries {
+			wait := retryAfterDuration(resp.Header)
+			slog.Warn("throttled by API, backing off", "attempt", attempt+1, "wait", wait, "url", truncate(url, 80))
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(wait):
+				continue
+			}
+		}
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			apiName := "ARM API"
+			return nil, fmt.Errorf("%s error %d: %s", apiName, resp.StatusCode, truncate(string(body), 512))
+		}
+		return body, nil
+	}
+	return nil, fmt.Errorf("exhausted retries for %s", truncate(url, 80))
+}
+
+// retryAfterDuration parses the Retry-After header, falling back to
+// exponential backoff if not present.
+func retryAfterDuration(h http.Header) time.Duration {
+	if ra := h.Get("Retry-After"); ra != "" {
+		if secs, err := strconv.Atoi(ra); err == nil && secs > 0 {
+			return time.Duration(secs) * time.Second
+		}
+	}
+	// Default: 5 seconds if no Retry-After header.
+	return 5 * time.Second
 }
 
 func truncate(s string, n int) string {
@@ -104,19 +276,17 @@ func truncate(s string, n int) string {
 
 // EntraCollector collects Entra ID (Azure AD) identity data from Microsoft
 // Graph. It is safe for sequential use; create a new instance per collection.
+// Rate limiting is handled adaptively via 429 retry logic in the HTTP client,
+// not by fixed delays.
 type EntraCollector struct {
 	client GraphClient
-
-	// batchDelay is the delay between batch API calls to avoid rate limiting.
-	batchDelay time.Duration
 }
 
 // NewEntraCollector creates a collector that authenticates with the given
 // Azure credential.
 func NewEntraCollector(cred azcore.TokenCredential) *EntraCollector {
 	return &EntraCollector{
-		client:     &azureGraphClient{cred: cred},
-		batchDelay: 200 * time.Millisecond,
+		client: &azureGraphClient{cred: newCachedCredential(cred)},
 	}
 }
 
@@ -124,8 +294,7 @@ func NewEntraCollector(cred azcore.TokenCredential) *EntraCollector {
 // This is the primary constructor used by tests.
 func newEntraCollectorWithClient(client GraphClient) *EntraCollector {
 	return &EntraCollector{
-		client:     client,
-		batchDelay: 0, // no delay in tests
+		client: client,
 	}
 }
 
@@ -419,9 +588,6 @@ func (c *EntraCollector) collectGroupMemberships(ctx context.Context, groups sto
 				MemberType: m.ODataType,
 			})
 		}
-		if c.batchDelay > 0 {
-			time.Sleep(c.batchDelay)
-		}
 		return true
 	})
 	return all
@@ -443,9 +609,6 @@ func (c *EntraCollector) collectAppRoleAssignments(ctx context.Context, sps stor
 			return true
 		}
 		all = append(all, assignments...)
-		if c.batchDelay > 0 {
-			time.Sleep(c.batchDelay)
-		}
 		return true
 	})
 	return all
@@ -474,10 +637,7 @@ func (c *EntraCollector) collectOwnershipsByIDs(
 				ResourceType: resourceType,
 			})
 		}
-		if c.batchDelay > 0 {
-			time.Sleep(c.batchDelay)
 		}
-	}
 
 	return all
 }

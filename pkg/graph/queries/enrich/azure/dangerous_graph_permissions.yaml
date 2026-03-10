@@ -7,10 +7,11 @@ description: |
   Identifies service principals with dangerous Microsoft Graph API permissions
   such as RoleManagement.ReadWrite.All, AppRoleAssignment.ReadWrite.All, or
   Application.ReadWrite.All that could be abused for privilege escalation.
+  Flags specific dangerous permissions on the relationship.
 severity: high
-order: 56
+order: 45
 cypher: |
-  MATCH (sp:ServicePrincipal)-[r:HAS_APP_ROLE]->(resource:ServicePrincipal)
+  MATCH (sp:ServicePrincipal)-[r:HAS_PERMISSION {source: 'Microsoft Graph App Role'}]->(resource:ServicePrincipal)
   WHERE resource.displayName = 'Microsoft Graph'
      OR resource.appId = '00000003-0000-0000-c000-000000000000'
   SET sp._hasGraphApiPermissions = true

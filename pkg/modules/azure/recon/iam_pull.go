@@ -20,8 +20,8 @@ type IAMPullConfig struct {
 	plugin.AzureCommonRecon
 }
 
-// AzureIAMPullModule is the composite module that runs all 4 IAM collectors
-// sequentially (Entra → PIM → RBAC → MgmtGroups) and emits a consolidated result.
+// AzureIAMPullModule is the composite module that runs all 5 IAM collectors
+// sequentially (Entra → PIM → RBAC → MgmtGroups → ManagedIdentities) and emits a consolidated result.
 type AzureIAMPullModule struct {
 	IAMPullConfig
 }
@@ -34,9 +34,9 @@ func (m *AzureIAMPullModule) OpsecLevel() string        { return "moderate" }
 func (m *AzureIAMPullModule) Authors() []string         { return []string{"Praetorian"} }
 
 func (m *AzureIAMPullModule) Description() string {
-	return "Composite module that runs all Azure IAM collectors (Entra ID, PIM, RBAC, Management Groups) " +
-		"and emits a consolidated result. Equivalent to running iam-entra, iam-pim, iam-rbac, and " +
-		"iam-mgmt-groups sequentially."
+	return "Composite module that runs all Azure IAM collectors (Entra ID, PIM, RBAC, Management Groups, Managed Identities) " +
+		"and emits a consolidated result. Equivalent to running iam-entra, iam-pim, iam-rbac, " +
+		"iam-mgmt-groups, and iam-managed-identity sequentially."
 }
 
 func (m *AzureIAMPullModule) References() []string {
@@ -55,6 +55,7 @@ func (m *AzureIAMPullModule) SupportedResourceTypes() []string {
 		"Microsoft.Authorization/roleAssignments",
 		"Microsoft.Authorization/roleDefinitions",
 		"Microsoft.Management/managementGroups",
+		"Microsoft.ManagedIdentity/userAssignedIdentities",
 	}
 }
 
@@ -127,6 +128,22 @@ func (m *AzureIAMPullModule) Run(_ plugin.Config, out *pipeline.P[model.Aurelian
 		)
 	}
 
+	// 5. Managed Identities
+	if len(subIDs) > 0 {
+		slog.Info("collecting managed identity data")
+		miCollector := iam.NewManagedIdentityCollector(m.AzureCredential)
+		miData, err := miCollector.Collect(ctx, subIDs)
+		if err != nil {
+			slog.Warn("managed identity collection failed", "error", err)
+		} else {
+			consolidated.ManagedIdentities = miData
+			slog.Info("managed identity collection complete",
+				"identities", len(miData.Identities),
+				"attachments", len(miData.Attachments),
+			)
+		}
+	}
+
 	// Populate collection metadata
 	consolidated.Metadata = &types.CollectionMetadata{
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
@@ -140,6 +157,9 @@ func (m *AzureIAMPullModule) Run(_ plugin.Config, out *pipeline.P[model.Aurelian
 // buildEntityCounts summarizes entity counts from the consolidated data.
 func buildEntityCounts(c *types.AzureIAMConsolidated) map[string]int {
 	counts := make(map[string]int)
+	if c == nil {
+		return counts
+	}
 	if c.EntraID != nil {
 		counts["users"] = c.EntraID.Users.Len()
 		counts["groups"] = c.EntraID.Groups.Len()
@@ -160,6 +180,10 @@ func buildEntityCounts(c *types.AzureIAMConsolidated) map[string]int {
 	if c.ManagementGroups != nil {
 		counts["managementGroups"] = len(c.ManagementGroups.Groups)
 		counts["mgmtGroupRelationships"] = len(c.ManagementGroups.Relationships)
+	}
+	if c.ManagedIdentities != nil {
+		counts["managedIdentities"] = len(c.ManagedIdentities.Identities)
+		counts["identityAttachments"] = len(c.ManagedIdentities.Attachments)
 	}
 	return counts
 }

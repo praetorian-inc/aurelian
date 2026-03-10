@@ -83,6 +83,7 @@ type EntraRoleDefinition struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"displayName"`
 	Description string `json:"description,omitempty"`
+	TemplateId  string `json:"templateId,omitempty"`
 	IsBuiltIn   bool   `json:"isBuiltIn,omitempty"`
 	IsEnabled   bool   `json:"isEnabled,omitempty"`
 }
@@ -100,6 +101,7 @@ type DirectoryRoleAssignment struct {
 	PrincipalID      string `json:"principalId"`
 	RoleDefinitionID string `json:"roleDefinitionId"`
 	DirectoryScopeID string `json:"directoryScopeId,omitempty"`
+	PrincipalType    string `json:"principalType,omitempty"` // Resolved during transform: "User", "Group", or "ServicePrincipal"
 }
 
 // GroupMembership represents a membership relationship between a group and a member.
@@ -121,10 +123,11 @@ type OAuth2PermissionGrant struct {
 
 // AppRoleAssignment represents an app role assignment to a principal.
 type AppRoleAssignment struct {
-	ID          string `json:"id"`
-	PrincipalID string `json:"principalId"`
-	ResourceID  string `json:"resourceId"`
-	AppRoleID   string `json:"appRoleId"`
+	ID            string `json:"id"`
+	PrincipalID   string `json:"principalId"`
+	PrincipalType string `json:"principalType,omitempty"`
+	ResourceID    string `json:"resourceId"`
+	AppRoleID     string `json:"appRoleId"`
 }
 
 // OwnershipRelationship represents an ownership link between a principal and a resource.
@@ -204,6 +207,33 @@ type ManagementGroupRelationship struct {
 	ParentID  string `json:"parentId"`
 	ChildID   string `json:"childId"`
 	ChildType string `json:"childType"`
+}
+
+// ---------------------------------------------------------------------------
+// Managed Identity types
+// ---------------------------------------------------------------------------
+
+// ManagedIdentity represents an Azure user-assigned managed identity.
+type ManagedIdentity struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Location       string `json:"location"`
+	PrincipalID    string `json:"principalId"`
+	ClientID       string `json:"clientId"`
+	TenantID       string `json:"tenantId,omitempty"`
+	SubscriptionID string `json:"subscriptionId,omitempty"`
+	ResourceGroup  string `json:"resourceGroup,omitempty"`
+}
+
+// ResourceIdentityAttachment represents an Azure resource with a managed identity attached.
+type ResourceIdentityAttachment struct {
+	ResourceID     string   `json:"resourceId"`
+	ResourceName   string   `json:"resourceName"`
+	ResourceType   string   `json:"resourceType"`
+	SubscriptionID string   `json:"subscriptionId,omitempty"`
+	IdentityType   string   `json:"identityType"`                      // SystemAssigned, UserAssigned, SystemAssigned,UserAssigned
+	PrincipalID    string   `json:"principalId,omitempty"`             // For system-assigned
+	UserAssignedIDs []string `json:"userAssignedIdentityIds,omitempty"` // For user-assigned
 }
 
 // ---------------------------------------------------------------------------
@@ -434,6 +464,14 @@ type ManagementGroupData struct {
 	Relationships []ManagementGroupRelationship `json:"relationships,omitempty"`
 }
 
+// ManagedIdentityData holds managed identity data for one or more subscriptions.
+type ManagedIdentityData struct {
+	model.BaseAurelianModel
+
+	Identities  []ManagedIdentity            `json:"identities,omitempty"`
+	Attachments []ResourceIdentityAttachment `json:"attachments,omitempty"`
+}
+
 // CollectionMetadata holds metadata about a collection run.
 type CollectionMetadata struct {
 	TenantID  string         `json:"tenantId"`
@@ -445,9 +483,10 @@ type CollectionMetadata struct {
 type AzureIAMConsolidated struct {
 	model.BaseAurelianModel
 
-	EntraID          *EntraIDData         `json:"entraId,omitempty"`
-	PIM              *PIMData             `json:"pim,omitempty"`
-	RBAC             []*RBACData          `json:"rbac,omitempty"`
-	ManagementGroups *ManagementGroupData `json:"managementGroups,omitempty"`
-	Metadata         *CollectionMetadata  `json:"metadata,omitempty"`
+	EntraID           *EntraIDData          `json:"entraId,omitempty"`
+	PIM               *PIMData              `json:"pim,omitempty"`
+	RBAC              []*RBACData           `json:"rbac,omitempty"`
+	ManagementGroups  *ManagementGroupData  `json:"managementGroups,omitempty"`
+	ManagedIdentities *ManagedIdentityData  `json:"managedIdentities,omitempty"`
+	Metadata          *CollectionMetadata   `json:"metadata,omitempty"`
 }

@@ -4,14 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
-	"strings"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
@@ -27,6 +22,10 @@ type ARMClient interface {
 	// the raw JSON response body. The path is relative to
 	// https://management.azure.com unless it starts with "https://".
 	Get(ctx context.Context, path string) ([]byte, error)
+
+	// Post performs a POST request against the given ARM API path with the
+	// provided request body and returns the raw JSON response body.
+	Post(ctx context.Context, path string, body []byte) ([]byte, error)
 }
 
 // ---------------------------------------------------------------------------
@@ -49,40 +48,11 @@ type azureARMClient struct {
 }
 
 func (c *azureARMClient) Get(ctx context.Context, path string) ([]byte, error) {
-	url := path
-	if !strings.HasPrefix(path, "https://") {
-		url = armBaseURL + path
-	}
+	return doWithRetry(ctx, c.cred, "https://management.azure.com/.default", nil, path, armBaseURL)
+}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-
-	token, err := c.cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://management.azure.com/.default"},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("acquiring token: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+token.Token)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("HTTP request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response: %w", err)
-	}
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("ARM API error %d: %s", resp.StatusCode, truncate(string(body), 512))
-	}
-	return body, nil
+func (c *azureARMClient) Post(ctx context.Context, path string, reqBody []byte) ([]byte, error) {
+	return doWithRetryPost(ctx, c.cred, "https://management.azure.com/.default", nil, path, armBaseURL, reqBody)
 }
 
 // ---------------------------------------------------------------------------
@@ -171,16 +141,14 @@ type armPermission struct {
 // RBACCollector collects Azure RBAC role assignments and definitions for
 // one or more subscriptions via the ARM REST API.
 type RBACCollector struct {
-	client     ARMClient
-	batchDelay time.Duration
+	client ARMClient
 }
 
 // NewRBACCollector creates a collector that authenticates with the given
 // Azure credential.
 func NewRBACCollector(cred azcore.TokenCredential) *RBACCollector {
 	return &RBACCollector{
-		client:     &azureARMClient{cred: cred},
-		batchDelay: 200 * time.Millisecond,
+		client: &azureARMClient{cred: newCachedCredential(cred)},
 	}
 }
 
@@ -188,8 +156,7 @@ func NewRBACCollector(cred azcore.TokenCredential) *RBACCollector {
 // This is the primary constructor used by tests.
 func newRBACCollectorWithClient(client ARMClient) *RBACCollector {
 	return &RBACCollector{
-		client:     client,
-		batchDelay: 0,
+		client: client,
 	}
 }
 
@@ -207,9 +174,6 @@ func (c *RBACCollector) Collect(ctx context.Context, subscriptionIDs []string) (
 		}
 		results = append(results, data)
 
-		if c.batchDelay > 0 {
-			time.Sleep(c.batchDelay)
-		}
 	}
 
 	return results, nil

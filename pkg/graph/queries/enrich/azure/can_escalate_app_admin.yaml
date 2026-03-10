@@ -10,8 +10,18 @@ description: |
 severity: high
 order: 52
 cypher: |
-  MATCH (principal)-[r:HAS_ROLE]->(roleDef:RoleDefinition)
-  WHERE roleDef.displayName IN ['Application Administrator', 'Cloud Application Administrator']
-     OR roleDef.templateId IN ['9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3', '158c047a-c907-4556-b7ef-446551a6b5f7']
-  SET principal._canEscalateViaAppCreds = true, principal._canEscalate = true
-  RETURN count(principal) AS appAdmins
+  MATCH (attacker)-[perm:HAS_PERMISSION]->(rd:RoleDefinition)
+  WHERE rd.displayName IN ['Application Administrator', 'Cloud Application Administrator']
+     OR rd.templateId IN ['9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3', '158c047a-c907-4556-b7ef-446551a6b5f7']
+  SET attacker._canEscalateViaAppCreds = true, attacker._canEscalate = true
+  WITH attacker, perm
+  MATCH (target)
+  WHERE (target:Application OR target:ServicePrincipal)
+    AND target <> attacker
+  WITH DISTINCT attacker, target, perm
+  MERGE (attacker)-[r:CAN_ESCALATE {method: 'ApplicationAdmin'}]->(target)
+  ON CREATE SET
+    r.condition = 'Application Administrator can add credentials to applications/service principals to assume their identity and inherit permissions',
+    r.category = 'DirectoryRole',
+    r.source = perm.source
+  RETURN count(r) AS created

@@ -10,7 +10,7 @@ description: |
 severity: high
 order: 15
 cypher: |
-  MATCH (p:Principal)-[r:ELIGIBLE_FOR_PIM_ROLE]->(rd:RoleDefinition)
+  MATCH (p:Principal)-[r:HAS_PERMISSION {source: 'PIM', assignmentType: 'eligible'}]->(rd:RoleDefinition)
   WHERE rd.displayName IN [
     'Global Administrator',
     'Privileged Role Administrator',

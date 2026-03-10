@@ -8,6 +8,99 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestNewEntraIDData(t *testing.T) {
+	t.Run("returns non-nil with initialized maps", func(t *testing.T) {
+		data := NewEntraIDData("tenant-xyz", nil, nil, nil, nil)
+
+		require.NotNil(t, data)
+		assert.Equal(t, "tenant-xyz", data.TenantID)
+		assert.Equal(t, 0, data.Users.Len())
+		assert.Equal(t, 0, data.Groups.Len())
+		assert.Equal(t, 0, data.ServicePrincipals.Len())
+		assert.Equal(t, 0, data.Applications.Len())
+	})
+
+	t.Run("populates maps from input slices", func(t *testing.T) {
+		users := []EntraUser{
+			{ObjectID: "u1", DisplayName: "Alice"},
+			{ObjectID: "u2", DisplayName: "Bob"},
+		}
+		groups := []EntraGroup{
+			{ObjectID: "g1", DisplayName: "Admins"},
+		}
+		sps := []EntraServicePrincipal{
+			{ObjectID: "sp1", DisplayName: "SP One", AppID: "app-1"},
+		}
+		apps := []EntraApplication{
+			{ObjectID: "app1", DisplayName: "App One", AppID: "app-1"},
+		}
+
+		data := NewEntraIDData("tenant-abc", users, groups, sps, apps)
+
+		require.NotNil(t, data)
+		assert.Equal(t, 2, data.Users.Len())
+		assert.Equal(t, 1, data.Groups.Len())
+		assert.Equal(t, 1, data.ServicePrincipals.Len())
+		assert.Equal(t, 1, data.Applications.Len())
+
+		alice, ok := data.Users.Get("u1")
+		require.True(t, ok)
+		assert.Equal(t, "Alice", alice.DisplayName)
+
+		grp, ok := data.Groups.Get("g1")
+		require.True(t, ok)
+		assert.Equal(t, "Admins", grp.DisplayName)
+
+		sp, ok := data.ServicePrincipals.Get("sp1")
+		require.True(t, ok)
+		assert.Equal(t, "SP One", sp.DisplayName)
+
+		app, ok := data.Applications.Get("app1")
+		require.True(t, ok)
+		assert.Equal(t, "App One", app.DisplayName)
+	})
+}
+
+func TestRBACDataRoundTrip_JSONFields(t *testing.T) {
+	t.Run("JSON round-trip preserves all RBACData fields", func(t *testing.T) {
+		original := NewRBACData(
+			"sub-roundtrip",
+			[]RoleAssignment{
+				{ID: "ra-1", PrincipalID: "user-1", RoleDefinitionID: "rd-1", Scope: "/subscriptions/sub-roundtrip", PrincipalType: "User", Condition: "some-condition"},
+			},
+			[]RoleDefinition{
+				{
+					ID:       "rd-1",
+					RoleName: "Owner",
+					RoleType: "BuiltInRole",
+					Permissions: []RolePermission{
+						{Actions: []string{"*"}, NotActions: []string{}, DataActions: []string{"Microsoft.Storage/storageAccounts/blobServices/containers/blobs/*"}, NotDataActions: []string{"Microsoft.Storage/storageAccounts/blobServices/containers/blobs/delete"}},
+					},
+				},
+			},
+		)
+
+		data, err := json.Marshal(original)
+		require.NoError(t, err)
+
+		var restored RBACData
+		err = json.Unmarshal(data, &restored)
+		require.NoError(t, err)
+
+		assert.Equal(t, "sub-roundtrip", restored.SubscriptionID)
+		require.Len(t, restored.Assignments, 1)
+		assert.Equal(t, "some-condition", restored.Assignments[0].Condition)
+		assert.Equal(t, "User", restored.Assignments[0].PrincipalType)
+
+		rd, ok := restored.Definitions.Get("rd-1")
+		require.True(t, ok)
+		assert.Equal(t, "Owner", rd.RoleName)
+		require.Len(t, rd.Permissions, 1)
+		assert.Equal(t, []string{"Microsoft.Storage/storageAccounts/blobServices/containers/blobs/*"}, rd.Permissions[0].DataActions)
+		assert.Equal(t, []string{"Microsoft.Storage/storageAccounts/blobServices/containers/blobs/delete"}, rd.Permissions[0].NotDataActions)
+	})
+}
+
 func TestEntraIDDataRoundTrip(t *testing.T) {
 	t.Run("users and groups survive JSON round-trip", func(t *testing.T) {
 		original := NewEntraIDData(

@@ -9,7 +9,7 @@ description: |
 severity: high
 order: 25
 cypher: |
-  MATCH (p:Principal)-[r:HAS_RBAC_ROLE]->(sub:Subscription)
+  MATCH (p:Principal)-[r:HAS_PERMISSION]->(sub:Subscription)
   WHERE r.roleDefinitionId CONTAINS 'Owner' OR r.roleDefinitionId CONTAINS 'Contributor'
   WITH p, count(DISTINCT sub) AS subCount
   WHERE subCount > 1

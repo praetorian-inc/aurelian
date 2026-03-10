@@ -11,6 +11,6 @@ severity: critical
 order: 20
 cypher: |
   MATCH (owner:Principal)-[:OWNS]->(app:Application)
-  MATCH (sp:ServicePrincipal {appId: app.appId})-[:HAS_ROLE|HAS_RBAC_ROLE]->(role)
+  MATCH (sp:ServicePrincipal {appId: app.appId})-[:HAS_PERMISSION]->(role)
   SET owner._canEscalateViaApp = true
   RETURN owner.id AS ownerId, app.displayName AS appName, sp.displayName AS spName
