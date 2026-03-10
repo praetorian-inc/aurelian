@@ -14,7 +14,10 @@ func Merge[T any](inputs ...*P[T]) *P[T] {
 		return out
 	}
 
-	var wg sync.WaitGroup
+	var (
+		wg      sync.WaitGroup
+		errOnce sync.Once
+	)
 	for _, in := range inputs {
 		wg.Add(1)
 		go func(p *P[T]) {
@@ -22,8 +25,8 @@ func Merge[T any](inputs ...*P[T]) *P[T] {
 			for item := range p.ch {
 				out.Send(item)
 			}
-			if err := p.Wait(); err != nil && out.err == nil {
-				out.err = err
+			if err := p.Wait(); err != nil {
+				errOnce.Do(func() { out.err = err })
 			}
 		}(in)
 	}
