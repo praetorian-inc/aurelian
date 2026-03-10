@@ -136,7 +136,7 @@ func getAnonymousACRToken(client *http.Client, loginServer, scope string) (strin
 
 	var tok tokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tok); err != nil {
-		return "", fmt.Errorf("failed to decode token response: %v", err)
+		return "", fmt.Errorf("failed to decode token response: %w", err)
 	}
 
 	return tok.AccessToken, nil
