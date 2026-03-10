@@ -321,13 +321,14 @@ func (l *Logger) redrawProgress() {
 		doneWidth = 1
 	}
 	pendingDigits := len(fmt.Sprintf("%d", maxPending))
-	// " N processing" suffix width
-	queuedSuffix := 1 + pendingDigits + 11 // space + digits + " processing"
+	// " N processing / M processed" suffix width
+	//   1 + pendingDigits + 15 + doneWidth + 9
+	suffixWidth := 1 + pendingDigits + 15 + doneWidth + 9
 
-	// Layout: [~] <label> <done> <bar> N queued
+	// Layout: [~] <label> <bar> N processing / M processed
 	// Ensure bar fits in 80 cols; shrink if labels are very long.
 	const maxTermWidth = 80
-	barWidth := maxTermWidth - 4 - maxLabelLen - 1 - doneWidth - 1 - queuedSuffix
+	barWidth := maxTermWidth - 4 - maxLabelLen - 1 - suffixWidth
 	if barWidth > barBlocks {
 		barWidth = barBlocks
 	}
@@ -345,10 +346,9 @@ func (l *Logger) redrawProgress() {
 
 		pct := float64(min(pending, int64(barWidth))) / float64(barWidth)
 		bar := l.progressBar.ViewAs(pct)
-		doneStr := fmt.Sprintf("%*d", doneWidth, entry.completed)
-		queuedStr := fmt.Sprintf("%*d processing", pendingDigits, pending)
+		suffix := fmt.Sprintf("%*d processing / %*d processed", pendingDigits, pending, doneWidth, entry.completed)
 
-		fmt.Fprintf(l.w, "%s %s %s %s %s\n", l.statusPrefix, padded, doneStr, bar, queuedStr)
+		fmt.Fprintf(l.w, "%s %s %s %s\n", l.statusPrefix, padded, bar, suffix)
 	}
 
 	l.numProgLines = len(l.progressBars)
