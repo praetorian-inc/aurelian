@@ -7,6 +7,7 @@ ENV_FILE="$PROJECT_DIR/.env.integration"
 
 GO_FLAGS=""
 TARGET="./..."
+DESTROY_FIXTURES=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -19,6 +20,10 @@ while [[ $# -gt 0 ]]; do
       GO_FLAGS="${1#*=}"
       shift
       ;;
+    --destroy)
+      DESTROY_FIXTURES=true
+      shift
+      ;;
     -h|--help)
       echo "Usage: $0 [TARGET] [--go-flags '<additional go test flags>']"
       echo ""
@@ -29,6 +34,7 @@ while [[ $# -gt 0 ]]; do
       echo ""
       echo "Options:"
       echo "  --go-flags    Additional flags to pass to 'go test' (e.g. '--go-flags \"-v -timeout 30m\"')"
+      echo "  --destroy     Destroy and redeploy Terraform fixtures before running tests"
       echo ""
       echo "Examples:"
       echo "  $0                              # run all integration tests"
@@ -169,6 +175,10 @@ fi
 export AWS_PROFILE
 if $NEED_GCP; then
   export GCP_PROJECT_ID
+fi
+
+if $DESTROY_FIXTURES; then
+  export AURELIAN_DESTROY_FIXTURES=1
 fi
 
 set -x

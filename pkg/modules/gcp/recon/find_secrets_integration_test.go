@@ -96,14 +96,14 @@ func TestGCPFindSecrets(t *testing.T) {
 
 	t.Run("all risks have non-empty context", func(t *testing.T) {
 		for _, risk := range risks {
-			assert.NotEmpty(t, risk.Context, "risk context should not be empty for %s", risk.ImpactedARN)
+			assert.NotEmpty(t, risk.Context, "risk context should not be empty for %s", risk.ImpactedResourceID)
 		}
 	})
 }
 
 func hasGCPRiskForIdentifier(risks []output.AurelianRisk, identifier string) bool {
 	for _, risk := range risks {
-		if strings.Contains(risk.ImpactedARN, identifier) {
+		if strings.Contains(risk.ImpactedResourceID, identifier) {
 			return true
 		}
 	}

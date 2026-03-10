@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/gcp/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/gcp/extraction"
@@ -133,41 +132,8 @@ func riskFromScanResult(result secrets.SecretScanResult, out *pipeline.P[model.A
 		return nil
 	}
 
-	impactedARN := result.ResourceRef
-	if result.Match.FindingID != "" {
-		findingPrefix := result.Match.FindingID
-		if len(findingPrefix) > 8 {
-			findingPrefix = findingPrefix[:8]
-		}
-		impactedARN = fmt.Sprintf("%s:%s", result.ResourceRef, findingPrefix)
-	}
-
-	out.Send(output.AurelianRisk{
-		Name:        formatSecretRiskName(result.Match.RuleID),
-		Severity:    riskSeverityFromMatch(result.Match),
-		ImpactedARN: impactedARN,
-		Context:     proofBytes,
-	})
+	out.Send(secrets.NewSecretRisk(result, "gcp", proofBytes))
 	return nil
-}
-
-func extractRuleShortName(ruleID string) string {
-	parts := strings.Split(ruleID, ".")
-	if len(parts) >= 2 {
-		return parts[1]
-	}
-	return strings.ToLower(ruleID)
-}
-
-func formatSecretRiskName(ruleID string) string {
-	return fmt.Sprintf("gcp-secret-%s", extractRuleShortName(ruleID))
-}
-
-func riskSeverityFromMatch(match *types.Match) output.RiskSeverity {
-	if match.ValidationResult != nil && match.ValidationResult.Status == types.StatusValid {
-		return output.RiskSeverityHigh
-	}
-	return output.RiskSeverityMedium
 }
 
 func buildProofData(result secrets.SecretScanResult, match *types.Match) map[string]any {

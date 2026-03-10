@@ -61,7 +61,7 @@ func TestAWSPublicResources(t *testing.T) {
 		assert.Equal(t, "public-aws-resource", risk.Name)
 		assert.Contains(t, []output.RiskSeverity{output.RiskSeverityHigh, output.RiskSeverityMedium}, risk.Severity)
 		assert.NotContains(t, string(risk.Context), "aws_resource")
-		assert.NotEmpty(t, risk.ImpactedARN)
+		assert.NotEmpty(t, risk.ImpactedResourceID)
 	}
 
 	expectedImpactedResources := []string{
@@ -105,13 +105,13 @@ func TestAWSPublicResources(t *testing.T) {
 
 func hasRiskForResource(risks []output.AurelianRisk, expected string) bool {
 	for _, risk := range risks {
-		if risk.ImpactedARN == expected {
+		if risk.ImpactedResourceID == expected {
 			return true
 		}
-		if strings.HasSuffix(risk.ImpactedARN, "/"+expected) {
+		if strings.HasSuffix(risk.ImpactedResourceID, "/"+expected) {
 			return true
 		}
-		if strings.HasSuffix(risk.ImpactedARN, ":"+expected) {
+		if strings.HasSuffix(risk.ImpactedResourceID, ":"+expected) {
 			return true
 		}
 	}

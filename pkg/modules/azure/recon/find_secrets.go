@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/azure/extraction"
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
@@ -131,38 +130,8 @@ func (m *AzureFindSecretsModule) riskFromScanResult(result secrets.SecretScanRes
 		return nil
 	}
 
-	impactedARN := result.ResourceRef
-	if result.Match.FindingID != "" {
-		findingPrefix := result.Match.FindingID
-		if len(findingPrefix) > 8 {
-			findingPrefix = findingPrefix[:8]
-		}
-		impactedARN = fmt.Sprintf("%s:%s", result.ResourceRef, findingPrefix)
-	}
-
-	out.Send(output.AurelianRisk{
-		Name:        m.formatSecretRiskName(result.Match.RuleID),
-		Severity:    m.riskSeverityFromMatch(result.Match),
-		ImpactedARN: impactedARN,
-		Context:     proofBytes,
-	})
+	out.Send(secrets.NewSecretRisk(result, "azure", proofBytes))
 	return nil
-}
-
-func (m *AzureFindSecretsModule) formatSecretRiskName(ruleID string) string {
-	parts := strings.Split(ruleID, ".")
-	shortName := strings.ToLower(ruleID)
-	if len(parts) >= 2 {
-		shortName = parts[1]
-	}
-	return fmt.Sprintf("azure-secret-%s", shortName)
-}
-
-func (m *AzureFindSecretsModule) riskSeverityFromMatch(match *types.Match) output.RiskSeverity {
-	if match.ValidationResult != nil && match.ValidationResult.Status == types.StatusValid {
-		return output.RiskSeverityHigh
-	}
-	return output.RiskSeverityMedium
 }
 
 func (m *AzureFindSecretsModule) buildProofData(result secrets.SecretScanResult, match *types.Match) map[string]interface{} {

@@ -86,7 +86,7 @@ func TestAzureFindSecrets(t *testing.T) {
 
 	t.Run("all risks have non-empty context", func(t *testing.T) {
 		for _, risk := range risks {
-			assert.NotEmpty(t, risk.Context, "risk context should not be empty for %s", risk.ImpactedARN)
+			assert.NotEmpty(t, risk.Context, "risk context should not be empty for %s", risk.ImpactedResourceID)
 		}
 	})
 }
@@ -94,7 +94,7 @@ func TestAzureFindSecrets(t *testing.T) {
 func hasRiskForAzureResource(risks []output.AurelianRisk, resourceID string) bool {
 	lowerID := strings.ToLower(resourceID)
 	for _, risk := range risks {
-		lowerImpacted := strings.ToLower(risk.ImpactedARN)
+		lowerImpacted := strings.ToLower(risk.ImpactedResourceID)
 		if lowerImpacted == lowerID || strings.Contains(lowerImpacted, lowerID) {
 			return true
 		}

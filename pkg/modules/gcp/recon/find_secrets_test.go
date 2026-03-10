@@ -1,10 +1,13 @@
 package recon
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/secrets"
 	"github.com/praetorian-inc/titus/pkg/types"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestExtractRuleShortName(t *testing.T) {
@@ -17,18 +20,13 @@ func TestExtractRuleShortName(t *testing.T) {
 		{"custom", "custom"},
 	}
 	for _, tc := range tests {
-		got := extractRuleShortName(tc.ruleID)
-		if got != tc.want {
-			t.Errorf("extractRuleShortName(%q) = %q, want %q", tc.ruleID, got, tc.want)
-		}
+		assert.Equal(t, tc.want, secrets.ExtractRuleShortName(tc.ruleID))
 	}
 }
 
 func TestFormatSecretRiskName(t *testing.T) {
-	got := formatSecretRiskName("np.gcp.3")
-	if got != "gcp-secret-gcp" {
-		t.Errorf("formatSecretRiskName = %q, want %q", got, "gcp-secret-gcp")
-	}
+	got := fmt.Sprintf("gcp-secret-%s", secrets.ExtractRuleShortName("np.gcp.3"))
+	assert.Equal(t, "gcp-secret-gcp", got)
 }
 
 func TestRiskSeverityFromMatch_Validated(t *testing.T) {
@@ -37,16 +35,10 @@ func TestRiskSeverityFromMatch_Validated(t *testing.T) {
 			Status: types.StatusValid,
 		},
 	}
-	got := riskSeverityFromMatch(m)
-	if got != output.RiskSeverityHigh {
-		t.Errorf("severity = %q, want %q", got, output.RiskSeverityHigh)
-	}
+	assert.Equal(t, output.RiskSeverityHigh, secrets.RiskSeverityFromMatch(m))
 }
 
 func TestRiskSeverityFromMatch_Unvalidated(t *testing.T) {
 	m := &types.Match{}
-	got := riskSeverityFromMatch(m)
-	if got != output.RiskSeverityMedium {
-		t.Errorf("severity = %q, want %q", got, output.RiskSeverityMedium)
-	}
+	assert.Equal(t, output.RiskSeverityMedium, secrets.RiskSeverityFromMatch(m))
 }

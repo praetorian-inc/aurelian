@@ -2,6 +2,7 @@ package recon
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/extraction"
@@ -82,7 +83,7 @@ func TestExtractRuleShortName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.ruleID, func(t *testing.T) {
-			assert.Equal(t, tt.expected, extractRuleShortName(tt.ruleID))
+			assert.Equal(t, tt.expected, secrets.ExtractRuleShortName(tt.ruleID))
 		})
 	}
 }
@@ -99,7 +100,7 @@ func TestRiskNameFormatting(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.ruleID, func(t *testing.T) {
-			assert.Equal(t, tt.expected, formatSecretRiskName(tt.ruleID))
+			assert.Equal(t, tt.expected, fmt.Sprintf("aws-secret-%s", secrets.ExtractRuleShortName(tt.ruleID)))
 		})
 	}
 }
@@ -109,19 +110,19 @@ func TestRiskSeverityFromMatch(t *testing.T) {
 		match := &types.Match{
 			ValidationResult: &types.ValidationResult{Status: types.StatusValid},
 		}
-		assert.Equal(t, output.RiskSeverityHigh, riskSeverityFromMatch(match))
+		assert.Equal(t, output.RiskSeverityHigh, secrets.RiskSeverityFromMatch(match))
 	})
 
 	t.Run("no validation returns medium", func(t *testing.T) {
 		match := &types.Match{}
-		assert.Equal(t, output.RiskSeverityMedium, riskSeverityFromMatch(match))
+		assert.Equal(t, output.RiskSeverityMedium, secrets.RiskSeverityFromMatch(match))
 	})
 
 	t.Run("invalid validation returns medium", func(t *testing.T) {
 		match := &types.Match{
 			ValidationResult: &types.ValidationResult{Status: types.StatusInvalid},
 		}
-		assert.Equal(t, output.RiskSeverityMedium, riskSeverityFromMatch(match))
+		assert.Equal(t, output.RiskSeverityMedium, secrets.RiskSeverityFromMatch(match))
 	})
 }
 
@@ -246,7 +247,7 @@ func TestBuildRiskContextRoundTrip(t *testing.T) {
 	assert.Equal(t, "arn:aws:lambda:us-east-1:123456789012:function:demo", decoded["resource_ref"])
 }
 
-func TestRiskFromScanResult_ImpactedARN_IncludesFindingID(t *testing.T) {
+func TestRiskFromScanResult_ImpactedResourceID_IncludesFindingID(t *testing.T) {
 	match := &types.Match{
 		RuleID:   "np.aws.1",
 		RuleName: "AWS API Key",
@@ -270,12 +271,13 @@ func TestRiskFromScanResult_ImpactedARN_IncludesFindingID(t *testing.T) {
 	require.Len(t, items, 1)
 
 	risk := items[0].(output.AurelianRisk)
-	assert.Equal(t, "arn:aws:lambda:us-east-1:123:function:demo:abc123de", risk.ImpactedARN)
+	assert.Equal(t, "arn:aws:lambda:us-east-1:123:function:demo:abc123de", risk.ImpactedResourceID)
+	assert.Equal(t, "abc123def456", risk.DeduplicationID)
 	assert.Equal(t, "aws-secret-aws", risk.Name)
 	assert.Equal(t, output.RiskSeverityMedium, risk.Severity)
 }
 
-func TestRiskFromScanResult_ImpactedARN_NoFindingID(t *testing.T) {
+func TestRiskFromScanResult_ImpactedResourceID_NoFindingID(t *testing.T) {
 	match := &types.Match{
 		RuleID:   "np.aws.1",
 		RuleName: "AWS API Key",
@@ -298,5 +300,5 @@ func TestRiskFromScanResult_ImpactedARN_NoFindingID(t *testing.T) {
 	require.Len(t, items, 1)
 
 	risk := items[0].(output.AurelianRisk)
-	assert.Equal(t, "i-08da3f571f1346176", risk.ImpactedARN, "should use bare ResourceRef when FindingID is empty")
+	assert.Equal(t, "i-08da3f571f1346176", risk.ImpactedResourceID, "should use bare ResourceRef when FindingID is empty")
 }

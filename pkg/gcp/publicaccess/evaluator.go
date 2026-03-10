@@ -54,7 +54,7 @@ func (e *AccessEvaluator) Evaluate(r output.GCPResource, out *pipeline.P[model.A
 	out.Send(output.AurelianRisk{
 		Name:        name,
 		Severity:    severity,
-		ImpactedARN: r.ResourceID,
+		ImpactedResourceID: r.ResourceID,
 		Context:     ctx,
 	})
 
