@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/blueprint/armblueprint"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armpolicy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -89,8 +88,9 @@ func (e *ARMEnumerator) listPolicyDefinitions(sub azuretypes.SubscriptionInfo, o
 		return fmt.Errorf("create policy definitions client: %w", err)
 	}
 
-	filter := to.Ptr("policyType eq 'Custom'")
-	pager := client.NewListPager(&armpolicy.DefinitionsClientListOptions{Filter: filter})
+	// List all definitions; filter to Custom client-side.
+	// The server-side $filter for policyType is not reliably supported by the Go SDK.
+	pager := client.NewListPager(nil)
 	for pager.More() {
 		page, err := pager.NextPage(contextBackground())
 		if err != nil {
@@ -98,6 +98,11 @@ func (e *ARMEnumerator) listPolicyDefinitions(sub azuretypes.SubscriptionInfo, o
 		}
 		for _, d := range page.Value {
 			if d.ID == nil {
+				continue
+			}
+			// Skip built-in and static policies — they don't contain customer secrets.
+			if d.Properties != nil && d.Properties.PolicyType != nil &&
+				*d.Properties.PolicyType != armpolicy.PolicyTypeCustom {
 				continue
 			}
 			r := output.NewAzureResource(sub.ID, "Microsoft.Authorization/policyDefinitions", *d.ID)
