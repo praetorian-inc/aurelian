@@ -76,7 +76,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	}
 
 	var s secrets.SecretScanner
-	if err := s.Start(c.DBPath, c.DisabledTitusRules); err != nil {
+	if err := s.Start(c.ScannerConfig); err != nil {
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
 	}
 	defer func() {
