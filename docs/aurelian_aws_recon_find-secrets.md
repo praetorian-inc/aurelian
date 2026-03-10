@@ -9,14 +9,8 @@ aurelian aws recon find-secrets [flags]
 ### Options
 
 ```
-      --cache-dir string               Directory to store API response cache files
-      --cache-error-resp               Cache error response
-      --cache-error-resp-type string   Comma-separated cache error response types, e.g., TypeNotFoundException, AccessDeniedException. Use all to represent any error.
-      --cache-ext string               Name of AWS API response cache files extension (default ".aws-cache")
-      --cache-ttl int                  TTL for cached responses in seconds (default 3600)
       --concurrency int                Maximum concurrent API requests (default 5)
       --db-path string                 Path for Titus SQLite database
-      --disable-cache                  Disable API response caching
       --disabled-titus-rules strings   Rule IDs to exclude from scanning
   -h, --help                           help for find-secrets
       --max-events int                 Max log events per log group (default 10000)
