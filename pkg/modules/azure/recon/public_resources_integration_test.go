@@ -46,7 +46,7 @@ func TestAzurePublicResources(t *testing.T) {
 	for _, risk := range risks {
 		assert.NotEmpty(t, risk.Name, "risk Name must not be empty")
 		assert.NotEmpty(t, risk.Severity, "risk Severity must not be empty")
-		assert.NotEmpty(t, risk.ImpactedARN, "risk ImpactedARN must not be empty")
+		assert.NotEmpty(t, risk.ImpactedResourceID, "risk ImpactedResourceID must not be empty")
 		assert.NotEmpty(t, risk.Context, "risk Context must not be empty")
 	}
 

@@ -131,7 +131,7 @@ func resultToRisk(result templates.ARGQueryResult, out *pipeline.P[model.Aurelia
 	out.Send(output.AurelianRisk{
 		Name:        "public-azure-resource",
 		Severity:    result.TemplateDetails.Severity,
-		ImpactedARN: result.ResourceID,
+		ImpactedResourceID: result.ResourceID,
 		Context:     ctx,
 	})
 	return nil

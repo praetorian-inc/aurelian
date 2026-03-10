@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/aws/extraction"
@@ -121,44 +120,8 @@ func riskFromScanResult(result secrets.SecretScanResult, out *pipeline.P[model.A
 		return nil
 	}
 
-	impactedARN := result.ResourceRef
-	if result.Match.FindingID != "" {
-		findingPrefix := result.Match.FindingID
-		if len(findingPrefix) > 8 {
-			findingPrefix = findingPrefix[:8]
-		}
-		impactedARN = fmt.Sprintf("%s:%s", result.ResourceRef, findingPrefix)
-	}
-
-	out.Send(output.AurelianRisk{
-		Name:        formatSecretRiskName(result.Match.RuleID),
-		Severity:    riskSeverityFromMatch(result.Match),
-		ImpactedARN: impactedARN,
-		Context:     proofBytes,
-	})
+	out.Send(secrets.NewSecretRisk(result, "aws", proofBytes))
 	return nil
-}
-
-// extractRuleShortName extracts the short rule identifier from a Titus rule ID.
-// For IDs like "np.aws.1", returns "aws". For single-segment IDs, returns the
-// full ID lowercased.
-func extractRuleShortName(ruleID string) string {
-	parts := strings.Split(ruleID, ".")
-	if len(parts) >= 2 {
-		return parts[1]
-	}
-	return strings.ToLower(ruleID)
-}
-
-func formatSecretRiskName(ruleID string) string {
-	return fmt.Sprintf("aws-secret-%s", extractRuleShortName(ruleID))
-}
-
-func riskSeverityFromMatch(match *types.Match) output.RiskSeverity {
-	if match.ValidationResult != nil && match.ValidationResult.Status == types.StatusValid {
-		return output.RiskSeverityHigh
-	}
-	return output.RiskSeverityMedium
 }
 
 // buildProofData constructs proof JSON matching Guard's secrets proof format.

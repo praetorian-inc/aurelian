@@ -119,7 +119,7 @@ func riskFromResult(r publicaccess.PublicAccessResult, out *pipeline.P[model.Aur
 	out.Send(output.AurelianRisk{
 		Name:        "public-aws-resource",
 		Severity:    severity,
-		ImpactedARN: impactedARN,
+		ImpactedResourceID: impactedARN,
 		Context:     ctx,
 	})
 	return nil

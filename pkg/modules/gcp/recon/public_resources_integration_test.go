@@ -69,7 +69,7 @@ func TestGCPPublicResources(t *testing.T) {
 				[]output.RiskSeverity{output.RiskSeverityHigh, output.RiskSeverityMedium},
 				risk.Severity,
 				"unexpected risk severity: %s", risk.Severity)
-			assert.NotEmpty(t, risk.ImpactedARN, "risk ImpactedARN must be set")
+			assert.NotEmpty(t, risk.ImpactedResourceID, "risk ImpactedResourceID must be set")
 			assert.NotEmpty(t, risk.Context, "risk Context must be set")
 		}
 	})
@@ -175,7 +175,7 @@ func findRiskForNamedResource(resources []output.GCPResource, risks []output.Aur
 	for _, r := range resources {
 		if containsName(r, name) {
 			for i, risk := range risks {
-				if risk.ImpactedARN == r.ResourceID {
+				if risk.ImpactedResourceID == r.ResourceID {
 					return &risks[i]
 				}
 			}

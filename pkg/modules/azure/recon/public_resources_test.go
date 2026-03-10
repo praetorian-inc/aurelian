@@ -46,7 +46,7 @@ func TestResultToRisk(t *testing.T) {
 	risk := risks[0]
 	assert.Equal(t, "public-azure-resource", risk.Name)
 	assert.Equal(t, output.RiskSeverityHigh, risk.Severity)
-	assert.Contains(t, risk.ImpactedARN, "mystorage")
+	assert.Contains(t, risk.ImpactedResourceID, "mystorage")
 
 	var ctx map[string]any
 	require.NoError(t, json.Unmarshal(risk.Context, &ctx))
