@@ -57,3 +57,30 @@ func TestMerge_NoInputs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, items)
 }
+
+func TestMerge_RaceSafety(t *testing.T) {
+	// Spin up many inputs sending concurrently to verify no race conditions.
+	const numInputs = 10
+	const itemsPerInput = 100
+
+	inputs := make([]*P[int], numInputs)
+	for i := range inputs {
+		inputs[i] = New[int]()
+	}
+
+	merged := Merge(inputs...)
+
+	// Start all producers concurrently.
+	for i, p := range inputs {
+		go func(p *P[int], base int) {
+			defer p.Close()
+			for j := 0; j < itemsPerInput; j++ {
+				p.Send(base + j)
+			}
+		}(p, i*itemsPerInput)
+	}
+
+	items, err := merged.Collect()
+	require.NoError(t, err)
+	assert.Len(t, items, numInputs*itemsPerInput)
+}
