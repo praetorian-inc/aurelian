@@ -3,6 +3,7 @@ package extraction
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/blueprint/armblueprint"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armpolicy"
@@ -103,13 +104,13 @@ func extractBlueprintArtifacts(ctx extractContext, r output.AzureResource, out *
 
 // extractPolicyDefinitions retrieves and marshals a custom policy definition's rule.
 func extractPolicyDefinitions(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, _, segments, err := parseAzureResourceID(r.ResourceID)
-	if err != nil {
-		return fmt.Errorf("failed to parse policy definition resource ID: %w", err)
-	}
-	policyName := segments["policyDefinitions"]
+	// Policy definitions are subscription-scope resources:
+	// /subscriptions/{sub}/providers/Microsoft.Authorization/policyDefinitions/{name}
+	// parseAzureResourceID requires a resource group, so extract the name from the last path segment.
+	parts := strings.Split(r.ResourceID, "/")
+	policyName := parts[len(parts)-1]
 	if policyName == "" {
-		return fmt.Errorf("no policyDefinitions segment in resource ID %s", r.ResourceID)
+		return fmt.Errorf("could not extract policy name from resource ID %s", r.ResourceID)
 	}
 
 	client, err := armpolicy.NewDefinitionsClient(r.SubscriptionID, ctx.Cred, nil)

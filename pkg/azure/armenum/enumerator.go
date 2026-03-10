@@ -57,29 +57,64 @@ func (e *ARMEnumerator) listDeployments(sub azuretypes.SubscriptionInfo, out *pi
 		return fmt.Errorf("create deployments client: %w", err)
 	}
 
-	pager := client.NewListAtSubscriptionScopePager(nil)
-	for pager.More() {
-		page, err := pager.NextPage(contextBackground())
+	// Subscription-scope deployments (created without a resource group).
+	subPager := client.NewListAtSubscriptionScopePager(nil)
+	for subPager.More() {
+		page, err := subPager.NextPage(contextBackground())
 		if err != nil {
-			return handleListError(err, "deployments", sub.ID)
+			return handleListError(err, "deployments-subscription", sub.ID)
 		}
 		for _, d := range page.Value {
-			if d.ID == nil {
+			emitDeployment(d.ID, d.Name, d.Location, sub, out)
+		}
+	}
+
+	// Resource-group-scope deployments: iterate all resource groups.
+	rgClient, err := armresources.NewResourceGroupsClient(sub.ID, e.cred, nil)
+	if err != nil {
+		return fmt.Errorf("create resource groups client: %w", err)
+	}
+	rgPager := rgClient.NewListPager(nil)
+	for rgPager.More() {
+		rgPage, err := rgPager.NextPage(contextBackground())
+		if err != nil {
+			return handleListError(err, "resourceGroups", sub.ID)
+		}
+		for _, rg := range rgPage.Value {
+			if rg.Name == nil {
 				continue
 			}
-			r := output.NewAzureResource(sub.ID, "Microsoft.Resources/deployments", *d.ID)
-			r.SubscriptionName = sub.DisplayName
-			r.TenantID = sub.TenantID
-			if d.Name != nil {
-				r.DisplayName = *d.Name
+			rgDeployPager := client.NewListByResourceGroupPager(*rg.Name, nil)
+			for rgDeployPager.More() {
+				page, err := rgDeployPager.NextPage(contextBackground())
+				if err != nil {
+					slog.Warn("ARM enumeration skipped (listing deployments in resource group)",
+						"rg", *rg.Name, "subscription", sub.ID, "error", err)
+					break
+				}
+				for _, d := range page.Value {
+					emitDeployment(d.ID, d.Name, d.Location, sub, out)
+				}
 			}
-			if d.Location != nil {
-				r.Location = *d.Location
-			}
-			out.Send(r)
 		}
 	}
 	return nil
+}
+
+func emitDeployment(id, name, location *string, sub azuretypes.SubscriptionInfo, out *pipeline.P[output.AzureResource]) {
+	if id == nil {
+		return
+	}
+	r := output.NewAzureResource(sub.ID, "Microsoft.Resources/deployments", *id)
+	r.SubscriptionName = sub.DisplayName
+	r.TenantID = sub.TenantID
+	if name != nil {
+		r.DisplayName = *name
+	}
+	if location != nil {
+		r.Location = *location
+	}
+	out.Send(r)
 }
 
 func (e *ARMEnumerator) listPolicyDefinitions(sub azuretypes.SubscriptionInfo, out *pipeline.P[output.AzureResource]) error {
