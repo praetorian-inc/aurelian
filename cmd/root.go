@@ -13,11 +13,8 @@ import (
 )
 
 var (
-	logLevelFlag     string
-	awsCacheLogLevel string
-	awsCacheLogFile  string
-	noColorFlag      bool
-	quietFlag        bool
+	noColorFlag bool
+	quietFlag   bool
 )
 
 var rootCmd = &cobra.Command{
@@ -34,9 +31,6 @@ func initCommands() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&logLevelFlag, "log-level", "none", "Log level (debug, info, warn, error)")
-	rootCmd.PersistentFlags().StringVar(&awsCacheLogLevel, "aws-cache-log-level", "none", "Log level (debug, info, warn, error)")
-	rootCmd.PersistentFlags().StringVar(&awsCacheLogFile, "aws-cache-log-file", "", "")
 	rootCmd.PersistentFlags().BoolVar(&noColorFlag, "no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&quietFlag, "quiet", false, "Suppress user messages (overrides default verbose CLI mode)")
 	rootCmd.PersistentFlags().String("output-dir", "aurelian-output", "Output directory (default: aurelian-output)")
