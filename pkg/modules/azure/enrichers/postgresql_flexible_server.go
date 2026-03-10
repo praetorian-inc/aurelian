@@ -2,9 +2,7 @@ package enrichers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/postgresql/armpostgresqlflexibleservers"
@@ -41,11 +39,12 @@ func enrichPostgreSQLFlexibleServer(cfg plugin.AzureEnricherConfig, result *temp
 
 func getPostgreSQLFirewallRulesCommand(cfg plugin.AzureEnricherConfig, subscriptionID, resourceGroup, serverName string) plugin.AzureEnrichmentCommand {
 	azCommand := fmt.Sprintf("az postgres flexible-server firewall-rule list --resource-group %s --server-name %s", resourceGroup, serverName)
+	description := "Retrieve PostgreSQL Flexible Server firewall rules"
 
 	if serverName == "" || subscriptionID == "" || resourceGroup == "" {
 		return plugin.AzureEnrichmentCommand{
 			Command:      azCommand,
-			Description:  "Retrieve PostgreSQL Flexible Server firewall rules",
+			Description:  description,
 			ActualOutput: "Error: Server name, subscription ID, or resource group is missing",
 			ExitCode:     1,
 		}
@@ -56,85 +55,33 @@ func getPostgreSQLFirewallRulesCommand(cfg plugin.AzureEnricherConfig, subscript
 		ctx = context.Background()
 	}
 
-	firewallClient, err := armpostgresqlflexibleservers.NewFirewallRulesClient(subscriptionID, cfg.Credential, nil)
-	if err != nil {
-		return plugin.AzureEnrichmentCommand{
-			Command:      azCommand,
-			Description:  "Retrieve PostgreSQL Flexible Server firewall rules (SDK failed)",
-			ActualOutput: fmt.Sprintf("SDK retrieval failed: %s", err.Error()),
-			Error:        err.Error(),
-			ExitCode:     1,
-		}
-	}
-
-	pager := firewallClient.NewListByServerPager(resourceGroup, serverName, nil)
-
-	type pgFirewallRuleOutput struct {
-		EndIPAddress   string `json:"endIpAddress"`
-		ID             string `json:"id"`
-		Name           string `json:"name"`
-		ResourceGroup  string `json:"resourceGroup"`
-		StartIPAddress string `json:"startIpAddress"`
-		Type           string `json:"type"`
-	}
-
-	var outputRules []pgFirewallRuleOutput
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
+	return buildFirewallRulesCommand(azCommand, description, func() ([]firewallRuleOutput, error) {
+		firewallClient, err := armpostgresqlflexibleservers.NewFirewallRulesClient(subscriptionID, cfg.Credential, nil)
 		if err != nil {
-			return plugin.AzureEnrichmentCommand{
-				Command:      azCommand,
-				Description:  "Retrieve PostgreSQL Flexible Server firewall rules (SDK failed)",
-				ActualOutput: fmt.Sprintf("SDK retrieval failed: %s", err.Error()),
-				Error:        err.Error(),
-				ExitCode:     1,
-			}
+			return nil, err
 		}
-		for _, rule := range page.Value {
-			if rule == nil {
-				continue
-			}
-			o := pgFirewallRuleOutput{Type: "Microsoft.DBforPostgreSQL/flexibleServers/firewallRules"}
-			if rule.Name != nil {
-				o.Name = *rule.Name
-			}
-			if rule.ID != nil {
-				o.ID = *rule.ID
-				parts := strings.Split(o.ID, "/")
-				for i, part := range parts {
-					if part == "resourceGroups" && i+1 < len(parts) {
-						o.ResourceGroup = parts[i+1]
-						break
-					}
-				}
-			}
-			if rule.Properties != nil {
-				if rule.Properties.StartIPAddress != nil {
-					o.StartIPAddress = *rule.Properties.StartIPAddress
-				}
-				if rule.Properties.EndIPAddress != nil {
-					o.EndIPAddress = *rule.Properties.EndIPAddress
-				}
-			}
-			outputRules = append(outputRules, o)
-		}
-	}
 
-	output := "[]"
-	if len(outputRules) > 0 {
-		b, err := json.MarshalIndent(outputRules, "", "  ")
-		if err != nil {
-			output = fmt.Sprintf("Error formatting output: %s", err.Error())
-		} else {
-			output = string(b)
+		pager := firewallClient.NewListByServerPager(resourceGroup, serverName, nil)
+		var rules []firewallRuleOutput
+		for pager.More() {
+			page, err := pager.NextPage(ctx)
+			if err != nil {
+				return nil, err
+			}
+			for _, rule := range page.Value {
+				if rule == nil || rule.Properties == nil {
+					continue
+				}
+				rules = append(rules, firewallRuleOutput{
+					Type:           "Microsoft.DBforPostgreSQL/flexibleServers/firewallRules",
+					Name:           derefString(rule.Name),
+					ID:             derefString(rule.ID),
+					ResourceGroup:  ParseResourceGroup(derefString(rule.ID)),
+					StartIPAddress: derefString(rule.Properties.StartIPAddress),
+					EndIPAddress:   derefString(rule.Properties.EndIPAddress),
+				})
+			}
 		}
-	}
-
-	return plugin.AzureEnrichmentCommand{
-		Command:                   azCommand,
-		Description:               "Retrieve PostgreSQL Flexible Server firewall rules",
-		ExpectedOutputDescription: "List of firewall rules with names and IP address ranges",
-		ActualOutput:              output,
-		ExitCode:                  0,
-	}
+		return rules, nil
+	})
 }

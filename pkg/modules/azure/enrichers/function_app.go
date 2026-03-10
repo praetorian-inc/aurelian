@@ -39,7 +39,7 @@ func enrichFunctionApp(cfg plugin.AzureEnricherConfig, result *templates.ARGQuer
 	}
 
 	// Step 0: Check IP restrictions via Management API
-	ipRestrictionsCmd := funcAppCheckIPRestrictions(cfg, webAppsClient, resourceGroupName, functionAppName)
+	ipRestrictionsCmd := checkIPRestrictionsCommand(cfg, webAppsClient, resourceGroupName, functionAppName, "Function App")
 
 	// Step 1: Enumerate triggers from production slot
 	cliEquiv := fmt.Sprintf("az functionapp function list --resource-group %s --name %s", resourceGroupName, functionAppName)
@@ -79,11 +79,11 @@ func enrichFunctionApp(cfg plugin.AzureEnricherConfig, result *templates.ARGQuer
 	}
 
 	// Step 4: SCM/Kudu probe
-	scmCmd := funcAppTestSCMSite(client, functionAppName)
+	scmCmd := probeSCMSite(client, functionAppName)
 	commands = append(commands, scmCmd)
 
 	// Step 5: EasyAuth cross-reference
-	easyAuthCmd := funcAppCheckEasyAuth(cfg, webAppsClient, resourceGroupName, functionAppName)
+	easyAuthCmd := checkEasyAuthCommand(cfg, webAppsClient, resourceGroupName, functionAppName)
 	commands = append(commands, easyAuthCmd)
 
 	return commands, nil
@@ -245,161 +245,3 @@ func funcAppProbeInvokeURL(client *http.Client, trigger HTTPTriggerInfo) plugin.
 	return cmd
 }
 
-// funcAppTestSCMSite tests the SCM/Kudu management site.
-func funcAppTestSCMSite(client *http.Client, appName string) plugin.AzureEnrichmentCommand {
-	scmURL := fmt.Sprintf("https://%s.scm.azurewebsites.net", appName)
-
-	cmd := plugin.AzureEnrichmentCommand{
-		Command:                   fmt.Sprintf("curl -i --max-redirects 0 '%s' --max-time 10", scmURL),
-		Description:               "Test access to SCM/Kudu management site (high risk if accessible)",
-		ExpectedOutputDescription: "200 = SCM accessible (HIGH RISK) | 3xx = redirect (auth) | 401/403 = auth required | timeout = blocked",
-	}
-
-	resp, err := client.Get(scmURL)
-	if err != nil {
-		cmd.Error = err.Error()
-		cmd.ActualOutput = fmt.Sprintf("Request failed: %s", err.Error())
-		cmd.ExitCode = -1
-		return cmd
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1000))
-
-	var exitCode int
-	var verdict string
-	switch {
-	case resp.StatusCode >= 200 && resp.StatusCode < 300:
-		exitCode = 1
-		verdict = "SCM ACCESSIBLE (HIGH RISK)"
-	case resp.StatusCode >= 300 && resp.StatusCode < 400:
-		exitCode = 0
-		verdict = "Redirect (auth required)"
-	case resp.StatusCode == 401 || resp.StatusCode == 403:
-		exitCode = 0
-		verdict = "Auth required"
-	default:
-		exitCode = 0
-		verdict = fmt.Sprintf("HTTP %d", resp.StatusCode)
-	}
-
-	cmd.ActualOutput = fmt.Sprintf("HTTP %d — %s\nBody preview: %s", resp.StatusCode, verdict, TruncateString(string(body), 500))
-	cmd.ExitCode = exitCode
-
-	return cmd
-}
-
-// funcAppCheckIPRestrictions queries IP security restrictions via the Management API.
-func funcAppCheckIPRestrictions(cfg plugin.AzureEnricherConfig, client *armappservice.WebAppsClient, resourceGroupName, appName string) plugin.AzureEnrichmentCommand {
-	cmd := plugin.AzureEnrichmentCommand{
-		Command:                   fmt.Sprintf("az webapp config access-restriction show --resource-group %s --name %s", resourceGroupName, appName),
-		Description:               "Check IP security restrictions via Management API (not available in ARG)",
-		ExpectedOutputDescription: "IP restrictions present = lower severity (network-level filtering in place) | No restrictions = fully open to internet",
-	}
-
-	siteConfig, err := client.GetConfiguration(cfg.Context, resourceGroupName, appName, nil)
-	if err != nil {
-		cmd.Error = err.Error()
-		cmd.ActualOutput = fmt.Sprintf("Error getting site configuration: %s", err.Error())
-		cmd.ExitCode = -1
-		return cmd
-	}
-
-	if siteConfig.Properties == nil || siteConfig.Properties.IPSecurityRestrictions == nil {
-		cmd.ActualOutput = "No IP restrictions configured — Function App is fully open to all internet traffic."
-		cmd.ExitCode = 1
-		return cmd
-	}
-
-	restrictions := siteConfig.Properties.IPSecurityRestrictions
-
-	// Filter out the default "Allow all" rule (priority 2147483647)
-	var meaningful []*armappservice.IPSecurityRestriction
-	for _, r := range restrictions {
-		if r.Priority != nil && *r.Priority == 2147483647 {
-			continue
-		}
-		meaningful = append(meaningful, r)
-	}
-
-	if len(meaningful) == 0 {
-		cmd.ActualOutput = "No IP restrictions configured — Function App is fully open to all internet traffic."
-		cmd.ExitCode = 1
-		return cmd
-	}
-
-	// Check if any meaningful rule is a broad allow-all
-	for _, r := range meaningful {
-		if r.Action != nil && strings.EqualFold(*r.Action, "Allow") {
-			if r.IPAddress != nil {
-				ip := strings.TrimSpace(*r.IPAddress)
-				if ip == "0.0.0.0/0" || ip == "::/0" {
-					cmd.ActualOutput = "No effective IP restrictions — broad allow-all rule (0.0.0.0/0) present. Function App is open to all internet traffic."
-					cmd.ExitCode = 1
-					return cmd
-				}
-			}
-			if r.Tag != nil && *r.Tag == armappservice.IPFilterTagServiceTag && r.IPAddress != nil {
-				if strings.EqualFold(strings.TrimSpace(*r.IPAddress), "Internet") {
-					cmd.ActualOutput = "No effective IP restrictions — Allow rule with ServiceTag 'Internet' present. Function App is open to all internet traffic."
-					cmd.ExitCode = 1
-					return cmd
-				}
-			}
-		}
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("IP restrictions found: %d rule(s)\n", len(meaningful)))
-	for _, r := range meaningful {
-		name := ""
-		if r.Name != nil {
-			name = *r.Name
-		}
-		action := ""
-		if r.Action != nil {
-			action = *r.Action
-		}
-		ipAddress := ""
-		if r.IPAddress != nil {
-			ipAddress = *r.IPAddress
-		}
-		priority := int32(0)
-		if r.Priority != nil {
-			priority = *r.Priority
-		}
-		sb.WriteString(fmt.Sprintf("  [%d] %s: %s %s\n", priority, name, action, ipAddress))
-	}
-	sb.WriteString("\nIP restrictions are present — network-level filtering is in place. This is a compensating control that reduces exposure.")
-
-	cmd.ActualOutput = sb.String()
-	cmd.ExitCode = 0
-	return cmd
-}
-
-// funcAppCheckEasyAuth queries EasyAuth / Entra ID platform authentication status.
-func funcAppCheckEasyAuth(cfg plugin.AzureEnricherConfig, client *armappservice.WebAppsClient, resourceGroupName, appName string) plugin.AzureEnrichmentCommand {
-	cmd := plugin.AzureEnrichmentCommand{
-		Command:                   fmt.Sprintf("az webapp auth show --resource-group %s --name %s", resourceGroupName, appName),
-		Description:               "Check EasyAuth / Entra ID platform authentication",
-		ExpectedOutputDescription: "Enabled = compensating control present | Disabled = anonymous triggers are truly unauthenticated",
-	}
-
-	status := CheckEasyAuth(cfg.Context, client, resourceGroupName, appName)
-	if status.Err != nil {
-		cmd.Error = status.Err.Error()
-		cmd.ActualOutput = fmt.Sprintf("Error checking EasyAuth: %s", status.Err.Error())
-		cmd.ExitCode = -1
-		return cmd
-	}
-
-	if status.Enabled {
-		cmd.ActualOutput = "EasyAuth is ENABLED - platform enforces authentication before requests reach function code. Anonymous trigger auth levels are overridden by EasyAuth."
-		cmd.ExitCode = 0
-	} else {
-		cmd.ActualOutput = "EasyAuth is DISABLED - no platform-level authentication. Anonymous triggers are truly accessible without any authentication."
-		cmd.ExitCode = 1
-	}
-
-	return cmd
-}

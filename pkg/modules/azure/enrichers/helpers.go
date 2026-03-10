@@ -1,7 +1,9 @@
 package enrichers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -296,4 +298,254 @@ func ExtractHTMLTitle(body string) string {
 	}
 
 	return strings.TrimSpace(body[contentStart : contentStart+end])
+}
+
+// derefString safely dereferences a string pointer, returning "" if nil.
+func derefString(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// probeSCMSite tests the SCM/Kudu management endpoint for an App Service or Function App.
+func probeSCMSite(client *http.Client, appName string) plugin.AzureEnrichmentCommand {
+	scmURL := fmt.Sprintf("https://%s.scm.azurewebsites.net", appName)
+
+	cmd := plugin.AzureEnrichmentCommand{
+		Command:                   fmt.Sprintf("curl -i --max-redirects 0 '%s' --max-time 10", scmURL),
+		Description:               "Test access to SCM/Kudu management site (high risk if accessible)",
+		ExpectedOutputDescription: "200 = SCM accessible (HIGH RISK) | 3xx = redirect (auth) | 401/403 = auth required | timeout = blocked",
+	}
+
+	resp, err := client.Get(scmURL)
+	if err != nil {
+		cmd.Error = err.Error()
+		cmd.ActualOutput = fmt.Sprintf("Request failed: %s", err.Error())
+		cmd.ExitCode = -1
+		return cmd
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1000))
+
+	var exitCode int
+	var verdict string
+	switch {
+	case resp.StatusCode >= 200 && resp.StatusCode < 300:
+		exitCode = 1
+		verdict = "SCM ACCESSIBLE (HIGH RISK)"
+	case resp.StatusCode >= 300 && resp.StatusCode < 400:
+		exitCode = 0
+		verdict = "Redirect (auth required)"
+	case resp.StatusCode == 401 || resp.StatusCode == 403:
+		exitCode = 0
+		verdict = "Auth required"
+	default:
+		exitCode = 0
+		verdict = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
+
+	cmd.ActualOutput = fmt.Sprintf("HTTP %d — %s\nBody preview: %s", resp.StatusCode, verdict, TruncateString(string(body), 500))
+	cmd.ExitCode = exitCode
+
+	return cmd
+}
+
+// checkIPRestrictionsCommand queries IP security restrictions via the Management API.
+// resourceLabel is used in messages (e.g. "App Service" or "Function App").
+func checkIPRestrictionsCommand(cfg plugin.AzureEnricherConfig, client *armappservice.WebAppsClient, resourceGroup, appName, resourceLabel string) plugin.AzureEnrichmentCommand {
+	cmd := plugin.AzureEnrichmentCommand{
+		Command:                   fmt.Sprintf("az webapp config access-restriction show --resource-group %s --name %s", resourceGroup, appName),
+		Description:               "Check IP security restrictions via Management API (not available in ARG)",
+		ExpectedOutputDescription: "IP restrictions present = lower severity | No restrictions = fully open to internet",
+	}
+
+	siteConfig, err := client.GetConfiguration(cfg.Context, resourceGroup, appName, nil)
+	if err != nil {
+		cmd.Error = err.Error()
+		cmd.ActualOutput = fmt.Sprintf("Error getting site configuration: %s", err.Error())
+		cmd.ExitCode = -1
+		return cmd
+	}
+
+	if siteConfig.Properties == nil || siteConfig.Properties.IPSecurityRestrictions == nil {
+		cmd.ActualOutput = fmt.Sprintf("No IP restrictions configured — %s is fully open to all internet traffic.", resourceLabel)
+		cmd.ExitCode = 1
+		return cmd
+	}
+
+	restrictions := siteConfig.Properties.IPSecurityRestrictions
+
+	// Filter out the default "Allow all" rule (priority 2147483647)
+	var meaningful []*armappservice.IPSecurityRestriction
+	for _, r := range restrictions {
+		if r.Priority != nil && *r.Priority == 2147483647 {
+			continue
+		}
+		meaningful = append(meaningful, r)
+	}
+
+	if len(meaningful) == 0 {
+		cmd.ActualOutput = fmt.Sprintf("No IP restrictions configured — %s is fully open to all internet traffic.", resourceLabel)
+		cmd.ExitCode = 1
+		return cmd
+	}
+
+	// Check if any meaningful rule is a broad allow-all
+	for _, r := range meaningful {
+		if r.Action != nil && strings.EqualFold(*r.Action, "Allow") {
+			if r.IPAddress != nil {
+				ip := strings.TrimSpace(*r.IPAddress)
+				if ip == "0.0.0.0/0" || ip == "::/0" {
+					cmd.ActualOutput = fmt.Sprintf("No effective IP restrictions — broad allow-all rule (0.0.0.0/0) present. %s is open to all internet traffic.", resourceLabel)
+					cmd.ExitCode = 1
+					return cmd
+				}
+			}
+			if r.Tag != nil && *r.Tag == armappservice.IPFilterTagServiceTag && r.IPAddress != nil {
+				if strings.EqualFold(strings.TrimSpace(*r.IPAddress), "Internet") {
+					cmd.ActualOutput = fmt.Sprintf("No effective IP restrictions — Allow rule with ServiceTag 'Internet' present. %s is open to all internet traffic.", resourceLabel)
+					cmd.ExitCode = 1
+					return cmd
+				}
+			}
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("IP restrictions found: %d rule(s)\n", len(meaningful)))
+	for _, r := range meaningful {
+		sb.WriteString(fmt.Sprintf("  [%d] %s: %s %s\n",
+			derefInt32(r.Priority), derefString(r.Name), derefString(r.Action), derefString(r.IPAddress)))
+	}
+	sb.WriteString("\nIP restrictions are present — network-level filtering is in place.")
+
+	cmd.ActualOutput = sb.String()
+	cmd.ExitCode = 0
+	return cmd
+}
+
+// derefInt32 safely dereferences an int32 pointer, returning 0 if nil.
+func derefInt32(p *int32) int32 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+// checkEasyAuthCommand queries EasyAuth / Entra ID platform authentication status.
+func checkEasyAuthCommand(cfg plugin.AzureEnricherConfig, client *armappservice.WebAppsClient, resourceGroup, appName string) plugin.AzureEnrichmentCommand {
+	cmd := plugin.AzureEnrichmentCommand{
+		Command:                   fmt.Sprintf("az webapp auth show --resource-group %s --name %s", resourceGroup, appName),
+		Description:               "Check EasyAuth / Entra ID platform authentication",
+		ExpectedOutputDescription: "Enabled = compensating control | Disabled = anonymous triggers are truly unauthenticated",
+	}
+
+	status := CheckEasyAuth(cfg.Context, client, resourceGroup, appName)
+	if status.Err != nil {
+		cmd.Error = status.Err.Error()
+		cmd.ActualOutput = fmt.Sprintf("Error checking EasyAuth: %s", status.Err.Error())
+		cmd.ExitCode = -1
+		return cmd
+	}
+
+	if status.Enabled {
+		cmd.ActualOutput = "EasyAuth is ENABLED — platform enforces authentication before requests reach function code. Anonymous trigger auth levels are overridden by EasyAuth."
+		cmd.ExitCode = 0
+	} else {
+		cmd.ActualOutput = "EasyAuth is DISABLED — no platform-level authentication. Anonymous triggers are truly accessible without any authentication."
+		cmd.ExitCode = 1
+	}
+
+	return cmd
+}
+
+// firewallRuleOutput represents a firewall rule in the format expected by Azure CLI output.
+type firewallRuleOutput struct {
+	EndIPAddress   string `json:"endIpAddress"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	ResourceGroup  string `json:"resourceGroup"`
+	StartIPAddress string `json:"startIpAddress"`
+	Type           string `json:"type"`
+}
+
+// buildFirewallRulesCommand creates an enrichment command that fetches firewall rules
+// using the provided callback and formats them as JSON.
+func buildFirewallRulesCommand(azCommand, description string, fetchRules func() ([]firewallRuleOutput, error)) plugin.AzureEnrichmentCommand {
+	rules, err := fetchRules()
+	if err != nil {
+		return plugin.AzureEnrichmentCommand{
+			Command:      azCommand,
+			Description:  description + " (SDK failed)",
+			ActualOutput: fmt.Sprintf("SDK retrieval failed: %s", err.Error()),
+			Error:        err.Error(),
+			ExitCode:     1,
+		}
+	}
+
+	output := "[]"
+	if len(rules) > 0 {
+		b, err := json.MarshalIndent(rules, "", "  ")
+		if err != nil {
+			output = fmt.Sprintf("Error formatting output: %s", err.Error())
+		} else {
+			output = string(b)
+		}
+	}
+
+	return plugin.AzureEnrichmentCommand{
+		Command:                   azCommand,
+		Description:               description,
+		ExpectedOutputDescription: "List of firewall rules with names and IP address ranges",
+		ActualOutput:              output,
+		ExitCode:                  0,
+	}
+}
+
+// enrichEventGridPOSTEndpoint tests an Event Grid endpoint by POSTing an empty events array.
+// endpointFromProps is the endpoint extracted from resource properties (may be empty).
+func enrichEventGridPOSTEndpoint(ctx context.Context, resourceName, location, endpointFromProps, description string) ([]plugin.AzureEnrichmentCommand, error) {
+	var endpoint string
+	if endpointFromProps != "" {
+		endpoint = endpointFromProps
+		if !strings.HasSuffix(endpoint, "/api/events") {
+			endpoint = strings.TrimSuffix(endpoint, "/") + "/api/events"
+		}
+	} else {
+		if location == "" || resourceName == "" {
+			return nil, nil
+		}
+		normalizedLocation := strings.TrimSpace(strings.ToLower(location))
+		endpoint = fmt.Sprintf("https://%s.%s-1.eventgrid.azure.net/api/events", resourceName, normalizedLocation)
+	}
+
+	client := NewHTTPClient(10 * time.Second)
+
+	body := bytes.NewBuffer([]byte("[]"))
+	req, err := http.NewRequestWithContext(ctx, "POST", endpoint, body)
+	if err != nil {
+		return nil, nil
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	cmd := plugin.AzureEnrichmentCommand{
+		Command:                   fmt.Sprintf("curl -X POST -H 'Content-Type: application/json' -d '[]' -i '%s' --max-time 10", endpoint),
+		Description:               description,
+		ExpectedOutputDescription: "401/405 = publicly accessible but authentication required | 403 = blocked via firewall rules",
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		cmd.ExitCode = 1
+		cmd.Error = err.Error()
+	} else {
+		defer resp.Body.Close()
+		io.Copy(io.Discard, resp.Body)
+		cmd.ActualOutput = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		cmd.ExitCode = 0
+	}
+
+	return []plugin.AzureEnrichmentCommand{cmd}, nil
 }
