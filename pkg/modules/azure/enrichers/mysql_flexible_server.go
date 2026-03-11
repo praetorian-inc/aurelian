@@ -1,7 +1,6 @@
 package enrichers
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -51,9 +50,6 @@ func getMySQLFirewallRulesCommand(cfg plugin.AzureEnricherConfig, subscriptionID
 	}
 
 	ctx := cfg.Context
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	return buildFirewallRulesCommand(azCommand, description, func() ([]firewallRuleOutput, error) {
 		clientFactory, err := armmysqlflexibleservers.NewClientFactory(subscriptionID, cfg.Credential, nil)

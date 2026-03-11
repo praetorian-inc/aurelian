@@ -3,6 +3,7 @@ package enrichment
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -27,8 +28,11 @@ func NewAzureEnricher(cred azcore.TokenCredential) *AzureEnricher {
 func (e *AzureEnricher) Enrich(result templates.ARGQueryResult, out *pipeline.P[templates.ARGQueryResult]) error {
 	enrichers := plugin.GetAzureEnrichers(result.TemplateID)
 	if len(enrichers) > 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
 		cfg := plugin.AzureEnricherConfig{
-			Context:    context.Background(),
+			Context:    ctx,
 			Credential: e.cred,
 		}
 

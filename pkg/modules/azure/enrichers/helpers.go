@@ -85,6 +85,85 @@ func HTTPProbe(client *http.Client, url, curlEquiv, description, expectedOutput 
 	return cmd
 }
 
+// HTTPProbeResult holds the parsed response from an HTTP probe, passed to
+// classifier callbacks.
+type HTTPProbeResult struct {
+	StatusCode int
+	Body       string
+	Header     http.Header
+}
+
+// HTTPProbeClassification is the output of a response classifier: a verdict
+// string, an exit code, and the formatted ActualOutput line.
+type HTTPProbeClassification struct {
+	ExitCode     int
+	ActualOutput string
+}
+
+// StatusCodeHTTPProbe performs an HTTP GET and returns an enrichment command
+// whose ExitCode is the HTTP status code. bodyLimit controls how many bytes
+// of the response body are read; bodyTruncate controls the preview length in
+// the output. This covers the common pattern used by API Management and
+// Cognitive Services probes.
+func StatusCodeHTTPProbe(client *http.Client, url, curlEquiv, description, expectedOutput string, bodyLimit int64, bodyTruncate int) plugin.AzureEnrichmentCommand {
+	cmd := plugin.AzureEnrichmentCommand{
+		Command:                   curlEquiv,
+		Description:               description,
+		ExpectedOutputDescription: expectedOutput,
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		cmd.Error = err.Error()
+		cmd.ActualOutput = fmt.Sprintf("Request failed: %s", err.Error())
+		cmd.ExitCode = -1
+		return cmd
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, bodyLimit))
+	cmd.ActualOutput = fmt.Sprintf("Status: %d, Body preview: %s", resp.StatusCode, TruncateString(string(body), bodyTruncate))
+	cmd.ExitCode = resp.StatusCode
+	return cmd
+}
+
+// ClassifiedHTTPProbe performs an HTTP GET and uses the provided classifier
+// function to determine the exit code and formatted output from the response.
+// bodyLimit controls how many bytes of the response body are read.
+func ClassifiedHTTPProbe(
+	client *http.Client,
+	url, curlEquiv, description, expectedOutput string,
+	bodyLimit int64,
+	classify func(result HTTPProbeResult) HTTPProbeClassification,
+) plugin.AzureEnrichmentCommand {
+	cmd := plugin.AzureEnrichmentCommand{
+		Command:                   curlEquiv,
+		Description:               description,
+		ExpectedOutputDescription: expectedOutput,
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		cmd.Error = err.Error()
+		cmd.ActualOutput = fmt.Sprintf("Request failed: %s", err.Error())
+		cmd.ExitCode = -1
+		return cmd
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, bodyLimit))
+	result := HTTPProbeResult{
+		StatusCode: resp.StatusCode,
+		Body:       string(body),
+		Header:     resp.Header,
+	}
+
+	classification := classify(result)
+	cmd.ActualOutput = classification.ActualOutput
+	cmd.ExitCode = classification.ExitCode
+	return cmd
+}
+
 // TCPProbe tests TCP connectivity to host:port with the given timeout and
 // returns an AzureEnrichmentCommand with the result.
 func TCPProbe(host string, port int, timeout time.Duration) plugin.AzureEnrichmentCommand {
@@ -312,44 +391,33 @@ func derefString(s *string) string {
 func probeSCMSite(client *http.Client, appName string) plugin.AzureEnrichmentCommand {
 	scmURL := fmt.Sprintf("https://%s.scm.azurewebsites.net", appName)
 
-	cmd := plugin.AzureEnrichmentCommand{
-		Command:                   fmt.Sprintf("curl -i --max-redirects 0 '%s' --max-time 10", scmURL),
-		Description:               "Test access to SCM/Kudu management site (high risk if accessible)",
-		ExpectedOutputDescription: "200 = SCM accessible (HIGH RISK) | 3xx = redirect (auth) | 401/403 = auth required | timeout = blocked",
-	}
+	return ClassifiedHTTPProbe(client, scmURL,
+		fmt.Sprintf("curl -i --max-redirects 0 '%s' --max-time 10", scmURL),
+		"Test access to SCM/Kudu management site (high risk if accessible)",
+		"200 = SCM accessible (HIGH RISK) | 3xx = redirect (auth) | 401/403 = auth required | timeout = blocked",
+		1000,
+		func(r HTTPProbeResult) HTTPProbeClassification {
+			var exitCode int
+			var verdict string
+			switch {
+			case r.StatusCode >= 200 && r.StatusCode < 300:
+				exitCode = 1
+				verdict = "SCM ACCESSIBLE (HIGH RISK)"
+			case r.StatusCode >= 300 && r.StatusCode < 400:
+				exitCode = 0
+				verdict = "Redirect (auth required)"
+			case r.StatusCode == 401 || r.StatusCode == 403:
+				exitCode = 0
+				verdict = "Auth required"
+			default:
+				exitCode = 0
+				verdict = fmt.Sprintf("HTTP %d", r.StatusCode)
+			}
 
-	resp, err := client.Get(scmURL)
-	if err != nil {
-		cmd.Error = err.Error()
-		cmd.ActualOutput = fmt.Sprintf("Request failed: %s", err.Error())
-		cmd.ExitCode = -1
-		return cmd
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1000))
-
-	var exitCode int
-	var verdict string
-	switch {
-	case resp.StatusCode >= 200 && resp.StatusCode < 300:
-		exitCode = 1
-		verdict = "SCM ACCESSIBLE (HIGH RISK)"
-	case resp.StatusCode >= 300 && resp.StatusCode < 400:
-		exitCode = 0
-		verdict = "Redirect (auth required)"
-	case resp.StatusCode == 401 || resp.StatusCode == 403:
-		exitCode = 0
-		verdict = "Auth required"
-	default:
-		exitCode = 0
-		verdict = fmt.Sprintf("HTTP %d", resp.StatusCode)
-	}
-
-	cmd.ActualOutput = fmt.Sprintf("HTTP %d — %s\nBody preview: %s", resp.StatusCode, verdict, TruncateString(string(body), 500))
-	cmd.ExitCode = exitCode
-
-	return cmd
+			output := fmt.Sprintf("HTTP %d — %s\nBody preview: %s", r.StatusCode, verdict, TruncateString(r.Body, 500))
+			return HTTPProbeClassification{ExitCode: exitCode, ActualOutput: output}
+		},
+	)
 }
 
 // checkIPRestrictionsCommand queries IP security restrictions via the Management API.
@@ -461,6 +529,51 @@ func checkEasyAuthCommand(cfg plugin.AzureEnricherConfig, client *armappservice.
 	return cmd
 }
 
+// buildNetworkRulesCommand creates an enrichment command that validates inputs,
+// resolves context, and delegates the SDK call + formatting to the provided callback.
+// The callback receives the resolved context and should return the formatted output string or an error.
+func buildNetworkRulesCommand(
+	cfg plugin.AzureEnricherConfig,
+	azCommand, description, expectedOutputDescription, missingInputMsg string,
+	inputs []string,
+	sdkCall func(ctx context.Context) (string, error),
+) plugin.AzureEnrichmentCommand {
+	for _, input := range inputs {
+		if input == "" {
+			return plugin.AzureEnrichmentCommand{
+				Command:      azCommand,
+				Description:  description,
+				ActualOutput: missingInputMsg,
+				ExitCode:     1,
+			}
+		}
+	}
+
+	ctx := cfg.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	output, err := sdkCall(ctx)
+	if err != nil {
+		return plugin.AzureEnrichmentCommand{
+			Command:      azCommand,
+			Description:  description + " (SDK failed)",
+			ActualOutput: fmt.Sprintf("SDK retrieval failed: %s", err.Error()),
+			Error:        err.Error(),
+			ExitCode:     1,
+		}
+	}
+
+	return plugin.AzureEnrichmentCommand{
+		Command:                   azCommand,
+		Description:               description,
+		ExpectedOutputDescription: expectedOutputDescription,
+		ActualOutput:              output,
+		ExitCode:                  0,
+	}
+}
+
 // firewallRuleOutput represents a firewall rule in the format expected by Azure CLI output.
 type firewallRuleOutput struct {
 	EndIPAddress   string `json:"endIpAddress"`
@@ -502,6 +615,128 @@ func buildFirewallRulesCommand(azCommand, description string, fetchRules func() 
 		ActualOutput:              output,
 		ExitCode:                  0,
 	}
+}
+
+// networkRuleSetInput is a provider-agnostic representation of the fields needed
+// to format a network rule set. Both the Event Hub and Service Bus enrichers
+// convert their SDK-specific types into this struct before calling
+// formatNetworkRuleSet.
+type networkRuleSetInput struct {
+	ID       *string
+	Name     *string
+	Location *string
+
+	DefaultAction               *string
+	TrustedServiceAccessEnabled *bool
+	PublicNetworkAccess         *string // nil when not applicable (e.g. Event Hub)
+
+	IPRules             []networkRuleSetIPRule
+	VirtualNetworkRules []networkRuleSetVNetRule
+}
+
+type networkRuleSetIPRule struct {
+	IPMask *string
+	Action *string
+}
+
+type networkRuleSetVNetRule struct {
+	SubnetID                         *string
+	IgnoreMissingVnetServiceEndpoint *bool
+}
+
+// formatNetworkRuleSet produces a JSON string for a network rule set.
+// typeName is the Azure resource type
+// (e.g. "Microsoft.EventHub/namespaces/networkRuleSets").
+// If publicNetworkAccessDefault is non-empty, the output includes a
+// publicNetworkAccess field initialised to that value (overridden by the
+// input when present).
+func formatNetworkRuleSet(input *networkRuleSetInput, typeName string, publicNetworkAccessDefault string) string {
+	if input == nil {
+		return "null"
+	}
+
+	type ipRuleOutput struct {
+		IPMask string `json:"ipMask"`
+		Action string `json:"action"`
+	}
+	type subnetOutput struct {
+		ID string `json:"id"`
+	}
+	type vnetRuleOutput struct {
+		Subnet                           subnetOutput `json:"subnet"`
+		IgnoreMissingVNetServiceEndpoint bool         `json:"ignoreMissingVnetServiceEndpoint"`
+	}
+	type networkRuleSetOutput struct {
+		ID                          string           `json:"id"`
+		Location                    string           `json:"location"`
+		Name                        string           `json:"name"`
+		ResourceGroup               string           `json:"resourceGroup"`
+		Type                        string           `json:"type"`
+		DefaultAction               string           `json:"defaultAction"`
+		IPRules                     []ipRuleOutput   `json:"ipRules"`
+		VirtualNetworkRules         []vnetRuleOutput `json:"virtualNetworkRules"`
+		TrustedServiceAccessEnabled bool             `json:"trustedServiceAccessEnabled"`
+		PublicNetworkAccess         string           `json:"publicNetworkAccess,omitempty"`
+	}
+
+	out := networkRuleSetOutput{
+		Type:                typeName,
+		PublicNetworkAccess: publicNetworkAccessDefault,
+	}
+
+	if input.ID != nil {
+		out.ID = *input.ID
+		parts := strings.Split(out.ID, "/")
+		for i, part := range parts {
+			if part == "resourceGroups" && i+1 < len(parts) {
+				out.ResourceGroup = parts[i+1]
+				break
+			}
+		}
+	}
+	if input.Name != nil {
+		out.Name = *input.Name
+	}
+	if input.Location != nil {
+		out.Location = *input.Location
+	}
+
+	if input.DefaultAction != nil {
+		out.DefaultAction = *input.DefaultAction
+	}
+	if input.TrustedServiceAccessEnabled != nil {
+		out.TrustedServiceAccessEnabled = *input.TrustedServiceAccessEnabled
+	}
+	if input.PublicNetworkAccess != nil {
+		out.PublicNetworkAccess = *input.PublicNetworkAccess
+	}
+
+	for _, ipRule := range input.IPRules {
+		r := ipRuleOutput{Action: "Allow"}
+		if ipRule.IPMask != nil {
+			r.IPMask = *ipRule.IPMask
+		}
+		if ipRule.Action != nil {
+			r.Action = *ipRule.Action
+		}
+		out.IPRules = append(out.IPRules, r)
+	}
+	for _, vnetRule := range input.VirtualNetworkRules {
+		r := vnetRuleOutput{}
+		if vnetRule.SubnetID != nil {
+			r.Subnet.ID = *vnetRule.SubnetID
+		}
+		if vnetRule.IgnoreMissingVnetServiceEndpoint != nil {
+			r.IgnoreMissingVNetServiceEndpoint = *vnetRule.IgnoreMissingVnetServiceEndpoint
+		}
+		out.VirtualNetworkRules = append(out.VirtualNetworkRules, r)
+	}
+
+	b, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("Error formatting output: %s", err.Error())
+	}
+	return string(b)
 }
 
 // enrichEventGridPOSTEndpoint tests an Event Grid endpoint by POSTing an empty events array.

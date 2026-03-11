@@ -63,51 +63,24 @@ func enrichDataExplorer(cfg plugin.AzureEnricherConfig, result *templates.ARGQue
 func getDataExplorerNetworkRulesCommand(cfg plugin.AzureEnricherConfig, subscriptionID, resourceGroup, clusterName string) plugin.AzureEnrichmentCommand {
 	azCommand := fmt.Sprintf("az kusto cluster show --name %s --resource-group %s --query '{publicNetworkAccess:properties.publicNetworkAccess,allowedIpRangeList:properties.allowedIpRangeList,publicIPType:properties.publicIPType,enableAutoStop:properties.enableAutoStop,state:properties.state}'", clusterName, resourceGroup)
 
-	if clusterName == "" || subscriptionID == "" || resourceGroup == "" {
-		return plugin.AzureEnrichmentCommand{
-			Command:      azCommand,
-			Description:  "Retrieve Data Explorer cluster network rules",
-			ActualOutput: "Error: Cluster name, subscription ID, or resource group is missing",
-			ExitCode:     1,
-		}
-	}
-
-	ctx := cfg.Context
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	kustoClient, err := armkusto.NewClustersClient(subscriptionID, cfg.Credential, nil)
-	if err != nil {
-		return plugin.AzureEnrichmentCommand{
-			Command:      azCommand,
-			Description:  "Retrieve Data Explorer cluster network rules (SDK failed)",
-			ActualOutput: fmt.Sprintf("SDK retrieval failed: %s", err.Error()),
-			Error:        err.Error(),
-			ExitCode:     1,
-		}
-	}
-
-	response, err := kustoClient.Get(ctx, resourceGroup, clusterName, nil)
-	if err != nil {
-		return plugin.AzureEnrichmentCommand{
-			Command:      azCommand,
-			Description:  "Retrieve Data Explorer cluster network rules (SDK failed)",
-			ActualOutput: fmt.Sprintf("SDK retrieval failed: %s", err.Error()),
-			Error:        err.Error(),
-			ExitCode:     1,
-		}
-	}
-
-	output := formatDataExplorerNetworkRules(&response.Cluster)
-
-	return plugin.AzureEnrichmentCommand{
-		Command:                   azCommand,
-		Description:               "Retrieve Data Explorer cluster network rules",
-		ExpectedOutputDescription: "Network configuration showing public access status and IP restrictions",
-		ActualOutput:              output,
-		ExitCode:                  0,
-	}
+	return buildNetworkRulesCommand(
+		cfg, azCommand,
+		"Retrieve Data Explorer cluster network rules",
+		"Network configuration showing public access status and IP restrictions",
+		"Error: Cluster name, subscription ID, or resource group is missing",
+		[]string{clusterName, subscriptionID, resourceGroup},
+		func(ctx context.Context) (string, error) {
+			kustoClient, err := armkusto.NewClustersClient(subscriptionID, cfg.Credential, nil)
+			if err != nil {
+				return "", err
+			}
+			response, err := kustoClient.Get(ctx, resourceGroup, clusterName, nil)
+			if err != nil {
+				return "", err
+			}
+			return formatDataExplorerNetworkRules(&response.Cluster), nil
+		},
+	)
 }
 
 func formatDataExplorerNetworkRules(cluster *armkusto.Cluster) string {

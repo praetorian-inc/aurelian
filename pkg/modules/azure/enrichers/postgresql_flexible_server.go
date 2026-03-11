@@ -1,7 +1,6 @@
 package enrichers
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -51,9 +50,6 @@ func getPostgreSQLFirewallRulesCommand(cfg plugin.AzureEnricherConfig, subscript
 	}
 
 	ctx := cfg.Context
-	if ctx == nil {
-		ctx = context.Background()
-	}
 
 	return buildFirewallRulesCommand(azCommand, description, func() ([]firewallRuleOutput, error) {
 		firewallClient, err := armpostgresqlflexibleservers.NewFirewallRulesClient(subscriptionID, cfg.Credential, nil)

@@ -2,7 +2,6 @@ package enrichers
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -22,11 +21,7 @@ func enrichFunctionApp(cfg plugin.AzureEnricherConfig, result *templates.ARGQuer
 	resourceGroupName := ParseResourceGroup(result.ResourceID)
 
 	if functionAppName == "" || subscriptionID == "" || resourceGroupName == "" {
-		return []plugin.AzureEnrichmentCommand{{
-			Description:  "Enumerate Function App HTTP triggers",
-			ActualOutput: "Error: Function App name, subscription ID, or resource group is missing",
-			ExitCode:     1,
-		}}, nil
+		return nil, nil
 	}
 
 	webAppsClient, err := NewWebAppsClient(subscriptionID, cfg.Credential)
@@ -204,44 +199,33 @@ func funcAppProbeInvokeURL(client *http.Client, trigger HTTPTriggerInfo) plugin.
 		slotLabel = fmt.Sprintf(" [slot:%s]", trigger.SlotName)
 	}
 
-	cmd := plugin.AzureEnrichmentCommand{
-		Command:                   fmt.Sprintf("curl -i --max-redirects 0 '%s' --max-time 10", trigger.InvokeURL),
-		Description:               fmt.Sprintf("Probe anonymous trigger: %s (route: %s)%s", trigger.FunctionName, trigger.Route, slotLabel),
-		ExpectedOutputDescription: "200 = anonymously accessible | 3xx = redirect (likely auth) | 401/403 = auth enforced | timeout = blocked",
-	}
+	return ClassifiedHTTPProbe(client, trigger.InvokeURL,
+		fmt.Sprintf("curl -i --max-redirects 0 '%s' --max-time 10", trigger.InvokeURL),
+		fmt.Sprintf("Probe anonymous trigger: %s (route: %s)%s", trigger.FunctionName, trigger.Route, slotLabel),
+		"200 = anonymously accessible | 3xx = redirect (likely auth) | 401/403 = auth enforced | timeout = blocked",
+		2000,
+		func(r HTTPProbeResult) HTTPProbeClassification {
+			var exitCode int
+			var verdict string
+			switch {
+			case r.StatusCode >= 200 && r.StatusCode < 300:
+				exitCode = 1
+				verdict = "ACCESSIBLE (anonymous)"
+			case r.StatusCode >= 300 && r.StatusCode < 400:
+				exitCode = 0
+				location := r.Header.Get("Location")
+				verdict = fmt.Sprintf("REDIRECT to %s (likely auth gate)", location)
+			case r.StatusCode == 401 || r.StatusCode == 403:
+				exitCode = 0
+				verdict = "AUTH ENFORCED (despite anonymous config)"
+			default:
+				exitCode = 0
+				verdict = fmt.Sprintf("HTTP %d", r.StatusCode)
+			}
 
-	resp, err := client.Get(trigger.InvokeURL)
-	if err != nil {
-		cmd.Error = err.Error()
-		cmd.ActualOutput = fmt.Sprintf("Request failed: %s", err.Error())
-		cmd.ExitCode = -1
-		return cmd
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2000))
-
-	var exitCode int
-	var verdict string
-	switch {
-	case resp.StatusCode >= 200 && resp.StatusCode < 300:
-		exitCode = 1
-		verdict = "ACCESSIBLE (anonymous)"
-	case resp.StatusCode >= 300 && resp.StatusCode < 400:
-		exitCode = 0
-		location := resp.Header.Get("Location")
-		verdict = fmt.Sprintf("REDIRECT to %s (likely auth gate)", location)
-	case resp.StatusCode == 401 || resp.StatusCode == 403:
-		exitCode = 0
-		verdict = "AUTH ENFORCED (despite anonymous config)"
-	default:
-		exitCode = 0
-		verdict = fmt.Sprintf("HTTP %d", resp.StatusCode)
-	}
-
-	cmd.ActualOutput = fmt.Sprintf("HTTP %d — %s\nBody preview: %s", resp.StatusCode, verdict, TruncateString(string(body), 800))
-	cmd.ExitCode = exitCode
-
-	return cmd
+			output := fmt.Sprintf("HTTP %d — %s\nBody preview: %s", r.StatusCode, verdict, TruncateString(r.Body, 800))
+			return HTTPProbeClassification{ExitCode: exitCode, ActualOutput: output}
+		},
+	)
 }
 

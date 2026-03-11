@@ -47,10 +47,7 @@ type apimSignupData struct {
 func enrichAPIManagement(_ plugin.AzureEnricherConfig, result *templates.ARGQueryResult) ([]plugin.AzureEnrichmentCommand, error) {
 	apimName := result.ResourceName
 	if apimName == "" {
-		return []plugin.AzureEnrichmentCommand{{
-			Description:  "Missing APIM name",
-			ActualOutput: "Error: APIM name is empty",
-		}}, nil
+		return nil, nil
 	}
 
 	resourceGroup := ParseResourceGroup(result.ResourceID)
@@ -110,74 +107,28 @@ func enrichAPIManagement(_ plugin.AzureEnricherConfig, result *templates.ARGQuer
 }
 
 func apimTestGatewayAccess(client *http.Client, gatewayURL string) plugin.AzureEnrichmentCommand {
-	cmd := plugin.AzureEnrichmentCommand{
-		Command:                   fmt.Sprintf("curl -i '%s' --max-time 15", gatewayURL),
-		Description:               "Test if APIM gateway endpoint is accessible",
-		ExpectedOutputDescription: "401 = authentication required | 200 = gateway accessible | 403 = blocked",
-	}
-
-	resp, err := client.Get(gatewayURL)
-	if err != nil {
-		cmd.Error = err.Error()
-		cmd.ActualOutput = fmt.Sprintf("Request failed: %s", err.Error())
-		cmd.ExitCode = -1
-		return cmd
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1000))
-	cmd.ActualOutput = fmt.Sprintf("Status: %d, Body preview: %s", resp.StatusCode, TruncateString(string(body), 500))
-	cmd.ExitCode = resp.StatusCode
-
-	return cmd
+	return StatusCodeHTTPProbe(client, gatewayURL,
+		fmt.Sprintf("curl -i '%s' --max-time 15", gatewayURL),
+		"Test if APIM gateway endpoint is accessible",
+		"401 = authentication required | 200 = gateway accessible | 403 = blocked",
+		1000, 500)
 }
 
 func apimTestPortalAccess(client *http.Client, baseURL string) plugin.AzureEnrichmentCommand {
-	cmd := plugin.AzureEnrichmentCommand{
-		Command:                   fmt.Sprintf("curl -i '%s' --max-time 15", baseURL),
-		Description:               "Test if Developer Portal is accessible",
-		ExpectedOutputDescription: "200 = portal accessible | 403 = blocked | timeout = not reachable",
-	}
-
-	resp, err := client.Get(baseURL)
-	if err != nil {
-		cmd.Error = err.Error()
-		cmd.ActualOutput = fmt.Sprintf("Request failed: %s", err.Error())
-		cmd.ExitCode = -1
-		return cmd
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1000))
-	cmd.ActualOutput = fmt.Sprintf("Status: %d, Body preview: %s", resp.StatusCode, TruncateString(string(body), 500))
-	cmd.ExitCode = resp.StatusCode
-
-	return cmd
+	return StatusCodeHTTPProbe(client, baseURL,
+		fmt.Sprintf("curl -i '%s' --max-time 15", baseURL),
+		"Test if Developer Portal is accessible",
+		"200 = portal accessible | 403 = blocked | timeout = not reachable",
+		1000, 500)
 }
 
 func apimTestSignupPageAccess(client *http.Client, baseURL string) plugin.AzureEnrichmentCommand {
 	signupURL := baseURL + "/signup"
-
-	cmd := plugin.AzureEnrichmentCommand{
-		Command:                   fmt.Sprintf("curl -i '%s' --max-time 15", signupURL),
-		Description:               "Test if signup page is accessible (UI check)",
-		ExpectedOutputDescription: "200 = signup visible in UI | 404 = signup hidden in UI (but API may still work!) | redirect = disabled",
-	}
-
-	resp, err := client.Get(signupURL)
-	if err != nil {
-		cmd.Error = err.Error()
-		cmd.ActualOutput = fmt.Sprintf("Request failed: %s", err.Error())
-		cmd.ExitCode = -1
-		return cmd
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 500))
-	cmd.ActualOutput = fmt.Sprintf("Status: %d, Body preview: %s", resp.StatusCode, TruncateString(string(body), 300))
-	cmd.ExitCode = resp.StatusCode
-
-	return cmd
+	return StatusCodeHTTPProbe(client, signupURL,
+		fmt.Sprintf("curl -i '%s' --max-time 15", signupURL),
+		"Test if signup page is accessible (UI check)",
+		"200 = signup visible in UI | 404 = signup hidden in UI (but API may still work!) | redirect = disabled",
+		500, 300)
 }
 
 func apimTestSignupAPI(client *http.Client, baseURL string) plugin.AzureEnrichmentCommand {

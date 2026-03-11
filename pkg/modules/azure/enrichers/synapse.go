@@ -16,10 +16,7 @@ func init() {
 func enrichSynapse(_ plugin.AzureEnricherConfig, result *templates.ARGQueryResult) ([]plugin.AzureEnrichmentCommand, error) {
 	workspaceName := result.ResourceName
 	if workspaceName == "" {
-		return []plugin.AzureEnrichmentCommand{{
-			Description:  "Missing Synapse workspace name",
-			ActualOutput: "Error: Synapse workspace name is empty",
-		}}, nil
+		return nil, nil
 	}
 
 	resourceGroup := ParseResourceGroup(result.ResourceID)
