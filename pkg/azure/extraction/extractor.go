@@ -2,7 +2,6 @@ package extraction
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strings"
 
@@ -13,7 +12,8 @@ import (
 
 // AzureExtractor extracts scannable content from Azure resources.
 type AzureExtractor struct {
-	cred azcore.TokenCredential
+	cred             azcore.TokenCredential
+	MaxCosmosDocSize int // 0 uses defaultMaxCosmosDocSize (1 MB)
 }
 
 // NewAzureExtractor creates an extractor with shared Azure credentials.
@@ -28,12 +28,15 @@ func (e *AzureExtractor) Extract(r output.AzureResource, out *pipeline.P[output.
 	normalizedType := strings.ToLower(r.ResourceType)
 	extractors := getExtractors(normalizedType)
 	if len(extractors) == 0 {
-		return fmt.Errorf("no extractor registered for Azure resource type %s", r.ResourceType)
+		slog.Debug("no extractor registered for resource type, skipping",
+			"type", r.ResourceType, "resource", r.ResourceID)
+		return nil
 	}
 
 	ctx := extractContext{
-		Context: context.Background(),
-		Cred:    e.cred,
+		Context:          context.Background(),
+		Cred:             e.cred,
+		MaxCosmosDocSize: e.MaxCosmosDocSize,
 	}
 
 	for _, ext := range extractors {
@@ -41,5 +44,11 @@ func (e *AzureExtractor) Extract(r output.AzureResource, out *pipeline.P[output.
 			slog.Warn("azure extractor failed", "name", ext.Name, "type", r.ResourceType, "resource", r.ResourceID, "error", err)
 		}
 	}
+
+	// Cross-cutting: scan tags on all resources (zero API cost, tags from ARG).
+	if err := extractTags(ctx, r, out); err != nil {
+		slog.Warn("tag extraction failed", "resource", r.ResourceID, "error", err)
+	}
+
 	return nil
 }

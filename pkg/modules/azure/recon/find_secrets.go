@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/praetorian-inc/aurelian/pkg/azure/armenum"
 	"github.com/praetorian-inc/aurelian/pkg/azure/extraction"
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
 	"github.com/praetorian-inc/aurelian/pkg/azure/subscriptions"
@@ -25,6 +26,7 @@ func init() {
 type AzureFindSecretsConfig struct {
 	plugin.AzureCommonRecon
 	secrets.ScannerConfig
+	MaxCosmosDocSize int `param:"max-cosmos-doc-size" desc:"Max individual Cosmos document size in bytes" default:"1048576"`
 }
 
 // AzureFindSecretsModule scans Azure resources for hardcoded secrets using Titus.
@@ -41,8 +43,9 @@ func (m *AzureFindSecretsModule) Authors() []string         { return []string{"P
 
 func (m *AzureFindSecretsModule) Description() string {
 	return "Enumerates Azure resources via Resource Graph, extracts content likely to contain " +
-		"hardcoded secrets (VM user data, web app settings, automation account variables, " +
-		"storage account blobs), and scans with Titus."
+		"hardcoded secrets (VM user data, web app settings, automation variables, storage blobs, " +
+		"container env vars, Cosmos DB, APIM named values, Key Vault, and 30+ other sources), " +
+		"and scans with Titus."
 }
 
 func (m *AzureFindSecretsModule) References() []string {
@@ -87,21 +90,43 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 		return nil
 	}
 
+	// Resolve subscriptions once, then fan out to both paths.
 	idStream := pipeline.From(subscriptionIDs...)
+
 	resolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
 	pipeline.Pipe(idStream, resolver.Resolve, resolvedSubs)
 
-	inputs := pipeline.New[resourcegraph.ListerInput]()
-	pipeline.Pipe(resolvedSubs, m.toListerInput, inputs)
+	subsList, err := resolvedSubs.Collect()
+	if err != nil {
+		return fmt.Errorf("failed to resolve subscriptions: %w", err)
+	}
+
+	// ARG path: enumerate resources discoverable via Resource Graph.
+	argResolvedSubs := pipeline.From(subsList...)
+
+	argInputs := pipeline.New[resourcegraph.ListerInput]()
+	pipeline.Pipe(argResolvedSubs, m.toListerInput, argInputs)
 
 	lister := resourcegraph.NewResourceGraphLister(c.AzureCredential, nil)
-	listed := pipeline.New[output.AzureResource]()
-	pipeline.Pipe(inputs, lister.List, listed)
+	argListed := pipeline.New[output.AzureResource]()
+	pipeline.Pipe(argInputs, lister.List, argListed)
+
+	// ARM path: enumerate resource types not indexed by ARG.
+	armResolvedSubs := pipeline.From(subsList...)
+
+	armEnumerator := armenum.NewARMEnumerator(c.AzureCredential)
+	armListed := pipeline.New[output.AzureResource]()
+	pipeline.Pipe(armResolvedSubs, armEnumerator.List, armListed)
+
+	// Merge both enumeration paths and extract secrets.
+	listed := pipeline.Merge(argListed, armListed)
 
 	extractor := extraction.NewAzureExtractor(c.AzureCredential)
+	extractor.MaxCosmosDocSize = m.MaxCosmosDocSize
 	extracted := pipeline.New[output.ScanInput]()
 	pipeline.Pipe(listed, extractor.Extract, extracted)
 
+	// Scan extracted content and convert results to risks.
 	scanned := pipeline.New[secrets.SecretScanResult]()
 	pipeline.Pipe(extracted, s.Scan, scanned)
 	pipeline.Pipe(scanned, m.riskFromScanResult, out)
@@ -109,15 +134,49 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 	return out.Wait()
 }
 
+// argResourceTypes lists all Azure resource types discoverable via Resource Graph
+// that have registered extractors.
+var argResourceTypes = []string{
+	// Compute
+	"Microsoft.Compute/virtualMachines",
+	"Microsoft.Compute/virtualMachineScaleSets",
+	"Microsoft.ContainerInstance/containerGroups",
+	"Microsoft.App/containerApps",
+	"Microsoft.HybridCompute/machines",
+
+	// Web & App
+	"Microsoft.Web/sites",
+	"Microsoft.Web/staticSites",
+	"Microsoft.Logic/workflows",
+	"Microsoft.ApiManagement/service",
+
+	// Automation
+	"Microsoft.Automation/automationAccounts",
+
+	// Storage & Data
+	"Microsoft.Storage/storageAccounts",
+	"Microsoft.AppConfiguration/configurationStores",
+	"Microsoft.DocumentDB/databaseAccounts",
+	"Microsoft.DataFactory/factories",
+	"Microsoft.DigitalTwins/digitalTwinsInstances",
+	"Microsoft.Synapse/workspaces",
+
+	// DevOps & Analytics
+	"Microsoft.ContainerRegistry/registries",
+	"Microsoft.Insights/components",
+	"Microsoft.Batch/batchAccounts",
+
+	// IaC & Governance
+	"Microsoft.Resources/templateSpecs",
+	// NOTE: Microsoft.Resources/deployments, Microsoft.Authorization/policyDefinitions,
+	// and Microsoft.Blueprint/blueprints are enumerated via the ARM direct path
+	// (pkg/azure/armenum), not via ARG, since they are absent from the ARG "Resources" table.
+}
+
 func (m *AzureFindSecretsModule) toListerInput(sub azuretypes.SubscriptionInfo, out *pipeline.P[resourcegraph.ListerInput]) error {
 	out.Send(resourcegraph.ListerInput{
-		Subscription: sub,
-		ResourceTypes: []string{
-			"Microsoft.Compute/virtualMachines",
-			"Microsoft.Web/sites",
-			"Microsoft.Automation/automationAccounts",
-			"Microsoft.Storage/storageAccounts",
-		},
+		Subscription:  sub,
+		ResourceTypes: argResourceTypes,
 	})
 	return nil
 }

@@ -1,6 +1,6 @@
 ## aurelian azure recon find-secrets
 
-Enumerates Azure resources via Resource Graph, extracts content likely to contain hardcoded secrets (VM user data, web app settings, automation account variables, storage account blobs), and scans with Titus.
+Enumerates Azure resources via Resource Graph, extracts content likely to contain hardcoded secrets (VM user data, web app settings, automation variables, storage blobs, container env vars, Cosmos DB, APIM named values, Key Vault, and 30+ other sources), and scans with Titus.
 
 ```
 aurelian azure recon find-secrets [flags]
@@ -12,6 +12,7 @@ aurelian azure recon find-secrets [flags]
       --db-path string                 Path for Titus SQLite database
       --disabled-titus-rules strings   Rule IDs to exclude from scanning
   -h, --help                           help for find-secrets
+      --max-cosmos-doc-size int        Max individual Cosmos document size in bytes (default 1048576)
       --output-dir string              Base output directory (default "aurelian-output")
   -s, --subscription-ids strings       Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions (default [all])
 ```
