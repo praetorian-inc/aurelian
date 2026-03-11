@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	// maxCosmosDocSize caps individual document size at 1 MB.
-	maxCosmosDocSize = 1 << 20
+	// defaultMaxCosmosDocSize caps individual document size at 1 MB.
+	defaultMaxCosmosDocSize = 1 << 20
 )
 
 // configCollectionNames are container names that likely hold configuration data.
@@ -274,9 +274,14 @@ func queryConfigDocs(ctx extractContext, r output.AzureResource, containerClient
 			return
 		}
 
+		maxDocSize := ctx.MaxCosmosDocSize
+		if maxDocSize <= 0 {
+			maxDocSize = defaultMaxCosmosDocSize
+		}
+
 		var filtered [][]byte
 		for _, item := range page.Items {
-			if len(item) > maxCosmosDocSize {
+			if len(item) > maxDocSize {
 				slog.Debug("skipping large Cosmos doc", "db", dbName, "container", containerName, "size", len(item))
 				continue
 			}

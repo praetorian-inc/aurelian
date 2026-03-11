@@ -38,20 +38,20 @@ func extractADFPipelines(ctx extractContext, r output.AzureResource, out *pipeli
 			return handleExtractError(err, "adf-pipelines", r.ResourceID)
 		}
 
-		for _, pipeline := range page.Value {
-			if pipeline.Properties == nil {
+		for _, p := range page.Value {
+			if p.Properties == nil {
 				continue
 			}
 
-			content, err := json.Marshal(pipeline.Properties)
+			content, err := json.Marshal(p.Properties)
 			if err != nil {
 				slog.Warn("failed to marshal ADF pipeline properties", "factory", factoryName, "error", err)
 				continue
 			}
 
 			pipelineName := ""
-			if pipeline.Name != nil {
-				pipelineName = *pipeline.Name
+			if p.Name != nil {
+				pipelineName = *p.Name
 			}
 			label := fmt.Sprintf("ADF Pipeline: %s", pipelineName)
 			out.Send(output.ScanInputFromAzureResource(r, label, content))

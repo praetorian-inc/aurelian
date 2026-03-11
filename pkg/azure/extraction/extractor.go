@@ -12,7 +12,8 @@ import (
 
 // AzureExtractor extracts scannable content from Azure resources.
 type AzureExtractor struct {
-	cred azcore.TokenCredential
+	cred             azcore.TokenCredential
+	MaxCosmosDocSize int // 0 uses defaultMaxCosmosDocSize (1 MB)
 }
 
 // NewAzureExtractor creates an extractor with shared Azure credentials.
@@ -33,8 +34,9 @@ func (e *AzureExtractor) Extract(r output.AzureResource, out *pipeline.P[output.
 	}
 
 	ctx := extractContext{
-		Context: context.Background(),
-		Cred:    e.cred,
+		Context:          context.Background(),
+		Cred:             e.cred,
+		MaxCosmosDocSize: e.MaxCosmosDocSize,
 	}
 
 	for _, ext := range extractors {

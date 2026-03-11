@@ -10,9 +10,10 @@ import (
 
 // extractContext holds per-resource Azure credential and extraction settings.
 type extractContext struct {
-	Context  context.Context
-	Cred     azcore.TokenCredential
-	ScanMode string // "critical" or "all" — used by storage blob extractor
+	Context          context.Context
+	Cred             azcore.TokenCredential
+	ScanMode         string // "critical" or "all" — used by storage blob extractor
+	MaxCosmosDocSize int    // max individual Cosmos document size in bytes; 0 uses defaultMaxCosmosDocSize
 }
 
 // extractorFunc is the signature for per-resource extraction functions.

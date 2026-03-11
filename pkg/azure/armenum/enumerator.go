@@ -6,6 +6,7 @@
 package armenum
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
 // ARMEnumeratedTypes lists the resource types this enumerator covers.
@@ -35,6 +37,11 @@ type ARMEnumerator struct {
 // NewARMEnumerator creates an enumerator with the given credential.
 func NewARMEnumerator(cred azcore.TokenCredential) *ARMEnumerator {
 	return &ARMEnumerator{cred: cred}
+}
+
+// newPaginator returns a Paginator configured for Azure API throttling errors.
+func newPaginator() *ratelimit.Paginator {
+	return ratelimit.NewAzurePaginator()
 }
 
 // List enumerates ARM-only resource types for the given subscription.
@@ -59,14 +66,18 @@ func (e *ARMEnumerator) listDeployments(sub azuretypes.SubscriptionInfo, out *pi
 
 	// Subscription-scope deployments (created without a resource group).
 	subPager := client.NewListAtSubscriptionScopePager(nil)
-	for subPager.More() {
-		page, err := subPager.NextPage(contextBackground())
+	paginator := newPaginator()
+	if err := paginator.Paginate(func() (bool, error) {
+		page, err := subPager.NextPage(context.Background())
 		if err != nil {
-			return handleListError(err, "deployments-subscription", sub.ID)
+			return false, handleListError(err, "deployments-subscription", sub.ID)
 		}
 		for _, d := range page.Value {
 			emitDeployment(d.ID, d.Name, d.Location, sub, out)
 		}
+		return subPager.More(), nil
+	}); err != nil {
+		return err
 	}
 
 	// Resource-group-scope deployments: iterate all resource groups.
@@ -74,30 +85,40 @@ func (e *ARMEnumerator) listDeployments(sub azuretypes.SubscriptionInfo, out *pi
 	if err != nil {
 		return fmt.Errorf("create resource groups client: %w", err)
 	}
+
 	rgPager := rgClient.NewListPager(nil)
-	for rgPager.More() {
-		rgPage, err := rgPager.NextPage(contextBackground())
+	rgPaginator := newPaginator()
+	if err := rgPaginator.Paginate(func() (bool, error) {
+		rgPage, err := rgPager.NextPage(context.Background())
 		if err != nil {
-			return handleListError(err, "resourceGroups", sub.ID)
+			return false, handleListError(err, "resourceGroups", sub.ID)
 		}
 		for _, rg := range rgPage.Value {
 			if rg.Name == nil {
 				continue
 			}
 			rgDeployPager := client.NewListByResourceGroupPager(*rg.Name, nil)
-			for rgDeployPager.More() {
-				page, err := rgDeployPager.NextPage(contextBackground())
+			deployPaginator := newPaginator()
+			if pErr := deployPaginator.Paginate(func() (bool, error) {
+				page, err := rgDeployPager.NextPage(context.Background())
 				if err != nil {
 					slog.Warn("ARM enumeration skipped (listing deployments in resource group)",
 						"rg", *rg.Name, "subscription", sub.ID, "error", err)
-					break
+					return false, nil
 				}
 				for _, d := range page.Value {
 					emitDeployment(d.ID, d.Name, d.Location, sub, out)
 				}
+				return rgDeployPager.More(), nil
+			}); pErr != nil {
+				return false, pErr
 			}
 		}
+		return rgPager.More(), nil
+	}); err != nil {
+		return err
 	}
+
 	return nil
 }
 
@@ -126,10 +147,11 @@ func (e *ARMEnumerator) listPolicyDefinitions(sub azuretypes.SubscriptionInfo, o
 	// List all definitions; filter to Custom client-side.
 	// The server-side $filter for policyType is not reliably supported by the Go SDK.
 	pager := client.NewListPager(nil)
-	for pager.More() {
-		page, err := pager.NextPage(contextBackground())
+	paginator := newPaginator()
+	return paginator.Paginate(func() (bool, error) {
+		page, err := pager.NextPage(context.Background())
 		if err != nil {
-			return handleListError(err, "policyDefinitions", sub.ID)
+			return false, handleListError(err, "policyDefinitions", sub.ID)
 		}
 		for _, d := range page.Value {
 			if d.ID == nil {
@@ -148,8 +170,8 @@ func (e *ARMEnumerator) listPolicyDefinitions(sub azuretypes.SubscriptionInfo, o
 			}
 			out.Send(r)
 		}
-	}
-	return nil
+		return pager.More(), nil
+	})
 }
 
 func (e *ARMEnumerator) listBlueprints(sub azuretypes.SubscriptionInfo, out *pipeline.P[output.AzureResource]) error {
@@ -160,10 +182,11 @@ func (e *ARMEnumerator) listBlueprints(sub azuretypes.SubscriptionInfo, out *pip
 
 	scope := fmt.Sprintf("/subscriptions/%s", sub.ID)
 	pager := client.NewListPager(scope, nil)
-	for pager.More() {
-		page, err := pager.NextPage(contextBackground())
+	paginator := newPaginator()
+	return paginator.Paginate(func() (bool, error) {
+		page, err := pager.NextPage(context.Background())
 		if err != nil {
-			return handleListError(err, "blueprints", sub.ID)
+			return false, handleListError(err, "blueprints", sub.ID)
 		}
 		for _, b := range page.Value {
 			if b.ID == nil {
@@ -177,8 +200,8 @@ func (e *ARMEnumerator) listBlueprints(sub azuretypes.SubscriptionInfo, out *pip
 			}
 			out.Send(r)
 		}
-	}
-	return nil
+		return pager.More(), nil
+	})
 }
 
 // handleListError suppresses permission/throttle errors and returns all others.

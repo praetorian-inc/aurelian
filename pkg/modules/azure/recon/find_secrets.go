@@ -27,6 +27,7 @@ func init() {
 type AzureFindSecretsConfig struct {
 	plugin.AzureCommonRecon
 	secrets.ScannerConfig
+	MaxCosmosDocSize int `param:"max-cosmos-doc-size" desc:"Max individual Cosmos document size in bytes" default:"1048576"`
 }
 
 // AzureFindSecretsModule scans Azure resources for hardcoded secrets using Titus.
@@ -90,31 +91,43 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 		return nil
 	}
 
+	// Resolve subscriptions once, then fan out to both paths.
+	idStream := pipeline.From(subscriptionIDs...)
+
+	resolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
+	pipeline.Pipe(idStream, resolver.Resolve, resolvedSubs)
+
+	subsList, err := resolvedSubs.Collect()
+	if err != nil {
+		return fmt.Errorf("failed to resolve subscriptions: %w", err)
+	}
+
 	// ARG path: enumerate resources discoverable via Resource Graph.
-	argIDStream := pipeline.From(subscriptionIDs...)
-	argResolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
-	pipeline.Pipe(argIDStream, resolver.Resolve, argResolvedSubs)
+	argResolvedSubs := pipeline.From(subsList...)
+
 	argInputs := pipeline.New[resourcegraph.ListerInput]()
 	pipeline.Pipe(argResolvedSubs, m.toListerInput, argInputs)
+
 	lister := resourcegraph.NewResourceGraphLister(c.AzureCredential, nil)
 	argListed := pipeline.New[output.AzureResource]()
 	pipeline.Pipe(argInputs, lister.List, argListed)
 
 	// ARM path: enumerate resource types not indexed by ARG.
-	armIDStream := pipeline.From(subscriptionIDs...)
-	armResolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
-	pipeline.Pipe(armIDStream, resolver.Resolve, armResolvedSubs)
+	armResolvedSubs := pipeline.From(subsList...)
+
 	armEnumerator := armenum.NewARMEnumerator(c.AzureCredential)
 	armListed := pipeline.New[output.AzureResource]()
 	pipeline.Pipe(armResolvedSubs, armEnumerator.List, armListed)
 
-	// Merge both enumeration paths into a single stream.
+	// Merge both enumeration paths and extract secrets.
 	listed := pipeline.Merge(argListed, armListed)
 
 	extractor := extraction.NewAzureExtractor(c.AzureCredential)
+	extractor.MaxCosmosDocSize = m.MaxCosmosDocSize
 	extracted := pipeline.New[output.ScanInput]()
 	pipeline.Pipe(listed, extractor.Extract, extracted)
 
+	// Scan extracted content and convert results to risks.
 	scanned := pipeline.New[secrets.SecretScanResult]()
 	pipeline.Pipe(extracted, s.Scan, scanned)
 	pipeline.Pipe(scanned, m.riskFromScanResult, out)
