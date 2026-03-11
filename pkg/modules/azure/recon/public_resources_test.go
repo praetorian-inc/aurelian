@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/azure/enrichment"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -64,8 +65,7 @@ func TestEnrichResultSuppression(t *testing.T) {
 		return nil, nil
 	})
 
-	cfg := plugin.AzureEnricherConfig{}
-	fn := enrichResult(cfg)
+	enricher := enrichment.NewAzureEnricher(nil)
 
 	result := templates.ARGQueryResult{
 		TemplateID:   "test_suppress",
@@ -76,7 +76,7 @@ func TestEnrichResultSuppression(t *testing.T) {
 	out := pipeline.New[templates.ARGQueryResult]()
 	go func() {
 		defer out.Close()
-		require.NoError(t, fn(result, out))
+		require.NoError(t, enricher.Enrich(result, out))
 	}()
 
 	var results []templates.ARGQueryResult
@@ -96,8 +96,7 @@ func TestEnrichResultNoSuppression(t *testing.T) {
 		return []plugin.AzureEnrichmentCommand{{Command: "curl test", Description: "test"}}, nil
 	})
 
-	cfg := plugin.AzureEnricherConfig{}
-	fn := enrichResult(cfg)
+	enricher := enrichment.NewAzureEnricher(nil)
 
 	result := templates.ARGQueryResult{
 		TemplateID:   "test_pass",
@@ -108,7 +107,7 @@ func TestEnrichResultNoSuppression(t *testing.T) {
 	out := pipeline.New[templates.ARGQueryResult]()
 	go func() {
 		defer out.Close()
-		require.NoError(t, fn(result, out))
+		require.NoError(t, enricher.Enrich(result, out))
 	}()
 
 	var results []templates.ARGQueryResult
