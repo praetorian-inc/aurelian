@@ -25,9 +25,7 @@ var configCollectionNames = map[string]bool{
 }
 
 func init() {
-	mustRegister("microsoft.documentdb/databaseaccounts", "cosmos-storedprocs", extractCosmosStoredProcs)
-	mustRegister("microsoft.documentdb/databaseaccounts", "cosmos-triggers", extractCosmosTriggers)
-	mustRegister("microsoft.documentdb/databaseaccounts", "cosmos-udfs", extractCosmosUDFs)
+	mustRegister("microsoft.documentdb/databaseaccounts", "cosmos-server-side-code", extractCosmosServerSideCode)
 	mustRegister("microsoft.documentdb/databaseaccounts", "cosmos-config-docs", extractCosmosConfigDocs)
 }
 
@@ -75,7 +73,9 @@ func cosmosDBContainers(ctx extractContext, sqlClient *armcosmos.SQLResourcesCli
 	return result, nil
 }
 
-func extractCosmosStoredProcs(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
+// extractCosmosServerSideCode enumerates containers once, then extracts stored
+// procedures, triggers, and UDFs for each container in a single pass.
+func extractCosmosServerSideCode(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
 	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Cosmos DB resource ID: %w", err)
@@ -93,163 +93,107 @@ func extractCosmosStoredProcs(ctx extractContext, r output.AzureResource, out *p
 
 	containers, err := cosmosDBContainers(ctx, sqlClient, resourceGroup, accountName)
 	if err != nil {
-		return handleExtractError(err, "cosmos-storedprocs", r.ResourceID)
+		return handleExtractError(err, "cosmos-server-side-code", r.ResourceID)
 	}
 
 	for _, dc := range containers {
 		dbName, containerName := dc[0], dc[1]
-
-		sprocPager := sqlClient.NewListSQLStoredProceduresPager(resourceGroup, accountName, dbName, containerName, nil)
-		for sprocPager.More() {
-			page, err := sprocPager.NextPage(ctx.Context)
-			if err != nil {
-				slog.Warn("failed to list stored procedures", "db", dbName, "container", containerName, "error", err)
-				break
-			}
-
-			for _, sproc := range page.Value {
-				if sproc.Properties == nil || sproc.Properties.Resource == nil {
-					continue
-				}
-				res := sproc.Properties.Resource
-				sprocName := ""
-				if res.ID != nil {
-					sprocName = *res.ID
-				}
-
-				body := ""
-				if res.Body != nil {
-					body = *res.Body
-				}
-				if body == "" {
-					continue
-				}
-
-				label := fmt.Sprintf("CosmosDB StoredProc: %s/%s/%s", dbName, containerName, sprocName)
-				out.Send(output.ScanInputFromAzureResource(r, label, []byte(body)))
-			}
-		}
+		emitStoredProcs(ctx, sqlClient, resourceGroup, accountName, dbName, containerName, r, out)
+		emitTriggers(ctx, sqlClient, resourceGroup, accountName, dbName, containerName, r, out)
+		emitUDFs(ctx, sqlClient, resourceGroup, accountName, dbName, containerName, r, out)
 	}
 
 	return nil
 }
 
-func extractCosmosTriggers(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
-	if err != nil {
-		return fmt.Errorf("failed to parse Cosmos DB resource ID: %w", err)
-	}
-
-	accountName := segments["databaseAccounts"]
-	if accountName == "" {
-		return fmt.Errorf("no databaseAccounts segment in resource ID %s", r.ResourceID)
-	}
-
-	sqlClient, err := newCosmosSQLClient(ctx, r.SubscriptionID)
-	if err != nil {
-		return fmt.Errorf("failed to create Cosmos SQL client: %w", err)
-	}
-
-	containers, err := cosmosDBContainers(ctx, sqlClient, resourceGroup, accountName)
-	if err != nil {
-		return handleExtractError(err, "cosmos-triggers", r.ResourceID)
-	}
-
-	for _, dc := range containers {
-		dbName, containerName := dc[0], dc[1]
-
-		triggerPager := sqlClient.NewListSQLTriggersPager(resourceGroup, accountName, dbName, containerName, nil)
-		for triggerPager.More() {
-			page, err := triggerPager.NextPage(ctx.Context)
-			if err != nil {
-				slog.Warn("failed to list triggers", "db", dbName, "container", containerName, "error", err)
-				break
+func emitStoredProcs(ctx extractContext, sqlClient *armcosmos.SQLResourcesClient, resourceGroup, accountName, dbName, containerName string, r output.AzureResource, out *pipeline.P[output.ScanInput]) {
+	pager := sqlClient.NewListSQLStoredProceduresPager(resourceGroup, accountName, dbName, containerName, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx.Context)
+		if err != nil {
+			slog.Warn("failed to list stored procedures", "db", dbName, "container", containerName, "error", err)
+			return
+		}
+		for _, sproc := range page.Value {
+			if sproc.Properties == nil || sproc.Properties.Resource == nil {
+				continue
 			}
-
-			for _, trigger := range page.Value {
-				if trigger.Properties == nil || trigger.Properties.Resource == nil {
-					continue
-				}
-				res := trigger.Properties.Resource
-				triggerName := ""
-				if res.ID != nil {
-					triggerName = *res.ID
-				}
-
-				body := ""
-				if res.Body != nil {
-					body = *res.Body
-				}
-				if body == "" {
-					continue
-				}
-
-				label := fmt.Sprintf("CosmosDB Trigger: %s/%s/%s", dbName, containerName, triggerName)
-				out.Send(output.ScanInputFromAzureResource(r, label, []byte(body)))
+			res := sproc.Properties.Resource
+			name := ""
+			if res.ID != nil {
+				name = *res.ID
 			}
+			body := ""
+			if res.Body != nil {
+				body = *res.Body
+			}
+			if body == "" {
+				continue
+			}
+			label := fmt.Sprintf("CosmosDB StoredProc: %s/%s/%s", dbName, containerName, name)
+			out.Send(output.ScanInputFromAzureResource(r, label, []byte(body)))
 		}
 	}
-
-	return nil
 }
 
-func extractCosmosUDFs(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
-	if err != nil {
-		return fmt.Errorf("failed to parse Cosmos DB resource ID: %w", err)
-	}
-
-	accountName := segments["databaseAccounts"]
-	if accountName == "" {
-		return fmt.Errorf("no databaseAccounts segment in resource ID %s", r.ResourceID)
-	}
-
-	sqlClient, err := newCosmosSQLClient(ctx, r.SubscriptionID)
-	if err != nil {
-		return fmt.Errorf("failed to create Cosmos SQL client: %w", err)
-	}
-
-	containers, err := cosmosDBContainers(ctx, sqlClient, resourceGroup, accountName)
-	if err != nil {
-		return handleExtractError(err, "cosmos-udfs", r.ResourceID)
-	}
-
-	for _, dc := range containers {
-		dbName, containerName := dc[0], dc[1]
-
-		udfPager := sqlClient.NewListSQLUserDefinedFunctionsPager(resourceGroup, accountName, dbName, containerName, nil)
-		for udfPager.More() {
-			page, err := udfPager.NextPage(ctx.Context)
-			if err != nil {
-				slog.Warn("failed to list UDFs", "db", dbName, "container", containerName, "error", err)
-				break
+func emitTriggers(ctx extractContext, sqlClient *armcosmos.SQLResourcesClient, resourceGroup, accountName, dbName, containerName string, r output.AzureResource, out *pipeline.P[output.ScanInput]) {
+	pager := sqlClient.NewListSQLTriggersPager(resourceGroup, accountName, dbName, containerName, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx.Context)
+		if err != nil {
+			slog.Warn("failed to list triggers", "db", dbName, "container", containerName, "error", err)
+			return
+		}
+		for _, trigger := range page.Value {
+			if trigger.Properties == nil || trigger.Properties.Resource == nil {
+				continue
 			}
-
-			for _, udf := range page.Value {
-				if udf.Properties == nil || udf.Properties.Resource == nil {
-					continue
-				}
-				res := udf.Properties.Resource
-				udfName := ""
-				if res.ID != nil {
-					udfName = *res.ID
-				}
-
-				body := ""
-				if res.Body != nil {
-					body = *res.Body
-				}
-				if body == "" {
-					continue
-				}
-
-				label := fmt.Sprintf("CosmosDB UDF: %s/%s/%s", dbName, containerName, udfName)
-				out.Send(output.ScanInputFromAzureResource(r, label, []byte(body)))
+			res := trigger.Properties.Resource
+			name := ""
+			if res.ID != nil {
+				name = *res.ID
 			}
+			body := ""
+			if res.Body != nil {
+				body = *res.Body
+			}
+			if body == "" {
+				continue
+			}
+			label := fmt.Sprintf("CosmosDB Trigger: %s/%s/%s", dbName, containerName, name)
+			out.Send(output.ScanInputFromAzureResource(r, label, []byte(body)))
 		}
 	}
+}
 
-	return nil
+func emitUDFs(ctx extractContext, sqlClient *armcosmos.SQLResourcesClient, resourceGroup, accountName, dbName, containerName string, r output.AzureResource, out *pipeline.P[output.ScanInput]) {
+	pager := sqlClient.NewListSQLUserDefinedFunctionsPager(resourceGroup, accountName, dbName, containerName, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx.Context)
+		if err != nil {
+			slog.Warn("failed to list UDFs", "db", dbName, "container", containerName, "error", err)
+			return
+		}
+		for _, udf := range page.Value {
+			if udf.Properties == nil || udf.Properties.Resource == nil {
+				continue
+			}
+			res := udf.Properties.Resource
+			name := ""
+			if res.ID != nil {
+				name = *res.ID
+			}
+			body := ""
+			if res.Body != nil {
+				body = *res.Body
+			}
+			if body == "" {
+				continue
+			}
+			label := fmt.Sprintf("CosmosDB UDF: %s/%s/%s", dbName, containerName, name)
+			out.Send(output.ScanInputFromAzureResource(r, label, []byte(body)))
+		}
+	}
 }
 
 func extractCosmosConfigDocs(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
@@ -330,6 +274,7 @@ func queryConfigDocs(ctx extractContext, r output.AzureResource, containerClient
 			return
 		}
 
+		var filtered [][]byte
 		for _, item := range page.Items {
 			if len(item) > maxCosmosDocSize {
 				slog.Debug("skipping large Cosmos doc", "db", dbName, "container", containerName, "size", len(item))
@@ -338,11 +283,12 @@ func queryConfigDocs(ctx extractContext, r output.AzureResource, containerClient
 			if len(item) == 0 {
 				continue
 			}
+			filtered = append(filtered, item)
 		}
 
-		// Marshal all items from this page together.
-		if len(page.Items) > 0 {
-			content, err := json.Marshal(page.Items)
+		// Marshal filtered items from this page together.
+		if len(filtered) > 0 {
+			content, err := json.Marshal(filtered)
 			if err != nil {
 				slog.Warn("failed to marshal config docs", "db", dbName, "container", containerName, "error", err)
 				continue

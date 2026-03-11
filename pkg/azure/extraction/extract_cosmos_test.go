@@ -14,8 +14,6 @@ func TestExtractCosmos_RegisteredTypes(t *testing.T) {
 	for i, e := range extractors {
 		names[i] = e.Name
 	}
-	assert.Contains(t, names, "cosmos-storedprocs")
-	assert.Contains(t, names, "cosmos-triggers")
-	assert.Contains(t, names, "cosmos-udfs")
+	assert.Contains(t, names, "cosmos-server-side-code")
 	assert.Contains(t, names, "cosmos-config-docs")
 }
