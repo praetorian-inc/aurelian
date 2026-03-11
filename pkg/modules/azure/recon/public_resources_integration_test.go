@@ -28,7 +28,7 @@ func TestAzurePublicResources(t *testing.T) {
 
 	results, err := testutil.RunAndCollect(t, mod, plugin.Config{
 		Args: map[string]any{
-			"subscription-ids": []string{subscriptionID},
+			"subscription-id": []string{subscriptionID},
 		},
 		Context: context.Background(),
 	})
@@ -45,25 +45,25 @@ func TestAzurePublicResources(t *testing.T) {
 	require.NotEmpty(t, risks, "should emit at least one risk")
 
 	// Validate risk fields on all results.
-	emptyResourceIDCount := 0
+	emptyARNCount := 0
 	for _, risk := range risks {
 		assert.NotEmpty(t, risk.Name, "risk Name must not be empty")
 		assert.NotEmpty(t, risk.Severity, "risk Severity must not be empty")
-		if risk.ImpactedResourceID == "" {
-			emptyResourceIDCount++
+		if risk.ImpactedARN == "" {
+			emptyARNCount++
 		}
 		assert.NotEmpty(t, risk.Context, "risk Context must not be empty")
 	}
-	if emptyResourceIDCount > 0 {
-		t.Logf("WARNING: %d/%d risks have empty ImpactedResourceID (ARG query missing id column)", emptyResourceIDCount, len(risks))
+	if emptyARNCount > 0 {
+		t.Logf("WARNING: %d/%d risks have empty ImpactedARN (ARG query missing id column)", emptyARNCount, len(risks))
 	}
 
 	// Build index of risks by resource ID and templateID for structural assertions.
 	risksByResourceID := make(map[string][]output.AurelianRisk)
 	risksByTemplateID := make(map[string][]output.AurelianRisk)
 	for _, risk := range risks {
-		if risk.ImpactedResourceID != "" {
-			risksByResourceID[strings.ToLower(risk.ImpactedResourceID)] = append(risksByResourceID[strings.ToLower(risk.ImpactedResourceID)], risk)
+		if risk.ImpactedARN != "" {
+			risksByResourceID[strings.ToLower(risk.ImpactedARN)] = append(risksByResourceID[strings.ToLower(risk.ImpactedARN)], risk)
 		}
 		var ctx map[string]any
 		if err := json.Unmarshal(risk.Context, &ctx); err == nil {
@@ -119,7 +119,7 @@ func TestAzurePublicResources(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			resourceID := strings.ToLower(fixture.Output(tc.fixtureKey))
 			matchedRisks, found := risksByResourceID[resourceID]
-			require.True(t, found, "expected risk with ImpactedResourceID %s", resourceID)
+			require.True(t, found, "expected risk with ImpactedARN %s", resourceID)
 			require.NotEmpty(t, matchedRisks)
 
 			risk := matchedRisks[0]
@@ -133,7 +133,7 @@ func TestAzurePublicResources(t *testing.T) {
 	}
 
 	// Event grid domain: template doesn't project the `id` column,
-	// so validate via risksByTemplateID instead of exact resource ID match.
+	// so validate via risksByTemplateID instead of exact ARN match.
 	t.Run("detects public event grid domain", func(t *testing.T) {
 		templateRisks := risksByTemplateID["event_grid_domain_public"]
 		require.NotEmpty(t, templateRisks, "should detect event grid domain")
