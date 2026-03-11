@@ -68,5 +68,5 @@ func (m *AWSCdkBucketTakeoverModule) Run(cfg plugin.Config, out *pipeline.P[mode
 	for _, risk := range result.Risks {
 		out.Send(risk)
 	}
-	return out.Wait()
+	return nil
 }
