@@ -2,13 +2,6 @@ package cdk
 
 import "github.com/praetorian-inc/aurelian/pkg/output"
 
-// QualifierInfo represents discovered CDK qualifier information.
-type QualifierInfo struct {
-	Qualifiers []string
-	AccountID  string
-	Regions    []string
-}
-
 // RoleInfo represents a detected CDK bootstrap role.
 type RoleInfo struct {
 	RoleName      string
@@ -49,11 +42,11 @@ type ScanResult struct {
 	Roles     []RoleInfo
 }
 
-// cdkRoleTypes maps CDK role type suffixes to display names.
-var cdkRoleTypes = map[string]string{
-	"file-publishing-role":  "File Publishing Role",
-	"cfn-exec-role":         "CloudFormation Execution Role",
-	"image-publishing-role": "Image Publishing Role",
-	"lookup-role":           "Lookup Role",
-	"deploy-role":           "Deploy Role",
+// cdkRoleTypes lists CDK role type suffixes used in bootstrap role naming.
+var cdkRoleTypes = []string{
+	"file-publishing-role",
+	"cfn-exec-role",
+	"image-publishing-role",
+	"lookup-role",
+	"deploy-role",
 }

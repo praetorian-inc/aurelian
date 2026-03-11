@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -63,7 +64,7 @@ func verifyBucketOwnership(ctx context.Context, client *s3.Client, bucketName, e
 	// If we can read the bucket policy, verify our account ID appears in it.
 	// A policy referencing a different account is suspicious.
 	if result.Policy != nil {
-		return true
+		return strings.Contains(*result.Policy, expectedAccountID)
 	}
 	return false
 }

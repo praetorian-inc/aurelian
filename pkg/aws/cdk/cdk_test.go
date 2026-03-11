@@ -3,6 +3,7 @@ package cdk
 import (
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -97,37 +98,37 @@ func TestCheckPolicyForAccountRestriction(t *testing.T) {
 func TestStatementAffectsS3(t *testing.T) {
 	tests := []struct {
 		name     string
-		stmt     map[string]any
+		stmt     *types.PolicyStatement
 		expected bool
 	}{
 		{
 			"s3 action string",
-			map[string]any{"Action": "s3:PutObject"},
+			&types.PolicyStatement{Action: types.NewDynaString([]string{"s3:PutObject"})},
 			true,
 		},
 		{
 			"s3 action in array",
-			map[string]any{"Action": []any{"s3:GetObject", "s3:PutObject"}},
+			&types.PolicyStatement{Action: types.NewDynaString([]string{"s3:GetObject", "s3:PutObject"})},
 			true,
 		},
 		{
 			"mixed actions with s3",
-			map[string]any{"Action": []any{"ec2:DescribeInstances", "s3:ListBucket"}},
+			&types.PolicyStatement{Action: types.NewDynaString([]string{"ec2:DescribeInstances", "s3:ListBucket"})},
 			true,
 		},
 		{
 			"no s3 actions",
-			map[string]any{"Action": []any{"ec2:DescribeInstances", "iam:ListRoles"}},
+			&types.PolicyStatement{Action: types.NewDynaString([]string{"ec2:DescribeInstances", "iam:ListRoles"})},
 			false,
 		},
 		{
 			"no action key",
-			map[string]any{"Effect": "Allow"},
+			&types.PolicyStatement{Effect: "Allow"},
 			false,
 		},
 		{
 			"uppercase S3",
-			map[string]any{"Action": "S3:PutObject"},
+			&types.PolicyStatement{Action: types.NewDynaString([]string{"S3:PutObject"})},
 			true,
 		},
 	}
@@ -142,76 +143,57 @@ func TestStatementAffectsS3(t *testing.T) {
 func TestHasResourceAccountCondition(t *testing.T) {
 	accountID := "123456789012"
 
+	cond := func(operator, key string, values ...string) *types.Condition {
+		return &types.Condition{
+			operator: types.ConditionStatement{
+				key: types.DynaString(values),
+			},
+		}
+	}
+
 	tests := []struct {
 		name     string
-		stmt     map[string]any
+		stmt     *types.PolicyStatement
 		expected bool
 	}{
 		{
 			"StringEquals match",
-			map[string]any{
-				"Condition": map[string]any{
-					"StringEquals": map[string]any{
-						"aws:ResourceAccount": "123456789012",
-					},
-				},
-			},
+			&types.PolicyStatement{Condition: cond("StringEquals", "aws:ResourceAccount", "123456789012")},
 			true,
 		},
 		{
 			"StringEquals array match",
-			map[string]any{
-				"Condition": map[string]any{
-					"StringEquals": map[string]any{
-						"aws:ResourceAccount": []any{"123456789012", "other"},
-					},
-				},
-			},
+			&types.PolicyStatement{Condition: cond("StringEquals", "aws:ResourceAccount", "123456789012", "other")},
 			true,
 		},
 		{
 			"StringLike match",
-			map[string]any{
-				"Condition": map[string]any{
-					"StringLike": map[string]any{
-						"aws:ResourceAccount": "123456789012",
-					},
-				},
-			},
+			&types.PolicyStatement{Condition: cond("StringLike", "aws:ResourceAccount", "123456789012")},
+			true,
+		},
+		{
+			"StringEqualsIgnoreCase match",
+			&types.PolicyStatement{Condition: cond("StringEqualsIgnoreCase", "aws:ResourceAccount", "123456789012")},
+			true,
+		},
+		{
+			"ForAnyValue:StringEquals match",
+			&types.PolicyStatement{Condition: cond("ForAnyValue:StringEquals", "aws:ResourceAccount", "123456789012")},
 			true,
 		},
 		{
 			"no condition",
-			map[string]any{},
-			false,
-		},
-		{
-			"wrong condition type",
-			map[string]any{
-				"Condition": map[string]any{
-					"ArnLike": map[string]any{
-						"aws:ResourceAccount": "123456789012",
-					},
-				},
-			},
+			&types.PolicyStatement{},
 			false,
 		},
 		{
 			"wrong account",
-			map[string]any{
-				"Condition": map[string]any{
-					"StringEquals": map[string]any{
-						"aws:ResourceAccount": "999999999999",
-					},
-				},
-			},
+			&types.PolicyStatement{Condition: cond("StringEquals", "aws:ResourceAccount", "999999999999")},
 			false,
 		},
 		{
-			"condition key not a map",
-			map[string]any{
-				"Condition": "not-a-map",
-			},
+			"unrelated condition key",
+			&types.PolicyStatement{Condition: cond("StringEquals", "aws:SourceAccount", "123456789012")},
 			false,
 		},
 	}
@@ -349,18 +331,16 @@ func TestGeneratePolicyRisk(t *testing.T) {
 func TestCdkRoleTypes(t *testing.T) {
 	assert.Len(t, cdkRoleTypes, 5)
 
-	expectedRoleTypes := map[string]string{
-		"file-publishing-role":  "File Publishing Role",
-		"cfn-exec-role":         "CloudFormation Execution Role",
-		"image-publishing-role": "Image Publishing Role",
-		"lookup-role":           "Lookup Role",
-		"deploy-role":           "Deploy Role",
+	expected := []string{
+		"file-publishing-role",
+		"cfn-exec-role",
+		"image-publishing-role",
+		"lookup-role",
+		"deploy-role",
 	}
 
-	for key, expectedValue := range expectedRoleTypes {
-		actualValue, exists := cdkRoleTypes[key]
-		assert.True(t, exists, "expected key %q to exist in cdkRoleTypes", key)
-		assert.Equal(t, expectedValue, actualValue, "unexpected display name for role type %q", key)
+	for _, roleType := range expected {
+		assert.Contains(t, cdkRoleTypes, roleType, "expected %q in cdkRoleTypes", roleType)
 	}
 }
 

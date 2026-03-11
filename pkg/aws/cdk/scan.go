@@ -38,45 +38,59 @@ func Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error) {
 	}
 
 	regions := opts.Regions
-	if len(regions) == 0 {
-		regions = []string{"us-east-1", "us-west-2", "us-east-2", "eu-west-1"}
+	regions, err = helpers.ResolveRegions(regions, opts.Profile, opts.ProfileDir)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve regions: %w", err)
 	}
 
-	qualifiers := opts.Qualifiers
-	if len(qualifiers) == 0 {
-		qualifiers = []string{"hnb659fds"}
-	}
-
-	slog.Info("cdk scan started", "account", accountID, "regions", regions, "qualifiers", qualifiers)
-
-	// Discover additional qualifiers from each region
-	for _, region := range regions {
-		slog.Debug("discovering qualifiers", "region", region)
-		regionCfg, err := helpers.NewAWSConfig(helpers.AWSConfigInput{
-			Region:     region,
-			Profile:    opts.Profile,
-			ProfileDir: opts.ProfileDir,
-		})
-		if err != nil {
-			slog.Debug("failed to create region config for qualifier discovery", "region", region, "error", err)
-			continue
-		}
-		ssmClient := ssm.NewFromConfig(regionCfg)
-		iamClient := iam.NewFromConfig(regionCfg)
-		discovered := discoverQualifiers(ctx, ssmClient, iamClient, accountID, region)
-		for _, q := range discovered {
-			if !slices.Contains(qualifiers, q) {
-				slog.Debug("discovered new qualifier", "qualifier", q, "region", region)
-				qualifiers = append(qualifiers, q)
-			}
-		}
-	}
+	slog.Info("cdk scan started", "account", accountID, "regions", regions, "qualifiers", opts.Qualifiers)
 
 	concurrency := opts.Concurrency
 	if concurrency <= 0 {
 		concurrency = 5
 	}
 	limiter := ratelimit.NewAWSRegionLimiter(concurrency)
+
+	// Discover additional qualifiers from each region in parallel
+	var qualifierMu sync.Mutex
+	dg, dctx := errgroup.WithContext(ctx)
+	for _, region := range regions {
+		dg.Go(func() error {
+			release, err := limiter.Acquire(dctx, region)
+			if err != nil {
+				return err
+			}
+			defer release()
+
+			slog.Debug("discovering qualifiers", "region", region)
+			regionCfg, err := helpers.NewAWSConfig(helpers.AWSConfigInput{
+				Region:     region,
+				Profile:    opts.Profile,
+				ProfileDir: opts.ProfileDir,
+			})
+			if err != nil {
+				slog.Warn("skipping qualifier discovery, failed to create region config", "region", region, "error", err)
+				return nil
+			}
+			ssmClient := ssm.NewFromConfig(regionCfg)
+			iamClient := iam.NewFromConfig(regionCfg)
+			discovered := discoverQualifiers(dctx, ssmClient, iamClient, accountID, region)
+
+			qualifierMu.Lock()
+			for _, q := range discovered {
+				if !slices.Contains(opts.Qualifiers, q) {
+					slog.Debug("discovered new qualifier", "qualifier", q, "region", region)
+					opts.Qualifiers = append(opts.Qualifiers, q)
+				}
+			}
+			qualifierMu.Unlock()
+
+			return nil
+		})
+	}
+	if err := dg.Wait(); err != nil {
+		return nil, fmt.Errorf("qualifier discovery failed: %w", err)
+	}
 
 	var (
 		mu       sync.Mutex
@@ -89,7 +103,7 @@ func Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error) {
 		g.Go(func() error {
 			release, err := limiter.Acquire(ctx, region)
 			if err != nil {
-				return nil
+				return err
 			}
 			defer release()
 
@@ -101,6 +115,7 @@ func Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error) {
 				ProfileDir: opts.ProfileDir,
 			})
 			if err != nil {
+				slog.Warn("skipping region scan, failed to create AWS config", "region", region, "error", err)
 				return nil
 			}
 
@@ -108,7 +123,7 @@ func Scan(ctx context.Context, opts ScanOptions) (*ScanResult, error) {
 			ssmClient := ssm.NewFromConfig(regionCfg)
 			s3Client := s3.NewFromConfig(regionCfg)
 
-			roles := detectRolesInRegion(ctx, iamClient, accountID, region, qualifiers)
+			roles := detectRolesInRegion(ctx, iamClient, accountID, region, opts.Qualifiers)
 			slog.Debug("detected CDK roles", "region", region, "count", len(roles))
 
 			var regionRisks []output.Risk

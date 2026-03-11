@@ -13,7 +13,7 @@ func detectRolesInRegion(ctx context.Context, client *iam.Client, accountID, reg
 	var roles []RoleInfo
 
 	for _, qualifier := range qualifiers {
-		for roleType := range cdkRoleTypes {
+		for _, roleType := range cdkRoleTypes {
 			roleName := fmt.Sprintf("cdk-%s-%s-%s-%s", qualifier, roleType, accountID, region)
 
 			roleInfo, err := getRoleInfo(ctx, client, roleName, qualifier, region, accountID, roleType)

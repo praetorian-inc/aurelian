@@ -27,6 +27,7 @@ func TestAWSCdkBucketTakeover(t *testing.T) {
 	qualifier := fixture.Output("qualifier")
 	qualifierNoBucket := fixture.Output("qualifier_no_bucket")
 	qualifierNoSSM := fixture.Output("qualifier_no_ssm")
+	accountID := fixture.Output("account_id")
 	region := fixture.Output("region")
 
 	cfg := plugin.Config{
@@ -52,60 +53,70 @@ func TestAWSCdkBucketTakeover(t *testing.T) {
 	}
 	require.NotEmpty(t, risks, "expected at least one Risk result")
 
-	t.Run("detects outdated bootstrap version", func(t *testing.T) {
-		var found bool
+	// Helper to find a risk by name and qualifier.
+	findRisk := func(name, qual string) *output.Risk {
 		for _, risk := range risks {
-			if risk.Name == "cdk-bootstrap-outdated" {
-				found = true
-				assert.Equal(t, "TH", risk.Status)
-				assert.Equal(t, "aurelian-cdk-scanner", risk.Source)
-				assert.Contains(t, risk.Description, "20")
-				break
+			if risk.Name != name {
+				continue
+			}
+			if risk.Target == nil || risk.Target.Properties == nil {
+				continue
+			}
+			if risk.Target.Properties["Qualifier"] == qual {
+				return &risk
 			}
 		}
-		assert.True(t, found, "expected cdk-bootstrap-outdated risk")
+		return nil
+	}
+
+	t.Run("detects outdated bootstrap version", func(t *testing.T) {
+		risk := findRisk("cdk-bootstrap-outdated", qualifier)
+		require.NotNil(t, risk, "expected cdk-bootstrap-outdated risk for qualifier %s", qualifier)
+		assert.Equal(t, "TH", risk.Status)
+		assert.Equal(t, "aurelian-cdk-scanner", risk.Source)
+		assert.Contains(t, risk.Description, "20")
+		assert.Equal(t, accountID, risk.Target.AccountRef)
+		assert.Equal(t, region, risk.Target.Region)
 	})
 
 	t.Run("detects missing bootstrap version", func(t *testing.T) {
-		var found bool
-		for _, risk := range risks {
-			if risk.Name == "cdk-bootstrap-missing" {
-				found = true
-				assert.Equal(t, "TM", risk.Status)
-				assert.Equal(t, "aurelian-cdk-scanner", risk.Source)
-				assert.Contains(t, risk.Description, "not found")
-				break
-			}
-		}
-		assert.True(t, found, "expected cdk-bootstrap-missing risk from qualifier with no SSM param")
+		risk := findRisk("cdk-bootstrap-missing", qualifierNoSSM)
+		require.NotNil(t, risk, "expected cdk-bootstrap-missing risk for qualifier %s", qualifierNoSSM)
+		assert.Equal(t, "TM", risk.Status)
+		assert.Equal(t, "aurelian-cdk-scanner", risk.Source)
+		assert.Contains(t, risk.Description, "not found")
+		assert.Equal(t, accountID, risk.Target.AccountRef)
+		assert.Equal(t, region, risk.Target.Region)
 	})
 
 	t.Run("detects missing bucket takeover", func(t *testing.T) {
-		var found bool
-		for _, risk := range risks {
-			if risk.Name == "cdk-bucket-takeover" {
-				found = true
-				assert.Equal(t, "TH", risk.Status)
-				assert.Equal(t, "aurelian-cdk-scanner", risk.Source)
-				assert.Contains(t, risk.Description, "missing")
-				break
-			}
-		}
-		assert.True(t, found, "expected cdk-bucket-takeover risk from qualifier with no S3 bucket")
+		risk := findRisk("cdk-bucket-takeover", qualifierNoBucket)
+		require.NotNil(t, risk, "expected cdk-bucket-takeover risk for qualifier %s", qualifierNoBucket)
+		assert.Equal(t, "TH", risk.Status)
+		assert.Equal(t, "aurelian-cdk-scanner", risk.Source)
+		assert.Contains(t, risk.Description, "missing")
+		assert.Equal(t, accountID, risk.Target.AccountRef)
+		assert.Equal(t, region, risk.Target.Region)
+		assert.Contains(t, risk.Target.Properties["BucketName"], qualifierNoBucket)
 	})
 
 	t.Run("detects unrestricted policy on file publishing role", func(t *testing.T) {
-		var found bool
+		risk := findRisk("cdk-policy-unrestricted", qualifier)
+		require.NotNil(t, risk, "expected cdk-policy-unrestricted risk for qualifier %s", qualifier)
+		assert.Equal(t, "TM", risk.Status)
+		assert.Equal(t, "aurelian-cdk-scanner", risk.Source)
+		assert.Contains(t, risk.Description, "FilePublishingRole")
+		assert.Equal(t, accountID, risk.Target.AccountRef)
+		assert.Equal(t, region, risk.Target.Region)
+		assert.Contains(t, risk.Target.Properties["RoleName"], qualifier)
+	})
+
+	t.Run("all risks reference correct account and region", func(t *testing.T) {
 		for _, risk := range risks {
-			if risk.Name == "cdk-policy-unrestricted" {
-				found = true
-				assert.Equal(t, "TM", risk.Status)
-				assert.Equal(t, "aurelian-cdk-scanner", risk.Source)
-				assert.Contains(t, risk.Description, "FilePublishingRole")
-				break
-			}
+			require.NotNil(t, risk.Target, "risk %s has nil Target", risk.Name)
+			assert.Equal(t, accountID, risk.Target.AccountRef, "risk %s has wrong account", risk.Name)
+			assert.Equal(t, region, risk.Target.Region, "risk %s has wrong region", risk.Name)
 		}
-		assert.True(t, found, "expected cdk-policy-unrestricted risk")
 	})
 
 	t.Run("handles context cancellation", func(t *testing.T) {
@@ -121,6 +132,8 @@ func TestAWSCdkBucketTakeover(t *testing.T) {
 		p1 := pipeline.From(cancelCfg)
 		p2 := pipeline.New[model.AurelianModel]()
 		pipeline.Pipe(p1, mod.Run, p2)
-		_, _ = p2.Collect()
+		cancelResults, cancelErr := p2.Collect()
+		assert.Error(t, cancelErr, "expected error from cancelled context")
+		assert.Empty(t, cancelResults, "expected no results from cancelled context")
 	})
 }

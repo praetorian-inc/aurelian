@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
-	"slices"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iameval "github.com/praetorian-inc/aurelian/pkg/aws/iam"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 func analyzePolicies(ctx context.Context, client *iam.Client, role RoleInfo) *output.Risk {
@@ -88,30 +89,34 @@ func analyzeRoleS3Policies(ctx context.Context, client *iam.Client, roleName, ac
 	return false, nil
 }
 
-func checkPolicyForAccountRestriction(policyDoc, accountID string) bool {
-	var policy map[string]any
-
+// parsePolicyDoc unmarshals a policy document string (raw or URL-encoded) into
+// a types.Policy. Unlike types.NewPolicyFromJSON it does not require Version.
+func parsePolicyDoc(policyDoc string) (*types.Policy, error) {
+	var policy types.Policy
 	if err := json.Unmarshal([]byte(policyDoc), &policy); err != nil {
 		decoded, decodeErr := url.QueryUnescape(policyDoc)
 		if decodeErr != nil {
-			return false
+			return nil, decodeErr
 		}
 		if err := json.Unmarshal([]byte(decoded), &policy); err != nil {
-			return false
+			return nil, err
 		}
 	}
+	return &policy, nil
+}
 
-	statements, ok := policy["Statement"].([]any)
-	if !ok {
+func checkPolicyForAccountRestriction(policyDoc, accountID string) bool {
+	policy, err := parsePolicyDoc(policyDoc)
+	if err != nil {
 		return false
 	}
 
-	for _, stmt := range statements {
-		statement, ok := stmt.(map[string]any)
-		if !ok {
-			continue
-		}
-		if !statementAffectsS3(statement) {
+	if policy.Statement == nil {
+		return false
+	}
+
+	for _, stmt := range *policy.Statement {
+		if !statementAffectsS3(&stmt) {
 			continue
 		}
 		// Check for aws:ResourceAccount condition — this is the ONLY reliable check.
@@ -120,7 +125,7 @@ func checkPolicyForAccountRestriction(policyDoc, accountID string) bool {
 		// 2. An IAM permission to arn:aws:s3:::bucket-name works regardless of bucket owner
 		// 3. The account ID in CDK bucket names is just a naming convention, not access control
 		// 4. Only aws:ResourceAccount condition actually restricts to same-account buckets
-		if hasResourceAccountCondition(statement, accountID) {
+		if hasResourceAccountCondition(&stmt, accountID) {
 			return true
 		}
 	}
@@ -128,58 +133,33 @@ func checkPolicyForAccountRestriction(policyDoc, accountID string) bool {
 	return false
 }
 
-func statementAffectsS3(statement map[string]any) bool {
-	actions, ok := statement["Action"]
-	if !ok {
+func statementAffectsS3(stmt *types.PolicyStatement) bool {
+	if stmt.Action == nil {
 		return false
 	}
-
-	var actionList []string
-	switch a := actions.(type) {
-	case string:
-		actionList = []string{a}
-	case []any:
-		for _, action := range a {
-			if actionStr, ok := action.(string); ok {
-				actionList = append(actionList, actionStr)
-			}
+	for _, action := range *stmt.Action {
+		if strings.HasPrefix(strings.ToLower(action), "s3:") {
+			return true
 		}
-	default:
-		return false
 	}
-
-	return slices.ContainsFunc(actionList, func(action string) bool {
-		return strings.HasPrefix(strings.ToLower(action), "s3:")
-	})
+	return false
 }
 
-func hasResourceAccountCondition(statement map[string]any, accountID string) bool {
-	condition, ok := statement["Condition"].(map[string]any)
-	if !ok {
+func hasResourceAccountCondition(stmt *types.PolicyStatement, accountID string) bool {
+	if stmt.Condition == nil {
 		return false
 	}
-
-	for condType, condValues := range condition {
-		if condType != "StringEquals" && condType != "StringLike" {
-			continue
-		}
-		condMap, ok := condValues.(map[string]any)
-		if !ok {
-			continue
-		}
-		if resourceAccount, exists := condMap["aws:ResourceAccount"]; exists {
-			switch ra := resourceAccount.(type) {
-			case string:
-				if ra == accountID {
-					return true
-				}
-			case []any:
-				for _, val := range ra {
-					if valStr, ok := val.(string); ok && valStr == accountID {
-						return true
-					}
-				}
-			}
+	reqCtx := &iameval.RequestContext{
+		ResourceAccount: accountID,
+	}
+	result := iameval.EvaluateConditions(stmt.Condition, reqCtx)
+	if !result.Allowed() {
+		return false
+	}
+	// Verify the condition actually references aws:ResourceAccount
+	for key := range result.KeyResults {
+		if strings.EqualFold(key, "aws:ResourceAccount") {
+			return result.KeyResults[key].Result == iameval.ConditionMatched
 		}
 	}
 	return false
