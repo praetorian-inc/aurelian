@@ -17,7 +17,7 @@ func startScanner(t *testing.T) *SecretScanner {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "titus.db")
 	var s SecretScanner
-	require.NoError(t, s.Start(dbPath, nil))
+	require.NoError(t, s.Start(ScannerConfig{DBPath: dbPath}))
 	t.Cleanup(func() { s.Close() })
 	return &s
 }
@@ -30,7 +30,7 @@ func TestSecretScanner_StartAndClose(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "titus.db")
 
 	var s SecretScanner
-	require.NoError(t, s.Start(dbPath, nil))
+	require.NoError(t, s.Start(ScannerConfig{DBPath: dbPath}))
 
 	assert.Equal(t, dbPath, s.DBPath())
 	_, err := os.Stat(dbPath)
@@ -111,7 +111,7 @@ func TestStart_ExplicitPath(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "titus.db")
 
 	var s SecretScanner
-	require.NoError(t, s.Start(dbPath, nil))
+	require.NoError(t, s.Start(ScannerConfig{DBPath: dbPath}))
 	defer s.Close()
 
 	assert.Equal(t, dbPath, s.DBPath(), "DBPath should return the provided path")
@@ -123,7 +123,7 @@ func TestStart_CustomPath(t *testing.T) {
 	customPath := filepath.Join(t.TempDir(), "custom-titus.db")
 
 	var s SecretScanner
-	require.NoError(t, s.Start(customPath, nil))
+	require.NoError(t, s.Start(ScannerConfig{DBPath: customPath}))
 	defer s.Close()
 
 	assert.Equal(t, customPath, s.DBPath(), "DBPath should return custom path")
@@ -135,7 +135,7 @@ func TestStart_CreatesParentDirectories(t *testing.T) {
 	customPath := filepath.Join(t.TempDir(), "deeply", "nested", "path", "titus.db")
 
 	var s SecretScanner
-	require.NoError(t, s.Start(customPath, nil))
+	require.NoError(t, s.Start(ScannerConfig{DBPath: customPath}))
 	defer s.Close()
 
 	_, err := os.Stat(filepath.Dir(customPath))
@@ -149,7 +149,7 @@ func TestStart_OutputDirectoryCreated(t *testing.T) {
 	dbPath := filepath.Join(tmpDir, "output", "titus.db")
 
 	var s SecretScanner
-	require.NoError(t, s.Start(dbPath, nil))
+	require.NoError(t, s.Start(ScannerConfig{DBPath: dbPath}))
 	defer s.Close()
 
 	_, err := os.Stat(filepath.Join(tmpDir, "output"))
@@ -217,7 +217,7 @@ func TestDatabasePersistence(t *testing.T) {
 
 	// Create scanner and scan content
 	var s1 SecretScanner
-	require.NoError(t, s1.Start(dbPath, nil))
+	require.NoError(t, s1.Start(ScannerConfig{DBPath: dbPath}))
 
 	initialMatches, err := s1.ps.scanContent(content, blobID, provenance)
 	require.NoError(t, err, "scanContent should succeed")
@@ -231,7 +231,7 @@ func TestDatabasePersistence(t *testing.T) {
 
 	// Create new scanner with same database
 	var s2 SecretScanner
-	require.NoError(t, s2.Start(dbPath, nil))
+	require.NoError(t, s2.Start(ScannerConfig{DBPath: dbPath}))
 	defer s2.Close()
 
 	// Scan same content — should find it already exists
@@ -288,7 +288,7 @@ func TestExplicitPathUsed(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "titus.db")
 
 	var s SecretScanner
-	require.NoError(t, s.Start(dbPath, nil))
+	require.NoError(t, s.Start(ScannerConfig{DBPath: dbPath}))
 	defer s.Close()
 
 	assert.Equal(t, dbPath, s.DBPath(), "DBPath should return provided path")
@@ -305,7 +305,7 @@ func TestCustomPathPersistence(t *testing.T) {
 
 	// Create scanner with custom path and scan content
 	var s1 SecretScanner
-	require.NoError(t, s1.Start(customPath, nil))
+	require.NoError(t, s1.Start(ScannerConfig{DBPath: customPath}))
 
 	initialMatches, err := s1.ps.scanContent(content, blobID, provenance)
 	require.NoError(t, err, "scanContent should succeed")
@@ -319,7 +319,7 @@ func TestCustomPathPersistence(t *testing.T) {
 
 	// Create new scanner with same custom path
 	var s2 SecretScanner
-	require.NoError(t, s2.Start(customPath, nil))
+	require.NoError(t, s2.Start(ScannerConfig{DBPath: customPath}))
 	defer s2.Close()
 
 	// Scan same content — should find it already exists

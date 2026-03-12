@@ -42,7 +42,7 @@ func extractStorageBlobs(ctx extractContext, r output.AzureResource, out *pipeli
 
 	containerPager := client.NewListContainersPager(nil)
 	paginator := ratelimit.NewAzurePaginator()
-	return paginator.Paginate(func() (bool, error) {
+	err = paginator.Paginate(func() (bool, error) {
 		page, err := containerPager.NextPage(ctx.Context)
 		if err != nil {
 			return true, err
@@ -58,6 +58,7 @@ func extractStorageBlobs(ctx extractContext, r output.AzureResource, out *pipeli
 		}
 		return containerPager.More(), nil
 	})
+	return handleExtractError(err, "storage-blobs", r.ResourceID)
 }
 
 // newBlobClientWithAccountKey fetches storage account keys via the management plane
@@ -74,7 +75,7 @@ func newBlobClientWithAccountKey(ctx extractContext, subscriptionID, resourceGro
 		return nil, fmt.Errorf("failed to list storage account keys: %w", err)
 	}
 
-	if keys.Keys == nil || len(keys.Keys) == 0 {
+	if len(keys.Keys) == 0 {
 		return nil, fmt.Errorf("no keys returned for storage account %s", accountName)
 	}
 

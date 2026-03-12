@@ -2,7 +2,6 @@ package recon
 
 import (
 	"fmt"
-	"log/slog"
 
 	"golang.org/x/sync/errgroup"
 
@@ -32,6 +31,7 @@ type GraphConfig struct {
 type AWSGraphModule struct {
 	GraphConfig
 
+	log                   *plugin.Logger
 	gaadData              *types.AuthorizationAccountDetails
 	resourcesWithPolicies store.Map[output.AWSResource]
 	relationships         store.Map[output.AWSIAMRelationship]
@@ -67,6 +67,8 @@ func (m *AWSGraphModule) Parameters() any {
 }
 
 func (m *AWSGraphModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
+	m.log = cfg.Log
+
 	if err := m.collectInputs(); err != nil {
 		return fmt.Errorf("collecting inputs: %w", err)
 	}
@@ -95,17 +97,14 @@ func (m *AWSGraphModule) collectInputs() error {
 
 func (m *AWSGraphModule) collectAccountAuthorizationDetails(eg *errgroup.Group, c GraphConfig) {
 	eg.Go(func() error {
-		slog.Info("collecting account authorization details")
+		m.log.Info("collecting account authorization details")
 		g := gaad.New(c.AWSReconBase)
 		gaadData, err := g.Get()
 		if err != nil {
 			return fmt.Errorf("collecting GAAD: %w", err)
 		}
-		slog.Info("GAAD collected",
-			"account", gaadData.AccountID,
-			"users", gaadData.Users.Len(),
-			"roles", gaadData.Roles.Len(),
-			"groups", gaadData.Groups.Len())
+		m.log.Success("GAAD collected (account: %s, users: %d, roles: %d, groups: %d)",
+			gaadData.AccountID, gaadData.Users.Len(), gaadData.Roles.Len(), gaadData.Groups.Len())
 		m.gaadData = gaadData
 		return nil
 	})
@@ -113,8 +112,8 @@ func (m *AWSGraphModule) collectAccountAuthorizationDetails(eg *errgroup.Group, 
 
 func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c GraphConfig, collector *resourcepolicies.ResourcePolicyCollector, resolvedRegions []string) {
 	eg.Go(func() error {
-		slog.Info("enumerating cloud resources and collecting policies",
-			"types", len(collector.SupportedResourceTypes()), "regions", len(resolvedRegions))
+		m.log.Info("enumerating cloud resources and collecting policies (%d types, %d regions)",
+			len(collector.SupportedResourceTypes()), len(resolvedRegions))
 
 		lister := enumeration.NewEnumerator(c.AWSCommonRecon)
 		resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, collector.SupportedResourceTypes())
@@ -124,7 +123,9 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 
 		resourceTypePipeline := pipeline.From(resourceTypes...)
 		listed := pipeline.New[output.AWSResource]()
-		pipeline.Pipe(resourceTypePipeline, lister.List, listed)
+		pipeline.Pipe(resourceTypePipeline, lister.List, listed, &pipeline.PipeOpts{
+			Progress: m.log.ProgressFunc("listing resources"),
+		})
 
 		collected := pipeline.New[output.AWSResource]()
 		pipeline.Pipe(listed, collector.Collect, collected)
@@ -141,21 +142,21 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 			return fmt.Errorf("collecting resources with policies: %w", err)
 		}
 
-		slog.Info("resources with policies collected", "count", results.Len())
+		m.log.Success("resources with policies collected (%d)", results.Len())
 		m.resourcesWithPolicies = results
 		return nil
 	})
 }
 
 func (m *AWSGraphModule) analyzeIAMPermissions() error {
-	slog.Info("analyzing IAM permissions")
+	m.log.Info("analyzing IAM permissions")
 	analyzer := gaadpkg.NewGaadAnalyzer()
 	relationships, err := analyzer.Analyze(m.gaadData, m.OrgPolicies, m.resourcesWithPolicies)
 	if err != nil {
 		return fmt.Errorf("analyzing permissions: %w", err)
 	}
 
-	slog.Info("IAM analysis complete", "relationships", relationships.Len())
+	m.log.Success("IAM analysis complete (%d relationships)", relationships.Len())
 	m.relationships = relationships
 	return nil
 }

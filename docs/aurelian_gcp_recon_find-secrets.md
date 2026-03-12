@@ -20,6 +20,7 @@ aurelian gcp recon find-secrets [flags]
       --output-dir string              Base output directory (default "aurelian-output")
   -p, --project-id strings             GCP project IDs
   -t, --resource-type strings          Resource types to enumerate (default [all])
+      --validate                       Validate detected secrets against their source APIs
 ```
 
 ### SEE ALSO

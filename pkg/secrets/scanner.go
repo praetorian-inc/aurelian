@@ -1,17 +1,21 @@
 package secrets
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/titus/pkg/types"
+	"github.com/praetorian-inc/titus/pkg/validator"
 )
 
 // SecretScanner provides an object-oriented interface for scanning content for secrets.
 type SecretScanner struct {
-	ps *persistentScanner
+	ps       *persistentScanner
+	validate bool
+	engine   *validator.Engine
 }
 
 // SecretScanResult represents a secret detection result emitted by the scanner.
@@ -25,15 +29,21 @@ type SecretScanResult struct {
 }
 
 // Start creates a new persistent scanner and stores it as a field.
-// The dbPath parameter specifies the SQLite database path; if empty, a default is used.
-// Any rules whose IDs appear in disabledRules are excluded from scanning.
-func (s *SecretScanner) Start(dbPath string, disabledRules []string) error {
-	ps, err := newPersistentScanner(dbPath, disabledRules)
+func (s *SecretScanner) Start(cfg ScannerConfig) error {
+	ps, err := newPersistentScanner(cfg.DBPath, cfg.DisabledTitusRules)
 	if err != nil {
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
 	}
 	s.ps = ps
-	slog.Info("secret scanner started", "db", ps.dbPath)
+	s.validate = cfg.Validate
+
+	if cfg.Validate {
+		s.engine = validator.NewDefaultEngine(4)
+		slog.Info("secret scanner started with validation enabled", "db", ps.dbPath)
+	} else {
+		slog.Info("secret scanner started", "db", ps.dbPath)
+	}
+
 	return nil
 }
 
@@ -68,9 +78,22 @@ func (s *SecretScanner) Scan(input output.ScanInput, out *pipeline.P[SecretScanR
 	}
 
 	for _, match := range matches {
+		if s.validate && s.engine != nil {
+			s.validateMatch(match, input.ResourceID)
+		}
 		out.Send(toScanResult(input, match))
 	}
 	return nil
+}
+
+// validateMatch runs the validation engine against a match, populating its ValidationResult.
+func (s *SecretScanner) validateMatch(match *types.Match, resourceID string) {
+	result, err := s.engine.ValidateMatch(context.Background(), match)
+	if err != nil {
+		slog.Warn("failed to validate secret", "resource", resourceID, "rule", match.RuleID, "error", err)
+		return
+	}
+	match.ValidationResult = result
 }
 
 func toScanResult(input output.ScanInput, match *types.Match) SecretScanResult {

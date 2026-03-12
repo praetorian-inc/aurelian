@@ -36,7 +36,7 @@ func extractAutomationVariables(ctx extractContext, r output.AzureResource, out 
 
 	pager := client.NewListByAutomationAccountPager(resourceGroup, accountName, nil)
 	paginator := ratelimit.NewAzurePaginator()
-	return paginator.Paginate(func() (bool, error) {
+	err = paginator.Paginate(func() (bool, error) {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
 			return true, err
@@ -58,6 +58,7 @@ func extractAutomationVariables(ctx extractContext, r output.AzureResource, out 
 		}
 		return pager.More(), nil
 	})
+	return handleExtractError(err, "automation-variables", r.ResourceID)
 }
 
 func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
@@ -77,7 +78,7 @@ func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *
 
 	pager := client.NewListByAutomationAccountPager(resourceGroup, accountName, nil)
 	paginator := ratelimit.NewAzurePaginator()
-	return paginator.Paginate(func() (bool, error) {
+	err = paginator.Paginate(func() (bool, error) {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
 			return true, err
@@ -99,6 +100,7 @@ func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *
 		}
 		return pager.More(), nil
 	})
+	return handleExtractError(err, "automation-runbooks", r.ResourceID)
 }
 
 // fetchRunbookContent retrieves the actual content of a runbook via the REST API.
