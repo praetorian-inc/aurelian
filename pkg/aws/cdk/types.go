@@ -33,11 +33,14 @@ type ScanOptions struct {
 	Concurrency int
 	Profile     string
 	ProfileDir  string
+	// OnRisk is called for each discovered risk as regions complete.
+	// It must be safe for concurrent use from multiple goroutines.
+	OnRisk func(output.Risk)
 }
 
-// ScanResult contains all findings from a CDK bucket takeover scan.
+// ScanResult contains metadata from a CDK bucket takeover scan.
+// Risks are streamed via the OnRisk callback in ScanOptions as regions complete.
 type ScanResult struct {
-	Risks     []output.Risk
 	AccountID string
 	Roles     []RoleInfo
 }

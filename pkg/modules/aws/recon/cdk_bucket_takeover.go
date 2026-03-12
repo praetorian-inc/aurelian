@@ -5,6 +5,7 @@ import (
 
 	cdkpkg "github.com/praetorian-inc/aurelian/pkg/aws/cdk"
 	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
@@ -54,19 +55,17 @@ func (m *AWSCdkBucketTakeoverModule) Parameters() any {
 func (m *AWSCdkBucketTakeoverModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.CdkBucketTakeoverConfig
 
-	result, err := cdkpkg.Scan(cfg.Context, cdkpkg.ScanOptions{
+	_, err := cdkpkg.Scan(cfg.Context, cdkpkg.ScanOptions{
 		Qualifiers:  c.Qualifiers,
 		Regions:     c.Regions,
 		Concurrency: c.Concurrency,
 		Profile:     c.Profile,
 		ProfileDir:  c.ProfileDir,
+		OnRisk:      func(r output.Risk) { out.Send(r) },
 	})
 	if err != nil {
 		return fmt.Errorf("cdk scan: %w", err)
 	}
 
-	for _, risk := range result.Risks {
-		out.Send(risk)
-	}
 	return nil
 }

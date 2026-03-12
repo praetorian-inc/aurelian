@@ -104,10 +104,11 @@ func discoverQualifiersFromIAMRoles(ctx context.Context, client *iam.Client, acc
 }
 
 func extractQualifierFromParameterName(name string) string {
-	if !strings.HasPrefix(name, "/cdk-bootstrap/") {
+	rest, ok := strings.CutPrefix(name, "/cdk-bootstrap/")
+	if !ok {
 		return ""
 	}
-	parts := strings.Split(strings.TrimPrefix(name, "/cdk-bootstrap/"), "/")
+	parts := strings.Split(rest, "/")
 	if len(parts) >= 1 && parts[0] != "" {
 		return parts[0]
 	}

@@ -111,6 +111,26 @@ func TestAWSCdkBucketTakeover(t *testing.T) {
 		assert.Contains(t, risk.Target.Properties["RoleName"], qualifier)
 	})
 
+	t.Run("no duplicate risks per qualifier", func(t *testing.T) {
+		type riskKey struct {
+			Name      string
+			Qualifier string
+		}
+		counts := make(map[riskKey]int)
+		for _, risk := range risks {
+			if risk.Target == nil || risk.Target.Properties == nil {
+				continue
+			}
+			qual, _ := risk.Target.Properties["Qualifier"].(string)
+			counts[riskKey{risk.Name, qual}]++
+		}
+		for key, count := range counts {
+			assert.Equal(t, 1, count,
+				"risk %q for qualifier %q appeared %d times, expected exactly 1",
+				key.Name, key.Qualifier, count)
+		}
+	})
+
 	t.Run("all risks reference correct account and region", func(t *testing.T) {
 		for _, risk := range risks {
 			require.NotNil(t, risk.Target, "risk %s has nil Target", risk.Name)

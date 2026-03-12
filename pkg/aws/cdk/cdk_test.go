@@ -1,10 +1,13 @@
 package cdk
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestExtractQualifierFromParameterName(t *testing.T) {
@@ -366,4 +369,123 @@ func TestCheckPolicyForAccountRestrictionMultipleStatements(t *testing.T) {
 		}`
 		assert.False(t, checkPolicyForAccountRestriction(policy, accountID))
 	})
+}
+
+// makeRolesForQualifier creates one RoleInfo per cdkRoleType for the given qualifier+region.
+func makeRolesForQualifier(qualifier, accountID, region string) []RoleInfo {
+	var roles []RoleInfo
+	for _, rt := range cdkRoleTypes {
+		roles = append(roles, RoleInfo{
+			RoleName:   fmt.Sprintf("cdk-%s-%s-%s-%s", qualifier, rt, accountID, region),
+			RoleArn:    fmt.Sprintf("arn:aws:iam::%s:role/cdk-%s-%s-%s-%s", accountID, qualifier, rt, accountID, region),
+			Qualifier:  qualifier,
+			Region:     region,
+			AccountID:  accountID,
+			RoleType:   rt,
+			BucketName: fmt.Sprintf("cdk-%s-assets-%s-%s", qualifier, accountID, region),
+		})
+	}
+	return roles
+}
+
+func TestProcessRegionRoles_SingleQualifier(t *testing.T) {
+	roles := makeRolesForQualifier("hnb659fds", "123456789012", "us-east-1")
+	require.Len(t, roles, 5, "expected one role per cdkRoleType")
+
+	var bootstrapCalls, bucketCalls, policyCalls int
+	var risks []output.Risk
+
+	processRegionRoles(roles,
+		func(role RoleInfo) *output.Risk {
+			bootstrapCalls++
+			return &output.Risk{Name: "cdk-bootstrap-outdated"}
+		},
+		func(role RoleInfo) *output.Risk {
+			bucketCalls++
+			return &output.Risk{Name: "cdk-bucket-takeover"}
+		},
+		func(role RoleInfo) *output.Risk {
+			policyCalls++
+			if role.RoleType == "file-publishing-role" {
+				return &output.Risk{Name: "cdk-policy-unrestricted"}
+			}
+			return nil
+		},
+		func(r output.Risk) { risks = append(risks, r) },
+	)
+
+	assert.Equal(t, 1, bootstrapCalls, "bootstrap check should run once per qualifier")
+	assert.Equal(t, 1, bucketCalls, "bucket check should run once per qualifier")
+	assert.Equal(t, 5, policyCalls, "policy check should run for every role")
+
+	// Exactly 3 risks: 1 bootstrap + 1 bucket + 1 policy (file-publishing-role only)
+	assert.Len(t, risks, 3)
+	riskNames := map[string]int{}
+	for _, r := range risks {
+		riskNames[r.Name]++
+	}
+	assert.Equal(t, 1, riskNames["cdk-bootstrap-outdated"], "should emit exactly one bootstrap risk")
+	assert.Equal(t, 1, riskNames["cdk-bucket-takeover"], "should emit exactly one bucket risk")
+	assert.Equal(t, 1, riskNames["cdk-policy-unrestricted"], "should emit exactly one policy risk")
+}
+
+func TestProcessRegionRoles_MultipleQualifiers(t *testing.T) {
+	var roles []RoleInfo
+	roles = append(roles, makeRolesForQualifier("qual1", "123456789012", "us-east-1")...)
+	roles = append(roles, makeRolesForQualifier("qual2", "123456789012", "us-east-1")...)
+
+	bootstrapByQualifier := map[string]int{}
+	bucketByQualifier := map[string]int{}
+	var risks []output.Risk
+
+	processRegionRoles(roles,
+		func(role RoleInfo) *output.Risk {
+			bootstrapByQualifier[role.Qualifier]++
+			return &output.Risk{Name: "cdk-bootstrap-outdated"}
+		},
+		func(role RoleInfo) *output.Risk {
+			bucketByQualifier[role.Qualifier]++
+			return &output.Risk{Name: "cdk-bucket-takeover"}
+		},
+		func(role RoleInfo) *output.Risk {
+			if role.RoleType == "file-publishing-role" {
+				return &output.Risk{Name: "cdk-policy-unrestricted"}
+			}
+			return nil
+		},
+		func(r output.Risk) { risks = append(risks, r) },
+	)
+
+	assert.Equal(t, 1, bootstrapByQualifier["qual1"], "bootstrap for qual1 should run once")
+	assert.Equal(t, 1, bootstrapByQualifier["qual2"], "bootstrap for qual2 should run once")
+	assert.Equal(t, 1, bucketByQualifier["qual1"], "bucket for qual1 should run once")
+	assert.Equal(t, 1, bucketByQualifier["qual2"], "bucket for qual2 should run once")
+
+	// 2 qualifiers × (1 bootstrap + 1 bucket + 1 policy) = 6 risks
+	assert.Len(t, risks, 6)
+}
+
+func TestProcessRegionRoles_NilRisksNotEmitted(t *testing.T) {
+	roles := makeRolesForQualifier("hnb659fds", "123456789012", "us-east-1")
+	var risks []output.Risk
+
+	processRegionRoles(roles,
+		func(RoleInfo) *output.Risk { return nil },
+		func(RoleInfo) *output.Risk { return nil },
+		func(RoleInfo) *output.Risk { return nil },
+		func(r output.Risk) { risks = append(risks, r) },
+	)
+
+	assert.Empty(t, risks)
+}
+
+func TestProcessRegionRoles_EmptyRoles(t *testing.T) {
+	var called bool
+	processRegionRoles(nil,
+		func(RoleInfo) *output.Risk { called = true; return nil },
+		func(RoleInfo) *output.Risk { called = true; return nil },
+		func(RoleInfo) *output.Risk { called = true; return nil },
+		func(output.Risk) { called = true },
+	)
+	assert.False(t, called, "no check functions should be called with empty roles")
 }
