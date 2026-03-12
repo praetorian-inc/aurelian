@@ -6,6 +6,10 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/service/cloudfront"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	helpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	cf "github.com/praetorian-inc/aurelian/pkg/aws/cloudfront"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -18,7 +22,7 @@ func init() {
 }
 
 type CloudFrontS3TakeoverConfig struct {
-	plugin.AWSReconBase
+	plugin.AWSCommonRecon
 }
 
 type AWSCloudFrontS3TakeoverModule struct {
@@ -57,26 +61,41 @@ func (m *AWSCloudFrontS3TakeoverModule) Parameters() any {
 func (m *AWSCloudFrontS3TakeoverModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.CloudFrontS3TakeoverConfig
 
-	result, err := cf.Scan(cfg.Context, cf.ScanOptions{
+	// CloudFront is a global service — always us-east-1.
+	awsCfg, err := helpers.NewAWSConfig(helpers.AWSConfigInput{
+		Region:     "us-east-1",
 		Profile:    c.Profile,
 		ProfileDir: c.ProfileDir,
 	})
 	if err != nil {
-		return fmt.Errorf("cloudfront scan: %w", err)
+		return fmt.Errorf("create AWS config: %w", err)
 	}
 
-	for _, f := range result.Findings {
-		risk, err := buildTakeoverRisk(f)
-		if err != nil {
-			slog.Warn("failed to build risk", "distribution", f.DistributionID, "error", err)
-			continue
-		}
-		out.Send(risk)
+	accountID, err := helpers.GetAccountId(awsCfg)
+	if err != nil {
+		return fmt.Errorf("get account ID: %w", err)
 	}
-	return nil
+
+	inputs, err := collectInputs(c.AWSCommonRecon, m.SupportedResourceTypes())
+	if err != nil {
+		return fmt.Errorf("collect inputs: %w", err)
+	}
+
+	lister := cf.NewLister(cloudfront.NewFromConfig(awsCfg), accountID)
+	checker := cf.NewChecker(s3.NewFromConfig(awsCfg), route53.NewFromConfig(awsCfg))
+
+	inputPipeline := pipeline.From(inputs...)
+	listed := pipeline.New[cf.DistributionInfo]()
+	pipeline.Pipe(inputPipeline, lister.List, listed)
+
+	findings := pipeline.New[cf.Finding]()
+	pipeline.Pipe(listed, checker.Check, findings)
+
+	pipeline.Pipe(findings, buildTakeoverRisk, out)
+	return out.Wait()
 }
 
-func buildTakeoverRisk(f cf.Finding) (output.AurelianRisk, error) {
+func buildTakeoverRisk(f cf.Finding, out *pipeline.P[model.AurelianModel]) error {
 	severity := output.RiskSeverityMedium
 	if len(f.Route53Records) > 0 {
 		severity = output.RiskSeverityHigh
@@ -126,15 +145,17 @@ func buildTakeoverRisk(f cf.Finding) (output.AurelianRisk, error) {
 		),
 	})
 	if err != nil {
-		return output.AurelianRisk{}, fmt.Errorf("marshal risk context: %w", err)
+		slog.Warn("failed to marshal risk context", "distribution", f.DistributionID, "error", err)
+		return nil
 	}
 
-	return output.AurelianRisk{
+	out.Send(output.AurelianRisk{
 		Name:        "cloudfront-s3-takeover",
 		Severity:    severity,
 		ImpactedARN: f.DistributionID,
 		Context:     ctx,
-	}, nil
+	})
+	return nil
 }
 
 func collectAffectedDomains(aliases []string, records []cf.Route53Record) []string {
