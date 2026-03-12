@@ -3,7 +3,8 @@ package pipeline
 import (
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -108,7 +109,7 @@ func TestPipe_Parallel_ProcessesAllItems(t *testing.T) {
 	results, err := out.Collect()
 	require.NoError(t, err)
 
-	sort.Ints(results)
+	slices.Sort(results)
 	assert.Equal(t, []int{2, 4, 6, 8, 10}, results)
 }
 
@@ -198,6 +199,22 @@ func TestDrain_PropagatesError(t *testing.T) {
 	require.ErrorIs(t, err, expectedErr)
 }
 
+func TestSend_IncrementsCounter(t *testing.T) {
+	p := New[int]()
+	assert.Equal(t, int64(0), p.Sent())
+
+	go func() {
+		p.Send(1)
+		p.Send(2)
+		p.Send(3)
+		p.Close()
+	}()
+
+	for range p.Range() {
+	}
+	assert.Equal(t, int64(3), p.Sent())
+}
+
 func TestPipe_Parallel_DefaultsConcurrencyToOne(t *testing.T) {
 	in := From(1, 2, 3)
 	out := New[int]()
@@ -223,4 +240,161 @@ func TestPipe_Parallel_DefaultsConcurrencyToOne(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, results, 3)
 	assert.Equal(t, int32(1), maxActive.Load())
+}
+
+func TestPipe_Progress(t *testing.T) {
+	in := From(1, 2, 3, 4, 5)
+	out := New[int]()
+
+	var mu sync.Mutex
+	var calls []struct{ completed, total int64 }
+
+	Pipe(in, func(item int, o *P[int]) error {
+		time.Sleep(200 * time.Millisecond)
+		o.Send(item * 10)
+		return nil
+	}, out, &PipeOpts{
+		Progress: func(completed, total int64) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls = append(calls, struct{ completed, total int64 }{completed, total})
+		},
+	})
+
+	results, err := out.Collect()
+	require.NoError(t, err)
+	assert.Len(t, results, 5)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotEmpty(t, calls, "expected at least one progress call")
+	// Total may be negative (input still streaming) or positive (input done).
+	// Absolute value should be > 0 either way.
+	absTotal := calls[0].total
+	if absTotal < 0 {
+		absTotal = -absTotal
+	}
+	assert.Greater(t, absTotal, int64(0))
+}
+
+func TestPipe_NoProgress(t *testing.T) {
+	in := From(1, 2, 3)
+	out := New[int]()
+
+	Pipe(in, func(item int, o *P[int]) error {
+		o.Send(item)
+		return nil
+	}, out)
+
+	results, err := out.Collect()
+	require.NoError(t, err)
+	assert.Equal(t, []int{1, 2, 3}, results)
+}
+
+func TestPipe_Parallel_Progress(t *testing.T) {
+	in := From(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+	out := New[int]()
+
+	var mu sync.Mutex
+	var calls []struct{ completed, total int64 }
+
+	Pipe(in, func(item int, o *P[int]) error {
+		time.Sleep(400 * time.Millisecond)
+		o.Send(item)
+		return nil
+	}, out, &PipeOpts{
+		Concurrency: 3,
+		Progress: func(completed, total int64) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls = append(calls, struct{ completed, total int64 }{completed, total})
+		},
+	})
+
+	results, err := out.Collect()
+	require.NoError(t, err)
+	assert.Len(t, results, 10)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotEmpty(t, calls)
+	absTotal := calls[0].total
+	if absTotal < 0 {
+		absTotal = -absTotal
+	}
+	assert.Greater(t, absTotal, int64(0))
+}
+
+func TestPipe_ProgressNeverExceedsAbsTotal(t *testing.T) {
+	in := From(1, 2, 3, 4, 5)
+	out := New[int]()
+
+	var mu sync.Mutex
+	var calls []struct{ completed, total int64 }
+
+	Pipe(in, func(item int, o *P[int]) error {
+		time.Sleep(300 * time.Millisecond)
+		o.Send(item)
+		return nil
+	}, out, &PipeOpts{
+		Progress: func(completed, total int64) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls = append(calls, struct{ completed, total int64 }{completed, total})
+		},
+	})
+
+	_, err := out.Collect()
+	require.NoError(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	for _, c := range calls {
+		absTotal := c.total
+		if absTotal < 0 {
+			absTotal = -absTotal
+		}
+		assert.LessOrEqual(t, c.completed, absTotal, "completed should never exceed |total|")
+	}
+}
+
+func TestPipe_ProgressTotalBecomesPositiveAfterInputDone(t *testing.T) {
+	in := From(1, 2, 3)
+	out := New[int]()
+
+	var mu sync.Mutex
+	var calls []struct{ completed, total int64 }
+
+	Pipe(in, func(item int, o *P[int]) error {
+		time.Sleep(600 * time.Millisecond)
+		o.Send(item)
+		return nil
+	}, out, &PipeOpts{
+		Progress: func(completed, total int64) {
+			mu.Lock()
+			defer mu.Unlock()
+			calls = append(calls, struct{ completed, total int64 }{completed, total})
+		},
+	})
+
+	_, err := out.Collect()
+	require.NoError(t, err)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotEmpty(t, calls)
+
+	// The last progress callback before removal (-1,-1) should have positive total
+	// because inputDone is true after the for-range loop exits.
+	// Filter out the removal sentinel.
+	var nonSentinel []struct{ completed, total int64 }
+	for _, c := range calls {
+		if c.completed >= 0 && c.total != -1 {
+			nonSentinel = append(nonSentinel, c)
+		}
+	}
+	if len(nonSentinel) > 0 {
+		last := nonSentinel[len(nonSentinel)-1]
+		assert.Greater(t, last.total, int64(0), "total should be positive once input is done")
+	}
 }

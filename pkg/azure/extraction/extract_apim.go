@@ -8,6 +8,7 @@ import (
 	armapimanagement "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
 func init() {
@@ -52,7 +53,7 @@ func extractAPIMBackends(ctx extractContext, r output.AzureResource, out *pipeli
 	}
 
 	pager := client.NewListByServicePager(rg, serviceName, nil)
-	paginator := newAzurePaginator()
+	paginator := ratelimit.NewAzurePaginator()
 	err = paginator.Paginate(func() (bool, error) {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
@@ -88,7 +89,7 @@ func extractAPIMNamedValues(ctx extractContext, r output.AzureResource, out *pip
 	}
 
 	pager := namedValueClient.NewListByServicePager(rg, serviceName, nil)
-	paginator := newAzurePaginator()
+	paginator := ratelimit.NewAzurePaginator()
 	err = paginator.Paginate(func() (bool, error) {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {

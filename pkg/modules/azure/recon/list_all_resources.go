@@ -63,7 +63,7 @@ func (m *AzureListAllResourcesModule) Parameters() any {
 	return &m.ListAllConfig
 }
 
-func (m *AzureListAllResourcesModule) Run(_ plugin.Config, resources *pipeline.P[model.AurelianModel]) error {
+func (m *AzureListAllResourcesModule) Run(cfg plugin.Config, resources *pipeline.P[model.AurelianModel]) error {
 	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential)
 
 	subscriptionIDs, err := resolveSubscriptionIDs(m.SubscriptionIDs, resolver)
@@ -75,6 +75,8 @@ func (m *AzureListAllResourcesModule) Run(_ plugin.Config, resources *pipeline.P
 		slog.Warn("no accessible Azure subscriptions found")
 		return nil
 	}
+
+	cfg.Info("scanning %d Azure subscriptions", len(subscriptionIDs))
 
 	idStream := pipeline.From(subscriptionIDs...)
 	resolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
@@ -89,5 +91,9 @@ func (m *AzureListAllResourcesModule) Run(_ plugin.Config, resources *pipeline.P
 
 	pipeline.Pipe(listed, toAurelianModel, resources)
 
-	return resources.Wait()
+	if err := resources.Wait(); err != nil {
+		return err
+	}
+	cfg.Success("Azure resource enumeration complete")
+	return nil
 }

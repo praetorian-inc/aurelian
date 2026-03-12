@@ -61,13 +61,23 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model
 		return err
 	}
 
+	cfg.Info("enumerating %d resource types across %d regions", len(resourceTypes), len(c.Regions))
+
 	resourceTypePipeline := pipeline.From(resourceTypes...)
 	listed := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(resourceTypePipeline, lister.List, listed)
+	pipeline.Pipe(resourceTypePipeline, lister.List, listed, &pipeline.PipeOpts{
+		Progress: cfg.Log.ProgressFunc("listing resources"),
+	})
 
+	count := 0
 	for r := range listed.Range() {
+		count++
 		out.Send(r)
 	}
 
-	return listed.Wait()
+	if err := listed.Wait(); err != nil {
+		return err
+	}
+	cfg.Success("enumerated %d resources", count)
+	return nil
 }
