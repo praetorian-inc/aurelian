@@ -264,7 +264,7 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 	log := plugin.NewLogger(os.Stderr, noColorFlag, quietFlag)
 	log.Banner(banner)
 	log.Info("running module %s", moduleName)
-	configureSlog(logLevelFlag, log)
+	configureSlog("none", log)
 
 	// Inject module ID into args for downstream outputters
 	argsMap["module-name"] = module.ID()

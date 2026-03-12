@@ -9,6 +9,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
 func init() {
@@ -113,7 +114,7 @@ func extractWebAppSlots(ctx extractContext, r output.AzureResource, out *pipelin
 	}
 
 	pager := client.NewListSlotsPager(rg, appName, nil)
-	paginator := newAzurePaginator()
+	paginator := ratelimit.NewAzurePaginator()
 	err = paginator.Paginate(func() (bool, error) {
 		page, err := pager.NextPage(ctx.Context)
 		if err != nil {
