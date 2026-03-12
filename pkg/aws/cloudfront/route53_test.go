@@ -2,6 +2,7 @@ package cloudfront
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/route53"
@@ -217,4 +218,30 @@ func TestFindRoute53Records_SkipsNilZoneFields(t *testing.T) {
 	records, err := findRoute53Records(context.Background(), client, cfDomain, nil)
 	require.NoError(t, err)
 	require.Len(t, records, 1)
+}
+
+func TestFindRoute53Records_ListZonesError(t *testing.T) {
+	client := &mockRoute53Client{
+		listZonesErr: fmt.Errorf("access denied"),
+	}
+
+	records, err := findRoute53Records(context.Background(), client, "abc.cloudfront.net", nil)
+	require.NoError(t, err)
+	assert.Empty(t, records, "zone enumeration error should return empty results, not loop forever")
+}
+
+func TestFindRoute53Records_ListRecordsError(t *testing.T) {
+	zoneID := "/hostedzone/ZERR"
+	zoneName := "err.com."
+
+	client := &mockRoute53Client{
+		hostedZones: []route53types.HostedZone{
+			{Id: &zoneID, Name: &zoneName},
+		},
+		listRecordsErr: fmt.Errorf("throttling"),
+	}
+
+	records, err := findRoute53Records(context.Background(), client, "abc.cloudfront.net", nil)
+	require.NoError(t, err)
+	assert.Empty(t, records, "record enumeration error should skip zone, not loop forever")
 }
