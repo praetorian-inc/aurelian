@@ -45,7 +45,7 @@ func TestExtractIaC_Policy_RegisteredTypes(t *testing.T) {
 func TestExtractPolicyDefinitions_SubscriptionScopeIDParsing(t *testing.T) {
 	// Verify that extractPolicyDefinitions correctly extracts the policy name
 	// from a subscription-scope resource ID (no resource group in path).
-	// The function previously used parseAzureResourceID which fails for these IDs.
+	// The function previously used ParseAzureResourceID which fails for these IDs.
 	// Now it uses strings.Split to get the last path segment.
 	//
 	// We test indirectly: calling the extractor with a nil credential will fail at

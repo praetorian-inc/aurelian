@@ -5,10 +5,10 @@ import (
 	"strings"
 )
 
-// parseAzureResourceID parses a standard Azure resource ID into its components.
+// ParseAzureResourceID parses a standard Azure resource ID into its components.
 // Input format: /subscriptions/{sub}/resourceGroups/{rg}/providers/{provider}/{type}/{name}[/{subtype}/{subname}...]
 // Returns subscriptionID, resourceGroup, and a map of resource type segments to their values.
-func parseAzureResourceID(id string) (subscriptionID, resourceGroup string, segments map[string]string, err error) {
+func ParseAzureResourceID(id string) (subscriptionID, resourceGroup string, segments map[string]string, err error) {
 	if id == "" {
 		return "", "", nil, fmt.Errorf("resource ID cannot be empty")
 	}
@@ -43,4 +43,23 @@ func parseAzureResourceID(id string) (subscriptionID, resourceGroup string, segm
 	}
 
 	return subscriptionID, resourceGroup, segments, nil
+}
+
+// ResourceTypeFromID extracts the top-level Azure resource type from a full resource ID.
+// For "/subscriptions/.../providers/Microsoft.Compute/virtualMachines/my-vm" returns "Microsoft.Compute/virtualMachines".
+func ResourceTypeFromID(id string) (string, error) {
+	if id == "" {
+		return "", fmt.Errorf("resource ID cannot be empty")
+	}
+
+	trimmed := strings.TrimPrefix(id, "/")
+	parts := strings.Split(trimmed, "/")
+
+	if len(parts) < 8 {
+		return "", fmt.Errorf("invalid Azure resource ID: too few segments")
+	}
+
+	// parts[5] = provider namespace (e.g. "Microsoft.Compute")
+	// parts[6] = resource type (e.g. "virtualMachines")
+	return parts[5] + "/" + parts[6], nil
 }

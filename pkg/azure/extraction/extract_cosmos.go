@@ -76,7 +76,7 @@ func cosmosDBContainers(ctx extractContext, sqlClient *armcosmos.SQLResourcesCli
 // extractCosmosServerSideCode enumerates containers once, then extracts stored
 // procedures, triggers, and UDFs for each container in a single pass.
 func extractCosmosServerSideCode(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Cosmos DB resource ID: %w", err)
 	}
@@ -197,7 +197,7 @@ func emitUDFs(ctx extractContext, sqlClient *armcosmos.SQLResourcesClient, resou
 }
 
 func extractCosmosConfigDocs(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, _, segments, err := parseAzureResourceID(r.ResourceID)
+	_, _, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Cosmos DB resource ID: %w", err)
 	}

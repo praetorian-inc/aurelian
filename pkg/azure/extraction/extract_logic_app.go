@@ -45,7 +45,7 @@ func extractLogicAppDefinition(ctx extractContext, r output.AzureResource, out *
 }
 
 func parseLogicAppID(resourceID string) (resourceGroup, workflowName string, err error) {
-	_, rg, segments, parseErr := parseAzureResourceID(resourceID)
+	_, rg, segments, parseErr := ParseAzureResourceID(resourceID)
 	if parseErr != nil {
 		return "", "", fmt.Errorf("failed to parse logic app resource ID: %w", parseErr)
 	}
