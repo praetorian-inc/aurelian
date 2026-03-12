@@ -76,9 +76,7 @@ func (m *AzureListAllResourcesModule) Run(cfg plugin.Config, resources *pipeline
 		return nil
 	}
 
-	if cfg.Log != nil {
-		cfg.Log.Info("scanning %d Azure subscriptions", len(subscriptionIDs))
-	}
+	cfg.Info("scanning %d Azure subscriptions", len(subscriptionIDs))
 
 	idStream := pipeline.From(subscriptionIDs...)
 	resolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
@@ -96,8 +94,6 @@ func (m *AzureListAllResourcesModule) Run(cfg plugin.Config, resources *pipeline
 	if err := resources.Wait(); err != nil {
 		return err
 	}
-	if cfg.Log != nil {
-		cfg.Log.Success("Azure resource enumeration complete")
-	}
+	cfg.Success("Azure resource enumeration complete")
 	return nil
 }

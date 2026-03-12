@@ -65,7 +65,7 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 
 	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
 	if err != nil {
-		return fmt.Errorf("failed to collect inputs: %v", err)
+		return fmt.Errorf("failed to collect inputs: %w", err)
 	}
 
 	cfg.Info("evaluating %d resource types for public access across %d regions", len(inputs), len(c.Regions))

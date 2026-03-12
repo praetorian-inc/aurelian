@@ -3,7 +3,7 @@ package pipeline
 import (
 	"errors"
 	"fmt"
-	"sort"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -109,7 +109,7 @@ func TestPipe_Parallel_ProcessesAllItems(t *testing.T) {
 	results, err := out.Collect()
 	require.NoError(t, err)
 
-	sort.Ints(results)
+	slices.Sort(results)
 	assert.Equal(t, []int{2, 4, 6, 8, 10}, results)
 }
 

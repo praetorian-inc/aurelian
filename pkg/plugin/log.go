@@ -305,21 +305,12 @@ func (l *Logger) redrawProgress() {
 	var maxLabelLen int
 	var maxDone, maxPending int64
 	for _, entry := range l.progressBars {
-		if len(entry.label) > maxLabelLen {
-			maxLabelLen = len(entry.label)
-		}
-		if entry.completed > maxDone {
-			maxDone = entry.completed
-		}
-		if pending := entry.total - entry.completed; pending > maxPending {
-			maxPending = pending
-		}
+		maxLabelLen = max(maxLabelLen, len(entry.label))
+		maxDone = max(maxDone, entry.completed)
+		maxPending = max(maxPending, entry.total-entry.completed)
 	}
 
 	doneWidth := len(fmt.Sprintf("%d", maxDone))
-	if doneWidth < 1 {
-		doneWidth = 1
-	}
 	pendingDigits := len(fmt.Sprintf("%d", maxPending))
 	// " N processing / M processed" suffix width
 	//   1 + pendingDigits + 15 + doneWidth + 9
@@ -328,21 +319,12 @@ func (l *Logger) redrawProgress() {
 	// Layout: [~] <label> <bar> N processing / M processed
 	// Ensure bar fits in 80 cols; shrink if labels are very long.
 	const maxTermWidth = 80
-	barWidth := maxTermWidth - 4 - maxLabelLen - 1 - suffixWidth
-	if barWidth > barBlocks {
-		barWidth = barBlocks
-	}
-	if barWidth < 5 {
-		barWidth = 5
-	}
+	barWidth := max(min(maxTermWidth-4-maxLabelLen-1-suffixWidth, barBlocks), 5)
 	l.progressBar.Width = barWidth
 
 	for _, entry := range l.progressBars {
 		padded := entry.label + strings.Repeat(" ", maxLabelLen-len(entry.label))
-		pending := entry.total - entry.completed
-		if pending < 0 {
-			pending = 0
-		}
+		pending := max(entry.total-entry.completed, 0)
 
 		pct := float64(min(pending, int64(barWidth))) / float64(barWidth)
 		bar := l.progressBar.ViewAs(pct)
@@ -424,22 +406,28 @@ func (h *SlogHandler) WithGroup(name string) slog.Handler {
 	}
 }
 func (h *SlogHandler) formatAttrs(r slog.Record) string {
-	var parts []string
-	// Include handler-level attrs first
-	for _, a := range h.attrs {
-		parts = append(parts, h.formatAttr(a))
+	var b strings.Builder
+	for i, a := range h.attrs {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		h.writeAttr(&b, a)
 	}
-	// Then record attrs
+	offset := len(h.attrs)
 	r.Attrs(func(a slog.Attr) bool {
-		parts = append(parts, h.formatAttr(a))
+		if offset > 0 || b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		h.writeAttr(&b, a)
 		return true
 	})
-	return strings.Join(parts, " ")
+	return b.String()
 }
 
-func (h *SlogHandler) formatAttr(a slog.Attr) string {
+func (h *SlogHandler) writeAttr(b *strings.Builder, a slog.Attr) {
 	if h.group != "" {
-		return fmt.Sprintf("%s.%s=%v", h.group, a.Key, a.Value)
+		fmt.Fprintf(b, "%s.%s=%v", h.group, a.Key, a.Value)
+	} else {
+		fmt.Fprintf(b, "%s=%v", a.Key, a.Value)
 	}
-	return fmt.Sprintf("%s=%v", a.Key, a.Value)
 }

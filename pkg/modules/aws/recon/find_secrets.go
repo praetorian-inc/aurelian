@@ -89,7 +89,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 
 	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
 	if err != nil {
-		return fmt.Errorf("failed to collect inputs: %v", err)
+		return fmt.Errorf("failed to collect inputs: %w", err)
 	}
 
 	lister := cclist.NewEnumerator(c.AWSCommonRecon)
