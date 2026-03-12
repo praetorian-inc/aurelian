@@ -5,6 +5,7 @@ package recon
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -98,6 +99,12 @@ func deleteBucket(t *testing.T, bucketName string) {
 	_, err = client.DeleteBucket(ctx, &s3.DeleteBucketInput{
 		Bucket: &bucketName,
 	})
-	require.NoError(t, err, "failed to delete bucket %s", bucketName)
+	if err != nil {
+		if strings.Contains(err.Error(), "NoSuchBucket") {
+			t.Logf("bucket %s already deleted, skipping", bucketName)
+			return
+		}
+		require.NoError(t, err, "failed to delete bucket %s", bucketName)
+	}
 	t.Logf("deleted S3 bucket %s to simulate takeover vulnerability", bucketName)
 }
