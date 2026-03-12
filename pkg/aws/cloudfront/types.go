@@ -1,17 +1,5 @@
 package cloudfront
 
-// ScanOptions configures the CloudFront S3 takeover scan.
-type ScanOptions struct {
-	Profile    string
-	ProfileDir string
-}
-
-// ScanResult contains the findings from a CloudFront S3 takeover scan.
-type ScanResult struct {
-	Findings  []Finding
-	AccountID string
-}
-
 // Finding pairs a vulnerable distribution with its associated Route53 records.
 type Finding struct {
 	VulnerableDistribution
