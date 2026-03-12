@@ -9,6 +9,7 @@ const defaultDBFilename = "titus.db"
 type ScannerConfig struct {
 	DBPath             string   `param:"db-path" desc:"Path for Titus SQLite database"`
 	DisabledTitusRules []string `param:"disabled-titus-rules" desc:"Rule IDs to exclude from scanning"`
+	Validate           bool     `param:"validate" desc:"Validate detected secrets against their source APIs" default:"false"`
 }
 
 // DefaultDBPath returns the default database path for the given output directory.
