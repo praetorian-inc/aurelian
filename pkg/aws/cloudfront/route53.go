@@ -28,8 +28,8 @@ func findRoute53Records(ctx context.Context, client Route53API, cloudfrontDomain
 	for zonesPaginator.HasMorePages() {
 		zonesPage, err := zonesPaginator.NextPage(ctx)
 		if err != nil {
-			slog.WarnContext(ctx, "failed to retrieve hosted zones page, skipping", "error", err)
-			continue
+			slog.WarnContext(ctx, "failed to retrieve hosted zones, aborting zone enumeration", "error", err)
+			break
 		}
 
 		for _, zone := range zonesPage.HostedZones {
@@ -45,8 +45,8 @@ func findRoute53Records(ctx context.Context, client Route53API, cloudfrontDomain
 			for recordsPaginator.HasMorePages() {
 				recordsPage, err := recordsPaginator.NextPage(ctx)
 				if err != nil {
-					slog.WarnContext(ctx, "failed to retrieve record sets page, skipping", "zoneID", zoneID, "error", err)
-					continue
+					slog.WarnContext(ctx, "failed to retrieve record sets, skipping zone", "zoneID", zoneID, "error", err)
+					break
 				}
 
 				for _, record := range recordsPage.ResourceRecordSets {
