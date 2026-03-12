@@ -11,11 +11,14 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
 
+// Lister enumerates CloudFront distributions via the pipeline interface.
+// It handles both single-distribution ARN input and full enumeration.
 type Lister struct {
 	cfClient  CloudFrontAPI
 	accountID string
 }
 
+// NewLister creates a Lister from a pre-configured CloudFront client.
 func NewLister(cfClient *cfclient.Client, accountID string) *Lister {
 	return &Lister{
 		cfClient:  cfClient,
@@ -23,6 +26,7 @@ func NewLister(cfClient *cfclient.Client, accountID string) *Lister {
 	}
 }
 
+// List routes an identifier to single-distribution fetch or full enumeration.
 func (l *Lister) List(identifier string, out *pipeline.P[DistributionInfo]) error {
 	parsed, err := awsaarn.Parse(identifier)
 	if err == nil {
