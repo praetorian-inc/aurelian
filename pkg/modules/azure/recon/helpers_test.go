@@ -62,3 +62,31 @@ func TestResolveSubscriptionIDs_AllError(t *testing.T) {
 	_, err := resolveSubscriptionIDs([]string{"all"}, resolver)
 	assert.Error(t, err)
 }
+
+func TestAzureResourceFromID_Standard(t *testing.T) {
+	id := "/subscriptions/sub-123/resourceGroups/rg-test/providers/Microsoft.Compute/virtualMachines/my-vm"
+	r, err := azureResourceFromID(id)
+	require.NoError(t, err)
+	assert.Equal(t, "sub-123", r.SubscriptionID)
+	assert.Equal(t, "rg-test", r.ResourceGroup)
+	assert.Equal(t, "Microsoft.Compute/virtualMachines", r.ResourceType)
+	assert.Equal(t, id, r.ResourceID)
+}
+
+func TestAzureResourceFromID_WebApp(t *testing.T) {
+	id := "/subscriptions/abc/resourceGroups/my-rg/providers/Microsoft.Web/sites/my-app"
+	r, err := azureResourceFromID(id)
+	require.NoError(t, err)
+	assert.Equal(t, "abc", r.SubscriptionID)
+	assert.Equal(t, "my-rg", r.ResourceGroup)
+	assert.Equal(t, "Microsoft.Web/sites", r.ResourceType)
+	assert.Equal(t, id, r.ResourceID)
+}
+
+func TestAzureResourceFromID_Invalid(t *testing.T) {
+	_, err := azureResourceFromID("")
+	assert.Error(t, err)
+
+	_, err = azureResourceFromID("/subscriptions/sub-123")
+	assert.Error(t, err)
+}

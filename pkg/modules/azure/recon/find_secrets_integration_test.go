@@ -127,6 +127,98 @@ func TestAzureFindSecrets(t *testing.T) {
 	})
 }
 
+func TestAzureFindSecretsResource(t *testing.T) {
+	fixture := testutil.NewAzureFixture(t, "azure/recon/find-secrets")
+	fixture.Setup()
+
+	mod, ok := plugin.Get(plugin.PlatformAzure, plugin.CategoryRecon, "find-secrets")
+	if !ok {
+		t.Fatal("azure find-secrets module not registered in plugin system")
+	}
+
+	// Use the VM resource ID from the fixture — known to contain secrets.
+	vmID := fixture.Output("vm_id")
+	require.NotEmpty(t, vmID, "fixture must provide vm_id output")
+
+	cfg := plugin.Config{
+		Args: map[string]any{
+			"resource-id": []string{vmID},
+		},
+		Context: context.Background(),
+	}
+
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	var risks []output.AurelianRisk
+	for m := range p2.Range() {
+		r, ok := m.(output.AurelianRisk)
+		if !ok {
+			continue
+		}
+		risks = append(risks, r)
+	}
+	require.NoError(t, p2.Wait())
+	require.NotEmpty(t, risks, "expected at least one secret risk for VM resource")
+
+	t.Run("all risks reference the targeted resource", func(t *testing.T) {
+		for _, risk := range risks {
+			assert.True(t, strings.Contains(strings.ToLower(risk.ImpactedResourceID), strings.ToLower(vmID)),
+				"risk %q should reference the targeted VM resource", risk.ImpactedResourceID)
+		}
+	})
+
+	t.Run("all risks have azure-secret- prefix", func(t *testing.T) {
+		for _, risk := range risks {
+			assert.True(t, strings.HasPrefix(risk.Name, "azure-secret-"),
+				"risk name %q should start with azure-secret-", risk.Name)
+		}
+	})
+}
+
+func TestAzureFindSecretsResourceMultiple(t *testing.T) {
+	fixture := testutil.NewAzureFixture(t, "azure/recon/find-secrets")
+	fixture.Setup()
+
+	mod, ok := plugin.Get(plugin.PlatformAzure, plugin.CategoryRecon, "find-secrets")
+	if !ok {
+		t.Fatal("azure find-secrets module not registered in plugin system")
+	}
+
+	vmID := fixture.Output("vm_id")
+	webAppID := fixture.Output("web_app_id")
+	require.NotEmpty(t, vmID)
+	require.NotEmpty(t, webAppID)
+
+	cfg := plugin.Config{
+		Args: map[string]any{
+			"resource-id": []string{vmID, webAppID},
+		},
+		Context: context.Background(),
+	}
+
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	var risks []output.AurelianRisk
+	for m := range p2.Range() {
+		r, ok := m.(output.AurelianRisk)
+		if !ok {
+			continue
+		}
+		risks = append(risks, r)
+	}
+	require.NoError(t, p2.Wait())
+	require.NotEmpty(t, risks, "expected risks from multiple targeted resources")
+
+	foundVM := hasRiskForAzureResource(risks, vmID)
+	foundWebApp := hasRiskForAzureResource(risks, webAppID)
+	assert.True(t, foundVM, "expected risk for VM %s", vmID)
+	assert.True(t, foundWebApp, "expected risk for Web App %s", webAppID)
+}
+
 func hasRiskForAzureResource(risks []output.AurelianRisk, resourceID string) bool {
 	lowerID := strings.ToLower(resourceID)
 	for _, risk := range risks {
