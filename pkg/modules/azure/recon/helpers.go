@@ -2,12 +2,14 @@ package recon
 
 import (
 	"fmt"
+	"strings"
+
+	"github.com/praetorian-inc/aurelian/pkg/azure/extraction"
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
-	"strings"
 )
 
 // resolveSubscriptionIDs returns the given IDs directly, or if ids is ["all"],
@@ -35,4 +37,25 @@ func subscriptionToListerInput(sub azuretypes.SubscriptionInfo, out *pipeline.P[
 func toAurelianModel(r output.AzureResource, out *pipeline.P[model.AurelianModel]) error {
 	out.Send(r)
 	return nil
+}
+
+// azureResourceFromID parses a full Azure resource ID into an AzureResource.
+// This is the Azure equivalent of AWS's ARN-based resource lookup in collectInputs.
+func azureResourceFromID(id string) (output.AzureResource, error) {
+	subID, rg, _, err := extraction.ParseAzureResourceID(id)
+	if err != nil {
+		return output.AzureResource{}, fmt.Errorf("invalid resource ID %q: %w", id, err)
+	}
+
+	resourceType, err := extraction.ResourceTypeFromID(id)
+	if err != nil {
+		return output.AzureResource{}, fmt.Errorf("cannot determine resource type from %q: %w", id, err)
+	}
+
+	return output.AzureResource{
+		SubscriptionID: subID,
+		ResourceGroup:  rg,
+		ResourceType:   resourceType,
+		ResourceID:     id,
+	}, nil
 }

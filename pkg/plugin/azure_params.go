@@ -17,6 +17,7 @@ type AzureReconBase struct {
 type AzureCommonRecon struct {
 	AzureReconBase
 	SubscriptionIDs []string               `param:"subscription-ids" desc:"Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions" default:"all" shortcode:"s"`
+	ResourceID      []string               `param:"resource-id" desc:"Azure resource ID(s) to scan directly, skipping enumeration" shortcode:"i"`
 	AzureCredential azcore.TokenCredential `param:"-"`
 }
 

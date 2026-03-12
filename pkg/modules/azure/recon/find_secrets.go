@@ -80,46 +80,17 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 		}
 	}()
 
-	resolver := subscriptions.NewSubscriptionResolver(c.AzureCredential)
-	subscriptionIDs, err := resolveSubscriptionIDs(c.SubscriptionIDs, resolver)
-	if err != nil {
-		return fmt.Errorf("failed to resolve subscriptions: %w", err)
+	// Branch: resource-level targeting (like AWS ResourceARN) vs subscription-wide scan.
+	var listed *pipeline.P[output.AzureResource]
+	if len(c.ResourceID) > 0 {
+		listed = m.listByResourceID(c)
+	} else {
+		var err error
+		listed, err = m.listBySubscription(c)
+		if err != nil {
+			return err
+		}
 	}
-	if len(subscriptionIDs) == 0 {
-		slog.Warn("no accessible Azure subscriptions found")
-		return nil
-	}
-
-	// Resolve subscriptions once, then fan out to both paths.
-	idStream := pipeline.From(subscriptionIDs...)
-
-	resolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
-	pipeline.Pipe(idStream, resolver.Resolve, resolvedSubs)
-
-	subsList, err := resolvedSubs.Collect()
-	if err != nil {
-		return fmt.Errorf("failed to resolve subscriptions: %w", err)
-	}
-
-	// ARG path: enumerate resources discoverable via Resource Graph.
-	argResolvedSubs := pipeline.From(subsList...)
-
-	argInputs := pipeline.New[resourcegraph.ListerInput]()
-	pipeline.Pipe(argResolvedSubs, m.toListerInput, argInputs)
-
-	lister := resourcegraph.NewResourceGraphLister(c.AzureCredential, nil)
-	argListed := pipeline.New[output.AzureResource]()
-	pipeline.Pipe(argInputs, lister.List, argListed)
-
-	// ARM path: enumerate resource types not indexed by ARG.
-	armResolvedSubs := pipeline.From(subsList...)
-
-	armEnumerator := armenum.NewARMEnumerator(c.AzureCredential)
-	armListed := pipeline.New[output.AzureResource]()
-	pipeline.Pipe(armResolvedSubs, armEnumerator.List, armListed)
-
-	// Merge both enumeration paths and extract secrets.
-	listed := pipeline.Merge(argListed, armListed)
 
 	extractor := extraction.NewAzureExtractor(c.AzureCredential)
 	extractor.MaxCosmosDocSize = m.MaxCosmosDocSize
@@ -132,6 +103,61 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 	pipeline.Pipe(scanned, m.riskFromScanResult, out)
 
 	return out.Wait()
+}
+
+// listByResourceID builds AzureResource structs directly from user-provided resource IDs,
+// skipping ARG and ARM enumeration entirely. Mirrors AWS's ResourceARN path.
+func (m *AzureFindSecretsModule) listByResourceID(c AzureFindSecretsConfig) *pipeline.P[output.AzureResource] {
+	resources := make([]output.AzureResource, 0, len(c.ResourceID))
+	for _, id := range c.ResourceID {
+		r, err := azureResourceFromID(id)
+		if err != nil {
+			slog.Warn("skipping invalid resource ID", "id", id, "error", err)
+			continue
+		}
+		resources = append(resources, r)
+	}
+	return pipeline.From(resources...)
+}
+
+// listBySubscription runs the full ARG + ARM enumeration across subscriptions.
+func (m *AzureFindSecretsModule) listBySubscription(c AzureFindSecretsConfig) (*pipeline.P[output.AzureResource], error) {
+	resolver := subscriptions.NewSubscriptionResolver(c.AzureCredential)
+	subscriptionIDs, err := resolveSubscriptionIDs(c.SubscriptionIDs, resolver)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve subscriptions: %w", err)
+	}
+	if len(subscriptionIDs) == 0 {
+		slog.Warn("no accessible Azure subscriptions found")
+		return pipeline.From[output.AzureResource](), nil
+	}
+
+	idStream := pipeline.From(subscriptionIDs...)
+
+	resolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
+	pipeline.Pipe(idStream, resolver.Resolve, resolvedSubs)
+
+	subsList, err := resolvedSubs.Collect()
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve subscriptions: %w", err)
+	}
+
+	// ARG path: enumerate resources discoverable via Resource Graph.
+	argResolvedSubs := pipeline.From(subsList...)
+	argInputs := pipeline.New[resourcegraph.ListerInput]()
+	pipeline.Pipe(argResolvedSubs, m.toListerInput, argInputs)
+
+	lister := resourcegraph.NewResourceGraphLister(c.AzureCredential, nil)
+	argListed := pipeline.New[output.AzureResource]()
+	pipeline.Pipe(argInputs, lister.List, argListed)
+
+	// ARM path: enumerate resource types not indexed by ARG.
+	armResolvedSubs := pipeline.From(subsList...)
+	armEnumerator := armenum.NewARMEnumerator(c.AzureCredential)
+	armListed := pipeline.New[output.AzureResource]()
+	pipeline.Pipe(armResolvedSubs, armEnumerator.List, armListed)
+
+	return pipeline.Merge(argListed, armListed), nil
 }
 
 // argResourceTypes lists all Azure resource types discoverable via Resource Graph
