@@ -14,6 +14,7 @@ aurelian azure recon find-secrets [flags]
   -h, --help                           help for find-secrets
       --max-cosmos-doc-size int        Max individual Cosmos document size in bytes (default 1048576)
       --output-dir string              Base output directory (default "aurelian-output")
+  -i, --resource-id strings            Azure resource ID(s) to scan directly, skipping enumeration
   -s, --subscription-ids strings       Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions (default [all])
       --validate                       Validate detected secrets against their source APIs
 ```
