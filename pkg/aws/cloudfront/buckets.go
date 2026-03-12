@@ -92,16 +92,3 @@ func checkDistributionOrigins(ctx context.Context, client S3API, dist Distributi
 
 	return vulnerable
 }
-
-// findVulnerableDistributions iterates over distributions, checks each S3 origin's
-// bucket, and returns VulnerableDistribution entries for any missing buckets.
-func findVulnerableDistributions(ctx context.Context, client S3API, distributions []DistributionInfo) []VulnerableDistribution {
-	var result []VulnerableDistribution
-
-	for _, dist := range distributions {
-		vulnerable := checkDistributionOrigins(ctx, client, dist)
-		result = append(result, vulnerable...)
-	}
-
-	return result
-}
