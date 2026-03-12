@@ -131,7 +131,7 @@ func riskFromScanResult(result secrets.SecretScanResult, out *pipeline.P[model.A
 	out.Send(output.AurelianRisk{
 		Name:        formatSecretRiskName(result.Match.RuleID),
 		Severity:    riskSeverityFromMatch(result.Match),
-		ImpactedARN: impactedARN,
+		ImpactedResourceID: impactedARN,
 		Context:     proofBytes,
 	})
 	return nil

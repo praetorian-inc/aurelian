@@ -17,6 +17,10 @@ type mockS3Client struct {
 	// bucketResponses maps bucket name to the error returned by HeadBucket.
 	// nil means the bucket exists; a non-nil error is returned as-is.
 	bucketResponses map[string]error
+	// locationResponses maps bucket name to the error returned by GetBucketLocation.
+	// nil means success (bucket owned by current account). If the map is nil or
+	// the bucket is absent, GetBucketLocation succeeds by default.
+	locationResponses map[string]error
 }
 
 func (m *mockS3Client) HeadBucket(_ context.Context, params *s3.HeadBucketInput, _ ...func(*s3.Options)) (*s3.HeadBucketOutput, error) {
@@ -33,6 +37,17 @@ func (m *mockS3Client) HeadBucket(_ context.Context, params *s3.HeadBucketInput,
 }
 
 func (m *mockS3Client) GetBucketLocation(_ context.Context, params *s3.GetBucketLocationInput, _ ...func(*s3.Options)) (*s3.GetBucketLocationOutput, error) {
+	if params.Bucket == nil {
+		return nil, fmt.Errorf("nil bucket name")
+	}
+	if m.locationResponses != nil {
+		if err, ok := m.locationResponses[*params.Bucket]; ok {
+			if err != nil {
+				return nil, err
+			}
+			return &s3.GetBucketLocationOutput{}, nil
+		}
+	}
 	return &s3.GetBucketLocationOutput{}, nil
 }
 
@@ -235,6 +250,87 @@ func TestChecker_Check_WithRoute53Records(t *testing.T) {
 	assert.Equal(t, "vuln-bucket", f.MissingBucket)
 	require.Len(t, f.Route53Records, 1)
 	assert.Equal(t, "app.example.com", f.Route53Records[0].RecordName)
+}
+
+func TestChecker_Check_RedirectNotOwned(t *testing.T) {
+	s3Mock := &mockS3Client{
+		bucketResponses: map[string]error{
+			"hijacked-bucket": fmt.Errorf("PermanentRedirect: bucket is in a different region"),
+		},
+		locationResponses: map[string]error{
+			"hijacked-bucket": fmt.Errorf("AccessDenied: access denied"),
+		},
+	}
+	r53Mock := &mockRoute53Client{}
+
+	checker := &Checker{s3Client: s3Mock, r53Client: r53Mock}
+
+	dist := DistributionInfo{
+		ID:         "EDIST_HIJACK",
+		DomainName: "d-hijack.cloudfront.net",
+		AccountID:  "123456789012",
+		Aliases:    []string{"app.example.com"},
+		Origins: []OriginInfo{
+			{
+				ID:         "S3-hijacked",
+				DomainName: "hijacked-bucket.s3.amazonaws.com",
+				OriginType: "s3",
+			},
+		},
+	}
+
+	out := pipeline.New[Finding]()
+	go func() {
+		defer out.Close()
+		require.NoError(t, checker.Check(dist, out))
+	}()
+
+	findings, err := out.Collect()
+	require.NoError(t, err)
+	require.Len(t, findings, 1, "bucket owned by another account should produce a finding")
+
+	f := findings[0]
+	assert.Equal(t, "EDIST_HIJACK", f.DistributionID)
+	assert.Equal(t, "hijacked-bucket", f.MissingBucket)
+	assert.Equal(t, BucketExistsNotOwned, f.BucketState,
+		"bucket that exists but is not owned should have BucketExistsNotOwned state")
+}
+
+func TestChecker_Check_RedirectOwned(t *testing.T) {
+	s3Mock := &mockS3Client{
+		bucketResponses: map[string]error{
+			"owned-bucket": fmt.Errorf("PermanentRedirect: bucket is in a different region"),
+		},
+		locationResponses: map[string]error{
+			"owned-bucket": nil, // GetBucketLocation succeeds — bucket is ours
+		},
+	}
+	r53Mock := &mockRoute53Client{}
+
+	checker := &Checker{s3Client: s3Mock, r53Client: r53Mock}
+
+	dist := DistributionInfo{
+		ID:         "EDIST_OWNED",
+		DomainName: "d-owned.cloudfront.net",
+		AccountID:  "123456789012",
+		Origins: []OriginInfo{
+			{
+				ID:         "S3-owned",
+				DomainName: "owned-bucket.s3.amazonaws.com",
+				OriginType: "s3",
+			},
+		},
+	}
+
+	out := pipeline.New[Finding]()
+	go func() {
+		defer out.Close()
+		require.NoError(t, checker.Check(dist, out))
+	}()
+
+	findings, err := out.Collect()
+	require.NoError(t, err)
+	assert.Empty(t, findings, "bucket owned by current account should not produce a finding")
 }
 
 func TestChecker_Check_MultipleMissingBuckets(t *testing.T) {

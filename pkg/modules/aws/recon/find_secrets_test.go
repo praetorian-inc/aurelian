@@ -246,7 +246,7 @@ func TestBuildRiskContextRoundTrip(t *testing.T) {
 	assert.Equal(t, "arn:aws:lambda:us-east-1:123456789012:function:demo", decoded["resource_ref"])
 }
 
-func TestRiskFromScanResult_ImpactedARN_IncludesFindingID(t *testing.T) {
+func TestRiskFromScanResult_ImpactedResourceID_IncludesFindingID(t *testing.T) {
 	match := &types.Match{
 		RuleID:   "np.aws.1",
 		RuleName: "AWS API Key",
@@ -270,12 +270,12 @@ func TestRiskFromScanResult_ImpactedARN_IncludesFindingID(t *testing.T) {
 	require.Len(t, items, 1)
 
 	risk := items[0].(output.AurelianRisk)
-	assert.Equal(t, "arn:aws:lambda:us-east-1:123:function:demo:abc123de", risk.ImpactedARN)
+	assert.Equal(t, "arn:aws:lambda:us-east-1:123:function:demo:abc123de", risk.ImpactedResourceID)
 	assert.Equal(t, "aws-secret-aws", risk.Name)
 	assert.Equal(t, output.RiskSeverityMedium, risk.Severity)
 }
 
-func TestRiskFromScanResult_ImpactedARN_NoFindingID(t *testing.T) {
+func TestRiskFromScanResult_ImpactedResourceID_NoFindingID(t *testing.T) {
 	match := &types.Match{
 		RuleID:   "np.aws.1",
 		RuleName: "AWS API Key",
@@ -298,5 +298,5 @@ func TestRiskFromScanResult_ImpactedARN_NoFindingID(t *testing.T) {
 	require.Len(t, items, 1)
 
 	risk := items[0].(output.AurelianRisk)
-	assert.Equal(t, "i-08da3f571f1346176", risk.ImpactedARN, "should use bare ResourceRef when FindingID is empty")
+	assert.Equal(t, "i-08da3f571f1346176", risk.ImpactedResourceID, "should use bare ResourceRef when FindingID is empty")
 }

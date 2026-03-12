@@ -100,29 +100,66 @@ func buildTakeoverRisk(f cf.Finding, out *pipeline.P[model.AurelianModel]) error
 	if len(f.Route53Records) > 0 {
 		severity = output.RiskSeverityHigh
 	}
+	if f.BucketState == cf.BucketExistsNotOwned {
+		severity = output.RiskSeverityCritical
+	}
 
 	affectedDomains := collectAffectedDomains(f.Aliases, f.Route53Records)
 
-	description := fmt.Sprintf(
-		"CloudFront distribution %s points to non-existent S3 bucket '%s'. "+
-			"An attacker could create this bucket to serve malicious content.",
-		f.DistributionID, f.MissingBucket,
-	)
-	if len(f.Route53Records) > 0 {
+	var description, impact, recommendation string
+
+	if f.BucketState == cf.BucketExistsNotOwned {
+		description = fmt.Sprintf(
+			"CloudFront distribution %s references S3 bucket '%s' which exists but is not owned by this account. "+
+				"An external party may already be serving content through this distribution.",
+			f.DistributionID, f.MissingBucket,
+		)
+		if len(affectedDomains) > 0 {
+			description += fmt.Sprintf(" Affected domain(s): %s", strings.Join(affectedDomains, ", "))
+		}
+		impact = "The S3 bucket referenced by this distribution exists but is owned by another account. " +
+			"An external party may already be serving arbitrary content through the CloudFront distribution."
+		recommendation = fmt.Sprintf(
+			"1. Investigate content currently being served through distribution %s immediately\n"+
+				"2. Update the distribution origin to a bucket owned by this account, OR\n"+
+				"3. Delete the CloudFront distribution %s and remove associated DNS records",
+			f.DistributionID, f.DistributionID,
+		)
+	} else {
 		description = fmt.Sprintf(
 			"CloudFront distribution %s points to non-existent S3 bucket '%s'. "+
-				"Route53 records are actively pointing to this distribution. "+
-				"An attacker could create this bucket to serve malicious content on %d domain(s): %s",
+				"An attacker could create this bucket to serve malicious content.",
 			f.DistributionID, f.MissingBucket,
-			len(affectedDomains), strings.Join(affectedDomains, ", "),
 		)
-	} else if len(affectedDomains) > 0 {
-		description = fmt.Sprintf(
-			"CloudFront distribution %s points to non-existent S3 bucket '%s'. "+
-				"An attacker could create this bucket to serve malicious content on alias domain(s): %s",
+		if len(f.Route53Records) > 0 {
+			description = fmt.Sprintf(
+				"CloudFront distribution %s points to non-existent S3 bucket '%s'. "+
+					"Route53 records are actively pointing to this distribution. "+
+					"An attacker could create this bucket to serve malicious content on %d domain(s): %s",
+				f.DistributionID, f.MissingBucket,
+				len(affectedDomains), strings.Join(affectedDomains, ", "),
+			)
+		} else if len(affectedDomains) > 0 {
+			description = fmt.Sprintf(
+				"CloudFront distribution %s points to non-existent S3 bucket '%s'. "+
+					"An attacker could create this bucket to serve malicious content on alias domain(s): %s",
+				f.DistributionID, f.MissingBucket,
+				strings.Join(affectedDomains, ", "),
+			)
+		}
+		impact = "An attacker could register the missing S3 bucket and serve arbitrary content " +
+			"through the CloudFront distribution, enabling subdomain or domain takeover."
+		recommendation = fmt.Sprintf(
+			"1. Delete the CloudFront distribution %s if no longer needed, OR\n"+
+				"2. Create the S3 bucket '%s' in your account to reclaim ownership, OR\n"+
+				"3. Update the distribution to point to a different, existing origin.",
 			f.DistributionID, f.MissingBucket,
-			strings.Join(affectedDomains, ", "),
 		)
+	}
+
+	bucketState := "missing"
+	if f.BucketState == cf.BucketExistsNotOwned {
+		bucketState = "not_owned"
 	}
 
 	ctx, err := json.Marshal(map[string]any{
@@ -134,15 +171,10 @@ func buildTakeoverRisk(f cf.Finding, out *pipeline.P[model.AurelianModel]) error
 		"aliases":             f.Aliases,
 		"affected_domains":    affectedDomains,
 		"route53_records":     f.Route53Records,
+		"bucket_state":        bucketState,
 		"description":         description,
-		"impact": "An attacker could register the missing S3 bucket and serve arbitrary content " +
-			"through the CloudFront distribution, enabling subdomain or domain takeover.",
-		"recommendation": fmt.Sprintf(
-			"1. Delete the CloudFront distribution %s if no longer needed, OR\n"+
-				"2. Create the S3 bucket '%s' in your account to reclaim ownership, OR\n"+
-				"3. Update the distribution to point to a different, existing origin.",
-			f.DistributionID, f.MissingBucket,
-		),
+		"impact":              impact,
+		"recommendation":      recommendation,
 	})
 	if err != nil {
 		slog.Warn("failed to marshal risk context", "distribution", f.DistributionID, "error", err)
@@ -152,7 +184,7 @@ func buildTakeoverRisk(f cf.Finding, out *pipeline.P[model.AurelianModel]) error
 	out.Send(output.AurelianRisk{
 		Name:        "cloudfront-s3-takeover",
 		Severity:    severity,
-		ImpactedARN: f.DistributionID,
+		ImpactedResourceID: f.DistributionID,
 		Context:     ctx,
 	})
 	return nil

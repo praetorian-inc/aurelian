@@ -22,7 +22,8 @@ type OriginInfo struct {
 	OriginType string // "s3" or "custom"
 }
 
-// VulnerableDistribution describes a CloudFront distribution with a missing S3 origin bucket.
+// VulnerableDistribution describes a CloudFront distribution whose S3 origin
+// bucket is missing or not owned by the current account.
 type VulnerableDistribution struct {
 	DistributionID     string
 	DistributionDomain string
@@ -31,6 +32,7 @@ type VulnerableDistribution struct {
 	OriginDomain       string
 	OriginID           string
 	AccountID          string
+	BucketState        BucketExistence
 }
 
 // Route53Record describes a DNS record pointing to a CloudFront distribution.
@@ -48,5 +50,6 @@ type BucketExistence int
 const (
 	BucketExists BucketExistence = iota
 	BucketNotExists
+	BucketExistsNotOwned
 	BucketUnknown
 )

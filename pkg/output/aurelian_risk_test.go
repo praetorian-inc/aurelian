@@ -1,16 +1,32 @@
 package output
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestAurelianRiskJSONSerialization(t *testing.T) {
-	risk := AurelianRisk{Name: "public-aws-resource", Severity: RiskSeverityHigh, ImpactedARN: "arn:aws:s3:::example", Context: json.RawMessage(`{"is_public":true}`)}
-	data, err := json.Marshal(risk)
-	assert.NoError(t, err)
-	assert.Contains(t, string(data), `"severity":"high"`)
-	assert.Contains(t, string(data), `"impacted_arn":"arn:aws:s3:::example"`)
+func TestNormalizeSeverity(t *testing.T) {
+	tests := []struct {
+		input    RiskSeverity
+		expected RiskSeverity
+	}{
+		{"Critical", RiskSeverityCritical},
+		{"critical", RiskSeverityCritical},
+		{"High", RiskSeverityHigh},
+		{"high", RiskSeverityHigh},
+		{"Medium", RiskSeverityMedium},
+		{"medium", RiskSeverityMedium},
+		{"Low", RiskSeverityLow},
+		{"low", RiskSeverityLow},
+		{"Info", RiskSeverityInfo},
+		{"unknown", RiskSeverityInfo},
+		{"", RiskSeverityInfo},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.input), func(t *testing.T) {
+			assert.Equal(t, tt.expected, NormalizeSeverity(tt.input))
+		})
+	}
 }

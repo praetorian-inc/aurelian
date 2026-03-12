@@ -2,6 +2,7 @@ package output
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 )
@@ -16,10 +17,27 @@ const (
 	RiskSeverityCritical RiskSeverity = "critical"
 )
 
+// NormalizeSeverity maps a severity string (case-insensitive) to a canonical RiskSeverity constant.
+func NormalizeSeverity(s RiskSeverity) RiskSeverity {
+	switch RiskSeverity(strings.ToLower(string(s))) {
+	case RiskSeverityCritical:
+		return RiskSeverityCritical
+	case RiskSeverityHigh:
+		return RiskSeverityHigh
+	case RiskSeverityMedium:
+		return RiskSeverityMedium
+	case RiskSeverityLow:
+		return RiskSeverityLow
+	default:
+		return RiskSeverityInfo
+	}
+}
+
 type AurelianRisk struct {
 	model.BaseAurelianModel
-	Name        string          `json:"name"`
-	Severity    RiskSeverity    `json:"severity"`
-	ImpactedARN string          `json:"impacted_arn,omitempty"`
-	Context     json.RawMessage `json:"context,omitempty"`
+	Name               string          `json:"name"`
+	Severity           RiskSeverity    `json:"severity"`
+	ImpactedResourceID string          `json:"impacted_resource_id,omitempty"`
+	DeduplicationID    string          `json:"deduplication_id,omitempty"`
+	Context            json.RawMessage `json:"context,omitempty"`
 }

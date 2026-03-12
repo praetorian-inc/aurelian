@@ -37,7 +37,7 @@ func TestBuildTakeoverRisk_MediumSeverity(t *testing.T) {
 	risk := items[0].(output.AurelianRisk)
 	assert.Equal(t, "cloudfront-s3-takeover", risk.Name)
 	assert.Equal(t, output.RiskSeverityMedium, risk.Severity)
-	assert.Equal(t, "EDIST_MEDIUM", risk.ImpactedARN)
+	assert.Equal(t, "EDIST_MEDIUM", risk.ImpactedResourceID)
 }
 
 func TestBuildTakeoverRisk_HighSeverity(t *testing.T) {
@@ -75,7 +75,7 @@ func TestBuildTakeoverRisk_HighSeverity(t *testing.T) {
 	risk := items[0].(output.AurelianRisk)
 	assert.Equal(t, output.RiskSeverityHigh, risk.Severity,
 		"Route53 records pointing to the distribution should elevate severity to High")
-	assert.Equal(t, "EDIST_HIGH", risk.ImpactedARN)
+	assert.Equal(t, "EDIST_HIGH", risk.ImpactedResourceID)
 }
 
 func TestBuildTakeoverRisk_ContextFields(t *testing.T) {
@@ -154,6 +154,47 @@ func TestBuildTakeoverRisk_AliasOnlyDomains(t *testing.T) {
 	desc := ctx["description"].(string)
 	assert.Contains(t, desc, "alias domain(s)")
 	assert.Contains(t, desc, "cdn.example.com")
+}
+
+func TestBuildTakeoverRisk_NotOwnedBucket(t *testing.T) {
+	finding := cf.Finding{
+		VulnerableDistribution: cf.VulnerableDistribution{
+			DistributionID:     "EDIST_NOTOWNED",
+			DistributionDomain: "d-notowned.cloudfront.net",
+			Aliases:            []string{"app.example.com"},
+			MissingBucket:      "hijacked-bucket",
+			OriginDomain:       "hijacked-bucket.s3.amazonaws.com",
+			OriginID:           "S3-hijacked",
+			AccountID:          "123456789012",
+			BucketState:        cf.BucketExistsNotOwned,
+		},
+		Route53Records: []cf.Route53Record{
+			{RecordName: "app.example.com", RecordType: "A", Value: "d-notowned.cloudfront.net"},
+		},
+	}
+
+	out := pipeline.New[model.AurelianModel]()
+	go func() {
+		defer out.Close()
+		require.NoError(t, buildTakeoverRisk(finding, out))
+	}()
+
+	items, err := out.Collect()
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+
+	risk := items[0].(output.AurelianRisk)
+	assert.Equal(t, output.RiskSeverityCritical, risk.Severity,
+		"bucket owned by another account should be Critical severity")
+
+	var ctx map[string]any
+	require.NoError(t, json.Unmarshal(risk.Context, &ctx))
+
+	assert.Equal(t, "not_owned", ctx["bucket_state"])
+	desc := ctx["description"].(string)
+	assert.Contains(t, desc, "not owned by this account")
+	assert.Contains(t, desc, "app.example.com")
+	assert.Contains(t, ctx["impact"].(string), "owned by another account")
 }
 
 func TestCollectAffectedDomains(t *testing.T) {
