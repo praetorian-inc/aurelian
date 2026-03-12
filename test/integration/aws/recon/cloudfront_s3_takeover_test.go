@@ -52,7 +52,7 @@ func TestAWSCloudFrontS3Takeover(t *testing.T) {
 	t.Run("detects missing bucket", func(t *testing.T) {
 		found := false
 		for _, risk := range risks {
-			if risk.ImpactedARN == vulnDistID {
+			if risk.ImpactedResourceID == vulnDistID {
 				found = true
 				assert.Equal(t, "cloudfront-s3-takeover", risk.Name)
 				assert.Contains(t, []output.RiskSeverity{output.RiskSeverityMedium, output.RiskSeverityHigh}, risk.Severity)
@@ -67,7 +67,7 @@ func TestAWSCloudFrontS3Takeover(t *testing.T) {
 
 	t.Run("does not flag healthy distribution", func(t *testing.T) {
 		for _, risk := range risks {
-			assert.NotEqual(t, healthyDistID, risk.ImpactedARN,
+			assert.NotEqual(t, healthyDistID, risk.ImpactedResourceID,
 				"healthy distribution %s should not produce a risk", healthyDistID)
 		}
 	})
