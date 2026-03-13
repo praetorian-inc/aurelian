@@ -39,7 +39,6 @@ func TestWhoamiExtractsCallerARN(t *testing.T) {
 	if identity.Status == "success" {
 		assert.Equal(t, expectedAccount, identity.Account, "account should match")
 		assert.Contains(t, identity.ARN, expectedAccount, "ARN should contain the account ID")
-		assert.NotEmpty(t, identity.Method, "method should be set on success")
 
 		if identity.ARN != expectedARN {
 			t.Logf("ARN mismatch (may be expected for assumed roles): got=%s want=%s", identity.ARN, expectedARN)
@@ -76,7 +75,6 @@ func TestWhoamiSingleTechnique(t *testing.T) {
 			if identity.Status == "success" {
 				assert.NotEmpty(t, identity.ARN)
 				assert.NotEmpty(t, identity.Account)
-				assert.Equal(t, technique, identity.Method)
 			}
 		})
 	}

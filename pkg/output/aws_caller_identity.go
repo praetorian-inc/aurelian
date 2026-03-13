@@ -20,8 +20,4 @@ type CallerIdentity struct {
 
 	// Account is the AWS account ID parsed from the ARN (e.g., "123456789012")
 	Account string `json:"account,omitempty"`
-
-	// Method is the technique that successfully extracted the ARN
-	// (e.g., "timestream", "pinpoint", "sqs")
-	Method string `json:"method,omitempty"`
 }

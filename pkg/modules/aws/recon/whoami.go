@@ -108,7 +108,6 @@ func (m *AWSWhoamiModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianM
 				Status:  "success",
 				ARN:     arn,
 				Account: accountFromARN(arn),
-				Method:  t.name,
 			})
 			return nil
 		}
