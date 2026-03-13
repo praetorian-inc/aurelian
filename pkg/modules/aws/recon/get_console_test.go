@@ -30,9 +30,9 @@ func TestGetConsole_MFADeviceARN(t *testing.T) {
 			expectedARN: "arn:aws:iam::123456789012:mfa/alice",
 		},
 		{
-			name:        "ARN with path - uses everything after first slash",
+			name:        "ARN with path - extracts leaf username only",
 			callerARN:   "arn:aws:iam::123456789012:user/path/to/username",
-			expectedARN: "arn:aws:iam::123456789012:mfa/path/to/username",
+			expectedARN: "arn:aws:iam::123456789012:mfa/username",
 		},
 		{
 			name:      "short malformed ARN fewer than 6 parts",

@@ -27,6 +27,10 @@ const (
 	maxDuration    = 129600
 )
 
+// federationPolicy grants Action:* / Resource:* intentionally. GetFederationToken
+// returns credentials scoped to the intersection of this policy and the calling
+// IAM user's permissions, so the resulting session never exceeds the caller's
+// existing privileges. This mirrors Nebula's console_url implementation.
 var federationPolicy = map[string]interface{}{
 	"Version": "2012-10-17",
 	"Statement": []map[string]interface{}{
@@ -216,7 +220,7 @@ func mfaDeviceARN(callerARN string) (string, error) {
 	}
 	accountID := parts[4]
 	resourcePart := parts[5] // e.g. "user/USERNAME"
-	slashIdx := strings.Index(resourcePart, "/")
+	slashIdx := strings.LastIndex(resourcePart, "/")
 	if slashIdx < 0 {
 		return "", fmt.Errorf("no username found in ARN resource part: %s", resourcePart)
 	}
