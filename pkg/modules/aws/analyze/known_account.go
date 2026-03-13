@@ -80,7 +80,7 @@ type knownAccountEntry struct {
 func (m *KnownAccountModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.KnownAccountConfig
 
-	cfg.Log.Info("looking up account %s", c.AccountID)
+	cfg.Info("looking up account %s", c.AccountID)
 
 	// Check Thinkst canary accounts first (no network required).
 	for _, id := range thinkstCanaryAccounts {
@@ -117,10 +117,10 @@ func (m *KnownAccountModule) Run(cfg plugin.Config, out *pipeline.P[model.Aureli
 	}
 
 	for _, f := range fetchers {
-		cfg.Log.Info("checking source: %s", f.name)
+		cfg.Info("checking source: %s", f.name)
 		entry, found, err := f.fn(c.AccountID)
 		if err != nil {
-			cfg.Log.Warn("error checking %s: %v", f.name, err)
+			cfg.Warn("error checking %s: %v", f.name, err)
 			continue
 		}
 		if found {

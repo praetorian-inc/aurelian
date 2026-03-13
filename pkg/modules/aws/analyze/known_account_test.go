@@ -9,19 +9,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestThinkstCanaryDetection_KnownCanary(t *testing.T) {
-	// All known canary accounts should be detected
-	for _, id := range thinkstCanaryAccounts {
-		found := false
-		for _, canary := range thinkstCanaryAccounts {
-			if canary == id {
-				found = true
-				break
-			}
-		}
-		assert.True(t, found, "canary account %s should be in thinkstCanaryAccounts", id)
-	}
-}
 
 func TestThinkstCanaryDetection_NonCanary(t *testing.T) {
 	nonCanary := "123456789012"

@@ -3,9 +3,7 @@ package analyze
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
-	"net/http"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -70,7 +68,7 @@ func (m *IPLookupModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianMo
 		return fmt.Errorf("invalid IP address: %s", c.IP)
 	}
 
-	cfg.Log.Info("fetching AWS IP ranges")
+	cfg.Info("fetching AWS IP ranges")
 
 	ranges, err := fetchAWSIPRanges()
 	if err != nil {
@@ -81,10 +79,10 @@ func (m *IPLookupModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianMo
 
 	var resultsJSON []byte
 	if found {
-		cfg.Log.Info("found match: %s (%s, %s)", match.IPPrefix+match.IPv6Prefix, match.Service, match.Region)
+		cfg.Info("found match: %s (%s, %s)", match.IPPrefix+match.IPv6Prefix, match.Service, match.Region)
 		resultsJSON, err = json.Marshal(match)
 	} else {
-		cfg.Log.Info("IP %s not found in AWS ranges", c.IP)
+		cfg.Info("IP %s not found in AWS ranges", c.IP)
 		resultsJSON, err = json.Marshal(map[string]string{"result": "not found"})
 	}
 
@@ -118,26 +116,14 @@ type awsIPRanges struct {
 }
 
 func fetchAWSIPRanges() (*awsIPRanges, error) {
-	resp, err := http.Get(awsIPRangesURL) //nolint:noctx
+	body, err := fetchURL(awsIPRangesURL)
 	if err != nil {
-		return nil, fmt.Errorf("GET %s: %w", awsIPRangesURL, err)
+		return nil, err
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: HTTP %d", awsIPRangesURL, resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response body: %w", err)
-	}
-
 	var ranges awsIPRanges
 	if err := json.Unmarshal(body, &ranges); err != nil {
 		return nil, fmt.Errorf("parsing IP ranges JSON: %w", err)
 	}
-
 	return &ranges, nil
 }
 
