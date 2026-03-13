@@ -4,6 +4,9 @@ import (
 	"fmt"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/eiptakeover"
+	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
@@ -43,40 +46,28 @@ func (m *EIPDanglingTakeoverModule) References() []string {
 }
 
 func (m *EIPDanglingTakeoverModule) SupportedResourceTypes() []string {
-	return []string{
-		"AWS::Route53::RecordSet",
-		"AWS::EC2::EIP",
-	}
+	return nil
 }
 
-func (m *EIPDanglingTakeoverModule) Run(cfg plugin.Config) ([]plugin.Result, error) {
+func (m *EIPDanglingTakeoverModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.EIPDanglingTakeoverConfig
-
-	resolvedRegions, err := resolveRegions(c.Regions, c.Profile, c.ProfileDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve regions: %w", err)
-	}
 
 	opts := eiptakeover.ScanOptions{
 		Profile:     c.Profile,
 		ProfileDir:  c.ProfileDir,
-		Regions:     resolvedRegions,
+		Regions:     c.Regions,
 		Concurrency: c.Concurrency,
 	}
 
-	risks, err := eiptakeover.Scan(opts)
+	var count int
+	err := eiptakeover.Scan(opts, func(risk output.AurelianRisk) {
+		count++
+		out.Send(risk)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("eip dangling takeover scan failed: %w", err)
+		return fmt.Errorf("eip dangling takeover scan: %w", err)
 	}
 
-	return []plugin.Result{
-		{
-			Data: risks,
-			Metadata: map[string]any{
-				"module":   m.ID(),
-				"platform": m.Platform(),
-				"regions":  resolvedRegions,
-			},
-		},
-	}, nil
+	cfg.Info("found %d dangling records", count)
+	return nil
 }
