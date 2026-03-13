@@ -48,14 +48,14 @@ func (m *SubdomainTakeoverModule) SupportedResourceTypes() []string {
 }
 
 func (m *SubdomainTakeoverModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
-	checker, err := dnstakeover.NewDNSTakeoverChecker(m.AWSCommonRecon)
+	checker, err := dnstakeover.NewDNSTakeoverChecker(cfg.Context, m.AWSCommonRecon)
 	if err != nil {
 		return err
 	}
 
 	cfg.Info("enumerating Route53 records from public hosted zones")
 
-	enumerator := dnstakeover.NewRoute53Enumerator(m.AWSCommonRecon)
+	enumerator := dnstakeover.NewRoute53Enumerator(cfg.Context, m.AWSCommonRecon)
 	trigger := pipeline.From("route53")
 
 	records := pipeline.New[dnstakeover.Route53Record]()

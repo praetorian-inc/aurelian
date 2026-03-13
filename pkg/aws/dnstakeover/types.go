@@ -1,8 +1,12 @@
 package dnstakeover
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"net"
+	"sync"
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -18,22 +22,39 @@ type Route53Record struct {
 	IsAlias    bool
 }
 
+// eipCache holds lazily-initialized EIP state scoped to a single checker run.
+type eipCache struct {
+	once         sync.Once
+	ranges       []parsedPrefix
+	allocatedIPs map[string]bool
+	err          error
+}
+
+type parsedPrefix struct {
+	network *net.IPNet
+	region  string
+	service string
+}
+
 // CheckContext holds shared state for checker functions.
 type CheckContext struct {
+	Ctx       context.Context
 	Opts      plugin.AWSCommonRecon
 	AccountID string
+	EIPCache  *eipCache
 }
 
 // NewTakeoverRisk builds an AurelianRisk for a subdomain takeover finding.
-func NewTakeoverRisk(name string, severity output.RiskSeverity, rec Route53Record, accountID string, context map[string]any) output.AurelianRisk {
-	context["account_id"] = accountID
-	context["zone_id"] = rec.ZoneID
-	context["zone_name"] = rec.ZoneName
-	context["record_name"] = rec.RecordName
-	context["record_type"] = rec.Type
-	context["record_values"] = rec.Values
+func NewTakeoverRisk(name string, severity output.RiskSeverity, rec Route53Record, accountID string, extra map[string]any) output.AurelianRisk {
+	merged := maps.Clone(extra)
+	merged["account_id"] = accountID
+	merged["zone_id"] = rec.ZoneID
+	merged["zone_name"] = rec.ZoneName
+	merged["record_name"] = rec.RecordName
+	merged["record_type"] = rec.Type
+	merged["record_values"] = rec.Values
 
-	ctxBytes, _ := json.Marshal(context)
+	ctxBytes, _ := json.Marshal(merged)
 
 	resourceID := fmt.Sprintf("arn:aws:route53:::hostedzone/%s/recordset/%s/%s",
 		rec.ZoneID, rec.RecordName, rec.Type)

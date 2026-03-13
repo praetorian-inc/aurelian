@@ -1,6 +1,7 @@
 package dnstakeover
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
@@ -17,7 +18,7 @@ type DNSTakeoverChecker struct {
 }
 
 // NewDNSTakeoverChecker creates a checker with shared AWS options.
-func NewDNSTakeoverChecker(opts plugin.AWSCommonRecon) (*DNSTakeoverChecker, error) {
+func NewDNSTakeoverChecker(ctx context.Context, opts plugin.AWSCommonRecon) (*DNSTakeoverChecker, error) {
 	cfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
 		Region:     "us-east-1",
 		Profile:    opts.Profile,
@@ -34,8 +35,10 @@ func NewDNSTakeoverChecker(opts plugin.AWSCommonRecon) (*DNSTakeoverChecker, err
 
 	return &DNSTakeoverChecker{
 		ctx: CheckContext{
+			Ctx:       ctx,
 			Opts:      opts,
 			AccountID: accountID,
+			EIPCache:  &eipCache{},
 		},
 	}, nil
 }

@@ -16,12 +16,13 @@ import (
 
 // Route53Enumerator lists all DNS records from public hosted zones.
 type Route53Enumerator struct {
+	ctx  context.Context
 	opts plugin.AWSCommonRecon
 }
 
 // NewRoute53Enumerator creates a Route53 record enumerator.
-func NewRoute53Enumerator(opts plugin.AWSCommonRecon) *Route53Enumerator {
-	return &Route53Enumerator{opts: opts}
+func NewRoute53Enumerator(ctx context.Context, opts plugin.AWSCommonRecon) *Route53Enumerator {
+	return &Route53Enumerator{ctx: ctx, opts: opts}
 }
 
 // EnumerateAll is a pipeline-compatible method that lists all records from
@@ -38,10 +39,10 @@ func (e *Route53Enumerator) EnumerateAll(_ string, out *pipeline.P[Route53Record
 	}
 
 	client := route53.NewFromConfig(cfg)
-	return e.enumerateZones(client, out)
+	return e.enumerateZones(e.ctx, client, out)
 }
 
-func (e *Route53Enumerator) enumerateZones(client *route53.Client, out *pipeline.P[Route53Record]) error {
+func (e *Route53Enumerator) enumerateZones(ctx context.Context, client *route53.Client, out *pipeline.P[Route53Record]) error {
 	var marker *string
 	for {
 		input := &route53.ListHostedZonesInput{}
@@ -49,7 +50,7 @@ func (e *Route53Enumerator) enumerateZones(client *route53.Client, out *pipeline
 			input.Marker = marker
 		}
 
-		resp, err := client.ListHostedZones(context.Background(), input)
+		resp, err := client.ListHostedZones(ctx, input)
 		if err != nil {
 			return fmt.Errorf("list hosted zones: %w", err)
 		}
@@ -62,7 +63,7 @@ func (e *Route53Enumerator) enumerateZones(client *route53.Client, out *pipeline
 			zoneID := strings.TrimPrefix(aws.ToString(hz.Id), "/hostedzone/")
 			zoneName := strings.TrimSuffix(aws.ToString(hz.Name), ".")
 
-			if err := e.enumerateRecords(client, zoneID, zoneName, out); err != nil {
+			if err := e.enumerateRecords(ctx, client, zoneID, zoneName, out); err != nil {
 				slog.Warn("failed to enumerate zone records", "zone_id", zoneID, "zone_name", zoneName, "error", err)
 			}
 		}
@@ -76,7 +77,7 @@ func (e *Route53Enumerator) enumerateZones(client *route53.Client, out *pipeline
 	return nil
 }
 
-func (e *Route53Enumerator) enumerateRecords(client *route53.Client, zoneID, zoneName string, out *pipeline.P[Route53Record]) error {
+func (e *Route53Enumerator) enumerateRecords(ctx context.Context, client *route53.Client, zoneID, zoneName string, out *pipeline.P[Route53Record]) error {
 	var startName *string
 	var startType r53types.RRType
 
@@ -89,7 +90,7 @@ func (e *Route53Enumerator) enumerateRecords(client *route53.Client, zoneID, zon
 			input.StartRecordType = startType
 		}
 
-		resp, err := client.ListResourceRecordSets(context.Background(), input)
+		resp, err := client.ListResourceRecordSets(ctx, input)
 		if err != nil {
 			return fmt.Errorf("list record sets for zone %s: %w", zoneID, err)
 		}

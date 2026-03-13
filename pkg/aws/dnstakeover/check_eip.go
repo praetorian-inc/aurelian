@@ -25,26 +25,10 @@ func init() {
 
 const awsIPRangesURL = "https://ip-ranges.amazonaws.com/ip-ranges.json"
 
-// eipState holds lazily-initialized data shared across all A record checks.
-var (
-	eipOnce  sync.Once
-	eipState struct {
-		ranges       []parsedPrefix
-		allocatedIPs map[string]bool
-		err          error
-	}
-)
-
 type ipPrefixEntry struct {
 	IPPrefix string `json:"ip_prefix"`
 	Region   string `json:"region"`
 	Service  string `json:"service"`
-}
-
-type parsedPrefix struct {
-	network *net.IPNet
-	region  string
-	service string
 }
 
 func checkEIP(ctx CheckContext, rec Route53Record, out *pipeline.P[model.AurelianModel]) error {
@@ -52,19 +36,20 @@ func checkEIP(ctx CheckContext, rec Route53Record, out *pipeline.P[model.Aurelia
 		return nil // alias A records point to AWS endpoints, not raw IPs
 	}
 
-	eipOnce.Do(func() {
-		eipState.ranges, eipState.allocatedIPs, eipState.err = initEIPState(ctx)
+	cache := ctx.EIPCache
+	cache.once.Do(func() {
+		cache.ranges, cache.allocatedIPs, cache.err = initEIPState(ctx)
 	})
-	if eipState.err != nil {
-		return fmt.Errorf("eip state initialization failed: %w", eipState.err)
+	if cache.err != nil {
+		return fmt.Errorf("eip state initialization failed: %w", cache.err)
 	}
 
 	for _, ip := range rec.Values {
-		awsRegion, awsService, inAWS := containsIP(eipState.ranges, ip)
+		awsRegion, awsService, inAWS := containsIP(cache.ranges, ip)
 		if !inAWS {
 			continue
 		}
-		if eipState.allocatedIPs[ip] {
+		if cache.allocatedIPs[ip] {
 			continue
 		}
 
@@ -96,7 +81,7 @@ func checkEIP(ctx CheckContext, rec Route53Record, out *pipeline.P[model.Aurelia
 
 func initEIPState(ctx CheckContext) ([]parsedPrefix, map[string]bool, error) {
 	slog.Info("eip checker: fetching aws ip ranges")
-	ranges, err := fetchAWSIPRanges()
+	ranges, err := fetchAWSIPRanges(ctx.Ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -112,8 +97,12 @@ func initEIPState(ctx CheckContext) ([]parsedPrefix, map[string]bool, error) {
 	return ranges, allocated, nil
 }
 
-func fetchAWSIPRanges() ([]parsedPrefix, error) {
-	resp, err := http.Get(awsIPRangesURL) //nolint:noctx
+func fetchAWSIPRanges(ctx context.Context) ([]parsedPrefix, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, awsIPRangesURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create aws ip ranges request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch aws ip ranges: %w", err)
 	}
@@ -183,7 +172,7 @@ func fetchAllocatedEIPs(ctx CheckContext) (map[string]bool, error) {
 		}
 
 		client := ec2.NewFromConfig(cfg)
-		resp, err := client.DescribeAddresses(context.Background(), &ec2.DescribeAddressesInput{})
+		resp, err := client.DescribeAddresses(ctx.Ctx, &ec2.DescribeAddressesInput{})
 		if err != nil {
 			return fmt.Errorf("region %s describe addresses: %w", region, err)
 		}

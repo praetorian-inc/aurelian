@@ -1,7 +1,6 @@
 package dnstakeover
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -83,7 +82,7 @@ func checkEBDNSAvailability(ctx CheckContext, prefix, region string) (bool, erro
 	}
 
 	client := elasticbeanstalk.NewFromConfig(cfg)
-	resp, err := client.CheckDNSAvailability(context.Background(), &elasticbeanstalk.CheckDNSAvailabilityInput{
+	resp, err := client.CheckDNSAvailability(ctx.Ctx, &elasticbeanstalk.CheckDNSAvailabilityInput{
 		CNAMEPrefix: aws.String(prefix),
 	})
 	if err != nil {

@@ -2,6 +2,7 @@ package dnstakeover
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -39,7 +40,7 @@ func checkNS(ctx CheckContext, rec Route53Record, out *pipeline.P[model.Aurelian
 		return nil
 	}
 
-	queryErr := validateNSDelegation(rec.RecordName, route53NSes[0])
+	queryErr := validateNSDelegation(ctx.Ctx, rec.RecordName, route53NSes[0])
 	if queryErr == "" {
 		return nil // zone is alive
 	}
@@ -77,7 +78,7 @@ func checkNS(ctx CheckContext, rec Route53Record, out *pipeline.P[model.Aurelian
 	return nil
 }
 
-func validateNSDelegation(recordName, nameserver string) string {
+func validateNSDelegation(parentCtx context.Context, recordName, nameserver string) string {
 	resolver := &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
@@ -86,7 +87,7 @@ func validateNSDelegation(recordName, nameserver string) string {
 		},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(parentCtx, 10*time.Second)
 	defer cancel()
 
 	_, err := resolver.LookupNS(ctx, recordName)
@@ -94,8 +95,8 @@ func validateNSDelegation(recordName, nameserver string) string {
 		return "" // zone exists
 	}
 
-	dnsErr, ok := err.(*net.DNSError)
-	if !ok || dnsErr.IsTimeout {
+	var dnsErr *net.DNSError
+	if !errors.As(err, &dnsErr) || dnsErr.IsTimeout {
 		return "" // transient — don't flag
 	}
 
