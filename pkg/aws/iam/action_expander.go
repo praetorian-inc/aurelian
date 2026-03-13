@@ -52,9 +52,9 @@ func (ae *ActionExpander) Expand(pattern string) ([]string, error) {
 		act = parts[1]
 	}
 
-	// Precompile regex outside the loop
-	regexStr := strings.ReplaceAll(act, "*", ".*")
-	regexPattern := "(?i)^" + service + ":" + regexStr + "$"
+	// Precompile regex outside the loop — QuoteMeta to safely handle any metacharacters
+	escaped := regexp.QuoteMeta(service + ":" + act)
+	regexPattern := "(?i)^" + strings.ReplaceAll(escaped, `\*`, `.*`) + "$"
 	re, err := regexp.Compile(regexPattern)
 	if err != nil {
 		return nil, fmt.Errorf("invalid regex pattern: %w", err)
