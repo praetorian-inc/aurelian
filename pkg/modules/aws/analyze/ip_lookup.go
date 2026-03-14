@@ -9,7 +9,10 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/utils"
 )
+
+var httpClient = &utils.CachedHTTPClient{}
 
 const awsIPRangesURL = "https://ip-ranges.amazonaws.com/ip-ranges.json"
 
@@ -116,7 +119,7 @@ type awsIPRanges struct {
 }
 
 func fetchAWSIPRanges() (*awsIPRanges, error) {
-	body, err := fetchURL(awsIPRangesURL)
+	body, err := httpClient.Get(awsIPRangesURL)
 	if err != nil {
 		return nil, err
 	}

@@ -3,8 +3,7 @@ package analyze
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
+	"slices"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -83,24 +82,16 @@ func (m *KnownAccountModule) Run(cfg plugin.Config, out *pipeline.P[model.Aureli
 	cfg.Info("looking up account %s", c.AccountID)
 
 	// Check Thinkst canary accounts first (no network required).
-	for _, id := range thinkstCanaryAccounts {
-		if id == c.AccountID {
-			result := knownAccountEntry{
-				AccountID: c.AccountID,
-				Owner:     "Thinkst Canary Token",
-				Source:    "hardcoded",
-			}
-			return emitKnownAccountResult(m.ID(), c.AccountID, result, out)
+	if slices.Contains(thinkstCanaryAccounts, c.AccountID) {
+		result := knownAccountEntry{
+			AccountID: c.AccountID,
+			Owner:     "Thinkst Canary Token",
+			Source:    "hardcoded",
 		}
+		return emitKnownAccountResult(m.ID(), c.AccountID, result, out)
 	}
 
 	// Fetch from all three remote sources and return the first match.
-	type fetchResult struct {
-		entry knownAccountEntry
-		found bool
-		err   error
-	}
-
 	fetchers := []struct {
 		name string
 		fn   func(string) (knownAccountEntry, bool, error)
@@ -154,7 +145,7 @@ func emitKnownAccountResult(moduleID, accountID string, entry knownAccountEntry,
 
 // lookupInJSONSource fetches and searches the rupertbg JSON array source.
 func lookupInJSONSource(accountID string) (knownAccountEntry, bool, error) {
-	body, err := fetchURL(knownAccountsJSONURL)
+	body, err := httpClient.Get(knownAccountsJSONURL)
 	if err != nil {
 		return knownAccountEntry{}, false, err
 	}
@@ -191,7 +182,7 @@ type yamlAccountEntry struct {
 // lookupInYAMLSource fetches and searches a YAML accounts file.
 // Both fwdcloudsec and cloudmapper use a list of objects with a name field and an accounts array.
 func lookupInYAMLSource(accountID, url, sourceName string) (knownAccountEntry, bool, error) {
-	body, err := fetchURL(url)
+	body, err := httpClient.Get(url)
 	if err != nil {
 		return knownAccountEntry{}, false, err
 	}
@@ -216,21 +207,3 @@ func lookupInYAMLSource(accountID, url, sourceName string) (knownAccountEntry, b
 	return knownAccountEntry{}, false, nil
 }
 
-func fetchURL(url string) ([]byte, error) {
-	resp, err := http.Get(url) //nolint:noctx
-	if err != nil {
-		return nil, fmt.Errorf("GET %s: %w", url, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response from %s: %w", url, err)
-	}
-
-	return body, nil
-}
