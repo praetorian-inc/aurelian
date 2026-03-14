@@ -39,6 +39,7 @@ func TestAWSPublicResources(t *testing.T) {
 				"AWS::EFS::FileSystem",
 				"AWS::Cognito::UserPool",
 				"AWS::RDS::DBInstance",
+				"AWS::EC2::Image",
 			},
 		},
 		Context: context.Background(),
@@ -75,6 +76,7 @@ func TestAWSPublicResources(t *testing.T) {
 		fixture.Output("public_efs_id"),
 		fixture.Output("public_cognito_pool_id"),
 		fixture.Output("public_rds_identifier"),
+		fixture.Output("public_ami_id"),
 	}
 
 	for _, expected := range expectedImpactedResources {
@@ -101,6 +103,31 @@ func TestAWSPublicResources(t *testing.T) {
 
 	assert.True(t, hasInvokeFunction, "expected at least one risk with lambda:InvokeFunction")
 	assert.True(t, hasInvokeFunctionURL, "expected at least one risk with lambda:InvokeFunctionUrl")
+
+	publicAMIID := fixture.Output("public_ami_id")
+	amiRisk := findRiskForResource(risks, publicAMIID)
+	if assert.NotNilf(t, amiRisk, "expected risk for public AMI %s", publicAMIID) {
+		assert.Contains(t, []output.RiskSeverity{output.RiskSeverityHigh, output.RiskSeverityMedium}, amiRisk.Severity)
+		var ctx struct {
+			AllowedActions    []string `json:"allowed_actions"`
+			EvaluationReasons []string `json:"evaluation_reasons"`
+		}
+		require.NoError(t, json.Unmarshal(amiRisk.Context, &ctx))
+		assert.Contains(t, ctx.AllowedActions, "ec2:RunInstances")
+		assert.NotEmpty(t, ctx.EvaluationReasons)
+	}
+}
+
+func findRiskForResource(risks []output.AurelianRisk, expected string) *output.AurelianRisk {
+	for _, risk := range risks {
+		if risk.ImpactedResourceID == expected ||
+			strings.HasSuffix(risk.ImpactedResourceID, "/"+expected) ||
+			strings.HasSuffix(risk.ImpactedResourceID, ":"+expected) ||
+			strings.Contains(risk.ImpactedResourceID, expected) {
+			return &risk
+		}
+	}
+	return nil
 }
 
 func hasRiskForResource(risks []output.AurelianRisk, expected string) bool {

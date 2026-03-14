@@ -2,7 +2,6 @@ package cloudfront
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -28,12 +27,7 @@ func (c *Checker) Check(dist DistributionInfo, out *pipeline.P[Finding]) error {
 	vulnerable := checkDistributionOrigins(context.Background(), c.s3Client, dist)
 
 	for _, vuln := range vulnerable {
-		records, err := findRoute53Records(context.Background(), c.r53Client, vuln.DistributionDomain, vuln.Aliases)
-		if err != nil {
-			slog.Warn("error searching Route53 records", "distribution", vuln.DistributionID, "error", err)
-			records = nil
-		}
-
+		records := findRoute53Records(context.Background(), c.r53Client, vuln.DistributionDomain, vuln.Aliases)
 		out.Send(Finding{
 			VulnerableDistribution: vuln,
 			Route53Records:         records,

@@ -31,6 +31,7 @@ var all = []string{
 	"AWS::Logs::LogGroup",
 	"AWS::RDS::DBCluster",
 	"AWS::RDS::DBInstance",
+	"AWS::Route53::HostedZone",
 	"AWS::S3::Bucket",
 	"AWS::SNS::Topic",
 	"AWS::SQS::Queue",

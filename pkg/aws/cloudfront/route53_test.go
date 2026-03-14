@@ -65,8 +65,8 @@ func TestFindRoute53Records_AliasMatch(t *testing.T) {
 		},
 	}
 
-	records, err := findRoute53Records(context.Background(), client, cfDomain, nil)
-	require.NoError(t, err)
+	records := findRoute53Records(context.Background(), client, cfDomain, nil)
+
 	require.Len(t, records, 1)
 
 	assert.Equal(t, "Z123", records[0].ZoneID)
@@ -98,8 +98,8 @@ func TestFindRoute53Records_CNAMEMatchesCloudfrontDomain(t *testing.T) {
 		},
 	}
 
-	records, err := findRoute53Records(context.Background(), client, cfDomain, nil)
-	require.NoError(t, err)
+	records := findRoute53Records(context.Background(), client, cfDomain, nil)
+
 	require.Len(t, records, 1)
 	assert.Equal(t, "CNAME", records[0].RecordType)
 	assert.Equal(t, cfDomain, records[0].Value)
@@ -127,8 +127,8 @@ func TestFindRoute53Records_CNAMEMatchesAlias(t *testing.T) {
 		},
 	}
 
-	records, err := findRoute53Records(context.Background(), client, "different.cloudfront.net", []string{alias})
-	require.NoError(t, err)
+	records := findRoute53Records(context.Background(), client, "different.cloudfront.net", []string{alias})
+
 	require.Len(t, records, 1)
 	assert.Equal(t, alias, records[0].Value)
 }
@@ -154,8 +154,8 @@ func TestFindRoute53Records_NoMatch(t *testing.T) {
 		},
 	}
 
-	records, err := findRoute53Records(context.Background(), client, "abc.cloudfront.net", nil)
-	require.NoError(t, err)
+	records := findRoute53Records(context.Background(), client, "abc.cloudfront.net", nil)
+
 	assert.Empty(t, records)
 }
 
@@ -182,8 +182,8 @@ func TestFindRoute53Records_TrailingDotNormalization(t *testing.T) {
 	}
 
 	// Pass cloudfrontDomain with trailing dot - should still match
-	records, err := findRoute53Records(context.Background(), client, cfDomain+".", nil)
-	require.NoError(t, err)
+	records := findRoute53Records(context.Background(), client, cfDomain+".", nil)
+
 	require.Len(t, records, 1)
 	assert.Equal(t, cfDomain, records[0].Value)
 }
@@ -215,8 +215,8 @@ func TestFindRoute53Records_SkipsNilZoneFields(t *testing.T) {
 		},
 	}
 
-	records, err := findRoute53Records(context.Background(), client, cfDomain, nil)
-	require.NoError(t, err)
+	records := findRoute53Records(context.Background(), client, cfDomain, nil)
+
 	require.Len(t, records, 1)
 }
 
@@ -225,8 +225,8 @@ func TestFindRoute53Records_ListZonesError(t *testing.T) {
 		listZonesErr: fmt.Errorf("access denied"),
 	}
 
-	records, err := findRoute53Records(context.Background(), client, "abc.cloudfront.net", nil)
-	require.NoError(t, err)
+	records := findRoute53Records(context.Background(), client, "abc.cloudfront.net", nil)
+
 	assert.Empty(t, records, "zone enumeration error should return empty results, not loop forever")
 }
 
@@ -241,7 +241,7 @@ func TestFindRoute53Records_ListRecordsError(t *testing.T) {
 		listRecordsErr: fmt.Errorf("throttling"),
 	}
 
-	records, err := findRoute53Records(context.Background(), client, "abc.cloudfront.net", nil)
-	require.NoError(t, err)
+	records := findRoute53Records(context.Background(), client, "abc.cloudfront.net", nil)
+
 	assert.Empty(t, records, "record enumeration error should skip zone, not loop forever")
 }

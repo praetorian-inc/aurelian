@@ -20,7 +20,7 @@ type Route53API interface {
 // point to the given CloudFront distribution domain or any of its aliases.
 // It returns A/AAAA alias records whose AliasTarget matches cloudfrontDomain,
 // and CNAME records whose value matches cloudfrontDomain or any alias.
-func findRoute53Records(ctx context.Context, client Route53API, cloudfrontDomain string, aliases []string) ([]Route53Record, error) {
+func findRoute53Records(ctx context.Context, client Route53API, cloudfrontDomain string, aliases []string) []Route53Record {
 	var matchingRecords []Route53Record
 	cloudfrontDomain = strings.TrimSuffix(cloudfrontDomain, ".")
 
@@ -92,5 +92,5 @@ func findRoute53Records(ctx context.Context, client Route53API, cloudfrontDomain
 		}
 	}
 
-	return matchingRecords, nil
+	return matchingRecords
 }

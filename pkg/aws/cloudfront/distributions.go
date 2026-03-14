@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudfront"
@@ -19,19 +20,29 @@ type CloudFrontAPI interface {
 
 // isS3Domain returns true if the domain name matches known S3 origin patterns.
 func isS3Domain(domain string) bool {
-	patterns := []string{
-		".s3.amazonaws.com",
-		".s3-website.",
-		".s3-website-",
-		".s3-",
-		".s3.",
-	}
-	for _, pattern := range patterns {
-		if strings.Contains(domain, pattern) {
-			return true
-		}
-	}
-	return false
+	patterns := []string{".s3.amazonaws.com", ".s3-website.", ".s3-website-", ".s3-", ".s3."}
+	return slices.ContainsFunc(patterns, func(p string) bool {
+		return strings.Contains(domain, p)
+	})
+}
+
+// bucketNamePatterns are compiled once and matched in order to extract the
+// bucket name from an S3 origin domain. The submatch at the given index
+// contains the bucket name.
+var bucketNamePatterns = []struct {
+	re    *regexp.Regexp
+	index int
+}{
+	// Virtual-hosted style
+	{regexp.MustCompile(`^([^.]+)\.s3\.amazonaws\.com`), 1},
+	{regexp.MustCompile(`^([^.]+)\.s3\.([a-z0-9-]+)\.amazonaws\.com`), 1},
+	{regexp.MustCompile(`^([^.]+)\.s3-([a-z0-9-]+)\.amazonaws\.com`), 1},
+	{regexp.MustCompile(`^([^.]+)\.s3-website\.([a-z0-9-]+)\.amazonaws\.com`), 1},
+	{regexp.MustCompile(`^([^.]+)\.s3-website-([a-z0-9-]+)\.amazonaws\.com`), 1},
+	// Path-style
+	{regexp.MustCompile(`^s3\.amazonaws\.com/([^/]+)`), 1},
+	{regexp.MustCompile(`^s3\.([a-z0-9-]+)\.amazonaws\.com/([^/]+)`), 2},
+	{regexp.MustCompile(`^s3-([a-z0-9-]+)\.amazonaws\.com/([^/]+)`), 2},
 }
 
 // extractBucketName extracts the S3 bucket name from an origin domain using regex-based matching.
@@ -39,37 +50,8 @@ func extractBucketName(originDomain string) string {
 	domain := strings.TrimPrefix(originDomain, "https://")
 	domain = strings.TrimPrefix(domain, "http://")
 
-	// Virtual-hosted style patterns
-	virtualPatterns := []struct {
-		pattern string
-		index   int
-	}{
-		{`^([^.]+)\.s3\.amazonaws\.com`, 1},
-		{`^([^.]+)\.s3\.([a-z0-9-]+)\.amazonaws\.com`, 1},
-		{`^([^.]+)\.s3-([a-z0-9-]+)\.amazonaws\.com`, 1},
-		{`^([^.]+)\.s3-website\.([a-z0-9-]+)\.amazonaws\.com`, 1},
-		{`^([^.]+)\.s3-website-([a-z0-9-]+)\.amazonaws\.com`, 1},
-	}
-	for _, p := range virtualPatterns {
-		re := regexp.MustCompile(p.pattern)
-		matches := re.FindStringSubmatch(domain)
-		if len(matches) > p.index {
-			return matches[p.index]
-		}
-	}
-
-	// Path-style patterns
-	pathPatterns := []struct {
-		pattern string
-		index   int
-	}{
-		{`^s3\.amazonaws\.com/([^/]+)`, 1},
-		{`^s3\.([a-z0-9-]+)\.amazonaws\.com/([^/]+)`, 2},
-		{`^s3-([a-z0-9-]+)\.amazonaws\.com/([^/]+)`, 2},
-	}
-	for _, p := range pathPatterns {
-		re := regexp.MustCompile(p.pattern)
-		matches := re.FindStringSubmatch(domain)
+	for _, p := range bucketNamePatterns {
+		matches := p.re.FindStringSubmatch(domain)
 		if len(matches) > p.index {
 			return matches[p.index]
 		}
