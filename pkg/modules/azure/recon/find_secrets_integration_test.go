@@ -4,6 +4,7 @@ package recon
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -162,17 +163,46 @@ func TestAzureFindSecretsResource(t *testing.T) {
 	require.NoError(t, p2.Wait())
 	require.NotEmpty(t, risks, "expected at least one secret risk for VM resource")
 
-	t.Run("all risks reference the targeted resource", func(t *testing.T) {
+	// The VM fixture plants a fake AWS key in user_data, so we expect:
+	// - risk name: "azure-secret-aws"
+	// - severity: medium (fake key won't pass validation)
+	// - only the targeted VM resource referenced (no leakage from other resources)
+
+	t.Run("detects planted AWS key with correct risk name", func(t *testing.T) {
+		found := false
 		for _, risk := range risks {
-			assert.True(t, strings.Contains(strings.ToLower(risk.ImpactedResourceID), strings.ToLower(vmID)),
-				"risk %q should reference the targeted VM resource", risk.ImpactedResourceID)
+			if risk.Name == "azure-secret-aws" {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "expected risk named 'azure-secret-aws' from planted fake AWS key in VM user_data")
+	})
+
+	t.Run("severity is medium for unvalidated secret", func(t *testing.T) {
+		for _, risk := range risks {
+			if risk.Name == "azure-secret-aws" {
+				assert.Equal(t, output.RiskSeverityMedium, risk.Severity,
+					"fake AWS key should be medium severity (not validated)")
+			}
 		}
 	})
 
-	t.Run("all risks have azure-secret- prefix", func(t *testing.T) {
+	t.Run("only targeted VM resource has risks", func(t *testing.T) {
 		for _, risk := range risks {
-			assert.True(t, strings.HasPrefix(risk.Name, "azure-secret-"),
-				"risk name %q should start with azure-secret-", risk.Name)
+			assert.True(t, strings.Contains(strings.ToLower(risk.ImpactedResourceID), strings.ToLower(vmID)),
+				"risk ImpactedResourceID %q should reference only the targeted VM, not other resources", risk.ImpactedResourceID)
+		}
+	})
+
+	t.Run("all risks have valid proof context", func(t *testing.T) {
+		for _, risk := range risks {
+			require.NotEmpty(t, risk.Context, "risk context should not be empty")
+			var ctx map[string]interface{}
+			require.NoError(t, json.Unmarshal(risk.Context, &ctx), "risk context must be valid JSON")
+			assert.NotEmpty(t, ctx["rule_text_id"], "risk context should have rule_text_id")
+			assert.NotEmpty(t, ctx["resource_ref"], "risk context should have resource_ref")
+			assert.NotEmpty(t, ctx["matches"], "risk context should have matches")
 		}
 	})
 }
