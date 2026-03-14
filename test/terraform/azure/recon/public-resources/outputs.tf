@@ -118,9 +118,9 @@ output "application_gateway_id" {
   value = azurerm_application_gateway.public.id
 }
 
-output "kusto_cluster_id" {
-  value = azurerm_kusto_cluster.public.id
-}
+# output "kusto_cluster_id" {
+#   value = azurerm_kusto_cluster.public.id
+# }
 
 output "app_service_id" {
   value = azurerm_linux_web_app.public.id

@@ -33,7 +33,7 @@ func TestAzurePublicResources(t *testing.T) {
 		Context: context.Background(),
 	})
 	require.NoError(t, err)
-	testutil.AssertMinResults(t, results, 17)
+	testutil.AssertMinResults(t, results, 16)
 
 	// Collect risks from results.
 	var risks []output.AurelianRisk
@@ -45,25 +45,25 @@ func TestAzurePublicResources(t *testing.T) {
 	require.NotEmpty(t, risks, "should emit at least one risk")
 
 	// Validate risk fields on all results.
-	emptyARNCount := 0
+	emptyResourceIDCount := 0
 	for _, risk := range risks {
 		assert.NotEmpty(t, risk.Name, "risk Name must not be empty")
 		assert.NotEmpty(t, risk.Severity, "risk Severity must not be empty")
-		if risk.ImpactedARN == "" {
-			emptyARNCount++
+		if risk.ImpactedResourceID == "" {
+			emptyResourceIDCount++
 		}
 		assert.NotEmpty(t, risk.Context, "risk Context must not be empty")
 	}
-	if emptyARNCount > 0 {
-		t.Logf("WARNING: %d/%d risks have empty ImpactedARN (ARG query missing id column)", emptyARNCount, len(risks))
+	if emptyResourceIDCount > 0 {
+		t.Logf("WARNING: %d/%d risks have empty ImpactedResourceID (ARG query missing id column)", emptyResourceIDCount, len(risks))
 	}
 
 	// Build index of risks by resource ID and templateID for structural assertions.
 	risksByResourceID := make(map[string][]output.AurelianRisk)
 	risksByTemplateID := make(map[string][]output.AurelianRisk)
 	for _, risk := range risks {
-		if risk.ImpactedARN != "" {
-			risksByResourceID[strings.ToLower(risk.ImpactedARN)] = append(risksByResourceID[strings.ToLower(risk.ImpactedARN)], risk)
+		if risk.ImpactedResourceID != "" {
+			risksByResourceID[strings.ToLower(risk.ImpactedResourceID)] = append(risksByResourceID[strings.ToLower(risk.ImpactedResourceID)], risk)
 		}
 		var ctx map[string]any
 		if err := json.Unmarshal(risk.Context, &ctx); err == nil {
@@ -106,7 +106,7 @@ func TestAzurePublicResources(t *testing.T) {
 		{"detects public cosmos db", "cosmos_db_id"},
 		{"detects public redis cache", "redis_cache_id"},
 		{"detects acr with anonymous pull", "acr_anon_pull_id"},
-		{"detects public data explorer cluster", "kusto_cluster_id"},
+		// {"detects public data explorer cluster", "kusto_cluster_id"}, // Kusto Dev SKU unavailable in test subscription
 		{"detects public api management", "api_management_id"},
 		{"detects public load balancer", "load_balancer_id"},
 		{"detects public application gateway", "application_gateway_id"},
@@ -119,7 +119,7 @@ func TestAzurePublicResources(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			resourceID := strings.ToLower(fixture.Output(tc.fixtureKey))
 			matchedRisks, found := risksByResourceID[resourceID]
-			require.True(t, found, "expected risk with ImpactedARN %s", resourceID)
+			require.True(t, found, "expected risk with ImpactedResourceID %s", resourceID)
 			require.NotEmpty(t, matchedRisks)
 
 			risk := matchedRisks[0]
@@ -392,6 +392,7 @@ func TestAzurePublicResources(t *testing.T) {
 		{
 			name:       "data explorer enricher produces cluster probe and network rules",
 			templateID: "data_explorer_public_access",
+			optional:   true, // Kusto Dev SKU unavailable in test subscription
 			checkCmd: func(t *testing.T, cmds []map[string]any) {
 				assertCommandContains(t, cmds, "kusto.windows.net")
 			},

@@ -850,19 +850,20 @@ resource "azurerm_application_gateway" "public" {
 # Note: Takes ~15 min to provision
 # ============================================================================
 
-resource "azurerm_kusto_cluster" "public" {
-  name                          = "${local.prefix_san}kusto"
-  resource_group_name           = azurerm_resource_group.test.name
-  location                      = local.location
-  public_network_access_enabled = true
-
-  sku {
-    name     = "Dev(No SLA)_Standard_E2a_v4"
-    capacity = 1
-  }
-
-  tags = local.tags
-}
+# Kusto cluster disabled — Dev SKU has no capacity in this subscription.
+# resource "azurerm_kusto_cluster" "public" {
+#   name                          = "${local.prefix_san}kusto"
+#   resource_group_name           = azurerm_resource_group.test.name
+#   location                      = "eastus"
+#   public_network_access_enabled = true
+#
+#   sku {
+#     name     = "Dev(No SLA)_Standard_E2a_v4"
+#     capacity = 1
+#   }
+#
+#   tags = local.tags
+# }
 
 # ============================================================================
 # 34. App Service (Linux Web App) — publicly accessible

@@ -121,7 +121,8 @@ func (m *AzurePublicResourcesModule) Run(_ plugin.Config, out *pipeline.P[model.
 	// Enrichment stage
 	enricher := enrichment.NewAzureEnricher(m.AzureCredential)
 	enriched := pipeline.New[templates.ARGQueryResult]()
-	pipeline.Pipe(results, enricher.Enrich, enriched, &pipeline.PipeOpts{Concurrency: 10})
+	pipeOpts := &pipeline.PipeOpts{Concurrency: m.Concurrency}
+	pipeline.Pipe(results, enricher.Enrich, enriched, pipeOpts)
 
 	pipeline.Pipe(enriched, resultToRisk, out)
 
