@@ -1,6 +1,7 @@
 package recon
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -128,7 +129,7 @@ func TestGetConsole_BuildConsoleURL(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		consoleURL, err := buildConsoleURL(srv.URL, "AKID", "SECRET", "TOKEN", "federation-token", 3600)
+		consoleURL, err := buildConsoleURL(context.Background(), srv.URL, "AKID", "SECRET", "TOKEN", "federation-token", 3600)
 		require.NoError(t, err)
 		assert.Contains(t, consoleURL, "Action=login")
 		assert.Contains(t, consoleURL, "SigninToken=test-signin-token")
@@ -146,7 +147,7 @@ func TestGetConsole_BuildConsoleURL(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		consoleURL, err := buildConsoleURL(srv.URL, "AKID", "SECRET", "TOKEN", "assume-role", 3600)
+		consoleURL, err := buildConsoleURL(context.Background(), srv.URL, "AKID", "SECRET", "TOKEN", "assume-role", 3600)
 		require.NoError(t, err)
 		assert.Contains(t, consoleURL, "Action=login")
 		assert.Contains(t, consoleURL, "SigninToken=assume-role-token")
@@ -158,7 +159,7 @@ func TestGetConsole_BuildConsoleURL(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		_, err := buildConsoleURL(srv.URL, "AKID", "SECRET", "TOKEN", "federation-token", 3600)
+		_, err := buildConsoleURL(context.Background(), srv.URL, "AKID", "SECRET", "TOKEN", "federation-token", 3600)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "403")
 	})
@@ -171,7 +172,7 @@ func TestGetConsole_BuildConsoleURL(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		_, err := buildConsoleURL(srv.URL, "AKID", "SECRET", "TOKEN", "federation-token", 3600)
+		_, err := buildConsoleURL(context.Background(), srv.URL, "AKID", "SECRET", "TOKEN", "federation-token", 3600)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "empty signin token")
 	})
@@ -183,7 +184,7 @@ func TestGetConsole_BuildConsoleURL(t *testing.T) {
 		}))
 		defer srv.Close()
 
-		_, err := buildConsoleURL(srv.URL, "AKID", "SECRET", "TOKEN", "federation-token", 3600)
+		_, err := buildConsoleURL(context.Background(), srv.URL, "AKID", "SECRET", "TOKEN", "federation-token", 3600)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "decoding signin token response")
 	})

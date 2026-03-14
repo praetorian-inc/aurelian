@@ -31,9 +31,9 @@ const (
 // returns credentials scoped to the intersection of this policy and the calling
 // IAM user's permissions, so the resulting session never exceeds the caller's
 // existing privileges. This mirrors Nebula's console_url implementation.
-var federationPolicy = map[string]interface{}{
+var federationPolicy = map[string]any{
 	"Version": "2012-10-17",
-	"Statement": []map[string]interface{}{
+	"Statement": []map[string]any{
 		{
 			"Effect":   "Allow",
 			"Action":   []string{"*"},
@@ -116,7 +116,7 @@ func (m *GetConsoleModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 
 	stsClient := sts.NewFromConfig(awsCfg)
 
-	identity, err := stsClient.GetCallerIdentity(context.Background(), &sts.GetCallerIdentityInput{})
+	identity, err := stsClient.GetCallerIdentity(cfg.Context, &sts.GetCallerIdentityInput{})
 	if err != nil {
 		return fmt.Errorf("getting caller identity: %w", err)
 	}
@@ -147,7 +147,7 @@ func (m *GetConsoleModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 			input.SerialNumber = aws.String(mfaSerial)
 			input.TokenCode = aws.String(c.MFAToken)
 		}
-		assumed, assumeErr := stsClient.AssumeRole(context.Background(), input)
+		assumed, assumeErr := stsClient.AssumeRole(cfg.Context, input)
 		if assumeErr != nil {
 			return fmt.Errorf("assuming role %s: %w", c.RoleARN, assumeErr)
 		}
@@ -156,7 +156,7 @@ func (m *GetConsoleModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 
 	case strings.Contains(identityARN, ":assumed-role/"):
 		// Use existing temp credentials from the loaded AWS config.
-		creds, credsErr := awsCfg.Credentials.Retrieve(context.Background())
+		creds, credsErr := awsCfg.Credentials.Retrieve(cfg.Context)
 		if credsErr != nil {
 			return fmt.Errorf("retrieving credentials: %w", credsErr)
 		}
@@ -176,7 +176,7 @@ func (m *GetConsoleModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 			DurationSeconds: aws.Int32(int32(c.Duration)),
 			Policy:          aws.String(string(policyBytes)),
 		}
-		fedToken, fedErr := stsClient.GetFederationToken(context.Background(), fedInput)
+		fedToken, fedErr := stsClient.GetFederationToken(cfg.Context, fedInput)
 		if fedErr != nil {
 			return fmt.Errorf("getting federation token: %w", fedErr)
 		}
@@ -184,7 +184,7 @@ func (m *GetConsoleModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 		credMethod = "federation-token"
 	}
 
-	consoleURL, err := buildConsoleURL(awsFedEndpoint, accessKeyID, secretAccessKey, sessionToken, credMethod, c.Duration)
+	consoleURL, err := buildConsoleURL(cfg.Context, awsFedEndpoint, accessKeyID, secretAccessKey, sessionToken, credMethod, c.Duration)
 	if err != nil {
 		return fmt.Errorf("building console URL: %w", err)
 	}
@@ -250,7 +250,7 @@ type signinTokenResponse struct {
 // buildConsoleURL exchanges temporary credentials for a federation SigninToken
 // and returns a ready-to-use AWS console URL. fedEndpoint is the federation
 // endpoint base URL (normally awsFedEndpoint; injectable for testing).
-func buildConsoleURL(fedEndpoint, accessKeyID, secretAccessKey, sessionToken, credMethod string, duration int) (string, error) {
+func buildConsoleURL(ctx context.Context, fedEndpoint, accessKeyID, secretAccessKey, sessionToken, credMethod string, duration int) (string, error) {
 	sessionData, err := json.Marshal(map[string]string{
 		"sessionId":    accessKeyID,
 		"sessionKey":   secretAccessKey,
@@ -274,7 +274,11 @@ func buildConsoleURL(fedEndpoint, accessKeyID, secretAccessKey, sessionToken, cr
 		)
 	}
 
-	resp, err := http.Get(fedURL) //nolint:noctx
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fedURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("creating signin token request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("fetching signin token: %w", err)
 	}
