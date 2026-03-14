@@ -51,10 +51,7 @@ func TestWhoamiModuleParameters(t *testing.T) {
 
 func TestWhoamiSupportedResourceTypes(t *testing.T) {
 	m := &AWSWhoamiModule{}
-	types := m.SupportedResourceTypes()
-	require.Len(t, types, 2)
-	assert.Contains(t, types, "AWS::IAM::User")
-	assert.Contains(t, types, "AWS::IAM::Role")
+	assert.Nil(t, m.SupportedResourceTypes())
 }
 
 func TestExtractARNFromError(t *testing.T) {
@@ -72,6 +69,11 @@ func TestExtractARNFromError(t *testing.T) {
 			name:    "assumed role ARN",
 			errMsg:  `User: arn:aws:sts::123456789012:assumed-role/my-role/session-name is not authorized`,
 			wantARN: "arn:aws:sts::123456789012:assumed-role/my-role/session-name",
+		},
+		{
+			name:    "IAM user ARN with dots",
+			errMsg:  `User: arn:aws:iam::123456789012:user/alice.bob is not authorized to perform: timestream:DescribeEndpoints`,
+			wantARN: "arn:aws:iam::123456789012:user/alice.bob",
 		},
 		{
 			name:    "no ARN in message",

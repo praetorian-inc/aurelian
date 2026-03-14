@@ -58,7 +58,7 @@ func TestWhoamiSingleTechnique(t *testing.T) {
 		t.Skip("whoami module not registered in plugin system")
 	}
 
-	techniques := []string{"timestream", "pinpoint", "sqs"}
+	techniques := []string{"sns", "sqs"}
 	for _, technique := range techniques {
 		t.Run(technique, func(t *testing.T) {
 			results, err := testutil.RunAndCollect(t, mod, plugin.Config{

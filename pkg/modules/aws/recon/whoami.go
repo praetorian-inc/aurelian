@@ -19,20 +19,17 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
 
-var arnRegex = regexp.MustCompile(`arn:aws:[a-zA-Z0-9-]+::[0-9]{12}:[a-zA-Z0-9-_/]+`)
+var arnRegex = regexp.MustCompile(`arn:aws:[a-zA-Z0-9-]+::[0-9]{12}:[a-zA-Z0-9-_/.+=,@]+`)
 
 func init() {
 	plugin.Register(&AWSWhoamiModule{})
 }
 
-// WhoamiConfig holds the typed parameters for the whoami module.
 type WhoamiConfig struct {
 	plugin.AWSReconBase
 	Action string `param:"action" desc:"Whoami technique: timestream, pinpoint, sqs, or all" default:"all" enum:"timestream,pinpoint,sqs,all"`
 }
 
-// AWSWhoamiModule performs covert caller identity extraction using AWS APIs
-// whose error messages leak the caller ARN without logging to CloudTrail.
 type AWSWhoamiModule struct {
 	WhoamiConfig
 }
@@ -56,7 +53,7 @@ func (m *AWSWhoamiModule) References() []string {
 }
 
 func (m *AWSWhoamiModule) SupportedResourceTypes() []string {
-	return []string{"AWS::IAM::User", "AWS::IAM::Role"}
+	return nil
 }
 
 func (m *AWSWhoamiModule) Parameters() any {
@@ -75,12 +72,12 @@ func (m *AWSWhoamiModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianM
 		return fmt.Errorf("whoami: load AWS config: %w", err)
 	}
 
-	ctx := context.TODO()
+	ctx := cfg.Context
 	action := strings.ToLower(c.Action)
 
 	type technique struct {
 		name string
-		fn   func(context.Context, aws.Config) string
+		fn   func(context.Context, aws.Config, *plugin.Logger) string
 	}
 
 	techniques := []technique{
@@ -101,9 +98,9 @@ func (m *AWSWhoamiModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianM
 
 	for _, t := range techniques {
 		slog.Info("trying whoami method", "method", t.name)
-		arn := t.fn(ctx, awsCfg)
+		arn := t.fn(ctx, awsCfg, cfg.Log)
 		if arn != "" {
-			slog.Info("extracted ARN", "method", t.name, "arn", arn)
+			cfg.Log.Success("extracted ARN via %s: %s", t.name, arn)
 			out.Send(&output.CallerIdentity{
 				Status:  "success",
 				ARN:     arn,
@@ -114,37 +111,40 @@ func (m *AWSWhoamiModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianM
 		slog.Debug("method returned no ARN", "method", t.name)
 	}
 
-	// All techniques failed to extract an ARN — the APIs succeeded (caller has permissions)
+	cfg.Log.Warn("no ARN extracted — all techniques returned non-IAM errors (caller likely has permissions for these APIs, or the APIs aren't enabled)")
 	out.Send(&output.CallerIdentity{
 		Status: "no_arn_found",
 	})
 	return nil
 }
 
-func timestreamDescribeEndpoints(ctx context.Context, cfg aws.Config) string {
+func timestreamDescribeEndpoints(ctx context.Context, cfg aws.Config, log *plugin.Logger) string {
 	client := timestreamquery.NewFromConfig(cfg)
 	_, err := client.DescribeEndpoints(ctx, &timestreamquery.DescribeEndpointsInput{})
 	if err != nil {
 		return extractARNFromError(err.Error())
 	}
+	log.Info("timestream: caller has timestream:DescribeEndpoints permission")
 	return ""
 }
 
-func pinpointSendVoiceMessage(ctx context.Context, cfg aws.Config) string {
+func pinpointSendVoiceMessage(ctx context.Context, cfg aws.Config, log *plugin.Logger) string {
 	client := pinpointsmsvoice.NewFromConfig(cfg)
 	_, err := client.SendVoiceMessage(ctx, &pinpointsmsvoice.SendVoiceMessageInput{})
 	if err != nil {
 		return extractARNFromError(err.Error())
 	}
+	log.Info("pinpoint: caller has sms-voice:SendVoiceMessage permission")
 	return ""
 }
 
-func sqsListQueues(ctx context.Context, cfg aws.Config) string {
+func sqsListQueues(ctx context.Context, cfg aws.Config, log *plugin.Logger) string {
 	client := sqs.NewFromConfig(cfg)
 	_, err := client.ListQueues(ctx, &sqs.ListQueuesInput{})
 	if err != nil {
 		return extractARNFromError(err.Error())
 	}
+	log.Info("sqs: caller has sqs:ListQueues permission")
 	return ""
 }
 
@@ -153,12 +153,11 @@ func extractARNFromError(errorMessage string) string {
 	if match != "" {
 		return match
 	}
-	slog.Debug("no ARN in error message", "error", errorMessage)
+	slog.Debug("no ARN matched in error message", "regex", arnRegex.String(), "error_message", errorMessage)
 	return ""
 }
 
 func accountFromARN(arn string) string {
-	// ARN format: arn:aws:<service>::<account>:<resource>
 	parts := strings.Split(arn, ":")
 	if len(parts) >= 5 {
 		return parts[4]
