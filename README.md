@@ -34,7 +34,6 @@ Aurelian performs reconnaissance and security analysis across multi-cloud enviro
 - **Secrets Discovery** — Integrated Nosey Parker scanning for credentials across cloud storage, instances, and container images
 - **Multi-Cloud Support** — AWS, Azure, GCP, and container registries with unified CLI interface
 - **Flexible Output** — JSON, Markdown, CSV, SARIF, or human-readable formats
-- **MCP Integration** — Model Context Protocol server for LLM-powered cloud security analysis
 - **Go Library** — Import directly into your Go applications
 
 ## Installation
@@ -381,7 +380,6 @@ graph LR
 
 - **Multi-cloud unified CLI**: Same interface across AWS, Azure, and GCP
 - **Library integration**: Import modules directly into Go applications
-- **MCP support**: LLM integration for AI-assisted cloud security
 
 ### vs Manual CLI
 

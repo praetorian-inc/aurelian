@@ -64,8 +64,8 @@ type SingleCondition struct {
 	Values   []string `json:"values"`
 }
 
-// evaluateConditions evaluates all conditions in a policy statement
-func evaluateConditions(conditions *types.Condition, ctx *RequestContext) *ConditionEval {
+// EvaluateConditions evaluates all conditions in a policy statement
+func EvaluateConditions(conditions *types.Condition, ctx *RequestContext) *ConditionEval {
 	if conditions == nil {
 		// No conditions to evaluate, so we match by default
 		return &ConditionEval{
