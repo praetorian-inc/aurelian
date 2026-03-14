@@ -3,6 +3,7 @@ package dnstakeover
 import (
 	"fmt"
 	"log/slog"
+	"net"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -11,7 +12,7 @@ import (
 
 func (c *Checker) checkA(rec DNSRecord, out *pipeline.P[model.AurelianModel]) {
 	for _, ip := range rec.Values {
-		if c.ipInUse(rec.ProjectID, ip) {
+		if !isPublicIP(ip) || c.ipInUse(rec.ProjectID, ip) {
 			continue
 		}
 
@@ -29,6 +30,14 @@ func (c *Checker) checkA(rec DNSRecord, out *pipeline.P[model.AurelianModel]) {
 			},
 		))
 	}
+}
+
+func isPublicIP(s string) bool {
+	ip := net.ParseIP(s)
+	if ip == nil {
+		return false
+	}
+	return ip.IsGlobalUnicast() && !ip.IsPrivate()
 }
 
 func (c *Checker) ipInUse(projectID, ipAddress string) bool {
