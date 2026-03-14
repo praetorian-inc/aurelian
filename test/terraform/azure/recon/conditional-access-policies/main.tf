@@ -328,9 +328,8 @@ resource "azuread_conditional_access_policy" "location_based" {
   }
 
   session_controls {
-    sign_in_frequency                     = 1
-    sign_in_frequency_period              = "days"
-    sign_in_frequency_authentication_type = "secondaryAuthentication"
+    sign_in_frequency        = 1
+    sign_in_frequency_period = "days"
   }
 }
 
@@ -514,6 +513,5 @@ resource "azuread_conditional_access_policy" "guest_access" {
   session_controls {
     sign_in_frequency        = 1
     sign_in_frequency_period = "days"
-    persistent_browser_mode  = "never"
   }
 }

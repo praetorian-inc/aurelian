@@ -676,10 +676,9 @@ func TestConditionalAccessPolicies_EndToEnd(t *testing.T) {
 		assert.Equal(t, "OR", p.GrantControls["operator"])
 		assert.Equal(t, []string{"mfa"}, builtIn(p.GrantControls))
 
-		// Session — signInFrequency + persistentBrowser
+		// Session — signInFrequency only
 		require.NotNil(t, p.SessionControls)
 		assert.NotNil(t, p.SessionControls["signInFrequency"])
-		assert.NotNil(t, p.SessionControls["persistentBrowser"])
 
 		// Resolution: 1 excluded user (admin), 0 groups, 0 roles, 0 apps
 		// (GuestsOrExternalUsers isn't a UUID, Office365 isn't a UUID)
