@@ -12,6 +12,7 @@ recon commands for aws
 
 * [aurelian aws](aurelian_aws.md)	 - aws platform commands
 * [aurelian aws recon account-auth-details](aurelian_aws_recon_account-auth-details.md)	 - Retrieves IAM account authorization details including users, roles, groups, and policies. IAM is a global service, so this module always queries us-east-1 region.
+* [aurelian aws recon cdk-bucket-takeover](aurelian_aws_recon_cdk-bucket-takeover.md)	 - Detects AWS CDK S3 bucket takeover vulnerabilities by identifying missing CDK staging buckets and insecure IAM policies. Scans for CDK bootstrap roles and validates associated S3 buckets for potential account takeover risks.
 * [aurelian aws recon find-secrets](aurelian_aws_recon_find-secrets.md)	 - Enumerates AWS resources via Cloud Control, extracts content likely to contain hardcoded secrets (EC2 user data, Lambda code, CloudFormation templates, CloudWatch logs, ECS task definitions, SSM documents, Step Functions executions), and scans with Titus.
 * [aurelian aws recon graph](aurelian_aws_recon_graph.md)	 - Collects AWS IAM data (GAAD, resources, policies), evaluates permissions, and detects privilege escalation paths. Outputs JSON by default; use --neo4j-uri to populate graph database with relationships.
 * [aurelian aws recon list-all](aurelian_aws_recon_list-all.md)	 - List resources in an AWS account using CloudControl API. Supports 'full' scan for all resources or 'summary' scan for key services. Can scan multiple regions concurrently.
