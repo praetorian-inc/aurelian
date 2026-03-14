@@ -25,7 +25,6 @@ func (c *CrossRegionActor) ActInRegions(regions []string, action func(region str
 	g.SetLimit(c.concurrencyOrDefault())
 
 	for _, region := range regions {
-		region := region
 		g.Go(func() error {
 			return c.ActInRegion(region, func() error {
 				return action(region)

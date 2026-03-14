@@ -50,6 +50,10 @@ output "public_rds_identifier" {
   value = aws_db_instance.public.identifier
 }
 
+output "public_ami_id" {
+  value = aws_ami_copy.public.id
+}
+
 output "public_opensearch_domain" {
   value = aws_opensearch_domain.public.domain_name
 }
