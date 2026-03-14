@@ -95,7 +95,8 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 	extractor := extraction.NewAzureExtractor(c.AzureCredential)
 	extractor.MaxCosmosDocSize = m.MaxCosmosDocSize
 	extracted := pipeline.New[output.ScanInput]()
-	pipeline.Pipe(listed, extractor.Extract, extracted)
+	pipeOpts := &pipeline.PipeOpts{Concurrency: m.Concurrency}
+	pipeline.Pipe(listed, extractor.Extract, extracted, pipeOpts)
 
 	// Scan extracted content and convert results to risks.
 	scanned := pipeline.New[secrets.SecretScanResult]()

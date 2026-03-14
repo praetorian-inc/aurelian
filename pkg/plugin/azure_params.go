@@ -16,6 +16,7 @@ type AzureReconBase struct {
 // AzureCommonRecon contains common parameters for Azure reconnaissance modules.
 type AzureCommonRecon struct {
 	AzureReconBase
+	Concurrency     int                    `param:"concurrency" desc:"Maximum concurrent API requests" default:"5"`
 	SubscriptionIDs []string               `param:"subscription-ids" desc:"Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions" default:"all" shortcode:"s"`
 	ResourceID      []string               `param:"resource-id" desc:"Azure resource ID(s) to scan directly, skipping enumeration" shortcode:"i"`
 	AzureCredential azcore.TokenCredential `param:"-"`
@@ -27,5 +28,6 @@ func (c *AzureCommonRecon) PostBind(_ Config, _ Module) error {
 		return fmt.Errorf("azure authentication failed: %w", err)
 	}
 	c.AzureCredential = cred
+	c.Concurrency = max(1, c.Concurrency)
 	return nil
 }
