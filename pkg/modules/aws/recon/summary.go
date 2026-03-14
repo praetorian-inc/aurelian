@@ -130,6 +130,10 @@ func (m *AWSSummaryModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 
 	// Build MarkdownTable output matching Nebula's format.
 	table := buildCostTable(serviceRegions, regionSet, grandTotal, days)
+
+	// Print markdown table to console.
+	cfg.Info("\n%s", table.String())
+
 	out.Send(table)
 	return nil
 }
