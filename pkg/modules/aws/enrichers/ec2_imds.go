@@ -20,13 +20,13 @@ type EC2DescribeInstancesAPI interface {
 	DescribeInstances(ctx context.Context, input *ec2.DescribeInstancesInput, opts ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error)
 }
 
-func fetchIMDSMetadataWrapper(cfg plugin.EnricherConfig, r *output.CloudResource) error {
+func fetchIMDSMetadataWrapper(cfg plugin.EnricherConfig, r *output.AWSResource) error {
 	client := ec2.NewFromConfig(cfg.AWSConfig)
 	return FetchIMDSMetadata(cfg, r, client)
 }
 
 // FetchIMDSMetadata enriches an EC2 instance resource with IMDS metadata properties.
-func FetchIMDSMetadata(cfg plugin.EnricherConfig, r *output.CloudResource, client EC2DescribeInstancesAPI) error {
+func FetchIMDSMetadata(cfg plugin.EnricherConfig, r *output.AWSResource, client EC2DescribeInstancesAPI) error {
 	out, err := client.DescribeInstances(cfg.Context, &ec2.DescribeInstancesInput{
 		InstanceIds: []string{r.ResourceID},
 	})

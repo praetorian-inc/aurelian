@@ -15,12 +15,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type mockEC2Client struct {
+type mockIMDSClient struct {
 	output *ec2.DescribeInstancesOutput
 	err    error
 }
 
-func (m *mockEC2Client) DescribeInstances(ctx context.Context, input *ec2.DescribeInstancesInput, opts ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+func (m *mockIMDSClient) DescribeInstances(ctx context.Context, input *ec2.DescribeInstancesInput, opts ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
 	return m.output, m.err
 }
 
@@ -31,7 +31,7 @@ func TestFetchIMDSMetadata(t *testing.T) {
 	}
 
 	t.Run("IMDSv1 allowed", func(t *testing.T) {
-		client := &mockEC2Client{
+		client := &mockIMDSClient{
 			output: &ec2.DescribeInstancesOutput{
 				Reservations: []ec2types.Reservation{{
 					Instances: []ec2types.Instance{{
@@ -46,7 +46,7 @@ func TestFetchIMDSMetadata(t *testing.T) {
 			},
 		}
 
-		r := &output.CloudResource{
+		r := &output.AWSResource{
 			ResourceType: "AWS::EC2::Instance",
 			ResourceID:   "i-0123456789abcdef0",
 			Properties:   make(map[string]any),
@@ -61,7 +61,7 @@ func TestFetchIMDSMetadata(t *testing.T) {
 	})
 
 	t.Run("IMDSv2 enforced", func(t *testing.T) {
-		client := &mockEC2Client{
+		client := &mockIMDSClient{
 			output: &ec2.DescribeInstancesOutput{
 				Reservations: []ec2types.Reservation{{
 					Instances: []ec2types.Instance{{
@@ -76,7 +76,7 @@ func TestFetchIMDSMetadata(t *testing.T) {
 			},
 		}
 
-		r := &output.CloudResource{
+		r := &output.AWSResource{
 			ResourceType: "AWS::EC2::Instance",
 			ResourceID:   "i-0123456789abcdef0",
 			Properties:   make(map[string]any),
@@ -89,7 +89,7 @@ func TestFetchIMDSMetadata(t *testing.T) {
 	})
 
 	t.Run("IMDS disabled", func(t *testing.T) {
-		client := &mockEC2Client{
+		client := &mockIMDSClient{
 			output: &ec2.DescribeInstancesOutput{
 				Reservations: []ec2types.Reservation{{
 					Instances: []ec2types.Instance{{
@@ -104,7 +104,7 @@ func TestFetchIMDSMetadata(t *testing.T) {
 			},
 		}
 
-		r := &output.CloudResource{
+		r := &output.AWSResource{
 			ResourceType: "AWS::EC2::Instance",
 			ResourceID:   "i-0123456789abcdef0",
 			Properties:   make(map[string]any),
@@ -116,7 +116,7 @@ func TestFetchIMDSMetadata(t *testing.T) {
 	})
 
 	t.Run("nil MetadataOptions uses defaults", func(t *testing.T) {
-		client := &mockEC2Client{
+		client := &mockIMDSClient{
 			output: &ec2.DescribeInstancesOutput{
 				Reservations: []ec2types.Reservation{{
 					Instances: []ec2types.Instance{{
@@ -127,7 +127,7 @@ func TestFetchIMDSMetadata(t *testing.T) {
 			},
 		}
 
-		r := &output.CloudResource{
+		r := &output.AWSResource{
 			ResourceType: "AWS::EC2::Instance",
 			ResourceID:   "i-0123456789abcdef0",
 			Properties:   make(map[string]any),
@@ -141,7 +141,7 @@ func TestFetchIMDSMetadata(t *testing.T) {
 	})
 
 	t.Run("terminated instance", func(t *testing.T) {
-		client := &mockEC2Client{
+		client := &mockIMDSClient{
 			output: &ec2.DescribeInstancesOutput{
 				Reservations: []ec2types.Reservation{{
 					Instances: []ec2types.Instance{{
@@ -156,7 +156,7 @@ func TestFetchIMDSMetadata(t *testing.T) {
 			},
 		}
 
-		r := &output.CloudResource{
+		r := &output.AWSResource{
 			ResourceType: "AWS::EC2::Instance",
 			ResourceID:   "i-0123456789abcdef0",
 			Properties:   make(map[string]any),
@@ -168,14 +168,14 @@ func TestFetchIMDSMetadata(t *testing.T) {
 	})
 
 	t.Run("instance not found", func(t *testing.T) {
-		client := &mockEC2Client{
+		client := &mockIMDSClient{
 			err: &smithy.GenericAPIError{
 				Code:    "InvalidInstanceID.NotFound",
 				Message: "The instance ID 'i-nonexistent' does not exist",
 			},
 		}
 
-		r := &output.CloudResource{
+		r := &output.AWSResource{
 			ResourceType: "AWS::EC2::Instance",
 			ResourceID:   "i-nonexistent",
 			Properties:   make(map[string]any),
