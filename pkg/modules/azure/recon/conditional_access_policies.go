@@ -21,7 +21,7 @@ func init() {
 }
 
 type AzureConditionalAccessPoliciesConfig struct {
-	plugin.AzureCommonRecon
+	plugin.AzureEntraRecon
 }
 
 type AzureConditionalAccessPoliciesModule struct {
@@ -53,21 +53,25 @@ func (m *AzureConditionalAccessPoliciesModule) Parameters() any {
 	return &m.AzureConditionalAccessPoliciesConfig
 }
 
-func (m *AzureConditionalAccessPoliciesModule) Run(_ plugin.Config, out *pipeline.P[model.AurelianModel]) error {
+func (m *AzureConditionalAccessPoliciesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
+	ctx := cfg.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	graphClient, err := msgraphsdk.NewGraphServiceClientWithCredentials(m.AzureCredential, nil)
 	if err != nil {
 		return fmt.Errorf("creating Graph client: %w", err)
 	}
 
-	policies, err := m.fetchPolicies(context.Background(), graphClient)
+	policies, err := m.fetchPolicies(ctx, graphClient)
 	if err != nil {
 		return fmt.Errorf("fetching conditional access policies: %w", err)
 	}
 
 	slog.Info("collected conditional access policies", "count", len(policies))
 
-	// Resolve UUIDs to human-readable names
-	resolver := graphresolver.NewResolver(graphClient)
+	resolver := graphresolver.NewResolver(graphClient, ctx)
 	collected := pipeline.From(policies...)
 	resolved := pipeline.New[output.AzureConditionalAccessPolicy]()
 	pipeline.Pipe(collected, resolver.Resolve, resolved)

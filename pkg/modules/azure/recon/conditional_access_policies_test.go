@@ -41,8 +41,8 @@ func TestConditionalAccessPoliciesParameters(t *testing.T) {
 		paramNames[p.Name] = true
 	}
 
-	assert.True(t, paramNames["subscription-ids"], "should have subscription-ids param")
 	assert.True(t, paramNames["output-dir"], "should have output-dir param")
+	assert.False(t, paramNames["subscription-ids"], "Entra module should not expose subscription-ids")
 }
 
 func TestConvertPolicy_FullPolicy(t *testing.T) {

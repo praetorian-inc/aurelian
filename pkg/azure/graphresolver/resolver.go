@@ -21,21 +21,22 @@ var uuidRegex = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4
 // human-readable names via Microsoft Graph.
 type Resolver struct {
 	client  *msgraphsdk.GraphServiceClient
+	ctx     context.Context
 	cache   map[string]output.ResolvedEntity
 	cacheMu sync.RWMutex
 }
 
-func NewResolver(client *msgraphsdk.GraphServiceClient) *Resolver {
+func NewResolver(client *msgraphsdk.GraphServiceClient, ctx context.Context) *Resolver {
 	return &Resolver{
 		client: client,
+		ctx:    ctx,
 		cache:  make(map[string]output.ResolvedEntity),
 	}
 }
 
 // Resolve is a pipeline-compatible method that enriches a policy with resolved UUIDs.
 func (r *Resolver) Resolve(policy output.AzureConditionalAccessPolicy, out *pipeline.P[output.AzureConditionalAccessPolicy]) error {
-	ctx := context.Background()
-	enriched := r.enrichPolicy(ctx, policy)
+	enriched := r.enrichPolicy(r.ctx, policy)
 	out.Send(enriched)
 	return nil
 }
@@ -44,11 +45,6 @@ func (r *Resolver) enrichPolicy(ctx context.Context, policy output.AzureConditio
 	if policy.Conditions == nil {
 		return policy
 	}
-
-	policy.ResolvedUsers = make(map[string]output.ResolvedEntity)
-	policy.ResolvedGroups = make(map[string]output.ResolvedEntity)
-	policy.ResolvedApplications = make(map[string]output.ResolvedEntity)
-	policy.ResolvedRoles = make(map[string]output.ResolvedEntity)
 
 	var userUUIDs, groupUUIDs, appUUIDs, roleUUIDs []string
 
@@ -69,11 +65,14 @@ func (r *Resolver) enrichPolicy(ctx context.Context, policy output.AzureConditio
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	resolve := func(uuids []string, entityType string, resolveFn func(context.Context, string) output.ResolvedEntity, target map[string]output.ResolvedEntity) {
+	// Only allocate maps for entity types that have resolvable UUIDs.
+	// nil maps are omitted from JSON via omitempty; empty maps serialize as {}.
+	resolveInto := func(uuids []string, entityType string, resolveFn func(context.Context, string) output.ResolvedEntity) map[string]output.ResolvedEntity {
 		filtered := filterValidUUIDs(uuids)
 		if len(filtered) == 0 {
-			return
+			return nil
 		}
+		target := make(map[string]output.ResolvedEntity, len(filtered))
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -84,12 +83,13 @@ func (r *Resolver) enrichPolicy(ctx context.Context, policy output.AzureConditio
 				mu.Unlock()
 			}
 		}()
+		return target
 	}
 
-	resolve(userUUIDs, "user", r.resolveUser, policy.ResolvedUsers)
-	resolve(groupUUIDs, "group", r.resolveGroup, policy.ResolvedGroups)
-	resolve(appUUIDs, "application", r.resolveApplication, policy.ResolvedApplications)
-	resolve(roleUUIDs, "role", r.resolveRole, policy.ResolvedRoles)
+	policy.ResolvedUsers = resolveInto(userUUIDs, "user", r.resolveUser)
+	policy.ResolvedGroups = resolveInto(groupUUIDs, "group", r.resolveGroup)
+	policy.ResolvedApplications = resolveInto(appUUIDs, "application", r.resolveApplication)
+	policy.ResolvedRoles = resolveInto(roleUUIDs, "role", r.resolveRole)
 
 	wg.Wait()
 	return policy

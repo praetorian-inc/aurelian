@@ -28,3 +28,19 @@ func (c *AzureCommonRecon) PostBind(_ Config, _ Module) error {
 	c.AzureCredential = cred
 	return nil
 }
+
+// AzureEntraRecon contains parameters for Entra ID (Azure AD) modules that
+// operate at the tenant level and do not require subscription IDs.
+type AzureEntraRecon struct {
+	AzureReconBase
+	AzureCredential azcore.TokenCredential `param:"-"`
+}
+
+func (c *AzureEntraRecon) PostBind(_ Config, _ Module) error {
+	cred, err := azureauth.NewAzureCredential()
+	if err != nil {
+		return fmt.Errorf("azure authentication failed: %w", err)
+	}
+	c.AzureCredential = cred
+	return nil
+}
