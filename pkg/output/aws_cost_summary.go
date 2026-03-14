@@ -2,16 +2,18 @@ package output
 
 import "github.com/praetorian-inc/aurelian/pkg/model"
 
-// AWSCostSummary represents a Cost Explorer breakdown of services and regions.
+// AWSCostSummary represents a Cost Explorer breakdown formatted as a markdown table,
+// matching Nebula's MarkdownTable output structure.
 type AWSCostSummary struct {
 	model.BaseAurelianModel
 
-	// Services maps service name -> region -> cost.
-	Services map[string]map[string]float64 `json:"services"`
+	// TableHeading is a markdown heading displayed above the table.
+	TableHeading string `json:"TableHeading"`
 
-	// TotalCost is the grand total across all services and regions.
-	TotalCost float64 `json:"total_cost"`
+	// Headers are the column names: ["Service", region1, region2, ..., "Total Cost"].
+	Headers []string `json:"Headers"`
 
-	// Days is the lookback window used.
-	Days int `json:"days"`
+	// Rows contains one slice per service, plus a final TOTAL row.
+	// Each row has len(Headers) entries: service name, per-region cost strings, and row total.
+	Rows [][]string `json:"Rows"`
 }
