@@ -96,7 +96,9 @@ func (m *AWSSummaryModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 		return fmt.Errorf("summary: Cost Explorer GetCostAndUsage: %w", err)
 	}
 
+	// Parse cost data into service -> region -> cost map.
 	serviceRegions := make(map[string]map[string]float64)
+	regionSet := make(map[string]bool)
 	grandTotal := 0.0
 
 	for _, rbt := range result.ResultsByTime {
@@ -119,22 +121,80 @@ func (m *AWSSummaryModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 				serviceRegions[service] = make(map[string]float64)
 			}
 			serviceRegions[service][region] += cost
+			regionSet[region] = true
 			grandTotal += cost
 		}
 	}
 
 	slog.Info("cost summary", "services", len(serviceRegions), "total", fmt.Sprintf("$%.2f", grandTotal))
 
-	if cfg.Verbose {
-		printSummaryTable(serviceRegions, grandTotal)
+	// Build MarkdownTable output matching Nebula's format.
+	table := buildCostTable(serviceRegions, regionSet, grandTotal, days)
+	out.Send(table)
+	return nil
+}
+
+func buildCostTable(serviceRegions map[string]map[string]float64, regionSet map[string]bool, grandTotal float64, days int) *output.AWSCostSummary {
+	// Sort regions.
+	regions := make([]string, 0, len(regionSet))
+	for r := range regionSet {
+		regions = append(regions, r)
+	}
+	sort.Strings(regions)
+
+	// Sort services.
+	services := make([]string, 0, len(serviceRegions))
+	for s := range serviceRegions {
+		services = append(services, s)
+	}
+	sort.Strings(services)
+
+	// Headers: Service, region1, region2, ..., Total Cost
+	headers := make([]string, 0, len(regions)+2)
+	headers = append(headers, "Service")
+	headers = append(headers, regions...)
+	headers = append(headers, "Total Cost")
+
+	// Rows: one per service + final TOTAL row.
+	rows := make([][]string, 0, len(services)+1)
+	totalByRegion := make(map[string]float64)
+
+	for _, svc := range services {
+		row := make([]string, 0, len(headers))
+		row = append(row, svc)
+		svcTotal := 0.0
+		for _, r := range regions {
+			cost := serviceRegions[svc][r]
+			svcTotal += cost
+			totalByRegion[r] += cost
+			if cost > 0.01 {
+				row = append(row, fmt.Sprintf("$%.2f", cost))
+			} else {
+				row = append(row, "-")
+			}
+		}
+		row = append(row, fmt.Sprintf("$%.2f", svcTotal))
+		rows = append(rows, row)
 	}
 
-	out.Send(&output.AWSCostSummary{
-		Services:  serviceRegions,
-		TotalCost: grandTotal,
-		Days:      days,
-	})
-	return nil
+	// TOTAL row with bold markdown formatting.
+	totalRow := make([]string, 0, len(headers))
+	totalRow = append(totalRow, "**TOTAL**")
+	for _, r := range regions {
+		if totalByRegion[r] > 0.01 {
+			totalRow = append(totalRow, fmt.Sprintf("**$%.2f**", totalByRegion[r]))
+		} else {
+			totalRow = append(totalRow, "-")
+		}
+	}
+	totalRow = append(totalRow, fmt.Sprintf("**$%.2f**", grandTotal))
+	rows = append(rows, totalRow)
+
+	return &output.AWSCostSummary{
+		TableHeading: fmt.Sprintf("# AWS Cost Summary\n\nCost breakdown by service and region (last %d days):\n\n", days),
+		Headers:      headers,
+		Rows:         rows,
+	}
 }
 
 func cleanServiceName(name string) string {
@@ -144,66 +204,3 @@ func cleanServiceName(name string) string {
 }
 
 func strPtr(s string) *string { return &s }
-
-func printSummaryTable(serviceRegions map[string]map[string]float64, grandTotal float64) {
-	// Collect all regions
-	regionSet := make(map[string]bool)
-	for _, regions := range serviceRegions {
-		for r := range regions {
-			regionSet[r] = true
-		}
-	}
-	var regions []string
-	for r := range regionSet {
-		regions = append(regions, r)
-	}
-	sort.Strings(regions)
-
-	// Sort services
-	var services []string
-	for s := range serviceRegions {
-		services = append(services, s)
-	}
-	sort.Strings(services)
-
-	// Print header
-	fmt.Printf("\n%-40s", "Service")
-	for _, r := range regions {
-		fmt.Printf("  %-16s", r)
-	}
-	fmt.Printf("  %-12s\n", "Total")
-	fmt.Println(strings.Repeat("-", 40+18*len(regions)+14))
-
-	// Print rows
-	for _, svc := range services {
-		svcTotal := 0.0
-		fmt.Printf("%-40s", svc)
-		for _, r := range regions {
-			cost := serviceRegions[svc][r]
-			svcTotal += cost
-			if cost > 0.01 {
-				fmt.Printf("  $%-15.2f", cost)
-			} else {
-				fmt.Printf("  %-16s", "-")
-			}
-		}
-		fmt.Printf("  $%-11.2f\n", svcTotal)
-	}
-
-	fmt.Println(strings.Repeat("-", 40+18*len(regions)+14))
-	fmt.Printf("%-40s", "TOTAL")
-	totalByRegion := make(map[string]float64)
-	for _, regions := range serviceRegions {
-		for r, cost := range regions {
-			totalByRegion[r] += cost
-		}
-	}
-	for _, r := range regions {
-		if totalByRegion[r] > 0.01 {
-			fmt.Printf("  $%-15.2f", totalByRegion[r])
-		} else {
-			fmt.Printf("  %-16s", "-")
-		}
-	}
-	fmt.Printf("  $%-11.2f\n\n", grandTotal)
-}
