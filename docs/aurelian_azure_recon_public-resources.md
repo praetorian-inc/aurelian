@@ -9,10 +9,8 @@ aurelian azure recon public-resources [flags]
 ### Options
 
 ```
-      --concurrency int            Maximum concurrent API requests (default 5)
   -h, --help                       help for public-resources
       --output-dir string          Base output directory (default "aurelian-output")
-  -i, --resource-id strings        Azure resource ID(s) to scan directly, skipping enumeration
   -s, --subscription-ids strings   Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions (default [all])
       --template-dir string        Optional directory with additional YAML query templates
 ```

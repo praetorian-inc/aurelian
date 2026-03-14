@@ -26,7 +26,9 @@ func init() {
 type AzureFindSecretsConfig struct {
 	plugin.AzureCommonRecon
 	secrets.ScannerConfig
-	MaxCosmosDocSize int `param:"max-cosmos-doc-size" desc:"Max individual Cosmos document size in bytes" default:"1048576"`
+	Concurrency      int      `param:"concurrency" desc:"Maximum concurrent API requests" default:"5"`
+	ResourceID       []string `param:"resource-id" desc:"Azure resource ID(s) to scan directly, skipping enumeration" shortcode:"i"`
+	MaxCosmosDocSize int      `param:"max-cosmos-doc-size" desc:"Max individual Cosmos document size in bytes" default:"1048576"`
 }
 
 // AzureFindSecretsModule scans Azure resources for hardcoded secrets using Titus.
@@ -66,6 +68,7 @@ func (m *AzureFindSecretsModule) Parameters() any {
 
 func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.AzureFindSecretsConfig
+	c.Concurrency = max(1, c.Concurrency)
 	if c.DBPath == "" {
 		c.DBPath = secrets.DefaultDBPath(c.OutputDir)
 	}
