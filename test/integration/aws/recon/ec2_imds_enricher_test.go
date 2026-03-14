@@ -7,10 +7,12 @@ import (
 	"os"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/model"
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/enrichers" // register enrichers
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/recon"     // register modules
 	"github.com/praetorian-inc/aurelian/pkg/modules/common"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
@@ -19,7 +21,7 @@ import (
 )
 
 func TestEC2IMDSEnricher(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/recon/ec2-imds-check")
+	fixture := testutil.NewAWSFixture(t, "aws/recon/ec2-imds-check")
 	fixture.Setup()
 
 	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "list-all")
@@ -27,8 +29,8 @@ func TestEC2IMDSEnricher(t *testing.T) {
 		t.Fatal("list-all module not registered in plugin system")
 	}
 
-	// Run list-all with EC2 resource type (enricher auto-runs)
-	results, err := mod.Run(plugin.Config{
+	// Run list-all with EC2 resource type (enricher runs automatically in pipeline)
+	results, err := testutil.RunAndCollect(t, mod, plugin.Config{
 		Args: map[string]any{
 			"resource-type": []string{"AWS::EC2::Instance"},
 			"regions":       []string{"us-east-1"},
@@ -39,8 +41,13 @@ func TestEC2IMDSEnricher(t *testing.T) {
 	require.NoError(t, err, "enumeration should succeed")
 	testutil.AssertMinResults(t, results, 1)
 
-	// Parse CloudResource data from results
-	resources := flattenCloudResources(t, results[0].Data)
+	// Extract AWSResource instances from results
+	var resources []output.AWSResource
+	for _, r := range results {
+		if res, ok := r.(output.AWSResource); ok {
+			resources = append(resources, res)
+		}
+	}
 
 	// Build lookup sets from fixture outputs
 	allInstanceIDs := fixture.OutputList("all_instance_ids")
@@ -62,7 +69,7 @@ func TestEC2IMDSEnricher(t *testing.T) {
 	}
 
 	// Filter to test instances
-	var testInstances []output.CloudResource
+	var testInstances []output.AWSResource
 	for _, r := range resources {
 		if r.ResourceType == "AWS::EC2::Instance" && allIDSet[r.ResourceID] {
 			testInstances = append(testInstances, r)
@@ -94,13 +101,24 @@ func TestEC2IMDSEnricher(t *testing.T) {
 		analyzer := common.NewYAMLAnalyzer([]common.YAMLRule{rule})
 
 		for _, instance := range testInstances {
-			analyzerResults, err := analyzer.Run(plugin.Config{
-				Context: context.Background(),
-				Args:    map[string]any{"resource": instance},
-			})
+			out := pipeline.New[model.AurelianModel]()
+			go func() {
+				defer out.Close()
+				require.NoError(t, analyzer.Run(plugin.Config{
+					Context: context.Background(),
+					Args:    map[string]any{"resource": instance},
+				}, out))
+			}()
+
+			analyzerResults, err := out.Collect()
 			require.NoError(t, err)
-			findings, ok := analyzerResults[0].Data.([]plugin.Finding)
-			require.True(t, ok)
+
+			var findings []plugin.Finding
+			for _, r := range analyzerResults {
+				if f, ok := r.(plugin.Finding); ok {
+					findings = append(findings, f)
+				}
+			}
 
 			if flaggedIDSet[instance.ResourceID] {
 				assert.NotEmpty(t, findings,
