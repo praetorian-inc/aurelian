@@ -23,6 +23,8 @@ const banner = `                      _ _
  / _` + "`" + ` | | | | '__/ _ \ | |/ _` + "`" + ` | '_ \ 
 | (_| | |_| | | |  __/ | | (_| | | | |
  \__,_|\__,_|_|  \___|_|_|\__,_|_| |_|
+
+ Praetorian Security, Inc.
 `
 
 func configureSlog(level string, logger *plugin.Logger) {
