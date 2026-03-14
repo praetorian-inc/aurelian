@@ -50,6 +50,8 @@ func NewEnumerator(opts plugin.AWSCommonRecon) *Enumerator {
 	e.Register(iamEnum.PolicyEnumerator())
 	e.Register(iamEnum.UserEnumerator())
 
+	e.Register(NewEC2ImageEnumerator(opts, provider))
+
 	return e
 }
 

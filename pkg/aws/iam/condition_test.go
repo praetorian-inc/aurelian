@@ -1273,7 +1273,7 @@ func TestEvaluateConditions(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			//tc.context.PopulateDefaultRequestConditionKeys("arn:aws:iam::123456789012:role/test-role")
-			result := evaluateConditions(tc.conditions, tc.context)
+			result := EvaluateConditions(tc.conditions, tc.context)
 			if result.Result != tc.expected.Result {
 				t.Errorf("Expected %v, but got %v for conditions %v and context %v", tc.expected, result, tc.conditions, tc.context)
 			}

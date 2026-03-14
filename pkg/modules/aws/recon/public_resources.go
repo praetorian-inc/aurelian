@@ -65,27 +65,39 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 
 	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
 	if err != nil {
-		return fmt.Errorf("failed to collect inputs: %v", err)
+		return fmt.Errorf("failed to collect inputs: %w", err)
 	}
 
-	pipeOpts := &pipeline.PipeOpts{Concurrency: m.Concurrency}
+	cfg.Info("evaluating %d resource types for public access across %d regions", len(inputs), len(c.Regions))
 
 	inputPipeline := pipeline.From(inputs...)
 	listed := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(inputPipeline, lister.List, listed)
+	pipeline.Pipe(inputPipeline, lister.List, listed, &pipeline.PipeOpts{
+		Progress: cfg.Log.ProgressFunc("listing resources"),
+	})
 
 	// Enrich resources with properties not available from CloudControl
 	// (e.g. RDS PubliclyAccessible, Cognito self-signup, Lambda function URL auth type).
 	enricher := enrichment.NewAWSEnricher(c.AWSCommonRecon)
 	enriched := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(listed, enricher.Enrich, enriched, pipeOpts)
+	pipeline.Pipe(listed, enricher.Enrich, enriched, &pipeline.PipeOpts{
+		Progress:    cfg.Log.ProgressFunc("enriching resources"),
+		Concurrency: m.Concurrency,
+	})
 
 	evaluator := publicaccess.NewResourceEvaluator(c.AWSCommonRecon, c.OrgPolicies)
 	evaluated := pipeline.New[publicaccess.PublicAccessResult]()
-	pipeline.Pipe(enriched, evaluator.Evaluate, evaluated, pipeOpts)
+	pipeline.Pipe(enriched, evaluator.Evaluate, evaluated, &pipeline.PipeOpts{
+		Progress:    cfg.Log.ProgressFunc("evaluating public access"),
+		Concurrency: m.Concurrency,
+	})
 	pipeline.Pipe(evaluated, riskFromResult, out)
 
-	return out.Wait()
+	if err := out.Wait(); err != nil {
+		return err
+	}
+	cfg.Success("public access evaluation complete")
+	return nil
 }
 
 func riskFromResult(r publicaccess.PublicAccessResult, out *pipeline.P[model.AurelianModel]) error {
