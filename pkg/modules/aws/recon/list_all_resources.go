@@ -1,6 +1,7 @@
 package recon
 
 import (
+	"github.com/praetorian-inc/aurelian/pkg/aws/enrichment"
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -69,13 +70,22 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model
 		Progress: cfg.Log.ProgressFunc("listing resources"),
 	})
 
+	// Enrich resources with properties not available from CloudControl
+	// (e.g. EC2 IMDS metadata, Lambda function URL auth type).
+	enricher := enrichment.NewAWSEnricher(c.AWSCommonRecon)
+	enriched := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(listed, enricher.Enrich, enriched, &pipeline.PipeOpts{
+		Progress:    cfg.Log.ProgressFunc("enriching resources"),
+		Concurrency: c.Concurrency,
+	})
+
 	count := 0
-	for r := range listed.Range() {
+	for r := range enriched.Range() {
 		count++
 		out.Send(r)
 	}
 
-	if err := listed.Wait(); err != nil {
+	if err := enriched.Wait(); err != nil {
 		return err
 	}
 	cfg.Success("enumerated %d resources", count)

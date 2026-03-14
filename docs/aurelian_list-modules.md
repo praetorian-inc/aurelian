@@ -1,6 +1,6 @@
 ## aurelian list-modules
 
-Display available Diocletian modules in a tree structure
+Display available Aurelian modules in a tree structure
 
 ```
 aurelian list-modules [flags]

@@ -68,7 +68,7 @@ func evaluateStatement(stmt *types.PolicyStatement, requestedAction, requestedRe
 
 	// Check conditions if present
 	if stmt.Condition != nil {
-		conditionEval := evaluateConditions(stmt.Condition, context)
+		conditionEval := EvaluateConditions(stmt.Condition, context)
 		eval.ConditionEvaluation = conditionEval
 
 		// If conditions explicitly failed, return with implicit deny
