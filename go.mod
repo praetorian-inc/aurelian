@@ -19,6 +19,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cosmos/armcosmos/v3 v3.4.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/datafactory/armdatafactory/v8 v8.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/digitaltwins/armdigitaltwins v1.2.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/eventhub/armeventhub v1.3.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/hybridcompute/armhybridcompute/v2 v2.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/kusto/armkusto/v2 v2.3.0
@@ -65,6 +66,8 @@ require (
 	github.com/fatih/color v1.18.0
 	github.com/hashicorp/terraform-exec v0.24.0
 	github.com/mattn/go-isatty v0.0.20
+	github.com/microsoftgraph/msgraph-sdk-go v1.96.0
+	github.com/microsoftgraph/msgraph-sdk-go-core v1.4.0
 	github.com/muesli/termenv v0.16.0
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.4
 	github.com/praetorian-inc/titus v1.1.3
@@ -152,8 +155,6 @@ require (
 	github.com/microsoft/kiota-serialization-json-go v1.1.2 // indirect
 	github.com/microsoft/kiota-serialization-multipart-go v1.1.2 // indirect
 	github.com/microsoft/kiota-serialization-text-go v1.1.3 // indirect
-	github.com/microsoftgraph/msgraph-sdk-go v1.96.0 // indirect
-	github.com/microsoftgraph/msgraph-sdk-go-core v1.4.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/go-archive v0.1.0 // indirect
 	github.com/moby/patternmatcher v0.6.0 // indirect

@@ -50,6 +50,8 @@ github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/datafactory/armdatafactory
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/datafactory/armdatafactory/v8 v8.0.0/go.mod h1:Ypduw9uodhLDo/M4Nqx6F1RENfFOvtQQsfa7PPdws9o=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/digitaltwins/armdigitaltwins v1.2.0 h1:GD96b78rv9jhShcYcJauisgqyXBFgEaTAvUMaPiFl9w=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/digitaltwins/armdigitaltwins v1.2.0/go.mod h1:ESqbgba0Fl1eop2bwoJ84Vmh+d093eDrYK2TdR9bKEM=
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns v1.2.0 h1:lpOxwrQ919lCZoNCd69rVt8u1eLZuMORrGXqy8sNf3c=
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns v1.2.0/go.mod h1:fSvRkb8d26z9dbL40Uf/OO6Vo9iExtZK3D0ulRV+8M0=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/eventhub/armeventhub v1.3.0 h1:4hGvxD72TluuFIXVr8f4XkKZfqAa7Pj61t0jmQ7+kes=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/eventhub/armeventhub v1.3.0/go.mod h1:TSH7DcFItwAufy0Lz+Ft2cyopExCpxbOxI5SkH4dRNo=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/hybridcompute/armhybridcompute/v2 v2.0.0 h1:VvSZmyJEBvdzQXbs1Ued+iaapfSze5+rawR0EFFzyVw=
