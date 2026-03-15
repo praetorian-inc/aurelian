@@ -1,4 +1,4 @@
-package azure
+package misconfigurations
 
 import (
 	"embed"
@@ -9,7 +9,8 @@ import (
 //go:embed *.yaml
 var embeddedTemplates embed.FS
 
-// NewLoader creates a TemplateLoader pre-populated with all embedded Azure YAML templates.
+// NewLoader creates a TemplateLoader pre-populated with all embedded
+// misconfiguration YAML templates.
 func NewLoader() (*templates.TemplateLoader, error) {
 	return templates.NewTemplateLoader(embeddedTemplates)
 }

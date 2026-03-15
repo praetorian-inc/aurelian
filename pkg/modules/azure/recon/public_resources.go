@@ -12,7 +12,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/templates"
-	azuretemplates "github.com/praetorian-inc/aurelian/pkg/templates/azure"
+	azuretemplates "github.com/praetorian-inc/aurelian/pkg/templates/azure/public-resources"
 )
 
 func init() {
