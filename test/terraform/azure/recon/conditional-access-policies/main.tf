@@ -263,6 +263,7 @@ resource "azuread_conditional_access_policy" "risk_based" {
 resource "azuread_conditional_access_policy" "app_targeted" {
   display_name = "${local.prefix}-app-targeted"
   state        = "disabled"
+  depends_on   = [azuread_service_principal.test]
 
   conditions {
     users {

@@ -290,7 +290,7 @@ func TestConditionalAccessPolicies_EndToEnd(t *testing.T) {
 		assert.Empty(t, p.ResolvedGroups)
 		assert.Len(t, p.ResolvedRoles, 2)
 		assert.Empty(t, p.ResolvedApplications)
-		assertUser(t, p, "exclude_user_object_id", "exclude_user_display_name", "exclude_user_object_id")
+		assertUser(t, p, "exclude_user_object_id", "exclude_user_display_name", "exclude_user_upn")
 		// UPN check — use the helper but we need the UPN output; the exclude user
 		// was created with a known UPN pattern, validate via display name instead
 		assertRole(t, p, "global_admin_role_template_id", "Global Administrator")
@@ -455,7 +455,7 @@ func TestConditionalAccessPolicies_EndToEnd(t *testing.T) {
 		assert.Empty(t, p.ResolvedGroups)
 		assert.Len(t, p.ResolvedRoles, 1)
 		assert.Empty(t, p.ResolvedApplications)
-		assertUser(t, p, "admin_user_object_id", "admin_user_display_name", "admin_user_object_id")
+		assertUser(t, p, "admin_user_object_id", "admin_user_display_name", "admin_user_upn")
 		assertRole(t, p, "global_admin_role_template_id", "Global Administrator")
 	})
 
@@ -509,7 +509,7 @@ func TestConditionalAccessPolicies_EndToEnd(t *testing.T) {
 		assert.Empty(t, p.ResolvedRoles)
 		assert.Empty(t, p.ResolvedApplications)
 		assertUser(t, p, "test_user_object_id", "test_user_display_name", "test_user_upn")
-		assertUser(t, p, "exclude_user_object_id", "exclude_user_display_name", "exclude_user_object_id")
+		assertUser(t, p, "exclude_user_object_id", "exclude_user_display_name", "exclude_user_upn")
 		assertGroup(t, p, "admin_group_object_id", "admin_group_display_name")
 	})
 
@@ -686,7 +686,7 @@ func TestConditionalAccessPolicies_EndToEnd(t *testing.T) {
 		assert.Empty(t, p.ResolvedGroups)
 		assert.Empty(t, p.ResolvedRoles)
 		assert.Empty(t, p.ResolvedApplications)
-		assertUser(t, p, "admin_user_object_id", "admin_user_display_name", "admin_user_object_id")
+		assertUser(t, p, "admin_user_object_id", "admin_user_display_name", "admin_user_upn")
 	})
 
 	// =====================================================================

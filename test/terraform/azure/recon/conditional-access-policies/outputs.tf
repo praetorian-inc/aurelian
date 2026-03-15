@@ -128,12 +128,20 @@ output "exclude_user_display_name" {
   value = azuread_user.exclude.display_name
 }
 
+output "exclude_user_upn" {
+  value = azuread_user.exclude.user_principal_name
+}
+
 output "admin_user_object_id" {
   value = azuread_user.admin.object_id
 }
 
 output "admin_user_display_name" {
   value = azuread_user.admin.display_name
+}
+
+output "admin_user_upn" {
+  value = azuread_user.admin.user_principal_name
 }
 
 # ---------- Group outputs ----------
