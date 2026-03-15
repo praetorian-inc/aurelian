@@ -1,4 +1,4 @@
-package misconfigcheck
+package configscan
 
 import (
 	"fmt"

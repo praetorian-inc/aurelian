@@ -1,4 +1,4 @@
-package misconfigurations
+package configurationscan
 
 import (
 	"embed"
@@ -10,7 +10,7 @@ import (
 var embeddedTemplates embed.FS
 
 // NewLoader creates a TemplateLoader pre-populated with all embedded
-// misconfiguration YAML templates.
+// configuration scan YAML templates.
 func NewLoader() (*templates.TemplateLoader, error) {
 	return templates.NewTemplateLoader(embeddedTemplates)
 }

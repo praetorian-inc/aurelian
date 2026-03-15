@@ -15,13 +15,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAzureMisconfigurations(t *testing.T) {
-	fixture := testutil.NewAzureFixture(t, "azure/recon/misconfigurations")
+func TestAzureConfigurationScan(t *testing.T) {
+	fixture := testutil.NewAzureFixture(t, "azure/recon/configuration-scan")
 	fixture.Setup()
 
-	mod, ok := plugin.Get(plugin.PlatformAzure, plugin.CategoryRecon, "misconfigurations")
+	mod, ok := plugin.Get(plugin.PlatformAzure, plugin.CategoryRecon, "configuration-scan")
 	if !ok {
-		t.Fatal("misconfigurations module not registered")
+		t.Fatal("configuration-scan module not registered")
 	}
 
 	subscriptionID := fixture.Output("subscription_id")
@@ -84,7 +84,7 @@ func TestAzureMisconfigurations(t *testing.T) {
 	// =====================================================================
 	t.Run("aks_local_accounts_enabled", func(t *testing.T) {
 		rc := findRisk(t, "aks_local_accounts_enabled", "aks_id")
-		assert.Equal(t, "azure-misconfiguration", rc.Risk.Name)
+		assert.Equal(t, "azure-configuration-scan", rc.Risk.Name)
 		assert.Equal(t, output.RiskSeverity("low"), rc.Risk.Severity)
 		assert.Equal(t, "aks_local_accounts_enabled", rc.Template)
 		assert.NotEmpty(t, rc.Risk.Context)
@@ -95,7 +95,7 @@ func TestAzureMisconfigurations(t *testing.T) {
 	// =====================================================================
 	t.Run("app_service_auth_disabled", func(t *testing.T) {
 		rc := findRisk(t, "app_service_auth_disabled", "webapp_no_auth_id")
-		assert.Equal(t, "azure-misconfiguration", rc.Risk.Name)
+		assert.Equal(t, "azure-configuration-scan", rc.Risk.Name)
 		assert.Equal(t, output.RiskSeverity("medium"), rc.Risk.Severity)
 		assert.Equal(t, "app_service_auth_disabled", rc.Template)
 
@@ -109,7 +109,7 @@ func TestAzureMisconfigurations(t *testing.T) {
 	// =====================================================================
 	t.Run("app_service_remote_debugging_enabled", func(t *testing.T) {
 		rc := findRisk(t, "app_service_remote_debugging_enabled", "webapp_debug_id")
-		assert.Equal(t, "azure-misconfiguration", rc.Risk.Name)
+		assert.Equal(t, "azure-configuration-scan", rc.Risk.Name)
 		assert.Equal(t, output.RiskSeverity("high"), rc.Risk.Severity)
 		assert.Equal(t, "app_service_remote_debugging_enabled", rc.Template)
 
@@ -127,7 +127,7 @@ func TestAzureMisconfigurations(t *testing.T) {
 	// =====================================================================
 	t.Run("databases_allow_azure_services", func(t *testing.T) {
 		rc := findRisk(t, "databases_allow_azure_services", "sql_server_id")
-		assert.Equal(t, "azure-misconfiguration", rc.Risk.Name)
+		assert.Equal(t, "azure-configuration-scan", rc.Risk.Name)
 		assert.Equal(t, output.RiskSeverity("high"), rc.Risk.Severity)
 		assert.Equal(t, "databases_allow_azure_services", rc.Template)
 	})
@@ -139,7 +139,7 @@ func TestAzureMisconfigurations(t *testing.T) {
 	// =====================================================================
 	t.Run("function_app_http_anonymous_access", func(t *testing.T) {
 		rc := findRisk(t, "function_app_http_anonymous_access", "func_anon_id")
-		assert.Equal(t, "azure-misconfiguration", rc.Risk.Name)
+		assert.Equal(t, "azure-configuration-scan", rc.Risk.Name)
 		assert.Equal(t, output.RiskSeverity("high"), rc.Risk.Severity)
 		assert.Equal(t, "function_app_http_anonymous_access", rc.Template)
 	})
@@ -149,7 +149,7 @@ func TestAzureMisconfigurations(t *testing.T) {
 	// =====================================================================
 	t.Run("function_apps_admin_managed_identity", func(t *testing.T) {
 		rc := findRisk(t, "function_apps_admin_managed_identity", "func_admin_mi_id")
-		assert.Equal(t, "azure-misconfiguration", rc.Risk.Name)
+		assert.Equal(t, "azure-configuration-scan", rc.Risk.Name)
 		assert.Equal(t, output.RiskSeverity("low"), rc.Risk.Severity)
 		assert.Equal(t, "function_apps_admin_managed_identity", rc.Template)
 	})
@@ -159,7 +159,7 @@ func TestAzureMisconfigurations(t *testing.T) {
 	// =====================================================================
 	t.Run("key_vault_access_policy_privilege_escalation", func(t *testing.T) {
 		rc := findRisk(t, "key_vault_access_policy_privilege_escalation", "key_vault_id")
-		assert.Equal(t, "azure-misconfiguration", rc.Risk.Name)
+		assert.Equal(t, "azure-configuration-scan", rc.Risk.Name)
 		assert.Equal(t, output.RiskSeverity("high"), rc.Risk.Severity)
 		assert.Equal(t, "key_vault_access_policy_privilege_escalation", rc.Template)
 	})
@@ -169,7 +169,7 @@ func TestAzureMisconfigurations(t *testing.T) {
 	// =====================================================================
 	t.Run("kusto_wildcard_trusted_tenants", func(t *testing.T) {
 		rc := findRisk(t, "kusto_wildcard_trusted_tenants", "kusto_id")
-		assert.Equal(t, "azure-misconfiguration", rc.Risk.Name)
+		assert.Equal(t, "azure-configuration-scan", rc.Risk.Name)
 		assert.Equal(t, output.RiskSeverity("high"), rc.Risk.Severity)
 		assert.Equal(t, "kusto_wildcard_trusted_tenants", rc.Template)
 	})
@@ -179,7 +179,7 @@ func TestAzureMisconfigurations(t *testing.T) {
 	// =====================================================================
 	t.Run("nsg_unrestricted_port_ranges", func(t *testing.T) {
 		rc := findRisk(t, "nsg_unrestricted_port_ranges", "nsg_id")
-		assert.Equal(t, "azure-misconfiguration", rc.Risk.Name)
+		assert.Equal(t, "azure-configuration-scan", rc.Risk.Name)
 		assert.Equal(t, output.RiskSeverity("medium"), rc.Risk.Severity)
 		assert.Equal(t, "nsg_unrestricted_port_ranges", rc.Template)
 	})
@@ -189,7 +189,7 @@ func TestAzureMisconfigurations(t *testing.T) {
 	// =====================================================================
 	t.Run("overprivileged_custom_roles", func(t *testing.T) {
 		rc := findRisk(t, "overprivileged_custom_roles", "custom_role_id")
-		assert.Equal(t, "azure-misconfiguration", rc.Risk.Name)
+		assert.Equal(t, "azure-configuration-scan", rc.Risk.Name)
 		assert.Equal(t, output.RiskSeverity("high"), rc.Risk.Severity)
 		assert.Equal(t, "overprivileged_custom_roles", rc.Template)
 	})
@@ -199,7 +199,7 @@ func TestAzureMisconfigurations(t *testing.T) {
 	// =====================================================================
 	t.Run("vm_privileged_managed_identity", func(t *testing.T) {
 		rc := findRisk(t, "vm_privileged_managed_identity", "vm_id")
-		assert.Equal(t, "azure-misconfiguration", rc.Risk.Name)
+		assert.Equal(t, "azure-configuration-scan", rc.Risk.Name)
 		assert.Equal(t, output.RiskSeverity("low"), rc.Risk.Severity)
 		assert.Equal(t, "vm_privileged_managed_identity", rc.Template)
 	})
@@ -209,7 +209,7 @@ func TestAzureMisconfigurations(t *testing.T) {
 	// =====================================================================
 	t.Run("vm_ssh_password_authentication", func(t *testing.T) {
 		rc := findRisk(t, "vm_ssh_password_authentication", "vm_id")
-		assert.Equal(t, "azure-misconfiguration", rc.Risk.Name)
+		assert.Equal(t, "azure-configuration-scan", rc.Risk.Name)
 		assert.Equal(t, output.RiskSeverity("high"), rc.Risk.Severity)
 		assert.Equal(t, "vm_ssh_password_authentication", rc.Template)
 	})
@@ -218,10 +218,10 @@ func TestAzureMisconfigurations(t *testing.T) {
 	// Cross-finding invariants
 	// =====================================================================
 
-	t.Run("all risks have name azure-misconfiguration", func(t *testing.T) {
+	t.Run("all risks have name azure-configuration-scan", func(t *testing.T) {
 		for _, rc := range all {
-			assert.Equal(t, "azure-misconfiguration", rc.Risk.Name,
-				"template %q: risk name should be azure-misconfiguration", rc.Template)
+			assert.Equal(t, "azure-configuration-scan", rc.Risk.Name,
+				"template %q: risk name should be azure-configuration-scan", rc.Template)
 		}
 	})
 

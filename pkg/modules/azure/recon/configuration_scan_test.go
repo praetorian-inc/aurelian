@@ -12,14 +12,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	misconfigtemplates "github.com/praetorian-inc/aurelian/pkg/templates/azure/misconfigurations"
+	configscantemplates "github.com/praetorian-inc/aurelian/pkg/templates/azure/configuration-scan"
 )
 
-func TestMisconfigurationsModuleMetadata(t *testing.T) {
-	m := &AzureMisconfigurationsModule{}
+func TestConfigurationScanModuleMetadata(t *testing.T) {
+	m := &AzureConfigurationScanModule{}
 
-	assert.Equal(t, "misconfigurations", m.ID())
-	assert.Equal(t, "Azure Misconfigurations", m.Name())
+	assert.Equal(t, "configuration-scan", m.ID())
+	assert.Equal(t, "Azure Configuration Scan", m.Name())
 	assert.Equal(t, plugin.PlatformAzure, m.Platform())
 	assert.Equal(t, plugin.CategoryRecon, m.Category())
 	assert.Equal(t, "moderate", m.OpsecLevel())
@@ -33,8 +33,8 @@ func TestMisconfigurationsModuleMetadata(t *testing.T) {
 	assert.Equal(t, []string{"Microsoft.Resources/subscriptions"}, m.SupportedResourceTypes())
 }
 
-func TestMisconfigurationsParameters(t *testing.T) {
-	m := &AzureMisconfigurationsModule{}
+func TestConfigurationScanParameters(t *testing.T) {
+	m := &AzureConfigurationScanModule{}
 	params, err := plugin.ParametersFrom(m.Parameters())
 	require.NoError(t, err)
 
@@ -48,12 +48,12 @@ func TestMisconfigurationsParameters(t *testing.T) {
 	assert.True(t, paramNames["output-dir"], "should have output-dir param")
 }
 
-func TestMisconfigurationsTemplateLoader_LoadsAll13(t *testing.T) {
-	loader, err := misconfigtemplates.NewLoader()
+func TestConfigurationScanTemplateLoader_LoadsAll13(t *testing.T) {
+	loader, err := configscantemplates.NewLoader()
 	require.NoError(t, err)
 
 	tmps := loader.GetTemplates()
-	assert.Len(t, tmps, 13, "should load exactly 13 misconfiguration templates")
+	assert.Len(t, tmps, 13, "should load exactly 13 configuration scan templates")
 
 	expectedIDs := map[string]bool{
 		"aks_local_accounts_enabled":                  true,
@@ -85,18 +85,18 @@ func TestMisconfigurationsTemplateLoader_LoadsAll13(t *testing.T) {
 	}
 }
 
-func TestMisconfigurationsTemplateLoader_NoOverlapWithPublicResources(t *testing.T) {
+func TestConfigurationScanTemplateLoader_NoOverlapWithPublicResources(t *testing.T) {
 	// Import public-resources loader to verify no template ID overlap.
 	// This test is in the recon package so we can't directly import,
 	// but we verify by checking the module initialization loads distinct sets.
-	m := &AzureMisconfigurationsModule{}
+	m := &AzureConfigurationScanModule{}
 	require.NoError(t, m.initialize())
 	assert.Len(t, m.templates, 13)
 
 	for _, tmpl := range m.templates {
 		// None of these should be public-access templates
 		assert.NotContains(t, tmpl.ID, "public_access",
-			"misconfiguration template %s looks like a public-access template", tmpl.ID)
+			"configuration scan template %s looks like a public-access template", tmpl.ID)
 		assert.NotEqual(t, "storage_accounts_public_access", tmpl.ID)
 		assert.NotEqual(t, "sql_servers_public_access", tmpl.ID)
 	}
@@ -120,7 +120,7 @@ func TestMisconfigToRisk(t *testing.T) {
 	out := pipeline.New[model.AurelianModel]()
 	go func() {
 		defer out.Close()
-		require.NoError(t, misconfigToRisk(result, out))
+		require.NoError(t, configScanToRisk(result, out))
 	}()
 
 	items, err := out.Collect()
@@ -130,7 +130,7 @@ func TestMisconfigToRisk(t *testing.T) {
 	risk, ok := items[0].(output.AurelianRisk)
 	require.True(t, ok)
 
-	assert.Equal(t, "azure-misconfiguration", risk.Name)
+	assert.Equal(t, "azure-configuration-scan", risk.Name)
 	assert.Equal(t, output.RiskSeverity("high"), risk.Severity)
 	assert.Equal(t, "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm-1", risk.ImpactedResourceID)
 	assert.NotEmpty(t, risk.Context)
@@ -161,7 +161,7 @@ func TestMisconfigToRisk_SeverityPreserved(t *testing.T) {
 			out := pipeline.New[model.AurelianModel]()
 			go func() {
 				defer out.Close()
-				misconfigToRisk(result, out)
+				configScanToRisk(result, out)
 			}()
 
 			items, err := out.Collect()

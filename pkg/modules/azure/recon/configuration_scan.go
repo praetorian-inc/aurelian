@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 
-	"github.com/praetorian-inc/aurelian/pkg/azure/misconfigcheck"
+	"github.com/praetorian-inc/aurelian/pkg/azure/configscan"
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
 	"github.com/praetorian-inc/aurelian/pkg/azure/subscriptions"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
@@ -14,53 +14,53 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/templates"
-	misconfigtemplates "github.com/praetorian-inc/aurelian/pkg/templates/azure/misconfigurations"
+	configscantemplates "github.com/praetorian-inc/aurelian/pkg/templates/azure/configuration-scan"
 )
 
 func init() {
-	plugin.Register(&AzureMisconfigurationsModule{})
+	plugin.Register(&AzureConfigurationScanModule{})
 }
 
-type AzureMisconfigurationsConfig struct {
+type AzureConfigurationScanConfig struct {
 	plugin.AzureCommonRecon
 	TemplateDir string `param:"template-dir" desc:"Optional directory with additional YAML query templates" default:""`
 }
 
-type AzureMisconfigurationsModule struct {
-	AzureMisconfigurationsConfig
+type AzureConfigurationScanModule struct {
+	AzureConfigurationScanConfig
 	templates []*templates.ARGQueryTemplate
 }
 
-func (m *AzureMisconfigurationsModule) ID() string                { return "misconfigurations" }
-func (m *AzureMisconfigurationsModule) Name() string              { return "Azure Misconfigurations" }
-func (m *AzureMisconfigurationsModule) Platform() plugin.Platform { return plugin.PlatformAzure }
-func (m *AzureMisconfigurationsModule) Category() plugin.Category { return plugin.CategoryRecon }
-func (m *AzureMisconfigurationsModule) OpsecLevel() string        { return "moderate" }
-func (m *AzureMisconfigurationsModule) Authors() []string         { return []string{"Praetorian"} }
+func (m *AzureConfigurationScanModule) ID() string                { return "configuration-scan" }
+func (m *AzureConfigurationScanModule) Name() string              { return "Azure Configuration Scan" }
+func (m *AzureConfigurationScanModule) Platform() plugin.Platform { return plugin.PlatformAzure }
+func (m *AzureConfigurationScanModule) Category() plugin.Category { return plugin.CategoryRecon }
+func (m *AzureConfigurationScanModule) OpsecLevel() string        { return "moderate" }
+func (m *AzureConfigurationScanModule) Authors() []string         { return []string{"Praetorian"} }
 
-func (m *AzureMisconfigurationsModule) Description() string {
-	return "Detects Azure misconfigurations including weak authentication, disabled RBAC, " +
+func (m *AzureConfigurationScanModule) Description() string {
+	return "Detects Azure configuration issues including weak authentication, disabled RBAC, " +
 		"privilege escalation paths, and overly permissive access rules via Azure Resource Graph."
 }
 
-func (m *AzureMisconfigurationsModule) References() []string {
+func (m *AzureConfigurationScanModule) References() []string {
 	return []string{
 		"https://learn.microsoft.com/en-us/azure/azure-resource-graph/overview",
 	}
 }
 
-func (m *AzureMisconfigurationsModule) SupportedResourceTypes() []string {
+func (m *AzureConfigurationScanModule) SupportedResourceTypes() []string {
 	return []string{
 		"Microsoft.Resources/subscriptions",
 	}
 }
 
-func (m *AzureMisconfigurationsModule) Parameters() any {
-	return &m.AzureMisconfigurationsConfig
+func (m *AzureConfigurationScanModule) Parameters() any {
+	return &m.AzureConfigurationScanConfig
 }
 
-func (m *AzureMisconfigurationsModule) initialize() error {
-	loader, err := misconfigtemplates.NewLoader()
+func (m *AzureConfigurationScanModule) initialize() error {
+	loader, err := configscantemplates.NewLoader()
 	if err != nil {
 		return err
 	}
@@ -75,14 +75,14 @@ func (m *AzureMisconfigurationsModule) initialize() error {
 	return nil
 }
 
-func (m *AzureMisconfigurationsModule) fanOutTemplates(sub azuretypes.SubscriptionInfo, out *pipeline.P[resourcegraph.QueryInput]) error {
+func (m *AzureConfigurationScanModule) fanOutTemplates(sub azuretypes.SubscriptionInfo, out *pipeline.P[resourcegraph.QueryInput]) error {
 	for _, tmpl := range m.templates {
 		out.Send(resourcegraph.QueryInput{Sub: sub, Template: tmpl})
 	}
 	return nil
 }
 
-func (m *AzureMisconfigurationsModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
+func (m *AzureConfigurationScanModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	ctx := cfg.Context
 	if ctx == nil {
 		ctx = context.Background()
@@ -93,7 +93,7 @@ func (m *AzureMisconfigurationsModule) Run(cfg plugin.Config, out *pipeline.P[mo
 	}
 
 	if len(m.templates) == 0 {
-		slog.Warn("no azure misconfiguration templates loaded")
+		slog.Warn("no azure configuration scan templates loaded")
 		return nil
 	}
 
@@ -121,16 +121,16 @@ func (m *AzureMisconfigurationsModule) Run(cfg plugin.Config, out *pipeline.P[mo
 
 	// Enrichment: confirm enricher-dependent templates via SDK API calls.
 	// Templates with ARG-level filtering pass through unchanged.
-	enricher := misconfigcheck.NewEnricher(ctx, m.AzureCredential)
+	enricher := configscan.NewEnricher(ctx, m.AzureCredential)
 	confirmed := pipeline.New[templates.ARGQueryResult]()
 	pipeline.Pipe(candidates, enricher.Enrich, confirmed)
 
-	pipeline.Pipe(confirmed, misconfigToRisk, out)
+	pipeline.Pipe(confirmed, configScanToRisk, out)
 
 	return out.Wait()
 }
 
-func misconfigToRisk(result templates.ARGQueryResult, out *pipeline.P[model.AurelianModel]) error {
+func configScanToRisk(result templates.ARGQueryResult, out *pipeline.P[model.AurelianModel]) error {
 	ctx, err := json.Marshal(result)
 	if err != nil {
 		slog.Warn("failed to marshal risk context", "template", result.TemplateID, "error", err)
@@ -138,7 +138,7 @@ func misconfigToRisk(result templates.ARGQueryResult, out *pipeline.P[model.Aure
 	}
 
 	out.Send(output.AurelianRisk{
-		Name:               "azure-misconfiguration",
+		Name:               "azure-configuration-scan",
 		Severity:           result.TemplateDetails.Severity,
 		ImpactedResourceID: result.ResourceID,
 		Context:            ctx,
