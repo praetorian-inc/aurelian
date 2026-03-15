@@ -15,13 +15,15 @@ type DNSTakeoverChecker struct {
 }
 
 // NewDNSTakeoverChecker creates a checker with shared Azure credentials and options.
-func NewDNSTakeoverChecker(ctx context.Context, opts plugin.AzureCommonRecon) *DNSTakeoverChecker {
+// subscriptionIDs should contain the resolved (not "all") subscription IDs for cross-subscription lookups.
+func NewDNSTakeoverChecker(ctx context.Context, opts plugin.AzureCommonRecon, subscriptionIDs []string) *DNSTakeoverChecker {
 	return &DNSTakeoverChecker{
 		ctx: CheckContext{
-			Ctx:           ctx,
-			Opts:          opts,
-			Credential:    opts.AzureCredential,
-			PublicIPCache: &publicIPCache{},
+			Ctx:             ctx,
+			Opts:            opts,
+			Credential:      opts.AzureCredential,
+			SubscriptionIDs: subscriptionIDs,
+			PublicIPCache:   &publicIPCache{},
 		},
 	}
 }

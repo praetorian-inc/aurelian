@@ -26,11 +26,12 @@ type AzureDNSRecord struct {
 
 // CheckContext holds shared state for checker functions.
 type CheckContext struct {
-	Ctx            context.Context
-	Opts           plugin.AzureCommonRecon
-	Credential     azcore.TokenCredential
-	SubscriptionID string
-	PublicIPCache  *publicIPCache
+	Ctx             context.Context
+	Opts            plugin.AzureCommonRecon
+	Credential      azcore.TokenCredential
+	SubscriptionID  string
+	SubscriptionIDs []string // resolved subscription IDs for cross-subscription lookups
+	PublicIPCache   *publicIPCache
 }
 
 // publicIPCache holds lazily-initialized public IP state scoped to a single checker run.
