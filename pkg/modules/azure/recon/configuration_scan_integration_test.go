@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/azure/enrichers"
+	_ "github.com/praetorian-inc/aurelian/pkg/modules/azure/evaluators"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"

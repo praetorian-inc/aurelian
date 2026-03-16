@@ -24,6 +24,7 @@ func init() {
 type AzureConfigurationScanConfig struct {
 	plugin.AzureCommonRecon
 	TemplateDir string `param:"template-dir" desc:"Optional directory with additional YAML query templates" default:""`
+	Concurrency int    `param:"concurrency"  desc:"Maximum concurrent API requests" default:"10"`
 }
 
 type AzureConfigurationScanModule struct {
@@ -119,10 +120,15 @@ func (m *AzureConfigurationScanModule) Run(cfg plugin.Config, out *pipeline.P[mo
 	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, nil)
 	pipeline.Pipe(inputStream, lister.Query, candidates)
 
-	enricher := enrichment.NewAzureConfigEnricher(ctx, m.AzureCredential)
+	enricher := enrichment.NewAzureEnricher(ctx, m.AzureCredential)
+	enriched := pipeline.New[templates.ARGQueryResult]()
+	pipeline.Pipe(candidates, enricher.Enrich, enriched, &pipeline.PipeOpts{
+		Concurrency: m.Concurrency,
+	})
+
 	confirmed := pipeline.New[templates.ARGQueryResult]()
-	pipeline.Pipe(candidates, enricher.Enrich, confirmed, &pipeline.PipeOpts{
-		Concurrency: 10,
+	pipeline.Pipe(enriched, enrichment.Evaluate, confirmed, &pipeline.PipeOpts{
+		Concurrency: m.Concurrency,
 	})
 
 	pipeline.Pipe(confirmed, configScanToRisk, out)
