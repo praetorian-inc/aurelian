@@ -14,23 +14,36 @@ import (
 )
 
 func init() {
-	plugin.RegisterAzureEnricher("databases_allow_azure_services", checkDatabaseFirewall)
+	plugin.RegisterAzureEnricher("microsoft.sql/servers", enrichDatabaseFirewall)
+	plugin.RegisterAzureEnricher("microsoft.synapse/workspaces", enrichDatabaseFirewall)
+	plugin.RegisterAzureEnricher("microsoft.dbforpostgresql/flexibleservers", enrichDatabaseFirewall)
+	plugin.RegisterAzureEnricher("microsoft.dbformysql/flexibleservers", enrichDatabaseFirewall)
 }
 
-func checkDatabaseFirewall(cfg plugin.AzureEnricherConfig, result templates.ARGQueryResult) (bool, error) {
-	subID, rg, name, err := enrichment.ParseResource(result)
+func enrichDatabaseFirewall(cfg plugin.AzureEnricherConfig, result *templates.ARGQueryResult) error {
+	subID, rg, name, err := enrichment.ParseResource(*result)
 	if err != nil {
-		return false, err
+		return err
 	}
 
-	resourceType := strings.ToLower(result.ResourceType)
+	found, err := checkFirewallRules(cfg, subID, rg, name, result.ResourceType)
+	if err != nil {
+		return err
+	}
+
+	result.Properties["allowAzureServicesFirewall"] = found
+	return nil
+}
+
+func checkFirewallRules(cfg plugin.AzureEnricherConfig, subID, rg, name, resourceType string) (bool, error) {
+	lower := strings.ToLower(resourceType)
 	switch {
-	case strings.Contains(resourceType, "microsoft.sql/servers"),
-		strings.Contains(resourceType, "microsoft.synapse"):
+	case strings.Contains(lower, "microsoft.sql/servers"),
+		strings.Contains(lower, "microsoft.synapse"):
 		return checkSQLFirewall(cfg, subID, rg, name)
-	case strings.Contains(resourceType, "microsoft.dbforpostgresql"):
+	case strings.Contains(lower, "microsoft.dbforpostgresql"):
 		return checkPostgreSQLFirewall(cfg, subID, rg, name)
-	case strings.Contains(resourceType, "microsoft.dbformysql"):
+	case strings.Contains(lower, "microsoft.dbformysql"):
 		return checkMySQLFirewall(cfg, subID, rg, name)
 	default:
 		return false, fmt.Errorf("unsupported database type: %s", resourceType)

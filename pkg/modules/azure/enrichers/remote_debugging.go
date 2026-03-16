@@ -1,7 +1,7 @@
 package enrichers
 
 import (
-	"fmt"
+	"log/slog"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
 
@@ -11,30 +11,33 @@ import (
 )
 
 func init() {
-	plugin.RegisterAzureEnricher("app_service_remote_debugging_enabled", checkRemoteDebugging)
+	plugin.RegisterAzureEnricher("microsoft.web/sites", enrichRemoteDebugging)
 }
 
-func checkRemoteDebugging(cfg plugin.AzureEnricherConfig, result templates.ARGQueryResult) (bool, error) {
-	subID, rg, name, err := enrichment.ParseResource(result)
+func enrichRemoteDebugging(cfg plugin.AzureEnricherConfig, result *templates.ARGQueryResult) error {
+	subID, rg, name, err := enrichment.ParseResource(*result)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	client, err := armappservice.NewWebAppsClient(subID, cfg.Credential, nil)
 	if err != nil {
-		return false, fmt.Errorf("creating web apps client: %w", err)
+		return err
 	}
 
 	config, err := client.GetConfiguration(cfg.Context, rg, name, nil)
 	if err != nil {
-		return false, fmt.Errorf("getting configuration for %s: %w", name, err)
+		slog.Warn("could not get site config, skipping",
+			"resource", result.ResourceID, "error", err)
+		return nil
 	}
 
+	enabled := false
 	if config.Properties != nil &&
-		config.Properties.RemoteDebuggingEnabled != nil &&
-		*config.Properties.RemoteDebuggingEnabled {
-		return true, nil
+		config.Properties.RemoteDebuggingEnabled != nil {
+		enabled = *config.Properties.RemoteDebuggingEnabled
 	}
 
-	return false, nil
+	result.Properties["remoteDebuggingEnabled"] = enabled
+	return nil
 }

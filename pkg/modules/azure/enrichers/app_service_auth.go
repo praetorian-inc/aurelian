@@ -1,7 +1,7 @@
 package enrichers
 
 import (
-	"fmt"
+	"log/slog"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
 
@@ -11,31 +11,34 @@ import (
 )
 
 func init() {
-	plugin.RegisterAzureEnricher("app_service_auth_disabled", checkAppServiceAuth)
+	plugin.RegisterAzureEnricher("microsoft.web/sites", enrichAppServiceAuth)
 }
 
-func checkAppServiceAuth(cfg plugin.AzureEnricherConfig, result templates.ARGQueryResult) (bool, error) {
-	subID, rg, name, err := enrichment.ParseResource(result)
+func enrichAppServiceAuth(cfg plugin.AzureEnricherConfig, result *templates.ARGQueryResult) error {
+	subID, rg, name, err := enrichment.ParseResource(*result)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	client, err := armappservice.NewWebAppsClient(subID, cfg.Credential, nil)
 	if err != nil {
-		return false, fmt.Errorf("creating web apps client: %w", err)
+		return err
 	}
 
 	authSettings, err := client.GetAuthSettingsV2(cfg.Context, rg, name, nil)
 	if err != nil {
-		return false, fmt.Errorf("getting auth settings for %s: %w", name, err)
+		slog.Warn("could not get auth settings, skipping",
+			"resource", result.ResourceID, "error", err)
+		return nil
 	}
 
+	enabled := false
 	if authSettings.Properties != nil &&
 		authSettings.Properties.Platform != nil &&
-		authSettings.Properties.Platform.Enabled != nil &&
-		*authSettings.Properties.Platform.Enabled {
-		return false, nil
+		authSettings.Properties.Platform.Enabled != nil {
+		enabled = *authSettings.Properties.Platform.Enabled
 	}
 
-	return true, nil
+	result.Properties["authEnabled"] = enabled
+	return nil
 }

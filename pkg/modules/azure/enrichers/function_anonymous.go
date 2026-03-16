@@ -1,7 +1,7 @@
 package enrichers
 
 import (
-	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
@@ -12,25 +12,27 @@ import (
 )
 
 func init() {
-	plugin.RegisterAzureEnricher("function_app_http_anonymous_access", checkFunctionAnonymousAccess)
+	plugin.RegisterAzureEnricher("microsoft.web/sites", enrichFunctionAnonymousAccess)
 }
 
-func checkFunctionAnonymousAccess(cfg plugin.AzureEnricherConfig, result templates.ARGQueryResult) (bool, error) {
-	subID, rg, name, err := enrichment.ParseResource(result)
+func enrichFunctionAnonymousAccess(cfg plugin.AzureEnricherConfig, result *templates.ARGQueryResult) error {
+	subID, rg, name, err := enrichment.ParseResource(*result)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	client, err := armappservice.NewWebAppsClient(subID, cfg.Credential, nil)
 	if err != nil {
-		return false, fmt.Errorf("creating web apps client: %w", err)
+		return err
 	}
 
 	pager := client.NewListFunctionsPager(rg, name, nil)
 	for pager.More() {
 		page, err := pager.NextPage(cfg.Context)
 		if err != nil {
-			return false, fmt.Errorf("listing functions for %s: %w", name, err)
+			slog.Warn("could not list functions, skipping",
+				"resource", result.ResourceID, "error", err)
+			return nil
 		}
 
 		for _, fn := range page.Value {
@@ -54,11 +56,13 @@ func checkFunctionAnonymousAccess(cfg plugin.AzureEnricherConfig, result templat
 					continue
 				}
 				if authLevel, _ := bm["authLevel"].(string); strings.EqualFold(authLevel, "anonymous") {
-					return true, nil
+					result.Properties["hasAnonymousHttpTrigger"] = true
+					return nil
 				}
 			}
 		}
 	}
 
-	return false, nil
+	result.Properties["hasAnonymousHttpTrigger"] = false
+	return nil
 }

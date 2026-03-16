@@ -13,7 +13,7 @@ import (
 )
 
 func init() {
-	plugin.RegisterAzureEnricher("vm_privileged_managed_identity", checkVMPrivilegedIdentity)
+	plugin.RegisterAzureEnricher("microsoft.compute/virtualmachines", enrichVMIdentity)
 }
 
 var privilegedRoleIDs = map[string]bool{
@@ -24,10 +24,10 @@ var privilegedRoleIDs = map[string]bool{
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
-func checkVMPrivilegedIdentity(cfg plugin.AzureEnricherConfig, result templates.ARGQueryResult) (bool, error) {
-	subID, _, _, err := enrichment.ParseResource(result)
+func enrichVMIdentity(cfg plugin.AzureEnricherConfig, result *templates.ARGQueryResult) error {
+	subID, _, _, err := enrichment.ParseResource(*result)
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	principalID := ""
@@ -36,17 +36,14 @@ func checkVMPrivilegedIdentity(cfg plugin.AzureEnricherConfig, result templates.
 			principalID = pid
 		}
 	}
-	if principalID == "" {
-		return false, nil
-	}
-
-	if !uuidPattern.MatchString(principalID) {
-		return false, nil
+	if principalID == "" || !uuidPattern.MatchString(principalID) {
+		result.Properties["hasPrivilegedManagedIdentity"] = false
+		return nil
 	}
 
 	client, err := armauthorization.NewRoleAssignmentsClient(subID, cfg.Credential, nil)
 	if err != nil {
-		return false, fmt.Errorf("creating role assignments client: %w", err)
+		return fmt.Errorf("creating role assignments client: %w", err)
 	}
 
 	filter := fmt.Sprintf("assignedTo('%s')", principalID)
@@ -57,7 +54,7 @@ func checkVMPrivilegedIdentity(cfg plugin.AzureEnricherConfig, result templates.
 	for pager.More() {
 		page, err := pager.NextPage(cfg.Context)
 		if err != nil {
-			return false, fmt.Errorf("listing role assignments for %s: %w", principalID, err)
+			return fmt.Errorf("listing role assignments for %s: %w", principalID, err)
 		}
 		for _, ra := range page.Value {
 			if ra.Properties == nil || ra.Properties.RoleDefinitionID == nil {
@@ -66,10 +63,12 @@ func checkVMPrivilegedIdentity(cfg plugin.AzureEnricherConfig, result templates.
 			roleDefID := strings.ToLower(*ra.Properties.RoleDefinitionID)
 			guid := roleDefID[strings.LastIndex(roleDefID, "/")+1:]
 			if privilegedRoleIDs[guid] {
-				return true, nil
+				result.Properties["hasPrivilegedManagedIdentity"] = true
+				return nil
 			}
 		}
 	}
 
-	return false, nil
+	result.Properties["hasPrivilegedManagedIdentity"] = false
+	return nil
 }

@@ -8,18 +8,25 @@ import (
 )
 
 func TestRegisteredEnrichers_ExactSet(t *testing.T) {
-	enricherTemplates := []string{
-		"app_service_auth_disabled",
-		"app_service_remote_debugging_enabled",
-		"databases_allow_azure_services",
-		"function_app_http_anonymous_access",
-		"vm_privileged_managed_identity",
+	enricherResourceTypes := []string{
+		"microsoft.web/sites",
+		"microsoft.sql/servers",
+		"microsoft.synapse/workspaces",
+		"microsoft.dbforpostgresql/flexibleservers",
+		"microsoft.dbformysql/flexibleservers",
+		"microsoft.compute/virtualmachines",
 	}
 
-	for _, tmplID := range enricherTemplates {
-		assert.NotEmpty(t, plugin.GetAzureEnrichers(tmplID),
-			"template %q should have a registered enricher", tmplID)
+	for _, rt := range enricherResourceTypes {
+		assert.NotEmpty(t, plugin.GetAzureEnrichers(rt),
+			"resource type %q should have a registered enricher", rt)
 	}
+}
+
+func TestRegisteredEnrichers_WebSitesHasMultiple(t *testing.T) {
+	enrichers := plugin.GetAzureEnrichers("microsoft.web/sites")
+	assert.Len(t, enrichers, 3,
+		"microsoft.web/sites should have 3 enrichers (auth, remote debugging, function anonymous)")
 }
 
 func TestRegisteredEnrichers_ARGFilteredNotIncluded(t *testing.T) {
