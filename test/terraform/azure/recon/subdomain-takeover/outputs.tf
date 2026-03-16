@@ -31,7 +31,7 @@ output "orphaned_ip_record" {
 }
 
 output "orphaned_ip" {
-  value = azurerm_dns_a_record.orphaned_ip.records[0]
+  value = one(azurerm_dns_a_record.orphaned_ip.records)
 }
 
 output "ns_record" {
