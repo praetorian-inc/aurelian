@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 
-	"github.com/praetorian-inc/aurelian/pkg/azure/configscan"
+	"github.com/praetorian-inc/aurelian/pkg/azure/enrichment"
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
 	"github.com/praetorian-inc/aurelian/pkg/azure/subscriptions"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
@@ -24,6 +24,7 @@ func init() {
 type AzureConfigurationScanConfig struct {
 	plugin.AzureCommonRecon
 	TemplateDir string `param:"template-dir" desc:"Optional directory with additional YAML query templates" default:""`
+	Concurrency int    `param:"concurrency"  desc:"Maximum concurrent API requests" default:"10"`
 }
 
 type AzureConfigurationScanModule struct {
@@ -119,11 +120,16 @@ func (m *AzureConfigurationScanModule) Run(cfg plugin.Config, out *pipeline.P[mo
 	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, nil)
 	pipeline.Pipe(inputStream, lister.Query, candidates)
 
-	// Enrichment: confirm enricher-dependent templates via SDK API calls.
-	// Templates with ARG-level filtering pass through unchanged.
-	enricher := configscan.NewEnricher(ctx, m.AzureCredential)
+	enricher := enrichment.NewAzureEnricher(ctx, m.AzureCredential)
+	enriched := pipeline.New[templates.ARGQueryResult]()
+	pipeline.Pipe(candidates, enricher.Enrich, enriched, &pipeline.PipeOpts{
+		Concurrency: m.Concurrency,
+	})
+
 	confirmed := pipeline.New[templates.ARGQueryResult]()
-	pipeline.Pipe(candidates, enricher.Enrich, confirmed)
+	pipeline.Pipe(enriched, enrichment.Evaluate, confirmed, &pipeline.PipeOpts{
+		Concurrency: m.Concurrency,
+	})
 
 	pipeline.Pipe(confirmed, configScanToRisk, out)
 
