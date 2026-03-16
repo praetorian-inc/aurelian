@@ -106,199 +106,64 @@ func TestAzurePublicResources(t *testing.T) {
 			expectedTemplate, rc.Risk.ImpactedResourceID, resourceNameSubstr)
 	}
 
-	// =====================================================================
-	// Storage & Data
-	// =====================================================================
+	// Per-template assertions: verify each template found the expected fixture resource
+	// with the correct severity and resource name substring.
+	templateTests := []struct {
+		templateID string
+		fixtureKey string
+		severity   output.RiskSeverity
+		substr     string
+		optional   bool // skip if fixture output is missing
+	}{
+		// Storage & Data
+		{"storage_accounts_public_access", "storage_account_id", output.RiskSeverityHigh, "sa", false},
+		{"key_vault_public_access", "key_vault_id", output.RiskSeverityHigh, "-kv", false},
+		{"cosmos_db_public_access", "cosmos_db_id", output.RiskSeverityHigh, "-cosmos", false},
+		{"redis_cache_public_access", "redis_cache_id", output.RiskSeverityLow, "-redis", false},
+		{"app_configuration_public_access", "app_configuration_id", output.RiskSeverityMedium, "-appconf", false},
+		// Databases
+		{"sql_servers_public_access", "sql_server_id", output.RiskSeverityHigh, "-w-sql", true},
+		{"postgresql_flexible_server_public_access", "postgresql_server_id", output.RiskSeverityMedium, "-pg", false},
+		// Container & Registry
+		{"container_registries_public_access", "acr_id", output.RiskSeverityHigh, "acr", false},
+		{"acr_anonymous_pull_access", "acr_anon_pull_id", output.RiskSeverityHigh, "acranon", false},
+		{"container_apps_public_access", "container_app_id", output.RiskSeverityMedium, "-w-ca", true},
+		{"container_instances_public_access", "container_instance_id", output.RiskSeverityMedium, "-ci", false},
+		{"aks_public_access", "aks_id", output.RiskSeverityHigh, "-aks", false},
+		// AI & Search
+		{"cognitive_services_public_access", "cognitive_account_id", output.RiskSeverityMedium, "-cog", false},
+		{"search_service_public_access", "search_service_id", output.RiskSeverityMedium, "-search", false},
+		// Compute
+		{"virtual_machines_public_access", "virtual_machine_id", output.RiskSeverityHigh, "-vm", false},
+		{"databricks_public_access", "databricks_workspace_id", output.RiskSeverityMedium, "-dbw", false},
+		// IoT & Messaging
+		{"iot_hub_public_access", "iot_hub_id", output.RiskSeverityMedium, "-iot", false},
+		{"event_grid_topics_public_access", "event_grid_topic_id", output.RiskSeverityMedium, "-egt", false},
+		{"notification_hubs_public_access", "notification_hub_namespace_id", output.RiskSeverityMedium, "-nhns", false},
+		{"service_bus_public_access", "service_bus_id", output.RiskSeverityLow, "-sbus", false},
+		{"event_hub_public_access", "event_hub_id", output.RiskSeverityHigh, "-eh", false},
+		// Analytics & Integration
+		{"synapse_public_access", "synapse_workspace_id", output.RiskSeverityMedium, "-w-syn", true},
+		{"ml_workspace_public_access", "ml_workspace_id", output.RiskSeverityMedium, "-w-mlw", true},
+		{"logic_apps_public_access", "logic_app_id", output.RiskSeverityMedium, "-la", false},
+		{"data_factory_public_access", "data_factory_id", output.RiskSeverityLow, "-adf", false},
+		{"log_analytics_public_access", "log_analytics_id", output.RiskSeverityLow, "-law", false},
+		{"data_explorer_public_access", "kusto_cluster_id", output.RiskSeverityMedium, "kusto", false},
+		// Networking
+		{"api_management_public_access", "api_management_id", output.RiskSeverityMedium, "-apim", false},
+		{"load_balancers_public", "load_balancer_id", output.RiskSeverityHigh, "-lb", false},
+		{"application_gateway_public_access", "application_gateway_id", output.RiskSeverityMedium, "-appgw", false},
+	}
 
-	t.Run("storage_accounts_public_access", func(t *testing.T) {
-		rc := findRisk(t, "storage_accounts_public_access", "storage_account_id")
-		assertRisk(t, rc, "storage_accounts_public_access", output.RiskSeverityHigh, "sa")
-	})
-
-	t.Run("key_vault_public_access", func(t *testing.T) {
-		rc := findRisk(t, "key_vault_public_access", "key_vault_id")
-		assertRisk(t, rc, "key_vault_public_access", output.RiskSeverityHigh, "-kv")
-	})
-
-	t.Run("cosmos_db_public_access", func(t *testing.T) {
-		rc := findRisk(t, "cosmos_db_public_access", "cosmos_db_id")
-		assertRisk(t, rc, "cosmos_db_public_access", output.RiskSeverityHigh, "-cosmos")
-	})
-
-	t.Run("redis_cache_public_access", func(t *testing.T) {
-		rc := findRisk(t, "redis_cache_public_access", "redis_cache_id")
-		assertRisk(t, rc, "redis_cache_public_access", output.RiskSeverityLow, "-redis")
-	})
-
-	t.Run("app_configuration_public_access", func(t *testing.T) {
-		rc := findRisk(t, "app_configuration_public_access", "app_configuration_id")
-		assertRisk(t, rc, "app_configuration_public_access", output.RiskSeverityMedium, "-appconf")
-	})
-
-	// =====================================================================
-	// Databases
-	// =====================================================================
-
-	t.Run("sql_servers_public_access", func(t *testing.T) {
-		if !fixtureHasOutput("sql_server_id") {
-			t.Skip("sql_server not provisioned in this environment")
-		}
-		rc := findRisk(t, "sql_servers_public_access", "sql_server_id")
-		assertRisk(t, rc, "sql_servers_public_access", output.RiskSeverityHigh, "-w-sql")
-	})
-
-	t.Run("postgresql_flexible_server_public_access", func(t *testing.T) {
-		rc := findRisk(t, "postgresql_flexible_server_public_access", "postgresql_server_id")
-		assertRisk(t, rc, "postgresql_flexible_server_public_access", output.RiskSeverityMedium, "-pg")
-	})
-
-	// =====================================================================
-	// Container & Registry
-	// =====================================================================
-
-	t.Run("container_registries_public_access", func(t *testing.T) {
-		rc := findRisk(t, "container_registries_public_access", "acr_id")
-		assertRisk(t, rc, "container_registries_public_access", output.RiskSeverityHigh, "acr")
-	})
-
-	t.Run("acr_anonymous_pull_access", func(t *testing.T) {
-		rc := findRisk(t, "acr_anonymous_pull_access", "acr_anon_pull_id")
-		assertRisk(t, rc, "acr_anonymous_pull_access", output.RiskSeverityHigh, "acranon")
-	})
-
-	t.Run("container_apps_public_access", func(t *testing.T) {
-		if !fixtureHasOutput("container_app_id") {
-			t.Skip("container_app not provisioned in this environment")
-		}
-		rc := findRisk(t, "container_apps_public_access", "container_app_id")
-		assertRisk(t, rc, "container_apps_public_access", output.RiskSeverityMedium, "-w-ca")
-	})
-
-	t.Run("container_instances_public_access", func(t *testing.T) {
-		rc := findRisk(t, "container_instances_public_access", "container_instance_id")
-		assertRisk(t, rc, "container_instances_public_access", output.RiskSeverityMedium, "-ci")
-	})
-
-	t.Run("aks_public_access", func(t *testing.T) {
-		rc := findRisk(t, "aks_public_access", "aks_id")
-		assertRisk(t, rc, "aks_public_access", output.RiskSeverityHigh, "-aks")
-	})
-
-	// =====================================================================
-	// AI & Search
-	// =====================================================================
-
-	t.Run("cognitive_services_public_access", func(t *testing.T) {
-		rc := findRisk(t, "cognitive_services_public_access", "cognitive_account_id")
-		assertRisk(t, rc, "cognitive_services_public_access", output.RiskSeverityMedium, "-cog")
-	})
-
-	t.Run("search_service_public_access", func(t *testing.T) {
-		rc := findRisk(t, "search_service_public_access", "search_service_id")
-		assertRisk(t, rc, "search_service_public_access", output.RiskSeverityMedium, "-search")
-	})
-
-	// =====================================================================
-	// Compute
-	// =====================================================================
-
-	t.Run("virtual_machines_public_access", func(t *testing.T) {
-		rc := findRisk(t, "virtual_machines_public_access", "virtual_machine_id")
-		assertRisk(t, rc, "virtual_machines_public_access", output.RiskSeverityHigh, "-vm")
-	})
-
-	t.Run("databricks_public_access", func(t *testing.T) {
-		rc := findRisk(t, "databricks_public_access", "databricks_workspace_id")
-		assertRisk(t, rc, "databricks_public_access", output.RiskSeverityMedium, "-dbw")
-	})
-
-	// =====================================================================
-	// IoT & Messaging
-	// =====================================================================
-
-	t.Run("iot_hub_public_access", func(t *testing.T) {
-		rc := findRisk(t, "iot_hub_public_access", "iot_hub_id")
-		assertRisk(t, rc, "iot_hub_public_access", output.RiskSeverityMedium, "-iot")
-	})
-
-	t.Run("event_grid_topics_public_access", func(t *testing.T) {
-		rc := findRisk(t, "event_grid_topics_public_access", "event_grid_topic_id")
-		assertRisk(t, rc, "event_grid_topics_public_access", output.RiskSeverityMedium, "-egt")
-	})
-
-	t.Run("notification_hubs_public_access", func(t *testing.T) {
-		rc := findRisk(t, "notification_hubs_public_access", "notification_hub_namespace_id")
-		assertRisk(t, rc, "notification_hubs_public_access", output.RiskSeverityMedium, "-nhns")
-	})
-
-	t.Run("service_bus_public_access", func(t *testing.T) {
-		rc := findRisk(t, "service_bus_public_access", "service_bus_id")
-		assertRisk(t, rc, "service_bus_public_access", output.RiskSeverityLow, "-sbus")
-	})
-
-	t.Run("event_hub_public_access", func(t *testing.T) {
-		rc := findRisk(t, "event_hub_public_access", "event_hub_id")
-		assertRisk(t, rc, "event_hub_public_access", output.RiskSeverityHigh, "-eh")
-	})
-
-	// =====================================================================
-	// Analytics & Integration
-	// =====================================================================
-
-	t.Run("synapse_public_access", func(t *testing.T) {
-		if !fixtureHasOutput("synapse_workspace_id") {
-			t.Skip("synapse_workspace not provisioned in this environment")
-		}
-		rc := findRisk(t, "synapse_public_access", "synapse_workspace_id")
-		assertRisk(t, rc, "synapse_public_access", output.RiskSeverityMedium, "-w-syn")
-	})
-
-	t.Run("ml_workspace_public_access", func(t *testing.T) {
-		if !fixtureHasOutput("ml_workspace_id") {
-			t.Skip("ml_workspace not provisioned in this environment")
-		}
-		rc := findRisk(t, "ml_workspace_public_access", "ml_workspace_id")
-		assertRisk(t, rc, "ml_workspace_public_access", output.RiskSeverityMedium, "-w-mlw")
-	})
-
-	t.Run("logic_apps_public_access", func(t *testing.T) {
-		rc := findRisk(t, "logic_apps_public_access", "logic_app_id")
-		assertRisk(t, rc, "logic_apps_public_access", output.RiskSeverityMedium, "-la")
-	})
-
-	t.Run("data_factory_public_access", func(t *testing.T) {
-		rc := findRisk(t, "data_factory_public_access", "data_factory_id")
-		assertRisk(t, rc, "data_factory_public_access", output.RiskSeverityLow, "-adf")
-	})
-
-	t.Run("log_analytics_public_access", func(t *testing.T) {
-		rc := findRisk(t, "log_analytics_public_access", "log_analytics_id")
-		assertRisk(t, rc, "log_analytics_public_access", output.RiskSeverityLow, "-law")
-	})
-
-	t.Run("data_explorer_public_access", func(t *testing.T) {
-		rc := findRisk(t, "data_explorer_public_access", "kusto_cluster_id")
-		assertRisk(t, rc, "data_explorer_public_access", output.RiskSeverityMedium, "kusto")
-	})
-
-	// =====================================================================
-	// Networking
-	// =====================================================================
-
-	t.Run("api_management_public_access", func(t *testing.T) {
-		rc := findRisk(t, "api_management_public_access", "api_management_id")
-		assertRisk(t, rc, "api_management_public_access", output.RiskSeverityMedium, "-apim")
-	})
-
-	t.Run("load_balancers_public", func(t *testing.T) {
-		rc := findRisk(t, "load_balancers_public", "load_balancer_id")
-		assertRisk(t, rc, "load_balancers_public", output.RiskSeverityHigh, "-lb")
-	})
-
-	t.Run("application_gateway_public_access", func(t *testing.T) {
-		rc := findRisk(t, "application_gateway_public_access", "application_gateway_id")
-		assertRisk(t, rc, "application_gateway_public_access", output.RiskSeverityMedium, "-appgw")
-	})
+	for _, tt := range templateTests {
+		t.Run(tt.templateID, func(t *testing.T) {
+			if tt.optional && !fixtureHasOutput(tt.fixtureKey) {
+				t.Skipf("%s not provisioned in this environment", tt.fixtureKey)
+			}
+			rc := findRisk(t, tt.templateID, tt.fixtureKey)
+			assertRisk(t, rc, tt.templateID, tt.severity, tt.substr)
+		})
+	}
 
 	// =====================================================================
 	// Negative tests — secure resources must NOT produce findings
