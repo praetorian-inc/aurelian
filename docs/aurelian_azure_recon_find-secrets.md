@@ -9,6 +9,7 @@ aurelian azure recon find-secrets [flags]
 ### Options
 
 ```
+      --concurrency int                Maximum concurrent API requests (default 5)
       --db-path string                 Path for Titus SQLite database
       --disabled-titus-rules strings   Rule IDs to exclude from scanning
   -h, --help                           help for find-secrets
