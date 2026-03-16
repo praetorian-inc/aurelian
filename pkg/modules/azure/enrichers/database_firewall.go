@@ -87,10 +87,11 @@ func checkPostgreSQLFirewall(cfg plugin.AzureEnricherConfig, subID, rg, serverNa
 			return false, fmt.Errorf("listing PostgreSQL firewall rules: %w", err)
 		}
 		for _, rule := range page.Value {
-			if rule.Name != nil && *rule.Name == "AllowAllAzureIps" {
-				return true, nil
+			var start, end string
+			if rule.Properties != nil {
+				start, end = derefStr(rule.Properties.StartIPAddress), derefStr(rule.Properties.EndIPAddress)
 			}
-			if rule.Properties != nil && isAllowAzureServicesRule(derefStr(rule.Properties.StartIPAddress), derefStr(rule.Properties.EndIPAddress)) {
+			if isFlexibleServerAllowAllAzureRule(rule.Name, start, end) {
 				return true, nil
 			}
 		}
@@ -111,15 +112,25 @@ func checkMySQLFirewall(cfg plugin.AzureEnricherConfig, subID, rg, serverName st
 			return false, fmt.Errorf("listing MySQL firewall rules: %w", err)
 		}
 		for _, rule := range page.Value {
-			if rule.Name != nil && *rule.Name == "AllowAllAzureIps" {
-				return true, nil
+			var start, end string
+			if rule.Properties != nil {
+				start, end = derefStr(rule.Properties.StartIPAddress), derefStr(rule.Properties.EndIPAddress)
 			}
-			if rule.Properties != nil && isAllowAzureServicesRule(derefStr(rule.Properties.StartIPAddress), derefStr(rule.Properties.EndIPAddress)) {
+			if isFlexibleServerAllowAllAzureRule(rule.Name, start, end) {
 				return true, nil
 			}
 		}
 	}
 	return false, nil
+}
+
+// isFlexibleServerAllowAllAzureRule checks if a flexible server firewall rule
+// represents the "Allow Azure Services" rule, by well-known name or IP range.
+func isFlexibleServerAllowAllAzureRule(name *string, startIP, endIP string) bool {
+	if name != nil && *name == "AllowAllAzureIps" {
+		return true
+	}
+	return isAllowAzureServicesRule(startIP, endIP)
 }
 
 func isAllowAzureServicesRule(startIP, endIP string) bool {
