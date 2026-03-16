@@ -16,6 +16,11 @@ func init() {
 }
 
 func enrichFunctionAnonymousAccess(cfg plugin.AzureEnricherConfig, result *templates.ARGQueryResult) error {
+	kind, _ := result.Properties["kind"].(string)
+	if !strings.Contains(strings.ToLower(kind), "functionapp") {
+		return nil
+	}
+
 	subID, rg, name, err := enrichment.ParseResource(*result)
 	if err != nil {
 		return err
