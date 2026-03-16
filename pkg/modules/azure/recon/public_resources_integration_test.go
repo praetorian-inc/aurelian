@@ -301,6 +301,43 @@ func TestAzurePublicResources(t *testing.T) {
 	})
 
 	// =====================================================================
+	// Negative tests — secure resources must NOT produce findings
+	// =====================================================================
+
+	// Helper: assert a secure resource ID does not appear in any finding.
+	assertNotFlagged := func(t *testing.T, fixtureKey, description string) {
+		t.Helper()
+		if !fixtureHasOutput(fixtureKey) {
+			t.Skipf("%s not provisioned", description)
+		}
+		secureID := strings.ToLower(fixture.Output(fixtureKey))
+		for _, rc := range all {
+			assert.NotEqual(t, strings.ToLower(rc.ResourceID), secureID,
+				"%s should NOT be flagged but was by template %q", description, rc.Template)
+		}
+	}
+
+	t.Run("secure storage account not flagged", func(t *testing.T) {
+		assertNotFlagged(t, "secure_storage_account_id", "secure storage account (public access disabled)")
+	})
+
+	t.Run("secure key vault not flagged", func(t *testing.T) {
+		assertNotFlagged(t, "secure_key_vault_id", "secure key vault (deny by default)")
+	})
+
+	t.Run("secure cosmos db not flagged", func(t *testing.T) {
+		assertNotFlagged(t, "secure_cosmos_db_id", "secure Cosmos DB (public access disabled)")
+	})
+
+	t.Run("secure container registry not flagged", func(t *testing.T) {
+		assertNotFlagged(t, "secure_acr_id", "secure ACR (public access disabled, admin disabled)")
+	})
+
+	t.Run("secure app configuration not flagged", func(t *testing.T) {
+		assertNotFlagged(t, "secure_app_configuration_id", "secure App Configuration (public access disabled)")
+	})
+
+	// =====================================================================
 	// Cross-finding invariants
 	// =====================================================================
 

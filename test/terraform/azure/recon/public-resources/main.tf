@@ -860,3 +860,84 @@ resource "azurerm_kusto_cluster" "public" {
 
   tags = local.tags
 }
+
+# ============================================================================
+# NEGATIVE TEST FIXTURES — secure resources that must NOT be flagged
+# ============================================================================
+
+# Secure Storage Account — public network access disabled
+resource "azurerm_storage_account" "secure" {
+  name                          = "${local.prefix_san}sec"
+  resource_group_name           = azurerm_resource_group.test.name
+  location                      = local.location
+  account_tier                  = "Standard"
+  account_replication_type      = "LRS"
+  public_network_access_enabled = false
+
+  tags = local.tags
+}
+
+# Secure Key Vault — public network access disabled, deny by default
+resource "azurerm_key_vault" "secure" {
+  name                          = "${local.prefix}-sec-kv"
+  resource_group_name           = azurerm_resource_group.test.name
+  location                      = local.location
+  tenant_id                     = data.azurerm_client_config.current.tenant_id
+  sku_name                      = "standard"
+  purge_protection_enabled      = false
+  soft_delete_retention_days    = 7
+  public_network_access_enabled = false
+
+  network_acls {
+    default_action = "Deny"
+    bypass         = "AzureServices"
+  }
+
+  tags = local.tags
+}
+
+# Secure Cosmos DB — public network access disabled
+resource "azurerm_cosmosdb_account" "secure" {
+  name                          = "${local.prefix}-sec-cosmos"
+  resource_group_name           = azurerm_resource_group.test.name
+  location                      = local.location
+  offer_type                    = "Standard"
+  kind                          = "GlobalDocumentDB"
+  public_network_access_enabled = false
+
+  capabilities {
+    name = "EnableServerless"
+  }
+
+  consistency_policy {
+    consistency_level = "Session"
+  }
+
+  geo_location {
+    location          = local.location
+    failover_priority = 0
+  }
+
+  tags = local.tags
+}
+
+# Secure Container Registry — public network access disabled, admin disabled
+resource "azurerm_container_registry" "secure" {
+  name                          = "${local.prefix_san}secacr"
+  resource_group_name           = azurerm_resource_group.test.name
+  location                      = local.location
+  sku                           = "Premium"
+  admin_enabled                 = false
+  public_network_access_enabled = false
+  tags                          = local.tags
+}
+
+# Secure App Configuration — public network access disabled
+resource "azurerm_app_configuration" "secure" {
+  name                  = "${local.prefix}-sec-appconf"
+  resource_group_name   = azurerm_resource_group.test.name
+  location              = local.location
+  sku                   = "free"
+  public_network_access = "Disabled"
+  tags                  = local.tags
+}
