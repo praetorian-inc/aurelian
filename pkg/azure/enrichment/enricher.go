@@ -3,6 +3,7 @@ package enrichment
 import (
 	"context"
 	"log/slog"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 
@@ -11,26 +12,29 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/templates"
 )
 
-// AzureConfigEnricher runs registered enricher functions on ARG query results.
-// Templates without registered enrichers pass through unchanged.
-// Templates with enrichers are confirmed or dropped based on SDK API calls.
-type AzureConfigEnricher struct {
+// AzureEnricher runs registered enricher functions on ARG query results,
+// adding properties not available from Resource Graph. Always forwards results.
+type AzureEnricher struct {
 	ctx  context.Context
 	cred azcore.TokenCredential
 }
 
-// NewAzureConfigEnricher creates an enricher with the given context and credentials.
-func NewAzureConfigEnricher(ctx context.Context, cred azcore.TokenCredential) *AzureConfigEnricher {
-	return &AzureConfigEnricher{ctx: ctx, cred: cred}
+func NewAzureEnricher(ctx context.Context, cred azcore.TokenCredential) *AzureEnricher {
+	return &AzureEnricher{ctx: ctx, cred: cred}
 }
 
 // Enrich is a pipeline-compatible method that looks up registered enrichers
-// for the result's template ID, runs each one, and gates on the result.
-func (e *AzureConfigEnricher) Enrich(result templates.ARGQueryResult, out *pipeline.P[templates.ARGQueryResult]) error {
-	enrichers := plugin.GetAzureEnrichers(result.TemplateID)
+// by resource type, runs each one, and always forwards the result.
+func (e *AzureEnricher) Enrich(result templates.ARGQueryResult, out *pipeline.P[templates.ARGQueryResult]) error {
+	resourceType := strings.ToLower(result.ResourceType)
+	enrichers := plugin.GetAzureEnrichers(resourceType)
 	if len(enrichers) == 0 {
 		out.Send(result)
 		return nil
+	}
+
+	if result.Properties == nil {
+		result.Properties = make(map[string]any)
 	}
 
 	cfg := plugin.AzureEnricherConfig{
@@ -38,14 +42,11 @@ func (e *AzureConfigEnricher) Enrich(result templates.ARGQueryResult, out *pipel
 		Credential: e.cred,
 	}
 	for _, enrich := range enrichers {
-		confirmed, err := enrich(cfg, result)
-		if err != nil {
-			slog.Warn("azure enricher failed, dropping candidate",
-				"template", result.TemplateID, "resource", result.ResourceID, "error", err)
-			return nil
-		}
-		if !confirmed {
-			return nil
+		if err := enrich(cfg, &result); err != nil {
+			slog.Warn("azure enricher failed",
+				"type", result.ResourceType,
+				"resource", result.ResourceID,
+				"error", err)
 		}
 	}
 	out.Send(result)

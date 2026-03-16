@@ -12,33 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEnrich_UnregisteredTemplate_PassesThrough(t *testing.T) {
+func TestEnrich_UnregisteredType_PassesThrough(t *testing.T) {
 	defer plugin.ResetAzureEnricherRegistry()
 
-	e := NewAzureConfigEnricher(context.Background(), nil)
-	result := templates.ARGQueryResult{TemplateID: "no_enricher_needed", ResourceID: "/sub/rg/res"}
-
-	out := pipeline.New[templates.ARGQueryResult]()
-	go func() {
-		defer out.Close()
-		require.NoError(t, e.Enrich(result, out))
-	}()
-
-	items, err := out.Collect()
-	require.NoError(t, err)
-	require.Len(t, items, 1)
-	assert.Equal(t, "no_enricher_needed", items[0].TemplateID)
-}
-
-func TestEnrich_ConfirmedResult_PassesThrough(t *testing.T) {
-	defer plugin.ResetAzureEnricherRegistry()
-
-	plugin.RegisterAzureEnricher("confirmed_tmpl", func(_ plugin.AzureEnricherConfig, _ templates.ARGQueryResult) (bool, error) {
-		return true, nil
-	})
-
-	e := NewAzureConfigEnricher(context.Background(), nil)
-	result := templates.ARGQueryResult{TemplateID: "confirmed_tmpl", ResourceID: "/sub/rg/res"}
+	e := NewAzureEnricher(context.Background(), nil)
+	result := templates.ARGQueryResult{ResourceType: "Microsoft.Unknown/thing", ResourceID: "/res"}
 
 	out := pipeline.New[templates.ARGQueryResult]()
 	go func() {
@@ -51,15 +29,16 @@ func TestEnrich_ConfirmedResult_PassesThrough(t *testing.T) {
 	require.Len(t, items, 1)
 }
 
-func TestEnrich_DroppedResult_NotSent(t *testing.T) {
+func TestEnrich_MutatesProperties(t *testing.T) {
 	defer plugin.ResetAzureEnricherRegistry()
 
-	plugin.RegisterAzureEnricher("drop_tmpl", func(_ plugin.AzureEnricherConfig, _ templates.ARGQueryResult) (bool, error) {
-		return false, nil
+	plugin.RegisterAzureEnricher("microsoft.web/sites", func(_ plugin.AzureEnricherConfig, r *templates.ARGQueryResult) error {
+		r.Properties["authEnabled"] = false
+		return nil
 	})
 
-	e := NewAzureConfigEnricher(context.Background(), nil)
-	result := templates.ARGQueryResult{TemplateID: "drop_tmpl", ResourceID: "/sub/rg/res"}
+	e := NewAzureEnricher(context.Background(), nil)
+	result := templates.ARGQueryResult{ResourceType: "Microsoft.Web/sites", ResourceID: "/res"}
 
 	out := pipeline.New[templates.ARGQueryResult]()
 	go func() {
@@ -69,18 +48,19 @@ func TestEnrich_DroppedResult_NotSent(t *testing.T) {
 
 	items, err := out.Collect()
 	require.NoError(t, err)
-	assert.Empty(t, items)
+	require.Len(t, items, 1)
+	assert.Equal(t, false, items[0].Properties["authEnabled"])
 }
 
-func TestEnrich_ErrorResult_DroppedAndLogged(t *testing.T) {
+func TestEnrich_ErrorStillForwards(t *testing.T) {
 	defer plugin.ResetAzureEnricherRegistry()
 
-	plugin.RegisterAzureEnricher("error_tmpl", func(_ plugin.AzureEnricherConfig, _ templates.ARGQueryResult) (bool, error) {
-		return false, fmt.Errorf("sdk call failed")
+	plugin.RegisterAzureEnricher("microsoft.web/sites", func(_ plugin.AzureEnricherConfig, _ *templates.ARGQueryResult) error {
+		return fmt.Errorf("sdk call failed")
 	})
 
-	e := NewAzureConfigEnricher(context.Background(), nil)
-	result := templates.ARGQueryResult{TemplateID: "error_tmpl", ResourceID: "/sub/rg/res"}
+	e := NewAzureEnricher(context.Background(), nil)
+	result := templates.ARGQueryResult{ResourceType: "Microsoft.Web/sites", ResourceID: "/res"}
 
 	out := pipeline.New[templates.ARGQueryResult]()
 	go func() {
@@ -90,21 +70,23 @@ func TestEnrich_ErrorResult_DroppedAndLogged(t *testing.T) {
 
 	items, err := out.Collect()
 	require.NoError(t, err)
-	assert.Empty(t, items)
+	require.Len(t, items, 1, "result should be forwarded even on enricher error")
 }
 
-func TestEnrich_MultipleEnrichers_AllMustConfirm(t *testing.T) {
+func TestEnrich_MultipleEnrichersAllRun(t *testing.T) {
 	defer plugin.ResetAzureEnricherRegistry()
 
-	plugin.RegisterAzureEnricher("multi_tmpl", func(_ plugin.AzureEnricherConfig, _ templates.ARGQueryResult) (bool, error) {
-		return true, nil
+	plugin.RegisterAzureEnricher("microsoft.web/sites", func(_ plugin.AzureEnricherConfig, r *templates.ARGQueryResult) error {
+		r.Properties["a"] = true
+		return nil
 	})
-	plugin.RegisterAzureEnricher("multi_tmpl", func(_ plugin.AzureEnricherConfig, _ templates.ARGQueryResult) (bool, error) {
-		return false, nil // second enricher drops
+	plugin.RegisterAzureEnricher("microsoft.web/sites", func(_ plugin.AzureEnricherConfig, r *templates.ARGQueryResult) error {
+		r.Properties["b"] = true
+		return nil
 	})
 
-	e := NewAzureConfigEnricher(context.Background(), nil)
-	result := templates.ARGQueryResult{TemplateID: "multi_tmpl", ResourceID: "/sub/rg/res"}
+	e := NewAzureEnricher(context.Background(), nil)
+	result := templates.ARGQueryResult{ResourceType: "Microsoft.Web/sites", ResourceID: "/res"}
 
 	out := pipeline.New[templates.ARGQueryResult]()
 	go func() {
@@ -114,5 +96,52 @@ func TestEnrich_MultipleEnrichers_AllMustConfirm(t *testing.T) {
 
 	items, err := out.Collect()
 	require.NoError(t, err)
-	assert.Empty(t, items, "should be dropped because second enricher returned false")
+	require.Len(t, items, 1)
+	assert.Equal(t, true, items[0].Properties["a"])
+	assert.Equal(t, true, items[0].Properties["b"])
+}
+
+func TestEnrich_CaseInsensitiveResourceType(t *testing.T) {
+	defer plugin.ResetAzureEnricherRegistry()
+
+	plugin.RegisterAzureEnricher("microsoft.web/sites", func(_ plugin.AzureEnricherConfig, r *templates.ARGQueryResult) error {
+		r.Properties["found"] = true
+		return nil
+	})
+
+	e := NewAzureEnricher(context.Background(), nil)
+	result := templates.ARGQueryResult{ResourceType: "Microsoft.Web/Sites", ResourceID: "/res"}
+
+	out := pipeline.New[templates.ARGQueryResult]()
+	go func() {
+		defer out.Close()
+		require.NoError(t, e.Enrich(result, out))
+	}()
+
+	items, err := out.Collect()
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, true, items[0].Properties["found"])
+}
+
+func TestEnrich_NilProperties_Initialized(t *testing.T) {
+	defer plugin.ResetAzureEnricherRegistry()
+
+	plugin.RegisterAzureEnricher("microsoft.web/sites", func(_ plugin.AzureEnricherConfig, r *templates.ARGQueryResult) error {
+		r.Properties["key"] = "value"
+		return nil
+	})
+
+	e := NewAzureEnricher(context.Background(), nil)
+	result := templates.ARGQueryResult{ResourceType: "Microsoft.Web/sites", ResourceID: "/res"}
+
+	out := pipeline.New[templates.ARGQueryResult]()
+	go func() {
+		defer out.Close()
+		require.NoError(t, e.Enrich(result, out))
+	}()
+
+	items, err := out.Collect()
+	require.NoError(t, err)
+	assert.Equal(t, "value", items[0].Properties["key"])
 }
