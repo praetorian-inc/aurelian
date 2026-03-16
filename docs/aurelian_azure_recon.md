@@ -11,6 +11,7 @@ recon commands for azure
 ### SEE ALSO
 
 * [aurelian azure](aurelian_azure.md)	 - azure platform commands
+* [aurelian azure recon conditional-access-policies](aurelian_azure_recon_conditional-access-policies.md)	 - Enumerates Azure AD Conditional Access Policies via the Microsoft Graph API
 * [aurelian azure recon find-secrets](aurelian_azure_recon_find-secrets.md)	 - Enumerates Azure resources via Resource Graph, extracts content likely to contain hardcoded secrets (VM user data, web app settings, automation variables, storage blobs, container env vars, Cosmos DB, APIM named values, Key Vault, and 30+ other sources), and scans with Titus.
 * [aurelian azure recon list-all](aurelian_azure_recon_list-all.md)	 - List all Azure resources across subscriptions using Azure Resource Graph. Supports scanning specific subscriptions or all accessible subscriptions.
 * [aurelian azure recon public-resources](aurelian_azure_recon_public-resources.md)	 - Identifies publicly accessible Azure resources by executing Azure Resource Graph query templates against target subscriptions. Detects public storage accounts, databases, key vaults, web apps, and other resources exposed to the internet.
