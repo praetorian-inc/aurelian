@@ -14,9 +14,10 @@ type AzureEnricherConfig struct {
 	Credential azcore.TokenCredential
 }
 
-// AzureEnricherFunc confirms or drops an ARG query result via Azure SDK API calls.
-// Returns (true, nil) to confirm the finding, (false, nil) to drop it.
-type AzureEnricherFunc func(cfg AzureEnricherConfig, result templates.ARGQueryResult) (bool, error)
+// AzureEnricherFunc adds properties to an ARG query result via Azure SDK API calls.
+// Enrichers mutate result.Properties and always return nil on success.
+// Errors are logged by the pipeline wrapper; the result is still forwarded.
+type AzureEnricherFunc func(cfg AzureEnricherConfig, result *templates.ARGQueryResult) error
 
 type azureEnricherRegistry struct {
 	mu        sync.RWMutex
@@ -27,23 +28,24 @@ var globalAzureEnricherRegistry = &azureEnricherRegistry{
 	enrichers: make(map[string][]AzureEnricherFunc),
 }
 
-// RegisterAzureEnricher registers an enricher function for a template ID.
+// RegisterAzureEnricher registers an enricher function for a resource type.
+// The resourceType should be lowercase (e.g., "microsoft.web/sites").
 // Called from init() in individual enricher files.
-func RegisterAzureEnricher(templateID string, fn AzureEnricherFunc) {
+func RegisterAzureEnricher(resourceType string, fn AzureEnricherFunc) {
 	globalAzureEnricherRegistry.mu.Lock()
 	defer globalAzureEnricherRegistry.mu.Unlock()
 
-	globalAzureEnricherRegistry.enrichers[templateID] = append(
-		globalAzureEnricherRegistry.enrichers[templateID], fn,
+	globalAzureEnricherRegistry.enrichers[resourceType] = append(
+		globalAzureEnricherRegistry.enrichers[resourceType], fn,
 	)
 }
 
-// GetAzureEnrichers returns all enrichers registered for a template ID.
-func GetAzureEnrichers(templateID string) []AzureEnricherFunc {
+// GetAzureEnrichers returns all enrichers registered for a resource type.
+func GetAzureEnrichers(resourceType string) []AzureEnricherFunc {
 	globalAzureEnricherRegistry.mu.RLock()
 	defer globalAzureEnricherRegistry.mu.RUnlock()
 
-	enrichers := globalAzureEnricherRegistry.enrichers[templateID]
+	enrichers := globalAzureEnricherRegistry.enrichers[resourceType]
 	if enrichers == nil {
 		return []AzureEnricherFunc{}
 	}

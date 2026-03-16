@@ -6,45 +6,46 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/templates"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRegisterAndGetAzureEnricher(t *testing.T) {
 	defer ResetAzureEnricherRegistry()
 
 	called := false
-	fn := func(_ AzureEnricherConfig, _ templates.ARGQueryResult) (bool, error) {
+	fn := func(_ AzureEnricherConfig, result *templates.ARGQueryResult) error {
 		called = true
-		return true, nil
+		result.Properties["test"] = true
+		return nil
 	}
 
-	RegisterAzureEnricher("test_template", fn)
-	enrichers := GetAzureEnrichers("test_template")
+	RegisterAzureEnricher("microsoft.web/sites", fn)
+	enrichers := GetAzureEnrichers("microsoft.web/sites")
 
-	assert.Len(t, enrichers, 1)
-	ok, err := enrichers[0](AzureEnricherConfig{Context: context.Background()}, templates.ARGQueryResult{})
+	require.Len(t, enrichers, 1)
+	r := &templates.ARGQueryResult{Properties: map[string]any{}}
+	err := enrichers[0](AzureEnricherConfig{Context: context.Background()}, r)
 	assert.NoError(t, err)
-	assert.True(t, ok)
 	assert.True(t, called)
+	assert.Equal(t, true, r.Properties["test"])
 }
 
 func TestGetAzureEnrichers_Unregistered(t *testing.T) {
 	defer ResetAzureEnricherRegistry()
-
-	enrichers := GetAzureEnrichers("nonexistent")
-	assert.Empty(t, enrichers)
+	assert.Empty(t, GetAzureEnrichers("nonexistent"))
 }
 
-func TestRegisterAzureEnricher_MultiplePerTemplate(t *testing.T) {
+func TestRegisterAzureEnricher_MultiplePerType(t *testing.T) {
 	defer ResetAzureEnricherRegistry()
 
-	RegisterAzureEnricher("tmpl", func(_ AzureEnricherConfig, _ templates.ARGQueryResult) (bool, error) { return true, nil })
-	RegisterAzureEnricher("tmpl", func(_ AzureEnricherConfig, _ templates.ARGQueryResult) (bool, error) { return false, nil })
+	RegisterAzureEnricher("microsoft.web/sites", func(_ AzureEnricherConfig, _ *templates.ARGQueryResult) error { return nil })
+	RegisterAzureEnricher("microsoft.web/sites", func(_ AzureEnricherConfig, _ *templates.ARGQueryResult) error { return nil })
 
-	assert.Len(t, GetAzureEnrichers("tmpl"), 2)
+	assert.Len(t, GetAzureEnrichers("microsoft.web/sites"), 2)
 }
 
 func TestResetAzureEnricherRegistry(t *testing.T) {
-	RegisterAzureEnricher("tmpl", func(_ AzureEnricherConfig, _ templates.ARGQueryResult) (bool, error) { return true, nil })
+	RegisterAzureEnricher("microsoft.web/sites", func(_ AzureEnricherConfig, _ *templates.ARGQueryResult) error { return nil })
 	ResetAzureEnricherRegistry()
-	assert.Empty(t, GetAzureEnrichers("tmpl"))
+	assert.Empty(t, GetAzureEnrichers("microsoft.web/sites"))
 }
