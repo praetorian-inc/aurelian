@@ -5,6 +5,10 @@
 //
 // Adapted from Nebula's nebula-public-access testing infrastructure.
 //
+// Resources that hit quota/provider limits in eastus2 are deployed to a
+// secondary region (westus2 by default): SQL Server, Synapse, ML Workspace,
+// Container App. Azure ARG queries work cross-region within a subscription.
+//
 // ==================== TEST CASES ====================
 //
 // | #  | Resource                     | Template ID                                | Expected |
@@ -99,6 +103,12 @@ variable "location" {
   default     = "eastus2"
 }
 
+variable "location_secondary" {
+  description = "Secondary Azure region for resources that hit quota/provider limits in the primary region"
+  type        = string
+  default     = "westus2"
+}
+
 # ============================================================================
 # Resource Group
 # ============================================================================
@@ -182,9 +192,9 @@ resource "azurerm_key_vault" "public" {
 # ============================================================================
 
 resource "azurerm_mssql_server" "public" {
-  name                          = "${local.prefix}-sql"
+  name                          = "${local.prefix}-w-sql"
   resource_group_name           = azurerm_resource_group.test.name
-  location                      = local.location
+  location                      = var.location_secondary
   version                       = "12.0"
   administrator_login           = "aurelianadmin"
   administrator_login_password  = "P@ssw0rd${random_string.suffix.result}!"
@@ -360,9 +370,9 @@ resource "azurerm_databricks_workspace" "public" {
 # ============================================================================
 
 resource "azurerm_storage_account" "synapse" {
-  name                     = "${local.prefix_san}syn"
+  name                     = "${local.prefix_san}wsyn"
   resource_group_name      = azurerm_resource_group.test.name
-  location                 = local.location
+  location                 = var.location_secondary
   account_tier             = "Standard"
   account_replication_type = "LRS"
   account_kind             = "StorageV2"
@@ -376,9 +386,9 @@ resource "azurerm_storage_data_lake_gen2_filesystem" "synapse" {
 }
 
 resource "azurerm_synapse_workspace" "public" {
-  name                                 = "${local.prefix}-syn"
+  name                                 = "${local.prefix}-w-syn"
   resource_group_name                  = azurerm_resource_group.test.name
-  location                             = local.location
+  location                             = var.location_secondary
   storage_data_lake_gen2_filesystem_id = azurerm_storage_data_lake_gen2_filesystem.synapse.id
   sql_administrator_login              = "sqladminuser"
   sql_administrator_login_password     = "P@ssw0rd1234!"
@@ -394,45 +404,45 @@ resource "azurerm_synapse_workspace" "public" {
 # ============================================================================
 
 resource "azurerm_storage_account" "ml" {
-  name                     = "${local.prefix_san}ml"
+  name                     = "${local.prefix_san}wml"
   resource_group_name      = azurerm_resource_group.test.name
-  location                 = local.location
+  location                 = var.location_secondary
   account_tier             = "Standard"
   account_replication_type = "LRS"
   tags                     = local.tags
 }
 
 resource "azurerm_key_vault" "ml" {
-  name                = "${local.prefix}-mlkv"
+  name                = "${local.prefix}-wmlkv"
   resource_group_name = azurerm_resource_group.test.name
-  location            = local.location
+  location            = var.location_secondary
   tenant_id           = data.azurerm_client_config.current.tenant_id
   sku_name            = "standard"
   tags                = local.tags
 }
 
 resource "azurerm_log_analytics_workspace" "ml" {
-  name                = "${local.prefix}-mllaw"
+  name                = "${local.prefix}-wmllaw"
   resource_group_name = azurerm_resource_group.test.name
-  location            = local.location
+  location            = var.location_secondary
   sku                 = "PerGB2018"
   retention_in_days   = 30
   tags                = local.tags
 }
 
 resource "azurerm_application_insights" "ml" {
-  name                = "${local.prefix}-mlai"
+  name                = "${local.prefix}-wmlai"
   resource_group_name = azurerm_resource_group.test.name
-  location            = local.location
+  location            = var.location_secondary
   application_type    = "web"
   workspace_id        = azurerm_log_analytics_workspace.ml.id
   tags                = local.tags
 }
 
 resource "azurerm_machine_learning_workspace" "public" {
-  name                          = "${local.prefix}-mlw"
+  name                          = "${local.prefix}-w-mlw"
   resource_group_name           = azurerm_resource_group.test.name
-  location                      = local.location
+  location                      = var.location_secondary
   application_insights_id       = azurerm_application_insights.ml.id
   key_vault_id                  = azurerm_key_vault.ml.id
   storage_account_id            = azurerm_storage_account.ml.id
@@ -448,24 +458,24 @@ resource "azurerm_machine_learning_workspace" "public" {
 # ============================================================================
 
 resource "azurerm_log_analytics_workspace" "containerapp" {
-  name                = "${local.prefix}-calaw"
+  name                = "${local.prefix}-wcalaw"
   resource_group_name = azurerm_resource_group.test.name
-  location            = local.location
+  location            = var.location_secondary
   sku                 = "PerGB2018"
   retention_in_days   = 30
   tags                = local.tags
 }
 
 resource "azurerm_container_app_environment" "main" {
-  name                       = "${local.prefix}-cae"
+  name                       = "${local.prefix}-w-cae"
   resource_group_name        = azurerm_resource_group.test.name
-  location                   = local.location
+  location                   = var.location_secondary
   log_analytics_workspace_id = azurerm_log_analytics_workspace.containerapp.id
   tags                       = local.tags
 }
 
 resource "azurerm_container_app" "public" {
-  name                         = "${local.prefix}-ca"
+  name                         = "${local.prefix}-w-ca"
   resource_group_name          = azurerm_resource_group.test.name
   container_app_environment_id = azurerm_container_app_environment.main.id
   revision_mode                = "Single"
