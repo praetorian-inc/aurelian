@@ -4,6 +4,8 @@ package recon
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -31,158 +33,256 @@ func TestAzurePublicResources(t *testing.T) {
 		Context: context.Background(),
 	})
 	require.NoError(t, err)
-	testutil.AssertMinResults(t, results, 17)
+	testutil.AssertMinResults(t, results, 20)
 
-	// Collect risks from results.
-	var risks []output.AurelianRisk
+	// =====================================================================
+	// Index risks by template ID for precise assertions.
+	// =====================================================================
+
+	type riskWithContext struct {
+		Risk       output.AurelianRisk
+		CtxMap     map[string]any
+		Template   string
+		ResourceID string
+	}
+
+	var all []riskWithContext
+	byTemplate := make(map[string][]riskWithContext)
 	for _, r := range results {
-		if risk, ok := r.(output.AurelianRisk); ok {
-			risks = append(risks, risk)
+		risk, ok := r.(output.AurelianRisk)
+		if !ok {
+			continue
+		}
+		var ctx map[string]any
+		require.NoError(t, json.Unmarshal(risk.Context, &ctx))
+		tid, _ := ctx["templateId"].(string)
+		rc := riskWithContext{
+			Risk:       risk,
+			CtxMap:     ctx,
+			Template:   tid,
+			ResourceID: risk.ImpactedResourceID,
+		}
+		all = append(all, rc)
+		byTemplate[tid] = append(byTemplate[tid], rc)
+	}
+
+	// Helper: check if a fixture output exists and is non-empty.
+	fixtureHasOutput := func(key string) bool {
+		defer func() { recover() }() // Output() calls t.Fatalf on missing keys
+		v := fixture.Output(key)
+		return v != ""
+	}
+
+	// Helper: find a risk for a specific fixture resource within a template.
+	findRisk := func(t *testing.T, templateID, fixtureResourceIDKey string) riskWithContext {
+		t.Helper()
+		expectedID := strings.ToLower(fixture.Output(fixtureResourceIDKey))
+		require.NotEmpty(t, expectedID, "fixture output %q is empty", fixtureResourceIDKey)
+		risks, ok := byTemplate[templateID]
+		require.True(t, ok, "no findings for template %q", templateID)
+		for _, rc := range risks {
+			if strings.EqualFold(rc.ResourceID, expectedID) {
+				return rc
+			}
+		}
+		t.Fatalf("template %q has %d findings but none match fixture resource %q (%s)",
+			templateID, len(risks), expectedID, fixtureResourceIDKey)
+		return riskWithContext{} // unreachable
+	}
+
+	// Helper: assert a specific risk's common fields.
+	// resourceNameSubstr is an environment-agnostic suffix (e.g., "-kv", "sa", "-aks")
+	// that must appear in the ImpactedResourceID to confirm the right resource was caught.
+	assertRisk := func(t *testing.T, rc riskWithContext, expectedTemplate string, expectedSeverity output.RiskSeverity, resourceNameSubstr string) {
+		t.Helper()
+		assert.Equal(t, "public-azure-resource", rc.Risk.Name)
+		assert.Equal(t, expectedSeverity, rc.Risk.Severity,
+			"template %s: expected severity %s, got %s", expectedTemplate, expectedSeverity, rc.Risk.Severity)
+		assert.Equal(t, expectedTemplate, rc.Template)
+		assert.NotEmpty(t, rc.Risk.ImpactedResourceID)
+		assert.NotEmpty(t, rc.Risk.Context)
+		assert.Contains(t, strings.ToLower(rc.Risk.ImpactedResourceID), strings.ToLower(resourceNameSubstr),
+			"template %s: ImpactedResourceID %q should contain resource name substring %q",
+			expectedTemplate, rc.Risk.ImpactedResourceID, resourceNameSubstr)
+	}
+
+	// Per-template assertions: verify each template found the expected fixture resource
+	// with the correct severity and resource name substring.
+	templateTests := []struct {
+		templateID string
+		fixtureKey string
+		severity   output.RiskSeverity
+		substr     string
+		optional   bool // skip if fixture output is missing
+	}{
+		// Storage & Data
+		{"storage_accounts_public_access", "storage_account_id", output.RiskSeverityHigh, "sa", false},
+		{"key_vault_public_access", "key_vault_id", output.RiskSeverityHigh, "-kv", false},
+		{"cosmos_db_public_access", "cosmos_db_id", output.RiskSeverityHigh, "-cosmos", false},
+		{"redis_cache_public_access", "redis_cache_id", output.RiskSeverityLow, "-redis", false},
+		{"app_configuration_public_access", "app_configuration_id", output.RiskSeverityMedium, "-appconf", false},
+		// Databases
+		{"sql_servers_public_access", "sql_server_id", output.RiskSeverityHigh, "-w-sql", true},
+		{"postgresql_flexible_server_public_access", "postgresql_server_id", output.RiskSeverityMedium, "-pg", false},
+		// Container & Registry
+		{"container_registries_public_access", "acr_id", output.RiskSeverityHigh, "acr", false},
+		{"acr_anonymous_pull_access", "acr_anon_pull_id", output.RiskSeverityHigh, "acranon", false},
+		{"container_apps_public_access", "container_app_id", output.RiskSeverityMedium, "-w-ca", true},
+		{"container_instances_public_access", "container_instance_id", output.RiskSeverityMedium, "-ci", false},
+		{"aks_public_access", "aks_id", output.RiskSeverityHigh, "-aks", false},
+		// AI & Search
+		{"cognitive_services_public_access", "cognitive_account_id", output.RiskSeverityMedium, "-cog", false},
+		{"search_service_public_access", "search_service_id", output.RiskSeverityMedium, "-search", false},
+		// Compute
+		{"virtual_machines_public_access", "virtual_machine_id", output.RiskSeverityHigh, "-vm", false},
+		{"databricks_public_access", "databricks_workspace_id", output.RiskSeverityMedium, "-dbw", false},
+		// IoT & Messaging
+		{"iot_hub_public_access", "iot_hub_id", output.RiskSeverityMedium, "-iot", false},
+		{"event_grid_topics_public_access", "event_grid_topic_id", output.RiskSeverityMedium, "-egt", false},
+		{"notification_hubs_public_access", "notification_hub_namespace_id", output.RiskSeverityMedium, "-nhns", false},
+		{"service_bus_public_access", "service_bus_id", output.RiskSeverityLow, "-sbus", false},
+		{"event_hub_public_access", "event_hub_id", output.RiskSeverityHigh, "-eh", false},
+		// Analytics & Integration
+		{"synapse_public_access", "synapse_workspace_id", output.RiskSeverityMedium, "-w-syn", true},
+		{"ml_workspace_public_access", "ml_workspace_id", output.RiskSeverityMedium, "-w-mlw", true},
+		{"logic_apps_public_access", "logic_app_id", output.RiskSeverityMedium, "-la", false},
+		{"data_factory_public_access", "data_factory_id", output.RiskSeverityLow, "-adf", false},
+		{"log_analytics_public_access", "log_analytics_id", output.RiskSeverityLow, "-law", false},
+		{"data_explorer_public_access", "kusto_cluster_id", output.RiskSeverityMedium, "kusto", false},
+		// Networking
+		{"api_management_public_access", "api_management_id", output.RiskSeverityMedium, "-apim", false},
+		{"load_balancers_public", "load_balancer_id", output.RiskSeverityHigh, "-lb", false},
+		{"application_gateway_public_access", "application_gateway_id", output.RiskSeverityMedium, "-appgw", false},
+	}
+
+	for _, tt := range templateTests {
+		t.Run(tt.templateID, func(t *testing.T) {
+			if tt.optional && !fixtureHasOutput(tt.fixtureKey) {
+				t.Skipf("%s not provisioned in this environment", tt.fixtureKey)
+			}
+			rc := findRisk(t, tt.templateID, tt.fixtureKey)
+			assertRisk(t, rc, tt.templateID, tt.severity, tt.substr)
+		})
+	}
+
+	// =====================================================================
+	// Negative tests — secure resources must NOT produce findings
+	// =====================================================================
+
+	// Helper: assert a secure resource ID does not appear in any finding.
+	assertNotFlagged := func(t *testing.T, fixtureKey, description string) {
+		t.Helper()
+		if !fixtureHasOutput(fixtureKey) {
+			t.Skipf("%s not provisioned", description)
+		}
+		secureID := strings.ToLower(fixture.Output(fixtureKey))
+		for _, rc := range all {
+			assert.NotEqual(t, strings.ToLower(rc.ResourceID), secureID,
+				"%s should NOT be flagged but was by template %q", description, rc.Template)
 		}
 	}
-	require.NotEmpty(t, risks, "should emit at least one risk")
 
-	// Validate risk fields on all results.
-	for _, risk := range risks {
-		assert.NotEmpty(t, risk.Name, "risk Name must not be empty")
-		assert.NotEmpty(t, risk.Severity, "risk Severity must not be empty")
-		assert.NotEmpty(t, risk.ImpactedResourceID, "risk ImpactedResourceID must not be empty")
-		assert.NotEmpty(t, risk.Context, "risk Context must not be empty")
-	}
-
-	// --- Original resources (Tier 5A/5B equivalents) ---
-
-	t.Run("detects public storage account", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("storage_account_id"))
+	t.Run("secure storage account not flagged", func(t *testing.T) {
+		assertNotFlagged(t, "secure_storage_account_id", "secure storage account (public access disabled)")
 	})
 
-	t.Run("detects public key vault", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("key_vault_id"))
+	t.Run("secure key vault not flagged", func(t *testing.T) {
+		assertNotFlagged(t, "secure_key_vault_id", "secure key vault (deny by default)")
 	})
 
-	t.Run("detects public sql server", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("sql_server_id"))
+	t.Run("secure cosmos db not flagged", func(t *testing.T) {
+		assertNotFlagged(t, "secure_cosmos_db_id", "secure Cosmos DB (public access disabled)")
 	})
 
-	t.Run("detects public container registry", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("acr_id"))
+	t.Run("secure container registry not flagged", func(t *testing.T) {
+		assertNotFlagged(t, "secure_acr_id", "secure ACR (public access disabled, admin disabled)")
 	})
 
-	// --- Database servers ---
-
-	t.Run("detects public postgresql flexible server", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("postgresql_server_id"))
+	t.Run("secure app configuration not flagged", func(t *testing.T) {
+		assertNotFlagged(t, "secure_app_configuration_id", "secure App Configuration (public access disabled)")
 	})
 
-	// --- AI and Search ---
+	// =====================================================================
+	// Cross-finding invariants
+	// =====================================================================
 
-	t.Run("detects public cognitive services", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("cognitive_account_id"))
+	t.Run("all risks have name public-azure-resource", func(t *testing.T) {
+		for _, rc := range all {
+			assert.Equal(t, "public-azure-resource", rc.Risk.Name,
+				"template %q: risk name should be public-azure-resource", rc.Template)
+		}
 	})
 
-	t.Run("detects public search service", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("search_service_id"))
+	t.Run("all risks have valid severity", func(t *testing.T) {
+		validSeverities := map[output.RiskSeverity]bool{
+			output.RiskSeverityInfo: true, output.RiskSeverityLow: true,
+			output.RiskSeverityMedium: true, output.RiskSeverityHigh: true,
+			output.RiskSeverityCritical: true,
+		}
+		for _, rc := range all {
+			assert.True(t, validSeverities[rc.Risk.Severity],
+				"template %q: invalid severity %q", rc.Template, rc.Risk.Severity)
+		}
 	})
 
-	// --- Compute ---
-
-	t.Run("detects public container instance", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("container_instance_id"))
+	t.Run("all risks have non-empty resource ID", func(t *testing.T) {
+		for _, rc := range all {
+			assert.NotEmpty(t, rc.Risk.ImpactedResourceID,
+				"template %q: ImpactedResourceID must not be empty", rc.Template)
+		}
 	})
 
-	t.Run("detects public container app", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("container_app_id"))
+	t.Run("all risks have valid JSON context with templateId", func(t *testing.T) {
+		for _, rc := range all {
+			assert.NotEmpty(t, rc.Template,
+				"risk context must contain templateId")
+		}
 	})
 
-	t.Run("detects public databricks workspace", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("databricks_workspace_id"))
+	t.Run("all risks have resourceId in context", func(t *testing.T) {
+		for _, rc := range all {
+			resID, _ := rc.CtxMap["resourceId"].(string)
+			assert.NotEmpty(t, resID,
+				"template %q: context should contain resourceId", rc.Template)
+		}
 	})
 
-	t.Run("detects public aks cluster", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("aks_id"))
+	t.Run("most risks have resourceType in context", func(t *testing.T) {
+		withType := 0
+		for _, rc := range all {
+			resType, _ := rc.CtxMap["resourceType"].(string)
+			if resType != "" {
+				withType++
+			}
+		}
+		// At least 80% of findings should have resourceType populated.
+		ratio := float64(withType) / float64(len(all))
+		assert.Greater(t, ratio, 0.8,
+			"only %d/%d findings have resourceType in context", withType, len(all))
 	})
 
-	t.Run("detects public virtual machine", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("virtual_machine_id"))
+	t.Run("no duplicate findings per resource per template", func(t *testing.T) {
+		seen := make(map[string]int)
+		for _, rc := range all {
+			key := rc.Template + "|" + strings.ToLower(rc.ResourceID)
+			seen[key]++
+		}
+		for key, count := range seen {
+			assert.Equal(t, 1, count,
+				"duplicate finding: %s appears %d times", key, count)
+		}
 	})
 
-	// --- IoT and Messaging ---
-
-	t.Run("detects public iot hub", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("iot_hub_id"))
-	})
-
-	t.Run("detects public event grid topic", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("event_grid_topic_id"))
-	})
-
-	t.Run("detects public notification hub namespace", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("notification_hub_namespace_id"))
-	})
-
-	t.Run("detects public service bus", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("service_bus_id"))
-	})
-
-	t.Run("detects public event hub", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("event_hub_id"))
-	})
-
-	// --- Configuration and Analytics ---
-
-	t.Run("detects public app configuration", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("app_configuration_id"))
-	})
-
-	t.Run("detects public synapse workspace", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("synapse_workspace_id"))
-	})
-
-	t.Run("detects public ml workspace", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("ml_workspace_id"))
-	})
-
-	t.Run("detects public logic app", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("logic_app_id"))
-	})
-
-	t.Run("detects public data factory", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("data_factory_id"))
-	})
-
-	t.Run("detects public log analytics workspace", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("log_analytics_id"))
-	})
-
-	// --- Data stores ---
-
-	t.Run("detects public cosmos db", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("cosmos_db_id"))
-	})
-
-	t.Run("detects public redis cache", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("redis_cache_id"))
-	})
-
-	t.Run("detects acr with anonymous pull", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("acr_anon_pull_id"))
-	})
-
-	t.Run("detects public data explorer cluster", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("kusto_cluster_id"))
-	})
-
-	// --- Networking ---
-
-	t.Run("detects public api management", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("api_management_id"))
-	})
-
-	t.Run("detects public load balancer", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("load_balancer_id"))
-	})
-
-	t.Run("detects public application gateway", func(t *testing.T) {
-		testutil.AssertResultContainsString(t, results, fixture.Output("application_gateway_id"))
+	t.Run("severity distribution has all expected levels", func(t *testing.T) {
+		sevCounts := make(map[output.RiskSeverity]int)
+		for _, rc := range all {
+			sevCounts[rc.Risk.Severity]++
+		}
+		assert.Greater(t, sevCounts[output.RiskSeverityHigh], 0,
+			"should have at least one high severity finding")
+		assert.Greater(t, sevCounts[output.RiskSeverityMedium], 0,
+			"should have at least one medium severity finding")
+		assert.Greater(t, sevCounts[output.RiskSeverityLow], 0,
+			"should have at least one low severity finding")
 	})
 }

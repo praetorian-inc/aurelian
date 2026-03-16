@@ -121,3 +121,24 @@ output "application_gateway_id" {
 output "kusto_cluster_id" {
   value = azurerm_kusto_cluster.public.id
 }
+
+# Negative test outputs — secure resources that must NOT appear in findings
+output "secure_storage_account_id" {
+  value = azurerm_storage_account.secure.id
+}
+
+output "secure_key_vault_id" {
+  value = azurerm_key_vault.secure.id
+}
+
+output "secure_cosmos_db_id" {
+  value = azurerm_cosmosdb_account.secure.id
+}
+
+output "secure_acr_id" {
+  value = azurerm_container_registry.secure.id
+}
+
+output "secure_app_configuration_id" {
+  value = azurerm_app_configuration.secure.id
+}
