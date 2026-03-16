@@ -102,7 +102,7 @@ func TestConfigurationScanTemplateLoader_NoOverlapWithPublicResources(t *testing
 	}
 }
 
-func TestMisconfigToRisk(t *testing.T) {
+func TestConfigScanToRisk(t *testing.T) {
 	tmpl := &templates.ARGQueryTemplate{
 		ID:       "test_misconfig",
 		Name:     "Test Misconfiguration",
@@ -142,7 +142,7 @@ func TestMisconfigToRisk(t *testing.T) {
 	assert.Equal(t, "Microsoft.Compute/virtualMachines", ctx["resourceType"])
 }
 
-func TestMisconfigToRisk_SeverityPreserved(t *testing.T) {
+func TestConfigScanToRisk_SeverityPreserved(t *testing.T) {
 	severities := []string{"low", "medium", "high", "critical"}
 
 	for _, sev := range severities {
