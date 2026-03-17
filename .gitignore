@@ -25,5 +25,4 @@ debug.log*
 docker-images
 .claude/.output
 .worktrees/
-chat-continue.txt
-file.txt
+*.txt
