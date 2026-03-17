@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -15,6 +16,9 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 )
+
+// validSubscriptionID matches a standard Azure subscription UUID.
+var validSubscriptionID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // resolveSubscriptionIDs returns the given IDs directly, or if ids is ["all"],
 // lists all accessible subscriptions and returns their IDs.
@@ -65,19 +69,20 @@ func hydrateFromARG(cred azcore.TokenCredential, resources []output.AzureResourc
 
 	for subID, indices := range bySub {
 		// Build a query that fetches all resources by ID in one call.
+		// Escape single quotes in resource IDs to prevent KQL injection.
 		ids := make([]string, len(indices))
 		for j, idx := range indices {
-			ids[j] = fmt.Sprintf("'%s'", strings.ToLower(resources[idx].ResourceID))
+			escaped := strings.ReplaceAll(strings.ToLower(resources[idx].ResourceID), "'", "''")
+			ids[j] = fmt.Sprintf("'%s'", escaped)
 		}
 		query := fmt.Sprintf(
 			"Resources | where tolower(id) in (%s) | project id, name, type, location, tenantId",
 			strings.Join(ids, ", "),
 		)
 
-		sub := subID
 		resp, err := client.Resources(context.Background(), armresourcegraph.QueryRequest{
 			Query:         &query,
-			Subscriptions: []*string{&sub},
+			Subscriptions: []*string{&subID},
 		}, nil)
 		if err != nil {
 			slog.Warn("ARG hydration query failed, continuing with parsed-only fields",
@@ -131,6 +136,10 @@ func azureResourceFromID(id string) (output.AzureResource, error) {
 	subID, rg, _, err := extraction.ParseAzureResourceID(id)
 	if err != nil {
 		return output.AzureResource{}, fmt.Errorf("invalid resource ID %q: %w", id, err)
+	}
+
+	if !validSubscriptionID.MatchString(subID) {
+		return output.AzureResource{}, fmt.Errorf("invalid subscription ID %q in resource ID: expected UUID format", subID)
 	}
 
 	resourceType, err := extraction.ResourceTypeFromID(id)

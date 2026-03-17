@@ -14,7 +14,7 @@ import (
 )
 
 // TestARMEnumerator_List_NilCred verifies List does not panic when
-// credentials are nil. The raw policy pager returns an error for nil creds.
+// credentials are nil. The raw policy pager constructor rejects nil creds.
 func TestARMEnumerator_List_NilCred(t *testing.T) {
 	e := NewARMEnumerator(nil)
 	sub := azuretypes.SubscriptionInfo{ID: "00000000-0000-0000-0000-000000000000"}
@@ -23,7 +23,7 @@ func TestARMEnumerator_List_NilCred(t *testing.T) {
 	go func() {
 		defer out.Close()
 		err := e.List(sub, out)
-		// Policy definitions raw pager returns error for nil credential.
+		// Constructor now validates credential eagerly.
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "credential is nil")
 	}()

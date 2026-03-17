@@ -86,7 +86,11 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 	// Branch: resource-level targeting (like AWS ResourceARN) vs subscription-wide scan.
 	var listed *pipeline.P[output.AzureResource]
 	if len(c.ResourceID) > 0 {
-		listed = m.listByResourceID(c)
+		var err error
+		listed, err = m.listByResourceID(c)
+		if err != nil {
+			return err
+		}
 	} else {
 		var err error
 		listed, err = m.listBySubscription(c)
@@ -113,7 +117,7 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 // skipping ARG and ARM enumeration entirely. Mirrors AWS's ResourceARN path.
 // Hydrates each resource via ARG to populate Location, DisplayName, and TenantID
 // which are not derivable from the resource ID string alone.
-func (m *AzureFindSecretsModule) listByResourceID(c AzureFindSecretsConfig) *pipeline.P[output.AzureResource] {
+func (m *AzureFindSecretsModule) listByResourceID(c AzureFindSecretsConfig) (*pipeline.P[output.AzureResource], error) {
 	resources := make([]output.AzureResource, 0, len(c.ResourceID))
 	for _, id := range c.ResourceID {
 		r, err := azureResourceFromID(id)
@@ -124,11 +128,15 @@ func (m *AzureFindSecretsModule) listByResourceID(c AzureFindSecretsConfig) *pip
 		resources = append(resources, r)
 	}
 
+	if len(resources) == 0 && len(c.ResourceID) > 0 {
+		return nil, fmt.Errorf("all %d provided resource IDs were invalid", len(c.ResourceID))
+	}
+
 	// Hydrate resources with metadata from ARG (location, name, tenantId).
 	// Resources not in ARG (e.g., policy definitions) retain parsed-only fields.
 	hydrateFromARG(c.AzureCredential, resources)
 
-	return pipeline.From(resources...)
+	return pipeline.From(resources...), nil
 }
 
 // listBySubscription runs the full ARG + ARM enumeration across subscriptions.

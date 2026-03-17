@@ -150,7 +150,7 @@ func (e *ARMEnumerator) listPolicyDefinitions(sub azuretypes.SubscriptionInfo, o
 
 	paginator := newPaginator()
 	return paginator.Paginate(func() (bool, error) {
-		defs, nextLink, err := pipeline.nextPage()
+		defs, nextLink, err := pipeline.nextPage(context.Background())
 		if err != nil {
 			return false, handleListError(err, "policyDefinitions", sub.ID)
 		}
@@ -203,6 +203,8 @@ func (e *ARMEnumerator) listBlueprints(sub azuretypes.SubscriptionInfo, out *pip
 }
 
 // handleListError suppresses permission/throttle errors and returns all others.
+// Deserialization errors are explicitly logged and propagated so the caller
+// can distinguish SDK unmarshalling failures from transient network issues.
 func handleListError(err error, resourceKind, subscriptionID string) error {
 	if err == nil {
 		return nil
@@ -215,6 +217,13 @@ func handleListError(err error, resourceKind, subscriptionID string) error {
 			"error", msg,
 		)
 		return nil
+	}
+	if isDeserializationError(msg) {
+		slog.Error("ARM enumeration hit deserialization error",
+			"kind", resourceKind,
+			"subscription", subscriptionID,
+			"error", msg,
+		)
 	}
 	return fmt.Errorf("ARM list %s in %s: %w", resourceKind, subscriptionID, err)
 }

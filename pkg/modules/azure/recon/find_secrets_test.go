@@ -304,21 +304,22 @@ func TestListByResourceID_ValidIDs(t *testing.T) {
 	m := &AzureFindSecretsModule{}
 	c := AzureFindSecretsConfig{}
 	c.ResourceID = []string{
-		"/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.Compute/virtualMachines/vm-1",
-		"/subscriptions/sub-2/resourceGroups/rg-2/providers/Microsoft.Web/sites/app-1",
+		"/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-1/providers/Microsoft.Compute/virtualMachines/vm-1",
+		"/subscriptions/00000000-0000-0000-0000-000000000002/resourceGroups/rg-2/providers/Microsoft.Web/sites/app-1",
 	}
 
-	listed := m.listByResourceID(c)
+	listed, err := m.listByResourceID(c)
+	require.NoError(t, err)
 	resources, err := listed.Collect()
 	require.NoError(t, err)
 	require.Len(t, resources, 2)
 
-	assert.Equal(t, "sub-1", resources[0].SubscriptionID)
+	assert.Equal(t, "00000000-0000-0000-0000-000000000001", resources[0].SubscriptionID)
 	assert.Equal(t, "rg-1", resources[0].ResourceGroup)
 	assert.Equal(t, "Microsoft.Compute/virtualMachines", resources[0].ResourceType)
 	assert.Equal(t, c.ResourceID[0], resources[0].ResourceID)
 
-	assert.Equal(t, "sub-2", resources[1].SubscriptionID)
+	assert.Equal(t, "00000000-0000-0000-0000-000000000002", resources[1].SubscriptionID)
 	assert.Equal(t, "rg-2", resources[1].ResourceGroup)
 	assert.Equal(t, "Microsoft.Web/sites", resources[1].ResourceType)
 	assert.Equal(t, c.ResourceID[1], resources[1].ResourceID)
@@ -329,14 +330,28 @@ func TestListByResourceID_SkipsInvalid(t *testing.T) {
 	c := AzureFindSecretsConfig{}
 	c.ResourceID = []string{
 		"not-a-valid-id",
-		"/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.Compute/virtualMachines/vm-1",
+		"/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-1/providers/Microsoft.Compute/virtualMachines/vm-1",
 	}
 
-	listed := m.listByResourceID(c)
+	listed, err := m.listByResourceID(c)
+	require.NoError(t, err)
 	resources, err := listed.Collect()
 	require.NoError(t, err)
 	require.Len(t, resources, 1, "invalid IDs should be skipped with a warning")
-	assert.Equal(t, "sub-1", resources[0].SubscriptionID)
+	assert.Equal(t, "00000000-0000-0000-0000-000000000001", resources[0].SubscriptionID)
+}
+
+func TestListByResourceID_AllInvalid(t *testing.T) {
+	m := &AzureFindSecretsModule{}
+	c := AzureFindSecretsConfig{}
+	c.ResourceID = []string{
+		"not-a-valid-id",
+		"also-not-valid",
+	}
+
+	_, err := m.listByResourceID(c)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "all 2 provided resource IDs were invalid")
 }
 
 func TestListByResourceID_Empty(t *testing.T) {
@@ -344,7 +359,8 @@ func TestListByResourceID_Empty(t *testing.T) {
 	c := AzureFindSecretsConfig{}
 	c.ResourceID = []string{}
 
-	listed := m.listByResourceID(c)
+	listed, err := m.listByResourceID(c)
+	require.NoError(t, err)
 	resources, err := listed.Collect()
 	require.NoError(t, err)
 	assert.Empty(t, resources)

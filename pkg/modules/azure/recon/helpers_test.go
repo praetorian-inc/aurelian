@@ -65,23 +65,30 @@ func TestResolveSubscriptionIDs_AllError(t *testing.T) {
 }
 
 func TestAzureResourceFromID_Standard(t *testing.T) {
-	id := "/subscriptions/sub-123/resourceGroups/rg-test/providers/Microsoft.Compute/virtualMachines/my-vm"
+	id := "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-test/providers/Microsoft.Compute/virtualMachines/my-vm"
 	r, err := azureResourceFromID(id)
 	require.NoError(t, err)
-	assert.Equal(t, "sub-123", r.SubscriptionID)
+	assert.Equal(t, "00000000-0000-0000-0000-000000000001", r.SubscriptionID)
 	assert.Equal(t, "rg-test", r.ResourceGroup)
 	assert.Equal(t, "Microsoft.Compute/virtualMachines", r.ResourceType)
 	assert.Equal(t, id, r.ResourceID)
 }
 
 func TestAzureResourceFromID_WebApp(t *testing.T) {
-	id := "/subscriptions/abc/resourceGroups/my-rg/providers/Microsoft.Web/sites/my-app"
+	id := "/subscriptions/00000000-0000-0000-0000-000000000002/resourceGroups/my-rg/providers/Microsoft.Web/sites/my-app"
 	r, err := azureResourceFromID(id)
 	require.NoError(t, err)
-	assert.Equal(t, "abc", r.SubscriptionID)
+	assert.Equal(t, "00000000-0000-0000-0000-000000000002", r.SubscriptionID)
 	assert.Equal(t, "my-rg", r.ResourceGroup)
 	assert.Equal(t, "Microsoft.Web/sites", r.ResourceType)
 	assert.Equal(t, id, r.ResourceID)
+}
+
+func TestAzureResourceFromID_InvalidSubscriptionID(t *testing.T) {
+	id := "/subscriptions/not-a-uuid/resourceGroups/rg-test/providers/Microsoft.Compute/virtualMachines/my-vm"
+	_, err := azureResourceFromID(id)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid subscription ID")
 }
 
 func TestAzureResourceFromID_Invalid(t *testing.T) {
@@ -95,7 +102,7 @@ func TestAzureResourceFromID_Invalid(t *testing.T) {
 func TestAzureResourceFromID_MissingMetadata(t *testing.T) {
 	// azureResourceFromID only parses the ID string — Location, DisplayName,
 	// TenantID are NOT populated. These require hydration via ARG.
-	id := "/subscriptions/sub-123/resourceGroups/rg-test/providers/Microsoft.Compute/virtualMachines/my-vm"
+	id := "/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-test/providers/Microsoft.Compute/virtualMachines/my-vm"
 	r, err := azureResourceFromID(id)
 	require.NoError(t, err)
 	assert.Empty(t, r.Location, "Location should be empty before hydration")

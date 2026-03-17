@@ -6,16 +6,22 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 )
+
+// azureManagementHost is the required prefix for all raw HTTP requests and nextLink URLs.
+const azureManagementHost = "https://management.azure.com/"
 
 // rawPolicyPager pages through Azure policy definitions using raw HTTP + JSON
 // to avoid SDK unmarshalling crashes caused by metadata type mismatches
 // (e.g., "assignPermissions": "true" instead of true in custom policies).
 type rawPolicyPager struct {
 	cred    azcore.TokenCredential
+	client  *http.Client
 	nextURL string
 }
 
@@ -37,35 +43,35 @@ type rawPolicyPage struct {
 }
 
 func newRawPolicyPager(subscriptionID string, cred azcore.TokenCredential) (*rawPolicyPager, error) {
+	if cred == nil {
+		return nil, fmt.Errorf("credential is nil")
+	}
 	return &rawPolicyPager{
 		cred:    cred,
+		client:  &http.Client{Timeout: 30 * time.Second},
 		nextURL: fmt.Sprintf("https://management.azure.com/subscriptions/%s/providers/Microsoft.Authorization/policyDefinitions?api-version=2023-04-01", subscriptionID),
 	}, nil
 }
 
-func (p *rawPolicyPager) nextPage() (defs []rawPolicyDef, nextLink string, err error) {
+func (p *rawPolicyPager) nextPage(ctx context.Context) (defs []rawPolicyDef, nextLink string, err error) {
 	if p.nextURL == "" {
 		return nil, "", nil
 	}
 
-	if p.cred == nil {
-		return nil, "", fmt.Errorf("credential is nil")
-	}
-
-	token, err := p.cred.GetToken(context.Background(), policy.TokenRequestOptions{
+	token, err := p.cred.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{"https://management.azure.com/.default"},
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("acquiring token: %w", err)
 	}
 
-	req, err := http.NewRequest("GET", p.nextURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", p.nextURL, nil)
 	if err != nil {
 		return nil, "", fmt.Errorf("creating request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token.Token)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := p.client.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("HTTP request: %w", err)
 	}
@@ -97,13 +103,10 @@ func (p *rawPolicyPager) nextPage() (defs []rawPolicyDef, nextLink string, err e
 		defs = append(defs, def)
 	}
 
+	// Validate nextLink stays within Azure management plane to prevent SSRF.
+	if page.NextLink != "" && !strings.HasPrefix(page.NextLink, azureManagementHost) {
+		return nil, "", fmt.Errorf("unexpected nextLink host: %s", page.NextLink)
+	}
 	p.nextURL = page.NextLink
 	return defs, page.NextLink, nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
