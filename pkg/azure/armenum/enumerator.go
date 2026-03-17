@@ -14,7 +14,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/blueprint/armblueprint"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armpolicy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -139,38 +138,37 @@ func emitDeployment(id, name, location *string, sub azuretypes.SubscriptionInfo,
 }
 
 func (e *ARMEnumerator) listPolicyDefinitions(sub azuretypes.SubscriptionInfo, out *pipeline.P[output.AzureResource]) error {
-	client, err := armpolicy.NewDefinitionsClient(sub.ID, e.cred, nil)
+	// Use raw JSON pagination instead of the typed SDK client.
+	// The armpolicy SDK's typed unmarshaller crashes when custom policy definitions
+	// contain metadata type mismatches (e.g., "assignPermissions": "true" instead of
+	// true). This is a known issue with production tenants where custom policies have
+	// non-conforming metadata. Raw JSON lets us tolerate malformed fields gracefully.
+	pipeline, err := newRawPolicyPager(sub.ID, e.cred)
 	if err != nil {
-		return fmt.Errorf("create policy definitions client: %w", err)
+		return fmt.Errorf("create policy definitions pager: %w", err)
 	}
 
-	// List all definitions; filter to Custom client-side.
-	// The server-side $filter for policyType is not reliably supported by the Go SDK.
-	pager := client.NewListPager(nil)
 	paginator := newPaginator()
 	return paginator.Paginate(func() (bool, error) {
-		page, err := pager.NextPage(context.Background())
+		defs, nextLink, err := pipeline.nextPage()
 		if err != nil {
 			return false, handleListError(err, "policyDefinitions", sub.ID)
 		}
-		for _, d := range page.Value {
-			if d.ID == nil {
+		for _, d := range defs {
+			if d.ID == "" {
 				continue
 			}
 			// Skip built-in and static policies — they don't contain customer secrets.
-			if d.Properties != nil && d.Properties.PolicyType != nil &&
-				*d.Properties.PolicyType != armpolicy.PolicyTypeCustom {
+			if d.Properties.PolicyType != "" && d.Properties.PolicyType != "Custom" {
 				continue
 			}
-			r := output.NewAzureResource(sub.ID, "Microsoft.Authorization/policyDefinitions", *d.ID)
+			r := output.NewAzureResource(sub.ID, "Microsoft.Authorization/policyDefinitions", d.ID)
 			r.SubscriptionName = sub.DisplayName
 			r.TenantID = sub.TenantID
-			if d.Name != nil {
-				r.DisplayName = *d.Name
-			}
+			r.DisplayName = d.Properties.DisplayName
 			out.Send(r)
 		}
-		return pager.More(), nil
+		return nextLink != "", nil
 	})
 }
 
@@ -229,6 +227,25 @@ func isAuthOrThrottle(msg string) bool {
 		fmt.Sprintf("%d", http.StatusUnauthorized),
 		fmt.Sprintf("%d", http.StatusNotFound),
 		fmt.Sprintf("%d", http.StatusTooManyRequests),
+	} {
+		if strings.Contains(msg, kw) {
+			return true
+		}
+	}
+	return false
+}
+
+// isDeserializationError returns true if the error indicates a JSON/XML
+// unmarshalling failure from the Azure SDK. These occur when the API returns
+// fields or types that the SDK structs don't expect (e.g., newer API schema).
+func isDeserializationError(msg string) bool {
+	for _, kw := range []string{
+		"cannot unmarshal",
+		"unmarshalling type",
+		"error decoding",
+		"invalid character",
+		"unexpected end of JSON",
+		"xml:",
 	} {
 		if strings.Contains(msg, kw) {
 			return true
