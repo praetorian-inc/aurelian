@@ -102,8 +102,10 @@ output "nsg_name" {
 
 # ---------- 10. Overprivileged custom role ----------
 
+# ARG AuthorizationResources returns tenant-scoped IDs for role definitions
+# (without subscription prefix), so we construct the matching format here.
 output "custom_role_id" {
-  value = azurerm_role_definition.overprivileged.role_definition_resource_id
+  value = "/providers/Microsoft.Authorization/roleDefinitions/${azurerm_role_definition.overprivileged.role_definition_id}"
 }
 
 output "custom_role_name" {
@@ -164,7 +166,7 @@ output "template_resource_map" {
     key_vault_access_policy_privilege_escalation  = azurerm_key_vault.no_rbac.id
     kusto_wildcard_trusted_tenants               = azurerm_kusto_cluster.wildcard.id
     nsg_unrestricted_port_ranges                 = azurerm_network_security_group.wide_open.id
-    overprivileged_custom_roles                  = azurerm_role_definition.overprivileged.role_definition_resource_id
+    overprivileged_custom_roles                  = "/providers/Microsoft.Authorization/roleDefinitions/${azurerm_role_definition.overprivileged.role_definition_id}"
     vm_privileged_managed_identity               = azurerm_linux_virtual_machine.priv_mi_password.id
     vm_ssh_password_authentication               = azurerm_linux_virtual_machine.priv_mi_password.id
   }
