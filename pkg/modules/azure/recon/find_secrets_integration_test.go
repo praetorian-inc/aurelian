@@ -205,6 +205,38 @@ func TestAzureFindSecretsResource(t *testing.T) {
 			assert.NotEmpty(t, ctx["matches"], "risk context should have matches")
 		}
 	})
+
+	t.Run("ARG hydration populates region in proof context", func(t *testing.T) {
+		// The --resource-id path hydrates via ARG, so the proof context
+		// should include a non-empty region (Location) from the VM resource.
+		for _, risk := range risks {
+			if risk.Name != "azure-secret-aws" {
+				continue
+			}
+			var ctx map[string]interface{}
+			require.NoError(t, json.Unmarshal(risk.Context, &ctx))
+			matches, ok := ctx["matches"].([]interface{})
+			if !ok || len(matches) == 0 {
+				continue
+			}
+			match, ok := matches[0].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			provenance, ok := match["provenance"].([]interface{})
+			if !ok || len(provenance) == 0 {
+				continue
+			}
+			prov, ok := provenance[0].(map[string]interface{})
+			if !ok {
+				continue
+			}
+			region, _ := prov["region"].(string)
+			assert.NotEmpty(t, region, "ARG hydration should populate region (Location) for --resource-id path")
+			return
+		}
+		t.Fatal("no azure-secret-aws risk found to check region")
+	})
 }
 
 func TestAzureFindSecretsResourceMultiple(t *testing.T) {
