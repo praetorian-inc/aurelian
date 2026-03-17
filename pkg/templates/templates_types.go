@@ -26,6 +26,11 @@ type ARGQueryResult struct {
 	Location        string                 `json:"location"`
 	SubscriptionID  string                 `json:"subscriptionId"`
 	Properties      map[string]interface{} `json:"properties,omitempty"`
+
+	// Suppressed indicates that an enricher determined this result is a false positive
+	// and should not be emitted as a risk. SuppressReason explains why.
+	Suppressed     bool   `json:"suppressed,omitempty"`
+	SuppressReason string `json:"suppressReason,omitempty"`
 }
 
 // ARGTemplateLoader handles loading and validating ARG query templates

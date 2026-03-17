@@ -49,6 +49,7 @@ func (e *AzureEnricher) Enrich(result templates.ARGQueryResult, out *pipeline.P[
 				"error", err)
 		}
 	}
+
 	out.Send(result)
 	return nil
 }

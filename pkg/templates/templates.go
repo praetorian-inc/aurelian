@@ -10,9 +10,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-//go:embed *.yaml
-var EmbeddedTemplates embed.FS
-
 // TemplateLoader loads templates from both embedded files and optional user-supplied directory
 type TemplateLoader struct {
 	templates []*ARGQueryTemplate

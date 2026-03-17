@@ -1,16 +1,16 @@
-## aurelian azure recon list-all
+## aurelian azure recon subdomain-takeover
 
-List all Azure resources across subscriptions using Azure Resource Graph. Supports scanning specific subscriptions or all accessible subscriptions.
+Scan for dangling DNS records in Azure DNS zones that could enable subdomain takeover. Checks CNAME records for unclaimed App Service, Blob Storage, CDN, and Traffic Manager names; A/AAAA records for orphaned public IPs; and NS delegations to non-existent Azure DNS zones.
 
 ```
-aurelian azure recon list-all [flags]
+aurelian azure recon subdomain-takeover [flags]
 ```
 
 ### Options
 
 ```
       --concurrency int            Maximum concurrent API requests (default 5)
-  -h, --help                       help for list-all
+  -h, --help                       help for subdomain-takeover
       --output-dir string          Base output directory (default "aurelian-output")
   -s, --subscription-ids strings   Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions (default [all])
 ```
