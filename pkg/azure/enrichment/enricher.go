@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 
@@ -11,6 +12,8 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/templates"
 )
+
+const enricherTimeout = 30 * time.Second
 
 // AzureEnricher runs registered enricher functions on ARG query results,
 // adding properties not available from Resource Graph. Always forwards results.
@@ -37,8 +40,11 @@ func (e *AzureEnricher) Enrich(result templates.ARGQueryResult, out *pipeline.P[
 		result.Properties = make(map[string]any)
 	}
 
+	enrichCtx, cancel := context.WithTimeout(e.ctx, enricherTimeout)
+	defer cancel()
+
 	cfg := plugin.AzureEnricherConfig{
-		Context:    e.ctx,
+		Context:    enrichCtx,
 		Credential: e.cred,
 	}
 	for _, enrich := range enrichers {

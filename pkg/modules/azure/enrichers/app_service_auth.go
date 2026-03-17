@@ -3,7 +3,7 @@ package enrichers
 import (
 	"log/slog"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice/v4"
 
 	"github.com/praetorian-inc/aurelian/pkg/azure/enrichment"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
