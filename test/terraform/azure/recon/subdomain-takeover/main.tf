@@ -26,7 +26,8 @@ resource "random_string" "suffix" {
 }
 
 locals {
-  prefix = "${var.prefix}-${random_string.suffix.result}"
+  prefix     = "${var.prefix}-${random_string.suffix.result}"
+  prefix_san = "${var.prefix}${random_string.suffix.result}"
 }
 
 resource "azurerm_resource_group" "test" {
@@ -66,7 +67,7 @@ resource "azurerm_dns_cname_record" "storage_dangling" {
   zone_name           = azurerm_dns_zone.test.name
   resource_group_name = azurerm_resource_group.test.name
   ttl                 = 300
-  record              = "${local.prefix}nonexiststor.blob.core.windows.net"
+  record              = "${local.prefix_san}noexist.blob.core.windows.net"
 }
 
 # Dangling Traffic Manager CNAME
