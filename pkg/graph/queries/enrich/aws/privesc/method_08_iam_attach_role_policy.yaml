@@ -11,10 +11,8 @@ order: 108
 cypher: |
   MATCH (attacker:Principal)-[perm]->(target)
   WHERE type(perm) = 'IAM_ATTACHROLEPOLICY'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  AND coalesce(target.Arn, target.arn) <> coalesce(attacker.Arn, attacker.arn)
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(target)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:AttachRolePolicy',
       pe.severity = 'high',

@@ -15,10 +15,7 @@ cypher: |
   WITH attacker, target
   MATCH (attacker)-[invoke]->(target)
   WHERE type(invoke) = 'LAMBDA_INVOKEFUNCTION'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(target)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'lambda:UpdateFunctionCode + lambda:InvokeFunction',
       pe.severity = 'high',
