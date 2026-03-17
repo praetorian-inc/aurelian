@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -89,4 +90,44 @@ func TestAzureResourceFromID_Invalid(t *testing.T) {
 
 	_, err = azureResourceFromID("/subscriptions/sub-123")
 	assert.Error(t, err)
+}
+
+func TestAzureResourceFromID_MissingMetadata(t *testing.T) {
+	// azureResourceFromID only parses the ID string — Location, DisplayName,
+	// TenantID are NOT populated. These require hydration via ARG.
+	id := "/subscriptions/sub-123/resourceGroups/rg-test/providers/Microsoft.Compute/virtualMachines/my-vm"
+	r, err := azureResourceFromID(id)
+	require.NoError(t, err)
+	assert.Empty(t, r.Location, "Location should be empty before hydration")
+	assert.Empty(t, r.DisplayName, "DisplayName should be empty before hydration")
+	assert.Empty(t, r.TenantID, "TenantID should be empty before hydration")
+}
+
+func TestHydrateFromARG_NilCred(t *testing.T) {
+	resources := []output.AzureResource{
+		{SubscriptionID: "sub-1", ResourceID: "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1"},
+	}
+	// Should not panic with nil credential.
+	hydrateFromARG(nil, resources)
+	assert.Empty(t, resources[0].Location, "should remain empty with nil cred")
+}
+
+func TestHydrateFromARG_EmptyResources(t *testing.T) {
+	// Should not panic with empty slice.
+	hydrateFromARG(nil, nil)
+	hydrateFromARG(nil, []output.AzureResource{})
+}
+
+func TestStrVal(t *testing.T) {
+	m := map[string]any{
+		"location": "eastus",
+		"name":     "my-vm",
+		"count":    42,
+		"nil":      nil,
+	}
+	assert.Equal(t, "eastus", strVal(m, "location"))
+	assert.Equal(t, "my-vm", strVal(m, "name"))
+	assert.Equal(t, "", strVal(m, "count"))     // int → empty string
+	assert.Equal(t, "", strVal(m, "nil"))        // nil → empty string
+	assert.Equal(t, "", strVal(m, "missing"))    // missing key → empty string
 }

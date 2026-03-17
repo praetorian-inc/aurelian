@@ -111,6 +111,8 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 
 // listByResourceID builds AzureResource structs directly from user-provided resource IDs,
 // skipping ARG and ARM enumeration entirely. Mirrors AWS's ResourceARN path.
+// Hydrates each resource via ARG to populate Location, DisplayName, and TenantID
+// which are not derivable from the resource ID string alone.
 func (m *AzureFindSecretsModule) listByResourceID(c AzureFindSecretsConfig) *pipeline.P[output.AzureResource] {
 	resources := make([]output.AzureResource, 0, len(c.ResourceID))
 	for _, id := range c.ResourceID {
@@ -121,6 +123,11 @@ func (m *AzureFindSecretsModule) listByResourceID(c AzureFindSecretsConfig) *pip
 		}
 		resources = append(resources, r)
 	}
+
+	// Hydrate resources with metadata from ARG (location, name, tenantId).
+	// Resources not in ARG (e.g., policy definitions) retain parsed-only fields.
+	hydrateFromARG(c.AzureCredential, resources)
+
 	return pipeline.From(resources...)
 }
 

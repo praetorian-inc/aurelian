@@ -1,9 +1,13 @@
 package recon
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/praetorian-inc/aurelian/pkg/azure/extraction"
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
@@ -37,6 +41,88 @@ func subscriptionToListerInput(sub azuretypes.SubscriptionInfo, out *pipeline.P[
 func toAurelianModel(r output.AzureResource, out *pipeline.P[model.AurelianModel]) error {
 	out.Send(r)
 	return nil
+}
+
+// hydrateFromARG enriches a slice of AzureResource in-place with metadata
+// (Location, DisplayName, TenantID) from Azure Resource Graph. Resources not
+// indexed by ARG (e.g., policy definitions, deployments) are left unchanged.
+func hydrateFromARG(cred azcore.TokenCredential, resources []output.AzureResource) {
+	if len(resources) == 0 || cred == nil {
+		return
+	}
+
+	// Group resource IDs by subscription for batched ARG queries.
+	bySub := make(map[string][]int) // subscriptionID → indices into resources
+	for i, r := range resources {
+		bySub[r.SubscriptionID] = append(bySub[r.SubscriptionID], i)
+	}
+
+	client, err := armresourcegraph.NewClient(cred, nil)
+	if err != nil {
+		slog.Warn("could not create ARG client for resource hydration", "error", err)
+		return
+	}
+
+	for subID, indices := range bySub {
+		// Build a query that fetches all resources by ID in one call.
+		ids := make([]string, len(indices))
+		for j, idx := range indices {
+			ids[j] = fmt.Sprintf("'%s'", strings.ToLower(resources[idx].ResourceID))
+		}
+		query := fmt.Sprintf(
+			"Resources | where tolower(id) in (%s) | project id, name, type, location, tenantId",
+			strings.Join(ids, ", "),
+		)
+
+		sub := subID
+		resp, err := client.Resources(context.Background(), armresourcegraph.QueryRequest{
+			Query:         &query,
+			Subscriptions: []*string{&sub},
+		}, nil)
+		if err != nil {
+			slog.Warn("ARG hydration query failed, continuing with parsed-only fields",
+				"subscription", subID, "error", err)
+			continue
+		}
+
+		// Index results by lowercase ID for matching.
+		type argResult struct {
+			Location string
+			Name     string
+			TenantID string
+		}
+		lookup := make(map[string]argResult)
+		if data, ok := resp.Data.([]any); ok {
+			for _, item := range data {
+				m, ok := item.(map[string]any)
+				if !ok {
+					continue
+				}
+				rid, _ := m["id"].(string)
+				lookup[strings.ToLower(rid)] = argResult{
+					Location: strVal(m, "location"),
+					Name:     strVal(m, "name"),
+					TenantID: strVal(m, "tenantId"),
+				}
+			}
+		}
+
+		// Apply hydrated fields back to resources.
+		for _, idx := range indices {
+			if result, ok := lookup[strings.ToLower(resources[idx].ResourceID)]; ok {
+				resources[idx].Location = result.Location
+				resources[idx].TenantID = result.TenantID
+				if resources[idx].DisplayName == "" {
+					resources[idx].DisplayName = result.Name
+				}
+			}
+		}
+	}
+}
+
+func strVal(m map[string]any, key string) string {
+	v, _ := m[key].(string)
+	return v
 }
 
 // azureResourceFromID parses a full Azure resource ID into an AzureResource.
