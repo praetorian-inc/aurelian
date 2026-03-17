@@ -9,7 +9,7 @@ aurelian azure recon subdomain-takeover [flags]
 ### Options
 
 ```
-      --concurrency int            Number of concurrent checker goroutines (default 5)
+      --concurrency int            Maximum concurrent API requests (default 5)
   -h, --help                       help for subdomain-takeover
       --output-dir string          Base output directory (default "aurelian-output")
   -s, --subscription-ids strings   Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions (default [all])
