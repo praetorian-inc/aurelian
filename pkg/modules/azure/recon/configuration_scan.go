@@ -137,7 +137,7 @@ func (m *AzureConfigurationScanModule) Run(cfg plugin.Config, out *pipeline.P[mo
 }
 
 func configScanToRisk(result templates.ARGQueryResult, out *pipeline.P[model.AurelianModel]) error {
-	rawContext, err := json.Marshal(result)
+	ctx, err := json.Marshal(result)
 	if err != nil {
 		slog.Warn("failed to marshal risk context", "template", result.TemplateID, "error", err)
 		return nil
@@ -147,7 +147,7 @@ func configScanToRisk(result templates.ARGQueryResult, out *pipeline.P[model.Aur
 		Name:               "azure-configuration-scan",
 		Severity:           result.TemplateDetails.Severity,
 		ImpactedResourceID: result.ResourceID,
-		Context:            rawContext,
+		Context:            ctx,
 	})
 	return nil
 }
