@@ -13,17 +13,16 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/templates"
 )
 
-const enricherTimeout = 30 * time.Second
-
 // AzureEnricher runs registered enricher functions on ARG query results,
 // adding properties not available from Resource Graph. Always forwards results.
 type AzureEnricher struct {
-	ctx  context.Context
-	cred azcore.TokenCredential
+	ctx     context.Context
+	cred    azcore.TokenCredential
+	timeout time.Duration
 }
 
-func NewAzureEnricher(ctx context.Context, cred azcore.TokenCredential) *AzureEnricher {
-	return &AzureEnricher{ctx: ctx, cred: cred}
+func NewAzureEnricher(ctx context.Context, cred azcore.TokenCredential, timeout time.Duration) *AzureEnricher {
+	return &AzureEnricher{ctx: ctx, cred: cred, timeout: timeout}
 }
 
 // Enrich is a pipeline-compatible method that looks up registered enrichers
@@ -40,7 +39,7 @@ func (e *AzureEnricher) Enrich(result templates.ARGQueryResult, out *pipeline.P[
 		result.Properties = make(map[string]any)
 	}
 
-	enrichCtx, cancel := context.WithTimeout(e.ctx, enricherTimeout)
+	enrichCtx, cancel := context.WithTimeout(e.ctx, e.timeout)
 	defer cancel()
 
 	cfg := plugin.AzureEnricherConfig{

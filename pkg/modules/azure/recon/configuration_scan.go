@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"time"
 
 	"github.com/praetorian-inc/aurelian/pkg/azure/enrichment"
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
@@ -23,8 +24,9 @@ func init() {
 
 type AzureConfigurationScanConfig struct {
 	plugin.AzureCommonRecon
-	TemplateDir string `param:"template-dir" desc:"Optional directory with additional YAML query templates" default:""`
-	Concurrency int    `param:"concurrency"  desc:"Maximum concurrent API requests" default:"10"`
+	TemplateDir      string `param:"template-dir"      desc:"Optional directory with additional YAML query templates" default:""`
+	Concurrency      int    `param:"concurrency"       desc:"Maximum concurrent API requests" default:"10"`
+	EnricherTimeout  int    `param:"enricher-timeout"  desc:"Per-resource enricher timeout in seconds" default:"120"`
 }
 
 type AzureConfigurationScanModule struct {
@@ -120,7 +122,8 @@ func (m *AzureConfigurationScanModule) Run(cfg plugin.Config, out *pipeline.P[mo
 	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, nil)
 	pipeline.Pipe(inputStream, lister.Query, candidates)
 
-	enricher := enrichment.NewAzureEnricher(ctx, m.AzureCredential)
+	enricherTimeout := time.Duration(m.EnricherTimeout) * time.Second
+	enricher := enrichment.NewAzureEnricher(ctx, m.AzureCredential, enricherTimeout)
 	enriched := pipeline.New[templates.ARGQueryResult]()
 	pipeline.Pipe(candidates, enricher.Enrich, enriched, &pipeline.PipeOpts{
 		Concurrency: m.Concurrency,
