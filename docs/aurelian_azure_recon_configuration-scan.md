@@ -9,7 +9,7 @@ aurelian azure recon configuration-scan [flags]
 ### Options
 
 ```
-      --concurrency int            Maximum concurrent API requests (default 10)
+      --concurrency int            Maximum concurrent API requests (default 5)
   -h, --help                       help for configuration-scan
       --output-dir string          Base output directory (default "aurelian-output")
   -s, --subscription-ids strings   Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions (default [all])
