@@ -8,8 +8,6 @@ import (
 	"log/slog"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/dbtype"
-	"github.com/praetorian-inc/aurelian/pkg/graph"
-	"github.com/praetorian-inc/aurelian/pkg/graph/adapters"
 	privesc "github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc_new"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -24,7 +22,12 @@ func init() {
 // DetectPrivescsConfig holds parameters for the detect-privescs module.
 type DetectPrivescsConfig struct {
 	plugin.GraphOutputBase
-	Compiler privesc.Compiler `param:"-"`
+	Queryer privesc.Queryer `param:"-"`
+}
+
+// SetQueryer allows external callers (e.g. Guard) to inject a Queryer.
+func (c *DetectPrivescsConfig) SetQueryer(q privesc.Queryer) {
+	c.Queryer = q
 }
 
 // DetectPrivescsModule runs all privesc method queries against a Neo4j graph
@@ -49,43 +52,32 @@ func (m *DetectPrivescsModule) Description() string {
 }
 
 func (m *DetectPrivescsModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
-	db, err := connectGraph(m.GraphOutputBase)
+	queryer, err := m.resolveQueryer()
 	if err != nil {
 		return err
 	}
-	defer db.Close()
-
-	compiler := resolveCompiler(m.Compiler)
+	defer queryer.Close()
 
 	ctx := context.Background()
 	for _, method := range allMethods() {
-		if err := runMethod(ctx, db, compiler, method, out); err != nil {
+		if err := runMethod(ctx, queryer, method, out); err != nil {
 			slog.Warn("privesc method failed", "id", method.ID(), "error", err)
 		}
 	}
 	return nil
 }
 
-func connectGraph(params plugin.GraphOutputBase) (graph.GraphDatabase, error) {
-	graphCfg := graph.NewConfig(params.Neo4jURI, params.Neo4jUsername, params.Neo4jPassword)
-
-	db, err := adapters.NewNeo4jAdapter(graphCfg)
-	if err != nil {
+// resolveQueryer returns the caller-provided Queryer if set,
+// otherwise creates a default Neo4jQueryer using GraphOutputBase params.
+func (m *DetectPrivescsModule) resolveQueryer() (privesc.Queryer, error) {
+	if m.Queryer != nil {
+		return m.Queryer, nil
+	}
+	q := privesc.NewNeo4jQueryer()
+	if err := q.Connect(m.Neo4jURI, m.Neo4jUsername, m.Neo4jPassword); err != nil {
 		return nil, fmt.Errorf("connecting to Neo4j: %w", err)
 	}
-
-	if err := db.VerifyConnectivity(context.Background()); err != nil {
-		return nil, fmt.Errorf("Neo4j connectivity check failed: %w", err)
-	}
-
-	return db, nil
-}
-
-func resolveCompiler(c privesc.Compiler) privesc.Compiler {
-	if c != nil {
-		return c
-	}
-	return privesc.DefaultNeo4jCompiler()
+	return q, nil
 }
 
 func allMethods() []privesc.AWSPrivesc {
@@ -98,30 +90,26 @@ func allMethods() []privesc.AWSPrivesc {
 
 func runMethod(
 	ctx context.Context,
-	db graph.GraphDatabase,
-	compiler privesc.Compiler,
+	queryer privesc.Queryer,
 	method privesc.AWSPrivesc,
 	out *pipeline.P[model.AurelianModel],
 ) error {
-	cypher, err := compiler.Compile(method.Query())
-	if err != nil {
-		return fmt.Errorf("compiling %s: %w", method.ID(), err)
-	}
-
 	slog.Debug("running privesc query", "id", method.ID())
 
-	result, err := db.Query(ctx, cypher, nil)
+	results, err := queryer.Query(ctx, method.Query())
 	if err != nil {
 		return fmt.Errorf("executing %s: %w", method.ID(), err)
 	}
 
-	for _, record := range result.Records {
-		risk, err := recordToRisk(method, record)
-		if err != nil {
-			slog.Warn("skipping record", "method", method.ID(), "error", err)
-			continue
+	for _, result := range results {
+		for _, record := range result.Records {
+			risk, err := recordToRisk(method, record)
+			if err != nil {
+				slog.Warn("skipping record", "method", method.ID(), "error", err)
+				continue
+			}
+			out.Send(risk)
 		}
-		out.Send(risk)
 	}
 	return nil
 }

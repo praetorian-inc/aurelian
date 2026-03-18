@@ -15,7 +15,7 @@ import (
 	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	
+
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/recon"
 )
 

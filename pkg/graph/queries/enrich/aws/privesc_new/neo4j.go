@@ -1,8 +1,12 @@
 package privescnew
 
 import (
+	"context"
 	"fmt"
 	"strings"
+
+	"github.com/praetorian-inc/aurelian/pkg/graph"
+	"github.com/praetorian-inc/aurelian/pkg/graph/adapters"
 )
 
 // Neo4jCompiler compiles Query ASTs into Neo4j Cypher strings.
@@ -62,4 +66,52 @@ func (c *Neo4jCompiler) Compile(q Query) (string, error) {
 // "iam:CreatePolicyVersion" → "IAM_CREATEPOLICYVERSION"
 func actionToRelType(action string) string {
 	return strings.ToUpper(strings.ReplaceAll(action, ":", "_"))
+}
+
+// Neo4jQueryer implements Queryer by compiling DSL queries to Cypher
+// and executing them against a direct Neo4j connection.
+type Neo4jQueryer struct {
+	compiler *Neo4jCompiler
+	db       graph.GraphDatabase
+}
+
+// NewNeo4jQueryer creates a Neo4jQueryer with the default compiler.
+// Call Connect() before Query().
+func NewNeo4jQueryer() *Neo4jQueryer {
+	return &Neo4jQueryer{
+		compiler: DefaultNeo4jCompiler(),
+	}
+}
+
+func (q *Neo4jQueryer) Connect(uri, username, password string) error {
+	cfg := graph.NewConfig(uri, username, password)
+	db, err := adapters.NewNeo4jAdapter(cfg)
+	if err != nil {
+		return err
+	}
+	if err := db.VerifyConnectivity(context.Background()); err != nil {
+		db.Close()
+		return err
+	}
+	q.db = db
+	return nil
+}
+
+func (q *Neo4jQueryer) Query(ctx context.Context, query Query) ([]*graph.QueryResult, error) {
+	cypher, err := q.compiler.Compile(query)
+	if err != nil {
+		return nil, err
+	}
+	result, err := q.db.Query(ctx, cypher, nil)
+	if err != nil {
+		return nil, err
+	}
+	return []*graph.QueryResult{result}, nil
+}
+
+func (q *Neo4jQueryer) Close() error {
+	if q.db != nil {
+		return q.db.Close()
+	}
+	return nil
 }

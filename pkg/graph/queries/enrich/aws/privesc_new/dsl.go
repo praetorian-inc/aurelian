@@ -1,5 +1,11 @@
 package privescnew
 
+import (
+	"context"
+
+	"github.com/praetorian-inc/aurelian/pkg/graph"
+)
+
 // Node represents a semantic graph node (e.g. "Principal", "ManagedPolicy").
 // The Kind field is interpreted by the Compiler to produce backend-specific predicates.
 type Node struct {
@@ -21,6 +27,16 @@ type Query struct {
 // Compiler transforms a Query AST into a backend-specific query string.
 type Compiler interface {
 	Compile(Query) (string, error)
+}
+
+// Queryer compiles and executes a privesc DSL query against a graph backend.
+type Queryer interface {
+	// Connect initializes the backend connection. No-op for pre-connected backends.
+	Connect(uri, username, password string) error
+	// Query compiles the DSL query and returns results.
+	Query(ctx context.Context, q Query) ([]*graph.QueryResult, error)
+	// Close releases resources. No-op for externally-managed connections.
+	Close() error
 }
 
 // --- DSL constructor functions ---
