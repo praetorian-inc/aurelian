@@ -4,12 +4,8 @@ package privescnew
 type AWSPrivesc interface {
 	ID() string
 	Name() string
-	Platform() string
-	Type() string
-	Category() string
 	Description() string
 	Severity() string
-	Order() int
 	Query() Query
 }
 
@@ -27,16 +23,11 @@ func (m *Method01IAMCreatePolicyVersion) Name() string {
 	return "IAM CreatePolicyVersion Privilege Escalation"
 }
 
-func (m *Method01IAMCreatePolicyVersion) Platform() string { return "aws" }
-func (m *Method01IAMCreatePolicyVersion) Type() string     { return "enrich" }
-func (m *Method01IAMCreatePolicyVersion) Category() string { return "privesc" }
-
 func (m *Method01IAMCreatePolicyVersion) Description() string {
 	return "Detects principals with iam:CreatePolicyVersion permission that can modify managed policies."
 }
 
 func (m *Method01IAMCreatePolicyVersion) Severity() string { return "high" }
-func (m *Method01IAMCreatePolicyVersion) Order() int       { return 101 }
 
 func (m *Method01IAMCreatePolicyVersion) Query() Query {
 	return Match(

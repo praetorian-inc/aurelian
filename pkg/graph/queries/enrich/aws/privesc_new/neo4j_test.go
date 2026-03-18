@@ -58,6 +58,46 @@ func TestActionToRelType(t *testing.T) {
 	}
 }
 
+func TestCompileMethod02(t *testing.T) {
+	method := NewMethod02IAMSetDefaultPolicyVersion()
+	compiler := DefaultNeo4jCompiler()
+
+	got, err := compiler.Compile(method.Query())
+	if err != nil {
+		t.Fatalf("Compile() error: %v", err)
+	}
+
+	want := "MATCH path = (n0)-[r0]->(n1)\n" +
+		"WHERE n0._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND type(r0) = 'IAM_SETDEFAULTPOLICYVERSION'\n" +
+		"  AND n1._resourceType = 'AWS::IAM::ManagedPolicy'\n" +
+		"RETURN path"
+
+	if got != want {
+		t.Errorf("Compile() mismatch.\ngot:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestCompileMethod03(t *testing.T) {
+	method := NewMethod03IAMCreateAccessKey()
+	compiler := DefaultNeo4jCompiler()
+
+	got, err := compiler.Compile(method.Query())
+	if err != nil {
+		t.Fatalf("Compile() error: %v", err)
+	}
+
+	want := "MATCH path = (n0)-[r0]->(n1)\n" +
+		"WHERE n0._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND type(r0) = 'IAM_CREATEACCESSKEY'\n" +
+		"  AND n1._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"RETURN path"
+
+	if got != want {
+		t.Errorf("Compile() mismatch.\ngot:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
 func TestCompileUnknownNodeKind(t *testing.T) {
 	compiler := DefaultNeo4jCompiler()
 	q := Match(Node{Kind: "Unknown"}, HasPermission("iam:Foo"), ManagedPolicy())
