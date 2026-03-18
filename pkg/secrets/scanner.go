@@ -26,6 +26,7 @@ type SecretScanResult struct {
 	ResourceType string       `json:"resource_type"`
 	Region       string       `json:"region"`
 	AccountID    string       `json:"account_id"`
+	Platform     string       `json:"platform"`
 	Label        string       `json:"label"`
 	Match        *types.Match `json:"match"`
 }
@@ -84,7 +85,16 @@ func (s *SecretScanner) Scan(input output.ScanInput, out *pipeline.P[SecretScanR
 	}
 
 	blobID := types.ComputeBlobID(input.Content)
-	provenance := types.FileProvenance{FilePath: input.Label}
+	provenance := types.ExtendedProvenance{
+		Payload: map[string]any{
+			"platform":      input.Platform,
+			"resource_id":   input.ResourceID,
+			"resource_type": input.ResourceType,
+			"region":        input.Region,
+			"account_id":    input.AccountID,
+			"subresource":   input.Label,
+		},
+	}
 
 	matches, err := s.ps.scanContent(input.Content, blobID, provenance)
 	if err != nil {
@@ -117,6 +127,7 @@ func toScanResult(input output.ScanInput, match *types.Match) SecretScanResult {
 		ResourceType: input.ResourceType,
 		Region:       input.Region,
 		AccountID:    input.AccountID,
+		Platform:     input.Platform,
 		Label:        input.Label,
 		Match:        match,
 	}

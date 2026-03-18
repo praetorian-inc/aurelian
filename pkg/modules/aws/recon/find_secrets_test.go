@@ -126,7 +126,7 @@ func TestRiskSeverityFromMatch(t *testing.T) {
 	})
 }
 
-func TestBuildProofData(t *testing.T) {
+func TestToRisk_ProofData(t *testing.T) {
 	match := &types.Match{
 		RuleID:    "np.aws.1",
 		RuleName:  "AWS API Key",
@@ -150,39 +150,55 @@ func TestBuildProofData(t *testing.T) {
 		ResourceType: "AWS::Lambda::Function",
 		Region:       "us-east-1",
 		AccountID:    "123",
+		Platform:     "aws",
 		Label:        "handler.py",
+		Match:        match,
 	}
-	proof := buildProofData(result, match)
+
+	risk, err := result.ToRisk()
+	require.NoError(t, err)
+
+	var proof map[string]any
+	require.NoError(t, json.Unmarshal(risk.Context, &proof))
 
 	assert.Equal(t, "abc123def456", proof["finding_id"])
 	assert.Equal(t, "AWS API Key", proof["rule_name"])
 	assert.Equal(t, "np.aws.1", proof["rule_text_id"])
 	assert.Equal(t, "arn:aws:lambda:us-east-1:123:function:demo", proof["resource_ref"])
-	assert.Equal(t, 1, proof["num_matches"])
+	assert.Equal(t, float64(1), proof["num_matches"])
 
-	matches := proof["matches"].([]map[string]interface{})
+	matches := proof["matches"].([]any)
 	require.Len(t, matches, 1)
 
-	snippet := matches[0]["snippet"].(map[string]string)
+	m0 := matches[0].(map[string]any)
+	snippet := m0["snippet"].(map[string]any)
 	assert.Equal(t, "key=", snippet["before"])
 	assert.Equal(t, "AKIAIOSFODNN7EXAMPLE", snippet["matching"])
 	assert.Equal(t, "\n", snippet["after"])
 
-	location := matches[0]["location"].(map[string]interface{})
-	offsetSpan := location["offset_span"].(map[string]interface{})
-	assert.Equal(t, int64(4), offsetSpan["start"])
-	assert.Equal(t, int64(24), offsetSpan["end"])
+	location := m0["location"].(map[string]any)
+	offsetSpan := location["offset_span"].(map[string]any)
+	assert.Equal(t, float64(4), offsetSpan["start"])
+	assert.Equal(t, float64(24), offsetSpan["end"])
 
-	sourceSpan := location["source_span"].(map[string]interface{})
-	start := sourceSpan["start"].(map[string]interface{})
-	assert.Equal(t, 1, start["line"])
-	assert.Equal(t, 5, start["column"])
+	sourceSpan := location["source_span"].(map[string]any)
+	start := sourceSpan["start"].(map[string]any)
+	assert.Equal(t, float64(1), start["line"])
+	assert.Equal(t, float64(5), start["column"])
+
+	provenance := m0["provenance"].([]any)
+	require.Len(t, provenance, 1)
+	prov := provenance[0].(map[string]any)
+	assert.Equal(t, "cloud", prov["kind"])
+	assert.Equal(t, "aws", prov["platform"])
+	assert.Equal(t, "arn:aws:lambda:us-east-1:123:function:demo", prov["resource_id"])
+	assert.Equal(t, "AWS::Lambda::Function", prov["resource_type"])
 
 	_, hasValidation := proof["validation"]
 	assert.False(t, hasValidation, "no validation when ValidationResult is nil")
 }
 
-func TestBuildProofData_WithValidation(t *testing.T) {
+func TestToRisk_WithValidation(t *testing.T) {
 	match := &types.Match{
 		RuleID:    "np.aws.1",
 		RuleName:  "AWS API Key",
@@ -197,17 +213,24 @@ func TestBuildProofData_WithValidation(t *testing.T) {
 	result := secrets.SecretScanResult{
 		ResourceRef:  "arn:aws:s3:::bucket",
 		ResourceType: "AWS::S3::Bucket",
+		Platform:     "aws",
 		Label:        "config.yaml",
+		Match:        match,
 	}
-	proof := buildProofData(result, match)
 
-	validation := proof["validation"].(map[string]interface{})
+	risk, err := result.ToRisk()
+	require.NoError(t, err)
+
+	var proof map[string]any
+	require.NoError(t, json.Unmarshal(risk.Context, &proof))
+
+	validation := proof["validation"].(map[string]any)
 	assert.Equal(t, string(types.StatusValid), validation["status"])
 	assert.Equal(t, 0.95, validation["confidence"])
 	assert.Equal(t, "Key is active", validation["message"])
 }
 
-func TestBuildRiskContextRoundTrip(t *testing.T) {
+func TestToRisk_RoundTrip(t *testing.T) {
 	match := &types.Match{
 		RuleID:    "np.aws.1",
 		RuleName:  "AWS API Key",
@@ -231,15 +254,16 @@ func TestBuildRiskContextRoundTrip(t *testing.T) {
 		ResourceType: "AWS::Lambda::Function",
 		Region:       "us-east-1",
 		AccountID:    "123456789012",
+		Platform:     "aws",
 		Label:        "index.js",
+		Match:        match,
 	}
-	proof := buildProofData(result, match)
-	proofBytes, err := json.MarshalIndent(proof, "", "  ")
+
+	risk, err := result.ToRisk()
 	require.NoError(t, err)
 
-	var decoded map[string]interface{}
-	err = json.Unmarshal(proofBytes, &decoded)
-	require.NoError(t, err)
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(risk.Context, &decoded))
 
 	assert.Equal(t, "abc123def456", decoded["finding_id"])
 	assert.Equal(t, "AWS API Key", decoded["rule_name"])
@@ -249,13 +273,14 @@ func TestBuildRiskContextRoundTrip(t *testing.T) {
 
 func TestRiskFromScanResult_ImpactedResourceID_IncludesFindingID(t *testing.T) {
 	match := &types.Match{
-		RuleID:   "np.aws.1",
-		RuleName: "AWS API Key",
+		RuleID:    "np.aws.1",
+		RuleName:  "AWS API Key",
 		FindingID: "abc123def456",
 	}
 
 	result := secrets.SecretScanResult{
 		ResourceRef: "arn:aws:lambda:us-east-1:123:function:demo",
+		Platform:    "aws",
 		Label:       "main.py",
 		Match:       match,
 	}
@@ -263,7 +288,7 @@ func TestRiskFromScanResult_ImpactedResourceID_IncludesFindingID(t *testing.T) {
 	out := pipeline.New[model.AurelianModel]()
 	go func() {
 		defer out.Close()
-		require.NoError(t, riskFromScanResult(result, out))
+		require.NoError(t, secrets.RiskFromScanResult(result, out))
 	}()
 
 	items, err := out.Collect()
@@ -285,6 +310,7 @@ func TestRiskFromScanResult_ImpactedResourceID_NoFindingID(t *testing.T) {
 
 	result := secrets.SecretScanResult{
 		ResourceRef: "i-08da3f571f1346176",
+		Platform:    "aws",
 		Label:       "user-data",
 		Match:       match,
 	}
@@ -292,7 +318,7 @@ func TestRiskFromScanResult_ImpactedResourceID_NoFindingID(t *testing.T) {
 	out := pipeline.New[model.AurelianModel]()
 	go func() {
 		defer out.Close()
-		require.NoError(t, riskFromScanResult(result, out))
+		require.NoError(t, secrets.RiskFromScanResult(result, out))
 	}()
 
 	items, err := out.Collect()
