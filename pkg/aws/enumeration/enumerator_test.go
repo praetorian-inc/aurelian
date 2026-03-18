@@ -73,6 +73,26 @@ func TestEnumerator_List_InvalidIdentifier(t *testing.T) {
 	require.Contains(t, err.Error(), "identifier must be either an ARN or CloudControl resource type")
 }
 
+func TestEnumerator_enumerateByType_DispatchesSSMToRegisteredEnumerator(t *testing.T) {
+	mock := &mockResourceEnumerator{resourceType: "AWS::SSM::Document"}
+	e := &Enumerator{
+		enumerators: map[string]ResourceEnumerator{"AWS::SSM::Document": mock},
+		cc:          &CloudControlEnumerator{},
+	}
+
+	out := pipeline.New[output.AWSResource]()
+	go func() {
+		for range out.Range() {
+		}
+	}()
+
+	err := e.listByType("AWS::SSM::Document", out)
+	out.Close()
+
+	require.NoError(t, err)
+	require.True(t, mock.enumerateAllCalled)
+}
+
 func TestEnumerator_EnumerateByARN_FallbackOnSentinel(t *testing.T) {
 	mock := &mockResourceEnumerator{
 		resourceType: "AWS::S3::Bucket",
