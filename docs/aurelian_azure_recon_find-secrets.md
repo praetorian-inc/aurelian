@@ -13,8 +13,10 @@ aurelian azure recon find-secrets [flags]
       --db-path string                 Path for Titus SQLite database
       --disabled-titus-rules strings   Rule IDs to exclude from scanning
   -h, --help                           help for find-secrets
+      --ignore-file string             Path to gitignore-style file for skipping paths; empty uses titus defaults
       --max-cosmos-doc-size int        Max individual Cosmos document size in bytes (default 1048576)
       --output-dir string              Base output directory (default "aurelian-output")
+      --ruleset string                 Titus ruleset to apply; empty string disables ruleset filtering (default "default")
   -s, --subscription-ids strings       Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions (default [all])
       --validate                       Validate detected secrets against their source APIs
 ```

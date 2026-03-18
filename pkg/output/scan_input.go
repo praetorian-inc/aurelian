@@ -19,6 +19,11 @@ type ScanInput struct {
 
 	// Label describes what this content is (e.g. "UserData", "handler.py", "template.yaml").
 	Label string
+
+	// PathFilterable indicates Label is a filesystem path eligible for ignore-pattern filtering.
+	// Set to true only when Label is an archive-relative or filesystem path (e.g. Lambda ZIP entries).
+	// Leave false for semantic labels like "UserData" or "ECS Task Definition".
+	PathFilterable bool
 }
 
 // ScanInputFromAWSResource creates a ScanInput by mapping common fields from an AWSResource.

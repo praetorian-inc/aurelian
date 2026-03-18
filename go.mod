@@ -73,7 +73,7 @@ require (
 	github.com/microsoftgraph/msgraph-sdk-go-core v1.4.0
 	github.com/muesli/termenv v0.16.0
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.4
-	github.com/praetorian-inc/titus v1.1.3
+	github.com/praetorian-inc/titus v1.1.7
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go/modules/neo4j v0.40.0
@@ -178,6 +178,7 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
+	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06 // indirect
 	github.com/shirou/gopsutil/v4 v4.25.6 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/std-uritemplate/std-uritemplate/go/v2 v2.0.3 // indirect
