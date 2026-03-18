@@ -7,15 +7,17 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/titus/pkg/enum/ignore"
 	"github.com/praetorian-inc/titus/pkg/types"
 	"github.com/praetorian-inc/titus/pkg/validator"
 )
 
 // SecretScanner provides an object-oriented interface for scanning content for secrets.
 type SecretScanner struct {
-	ps       *persistentScanner
-	validate bool
-	engine   *validator.Engine
+	ps         *persistentScanner
+	validate   bool
+	engine     *validator.Engine
+	ignorePath func(string) bool
 }
 
 // SecretScanResult represents a secret detection result emitted by the scanner.
@@ -30,12 +32,20 @@ type SecretScanResult struct {
 
 // Start creates a new persistent scanner and stores it as a field.
 func (s *SecretScanner) Start(cfg ScannerConfig) error {
-	ps, err := newPersistentScanner(cfg.DBPath, cfg.DisabledTitusRules)
+	ps, err := newPersistentScanner(cfg.DBPath, cfg.Ruleset, cfg.DisabledTitusRules)
 	if err != nil {
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
 	}
+
+	ig, err := ignore.CompilePatterns(cfg.IgnoreFile)
+	if err != nil {
+		ps.close()
+		return fmt.Errorf("failed to compile ignore patterns: %w", err)
+	}
+
 	s.ps = ps
 	s.validate = cfg.Validate
+	s.ignorePath = ig.MatchesPath
 
 	if cfg.Validate {
 		s.engine = validator.NewDefaultEngine(4)
@@ -68,6 +78,11 @@ func (s *SecretScanner) DBPath() string {
 // Scan is a pipeline-compatible method that scans a ScanInput for secrets
 // and sends SecretScanResult values to the output pipeline.
 func (s *SecretScanner) Scan(input output.ScanInput, out *pipeline.P[SecretScanResult]) error {
+	if input.PathFilterable && s.ignorePath != nil && s.ignorePath(input.Label) {
+		slog.Debug("skipping ignored path", "label", input.Label, "resource", input.ResourceID)
+		return nil
+	}
+
 	blobID := types.ComputeBlobID(input.Content)
 	provenance := types.FileProvenance{FilePath: input.Label}
 

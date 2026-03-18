@@ -80,7 +80,9 @@ func extractLambda(ctx extractContext, r output.AWSResource, out *pipeline.P[out
 				return nil
 			}
 
-			out.Send(output.ScanInputFromAWSResource(r, f.Name, content))
+			si := output.ScanInputFromAWSResource(r, f.Name, content)
+			si.PathFilterable = true
+			out.Send(si)
 			return nil
 		})
 	}
