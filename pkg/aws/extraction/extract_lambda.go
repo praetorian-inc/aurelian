@@ -63,7 +63,6 @@ func extractLambda(ctx extractContext, r output.AWSResource, out *pipeline.P[out
 			continue
 		}
 
-		f := f
 		g.Go(func() error {
 			rc, err := f.Open()
 			if err != nil {
