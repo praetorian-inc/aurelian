@@ -91,7 +91,7 @@ func generateModuleCommand(platform plugin.Platform, category plugin.Category, m
 		Use:   moduleID,
 		Short: module.Description(),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runModule(cmd, module, platform)
+			return runModule(cmd, module, platform, category)
 		},
 	}
 
@@ -224,7 +224,7 @@ func addFlag(cmd *cobra.Command, param plugin.Parameter, flagValues map[string]i
 }
 
 // Update runModule to accept platform string
-func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platform) error {
+func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platform, category plugin.Category) error {
 	// Convert flags to args map
 	argsMap := make(map[string]any)
 	cmd.Flags().VisitAll(func(flag *pflag.Flag) {
@@ -285,9 +285,42 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 	p2 := pipeline.New[model.AurelianModel]()
 	pipeline.Pipe(p1, module.Run, p2)
 
-	results, err := p2.Collect()
-	if err != nil {
+	// If neo4j-uri is set on a recon module, stream results into Neo4j as they arrive.
+	var (
+		graphFmt *plugin.GraphFormatter
+		err      error
+	)
+	neo4jURI, _ := argsMap["neo4j-uri"].(string)
+	if neo4jURI != "" && category == plugin.CategoryRecon {
+		neo4jUser, _ := argsMap["neo4j-username"].(string)
+		neo4jPass, _ := argsMap["neo4j-password"].(string)
+
+		log.Info("streaming results into Neo4j at %s", neo4jURI)
+		graphFmt, err = plugin.NewGraphFormatter(neo4jURI, neo4jUser, neo4jPass)
+		if err != nil {
+			return fmt.Errorf("failed to connect to Neo4j: %w", err)
+		}
+		defer graphFmt.Close()
+	}
+
+	var results []model.AurelianModel
+	for item := range p2.Range() {
+		results = append(results, item)
+		if graphFmt != nil {
+			if err := graphFmt.Send(item); err != nil {
+				return fmt.Errorf("failed to stream to Neo4j: %w", err)
+			}
+		}
+	}
+	if err := p2.Wait(); err != nil {
 		return err
+	}
+
+	if graphFmt != nil {
+		if err := graphFmt.Finalize(); err != nil {
+			return fmt.Errorf("failed to finalize Neo4j graph: %w", err)
+		}
+		log.Success("graph data loaded into Neo4j")
 	}
 
 	// Output results if there are any
