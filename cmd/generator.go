@@ -219,7 +219,7 @@ func addFlag(cmd *cobra.Command, param plugin.Parameter, flagValues map[string]i
 	}
 
 	if param.Required {
-		cmd.MarkFlagRequired(name)
+		_ = cmd.MarkFlagRequired(name)
 	}
 }
 
@@ -313,7 +313,7 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		if err != nil {
 			return fmt.Errorf("failed to create output file: %w", err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		formatter := &plugin.JSONFormatter{Writer: f, Pretty: true}
 		if err := formatter.Format(results); err != nil {

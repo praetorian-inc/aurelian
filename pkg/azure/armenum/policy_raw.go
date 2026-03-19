@@ -75,7 +75,7 @@ func (p *rawPolicyPager) nextPage(ctx context.Context) (defs []rawPolicyDef, nex
 	if err != nil {
 		return nil, "", fmt.Errorf("HTTP request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

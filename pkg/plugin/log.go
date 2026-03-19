@@ -119,7 +119,7 @@ func (l *Logger) Banner(text string) {
 	defer l.mu.Unlock()
 
 	styled := l.renderer.NewStyle().Bold(true).Foreground(lipgloss.Color("#E63948")).Render(text)
-	fmt.Fprintln(l.w, styled)
+	_, _ = fmt.Fprintln(l.w, styled)
 }
 
 // Success prints a [+] message (green).
@@ -160,7 +160,7 @@ func (l *Logger) Status(format string, args ...any) {
 	}
 
 	l.clearStatus()
-	fmt.Fprintf(l.w, "\r%s %s", l.statusPrefix, msg)
+	_, _ = fmt.Fprintf(l.w, "\r%s %s", l.statusPrefix, msg)
 	l.hasStatus = true
 }
 
@@ -258,7 +258,7 @@ func (l *Logger) print(prefix, format string, args ...any) {
 	defer l.mu.Unlock()
 
 	l.clearArea()
-	fmt.Fprintf(l.w, "%s %s\n", prefix, msg)
+	_, _ = fmt.Fprintf(l.w, "%s %s\n", prefix, msg)
 	l.redrawProgress()
 }
 
@@ -266,7 +266,7 @@ func (l *Logger) print(prefix, format string, args ...any) {
 // Must be called with l.mu held.
 func (l *Logger) clearStatus() {
 	if l.hasStatus && l.isTTY {
-		fmt.Fprintf(l.w, "\r\033[2K")
+		_, _ = fmt.Fprintf(l.w, "\r\033[2K")
 		l.hasStatus = false
 	}
 }
@@ -280,11 +280,11 @@ func (l *Logger) clearArea() {
 	}
 
 	if l.numProgLines > 0 {
-		fmt.Fprintf(l.w, "\033[%dA\033[J", l.numProgLines)
+		_, _ = fmt.Fprintf(l.w, "\033[%dA\033[J", l.numProgLines)
 		l.numProgLines = 0
 		l.hasStatus = false
 	} else if l.hasStatus {
-		fmt.Fprintf(l.w, "\r\033[2K")
+		_, _ = fmt.Fprintf(l.w, "\r\033[2K")
 		l.hasStatus = false
 	}
 }
@@ -330,7 +330,7 @@ func (l *Logger) redrawProgress() {
 		bar := l.progressBar.ViewAs(pct)
 		suffix := fmt.Sprintf("%*d processing / %*d processed", pendingDigits, pending, doneWidth, entry.completed)
 
-		fmt.Fprintf(l.w, "%s %s %s %s\n", l.statusPrefix, padded, bar, suffix)
+		_, _ = fmt.Fprintf(l.w, "%s %s %s %s\n", l.statusPrefix, padded, bar, suffix)
 	}
 
 	l.numProgLines = len(l.progressBars)

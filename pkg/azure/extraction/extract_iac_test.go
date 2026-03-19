@@ -644,7 +644,7 @@ func TestExtractPolicyDefinitions_SubscriptionScopeIDParsing(t *testing.T) {
 		defer out.Close()
 		gotErr = extractPolicyDefinitions(ctx, r, out)
 	}()
-	out.Drain() // consume and discard
+	_ = out.Drain() // consume and discard
 
 	// The error (if any) should NOT be "invalid Azure resource ID" or "too few segments"
 	// It may be an ARM API error (nil cred), but not a parsing error.

@@ -69,7 +69,7 @@ func TestBuildCostTable(t *testing.T) {
 	table := buildCostTable(serviceRegions, regionSet, grandTotal, 30)
 
 	// Check heading.
-	assert.Contains(t, table.TableHeading, "AWS Cost Summary")
+	assert.Contains(t, table.TableHeading, "Cost breakdown by service and region")
 	assert.Contains(t, table.TableHeading, "30 days")
 
 	// Check headers: Service, us-east-1, us-west-2, Total Cost
@@ -99,10 +99,10 @@ func TestBuildCostTable(t *testing.T) {
 	assert.Equal(t, "-", table.Rows[2][2])          // us-west-2 (no cost)
 	assert.Equal(t, "$0.01", table.Rows[2][3])      // total (0.005 rounds)
 
-	// TOTAL row with bold markdown.
+	// TOTAL row.
 	totalRow := table.Rows[3]
-	assert.Equal(t, "**TOTAL**", totalRow[0])
-	assert.Contains(t, totalRow[len(totalRow)-1], "**$")
+	assert.Equal(t, "TOTAL", totalRow[0])
+	assert.Contains(t, totalRow[len(totalRow)-1], "$")
 }
 
 func TestBuildCostTableOmitsEmptyRegions(t *testing.T) {

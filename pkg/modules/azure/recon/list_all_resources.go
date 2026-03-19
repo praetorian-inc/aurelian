@@ -21,10 +21,6 @@ type subscriptionResolver interface {
 	ListAllSubscriptions() ([]azuretypes.SubscriptionInfo, error)
 }
 
-type resourceLister interface {
-	List(input resourcegraph.ListerInput, out *pipeline.P[output.AzureResource]) error
-}
-
 // ListAllConfig holds parameters for the Azure list-all module.
 type ListAllConfig struct {
 	plugin.AzureCommonRecon

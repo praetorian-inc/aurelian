@@ -638,7 +638,7 @@ func TestEvaluateStatement(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.context.PopulateDefaultRequestConditionKeys(tt.requestedResource)
+			assert.NoError(t, tt.context.PopulateDefaultRequestConditionKeys(tt.requestedResource))
 			got := evaluateStatement(tt.stmt, tt.requestedAction, tt.requestedResource, tt.context)
 			t.Logf("EvaluateStatement: ExplicitAllow: %v, ExplicitDeny: %v, ImplicitDeny: %v, MatchedAction: %v, MatchedResource: %v, MatchedPrincipal: %v", got.ExplicitAllow, got.ExplicitDeny, got.ImplicitDeny, got.MatchedAction, got.MatchedResource, got.MatchedPrincipal)
 			assert.Equal(t, got.ExplicitAllow, tt.expected.ExplicitAllow)

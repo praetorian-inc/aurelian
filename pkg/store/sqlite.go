@@ -143,7 +143,7 @@ func (m *SQLiteMap[T]) flush() {
 		slog.Error("store: flush prepare", "table", m.table, "error", err)
 		return
 	}
-	defer txStmt.Close()
+	defer func() { _ = txStmt.Close() }()
 
 	for _, w := range m.pending {
 		if _, err := txStmt.Exec(w.key, w.raw); err != nil {
@@ -233,7 +233,7 @@ func (m *SQLiteMap[T]) Range(fn func(string, T) bool) {
 		slog.Error("store: range query", "table", m.table, "error", err)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var key string
@@ -263,7 +263,7 @@ func (m *SQLiteMap[T]) RangeWithKeyFilter(filter func(string) bool, fn func(stri
 		slog.Error("store: range query", "table", m.table, "error", err)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var key string
@@ -340,7 +340,7 @@ func OpenSQLiteDB(path string) (*sql.DB, error) {
 			return nil, fmt.Errorf("store: create temp db: %w", err)
 		}
 		path = f.Name()
-		f.Close()
+		_ = f.Close()
 	}
 
 	// Use DSN pragma syntax so every pooled connection gets the same settings.

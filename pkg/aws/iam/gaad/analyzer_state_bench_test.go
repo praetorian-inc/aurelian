@@ -16,14 +16,14 @@ func BenchmarkGetResourcesByAction(b *testing.B) {
 			resources := store.NewMap[output.AWSResource]()
 			for i := 0; i < size; i++ {
 				var arnStr string
-				switch {
-				case i%5 == 0:
+				switch i % 5 {
+				case 0:
 					arnStr = fmt.Sprintf("arn:aws:iam::%012d:role/role-%d", 100000000000+i, i)
-				case i%5 == 1:
+				case 1:
 					arnStr = fmt.Sprintf("arn:aws:iam::%012d:user/user-%d", 100000000000+i, i)
-				case i%5 == 2:
+				case 2:
 					arnStr = fmt.Sprintf("arn:aws:s3:::bucket-%d", i)
-				case i%5 == 3:
+				case 3:
 					arnStr = fmt.Sprintf("arn:aws:lambda:us-east-1:%012d:function:func-%d", 100000000000+i, i)
 				default:
 					arnStr = fmt.Sprintf("arn:aws:ec2:us-east-1:%012d:instance/i-%d", 100000000000+i, i)

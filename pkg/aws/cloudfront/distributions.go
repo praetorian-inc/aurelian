@@ -129,9 +129,7 @@ func buildDistributionInfo(dist *cloudfront.GetDistributionOutput, accountID str
 
 	// Extract aliases (alternate domain names / CNAMEs)
 	if cfg.Aliases != nil {
-		for _, alias := range cfg.Aliases.Items {
-			info.Aliases = append(info.Aliases, alias)
-		}
+		info.Aliases = append(info.Aliases, cfg.Aliases.Items...)
 	}
 
 	// Extract origins

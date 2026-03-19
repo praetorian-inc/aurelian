@@ -226,7 +226,7 @@ func pipeParallel[In, Out any](in *P[In], fn func(In, *P[Out]) error, out *P[Out
 		}
 		inputDone.Store(true)
 
-		g.Wait()
+		_ = g.Wait()
 
 		if err := in.Wait(); err != nil && out.err == nil {
 			out.err = err

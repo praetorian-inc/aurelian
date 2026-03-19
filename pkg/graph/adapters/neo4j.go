@@ -47,7 +47,7 @@ func escapeLabel(label string) string {
 // VerifyConnectivity tests the database connection by running a simple query
 func (a *Neo4jAdapter) VerifyConnectivity(ctx context.Context) error {
 	session := a.driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeRead})
-	defer session.Close(ctx)
+	defer func() { _ = session.Close(ctx) }()
 
 	_, err := session.Run(ctx, "RETURN 1 AS test", nil)
 	if err != nil {
@@ -84,7 +84,7 @@ func (a *Neo4jAdapter) CreateNodes(ctx context.Context, nodes []*graph.Node) (*g
 
 	// Process each group in batches
 	session := a.driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
-	defer session.Close(ctx)
+	defer func() { _ = session.Close(ctx) }()
 
 	for _, group := range groups {
 		if len(group) == 0 {
@@ -244,7 +244,7 @@ func (a *Neo4jAdapter) CreateRelationships(ctx context.Context, rels []*graph.Re
 
 	// Now create relationships in batches per group
 	session := a.driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
-	defer session.Close(ctx)
+	defer func() { _ = session.Close(ctx) }()
 
 	for _, group := range groups {
 		if len(group) == 0 {
@@ -355,7 +355,7 @@ func (a *Neo4jAdapter) buildRelationshipMergeQuery(rel *graph.Relationship) stri
 // Query executes a raw Cypher query with parameters
 func (a *Neo4jAdapter) Query(ctx context.Context, cypher string, params map[string]any) (*graph.QueryResult, error) {
 	session := a.driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
-	defer session.Close(ctx)
+	defer func() { _ = session.Close(ctx) }()
 
 	result, err := session.Run(ctx, cypher, params)
 	if err != nil {
