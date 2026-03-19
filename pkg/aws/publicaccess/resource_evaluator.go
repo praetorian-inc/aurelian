@@ -28,15 +28,16 @@ type evaluator func(resource *output.AWSResource, awsCfg aws.Config, accountID s
 // evaluators maps resource types to their evaluation functions.
 func (e *ResourceEvaluator) evaluators() map[string]evaluator {
 	return map[string]evaluator{
-		"AWS::EC2::Instance":     e.evaluateEC2,
-		"AWS::RDS::DBInstance":   e.evaluateRDS,
-		"AWS::Cognito::UserPool": e.evaluateCognito,
-		"AWS::Lambda::Function":  e.evaluateLambda,
-		"AWS::S3::Bucket":        e.evaluateS3,
-		"AWS::SNS::Topic":        e.evaluateSNS,
-		"AWS::SQS::Queue":        e.evaluateSQS,
-		"AWS::EFS::FileSystem":   e.evaluateEFS,
-		"AWS::EC2::Image":        e.evaluateEC2Image,
+		"AWS::EC2::Instance":      e.evaluateEC2,
+		"AWS::RDS::DBInstance":    e.evaluateRDS,
+		"AWS::Redshift::Cluster":  e.evaluateRedshift,
+		"AWS::Cognito::UserPool":  e.evaluateCognito,
+		"AWS::Lambda::Function":   e.evaluateLambda,
+		"AWS::S3::Bucket":         e.evaluateS3,
+		"AWS::SNS::Topic":         e.evaluateSNS,
+		"AWS::SQS::Queue":         e.evaluateSQS,
+		"AWS::EFS::FileSystem":    e.evaluateEFS,
+		"AWS::EC2::Image":         e.evaluateEC2Image,
 	}
 }
 
@@ -52,6 +53,7 @@ func SupportedResourceTypes() []string {
 		"AWS::EFS::FileSystem",
 		"AWS::Cognito::UserPool",
 		"AWS::RDS::DBInstance",
+		"AWS::Redshift::Cluster",
 		"AWS::EC2::Image",
 	}
 }
@@ -179,6 +181,19 @@ func (e *ResourceEvaluator) evaluateRDS(resource *output.AWSResource, _ aws.Conf
 		IsPublic: true,
 		EvaluationReasons: []string{
 			"RDS instance is publicly accessible (PubliclyAccessible=true)",
+		},
+	}
+}
+
+func (e *ResourceEvaluator) evaluateRedshift(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	isPublic, _ := resource.Properties["IsPubliclyAccessible"].(bool)
+	if !isPublic {
+		return nil
+	}
+	return &PublicAccessResult{
+		IsPublic: true,
+		EvaluationReasons: []string{
+			"Redshift cluster is publicly accessible (PubliclyAccessible=true)",
 		},
 	}
 }
