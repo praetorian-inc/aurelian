@@ -1,0 +1,37 @@
+id: "2.1.1"
+title: "Ensure Safe Links for email messages is enabled"
+service: defender
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that Safe Links policies are enabled for email messages to
+  provide time-of-click URL verification and protection against
+  malicious links.
+rationale: |
+  Safe Links scans and rewrites URLs in email messages to protect
+  users from phishing and malware delivery. Without Safe Links,
+  users clicking malicious URLs in email are unprotected from
+  credential harvesting and malware download attacks.
+impact: |
+  URL rewriting may cause minor delays when clicking links. Some
+  legitimate URLs may occasionally be flagged as suspicious.
+remediation: |
+  Navigate to Microsoft 365 Defender > Policies & rules > Threat
+  policies > Safe Links and ensure a policy is enabled that covers
+  all users with URL scanning enabled for email messages.
+references:
+  - "https://learn.microsoft.com/en-us/defender-office-365/safe-links-about"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 2.1.1"
+cis_controls:
+  - "v8: 9.3"
+  - "v8: 9.7"
+guard:
+  finding_slug: "m365-cis-2-1-1-safe-links-enabled"
+  phase_tag: "phase_m365_defender"
+  asset_type: "m365tenant"
+  cwe: "CWE-1188"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - safe_links_policies
