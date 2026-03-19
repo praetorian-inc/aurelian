@@ -313,7 +313,7 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		if err != nil {
 			return fmt.Errorf("failed to create output file: %w", err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		formatter := &plugin.JSONFormatter{Writer: f, Pretty: true}
 		if err := formatter.Format(results); err != nil {

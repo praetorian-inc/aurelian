@@ -101,7 +101,7 @@ func downloadObject(svc *gcsapi.Service, bucket, object string) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var buf bytes.Buffer
 	_, err = io.Copy(&buf, io.LimitReader(resp.Body, maxObjectSize))

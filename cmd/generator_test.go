@@ -81,7 +81,7 @@ func TestFileWriterCreation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create output file: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Write test content
 	testContent := "test output content"
@@ -91,7 +91,7 @@ func TestFileWriterCreation(t *testing.T) {
 	}
 
 	// Close and verify
-	f.Close()
+	_ = f.Close()
 
 	// Read back and verify
 	content, err := os.ReadFile(outputFile)

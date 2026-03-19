@@ -14,7 +14,7 @@ func TestGetFromMapBWhileRangingMapA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mapA, err := NewSQLiteMapWithThreshold[string](db, 10)
 	if err != nil {
@@ -60,7 +60,7 @@ func TestSetToMapBWhileRangingMapA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mapA, err := NewSQLiteMapWithThreshold[string](db, 10)
 	if err != nil {
@@ -105,14 +105,14 @@ func TestConcurrentGetsOnSharedMap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Use a large threshold so all writes stay buffered.
 	m, err := NewSQLiteMapWithThreshold[string](db, 5000)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer m.Close()
+	defer func() { _ = m.Close() }()
 
 	// Buffer up writes without flushing.
 	for i := 0; i < 200; i++ {
@@ -154,13 +154,13 @@ func TestConcurrentSetsOnSharedMap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	m, err := NewSQLiteMapWithThreshold[string](db, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer m.Close()
+	defer func() { _ = m.Close() }()
 
 	var wg sync.WaitGroup
 	for g := 0; g < 50; g++ {
@@ -193,13 +193,13 @@ func TestConcurrentRangesOnSharedMap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	m, err := NewSQLiteMapWithThreshold[string](db, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer m.Close()
+	defer func() { _ = m.Close() }()
 
 	for i := 0; i < 50; i++ {
 		m.Set(fmt.Sprintf("k%d", i), fmt.Sprintf("v%d", i))
@@ -237,7 +237,7 @@ func TestCreateTableWhileFlushInProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Create first map and buffer enough data to trigger a slow flush.
 	m1, err := NewSQLiteMapWithThreshold[string](db, 100)
@@ -272,7 +272,7 @@ func TestCreateTableWhileFlushInProgress(t *testing.T) {
 				errs <- fmt.Errorf("NewSQLiteMap during flush: %v", err)
 				return
 			}
-			m.Close()
+			_ = m.Close()
 		}()
 	}
 
@@ -292,7 +292,7 @@ func TestConcurrentGetAndSetDifferentMaps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// "resource store" — populated, then read concurrently.
 	resources, err := NewSQLiteMapWithThreshold[string](db, 50)
@@ -366,13 +366,13 @@ func TestFlushDoesNotCorruptOnConcurrentAccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	m, err := NewSQLiteMapWithThreshold[string](db, 5)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer m.Close()
+	defer func() { _ = m.Close() }()
 
 	wrapped := WrapMap[string](m)
 

@@ -124,7 +124,7 @@ func TestStart_CustomPath(t *testing.T) {
 
 	var s SecretScanner
 	require.NoError(t, s.Start(ScannerConfig{DBPath: customPath}))
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	assert.Equal(t, customPath, s.DBPath(), "DBPath should return custom path")
 	_, err := os.Stat(customPath)
@@ -136,7 +136,7 @@ func TestStart_CreatesParentDirectories(t *testing.T) {
 
 	var s SecretScanner
 	require.NoError(t, s.Start(ScannerConfig{DBPath: customPath}))
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	_, err := os.Stat(filepath.Dir(customPath))
 	assert.NoError(t, err, "parent directories should exist")
@@ -150,7 +150,7 @@ func TestStart_OutputDirectoryCreated(t *testing.T) {
 
 	var s SecretScanner
 	require.NoError(t, s.Start(ScannerConfig{DBPath: dbPath}))
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	_, err := os.Stat(filepath.Join(tmpDir, "output"))
 	require.NoError(t, err, "output directory should exist")
@@ -232,7 +232,7 @@ func TestDatabasePersistence(t *testing.T) {
 	// Create new scanner with same database
 	var s2 SecretScanner
 	require.NoError(t, s2.Start(ScannerConfig{DBPath: dbPath}))
-	defer s2.Close()
+	defer func() { _ = s2.Close() }()
 
 	// Scan same content — should find it already exists
 	cachedMatches, err := s2.ps.scanContent(content, blobID, provenance)
@@ -289,7 +289,7 @@ func TestExplicitPathUsed(t *testing.T) {
 
 	var s SecretScanner
 	require.NoError(t, s.Start(ScannerConfig{DBPath: dbPath}))
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	assert.Equal(t, dbPath, s.DBPath(), "DBPath should return provided path")
 	_, err := os.Stat(dbPath)
@@ -320,7 +320,7 @@ func TestCustomPathPersistence(t *testing.T) {
 	// Create new scanner with same custom path
 	var s2 SecretScanner
 	require.NoError(t, s2.Start(ScannerConfig{DBPath: customPath}))
-	defer s2.Close()
+	defer func() { _ = s2.Close() }()
 
 	// Scan same content — should find it already exists
 	cachedMatches, err := s2.ps.scanContent(content, blobID, provenance)
@@ -472,7 +472,7 @@ func TestSecretScanner_CustomIgnoreFileReplacesDefaults(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "titus.db")
 	var s SecretScanner
 	require.NoError(t, s.Start(ScannerConfig{DBPath: dbPath, IgnoreFile: ignoreFile}))
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 
 	srcInput := output.ScanInput{
 		Content:        []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF"),

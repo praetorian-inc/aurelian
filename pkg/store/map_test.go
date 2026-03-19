@@ -228,7 +228,7 @@ func TestSQLiteMapBatchedWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Small threshold to exercise flush within test.
 	sm, err := NewSQLiteMapWithThreshold[string](db, 3)
@@ -289,7 +289,7 @@ func TestSQLiteMapMultipleTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	sm1, err := NewSQLiteMap[string](db)
 	if err != nil {

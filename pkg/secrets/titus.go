@@ -37,7 +37,7 @@ func newPersistentScanner(dbPath string, rulesetID string, disabledRules []strin
 	loader := rule.NewLoader()
 	allRules, err := loader.LoadBuiltinRules()
 	if err != nil {
-		s.Close()
+		_ = s.Close()
 		return nil, fmt.Errorf("failed to load builtin rules: %w", err)
 	}
 
@@ -45,12 +45,12 @@ func newPersistentScanner(dbPath string, rulesetID string, disabledRules []strin
 	if rulesetID != "" {
 		rulesets, err := loader.LoadBuiltinRulesets()
 		if err != nil {
-			s.Close()
+			_ = s.Close()
 			return nil, fmt.Errorf("failed to load builtin rulesets: %w", err)
 		}
 		rs := rule.FindRuleset(rulesets, rulesetID)
 		if rs == nil {
-			s.Close()
+			_ = s.Close()
 			return nil, fmt.Errorf("ruleset %q not found", rulesetID)
 		}
 		allRules = rule.ApplyRuleset(allRules, rs)
@@ -75,7 +75,7 @@ func newPersistentScanner(dbPath string, rulesetID string, disabledRules []strin
 		ContextLines: 3,
 	})
 	if err != nil {
-		s.Close()
+		_ = s.Close()
 		return nil, fmt.Errorf("failed to create matcher: %w", err)
 	}
 
@@ -83,8 +83,8 @@ func newPersistentScanner(dbPath string, rulesetID string, disabledRules []strin
 	for _, r := range rules {
 		ruleMap[r.ID] = r
 		if err := s.AddRule(r); err != nil {
-			m.Close()
-			s.Close()
+			_ = m.Close()
+			_ = s.Close()
 			return nil, fmt.Errorf("failed to store rule %s: %w", r.ID, err)
 		}
 	}
@@ -183,7 +183,7 @@ func (ps *persistentScanner) populateFindingIDs(matches []*types.Match) {
 // close closes the matcher and store, releasing resources.
 func (ps *persistentScanner) close() error {
 	if err := ps.matcher.Close(); err != nil {
-		ps.store.Close()
+		_ = ps.store.Close()
 		return fmt.Errorf("failed to close matcher: %w", err)
 	}
 

@@ -355,7 +355,7 @@ func (a *Neo4jAdapter) buildRelationshipMergeQuery(rel *graph.Relationship) stri
 // Query executes a raw Cypher query with parameters
 func (a *Neo4jAdapter) Query(ctx context.Context, cypher string, params map[string]any) (*graph.QueryResult, error) {
 	session := a.driver.NewSession(ctx, neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
-	defer session.Close(ctx)
+	defer func() { _ = session.Close(ctx) }()
 
 	result, err := session.Run(ctx, cypher, params)
 	if err != nil {
