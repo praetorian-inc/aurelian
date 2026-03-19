@@ -27,6 +27,7 @@ type AzureFindSecretsConfig struct {
 	Concurrency      int      `param:"concurrency" desc:"Maximum concurrent API requests" default:"5"`
 	ResourceID       []string `param:"resource-id" desc:"Azure resource ID(s) to scan directly, skipping enumeration" shortcode:"i"`
 	MaxCosmosDocSize int      `param:"max-cosmos-doc-size" desc:"Max individual Cosmos document size in bytes" default:"1048576"`
+	MaxCosmosDocScan int      `param:"max-cosmos-doc-scan" desc:"Max total Cosmos documents to scan per container" default:"50"`
 }
 
 // AzureFindSecretsModule scans Azure resources for hardcoded secrets using Titus.
@@ -99,6 +100,7 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 
 	extractor := extraction.NewAzureExtractor(c.AzureCredential)
 	extractor.MaxCosmosDocSize = m.MaxCosmosDocSize
+	extractor.MaxCosmosDocScan = m.MaxCosmosDocScan
 	extracted := pipeline.New[output.ScanInput]()
 	pipeOpts := &pipeline.PipeOpts{Concurrency: m.Concurrency}
 	pipeline.Pipe(listed, extractor.Extract, extracted, pipeOpts)
