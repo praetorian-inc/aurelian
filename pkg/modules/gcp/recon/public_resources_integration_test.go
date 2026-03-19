@@ -5,6 +5,7 @@ package recon_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
@@ -124,7 +125,7 @@ func TestGCPPublicResources(t *testing.T) {
 			"expected risk for public cloud run service %q", publicRunName)
 
 		// Private Cloud Run still gets a public URL from GCP, so it's flagged as
-		// "public-gcp-resource" (MEDIUM). Both should have risks, but severity differs.
+		// "public-gcp-resource-run-service" (MEDIUM). Both should have risks, but severity differs.
 		publicRisk := findRiskForNamedResource(resources, risks, publicRunName)
 		privateRisk := findRiskForNamedResource(resources, risks, privateRunName)
 		if publicRisk != nil && privateRisk != nil {
@@ -151,15 +152,24 @@ func TestGCPPublicResources(t *testing.T) {
 			"private compute instance %q should NOT have a risk", privateInstance)
 	})
 
-	t.Run("risk names follow gcp naming convention", func(t *testing.T) {
-		validNames := map[string]bool{
-			"public-anonymous-gcp-resource": true,
-			"anonymous-gcp-resource":        true,
-			"public-gcp-resource":           true,
+	t.Run("risk names follow granular gcp naming convention", func(t *testing.T) {
+		validPrefixes := []string{
+			"public-anonymous-gcp-resource-",
+			"anonymous-gcp-resource-",
+			"public-gcp-resource-",
 		}
 		for _, risk := range risks {
-			assert.Truef(t, validNames[risk.Name],
-				"unexpected risk name %q", risk.Name)
+			hasValidPrefix := false
+			for _, prefix := range validPrefixes {
+				if strings.HasPrefix(risk.Name, prefix) {
+					hasValidPrefix = true
+					break
+				}
+			}
+			assert.Truef(t, hasValidPrefix,
+				"risk name %q should start with one of the valid prefixes", risk.Name)
+			assert.NotEmpty(t, risk.DeduplicationID,
+				"risk %q should have DeduplicationID set to resource type", risk.Name)
 		}
 	})
 }

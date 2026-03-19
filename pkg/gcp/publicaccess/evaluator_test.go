@@ -70,4 +70,81 @@ func TestEvaluate_BothPublicAndAnonymous_HighSeverity(t *testing.T) {
 	risk, ok := items[1].(output.AurelianRisk)
 	require.True(t, ok)
 	assert.Equal(t, output.RiskSeverityHigh, risk.Severity)
+	assert.Equal(t, "public-anonymous-gcp-resource-run-service", risk.Name)
+	assert.Equal(t, "run.googleapis.com/Service", risk.DeduplicationID)
+}
+
+func TestEvaluate_GranularRiskName(t *testing.T) {
+	tests := []struct {
+		name         string
+		resource     output.GCPResource
+		wantRiskName string
+		wantDedupeID string
+		wantSeverity output.RiskSeverity
+	}{
+		{
+			name: "public+anonymous compute instance",
+			resource: output.GCPResource{
+				ResourceType: "compute.googleapis.com/Instance",
+				ResourceID:   "projects/p/zones/z/instances/i",
+				ProjectID:    "p",
+				IPs:          []string{"1.2.3.4"},
+				Properties:   map[string]any{"AnonymousAccess": true},
+			},
+			wantRiskName: "public-anonymous-gcp-resource-compute-instance",
+			wantDedupeID: "compute.googleapis.com/Instance",
+			wantSeverity: output.RiskSeverityHigh,
+		},
+		{
+			name: "anonymous-only storage bucket",
+			resource: output.GCPResource{
+				ResourceType: "storage.googleapis.com/Bucket",
+				ResourceID:   "projects/_/buckets/b",
+				ProjectID:    "p",
+				Properties:   map[string]any{"AnonymousAccess": true},
+			},
+			wantRiskName: "anonymous-gcp-resource-storage-bucket",
+			wantDedupeID: "storage.googleapis.com/Bucket",
+			wantSeverity: output.RiskSeverityMedium,
+		},
+		{
+			name: "public-only cloud run service",
+			resource: output.GCPResource{
+				ResourceType: "run.googleapis.com/Service",
+				ResourceID:   "projects/p/locations/l/services/s",
+				ProjectID:    "p",
+				URLs:         []string{"https://s.run.app"},
+			},
+			wantRiskName: "public-gcp-resource-run-service",
+			wantDedupeID: "run.googleapis.com/Service",
+			wantSeverity: output.RiskSeverityMedium,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &AccessEvaluator{}
+			out := pipeline.New[model.AurelianModel]()
+
+			go func() {
+				defer out.Close()
+				e.Evaluate(tt.resource, out)
+			}()
+
+			items, err := out.Collect()
+			require.NoError(t, err)
+
+			// First item is the resource itself, second is the risk.
+			var risk output.AurelianRisk
+			for _, item := range items {
+				if r, ok := item.(output.AurelianRisk); ok {
+					risk = r
+				}
+			}
+
+			assert.Equal(t, tt.wantRiskName, risk.Name)
+			assert.Equal(t, tt.wantDedupeID, risk.DeduplicationID)
+			assert.Equal(t, tt.wantSeverity, risk.Severity)
+		})
+	}
 }
