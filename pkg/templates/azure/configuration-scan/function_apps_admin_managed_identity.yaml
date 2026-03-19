@@ -1,0 +1,137 @@
+id: function_apps_admin_managed_identity
+name: Function Apps with Admin Managed Identity
+description: Detects Azure Function Apps with system-assigned managed identities granted Owner, Contributor, or User Access Administrator roles. If a Function App is compromised, attackers can steal the managed identity token from the Azure Instance Metadata Service (IMDS) at 169.254.169.254 and escalate to subscription-level privileges.
+severity: Low
+category: ["Privilege Escalation", "arg-scan"]
+reportability: Manual Triage
+triageNotes: |
+  Important Context:
+  This scan identifies Azure Function Apps with system-assigned managed identities that have been assigned high-privilege Azure RBAC roles (Owner, Contributor, or User Access Administrator).
+
+  Understanding the Risk:
+  - Function Apps are serverless compute resources that execute code in response to events
+  - System-assigned managed identities provide automatic Azure AD authentication without credentials
+  - If a Function App is compromised (via code injection, dependency vulnerabilities, SSRF, etc.), attackers can:
+    1. Access the Azure Instance Metadata Service (IMDS) at 169.254.169.254
+    2. Steal the managed identity token (no authentication required from within the Function App)
+    3. Use that token to perform actions with the managed identity's permissions
+  - Owner/Contributor/User Access Administrator roles provide subscription-level control plane access
+
+  Key Security Concerns:
+  - Privilege escalation: Function App compromise → subscription/resource group takeover
+  - Persistence: Attackers can create new role assignments, users, or service principals
+  - Lateral movement: Access to other resources via RBAC permissions
+  - Data exfiltration: Read access to secrets, storage, databases across the subscription
+  - Cost exploitation: Deploying additional resources using the identity's permissions
+
+  Attack Prerequisites:
+  - Attacker must first compromise the Function App (code vulnerability, supply chain, misconfig)
+  - Function App must have network access to IMDS endpoint (always available by default)
+  - No additional authentication needed once inside the Function App execution context
+
+  Triage Guidance:
+  1. **Assess Function App exposure**: Is this Function App publicly accessible? Check:
+     - properties.publicNetworkAccess (should be 'Disabled' for internal-only apps)
+     - Private endpoint connections (reduces attack surface)
+     - Authentication requirements (anonymous vs authenticated triggers)
+
+  2. **Evaluate role necessity**: Does this Function App legitimately need admin privileges?
+     - Owner: Full control including role assignments (rarely needed for Function Apps)
+     - Contributor: Can create/modify resources (often over-privileged)
+     - User Access Administrator: Can assign roles (almost never needed)
+
+  3. **Review role assignment scope**:
+     - Subscription-level: Highest risk, entire subscription compromise
+     - Resource group-level: High risk, resource group takeover
+     - Resource-level: Lower risk, limited to specific resources
+
+  4. **Check Function App security posture**:
+     - Review code for vulnerabilities (injection, SSRF, deserialization)
+     - Audit dependencies for known CVEs
+     - Verify input validation and security controls
+     - Check deployment method (CI/CD security)
+
+  5. **Audit RBAC logs**:
+     - Review Azure Activity Logs for unusual actions by this managed identity
+     - Check for unexpected resource creations or role assignments
+     - Look for access to sensitive resources (Key Vaults, Storage, etc.)
+
+  Common Scenarios:
+  - Infrastructure-as-code automation Function Apps (may legitimately need elevated permissions)
+  - Management/operations Function Apps (often over-privileged by convenience)
+  - Legacy deployments before least-privilege principles were enforced
+  - Developers granted broad permissions during development, never reduced for production
+  - Copy-paste RBAC assignments without understanding principle of least privilege
+
+  Risk Assessment:
+  - CRITICAL: Publicly accessible Function App + Owner/Contributor at subscription scope
+  - HIGH: Publicly accessible Function App + any admin role at any scope
+  - HIGH: Private Function App + Owner/Contributor at subscription scope
+  - MEDIUM: Private Function App + admin roles at resource group scope
+  - LOW: Function App with specific resource-level permissions only
+
+  Remediation Guidance:
+  1. **Apply principle of least privilege**:
+     - Identify the minimum permissions required for the Function App's operations
+     - Create a custom RBAC role with only necessary permissions
+     - Assign the custom role at the narrowest scope possible (resource > RG > subscription)
+
+  2. **Remove admin roles**:
+     - Owner: Almost never appropriate for workload identities
+     - Contributor: Replace with specific resource type permissions (e.g., Storage Blob Contributor)
+     - User Access Administrator: Remove unless identity management is core function
+
+  3. **Enhance Function App security**:
+     - Disable public network access if Function App is internal-only
+     - Configure private endpoints for VNet-only access
+     - Enable authentication requirements (Azure AD, function keys with rotation)
+     - Implement network restrictions (IP allowlists, service endpoints)
+
+  4. **Implement monitoring**:
+     - Enable Azure Monitor alerts for unusual activity by managed identity
+     - Set up alerts for role assignment changes
+     - Monitor access to sensitive resources
+     - Configure cost alerts (detect resource provisioning abuse)
+
+  5. **Consider alternatives**:
+     - User-assigned managed identities (can be shared, easier to manage permissions)
+     - Azure Key Vault references for secrets instead of broad RBAC access
+     - Managed identity federation with specific service principals
+     - Just-in-time privileged access (PIM) for admin operations
+
+references:
+  - https://learn.microsoft.com/en-us/azure/app-service/overview-managed-identity
+  - https://learn.microsoft.com/en-us/azure/azure-functions/functions-identity-based-connections-tutorial
+  - https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles
+  - https://learn.microsoft.com/en-us/azure/role-based-access-control/best-practices
+  - https://learn.microsoft.com/en-us/azure/app-service/configure-authentication-provider-aad
+  - https://learn.microsoft.com/en-us/azure/templates/microsoft.web/sites
+  - https://github.com/projectdiscovery/nuclei-templates/blob/main/cloud/azure/functions/azure-functionapp-admin-privileges.yaml
+query: |
+  resources
+  | where type =~ 'microsoft.web/sites'
+  | where kind contains 'functionapp'
+  | where isnotnull(identity)
+  | where identity.type =~ 'SystemAssigned'
+  | extend principalId = tostring(identity.principalId)
+  | join kind=inner (
+      authorizationresources
+      | where type =~ 'microsoft.authorization/roleassignments'
+      | extend roleAssignmentPrincipalId = tostring(properties.principalId)
+      | extend roleDefinitionId = tolower(tostring(properties.roleDefinitionId))
+      | extend roleAssignmentScope = tostring(properties.scope)
+      | where roleDefinitionId contains '/providers/microsoft.authorization/roledefinitions/8e3af657-a8ff-443c-a75c-2fe8c4bcb635' // Owner
+          or roleDefinitionId contains '/providers/microsoft.authorization/roledefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c' // Contributor
+          or roleDefinitionId contains '/providers/microsoft.authorization/roledefinitions/18d7d88d-d35e-4fb5-a5c3-7773c20a72d9' // User Access Administrator
+  ) on $left.principalId == $right.roleAssignmentPrincipalId
+  | project
+      id,
+      name,
+      type,
+      kind,
+      location,
+      resourceGroup,
+      subscriptionId,
+      managedIdentityPrincipalId = principalId,
+      roleDefinitionId,
+      roleAssignmentScope

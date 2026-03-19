@@ -1,0 +1,36 @@
+id: databases_allow_azure_services
+name: Database Azure Services Access Detection
+category: ["Access Control", "arg-scan"]
+description: Detects database servers with "Allow Azure services" firewall rules enabled using enrichment analysis
+severity: High
+reportability: Automatic
+triageNotes: |
+  This template identifies database resources that may have "Allow Azure services" firewall rules enabled.
+  Enrichment analysis is performed to detect actual firewall rule configurations:
+
+  - SQL Server/Synapse: Checks for AllowAllWindowsAzureIps firewall rule (0.0.0.0-0.0.0.0)
+  - PostgreSQL Flexible: Checks for AllowAllAzureIps rule + public network access
+  - MySQL Flexible: Checks for AllowAllAzureIps rule + public network access
+
+  **Security Risk**: These rules allow ANY Azure resource from ANY subscription to bypass firewall controls.
+  **Recommendation**: Use Private Endpoints, VNet service endpoints, or specific IP allowlists instead.
+references:
+  - https://learn.microsoft.com/en-us/azure/azure-sql/database/network-access-controls-overview
+  - https://learn.microsoft.com/en-us/azure/azure-sql/database/firewall-configure
+  - https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/how-to-manage-firewall-portal
+  - https://learn.microsoft.com/en-us/azure/mysql/flexible-server/how-to-manage-firewall-portal
+query: |
+  resources
+  | where type in~ (
+      'Microsoft.Sql/servers',
+      'Microsoft.Synapse/workspaces',
+      'Microsoft.DBforPostgreSQL/flexibleServers',
+      'Microsoft.DBforMySQL/flexibleServers'
+  )
+  | project
+      id,
+      name,
+      type,
+      location,
+      resourceGroup,
+      subscriptionId

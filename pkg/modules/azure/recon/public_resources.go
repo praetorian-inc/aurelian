@@ -4,17 +4,15 @@ import (
 	"encoding/json"
 	"log/slog"
 
-	"github.com/praetorian-inc/aurelian/pkg/azure/enrichment"
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
 	"github.com/praetorian-inc/aurelian/pkg/azure/subscriptions"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/model"
-	_ "github.com/praetorian-inc/aurelian/pkg/modules/azure/enrichers"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/templates"
-	azuretemplates "github.com/praetorian-inc/aurelian/pkg/templates/azure"
+	azuretemplates "github.com/praetorian-inc/aurelian/pkg/templates/azure/public-resources"
 )
 
 func init() {
@@ -118,13 +116,7 @@ func (m *AzurePublicResourcesModule) Run(_ plugin.Config, out *pipeline.P[model.
 	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, nil)
 	pipeline.Pipe(inputStream, lister.Query, results)
 
-	// Enrichment stage
-	enricher := enrichment.NewAzureEnricher(m.AzureCredential)
-	enriched := pipeline.New[templates.ARGQueryResult]()
-	pipeOpts := &pipeline.PipeOpts{Concurrency: m.Concurrency}
-	pipeline.Pipe(results, enricher.Enrich, enriched, pipeOpts)
-
-	pipeline.Pipe(enriched, resultToRisk, out)
+	pipeline.Pipe(results, resultToRisk, out)
 
 	return out.Wait()
 }

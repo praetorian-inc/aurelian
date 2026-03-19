@@ -3,59 +3,56 @@ package enrichment
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/templates"
 )
 
-// AzureEnricher runs registered enricher functions on Azure ARG query results,
-// adding enrichment commands and suppressing false positives.
+// AzureEnricher runs registered enricher functions on ARG query results,
+// adding properties not available from Resource Graph. Always forwards results.
 type AzureEnricher struct {
-	cred azcore.TokenCredential
+	ctx     context.Context
+	cred    azcore.TokenCredential
+	timeout time.Duration
 }
 
-// NewAzureEnricher creates an AzureEnricher with the given credential.
-func NewAzureEnricher(cred azcore.TokenCredential) *AzureEnricher {
-	return &AzureEnricher{cred: cred}
+func NewAzureEnricher(ctx context.Context, cred azcore.TokenCredential, timeout time.Duration) *AzureEnricher {
+	return &AzureEnricher{ctx: ctx, cred: cred, timeout: timeout}
 }
 
 // Enrich is a pipeline-compatible method that looks up registered enrichers
-// for the result's templateID, runs each enricher, attaches enrichment commands,
-// and suppresses false positives.
+// by resource type, runs each one, and always forwards the result.
 func (e *AzureEnricher) Enrich(result templates.ARGQueryResult, out *pipeline.P[templates.ARGQueryResult]) error {
-	enrichers := plugin.GetAzureEnrichers(result.TemplateID)
-	if len(enrichers) > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		cfg := plugin.AzureEnricherConfig{
-			Context:    ctx,
-			Credential: e.cred,
-		}
-
-		var allCommands []plugin.AzureEnrichmentCommand
-		for _, fn := range enrichers {
-			commands, err := fn(cfg, &result)
-			if err != nil {
-				slog.Warn("enricher failed", "template", result.TemplateID, "resource", result.ResourceID, "error", err)
-				continue
-			}
-			allCommands = append(allCommands, commands...)
-		}
-		if len(allCommands) > 0 {
-			if result.Properties == nil {
-				result.Properties = make(map[string]interface{})
-			}
-			result.Properties["enrichmentCommands"] = allCommands
-		}
+	resourceType := strings.ToLower(result.ResourceType)
+	enrichers := plugin.GetAzureEnrichers(resourceType)
+	if len(enrichers) == 0 {
+		out.Send(result)
+		return nil
 	}
 
-	if result.Suppressed {
-		slog.Info("suppressed false positive", "template", result.TemplateID, "resource", result.ResourceID, "reason", result.SuppressReason)
-		return nil
+	if result.Properties == nil {
+		result.Properties = make(map[string]any)
+	}
+
+	enrichCtx, cancel := context.WithTimeout(e.ctx, e.timeout)
+	defer cancel()
+
+	cfg := plugin.AzureEnricherConfig{
+		Context:    enrichCtx,
+		Credential: e.cred,
+	}
+	for _, enrich := range enrichers {
+		if err := enrich(cfg, &result); err != nil {
+			slog.Warn("azure enricher failed",
+				"type", result.ResourceType,
+				"resource", result.ResourceID,
+				"error", err)
+		}
 	}
 
 	out.Send(result)

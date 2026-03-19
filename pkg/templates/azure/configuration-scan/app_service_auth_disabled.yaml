@@ -1,0 +1,149 @@
+id: app_service_auth_disabled
+name: App Service Authentication Disabled
+description: Detects Azure App Services with Easy Auth (Azure AD authentication) disabled, allowing unauthenticated access to web applications. App Service Authentication provides a built-in authentication and authorization layer that validates requests before they reach application code, protecting against unauthorized access.
+severity: Medium
+category: ["Access Control", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Security Risk:
+  Azure App Services without Easy Auth (App Service Authentication/Authorization) enabled allow
+  direct access to web applications without identity verification. This bypasses Azure AD or other
+  identity provider controls, potentially exposing application functionality and data to unauthenticated users.
+
+  Attack Vector:
+  - Unauthenticated users can access application endpoints directly
+  - Authentication bypass for applications relying solely on App Service Auth
+  - Identity controls circumvented at platform level
+  - No built-in token validation or identity injection
+  - Potential exposure of sensitive application functionality
+
+  Understanding App Service Authentication (Easy Auth):
+  - Feature: Built-in authentication/authorization (Easy Auth)
+  - API: config/authsettingsV2 with properties.platform.enabled
+  - When enabled=true: Requests authenticated before reaching app code
+  - When enabled=false or null: No platform-level authentication (this finding)
+  - Supports Azure AD, Microsoft, Google, Facebook, Twitter identity providers
+  - Injects identity claims into HTTP headers for application use
+
+  App Service Authentication vs Application-Level Auth:
+  - Easy Auth: Platform-level, happens before request reaches application
+  - Application Auth: Code-level, implemented within application logic
+  - Both can coexist: Easy Auth + app-level auth for defense-in-depth
+  - This detection focuses on missing Easy Auth (platform level)
+
+  Detection Method:
+  This detection uses the Azure Management API to check authentication configuration:
+  - ARG Query: Identifies all App Services (microsoft.web/sites)
+  - Enricher: Calls Management API config/authsettingsV2 endpoint
+  - Checks: properties.platform.enabled field
+  - Requires: Reader permission (Microsoft.Web/sites/config/read)
+
+  Common Scenarios:
+  - Public-facing applications intentionally without Easy Auth (using app-level auth)
+  - Legacy applications migrated without enabling platform authentication
+  - Development/staging environments without authentication requirements
+  - APIs behind API Management with authentication at gateway level
+  - Applications using custom authentication implementations
+  - Microservices with service-to-service authentication only
+
+  Legitimate Use Cases:
+  - Public websites designed for anonymous access (marketing sites, documentation)
+  - Applications with robust application-level authentication (custom identity solutions)
+  - Services behind Azure Front Door or API Management with authentication
+  - Internal applications with network-level access controls (private endpoints)
+  - Development and testing environments
+  - Public APIs intentionally exposed without authentication
+
+  Triage Guidance:
+  1. Verify if this is a public-facing application (high risk) or internal-only (lower risk)
+  2. Check if application implements its own authentication (custom code, frameworks)
+  3. Review if app is behind API Management or Application Gateway with auth
+  4. Verify network access restrictions (private endpoints, IP allowlists)
+  5. Check application logs for authentication implementation evidence
+  6. Determine if application handles sensitive data or privileged operations
+  7. Assess if authentication is required based on application purpose
+  8. Review Azure AD integration or other identity provider configurations
+
+  Remediation Steps:
+  1. Enable Easy Auth if application should require authentication:
+     ```bash
+     # Enable Azure AD authentication
+     az webapp auth update --resource-group <rg> --name <app> --enabled true \
+       --action LoginWithAzureActiveDirectory \
+       --aad-client-id <client-id> \
+       --aad-client-secret <client-secret> \
+       --aad-allowed-token-audiences https://<app>.azurewebsites.net/.auth/login/aad/callback
+     ```
+
+  2. Configure authentication provider (Azure AD recommended):
+     - Navigate to Azure Portal → App Service → Authentication
+     - Click "Add identity provider"
+     - Select provider (Azure AD, Microsoft, Google, etc.)
+     - Configure provider settings and redirect URLs
+     - Set "Require authentication" or "Allow anonymous requests"
+
+  3. For applications with custom authentication:
+     - Document why Easy Auth is not enabled
+     - Ensure application-level authentication is robust and tested
+     - Implement rate limiting and request validation
+     - Enable comprehensive logging and monitoring
+     - Consider enabling Easy Auth for defense-in-depth
+
+  4. Network-level protections for internal apps:
+     - Configure private endpoints to restrict to VNet access
+     - Set up IP restrictions to limit access to known sources
+     - Use Azure Front Door or Application Gateway with WAF
+     - Enable Azure AD Conditional Access policies
+
+  5. Monitoring and compliance:
+     - Enable Application Insights for authentication tracking
+     - Set up alerts for failed authentication attempts
+     - Review authentication logs regularly
+     - Implement Azure Policy to enforce Easy Auth for production apps
+
+  Azure CLI Commands:
+  ```bash
+  # Check current authentication status
+  az webapp auth show --resource-group <rg> --name <app>
+
+  # Enable Easy Auth with Azure AD
+  az webapp auth update --resource-group <rg> --name <app> --enabled true \
+    --action LoginWithAzureActiveDirectory
+
+  # List all App Services without authentication
+  az webapp list --query "[?siteConfig.authSettings.enabled==\`false\` || siteConfig.authSettings.enabled==null].[name,resourceGroup]" -o table
+
+  # Check authsettingsV2 via Management API
+  az rest --method GET \
+    --uri "https://management.azure.com/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Web/sites/<app>/config/authsettingsV2?api-version=2023-12-01"
+  ```
+
+  Compliance Impact:
+  - Violates defense-in-depth security principles
+  - May fail compliance audits (PCI-DSS, HIPAA, SOC 2, ISO 27001)
+  - Increases risk of unauthorized access and data breaches
+  - May violate data protection regulations (GDPR, CCPA) for applications handling PII
+
+references:
+  - https://learn.microsoft.com/en-us/azure/app-service/overview-authentication-authorization
+  - https://learn.microsoft.com/en-us/azure/app-service/configure-authentication-provider-aad
+  - https://learn.microsoft.com/en-us/azure/templates/microsoft.web/sites
+  - https://learn.microsoft.com/en-us/rest/api/appservice/web-apps/get-auth-settings-v2
+  - https://github.com/projectdiscovery/nuclei-templates/blob/main/cloud/azure/appservice/azure-appservice-auth-disabled.yaml
+query: |
+  resources
+  | where type =~ 'microsoft.web/sites'
+  | where kind !contains 'functionapp'
+  // Enricher calls config/authsettingsV2 to check platform.enabled
+  | extend publicNetworkAccess = tolower(coalesce(properties.publicNetworkAccess, 'Enabled'))
+  | extend httpsOnly = coalesce(tobool(properties.httpsOnly), false)
+  | project
+      id,
+      name,
+      type,
+      kind,
+      location,
+      resourceGroup,
+      publicNetworkAccess,
+      httpsOnly,
+      subscriptionId
