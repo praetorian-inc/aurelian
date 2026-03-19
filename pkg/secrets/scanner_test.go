@@ -168,7 +168,7 @@ func TestScanContent(t *testing.T) {
 
 	s := startScanner(t)
 
-	content := []byte("aws_access_key_id=AKIAIOSFODNN7EXAMPLE")
+	content := []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF")
 	blobID := types.ComputeBlobID(content)
 	provenance := types.FileProvenance{FilePath: "test/credentials.txt"}
 
@@ -255,7 +255,7 @@ func TestClose(t *testing.T) {
 func TestScanContent_FindingID_PopulatedOnCachedPath(t *testing.T) {
 	s := startScanner(t)
 
-	content := []byte("aws_access_key_id=AKIAIOSFODNN7EXAMPLE")
+	content := []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF")
 	blobID := types.ComputeBlobID(content)
 	provenance := types.FileProvenance{FilePath: "test/credentials.txt"}
 
@@ -337,7 +337,7 @@ func TestFindingsCreation(t *testing.T) {
 
 	s := startScanner(t)
 
-	content := []byte("aws_access_key_id=AKIAIOSFODNN7EXAMPLE")
+	content := []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF")
 	blobID := types.ComputeBlobID(content)
 	provenance := types.FileProvenance{FilePath: "test/credentials.txt"}
 
@@ -365,11 +365,11 @@ func TestFindingsDeduplication(t *testing.T) {
 	s := startScanner(t)
 
 	// Same secret in two different files (different blobs via different provenance)
-	content1 := []byte("aws_access_key_id=AKIAIOSFODNN7EXAMPLE")
+	content1 := []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF")
 	blobID1 := types.ComputeBlobID(content1)
 	provenance1 := types.FileProvenance{FilePath: "file1/credentials.txt"}
 
-	content2 := []byte("aws_access_key_id=AKIAIOSFODNN7EXAMPLE")
+	content2 := []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF")
 	blobID2 := types.ComputeBlobID(content2)
 	provenance2 := types.FileProvenance{FilePath: "file2/credentials.txt"}
 
@@ -387,4 +387,161 @@ func TestFindingsDeduplication(t *testing.T) {
 	findings, err := s.ps.store.GetFindings()
 	require.NoError(t, err, "GetFindings should succeed")
 	assert.Len(t, findings, 1, "should have exactly 1 deduplicated finding")
+}
+
+// ---------------------------------------------------------------------------
+// Ignore pattern tests
+// ---------------------------------------------------------------------------
+
+func TestSecretScanner_ScanSkipsIgnoredPathFilterableInputs(t *testing.T) {
+	s := startScanner(t)
+
+	input := output.ScanInput{
+		Content:        []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF"),
+		ResourceID:     "arn:aws:lambda:us-east-1:123456789012:function:demo",
+		ResourceType:   "AWS::Lambda::Function",
+		Region:         "us-east-1",
+		AccountID:      "123456789012",
+		Label:          "node_modules/@aws-sdk/client-s3/dist/credentials.js",
+		PathFilterable: true,
+	}
+
+	out := pipeline.New[SecretScanResult]()
+	go func() {
+		defer out.Close()
+		require.NoError(t, s.Scan(input, out))
+	}()
+
+	items, err := out.Collect()
+	require.NoError(t, err)
+	assert.Empty(t, items, "scan results should be empty for ignored path-filterable input")
+}
+
+func TestSecretScanner_ScanDoesNotFilterNonPathFilterableInputs(t *testing.T) {
+	s := startScanner(t)
+
+	input := output.ScanInput{
+		Content:        []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF"),
+		ResourceID:     "arn:aws:ecs:us-east-1:123456789012:task-definition/my-task:1",
+		ResourceType:   "AWS::ECS::TaskDefinition",
+		Region:         "us-east-1",
+		AccountID:      "123456789012",
+		Label:          "package-lock.json",
+		PathFilterable: false,
+	}
+
+	out := pipeline.New[SecretScanResult]()
+	go func() {
+		defer out.Close()
+		require.NoError(t, s.Scan(input, out))
+	}()
+
+	items, err := out.Collect()
+	require.NoError(t, err)
+	assert.NotEmpty(t, items, "non-PathFilterable input must not be filtered even if label matches ignore pattern")
+}
+
+func TestSecretScanner_ScanAllowsNonIgnoredPathFilterableInputs(t *testing.T) {
+	s := startScanner(t)
+
+	input := output.ScanInput{
+		Content:        []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF"),
+		ResourceID:     "arn:aws:lambda:us-east-1:123456789012:function:demo",
+		ResourceType:   "AWS::Lambda::Function",
+		Region:         "us-east-1",
+		AccountID:      "123456789012",
+		Label:          "src/handler.py",
+		PathFilterable: true,
+	}
+
+	out := pipeline.New[SecretScanResult]()
+	go func() {
+		defer out.Close()
+		require.NoError(t, s.Scan(input, out))
+	}()
+
+	items, err := out.Collect()
+	require.NoError(t, err)
+	assert.NotEmpty(t, items, "scan results should not be empty for allowed path")
+}
+
+func TestSecretScanner_CustomIgnoreFileReplacesDefaults(t *testing.T) {
+	ignoreFile := filepath.Join(t.TempDir(), "custom.conf")
+	require.NoError(t, os.WriteFile(ignoreFile, []byte("src/**\n"), 0o644))
+
+	dbPath := filepath.Join(t.TempDir(), "titus.db")
+	var s SecretScanner
+	require.NoError(t, s.Start(ScannerConfig{DBPath: dbPath, IgnoreFile: ignoreFile}))
+	t.Cleanup(func() { s.Close() })
+
+	srcInput := output.ScanInput{
+		Content:        []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF"),
+		ResourceID:     "arn:aws:lambda:us-east-1:123456789012:function:demo",
+		ResourceType:   "AWS::Lambda::Function",
+		Region:         "us-east-1",
+		AccountID:      "123456789012",
+		Label:          "src/handler.py",
+		PathFilterable: true,
+	}
+
+	out := pipeline.New[SecretScanResult]()
+	go func() {
+		defer out.Close()
+		require.NoError(t, s.Scan(srcInput, out))
+	}()
+	items, err := out.Collect()
+	require.NoError(t, err)
+	assert.Empty(t, items, "src/ should be ignored by custom pattern")
+
+	nodeInput := output.ScanInput{
+		Content:        []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF"),
+		ResourceID:     "arn:aws:lambda:us-east-1:123456789012:function:demo",
+		ResourceType:   "AWS::Lambda::Function",
+		Region:         "us-east-1",
+		AccountID:      "123456789012",
+		Label:          "node_modules/@aws-sdk/client-s3/dist/credentials.js",
+		PathFilterable: true,
+	}
+
+	out2 := pipeline.New[SecretScanResult]()
+	go func() {
+		defer out2.Close()
+		require.NoError(t, s.Scan(nodeInput, out2))
+	}()
+	items2, err := out2.Collect()
+	require.NoError(t, err)
+	assert.NotEmpty(t, items2, "node_modules should NOT be ignored when custom file replaces defaults")
+}
+
+func TestSecretScanner_ScanSkipsMultipleIgnoredPaths(t *testing.T) {
+	s := startScanner(t)
+
+	ignoredLabels := []string{
+		"node_modules/@aws-sdk/client-s3/index.js",
+		"package-lock.json",
+		"vendor/bundle.min.js",
+		"lib/python3.11/site-packages/botocore/auth.py",
+		"go.sum",
+	}
+
+	for _, label := range ignoredLabels {
+		t.Run(label, func(t *testing.T) {
+			out := pipeline.New[SecretScanResult]()
+			go func() {
+				defer out.Close()
+				require.NoError(t, s.Scan(output.ScanInput{
+					Content:        []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF"),
+					ResourceID:     "arn:aws:lambda:us-east-1:123456789012:function:demo",
+					ResourceType:   "AWS::Lambda::Function",
+					Region:         "us-east-1",
+					AccountID:      "123456789012",
+					Label:          label,
+					PathFilterable: true,
+				}, out))
+			}()
+			items, err := out.Collect()
+			require.NoError(t, err)
+			assert.Empty(t, items, "expected %s to be ignored", label)
+		})
+	}
 }

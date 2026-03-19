@@ -16,11 +16,29 @@ type AzureReconBase struct {
 // AzureCommonRecon contains common parameters for Azure reconnaissance modules.
 type AzureCommonRecon struct {
 	AzureReconBase
+	Concurrency     int                    `param:"concurrency" desc:"Maximum concurrent API requests" default:"5"`
 	SubscriptionIDs []string               `param:"subscription-ids" desc:"Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions" default:"all" shortcode:"s"`
 	AzureCredential azcore.TokenCredential `param:"-"`
 }
 
 func (c *AzureCommonRecon) PostBind(_ Config, _ Module) error {
+	cred, err := azureauth.NewAzureCredential()
+	if err != nil {
+		return fmt.Errorf("azure authentication failed: %w", err)
+	}
+	c.AzureCredential = cred
+	c.Concurrency = max(1, c.Concurrency)
+	return nil
+}
+
+// AzureEntraRecon contains parameters for Entra ID (Azure AD) modules that
+// operate at the tenant level and do not require subscription IDs.
+type AzureEntraRecon struct {
+	AzureReconBase
+	AzureCredential azcore.TokenCredential `param:"-"`
+}
+
+func (c *AzureEntraRecon) PostBind(_ Config, _ Module) error {
 	cred, err := azureauth.NewAzureCredential()
 	if err != nil {
 		return fmt.Errorf("azure authentication failed: %w", err)

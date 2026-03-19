@@ -1,7 +1,6 @@
 package recon
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/secrets"
-	"github.com/praetorian-inc/titus/pkg/types"
 )
 
 func init() {
@@ -112,7 +110,7 @@ func (m *GCPFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aureli
 	// Scan for secrets.
 	scanned := pipeline.New[secrets.SecretScanResult]()
 	pipeline.Pipe(extracted, s.Scan, scanned)
-	pipeline.Pipe(scanned, riskFromScanResult, out)
+	pipeline.Pipe(scanned, secrets.RiskFromScanResult, out)
 
 	return out.Wait()
 }
@@ -124,72 +122,3 @@ func splitHierarchyResources(res output.GCPResource, p *pipeline.P[string]) erro
 	return nil
 }
 
-func riskFromScanResult(result secrets.SecretScanResult, out *pipeline.P[model.AurelianModel]) error {
-	proof := buildProofData(result, result.Match)
-	proofBytes, err := json.MarshalIndent(proof, "", "  ")
-	if err != nil {
-		slog.Warn("failed to marshal proof", "resource", result.ResourceRef, "error", err)
-		return nil
-	}
-
-	out.Send(secrets.NewSecretRisk(result, "gcp", proofBytes))
-	return nil
-}
-
-func buildProofData(result secrets.SecretScanResult, match *types.Match) map[string]any {
-	proof := map[string]any{
-		"finding_id":   match.FindingID,
-		"rule_name":    match.RuleName,
-		"rule_text_id": match.RuleID,
-		"resource_ref": result.ResourceRef,
-		"num_matches":  1,
-		"matches": []map[string]any{
-			{
-				"provenance": []map[string]any{
-					{
-						"kind":          "cloud_resource",
-						"platform":      "gcp",
-						"resource_id":   result.ResourceRef,
-						"resource_type": result.ResourceType,
-						"region":        result.Region,
-						"account_id":    result.AccountID,
-						"first_commit": map[string]any{
-							"blob_path": result.Label,
-						},
-					},
-				},
-				"snippet": map[string]string{
-					"before":   string(match.Snippet.Before),
-					"matching": string(match.Snippet.Matching),
-					"after":    string(match.Snippet.After),
-				},
-				"location": map[string]any{
-					"offset_span": map[string]any{
-						"start": match.Location.Offset.Start,
-						"end":   match.Location.Offset.End,
-					},
-					"source_span": map[string]any{
-						"start": map[string]any{
-							"line":   match.Location.Source.Start.Line,
-							"column": match.Location.Source.Start.Column,
-						},
-						"end": map[string]any{
-							"line":   match.Location.Source.End.Line,
-							"column": match.Location.Source.End.Column,
-						},
-					},
-				},
-			},
-		},
-	}
-
-	if match.ValidationResult != nil {
-		proof["validation"] = map[string]any{
-			"status":     string(match.ValidationResult.Status),
-			"confidence": match.ValidationResult.Confidence,
-			"message":    match.ValidationResult.Message,
-		}
-	}
-
-	return proof
-}

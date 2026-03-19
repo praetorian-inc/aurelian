@@ -1,7 +1,6 @@
 package recon
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -12,7 +11,6 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/secrets"
-	"github.com/praetorian-inc/titus/pkg/types"
 )
 
 func init() {
@@ -61,7 +59,6 @@ func (m *AWSFindSecretsModule) SupportedResourceTypes() []string {
 		"AWS::SSM::Document",
 		"AWS::StepFunctions::StateMachine",
 		// TODO: AWS::ECR::Repository — container image scanning deferred to follow-up PR.
-		// TODO: add collection module for AWS::SSM::Document
 	}
 }
 
@@ -114,7 +111,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	pipeline.Pipe(extracted, s.Scan, scanned, &pipeline.PipeOpts{
 		Progress: cfg.Log.ProgressFunc("scanning for secrets"),
 	})
-	pipeline.Pipe(scanned, riskFromScanResult, out)
+	pipeline.Pipe(scanned, secrets.RiskFromScanResult, out)
 
 	if err := out.Wait(); err != nil {
 		return err
@@ -123,74 +120,3 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	return nil
 }
 
-func riskFromScanResult(result secrets.SecretScanResult, out *pipeline.P[model.AurelianModel]) error {
-	proof := buildProofData(result, result.Match)
-	proofBytes, err := json.MarshalIndent(proof, "", "  ")
-	if err != nil {
-		slog.Warn("failed to marshal proof", "resource", result.ResourceRef, "error", err)
-		return nil
-	}
-
-	out.Send(secrets.NewSecretRisk(result, "aws", proofBytes))
-	return nil
-}
-
-// buildProofData constructs proof JSON matching Guard's secrets proof format.
-// Includes provenance with cloud resource context so the UI can render findings.
-func buildProofData(result secrets.SecretScanResult, match *types.Match) map[string]interface{} {
-	proof := map[string]interface{}{
-		"finding_id":   match.FindingID,
-		"rule_name":    match.RuleName,
-		"rule_text_id": match.RuleID,
-		"resource_ref": result.ResourceRef,
-		"num_matches":  1,
-		"matches": []map[string]interface{}{
-			{
-				"provenance": []map[string]interface{}{
-					{
-						"kind":          "cloud_resource",
-						"platform":      "aws",
-						"resource_id":   result.ResourceRef,
-						"resource_type": result.ResourceType,
-						"region":        result.Region,
-						"account_id":    result.AccountID,
-						"first_commit": map[string]interface{}{
-							"blob_path": result.Label,
-						},
-					},
-				},
-				"snippet": map[string]string{
-					"before":   string(match.Snippet.Before),
-					"matching": string(match.Snippet.Matching),
-					"after":    string(match.Snippet.After),
-				},
-				"location": map[string]interface{}{
-					"offset_span": map[string]interface{}{
-						"start": match.Location.Offset.Start,
-						"end":   match.Location.Offset.End,
-					},
-					"source_span": map[string]interface{}{
-						"start": map[string]interface{}{
-							"line":   match.Location.Source.Start.Line,
-							"column": match.Location.Source.Start.Column,
-						},
-						"end": map[string]interface{}{
-							"line":   match.Location.Source.End.Line,
-							"column": match.Location.Source.End.Column,
-						},
-					},
-				},
-			},
-		},
-	}
-
-	if match.ValidationResult != nil {
-		proof["validation"] = map[string]interface{}{
-			"status":     string(match.ValidationResult.Status),
-			"confidence": match.ValidationResult.Confidence,
-			"message":    match.ValidationResult.Message,
-		}
-	}
-
-	return proof
-}

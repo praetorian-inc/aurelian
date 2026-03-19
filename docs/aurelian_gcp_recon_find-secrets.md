@@ -15,11 +15,13 @@ aurelian gcp recon find-secrets [flags]
       --disabled-titus-rules strings   Rule IDs to exclude from scanning
       --folder-id strings              GCP folder IDs
   -h, --help                           help for find-secrets
+      --ignore-file string             Path to gitignore-style file for skipping paths; empty uses titus defaults
       --include-sys-projects           Include system projects
   -o, --org-id strings                 GCP organization IDs
       --output-dir string              Base output directory (default "aurelian-output")
   -p, --project-id strings             GCP project IDs
   -t, --resource-type strings          Resource types to enumerate (default [all])
+      --ruleset string                 Titus ruleset to apply; empty string disables ruleset filtering (default "default")
       --validate                       Validate detected secrets against their source APIs
 ```
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/azure/enrichment"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -51,6 +52,71 @@ func TestResultToRisk(t *testing.T) {
 	var ctx map[string]any
 	require.NoError(t, json.Unmarshal(risk.Context, &ctx))
 	assert.Equal(t, "storage_accounts_public_access", ctx["templateId"])
+}
+
+func TestEnrichResultSuppression(t *testing.T) {
+	plugin.ResetAzureEnricherRegistry()
+	defer plugin.ResetAzureEnricherRegistry()
+
+	// Register an enricher that suppresses the result.
+	plugin.RegisterAzureEnricher("test_suppress", func(_ plugin.AzureEnricherConfig, result *templates.ARGQueryResult) ([]plugin.AzureEnrichmentCommand, error) {
+		result.Suppressed = true
+		result.SuppressReason = "resource not actually public"
+		return nil, nil
+	})
+
+	enricher := enrichment.NewAzureEnricher(nil)
+
+	result := templates.ARGQueryResult{
+		TemplateID:   "test_suppress",
+		ResourceID:   "/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.Test/resource1",
+		ResourceName: "resource1",
+	}
+
+	out := pipeline.New[templates.ARGQueryResult]()
+	go func() {
+		defer out.Close()
+		require.NoError(t, enricher.Enrich(result, out))
+	}()
+
+	var results []templates.ARGQueryResult
+	for r := range out.Range() {
+		results = append(results, r)
+	}
+	require.NoError(t, out.Wait())
+	assert.Empty(t, results, "suppressed result should not be emitted")
+}
+
+func TestEnrichResultNoSuppression(t *testing.T) {
+	plugin.ResetAzureEnricherRegistry()
+	defer plugin.ResetAzureEnricherRegistry()
+
+	// Register an enricher that does NOT suppress.
+	plugin.RegisterAzureEnricher("test_pass", func(_ plugin.AzureEnricherConfig, result *templates.ARGQueryResult) ([]plugin.AzureEnrichmentCommand, error) {
+		return []plugin.AzureEnrichmentCommand{{Command: "curl test", Description: "test"}}, nil
+	})
+
+	enricher := enrichment.NewAzureEnricher(nil)
+
+	result := templates.ARGQueryResult{
+		TemplateID:   "test_pass",
+		ResourceID:   "/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.Test/resource2",
+		ResourceName: "resource2",
+	}
+
+	out := pipeline.New[templates.ARGQueryResult]()
+	go func() {
+		defer out.Close()
+		require.NoError(t, enricher.Enrich(result, out))
+	}()
+
+	var results []templates.ARGQueryResult
+	for r := range out.Range() {
+		results = append(results, r)
+	}
+	require.NoError(t, out.Wait())
+	require.Len(t, results, 1, "non-suppressed result should be emitted")
+	assert.Equal(t, "resource2", results[0].ResourceName)
 }
 
 func TestModuleMetadata(t *testing.T) {

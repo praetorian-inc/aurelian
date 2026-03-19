@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"fmt"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/praetorian-inc/aurelian/pkg/utils"
@@ -21,8 +22,9 @@ type persistentScanner struct {
 
 // newPersistentScanner creates a new persistent Titus scanner.
 // The caller is responsible for providing a valid dbPath.
-// Any rules whose IDs appear in disabledRules are excluded from scanning.
-func newPersistentScanner(dbPath string, disabledRules []string) (*persistentScanner, error) {
+// If rulesetID is non-empty, only rules in that ruleset are loaded.
+// Any rules whose IDs appear in disabledRules are then excluded.
+func newPersistentScanner(dbPath string, rulesetID string, disabledRules []string) (*persistentScanner, error) {
 	if err := utils.EnsureDirectoryExists(filepath.Dir(dbPath)); err != nil {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
@@ -37,6 +39,22 @@ func newPersistentScanner(dbPath string, disabledRules []string) (*persistentSca
 	if err != nil {
 		s.Close()
 		return nil, fmt.Errorf("failed to load builtin rules: %w", err)
+	}
+
+	// Apply ruleset filter if specified.
+	if rulesetID != "" {
+		rulesets, err := loader.LoadBuiltinRulesets()
+		if err != nil {
+			s.Close()
+			return nil, fmt.Errorf("failed to load builtin rulesets: %w", err)
+		}
+		rs := rule.FindRuleset(rulesets, rulesetID)
+		if rs == nil {
+			s.Close()
+			return nil, fmt.Errorf("ruleset %q not found", rulesetID)
+		}
+		allRules = rule.ApplyRuleset(allRules, rs)
+		slog.Info("applied ruleset", "ruleset", rulesetID, "rules", len(allRules))
 	}
 
 	disabled := make(map[string]bool, len(disabledRules))

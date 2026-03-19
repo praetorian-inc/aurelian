@@ -63,7 +63,6 @@ func extractLambda(ctx extractContext, r output.AWSResource, out *pipeline.P[out
 			continue
 		}
 
-		f := f
 		g.Go(func() error {
 			rc, err := f.Open()
 			if err != nil {
@@ -80,7 +79,9 @@ func extractLambda(ctx extractContext, r output.AWSResource, out *pipeline.P[out
 				return nil
 			}
 
-			out.Send(output.ScanInputFromAWSResource(r, f.Name, content))
+			si := output.ScanInputFromAWSResource(r, f.Name, content)
+			si.PathFilterable = true
+			out.Send(si)
 			return nil
 		})
 	}

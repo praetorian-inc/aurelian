@@ -1,7 +1,6 @@
 package recon
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 
@@ -15,7 +14,6 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/secrets"
-	"github.com/praetorian-inc/titus/pkg/types"
 )
 
 func init() {
@@ -108,7 +106,7 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 	// Scan extracted content and convert results to risks.
 	scanned := pipeline.New[secrets.SecretScanResult]()
 	pipeline.Pipe(extracted, s.Scan, scanned)
-	pipeline.Pipe(scanned, m.riskFromScanResult, out)
+	pipeline.Pipe(scanned, secrets.RiskFromScanResult, out)
 
 	return out.Wait()
 }
@@ -226,72 +224,3 @@ func (m *AzureFindSecretsModule) toListerInput(sub azuretypes.SubscriptionInfo, 
 	return nil
 }
 
-func (m *AzureFindSecretsModule) riskFromScanResult(result secrets.SecretScanResult, out *pipeline.P[model.AurelianModel]) error {
-	proof := m.buildProofData(result, result.Match)
-	proofBytes, err := json.MarshalIndent(proof, "", "  ")
-	if err != nil {
-		slog.Warn("failed to marshal proof", "resource", result.ResourceRef, "error", err)
-		return nil
-	}
-
-	out.Send(secrets.NewSecretRisk(result, "azure", proofBytes))
-	return nil
-}
-
-func (m *AzureFindSecretsModule) buildProofData(result secrets.SecretScanResult, match *types.Match) map[string]interface{} {
-	proof := map[string]interface{}{
-		"finding_id":   match.FindingID,
-		"rule_name":    match.RuleName,
-		"rule_text_id": match.RuleID,
-		"resource_ref": result.ResourceRef,
-		"num_matches":  1,
-		"matches": []map[string]interface{}{
-			{
-				"provenance": []map[string]interface{}{
-					{
-						"kind":          "cloud_resource",
-						"platform":      "azure",
-						"resource_id":   result.ResourceRef,
-						"resource_type": result.ResourceType,
-						"region":        result.Region,
-						"account_id":    result.AccountID,
-						"first_commit": map[string]interface{}{
-							"blob_path": result.Label,
-						},
-					},
-				},
-				"snippet": map[string]string{
-					"before":   string(match.Snippet.Before),
-					"matching": string(match.Snippet.Matching),
-					"after":    string(match.Snippet.After),
-				},
-				"location": map[string]interface{}{
-					"offset_span": map[string]interface{}{
-						"start": match.Location.Offset.Start,
-						"end":   match.Location.Offset.End,
-					},
-					"source_span": map[string]interface{}{
-						"start": map[string]interface{}{
-							"line":   match.Location.Source.Start.Line,
-							"column": match.Location.Source.Start.Column,
-						},
-						"end": map[string]interface{}{
-							"line":   match.Location.Source.End.Line,
-							"column": match.Location.Source.End.Column,
-						},
-					},
-				},
-			},
-		},
-	}
-
-	if match.ValidationResult != nil {
-		proof["validation"] = map[string]interface{}{
-			"status":     string(match.ValidationResult.Status),
-			"confidence": match.ValidationResult.Confidence,
-			"message":    match.ValidationResult.Message,
-		}
-	}
-
-	return proof
-}
