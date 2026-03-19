@@ -51,9 +51,14 @@ func TestAccountIDFromAccessKey(t *testing.T) {
 			wantAcct: "581039954779",
 		},
 		{
+			name:     "AKIA real key",
+			keyID:    "AKIAV7S32T2OSBFJQOIY",
+			wantAcct: "411435703965",
+		},
+		{
 			name:     "ASIA temporary key",
-			keyID:    "ASIAJEXAMPLEXEG2JICEA",
-			wantAcct: "628609546953",
+			keyID:    "ASIAY34FZKBOKMUTVV7A",
+			wantAcct: "609629065308",
 		},
 		{
 			name:      "too short after prefix",

@@ -3,12 +3,10 @@ package analyze
 import (
 	"encoding/base32"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
-	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 )
@@ -38,7 +36,7 @@ func (m *AccessKeyToAccountIDModule) Description() string {
 
 func (m *AccessKeyToAccountIDModule) References() []string {
 	return []string{
-		"https://medium.com/@TalBeerySec/a-]short-note-on-aws-key-id-f88cc4317489",
+		"https://medium.com/@TalBeerySec/a-short-note-on-aws-key-id-f88cc4317489",
 		"https://hackingthe.cloud/aws/enumeration/account-id-from-access-key/",
 	}
 }
@@ -63,31 +61,12 @@ func (m *AccessKeyToAccountIDModule) Run(cfg plugin.Config, out *pipeline.P[mode
 
 	cfg.Success("access key %s belongs to account %s", key, accountID)
 
-	result := struct {
-		AccessKeyID string `json:"access_key_id"`
-		AccountID   string `json:"account_id"`
-	}{
-		AccessKeyID: key,
-		AccountID:   accountID,
-	}
-
-	resultsJSON, err := json.Marshal(result)
-	if err != nil {
-		return fmt.Errorf("marshaling results: %w", err)
-	}
-
-	out.Send(output.AnalyzeResult{
-		Module:  m.ID(),
-		Input:   key,
-		Results: json.RawMessage(resultsJSON),
-	})
-
 	return nil
 }
 
 // accountIDFromAccessKey extracts the AWS account ID encoded in an access key ID.
 // The key ID (after the 4-char prefix) is base32-encoded. The account ID is
-// embedded in bits 1–39 of the decoded bytes.
+// embedded in bits 7–46 of the first 6 decoded bytes.
 func accountIDFromAccessKey(keyID string) (string, error) {
 	trimmed := keyID[4:]
 
@@ -105,7 +84,7 @@ func accountIDFromAccessKey(keyID string) (string, error) {
 	copy(buf[2:], decoded[:6])
 	val := binary.BigEndian.Uint64(buf[:])
 
-	// The account ID occupies bits 7–38 (mask then shift).
+	// The account ID occupies bits 7–46 (mask then shift right by 7 to get a 40-bit value).
 	accountID := (val & 0x7fffffffff80) >> 7
 
 	return fmt.Sprintf("%012d", accountID), nil
