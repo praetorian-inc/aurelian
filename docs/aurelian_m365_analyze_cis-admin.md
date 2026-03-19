@@ -10,7 +10,6 @@ aurelian m365 analyze cis-admin [flags]
 
 ```
       --checks string           Comma-separated CIS IDs to include
-      --concurrency int         Max concurrent API requests (default 5)
       --exclude-checks string   Comma-separated CIS IDs to exclude
   -h, --help                    help for cis-admin
       --output-dir string       Base output directory (default "aurelian-output")
