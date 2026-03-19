@@ -121,6 +121,13 @@ func riskFromResult(r publicaccess.PublicAccessResult, out *pipeline.P[model.Aur
 		impactedARN = resourceID
 	}
 
+	resourceType := r.AWSResource.ResourceType
+	slug := output.ResourceTypeSlug(resourceType)
+	name := "public-aws-resource"
+	if slug != "" {
+		name = "public-aws-resource-" + slug
+	}
+
 	r.AWSResource = nil
 	ctx, err := json.Marshal(r)
 	if err != nil {
@@ -129,10 +136,11 @@ func riskFromResult(r publicaccess.PublicAccessResult, out *pipeline.P[model.Aur
 	}
 
 	out.Send(output.AurelianRisk{
-		Name:        "public-aws-resource",
-		Severity:    severity,
+		Name:               name,
+		Severity:           severity,
 		ImpactedResourceID: impactedARN,
-		Context:     ctx,
+		DeduplicationID:    resourceType,
+		Context:            ctx,
 	})
 	return nil
 }
