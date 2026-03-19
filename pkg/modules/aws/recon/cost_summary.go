@@ -21,51 +21,51 @@ import (
 )
 
 func init() {
-	plugin.Register(&AWSSummaryModule{})
+	plugin.Register(&AWSCostSummaryModule{})
 }
 
-type SummaryConfig struct {
+type CostSummaryConfig struct {
 	plugin.AWSReconBase
 	Days int `param:"days" desc:"Number of days to look back for cost data" default:"30" shortcode:"d"`
 }
 
-type AWSSummaryModule struct {
-	SummaryConfig
+type AWSCostSummaryModule struct {
+	CostSummaryConfig
 }
 
-func (m *AWSSummaryModule) ID() string                { return "summary" }
-func (m *AWSSummaryModule) Name() string              { return "AWS Summary" }
-func (m *AWSSummaryModule) Platform() plugin.Platform { return plugin.PlatformAWS }
-func (m *AWSSummaryModule) Category() plugin.Category { return plugin.CategoryRecon }
-func (m *AWSSummaryModule) OpsecLevel() string        { return "moderate" }
-func (m *AWSSummaryModule) Authors() []string         { return []string{"Praetorian"} }
+func (m *AWSCostSummaryModule) ID() string                { return "cost-summary" }
+func (m *AWSCostSummaryModule) Name() string              { return "AWS Cost Summary" }
+func (m *AWSCostSummaryModule) Platform() plugin.Platform { return plugin.PlatformAWS }
+func (m *AWSCostSummaryModule) Category() plugin.Category { return plugin.CategoryRecon }
+func (m *AWSCostSummaryModule) OpsecLevel() string        { return "moderate" }
+func (m *AWSCostSummaryModule) Authors() []string         { return []string{"Praetorian"} }
 
-func (m *AWSSummaryModule) Description() string {
+func (m *AWSCostSummaryModule) Description() string {
 	return "Use Cost Explorer to summarize the services and regions in use, displaying costs in a markdown table."
 }
 
-func (m *AWSSummaryModule) References() []string {
+func (m *AWSCostSummaryModule) References() []string {
 	return []string{
 		"https://docs.aws.amazon.com/cost-management/latest/userguide/ce-api.html",
 	}
 }
 
-func (m *AWSSummaryModule) SupportedResourceTypes() []string {
+func (m *AWSCostSummaryModule) SupportedResourceTypes() []string {
 	return nil
 }
 
-func (m *AWSSummaryModule) Parameters() any {
-	return &m.SummaryConfig
+func (m *AWSCostSummaryModule) Parameters() any {
+	return &m.CostSummaryConfig
 }
 
-func (m *AWSSummaryModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
+func (m *AWSCostSummaryModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	awsCfg, err := helpers.NewAWSConfig(helpers.AWSConfigInput{
 		Region:     "us-east-1",
 		Profile:    m.Profile,
 		ProfileDir: m.ProfileDir,
 	})
 	if err != nil {
-		return fmt.Errorf("summary: load AWS config: %w", err)
+		return fmt.Errorf("cost-summary: load AWS config: %w", err)
 	}
 
 	client := costexplorer.NewFromConfig(awsCfg)
@@ -103,7 +103,7 @@ func (m *AWSSummaryModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 	for {
 		result, err := client.GetCostAndUsage(ctx, input)
 		if err != nil {
-			return fmt.Errorf("summary: Cost Explorer GetCostAndUsage: %w", err)
+			return fmt.Errorf("cost-summary: Cost Explorer GetCostAndUsage: %w", err)
 		}
 
 		for _, rbt := range result.ResultsByTime {
@@ -154,8 +154,21 @@ func (m *AWSSummaryModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 	return nil
 }
 
+const costDisplayThreshold = 0.01
+
 func buildCostTable(serviceRegions map[string]map[string]float64, regionSet map[string]bool, grandTotal float64, days int) *output.AWSCostSummary {
-	regions := slices.Sorted(maps.Keys(regionSet))
+	// Filter out regions where no service has cost above the display threshold.
+	activeRegions := make(map[string]bool, len(regionSet))
+	for r := range regionSet {
+		for _, costs := range serviceRegions {
+			if costs[r] > costDisplayThreshold {
+				activeRegions[r] = true
+				break
+			}
+		}
+	}
+
+	regions := slices.Sorted(maps.Keys(activeRegions))
 	services := slices.Sorted(maps.Keys(serviceRegions))
 
 	// Headers: Service, region1, region2, ..., Total Cost
@@ -176,7 +189,7 @@ func buildCostTable(serviceRegions map[string]map[string]float64, regionSet map[
 			cost := serviceRegions[svc][r]
 			svcTotal += cost
 			totalByRegion[r] += cost
-			if cost > 0.01 {
+			if cost > costDisplayThreshold {
 				row = append(row, fmt.Sprintf("$%.2f", cost))
 			} else {
 				row = append(row, "-")
@@ -188,19 +201,19 @@ func buildCostTable(serviceRegions map[string]map[string]float64, regionSet map[
 
 	// TOTAL row with bold markdown formatting.
 	totalRow := make([]string, 0, len(headers))
-	totalRow = append(totalRow, "**TOTAL**")
+	totalRow = append(totalRow, "TOTAL")
 	for _, r := range regions {
-		if totalByRegion[r] > 0.01 {
-			totalRow = append(totalRow, fmt.Sprintf("**$%.2f**", totalByRegion[r]))
+		if totalByRegion[r] > costDisplayThreshold {
+			totalRow = append(totalRow, fmt.Sprintf("$%.2f", totalByRegion[r]))
 		} else {
 			totalRow = append(totalRow, "-")
 		}
 	}
-	totalRow = append(totalRow, fmt.Sprintf("**$%.2f**", grandTotal))
+	totalRow = append(totalRow, fmt.Sprintf("$%.2f", grandTotal))
 	rows = append(rows, totalRow)
 
 	return &output.AWSCostSummary{
-		TableHeading: fmt.Sprintf("# AWS Cost Summary\n\nCost breakdown by service and region (last %d days):\n\n", days),
+		TableHeading: fmt.Sprintf("\nCost breakdown by service and region (last %d days):\n\n", days),
 		Headers:      headers,
 		Rows:         rows,
 	}
@@ -211,4 +224,3 @@ func cleanServiceName(name string) string {
 	name = strings.ReplaceAll(name, "AWS ", "")
 	return name
 }
-

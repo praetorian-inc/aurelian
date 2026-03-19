@@ -1,16 +1,16 @@
-## aurelian aws recon summary
+## aurelian aws recon cost-summary
 
 Use Cost Explorer to summarize the services and regions in use, displaying costs in a markdown table.
 
 ```
-aurelian aws recon summary [flags]
+aurelian aws recon cost-summary [flags]
 ```
 
 ### Options
 
 ```
   -d, --days int             Number of days to look back for cost data (default 30)
-  -h, --help                 help for summary
+  -h, --help                 help for cost-summary
       --opsec_level string   Operational security level for AWS operations (default "none")
       --output-dir string    Base output directory (default "aurelian-output")
   -p, --profile string       AWS profile to use
