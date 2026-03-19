@@ -29,8 +29,8 @@ func TestOutputFlagWritesToFile(t *testing.T) {
 	cmd.Flags().StringP("output-file", "f", "", "Output file path")
 
 	// Set the flags
-	cmd.Flags().Set("output-format", "json")
-	cmd.Flags().Set("output-file", outputFile)
+	_ = cmd.Flags().Set("output-format", "json")
+	_ = cmd.Flags().Set("output-file", outputFile)
 
 	// Verify flags are readable
 	format, err := cmd.Flags().GetString("output-format")

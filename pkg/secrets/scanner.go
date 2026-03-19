@@ -40,7 +40,7 @@ func (s *SecretScanner) Start(cfg ScannerConfig) error {
 
 	ig, err := ignore.CompilePatterns(cfg.IgnoreFile)
 	if err != nil {
-		ps.close()
+		_ = ps.close()
 		return fmt.Errorf("failed to compile ignore patterns: %w", err)
 	}
 

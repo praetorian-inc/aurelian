@@ -64,7 +64,7 @@ func TestNeo4jAdapter_DefaultBatchSize(t *testing.T) {
 	adapter, err := NewNeo4jAdapter(cfg)
 	require.NoError(t, err)
 	require.NotNil(t, adapter)
-	defer adapter.Close()
+	defer func() { _ = adapter.Close() }()
 
 	// Verify default batch size is 1000
 	assert.Equal(t, 1000, adapter.batchSize, "default batch size should be 1000")

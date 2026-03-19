@@ -57,7 +57,7 @@ func computeFixtureHash(dir string) (string, error) {
 
 	h := md5.New()
 	for _, e := range entries {
-		fmt.Fprintf(h, "path:%s\n", e.relPath)
+		_, _ = fmt.Fprintf(h, "path:%s\n", e.relPath)
 
 		data, err := os.ReadFile(e.absPath)
 		if err != nil {

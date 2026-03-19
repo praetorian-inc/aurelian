@@ -43,7 +43,7 @@ func extractLambda(ctx extractContext, r output.AWSResource, out *pipeline.P[out
 	if err != nil {
 		return fmt.Errorf("failed to download Lambda code for %s: %w", functionName, err)
 	}
-	defer httpResp.Body.Close()
+	defer func() { _ = httpResp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(httpResp.Body, maxLambdaZipSize))
 	if err != nil {
@@ -70,7 +70,7 @@ func extractLambda(ctx extractContext, r output.AWSResource, out *pipeline.P[out
 			}
 
 			content, err := io.ReadAll(rc)
-			rc.Close()
+			_ = rc.Close()
 			if err != nil {
 				return nil
 			}

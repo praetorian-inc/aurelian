@@ -20,13 +20,13 @@ func TestGetFromMapBWhileRangingMapA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mapA.Close()
+	defer func() { _ = mapA.Close() }()
 
 	mapB, err := NewSQLiteMapWithThreshold[string](db, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mapB.Close()
+	defer func() { _ = mapB.Close() }()
 
 	// Populate both maps.
 	for i := 0; i < 20; i++ {
@@ -66,13 +66,13 @@ func TestSetToMapBWhileRangingMapA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mapA.Close()
+	defer func() { _ = mapA.Close() }()
 
 	mapB, err := NewSQLiteMapWithThreshold[string](db, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mapB.Close()
+	defer func() { _ = mapB.Close() }()
 
 	// Populate map A.
 	for i := 0; i < 20; i++ {
@@ -244,7 +244,7 @@ func TestCreateTableWhileFlushInProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer m1.Close()
+	defer func() { _ = m1.Close() }()
 
 	for i := 0; i < 500; i++ {
 		m1.Set(fmt.Sprintf("key-%d", i), fmt.Sprintf("value-%d", i))
@@ -299,7 +299,7 @@ func TestConcurrentGetAndSetDifferentMaps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resources.Close()
+	defer func() { _ = resources.Close() }()
 
 	for i := 0; i < 200; i++ {
 		resources.Set(fmt.Sprintf("res-%d", i), fmt.Sprintf("data-%d", i))
@@ -312,7 +312,7 @@ func TestConcurrentGetAndSetDifferentMaps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer results.Close()
+	defer func() { _ = results.Close() }()
 
 	// Simulate eval workers reading resources + collector writing results.
 	var wg sync.WaitGroup

@@ -67,13 +67,13 @@ func TestSQLiteMap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	m, err := NewSQLiteMap[string](db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer m.Close()
+	defer func() { _ = m.Close() }()
 
 	testMapImplementation(t, WrapMap[string](m))
 }
@@ -165,13 +165,13 @@ func TestSQLiteMapRangeWithKeyFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	m, err := NewSQLiteMap[string](db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer m.Close()
+	defer func() { _ = m.Close() }()
 
 	testRangeWithKeyFilter(t, WrapMap[string](m))
 }
@@ -211,13 +211,13 @@ func TestSQLiteMapPointers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	m, err := NewSQLiteMap[*testStruct](db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer m.Close()
+	defer func() { _ = m.Close() }()
 
 	testMapPointers(t, WrapMap[*testStruct](m))
 }
@@ -235,7 +235,7 @@ func TestSQLiteMapBatchedWrites(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sm.Close()
+	defer func() { _ = sm.Close() }()
 
 	m := WrapMap[string](sm)
 
@@ -245,7 +245,7 @@ func TestSQLiteMapBatchedWrites(t *testing.T) {
 
 	// Direct DB query should show 0 rows (not flushed yet).
 	var count int
-	db.QueryRow("SELECT COUNT(*) FROM " + sm.table).Scan(&count)
+	_ = db.QueryRow("SELECT COUNT(*) FROM " + sm.table).Scan(&count)
 	if count != 0 {
 		t.Fatalf("expected 0 rows in DB before flush, got %d", count)
 	}
@@ -258,7 +258,7 @@ func TestSQLiteMapBatchedWrites(t *testing.T) {
 
 	// Third write triggers flush (threshold=3).
 	m.Set("c", "3")
-	db.QueryRow("SELECT COUNT(*) FROM " + sm.table).Scan(&count)
+	_ = db.QueryRow("SELECT COUNT(*) FROM " + sm.table).Scan(&count)
 	if count != 3 {
 		t.Fatalf("expected 3 rows after threshold flush, got %d", count)
 	}
@@ -295,13 +295,13 @@ func TestSQLiteMapMultipleTables(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sm1.Close()
+	defer func() { _ = sm1.Close() }()
 
 	sm2, err := NewSQLiteMap[int](db)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sm2.Close()
+	defer func() { _ = sm2.Close() }()
 
 	m1 := WrapMap[string](sm1)
 	m2 := WrapMap[int](sm2)

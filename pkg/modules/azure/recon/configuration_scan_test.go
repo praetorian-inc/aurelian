@@ -161,7 +161,7 @@ func TestConfigScanToRisk_SeverityPreserved(t *testing.T) {
 			out := pipeline.New[model.AurelianModel]()
 			go func() {
 				defer out.Close()
-				configScanToRisk(result, out)
+				_ = configScanToRisk(result, out)
 			}()
 
 			items, err := out.Collect()

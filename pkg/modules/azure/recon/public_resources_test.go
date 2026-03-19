@@ -256,7 +256,7 @@ func TestResultToRisk_SeverityPreserved(t *testing.T) {
 			out := pipeline.New[model.AurelianModel]()
 			go func() {
 				defer out.Close()
-				resultToRisk(result, out)
+				_ = resultToRisk(result, out)
 			}()
 
 			items, err := out.Collect()
@@ -287,7 +287,7 @@ func TestResultToRisk_ContextContainsAllFields(t *testing.T) {
 	out := pipeline.New[model.AurelianModel]()
 	go func() {
 		defer out.Close()
-		resultToRisk(result, out)
+		_ = resultToRisk(result, out)
 	}()
 
 	items, err := out.Collect()

@@ -18,7 +18,7 @@ func startScanner(t *testing.T) *SecretScanner {
 	dbPath := filepath.Join(t.TempDir(), "titus.db")
 	var s SecretScanner
 	require.NoError(t, s.Start(ScannerConfig{DBPath: dbPath}))
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	return &s
 }
 
@@ -112,7 +112,7 @@ func TestStart_ExplicitPath(t *testing.T) {
 
 	var s SecretScanner
 	require.NoError(t, s.Start(ScannerConfig{DBPath: dbPath}))
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	assert.Equal(t, dbPath, s.DBPath(), "DBPath should return the provided path")
 	_, err := os.Stat(dbPath)

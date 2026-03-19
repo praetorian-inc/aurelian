@@ -129,7 +129,7 @@ func fetchRunbookContent(ctx extractContext, subscriptionID, resourceGroup, acco
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("runbook content request returned %d", resp.StatusCode)

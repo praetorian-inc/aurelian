@@ -71,7 +71,7 @@ func (m *GCPListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model
 	pipeline.Pipe(resolved, m.splitHierarchyResources(out), projects)
 
 	if !hasNonHierarchyResourceTypes(requestedTypes) {
-		projects.Drain()
+		_ = projects.Drain()
 		return out.Wait()
 	}
 

@@ -219,7 +219,7 @@ func addFlag(cmd *cobra.Command, param plugin.Parameter, flagValues map[string]i
 	}
 
 	if param.Required {
-		cmd.MarkFlagRequired(name)
+		_ = cmd.MarkFlagRequired(name)
 	}
 }
 
