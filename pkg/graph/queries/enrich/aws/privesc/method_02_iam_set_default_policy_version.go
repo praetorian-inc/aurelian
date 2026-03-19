@@ -1,4 +1,4 @@
-package methods
+package privesc
 
 import (
 	"github.com/praetorian-inc/aurelian/pkg/graph/queries/dsl"
@@ -17,7 +17,7 @@ func (m *Method02IAMSetDefaultPolicyVersion) ID() string {
 }
 
 func (m *Method02IAMSetDefaultPolicyVersion) Name() string {
-	return "IAM SetDefaultPolicyVersion"
+	return "Method02 IAM SetDefaultPolicyVersion"
 }
 
 func (m *Method02IAMSetDefaultPolicyVersion) Description() string {

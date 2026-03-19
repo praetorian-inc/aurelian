@@ -92,10 +92,198 @@ func TestCompileMethod03(t *testing.T) {
 		"WHERE n0._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
 		"  AND type(r0) = 'IAM_CREATEACCESSKEY'\n" +
 		"  AND n1._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND n0 <> n1\n" +
 		"RETURN path"
 
 	if got != want {
 		t.Errorf("Compile() mismatch.\ngot:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestCompileMethod04(t *testing.T) {
+	compiler := DefaultNeo4jCompiler()
+	q := dsl.Match(dsl.Principal(), dsl.HasPermission("iam:CreateLoginProfile"), dsl.Principal())
+
+	got, err := compiler.Compile(q)
+	if err != nil {
+		t.Fatalf("Compile() error: %v", err)
+	}
+
+	want := "MATCH path = (n0)-[r0]->(n1)\n" +
+		"WHERE n0._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND type(r0) = 'IAM_CREATELOGINPROFILE'\n" +
+		"  AND n1._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND n0 <> n1\n" +
+		"RETURN path"
+
+	if got != want {
+		t.Errorf("Compile() mismatch.\ngot:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestCompileMethod05(t *testing.T) {
+	compiler := DefaultNeo4jCompiler()
+	q := dsl.Match(dsl.Principal(), dsl.HasPermission("iam:UpdateLoginProfile"), dsl.Principal())
+
+	got, err := compiler.Compile(q)
+	if err != nil {
+		t.Fatalf("Compile() error: %v", err)
+	}
+
+	want := "MATCH path = (n0)-[r0]->(n1)\n" +
+		"WHERE n0._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND type(r0) = 'IAM_UPDATELOGINPROFILE'\n" +
+		"  AND n1._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND n0 <> n1\n" +
+		"RETURN path"
+
+	if got != want {
+		t.Errorf("Compile() mismatch.\ngot:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestCompileMethod06(t *testing.T) {
+	compiler := DefaultNeo4jCompiler()
+	q := dsl.Match(dsl.Principal(), dsl.HasPermission("iam:AttachUserPolicy"), dsl.Principal())
+
+	got, err := compiler.Compile(q)
+	if err != nil {
+		t.Fatalf("Compile() error: %v", err)
+	}
+
+	want := "MATCH path = (n0)-[r0]->(n1)\n" +
+		"WHERE n0._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND type(r0) = 'IAM_ATTACHUSERPOLICY'\n" +
+		"  AND n1._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND n0 <> n1\n" +
+		"RETURN path"
+
+	if got != want {
+		t.Errorf("Compile() mismatch.\ngot:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestCompileMethod07(t *testing.T) {
+	compiler := DefaultNeo4jCompiler()
+	q := dsl.Match(dsl.Principal(), dsl.HasPermission("iam:AttachGroupPolicy"), dsl.Principal())
+
+	got, err := compiler.Compile(q)
+	if err != nil {
+		t.Fatalf("Compile() error: %v", err)
+	}
+
+	want := "MATCH path = (n0)-[r0]->(n1)\n" +
+		"WHERE n0._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND type(r0) = 'IAM_ATTACHGROUPPOLICY'\n" +
+		"  AND n1._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND n0 <> n1\n" +
+		"RETURN path"
+
+	if got != want {
+		t.Errorf("Compile() mismatch.\ngot:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestCompileMethod08(t *testing.T) {
+	compiler := DefaultNeo4jCompiler()
+	q := dsl.Match(dsl.Principal(), dsl.HasPermission("iam:AttachRolePolicy"), dsl.Principal())
+
+	got, err := compiler.Compile(q)
+	if err != nil {
+		t.Fatalf("Compile() error: %v", err)
+	}
+
+	want := "MATCH path = (n0)-[r0]->(n1)\n" +
+		"WHERE n0._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND type(r0) = 'IAM_ATTACHROLEPOLICY'\n" +
+		"  AND n1._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND n0 <> n1\n" +
+		"RETURN path"
+
+	if got != want {
+		t.Errorf("Compile() mismatch.\ngot:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestCompileMethod09(t *testing.T) {
+	compiler := DefaultNeo4jCompiler()
+	q := dsl.Match(dsl.Principal(), dsl.HasPermission("iam:PutUserPolicy"), dsl.Principal())
+
+	got, err := compiler.Compile(q)
+	if err != nil {
+		t.Fatalf("Compile() error: %v", err)
+	}
+
+	want := "MATCH path = (n0)-[r0]->(n1)\n" +
+		"WHERE n0._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND type(r0) = 'IAM_PUTUSERPOLICY'\n" +
+		"  AND n1._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND n0 <> n1\n" +
+		"RETURN path"
+
+	if got != want {
+		t.Errorf("Compile() mismatch.\ngot:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestCompileMethod10(t *testing.T) {
+	compiler := DefaultNeo4jCompiler()
+	q := dsl.Match(dsl.Principal(), dsl.HasPermission("iam:PutGroupPolicy"), dsl.Principal())
+
+	got, err := compiler.Compile(q)
+	if err != nil {
+		t.Fatalf("Compile() error: %v", err)
+	}
+
+	want := "MATCH path = (n0)-[r0]->(n1)\n" +
+		"WHERE n0._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND type(r0) = 'IAM_PUTGROUPPOLICY'\n" +
+		"  AND n1._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND n0 <> n1\n" +
+		"RETURN path"
+
+	if got != want {
+		t.Errorf("Compile() mismatch.\ngot:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestCompileSelfReferentialAllowed(t *testing.T) {
+	compiler := DefaultNeo4jCompiler()
+	q := dsl.Query{
+		From:                    dsl.Principal(),
+		Permission:              dsl.HasPermission("iam:CreateAccessKey"),
+		To:                      dsl.Principal(),
+		SelfReferentialBehavior: dsl.AllowSelfReferential,
+	}
+
+	got, err := compiler.Compile(q)
+	if err != nil {
+		t.Fatalf("Compile() error: %v", err)
+	}
+
+	want := "MATCH path = (n0)-[r0]->(n1)\n" +
+		"WHERE n0._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"  AND type(r0) = 'IAM_CREATEACCESSKEY'\n" +
+		"  AND n1._resourceType IN ['AWS::IAM::User', 'AWS::IAM::Role', 'AWS::IAM::Group']\n" +
+		"RETURN path"
+
+	if got != want {
+		t.Errorf("Compile() mismatch.\ngot:\n%s\n\nwant:\n%s", got, want)
+	}
+}
+
+func TestCompileDifferentKindsNoSelfReferentialClause(t *testing.T) {
+	compiler := DefaultNeo4jCompiler()
+	q := dsl.Match(dsl.Principal(), dsl.HasPermission("iam:CreatePolicyVersion"), dsl.ManagedPolicy())
+
+	got, err := compiler.Compile(q)
+	if err != nil {
+		t.Fatalf("Compile() error: %v", err)
+	}
+
+	// Different node kinds → no n0 <> n1 clause even with default ForbidSelfReferential
+	if strings.Contains(got, "n0 <> n1") {
+		t.Errorf("should not have self-referential clause for different node kinds:\n%s", got)
 	}
 }
 

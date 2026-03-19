@@ -1,4 +1,4 @@
-package methods
+package privesc
 
 import (
 	"github.com/praetorian-inc/aurelian/pkg/graph/queries/dsl"

@@ -15,11 +15,27 @@ type Permission struct {
 	Action string
 }
 
+type SelfReferentialBehavior string
+
+const (
+	ForbidSelfReferential SelfReferentialBehavior = "" // use empty string so defaults forbid
+	AllowSelfReferential  SelfReferentialBehavior = "allow"
+)
+
 // Query is the minimal AST: a single-hop path from one node to another via a permission.
 type Query struct {
-	From       Node
-	Permission Permission
-	To         Node
+	From                    Node
+	Permission              Permission
+	To                      Node
+	SelfReferentialBehavior SelfReferentialBehavior
+}
+
+type QueryOption func(*Query)
+
+func (q *Query) WithSelfReferentialBehavior(selfReferentialBehavior SelfReferentialBehavior) QueryOption {
+	return func(q *Query) {
+		q.SelfReferentialBehavior = selfReferentialBehavior
+	}
 }
 
 // Compiler transforms a Query AST into a backend-specific query string.
@@ -69,6 +85,12 @@ func HasPermission(action string) Permission {
 }
 
 // Match builds a single-hop query: from --[permission]--> to.
-func Match(from Node, perm Permission, to Node) Query {
-	return Query{From: from, Permission: perm, To: to}
+func Match(from Node, perm Permission, to Node, opts ...QueryOption) Query {
+	q := Query{From: from, Permission: perm, To: to}
+
+	for _, opt := range opts {
+		opt(&q)
+	}
+
+	return q
 }

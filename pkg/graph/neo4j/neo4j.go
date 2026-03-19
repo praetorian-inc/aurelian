@@ -56,6 +56,10 @@ func (c *Neo4jCompiler) Compile(q dsl.Query) (string, error) {
 	}
 	wheres = append(wheres, toPred(toAlias))
 
+	if q.SelfReferentialBehavior != dsl.AllowSelfReferential && q.From.Kind == q.To.Kind {
+		wheres = append(wheres, fmt.Sprintf("%s <> %s", fromAlias, toAlias))
+	}
+
 	cypher := fmt.Sprintf(
 		"MATCH path = (%s)-[%s]->(%s)\nWHERE %s\nRETURN path",
 		fromAlias, relAlias, toAlias,

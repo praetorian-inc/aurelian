@@ -1,4 +1,4 @@
-package methods
+package privesc
 
 import (
 	"github.com/praetorian-inc/aurelian/pkg/graph/queries/dsl"
@@ -15,7 +15,7 @@ func (m *Method03IAMCreateAccessKey) ID() string {
 }
 
 func (m *Method03IAMCreateAccessKey) Name() string {
-	return "IAM CreateAccessKey"
+	return "Method03 IAM CreateAccessKey"
 }
 
 func (m *Method03IAMCreateAccessKey) Description() string {

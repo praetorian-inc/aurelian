@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	privesc "github.com/praetorian-inc/aurelian/pkg/graph/queries/dsl"
+	privesc2 "github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc"
 	"log/slog"
 
-	"github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc/methods"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -54,7 +54,7 @@ func (m *DetectPrivescsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	defer m.Queryer.Close()
 
 	ctx := context.Background()
-	for _, method := range methods.AllPrivescQueries {
+	for _, method := range privesc2.AllPrivescQueries {
 		if err := m.runMethod(ctx, method, out); err != nil {
 			slog.Warn("privesc method failed", "id", method.ID(), "error", err)
 		}
@@ -64,7 +64,7 @@ func (m *DetectPrivescsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 
 func (m *DetectPrivescsModule) runMethod(
 	ctx context.Context,
-	method methods.AWSPrivesc,
+	method privesc2.AWSPrivesc,
 	out *pipeline.P[model.AurelianModel],
 ) error {
 	slog.Debug("running privesc query", "id", method.ID())
@@ -73,6 +73,8 @@ func (m *DetectPrivescsModule) runMethod(
 	if err != nil {
 		return fmt.Errorf("executing %s: %w", method.ID(), err)
 	}
+
+	slog.Info("finished query", "id", method.ID(), "count", len(paths))
 
 	for _, path := range paths {
 		risk, err := m.matchedPathToRisk(method, path)
@@ -85,7 +87,7 @@ func (m *DetectPrivescsModule) runMethod(
 	return nil
 }
 
-func (m *DetectPrivescsModule) matchedPathToRisk(method methods.AWSPrivesc, path privesc.MatchedPath) (output.AurelianRisk, error) {
+func (m *DetectPrivescsModule) matchedPathToRisk(method privesc2.AWSPrivesc, path privesc.MatchedPath) (output.AurelianRisk, error) {
 	contextBytes, err := json.Marshal(path.Hops)
 	if err != nil {
 		return output.AurelianRisk{}, fmt.Errorf("marshalling match context: %w", err)

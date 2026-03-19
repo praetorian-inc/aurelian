@@ -1,4 +1,4 @@
-package methods
+package privesc
 
 import "github.com/praetorian-inc/aurelian/pkg/graph/queries/dsl"
 
@@ -15,4 +15,11 @@ var AllPrivescQueries = []AWSPrivesc{
 	NewMethod01IAMCreatePolicyVersion(),
 	NewMethod02IAMSetDefaultPolicyVersion(),
 	NewMethod03IAMCreateAccessKey(),
+	NewMethod04IAMCreateLoginProfile(),
+	NewMethod05IAMUpdateLoginProfile(),
+	NewMethod06IAMAttachUserPolicy(),
+	NewMethod07IAMAttachGroupPolicy(),
+	NewMethod08IAMAttachRolePolicy(),
+	NewMethod09IAMPutUserPolicy(),
+	NewMethod10IAMPutGroupPolicy(),
 }
