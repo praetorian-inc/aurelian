@@ -38,7 +38,7 @@ func extractStaticWebAppSettings(ctx extractContext, r output.AzureResource, out
 }
 
 func parseStaticWebAppID(resourceID string) (resourceGroup, siteName string, err error) {
-	_, rg, segments, parseErr := parseAzureResourceID(resourceID)
+	_, rg, segments, parseErr := ParseAzureResourceID(resourceID)
 	if parseErr != nil {
 		return "", "", fmt.Errorf("failed to parse static web app resource ID: %w", parseErr)
 	}

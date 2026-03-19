@@ -19,7 +19,7 @@ func init() {
 // data-plane client for Digital Twins; this would require using azcore pipeline or net/http
 // with BearerTokenPolicy for auth.
 func extractDigitalTwinsProperties(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Digital Twins resource ID: %w", err)
 	}

@@ -20,7 +20,7 @@ func init() {
 }
 
 func extractAutomationVariables(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse automation account resource ID: %w", err)
 	}
@@ -62,7 +62,7 @@ func extractAutomationVariables(ctx extractContext, r output.AzureResource, out 
 }
 
 func extractAutomationRunbooks(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse automation account resource ID: %w", err)
 	}

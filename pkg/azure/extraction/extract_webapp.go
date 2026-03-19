@@ -91,7 +91,7 @@ func extractWebAppHostKeys(ctx extractContext, r output.AzureResource, out *pipe
 }
 
 func parseWebAppID(resourceID string) (resourceGroup, appName string, err error) {
-	_, rg, segments, parseErr := parseAzureResourceID(resourceID)
+	_, rg, segments, parseErr := ParseAzureResourceID(resourceID)
 	if parseErr != nil {
 		return "", "", fmt.Errorf("failed to parse web app resource ID: %w", parseErr)
 	}

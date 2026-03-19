@@ -20,7 +20,7 @@ func init() {
 
 // extractTemplateSpecVersions lists all versions of a Template Spec and marshals each version's template content.
 func extractTemplateSpecVersions(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse template spec resource ID: %w", err)
 	}
@@ -63,7 +63,7 @@ func extractTemplateSpecVersions(ctx extractContext, r output.AzureResource, out
 // extractBlueprintArtifacts lists artifacts for a Blueprint definition.
 // Note: Azure Blueprints are deprecated as of July 2026.
 func extractBlueprintArtifacts(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, _, segments, err := parseAzureResourceID(r.ResourceID)
+	_, _, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse blueprint resource ID: %w", err)
 	}
@@ -106,7 +106,7 @@ func extractBlueprintArtifacts(ctx extractContext, r output.AzureResource, out *
 func extractPolicyDefinitions(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
 	// Policy definitions are subscription-scope resources:
 	// /subscriptions/{sub}/providers/Microsoft.Authorization/policyDefinitions/{name}
-	// parseAzureResourceID requires a resource group, so extract the name from the last path segment.
+	// ParseAzureResourceID requires a resource group, so extract the name from the last path segment.
 	parts := strings.Split(r.ResourceID, "/")
 	policyName := parts[len(parts)-1]
 	if policyName == "" {

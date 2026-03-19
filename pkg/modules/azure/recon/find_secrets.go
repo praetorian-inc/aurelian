@@ -24,7 +24,9 @@ func init() {
 type AzureFindSecretsConfig struct {
 	plugin.AzureCommonRecon
 	secrets.ScannerConfig
-	MaxCosmosDocSize int `param:"max-cosmos-doc-size" desc:"Max individual Cosmos document size in bytes" default:"1048576"`
+	Concurrency      int      `param:"concurrency" desc:"Maximum concurrent API requests" default:"5"`
+	ResourceID       []string `param:"resource-id" desc:"Azure resource ID(s) to scan directly, skipping enumeration" shortcode:"i"`
+	MaxCosmosDocSize int      `param:"max-cosmos-doc-size" desc:"Max individual Cosmos document size in bytes" default:"1048576"`
 }
 
 // AzureFindSecretsModule scans Azure resources for hardcoded secrets using Titus.
@@ -64,6 +66,7 @@ func (m *AzureFindSecretsModule) Parameters() any {
 
 func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.AzureFindSecretsConfig
+	c.Concurrency = max(1, c.Concurrency)
 	if c.DBPath == "" {
 		c.DBPath = secrets.DefaultDBPath(c.OutputDir)
 	}
@@ -78,17 +81,74 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 		}
 	}()
 
+	// Branch: resource-level targeting (like AWS ResourceARN) vs subscription-wide scan.
+	var listed *pipeline.P[output.AzureResource]
+	if len(c.ResourceID) > 0 {
+		var err error
+		listed, err = m.listByResourceID(c)
+		if err != nil {
+			return err
+		}
+	} else {
+		var err error
+		listed, err = m.listBySubscription(c)
+		if err != nil {
+			return err
+		}
+	}
+
+	extractor := extraction.NewAzureExtractor(c.AzureCredential)
+	extractor.MaxCosmosDocSize = m.MaxCosmosDocSize
+	extracted := pipeline.New[output.ScanInput]()
+	pipeOpts := &pipeline.PipeOpts{Concurrency: m.Concurrency}
+	pipeline.Pipe(listed, extractor.Extract, extracted, pipeOpts)
+
+	// Scan extracted content and convert results to risks.
+	scanned := pipeline.New[secrets.SecretScanResult]()
+	pipeline.Pipe(extracted, s.Scan, scanned)
+	pipeline.Pipe(scanned, secrets.RiskFromScanResult, out)
+
+	return out.Wait()
+}
+
+// listByResourceID builds AzureResource structs directly from user-provided resource IDs,
+// skipping ARG and ARM enumeration entirely. Mirrors AWS's ResourceARN path.
+// Hydrates each resource via ARG to populate Location, DisplayName, and TenantID
+// which are not derivable from the resource ID string alone.
+func (m *AzureFindSecretsModule) listByResourceID(c AzureFindSecretsConfig) (*pipeline.P[output.AzureResource], error) {
+	resources := make([]output.AzureResource, 0, len(c.ResourceID))
+	for _, id := range c.ResourceID {
+		r, err := azureResourceFromID(id)
+		if err != nil {
+			slog.Warn("skipping invalid resource ID", "id", id, "error", err)
+			continue
+		}
+		resources = append(resources, r)
+	}
+
+	if len(resources) == 0 && len(c.ResourceID) > 0 {
+		return nil, fmt.Errorf("all %d provided resource IDs were invalid", len(c.ResourceID))
+	}
+
+	// Hydrate resources with metadata from ARG (location, name, tenantId).
+	// Resources not in ARG (e.g., policy definitions) retain parsed-only fields.
+	hydrateFromARG(c.AzureCredential, resources)
+
+	return pipeline.From(resources...), nil
+}
+
+// listBySubscription runs the full ARG + ARM enumeration across subscriptions.
+func (m *AzureFindSecretsModule) listBySubscription(c AzureFindSecretsConfig) (*pipeline.P[output.AzureResource], error) {
 	resolver := subscriptions.NewSubscriptionResolver(c.AzureCredential)
 	subscriptionIDs, err := resolveSubscriptionIDs(c.SubscriptionIDs, resolver)
 	if err != nil {
-		return fmt.Errorf("failed to resolve subscriptions: %w", err)
+		return nil, fmt.Errorf("failed to resolve subscriptions: %w", err)
 	}
 	if len(subscriptionIDs) == 0 {
 		slog.Warn("no accessible Azure subscriptions found")
-		return nil
+		return pipeline.From[output.AzureResource](), nil
 	}
 
-	// Resolve subscriptions once, then fan out to both paths.
 	idStream := pipeline.From(subscriptionIDs...)
 
 	resolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
@@ -96,12 +156,11 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 
 	subsList, err := resolvedSubs.Collect()
 	if err != nil {
-		return fmt.Errorf("failed to resolve subscriptions: %w", err)
+		return nil, fmt.Errorf("failed to resolve subscriptions: %w", err)
 	}
 
 	// ARG path: enumerate resources discoverable via Resource Graph.
 	argResolvedSubs := pipeline.From(subsList...)
-
 	argInputs := pipeline.New[resourcegraph.ListerInput]()
 	pipeline.Pipe(argResolvedSubs, m.toListerInput, argInputs)
 
@@ -111,25 +170,11 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 
 	// ARM path: enumerate resource types not indexed by ARG.
 	armResolvedSubs := pipeline.From(subsList...)
-
 	armEnumerator := armenum.NewARMEnumerator(c.AzureCredential)
 	armListed := pipeline.New[output.AzureResource]()
 	pipeline.Pipe(armResolvedSubs, armEnumerator.List, armListed)
 
-	// Merge both enumeration paths and extract secrets.
-	listed := pipeline.Merge(argListed, armListed)
-
-	extractor := extraction.NewAzureExtractor(c.AzureCredential)
-	extractor.MaxCosmosDocSize = m.MaxCosmosDocSize
-	extracted := pipeline.New[output.ScanInput]()
-	pipeline.Pipe(listed, extractor.Extract, extracted)
-
-	// Scan extracted content and convert results to risks.
-	scanned := pipeline.New[secrets.SecretScanResult]()
-	pipeline.Pipe(extracted, s.Scan, scanned)
-	pipeline.Pipe(scanned, secrets.RiskFromScanResult, out)
-
-	return out.Wait()
+	return pipeline.Merge(argListed, armListed), nil
 }
 
 // argResourceTypes lists all Azure resource types discoverable via Resource Graph

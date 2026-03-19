@@ -17,7 +17,7 @@ func init() {
 }
 
 func extractVMUserData(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse VM resource ID: %w", err)
 	}
@@ -79,7 +79,7 @@ func extractVMUserData(ctx extractContext, r output.AzureResource, out *pipeline
 }
 
 func extractVMExtensions(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse VM resource ID: %w", err)
 	}

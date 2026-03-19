@@ -54,6 +54,7 @@ func TestFindSecretsParameters(t *testing.T) {
 	}
 
 	assert.True(t, paramNames["subscription-ids"], "should have subscription-ids param")
+	assert.True(t, paramNames["resource-id"], "should have resource-id param")
 	assert.True(t, paramNames["output-dir"], "should have output-dir param")
 	assert.True(t, paramNames["db-path"], "should have db-path param")
 	assert.True(t, paramNames["max-cosmos-doc-size"], "should have max-cosmos-doc-size param")
@@ -308,4 +309,70 @@ func TestRiskFromScanResult_ImpactedResourceID_NoFindingID(t *testing.T) {
 
 	risk := items[0].(output.AurelianRisk)
 	assert.Equal(t, "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/myvm", risk.ImpactedResourceID, "should use bare ResourceRef when FindingID is empty")
+}
+
+func TestListByResourceID_ValidIDs(t *testing.T) {
+	m := &AzureFindSecretsModule{}
+	c := AzureFindSecretsConfig{}
+	c.ResourceID = []string{
+		"/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-1/providers/Microsoft.Compute/virtualMachines/vm-1",
+		"/subscriptions/00000000-0000-0000-0000-000000000002/resourceGroups/rg-2/providers/Microsoft.Web/sites/app-1",
+	}
+
+	listed, err := m.listByResourceID(c)
+	require.NoError(t, err)
+	resources, err := listed.Collect()
+	require.NoError(t, err)
+	require.Len(t, resources, 2)
+
+	assert.Equal(t, "00000000-0000-0000-0000-000000000001", resources[0].SubscriptionID)
+	assert.Equal(t, "rg-1", resources[0].ResourceGroup)
+	assert.Equal(t, "Microsoft.Compute/virtualMachines", resources[0].ResourceType)
+	assert.Equal(t, c.ResourceID[0], resources[0].ResourceID)
+
+	assert.Equal(t, "00000000-0000-0000-0000-000000000002", resources[1].SubscriptionID)
+	assert.Equal(t, "rg-2", resources[1].ResourceGroup)
+	assert.Equal(t, "Microsoft.Web/sites", resources[1].ResourceType)
+	assert.Equal(t, c.ResourceID[1], resources[1].ResourceID)
+}
+
+func TestListByResourceID_SkipsInvalid(t *testing.T) {
+	m := &AzureFindSecretsModule{}
+	c := AzureFindSecretsConfig{}
+	c.ResourceID = []string{
+		"not-a-valid-id",
+		"/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-1/providers/Microsoft.Compute/virtualMachines/vm-1",
+	}
+
+	listed, err := m.listByResourceID(c)
+	require.NoError(t, err)
+	resources, err := listed.Collect()
+	require.NoError(t, err)
+	require.Len(t, resources, 1, "invalid IDs should be skipped with a warning")
+	assert.Equal(t, "00000000-0000-0000-0000-000000000001", resources[0].SubscriptionID)
+}
+
+func TestListByResourceID_AllInvalid(t *testing.T) {
+	m := &AzureFindSecretsModule{}
+	c := AzureFindSecretsConfig{}
+	c.ResourceID = []string{
+		"not-a-valid-id",
+		"also-not-valid",
+	}
+
+	_, err := m.listByResourceID(c)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "all 2 provided resource IDs were invalid")
+}
+
+func TestListByResourceID_Empty(t *testing.T) {
+	m := &AzureFindSecretsModule{}
+	c := AzureFindSecretsConfig{}
+	c.ResourceID = []string{}
+
+	listed, err := m.listByResourceID(c)
+	require.NoError(t, err)
+	resources, err := listed.Collect()
+	require.NoError(t, err)
+	assert.Empty(t, resources)
 }

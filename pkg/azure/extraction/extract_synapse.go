@@ -20,7 +20,7 @@ func init() {
 // The armsynapse SDK does not expose a LinkedServicesClient; data-plane access would require
 // using azcore pipeline or net/http with BearerTokenPolicy for auth against the dev endpoint.
 func extractSynapseProperties(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Synapse workspace resource ID: %w", err)
 	}
