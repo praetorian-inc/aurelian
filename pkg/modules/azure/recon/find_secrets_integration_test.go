@@ -281,6 +281,191 @@ func TestAzureFindSecretsResourceMultiple(t *testing.T) {
 	assert.True(t, foundWebApp, "expected risk for Web App %s", webAppID)
 }
 
+// TestAzureFindSecretsResourcePolicyDefinition verifies that --resource-id works for
+// subscription-scoped resources (no resourceGroups segment in the ID). Policy definitions
+// are subscription-scoped and ARM-enumerated, exercising the arm.ParseResourceID path.
+func TestAzureFindSecretsResourcePolicyDefinition(t *testing.T) {
+	fixture := testutil.NewAzureFixture(t, "azure/recon/find-secrets")
+	fixture.Setup()
+
+	mod, ok := plugin.Get(plugin.PlatformAzure, plugin.CategoryRecon, "find-secrets")
+	if !ok {
+		t.Fatal("azure find-secrets module not registered in plugin system")
+	}
+
+	policyID := fixture.Output("policy_definition_id")
+	require.NotEmpty(t, policyID, "fixture must provide policy_definition_id output")
+
+	cfg := plugin.Config{
+		Args: map[string]any{
+			"resource-id": []string{policyID},
+		},
+		Context: context.Background(),
+	}
+
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	var risks []output.AurelianRisk
+	for m := range p2.Range() {
+		r, ok := m.(output.AurelianRisk)
+		if !ok {
+			continue
+		}
+		risks = append(risks, r)
+	}
+	require.NoError(t, p2.Wait())
+	require.NotEmpty(t, risks, "expected at least one risk for policy definition resource")
+
+	t.Run("only targeted policy definition has risks", func(t *testing.T) {
+		for _, risk := range risks {
+			assert.True(t, strings.Contains(strings.ToLower(risk.ImpactedResourceID), strings.ToLower(policyID)),
+				"risk ImpactedResourceID %q should reference only the targeted policy definition", risk.ImpactedResourceID)
+		}
+	})
+
+	t.Run("all risks have valid severity", func(t *testing.T) {
+		validSeverities := map[output.RiskSeverity]bool{
+			output.RiskSeverityLow:      true,
+			output.RiskSeverityMedium:   true,
+			output.RiskSeverityHigh:     true,
+			output.RiskSeverityCritical: true,
+		}
+		for _, risk := range risks {
+			assert.True(t, validSeverities[risk.Severity],
+				"unexpected severity %q for risk %s", risk.Severity, risk.Name)
+		}
+	})
+
+	t.Run("all risks have valid proof context", func(t *testing.T) {
+		for _, risk := range risks {
+			require.NotEmpty(t, risk.Context, "risk context should not be empty")
+			var ctx map[string]interface{}
+			require.NoError(t, json.Unmarshal(risk.Context, &ctx), "risk context must be valid JSON")
+			assert.NotEmpty(t, ctx["rule_text_id"], "risk context should have rule_text_id")
+			assert.NotEmpty(t, ctx["resource_ref"], "risk context should have resource_ref")
+			assert.NotEmpty(t, ctx["matches"], "risk context should have matches")
+		}
+	})
+}
+
+// TestAzureFindSecretsResourceARMDeployment verifies --resource-id with a resource-group-scoped
+// ARM deployment — a resource type discovered via ARM enumeration rather than ARG.
+func TestAzureFindSecretsResourceARMDeployment(t *testing.T) {
+	fixture := testutil.NewAzureFixture(t, "azure/recon/find-secrets")
+	fixture.Setup()
+
+	mod, ok := plugin.Get(plugin.PlatformAzure, plugin.CategoryRecon, "find-secrets")
+	if !ok {
+		t.Fatal("azure find-secrets module not registered in plugin system")
+	}
+
+	deploymentID := fixture.Output("arm_deployment_id")
+	require.NotEmpty(t, deploymentID, "fixture must provide arm_deployment_id output")
+
+	cfg := plugin.Config{
+		Args: map[string]any{
+			"resource-id": []string{deploymentID},
+		},
+		Context: context.Background(),
+	}
+
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	var risks []output.AurelianRisk
+	for m := range p2.Range() {
+		r, ok := m.(output.AurelianRisk)
+		if !ok {
+			continue
+		}
+		risks = append(risks, r)
+	}
+	require.NoError(t, p2.Wait())
+	require.NotEmpty(t, risks, "expected at least one risk for ARM deployment resource")
+
+	t.Run("only targeted deployment has risks", func(t *testing.T) {
+		for _, risk := range risks {
+			assert.True(t, strings.Contains(strings.ToLower(risk.ImpactedResourceID), strings.ToLower(deploymentID)),
+				"risk ImpactedResourceID %q should reference only the targeted deployment", risk.ImpactedResourceID)
+		}
+	})
+
+	t.Run("all risks have valid proof context", func(t *testing.T) {
+		for _, risk := range risks {
+			require.NotEmpty(t, risk.Context, "risk context should not be empty")
+			var ctx map[string]interface{}
+			require.NoError(t, json.Unmarshal(risk.Context, &ctx), "risk context must be valid JSON")
+			assert.NotEmpty(t, ctx["rule_text_id"], "risk context should have rule_text_id")
+			assert.NotEmpty(t, ctx["resource_ref"], "risk context should have resource_ref")
+		}
+	})
+}
+
+// TestAzureFindSecretsResourceMixedScopes verifies --resource-id with a mix of
+// resource-group-scoped (VM) and subscription-scoped (policy definition) resources
+// in a single invocation.
+func TestAzureFindSecretsResourceMixedScopes(t *testing.T) {
+	fixture := testutil.NewAzureFixture(t, "azure/recon/find-secrets")
+	fixture.Setup()
+
+	mod, ok := plugin.Get(plugin.PlatformAzure, plugin.CategoryRecon, "find-secrets")
+	if !ok {
+		t.Fatal("azure find-secrets module not registered in plugin system")
+	}
+
+	vmID := fixture.Output("vm_id")
+	policyID := fixture.Output("policy_definition_id")
+	require.NotEmpty(t, vmID)
+	require.NotEmpty(t, policyID)
+
+	cfg := plugin.Config{
+		Args: map[string]any{
+			"resource-id": []string{vmID, policyID},
+		},
+		Context: context.Background(),
+	}
+
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	var risks []output.AurelianRisk
+	for m := range p2.Range() {
+		r, ok := m.(output.AurelianRisk)
+		if !ok {
+			continue
+		}
+		risks = append(risks, r)
+	}
+	require.NoError(t, p2.Wait())
+	require.NotEmpty(t, risks, "expected risks from mixed-scope resource targeting")
+
+	t.Run("detects secret in VM", func(t *testing.T) {
+		assert.True(t, hasRiskForAzureResource(risks, vmID),
+			"expected risk for VM %s", vmID)
+	})
+
+	t.Run("detects secret in policy definition", func(t *testing.T) {
+		assert.True(t, hasRiskForAzureResource(risks, policyID),
+			"expected risk for policy definition %s", policyID)
+	})
+
+	t.Run("all risks reference only targeted resources", func(t *testing.T) {
+		lowerVM := strings.ToLower(vmID)
+		lowerPolicy := strings.ToLower(policyID)
+		for _, risk := range risks {
+			lower := strings.ToLower(risk.ImpactedResourceID)
+			referencesVM := strings.Contains(lower, lowerVM)
+			referencesPolicy := strings.Contains(lower, lowerPolicy)
+			assert.True(t, referencesVM || referencesPolicy,
+				"risk %q should reference one of the targeted resources, not leak to others", risk.ImpactedResourceID)
+		}
+	})
+}
+
 func hasRiskForAzureResource(risks []output.AurelianRisk, resourceID string) bool {
 	lowerID := strings.ToLower(resourceID)
 	for _, risk := range risks {
