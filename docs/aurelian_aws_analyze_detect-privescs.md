@@ -11,7 +11,7 @@ aurelian aws analyze detect-privescs [flags]
 ```
   -h, --help                    help for detect-privescs
       --neo4j-password string   Neo4j password (default "neo4j")
-      --neo4j-uri string        Neo4j connection URI (e.g., bolt://localhost:7687)
+      --neo4j-uri string        Neo4j connection URI (e.g., bolt://localhost:7687) (required)
       --neo4j-username string   Neo4j username (default "neo4j")
 ```
 
