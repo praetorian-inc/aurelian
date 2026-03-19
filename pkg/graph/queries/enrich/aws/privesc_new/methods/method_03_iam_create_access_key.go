@@ -1,4 +1,6 @@
-package privescnew
+package methods
+
+import "github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc_new"
 
 // Method03IAMCreateAccessKey is a Go-backed version of:
 // enrich/aws/privesc/method_03_iam_create_access_key.yaml
@@ -11,7 +13,7 @@ func (m *Method03IAMCreateAccessKey) ID() string {
 }
 
 func (m *Method03IAMCreateAccessKey) Name() string {
-	return "IAM CreateAccessKey Privilege Escalation"
+	return "IAM CreateAccessKey"
 }
 
 func (m *Method03IAMCreateAccessKey) Description() string {
@@ -20,10 +22,10 @@ func (m *Method03IAMCreateAccessKey) Description() string {
 
 func (m *Method03IAMCreateAccessKey) Severity() string { return "high" }
 
-func (m *Method03IAMCreateAccessKey) Query() Query {
-	return Match(
-		Principal(),
-		HasPermission("iam:CreateAccessKey"),
-		Principal(),
+func (m *Method03IAMCreateAccessKey) Query() privescnew.Query {
+	return privescnew.Match(
+		privescnew.Principal(),
+		privescnew.HasPermission("iam:CreateAccessKey"),
+		privescnew.Principal(),
 	)
 }

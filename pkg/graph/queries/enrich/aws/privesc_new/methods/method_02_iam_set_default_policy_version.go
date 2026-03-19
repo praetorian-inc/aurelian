@@ -1,4 +1,6 @@
-package privescnew
+package methods
+
+import "github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc_new"
 
 // Method02IAMSetDefaultPolicyVersion is a Go-backed version of:
 // enrich/aws/privesc/method_02_iam_set_default_policy_version.yaml
@@ -13,7 +15,7 @@ func (m *Method02IAMSetDefaultPolicyVersion) ID() string {
 }
 
 func (m *Method02IAMSetDefaultPolicyVersion) Name() string {
-	return "IAM SetDefaultPolicyVersion Privilege Escalation"
+	return "IAM SetDefaultPolicyVersion"
 }
 
 func (m *Method02IAMSetDefaultPolicyVersion) Description() string {
@@ -22,10 +24,10 @@ func (m *Method02IAMSetDefaultPolicyVersion) Description() string {
 
 func (m *Method02IAMSetDefaultPolicyVersion) Severity() string { return "high" }
 
-func (m *Method02IAMSetDefaultPolicyVersion) Query() Query {
-	return Match(
-		Principal(),
-		HasPermission("iam:SetDefaultPolicyVersion"),
-		ManagedPolicy(),
+func (m *Method02IAMSetDefaultPolicyVersion) Query() privescnew.Query {
+	return privescnew.Match(
+		privescnew.Principal(),
+		privescnew.HasPermission("iam:SetDefaultPolicyVersion"),
+		privescnew.ManagedPolicy(),
 	)
 }

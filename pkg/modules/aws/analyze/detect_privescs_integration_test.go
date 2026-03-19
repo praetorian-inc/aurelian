@@ -166,19 +166,26 @@ func TestDetectPrivescs(t *testing.T) {
 		}
 	})
 
-	t.Run("all risks have path context with nodes and relationships", func(t *testing.T) {
+	t.Run("all risks have matched path context with hops", func(t *testing.T) {
 		for _, risk := range risks {
 			var ctx map[string]interface{}
 			err := json.Unmarshal(risk.Context, &ctx)
 			require.NoError(t, err, "risk context should be valid JSON")
 
-			nodes, ok := ctx["nodes"].([]interface{})
-			require.True(t, ok, "context should have 'nodes' array")
-			assert.GreaterOrEqual(t, len(nodes), 2, "path should have at least 2 nodes")
+			hops, ok := ctx["hops"].([]interface{})
+			require.True(t, ok, "context should have 'hops' array")
+			assert.NotEmpty(t, hops, "should have at least 1 hop")
 
-			rels, ok := ctx["relationships"].([]interface{})
-			require.True(t, ok, "context should have 'relationships' array")
-			assert.GreaterOrEqual(t, len(rels), 1, "path should have at least 1 relationship")
+			for _, h := range hops {
+				hop, ok := h.(map[string]interface{})
+				require.True(t, ok)
+				assert.NotEmpty(t, hop["source_id"], "hop should have non-empty source_id")
+				assert.NotEmpty(t, hop["target_id"], "hop should have non-empty target_id")
+
+				actions, ok := hop["actions"].([]interface{})
+				require.True(t, ok, "hop should have 'actions' array")
+				assert.NotEmpty(t, actions, "hop should have at least 1 action")
+			}
 		}
 	})
 

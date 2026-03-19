@@ -1,4 +1,6 @@
-package privescnew
+package methods
+
+import "github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc_new"
 
 // AWSPrivesc defines the minimal contract for read-only privilege escalation queries.
 type AWSPrivesc interface {
@@ -6,7 +8,7 @@ type AWSPrivesc interface {
 	Name() string
 	Description() string
 	Severity() string
-	Query() Query
+	Query() privescnew.Query
 }
 
 // Method01IAMCreatePolicyVersion is a Go-backed version of:
@@ -29,10 +31,10 @@ func (m *Method01IAMCreatePolicyVersion) Description() string {
 
 func (m *Method01IAMCreatePolicyVersion) Severity() string { return "high" }
 
-func (m *Method01IAMCreatePolicyVersion) Query() Query {
-	return Match(
-		Principal(),
-		HasPermission("iam:CreatePolicyVersion"),
-		ManagedPolicy(),
+func (m *Method01IAMCreatePolicyVersion) Query() privescnew.Query {
+	return privescnew.Match(
+		privescnew.Principal(),
+		privescnew.HasPermission("iam:CreatePolicyVersion"),
+		privescnew.ManagedPolicy(),
 	)
 }

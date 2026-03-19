@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/neo4j/neo4j-go-driver/v5/neo4j/dbtype"
 	privesc "github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc_new"
+	"github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc_new/methods"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -80,31 +80,31 @@ func (m *DetectPrivescsModule) resolveQueryer() (privesc.Queryer, error) {
 	return q, nil
 }
 
-func allMethods() []privesc.AWSPrivesc {
-	return []privesc.AWSPrivesc{
-		privesc.NewMethod01IAMCreatePolicyVersion(),
-		privesc.NewMethod02IAMSetDefaultPolicyVersion(),
-		privesc.NewMethod03IAMCreateAccessKey(),
+func allMethods() []methods.AWSPrivesc {
+	return []methods.AWSPrivesc{
+		methods.NewMethod01IAMCreatePolicyVersion(),
+		methods.NewMethod02IAMSetDefaultPolicyVersion(),
+		methods.NewMethod03IAMCreateAccessKey(),
 	}
 }
 
 func runMethod(
 	ctx context.Context,
 	queryer privesc.Queryer,
-	method privesc.AWSPrivesc,
+	method methods.AWSPrivesc,
 	out *pipeline.P[model.AurelianModel],
 ) error {
 	slog.Debug("running privesc query", "id", method.ID())
 
-	result, err := queryer.Query(ctx, method.Query())
+	paths, err := queryer.Query(ctx, method.Query())
 	if err != nil {
 		return fmt.Errorf("executing %s: %w", method.ID(), err)
 	}
 
-	for _, record := range result.Records {
-		risk, err := recordToRisk(method, record)
+	for _, path := range paths {
+		risk, err := matchedPathToRisk(method, path)
 		if err != nil {
-			slog.Warn("skipping record", "method", method.ID(), "error", err)
+			slog.Warn("skipping path", "method", method.ID(), "error", err)
 			continue
 		}
 		out.Send(risk)
@@ -112,17 +112,10 @@ func runMethod(
 	return nil
 }
 
-func recordToRisk(method privesc.AWSPrivesc, record map[string]interface{}) (output.AurelianRisk, error) {
-	pathData, ok := record["path"]
-	if !ok {
-		return output.AurelianRisk{}, fmt.Errorf("record missing 'path' column")
-	}
-
-	cleanPath := pathToMap(pathData)
-
-	contextBytes, err := json.Marshal(cleanPath)
+func matchedPathToRisk(method methods.AWSPrivesc, path privesc.MatchedPath) (output.AurelianRisk, error) {
+	contextBytes, err := json.Marshal(path.Hops)
 	if err != nil {
-		return output.AurelianRisk{}, fmt.Errorf("marshalling path context: %w", err)
+		return output.AurelianRisk{}, fmt.Errorf("marshalling match context: %w", err)
 	}
 
 	dedupHash := fmt.Sprintf("%x", sha256.Sum256(contextBytes))
@@ -133,34 +126,4 @@ func recordToRisk(method privesc.AWSPrivesc, record map[string]interface{}) (out
 		DeduplicationID: dedupHash,
 		Context:         contextBytes,
 	}, nil
-}
-
-// pathToMap converts a Neo4j dbtype.Path into a clean, driver-independent
-// representation suitable for JSON serialization and stable deduplication.
-func pathToMap(raw interface{}) map[string]interface{} {
-	path, ok := raw.(dbtype.Path)
-	if !ok {
-		return map[string]interface{}{"raw": raw}
-	}
-
-	nodes := make([]map[string]interface{}, len(path.Nodes))
-	for i, n := range path.Nodes {
-		nodes[i] = map[string]interface{}{
-			"labels":     n.Labels,
-			"properties": n.Props,
-		}
-	}
-
-	rels := make([]map[string]interface{}, len(path.Relationships))
-	for i, r := range path.Relationships {
-		rels[i] = map[string]interface{}{
-			"type":       r.Type,
-			"properties": r.Props,
-		}
-	}
-
-	return map[string]interface{}{
-		"nodes":         nodes,
-		"relationships": rels,
-	}
 }

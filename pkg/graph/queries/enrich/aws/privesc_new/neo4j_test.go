@@ -6,10 +6,10 @@ import (
 )
 
 func TestCompileMethod01(t *testing.T) {
-	method := NewMethod01IAMCreatePolicyVersion()
 	compiler := DefaultNeo4jCompiler()
+	q := Match(Principal(), HasPermission("iam:CreatePolicyVersion"), ManagedPolicy())
 
-	got, err := compiler.Compile(method.Query())
+	got, err := compiler.Compile(q)
 	if err != nil {
 		t.Fatalf("Compile() error: %v", err)
 	}
@@ -26,10 +26,10 @@ func TestCompileMethod01(t *testing.T) {
 }
 
 func TestCompileReturnsPath(t *testing.T) {
-	method := NewMethod01IAMCreatePolicyVersion()
 	compiler := DefaultNeo4jCompiler()
+	q := Match(Principal(), HasPermission("iam:CreatePolicyVersion"), ManagedPolicy())
 
-	got, err := compiler.Compile(method.Query())
+	got, err := compiler.Compile(q)
 	if err != nil {
 		t.Fatalf("Compile() error: %v", err)
 	}
@@ -59,10 +59,10 @@ func TestActionToRelType(t *testing.T) {
 }
 
 func TestCompileMethod02(t *testing.T) {
-	method := NewMethod02IAMSetDefaultPolicyVersion()
 	compiler := DefaultNeo4jCompiler()
+	q := Match(Principal(), HasPermission("iam:SetDefaultPolicyVersion"), ManagedPolicy())
 
-	got, err := compiler.Compile(method.Query())
+	got, err := compiler.Compile(q)
 	if err != nil {
 		t.Fatalf("Compile() error: %v", err)
 	}
@@ -79,10 +79,10 @@ func TestCompileMethod02(t *testing.T) {
 }
 
 func TestCompileMethod03(t *testing.T) {
-	method := NewMethod03IAMCreateAccessKey()
 	compiler := DefaultNeo4jCompiler()
+	q := Match(Principal(), HasPermission("iam:CreateAccessKey"), Principal())
 
-	got, err := compiler.Compile(method.Query())
+	got, err := compiler.Compile(q)
 	if err != nil {
 		t.Fatalf("Compile() error: %v", err)
 	}

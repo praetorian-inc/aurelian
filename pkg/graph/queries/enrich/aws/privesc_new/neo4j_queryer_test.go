@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j/dbtype"
 	"github.com/praetorian-inc/aurelian/pkg/graph"
 )
 
@@ -34,7 +35,15 @@ func TestNeo4jQueryerDelegatesToCompiler(t *testing.T) {
 	mock := &mockGraphDB{
 		result: &graph.QueryResult{
 			Records: []map[string]interface{}{
-				{"path": "test"},
+				{"path": dbtype.Path{
+					Nodes: []dbtype.Node{
+						{Labels: []string{"Principal"}, Props: map[string]any{"arn": "arn:aws:iam::123456:role/Admin"}},
+						{Labels: []string{"ManagedPolicy"}, Props: map[string]any{"arn": "arn:aws:iam::123456:policy/MyPolicy"}},
+					},
+					Relationships: []dbtype.Relationship{
+						{Type: "IAM_CREATEPOLICYVERSION"},
+					},
+				}},
 			},
 		},
 	}
@@ -42,17 +51,27 @@ func TestNeo4jQueryerDelegatesToCompiler(t *testing.T) {
 	q := NewNeo4jQueryer()
 	q.db = mock // bypass Connect, inject mock
 
-	method := NewMethod01IAMCreatePolicyVersion()
-	results, err := q.Query(context.Background(), method.Query())
+	query := Match(Principal(), HasPermission("iam:CreatePolicyVersion"), ManagedPolicy())
+	results, err := q.Query(context.Background(), query)
 	if err != nil {
 		t.Fatalf("Query() error: %v", err)
 	}
 
 	if len(results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(results))
+		t.Fatalf("expected 1 matched path, got %d", len(results))
 	}
-	if len(results[0].Records) != 1 {
-		t.Fatalf("expected 1 record, got %d", len(results[0].Records))
+	if len(results[0].Hops) != 1 {
+		t.Fatalf("expected 1 hop, got %d", len(results[0].Hops))
+	}
+	hop := results[0].Hops[0]
+	if hop.SourceID != "arn:aws:iam::123456:role/Admin" {
+		t.Errorf("unexpected source: %s", hop.SourceID)
+	}
+	if hop.TargetID != "arn:aws:iam::123456:policy/MyPolicy" {
+		t.Errorf("unexpected target: %s", hop.TargetID)
+	}
+	if len(hop.Actions) != 1 || hop.Actions[0] != "IAM_CREATEPOLICYVERSION" {
+		t.Errorf("unexpected actions: %v", hop.Actions)
 	}
 
 	wantCypher := "MATCH path = (n0)-[r0]->(n1)\n" +

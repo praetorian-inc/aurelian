@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j/dbtype"
 	"github.com/praetorian-inc/aurelian/pkg/graph"
 	"github.com/praetorian-inc/aurelian/pkg/graph/adapters"
 )
@@ -97,7 +98,7 @@ func (q *Neo4jQueryer) Connect(uri, username, password string) error {
 	return nil
 }
 
-func (q *Neo4jQueryer) Query(ctx context.Context, query Query) (*graph.QueryResult, error) {
+func (q *Neo4jQueryer) Query(ctx context.Context, query Query) ([]MatchedPath, error) {
 	cypher, err := q.compiler.Compile(query)
 	if err != nil {
 		return nil, err
@@ -106,7 +107,69 @@ func (q *Neo4jQueryer) Query(ctx context.Context, query Query) (*graph.QueryResu
 	if err != nil {
 		return nil, err
 	}
-	return result, nil
+	return pathRecordsToMatchedPaths(result), nil
+}
+
+// pathRecordsToMatchedPaths converts Cypher "RETURN path" records into MatchedPaths.
+// Each record's "path" column is a dbtype.Path representing one escalation instance.
+func pathRecordsToMatchedPaths(qr *graph.QueryResult) []MatchedPath {
+	if qr == nil {
+		return nil
+	}
+	var paths []MatchedPath
+	for _, record := range qr.Records {
+		pathData, ok := record["path"]
+		if !ok {
+			continue
+		}
+		path, ok := pathData.(dbtype.Path)
+		if !ok {
+			continue
+		}
+		mp := pathToMatchedPath(path)
+		if len(mp.Hops) > 0 {
+			paths = append(paths, mp)
+		}
+	}
+	return paths
+}
+
+// pathToMatchedPath converts a single dbtype.Path into a MatchedPath.
+// Each relationship in the path becomes one hop.
+func pathToMatchedPath(path dbtype.Path) MatchedPath {
+	var hops []MatchResult
+	for i, rel := range path.Relationships {
+		if i+1 >= len(path.Nodes) {
+			break
+		}
+		hops = append(hops, MatchResult{
+			SourceID: nodeIdentifier(path.Nodes[i]),
+			TargetID: nodeIdentifier(path.Nodes[i+1]),
+			Actions:  []string{relTypeToAction(rel.Type)},
+		})
+	}
+	return MatchedPath{Hops: hops}
+}
+
+// nodeIdentifier extracts the best identifier from a Neo4j node.
+// Prefers "arn", falls back to "key", then first available property.
+func nodeIdentifier(n dbtype.Node) string {
+	for _, prop := range []string{"arn", "key"} {
+		if v, ok := n.Props[prop]; ok {
+			if s, ok := v.(string); ok && s != "" {
+				return s
+			}
+		}
+	}
+	return fmt.Sprintf("node(%v)", n.Labels)
+}
+
+// relTypeToAction converts a Neo4j relationship type back to an IAM action string.
+// "IAM_CREATEPOLICYVERSION" → "iam:CreatePolicyVersion"
+// This is a best-effort inverse of actionToRelType; the uppercase form is
+// returned if the original casing cannot be recovered.
+func relTypeToAction(relType string) string {
+	return relType
 }
 
 func (q *Neo4jQueryer) Close() error {

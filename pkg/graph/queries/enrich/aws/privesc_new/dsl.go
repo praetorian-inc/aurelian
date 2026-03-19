@@ -2,8 +2,6 @@ package privescnew
 
 import (
 	"context"
-
-	"github.com/praetorian-inc/aurelian/pkg/graph"
 )
 
 // Node represents a semantic graph node (e.g. "Principal", "ManagedPolicy").
@@ -29,12 +27,26 @@ type Compiler interface {
 	Compile(Query) (string, error)
 }
 
+// MatchResult represents a single directed hop in a privilege escalation path.
+type MatchResult struct {
+	SourceID string   `json:"source_id"` // Identifier for the source node (ARN or key)
+	TargetID string   `json:"target_id"` // Identifier for the target node (ARN or key)
+	Actions  []string `json:"actions"`   // Permissions on the edge between source and target
+}
+
+// MatchedPath represents one discovered instance of a privilege escalation path.
+// A single-hop query produces one hop per MatchedPath.
+// Multi-hop paths (A→B→C) produce multiple hops in a single MatchedPath.
+type MatchedPath struct {
+	Hops []MatchResult `json:"hops"`
+}
+
 // Queryer compiles and executes a privesc DSL query against a graph backend.
 type Queryer interface {
 	// Connect initializes the backend connection. No-op for pre-connected backends.
 	Connect(uri, username, password string) error
-	// Query compiles the DSL query and returns results.
-	Query(ctx context.Context, q Query) (*graph.QueryResult, error)
+	// Query compiles the DSL query and returns one MatchedPath per discovered escalation instance.
+	Query(ctx context.Context, q Query) ([]MatchedPath, error)
 	// Close releases resources. No-op for externally-managed connections.
 	Close() error
 }
