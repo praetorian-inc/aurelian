@@ -1,13 +1,15 @@
 package recon
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
-	"sort"
+	"maps"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	cetypes "github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 
@@ -49,7 +51,7 @@ func (m *AWSSummaryModule) References() []string {
 }
 
 func (m *AWSSummaryModule) SupportedResourceTypes() []string {
-	return []string{}
+	return nil
 }
 
 func (m *AWSSummaryModule) Parameters() any {
@@ -67,7 +69,7 @@ func (m *AWSSummaryModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 	}
 
 	client := costexplorer.NewFromConfig(awsCfg)
-	ctx := context.TODO()
+	ctx := cfg.Context
 
 	days := m.Days
 	if days <= 0 {
@@ -88,8 +90,8 @@ func (m *AWSSummaryModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 		Granularity: cetypes.GranularityMonthly,
 		Metrics:     []string{"BlendedCost"},
 		GroupBy: []cetypes.GroupDefinition{
-			{Type: cetypes.GroupDefinitionTypeDimension, Key: strPtr("SERVICE")},
-			{Type: cetypes.GroupDefinitionTypeDimension, Key: strPtr("REGION")},
+			{Type: cetypes.GroupDefinitionTypeDimension, Key: aws.String("SERVICE")},
+			{Type: cetypes.GroupDefinitionTypeDimension, Key: aws.String("REGION")},
 		},
 	}
 
@@ -117,7 +119,12 @@ func (m *AWSSummaryModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 
 				var cost float64
 				if metric, ok := group.Metrics["BlendedCost"]; ok && metric.Amount != nil {
-					fmt.Sscanf(*metric.Amount, "%f", &cost)
+					parsed, parseErr := strconv.ParseFloat(*metric.Amount, 64)
+					if parseErr != nil {
+						slog.Warn("failed to parse cost amount", "amount", *metric.Amount, "error", parseErr)
+					} else {
+						cost = parsed
+					}
 				}
 
 				if serviceRegions[service] == nil {
@@ -148,19 +155,8 @@ func (m *AWSSummaryModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 }
 
 func buildCostTable(serviceRegions map[string]map[string]float64, regionSet map[string]bool, grandTotal float64, days int) *output.AWSCostSummary {
-	// Sort regions.
-	regions := make([]string, 0, len(regionSet))
-	for r := range regionSet {
-		regions = append(regions, r)
-	}
-	sort.Strings(regions)
-
-	// Sort services.
-	services := make([]string, 0, len(serviceRegions))
-	for s := range serviceRegions {
-		services = append(services, s)
-	}
-	sort.Strings(services)
+	regions := slices.Sorted(maps.Keys(regionSet))
+	services := slices.Sorted(maps.Keys(serviceRegions))
 
 	// Headers: Service, region1, region2, ..., Total Cost
 	headers := make([]string, 0, len(regions)+2)
@@ -216,4 +212,3 @@ func cleanServiceName(name string) string {
 	return name
 }
 
-func strPtr(s string) *string { return &s }
