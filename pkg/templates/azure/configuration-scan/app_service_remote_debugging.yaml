@@ -1,0 +1,80 @@
+id: app_service_remote_debugging_enabled
+name: App Service Remote Debugging Enabled
+description: Detects Azure App Services with remote debugging enabled, which provides RCE-equivalent access to application code, environment variables, and memory. Remote debugging should be disabled in production environments to minimize attack surface.
+severity: High
+category: ["Access Control", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Security Risk:
+  Remote debugging on Azure App Services provides direct access to running application processes,
+  creating an RCE-equivalent attack vector if network access is available. Even with authentication
+  required, enabling remote debugging in production environments significantly expands the attack surface.
+
+  Attack Vector:
+  - Attackers can attach debuggers to running processes remotely
+  - Direct access to application memory, including secrets and credentials
+  - Ability to execute code within the application context
+  - Access to environment variables and connection strings
+  - Potential for application hijacking and data exfiltration
+
+  Understanding Remote Debugging:
+  - Property: properties.siteConfig.remoteDebuggingEnabled
+  - When set to 'true': Remote debugging is enabled (this finding)
+  - When set to 'false' or null: Remote debugging is disabled (secure)
+  - Opens additional network ports for debugger attachment
+  - Requires authentication but increases attack surface significantly
+
+  Common Scenarios:
+  - Developers enable remote debugging for troubleshooting and forget to disable it
+  - Development/staging configurations copied to production without hardening
+  - Emergency debugging sessions left enabled after resolution
+  - Lack of infrastructure-as-code controls to enforce disabled state
+
+  Triage Guidance:
+  1. Verify if this is a production App Service (high priority) or non-production (lower priority)
+  2. Check if remote debugging is actively being used for legitimate troubleshooting
+  3. Review network access restrictions - is the App Service publicly accessible?
+  4. Verify if the App Service has private endpoint or IP restrictions configured
+  5. Check application logs for recent debugger attachment attempts
+  6. Validate if secrets or sensitive data are present in application memory
+
+  Remediation Steps:
+  1. Disable remote debugging immediately for production App Services
+  2. Use Application Insights or other observability tools instead for troubleshooting
+  3. Implement infrastructure-as-code to enforce remoteDebuggingEnabled = false
+  4. Establish process for time-limited debugging sessions with approval
+  5. Rotate any secrets or credentials that may have been exposed during debugging
+  6. Review and implement network access restrictions (private endpoints, IP allowlists)
+
+  Azure CLI Commands:
+  ```bash
+  # Disable remote debugging
+  az webapp config set --resource-group <resource-group> --name <app-name> --remote-debugging-enabled false
+
+  # Verify current configuration
+  az webapp config show --resource-group <resource-group> --name <app-name> --query "remoteDebuggingEnabled"
+
+  # List all App Services with remote debugging enabled (validation)
+  az webapp list --query "[?siteConfig.remoteDebuggingEnabled==\`true\`].[name,resourceGroup]" -o table
+  ```
+
+  Compliance Impact:
+  - Violates security hardening best practices
+  - May fail compliance audits (PCI-DSS, HIPAA, SOC 2)
+  - Increases attack surface contrary to least privilege principles
+
+references:
+  - https://learn.microsoft.com/en-us/azure/templates/microsoft.web/sites
+  - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.AppService.RemoteDebug/
+  - https://learn.microsoft.com/en-us/azure/app-service/configure-common
+  - https://github.com/projectdiscovery/nuclei-templates/blob/main/cloud/azure/appservice/azure-appservice-remote-debugging-enabled.yaml
+query: |
+  resources
+  | where type =~ 'microsoft.web/sites'
+  | project
+      id,
+      name,
+      type,
+      location,
+      resourceGroup,
+      subscriptionId

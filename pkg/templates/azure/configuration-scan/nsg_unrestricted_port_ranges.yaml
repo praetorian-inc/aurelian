@@ -1,0 +1,274 @@
+id: nsg_unrestricted_port_ranges
+name: NSG Rules with Unrestricted Port Ranges
+description: Detects Network Security Group (NSG) inbound allow rules with overly broad port ranges (> 1000 ports) that bypass intended firewall restrictions. Broad port ranges expose services to unnecessary risk by allowing access to ports beyond what's required, increasing the attack surface for exploitation of administrative, database, and application ports.
+severity: Medium
+category: ["Access Control", "arg-scan"]
+reportability: Manual Triage
+triageNotes: |
+  Security Risk:
+  NSG rules with overly broad port ranges (e.g., 0-65535, 1-5000, or multiple large ranges)
+  violate the principle of least privilege by allowing access to far more ports than necessary.
+  While NSG rules still provide some network filtering, broad port ranges significantly weaken
+  firewall effectiveness and make it difficult to understand and audit what services are actually
+  exposed.
+
+  Understanding Port Range Findings:
+  - totalPortSpan: Total number of ports allowed by this rule (sum of all ranges)
+  - portSpecifications: The actual port range(s) configured (e.g., ["0-65535"], ["1000-2500","5000-6500"])
+  - portSpanDetails: Breakdown showing each range and its span
+  - Threshold: Rules allowing > 1000 ports are flagged
+
+  Common Examples:
+  - "0-65535" or "*": All 65,536 ports (complete firewall bypass)
+  - "1-5000": 5,000 ports (likely far more than needed)
+  - "8000-10000": 2,001 ports (may be legitimate for application ranges)
+  - Multiple ranges like "1000-2500" + "5000-6500": 3,002 total ports
+
+  Attack Surface Impact:
+  - Exposes unnecessary ports to potential exploitation
+  - Makes vulnerability scanning more difficult (which ports are actually in use?)
+  - Complicates incident response (what was the intended exposure?)
+  - Violates security best practices and compliance requirements
+  - Increases risk of:
+    * Administrative port exposure (RDP 3389, SSH 22, WinRM 5985-5986)
+    * Database port exposure (SQL 1433, PostgreSQL 5432, MySQL 3306, MongoDB 27017)
+    * Application port exposure (Redis 6379, Elasticsearch 9200, etc.)
+
+  What NSGs Protect:
+  NSGs can be attached to:
+  - Network Interfaces (NICs) - protecting individual VMs and resources
+  - Subnets - protecting ALL resources in the subnet including:
+    * Virtual Machines and VM Scale Sets
+    * Azure Kubernetes Service (AKS) nodes
+    * App Service Environments (ASE)
+    * Azure SQL Managed Instance
+    * Azure Database for PostgreSQL/MySQL Flexible Servers
+    * Azure Cache for Redis
+    * Private Endpoints
+    * VPN/ExpressRoute Gateways
+    * Azure Bastion
+    * Many other PaaS services with VNet integration
+
+  Detection Method:
+  This detection uses Azure Resource Graph to query NSG configuration:
+  - ARG Query: Analyzes all NSG inbound allow rules
+  - Native ARG: No enricher required, properties available in ARG
+  - Calculation: Parses port ranges and calculates total span
+  - Handles: Single ranges (0-65535), wildcards (*), multiple ranges
+  - Requires: Reader permission (Microsoft.Network/networkSecurityGroups/read)
+
+  Triage Guidance:
+  1. Review the totalPortSpan to understand severity:
+     - > 10,000 ports: CRITICAL - Likely misconfigured or wildcard
+     - 5,000-10,000 ports: HIGH - Very broad, likely unnecessary
+     - 2,000-5,000 ports: MEDIUM - Broad, may be legitimate for some apps
+     - 1,001-2,000 ports: LOW - Borderline, verify business justification
+
+  2. Check the source address prefix:
+     - Source "*", "Internet", "0.0.0.0/0": HIGH PRIORITY - Internet-facing
+     - Source VirtualNetwork or specific IPs: LOWER PRIORITY - Internal only
+     - Source AzureLoadBalancer: May be legitimate for health probes
+
+  3. Determine if the NSG is attached to resources:
+     - Check NSG associations (subnets, NICs)
+     - Unattached NSGs are lower priority (but still bad configuration hygiene)
+     - Subnet-level NSGs affect many more resources than NIC-level
+
+  4. Verify business justification:
+     - Application-specific port ranges (e.g., 8000-8999 for microservices)
+     - Load balancer health probe ranges
+     - Legacy applications with dynamic port requirements
+     - Document justification for any approved broad ranges
+
+  5. Check for overlapping rules:
+     - Multiple rules on the same NSG may combine to create broader exposure
+     - Review priority and ensure deny rules aren't overridden
+
+  Legitimate Use Cases:
+  - Application server farms with ports 8000-8999 (1000 ports)
+  - Kubernetes NodePort ranges (30000-32767, 2768 ports)
+  - Development/testing environments with ephemeral port needs
+  - Load balancer backend pools requiring flexible port assignment
+  - However, even in these cases, consider:
+    * Using Private Endpoints instead of broad NSG rules
+    * Application Gateway / Load Balancer for controlled exposure
+    * Service-specific security groups rather than subnet-level broad rules
+
+  Remediation Steps:
+  1. Identify required ports:
+     ```bash
+     # For VMs: Check listening ports
+     netstat -tuln | grep LISTEN
+
+     # For Azure resources: Review service documentation
+     # Common ports:
+     # - Web: 80 (HTTP), 443 (HTTPS)
+     # - SSH: 22
+     # - RDP: 3389
+     # - SQL: 1433 (SQL Server), 5432 (PostgreSQL), 3306 (MySQL)
+     ```
+
+  2. Create specific rules for required ports only:
+     ```bash
+     # Remove broad rule
+     az network nsg rule delete \
+       --resource-group <rg> \
+       --nsg-name <nsg-name> \
+       --name <broad-rule-name>
+
+     # Add specific rule (example: web traffic only)
+     az network nsg rule create \
+       --resource-group <rg> \
+       --nsg-name <nsg-name> \
+       --name AllowWebTraffic \
+       --priority 100 \
+       --source-address-prefixes Internet \
+       --source-port-ranges '*' \
+       --destination-address-prefixes '*' \
+       --destination-port-ranges 80 443 \
+       --access Allow \
+       --protocol Tcp \
+       --direction Inbound \
+       --description "Allow HTTP and HTTPS only"
+     ```
+
+  3. Consider architectural improvements:
+     ```bash
+     # Option 1: Use Azure Bastion instead of exposing RDP/SSH
+     az network bastion create \
+       --resource-group <rg> \
+       --name <bastion-name> \
+       --vnet-name <vnet-name> \
+       --location <location>
+
+     # Option 2: Use Application Gateway for web applications
+     # Option 3: Use Private Endpoints for PaaS services
+     # Option 4: Use Azure Firewall for centralized egress control
+     ```
+
+  4. Apply defense-in-depth:
+     - Use both subnet-level and NIC-level NSGs
+     - Implement Application Security Groups (ASGs) for logical grouping
+     - Enable Azure Firewall or Network Virtual Appliances
+     - Use Just-In-Time (JIT) VM access for administrative ports
+     - Enable NSG flow logs for traffic analysis
+
+  5. Audit and monitor:
+     ```bash
+     # List all NSG rules sorted by port span
+     az graph query -q "resources | where type =~ 'microsoft.network/networksecuritygroups' | mv-expand rule = properties.securityRules | project nsg=name, rule=rule.name, ports=rule.properties.destinationPortRange"
+
+     # Enable NSG flow logs
+     az network watcher flow-log create \
+       --resource-group <rg> \
+       --nsg <nsg-name> \
+       --name <flow-log-name> \
+       --storage-account <storage-account>
+
+     # Set up alerts for NSG rule changes
+     # Monitor Azure Activity Log for:
+     # - Microsoft.Network/networkSecurityGroups/securityRules/write
+     # - Microsoft.Network/networkSecurityGroups/write
+     ```
+
+  Azure CLI Commands:
+  ```bash
+  # View NSG rules with port ranges
+  az network nsg show --resource-group <rg> --name <nsg-name> \
+    --query 'securityRules[].{Name:name, Ports:destinationPortRange, Priority:priority, Access:access}' \
+    --output table
+
+  # List all NSGs with broad port rules
+  az graph query -q "resources | where type =~ 'microsoft.network/networksecuritygroups' | mv-expand rule = properties.securityRules | where rule.properties.destinationPortRange contains '-' | project name, resourceGroup, ruleName=rule.name, ports=rule.properties.destinationPortRange"
+
+  # Check NSG associations
+  az network nsg show --resource-group <rg> --name <nsg-name> \
+    --query '{Subnets:subnets[].id, NICs:networkInterfaces[].id}'
+
+  # Test effective NSG rules on a NIC
+  az network nic show-effective-nsg \
+    --resource-group <rg> \
+    --name <nic-name>
+  ```
+
+  Compliance Impact:
+  - Violates CIS Azure Foundations Benchmark (network security controls)
+  - Fails PCI-DSS Requirement 1.2.1 (restrict inbound traffic to necessary ports)
+  - May violate HIPAA, SOC 2, ISO 27001 network security requirements
+  - Fails NIST 800-53 SC-7 (Boundary Protection)
+  - Increases audit findings and compliance risk
+  - Violates principle of least privilege
+
+  Additional Considerations:
+  - Broad port ranges should be explicitly documented and approved
+  - Regular audits (quarterly minimum) to review NSG rules
+  - Use Azure Policy to prevent creation of overly permissive rules
+  - Implement change management process for NSG modifications
+  - Consider using Application Security Groups for cleaner rule management
+  - Tag NSGs with business justification for broad rules (if approved)
+  - Review NSG rules during security assessments and penetration tests
+
+references:
+  - https://learn.microsoft.com/en-us/azure/virtual-network/network-security-groups-overview
+  - https://learn.microsoft.com/en-us/azure/virtual-network/network-security-group-how-it-works
+  - https://learn.microsoft.com/en-us/azure/virtual-network/manage-network-security-group
+  - https://learn.microsoft.com/en-us/azure/security/fundamentals/network-best-practices
+  - https://github.com/projectdiscovery/nuclei-templates/blob/main/cloud/azure/network/azure-nsg-unrestricted-port-range.yaml
+query: |
+  resources
+  | where type =~ 'microsoft.network/networksecuritygroups'
+  | extend nsgName = name, nsgId = id
+  | mv-expand rule = properties.securityRules
+  | where rule.properties.direction =~ 'Inbound'
+  | where rule.properties.access =~ 'Allow'
+  | extend ruleName = tostring(rule.name)
+  | extend sourcePrefix = tostring(rule.properties.sourceAddressPrefix)
+  | extend sourcePrefixes = tostring(rule.properties.sourceAddressPrefixes)
+  | extend destPortRange = tostring(rule.properties.destinationPortRange)
+  | extend destPortRanges = rule.properties.destinationPortRanges
+  // Collect all port specifications (single range or multiple ranges)
+  | extend allPortSpecs = case(
+      isnotempty(destPortRange), pack_array(destPortRange),
+      isnotempty(destPortRanges), destPortRanges,
+      pack_array('*')
+  )
+  | mv-expand portSpec = allPortSpecs to typeof(string)
+  // Parse port ranges and calculate span
+  | extend portStart = case(
+      portSpec == '*', 0,
+      portSpec contains '-', toint(split(portSpec, '-')[0]),
+      toint(portSpec)
+  )
+  | extend portEnd = case(
+      portSpec == '*', 65535,
+      portSpec contains '-', toint(split(portSpec, '-')[1]),
+      toint(portSpec)
+  )
+  | extend portSpan = portEnd - portStart + 1
+  // Aggregate port spans per rule
+  | summarize
+      totalPortSpan = sum(portSpan),
+      portSpecifications = make_set(portSpec),
+      portSpanDetails = make_list(pack('spec', portSpec, 'span', portSpan)),
+      sourcePrefix = any(sourcePrefix),
+      sourcePrefixes = any(sourcePrefixes),
+      location = any(location),
+      resourceGroup = any(resourceGroup),
+      subscriptionId = any(subscriptionId)
+      by nsgId, nsgName, ruleName
+  // Flag rules with > 1000 ports
+  | where totalPortSpan > 1000
+  | project
+      id = nsgId,
+      name = nsgName,
+      type = 'microsoft.network/networksecuritygroups',
+      location,
+      resourceGroup,
+      subscriptionId,
+      ruleName,
+      totalPortSpan,
+      portSpecifications = tostring(portSpecifications),
+      portSpanDetails = tostring(portSpanDetails),
+      sourcePrefix,
+      sourcePrefixes
+  | order by totalPortSpan desc

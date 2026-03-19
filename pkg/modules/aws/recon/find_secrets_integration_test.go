@@ -17,8 +17,16 @@ import (
 )
 
 func TestAWSFindSecrets(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/recon/find-secrets")
+	fixture := testutil.NewAWSFixture(t, "aws/recon/find-secrets")
 	fixture.Setup()
+
+	// Log events expire with 1-day retention. Re-inject if missing so the
+	// CloudWatch Logs subtest passes on long-lived fixtures.
+	testutil.EnsureLogEvent(t, "us-east-2",
+		fixture.Output("log_group_name"),
+		fixture.Output("log_stream_name"),
+		fixture.Output("log_event_message"),
+	)
 
 	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "find-secrets")
 	if !ok {
@@ -48,7 +56,7 @@ func TestAWSFindSecrets(t *testing.T) {
 	require.NoError(t, p2.Wait())
 	require.NotEmpty(t, risks, "expected at least one secret risk finding")
 
-	// Map of resource type label → fixture output identifier to look for in ImpactedARN.
+	// Map of resource type label → fixture output identifier to look for in ImpactedResourceID.
 	expectedResources := map[string]string{
 		"EC2 Instance":       fixture.Output("instance_id"),
 		"Lambda Function":    fixture.Output("function_name"),
@@ -88,15 +96,15 @@ func TestAWSFindSecrets(t *testing.T) {
 
 	t.Run("all risks have non-empty context", func(t *testing.T) {
 		for _, risk := range risks {
-			assert.NotEmpty(t, risk.Context, "risk context should not be empty for %s", risk.ImpactedARN)
+			assert.NotEmpty(t, risk.Context, "risk context should not be empty for %s", risk.ImpactedResourceID)
 		}
 	})
 }
 
 func hasRiskForIdentifier(risks []output.AurelianRisk, identifier string) bool {
 	for _, risk := range risks {
-		if risk.ImpactedARN == identifier ||
-			strings.Contains(risk.ImpactedARN, identifier) {
+		if risk.ImpactedResourceID == identifier ||
+			strings.Contains(risk.ImpactedResourceID, identifier) {
 			return true
 		}
 	}

@@ -43,7 +43,7 @@ func extractLambda(ctx extractContext, r output.AWSResource, out *pipeline.P[out
 	if err != nil {
 		return fmt.Errorf("failed to download Lambda code for %s: %w", functionName, err)
 	}
-	defer httpResp.Body.Close()
+	defer func() { _ = httpResp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(httpResp.Body, maxLambdaZipSize))
 	if err != nil {
@@ -63,7 +63,6 @@ func extractLambda(ctx extractContext, r output.AWSResource, out *pipeline.P[out
 			continue
 		}
 
-		f := f
 		g.Go(func() error {
 			rc, err := f.Open()
 			if err != nil {
@@ -71,7 +70,7 @@ func extractLambda(ctx extractContext, r output.AWSResource, out *pipeline.P[out
 			}
 
 			content, err := io.ReadAll(rc)
-			rc.Close()
+			_ = rc.Close()
 			if err != nil {
 				return nil
 			}
@@ -80,7 +79,9 @@ func extractLambda(ctx extractContext, r output.AWSResource, out *pipeline.P[out
 				return nil
 			}
 
-			out.Send(output.ScanInputFromAWSResource(r, f.Name, content))
+			si := output.ScanInputFromAWSResource(r, f.Name, content)
+			si.PathFilterable = true
+			out.Send(si)
 			return nil
 		})
 	}

@@ -1,0 +1,89 @@
+id: app_services_public_access
+name: Publicly Accessible App Services
+description: Detects App Services with public network access enabled (publicNetworkAccess != 'Disabled'). Relies on dynamic enricher testing to validate actual accessibility, as IP restrictions and private endpoints can coexist with public access. VNet integration provides outbound connectivity and does not restrict inbound public access.
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Manual Triage
+triageNotes: |
+  Important Context:
+  This scan identifies App Services with public network access enabled (publicNetworkAccess != 'Disabled').
+
+  Key Understanding:
+  - App Services can have BOTH private endpoints AND public access enabled simultaneously
+  - Private endpoints provide private inbound paths, but do NOT disable public access
+  - IP restrictions can be complex (allow/deny rules) and may not fully block public access
+  - This template relies on dynamic enricher testing to validate actual accessibility from the internet
+  - VNet integration is NOT a factor in public accessibility (it only provides outbound connectivity)
+
+  Understanding App Service Network Access:
+  - VNet Integration: Enables OUTBOUND connectivity from App Service to VNet resources (does NOT restrict inbound access)
+  - Private Endpoints: Provides private inbound connectivity from within VNet, but can coexist with public access
+  - IP Restrictions: Allows/denies access based on client IP addresses/ranges, but may have permissive rules
+  - Public Network Access: When NOT disabled, the service accepts connections from public internet regardless of private endpoints
+
+  Enricher Validation:
+  The enricher performs dynamic HTTP tests to validate actual accessibility:
+  1. Tests HTTP GET to https://{name}.azurewebsites.net
+  2. Tests access to SCM/Kudu site at https://{name}.scm.azurewebsites.net
+  3. Returns actual HTTP status codes and response bodies
+
+  Use enricher results to determine if the app is ACTUALLY accessible from the internet, as static
+  configuration checks (IP restrictions, private endpoints) may not reflect real-world accessibility.
+
+  Access Control Mechanisms:
+  - App Services may implement application-level authentication (Azure AD, built-in authentication)
+  - Application-level authorization and access controls independent of network configuration
+  - API keys, authentication tokens, or other application security measures
+  - Network-level restrictions do not determine application-level security posture
+
+  Triage Guidance:
+  1. Review enricher test results for actual internet accessibility (HTTP status codes)
+  2. Test the application from external networks to validate access
+  3. Review application-level authentication and authorization mechanisms
+  4. Check if IP restrictions are properly configured (allowlist vs denylist)
+  5. Verify if private endpoints are intended to be the ONLY access path
+  6. Evaluate if the application is intended for public use vs internal use only
+
+  Common Scenarios:
+  - Public-facing websites and APIs legitimately need internet accessibility
+  - Internal applications may be misconfigured to allow public access
+  - Apps with private endpoints may still have public access enabled (intentionally or accidentally)
+  - IP restrictions may have overly permissive rules or be bypassed
+  - Development/staging environments may not require the same restrictions as production
+  - Legacy applications might lack modern authentication mechanisms
+
+  Remediation Considerations:
+  - Set publicNetworkAccess to 'Disabled' if the application should only be accessible via private endpoints
+  - Configure strict IP restrictions to limit access to specific networks or IP ranges
+  - Implement or strengthen application-level authentication and authorization
+  - Consider using Azure Front Door or Application Gateway for additional security layers
+  - Review and test all access paths (public endpoint, private endpoint, IP restrictions)
+references:
+  - https://learn.microsoft.com/en-us/azure/app-service/overview-access-restrictions
+  - https://learn.microsoft.com/en-us/azure/app-service/overview-vnet-integration
+  - https://learn.microsoft.com/en-us/azure/app-service/networking-features
+  - https://learn.microsoft.com/en-us/azure/app-service/app-service-ip-restrictions
+  - https://learn.microsoft.com/en-us/azure/app-service/networking/private-endpoint
+query: |
+    resources
+    | where type =~ 'microsoft.web/sites'
+    | extend hasPrivateEndpoint = isnotnull(properties.privateEndpointConnections) and
+        array_length(properties.privateEndpointConnections) > 0
+    | extend hasIpRestrictions = isnotnull(properties.siteConfig.ipSecurityRestrictions) and
+        array_length(properties.siteConfig.ipSecurityRestrictions) > 0
+    | extend publicNetworkAccess = tolower(coalesce(properties.publicNetworkAccess, 'Enabled'))
+    | extend vnetIntegration = properties.virtualNetworkSubnetId
+    | extend isPubliclyAccessible = (publicNetworkAccess != 'disabled')
+    | where isPubliclyAccessible == true
+    | project
+        id,
+        name,
+        type,
+        location,
+        resourceGroup,
+        publicNetworkAccess,
+        hasPrivateEndpoint,
+        hasIpRestrictions,
+        vnetIntegration,
+        isPubliclyAccessible,
+        subscriptionId

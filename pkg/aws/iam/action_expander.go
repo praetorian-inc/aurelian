@@ -3,13 +3,15 @@ package iam
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"regexp"
 	"strings"
 	"sync"
+
+	"github.com/praetorian-inc/aurelian/pkg/utils"
 )
+
+var httpClient = &utils.CachedHTTPClient{}
 
 // ActionExpander expands wildcard IAM actions by fetching the complete list
 // of AWS actions from the AWS types.Policy Generator. Replaces Janus AWSExpandActions chain link.
@@ -23,7 +25,7 @@ type ActionExpander struct {
 // all matching concrete actions. Lazy-initializes on first call.
 func (ae *ActionExpander) Expand(pattern string) ([]string, error) {
 	ae.once.Do(func() {
-		ae.allActions, ae.initErr = fetchAllAWSActions()
+		ae.allActions, ae.initErr = ae.fetchAllAWSActions()
 		if ae.initErr != nil {
 			slog.Error("Error fetching AWS actions during initialization", "error", ae.initErr)
 		} else {
@@ -44,17 +46,17 @@ func (ae *ActionExpander) Expand(pattern string) ([]string, error) {
 		service = "*"
 		act = "*"
 	} else {
-		parts := strings.SplitN(pattern, ":", 2)
-		if len(parts) != 2 {
+		var ok bool
+		service, act, ok = strings.Cut(pattern, ":")
+		if !ok {
 			return nil, fmt.Errorf("invalid action pattern: %s", pattern)
 		}
-		service = strings.ToLower(parts[0])
-		act = parts[1]
+		service = strings.ToLower(service)
 	}
 
-	// Precompile regex outside the loop
-	regexStr := strings.ReplaceAll(act, "*", ".*")
-	regexPattern := "(?i)^" + service + ":" + regexStr + "$"
+	// Precompile regex outside the loop — QuoteMeta to safely handle any metacharacters
+	escaped := regexp.QuoteMeta(service + ":" + act)
+	regexPattern := "(?i)^" + strings.ReplaceAll(escaped, `\*`, `.*`) + "$"
 	re, err := regexp.Compile(regexPattern)
 	if err != nil {
 		return nil, fmt.Errorf("invalid regex pattern: %w", err)
@@ -71,23 +73,18 @@ func (ae *ActionExpander) Expand(pattern string) ([]string, error) {
 	return results, nil
 }
 
-// fetchAllAWSActions fetches the list of all AWS actions from the AWS types.Policy Generator
-func fetchAllAWSActions() ([]string, error) {
-	resp, err := http.Get("https://awspolicygen.s3.amazonaws.com/js/policies.js")
+const awsPolicyGenURL = "https://awspolicygen.s3.amazonaws.com/js/policies.js"
+
+func (ae *ActionExpander) fetchAllAWSActions() ([]string, error) {
+	body, err := httpClient.Get(awsPolicyGenURL)
 	if err != nil {
 		return nil, fmt.Errorf("fetching AWS actions: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading AWS actions response: %w", err)
 	}
 
 	// Remove the JavaScript assignment to get valid JSON
 	jstring := strings.Replace(string(body), "app.PolicyEditorConfig=", "", 1)
 
-	var j map[string]interface{}
+	var j map[string]any
 	err = json.Unmarshal([]byte(jstring), &j)
 	if err != nil {
 		return nil, fmt.Errorf("parsing AWS actions JSON: %w", err)
@@ -95,16 +92,28 @@ func fetchAllAWSActions() ([]string, error) {
 
 	// Extract all actions from the service map
 	var allActions []string
-	serviceMap, ok := j["serviceMap"].(map[string]interface{})
+	serviceMap, ok := j["serviceMap"].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("unexpected serviceMap format")
 	}
-	for serviceName := range serviceMap {
-		svc := serviceMap[serviceName].(map[string]interface{})
-		prefix := svc["StringPrefix"].(string)
-		actions := svc["Actions"].([]interface{})
+	for serviceName, raw := range serviceMap {
+		svc, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("unexpected format for service %q", serviceName)
+		}
+		prefix, ok := svc["StringPrefix"].(string)
+		if !ok {
+			return nil, fmt.Errorf("missing StringPrefix for service %q", serviceName)
+		}
+		actions, ok := svc["Actions"].([]any)
+		if !ok {
+			return nil, fmt.Errorf("missing Actions for service %q", serviceName)
+		}
 		for _, a := range actions {
-			action := a.(string)
+			action, ok := a.(string)
+			if !ok {
+				continue
+			}
 			allActions = append(allActions, prefix+":"+action)
 		}
 	}

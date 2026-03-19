@@ -441,6 +441,30 @@ resource "aws_db_instance" "public" {
 }
 
 # ============================================================
+# Public AMI (property-based detection via EC2ImageEnumerator)
+# ============================================================
+resource "aws_ec2_image_block_public_access" "unblock" {
+  state = "unblocked"
+}
+
+resource "aws_ami_copy" "public" {
+  name              = "${local.prefix}-public-ami"
+  description       = "Public AMI for public-resources integration test"
+  source_ami_id     = data.aws_ami.amazon_linux.id
+  source_ami_region = var.region
+
+  tags = { Name = "${local.prefix}-public-ami" }
+
+  lifecycle { ignore_changes = [deprecation_time] }
+}
+
+resource "aws_ami_launch_permission" "public" {
+  image_id   = aws_ami_copy.public.id
+  group      = "all"
+  depends_on = [aws_ec2_image_block_public_access.unblock]
+}
+
+# ============================================================
 # OpenSearch domain with public policy (policy-based detection)
 # ============================================================
 resource "aws_opensearch_domain" "public" {

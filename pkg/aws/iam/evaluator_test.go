@@ -78,13 +78,6 @@ func TestPolicyEvaluator_BasicIdentityPolicy(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, result.Allowed)
 
-	identityStatements = &types.PolicyStatementList{
-		{
-			Effect:   "Allow",
-			Action:   types.NewDynaString([]string{"*"}),
-			Resource: types.NewDynaString([]string{"*"}),
-		},
-	}
 }
 
 func TestPolicyEvaluator_ExplicitDenyOverridesAllow(t *testing.T) {
@@ -302,7 +295,7 @@ func TestPolicyEvaluator_ServiceControlPolicy(t *testing.T) {
 
 	// Test 1: Allowed action
 	ctx := createRequestContext("arn:aws:iam::111122223333:user/test-user")
-	ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:example-bucket/file.txt")
+	assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:example-bucket/file.txt"))
 	req1 := &EvaluationRequest{
 		Action:             "s3:GetObject",
 		Resource:           "arn:aws:s3::111122223333:example-bucket/file.txt",
@@ -449,7 +442,7 @@ func TestPolicyEvaluator_ResourceControlPolicy(t *testing.T) {
 
 	// Set the resource account ID and populate condition keys
 	resource := "arn:aws:s3::111122223333:example-bucket/file.txt"
-	ctx.PopulateDefaultRequestConditionKeys(resource)
+	assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys(resource))
 
 	t.Logf("Request Context: %+v", ctx)
 
@@ -664,7 +657,7 @@ func TestPolicyEvaluator_SCPDenyS3PublicAccess(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := createRequestContext(tt.principalArn)
-			ctx.PopulateDefaultRequestConditionKeys(tt.resource)
+			assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys(tt.resource))
 			req := &EvaluationRequest{
 				Action:             tt.action,
 				Resource:           tt.resource,
@@ -840,7 +833,7 @@ func TestPolicyEvaluator_SCPRegionGuardRails(t *testing.T) {
 				IdentityStatements: identity,
 			}
 
-			req.Context.PopulateDefaultRequestConditionKeys(tt.resource)
+			assert.NoError(t, req.Context.PopulateDefaultRequestConditionKeys(tt.resource))
 
 			result, err := evaluator.Evaluate(req)
 			assert.NoError(t, err)
@@ -941,7 +934,7 @@ func TestPolicyEvaluator_AssumeRolePolicyDocument(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := createRequestContext(tt.principalArn)
-			ctx.PopulateDefaultRequestConditionKeys(tt.resource)
+			assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys(tt.resource))
 
 			req := &EvaluationRequest{
 				Action:             tt.action,
@@ -1223,7 +1216,7 @@ func TestPolicyEvaluator_SCPServiceLinkedRole(t *testing.T) {
 	// Test regular principal - should be denied by SCP
 	ctx := createRequestContext("arn:aws:iam::111122223333:user/test-user")
 	ctx.PrincipalOrgID = "o-1234567"
-	ctx.PopulateDefaultRequestConditionKeys("arn:aws:bedrock:us-east-1:111122223333:agent/QOYTA2YG0G")
+	assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys("arn:aws:bedrock:us-east-1:111122223333:agent/QOYTA2YG0G"))
 	req := &EvaluationRequest{
 		Action:             "bedrock:InvokeModel",
 		Resource:           "arn:aws:bedrock:us-east-1:111122223333:agent/QOYTA2YG0G",
@@ -1240,7 +1233,7 @@ func TestPolicyEvaluator_SCPServiceLinkedRole(t *testing.T) {
 	// Test service-linked role - should be allowed despite SCP deny
 	ctx = createRequestContext("arn:aws:iam::111122223333:role/aws-service-role/bedrock.amazonaws.com/AWSServiceRoleForBedrock")
 	ctx.PrincipalOrgID = "o-1234567"
-	ctx.PopulateDefaultRequestConditionKeys("arn:aws:bedrock:us-east-1:111122223333:agent/QOYTA2YG0G")
+	assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys("arn:aws:bedrock:us-east-1:111122223333:agent/QOYTA2YG0G"))
 	req = &EvaluationRequest{
 		Action:             "bedrock:InvokeModel",
 		Resource:           "arn:aws:bedrock:us-east-1:111122223333:agent/QOYTA2YG0G",
@@ -1444,7 +1437,7 @@ func TestPolicyEvaluator_SameAccountAssumeRole_TrustPolicyValidation(t *testing.
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := createRequestContext(tt.principalArn)
 			ctx.PrincipalAccount = accountID
-			ctx.PopulateDefaultRequestConditionKeys(targetRoleArn)
+			assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys(targetRoleArn))
 
 			req := &EvaluationRequest{
 				Action:             "sts:AssumeRole",
@@ -1622,7 +1615,7 @@ func TestPolicyEvaluator_SameAccountAssumeRole_WithGaadFlow(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := createRequestContext(attackerRoleArn)
 			ctx.PrincipalAccount = accountID
-			ctx.PopulateDefaultRequestConditionKeys(tt.targetRole)
+			assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys(tt.targetRole))
 
 			req := &EvaluationRequest{
 				Action:             "sts:AssumeRole",
@@ -1722,7 +1715,7 @@ func TestPolicyEvaluator_CrossAccountAssumeRole_TrustPolicyValidation(t *testing
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := createRequestContext(tt.principalArn)
 			ctx.PrincipalAccount = sourceAccountID
-			ctx.PopulateDefaultRequestConditionKeys(targetRoleArn)
+			assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys(targetRoleArn))
 
 			req := &EvaluationRequest{
 				Action:             "sts:AssumeRole",
@@ -1827,7 +1820,7 @@ func TestPolicyEvaluator_CrossAccountAssumeRole(t *testing.T) {
 	})
 
 	ctx := createRequestContext("arn:aws:iam::" + sourceAccountID + ":user/test-user")
-	ctx.PopulateDefaultRequestConditionKeys(targetRoleArn)
+	assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys(targetRoleArn))
 
 	req := &EvaluationRequest{
 		Action:             "sts:AssumeRole",
@@ -1868,7 +1861,7 @@ func TestPolicyEvaluator_SameAccountNonAssumeRole_ExplicitPrincipalAllow(t *test
 
 	// No identity statements at all - resource policy alone with explicit principal should work
 	ctx := createRequestContext("arn:aws:iam::111122223333:user/test-user")
-	ctx.PopulateDefaultRequestConditionKeys(resource)
+	assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys(resource))
 
 	req := &EvaluationRequest{
 		Action:   "s3:GetObject",
@@ -1941,7 +1934,7 @@ func TestPolicyEvaluator_RCPDenyPath(t *testing.T) {
 	})
 
 	ctx := createRequestContext("arn:aws:iam::111122223333:user/test-user")
-	ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:my-bucket/file.txt")
+	assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:my-bucket/file.txt"))
 
 	// s3:PutObject should be denied by RCP (not in allow list)
 	req := &EvaluationRequest{
@@ -2024,7 +2017,7 @@ func TestPolicyEvaluator_ParentSCPNoAllowPath(t *testing.T) {
 	})
 
 	ctx := createRequestContext("arn:aws:iam::111122223333:user/test-user")
-	ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:my-bucket")
+	assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:my-bucket"))
 
 	req := &EvaluationRequest{
 		Action:             "s3:GetObject",
@@ -2104,7 +2097,7 @@ func TestPolicyEvaluator_ParentRCPNoAllowPath(t *testing.T) {
 	})
 
 	ctx := createRequestContext("arn:aws:iam::111122223333:user/test-user")
-	ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:my-bucket")
+	assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys("arn:aws:s3::111122223333:my-bucket"))
 
 	req := &EvaluationRequest{
 		Action:             "s3:GetObject",

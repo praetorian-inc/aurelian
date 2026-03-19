@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"sort"
 	"strings"
@@ -13,11 +14,8 @@ import (
 )
 
 var (
-	logLevelFlag     string
-	awsCacheLogLevel string
-	awsCacheLogFile  string
-	noColorFlag      bool
-	quietFlag        bool
+	noColorFlag bool
+	quietFlag   bool
 )
 
 var rootCmd = &cobra.Command{
@@ -34,9 +32,6 @@ func initCommands() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&logLevelFlag, "log-level", "none", "Log level (debug, info, warn, error)")
-	rootCmd.PersistentFlags().StringVar(&awsCacheLogLevel, "aws-cache-log-level", "none", "Log level (debug, info, warn, error)")
-	rootCmd.PersistentFlags().StringVar(&awsCacheLogFile, "aws-cache-log-file", "", "")
 	rootCmd.PersistentFlags().BoolVar(&noColorFlag, "no-color", false, "Disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&quietFlag, "quiet", false, "Suppress user messages (overrides default verbose CLI mode)")
 	rootCmd.PersistentFlags().String("output-dir", "aurelian-output", "Output directory (default: aurelian-output)")
@@ -50,10 +45,27 @@ func Execute() error {
 
 var listModulesCmd = &cobra.Command{
 	Use:   "list-modules",
-	Short: "Display available Diocletian modules in a tree structure",
+	Short: "Display available Aurelian modules in a tree structure",
 	Run: func(cmd *cobra.Command, args []string) {
+		log := plugin.NewLogger(os.Stderr, noColorFlag, quietFlag)
+		log.Banner(banner + moduleCounts())
 		displayModuleTree()
 	},
+}
+
+func moduleCounts() string {
+	hierarchy := plugin.GetHierarchy()
+	counts := make(map[plugin.Platform]int)
+	for platform, categories := range hierarchy {
+		for _, modules := range categories {
+			counts[platform] += len(modules)
+		}
+	}
+	return fmt.Sprintf(" %d AWS, %d Azure, %d GCP modules",
+		counts[plugin.PlatformAWS],
+		counts[plugin.PlatformAzure],
+		counts[plugin.PlatformGCP],
+	)
 }
 
 func displayModuleTree() {

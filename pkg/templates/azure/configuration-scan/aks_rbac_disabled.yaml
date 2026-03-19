@@ -1,0 +1,58 @@
+id: aks_rbac_disabled
+name: AKS Clusters with RBAC Disabled
+description: Detects AKS clusters without Kubernetes RBAC enabled, allowing any authenticated user cluster-wide permissions
+category: ["Privilege Escalation", "arg-scan"]
+severity: High
+reportability: Automatic
+triageNotes: |
+  This finding identifies AKS clusters that have Kubernetes RBAC disabled, which creates significant security risks:
+
+  1. **Risk Explanation**: Without Kubernetes RBAC enabled, any authenticated user has cluster-wide administrative permissions. This means they can:
+     - Delete workloads and disrupt services
+     - Access all secrets and sensitive data across all namespaces
+     - Deploy malicious containers
+     - Modify cluster configurations
+     - Escalate privileges without restrictions
+
+  2. **Kubernetes without RBAC = Single-User System**: Disabling RBAC effectively treats the entire cluster as a single-user system with no authorization boundaries, negating the security benefits of Kubernetes namespaces and access controls.
+
+  3. **Common Scenario**: This configuration is often found in dev/test clusters that were later promoted to production without proper security hardening. Legacy clusters created before RBAC became default may also have this setting.
+
+  Triage Guidance:
+  - CRITICAL: Immediately review clusters with enableRbac=false in production environments
+  - Check if Azure RBAC (enableAzureRBAC) is enabled as a compensating control (still insufficient without K8s RBAC)
+  - Verify cluster usage - if actively used, plan migration to RBAC-enabled cluster
+  - Review audit logs for unauthorized access patterns
+  - Consider cluster version - older Kubernetes versions may require RBAC enablement strategy
+
+  Remediation Note:
+  **IMPORTANT:** The `enableRBAC` property cannot be changed after cluster creation. The only
+  remediation is to create a new AKS cluster with RBAC enabled, migrate workloads to it, and
+  decommission the old cluster.
+references:
+  - https://learn.microsoft.com/en-us/azure/aks/concepts-identity#kubernetes-rbac
+  - https://learn.microsoft.com/en-us/azure/aks/operator-best-practices-identity#use-kubernetes-role-based-access-control-kubernetes-rbac
+query: |
+    resources
+    | where type =~ 'Microsoft.ContainerService/managedClusters'
+    | extend enableRbac = coalesce(properties.enableRBAC, true)
+    | extend aadProfile = properties.aadProfile
+    | extend enableAzureRbac = coalesce(aadProfile.enableAzureRBAC, false)
+    | extend networkProfile = properties.networkProfile
+    | extend networkPolicy = networkProfile.networkPolicy
+    | extend kubernetesVersion = properties.kubernetesVersion
+    | extend agentPoolCount = array_length(properties.agentPoolProfiles)
+    | where enableRbac == false
+    | project
+        id,
+        name,
+        type,
+        location,
+        subscriptionId,
+        resourceGroup,
+        enableRbac,
+        enableAzureRbac,
+        kubernetesVersion,
+        networkPolicy,
+        agentPoolCount,
+        properties

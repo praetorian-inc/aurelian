@@ -13,7 +13,7 @@ import (
 )
 
 func TestGAAD(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/recon/graph")
+	fixture := testutil.NewAWSFixture(t, "aws/recon/graph")
 	fixture.Setup()
 
 	g := New(plugin.AWSReconBase{})

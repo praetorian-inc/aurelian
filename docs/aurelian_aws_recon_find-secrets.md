@@ -9,16 +9,11 @@ aurelian aws recon find-secrets [flags]
 ### Options
 
 ```
-      --cache-dir string               Directory to store API response cache files
-      --cache-error-resp               Cache error response
-      --cache-error-resp-type string   Comma-separated cache error response types, e.g., TypeNotFoundException, AccessDeniedException. Use all to represent any error.
-      --cache-ext string               Name of AWS API response cache files extension (default ".aws-cache")
-      --cache-ttl int                  TTL for cached responses in seconds (default 3600)
       --concurrency int                Maximum concurrent API requests (default 5)
       --db-path string                 Path for Titus SQLite database
-      --disable-cache                  Disable API response caching
       --disabled-titus-rules strings   Rule IDs to exclude from scanning
   -h, --help                           help for find-secrets
+      --ignore-file string             Path to gitignore-style file for skipping paths; empty uses titus defaults
       --max-events int                 Max log events per log group (default 10000)
       --max-streams int                Max streams to sample per log group (default 10)
       --opsec_level string             Operational security level for AWS operations (default "none")
@@ -28,6 +23,8 @@ aurelian aws recon find-secrets [flags]
   -r, --regions strings                AWS regions to scan (default [all])
   -a, --resource-arn strings           AWS target resource ARN
   -t, --resource-type strings          AWS Cloud Control resource type (default [all])
+      --ruleset string                 Titus ruleset to apply; empty string disables ruleset filtering (default "default")
+      --validate                       Validate detected secrets against their source APIs
 ```
 
 ### SEE ALSO

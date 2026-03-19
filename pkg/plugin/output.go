@@ -36,7 +36,7 @@ type ConsoleFormatter struct {
 // Format implements the Formatter interface for console output
 func (f *ConsoleFormatter) Format(results []model.AurelianModel) error {
 	for _, r := range results {
-		fmt.Fprintf(f.Writer, "%+v\n", r)
+		_, _ = fmt.Fprintf(f.Writer, "%+v\n", r)
 	}
 	return nil
 }

@@ -1,0 +1,130 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+project_name: aurelian
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: aurelian
+    main: .
+    binary: aurelian
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w
+      - -X github.com/praetorian-inc/aurelian/version.Version={{.Version}}
+      - -X github.com/praetorian-inc/aurelian/version.Commit={{.ShortCommit}}
+      - -X 'github.com/praetorian-inc/aurelian/version.BuildTime={{.Date}}'
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    name_template: >-
+      {{ .ProjectName }}-{{ .Os }}-{{ .Arch }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: SHA256SUMS.txt
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^ci:"
+      - "^chore:"
+      - "^test:"
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Performance
+      regexp: '^.*?perf(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Security
+      regexp: '^.*?sec(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: Other
+      order: 999
+
+release:
+  github:
+    owner: praetorian-inc
+    name: aurelian
+  draft: false
+  prerelease: auto
+  name_template: "Aurelian {{ .Tag }}"
+  header: |
+    ## Installation
+
+    ### Go Install
+    ```bash
+    go install github.com/praetorian-inc/aurelian@{{ .Tag }}
+    ```
+
+    ### Download Binary
+    Download the appropriate binary for your platform from the assets below.
+
+    ```bash
+    # Linux (amd64)
+    curl -LO https://github.com/praetorian-inc/aurelian/releases/download/{{ .Tag }}/aurelian-linux-amd64.tar.gz
+    tar -xzf aurelian-linux-amd64.tar.gz
+    chmod +x aurelian
+    sudo mv aurelian /usr/local/bin/
+
+    # macOS (Apple Silicon)
+    curl -LO https://github.com/praetorian-inc/aurelian/releases/download/{{ .Tag }}/aurelian-darwin-arm64.tar.gz
+    tar -xzf aurelian-darwin-arm64.tar.gz
+    chmod +x aurelian
+    sudo mv aurelian /usr/local/bin/
+    ```
+
+    ### Verify Checksums
+    ```bash
+    sha256sum -c SHA256SUMS.txt
+    ```
+
+  footer: |
+    ## Supported Platforms
+
+    | OS | Architecture | Binary |
+    |----|--------------|--------|
+    | Linux | amd64 | `aurelian-linux-amd64.tar.gz` |
+    | Linux | arm64 | `aurelian-linux-arm64.tar.gz` |
+    | macOS | amd64 (Intel) | `aurelian-darwin-amd64.tar.gz` |
+    | macOS | arm64 (Apple Silicon) | `aurelian-darwin-arm64.tar.gz` |
+    | Windows | amd64 | `aurelian-windows-amd64.zip` |
+
+    ---
+    **Full Changelog**: https://github.com/praetorian-inc/aurelian/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+announce:
+  skip: true

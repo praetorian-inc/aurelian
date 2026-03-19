@@ -1,3 +1,4 @@
+.env.integration
 ./aurelian
 aurelian
 *.test
@@ -24,3 +25,4 @@ debug.log*
 docker-images
 .claude/.output
 .worktrees/
+*.txt

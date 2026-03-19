@@ -85,11 +85,7 @@ func extractLogStream(
 
 		for _, event := range eventsResp.Events {
 			if event.Message != nil && *event.Message != "" {
-				label := "log-event"
-				if event.EventId != nil {
-					label = "log-event:" + *event.EventId
-				}
-				out.Send(output.ScanInputFromAWSResource(r, label, []byte(*event.Message)))
+				out.Send(output.ScanInputFromAWSResource(r, streamName, []byte(*event.Message)))
 				eventCount++
 			}
 		}

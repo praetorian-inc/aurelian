@@ -16,7 +16,7 @@ import (
 )
 
 func TestAWSResourcePolicies(t *testing.T) {
-	fixture := testutil.NewFixture(t, "aws/recon/graph")
+	fixture := testutil.NewAWSFixture(t, "aws/recon/graph")
 	fixture.Setup()
 
 	mod, ok := plugin.Get(plugin.PlatformAWS, plugin.CategoryRecon, "resource-policies")

@@ -1,7 +1,7 @@
 package recon
 
 import (
-	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
+	cclist "github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -53,23 +53,33 @@ func (m *AWSResourcePoliciesModule) Parameters() any {
 func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.ResourcePoliciesConfig
 
-	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
+	lister := cclist.NewEnumerator(c.AWSCommonRecon)
 	collector := resourcepolicies.New(c.AWSCommonRecon)
 	resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, collector.SupportedResourceTypes())
 	if err != nil {
 		return err
 	}
 
+	cfg.Info("collecting resource policies for %d resource types across %d regions", len(resourceTypes), len(c.Regions))
+
 	resourceTypePipeline := pipeline.From(resourceTypes...)
 	listed := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(resourceTypePipeline, lister.ListByType, listed)
+	pipeline.Pipe(resourceTypePipeline, lister.List, listed, &pipeline.PipeOpts{
+		Progress: cfg.Log.ProgressFunc("listing resources"),
+	})
 
 	collected := pipeline.New[output.AWSResource]()
 	pipeline.Pipe(listed, collector.Collect, collected)
 
+	count := 0
 	for r := range collected.Range() {
+		count++
 		out.Send(r)
 	}
 
-	return collected.Wait()
+	if err := collected.Wait(); err != nil {
+		return err
+	}
+	cfg.Success("collected %d resources with policies", count)
+	return nil
 }

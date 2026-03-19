@@ -9,17 +9,11 @@ aurelian aws recon org-policies [flags]
 ### Options
 
 ```
-      --cache-dir string               Directory to store API response cache files
-      --cache-error-resp               Cache error response
-      --cache-error-resp-type string   Comma-separated cache error response types, e.g., TypeNotFoundException, AccessDeniedException. Use all to represent any error.
-      --cache-ext string               Name of AWS API response cache files extension (default ".aws-cache")
-      --cache-ttl int                  TTL for cached responses in seconds (default 3600)
-      --disable-cache                  Disable API response caching
-  -h, --help                           help for org-policies
-      --opsec_level string             Operational security level for AWS operations (default "none")
-      --output-dir string              Base output directory (default "aurelian-output")
-  -p, --profile string                 AWS profile to use
-      --profile-dir string             Set to override the default AWS profile directory
+  -h, --help                 help for org-policies
+      --opsec_level string   Operational security level for AWS operations (default "none")
+      --output-dir string    Base output directory (default "aurelian-output")
+  -p, --profile string       AWS profile to use
+      --profile-dir string   Set to override the default AWS profile directory
 ```
 
 ### SEE ALSO

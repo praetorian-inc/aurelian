@@ -1,0 +1,294 @@
+id: vm_privileged_managed_identity
+name: VMs with Privileged Managed Identities
+description: Detects Azure Virtual Machines with system-assigned or user-assigned managed identities that have been granted privileged RBAC roles (Owner, Contributor, User Access Administrator). If a VM is compromised, attackers can steal the managed identity token from the Azure Instance Metadata Service (IMDS) at 169.254.169.254 and use it for subscription-level access, enabling subscription takeover and lateral movement.
+severity: Low
+category: ["Access Control", "arg-scan"]
+reportability: Manual Triage
+triageNotes: |
+  Security Risk:
+  Virtual Machines with managed identities assigned privileged RBAC roles create a significant
+  blast radius if the VM is compromised. Attackers who gain code execution on the VM can trivially
+  steal the managed identity token from the Instance Metadata Service (IMDS) and pivot to
+  subscription-level access.
+
+  Understanding Managed Identities:
+  - **System-Assigned MI**: Automatically created with the VM, tied to VM lifecycle
+  - **User-Assigned MI**: Standalone Azure resource, can be assigned to multiple VMs
+  - **IMDS Access**: Any process on the VM can request tokens via HTTP to 169.254.169.254
+  - **No Credentials Required**: Tokens are automatically provided, no secrets to steal
+  - **Token Scope**: Tokens inherit all RBAC permissions assigned to the managed identity
+
+  Attack Path:
+  1. Attacker compromises VM (RCE, stolen SSH keys, vulnerable service, supply chain)
+  2. Attacker queries IMDS: `curl -H "Metadata:true" "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/"`
+  3. IMDS returns OAuth token with all permissions of the managed identity
+  4. If identity has Owner/Contributor: Attacker now has subscription-wide control
+  5. Attacker can: Create new admins, exfiltrate secrets, disable logging, persist, pivot
+
+  Privileged Roles (Flagged by This Detection):
+  - **Owner**: Full control over resources + ability to assign roles to others
+  - **Contributor**: Full control over resources (cannot assign roles)
+  - **User Access Administrator**: Can assign roles to other principals
+
+  Why This Matters:
+  - **High-Impact Lateral Movement**: Single VM compromise → full subscription access
+  - **Amplified Blast Radius**: What starts as a single host compromise becomes organization-wide
+  - **Common Attack Vector**: IMDS token theft is trivial and well-documented
+  - **Post-Compromise Power**: Enables persistence, privilege escalation, data exfiltration
+  - **Hard to Detect**: Token theft via IMDS is often silent (no failed auth, no logs)
+
+  Detection Method:
+  This detection uses Azure Resource Graph + Authorization API enrichment:
+  - **ARG Query**: Identifies VMs with managed identities (identity property not null)
+  - **Enricher**: Queries Azure Authorization API for role assignments
+  - **Checks**: Microsoft.Authorization/roleAssignments/read permission required
+  - **Scope**: Checks subscription-level role assignments for the identity's principalId
+  - **Filters**: Flags Owner, Contributor, User Access Administrator roles
+
+  Common Legitimate Use Cases:
+  1. **CI/CD Pipeline VMs**: Azure DevOps self-hosted agents deploying infrastructure
+     - Justification: Need Contributor to create/modify resources
+     - Mitigation: Scope to specific resource groups, not subscription-level
+     - Alternative: Use Azure DevOps service connections instead of VM-based agents
+
+  2. **Infrastructure Automation VMs**: Terraform, Ansible, or custom deployment VMs
+     - Justification: Need to manage resources across the subscription
+     - Mitigation: Use scoped roles to specific resource groups
+     - Alternative: Azure Automation Accounts, Azure Functions with limited scope
+
+  3. **Backup/Disaster Recovery VMs**: Backup solutions requiring read across subscription
+     - Justification: Need Reader role across subscription
+     - Mitigation: Reader is lower risk (not flagged by this detection)
+     - Alternative: Use Azure Backup native service
+
+  4. **Management/Monitoring VMs**: Centralized management or compliance scanning
+     - Justification: Need to inventory and assess resources
+     - Mitigation: Use Reader or custom roles with specific read permissions
+     - Alternative: Azure Policy, Azure Monitor, or native compliance tools
+
+  5. **Development/Test VMs**: Temporary VMs for testing deployments
+     - Justification: Developers testing infrastructure code
+     - Mitigation: Should NEVER have Owner/Contributor in prod subscriptions
+     - Alternative: Use separate dev/test subscriptions with isolated identities
+
+  Triage Guidance:
+  1. **Determine VM Purpose**:
+     - Check VM tags for "purpose", "environment", "owner" metadata
+     - Check resource group naming conventions (e.g., "rg-cicd-*", "rg-automation-*")
+     - Interview VM owner or review deployment documentation
+     - Identify the workload running on the VM
+
+  2. **Assess Environment Criticality**:
+     - Production subscription with privileged MI: **CRITICAL PRIORITY**
+     - Dev/test subscription with privileged MI: **MEDIUM PRIORITY**
+     - Sandbox subscription: **LOW PRIORITY**
+
+  3. **Check VM Network Exposure**:
+     - Public IP + privileged MI: **HIGHEST RISK** (internet-exposed + high privileges)
+     - Private IP only + privileged MI: **MEDIUM RISK** (requires internal network access)
+     - Behind Azure Bastion: **LOWER RISK** (controlled access, but still risky if compromised)
+
+  4. **Verify VM Security Posture**:
+     ```bash
+     # Check if VM has public IP
+     az vm show --resource-group <rg> --name <vm-name> --query "networkProfile.networkInterfaces[].{id:id}" -o table
+
+     # Check for endpoint protection/EDR
+     az vm extension list --resource-group <rg> --vm-name <vm-name> --query "[?contains(name,'MDE') || contains(name,'Defender')].{name:name, status:provisioningState}" -o table
+
+     # Check NSG rules
+     az network nsg rule list --resource-group <rg> --nsg-name <nsg-name> --query "[?direction=='Inbound' && access=='Allow'].{name:name, protocol:protocol, sourceAddressPrefix:sourceAddressPrefix, destinationPortRange:destinationPortRange}" -o table
+
+     # Check OS patch status
+     az vm show --resource-group <rg> --name <vm-name> --query "storageProfile.imageReference" -o table
+     ```
+
+  5. **Review Role Assignment Scope**:
+     ```bash
+     # Check role assignments for the managed identity
+     MI_PRINCIPAL_ID=$(az vm show --resource-group <rg> --name <vm-name> --query identity.principalId -o tsv)
+     az role assignment list --assignee $MI_PRINCIPAL_ID --all --query "[].{role:roleDefinitionName, scope:scope}" -o table
+     ```
+     - **Subscription-level**: Highest risk (full subscription access)
+     - **Resource Group-level**: Medium risk (limited to specific RG)
+     - **Resource-level**: Lower risk (single resource access)
+
+  6. **Check for Business Justification**:
+     - Is there a documented approval for this privileged identity?
+     - Is this identity listed in security exceptions or approved automation list?
+     - Has this been reviewed in the last 90 days?
+     - Is there a compensating control (e.g., IP restrictions, conditional access)?
+
+  7. **Evaluate Alternatives**:
+     - Can the workload use Azure services instead of VM-based automation?
+     - Can the role be scoped to resource groups instead of subscription?
+     - Can a custom role with minimal permissions replace Owner/Contributor?
+     - Can the identity be switched from permanent to Just-In-Time (PIM for MI)?
+
+  Remediation Steps:
+
+  **Option 1: Remove Privileged Role Assignment (Immediate)**
+  ```bash
+  # Get managed identity principal ID
+  MI_PRINCIPAL_ID=$(az vm show --resource-group <rg> --name <vm-name> --query identity.principalId -o tsv)
+
+  # List current role assignments
+  az role assignment list --assignee $MI_PRINCIPAL_ID --all -o table
+
+  # Remove privileged role assignment
+  az role assignment delete \
+    --assignee $MI_PRINCIPAL_ID \
+    --role "Contributor" \
+    --scope "/subscriptions/<subscription-id>"
+
+  # Assign scoped role instead (resource group level)
+  az role assignment create \
+    --assignee $MI_PRINCIPAL_ID \
+    --role "Contributor" \
+    --resource-group <specific-rg>
+  ```
+
+  **Option 2: Create Custom Role with Minimal Permissions**
+  ```bash
+  # Create custom role definition
+  cat > custom-role.json <<EOF
+  {
+    "Name": "Custom Automation Role",
+    "Description": "Minimal permissions for automation tasks",
+    "Actions": [
+      "Microsoft.Resources/deployments/*",
+      "Microsoft.Resources/subscriptions/resourceGroups/read",
+      "Microsoft.Compute/virtualMachines/read",
+      "Microsoft.Network/*/read"
+    ],
+    "NotActions": [],
+    "AssignableScopes": [
+      "/subscriptions/<subscription-id>/resourceGroups/<automation-rg>"
+    ]
+  }
+  EOF
+
+  # Create role and assign
+  az role definition create --role-definition custom-role.json
+  az role assignment create --assignee $MI_PRINCIPAL_ID --role "Custom Automation Role" --resource-group <automation-rg>
+  ```
+
+  **Option 3: Migrate to Alternative Service**
+  ```bash
+  # For CI/CD: Use Azure DevOps service connections
+  # For automation: Use Azure Automation Account
+  # For functions: Use Azure Functions with scoped MI
+  # For batch: Use Azure Batch with limited permissions
+  ```
+
+  **Option 4: Implement Defense-in-Depth Controls**
+  If privileged identity is required, add compensating controls:
+  1. **Restrict IMDS Access** (Requires OS-level configuration):
+     ```bash
+     # On Linux VMs: Use iptables to restrict IMDS access to specific processes
+     iptables -A OUTPUT -d 169.254.169.254 -m owner ! --uid-owner <trusted-uid> -j REJECT
+
+     # On Windows VMs: Use Windows Firewall rules
+     ```
+
+  2. **Enable Azure Defender for Servers**:
+     ```bash
+     # Enable Microsoft Defender for Servers on the subscription
+     az security pricing create --name VirtualMachines --tier Standard
+     ```
+
+  3. **Enable JIT VM Access**:
+     ```bash
+     # Enable Just-In-Time VM access
+     az security jit-policy create \
+       --resource-group <rg> \
+       --vm-name <vm-name> \
+       --port 22 \
+       --protocol Tcp \
+       --max-request-duration PT3H \
+       --allowed-source-address-prefix "*"
+     ```
+
+  4. **Implement Network Segmentation**:
+     - Place automation VMs in dedicated subnet
+     - Use NSG rules to restrict inbound/outbound traffic
+     - Use Azure Firewall for egress filtering
+
+  5. **Enable Advanced Logging**:
+     ```bash
+     # Enable Azure Monitor for VMs
+     az monitor log-analytics workspace create --resource-group <rg> --workspace-name <workspace-name>
+
+     # Enable diagnostic settings for IMDS token requests (if available)
+     # Monitor Azure Activity Log for role assignment changes
+     ```
+
+  Azure CLI Commands:
+  ```bash
+  # Check VM managed identity configuration
+  az vm show --resource-group <rg> --name <vm-name> \
+    --query '{name:name, identity:identity, location:location}' -o json
+
+  # List all role assignments for a managed identity
+  MI_PRINCIPAL_ID=$(az vm show --resource-group <rg> --name <vm-name> --query identity.principalId -o tsv)
+  az role assignment list --assignee $MI_PRINCIPAL_ID --all -o table
+
+  # Check scope of role assignments
+  az role assignment list --assignee $MI_PRINCIPAL_ID --all \
+    --query "[].{role:roleDefinitionName, scope:scope, scopeType:case(@.scope, @, 'subscription', contains(@.scope, 'subscriptions') && !contains(@.scope, 'resourceGroups'), 'resourceGroup', contains(@.scope, 'resourceGroups') && !contains(@.scope, 'providers'), 'resource', contains(@.scope, 'providers'))}" -o table
+
+  # Find all VMs with privileged managed identities in subscription
+  az graph query -q "resources | where type =~ 'microsoft.compute/virtualmachines' | where isnotnull(identity) | project name, resourceGroup, principalId = identity.principalId"
+  ```
+
+  Compliance Impact:
+  - Violates principle of least privilege (CIS, NIST 800-53, ISO 27001)
+  - Increases risk of subscription-wide compromise (SOC 2, HIPAA requirements)
+  - May violate organization's identity and access management policies
+  - Fails cloud security best practices (CSA CCM, Azure Security Benchmark)
+  - Increases audit findings and compliance risk
+
+  Additional Considerations:
+  - **Token Lifetime**: Managed identity tokens are valid for 24 hours by default
+  - **Token Refresh**: Tokens can be automatically refreshed by applications
+  - **No MFA**: Managed identity authentication bypasses MFA (by design)
+  - **IMDS v2**: Azure IMDS doesn't have IMDSv2 protections like AWS (no session tokens)
+  - **Monitoring Challenges**: IMDS token requests are not logged by default
+  - **Rotation**: Managed identity credentials are automatically rotated by Azure
+  - **Deletion**: Removing a system-assigned MI deletes the identity permanently
+
+  References for Security Teams:
+  - Review Azure Security Benchmark guidance on managed identities
+  - Implement least-privilege access patterns
+  - Regular audits of role assignments (quarterly minimum)
+  - Incident response playbooks for VM compromise scenarios
+  - Security awareness training on managed identity risks
+
+references:
+  - https://learn.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview
+  - https://learn.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/how-to-use-vm-token
+  - https://learn.microsoft.com/en-us/azure/role-based-access-control/overview
+  - https://learn.microsoft.com/en-us/azure/virtual-machines/instance-metadata-service
+  - https://posts.specterops.io/azure-privilege-escalation-via-azure-api-permissions-abuse-74aee1006f48
+  - https://github.com/projectdiscovery/nuclei-templates/blob/main/cloud/azure/virtualmachines/azure-vm-managed-identity-unassigned.yaml
+query: |
+  // Note: Role filtering (Owner, Contributor, User Access Administrator) is intentionally
+  // NOT performed in this ARG query. That responsibility is delegated to the enricher,
+  // which queries the Azure Authorization API for role assignments per identity principalId.
+  // This query returns ALL VMs with any managed identity; the enricher determines privilege level.
+  resources
+  | where type =~ 'microsoft.compute/virtualmachines'
+  | where isnotnull(identity)
+  | extend identityType = tostring(identity.type)
+  | extend principalId = tostring(identity.principalId)
+  | extend userAssignedIdentities = identity.userAssignedIdentities
+  | project
+      id,
+      name,
+      type,
+      location,
+      resourceGroup,
+      subscriptionId,
+      identityType,
+      principalId,
+      userAssignedIdentities

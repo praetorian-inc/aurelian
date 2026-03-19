@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/efs"
@@ -27,14 +28,16 @@ type evaluator func(resource *output.AWSResource, awsCfg aws.Config, accountID s
 // evaluators maps resource types to their evaluation functions.
 func (e *ResourceEvaluator) evaluators() map[string]evaluator {
 	return map[string]evaluator{
-		"AWS::EC2::Instance":     e.evaluateEC2,
-		"AWS::RDS::DBInstance":   e.evaluateRDS,
-		"AWS::Cognito::UserPool": e.evaluateCognito,
-		"AWS::Lambda::Function":  e.evaluateLambda,
-		"AWS::S3::Bucket":        e.evaluateS3,
-		"AWS::SNS::Topic":        e.evaluateSNS,
-		"AWS::SQS::Queue":        e.evaluateSQS,
-		"AWS::EFS::FileSystem":   e.evaluateEFS,
+		"AWS::EC2::Instance":      e.evaluateEC2,
+		"AWS::RDS::DBInstance":    e.evaluateRDS,
+		"AWS::Redshift::Cluster":  e.evaluateRedshift,
+		"AWS::Cognito::UserPool":  e.evaluateCognito,
+		"AWS::Lambda::Function":   e.evaluateLambda,
+		"AWS::S3::Bucket":         e.evaluateS3,
+		"AWS::SNS::Topic":         e.evaluateSNS,
+		"AWS::SQS::Queue":         e.evaluateSQS,
+		"AWS::EFS::FileSystem":    e.evaluateEFS,
+		"AWS::EC2::Image":         e.evaluateEC2Image,
 	}
 }
 
@@ -50,6 +53,8 @@ func SupportedResourceTypes() []string {
 		"AWS::EFS::FileSystem",
 		"AWS::Cognito::UserPool",
 		"AWS::RDS::DBInstance",
+		"AWS::Redshift::Cluster",
+		"AWS::EC2::Image",
 	}
 }
 
@@ -59,6 +64,10 @@ type ResourceEvaluator struct {
 	opts             plugin.AWSCommonRecon
 	crossRegionActor *ratelimit.CrossRegionActor
 	orgPolicies      *orgpolicies.OrgPolicies
+
+	accountID     string
+	accountIDOnce sync.Once
+	accountIDErr  error
 }
 
 // NewResourceEvaluator creates a new ResourceEvaluator.
@@ -94,7 +103,7 @@ func (e *ResourceEvaluator) Evaluate(resource output.AWSResource, out *pipeline.
 			return nil
 		}
 
-		accountID, err := awshelpers.GetAccountId(awsCfg)
+		accountID, err := e.getAccountID(awsCfg)
 		if err != nil {
 			slog.Warn("failed to get account ID, skipping resource",
 				"resource", resource.ResourceID, "region", resource.Region, "error", err)
@@ -104,6 +113,13 @@ func (e *ResourceEvaluator) Evaluate(resource output.AWSResource, out *pipeline.
 		e.evaluateCore(&resource, awsCfg, accountID, out)
 		return nil
 	})
+}
+
+func (e *ResourceEvaluator) getAccountID(awsCfg aws.Config) (string, error) {
+	e.accountIDOnce.Do(func() {
+		e.accountID, e.accountIDErr = awshelpers.GetAccountId(awsCfg)
+	})
+	return e.accountID, e.accountIDErr
 }
 
 // evaluateCore performs the core evaluation logic: looks up the evaluator for
@@ -169,6 +185,19 @@ func (e *ResourceEvaluator) evaluateRDS(resource *output.AWSResource, _ aws.Conf
 	}
 }
 
+func (e *ResourceEvaluator) evaluateRedshift(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	isPublic, _ := resource.Properties["IsPubliclyAccessible"].(bool)
+	if !isPublic {
+		return nil
+	}
+	return &PublicAccessResult{
+		IsPublic: true,
+		EvaluationReasons: []string{
+			"Redshift cluster is publicly accessible (PubliclyAccessible=true)",
+		},
+	}
+}
+
 func (e *ResourceEvaluator) evaluateCognito(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
 	selfSignup, _ := resource.Properties["SelfSignupEnabled"].(bool)
 	if !selfSignup {
@@ -178,6 +207,49 @@ func (e *ResourceEvaluator) evaluateCognito(resource *output.AWSResource, _ aws.
 		IsPublic: true,
 		EvaluationReasons: []string{
 			"Cognito user pool allows self-signup (AdminCreateUserOnly=false)",
+		},
+	}
+}
+
+func (e *ResourceEvaluator) evaluateEC2Image(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	isPublic, _ := resource.Properties["IsPublic"].(bool)
+	if !isPublic {
+		return nil
+	}
+
+	instances, _ := resource.Properties["InUseByInstances"].([]string)
+	if instances == nil {
+		if raw, ok := resource.Properties["InUseByInstances"].([]any); ok {
+			for _, v := range raw {
+				if s, ok := v.(string); ok {
+					instances = append(instances, s)
+				}
+			}
+		}
+	}
+
+	imageID, _ := resource.Properties["ImageId"].(string)
+	name, _ := resource.Properties["Name"].(string)
+
+	if len(instances) > 0 {
+		return &PublicAccessResult{
+			IsPublic:       true,
+			AllowedActions: []string{"ec2:DescribeImages", "ec2:RunInstances"},
+			EvaluationReasons: []string{
+				fmt.Sprintf("AMI '%s' (%s) is publicly accessible and in use by %d running instance(s)",
+					name, imageID, len(instances)),
+				"Attackers can launch instances from this AMI to extract credentials, SSH keys, and application code",
+			},
+		}
+	}
+
+	return &PublicAccessResult{
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"ec2:DescribeImages", "ec2:RunInstances"},
+		EvaluationReasons: []string{
+			fmt.Sprintf("AMI '%s' (%s) is publicly accessible but not in use by any running instances",
+				name, imageID),
+			"While not actively deployed, the AMI may contain sensitive data; recommend removing public access",
 		},
 	}
 }

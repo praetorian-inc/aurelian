@@ -1,0 +1,49 @@
+id: postgresql_flexible_server_public_access
+name: "Publicly Accessible Azure Database for PostgreSQL Flexible Server"
+description: "Detects Azure Database for PostgreSQL Flexible Servers with public network access enabled (no VNet integration)"
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - Direct database exposure to the internet
+  - Potential for brute-force attacks on database credentials
+  - Data exfiltration if credentials compromised
+  - Business impact: customer data exposure, compliance violations
+
+  Triage Guidance:
+  - This finding confirms network-level accessibility from internet
+  - Does NOT confirm authentication bypass or SQL injection
+  - Manual verification required:
+    1. Check firewall rules: az postgres flexible-server firewall-rule list --resource-group <rg> --server-name <name>
+    2. Look for overly permissive rules (0.0.0.0-255.255.255.255)
+    3. Review AllowAllWindowsAzureIps setting
+    4. Test actual connectivity: nc -zv <server>.postgres.database.azure.com 5432
+  - Consider: Does this database need internet access? Can it use private endpoints?
+
+  Remediation Considerations:
+  - Disable public network access (requires VNet integration)
+  - Implement private endpoints (Azure Private Link)
+  - Configure IP restrictions to known safe ranges
+  - Enable Azure AD authentication instead of PostgreSQL auth
+references:
+  - https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-networking-public
+  - https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-networking-private
+query: |
+  resources
+  | where type =~ 'Microsoft.DBforPostgreSQL/flexibleServers'
+  | extend publicNetworkAccess = tolower(coalesce(properties.network.publicNetworkAccess, 'enabled'))
+  | extend delegatedSubnetResourceId = properties.network.delegatedSubnetResourceId
+  | where isempty(delegatedSubnetResourceId)  // No VNet integration = public
+  | where publicNetworkAccess != 'disabled'
+  | project
+      id,
+      name,
+      type,
+      location,
+      resourceGroup,
+      subscriptionId,
+      publicNetworkAccess,
+      fullyQualifiedDomainName = properties.fullyQualifiedDomainName,
+      skuName = properties.sku.name,
+      skuTier = properties.sku.tier

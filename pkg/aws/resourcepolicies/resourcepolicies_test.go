@@ -69,9 +69,7 @@ func TestResourcePoliciesCollectPoliciesFlow(t *testing.T) {
 		ARN:          "arn:aws:s3:::test-bucket",
 		Region:       "us-east-1",
 		AccountRef:   "123456789012",
-		Properties: map[string]any{
-			"BucketName": "test-bucket",
-		},
+		Properties:   make(map[string]any),
 	}
 
 	lambdaResource := output.AWSResource{
@@ -187,9 +185,6 @@ func TestResourcePoliciesNoPolicy(t *testing.T) {
 	s3Resource := output.AWSResource{
 		ResourceType: "AWS::S3::Bucket",
 		ResourceID:   "no-policy-bucket",
-		Properties: map[string]any{
-			"BucketName": "no-policy-bucket",
-		},
 	}
 	s3Client := &mockS3Client{
 		policy: &s3.GetBucketPolicyOutput{

@@ -1,15 +1,18 @@
 package templates
 
+import "github.com/praetorian-inc/aurelian/pkg/output"
+
 // ARGQueryTemplate represents a single Azure Resource Graph query template
 type ARGQueryTemplate struct {
-	ID          string   `yaml:"id"`
-	Name        string   `yaml:"name"`
-	Description string   `yaml:"description"`
-	Severity    string   `yaml:"severity"`
-	Query       string   `yaml:"query"`
-	Category    []string `yaml:"category"`
-	References  []string `yaml:"references"`
-	TriageNotes string   `yaml:"triageNotes,omitempty"`
+	ID          string              `yaml:"id"`
+	Name        string              `yaml:"name"`
+	Description string              `yaml:"description"`
+	Severity    output.RiskSeverity `yaml:"severity"`
+	Query       string              `yaml:"query"`
+	Category    []string            `yaml:"category"`
+	References  []string            `yaml:"references"`
+	TriageNotes   string              `yaml:"triageNotes,omitempty"`
+	Reportability string              `yaml:"reportability,omitempty"`
 }
 
 // ARGQueryResult represents a standardized result from an ARG query
@@ -23,6 +26,11 @@ type ARGQueryResult struct {
 	Location        string                 `json:"location"`
 	SubscriptionID  string                 `json:"subscriptionId"`
 	Properties      map[string]interface{} `json:"properties,omitempty"`
+
+	// Suppressed indicates that an enricher determined this result is a false positive
+	// and should not be emitted as a risk. SuppressReason explains why.
+	Suppressed     bool   `json:"suppressed,omitempty"`
+	SuppressReason string `json:"suppressReason,omitempty"`
 }
 
 // ARGTemplateLoader handles loading and validating ARG query templates

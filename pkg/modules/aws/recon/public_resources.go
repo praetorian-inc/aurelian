@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	cclist "github.com/praetorian-inc/aurelian/pkg/aws/cloudcontrol"
 	"github.com/praetorian-inc/aurelian/pkg/aws/enrichment"
+	cclist "github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/aws/publicaccess"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -61,29 +61,43 @@ func (m *AWSPublicResourcesModule) Parameters() any {
 func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.PublicResourcesConfig
 
-	lister := cclist.NewCloudControlLister(c.AWSCommonRecon)
+	lister := cclist.NewEnumerator(c.AWSCommonRecon)
 
 	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
 	if err != nil {
-		return fmt.Errorf("failed to collect inputs: %v", err)
+		return fmt.Errorf("failed to collect inputs: %w", err)
 	}
+
+	cfg.Info("evaluating %d resource types for public access across %d regions", len(inputs), len(c.Regions))
 
 	inputPipeline := pipeline.From(inputs...)
 	listed := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(inputPipeline, lister.List, listed)
+	pipeline.Pipe(inputPipeline, lister.List, listed, &pipeline.PipeOpts{
+		Progress: cfg.Log.ProgressFunc("listing resources"),
+	})
 
 	// Enrich resources with properties not available from CloudControl
 	// (e.g. RDS PubliclyAccessible, Cognito self-signup, Lambda function URL auth type).
 	enricher := enrichment.NewAWSEnricher(c.AWSCommonRecon)
 	enriched := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(listed, enricher.Enrich, enriched)
+	pipeline.Pipe(listed, enricher.Enrich, enriched, &pipeline.PipeOpts{
+		Progress:    cfg.Log.ProgressFunc("enriching resources"),
+		Concurrency: m.Concurrency,
+	})
 
 	evaluator := publicaccess.NewResourceEvaluator(c.AWSCommonRecon, c.OrgPolicies)
 	evaluated := pipeline.New[publicaccess.PublicAccessResult]()
-	pipeline.Pipe(enriched, evaluator.Evaluate, evaluated)
+	pipeline.Pipe(enriched, evaluator.Evaluate, evaluated, &pipeline.PipeOpts{
+		Progress:    cfg.Log.ProgressFunc("evaluating public access"),
+		Concurrency: m.Concurrency,
+	})
 	pipeline.Pipe(evaluated, riskFromResult, out)
 
-	return out.Wait()
+	if err := out.Wait(); err != nil {
+		return err
+	}
+	cfg.Success("public access evaluation complete")
+	return nil
 }
 
 func riskFromResult(r publicaccess.PublicAccessResult, out *pipeline.P[model.AurelianModel]) error {
@@ -117,7 +131,7 @@ func riskFromResult(r publicaccess.PublicAccessResult, out *pipeline.P[model.Aur
 	out.Send(output.AurelianRisk{
 		Name:        "public-aws-resource",
 		Severity:    severity,
-		ImpactedARN: impactedARN,
+		ImpactedResourceID: impactedARN,
 		Context:     ctx,
 	})
 	return nil

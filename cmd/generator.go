@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
@@ -15,6 +17,32 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
+
+const banner = `                      _ _            
+  __ _ _   _ _ __ ___| (_) __ _ _ __  
+ / _` + "`" + ` | | | | '__/ _ \ | |/ _` + "`" + ` | '_ \ 
+| (_| | |_| | | |  __/ | | (_| | | | |
+ \__,_|\__,_|_|  \___|_|_|\__,_|_| |_|
+
+ Praetorian Security, Inc.
+`
+
+func configureSlog(level string, logger *plugin.Logger) {
+	var slogLevel slog.Level
+	switch strings.ToLower(level) {
+	case "debug":
+		slogLevel = slog.LevelDebug
+	case "info":
+		slogLevel = slog.LevelInfo
+	case "warn", "warning":
+		slogLevel = slog.LevelWarn
+	case "error":
+		slogLevel = slog.LevelError
+	default: // "none" — only warn/error pass through
+		slogLevel = slog.LevelWarn
+	}
+	slog.SetDefault(slog.New(plugin.NewSlogHandler(logger, slogLevel)))
+}
 
 // platformAliases maps platform names to their command aliases
 var platformAliases = map[string][]string{
@@ -191,7 +219,7 @@ func addFlag(cmd *cobra.Command, param plugin.Parameter, flagValues map[string]i
 	}
 
 	if param.Required {
-		cmd.MarkFlagRequired(name)
+		_ = cmd.MarkFlagRequired(name)
 	}
 }
 
@@ -235,7 +263,10 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 			moduleName = "Azure ARG Template Scanner WITHOUT ENRICHMENT"
 		}
 	}
-	fmt.Printf("Running module %s", moduleName)
+	log := plugin.NewLogger(os.Stderr, noColorFlag, quietFlag)
+	log.Banner(banner)
+	log.Info("running module %s", moduleName)
+	configureSlog("none", log)
 
 	// Inject module ID into args for downstream outputters
 	argsMap["module-name"] = module.ID()
@@ -246,6 +277,7 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		Context: context.Background(),
 		Output:  io.Discard,
 		Verbose: !quietFlag,
+		Log:     log,
 	}
 
 	// Run module (parameter binding is handled automatically by ModuleWrapper)
@@ -281,16 +313,14 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		if err != nil {
 			return fmt.Errorf("failed to create output file: %w", err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		formatter := &plugin.JSONFormatter{Writer: f, Pretty: true}
 		if err := formatter.Format(results); err != nil {
 			return fmt.Errorf("failed to format output: %w", err)
 		}
 
-		if !quietFlag {
-			fmt.Printf("Output written to: %s\n", outputPath)
-		}
+		log.Success("output written to %s", outputPath)
 	}
 
 	return nil
