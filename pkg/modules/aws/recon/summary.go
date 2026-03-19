@@ -80,7 +80,7 @@ func (m *AWSSummaryModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 
 	slog.Info("querying Cost Explorer", "start", startDate, "end", endDate)
 
-	result, err := client.GetCostAndUsage(ctx, &costexplorer.GetCostAndUsageInput{
+	input := &costexplorer.GetCostAndUsageInput{
 		TimePeriod: &cetypes.DateInterval{
 			Start: &startDate,
 			End:   &endDate,
@@ -91,9 +91,6 @@ func (m *AWSSummaryModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 			{Type: cetypes.GroupDefinitionTypeDimension, Key: strPtr("SERVICE")},
 			{Type: cetypes.GroupDefinitionTypeDimension, Key: strPtr("REGION")},
 		},
-	})
-	if err != nil {
-		return fmt.Errorf("summary: Cost Explorer GetCostAndUsage: %w", err)
 	}
 
 	// Parse cost data into service -> region -> cost map.
@@ -101,29 +98,41 @@ func (m *AWSSummaryModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 	regionSet := make(map[string]bool)
 	grandTotal := 0.0
 
-	for _, rbt := range result.ResultsByTime {
-		for _, group := range rbt.Groups {
-			if len(group.Keys) < 2 {
-				continue
-			}
-			service := cleanServiceName(group.Keys[0])
-			region := group.Keys[1]
-			if service == "" || region == "" {
-				continue
-			}
-
-			var cost float64
-			if metric, ok := group.Metrics["BlendedCost"]; ok && metric.Amount != nil {
-				fmt.Sscanf(*metric.Amount, "%f", &cost)
-			}
-
-			if serviceRegions[service] == nil {
-				serviceRegions[service] = make(map[string]float64)
-			}
-			serviceRegions[service][region] += cost
-			regionSet[region] = true
-			grandTotal += cost
+	for {
+		result, err := client.GetCostAndUsage(ctx, input)
+		if err != nil {
+			return fmt.Errorf("summary: Cost Explorer GetCostAndUsage: %w", err)
 		}
+
+		for _, rbt := range result.ResultsByTime {
+			for _, group := range rbt.Groups {
+				if len(group.Keys) < 2 {
+					continue
+				}
+				service := cleanServiceName(group.Keys[0])
+				region := group.Keys[1]
+				if service == "" || region == "" {
+					continue
+				}
+
+				var cost float64
+				if metric, ok := group.Metrics["BlendedCost"]; ok && metric.Amount != nil {
+					fmt.Sscanf(*metric.Amount, "%f", &cost)
+				}
+
+				if serviceRegions[service] == nil {
+					serviceRegions[service] = make(map[string]float64)
+				}
+				serviceRegions[service][region] += cost
+				regionSet[region] = true
+				grandTotal += cost
+			}
+		}
+
+		if result.NextPageToken == nil {
+			break
+		}
+		input.NextPageToken = result.NextPageToken
 	}
 
 	slog.Info("cost summary", "services", len(serviceRegions), "total", fmt.Sprintf("$%.2f", grandTotal))
