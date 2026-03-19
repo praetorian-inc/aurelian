@@ -14,7 +14,7 @@ import (
 type AzureExtractor struct {
 	cred             azcore.TokenCredential
 	MaxCosmosDocSize int // 0 uses defaultMaxCosmosDocSize (1 MB)
-	MaxCosmosDocScan int // 0 means unlimited
+	MaxCosmosDocScan int // 0 uses defaultMaxCosmosDocScan (50)
 }
 
 // NewAzureExtractor creates an extractor with shared Azure credentials.

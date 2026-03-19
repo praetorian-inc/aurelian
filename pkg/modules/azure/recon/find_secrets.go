@@ -27,7 +27,7 @@ type AzureFindSecretsConfig struct {
 	Concurrency      int      `param:"concurrency" desc:"Maximum concurrent API requests" default:"5"`
 	ResourceID       []string `param:"resource-id" desc:"Azure resource ID(s) to scan directly, skipping enumeration" shortcode:"i"`
 	MaxCosmosDocSize int      `param:"max-cosmos-doc-size" desc:"Max individual Cosmos document size in bytes" default:"1048576"`
-	MaxCosmosDocScan int      `param:"max-cosmos-doc-scan" desc:"Max total Cosmos documents to scan per container (0 = unlimited)" default:"0"`
+	MaxCosmosDocScan int      `param:"max-cosmos-doc-scan" desc:"Max total Cosmos documents to scan per container" default:"50"`
 }
 
 // AzureFindSecretsModule scans Azure resources for hardcoded secrets using Titus.

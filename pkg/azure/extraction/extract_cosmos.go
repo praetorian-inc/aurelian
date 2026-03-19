@@ -14,6 +14,8 @@ import (
 const (
 	// defaultMaxCosmosDocSize caps individual document size at 1 MB.
 	defaultMaxCosmosDocSize = 1 << 20
+	// defaultMaxCosmosDocScan caps the total documents scanned per container.
+	defaultMaxCosmosDocScan = 50
 )
 
 // configCollectionNames are container names that likely hold configuration data.
@@ -269,12 +271,15 @@ func queryConfigDocs(ctx extractContext, r output.AzureResource, containerClient
 	if maxDocSize <= 0 {
 		maxDocSize = defaultMaxCosmosDocSize
 	}
-	maxDocScan := ctx.MaxCosmosDocScan // 0 = unlimited
+	maxDocScan := ctx.MaxCosmosDocScan
+	if maxDocScan <= 0 {
+		maxDocScan = defaultMaxCosmosDocScan
+	}
 
 	scanned := 0
 	for queryPager.More() {
-		if maxDocScan > 0 && scanned >= maxDocScan {
-			slog.Debug("cosmos doc scan limit reached", "db", dbName, "container", containerName, "limit", maxDocScan)
+		if scanned >= maxDocScan {
+			slog.Info("cosmos doc scan limit reached", "db", dbName, "container", containerName, "scanned", scanned, "limit", maxDocScan)
 			return
 		}
 
@@ -284,9 +289,11 @@ func queryConfigDocs(ctx extractContext, r output.AzureResource, containerClient
 			return
 		}
 
+		slog.Info("scanning cosmos config docs", "db", dbName, "container", containerName, "scanned", scanned, "pageItems", len(page.Items))
+
 		var filtered [][]byte
 		for _, item := range page.Items {
-			if maxDocScan > 0 && scanned >= maxDocScan {
+			if scanned >= maxDocScan {
 				break
 			}
 			scanned++
