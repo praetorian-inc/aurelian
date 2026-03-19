@@ -110,43 +110,48 @@ func TestAzureResourceFromID_MissingMetadata(t *testing.T) {
 	assert.Empty(t, r.TenantID, "TenantID should be empty before hydration")
 }
 
-// TestAzureResourceFromID_SubscriptionScopedResources documents a known limitation:
-// subscription-scoped resource IDs (no resourceGroups segment) are rejected by
-// azureResourceFromID because ParseAzureResourceID and ResourceTypeFromID both
-// require 8+ path segments with resourceGroups at index 2.
-//
-// Affected resource types: policy definitions, blueprints, subscription-scope deployments.
-// These resources work in the normal subscription-wide enumeration path (the ARM
-// enumerator emits them and extractors handle them individually), but cannot be
-// targeted directly via --resource-id.
-//
-// TODO: support subscription-scoped IDs in azureResourceFromID to enable
-// --resource-id targeting for policy definitions, blueprints, and
-// subscription-scope deployments.
+// TestAzureResourceFromID_SubscriptionScopedResources verifies that subscription-scoped
+// resource IDs (no resourceGroups segment) are correctly parsed. These include policy
+// definitions, blueprints, and subscription-scope deployments.
 func TestAzureResourceFromID_SubscriptionScopedResources(t *testing.T) {
 	tests := []struct {
-		name string
-		id   string
+		name         string
+		id           string
+		wantType     string
+		wantSubID    string
+		wantRG       string
 	}{
 		{
-			name: "policy definition",
-			id:   "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.Authorization/policyDefinitions/my-custom-policy",
+			name:      "policy definition",
+			id:        "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.Authorization/policyDefinitions/my-custom-policy",
+			wantType:  "Microsoft.Authorization/policyDefinitions",
+			wantSubID: "00000000-0000-0000-0000-000000000001",
+			wantRG:    "",
 		},
 		{
-			name: "blueprint",
-			id:   "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.Blueprint/blueprints/my-blueprint",
+			name:      "blueprint",
+			id:        "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.Blueprint/blueprints/my-blueprint",
+			wantType:  "Microsoft.Blueprint/blueprints",
+			wantSubID: "00000000-0000-0000-0000-000000000001",
+			wantRG:    "",
 		},
 		{
-			name: "subscription-scope deployment",
-			id:   "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.Resources/deployments/my-deployment",
+			name:      "subscription-scope deployment",
+			id:        "/subscriptions/00000000-0000-0000-0000-000000000001/providers/Microsoft.Resources/deployments/my-deployment",
+			wantType:  "Microsoft.Resources/deployments",
+			wantSubID: "00000000-0000-0000-0000-000000000001",
+			wantRG:    "",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := azureResourceFromID(tt.id)
-			assert.Error(t, err, "subscription-scoped %s IDs are not yet supported by --resource-id", tt.name)
-			assert.Contains(t, err.Error(), "too few segments")
+			r, err := azureResourceFromID(tt.id)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantSubID, r.SubscriptionID)
+			assert.Equal(t, tt.wantRG, r.ResourceGroup)
+			assert.Equal(t, tt.wantType, r.ResourceType)
+			assert.Equal(t, tt.id, r.ResourceID)
 		})
 	}
 }

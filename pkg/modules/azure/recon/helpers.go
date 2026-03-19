@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
-	"github.com/praetorian-inc/aurelian/pkg/azure/extraction"
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
 	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/model"
@@ -132,25 +132,22 @@ func strVal(m map[string]any, key string) string {
 
 // azureResourceFromID parses a full Azure resource ID into an AzureResource.
 // This is the Azure equivalent of AWS's ARN-based resource lookup in collectInputs.
+// Supports both resource-group-scoped and subscription-scoped resource IDs
+// (e.g., policy definitions, blueprints, subscription-scope deployments).
 func azureResourceFromID(id string) (output.AzureResource, error) {
-	subID, rg, _, err := extraction.ParseAzureResourceID(id)
+	parsed, err := arm.ParseResourceID(id)
 	if err != nil {
 		return output.AzureResource{}, fmt.Errorf("invalid resource ID %q: %w", id, err)
 	}
 
-	if !validSubscriptionID.MatchString(subID) {
-		return output.AzureResource{}, fmt.Errorf("invalid subscription ID %q in resource ID: expected UUID format", subID)
-	}
-
-	resourceType, err := extraction.ResourceTypeFromID(id)
-	if err != nil {
-		return output.AzureResource{}, fmt.Errorf("cannot determine resource type from %q: %w", id, err)
+	if !validSubscriptionID.MatchString(parsed.SubscriptionID) {
+		return output.AzureResource{}, fmt.Errorf("invalid subscription ID %q in resource ID: expected UUID format", parsed.SubscriptionID)
 	}
 
 	return output.AzureResource{
-		SubscriptionID: subID,
-		ResourceGroup:  rg,
-		ResourceType:   resourceType,
+		SubscriptionID: parsed.SubscriptionID,
+		ResourceGroup:  parsed.ResourceGroupName,
+		ResourceType:   parsed.ResourceType.String(),
 		ResourceID:     id,
 	}, nil
 }
