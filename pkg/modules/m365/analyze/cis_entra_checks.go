@@ -3,6 +3,7 @@ package analyze
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/m365/checks"
@@ -1316,22 +1317,22 @@ func includesAdminRoles(policy databag.ConditionalAccessPolicy) bool {
 
 // includesAllUsers checks if a CA policy targets all users.
 func includesAllUsers(policy databag.ConditionalAccessPolicy) bool {
-	return containsStr(policy.IncludeUsers, "All")
+	return slices.Contains(policy.IncludeUsers, "All")
 }
 
 // includesAllApps checks if a CA policy targets all cloud apps.
 func includesAllApps(policy databag.ConditionalAccessPolicy) bool {
-	return containsStr(policy.IncludeApplications, "All")
+	return slices.Contains(policy.IncludeApplications, "All")
 }
 
 // requiresMFA checks if a CA policy requires multifactor authentication.
 func requiresMFA(policy databag.ConditionalAccessPolicy) bool {
-	return containsStr(policy.BuiltInControls, "mfa")
+	return slices.Contains(policy.BuiltInControls, "mfa")
 }
 
 // blocksAccess checks if a CA policy blocks access.
 func blocksAccess(policy databag.ConditionalAccessPolicy) bool {
-	return containsStr(policy.BuiltInControls, "block")
+	return slices.Contains(policy.BuiltInControls, "block")
 }
 
 // targetsLegacyClients checks if a CA policy targets legacy authentication clients.
@@ -1377,8 +1378,8 @@ func requiresPhishingResistantMFA(policy databag.ConditionalAccessPolicy) bool {
 
 // requiresCompliantDevice checks if the policy requires a compliant or hybrid-joined device.
 func requiresCompliantDevice(policy databag.ConditionalAccessPolicy) bool {
-	return containsStr(policy.BuiltInControls, "compliantDevice") ||
-		containsStr(policy.BuiltInControls, "domainJoinedDevice")
+	return slices.Contains(policy.BuiltInControls, "compliantDevice") ||
+		slices.Contains(policy.BuiltInControls, "domainJoinedDevice")
 }
 
 // targetsUserActionMFARegistration checks if a CA policy targets the MFA registration user action.

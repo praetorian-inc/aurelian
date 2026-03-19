@@ -22,7 +22,6 @@ type M365CommonParams struct {
 	TenantDomain  string                 `param:"tenant-domain"  desc:"Primary tenant domain (auto-detected if empty)" default:""`
 	Checks        string                 `param:"checks"         desc:"Comma-separated CIS IDs to include" default:""`
 	ExcludeChecks string                 `param:"exclude-checks" desc:"Comma-separated CIS IDs to exclude" default:""`
-	Concurrency   int                    `param:"concurrency"    desc:"Max concurrent API requests" default:"5"`
 	AzureCredential azcore.TokenCredential `param:"-"`
 }
 
@@ -32,7 +31,6 @@ func (c *M365CommonParams) PostBind(_ Config, _ Module) error {
 		return fmt.Errorf("azure authentication failed: %w", err)
 	}
 	c.AzureCredential = cred
-	c.Concurrency = max(1, c.Concurrency)
 
 	// Auto-detect tenant ID and domain via Graph /organization endpoint
 	if c.TenantID == "" || c.TenantDomain == "" {

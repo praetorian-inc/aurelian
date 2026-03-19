@@ -42,7 +42,9 @@ func checkAdminReducedLicenses(_ context.Context, bag *databag.M365DataBag) (*ch
 		}, nil
 	}
 
-	// Check that admin accounts have minimal licenses (ideally 0 or 1 productivity licenses)
+	// CIS recommends admin accounts have minimal licenses (typically Azure AD P2 +
+	// admin-specific SKU) rather than full E3/E5 productivity suites. Threshold of 2
+	// allows one base license + one admin license while flagging accounts with full suites.
 	const maxLicenses = 2
 	var overLicensed []string
 	for _, user := range bag.Users {

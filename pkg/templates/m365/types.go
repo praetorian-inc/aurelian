@@ -5,7 +5,6 @@ import (
 	"embed"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"gopkg.in/yaml.v3"
@@ -116,17 +115,6 @@ func FilterTemplates(templates []*M365CheckTemplate, include, exclude map[string
 			continue
 		}
 		filtered = append(filtered, t)
-	}
-	return filtered
-}
-
-// FilterByService returns templates matching the given service name.
-func FilterByService(templates []*M365CheckTemplate, service string) []*M365CheckTemplate {
-	var filtered []*M365CheckTemplate
-	for _, t := range templates {
-		if strings.EqualFold(t.Service, service) {
-			filtered = append(filtered, t)
-		}
 	}
 	return filtered
 }

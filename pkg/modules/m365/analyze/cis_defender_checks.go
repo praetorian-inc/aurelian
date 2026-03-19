@@ -32,10 +32,12 @@ func init() {
 }
 
 // comprehensiveFileTypes is the set of file extensions that CIS recommends blocking
-// in the common attachment type filter.
-var comprehensiveFileTypes = []string{
-	"ace", "ani", "app", "cab", "docm", "exe", "iso", "jar", "jnlp",
-	"reg", "scr", "vbe", "vbs", "wsc", "wsf", "wsh", "pif", "msi",
+// in the common attachment type filter. Declared as a function to prevent mutation.
+func comprehensiveFileTypes() []string {
+	return []string{
+		"ace", "ani", "app", "cab", "docm", "exe", "iso", "jar", "jnlp",
+		"reg", "scr", "vbe", "vbs", "wsc", "wsf", "wsh", "pif", "msi",
+	}
 }
 
 // 2.1.1: Ensure Safe Links for email messages is enabled and properly configured.
@@ -277,7 +279,7 @@ func checkComprehensiveAttachmentFilter(_ context.Context, bag *databag.M365Data
 		}
 
 		var missing []string
-		for _, required := range comprehensiveFileTypes {
+		for _, required := range comprehensiveFileTypes() {
 			if !blocked[required] {
 				missing = append(missing, required)
 			}
@@ -307,7 +309,7 @@ func checkComprehensiveAttachmentFilter(_ context.Context, bag *databag.M365Data
 			blocked[strings.ToLower(ft)] = true
 		}
 		var missing []string
-		for _, required := range comprehensiveFileTypes {
+		for _, required := range comprehensiveFileTypes() {
 			if !blocked[required] {
 				missing = append(missing, required)
 			}

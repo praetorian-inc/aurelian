@@ -878,7 +878,7 @@ func TestCheckOneDriveSharingRestricted_Fail(t *testing.T) {
 func TestCheckGuestsCannotReshareItems_Pass(t *testing.T) {
 	bag := &databag.M365DataBag{
 		TenantID:         "test-tenant",
-		SharePointTenant: &databag.SharePointTenantConfig{PreventExternalUsersFromResharing: true},
+		SharePointTenant: &databag.SharePointTenantConfig{RequireAcceptingAccountMatchInvitedAccount: true},
 	}
 	result, err := checkGuestsCannotReshareItems(context.Background(), bag)
 	if err != nil {
@@ -892,7 +892,7 @@ func TestCheckGuestsCannotReshareItems_Pass(t *testing.T) {
 func TestCheckGuestsCannotReshareItems_Fail(t *testing.T) {
 	bag := &databag.M365DataBag{
 		TenantID:         "test-tenant",
-		SharePointTenant: &databag.SharePointTenantConfig{PreventExternalUsersFromResharing: false},
+		SharePointTenant: &databag.SharePointTenantConfig{RequireAcceptingAccountMatchInvitedAccount: false},
 	}
 	result, err := checkGuestsCannotReshareItems(context.Background(), bag)
 	if err != nil {

@@ -192,7 +192,10 @@ func checkOneDriveSharingRestricted(_ context.Context, bag *databag.M365DataBag)
 	}, nil
 }
 
-// 7.2.5: Ensure guests cannot reshare items they don't own
+// 7.2.5: Ensure guests must match the invited account to access shared content.
+// This is distinct from 7.2.2 (PreventExternalUsersFromResharing) — 7.2.5 ensures
+// that the accepting account matches the invited account, preventing forwarded
+// invite links from granting access to unintended users.
 func checkGuestsCannotReshareItems(_ context.Context, bag *databag.M365DataBag) (*checks.CheckResult, error) {
 	if bag.SharePointTenant == nil {
 		return &checks.CheckResult{
@@ -202,19 +205,19 @@ func checkGuestsCannotReshareItems(_ context.Context, bag *databag.M365DataBag) 
 		}, nil
 	}
 
-	if bag.SharePointTenant.PreventExternalUsersFromResharing {
+	if bag.SharePointTenant.RequireAcceptingAccountMatchInvitedAccount {
 		return &checks.CheckResult{
 			Passed:  true,
-			Message: "Guests cannot reshare items they don't own",
+			Message: "Guests must use the same account that the sharing invitation was sent to",
 		}, nil
 	}
 
 	return &checks.CheckResult{
 		Passed:     false,
 		ResourceID: bag.TenantID,
-		Message:    "Guests can reshare items they don't own",
+		Message:    "Guests are not required to match the invited account — forwarded invitations may grant access to unintended users",
 		Evidence: map[string]any{
-			"preventExternalUsersFromResharing": bag.SharePointTenant.PreventExternalUsersFromResharing,
+			"requireAcceptingAccountMatchInvitedAccount": bag.SharePointTenant.RequireAcceptingAccountMatchInvitedAccount,
 		},
 	}, nil
 }
