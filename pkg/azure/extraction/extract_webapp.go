@@ -69,6 +69,13 @@ func extractWebAppConnections(ctx extractContext, r output.AzureResource, out *p
 }
 
 func extractWebAppHostKeys(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
+	// Host keys only exist on Function Apps. Regular Web Apps return 404.
+	// If kind is known and does not indicate a function app, skip.
+	kind, _ := r.Properties["kind"].(string)
+	if kind != "" && !strings.Contains(strings.ToLower(kind), "functionapp") {
+		return nil
+	}
+
 	resourceGroup, appName, err := parseWebAppID(r.ResourceID)
 	if err != nil {
 		return err

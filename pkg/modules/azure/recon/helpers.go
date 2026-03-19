@@ -76,7 +76,7 @@ func hydrateFromARG(cred azcore.TokenCredential, resources []output.AzureResourc
 			ids[j] = fmt.Sprintf("'%s'", escaped)
 		}
 		query := fmt.Sprintf(
-			"Resources | where tolower(id) in (%s) | project id, name, type, location, tenantId",
+			"Resources | where tolower(id) in (%s) | project id, name, type, kind, location, tenantId",
 			strings.Join(ids, ", "),
 		)
 
@@ -95,6 +95,7 @@ func hydrateFromARG(cred azcore.TokenCredential, resources []output.AzureResourc
 			Location string
 			Name     string
 			TenantID string
+			Kind     string
 		}
 		lookup := make(map[string]argResult)
 		if data, ok := resp.Data.([]any); ok {
@@ -108,6 +109,7 @@ func hydrateFromARG(cred azcore.TokenCredential, resources []output.AzureResourc
 					Location: strVal(m, "location"),
 					Name:     strVal(m, "name"),
 					TenantID: strVal(m, "tenantId"),
+					Kind:     strVal(m, "kind"),
 				}
 			}
 		}
@@ -119,6 +121,12 @@ func hydrateFromARG(cred azcore.TokenCredential, resources []output.AzureResourc
 				resources[idx].TenantID = result.TenantID
 				if resources[idx].DisplayName == "" {
 					resources[idx].DisplayName = result.Name
+				}
+				if result.Kind != "" {
+					if resources[idx].Properties == nil {
+						resources[idx].Properties = make(map[string]any)
+					}
+					resources[idx].Properties["kind"] = result.Kind
 				}
 			}
 		}

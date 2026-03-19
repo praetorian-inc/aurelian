@@ -17,7 +17,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/templates"
 )
 
-const listAllQuery = "Resources | project id, name, type, location, resourceGroup, tags, properties"
+const listAllQuery = "Resources | project id, name, type, kind, location, resourceGroup, tags, properties"
 
 // ListerInput provides the subscription and optional resource type filter for
 // a Resource Graph query. When ResourceTypes is nil or empty, all resources are
@@ -65,7 +65,7 @@ func buildFilteredQuery(resourceTypes []string) string {
 	for i, rt := range resourceTypes {
 		quoted[i] = "'" + strings.ToLower(rt) + "'"
 	}
-	return "Resources | where type in~ (" + strings.Join(quoted, ",") + ") | project id, name, type, location, resourceGroup, tags, properties"
+	return "Resources | where type in~ (" + strings.Join(quoted, ",") + ") | project id, name, type, kind, location, resourceGroup, tags, properties"
 }
 
 func (l *ResourceGraphLister) querySubscription(sub azuretypes.SubscriptionInfo, query string, out *pipeline.P[output.AzureResource]) error {

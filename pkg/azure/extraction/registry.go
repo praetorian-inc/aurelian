@@ -14,6 +14,7 @@ type extractContext struct {
 	Cred             azcore.TokenCredential
 	ScanMode         string // "critical" or "all" — used by storage blob extractor
 	MaxCosmosDocSize int    // max individual Cosmos document size in bytes; 0 uses defaultMaxCosmosDocSize
+	MaxCosmosDocScan int    // max total documents to scan per container; 0 means unlimited
 }
 
 // extractorFunc is the signature for per-resource extraction functions.
