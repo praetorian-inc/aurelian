@@ -34,7 +34,7 @@ type Queryer interface {
 	// Connect initializes the backend connection. No-op for pre-connected backends.
 	Connect(uri, username, password string) error
 	// Query compiles the DSL query and returns results.
-	Query(ctx context.Context, q Query) ([]*graph.QueryResult, error)
+	Query(ctx context.Context, q Query) (*graph.QueryResult, error)
 	// Close releases resources. No-op for externally-managed connections.
 	Close() error
 }

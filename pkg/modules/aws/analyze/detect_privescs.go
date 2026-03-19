@@ -96,20 +96,18 @@ func runMethod(
 ) error {
 	slog.Debug("running privesc query", "id", method.ID())
 
-	results, err := queryer.Query(ctx, method.Query())
+	result, err := queryer.Query(ctx, method.Query())
 	if err != nil {
 		return fmt.Errorf("executing %s: %w", method.ID(), err)
 	}
 
-	for _, result := range results {
-		for _, record := range result.Records {
-			risk, err := recordToRisk(method, record)
-			if err != nil {
-				slog.Warn("skipping record", "method", method.ID(), "error", err)
-				continue
-			}
-			out.Send(risk)
+	for _, record := range result.Records {
+		risk, err := recordToRisk(method, record)
+		if err != nil {
+			slog.Warn("skipping record", "method", method.ID(), "error", err)
+			continue
 		}
+		out.Send(risk)
 	}
 	return nil
 }
@@ -130,8 +128,8 @@ func recordToRisk(method privesc.AWSPrivesc, record map[string]interface{}) (out
 	dedupHash := fmt.Sprintf("%x", sha256.Sum256(contextBytes))
 
 	return output.AurelianRisk{
-		Name:            method.ID(),
-		Severity:        output.NormalizeSeverity(output.RiskSeverity(method.Severity())),
+		Name:            method.Name(),
+		Severity:        output.NormalizeSeverity(method.Severity()),
 		DeduplicationID: dedupHash,
 		Context:         contextBytes,
 	}, nil

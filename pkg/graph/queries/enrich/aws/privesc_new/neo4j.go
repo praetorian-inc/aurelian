@@ -97,7 +97,7 @@ func (q *Neo4jQueryer) Connect(uri, username, password string) error {
 	return nil
 }
 
-func (q *Neo4jQueryer) Query(ctx context.Context, query Query) ([]*graph.QueryResult, error) {
+func (q *Neo4jQueryer) Query(ctx context.Context, query Query) (*graph.QueryResult, error) {
 	cypher, err := q.compiler.Compile(query)
 	if err != nil {
 		return nil, err
@@ -106,7 +106,7 @@ func (q *Neo4jQueryer) Query(ctx context.Context, query Query) ([]*graph.QueryRe
 	if err != nil {
 		return nil, err
 	}
-	return []*graph.QueryResult{result}, nil
+	return result, nil
 }
 
 func (q *Neo4jQueryer) Close() error {

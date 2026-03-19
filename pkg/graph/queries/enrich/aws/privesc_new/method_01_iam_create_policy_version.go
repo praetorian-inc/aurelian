@@ -20,7 +20,7 @@ func (m *Method01IAMCreatePolicyVersion) ID() string {
 }
 
 func (m *Method01IAMCreatePolicyVersion) Name() string {
-	return "IAM CreatePolicyVersion Privilege Escalation"
+	return "Method01 IAM CreatePolicyVersion"
 }
 
 func (m *Method01IAMCreatePolicyVersion) Description() string {
