@@ -1,4 +1,4 @@
-package queryer
+package neo4j
 
 import (
 	"github.com/praetorian-inc/aurelian/pkg/graph/queries/dsl"

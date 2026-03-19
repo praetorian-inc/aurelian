@@ -1,4 +1,4 @@
-package queryer
+package neo4j
 
 import (
 	"context"

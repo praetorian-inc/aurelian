@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	privesc "github.com/praetorian-inc/aurelian/pkg/graph/queries/dsl"
-	"github.com/praetorian-inc/aurelian/pkg/graph/queryer"
 	"log/slog"
 
 	"github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc/methods"
@@ -23,7 +22,6 @@ func init() {
 // DetectPrivescsConfig holds parameters for the detect-privescs module.
 type DetectPrivescsConfig struct {
 	plugin.GraphOutputBase
-	Queryer privesc.Queryer `param:"-"`
 }
 
 // SetQueryer allows external callers (e.g. Guard) to inject a Queryer.
@@ -53,49 +51,31 @@ func (m *DetectPrivescsModule) Description() string {
 }
 
 func (m *DetectPrivescsModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
-	queryer, err := m.resolveQueryer()
-	if err != nil {
-		return err
-	}
-	defer queryer.Close()
+	defer m.Queryer.Close()
 
 	ctx := context.Background()
 	for _, method := range methods.AllPrivescQueries {
-		if err := runMethod(ctx, queryer, method, out); err != nil {
+		if err := m.runMethod(ctx, method, out); err != nil {
 			slog.Warn("privesc method failed", "id", method.ID(), "error", err)
 		}
 	}
 	return nil
 }
 
-// resolveQueryer returns the caller-provided Queryer if set,
-// otherwise creates a default Neo4jQueryer using GraphOutputBase params.
-func (m *DetectPrivescsModule) resolveQueryer() (privesc.Queryer, error) {
-	if m.Queryer != nil {
-		return m.Queryer, nil
-	}
-	q := queryer.NewNeo4jQueryer()
-	if err := q.Connect(m.Neo4jURI, m.Neo4jUsername, m.Neo4jPassword); err != nil {
-		return nil, fmt.Errorf("connecting to Neo4j: %w", err)
-	}
-	return q, nil
-}
-
-func runMethod(
+func (m *DetectPrivescsModule) runMethod(
 	ctx context.Context,
-	queryer privesc.Queryer,
 	method methods.AWSPrivesc,
 	out *pipeline.P[model.AurelianModel],
 ) error {
 	slog.Debug("running privesc query", "id", method.ID())
 
-	paths, err := queryer.Query(ctx, method.Query())
+	paths, err := m.Queryer.Query(ctx, method.Query())
 	if err != nil {
 		return fmt.Errorf("executing %s: %w", method.ID(), err)
 	}
 
 	for _, path := range paths {
-		risk, err := matchedPathToRisk(method, path)
+		risk, err := m.matchedPathToRisk(method, path)
 		if err != nil {
 			slog.Warn("skipping path", "method", method.ID(), "error", err)
 			continue
@@ -105,7 +85,7 @@ func runMethod(
 	return nil
 }
 
-func matchedPathToRisk(method methods.AWSPrivesc, path privesc.MatchedPath) (output.AurelianRisk, error) {
+func (m *DetectPrivescsModule) matchedPathToRisk(method methods.AWSPrivesc, path privesc.MatchedPath) (output.AurelianRisk, error) {
 	contextBytes, err := json.Marshal(path.Hops)
 	if err != nil {
 		return output.AurelianRisk{}, fmt.Errorf("marshalling match context: %w", err)
