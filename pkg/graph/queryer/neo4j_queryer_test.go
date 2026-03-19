@@ -1,7 +1,8 @@
-package privescnew
+package queryer
 
 import (
 	"context"
+	"github.com/praetorian-inc/aurelian/pkg/graph/queries/dsl"
 	"testing"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/dbtype"
@@ -51,7 +52,7 @@ func TestNeo4jQueryerDelegatesToCompiler(t *testing.T) {
 	q := NewNeo4jQueryer()
 	q.db = mock // bypass Connect, inject mock
 
-	query := Match(Principal(), HasPermission("iam:CreatePolicyVersion"), ManagedPolicy())
+	query := dsl.Match(dsl.Principal(), dsl.HasPermission("iam:CreatePolicyVersion"), dsl.ManagedPolicy())
 	results, err := q.Query(context.Background(), query)
 	if err != nil {
 		t.Fatalf("Query() error: %v", err)
@@ -88,7 +89,7 @@ func TestNeo4jQueryerCompileError(t *testing.T) {
 	q := NewNeo4jQueryer()
 	q.db = &mockGraphDB{}
 
-	badQuery := Match(Node{Kind: "Unknown"}, HasPermission("foo:Bar"), Principal())
+	badQuery := dsl.Match(dsl.Node{Kind: "Unknown"}, dsl.HasPermission("foo:Bar"), dsl.Principal())
 	_, err := q.Query(context.Background(), badQuery)
 	if err == nil {
 		t.Fatal("expected error for unknown node kind, got nil")

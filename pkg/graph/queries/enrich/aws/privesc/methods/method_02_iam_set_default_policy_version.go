@@ -1,6 +1,8 @@
 package methods
 
-import "github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc_new"
+import (
+	"github.com/praetorian-inc/aurelian/pkg/graph/queries/dsl"
+)
 
 // Method02IAMSetDefaultPolicyVersion is a Go-backed version of:
 // enrich/aws/privesc/method_02_iam_set_default_policy_version.yaml
@@ -24,10 +26,10 @@ func (m *Method02IAMSetDefaultPolicyVersion) Description() string {
 
 func (m *Method02IAMSetDefaultPolicyVersion) Severity() string { return "high" }
 
-func (m *Method02IAMSetDefaultPolicyVersion) Query() privescnew.Query {
-	return privescnew.Match(
-		privescnew.Principal(),
-		privescnew.HasPermission("iam:SetDefaultPolicyVersion"),
-		privescnew.ManagedPolicy(),
+func (m *Method02IAMSetDefaultPolicyVersion) Query() dsl.Query {
+	return dsl.Match(
+		dsl.Principal(),
+		dsl.HasPermission("iam:SetDefaultPolicyVersion"),
+		dsl.ManagedPolicy(),
 	)
 }

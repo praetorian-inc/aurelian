@@ -5,10 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	privesc "github.com/praetorian-inc/aurelian/pkg/graph/queries/dsl"
+	"github.com/praetorian-inc/aurelian/pkg/graph/queryer"
 	"log/slog"
 
-	privesc "github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc_new"
-	"github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc_new/methods"
+	"github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc/methods"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -59,7 +60,7 @@ func (m *DetectPrivescsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	defer queryer.Close()
 
 	ctx := context.Background()
-	for _, method := range allMethods() {
+	for _, method := range methods.AllPrivescQueries {
 		if err := runMethod(ctx, queryer, method, out); err != nil {
 			slog.Warn("privesc method failed", "id", method.ID(), "error", err)
 		}
@@ -73,19 +74,11 @@ func (m *DetectPrivescsModule) resolveQueryer() (privesc.Queryer, error) {
 	if m.Queryer != nil {
 		return m.Queryer, nil
 	}
-	q := privesc.NewNeo4jQueryer()
+	q := queryer.NewNeo4jQueryer()
 	if err := q.Connect(m.Neo4jURI, m.Neo4jUsername, m.Neo4jPassword); err != nil {
 		return nil, fmt.Errorf("connecting to Neo4j: %w", err)
 	}
 	return q, nil
-}
-
-func allMethods() []methods.AWSPrivesc {
-	return []methods.AWSPrivesc{
-		methods.NewMethod01IAMCreatePolicyVersion(),
-		methods.NewMethod02IAMSetDefaultPolicyVersion(),
-		methods.NewMethod03IAMCreateAccessKey(),
-	}
 }
 
 func runMethod(

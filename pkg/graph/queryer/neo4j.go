@@ -1,8 +1,9 @@
-package privescnew
+package queryer
 
 import (
 	"context"
 	"fmt"
+	"github.com/praetorian-inc/aurelian/pkg/graph/queries/dsl"
 	"strings"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j/dbtype"
@@ -33,7 +34,7 @@ func DefaultNeo4jCompiler() *Neo4jCompiler {
 
 // Compile transforms a Query into a Cypher string.
 // Aliases are assigned sequentially: n0, r0, n1.
-func (c *Neo4jCompiler) Compile(q Query) (string, error) {
+func (c *Neo4jCompiler) Compile(q dsl.Query) (string, error) {
 	fromAlias := "n0"
 	relAlias := "r0"
 	toAlias := "n1"
@@ -98,7 +99,7 @@ func (q *Neo4jQueryer) Connect(uri, username, password string) error {
 	return nil
 }
 
-func (q *Neo4jQueryer) Query(ctx context.Context, query Query) ([]MatchedPath, error) {
+func (q *Neo4jQueryer) Query(ctx context.Context, query dsl.Query) ([]dsl.MatchedPath, error) {
 	cypher, err := q.compiler.Compile(query)
 	if err != nil {
 		return nil, err
@@ -112,11 +113,11 @@ func (q *Neo4jQueryer) Query(ctx context.Context, query Query) ([]MatchedPath, e
 
 // pathRecordsToMatchedPaths converts Cypher "RETURN path" records into MatchedPaths.
 // Each record's "path" column is a dbtype.Path representing one escalation instance.
-func pathRecordsToMatchedPaths(qr *graph.QueryResult) []MatchedPath {
+func pathRecordsToMatchedPaths(qr *graph.QueryResult) []dsl.MatchedPath {
 	if qr == nil {
 		return nil
 	}
-	var paths []MatchedPath
+	var paths []dsl.MatchedPath
 	for _, record := range qr.Records {
 		pathData, ok := record["path"]
 		if !ok {
@@ -136,19 +137,19 @@ func pathRecordsToMatchedPaths(qr *graph.QueryResult) []MatchedPath {
 
 // pathToMatchedPath converts a single dbtype.Path into a MatchedPath.
 // Each relationship in the path becomes one hop.
-func pathToMatchedPath(path dbtype.Path) MatchedPath {
-	var hops []MatchResult
+func pathToMatchedPath(path dbtype.Path) dsl.MatchedPath {
+	var hops []dsl.MatchResult
 	for i, rel := range path.Relationships {
 		if i+1 >= len(path.Nodes) {
 			break
 		}
-		hops = append(hops, MatchResult{
+		hops = append(hops, dsl.MatchResult{
 			SourceID: nodeIdentifier(path.Nodes[i]),
 			TargetID: nodeIdentifier(path.Nodes[i+1]),
 			Actions:  []string{relTypeToAction(rel.Type)},
 		})
 	}
-	return MatchedPath{Hops: hops}
+	return dsl.MatchedPath{Hops: hops}
 }
 
 // nodeIdentifier extracts the best identifier from a Neo4j node.

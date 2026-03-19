@@ -1,6 +1,8 @@
 package methods
 
-import "github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc_new"
+import (
+	"github.com/praetorian-inc/aurelian/pkg/graph/queries/dsl"
+)
 
 // Method03IAMCreateAccessKey is a Go-backed version of:
 // enrich/aws/privesc/method_03_iam_create_access_key.yaml
@@ -22,10 +24,10 @@ func (m *Method03IAMCreateAccessKey) Description() string {
 
 func (m *Method03IAMCreateAccessKey) Severity() string { return "high" }
 
-func (m *Method03IAMCreateAccessKey) Query() privescnew.Query {
-	return privescnew.Match(
-		privescnew.Principal(),
-		privescnew.HasPermission("iam:CreateAccessKey"),
-		privescnew.Principal(),
+func (m *Method03IAMCreateAccessKey) Query() dsl.Query {
+	return dsl.Match(
+		dsl.Principal(),
+		dsl.HasPermission("iam:CreateAccessKey"),
+		dsl.Principal(),
 	)
 }

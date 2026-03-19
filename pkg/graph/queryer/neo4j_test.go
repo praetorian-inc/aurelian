@@ -1,13 +1,14 @@
-package privescnew
+package queryer
 
 import (
+	"github.com/praetorian-inc/aurelian/pkg/graph/queries/dsl"
 	"strings"
 	"testing"
 )
 
 func TestCompileMethod01(t *testing.T) {
 	compiler := DefaultNeo4jCompiler()
-	q := Match(Principal(), HasPermission("iam:CreatePolicyVersion"), ManagedPolicy())
+	q := dsl.Match(dsl.Principal(), dsl.HasPermission("iam:CreatePolicyVersion"), dsl.ManagedPolicy())
 
 	got, err := compiler.Compile(q)
 	if err != nil {
@@ -27,7 +28,7 @@ func TestCompileMethod01(t *testing.T) {
 
 func TestCompileReturnsPath(t *testing.T) {
 	compiler := DefaultNeo4jCompiler()
-	q := Match(Principal(), HasPermission("iam:CreatePolicyVersion"), ManagedPolicy())
+	q := dsl.Match(dsl.Principal(), dsl.HasPermission("iam:CreatePolicyVersion"), dsl.ManagedPolicy())
 
 	got, err := compiler.Compile(q)
 	if err != nil {
@@ -60,7 +61,7 @@ func TestActionToRelType(t *testing.T) {
 
 func TestCompileMethod02(t *testing.T) {
 	compiler := DefaultNeo4jCompiler()
-	q := Match(Principal(), HasPermission("iam:SetDefaultPolicyVersion"), ManagedPolicy())
+	q := dsl.Match(dsl.Principal(), dsl.HasPermission("iam:SetDefaultPolicyVersion"), dsl.ManagedPolicy())
 
 	got, err := compiler.Compile(q)
 	if err != nil {
@@ -80,7 +81,7 @@ func TestCompileMethod02(t *testing.T) {
 
 func TestCompileMethod03(t *testing.T) {
 	compiler := DefaultNeo4jCompiler()
-	q := Match(Principal(), HasPermission("iam:CreateAccessKey"), Principal())
+	q := dsl.Match(dsl.Principal(), dsl.HasPermission("iam:CreateAccessKey"), dsl.Principal())
 
 	got, err := compiler.Compile(q)
 	if err != nil {
@@ -100,7 +101,7 @@ func TestCompileMethod03(t *testing.T) {
 
 func TestCompileUnknownNodeKind(t *testing.T) {
 	compiler := DefaultNeo4jCompiler()
-	q := Match(Node{Kind: "Unknown"}, HasPermission("iam:Foo"), ManagedPolicy())
+	q := dsl.Match(dsl.Node{Kind: "Unknown"}, dsl.HasPermission("iam:Foo"), dsl.ManagedPolicy())
 
 	_, err := compiler.Compile(q)
 	if err == nil {
