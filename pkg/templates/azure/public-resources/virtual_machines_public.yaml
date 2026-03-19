@@ -155,6 +155,7 @@ query: |
   | project
       id = vmId,
       name = vmName,
+      type = 'microsoft.compute/virtualmachines',
       location = vmLocation,
       publicIPs = tostring(publicIPs),
       privateIPs = tostring(privateIPs),

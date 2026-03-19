@@ -95,7 +95,10 @@ func TestAzurePublicResources(t *testing.T) {
 	// that must appear in the ImpactedResourceID to confirm the right resource was caught.
 	assertRisk := func(t *testing.T, rc riskWithContext, expectedTemplate string, expectedSeverity output.RiskSeverity, resourceNameSubstr string) {
 		t.Helper()
-		assert.Equal(t, "public-azure-resource", rc.Risk.Name)
+		assert.True(t, strings.HasPrefix(rc.Risk.Name, "public-azure-resource-"),
+			"template %s: risk name %q should have prefix public-azure-resource-", expectedTemplate, rc.Risk.Name)
+		assert.NotEmpty(t, rc.Risk.DeduplicationID,
+			"template %s: risk should have DeduplicationID", expectedTemplate)
 		assert.Equal(t, expectedSeverity, rc.Risk.Severity,
 			"template %s: expected severity %s, got %s", expectedTemplate, expectedSeverity, rc.Risk.Severity)
 		assert.Equal(t, expectedTemplate, rc.Template)
@@ -206,10 +209,12 @@ func TestAzurePublicResources(t *testing.T) {
 	// Cross-finding invariants
 	// =====================================================================
 
-	t.Run("all risks have name public-azure-resource", func(t *testing.T) {
+	t.Run("all risks have granular name with resource type slug", func(t *testing.T) {
 		for _, rc := range all {
-			assert.Equal(t, "public-azure-resource", rc.Risk.Name,
-				"template %q: risk name should be public-azure-resource", rc.Template)
+			assert.True(t, strings.HasPrefix(rc.Risk.Name, "public-azure-resource-"),
+				"template %q: risk name %q should have prefix public-azure-resource-", rc.Template, rc.Risk.Name)
+			assert.NotEmpty(t, rc.Risk.DeduplicationID,
+				"template %q: risk should have DeduplicationID set to resource type", rc.Template)
 		}
 	})
 

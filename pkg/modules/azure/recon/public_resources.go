@@ -128,11 +128,18 @@ func resultToRisk(result templates.ARGQueryResult, out *pipeline.P[model.Aurelia
 		return nil
 	}
 
+	slug := output.ResourceTypeSlug(result.ResourceType)
+	name := "public-azure-resource"
+	if slug != "" {
+		name = "public-azure-resource-" + slug
+	}
+
 	out.Send(output.AurelianRisk{
-		Name:        "public-azure-resource",
-		Severity:    result.TemplateDetails.Severity,
+		Name:               name,
+		Severity:           result.TemplateDetails.Severity,
 		ImpactedResourceID: result.ResourceID,
-		Context:     ctx,
+		DeduplicationID:    result.ResourceType,
+		Context:            ctx,
 	})
 	return nil
 }
