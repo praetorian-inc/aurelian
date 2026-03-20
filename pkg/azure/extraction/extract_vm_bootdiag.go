@@ -19,7 +19,7 @@ func init() {
 }
 
 func extractVMBootDiag(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse resource ID: %w", err)
 	}
@@ -57,7 +57,7 @@ func extractVMBootDiag(ctx extractContext, r output.AzureResource, out *pipeline
 		slog.Warn("failed to download boot diagnostics log", "vm", vmName, "error", err)
 		return nil
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		slog.Warn("unexpected status downloading boot diagnostics log", "vm", vmName, "status", resp.StatusCode)

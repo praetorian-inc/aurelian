@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -119,6 +120,11 @@ func generateModuleCommand(platform plugin.Platform, category plugin.Category, m
 		addFlag(cmd, param, flagValues)
 	}
 
+	// If a module declares neo4j-uri, it requires a graph database connection
+	if paramNames["neo4j-uri"] {
+		_ = cmd.MarkFlagRequired("neo4j-uri")
+	}
+
 	parent.AddCommand(cmd)
 }
 
@@ -219,7 +225,7 @@ func addFlag(cmd *cobra.Command, param plugin.Parameter, flagValues map[string]i
 	}
 
 	if param.Required {
-		cmd.MarkFlagRequired(name)
+		_ = cmd.MarkFlagRequired(name)
 	}
 }
 
@@ -270,6 +276,21 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 
 	// Inject module ID into args for downstream outputters
 	argsMap["module-name"] = module.ID()
+
+	// Validate Neo4j connectivity early, before expensive module execution
+	var graphFormatter *plugin.GraphFormatter
+	if neo4jURI := stringArg(argsMap, "neo4j-uri"); neo4jURI != "" {
+		username := cmp.Or(stringArg(argsMap, "neo4j-username"), "neo4j")
+		password := cmp.Or(stringArg(argsMap, "neo4j-password"), "neo4j")
+
+		var err error
+		graphFormatter, err = plugin.NewGraphFormatter(neo4jURI, username, password)
+		if err != nil {
+			return fmt.Errorf("neo4j connection failed: %w", err)
+		}
+		defer func() { _ = graphFormatter.Close() }()
+		log.Success("connected to Neo4j at %s", neo4jURI)
+	}
 
 	// Create config with args, context, and output writer (initially discard, will be set per-format)
 	cfg := plugin.Config{
@@ -346,15 +367,28 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		if err != nil {
 			return fmt.Errorf("failed to create output file: %w", err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
-		formatter := &plugin.JSONFormatter{Writer: f, Pretty: true}
-		if err := formatter.Format(results); err != nil {
-			return fmt.Errorf("failed to format output: %w", err)
+		// Always write JSON output
+		jsonFormatter := &plugin.JSONFormatter{Writer: f, Pretty: true}
+		if err := jsonFormatter.Format(results); err != nil {
+			return fmt.Errorf("failed to format JSON output: %w", err)
 		}
-
 		log.Success("output written to %s", outputPath)
+
+		// Write to Neo4j if connection was established
+		if graphFormatter != nil {
+			if err := graphFormatter.Format(results); err != nil {
+				return fmt.Errorf("failed to write to Neo4j: %w", err)
+			}
+			log.Success("graph data written to Neo4j")
+		}
 	}
 
 	return nil
+}
+
+func stringArg(args map[string]any, key string) string {
+	s, _ := args[key].(string)
+	return s
 }

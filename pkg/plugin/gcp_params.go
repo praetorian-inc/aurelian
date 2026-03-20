@@ -26,7 +26,7 @@ func (c *GCPCommonRecon) PostBind(_ Config, _ Module) error {
 		return fmt.Errorf("at least one of --project-id, --org-id, or --folder-id is required")
 	}
 	if c.CredentialsFile != "" {
-		c.ClientOptions = append(c.ClientOptions, option.WithCredentialsFile(c.CredentialsFile))
+		c.ClientOptions = append(c.ClientOptions, option.WithCredentialsFile(c.CredentialsFile)) //nolint:staticcheck // WithCredentialsFile is the intended API for file-based credentials
 	}
 	c.Concurrency = max(1, c.Concurrency)
 	return nil

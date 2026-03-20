@@ -1,0 +1,50 @@
+id: kusto_wildcard_trusted_tenants
+name: Kusto Clusters with Wildcard Trusted External Tenants
+category: ["Access Control", "arg-scan"]
+description: Detects Azure Data Explorer (Kusto) clusters configured with wildcard trusted external tenants, allowing authentication from any Azure AD tenant
+severity: High
+reportability: Automatic
+triageNotes: |
+  1. **Immediate Threat**: Wildcard trustedExternalTenants ("*") allows authentication attempts from ANY Azure AD tenant globally
+  2. **Attack Scenario**: Attackers with Azure AD principals in any tenant can attempt to authenticate to your Kusto cluster
+  3. **Default Misconfiguration**: Azure Data Explorer defaults to wildcard configuration, most organizations never change it
+  4. **Defense Weakness**: Only database-level RBAC roles stand between authenticated external principals and your data
+
+  **Technical Details**:
+  - Setting: properties.trustedExternalTenants contains "*" (wildcard)
+  - Impact: Removes tenant-based filtering (first layer of defense)
+  - Scope: Affects authentication, not network connectivity
+  - Still requires: Valid Azure AD principal + appropriate database roles
+
+  **Network Security Note**:
+  This finding addresses ACCESS CONTROL risks. You should ALSO verify network security:
+  - Check for public network access settings
+  - Verify firewall rules and IP restrictions
+  - Ensure Private Endpoints are configured for production clusters
+references:
+  - https://learn.microsoft.com/en-us/azure/data-explorer/kusto/access-control/cross-tenant-query-and-commands
+  - https://learn.microsoft.com/en-us/azure/data-explorer/security-network
+  - https://learn.microsoft.com/en-us/azure/data-explorer/kusto/access-control/
+  - https://learn.microsoft.com/en-us/azure/data-explorer/kusto/management/access-control/
+query: |
+  resources
+  | where type =~ 'Microsoft.Kusto/clusters'
+  | extend clusterState = tostring(properties.state)
+  | extend publicNetworkAccess = tostring(properties.publicNetworkAccess)
+  | extend trustedExternalTenants = properties.trustedExternalTenants
+  | extend enableAutoStop = tobool(properties.enableAutoStop)
+  | extend enableAutoScale = tobool(properties.enableAutoScale)
+  | extend tier = tostring(sku.tier)
+  | extend capacity = toint(sku.capacity)
+  // Check if trustedExternalTenants contains wildcard
+  | where trustedExternalTenants has '*'
+  | project
+      id,
+      name,
+      type,
+      location,
+      resourceGroup,
+      clusterState,
+      publicNetworkAccess,
+      trustedExternalTenants,
+      subscriptionId

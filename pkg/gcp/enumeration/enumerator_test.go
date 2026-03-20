@@ -1,6 +1,7 @@
 package enumeration
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -38,13 +39,16 @@ func TestEnumerator_ForTypes_Filters(t *testing.T) {
 }
 
 func TestEnumerator_ListForProject_CallsAllListers(t *testing.T) {
+	var mu sync.Mutex
 	called := make(map[string]bool)
 	e := &Enumerator{
 		listers: []ResourceLister{
 			&mockLister{
 				resourceType: "type-a",
 				listFunc: func(pid string, out *pipeline.P[output.GCPResource]) error {
+					mu.Lock()
 					called["type-a"] = true
+					mu.Unlock()
 					assert.Equal(t, "my-project", pid)
 					return nil
 				},
@@ -52,7 +56,9 @@ func TestEnumerator_ListForProject_CallsAllListers(t *testing.T) {
 			&mockLister{
 				resourceType: "type-b",
 				listFunc: func(pid string, out *pipeline.P[output.GCPResource]) error {
+					mu.Lock()
 					called["type-b"] = true
+					mu.Unlock()
 					return nil
 				},
 			},
@@ -69,6 +75,8 @@ func TestEnumerator_ListForProject_CallsAllListers(t *testing.T) {
 	for range out.Range() {
 	}
 
+	mu.Lock()
+	defer mu.Unlock()
 	assert.True(t, called["type-a"])
 	assert.True(t, called["type-b"])
 }

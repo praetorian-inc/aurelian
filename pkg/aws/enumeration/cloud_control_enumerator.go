@@ -214,12 +214,12 @@ func (cc *CloudControlEnumerator) parseTaskDefinition(_, taskDefinition string) 
 // resource into out as pages are fetched. Its signature matches the fn
 // parameter of pipeline.Pipe[string, output.AWSResource].
 func (cc *CloudControlEnumerator) EnumerateByType(resourceType string, out *pipeline.P[output.AWSResource]) error {
-	if len(cc.AWSCommonRecon.Regions) == 0 {
+	if len(cc.Regions) == 0 {
 		return fmt.Errorf("no regions configured")
 	}
 
 	actor := ratelimit.NewCrossRegionActor(cc.Concurrency)
-	return actor.ActInRegions(cc.AWSCommonRecon.Regions, func(region string) error {
+	return actor.ActInRegions(cc.Regions, func(region string) error {
 		return cc.listInRegionByType(region, resourceType, out)
 	})
 }

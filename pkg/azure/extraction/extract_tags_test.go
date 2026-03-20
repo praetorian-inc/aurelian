@@ -19,7 +19,7 @@ func TestExtractTags_NonEmpty(t *testing.T) {
 	out := pipeline.New[output.ScanInput]()
 	go func() {
 		defer out.Close()
-		extractTags(extractContext{}, r, out)
+		_ = extractTags(extractContext{}, r, out)
 	}()
 
 	results, _ := out.Collect()
@@ -43,7 +43,7 @@ func TestExtractTags_Empty(t *testing.T) {
 	out := pipeline.New[output.ScanInput]()
 	go func() {
 		defer out.Close()
-		extractTags(extractContext{}, r, out)
+		_ = extractTags(extractContext{}, r, out)
 	}()
 
 	results, _ := out.Collect()

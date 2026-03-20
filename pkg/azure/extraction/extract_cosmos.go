@@ -14,6 +14,8 @@ import (
 const (
 	// defaultMaxCosmosDocSize caps individual document size at 1 MB.
 	defaultMaxCosmosDocSize = 1 << 20
+	// defaultMaxCosmosDocScan caps the total documents scanned per container.
+	defaultMaxCosmosDocScan = 50
 )
 
 // configCollectionNames are container names that likely hold configuration data.
@@ -76,7 +78,7 @@ func cosmosDBContainers(ctx extractContext, sqlClient *armcosmos.SQLResourcesCli
 // extractCosmosServerSideCode enumerates containers once, then extracts stored
 // procedures, triggers, and UDFs for each container in a single pass.
 func extractCosmosServerSideCode(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Cosmos DB resource ID: %w", err)
 	}
@@ -197,7 +199,7 @@ func emitUDFs(ctx extractContext, sqlClient *armcosmos.SQLResourcesClient, resou
 }
 
 func extractCosmosConfigDocs(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, _, segments, err := parseAzureResourceID(r.ResourceID)
+	_, _, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Cosmos DB resource ID: %w", err)
 	}
@@ -260,27 +262,41 @@ func extractCosmosConfigDocs(ctx extractContext, r output.AzureResource, out *pi
 }
 
 func queryConfigDocs(ctx extractContext, r output.AzureResource, containerClient *azcosmos.ContainerClient, dbName, containerName string, out *pipeline.P[output.ScanInput]) {
-	query := "SELECT TOP 50 * FROM c"
-	// Use a cross-partition query by providing an empty partition key.
-	crossPartition := true
-	queryPager := containerClient.NewQueryItemsPager(query, azcosmos.NewPartitionKey(), &azcosmos.QueryOptions{
-		EnableCrossPartitionQuery: &crossPartition,
-	})
+	// Use SELECT * without TOP — the gateway rejects TOP N cross-partition queries
+	// because it cannot merge ranked results across partitions without client-side execution.
+	// EnableCrossPartitionQuery defaults to true in the SDK.
+	queryPager := containerClient.NewQueryItemsPager("SELECT * FROM c", azcosmos.NewPartitionKey(), nil)
 
+	maxDocSize := ctx.MaxCosmosDocSize
+	if maxDocSize <= 0 {
+		maxDocSize = defaultMaxCosmosDocSize
+	}
+	maxDocScan := ctx.MaxCosmosDocScan
+	if maxDocScan <= 0 {
+		maxDocScan = defaultMaxCosmosDocScan
+	}
+
+	scanned := 0
 	for queryPager.More() {
+		if scanned >= maxDocScan {
+			slog.Info("cosmos doc scan limit reached", "db", dbName, "container", containerName, "scanned", scanned, "limit", maxDocScan)
+			return
+		}
+
 		page, err := queryPager.NextPage(ctx.Context)
 		if err != nil {
 			slog.Warn("failed to query config docs", "db", dbName, "container", containerName, "error", err)
 			return
 		}
 
-		maxDocSize := ctx.MaxCosmosDocSize
-		if maxDocSize <= 0 {
-			maxDocSize = defaultMaxCosmosDocSize
-		}
+		slog.Info("scanning cosmos config docs", "db", dbName, "container", containerName, "scanned", scanned, "pageItems", len(page.Items))
 
 		var filtered [][]byte
 		for _, item := range page.Items {
+			if scanned >= maxDocScan {
+				break
+			}
+			scanned++
 			if len(item) > maxDocSize {
 				slog.Debug("skipping large Cosmos doc", "db", dbName, "container", containerName, "size", len(item))
 				continue

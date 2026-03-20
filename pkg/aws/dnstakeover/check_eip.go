@@ -106,7 +106,7 @@ func fetchAWSIPRanges(ctx context.Context) ([]parsedPrefix, error) {
 	if err != nil {
 		return nil, fmt.Errorf("fetch aws ip ranges: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetch aws ip ranges: status %d", resp.StatusCode)

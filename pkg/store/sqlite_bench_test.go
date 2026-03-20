@@ -12,13 +12,13 @@ func benchSQLiteMap(b *testing.B, n int) *SQLiteMap[string] {
 	if err != nil {
 		b.Fatal(err)
 	}
-	b.Cleanup(func() { db.Close() })
+	b.Cleanup(func() { _ = db.Close() })
 
 	m, err := NewSQLiteMap[string](db)
 	if err != nil {
 		b.Fatal(err)
 	}
-	b.Cleanup(func() { m.Close() })
+	b.Cleanup(func() { _ = m.Close() })
 
 	for i := 0; i < n; i++ {
 		// ~10% of keys look like IAM ARNs, the rest are other services.
@@ -45,13 +45,13 @@ func BenchmarkSQLiteMap_Set(b *testing.B) {
 			if err != nil {
 				b.Fatal(err)
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			m, err := NewSQLiteMap[string](db)
 			if err != nil {
 				b.Fatal(err)
 			}
-			defer m.Close()
+			defer func() { _ = m.Close() }()
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {

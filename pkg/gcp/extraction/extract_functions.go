@@ -49,7 +49,7 @@ func downloadAndExtractZip(r output.GCPResource, downloadURL string, out *pipeli
 	if err != nil {
 		return fmt.Errorf("downloading source for %s: %w", r.ResourceID, err)
 	}
-	defer httpResp.Body.Close()
+	defer func() { _ = httpResp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(httpResp.Body, maxFunctionZipSize))
 	if err != nil {
@@ -72,7 +72,7 @@ func downloadAndExtractZip(r output.GCPResource, downloadURL string, out *pipeli
 		}
 
 		content, err := io.ReadAll(rc)
-		rc.Close()
+		_ = rc.Close()
 		if err != nil || len(content) == 0 {
 			continue
 		}

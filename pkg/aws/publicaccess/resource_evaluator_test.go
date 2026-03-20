@@ -18,7 +18,7 @@ func newTestEvaluator() *ResourceEvaluator {
 
 func TestSupportedResourceTypes(t *testing.T) {
 	types := SupportedResourceTypes()
-	assert.Len(t, types, 9)
+	assert.Len(t, types, 10)
 
 	e := newTestEvaluator()
 	registry := e.evaluators()
@@ -421,6 +421,39 @@ func TestEvaluateCore_RDS_Private(t *testing.T) {
 	resource := &output.AWSResource{
 		ResourceType: "AWS::RDS::DBInstance",
 		ResourceID:   "mydb-private",
+		Region:       "us-east-1",
+		Properties:   map[string]any{"IsPubliclyAccessible": false},
+	}
+
+	results := collectCore(e, resource)
+
+	require.Len(t, results, 1)
+	assert.Equal(t, output.AccessLevelPrivate, results[0].AWSResource.AccessLevel)
+	assert.False(t, results[0].IsPublic)
+}
+
+func TestEvaluateCore_Redshift_Public(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::Redshift::Cluster",
+		ResourceID:   "my-cluster-public",
+		Region:       "us-east-1",
+		Properties:   map[string]any{"IsPubliclyAccessible": true},
+	}
+
+	results := collectCore(e, resource)
+
+	require.Len(t, results, 1)
+	assert.Equal(t, output.AccessLevelPublic, results[0].AWSResource.AccessLevel)
+	assert.True(t, results[0].IsPublic)
+	assert.Contains(t, results[0].EvaluationReasons[0], "Redshift cluster is publicly accessible")
+}
+
+func TestEvaluateCore_Redshift_Private(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::Redshift::Cluster",
+		ResourceID:   "my-cluster-private",
 		Region:       "us-east-1",
 		Properties:   map[string]any{"IsPubliclyAccessible": false},
 	}

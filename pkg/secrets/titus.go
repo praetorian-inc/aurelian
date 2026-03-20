@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"fmt"
+	"log/slog"
 	"path/filepath"
 
 	"github.com/praetorian-inc/aurelian/pkg/utils"
@@ -21,8 +22,9 @@ type persistentScanner struct {
 
 // newPersistentScanner creates a new persistent Titus scanner.
 // The caller is responsible for providing a valid dbPath.
-// Any rules whose IDs appear in disabledRules are excluded from scanning.
-func newPersistentScanner(dbPath string, disabledRules []string) (*persistentScanner, error) {
+// If rulesetID is non-empty, only rules in that ruleset are loaded.
+// Any rules whose IDs appear in disabledRules are then excluded.
+func newPersistentScanner(dbPath string, rulesetID string, disabledRules []string) (*persistentScanner, error) {
 	if err := utils.EnsureDirectoryExists(filepath.Dir(dbPath)); err != nil {
 		return nil, fmt.Errorf("failed to create database directory: %w", err)
 	}
@@ -35,8 +37,24 @@ func newPersistentScanner(dbPath string, disabledRules []string) (*persistentSca
 	loader := rule.NewLoader()
 	allRules, err := loader.LoadBuiltinRules()
 	if err != nil {
-		s.Close()
+		_ = s.Close()
 		return nil, fmt.Errorf("failed to load builtin rules: %w", err)
+	}
+
+	// Apply ruleset filter if specified.
+	if rulesetID != "" {
+		rulesets, err := loader.LoadBuiltinRulesets()
+		if err != nil {
+			_ = s.Close()
+			return nil, fmt.Errorf("failed to load builtin rulesets: %w", err)
+		}
+		rs := rule.FindRuleset(rulesets, rulesetID)
+		if rs == nil {
+			_ = s.Close()
+			return nil, fmt.Errorf("ruleset %q not found", rulesetID)
+		}
+		allRules = rule.ApplyRuleset(allRules, rs)
+		slog.Info("applied ruleset", "ruleset", rulesetID, "rules", len(allRules))
 	}
 
 	disabled := make(map[string]bool, len(disabledRules))
@@ -57,7 +75,7 @@ func newPersistentScanner(dbPath string, disabledRules []string) (*persistentSca
 		ContextLines: 3,
 	})
 	if err != nil {
-		s.Close()
+		_ = s.Close()
 		return nil, fmt.Errorf("failed to create matcher: %w", err)
 	}
 
@@ -65,8 +83,8 @@ func newPersistentScanner(dbPath string, disabledRules []string) (*persistentSca
 	for _, r := range rules {
 		ruleMap[r.ID] = r
 		if err := s.AddRule(r); err != nil {
-			m.Close()
-			s.Close()
+			_ = m.Close()
+			_ = s.Close()
 			return nil, fmt.Errorf("failed to store rule %s: %w", r.ID, err)
 		}
 	}
@@ -165,7 +183,7 @@ func (ps *persistentScanner) populateFindingIDs(matches []*types.Match) {
 // close closes the matcher and store, releasing resources.
 func (ps *persistentScanner) close() error {
 	if err := ps.matcher.Close(); err != nil {
-		ps.store.Close()
+		_ = ps.store.Close()
 		return fmt.Errorf("failed to close matcher: %w", err)
 	}
 

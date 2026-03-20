@@ -38,7 +38,7 @@ func NewGraphFormatter(uri, username, password string) (*GraphFormatter, error) 
 		return nil, fmt.Errorf("creating Neo4j adapter: %w", err)
 	}
 	if err := db.VerifyConnectivity(context.Background()); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("Neo4j connection failed: %w", err)
 	}
 	return &GraphFormatter{db: db, config: cfg, flushSize: 1000}, nil

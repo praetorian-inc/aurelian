@@ -11,6 +11,7 @@ analyze commands for aws
 ### SEE ALSO
 
 * [aurelian aws](aurelian_aws.md)	 - aws platform commands
+* [aurelian aws analyze access-key-to-account-id](aurelian_aws_analyze_access-key-to-account-id.md)	 - Derives the AWS account ID from an access key ID using base32 decoding without making any API calls.
 * [aurelian aws analyze analyze-iam-permissions](aurelian_aws_analyze_analyze-iam-permissions.md)	 - Analyzes IAM permissions from GAAD data to detect privilege escalation paths, cross-account access, and create-then-use attack patterns. Requires GAAD JSON file from account-auth-details module.
 * [aurelian aws analyze detect-privescs](aurelian_aws_analyze_detect-privescs.md)	 - Runs privilege escalation detection queries against a Neo4j IAM graph and emits risks for each detected escalation path.
 * [aurelian aws analyze expand-actions](aurelian_aws_analyze_expand-actions.md)	 - Expands wildcard IAM action patterns (e.g. s3:Get* or *) into the full list of matching AWS actions by fetching the AWS Policy Generator service map.

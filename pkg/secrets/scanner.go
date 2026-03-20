@@ -7,15 +7,17 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/titus/pkg/enum/ignore"
 	"github.com/praetorian-inc/titus/pkg/types"
 	"github.com/praetorian-inc/titus/pkg/validator"
 )
 
 // SecretScanner provides an object-oriented interface for scanning content for secrets.
 type SecretScanner struct {
-	ps       *persistentScanner
-	validate bool
-	engine   *validator.Engine
+	ps         *persistentScanner
+	validate   bool
+	engine     *validator.Engine
+	ignorePath func(string) bool
 }
 
 // SecretScanResult represents a secret detection result emitted by the scanner.
@@ -24,18 +26,27 @@ type SecretScanResult struct {
 	ResourceType string       `json:"resource_type"`
 	Region       string       `json:"region"`
 	AccountID    string       `json:"account_id"`
+	Platform     string       `json:"platform"`
 	Label        string       `json:"label"`
 	Match        *types.Match `json:"match"`
 }
 
 // Start creates a new persistent scanner and stores it as a field.
 func (s *SecretScanner) Start(cfg ScannerConfig) error {
-	ps, err := newPersistentScanner(cfg.DBPath, cfg.DisabledTitusRules)
+	ps, err := newPersistentScanner(cfg.DBPath, cfg.Ruleset, cfg.DisabledTitusRules)
 	if err != nil {
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
 	}
+
+	ig, err := ignore.CompilePatterns(cfg.IgnoreFile)
+	if err != nil {
+		_ = ps.close()
+		return fmt.Errorf("failed to compile ignore patterns: %w", err)
+	}
+
 	s.ps = ps
 	s.validate = cfg.Validate
+	s.ignorePath = ig.MatchesPath
 
 	if cfg.Validate {
 		s.engine = validator.NewDefaultEngine(4)
@@ -68,8 +79,22 @@ func (s *SecretScanner) DBPath() string {
 // Scan is a pipeline-compatible method that scans a ScanInput for secrets
 // and sends SecretScanResult values to the output pipeline.
 func (s *SecretScanner) Scan(input output.ScanInput, out *pipeline.P[SecretScanResult]) error {
+	if input.PathFilterable && s.ignorePath != nil && s.ignorePath(input.Label) {
+		slog.Debug("skipping ignored path", "label", input.Label, "resource", input.ResourceID)
+		return nil
+	}
+
 	blobID := types.ComputeBlobID(input.Content)
-	provenance := types.FileProvenance{FilePath: input.Label}
+	provenance := types.ExtendedProvenance{
+		Payload: map[string]any{
+			"platform":      input.Platform,
+			"resource_id":   input.ResourceID,
+			"resource_type": input.ResourceType,
+			"region":        input.Region,
+			"account_id":    input.AccountID,
+			"subresource":   input.Label,
+		},
+	}
 
 	matches, err := s.ps.scanContent(input.Content, blobID, provenance)
 	if err != nil {
@@ -102,6 +127,7 @@ func toScanResult(input output.ScanInput, match *types.Match) SecretScanResult {
 		ResourceType: input.ResourceType,
 		Region:       input.Region,
 		AccountID:    input.AccountID,
+		Platform:     input.Platform,
 		Label:        input.Label,
 		Match:        match,
 	}

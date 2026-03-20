@@ -54,6 +54,7 @@ func TestFindSecretsParameters(t *testing.T) {
 	}
 
 	assert.True(t, paramNames["subscription-ids"], "should have subscription-ids param")
+	assert.True(t, paramNames["resource-id"], "should have resource-id param")
 	assert.True(t, paramNames["output-dir"], "should have output-dir param")
 	assert.True(t, paramNames["db-path"], "should have db-path param")
 	assert.True(t, paramNames["max-cosmos-doc-size"], "should have max-cosmos-doc-size param")
@@ -114,7 +115,7 @@ func TestRiskSeverityFromMatch(t *testing.T) {
 	})
 }
 
-func TestBuildProofData(t *testing.T) {
+func TestToRisk_ProofData(t *testing.T) {
 	match := &types.Match{
 		RuleID:    "np.aws.1",
 		RuleName:  "AWS API Key",
@@ -138,41 +139,48 @@ func TestBuildProofData(t *testing.T) {
 		ResourceType: "Microsoft.Web/sites",
 		Region:       "eastus",
 		AccountID:    "00000000-0000-0000-0000-000000000000",
+		Platform:     "azure",
 		Label:        "appsettings.json",
+		Match:        match,
 	}
 
-	m := &AzureFindSecretsModule{}
-	proof := m.buildProofData(result, match)
+	risk, err := result.ToRisk()
+	require.NoError(t, err)
+
+	var proof map[string]any
+	require.NoError(t, json.Unmarshal(risk.Context, &proof))
 
 	assert.Equal(t, "abc123def456", proof["finding_id"])
 	assert.Equal(t, "AWS API Key", proof["rule_name"])
 	assert.Equal(t, "np.aws.1", proof["rule_text_id"])
 	assert.Equal(t, result.ResourceRef, proof["resource_ref"])
-	assert.Equal(t, 1, proof["num_matches"])
+	assert.Equal(t, float64(1), proof["num_matches"])
 
-	matches := proof["matches"].([]map[string]interface{})
+	matches := proof["matches"].([]any)
 	require.Len(t, matches, 1)
 
-	snippet := matches[0]["snippet"].(map[string]string)
+	m0 := matches[0].(map[string]any)
+	snippet := m0["snippet"].(map[string]any)
 	assert.Equal(t, "key=", snippet["before"])
 	assert.Equal(t, "AKIAIOSFODNN7EXAMPLE", snippet["matching"])
 	assert.Equal(t, "\n", snippet["after"])
 
-	location := matches[0]["location"].(map[string]interface{})
-	offsetSpan := location["offset_span"].(map[string]interface{})
-	assert.Equal(t, int64(4), offsetSpan["start"])
-	assert.Equal(t, int64(24), offsetSpan["end"])
+	location := m0["location"].(map[string]any)
+	offsetSpan := location["offset_span"].(map[string]any)
+	assert.Equal(t, float64(4), offsetSpan["start"])
+	assert.Equal(t, float64(24), offsetSpan["end"])
 
-	sourceSpan := location["source_span"].(map[string]interface{})
-	start := sourceSpan["start"].(map[string]interface{})
-	assert.Equal(t, 1, start["line"])
-	assert.Equal(t, 5, start["column"])
+	provenance := m0["provenance"].([]any)
+	require.Len(t, provenance, 1)
+	prov := provenance[0].(map[string]any)
+	assert.Equal(t, "cloud", prov["kind"])
+	assert.Equal(t, "azure", prov["platform"])
 
 	_, hasValidation := proof["validation"]
 	assert.False(t, hasValidation, "no validation when ValidationResult is nil")
 }
 
-func TestBuildProofData_WithValidation(t *testing.T) {
+func TestToRisk_WithValidation(t *testing.T) {
 	match := &types.Match{
 		RuleID:    "np.aws.1",
 		RuleName:  "AWS API Key",
@@ -187,19 +195,24 @@ func TestBuildProofData_WithValidation(t *testing.T) {
 	result := secrets.SecretScanResult{
 		ResourceRef:  "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/myaccount",
 		ResourceType: "Microsoft.Storage/storageAccounts",
+		Platform:     "azure",
 		Label:        "connection-string",
+		Match:        match,
 	}
 
-	m := &AzureFindSecretsModule{}
-	proof := m.buildProofData(result, match)
+	risk, err := result.ToRisk()
+	require.NoError(t, err)
 
-	validation := proof["validation"].(map[string]interface{})
+	var proof map[string]any
+	require.NoError(t, json.Unmarshal(risk.Context, &proof))
+
+	validation := proof["validation"].(map[string]any)
 	assert.Equal(t, string(types.StatusValid), validation["status"])
 	assert.Equal(t, 0.95, validation["confidence"])
 	assert.Equal(t, "Key is active", validation["message"])
 }
 
-func TestBuildRiskContextRoundTrip(t *testing.T) {
+func TestToRisk_RoundTrip(t *testing.T) {
 	match := &types.Match{
 		RuleID:    "np.aws.1",
 		RuleName:  "AWS API Key",
@@ -223,17 +236,16 @@ func TestBuildRiskContextRoundTrip(t *testing.T) {
 		ResourceType: "Microsoft.Compute/virtualMachines",
 		Region:       "eastus",
 		AccountID:    "00000000-0000-0000-0000-000000000000",
+		Platform:     "azure",
 		Label:        "userdata.sh",
+		Match:        match,
 	}
 
-	m := &AzureFindSecretsModule{}
-	proof := m.buildProofData(result, match)
-	proofBytes, err := json.MarshalIndent(proof, "", "  ")
+	risk, err := result.ToRisk()
 	require.NoError(t, err)
 
-	var decoded map[string]interface{}
-	err = json.Unmarshal(proofBytes, &decoded)
-	require.NoError(t, err)
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(risk.Context, &decoded))
 
 	assert.Equal(t, "abc123def456", decoded["finding_id"])
 	assert.Equal(t, "AWS API Key", decoded["rule_name"])
@@ -250,15 +262,15 @@ func TestRiskFromScanResult_ImpactedResourceID_IncludesFindingID(t *testing.T) {
 
 	result := secrets.SecretScanResult{
 		ResourceRef: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Web/sites/myapp",
+		Platform:    "azure",
 		Label:       "appsettings.json",
 		Match:       match,
 	}
 
-	m := &AzureFindSecretsModule{}
 	out := pipeline.New[model.AurelianModel]()
 	go func() {
 		defer out.Close()
-		require.NoError(t, m.riskFromScanResult(result, out))
+		require.NoError(t, secrets.RiskFromScanResult(result, out))
 	}()
 
 	items, err := out.Collect()
@@ -280,15 +292,15 @@ func TestRiskFromScanResult_ImpactedResourceID_NoFindingID(t *testing.T) {
 
 	result := secrets.SecretScanResult{
 		ResourceRef: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/myvm",
+		Platform:    "azure",
 		Label:       "userdata.sh",
 		Match:       match,
 	}
 
-	m := &AzureFindSecretsModule{}
 	out := pipeline.New[model.AurelianModel]()
 	go func() {
 		defer out.Close()
-		require.NoError(t, m.riskFromScanResult(result, out))
+		require.NoError(t, secrets.RiskFromScanResult(result, out))
 	}()
 
 	items, err := out.Collect()
@@ -297,4 +309,70 @@ func TestRiskFromScanResult_ImpactedResourceID_NoFindingID(t *testing.T) {
 
 	risk := items[0].(output.AurelianRisk)
 	assert.Equal(t, "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/myvm", risk.ImpactedResourceID, "should use bare ResourceRef when FindingID is empty")
+}
+
+func TestListByResourceID_ValidIDs(t *testing.T) {
+	m := &AzureFindSecretsModule{}
+	c := AzureFindSecretsConfig{}
+	c.ResourceID = []string{
+		"/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-1/providers/Microsoft.Compute/virtualMachines/vm-1",
+		"/subscriptions/00000000-0000-0000-0000-000000000002/resourceGroups/rg-2/providers/Microsoft.Web/sites/app-1",
+	}
+
+	listed, err := m.listByResourceID(c)
+	require.NoError(t, err)
+	resources, err := listed.Collect()
+	require.NoError(t, err)
+	require.Len(t, resources, 2)
+
+	assert.Equal(t, "00000000-0000-0000-0000-000000000001", resources[0].SubscriptionID)
+	assert.Equal(t, "rg-1", resources[0].ResourceGroup)
+	assert.Equal(t, "Microsoft.Compute/virtualMachines", resources[0].ResourceType)
+	assert.Equal(t, c.ResourceID[0], resources[0].ResourceID)
+
+	assert.Equal(t, "00000000-0000-0000-0000-000000000002", resources[1].SubscriptionID)
+	assert.Equal(t, "rg-2", resources[1].ResourceGroup)
+	assert.Equal(t, "Microsoft.Web/sites", resources[1].ResourceType)
+	assert.Equal(t, c.ResourceID[1], resources[1].ResourceID)
+}
+
+func TestListByResourceID_SkipsInvalid(t *testing.T) {
+	m := &AzureFindSecretsModule{}
+	c := AzureFindSecretsConfig{}
+	c.ResourceID = []string{
+		"not-a-valid-id",
+		"/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-1/providers/Microsoft.Compute/virtualMachines/vm-1",
+	}
+
+	listed, err := m.listByResourceID(c)
+	require.NoError(t, err)
+	resources, err := listed.Collect()
+	require.NoError(t, err)
+	require.Len(t, resources, 1, "invalid IDs should be skipped with a warning")
+	assert.Equal(t, "00000000-0000-0000-0000-000000000001", resources[0].SubscriptionID)
+}
+
+func TestListByResourceID_AllInvalid(t *testing.T) {
+	m := &AzureFindSecretsModule{}
+	c := AzureFindSecretsConfig{}
+	c.ResourceID = []string{
+		"not-a-valid-id",
+		"also-not-valid",
+	}
+
+	_, err := m.listByResourceID(c)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "all 2 provided resource IDs were invalid")
+}
+
+func TestListByResourceID_Empty(t *testing.T) {
+	m := &AzureFindSecretsModule{}
+	c := AzureFindSecretsConfig{}
+	c.ResourceID = []string{}
+
+	listed, err := m.listByResourceID(c)
+	require.NoError(t, err)
+	resources, err := listed.Collect()
+	require.NoError(t, err)
+	assert.Empty(t, resources)
 }

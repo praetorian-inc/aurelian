@@ -15,7 +15,7 @@ func init() {
 }
 
 func extractAppConfigKeyValues(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, _, segments, err := parseAzureResourceID(r.ResourceID)
+	_, _, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse App Configuration resource ID: %w", err)
 	}

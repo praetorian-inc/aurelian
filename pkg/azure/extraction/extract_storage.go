@@ -25,7 +25,7 @@ func init() {
 }
 
 func extractStorageBlobs(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse storage account resource ID: %w", err)
 	}
@@ -146,7 +146,7 @@ func downloadBlob(ctx extractContext, client *azblob.Client, containerName, blob
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var buf bytes.Buffer
 	_, err = io.Copy(&buf, io.LimitReader(resp.Body, maxBlobSize))

@@ -16,7 +16,7 @@ func init() {
 }
 
 func extractADFPipelines(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Data Factory resource ID: %w", err)
 	}
@@ -62,7 +62,7 @@ func extractADFPipelines(ctx extractContext, r output.AzureResource, out *pipeli
 }
 
 func extractADFLinkedServices(ctx extractContext, r output.AzureResource, out *pipeline.P[output.ScanInput]) error {
-	_, resourceGroup, segments, err := parseAzureResourceID(r.ResourceID)
+	_, resourceGroup, segments, err := ParseAzureResourceID(r.ResourceID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Data Factory resource ID: %w", err)
 	}
