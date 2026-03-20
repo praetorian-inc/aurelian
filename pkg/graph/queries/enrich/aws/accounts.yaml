@@ -1,0 +1,14 @@
+id: aws/enrich/accounts
+name: Account Metadata
+platform: aws
+type: enrich
+category: metadata
+description: |
+  Sets account-level metadata on principal nodes.
+severity: info
+order: 0
+cypher: |
+  MATCH (n:Principal)
+  WHERE n._resourceType STARTS WITH 'AWS::'
+  SET n._enriched = true
+  RETURN count(n) as enriched_count

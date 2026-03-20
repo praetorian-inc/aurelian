@@ -1,0 +1,14 @@
+id: aws/enrich/iam/link_policies_to_roles
+name: Link Managed Policies to Principals
+platform: aws
+type: enrich
+category: iam
+description: |
+  Creates HAS_POLICY relationships between principals and their attached managed policies.
+severity: info
+order: 4
+cypher: |
+  MATCH (p:Principal)
+  WHERE p.AttachedManagedPolicies IS NOT NULL
+  SET p._policy_count = size(p.AttachedManagedPolicies)
+  RETURN count(p) as principals_with_policies

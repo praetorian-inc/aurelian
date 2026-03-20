@@ -1,0 +1,76 @@
+id: aks_local_accounts_enabled
+name: AKS Clusters with Local Accounts Enabled
+description: Detects Azure Kubernetes Service (AKS) clusters that have local account authentication enabled. Local accounts bypass Azure AD authentication and lack modern security controls like MFA, conditional access policies, and comprehensive audit logging.
+severity: Low
+category: ["Access Control", "arg-scan"]
+reportability: Manual Triage
+triageNotes: |
+  Important Context:
+  AKS local accounts provide an alternative authentication method that bypasses Azure AD. While authentication credentials are still required, local accounts lack the modern security controls available through AAD authentication.
+
+  Security Considerations:
+  - Local accounts bypass Multi-Factor Authentication (MFA)
+  - No conditional access policy enforcement
+  - Long-lived credentials without automatic rotation policies
+  - Limited audit logging compared to AAD authentication
+  - Cannot enforce just-in-time (JIT) access patterns
+  - Credentials persist for extended periods without expiration
+
+  This is NOT:
+  - Anonymous access (credentials still required)
+  - A direct vulnerability (requires credential compromise first)
+  - Internet exposure by itself (depends on cluster network configuration)
+
+  Understanding disableLocalAccounts Property:
+  - When set to 'true': Local accounts are disabled, only AAD authentication is allowed (secure)
+  - When set to 'false' or null: Local accounts are enabled (this finding)
+  - Property location: properties.disableLocalAccounts
+  - Requires AAD integration to be enabled on the cluster
+
+  Triage Guidance:
+  1. Verify if local accounts are intentionally enabled for break-glass scenarios
+  2. Check if credentials are properly secured and rotated regularly
+  3. Evaluate if AAD-only authentication is feasible for the environment
+  4. Confirm AAD integration is enabled before disabling local accounts
+  5. Review who has access to local account credentials
+  6. Check for any hardcoded credentials in automation scripts
+
+  Remediation Considerations:
+  - Disable local accounts: Set properties.disableLocalAccounts to true
+  - Migrate all access to AAD authentication with RBAC
+  - Implement break-glass procedures using AAD emergency access accounts instead
+  - Rotate cluster certificates after disabling local accounts on existing clusters
+  - Update any automation that relies on local account credentials
+  - Verify AAD admin groups are properly configured before making changes
+
+  Commands for Remediation:
+  ```bash
+  # Disable local accounts on existing cluster
+  az aks update --resource-group <resource-group> --name <cluster-name> --disable-local-accounts
+
+  # After disabling, rotate certificates to revoke existing access
+  az aks rotate-certs --resource-group <resource-group> --name <cluster-name>
+  ```
+references:
+  - https://learn.microsoft.com/en-us/azure/aks/manage-local-accounts-managed-azure-ad
+  - https://learn.microsoft.com/en-us/azure/aks/managed-aad
+  - https://learn.microsoft.com/en-us/azure/aks/certificate-rotation
+query: |
+  resources
+  | where type =~ 'Microsoft.ContainerService/managedClusters'
+  | extend disableLocalAccounts = coalesce(properties.disableLocalAccounts, false)
+  | extend aadProfile = properties.aadProfile
+  | extend enableRBAC = coalesce(properties.enableRBAC, false)
+  | where disableLocalAccounts == false
+  | project
+      id,
+      name,
+      type,
+      location,
+      resourceGroup,
+      subscriptionId,
+      disableLocalAccounts,
+      aadEnabled = isnotnull(aadProfile),
+      enableRBAC,
+      fqdn = properties.fqdn,
+      kubernetesVersion = properties.kubernetesVersion

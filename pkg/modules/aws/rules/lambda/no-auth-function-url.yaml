@@ -1,0 +1,21 @@
+id: lambda-no-auth-function-url
+name: Lambda Function URL Without Authentication
+platform: aws
+resource_type: AWS::Lambda::Function
+severity: high
+description: |
+  Lambda function URL is publicly accessible without IAM authentication.
+  Anyone with the URL can invoke the function, potentially exposing sensitive operations or data.
+references:
+  - https://docs.aws.amazon.com/lambda/latest/dg/urls-auth.html
+  - https://docs.aws.amazon.com/lambda/latest/dg/urls-invocation.html
+recommendation: |
+  Enable IAM authentication for the function URL by setting AuthType to AWS_IAM.
+  Use resource-based policies to control which principals can invoke the function.
+
+# All conditions must be true (implicit AND)
+match:
+  - field: FunctionUrl
+    exists: true
+  - field: FunctionUrlAuthType
+    equals: NONE

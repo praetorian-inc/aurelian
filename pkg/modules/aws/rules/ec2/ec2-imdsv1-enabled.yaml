@@ -1,0 +1,23 @@
+id: ec2-imdsv1-enabled
+name: EC2 Instance Allows IMDSv1
+platform: aws
+resource_type: AWS::EC2::Instance
+severity: medium
+description: |
+  EC2 instance allows IMDSv1 (Instance Metadata Service v1), which is vulnerable
+  to SSRF-based credential theft. An attacker who achieves SSRF can steal
+  temporary IAM credentials from the metadata endpoint without requiring a session token.
+references:
+  - https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html
+  - https://aws.amazon.com/blogs/security/defense-in-depth-open-firewalls-reverse-proxies-ssrf-vulnerabilities-ec2-instance-metadata-service/
+recommendation: |
+  Enforce IMDSv2 by setting HttpTokens to "required":
+  aws ec2 modify-instance-metadata-options --instance-id <id> --http-tokens required --http-endpoint enabled
+
+match:
+  - field: InstanceStateName
+    not_equals: terminated
+  - field: MetadataHttpEndpoint
+    not_equals: disabled
+  - field: MetadataHttpTokens
+    not_equals: required

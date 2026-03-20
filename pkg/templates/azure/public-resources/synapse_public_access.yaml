@@ -1,0 +1,57 @@
+id: synapse_public_access
+name: "Publicly Accessible Synapse Analytics Workspace"
+description: "Detects Azure Synapse Analytics workspaces with public network access enabled"
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - Synapse workspace SQL and development endpoints exposed to the internet
+  - Could enable unauthorized access to data warehouse resources
+  - May expose SQL endpoints, Spark pools, and data pipelines
+  - Sensitive enterprise data could be exfiltrated
+  - SQL injection attacks possible against exposed endpoints
+
+  Triage Guidance:
+  - This finding confirms network-level accessibility from internet
+  - Synapse access is protected by Azure AD and SQL authentication
+  - Manual testing required:
+    1. Verify SQL endpoint connectivity
+    2. Check if development endpoint is accessible
+    3. Review workspace firewall rules
+    4. Test SQL authentication enforcement
+  - Consider: Can workspace be restricted to corporate networks?
+
+  Remediation Considerations:
+  - Disable public network access if not required
+  - Implement workspace firewall rules
+  - Use managed private endpoints for data sources
+  - Use Azure Private Link for internal access
+  - Enforce Azure AD-only authentication
+  - Disable SQL authentication where possible
+  - Monitor SQL query execution and access patterns
+  - Review and restrict workspace role assignments
+
+references:
+  - https://learn.microsoft.com/en-us/azure/synapse-analytics/security/connectivity-settings
+  - https://learn.microsoft.com/en-us/azure/synapse-analytics/security/synapse-workspace-managed-private-endpoints
+
+query: |
+  resources
+  | where type =~ 'Microsoft.Synapse/workspaces'
+  | extend publicNetworkAccess = tolower(coalesce(properties.publicNetworkAccess, 'enabled'))
+  | extend managedVirtualNetwork = properties.managedVirtualNetwork
+  | extend sqlAdminLogin = properties.sqlAdministratorLogin
+  | extend connectivityEndpoints = properties.connectivityEndpoints
+  | where publicNetworkAccess != 'disabled'
+  | project
+      id,
+      name,
+      type,
+      location,
+      publicNetworkAccess,
+      managedVirtualNetwork,
+      sqlAdminLogin,
+      connectivityEndpoints,
+      subscriptionId,
+      resourceGroup

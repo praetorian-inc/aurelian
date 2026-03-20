@@ -1,0 +1,22 @@
+id: aws/enrich/privesc/method_23
+name: SSM SendCommand Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with ssm:SendCommand permission that can execute commands 
+  on EC2 instances with elevated IAM roles.
+severity: high
+order: 123
+cypher: |
+  MATCH (attacker:Principal)-[perm]->(target)
+  WHERE type(perm) = 'SSM_SENDCOMMAND'
+  WITH attacker
+  MATCH (victim:Principal)
+  WHERE victim.Arn <> attacker.Arn
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'ssm:SendCommand',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

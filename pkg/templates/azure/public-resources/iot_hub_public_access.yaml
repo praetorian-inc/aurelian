@@ -1,0 +1,63 @@
+id: iot_hub_public_access
+name: "Publicly Accessible IoT Hub"
+description: "Detects Azure IoT Hub instances with public network access enabled and no IP restrictions"
+severity: Medium
+category: ["Public Access", "arg-scan"]
+reportability: Automatic
+triageNotes: |
+  Potential Risk:
+  - IoT Hub device communication endpoints exposed to the internet
+  - Could enable unauthorized device connections or data interception
+  - May allow spoofed telemetry injection or command manipulation
+  - Sensitive device data could be accessed if authentication is misconfigured
+
+  Triage Guidance:
+  - This finding confirms network-level accessibility from internet
+  - IoT Hub access is protected by device authentication tokens
+  - Manual testing required:
+    1. Verify device registry is not publicly accessible
+    2. Check if device authentication is enforced
+    3. Review any enabled shared access policies
+  - Consider: Can IoT Hub connectivity be restricted to known networks?
+
+  Remediation Considerations:
+  - Disable public network access if not required
+  - Implement IP restrictions for known connection sources
+  - Use Azure Private Link for internal device connections
+  - Enforce certificate-based device authentication
+  - Rotate device keys regularly
+  - Monitor device connection attempts
+
+references:
+  - https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-public-network-access
+  - https://learn.microsoft.com/en-us/azure/iot-hub/iot-hub-ip-filtering
+
+query: |
+  resources
+  | where type =~ 'Microsoft.Devices/IotHubs'
+  | extend publicNetworkAccess = tolower(coalesce(properties.publicNetworkAccess, 'enabled'))
+  | extend defaultAction = tolower(coalesce(properties.networkRuleSet.defaultAction, 'allow'))
+  | extend sku = sku.name
+  | extend endpoint = properties.eventHubEndpoints.events.endpoint
+  | extend hostname = properties.hostName
+  | extend zoneRedundant = properties.zoneRedundant
+  | where publicNetworkAccess != 'disabled'
+  | where defaultAction == 'allow' or
+      isnull(properties.networkRuleSet.ipRules) or
+      properties.networkRuleSet.ipRules has '0.0.0.0' or
+      properties.networkRuleSet.ipRules has '0.0.0.0/0' or
+      properties.networkRuleSet.ipRules has '*' or
+      properties.networkRuleSet.ipRules has 'Internet'
+  | project
+      id,
+      name,
+      type,
+      location,
+      publicNetworkAccess,
+      defaultAction,
+      sku,
+      endpoint,
+      hostname,
+      zoneRedundant,
+      subscriptionId,
+      resourceGroup

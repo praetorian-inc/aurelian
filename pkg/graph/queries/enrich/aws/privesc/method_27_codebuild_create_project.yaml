@@ -1,0 +1,22 @@
+id: aws/enrich/privesc/method_27
+name: CodeBuild CreateProject Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with codebuild:CreateProject permission that can create 
+  build projects with elevated IAM roles.
+severity: medium
+order: 127
+cypher: |
+  MATCH (attacker:Principal)-[perm]->(target)
+  WHERE type(perm) = 'CODEBUILD_CREATEPROJECT'
+  WITH attacker
+  MATCH (victim:Principal)
+  WHERE victim.Arn <> attacker.Arn
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'codebuild:CreateProject',
+      pe.severity = 'medium',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

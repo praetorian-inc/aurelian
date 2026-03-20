@@ -1,0 +1,70 @@
+package plugin
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	helpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
+	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
+	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
+)
+
+type AWSReconBase struct {
+	OutputDir  string `param:"output-dir"   desc:"Base output directory" default:"aurelian-output"`
+	Profile    string `param:"profile"      desc:"AWS profile to use" shortcode:"p"`
+	ProfileDir string `param:"profile-dir"  desc:"Set to override the default AWS profile directory"`
+	OpsecLevel string `param:"opsec_level"  desc:"Operational security level for AWS operations" default:"none"`
+}
+
+type AWSCommonRecon struct {
+	AWSReconBase
+	Concurrency  int      `param:"concurrency"    desc:"Maximum concurrent API requests" default:"5"`
+	Regions      []string `param:"regions"        desc:"AWS regions to scan" default:"all" shortcode:"r"`
+	ResourceType []string `param:"resource-type"  desc:"AWS Cloud Control resource type" default:"all" shortcode:"t"`
+	ResourceARN  []string `param:"resource-arn"   desc:"AWS target resource ARN" shortcode:"a"`
+}
+
+func (c *AWSCommonRecon) PostBind(_ Config, _ Module) error {
+	if len(c.Regions) == 1 && strings.EqualFold(c.Regions[0], "all") {
+		resolved, err := helpers.EnabledRegions(c.Profile, c.ProfileDir)
+		if err != nil {
+			return fmt.Errorf("resolving regions: %w", err)
+		}
+		c.Regions = resolved
+	}
+	
+	c.Concurrency = max(1, c.Concurrency)
+	return nil
+}
+
+type OrgPoliciesParam struct {
+	OrgPoliciesFile string                   `param:"org-policies-file" desc:"Path to Org Policies JSON file"`
+	OrgPolicies     *orgpolicies.OrgPolicies `param:"-"`
+}
+
+func (c *OrgPoliciesParam) PostBind(_ Config, _ Module) error {
+	orgPoliciesPath := c.OrgPoliciesFile
+	if orgPoliciesPath == "" {
+		c.OrgPolicies = orgpolicies.NewDefaultOrgPolicies()
+		return nil
+	}
+
+	fi, err := os.Stat(orgPoliciesPath)
+	if err != nil {
+		return fmt.Errorf("error reading org policies file %q: %w", orgPoliciesPath, err)
+	}
+
+	if fi.Size() == 0 {
+		c.OrgPolicies = orgpolicies.NewDefaultOrgPolicies()
+		return nil
+	}
+
+	op, err := iam.LoadJSONFile[orgpolicies.OrgPolicies](orgPoliciesPath)
+	if err != nil {
+		return fmt.Errorf("loading org policies: %w", err)
+	}
+
+	c.OrgPolicies = op
+	return nil
+}

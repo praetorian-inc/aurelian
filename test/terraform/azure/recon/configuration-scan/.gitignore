@@ -1,0 +1,6 @@
+function_code/
+function_code.zip
+.terraform/
+*.tfstate*
+backend_override.tf
+.terraform.lock.hcl

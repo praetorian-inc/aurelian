@@ -1,0 +1,85 @@
+package recon
+
+import (
+	cclist "github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
+	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
+	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
+)
+
+func init() {
+	plugin.Register(&AWSResourcePoliciesModule{})
+}
+
+// ResourcePoliciesConfig holds the typed parameters for resource-policies module.
+type ResourcePoliciesConfig struct {
+	plugin.AWSCommonRecon
+}
+
+// AWSResourcePoliciesModule retrieves resource policies for supported AWS services
+type AWSResourcePoliciesModule struct {
+	ResourcePoliciesConfig
+}
+
+func (m *AWSResourcePoliciesModule) ID() string                { return "resource-policies" }
+func (m *AWSResourcePoliciesModule) Name() string              { return "AWS Get Resource Policies" }
+func (m *AWSResourcePoliciesModule) Platform() plugin.Platform { return plugin.PlatformAWS }
+func (m *AWSResourcePoliciesModule) Category() plugin.Category { return plugin.CategoryRecon }
+func (m *AWSResourcePoliciesModule) OpsecLevel() string        { return "moderate" }
+func (m *AWSResourcePoliciesModule) Authors() []string         { return []string{"Praetorian"} }
+
+func (m *AWSResourcePoliciesModule) Description() string {
+	return "Retrieves resource-based policies for AWS resources that support them (S3 buckets, Lambda functions, SNS topics, SQS queues, EFS file systems, OpenSearch/Elasticsearch domains). " +
+		"Policies are added to the ResourcePolicy property of each resource."
+}
+
+func (m *AWSResourcePoliciesModule) References() []string {
+	return []string{
+		"https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_identity-vs-resource.html",
+		"https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic.html",
+	}
+}
+
+func (m *AWSResourcePoliciesModule) SupportedResourceTypes() []string {
+	return resourcepolicies.New(m.AWSCommonRecon).SupportedResourceTypes()
+}
+
+func (m *AWSResourcePoliciesModule) Parameters() any {
+	return &m.ResourcePoliciesConfig
+}
+
+func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
+	c := m.ResourcePoliciesConfig
+
+	lister := cclist.NewEnumerator(c.AWSCommonRecon)
+	collector := resourcepolicies.New(c.AWSCommonRecon)
+	resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, collector.SupportedResourceTypes())
+	if err != nil {
+		return err
+	}
+
+	cfg.Info("collecting resource policies for %d resource types across %d regions", len(resourceTypes), len(c.Regions))
+
+	resourceTypePipeline := pipeline.From(resourceTypes...)
+	listed := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(resourceTypePipeline, lister.List, listed, &pipeline.PipeOpts{
+		Progress: cfg.Log.ProgressFunc("listing resources"),
+	})
+
+	collected := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(listed, collector.Collect, collected)
+
+	count := 0
+	for r := range collected.Range() {
+		count++
+		out.Send(r)
+	}
+
+	if err := collected.Wait(); err != nil {
+		return err
+	}
+	cfg.Success("collected %d resources with policies", count)
+	return nil
+}

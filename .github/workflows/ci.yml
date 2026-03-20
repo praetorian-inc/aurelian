@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-build
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          CGO_ENABLED: '0'
+        run: go build -trimpath -ldflags="-s -w" ./...
+
+      - name: Vet
+        run: go vet ./...
+
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-test-${{ matrix.scope }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scope: aws
+            packages: ./pkg/aws/... ./pkg/modules/aws/...
+          - scope: azure
+            packages: ./pkg/azure/... ./pkg/modules/azure/...
+          - scope: gcp
+            packages: ./pkg/gcp/... ./pkg/modules/gcp/...
+          - scope: core
+            packages: ./pkg/graph/... ./pkg/integration/... ./pkg/modules/common/... ./pkg/output/... ./pkg/pipeline/... ./pkg/plugin/... ./pkg/ratelimit/... ./pkg/secrets/... ./pkg/store/... ./pkg/templates/... ./pkg/types/... ./cmd/... ./internal/... ./test/...
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Test (${{ matrix.scope }})
+        run: go test -race ${{ matrix.packages }}
+
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-lint
+      cancel-in-progress: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest

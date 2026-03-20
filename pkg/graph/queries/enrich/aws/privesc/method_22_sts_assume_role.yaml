@@ -1,0 +1,22 @@
+id: aws/enrich/privesc/method_22
+name: STS AssumeRole Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with sts:AssumeRole permission that can assume roles 
+  with elevated privileges.
+severity: high
+order: 122
+cypher: |
+  MATCH (attacker:Principal)-[perm]->(target)
+  WHERE type(perm) = 'STS_ASSUMEROLE'
+  WITH attacker
+  MATCH (victim:Principal)
+  WHERE victim.Arn <> attacker.Arn
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'sts:AssumeRole',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

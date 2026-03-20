@@ -1,0 +1,18 @@
+id: aws/enrich/resource_to_role
+name: Resource to Role Mapping
+platform: aws
+type: enrich
+category: resource-to-role
+description: |
+  Links EC2 instances and Lambda functions to their IAM roles via instance profiles.
+severity: info
+order: 1
+cypher: |
+  MATCH (role:Role)
+  WHERE role.InstanceProfileList IS NOT NULL
+  WITH role, role.InstanceProfileList AS profiles
+  MATCH (resource:Resource)
+  WHERE resource._resourceType IN ['AWS::EC2::Instance', 'AWS::Lambda::Function']
+  AND ANY(profile IN profiles WHERE resource.IamInstanceProfile = profile OR resource.Role = role.Arn)
+  MERGE (resource)-[:HAS_ROLE]->(role)
+  RETURN count(*) as links_created

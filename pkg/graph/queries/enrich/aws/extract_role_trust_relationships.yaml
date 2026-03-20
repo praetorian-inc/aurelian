@@ -1,0 +1,17 @@
+id: aws/enrich/extract_role_trust_relationships
+name: Extract Role Trust Relationships
+platform: aws
+type: enrich
+category: trust-extraction
+description: |
+  Creates TRUSTS_ROLE relationships between principals based on AssumeRolePolicyDocument.
+severity: info
+order: 2
+cypher: |
+  MATCH (role:Role)
+  MATCH (principal:Principal)
+  WHERE principal.Arn IS NOT NULL
+  AND role.AssumeRolePolicyDocument IS NOT NULL
+  AND role.AssumeRolePolicyDocument CONTAINS principal.Arn
+  MERGE (principal)-[:CAN_ASSUME]->(role)
+  RETURN count(*) as trust_relationships
