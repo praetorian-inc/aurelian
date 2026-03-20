@@ -54,7 +54,8 @@ type MatchResult struct {
 // A single-hop query produces one hop per MatchedPath.
 // Multi-hop paths (A→B→C) produce multiple hops in a single MatchedPath.
 type MatchedPath struct {
-	Hops []MatchResult `json:"hops"`
+	Hops       []MatchResult `json:"hops"`
+	RootNodeID string        `json:"root_node_id"`
 }
 
 // Queryer compiles and executes a privesc DSL query against a graph backend.

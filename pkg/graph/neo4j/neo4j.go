@@ -153,7 +153,11 @@ func pathToMatchedPath(path dbtype.Path) dsl.MatchedPath {
 			Actions:  []string{relTypeToAction(rel.Type)},
 		})
 	}
-	return dsl.MatchedPath{Hops: hops}
+	rootNodeID := ""
+	if len(path.Nodes) > 0 {
+		rootNodeID = nodeIdentifier(path.Nodes[0])
+	}
+	return dsl.MatchedPath{Hops: hops, RootNodeID: rootNodeID}
 }
 
 // nodeIdentifier extracts the best identifier from a Neo4j node.

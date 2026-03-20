@@ -93,12 +93,13 @@ func (m *DetectPrivescsModule) matchedPathToRisk(method privesc2.AWSPrivesc, pat
 		return output.AurelianRisk{}, fmt.Errorf("marshalling match context: %w", err)
 	}
 
-	dedupHash := fmt.Sprintf("%x", sha256.Sum256(contextBytes))
+	dedupHash := fmt.Sprintf("%x", sha256.Sum256([]byte(method.Name())))
 
 	return output.AurelianRisk{
-		Name:            method.Name(),
-		Severity:        output.NormalizeSeverity(method.Severity()),
-		DeduplicationID: dedupHash,
-		Context:         contextBytes,
+		Name:               method.Name(),
+		ImpactedResourceID: path.RootNodeID,
+		Severity:           output.NormalizeSeverity(method.Severity()),
+		DeduplicationID:    dedupHash,
+		Context:            contextBytes,
 	}, nil
 }
