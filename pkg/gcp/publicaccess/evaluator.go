@@ -28,17 +28,22 @@ func (e *AccessEvaluator) Evaluate(r output.GCPResource, out *pipeline.P[model.A
 	}
 
 	var severity output.RiskSeverity
-	var name string
+	var prefix string
 	switch {
 	case hasPublicNetwork && hasAnonymousAccess:
 		severity = output.RiskSeverityHigh
-		name = "public-anonymous-gcp-resource"
+		prefix = "public-anonymous-gcp-resource"
 	case hasAnonymousAccess:
 		severity = output.RiskSeverityMedium
-		name = "anonymous-gcp-resource"
+		prefix = "anonymous-gcp-resource"
 	default:
 		severity = output.RiskSeverityMedium
-		name = "public-gcp-resource"
+		prefix = "public-gcp-resource"
+	}
+
+	name := prefix
+	if slug := output.ResourceTypeSlug(r.ResourceType); slug != "" {
+		name = prefix + "-" + slug
 	}
 
 	ctx, _ := json.Marshal(map[string]any{
@@ -52,10 +57,11 @@ func (e *AccessEvaluator) Evaluate(r output.GCPResource, out *pipeline.P[model.A
 	})
 
 	out.Send(output.AurelianRisk{
-		Name:        name,
-		Severity:    severity,
+		Name:               name,
+		Severity:           severity,
 		ImpactedResourceID: r.ResourceID,
-		Context:     ctx,
+		DeduplicationID:    r.ResourceType,
+		Context:            ctx,
 	})
 
 	return nil

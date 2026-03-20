@@ -224,7 +224,8 @@ func TestResultToRisk(t *testing.T) {
 	risk, ok := items[0].(output.AurelianRisk)
 	require.True(t, ok)
 
-	assert.Equal(t, "public-azure-resource", risk.Name)
+	assert.Equal(t, "public-azure-resource-storage-storageaccounts", risk.Name)
+	assert.Equal(t, "Microsoft.Storage/storageAccounts", risk.DeduplicationID)
 	assert.Equal(t, output.RiskSeverityHigh, risk.Severity)
 	assert.Equal(t, "/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/mystorage", risk.ImpactedResourceID)
 	assert.NotEmpty(t, risk.Context)
@@ -251,6 +252,7 @@ func TestResultToRisk_SeverityPreserved(t *testing.T) {
 				TemplateID:      tmpl.ID,
 				TemplateDetails: tmpl,
 				ResourceID:      "/subscriptions/s/resourceGroups/r/providers/T/n",
+				ResourceType:    "Microsoft.Test/resources",
 			}
 
 			out := pipeline.New[model.AurelianModel]()
@@ -265,7 +267,7 @@ func TestResultToRisk_SeverityPreserved(t *testing.T) {
 
 			risk := items[0].(output.AurelianRisk)
 			assert.Equal(t, output.RiskSeverity(sev), risk.Severity)
-			assert.Equal(t, "public-azure-resource", risk.Name)
+			assert.Equal(t, "public-azure-resource-test-resources", risk.Name)
 		})
 	}
 }

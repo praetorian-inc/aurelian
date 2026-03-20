@@ -59,7 +59,9 @@ func TestAWSPublicResources(t *testing.T) {
 	require.NotEmpty(t, risks, "should emit at least one risk")
 
 	for _, risk := range risks {
-		assert.Equal(t, "public-aws-resource", risk.Name)
+		assert.True(t, strings.HasPrefix(risk.Name, "public-aws-resource-"),
+			"risk name %q should have prefix public-aws-resource-", risk.Name)
+		assert.NotEmpty(t, risk.DeduplicationID, "risk should have DeduplicationID set to resource type")
 		assert.Contains(t, []output.RiskSeverity{output.RiskSeverityHigh, output.RiskSeverityMedium}, risk.Severity)
 		assert.NotContains(t, string(risk.Context), "aws_resource")
 		assert.NotEmpty(t, risk.ImpactedResourceID)
