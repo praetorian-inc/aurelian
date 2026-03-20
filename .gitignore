@@ -23,6 +23,7 @@ out.json
 debug.log*
 *.json
 docker-images
-.claude/.output
+.claude/*
 .worktrees/
 *.txt
+docs/*superpowers*
