@@ -6,7 +6,7 @@ on:
 
 jobs:
   release:
-    runs-on: ubuntu-latest-16-core-64gb
+    runs-on: ubuntu-large-public
     environment: release
     permissions:
       contents: write
