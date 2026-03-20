@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-<a href="https://github.com/praetorian-inc/aurelian/actions/workflows/build.yml"><img src="https://img.shields.io/github/actions/workflow/status/praetorian-inc/aurelian/build.yml?style=flat-square&label=build" alt="Build"></a>
+<a href="https://github.com/praetorian-inc/aurelian/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/praetorian-inc/aurelian/ci.yml?style=flat-square&label=build" alt="Build"></a>
 <a href="https://github.com/praetorian-inc/aurelian/releases"><img src="https://img.shields.io/github/v/release/praetorian-inc/aurelian?style=flat-square" alt="Release"></a>
 <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg?style=flat-square" alt="License"></a>
 <a href="https://github.com/praetorian-inc/aurelian/stargazers"><img src="https://img.shields.io/github/stars/praetorian-inc/aurelian?style=flat-square" alt="Stars"></a>
