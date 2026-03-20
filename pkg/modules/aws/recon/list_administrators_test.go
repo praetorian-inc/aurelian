@@ -12,7 +12,5 @@ func TestListAdministratorsModuleMetadata(t *testing.T) {
 	assert.Equal(t, "list-administrators", m.ID())
 	assert.Equal(t, plugin.PlatformAWS, m.Platform())
 	assert.Equal(t, plugin.CategoryRecon, m.Category())
-	assert.Contains(t, m.SupportedResourceTypes(), "AWS::IAM::User")
-	assert.Contains(t, m.SupportedResourceTypes(), "AWS::IAM::Role")
-	assert.Contains(t, m.SupportedResourceTypes(), "AWS::IAM::Group")
+	assert.Contains(t, m.SupportedResourceTypes(), "AWS::Organizations::Account")
 }

@@ -1,10 +1,6 @@
 package recon
 
 import (
-	"fmt"
-
-	"github.com/aws/aws-sdk-go-v2/service/iam"
-	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/aws/enrichment"
 	"github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/aws/iamadmin"
@@ -40,7 +36,7 @@ func (m *AWSListAdministratorsModule) References() []string      { return []stri
 func (m *AWSListAdministratorsModule) Parameters() any           { return &m.ListAdministratorsConfig }
 
 func (m *AWSListAdministratorsModule) SupportedResourceTypes() []string {
-	return []string{"AWS::IAM::User", "AWS::IAM::Role", "AWS::IAM::Group"}
+	return []string{"AWS::Organizations::Account"}
 }
 
 func (m *AWSListAdministratorsModule) Run(_ plugin.Config, out *pipeline.P[model.AurelianModel]) error {
