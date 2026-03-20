@@ -54,7 +54,7 @@ type AWSResource struct {
 	AccessLevel AccessLevel `json:"access_level,omitempty"`
 
 	// IsAdmin indicates whether this IAM principal has administrator-level access.
-	IsAdmin bool `json:"is_admin,omitempty"`
+	IsAdmin *bool `json:"is_admin,omitempty"`
 }
 
 // NewAWSResource constructs an AWSResource with the required core fields.

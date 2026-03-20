@@ -20,7 +20,7 @@ func (e *Evaluator) evaluateRole(resource output.AWSResource, out *pipeline.P[ou
 		return nil
 	}
 
-	resource.IsAdmin = true
+	resource.IsAdmin = &isAdmin
 	out.Send(resource)
 	return nil
 }

@@ -15,6 +15,7 @@ import (
 type Evaluator struct {
 	cfg          plugin.AWSCommonRecon
 	iam          *iam.Client
+	accountID    string
 	initMu       sync.Mutex
 	emittedUsers map[string]bool
 }
@@ -60,7 +61,13 @@ func (e *Evaluator) initialize() error {
 		return fmt.Errorf("load aws config: %w", err)
 	}
 
+	accountID, err := awshelpers.GetAccountId(awsCfg)
+	if err != nil {
+		return fmt.Errorf("get account id: %w", err)
+	}
+
 	e.iam = iam.NewFromConfig(awsCfg)
+	e.accountID = accountID
 
 	return nil
 }

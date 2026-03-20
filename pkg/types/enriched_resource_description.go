@@ -187,27 +187,6 @@ func extractServiceFromTypeName(typeName string) string {
 	return service
 }
 
-// func (erd *EnrichedResourceDescription) ToNPInputs() ([]NpInput, error) {
-// 	propsJson, err := json.Marshal(erd.Properties)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	return []NpInput{
-// 		{
-// 			ContentBase64: base64.StdEncoding.EncodeToString(propsJson),
-// 			Provenance: NpProvenance{
-// 				Platform:     "aws",
-// 				ResourceType: erd.TypeName,
-// 				ResourceID:   erd.Arn.String(),
-// 				Region:       erd.Region,
-// 				AccountID:    erd.AccountId,
-// 			},
-// 		},
-// 	}, nil
-
-// }
-
 func (e *EnrichedResourceDescription) Type() string {
 	split := strings.Split(e.TypeName, "::")
 	if len(split) < 3 {

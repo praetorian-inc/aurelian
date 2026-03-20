@@ -9,6 +9,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 )
 
 func (e *Evaluator) evaluateGroup(resource output.AWSResource, out *pipeline.P[output.AWSResource]) error {
@@ -20,7 +21,7 @@ func (e *Evaluator) evaluateGroup(resource output.AWSResource, out *pipeline.P[o
 		return nil
 	}
 
-	resource.IsAdmin = true
+	resource.IsAdmin = &isAdmin
 	out.Send(resource)
 
 	members, err := e.getGroupMembers(context.Background(), resource.ResourceID)
@@ -35,11 +36,11 @@ func (e *Evaluator) evaluateGroup(resource output.AWSResource, out *pipeline.P[o
 
 		out.Send(output.AWSResource{
 			ResourceType: "AWS::IAM::User",
-			ResourceID:   member,
+			ResourceID:   types.BuildResourceARN(member, "AWS::IAM::User", "us-east-1", e.accountID).String(),
 			AccountRef:   resource.AccountRef,
 			Region:       "global",
-			DisplayName:  fmt.Sprintf("%s (via group %s)", member, resource.ResourceID),
-			IsAdmin:      true,
+			DisplayName:  member,
+			IsAdmin:      &isAdmin,
 		})
 		e.emittedUsers[member] = true
 	}

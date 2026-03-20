@@ -34,6 +34,7 @@ func (m *AWSListAdministratorsModule) OpsecLevel() string        { return "passi
 func (m *AWSListAdministratorsModule) Authors() []string         { return []string{"Praetorian"} }
 func (m *AWSListAdministratorsModule) References() []string      { return []string{} }
 func (m *AWSListAdministratorsModule) Parameters() any           { return &m.ListAdministratorsConfig }
+func (m *AWSListAdministratorsModule) Global() bool              { return true }
 
 func (m *AWSListAdministratorsModule) SupportedResourceTypes() []string {
 	return []string{"AWS::Organizations::Account"}
@@ -41,14 +42,9 @@ func (m *AWSListAdministratorsModule) SupportedResourceTypes() []string {
 
 func (m *AWSListAdministratorsModule) Run(_ plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.ListAdministratorsConfig
-	inputs, err := collectInputs(c.AWSCommonRecon, m.SupportedResourceTypes())
-	if err != nil {
-		return err
-	}
-
 	lister := enumeration.NewEnumerator(c.AWSCommonRecon)
 	listed := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(pipeline.From(inputs...), lister.List, listed)
+	pipeline.Pipe(pipeline.From("AWS::IAM::User", "AWS::IAM::Role", "AWS::IAM::Group"), lister.List, listed)
 
 	evaluator := iamadmin.New(m.AWSCommonRecon)
 
