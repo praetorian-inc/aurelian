@@ -250,6 +250,8 @@ func (e *IAMEnumerator) listUsers(out *pipeline.P[output.AWSResource]) error {
 				AccountRef:   e.accountID,
 				Region:       "global",
 			})
+
+			fmt.Printf("sent user: %s\n", userARN)
 		}
 
 		if result.IsTruncated {
