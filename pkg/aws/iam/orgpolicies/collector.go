@@ -74,6 +74,20 @@ func CollectOrgPolicies(ctx context.Context, opts CollectorOptions) (*OrgPolicie
 	return orgPolicies, nil
 }
 
+// CollectOrgHierarchy collects and returns the AWS Organizations hierarchy tree.
+func CollectOrgHierarchy(ctx context.Context, opts CollectorOptions) (*OrgUnit, error) {
+	cfg, err := helpers.NewAWSConfig(helpers.AWSConfigInput{
+		Region:     "us-east-1",
+		Profile:    opts.Profile,
+		ProfileDir: opts.ProfileDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AWS config: %w", err)
+	}
+	client := organizations.NewFromConfig(cfg)
+	return collectOrganizationHierarchy(ctx, client)
+}
+
 // collectOrganizationHierarchy recursively collects the AWS Organizations hierarchy.
 func collectOrganizationHierarchy(ctx context.Context, client OrganizationsClient) (*OrgUnit, error) {
 	slog.Debug("Collecting Organization Hierarchy")
