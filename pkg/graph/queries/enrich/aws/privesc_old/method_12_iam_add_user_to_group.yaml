@@ -1,0 +1,22 @@
+id: aws/enrich/privesc/method_12
+name: IAM AddUserToGroup Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with iam:AddUserToGroup permission that can add users 
+  to groups with elevated permissions.
+severity: high
+order: 112
+cypher: |
+  MATCH (attacker:Principal)-[perm]->(target)
+  WHERE type(perm) = 'IAM_ADDUSERTOGROUP'
+  WITH attacker
+  MATCH (victim:Principal)
+  WHERE victim.Arn <> attacker.Arn
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:AddUserToGroup',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

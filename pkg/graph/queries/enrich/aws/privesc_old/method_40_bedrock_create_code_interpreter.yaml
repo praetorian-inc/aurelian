@@ -1,0 +1,23 @@
+id: aws/enrich/privesc/method_40
+name: IAM PassRole + Bedrock CreateCodeInterpreter Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with iam:PassRole and bedrock-agentcore:CreateCodeInterpreter,
+  StartCodeInterpreterSession, and InvokeCodeInterpreter permissions that can
+  execute arbitrary code with elevated IAM roles via Bedrock AgentCore.
+severity: high
+order: 140
+cypher: |
+  MATCH (attacker:Principal)-[passrole]->(target)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+  WITH attacker
+  MATCH (attacker)-[create]->(service_resource)
+  WHERE type(create) = 'BEDROCK_AGENTCORE_CREATECODEINTERPRETER'
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:PassRole + bedrock-agentcore:CreateCodeInterpreter',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

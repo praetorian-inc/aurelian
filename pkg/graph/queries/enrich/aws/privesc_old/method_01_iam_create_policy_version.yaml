@@ -1,0 +1,22 @@
+id: aws/enrich/privesc/method_01
+name: IAM CreatePolicyVersion Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with iam:CreatePolicyVersion permission that can modify 
+  managed policies to grant themselves admin access.
+severity: high
+order: 101
+cypher: |
+  MATCH (attacker:Principal)-[perm]->(target)
+  WHERE type(perm) = 'IAM_CREATEPOLICYVERSION'
+  WITH attacker
+  MATCH (victim:Principal)
+  WHERE victim.Arn <> attacker.Arn
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:CreatePolicyVersion',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

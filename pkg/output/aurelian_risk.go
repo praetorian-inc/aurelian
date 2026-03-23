@@ -18,7 +18,7 @@ const (
 )
 
 // NormalizeSeverity maps a severity string (case-insensitive) to a canonical RiskSeverity constant.
-func NormalizeSeverity(s RiskSeverity) RiskSeverity {
+func NormalizeSeverity[T RiskSeverity | string](s T) RiskSeverity {
 	switch RiskSeverity(strings.ToLower(string(s))) {
 	case RiskSeverityCritical:
 		return RiskSeverityCritical
