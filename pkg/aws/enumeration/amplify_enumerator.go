@@ -61,7 +61,7 @@ func (e *AmplifyAppEnumerator) EnumerateByARN(arn string, out *pipeline.P[output
 	}
 
 	if parsed.Region == "" {
-		return fmt.Errorf("Amplify app ARN missing region: %q", arn)
+		return fmt.Errorf("amplify app ARN missing region: %q", arn)
 	}
 
 	cfg, err := e.provider.GetAWSConfig(parsed.Region)
