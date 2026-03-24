@@ -417,8 +417,8 @@ github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRI
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c h1:ncq/mPwQF4JjgDlrVEn3C11VoGHZN7m8qihwgMEtzYw=
 github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c/go.mod h1:OmDBASR4679mdNQnz2pUhc2G8CO2JrUAVFDRBDP/hJE=
-github.com/praetorian-inc/titus v1.1.9-0.20260324201142-de7b225f5545 h1:ojU7rgolGjBybthhMvIVGeJIw+gFAmajnIGk0qRRHBg=
-github.com/praetorian-inc/titus v1.1.9-0.20260324201142-de7b225f5545/go.mod h1:i2tQG3iJmoi00n8dBE32g50wc/LkIVUV02PHhdC0c3s=
+github.com/praetorian-inc/titus v1.1.10-0.20260324203732-67e248d9ab6b h1:NZ/fM6V2w9wvZ8Duz45Q/YjUOCT7yiHQsWnUYeUiZV0=
+github.com/praetorian-inc/titus v1.1.10-0.20260324203732-67e248d9ab6b/go.mod h1:i2tQG3iJmoi00n8dBE32g50wc/LkIVUV02PHhdC0c3s=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=

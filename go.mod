@@ -72,7 +72,7 @@ require (
 	github.com/microsoftgraph/msgraph-sdk-go-core v1.4.0
 	github.com/muesli/termenv v0.16.0
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.4
-	github.com/praetorian-inc/titus v1.1.9-0.20260324201142-de7b225f5545
+	github.com/praetorian-inc/titus v1.1.10-0.20260324203732-67e248d9ab6b
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/testcontainers/testcontainers-go/modules/neo4j v0.40.0
