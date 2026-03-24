@@ -10,7 +10,7 @@ type ScannerConfig struct {
 	DBPath             string   `param:"db-path" desc:"Path for Titus SQLite database"`
 	DisabledTitusRules []string `param:"disabled-titus-rules" desc:"Rule IDs to exclude from scanning"`
 	Validate           bool     `param:"validate" desc:"Validate detected secrets against their source APIs" default:"false"`
-	IgnoreFile         string   `param:"ignore-file" desc:"Path to gitignore-style file for skipping paths; empty uses titus defaults" default:""`
+	IgnoreFile         string   `param:"ignore-file" desc:"Path to gitignore-style file for skipping paths; when empty uses Titus defaults plus Aurelian cloud noise filters" default:""`
 	Ruleset            string   `param:"ruleset" desc:"Titus ruleset to apply; empty string disables ruleset filtering" default:"default"`
 }
 

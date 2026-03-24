@@ -417,6 +417,38 @@ func TestSecretScanner_ScanSkipsIgnoredPathFilterableInputs(t *testing.T) {
 	assert.Empty(t, items, "scan results should be empty for ignored path-filterable input")
 }
 
+func TestSecretScanner_DefaultAurelianIgnorePatternsApplied(t *testing.T) {
+	s := startScanner(t)
+
+	ignoredLabels := []string{
+		"node_modules/aws-sdk/clients/kms.d.ts",
+		"node_modules/dotenv-expand/README.md",
+		"lib/Cryptodome/SelfTest/Protocol/test_ecdh.py",
+		"Crypto/SelfTest/PublicKey/test_import_DSA.py",
+	}
+
+	for _, label := range ignoredLabels {
+		t.Run(label, func(t *testing.T) {
+			out := pipeline.New[SecretScanResult]()
+			go func() {
+				defer out.Close()
+				require.NoError(t, s.Scan(output.ScanInput{
+					Content:        []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF"),
+					ResourceID:     "arn:aws:lambda:us-east-1:123456789012:function:demo",
+					ResourceType:   "AWS::Lambda::Function",
+					Region:         "us-east-1",
+					AccountID:      "123456789012",
+					Label:          label,
+					PathFilterable: true,
+				}, out))
+			}()
+			items, err := out.Collect()
+			require.NoError(t, err)
+			assert.Empty(t, items, "expected %s to be ignored by default Aurelian ignore patterns", label)
+		})
+	}
+}
+
 func TestSecretScanner_ScanDoesNotFilterNonPathFilterableInputs(t *testing.T) {
 	s := startScanner(t)
 

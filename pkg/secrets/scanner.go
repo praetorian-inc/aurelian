@@ -38,7 +38,12 @@ func (s *SecretScanner) Start(cfg ScannerConfig) error {
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
 	}
 
-	ig, err := ignore.CompilePatterns(cfg.IgnoreFile)
+	extraIgnoreLines := []string{}
+	if cfg.IgnoreFile == "" {
+		extraIgnoreLines = aurelianIgnoreExtraLines
+	}
+
+	ig, err := ignore.CompilePatterns(cfg.IgnoreFile, extraIgnoreLines...)
 	if err != nil {
 		_ = ps.close()
 		return fmt.Errorf("failed to compile ignore patterns: %w", err)
