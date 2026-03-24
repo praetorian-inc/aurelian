@@ -37,3 +37,11 @@ output "iam_user_arn" {
 output "iam_user_name" {
   value = aws_iam_user.test.name
 }
+
+output "amplify_app_id" {
+  value = aws_amplify_app.test.id
+}
+
+output "amplify_app_name" {
+  value = aws_amplify_app.test.name
+}

@@ -465,6 +465,18 @@ resource "aws_ami_launch_permission" "public" {
 }
 
 # ============================================================
+# Amplify app with branch (property-based detection via URLs)
+# ============================================================
+resource "aws_amplify_app" "public" {
+  name = "${local.prefix}-amplify-app"
+}
+
+resource "aws_amplify_branch" "main" {
+  app_id      = aws_amplify_app.public.id
+  branch_name = "main"
+}
+
+# ============================================================
 # OpenSearch domain with public policy (policy-based detection)
 # ============================================================
 resource "aws_opensearch_domain" "public" {
