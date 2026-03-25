@@ -13,7 +13,7 @@ aurelian azure recon find-secrets [flags]
       --db-path string                 Path for Titus SQLite database
       --disabled-titus-rules strings   Rule IDs to exclude from scanning
   -h, --help                           help for find-secrets
-      --ignore-file string             Path to gitignore-style file for skipping paths; when empty uses Titus defaults plus Aurelian cloud noise filters
+      --ignore-file string             Path to gitignore-style file for skipping paths; when empty uses a default list
       --max-cosmos-doc-scan int        Max total Cosmos documents to scan per container (default 50)
       --max-cosmos-doc-size int        Max individual Cosmos document size in bytes (default 1048576)
       --output-dir string              Base output directory (default "aurelian-output")

@@ -15,7 +15,7 @@ aurelian gcp recon find-secrets [flags]
       --disabled-titus-rules strings   Rule IDs to exclude from scanning
       --folder-id strings              GCP folder IDs
   -h, --help                           help for find-secrets
-      --ignore-file string             Path to gitignore-style file for skipping paths; when empty uses Titus defaults plus Aurelian cloud noise filters
+      --ignore-file string             Path to gitignore-style file for skipping paths; when empty uses a default list
       --include-sys-projects           Include system projects
   -o, --org-id strings                 GCP organization IDs
       --output-dir string              Base output directory (default "aurelian-output")
