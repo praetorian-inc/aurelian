@@ -11,9 +11,6 @@ aurelian aws recon graph [flags]
 ```
       --concurrency int            Maximum concurrent API requests (default 5)
   -h, --help                       help for graph
-      --neo4j-password string      Neo4j password (default "neo4j")
-      --neo4j-uri string           Neo4j connection URI (e.g., bolt://localhost:7687)
-      --neo4j-username string      Neo4j username (default "neo4j")
       --opsec_level string         Operational security level for AWS operations (default "none")
       --org-policies-file string   Path to Org Policies JSON file
       --output-dir string          Base output directory (default "aurelian-output")

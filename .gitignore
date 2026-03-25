@@ -26,5 +26,4 @@ docker-images
 .claude/*
 .worktrees/
 *.txt
-*superpowers*
-.mailmap
+docs/*superpowers*
