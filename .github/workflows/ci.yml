@@ -7,7 +7,7 @@ on:
     branches: [main, dev]
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -31,8 +31,36 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Test
-        run: go test -race ./...
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-test-${{ matrix.scope }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scope: aws
+            packages: ./pkg/aws/... ./pkg/modules/aws/...
+          - scope: azure
+            packages: ./pkg/azure/... ./pkg/modules/azure/...
+          - scope: gcp
+            packages: ./pkg/gcp/... ./pkg/modules/gcp/...
+          - scope: core
+            packages: ./pkg/graph/... ./pkg/integration/... ./pkg/modules/common/... ./pkg/output/... ./pkg/pipeline/... ./pkg/plugin/... ./pkg/ratelimit/... ./pkg/secrets/... ./pkg/store/... ./pkg/templates/... ./pkg/types/... ./cmd/... ./internal/... ./test/...
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Test (${{ matrix.scope }})
+        run: go test -race ${{ matrix.packages }}
 
   lint:
     runs-on: ubuntu-latest

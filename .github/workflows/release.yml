@@ -6,11 +6,14 @@ on:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-large-public
     environment: release
     permissions:
       contents: write
     steps:
+      - name: Free disk space
+        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/boost
+
       - name: Checkout
         uses: actions/checkout@v6
         with:
@@ -25,7 +28,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           version: '~> v2'
-          args: release --clean
+          args: release --clean --parallelism 1
         env:
           CGO_ENABLED: '0'
           GITHUB_TOKEN: ${{ github.token }}
