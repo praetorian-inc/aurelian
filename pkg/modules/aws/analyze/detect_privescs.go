@@ -5,10 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	privesc "github.com/praetorian-inc/aurelian/pkg/graph/queries/dsl"
-	privesc2 "github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc"
 	"log/slog"
 
+	"github.com/praetorian-inc/aurelian/pkg/graph/queries/dsl"
+	"github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -25,7 +25,7 @@ type DetectPrivescsConfig struct {
 }
 
 // SetQueryer allows external callers (e.g. Guard) to inject a Queryer.
-func (c *DetectPrivescsConfig) SetQueryer(q privesc.Queryer) {
+func (c *DetectPrivescsConfig) SetQueryer(q dsl.Queryer) {
 	c.Queryer = q
 }
 
@@ -54,7 +54,7 @@ func (m *DetectPrivescsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	defer m.Queryer.Close()
 
 	ctx := context.Background()
-	for _, method := range privesc2.AllPrivescQueries {
+	for _, method := range privesc.AllPrivescQueries {
 		if err := m.runMethod(ctx, method, out); err != nil {
 			slog.Warn("privesc method failed", "id", method.ID(), "error", err)
 		}
@@ -64,7 +64,7 @@ func (m *DetectPrivescsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 
 func (m *DetectPrivescsModule) runMethod(
 	ctx context.Context,
-	method privesc2.AWSPrivesc,
+	method privesc.AWSPrivesc,
 	out *pipeline.P[model.AurelianModel],
 ) error {
 	slog.Debug("running privesc query", "id", method.ID())
@@ -87,7 +87,7 @@ func (m *DetectPrivescsModule) runMethod(
 	return nil
 }
 
-func (m *DetectPrivescsModule) matchedPathToRisk(method privesc2.AWSPrivesc, path privesc.MatchedPath) (output.AurelianRisk, error) {
+func (m *DetectPrivescsModule) matchedPathToRisk(method privesc.AWSPrivesc, path dsl.MatchedPath) (output.AurelianRisk, error) {
 	contextBytes, err := json.Marshal(path.Hops)
 	if err != nil {
 		return output.AurelianRisk{}, fmt.Errorf("marshalling match context: %w", err)

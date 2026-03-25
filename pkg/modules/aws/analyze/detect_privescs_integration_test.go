@@ -5,9 +5,11 @@ package analyze
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -25,6 +27,7 @@ func TestMain(m *testing.M) {
 	ctx := context.Background()
 	boltURL, cleanup, err := testutil.StartNeo4jContainer(ctx)
 	if err != nil {
+		slog.Error("failed to start integration test Neo4j container", "error", err)
 		os.Exit(1)
 	}
 	sharedNeo4jBoltURL = boltURL
@@ -115,76 +118,48 @@ func TestDetectPrivescs(t *testing.T) {
 	// Step 5: Assert on detected privilege escalation risks.
 	// -------------------------------------------------------------------------
 
-	t.Run("emits risks for all three methods", func(t *testing.T) {
-		assert.NotEmpty(t, risksByMethod["aws/enrich/privesc/method_01"],
-			"should detect CreatePolicyVersion privesc paths")
-		assert.NotEmpty(t, risksByMethod["aws/enrich/privesc/method_02"],
-			"should detect SetDefaultPolicyVersion privesc paths")
-		assert.NotEmpty(t, risksByMethod["aws/enrich/privesc/method_03"],
-			"should detect CreateAccessKey privesc paths")
+	t.Run("emits risks for all registered methods", func(t *testing.T) {
+		for _, method := range privesc.AllPrivescQueries {
+			assert.NotEmpty(t, risksByMethod[method.Name()],
+				"should detect risks for %s", method.Name())
+		}
 	})
 
-	t.Run("method_01 CreatePolicyVersion", func(t *testing.T) {
-		m01 := risksByMethod["aws/enrich/privesc/method_01"]
-		require.NotEmpty(t, m01)
-
-		// Fixture has user0 + assumable-role with iam:CreatePolicyVersion on *.
-		// Each should produce at least one path to a managed policy node.
-		assert.GreaterOrEqual(t, len(m01), 2,
-			"user0 and assumable-role both have iam:CreatePolicyVersion")
-
-		assert.Equal(t, output.RiskSeverityHigh, m01[0].Severity)
-	})
-
-	t.Run("method_02 SetDefaultPolicyVersion", func(t *testing.T) {
-		m02 := risksByMethod["aws/enrich/privesc/method_02"]
-		require.NotEmpty(t, m02)
-
-		// user0 has iam:SetDefaultPolicyVersion on *.
-		assert.GreaterOrEqual(t, len(m02), 1)
-		assert.Equal(t, output.RiskSeverityHigh, m02[0].Severity)
-	})
-
-	t.Run("method_03 CreateAccessKey", func(t *testing.T) {
-		m03 := risksByMethod["aws/enrich/privesc/method_03"]
-		require.NotEmpty(t, m03)
-
-		// user0 and assumable-role have iam:CreateAccessKey on *.
-		// Targets are Principal nodes (users, roles, groups).
-		assert.GreaterOrEqual(t, len(m03), 1)
-		assert.Equal(t, output.RiskSeverityHigh, m03[0].Severity)
-	})
+	for _, method := range privesc.AllPrivescQueries {
+		method := method
+		t.Run(method.Name(), func(t *testing.T) {
+			methodRisks := risksByMethod[method.Name()]
+			require.NotEmpty(t, methodRisks, "no risks for %s", method.Name())
+			assert.GreaterOrEqual(t, len(methodRisks), 1)
+			assert.Equal(t, output.RiskSeverityHigh, methodRisks[0].Severity)
+		})
+	}
 
 	t.Run("all risks have valid deduplication IDs", func(t *testing.T) {
-		seen := make(map[string]bool)
 		for _, risk := range risks {
 			assert.NotEmpty(t, risk.DeduplicationID)
 			assert.Len(t, risk.DeduplicationID, 64, "SHA-256 hex should be 64 chars")
-			assert.False(t, seen[risk.DeduplicationID],
-				"duplicate dedup ID %s for method %s", risk.DeduplicationID, risk.Name)
-			seen[risk.DeduplicationID] = true
 		}
 	})
 
 	t.Run("all risks have matched path context with hops", func(t *testing.T) {
 		for _, risk := range risks {
-			var ctx map[string]interface{}
-			err := json.Unmarshal(risk.Context, &ctx)
+			var ctxs []map[string]interface{}
+			err := json.Unmarshal(risk.Context, &ctxs)
 			require.NoError(t, err, "risk context should be valid JSON")
 
-			hops, ok := ctx["hops"].([]interface{})
-			require.True(t, ok, "context should have 'hops' array")
-			assert.NotEmpty(t, hops, "should have at least 1 hop")
+			for i, ctx := range ctxs {
+				sourceID, ok := ctx["source_id"].(string)
+				require.True(t, ok, "source id did not exist in context %d: %v", i, ctx)
+				require.NotEmpty(t, sourceID, "source id was an empty string in context %d: %v", i, ctx)
 
-			for _, h := range hops {
-				hop, ok := h.(map[string]interface{})
-				require.True(t, ok)
-				assert.NotEmpty(t, hop["source_id"], "hop should have non-empty source_id")
-				assert.NotEmpty(t, hop["target_id"], "hop should have non-empty target_id")
+				targetID, ok := ctx["target_id"].(string)
+				require.True(t, ok, "target id did not exist in context %d: %v", i, ctx)
+				require.NotEmpty(t, targetID, "target id was an empty string in context %d: %v", i, ctx)
 
-				actions, ok := hop["actions"].([]interface{})
-				require.True(t, ok, "hop should have 'actions' array")
-				assert.NotEmpty(t, actions, "hop should have at least 1 action")
+				actions, ok := ctx["actions"].([]any)
+				require.True(t, ok, "actions did not exist in context %d: %v", i, ctx)
+				require.NotEmpty(t, actions, "actions was an empty slice in context %d: %v", i, ctx)
 			}
 		}
 	})

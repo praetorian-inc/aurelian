@@ -28,7 +28,7 @@ func (c *GraphOutputBase) PostBind(cfg Config, _ Module) error {
 	}
 
 	// We don't want to mark `neo4j-uri` as `required` in the field tag because it isn't required when a Queryer is provided.
-	if c.Neo4jURI != "" {
+	if c.Neo4jURI == "" {
 		return fmt.Errorf("neo4j connection URI is required")
 	}
 
