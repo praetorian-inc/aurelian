@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
+	"sort"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc"
@@ -166,8 +167,13 @@ func TestDetectPrivescs(t *testing.T) {
 
 	t.Run("diagnostic summary", func(t *testing.T) {
 		t.Logf("Total risks detected: %d", len(risks))
-		for method, methodRisks := range risksByMethod {
-			t.Logf("  %s: %d risks", method, len(methodRisks))
+		names := make([]string, 0, len(risksByMethod))
+		for name := range risksByMethod {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			t.Logf("  %s: %d risks", name, len(risksByMethod[name]))
 		}
 	})
 }
