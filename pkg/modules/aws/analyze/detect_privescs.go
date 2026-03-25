@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/praetorian-inc/aurelian/pkg/graph/queries/dsl"
 	"github.com/praetorian-inc/aurelian/pkg/graph/queries/enrich/aws/privesc"
@@ -53,12 +54,21 @@ func (m *DetectPrivescsModule) Description() string {
 func (m *DetectPrivescsModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	defer m.Queryer.Close()
 
+	g := sync.WaitGroup{}
+	semaphore := make(chan struct{}, 10)
+
 	ctx := context.Background()
 	for _, method := range privesc.AllPrivescQueries {
-		if err := m.runMethod(ctx, method, out); err != nil {
-			slog.Warn("privesc method failed", "id", method.ID(), "error", err)
-		}
+		semaphore <- struct{}{}
+		g.Go(func() {
+			if err := m.runMethod(ctx, method, out); err != nil {
+				slog.Warn("privesc method failed", "id", method.ID(), "error", err)
+			}
+			<-semaphore
+		})
 	}
+
+	g.Wait()
 	return nil
 }
 
