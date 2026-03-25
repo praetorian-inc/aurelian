@@ -45,7 +45,6 @@ func (m *AWSListAllResourcesModule) References() []string {
 func (m *AWSListAllResourcesModule) SupportedResourceTypes() []string {
 	return []string{
 		"AWS::Organizations::Account",
-		"AWS::Organizations::Organization",
 	}
 }
 
