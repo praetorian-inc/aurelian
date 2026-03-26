@@ -1,0 +1,37 @@
+id: "8.5.9"
+title: "Ensure meeting recording is configured appropriately"
+service: teams
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that meeting recording settings are configured to prevent
+  unauthorized recording and ensure recordings are stored in
+  approved locations with appropriate access controls.
+rationale: |
+  Meeting recordings may contain sensitive business discussions,
+  credentials shared on screen, or confidential data. Unrestricted
+  recording allows any participant to capture and potentially
+  exfiltrate meeting content.
+impact: |
+  Meeting recording may be restricted to organizers or disabled
+  entirely, affecting teams that rely on recording for documentation.
+remediation: |
+  Navigate to Teams Admin Center > Meetings > Meeting policies and
+  configure recording settings to restrict who can record and ensure
+  recordings are stored in OneDrive/SharePoint with appropriate
+  permissions.
+references:
+  - "https://learn.microsoft.com/en-us/microsoftteams/meeting-recording"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 8.5.9"
+cis_controls:
+  - "v8: 3.3"
+guard:
+  finding_slug: "m365-cis-8-5-9-recording-disabled"
+  phase_tag: "phase_m365_teams"
+  asset_type: "m365tenant"
+  cwe: "CWE-200"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - teams_meeting_policies

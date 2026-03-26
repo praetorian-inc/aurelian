@@ -1,0 +1,39 @@
+id: "1.1.3"
+title: "Ensure fewer than five users have Global Administrator role"
+service: admin
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that the number of users assigned the Global Administrator
+  role is between two and four (inclusive) as viewed from the
+  Microsoft 365 Admin Center.
+rationale: |
+  The Global Administrator role has unrestricted access to all tenant
+  settings and data. Minimizing the number of Global Administrators
+  reduces the number of high-value targets and limits the blast
+  radius if an admin account is compromised.
+impact: |
+  Some administrators may need to be reassigned to more specific
+  administrative roles following the principle of least privilege.
+remediation: |
+  Review Global Administrator role assignments in the Microsoft 365
+  Admin Center > Roles > Role assignments and reduce to between two
+  and four. Reassign excess Global Administrators to more granular
+  roles.
+references:
+  - "https://learn.microsoft.com/en-us/microsoft-365/admin/add-users/about-admin-roles"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 1.1.3"
+cis_controls:
+  - "v8: 5.4"
+  - "v8: 6.5"
+guard:
+  finding_slug: "m365-cis-1-1-3-global-admin-count"
+  phase_tag: "phase_m365_admin"
+  asset_type: "m365tenant"
+  cwe: "CWE-732"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:H/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - directory_roles
+  - role_assignments

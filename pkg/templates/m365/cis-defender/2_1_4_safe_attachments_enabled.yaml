@@ -1,0 +1,37 @@
+id: "2.1.4"
+title: "Ensure Safe Attachments policy is enabled"
+service: defender
+level: L2
+profile: "E5 Level 2"
+execution: Automated
+severity: high
+description: |
+  Verify that a Safe Attachments policy is enabled to detonate
+  suspicious email attachments in a sandbox before delivery.
+rationale: |
+  Safe Attachments provides zero-day protection by opening email
+  attachments in a virtual environment to detect malicious behavior.
+  Without this protection, novel malware that bypasses signature-based
+  detection can reach user inboxes.
+impact: |
+  Email delivery may be delayed by a few minutes while attachments
+  are scanned. This requires Microsoft Defender for Office 365 Plan 1
+  or higher licensing.
+remediation: |
+  Navigate to Microsoft 365 Defender > Policies & rules > Threat
+  policies > Safe Attachments and create or enable a policy covering
+  all users with the action set to "Block".
+references:
+  - "https://learn.microsoft.com/en-us/defender-office-365/safe-attachments-about"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 2.1.4"
+cis_controls:
+  - "v8: 9.3"
+  - "v8: 9.7"
+guard:
+  finding_slug: "m365-cis-2-1-4-safe-attachments-enabled"
+  phase_tag: "phase_m365_defender"
+  asset_type: "m365tenant"
+  cwe: "CWE-1188"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - safe_attachments_policies

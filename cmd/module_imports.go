@@ -9,4 +9,5 @@ import (
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/azure/evaluators"
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/gcp/enrichers"
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/gcp/recon"
+	_ "github.com/praetorian-inc/aurelian/pkg/modules/m365/analyze"
 )
