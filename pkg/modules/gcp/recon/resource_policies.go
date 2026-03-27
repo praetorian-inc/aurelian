@@ -3,11 +3,13 @@ package recon
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	asset "cloud.google.com/go/asset/apiv1"
 	assetpb "cloud.google.com/go/asset/apiv1/assetpb"
 	"google.golang.org/api/iterator"
 
+	"github.com/praetorian-inc/aurelian/pkg/gcp/gcperrors"
 	"github.com/praetorian-inc/aurelian/pkg/gcp/hierarchy"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -98,6 +100,11 @@ func (m *GCPResourcePoliciesModule) searchPolicies(cfg plugin.Config, scope stri
 			break
 		}
 		if err != nil {
+			if gcperrors.ShouldSkip(err) {
+				slog.Debug("skipping IAM policy search", "scope", scope, "reason", err)
+				cfg.Warn("skipping %s: %v", scope, err)
+				return nil
+			}
 			return fmt.Errorf("iterating IAM policies in %s: %w", scope, err)
 		}
 
