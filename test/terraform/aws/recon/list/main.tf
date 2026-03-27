@@ -118,3 +118,13 @@ resource "aws_lambda_function" "test" {
   runtime          = "python3.12"
   source_code_hash = data.archive_file.dummy.output_base64sha256
 }
+
+# Amplify app (enumerated via custom AmplifyAppEnumerator)
+resource "aws_amplify_app" "test" {
+  name = "${local.prefix}-amplify-app"
+}
+
+resource "aws_amplify_branch" "main" {
+  app_id      = aws_amplify_app.test.id
+  branch_name = "main"
+}

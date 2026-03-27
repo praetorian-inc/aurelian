@@ -357,6 +357,7 @@ var serviceResourcePrefixes = map[string][]resourcePrefixEntry{
 
 // serviceDefaultResourceType is the fallback when no prefix rule matches.
 var serviceDefaultResourceType = map[string]string{
+	"amplify":           "AWS::Amplify::App",
 	"ec2":               "AWS::EC2::Instance",
 	"s3":                "AWS::S3::Bucket",
 	"lambda":            "AWS::Lambda::Function",

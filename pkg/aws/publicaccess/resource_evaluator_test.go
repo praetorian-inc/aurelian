@@ -18,7 +18,7 @@ func newTestEvaluator() *ResourceEvaluator {
 
 func TestSupportedResourceTypes(t *testing.T) {
 	types := SupportedResourceTypes()
-	assert.Len(t, types, 10)
+	assert.Len(t, types, 11)
 
 	e := newTestEvaluator()
 	registry := e.evaluators()
@@ -104,6 +104,80 @@ func TestEvaluateCognito_NoSelfSignup(t *testing.T) {
 
 	result := e.evaluateCognito(resource, aws.Config{}, "")
 	assert.Nil(t, result)
+}
+
+// --- Amplify evaluator tests ---
+
+func TestEvaluateAmplify_WithBranchURLs(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::Amplify::App",
+		ResourceID:   "d1234567890",
+		Properties: map[string]any{
+			"DefaultDomain": "d1234567890.amplifyapp.com",
+			"Name":          "my-app",
+		},
+		URLs: []string{
+			"https://main.d1234567890.amplifyapp.com",
+			"https://develop.d1234567890.amplifyapp.com",
+		},
+	}
+
+	result := e.evaluateAmplify(resource, aws.Config{}, "")
+	require.NotNil(t, result)
+	assert.True(t, result.IsPublic)
+	assert.Contains(t, result.AllowedActions, "amplify:GetApp")
+	assert.Contains(t, result.EvaluationReasons[0], "my-app")
+	assert.Contains(t, result.EvaluationReasons[0], "2 publicly accessible branch URL(s)")
+}
+
+func TestEvaluateAmplify_NoURLs(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::Amplify::App",
+		ResourceID:   "d1234567890",
+		Properties: map[string]any{
+			"DefaultDomain": "d1234567890.amplifyapp.com",
+			"Name":          "my-app",
+		},
+	}
+
+	result := e.evaluateAmplify(resource, aws.Config{}, "")
+	assert.Nil(t, result)
+}
+
+func TestEvaluateAmplify_FallbackLabel(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::Amplify::App",
+		ResourceID:   "d1234567890",
+		Properties:   map[string]any{"DefaultDomain": "d1234567890.amplifyapp.com"},
+		URLs:         []string{"https://main.d1234567890.amplifyapp.com"},
+	}
+
+	result := e.evaluateAmplify(resource, aws.Config{}, "")
+	require.NotNil(t, result)
+	assert.Contains(t, result.EvaluationReasons[0], "d1234567890.amplifyapp.com",
+		"should fall back to DefaultDomain when Name is absent")
+}
+
+func TestEvaluateCore_Amplify_Public(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::Amplify::App",
+		ResourceID:   "d1234567890",
+		Region:       "us-east-1",
+		Properties: map[string]any{
+			"DefaultDomain": "d1234567890.amplifyapp.com",
+			"Name":          "my-app",
+		},
+		URLs: []string{"https://main.d1234567890.amplifyapp.com"},
+	}
+
+	results := collectCore(e, resource)
+	require.Len(t, results, 1)
+	assert.True(t, results[0].IsPublic)
+	assert.Equal(t, output.AccessLevelPublic, results[0].AWSResource.AccessLevel)
 }
 
 // --- Lambda evaluateLambdaAccess integration tests ---

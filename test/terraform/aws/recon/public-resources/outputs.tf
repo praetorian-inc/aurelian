@@ -54,6 +54,14 @@ output "public_ami_id" {
   value = aws_ami_copy.public.id
 }
 
+output "public_amplify_app_id" {
+  value = aws_amplify_app.public.id
+}
+
+output "public_amplify_default_domain" {
+  value = aws_amplify_app.public.default_domain
+}
+
 output "public_opensearch_domain" {
   value = aws_opensearch_domain.public.domain_name
 }

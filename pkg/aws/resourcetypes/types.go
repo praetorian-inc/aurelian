@@ -6,6 +6,7 @@ import "fmt"
 
 // all is the comprehensive list of CloudControl-supported resource types.
 var all = []string{
+	"AWS::Amplify::App",
 	"AWS::ApiGateway::RestApi",
 	"AWS::ApiGatewayV2::Api",
 	"AWS::AutoScaling::AutoScalingGroup",

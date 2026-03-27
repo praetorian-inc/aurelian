@@ -31,6 +31,7 @@ func TestAWSPublicResources(t *testing.T) {
 		Args: map[string]any{
 			"regions": []string{"us-east-1"},
 			"resource-type": []string{
+				"AWS::Amplify::App",
 				"AWS::S3::Bucket",
 				"AWS::SNS::Topic",
 				"AWS::SQS::Queue",
@@ -66,6 +67,7 @@ func TestAWSPublicResources(t *testing.T) {
 	}
 
 	expectedImpactedResources := []string{
+		fixture.Output("public_amplify_app_id"),
 		fixture.Output("public_bucket_name"),
 		fixture.Output("public_topic_arn"),
 		fixture.Output("public_queue_name"),
@@ -86,6 +88,7 @@ func TestAWSPublicResources(t *testing.T) {
 
 	hasInvokeFunction := false
 	hasInvokeFunctionURL := false
+	hasAmplifyGetApp := false
 	for _, risk := range risks {
 		var ctx struct {
 			AllowedActions []string `json:"allowed_actions"`
@@ -98,11 +101,29 @@ func TestAWSPublicResources(t *testing.T) {
 			if action == "lambda:InvokeFunctionUrl" {
 				hasInvokeFunctionURL = true
 			}
+			if action == "amplify:GetApp" {
+				hasAmplifyGetApp = true
+			}
 		}
 	}
 
 	assert.True(t, hasInvokeFunction, "expected at least one risk with lambda:InvokeFunction")
 	assert.True(t, hasInvokeFunctionURL, "expected at least one risk with lambda:InvokeFunctionUrl")
+	assert.True(t, hasAmplifyGetApp, "expected at least one risk with amplify:GetApp")
+
+	amplifyAppID := fixture.Output("public_amplify_app_id")
+	amplifyRisk := findRiskForResource(risks, amplifyAppID)
+	if assert.NotNilf(t, amplifyRisk, "expected risk for Amplify app %s", amplifyAppID) {
+		assert.Equal(t, output.RiskSeverityHigh, amplifyRisk.Severity)
+		var ctx struct {
+			AllowedActions    []string `json:"allowed_actions"`
+			EvaluationReasons []string `json:"evaluation_reasons"`
+		}
+		require.NoError(t, json.Unmarshal(amplifyRisk.Context, &ctx))
+		assert.Contains(t, ctx.AllowedActions, "amplify:GetApp")
+		assert.NotEmpty(t, ctx.EvaluationReasons)
+		assert.Contains(t, ctx.EvaluationReasons[0], "publicly accessible branch URL(s)")
+	}
 
 	publicAMIID := fixture.Output("public_ami_id")
 	amiRisk := findRiskForResource(risks, publicAMIID)

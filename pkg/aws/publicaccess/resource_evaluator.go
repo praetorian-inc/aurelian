@@ -1,6 +1,7 @@
 package publicaccess
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -28,6 +29,7 @@ type evaluator func(resource *output.AWSResource, awsCfg aws.Config, accountID s
 // evaluators maps resource types to their evaluation functions.
 func (e *ResourceEvaluator) evaluators() map[string]evaluator {
 	return map[string]evaluator{
+		"AWS::Amplify::App":       e.evaluateAmplify,
 		"AWS::EC2::Instance":      e.evaluateEC2,
 		"AWS::RDS::DBInstance":    e.evaluateRDS,
 		"AWS::Redshift::Cluster":  e.evaluateRedshift,
@@ -45,6 +47,7 @@ func (e *ResourceEvaluator) evaluators() map[string]evaluator {
 func SupportedResourceTypes() []string {
 	// Stable ordering — not derived from map iteration.
 	return []string{
+		"AWS::Amplify::App",
 		"AWS::EC2::Instance",
 		"AWS::S3::Bucket",
 		"AWS::SNS::Topic",
@@ -153,6 +156,24 @@ func (e *ResourceEvaluator) evaluateCore(resource *output.AWSResource, awsCfg aw
 }
 
 // --- property-based evaluators ---
+
+func (e *ResourceEvaluator) evaluateAmplify(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	if len(resource.URLs) == 0 {
+		return nil
+	}
+
+	defaultDomain, _ := resource.Properties["DefaultDomain"].(string)
+	appName, _ := resource.Properties["Name"].(string)
+	label := cmp.Or(appName, defaultDomain, resource.ResourceID)
+
+	return &PublicAccessResult{
+		IsPublic:       true,
+		AllowedActions: []string{"amplify:GetApp"},
+		EvaluationReasons: []string{
+			fmt.Sprintf("Amplify app '%s' has %d publicly accessible branch URL(s)", label, len(resource.URLs)),
+		},
+	}
+}
 
 func (e *ResourceEvaluator) evaluateEC2(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
 	publicIP, _ := resource.Properties["PublicIp"].(string)

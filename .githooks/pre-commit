@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! command -v golangci-lint &>/dev/null; then
+    echo "golangci-lint not found, skipping lint check"
+    echo "Install: https://golangci-lint.run/welcome/install/"
+    exit 0
+fi
+
+# Find Go packages with staged changes.
+pkgs=$(git diff --cached --name-only --diff-filter=ACM -- '*.go' \
+    | xargs -I{} dirname {} \
+    | sort -u \
+    | sed 's|^|./|')
+
+if [ -z "$pkgs" ]; then
+    exit 0
+fi
+
+echo "Running golangci-lint on changed packages..."
+# shellcheck disable=SC2086
+golangci-lint run $pkgs

@@ -128,6 +128,8 @@ github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.17 h1:JqcdRG//czea7Ppjb+g/n4o8i/R
 github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.17/go.mod h1:CO+WeGmIdj/MlPel2KwID9Gt7CNq4M65HUfBW97liM0=
 github.com/aws/aws-sdk-go-v2/service/account v1.24.0 h1:bxsS3BE+wpRBd4B0//h/ZOo8Ay55jyb9zprax9rCSYs=
 github.com/aws/aws-sdk-go-v2/service/account v1.24.0/go.mod h1:BwMkMxZPTVtRT9zRKpB92ljsRFX0EXk2WoLQmCnNuRs=
+github.com/aws/aws-sdk-go-v2/service/amplify v1.38.13 h1:dO3jyPlS/HY5cZVsR+mybSJjNuLAPO2EGu4K1DIlUVs=
+github.com/aws/aws-sdk-go-v2/service/amplify v1.38.13/go.mod h1:8Yy4YO5rEbsoaRqkWkoHSEAkLE2EYw7C3vgFCFa9QQg=
 github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.23.11 h1:vsDNkqiXTCeTaSt1qNtri0RzTBDAXV1VQ4L5c5lvW2k=
 github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.23.11/go.mod h1:aH+Z4h+QZfJ2iEP+EITPDP8nZI1eFUJu38V6c9Nq9uQ=
 github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.6 h1:3Rzut9v4ULIX3kjA6w3/Zaq2g8wBx6qJXB4BhQhIgjs=
