@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 
 	"golang.org/x/oauth2/google"
 
@@ -19,21 +20,21 @@ func init() {
 }
 
 type GCPWhoamiConfig struct {
-	plugin.GCPCommonRecon
+	CredentialsFile string `param:"creds-file" desc:"Path to GCP credentials JSON" shortcode:"c"`
 }
 
 type GCPWhoamiModule struct {
 	GCPWhoamiConfig
 }
 
-func (m *GCPWhoamiModule) ID() string                  { return "whoami" }
-func (m *GCPWhoamiModule) Name() string                { return "GCP Covert Whoami" }
-func (m *GCPWhoamiModule) Platform() plugin.Platform   { return plugin.PlatformGCP }
-func (m *GCPWhoamiModule) Category() plugin.Category   { return plugin.CategoryRecon }
-func (m *GCPWhoamiModule) OpsecLevel() string          { return "stealth" }
-func (m *GCPWhoamiModule) Authors() []string           { return []string{"Praetorian"} }
+func (m *GCPWhoamiModule) ID() string                       { return "whoami" }
+func (m *GCPWhoamiModule) Name() string                     { return "GCP Covert Whoami" }
+func (m *GCPWhoamiModule) Platform() plugin.Platform        { return plugin.PlatformGCP }
+func (m *GCPWhoamiModule) Category() plugin.Category        { return plugin.CategoryRecon }
+func (m *GCPWhoamiModule) OpsecLevel() string               { return "stealth" }
+func (m *GCPWhoamiModule) Authors() []string                { return []string{"Praetorian"} }
 func (m *GCPWhoamiModule) SupportedResourceTypes() []string { return nil }
-func (m *GCPWhoamiModule) Parameters() any             { return &m.GCPWhoamiConfig }
+func (m *GCPWhoamiModule) Parameters() any                  { return &m.GCPWhoamiConfig }
 
 func (m *GCPWhoamiModule) Description() string {
 	return "Determine caller identity via the OAuth2 tokeninfo endpoint without generating GCP Cloud Audit Logs."
@@ -45,6 +46,11 @@ func (m *GCPWhoamiModule) References() []string {
 
 func (m *GCPWhoamiModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	ctx := cfg.Context
+
+	if m.CredentialsFile != "" {
+		os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", m.CredentialsFile)
+	}
+
 	creds, err := google.FindDefaultCredentials(ctx, "https://www.googleapis.com/auth/cloud-platform")
 	if err != nil {
 		return fmt.Errorf("whoami: find credentials: %w", err)
