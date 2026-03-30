@@ -1,6 +1,6 @@
 ## aurelian gcp recon whoami
 
-Determine caller identity via the OAuth2 tokeninfo endpoint without generating GCP Cloud Audit Logs.
+Determine caller identity via the OAuth2 tokeninfo endpoint without generating GCP Cloud Audit Logs. Supports service account keys, user credentials, and workload identity federation.
 
 ```
 aurelian gcp recon whoami [flags]
