@@ -189,14 +189,18 @@ func hasPublicAccess(bindings []*gcsapi.PolicyBindings) bool {
 }
 
 func (s *terraformStateScanner) hasTfstateObjects(bucketName string) bool {
-	resp, err := s.svc.Objects.List(bucketName).Prefix("").Delimiter("").MaxResults(50).Do()
-	if err != nil {
-		slog.Warn("failed to list objects for tfstate check", "bucket", bucketName, "error", err)
-		return false
-	}
-	for _, obj := range resp.Items {
-		if strings.HasSuffix(obj.Name, ".tfstate") {
-			return true
+	// Check for common tfstate file paths with targeted prefix queries
+	// rather than listing all objects.
+	for _, prefix := range []string{"terraform.tfstate", "default.tfstate", "env:/", "terraform/"} {
+		resp, err := s.svc.Objects.List(bucketName).Prefix(prefix).MaxResults(5).Do()
+		if err != nil {
+			slog.Debug("failed to list objects for tfstate check", "bucket", bucketName, "prefix", prefix, "error", err)
+			continue
+		}
+		for _, obj := range resp.Items {
+			if strings.HasSuffix(obj.Name, ".tfstate") || strings.HasSuffix(obj.Name, ".tfstate.backup") {
+				return true
+			}
 		}
 	}
 	return false
