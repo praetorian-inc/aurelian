@@ -23,7 +23,6 @@ func init() {
 
 type GraphConfig struct {
 	plugin.AWSCommonRecon
-	plugin.GraphOutputBase
 	plugin.OrgPoliciesParam
 }
 
