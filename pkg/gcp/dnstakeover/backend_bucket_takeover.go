@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/praetorian-inc/aurelian/pkg/gcp/gcperrors"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -45,6 +46,10 @@ func NewBackendBucketChecker(clientOptions []option.ClientOption) (*BackendBucke
 func (c *BackendBucketChecker) CheckProject(projectID string, out *pipeline.P[model.AurelianModel]) error {
 	backendBuckets, err := c.computeSvc.BackendBuckets.List(projectID).Do()
 	if err != nil {
+		if gcperrors.ShouldSkip(err) {
+			slog.Debug("skipping backend bucket scan", "project", projectID, "reason", err)
+			return nil
+		}
 		slog.Warn("failed to list backend buckets", "project", projectID, "error", err)
 		return nil
 	}
@@ -101,9 +106,6 @@ func referencesBackendBucket(um *compute.UrlMap, selfLink string) bool {
 				return true
 			}
 		}
-	}
-	for _, hr := range um.HostRules {
-		_ = hr // host rules reference path matchers by name, not directly
 	}
 	return false
 }
