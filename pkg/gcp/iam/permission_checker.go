@@ -3,7 +3,9 @@ package iam
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
+	"github.com/praetorian-inc/aurelian/pkg/gcp/gcperrors"
 	cloudresourcemanager "google.golang.org/api/cloudresourcemanager/v1"
 	"google.golang.org/api/option"
 )
@@ -34,6 +36,10 @@ func (pc *PermissionChecker) TestPermissions(projectID string, permissions []str
 			Permissions: batch,
 		}).Do()
 		if err != nil {
+			if gcperrors.ShouldSkip(err) {
+				slog.Debug("skipping permission test", "project", projectID, "reason", err)
+				return nil, nil
+			}
 			return nil, fmt.Errorf("testing permissions on project %s: %w", projectID, err)
 		}
 		granted = append(granted, resp.Permissions...)

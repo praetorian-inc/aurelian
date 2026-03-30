@@ -116,5 +116,9 @@ func (m *GCPPrivescDetectionModule) Run(cfg plugin.Config, out *pipeline.P[model
 		Concurrency: c.Concurrency,
 	})
 
-	return out.Wait()
+	if err := out.Wait(); err != nil {
+		return err
+	}
+	cfg.Success("privilege escalation scan complete")
+	return nil
 }
