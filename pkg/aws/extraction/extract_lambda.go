@@ -34,6 +34,16 @@ func extractLambda(ctx extractContext, r output.AWSResource, out *pipeline.P[out
 		return fmt.Errorf("GetFunction failed for %s: %w", functionName, err)
 	}
 
+	if resp.Configuration != nil &&
+		resp.Configuration.Environment != nil &&
+		len(resp.Configuration.Environment.Variables) > 0 {
+		for key, value := range resp.Configuration.Environment.Variables {
+			content := fmt.Sprintf("%s=%s", key, value)
+			si := output.ScanInputFromAWSResource(r, fmt.Sprintf("env/%s", key), []byte(content))
+			out.Send(si)
+		}
+	}
+
 	missingCodeLocation := resp.Code == nil || resp.Code.Location == nil || *resp.Code.Location == ""
 	if missingCodeLocation {
 		return nil

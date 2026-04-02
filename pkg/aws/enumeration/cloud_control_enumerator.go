@@ -55,10 +55,12 @@ func (cc *CloudControlEnumerator) EnumerateByARN(resourceARN string, out *pipeli
 		slog.Debug("skipping arn", "arn", resourceARN, "error", err)
 		return nil
 	}
+	if err != nil {
+		return err
+	}
 
 	out.Send(resource)
-
-	return err
+	return nil
 }
 
 func (cc *CloudControlEnumerator) getResourceByARN(arn string) (output.AWSResource, error) {
