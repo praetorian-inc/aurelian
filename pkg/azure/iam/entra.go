@@ -572,24 +572,52 @@ func (a *entraApplicationWithOwners) toCredentials() []types.CredentialInfo {
 	return creds
 }
 
-// collectGroupMemberships iterates over groups and fetches members for each.
+// collectGroupMemberships iterates over groups and fetches members for each,
+// using up to 10 concurrent goroutines.
 func (c *EntraCollector) collectGroupMemberships(ctx context.Context, groups store.Map[types.EntraGroup]) []types.GroupMembership {
-	var all []types.GroupMembership
+	var groupIDs []string
 	groups.Range(func(_ string, g types.EntraGroup) bool {
-		members, err := paginate[groupMemberItem](ctx, c.client, "/groups/"+g.ObjectID+"/members")
-		if err != nil {
-			slog.Warn("failed to collect group members", "groupId", g.ObjectID, "error", err)
-			return true // continue
-		}
-		for _, m := range members {
-			all = append(all, types.GroupMembership{
-				GroupID:    g.ObjectID,
-				MemberID:   m.ID,
-				MemberType: m.ODataType,
-			})
-		}
+		groupIDs = append(groupIDs, g.ObjectID)
 		return true
 	})
+
+	type result struct {
+		memberships []types.GroupMembership
+	}
+
+	results := make([]result, len(groupIDs))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10)
+
+	for i, gid := range groupIDs {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(idx int, groupID string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			members, err := paginate[groupMemberItem](ctx, c.client, "/groups/"+groupID+"/members")
+			if err != nil {
+				slog.Warn("failed to collect group members", "groupId", groupID, "error", err)
+				return
+			}
+			var memberships []types.GroupMembership
+			for _, m := range members {
+				memberships = append(memberships, types.GroupMembership{
+					GroupID:    groupID,
+					MemberID:   m.ID,
+					MemberType: m.ODataType,
+				})
+			}
+			results[idx] = result{memberships: memberships}
+		}(i, gid)
+	}
+	wg.Wait()
+
+	var all []types.GroupMembership
+	for _, r := range results {
+		all = append(all, r.memberships...)
+	}
 	return all
 }
 
@@ -599,45 +627,82 @@ type groupMemberItem struct {
 }
 
 // collectAppRoleAssignments iterates over service principals and fetches
-// app role assignments for each.
+// app role assignments for each, using up to 10 concurrent goroutines.
 func (c *EntraCollector) collectAppRoleAssignments(ctx context.Context, sps store.Map[types.EntraServicePrincipal]) []types.AppRoleAssignment {
-	var all []types.AppRoleAssignment
+	var spIDs []string
 	sps.Range(func(_ string, sp types.EntraServicePrincipal) bool {
-		assignments, err := paginate[types.AppRoleAssignment](ctx, c.client, "/servicePrincipals/"+sp.ObjectID+"/appRoleAssignments")
-		if err != nil {
-			slog.Warn("failed to collect app role assignments", "spId", sp.ObjectID, "error", err)
-			return true
-		}
-		all = append(all, assignments...)
+		spIDs = append(spIDs, sp.ObjectID)
 		return true
 	})
+
+	results := make([][]types.AppRoleAssignment, len(spIDs))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10)
+
+	for i, spID := range spIDs {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(idx int, id string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			assignments, err := paginate[types.AppRoleAssignment](ctx, c.client, "/servicePrincipals/"+id+"/appRoleAssignments")
+			if err != nil {
+				slog.Warn("failed to collect app role assignments", "spId", id, "error", err)
+				return
+			}
+			results[idx] = assignments
+		}(i, spID)
+	}
+	wg.Wait()
+
+	var all []types.AppRoleAssignment
+	for _, r := range results {
+		all = append(all, r...)
+	}
 	return all
 }
 
 // collectOwnershipsByIDs fetches owners for a list of entity IDs via the
-// Graph API and returns ownership relationships.
+// Graph API and returns ownership relationships, using up to 10 concurrent goroutines.
 func (c *EntraCollector) collectOwnershipsByIDs(
 	ctx context.Context,
 	entityIDs []string,
 	resourceType string,
 	basePath string,
 ) []types.OwnershipRelationship {
+	results := make([][]types.OwnershipRelationship, len(entityIDs))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 10)
+
+	for i, entityID := range entityIDs {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(idx int, eid string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			owners, err := paginate[graphDirectoryObject](ctx, c.client, basePath+eid+"/owners")
+			if err != nil {
+				slog.Warn("failed to collect owners", "resourceType", resourceType, "resourceId", eid, "error", err)
+				return
+			}
+			var ownerships []types.OwnershipRelationship
+			for _, owner := range owners {
+				ownerships = append(ownerships, types.OwnershipRelationship{
+					OwnerID:      owner.ID,
+					ResourceID:   eid,
+					ResourceType: resourceType,
+				})
+			}
+			results[idx] = ownerships
+		}(i, entityID)
+	}
+	wg.Wait()
+
 	var all []types.OwnershipRelationship
-
-	for _, entityID := range entityIDs {
-		owners, err := paginate[graphDirectoryObject](ctx, c.client, basePath+entityID+"/owners")
-		if err != nil {
-			slog.Warn("failed to collect owners", "resourceType", resourceType, "resourceId", entityID, "error", err)
-			continue
-		}
-		for _, owner := range owners {
-			all = append(all, types.OwnershipRelationship{
-				OwnerID:      owner.ID,
-				ResourceID:   entityID,
-				ResourceType: resourceType,
-			})
-		}
-		}
-
+	for _, r := range results {
+		all = append(all, r...)
+	}
 	return all
 }
