@@ -1,0 +1,37 @@
+id: "5.1.3.1"
+title: "Ensure a dynamic group for guest users is created"
+service: entra
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that a dynamic Entra ID group exists that automatically
+  captures all guest user accounts based on the userType attribute.
+rationale: |
+  A dynamic group for guest users enables consistent policy
+  application, access reviews, and monitoring of external identities.
+  Without this group, guest users may be overlooked in security
+  policies and Conditional Access rules.
+impact: |
+  Minimal impact. A new dynamic group will be created that
+  automatically populates with guest users for policy targeting.
+remediation: |
+  Create a dynamic Entra ID group with the membership rule
+  (user.userType -eq "Guest") to automatically include all guest
+  accounts.
+references:
+  - "https://learn.microsoft.com/en-us/entra/identity/users/groups-dynamic-membership"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 5.1.3.1"
+cis_controls:
+  - "v8: 6.1"
+  - "v8: 6.8"
+guard:
+  finding_slug: "m365-cis-5-1-3-1-dynamic-group-guests"
+  phase_tag: "phase_m365_entra"
+  asset_type: "m365tenant"
+  cwe: "CWE-732"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - groups
+  - guest_users

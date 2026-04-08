@@ -1,0 +1,36 @@
+id: "6.5.3"
+title: "Ensure additional storage providers are restricted in Outlook on the web"
+service: exchange
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that additional third-party storage providers are disabled
+  in the Outlook on the web (OWA) mailbox policy.
+rationale: |
+  Allowing third-party storage providers in Outlook on the web
+  enables users to attach and share files from unmanaged cloud
+  services, creating data exfiltration paths that bypass DLP
+  controls and organizational data governance policies.
+impact: |
+  Users will be unable to attach files from third-party storage
+  providers in Outlook on the web. OneDrive and SharePoint remain
+  available as managed alternatives.
+remediation: |
+  Run Set-OwaMailboxPolicy -Identity OwaMailboxPolicy-Default
+  -AdditionalStorageProvidersAvailable $false in Exchange Online
+  PowerShell.
+references:
+  - "https://learn.microsoft.com/en-us/exchange/clients-and-mobile-in-exchange-online/outlook-on-the-web/outlook-on-the-web"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 6.5.3"
+cis_controls:
+  - "v8: 3.3"
+guard:
+  finding_slug: "m365-cis-6-5-3-thirdparty-storage-disabled"
+  phase_tag: "phase_m365_exchange"
+  asset_type: "m365tenant"
+  cwe: "CWE-200"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - owa_mailbox_policy
