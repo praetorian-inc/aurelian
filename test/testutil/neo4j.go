@@ -4,6 +4,8 @@ package testutil
 
 import (
 	"context"
+	"fmt"
+	"net"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/graph"
@@ -11,9 +13,24 @@ import (
 	neo4jcontainer "github.com/testcontainers/testcontainers-go/modules/neo4j"
 )
 
+// isDockerAvailable checks if the Docker daemon is accessible.
+func isDockerAvailable() bool {
+	// Try the default Docker socket.
+	conn, err := net.Dial("unix", "/var/run/docker.sock")
+	if err == nil {
+		conn.Close()
+		return true
+	}
+	return false
+}
+
 // StartNeo4jContainer starts a shared Neo4j 5.x container and returns the bolt URL
 // and a cleanup function. The caller is responsible for calling cleanup when done.
 func StartNeo4jContainer(ctx context.Context) (boltURL string, cleanup func(), err error) {
+	if !isDockerAvailable() {
+		return "", nil, fmt.Errorf("Docker daemon is not accessible: ensure Docker is running and the current user has permission to access /var/run/docker.sock")
+	}
+
 	container, err := neo4jcontainer.Run(ctx, "neo4j:5",
 		neo4jcontainer.WithoutAuthentication(),
 	)

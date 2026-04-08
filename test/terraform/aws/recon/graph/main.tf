@@ -61,8 +61,9 @@ resource "aws_iam_user_policy" "inline" {
           "iam:AttachUserPolicy",
           "iam:PutUserPolicy",
           "sts:AssumeRole",
-          # User -> ManagedPolicy relationship
+          # User -> ManagedPolicy relationships
           "iam:CreatePolicyVersion",
+          "iam:SetDefaultPolicyVersion",
         ]
         Resource = "*"
       }
