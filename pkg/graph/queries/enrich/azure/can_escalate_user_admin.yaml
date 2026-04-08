@@ -33,12 +33,9 @@ cypher: |
       ]
     }
   WITH DISTINCT attacker, target, perm
-  CALL {
-    WITH attacker, target, perm
-    MERGE (attacker)-[r:CAN_ESCALATE {method: 'PasswordResetViaUserAdmin'}]->(target)
-    ON CREATE SET
-      r.condition = 'Can reset passwords for users with no admin roles or specific low-privilege roles',
-      r.category = 'DirectoryRole',
-      r.source = perm.source
-  } IN TRANSACTIONS OF 10000 ROWS
+  MERGE (attacker)-[r:CAN_ESCALATE {method: 'PasswordResetViaUserAdmin'}]->(target)
+  ON CREATE SET
+    r.condition = 'Can reset passwords for users with no admin roles or specific low-privilege roles',
+    r.category = 'DirectoryRole',
+    r.source = perm.source
   RETURN count(*) AS created

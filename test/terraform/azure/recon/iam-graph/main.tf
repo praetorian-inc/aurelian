@@ -507,6 +507,7 @@ resource "azuread_application_password" "pim_reader" {
 # Requires Azure AD Premium P2.
 # =============================================================================
 resource "azuread_directory_role_eligibility_schedule_request" "regular_user_eligible_global_admin" {
+  count              = var.enable_pim ? 1 : 0
   role_definition_id = "62e90394-69f5-4237-9190-012177145e10" # Global Administrator
   principal_id       = azuread_user.regular.object_id
   directory_scope_id = "/"

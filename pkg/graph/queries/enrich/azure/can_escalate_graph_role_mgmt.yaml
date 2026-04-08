@@ -20,11 +20,8 @@ cypher: |
   MATCH (target:Principal)
   WHERE target <> attacker
   WITH DISTINCT attacker, target
-  CALL {
-    WITH attacker, target
-    MERGE (attacker)-[r:CAN_ESCALATE {method: 'GraphRoleManagement'}]->(target)
-    ON CREATE SET
-      r.condition = 'Service Principal with RoleManagement.ReadWrite.Directory can assign Global Administrator or any directory role to any principal',
-      r.category = 'GraphPermission'
-  } IN TRANSACTIONS OF 10000 ROWS
+  MERGE (attacker)-[r:CAN_ESCALATE {method: 'GraphRoleManagement'}]->(target)
+  ON CREATE SET
+    r.condition = 'Service Principal with RoleManagement.ReadWrite.Directory can assign Global Administrator or any directory role to any principal',
+    r.category = 'GraphPermission'
   RETURN count(*) AS created

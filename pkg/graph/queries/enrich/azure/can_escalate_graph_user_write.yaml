@@ -16,11 +16,8 @@ cypher: |
   MATCH (target:User)
   WHERE target <> attacker
   WITH DISTINCT attacker, target
-  CALL {
-    WITH attacker, target
-    MERGE (attacker)-[r:CAN_ESCALATE {method: 'GraphUserReadWrite'}]->(target)
-    ON CREATE SET
-      r.condition = 'Service Principal with User.ReadWrite.All can reset passwords, modify profiles, and disable accounts for any user',
-      r.category = 'GraphPermission'
-  } IN TRANSACTIONS OF 10000 ROWS
+  MERGE (attacker)-[r:CAN_ESCALATE {method: 'GraphUserReadWrite'}]->(target)
+  ON CREATE SET
+    r.condition = 'Service Principal with User.ReadWrite.All can reset passwords, modify profiles, and disable accounts for any user',
+    r.category = 'GraphPermission'
   RETURN count(*) AS created

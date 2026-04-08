@@ -19,12 +19,9 @@ cypher: |
   MATCH (target:Principal)
   WHERE target <> attacker
   WITH DISTINCT attacker, target, perm
-  CALL {
-    WITH attacker, target, perm
-    MERGE (attacker)-[r:CAN_ESCALATE {method: 'GlobalAdministrator'}]->(target)
-    ON CREATE SET
-      r.condition = 'Global Administrator role provides complete tenant control and can escalate to all resources',
-      r.category = 'DirectoryRole',
-      r.source = perm.source
-  } IN TRANSACTIONS OF 10000 ROWS
+  MERGE (attacker)-[r:CAN_ESCALATE {method: 'GlobalAdministrator'}]->(target)
+  ON CREATE SET
+    r.condition = 'Global Administrator role provides complete tenant control and can escalate to all resources',
+    r.category = 'DirectoryRole',
+    r.source = perm.source
   RETURN count(*) AS created

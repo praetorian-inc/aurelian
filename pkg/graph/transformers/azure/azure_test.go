@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/graph"
+	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1227,4 +1228,251 @@ func TestPrincipalNodeByAzureType(t *testing.T) {
 			assert.Equal(t, []string{"id"}, node.UniqueKey)
 		})
 	}
+}
+
+// ===========================================================================
+// Empty collection transforms
+// ===========================================================================
+
+func TestTransformEntraIDData_Empty(t *testing.T) {
+	data := &types.EntraIDData{
+		Users:             store.NewMap[types.EntraUser](),
+		Groups:            store.NewMap[types.EntraGroup](),
+		ServicePrincipals: store.NewMap[types.EntraServicePrincipal](),
+		Applications:      store.NewMap[types.EntraApplication](),
+	}
+	nodes, rels := TransformEntraIDData(data)
+	assert.Empty(t, nodes, "empty EntraIDData should produce zero nodes")
+	assert.Empty(t, rels, "empty EntraIDData should produce zero relationships")
+}
+
+// ===========================================================================
+// Principal type resolution during DirectoryRoleAssignment transform
+// ===========================================================================
+
+func TestTransformEntraIDData_PrincipalTypeResolution(t *testing.T) {
+	data := types.NewEntraIDData(
+		"tenant-001",
+		[]types.EntraUser{{ObjectID: "user-001"}},
+		[]types.EntraGroup{{ObjectID: "group-001"}},
+		[]types.EntraServicePrincipal{{ObjectID: "sp-001"}},
+		nil,
+	)
+
+	data.DirectoryRoleAssignments = []types.DirectoryRoleAssignment{
+		{ID: "dra-user", PrincipalID: "user-001", RoleDefinitionID: "rd-001"},
+		{ID: "dra-group", PrincipalID: "group-001", RoleDefinitionID: "rd-001"},
+		{ID: "dra-sp", PrincipalID: "sp-001", RoleDefinitionID: "rd-001"},
+		{ID: "dra-unknown", PrincipalID: "unknown-001", RoleDefinitionID: "rd-001"},
+		{ID: "dra-explicit", PrincipalID: "sp-001", RoleDefinitionID: "rd-001", PrincipalType: "ServicePrincipal"},
+	}
+
+	_, rels := TransformEntraIDData(data)
+
+	var hasPerm []*graph.Relationship
+	for _, r := range rels {
+		if r.Type == "HAS_PERMISSION" {
+			hasPerm = append(hasPerm, r)
+		}
+	}
+	require.Len(t, hasPerm, 5)
+
+	assert.Equal(t, []string{"User", "Principal", "Azure::EntraID::User"}, hasPerm[0].StartNode.Labels,
+		"user-001 should resolve to User")
+	assert.Equal(t, []string{"Group", "Azure::EntraID::Group"}, hasPerm[1].StartNode.Labels,
+		"group-001 should resolve to Group")
+	assert.Equal(t, []string{"ServicePrincipal", "Principal", "Azure::EntraID::ServicePrincipal"}, hasPerm[2].StartNode.Labels,
+		"sp-001 should resolve to ServicePrincipal")
+	assert.Equal(t, []string{"User", "Principal", "Azure::EntraID::User"}, hasPerm[3].StartNode.Labels,
+		"unknown-001 should default to User")
+	assert.Equal(t, []string{"ServicePrincipal", "Principal", "Azure::EntraID::ServicePrincipal"}, hasPerm[4].StartNode.Labels,
+		"explicitly typed SP should remain ServicePrincipal")
+}
+
+// ===========================================================================
+// Label consistency: minimal nodes must match full node constructors
+// ===========================================================================
+
+func TestMinimalNodeLabelsMatchFullNodes(t *testing.T) {
+	t.Run("User", func(t *testing.T) {
+		full := NodeFromEntraUser(types.EntraUser{ObjectID: "u1"})
+		minimal := minimalUserNode("u1")
+		assert.Equal(t, full.Labels, minimal.Labels)
+		assert.Equal(t, full.UniqueKey, minimal.UniqueKey)
+	})
+	t.Run("Group", func(t *testing.T) {
+		full := NodeFromEntraGroup(types.EntraGroup{ObjectID: "g1"})
+		minimal := minimalGroupNode("g1")
+		assert.Equal(t, full.Labels, minimal.Labels)
+	})
+	t.Run("ServicePrincipal", func(t *testing.T) {
+		full := NodeFromEntraServicePrincipal(types.EntraServicePrincipal{ObjectID: "sp1"})
+		minimal := minimalServicePrincipalNode("sp1")
+		assert.Equal(t, full.Labels, minimal.Labels)
+	})
+	t.Run("RoleDefinition", func(t *testing.T) {
+		full := NodeFromEntraRoleDefinition(types.EntraRoleDefinition{ID: "rd1"})
+		minimal := minimalRoleDefinitionNode("rd1")
+		assert.Equal(t, full.Labels, minimal.Labels)
+	})
+}
+
+// ===========================================================================
+// scopeNode edge cases
+// ===========================================================================
+
+func TestScopeNode(t *testing.T) {
+	tests := []struct {
+		name           string
+		scope          string
+		expectedLabels []string
+		expectedID     string
+	}{
+		{"subscription scope", "/subscriptions/sub-001", []string{"Subscription", "Azure::Subscription"}, "sub-001"},
+		{"resource group scope", "/subscriptions/sub-001/resourceGroups/rg", []string{"Subscription", "Azure::Subscription"}, "sub-001"},
+		{"deep resource scope", "/subscriptions/sub-001/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1", []string{"Subscription", "Azure::Subscription"}, "sub-001"},
+		{"management group scope", "/providers/Microsoft.Management/managementGroups/mg1", []string{"Resource"}, "/providers/Microsoft.Management/managementGroups/mg1"},
+		{"root scope", "/", []string{"Resource"}, "/"},
+		{"empty scope", "", []string{"Resource"}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := scopeNode(tt.scope)
+			assert.Equal(t, tt.expectedLabels, node.Labels)
+			assert.Equal(t, tt.expectedID, node.Properties["id"])
+		})
+	}
+}
+
+// ===========================================================================
+// TransformAll integration
+// ===========================================================================
+
+func TestTransformAll_Integrated(t *testing.T) {
+	data := &types.AzureIAMConsolidated{
+		EntraID: types.NewEntraIDData(
+			"tenant-001",
+			[]types.EntraUser{{ObjectID: "user-001", DisplayName: "Alice"}},
+			[]types.EntraGroup{{ObjectID: "group-001", DisplayName: "Admins"}},
+			[]types.EntraServicePrincipal{{ObjectID: "sp-001", DisplayName: "App1", AppID: "app-id"}},
+			[]types.EntraApplication{{ObjectID: "app-001", DisplayName: "App1", AppID: "app-id"}},
+		),
+		RBAC: []*types.RBACData{
+			types.NewRBACData("sub-001",
+				[]types.RoleAssignment{{ID: "ra-001", PrincipalID: "user-001", RoleDefinitionID: "rd-001", Scope: "/subscriptions/sub-001"}},
+				[]types.RoleDefinition{{ID: "rd-001", RoleName: "Owner"}},
+			),
+		},
+		PIM: &types.PIMData{
+			ActiveAssignments: []types.PIMRoleAssignment{
+				{ID: "pim-001", PrincipalID: "user-001", RoleDefinitionID: "rd-001", Scope: "/", AssignmentType: "active"},
+			},
+		},
+		ManagementGroups: &types.ManagementGroupData{
+			Groups: []types.ManagementGroup{{ID: "mg-001", DisplayName: "Root", Name: "root"}},
+		},
+		ManagedIdentities: &types.ManagedIdentityData{
+			Identities: []types.ManagedIdentity{{ID: "mi-001", Name: "mi1", PrincipalID: "sp-001"}},
+		},
+	}
+
+	nodes, rels := TransformAll(data)
+	assert.Greater(t, len(nodes), 0)
+	assert.Greater(t, len(rels), 0)
+
+	labelSet := make(map[string]bool)
+	for _, n := range nodes {
+		for _, l := range n.Labels {
+			labelSet[l] = true
+		}
+	}
+	assert.True(t, labelSet["User"])
+	assert.True(t, labelSet["Group"])
+	assert.True(t, labelSet["ServicePrincipal"])
+	assert.True(t, labelSet["Application"])
+	assert.True(t, labelSet["Subscription"])
+	assert.True(t, labelSet["RBACRoleDefinition"])
+	assert.True(t, labelSet["ManagementGroup"])
+	assert.True(t, labelSet["ManagedIdentity"])
+}
+
+func TestTransformAll_AllNilFields(t *testing.T) {
+	data := &types.AzureIAMConsolidated{}
+	nodes, rels := TransformAll(data)
+	assert.Empty(t, nodes)
+	assert.Empty(t, rels)
+}
+
+// ===========================================================================
+// Mixed identity type: SystemAssigned + UserAssigned on same resource
+// ===========================================================================
+
+func TestTransformManagedIdentityData_MixedIdentityTypes(t *testing.T) {
+	data := &types.ManagedIdentityData{
+		Identities: []types.ManagedIdentity{
+			{ID: "mi-ua-001", Name: "ua-mi", PrincipalID: "sp-ua-001"},
+		},
+		Attachments: []types.ResourceIdentityAttachment{
+			{
+				ResourceID:      "vm-001",
+				ResourceName:    "my-vm",
+				ResourceType:    "Microsoft.Compute/virtualMachines",
+				IdentityType:    "SystemAssigned,UserAssigned",
+				PrincipalID:     "sp-system-001",
+				UserAssignedIDs: []string{"mi-ua-001"},
+			},
+		},
+	}
+
+	nodes, rels := TransformManagedIdentityData(data)
+	assert.Equal(t, 3, len(nodes)) // 1 UA MI + 1 AzureResource + 1 synthetic system MI
+	assert.Equal(t, 4, len(rels))  // 1 UA MI→SP + 1 Resource→synth MI + 1 synth MI→SP + 1 Resource→UA MI
+
+	identityTypes := make(map[string]bool)
+	for _, r := range rels {
+		if it, ok := r.Properties["identityType"]; ok {
+			identityTypes[it.(string)] = true
+		}
+	}
+	assert.True(t, identityTypes["SystemAssigned"])
+	assert.True(t, identityTypes["UserAssigned"])
+}
+
+func TestTransformManagedIdentityData_SystemAssignedNoPrincipal(t *testing.T) {
+	data := &types.ManagedIdentityData{
+		Attachments: []types.ResourceIdentityAttachment{
+			{ResourceID: "vm-001", ResourceName: "my-vm", ResourceType: "Microsoft.Compute/virtualMachines", IdentityType: "SystemAssigned", PrincipalID: ""},
+		},
+	}
+	nodes, rels := TransformManagedIdentityData(data)
+	assert.Equal(t, 1, len(nodes), "only AzureResource node")
+	assert.Empty(t, rels)
+}
+
+func TestTransformManagedIdentityData_UserAssignedNoPrincipal(t *testing.T) {
+	data := &types.ManagedIdentityData{
+		Identities: []types.ManagedIdentity{{ID: "mi-001", Name: "mi1", PrincipalID: ""}},
+	}
+	nodes, rels := TransformManagedIdentityData(data)
+	assert.Equal(t, 1, len(nodes), "MI node still created")
+	assert.Empty(t, rels, "no MI→SP rel when PrincipalID is empty")
+}
+
+// ===========================================================================
+// Neo4j property edge cases
+// ===========================================================================
+
+func TestToNeo4jArray_MixedTypes(t *testing.T) {
+	result := toNeo4jArray([]interface{}{"a", float64(1)})
+	assert.IsType(t, "", result, "mixed array → JSON string")
+}
+
+func TestToNeo4jProperty_ComplexObject(t *testing.T) {
+	result := toNeo4jProperty(map[string]interface{}{"key": "value"})
+	assert.IsType(t, "", result, "complex object → JSON string")
+}
+
+func TestToNeo4jProperty_EmptyObject(t *testing.T) {
+	result := toNeo4jProperty(map[string]interface{}{})
+	assert.Nil(t, result, "empty object → nil")
 }

@@ -17,11 +17,8 @@ cypher: |
   MATCH (target:Principal)
   WHERE target <> attacker
   WITH DISTINCT attacker, target
-  CALL {
-    WITH attacker, target
-    MERGE (attacker)-[r:CAN_ESCALATE {method: 'DirectoryReadWriteAll'}]->(target)
-    ON CREATE SET
-      r.condition = 'Service Principal with Directory.ReadWrite.All can modify any directory object including role assignments',
-      r.category = 'GraphPermission'
-  } IN TRANSACTIONS OF 10000 ROWS
+  MERGE (attacker)-[r:CAN_ESCALATE {method: 'DirectoryReadWriteAll'}]->(target)
+  ON CREATE SET
+    r.condition = 'Service Principal with Directory.ReadWrite.All can modify any directory object including role assignments',
+    r.category = 'GraphPermission'
   RETURN count(*) AS created
