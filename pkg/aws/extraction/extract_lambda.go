@@ -3,6 +3,7 @@ package extraction
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,10 +17,25 @@ import (
 
 const maxLambdaZipSize = 250 * 1024 * 1024
 
+func extractLambdaProperties(_ extractContext, r output.AWSResource, out *pipeline.P[output.ScanInput]) error {
+	if len(r.Properties) == 0 {
+		return nil
+	}
+
+	data, err := json.Marshal(r.Properties)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Lambda function properties: %w", err)
+	}
+
+	out.Send(output.ScanInputFromAWSResource(r, "Lambda Configuration", data))
+	return nil
+}
+
 var httpClient = &http.Client{Timeout: 10 * time.Minute}
 
 func init() {
 	mustRegister("AWS::Lambda::Function", "lambda-code", extractLambda)
+	mustRegister("AWS::Lambda::Function", "lambda-properties", extractLambdaProperties)
 }
 
 func extractLambda(ctx extractContext, r output.AWSResource, out *pipeline.P[output.ScanInput]) error {

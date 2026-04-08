@@ -59,6 +59,47 @@ func TestExtract_FirstExtractorFailsSecondSucceeds(t *testing.T) {
 	assert.Equal(t, "ok", items[0].Label)
 }
 
+func TestExtract_LambdaPropertiesExtractor(t *testing.T) {
+	ex := NewAWSExtractor(plugin.AWSCommonRecon{Concurrency: 1}, Config{})
+	out := pipeline.New[output.ScanInput]()
+	resource := output.AWSResource{
+		ResourceType: "AWS::Lambda::Function",
+		ResourceID:   "arn:aws:lambda:us-east-1:123456789012:function:my-func",
+		ARN:          "arn:aws:lambda:us-east-1:123456789012:function:my-func",
+		Region:       "us-east-1",
+		AccountRef:   "123456789012",
+		Properties: map[string]any{
+			"FunctionName": "my-func",
+			"Environment": map[string]any{
+				"Variables": map[string]any{
+					"DB_PASSWORD": "super-secret-password",
+				},
+			},
+		},
+	}
+
+	go func() {
+		defer out.Close()
+		err := ex.Extract(resource, out)
+		require.NoError(t, err)
+	}()
+
+	items, err := out.Collect()
+	require.NoError(t, err)
+
+	var found bool
+	for _, item := range items {
+		if item.Label == "Lambda Configuration" {
+			found = true
+			assert.Contains(t, string(item.Content), "DB_PASSWORD")
+			assert.Contains(t, string(item.Content), "super-secret-password")
+			assert.False(t, item.PathFilterable)
+			break
+		}
+	}
+	assert.True(t, found, "expected Lambda Configuration scan input")
+}
+
 func TestExtract_ECSPropertiesExtractor(t *testing.T) {
 	ex := NewAWSExtractor(plugin.AWSCommonRecon{Concurrency: 1}, Config{})
 	out := pipeline.New[output.ScanInput]()
