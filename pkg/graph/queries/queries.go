@@ -104,6 +104,38 @@ func EnrichAWS(ctx context.Context, db graph.GraphDatabase) error {
 	return nil
 }
 
+// EnrichAzure runs all Azure enrichment queries in order
+func EnrichAzure(ctx context.Context, db graph.GraphDatabase) error {
+	var enrichQueries []*Query
+	for _, query := range queryRegistry {
+		if query.Metadata.Type == "enrich" && query.Metadata.Platform == "azure" {
+			enrichQueries = append(enrichQueries, query)
+		}
+	}
+
+	sort.Slice(enrichQueries, func(i, j int) bool {
+		return enrichQueries[i].Metadata.Order < enrichQueries[j].Metadata.Order
+	})
+
+	slog.Info("running Azure enrichment queries", "count", len(enrichQueries))
+
+	for _, query := range enrichQueries {
+		slog.Debug("executing enrichment query", "id", query.Metadata.ID, "name", query.Metadata.Name)
+
+		result, err := db.Query(ctx, query.Cypher, nil)
+		if err != nil {
+			return fmt.Errorf("query %s failed: %w", query.Metadata.ID, err)
+		}
+
+		slog.Debug("query completed",
+			"id", query.Metadata.ID,
+			"nodes_created", result.Summary.NodesCreated,
+			"relationships_created", result.Summary.RelationshipsCreated)
+	}
+
+	return nil
+}
+
 // AnalyzeAWS runs all AWS analysis queries in order and returns results
 func AnalyzeAWS(ctx context.Context, db graph.GraphDatabase) ([]*graph.QueryResult, error) {
 	var analysisQueries []*Query

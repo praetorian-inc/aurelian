@@ -1,0 +1,27 @@
+id: azure/enrich/can-escalate-global-admin
+name: Global Administrator Escalation
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Global Administrators have full control over all Azure AD and Azure resources.
+  Creates CAN_ESCALATE edges from principals with Global Administrator role
+  to all other principals, as they can reset passwords, modify roles, and
+  compromise any identity in the directory.
+severity: critical
+order: 50
+cypher: |
+  MATCH (attacker)-[perm:HAS_PERMISSION]->(rd:RoleDefinition)
+  WHERE rd.displayName = 'Global Administrator'
+     OR rd.templateId = '62e90394-69f5-4237-9190-012177145e10'
+  SET attacker._isGlobalAdmin = true, attacker._canEscalate = true
+  WITH attacker, perm
+  MATCH (target:Principal)
+  WHERE target <> attacker
+  WITH DISTINCT attacker, target, perm
+  MERGE (attacker)-[r:CAN_ESCALATE {method: 'GlobalAdministrator'}]->(target)
+  ON CREATE SET
+    r.condition = 'Global Administrator role provides complete tenant control and can escalate to all resources',
+    r.category = 'DirectoryRole',
+    r.source = perm.source
+  RETURN count(*) AS created

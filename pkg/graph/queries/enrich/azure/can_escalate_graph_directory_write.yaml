@@ -1,0 +1,24 @@
+id: azure/enrich/can-escalate-graph-directory-write
+name: Graph API Directory.ReadWrite.All Escalation
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Service principals with Directory.ReadWrite.All can modify any directory
+  object including role assignments, enabling full directory compromise.
+severity: critical
+order: 75
+cypher: |
+  MATCH (attacker:ServicePrincipal)-[perm:HAS_PERMISSION]->(resource:ServicePrincipal)
+  WHERE perm.source IN ['Microsoft Graph App Role', 'Microsoft Graph OAuth2']
+    AND (resource.displayName = 'Microsoft Graph' OR resource.appId = '00000003-0000-0000-c000-000000000000')
+  SET attacker._canEscalate = true
+  WITH attacker
+  MATCH (target:Principal)
+  WHERE target <> attacker
+  WITH DISTINCT attacker, target
+  MERGE (attacker)-[r:CAN_ESCALATE {method: 'DirectoryReadWriteAll'}]->(target)
+  ON CREATE SET
+    r.condition = 'Service Principal with Directory.ReadWrite.All can modify any directory object including role assignments',
+    r.category = 'GraphPermission'
+  RETURN count(*) AS created
