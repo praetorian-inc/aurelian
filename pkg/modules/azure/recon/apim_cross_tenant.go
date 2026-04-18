@@ -26,26 +26,31 @@ func init() {
 }
 
 type APIMCrossTenantConfig struct {
-	TargetAPIM   string `param:"target"       desc:"Target APIM developer portal URL"                                      required:"true"`
-	AttackerAPIM string `param:"attacker"     desc:"Attacker-controlled APIM portal URL (enables cross-tenant signup bypass)"`
-	Email        string `param:"email"        desc:"Registration email (requires --attacker or --skip-signup)"`
-	Password     string `param:"password"     desc:"Registration password (requires --attacker or --skip-signup)"           sensitive:"true"`
-	FirstName    string `param:"first"        desc:"First name for registration"                                           default:"Test"`
-	LastName     string `param:"last"         desc:"Last name for registration"                                            default:"User"`
-	Insecure     bool   `param:"insecure"     desc:"Skip TLS certificate verification"                                      default:"false" shortcode:"k"`
-	SkipSignup   bool   `param:"skip-signup"  desc:"Skip captcha/signup steps; login and enumerate with existing credentials" default:"false"`
-	SkipPreauth  bool   `param:"skip-preauth" desc:"Skip unauthenticated pre-auth enumeration phase"                         default:"false"`
+	TargetAPIM   string `param:"target"    desc:"Target APIM developer portal URL"                                                           required:"true"`
+	Mode         string `param:"mode"      desc:"Scan mode: passive (unauthenticated enum only), authenticated (login + enum), bypass (cross-tenant captcha relay + signup + enum)" default:"passive" enum:"passive,authenticated,bypass"`
+	AttackerAPIM string `param:"attacker"  desc:"Attacker-controlled APIM portal URL (required for bypass mode)"`
+	Email        string `param:"email"     desc:"Account email (required for authenticated and bypass modes)"`
+	Password     string `param:"password"  desc:"Account password (required for authenticated and bypass modes)"                              sensitive:"true"`
+	FirstName    string `param:"first"     desc:"First name for registration (bypass mode)"                                                  default:"Test"`
+	LastName     string `param:"last"      desc:"Last name for registration (bypass mode)"                                                   default:"User"`
+	Insecure     bool   `param:"insecure"  desc:"Skip TLS certificate verification"                                                           default:"false" shortcode:"k"`
 }
 
 func (c *APIMCrossTenantConfig) PostBind(_ plugin.Config, _ plugin.Module) error {
-	if c.SkipSignup {
+	switch c.Mode {
+	case "passive":
+		// no additional requirements
+	case "authenticated":
 		if c.Email == "" || c.Password == "" {
-			return fmt.Errorf("--skip-signup requires both --email and --password")
+			return fmt.Errorf("authenticated mode requires --email and --password")
 		}
-		return nil
-	}
-	if c.AttackerAPIM != "" && (c.Email == "" || c.Password == "") {
-		return fmt.Errorf("--attacker requires both --email and --password")
+	case "bypass":
+		if c.AttackerAPIM == "" {
+			return fmt.Errorf("bypass mode requires --attacker")
+		}
+		if c.Email == "" || c.Password == "" {
+			return fmt.Errorf("bypass mode requires --email and --password")
+		}
 	}
 	return nil
 }
@@ -54,14 +59,24 @@ type APIMCrossTenantModule struct {
 	APIMCrossTenantConfig
 }
 
-func (m *APIMCrossTenantModule) ID() string          { return "apim-cross-tenant" }
-func (m *APIMCrossTenantModule) Name() string        { return "Azure APIM Cross-Tenant Signup" }
-func (m *APIMCrossTenantModule) Platform() plugin.Platform { return plugin.PlatformAzure }
-func (m *APIMCrossTenantModule) Category() plugin.Category { return plugin.CategoryRecon }
-func (m *APIMCrossTenantModule) OpsecLevel() string  { return "loud" }
-func (m *APIMCrossTenantModule) Authors() []string   { return []string{"Praetorian"} }
-func (m *APIMCrossTenantModule) Parameters() any     { return &m.APIMCrossTenantConfig }
+func (m *APIMCrossTenantModule) ID() string                       { return "apim-cross-tenant" }
+func (m *APIMCrossTenantModule) Name() string                     { return "Azure APIM Cross-Tenant Signup" }
+func (m *APIMCrossTenantModule) Platform() plugin.Platform        { return plugin.PlatformAzure }
+func (m *APIMCrossTenantModule) Category() plugin.Category        { return plugin.CategoryRecon }
+func (m *APIMCrossTenantModule) Authors() []string                { return []string{"Praetorian"} }
+func (m *APIMCrossTenantModule) Parameters() any                  { return &m.APIMCrossTenantConfig }
 func (m *APIMCrossTenantModule) SupportedResourceTypes() []string { return nil }
+
+func (m *APIMCrossTenantModule) OpsecLevel() string {
+	switch m.Mode {
+	case "bypass":
+		return "loud"
+	case "authenticated":
+		return "moderate"
+	default:
+		return "stealth"
+	}
+}
 
 func (m *APIMCrossTenantModule) Description() string {
 	return "Enumerates Azure APIM developer portal resources (APIs, products, delegation settings) " +
@@ -86,24 +101,25 @@ func (m *APIMCrossTenantModule) Run(cfg plugin.Config, out *pipeline.P[model.Aur
 
 	cfg.Info("management API: %s (version: %s)", mgmtURL, mgmtVersion)
 
-	if !m.SkipPreauth {
+	switch m.Mode {
+	case "passive":
+		return m.enumPublic(client, target, mgmtURL, mgmtVersion, out)
+	case "authenticated":
 		if err := m.enumPublic(client, target, mgmtURL, mgmtVersion, out); err != nil {
 			return fmt.Errorf("pre-auth enumeration: %w", err)
 		}
-	}
-
-	if m.SkipSignup {
 		return m.loginAndEnum(cfg, client, target, mgmtURL, mgmtVersion, out)
+	case "bypass":
+		if err := m.enumPublic(client, target, mgmtURL, mgmtVersion, out); err != nil {
+			return fmt.Errorf("pre-auth enumeration: %w", err)
+		}
+		return m.bypassAndEnumAuthenticated(cfg, client, target, mgmtURL, mgmtVersion, out)
+	default:
+		return fmt.Errorf("unknown mode: %s", m.Mode)
 	}
-
-	if m.AttackerAPIM == "" {
-		return nil
-	}
-
-	return m.bypassAndEnumAuthenticated(cfg, client, target, mgmtURL, mgmtVersion, out)
 }
 
-// loginAndEnum skips signup and goes straight to login + authenticated enumeration.
+// loginAndEnum authenticates with existing credentials and enumerates.
 func (m *APIMCrossTenantModule) loginAndEnum(cfg plugin.Config, client *http.Client, target, mgmtURL, mgmtVersion string, out *pipeline.P[model.AurelianModel]) error {
 	sasToken, userID, err := m.login(client, target, mgmtVersion)
 	if err != nil {
