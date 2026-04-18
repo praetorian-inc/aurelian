@@ -18,4 +18,5 @@ jobs:
     with:
       build-cmd-path: .
       build-binary-name: aurelian
+      golangci-lint-timeout: 10m
     secrets: inherit
