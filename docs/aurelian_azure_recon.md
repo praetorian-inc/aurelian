@@ -11,6 +11,7 @@ recon commands for azure
 ### SEE ALSO
 
 * [aurelian azure](aurelian_azure.md)	 - azure platform commands
+* [aurelian azure recon apim-cross-tenant](aurelian_azure_recon_apim-cross-tenant.md)	 - Enumerates Azure APIM developer portal resources (APIs, products, delegation settings) without authentication, then optionally performs a cross-tenant captcha relay attack to create an account on the target portal and enumerate authenticated resources and subscription keys.
 * [aurelian azure recon conditional-access-policies](aurelian_azure_recon_conditional-access-policies.md)	 - Enumerates Azure AD Conditional Access Policies via the Microsoft Graph API
 * [aurelian azure recon configuration-scan](aurelian_azure_recon_configuration-scan.md)	 - Detects Azure configuration issues including weak authentication, disabled RBAC, privilege escalation paths, and overly permissive access rules via Azure Resource Graph.
 * [aurelian azure recon find-secrets](aurelian_azure_recon_find-secrets.md)	 - Enumerates Azure resources via Resource Graph, extracts content likely to contain hardcoded secrets (VM user data, web app settings, automation variables, storage blobs, container env vars, Cosmos DB, APIM named values, Key Vault, and 30+ other sources), and scans with Titus.
