@@ -1,0 +1,12 @@
+name: External Contribution Notify
+
+on:
+  issues:
+    types: [opened, assigned, closed]
+  pull_request_target:
+    types: [opened, assigned, closed]
+
+jobs:
+  notify:
+    uses: praetorian-inc/public-workflows/.github/workflows/external-contrib-notify.yml@4900fbd3aaf1992181e2ebfb108c71fee8250c67  # v2.0.1
+    secrets: inherit
