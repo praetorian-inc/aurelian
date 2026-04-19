@@ -18,13 +18,18 @@ permissions:
 jobs:
   review:
     runs-on: ubuntu-latest
+    # Defense-in-depth: the pull_request trigger is currently commented out, but if it's
+    # ever re-enabled, this gate blocks prompt-injection from external-PR content by
+    # requiring author_association ∈ {OWNER, MEMBER, COLLABORATOR}. workflow_dispatch
+    # is already collaborator-only by GitHub's permission model.
     if: |
       (github.event_name == 'workflow_dispatch') ||
       (
         github.event.pull_request.draft == false &&
         !contains(github.actor, '[bot]') &&
         github.actor != 'coderabbitai' &&
-        github.actor != 'devin-ai-integration'
+        github.actor != 'devin-ai-integration' &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
       )
 
     steps:
@@ -40,7 +45,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Claude PR review
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@38ec876110f9fbf8b950c79f534430740c3ac009  # v1.0.101
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
