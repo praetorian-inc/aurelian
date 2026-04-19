@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -285,42 +286,49 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 	p2 := pipeline.New[model.AurelianModel]()
 	pipeline.Pipe(p1, module.Run, p2)
 
-	results, err := p2.Collect()
+	// Determine output file path
+	var outputPath string
+	if outputFile != "" {
+		// User specified explicit file — use as-is
+		outputPath = outputFile
+	} else {
+		// Auto-generate: {output-dir}/{moduleID}-{timestamp}.{ext}
+		timestamp := time.Now().Format("20060102-150405")
+		filename := fmt.Sprintf("%s-%s%s", module.ID(), timestamp, ".jsonl")
+		outputPath = filepath.Join(outputDir, filename)
+	}
+
+	// Ensure the output directory exists
+	if err := utils.EnsureFileDirectory(outputPath); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	f, err := os.Create(outputPath)
 	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	// Stream results as JSONL (one JSON object per line) to avoid
+	// accumulating all results in memory.
+	enc := json.NewEncoder(f)
+	count := 0
+	for item := range p2.Range() {
+		if err := enc.Encode(item); err != nil {
+			return fmt.Errorf("failed to encode result: %w", err)
+		}
+		count++
+	}
+	if err := p2.Wait(); err != nil {
 		return err
 	}
 
-	// Output results if there are any
-	if len(results) > 0 {
-		// Determine output file path
-		var outputPath string
-		if outputFile != "" {
-			// User specified explicit file — use as-is
-			outputPath = outputFile
-		} else {
-			// Auto-generate: {output-dir}/{moduleID}-{timestamp}.{ext}
-			timestamp := time.Now().Format("20060102-150405")
-			filename := fmt.Sprintf("%s-%s%s", module.ID(), timestamp, ".json")
-			outputPath = filepath.Join(outputDir, filename)
-		}
-
-		// Ensure the output directory exists
-		if err := utils.EnsureFileDirectory(outputPath); err != nil {
-			return fmt.Errorf("failed to create output directory: %w", err)
-		}
-
-		f, err := os.Create(outputPath)
-		if err != nil {
-			return fmt.Errorf("failed to create output file: %w", err)
-		}
-		defer func() { _ = f.Close() }()
-
-		formatter := &plugin.JSONFormatter{Writer: f, Pretty: true}
-		if err := formatter.Format(results); err != nil {
-			return fmt.Errorf("failed to format output: %w", err)
-		}
-
-		log.Success("output written to %s", outputPath)
+	if count > 0 {
+		log.Success("output written to %s (%d results)", outputPath, count)
+	} else {
+		// Clean up empty file
+		_ = f.Close()
+		_ = os.Remove(outputPath)
 	}
 
 	return nil
