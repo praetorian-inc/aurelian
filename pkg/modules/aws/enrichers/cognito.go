@@ -21,6 +21,7 @@ type CognitoClient interface {
 	DescribeUserPool(ctx context.Context, params *cognitoidentityprovider.DescribeUserPoolInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.DescribeUserPoolOutput, error)
 	ListUserPoolClients(ctx context.Context, params *cognitoidentityprovider.ListUserPoolClientsInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.ListUserPoolClientsOutput, error)
 	DescribeUserPoolClient(ctx context.Context, params *cognitoidentityprovider.DescribeUserPoolClientInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.DescribeUserPoolClientOutput, error)
+	ListGroups(ctx context.Context, params *cognitoidentityprovider.ListGroupsInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.ListGroupsOutput, error)
 }
 
 func enrichCognitoUserPoolWrapper(cfg plugin.EnricherConfig, r *output.AWSResource) error {
@@ -128,6 +129,27 @@ func EnrichCognitoUserPool(cfg plugin.EnricherConfig, r *output.AWSResource, cli
 	}
 	if len(clientProps) > 0 {
 		r.Properties["ClientProperties"] = clientProps
+	}
+
+	// Collect IAM roles from user pool groups
+	groupsOut, err := client.ListGroups(cfg.Context, &cognitoidentityprovider.ListGroupsInput{
+		UserPoolId: &poolID,
+	})
+	if err != nil {
+		slog.Warn("failed to list user pool groups",
+			"pool_id", poolID,
+			"error", err,
+		)
+	} else if groupsOut != nil {
+		var roles []string
+		for _, group := range groupsOut.Groups {
+			if group.RoleArn != nil && *group.RoleArn != "" {
+				roles = append(roles, *group.RoleArn)
+			}
+		}
+		if len(roles) > 0 {
+			r.Properties["Roles"] = roles
+		}
 	}
 
 	return nil
