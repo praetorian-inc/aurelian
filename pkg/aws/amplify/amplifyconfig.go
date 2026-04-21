@@ -87,6 +87,7 @@ func (e *Extractor) Extract(ctx context.Context, target string) (Config, error) 
 
 	applySingleExtractors(&result, html)
 	applyMultiExtractors(&result, html)
+	extractOAuthScopes(&result, html)
 	extractCloudLogicCustom(&result, html)
 
 	jsURLs := collectScriptURLs(base, html)
@@ -112,6 +113,7 @@ func (e *Extractor) Extract(ctx context.Context, target string) (Config, error) 
 
 		applySingleExtractors(&result, body)
 		applyMultiExtractors(&result, body)
+		extractOAuthScopes(&result, body)
 		extractCloudLogicCustom(&result, body)
 
 		for _, m := range jsChunkRe.FindAllStringSubmatch(body, -1) {
@@ -120,6 +122,10 @@ func (e *Extractor) Extract(ctx context.Context, target string) (Config, error) 
 				jsURLs = append(jsURLs, chunkURL)
 			}
 		}
+	}
+
+	if !hasAmplifySignal(result) {
+		clearWeakSignals(&result)
 	}
 
 	return result, nil
@@ -519,12 +525,8 @@ var multiExtractors = []multiExtractor{
 			regexp.MustCompile(`["']?tableName["']?\s*[=:]\s*["']([A-Za-z0-9_-]+)["']`),
 		},
 	},
-	{
-		appender: func(c *Config, v string) { c.OAuthScopes = appendUnique(c.OAuthScopes, v) },
-		patterns: []*regexp.Regexp{
-			regexp.MustCompile(`["']((?:phone|email|openid|profile|aws\.cognito\.signin\.user\.admin))["']`),
-		},
-	},
+	// OAuth scopes are extracted by extractOAuthScopes which requires
+	// a "scope"/"scopes" key context to avoid matching bare words like "email".
 	{
 		splitOnComma: true,
 		appender:     func(c *Config, v string) { c.OAuthRedirectSignIn = appendUnique(c.OAuthRedirectSignIn, v) },
@@ -562,6 +564,11 @@ var (
 	cloudLogicFieldRe = regexp.MustCompile(`["']?(\w+)["']?\s*[=:]\s*["']([^"']+)["']`)
 	customHeaderRe    = regexp.MustCompile(`["']([A-Za-z][\w-]*)["']\s*:\s*["']([^"']+)["']`)
 	headerBlockRe     = regexp.MustCompile(`custom_header\s*:\s*(?:async\s+)?(?:function\s*\(\s*\)|(?:\(\s*\)))\s*=>?\s*\(?(\{[^}]+\})\)?`)
+
+	// oauthScopeBlockRe matches a "scope" or "scopes" key followed by an array,
+	// capturing the array contents. This avoids matching bare "email" etc.
+	oauthScopeBlockRe = regexp.MustCompile(`["']?scopes?["']?\s*[=:]\s*\[([^\]]+)\]`)
+	oauthScopeValueRe = regexp.MustCompile(`["'](phone|email|openid|profile|aws\.cognito\.signin\.user\.admin)["']`)
 )
 
 var wellKnownConfigPaths = []string{
@@ -707,6 +714,55 @@ func extractCustomHeaders(c *Config, body string) {
 			}
 		}
 	}
+}
+
+// extractOAuthScopes finds scope arrays (e.g. scope:["email","openid"]) and
+// extracts individual values. Requires a "scope"/"scopes" key context to avoid
+// matching bare words like "email" that appear in non-Amplify pages.
+func extractOAuthScopes(c *Config, body string) {
+	for _, block := range oauthScopeBlockRe.FindAllStringSubmatch(body, -1) {
+		if len(block) < 2 {
+			continue
+		}
+		for _, m := range oauthScopeValueRe.FindAllStringSubmatch(block[1], -1) {
+			if len(m) > 1 {
+				c.OAuthScopes = appendUnique(c.OAuthScopes, m[1])
+			}
+		}
+	}
+}
+
+// hasAmplifySignal returns true if the config contains at least one field whose
+// extraction pattern is specific enough to confirm this is an Amplify/AWS app.
+// Generic fields like OAuthScopes ("email") or DynamoDBTables ("tableName") can
+// match on non-Amplify pages and are not considered strong signals.
+func hasAmplifySignal(c Config) bool {
+	return c.UserPoolID != "" ||
+		c.UserPoolClientID != "" ||
+		c.IdentityPoolID != "" ||
+		c.OAuthDomain != "" ||
+		c.GraphQLEndpoint != "" ||
+		c.AppSyncAPIKey != "" ||
+		len(c.APIEndpoints) > 0 ||
+		len(c.LambdaFunctionURLs) > 0 ||
+		c.S3Bucket != "" ||
+		c.PinpointAppID != "" ||
+		len(c.CloudLogicAPIs) > 0
+}
+
+// clearWeakSignals zeros out fields that are prone to false positives on
+// non-Amplify pages. Called when no strong Amplify indicator was found.
+func clearWeakSignals(c *Config) {
+	c.Region = ""
+	c.OAuthScopes = nil
+	c.OAuthResponseType = ""
+	c.OAuthRedirectSignIn = nil
+	c.OAuthRedirectSignOut = nil
+	c.CognitoMFA = ""
+	c.CognitoUsernameAttributes = nil
+	c.CognitoSignupAttributes = nil
+	c.DynamoDBTables = nil
+	c.APIGatewayAPIKeys = nil
 }
 
 func appendUnique(slice []string, val string) []string {
