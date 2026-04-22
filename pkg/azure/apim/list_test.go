@@ -1,6 +1,9 @@
 package apim
 
-import "testing"
+import (
+	"os"
+	"testing"
+)
 
 func TestParseAPIListPage(t *testing.T) {
 	cases := []struct {
@@ -125,5 +128,46 @@ func TestParseAPIListPage(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestParseAPIListPage_NativeMCPFixture exercises the primary "type=mcp"
+// signal against a realistic sample response from
+// api-version=2024-06-01-preview. The Terraform test fixture can only cover
+// the URL-template fallback path (Consumption-tier APIM does not support
+// native MCP-type APIs), so this file-based test is what proves the
+// authoritative IsMCPServer signal works end-to-end through parseAPIListPage.
+func TestParseAPIListPage_NativeMCPFixture(t *testing.T) {
+	body, err := os.ReadFile("testdata/apis-2024-06-01-preview-sample.json")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	items, nextLink, err := parseAPIListPage(body)
+	if err != nil {
+		t.Fatalf("parseAPIListPage: %v", err)
+	}
+	if nextLink != "" {
+		t.Errorf("nextLink = %q, want empty", nextLink)
+	}
+	if got := len(items); got != 5 {
+		t.Fatalf("got %d items, want 5", got)
+	}
+
+	want := map[string]bool{
+		"rest-echo":     false, // regular REST API
+		"weather-proxy": false, // apiType=http
+		"weather-mcp":   true,  // type=mcp (lowercase)
+		"analytics-mcp": true,  // type=MCP (uppercase — parser is case-insensitive)
+		"graphql-store": false, // apiType=graphql
+	}
+	for _, item := range items {
+		expected, ok := want[item.APIID]
+		if !ok {
+			t.Errorf("unexpected API in fixture: %q", item.APIID)
+			continue
+		}
+		if item.IsMCPServer != expected {
+			t.Errorf("%s: IsMCPServer = %v, want %v", item.APIID, item.IsMCPServer, expected)
+		}
 	}
 }

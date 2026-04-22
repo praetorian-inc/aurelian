@@ -1,0 +1,70 @@
+{
+  "value": [
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-sample/providers/Microsoft.ApiManagement/service/apim-sample/apis/rest-echo",
+      "type": "Microsoft.ApiManagement/service/apis",
+      "name": "rest-echo",
+      "properties": {
+        "displayName": "Echo API (REST)",
+        "path": "echo",
+        "protocols": ["https"],
+        "subscriptionRequired": true,
+        "isCurrent": true
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-sample/providers/Microsoft.ApiManagement/service/apim-sample/apis/weather-proxy",
+      "type": "Microsoft.ApiManagement/service/apis",
+      "name": "weather-proxy",
+      "properties": {
+        "displayName": "Weather REST Proxy",
+        "path": "weather",
+        "protocols": ["https"],
+        "subscriptionRequired": false,
+        "apiType": "http",
+        "isCurrent": true
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-sample/providers/Microsoft.ApiManagement/service/apim-sample/apis/weather-mcp",
+      "type": "Microsoft.ApiManagement/service/apis",
+      "name": "weather-mcp",
+      "properties": {
+        "displayName": "Weather MCP Server",
+        "path": "weather-mcp",
+        "protocols": ["https"],
+        "subscriptionRequired": false,
+        "type": "mcp",
+        "isCurrent": true
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-sample/providers/Microsoft.ApiManagement/service/apim-sample/apis/analytics-mcp",
+      "type": "Microsoft.ApiManagement/service/apis",
+      "name": "analytics-mcp",
+      "properties": {
+        "displayName": "Analytics MCP",
+        "path": "analytics",
+        "protocols": ["https"],
+        "subscriptionRequired": true,
+        "type": "MCP",
+        "isCurrent": true
+      }
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-sample/providers/Microsoft.ApiManagement/service/apim-sample/apis/graphql-store",
+      "type": "Microsoft.ApiManagement/service/apis",
+      "name": "graphql-store",
+      "properties": {
+        "displayName": "GraphQL Store API",
+        "path": "store",
+        "protocols": ["https"],
+        "subscriptionRequired": true,
+        "apiType": "graphql",
+        "isCurrent": true
+      }
+    }
+  ],
+  "count": 5,
+  "nextLink": ""
+}

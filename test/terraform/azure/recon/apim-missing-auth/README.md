@@ -21,12 +21,59 @@ Provisions (~5 min on Consumption-tier APIM, free):
   - `apim1/checkheader-api` — API-scope auth-header `<check-header>`
   - `apim1/product-auth-api` — member of JWT-enforcing product (`SubscriptionRequired=true`)
   - `apim1/fake-mcp-api` — MCP-shaped operations (`/mcp`, `/sse`, `/messages`),
-    no auth (positive case + exercises MCP labelling)
+    no auth (positive case + exercises MCP labelling via URL-template fallback)
   - `apim2/inherits-auth-api` — inherits service-scope `<validate-jwt>`
 - A catch-all `GET /` operation on each REST API with a `<mock-response>`
   op-policy so the APIs respond to direct HTTP requests for manual
-  verification. Consumption tier doesn't support native MCP-type APIs, so
-  the fake MCP server is a regular API shaped like one.
+  verification.
+
+## What this fixture does and does NOT cover
+
+The module labels an API as an MCP server via two signals, in precedence
+order:
+
+1. **Primary**: `properties.type == "mcp"` on the API contract, returned
+   by ARM's `/apis` endpoint at `api-version=2024-06-01-preview`. This
+   is how APIM natively exposes MCP-type APIs introduced in 2024.
+2. **Fallback**: any operation URL template is `/mcp`, `/sse`,
+   `/messages`, or `/message`. This catches REST-API-shaped MCP proxies
+   that aren't typed natively.
+
+**This Terraform fixture exercises only the fallback (2).** The
+`fake-mcp-api` is a plain `azurerm_api_management_api` with
+MCP-conventional operation paths — its `properties.type` is `null`,
+not `"mcp"`. Consumption tier does not support native MCP-type APIs,
+so a true `type=mcp` API cannot be provisioned here.
+
+The primary signal (1) is covered by:
+
+- `pkg/azure/apim/list_test.go` — unit tests for `parseAPIListPage`
+  including `TestParseAPIListPage_NativeMCPFixture`, which reads
+  `pkg/azure/apim/testdata/apis-2024-06-01-preview-sample.json` — a
+  captured ARM list response containing both `type=mcp` and non-MCP
+  entries (with the type field in both lowercase and uppercase to
+  assert case-insensitive matching).
+
+### Adding a live native-MCP test
+
+If you need the Terraform fixture itself to exercise the primary
+signal (e.g., for a CI run that wants to hit real ARM list semantics
+for MCP-type APIs), you must:
+
+1. Upgrade one of the APIMs in `main.tf` from `Consumption_0` to
+   `Developer_1` (or higher). Cost: **~$50/month pro-rated (~$0.07/hr,
+   ~$1.70/day)** while deployed. Provisioning time jumps from ~5 min to
+   ~30-45 min.
+2. Add a native MCP API. At time of writing, neither the `azurerm`
+   provider nor the `azapi` provider directly expose the new MCP-type
+   API resource; you would declare it via `azapi_resource` against
+   `Microsoft.ApiManagement/service/apis@2024-06-01-preview` with
+   `body.properties.type = "mcp"`. See
+   <https://learn.microsoft.com/en-us/azure/api-management/mcp-server-overview>.
+
+The fallback path coverage plus the unit-test-level primary-path
+coverage is generally sufficient — the overhead of keeping a
+Developer-tier APIM warm is not worth the marginal CI assurance.
 
 ## Manual HTTP verification
 
@@ -57,7 +104,8 @@ Exactly two risks, both `critical`:
 
 - `name: azure-apim-missing-auth`, deduplication ending in `unauth-api`
 - `name: azure-apim-mcp-missing-auth`, deduplication ending in `fake-mcp-api`
-  (with `context.is_mcp_server == true`)
+  (with `context.is_mcp_server == true` — set by the URL-template
+  fallback because the fixture is Consumption tier)
 
 None of the jwt / ipfilter / checkheader / product-auth / inherits-auth
 APIs should appear.
