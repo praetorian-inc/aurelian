@@ -152,6 +152,8 @@ func (m *AzureAPIMMissingAuthModule) classifyService(ctx context.Context) func(a
 		for _, api := range apis {
 			api.APIPolicyAuth = fetchAPIPolicyAuth(ctx, factory, t, api.APIID)
 			api.ProductPolicyAuths = fetchProductPolicyAuths(ctx, factory, t, api.APIID)
+			api.Operations = listAPIOperations(ctx, factory, t, api.APIID)
+			api.IsMCPServer = apim.IsMCPServer(api.Operations)
 
 			verdict := apim.ClassifyAPI(api, servicePolicy)
 			if verdict.IsAuthenticated {
@@ -221,6 +223,46 @@ func toInventoryItem(api *armapimanagement.APIContract) apim.APIInventoryItem {
 		}
 	}
 	return item
+}
+
+// listAPIOperations returns every operation defined on an API. URL templates
+// are the signal we need for MCP classification; we don't need operation-scope
+// policies for API-level auth classification (operation auth only gates a
+// single operation, not the API as a whole).
+func listAPIOperations(ctx context.Context, factory *armapimanagement.ClientFactory, t apimServiceTarget, apiID string) []apim.OperationInventoryItem {
+	pager := factory.NewAPIOperationClient().NewListByAPIPager(t.ResourceGroup, t.ServiceName, apiID, nil)
+	paginator := ratelimit.NewAzurePaginator()
+	var ops []apim.OperationInventoryItem
+	err := paginator.Paginate(func() (bool, error) {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return true, err
+		}
+		for _, op := range page.Value {
+			if op == nil || op.Properties == nil {
+				continue
+			}
+			item := apim.OperationInventoryItem{}
+			if op.Name != nil {
+				item.OperationID = *op.Name
+			}
+			if op.Properties.DisplayName != nil {
+				item.DisplayName = *op.Properties.DisplayName
+			}
+			if op.Properties.Method != nil {
+				item.Method = *op.Properties.Method
+			}
+			if op.Properties.URLTemplate != nil {
+				item.URLTemplate = *op.Properties.URLTemplate
+			}
+			ops = append(ops, item)
+		}
+		return pager.More(), nil
+	})
+	if err != nil && !isNotFound(err) {
+		slog.Warn("could not list API operations", "service", t.ResourceID, "api", apiID, "error", err)
+	}
+	return ops
 }
 
 func fetchAPIPolicyAuth(ctx context.Context, factory *armapimanagement.ClientFactory, t apimServiceTarget, apiID string) apim.AuthPosture {
@@ -302,15 +344,16 @@ func isNotFound(err error) bool {
 }
 
 type missingAuthContext struct {
-	APIMServiceID        string           `json:"apim_service_id"`
-	APIMServiceName      string           `json:"apim_service_name"`
-	APIID                string           `json:"api_id"`
-	APIDisplayName       string           `json:"api_display_name,omitempty"`
-	APIPath              string           `json:"api_path,omitempty"`
-	Protocols            []string         `json:"protocols,omitempty"`
-	SubscriptionRequired bool             `json:"subscription_required"`
-	ServicePolicyAuth    apim.AuthPosture `json:"service_policy_auth"`
-	APIPolicyAuth        apim.AuthPosture `json:"api_policy_auth"`
+	APIMServiceID        string             `json:"apim_service_id"`
+	APIMServiceName      string             `json:"apim_service_name"`
+	APIID                string             `json:"api_id"`
+	APIDisplayName       string             `json:"api_display_name,omitempty"`
+	APIPath              string             `json:"api_path,omitempty"`
+	Protocols            []string           `json:"protocols,omitempty"`
+	IsMCPServer          bool               `json:"is_mcp_server"`
+	SubscriptionRequired bool               `json:"subscription_required"`
+	ServicePolicyAuth    apim.AuthPosture   `json:"service_policy_auth"`
+	APIPolicyAuth        apim.AuthPosture   `json:"api_policy_auth"`
 	ProductPolicyAuths   []apim.AuthPosture `json:"product_policy_auths,omitempty"`
 }
 
@@ -322,6 +365,7 @@ func emitMissingAuthRisk(out *pipeline.P[model.AurelianModel], t apimServiceTarg
 		APIDisplayName:       api.DisplayName,
 		APIPath:              api.Path,
 		Protocols:            api.Protocols,
+		IsMCPServer:          api.IsMCPServer,
 		SubscriptionRequired: api.SubscriptionRequired,
 		ServicePolicyAuth:    servicePolicy,
 		APIPolicyAuth:        api.APIPolicyAuth,
@@ -333,8 +377,13 @@ func emitMissingAuthRisk(out *pipeline.P[model.AurelianModel], t apimServiceTarg
 		return
 	}
 
+	name := "azure-apim-missing-auth"
+	if api.IsMCPServer {
+		name = "azure-apim-mcp-missing-auth"
+	}
+
 	out.Send(output.AurelianRisk{
-		Name:               "azure-apim-missing-auth",
+		Name:               name,
 		Severity:           output.RiskSeverityCritical,
 		ImpactedResourceID: t.ResourceID,
 		DeduplicationID:    strings.Join([]string{t.ResourceID, api.APIID}, "/"),

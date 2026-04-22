@@ -95,6 +95,80 @@ func TestClassifyAPI_SubscriptionRequiredExposed(t *testing.T) {
 	}
 }
 
+func TestIsMCPServer(t *testing.T) {
+	cases := []struct {
+		name       string
+		operations []OperationInventoryItem
+		want       bool
+	}{
+		{
+			name:       "no operations",
+			operations: nil,
+			want:       false,
+		},
+		{
+			name: "streamable-HTTP MCP endpoint at /mcp",
+			operations: []OperationInventoryItem{
+				{URLTemplate: "/mcp"},
+			},
+			want: true,
+		},
+		{
+			name: "SSE transport (/sse + /messages)",
+			operations: []OperationInventoryItem{
+				{URLTemplate: "/sse"},
+				{URLTemplate: "/messages"},
+			},
+			want: true,
+		},
+		{
+			name: "deprecated single /message endpoint",
+			operations: []OperationInventoryItem{
+				{URLTemplate: "/message"},
+			},
+			want: true,
+		},
+		{
+			name: "case-insensitive match",
+			operations: []OperationInventoryItem{
+				{URLTemplate: "/MCP"},
+			},
+			want: true,
+		},
+		{
+			name: "MCP path nested under a prefix",
+			operations: []OperationInventoryItem{
+				{URLTemplate: "/v1/mcp"},
+			},
+			want: true,
+		},
+		{
+			name: "regular REST API operations do not match",
+			operations: []OperationInventoryItem{
+				{URLTemplate: "/users/{id}"},
+				{URLTemplate: "/orders"},
+			},
+			want: false,
+		},
+		{
+			name: "/mcp-like substrings in other words do not match",
+			operations: []OperationInventoryItem{
+				{URLTemplate: "/semcpanel"},
+				{URLTemplate: "/messageboard"},
+			},
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := IsMCPServer(tc.operations)
+			if got != tc.want {
+				t.Fatalf("IsMCPServer() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestClassifyAPI_ServiceScopePreferredOverAPIScope(t *testing.T) {
 	api := APIInventoryItem{
 		APIID:         "a",

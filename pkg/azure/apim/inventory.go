@@ -1,5 +1,7 @@
 package apim
 
+import "strings"
+
 // APIInventoryItem captures everything we need to know about a single API
 // within one APIM service in order to classify its authentication posture.
 type APIInventoryItem struct {
@@ -8,6 +10,7 @@ type APIInventoryItem struct {
 	Path                 string
 	Protocols            []string
 	SubscriptionRequired bool
+	IsMCPServer          bool
 	APIPolicyAuth        AuthPosture
 	ProductPolicyAuths   []AuthPosture
 	Operations           []OperationInventoryItem
@@ -30,6 +33,27 @@ type APIVerdict struct {
 	IsAuthenticated      bool
 	SubscriptionRequired bool
 	AuthScope            string // "service" | "api" | "product" | ""
+}
+
+// mcpOperationSuffixes is the set of URL-template trailing segments that
+// identify an API as a Model Context Protocol server. MCP's Streamable-HTTP
+// transport uses /mcp, and the (deprecated) SSE transport uses /sse plus
+// either /messages (current) or /message (early drafts).
+var mcpOperationSuffixes = []string{"/mcp", "/sse", "/messages", "/message"}
+
+// IsMCPServer reports whether any operation's URL template identifies the API
+// as an MCP server. Checks are case-insensitive and match either the full
+// template or a trailing path segment, so both "/mcp" and "/v1/mcp" count.
+func IsMCPServer(operations []OperationInventoryItem) bool {
+	for _, op := range operations {
+		tmpl := strings.ToLower(op.URLTemplate)
+		for _, suffix := range mcpOperationSuffixes {
+			if tmpl == suffix || strings.HasSuffix(tmpl, suffix) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ClassifyAPI returns an APIVerdict summarizing the given API's auth posture.

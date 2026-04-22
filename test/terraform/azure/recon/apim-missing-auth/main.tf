@@ -268,3 +268,151 @@ resource "azurerm_api_management_api" "inherits_auth" {
   protocols             = ["https"]
   subscription_required = false
 }
+
+# ============================================================
+# Catch-all GET operations + mock-response op policies so each API
+# has something to answer with when curl'd. The mock runs at the
+# operation scope, so it only fires if the API/service/product-scope
+# inbound policies don't already short-circuit the pipeline.
+# ============================================================
+locals {
+  http_check_apis = {
+    unauth      = azurerm_api_management_api.unauth.name
+    jwt         = azurerm_api_management_api.jwt.name
+    ipfilter    = azurerm_api_management_api.ipfilter.name
+    checkheader = azurerm_api_management_api.checkheader.name
+    product     = azurerm_api_management_api.product_auth.name
+  }
+}
+
+resource "azurerm_api_management_api_operation" "get_root" {
+  for_each            = local.http_check_apis
+  operation_id        = "get-root"
+  api_name            = each.value
+  api_management_name = azurerm_api_management.apim1.name
+  resource_group_name = azurerm_resource_group.test.name
+  display_name        = "Get /"
+  method              = "GET"
+  url_template        = "/"
+  description         = "Catch-all for manual verification"
+}
+
+resource "azurerm_api_management_api_operation_policy" "get_root_mock" {
+  for_each            = local.http_check_apis
+  api_name            = each.value
+  api_management_name = azurerm_api_management.apim1.name
+  resource_group_name = azurerm_resource_group.test.name
+  operation_id        = azurerm_api_management_api_operation.get_root[each.key].operation_id
+
+  xml_content = <<-XML
+    <policies>
+      <inbound>
+        <base />
+        <mock-response status-code="200" content-type="application/json" />
+      </inbound>
+      <backend><base /></backend>
+      <outbound><base /></outbound>
+      <on-error><base /></on-error>
+    </policies>
+  XML
+}
+
+resource "azurerm_api_management_api_operation" "inherits_get_root" {
+  operation_id        = "get-root"
+  api_name            = azurerm_api_management_api.inherits_auth.name
+  api_management_name = azurerm_api_management.apim2.name
+  resource_group_name = azurerm_resource_group.test.name
+  display_name        = "Get /"
+  method              = "GET"
+  url_template        = "/"
+  description         = "Catch-all for manual verification"
+}
+
+resource "azurerm_api_management_api_operation_policy" "inherits_get_root_mock" {
+  api_name            = azurerm_api_management_api.inherits_auth.name
+  api_management_name = azurerm_api_management.apim2.name
+  resource_group_name = azurerm_resource_group.test.name
+  operation_id        = azurerm_api_management_api_operation.inherits_get_root.operation_id
+
+  xml_content = <<-XML
+    <policies>
+      <inbound>
+        <base />
+        <mock-response status-code="200" content-type="application/json" />
+      </inbound>
+      <backend><base /></backend>
+      <outbound><base /></outbound>
+      <on-error><base /></on-error>
+    </policies>
+  XML
+}
+
+# ============================================================
+# Fake MCP-shaped API on APIM #1 — no authentication, operations
+# match the Streamable HTTP MCP transport (/mcp) AND the deprecated
+# SSE transport (/sse + /messages). Consumption tier cannot create a
+# native MCP-type API, so we synthesize one with the same operation
+# shape to exercise the detection logic.
+# ============================================================
+resource "azurerm_api_management_api" "fake_mcp" {
+  name                  = "fake-mcp-api"
+  resource_group_name   = azurerm_resource_group.test.name
+  api_management_name   = azurerm_api_management.apim1.name
+  revision              = "1"
+  display_name          = "Fake MCP Server (unauthenticated)"
+  path                  = "fake-mcp"
+  protocols             = ["https"]
+  subscription_required = false
+}
+
+resource "azurerm_api_management_api_operation" "fake_mcp_streamable" {
+  operation_id        = "mcp-streamable"
+  api_name            = azurerm_api_management_api.fake_mcp.name
+  api_management_name = azurerm_api_management.apim1.name
+  resource_group_name = azurerm_resource_group.test.name
+  display_name        = "MCP Streamable HTTP endpoint"
+  method              = "POST"
+  url_template        = "/mcp"
+  description         = "Streamable-HTTP MCP transport"
+}
+
+resource "azurerm_api_management_api_operation_policy" "fake_mcp_streamable_mock" {
+  api_name            = azurerm_api_management_api.fake_mcp.name
+  api_management_name = azurerm_api_management.apim1.name
+  resource_group_name = azurerm_resource_group.test.name
+  operation_id        = azurerm_api_management_api_operation.fake_mcp_streamable.operation_id
+
+  xml_content = <<-XML
+    <policies>
+      <inbound>
+        <base />
+        <mock-response status-code="200" content-type="application/json" />
+      </inbound>
+      <backend><base /></backend>
+      <outbound><base /></outbound>
+      <on-error><base /></on-error>
+    </policies>
+  XML
+}
+
+resource "azurerm_api_management_api_operation" "fake_mcp_sse" {
+  operation_id        = "mcp-sse"
+  api_name            = azurerm_api_management_api.fake_mcp.name
+  api_management_name = azurerm_api_management.apim1.name
+  resource_group_name = azurerm_resource_group.test.name
+  display_name        = "MCP SSE endpoint"
+  method              = "GET"
+  url_template        = "/sse"
+  description         = "Deprecated SSE MCP transport"
+}
+
+resource "azurerm_api_management_api_operation" "fake_mcp_messages" {
+  operation_id        = "mcp-messages"
+  api_name            = azurerm_api_management_api.fake_mcp.name
+  api_management_name = azurerm_api_management.apim1.name
+  resource_group_name = azurerm_resource_group.test.name
+  display_name        = "MCP SSE message channel"
+  method              = "POST"
+  url_template        = "/messages"
+  description         = "SSE message channel"
+}
