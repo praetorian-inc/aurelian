@@ -142,7 +142,7 @@ func (m *AzureAPIMMissingAuthModule) classifyService(ctx context.Context) func(a
 
 		servicePolicy := fetchServicePolicyAuth(ctx, factory, t)
 
-		apis, err := listAPIs(ctx, factory, t)
+		apis, err := apim.ListAPIs(ctx, m.AzureCredential, t.SubscriptionID, t.ResourceGroup, t.ServiceName)
 		if err != nil {
 			slog.Warn("skipping APIM service — could not list APIs",
 				"service", t.ResourceID, "error", err)
@@ -152,8 +152,14 @@ func (m *AzureAPIMMissingAuthModule) classifyService(ctx context.Context) func(a
 		for _, api := range apis {
 			api.APIPolicyAuth = fetchAPIPolicyAuth(ctx, factory, t, api.APIID)
 			api.ProductPolicyAuths = fetchProductPolicyAuths(ctx, factory, t, api.APIID)
-			api.Operations = listAPIOperations(ctx, factory, t, api.APIID)
-			api.IsMCPServer = apim.IsMCPServer(api.Operations)
+			if !api.IsMCPServer {
+				// Native MCP-type APIs have no classic operations (their tools are a
+				// different sub-resource). Skip the call for MCP; fall back to
+				// operation-path heuristic for non-native APIs so proxy-shaped MCPs
+				// (e.g., regular APIs with a /mcp operation) are still labeled.
+				api.Operations = listAPIOperations(ctx, factory, t, api.APIID)
+				api.IsMCPServer = apim.IsMCPServer(api.Operations)
+			}
 
 			verdict := apim.ClassifyAPI(api, servicePolicy)
 			if verdict.IsAuthenticated {
@@ -180,50 +186,6 @@ func fetchServicePolicyAuth(ctx context.Context, factory *armapimanagement.Clien
 	return apim.ParseInboundAuth(policyValue(resp.Properties), nil)
 }
 
-func listAPIs(ctx context.Context, factory *armapimanagement.ClientFactory, t apimServiceTarget) ([]apim.APIInventoryItem, error) {
-	pager := factory.NewAPIClient().NewListByServicePager(t.ResourceGroup, t.ServiceName, nil)
-	paginator := ratelimit.NewAzurePaginator()
-	var apis []apim.APIInventoryItem
-	err := paginator.Paginate(func() (bool, error) {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return true, err
-		}
-		for _, api := range page.Value {
-			apis = append(apis, toInventoryItem(api))
-		}
-		return pager.More(), nil
-	})
-	return apis, err
-}
-
-func toInventoryItem(api *armapimanagement.APIContract) apim.APIInventoryItem {
-	item := apim.APIInventoryItem{}
-	if api == nil {
-		return item
-	}
-	if api.Name != nil {
-		item.APIID = *api.Name
-	}
-	if api.Properties == nil {
-		return item
-	}
-	if api.Properties.DisplayName != nil {
-		item.DisplayName = *api.Properties.DisplayName
-	}
-	if api.Properties.Path != nil {
-		item.Path = *api.Properties.Path
-	}
-	if api.Properties.SubscriptionRequired != nil {
-		item.SubscriptionRequired = *api.Properties.SubscriptionRequired
-	}
-	for _, p := range api.Properties.Protocols {
-		if p != nil {
-			item.Protocols = append(item.Protocols, string(*p))
-		}
-	}
-	return item
-}
 
 // listAPIOperations returns every operation defined on an API. URL templates
 // are the signal we need for MCP classification; we don't need operation-scope
