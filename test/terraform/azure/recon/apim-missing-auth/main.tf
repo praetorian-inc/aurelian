@@ -1,7 +1,9 @@
-# Aurelian integration fixture for the apim-missing-auth recon module.
+# Aurelian integration fixture for the apim-missing-auth and
+# apim-backend-direct-access recon modules.
 #
 # ============================= TEST MATRIX =============================
 #
+# Module 1 — apim-missing-auth:
 #   | API                     | Policies configured                              | Expected verdict        |
 #   |-------------------------|--------------------------------------------------|-------------------------|
 #   | apim-1/unauth-api       | none                                             | UNAUTHENTICATED (emit)  |
@@ -11,6 +13,11 @@
 #   | apim-1/product-auth-api | no API policy; SubscriptionRequired=true; member | authenticated (skip)    |
 #   |                         | of product with <validate-jwt> policy            |                         |
 #   | apim-2/inherits-auth-api| no API policy; service-scope <validate-jwt>      | authenticated (skip)    |
+#
+# Module 2 — apim-backend-direct-access:
+#   | Backend (configured on apim-1)               | Expected verdict       |
+#   |----------------------------------------------|------------------------|
+#   | https://<public-app-service>.azurewebsites.net | DIRECT-ACCESS (emit) |
 
 terraform {
   required_providers {
@@ -41,10 +48,11 @@ resource "random_string" "suffix" {
 }
 
 locals {
-  prefix = "aur-apim-${random_string.suffix.result}"
+  prefix     = "aur-apim-${random_string.suffix.result}"
+  prefix_san = "aurapim${random_string.suffix.result}" # alphanumeric for storage/app-service names
   tags = {
     ManagedBy = "terraform"
-    Purpose   = "aurelian-apim-missing-auth-testing"
+    Purpose   = "aurelian-apim-detection-testing"
   }
 }
 
@@ -52,6 +60,35 @@ resource "azurerm_resource_group" "test" {
   name     = "${local.prefix}-rg"
   location = var.location
   tags     = local.tags
+}
+
+# ============================================================
+# Public App Service (target of module 2's direct-access check)
+# ============================================================
+resource "azurerm_service_plan" "test" {
+  name                = "${local.prefix}-plan"
+  resource_group_name = azurerm_resource_group.test.name
+  location            = azurerm_resource_group.test.location
+  os_type             = "Linux"
+  sku_name            = "B1"
+  tags                = local.tags
+}
+
+resource "azurerm_linux_web_app" "public_backend" {
+  name                = "${local.prefix_san}-backend"
+  resource_group_name = azurerm_resource_group.test.name
+  location            = azurerm_service_plan.test.location
+  service_plan_id     = azurerm_service_plan.test.id
+
+  public_network_access_enabled = true
+
+  site_config {
+    # Intentionally empty — no ipSecurityRestrictions, matching the finding's
+    # "directly reachable" shape.
+    minimum_tls_version = "1.2"
+  }
+
+  tags = local.tags
 }
 
 # ============================================================
@@ -67,7 +104,7 @@ resource "azurerm_api_management" "apim1" {
   tags                = local.tags
 }
 
-# ---------- API: unauth-api (positive case — no auth anywhere) ----------
+# ---------- API: unauth-api (positive case for module 1) ----------
 resource "azurerm_api_management_api" "unauth" {
   name                = "unauth-api"
   resource_group_name = azurerm_resource_group.test.name
@@ -225,6 +262,16 @@ resource "azurerm_api_management_product_api" "product_auth" {
   product_id          = azurerm_api_management_product.jwt_product.product_id
   api_management_name = azurerm_api_management.apim1.name
   resource_group_name = azurerm_resource_group.test.name
+}
+
+# ---------- APIM #1 backend → public App Service (module 2 target) ----------
+resource "azurerm_api_management_backend" "public_app" {
+  name                = "public-appservice-backend"
+  resource_group_name = azurerm_resource_group.test.name
+  api_management_name = azurerm_api_management.apim1.name
+  protocol            = "http"
+  url                 = "https://${azurerm_linux_web_app.public_backend.default_hostname}"
+  description         = "Direct-accessible App Service backend (module 2 positive case)"
 }
 
 # ============================================================
