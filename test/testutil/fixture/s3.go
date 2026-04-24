@@ -384,12 +384,17 @@ func (f *BaseFixture) purgeModulePrefix(ctx context.Context) error {
 			}
 
 			if len(objects) > 0 {
-				_, err = client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+				deleteOutput, err := client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 					Bucket: &bucket,
 					Delete: &types.Delete{Objects: objects, Quiet: aws.Bool(true)},
 				})
 				if err != nil {
 					return fmt.Errorf("delete module prefix objects: %w", err)
+				}
+				if len(deleteOutput.Errors) > 0 {
+					e := deleteOutput.Errors[0]
+					return fmt.Errorf("delete module prefix objects: partial failure: key=%q code=%q message=%q (and %d more)",
+						aws.ToString(e.Key), aws.ToString(e.Code), aws.ToString(e.Message), len(deleteOutput.Errors)-1)
 				}
 			}
 		}
