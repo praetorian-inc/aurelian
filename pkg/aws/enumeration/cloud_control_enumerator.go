@@ -21,6 +21,7 @@ type CloudControlEnumerator struct {
 	plugin.AWSCommonRecon
 	CrossRegionActor *ratelimit.CrossRegionActor
 	provider         *AWSConfigProvider
+	fallback         *ConfigFallback
 }
 
 func NewCloudControlEnumerator(options plugin.AWSCommonRecon) *CloudControlEnumerator {
@@ -270,7 +271,13 @@ func (cc *CloudControlEnumerator) listInRegionByType(region, resourceType string
 	}
 
 	err = cc.listByType(client, accountID, region, resourceType, out)
-	if handled := handleListError(err, resourceType, region, nil); handled == nil {
+	var fb fallbackFn
+	if cc.fallback != nil {
+		fb = func() error {
+			return cc.fallback.Attempt(context.Background(), resourceType, region, out)
+		}
+	}
+	if handled := handleListError(err, resourceType, region, fb); handled == nil {
 		return nil
 	}
 	slog.Warn("error listing resources", "type", resourceType, "region", region, "error", err)

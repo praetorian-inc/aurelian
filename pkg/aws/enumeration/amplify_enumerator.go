@@ -19,12 +19,14 @@ import (
 type AmplifyAppEnumerator struct {
 	plugin.AWSCommonRecon
 	provider *AWSConfigProvider
+	fallback *ConfigFallback
 }
 
-func NewAmplifyAppEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider) *AmplifyAppEnumerator {
+func NewAmplifyAppEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider, fallback *ConfigFallback) *AmplifyAppEnumerator {
 	return &AmplifyAppEnumerator{
 		AWSCommonRecon: opts,
 		provider:       provider,
+		fallback:       fallback,
 	}
 }
 
@@ -109,7 +111,13 @@ func (e *AmplifyAppEnumerator) listAppsInRegion(region, accountID string, out *p
 			NextToken: nextToken,
 		})
 		if err != nil {
-			if handled := handleListError(err, "AWS::Amplify::App", region, nil); handled == nil {
+			var fb fallbackFn
+			if e.fallback != nil {
+				fb = func() error {
+					return e.fallback.Attempt(context.Background(), "AWS::Amplify::App", region, out)
+				}
+			}
+			if handled := handleListError(err, "AWS::Amplify::App", region, fb); handled == nil {
 				return false, nil
 			}
 			return false, fmt.Errorf("list amplify apps in %s: %w", region, err)
