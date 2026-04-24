@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/configservice"
 	configtypes "github.com/aws/aws-sdk-go-v2/service/configservice/types"
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
@@ -166,14 +167,131 @@ func (f *ConfigFallback) describeRecorderStatus(ctx context.Context, region stri
 	return resp.ConfigurationRecordersStatus, nil
 }
 
-// listAndHydrate is implemented in Task 10.
+// listAndHydrate performs the type-specific part of the fallback: paginated
+// ListDiscoveredResources, per-record identifier translation, and CloudControl
+// GetResource hydration. Step numbers refer to the spec.
 func (f *ConfigFallback) listAndHydrate(
 	ctx context.Context,
 	resourceType, region string,
 	entry *regionStateEntry,
 	out *pipeline.P[output.AWSResource],
 ) error {
-	return fmt.Errorf("%w: not yet implemented", errFallbackExhausted)
+	records, err := f.listDiscoveredResources(ctx, region, resourceType)
+	if err != nil {
+		if isAccessDeniedError(err) {
+			f.markRegionUnavailable(entry, region, err)
+		}
+		return fmt.Errorf("%w: list discovered resources: %w", errFallbackExhausted, err)
+	}
+	if len(records) == 0 {
+		return fmt.Errorf("%w: %w", errFallbackExhausted, errConfigNoRecords)
+	}
+
+	// accountID is only needed for the real translation path; when the hydrate
+	// seam is injected (tests), skip the provider call.
+	accountID := ""
+	if f.hydrate == nil {
+		accountID, err = f.provider.GetAccountID(region)
+		if err != nil {
+			return fmt.Errorf("%w: get account id: %w", errFallbackExhausted, err)
+		}
+	}
+
+	hydrated := 0
+	for _, rec := range records {
+		identifier, ok := f.translator.Translate(resourceType, rec, accountID, region)
+		if !ok {
+			slog.Debug("skipping config record: no identifier",
+				"type", resourceType,
+				"resource_id", aws.ToString(rec.ResourceId),
+				"resource_name", aws.ToString(rec.ResourceName),
+			)
+			continue
+		}
+		resource, err := f.hydrateIdentifier(region, resourceType, identifier)
+		if err != nil {
+			slog.Debug("skipping config record: get failed",
+				"type", resourceType, "identifier", identifier, "error", err)
+			continue
+		}
+		out.Send(resource)
+		hydrated++
+	}
+
+	if hydrated == 0 {
+		f.markRegionHydrationBlocked(entry, region)
+		return fmt.Errorf("%w: %w", errFallbackExhausted, errHydrationBlocked)
+	}
+	return nil
+}
+
+func (f *ConfigFallback) listDiscoveredResources(ctx context.Context, region, resourceType string) ([]configtypes.ResourceIdentifier, error) {
+	if f.listDiscovered != nil {
+		return f.listDiscovered(ctx, region, resourceType)
+	}
+	cfg, err := f.provider.GetAWSConfig(region)
+	if err != nil {
+		return nil, fmt.Errorf("get aws config for %s: %w", region, err)
+	}
+	client := configservice.NewFromConfig(*cfg)
+
+	var (
+		all       []configtypes.ResourceIdentifier
+		nextToken *string
+	)
+	for {
+		input := &configservice.ListDiscoveredResourcesInput{
+			ResourceType: configtypes.ResourceType(resourceType),
+		}
+		if nextToken != nil {
+			input.NextToken = nextToken
+		}
+		resp, err := client.ListDiscoveredResources(ctx, input)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, resp.ResourceIdentifiers...)
+		if resp.NextToken == nil {
+			return all, nil
+		}
+		nextToken = resp.NextToken
+	}
+}
+
+func (f *ConfigFallback) hydrateIdentifier(region, resourceType, identifier string) (output.AWSResource, error) {
+	if f.hydrate != nil {
+		return f.hydrate(region, resourceType, identifier)
+	}
+	return f.cc.getResourceByTypeAndIdentifier(region, resourceType, identifier)
+}
+
+func (f *ConfigFallback) markRegionUnavailable(entry *regionStateEntry, region string, reason error) {
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	if entry.state == regionAvailable {
+		entry.state = regionUnavailable
+		entry.reason = reason
+		entry.logOnce.Do(func() {
+			slog.Info("config list access denied in region; treating as region-wide unavailable",
+				"region", region, "reason", reason.Error())
+		})
+	}
+}
+
+func (f *ConfigFallback) markRegionHydrationBlocked(entry *regionStateEntry, region string) {
+	entry.mu.Lock()
+	defer entry.mu.Unlock()
+	// Only transition from regionAvailable. If a concurrent listAndHydrate
+	// already observed list AccessDenied and set regionUnavailable, the
+	// stronger signal wins — do not downgrade it.
+	if entry.state == regionAvailable {
+		entry.state = regionHydrationBlocked
+		entry.reason = errHydrationBlocked
+		entry.logOnce.Do(func() {
+			slog.Info("cloudcontrol get denied in region; config fallback ineffective",
+				"region", region)
+		})
+	}
 }
 
 // hasActiveRecorder reports whether at least one recorder in statuses is
