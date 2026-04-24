@@ -156,6 +156,7 @@ func TestRunLifecycle_RedeployEnvVar_ForcesRedeploy(t *testing.T) {
 func TestRunLifecycle_RegistersOnSuccess(t *testing.T) {
 	// Use a local registry instead of the process-global to keep tests isolated.
 	localReg := &registry{}
+	localReg.teardownFn = func(context.Context, *BaseFixture) error { return nil }
 	t.Cleanup(func() {
 		// defensive: drain the local registry in case anything else got added
 		_ = localReg.DestroyAll(context.Background())

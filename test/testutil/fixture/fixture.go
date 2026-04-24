@@ -208,6 +208,8 @@ func (f *BaseFixture) runLifecycle(ctx context.Context) error {
 		return err
 	}
 
+	// registry is nil only for BaseFixture literals constructed directly
+	// in tests; NewBase always sets it to globalRegistry for production use.
 	if f.registry != nil {
 		f.registry.register(f)
 	}
