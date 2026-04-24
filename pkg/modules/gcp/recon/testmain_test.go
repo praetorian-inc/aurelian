@@ -1,5 +1,7 @@
 //go:build integration
 
+// Uses the recon_test external package to match the existing integration
+// tests in this directory.
 package recon_test
 
 import (
