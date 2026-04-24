@@ -128,6 +128,11 @@ func (m *mockOps) DeleteArtifacts(context.Context) error {
 	return nil
 }
 
+func (m *mockOps) PurgeModulePrefix(context.Context) error {
+	*m.calls = append(*m.calls, "purge")
+	return nil
+}
+
 func TestRunLifecycle_RedeployEnvVar_ForcesRedeploy(t *testing.T) {
 	t.Setenv("AURELIAN_REDEPLOY_FIXTURES", "1")
 

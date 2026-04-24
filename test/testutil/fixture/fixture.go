@@ -53,6 +53,7 @@ type ops interface {
 	Output(context.Context, ...tfexec.OutputOption) (map[string]tfexec.OutputMeta, error)
 	UploadArtifacts(context.Context) error
 	DeleteArtifacts(context.Context) error
+	PurgeModulePrefix(context.Context) error
 }
 
 // BaseFixture manages a Terraform fixture backed by S3 remote state.
@@ -139,6 +140,10 @@ func (o baseOps) UploadArtifacts(ctx context.Context) error {
 
 func (o baseOps) DeleteArtifacts(ctx context.Context) error {
 	return o.fixture.deleteFixtureArtifacts(ctx)
+}
+
+func (o baseOps) PurgeModulePrefix(ctx context.Context) error {
+	return o.fixture.purgeModulePrefix(ctx)
 }
 
 // --- Public API ---
