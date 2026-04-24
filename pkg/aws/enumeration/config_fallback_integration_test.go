@@ -120,5 +120,5 @@ func Test_ConfigFallback_DiscoversBucketsViaConfig(t *testing.T) {
 	assert.NotContains(t, logs, "cloudcontrol get denied in region",
 		"must not log hydration-blocked on happy path")
 	// Expect the success debug line somewhere in the run.
-	assert.Contains(t, strings.ToLower(logs), "fell back to config")
+	assert.Contains(t, strings.ToLower(logs), "config fallback emitted resources")
 }

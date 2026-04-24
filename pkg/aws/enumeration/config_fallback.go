@@ -222,6 +222,8 @@ func (f *ConfigFallback) listAndHydrate(
 		f.markRegionHydrationBlocked(entry, region)
 		return fmt.Errorf("%w: %w", errFallbackExhausted, errHydrationBlocked)
 	}
+	slog.Debug("config fallback emitted resources",
+		"type", resourceType, "region", region, "count", hydrated)
 	return nil
 }
 

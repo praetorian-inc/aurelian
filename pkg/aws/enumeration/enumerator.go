@@ -31,7 +31,6 @@ type ResourceEnumerator interface {
 type Enumerator struct {
 	enumerators map[string]ResourceEnumerator
 	cc          *CloudControlEnumerator
-	fallback    *ConfigFallback
 }
 
 // NewEnumerator creates an Enumerator with CloudControl fallback and registers
@@ -47,7 +46,6 @@ func NewEnumerator(opts plugin.AWSCommonRecon) *Enumerator {
 	e := &Enumerator{
 		enumerators: make(map[string]ResourceEnumerator),
 		cc:          cc,
-		fallback:    fallback,
 	}
 	e.Register(NewAmplifyAppEnumerator(opts, provider, fallback))
 	e.Register(NewS3Enumerator(opts, provider, fallback))
