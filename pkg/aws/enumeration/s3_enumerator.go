@@ -18,14 +18,16 @@ import (
 type S3Enumerator struct {
 	plugin.AWSCommonRecon
 	provider  *AWSConfigProvider
+	fallback  *ConfigFallback
 	accountID string
 }
 
 // NewS3Enumerator creates an S3Enumerator that uses the native S3 SDK.
-func NewS3Enumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider) *S3Enumerator {
+func NewS3Enumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider, fallback *ConfigFallback) *S3Enumerator {
 	return &S3Enumerator{
 		AWSCommonRecon: opts,
 		provider:       provider,
+		fallback:       fallback,
 	}
 }
 
@@ -128,7 +130,13 @@ func (l *S3Enumerator) listBucketsInRegion(region string, out *pipeline.P[output
 
 		result, err := client.ListBuckets(context.Background(), input)
 		if err != nil {
-			if handled := handleListError(err, "AWS::S3::Bucket", region); handled == nil {
+			var fb fallbackFn
+			if l.fallback != nil {
+				fb = func() error {
+					return l.fallback.Attempt(context.Background(), "AWS::S3::Bucket", region, out)
+				}
+			}
+			if handled := handleListError(err, "AWS::S3::Bucket", region, fb); handled == nil {
 				return false, nil
 			}
 			return false, fmt.Errorf("list buckets in %s: %w", region, err)
