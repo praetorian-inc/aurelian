@@ -174,9 +174,9 @@ func (f *BaseFixture) runLifecycle(ctx context.Context) error {
 		return fmt.Errorf("terraform init: %w", err)
 	}
 
-	destroyFixtures := os.Getenv("AURELIAN_DESTROY_FIXTURES") == "1"
-	if destroyFixtures {
-		f.t.Log("terraform fixture hash check: AURELIAN_DESTROY_FIXTURES=1")
+	redeployFixtures := os.Getenv("AURELIAN_REDEPLOY_FIXTURES") == "1"
+	if redeployFixtures {
+		f.t.Log("terraform fixture hash check: AURELIAN_REDEPLOY_FIXTURES=1")
 		f.t.Log("terraform fixture decision: teardown + redeploy (forced)")
 		if err := f.redeployStack(ctx, effectiveHash); err != nil {
 			return err

@@ -178,7 +178,7 @@ if $NEED_GCP; then
 fi
 
 if $DESTROY_FIXTURES; then
-  export AURELIAN_DESTROY_FIXTURES=1
+  export AURELIAN_REDEPLOY_FIXTURES=1
 fi
 
 set -x

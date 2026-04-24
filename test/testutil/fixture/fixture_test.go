@@ -128,6 +128,25 @@ func (m *mockOps) DeleteArtifacts(context.Context) error {
 	return nil
 }
 
+func TestRunLifecycle_RedeployEnvVar_ForcesRedeploy(t *testing.T) {
+	t.Setenv("AURELIAN_REDEPLOY_FIXTURES", "1")
+
+	f, calls, effectiveHash, mock := newLifecycleFixture(t, "", nil, nil)
+	mock.remoteHash = effectiveHash // hash matches, but the env var should force redeploy
+
+	err := f.runLifecycle(context.Background())
+	if err != nil {
+		t.Fatalf("run lifecycle: %v", err)
+	}
+
+	// downloadArtifactsToTempDir fails (no artifacts in S3 under the test prefix)
+	// so redeployStack falls back to ops.Destroy, then re-init + apply.
+	expected := []string{"init", "destroy", "delete", "init", "apply", "upload", "put", "output"}
+	if !slices.Equal(*calls, expected) {
+		t.Fatalf("unexpected calls: got=%v want=%v", *calls, expected)
+	}
+}
+
 func newLifecycleFixture(t *testing.T, remoteHash string, hashErr error, outputErr error) (*BaseFixture, *[]string, string, *mockOps) {
 	t.Helper()
 
