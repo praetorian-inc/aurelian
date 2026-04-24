@@ -95,6 +95,34 @@ func (cc *CloudControlEnumerator) getResourceByARN(arn string) (output.AWSResour
 	return cr, nil
 }
 
+// getResourceByTypeAndIdentifier fetches a single resource by an already-known
+// resource type + primary identifier, skipping the ARN-parse step of
+// getResourceByARN. Used by ConfigFallback after translating a Config
+// ResourceIdentifier; all other callers should prefer getResourceByARN.
+func (cc *CloudControlEnumerator) getResourceByTypeAndIdentifier(
+	region, resourceType, identifier string,
+) (output.AWSResource, error) {
+	client, err := cc.newCloudControlClient(region)
+	if err != nil {
+		return output.AWSResource{}, fmt.Errorf("create client: %w", err)
+	}
+
+	accountID, err := cc.provider.GetAccountID(region)
+	if err != nil {
+		return output.AWSResource{}, err
+	}
+
+	result, err := client.GetResource(context.Background(), &cloudcontrol.GetResourceInput{
+		TypeName:   aws.String(resourceType),
+		Identifier: aws.String(identifier),
+	})
+	if err != nil {
+		return output.AWSResource{}, fmt.Errorf("get %s %s: %w", resourceType, identifier, err)
+	}
+
+	return awshelpers.CloudControlToAWSResource(*result.ResourceDescription, resourceType, accountID, region), nil
+}
+
 func (cc *CloudControlEnumerator) resolveARNTarget(resourceARN string) (string, string, string, error) {
 	parsed, err := awsaarn.Parse(resourceARN)
 	if err != nil {
