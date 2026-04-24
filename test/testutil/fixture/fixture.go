@@ -58,11 +58,12 @@ type ops interface {
 
 // BaseFixture manages a Terraform fixture backed by S3 remote state.
 type BaseFixture struct {
-	tf      *tfexec.Terraform
-	outputs map[string]tfexec.OutputMeta
-	t       *testing.T
-	cfg     Config
-	ops     ops
+	tf       *tfexec.Terraform
+	outputs  map[string]tfexec.OutputMeta
+	t        *testing.T
+	cfg      Config
+	ops      ops
+	registry *registry
 }
 
 type baseOps struct {
@@ -80,7 +81,7 @@ func NewBase(t *testing.T, cfg Config) *BaseFixture {
 		t.Fatalf("failed to create terraform instance for %s: %v", cfg.ModuleDir, err)
 	}
 
-	fixture := &BaseFixture{tf: tf, t: t, cfg: cfg}
+	fixture := &BaseFixture{tf: tf, t: t, cfg: cfg, registry: globalRegistry}
 	fixture.ops = baseOps{fixture: fixture}
 
 	return fixture
@@ -174,47 +175,43 @@ func (f *BaseFixture) runLifecycle(ctx context.Context) error {
 		return fmt.Errorf("get remote hash: %w", err)
 	}
 
-	err = f.ops.Init(ctx, f.cfg.InitOpts...)
-	if err != nil {
+	if err := f.ops.Init(ctx, f.cfg.InitOpts...); err != nil {
 		return fmt.Errorf("terraform init: %w", err)
 	}
 
 	redeployFixtures := os.Getenv("AURELIAN_REDEPLOY_FIXTURES") == "1"
-	if redeployFixtures {
+	switch {
+	case redeployFixtures:
 		f.t.Log("terraform fixture hash check: AURELIAN_REDEPLOY_FIXTURES=1")
 		f.t.Log("terraform fixture decision: teardown + redeploy (forced)")
 		if err := f.redeployStack(ctx, effectiveHash); err != nil {
 			return err
 		}
-
-		return f.loadOutputs(ctx)
-	}
-
-	missingRemoteHash := remoteHash == ""
-	if missingRemoteHash {
+	case remoteHash == "":
 		f.t.Log("terraform fixture hash check: remote hash empty")
 		f.t.Log("terraform fixture decision: deploy")
 		if err := f.deployStack(ctx, effectiveHash); err != nil {
 			return err
 		}
-
-		return f.loadOutputs(ctx)
-	}
-
-	hashMatches := remoteHash == effectiveHash
-	if hashMatches {
+	case remoteHash == effectiveHash:
 		f.t.Log("terraform fixture hash check: hashes match")
 		f.t.Log("terraform fixture decision: reuse existing fixture")
-		return f.loadOutputs(ctx)
+	default:
+		f.t.Logf("terraform fixture hash check: hashes differ (remote=%s local_effective=%s)", remoteHash, effectiveHash)
+		f.t.Log("terraform fixture decision: re-apply (drift detected)")
+		if err := f.deployStack(ctx, effectiveHash); err != nil {
+			return err
+		}
 	}
 
-	f.t.Logf("terraform fixture hash check: hashes differ (remote=%s local_effective=%s)", remoteHash, effectiveHash)
-	f.t.Log("terraform fixture decision: re-apply (drift detected)")
-	if err := f.deployStack(ctx, effectiveHash); err != nil {
+	if err := f.loadOutputs(ctx); err != nil {
 		return err
 	}
 
-	return f.loadOutputs(ctx)
+	if f.registry != nil {
+		f.registry.register(f)
+	}
+	return nil
 }
 
 // Output returns a single Terraform output as a string.

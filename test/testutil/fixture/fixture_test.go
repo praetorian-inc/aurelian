@@ -153,6 +153,28 @@ func TestRunLifecycle_RedeployEnvVar_ForcesRedeploy(t *testing.T) {
 	}
 }
 
+func TestRunLifecycle_RegistersOnSuccess(t *testing.T) {
+	// Use a local registry instead of the process-global to keep tests isolated.
+	localReg := &registry{}
+	t.Cleanup(func() {
+		// defensive: drain the local registry in case anything else got added
+		_ = localReg.DestroyAll(context.Background())
+	})
+
+	f, _, _, _ := newLifecycleFixture(t, "", nil, nil)
+	f.cfg.StateKey = "integration-tests/test/register/terraform.tfstate"
+	f.registry = localReg
+
+	if err := f.runLifecycle(context.Background()); err != nil {
+		t.Fatalf("run lifecycle: %v", err)
+	}
+
+	got := localReg.snapshot()
+	if len(got) != 1 || got[0] != f {
+		t.Fatalf("expected fixture to be registered exactly once; got %v", got)
+	}
+}
+
 func newLifecycleFixture(t *testing.T, remoteHash string, hashErr error, outputErr error) (*BaseFixture, *[]string, string, *mockOps) {
 	t.Helper()
 
