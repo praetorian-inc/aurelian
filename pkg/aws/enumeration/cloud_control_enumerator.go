@@ -242,7 +242,7 @@ func (cc *CloudControlEnumerator) listInRegionByType(region, resourceType string
 	}
 
 	err = cc.listByType(client, accountID, region, resourceType, out)
-	if handled := handleListError(err, resourceType, region); handled == nil {
+	if handled := handleListError(err, resourceType, region, nil); handled == nil {
 		return nil
 	}
 	slog.Warn("error listing resources", "type", resourceType, "region", region, "error", err)

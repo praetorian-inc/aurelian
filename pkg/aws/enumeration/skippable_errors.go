@@ -60,19 +60,31 @@ func isRegionUnsupportedError(err error) bool {
 		strings.Contains(msg, "EndpointNotFound")
 }
 
+// fallbackFn is invoked by handleListError when the primary list call returned
+// an AccessDenied response and the call site opted into a fallback. It must
+// return nil on success, errFallbackExhausted on expected failure (fallback
+// tried but produced nothing), or any other error to propagate as-is.
+type fallbackFn func() error
+
+// errFallbackExhausted is the sentinel a fallbackFn returns when the fallback
+// path ran to completion but could not produce resources (Config denied, no
+// recorder, or CloudControl GetResource denied).
+var errFallbackExhausted = errors.New("fallback exhausted")
+
 // handleListError classifies err returned from a per-region list call and
 // decides whether enumeration for other regions / resource types should
-// continue. It returns nil (logging at the appropriate level) if the error is
-// a known per-region condition, or the original error if enumeration should
-// abort.
+// continue. When err is AccessDenied and a fallback is supplied, the fallback
+// is invoked; the returned behavior is:
 //
-//   - Region not available → Debug, continue (routine, some services are
-//     missing from some regions).
-//   - Unsupported resource type / action → Debug, continue (CloudControl only).
-//   - Access denied (IAM or SCP) → Warn, continue (the user sees why a region
-//     or service produced no data).
-//   - Anything else → returned as-is; caller decides whether to abort.
-func handleListError(err error, resourceType, region string) error {
+//   - Region not available → Debug, return nil.
+//   - Unsupported resource type → Debug, return nil (CloudControl only).
+//   - Access denied with fallback == nil → Warn, return nil (PR #178 behavior).
+//   - Access denied with fallback returning nil → Debug, return nil.
+//   - Access denied with fallback returning errFallbackExhausted → Warn
+//     "unable to list resources" with both primary and fallback errors, return nil.
+//   - Access denied with fallback returning any other error → return that error.
+//   - Anything else → return err as-is.
+func handleListError(err error, resourceType, region string, fallback fallbackFn) error {
 	if err == nil {
 		return nil
 	}
@@ -87,9 +99,28 @@ func handleListError(err error, resourceType, region string) error {
 		return nil
 	}
 	if isAccessDeniedError(err) {
-		slog.Warn("access denied listing resources, skipping",
-			"type", resourceType, "region", region, "error", err)
-		return nil
+		if fallback == nil {
+			slog.Warn("access denied listing resources, skipping",
+				"type", resourceType, "region", region, "error", err)
+			return nil
+		}
+		fbErr := fallback()
+		switch {
+		case fbErr == nil:
+			slog.Debug("fell back to config, listed resources",
+				"type", resourceType, "region", region)
+			return nil
+		case errors.Is(fbErr, errFallbackExhausted):
+			slog.Warn("unable to list resources",
+				"type", resourceType,
+				"region", region,
+				"primary", err,
+				"fallback", fbErr,
+			)
+			return nil
+		default:
+			return fbErr
+		}
 	}
 	return err
 }

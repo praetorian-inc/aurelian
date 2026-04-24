@@ -128,7 +128,7 @@ func (l *S3Enumerator) listBucketsInRegion(region string, out *pipeline.P[output
 
 		result, err := client.ListBuckets(context.Background(), input)
 		if err != nil {
-			if handled := handleListError(err, "AWS::S3::Bucket", region); handled == nil {
+			if handled := handleListError(err, "AWS::S3::Bucket", region, nil); handled == nil {
 				return false, nil
 			}
 			return false, fmt.Errorf("list buckets in %s: %w", region, err)

@@ -109,7 +109,7 @@ func (e *AmplifyAppEnumerator) listAppsInRegion(region, accountID string, out *p
 			NextToken: nextToken,
 		})
 		if err != nil {
-			if handled := handleListError(err, "AWS::Amplify::App", region); handled == nil {
+			if handled := handleListError(err, "AWS::Amplify::App", region, nil); handled == nil {
 				return false, nil
 			}
 			return false, fmt.Errorf("list amplify apps in %s: %w", region, err)
