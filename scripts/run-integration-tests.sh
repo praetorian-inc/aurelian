@@ -38,7 +38,8 @@ while [[ $# -gt 0 ]]; do
       echo "  TARGET        Go test target pattern (default: ./...)"
       echo ""
       echo "Options:"
-      echo "  --go-flags    Additional flags to pass to 'go test' (e.g. '--go-flags \"-v -timeout 30m\"')"
+      echo "  --go-flags    Additional flags to pass to 'go test' (e.g. '--go-flags \"-v\"')."
+  echo "                A -timeout of 30m is applied by default unless you supply your own."
       echo "  --keep        Keep Terraform fixtures alive after the run. By default, fixtures"
       echo "                are destroyed when every test in the package passes."
       echo "  --redeploy    Force Terraform fixtures to be torn down and redeployed at Setup,"
@@ -191,6 +192,13 @@ if $KEEP_FIXTURES; then
 fi
 if $REDEPLOY_FIXTURES; then
   export AURELIAN_REDEPLOY_FIXTURES=1
+fi
+
+# Default to -timeout 30m unless the caller provided their own -timeout in --go-flags.
+# The default covers a long test phase plus the post-run fixture destroy (which
+# can take up to ~15 minutes for heavy cloud fixtures).
+if [[ "$GO_FLAGS" != *"-timeout"* ]]; then
+  GO_FLAGS="-timeout 30m $GO_FLAGS"
 fi
 
 set -x
