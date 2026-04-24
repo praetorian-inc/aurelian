@@ -139,8 +139,9 @@ func TestRunLifecycle_RedeployEnvVar_ForcesRedeploy(t *testing.T) {
 		t.Fatalf("run lifecycle: %v", err)
 	}
 
-	// downloadArtifactsToTempDir fails (no artifacts in S3 under the test prefix)
-	// so redeployStack falls back to ops.Destroy, then re-init + apply.
+	// downloadArtifactsToTempDir fails — either at credential resolution (no
+	// AWS profile) or because the test prefix has no real S3 objects — and
+	// redeployStack falls back to ops.Destroy, then re-init + apply.
 	expected := []string{"init", "destroy", "delete", "init", "apply", "upload", "put", "output"}
 	if !slices.Equal(*calls, expected) {
 		t.Fatalf("unexpected calls: got=%v want=%v", *calls, expected)
