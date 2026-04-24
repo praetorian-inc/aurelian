@@ -128,6 +128,54 @@ func (m *mockOps) DeleteArtifacts(context.Context) error {
 	return nil
 }
 
+func (m *mockOps) PurgeModulePrefix(context.Context) error {
+	*m.calls = append(*m.calls, "purge")
+	return nil
+}
+
+func TestRunLifecycle_RedeployEnvVar_ForcesRedeploy(t *testing.T) {
+	t.Setenv("AURELIAN_REDEPLOY_FIXTURES", "1")
+
+	f, calls, effectiveHash, mock := newLifecycleFixture(t, "", nil, nil)
+	mock.remoteHash = effectiveHash // hash matches, but the env var should force redeploy
+
+	err := f.runLifecycle(context.Background())
+	if err != nil {
+		t.Fatalf("run lifecycle: %v", err)
+	}
+
+	// downloadArtifactsToTempDir fails — either at credential resolution (no
+	// AWS profile) or because the test prefix has no real S3 objects — and
+	// redeployStack falls back to ops.Destroy, then re-init + apply.
+	expected := []string{"init", "destroy", "delete", "init", "apply", "upload", "put", "output"}
+	if !slices.Equal(*calls, expected) {
+		t.Fatalf("unexpected calls: got=%v want=%v", *calls, expected)
+	}
+}
+
+func TestRunLifecycle_RegistersOnSuccess(t *testing.T) {
+	// Use a local registry instead of the process-global to keep tests isolated.
+	localReg := &registry{}
+	localReg.teardownFn = func(context.Context, *BaseFixture) error { return nil }
+	t.Cleanup(func() {
+		// defensive: drain the local registry in case anything else got added
+		_ = localReg.DestroyAll(context.Background())
+	})
+
+	f, _, _, _ := newLifecycleFixture(t, "", nil, nil)
+	f.cfg.StateKey = "integration-tests/test/register/terraform.tfstate"
+	f.registry = localReg
+
+	if err := f.runLifecycle(context.Background()); err != nil {
+		t.Fatalf("run lifecycle: %v", err)
+	}
+
+	got := localReg.snapshot()
+	if len(got) != 1 || got[0] != f {
+		t.Fatalf("expected fixture to be registered exactly once; got %v", got)
+	}
+}
+
 func newLifecycleFixture(t *testing.T, remoteHash string, hashErr error, outputErr error) (*BaseFixture, *[]string, string, *mockOps) {
 	t.Helper()
 
@@ -153,7 +201,8 @@ func newLifecycleFixture(t *testing.T, remoteHash string, hashErr error, outputE
 			ArtifactsURI: "test://artifacts/",
 			InitOpts:     []tfexec.InitOption{},
 		},
-		ops: mock,
+		ops:  mock,
+		logf: t.Logf,
 	}
 
 	return f, &calls, effectiveHash, mock
