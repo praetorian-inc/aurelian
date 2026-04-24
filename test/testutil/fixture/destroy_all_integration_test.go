@@ -5,6 +5,7 @@ package fixture
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -95,7 +96,7 @@ func listModulePrefix(t *testing.T, ctx context.Context, stateKey string) []stri
 	if err != nil {
 		t.Fatalf("s3 client: %v", err)
 	}
-	prefix := stateKey[:len(stateKey)-len("terraform.tfstate")]
+	prefix := filepath.ToSlash(filepath.Dir(stateKey)) + "/"
 
 	var keys []string
 	var token *string
