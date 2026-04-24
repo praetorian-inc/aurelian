@@ -115,6 +115,9 @@ func (e *SSMDocumentEnumerator) listDocumentsInRegion(region, accountID string, 
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(context.Background())
 		if err != nil {
+			if handled := handleListError(err, "AWS::SSM::Document", region); handled == nil {
+				return nil
+			}
 			return fmt.Errorf("list documents in %s: %w", region, err)
 		}
 

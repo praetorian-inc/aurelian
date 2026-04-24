@@ -51,11 +51,15 @@ func (cc *CloudControlEnumerator) List(identifier string, out *pipeline.P[output
 
 func (cc *CloudControlEnumerator) EnumerateByARN(resourceARN string, out *pipeline.P[output.AWSResource]) error {
 	resource, err := cc.getResourceByARN(resourceARN)
-	if cc.isSkippableError(err) {
-		slog.Debug("skipping arn", "arn", resourceARN, "error", err)
-		return nil
-	}
 	if err != nil {
+		if isUnsupportedTypeError(err) || isRegionUnsupportedError(err) {
+			slog.Debug("skipping arn", "arn", resourceARN, "error", err)
+			return nil
+		}
+		if isAccessDeniedError(err) {
+			slog.Warn("access denied fetching resource, skipping", "arn", resourceARN, "error", err)
+			return nil
+		}
 		return err
 	}
 
@@ -238,16 +242,11 @@ func (cc *CloudControlEnumerator) listInRegionByType(region, resourceType string
 	}
 
 	err = cc.listByType(client, accountID, region, resourceType, out)
-	if cc.isSkippableError(err) {
-		slog.Debug("skipping resource type", "type", resourceType, "region", region, "error", err)
+	if handled := handleListError(err, resourceType, region); handled == nil {
 		return nil
 	}
-	if err != nil {
-		slog.Warn("error listing resources", "type", resourceType, "region", region, "error", err)
-		return err
-	}
-
-	return nil
+	slog.Warn("error listing resources", "type", resourceType, "region", region, "error", err)
+	return err
 }
 
 func (cc *CloudControlEnumerator) listByType(
@@ -281,16 +280,6 @@ func (cc *CloudControlEnumerator) listByType(
 		nextToken = result.NextToken
 		return nextToken != nil, nil
 	})
-}
-
-func (cc *CloudControlEnumerator) isSkippableError(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := err.Error()
-	return strings.Contains(s, "TypeNotFoundException") ||
-		strings.Contains(s, "UnsupportedActionException") ||
-		strings.Contains(s, "AccessDeniedException")
 }
 
 func (cc *CloudControlEnumerator) newCloudControlClient(region string) (*cloudcontrol.Client, error) {
