@@ -289,7 +289,7 @@ func (f *BaseFixture) downloadArtifactsToTempDir(ctx context.Context) (string, e
 		}
 	}
 
-	f.t.Logf("terraform fixture: downloaded %d artifacts to %s", len(allKeys), tmpDir)
+	f.logf("terraform fixture: downloaded %d artifacts to %s", len(allKeys), tmpDir)
 	return tmpDir, nil
 }
 

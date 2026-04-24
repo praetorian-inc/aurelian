@@ -21,12 +21,12 @@ func (f *BaseFixture) loadOutputs(ctx context.Context) error {
 }
 
 func (f *BaseFixture) deployStack(ctx context.Context, hash string) error {
-	f.t.Log("terraform fixture action: deploy start")
+	f.logf("terraform fixture action: deploy start")
 	err := f.ops.Apply(ctx)
 	if err != nil {
 		return fmt.Errorf("terraform apply: %w", err)
 	}
-	f.t.Log("terraform fixture action: deploy complete")
+	f.logf("terraform fixture action: deploy complete")
 
 	err = f.ops.UploadArtifacts(ctx)
 	if err != nil {
@@ -46,11 +46,11 @@ func (f *BaseFixture) deployStack(ctx context.Context, hash string) error {
 // if present, otherwise the local fixture directory — then deletes
 // the artifacts/ prefix from S3.
 func (f *BaseFixture) teardownStack(ctx context.Context) error {
-	f.t.Log("terraform fixture action: teardown start")
+	f.logf("terraform fixture action: teardown start")
 
 	tmpDir, downloadErr := f.downloadArtifactsToTempDir(ctx)
 	if downloadErr != nil {
-		f.t.Logf("terraform fixture: failed to download remote artifacts, falling back to local destroy: %v", downloadErr)
+		f.logf("terraform fixture: failed to download remote artifacts, falling back to local destroy: %v", downloadErr)
 		if err := f.ops.Destroy(ctx); err != nil {
 			return fmt.Errorf("terraform destroy (fallback): %w", err)
 		}
@@ -74,7 +74,7 @@ func (f *BaseFixture) teardownStack(ctx context.Context) error {
 	if err := f.ops.DeleteArtifacts(ctx); err != nil {
 		return fmt.Errorf("delete fixture artifacts: %w", err)
 	}
-	f.t.Log("terraform fixture action: teardown complete")
+	f.logf("terraform fixture action: teardown complete")
 
 	return nil
 }

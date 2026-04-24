@@ -201,7 +201,8 @@ func newLifecycleFixture(t *testing.T, remoteHash string, hashErr error, outputE
 			ArtifactsURI: "test://artifacts/",
 			InitOpts:     []tfexec.InitOption{},
 		},
-		ops: mock,
+		ops:  mock,
+		logf: t.Logf,
 	}
 
 	return f, &calls, effectiveHash, mock
