@@ -1,6 +1,7 @@
 package amplify
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -119,6 +120,26 @@ func TestClearWeakSignals_NotCalledWhenStrongSignalPresent(t *testing.T) {
 	assert.Equal(t, "us-east-1", c.Region)
 	assert.Equal(t, []string{"email", "openid"}, c.OAuthScopes)
 	assert.Equal(t, []string{"Users"}, c.DynamoDBTables)
+}
+
+func TestCollectScriptURLs_UnquotedSrc(t *testing.T) {
+	// Minified Vue/Webpack HTML commonly emits unquoted src attributes.
+	html := `<!DOCTYPE html><html><head><link href=/css/app.css rel=stylesheet>` +
+		`<script src=/js/chunk-vendors.3752b773.js></script>` +
+		`<script src=/js/app.666fe630.js></script>` +
+		`<script src="/js/quoted.js"></script>` +
+		`<script src='/js/single.js'></script></head></html>`
+
+	base, err := url.Parse("https://dev.example.amplifyapp.com")
+	assert.NoError(t, err)
+
+	urls := collectScriptURLs(base, html)
+	assert.ElementsMatch(t, []string{
+		"https://dev.example.amplifyapp.com/js/chunk-vendors.3752b773.js",
+		"https://dev.example.amplifyapp.com/js/app.666fe630.js",
+		"https://dev.example.amplifyapp.com/js/quoted.js",
+		"https://dev.example.amplifyapp.com/js/single.js",
+	}, urls)
 }
 
 func TestNonAmplifyPage_NoFalsePositives(t *testing.T) {

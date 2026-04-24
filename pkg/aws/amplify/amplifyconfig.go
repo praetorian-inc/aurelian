@@ -556,7 +556,7 @@ var multiExtractors = []multiExtractor{
 }
 
 var (
-	scriptSrcRe = regexp.MustCompile(`<script[^>]+src=["']([^"']+)["']`)
+	scriptSrcRe = regexp.MustCompile(`<script[^>]+src=["']?([^"'\s>]+)`)
 	jsChunkRe   = regexp.MustCompile(`["'](/static/js/[^"']+\.js)["']`)
 
 	cloudLogicBlockRe = regexp.MustCompile(`(?:aws_cloud_logic_custom|cloud_logic_custom)["']?\s*[=:]\s*\[([^\]]+)\]`)
