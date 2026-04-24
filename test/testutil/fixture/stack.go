@@ -41,7 +41,11 @@ func (f *BaseFixture) deployStack(ctx context.Context, hash string) error {
 	return nil
 }
 
-func (f *BaseFixture) redeployStack(ctx context.Context, hash string) error {
+// teardownStack runs `terraform destroy` using the most authoritative
+// source of the module's `.tf` files — the artifacts snapshot in S3 if
+// present, otherwise the local fixture directory. After destroy it also
+// deletes the artifacts/ prefix so a subsequent Setup uploads fresh.
+func (f *BaseFixture) teardownStack(ctx context.Context) error {
 	f.t.Log("terraform fixture action: teardown start")
 
 	tmpDir, downloadErr := f.downloadArtifactsToTempDir(ctx)
@@ -72,7 +76,17 @@ func (f *BaseFixture) redeployStack(ctx context.Context, hash string) error {
 	}
 	f.t.Log("terraform fixture action: teardown complete")
 
-	// Re-init local dir since remote artifact destroy may have changed backend state.
+	return nil
+}
+
+// redeployStack tears down existing infrastructure and deploys fresh.
+// The local directory's init may have been invalidated by the remote
+// destroy, so re-init before the deploy.
+func (f *BaseFixture) redeployStack(ctx context.Context, hash string) error {
+	if err := f.teardownStack(ctx); err != nil {
+		return err
+	}
+
 	if err := f.ops.Init(ctx, f.cfg.InitOpts...); err != nil {
 		return fmt.Errorf("terraform re-init: %w", err)
 	}
