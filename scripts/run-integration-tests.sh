@@ -7,7 +7,8 @@ ENV_FILE="$PROJECT_DIR/.env.integration"
 
 GO_FLAGS=""
 TARGET="./..."
-DESTROY_FIXTURES=false
+KEEP_FIXTURES=false
+REDEPLOY_FIXTURES=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -20,8 +21,12 @@ while [[ $# -gt 0 ]]; do
       GO_FLAGS="${1#*=}"
       shift
       ;;
-    --destroy)
-      DESTROY_FIXTURES=true
+    --keep)
+      KEEP_FIXTURES=true
+      shift
+      ;;
+    --redeploy)
+      REDEPLOY_FIXTURES=true
       shift
       ;;
     -h|--help)
@@ -34,13 +39,17 @@ while [[ $# -gt 0 ]]; do
       echo ""
       echo "Options:"
       echo "  --go-flags    Additional flags to pass to 'go test' (e.g. '--go-flags \"-v -timeout 30m\"')"
-      echo "  --destroy     Destroy and redeploy Terraform fixtures before running tests"
+      echo "  --keep        Keep Terraform fixtures alive after the run. By default, fixtures"
+      echo "                are destroyed when every test in the package passes."
+      echo "  --redeploy    Force Terraform fixtures to be torn down and redeployed at Setup,"
+      echo "                ignoring the hash-based reuse check. Combine with --keep to iterate"
+      echo "                on a freshly-provisioned fixture."
       echo ""
       echo "Examples:"
-      echo "  $0                              # run all integration tests"
-      echo "  $0 ./pkg/azure/...              # run just azure component tests"
-      echo "  $0 ./pkg/modules/aws/recon/...  # run just aws recon module tests"
-      echo "  $0 ./pkg/modules/gcp/recon/...  # run just gcp recon module tests"
+      echo "  $0                              # run all integration tests (destroy on success)"
+      echo "  $0 ./pkg/azure/...              # run azure component tests"
+      echo "  $0 --keep ./pkg/modules/aws/recon/...    # iterate locally, keep fixtures alive"
+      echo "  $0 --redeploy --keep ./pkg/modules/aws/recon/...  # fresh deploy, then iterate"
       exit 0
       ;;
     -*)
@@ -177,7 +186,10 @@ if $NEED_GCP; then
   export GCP_PROJECT_ID
 fi
 
-if $DESTROY_FIXTURES; then
+if $KEEP_FIXTURES; then
+  export AURELIAN_KEEP_FIXTURES=1
+fi
+if $REDEPLOY_FIXTURES; then
   export AURELIAN_REDEPLOY_FIXTURES=1
 fi
 
