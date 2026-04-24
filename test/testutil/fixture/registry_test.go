@@ -5,6 +5,7 @@ package fixture
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -112,7 +113,7 @@ func TestRegistry_DestroyAll_AggregatesErrors(t *testing.T) {
 		t.Fatal("want aggregated error, got nil")
 	}
 	msg := err.Error()
-	if !contains(msg, "boom: a") || !contains(msg, "boom: b") {
+	if !strings.Contains(msg, "boom: a") || !strings.Contains(msg, "boom: b") {
 		t.Fatalf("want aggregated error to mention both failures, got: %v", msg)
 	}
 }
@@ -142,15 +143,3 @@ func (baseOpsZero) UploadArtifacts(context.Context) error   { return nil }
 func (baseOpsZero) DeleteArtifacts(context.Context) error   { return nil }
 func (baseOpsZero) PurgeModulePrefix(context.Context) error { return nil }
 
-func contains(s, substr string) bool {
-	return len(substr) == 0 || (len(s) >= len(substr) && stringsIndex(s, substr) >= 0)
-}
-
-func stringsIndex(s, substr string) int {
-	for i := 0; i+len(substr) <= len(s); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
-}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // registry holds fixtures that had Setup() complete successfully during
@@ -55,6 +56,8 @@ func (r *registry) snapshot() []*BaseFixture {
 	return out
 }
 
+const perFixtureDestroyTimeout = 10 * time.Minute
+
 // DestroyAll tears down every registered fixture and sweeps its S3
 // prefix. Failures are collected and returned as a single aggregated
 // error so that one bad fixture does not prevent others from being
@@ -72,9 +75,11 @@ func (r *registry) DestroyAll(ctx context.Context) error {
 
 	var errs []error
 	for _, f := range fixtures {
-		if err := fn(ctx, f); err != nil {
+		fixtureCtx, cancel := context.WithTimeout(ctx, perFixtureDestroyTimeout)
+		if err := fn(fixtureCtx, f); err != nil {
 			errs = append(errs, fmt.Errorf("destroy %s: %w", f.cfg.StateKey, err))
 		}
+		cancel()
 	}
 
 	if len(errs) == 0 {
