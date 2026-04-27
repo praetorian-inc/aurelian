@@ -83,3 +83,32 @@ func TestExclusions_HaveJustifications(t *testing.T) {
 		}
 	}
 }
+
+func TestExclusions_NotInBaseline(t *testing.T) {
+	baselineSet := make(map[string]bool, len(baseline))
+	for _, rt := range baseline {
+		baselineSet[rt] = true
+	}
+
+	for rt := range exclusions {
+		if baselineSet[rt] {
+			t.Errorf("type %q is in both baseline and exclusions; exclusions wins but the conflict is a configuration mistake", rt)
+		}
+	}
+}
+
+func TestBaseline_FormatValid(t *testing.T) {
+	for _, rt := range baseline {
+		if !typeFormat.MatchString(rt) {
+			t.Errorf("baseline type %q does not match AWS::Service::Resource format", rt)
+		}
+	}
+}
+
+func TestSummary_FormatValid(t *testing.T) {
+	for _, rt := range summary {
+		if !typeFormat.MatchString(rt) {
+			t.Errorf("summary type %q does not match AWS::Service::Resource format", rt)
+		}
+	}
+}
