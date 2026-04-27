@@ -89,6 +89,22 @@ func Count() int {
 	return len(Registry.modules)
 }
 
+// ByPlatform returns a snapshot of all registered modules for a given platform.
+// Safe for concurrent use; returns a freshly-allocated slice on each call so
+// callers cannot mutate registry state.
+func ByPlatform(p Platform) []Module {
+	Registry.mu.RLock()
+	defer Registry.mu.RUnlock()
+
+	out := make([]Module, 0)
+	for _, entry := range Registry.modules {
+		if entry.Platform == p {
+			out = append(out, entry.Module)
+		}
+	}
+	return out
+}
+
 // ResetRegistry clears the global registry. Intended for tests.
 func ResetRegistry() {
 	Registry = &registry{
