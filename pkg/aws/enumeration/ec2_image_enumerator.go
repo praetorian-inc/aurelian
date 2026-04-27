@@ -105,7 +105,7 @@ func (l *EC2ImageEnumerator) listImagesInRegion(region, accountID string, out *p
 		Owners: []string{"self"},
 	})
 	if err != nil {
-		if handled := handleListError(err, "AWS::EC2::Image", region); handled == nil {
+		if handled := handleListError(err, "AWS::EC2::Image", region, nil); handled == nil {
 			return nil
 		}
 		return fmt.Errorf("describe images in %s: %w", region, err)

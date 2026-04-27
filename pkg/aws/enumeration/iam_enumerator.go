@@ -137,7 +137,7 @@ func (e *IAMEnumerator) listRoles(out *pipeline.P[output.AWSResource]) error {
 
 		result, err := client.ListRoles(context.Background(), input)
 		if err != nil {
-			if handled := handleListError(err, "AWS::IAM::Role", "global"); handled == nil {
+			if handled := handleListError(err, "AWS::IAM::Role", "global", nil); handled == nil {
 				return false, nil
 			}
 			return false, fmt.Errorf("list IAM roles: %w", err)
@@ -189,7 +189,7 @@ func (e *IAMEnumerator) listPolicies(out *pipeline.P[output.AWSResource]) error 
 
 		result, err := client.ListPolicies(context.Background(), input)
 		if err != nil {
-			if handled := handleListError(err, "AWS::IAM::Policy", "global"); handled == nil {
+			if handled := handleListError(err, "AWS::IAM::Policy", "global", nil); handled == nil {
 				return false, nil
 			}
 			return false, fmt.Errorf("list IAM policies: %w", err)
@@ -239,7 +239,7 @@ func (e *IAMEnumerator) listUsers(out *pipeline.P[output.AWSResource]) error {
 
 		result, err := client.ListUsers(context.Background(), input)
 		if err != nil {
-			if handled := handleListError(err, "AWS::IAM::User", "global"); handled == nil {
+			if handled := handleListError(err, "AWS::IAM::User", "global", nil); handled == nil {
 				return false, nil
 			}
 			return false, fmt.Errorf("list IAM users: %w", err)

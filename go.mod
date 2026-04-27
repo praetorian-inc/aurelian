@@ -36,7 +36,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/synapse/armsynapse v0.8.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/trafficmanager/armtrafficmanager v1.3.0
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.4
-	github.com/aws/aws-sdk-go-v2 v1.41.4
+	github.com/aws/aws-sdk-go-v2 v1.41.6
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
 	github.com/aws/aws-sdk-go-v2/service/account v1.24.0
 	github.com/aws/aws-sdk-go-v2/service/amplify v1.38.13
@@ -45,6 +45,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.54.4
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.63.2
 	github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider v1.58.0
+	github.com/aws/aws-sdk-go-v2/service/configservice v1.62.2
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.63.5
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.202.4
 	github.com/aws/aws-sdk-go-v2/service/efs v1.41.10
@@ -63,7 +64,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.68.2
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.6
 	github.com/aws/aws-sdk-go-v2/service/timestreamquery v1.36.13
-	github.com/aws/smithy-go v1.24.2
+	github.com/aws/smithy-go v1.25.0
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/fatih/color v1.18.0
@@ -214,8 +215,8 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.7 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.17 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.20 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.20 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.22 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.22 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.17 // indirect

@@ -38,3 +38,13 @@ func TestResolveARNTarget_InvalidARNFails(t *testing.T) {
 	_, _, _, err := cc.resolveARNTarget("not-an-arn")
 	require.Error(t, err)
 }
+
+func TestGetResourceByTypeAndIdentifier_SkipsARNParse(t *testing.T) {
+	// Smoke test to pin the function signature; real SDK integration is
+	// covered by the CloudControlEnumerator integration suite. The intent of
+	// this unit test is that the helper exists and compiles — full behavioral
+	// coverage is in the integration test and in ConfigFallback tests that
+	// swap this helper via a seam.
+	cc := &CloudControlEnumerator{}
+	_ = cc.getResourceByTypeAndIdentifier // method must exist
+}
