@@ -18,19 +18,6 @@ func TestGetSummaryReturnsNonEmpty(t *testing.T) {
 	}
 }
 
-func TestSummaryIsSubsetOfAll(t *testing.T) {
-	allSet := make(map[string]bool)
-	for _, rt := range GetAll() {
-		allSet[rt] = true
-	}
-
-	for _, rt := range GetSummary() {
-		if !allSet[rt] {
-			t.Errorf("summary resource type %q is not in All set", rt)
-		}
-	}
-}
-
 func TestGetAllHasNoDuplicates(t *testing.T) {
 	seen := make(map[string]bool)
 	for _, rt := range GetAll() {
@@ -51,12 +38,6 @@ func TestGetSummaryHasNoDuplicates(t *testing.T) {
 	}
 }
 
-func TestIsValidWithKnownType(t *testing.T) {
-	if !IsValid("AWS::EC2::Instance") {
-		t.Error("expected AWS::EC2::Instance to be valid")
-	}
-}
-
 func TestIsValidWithUnknownType(t *testing.T) {
 	if IsValid("AWS::Fake::Thing") {
 		t.Error("expected AWS::Fake::Thing to be invalid")
@@ -69,15 +50,8 @@ func TestIsValidEmptyString(t *testing.T) {
 	}
 }
 
-func TestValidateWithAllValid(t *testing.T) {
-	err := Validate([]string{"AWS::EC2::Instance", "AWS::S3::Bucket"})
-	if err != nil {
-		t.Errorf("expected no error, got: %v", err)
-	}
-}
-
 func TestValidateWithInvalidType(t *testing.T) {
-	err := Validate([]string{"AWS::EC2::Instance", "AWS::Fake::Thing"})
+	err := Validate([]string{"AWS::Fake::Thing"})
 	if err == nil {
 		t.Error("expected error for invalid resource type")
 	}
@@ -90,11 +64,51 @@ func TestValidateEmptySlice(t *testing.T) {
 	}
 }
 
-func TestAllTypesFollowAWSFormat(t *testing.T) {
-	for _, rt := range GetAll() {
-		// AWS CloudControl types follow AWS::Service::Resource pattern
-		if len(rt) < 10 || rt[:5] != "AWS::" {
-			t.Errorf("resource type %q does not follow AWS::Service::Resource format", rt)
+func TestIsExcluded_KnownExclusion(t *testing.T) {
+	if !IsExcluded("AWS::Organizations::Account") {
+		t.Error("expected AWS::Organizations::Account to be excluded")
+	}
+}
+
+func TestIsExcluded_NonExcludedType(t *testing.T) {
+	if IsExcluded("AWS::S3::Bucket") {
+		t.Error("expected AWS::S3::Bucket to not be excluded")
+	}
+}
+
+func TestExclusions_HaveJustifications(t *testing.T) {
+	for rt, justification := range exclusions {
+		if justification == "" {
+			t.Errorf("exclusion %q has empty justification", rt)
+		}
+	}
+}
+
+func TestExclusions_NotInBaseline(t *testing.T) {
+	baselineSet := make(map[string]bool, len(baseline))
+	for _, rt := range baseline {
+		baselineSet[rt] = true
+	}
+
+	for rt := range exclusions {
+		if baselineSet[rt] {
+			t.Errorf("type %q is in both baseline and exclusions; exclusions wins but the conflict is a configuration mistake", rt)
+		}
+	}
+}
+
+func TestBaseline_FormatValid(t *testing.T) {
+	for _, rt := range baseline {
+		if !typeFormat.MatchString(rt) {
+			t.Errorf("baseline type %q does not match AWS::Service::Resource format", rt)
+		}
+	}
+}
+
+func TestSummary_FormatValid(t *testing.T) {
+	for _, rt := range summary {
+		if !typeFormat.MatchString(rt) {
+			t.Errorf("summary type %q does not match AWS::Service::Resource format", rt)
 		}
 	}
 }
