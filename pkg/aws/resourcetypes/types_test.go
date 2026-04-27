@@ -98,3 +98,23 @@ func TestAllTypesFollowAWSFormat(t *testing.T) {
 		}
 	}
 }
+
+func TestIsExcluded_KnownExclusion(t *testing.T) {
+	if !IsExcluded("AWS::Organizations::Account") {
+		t.Error("expected AWS::Organizations::Account to be excluded")
+	}
+}
+
+func TestIsExcluded_NonExcludedType(t *testing.T) {
+	if IsExcluded("AWS::S3::Bucket") {
+		t.Error("expected AWS::S3::Bucket to not be excluded")
+	}
+}
+
+func TestExclusions_HaveJustifications(t *testing.T) {
+	for rt, justification := range exclusions {
+		if justification == "" {
+			t.Errorf("exclusion %q has empty justification", rt)
+		}
+	}
+}
