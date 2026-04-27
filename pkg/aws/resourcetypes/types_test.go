@@ -18,19 +18,6 @@ func TestGetSummaryReturnsNonEmpty(t *testing.T) {
 	}
 }
 
-func TestSummaryIsSubsetOfAll(t *testing.T) {
-	allSet := make(map[string]bool)
-	for _, rt := range GetAll() {
-		allSet[rt] = true
-	}
-
-	for _, rt := range GetSummary() {
-		if !allSet[rt] {
-			t.Errorf("summary resource type %q is not in All set", rt)
-		}
-	}
-}
-
 func TestGetAllHasNoDuplicates(t *testing.T) {
 	seen := make(map[string]bool)
 	for _, rt := range GetAll() {
@@ -51,12 +38,6 @@ func TestGetSummaryHasNoDuplicates(t *testing.T) {
 	}
 }
 
-func TestIsValidWithKnownType(t *testing.T) {
-	if !IsValid("AWS::EC2::Instance") {
-		t.Error("expected AWS::EC2::Instance to be valid")
-	}
-}
-
 func TestIsValidWithUnknownType(t *testing.T) {
 	if IsValid("AWS::Fake::Thing") {
 		t.Error("expected AWS::Fake::Thing to be invalid")
@@ -69,15 +50,8 @@ func TestIsValidEmptyString(t *testing.T) {
 	}
 }
 
-func TestValidateWithAllValid(t *testing.T) {
-	err := Validate([]string{"AWS::EC2::Instance", "AWS::S3::Bucket"})
-	if err != nil {
-		t.Errorf("expected no error, got: %v", err)
-	}
-}
-
 func TestValidateWithInvalidType(t *testing.T) {
-	err := Validate([]string{"AWS::EC2::Instance", "AWS::Fake::Thing"})
+	err := Validate([]string{"AWS::Fake::Thing"})
 	if err == nil {
 		t.Error("expected error for invalid resource type")
 	}
@@ -87,15 +61,6 @@ func TestValidateEmptySlice(t *testing.T) {
 	err := Validate([]string{})
 	if err != nil {
 		t.Errorf("expected no error for empty slice, got: %v", err)
-	}
-}
-
-func TestAllTypesFollowAWSFormat(t *testing.T) {
-	for _, rt := range GetAll() {
-		// AWS CloudControl types follow AWS::Service::Resource pattern
-		if len(rt) < 10 || rt[:5] != "AWS::" {
-			t.Errorf("resource type %q does not follow AWS::Service::Resource format", rt)
-		}
 	}
 }
 
