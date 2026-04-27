@@ -10,6 +10,13 @@
 // The union is computed once per process via sync.Once on first call to
 // GetAll(). See union.go for the computation; exclusions.go for the subtraction
 // list.
+//
+// Cache lifecycle: the union cache is process-lifetime and is NOT invalidated
+// when plugin.ResetRegistry() is called. Do not call GetAll, IsValid, or
+// Validate from a package init() function — if invoked before all module
+// init() functions have registered, the cached union will be permanently
+// incomplete. Tests that need a fresh union should call ResetForTest (defined
+// in export_test.go).
 package resourcetypes
 
 import "fmt"
@@ -62,9 +69,9 @@ var summary = []string{
 // GetAll returns the runtime-computed union of supported resource types.
 // The returned slice is a defensive copy; callers may mutate it freely.
 func GetAll() []string {
-	cache := computeAll()
-	out := make([]string, len(cache))
-	copy(out, cache)
+	ensureComputed()
+	out := make([]string, len(allCache))
+	copy(out, allCache)
 	return out
 }
 
@@ -77,14 +84,15 @@ func GetSummary() []string {
 
 // IsValid reports whether rt is a known resource type (i.e., in GetAll()).
 func IsValid(rt string) bool {
-	_ = computeAll() // ensure allSet is populated
+	ensureComputed()
 	return allSet[rt]
 }
 
 // Validate returns an error if any type in the slice is not a known resource type.
 func Validate(types []string) error {
+	ensureComputed()
 	for _, rt := range types {
-		if !IsValid(rt) {
+		if !allSet[rt] {
 			return fmt.Errorf("unsupported resource type: %s", rt)
 		}
 	}

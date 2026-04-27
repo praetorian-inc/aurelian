@@ -109,8 +109,6 @@ func TestExclusions_AreReferenced(t *testing.T) {
 	// weight from a past refactor — delete it.
 	referenced := make(map[string]bool)
 
-	// Baseline references — re-derive from GetAll() ∪ exclusions to avoid
-	// reaching into the package's unexported baseline slice.
 	for _, rt := range resourcetypes.GetAll() {
 		referenced[rt] = true
 	}
@@ -120,21 +118,35 @@ func TestExclusions_AreReferenced(t *testing.T) {
 		}
 	}
 
-	// Iterate the exclusions via IsExcluded against a candidate set: walk
-	// every type either in GetAll() or referenced by a module, then check
-	// for any IsExcluded entries that aren't in that set. We can't iterate
-	// the exclusions map directly from here (unexported), so instead we
-	// assert the inverse via a known-exclusions list.
-	knownExclusions := []string{
-		"AWS::Organizations::Account",
-	}
-	for _, rt := range knownExclusions {
-		if !resourcetypes.IsExcluded(rt) {
-			t.Errorf("expected %q to be excluded but IsExcluded returned false", rt)
-			continue
-		}
+	for _, rt := range resourcetypes.ExclusionsForTest() {
 		if !referenced[rt] {
 			t.Errorf("exclusion %q is not declared by any module or in GetAll(); delete the dead exclusion", rt)
+		}
+	}
+}
+
+func TestResetForTest_AllowsRecomputation(t *testing.T) {
+	// Force the cache to populate.
+	first := resourcetypes.GetAll()
+	if len(first) == 0 {
+		t.Fatal("expected non-empty GetAll on first call")
+	}
+
+	// Reset and re-fetch — must not panic and must return a valid slice.
+	resourcetypes.ResetForTest()
+	second := resourcetypes.GetAll()
+	if len(second) == 0 {
+		t.Fatal("expected non-empty GetAll after ResetForTest")
+	}
+
+	// The post-reset slice should match the pre-reset slice byte-for-byte
+	// because no module/exclusion state changed between the two calls.
+	if len(first) != len(second) {
+		t.Fatalf("post-reset GetAll length differs: before=%d after=%d", len(first), len(second))
+	}
+	for i := range first {
+		if first[i] != second[i] {
+			t.Errorf("index %d differs: before=%q after=%q", i, first[i], second[i])
 		}
 	}
 }

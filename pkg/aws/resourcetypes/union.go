@@ -18,22 +18,23 @@ var (
 	allSet   map[string]bool
 )
 
-// computeAll returns the cached union slice, computing it on first call.
-// The returned slice is the internal cache — callers MUST NOT mutate it.
-// Use GetAll() externally to obtain a defensive copy.
+// ensureComputed runs the union build at most once per process. After it
+// returns, allCache and allSet are populated and safe to read.
 //
-// Note: if no AWS modules are registered when this runs (e.g., a test
-// imports resourcetypes directly without importing pkg/modules/loader),
-// the union degrades to baseline minus exclusions. The full union requires
-// the loader to be imported so the plugin registry is populated.
-func computeAll() []string {
+// The cache has process-lifetime: it is NOT invalidated when
+// plugin.ResetRegistry() is called. Tests that need a fresh union must call
+// ResetForTest (see export_test.go).
+//
+// Important init-order constraint: do NOT call GetAll(), IsValid(), or
+// Validate() from a package init() function. If invoked before all module
+// init() functions have registered, the union will be permanently incomplete
+// for the lifetime of the process.
+func ensureComputed() {
 	allOnce.Do(func() {
 		seen := make(map[string]struct{})
-
 		for _, rt := range baseline {
 			seen[rt] = struct{}{}
 		}
-
 		for _, m := range plugin.ByPlatform(plugin.PlatformAWS) {
 			for _, rt := range m.SupportedResourceTypes() {
 				if !typeFormat.MatchString(rt) {
@@ -44,21 +45,17 @@ func computeAll() []string {
 				seen[rt] = struct{}{}
 			}
 		}
-
 		for rt := range exclusions {
 			delete(seen, rt)
 		}
-
 		allCache = make([]string, 0, len(seen))
 		for rt := range seen {
 			allCache = append(allCache, rt)
 		}
 		sort.Strings(allCache)
-
 		allSet = make(map[string]bool, len(allCache))
 		for _, rt := range allCache {
 			allSet[rt] = true
 		}
 	})
-	return allCache
 }
