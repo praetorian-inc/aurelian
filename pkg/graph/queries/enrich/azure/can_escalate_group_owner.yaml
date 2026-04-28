@@ -1,0 +1,21 @@
+id: azure/enrich/can-escalate-group-owner
+name: Group Owner Privilege Escalation
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Group owners can add members to groups they own. If the group has privileged
+  role assignments, the owner can escalate by adding themselves as a member,
+  inheriting the group's permissions. Also creates CAN_ESCALATE edges from
+  owners to the service principals reachable via group permissions.
+severity: high
+order: 57
+cypher: |
+  MATCH (owner)-[:OWNS]->(group:Group)-[:HAS_PERMISSION|MEMBER_OF*1..2]->(rd:RoleDefinition)
+  SET owner._canEscalateViaGroupOwnership = true, owner._canEscalate = true
+  WITH DISTINCT owner, group
+  MERGE (owner)-[r:CAN_ESCALATE {method: 'GroupOwnership'}]->(group)
+  ON CREATE SET
+    r.condition = 'Group owner can add self as member to inherit group permissions',
+    r.category = 'GroupOwnership'
+  RETURN count(r) AS created
