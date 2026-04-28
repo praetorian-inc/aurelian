@@ -14,6 +14,7 @@ type GCPCommonRecon struct {
 	ResourceType       []string              `param:"resource-type"        desc:"Resource types to enumerate" default:"all" shortcode:"t"`
 	Concurrency        int                   `param:"concurrency"          desc:"Max concurrent API requests" default:"5"`
 	CredentialsFile    string                `param:"creds-file"           desc:"Path to GCP credentials JSON" shortcode:"c"`
+	QuotaProject       string                `param:"quota-project"        desc:"GCP project for API quota and billing (required for WIF credentials)" shortcode:"q"`
 	IncludeSysProjects bool                  `param:"include-sys-projects" desc:"Include system projects" default:"false"`
 	ClientOptions      []option.ClientOption `param:"-"`
 	ResolvedProjects   []string              `param:"-"`
@@ -27,6 +28,9 @@ func (c *GCPCommonRecon) PostBind(_ Config, _ Module) error {
 	}
 	if c.CredentialsFile != "" {
 		c.ClientOptions = append(c.ClientOptions, option.WithCredentialsFile(c.CredentialsFile)) //nolint:staticcheck // WithCredentialsFile is the intended API for file-based credentials
+	}
+	if c.QuotaProject != "" {
+		c.ClientOptions = append(c.ClientOptions, option.WithQuotaProject(c.QuotaProject))
 	}
 	c.Concurrency = max(1, c.Concurrency)
 	return nil
