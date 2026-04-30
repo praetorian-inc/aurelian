@@ -3,172 +3,51 @@ package recon
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"log/slog"
-	"net/http"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	armapimanagement "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
 
 	"github.com/praetorian-inc/aurelian/pkg/azure/apim"
-	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
-	"github.com/praetorian-inc/aurelian/pkg/azure/subscriptions"
-	azuretypes "github.com/praetorian-inc/aurelian/pkg/azure/types"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
-	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
-func init() {
-	plugin.Register(&AzureAPIMMissingAuthModule{})
-}
+// checkMissingAuth audits APIs (including MCP servers) on the target service for
+// missing authentication controls at the service, product, or API scope. Emits
+// azure-apim-missing-auth (or azure-apim-mcp-missing-auth for MCP servers) per
+// unauthenticated API.
+func (m *AzureAPIMAuditModule) checkMissingAuth(c *apimCheckContext, out *pipeline.P[model.AurelianModel]) {
+	t := c.target
+	servicePolicy := fetchServicePolicyAuth(c.ctx, c.factory, t)
 
-type AzureAPIMMissingAuthConfig struct {
-	plugin.AzureCommonRecon
-}
-
-type AzureAPIMMissingAuthModule struct {
-	AzureAPIMMissingAuthConfig
-}
-
-func (m *AzureAPIMMissingAuthModule) ID() string                { return "apim-missing-auth" }
-func (m *AzureAPIMMissingAuthModule) Name() string              { return "Azure APIM Missing Authentication" }
-func (m *AzureAPIMMissingAuthModule) Platform() plugin.Platform { return plugin.PlatformAzure }
-func (m *AzureAPIMMissingAuthModule) Category() plugin.Category { return plugin.CategoryRecon }
-func (m *AzureAPIMMissingAuthModule) OpsecLevel() string        { return "moderate" }
-func (m *AzureAPIMMissingAuthModule) Authors() []string         { return []string{"Praetorian"} }
-
-func (m *AzureAPIMMissingAuthModule) Description() string {
-	return "Detects Azure API Management APIs (including MCP servers exposed via APIM) that have no authentication " +
-		"controls at the service, product, or API scope. Inspects policy XML for validate-jwt, validate-azure-ad-token, " +
-		"ip-filter, and auth-header check-header elements, and confirms whether a subscription is required."
-}
-
-func (m *AzureAPIMMissingAuthModule) References() []string {
-	return []string{
-		"https://learn.microsoft.com/en-us/azure/api-management/api-management-access-restriction-policies",
-		"https://learn.microsoft.com/en-us/azure/api-management/authentication-authorization-overview",
-		"https://learn.microsoft.com/en-us/azure/api-management/api-management-subscriptions",
-	}
-}
-
-func (m *AzureAPIMMissingAuthModule) SupportedResourceTypes() []string {
-	return []string{"Microsoft.ApiManagement/service"}
-}
-
-func (m *AzureAPIMMissingAuthModule) Parameters() any {
-	return &m.AzureAPIMMissingAuthConfig
-}
-
-// apimServiceTarget is the unit of work fanned out per APIM service discovered via ARG.
-type apimServiceTarget struct {
-	SubscriptionID string
-	ResourceGroup  string
-	ServiceName    string
-	ResourceID     string
-}
-
-func (m *AzureAPIMMissingAuthModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
-	ctx := cfg.Context
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	resolver := subscriptions.NewSubscriptionResolver(m.AzureCredential)
-	subIDs, err := resolveSubscriptionIDs(m.SubscriptionIDs, resolver)
+	apis, err := apim.ListAPIs(c.ctx, m.AzureCredential, t.SubscriptionID, t.ResourceGroup, t.ServiceName)
 	if err != nil {
-		return err
-	}
-	if len(subIDs) == 0 {
-		slog.Warn("no accessible Azure subscriptions found")
-		return nil
+		slog.Warn("skipping APIM service — could not list APIs",
+			"service", t.ResourceID, "error", err)
+		return
 	}
 
-	cfg.Info("scanning %d Azure subscriptions for APIM services", len(subIDs))
-
-	idStream := pipeline.From(subIDs...)
-	resolvedSubs := pipeline.New[azuretypes.SubscriptionInfo]()
-	pipeline.Pipe(idStream, resolver.Resolve, resolvedSubs)
-
-	lister := resourcegraph.NewResourceGraphLister(m.AzureCredential, nil)
-	apimResources := pipeline.New[output.AzureResource]()
-	pipeline.Pipe(resolvedSubs, func(sub azuretypes.SubscriptionInfo, out *pipeline.P[output.AzureResource]) error {
-		return lister.List(resourcegraph.ListerInput{
-			Subscription:  sub,
-			ResourceTypes: []string{"Microsoft.ApiManagement/service"},
-		}, out)
-	}, apimResources)
-
-	targets := pipeline.New[apimServiceTarget]()
-	pipeline.Pipe(apimResources, toAPIMTarget, targets)
-
-	pipeline.Pipe(targets, m.classifyService(ctx), out, &pipeline.PipeOpts{
-		Concurrency: m.Concurrency,
-	})
-
-	if err := out.Wait(); err != nil {
-		return err
-	}
-	cfg.Success("APIM missing-auth scan complete")
-	return nil
-}
-
-func toAPIMTarget(r output.AzureResource, out *pipeline.P[apimServiceTarget]) error {
-	parsed, err := arm.ParseResourceID(r.ResourceID)
-	if err != nil {
-		slog.Warn("skipping unparseable APIM resource ID", "id", r.ResourceID, "error", err)
-		return nil
-	}
-	out.Send(apimServiceTarget{
-		SubscriptionID: parsed.SubscriptionID,
-		ResourceGroup:  parsed.ResourceGroupName,
-		ServiceName:    parsed.Name,
-		ResourceID:     r.ResourceID,
-	})
-	return nil
-}
-
-func (m *AzureAPIMMissingAuthModule) classifyService(ctx context.Context) func(apimServiceTarget, *pipeline.P[model.AurelianModel]) error {
-	return func(t apimServiceTarget, out *pipeline.P[model.AurelianModel]) error {
-		factory, err := armapimanagement.NewClientFactory(t.SubscriptionID, m.AzureCredential, nil)
-		if err != nil {
-			return fmt.Errorf("failed to create APIM client factory for %s: %w", t.ResourceID, err)
+	for _, api := range apis {
+		api.APIPolicyAuth = fetchAPIPolicyAuth(c.ctx, c.factory, t, api.APIID)
+		api.ProductPolicyAuths = fetchProductPolicyAuths(c.ctx, c.factory, t, api.APIID)
+		if !api.IsMCPServer {
+			// Native MCP-type APIs have no classic operations (their tools are a
+			// different sub-resource). Skip the call for MCP; fall back to
+			// operation-path heuristic for non-native APIs so proxy-shaped MCPs
+			// (e.g., regular APIs with a /mcp operation) are still labeled.
+			api.Operations = listAPIOperations(c.ctx, c.factory, t, api.APIID)
+			api.IsMCPServer = apim.IsMCPServer(api.Operations)
 		}
 
-		servicePolicy := fetchServicePolicyAuth(ctx, factory, t)
-
-		apis, err := apim.ListAPIs(ctx, m.AzureCredential, t.SubscriptionID, t.ResourceGroup, t.ServiceName)
-		if err != nil {
-			slog.Warn("skipping APIM service — could not list APIs",
-				"service", t.ResourceID, "error", err)
-			return nil
+		verdict := apim.ClassifyAPI(api, servicePolicy)
+		if verdict.IsAuthenticated {
+			continue
 		}
 
-		for _, api := range apis {
-			api.APIPolicyAuth = fetchAPIPolicyAuth(ctx, factory, t, api.APIID)
-			api.ProductPolicyAuths = fetchProductPolicyAuths(ctx, factory, t, api.APIID)
-			if !api.IsMCPServer {
-				// Native MCP-type APIs have no classic operations (their tools are a
-				// different sub-resource). Skip the call for MCP; fall back to
-				// operation-path heuristic for non-native APIs so proxy-shaped MCPs
-				// (e.g., regular APIs with a /mcp operation) are still labeled.
-				api.Operations = listAPIOperations(ctx, factory, t, api.APIID)
-				api.IsMCPServer = apim.IsMCPServer(api.Operations)
-			}
-
-			verdict := apim.ClassifyAPI(api, servicePolicy)
-			if verdict.IsAuthenticated {
-				continue
-			}
-
-			emitMissingAuthRisk(out, t, api, verdict, servicePolicy)
-		}
-		return nil
+		emitMissingAuthRisk(out, t, api, verdict, servicePolicy)
 	}
 }
 
@@ -185,7 +64,6 @@ func fetchServicePolicyAuth(ctx context.Context, factory *armapimanagement.Clien
 	}
 	return apim.ParseInboundAuth(policyValue(resp.Properties), nil)
 }
-
 
 // listAPIOperations returns every operation defined on an API. URL templates
 // are the signal we need for MCP classification; we don't need operation-scope
@@ -278,31 +156,6 @@ func listAPIProducts(ctx context.Context, factory *armapimanagement.ClientFactor
 		return pager.More(), nil
 	})
 	return ids, err
-}
-
-func policyValue(props *armapimanagement.PolicyContractProperties) string {
-	if props == nil || props.Value == nil {
-		return ""
-	}
-	return *props.Value
-}
-
-// isNotFound reports whether err is an Azure ResponseError with a 404 / 403 /
-// 401 status code. APIM returns 404 when a policy has never been set at a
-// scope (which is exactly what "no auth" looks like), and 403/401 for
-// insufficient permissions.
-func isNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) {
-		switch respErr.StatusCode {
-		case http.StatusNotFound, http.StatusForbidden, http.StatusUnauthorized:
-			return true
-		}
-	}
-	return false
 }
 
 type missingAuthContext struct {
