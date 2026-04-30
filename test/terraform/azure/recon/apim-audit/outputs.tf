@@ -18,16 +18,54 @@ output "public_app_service_hostname" {
   value = azurerm_linux_web_app.public_backend.default_hostname
 }
 
-output "expected_unauthenticated_apis" {
-  description = "APIs the apim-missing-auth module should flag"
-  value = [
-    "${azurerm_api_management.apim1.id}/apis/${azurerm_api_management_api.unauth.name}",
-  ]
+output "public_app_service_id" {
+  value = azurerm_linux_web_app.public_backend.id
 }
 
-output "expected_direct_access_backends" {
-  description = "Backends the apim-backend-direct-access module should flag as high"
-  value = [
-    azurerm_api_management_backend.public_app.url,
-  ]
+# Per-API IDs — used by integration tests to assert positive vs negative cases
+# precisely without depending on string concatenation in the test code.
+
+output "unauth_api_id" {
+  description = "API expected to be flagged azure-apim-missing-auth (no auth at any scope)"
+  value       = "${azurerm_api_management.apim1.id}/apis/${azurerm_api_management_api.unauth.name}"
+}
+
+output "fake_mcp_api_id" {
+  description = "API expected to be flagged azure-apim-mcp-missing-auth (MCP-shaped, no auth)"
+  value       = "${azurerm_api_management.apim1.id}/apis/${azurerm_api_management_api.fake_mcp.name}"
+}
+
+output "jwt_api_id" {
+  description = "API protected by API-scope validate-jwt — must NOT be flagged"
+  value       = "${azurerm_api_management.apim1.id}/apis/${azurerm_api_management_api.jwt.name}"
+}
+
+output "ipfilter_api_id" {
+  description = "API protected by API-scope ip-filter — must NOT be flagged"
+  value       = "${azurerm_api_management.apim1.id}/apis/${azurerm_api_management_api.ipfilter.name}"
+}
+
+output "checkheader_api_id" {
+  description = "API protected by API-scope check-header — must NOT be flagged"
+  value       = "${azurerm_api_management.apim1.id}/apis/${azurerm_api_management_api.checkheader.name}"
+}
+
+output "product_auth_api_id" {
+  description = "API protected by product-scope JWT + subscription-required — must NOT be flagged"
+  value       = "${azurerm_api_management.apim1.id}/apis/${azurerm_api_management_api.product_auth.name}"
+}
+
+output "inherits_auth_api_id" {
+  description = "API on apim2 inheriting service-scope validate-jwt — must NOT be flagged"
+  value       = "${azurerm_api_management.apim2.id}/apis/${azurerm_api_management_api.inherits_auth.name}"
+}
+
+output "public_backend_name" {
+  description = "APIM backend pointing at the public App Service — expected azure-apim-backend-direct-access High"
+  value       = azurerm_api_management_backend.public_app.name
+}
+
+output "public_backend_url" {
+  description = "URL of the APIM backend pointing at the public App Service"
+  value       = azurerm_api_management_backend.public_app.url
 }
