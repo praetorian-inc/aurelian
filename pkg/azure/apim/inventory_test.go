@@ -208,11 +208,33 @@ func TestIsMCPServer(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "deprecated single /message endpoint",
+			name: "deprecated SSE pair using singular /message",
 			operations: []OperationInventoryItem{
+				{URLTemplate: "/sse"},
 				{URLTemplate: "/message"},
 			},
 			want: true,
+		},
+		{
+			name: "lone /messages does NOT match — ambiguous, could be a regular API",
+			operations: []OperationInventoryItem{
+				{URLTemplate: "/messages"},
+			},
+			want: false,
+		},
+		{
+			name: "lone /sse does NOT match — ambiguous, could be live-update SSE",
+			operations: []OperationInventoryItem{
+				{URLTemplate: "/sse"},
+			},
+			want: false,
+		},
+		{
+			name: "lone /message does NOT match",
+			operations: []OperationInventoryItem{
+				{URLTemplate: "/message"},
+			},
+			want: false,
 		},
 		{
 			name: "case-insensitive match",

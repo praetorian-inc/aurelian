@@ -35,26 +35,60 @@ type APIVerdict struct {
 	AuthScope            string // "service" | "api" | "product" | ""
 }
 
-// mcpOperationSuffixes is the set of URL-template trailing segments that
-// identify an API as a Model Context Protocol server. MCP's Streamable-HTTP
-// transport uses /mcp, and the (deprecated) SSE transport uses /sse plus
-// either /messages (current) or /message (early drafts).
-var mcpOperationSuffixes = []string{"/mcp", "/sse", "/messages", "/message"}
+// mcpStreamableSuffix identifies the Streamable-HTTP MCP transport: a single
+// `/mcp` operation is sufficient evidence on its own.
+const mcpStreamableSuffix = "/mcp"
 
-// IsMCPServer reports whether any operation's URL template identifies the API
-// as an MCP server. Checks are case-insensitive, ignore trailing slashes, and
-// match either the full template or a trailing path segment, so "/mcp",
-// "/mcp/", and "/v1/mcp" all count.
-func IsMCPServer(operations []OperationInventoryItem) bool {
-	for _, op := range operations {
-		tmpl := strings.TrimRight(strings.ToLower(op.URLTemplate), "/")
-		for _, suffix := range mcpOperationSuffixes {
-			if tmpl == suffix || strings.HasSuffix(tmpl, suffix) {
-				return true
-			}
+// mcpSSEEventSuffixes identifies the server-side event-stream half of the MCP
+// SSE transport. /sse alone is ambiguous (many APIs serve SSE for live
+// updates), so we require the message-channel half too — see mcpSSEMessageSuffixes.
+var mcpSSEEventSuffixes = []string{"/sse"}
+
+// mcpSSEMessageSuffixes identifies the client-side message-channel half of
+// the MCP SSE transport. /messages alone is ambiguous (any messaging app may
+// expose `POST /messages`), so it's only counted when paired with /sse.
+// /message (singular) appeared in early MCP drafts.
+var mcpSSEMessageSuffixes = []string{"/messages", "/message"}
+
+// matchesSuffix reports whether the (lowercased, trailing-slash-trimmed) URL
+// template matches any of the given suffixes, either equal to or as a path-
+// suffix.
+func matchesSuffix(tmpl string, suffixes []string) bool {
+	for _, s := range suffixes {
+		if tmpl == s || strings.HasSuffix(tmpl, s) {
+			return true
 		}
 	}
 	return false
+}
+
+// IsMCPServer reports whether the API's operations identify it as a Model
+// Context Protocol server.
+//
+// Two transports count:
+//   - Streamable HTTP — a single operation matching `/mcp` is sufficient.
+//   - SSE (deprecated) — requires BOTH a `/sse` operation AND a
+//     `/messages` (or `/message`) operation. Either alone is ambiguous;
+//     ordinary REST APIs often expose `POST /messages` and SSE-based live-
+//     update endpoints are common, so a lone match would misclassify them.
+//
+// Matches are case-insensitive and ignore trailing slashes.
+func IsMCPServer(operations []OperationInventoryItem) bool {
+	hasSSEEvent := false
+	hasSSEMessage := false
+	for _, op := range operations {
+		tmpl := strings.TrimRight(strings.ToLower(op.URLTemplate), "/")
+		if tmpl == mcpStreamableSuffix || strings.HasSuffix(tmpl, mcpStreamableSuffix) {
+			return true
+		}
+		if matchesSuffix(tmpl, mcpSSEEventSuffixes) {
+			hasSSEEvent = true
+		}
+		if matchesSuffix(tmpl, mcpSSEMessageSuffixes) {
+			hasSSEMessage = true
+		}
+	}
+	return hasSSEEvent && hasSSEMessage
 }
 
 // ClassifyAPI returns an APIVerdict summarizing the given API's auth posture.
