@@ -175,10 +175,15 @@ func lookupAppServiceExposure(ctx context.Context, client *armresourcegraph.Clie
 	// Escape backslashes BEFORE single quotes — Kusto's `\` escapes the next
 	// character, so an FQDN ending in `\` (attacker-controlled backend URL)
 	// would otherwise escape the closing quote and break the query.
+	//
+	// Includes deployment slots (microsoft.web/sites/slots): slot hostnames
+	// like `<app>-staging.azurewebsites.net` live on the slot resource, not
+	// the parent site, so a query restricted to microsoft.web/sites would
+	// miss them and downgrade APIM-backed slot URLs to backend-unverified.
 	escaped := strings.ReplaceAll(strings.ToLower(fqdn), `\`, `\\`)
 	escaped = strings.ReplaceAll(escaped, "'", "''")
 	query := fmt.Sprintf(`resources
-| where type =~ 'microsoft.web/sites'
+| where type =~ 'microsoft.web/sites' or type =~ 'microsoft.web/sites/slots'
 | extend defaultHostName = tolower(tostring(properties.defaultHostName))
 | extend hostNames = properties.enabledHostNames
 | mv-expand hostName = hostNames

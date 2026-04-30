@@ -16,7 +16,6 @@ const (
 	BackendAppServiceEnvironment BackendCategory = "azure-app-service-environment"
 	BackendAPIM                  BackendCategory = "azure-apim"
 	BackendGCPCloudRun           BackendCategory = "gcp-cloud-run"
-	BackendOpenShift             BackendCategory = "openshift"
 	BackendOther                 BackendCategory = "other"
 )
 
@@ -38,18 +37,14 @@ func CategorizeBackendURL(rawURL string) (BackendCategory, string) {
 		return BackendAPIM, host
 	case strings.HasSuffix(host, ".a.run.app") || strings.HasSuffix(host, ".run.app"):
 		return BackendGCPCloudRun, host
-	case openShiftRoutePattern(host):
-		return BackendOpenShift, host
 	default:
+		// Note: an earlier revision had an OpenShift category gated on
+		// strings.Contains(host, ".apps."). That heuristic matched legitimate
+		// non-OpenShift hostnames (e.g., web.apps.contoso.com), so it was
+		// removed. OpenShift / non-Azure hosts fall through to "other" and
+		// still emit azure-apim-backend-unverified for human triage.
 		return BackendOther, host
 	}
-}
-
-// openShiftRoutePattern detects the default-route shape of an OpenShift
-// application: "<app>.apps.<cluster-domain>". This covers ARO clusters like
-// "apps.arocorpitdev.az.micron.com".
-func openShiftRoutePattern(host string) bool {
-	return strings.Contains(host, ".apps.")
 }
 
 func extractHost(raw string) string {
