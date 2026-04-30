@@ -1,6 +1,9 @@
 package apim
 
-import "testing"
+import (
+	"net/url"
+	"testing"
+)
 
 func TestParseAPIListPage(t *testing.T) {
 	cases := []struct {
@@ -123,6 +126,60 @@ func TestParseAPIListPage(t *testing.T) {
 				if len(got.Protocols) != len(want.Protocols) {
 					t.Errorf("item[%d] protocols = %v, want %v", i, got.Protocols, want.Protocols)
 				}
+			}
+		})
+	}
+}
+
+func TestValidateARMURL(t *testing.T) {
+	base, err := url.Parse("https://management.azure.com/subscriptions/abc/...?api-version=2024-06-01-preview")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		raw     string
+		wantErr bool
+	}{
+		{
+			name: "matching ARM host accepted",
+			raw:  "https://management.azure.com/subscriptions/abc/resourceGroups/r/providers/Microsoft.ApiManagement/service/s/apis?api-version=2024-06-01-preview&$skiptoken=tok",
+		},
+		{
+			name: "matching host different case accepted",
+			raw:  "https://Management.Azure.Com/subscriptions/abc/resourceGroups/r/providers/Microsoft.ApiManagement/service/s/apis?api-version=2024-06-01-preview",
+		},
+		{
+			name:    "foreign host rejected",
+			raw:     "https://attacker.example.com/exfil",
+			wantErr: true,
+		},
+		{
+			name:    "subdomain attack rejected",
+			raw:     "https://management.azure.com.attacker.example/subscriptions/x",
+			wantErr: true,
+		},
+		{
+			name:    "non-https rejected",
+			raw:     "http://management.azure.com/subscriptions/abc",
+			wantErr: true,
+		},
+		{
+			name:    "malformed URL rejected",
+			raw:     "://not-a-url",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateARMURL(tc.raw, base)
+			if tc.wantErr && err == nil {
+				t.Fatalf("expected error for %q, got nil", tc.raw)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error for %q: %v", tc.raw, err)
 			}
 		})
 	}
