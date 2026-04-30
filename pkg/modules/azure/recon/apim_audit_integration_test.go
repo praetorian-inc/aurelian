@@ -81,6 +81,24 @@ func TestAzureAPIMAudit(t *testing.T) {
 	apim1ID := fixture.Output("apim1_id")
 	apim2ID := fixture.Output("apim2_id")
 
+	// Fixture-scoped views — risks that target this fixture's APIM services
+	// only. The subscription may contain other APIM services unrelated to
+	// the fixture, and the module correctly emits risks against those too.
+	// Count assertions must filter to the fixture, while invariants
+	// (valid names, no duplicates) apply to every risk the module produces.
+	fixtureScoped := func(target string) bool {
+		return strings.EqualFold(target, apim1ID) || strings.EqualFold(target, apim2ID)
+	}
+	var fixtureRisks []riskWithCtx
+	fixtureByName := make(map[string][]riskWithCtx)
+	for _, rc := range allRisks {
+		if !fixtureScoped(rc.Risk.ImpactedResourceID) {
+			continue
+		}
+		fixtureRisks = append(fixtureRisks, rc)
+		fixtureByName[rc.Risk.Name] = append(fixtureByName[rc.Risk.Name], rc)
+	}
+
 	// ================================================================
 	// Positive: missing-auth check
 	// ================================================================
@@ -173,15 +191,16 @@ func TestAzureAPIMAudit(t *testing.T) {
 	// ================================================================
 	// Cross-finding invariants
 	// ================================================================
-	t.Run("missing-auth check produced exactly the two expected positives", func(t *testing.T) {
-		total := len(byName["azure-apim-missing-auth"]) + len(byName["azure-apim-mcp-missing-auth"])
+	t.Run("missing-auth check produced exactly the two expected positives within the fixture", func(t *testing.T) {
+		total := len(fixtureByName["azure-apim-missing-auth"]) + len(fixtureByName["azure-apim-mcp-missing-auth"])
 		assert.Equal(t, 2, total,
-			"expected 2 missing-auth risks (unauth + mcp), got %d (names: missing-auth=%d, mcp=%d)",
-			total, len(byName["azure-apim-missing-auth"]), len(byName["azure-apim-mcp-missing-auth"]))
+			"expected 2 missing-auth risks (unauth + mcp) on the fixture APIMs, got %d (names: missing-auth=%d, mcp=%d)",
+			total, len(fixtureByName["azure-apim-missing-auth"]), len(fixtureByName["azure-apim-mcp-missing-auth"]))
 	})
 
-	t.Run("backend check produced at least one direct-access positive", func(t *testing.T) {
-		assert.GreaterOrEqual(t, len(byName["azure-apim-backend-direct-access"]), 1)
+	t.Run("backend check produced exactly one direct-access positive within the fixture", func(t *testing.T) {
+		assert.Equal(t, 1, len(fixtureByName["azure-apim-backend-direct-access"]),
+			"the fixture provisions one public App Service backend; expected exactly one direct-access risk")
 	})
 
 	t.Run("apim2 produced no risks (only API inherits auth, no backends)", func(t *testing.T) {
