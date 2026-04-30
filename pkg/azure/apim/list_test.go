@@ -2,6 +2,7 @@ package apim
 
 import (
 	"net/url"
+	"reflect"
 	"testing"
 )
 
@@ -123,7 +124,7 @@ func TestParseAPIListPage(t *testing.T) {
 					got.IsMCPServer != want.IsMCPServer {
 					t.Errorf("item[%d] = %+v, want %+v", i, got, want)
 				}
-				if len(got.Protocols) != len(want.Protocols) {
+				if !reflect.DeepEqual(got.Protocols, want.Protocols) {
 					t.Errorf("item[%d] protocols = %v, want %v", i, got.Protocols, want.Protocols)
 				}
 			}

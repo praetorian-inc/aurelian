@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -14,6 +15,10 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
+
+// listAPIsRequestTimeout caps each ARM list-APIs request so a hung control
+// plane can't tie up a worker indefinitely under context-less callers.
+const listAPIsRequestTimeout = 30 * time.Second
 
 // APIListAPIVersion is the minimum ARM api-version required to enumerate
 // native MCP-type APIs. Older versions (2021-08-01, 2023-05-01-preview)
@@ -79,7 +84,7 @@ func ListAPIs(ctx context.Context, cred azcore.TokenCredential, subscriptionID, 
 		return nil, fmt.Errorf("acquire ARM token: %w", err)
 	}
 
-	client := http.DefaultClient
+	client := &http.Client{Timeout: listAPIsRequestTimeout}
 	var all []APIInventoryItem
 	next := base
 	paginator := ratelimit.NewAzurePaginator()
