@@ -3,6 +3,7 @@ package recon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -19,9 +20,18 @@ import (
 // missing authentication controls at the service, product, or API scope. Emits
 // azure-apim-missing-auth (or azure-apim-mcp-missing-auth for MCP servers) per
 // unauthenticated API.
+//
+// Permission-denied (401/403) reads at any scope mean the auth posture is
+// unknown, not absent — those APIs are skipped to avoid false-positive
+// Critical findings, with a warning logged so the operator notices the gap.
 func (m *AzureAPIMAuditModule) checkMissingAuth(c *apimCheckContext, out *pipeline.P[model.AurelianModel]) {
 	t := c.target
-	servicePolicy := fetchServicePolicyAuth(c.ctx, c.factory, t)
+	servicePolicy, err := fetchServicePolicyAuth(c.ctx, c.factory, t)
+	if err != nil {
+		slog.Warn("skipping APIM service — service policy unreadable",
+			"service", t.ResourceID, "error", err)
+		return
+	}
 
 	apis, err := apim.ListAPIs(c.ctx, m.AzureCredential, t.SubscriptionID, t.ResourceGroup, t.ServiceName)
 	if err != nil {
@@ -31,8 +41,22 @@ func (m *AzureAPIMAuditModule) checkMissingAuth(c *apimCheckContext, out *pipeli
 	}
 
 	for _, api := range apis {
-		api.APIPolicyAuth = fetchAPIPolicyAuth(c.ctx, c.factory, t, api.APIID)
-		api.ProductPolicyAuths = fetchProductPolicyAuths(c.ctx, c.factory, t, api.APIID)
+		apiPolicy, err := fetchAPIPolicyAuth(c.ctx, c.factory, t, api.APIID)
+		if err != nil {
+			slog.Warn("skipping API — API-scope policy unreadable",
+				"service", t.ResourceID, "api", api.APIID, "error", err)
+			continue
+		}
+		api.APIPolicyAuth = apiPolicy
+
+		productPolicies, err := fetchProductPolicyAuths(c.ctx, c.factory, t, api.APIID)
+		if err != nil {
+			slog.Warn("skipping API — product-scope policy unreadable",
+				"service", t.ResourceID, "api", api.APIID, "error", err)
+			continue
+		}
+		api.ProductPolicyAuths = productPolicies
+
 		if !api.IsMCPServer {
 			// Native MCP-type APIs have no classic operations (their tools are a
 			// different sub-resource). Skip the call for MCP; fall back to
@@ -53,18 +77,18 @@ func (m *AzureAPIMAuditModule) checkMissingAuth(c *apimCheckContext, out *pipeli
 
 // fetchServicePolicyAuth returns the auth posture derived from the APIM
 // service's global inbound policy. A 404 (no custom policy at all) yields
-// an empty posture — the service is the top of the inheritance chain so
-// HasBase is moot here. Forbidden / unauthorized errors are also treated as
-// "no auth" since we can't confirm otherwise.
-func fetchServicePolicyAuth(ctx context.Context, factory *armapimanagement.ClientFactory, t apimServiceTarget) apim.AuthPosture {
+// an empty posture — service is the top of the inheritance chain so HasBase
+// is moot here. Permission-denied or other errors are propagated; the caller
+// must skip emission for the affected API to avoid false-positive findings.
+func fetchServicePolicyAuth(ctx context.Context, factory *armapimanagement.ClientFactory, t apimServiceTarget) (apim.AuthPosture, error) {
 	resp, err := factory.NewPolicyClient().Get(ctx, t.ResourceGroup, t.ServiceName, armapimanagement.PolicyIDNamePolicy, nil)
 	if err != nil {
-		if !isNotFound(err) {
-			slog.Warn("could not fetch APIM service policy", "service", t.ResourceID, "error", err)
+		if isPolicyNotConfigured(err) {
+			return apim.AuthPosture{}, nil
 		}
-		return apim.AuthPosture{}
+		return apim.AuthPosture{}, err
 	}
-	return apim.ParseInboundAuth(policyValue(resp.Properties), nil)
+	return apim.ParseInboundAuth(policyValue(resp.Properties), nil), nil
 }
 
 // listAPIOperations returns every operation defined on an API. URL templates
@@ -101,7 +125,7 @@ func listAPIOperations(ctx context.Context, factory *armapimanagement.ClientFact
 		}
 		return pager.More(), nil
 	})
-	if err != nil && !isNotFound(err) {
+	if err != nil && !isPolicyNotConfigured(err) {
 		slog.Warn("could not list API operations", "service", t.ResourceID, "api", apiID, "error", err)
 	}
 	return ops
@@ -109,44 +133,46 @@ func listAPIOperations(ctx context.Context, factory *armapimanagement.ClientFact
 
 // fetchAPIPolicyAuth returns the auth posture for the API's own inbound
 // policy. A 404 means the API has no custom policy, which APIM treats as
-// implicit `<base />` — return InheritedFromParent so service-scope auth
-// continues to apply through the chain.
-func fetchAPIPolicyAuth(ctx context.Context, factory *armapimanagement.ClientFactory, t apimServiceTarget, apiID string) apim.AuthPosture {
+// implicit `<base />` — InheritedFromParent so service-scope auth continues
+// to apply through the chain. Permission-denied or other errors are
+// propagated; the caller must skip emission for the affected API to avoid
+// false-positive findings.
+func fetchAPIPolicyAuth(ctx context.Context, factory *armapimanagement.ClientFactory, t apimServiceTarget, apiID string) (apim.AuthPosture, error) {
 	resp, err := factory.NewAPIPolicyClient().Get(ctx, t.ResourceGroup, t.ServiceName, apiID, armapimanagement.PolicyIDNamePolicy, nil)
 	if err != nil {
-		if isNotFound(err) {
-			return apim.InheritedFromParent()
+		if isPolicyNotConfigured(err) {
+			return apim.InheritedFromParent(), nil
 		}
-		slog.Warn("could not fetch API policy", "service", t.ResourceID, "api", apiID, "error", err)
-		return apim.AuthPosture{}
+		return apim.AuthPosture{}, err
 	}
-	return apim.ParseInboundAuth(policyValue(resp.Properties), nil)
+	return apim.ParseInboundAuth(policyValue(resp.Properties), nil), nil
 }
 
-func fetchProductPolicyAuths(ctx context.Context, factory *armapimanagement.ClientFactory, t apimServiceTarget, apiID string) []apim.AuthPosture {
+// fetchProductPolicyAuths returns the AuthPosture for each product the API is
+// associated with. A 404 on a product policy means the product has no custom
+// policy → implicit `<base />` inheritance from service. Permission-denied
+// (or other) errors on any product policy are returned as a hard error: we
+// can't confirm the product authenticates, and silently treating it as "no
+// auth" would produce a false-positive Critical finding.
+func fetchProductPolicyAuths(ctx context.Context, factory *armapimanagement.ClientFactory, t apimServiceTarget, apiID string) ([]apim.AuthPosture, error) {
 	productIDs, err := listAPIProducts(ctx, factory, t, apiID)
 	if err != nil {
-		slog.Warn("could not list products for API", "service", t.ResourceID, "api", apiID, "error", err)
-		return nil
+		return nil, err
 	}
 	postures := make([]apim.AuthPosture, 0, len(productIDs))
 	productClient := factory.NewProductPolicyClient()
 	for _, productID := range productIDs {
 		resp, err := productClient.Get(ctx, t.ResourceGroup, t.ServiceName, productID, armapimanagement.PolicyIDNamePolicy, nil)
 		if err != nil {
-			if isNotFound(err) {
-				// Product has no custom policy → implicit <base /> inheritance.
+			if isPolicyNotConfigured(err) {
 				postures = append(postures, apim.InheritedFromParent())
 				continue
 			}
-			slog.Warn("could not fetch product policy",
-				"service", t.ResourceID, "product", productID, "error", err)
-			postures = append(postures, apim.AuthPosture{})
-			continue
+			return nil, fmt.Errorf("product %q: %w", productID, err)
 		}
 		postures = append(postures, apim.ParseInboundAuth(policyValue(resp.Properties), nil))
 	}
-	return postures
+	return postures, nil
 }
 
 func listAPIProducts(ctx context.Context, factory *armapimanagement.ClientFactory, t apimServiceTarget, apiID string) ([]string, error) {

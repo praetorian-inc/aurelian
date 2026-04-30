@@ -119,14 +119,24 @@ func TestParseInboundAuth(t *testing.T) {
 			want:     AuthPosture{},
 		},
 		{
-			name: "include-fragment with unknown id is conservatively treated as auth",
+			name: "include-fragment with unknown id does NOT count as auth",
 			policy: `<policies>
   <inbound>
     <include-fragment fragment-id="unknown-fragment" />
   </inbound>
 </policies>`,
 			fragAuth: map[string]bool{},
-			want:     AuthPosture{IncludeFragment: true},
+			want:     AuthPosture{},
+		},
+		{
+			name: "include-fragment with nil fragment map does NOT count as auth",
+			policy: `<policies>
+  <inbound>
+    <include-fragment fragment-id="anything" />
+  </inbound>
+</policies>`,
+			fragAuth: nil,
+			want:     AuthPosture{},
 		},
 		{
 			name: "combined auth + base counts each present element",

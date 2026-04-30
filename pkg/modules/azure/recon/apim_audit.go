@@ -129,9 +129,13 @@ func (m *AzureAPIMAuditModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	targets := pipeline.New[apimServiceTarget]()
 	pipeline.Pipe(apimResources, toAPIMTarget, targets)
 
-	checks := []apimCheck{
-		m.checkMissingAuth,
-		m.checkBackendDirectAccess,
+	checks := []apimCheck{m.checkMissingAuth}
+	if argClient != nil {
+		// Backend direct-access correlation needs ARG to look up App Service
+		// reachability; if ARG init failed we skip the check entirely (logged
+		// above) rather than emit Low backend-unverified findings for every
+		// Azure App Service backend.
+		checks = append(checks, m.checkBackendDirectAccess)
 	}
 
 	pipeline.Pipe(targets, m.runChecks(ctx, argClient, checks), out, &pipeline.PipeOpts{
@@ -186,20 +190,23 @@ func policyValue(props *armapimanagement.PolicyContractProperties) string {
 	return *props.Value
 }
 
-// isNotFound reports whether err is an Azure ResponseError with a 404 / 403 /
-// 401 status code. APIM returns 404 when a policy has never been set at a
-// scope (which is exactly what "no auth" looks like), and 403/401 for
-// insufficient permissions.
-func isNotFound(err error) bool {
+// isPolicyNotConfigured reports whether err corresponds to a 404 from ARM,
+// which APIM uses to indicate "no custom policy has been set at this scope".
+// That is semantically the same as `<inbound><base /></inbound>` — the parent
+// scope's policies run unmodified.
+//
+// Permission errors (401/403) are intentionally NOT treated as "not configured"
+// here — silently downgrading them to "no auth" produces false-positive
+// missing-auth findings when the auditor lacks read on a policy scope. Use
+// isPermissionDenied to handle those separately.
+func isPolicyNotConfigured(err error) bool {
 	if err == nil {
 		return false
 	}
 	var respErr *azcore.ResponseError
 	if errors.As(err, &respErr) {
-		switch respErr.StatusCode {
-		case http.StatusNotFound, http.StatusForbidden, http.StatusUnauthorized:
-			return true
-		}
+		return respErr.StatusCode == http.StatusNotFound
 	}
 	return false
 }
+

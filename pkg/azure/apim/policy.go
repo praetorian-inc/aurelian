@@ -15,9 +15,12 @@ import (
 // control on their own.
 //
 // IncludeFragment is true when an <include-fragment> element is present and
-// the referenced fragment itself contains an auth primitive. Fragments whose
-// bodies aren't resolvable are treated as authenticating (conservative: do not
-// flag the API as unauthenticated when we can't see the fragment).
+// the referenced fragment is known (via fragmentAuth) to contain an auth
+// primitive. Unknown fragments are NOT treated as authenticating — that
+// would produce a silent false-negative on missing-auth detection for any
+// policy that includes a logging / header-transform / CORS fragment, which
+// is the common case. Pre-indexing fragments via the policy-fragment client
+// is a follow-up (TODO) so unknown fragments can be classified correctly.
 //
 // HasBase records whether the inbound section contains <base />. APIM's policy
 // hierarchy (Global → Product → API → Operation) only chains together when
@@ -113,8 +116,10 @@ func inspectElement(t xml.StartElement, posture *AuthPosture, fragmentAuth map[s
 		if id == "" {
 			return
 		}
-		hasAuth, known := fragmentAuth[id]
-		if !known || hasAuth {
+		// Only count the fragment if we have indexed its body and confirmed
+		// it contains an auth primitive. Unknown fragments default to "no
+		// auth contribution" — see IncludeFragment doc above.
+		if hasAuth, known := fragmentAuth[id]; known && hasAuth {
 			posture.IncludeFragment = true
 		}
 	}
