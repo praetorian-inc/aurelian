@@ -111,6 +111,14 @@ func classifyAndEmitBackend(
 
 	switch cat {
 	case apim.BackendAppService, apim.BackendAppServiceEnvironment:
+		if argClient == nil {
+			// Without ARG we can't correlate the FQDN to an App Service to
+			// read publicNetworkAccess / IP restrictions. Emitting Low
+			// per-backend in this state would create N findings of pure
+			// noise; better to skip silently and let the operator notice
+			// the warning logged once at module start.
+			return
+		}
 		exposure := lookupAppServiceExposure(ctx, argClient, fqdn)
 		payload.CorrelatedResourceID = exposure.ResourceID
 		payload.PublicNetworkAccess = exposure.PublicNetworkAccess
@@ -164,7 +172,11 @@ func lookupAppServiceExposure(ctx context.Context, client *armresourcegraph.Clie
 		return appServiceExposure{}
 	}
 	// ARG lowercases hostnames in defaultHostName; we search both fields.
-	escaped := strings.ReplaceAll(strings.ToLower(fqdn), "'", "''")
+	// Escape backslashes BEFORE single quotes — Kusto's `\` escapes the next
+	// character, so an FQDN ending in `\` (attacker-controlled backend URL)
+	// would otherwise escape the closing quote and break the query.
+	escaped := strings.ReplaceAll(strings.ToLower(fqdn), `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, "'", "''")
 	query := fmt.Sprintf(`resources
 | where type =~ 'microsoft.web/sites'
 | extend defaultHostName = tolower(tostring(properties.defaultHostName))
