@@ -19,13 +19,31 @@ func TestClassifyAPI_UnauthenticatedWhenAllScopesEmpty(t *testing.T) {
 }
 
 func TestClassifyAPI_ServicePolicyAuthPropagates(t *testing.T) {
-	api := APIInventoryItem{APIID: "a"}
+	// API has no own policy → APIPolicyAuth represents "inherits from parent".
+	api := APIInventoryItem{APIID: "a", APIPolicyAuth: InheritedFromParent()}
 	v := ClassifyAPI(api, AuthPosture{ValidateJWT: true})
 	if !v.IsAuthenticated {
-		t.Fatal("expected authenticated when service policy has auth")
+		t.Fatal("expected authenticated when service policy has auth and API inherits via <base />")
 	}
 	if v.AuthScope != "service" {
 		t.Fatalf("AuthScope = %q, want %q", v.AuthScope, "service")
+	}
+}
+
+func TestClassifyAPI_ServicePolicyBypassedWhenAPILacksBase(t *testing.T) {
+	// API has its own custom inbound policy, but that policy doesn't include
+	// <base />. Service-scope <validate-jwt> never executes — even though the
+	// service has auth configured, the API is effectively unauthenticated.
+	api := APIInventoryItem{
+		APIID:         "a",
+		APIPolicyAuth: AuthPosture{}, // custom policy, no auth elements, no <base />
+	}
+	v := ClassifyAPI(api, AuthPosture{ValidateJWT: true})
+	if v.IsAuthenticated {
+		t.Fatal("service-scope auth must NOT propagate when API policy lacks <base />")
+	}
+	if v.AuthScope != "" {
+		t.Fatalf("AuthScope = %q, want empty (no scope authenticates)", v.AuthScope)
 	}
 }
 
@@ -40,18 +58,86 @@ func TestClassifyAPI_APIPolicyAuth(t *testing.T) {
 	}
 }
 
-func TestClassifyAPI_ProductPolicyAuthRequiresSubscriptionRequired(t *testing.T) {
+func TestClassifyAPI_ProductPolicyAuthRequiresAllProductsAuthenticated(t *testing.T) {
+	// API is in two products; both enforce JWT. With SubscriptionRequired AND
+	// APIPolicyAuth.HasBase the product chain runs. Because every product
+	// authenticates, the API is authenticated.
 	api := APIInventoryItem{
 		APIID:                "a",
 		SubscriptionRequired: true,
-		ProductPolicyAuths:   []AuthPosture{{}, {ValidateAzureADToken: true}},
+		APIPolicyAuth:        InheritedFromParent(),
+		ProductPolicyAuths: []AuthPosture{
+			{ValidateJWT: true},
+			{ValidateAzureADToken: true},
+		},
 	}
 	v := ClassifyAPI(api, AuthPosture{})
 	if !v.IsAuthenticated {
-		t.Fatal("expected authenticated when subscription-required is true and any product has auth")
+		t.Fatal("expected authenticated when every product enforces auth")
 	}
 	if v.AuthScope != "product" {
 		t.Fatalf("AuthScope = %q, want %q", v.AuthScope, "product")
+	}
+}
+
+func TestClassifyAPI_ProductPolicyAuthRejectsAnyOpenProduct(t *testing.T) {
+	// One product has no auth and no <base />. An attacker subscribes to
+	// that product to bypass the auth on the other product — so the API is
+	// effectively unauthenticated even though product B enforces JWT.
+	api := APIInventoryItem{
+		APIID:                "a",
+		SubscriptionRequired: true,
+		APIPolicyAuth:        InheritedFromParent(),
+		ProductPolicyAuths: []AuthPosture{
+			{},                         // weak product: no own auth, no inheritance
+			{ValidateJWT: true},        // strong product
+		},
+	}
+	v := ClassifyAPI(api, AuthPosture{})
+	if v.IsAuthenticated {
+		t.Fatal("API must not be classified authenticated when any associated product is open")
+	}
+}
+
+func TestClassifyAPI_ProductInheritsServiceAuthViaBase(t *testing.T) {
+	// Product B has no own auth but does include <base /> — so it inherits
+	// service-scope JWT. Product A has its own JWT. All products authenticate.
+	api := APIInventoryItem{
+		APIID:                "a",
+		SubscriptionRequired: true,
+		APIPolicyAuth:        InheritedFromParent(),
+		ProductPolicyAuths: []AuthPosture{
+			{ValidateJWT: true},
+			{HasBase: true}, // inherits service
+		},
+	}
+	v := ClassifyAPI(api, AuthPosture{ValidateJWT: true})
+	if !v.IsAuthenticated {
+		t.Fatal("expected authenticated when products either own auth or inherit via base")
+	}
+	// AuthScope should be 'service' in this case because service auth applies
+	// directly to the API too (api.HasBase + service.HasAuth).
+	if v.AuthScope != "service" {
+		t.Fatalf("AuthScope = %q, want %q", v.AuthScope, "service")
+	}
+}
+
+func TestClassifyAPI_ProductBaseWithoutServiceAuthDoesNotInherit(t *testing.T) {
+	// Product B has <base /> but service has no auth. Product B does not
+	// effectively authenticate. Product A has own auth. The weak product
+	// breaks the chain.
+	api := APIInventoryItem{
+		APIID:                "a",
+		SubscriptionRequired: true,
+		APIPolicyAuth:        InheritedFromParent(),
+		ProductPolicyAuths: []AuthPosture{
+			{ValidateJWT: true},
+			{HasBase: true}, // inherits ... but service has nothing to inherit
+		},
+	}
+	v := ClassifyAPI(api, AuthPosture{}) // service has no auth
+	if v.IsAuthenticated {
+		t.Fatal("product with <base /> must not authenticate when service has no auth")
 	}
 }
 
@@ -143,6 +229,20 @@ func TestIsMCPServer(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "trailing slash is ignored",
+			operations: []OperationInventoryItem{
+				{URLTemplate: "/mcp/"},
+			},
+			want: true,
+		},
+		{
+			name: "trailing slash on nested MCP path",
+			operations: []OperationInventoryItem{
+				{URLTemplate: "/v1/mcp/"},
+			},
+			want: true,
+		},
+		{
 			name: "regular REST API operations do not match",
 			operations: []OperationInventoryItem{
 				{URLTemplate: "/users/{id}"},
@@ -170,12 +270,14 @@ func TestIsMCPServer(t *testing.T) {
 }
 
 func TestClassifyAPI_ServiceScopePreferredOverAPIScope(t *testing.T) {
+	// Both service and API authenticate, AND the API includes <base /> so
+	// service auth actually runs. Service is reported as the outermost gate.
 	api := APIInventoryItem{
 		APIID:         "a",
-		APIPolicyAuth: AuthPosture{ValidateJWT: true},
+		APIPolicyAuth: AuthPosture{ValidateJWT: true, HasBase: true},
 	}
 	v := ClassifyAPI(api, AuthPosture{ValidateJWT: true})
 	if v.AuthScope != "service" {
-		t.Fatalf("expected service scope to win when both authenticate, got %q", v.AuthScope)
+		t.Fatalf("expected service scope to win when both authenticate and API has <base />, got %q", v.AuthScope)
 	}
 }

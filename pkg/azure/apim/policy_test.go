@@ -90,13 +90,13 @@ func TestParseInboundAuth(t *testing.T) {
 			want: AuthPosture{ValidateJWT: true},
 		},
 		{
-			name: "only <base /> — nothing authenticates here",
+			name: "only <base /> — no auth element, but HasBase=true so parent runs",
 			policy: `<policies>
   <inbound>
     <base />
   </inbound>
 </policies>`,
-			want: AuthPosture{},
+			want: AuthPosture{HasBase: true},
 		},
 		{
 			name: "include-fragment referencing auth fragment",
@@ -137,7 +137,25 @@ func TestParseInboundAuth(t *testing.T) {
     <ip-filter action="allow"><address>10.0.0.0/8</address></ip-filter>
   </inbound>
 </policies>`,
-			want: AuthPosture{ValidateJWT: true, IPFilter: true},
+			want: AuthPosture{ValidateJWT: true, IPFilter: true, HasBase: true},
+		},
+		{
+			name: "auth without <base /> — auth is detected but inheritance is broken",
+			policy: `<policies>
+  <inbound>
+    <validate-jwt header-name="Authorization" />
+  </inbound>
+</policies>`,
+			want: AuthPosture{ValidateJWT: true},
+		},
+		{
+			name: "<base /> outside inbound is ignored (only inbound base counts)",
+			policy: `<policies>
+  <inbound></inbound>
+  <backend><base /></backend>
+  <outbound><base /></outbound>
+</policies>`,
+			want: AuthPosture{},
 		},
 		{
 			name:   "malformed XML is treated as empty (defensive)",
@@ -158,7 +176,7 @@ func TestParseInboundAuth(t *testing.T) {
   </backend>
   <outbound><base /></outbound>
 </policies>`,
-			want: AuthPosture{},
+			want: AuthPosture{HasBase: true},
 		},
 	}
 

@@ -52,8 +52,10 @@ func (m *AzureAPIMAuditModule) checkMissingAuth(c *apimCheckContext, out *pipeli
 }
 
 // fetchServicePolicyAuth returns the auth posture derived from the APIM
-// service's global inbound policy. Missing / forbidden policies yield an
-// empty posture (treated as "no auth").
+// service's global inbound policy. A 404 (no custom policy at all) yields
+// an empty posture — the service is the top of the inheritance chain so
+// HasBase is moot here. Forbidden / unauthorized errors are also treated as
+// "no auth" since we can't confirm otherwise.
 func fetchServicePolicyAuth(ctx context.Context, factory *armapimanagement.ClientFactory, t apimServiceTarget) apim.AuthPosture {
 	resp, err := factory.NewPolicyClient().Get(ctx, t.ResourceGroup, t.ServiceName, armapimanagement.PolicyIDNamePolicy, nil)
 	if err != nil {
@@ -105,12 +107,17 @@ func listAPIOperations(ctx context.Context, factory *armapimanagement.ClientFact
 	return ops
 }
 
+// fetchAPIPolicyAuth returns the auth posture for the API's own inbound
+// policy. A 404 means the API has no custom policy, which APIM treats as
+// implicit `<base />` — return InheritedFromParent so service-scope auth
+// continues to apply through the chain.
 func fetchAPIPolicyAuth(ctx context.Context, factory *armapimanagement.ClientFactory, t apimServiceTarget, apiID string) apim.AuthPosture {
 	resp, err := factory.NewAPIPolicyClient().Get(ctx, t.ResourceGroup, t.ServiceName, apiID, armapimanagement.PolicyIDNamePolicy, nil)
 	if err != nil {
-		if !isNotFound(err) {
-			slog.Warn("could not fetch API policy", "service", t.ResourceID, "api", apiID, "error", err)
+		if isNotFound(err) {
+			return apim.InheritedFromParent()
 		}
+		slog.Warn("could not fetch API policy", "service", t.ResourceID, "api", apiID, "error", err)
 		return apim.AuthPosture{}
 	}
 	return apim.ParseInboundAuth(policyValue(resp.Properties), nil)
@@ -127,10 +134,13 @@ func fetchProductPolicyAuths(ctx context.Context, factory *armapimanagement.Clie
 	for _, productID := range productIDs {
 		resp, err := productClient.Get(ctx, t.ResourceGroup, t.ServiceName, productID, armapimanagement.PolicyIDNamePolicy, nil)
 		if err != nil {
-			if !isNotFound(err) {
-				slog.Warn("could not fetch product policy",
-					"service", t.ResourceID, "product", productID, "error", err)
+			if isNotFound(err) {
+				// Product has no custom policy → implicit <base /> inheritance.
+				postures = append(postures, apim.InheritedFromParent())
+				continue
 			}
+			slog.Warn("could not fetch product policy",
+				"service", t.ResourceID, "product", productID, "error", err)
 			postures = append(postures, apim.AuthPosture{})
 			continue
 		}

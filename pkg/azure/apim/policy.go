@@ -6,7 +6,8 @@ import (
 )
 
 // AuthPosture records which authentication-related elements appear inside an
-// APIM policy's <inbound> section.
+// APIM policy's <inbound> section, plus whether the inbound section calls the
+// parent scope via <base />.
 //
 // A check-header element counts only when the header it asserts is one of the
 // common authentication headers (Authorization, X-API-Key, etc.). Subscription
@@ -17,15 +18,23 @@ import (
 // the referenced fragment itself contains an auth primitive. Fragments whose
 // bodies aren't resolvable are treated as authenticating (conservative: do not
 // flag the API as unauthenticated when we can't see the fragment).
+//
+// HasBase records whether the inbound section contains <base />. APIM's policy
+// hierarchy (Global → Product → API → Operation) only chains together when
+// each child scope's inbound includes <base /> — without it, parent scopes are
+// bypassed. A scope with no custom policy at all is semantically equivalent to
+// `<inbound><base /></inbound>` and should be reported with HasBase=true.
 type AuthPosture struct {
 	ValidateJWT          bool
 	ValidateAzureADToken bool
 	CheckHeader          bool
 	IPFilter             bool
 	IncludeFragment      bool
+	HasBase              bool
 }
 
-// HasAuth reports whether any auth element was detected.
+// HasAuth reports whether any auth element was detected. HasBase is intentionally
+// excluded — calling the parent doesn't authenticate on its own.
 func (p AuthPosture) HasAuth() bool {
 	return p.ValidateJWT || p.ValidateAzureADToken || p.CheckHeader || p.IPFilter || p.IncludeFragment
 }
@@ -87,6 +96,8 @@ func ParseInboundAuth(policyXML string, fragmentAuth map[string]bool) AuthPostur
 
 func inspectElement(t xml.StartElement, posture *AuthPosture, fragmentAuth map[string]bool) {
 	switch t.Name.Local {
+	case "base":
+		posture.HasBase = true
 	case "validate-jwt":
 		posture.ValidateJWT = true
 	case "validate-azure-ad-token":
@@ -107,6 +118,13 @@ func inspectElement(t xml.StartElement, posture *AuthPosture, fragmentAuth map[s
 			posture.IncludeFragment = true
 		}
 	}
+}
+
+// InheritedFromParent returns the AuthPosture for a scope that has no custom
+// policy at all. APIM treats absence-of-policy as semantically identical to
+// `<inbound><base /></inbound>`, so the parent's policies run unmodified.
+func InheritedFromParent() AuthPosture {
+	return AuthPosture{HasBase: true}
 }
 
 func attrValue(t xml.StartElement, name string) string {

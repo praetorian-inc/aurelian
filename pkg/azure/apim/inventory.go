@@ -42,11 +42,12 @@ type APIVerdict struct {
 var mcpOperationSuffixes = []string{"/mcp", "/sse", "/messages", "/message"}
 
 // IsMCPServer reports whether any operation's URL template identifies the API
-// as an MCP server. Checks are case-insensitive and match either the full
-// template or a trailing path segment, so both "/mcp" and "/v1/mcp" count.
+// as an MCP server. Checks are case-insensitive, ignore trailing slashes, and
+// match either the full template or a trailing path segment, so "/mcp",
+// "/mcp/", and "/v1/mcp" all count.
 func IsMCPServer(operations []OperationInventoryItem) bool {
 	for _, op := range operations {
-		tmpl := strings.ToLower(op.URLTemplate)
+		tmpl := strings.TrimRight(strings.ToLower(op.URLTemplate), "/")
 		for _, suffix := range mcpOperationSuffixes {
 			if tmpl == suffix || strings.HasSuffix(tmpl, suffix) {
 				return true
@@ -57,23 +58,59 @@ func IsMCPServer(operations []OperationInventoryItem) bool {
 }
 
 // ClassifyAPI returns an APIVerdict summarizing the given API's auth posture.
-// Precedence when multiple scopes authenticate: service > api > product.
+//
+// The classifier respects APIM's policy inheritance chain (Global → Product →
+// API → Operation). A child scope inherits parent auth only when the child's
+// inbound section calls `<base />` (tracked as AuthPosture.HasBase). When a
+// scope has no custom policy at all, callers are expected to pass a posture
+// with HasBase=true (use InheritedFromParent), matching APIM's behavior of
+// implicitly running the parent.
+//
+// Authentication rules, conservative side:
+//
+//   - API-scope auth (api.APIPolicyAuth.HasAuth) always counts — it runs
+//     regardless of <base /> and regardless of subscription state.
+//   - Service-scope auth counts only when api.APIPolicyAuth.HasBase is true.
+//     Otherwise the API's policy short-circuits the chain and service-scope
+//     `<validate-jwt>` etc. never executes.
+//   - Product-scope auth counts only when (a) api.SubscriptionRequired is
+//     true (calls go through a product), (b) api.APIPolicyAuth.HasBase is
+//     true (so product policy runs), (c) at least one product is associated,
+//     and (d) EVERY associated product enforces auth — either via its own
+//     policy or by chaining to a service-scope auth via <base />. If any
+//     product is open, an attacker subscribes to the weakest one and bypasses
+//     the others.
+//
+// Precedence on label: when multiple scopes authenticate, the chain is
+// reported in order service > api > product so the operator sees the
+// outermost gate.
 func ClassifyAPI(api APIInventoryItem, servicePolicyAuth AuthPosture) APIVerdict {
 	v := APIVerdict{SubscriptionRequired: api.SubscriptionRequired}
+
+	serviceApplies := servicePolicyAuth.HasAuth() && api.APIPolicyAuth.HasBase
+	apiApplies := api.APIPolicyAuth.HasAuth()
+
 	switch {
-	case servicePolicyAuth.HasAuth():
+	case serviceApplies:
 		v.IsAuthenticated = true
 		v.AuthScope = "service"
-	case api.APIPolicyAuth.HasAuth():
+	case apiApplies:
 		v.IsAuthenticated = true
 		v.AuthScope = "api"
-	case api.SubscriptionRequired:
+	case api.SubscriptionRequired && api.APIPolicyAuth.HasBase && len(api.ProductPolicyAuths) > 0:
+		allProductsAuth := true
 		for _, p := range api.ProductPolicyAuths {
-			if p.HasAuth() {
-				v.IsAuthenticated = true
-				v.AuthScope = "product"
+			// A product authenticates if it has its own auth, OR it inherits
+			// service auth via <base /> (which only fires when service has auth).
+			productAuthed := p.HasAuth() || (p.HasBase && servicePolicyAuth.HasAuth())
+			if !productAuthed {
+				allProductsAuth = false
 				break
 			}
+		}
+		if allProductsAuth {
+			v.IsAuthenticated = true
+			v.AuthScope = "product"
 		}
 	}
 	return v
