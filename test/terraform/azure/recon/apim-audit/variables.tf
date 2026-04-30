@@ -3,8 +3,3 @@ variable "location" {
   type        = string
   default     = "westus2"
 }
-
-variable "subscription_id" {
-  description = "Target Azure subscription ID"
-  type        = string
-}

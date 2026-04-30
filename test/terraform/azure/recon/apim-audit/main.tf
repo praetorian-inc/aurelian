@@ -34,13 +34,14 @@ terraform {
 }
 
 provider "azurerm" {
-  subscription_id = var.subscription_id
   features {
     resource_group {
       prevent_deletion_if_contains_resources = false
     }
   }
 }
+
+data "azurerm_client_config" "current" {}
 
 resource "random_string" "suffix" {
   length  = 6
@@ -71,8 +72,10 @@ resource "azurerm_service_plan" "test" {
   resource_group_name = azurerm_resource_group.test.name
   location            = azurerm_resource_group.test.location
   os_type             = "Linux"
-  sku_name            = "B1"
-  tags                = local.tags
+  # S1: this subscription has Standard quota allocated in westus2. B1 hit
+  # transient capacity 409s; F1/B1 hit "Free/Basic VMs: 0" quota in eastus2.
+  sku_name = "S1"
+  tags     = local.tags
 }
 
 resource "azurerm_linux_web_app" "public_backend" {
