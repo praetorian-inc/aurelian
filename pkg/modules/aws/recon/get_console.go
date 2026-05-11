@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -284,12 +285,22 @@ func buildConsoleURL(ctx context.Context, fedEndpoint, accessKeyID, secretAccess
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("reading signin token response: %w", err)
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("federation endpoint returned status %d", resp.StatusCode)
+		const maxSnippet = 512
+		snippet := string(body)
+		if len(snippet) > maxSnippet {
+			snippet = snippet[:maxSnippet] + "..."
+		}
+		return "", fmt.Errorf("federation endpoint returned status %s: %s", resp.Status, snippet)
 	}
 
 	var tokenResp signinTokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
 		return "", fmt.Errorf("decoding signin token response: %w", err)
 	}
 	if tokenResp.SigninToken == "" {
