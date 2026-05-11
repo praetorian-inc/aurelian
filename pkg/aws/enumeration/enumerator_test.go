@@ -202,25 +202,6 @@ func (m *sendingAllMockEnumerator) EnumerateByARN(_ string, out *pipeline.P[outp
 	return nil
 }
 
-func TestIsAccessDeniedError(t *testing.T) {
-	tests := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{"AccessDeniedException from SCP", errors.New("api error AccessDeniedException: User is not authorized"), true},
-		{"AccessDenied S3 style", errors.New("AccessDenied: forbidden"), true},
-		{"UnauthorizedAccess", errors.New("UnauthorizedAccess: not permitted"), true},
-		{"throttling is not access denied", errors.New("ThrottlingException: Rate exceeded"), false},
-		{"generic error", errors.New("connection refused"), false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, isAccessDeniedError(tt.err))
-		})
-	}
-}
-
 func TestSkippedTracker(t *testing.T) {
 	var tracker SkippedTracker
 

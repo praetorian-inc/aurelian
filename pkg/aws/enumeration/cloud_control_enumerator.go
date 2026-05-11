@@ -289,8 +289,7 @@ func (cc *CloudControlEnumerator) isSkippableError(err error) bool {
 	}
 	s := err.Error()
 	return strings.Contains(s, "TypeNotFoundException") ||
-		strings.Contains(s, "UnsupportedActionException") ||
-		isAccessDeniedError(err)
+		strings.Contains(s, "UnsupportedActionException")
 }
 
 func (cc *CloudControlEnumerator) newCloudControlClient(region string) (*cloudcontrol.Client, error) {

@@ -16,17 +16,6 @@ import (
 
 var errFallbackToCloudControl = errors.New("fallback to cloud control")
 
-// isAccessDeniedError returns true when the error indicates the caller lacks
-// permission to perform the requested operation. This is a recoverable
-// condition: the region/resource type is skipped with a warning instead of
-// aborting the entire enumeration.
-func isAccessDeniedError(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "AccessDeniedException") ||
-		strings.Contains(msg, "AccessDenied") ||
-		strings.Contains(msg, "UnauthorizedAccess")
-}
-
 // SkippedResource records a resource type + region that was skipped during
 // enumeration due to a non-fatal error (access denied, unsupported type, etc.).
 type SkippedResource struct {

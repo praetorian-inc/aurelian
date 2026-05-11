@@ -120,8 +120,8 @@ func (e *AmplifyAppEnumerator) listAppsInRegion(region, accountID string, out *p
 			NextToken: nextToken,
 		})
 		if err != nil {
-			if isRegionUnsupportedError(err) || isAccessDeniedError(err) {
-				slog.Debug("skipping amplify in region", "region", region, "error", err)
+			if isRegionUnsupportedError(err) {
+				slog.Debug("amplify not available in region, skipping", "region", region)
 				return false, nil
 			}
 			return false, fmt.Errorf("list amplify apps in %s: %w", region, err)
