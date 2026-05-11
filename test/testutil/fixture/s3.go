@@ -289,7 +289,7 @@ func (f *BaseFixture) downloadArtifactsToTempDir(ctx context.Context) (string, e
 		}
 	}
 
-	f.t.Logf("terraform fixture: downloaded %d artifacts to %s", len(allKeys), tmpDir)
+	f.logf("terraform fixture: downloaded %d artifacts to %s", len(allKeys), tmpDir)
 	return tmpDir, nil
 }
 
@@ -347,4 +347,63 @@ func (f *BaseFixture) putRemoteHash(ctx context.Context, hash string) error {
 	}
 
 	return nil
+}
+
+// purgeModulePrefix deletes every object under the module's S3 prefix
+// (integration-tests/<moduleDir>/). Used after a successful teardown to
+// remove the empty terraform.tfstate, the fixture.md5 hash marker, the
+// artifacts/* tree, and any terraform.tfstate.tflock left by the S3
+// backend.
+func (f *BaseFixture) purgeModulePrefix(ctx context.Context) error {
+	client, err := newS3Client(ctx)
+	if err != nil {
+		return fmt.Errorf("create S3 client: %w", err)
+	}
+
+	bucket := stateBucket
+	prefix := filepath.ToSlash(filepath.Dir(f.cfg.StateKey)) + "/"
+
+	var continuationToken *string
+	for {
+		listOutput, err := client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            &bucket,
+			Prefix:            &prefix,
+			ContinuationToken: continuationToken,
+		})
+		if err != nil {
+			return fmt.Errorf("list module prefix: %w", err)
+		}
+
+		if len(listOutput.Contents) > 0 {
+			objects := make([]types.ObjectIdentifier, 0, len(listOutput.Contents))
+			for _, object := range listOutput.Contents {
+				if object.Key == nil {
+					continue
+				}
+				objects = append(objects, types.ObjectIdentifier{Key: object.Key})
+			}
+
+			if len(objects) > 0 {
+				deleteOutput, err := client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+					Bucket: &bucket,
+					Delete: &types.Delete{Objects: objects, Quiet: aws.Bool(true)},
+				})
+				if err != nil {
+					return fmt.Errorf("delete module prefix objects: %w", err)
+				}
+				if len(deleteOutput.Errors) > 0 {
+					e := deleteOutput.Errors[0]
+					return fmt.Errorf("delete module prefix objects: partial failure: key=%q code=%q message=%q (and %d more)",
+						aws.ToString(e.Key), aws.ToString(e.Code), aws.ToString(e.Message), len(deleteOutput.Errors)-1)
+				}
+			}
+		}
+
+		isTruncated := listOutput.IsTruncated != nil && *listOutput.IsTruncated
+		if !isTruncated {
+			return nil
+		}
+
+		continuationToken = listOutput.NextContinuationToken
+	}
 }
