@@ -1,6 +1,7 @@
 package enumeration
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -101,4 +102,136 @@ func TestEnumerator_EnumerateByARN_FallbackOnSentinel(t *testing.T) {
 
 	require.ErrorIs(t, mock.enumerateByARNErr, errFallbackToCloudControl,
 		"S3Enumerator should return sentinel error for EnumerateByARN")
+}
+
+func TestEnumerator_List_ErrorRecordedNotReturned(t *testing.T) {
+	mock := &mockResourceEnumerator{
+		resourceType:    "AWS::S3::Bucket",
+		enumerateAllErr: errors.New("operation error S3: ListBuckets, AccessDeniedException"),
+	}
+
+	e := &Enumerator{
+		enumerators: map[string]ResourceEnumerator{"AWS::S3::Bucket": mock},
+		cc:          &CloudControlEnumerator{},
+	}
+
+	out := pipeline.New[output.AWSResource]()
+	go func() { for range out.Range() {} }()
+
+	err := e.List("AWS::S3::Bucket", out)
+	out.Close()
+
+	require.NoError(t, err, "List should swallow errors and record them")
+	skipped := e.Skipped.Skipped()
+	require.Len(t, skipped, 1)
+	require.Equal(t, "AWS::S3::Bucket", skipped[0].ResourceType)
+	require.Contains(t, skipped[0].Reason, "AccessDeniedException")
+}
+
+func TestEnumerator_List_SuccessNotRecorded(t *testing.T) {
+	mock := &mockResourceEnumerator{
+		resourceType: "AWS::S3::Bucket",
+	}
+
+	e := &Enumerator{
+		enumerators: map[string]ResourceEnumerator{"AWS::S3::Bucket": mock},
+		cc:          &CloudControlEnumerator{},
+	}
+
+	out := pipeline.New[output.AWSResource]()
+	go func() { for range out.Range() {} }()
+
+	err := e.List("AWS::S3::Bucket", out)
+	out.Close()
+
+	require.NoError(t, err)
+	require.Empty(t, e.Skipped.Skipped(), "successful enumeration should not be recorded")
+}
+
+func TestEnumerator_List_MultipleTypes_OneFailsContinues(t *testing.T) {
+	failing := &mockResourceEnumerator{
+		resourceType:    "AWS::Amplify::App",
+		enumerateAllErr: errors.New("AccessDeniedException: not authorized"),
+	}
+	succeeding := &sendingAllMockEnumerator{
+		resourceType: "AWS::Lambda::Function",
+		resource: output.AWSResource{
+			ResourceType: "AWS::Lambda::Function",
+			ResourceID:   "my-func",
+		},
+	}
+
+	e := &Enumerator{
+		enumerators: map[string]ResourceEnumerator{
+			"AWS::Amplify::App":     failing,
+			"AWS::Lambda::Function": succeeding,
+		},
+		cc: &CloudControlEnumerator{},
+	}
+
+	// Simulate pipeline: feed two resource types, collect results
+	types := pipeline.From("AWS::Amplify::App", "AWS::Lambda::Function")
+	listed := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(types, e.List, listed)
+
+	results, err := listed.Collect()
+	require.NoError(t, err, "pipeline should not fail when one type errors")
+	require.Len(t, results, 1, "successful type should still produce results")
+	require.Equal(t, "AWS::Lambda::Function", results[0].ResourceType)
+
+	skipped := e.Skipped.Skipped()
+	require.Len(t, skipped, 1)
+	require.Equal(t, "AWS::Amplify::App", skipped[0].ResourceType)
+}
+
+// sendingAllMockEnumerator sends a resource from EnumerateAll.
+type sendingAllMockEnumerator struct {
+	resourceType string
+	resource     output.AWSResource
+}
+
+func (m *sendingAllMockEnumerator) ResourceType() string { return m.resourceType }
+
+func (m *sendingAllMockEnumerator) EnumerateAll(out *pipeline.P[output.AWSResource]) error {
+	out.Send(m.resource)
+	return nil
+}
+
+func (m *sendingAllMockEnumerator) EnumerateByARN(_ string, out *pipeline.P[output.AWSResource]) error {
+	out.Send(m.resource)
+	return nil
+}
+
+func TestIsAccessDeniedError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"AccessDeniedException from SCP", errors.New("api error AccessDeniedException: User is not authorized"), true},
+		{"AccessDenied S3 style", errors.New("AccessDenied: forbidden"), true},
+		{"UnauthorizedAccess", errors.New("UnauthorizedAccess: not permitted"), true},
+		{"throttling is not access denied", errors.New("ThrottlingException: Rate exceeded"), false},
+		{"generic error", errors.New("connection refused"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, isAccessDeniedError(tt.err))
+		})
+	}
+}
+
+func TestSkippedTracker(t *testing.T) {
+	var tracker SkippedTracker
+
+	require.Empty(t, tracker.Skipped(), "new tracker should be empty")
+
+	tracker.Record("AWS::Amplify::App", "ap-northeast-3", "AccessDeniedException")
+	tracker.Record("AWS::S3::Bucket", "eu-west-1", "connection refused")
+
+	skipped := tracker.Skipped()
+	require.Len(t, skipped, 2)
+	require.Equal(t, "AWS::Amplify::App", skipped[0].ResourceType)
+	require.Equal(t, "ap-northeast-3", skipped[0].Region)
+	require.Equal(t, "eu-west-1", skipped[1].Region)
 }

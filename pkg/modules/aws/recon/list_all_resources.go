@@ -87,6 +87,8 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model
 	if err := enriched.Wait(); err != nil {
 		return err
 	}
+
+	lister.Skipped.LogSummary()
 	cfg.Success("enumerated %d resources", count)
 	return nil
 }

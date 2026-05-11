@@ -96,6 +96,8 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	if err := out.Wait(); err != nil {
 		return err
 	}
+
+	lister.Skipped.LogSummary()
 	cfg.Success("public access evaluation complete")
 	return nil
 }

@@ -42,8 +42,9 @@ func TestEnumerateByARN_ErrorDoesNotSendZeroResource(t *testing.T) {
 	out.Close()
 	<-done
 
-	require.Error(t, err)
+	require.NoError(t, err, "List should not return error — errors are recorded in SkippedTracker")
 	assert.Empty(t, collected, "no resources should be sent when EnumerateByARN returns an error")
+	assert.NotEmpty(t, e.Skipped.Skipped(), "error should be recorded in SkippedTracker")
 }
 
 func TestEnumerateByARN_SuccessSendsResource(t *testing.T) {

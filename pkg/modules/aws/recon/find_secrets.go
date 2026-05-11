@@ -116,6 +116,8 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	if err := out.Wait(); err != nil {
 		return err
 	}
+
+	lister.Skipped.LogSummary()
 	cfg.Success("secret scanning complete")
 	return nil
 }

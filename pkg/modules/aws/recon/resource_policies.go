@@ -80,6 +80,8 @@ func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, out *pipeline.P[model
 	if err := collected.Wait(); err != nil {
 		return err
 	}
+
+	lister.Skipped.LogSummary()
 	cfg.Success("collected %d resources with policies", count)
 	return nil
 }

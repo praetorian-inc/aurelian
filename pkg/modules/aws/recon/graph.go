@@ -142,6 +142,7 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 			return fmt.Errorf("collecting resources with policies: %w", err)
 		}
 
+		lister.Skipped.LogSummary()
 		m.log.Success("resources with policies collected (%d)", results.Len())
 		m.resourcesWithPolicies = results
 		return nil
