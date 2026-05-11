@@ -21,6 +21,7 @@ type CloudControlEnumerator struct {
 	plugin.AWSCommonRecon
 	CrossRegionActor *ratelimit.CrossRegionActor
 	provider         *AWSConfigProvider
+	fallback         *ConfigFallback
 }
 
 func NewCloudControlEnumerator(options plugin.AWSCommonRecon) *CloudControlEnumerator {
@@ -51,11 +52,15 @@ func (cc *CloudControlEnumerator) List(identifier string, out *pipeline.P[output
 
 func (cc *CloudControlEnumerator) EnumerateByARN(resourceARN string, out *pipeline.P[output.AWSResource]) error {
 	resource, err := cc.getResourceByARN(resourceARN)
-	if cc.isSkippableError(err) {
-		slog.Debug("skipping arn", "arn", resourceARN, "error", err)
-		return nil
-	}
 	if err != nil {
+		if isUnsupportedTypeError(err) || isRegionUnsupportedError(err) {
+			slog.Debug("skipping arn", "arn", resourceARN, "error", err)
+			return nil
+		}
+		if isAccessDeniedError(err) {
+			slog.Warn("access denied fetching resource, skipping", "arn", resourceARN, "error", err)
+			return nil
+		}
 		return err
 	}
 
@@ -89,6 +94,34 @@ func (cc *CloudControlEnumerator) getResourceByARN(arn string) (output.AWSResour
 
 	cr := awshelpers.CloudControlToAWSResource(*result.ResourceDescription, resourceType, accountID, region)
 	return cr, nil
+}
+
+// getResourceByTypeAndIdentifier fetches a single resource by an already-known
+// resource type + primary identifier, skipping the ARN-parse step of
+// getResourceByARN. Used by ConfigFallback after translating a Config
+// ResourceIdentifier; all other callers should prefer getResourceByARN.
+func (cc *CloudControlEnumerator) getResourceByTypeAndIdentifier(
+	region, resourceType, identifier string,
+) (output.AWSResource, error) {
+	client, err := cc.newCloudControlClient(region)
+	if err != nil {
+		return output.AWSResource{}, fmt.Errorf("create client: %w", err)
+	}
+
+	accountID, err := cc.provider.GetAccountID(region)
+	if err != nil {
+		return output.AWSResource{}, err
+	}
+
+	result, err := client.GetResource(context.Background(), &cloudcontrol.GetResourceInput{
+		TypeName:   aws.String(resourceType),
+		Identifier: aws.String(identifier),
+	})
+	if err != nil {
+		return output.AWSResource{}, fmt.Errorf("get %s %s: %w", resourceType, identifier, err)
+	}
+
+	return awshelpers.CloudControlToAWSResource(*result.ResourceDescription, resourceType, accountID, region), nil
 }
 
 func (cc *CloudControlEnumerator) resolveARNTarget(resourceARN string) (string, string, string, error) {
@@ -238,16 +271,17 @@ func (cc *CloudControlEnumerator) listInRegionByType(region, resourceType string
 	}
 
 	err = cc.listByType(client, accountID, region, resourceType, out)
-	if cc.isSkippableError(err) {
-		slog.Debug("skipping resource type", "type", resourceType, "region", region, "error", err)
+	var fb fallbackFn
+	if cc.fallback != nil {
+		fb = func() error {
+			return cc.fallback.Attempt(context.Background(), resourceType, region, out)
+		}
+	}
+	if handled := handleListError(err, resourceType, region, fb); handled == nil {
 		return nil
 	}
-	if err != nil {
-		slog.Warn("error listing resources", "type", resourceType, "region", region, "error", err)
-		return err
-	}
-
-	return nil
+	slog.Warn("error listing resources", "type", resourceType, "region", region, "error", err)
+	return err
 }
 
 func (cc *CloudControlEnumerator) listByType(
@@ -281,16 +315,6 @@ func (cc *CloudControlEnumerator) listByType(
 		nextToken = result.NextToken
 		return nextToken != nil, nil
 	})
-}
-
-func (cc *CloudControlEnumerator) isSkippableError(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := err.Error()
-	return strings.Contains(s, "TypeNotFoundException") ||
-		strings.Contains(s, "UnsupportedActionException") ||
-		strings.Contains(s, "AccessDeniedException")
 }
 
 func (cc *CloudControlEnumerator) newCloudControlClient(region string) (*cloudcontrol.Client, error) {

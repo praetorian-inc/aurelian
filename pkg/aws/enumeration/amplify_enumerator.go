@@ -3,7 +3,6 @@ package enumeration
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -20,12 +19,14 @@ import (
 type AmplifyAppEnumerator struct {
 	plugin.AWSCommonRecon
 	provider *AWSConfigProvider
+	fallback *ConfigFallback
 }
 
-func NewAmplifyAppEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider) *AmplifyAppEnumerator {
+func NewAmplifyAppEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider, fallback *ConfigFallback) *AmplifyAppEnumerator {
 	return &AmplifyAppEnumerator{
 		AWSCommonRecon: opts,
 		provider:       provider,
+		fallback:       fallback,
 	}
 }
 
@@ -96,16 +97,6 @@ func (e *AmplifyAppEnumerator) EnumerateByARN(arn string, out *pipeline.P[output
 	return nil
 }
 
-// isRegionUnsupportedError returns true when the error indicates the AWS service
-// is not available in the target region (DNS resolution failure or explicit
-// region-not-supported response).
-func isRegionUnsupportedError(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "no such host") ||
-		strings.Contains(msg, "could not resolve endpoint") ||
-		strings.Contains(msg, "EndpointNotFound")
-}
-
 func (e *AmplifyAppEnumerator) listAppsInRegion(region, accountID string, out *pipeline.P[output.AWSResource]) error {
 	cfg, err := e.provider.GetAWSConfig(region)
 	if err != nil {
@@ -120,8 +111,13 @@ func (e *AmplifyAppEnumerator) listAppsInRegion(region, accountID string, out *p
 			NextToken: nextToken,
 		})
 		if err != nil {
-			if isRegionUnsupportedError(err) {
-				slog.Debug("amplify not available in region, skipping", "region", region)
+			var fb fallbackFn
+			if e.fallback != nil {
+				fb = func() error {
+					return e.fallback.Attempt(context.Background(), "AWS::Amplify::App", region, out)
+				}
+			}
+			if handled := handleListError(err, "AWS::Amplify::App", region, fb); handled == nil {
 				return false, nil
 			}
 			return false, fmt.Errorf("list amplify apps in %s: %w", region, err)
