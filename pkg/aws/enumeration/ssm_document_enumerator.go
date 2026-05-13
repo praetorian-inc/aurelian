@@ -3,6 +3,7 @@ package enumeration
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -20,13 +21,15 @@ import (
 // documents.
 type SSMDocumentEnumerator struct {
 	plugin.AWSCommonRecon
-	provider *AWSConfigProvider
+	provider   *AWSConfigProvider
+	skipReport *SkipReport
 }
 
-func NewSSMDocumentEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider) *SSMDocumentEnumerator {
+func NewSSMDocumentEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider, skipReport *SkipReport) *SSMDocumentEnumerator {
 	return &SSMDocumentEnumerator{
 		AWSCommonRecon: opts,
 		provider:       provider,
+		skipReport:     skipReport,
 	}
 }
 
@@ -115,6 +118,18 @@ func (e *SSMDocumentEnumerator) listDocumentsInRegion(region, accountID string, 
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(context.Background())
 		if err != nil {
+			if IsSkippableAWSError(err) {
+				code := SkipReason(err)
+				slog.Warn("skipping ssm ListDocuments", "region", region, "code", code, "error", err)
+				e.skipReport.Record(SkippedOp{
+					Region:    region,
+					Service:   "ssm",
+					Operation: "ListDocuments",
+					ErrorCode: code,
+					Detail:    err.Error(),
+				})
+				return nil
+			}
 			return fmt.Errorf("list documents in %s: %w", region, err)
 		}
 
