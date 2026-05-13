@@ -15,7 +15,7 @@ func TestSSMDocumentEnumerator_ResourceType(t *testing.T) {
 	enum := NewSSMDocumentEnumerator(plugin.AWSCommonRecon{
 		Regions:     []string{"us-east-1"},
 		Concurrency: 2,
-	}, provider)
+	}, provider, NewSkipReport())
 
 	assert.Equal(t, "AWS::SSM::Document", enum.ResourceType())
 }

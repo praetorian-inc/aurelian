@@ -3,6 +3,9 @@ package enumeration
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"strings"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsaarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
@@ -13,25 +16,25 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 	"github.com/praetorian-inc/aurelian/pkg/types"
-	"log/slog"
-	"strings"
 )
 
 type CloudControlEnumerator struct {
 	plugin.AWSCommonRecon
 	CrossRegionActor *ratelimit.CrossRegionActor
 	provider         *AWSConfigProvider
+	skipReport       *SkipReport
 }
 
 func NewCloudControlEnumerator(options plugin.AWSCommonRecon) *CloudControlEnumerator {
-	return NewCloudControlEnumeratorWithProvider(options, NewAWSConfigProvider(options))
+	return NewCloudControlEnumeratorWithProvider(options, NewAWSConfigProvider(options), NewSkipReport())
 }
 
-func NewCloudControlEnumeratorWithProvider(options plugin.AWSCommonRecon, provider *AWSConfigProvider) *CloudControlEnumerator {
+func NewCloudControlEnumeratorWithProvider(options plugin.AWSCommonRecon, provider *AWSConfigProvider, skipReport *SkipReport) *CloudControlEnumerator {
 	return &CloudControlEnumerator{
 		AWSCommonRecon:   options,
 		CrossRegionActor: ratelimit.NewCrossRegionActor(options.Concurrency),
 		provider:         provider,
+		skipReport:       skipReport,
 	}
 }
 
@@ -50,9 +53,20 @@ func (cc *CloudControlEnumerator) List(identifier string, out *pipeline.P[output
 }
 
 func (cc *CloudControlEnumerator) EnumerateByARN(resourceARN string, out *pipeline.P[output.AWSResource]) error {
-	resource, err := cc.getResourceByARN(resourceARN)
-	if cc.isSkippableError(err) {
-		slog.Debug("skipping arn", "arn", resourceARN, "error", err)
+	region, resource, err := cc.getResourceByARN(resourceARN)
+	if IsSkippableAWSError(err) {
+		code := SkipReason(err)
+		slog.Warn("skipping cloudcontrol GetResource", "arn", resourceARN, "region", region, "code", code, "error", err)
+		if region == "" {
+			region = "unknown"
+		}
+		cc.skipReport.Record(SkippedOp{
+			Region:    region,
+			Service:   "cloudcontrol",
+			Operation: "GetResource",
+			ErrorCode: code,
+			Detail:    err.Error(),
+		})
 		return nil
 	}
 	if err != nil {
@@ -63,20 +77,20 @@ func (cc *CloudControlEnumerator) EnumerateByARN(resourceARN string, out *pipeli
 	return nil
 }
 
-func (cc *CloudControlEnumerator) getResourceByARN(arn string) (output.AWSResource, error) {
+func (cc *CloudControlEnumerator) getResourceByARN(arn string) (string, output.AWSResource, error) {
 	region, resourceType, identifier, err := cc.resolveARNTarget(arn)
 	if err != nil {
-		return output.AWSResource{}, err
+		return "", output.AWSResource{}, err
 	}
 
 	client, err := cc.newCloudControlClient(region)
 	if err != nil {
-		return output.AWSResource{}, fmt.Errorf("create client: %w", err)
+		return region, output.AWSResource{}, fmt.Errorf("create client: %w", err)
 	}
 
 	accountID, err := cc.provider.GetAccountID(region)
 	if err != nil {
-		return output.AWSResource{}, err
+		return region, output.AWSResource{}, err
 	}
 
 	result, err := client.GetResource(context.Background(), &cloudcontrol.GetResourceInput{
@@ -84,11 +98,11 @@ func (cc *CloudControlEnumerator) getResourceByARN(arn string) (output.AWSResour
 		Identifier: aws.String(identifier),
 	})
 	if err != nil {
-		return output.AWSResource{}, fmt.Errorf("get %s %s: %w", resourceType, identifier, err)
+		return region, output.AWSResource{}, fmt.Errorf("get %s %s: %w", resourceType, identifier, err)
 	}
 
 	cr := awshelpers.CloudControlToAWSResource(*result.ResourceDescription, resourceType, accountID, region)
-	return cr, nil
+	return region, cr, nil
 }
 
 func (cc *CloudControlEnumerator) resolveARNTarget(resourceARN string) (string, string, string, error) {
@@ -238,8 +252,16 @@ func (cc *CloudControlEnumerator) listInRegionByType(region, resourceType string
 	}
 
 	err = cc.listByType(client, accountID, region, resourceType, out)
-	if cc.isSkippableError(err) {
-		slog.Debug("skipping resource type", "type", resourceType, "region", region, "error", err)
+	if IsSkippableAWSError(err) {
+		code := SkipReason(err)
+		slog.Warn("skipping cloudcontrol ListResources", "type", resourceType, "region", region, "code", code, "error", err)
+		cc.skipReport.Record(SkippedOp{
+			Region:    region,
+			Service:   "cloudcontrol",
+			Operation: "ListResources:" + resourceType,
+			ErrorCode: code,
+			Detail:    err.Error(),
+		})
 		return nil
 	}
 	if err != nil {
@@ -281,16 +303,6 @@ func (cc *CloudControlEnumerator) listByType(
 		nextToken = result.NextToken
 		return nextToken != nil, nil
 	})
-}
-
-func (cc *CloudControlEnumerator) isSkippableError(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := err.Error()
-	return strings.Contains(s, "TypeNotFoundException") ||
-		strings.Contains(s, "UnsupportedActionException") ||
-		strings.Contains(s, "AccessDeniedException")
 }
 
 func (cc *CloudControlEnumerator) newCloudControlClient(region string) (*cloudcontrol.Client, error) {

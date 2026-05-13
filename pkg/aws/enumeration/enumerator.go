@@ -31,30 +31,41 @@ type ResourceEnumerator interface {
 type Enumerator struct {
 	enumerators map[string]ResourceEnumerator
 	cc          *CloudControlEnumerator
+	skipReport  *SkipReport
 }
 
 // NewEnumerator creates an Enumerator with CloudControl fallback and registers
-// all built-in resource-specific enumerators.
+// all built-in resource-specific enumerators. The SkipReport is shared across
+// all sub-enumerators so a single Summary() call surfaces every skipped
+// (region, service) pair to the operator.
 func NewEnumerator(opts plugin.AWSCommonRecon) *Enumerator {
 	provider := NewAWSConfigProvider(opts)
-	cc := NewCloudControlEnumeratorWithProvider(opts, provider)
+	skipReport := NewSkipReport()
+	cc := NewCloudControlEnumeratorWithProvider(opts, provider, skipReport)
 	e := &Enumerator{
 		enumerators: make(map[string]ResourceEnumerator),
 		cc:          cc,
+		skipReport:  skipReport,
 	}
 	// Register built-in enumerators here as they are implemented.
-	e.Register(NewAmplifyAppEnumerator(opts, provider))
-	e.Register(NewS3Enumerator(opts, provider))
+	e.Register(NewAmplifyAppEnumerator(opts, provider, skipReport))
+	e.Register(NewS3Enumerator(opts, provider, skipReport))
 
-	iamEnum := NewIAMEnumerator(opts, provider)
+	iamEnum := NewIAMEnumerator(opts, provider, skipReport)
 	e.Register(iamEnum.RoleEnumerator())
 	e.Register(iamEnum.PolicyEnumerator())
 	e.Register(iamEnum.UserEnumerator())
 
-	e.Register(NewEC2ImageEnumerator(opts, provider))
-	e.Register(NewSSMDocumentEnumerator(opts, provider))
+	e.Register(NewEC2ImageEnumerator(opts, provider, skipReport))
+	e.Register(NewSSMDocumentEnumerator(opts, provider, skipReport))
 
 	return e
+}
+
+// SkipReport returns the report aggregating all skipped per-region calls. It
+// is safe to call concurrently with enumeration in progress.
+func (e *Enumerator) SkipReport() *SkipReport {
+	return e.skipReport
 }
 
 // Register adds a ResourceEnumerator to the registry.

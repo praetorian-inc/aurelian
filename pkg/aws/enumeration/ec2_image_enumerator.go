@@ -21,14 +21,16 @@ import (
 // native EC2 SDK, enriching each image with launch permissions and usage data.
 type EC2ImageEnumerator struct {
 	plugin.AWSCommonRecon
-	provider *AWSConfigProvider
+	provider   *AWSConfigProvider
+	skipReport *SkipReport
 }
 
 // NewEC2ImageEnumerator creates an EC2ImageEnumerator that uses the native EC2 SDK.
-func NewEC2ImageEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider) *EC2ImageEnumerator {
+func NewEC2ImageEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider, skipReport *SkipReport) *EC2ImageEnumerator {
 	return &EC2ImageEnumerator{
 		AWSCommonRecon: opts,
 		provider:       provider,
+		skipReport:     skipReport,
 	}
 }
 
@@ -105,6 +107,18 @@ func (l *EC2ImageEnumerator) listImagesInRegion(region, accountID string, out *p
 		Owners: []string{"self"},
 	})
 	if err != nil {
+		if IsSkippableAWSError(err) {
+			code := SkipReason(err)
+			slog.Warn("skipping ec2 DescribeImages", "region", region, "code", code, "error", err)
+			l.skipReport.Record(SkippedOp{
+				Region:    region,
+				Service:   "ec2",
+				Operation: "DescribeImages",
+				ErrorCode: code,
+				Detail:    err.Error(),
+			})
+			return nil
+		}
 		return fmt.Errorf("describe images in %s: %w", region, err)
 	}
 
@@ -116,8 +130,21 @@ func (l *EC2ImageEnumerator) listImagesInRegion(region, accountID string, out *p
 	for _, image := range result.Images {
 		resource, err := buildResource(context.Background(), client, image, accountID, region)
 		if err != nil {
+			imageID := aws.ToString(image.ImageId)
+			if IsSkippableAWSError(err) {
+				code := SkipReason(err)
+				slog.Warn("skipping ec2 DescribeImageAttribute", "region", region, "image_id", imageID, "code", code, "error", err)
+				l.skipReport.Record(SkippedOp{
+					Region:    region,
+					Service:   "ec2",
+					Operation: "DescribeImageAttribute",
+					ErrorCode: code,
+					Detail:    err.Error(),
+				})
+				continue
+			}
 			slog.Warn("failed to build EC2 image resource",
-				"image_id", aws.ToString(image.ImageId),
+				"image_id", imageID,
 				"region", region,
 				"error", err,
 			)
