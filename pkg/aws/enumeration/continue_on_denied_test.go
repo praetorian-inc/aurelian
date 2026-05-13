@@ -33,7 +33,7 @@ type regionErrPlan map[string]error
 // runWithSkipHandling simulates the wrapper every real enumerator now performs:
 // errors that pass IsSkippableAWSError are recorded into the SkipReport and
 // converted to nil; everything else propagates.
-func runWithSkipHandling(t *testing.T, regions []string, plan regionErrPlan, report *SkipReport) (error, int) {
+func runWithSkipHandling(t *testing.T, regions []string, plan regionErrPlan, report *SkipReport) (int, error) {
 	t.Helper()
 
 	var invoked int64
@@ -56,7 +56,7 @@ func runWithSkipHandling(t *testing.T, regions []string, plan regionErrPlan, rep
 		}
 		return regionErr
 	})
-	return err, int(atomic.LoadInt64(&invoked))
+	return int(atomic.LoadInt64(&invoked)), err
 }
 
 // TP1: one region denied (AccessDeniedException), one region succeeds.
@@ -69,7 +69,7 @@ func TestContinueOnDenied_AccessDenied_AcrossTwoRegions_LoopCompletes(t *testing
 		// "us-east-2" has no plan entry -> succeeds.
 	}
 
-	err, invoked := runWithSkipHandling(t, []string{"us-east-1", "us-east-2"}, plan, report)
+	invoked, err := runWithSkipHandling(t, []string{"us-east-1", "us-east-2"}, plan, report)
 
 	require.NoError(t, err, "errgroup should return nil when only skippable errors occurred")
 	assert.Equal(t, 2, invoked, "both region actions must run; sibling must not be cancelled")
@@ -83,7 +83,7 @@ func TestContinueOnDenied_AccessDenied_RecordsSkipTuple(t *testing.T) {
 		"us-east-1": &fakeAPIError{code: "AccessDeniedException", msg: "denied by SCP"},
 	}
 
-	err, _ := runWithSkipHandling(t, []string{"us-east-1", "us-east-2"}, plan, report)
+	_, err := runWithSkipHandling(t, []string{"us-east-1", "us-east-2"}, plan, report)
 	require.NoError(t, err)
 
 	require.Equal(t, 1, report.Len(), "exactly one region should have been recorded")
@@ -109,7 +109,7 @@ func TestContinueOnDenied_MultipleSkippableCodes_AllRegionsComplete(t *testing.T
 	}
 
 	regions := []string{"us-east-1", "us-west-2", "ap-northeast-3", "eu-west-1"}
-	err, invoked := runWithSkipHandling(t, regions, plan, report)
+	invoked, err := runWithSkipHandling(t, regions, plan, report)
 
 	require.NoError(t, err, "all errors were skippable, errgroup must return nil")
 	assert.Equal(t, 4, invoked, "every region action must run")
@@ -132,7 +132,7 @@ func TestContinueOnDenied_WrappedSmithyError_IsClassifiedSkippable(t *testing.T)
 	wrapped := fmt.Errorf("list amplify apps in us-east-1: %w", &fakeAPIError{code: "AccessDeniedException", msg: "denied"})
 	plan := regionErrPlan{"us-east-1": wrapped}
 
-	err, invoked := runWithSkipHandling(t, []string{"us-east-1", "us-east-2"}, plan, report)
+	invoked, err := runWithSkipHandling(t, []string{"us-east-1", "us-east-2"}, plan, report)
 
 	require.NoError(t, err, "wrapped skippable errors must not abort the loop")
 	assert.Equal(t, 2, invoked, "sibling region must still run")
@@ -170,7 +170,7 @@ func TestContinueOnDenied_NonSkippableError_PropagatesFatal(t *testing.T) {
 		"us-east-1": errors.New("network connection refused"),
 	}
 
-	err, _ := runWithSkipHandling(t, []string{"us-east-1", "us-east-2"}, plan, report)
+	_, err := runWithSkipHandling(t, []string{"us-east-1", "us-east-2"}, plan, report)
 
 	require.Error(t, err, "non-skippable errors must propagate so operators see them")
 	assert.Contains(t, err.Error(), "network connection refused")
@@ -187,7 +187,7 @@ func TestContinueOnDenied_NonListedSmithyCode_PropagatesFatal(t *testing.T) {
 		"us-east-1": &fakeAPIError{code: "ThrottlingException", msg: "rate exceeded"},
 	}
 
-	err, _ := runWithSkipHandling(t, []string{"us-east-1", "us-east-2"}, plan, report)
+	_, err := runWithSkipHandling(t, []string{"us-east-1", "us-east-2"}, plan, report)
 
 	require.Error(t, err, "ThrottlingException is intentionally not in skippableErrorCodes")
 	assert.Contains(t, err.Error(), "ThrottlingException")
@@ -204,7 +204,7 @@ func TestContinueOnDenied_EmptySmithyCode_PropagatesFatal(t *testing.T) {
 		"us-east-1": &fakeAPIError{code: "", msg: "weird coreless smithy error"},
 	}
 
-	err, _ := runWithSkipHandling(t, []string{"us-east-1", "us-east-2"}, plan, report)
+	_, err := runWithSkipHandling(t, []string{"us-east-1", "us-east-2"}, plan, report)
 
 	require.Error(t, err, "empty smithy code with non-DNS message must NOT be classified as skippable")
 	assert.Equal(t, 0, report.Len())
@@ -237,7 +237,7 @@ func TestContinueOnDenied_HighConcurrency_AllRecorded(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err, _ := runWithSkipHandling(t, regions, plan, report)
+			_, err := runWithSkipHandling(t, regions, plan, report)
 			errs <- err
 		}()
 	}
