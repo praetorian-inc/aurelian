@@ -21,6 +21,8 @@ type mockCognitoClient struct {
 	listClientsError     error
 	describeClientOutput *cognitoidentityprovider.DescribeUserPoolClientOutput
 	describeClientError  error
+	listGroupsOutput     *cognitoidentityprovider.ListGroupsOutput
+	listGroupsError      error
 }
 
 func (m *mockCognitoClient) DescribeUserPool(ctx context.Context, params *cognitoidentityprovider.DescribeUserPoolInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.DescribeUserPoolOutput, error) {
@@ -33,6 +35,10 @@ func (m *mockCognitoClient) ListUserPoolClients(ctx context.Context, params *cog
 
 func (m *mockCognitoClient) DescribeUserPoolClient(ctx context.Context, params *cognitoidentityprovider.DescribeUserPoolClientInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.DescribeUserPoolClientOutput, error) {
 	return m.describeClientOutput, m.describeClientError
+}
+
+func (m *mockCognitoClient) ListGroups(ctx context.Context, params *cognitoidentityprovider.ListGroupsInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.ListGroupsOutput, error) {
+	return m.listGroupsOutput, m.listGroupsError
 }
 
 func TestEnrichCognitoUserPool_SelfSignupEnabled(t *testing.T) {
@@ -189,6 +195,77 @@ func TestEnrichCognitoUserPool_NilAdminConfig(t *testing.T) {
 
 	assert.True(t, resource.Properties["SelfSignupEnabled"].(bool),
 		"self-signup should default to enabled when AdminCreateUserConfig is nil")
+}
+
+func TestEnrichCognitoUserPool_WithGroupRoles(t *testing.T) {
+	mockClient := &mockCognitoClient{
+		describePoolOutput: &cognitoidentityprovider.DescribeUserPoolOutput{
+			UserPool: &cognitotypes.UserPoolType{
+				AdminCreateUserConfig: &cognitotypes.AdminCreateUserConfigType{
+					AllowAdminCreateUserOnly: true,
+				},
+			},
+		},
+		listClientsOutput: &cognitoidentityprovider.ListUserPoolClientsOutput{
+			UserPoolClients: []cognitotypes.UserPoolClientDescription{},
+		},
+		listGroupsOutput: &cognitoidentityprovider.ListGroupsOutput{
+			Groups: []cognitotypes.GroupType{
+				{GroupName: aws.String("admins"), RoleArn: aws.String("arn:aws:iam::123456789012:role/AdminRole")},
+				{GroupName: aws.String("users"), RoleArn: aws.String("arn:aws:iam::123456789012:role/UserRole")},
+				{GroupName: aws.String("no-role")},
+			},
+		},
+	}
+
+	resource := &output.AWSResource{
+		ResourceType: "AWS::Cognito::UserPool",
+		ResourceID:   "us-east-1_abc123",
+		Properties:   map[string]any{"UserPoolId": "us-east-1_abc123"},
+	}
+
+	cfg := plugin.EnricherConfig{Context: context.Background(), AWSConfig: aws.Config{}}
+	err := enrichers.EnrichCognitoUserPool(cfg, resource, mockClient)
+	require.NoError(t, err)
+
+	roles, ok := resource.Properties["Roles"].([]string)
+	require.True(t, ok)
+	assert.Len(t, roles, 2)
+	assert.Contains(t, roles, "arn:aws:iam::123456789012:role/AdminRole")
+	assert.Contains(t, roles, "arn:aws:iam::123456789012:role/UserRole")
+}
+
+func TestEnrichCognitoUserPool_NoGroupRoles(t *testing.T) {
+	mockClient := &mockCognitoClient{
+		describePoolOutput: &cognitoidentityprovider.DescribeUserPoolOutput{
+			UserPool: &cognitotypes.UserPoolType{
+				AdminCreateUserConfig: &cognitotypes.AdminCreateUserConfigType{
+					AllowAdminCreateUserOnly: true,
+				},
+			},
+		},
+		listClientsOutput: &cognitoidentityprovider.ListUserPoolClientsOutput{
+			UserPoolClients: []cognitotypes.UserPoolClientDescription{},
+		},
+		listGroupsOutput: &cognitoidentityprovider.ListGroupsOutput{
+			Groups: []cognitotypes.GroupType{
+				{GroupName: aws.String("no-role")},
+			},
+		},
+	}
+
+	resource := &output.AWSResource{
+		ResourceType: "AWS::Cognito::UserPool",
+		ResourceID:   "us-east-1_abc123",
+		Properties:   map[string]any{"UserPoolId": "us-east-1_abc123"},
+	}
+
+	cfg := plugin.EnricherConfig{Context: context.Background(), AWSConfig: aws.Config{}}
+	err := enrichers.EnrichCognitoUserPool(cfg, resource, mockClient)
+	require.NoError(t, err)
+
+	_, exists := resource.Properties["Roles"]
+	assert.False(t, exists, "Roles should not be set when no groups have roles")
 }
 
 func TestEnrichCognitoUserPool_BothDomains(t *testing.T) {
