@@ -1,13 +1,5 @@
 name: AI Review
 
-# Single consolidated AI code-review for Aurelian PRs targeting `main`.
-# Self-contained — review rules live in this file. Two trigger paths:
-#   1. pull_request opened or marked ready-for-review (base: main only)
-#   2. issue_comment containing `@ai-review` from a maintainer
-#      (OWNER / MEMBER / COLLABORATOR association) on a PR into `main`
-#
-# Only secret needed: ANTHROPIC_API_KEY.
-
 on:
   pull_request:
     types: [opened, ready_for_review]
@@ -37,12 +29,7 @@ jobs:
         (
           github.event_name == 'issue_comment' &&
           github.event.issue.pull_request != null &&
-          contains(github.event.comment.body, '@ai-review') &&
-          (
-            github.event.comment.author_association == 'OWNER' ||
-            github.event.comment.author_association == 'MEMBER' ||
-            github.event.comment.author_association == 'COLLABORATOR'
-          )
+          contains(github.event.comment.body, '@ai-review')
         )
       )
 
@@ -50,6 +37,19 @@ jobs:
     timeout-minutes: 20
 
     steps:
+      - name: Verify commenter has write access
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.event.comment.user.login }}
+        run: |
+          set -euo pipefail
+          PERM=$(gh api "repos/${{ github.repository }}/collaborators/${ACTOR}/permission" --jq .permission 2>/dev/null || echo none)
+          case "$PERM" in
+            admin|maintain|write) echo "OK: $ACTOR has $PERM" ;;
+            *) echo "::error::$ACTOR lacks write access (got '$PERM'); refusing."; exit 1 ;;
+          esac
+
       - name: Resolve PR head
         id: pr
         env:
