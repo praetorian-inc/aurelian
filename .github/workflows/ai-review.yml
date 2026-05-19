@@ -1,28 +1,22 @@
 name: AI Review
 
-# Single consolidated AI code-review for Aurelian PRs. Self-contained — the
-# review rules live in this file. Three trigger paths:
-#   1. pull_request: opened or marked ready-for-review (NOT on push/synchronize)
+# Single consolidated AI code-review for Aurelian PRs targeting `main`.
+# Self-contained — review rules live in this file. Two trigger paths:
+#   1. pull_request opened or marked ready-for-review (base: main only)
 #   2. issue_comment containing `@ai-review` from a maintainer
-#      (OWNER / MEMBER / COLLABORATOR association)
-#   3. workflow_dispatch with a PR number — manual escape hatch
+#      (OWNER / MEMBER / COLLABORATOR association) on a PR into `main`
 #
 # Only secret needed: ANTHROPIC_API_KEY.
 
 on:
   pull_request:
     types: [opened, ready_for_review]
+    branches: [main]
   issue_comment:
     types: [created]
-  workflow_dispatch:
-    inputs:
-      pr_number:
-        description: "PR number to review"
-        required: true
-        type: string
 
 concurrency:
-  group: ai-review-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr_number }}
+  group: ai-review-${{ github.event.pull_request.number || github.event.issue.number }}
   cancel-in-progress: true
 
 permissions:
@@ -31,11 +25,9 @@ permissions:
 
 jobs:
   review:
-    # Same-repo + non-bot gating with three distinct entry paths.
     if: >
       !contains(github.actor, '[bot]') && !contains(github.actor, 'coderabbit') && !contains(github.actor, 'devin') &&
       (
-        github.event_name == 'workflow_dispatch' ||
         (
           github.event_name == 'pull_request' &&
           github.event.pull_request.draft == false &&
@@ -65,27 +57,33 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          case "${{ github.event_name }}" in
-            issue_comment)     NUM="${{ github.event.issue.number }}" ;;
-            workflow_dispatch) NUM="${{ inputs.pr_number }}" ;;
-            *)                 NUM="${{ github.event.pull_request.number }}" ;;
-          esac
-          DATA=$(gh pr view "$NUM" --repo "$REPO" --json headRefOid,headRepository,state)
+          if [[ "${{ github.event_name }}" == "issue_comment" ]]; then
+            NUM="${{ github.event.issue.number }}"
+          else
+            NUM="${{ github.event.pull_request.number }}"
+          fi
+          DATA=$(gh pr view "$NUM" --repo "$REPO" --json headRefOid,headRepository,baseRefName,state)
           SHA=$(echo "$DATA" | jq -r .headRefOid)
           HEAD_REPO=$(echo "$DATA" | jq -r .headRepository.nameWithOwner)
+          BASE=$(echo "$DATA" | jq -r .baseRefName)
           STATE=$(echo "$DATA" | jq -r .state)
           if [[ "$HEAD_REPO" != "$REPO" ]]; then
             echo "::error::PR head is on a fork ($HEAD_REPO); refusing."
             exit 1
           fi
+          if [[ "$BASE" != "main" ]]; then
+            echo "::notice::PR #$NUM targets $BASE, not main; skipping review."
+            exit 0
+          fi
           if [[ "$STATE" != "OPEN" ]]; then
-            echo "::error::PR #$NUM is $STATE; refusing."
-            exit 1
+            echo "::notice::PR #$NUM is $STATE; skipping review."
+            exit 0
           fi
           echo "number=$NUM" >> "$GITHUB_OUTPUT"
           echo "sha=$SHA"    >> "$GITHUB_OUTPUT"
 
       - name: Checkout PR head
+        if: steps.pr.outputs.sha != ''
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ steps.pr.outputs.sha }}
@@ -93,10 +91,8 @@ jobs:
           persist-credentials: false
 
       - name: Run review
+        if: steps.pr.outputs.sha != ''
         uses: anthropics/claude-code-action@38ec876110f9fbf8b950c79f534430740c3ac009  # v1.0.101
-        env:
-          PR_NUMBER: ${{ steps.pr.outputs.number }}
-          REPO: ${{ github.repository }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -114,126 +110,173 @@ jobs:
 
             ## How to Review
 
-            1. `gh pr view ${{ steps.pr.outputs.number }} --repo ${{ github.repository }}` for PR title/body.
+            1. `gh pr view ${{ steps.pr.outputs.number }} --repo ${{ github.repository }}` for PR title / body.
             2. `gh pr diff ${{ steps.pr.outputs.number }} --repo ${{ github.repository }}` for the diff.
-            3. Read each changed file in full — never review diffs in isolation.
-            4. Apply only rules relevant to the files touched. Skip irrelevant categories.
-            5. Write the review to `/tmp/review.md` in the format below, then post it once:
+            3. Read each changed file in full — never review a diff in isolation.
+            4. Walk the rule tiers below in order; flag only what is observable in the diff.
+            5. Write the review to `/tmp/review.md` in the format below, then post once:
                `gh pr comment ${{ steps.pr.outputs.number }} --repo ${{ github.repository }} --body-file /tmp/review.md`
-               One comment only. Do not post inline comments. Do not post multiple top-level comments.
+               One comment only. No inline comments. No multiple top-level comments.
 
             ## Scope Discipline
 
-            - Code review only. Do NOT comment on test coverage, missing tests, or test naming.
-              (Architectural rules about *how* tests are wired — e.g. blank-imports, build tags —
-              are in scope only if test files are part of this PR.)
-            - Do NOT raise stylistic / formatting / naming-preference nits. Other tools cover those.
-            - Do NOT propose refactors outside the diff.
-            - Do NOT edit files. Do NOT push commits.
-            - Flag a rule only if you can point to a concrete file + line in this PR.
+            - Code review only. Do NOT demand new tests. Do NOT comment on test coverage, missing tests, or test naming.
+            - Do NOT raise stylistic / formatting / naming nits beyond the explicit Tier 3 list.
+            - Do NOT propose refactors outside the diff. Do NOT edit files. Do NOT push commits.
+            - Flag only when you can point to a concrete file + line.
 
-            ## Review Rules
+            ## Tier 1 — Must-flag (behavioral correctness). Spend most of your budget here.
 
-            ### Module Architecture
-            - Modules live in `pkg/modules/<csp>/<category>/` and self-register via `init()` + `plugin.Register()`. Flag any central manifest, dispatcher, or orchestrator package.
-            - Module `Run()` should be thin (~30 lines target): bind config, delegate to a shared package under `pkg/<csp>/<service>/`, emit into `out`. Flag inline errgroup, manual rate limiting, manual pagination, or business logic in `Run()`.
-            - Module `Run()` must emit results into `*pipeline.P[model.AurelianModel]` via `out.Send()` (or by piping into `out`). Flag modules that return results directly instead of streaming.
-            - `SupportedResourceTypes()` must list **input targets** (e.g. subscription, account, project), NOT resource types discovered internally. Common bug: listing every Azure type a secrets module scans, when the actual input is `Microsoft.Resources/subscriptions`.
+            ### Logic & Implementation
+            - Does the change do what the PR description and the changed function / method names claim? Flag scope creep beyond stated intent. Do NOT raise a title-vs-code mismatch as a defect on its own — only when the divergence introduces real risk or surprises.
+            - Off-by-one, wrong loop bounds, wrong slice indices.
+            - Wrong loop variable captured by a goroutine closure inside a non-`for` loop. (Go ≥1.22 fixed the for-loop case.)
+            - Filter loops that validate but then operate on the unfiltered slice.
+            - Branches genuinely unreachable given the call graph. NEVER flag the following as unreachable / dead:
+                - blank imports (`_ "path"`) — these exist for `init()` side effects
+                - `init()` functions and plugin / enricher registry registrations
+                - interface methods called via reflection or registry dispatch
+              These are intentional and load-bearing.
 
-            ### Pipelines & Lifecycle
+            ### Concurrency
+            - Multiple goroutines writing the same shared field without `sync.Once` / `sync.Mutex` — race.
+            - Context propagation dropped on a long-running call (`ctx` replaced with `context.Background()` inside a request-scoped path, or cancellation not honored).
+            - Local variables shadowing package imports (`pipeline`, `context`, `errors`).
+
+            ### Pipeline Lifecycle (Aurelian-specific deadlock source)
             - `out.Wait()` vs `return nil` — get this exactly right:
                 - `out.Send()` directly with no internal pipeline → `return nil` (caller's `Pipe` defer handles `Close`).
                 - `pipeline.Pipe(x, fn, out)` targeting `out` → `return out.Wait()`.
                 - Internal pipeline drained via `Range()` then re-emitted → `return internal.Wait()`.
-              Wrong choice deadlocks the pipeline.
-            - Flag inline closures passed to `pipeline.Pipe`. Extract them to named methods for readability and testability.
+              Wrong choice deadlocks.
+            - Send to a pipeline after it has been closed; double-close on the same pipeline.
 
-            ### Components
-            - Components live in `pkg/<csp>/<component>/` and expose methods matching `func(input T, out *pipeline.P[U]) error`. Flag component methods with multiple domain parameters — bundle them into a single input struct.
-            - Flag interfaces created solely to mock SDK clients for unit tests. Components close to cloud SDKs are validated by integration tests, not brittle wiring tests. (This is about *architecture*, not test count — do not demand new tests.)
-            - Type-dispatched handlers must use an `init()`-based registry pattern, not switch/if-else inside a central dispatcher.
+            ### Error Semantics
+            - `if err != nil { return nil }` that silently drops an error with no `slog.Warn` (or higher) and no clearly-deliberate comment.
+            - Returning `nil` on partial failure when the contract is all-or-nothing.
+            - Swallowing a sentinel (`io.EOF`, `context.Canceled`, `ResourceNotFoundException`) the caller relies on.
+            - Error classification via string-matching on error messages — must use SDK `ErrorCode()` via `errors.As`.
+            - `%w` wrapping / context wrapping — flag ONLY when the wrap chain genuinely loses context (final error has no operation name AND no upstream `%w`). Do NOT flag every bare `return err`.
 
-            ### Parameters & Types
-            - Parameters must use struct-tag binding via `plugin.Bind(cfg, &c)`. Flag manual `plugin.NewParameters()`, `params.Set()`, `params.Validate()`, or raw `cfg.Args["key"].(type)` assertions.
-            - Config structs should embed the appropriate common parameter group (e.g. `AWSCommonRecon` / `AWSReconBase` / their Azure / GCP equivalents). Flag re-declaration of shared params (profile, regions, concurrency, ARN list).
-            - Flag hardcoded concurrency limits, thresholds, or tuning constants — make them parameters (modules) or constructor options (components).
-            - Flag `any` / `interface{}` in struct fields or return types when a concrete type exists. Flag struct fields that don't match the corresponding YAML template fields — silent data loss.
+            ### Panic Risk
+            - Nil pointer deref on a value not nil-checked first.
+            - Type assertion without the `, ok` form (or without a fallback) on SDK responses / map values.
+            - Slice indexing without a length check on SDK / user / external data.
+            - `MustX` family used outside `init()` or package-level `var` — propagates as panic at call time.
+
+            ### Test Meaningfulness (only when test files are part of this PR)
+            - Tautological assertions that pass without exercising the changed code (`assert.Equal(x, x)`; mocks returning the expected value with no behavior in between).
+            - Mocks / stubs that swallow the path the test claims to exercise.
+            - Table-driven cases where every row lands on the same branch — variety is cosmetic.
+            - Fixtures that don't reach the new code (e.g. config added but the changed function is never called from the test).
+            - Assertions on internal state instead of the contract.
+            - Tests whose failure would NOT represent a regression of the changed behavior.
+            You may NOT demand additional tests; you may NOT comment on test naming, formatting, or count.
+
+            ### Over-engineering / Dead Code (YAGNI)
+            - Helpers / methods / constants introduced with a single call site that could be inlined.
+            - Interfaces with a single concrete implementation when no second impl is on the horizon.
+            - Configuration / parameters / fields added but never read.
+            - Defensive checks for impossible conditions (e.g. nil-check on a value the caller already validated).
+            - Speculative abstractions or feature flags for hypothetical futures.
+            Carve-outs — NEVER flag these as dead code or over-engineering:
+            - Blank imports for `init()` side effects.
+            - Plugin / enricher / handler registry patterns.
+            - Interface boundaries for CSP polymorphism (AWS / Azure / GCP / K8s).
+
+            ### Cypher / Graph
+            - Cypher queries that drop the matched target from `WITH` and re-match downstream — O(n²) false edges. Always carry the target: `WITH attacker, target`.
+
+            ## Tier 2 — Aurelian architectural conventions (flag only when load-bearing)
+
+            ### Module Architecture
+            - Modules live in `pkg/modules/<csp>/<category>/` and self-register via `init()` + `plugin.Register()`. Flag central manifests / dispatchers / orchestrators.
+            - Module `Run()` should be thin: bind config, delegate to a shared package under `pkg/<csp>/<service>/`, emit into `out`. Flag inline errgroup / manual rate-limit / manual pagination / business logic in `Run()`.
+            - Module `Run()` emits via `*pipeline.P[model.AurelianModel]`; flag direct result returns.
+            - `SupportedResourceTypes()` lists input targets (subscription / account / project), not internally-discovered types.
+
+            ### Parameters
+            - `plugin.Bind(cfg, &c)` struct-tag binding. Flag manual `NewParameters` / `Set` / `Validate` / raw `cfg.Args["..."]` asserts.
+            - Embed the appropriate common parameter group (`AWSCommonRecon` / `AWSReconBase` / Azure / GCP equivalents). Flag re-declared shared params (profile, regions, concurrency, ARN list).
+            - Concurrency limits and thresholds should be parameters, not magic constants.
+            - Concrete types over `any` / `interface{}` where a concrete type exists. Struct fields must match YAML template fields.
 
             ### Shared Packages
-            - errgroup, rate limiting, pagination, and type handling logic belong in `pkg/<csp>/<service>/`, not in module `Run()`.
-            - Rate limiting must use a per-region / scoped limiter (e.g. `ratelimit.NewAWSRegionLimiter(concurrency)`, `ratelimit.NewCrossRegionActor(concurrency)`). Flag any use of `ratelimit.Global()`.
-            - Region fan-out must use `CrossRegionActor` (`ActInRegions` for fan-out, `ActInRegion` for streaming) — not manual region for-loops.
-            - Pagination must use `ratelimit.Paginator` or the CSP-equivalent — not hand-rolled NextToken loops with manual retry/backoff.
-            - If a module makes custom AWS SDK calls (not via CloudControl), there should be a corresponding shared package under `pkg/aws/<service>/`.
+            - errgroup / rate limiting / pagination / type handling live in `pkg/<csp>/<service>/`, not in module `Run()`.
+            - Rate limiting: scoped limiter (`ratelimit.NewAWSRegionLimiter`, `NewCrossRegionActor`). Never `ratelimit.Global()`.
+            - Region fan-out: `CrossRegionActor.ActInRegions` / `ActInRegion`. No manual region for-loops.
+            - Pagination: `ratelimit.Paginator` (or CSP equivalent). No hand-rolled NextToken + manual retry.
+            - Custom AWS SDK calls outside CloudControl should have a `pkg/aws/<service>/` package.
 
             ### SDK & Parsing
-            - AWS code must use SDK v2 (`github.com/aws/aws-sdk-go-v2`). Flag any v1 import (`github.com/aws/aws-sdk-go`).
-            - Resource identifier parsing must use SDK parsers — `arn.Parse` (AWS), `arm.ParseResourceID` (Azure), GCP SDK resource-name helpers. Flag `strings.Split` on ARNs / resource IDs.
-            - When ingesting AWS JSON responses, check `pkg/types/` first — there may already be an enhanced type with a custom `UnmarshalJSON`. Flag new lookalike type definitions.
+            - AWS SDK v2 only; flag any v1 (`github.com/aws/aws-sdk-go`).
+            - Resource identifier parsing via SDK: `arn.Parse`, `arm.ParseResourceID`, GCP helpers. Flag `strings.Split` on ARNs / resource IDs.
+            - Check `pkg/types/` for enhanced types with `UnmarshalJSON` before defining new ones.
 
             ### Enrichers
-            - Enrichers register per resource type in `init()` via the CSP-appropriate API (`plugin.RegisterEnricher` AWS, `plugin.RegisterAzureEnricher`, `plugin.RegisterGCPEnricher`). Flag enrichment logic inlined inside modules or listers — listers list, enrichers enrich.
-            - Enrichers should define a narrow client interface for the SDK calls they make, with a wrapper-vs-core split for testability.
-            - Missing-resource errors (e.g. `ResourceNotFoundException`) must return nil, not propagate. Treat enrichment as best-effort.
-            - Flag mixed mutation + filtering in a single enricher — split into mutators (add properties) vs evaluators (assess and emit risks).
+            - Register in `init()` via the CSP-appropriate API (`plugin.RegisterEnricher`, `RegisterAzureEnricher`, `RegisterGCPEnricher`). Flag enrichment inlined in modules / listers.
+            - Narrow client interface for SDK calls; wrapper-vs-core split.
+            - Missing-resource errors return nil (best-effort).
+            - Split mutators (add properties) and evaluators (assess + emit risks) — don't mix in one enricher.
 
-            ### Error Handling
-            - `if err != nil { return nil }` without logging — flag. Must `slog.Warn` at minimum.
-            - `fmt.Errorf` must use `%w` for wrapping, not `%v`.
-            - Bare `return err` without context wrapping — flag. Use `fmt.Errorf("listing buckets: %w", err)`.
-            - Error classification by string-matching on error messages — flag. Use SDK `ErrorCode()` via `errors.As`.
-            - Multiple goroutines writing the same shared error field without `sync.Once` — flag race.
-
-            ### Code Quality (Modern Go ≥1.24)
-            - Prefer `slices`, `maps`, `cmp` packages over manual loops. Builtins `min` / `max` / `clear`. `range n` over `for i := 0; i < n; i++`. Drop `v := v` loop-var copies (fixed in 1.22). `cmp.Or` for defaults. `errors.Is` / `errors.As`. `strings.Cut` / `CutPrefix`. `errgroup` over `sync.WaitGroup` + channel.
-            - Flag local variables shadowing package imports (`pipeline`, `context`, `errors`).
-            - Flag `regexp.MustCompile` inside functions — should be package-level vars.
-            - Flag subscriptions / accounts / regions resolved in multiple places.
-            - Filter loops that validate but then use the unfiltered `page.Items` — flag.
-            - Missing `PermissionsBoundary` / `IAMTags` on IAM resources created in test fixtures — flag.
-
-            ### Graph / Cypher (Neo4j)
-            - Cypher queries that drop the matched target node from `WITH` and re-match downstream — flag. Creates O(n²) false edges. Carry the target through every `WITH`: `WITH attacker, target`.
+            ### Modern Go ≥1.24 (use stdlib instead of hand-rolled equivalents)
+            - `slices.Contains` / `Index` / `Sort` over manual loops.
+            - `maps.Keys` / `Values` / `Clone` over manual loops.
+            - `cmp.Or` for default-value chains.
+            - Builtin `min` / `max` / `clear`.
+            - `range n` over `for i := 0; i < n; i++`.
+            - `errors.Is` / `errors.As` over manual error comparison or type switch.
+            - `strings.Cut` / `CutPrefix` / `CutSuffix` over `Split[:2]` or `HasPrefix` + slicing.
+            - `errgroup` over `sync.WaitGroup` + error channel.
+            - `any` (builtin alias) over `interface{}` in new code.
 
             ### Cross-Cutting Anti-Patterns
-            - `pkg/dispatcher/` or `pkg/orchestrator/` directories — flag. Modules belong in `pkg/modules/`.
-            - Raw `map[string]interface{}` for AWS types when `pkg/types/` has a structured alternative — flag.
-            - Chariot or Tabularium imports in Aurelian module code — flag. Modules return `output.CloudResource` only.
-            - Logging / progress callbacks plumbed through module `Run()` — push to pipeline or components.
+            - `pkg/dispatcher/` or `pkg/orchestrator/` directories — modules belong in `pkg/modules/`.
+            - `map[string]interface{}` for AWS types when `pkg/types/` has a structured alternative.
+            - Chariot or Tabularium imports in module code — modules emit `output.CloudResource` only.
+            - Logging / progress callbacks plumbed through `Run()` — push to pipeline or components.
 
-            ### Code Principles (Cross-Cutting)
-            - **DRY** — flag duplicated logic across modules / components. Extract to a shared helper or component.
-            - **YAGNI** — flag speculative abstractions, single-impl interfaces, feature flags for hypothetical scenarios, configurability nobody asked for.
-            - **Minimal comments** — flag comments that describe *what* code does. Doc comments on unexported types/functions are flagged unless behavior is genuinely surprising.
+            ### DRY
+            - Subscriptions / accounts / regions resolved in multiple places.
+            - Duplicated logic across modules / components — extract to a shared helper or component.
+
+            ## Tier 3 — Low priority (mention only if egregious; do not crowd findings)
+
+            - Inline closures passed to `pipeline.Pipe` — extract to a named method when the closure is non-trivial and obviously deserves one. Trivial closures: leave alone.
+            - `regexp.MustCompile` inside hot-path functions — should be a package-level `var`.
+            - Comments that state the obvious or are unnecessarily verbose.
 
             ## Output Format
 
-            Write `/tmp/review.md` using exactly this structure:
+            Write `/tmp/review.md` exactly as:
 
             ```
             ## AI Review
 
             ### Summary
-            - (1–3 bullets describing what the PR does — drawn from the diff, not the PR body)
+            - (1–3 bullets describing what the PR actually does — drawn from the diff, not the PR body)
 
             ### Findings
 
             | # | Severity | Rule | File | Location | Detail |
             |---|----------|------|------|----------|--------|
-            | 1 | high | Thin module | `pkg/modules/aws/recon/foo.go` | L45–L90 | `Run()` is 45 lines with inline errgroup; move control flow into `pkg/aws/foo/` |
+            | 1 | high | Pipeline lifecycle | `pkg/modules/aws/recon/foo.go` | L120 | `Run()` returns `out.Wait()` but only calls `out.Send()` directly; will deadlock. Use `return nil`. |
 
             Severity:
-            - **high** — architectural violation (wrong package layout, control flow in module, SDK v1, pipeline lifecycle bug)
-            - **medium** — pattern deviation (bare error return, missing enricher interface, hand-rolled ARN parsing)
-            - **low** — suggestion (could reuse existing enhanced type, modern-Go idiom missed)
+            - **high** — Tier 1 behavioral bug (logic, concurrency, error semantics, panic, pipeline lifecycle, dead-code, Cypher, test meaningfulness, scope creep)
+            - **medium** — Tier 2 architectural deviation that's load-bearing
+            - **low** — Tier 3 soft preference
 
             If nothing significant: `No issues found — LGTM pending human review.`
 
             ### Notes (optional)
-            - (1–2 bullets only if you have non-finding context worth surfacing — e.g. "this widens the IAM enricher surface area, worth a careful read of pkg/aws/iam/enrich.go")
+            - (1–2 bullets only if there is non-finding context worth surfacing — e.g. "this widens the IAM enricher surface area, worth a careful read of pkg/aws/iam/enrich.go")
             ```
 
-            Keep findings sharp. Total under 15 rows. Quality over quantity.
+            Hard caps:
+            - Total under 15 rows.
+            - At least two-thirds of findings should be Tier 1 unless the PR is purely a convention / refactor fix.
+            - Quality over quantity. If a finding wouldn't survive a human reviewer's pushback, omit it.
           claude_args: |
             --model claude-opus-4-7
             --max-turns 30
