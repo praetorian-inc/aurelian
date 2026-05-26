@@ -2,22 +2,23 @@
 
 Enumerates Azure APIM developer portal resources (APIs, products, delegation settings) without authentication, then optionally performs a cross-tenant captcha relay attack to create an account on the target portal and enumerate authenticated resources and subscription keys.
 
-```
+```bash
 aurelian azure recon apim-cross-tenant [flags]
 ```
 
 ### Options
 
-```
-      --attacker string   Attacker-controlled APIM portal URL (required for bypass mode)
-      --email string      Account email (required for authenticated and bypass modes)
-      --first string      First name for registration (bypass mode) (default "Test")
-  -h, --help              help for apim-cross-tenant
-  -k, --insecure          Skip TLS certificate verification
-      --last string       Last name for registration (bypass mode) (default "User")
-      --mode string       Scan mode: passive (unauthenticated enum only), authenticated (login + enum), bypass (cross-tenant captcha relay + signup + enum) (default "passive")
-      --password string   Account password (required for authenticated and bypass modes)
-      --target string     Target APIM developer portal URL (required)
+```text
+      --attacker string    Attacker-controlled APIM portal URL (required for bypass mode)
+      --email string       Account email (required for authenticated and bypass modes)
+      --first string       First name for registration (bypass mode) (default "Test")
+  -h, --help               help for apim-cross-tenant
+  -k, --insecure           Skip TLS certificate verification
+      --last string        Last name for registration (bypass mode) (default "User")
+      --mode string        Scan mode: passive (unauthenticated enum only), authenticated (login + enum), bypass (cross-tenant captcha relay + signup + enum) (default "passive")
+      --openai-key string  OpenAI API key for audio captcha transcription (bypass mode); falls back to OPENAI_API_KEY env var if unset
+      --password string    Account password (required for authenticated and bypass modes)
+      --target string      Target APIM developer portal URL (required)
 ```
 
 ### SEE ALSO

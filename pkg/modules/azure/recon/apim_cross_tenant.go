@@ -653,9 +653,16 @@ func (m *APIMCrossTenantModule) doJSONList(client *http.Client, firstURL string,
 
 // buildHTTPClient creates an HTTP client that honors the Insecure flag.
 func (m *APIMCrossTenantModule) buildHTTPClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	var transport *http.Transport
+	if t, ok := http.DefaultTransport.(*http.Transport); ok {
+		transport = t.Clone()
+	} else {
+		transport = &http.Transport{}
+	}
 	if m.Insecure {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec
+	} else {
+		transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS13}
 	}
 	return &http.Client{
 		Timeout:   30 * time.Second,
