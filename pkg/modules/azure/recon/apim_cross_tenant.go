@@ -32,6 +32,7 @@ type APIMCrossTenantConfig struct {
 	TargetAPIM   string `param:"target"    desc:"Target APIM developer portal URL"                                                           required:"true"`
 	Mode         string `param:"mode"      desc:"Scan mode: passive (unauthenticated enum only), authenticated (login + enum), bypass (cross-tenant captcha relay + signup + enum)" default:"passive" enum:"passive,authenticated,bypass"`
 	AttackerAPIM string `param:"attacker"  desc:"Attacker-controlled APIM portal URL (required for bypass mode)"`
+	OpenAIKey    string `param:"openai-key" desc:"OpenAI API key for audio captcha transcription (bypass mode); falls back to OPENAI_API_KEY env var if unset" sensitive:"true"`
 	Email        string `param:"email"     desc:"Account email (required for authenticated and bypass modes)"`
 	Password     string `param:"password"  desc:"Account password (required for authenticated and bypass modes)"                              sensitive:"true"`
 	FirstName    string `param:"first"     desc:"First name for registration (bypass mode)"                                                  default:"Test"`
@@ -526,9 +527,12 @@ func (m *APIMCrossTenantModule) solveCaptcha(cfg plugin.Config, client *http.Cli
 // solveCaptchaAudio fetches an audio captcha and transcribes it via the OpenAI Whisper API.
 // Returns an error if OPENAI_API_KEY is not set or transcription fails.
 func (m *APIMCrossTenantModule) solveCaptchaAudio(client *http.Client, attacker string) (solution string, captcha apimCaptchaResponse, err error) {
-	apiKey := os.Getenv("OPENAI_API_KEY")
+	apiKey := m.OpenAIKey
 	if apiKey == "" {
-		return "", captcha, fmt.Errorf("OPENAI_API_KEY not set")
+		apiKey = os.Getenv("OPENAI_API_KEY")
+	}
+	if apiKey == "" {
+		return "", captcha, fmt.Errorf("--openai-key not set and OPENAI_API_KEY env var is unset")
 	}
 
 	captchaURL := fmt.Sprintf("%s/captcha-challenge?challengeType=audio", attacker)
