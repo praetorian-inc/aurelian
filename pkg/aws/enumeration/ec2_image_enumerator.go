@@ -21,14 +21,16 @@ import (
 // native EC2 SDK, enriching each image with launch permissions and usage data.
 type EC2ImageEnumerator struct {
 	plugin.AWSCommonRecon
-	provider *AWSConfigProvider
+	provider   *AWSConfigProvider
+	skipReport *SkipReport
 }
 
 // NewEC2ImageEnumerator creates an EC2ImageEnumerator that uses the native EC2 SDK.
-func NewEC2ImageEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider) *EC2ImageEnumerator {
+func NewEC2ImageEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider, skipReport *SkipReport) *EC2ImageEnumerator {
 	return &EC2ImageEnumerator{
 		AWSCommonRecon: opts,
 		provider:       provider,
+		skipReport:     skipReport,
 	}
 }
 
@@ -105,6 +107,10 @@ func (l *EC2ImageEnumerator) listImagesInRegion(region, accountID string, out *p
 		Owners: []string{"self"},
 	})
 	if err != nil {
+		if op := ClassifySkippable(err, "ec2", "DescribeImages", region); op != nil {
+			l.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return fmt.Errorf("describe images in %s: %w", region, err)
 	}
 

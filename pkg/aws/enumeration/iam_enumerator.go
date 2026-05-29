@@ -20,8 +20,9 @@ import (
 // fetches once per lifetime via sync.Once.
 type IAMEnumerator struct {
 	plugin.AWSCommonRecon
-	provider  *AWSConfigProvider
-	accountID string
+	provider   *AWSConfigProvider
+	skipReport *SkipReport
+	accountID  string
 }
 
 // iamSubEnumerator implements ResourceEnumerator for a single IAM resource type.
@@ -49,10 +50,11 @@ func (s *iamSubEnumerator) EnumerateByARN(arn string, out *pipeline.P[output.AWS
 }
 
 // NewIAMEnumerator creates an IAMEnumerator.
-func NewIAMEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider) *IAMEnumerator {
+func NewIAMEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider, skipReport *SkipReport) *IAMEnumerator {
 	return &IAMEnumerator{
 		AWSCommonRecon: opts,
 		provider:       provider,
+		skipReport:     skipReport,
 	}
 }
 

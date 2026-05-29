@@ -3,7 +3,6 @@ package enumeration
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -19,13 +18,15 @@ import (
 // because CloudControl does not support AWS::Amplify::App.
 type AmplifyAppEnumerator struct {
 	plugin.AWSCommonRecon
-	provider *AWSConfigProvider
+	provider   *AWSConfigProvider
+	skipReport *SkipReport
 }
 
-func NewAmplifyAppEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider) *AmplifyAppEnumerator {
+func NewAmplifyAppEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider, skipReport *SkipReport) *AmplifyAppEnumerator {
 	return &AmplifyAppEnumerator{
 		AWSCommonRecon: opts,
 		provider:       provider,
+		skipReport:     skipReport,
 	}
 }
 
@@ -96,7 +97,6 @@ func (e *AmplifyAppEnumerator) EnumerateByARN(arn string, out *pipeline.P[output
 	return nil
 }
 
-
 func (e *AmplifyAppEnumerator) listAppsInRegion(region, accountID string, out *pipeline.P[output.AWSResource]) error {
 	cfg, err := e.provider.GetAWSConfig(region)
 	if err != nil {
@@ -104,15 +104,16 @@ func (e *AmplifyAppEnumerator) listAppsInRegion(region, accountID string, out *p
 	}
 	client := amplify.NewFromConfig(*cfg)
 
+	var skipped []SkippedOp
 	var nextToken *string
 	paginator := ratelimit.NewAWSPaginator()
-	return paginator.Paginate(func() (bool, error) {
+	err = paginator.Paginate(func() (bool, error) {
 		result, err := client.ListApps(context.Background(), &amplify.ListAppsInput{
 			NextToken: nextToken,
 		})
 		if err != nil {
-			if isRegionUnsupportedError(err) {
-				slog.Debug("amplify not available in region, skipping", "region", region)
+			if op := ClassifySkippable(err, "amplify", "ListApps", region); op != nil {
+				skipped = append(skipped, *op)
 				return false, nil
 			}
 			return false, fmt.Errorf("list amplify apps in %s: %w", region, err)
@@ -140,4 +141,7 @@ func (e *AmplifyAppEnumerator) listAppsInRegion(region, accountID string, out *p
 		nextToken = result.NextToken
 		return nextToken != nil, nil
 	})
+
+	e.skipReport.RecordBatch(skipped)
+	return err
 }

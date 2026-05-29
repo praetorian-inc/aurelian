@@ -13,7 +13,6 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 	"github.com/praetorian-inc/aurelian/pkg/types"
-	"log/slog"
 	"strings"
 )
 
@@ -21,17 +20,19 @@ type CloudControlEnumerator struct {
 	plugin.AWSCommonRecon
 	CrossRegionActor *ratelimit.CrossRegionActor
 	provider         *AWSConfigProvider
+	skipReport       *SkipReport
 }
 
 func NewCloudControlEnumerator(options plugin.AWSCommonRecon) *CloudControlEnumerator {
-	return NewCloudControlEnumeratorWithProvider(options, NewAWSConfigProvider(options))
+	return NewCloudControlEnumeratorWithProvider(options, NewAWSConfigProvider(options), NewSkipReport())
 }
 
-func NewCloudControlEnumeratorWithProvider(options plugin.AWSCommonRecon, provider *AWSConfigProvider) *CloudControlEnumerator {
+func NewCloudControlEnumeratorWithProvider(options plugin.AWSCommonRecon, provider *AWSConfigProvider, skipReport *SkipReport) *CloudControlEnumerator {
 	return &CloudControlEnumerator{
 		AWSCommonRecon:   options,
 		CrossRegionActor: ratelimit.NewCrossRegionActor(options.Concurrency),
 		provider:         provider,
+		skipReport:       skipReport,
 	}
 }
 
@@ -51,11 +52,16 @@ func (cc *CloudControlEnumerator) List(identifier string, out *pipeline.P[output
 
 func (cc *CloudControlEnumerator) EnumerateByARN(resourceARN string, out *pipeline.P[output.AWSResource]) error {
 	resource, err := cc.getResourceByARN(resourceARN)
-	if IsSkippableAWSError(err) {
-		slog.Debug("skipping arn", "arn", resourceARN, "code", SkipReason(err), "error", err)
-		return nil
-	}
 	if err != nil {
+		// Extract region from ARN for skip reporting; best-effort.
+		region := ""
+		if parsed, parseErr := awsaarn.Parse(resourceARN); parseErr == nil {
+			region = parsed.Region
+		}
+		if op := ClassifySkippable(err, "cloudcontrol", "GetResource", region); op != nil {
+			cc.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return err
 	}
 
@@ -238,12 +244,11 @@ func (cc *CloudControlEnumerator) listInRegionByType(region, resourceType string
 	}
 
 	err = cc.listByType(client, accountID, region, resourceType, out)
-	if IsSkippableAWSError(err) {
-		slog.Debug("skipping resource type", "type", resourceType, "region", region, "code", SkipReason(err), "error", err)
-		return nil
-	}
 	if err != nil {
-		slog.Warn("error listing resources", "type", resourceType, "region", region, "error", err)
+		if op := ClassifySkippable(err, "cloudcontrol", "ListResources", region); op != nil {
+			cc.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return err
 	}
 

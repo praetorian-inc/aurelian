@@ -20,13 +20,15 @@ import (
 // documents.
 type SSMDocumentEnumerator struct {
 	plugin.AWSCommonRecon
-	provider *AWSConfigProvider
+	provider   *AWSConfigProvider
+	skipReport *SkipReport
 }
 
-func NewSSMDocumentEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider) *SSMDocumentEnumerator {
+func NewSSMDocumentEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider, skipReport *SkipReport) *SSMDocumentEnumerator {
 	return &SSMDocumentEnumerator{
 		AWSCommonRecon: opts,
 		provider:       provider,
+		skipReport:     skipReport,
 	}
 }
 
@@ -112,9 +114,15 @@ func (e *SSMDocumentEnumerator) listDocumentsInRegion(region, accountID string, 
 		},
 	})
 
+	var skipped []SkippedOp
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(context.Background())
 		if err != nil {
+			if op := ClassifySkippable(err, "ssm", "ListDocuments", region); op != nil {
+				skipped = append(skipped, *op)
+				break
+			}
+			e.skipReport.RecordBatch(skipped)
 			return fmt.Errorf("list documents in %s: %w", region, err)
 		}
 
@@ -137,5 +145,6 @@ func (e *SSMDocumentEnumerator) listDocumentsInRegion(region, accountID string, 
 		}
 	}
 
+	e.skipReport.RecordBatch(skipped)
 	return nil
 }

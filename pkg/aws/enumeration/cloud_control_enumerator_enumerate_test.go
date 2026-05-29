@@ -29,12 +29,9 @@ func TestEnumerateByARN_ErrorDoesNotSendZeroResource(t *testing.T) {
 		enumerateByARNErr: &ccTestSmithyError{code: "AccessDeniedException", msg: "denied by SCP"},
 	}
 
-	e := &Enumerator{
-		enumerators: map[string]ResourceEnumerator{
-			"AWS::Lambda::Function": mock,
-		},
-		cc: &CloudControlEnumerator{},
-	}
+	e := newTestEnumerator(map[string]ResourceEnumerator{
+		"AWS::Lambda::Function": mock,
+	})
 
 	out := pipeline.New[output.AWSResource]()
 	var collected []output.AWSResource
@@ -71,12 +68,9 @@ func TestEnumerateByARN_SuccessSendsResource(t *testing.T) {
 		resource:     expected,
 	}
 
-	e := &Enumerator{
-		enumerators: map[string]ResourceEnumerator{
-			"AWS::Lambda::Function": mock,
-		},
-		cc: &CloudControlEnumerator{},
-	}
+	e := newTestEnumerator(map[string]ResourceEnumerator{
+		"AWS::Lambda::Function": mock,
+	})
 
 	out := pipeline.New[output.AWSResource]()
 	var collected []output.AWSResource

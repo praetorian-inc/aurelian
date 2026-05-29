@@ -24,7 +24,7 @@ func TestEC2ImageEnumerator(t *testing.T) {
 	enum := NewEC2ImageEnumerator(plugin.AWSCommonRecon{
 		Regions:     []string{"us-east-1"},
 		Concurrency: 2,
-	}, provider)
+	}, provider, NewSkipReport())
 
 	t.Run("EnumerateAll discovers owned AMIs", func(t *testing.T) {
 		results, err := collectImageResults(func(out *pipeline.P[output.AWSResource]) error {
