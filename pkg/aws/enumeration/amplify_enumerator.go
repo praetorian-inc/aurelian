@@ -96,15 +96,6 @@ func (e *AmplifyAppEnumerator) EnumerateByARN(arn string, out *pipeline.P[output
 	return nil
 }
 
-// isRegionUnsupportedError returns true when the error indicates the AWS service
-// is not available in the target region (DNS resolution failure or explicit
-// region-not-supported response).
-func isRegionUnsupportedError(err error) bool {
-	msg := err.Error()
-	return strings.Contains(msg, "no such host") ||
-		strings.Contains(msg, "could not resolve endpoint") ||
-		strings.Contains(msg, "EndpointNotFound")
-}
 
 func (e *AmplifyAppEnumerator) listAppsInRegion(region, accountID string, out *pipeline.P[output.AWSResource]) error {
 	cfg, err := e.provider.GetAWSConfig(region)

@@ -1,20 +1,32 @@
 package enumeration
 
 import (
-	"errors"
+	"fmt"
 	"testing"
 
+	smithy "github.com/aws/smithy-go"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+// ccTestSmithyError implements smithy.APIError for cloud control tests.
+type ccTestSmithyError struct {
+	code string
+	msg  string
+}
+
+func (e *ccTestSmithyError) Error() string                 { return fmt.Sprintf("%s: %s", e.code, e.msg) }
+func (e *ccTestSmithyError) ErrorCode() string             { return e.code }
+func (e *ccTestSmithyError) ErrorMessage() string          { return e.msg }
+func (e *ccTestSmithyError) ErrorFault() smithy.ErrorFault { return smithy.FaultClient }
+
 func TestEnumerateByARN_ErrorDoesNotSendZeroResource(t *testing.T) {
-	// A mock enumerator that always returns an error from EnumerateByARN.
+	// A mock enumerator that returns a skippable error from EnumerateByARN.
 	mock := &mockResourceEnumerator{
 		resourceType:      "AWS::Lambda::Function",
-		enumerateByARNErr: errors.New("GetResource failed"),
+		enumerateByARNErr: &ccTestSmithyError{code: "AccessDeniedException", msg: "denied by SCP"},
 	}
 
 	e := &Enumerator{
@@ -42,9 +54,9 @@ func TestEnumerateByARN_ErrorDoesNotSendZeroResource(t *testing.T) {
 	out.Close()
 	<-done
 
-	require.NoError(t, err, "List should not return error — errors are recorded in SkippedTracker")
+	require.NoError(t, err, "List should not return error — skippable errors are recorded in SkipReport")
 	assert.Empty(t, collected, "no resources should be sent when EnumerateByARN returns an error")
-	assert.NotEmpty(t, e.Skipped.Skipped(), "error should be recorded in SkippedTracker")
+	assert.True(t, e.Skipped.Len() > 0, "error should be recorded in SkipReport")
 }
 
 func TestEnumerateByARN_SuccessSendsResource(t *testing.T) {

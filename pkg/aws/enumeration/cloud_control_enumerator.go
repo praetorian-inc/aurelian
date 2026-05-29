@@ -51,8 +51,8 @@ func (cc *CloudControlEnumerator) List(identifier string, out *pipeline.P[output
 
 func (cc *CloudControlEnumerator) EnumerateByARN(resourceARN string, out *pipeline.P[output.AWSResource]) error {
 	resource, err := cc.getResourceByARN(resourceARN)
-	if cc.isSkippableError(err) {
-		slog.Debug("skipping arn", "arn", resourceARN, "error", err)
+	if IsSkippableAWSError(err) {
+		slog.Debug("skipping arn", "arn", resourceARN, "code", SkipReason(err), "error", err)
 		return nil
 	}
 	if err != nil {
@@ -238,8 +238,8 @@ func (cc *CloudControlEnumerator) listInRegionByType(region, resourceType string
 	}
 
 	err = cc.listByType(client, accountID, region, resourceType, out)
-	if cc.isSkippableError(err) {
-		slog.Debug("skipping resource type", "type", resourceType, "region", region, "error", err)
+	if IsSkippableAWSError(err) {
+		slog.Debug("skipping resource type", "type", resourceType, "region", region, "code", SkipReason(err), "error", err)
 		return nil
 	}
 	if err != nil {
@@ -283,14 +283,6 @@ func (cc *CloudControlEnumerator) listByType(
 	})
 }
 
-func (cc *CloudControlEnumerator) isSkippableError(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := err.Error()
-	return strings.Contains(s, "TypeNotFoundException") ||
-		strings.Contains(s, "UnsupportedActionException")
-}
 
 func (cc *CloudControlEnumerator) newCloudControlClient(region string) (*cloudcontrol.Client, error) {
 	awsCfg, err := cc.provider.GetAWSConfig(region)
