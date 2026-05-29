@@ -2,6 +2,7 @@ package enumeration
 
 import (
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"sync"
@@ -30,6 +31,30 @@ type SkipReport struct {
 // NewSkipReport returns an empty SkipReport ready for concurrent use.
 func NewSkipReport() *SkipReport {
 	return &SkipReport{}
+}
+
+// RecordSkippable classifies err and, if it represents a non-fatal
+// per-(region, service) failure, logs at Warn and records the skip. Returns
+// true when the error was handled (skippable) and the caller should treat it
+// as a soft success; false when err is fatal and the caller must propagate it.
+//
+// extraLogAttrs are appended to the standard Warn attributes ("region",
+// "code", "error"); pass them as key/value pairs, e.g. "arn", resourceARN.
+func (r *SkipReport) RecordSkippable(err error, service, operation, region string, extraLogAttrs ...any) bool {
+	if !IsSkippableAWSError(err) {
+		return false
+	}
+	code := SkipReason(err)
+	attrs := append([]any{"region", region, "code", code, "error", err}, extraLogAttrs...)
+	slog.Warn("skipping "+service+" "+operation, attrs...)
+	r.Record(SkippedOp{
+		Region:    region,
+		Service:   service,
+		Operation: operation,
+		ErrorCode: code,
+		Detail:    err.Error(),
+	})
+	return true
 }
 
 // Record appends a SkippedOp to the report. The Detail field is truncated to

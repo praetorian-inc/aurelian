@@ -3,7 +3,6 @@ package enumeration
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -112,16 +111,7 @@ func (e *AmplifyAppEnumerator) listAppsInRegion(region, accountID string, out *p
 			NextToken: nextToken,
 		})
 		if err != nil {
-			if IsSkippableAWSError(err) {
-				code := SkipReason(err)
-				slog.Warn("skipping amplify ListApps", "region", region, "code", code, "error", err)
-				e.skipReport.Record(SkippedOp{
-					Region:    region,
-					Service:   "amplify",
-					Operation: "ListApps",
-					ErrorCode: code,
-					Detail:    err.Error(),
-				})
+			if e.skipReport.RecordSkippable(err, "amplify", "ListApps", region) {
 				return false, nil
 			}
 			return false, fmt.Errorf("list amplify apps in %s: %w", region, err)

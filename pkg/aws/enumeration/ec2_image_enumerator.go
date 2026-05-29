@@ -107,16 +107,7 @@ func (l *EC2ImageEnumerator) listImagesInRegion(region, accountID string, out *p
 		Owners: []string{"self"},
 	})
 	if err != nil {
-		if IsSkippableAWSError(err) {
-			code := SkipReason(err)
-			slog.Warn("skipping ec2 DescribeImages", "region", region, "code", code, "error", err)
-			l.skipReport.Record(SkippedOp{
-				Region:    region,
-				Service:   "ec2",
-				Operation: "DescribeImages",
-				ErrorCode: code,
-				Detail:    err.Error(),
-			})
+		if l.skipReport.RecordSkippable(err, "ec2", "DescribeImages", region) {
 			return nil
 		}
 		return fmt.Errorf("describe images in %s: %w", region, err)
@@ -131,16 +122,7 @@ func (l *EC2ImageEnumerator) listImagesInRegion(region, accountID string, out *p
 		resource, err := buildResource(context.Background(), client, image, accountID, region)
 		if err != nil {
 			imageID := aws.ToString(image.ImageId)
-			if IsSkippableAWSError(err) {
-				code := SkipReason(err)
-				slog.Warn("skipping ec2 DescribeImageAttribute", "region", region, "image_id", imageID, "code", code, "error", err)
-				l.skipReport.Record(SkippedOp{
-					Region:    region,
-					Service:   "ec2",
-					Operation: "DescribeImageAttribute",
-					ErrorCode: code,
-					Detail:    err.Error(),
-				})
+			if l.skipReport.RecordSkippable(err, "ec2", "DescribeImageAttribute", region, "image_id", imageID) {
 				continue
 			}
 			slog.Warn("failed to build EC2 image resource",

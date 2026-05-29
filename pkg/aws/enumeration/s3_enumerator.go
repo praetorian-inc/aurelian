@@ -3,7 +3,6 @@ package enumeration
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -131,16 +130,7 @@ func (l *S3Enumerator) listBucketsInRegion(region string, out *pipeline.P[output
 
 		result, err := client.ListBuckets(context.Background(), input)
 		if err != nil {
-			if IsSkippableAWSError(err) {
-				code := SkipReason(err)
-				slog.Warn("skipping s3 ListBuckets", "region", region, "code", code, "error", err)
-				l.skipReport.Record(SkippedOp{
-					Region:    region,
-					Service:   "s3",
-					Operation: "ListBuckets",
-					ErrorCode: code,
-					Detail:    err.Error(),
-				})
+			if l.skipReport.RecordSkippable(err, "s3", "ListBuckets", region) {
 				return false, nil
 			}
 			return false, fmt.Errorf("list buckets in %s: %w", region, err)

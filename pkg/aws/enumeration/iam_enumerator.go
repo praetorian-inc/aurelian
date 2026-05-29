@@ -3,7 +3,6 @@ package enumeration
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 
@@ -120,20 +119,6 @@ func (e *IAMEnumerator) getIAMClient() (*iam.Client, error) {
 	return iam.NewFromConfig(*cfg), nil
 }
 
-// recordSkip captures a skippable IAM list failure so that a missing
-// permission on one IAM resource type doesn't abort enumeration of the others.
-func (e *IAMEnumerator) recordSkip(operation string, err error) {
-	code := SkipReason(err)
-	slog.Warn("skipping iam call", "operation", operation, "code", code, "error", err)
-	e.skipReport.Record(SkippedOp{
-		Region:    "global",
-		Service:   "iam",
-		Operation: operation,
-		ErrorCode: code,
-		Detail:    err.Error(),
-	})
-}
-
 // listRoles fetches all IAM roles with pagination.
 func (e *IAMEnumerator) listRoles(out *pipeline.P[output.AWSResource]) error {
 	if err := e.resolveAccountID(); err != nil {
@@ -154,8 +139,7 @@ func (e *IAMEnumerator) listRoles(out *pipeline.P[output.AWSResource]) error {
 
 		result, err := client.ListRoles(context.Background(), input)
 		if err != nil {
-			if IsSkippableAWSError(err) {
-				e.recordSkip("ListRoles", err)
+			if e.skipReport.RecordSkippable(err, "iam", "ListRoles", "global") {
 				return false, nil
 			}
 			return false, fmt.Errorf("list IAM roles: %w", err)
@@ -207,8 +191,7 @@ func (e *IAMEnumerator) listPolicies(out *pipeline.P[output.AWSResource]) error 
 
 		result, err := client.ListPolicies(context.Background(), input)
 		if err != nil {
-			if IsSkippableAWSError(err) {
-				e.recordSkip("ListPolicies", err)
+			if e.skipReport.RecordSkippable(err, "iam", "ListPolicies", "global") {
 				return false, nil
 			}
 			return false, fmt.Errorf("list IAM policies: %w", err)
@@ -258,8 +241,7 @@ func (e *IAMEnumerator) listUsers(out *pipeline.P[output.AWSResource]) error {
 
 		result, err := client.ListUsers(context.Background(), input)
 		if err != nil {
-			if IsSkippableAWSError(err) {
-				e.recordSkip("ListUsers", err)
+			if e.skipReport.RecordSkippable(err, "iam", "ListUsers", "global") {
 				return false, nil
 			}
 			return false, fmt.Errorf("list IAM users: %w", err)

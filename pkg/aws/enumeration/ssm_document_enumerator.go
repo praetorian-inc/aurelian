@@ -3,7 +3,6 @@ package enumeration
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -118,16 +117,7 @@ func (e *SSMDocumentEnumerator) listDocumentsInRegion(region, accountID string, 
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(context.Background())
 		if err != nil {
-			if IsSkippableAWSError(err) {
-				code := SkipReason(err)
-				slog.Warn("skipping ssm ListDocuments", "region", region, "code", code, "error", err)
-				e.skipReport.Record(SkippedOp{
-					Region:    region,
-					Service:   "ssm",
-					Operation: "ListDocuments",
-					ErrorCode: code,
-					Detail:    err.Error(),
-				})
+			if e.skipReport.RecordSkippable(err, "ssm", "ListDocuments", region) {
 				return nil
 			}
 			return fmt.Errorf("list documents in %s: %w", region, err)

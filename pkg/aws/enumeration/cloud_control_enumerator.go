@@ -54,22 +54,14 @@ func (cc *CloudControlEnumerator) List(identifier string, out *pipeline.P[output
 
 func (cc *CloudControlEnumerator) EnumerateByARN(resourceARN string, out *pipeline.P[output.AWSResource]) error {
 	region, resource, err := cc.getResourceByARN(resourceARN)
-	if IsSkippableAWSError(err) {
-		code := SkipReason(err)
-		slog.Warn("skipping cloudcontrol GetResource", "arn", resourceARN, "region", region, "code", code, "error", err)
-		if region == "" {
-			region = "unknown"
-		}
-		cc.skipReport.Record(SkippedOp{
-			Region:    region,
-			Service:   "cloudcontrol",
-			Operation: "GetResource",
-			ErrorCode: code,
-			Detail:    err.Error(),
-		})
-		return nil
-	}
 	if err != nil {
+		recordRegion := region
+		if recordRegion == "" {
+			recordRegion = "unknown"
+		}
+		if cc.skipReport.RecordSkippable(err, "cloudcontrol", "GetResource", recordRegion, "arn", resourceARN) {
+			return nil
+		}
 		return err
 	}
 
@@ -252,19 +244,10 @@ func (cc *CloudControlEnumerator) listInRegionByType(region, resourceType string
 	}
 
 	err = cc.listByType(client, accountID, region, resourceType, out)
-	if IsSkippableAWSError(err) {
-		code := SkipReason(err)
-		slog.Warn("skipping cloudcontrol ListResources", "type", resourceType, "region", region, "code", code, "error", err)
-		cc.skipReport.Record(SkippedOp{
-			Region:    region,
-			Service:   "cloudcontrol",
-			Operation: "ListResources:" + resourceType,
-			ErrorCode: code,
-			Detail:    err.Error(),
-		})
-		return nil
-	}
 	if err != nil {
+		if cc.skipReport.RecordSkippable(err, "cloudcontrol", "ListResources:"+resourceType, region) {
+			return nil
+		}
 		slog.Warn("error listing resources", "type", resourceType, "region", region, "error", err)
 		return err
 	}
