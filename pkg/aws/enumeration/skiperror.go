@@ -70,12 +70,22 @@ func extractAPIErrorCode(err error) (string, bool) {
 // service is not available in the target region (DNS resolution failure or
 // explicit region-not-supported response). These errors aren't smithy-coded,
 // so substring matching is the only signal available.
+//
+// The "no such host" check is scoped to AWS endpoint DNS names
+// (*.amazonaws.com) to avoid masking transient DNS failures on non-AWS hosts.
 func isRegionUnsupportedError(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := err.Error()
-	return strings.Contains(msg, "no such host") ||
-		strings.Contains(msg, "could not resolve endpoint") ||
-		strings.Contains(msg, "EndpointNotFound")
+	if strings.Contains(msg, "could not resolve endpoint") ||
+		strings.Contains(msg, "EndpointNotFound") {
+		return true
+	}
+	// Only treat "no such host" as region-unsupported when the failing
+	// lookup is for an AWS service endpoint, not an arbitrary hostname.
+	if strings.Contains(msg, "no such host") && strings.Contains(msg, ".amazonaws.com") {
+		return true
+	}
+	return false
 }

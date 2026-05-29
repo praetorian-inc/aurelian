@@ -44,10 +44,13 @@ func (e *mockSmithyError) ErrorMessage() string          { return e.msg }
 func (e *mockSmithyError) ErrorFault() smithy.ErrorFault { return smithy.FaultClient }
 
 func newTestEnumerator(enumerators map[string]ResourceEnumerator) *Enumerator {
+	// Share one SkipReport across Enumerator and CloudControl, matching
+	// the production wiring in NewEnumerator.
+	skipped := NewSkipReport()
 	return &Enumerator{
 		enumerators: enumerators,
-		cc:          &CloudControlEnumerator{skipReport: NewSkipReport()},
-		Skipped:     NewSkipReport(),
+		cc:          &CloudControlEnumerator{skipReport: skipped},
+		Skipped:     skipped,
 	}
 }
 

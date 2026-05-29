@@ -122,7 +122,6 @@ func (e *SSMDocumentEnumerator) listDocumentsInRegion(region, accountID string, 
 				skipped = append(skipped, *op)
 				break
 			}
-			e.skipReport.RecordBatch(skipped)
 			return fmt.Errorf("list documents in %s: %w", region, err)
 		}
 

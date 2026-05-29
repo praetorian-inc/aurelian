@@ -38,10 +38,15 @@ func TestIsSkippableAWSError(t *testing.T) {
 		{"UnsupportedActionException", &fakeAPIError{code: "UnsupportedActionException"}, true},
 		{"unrelated smithy code", &fakeAPIError{code: "ThrottlingException"}, false},
 		{"wrapped AccessDenied", fmt.Errorf("list amplify apps: %w", &fakeAPIError{code: "AccessDeniedException"}), true},
-		{"region unsupported - no such host", errors.New("dial tcp: lookup amplify.eu-south-1.amazonaws.com: no such host"), true},
+		{"region unsupported - amazonaws no such host", errors.New("dial tcp: lookup amplify.eu-south-1.amazonaws.com: no such host"), true},
 		{"region unsupported - resolve endpoint", errors.New("could not resolve endpoint"), true},
 		{"region unsupported - EndpointNotFound", errors.New("EndpointNotFound for service in region"), true},
 		{"plain unrelated error", errors.New("network connection refused"), false},
+		// Regression: bare "no such host" without .amazonaws.com must NOT be
+		// classified as region-unsupported — it could be a transient DNS
+		// failure on a non-AWS host (e.g. corporate proxy, sidecar).
+		{"transient DNS - bare no such host", errors.New("dial tcp: lookup internal-proxy.corp.example.com: no such host"), false},
+		{"transient DNS - no such host no domain", errors.New("no such host"), false},
 	}
 
 	for _, tc := range tests {
@@ -60,7 +65,7 @@ func TestSkipReason(t *testing.T) {
 		{"nil", nil, ""},
 		{"smithy code", &fakeAPIError{code: "AccessDeniedException"}, "AccessDeniedException"},
 		{"wrapped smithy code", fmt.Errorf("ctx: %w", &fakeAPIError{code: "OptInRequired"}), "OptInRequired"},
-		{"region unsupported", errors.New("no such host"), "RegionUnsupported"},
+		{"region unsupported", errors.New("dial tcp: lookup svc.us-west-2.amazonaws.com: no such host"), "RegionUnsupported"},
 		{"unknown", errors.New("something else"), "Unknown"},
 	}
 
