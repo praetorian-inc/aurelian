@@ -4,6 +4,7 @@ package enumeration
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -104,19 +105,38 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 		assert.Empty(t, results, "denied SSM should produce no resources")
 	})
 
+	// --- Error path: CloudControl-only type (no native enumerator) ---
+	// Lambda has no native enumerator — it falls through to CloudControl.
+	// The restricted role has no lambda:* permissions, so CloudControl's
+	// ListResources call should fail and be classified as skippable.
+	// This exercises the CloudControl inner skip path (listInRegionByType).
+	t.Run("CloudControl_denied", func(t *testing.T) {
+		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+			return enumerator.List("AWS::Lambda::Function", out)
+		})
+		require.NoError(t, err, "CloudControl denial should be skipped, not returned as error")
+		// May return results if CloudControl happens to have read access
+		// via cloudcontrol:ListResources (which is allowed). The deny is on
+		// lambda:* not cloudcontrol:*, so CloudControl may or may not succeed
+		// depending on the underlying service authorization model.
+		t.Logf("CloudControl Lambda: %d results", len(results))
+	})
+
 	// --- Partial error path: EC2 images ---
 	// DescribeImages is allowed but DescribeImageAttribute is denied.
-	// The enumerator should list images but fail on enrichment (per-image
-	// buildResource calls DescribeImageAttribute). The enrichment failure
-	// is handled as a per-item warn, not a skip. If there are no AMIs owned
-	// by the account, this is effectively a no-op.
+	// The enumerator lists images but buildResource fails per-image because
+	// DescribeImageAttribute returns UnauthorizedOperation. Each failure is
+	// logged as a per-item warn and the image is skipped (continue), but the
+	// pipeline does not abort. The result is 0 enriched images even though
+	// DescribeImages found AMIs — this is correct behavior for partial denial.
 	t.Run("EC2_partial", func(t *testing.T) {
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::EC2::Image", out)
 		})
-		// Should not abort regardless of whether images exist.
-		require.NoError(t, err, "EC2 partial denial should not abort")
-		t.Logf("EC2 images: %d (may be 0 if no self-owned AMIs)", len(results))
+		require.NoError(t, err, "EC2 partial denial should not abort the pipeline")
+		// Results may be 0 because all images failed enrichment, or because
+		// there are no self-owned AMIs. Either way, no abort.
+		t.Logf("EC2 images: %d (0 expected when all images fail enrichment)", len(results))
 	})
 
 	// --- Critical: mixed pipeline — denied types must not cause loss of allowed types ---
@@ -210,7 +230,7 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 		}
 	})
 
-	// --- Verify summary and detail file ---
+	// --- Verify summary and detail file are consistent ---
 	t.Run("Summary_and_detail_file", func(t *testing.T) {
 		summary := enumerator.Skipped.Summary()
 		assert.NotEmpty(t, summary)
@@ -220,10 +240,25 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 		// Force write the detail file (Close hasn't fired yet because of defer).
 		require.NoError(t, enumerator.Skipped.WriteDetailFile(outputDir))
 		detailPath := filepath.Join(outputDir, "enumeration-skips.json")
-		info, err := os.Stat(detailPath)
-		require.NoError(t, err, "detail file should exist")
-		assert.True(t, info.Size() > 0, "detail file should not be empty")
-		t.Logf("Detail file: %s (%d bytes)", detailPath, info.Size())
+		data, err := os.ReadFile(detailPath)
+		require.NoError(t, err, "detail file should exist and be readable")
+
+		var detail []SkippedOp
+		require.NoError(t, json.Unmarshal(data, &detail))
+		t.Logf("Detail file: %d entries (%d bytes)", len(detail), len(data))
+
+		// Detail file entry count must match SkipReport snapshot.
+		snap := enumerator.Skipped.Snapshot()
+		assert.Equal(t, len(snap), len(detail),
+			"detail file must have same number of entries as SkipReport snapshot")
+
+		// Every entry in the detail file should have non-empty fields.
+		for i, op := range detail {
+			assert.NotEmpty(t, op.Service, "detail[%d] Service", i)
+			assert.NotEmpty(t, op.Operation, "detail[%d] Operation", i)
+			assert.NotEmpty(t, op.ErrorCode, "detail[%d] ErrorCode", i)
+			assert.NotEmpty(t, op.Detail, "detail[%d] Detail", i)
+		}
 	})
 }
 
