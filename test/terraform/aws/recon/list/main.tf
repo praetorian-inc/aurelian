@@ -221,3 +221,65 @@ resource "aws_iam_role_policy" "restricted_deny" {
     ]
   })
 }
+
+# Per-region restricted role: simulates SCP-style per-region denial.
+#
+# Amplify is denied ONLY in us-east-1 but allowed in us-east-2.
+# S3 is allowed everywhere. This tests that:
+#   - us-east-1 Amplify is skipped
+#   - us-east-2 Amplify succeeds and returns the test app
+#   - S3 works in both regions
+#   - SkipReport has region-level granularity (us-east-1 only)
+resource "aws_iam_role" "region_restricted" {
+  name = "${local.prefix}-region-restricted-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        AWS = data.aws_caller_identity.current.arn
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "region_restricted_allow" {
+  name = "${local.prefix}-region-restricted-allow"
+  role = aws_iam_role.region_restricted.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "AllowAll"
+        Effect   = "Allow"
+        Action   = ["s3:*", "sts:*", "amplify:*", "cloudcontrol:*", "cloudformation:*", "iam:*"]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "region_restricted_deny" {
+  name = "${local.prefix}-region-restricted-deny"
+  role = aws_iam_role.region_restricted.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "DenyAmplifyInUsEast1"
+        Effect   = "Deny"
+        Action   = ["amplify:*"]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:RequestedRegion" = "us-east-1"
+          }
+        }
+      }
+    ]
+  })
+}

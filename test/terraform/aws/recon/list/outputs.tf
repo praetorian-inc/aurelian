@@ -49,3 +49,7 @@ output "amplify_app_name" {
 output "restricted_role_arn" {
   value = aws_iam_role.restricted.arn
 }
+
+output "region_restricted_role_arn" {
+  value = aws_iam_role.region_restricted.arn
+}

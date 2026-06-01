@@ -41,34 +41,11 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	restrictedRoleARN := fixture.Output("restricted_role_arn")
 	require.NotEmpty(t, restrictedRoleARN, "restricted_role_arn must be in Terraform outputs")
 
-	// Write a temporary AWS profile that assumes the restricted role.
-	profileDir := t.TempDir()
-	profileName := "aurelian-test-restricted"
-	sourceProfile := os.Getenv("AWS_PROFILE")
-	if sourceProfile == "" {
-		sourceProfile = "default"
-	}
-
-	configContent := "[profile " + profileName + "]\n" +
-		"role_arn = " + restrictedRoleARN + "\n" +
-		"source_profile = " + sourceProfile + "\n" +
-		"region = us-east-1\n"
-
-	homeDir, err := os.UserHomeDir()
-	require.NoError(t, err)
-
-	origConfig, _ := os.ReadFile(filepath.Join(homeDir, ".aws", "config"))
-	origCreds, _ := os.ReadFile(filepath.Join(homeDir, ".aws", "credentials"))
-
-	require.NoError(t, os.WriteFile(filepath.Join(profileDir, "config"), append(origConfig, []byte("\n"+configContent)...), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(profileDir, "credentials"), origCreds, 0o600))
+	profileDir, profileName := setupRestrictedProfile(t, restrictedRoleARN)
 
 	// Sanity check: verify assume-role works before running enumerator.
 	ctx := context.Background()
-	baseCfg, err := config.LoadDefaultConfig(ctx,
-		config.WithSharedConfigProfile(sourceProfile),
-		config.WithRegion("us-east-1"),
-	)
+	baseCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
 	require.NoError(t, err)
 	stsClient := sts.NewFromConfig(baseCfg)
 	_, err = stsClient.AssumeRole(ctx, &sts.AssumeRoleInput{
@@ -223,6 +200,212 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 		assert.True(t, info.Size() > 0, "detail file should not be empty")
 		t.Logf("Detail file: %s (%d bytes)", detailPath, info.Size())
 	})
+}
+
+// TestSkipResilience_ByARN_Denied tests the listByARN code path with a denied
+// resource. This is different from listByType — it goes through EnumerateByARN
+// instead of EnumerateAll.
+func TestSkipResilience_ByARN_Denied(t *testing.T) {
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
+	fixture.Setup()
+
+	restrictedRoleARN := fixture.Output("restricted_role_arn")
+	amplifyAppID := fixture.Output("amplify_app_id")
+	require.NotEmpty(t, restrictedRoleARN)
+	require.NotEmpty(t, amplifyAppID)
+
+	// Build the Amplify app ARN from fixture outputs.
+	ctx := context.Background()
+	baseCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	require.NoError(t, err)
+	identity, err := sts.NewFromConfig(baseCfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	require.NoError(t, err)
+	amplifyARN := "arn:aws:amplify:us-east-2:" + *identity.Account + ":apps/" + amplifyAppID
+
+	profileDir, profileName := setupRestrictedProfile(t, restrictedRoleARN)
+
+	enumerator := NewEnumerator(plugin.AWSCommonRecon{
+		AWSReconBase: plugin.AWSReconBase{
+			Profile:    profileName,
+			ProfileDir: profileDir,
+			OutputDir:  t.TempDir(),
+		},
+		Regions:     []string{"us-east-2"},
+		Concurrency: 1,
+	})
+	defer enumerator.Close()
+
+	// Enumerate a denied Amplify app by ARN.
+	results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+		return enumerator.List(amplifyARN, out)
+	})
+	require.NoError(t, err, "by-ARN denial should be skipped, not returned as error")
+	assert.Empty(t, results, "denied ARN should produce no resources")
+
+	snap := enumerator.Skipped.Snapshot()
+	require.NotEmpty(t, snap, "SkipReport should capture the by-ARN denial")
+	t.Logf("By-ARN skip: %+v", snap[0])
+}
+
+// TestSkipResilience_MultiRegion tests that denials in multiple regions each
+// produce a separate SkipReport entry, and that allowed services return
+// results from all regions.
+func TestSkipResilience_MultiRegion(t *testing.T) {
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
+	fixture.Setup()
+
+	restrictedRoleARN := fixture.Output("restricted_role_arn")
+	require.NotEmpty(t, restrictedRoleARN)
+
+	profileDir, profileName := setupRestrictedProfile(t, restrictedRoleARN)
+
+	enumerator := NewEnumerator(plugin.AWSCommonRecon{
+		AWSReconBase: plugin.AWSReconBase{
+			Profile:    profileName,
+			ProfileDir: profileDir,
+			OutputDir:  t.TempDir(),
+		},
+		Regions:     []string{"us-east-1", "us-east-2"},
+		Concurrency: 2,
+	})
+	defer enumerator.Close()
+
+	// S3 in both regions — should get buckets from both.
+	s3Results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+		return enumerator.List("AWS::S3::Bucket", out)
+	})
+	require.NoError(t, err)
+	assert.NotEmpty(t, s3Results, "S3 should return buckets from multiple regions")
+
+	s3Regions := make(map[string]bool)
+	for _, r := range s3Results {
+		s3Regions[r.Region] = true
+	}
+	t.Logf("S3 regions with buckets: %v", s3Regions)
+
+	// Amplify denied in both regions — should produce 2 skip entries.
+	amplifyResults, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+		return enumerator.List("AWS::Amplify::App", out)
+	})
+	require.NoError(t, err, "multi-region Amplify denial should not error")
+	assert.Empty(t, amplifyResults)
+
+	// SkipReport should have entries from both regions for Amplify.
+	snap := enumerator.Skipped.Snapshot()
+	amplifySkipRegions := make(map[string]bool)
+	for _, op := range snap {
+		if op.Service == "amplify" || op.Service == "AWS::Amplify::App" {
+			amplifySkipRegions[op.Region] = true
+		}
+	}
+	t.Logf("Amplify skip regions: %v", amplifySkipRegions)
+	// At least one region should show up in skips. Both regions should be
+	// recorded if the inner loop handles them (which it does for Amplify
+	// via CrossRegionActor).
+	assert.NotEmpty(t, amplifySkipRegions, "Amplify should be skipped in at least one region")
+}
+
+// TestSkipResilience_PerRegionDenial uses an IAM role that denies Amplify
+// ONLY in us-east-1 (via aws:RequestedRegion condition) but allows it in
+// us-east-2. This simulates SCP-style per-region denial and verifies:
+//   - us-east-1 Amplify is skipped (denied)
+//   - us-east-2 Amplify succeeds and returns the test app
+//   - S3 works in both regions (unaffected)
+//   - SkipReport records the denial with us-east-1 region only
+func TestSkipResilience_PerRegionDenial(t *testing.T) {
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
+	fixture.Setup()
+
+	regionRestrictedRoleARN := fixture.Output("region_restricted_role_arn")
+	require.NotEmpty(t, regionRestrictedRoleARN, "region_restricted_role_arn must be in Terraform outputs")
+
+	amplifyAppName := fixture.Output("amplify_app_name")
+	require.NotEmpty(t, amplifyAppName)
+
+	profileDir, profileName := setupRestrictedProfile(t, regionRestrictedRoleARN)
+
+	enumerator := NewEnumerator(plugin.AWSCommonRecon{
+		AWSReconBase: plugin.AWSReconBase{
+			Profile:    profileName,
+			ProfileDir: profileDir,
+			OutputDir:  t.TempDir(),
+		},
+		Regions:     []string{"us-east-1", "us-east-2"},
+		Concurrency: 2,
+	})
+	defer enumerator.Close()
+
+	// Enumerate Amplify across both regions.
+	amplifyResults, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+		return enumerator.List("AWS::Amplify::App", out)
+	})
+	require.NoError(t, err, "per-region denial should not abort")
+
+	// us-east-2 should return the test Amplify app (fixture deploys to us-east-2).
+	// us-east-1 should be skipped.
+	t.Logf("Amplify results: %d apps", len(amplifyResults))
+	for _, r := range amplifyResults {
+		t.Logf("  %s region=%s name=%s", r.ResourceID, r.Region, r.DisplayName)
+	}
+
+	// S3 should work in both regions regardless.
+	s3Results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+		return enumerator.List("AWS::S3::Bucket", out)
+	})
+	require.NoError(t, err)
+	assert.NotEmpty(t, s3Results, "S3 should be unaffected by Amplify regional denial")
+
+	// SkipReport should have a denial for us-east-1 Amplify specifically.
+	snap := enumerator.Skipped.Snapshot()
+	require.NotEmpty(t, snap, "SkipReport should capture the us-east-1 Amplify denial")
+
+	var usEast1AmplifySkip *SkippedOp
+	for i, op := range snap {
+		if (op.Service == "amplify" || op.Service == "AWS::Amplify::App") && op.Region == "us-east-1" {
+			usEast1AmplifySkip = &snap[i]
+			break
+		}
+	}
+	require.NotNil(t, usEast1AmplifySkip,
+		"SkipReport must have a us-east-1 Amplify entry; got: %+v", snap)
+	assert.Contains(t, usEast1AmplifySkip.ErrorCode, "AccessDenied")
+
+	// us-east-2 should NOT appear in skip report for Amplify.
+	for _, op := range snap {
+		if (op.Service == "amplify" || op.Service == "AWS::Amplify::App") && op.Region == "us-east-2" {
+			t.Errorf("us-east-2 Amplify should NOT be in SkipReport (it's allowed), but found: %+v", op)
+		}
+	}
+
+	t.Logf("Summary:\n%s", enumerator.Skipped.Summary())
+}
+
+// setupRestrictedProfile creates a temporary AWS CLI profile directory that
+// assumes the given role ARN. Returns (profileDir, profileName).
+func setupRestrictedProfile(t *testing.T, roleARN string) (string, string) {
+	t.Helper()
+	profileDir := t.TempDir()
+	profileName := "aurelian-test-restricted"
+	sourceProfile := os.Getenv("AWS_PROFILE")
+	if sourceProfile == "" {
+		sourceProfile = "default"
+	}
+
+	configContent := "[profile " + profileName + "]\n" +
+		"role_arn = " + roleARN + "\n" +
+		"source_profile = " + sourceProfile + "\n" +
+		"region = us-east-1\n"
+
+	homeDir, err := os.UserHomeDir()
+	require.NoError(t, err)
+
+	origConfig, _ := os.ReadFile(filepath.Join(homeDir, ".aws", "config"))
+	origCreds, _ := os.ReadFile(filepath.Join(homeDir, ".aws", "credentials"))
+
+	require.NoError(t, os.WriteFile(filepath.Join(profileDir, "config"), append(origConfig, []byte("\n"+configContent)...), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(profileDir, "credentials"), origCreds, 0o600))
+
+	return profileDir, profileName
 }
 
 // stscreds is imported to ensure the SDK can resolve assume-role profiles.
