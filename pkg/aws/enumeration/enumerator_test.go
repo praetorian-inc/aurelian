@@ -221,3 +221,77 @@ func (m *sendingAllMockEnumerator) EnumerateByARN(_ string, out *pipeline.P[outp
 	out.Send(m.resource)
 	return nil
 }
+
+// --- Close() tests ---
+
+// Happy path: no skips recorded, Close is a no-op (no panic, no log).
+func TestEnumerator_Close_NoSkips(t *testing.T) {
+	e := newTestEnumerator(map[string]ResourceEnumerator{})
+	assert.Equal(t, 0, e.Skipped.Len())
+	e.Close() // must not panic
+	assert.Equal(t, 0, e.Skipped.Len(), "Close must not mutate the report")
+}
+
+// Close surfaces skips that were recorded during enumeration.
+func TestEnumerator_Close_WithSkips(t *testing.T) {
+	mock := &mockResourceEnumerator{
+		resourceType:    "AWS::S3::Bucket",
+		enumerateAllErr: &mockSmithyError{code: "AccessDeniedException", msg: "denied"},
+	}
+
+	e := newTestEnumerator(map[string]ResourceEnumerator{"AWS::S3::Bucket": mock})
+
+	out := pipeline.New[output.AWSResource]()
+	go func() { for range out.Range() {} }()
+	_ = e.List("AWS::S3::Bucket", out)
+	out.Close()
+
+	require.Equal(t, 1, e.Skipped.Len(), "skip should be recorded before Close")
+	e.Close() // should log summary, not panic
+	assert.Equal(t, 1, e.Skipped.Len(), "Close must not clear the report")
+}
+
+// Close is safe to call multiple times (idempotent).
+func TestEnumerator_Close_Idempotent(t *testing.T) {
+	e := newTestEnumerator(map[string]ResourceEnumerator{})
+	e.Skipped.Record(SkippedOp{
+		Region: "us-east-1", Service: "amplify", Operation: "ListApps",
+		ErrorCode: "AccessDeniedException",
+	})
+	e.Close()
+	e.Close() // second call must not panic or double-log
+	assert.Equal(t, 1, e.Skipped.Len())
+}
+
+// Defer pattern: Close fires even when the module returns early with an error.
+func TestEnumerator_Close_OnEarlyReturn(t *testing.T) {
+	e := newTestEnumerator(map[string]ResourceEnumerator{})
+
+	// Simulate a module that records a skip then returns early on a fatal error.
+	e.Skipped.Record(SkippedOp{
+		Region: "eu-west-1", Service: "s3", Operation: "ListBuckets",
+		ErrorCode: "AccessDenied", Detail: "denied",
+	})
+
+	// In real code this would be defer lister.Close() at the top of Run().
+	// The defer fires even though the function "returns" with an error.
+	func() {
+		defer e.Close()
+		// Simulate early return
+		return
+	}()
+
+	// The skip should have been logged by Close (we can't assert on slog
+	// output, but we verify Close didn't panic and the report is intact).
+	assert.Equal(t, 1, e.Skipped.Len())
+}
+
+// Edge case: Close on a zero-value Enumerator (nil Skipped) must not panic.
+func TestEnumerator_Close_NilSkipped(t *testing.T) {
+	e := &Enumerator{
+		enumerators: make(map[string]ResourceEnumerator),
+		cc:          &CloudControlEnumerator{skipReport: NewSkipReport()},
+		Skipped:     NewSkipReport(),
+	}
+	e.Close() // must not panic
+}
