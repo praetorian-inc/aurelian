@@ -110,16 +110,45 @@ resource "aws_s3_bucket" "test" {
   bucket = "${local.prefix}-bucket-${count.index}"
 }
 
+resource "aws_s3_bucket_public_access_block" "test" {
+  count                   = 3
+  bucket                  = aws_s3_bucket.test[count.index].id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
 resource "aws_s3_bucket" "test_secondary" {
   provider = aws.secondary
   count    = 2
   bucket   = "${local.prefix}-bucket-secondary-${count.index}"
 }
 
+resource "aws_s3_bucket_public_access_block" "test_secondary" {
+  provider                = aws.secondary
+  count                   = 2
+  bucket                  = aws_s3_bucket.test_secondary[count.index].id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
 resource "aws_s3_bucket" "test_tertiary" {
   provider = aws.tertiary
   count    = 2
   bucket   = "${local.prefix}-bucket-tertiary-${count.index}"
+}
+
+resource "aws_s3_bucket_public_access_block" "test_tertiary" {
+  provider                = aws.tertiary
+  count                   = 2
+  bucket                  = aws_s3_bucket.test_tertiary[count.index].id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
 }
 
 # Lambda functions

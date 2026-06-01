@@ -415,6 +415,20 @@ func TestSkipResilience_PartialEC2Access(t *testing.T) {
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
+	// Precondition: verify the account has self-owned AMIs using the
+	// unrestricted role. If it doesn't, this test is meaningless.
+	fullAccessEnum := newRestrictedEnumerator(t, fixture, fixture.Output("restricted_role_arn"))
+	fullResults, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+		return fullAccessEnum.List("AWS::EC2::Image", out)
+	})
+	fullAccessEnum.Close()
+	require.NoError(t, err)
+	if len(fullResults) == 0 {
+		t.Skip("no self-owned AMIs in account — partial EC2 test is not meaningful")
+	}
+	t.Logf("precondition: %d self-owned AMIs found with full access", len(fullResults))
+
+	// Now run with the partial-EC2 role (DescribeImages OK, DescribeImageAttribute denied).
 	roleARN := fixture.Output("partial_ec2_role_arn")
 	require.NotEmpty(t, roleARN)
 
@@ -425,7 +439,8 @@ func TestSkipResilience_PartialEC2Access(t *testing.T) {
 		return enumerator.List("AWS::EC2::Image", out)
 	})
 	require.NoError(t, err)
-	assert.Empty(t, results, "all images should fail enrichment")
+	assert.Empty(t, results,
+		"all %d images should fail enrichment (DescribeImageAttribute denied)", len(fullResults))
 
 	// Per-item failures are Warns, not skips.
 	for _, op := range enumerator.Skipped.Snapshot() {

@@ -1,6 +1,7 @@
 package enumeration_test
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -41,7 +42,7 @@ func TestNewEnumeratorRequiresClose(t *testing.T) {
 
 		f, parseErr := parser.ParseFile(fset, path, nil, 0)
 		if parseErr != nil {
-			return nil
+			return fmt.Errorf("parse %s: %w", path, parseErr)
 		}
 
 		// Only inspect files that import the AWS enumeration package.
