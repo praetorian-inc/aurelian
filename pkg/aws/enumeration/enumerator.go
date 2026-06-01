@@ -3,7 +3,6 @@ package enumeration
 import (
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"sync"
 
@@ -65,17 +64,16 @@ func NewEnumerator(opts plugin.AWSCommonRecon) *Enumerator {
 	return e
 }
 
-// Close logs the skip summary exactly once and satisfies io.Closer so
-// static analysis tools flag unclosed enumerators. Safe to call multiple
-// times; use defer after NewEnumerator so the operator always sees which
+// Close logs the skip summary exactly once. Safe to call multiple times;
+// use defer after NewEnumerator so the operator always sees which
 // (region, service) pairs were skipped, even on early-return error paths.
+//
+// TestNewEnumeratorRequiresClose enforces via AST analysis that every
+// non-test caller of NewEnumerator has a matching defer …Close().
 func (e *Enumerator) Close() error {
 	e.closeOnce.Do(func() { e.Skipped.LogSummary() })
 	return nil
 }
-
-// Compile-time check: *Enumerator implements io.Closer.
-var _ io.Closer = (*Enumerator)(nil)
 
 // Register adds a ResourceEnumerator to the registry.
 func (e *Enumerator) Register(l ResourceEnumerator) {
