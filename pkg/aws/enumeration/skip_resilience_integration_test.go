@@ -3,15 +3,12 @@
 package enumeration
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -38,7 +35,7 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 			return enumerator.List("AWS::S3::Bucket", out)
 		})
 		require.NoError(t, err)
-		assertFixtureResourcesByID(t, results, fixture.OutputList("bucket_names"))
+		assertFixtureResourcesByARN(t, results, fixture.OutputList("bucket_arns"))
 	})
 
 	t.Run("IAM_roles_allowed", func(t *testing.T) {
@@ -46,7 +43,7 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 			return enumerator.List("AWS::IAM::Role", out)
 		})
 		require.NoError(t, err)
-		assertFixtureResourcesByID(t, results, fixture.OutputList("iam_role_names"))
+		assertFixtureResourcesByARN(t, results, fixture.OutputList("iam_role_arns"))
 	})
 
 	t.Run("Lambda_allowed", func(t *testing.T) {
@@ -62,7 +59,7 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 			return enumerator.List("AWS::EC2::Instance", out)
 		})
 		require.NoError(t, err)
-		assertFixtureResourcesByID(t, results, fixture.OutputList("instance_ids"))
+		assertFixtureResourcesByARN(t, results, fixture.OutputList("instance_arns"))
 	})
 
 	t.Run("Amplify_denied", func(t *testing.T) {
@@ -109,22 +106,24 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 		results, err := listed.Collect()
 		require.NoError(t, err)
 
-		resultIDs := indexIDs(results)
 		resultARNs := indexARNs(results)
 
-		assertAllPresent(t, resultIDs, fixture.OutputList("bucket_names"), "S3 bucket")
-		assertAllPresent(t, resultIDs, fixture.OutputList("iam_role_names"), "IAM role")
-		assertAllPresent(t, resultIDs, fixture.OutputList("iam_policy_names"), "IAM policy")
-		assertAllPresent(t, resultIDs, fixture.OutputList("iam_user_names"), "IAM user")
+		assertAllPresent(t, resultARNs, fixture.OutputList("bucket_arns"), "S3 bucket")
+		assertAllPresent(t, resultARNs, fixture.OutputList("iam_role_arns"), "IAM role")
+		assertAllPresent(t, resultARNs, fixture.OutputList("iam_policy_arns"), "IAM policy")
+		assertAllPresent(t, resultARNs, fixture.OutputList("iam_user_arns"), "IAM user")
 		assertAllPresent(t, resultARNs, fixture.OutputList("function_arns"), "Lambda function")
-		assertAllPresent(t, resultIDs, fixture.OutputList("instance_ids"), "EC2 instance")
+		assertAllPresent(t, resultARNs, fixture.OutputList("instance_arns"), "EC2 instance")
 
 		snap := mixedEnum.Skipped.Snapshot()
 		skippedServices := indexSkipServices(snap)
 		assert.True(t, skippedServices["amplify"] || skippedServices["AWS::Amplify::App"])
 		assert.True(t, skippedServices["ssm"] || skippedServices["AWS::SSM::Document"])
-		assert.False(t, skippedServices["s3"])
-		assert.False(t, skippedServices["iam"])
+		// Allowed services must NOT appear in SkipReport.
+		assert.False(t, skippedServices["s3"], "S3 must NOT be in SkipReport")
+		assert.False(t, skippedServices["iam"], "IAM must NOT be in SkipReport")
+		assert.False(t, skippedServices["ec2"], "EC2 must NOT be in SkipReport")
+		assert.False(t, skippedServices["lambda"], "Lambda must NOT be in SkipReport")
 	})
 
 	t.Run("SkipReport_completeness", func(t *testing.T) {
@@ -160,19 +159,9 @@ func TestSkipResilience_ByARN_Denied(t *testing.T) {
 	fixture.Setup()
 
 	restrictedRoleARN := fixture.Output("restricted_role_arn")
+	amplifyARN := fixture.Output("amplify_app_arn")
 	require.NotEmpty(t, restrictedRoleARN)
-
-	amplifyAppID := fixture.Output("amplify_app_id")
-	amplifyRegion := fixture.Output("amplify_app_region")
-	require.NotEmpty(t, amplifyAppID)
-
-	ctx := context.Background()
-	regions := fixture.OutputList("test_regions")
-	baseCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(regions[0]))
-	require.NoError(t, err)
-	identity, err := sts.NewFromConfig(baseCfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
-	require.NoError(t, err)
-	amplifyARN := "arn:aws:amplify:" + amplifyRegion + ":" + *identity.Account + ":apps/" + amplifyAppID
+	require.NotEmpty(t, amplifyARN)
 
 	enumerator := newRestrictedEnumerator(t, fixture, restrictedRoleARN)
 	defer enumerator.Close()
@@ -214,18 +203,10 @@ func TestSkipResilience_ByARN_MixedAllowDeny(t *testing.T) {
 
 	restrictedRoleARN := fixture.Output("restricted_role_arn")
 	iamRoleARN := fixture.Output("iam_role_arn")
-	amplifyAppID := fixture.Output("amplify_app_id")
-	amplifyRegion := fixture.Output("amplify_app_region")
+	amplifyARN := fixture.Output("amplify_app_arn")
 	require.NotEmpty(t, restrictedRoleARN)
 	require.NotEmpty(t, iamRoleARN)
-
-	ctx := context.Background()
-	regions := fixture.OutputList("test_regions")
-	baseCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(regions[0]))
-	require.NoError(t, err)
-	identity, err := sts.NewFromConfig(baseCfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
-	require.NoError(t, err)
-	amplifyARN := "arn:aws:amplify:" + amplifyRegion + ":" + *identity.Account + ":apps/" + amplifyAppID
+	require.NotEmpty(t, amplifyARN)
 
 	enumerator := newRestrictedEnumerator(t, fixture, restrictedRoleARN)
 	defer enumerator.Close()
@@ -253,12 +234,12 @@ func TestSkipResilience_MultiRegion(t *testing.T) {
 	enumerator := newRestrictedEnumerator(t, fixture, restrictedRoleARN)
 	defer enumerator.Close()
 
-	// S3 across all regions.
+	// S3 across all regions — assert every fixture bucket by ARN.
 	s3Results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 		return enumerator.List("AWS::S3::Bucket", out)
 	})
 	require.NoError(t, err)
-	assertFixtureResourcesByID(t, s3Results, fixture.OutputList("bucket_names"))
+	assertFixtureResourcesByARN(t, s3Results, fixture.OutputList("bucket_arns"))
 
 	// Amplify denied in all regions (restricted role denies amplify:*).
 	amplifyResults, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
@@ -294,13 +275,13 @@ func TestSkipResilience_PerRegionDenial(t *testing.T) {
 	enumerator := newRestrictedEnumerator(t, fixture, roleARN)
 	defer enumerator.Close()
 
-	// S3: allowed everywhere — all fixture buckets must survive.
+	// S3: allowed everywhere — all fixture buckets must survive by ARN.
 	t.Run("S3_all_regions", func(t *testing.T) {
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::S3::Bucket", out)
 		})
 		require.NoError(t, err)
-		assertFixtureResourcesByID(t, results, fixture.OutputList("bucket_names"))
+		assertFixtureResourcesByARN(t, results, fixture.OutputList("bucket_arns"))
 	})
 
 	// Amplify: denied in denyAmplifyRegion, allowed elsewhere.
@@ -311,10 +292,10 @@ func TestSkipResilience_PerRegionDenial(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		amplifyAppID := fixture.Output("amplify_app_id")
-		resultIDs := indexIDs(results)
-		require.True(t, resultIDs[amplifyAppID],
-			"Amplify app %q must survive (not in deny region %s)", amplifyAppID, denyAmplifyRegion)
+		amplifyARN := fixture.Output("amplify_app_arn")
+		resultARNs := indexARNs(results)
+		require.True(t, resultARNs[amplifyARN],
+			"Amplify app %q must survive (not in deny region %s)", amplifyARN, denyAmplifyRegion)
 	})
 
 	// Lambda: denied in denyLambdaRegion (primary). Functions from
@@ -402,17 +383,17 @@ func TestSkipResilience_MosaicPipeline(t *testing.T) {
 	results, err := listed.Collect()
 	require.NoError(t, err)
 
-	resultIDs := indexIDs(results)
 	resultARNs := indexARNs(results)
 
-	// S3: all buckets.
-	assertAllPresent(t, resultIDs, fixture.OutputList("bucket_names"), "S3 bucket")
+	// S3: all buckets by ARN.
+	assertAllPresent(t, resultARNs, fixture.OutputList("bucket_arns"), "S3 bucket")
 
-	// IAM: all roles.
-	assertAllPresent(t, resultIDs, fixture.OutputList("iam_role_names"), "IAM role")
+	// IAM: all roles by ARN.
+	assertAllPresent(t, resultARNs, fixture.OutputList("iam_role_arns"), "IAM role")
 
 	// Amplify: app must survive (not in deny region).
-	require.True(t, resultIDs[fixture.Output("amplify_app_id")])
+	amplifyARN := fixture.Output("amplify_app_arn")
+	require.True(t, resultARNs[amplifyARN], "Amplify app %q must survive", amplifyARN)
 
 	// Lambda: secondary + tertiary survive, primary absent.
 	assertAllPresent(t, resultARNs, fixture.OutputList("function_arns_secondary"), "Lambda (allowed)")
@@ -538,14 +519,6 @@ func setupRestrictedProfile(t *testing.T, roleARN string) (string, string) {
 	return profileDir, profileName
 }
 
-func indexIDs(results []output.AWSResource) map[string]bool {
-	m := make(map[string]bool)
-	for _, r := range results {
-		m[r.ResourceID] = true
-	}
-	return m
-}
-
 func indexARNs(results []output.AWSResource) map[string]bool {
 	m := make(map[string]bool)
 	for _, r := range results {
@@ -560,14 +533,6 @@ func indexSkipServices(snap []SkippedOp) map[string]bool {
 		m[op.Service] = true
 	}
 	return m
-}
-
-func assertFixtureResourcesByID(t *testing.T, results []output.AWSResource, expected []string) {
-	t.Helper()
-	ids := indexIDs(results)
-	for _, id := range expected {
-		require.True(t, ids[id], "fixture resource %q missing from results", id)
-	}
 }
 
 func assertFixtureResourcesByARN(t *testing.T, results []output.AWSResource, expected []string) {

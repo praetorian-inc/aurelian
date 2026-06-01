@@ -17,6 +17,14 @@ output "bucket_names" {
   value = concat(aws_s3_bucket.test[*].id, aws_s3_bucket.test_secondary[*].id, aws_s3_bucket.test_tertiary[*].id)
 }
 
+output "bucket_arns" {
+  value = concat(aws_s3_bucket.test[*].arn, aws_s3_bucket.test_secondary[*].arn, aws_s3_bucket.test_tertiary[*].arn)
+}
+
+output "instance_arns" {
+  value = concat(aws_instance.test[*].arn, aws_instance.test_secondary[*].arn, aws_instance.test_tertiary[*].arn)
+}
+
 output "function_arns" {
   value = concat(aws_lambda_function.test[*].arn, aws_lambda_function.test_secondary[*].arn, aws_lambda_function.test_tertiary[*].arn)
 }
@@ -90,6 +98,10 @@ output "iam_user_name" {
 
 output "amplify_app_id" {
   value = aws_amplify_app.test.id
+}
+
+output "amplify_app_arn" {
+  value = aws_amplify_app.test.arn
 }
 
 output "amplify_app_name" {
