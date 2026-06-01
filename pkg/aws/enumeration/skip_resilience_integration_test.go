@@ -123,16 +123,30 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	// This simulates the real list-all pattern: multiple resource types fed
 	// through pipeline.Pipe. If one type is denied, the others must still
 	// produce their full results.
+	//
+	// Uses a fresh enumerator because IAM's sync.Once means a second
+	// EnumerateAll on the same instance is a no-op (by design — IAM is global).
 	t.Run("MixedPipeline_no_resource_loss", func(t *testing.T) {
+		mixedEnum := NewEnumerator(plugin.AWSCommonRecon{
+			AWSReconBase: plugin.AWSReconBase{
+				Profile:    profileName,
+				ProfileDir: profileDir,
+				OutputDir:  t.TempDir(),
+			},
+			Regions:     []string{"us-east-1"},
+			Concurrency: 2,
+		})
+		defer mixedEnum.Close()
+
 		// Feed a mix of allowed and denied types through a single pipeline.
 		types := pipeline.From(
 			"AWS::S3::Bucket",      // allowed
 			"AWS::Amplify::App",    // denied
-			"AWS::IAM::Role",       // allowed
+			"AWS::IAM::Role",       // allowed (global, sync.Once)
 			"AWS::SSM::Document",   // denied
 		)
 		listed := pipeline.New[output.AWSResource]()
-		pipeline.Pipe(types, enumerator.List, listed)
+		pipeline.Pipe(types, mixedEnum.List, listed)
 
 		results, err := listed.Collect()
 		require.NoError(t, err, "pipeline must not fail when some types are denied")
@@ -155,6 +169,17 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 			"denied Amplify should produce no resources")
 		assert.Equal(t, 0, byType["AWS::SSM::Document"],
 			"denied SSM should produce no resources")
+
+		// Verify the mixed enumerator's own SkipReport captured both denials.
+		snap := mixedEnum.Skipped.Snapshot()
+		skippedServices := make(map[string]bool)
+		for _, op := range snap {
+			skippedServices[op.Service] = true
+		}
+		assert.True(t, skippedServices["amplify"] || skippedServices["AWS::Amplify::App"],
+			"mixed pipeline SkipReport must contain Amplify denial")
+		assert.True(t, skippedServices["ssm"] || skippedServices["AWS::SSM::Document"],
+			"mixed pipeline SkipReport must contain SSM denial")
 	})
 
 	// --- Verify SkipReport captured all denials ---
