@@ -67,42 +67,48 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	})
 	defer enumerator.Close()
 
-	// --- Happy path: S3 (fully allowed) — assert fixture buckets by name ---
+	// --- Happy path: S3 (fully allowed) — assert all 5 fixture buckets ---
 	t.Run("S3_allowed", func(t *testing.T) {
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::S3::Bucket", out)
 		})
 		require.NoError(t, err, "S3 should not error")
-		require.NotEmpty(t, results, "S3 should return buckets")
-		t.Logf("S3: %d buckets", len(results))
+
+		expectedBuckets := fixture.OutputList("bucket_names")
+		require.GreaterOrEqual(t, len(results), len(expectedBuckets),
+			"S3 must return at least %d buckets (fixture count); got %d", len(expectedBuckets), len(results))
 
 		resultIDs := make(map[string]bool)
 		for _, r := range results {
 			resultIDs[r.ResourceID] = true
 		}
-		for _, name := range fixture.OutputList("bucket_names") {
+		for _, name := range expectedBuckets {
 			assert.True(t, resultIDs[name],
 				"fixture S3 bucket %q must be returned", name)
 		}
+		t.Logf("S3: %d total buckets, %d expected from fixture", len(results), len(expectedBuckets))
 	})
 
-	// --- Happy path: IAM (fully allowed, global) — assert fixture roles by name ---
+	// --- Happy path: IAM (fully allowed, global) — assert all 5 fixture roles ---
 	t.Run("IAM_allowed", func(t *testing.T) {
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::IAM::Role", out)
 		})
 		require.NoError(t, err, "IAM should not error")
-		require.NotEmpty(t, results, "IAM should return roles")
-		t.Logf("IAM roles: %d", len(results))
+
+		expectedRoles := fixture.OutputList("iam_role_names")
+		require.GreaterOrEqual(t, len(results), len(expectedRoles),
+			"IAM must return at least %d roles (fixture count); got %d", len(expectedRoles), len(results))
 
 		resultIDs := make(map[string]bool)
 		for _, r := range results {
 			resultIDs[r.ResourceID] = true
 		}
-		for _, name := range fixture.OutputList("iam_role_names") {
+		for _, name := range expectedRoles {
 			assert.True(t, resultIDs[name],
 				"fixture IAM role %q must be returned", name)
 		}
+		t.Logf("IAM: %d total roles, %d expected from fixture", len(results), len(expectedRoles))
 	})
 
 	// --- Error path: Amplify (fully denied) ---
@@ -126,23 +132,26 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	// --- Happy path: Lambda via CloudControl (no native enumerator) ---
 	// Lambda falls through to CloudControl. The restricted role allows
 	// lambda:* + cloudcontrol:*, so this should succeed.
+	// --- Happy path: Lambda via CloudControl — assert all 5 fixture functions ---
 	t.Run("Lambda_via_CloudControl_allowed", func(t *testing.T) {
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::Lambda::Function", out)
 		})
 		require.NoError(t, err, "Lambda via CloudControl should not error")
-		assert.NotEmpty(t, results, "Lambda should return functions — 5 fixture functions exist")
-		t.Logf("Lambda functions: %d", len(results))
 
-		// Assert fixture functions are present.
+		expectedFunctions := fixture.OutputList("function_arns")
+		require.GreaterOrEqual(t, len(results), len(expectedFunctions),
+			"Lambda must return at least %d functions (fixture count); got %d", len(expectedFunctions), len(results))
+
 		resultARNs := make(map[string]bool)
 		for _, r := range results {
 			resultARNs[r.ARN] = true
 		}
-		for _, arn := range fixture.OutputList("function_arns") {
+		for _, arn := range expectedFunctions {
 			assert.True(t, resultARNs[arn],
 				"fixture Lambda function %q must be returned", arn)
 		}
+		t.Logf("Lambda: %d total functions, %d expected from fixture", len(results), len(expectedFunctions))
 	})
 
 	// --- EC2 images: full access, enrichment succeeds ---
