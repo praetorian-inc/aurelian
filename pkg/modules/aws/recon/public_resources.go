@@ -62,7 +62,7 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	c := m.PublicResourcesConfig
 
 	lister := cclist.NewEnumerator(c.AWSCommonRecon)
-	defer lister.Close()
+	defer func() { _ = lister.Close() }()
 
 	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
 	if err != nil {
