@@ -157,7 +157,7 @@ func TestContinueOnDenied_Summary_RendersGroupedReport(t *testing.T) {
 		"header should reflect total skips and unique regions")
 	assert.Contains(t, summary, "amplify ListApps")
 	assert.Contains(t, summary, "us-east-1, us-west-2")
-	assert.Contains(t, summary, "[AccessDeniedException]")
+	assert.Contains(t, summary, "AccessDeniedException×2")
 }
 
 // FP1: a non-AWS, non-skippable error (e.g. a plain network failure that

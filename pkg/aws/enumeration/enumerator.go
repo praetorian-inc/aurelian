@@ -3,6 +3,7 @@ package enumeration
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -33,6 +34,7 @@ type Enumerator struct {
 	enumerators map[string]ResourceEnumerator
 	cc          *CloudControlEnumerator
 	Skipped     *SkipReport
+	outputDir   string
 	closeOnce   sync.Once
 }
 
@@ -48,6 +50,7 @@ func NewEnumerator(opts plugin.AWSCommonRecon) *Enumerator {
 		enumerators: make(map[string]ResourceEnumerator),
 		cc:          cc,
 		Skipped:     skipReport,
+		outputDir:   opts.OutputDir,
 	}
 	// Register built-in enumerators here as they are implemented.
 	e.Register(NewAmplifyAppEnumerator(opts, provider, skipReport))
@@ -64,14 +67,25 @@ func NewEnumerator(opts plugin.AWSCommonRecon) *Enumerator {
 	return e
 }
 
-// Close logs the skip summary exactly once. Safe to call multiple times;
-// use defer after NewEnumerator so the operator always sees which
-// (region, service) pairs were skipped, even on early-return error paths.
+// Close logs the skip summary and writes the full detail file exactly once.
+// Safe to call multiple times; use defer after NewEnumerator so the operator
+// always sees which (region, service) pairs were skipped, even on early-return
+// error paths.
+//
+// The summary is logged at Warn (always visible). The detail file
+// (enumeration-skips.json) is written to OutputDir for post-run analysis.
 //
 // TestNewEnumeratorRequiresClose enforces via AST analysis that every
 // non-test caller of NewEnumerator has a matching defer …Close().
 func (e *Enumerator) Close() error {
-	e.closeOnce.Do(func() { e.Skipped.LogSummary() })
+	e.closeOnce.Do(func() {
+		e.Skipped.LogSummary()
+		if e.outputDir != "" {
+			if err := e.Skipped.WriteDetailFile(e.outputDir); err != nil {
+				slog.Warn("failed to write skip detail file", "error", err)
+			}
+		}
+	})
 	return nil
 }
 

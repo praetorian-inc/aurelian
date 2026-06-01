@@ -1,8 +1,11 @@
 package enumeration
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -12,14 +15,18 @@ import (
 // operator can see, after the run, which AWS calls were denied or unsupported
 // without losing them in the noise.
 type SkippedOp struct {
-	Region    string // AWS region (or "global" for IAM and other non-regional services)
-	Service   string // short service name, e.g. "amplify", "ec2", "iam"
-	Operation string // AWS API operation, e.g. "ListApps", "DescribeImages"
-	ErrorCode string // smithy code or "RegionUnsupported" / "Unknown"
-	Detail    string // truncated raw error string (<= 500 chars)
+	Region    string `json:"region"`    // AWS region (or "global" for IAM and other non-regional services)
+	Service   string `json:"service"`   // short service name, e.g. "amplify", "ec2", "iam"
+	Operation string `json:"operation"` // AWS API operation, e.g. "ListApps", "DescribeImages"
+	ErrorCode string `json:"error_code"` // smithy code or "RegionUnsupported" / "Unknown"
+	Detail    string `json:"detail"`    // truncated raw error string (<= 500 chars)
 }
 
 const maxDetailLen = 500
+
+// maxInlineRegions is the threshold above which Summary() collapses
+// region lists to a count instead of listing each one.
+const maxInlineRegions = 5
 
 // SkipReport is a thread-safe aggregator for SkippedOp records emitted from
 // multiple goroutines during cross-region enumeration.
@@ -78,9 +85,10 @@ func (r *SkipReport) Len() int {
 	return len(r.ops)
 }
 
-// Summary renders a human-readable, deterministic summary grouped by
-// "<service> <operation>" with all affected regions and the dominant error
-// code per group. Returns an empty string if no ops were recorded.
+// Summary renders a compact, deterministic summary grouped by
+// "<service> <operation>". Region lists exceeding 5 entries are collapsed
+// to a count. All distinct error codes per group are shown with counts.
+// Returns an empty string if no ops were recorded.
 func (r *SkipReport) Summary() string {
 	ops := r.Snapshot()
 	if len(ops) == 0 {
@@ -134,31 +142,52 @@ func (r *SkipReport) Summary() string {
 	for _, k := range keys {
 		g := groups[k]
 
-		regions := make([]string, 0, len(g.regions))
-		for reg := range g.regions {
-			regions = append(regions, reg)
-		}
-		sort.Strings(regions)
+		regionPart := formatRegions(g.regions)
+		codePart := formatCodes(g.codes)
 
-		code := dominantCode(g.codes)
-
-		fmt.Fprintf(&b, "  %s %s: %s [%s]\n", k.service, k.operation, strings.Join(regions, ", "), code)
+		fmt.Fprintf(&b, "  %s %s: %s %s\n", k.service, k.operation, regionPart, codePart)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// dominantCode returns the code with the highest count; ties broken
-// alphabetically to keep output stable.
-func dominantCode(counts map[string]int) string {
-	best := ""
-	bestN := -1
-	for code, n := range counts {
-		if n > bestN || (n == bestN && code < best) {
-			best = code
-			bestN = n
+// formatRegions returns a compact region string: lists up to maxInlineRegions
+// individually, otherwise collapses to "N regions".
+func formatRegions(regions map[string]struct{}) string {
+	if len(regions) > maxInlineRegions {
+		return fmt.Sprintf("%d regions", len(regions))
+	}
+	sorted := make([]string, 0, len(regions))
+	for r := range regions {
+		sorted = append(sorted, r)
+	}
+	sort.Strings(sorted)
+	return strings.Join(sorted, ", ")
+}
+
+// formatCodes returns all distinct error codes with counts, sorted
+// alphabetically. Example: "[AccessDeniedException×14, OptInRequired×3]"
+func formatCodes(codes map[string]int) string {
+	type codeCount struct {
+		code  string
+		count int
+	}
+	sorted := make([]codeCount, 0, len(codes))
+	for c, n := range codes {
+		sorted = append(sorted, codeCount{c, n})
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].code < sorted[j].code
+	})
+
+	parts := make([]string, 0, len(sorted))
+	for _, cc := range sorted {
+		if cc.count == 1 {
+			parts = append(parts, cc.code)
+		} else {
+			parts = append(parts, fmt.Sprintf("%s×%d", cc.code, cc.count))
 		}
 	}
-	return best
+	return "[" + strings.Join(parts, ", ") + "]"
 }
 
 // LogSummary logs the skip report summary if any operations were skipped.
@@ -168,6 +197,30 @@ func (r *SkipReport) LogSummary() {
 		return
 	}
 	slog.Warn(s)
+}
+
+// WriteDetailFile writes the full skip report as JSON to
+// <dir>/enumeration-skips.json. This file contains every SkippedOp with all
+// fields for post-run analysis and debugging. Returns nil if no ops were
+// recorded (no file is created).
+func (r *SkipReport) WriteDetailFile(dir string) error {
+	ops := r.Snapshot()
+	if len(ops) == 0 {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("create output dir: %w", err)
+	}
+	path := filepath.Join(dir, "enumeration-skips.json")
+	data, err := json.MarshalIndent(ops, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal skip report: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	slog.Debug("skip report written", "path", path, "count", len(ops))
+	return nil
 }
 
 // ClassifySkippable checks whether err is a skippable AWS error. If so, it
