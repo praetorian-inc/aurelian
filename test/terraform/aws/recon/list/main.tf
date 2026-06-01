@@ -19,6 +19,16 @@ provider "aws" {
   region = var.region
 }
 
+provider "aws" {
+  alias  = "secondary"
+  region = var.secondary_region
+}
+
+provider "aws" {
+  alias  = "tertiary"
+  region = var.tertiary_region
+}
+
 resource "random_id" "run" {
   byte_length = 4
 }
@@ -27,7 +37,7 @@ locals {
   prefix = "aurelian-test-${random_id.run.hex}"
 }
 
-# EC2 instances
+# EC2 instances — primary region
 data "aws_ami" "amazon_linux" {
   most_recent = true
   owners      = ["amazon"]
@@ -39,7 +49,7 @@ data "aws_ami" "amazon_linux" {
 }
 
 resource "aws_instance" "test" {
-  count         = 5
+  count         = 3
   ami           = data.aws_ami.amazon_linux.id
   instance_type = "t3.micro"
 
@@ -48,10 +58,68 @@ resource "aws_instance" "test" {
   }
 }
 
-# S3 buckets
+# EC2 instances — secondary region
+data "aws_ami" "amazon_linux_secondary" {
+  provider    = aws.secondary
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-*-x86_64"]
+  }
+}
+
+resource "aws_instance" "test_secondary" {
+  provider      = aws.secondary
+  count         = 2
+  ami           = data.aws_ami.amazon_linux_secondary.id
+  instance_type = "t3.micro"
+
+  tags = {
+    Name = "${local.prefix}-instance-secondary-${count.index}"
+  }
+}
+
+# EC2 instances — tertiary region
+data "aws_ami" "amazon_linux_tertiary" {
+  provider    = aws.tertiary
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-*-x86_64"]
+  }
+}
+
+resource "aws_instance" "test_tertiary" {
+  provider      = aws.tertiary
+  count         = 2
+  ami           = data.aws_ami.amazon_linux_tertiary.id
+  instance_type = "t3.micro"
+
+  tags = {
+    Name = "${local.prefix}-instance-tertiary-${count.index}"
+  }
+}
+
+# S3 buckets — split across regions
 resource "aws_s3_bucket" "test" {
-  count  = 5
+  count  = 3
   bucket = "${local.prefix}-bucket-${count.index}"
+}
+
+resource "aws_s3_bucket" "test_secondary" {
+  provider = aws.secondary
+  count    = 2
+  bucket   = "${local.prefix}-bucket-secondary-${count.index}"
+}
+
+resource "aws_s3_bucket" "test_tertiary" {
+  provider = aws.tertiary
+  count    = 2
+  bucket   = "${local.prefix}-bucket-tertiary-${count.index}"
 }
 
 # Lambda functions
@@ -113,9 +181,31 @@ resource "aws_iam_user" "test" {
 }
 
 resource "aws_lambda_function" "test" {
-  count            = 5
+  count            = 3
   filename         = data.archive_file.dummy.output_path
   function_name    = "${local.prefix}-function-${count.index}"
+  role             = aws_iam_role.lambda.arn
+  handler          = "index.handler"
+  runtime          = "python3.12"
+  source_code_hash = data.archive_file.dummy.output_base64sha256
+}
+
+resource "aws_lambda_function" "test_secondary" {
+  provider         = aws.secondary
+  count            = 2
+  filename         = data.archive_file.dummy.output_path
+  function_name    = "${local.prefix}-function-secondary-${count.index}"
+  role             = aws_iam_role.lambda.arn
+  handler          = "index.handler"
+  runtime          = "python3.12"
+  source_code_hash = data.archive_file.dummy.output_base64sha256
+}
+
+resource "aws_lambda_function" "test_tertiary" {
+  provider         = aws.tertiary
+  count            = 2
+  filename         = data.archive_file.dummy.output_path
+  function_name    = "${local.prefix}-function-tertiary-${count.index}"
   role             = aws_iam_role.lambda.arn
   handler          = "index.handler"
   runtime          = "python3.12"
@@ -289,14 +379,17 @@ resource "aws_iam_role_policy" "partial_ec2_deny" {
   })
 }
 
-# Per-region restricted role: simulates SCP-style per-region denial.
+# Per-region mosaic role: different services denied in different regions.
 #
-# Amplify is denied ONLY in us-east-1 but allowed in us-east-2.
-# S3 is allowed everywhere. This tests that:
-#   - us-east-1 Amplify is skipped
-#   - us-east-2 Amplify succeeds and returns the test app
-#   - S3 works in both regions
-#   - SkipReport has region-level granularity (us-east-1 only)
+# Mosaic pattern across 3 regions:
+#   us-east-1: Amplify DENIED, Lambda allowed, S3 allowed
+#   us-east-2: Amplify allowed, Lambda DENIED, S3 allowed
+#   us-west-2: Amplify allowed, Lambda allowed, S3 allowed (all allowed)
+#
+# This tests that the enumerator collects resources from each
+# (service, region) combination that works, while skipping the
+# specific (service, region) pairs that are denied. A bug that aborts
+# all regions for a type when one region fails would lose resources.
 resource "aws_iam_role" "region_restricted" {
   name = "${local.prefix}-region-restricted-role"
 
@@ -322,7 +415,7 @@ resource "aws_iam_role_policy" "region_restricted_allow" {
       {
         Sid      = "AllowAll"
         Effect   = "Allow"
-        Action   = ["s3:*", "sts:*", "amplify:*", "cloudcontrol:*", "cloudformation:*", "iam:*"]
+        Action   = ["s3:*", "sts:*", "amplify:*", "lambda:*", "ec2:*", "cloudcontrol:*", "cloudformation:*", "iam:*"]
         Resource = "*"
       }
     ]
@@ -344,6 +437,17 @@ resource "aws_iam_role_policy" "region_restricted_deny" {
         Condition = {
           StringEquals = {
             "aws:RequestedRegion" = "us-east-1"
+          }
+        }
+      },
+      {
+        Sid      = "DenyLambdaInUsEast2"
+        Effect   = "Deny"
+        Action   = ["lambda:*"]
+        Resource = "*"
+        Condition = {
+          StringEquals = {
+            "aws:RequestedRegion" = "us-east-2"
           }
         }
       }

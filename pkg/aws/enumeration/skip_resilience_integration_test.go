@@ -444,22 +444,21 @@ func TestSkipResilience_MultiRegion(t *testing.T) {
 	assert.NotEmpty(t, amplifySkipRegions, "Amplify should be skipped in at least one region")
 }
 
-// TestSkipResilience_PerRegionDenial uses an IAM role that denies Amplify
-// ONLY in us-east-1 (via aws:RequestedRegion condition) but allows it in
-// us-east-2. This simulates SCP-style per-region denial and verifies:
-//   - us-east-1 Amplify is skipped (denied)
-//   - us-east-2 Amplify succeeds and returns the test app
-//   - S3 works in both regions (unaffected)
-//   - SkipReport records the denial with us-east-1 region only
+// TestSkipResilience_PerRegionDenial uses a mosaic IAM role that denies
+// different services in different regions:
+//
+//	us-east-1: Amplify DENIED, Lambda allowed, S3 allowed
+//	us-east-2: Amplify allowed, Lambda DENIED, S3 allowed
+//	us-west-2: all allowed
+//
+// Fixture resources exist in all 3 regions. The test verifies that resources
+// from allowed (service, region) pairs survive while denied pairs are skipped.
 func TestSkipResilience_PerRegionDenial(t *testing.T) {
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
 	regionRestrictedRoleARN := fixture.Output("region_restricted_role_arn")
-	require.NotEmpty(t, regionRestrictedRoleARN, "region_restricted_role_arn must be in Terraform outputs")
-
-	amplifyAppName := fixture.Output("amplify_app_name")
-	require.NotEmpty(t, amplifyAppName)
+	require.NotEmpty(t, regionRestrictedRoleARN)
 
 	profileDir, profileName := setupRestrictedProfile(t, regionRestrictedRoleARN)
 
@@ -469,52 +468,128 @@ func TestSkipResilience_PerRegionDenial(t *testing.T) {
 			ProfileDir: profileDir,
 			OutputDir:  t.TempDir(),
 		},
-		Regions:     []string{"us-east-1", "us-east-2"},
-		Concurrency: 2,
+		Regions:     []string{"us-east-1", "us-east-2", "us-west-2"},
+		Concurrency: 3,
 	})
 	defer enumerator.Close()
 
-	// Enumerate Amplify across both regions.
-	amplifyResults, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
-		return enumerator.List("AWS::Amplify::App", out)
-	})
-	require.NoError(t, err, "per-region denial should not abort")
+	// --- S3: allowed in all 3 regions, all fixture buckets must be present ---
+	t.Run("S3_all_regions", func(t *testing.T) {
+		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+			return enumerator.List("AWS::S3::Bucket", out)
+		})
+		require.NoError(t, err)
 
-	// us-east-2 should return the test Amplify app (fixture deploys to us-east-2).
-	// us-east-1 should be skipped.
-	t.Logf("Amplify results: %d apps", len(amplifyResults))
-	for _, r := range amplifyResults {
-		t.Logf("  %s region=%s name=%s", r.ResourceID, r.Region, r.DisplayName)
-	}
-
-	// S3 should work in both regions regardless.
-	s3Results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
-		return enumerator.List("AWS::S3::Bucket", out)
-	})
-	require.NoError(t, err)
-	assert.NotEmpty(t, s3Results, "S3 should be unaffected by Amplify regional denial")
-
-	// SkipReport should have a denial for us-east-1 Amplify specifically.
-	snap := enumerator.Skipped.Snapshot()
-	require.NotEmpty(t, snap, "SkipReport should capture the us-east-1 Amplify denial")
-
-	var usEast1AmplifySkip *SkippedOp
-	for i, op := range snap {
-		if (op.Service == "amplify" || op.Service == "AWS::Amplify::App") && op.Region == "us-east-1" {
-			usEast1AmplifySkip = &snap[i]
-			break
+		resultIDs := make(map[string]bool)
+		for _, r := range results {
+			resultIDs[r.ResourceID] = true
 		}
-	}
-	require.NotNil(t, usEast1AmplifySkip,
-		"SkipReport must have a us-east-1 Amplify entry; got: %+v", snap)
-	assert.Contains(t, usEast1AmplifySkip.ErrorCode, "AccessDenied")
-
-	// us-east-2 should NOT appear in skip report for Amplify.
-	for _, op := range snap {
-		if (op.Service == "amplify" || op.Service == "AWS::Amplify::App") && op.Region == "us-east-2" {
-			t.Errorf("us-east-2 Amplify should NOT be in SkipReport (it's allowed), but found: %+v", op)
+		for _, name := range fixture.OutputList("bucket_names") {
+			require.True(t, resultIDs[name],
+				"S3 bucket %q must survive mosaic denial", name)
 		}
-	}
+	})
+
+	// --- Amplify: denied in us-east-1, allowed in us-east-2 + us-west-2 ---
+	// The fixture Amplify app is in us-east-2 — it should be returned.
+	t.Run("Amplify_mosaic", func(t *testing.T) {
+		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+			return enumerator.List("AWS::Amplify::App", out)
+		})
+		require.NoError(t, err)
+
+		// Fixture app in us-east-2 should survive.
+		amplifyAppID := fixture.Output("amplify_app_id")
+		resultIDs := make(map[string]bool)
+		for _, r := range results {
+			resultIDs[r.ResourceID] = true
+		}
+		require.True(t, resultIDs[amplifyAppID],
+			"Amplify app %q in us-east-2 must survive us-east-1 denial", amplifyAppID)
+	})
+
+	// --- Lambda via CloudControl: denied in us-east-2, allowed in us-east-1 + us-west-2 ---
+	// Fixture Lambdas in us-east-1 (secondary) and us-west-2 (tertiary) should survive.
+	// Fixture Lambdas in us-east-2 (primary) should be lost (Lambda denied there).
+	t.Run("Lambda_mosaic", func(t *testing.T) {
+		// Use a fresh enumerator — Lambda goes through CloudControl which
+		// has its own inner skip path.
+		lambdaEnum := NewEnumerator(plugin.AWSCommonRecon{
+			AWSReconBase: plugin.AWSReconBase{
+				Profile:    profileName,
+				ProfileDir: profileDir,
+				OutputDir:  t.TempDir(),
+			},
+			Regions:     []string{"us-east-1", "us-east-2", "us-west-2"},
+			Concurrency: 3,
+		})
+		defer lambdaEnum.Close()
+
+		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+			return lambdaEnum.List("AWS::Lambda::Function", out)
+		})
+		require.NoError(t, err)
+
+		resultARNs := make(map[string]bool)
+		for _, r := range results {
+			resultARNs[r.ARN] = true
+		}
+
+		// us-east-1 (secondary) functions: Lambda allowed → must survive.
+		for _, arn := range fixture.OutputList("function_arns_secondary") {
+			require.True(t, resultARNs[arn],
+				"Lambda %q (us-east-1, allowed) must survive", arn)
+		}
+
+		// us-west-2 (tertiary) functions: Lambda allowed → must survive.
+		for _, arn := range fixture.OutputList("function_arns_tertiary") {
+			require.True(t, resultARNs[arn],
+				"Lambda %q (us-west-2, allowed) must survive", arn)
+		}
+
+		// us-east-2 (primary) functions: Lambda DENIED → must be absent.
+		for _, arn := range fixture.OutputList("function_arns_primary") {
+			assert.False(t, resultARNs[arn],
+				"Lambda %q (us-east-2, denied) must NOT be returned", arn)
+		}
+
+		// SkipReport should have Lambda denial for us-east-2.
+		snap := lambdaEnum.Skipped.Snapshot()
+		foundLambdaDeny := false
+		for _, op := range snap {
+			if op.Region == "us-east-2" && (op.Service == "cloudcontrol" || op.Service == "AWS::Lambda::Function") {
+				foundLambdaDeny = true
+				break
+			}
+		}
+		assert.True(t, foundLambdaDeny,
+			"SkipReport must have a us-east-2 Lambda/cloudcontrol denial")
+	})
+
+	// --- SkipReport: verify mosaic denials are region-specific ---
+	t.Run("SkipReport_mosaic", func(t *testing.T) {
+		snap := enumerator.Skipped.Snapshot()
+
+		// Build a set of (service, region) skip pairs.
+		type skipKey struct{ service, region string }
+		skips := make(map[skipKey]bool)
+		for _, op := range snap {
+			skips[skipKey{op.Service, op.Region}] = true
+		}
+
+		t.Logf("Mosaic skip pairs: %v", skips)
+
+		// Amplify should be denied in us-east-1 only.
+		assert.True(t,
+			skips[skipKey{"amplify", "us-east-1"}] || skips[skipKey{"AWS::Amplify::App", "us-east-1"}],
+			"Amplify must be skipped in us-east-1")
+		assert.False(t,
+			skips[skipKey{"amplify", "us-east-2"}] || skips[skipKey{"AWS::Amplify::App", "us-east-2"}],
+			"Amplify must NOT be skipped in us-east-2")
+		assert.False(t,
+			skips[skipKey{"amplify", "us-west-2"}] || skips[skipKey{"AWS::Amplify::App", "us-west-2"}],
+			"Amplify must NOT be skipped in us-west-2")
+	})
 
 	t.Logf("Summary:\n%s", enumerator.Skipped.Summary())
 }

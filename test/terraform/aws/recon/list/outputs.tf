@@ -1,13 +1,38 @@
 output "instance_ids" {
+  value = concat(aws_instance.test[*].id, aws_instance.test_secondary[*].id, aws_instance.test_tertiary[*].id)
+}
+
+# Per-region instance IDs for mosaic deny assertions.
+output "instance_ids_primary" {
   value = aws_instance.test[*].id
+}
+output "instance_ids_secondary" {
+  value = aws_instance.test_secondary[*].id
+}
+output "instance_ids_tertiary" {
+  value = aws_instance.test_tertiary[*].id
 }
 
 output "bucket_names" {
-  value = aws_s3_bucket.test[*].id
+  value = concat(aws_s3_bucket.test[*].id, aws_s3_bucket.test_secondary[*].id, aws_s3_bucket.test_tertiary[*].id)
 }
 
 output "function_arns" {
+  value = concat(aws_lambda_function.test[*].arn, aws_lambda_function.test_secondary[*].arn, aws_lambda_function.test_tertiary[*].arn)
+}
+
+# Per-region function ARNs for mosaic deny assertions.
+# us-east-2 (primary): Lambda DENIED by region_restricted role
+# us-east-1 (secondary): Lambda allowed
+# us-west-2 (tertiary): Lambda allowed
+output "function_arns_primary" {
   value = aws_lambda_function.test[*].arn
+}
+output "function_arns_secondary" {
+  value = aws_lambda_function.test_secondary[*].arn
+}
+output "function_arns_tertiary" {
+  value = aws_lambda_function.test_tertiary[*].arn
 }
 
 output "prefix" {
