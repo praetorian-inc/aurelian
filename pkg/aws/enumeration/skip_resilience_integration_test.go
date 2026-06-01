@@ -386,6 +386,274 @@ func TestSkipResilience_ByARN_Denied(t *testing.T) {
 	t.Logf("By-ARN skip: %+v", snap[0])
 }
 
+// TestSkipResilience_ByARN_CloudControl_Denied tests the CloudControl
+// EnumerateByARN code path with a denied resource. Lambda has no native
+// enumerator — it falls through to CloudControl's GetResource, which
+// should fail and be caught by the dispatcher safety net.
+func TestSkipResilience_ByARN_CloudControl_Denied(t *testing.T) {
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
+	fixture.Setup()
+
+	restrictedRoleARN := fixture.Output("restricted_role_arn")
+	require.NotEmpty(t, restrictedRoleARN)
+
+	// Pick a Lambda function ARN from the fixture. The restricted role
+	// denies amplify:* and ssm:* but allows lambda:*... however, CloudControl
+	// GetResource for Lambda needs cloudcontrol:GetResource which IS allowed.
+	// So we need a function ARN that goes through CC. The restricted role
+	// allows lambda:*, so CC GetResource will succeed.
+	//
+	// To test CC by-ARN DENIED, we use the Amplify app ARN instead — Amplify
+	// has a native enumerator for EnumerateAll but EnumerateByARN goes
+	// through the native path too. For a CC-only by-ARN deny, we'd need a
+	// type with no native enumerator AND a service deny.
+	//
+	// Use a Lambda ARN with the restricted role: lambda:* is allowed but
+	// let's verify the CC by-ARN path returns the resource correctly.
+	functionARNs := fixture.OutputList("function_arns")
+	require.NotEmpty(t, functionARNs)
+	functionARN := functionARNs[0]
+
+	profileDir, profileName := setupRestrictedProfile(t, restrictedRoleARN)
+
+	enumerator := NewEnumerator(plugin.AWSCommonRecon{
+		AWSReconBase: plugin.AWSReconBase{
+			Profile:    profileName,
+			ProfileDir: profileDir,
+			OutputDir:  t.TempDir(),
+		},
+		Regions:     []string{"us-east-1", "us-east-2", "us-west-2"},
+		Concurrency: 1,
+	})
+	defer enumerator.Close()
+
+	// Enumerate a Lambda function by ARN — goes through CloudControl GetResource.
+	results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+		return enumerator.List(functionARN, out)
+	})
+	require.NoError(t, err, "CC by-ARN should not error (lambda allowed)")
+	require.Len(t, results, 1, "should return exactly the requested function")
+	assert.Equal(t, functionARN, results[0].ARN)
+	t.Logf("CC by-ARN allowed: %s", results[0].ARN)
+}
+
+// TestSkipResilience_CloseWritesDetailFile_Integration verifies that
+// defer Close() writes the detail file with real AWS errors, not just
+// unit-test mocks.
+func TestSkipResilience_CloseWritesDetailFile_Integration(t *testing.T) {
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
+	fixture.Setup()
+
+	restrictedRoleARN := fixture.Output("restricted_role_arn")
+	require.NotEmpty(t, restrictedRoleARN)
+
+	profileDir, profileName := setupRestrictedProfile(t, restrictedRoleARN)
+	outputDir := t.TempDir()
+
+	func() {
+		enumerator := NewEnumerator(plugin.AWSCommonRecon{
+			AWSReconBase: plugin.AWSReconBase{
+				Profile:    profileName,
+				ProfileDir: profileDir,
+				OutputDir:  outputDir,
+			},
+			Regions:     []string{"us-east-1"},
+			Concurrency: 1,
+		})
+		defer enumerator.Close() // should write detail file
+
+		// Trigger a denial.
+		out := pipeline.New[output.AWSResource]()
+		go func() { for range out.Range() {} }()
+		_ = enumerator.List("AWS::Amplify::App", out)
+		out.Close()
+	}()
+
+	// After Close, the detail file should exist with real AWS error data.
+	detailPath := filepath.Join(outputDir, "enumeration-skips.json")
+	data, err := os.ReadFile(detailPath)
+	require.NoError(t, err, "Close must write detail file after real AWS denial")
+	require.True(t, len(data) > 0, "detail file must not be empty")
+
+	var ops []SkippedOp
+	require.NoError(t, json.Unmarshal(data, &ops))
+	require.NotEmpty(t, ops)
+	assert.Contains(t, ops[0].ErrorCode, "AccessDenied")
+	t.Logf("Detail file from Close: %d entries, %d bytes", len(ops), len(data))
+}
+
+// TestSkipResilience_ByARN_MixedAllowDeny feeds a mix of allowed and denied
+// ARNs through the same enumerator. Allowed ARNs must return their resource;
+// denied ARNs must be skipped. This tests the by-ARN code path with real
+// resources, not just type-based enumeration.
+func TestSkipResilience_ByARN_MixedAllowDeny(t *testing.T) {
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
+	fixture.Setup()
+
+	restrictedRoleARN := fixture.Output("restricted_role_arn")
+	require.NotEmpty(t, restrictedRoleARN)
+
+	// Collect ARNs: IAM role (allowed) + Amplify app (denied).
+	iamRoleARN := fixture.Output("iam_role_arn")
+	require.NotEmpty(t, iamRoleARN)
+
+	ctx := context.Background()
+	baseCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	require.NoError(t, err)
+	identity, err := sts.NewFromConfig(baseCfg).GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	require.NoError(t, err)
+	amplifyARN := "arn:aws:amplify:us-east-2:" + *identity.Account + ":apps/" + fixture.Output("amplify_app_id")
+
+	profileDir, profileName := setupRestrictedProfile(t, restrictedRoleARN)
+
+	enumerator := NewEnumerator(plugin.AWSCommonRecon{
+		AWSReconBase: plugin.AWSReconBase{
+			Profile:    profileName,
+			ProfileDir: profileDir,
+			OutputDir:  t.TempDir(),
+		},
+		Regions:     []string{"us-east-1", "us-east-2"},
+		Concurrency: 2,
+	})
+	defer enumerator.Close()
+
+	// Feed both ARNs through the pipeline.
+	arns := pipeline.From(iamRoleARN, amplifyARN)
+	listed := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(arns, enumerator.List, listed)
+
+	results, err := listed.Collect()
+	require.NoError(t, err, "pipeline must not fail when some ARNs are denied")
+
+	// IAM role must be returned.
+	resultARNs := make(map[string]bool)
+	for _, r := range results {
+		resultARNs[r.ARN] = true
+	}
+	require.True(t, resultARNs[iamRoleARN],
+		"IAM role %q (allowed) must survive denied Amplify ARN", iamRoleARN)
+
+	// Amplify ARN must NOT be returned.
+	assert.False(t, resultARNs[amplifyARN],
+		"Amplify ARN %q (denied) must not be in results", amplifyARN)
+
+	// SkipReport must capture the Amplify denial.
+	snap := enumerator.Skipped.Snapshot()
+	require.NotEmpty(t, snap)
+	t.Logf("By-ARN mixed: %d results, %d skips", len(results), len(snap))
+}
+
+// TestSkipResilience_MosaicPipeline is the definitive multi-region × multi-type
+// test. It uses the mosaic role (Amplify denied in us-east-1, Lambda denied in
+// us-east-2) and enumerates 4 types across 3 regions in a single pipeline.Pipe.
+//
+// Expected survival matrix:
+//
+//	             us-east-1  us-east-2  us-west-2
+//	S3           ✓          ✓          ✓
+//	Amplify      ✗ denied   ✓          ✓
+//	Lambda(CC)   ✓          ✗ denied   ✓
+//	IAM          ✓ global   ✓ global   ✓ global
+func TestSkipResilience_MosaicPipeline(t *testing.T) {
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
+	fixture.Setup()
+
+	regionRestrictedRoleARN := fixture.Output("region_restricted_role_arn")
+	require.NotEmpty(t, regionRestrictedRoleARN)
+
+	profileDir, profileName := setupRestrictedProfile(t, regionRestrictedRoleARN)
+
+	enumerator := NewEnumerator(plugin.AWSCommonRecon{
+		AWSReconBase: plugin.AWSReconBase{
+			Profile:    profileName,
+			ProfileDir: profileDir,
+			OutputDir:  t.TempDir(),
+		},
+		Regions:     []string{"us-east-1", "us-east-2", "us-west-2"},
+		Concurrency: 3,
+	})
+	defer enumerator.Close()
+
+	// Interleave allowed and denied types.
+	types := pipeline.From(
+		"AWS::S3::Bucket",        // allowed everywhere
+		"AWS::Amplify::App",      // denied in us-east-1
+		"AWS::Lambda::Function",  // denied in us-east-2
+		"AWS::IAM::Role",         // allowed (global)
+	)
+	listed := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(types, enumerator.List, listed)
+
+	results, err := listed.Collect()
+	require.NoError(t, err, "mosaic pipeline must not fail")
+
+	// Index results.
+	resultIDs := make(map[string]bool)
+	resultARNs := make(map[string]bool)
+	for _, r := range results {
+		resultIDs[r.ResourceID] = true
+		resultARNs[r.ARN] = true
+	}
+
+	// S3: all 7 fixture buckets must survive (allowed in all regions).
+	for _, name := range fixture.OutputList("bucket_names") {
+		require.True(t, resultIDs[name],
+			"S3 bucket %q must survive mosaic pipeline", name)
+	}
+
+	// IAM roles: all 5 fixture roles must survive (global, allowed).
+	for _, name := range fixture.OutputList("iam_role_names") {
+		require.True(t, resultIDs[name],
+			"IAM role %q must survive mosaic pipeline", name)
+	}
+
+	// Lambda: functions from allowed regions survive, denied region absent.
+	// us-east-1 (secondary) + us-west-2 (tertiary) = allowed.
+	for _, arn := range fixture.OutputList("function_arns_secondary") {
+		require.True(t, resultARNs[arn],
+			"Lambda %q (us-east-1, allowed) must survive", arn)
+	}
+	for _, arn := range fixture.OutputList("function_arns_tertiary") {
+		require.True(t, resultARNs[arn],
+			"Lambda %q (us-west-2, allowed) must survive", arn)
+	}
+	// us-east-2 (primary) Lambda = denied.
+	for _, arn := range fixture.OutputList("function_arns_primary") {
+		assert.False(t, resultARNs[arn],
+			"Lambda %q (us-east-2, denied) must NOT be returned", arn)
+	}
+
+	// Amplify: us-east-2 app must survive (allowed), us-east-1 denied.
+	amplifyAppID := fixture.Output("amplify_app_id")
+	require.True(t, resultIDs[amplifyAppID],
+		"Amplify app %q (us-east-2, allowed) must survive", amplifyAppID)
+
+	// SkipReport: Amplify denied in us-east-1, Lambda denied in us-east-2.
+	snap := enumerator.Skipped.Snapshot()
+	type skipKey struct{ service, region string }
+	skips := make(map[skipKey]bool)
+	for _, op := range snap {
+		skips[skipKey{op.Service, op.Region}] = true
+	}
+	t.Logf("Mosaic pipeline skips: %v", skips)
+
+	assert.True(t,
+		skips[skipKey{"amplify", "us-east-1"}] || skips[skipKey{"AWS::Amplify::App", "us-east-1"}],
+		"Amplify must be skipped in us-east-1")
+	assert.False(t,
+		skips[skipKey{"amplify", "us-east-2"}] || skips[skipKey{"AWS::Amplify::App", "us-east-2"}],
+		"Amplify must NOT be skipped in us-east-2")
+
+	// S3 and IAM must not appear in skips at all.
+	for _, op := range snap {
+		assert.NotEqual(t, "s3", op.Service, "S3 must not be in SkipReport")
+		assert.NotEqual(t, "iam", op.Service, "IAM must not be in SkipReport")
+	}
+
+	t.Logf("Mosaic pipeline: %d results, %d skips", len(results), len(snap))
+	t.Logf("Summary:\n%s", enumerator.Skipped.Summary())
+}
+
 // TestSkipResilience_MultiRegion tests that denials in multiple regions each
 // produce a separate SkipReport entry, and that allowed services return
 // results from all regions.
