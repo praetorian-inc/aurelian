@@ -3,6 +3,8 @@ package enumeration
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	smithy "github.com/aws/smithy-go"
@@ -294,4 +296,104 @@ func TestEnumerator_Close_NilSkipped(t *testing.T) {
 		Skipped:     NewSkipReport(),
 	}
 	e.Close() // must not panic
+}
+
+// Close with outputDir writes detail file; empty outputDir does not.
+func TestEnumerator_Close_WritesDetailFile(t *testing.T) {
+	dir := t.TempDir()
+	e := &Enumerator{
+		enumerators: make(map[string]ResourceEnumerator),
+		cc:          &CloudControlEnumerator{skipReport: NewSkipReport()},
+		Skipped:     NewSkipReport(),
+		outputDir:   dir,
+	}
+	e.Skipped.Record(SkippedOp{
+		Region: "us-east-1", Service: "amplify", Operation: "ListApps",
+		ErrorCode: "AccessDeniedException", Detail: "denied",
+	})
+
+	e.Close()
+
+	_, err := os.Stat(filepath.Join(dir, "enumeration-skips.json"))
+	assert.NoError(t, err, "Close with outputDir must write detail file")
+}
+
+func TestEnumerator_Close_EmptyOutputDir_NoFile(t *testing.T) {
+	e := &Enumerator{
+		enumerators: make(map[string]ResourceEnumerator),
+		cc:          &CloudControlEnumerator{skipReport: NewSkipReport()},
+		Skipped:     NewSkipReport(),
+		outputDir:   "", // empty — no file should be written
+	}
+	e.Skipped.Record(SkippedOp{
+		Region: "us-east-1", Service: "amplify", Operation: "ListApps",
+		ErrorCode: "AccessDeniedException", Detail: "denied",
+	})
+
+	e.Close() // must not panic or attempt file write
+}
+
+// IAM sync.Once denial: if IAM is denied, the cached error should be caught
+// by the dispatcher safety net on every subsequent List call for IAM types.
+func TestEnumerator_List_IAMDenied_SyncOnce(t *testing.T) {
+	// Simulate an IAM sub-enumerator that returns AccessDeniedException.
+	denied := &mockResourceEnumerator{
+		resourceType:    "AWS::IAM::Role",
+		enumerateAllErr: &mockSmithyError{code: "AccessDeniedException", msg: "denied"},
+	}
+
+	e := newTestEnumerator(map[string]ResourceEnumerator{"AWS::IAM::Role": denied})
+
+	// First call: denied, should be caught and recorded.
+	out1 := pipeline.New[output.AWSResource]()
+	go func() { for range out1.Range() {} }()
+	err := e.List("AWS::IAM::Role", out1)
+	out1.Close()
+	require.NoError(t, err, "IAM denial should be skipped")
+	require.Equal(t, 1, e.Skipped.Len(), "first denial should be recorded")
+
+	// Second call with same type: the mock's enumerateAllErr is still set
+	// (simulating sync.Once cached error). Should also be caught.
+	out2 := pipeline.New[output.AWSResource]()
+	go func() { for range out2.Range() {} }()
+	err = e.List("AWS::IAM::Role", out2)
+	out2.Close()
+	require.NoError(t, err, "second IAM denial should also be skipped")
+	require.Equal(t, 2, e.Skipped.Len(), "second denial should also be recorded")
+}
+
+// Multiple types denied in sequence: each produces its own skip entry.
+func TestEnumerator_List_MultipleDeniedTypes_EachRecorded(t *testing.T) {
+	e := newTestEnumerator(map[string]ResourceEnumerator{
+		"AWS::Amplify::App": &mockResourceEnumerator{
+			resourceType:    "AWS::Amplify::App",
+			enumerateAllErr: &mockSmithyError{code: "AccessDeniedException", msg: "amplify denied"},
+		},
+		"AWS::SSM::Document": &mockResourceEnumerator{
+			resourceType:    "AWS::SSM::Document",
+			enumerateAllErr: &mockSmithyError{code: "AccessDeniedException", msg: "ssm denied"},
+		},
+		"AWS::Lambda::Function": &mockResourceEnumerator{
+			resourceType:    "AWS::Lambda::Function",
+			enumerateAllErr: &mockSmithyError{code: "UnauthorizedOperation", msg: "lambda denied"},
+		},
+	})
+
+	for _, typ := range []string{"AWS::Amplify::App", "AWS::SSM::Document", "AWS::Lambda::Function"} {
+		out := pipeline.New[output.AWSResource]()
+		go func() { for range out.Range() {} }()
+		err := e.List(typ, out)
+		out.Close()
+		require.NoError(t, err, "%s denial should be skipped", typ)
+	}
+
+	snap := e.Skipped.Snapshot()
+	require.Len(t, snap, 3, "each denied type must produce its own skip entry")
+
+	codes := make(map[string]bool)
+	for _, op := range snap {
+		codes[op.ErrorCode] = true
+	}
+	assert.True(t, codes["AccessDeniedException"])
+	assert.True(t, codes["UnauthorizedOperation"])
 }
