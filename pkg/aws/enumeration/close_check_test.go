@@ -149,6 +149,110 @@ func nameMatches(expr ast.Expr, name string) bool {
 	return false
 }
 
+// TestSkipReportFieldRequiresUsage is a static-analysis test that scans every
+// non-test .go file in pkg/aws/enumeration/ and verifies: if a file defines a
+// struct with a `skipReport *SkipReport` field, then the same file must also
+// contain a call to ClassifySkippable or skipReport.RecordBatch (i.e. the field
+// must actually be used, not just stored). This prevents the IAM-style bug where
+// a constructor wires the report but the enumerator never records skips.
+func TestSkipReportFieldRequiresUsage(t *testing.T) {
+	enumDir := filepath.Join(findRepoRoot(t), "pkg", "aws", "enumeration")
+	fset := token.NewFileSet()
+	var violations []string
+
+	entries, err := os.ReadDir(enumDir)
+	if err != nil {
+		t.Fatalf("read enumeration dir: %v", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		path := filepath.Join(enumDir, entry.Name())
+		f, parseErr := parser.ParseFile(fset, path, nil, 0)
+		if parseErr != nil {
+			t.Fatalf("parse %s: %v", path, parseErr)
+		}
+
+		if !fileHasSkipReportField(f) {
+			continue
+		}
+		if !fileUsesSkipReport(f) {
+			violations = append(violations, entry.Name())
+		}
+	}
+
+	for _, v := range violations {
+		t.Errorf(`%s: struct has skipReport *SkipReport field but never uses it.
+
+    Any enumerator that accepts *SkipReport must call ClassifySkippable
+    or skipReport.RecordBatch in its enumeration methods. Without this,
+    errors are silently lost from the SkipReport summary.
+
+    Example — add to your list/enumerate function:
+        if op := ClassifySkippable(err, "myservice", "ListThings", region); op != nil {
+            e.skipReport.RecordBatch([]SkippedOp{*op})
+            return nil
+        }`, v)
+	}
+}
+
+// fileHasSkipReportField checks if any struct in the file has a field
+// named "skipReport" with type "*SkipReport".
+func fileHasSkipReportField(f *ast.File) bool {
+	found := false
+	ast.Inspect(f, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		ts, ok := n.(*ast.TypeSpec)
+		if !ok {
+			return true
+		}
+		st, ok := ts.Type.(*ast.StructType)
+		if !ok {
+			return true
+		}
+		for _, field := range st.Fields.List {
+			for _, name := range field.Names {
+				if name.Name == "skipReport" {
+					found = true
+					return false
+				}
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// fileUsesSkipReport checks if the file contains a call to ClassifySkippable
+// or a selector expression accessing skipReport (e.g. e.skipReport.RecordBatch).
+func fileUsesSkipReport(f *ast.File) bool {
+	found := false
+	ast.Inspect(f, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		switch e := n.(type) {
+		case *ast.CallExpr:
+			if nameMatches(e.Fun, "ClassifySkippable") {
+				found = true
+			}
+		case *ast.SelectorExpr:
+			// Match e.skipReport.RecordBatch, e.skipReport.Record, etc.
+			if inner, ok := e.X.(*ast.SelectorExpr); ok {
+				if inner.Sel.Name == "skipReport" {
+					found = true
+				}
+			}
+		}
+		return !found
+	})
+	return found
+}
+
 // findRepoRoot walks up from the working directory looking for a go.mod file.
 func findRepoRoot(t *testing.T) string {
 	t.Helper()
