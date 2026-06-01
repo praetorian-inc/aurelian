@@ -96,6 +96,12 @@ output "amplify_app_name" {
   value = aws_amplify_app.test.name
 }
 
+# All regions where fixture resources are deployed. Tests should scan
+# these regions to find all fixture resources.
+output "test_regions" {
+  value = distinct([var.region, var.secondary_region, var.tertiary_region])
+}
+
 output "restricted_role_arn" {
   value = aws_iam_role.restricted.arn
 }

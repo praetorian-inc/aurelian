@@ -42,33 +42,9 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	restrictedRoleARN := fixture.Output("restricted_role_arn")
 	require.NotEmpty(t, restrictedRoleARN, "restricted_role_arn must be in Terraform outputs")
 
-	profileDir, profileName := setupRestrictedProfile(t, restrictedRoleARN)
-
-	// Sanity check: verify assume-role works before running enumerator.
-	ctx := context.Background()
-	baseCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
-	require.NoError(t, err)
-	stsClient := sts.NewFromConfig(baseCfg)
-	_, err = stsClient.AssumeRole(ctx, &sts.AssumeRoleInput{
-		RoleArn:         &restrictedRoleARN,
-		RoleSessionName: strPtr("aurelian-skip-test"),
-	})
-	require.NoError(t, err, "must be able to assume the restricted role — check Terraform trust policy")
-
-	outputDir := t.TempDir()
-	// Scan both regions: fixture resources are in us-east-2 (Terraform
-	// default), and us-east-1 is included to exercise multi-region scanning
-	// alongside denials.
-	enumerator := NewEnumerator(plugin.AWSCommonRecon{
-		AWSReconBase: plugin.AWSReconBase{
-			Profile:    profileName,
-			ProfileDir: profileDir,
-			OutputDir:  outputDir,
-		},
-		Regions:     []string{"us-east-1", "us-east-2"},
-		Concurrency: 2,
-	})
+	enumerator := newRestrictedEnumerator(t, fixture, restrictedRoleARN)
 	defer enumerator.Close()
+	outputDir := enumerator.outputDir
 
 	// --- Happy path: S3 — assert each fixture bucket by unique name ---
 	t.Run("S3_allowed", func(t *testing.T) {
@@ -172,15 +148,7 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	// Uses a fresh enumerator because IAM's sync.Once means a second
 	// EnumerateAll on the same instance is a no-op (by design — IAM is global).
 	t.Run("MixedPipeline_no_resource_loss", func(t *testing.T) {
-		mixedEnum := NewEnumerator(plugin.AWSCommonRecon{
-			AWSReconBase: plugin.AWSReconBase{
-				Profile:    profileName,
-				ProfileDir: profileDir,
-				OutputDir:  t.TempDir(),
-			},
-			Regions:     []string{"us-east-1", "us-east-2"},
-			Concurrency: 2,
-		})
+		mixedEnum := newRestrictedEnumerator(t, fixture, restrictedRoleARN)
 		defer mixedEnum.Close()
 
 		// Interleave denied types between allowed types so denials occur
@@ -947,6 +915,27 @@ func setupRestrictedProfile(t *testing.T, roleARN string) (string, string) {
 	require.NoError(t, os.WriteFile(filepath.Join(profileDir, "credentials"), origCreds, 0o600))
 
 	return profileDir, profileName
+}
+
+// newRestrictedEnumerator creates an enumerator using a restricted role,
+// scanning all regions from the Terraform fixture. This ensures tests
+// automatically cover new regions when Terraform adds them.
+func newRestrictedEnumerator(t *testing.T, fixture testutil.Fixture, roleARN string) *Enumerator {
+	t.Helper()
+	profileDir, profileName := setupRestrictedProfile(t, roleARN)
+	regions := fixture.OutputList("test_regions")
+	require.NotEmpty(t, regions, "test_regions must be in Terraform outputs")
+
+	e := NewEnumerator(plugin.AWSCommonRecon{
+		AWSReconBase: plugin.AWSReconBase{
+			Profile:    profileName,
+			ProfileDir: profileDir,
+			OutputDir:  t.TempDir(),
+		},
+		Regions:     regions,
+		Concurrency: len(regions),
+	})
+	return e
 }
 
 // stscreds is imported to ensure the SDK can resolve assume-role profiles.
