@@ -72,7 +72,16 @@ func TestNewEnumeratorRequiresClose(t *testing.T) {
 	}
 
 	for _, v := range violations {
-		t.Errorf("NewEnumerator called without defer …Close(): %s", v)
+		t.Errorf(`%s: NewEnumerator() called without defer Close().
+
+    Add "defer lister.Close()" immediately after the NewEnumerator call:
+
+        lister := cclist.NewEnumerator(opts)
+        defer lister.Close()
+
+    Close() logs the skip summary so operators see which (region, service)
+    pairs were skipped due to AccessDenied / SCP / opt-in errors.
+    Without it, skipped resources are silently lost from the summary.`, v)
 	}
 }
 
