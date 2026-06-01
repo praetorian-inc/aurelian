@@ -67,24 +67,42 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	})
 	defer enumerator.Close()
 
-	// --- Happy path: S3 (fully allowed) ---
+	// --- Happy path: S3 (fully allowed) — assert fixture buckets by name ---
 	t.Run("S3_allowed", func(t *testing.T) {
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::S3::Bucket", out)
 		})
 		require.NoError(t, err, "S3 should not error")
-		assert.NotEmpty(t, results, "S3 should return buckets")
+		require.NotEmpty(t, results, "S3 should return buckets")
 		t.Logf("S3: %d buckets", len(results))
+
+		resultIDs := make(map[string]bool)
+		for _, r := range results {
+			resultIDs[r.ResourceID] = true
+		}
+		for _, name := range fixture.OutputList("bucket_names") {
+			assert.True(t, resultIDs[name],
+				"fixture S3 bucket %q must be returned", name)
+		}
 	})
 
-	// --- Happy path: IAM (fully allowed, global) ---
+	// --- Happy path: IAM (fully allowed, global) — assert fixture roles by name ---
 	t.Run("IAM_allowed", func(t *testing.T) {
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::IAM::Role", out)
 		})
 		require.NoError(t, err, "IAM should not error")
-		assert.NotEmpty(t, results, "IAM should return roles")
+		require.NotEmpty(t, results, "IAM should return roles")
 		t.Logf("IAM roles: %d", len(results))
+
+		resultIDs := make(map[string]bool)
+		for _, r := range results {
+			resultIDs[r.ResourceID] = true
+		}
+		for _, name := range fixture.OutputList("iam_role_names") {
+			assert.True(t, resultIDs[name],
+				"fixture IAM role %q must be returned", name)
+		}
 	})
 
 	// --- Error path: Amplify (fully denied) ---
@@ -105,38 +123,37 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 		assert.Empty(t, results, "denied SSM should produce no resources")
 	})
 
-	// --- Error path: CloudControl-only type (no native enumerator) ---
-	// Lambda has no native enumerator — it falls through to CloudControl.
-	// The restricted role has no lambda:* permissions, so CloudControl's
-	// ListResources call should fail and be classified as skippable.
-	// This exercises the CloudControl inner skip path (listInRegionByType).
-	t.Run("CloudControl_denied", func(t *testing.T) {
+	// --- Happy path: Lambda via CloudControl (no native enumerator) ---
+	// Lambda falls through to CloudControl. The restricted role allows
+	// lambda:* + cloudcontrol:*, so this should succeed.
+	t.Run("Lambda_via_CloudControl_allowed", func(t *testing.T) {
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::Lambda::Function", out)
 		})
-		require.NoError(t, err, "CloudControl denial should be skipped, not returned as error")
-		// May return results if CloudControl happens to have read access
-		// via cloudcontrol:ListResources (which is allowed). The deny is on
-		// lambda:* not cloudcontrol:*, so CloudControl may or may not succeed
-		// depending on the underlying service authorization model.
-		t.Logf("CloudControl Lambda: %d results", len(results))
+		require.NoError(t, err, "Lambda via CloudControl should not error")
+		assert.NotEmpty(t, results, "Lambda should return functions — 5 fixture functions exist")
+		t.Logf("Lambda functions: %d", len(results))
+
+		// Assert fixture functions are present.
+		resultARNs := make(map[string]bool)
+		for _, r := range results {
+			resultARNs[r.ARN] = true
+		}
+		for _, arn := range fixture.OutputList("function_arns") {
+			assert.True(t, resultARNs[arn],
+				"fixture Lambda function %q must be returned", arn)
+		}
 	})
 
-	// --- Partial error path: EC2 images ---
-	// DescribeImages is allowed but DescribeImageAttribute is denied.
-	// The enumerator lists images but buildResource fails per-image because
-	// DescribeImageAttribute returns UnauthorizedOperation. Each failure is
-	// logged as a per-item warn and the image is skipped (continue), but the
-	// pipeline does not abort. The result is 0 enriched images even though
-	// DescribeImages found AMIs — this is correct behavior for partial denial.
-	t.Run("EC2_partial", func(t *testing.T) {
+	// --- EC2 images: full access, enrichment succeeds ---
+	t.Run("EC2_images_allowed", func(t *testing.T) {
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::EC2::Image", out)
 		})
-		require.NoError(t, err, "EC2 partial denial should not abort the pipeline")
-		// Results may be 0 because all images failed enrichment, or because
-		// there are no self-owned AMIs. Either way, no abort.
-		t.Logf("EC2 images: %d (0 expected when all images fail enrichment)", len(results))
+		require.NoError(t, err, "EC2 image enumeration should not error")
+		t.Logf("EC2 images: %d self-owned AMIs", len(results))
+		// No fixture AMIs are created, so count depends on account state.
+		// The key assertion is no error — EC2 is fully allowed.
 	})
 
 	// --- Critical: mixed pipeline — denied types must not cause loss of specific resources ---
