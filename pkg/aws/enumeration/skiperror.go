@@ -21,8 +21,15 @@ var fatalErrorCodes = map[string]struct{}{
 
 // IsSkippableAWSError reports whether the error is a per-(region, service)
 // failure that should be recorded and skipped rather than aborting the
-// pipeline. All errors are skippable by default except fatal credential/
-// signature errors that would affect every subsequent call.
+// pipeline. All AWS API errors are skippable by default except fatal
+// credential/signature errors that would affect every subsequent call.
+//
+// Note: this includes ThrottlingException. Throttling is a transient,
+// per-call condition — the SDK's adaptive retry mode (configured in
+// NewAWSConfig) handles retry automatically. If retries are exhausted and
+// the call still throttles, we record it as a skip rather than aborting
+// the entire pipeline. Retry/backoff policy belongs in the rate-limiting
+// layer (pkg/ratelimit), not in the error classifier.
 func IsSkippableAWSError(err error) bool {
 	if err == nil {
 		return false

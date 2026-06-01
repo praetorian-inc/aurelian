@@ -107,14 +107,14 @@ func (e *Enumerator) List(identifier string, out *pipeline.P[output.AWSResource]
 	parsed, err := awsaarn.Parse(identifier)
 	if err == nil {
 		if err := e.listByARN(parsed, identifier, out); err != nil {
-			return e.handleListError(err, identifier)
+			return e.handleListError(err, parsed.Service, "GetResource", parsed.Region)
 		}
 		return nil
 	}
 
 	if strings.HasPrefix(identifier, "AWS::") {
 		if err := e.listByType(identifier, out); err != nil {
-			return e.handleListError(err, identifier)
+			return e.handleListError(err, identifier, "List", "")
 		}
 		return nil
 	}
@@ -124,8 +124,8 @@ func (e *Enumerator) List(identifier string, out *pipeline.P[output.AWSResource]
 
 // handleListError classifies err: skippable errors are recorded and nil is
 // returned so the pipeline continues; everything else is returned as-is.
-func (e *Enumerator) handleListError(err error, identifier string) error {
-	if op := ClassifySkippable(err, identifier, "List", ""); op != nil {
+func (e *Enumerator) handleListError(err error, service, operation, region string) error {
+	if op := ClassifySkippable(err, service, operation, region); op != nil {
 		e.Skipped.Record(*op)
 		return nil
 	}

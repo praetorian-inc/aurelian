@@ -53,7 +53,12 @@ func TestEnumerateByARN_ErrorDoesNotSendZeroResource(t *testing.T) {
 
 	require.NoError(t, err, "List should not return error — skippable errors are recorded in SkipReport")
 	assert.Empty(t, collected, "no resources should be sent when EnumerateByARN returns an error")
-	assert.True(t, e.Skipped.Len() > 0, "error should be recorded in SkipReport")
+	require.True(t, e.Skipped.Len() > 0, "error should be recorded in SkipReport")
+
+	// Dispatcher safety net should extract service/region from the ARN.
+	snap := e.Skipped.Snapshot()
+	assert.Equal(t, "lambda", snap[0].Service, "service should be extracted from ARN, not the full ARN")
+	assert.Equal(t, "us-east-1", snap[0].Region, "region should be extracted from ARN")
 }
 
 func TestEnumerateByARN_SuccessSendsResource(t *testing.T) {
