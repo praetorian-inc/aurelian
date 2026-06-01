@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	awsaarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -32,6 +33,7 @@ type Enumerator struct {
 	enumerators map[string]ResourceEnumerator
 	cc          *CloudControlEnumerator
 	Skipped     *SkipReport
+	closeOnce   sync.Once
 }
 
 // NewEnumerator creates an Enumerator with CloudControl fallback and registers
@@ -62,11 +64,11 @@ func NewEnumerator(opts plugin.AWSCommonRecon) *Enumerator {
 	return e
 }
 
-// Close logs the skip summary. Call via defer after NewEnumerator so the
-// operator always sees which (region, service) pairs were skipped, even on
-// early-return error paths.
+// Close logs the skip summary exactly once. Safe to call multiple times;
+// use defer after NewEnumerator so the operator always sees which
+// (region, service) pairs were skipped, even on early-return error paths.
 func (e *Enumerator) Close() {
-	e.Skipped.LogSummary()
+	e.closeOnce.Do(func() { e.Skipped.LogSummary() })
 }
 
 // Register adds a ResourceEnumerator to the registry.

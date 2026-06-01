@@ -251,7 +251,7 @@ func TestEnumerator_Close_WithSkips(t *testing.T) {
 	assert.Equal(t, 1, e.Skipped.Len(), "Close must not clear the report")
 }
 
-// Close is safe to call multiple times (idempotent).
+// Close is safe to call multiple times — summary logs exactly once.
 func TestEnumerator_Close_Idempotent(t *testing.T) {
 	e := newTestEnumerator(map[string]ResourceEnumerator{})
 	e.Skipped.Record(SkippedOp{
@@ -259,7 +259,7 @@ func TestEnumerator_Close_Idempotent(t *testing.T) {
 		ErrorCode: "AccessDeniedException",
 	})
 	e.Close()
-	e.Close() // second call must not panic or double-log
+	e.Close() // second call is a no-op (sync.Once)
 	assert.Equal(t, 1, e.Skipped.Len())
 }
 
