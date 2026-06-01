@@ -139,10 +139,10 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 		t.Logf("EC2 images: %d (0 expected when all images fail enrichment)", len(results))
 	})
 
-	// --- Critical: mixed pipeline — denied types must not cause loss of allowed types ---
-	// This simulates the real list-all pattern: multiple resource types fed
-	// through pipeline.Pipe. If one type is denied, the others must still
-	// produce their full results.
+	// --- Critical: mixed pipeline — denied types must not cause loss of specific resources ---
+	// This is the definitive resource-loss test. It feeds 6 types (3 allowed,
+	// 3 denied) through a single pipeline.Pipe across 2 regions, then asserts
+	// that every specific fixture resource is present by ID/ARN/name.
 	//
 	// Uses a fresh enumerator because IAM's sync.Once means a second
 	// EnumerateAll on the same instance is a no-op (by design — IAM is global).
@@ -153,17 +153,21 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 				ProfileDir: profileDir,
 				OutputDir:  t.TempDir(),
 			},
-			Regions:     []string{"us-east-1"},
+			// Use both regions: fixture resources are in us-east-2,
+			// S3 BucketRegion filtering needs the right region.
+			Regions:     []string{"us-east-1", "us-east-2"},
 			Concurrency: 2,
 		})
 		defer mixedEnum.Close()
 
 		// Feed a mix of allowed and denied types through a single pipeline.
 		types := pipeline.From(
-			"AWS::S3::Bucket",      // allowed
-			"AWS::Amplify::App",    // denied
-			"AWS::IAM::Role",       // allowed (global, sync.Once)
-			"AWS::SSM::Document",   // denied
+			"AWS::S3::Bucket",        // allowed
+			"AWS::Amplify::App",      // denied
+			"AWS::IAM::Role",         // allowed (global)
+			"AWS::SSM::Document",     // denied
+			"AWS::IAM::Policy",       // allowed (global)
+			"AWS::Lambda::Function",  // CC-only, denied (no lambda:* perms)
 		)
 		listed := pipeline.New[output.AWSResource]()
 		pipeline.Pipe(types, mixedEnum.List, listed)
@@ -171,35 +175,63 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 		results, err := listed.Collect()
 		require.NoError(t, err, "pipeline must not fail when some types are denied")
 
-		// Collect by resource type.
-		byType := make(map[string]int)
+		// Index results for lookup.
+		byType := make(map[string][]output.AWSResource)
+		resourceIDs := make(map[string]bool)
+		resourceARNs := make(map[string]bool)
 		for _, r := range results {
-			byType[r.ResourceType]++
+			byType[r.ResourceType] = append(byType[r.ResourceType], r)
+			resourceIDs[r.ResourceID] = true
+			resourceARNs[r.ARN] = true
 		}
-		t.Logf("MixedPipeline results: %v", byType)
 
-		// S3 and IAM must have produced resources.
-		assert.Greater(t, byType["AWS::S3::Bucket"], 0,
-			"S3 buckets must survive alongside denied types")
-		assert.Greater(t, byType["AWS::IAM::Role"], 0,
-			"IAM roles must survive alongside denied types")
+		t.Logf("MixedPipeline results by type:")
+		for rt, rs := range byType {
+			t.Logf("  %s: %d resources", rt, len(rs))
+		}
 
-		// Denied types must produce zero resources.
-		assert.Equal(t, 0, byType["AWS::Amplify::App"],
+		// --- Assert specific fixture resources survived ---
+
+		// S3: fixture creates 2 buckets. Assert each by name.
+		for _, name := range fixture.OutputList("bucket_names") {
+			assert.True(t, resourceIDs[name],
+				"S3 bucket %q must survive denied types in the pipeline", name)
+		}
+
+		// IAM Role: fixture creates a test role. Assert by name.
+		expectedRoleName := fixture.Output("iam_role_name")
+		assert.True(t, resourceIDs[expectedRoleName],
+			"IAM role %q must survive denied types", expectedRoleName)
+
+		// IAM Policy: fixture creates a test policy. Assert by name.
+		expectedPolicyName := fixture.Output("iam_policy_name")
+		assert.True(t, resourceIDs[expectedPolicyName],
+			"IAM policy %q must survive denied types", expectedPolicyName)
+
+		// --- Assert denied types produced zero resources ---
+		assert.Empty(t, byType["AWS::Amplify::App"],
 			"denied Amplify should produce no resources")
-		assert.Equal(t, 0, byType["AWS::SSM::Document"],
+		assert.Empty(t, byType["AWS::SSM::Document"],
 			"denied SSM should produce no resources")
 
-		// Verify the mixed enumerator's own SkipReport captured both denials.
+		// --- Assert SkipReport captured denials and NOT allowed services ---
 		snap := mixedEnum.Skipped.Snapshot()
 		skippedServices := make(map[string]bool)
 		for _, op := range snap {
 			skippedServices[op.Service] = true
 		}
+		t.Logf("MixedPipeline skips: %v", skippedServices)
+
 		assert.True(t, skippedServices["amplify"] || skippedServices["AWS::Amplify::App"],
-			"mixed pipeline SkipReport must contain Amplify denial")
+			"SkipReport must contain Amplify denial")
 		assert.True(t, skippedServices["ssm"] || skippedServices["AWS::SSM::Document"],
-			"mixed pipeline SkipReport must contain SSM denial")
+			"SkipReport must contain SSM denial")
+
+		// Allowed services must NOT appear in the skip report.
+		assert.False(t, skippedServices["s3"],
+			"S3 must NOT be in SkipReport — it's allowed")
+		assert.False(t, skippedServices["iam"],
+			"IAM must NOT be in SkipReport — it's allowed")
 	})
 
 	// --- Verify SkipReport captured all denials ---
