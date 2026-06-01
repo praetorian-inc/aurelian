@@ -140,9 +140,17 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	})
 
 	// --- Critical: mixed pipeline — denied types must not cause loss of specific resources ---
-	// This is the definitive resource-loss test. It feeds 6 types (3 allowed,
-	// 3 denied) through a single pipeline.Pipe across 2 regions, then asserts
-	// that every specific fixture resource is present by ID/ARN/name.
+	// This is the definitive resource-loss test. It feeds 8 resource types
+	// (6 allowed, 2 denied) through a single pipeline.Pipe across 2 regions,
+	// then asserts that every specific fixture resource is present by ID/ARN.
+	//
+	// Fixture provisions per type:
+	//   S3:     5 buckets      (allowed)
+	//   IAM:    5 roles, 5 policies, 5 users (allowed, global)
+	//   Lambda: 5 functions    (allowed via CloudControl)
+	//   EC2:    5 instances    (allowed via CloudControl)
+	//   Amplify: 1 app         (DENIED)
+	//   SSM:    0 provisioned  (DENIED)
 	//
 	// Uses a fresh enumerator because IAM's sync.Once means a second
 	// EnumerateAll on the same instance is a no-op (by design — IAM is global).
@@ -153,21 +161,20 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 				ProfileDir: profileDir,
 				OutputDir:  t.TempDir(),
 			},
-			// Use both regions: fixture resources are in us-east-2,
-			// S3 BucketRegion filtering needs the right region.
 			Regions:     []string{"us-east-1", "us-east-2"},
 			Concurrency: 2,
 		})
 		defer mixedEnum.Close()
 
-		// Feed a mix of allowed and denied types through a single pipeline.
 		types := pipeline.From(
-			"AWS::S3::Bucket",        // allowed
-			"AWS::Amplify::App",      // denied
-			"AWS::IAM::Role",         // allowed (global)
-			"AWS::SSM::Document",     // denied
-			"AWS::IAM::Policy",       // allowed (global)
-			"AWS::Lambda::Function",  // CC-only, denied (no lambda:* perms)
+			"AWS::S3::Bucket",        // allowed — 5 fixture buckets
+			"AWS::IAM::Role",         // allowed — 5 fixture roles (global)
+			"AWS::IAM::Policy",       // allowed — 5 fixture policies (global)
+			"AWS::IAM::User",         // allowed — 5 fixture users (global)
+			"AWS::Lambda::Function",  // allowed — 5 fixture functions (via CC)
+			"AWS::EC2::Instance",     // allowed — 5 fixture instances (via CC)
+			"AWS::Amplify::App",      // DENIED
+			"AWS::SSM::Document",     // DENIED
 		)
 		listed := pipeline.New[output.AWSResource]()
 		pipeline.Pipe(types, mixedEnum.List, listed)
@@ -175,43 +182,63 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 		results, err := listed.Collect()
 		require.NoError(t, err, "pipeline must not fail when some types are denied")
 
-		// Index results for lookup.
-		byType := make(map[string][]output.AWSResource)
+		// Index results.
+		byType := make(map[string]int)
 		resourceIDs := make(map[string]bool)
 		resourceARNs := make(map[string]bool)
 		for _, r := range results {
-			byType[r.ResourceType] = append(byType[r.ResourceType], r)
+			byType[r.ResourceType]++
 			resourceIDs[r.ResourceID] = true
 			resourceARNs[r.ARN] = true
 		}
 
 		t.Logf("MixedPipeline results by type:")
-		for rt, rs := range byType {
-			t.Logf("  %s: %d resources", rt, len(rs))
+		for rt, count := range byType {
+			t.Logf("  %s: %d", rt, count)
 		}
 
-		// --- Assert specific fixture resources survived ---
+		// --- Assert every fixture resource by ID/ARN ---
 
-		// S3: fixture creates 2 buckets. Assert each by name.
+		// S3: 5 buckets by name
 		for _, name := range fixture.OutputList("bucket_names") {
 			assert.True(t, resourceIDs[name],
-				"S3 bucket %q must survive denied types in the pipeline", name)
+				"S3 bucket %q must survive denied types", name)
 		}
 
-		// IAM Role: fixture creates a test role. Assert by name.
-		expectedRoleName := fixture.Output("iam_role_name")
-		assert.True(t, resourceIDs[expectedRoleName],
-			"IAM role %q must survive denied types", expectedRoleName)
+		// IAM Roles: 5 by name
+		for _, name := range fixture.OutputList("iam_role_names") {
+			assert.True(t, resourceIDs[name],
+				"IAM role %q must survive denied types", name)
+		}
 
-		// IAM Policy: fixture creates a test policy. Assert by name.
-		expectedPolicyName := fixture.Output("iam_policy_name")
-		assert.True(t, resourceIDs[expectedPolicyName],
-			"IAM policy %q must survive denied types", expectedPolicyName)
+		// IAM Policies: 5 by name
+		for _, name := range fixture.OutputList("iam_policy_names") {
+			assert.True(t, resourceIDs[name],
+				"IAM policy %q must survive denied types", name)
+		}
+
+		// IAM Users: 5 by name
+		for _, name := range fixture.OutputList("iam_user_names") {
+			assert.True(t, resourceIDs[name],
+				"IAM user %q must survive denied types", name)
+		}
+
+		// Lambda: 5 functions by ARN
+		for _, arn := range fixture.OutputList("function_arns") {
+			assert.True(t, resourceARNs[arn],
+				"Lambda function %q must survive denied types", arn)
+		}
+
+		// EC2: 5 instances by ID
+		for _, id := range fixture.OutputList("instance_ids") {
+			assert.True(t, resourceIDs[id],
+				"EC2 instance %q must survive denied types", id)
+		}
 
 		// --- Assert denied types produced zero resources ---
-		assert.Empty(t, byType["AWS::Amplify::App"],
+		assert.Equal(t, 0, byType["AWS::Amplify::App"],
 			"denied Amplify should produce no resources")
-		assert.Empty(t, byType["AWS::SSM::Document"],
+		assert.Equal(t, 0, byType["AWS::SSM::Document"],
 			"denied SSM should produce no resources")
 
 		// --- Assert SkipReport captured denials and NOT allowed services ---
@@ -228,10 +255,10 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 			"SkipReport must contain SSM denial")
 
 		// Allowed services must NOT appear in the skip report.
-		assert.False(t, skippedServices["s3"],
-			"S3 must NOT be in SkipReport — it's allowed")
-		assert.False(t, skippedServices["iam"],
-			"IAM must NOT be in SkipReport — it's allowed")
+		assert.False(t, skippedServices["s3"], "S3 must NOT be in SkipReport")
+		assert.False(t, skippedServices["iam"], "IAM must NOT be in SkipReport")
+		assert.False(t, skippedServices["ec2"], "EC2 must NOT be in SkipReport")
+		assert.False(t, skippedServices["lambda"], "Lambda must NOT be in SkipReport")
 	})
 
 	// --- Verify SkipReport captured all denials ---

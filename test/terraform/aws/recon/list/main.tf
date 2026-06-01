@@ -39,7 +39,7 @@ data "aws_ami" "amazon_linux" {
 }
 
 resource "aws_instance" "test" {
-  count         = 2
+  count         = 5
   ami           = data.aws_ami.amazon_linux.id
   instance_type = "t3.micro"
 
@@ -50,7 +50,7 @@ resource "aws_instance" "test" {
 
 # S3 buckets
 resource "aws_s3_bucket" "test" {
-  count  = 2
+  count  = 5
   bucket = "${local.prefix}-bucket-${count.index}"
 }
 
@@ -82,7 +82,8 @@ data "archive_file" "dummy" {
 
 # IAM resources for IAMEnumerator integration tests
 resource "aws_iam_role" "test" {
-  name = "${local.prefix}-test-role"
+  count = 5
+  name  = "${local.prefix}-test-role-${count.index}"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -94,7 +95,8 @@ resource "aws_iam_role" "test" {
 }
 
 resource "aws_iam_policy" "test" {
-  name = "${local.prefix}-test-policy"
+  count = 5
+  name  = "${local.prefix}-test-policy-${count.index}"
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -106,11 +108,12 @@ resource "aws_iam_policy" "test" {
 }
 
 resource "aws_iam_user" "test" {
-  name = "${local.prefix}-test-user"
+  count = 5
+  name  = "${local.prefix}-test-user-${count.index}"
 }
 
 resource "aws_lambda_function" "test" {
-  count            = 2
+  count            = 5
   filename         = data.archive_file.dummy.output_path
   function_name    = "${local.prefix}-function-${count.index}"
   role             = aws_iam_role.lambda.arn
@@ -172,21 +175,27 @@ resource "aws_iam_role_policy" "restricted_allow" {
         Resource = "*"
       },
       {
-        Sid      = "AllowS3Full"
+        Sid      = "AllowS3"
         Effect   = "Allow"
         Action   = ["s3:*"]
         Resource = "*"
       },
       {
-        Sid      = "AllowIAMFull"
+        Sid      = "AllowIAM"
         Effect   = "Allow"
         Action   = ["iam:*"]
         Resource = "*"
       },
       {
-        Sid      = "AllowEC2DescribeImages"
+        Sid      = "AllowEC2"
         Effect   = "Allow"
-        Action   = ["ec2:DescribeImages"]
+        Action   = ["ec2:*"]
+        Resource = "*"
+      },
+      {
+        Sid      = "AllowLambda"
+        Effect   = "Allow"
+        Action   = ["lambda:*"]
         Resource = "*"
       }
     ]
@@ -210,12 +219,6 @@ resource "aws_iam_role_policy" "restricted_deny" {
         Sid      = "DenySSM"
         Effect   = "Deny"
         Action   = ["ssm:*"]
-        Resource = "*"
-      },
-      {
-        Sid      = "DenyEC2ImageAttributes"
-        Effect   = "Deny"
-        Action   = ["ec2:DescribeImageAttribute", "ec2:DescribeInstances"]
         Resource = "*"
       }
     ]

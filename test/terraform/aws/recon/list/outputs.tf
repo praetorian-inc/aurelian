@@ -14,28 +14,53 @@ output "prefix" {
   value = local.prefix
 }
 
+output "iam_role_arns" {
+  value = aws_iam_role.test[*].arn
+}
+
+output "iam_role_names" {
+  value = aws_iam_role.test[*].name
+}
+
+# Keep singular outputs for backward compat with existing tests.
 output "iam_role_arn" {
-  value = aws_iam_role.test.arn
+  value = aws_iam_role.test[0].arn
 }
 
 output "iam_role_name" {
-  value = aws_iam_role.test.name
+  value = aws_iam_role.test[0].name
+}
+
+output "iam_policy_arns" {
+  value = aws_iam_policy.test[*].arn
+}
+
+output "iam_policy_names" {
+  value = aws_iam_policy.test[*].name
 }
 
 output "iam_policy_arn" {
-  value = aws_iam_policy.test.arn
+  value = aws_iam_policy.test[0].arn
 }
 
 output "iam_policy_name" {
-  value = aws_iam_policy.test.name
+  value = aws_iam_policy.test[0].name
+}
+
+output "iam_user_arns" {
+  value = aws_iam_user.test[*].arn
+}
+
+output "iam_user_names" {
+  value = aws_iam_user.test[*].name
 }
 
 output "iam_user_arn" {
-  value = aws_iam_user.test.arn
+  value = aws_iam_user.test[0].arn
 }
 
 output "iam_user_name" {
-  value = aws_iam_user.test.name
+  value = aws_iam_user.test[0].name
 }
 
 output "amplify_app_id" {
