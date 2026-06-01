@@ -130,8 +130,17 @@ resource "aws_amplify_branch" "main" {
 }
 
 # Restricted role for skip-resilience integration tests.
-# Allows S3 + STS + CloudControl (needed for enumeration plumbing) but
-# explicitly denies Amplify so the enumerator exercises the skip path.
+#
+# The policy is designed to trigger multiple error classes in a single run:
+#   - S3 + IAM: fully allowed → happy path (resources returned)
+#   - Amplify: fully denied → AccessDeniedException from native enumerator
+#   - SSM: fully denied → AccessDeniedException from native enumerator (different service)
+#   - EC2 images: DescribeImages allowed, DescribeImageAttribute denied
+#     → partial failure (list succeeds, enrichment fails per-image)
+#   - CloudControl: allowed, but Amplify/SSM calls through CC would also be
+#     denied by the service-level deny, exercising the CC skip path too
+#
+# STS is always allowed (needed for assume-role and GetCallerIdentity).
 data "aws_caller_identity" "current" {}
 
 resource "aws_iam_role" "restricted" {
@@ -155,11 +164,32 @@ resource "aws_iam_role_policy" "restricted_allow" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Allow"
-      Action   = ["s3:*", "sts:*", "cloudcontrol:*", "cloudformation:*"]
-      Resource = "*"
-    }]
+    Statement = [
+      {
+        Sid      = "AllowPlumbing"
+        Effect   = "Allow"
+        Action   = ["sts:*", "cloudcontrol:*", "cloudformation:*"]
+        Resource = "*"
+      },
+      {
+        Sid      = "AllowS3Full"
+        Effect   = "Allow"
+        Action   = ["s3:*"]
+        Resource = "*"
+      },
+      {
+        Sid      = "AllowIAMFull"
+        Effect   = "Allow"
+        Action   = ["iam:*"]
+        Resource = "*"
+      },
+      {
+        Sid      = "AllowEC2DescribeImages"
+        Effect   = "Allow"
+        Action   = ["ec2:DescribeImages"]
+        Resource = "*"
+      }
+    ]
   })
 }
 
@@ -169,10 +199,25 @@ resource "aws_iam_role_policy" "restricted_deny" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect   = "Deny"
-      Action   = ["amplify:*"]
-      Resource = "*"
-    }]
+    Statement = [
+      {
+        Sid      = "DenyAmplify"
+        Effect   = "Deny"
+        Action   = ["amplify:*"]
+        Resource = "*"
+      },
+      {
+        Sid      = "DenySSM"
+        Effect   = "Deny"
+        Action   = ["ssm:*"]
+        Resource = "*"
+      },
+      {
+        Sid      = "DenyEC2ImageAttributes"
+        Effect   = "Deny"
+        Action   = ["ec2:DescribeImageAttribute", "ec2:DescribeInstances"]
+        Resource = "*"
+      }
+    ]
   })
 }
