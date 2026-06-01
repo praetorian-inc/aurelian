@@ -56,11 +56,12 @@ func TestNewEnumeratorRequiresClose(t *testing.T) {
 				return true
 			}
 
-			if !bodyCallsNewEnumerator(fn.Body) {
-				return true
+			varName := newEnumeratorVarName(fn.Body)
+			if varName == "" {
+				return true // no NewEnumerator call in this function
 			}
 
-			if !bodyHasDeferClose(fn.Body) {
+			if !bodyHasDeferCloseOnVar(fn.Body, varName) {
 				pos := fset.Position(fn.Pos())
 				violations = append(violations, pos.String()+": "+fn.Name.Name)
 			}
@@ -98,31 +99,40 @@ func importsAWSEnumeration(f *ast.File) bool {
 	return false
 }
 
-// bodyCallsNewEnumerator reports whether the AST body contains a call to
-// a function named NewEnumerator (regardless of package qualifier).
-func bodyCallsNewEnumerator(body *ast.BlockStmt) bool {
-	found := false
+// newEnumeratorVarName finds the variable name assigned from a NewEnumerator
+// call (e.g. "lister" from `lister := cclist.NewEnumerator(...)`). Returns ""
+// if no NewEnumerator call is found.
+func newEnumeratorVarName(body *ast.BlockStmt) string {
+	var varName string
 	ast.Inspect(body, func(n ast.Node) bool {
-		if found {
+		if varName != "" {
 			return false
 		}
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
+		assign, ok := n.(*ast.AssignStmt)
+		if !ok || len(assign.Rhs) != 1 || len(assign.Lhs) != 1 {
 			return true
 		}
-		if nameMatches(call.Fun, "NewEnumerator") {
-			found = true
+		call, ok := assign.Rhs[0].(*ast.CallExpr)
+		if !ok || !nameMatches(call.Fun, "NewEnumerator") {
+			return true
 		}
-		return !found
+		if ident, ok := assign.Lhs[0].(*ast.Ident); ok {
+			varName = ident.Name
+		}
+		return varName == ""
 	})
-	return found
+	return varName
 }
 
-// bodyHasDeferClose reports whether the AST body contains a defer statement
-// that calls a method named Close. Handles both:
+// bodyHasDeferCloseOnVar checks that the function body contains a defer
+// statement that calls Close() on the specific variable. Handles both:
 //   - defer lister.Close()
-//   - defer func() { _ = lister.Close() }()   (linter-wrapped)
-func bodyHasDeferClose(body *ast.BlockStmt) bool {
+//   - defer func() { _ = lister.Close() }()   (linter errcheck pattern)
+//
+// This prevents false positives from unrelated defer x.Close() calls
+// (e.g. os.File, http.Response.Body) that have nothing to do with the
+// enumerator.
+func bodyHasDeferCloseOnVar(body *ast.BlockStmt, varName string) bool {
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		if found {
@@ -133,9 +143,13 @@ func bodyHasDeferClose(body *ast.BlockStmt) bool {
 			return true
 		}
 		// Direct: defer lister.Close()
-		if nameMatches(ds.Call.Fun, "Close") {
-			found = true
-			return false
+		if sel, ok := ds.Call.Fun.(*ast.SelectorExpr); ok {
+			if sel.Sel.Name == "Close" {
+				if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == varName {
+					found = true
+					return false
+				}
+			}
 		}
 		// Wrapped: defer func() { _ = lister.Close() }()
 		if funcLit, ok := ds.Call.Fun.(*ast.FuncLit); ok {
@@ -143,8 +157,16 @@ func bodyHasDeferClose(body *ast.BlockStmt) bool {
 				if found {
 					return false
 				}
-				if call, ok := inner.(*ast.CallExpr); ok && nameMatches(call.Fun, "Close") {
-					found = true
+				call, ok := inner.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+					if sel.Sel.Name == "Close" {
+						if ident, ok := sel.X.(*ast.Ident); ok && ident.Name == varName {
+							found = true
+						}
+					}
 				}
 				return !found
 			})
