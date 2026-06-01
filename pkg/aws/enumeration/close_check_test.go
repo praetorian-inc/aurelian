@@ -119,7 +119,9 @@ func bodyCallsNewEnumerator(body *ast.BlockStmt) bool {
 }
 
 // bodyHasDeferClose reports whether the AST body contains a defer statement
-// that calls a method named Close.
+// that calls a method named Close. Handles both:
+//   - defer lister.Close()
+//   - defer func() { _ = lister.Close() }()   (linter-wrapped)
 func bodyHasDeferClose(body *ast.BlockStmt) bool {
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -130,8 +132,22 @@ func bodyHasDeferClose(body *ast.BlockStmt) bool {
 		if !ok {
 			return true
 		}
+		// Direct: defer lister.Close()
 		if nameMatches(ds.Call.Fun, "Close") {
 			found = true
+			return false
+		}
+		// Wrapped: defer func() { _ = lister.Close() }()
+		if funcLit, ok := ds.Call.Fun.(*ast.FuncLit); ok {
+			ast.Inspect(funcLit.Body, func(inner ast.Node) bool {
+				if found {
+					return false
+				}
+				if call, ok := inner.(*ast.CallExpr); ok && nameMatches(call.Fun, "Close") {
+					found = true
+				}
+				return !found
+			})
 		}
 		return !found
 	})
