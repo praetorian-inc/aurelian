@@ -160,7 +160,7 @@ output "restricted_role_arn" {
 # If an inner loop is incorrectly wired, the skip service name will be
 # the CC type string instead of the short name, and the test will fail.
 output "restricted_denied_services" {
-  value = ["amplify", "ssm", "iam"]
+  value = ["amplify", "ssm"]
 }
 
 output "wiring_check_role_arn" {

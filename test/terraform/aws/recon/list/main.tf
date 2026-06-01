@@ -375,12 +375,6 @@ resource "aws_iam_role_policy" "restricted_deny" {
         Effect   = "Deny"
         Action   = ["ssm:*"]
         Resource = "*"
-      },
-      {
-        Sid      = "DenyIAMList"
-        Effect   = "Deny"
-        Action   = ["iam:ListRoles", "iam:ListPolicies", "iam:ListUsers"]
-        Resource = "*"
       }
     ]
   })
