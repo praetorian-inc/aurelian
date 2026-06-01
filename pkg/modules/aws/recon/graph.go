@@ -116,6 +116,7 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 			len(collector.SupportedResourceTypes()), len(resolvedRegions))
 
 		lister := enumeration.NewEnumerator(c.AWSCommonRecon)
+		defer lister.Close()
 		resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, collector.SupportedResourceTypes())
 		if err != nil {
 			return fmt.Errorf("resolving resource types: %w", err)
@@ -142,7 +143,6 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 			return fmt.Errorf("collecting resources with policies: %w", err)
 		}
 
-		lister.Skipped.LogSummary()
 		m.log.Success("resources with policies collected (%d)", results.Len())
 		m.resourcesWithPolicies = results
 		return nil

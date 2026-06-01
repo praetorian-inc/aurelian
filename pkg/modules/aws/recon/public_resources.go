@@ -62,6 +62,7 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 	c := m.PublicResourcesConfig
 
 	lister := cclist.NewEnumerator(c.AWSCommonRecon)
+	defer lister.Close()
 
 	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
 	if err != nil {
@@ -97,7 +98,6 @@ func (m *AWSPublicResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model.
 		return err
 	}
 
-	lister.Skipped.LogSummary()
 	cfg.Success("public access evaluation complete")
 	return nil
 }

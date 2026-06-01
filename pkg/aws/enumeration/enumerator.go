@@ -62,6 +62,13 @@ func NewEnumerator(opts plugin.AWSCommonRecon) *Enumerator {
 	return e
 }
 
+// Close logs the skip summary. Call via defer after NewEnumerator so the
+// operator always sees which (region, service) pairs were skipped, even on
+// early-return error paths.
+func (e *Enumerator) Close() {
+	e.Skipped.LogSummary()
+}
+
 // Register adds a ResourceEnumerator to the registry.
 func (e *Enumerator) Register(l ResourceEnumerator) {
 	e.enumerators[l.ResourceType()] = l
