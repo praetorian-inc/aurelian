@@ -227,33 +227,74 @@ func fileHasSkipReportField(f *ast.File) bool {
 	return found
 }
 
-// fileUsesSkipReport checks that the file contains BOTH:
-// 1. A call to ClassifySkippable (classify the error)
-// 2. A reference to skipReport.RecordBatch or skipReport.Record (flush to report)
-// Both are required — calling ClassifySkippable without recording the result
-// means the error is classified but silently dropped from the SkipReport.
+// fileUsesSkipReport checks that the file contains the correct wiring
+// pattern. It verifies THREE things all present in the same file:
+//
+// 1. An if-statement with ClassifySkippable in the Init:
+//    if op := ClassifySkippable(err, ...); op != nil { ... }
+//
+// 2. A dereference of the result variable (*op) inside the if-body
+//    (proves the classified op is captured, not discarded)
+//
+// 3. A call to skipReport.RecordBatch or skipReport.Record anywhere
+//    in the file (proves the captured ops are flushed to the report)
+//
+// All three are required. This catches:
+//   - ClassifySkippable never called → #1 fails
+//   - Called but result discarded (no *op) → #2 fails
+//   - Result captured but never flushed to report → #3 fails
 func fileUsesSkipReport(f *ast.File) bool {
-	hasClassify := false
-	hasRecord := false
+	hasClassifyWithDeref := false
+	hasSkipReportCall := false
+
 	ast.Inspect(f, func(n ast.Node) bool {
-		if hasClassify && hasRecord {
-			return false
-		}
-		switch e := n.(type) {
-		case *ast.CallExpr:
-			if nameMatches(e.Fun, "ClassifySkippable") {
-				hasClassify = true
-			}
-		case *ast.SelectorExpr:
-			if inner, ok := e.X.(*ast.SelectorExpr); ok {
-				if inner.Sel.Name == "skipReport" {
-					hasRecord = true
+		// Check #1 + #2: if op := ClassifySkippable(...); op != nil { ...*op... }
+		if ifStmt, ok := n.(*ast.IfStmt); ok && ifStmt.Init != nil {
+			if assign, ok := ifStmt.Init.(*ast.AssignStmt); ok && len(assign.Rhs) == 1 && len(assign.Lhs) == 1 {
+				if call, ok := assign.Rhs[0].(*ast.CallExpr); ok && nameMatches(call.Fun, "ClassifySkippable") {
+					if opIdent, ok := assign.Lhs[0].(*ast.Ident); ok {
+						if blockHasStarIdent(ifStmt.Body, opIdent.Name) {
+							hasClassifyWithDeref = true
+						}
+					}
 				}
 			}
 		}
+
+		// Check #3: any selector chain ending in skipReport.RecordBatch or skipReport.Record
+		if sel, ok := n.(*ast.SelectorExpr); ok {
+			if sel.Sel.Name == "RecordBatch" || sel.Sel.Name == "Record" {
+				if inner, ok := sel.X.(*ast.SelectorExpr); ok {
+					if inner.Sel.Name == "skipReport" {
+						hasSkipReportCall = true
+					}
+				}
+			}
+		}
+
 		return true
 	})
-	return hasClassify && hasRecord
+
+	return hasClassifyWithDeref && hasSkipReportCall
+}
+
+// blockHasStarIdent checks if the block contains *name (a star/deref of name).
+func blockHasStarIdent(body *ast.BlockStmt, name string) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		star, ok := n.(*ast.StarExpr)
+		if !ok {
+			return true
+		}
+		if ident, ok := star.X.(*ast.Ident); ok && ident.Name == name {
+			found = true
+		}
+		return !found
+	})
+	return found
 }
 
 // TestClassifySkippableServiceNames scans every non-test .go file in
