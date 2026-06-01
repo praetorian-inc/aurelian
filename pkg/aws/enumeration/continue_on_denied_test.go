@@ -178,19 +178,18 @@ func TestContinueOnDenied_NonSkippableError_PropagatesFatal(t *testing.T) {
 		"non-skippable errors must NOT be recorded as skips -- that would mask real failures")
 }
 
-// FP2: a smithy error with a code that is intentionally NOT in
-// skippableErrorCodes (e.g. ThrottlingException) must propagate as fatal so the
-// caller can decide whether to retry. The fix must not over-classify.
-func TestContinueOnDenied_NonListedSmithyCode_PropagatesFatal(t *testing.T) {
+// FP2: a fatal smithy error (expired credentials) must propagate — it means
+// every subsequent call will also fail, so continuing is pointless.
+func TestContinueOnDenied_FatalSmithyCode_PropagatesFatal(t *testing.T) {
 	report := NewSkipReport()
 	plan := regionErrPlan{
-		"us-east-1": &fakeAPIError{code: "ThrottlingException", msg: "rate exceeded"},
+		"us-east-1": &fakeAPIError{code: "ExpiredToken", msg: "token expired"},
 	}
 
 	_, err := runWithSkipHandling(t, []string{"us-east-1", "us-east-2"}, plan, report)
 
-	require.Error(t, err, "ThrottlingException is intentionally not in skippableErrorCodes")
-	assert.Contains(t, err.Error(), "ThrottlingException")
+	require.Error(t, err, "ExpiredToken must propagate — credentials are broken")
+	assert.Contains(t, err.Error(), "ExpiredToken")
 	assert.Equal(t, 0, report.Len())
 }
 

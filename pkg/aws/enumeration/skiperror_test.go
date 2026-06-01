@@ -27,6 +27,8 @@ func TestIsSkippableAWSError(t *testing.T) {
 		want bool
 	}{
 		{"nil", nil, false},
+
+		// All smithy-coded AWS errors are skippable (except fatal ones).
 		{"AccessDenied", &fakeAPIError{code: "AccessDenied"}, true},
 		{"AccessDeniedException", &fakeAPIError{code: "AccessDeniedException"}, true},
 		{"UnauthorizedOperation", &fakeAPIError{code: "UnauthorizedOperation"}, true},
@@ -36,15 +38,28 @@ func TestIsSkippableAWSError(t *testing.T) {
 		{"UnrecognizedClientException", &fakeAPIError{code: "UnrecognizedClientException"}, true},
 		{"TypeNotFoundException", &fakeAPIError{code: "TypeNotFoundException"}, true},
 		{"UnsupportedActionException", &fakeAPIError{code: "UnsupportedActionException"}, true},
-		{"unrelated smithy code", &fakeAPIError{code: "ThrottlingException"}, false},
+		{"ThrottlingException", &fakeAPIError{code: "ThrottlingException"}, true},
+		{"GeneralServiceException", &fakeAPIError{code: "GeneralServiceException", msg: "wrapping AccessDeniedException"}, true},
+		{"ValidationException", &fakeAPIError{code: "ValidationException"}, true},
+
+		// Wrapped smithy errors are also skippable.
 		{"wrapped AccessDenied", fmt.Errorf("list amplify apps: %w", &fakeAPIError{code: "AccessDeniedException"}), true},
+
+		// Fatal credential errors must NOT be skipped.
+		{"ExpiredToken", &fakeAPIError{code: "ExpiredToken"}, false},
+		{"ExpiredTokenException", &fakeAPIError{code: "ExpiredTokenException"}, false},
+		{"RequestExpired", &fakeAPIError{code: "RequestExpired"}, false},
+		{"SignatureDoesNotMatch", &fakeAPIError{code: "SignatureDoesNotMatch"}, false},
+		{"IncompleteSignature", &fakeAPIError{code: "IncompleteSignature"}, false},
+		{"MissingAuthenticationToken", &fakeAPIError{code: "MissingAuthenticationToken"}, false},
+
+		// Region-unsupported (DNS).
 		{"region unsupported - amazonaws no such host", errors.New("dial tcp: lookup amplify.eu-south-1.amazonaws.com: no such host"), true},
 		{"region unsupported - resolve endpoint", errors.New("could not resolve endpoint"), true},
 		{"region unsupported - EndpointNotFound", errors.New("EndpointNotFound for service in region"), true},
+
+		// Non-smithy, non-DNS errors are not skippable.
 		{"plain unrelated error", errors.New("network connection refused"), false},
-		// Regression: bare "no such host" without .amazonaws.com must NOT be
-		// classified as region-unsupported — it could be a transient DNS
-		// failure on a non-AWS host (e.g. corporate proxy, sidecar).
 		{"transient DNS - bare no such host", errors.New("dial tcp: lookup internal-proxy.corp.example.com: no such host"), false},
 		{"transient DNS - no such host no domain", errors.New("no such host"), false},
 	}
@@ -76,16 +91,13 @@ func TestSkipReason(t *testing.T) {
 	}
 }
 
-// TestSkippableErrorCodes_AllCovered ensures every code in skippableErrorCodes
-// is exercised by IsSkippableAWSError. If someone adds a new code to the map,
-// this test fails until they add a matching entry to the table-driven tests
-// above (or this loop catches it automatically).
-func TestSkippableErrorCodes_AllCovered(t *testing.T) {
-	for code := range skippableErrorCodes {
+// TestFatalErrorCodes_AllBlocked ensures every code in fatalErrorCodes
+// is correctly blocked from being skipped.
+func TestFatalErrorCodes_AllBlocked(t *testing.T) {
+	for code := range fatalErrorCodes {
 		t.Run(code, func(t *testing.T) {
 			err := &fakeAPIError{code: code, msg: "test"}
-			assert.True(t, IsSkippableAWSError(err), "code %q is in skippableErrorCodes but IsSkippableAWSError returns false", code)
-			assert.Equal(t, code, SkipReason(err), "SkipReason should return the code itself")
+			assert.False(t, IsSkippableAWSError(err), "fatal code %q must NOT be skippable", code)
 		})
 	}
 }

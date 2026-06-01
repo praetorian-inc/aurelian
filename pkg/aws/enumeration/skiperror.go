@@ -7,41 +7,41 @@ import (
 	smithy "github.com/aws/smithy-go"
 )
 
-// skippableErrorCodes lists smithy/AWS error codes that indicate a single
-// (region, service) call should be skipped rather than failing the whole
-// enumeration run. Covers SCP explicit denies, missing permissions, opt-in
-// regions, and CloudControl type-not-supported responses.
-var skippableErrorCodes = map[string]struct{}{
-	"AccessDenied":                {},
-	"AccessDeniedException":       {},
-	"UnauthorizedOperation":       {},
-	"AuthFailure":                 {},
-	"OptInRequired":               {},
-	"InvalidClientTokenId":        {},
-	"UnrecognizedClientException": {},
-	"TypeNotFoundException":       {},
-	"UnsupportedActionException":  {},
+// fatalErrorCodes lists smithy/AWS error codes that should NOT be skipped —
+// these indicate a fundamental problem that will affect all subsequent calls
+// (bad credentials, expired token, etc.). Everything else is skippable.
+var fatalErrorCodes = map[string]struct{}{
+	"ExpiredToken":            {},
+	"ExpiredTokenException":   {},
+	"RequestExpired":          {},
+	"SignatureDoesNotMatch":   {},
+	"IncompleteSignature":     {},
+	"MissingAuthenticationToken": {},
 }
 
-// IsSkippableAWSError reports whether the error is a non-fatal AWS API failure
-// for a single (region, service) call: a known auth/opt-in/type code, or a
-// DNS/endpoint resolution failure indicating the service is unavailable in the
-// region.
+// IsSkippableAWSError reports whether the error is a per-(region, service)
+// failure that should be recorded and skipped rather than aborting the
+// pipeline. All errors are skippable by default except fatal credential/
+// signature errors that would affect every subsequent call.
 func IsSkippableAWSError(err error) bool {
 	if err == nil {
 		return false
 	}
 	if code, ok := extractAPIErrorCode(err); ok {
-		if _, found := skippableErrorCodes[code]; found {
-			return true
+		if _, fatal := fatalErrorCodes[code]; fatal {
+			return false
 		}
+		return true
 	}
+	// Non-smithy errors: DNS/endpoint failures are skippable,
+	// everything else is not (could be a Go-level network failure,
+	// context cancellation, etc.).
 	return isRegionUnsupportedError(err)
 }
 
-// SkipReason returns the smithy error code if the error has one, otherwise
-// "RegionUnsupported" for DNS/endpoint failures, or "Unknown" for any other
-// non-coded error. Caller is expected to use this only after IsSkippableAWSError.
+// SkipReason returns a human-readable reason for the skip. For smithy errors
+// it returns the error code; for DNS failures "RegionUnsupported"; otherwise
+// "Unknown".
 func SkipReason(err error) string {
 	if err == nil {
 		return ""
