@@ -359,10 +359,13 @@ func TestClassifySkippableServiceNames(t *testing.T) {
 	}
 }
 
-// TestNewEnumeratorSharesSkipReport verifies that every constructor call inside
-// NewEnumerator passes the local `skipReport` variable, not `NewSkipReport()`.
-// If someone passes a fresh report, that enumerator's skips are isolated and
-// never appear in the operator summary.
+// TestNewEnumeratorSharesSkipReport verifies two things inside NewEnumerator:
+//
+// 1. NewSkipReport() is called exactly once (the shared instance).
+// 2. Every function call that has an argument named "skipReport" passes the
+//    identifier `skipReport` — not a NewSkipReport() call, a helper function,
+//    or any other expression. This ensures all enumerators share the same
+//    report instance.
 func TestNewEnumeratorSharesSkipReport(t *testing.T) {
 	enumDir := filepath.Join(findRepoRoot(t), "pkg", "aws", "enumeration")
 	fset := token.NewFileSet()
@@ -374,17 +377,13 @@ func TestNewEnumeratorSharesSkipReport(t *testing.T) {
 
 	var violations []string
 
-	// Find the NewEnumerator function.
 	ast.Inspect(f, func(n ast.Node) bool {
 		fn, ok := n.(*ast.FuncDecl)
 		if !ok || fn.Name.Name != "NewEnumerator" || fn.Body == nil {
 			return true
 		}
 
-		// Walk the function body for any call to NewSkipReport().
-		// The only allowed call is the initial `skipReport := NewSkipReport()`.
-		// Any other NewSkipReport() call means someone is creating an
-		// isolated report for a constructor.
+		// Check 1: exactly one NewSkipReport() call.
 		newSkipReportCount := 0
 		ast.Inspect(fn.Body, func(inner ast.Node) bool {
 			call, ok := inner.(*ast.CallExpr)
@@ -393,13 +392,56 @@ func TestNewEnumeratorSharesSkipReport(t *testing.T) {
 			}
 			if nameMatches(call.Fun, "NewSkipReport") {
 				newSkipReportCount++
-				if newSkipReportCount > 1 {
-					pos := fset.Position(call.Pos())
-					violations = append(violations, fmt.Sprintf(
-						"%s: NewSkipReport() called more than once in NewEnumerator. "+
-							"All enumerators must share the same skipReport instance. "+
-							"Pass the existing `skipReport` variable instead.", pos))
+			}
+			return true
+		})
+		if newSkipReportCount != 1 {
+			violations = append(violations, fmt.Sprintf(
+				"NewEnumerator has %d NewSkipReport() calls, expected exactly 1", newSkipReportCount))
+		}
+
+		// Check 2: every call whose last argument position could be a
+		// *SkipReport must pass the identifier `skipReport`, not any
+		// other expression.
+		ast.Inspect(fn.Body, func(inner ast.Node) bool {
+			call, ok := inner.(*ast.CallExpr)
+			if !ok || len(call.Args) == 0 {
+				return true
+			}
+			// Check every argument — if it's the identifier "skipReport", good.
+			// If it's a different expression but resolves to SkipReport, bad.
+			// We can't do type resolution in AST, so we use a heuristic:
+			// any call to a function named New*Enumerator* or
+			// New*CloudControl* must have its last arg be `skipReport`.
+			fnName := ""
+			if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+				fnName = sel.Sel.Name
+			} else if ident, ok := call.Fun.(*ast.Ident); ok {
+				fnName = ident.Name
+			}
+			if !strings.HasPrefix(fnName, "New") {
+				return true
+			}
+			// Check last argument — the *SkipReport is conventionally last.
+			lastArg := call.Args[len(call.Args)-1]
+			ident, isIdent := lastArg.(*ast.Ident)
+			if isIdent && ident.Name == "skipReport" {
+				return true // correct — passes the shared variable
+			}
+			// The last arg is not the `skipReport` identifier.
+			// Check if the function is one that accepts *SkipReport.
+			// Heuristic: constructor names containing "Enumerator" or
+			// "CloudControl" that we know take *SkipReport.
+			if strings.Contains(fnName, "Enumerator") || strings.Contains(fnName, "CloudControl") {
+				pos := fset.Position(call.Pos())
+				argStr := "non-identifier"
+				if isIdent {
+					argStr = ident.Name
 				}
+				violations = append(violations, fmt.Sprintf(
+					"%s: %s() last arg is %q, expected `skipReport`. "+
+						"All enumerators must share the same SkipReport instance.",
+					pos, fnName, argStr))
 			}
 			return true
 		})
