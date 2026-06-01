@@ -225,6 +225,70 @@ resource "aws_iam_role_policy" "restricted_deny" {
   })
 }
 
+# Partial-access role for EC2 image enrichment tests.
+#
+# Allows ec2:DescribeImages (list succeeds) but denies
+# ec2:DescribeImageAttribute (enrichment fails per-image). This tests
+# that the enumerator gracefully degrades — images are found but
+# enrichment fails, and the pipeline does not abort.
+#
+# Also tests ec2:DescribeInstances denied — findInstancesUsingImage
+# should return nil gracefully.
+resource "aws_iam_role" "partial_ec2" {
+  name = "${local.prefix}-partial-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        AWS = data.aws_caller_identity.current.arn
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "partial_ec2_allow" {
+  name = "${local.prefix}-partial-ec2-allow"
+  role = aws_iam_role.partial_ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "AllowPlumbing"
+        Effect   = "Allow"
+        Action   = ["sts:*", "cloudcontrol:*", "cloudformation:*"]
+        Resource = "*"
+      },
+      {
+        Sid      = "AllowEC2List"
+        Effect   = "Allow"
+        Action   = ["ec2:DescribeImages"]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "partial_ec2_deny" {
+  name = "${local.prefix}-partial-ec2-deny"
+  role = aws_iam_role.partial_ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "DenyEC2Enrichment"
+        Effect   = "Deny"
+        Action   = ["ec2:DescribeImageAttribute", "ec2:DescribeInstances"]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 # Per-region restricted role: simulates SCP-style per-region denial.
 #
 # Amplify is denied ONLY in us-east-1 but allowed in us-east-2.

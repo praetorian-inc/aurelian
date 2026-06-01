@@ -75,6 +75,10 @@ output "restricted_role_arn" {
   value = aws_iam_role.restricted.arn
 }
 
+output "partial_ec2_role_arn" {
+  value = aws_iam_role.partial_ec2.arn
+}
+
 output "region_restricted_role_arn" {
   value = aws_iam_role.region_restricted.arn
 }

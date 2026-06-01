@@ -516,6 +516,65 @@ func TestSkipResilience_PerRegionDenial(t *testing.T) {
 	t.Logf("Summary:\n%s", enumerator.Skipped.Summary())
 }
 
+// TestSkipResilience_PartialEC2Access uses a role that allows
+// ec2:DescribeImages but denies ec2:DescribeImageAttribute and
+// ec2:DescribeInstances. This is the partial-access scenario where
+// the enumerator succeeds at listing but fails during per-resource
+// enrichment.
+//
+// Expected behavior:
+//   - DescribeImages succeeds, finds self-owned AMIs
+//   - buildResource fails for EACH image (DescribeImageAttribute denied)
+//   - Each failure is logged as Warn and the image is skipped (continue)
+//   - The pipeline does NOT abort
+//   - 0 enriched images are returned (all dropped during enrichment)
+//   - SkipReport does NOT contain EC2 — the per-image failure is a Warn,
+//     not a skip (it's handled by the continue in the for loop, not by
+//     ClassifySkippable)
+func TestSkipResilience_PartialEC2Access(t *testing.T) {
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
+	fixture.Setup()
+
+	partialEC2RoleARN := fixture.Output("partial_ec2_role_arn")
+	require.NotEmpty(t, partialEC2RoleARN, "partial_ec2_role_arn must be in Terraform outputs")
+
+	profileDir, profileName := setupRestrictedProfile(t, partialEC2RoleARN)
+
+	enumerator := NewEnumerator(plugin.AWSCommonRecon{
+		AWSReconBase: plugin.AWSReconBase{
+			Profile:    profileName,
+			ProfileDir: profileDir,
+			OutputDir:  t.TempDir(),
+		},
+		Regions:     []string{"us-east-1"},
+		Concurrency: 1,
+	})
+	defer enumerator.Close()
+
+	// DescribeImages should succeed (finds self-owned AMIs in the account).
+	// But buildResource will fail for every image because
+	// DescribeImageAttribute is denied.
+	results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+		return enumerator.List("AWS::EC2::Image", out)
+	})
+	require.NoError(t, err, "partial EC2 access must not abort the pipeline")
+
+	// All images are dropped during enrichment — 0 results.
+	// This is the known behavior: list succeeds, enrichment fails per-item.
+	t.Logf("EC2 images with partial access: %d (expected 0 — enrichment denied)", len(results))
+	assert.Empty(t, results,
+		"all images should be dropped during enrichment when DescribeImageAttribute is denied")
+
+	// The per-image failures are Warn-logged (not ClassifySkippable), so
+	// they should NOT appear in the SkipReport.
+	snap := enumerator.Skipped.Snapshot()
+	for _, op := range snap {
+		assert.NotEqual(t, "ec2", op.Service,
+			"EC2 enrichment failures should not appear in SkipReport — they are per-item Warns, not skips")
+	}
+	t.Logf("SkipReport entries: %d", len(snap))
+}
+
 // setupRestrictedProfile creates a temporary AWS CLI profile directory that
 // assumes the given role ARN. Returns (profileDir, profileName).
 func setupRestrictedProfile(t *testing.T, roleARN string) (string, string) {
