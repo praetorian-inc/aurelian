@@ -2,6 +2,7 @@ package enumeration
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	smithy "github.com/aws/smithy-go"
@@ -59,6 +60,61 @@ func TestEnumerateByARN_ErrorDoesNotSendZeroResource(t *testing.T) {
 	snap := e.Skipped.Snapshot()
 	assert.Equal(t, "lambda", snap[0].Service, "service should be extracted from ARN, not the full ARN")
 	assert.Equal(t, "us-east-1", snap[0].Region, "region should be extracted from ARN")
+}
+
+// TestEnumerateByARN_DispatcherExtractsServiceAndRegion verifies that the
+// dispatcher safety net extracts the short service name and region from every
+// ARN format, not passing the full ARN as the service. This prevents
+// high-cardinality SkipReport entries like Service="arn:aws:amplify:...".
+//
+// Each ARN is routed to a mock enumerator that returns AccessDeniedException.
+// The error flows to handleListError which must record service/region from the
+// parsed ARN. If someone regresses handleListError to pass the raw identifier,
+// these assertions catch it.
+func TestEnumerateByARN_DispatcherExtractsServiceAndRegion(t *testing.T) {
+	tests := []struct {
+		arn             string
+		resourceType    string // what types.ResolveResourceType maps to
+		expectedService string
+		expectedRegion  string
+	}{
+		{"arn:aws:lambda:us-east-1:123456789012:function:my-func", "AWS::Lambda::Function", "lambda", "us-east-1"},
+		{"arn:aws:ec2:us-west-2:123456789012:instance/i-1234567890", "AWS::EC2::Instance", "ec2", "us-west-2"},
+		{"arn:aws:iam::123456789012:role/my-role", "AWS::IAM::Role", "iam", ""},
+		{"arn:aws:amplify:eu-west-1:123456789012:apps/abc123", "AWS::Amplify::App", "amplify", "eu-west-1"},
+		{"arn:aws:dynamodb:ap-southeast-1:123456789012:table/my-table", "AWS::DynamoDB::Table", "dynamodb", "ap-southeast-1"},
+		{"arn:aws:ssm:us-east-2:123456789012:document/my-doc", "AWS::SSM::Document", "ssm", "us-east-2"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.expectedService, func(t *testing.T) {
+			mock := &mockResourceEnumerator{
+				resourceType:      tc.resourceType,
+				enumerateByARNErr: &ccTestSmithyError{code: "AccessDeniedException", msg: "denied"},
+			}
+
+			e := newTestEnumerator(map[string]ResourceEnumerator{
+				tc.resourceType: mock,
+			})
+
+			out := pipeline.New[output.AWSResource]()
+			go func() { for range out.Range() {} }()
+			err := e.List(tc.arn, out)
+			out.Close()
+
+			require.NoError(t, err, "ARN %s should be skipped", tc.arn)
+			snap := e.Skipped.Snapshot()
+			require.NotEmpty(t, snap, "ARN %s should produce a skip entry", tc.arn)
+
+			last := snap[len(snap)-1]
+			assert.Equal(t, tc.expectedService, last.Service,
+				"ARN %s: service should be %q, not the full ARN", tc.arn, tc.expectedService)
+			assert.Equal(t, tc.expectedRegion, last.Region,
+				"ARN %s: region should be %q", tc.arn, tc.expectedRegion)
+			assert.False(t, strings.Contains(last.Service, "arn:"),
+				"service must never contain 'arn:' — that indicates the full ARN was passed")
+		})
+	}
 }
 
 func TestEnumerateByARN_SuccessSendsResource(t *testing.T) {
