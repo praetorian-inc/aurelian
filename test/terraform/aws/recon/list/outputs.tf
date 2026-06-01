@@ -102,6 +102,33 @@ output "test_regions" {
   value = distinct([var.region, var.secondary_region, var.tertiary_region])
 }
 
+# Region where the primary provider deploys (EC2, S3, Lambda primary resources).
+output "primary_region" {
+  value = var.region
+}
+
+output "secondary_region" {
+  value = var.secondary_region
+}
+
+output "tertiary_region" {
+  value = var.tertiary_region
+}
+
+# Amplify app is deployed in the primary region.
+output "amplify_app_region" {
+  value = var.region
+}
+
+# Mosaic role deny regions — tests should read these instead of hardcoding.
+output "mosaic_deny_amplify_region" {
+  value = var.secondary_region
+}
+
+output "mosaic_deny_lambda_region" {
+  value = var.region
+}
+
 output "restricted_role_arn" {
   value = aws_iam_role.restricted.arn
 }

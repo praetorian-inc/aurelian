@@ -430,24 +430,24 @@ resource "aws_iam_role_policy" "region_restricted_deny" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid      = "DenyAmplifyInUsEast1"
+        Sid      = "DenyAmplifyInSecondaryRegion"
         Effect   = "Deny"
         Action   = ["amplify:*"]
         Resource = "*"
         Condition = {
           StringEquals = {
-            "aws:RequestedRegion" = "us-east-1"
+            "aws:RequestedRegion" = var.secondary_region
           }
         }
       },
       {
-        Sid      = "DenyLambdaInUsEast2"
+        Sid      = "DenyLambdaInPrimaryRegion"
         Effect   = "Deny"
         Action   = ["lambda:*"]
         Resource = "*"
         Condition = {
           StringEquals = {
-            "aws:RequestedRegion" = "us-east-2"
+            "aws:RequestedRegion" = var.region
           }
         }
       }
