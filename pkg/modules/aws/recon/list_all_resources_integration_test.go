@@ -28,7 +28,7 @@ func TestAWSList(t *testing.T) {
 		results, err := testutil.RunAndCollect(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::Amplify::App"},
-				"regions":       []string{"us-east-2"},
+				"regions":       fixture.OutputList("test_regions"),
 				"scan-type":     "full",
 			},
 			Context: context.Background(),
@@ -60,7 +60,7 @@ func TestAWSList(t *testing.T) {
 		results, err := testutil.RunAndCollect(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::EC2::Instance"},
-				"regions":       []string{"us-east-2"},
+				"regions":       fixture.OutputList("test_regions"),
 				"scan-type":     "full",
 			},
 			Context: context.Background(),
@@ -83,7 +83,7 @@ func TestAWSList(t *testing.T) {
 		results, err := testutil.RunAndCollect(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::S3::Bucket"},
-				"regions":       []string{"us-east-2"},
+				"regions":       fixture.OutputList("test_regions"),
 				"scan-type":     "full",
 			},
 			Context: context.Background(),
@@ -106,7 +106,7 @@ func TestAWSList(t *testing.T) {
 		results, err := testutil.RunAndCollect(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::Lambda::Function"},
-				"regions":       []string{"us-east-2"},
+				"regions":       fixture.OutputList("test_regions"),
 				"scan-type":     "full",
 			},
 			Context: context.Background(),
@@ -129,7 +129,7 @@ func TestAWSList(t *testing.T) {
 		results, err := testutil.RunAndCollect(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::IAM::Role"},
-				"regions":       []string{"us-east-1", "us-east-2"},
+				"regions":       fixture.OutputList("test_regions"),
 				"scan-type":     "full",
 			},
 			Context: context.Background(),
@@ -150,7 +150,7 @@ func TestAWSList(t *testing.T) {
 		results, err := testutil.RunAndCollect(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::IAM::Policy"},
-				"regions":       []string{"us-east-1", "us-east-2"},
+				"regions":       fixture.OutputList("test_regions"),
 				"scan-type":     "full",
 			},
 			Context: context.Background(),
@@ -171,7 +171,7 @@ func TestAWSList(t *testing.T) {
 		results, err := testutil.RunAndCollect(t, mod, plugin.Config{
 			Args: map[string]any{
 				"resource-type": []string{"AWS::IAM::User"},
-				"regions":       []string{"us-east-1", "us-east-2"},
+				"regions":       fixture.OutputList("test_regions"),
 				"scan-type":     "full",
 			},
 			Context: context.Background(),
