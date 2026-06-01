@@ -386,6 +386,55 @@ resource "aws_iam_role_policy" "restricted_deny" {
   })
 }
 
+# Wiring-check role: denies EVERY native enumerator service so we can
+# verify each enumerator's ClassifySkippable wiring produces the correct
+# short service name in the SkipReport. Only STS + CloudControl plumbing
+# is allowed.
+resource "aws_iam_role" "wiring_check" {
+  name = "${local.prefix}-wiring-check-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        AWS = data.aws_caller_identity.current.arn
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "wiring_check_allow" {
+  name = "${local.prefix}-wiring-check-allow"
+  role = aws_iam_role.wiring_check.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "AllowPlumbing"
+      Effect   = "Allow"
+      Action   = ["sts:*", "cloudcontrol:*", "cloudformation:*"]
+      Resource = "*"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "wiring_check_deny" {
+  name = "${local.prefix}-wiring-check-deny"
+  role = aws_iam_role.wiring_check.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "DenyAllEnumeratedServices"
+      Effect   = "Deny"
+      Action   = ["amplify:*", "s3:*", "iam:*", "ec2:*", "ssm:*"]
+      Resource = "*"
+    }]
+  })
+}
+
 # Partial-access role for EC2 image enrichment tests.
 #
 # Allows ec2:DescribeImages (list succeeds) but denies

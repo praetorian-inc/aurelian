@@ -458,6 +458,71 @@ func TestSkipResilience_PartialEC2Access(t *testing.T) {
 	}
 }
 
+// TestSkipResilience_WiringCheck is the systematic behavioral test that
+// exercises every native enumerator's ClassifySkippable inner-loop wiring.
+// It uses the wiring-check role which denies ALL enumerated services, so
+// every enumerator type is forced through its error-handling path.
+//
+// For each type, it verifies:
+//   - List returns no error (skipped, not propagated)
+//   - SkipReport has an entry with the correct short service name
+//   - No entry has an AWS:: prefix (would indicate broken inner loop)
+//
+// This is the behavioral complement to the AST checks — it catches
+// "correct pattern in dead code" and runtime wiring failures that
+// static analysis can't detect.
+func TestSkipResilience_WiringCheck(t *testing.T) {
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
+	fixture.Setup()
+
+	roleARN := fixture.Output("wiring_check_role_arn")
+	require.NotEmpty(t, roleARN)
+
+	resourceTypes := fixture.OutputList("wiring_check_resource_types")
+	expectedServices := fixture.OutputList("wiring_check_denied_services")
+	require.NotEmpty(t, resourceTypes)
+	require.Equal(t, len(resourceTypes), len(expectedServices),
+		"wiring_check_resource_types and wiring_check_denied_services must have same length")
+
+	enumerator := newRestrictedEnumerator(t, fixture, roleARN)
+	defer enumerator.Close()
+
+	// Enumerate every type — all should be denied.
+	for i, resourceType := range resourceTypes {
+		expectedService := expectedServices[i]
+		t.Run(expectedService, func(t *testing.T) {
+			results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+				return enumerator.List(resourceType, out)
+			})
+			require.NoError(t, err, "%s should be skipped, not returned as error", resourceType)
+			assert.Empty(t, results, "%s should produce 0 resources (denied)", resourceType)
+		})
+	}
+
+	// Verify SkipReport has entries for every denied service with exact short names.
+	snap := enumerator.Skipped.Snapshot()
+	require.NotEmpty(t, snap)
+
+	skippedServices := make(map[string]bool)
+	for _, op := range snap {
+		skippedServices[op.Service] = true
+		// No AWS:: prefix — that would indicate dispatcher fallback, not inner loop.
+		require.False(t, strings.HasPrefix(op.Service, "AWS::"),
+			"SkipReport entry Service=%q uses CC type string — inner loop ClassifySkippable "+
+				"wiring is broken for this enumerator. The error fell through to the "+
+				"dispatcher safety net which records the raw identifier.", op.Service)
+	}
+
+	for _, svc := range expectedServices {
+		assert.True(t, skippedServices[svc],
+			"SkipReport must contain service %q. Found: %v. "+
+				"This means the enumerator's inner ClassifySkippable may be in dead code "+
+				"or not wired correctly.", svc, skippedServices)
+	}
+
+	t.Logf("Wiring check: %d skip entries, services: %v", len(snap), skippedServices)
+}
+
 // TestSkipResilience_ResourcePolicyDeny tests that a bucket with a
 // resource-based deny policy (bucket policy) is handled during by-ARN
 // enumeration. The restricted role has s3:* via IAM, but the bucket policy

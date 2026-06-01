@@ -163,6 +163,28 @@ output "restricted_denied_services" {
   value = ["amplify", "ssm", "iam"]
 }
 
+output "wiring_check_role_arn" {
+  value = aws_iam_role.wiring_check.arn
+}
+
+# Every native enumerator service denied by the wiring-check role.
+# Tests assert each produces a SkipReport entry with this exact short name.
+output "wiring_check_denied_services" {
+  value = ["amplify", "s3", "iam", "ec2", "ssm"]
+}
+
+# Resource types to enumerate with the wiring-check role.
+# Each type maps to a native enumerator that should have ClassifySkippable wiring.
+output "wiring_check_resource_types" {
+  value = [
+    "AWS::Amplify::App",
+    "AWS::S3::Bucket",
+    "AWS::IAM::Role",
+    "AWS::EC2::Image",
+    "AWS::SSM::Document"
+  ]
+}
+
 output "partial_ec2_role_arn" {
   value = aws_iam_role.partial_ec2.arn
 }
