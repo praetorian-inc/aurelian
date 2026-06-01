@@ -53,7 +53,14 @@ func (cc *CloudControlEnumerator) List(identifier string, out *pipeline.P[output
 func (cc *CloudControlEnumerator) EnumerateByARN(resourceARN string, out *pipeline.P[output.AWSResource]) error {
 	resource, err := cc.getResourceByARN(resourceARN)
 	if err != nil {
-		// Extract region from ARN for skip reporting; best-effort.
+		// Design note: we re-parse the ARN here rather than reusing the
+		// resolved region from getResourceByARN, because getResourceByARN
+		// returns a zero-value AWSResource on error (no region).
+		// For most ARNs this gives the correct region. For S3 ARNs
+		// (which omit the region component), region will be empty —
+		// this is acceptable for the skip report since the inner loop in
+		// listInRegionByType handles per-region skips with full metadata.
+		// This path is the dispatcher safety net for by-ARN lookups.
 		region := ""
 		if parsed, parseErr := awsaarn.Parse(resourceARN); parseErr == nil {
 			region = parsed.Region
