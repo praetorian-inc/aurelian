@@ -227,30 +227,95 @@ func fileHasSkipReportField(f *ast.File) bool {
 	return found
 }
 
-// fileUsesSkipReport checks if the file contains a call to ClassifySkippable
-// or a selector expression accessing skipReport (e.g. e.skipReport.RecordBatch).
+// fileUsesSkipReport checks that the file contains BOTH:
+// 1. A call to ClassifySkippable (classify the error)
+// 2. A reference to skipReport.RecordBatch or skipReport.Record (flush to report)
+// Both are required — calling ClassifySkippable without recording the result
+// means the error is classified but silently dropped from the SkipReport.
 func fileUsesSkipReport(f *ast.File) bool {
-	found := false
+	hasClassify := false
+	hasRecord := false
 	ast.Inspect(f, func(n ast.Node) bool {
-		if found {
+		if hasClassify && hasRecord {
 			return false
 		}
 		switch e := n.(type) {
 		case *ast.CallExpr:
 			if nameMatches(e.Fun, "ClassifySkippable") {
-				found = true
+				hasClassify = true
 			}
 		case *ast.SelectorExpr:
-			// Match e.skipReport.RecordBatch, e.skipReport.Record, etc.
 			if inner, ok := e.X.(*ast.SelectorExpr); ok {
 				if inner.Sel.Name == "skipReport" {
-					found = true
+					hasRecord = true
 				}
 			}
 		}
-		return !found
+		return true
 	})
-	return found
+	return hasClassify && hasRecord
+}
+
+// TestClassifySkippableServiceNames scans every non-test .go file in
+// pkg/aws/enumeration/ and verifies that all ClassifySkippable calls pass
+// a short lowercase service name (e.g. "amplify", "s3", "iam"), NOT a
+// CloudControl type string (e.g. "AWS::Amplify::App"). If someone adds a
+// new enumerator and passes the CC type string, this test fails — catching
+// the exact bug where inner-loop metadata is wrong and the SkipReport
+// would show degraded entries.
+func TestClassifySkippableServiceNames(t *testing.T) {
+	enumDir := filepath.Join(findRepoRoot(t), "pkg", "aws", "enumeration")
+	fset := token.NewFileSet()
+	var violations []string
+
+	entries, err := os.ReadDir(enumDir)
+	if err != nil {
+		t.Fatalf("read enumeration dir: %v", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		path := filepath.Join(enumDir, entry.Name())
+		f, parseErr := parser.ParseFile(fset, path, nil, 0)
+		if parseErr != nil {
+			t.Fatalf("parse %s: %v", path, parseErr)
+		}
+
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if !nameMatches(call.Fun, "ClassifySkippable") {
+				return true
+			}
+			// ClassifySkippable(err, service, operation, region)
+			// service is the second argument (index 1).
+			if len(call.Args) < 2 {
+				return true
+			}
+			lit, ok := call.Args[1].(*ast.BasicLit)
+			if !ok {
+				// Not a string literal — could be a variable (e.g. in
+				// enumerator.go dispatcher). Skip.
+				return true
+			}
+			svc := strings.Trim(lit.Value, `"`)
+			if strings.HasPrefix(svc, "AWS::") {
+				pos := fset.Position(call.Pos())
+				violations = append(violations, fmt.Sprintf(
+					"%s: ClassifySkippable uses CloudControl type %q as service name — use the short lowercase name instead (e.g. %q)",
+					pos, svc, strings.ToLower(strings.Split(svc, "::")[1])))
+			}
+			return true
+		})
+	}
+
+	for _, v := range violations {
+		t.Error(v)
+	}
 }
 
 // findRepoRoot walks up from the working directory looking for a go.mod file.

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
@@ -117,8 +118,8 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 
 		snap := mixedEnum.Skipped.Snapshot()
 		skippedServices := indexSkipServices(snap)
-		assert.True(t, skippedServices["amplify"] || skippedServices["AWS::Amplify::App"])
-		assert.True(t, skippedServices["ssm"] || skippedServices["AWS::SSM::Document"])
+		assert.True(t, skippedServices["amplify"])
+		assert.True(t, skippedServices["ssm"])
 		// Allowed services must NOT appear in SkipReport.
 		assert.False(t, skippedServices["s3"], "S3 must NOT be in SkipReport")
 		assert.False(t, skippedServices["iam"], "IAM must NOT be in SkipReport")
@@ -129,8 +130,14 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	t.Run("SkipReport_completeness", func(t *testing.T) {
 		snap := enumerator.Skipped.Snapshot()
 		require.NotEmpty(t, snap)
+
+		// Every skip must use the short service name from the inner loop,
+		// NOT a CloudControl type string. This is enforced at the unit-test
+		// level by TestClassifySkippableServiceNames (AST check), but we
+		// verify it here with real AWS errors too.
 		for _, op := range snap {
-			assert.Contains(t, op.ErrorCode, "AccessDenied")
+			assert.False(t, strings.HasPrefix(op.Service, "AWS::"),
+				"SkipReport entry has Service=%q — inner loop ClassifySkippable wiring may be broken", op.Service)
 		}
 	})
 
@@ -251,9 +258,12 @@ func TestSkipResilience_MultiRegion(t *testing.T) {
 	snap := enumerator.Skipped.Snapshot()
 	amplifySkipRegions := make(map[string]bool)
 	for _, op := range snap {
-		if op.Service == "amplify" || op.Service == "AWS::Amplify::App" {
+		if op.Service == "amplify" {
 			amplifySkipRegions[op.Region] = true
 		}
+		// Must not have CC type strings — indicates broken inner-loop wiring.
+		assert.False(t, strings.HasPrefix(op.Service, "AWS::"),
+			"SkipReport has CC type %q — inner loop wiring broken", op.Service)
 	}
 	assert.NotEmpty(t, amplifySkipRegions)
 }
@@ -344,7 +354,7 @@ func TestSkipResilience_PerRegionDenial(t *testing.T) {
 		}
 
 		assert.True(t,
-			skips[skipKey{"amplify", denyAmplifyRegion}] || skips[skipKey{"AWS::Amplify::App", denyAmplifyRegion}],
+			skips[skipKey{"amplify", denyAmplifyRegion}],
 			"Amplify must be skipped in %s", denyAmplifyRegion)
 
 		// Check Amplify is NOT skipped in other regions.
@@ -353,7 +363,7 @@ func TestSkipResilience_PerRegionDenial(t *testing.T) {
 				continue
 			}
 			assert.False(t,
-				skips[skipKey{"amplify", region}] || skips[skipKey{"AWS::Amplify::App", region}],
+				skips[skipKey{"amplify", region}],
 				"Amplify must NOT be skipped in %s (only denied in %s)", region, denyAmplifyRegion)
 		}
 	})

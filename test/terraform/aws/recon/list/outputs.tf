@@ -154,6 +154,15 @@ output "restricted_role_arn" {
   value = aws_iam_role.restricted.arn
 }
 
+# Services denied by the restricted role. Integration tests assert that
+# SkipReport entries use these exact service names (inner-loop metadata),
+# NOT the CloudControl type strings (dispatcher fallback metadata).
+# If an inner loop is incorrectly wired, the skip service name will be
+# the CC type string instead of the short name, and the test will fail.
+output "restricted_denied_services" {
+  value = ["amplify", "ssm", "iam"]
+}
+
 output "partial_ec2_role_arn" {
   value = aws_iam_role.partial_ec2.arn
 }
