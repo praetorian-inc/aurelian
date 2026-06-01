@@ -56,13 +56,16 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	require.NoError(t, err, "must be able to assume the restricted role — check Terraform trust policy")
 
 	outputDir := t.TempDir()
+	// Scan both regions: fixture resources are in us-east-2 (Terraform
+	// default), and us-east-1 is included to exercise multi-region scanning
+	// alongside denials.
 	enumerator := NewEnumerator(plugin.AWSCommonRecon{
 		AWSReconBase: plugin.AWSReconBase{
 			Profile:    profileName,
 			ProfileDir: profileDir,
 			OutputDir:  outputDir,
 		},
-		Regions:     []string{"us-east-1"},
+		Regions:     []string{"us-east-1", "us-east-2"},
 		Concurrency: 2,
 	})
 	defer enumerator.Close()
@@ -546,7 +549,7 @@ func TestSkipResilience_PartialEC2Access(t *testing.T) {
 			ProfileDir: profileDir,
 			OutputDir:  t.TempDir(),
 		},
-		Regions:     []string{"us-east-1"},
+		Regions:     []string{"us-east-1", "us-east-2"},
 		Concurrency: 1,
 	})
 	defer enumerator.Close()
