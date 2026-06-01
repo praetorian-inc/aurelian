@@ -230,7 +230,7 @@ func (m *sendingAllMockEnumerator) EnumerateByARN(_ string, out *pipeline.P[outp
 func TestEnumerator_Close_NoSkips(t *testing.T) {
 	e := newTestEnumerator(map[string]ResourceEnumerator{})
 	assert.Equal(t, 0, e.Skipped.Len())
-	e.Close() // must not panic
+	require.NoError(t, e.Close()) // must not panic
 	assert.Equal(t, 0, e.Skipped.Len(), "Close must not mutate the report")
 }
 
@@ -249,7 +249,7 @@ func TestEnumerator_Close_WithSkips(t *testing.T) {
 	out.Close()
 
 	require.Equal(t, 1, e.Skipped.Len(), "skip should be recorded before Close")
-	e.Close() // should log summary, not panic
+	require.NoError(t, e.Close()) // should log summary, not panic
 	assert.Equal(t, 1, e.Skipped.Len(), "Close must not clear the report")
 }
 
@@ -260,8 +260,8 @@ func TestEnumerator_Close_Idempotent(t *testing.T) {
 		Region: "us-east-1", Service: "amplify", Operation: "ListApps",
 		ErrorCode: "AccessDeniedException",
 	})
-	e.Close()
-	e.Close() // second call is a no-op (sync.Once)
+	require.NoError(t, e.Close())
+	require.NoError(t, e.Close()) // second call is a no-op (sync.Once)
 	assert.Equal(t, 1, e.Skipped.Len())
 }
 
@@ -278,9 +278,7 @@ func TestEnumerator_Close_OnEarlyReturn(t *testing.T) {
 	// In real code this would be defer lister.Close() at the top of Run().
 	// The defer fires even though the function "returns" with an error.
 	func() {
-		defer e.Close()
-		// Simulate early return
-		return
+		defer func() { require.NoError(t, e.Close()) }()
 	}()
 
 	// The skip should have been logged by Close (we can't assert on slog
@@ -295,7 +293,7 @@ func TestEnumerator_Close_NilSkipped(t *testing.T) {
 		cc:          &CloudControlEnumerator{skipReport: NewSkipReport()},
 		Skipped:     NewSkipReport(),
 	}
-	e.Close() // must not panic
+	require.NoError(t, e.Close()) // must not panic
 }
 
 // Close with outputDir writes detail file; empty outputDir does not.
@@ -312,7 +310,7 @@ func TestEnumerator_Close_WritesDetailFile(t *testing.T) {
 		ErrorCode: "AccessDeniedException", Detail: "denied",
 	})
 
-	e.Close()
+	require.NoError(t, e.Close())
 
 	_, err := os.Stat(filepath.Join(dir, "enumeration-skips.json"))
 	assert.NoError(t, err, "Close with outputDir must write detail file")
@@ -330,7 +328,7 @@ func TestEnumerator_Close_EmptyOutputDir_NoFile(t *testing.T) {
 		ErrorCode: "AccessDeniedException", Detail: "denied",
 	})
 
-	e.Close() // must not panic or attempt file write
+	require.NoError(t, e.Close()) // must not panic or attempt file write
 }
 
 // IAM sync.Once denial: if IAM is denied, the cached error should be caught
