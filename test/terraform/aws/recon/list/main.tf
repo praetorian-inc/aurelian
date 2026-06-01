@@ -151,6 +151,42 @@ resource "aws_s3_bucket_public_access_block" "test_tertiary" {
   restrict_public_buckets = true
 }
 
+# S3 bucket with resource-based deny policy.
+# The bucket itself is visible in ListBuckets (account-level), but
+# HeadBucket and GetBucketLocation are denied by the bucket policy
+# for the restricted role. Tests that resource-policy denials are
+# handled by the by-ARN enumeration path.
+resource "aws_s3_bucket" "policy_denied" {
+  bucket = "${local.prefix}-bucket-policy-denied"
+}
+
+resource "aws_s3_bucket_public_access_block" "policy_denied" {
+  bucket                  = aws_s3_bucket.policy_denied.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_policy" "policy_denied" {
+  bucket = aws_s3_bucket.policy_denied.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "DenyRestrictedRole"
+        Effect    = "Deny"
+        Principal = { AWS = aws_iam_role.restricted.arn }
+        Action    = ["s3:HeadBucket", "s3:GetBucketLocation", "s3:GetObject", "s3:ListBucket"]
+        Resource  = [
+          aws_s3_bucket.policy_denied.arn,
+          "${aws_s3_bucket.policy_denied.arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
 # Lambda functions
 resource "aws_iam_role" "lambda" {
   name = "${local.prefix}-lambda-role"

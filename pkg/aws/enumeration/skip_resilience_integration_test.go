@@ -448,6 +448,54 @@ func TestSkipResilience_PartialEC2Access(t *testing.T) {
 	}
 }
 
+// TestSkipResilience_ResourcePolicyDeny tests that a bucket with a
+// resource-based deny policy (bucket policy) is handled during by-ARN
+// enumeration. The restricted role has s3:* via IAM, but the bucket policy
+// explicitly denies HeadBucket for that role. This is a different denial
+// path than IAM-based deny — the error comes from the resource policy, not
+// the identity policy.
+func TestSkipResilience_ResourcePolicyDeny(t *testing.T) {
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
+	fixture.Setup()
+
+	restrictedRoleARN := fixture.Output("restricted_role_arn")
+	policyDeniedBucketARN := fixture.Output("policy_denied_bucket_arn")
+	policyDeniedBucketName := fixture.Output("policy_denied_bucket_name")
+	require.NotEmpty(t, restrictedRoleARN)
+	require.NotEmpty(t, policyDeniedBucketARN)
+
+	enumerator := newRestrictedEnumerator(t, fixture, restrictedRoleARN)
+	defer enumerator.Close()
+
+	// By-ARN: HeadBucket is denied by bucket policy. Should skip, not abort.
+	t.Run("ByARN_bucket_policy_deny", func(t *testing.T) {
+		bucketARNForList := "arn:aws:s3:::" + policyDeniedBucketName
+		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+			return enumerator.List(bucketARNForList, out)
+		})
+		require.NoError(t, err, "bucket-policy denial must be skipped, not returned as error")
+		assert.Empty(t, results, "resource-policy denied bucket should produce 0 results")
+	})
+
+	// ListBuckets (type-based): the bucket should still appear because
+	// ListBuckets is account-level and not subject to bucket policies.
+	// This proves that resource-policy deny only affects per-bucket ops,
+	// not the list.
+	t.Run("ListBuckets_still_returns_policy_denied_bucket", func(t *testing.T) {
+		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+			return enumerator.List("AWS::S3::Bucket", out)
+		})
+		require.NoError(t, err)
+
+		resultIDs := make(map[string]bool)
+		for _, r := range results {
+			resultIDs[r.ResourceID] = true
+		}
+		assert.True(t, resultIDs[policyDeniedBucketName],
+			"policy-denied bucket %q must still appear in ListBuckets (account-level API)", policyDeniedBucketName)
+	})
+}
+
 // TestSkipResilience_CloseWritesDetailFile: defer Close() writes detail file with real errors.
 func TestSkipResilience_CloseWritesDetailFile(t *testing.T) {
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")

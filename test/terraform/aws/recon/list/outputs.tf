@@ -96,6 +96,15 @@ output "iam_user_name" {
   value = aws_iam_user.test[0].name
 }
 
+# S3 bucket with resource-policy deny for restricted role.
+output "policy_denied_bucket_name" {
+  value = aws_s3_bucket.policy_denied.id
+}
+
+output "policy_denied_bucket_arn" {
+  value = aws_s3_bucket.policy_denied.arn
+}
+
 output "amplify_app_id" {
   value = aws_amplify_app.test.id
 }
