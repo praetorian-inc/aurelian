@@ -166,15 +166,18 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 		})
 		defer mixedEnum.Close()
 
+		// Interleave denied types between allowed types so denials occur
+		// mid-iteration, not just at the end. This catches bugs where the
+		// first allowed type completes, then a denial aborts the rest.
 		types := pipeline.From(
-			"AWS::S3::Bucket",        // allowed — 5 fixture buckets
-			"AWS::IAM::Role",         // allowed — 5 fixture roles (global)
-			"AWS::IAM::Policy",       // allowed — 5 fixture policies (global)
-			"AWS::IAM::User",         // allowed — 5 fixture users (global)
-			"AWS::Lambda::Function",  // allowed — 5 fixture functions (via CC)
-			"AWS::EC2::Instance",     // allowed — 5 fixture instances (via CC)
-			"AWS::Amplify::App",      // DENIED
-			"AWS::SSM::Document",     // DENIED
+			"AWS::S3::Bucket",        // 1. allowed — 5 fixture buckets
+			"AWS::Amplify::App",      // 2. DENIED (early — before most allowed types)
+			"AWS::IAM::Role",         // 3. allowed — 5 fixture roles
+			"AWS::IAM::Policy",       // 4. allowed — 5 fixture policies
+			"AWS::SSM::Document",     // 5. DENIED (middle — between allowed types)
+			"AWS::IAM::User",         // 6. allowed — 5 fixture users
+			"AWS::Lambda::Function",  // 7. allowed — 5 fixture functions (via CC)
+			"AWS::EC2::Instance",     // 8. allowed — 5 fixture instances (via CC)
 		)
 		listed := pipeline.New[output.AWSResource]()
 		pipeline.Pipe(types, mixedEnum.List, listed)
