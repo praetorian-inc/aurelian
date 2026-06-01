@@ -171,7 +171,9 @@ func (r *SkipReport) LogSummary() {
 }
 
 // ClassifySkippable checks whether err is a skippable AWS error. If so, it
-// logs a warning and returns a *SkippedOp suitable for local accumulation.
+// logs at Debug level (individual skips are noisy; the aggregated summary
+// logged by LogSummary at Warn level is the operator-facing output) and
+// returns a *SkippedOp suitable for local accumulation.
 // Returns nil when the error is not skippable (caller must propagate it).
 //
 // This function acquires no locks — callers collect the returned ops into a
@@ -182,7 +184,7 @@ func ClassifySkippable(err error, service, operation, region string) *SkippedOp 
 		return nil
 	}
 	code := SkipReason(err)
-	slog.Warn("skipping "+service+" "+operation, "region", region, "code", code, "error", err)
+	slog.Debug("skipping "+service+" "+operation, "region", region, "code", code, "error", err)
 	detail := err.Error()
 	if len(detail) > maxDetailLen {
 		detail = detail[:maxDetailLen]
