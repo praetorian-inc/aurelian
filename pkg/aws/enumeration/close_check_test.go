@@ -359,6 +359,130 @@ func TestClassifySkippableServiceNames(t *testing.T) {
 	}
 }
 
+// TestNewEnumeratorSharesSkipReport verifies that every constructor call inside
+// NewEnumerator passes the local `skipReport` variable, not `NewSkipReport()`.
+// If someone passes a fresh report, that enumerator's skips are isolated and
+// never appear in the operator summary.
+func TestNewEnumeratorSharesSkipReport(t *testing.T) {
+	enumDir := filepath.Join(findRepoRoot(t), "pkg", "aws", "enumeration")
+	fset := token.NewFileSet()
+	path := filepath.Join(enumDir, "enumerator.go")
+	f, err := parser.ParseFile(fset, path, nil, 0)
+	if err != nil {
+		t.Fatalf("parse enumerator.go: %v", err)
+	}
+
+	var violations []string
+
+	// Find the NewEnumerator function.
+	ast.Inspect(f, func(n ast.Node) bool {
+		fn, ok := n.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "NewEnumerator" || fn.Body == nil {
+			return true
+		}
+
+		// Walk the function body for any call to NewSkipReport().
+		// The only allowed call is the initial `skipReport := NewSkipReport()`.
+		// Any other NewSkipReport() call means someone is creating an
+		// isolated report for a constructor.
+		newSkipReportCount := 0
+		ast.Inspect(fn.Body, func(inner ast.Node) bool {
+			call, ok := inner.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			if nameMatches(call.Fun, "NewSkipReport") {
+				newSkipReportCount++
+				if newSkipReportCount > 1 {
+					pos := fset.Position(call.Pos())
+					violations = append(violations, fmt.Sprintf(
+						"%s: NewSkipReport() called more than once in NewEnumerator. "+
+							"All enumerators must share the same skipReport instance. "+
+							"Pass the existing `skipReport` variable instead.", pos))
+				}
+			}
+			return true
+		})
+
+		return false
+	})
+
+	for _, v := range violations {
+		t.Error(v)
+	}
+}
+
+// TestClassifySkippableAlwaysInIfInit verifies that every ClassifySkippable
+// call in non-test enumerator files is in an if-statement's Init position:
+//
+//	if op := ClassifySkippable(...); op != nil { ... }
+//
+// A bare call like `op := ClassifySkippable(...)` without a nil check would
+// panic on `*op` when the error is not skippable. This prevents that class
+// of nil-deref bug.
+func TestClassifySkippableAlwaysInIfInit(t *testing.T) {
+	enumDir := filepath.Join(findRepoRoot(t), "pkg", "aws", "enumeration")
+	fset := token.NewFileSet()
+	var violations []string
+
+	entries, err := os.ReadDir(enumDir)
+	if err != nil {
+		t.Fatalf("read dir: %v", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		// Skip skip_report.go — it defines ClassifySkippable, doesn't call it.
+		if entry.Name() == "skip_report.go" {
+			continue
+		}
+		path := filepath.Join(enumDir, entry.Name())
+		f, parseErr := parser.ParseFile(fset, path, nil, 0)
+		if parseErr != nil {
+			t.Fatalf("parse %s: %v", path, parseErr)
+		}
+
+		// Collect all ClassifySkippable call positions that ARE in if-inits.
+		ifInitPositions := make(map[token.Pos]bool)
+		ast.Inspect(f, func(n ast.Node) bool {
+			ifStmt, ok := n.(*ast.IfStmt)
+			if !ok || ifStmt.Init == nil {
+				return true
+			}
+			if assign, ok := ifStmt.Init.(*ast.AssignStmt); ok {
+				for _, rhs := range assign.Rhs {
+					if call, ok := rhs.(*ast.CallExpr); ok && nameMatches(call.Fun, "ClassifySkippable") {
+						ifInitPositions[call.Pos()] = true
+					}
+				}
+			}
+			return true
+		})
+
+		// Find ALL ClassifySkippable calls and check they're in the if-init set.
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok || !nameMatches(call.Fun, "ClassifySkippable") {
+				return true
+			}
+			if !ifInitPositions[call.Pos()] {
+				pos := fset.Position(call.Pos())
+				violations = append(violations, fmt.Sprintf(
+					"%s: ClassifySkippable must be in an if-statement Init position: "+
+						"`if op := ClassifySkippable(...); op != nil { ... }`. "+
+						"A bare call risks nil-deref on *op when the error is not skippable.", pos))
+			}
+			return true
+		})
+	}
+
+	for _, v := range violations {
+		t.Error(v)
+	}
+}
+
 // findRepoRoot walks up from the working directory looking for a go.mod file.
 func findRepoRoot(t *testing.T) string {
 	t.Helper()
