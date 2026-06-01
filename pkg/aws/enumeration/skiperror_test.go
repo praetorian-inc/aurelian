@@ -75,3 +75,17 @@ func TestSkipReason(t *testing.T) {
 		})
 	}
 }
+
+// TestSkippableErrorCodes_AllCovered ensures every code in skippableErrorCodes
+// is exercised by IsSkippableAWSError. If someone adds a new code to the map,
+// this test fails until they add a matching entry to the table-driven tests
+// above (or this loop catches it automatically).
+func TestSkippableErrorCodes_AllCovered(t *testing.T) {
+	for code := range skippableErrorCodes {
+		t.Run(code, func(t *testing.T) {
+			err := &fakeAPIError{code: code, msg: "test"}
+			assert.True(t, IsSkippableAWSError(err), "code %q is in skippableErrorCodes but IsSkippableAWSError returns false", code)
+			assert.Equal(t, code, SkipReason(err), "SkipReason should return the code itself")
+		})
+	}
+}
