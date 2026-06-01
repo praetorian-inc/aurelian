@@ -67,102 +67,90 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 	})
 	defer enumerator.Close()
 
-	// --- Happy path: S3 (fully allowed) — assert all 5 fixture buckets ---
+	// --- Happy path: S3 — assert each fixture bucket by unique name ---
 	t.Run("S3_allowed", func(t *testing.T) {
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::S3::Bucket", out)
 		})
-		require.NoError(t, err, "S3 should not error")
-
-		expectedBuckets := fixture.OutputList("bucket_names")
-		require.GreaterOrEqual(t, len(results), len(expectedBuckets),
-			"S3 must return at least %d buckets (fixture count); got %d", len(expectedBuckets), len(results))
+		require.NoError(t, err)
 
 		resultIDs := make(map[string]bool)
 		for _, r := range results {
 			resultIDs[r.ResourceID] = true
 		}
-		for _, name := range expectedBuckets {
-			assert.True(t, resultIDs[name],
-				"fixture S3 bucket %q must be returned", name)
+		for _, name := range fixture.OutputList("bucket_names") {
+			require.True(t, resultIDs[name],
+				"fixture S3 bucket %q missing from results", name)
 		}
-		t.Logf("S3: %d total buckets, %d expected from fixture", len(results), len(expectedBuckets))
 	})
 
-	// --- Happy path: IAM (fully allowed, global) — assert all 5 fixture roles ---
-	t.Run("IAM_allowed", func(t *testing.T) {
+	// --- Happy path: IAM roles — assert each fixture role by unique name ---
+	t.Run("IAM_roles_allowed", func(t *testing.T) {
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::IAM::Role", out)
 		})
-		require.NoError(t, err, "IAM should not error")
-
-		expectedRoles := fixture.OutputList("iam_role_names")
-		require.GreaterOrEqual(t, len(results), len(expectedRoles),
-			"IAM must return at least %d roles (fixture count); got %d", len(expectedRoles), len(results))
+		require.NoError(t, err)
 
 		resultIDs := make(map[string]bool)
 		for _, r := range results {
 			resultIDs[r.ResourceID] = true
 		}
-		for _, name := range expectedRoles {
-			assert.True(t, resultIDs[name],
-				"fixture IAM role %q must be returned", name)
+		for _, name := range fixture.OutputList("iam_role_names") {
+			require.True(t, resultIDs[name],
+				"fixture IAM role %q missing from results", name)
 		}
-		t.Logf("IAM: %d total roles, %d expected from fixture", len(results), len(expectedRoles))
 	})
 
-	// --- Error path: Amplify (fully denied) ---
-	t.Run("Amplify_denied", func(t *testing.T) {
-		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
-			return enumerator.List("AWS::Amplify::App", out)
-		})
-		require.NoError(t, err, "Amplify denial should be skipped, not returned as error")
-		assert.Empty(t, results, "denied Amplify should produce no resources")
-	})
-
-	// --- Error path: SSM (fully denied) ---
-	t.Run("SSM_denied", func(t *testing.T) {
-		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
-			return enumerator.List("AWS::SSM::Document", out)
-		})
-		require.NoError(t, err, "SSM denial should be skipped, not returned as error")
-		assert.Empty(t, results, "denied SSM should produce no resources")
-	})
-
-	// --- Happy path: Lambda via CloudControl (no native enumerator) ---
-	// Lambda falls through to CloudControl. The restricted role allows
-	// lambda:* + cloudcontrol:*, so this should succeed.
-	// --- Happy path: Lambda via CloudControl — assert all 5 fixture functions ---
-	t.Run("Lambda_via_CloudControl_allowed", func(t *testing.T) {
+	// --- Happy path: Lambda via CloudControl — assert each fixture function by unique ARN ---
+	t.Run("Lambda_allowed", func(t *testing.T) {
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 			return enumerator.List("AWS::Lambda::Function", out)
 		})
-		require.NoError(t, err, "Lambda via CloudControl should not error")
-
-		expectedFunctions := fixture.OutputList("function_arns")
-		require.GreaterOrEqual(t, len(results), len(expectedFunctions),
-			"Lambda must return at least %d functions (fixture count); got %d", len(expectedFunctions), len(results))
+		require.NoError(t, err)
 
 		resultARNs := make(map[string]bool)
 		for _, r := range results {
 			resultARNs[r.ARN] = true
 		}
-		for _, arn := range expectedFunctions {
-			assert.True(t, resultARNs[arn],
-				"fixture Lambda function %q must be returned", arn)
+		for _, arn := range fixture.OutputList("function_arns") {
+			require.True(t, resultARNs[arn],
+				"fixture Lambda function %q missing from results", arn)
 		}
-		t.Logf("Lambda: %d total functions, %d expected from fixture", len(results), len(expectedFunctions))
 	})
 
-	// --- EC2 images: full access, enrichment succeeds ---
-	t.Run("EC2_images_allowed", func(t *testing.T) {
+	// --- Happy path: EC2 instances via CloudControl — assert each fixture instance by unique ID ---
+	t.Run("EC2_instances_allowed", func(t *testing.T) {
 		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
-			return enumerator.List("AWS::EC2::Image", out)
+			return enumerator.List("AWS::EC2::Instance", out)
 		})
-		require.NoError(t, err, "EC2 image enumeration should not error")
-		t.Logf("EC2 images: %d self-owned AMIs", len(results))
-		// No fixture AMIs are created, so count depends on account state.
-		// The key assertion is no error — EC2 is fully allowed.
+		require.NoError(t, err)
+
+		resultIDs := make(map[string]bool)
+		for _, r := range results {
+			resultIDs[r.ResourceID] = true
+		}
+		for _, id := range fixture.OutputList("instance_ids") {
+			require.True(t, resultIDs[id],
+				"fixture EC2 instance %q missing from results", id)
+		}
+	})
+
+	// --- Error path: Amplify (fully denied) — exactly 0 results ---
+	t.Run("Amplify_denied", func(t *testing.T) {
+		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+			return enumerator.List("AWS::Amplify::App", out)
+		})
+		require.NoError(t, err, "Amplify denial should be skipped, not returned as error")
+		require.Empty(t, results, "denied Amplify must produce exactly 0 resources")
+	})
+
+	// --- Error path: SSM (fully denied) — exactly 0 results ---
+	t.Run("SSM_denied", func(t *testing.T) {
+		results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+			return enumerator.List("AWS::SSM::Document", out)
+		})
+		require.NoError(t, err, "SSM denial should be skipped, not returned as error")
+		require.Empty(t, results, "denied SSM must produce exactly 0 resources")
 	})
 
 	// --- Critical: mixed pipeline — denied types must not cause loss of specific resources ---
