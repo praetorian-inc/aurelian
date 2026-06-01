@@ -177,7 +177,7 @@ resource "aws_s3_bucket_policy" "policy_denied" {
         Sid       = "DenyRestrictedRole"
         Effect    = "Deny"
         Principal = { AWS = aws_iam_role.restricted.arn }
-        Action    = ["s3:HeadBucket", "s3:GetBucketLocation", "s3:GetObject", "s3:ListBucket"]
+        Action    = ["s3:ListBucket", "s3:GetBucketLocation", "s3:GetObject", "s3:GetBucketPolicy"]
         Resource  = [
           aws_s3_bucket.policy_denied.arn,
           "${aws_s3_bucket.policy_denied.arn}/*"
