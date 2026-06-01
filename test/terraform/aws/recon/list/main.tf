@@ -128,3 +128,51 @@ resource "aws_amplify_branch" "main" {
   app_id      = aws_amplify_app.test.id
   branch_name = "main"
 }
+
+# Restricted role for skip-resilience integration tests.
+# Allows S3 + STS + CloudControl (needed for enumeration plumbing) but
+# explicitly denies Amplify so the enumerator exercises the skip path.
+data "aws_caller_identity" "current" {}
+
+resource "aws_iam_role" "restricted" {
+  name = "${local.prefix}-restricted-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        AWS = data.aws_caller_identity.current.arn
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "restricted_allow" {
+  name = "${local.prefix}-restricted-allow"
+  role = aws_iam_role.restricted.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["s3:*", "sts:*", "cloudcontrol:*", "cloudformation:*"]
+      Resource = "*"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "restricted_deny" {
+  name = "${local.prefix}-restricted-deny"
+  role = aws_iam_role.restricted.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Deny"
+      Action   = ["amplify:*"]
+      Resource = "*"
+    }]
+  })
+}

@@ -45,3 +45,7 @@ output "amplify_app_id" {
 output "amplify_app_name" {
   value = aws_amplify_app.test.name
 }
+
+output "restricted_role_arn" {
+  value = aws_iam_role.restricted.arn
+}
