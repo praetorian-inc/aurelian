@@ -76,8 +76,8 @@ func (s *AnalyzerState) initializeResourceCache() {
 	})
 }
 
-// convertAndStore iterates over a store.Map, converts each item to an
-// *output.AWSResource, and stores it in dest keyed by the resource's ARN.
+// convertAndStore populates the resource store with IAM entities so the
+// evaluator can resolve principal and policy ARNs during permission analysis.
 func convertAndStore[T any](src store.Map[T], dest store.Map[*output.AWSResource], convert func(T) *output.AWSResource) {
 	src.Range(func(_ string, item T) bool {
 		r := convert(item)

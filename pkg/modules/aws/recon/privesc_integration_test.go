@@ -172,8 +172,16 @@ func TestPrivescEnrichmentE2E(t *testing.T) {
 		if len(result.Records) == 0 {
 			return 0
 		}
-		n, _ := result.Records[0]["n"].(int64)
-		return int(n)
+		// Coerce across int64/int/float64 — Neo4j driver may return any numeric type.
+		switch v := result.Records[0]["n"].(type) {
+		case int64:
+			return int(v)
+		case int:
+			return v
+		case float64:
+			return int(v)
+		}
+		return 0
 	}
 
 	t.Run("iam_privesc_user_has_standalone_edges", func(t *testing.T) {

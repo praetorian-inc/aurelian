@@ -586,7 +586,6 @@ func TestPrivescQueriesNeo4j(t *testing.T) {
 	}
 
 	for _, tc := range allPrivescCases() {
-		tc := tc
 		t.Run(tc.queryID, func(t *testing.T) {
 			runCase(t, tc)
 		})
