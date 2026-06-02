@@ -236,10 +236,14 @@ func TestPrivescEnrichmentE2E(t *testing.T) {
 			{extServicesUserARN, "batch:SubmitJob (method_46)", "BATCH_SUBMITJOB", true},
 			{extServicesUserARN, "batch:RegisterJobDefinition (method_45)", "BATCH_REGISTERJOBDEFINITION", true},
 			{extServicesUserARN, "cognito-identity:SetIdentityPoolRoles (method_51)", "COGNITO-IDENTITY_SETIDENTITYPOOLROLES", true},
-			// No deployed resources — log-only (AppRunner costs money; Braket/GameLift impractical).
-			{newServicesUserARN, "apprunner:CreateService (method_43)", "APPRUNNER_CREATESERVICE", false},
-			{newServicesUserARN, "braket:CreateJob (method_47)", "BRAKET_CREATEJOB", false},
-			{newServicesUserARN, "gamelift:CreateFleet (method_59)", "GAMELIFT_CREATEFLEET", false},
+			// Compound execution methods — now confirmed via extended_services_exec policy.
+			{extServicesUserARN, "ssm:CreateDocument (method_84)", "SSM_CREATEDOCUMENT", true},
+			{extServicesUserARN, "glue:CreateJob (method_77/80)", "GLUE_CREATEJOB", true},
+			{extServicesUserARN, "glue:CreateTrigger (method_77/78)", "GLUE_CREATETRIGGER", true},
+			// Confirmed via synthetic service wildcard resources (no real deployment needed).
+			{newServicesUserARN, "apprunner:CreateService (method_43)", "APPRUNNER_CREATESERVICE", true},
+			{newServicesUserARN, "braket:CreateJob (method_47)", "BRAKET_CREATEJOB", true},
+			{newServicesUserARN, "gamelift:CreateFleet (method_59)", "GAMELIFT_CREATEFLEET", true},
 		}
 
 		for _, c := range checks {
