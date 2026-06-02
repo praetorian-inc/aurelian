@@ -134,7 +134,7 @@ func runPostBinders(cfg Config, mod Module, target any) error {
 }
 
 func runPostBindersValue(cfg Config, mod Module, v reflect.Value) error {
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return nil
 		}

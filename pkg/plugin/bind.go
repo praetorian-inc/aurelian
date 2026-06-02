@@ -41,7 +41,7 @@ func ParametersFrom(v any) ([]Parameter, error) {
 		return nil, nil
 	}
 	t := reflect.TypeOf(v)
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
@@ -109,7 +109,7 @@ func collectFields(t reflect.Type) ([]Parameter, error) {
 
 func populateStruct(ps *Parameters, dst any) error {
 	v := reflect.ValueOf(dst)
-	if v.Kind() != reflect.Ptr || v.Elem().Kind() != reflect.Struct {
+	if v.Kind() != reflect.Pointer || v.Elem().Kind() != reflect.Struct {
 		return fmt.Errorf("bind: dst must be a pointer to a struct")
 	}
 	v = v.Elem()
