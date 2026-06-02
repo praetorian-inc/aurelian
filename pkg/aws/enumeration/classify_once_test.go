@@ -126,10 +126,93 @@ func checkFunctionExactlyOnce(fn *ssa.Function, classifyFn *ssa.Function, cg *ca
 						"(double recording). Ensure exactly one level classifies each error.",
 					pos, describeSSACall(call), count))
 			}
+
+			// Per-caller check: if the error flows through Returns to
+			// callers, verify EVERY caller classifies it. MAX gives the
+			// best-case count, but if any individual caller drops the
+			// error, that's a separate violation.
+			checkPerCallerDrops(errVal, classifyFn, cg, fset, violations, describeSSACall(call))
 		}
 	}
 	for _, anon := range fn.AnonFuncs {
 		checkFunctionExactlyOnce(anon, classifyFn, cg, fset, violations)
+	}
+}
+
+// checkPerCallerDrops verifies that EVERY call site of the function
+// containing the AWS SDK call handles the error correctly. Uses VTA to
+// find callers of the enclosing function (and transitive callers up the
+// chain), then checks each independently with a fresh visited map.
+func checkPerCallerDrops(val ssa.Value, classifyFn *ssa.Function, cg *callgraph.Graph, fset *token.FileSet, violations *[]string, awsCallDesc string) {
+	instr, ok := val.(ssa.Instruction)
+	if !ok {
+		return
+	}
+	// Walk up the function chain: the AWS SDK call is in fn. If fn
+	// returns an error (any error), check each caller of fn.
+	fn := instr.Parent()
+	checkCallersRecursive(fn, classifyFn, cg, fset, violations, awsCallDesc, make(map[*ssa.Function]bool))
+}
+
+// checkCallersRecursive checks each VTA caller of fn. For each caller
+// that receives an error from fn, it verifies the error reaches
+// ClassifySkippable. If not, reports a violation. Then recurses into
+// callers-of-callers for functions that propagate the error.
+func checkCallersRecursive(fn *ssa.Function, classifyFn *ssa.Function, cg *callgraph.Graph, fset *token.FileSet, violations *[]string, awsCallDesc string, visited map[*ssa.Function]bool) {
+	if visited[fn] {
+		return
+	}
+	visited[fn] = true
+
+	node := cg.Nodes[fn]
+	if node == nil {
+		return
+	}
+
+	// Find which return index is the error.
+	sig := fn.Signature
+	results := sig.Results()
+	errIdx := -1
+	for i := 0; i < results.Len(); i++ {
+		if isErrorType(results.At(i).Type()) {
+			errIdx = i
+			break
+		}
+	}
+	if errIdx < 0 {
+		return // function doesn't return an error
+	}
+
+	for _, edge := range node.In {
+		call, ok := edge.Site.(*ssa.Call)
+		if !ok || call == nil {
+			continue
+		}
+		errAtCaller := extractReturnedError(call, errIdx)
+		if errAtCaller == nil {
+			continue
+		}
+
+		// Only flag as "dropped" if the caller actively drops the error
+		// (doesn't return it, doesn't pass it to any function).
+		// If the caller propagates the error (returns it, passes to
+		// another function), it's not a drop — the error may reach
+		// ClassifySkippable at a higher level.
+		if errorIsSilentlyDropped(errAtCaller) {
+			pos := fset.Position(call.Pos())
+			*violations = append(*violations, fmt.Sprintf(
+				"%s: AWS SDK error from %s is dropped at this call site "+
+					"(error returned by %s but silently discarded here)",
+				pos, awsCallDesc, fn.Name()))
+		}
+	}
+
+	// Also recurse into callers that propagate the error further up.
+	for _, edge := range node.In {
+		callerFn := edge.Caller.Func
+		if callerFn != nil {
+			checkCallersRecursive(callerFn, classifyFn, cg, fset, violations, awsCallDesc, visited)
+		}
 	}
 }
 
