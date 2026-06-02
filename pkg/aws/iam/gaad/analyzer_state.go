@@ -112,6 +112,7 @@ func (s *AnalyzerState) addServicesToResourceCache() {
 		"autoscaling.amazonaws.com",
 		// New privesc-relevant services (methods 43–89)
 		"amplify.amazonaws.com",
+		"bedrock-agentcore.amazonaws.com",
 		"apprunner.amazonaws.com",
 		"batch.amazonaws.com",
 		"braket.amazonaws.com",

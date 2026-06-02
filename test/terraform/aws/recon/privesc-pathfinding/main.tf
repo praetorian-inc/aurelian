@@ -42,7 +42,7 @@ resource "aws_iam_role" "admin_target" {
     Statement = [{
       Effect    = "Allow"
       Action    = "sts:AssumeRole"
-      Principal = { Service = "lambda.amazonaws.com" }
+      Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
     }]
   })
   tags = { Purpose = "aurelian-pathfinding-e2e" }
@@ -54,147 +54,723 @@ resource "aws_iam_role_policy_attachment" "admin_target" {
 }
 
 # -----------------------------------------------------------------------------
-# IAM self-escalation labs (iam-001..013) — standalone single permissions
-# Pathfinding.cloud: iam-001-iam-createpolicyversion, iam-002-iam-createaccesskey, etc.
+# lab_amplify_001
 # -----------------------------------------------------------------------------
-resource "aws_iam_user" "iam_001" {
-  name = "${local.prefix}-iam-001"
-  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "iam-001" }
+resource "aws_iam_user" "lab_amplify_001" {
+  name = "${local.prefix}-lab-amplify-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-amplify-001" }
 }
-resource "aws_iam_user_policy" "iam_001" {
-  name = "${local.prefix}-iam-001"
-  user = aws_iam_user.iam_001.name
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{ Effect = "Allow", Action = ["iam:CreatePolicyVersion"], Resource = "*" }]
-  })
-}
-
-resource "aws_iam_user" "iam_002" {
-  name = "${local.prefix}-iam-002"
-  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "iam-002" }
-}
-resource "aws_iam_user_policy" "iam_002" {
-  name = "${local.prefix}-iam-002"
-  user = aws_iam_user.iam_002.name
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{ Effect = "Allow", Action = ["iam:CreateAccessKey"], Resource = "*" }]
-  })
-}
-
-resource "aws_iam_user" "iam_004" {
-  name = "${local.prefix}-iam-004"
-  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "iam-004" }
-}
-resource "aws_iam_user_policy" "iam_004" {
-  name = "${local.prefix}-iam-004"
-  user = aws_iam_user.iam_004.name
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{ Effect = "Allow", Action = ["iam:CreateLoginProfile"], Resource = "*" }]
-  })
-}
-
-resource "aws_iam_user" "iam_006" {
-  name = "${local.prefix}-iam-006"
-  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "iam-006" }
-}
-resource "aws_iam_user_policy" "iam_006" {
-  name = "${local.prefix}-iam-006"
-  user = aws_iam_user.iam_006.name
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{ Effect = "Allow", Action = ["iam:UpdateLoginProfile"], Resource = "*" }]
-  })
-}
-
-resource "aws_iam_user" "iam_012" {
-  name = "${local.prefix}-iam-012"
-  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "iam-012" }
-}
-resource "aws_iam_user_policy" "iam_012" {
-  name = "${local.prefix}-iam-012"
-  user = aws_iam_user.iam_012.name
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{ Effect = "Allow", Action = ["iam:UpdateAssumeRolePolicy"], Resource = "*" }]
-  })
-}
-
-# -----------------------------------------------------------------------------
-# Lambda privesc labs (lambda-001..006)
-# Pathfinding.cloud: lambda-001-iam-passrole+lambda-createfunction+lambda-invokefunction
-# -----------------------------------------------------------------------------
-resource "aws_iam_user" "lambda_001" {
-  name = "${local.prefix}-lambda-001"
-  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lambda-001" }
-}
-resource "aws_iam_user_policy" "lambda_001" {
-  name = "${local.prefix}-lambda-001"
-  user = aws_iam_user.lambda_001.name
+resource "aws_iam_user_policy" "lab_amplify_001" {
+  name = "${local.prefix}-lab-amplify-001"
+  user = aws_iam_user.lab_amplify_001.name
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = ["iam:PassRole", "lambda:CreateFunction", "lambda:InvokeFunction"]
+      Action   = ["iam:PassRole", "amplify:CreateApp", "amplify:CreateBranch", "amplify:StartJob"]
       Resource = "*"
     }]
   })
 }
 
-resource "aws_iam_user" "lambda_003" {
-  name = "${local.prefix}-lambda-003"
-  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lambda-003" }
+# -----------------------------------------------------------------------------
+# lab_apprunner_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_apprunner_001" {
+  name = "${local.prefix}-lab-apprunner-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-apprunner-001" }
 }
-resource "aws_iam_user_policy" "lambda_003" {
-  name = "${local.prefix}-lambda-003"
-  user = aws_iam_user.lambda_003.name
+resource "aws_iam_user_policy" "lab_apprunner_001" {
+  name = "${local.prefix}-lab-apprunner-001"
+  user = aws_iam_user.lab_apprunner_001.name
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{ Effect = "Allow", Action = ["lambda:UpdateFunctionCode"], Resource = "*" }]
-  })
-}
-
-# False-positive user: has lambda:UpdateFunctionCode but NOT lambda:InvokeFunction
-# method_39 (UpdateFunctionCode+InvokeFunction) must NOT fire for this user.
-resource "aws_iam_user" "lambda_fp_no_invoke" {
-  name = "${local.prefix}-lambda-fp-noinvoke"
-  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lambda-003-fp" }
-}
-resource "aws_iam_user_policy" "lambda_fp_no_invoke" {
-  name = "${local.prefix}-lambda-fp-noinvoke"
-  user = aws_iam_user.lambda_fp_no_invoke.name
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{ Effect = "Allow", Action = ["lambda:UpdateFunctionCode"], Resource = "*" }]
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "apprunner:CreateService"]
+      Resource = "*"
+    }]
   })
 }
 
 # -----------------------------------------------------------------------------
-# Glue privesc labs (glue-001..007)
-# Pathfinding.cloud: glue-002-glue-updatedevendpoint
+# lab_apprunner_002
 # -----------------------------------------------------------------------------
-resource "aws_iam_user" "glue_002" {
-  name = "${local.prefix}-glue-002"
-  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "glue-002" }
+resource "aws_iam_user" "lab_apprunner_002" {
+  name = "${local.prefix}-lab-apprunner-002"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-apprunner-002" }
 }
-resource "aws_iam_user_policy" "glue_002" {
-  name = "${local.prefix}-glue-002"
-  user = aws_iam_user.glue_002.name
+resource "aws_iam_user_policy" "lab_apprunner_002" {
+  name = "${local.prefix}-lab-apprunner-002"
+  user = aws_iam_user.lab_apprunner_002.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["apprunner:UpdateService"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_batch_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_batch_001" {
+  name = "${local.prefix}-lab-batch-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-batch-001" }
+}
+resource "aws_iam_user_policy" "lab_batch_001" {
+  name = "${local.prefix}-lab-batch-001"
+  user = aws_iam_user.lab_batch_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "batch:RegisterJobDefinition", "batch:SubmitJob"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_batch_002
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_batch_002" {
+  name = "${local.prefix}-lab-batch-002"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-batch-002" }
+}
+resource "aws_iam_user_policy" "lab_batch_002" {
+  name = "${local.prefix}-lab-batch-002"
+  user = aws_iam_user.lab_batch_002.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["batch:SubmitJob"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_bedrock_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_bedrock_001" {
+  name = "${local.prefix}-lab-bedrock-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-bedrock-001" }
+}
+resource "aws_iam_user_policy" "lab_bedrock_001" {
+  name = "${local.prefix}-lab-bedrock-001"
+  user = aws_iam_user.lab_bedrock_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "bedrock-agentcore:CreateCodeInterpreter"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_bedrock_002
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_bedrock_002" {
+  name = "${local.prefix}-lab-bedrock-002"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-bedrock-002" }
+}
+resource "aws_iam_user_policy" "lab_bedrock_002" {
+  name = "${local.prefix}-lab-bedrock-002"
+  user = aws_iam_user.lab_bedrock_002.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["bedrock-agentcore:InvokeSession"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_braket_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_braket_001" {
+  name = "${local.prefix}-lab-braket-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-braket-001" }
+}
+resource "aws_iam_user_policy" "lab_braket_001" {
+  name = "${local.prefix}-lab-braket-001"
+  user = aws_iam_user.lab_braket_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "braket:CreateJob"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_cloudformation_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_cloudformation_001" {
+  name = "${local.prefix}-lab-cloudformation-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-cloudformation-001" }
+}
+resource "aws_iam_user_policy" "lab_cloudformation_001" {
+  name = "${local.prefix}-lab-cloudformation-001"
+  user = aws_iam_user.lab_cloudformation_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "cloudformation:CreateStack"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_cloudformation_002
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_cloudformation_002" {
+  name = "${local.prefix}-lab-cloudformation-002"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-cloudformation-002" }
+}
+resource "aws_iam_user_policy" "lab_cloudformation_002" {
+  name = "${local.prefix}-lab-cloudformation-002"
+  user = aws_iam_user.lab_cloudformation_002.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["cloudformation:UpdateStack"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_cloudformation_003
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_cloudformation_003" {
+  name = "${local.prefix}-lab-cloudformation-003"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-cloudformation-003" }
+}
+resource "aws_iam_user_policy" "lab_cloudformation_003" {
+  name = "${local.prefix}-lab-cloudformation-003"
+  user = aws_iam_user.lab_cloudformation_003.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "cloudformation:CreateStackSet", "cloudformation:CreateStackInstances"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_cloudformation_004
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_cloudformation_004" {
+  name = "${local.prefix}-lab-cloudformation-004"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-cloudformation-004" }
+}
+resource "aws_iam_user_policy" "lab_cloudformation_004" {
+  name = "${local.prefix}-lab-cloudformation-004"
+  user = aws_iam_user.lab_cloudformation_004.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "cloudformation:UpdateStackSet"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_cloudformation_005
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_cloudformation_005" {
+  name = "${local.prefix}-lab-cloudformation-005"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-cloudformation-005" }
+}
+resource "aws_iam_user_policy" "lab_cloudformation_005" {
+  name = "${local.prefix}-lab-cloudformation-005"
+  user = aws_iam_user.lab_cloudformation_005.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["cloudformation:CreateChangeSet", "cloudformation:ExecuteChangeSet"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_codebuild_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_codebuild_001" {
+  name = "${local.prefix}-lab-codebuild-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-codebuild-001" }
+}
+resource "aws_iam_user_policy" "lab_codebuild_001" {
+  name = "${local.prefix}-lab-codebuild-001"
+  user = aws_iam_user.lab_codebuild_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "codebuild:CreateProject", "codebuild:StartBuild"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_codebuild_002
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_codebuild_002" {
+  name = "${local.prefix}-lab-codebuild-002"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-codebuild-002" }
+}
+resource "aws_iam_user_policy" "lab_codebuild_002" {
+  name = "${local.prefix}-lab-codebuild-002"
+  user = aws_iam_user.lab_codebuild_002.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["codebuild:StartBuild"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_codebuild_003
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_codebuild_003" {
+  name = "${local.prefix}-lab-codebuild-003"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-codebuild-003" }
+}
+resource "aws_iam_user_policy" "lab_codebuild_003" {
+  name = "${local.prefix}-lab-codebuild-003"
+  user = aws_iam_user.lab_codebuild_003.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["codebuild:StartBuildBatch"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_codebuild_004
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_codebuild_004" {
+  name = "${local.prefix}-lab-codebuild-004"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-codebuild-004" }
+}
+resource "aws_iam_user_policy" "lab_codebuild_004" {
+  name = "${local.prefix}-lab-codebuild-004"
+  user = aws_iam_user.lab_codebuild_004.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "codebuild:CreateProject", "codebuild:StartBuildBatch"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_codedeploy_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_codedeploy_001" {
+  name = "${local.prefix}-lab-codedeploy-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-codedeploy-001" }
+}
+resource "aws_iam_user_policy" "lab_codedeploy_001" {
+  name = "${local.prefix}-lab-codedeploy-001"
+  user = aws_iam_user.lab_codedeploy_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["codedeploy:CreateDeployment"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_cognito_identity_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_cognito_identity_001" {
+  name = "${local.prefix}-lab-cognito-identity-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-cognito-identity-001" }
+}
+resource "aws_iam_user_policy" "lab_cognito_identity_001" {
+  name = "${local.prefix}-lab-cognito-identity-001"
+  user = aws_iam_user.lab_cognito_identity_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "cognito-identity:SetIdentityPoolRoles"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ec2_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ec2_001" {
+  name = "${local.prefix}-lab-ec2-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ec2-001" }
+}
+resource "aws_iam_user_policy" "lab_ec2_001" {
+  name = "${local.prefix}-lab-ec2-001"
+  user = aws_iam_user.lab_ec2_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "ec2:RunInstances"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ec2_002
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ec2_002" {
+  name = "${local.prefix}-lab-ec2-002"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ec2-002" }
+}
+resource "aws_iam_user_policy" "lab_ec2_002" {
+  name = "${local.prefix}-lab-ec2-002"
+  user = aws_iam_user.lab_ec2_002.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["ec2:ModifyInstanceAttribute", "ec2:StopInstances", "ec2:StartInstances"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ec2_003
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ec2_003" {
+  name = "${local.prefix}-lab-ec2-003"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ec2-003" }
+}
+resource "aws_iam_user_policy" "lab_ec2_003" {
+  name = "${local.prefix}-lab-ec2-003"
+  user = aws_iam_user.lab_ec2_003.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["ec2-instance-connect:SendSSHPublicKey"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ec2_004
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ec2_004" {
+  name = "${local.prefix}-lab-ec2-004"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ec2-004" }
+}
+resource "aws_iam_user_policy" "lab_ec2_004" {
+  name = "${local.prefix}-lab-ec2-004"
+  user = aws_iam_user.lab_ec2_004.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "ec2:RequestSpotInstances"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ec2_005
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ec2_005" {
+  name = "${local.prefix}-lab-ec2-005"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ec2-005" }
+}
+resource "aws_iam_user_policy" "lab_ec2_005" {
+  name = "${local.prefix}-lab-ec2-005"
+  user = aws_iam_user.lab_ec2_005.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["ec2:CreateLaunchTemplateVersion", "ec2:ModifyLaunchTemplate"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ecs_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ecs_001" {
+  name = "${local.prefix}-lab-ecs-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ecs-001" }
+}
+resource "aws_iam_user_policy" "lab_ecs_001" {
+  name = "${local.prefix}-lab-ecs-001"
+  user = aws_iam_user.lab_ecs_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "ecs:CreateCluster", "ecs:RegisterTaskDefinition", "ecs:CreateService"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ecs_002
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ecs_002" {
+  name = "${local.prefix}-lab-ecs-002"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ecs-002" }
+}
+resource "aws_iam_user_policy" "lab_ecs_002" {
+  name = "${local.prefix}-lab-ecs-002"
+  user = aws_iam_user.lab_ecs_002.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "ecs:CreateCluster", "ecs:RegisterTaskDefinition", "ecs:RunTask"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ecs_003
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ecs_003" {
+  name = "${local.prefix}-lab-ecs-003"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ecs-003" }
+}
+resource "aws_iam_user_policy" "lab_ecs_003" {
+  name = "${local.prefix}-lab-ecs-003"
+  user = aws_iam_user.lab_ecs_003.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "ecs:RegisterTaskDefinition", "ecs:CreateService"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ecs_004
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ecs_004" {
+  name = "${local.prefix}-lab-ecs-004"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ecs-004" }
+}
+resource "aws_iam_user_policy" "lab_ecs_004" {
+  name = "${local.prefix}-lab-ecs-004"
+  user = aws_iam_user.lab_ecs_004.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "ecs:RegisterTaskDefinition", "ecs:RunTask"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ecs_005
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ecs_005" {
+  name = "${local.prefix}-lab-ecs-005"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ecs-005" }
+}
+resource "aws_iam_user_policy" "lab_ecs_005" {
+  name = "${local.prefix}-lab-ecs-005"
+  user = aws_iam_user.lab_ecs_005.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "ecs:RegisterTaskDefinition", "ecs:StartTask"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ecs_006
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ecs_006" {
+  name = "${local.prefix}-lab-ecs-006"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ecs-006" }
+}
+resource "aws_iam_user_policy" "lab_ecs_006" {
+  name = "${local.prefix}-lab-ecs-006"
+  user = aws_iam_user.lab_ecs_006.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["ecs:ExecuteCommand", "ecs:DescribeTasks"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ecs_007
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ecs_007" {
+  name = "${local.prefix}-lab-ecs-007"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ecs-007" }
+}
+resource "aws_iam_user_policy" "lab_ecs_007" {
+  name = "${local.prefix}-lab-ecs-007"
+  user = aws_iam_user.lab_ecs_007.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "ecs:StartTask", "ecs:RegisterContainerInstance"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ecs_008
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ecs_008" {
+  name = "${local.prefix}-lab-ecs-008"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ecs-008" }
+}
+resource "aws_iam_user_policy" "lab_ecs_008" {
+  name = "${local.prefix}-lab-ecs-008"
+  user = aws_iam_user.lab_ecs_008.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "ecs:RunTask"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ecs_009
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ecs_009" {
+  name = "${local.prefix}-lab-ecs-009"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ecs-009" }
+}
+resource "aws_iam_user_policy" "lab_ecs_009" {
+  name = "${local.prefix}-lab-ecs-009"
+  user = aws_iam_user.lab_ecs_009.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "ecs:StartTask"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_emr_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_emr_001" {
+  name = "${local.prefix}-lab-emr-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-emr-001" }
+}
+resource "aws_iam_user_policy" "lab_emr_001" {
+  name = "${local.prefix}-lab-emr-001"
+  user = aws_iam_user.lab_emr_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "elasticmapreduce:RunJobFlow"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_emr_serverless_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_emr_serverless_001" {
+  name = "${local.prefix}-lab-emr-serverless-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-emr-serverless-001" }
+}
+resource "aws_iam_user_policy" "lab_emr_serverless_001" {
+  name = "${local.prefix}-lab-emr-serverless-001"
+  user = aws_iam_user.lab_emr_serverless_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "emr-serverless:CreateApplication", "emr-serverless:StartJobRun"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_gamelift_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_gamelift_001" {
+  name = "${local.prefix}-lab-gamelift-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-gamelift-001" }
+}
+resource "aws_iam_user_policy" "lab_gamelift_001" {
+  name = "${local.prefix}-lab-gamelift-001"
+  user = aws_iam_user.lab_gamelift_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "gamelift:CreateBuild", "gamelift:CreateFleet"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_glue_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_glue_001" {
+  name = "${local.prefix}-lab-glue-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-glue-001" }
+}
+resource "aws_iam_user_policy" "lab_glue_001" {
+  name = "${local.prefix}-lab-glue-001"
+  user = aws_iam_user.lab_glue_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "glue:CreateDevEndpoint"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_glue_002
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_glue_002" {
+  name = "${local.prefix}-lab-glue-002"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-glue-002" }
+}
+resource "aws_iam_user_policy" "lab_glue_002" {
+  name = "${local.prefix}-lab-glue-002"
+  user = aws_iam_user.lab_glue_002.name
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{ Effect = "Allow", Action = ["glue:UpdateDevEndpoint"], Resource = "*" }]
   })
 }
 
-resource "aws_iam_user" "glue_003" {
-  name = "${local.prefix}-glue-003"
-  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "glue-003" }
+# -----------------------------------------------------------------------------
+# lab_glue_003
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_glue_003" {
+  name = "${local.prefix}-lab-glue-003"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-glue-003" }
 }
-resource "aws_iam_user_policy" "glue_003" {
-  name = "${local.prefix}-glue-003"
-  user = aws_iam_user.glue_003.name
+resource "aws_iam_user_policy" "lab_glue_003" {
+  name = "${local.prefix}-lab-glue-003"
+  user = aws_iam_user.lab_glue_003.name
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -206,53 +782,798 @@ resource "aws_iam_user_policy" "glue_003" {
 }
 
 # -----------------------------------------------------------------------------
-# EC2 privesc labs
-# Pathfinding.cloud: ec2-001, ec2-003, ec2-004, ec2-005
+# lab_glue_004
 # -----------------------------------------------------------------------------
-resource "aws_iam_user" "ec2_001" {
-  name = "${local.prefix}-ec2-001"
-  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "ec2-001" }
+resource "aws_iam_user" "lab_glue_004" {
+  name = "${local.prefix}-lab-glue-004"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-glue-004" }
 }
-resource "aws_iam_user_policy" "ec2_001" {
-  name = "${local.prefix}-ec2-001"
-  user = aws_iam_user.ec2_001.name
+resource "aws_iam_user_policy" "lab_glue_004" {
+  name = "${local.prefix}-lab-glue-004"
+  user = aws_iam_user.lab_glue_004.name
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = ["iam:PassRole", "ec2:RunInstances"]
+      Action   = ["iam:PassRole", "glue:CreateJob", "glue:CreateTrigger"]
       Resource = "*"
     }]
   })
 }
 
-resource "aws_iam_user" "ec2_003" {
-  name = "${local.prefix}-ec2-003"
-  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "ec2-003" }
+# -----------------------------------------------------------------------------
+# lab_glue_005
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_glue_005" {
+  name = "${local.prefix}-lab-glue-005"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-glue-005" }
 }
-resource "aws_iam_user_policy" "ec2_003" {
-  name = "${local.prefix}-ec2-003"
-  user = aws_iam_user.ec2_003.name
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{ Effect = "Allow", Action = ["ec2-instance-connect:SendSSHPublicKey"], Resource = "*" }]
-  })
-}
-
-resource "aws_iam_user" "ec2_004" {
-  name = "${local.prefix}-ec2-004"
-  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "ec2-004" }
-}
-resource "aws_iam_user_policy" "ec2_004" {
-  name = "${local.prefix}-ec2-004"
-  user = aws_iam_user.ec2_004.name
+resource "aws_iam_user_policy" "lab_glue_005" {
+  name = "${local.prefix}-lab-glue-005"
+  user = aws_iam_user.lab_glue_005.name
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = ["iam:PassRole", "ec2:RequestSpotInstances"]
+      Action   = ["iam:PassRole", "glue:UpdateJob", "glue:StartJobRun"]
       Resource = "*"
     }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_glue_006
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_glue_006" {
+  name = "${local.prefix}-lab-glue-006"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-glue-006" }
+}
+resource "aws_iam_user_policy" "lab_glue_006" {
+  name = "${local.prefix}-lab-glue-006"
+  user = aws_iam_user.lab_glue_006.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "glue:UpdateJob", "glue:CreateTrigger"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_glue_007
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_glue_007" {
+  name = "${local.prefix}-lab-glue-007"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-glue-007" }
+}
+resource "aws_iam_user_policy" "lab_glue_007" {
+  name = "${local.prefix}-lab-glue-007"
+  user = aws_iam_user.lab_glue_007.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "glue:CreateSession", "glue:RunStatement"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_001" {
+  name = "${local.prefix}-lab-iam-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-001" }
+}
+resource "aws_iam_user_policy" "lab_iam_001" {
+  name = "${local.prefix}-lab-iam-001"
+  user = aws_iam_user.lab_iam_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:CreatePolicyVersion"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_002
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_002" {
+  name = "${local.prefix}-lab-iam-002"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-002" }
+}
+resource "aws_iam_user_policy" "lab_iam_002" {
+  name = "${local.prefix}-lab-iam-002"
+  user = aws_iam_user.lab_iam_002.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:CreateAccessKey"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_003
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_003" {
+  name = "${local.prefix}-lab-iam-003"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-003" }
+}
+resource "aws_iam_user_policy" "lab_iam_003" {
+  name = "${local.prefix}-lab-iam-003"
+  user = aws_iam_user.lab_iam_003.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:DeleteAccessKey", "iam:CreateAccessKey"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_004
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_004" {
+  name = "${local.prefix}-lab-iam-004"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-004" }
+}
+resource "aws_iam_user_policy" "lab_iam_004" {
+  name = "${local.prefix}-lab-iam-004"
+  user = aws_iam_user.lab_iam_004.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:CreateLoginProfile"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_005
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_005" {
+  name = "${local.prefix}-lab-iam-005"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-005" }
+}
+resource "aws_iam_user_policy" "lab_iam_005" {
+  name = "${local.prefix}-lab-iam-005"
+  user = aws_iam_user.lab_iam_005.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:PutRolePolicy"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_006
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_006" {
+  name = "${local.prefix}-lab-iam-006"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-006" }
+}
+resource "aws_iam_user_policy" "lab_iam_006" {
+  name = "${local.prefix}-lab-iam-006"
+  user = aws_iam_user.lab_iam_006.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:UpdateLoginProfile"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_007
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_007" {
+  name = "${local.prefix}-lab-iam-007"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-007" }
+}
+resource "aws_iam_user_policy" "lab_iam_007" {
+  name = "${local.prefix}-lab-iam-007"
+  user = aws_iam_user.lab_iam_007.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:PutUserPolicy"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_008
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_008" {
+  name = "${local.prefix}-lab-iam-008"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-008" }
+}
+resource "aws_iam_user_policy" "lab_iam_008" {
+  name = "${local.prefix}-lab-iam-008"
+  user = aws_iam_user.lab_iam_008.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:AttachUserPolicy"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_009
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_009" {
+  name = "${local.prefix}-lab-iam-009"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-009" }
+}
+resource "aws_iam_user_policy" "lab_iam_009" {
+  name = "${local.prefix}-lab-iam-009"
+  user = aws_iam_user.lab_iam_009.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:AttachRolePolicy"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_010
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_010" {
+  name = "${local.prefix}-lab-iam-010"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-010" }
+}
+resource "aws_iam_user_policy" "lab_iam_010" {
+  name = "${local.prefix}-lab-iam-010"
+  user = aws_iam_user.lab_iam_010.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:AttachGroupPolicy"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_011
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_011" {
+  name = "${local.prefix}-lab-iam-011"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-011" }
+}
+resource "aws_iam_user_policy" "lab_iam_011" {
+  name = "${local.prefix}-lab-iam-011"
+  user = aws_iam_user.lab_iam_011.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:PutGroupPolicy"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_012
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_012" {
+  name = "${local.prefix}-lab-iam-012"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-012" }
+}
+resource "aws_iam_user_policy" "lab_iam_012" {
+  name = "${local.prefix}-lab-iam-012"
+  user = aws_iam_user.lab_iam_012.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:UpdateAssumeRolePolicy"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_013
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_013" {
+  name = "${local.prefix}-lab-iam-013"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-013" }
+}
+resource "aws_iam_user_policy" "lab_iam_013" {
+  name = "${local.prefix}-lab-iam-013"
+  user = aws_iam_user.lab_iam_013.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:AddUserToGroup"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_014
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_014" {
+  name = "${local.prefix}-lab-iam-014"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-014" }
+}
+resource "aws_iam_user_policy" "lab_iam_014" {
+  name = "${local.prefix}-lab-iam-014"
+  user = aws_iam_user.lab_iam_014.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:AttachRolePolicy", "sts:AssumeRole"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_015
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_015" {
+  name = "${local.prefix}-lab-iam-015"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-015" }
+}
+resource "aws_iam_user_policy" "lab_iam_015" {
+  name = "${local.prefix}-lab-iam-015"
+  user = aws_iam_user.lab_iam_015.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:AttachUserPolicy", "iam:CreateAccessKey"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_016
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_016" {
+  name = "${local.prefix}-lab-iam-016"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-016" }
+}
+resource "aws_iam_user_policy" "lab_iam_016" {
+  name = "${local.prefix}-lab-iam-016"
+  user = aws_iam_user.lab_iam_016.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:CreatePolicyVersion", "sts:AssumeRole"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_017
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_017" {
+  name = "${local.prefix}-lab-iam-017"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-017" }
+}
+resource "aws_iam_user_policy" "lab_iam_017" {
+  name = "${local.prefix}-lab-iam-017"
+  user = aws_iam_user.lab_iam_017.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:PutRolePolicy", "sts:AssumeRole"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_018
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_018" {
+  name = "${local.prefix}-lab-iam-018"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-018" }
+}
+resource "aws_iam_user_policy" "lab_iam_018" {
+  name = "${local.prefix}-lab-iam-018"
+  user = aws_iam_user.lab_iam_018.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:PutUserPolicy", "iam:CreateAccessKey"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_019
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_019" {
+  name = "${local.prefix}-lab-iam-019"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-019" }
+}
+resource "aws_iam_user_policy" "lab_iam_019" {
+  name = "${local.prefix}-lab-iam-019"
+  user = aws_iam_user.lab_iam_019.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:AttachRolePolicy", "iam:UpdateAssumeRolePolicy"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_020
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_020" {
+  name = "${local.prefix}-lab-iam-020"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-020" }
+}
+resource "aws_iam_user_policy" "lab_iam_020" {
+  name = "${local.prefix}-lab-iam-020"
+  user = aws_iam_user.lab_iam_020.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:CreatePolicyVersion", "iam:UpdateAssumeRolePolicy"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_iam_021
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_iam_021" {
+  name = "${local.prefix}-lab-iam-021"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-iam-021" }
+}
+resource "aws_iam_user_policy" "lab_iam_021" {
+  name = "${local.prefix}-lab-iam-021"
+  user = aws_iam_user.lab_iam_021.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:PutRolePolicy", "iam:UpdateAssumeRolePolicy"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_imagebuilder_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_imagebuilder_001" {
+  name = "${local.prefix}-lab-imagebuilder-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-imagebuilder-001" }
+}
+resource "aws_iam_user_policy" "lab_imagebuilder_001" {
+  name = "${local.prefix}-lab-imagebuilder-001"
+  user = aws_iam_user.lab_imagebuilder_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "imagebuilder:CreateInfrastructureConfiguration", "imagebuilder:CreateComponent", "imagebuilder:CreateImageRecipe", "imagebuilder:CreateImage"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_kinesisanalytics_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_kinesisanalytics_001" {
+  name = "${local.prefix}-lab-kinesisanalytics-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-kinesisanalytics-001" }
+}
+resource "aws_iam_user_policy" "lab_kinesisanalytics_001" {
+  name = "${local.prefix}-lab-kinesisanalytics-001"
+  user = aws_iam_user.lab_kinesisanalytics_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "kinesisanalytics:CreateApplication", "kinesisanalytics:StartApplication"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_lambda_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_lambda_001" {
+  name = "${local.prefix}-lab-lambda-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-lambda-001" }
+}
+resource "aws_iam_user_policy" "lab_lambda_001" {
+  name = "${local.prefix}-lab-lambda-001"
+  user = aws_iam_user.lab_lambda_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "lambda:CreateFunction", "lambda:InvokeFunction"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_lambda_002
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_lambda_002" {
+  name = "${local.prefix}-lab-lambda-002"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-lambda-002" }
+}
+resource "aws_iam_user_policy" "lab_lambda_002" {
+  name = "${local.prefix}-lab-lambda-002"
+  user = aws_iam_user.lab_lambda_002.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "lambda:CreateFunction", "lambda:CreateEventSourceMapping"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_lambda_003
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_lambda_003" {
+  name = "${local.prefix}-lab-lambda-003"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-lambda-003" }
+}
+resource "aws_iam_user_policy" "lab_lambda_003" {
+  name = "${local.prefix}-lab-lambda-003"
+  user = aws_iam_user.lab_lambda_003.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["lambda:UpdateFunctionCode"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_lambda_004
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_lambda_004" {
+  name = "${local.prefix}-lab-lambda-004"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-lambda-004" }
+}
+resource "aws_iam_user_policy" "lab_lambda_004" {
+  name = "${local.prefix}-lab-lambda-004"
+  user = aws_iam_user.lab_lambda_004.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["lambda:UpdateFunctionCode", "lambda:InvokeFunction"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_lambda_005
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_lambda_005" {
+  name = "${local.prefix}-lab-lambda-005"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-lambda-005" }
+}
+resource "aws_iam_user_policy" "lab_lambda_005" {
+  name = "${local.prefix}-lab-lambda-005"
+  user = aws_iam_user.lab_lambda_005.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["lambda:UpdateFunctionCode", "lambda:AddPermission"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_lambda_006
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_lambda_006" {
+  name = "${local.prefix}-lab-lambda-006"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-lambda-006" }
+}
+resource "aws_iam_user_policy" "lab_lambda_006" {
+  name = "${local.prefix}-lab-lambda-006"
+  user = aws_iam_user.lab_lambda_006.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "lambda:CreateFunction", "lambda:AddPermission"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_omics_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_omics_001" {
+  name = "${local.prefix}-lab-omics-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-omics-001" }
+}
+resource "aws_iam_user_policy" "lab_omics_001" {
+  name = "${local.prefix}-lab-omics-001"
+  user = aws_iam_user.lab_omics_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "omics:CreateWorkflow", "omics:StartRun"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_sagemaker_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_sagemaker_001" {
+  name = "${local.prefix}-lab-sagemaker-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-sagemaker-001" }
+}
+resource "aws_iam_user_policy" "lab_sagemaker_001" {
+  name = "${local.prefix}-lab-sagemaker-001"
+  user = aws_iam_user.lab_sagemaker_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "sagemaker:CreateNotebookInstance"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_sagemaker_002
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_sagemaker_002" {
+  name = "${local.prefix}-lab-sagemaker-002"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-sagemaker-002" }
+}
+resource "aws_iam_user_policy" "lab_sagemaker_002" {
+  name = "${local.prefix}-lab-sagemaker-002"
+  user = aws_iam_user.lab_sagemaker_002.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "sagemaker:CreateTrainingJob"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_sagemaker_003
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_sagemaker_003" {
+  name = "${local.prefix}-lab-sagemaker-003"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-sagemaker-003" }
+}
+resource "aws_iam_user_policy" "lab_sagemaker_003" {
+  name = "${local.prefix}-lab-sagemaker-003"
+  user = aws_iam_user.lab_sagemaker_003.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "sagemaker:CreateProcessingJob"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_sagemaker_004
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_sagemaker_004" {
+  name = "${local.prefix}-lab-sagemaker-004"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-sagemaker-004" }
+}
+resource "aws_iam_user_policy" "lab_sagemaker_004" {
+  name = "${local.prefix}-lab-sagemaker-004"
+  user = aws_iam_user.lab_sagemaker_004.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["sagemaker:CreatePresignedNotebookInstanceUrl"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_sagemaker_005
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_sagemaker_005" {
+  name = "${local.prefix}-lab-sagemaker-005"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-sagemaker-005" }
+}
+resource "aws_iam_user_policy" "lab_sagemaker_005" {
+  name = "${local.prefix}-lab-sagemaker-005"
+  user = aws_iam_user.lab_sagemaker_005.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["sagemaker:UpdateNotebookInstanceLifecycleConfig"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_scheduler_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_scheduler_001" {
+  name = "${local.prefix}-lab-scheduler-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-scheduler-001" }
+}
+resource "aws_iam_user_policy" "lab_scheduler_001" {
+  name = "${local.prefix}-lab-scheduler-001"
+  user = aws_iam_user.lab_scheduler_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "scheduler:CreateSchedule"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ssm_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ssm_001" {
+  name = "${local.prefix}-lab-ssm-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ssm-001" }
+}
+resource "aws_iam_user_policy" "lab_ssm_001" {
+  name = "${local.prefix}-lab-ssm-001"
+  user = aws_iam_user.lab_ssm_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["ssm:StartSession"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ssm_002
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ssm_002" {
+  name = "${local.prefix}-lab-ssm-002"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ssm-002" }
+}
+resource "aws_iam_user_policy" "lab_ssm_002" {
+  name = "${local.prefix}-lab-ssm-002"
+  user = aws_iam_user.lab_ssm_002.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["ssm:SendCommand"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_ssm_003
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_ssm_003" {
+  name = "${local.prefix}-lab-ssm-003"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-ssm-003" }
+}
+resource "aws_iam_user_policy" "lab_ssm_003" {
+  name = "${local.prefix}-lab-ssm-003"
+  user = aws_iam_user.lab_ssm_003.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["ssm:CreateDocument", "ssm:StartAutomationExecution"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_stepfunctions_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_stepfunctions_001" {
+  name = "${local.prefix}-lab-stepfunctions-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-stepfunctions-001" }
+}
+resource "aws_iam_user_policy" "lab_stepfunctions_001" {
+  name = "${local.prefix}-lab-stepfunctions-001"
+  user = aws_iam_user.lab_stepfunctions_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "states:CreateStateMachine", "states:StartExecution"]
+      Resource = "*"
+    }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_stepfunctions_002
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_stepfunctions_002" {
+  name = "${local.prefix}-lab-stepfunctions-002"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-stepfunctions-002" }
+}
+resource "aws_iam_user_policy" "lab_stepfunctions_002" {
+  name = "${local.prefix}-lab-stepfunctions-002"
+  user = aws_iam_user.lab_stepfunctions_002.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["states:UpdateStateMachine", "states:StartExecution"], Resource = "*" }]
+  })
+}
+
+# -----------------------------------------------------------------------------
+# lab_sts_001
+# -----------------------------------------------------------------------------
+resource "aws_iam_user" "lab_sts_001" {
+  name = "${local.prefix}-lab-sts-001"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "lab-sts-001" }
+}
+resource "aws_iam_user_policy" "lab_sts_001" {
+  name = "${local.prefix}-lab-sts-001"
+  user = aws_iam_user.lab_sts_001.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["sts:AssumeRole"], Resource = "*" }]
   })
 }
 
@@ -426,3 +1747,120 @@ resource "aws_iam_user_policy" "fp_ssm_createdoc_only" {
     Statement = [{ Effect = "Allow", Action = ["ssm:CreateDocument"], Resource = "*" }]
   })
 }
+
+# FP: lambda:UpdateFunctionCode only → method_39 (UpdateCode+Invoke) must NOT fire
+resource "aws_iam_user" "fp_lambda_004_no_invoke" {
+  name = "${local.prefix}-fp-lambda-004-noinv"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-lambda-004-no-invoke" }
+}
+resource "aws_iam_user_policy" "fp_lambda_004_no_invoke" {
+  name = "${local.prefix}-fp-lambda-004-noinv"
+  user = aws_iam_user.fp_lambda_004_no_invoke.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["lambda:UpdateFunctionCode"], Resource = "*" }]
+  })
+}
+
+# FP: lambda:UpdateFunctionCode only → method_65 (UpdateCode+AddPermission) must NOT fire
+resource "aws_iam_user" "fp_lambda_005_no_addpermission" {
+  name = "${local.prefix}-fp-lambda-005-noadd"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-lambda-005-no-addpermission" }
+}
+resource "aws_iam_user_policy" "fp_lambda_005_no_addpermission" {
+  name = "${local.prefix}-fp-lambda-005-noadd"
+  user = aws_iam_user.fp_lambda_005_no_addpermission.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["lambda:UpdateFunctionCode"], Resource = "*" }]
+  })
+}
+
+# FP: iam:PassRole only → method_60 (PassRole+CreateDevEndpoint) must NOT fire
+resource "aws_iam_user" "fp_glue_001_no_createdevendpoint" {
+  name = "${local.prefix}-fp-glue-001-nodev"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-glue-001-no-createdevendpoint" }
+}
+resource "aws_iam_user_policy" "fp_glue_001_no_createdevendpoint" {
+  name = "${local.prefix}-fp-glue-001-nodev"
+  user = aws_iam_user.fp_glue_001_no_createdevendpoint.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:PassRole"], Resource = aws_iam_role.admin_target.arn }]
+  })
+}
+
+# FP: ecs:RunTask only (no PassRole) → method_32 must NOT fire
+resource "aws_iam_user" "fp_ecs_runtask_no_passrole" {
+  name = "${local.prefix}-fp-ecs-run-nopr"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-ecs-runtask-no-passrole" }
+}
+resource "aws_iam_user_policy" "fp_ecs_runtask_no_passrole" {
+  name = "${local.prefix}-fp-ecs-run-nopr"
+  user = aws_iam_user.fp_ecs_runtask_no_passrole.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["ecs:RunTask"], Resource = "*" }]
+  })
+}
+
+# FP: elasticmapreduce:RunJobFlow only (no PassRole) → method_57 must NOT fire
+resource "aws_iam_user" "fp_emr_runjobflow_no_passrole" {
+  name = "${local.prefix}-fp-emr-run-nopr"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-emr-runjobflow-no-passrole" }
+}
+resource "aws_iam_user_policy" "fp_emr_runjobflow_no_passrole" {
+  name = "${local.prefix}-fp-emr-run-nopr"
+  user = aws_iam_user.fp_emr_runjobflow_no_passrole.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["elasticmapreduce:RunJobFlow"], Resource = "*" }]
+  })
+}
+
+# FP: PassRole + RegisterJobDefinition (no SubmitJob) → method_45 compound partial check
+resource "aws_iam_user" "fp_batch_001_no_submitjob" {
+  name = "${local.prefix}-fp-batch-001-nosubmit"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-batch-001-no-submitjob" }
+}
+resource "aws_iam_user_policy" "fp_batch_001_no_submitjob" {
+  name = "${local.prefix}-fp-batch-001-nosubmit"
+  user = aws_iam_user.fp_batch_001_no_submitjob.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "batch:RegisterJobDefinition"]
+      Resource = "*"
+    }]
+  })
+}
+
+# FP: ssm:StartAutomationExecution only → method_84 (CreateDoc+StartAutomation) must NOT fire
+resource "aws_iam_user" "fp_ssm_startautomation_only" {
+  name = "${local.prefix}-fp-ssm-startauto-only"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-ssm-startautomation-only" }
+}
+resource "aws_iam_user_policy" "fp_ssm_startautomation_only" {
+  name = "${local.prefix}-fp-ssm-startauto-only"
+  user = aws_iam_user.fp_ssm_startautomation_only.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["ssm:StartAutomationExecution"], Resource = "*" }]
+  })
+}
+
+# FP: states:UpdateStateMachine only → method_71 (UpdateStateMachine+StartExecution) must NOT fire
+resource "aws_iam_user" "fp_sfn_updatestatemachine_only" {
+  name = "${local.prefix}-fp-sfn-updatesm-only"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-sfn-updatestatemachine-only" }
+}
+resource "aws_iam_user_policy" "fp_sfn_updatestatemachine_only" {
+  name = "${local.prefix}-fp-sfn-updatesm-only"
+  user = aws_iam_user.fp_sfn_updatestatemachine_only.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["states:UpdateStateMachine"], Resource = "*" }]
+  })
+}
+data "aws_caller_identity" "current" {}
