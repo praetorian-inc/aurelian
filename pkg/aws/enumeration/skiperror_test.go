@@ -35,7 +35,7 @@ func TestIsSkippableAWSError(t *testing.T) {
 		{"AuthFailure", &fakeAPIError{code: "AuthFailure"}, true},
 		{"OptInRequired", &fakeAPIError{code: "OptInRequired"}, true},
 		{"InvalidClientTokenId", &fakeAPIError{code: "InvalidClientTokenId"}, false},
-		{"UnrecognizedClientException", &fakeAPIError{code: "UnrecognizedClientException"}, false},
+		{"UnrecognizedClientException", &fakeAPIError{code: "UnrecognizedClientException"}, true},
 		{"TypeNotFoundException", &fakeAPIError{code: "TypeNotFoundException"}, true},
 		{"UnsupportedActionException", &fakeAPIError{code: "UnsupportedActionException"}, true},
 		{"ThrottlingException", &fakeAPIError{code: "ThrottlingException"}, true},
