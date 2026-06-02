@@ -3,8 +3,8 @@ package enrichers
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"fmt"
+	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	cognitotypes "github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
@@ -81,75 +81,95 @@ func EnrichCognitoUserPool(cfg plugin.EnricherConfig, r *output.AWSResource, cli
 	}
 
 	// List and describe user pool clients
-	clientsOut, err := client.ListUserPoolClients(cfg.Context, &cognitoidentityprovider.ListUserPoolClientsInput{
-		UserPoolId: &poolID,
-		MaxResults: int32Ptr(60),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to list user pool clients: %w", err)
-	}
-
 	var clientProps []map[string]any
-	for _, clientDesc := range clientsOut.UserPoolClients {
-		if clientDesc.ClientId == nil {
-			continue
-		}
-		clientOut, err := client.DescribeUserPoolClient(cfg.Context, &cognitoidentityprovider.DescribeUserPoolClientInput{
+	var clientsToken *string
+	for {
+		clientsOut, err := client.ListUserPoolClients(cfg.Context, &cognitoidentityprovider.ListUserPoolClientsInput{
 			UserPoolId: &poolID,
-			ClientId:   clientDesc.ClientId,
+			MaxResults: int32Ptr(60),
+			NextToken:  clientsToken,
 		})
 		if err != nil {
-			slog.Warn("failed to describe user pool client",
-				"pool_id", poolID,
-				"client_id", stringVal(clientDesc.ClientId),
-				"error", err,
-			)
-			continue
+			return fmt.Errorf("failed to list user pool clients: %w", err)
 		}
 
-		c := clientOut.UserPoolClient
-		prop := map[string]any{
-			"ClientId":   stringVal(c.ClientId),
-			"ClientName": stringVal(c.ClientName),
-		}
-		if len(c.AllowedOAuthFlows) > 0 {
-			var flows []string
-			for _, f := range c.AllowedOAuthFlows {
-				flows = append(flows, string(f))
+		for _, clientDesc := range clientsOut.UserPoolClients {
+			if clientDesc.ClientId == nil {
+				continue
 			}
-			prop["AllowedOAuthFlows"] = flows
+			clientOut, err := client.DescribeUserPoolClient(cfg.Context, &cognitoidentityprovider.DescribeUserPoolClientInput{
+				UserPoolId: &poolID,
+				ClientId:   clientDesc.ClientId,
+			})
+			if err != nil {
+				slog.Warn("failed to describe user pool client",
+					"pool_id", poolID,
+					"client_id", stringVal(clientDesc.ClientId),
+					"error", err,
+				)
+				continue
+			}
+
+			c := clientOut.UserPoolClient
+			prop := map[string]any{
+				"ClientId":   stringVal(c.ClientId),
+				"ClientName": stringVal(c.ClientName),
+			}
+			if len(c.AllowedOAuthFlows) > 0 {
+				var flows []string
+				for _, f := range c.AllowedOAuthFlows {
+					flows = append(flows, string(f))
+				}
+				prop["AllowedOAuthFlows"] = flows
+			}
+			if len(c.CallbackURLs) > 0 {
+				prop["CallbackURLs"] = c.CallbackURLs
+			}
+			if len(c.AllowedOAuthScopes) > 0 {
+				prop["AllowedOAuthScopes"] = c.AllowedOAuthScopes
+			}
+			clientProps = append(clientProps, prop)
 		}
-		if len(c.CallbackURLs) > 0 {
-			prop["CallbackURLs"] = c.CallbackURLs
+
+		if clientsOut.NextToken == nil {
+			break
 		}
-		if len(c.AllowedOAuthScopes) > 0 {
-			prop["AllowedOAuthScopes"] = c.AllowedOAuthScopes
-		}
-		clientProps = append(clientProps, prop)
+		clientsToken = clientsOut.NextToken
 	}
 	if len(clientProps) > 0 {
 		r.Properties["ClientProperties"] = clientProps
 	}
 
-	// Collect IAM roles from user pool groups
-	groupsOut, err := client.ListGroups(cfg.Context, &cognitoidentityprovider.ListGroupsInput{
-		UserPoolId: &poolID,
-	})
-	if err != nil {
-		slog.Warn("failed to list user pool groups",
-			"pool_id", poolID,
-			"error", err,
-		)
-	} else if groupsOut != nil {
-		var roles []string
+	// Collect IAM roles from user pool groups. Duplicate ARNs across groups are preserved.
+	var roles []string
+	var nextToken *string
+	for {
+		groupsOut, err := client.ListGroups(cfg.Context, &cognitoidentityprovider.ListGroupsInput{
+			UserPoolId: &poolID,
+			NextToken:  nextToken,
+		})
+		if err != nil {
+			slog.Warn("failed to list user pool groups",
+				"pool_id", poolID,
+				"error", err,
+			)
+			break
+		}
+		if groupsOut == nil {
+			break
+		}
 		for _, group := range groupsOut.Groups {
 			if group.RoleArn != nil && *group.RoleArn != "" {
 				roles = append(roles, *group.RoleArn)
 			}
 		}
-		if len(roles) > 0 {
-			r.Properties["Roles"] = roles
+		if groupsOut.NextToken == nil {
+			break
 		}
+		nextToken = groupsOut.NextToken
+	}
+	if len(roles) > 0 {
+		r.Properties["Roles"] = roles
 	}
 
 	return nil
