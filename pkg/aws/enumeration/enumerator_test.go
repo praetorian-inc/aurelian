@@ -143,7 +143,7 @@ func TestEnumerator_List_SkippableError_RecordedNotReturned(t *testing.T) {
 	require.NoError(t, err, "List should swallow skippable errors and record them")
 	snap := e.Skipped.Snapshot()
 	require.Len(t, snap, 1)
-	assert.Equal(t, "AWS::S3::Bucket", snap[0].Service)
+	assert.Equal(t, "s3", snap[0].Service)
 	assert.Equal(t, "AccessDeniedException", snap[0].ErrorCode)
 	assert.Contains(t, snap[0].Detail, "denied by SCP")
 }
@@ -220,7 +220,7 @@ func TestEnumerator_List_MultipleTypes_OneSkippableFailContinues(t *testing.T) {
 
 	snap := e.Skipped.Snapshot()
 	require.Len(t, snap, 1)
-	assert.Equal(t, "AWS::Amplify::App", snap[0].Service)
+	assert.Equal(t, "amplify", snap[0].Service)
 	assert.Equal(t, "AccessDeniedException", snap[0].ErrorCode)
 }
 

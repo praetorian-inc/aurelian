@@ -90,7 +90,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	}
 
 	lister := cclist.NewEnumerator(c.AWSCommonRecon)
-	defer lister.Close()
+	defer func() { _ = lister.Close() }()
 	inputPipeline := pipeline.From(inputs...)
 	listed := pipeline.New[output.AWSResource]()
 	pipeline.Pipe(inputPipeline, lister.List, listed, &pipeline.PipeOpts{

@@ -17,7 +17,7 @@ import (
 // defer …Close() call. This prevents new modules from silently dropping the
 // skip summary.
 //
-// This is the compile-time enforcement layer — it fails the test suite if a
+// This is the test-time enforcement layer — it fails the test suite if a
 // caller of NewEnumerator forgets defer lister.Close().
 func TestNewEnumeratorRequiresClose(t *testing.T) {
 	repoRoot := findRepoRoot(t)

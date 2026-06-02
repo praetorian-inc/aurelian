@@ -56,7 +56,7 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model
 	c := m.ListAllConfig
 
 	lister := cclist.NewEnumerator(c.AWSCommonRecon)
-	defer lister.Close()
+	defer func() { _ = lister.Close() }()
 	resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, selectResourceTypes(c.ScanType))
 	if err != nil {
 		return err

@@ -114,7 +114,11 @@ func (e *Enumerator) List(identifier string, out *pipeline.P[output.AWSResource]
 
 	if strings.HasPrefix(identifier, "AWS::") {
 		if err := e.listByType(identifier, out); err != nil {
-			return e.handleListError(err, identifier, "List", "")
+			service := identifier
+			if parts := strings.Split(identifier, "::"); len(parts) >= 2 {
+				service = strings.ToLower(parts[1])
+			}
+			return e.handleListError(err, service, "List", "")
 		}
 		return nil
 	}
