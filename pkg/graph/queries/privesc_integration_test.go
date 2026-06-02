@@ -115,7 +115,11 @@ func allPrivescCases() []privescTestCase {
 		standaloneCase("aws/enrich/privesc/method_23", "SSM_SENDCOMMAND"),
 		standaloneCase("aws/enrich/privesc/method_24", "SSM_STARTSESSION"),
 		standaloneCase("aws/enrich/privesc/method_25", "SSM_CREATEASSOCIATION"),
+		standaloneCase("aws/enrich/privesc/method_26", "CODESTAR_CREATEPROJECT"),
 		standaloneCase("aws/enrich/privesc/method_27", "CODEBUILD_CREATEPROJECT"),
+		standaloneCase("aws/enrich/privesc/method_28", "IAM_CREATESERVICELINKEDROLE"),
+		// method_29: standalone — UpdateDevEndpoint on existing Glue endpoint (no PassRole)
+		standaloneCase("aws/enrich/privesc/method_29", "GLUE_UPDATEDEVENDPOINT"),
 		// method_30: standalone — UpdateStack on existing stack, no PassRole needed
 		standaloneCase("aws/enrich/privesc/method_30", "CLOUDFORMATION_UPDATESTACK"),
 		// method_31: CreateChangeSet + ExecuteChangeSet on the SAME stack (no PassRole)
@@ -152,8 +156,49 @@ func allPrivescCases() []privescTestCase {
 			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 			wantEdges: 1,
 		},
+		// method_38: iam:PassRole + ec2:CreateLaunchTemplate + autoscaling:CreateAutoScalingGroup
+		{
+			queryID: "aws/enrich/privesc/method_38",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (s:Resource  {Arn: '%s'})
+				WITH a, r, s
+				MERGE (a)-[:IAM_PASSROLE]->(r)
+				MERGE (a)-[:EC2_CREATELAUNCHTEMPLATE]->(s)
+				MERGE (a)-[:AUTOSCALING_CREATEAUTOSCALINGGROUP]->(s)
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),
+			wantEdges: 1,
+		},
 		// method_40: hyphens preserved by normalizer → BEDROCK-AGENTCORE_CREATECODEINTERPRETER
 		passRoleCase("aws/enrich/privesc/method_40", "BEDROCK-AGENTCORE_CREATECODEINTERPRETER"),
+		// method_41: iam:PassRole + (iam:PutRolePolicy or iam:AttachRolePolicy) on same role
+		{
+			queryID: "aws/enrich/privesc/method_41",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (r:Role      {Arn: '%s'})
+				WITH a, r
+				MERGE (a)-[:IAM_PUTROLEPOLICY]->(r)
+				MERGE (a)-[:IAM_PASSROLE]->(r)
+			`, attackerARN, roleARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(t {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
+			wantEdges: 1,
+		},
+		// method_42: iam:UpdateAssumeRolePolicy + iam:PassRole on same role
+		{
+			queryID: "aws/enrich/privesc/method_42",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (r:Role      {Arn: '%s'})
+				WITH a, r
+				MERGE (a)-[:IAM_UPDATEASSUMEROLEPOLICY]->(r)
+				MERGE (a)-[:IAM_PASSROLE]->(r)
+			`, attackerARN, roleARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(t {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
+			wantEdges: 1,
+		},
 
 		// ---- Methods 43–72 (initial gap-fill) ----
 		// method_43: iam:PassRole + apprunner:CreateService
