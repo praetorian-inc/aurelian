@@ -160,7 +160,6 @@ func redactURL(u *url.URL) string {
 // parsePager reads the response body into an apiListResponse via the existing
 // page-parsing path.
 func parsePager(resp *http.Response) ([]APIInventoryItem, string, error) {
-	defer func() { _ = resp.Body.Close() }()
 	dec := json.NewDecoder(resp.Body)
 	var listResp apiListResponse
 	if err := dec.Decode(&listResp); err != nil {
