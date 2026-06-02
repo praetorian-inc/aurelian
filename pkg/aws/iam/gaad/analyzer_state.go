@@ -102,6 +102,7 @@ func (s *AnalyzerState) addServicesToResourceCache() {
 		"kms.amazonaws.com",
 		"secretsmanager.amazonaws.com",
 		"codebuild.amazonaws.com",
+		"codedeploy.amazonaws.com",
 		"codepipeline.amazonaws.com",
 		"ecs.amazonaws.com",
 		"eks.amazonaws.com",
@@ -109,6 +110,20 @@ func (s *AnalyzerState) addServicesToResourceCache() {
 		"sagemaker.amazonaws.com",
 		"apigateway.amazonaws.com",
 		"autoscaling.amazonaws.com",
+		// New privesc-relevant services (methods 43–72)
+		"apprunner.amazonaws.com",
+		"batch.amazonaws.com",
+		"braket.amazonaws.com",
+		"cognito-identity.amazonaws.com",
+		"ec2-instance-connect.amazonaws.com",
+		"elasticmapreduce.amazonaws.com",
+		"emr-serverless.amazonaws.com",
+		"gamelift.amazonaws.com",
+		"imagebuilder.amazonaws.com",
+		"kinesisanalytics.amazonaws.com",
+		"omics.amazonaws.com",
+		"scheduler.amazonaws.com",
+		"states.amazonaws.com",
 	}
 
 	for _, service := range commonServices {

@@ -261,9 +261,327 @@ resource "aws_iam_user_policy" "extended_services" {
           "autoscaling:CreateAutoScalingGroup",
           # method_40: Bedrock CreateCodeInterpreter
           "bedrock-agentcore:CreateCodeInterpreter",
+          # method_54: ECS CreateService
+          "ecs:CreateService",
+          # method_61: Glue UpdateJob
+          "glue:UpdateJob",
+          # method_70/71: Step Functions
+          "states:CreateStateMachine",
+          "states:UpdateStateMachine",
+          # method_68: EventBridge Scheduler
+          "scheduler:CreateSchedule",
+          # method_45/46: Batch
+          "batch:RegisterJobDefinition",
+          "batch:SubmitJob",
+          # method_63: Image Builder
+          "imagebuilder:CreateInfrastructureConfiguration",
+          # method_67: SageMaker lifecycle config
+          "sagemaker:UpdateNotebookInstanceLifecycleConfig",
+          # method_51: Cognito
+          "cognito-identity:SetIdentityPoolRoles",
         ]
         Resource = "*"
       },
     ]
   })
+}
+
+# =============================================================================
+# Service resources — deployed so the recon module creates permission edges
+# for the new privesc methods. Resources are minimal (no active compute).
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# ECS cluster + task definition + service (0 desired tasks, free)
+# Enables: ecs:CreateService (method_54), ecs:RunTask (method_32)
+# -----------------------------------------------------------------------------
+resource "aws_ecs_cluster" "privesc" {
+  name = "${local.prefix}-cluster"
+  tags = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+resource "aws_ecs_task_definition" "privesc" {
+  family                   = "${local.prefix}-task"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 256
+  memory                   = 512
+  execution_role_arn       = aws_iam_role.ecs_execution.arn
+  task_role_arn            = aws_iam_role.passable.arn
+
+  container_definitions = jsonencode([{
+    name      = "placeholder"
+    image     = "public.ecr.aws/amazonlinux/amazonlinux:2"
+    essential = true
+    command   = ["sleep", "infinity"]
+  }])
+
+  tags = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+resource "aws_ecs_service" "privesc" {
+  name            = "${local.prefix}-service"
+  cluster         = aws_ecs_cluster.privesc.id
+  task_definition = aws_ecs_task_definition.privesc.arn
+  desired_count   = 0
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = [aws_subnet.privesc.id]
+    security_groups  = [aws_security_group.privesc.id]
+    assign_public_ip = false
+  }
+
+  tags = { Purpose = "aurelian-privesc-integration-test" }
+
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+}
+
+resource "aws_vpc" "privesc" {
+  cidr_block = "10.99.0.0/16"
+  tags       = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+resource "aws_subnet" "privesc" {
+  vpc_id            = aws_vpc.privesc.id
+  cidr_block        = "10.99.0.0/24"
+  availability_zone = "${var.region}a"
+  tags              = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+resource "aws_security_group" "privesc" {
+  name   = "${local.prefix}-sg"
+  vpc_id = aws_vpc.privesc.id
+  tags   = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+# -----------------------------------------------------------------------------
+# Step Functions state machine (express, nearly free when idle)
+# Enables: states:CreateStateMachine (method_70), states:UpdateStateMachine (method_71)
+# -----------------------------------------------------------------------------
+resource "aws_sfn_state_machine" "privesc" {
+  name     = "${local.prefix}-statemachine"
+  role_arn = aws_iam_role.passable.arn
+  type     = "EXPRESS"
+
+  definition = jsonencode({
+    Comment = "Aurelian privesc integration test placeholder"
+    StartAt = "Pass"
+    States = {
+      Pass = {
+        Type = "Pass"
+        End  = true
+      }
+    }
+  })
+
+  tags = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+# -----------------------------------------------------------------------------
+# EventBridge Scheduler schedule (once-a-year, essentially free)
+# Enables: scheduler:CreateSchedule (method_68)
+# -----------------------------------------------------------------------------
+resource "aws_scheduler_schedule_group" "privesc" {
+  name = "${local.prefix}-schedgrp"
+  tags = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+resource "aws_scheduler_schedule" "privesc" {
+  name       = "privesc-placeholder"
+  group_name = aws_scheduler_schedule_group.privesc.name
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  schedule_expression = "rate(365 days)"
+
+  target {
+    arn      = aws_sqs_queue.scheduler_target.arn
+    role_arn = aws_iam_role.scheduler.arn
+
+    input = jsonencode({ source = "aurelian-privesc-test" })
+  }
+}
+
+data "aws_caller_identity" "current" {}
+
+# ECS task execution role (trusts ecs-tasks.amazonaws.com)
+resource "aws_iam_role" "ecs_execution" {
+  name = "${local.prefix}-ecs-exec-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { Service = "ecs-tasks.amazonaws.com" }
+    }]
+  })
+
+  tags = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_execution" {
+  role       = aws_iam_role.ecs_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+# EventBridge Scheduler execution role (trusts scheduler.amazonaws.com)
+resource "aws_iam_role" "scheduler" {
+  name = "${local.prefix}-scheduler-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { Service = "scheduler.amazonaws.com" }
+    }]
+  })
+
+  tags = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+resource "aws_iam_role_policy" "scheduler" {
+  name = "${local.prefix}-scheduler-policy"
+  role = aws_iam_role.scheduler.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["sqs:SendMessage"]
+      Resource = aws_sqs_queue.scheduler_target.arn
+    }]
+  })
+}
+
+resource "aws_sqs_queue" "scheduler_target" {
+  name = "${local.prefix}-sched-target"
+  tags = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+# -----------------------------------------------------------------------------
+# Glue job (no compute unless triggered)
+# Enables: glue:CreateJob (method_60), glue:UpdateJob (method_61)
+# -----------------------------------------------------------------------------
+resource "aws_s3_bucket" "glue_scripts" {
+  bucket = "${local.prefix}-glue-scripts"
+  tags   = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+resource "aws_s3_object" "glue_script" {
+  bucket  = aws_s3_bucket.glue_scripts.id
+  key     = "placeholder.py"
+  content = "# aurelian privesc integration test placeholder"
+}
+
+resource "aws_glue_job" "privesc" {
+  name         = "${local.prefix}-glue-job"
+  role_arn     = aws_iam_role.passable.arn
+  glue_version = "4.0"
+
+  command {
+    script_location = "s3://${aws_s3_bucket.glue_scripts.bucket}/${aws_s3_object.glue_script.key}"
+    python_version  = "3"
+  }
+
+  default_arguments = {
+    "--job-language" = "python"
+  }
+
+  tags = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+# -----------------------------------------------------------------------------
+# AWS Batch: compute environment + job queue + job definition (FARGATE_SPOT, free idle)
+# Enables: batch:RegisterJobDefinition (method_45), batch:SubmitJob (method_46)
+# -----------------------------------------------------------------------------
+resource "aws_batch_compute_environment" "privesc" {
+  compute_environment_name = "${local.prefix}-batch-ce"
+  type                     = "MANAGED"
+  # Omit service_role to use the AWS-managed service-linked role AWSServiceRoleForBatch,
+  # which has all required ECS permissions without custom IAM setup.
+
+  compute_resources {
+    type               = "FARGATE_SPOT"
+    max_vcpus          = 4
+    security_group_ids = [aws_security_group.privesc.id]
+    subnets            = [aws_subnet.privesc.id]
+  }
+
+  tags = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+resource "aws_batch_job_queue" "privesc" {
+  name     = "${local.prefix}-batch-jq"
+  state    = "ENABLED"
+  priority = 1
+
+  compute_environment_order {
+    order               = 1
+    compute_environment = aws_batch_compute_environment.privesc.arn
+  }
+
+  tags = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+resource "aws_batch_job_definition" "privesc" {
+  name = "${local.prefix}-batch-jd"
+  type = "container"
+  platform_capabilities = ["FARGATE"]
+
+  container_properties = jsonencode({
+    image   = "public.ecr.aws/amazonlinux/amazonlinux:2"
+    command = ["echo", "aurelian-privesc-test"]
+    fargatePlatformConfiguration = { platformVersion = "LATEST" }
+    resourceRequirements = [
+      { type = "VCPU",   value = "0.25" },
+      { type = "MEMORY", value = "512" }
+    ]
+    executionRoleArn = aws_iam_role.ecs_execution.arn
+    jobRoleArn       = aws_iam_role.passable.arn
+    networkConfiguration = { assignPublicIp = "DISABLED" }
+  })
+
+  tags = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+# -----------------------------------------------------------------------------
+# Cognito Identity Pool (free for unused pools)
+# Enables: cognito-identity:SetIdentityPoolRoles (method_51)
+# -----------------------------------------------------------------------------
+resource "aws_cognito_identity_pool" "privesc" {
+  identity_pool_name               = "${local.prefix}-idpool"
+  allow_unauthenticated_identities = false
+
+  tags = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+# -----------------------------------------------------------------------------
+# SageMaker notebook lifecycle configuration (free — just a config object)
+# Enables: sagemaker:UpdateNotebookInstanceLifecycleConfig (method_67)
+# -----------------------------------------------------------------------------
+resource "aws_sagemaker_notebook_instance_lifecycle_configuration" "privesc" {
+  name = "${local.prefix}-nb-lc"
+}
+
+# -----------------------------------------------------------------------------
+# EC2 Image Builder infrastructure configuration (free — just a config object)
+# Enables: imagebuilder:CreateInfrastructureConfiguration (method_63)
+# -----------------------------------------------------------------------------
+resource "aws_imagebuilder_infrastructure_configuration" "privesc" {
+  name                  = "${local.prefix}-infra-config"
+  instance_profile_name = aws_iam_instance_profile.privesc.name
+
+  tags = { Purpose = "aurelian-privesc-integration-test" }
+}
+
+resource "aws_iam_instance_profile" "privesc" {
+  name = "${local.prefix}-instance-profile"
+  role = aws_iam_role.passable.name
 }

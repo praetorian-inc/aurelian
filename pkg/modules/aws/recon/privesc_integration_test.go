@@ -199,6 +199,16 @@ func TestPrivescEnrichmentE2E(t *testing.T) {
 			"user with SSM/CodeBuild/SageMaker permissions should have CAN_PRIVESC edges")
 	})
 
+	// Diagnostic: show all outgoing edge types from extended_services_user.
+	diagEdges, err := db.Query(ctx,
+		"MATCH (a)-[r]->() WHERE a.Arn = $arn OR a.arn = $arn RETURN type(r) AS t, count(r) AS n ORDER BY n DESC LIMIT 30",
+		map[string]any{"arn": extServicesUserARN})
+	require.NoError(t, err)
+	t.Logf("extended_services_user outgoing edges (%d types):", len(diagEdges.Records))
+	for _, rec := range diagEdges.Records {
+		t.Logf("  %v: %v", rec["t"], rec["n"])
+	}
+
 	// Spot-check: verify known-collectable permission types exist in the graph.
 	// Aurelian's recon only creates relationship edges to resources that actually exist
 	// in the account — new service actions (AppRunner, Batch, etc.) produce edges only
@@ -213,16 +223,23 @@ func TestPrivescEnrichmentE2E(t *testing.T) {
 		}
 
 		checks := []edgeCheck{
-			// IAM-level permissions always produce edges (IAM entities exist in every account).
+			// IAM-level permissions: always produce edges since IAM entities exist in every account.
 			{iamPrivescUserARN, "iam:PassRole (method_14/15…)", "IAM_PASSROLE", true},
 			{iamPrivescUserARN, "iam:CreatePolicyVersion (method_01)", "IAM_CREATEPOLICYVERSION", true},
 			{iamPrivescUserARN, "iam:CreateAccessKey (method_03)", "IAM_CREATEACCESSKEY", true},
-			// New service actions: edges only exist when those services have deployed resources.
+			// Service resources deployed by fixture — recon should collect edges to these.
+			{extServicesUserARN, "ecs:CreateService (method_54)", "ECS_CREATESERVICE", true},
+			{extServicesUserARN, "states:CreateStateMachine (method_70)", "STATES_CREATESTATEMACHINE", true},
+			{extServicesUserARN, "states:UpdateStateMachine (method_71)", "STATES_UPDATESTATEMACHINE", true},
+			{extServicesUserARN, "glue:UpdateJob (method_61)", "GLUE_UPDATEJOB", true},
+			{extServicesUserARN, "scheduler:CreateSchedule (method_68)", "SCHEDULER_CREATESCHEDULE", true},
+			{extServicesUserARN, "batch:SubmitJob (method_46)", "BATCH_SUBMITJOB", true},
+			{extServicesUserARN, "batch:RegisterJobDefinition (method_45)", "BATCH_REGISTERJOBDEFINITION", true},
+			{extServicesUserARN, "cognito-identity:SetIdentityPoolRoles (method_51)", "COGNITO-IDENTITY_SETIDENTITYPOOLROLES", true},
+			// No deployed resources — log-only (AppRunner costs money; Braket/GameLift impractical).
 			{newServicesUserARN, "apprunner:CreateService (method_43)", "APPRUNNER_CREATESERVICE", false},
-			{newServicesUserARN, "batch:RegisterJobDefinition (method_45)", "BATCH_REGISTERJOBDEFINITION", false},
-			{newServicesUserARN, "ecs:CreateService (method_54)", "ECS_CREATESERVICE", false},
-			{newServicesUserARN, "scheduler:CreateSchedule (method_68)", "SCHEDULER_CREATESCHEDULE", false},
-			{newServicesUserARN, "states:CreateStateMachine (method_70)", "STATES_CREATESTATEMACHINE", false},
+			{newServicesUserARN, "braket:CreateJob (method_47)", "BRAKET_CREATEJOB", false},
+			{newServicesUserARN, "gamelift:CreateFleet (method_59)", "GAMELIFT_CREATEFLEET", false},
 		}
 
 		for _, c := range checks {
