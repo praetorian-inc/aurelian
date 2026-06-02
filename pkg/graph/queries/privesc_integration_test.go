@@ -138,6 +138,20 @@ func allPrivescCases() []privescTestCase {
 		standaloneCase("aws/enrich/privesc/method_35", "SAGEMAKER_CREATEPRESIGNEDNOTEBOOKINSTANCEURL"),
 		passRoleCase("aws/enrich/privesc/method_36", "SAGEMAKER_CREATETRAININGJOB"),
 		passRoleCase("aws/enrich/privesc/method_37", "SAGEMAKER_CREATEPROCESSINGJOB"),
+		// method_39: lambda:UpdateFunctionCode + lambda:InvokeFunction (two-perm compound)
+		{
+			queryID: "aws/enrich/privesc/method_39",
+			setup: fmt.Sprintf(`
+					CREATE (a:Principal {Arn: '%s'})
+					CREATE (v:Principal {Arn: '%s'})
+					CREATE (f:Resource  {Arn: '%s'})
+					WITH a, v, f
+					MERGE (a)-[:LAMBDA_UPDATEFUNCTIONCODE]->(f)
+					MERGE (a)-[:LAMBDA_INVOKEFUNCTION]->(f)
+				`, attackerARN, victimARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			wantEdges: 1,
+		},
 		// method_40: hyphens preserved by normalizer → BEDROCK-AGENTCORE_CREATECODEINTERPRETER
 		passRoleCase("aws/enrich/privesc/method_40", "BEDROCK-AGENTCORE_CREATECODEINTERPRETER"),
 
