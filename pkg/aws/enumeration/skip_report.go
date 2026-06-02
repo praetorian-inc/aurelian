@@ -15,11 +15,11 @@ import (
 // operator can see, after the run, which AWS calls were denied or unsupported
 // without losing them in the noise.
 type SkippedOp struct {
-	Region    string `json:"region"`    // AWS region (or "global" for IAM and other non-regional services)
-	Service   string `json:"service"`   // short service name, e.g. "amplify", "ec2", "iam"
-	Operation string `json:"operation"` // AWS API operation, e.g. "ListApps", "DescribeImages"
+	Region    string `json:"region"`     // AWS region (or "global" for IAM and other non-regional services)
+	Service   string `json:"service"`    // short service name, e.g. "amplify", "ec2", "iam"
+	Operation string `json:"operation"`  // AWS API operation, e.g. "ListApps", "DescribeImages"
 	ErrorCode string `json:"error_code"` // smithy code or "RegionUnsupported" / "Unknown"
-	Detail    string `json:"detail"`    // truncated raw error string (<= 500 chars)
+	Detail    string `json:"detail"`     // truncated raw error string (<= 500 chars)
 }
 
 const maxDetailLen = 500

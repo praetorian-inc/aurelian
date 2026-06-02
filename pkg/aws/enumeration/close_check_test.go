@@ -268,14 +268,14 @@ func fileHasSkipReportField(f *ast.File) bool {
 // fileUsesSkipReport checks that the file contains the correct wiring
 // pattern. It verifies THREE things all present in the same file:
 //
-// 1. An if-statement with ClassifySkippable in the Init:
-//    if op := ClassifySkippable(err, ...); op != nil { ... }
+//  1. An if-statement with ClassifySkippable in the Init:
+//     if op := ClassifySkippable(err, ...); op != nil { ... }
 //
-// 2. A dereference of the result variable (*op) inside the if-body
-//    (proves the classified op is captured, not discarded)
+//  2. A dereference of the result variable (*op) inside the if-body
+//     (proves the classified op is captured, not discarded)
 //
-// 3. A call to skipReport.RecordBatch or skipReport.Record anywhere
-//    in the file (proves the captured ops are flushed to the report)
+//  3. A call to skipReport.RecordBatch or skipReport.Record anywhere
+//     in the file (proves the captured ops are flushed to the report)
 //
 // All three are required. This catches:
 //   - ClassifySkippable never called → #1 fails
@@ -399,11 +399,11 @@ func TestClassifySkippableServiceNames(t *testing.T) {
 
 // TestNewEnumeratorSharesSkipReport verifies two things inside NewEnumerator:
 //
-// 1. NewSkipReport() is called exactly once (the shared instance).
-// 2. Every function call that has an argument named "skipReport" passes the
-//    identifier `skipReport` — not a NewSkipReport() call, a helper function,
-//    or any other expression. This ensures all enumerators share the same
-//    report instance.
+//  1. NewSkipReport() is called exactly once (the shared instance).
+//  2. Every function call that has an argument named "skipReport" passes the
+//     identifier `skipReport` — not a NewSkipReport() call, a helper function,
+//     or any other expression. This ensures all enumerators share the same
+//     report instance.
 func TestNewEnumeratorSharesSkipReport(t *testing.T) {
 	enumDir := filepath.Join(findRepoRoot(t), "pkg", "aws", "enumeration")
 	fset := token.NewFileSet()

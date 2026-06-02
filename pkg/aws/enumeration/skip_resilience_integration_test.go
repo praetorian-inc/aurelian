@@ -94,10 +94,10 @@ func TestSkipResilience_RestrictedRole(t *testing.T) {
 
 		types := pipeline.From(
 			"AWS::S3::Bucket",
-			"AWS::Amplify::App",      // DENIED
+			"AWS::Amplify::App", // DENIED
 			"AWS::IAM::Role",
 			"AWS::IAM::Policy",
-			"AWS::SSM::Document",     // DENIED
+			"AWS::SSM::Document", // DENIED
 			"AWS::IAM::User",
 			"AWS::Lambda::Function",
 			"AWS::EC2::Instance",
@@ -595,7 +595,10 @@ func TestSkipResilience_CloseWritesDetailFile(t *testing.T) {
 		defer e.Close()
 
 		out := pipeline.New[output.AWSResource]()
-		go func() { for range out.Range() {} }()
+		go func() {
+			for range out.Range() {
+			}
+		}()
 		_ = e.List("AWS::Amplify::App", out)
 		out.Close()
 	}()

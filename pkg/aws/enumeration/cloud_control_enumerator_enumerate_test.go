@@ -98,7 +98,10 @@ func TestEnumerateByARN_DispatcherExtractsServiceAndRegion(t *testing.T) {
 			})
 
 			out := pipeline.New[output.AWSResource]()
-			go func() { for range out.Range() {} }()
+			go func() {
+				for range out.Range() {
+				}
+			}()
 			err := e.List(tc.arn, out)
 			out.Close()
 

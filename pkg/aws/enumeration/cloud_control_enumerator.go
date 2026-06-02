@@ -295,7 +295,6 @@ func (cc *CloudControlEnumerator) listByType(
 	})
 }
 
-
 func (cc *CloudControlEnumerator) newCloudControlClient(region string) (*cloudcontrol.Client, error) {
 	awsCfg, err := cc.provider.GetAWSConfig(region)
 	if err != nil {

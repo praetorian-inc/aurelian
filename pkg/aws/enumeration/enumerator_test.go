@@ -61,7 +61,10 @@ func TestEnumerator_enumerateByType_DispatchesToRegisteredLister(t *testing.T) {
 	e := newTestEnumerator(map[string]ResourceEnumerator{"AWS::S3::Bucket": mock})
 
 	out := pipeline.New[output.AWSResource]()
-	go func() { for range out.Range() {} }()
+	go func() {
+		for range out.Range() {
+		}
+	}()
 
 	err := e.listByType("AWS::S3::Bucket", out)
 	out.Close()
@@ -81,7 +84,10 @@ func TestEnumerator_List_InvalidIdentifier(t *testing.T) {
 	e := newTestEnumerator(map[string]ResourceEnumerator{})
 
 	out := pipeline.New[output.AWSResource]()
-	go func() { for range out.Range() {} }()
+	go func() {
+		for range out.Range() {
+		}
+	}()
 
 	err := e.List("garbage", out)
 	out.Close()
@@ -95,7 +101,10 @@ func TestEnumerator_enumerateByType_DispatchesSSMToRegisteredEnumerator(t *testi
 	e := newTestEnumerator(map[string]ResourceEnumerator{"AWS::SSM::Document": mock})
 
 	out := pipeline.New[output.AWSResource]()
-	go func() { for range out.Range() {} }()
+	go func() {
+		for range out.Range() {
+		}
+	}()
 
 	err := e.listByType("AWS::SSM::Document", out)
 	out.Close()
@@ -123,7 +132,10 @@ func TestEnumerator_List_SkippableError_RecordedNotReturned(t *testing.T) {
 	e := newTestEnumerator(map[string]ResourceEnumerator{"AWS::S3::Bucket": mock})
 
 	out := pipeline.New[output.AWSResource]()
-	go func() { for range out.Range() {} }()
+	go func() {
+		for range out.Range() {
+		}
+	}()
 
 	err := e.List("AWS::S3::Bucket", out)
 	out.Close()
@@ -145,7 +157,10 @@ func TestEnumerator_List_NonSkippableError_Propagated(t *testing.T) {
 	e := newTestEnumerator(map[string]ResourceEnumerator{"AWS::S3::Bucket": mock})
 
 	out := pipeline.New[output.AWSResource]()
-	go func() { for range out.Range() {} }()
+	go func() {
+		for range out.Range() {
+		}
+	}()
 
 	err := e.List("AWS::S3::Bucket", out)
 	out.Close()
@@ -163,7 +178,10 @@ func TestEnumerator_List_SuccessNotRecorded(t *testing.T) {
 	e := newTestEnumerator(map[string]ResourceEnumerator{"AWS::S3::Bucket": mock})
 
 	out := pipeline.New[output.AWSResource]()
-	go func() { for range out.Range() {} }()
+	go func() {
+		for range out.Range() {
+		}
+	}()
 
 	err := e.List("AWS::S3::Bucket", out)
 	out.Close()
@@ -244,7 +262,10 @@ func TestEnumerator_Close_WithSkips(t *testing.T) {
 	e := newTestEnumerator(map[string]ResourceEnumerator{"AWS::S3::Bucket": mock})
 
 	out := pipeline.New[output.AWSResource]()
-	go func() { for range out.Range() {} }()
+	go func() {
+		for range out.Range() {
+		}
+	}()
 	_ = e.List("AWS::S3::Bucket", out)
 	out.Close()
 
@@ -344,7 +365,10 @@ func TestEnumerator_List_IAMDenied_SyncOnce(t *testing.T) {
 
 	// First call: denied, should be caught and recorded.
 	out1 := pipeline.New[output.AWSResource]()
-	go func() { for range out1.Range() {} }()
+	go func() {
+		for range out1.Range() {
+		}
+	}()
 	err := e.List("AWS::IAM::Role", out1)
 	out1.Close()
 	require.NoError(t, err, "IAM denial should be skipped")
@@ -353,7 +377,10 @@ func TestEnumerator_List_IAMDenied_SyncOnce(t *testing.T) {
 	// Second call with same type: the mock's enumerateAllErr is still set
 	// (simulating sync.Once cached error). Should also be caught.
 	out2 := pipeline.New[output.AWSResource]()
-	go func() { for range out2.Range() {} }()
+	go func() {
+		for range out2.Range() {
+		}
+	}()
 	err = e.List("AWS::IAM::Role", out2)
 	out2.Close()
 	require.NoError(t, err, "second IAM denial should also be skipped")
@@ -379,7 +406,10 @@ func TestEnumerator_List_MultipleDeniedTypes_EachRecorded(t *testing.T) {
 
 	for _, typ := range []string{"AWS::Amplify::App", "AWS::SSM::Document", "AWS::Lambda::Function"} {
 		out := pipeline.New[output.AWSResource]()
-		go func() { for range out.Range() {} }()
+		go func() {
+			for range out.Range() {
+			}
+		}()
 		err := e.List(typ, out)
 		out.Close()
 		require.NoError(t, err, "%s denial should be skipped", typ)

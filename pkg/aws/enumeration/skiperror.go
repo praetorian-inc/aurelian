@@ -17,7 +17,7 @@ var fatalErrorCodes = map[string]struct{}{
 	"SignatureDoesNotMatch":      {},
 	"IncompleteSignature":        {},
 	"MissingAuthenticationToken": {},
-	"InvalidClientTokenId":        {},
+	"InvalidClientTokenId":       {},
 }
 
 // IsSkippableAWSError reports whether the error is a per-(region, service)
