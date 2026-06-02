@@ -19,7 +19,10 @@ cypher: |
   WITH attacker, svc
   MATCH (attacker)-[start]->(svc)
   WHERE type(start) = 'STATES_STARTEXECUTION'
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(svc)
+  WITH attacker
+  MATCH (victim:Principal)
+  WHERE victim.Arn <> attacker.Arn
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + states:CreateStateMachine + states:StartExecution',
       pe.severity = 'high',

@@ -65,9 +65,9 @@ func standaloneCase(queryID, permType string) privescTestCase {
 	}
 }
 
-// passRoleCase builds a test case for iam:PassRole + service action escalation methods.
-// The attacker holds IAM_PASSROLE on a role and svcPermType on a service resource;
-// the query should create CAN_PRIVESC from attacker to the service resource.
+// passRoleCase builds a test case for pre-existing PassRole+service methods (14–42).
+// These methods still create CAN_PRIVESC to the service resource node (pre-existing
+// Concern B design — tracked in Linear for a follow-up fix).
 func passRoleCase(queryID, svcPermType string) privescTestCase {
 	return privescTestCase{
 		queryID: queryID,
@@ -80,6 +80,26 @@ func passRoleCase(queryID, svcPermType string) privescTestCase {
 			MERGE (a)-[:`+"`%s`"+`]->(s)
 		`, attackerARN, roleARN, svcResourceARN, svcPermType),
 		verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),
+		wantEdges: 1,
+	}
+}
+
+// passRoleCaseFanOut builds a test case for new PassRole+service methods (43–89).
+// These methods fan-out CAN_PRIVESC to all Principals so paths are visible
+// to the privesc_paths.yaml analysis query (Concern B fixed for new methods).
+func passRoleCaseFanOut(queryID, svcPermType string) privescTestCase {
+	return privescTestCase{
+		queryID: queryID,
+		setup: fmt.Sprintf(`
+			CREATE (a:Principal {Arn: '%s'})
+			CREATE (v:Principal {Arn: '%s'})
+			CREATE (r:Resource  {Arn: '%s'})
+			CREATE (s:Resource  {Arn: '%s'})
+			WITH a, v, r, s
+			MERGE (a)-[:IAM_PASSROLE]->(r)
+			MERGE (a)-[:`+"`%s`"+`]->(s)
+		`, attackerARN, victimARN, roleARN, svcResourceARN, svcPermType),
+		verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 		wantEdges: 1,
 	}
 }
@@ -161,18 +181,19 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_38",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
 				CREATE (r:Resource  {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
+				WITH a, v, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:EC2_CREATELAUNCHTEMPLATE]->(s)
 				MERGE (a)-[:AUTOSCALING_CREATEAUTOSCALINGGROUP]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 			wantEdges: 1,
 		},
-		// method_40: hyphens preserved by normalizer → BEDROCK-AGENTCORE_CREATECODEINTERPRETER
-		passRoleCase("aws/enrich/privesc/method_40", "BEDROCK-AGENTCORE_CREATECODEINTERPRETER"),
+		// method_40: hyphens preserved by normalizer → BEDROCK-AGENTCORE_CREATECODEINTERPRETER (fan-out fixed)
+		passRoleCaseFanOut("aws/enrich/privesc/method_40", "BEDROCK-AGENTCORE_CREATECODEINTERPRETER"),
 		// method_41: iam:PassRole + (iam:PutRolePolicy or iam:AttachRolePolicy) on same role
 		{
 			queryID: "aws/enrich/privesc/method_41",
@@ -202,31 +223,31 @@ func allPrivescCases() []privescTestCase {
 
 		// ---- Methods 43–72 (initial gap-fill) ----
 		// method_43: iam:PassRole + apprunner:CreateService
-		passRoleCase("aws/enrich/privesc/method_43", "APPRUNNER_CREATESERVICE"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_43", "APPRUNNER_CREATESERVICE"),
 
 		// method_44: apprunner:UpdateService (standalone — no PassRole required)
 		standaloneCase("aws/enrich/privesc/method_44", "APPRUNNER_UPDATESERVICE"),
 
 		// method_45: iam:PassRole + batch:RegisterJobDefinition
-		passRoleCase("aws/enrich/privesc/method_45", "BATCH_REGISTERJOBDEFINITION"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_45", "BATCH_REGISTERJOBDEFINITION"),
 
 		// method_46: batch:SubmitJob (standalone)
 		standaloneCase("aws/enrich/privesc/method_46", "BATCH_SUBMITJOB"),
 
 		// method_47: iam:PassRole + braket:CreateJob
-		passRoleCase("aws/enrich/privesc/method_47", "BRAKET_CREATEJOB"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_47", "BRAKET_CREATEJOB"),
 
 		// method_48: iam:PassRole + cloudformation:CreateStackSet
-		passRoleCase("aws/enrich/privesc/method_48", "CLOUDFORMATION_CREATESTACKSET"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_48", "CLOUDFORMATION_CREATESTACKSET"),
 
 		// method_49: iam:PassRole + cloudformation:UpdateStackSet
-		passRoleCase("aws/enrich/privesc/method_49", "CLOUDFORMATION_UPDATESTACKSET"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_49", "CLOUDFORMATION_UPDATESTACKSET"),
 
 		// method_50: codedeploy:CreateDeployment (standalone)
 		standaloneCase("aws/enrich/privesc/method_50", "CODEDEPLOY_CREATEDEPLOYMENT"),
 
 		// method_51: iam:PassRole + cognito-identity:SetIdentityPoolRoles
-		passRoleCase("aws/enrich/privesc/method_51", "COGNITO-IDENTITY_SETIDENTITYPOOLROLES"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_51", "COGNITO-IDENTITY_SETIDENTITYPOOLROLES"),
 
 		// method_52: ec2-instance-connect:SendSSHPublicKey (standalone)
 		standaloneCase("aws/enrich/privesc/method_52", "EC2-INSTANCE-CONNECT_SENDSSHPUBLICKEY"),
@@ -235,37 +256,37 @@ func allPrivescCases() []privescTestCase {
 		standaloneCase("aws/enrich/privesc/method_53", "EC2_REPLACEIAMINSTANCEPROFILEASSOCIATION"),
 
 		// method_54: iam:PassRole + ecs:CreateService
-		passRoleCase("aws/enrich/privesc/method_54", "ECS_CREATESERVICE"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_54", "ECS_CREATESERVICE"),
 
 		// method_55: iam:PassRole + ecs:StartTask
-		passRoleCase("aws/enrich/privesc/method_55", "ECS_STARTTASK"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_55", "ECS_STARTTASK"),
 
 		// method_56: ecs:ExecuteCommand (standalone)
 		standaloneCase("aws/enrich/privesc/method_56", "ECS_EXECUTECOMMAND"),
 
 		// method_57: iam:PassRole + elasticmapreduce:RunJobFlow
-		passRoleCase("aws/enrich/privesc/method_57", "ELASTICMAPREDUCE_RUNJOBFLOW"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_57", "ELASTICMAPREDUCE_RUNJOBFLOW"),
 
 		// method_58: iam:PassRole + emr-serverless:CreateApplication
-		passRoleCase("aws/enrich/privesc/method_58", "EMR-SERVERLESS_CREATEAPPLICATION"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_58", "EMR-SERVERLESS_CREATEAPPLICATION"),
 
 		// method_59: iam:PassRole + gamelift:CreateFleet
-		passRoleCase("aws/enrich/privesc/method_59", "GAMELIFT_CREATEFLEET"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_59", "GAMELIFT_CREATEFLEET"),
 
 		// method_60: iam:PassRole + glue:CreateDevEndpoint
-		passRoleCase("aws/enrich/privesc/method_60", "GLUE_CREATEDEVENDPOINT"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_60", "GLUE_CREATEDEVENDPOINT"),
 
 		// method_61: iam:PassRole + glue:UpdateJob
-		passRoleCase("aws/enrich/privesc/method_61", "GLUE_UPDATEJOB"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_61", "GLUE_UPDATEJOB"),
 
 		// method_62: iam:PassRole + glue:CreateSession
-		passRoleCase("aws/enrich/privesc/method_62", "GLUE_CREATESESSION"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_62", "GLUE_CREATESESSION"),
 
 		// method_63: iam:PassRole + imagebuilder:CreateInfrastructureConfiguration
-		passRoleCase("aws/enrich/privesc/method_63", "IMAGEBUILDER_CREATEINFRASTRUCTURECONFIGURATION"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_63", "IMAGEBUILDER_CREATEINFRASTRUCTURECONFIGURATION"),
 
 		// method_64: iam:PassRole + kinesisanalytics:CreateApplication
-		passRoleCase("aws/enrich/privesc/method_64", "KINESISANALYTICS_CREATEAPPLICATION"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_64", "KINESISANALYTICS_CREATEAPPLICATION"),
 
 		// method_65: lambda:UpdateFunctionCode + lambda:AddPermission (two-perm compound)
 		{
@@ -283,19 +304,19 @@ func allPrivescCases() []privescTestCase {
 		},
 
 		// method_66: iam:PassRole + omics:CreateWorkflow
-		passRoleCase("aws/enrich/privesc/method_66", "OMICS_CREATEWORKFLOW"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_66", "OMICS_CREATEWORKFLOW"),
 
 		// method_67: sagemaker:UpdateNotebookInstanceLifecycleConfig (standalone)
 		standaloneCase("aws/enrich/privesc/method_67", "SAGEMAKER_UPDATENOTEBOOKINSTANCELIFECYCLECONFIG"),
 
 		// method_68: iam:PassRole + scheduler:CreateSchedule
-		passRoleCase("aws/enrich/privesc/method_68", "SCHEDULER_CREATESCHEDULE"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_68", "SCHEDULER_CREATESCHEDULE"),
 
 		// method_69: iam:PassRole + ssm:StartAutomationExecution
-		passRoleCase("aws/enrich/privesc/method_69", "SSM_STARTAUTOMATIONEXECUTION"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_69", "SSM_STARTAUTOMATIONEXECUTION"),
 
 		// method_70: iam:PassRole + states:CreateStateMachine
-		passRoleCase("aws/enrich/privesc/method_70", "STATES_CREATESTATEMACHINE"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_70", "STATES_CREATESTATEMACHINE"),
 
 		// method_71: UpdateStateMachine + StartExecution on same target (no PassRole)
 		{
@@ -317,7 +338,7 @@ func allPrivescCases() []privescTestCase {
 
 		// --- Group A: wrong-API fixes ---
 		// method_73: iam:PassRole + ec2:RequestSpotInstances (distinct from RunInstances)
-		passRoleCase("aws/enrich/privesc/method_73", "EC2_REQUESTSPOTINSTANCES"),
+		passRoleCaseFanOut("aws/enrich/privesc/method_73", "EC2_REQUESTSPOTINSTANCES"),
 
 		// method_74: ec2:CreateLaunchTemplateVersion + ec2:ModifyLaunchTemplate (no PassRole)
 		{
@@ -340,15 +361,16 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_75",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
 				CREATE (r:Resource  {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
+				WITH a, v, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:AMPLIFY_CREATEAPP]->(s)
 				MERGE (a)-[:AMPLIFY_CREATEBRANCH]->(s)
 				MERGE (a)-[:AMPLIFY_STARTJOB]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 			wantEdges: 1,
 		},
 
@@ -373,14 +395,15 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_77",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
 				CREATE (r:Resource  {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
+				WITH a, v, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GLUE_CREATEJOB]->(s)
 				MERGE (a)-[:GLUE_CREATETRIGGER]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 			wantEdges: 1,
 		},
 
@@ -389,14 +412,15 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_78",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
 				CREATE (r:Resource  {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
+				WITH a, v, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GLUE_UPDATEJOB]->(s)
 				MERGE (a)-[:GLUE_CREATETRIGGER]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 			wantEdges: 1,
 		},
 
@@ -405,14 +429,15 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_79",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
 				CREATE (r:Resource  {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
+				WITH a, v, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:LAMBDA_CREATEFUNCTION]->(s)
 				MERGE (a)-[:LAMBDA_ADDPERMISSION]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 			wantEdges: 1,
 		},
 
@@ -422,14 +447,15 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_80",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
 				CREATE (r:Resource  {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
+				WITH a, v, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GLUE_CREATEJOB]->(s)
 				MERGE (a)-[:GLUE_STARTJOBRUN]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 			wantEdges: 1,
 		},
 
@@ -438,14 +464,15 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_81",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
 				CREATE (r:Resource  {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
+				WITH a, v, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GLUE_UPDATEJOB]->(s)
 				MERGE (a)-[:GLUE_STARTJOBRUN]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 			wantEdges: 1,
 		},
 
@@ -454,14 +481,15 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_82",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
 				CREATE (r:Resource  {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
+				WITH a, v, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GLUE_CREATESESSION]->(s)
 				MERGE (a)-[:GLUE_RUNSTATEMENT]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 			wantEdges: 1,
 		},
 
@@ -470,14 +498,15 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_83",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
 				CREATE (r:Resource  {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
+				WITH a, v, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:STATES_CREATESTATEMACHINE]->(s)
 				MERGE (a)-[:STATES_STARTEXECUTION]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 			wantEdges: 1,
 		},
 
@@ -501,14 +530,15 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_85",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
 				CREATE (r:Resource  {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
+				WITH a, v, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:`+"`EMR-SERVERLESS_CREATEAPPLICATION`"+`]->(s)
 				MERGE (a)-[:`+"`EMR-SERVERLESS_STARTJOBRUN`"+`]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 			wantEdges: 1,
 		},
 
@@ -517,14 +547,15 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_86",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
 				CREATE (r:Resource  {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
+				WITH a, v, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:KINESISANALYTICS_CREATEAPPLICATION]->(s)
 				MERGE (a)-[:KINESISANALYTICS_STARTAPPLICATION]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 			wantEdges: 1,
 		},
 
@@ -533,31 +564,35 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_87",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
 				CREATE (r:Resource  {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
+				WITH a, v, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:OMICS_CREATEWORKFLOW]->(s)
 				MERGE (a)-[:OMICS_STARTRUN]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 			wantEdges: 1,
 		},
 
 		// method_88: iam:PassRole + gamelift:CreateBuild + gamelift:CreateFleet
+		// (gamelift CreateBuild and CreateFleet target different resource types)
+		// Now fans out to victim Principal.
 		{
 			queryID: "aws/enrich/privesc/method_88",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
 				CREATE (r:Resource  {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
 				CREATE (s2:Resource {Arn: 'arn:aws:gamelift:us-east-1::fleet/test'})
-				WITH a, r, s, s2
+				WITH a, v, r, s, s2
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GAMELIFT_CREATEBUILD]->(s)
 				MERGE (a)-[:GAMELIFT_CREATEFLEET]->(s2)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->() RETURN count(r) AS n`, attackerARN),
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 			wantEdges: 1,
 		},
 
@@ -566,14 +601,15 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_89",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
 				CREATE (r:Resource  {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
+				WITH a, v, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:IMAGEBUILDER_CREATEINFRASTRUCTURECONFIGURATION]->(s)
 				MERGE (a)-[:IMAGEBUILDER_CREATEIMAGE]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 			wantEdges: 1,
 		},
 	}

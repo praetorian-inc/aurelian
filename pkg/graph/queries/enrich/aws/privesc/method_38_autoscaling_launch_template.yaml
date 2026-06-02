@@ -18,7 +18,10 @@ cypher: |
   WITH attacker, service_resource
   MATCH (attacker)-[asg]->(asg_resource)
   WHERE type(asg) = 'AUTOSCALING_CREATEAUTOSCALINGGROUP'
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+  WITH attacker
+  MATCH (victim:Principal)
+  WHERE victim.Arn <> attacker.Arn
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + ec2:CreateLaunchTemplate + autoscaling:CreateAutoScalingGroup',
       pe.severity = 'high',

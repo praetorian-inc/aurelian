@@ -15,7 +15,10 @@ cypher: |
   WITH attacker
   MATCH (attacker)-[create]->(service_resource)
   WHERE type(create) = 'STATES_CREATESTATEMACHINE'
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+  WITH attacker
+  MATCH (victim:Principal)
+  WHERE victim.Arn <> attacker.Arn
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + states:CreateStateMachine',
       pe.severity = 'high',

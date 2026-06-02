@@ -18,7 +18,10 @@ cypher: |
   WITH attacker, svc
   MATCH (attacker)-[run]->(svc)
   WHERE type(run) = 'GLUE_RUNSTATEMENT'
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(svc)
+  WITH attacker
+  MATCH (victim:Principal)
+  WHERE victim.Arn <> attacker.Arn
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + glue:CreateSession + glue:RunStatement',
       pe.severity = 'high',
