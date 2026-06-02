@@ -76,13 +76,27 @@ func TestFatalError_Binary_EnumerationLevel(t *testing.T) {
 	t.Logf("Binary output:\n%s", outputStr)
 	t.Logf("Exit code error: %v", runErr)
 
-	// Binary must abort with Error — not skip.
+	// 1. Binary must show a fatal error.
 	assert.Contains(t, outputStr, "Error:",
 		"binary must abort when AccessDeniedException is fatal at enumeration level")
 	assert.Contains(t, outputStr, "AccessDeniedException",
 		"error must mention the denied operation")
+
+	// 2. Pipeline must have stopped — no resources enumerated, no skip summary.
+	assert.NotContains(t, outputStr, "enumerated",
+		"binary must NOT show 'enumerated N resources' — pipeline should have aborted")
 	assert.NotContains(t, outputStr, "skipped",
-		"binary must NOT show skip summary when the error is fatal")
+		"binary must NOT show skip summary — pipeline should have aborted before Close()")
+
+	// 3. Exit code must be non-zero.
+	assert.Error(t, runErr, "binary must exit with non-zero code on fatal error")
+
+	// 4. No output file — the pipeline aborted before writing results.
+	entries, _ := os.ReadDir(outputDir)
+	for _, e := range entries {
+		assert.NotContains(t, e.Name(), "list-all",
+			"no list-all output file should exist — pipeline aborted before writing")
+	}
 }
 
 func findRepoRootExec(t *testing.T) string {
