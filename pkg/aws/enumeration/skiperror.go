@@ -11,12 +11,14 @@ import (
 // these indicate a fundamental problem that will affect all subsequent calls
 // (bad credentials, expired token, etc.). Everything else is skippable.
 var fatalErrorCodes = map[string]struct{}{
-	"ExpiredToken":            {},
-	"ExpiredTokenException":   {},
-	"RequestExpired":          {},
-	"SignatureDoesNotMatch":   {},
-	"IncompleteSignature":     {},
+	"ExpiredToken":               {},
+	"ExpiredTokenException":      {},
+	"RequestExpired":             {},
+	"SignatureDoesNotMatch":      {},
+	"IncompleteSignature":        {},
 	"MissingAuthenticationToken": {},
+	"InvalidClientTokenId":       {},
+	"UnrecognizedClientException": {},
 }
 
 // IsSkippableAWSError reports whether the error is a per-(region, service)
