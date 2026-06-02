@@ -118,14 +118,28 @@ func allPrivescCases() []privescTestCase {
 		standaloneCase("aws/enrich/privesc/method_27", "CODEBUILD_CREATEPROJECT"),
 		// method_30: standalone — UpdateStack on existing stack, no PassRole needed
 		standaloneCase("aws/enrich/privesc/method_30", "CLOUDFORMATION_UPDATESTACK"),
+		// method_31: CreateChangeSet + ExecuteChangeSet on the SAME stack (no PassRole)
+		{
+			queryID: "aws/enrich/privesc/method_31",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
+				CREATE (t:Resource  {Arn: '%s'})
+				WITH a, v, t
+				MERGE (a)-[:CLOUDFORMATION_CREATECHANGESET]->(t)
+				MERGE (a)-[:CLOUDFORMATION_EXECUTECHANGESET]->(t)
+			`, attackerARN, victimARN, roleARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			wantEdges: 1,
+		},
 		passRoleCase("aws/enrich/privesc/method_32", "ECS_RUNTASK"),
 		standaloneCase("aws/enrich/privesc/method_33", "CODEBUILD_STARTBUILD"),
 		passRoleCase("aws/enrich/privesc/method_34", "CODEBUILD_UPDATEPROJECT"),
 		standaloneCase("aws/enrich/privesc/method_35", "SAGEMAKER_CREATEPRESIGNEDNOTEBOOKINSTANCEURL"),
 		passRoleCase("aws/enrich/privesc/method_36", "SAGEMAKER_CREATETRAININGJOB"),
 		passRoleCase("aws/enrich/privesc/method_37", "SAGEMAKER_CREATEPROCESSINGJOB"),
-		// method_40 YAML uses underscores (BEDROCK_AGENTCORE) not hyphens
-		passRoleCase("aws/enrich/privesc/method_40", "BEDROCK_AGENTCORE_CREATECODEINTERPRETER"),
+		// method_40: hyphens preserved by normalizer → BEDROCK-AGENTCORE_CREATECODEINTERPRETER
+		passRoleCase("aws/enrich/privesc/method_40", "BEDROCK-AGENTCORE_CREATECODEINTERPRETER"),
 
 		// ---- Methods 43–72 (initial gap-fill) ----
 		// method_43: iam:PassRole + apprunner:CreateService
@@ -262,7 +276,7 @@ func allPrivescCases() []privescTestCase {
 		},
 
 		// --- Group B: completely missing methods ---
-		// method_75: iam:PassRole + amplify:CreateApp + amplify:StartJob
+		// method_75: iam:PassRole + amplify:CreateApp + amplify:CreateBranch + amplify:StartJob (all same target)
 		{
 			queryID: "aws/enrich/privesc/method_75",
 			setup: fmt.Sprintf(`
@@ -272,6 +286,7 @@ func allPrivescCases() []privescTestCase {
 				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:AMPLIFY_CREATEAPP]->(s)
+				MERGE (a)-[:AMPLIFY_CREATEBRANCH]->(s)
 				MERGE (a)-[:AMPLIFY_STARTJOB]->(s)
 			`, attackerARN, roleARN, svcResourceARN),
 			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),

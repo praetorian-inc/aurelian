@@ -18,7 +18,7 @@ cypher: |
   MATCH (attacker)-[infra]->(svc)
   WHERE type(infra) = 'IMAGEBUILDER_CREATEINFRASTRUCTURECONFIGURATION'
   WITH attacker, svc
-  MATCH (attacker)-[image]->(svc2)
+  MATCH (attacker)-[image]->(svc)
   WHERE type(image) = 'IMAGEBUILDER_CREATEIMAGE'
   MERGE (attacker)-[pe:CAN_PRIVESC]->(svc)
   ON CREATE SET pe._created = timestamp()

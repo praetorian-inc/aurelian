@@ -392,7 +392,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"createdevendpoint": {"service"},
 			"updatedevendpoint": {"devEndpoint"},
 			"createjob":         {"service"},
-			"updatejob":         {"service"},
+			"updatejob":         {"job", "service"},
 			"createsession":     {"service"},
 			"createtrigger":     {"service"},
 			"startjobrun":       {"job", "service"},
@@ -573,6 +573,15 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 		ActionResourceMap: map[string][]string{
 			"createapplication": {"service"},
 			"startjobrun":       {"application", "service"},
+		},
+	},
+	"bedrock-agentcore": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service": regexp.MustCompile(`^arn:aws:bedrock-agentcore:\*:\*:\*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createcodeinterpreter": {"service"},
+			"invokesession":         {"service"},
 		},
 	},
 	"states": {

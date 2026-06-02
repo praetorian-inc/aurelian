@@ -16,11 +16,14 @@ cypher: |
   MATCH (attacker)-[app]->(svc)
   WHERE type(app) = 'AMPLIFY_CREATEAPP'
   WITH attacker, svc
-  MATCH (attacker)-[job]->(svc2)
+  MATCH (attacker)-[branch]->(svc)
+  WHERE type(branch) = 'AMPLIFY_CREATEBRANCH'
+  WITH attacker, svc
+  MATCH (attacker)-[job]->(svc)
   WHERE type(job) = 'AMPLIFY_STARTJOB'
   MERGE (attacker)-[pe:CAN_PRIVESC]->(svc)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:PassRole + amplify:CreateApp + amplify:StartJob',
+  SET pe.method = 'iam:PassRole + amplify:CreateApp + amplify:CreateBranch + amplify:StartJob',
       pe.severity = 'high',
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

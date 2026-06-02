@@ -16,7 +16,7 @@ cypher: |
   MATCH (attacker)-[create]->(svc)
   WHERE type(create) = 'LAMBDA_CREATEFUNCTION'
   WITH attacker, svc
-  MATCH (attacker)-[addperm]->(svc2)
+  MATCH (attacker)-[addperm]->(svc)
   WHERE type(addperm) = 'LAMBDA_ADDPERMISSION'
   MERGE (attacker)-[pe:CAN_PRIVESC]->(svc)
   ON CREATE SET pe._created = timestamp()

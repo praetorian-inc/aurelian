@@ -12,8 +12,8 @@ order: 131
 cypher: |
   MATCH (attacker:Principal)-[create]->(target)
   WHERE type(create) = 'CLOUDFORMATION_CREATECHANGESET'
-  WITH attacker
-  MATCH (attacker)-[execute]->(exec_resource)
+  WITH attacker, target
+  MATCH (attacker)-[execute]->(target)
   WHERE type(execute) = 'CLOUDFORMATION_EXECUTECHANGESET'
   WITH attacker
   MATCH (victim:Principal)

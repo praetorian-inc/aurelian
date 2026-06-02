@@ -17,7 +17,7 @@ cypher: |
   MATCH (attacker)-[create]->(svc)
   WHERE type(create) = 'STATES_CREATESTATEMACHINE'
   WITH attacker, svc
-  MATCH (attacker)-[start]->(svc2)
+  MATCH (attacker)-[start]->(svc)
   WHERE type(start) = 'STATES_STARTEXECUTION'
   MERGE (attacker)-[pe:CAN_PRIVESC]->(svc)
   ON CREATE SET pe._created = timestamp()

@@ -16,7 +16,7 @@ cypher: |
   MATCH (attacker)-[create]->(svc)
   WHERE type(create) = 'GLUE_CREATESESSION'
   WITH attacker, svc
-  MATCH (attacker)-[run]->(svc2)
+  MATCH (attacker)-[run]->(svc)
   WHERE type(run) = 'GLUE_RUNSTATEMENT'
   MERGE (attacker)-[pe:CAN_PRIVESC]->(svc)
   ON CREATE SET pe._created = timestamp()

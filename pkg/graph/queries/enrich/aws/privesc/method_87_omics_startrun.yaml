@@ -17,7 +17,7 @@ cypher: |
   MATCH (attacker)-[create]->(svc)
   WHERE type(create) = 'OMICS_CREATEWORKFLOW'
   WITH attacker, svc
-  MATCH (attacker)-[run]->(svc2)
+  MATCH (attacker)-[run]->(svc)
   WHERE type(run) = 'OMICS_STARTRUN'
   MERGE (attacker)-[pe:CAN_PRIVESC]->(svc)
   ON CREATE SET pe._created = timestamp()
