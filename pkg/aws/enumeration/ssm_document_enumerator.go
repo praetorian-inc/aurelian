@@ -77,6 +77,10 @@ func (e *SSMDocumentEnumerator) EnumerateByARN(arn string, out *pipeline.P[outpu
 		Name: aws.String(docName),
 	})
 	if err != nil {
+		if op := ClassifySkippable(err, "ssm", "DescribeDocument", parsed.Region); op != nil {
+			e.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return fmt.Errorf("describe document %s: %w", docName, err)
 	}
 

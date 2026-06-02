@@ -469,3 +469,4 @@ func TestEnumerator_List_FatalError_StopsPipeline(t *testing.T) {
 	assert.Equal(t, 1, callCount,
 		"pipeline must stop after first fatal error — second type should not be attempted")
 }
+

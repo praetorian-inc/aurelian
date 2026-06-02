@@ -82,6 +82,10 @@ func (l *EC2ImageEnumerator) EnumerateByARN(arn string, out *pipeline.P[output.A
 		ImageIds: []string{imageID},
 	})
 	if err != nil {
+		if op := ClassifySkippable(err, "ec2", "DescribeImages", parsed.Region); op != nil {
+			l.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return fmt.Errorf("describe image %s: %w", imageID, err)
 	}
 	if len(result.Images) == 0 {
@@ -90,6 +94,10 @@ func (l *EC2ImageEnumerator) EnumerateByARN(arn string, out *pipeline.P[output.A
 
 	resource, err := buildResource(context.Background(), client, result.Images[0], parsed.AccountID, parsed.Region)
 	if err != nil {
+		if op := ClassifySkippable(err, "ec2", "DescribeImageAttribute", parsed.Region); op != nil {
+			l.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return err
 	}
 	out.Send(resource)
@@ -119,19 +127,32 @@ func (l *EC2ImageEnumerator) listImagesInRegion(region, accountID string, out *p
 		return nil
 	}
 
+	var skipped []SkippedOp
 	for _, image := range result.Images {
 		resource, err := buildResource(context.Background(), client, image, accountID, region)
 		if err != nil {
-			slog.Warn("failed to build EC2 image resource",
-				"image_id", aws.ToString(image.ImageId),
-				"region", region,
-				"error", err,
-			)
-			continue
+			if op := ClassifySkippable(err, "ec2", "DescribeImageAttribute", region); op != nil {
+				skipped = append(skipped, *op)
+				resource = buildPartialResource(image, accountID, region)
+			} else {
+				return fmt.Errorf("build EC2 image resource %s: %w", aws.ToString(image.ImageId), err)
+			}
+		} else {
+			instances, err := findInstancesUsingImage(context.Background(), client, aws.ToString(image.ImageId))
+			if err != nil {
+				if op := ClassifySkippable(err, "ec2", "DescribeInstances", region); op != nil {
+					skipped = append(skipped, *op)
+				} else {
+					return fmt.Errorf("find instances using image %s: %w", aws.ToString(image.ImageId), err)
+				}
+			} else if len(instances) > 0 {
+				resource.Properties["InUseByInstances"] = instances
+			}
 		}
 		out.Send(resource)
 	}
 
+	l.skipReport.RecordBatch(skipped)
 	return nil
 }
 
@@ -147,7 +168,6 @@ func buildResource(ctx context.Context, client *ec2.Client, image ec2types.Image
 	}
 
 	snapshotIDs := extractImageSnapshotIDs(image.BlockDeviceMappings)
-	instances := findInstancesUsingImage(ctx, client, imageID)
 
 	return output.AWSResource{
 		ResourceType: "AWS::EC2::Image",
@@ -157,16 +177,39 @@ func buildResource(ctx context.Context, client *ec2.Client, image ec2types.Image
 		Region:       region,
 		DisplayName:  aws.ToString(image.Name),
 		Properties: map[string]any{
-			"ImageId":          imageID,
-			"Name":             aws.ToString(image.Name),
-			"Description":      aws.ToString(image.Description),
-			"CreationDate":     aws.ToString(image.CreationDate),
-			"Architecture":     string(image.Architecture),
-			"IsPublic":         isImagePublic(permResult.LaunchPermissions),
-			"SnapshotIds":      snapshotIDs,
-			"InUseByInstances": instances,
+			"ImageId":      imageID,
+			"Name":         aws.ToString(image.Name),
+			"Description":  aws.ToString(image.Description),
+			"CreationDate": aws.ToString(image.CreationDate),
+			"Architecture": string(image.Architecture),
+			"IsPublic":     isImagePublic(permResult.LaunchPermissions),
+			"SnapshotIds":  snapshotIDs,
 		},
 	}, nil
+}
+
+// buildPartialResource creates an AWSResource from image metadata alone, without
+// launch permissions or instance usage data. Used when DescribeImageAttribute is
+// denied so the image is still emitted (with IsPublic unknown) rather than silently
+// dropped from the listing.
+func buildPartialResource(image ec2types.Image, accountID, region string) output.AWSResource {
+	imageID := aws.ToString(image.ImageId)
+	return output.AWSResource{
+		ResourceType: "AWS::EC2::Image",
+		ResourceID:   imageID,
+		ARN:          fmt.Sprintf("arn:aws:ec2:%s:%s:image/%s", region, accountID, imageID),
+		AccountRef:   accountID,
+		Region:       region,
+		DisplayName:  aws.ToString(image.Name),
+		Properties: map[string]any{
+			"ImageId":      imageID,
+			"Name":         aws.ToString(image.Name),
+			"Description":  aws.ToString(image.Description),
+			"CreationDate": aws.ToString(image.CreationDate),
+			"Architecture": string(image.Architecture),
+			"SnapshotIds":  extractImageSnapshotIDs(image.BlockDeviceMappings),
+		},
+	}
 }
 
 func isImagePublic(permissions []ec2types.LaunchPermission) bool {
@@ -185,7 +228,7 @@ func extractImageSnapshotIDs(mappings []ec2types.BlockDeviceMapping) []string {
 	return ids
 }
 
-func findInstancesUsingImage(ctx context.Context, client *ec2.Client, imageID string) []string {
+func findInstancesUsingImage(ctx context.Context, client *ec2.Client, imageID string) ([]string, error) {
 	result, err := client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
 		Filters: []ec2types.Filter{
 			{
@@ -199,11 +242,7 @@ func findInstancesUsingImage(ctx context.Context, client *ec2.Client, imageID st
 		},
 	})
 	if err != nil {
-		slog.Debug("failed to find instances using image",
-			"image_id", imageID,
-			"error", err,
-		)
-		return nil
+		return nil, err
 	}
 
 	var instanceIDs []string
@@ -212,5 +251,5 @@ func findInstancesUsingImage(ctx context.Context, client *ec2.Client, imageID st
 			instanceIDs = append(instanceIDs, aws.ToString(instance.InstanceId))
 		}
 	}
-	return instanceIDs
+	return instanceIDs, nil
 }

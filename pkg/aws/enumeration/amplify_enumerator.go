@@ -75,6 +75,10 @@ func (e *AmplifyAppEnumerator) EnumerateByARN(arn string, out *pipeline.P[output
 		AppId: aws.String(appID),
 	})
 	if err != nil {
+		if op := ClassifySkippable(err, "amplify", "GetApp", parsed.Region); op != nil {
+			e.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return fmt.Errorf("get amplify app %s: %w", appID, err)
 	}
 

@@ -80,6 +80,10 @@ func (l *S3Enumerator) EnumerateByARN(arn string, out *pipeline.P[output.AWSReso
 		Bucket: &bucketName,
 	})
 	if err != nil {
+		if op := ClassifySkippable(err, "s3", "HeadBucket", l.Regions[0]); op != nil {
+			l.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return fmt.Errorf("head bucket %s: %w", bucketName, err)
 	}
 
