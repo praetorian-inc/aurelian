@@ -267,8 +267,6 @@ func countClassifyOnErrorPath(val ssa.Value, classifyFn *ssa.Function, cg *callg
 	// unconditionally), they're cumulative.
 	if classifyCount > 0 {
 		if !classifyAndPropagateAreExclusive(val, classifyFn, refs) {
-			// Classify and propagate are on the same runtime path.
-			// Re-trace with fresh visited map to get accurate propagate count.
 			freshPropagateCount := countPropagateOnly(val, classifyFn, cg)
 			if freshPropagateCount > 0 {
 				return classifyCount + freshPropagateCount
@@ -286,10 +284,17 @@ func countClassifyOnErrorPath(val ssa.Value, classifyFn *ssa.Function, cg *callg
 // calls at the caller level. This is used when we know the error was
 // classified at this level AND returned — the fresh trace ensures the
 // caller's ClassifySkippable isn't missed due to visited-map pollution.
+// countPropagateOnly re-traces the error with a fresh visited map and
+// returns the count of ClassifySkippable calls reachable through
+// propagation paths (excluding the classification at this level).
+// Uses the full recursive countClassifyOnErrorPath, then subtracts
+// the known classification at this level.
+// countPropagateOnly re-traces the error with a fresh visited map.
+// It counts ALL ClassifySkippable calls reachable (including at this level),
+// then subtracts 1 for the classification at this level.
+// Uses noCumulativeCheck=true to prevent recursive re-entry.
 func countPropagateOnly(val ssa.Value, classifyFn *ssa.Function, cg *callgraph.Graph) int {
 	freshVisited := make(map[ssa.Value]bool)
-	// Mark the value itself and the ClassifySkippable call as visited
-	// so we don't re-count the classification at this level.
 	freshVisited[val] = true
 
 	refs := val.Referrers()
@@ -297,10 +302,27 @@ func countPropagateOnly(val ssa.Value, classifyFn *ssa.Function, cg *callgraph.G
 		return 0
 	}
 
+	// Trace ONLY propagation referrers (skip ClassifySkippable Call).
+	// For each downstream value, use full recursive countClassifyOnErrorPath.
 	count := 0
 	returnFnSeen := make(map[*ssa.Function]bool)
 	for _, instr := range *refs {
 		switch v := instr.(type) {
+		case *ssa.Call:
+			if v.Common().StaticCallee() == classifyFn {
+				continue // skip the classification at this level
+			}
+			if callee := v.Common().StaticCallee(); callee != nil {
+				c := traceIntoCallee(val, v, callee, classifyFn, cg, freshVisited)
+				if c > count {
+					count = c
+				}
+			} else if isValArgOfCall(val, v) {
+				c := countClassifyOnErrorPath(v, classifyFn, cg, freshVisited)
+				if c > count {
+					count = c
+				}
+			}
 		case *ssa.Return:
 			fn := v.Parent()
 			if returnFnSeen[fn] {
@@ -319,8 +341,18 @@ func countPropagateOnly(val ssa.Value, classifyFn *ssa.Function, cg *callgraph.G
 					}
 				}
 			}
+		case *ssa.Phi:
+			c := countClassifyOnErrorPath(v, classifyFn, cg, freshVisited)
+			if c > count {
+				count = c
+			}
 		case *ssa.ChangeInterface:
 			c := traceChangeInterface(v, classifyFn, cg, freshVisited)
+			if c > count {
+				count = c
+			}
+		case *ssa.MakeInterface:
+			c := countClassifyOnErrorPath(v, classifyFn, cg, freshVisited)
 			if c > count {
 				count = c
 			}
@@ -329,14 +361,13 @@ func countPropagateOnly(val ssa.Value, classifyFn *ssa.Function, cg *callgraph.G
 			if c > count {
 				count = c
 			}
-		default:
-			// Any other value-producing instruction (append result, etc.)
-			if valInstr, ok := instr.(ssa.Value); ok {
-				c := countClassifyOnErrorPath(valInstr, classifyFn, cg, freshVisited)
-				if c > count {
-					count = c
-				}
+		case *ssa.IndexAddr:
+			c := traceFromStore(v, classifyFn, cg, freshVisited)
+			if c > count {
+				count = c
 			}
+		case *ssa.BinOp:
+			continue
 		}
 	}
 	return count
@@ -527,22 +558,14 @@ func traceIntoCallee(errVal ssa.Value, call *ssa.Call, callee *ssa.Function, cla
 	return 0
 }
 
-// traceReturnToCallers uses the VTA call graph to find all callers and
-// traces the returned error at each call site. Returns MAX across call
-// sites (each is an independent invocation at runtime).
 // traceReturnToCallers traces the returned error to all callers via VTA.
-// Returns MIN across callers: if ANY caller fails to classify (count=0),
-// the function's error is not always classified. This catches the case
-// where a helper function (e.g., buildResource) is called from multiple
-// sites and one site drops the error.
+// Returns MAX across callers (each call site is an independent runtime
+// invocation). Each caller gets a fresh copy of the visited map so they
+// don't pollute each other's traces.
 func traceReturnToCallers(fn *ssa.Function, errIdx int, classifyFn *ssa.Function, cg *callgraph.Graph, visited map[ssa.Value]bool) int {
 	node := cg.Nodes[fn]
 
-	// Check each caller independently with a fresh copy of the visited
-	// map. This prevents callers from polluting each other's traces.
-	// Use MIN across callers: if ANY caller fails to classify (count=0),
-	// the error is not always handled correctly.
-	minCount := -1
+	maxCount := 0
 	foundCaller := false
 	if node != nil {
 		for _, edge := range node.In {
@@ -555,8 +578,8 @@ func traceReturnToCallers(fn *ssa.Function, errIdx int, classifyFn *ssa.Function
 				callerVisited := copyVisited(visited)
 				c := countClassifyOnErrorPath(errAtCaller, classifyFn, cg, callerVisited)
 				foundCaller = true
-				if minCount < 0 || c < minCount {
-					minCount = c
+				if c > maxCount {
+					maxCount = c
 				}
 			}
 		}
@@ -564,15 +587,12 @@ func traceReturnToCallers(fn *ssa.Function, errIdx int, classifyFn *ssa.Function
 
 	if !foundCaller {
 		c := traceClosureReturn(fn, errIdx, classifyFn, cg, visited)
-		if c > 0 {
-			return c
+		if c > maxCount {
+			maxCount = c
 		}
 	}
 
-	if minCount < 0 {
-		return 0
-	}
-	return minCount
+	return maxCount
 }
 
 // traceClosureReturn handles closures passed as arguments to external
