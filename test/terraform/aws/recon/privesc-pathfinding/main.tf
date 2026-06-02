@@ -255,3 +255,174 @@ resource "aws_iam_user_policy" "ec2_004" {
     }]
   })
 }
+
+# =============================================================================
+# FALSE POSITIVE users — each has only ONE of the two required permissions.
+# Methods that need N permissions must NOT fire with N-1 permissions.
+# =============================================================================
+
+# FP: PassRole alone (no service action) → no PassRole+service method should fire
+resource "aws_iam_user" "fp_passrole_only" {
+  name = "${local.prefix}-fp-passrole-only"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-passrole-only" }
+}
+resource "aws_iam_user_policy" "fp_passrole_only" {
+  name = "${local.prefix}-fp-passrole-only"
+  user = aws_iam_user.fp_passrole_only.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:PassRole"], Resource = aws_iam_role.admin_target.arn }]
+  })
+}
+
+# FP: CreateFunction alone (no PassRole, no InvokeFunction) → method_14 must NOT fire
+resource "aws_iam_user" "fp_lambda_createfunction_only" {
+  name = "${local.prefix}-fp-lambda-cf-only"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-lambda-createfunction-only" }
+}
+resource "aws_iam_user_policy" "fp_lambda_createfunction_only" {
+  name = "${local.prefix}-fp-lambda-cf-only"
+  user = aws_iam_user.fp_lambda_createfunction_only.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["lambda:CreateFunction"], Resource = "*" }]
+  })
+}
+
+# FP: InvokeFunction alone (no PassRole, no CreateFunction) → method_14 must NOT fire
+resource "aws_iam_user" "fp_lambda_invoke_only" {
+  name = "${local.prefix}-fp-lambda-inv-only"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-lambda-invoke-only" }
+}
+resource "aws_iam_user_policy" "fp_lambda_invoke_only" {
+  name = "${local.prefix}-fp-lambda-inv-only"
+  user = aws_iam_user.fp_lambda_invoke_only.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["lambda:InvokeFunction"], Resource = "*" }]
+  })
+}
+
+# FP: RunInstances alone (no PassRole) → method_15 must NOT fire
+resource "aws_iam_user" "fp_ec2_runinstances_only" {
+  name = "${local.prefix}-fp-ec2-run-only"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-ec2-runinstances-only" }
+}
+resource "aws_iam_user_policy" "fp_ec2_runinstances_only" {
+  name = "${local.prefix}-fp-ec2-run-only"
+  user = aws_iam_user.fp_ec2_runinstances_only.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["ec2:RunInstances"], Resource = "*" }]
+  })
+}
+
+# FP: CreateStack alone (no PassRole) → method_16 (PassRole+CreateStack) must NOT fire
+resource "aws_iam_user" "fp_cfn_createstack_only" {
+  name = "${local.prefix}-fp-cfn-cs-only"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-cfn-createstack-only" }
+}
+resource "aws_iam_user_policy" "fp_cfn_createstack_only" {
+  name = "${local.prefix}-fp-cfn-cs-only"
+  user = aws_iam_user.fp_cfn_createstack_only.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["cloudformation:CreateStack"], Resource = "*" }]
+  })
+}
+
+# FP: CreateJob alone (no PassRole, no StartJobRun) → method_80 must NOT fire
+resource "aws_iam_user" "fp_glue_createjob_only" {
+  name = "${local.prefix}-fp-glue-cj-only"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-glue-createjob-only" }
+}
+resource "aws_iam_user_policy" "fp_glue_createjob_only" {
+  name = "${local.prefix}-fp-glue-cj-only"
+  user = aws_iam_user.fp_glue_createjob_only.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["glue:CreateJob"], Resource = "*" }]
+  })
+}
+
+# FP: PassRole + CreateJob (no StartJobRun) → method_80 must NOT fire (needs all 3)
+resource "aws_iam_user" "fp_glue_passrole_createjob_nostartjobrun" {
+  name = "${local.prefix}-fp-glue-no-sjr"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-glue-passrole-createjob-nostartjobrun" }
+}
+resource "aws_iam_user_policy" "fp_glue_passrole_createjob_nostartjobrun" {
+  name = "${local.prefix}-fp-glue-no-sjr"
+  user = aws_iam_user.fp_glue_passrole_createjob_nostartjobrun.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "glue:CreateJob"]
+      Resource = "*"
+    }]
+  })
+}
+
+# FP: PassRole + CreateStateMachine (no StartExecution) → method_83 must NOT fire
+resource "aws_iam_user" "fp_sfn_no_startexecution" {
+  name = "${local.prefix}-fp-sfn-no-start"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-sfn-no-startexecution" }
+}
+resource "aws_iam_user_policy" "fp_sfn_no_startexecution" {
+  name = "${local.prefix}-fp-sfn-no-start"
+  user = aws_iam_user.fp_sfn_no_startexecution.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "states:CreateStateMachine"]
+      Resource = "*"
+    }]
+  })
+}
+
+# FP: ECS CreateService alone (no PassRole) → method_54 must NOT fire
+resource "aws_iam_user" "fp_ecs_createservice_only" {
+  name = "${local.prefix}-fp-ecs-cs-only"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-ecs-createservice-only" }
+}
+resource "aws_iam_user_policy" "fp_ecs_createservice_only" {
+  name = "${local.prefix}-fp-ecs-cs-only"
+  user = aws_iam_user.fp_ecs_createservice_only.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["ecs:CreateService"], Resource = "*" }]
+  })
+}
+
+# FP: PassRole + CreateApplication (no StartJobRun) → method_85 must NOT fire
+resource "aws_iam_user" "fp_emr_serverless_no_startjobrun" {
+  name = "${local.prefix}-fp-emrs-no-sjr"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-emrs-no-startjobrun" }
+}
+resource "aws_iam_user_policy" "fp_emr_serverless_no_startjobrun" {
+  name = "${local.prefix}-fp-emrs-no-sjr"
+  user = aws_iam_user.fp_emr_serverless_no_startjobrun.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["iam:PassRole", "emr-serverless:CreateApplication"]
+      Resource = "*"
+    }]
+  })
+}
+
+# FP: SSM CreateDocument alone (no StartAutomationExecution) → method_84 must NOT fire
+resource "aws_iam_user" "fp_ssm_createdoc_only" {
+  name = "${local.prefix}-fp-ssm-cd-only"
+  tags = { Purpose = "aurelian-pathfinding-e2e", Lab = "fp-ssm-createdocument-only" }
+}
+resource "aws_iam_user_policy" "fp_ssm_createdoc_only" {
+  name = "${local.prefix}-fp-ssm-cd-only"
+  user = aws_iam_user.fp_ssm_createdoc_only.name
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["ssm:CreateDocument"], Resource = "*" }]
+  })
+}
