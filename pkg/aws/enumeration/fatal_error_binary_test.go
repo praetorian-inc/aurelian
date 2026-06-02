@@ -83,6 +83,9 @@ func TestFatalError_Binary_EnumerationLevel(t *testing.T) {
 		"error must mention the denied operation")
 
 	// 2. Pipeline must have stopped — no resources enumerated, no skip summary.
+	// NOTE: when LAB-3942 (graceful shutdown) is implemented, these assertions
+	// will need updating — the binary will show partial results and a skip
+	// summary even on fatal errors.
 	assert.NotContains(t, outputStr, "enumerated",
 		"binary must NOT show 'enumerated N resources' — pipeline should have aborted")
 	assert.NotContains(t, outputStr, "skipped",
