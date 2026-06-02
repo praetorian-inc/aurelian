@@ -748,24 +748,17 @@ func TestEnrichAWSPrivescEndToEnd(t *testing.T) {
 	err = EnrichAWS(ctx, db)
 	require.NoError(t, err, "EnrichAWS should succeed")
 
-	// MERGE is idempotent on (start, end, type) — all standalone methods share one edge to victim,
-	// all PassRole+service methods share one edge to svc. Assert both targets got a CAN_PRIVESC edge.
-	for _, tc := range []struct {
-		label  string
-		target string
-	}{
-		{"standalone methods → victim", victimARN},
-		{"PassRole+service methods → svc", svcResourceARN},
-	} {
-		result, err := db.Query(ctx,
-			fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(t {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, tc.target),
-			nil)
-		require.NoError(t, err)
-		require.Len(t, result.Records, 1)
-		n, _ := toInt64(result.Records[0]["n"])
-		t.Logf("%s: %d CAN_PRIVESC edge(s)", tc.label, n)
-		assert.GreaterOrEqual(t, int(n), 1, "expected at least 1 CAN_PRIVESC edge for %s", tc.label)
-	}
+	// After the Concern B fix (methods 43–89 fan-out to all Principals), MERGE deduplicates all
+	// edges per (attacker, victim, type) — every method fires to the same victim node, producing
+	// exactly 1 shared CAN_PRIVESC edge. Assert that edge exists.
+	result, err := db.Query(ctx,
+		fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+		nil)
+	require.NoError(t, err)
+	require.Len(t, result.Records, 1)
+	n, _ := toInt64(result.Records[0]["n"])
+	t.Logf("CAN_PRIVESC edges attacker→victim: %d", n)
+	assert.GreaterOrEqual(t, int(n), 1, "enrichment should produce at least 1 CAN_PRIVESC edge to victim")
 }
 
 // TestPrivescMultiHopPaths verifies that EnrichAWS produces CAN_PRIVESC edges
@@ -957,6 +950,55 @@ func TestPrivescAnalysisQuery(t *testing.T) {
 				"attacker and target should never be the same principal")
 		}
 	})
+}
+
+// TestPassRoleServiceFanOutReachesAnalysisQuery is the critical end-to-end proof for the
+// Concern B fix: seeds a PassRole+service method (method_43), runs EnrichAWS, then runs
+// the registered aws/analysis/privesc_paths query and asserts the path appears in output.
+// Before the fix, enrichment produced 0 analysis results for PassRole+service attackers.
+func TestPassRoleServiceFanOutReachesAnalysisQuery(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err)
+	t.Cleanup(cleanup)
+
+	cfg := graph.NewConfig(boltURL, "", "")
+	db, err := adapters.NewNeo4jAdapter(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	// Seed a principal with ONLY PassRole + AppRunner CreateService (method_43).
+	// Before the fan-out fix this would produce 0 analysis findings.
+	_, err = db.Query(ctx, fmt.Sprintf(`
+		CREATE (attacker:Principal {Arn: '%s', _is_admin: false})
+		CREATE (admin:Principal    {Arn: 'arn:aws:iam::123:role/admin', _is_admin: true})
+		CREATE (role:Resource      {Arn: '%s'})
+		CREATE (svc:Resource       {Arn: '%s'})
+		WITH attacker, admin, role, svc
+		MERGE (attacker)-[:IAM_PASSROLE]->(role)
+		MERGE (attacker)-[:APPRUNNER_CREATESERVICE]->(svc)
+	`, attackerARN, roleARN, svcResourceARN), nil)
+	require.NoError(t, err)
+
+	err = EnrichAWS(ctx, db)
+	require.NoError(t, err)
+
+	// The analysis query must now find a path from this attacker to admin.
+	result, err := RunPlatformQuery(ctx, db, "aws/analysis/privesc_paths", nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	found := false
+	for _, rec := range result.Records {
+		if rec["attacker_arn"] == attackerARN {
+			found = true
+			t.Logf("Found: %s → %s (%v hops)", rec["attacker_arn"], rec["target_arn"], rec["hop_count"])
+		}
+	}
+	assert.True(t, found,
+		"PassRole+AppRunner attacker must appear in analysis output after fan-out fix — "+
+			"if this fails, method_43 (or another PassRole+service method) has regressed to pointing at service_resource")
 }
 
 // toInt64 coerces common numeric types returned by the Neo4j driver to int64.
