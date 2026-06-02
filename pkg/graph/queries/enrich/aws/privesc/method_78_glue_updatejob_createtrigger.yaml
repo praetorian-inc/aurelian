@@ -16,7 +16,7 @@ cypher: |
   MATCH (attacker)-[update]->(svc)
   WHERE type(update) = 'GLUE_UPDATEJOB'
   WITH attacker, svc
-  MATCH (attacker)-[trigger]->(svc2)
+  MATCH (attacker)-[trigger]->(svc)
   WHERE type(trigger) = 'GLUE_CREATETRIGGER'
   MERGE (attacker)-[pe:CAN_PRIVESC]->(svc)
   ON CREATE SET pe._created = timestamp()

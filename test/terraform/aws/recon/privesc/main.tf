@@ -164,7 +164,7 @@ resource "aws_iam_user_policy" "new_services_passrole" {
           "omics:CreateWorkflow",
           # method_68: EventBridge Scheduler CreateSchedule
           "scheduler:CreateSchedule",
-          # method_69: SSM StartAutomationExecution
+          # method_69: SSM StartAutomationExecution (also in extended_services_exec for method_84)
           "ssm:StartAutomationExecution",
           # method_70: Step Functions CreateStateMachine
           "states:CreateStateMachine",
@@ -307,8 +307,9 @@ resource "aws_iam_user_policy" "extended_services_exec" {
         "glue:CreateTrigger",
         # method_83: states:StartExecution (paired with CreateStateMachine)
         "states:StartExecution",
-        # method_84: ssm:CreateDocument (paired with StartAutomationExecution)
+        # method_84: ssm:CreateDocument + StartAutomationExecution (both on same user)
         "ssm:CreateDocument",
+        "ssm:StartAutomationExecution",
         # method_85: emr-serverless:StartJobRun (paired with CreateApplication)
         "emr-serverless:StartJobRun",
         # method_86: kinesisanalytics:StartApplication (paired with CreateApplication)
