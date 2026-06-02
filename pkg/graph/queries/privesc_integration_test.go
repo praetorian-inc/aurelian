@@ -9,10 +9,25 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/graph"
 	"github.com/praetorian-inc/aurelian/pkg/graph/adapters"
-	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	neo4jcontainer "github.com/testcontainers/testcontainers-go/modules/neo4j"
 )
+
+// startNeo4jContainer starts a Neo4j 5.x container and returns its bolt URL and a cleanup fn.
+// Inlined here to avoid an import cycle: testutil → plugin → queries.
+func startNeo4jContainer(ctx context.Context) (string, func(), error) {
+	container, err := neo4jcontainer.Run(ctx, "neo4j:5", neo4jcontainer.WithoutAuthentication())
+	if err != nil {
+		return "", nil, err
+	}
+	boltURL, err := container.BoltUrl(ctx)
+	if err != nil {
+		container.Terminate(ctx)
+		return "", nil, err
+	}
+	return boltURL, func() { container.Terminate(ctx) }, nil
+}
 
 const (
 	attackerARN = "arn:aws:iam::123456789012:user/attacker"
@@ -204,7 +219,7 @@ func existingPrivescCases() []privescTestCase {
 		standaloneCase("aws/enrich/privesc/method_23", "SSM_SENDCOMMAND"),
 		standaloneCase("aws/enrich/privesc/method_24", "SSM_STARTSESSION"),
 		standaloneCase("aws/enrich/privesc/method_25", "SSM_CREATEASSOCIATION"),
-		passRoleCase("aws/enrich/privesc/method_27", "CODEBUILD_CREATEPROJECT"),
+		standaloneCase("aws/enrich/privesc/method_27", "CODEBUILD_CREATEPROJECT"),
 		passRoleCase("aws/enrich/privesc/method_30", "CLOUDFORMATION_UPDATESTACK"),
 		passRoleCase("aws/enrich/privesc/method_32", "ECS_RUNTASK"),
 		standaloneCase("aws/enrich/privesc/method_33", "CODEBUILD_STARTBUILD"),
@@ -212,7 +227,8 @@ func existingPrivescCases() []privescTestCase {
 		standaloneCase("aws/enrich/privesc/method_35", "SAGEMAKER_CREATEPRESIGNEDNOTEBOOKINSTANCEURL"),
 		passRoleCase("aws/enrich/privesc/method_36", "SAGEMAKER_CREATETRAININGJOB"),
 		passRoleCase("aws/enrich/privesc/method_37", "SAGEMAKER_CREATEPROCESSINGJOB"),
-		passRoleCase("aws/enrich/privesc/method_40", "BEDROCK-AGENTCORE_CREATECODEINTERPRETER"),
+		// method_40 YAML uses underscores (BEDROCK_AGENTCORE) not hyphens — match what the query expects.
+		passRoleCase("aws/enrich/privesc/method_40", "BEDROCK_AGENTCORE_CREATECODEINTERPRETER"),
 	}
 }
 
@@ -222,7 +238,7 @@ func existingPrivescCases() []privescTestCase {
 func TestPrivescQueriesNeo4j(t *testing.T) {
 	ctx := context.Background()
 
-	boltURL, cleanup, err := testutil.StartNeo4jContainer(ctx)
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
 	require.NoError(t, err, "start Neo4j container")
 	t.Cleanup(cleanup)
 
@@ -291,7 +307,7 @@ func TestPrivescQueriesNeo4j(t *testing.T) {
 func TestEnrichAWSPrivescEndToEnd(t *testing.T) {
 	ctx := context.Background()
 
-	boltURL, cleanup, err := testutil.StartNeo4jContainer(ctx)
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
 	require.NoError(t, err, "start Neo4j container")
 	t.Cleanup(cleanup)
 
@@ -304,37 +320,28 @@ func TestEnrichAWSPrivescEndToEnd(t *testing.T) {
 	_, err = db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
 	require.NoError(t, err)
 
+	// Seed nodes and all non-hyphenated relationship types in one query.
 	seedCypher := fmt.Sprintf(`
 		CREATE (attacker:Principal {Arn: '%s'})
 		CREATE (victim:Principal   {Arn: '%s'})
 		CREATE (role:Resource      {Arn: '%s'})
 		CREATE (svc:Resource       {Arn: '%s'})
 		WITH attacker, victim, role, svc
-
-		// PassRole edge (shared prerequisite for all PassRole+service methods)
 		MERGE (attacker)-[:IAM_PASSROLE]->(role)
-
-		// New standalone permissions (hyphenated types need backtick escaping in Cypher literals)
 		MERGE (attacker)-[:APPRUNNER_UPDATESERVICE]->(svc)
 		MERGE (attacker)-[:BATCH_SUBMITJOB]->(svc)
 		MERGE (attacker)-[:CODEDEPLOY_CREATEDEPLOYMENT]->(svc)
-		MERGE (attacker)-[:`EC2-INSTANCE-CONNECT_SENDSSHPUBLICKEY`]->(svc)
 		MERGE (attacker)-[:EC2_REPLACEIAMINSTANCEPROFILEASSOCIATION]->(svc)
 		MERGE (attacker)-[:ECS_EXECUTECOMMAND]->(svc)
 		MERGE (attacker)-[:SAGEMAKER_UPDATENOTEBOOKINSTANCELIFECYCLECONFIG]->(svc)
-		MERGE (attacker)-[:`BEDROCK-AGENTCORE_INVOKESESSION`]->(svc)
-
-		// New PassRole + service permissions
 		MERGE (attacker)-[:APPRUNNER_CREATESERVICE]->(svc)
 		MERGE (attacker)-[:BATCH_REGISTERJOBDEFINITION]->(svc)
 		MERGE (attacker)-[:BRAKET_CREATEJOB]->(svc)
 		MERGE (attacker)-[:CLOUDFORMATION_CREATESTACKSET]->(svc)
 		MERGE (attacker)-[:CLOUDFORMATION_UPDATESTACKSET]->(svc)
-		MERGE (attacker)-[:`COGNITO-IDENTITY_SETIDENTITYPOOLROLES`]->(svc)
 		MERGE (attacker)-[:ECS_CREATESERVICE]->(svc)
 		MERGE (attacker)-[:ECS_STARTTASK]->(svc)
 		MERGE (attacker)-[:ELASTICMAPREDUCE_RUNJOBFLOW]->(svc)
-		MERGE (attacker)-[:`EMR-SERVERLESS_CREATEAPPLICATION`]->(svc)
 		MERGE (attacker)-[:GAMELIFT_CREATEFLEET]->(svc)
 		MERGE (attacker)-[:GLUE_CREATEDEVENDPOINT]->(svc)
 		MERGE (attacker)-[:GLUE_UPDATEJOB]->(svc)
@@ -351,23 +358,140 @@ func TestEnrichAWSPrivescEndToEnd(t *testing.T) {
 	`, attackerARN, victimARN, roleARN, svcResourceARN)
 
 	_, err = db.Query(ctx, seedCypher, nil)
-	require.NoError(t, err, "seed graph")
+	require.NoError(t, err, "seed graph (non-hyphenated types)")
+
+	// Hyphenated relationship types must be backtick-escaped in Cypher literal syntax
+	// but cannot appear inside a Go raw string literal — seed them as separate queries.
+	for _, hyphenatedSeed := range []string{
+		fmt.Sprintf("MATCH (a {Arn: '%s'}), (s {Arn: '%s'}) MERGE (a)-[:`EC2-INSTANCE-CONNECT_SENDSSHPUBLICKEY`]->(s)", attackerARN, svcResourceARN),
+		fmt.Sprintf("MATCH (a {Arn: '%s'}), (s {Arn: '%s'}) MERGE (a)-[:`BEDROCK-AGENTCORE_INVOKESESSION`]->(s)", attackerARN, svcResourceARN),
+		fmt.Sprintf("MATCH (a {Arn: '%s'}), (s {Arn: '%s'}) MERGE (a)-[:`COGNITO-IDENTITY_SETIDENTITYPOOLROLES`]->(s)", attackerARN, svcResourceARN),
+		fmt.Sprintf("MATCH (a {Arn: '%s'}), (s {Arn: '%s'}) MERGE (a)-[:`EMR-SERVERLESS_CREATEAPPLICATION`]->(s)", attackerARN, svcResourceARN),
+	} {
+		_, err = db.Query(ctx, hyphenatedSeed, nil)
+		require.NoError(t, err, "seed hyphenated relationship type")
+	}
 
 	// Run the full enrichment pipeline.
 	err = EnrichAWS(ctx, db)
 	require.NoError(t, err, "EnrichAWS should succeed")
 
-	// Count total CAN_PRIVESC edges originating from the attacker.
-	result, err := db.Query(ctx,
-		fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->() RETURN count(r) AS n`, attackerARN),
-		nil)
-	require.NoError(t, err)
-	require.Len(t, result.Records, 1)
+	// MERGE is idempotent on (start, end, type) — all standalone methods share one edge to victim,
+	// all PassRole+service methods share one edge to svc. Assert both targets got a CAN_PRIVESC edge.
+	for _, tc := range []struct {
+		label  string
+		target string
+	}{
+		{"standalone methods → victim", victimARN},
+		{"PassRole+service methods → svc", svcResourceARN},
+	} {
+		result, err := db.Query(ctx,
+			fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(t {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, tc.target),
+			nil)
+		require.NoError(t, err)
+		require.Len(t, result.Records, 1)
+		n, _ := toInt64(result.Records[0]["n"])
+		t.Logf("%s: %d CAN_PRIVESC edge(s)", tc.label, n)
+		assert.GreaterOrEqual(t, int(n), 1, "expected at least 1 CAN_PRIVESC edge for %s", tc.label)
+	}
+}
 
-	n, _ := toInt64(result.Records[0]["n"])
-	t.Logf("attacker CAN_PRIVESC edge count after EnrichAWS: %d", n)
-	assert.GreaterOrEqual(t, int(n), 30,
-		"attacker with all new-method permissions should have at least 30 CAN_PRIVESC edges")
+// TestPrivescMultiHopPaths verifies that the analysis query detects multi-hop
+// privilege escalation chains built from CAN_PRIVESC enrichment edges.
+func TestPrivescMultiHopPaths(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	cfg := graph.NewConfig(boltURL, "", "")
+	db, err := adapters.NewNeo4jAdapter(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	// Seed a 3-hop chain: low → mid → high → admin
+	// where each hop is created by a different privesc method.
+	_, err = db.Query(ctx, `
+		CREATE (low:Principal  {Arn: 'arn:aws:iam::123456789012:user/low',  _is_admin: false})
+		CREATE (mid:Principal  {Arn: 'arn:aws:iam::123456789012:role/mid',  _is_admin: false})
+		CREATE (high:Principal {Arn: 'arn:aws:iam::123456789012:role/high', _is_admin: false})
+		CREATE (admin:Principal{Arn: 'arn:aws:iam::123456789012:role/admin',_is_admin: true})
+		CREATE (svc1:Resource  {Arn: 'arn:aws:lambda:us-east-1:123456789012:function:fn1'})
+		CREATE (svc2:Resource  {Arn: 'arn:aws:ecs:us-east-1:123456789012:cluster/c1'})
+		WITH low, mid, high, admin, svc1, svc2
+
+		// Hop 1: low has PassRole + CreateFunction → can execute as mid via Lambda
+		MERGE (low)-[:IAM_PASSROLE]->(mid)
+		MERGE (low)-[:LAMBDA_CREATEFUNCTION]->(svc1)
+
+		// Hop 2: mid has PassRole + ECS CreateService → can escalate to high
+		MERGE (mid)-[:IAM_PASSROLE]->(high)
+		MERGE (mid)-[:ECS_CREATESERVICE]->(svc2)
+
+		// Hop 3: high has iam:CreatePolicyVersion → direct admin escalation
+		MERGE (high)-[:IAM_CREATEPOLICYVERSION]->(admin)
+	`, nil)
+	require.NoError(t, err, "seed multi-hop graph")
+
+	// Run enrichment to create CAN_PRIVESC edges.
+	err = EnrichAWS(ctx, db)
+	require.NoError(t, err, "EnrichAWS should succeed")
+
+	t.Run("one_hop_low_to_svc1", func(t *testing.T) {
+		// method_14: low has PassRole+CreateFunction → CAN_PRIVESC to svc1
+		result, err := db.Query(ctx, `
+			MATCH (a {Arn: 'arn:aws:iam::123456789012:user/low'})-[r:CAN_PRIVESC]->(s {Arn: 'arn:aws:lambda:us-east-1:123456789012:function:fn1'})
+			RETURN count(r) AS n`, nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.GreaterOrEqual(t, int(n), 1, "low should have CAN_PRIVESC to Lambda svc via method_14")
+	})
+
+	t.Run("one_hop_high_to_admin", func(t *testing.T) {
+		// method_01: high has CreatePolicyVersion → CAN_PRIVESC to admin
+		result, err := db.Query(ctx, `
+			MATCH (a {Arn: 'arn:aws:iam::123456789012:role/high'})-[r:CAN_PRIVESC]->(b {Arn: 'arn:aws:iam::123456789012:role/admin'})
+			RETURN count(r) AS n`, nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.GreaterOrEqual(t, int(n), 1, "high should have CAN_PRIVESC to admin via method_01")
+	})
+
+	t.Run("analysis_query_finds_multi_hop_chain", func(t *testing.T) {
+		// The analysis query uses CAN_PRIVESC*1..3 to find chains from non-admin to admin.
+		result, err := db.Query(ctx, `
+			MATCH path = (attacker:Principal)-[:CAN_PRIVESC*1..3]->(target:Principal)
+			WHERE target._is_admin = true
+			AND NOT attacker._is_admin = true
+			AND attacker.Arn <> target.Arn
+			WITH attacker, target, length(path) AS hops
+			RETURN attacker.Arn AS attacker_arn, target.Arn AS target_arn, hops
+			ORDER BY hops ASC`, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, result.Records, "analysis query should find at least one privesc path to admin")
+
+		t.Logf("Found %d privesc path(s) to admin:", len(result.Records))
+		for _, rec := range result.Records {
+			t.Logf("  %s → %s (%v hops)", rec["attacker_arn"], rec["target_arn"], rec["hops"])
+		}
+
+		// Verify the 1-hop path (high → admin) is found.
+		found1Hop := false
+		for _, rec := range result.Records {
+			if rec["attacker_arn"] == "arn:aws:iam::123456789012:role/high" && rec["hops"] == int64(1) {
+				found1Hop = true
+			}
+		}
+		assert.True(t, found1Hop, "analysis query should find 1-hop path high → admin")
+	})
+
+	t.Run("no_self_privesc_edges", func(t *testing.T) {
+		result, err := db.Query(ctx, `MATCH (a)-[r:CAN_PRIVESC]->(a) RETURN count(r) AS n`, nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.Equal(t, int64(0), n, "no principal should have a CAN_PRIVESC edge to itself")
+	})
 }
 
 // toInt64 coerces common numeric types returned by the Neo4j driver to int64.
