@@ -1,0 +1,23 @@
+id: aws/enrich/privesc/method_51
+name: IAM PassRole + Cognito SetIdentityPoolRoles Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with iam:PassRole and cognito-identity:SetIdentityPoolRoles
+  permissions that can bind an admin role to an existing Cognito identity pool's
+  unauthenticated or authenticated role, then assume it via Cognito federation.
+severity: high
+order: 151
+cypher: |
+  MATCH (attacker:Principal)-[passrole]->(target)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+  WITH attacker
+  MATCH (attacker)-[set_roles]->(service_resource)
+  WHERE type(set_roles) = 'COGNITO-IDENTITY_SETIDENTITYPOOLROLES'
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:PassRole + cognito-identity:SetIdentityPoolRoles',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

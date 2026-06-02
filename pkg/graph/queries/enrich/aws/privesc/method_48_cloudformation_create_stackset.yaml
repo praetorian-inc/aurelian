@@ -1,0 +1,23 @@
+id: aws/enrich/privesc/method_48
+name: IAM PassRole + CloudFormation CreateStackSet Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both iam:PassRole and cloudformation:CreateStackSet
+  permissions that can create a CloudFormation StackSet with an administrative
+  execution role to deploy escalated IAM resources across accounts.
+severity: high
+order: 148
+cypher: |
+  MATCH (attacker:Principal)-[passrole]->(target)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+  WITH attacker
+  MATCH (attacker)-[create]->(service_resource)
+  WHERE type(create) = 'CLOUDFORMATION_CREATESTACKSET'
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:PassRole + cloudformation:CreateStackSet',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

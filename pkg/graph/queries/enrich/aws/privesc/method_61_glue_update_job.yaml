@@ -1,0 +1,23 @@
+id: aws/enrich/privesc/method_61
+name: IAM PassRole + Glue UpdateJob Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both iam:PassRole and glue:UpdateJob permissions
+  that can modify an existing Glue job to use a privileged IAM role and
+  a malicious script to escalate privileges on the next execution.
+severity: high
+order: 161
+cypher: |
+  MATCH (attacker:Principal)-[passrole]->(target)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+  WITH attacker
+  MATCH (attacker)-[update]->(service_resource)
+  WHERE type(update) = 'GLUE_UPDATEJOB'
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:PassRole + glue:UpdateJob',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

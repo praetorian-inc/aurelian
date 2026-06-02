@@ -1,0 +1,23 @@
+id: aws/enrich/privesc/method_60
+name: IAM PassRole + Glue CreateDevEndpoint Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both iam:PassRole and glue:CreateDevEndpoint permissions
+  that can create a Glue development endpoint with a privileged IAM role and
+  execute commands via SSH to escalate privileges.
+severity: high
+order: 160
+cypher: |
+  MATCH (attacker:Principal)-[passrole]->(target)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+  WITH attacker
+  MATCH (attacker)-[create]->(service_resource)
+  WHERE type(create) = 'GLUE_CREATEDEVENDPOINT'
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:PassRole + glue:CreateDevEndpoint',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

@@ -1,0 +1,23 @@
+id: aws/enrich/privesc/method_70
+name: IAM PassRole + Step Functions CreateStateMachine Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both iam:PassRole and states:CreateStateMachine permissions
+  that can create a Step Functions state machine with an admin role that calls IAM
+  APIs via SDK service integration to attach AdministratorAccess to the starting user.
+severity: high
+order: 170
+cypher: |
+  MATCH (attacker:Principal)-[passrole]->(target)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+  WITH attacker
+  MATCH (attacker)-[create]->(service_resource)
+  WHERE type(create) = 'STATES_CREATESTATEMACHINE'
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:PassRole + states:CreateStateMachine',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

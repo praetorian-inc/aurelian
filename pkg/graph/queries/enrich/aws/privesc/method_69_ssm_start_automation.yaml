@@ -1,0 +1,24 @@
+id: aws/enrich/privesc/method_69
+name: IAM PassRole + SSM StartAutomationExecution Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both iam:PassRole and ssm:StartAutomationExecution
+  permissions that can create a custom SSM Automation document with a Python
+  aws:executeScript step and execute it with an admin role as the automation
+  AssumeRole to escalate privileges.
+severity: high
+order: 169
+cypher: |
+  MATCH (attacker:Principal)-[passrole]->(target)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+  WITH attacker
+  MATCH (attacker)-[start]->(service_resource)
+  WHERE type(start) = 'SSM_STARTAUTOMATIONEXECUTION'
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:PassRole + ssm:StartAutomationExecution',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

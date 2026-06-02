@@ -1,0 +1,23 @@
+id: aws/enrich/privesc/method_57
+name: IAM PassRole + EMR RunJobFlow Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both iam:PassRole and elasticmapreduce:RunJobFlow
+  permissions that can launch an EMR cluster with an administrative instance
+  profile and execute a step to escalate privileges via credentials from IMDS.
+severity: high
+order: 157
+cypher: |
+  MATCH (attacker:Principal)-[passrole]->(target)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+  WITH attacker
+  MATCH (attacker)-[run]->(service_resource)
+  WHERE type(run) = 'ELASTICMAPREDUCE_RUNJOBFLOW'
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:PassRole + elasticmapreduce:RunJobFlow',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created
