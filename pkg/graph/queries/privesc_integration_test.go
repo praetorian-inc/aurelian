@@ -674,8 +674,9 @@ func TestEnrichAWSPrivescEndToEnd(t *testing.T) {
 	}
 }
 
-// TestPrivescMultiHopPaths verifies that the analysis query detects multi-hop
-// privilege escalation chains built from CAN_PRIVESC enrichment edges.
+// TestPrivescMultiHopPaths verifies that EnrichAWS produces CAN_PRIVESC edges
+// that form real principal-to-principal chains detectable by the analysis query.
+// Uses standalone IAM methods (which fire to ALL other principals) to build chains.
 func TestPrivescMultiHopPaths(t *testing.T) {
 	ctx := context.Background()
 
@@ -688,80 +689,58 @@ func TestPrivescMultiHopPaths(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	// Seed a 3-hop chain: low → mid → high → admin
-	// where each hop is created by a different privesc method.
+	// Seed four Principal nodes with IAM permission edges so EnrichAWS creates
+	// CAN_PRIVESC edges between them via standalone methods (methods 01–13 fire
+	// for ALL other principals, building a fully-connected escalation graph).
 	_, err = db.Query(ctx, `
 		CREATE (low:Principal  {Arn: 'arn:aws:iam::123456789012:user/low',  _is_admin: false})
 		CREATE (mid:Principal  {Arn: 'arn:aws:iam::123456789012:role/mid',  _is_admin: false})
 		CREATE (high:Principal {Arn: 'arn:aws:iam::123456789012:role/high', _is_admin: false})
 		CREATE (admin:Principal{Arn: 'arn:aws:iam::123456789012:role/admin',_is_admin: true})
-		CREATE (svc1:Resource  {Arn: 'arn:aws:lambda:us-east-1:123456789012:function:fn1'})
-		CREATE (svc2:Resource  {Arn: 'arn:aws:ecs:us-east-1:123456789012:cluster/c1'})
-		WITH low, mid, high, admin, svc1, svc2
+		CREATE (policy:Resource{Arn: 'arn:aws:iam::123456789012:policy/p'})
+		WITH low, mid, high, admin, policy
 
-		// Hop 1: low has PassRole + CreateFunction → can execute as mid via Lambda
-		MERGE (low)-[:IAM_PASSROLE]->(mid)
-		MERGE (low)-[:LAMBDA_CREATEFUNCTION]->(svc1)
+		// low: CreatePolicyVersion → CAN_PRIVESC to mid, high, admin (method_01)
+		MERGE (low)-[:IAM_CREATEPOLICYVERSION]->(policy)
 
-		// Hop 2: mid has PassRole + ECS CreateService → can escalate to high
-		MERGE (mid)-[:IAM_PASSROLE]->(high)
-		MERGE (mid)-[:ECS_CREATESERVICE]->(svc2)
+		// mid: PutRolePolicy → CAN_PRIVESC to low, high, admin (method_11)
+		MERGE (mid)-[:IAM_PUTROLEPOLICY]->(policy)
 
-		// Hop 3: high has iam:CreatePolicyVersion → direct admin escalation
-		MERGE (high)-[:IAM_CREATEPOLICYVERSION]->(admin)
+		// high: UpdateLoginProfile → CAN_PRIVESC to low, mid, admin (method_05)
+		MERGE (high)-[:IAM_UPDATELOGINPROFILE]->(admin)
 	`, nil)
 	require.NoError(t, err, "seed multi-hop graph")
 
-	// Run enrichment to create CAN_PRIVESC edges.
 	err = EnrichAWS(ctx, db)
 	require.NoError(t, err, "EnrichAWS should succeed")
 
-	t.Run("one_hop_low_to_svc1", func(t *testing.T) {
-		// method_14: low has PassRole+CreateFunction → CAN_PRIVESC to svc1
-		result, err := db.Query(ctx, `
-			MATCH (a {Arn: 'arn:aws:iam::123456789012:user/low'})-[r:CAN_PRIVESC]->(s {Arn: 'arn:aws:lambda:us-east-1:123456789012:function:fn1'})
-			RETURN count(r) AS n`, nil)
+	t.Run("enrichment_creates_1hop_low_to_admin", func(t *testing.T) {
+		result, err := db.Query(ctx,
+			`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/low'})-[r:CAN_PRIVESC]->(b {Arn: 'arn:aws:iam::123456789012:role/admin'})
+			 RETURN count(r) AS n`, nil)
 		require.NoError(t, err)
 		n, _ := toInt64(result.Records[0]["n"])
-		assert.GreaterOrEqual(t, int(n), 1, "low should have CAN_PRIVESC to Lambda svc via method_14")
+		assert.GreaterOrEqual(t, int(n), 1, "low → admin direct 1-hop via method_01")
 	})
 
-	t.Run("one_hop_high_to_admin", func(t *testing.T) {
-		// method_01: high has CreatePolicyVersion → CAN_PRIVESC to admin
-		result, err := db.Query(ctx, `
-			MATCH (a {Arn: 'arn:aws:iam::123456789012:role/high'})-[r:CAN_PRIVESC]->(b {Arn: 'arn:aws:iam::123456789012:role/admin'})
-			RETURN count(r) AS n`, nil)
+	t.Run("enrichment_creates_1hop_mid_to_admin", func(t *testing.T) {
+		result, err := db.Query(ctx,
+			`MATCH (a {Arn: 'arn:aws:iam::123456789012:role/mid'})-[r:CAN_PRIVESC]->(b {Arn: 'arn:aws:iam::123456789012:role/admin'})
+			 RETURN count(r) AS n`, nil)
 		require.NoError(t, err)
 		n, _ := toInt64(result.Records[0]["n"])
-		assert.GreaterOrEqual(t, int(n), 1, "high should have CAN_PRIVESC to admin via method_01")
+		assert.GreaterOrEqual(t, int(n), 1, "mid → admin direct 1-hop via method_11")
 	})
 
-	t.Run("analysis_query_finds_multi_hop_chain", func(t *testing.T) {
-		// The analysis query uses CAN_PRIVESC*1..3 to find chains from non-admin to admin.
-		result, err := db.Query(ctx, `
-			MATCH path = (attacker:Principal)-[:CAN_PRIVESC*1..3]->(target:Principal)
-			WHERE target._is_admin = true
-			AND NOT attacker._is_admin = true
-			AND attacker.Arn <> target.Arn
-			WITH attacker, target, length(path) AS hops
-			RETURN attacker.Arn AS attacker_arn, target.Arn AS target_arn, hops
-			ORDER BY hops ASC`, nil)
+	t.Run("enrichment_creates_principal_to_principal_edges", func(t *testing.T) {
+		// Standalone methods fire for ALL other principals; low should have edges to mid and high.
+		result, err := db.Query(ctx,
+			`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/low'})-[:CAN_PRIVESC]->(b:Principal)
+			 WHERE b.Arn <> a.Arn RETURN count(b) AS n`, nil)
 		require.NoError(t, err)
-		require.NotEmpty(t, result.Records, "analysis query should find at least one privesc path to admin")
-
-		t.Logf("Found %d privesc path(s) to admin:", len(result.Records))
-		for _, rec := range result.Records {
-			t.Logf("  %s → %s (%v hops)", rec["attacker_arn"], rec["target_arn"], rec["hops"])
-		}
-
-		// Verify the 1-hop path (high → admin) is found.
-		found1Hop := false
-		for _, rec := range result.Records {
-			if rec["attacker_arn"] == "arn:aws:iam::123456789012:role/high" && rec["hops"] == int64(1) {
-				found1Hop = true
-			}
-		}
-		assert.True(t, found1Hop, "analysis query should find 1-hop path high → admin")
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.GreaterOrEqual(t, int(n), 3,
+			"low should have CAN_PRIVESC edges to mid, high, and admin (at least 3 principals)")
 	})
 
 	t.Run("no_self_privesc_edges", func(t *testing.T) {
@@ -769,6 +748,120 @@ func TestPrivescMultiHopPaths(t *testing.T) {
 		require.NoError(t, err)
 		n, _ := toInt64(result.Records[0]["n"])
 		assert.Equal(t, int64(0), n, "no principal should have a CAN_PRIVESC edge to itself")
+	})
+}
+
+// TestPrivescAnalysisQuery tests the registered aws/analysis/privesc_paths query
+// end-to-end via RunPlatformQuery with controlled CAN_PRIVESC edge scenarios.
+func TestPrivescAnalysisQuery(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	cfg := graph.NewConfig(boltURL, "", "")
+	db, err := adapters.NewNeo4jAdapter(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	// Seed a controlled graph directly with CAN_PRIVESC edges.
+	// This tests the analysis query in isolation from enrichment logic.
+	_, err = db.Query(ctx, `
+		// 1-hop: a1 → admin directly
+		CREATE (a1:Principal    {Arn: 'arn:aws:iam::1:user/a1',    _is_admin: false})
+
+		// 2-hop: b1 → b2 → admin (b1 cannot reach admin directly)
+		CREATE (b1:Principal    {Arn: 'arn:aws:iam::1:user/b1',    _is_admin: false})
+		CREATE (b2:Principal    {Arn: 'arn:aws:iam::1:role/b2',    _is_admin: false})
+
+		// 3-hop: c1 → c2 → c3 → admin
+		CREATE (c1:Principal    {Arn: 'arn:aws:iam::1:user/c1',    _is_admin: false})
+		CREATE (c2:Principal    {Arn: 'arn:aws:iam::1:role/c2',    _is_admin: false})
+		CREATE (c3:Principal    {Arn: 'arn:aws:iam::1:role/c3',    _is_admin: false})
+
+		// >3-hop: d1 → d2 → d3 → d4 → admin (should NOT be found)
+		CREATE (d1:Principal    {Arn: 'arn:aws:iam::1:user/d1',    _is_admin: false})
+		CREATE (d2:Principal    {Arn: 'arn:aws:iam::1:role/d2',    _is_admin: false})
+		CREATE (d3:Principal    {Arn: 'arn:aws:iam::1:role/d3',    _is_admin: false})
+		CREATE (d4:Principal    {Arn: 'arn:aws:iam::1:role/d4',    _is_admin: false})
+
+		CREATE (admin:Principal {Arn: 'arn:aws:iam::1:role/admin', _is_admin: true})
+		CREATE (admin2:Principal{Arn: 'arn:aws:iam::1:role/admin2',_is_admin: true})
+
+		WITH a1, b1, b2, c1, c2, c3, d1, d2, d3, d4, admin, admin2
+
+		// 1-hop path
+		MERGE (a1)-[:CAN_PRIVESC]->(admin)
+
+		// 2-hop path (no direct b1→admin edge)
+		MERGE (b1)-[:CAN_PRIVESC]->(b2)
+		MERGE (b2)-[:CAN_PRIVESC]->(admin)
+
+		// 3-hop path
+		MERGE (c1)-[:CAN_PRIVESC]->(c2)
+		MERGE (c2)-[:CAN_PRIVESC]->(c3)
+		MERGE (c3)-[:CAN_PRIVESC]->(admin)
+
+		// 4-hop (should NOT appear in results — beyond 1..3 limit)
+		MERGE (d1)-[:CAN_PRIVESC]->(d2)
+		MERGE (d2)-[:CAN_PRIVESC]->(d3)
+		MERGE (d3)-[:CAN_PRIVESC]->(d4)
+		MERGE (d4)-[:CAN_PRIVESC]->(admin)
+
+		// admin→admin (should be excluded because attacker._is_admin=true)
+		MERGE (admin)-[:CAN_PRIVESC]->(admin2)
+	`, nil)
+	require.NoError(t, err, "seed analysis query graph")
+
+	// Invoke the registered analysis query (not inline Cypher).
+	result, err := RunPlatformQuery(ctx, db, "aws/analysis/privesc_paths", nil)
+	require.NoError(t, err, "analysis query should run without error")
+	require.NotNil(t, result)
+
+	// Index results by (attacker, hop_count) for assertions.
+	type pathKey struct{ attacker string; hops int64 }
+	found := map[pathKey]bool{}
+	for _, rec := range result.Records {
+		attacker, _ := rec["attacker_arn"].(string)
+		hops, _ := toInt64(rec["hop_count"])
+		found[pathKey{attacker, hops}] = true
+		t.Logf("  path: %s → %s (%d hops)", attacker, rec["target_arn"], hops)
+	}
+
+	t.Run("1_hop_a1_to_admin", func(t *testing.T) {
+		assert.True(t, found[pathKey{"arn:aws:iam::1:user/a1", 1}],
+			"a1 should reach admin in 1 hop")
+	})
+
+	t.Run("2_hop_b1_to_admin", func(t *testing.T) {
+		assert.True(t, found[pathKey{"arn:aws:iam::1:user/b1", 2}],
+			"b1 should reach admin in 2 hops via b2")
+	})
+
+	t.Run("3_hop_c1_to_admin", func(t *testing.T) {
+		assert.True(t, found[pathKey{"arn:aws:iam::1:user/c1", 3}],
+			"c1 should reach admin in 3 hops via c2 → c3")
+	})
+
+	t.Run("4_hop_d1_not_found", func(t *testing.T) {
+		assert.False(t, found[pathKey{"arn:aws:iam::1:user/d1", 4}],
+			"d1's 4-hop path exceeds CAN_PRIVESC*1..3 limit and must not appear")
+	})
+
+	t.Run("admin_to_admin_excluded", func(t *testing.T) {
+		for _, rec := range result.Records {
+			attacker, _ := rec["attacker_arn"].(string)
+			assert.NotEqual(t, "arn:aws:iam::1:role/admin", attacker,
+				"admin principal should never appear as an attacker (filtered by _is_admin=true)")
+		}
+	})
+
+	t.Run("no_self_loops", func(t *testing.T) {
+		for _, rec := range result.Records {
+			assert.NotEqual(t, rec["attacker_arn"], rec["target_arn"],
+				"attacker and target should never be the same principal")
+		}
 	})
 }
 

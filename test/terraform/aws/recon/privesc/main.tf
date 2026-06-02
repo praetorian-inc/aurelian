@@ -286,6 +286,82 @@ resource "aws_iam_user_policy" "extended_services" {
   })
 }
 
+# Compound execution methods — the creation action is in extended_services above;
+# these are the matching execute/run/start actions required to complete the attack path.
+resource "aws_iam_user_policy" "extended_services_exec" {
+  name = "${local.prefix}-extended-services-exec"
+  user = aws_iam_user.extended_services.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "CompoundExecMethods"
+      Effect = "Allow"
+      Action = [
+        # method_80: glue:CreateJob + StartJobRun
+        "glue:CreateJob",
+        "glue:StartJobRun",
+        # method_82: glue:CreateSession + RunStatement
+        "glue:RunStatement",
+        # method_77/78: CreateTrigger (paired with CreateJob/UpdateJob)
+        "glue:CreateTrigger",
+        # method_83: states:StartExecution (paired with CreateStateMachine)
+        "states:StartExecution",
+        # method_84: ssm:CreateDocument (paired with StartAutomationExecution)
+        "ssm:CreateDocument",
+        # method_85: emr-serverless:StartJobRun (paired with CreateApplication)
+        "emr-serverless:StartJobRun",
+        # method_86: kinesisanalytics:StartApplication (paired with CreateApplication)
+        "kinesisanalytics:StartApplication",
+        # method_87: omics:StartRun (paired with CreateWorkflow)
+        "omics:StartRun",
+        # method_88: gamelift:CreateBuild (paired with CreateFleet)
+        "gamelift:CreateBuild",
+        # method_89: imagebuilder:CreateImage (paired with CreateInfrastructureConfiguration)
+        "imagebuilder:CreateComponent",
+        "imagebuilder:CreateImageRecipe",
+        "imagebuilder:CreateImage",
+      ]
+      Resource = "*"
+    }]
+  })
+}
+
+# New compound and standalone methods (73-79) for new_services user
+resource "aws_iam_user_policy" "new_services_compound" {
+  name = "${local.prefix}-new-services-compound"
+  user = aws_iam_user.new_services.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "CompoundAndStandaloneNewMethods"
+      Effect = "Allow"
+      Action = [
+        # method_73: ec2:RequestSpotInstances (distinct from RunInstances)
+        "ec2:RequestSpotInstances",
+        # method_74: CreateLaunchTemplateVersion + ModifyLaunchTemplate
+        "ec2:CreateLaunchTemplateVersion",
+        "ec2:ModifyLaunchTemplate",
+        # method_75: Amplify CreateApp + CreateBranch + StartJob
+        "amplify:CreateApp",
+        "amplify:CreateBranch",
+        "amplify:StartJob",
+        # method_76: ModifyInstanceAttribute + StopInstances + StartInstances
+        "ec2:ModifyInstanceAttribute",
+        "ec2:StopInstances",
+        "ec2:StartInstances",
+        # method_77: glue:CreateJob + CreateTrigger
+        "glue:CreateJob",
+        "glue:CreateTrigger",
+        # method_79: lambda:CreateFunction + AddPermission (via iam:PassRole already granted)
+        "lambda:CreateFunction",
+      ]
+      Resource = "*"
+    }]
+  })
+}
+
 # =============================================================================
 # Service resources — deployed so the recon module creates permission edges
 # for the new privesc methods. Resources are minimal (no active compute).
