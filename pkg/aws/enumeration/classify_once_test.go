@@ -265,10 +265,14 @@ func countClassifyOnErrorPath(val ssa.Value, classifyFn *ssa.Function, cg *callg
 	// (the ClassifySkippable guard: if op != nil), they're exclusive.
 	// Otherwise (same block, no branch, or the error flows to both
 	// unconditionally), they're cumulative.
-	if classifyCount > 0 && propagateCount > 0 {
+	if classifyCount > 0 {
 		if !classifyAndPropagateAreExclusive(val, classifyFn, refs) {
+			// Classify and propagate are on the same runtime path.
+			// Re-trace with fresh visited map to get accurate propagate count.
 			freshPropagateCount := countPropagateOnly(val, classifyFn, cg)
-			return classifyCount + freshPropagateCount
+			if freshPropagateCount > 0 {
+				return classifyCount + freshPropagateCount
+			}
 		}
 	}
 	if classifyCount > propagateCount {
