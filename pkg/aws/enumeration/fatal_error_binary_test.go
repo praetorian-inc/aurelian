@@ -19,7 +19,12 @@ import (
 //   - Binary does NOT print "enumerated N resources" or skip summary
 //   - Exit code is non-zero
 //
-// This is the binary-level counterpart to the Go-level integration tests.
+// Note: the error occurs at GetAccountID (STS level), before enumeration
+// starts. This tests the "completely invalid credentials" path — the binary
+// fails fast rather than silently producing empty results. The enumeration-
+// level fatal error path (credential expires mid-run) is covered by unit
+// tests (TestContinueOnDenied_FatalSmithyCode_PropagatesFatal) since it
+// cannot be triggered with static AWS profiles.
 func TestFatalError_Binary_BadCredentials(t *testing.T) {
 	// Build the binary.
 	binDir := t.TempDir()

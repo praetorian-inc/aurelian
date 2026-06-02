@@ -14,20 +14,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestFatalError_BadCredentials_AbortsPipeline verifies that fatal credential
-// errors (SignatureDoesNotMatch) cause List to return an error instead of
-// silently skipping. This is the counterpart to the skip-resilience tests —
-// it proves that the blacklist classifier does NOT swallow credential failures.
+// TestFatalError_BadCredentials_AbortsPipeline verifies that invalid
+// credentials cause List to return an error instead of silently skipping.
 //
-// Uses a fake AWS profile with an invalid secret key. The SDK signs the
-// request with the wrong key, AWS responds with SignatureDoesNotMatch,
-// and the pipeline must abort.
+// Note: the error (InvalidClientTokenId) occurs at GetAccountID (STS level),
+// before enumeration starts. This tests the "completely invalid credentials"
+// path. The enumeration-level fatal error path (credential expires mid-run)
+// is covered by unit tests (TestContinueOnDenied_FatalSmithyCode_PropagatesFatal)
+// since it cannot be triggered with static AWS profiles.
 func TestFatalError_BadCredentials_AbortsPipeline(t *testing.T) {
 	profileDir := t.TempDir()
 	profileName := "aurelian-test-bad-creds"
 
-	// Write a profile with a syntactically valid access key but wrong secret.
-	// AWS will return SignatureDoesNotMatch (fatal, not skippable).
+	// Write a profile with a fake access key.
+	// AWS will return InvalidClientTokenId (fatal, not skippable).
 	configContent := "[profile " + profileName + "]\n" +
 		"region = us-east-1\n"
 	credsContent := "[" + profileName + "]\n" +
