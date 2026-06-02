@@ -1,0 +1,27 @@
+id: aws/enrich/privesc/method_86
+name: IAM PassRole + Kinesis Analytics CreateApplication + StartApplication Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with iam:PassRole, kinesisanalytics:CreateApplication, and
+  kinesisanalytics:StartApplication that can create a Kinesis Analytics (Managed Flink)
+  application with an admin execution role and start it to run a malicious JAR that
+  escalates privileges. Both create and start permissions are required.
+severity: high
+order: 186
+cypher: |
+  MATCH (attacker:Principal)-[passrole]->(target)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+  WITH attacker
+  MATCH (attacker)-[create]->(svc)
+  WHERE type(create) = 'KINESISANALYTICS_CREATEAPPLICATION'
+  WITH attacker, svc
+  MATCH (attacker)-[start]->(svc2)
+  WHERE type(start) = 'KINESISANALYTICS_STARTAPPLICATION'
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(svc)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:PassRole + kinesisanalytics:CreateApplication + kinesisanalytics:StartApplication',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

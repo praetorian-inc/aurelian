@@ -1,0 +1,26 @@
+id: aws/enrich/privesc/method_82
+name: IAM PassRole + Glue CreateSession + RunStatement Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with iam:PassRole, glue:CreateSession, and glue:RunStatement that
+  can create a Glue interactive session with a privileged role and execute arbitrary
+  Python code to escalate privileges. Both create and execute permissions required.
+severity: high
+order: 182
+cypher: |
+  MATCH (attacker:Principal)-[passrole]->(target)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+  WITH attacker
+  MATCH (attacker)-[create]->(svc)
+  WHERE type(create) = 'GLUE_CREATESESSION'
+  WITH attacker, svc
+  MATCH (attacker)-[run]->(svc2)
+  WHERE type(run) = 'GLUE_RUNSTATEMENT'
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(svc)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:PassRole + glue:CreateSession + glue:RunStatement',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

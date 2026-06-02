@@ -1,23 +1,26 @@
 id: aws/enrich/privesc/method_71
-name: IAM PassRole + Step Functions UpdateStateMachine Privilege Escalation
+name: Step Functions UpdateStateMachine + StartExecution Privilege Escalation
 platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with both iam:PassRole and states:UpdateStateMachine permissions
-  that can replace an existing state machine's definition with malicious IAM API calls
-  and execute it with a privileged role to escalate privileges.
+  Detects principals with states:UpdateStateMachine and states:StartExecution that can
+  replace an existing state machine's definition with malicious IAM API calls and execute it.
+  No iam:PassRole required since the execution role is already attached to the state machine.
 severity: high
 order: 171
 cypher: |
-  MATCH (attacker:Principal)-[passrole]->(target)
-  WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker
-  MATCH (attacker)-[update]->(service_resource)
+  MATCH (attacker:Principal)-[update]->(target)
   WHERE type(update) = 'STATES_UPDATESTATEMACHINE'
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+  WITH attacker, target
+  MATCH (attacker)-[start]->(target)
+  WHERE type(start) = 'STATES_STARTEXECUTION'
+  WITH attacker
+  MATCH (victim:Principal)
+  WHERE victim.Arn <> attacker.Arn
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:PassRole + states:UpdateStateMachine',
+  SET pe.method = 'states:UpdateStateMachine + states:StartExecution',
       pe.severity = 'high',
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

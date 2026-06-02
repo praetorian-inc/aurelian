@@ -242,8 +242,14 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"launch-template": regexp.MustCompile(`^arn:aws:ec2:[a-z-0-9]+:\d{12}:launch-template/.*`),
 		},
 		ActionResourceMap: map[string][]string{
-			"runinstances":                       {"service"},
-			"createlaunchtemplate":               {"service"},
+			"runinstances":                         {"service"},
+			"requestspotinstances":                 {"service"},
+			"createlaunchtemplate":                 {"service"},
+			"createlaunchtemplateversion":           {"service", "launch-template"},
+			"modifylaunchtemplate":                 {"service", "launch-template"},
+			"modifyinstanceattribute":              {"instance"},
+			"stopinstances":                        {"instance"},
+			"startinstances":                       {"instance"},
 			"replaceiaminstanceprofileassociation": {"instance"},
 		},
 	},
@@ -370,7 +376,8 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"sendcommand":              {"instance", "managed-instance", "document"},
 			"startsession":             {"instance", "managed-instance"},
 			"resumesession":            {"instance", "managed-instance"},
-			"startautomationexecution": {"automation", "document"},
+			"createdocument":           {"service", "document"},
+			"startautomationexecution": {"automation", "document", "service"},
 		},
 	},
 	"glue": {
@@ -387,6 +394,9 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"createjob":         {"service"},
 			"updatejob":         {"service"},
 			"createsession":     {"service"},
+			"createtrigger":     {"service"},
+			"startjobrun":       {"job", "service"},
+			"runstatement":      {"session", "service"},
 		},
 	},
 	"codebuild": {
@@ -427,6 +437,17 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 		ActionResourceMap: map[string][]string{
 			"createautoscalinggroup":    {"service", "launchTemplate"},
 			"createlaunchconfiguration": {"service"},
+		},
+	},
+	"amplify": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service": regexp.MustCompile(`^arn:aws:amplify:\*:\*:\*$`),
+			"app":     regexp.MustCompile(`^arn:aws:amplify:[a-z0-9-]+:\d{12}:apps/.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createapp":    {"service"},
+			"createbranch": {"app", "service"},
+			"startjob":     {"app", "service"},
 		},
 	},
 	"apprunner": {
@@ -493,21 +514,13 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"runjobflow": {"cluster", "service"},
 		},
 	},
-	"emr-serverless": {
-		ResourcePatterns: map[string]*regexp.Regexp{
-			"service":     regexp.MustCompile(`^arn:aws:emr-serverless:\*:\*:\*$`),
-			"application": regexp.MustCompile(`^arn:aws:emr-serverless:[a-z0-9-]+:\d{12}:/applications/.*$`),
-		},
-		ActionResourceMap: map[string][]string{
-			"createapplication": {"service"},
-		},
-	},
 	"gamelift": {
 		ResourcePatterns: map[string]*regexp.Regexp{
 			"service": regexp.MustCompile(`^arn:aws:gamelift:\*:\*:\*$`),
 			"fleet":   regexp.MustCompile(`^arn:aws:gamelift:[a-z0-9-]+::fleet/.*$`),
 		},
 		ActionResourceMap: map[string][]string{
+			"createbuild": {"service"},
 			"createfleet": {"fleet", "service"},
 		},
 	},
@@ -517,7 +530,10 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"infrastructure-configuration": regexp.MustCompile(`^arn:aws:imagebuilder:[a-z0-9-]+:\d{12}:infrastructure-configuration/.*$`),
 		},
 		ActionResourceMap: map[string][]string{
+			"createcomponent":                   {"service"},
+			"createimagerecipe":                 {"service"},
 			"createinfrastructureconfiguration": {"infrastructure-configuration", "service"},
+			"createimage":                       {"service"},
 		},
 	},
 	"kinesisanalytics": {
@@ -526,7 +542,8 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"application": regexp.MustCompile(`^arn:aws:kinesisanalytics:[a-z0-9-]+:\d{12}:application/.*$`),
 		},
 		ActionResourceMap: map[string][]string{
-			"createapplication": {"application", "service"},
+			"createapplication":  {"application", "service"},
+			"startapplication":   {"application", "service"},
 		},
 	},
 	"omics": {
@@ -536,6 +553,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 		},
 		ActionResourceMap: map[string][]string{
 			"createworkflow": {"workflow", "service"},
+			"startrun":       {"workflow", "service"},
 		},
 	},
 	"scheduler": {
@@ -547,6 +565,16 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"createschedule": {"schedule", "service"},
 		},
 	},
+	"emr-serverless": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service":     regexp.MustCompile(`^arn:aws:emr-serverless:\*:\*:\*$`),
+			"application": regexp.MustCompile(`^arn:aws:emr-serverless:[a-z0-9-]+:\d{12}:/applications/.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createapplication": {"service"},
+			"startjobrun":       {"application", "service"},
+		},
+	},
 	"states": {
 		ResourcePatterns: map[string]*regexp.Regexp{
 			"service":       regexp.MustCompile(`^arn:aws:states:\*:\*:\*$`),
@@ -555,6 +583,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 		ActionResourceMap: map[string][]string{
 			"createstatemachine": {"state-machine", "service"},
 			"updatestatemachine": {"state-machine", "service"},
+			"startexecution":     {"state-machine", "service"},
 		},
 	},
 }

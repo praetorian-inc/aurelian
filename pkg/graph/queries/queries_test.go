@@ -193,6 +193,7 @@ func TestRunPlatformQueryNotFound(t *testing.T) {
 // TestNewPrivescQueriesLoad verifies all new pathfinding.cloud gap-analysis methods load correctly.
 func TestNewPrivescQueriesLoad(t *testing.T) {
 	newMethods := []string{
+		// Initial gap-fill methods (43–72)
 		"aws/enrich/privesc/method_43",
 		"aws/enrich/privesc/method_44",
 		"aws/enrich/privesc/method_45",
@@ -223,6 +224,26 @@ func TestNewPrivescQueriesLoad(t *testing.T) {
 		"aws/enrich/privesc/method_70",
 		"aws/enrich/privesc/method_71",
 		"aws/enrich/privesc/method_72",
+		// Group A: wrong-API fixes (73–74)
+		"aws/enrich/privesc/method_73",
+		"aws/enrich/privesc/method_74",
+		// Group B: completely missing (75–79)
+		"aws/enrich/privesc/method_75",
+		"aws/enrich/privesc/method_76",
+		"aws/enrich/privesc/method_77",
+		"aws/enrich/privesc/method_78",
+		"aws/enrich/privesc/method_79",
+		// Group C: execution-gated compound methods (80–89)
+		"aws/enrich/privesc/method_80",
+		"aws/enrich/privesc/method_81",
+		"aws/enrich/privesc/method_82",
+		"aws/enrich/privesc/method_83",
+		"aws/enrich/privesc/method_84",
+		"aws/enrich/privesc/method_85",
+		"aws/enrich/privesc/method_86",
+		"aws/enrich/privesc/method_87",
+		"aws/enrich/privesc/method_88",
+		"aws/enrich/privesc/method_89",
 	}
 
 	for _, id := range newMethods {

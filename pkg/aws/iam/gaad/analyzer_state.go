@@ -110,7 +110,8 @@ func (s *AnalyzerState) addServicesToResourceCache() {
 		"sagemaker.amazonaws.com",
 		"apigateway.amazonaws.com",
 		"autoscaling.amazonaws.com",
-		// New privesc-relevant services (methods 43–72)
+		// New privesc-relevant services (methods 43–89)
+		"amplify.amazonaws.com",
 		"apprunner.amazonaws.com",
 		"batch.amazonaws.com",
 		"braket.amazonaws.com",

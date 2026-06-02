@@ -20,6 +20,10 @@ func IsPrivEscAction(action string) bool {
 }
 
 var privEscActions = []string{
+	// Amplify (method 75)
+	"amplify:CreateApp",
+	"amplify:CreateBranch",
+	"amplify:StartJob",
 	// App Runner (methods 43–44)
 	"apprunner:CreateService",
 	"apprunner:UpdateService",
@@ -48,10 +52,16 @@ var privEscActions = []string{
 	"codestar:CreateProject",
 	// Cognito Identity (method 51)
 	"cognito-identity:SetIdentityPoolRoles",
-	// EC2 (methods 15, 38, 52–53)
+	// EC2 (methods 15, 38, 52–53, 73–76)
 	"ec2:CreateLaunchTemplate",
+	"ec2:CreateLaunchTemplateVersion",
+	"ec2:ModifyInstanceAttribute",
+	"ec2:ModifyLaunchTemplate",
 	"ec2:ReplaceIamInstanceProfileAssociation",
+	"ec2:RequestSpotInstances",
 	"ec2:RunInstances",
+	"ec2:StartInstances",
+	"ec2:StopInstances",
 	"ec2-instance-connect:SendSSHPublicKey",
 	// ECS (methods 32, 54–56)
 	"ecs:CreateService",
@@ -61,14 +71,19 @@ var privEscActions = []string{
 	"ecs:StartTask",
 	// EMR (method 57)
 	"elasticmapreduce:RunJobFlow",
-	// EMR Serverless (method 58)
+	// EMR Serverless (methods 58, 85)
 	"emr-serverless:CreateApplication",
-	// GameLift (method 59)
+	"emr-serverless:StartJobRun",
+	// GameLift (methods 59, 88)
+	"gamelift:CreateBuild",
 	"gamelift:CreateFleet",
-	// Glue (methods 18, 29, 60–62)
+	// Glue (methods 18, 29, 60–62, 77–78, 80–82)
 	"glue:CreateDevEndpoint",
 	"glue:CreateJob",
 	"glue:CreateSession",
+	"glue:CreateTrigger",
+	"glue:RunStatement",
+	"glue:StartJobRun",
 	"glue:UpdateDevEndpoint",
 	"glue:UpdateJob",
 	// IAM (methods 01–13, 28)
@@ -89,10 +104,14 @@ var privEscActions = []string{
 	"iam:SetDefaultPolicyVersion",
 	"iam:UpdateAssumeRolePolicy",
 	"iam:UpdateLoginProfile",
-	// EC2 Image Builder (method 63)
+	// EC2 Image Builder (methods 63, 89)
+	"imagebuilder:CreateComponent",
+	"imagebuilder:CreateImage",
+	"imagebuilder:CreateImageRecipe",
 	"imagebuilder:CreateInfrastructureConfiguration",
-	// Kinesis Analytics (method 64)
+	// Kinesis Analytics (methods 64, 86)
 	"kinesisanalytics:CreateApplication",
+	"kinesisanalytics:StartApplication",
 	// Lambda (methods 14, 20–21, 39, 65)
 	"lambda:AddPermission",
 	"lambda:CreateEventSourceMapping",
@@ -100,8 +119,9 @@ var privEscActions = []string{
 	"lambda:InvokeFunction",
 	"lambda:UpdateFunctionCode",
 	"lambda:UpdateFunctionConfiguration",
-	// HealthOmics (method 66)
+	// HealthOmics (methods 66, 87)
 	"omics:CreateWorkflow",
+	"omics:StartRun",
 	// AutoScaling (method 38)
 	"autoscaling:CreateAutoScalingGroup",
 	"autoscaling:CreateLaunchConfiguration",
@@ -114,14 +134,16 @@ var privEscActions = []string{
 	"sagemaker:CreateProcessingJob",
 	"sagemaker:CreateTrainingJob",
 	"sagemaker:UpdateNotebookInstanceLifecycleConfig",
-	// SSM (methods 23–25, 69)
+	// SSM (methods 23–25, 69, 84)
 	"ssm:CreateAssociation",
+	"ssm:CreateDocument",
 	"ssm:ResumeSession",
 	"ssm:SendCommand",
 	"ssm:StartAutomationExecution",
 	"ssm:StartSession",
-	// Step Functions (methods 70–71)
+	// Step Functions (methods 70–71, 83)
 	"states:CreateStateMachine",
+	"states:StartExecution",
 	"states:UpdateStateMachine",
 	// STS (method 22)
 	"sts:AssumeRole",
