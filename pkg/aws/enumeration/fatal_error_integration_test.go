@@ -14,22 +14,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestFatalError_BadCredentials_AbortsPipeline verifies that invalid
-// credentials cause List to return an error instead of silently skipping.
+// TestFatalError_InvalidCredentials_FailsFast verifies that completely invalid
+// credentials cause an immediate error — not silent empty results.
 //
-// Note: the error (InvalidClientTokenId) occurs at GetAccountID (STS level),
-// before enumeration starts. This tests the "completely invalid credentials"
-// path. The enumeration-level fatal error path (credential expires mid-run)
-// is covered by unit tests (TestContinueOnDenied_FatalSmithyCode_PropagatesFatal)
-// since it cannot be triggered with static AWS profiles.
-func TestFatalError_BadCredentials_AbortsPipeline(t *testing.T) {
+// The error occurs at GetAccountID (STS GetCallerIdentity), BEFORE any
+// enumeration starts. This is the "garbage credentials" path.
+//
+// The enumeration-level fatal error path is tested by:
+//   - Unit: TestEnumerator_List_FatalError_StopsPipeline (mock ExpiredToken)
+//   - Binary: TestFatalError_Binary_EnumerationLevel (build tag + restricted role)
+func TestFatalError_InvalidCredentials_FailsFast(t *testing.T) {
 	profileDir := t.TempDir()
 	profileName := "aurelian-test-bad-creds"
 
-	// Write a profile with a fake access key.
-	// AWS will return InvalidClientTokenId (fatal, not skippable).
-	configContent := "[profile " + profileName + "]\n" +
-		"region = us-east-1\n"
+	configContent := "[profile " + profileName + "]\nregion = us-east-1\n"
 	credsContent := "[" + profileName + "]\n" +
 		"aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n" +
 		"aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n"
@@ -48,7 +46,7 @@ func TestFatalError_BadCredentials_AbortsPipeline(t *testing.T) {
 	})
 	defer enumerator.Close()
 
-	// List should return a fatal error — not skip it.
+	// Single List call — fails at STS, not at enumeration.
 	out := pipeline.New[output.AWSResource]()
 	var collected []output.AWSResource
 	done := make(chan struct{})
@@ -63,21 +61,18 @@ func TestFatalError_BadCredentials_AbortsPipeline(t *testing.T) {
 	out.Close()
 	<-done
 
-	// The error must propagate — bad credentials should NOT be skipped.
-	require.Error(t, err, "fatal credential error must propagate, not be skipped")
-	assert.Empty(t, collected, "no resources should be returned with bad credentials")
-
-	// SkipReport should be empty — fatal errors are not recorded as skips.
+	require.Error(t, err, "invalid credentials must produce an error")
+	assert.Contains(t, err.Error(), "InvalidClientTokenId")
+	assert.Empty(t, collected)
 	assert.Equal(t, 0, enumerator.Skipped.Len(),
-		"fatal credential errors must NOT appear in SkipReport — they are pipeline-fatal")
-
-	t.Logf("Fatal error propagated correctly: %v", err)
+		"credential errors must NOT appear in SkipReport")
 }
 
-// TestFatalError_BadCredentials_StopsPipeline verifies that when multiple
-// types are fed through pipeline.Pipe, a fatal credential error on the
-// first type stops the entire pipeline — subsequent types are NOT attempted.
-func TestFatalError_BadCredentials_StopsPipeline(t *testing.T) {
+// TestFatalError_InvalidCredentials_PipelineFailsFast verifies that a
+// pipeline of multiple types also fails fast with invalid credentials.
+// Same STS-level failure — included to confirm pipeline.Pipe propagates
+// the error correctly.
+func TestFatalError_InvalidCredentials_PipelineFailsFast(t *testing.T) {
 	profileDir := t.TempDir()
 	profileName := "aurelian-test-bad-creds-pipeline"
 
@@ -100,7 +95,6 @@ func TestFatalError_BadCredentials_StopsPipeline(t *testing.T) {
 	})
 	defer enumerator.Close()
 
-	// Feed multiple types — pipeline should stop after the first fatal error.
 	types := pipeline.From(
 		"AWS::S3::Bucket",
 		"AWS::IAM::Role",
@@ -111,12 +105,8 @@ func TestFatalError_BadCredentials_StopsPipeline(t *testing.T) {
 	pipeline.Pipe(types, enumerator.List, listed)
 
 	results, err := listed.Collect()
-	require.Error(t, err, "pipeline must abort on fatal credential error")
-	assert.Empty(t, results, "no resources should be collected with bad credentials")
-	assert.Equal(t, 0, enumerator.Skipped.Len(),
-		"fatal errors must NOT be recorded as skips")
-	assert.Contains(t, err.Error(), "InvalidClientTokenId",
-		"error must surface the credential failure")
-
-	t.Logf("Pipeline aborted correctly: %v", err)
+	require.Error(t, err, "invalid credentials must abort pipeline")
+	assert.Contains(t, err.Error(), "InvalidClientTokenId")
+	assert.Empty(t, results)
+	assert.Equal(t, 0, enumerator.Skipped.Len())
 }
