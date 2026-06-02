@@ -132,23 +132,17 @@ func TestPrivescEnrichmentE2E(t *testing.T) {
 
 	t.Logf("Graph seeded: %d nodes, %d edges", len(nodes), len(rels))
 
-	// --- Graph fixup: reconcile node schema inconsistency ---
-	//
-	// RelationshipFromAWSIAMRelationship builds start nodes via NodeFromAWSResource
-	// (OriginalData is nil from buildPrincipal) giving labels [User,Resource,AWS::IAM::User]
-	// with lowercase {arn}. EmitGAADEntities-derived nodes use [User,Principal,AWS::IAM::User]
-	// with PascalCase {Arn}. These become two separate Neo4j nodes; relationships attach to
-	// the Resource-labelled one, but enrichment queries match :Principal nodes.
-	//
-	// Fix: for all IAM entity nodes that hold relationships (the Resource-labelled ones),
-	// add the Principal label and copy arn → Arn so enrichment Cypher can reach them.
-	// This fixup should live in the production graph pipeline; tracked as a separate issue.
-	_, err = db.Query(ctx, `
-		MATCH (n)
+	// NodeFromAWSIAMResource now correctly assigns the Principal label to IAM entity
+	// nodes even when OriginalData is nil (fixed per ztgrace PR #120 feedback).
+	// Verify this before enrichment to catch any regression early.
+	principalCheck, err := db.Query(ctx, `
+		MATCH (n:Principal)
 		WHERE any(lbl IN labels(n) WHERE lbl IN ['AWS::IAM::User','AWS::IAM::Role','AWS::IAM::Group'])
-		  AND n.arn IS NOT NULL
-		SET n:Principal, n.Arn = n.arn`, nil)
-	require.NoError(t, err, "graph fixup: add Principal label to IAM entity nodes")
+		RETURN count(n) AS n`, nil)
+	require.NoError(t, err)
+	principalCount, _ := principalCheck.Records[0]["n"].(int64)
+	require.Greater(t, int(principalCount), 0,
+		"IAM entity nodes must carry the :Principal label — NodeFromAWSIAMResource regression")
 
 	diagRels, err := db.Query(ctx, `
 		MATCH ()-[r]->() RETURN type(r) AS rel_type, count(r) AS cnt

@@ -87,12 +87,18 @@ func EnrichAWS(ctx context.Context, db graph.GraphDatabase) error {
 
 	slog.Info("running AWS enrichment queries", "count", len(enrichQueries))
 
+	// Warn on individual failures; only return error if every query fails.
+	// Zach Grace (PR #120): "we should error if all methods failed" —
+	// a single broken method shouldn't abort all enrichment.
+	failures := 0
 	for _, query := range enrichQueries {
 		slog.Debug("executing enrichment query", "id", query.Metadata.ID, "name", query.Metadata.Name)
 
 		result, err := db.Query(ctx, query.Cypher, nil)
 		if err != nil {
-			return fmt.Errorf("query %s failed: %w", query.Metadata.ID, err)
+			failures++
+			slog.Warn("enrichment query failed", "id", query.Metadata.ID, "error", err)
+			continue
 		}
 
 		slog.Debug("query completed",
@@ -101,6 +107,9 @@ func EnrichAWS(ctx context.Context, db graph.GraphDatabase) error {
 			"relationships_created", result.Summary.RelationshipsCreated)
 	}
 
+	if failures == len(enrichQueries) {
+		return fmt.Errorf("all %d enrichment queries failed", failures)
+	}
 	return nil
 }
 

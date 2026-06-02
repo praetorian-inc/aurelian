@@ -15,6 +15,7 @@ type mockGraphDB struct {
 	queriesCalled []string
 	queryResults  map[string]*graph.QueryResult
 	queryErrors   map[string]error
+	defaultError  error // returned for any query not in queryErrors
 }
 
 func newMockGraphDB() *mockGraphDB {
@@ -30,6 +31,10 @@ func (m *mockGraphDB) Query(ctx context.Context, cypher string, params map[strin
 
 	if err, exists := m.queryErrors[cypher]; exists {
 		return nil, err
+	}
+
+	if m.defaultError != nil {
+		return nil, m.defaultError
 	}
 
 	if result, exists := m.queryResults[cypher]; exists {
@@ -137,17 +142,32 @@ func TestEnrichAWSFiltersCorrectly(t *testing.T) {
 	}
 }
 
-// TestEnrichAWSReturnsErrorOnQueryFailure verifies EnrichAWS propagates query errors
-func TestEnrichAWSReturnsErrorOnQueryFailure(t *testing.T) {
+// TestEnrichAWSWarnsOnSingleQueryFailure verifies EnrichAWS warns but continues
+// when an individual query fails (ztgrace pattern: warn per failure, error only if all fail).
+func TestEnrichAWSWarnsOnSingleQueryFailure(t *testing.T) {
 	mock := newMockGraphDB()
 	ctx := context.Background()
 
-	// Set up error for any query containing the accounts pattern
+	// Fail only the accounts query — all others succeed.
 	mock.queryErrors["MATCH (n:Principal)\nWHERE n._resourceType STARTS WITH 'AWS::'\nSET n._enriched = true\nRETURN count(n) as enriched_count\n"] = assert.AnError
 
+	// A single failure should NOT return an error — EnrichAWS warns and continues.
 	err := EnrichAWS(ctx, mock)
-	require.Error(t, err, "should return error when query fails")
-	assert.Contains(t, err.Error(), "aws/enrich/accounts", "error should mention failing query ID")
+	assert.NoError(t, err, "single query failure should warn and continue, not abort enrichment")
+}
+
+// TestEnrichAWSReturnsErrorWhenAllQueriesFail verifies EnrichAWS returns an error
+// only when every query fails (ztgrace pattern: error if ALL methods failed).
+func TestEnrichAWSReturnsErrorWhenAllQueriesFail(t *testing.T) {
+	mock := newMockGraphDB()
+	ctx := context.Background()
+
+	// Make every query call return an error.
+	mock.defaultError = assert.AnError
+
+	err := EnrichAWS(ctx, mock)
+	require.Error(t, err, "should return error when all queries fail")
+	assert.Contains(t, err.Error(), "all", "error should mention all queries failed")
 }
 
 // TestRunPlatformQueryExecutesQuery verifies RunPlatformQuery executes the correct query
