@@ -395,3 +395,47 @@ func TestEnumerator_List_MultipleDeniedTypes_EachRecorded(t *testing.T) {
 	assert.True(t, codes["AccessDeniedException"])
 	assert.True(t, codes["UnauthorizedOperation"])
 }
+
+// TestEnumerator_List_FatalError_StopsPipeline verifies that a fatal error
+// (e.g. ExpiredToken) at the enumeration level causes pipeline.Pipe to abort.
+// The first type returns a fatal error, and subsequent types must NOT execute.
+// This tests the actual pipeline behavior, not just the classifier.
+func TestEnumerator_List_FatalError_StopsPipeline(t *testing.T) {
+	callCount := 0
+	fatal := &mockResourceEnumerator{
+		resourceType:    "AWS::S3::Bucket",
+		enumerateAllErr: &mockSmithyError{code: "ExpiredToken", msg: "token expired mid-run"},
+	}
+	tracker := &mockResourceEnumerator{
+		resourceType: "AWS::Lambda::Function",
+		// No error — but we track if it was called.
+	}
+
+	e := newTestEnumerator(map[string]ResourceEnumerator{
+		"AWS::S3::Bucket":       fatal,
+		"AWS::Lambda::Function": tracker,
+	})
+
+	// Count how many times List is called via the pipeline.
+	originalList := e.List
+	wrappedList := func(identifier string, out *pipeline.P[output.AWSResource]) error {
+		callCount++
+		return originalList(identifier, out)
+	}
+
+	types := pipeline.From("AWS::S3::Bucket", "AWS::Lambda::Function")
+	listed := pipeline.New[output.AWSResource]()
+	pipeline.Pipe(types, wrappedList, listed)
+
+	results, err := listed.Collect()
+
+	require.Error(t, err, "pipeline must abort on fatal error")
+	assert.Contains(t, err.Error(), "ExpiredToken")
+	assert.Empty(t, results, "no resources should be collected after fatal error")
+	assert.Equal(t, 0, e.Skipped.Len(), "fatal errors must NOT be recorded as skips")
+
+	// The pipeline should have stopped after the first type.
+	// With pipeSequential, the second type should NOT be called.
+	assert.Equal(t, 1, callCount,
+		"pipeline must stop after first fatal error — second type should not be attempted")
+}
