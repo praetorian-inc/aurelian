@@ -162,3 +162,56 @@ func TestThreadSafety(t *testing.T) {
 		t.Errorf("Expected 10 modules after concurrent registration, got %d", plugin.Count())
 	}
 }
+
+func TestByPlatform_ReturnsOnlyMatchingPlatform(t *testing.T) {
+	plugin.ResetRegistry()
+
+	awsModule := &testutils.MockModule{
+		IDValue:       "aws-mod",
+		PlatformValue: plugin.PlatformAWS,
+		CategoryValue: plugin.CategoryRecon,
+	}
+	azureModule := &testutils.MockModule{
+		IDValue:       "azure-mod",
+		PlatformValue: plugin.PlatformAzure,
+		CategoryValue: plugin.CategoryRecon,
+	}
+	plugin.Register(awsModule)
+	plugin.Register(azureModule)
+
+	got := plugin.ByPlatform(plugin.PlatformAWS)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 AWS module, got %d", len(got))
+	}
+	if got[0].ID() != "aws-mod" {
+		t.Errorf("expected aws-mod, got %s", got[0].ID())
+	}
+}
+
+func TestByPlatform_EmptyForUnknownPlatform(t *testing.T) {
+	plugin.ResetRegistry()
+
+	got := plugin.ByPlatform(plugin.PlatformAWS)
+	if len(got) != 0 {
+		t.Errorf("expected empty slice, got %d entries", len(got))
+	}
+}
+
+func TestByPlatform_ReturnsFreshSlice(t *testing.T) {
+	plugin.ResetRegistry()
+
+	module := &testutils.MockModule{
+		IDValue:       "m",
+		PlatformValue: plugin.PlatformAWS,
+		CategoryValue: plugin.CategoryRecon,
+	}
+	plugin.Register(module)
+
+	first := plugin.ByPlatform(plugin.PlatformAWS)
+	first[0] = nil // mutate caller's copy
+
+	second := plugin.ByPlatform(plugin.PlatformAWS)
+	if len(second) != 1 || second[0] == nil {
+		t.Error("ByPlatform did not return a fresh slice; mutation leaked")
+	}
+}

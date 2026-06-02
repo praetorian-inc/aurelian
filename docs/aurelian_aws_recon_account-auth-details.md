@@ -1,6 +1,6 @@
 ## aurelian aws recon account-auth-details
 
-Retrieves IAM account authorization details including users, roles, groups, and policies. IAM is a global service, so this module always queries us-east-1 region.
+Retrieves IAM account authorization details including users, roles, groups, and policies. Supports multiple profiles for multi-account collection. IAM is a global service, so this module always queries us-east-1 region.
 
 ```
 aurelian aws recon account-auth-details [flags]
@@ -10,10 +10,10 @@ aurelian aws recon account-auth-details [flags]
 
 ```
   -h, --help                 help for account-auth-details
-      --opsec_level string   Operational security level for AWS operations (default "none")
       --output-dir string    Base output directory (default "aurelian-output")
-  -p, --profile string       AWS profile to use
+      --profile string       AWS profile to use
       --profile-dir string   Set to override the default AWS profile directory
+  -p, --profiles strings     AWS profiles to collect (comma-separated)
 ```
 
 ### SEE ALSO
