@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -84,6 +85,81 @@ func TestFatalError_Binary_BadCredentials(t *testing.T) {
 	_, statErr := os.Stat(filepath.Join(outputDir, "enumeration-skips.json"))
 	assert.True(t, os.IsNotExist(statErr),
 		"enumeration-skips.json must NOT exist — fatal errors are not recorded as skips")
+}
+
+// TestFatalError_Binary_EnumerationLevel builds the binary with the
+// fatal_test_mode tag (which adds AccessDeniedException to fatalErrorCodes),
+// then runs it with the restricted role. STS succeeds (valid credentials),
+// but the first AccessDeniedException during enumeration (e.g. Amplify denied)
+// is now fatal — the pipeline must abort.
+//
+// This tests the exact scenario: fatal error at the ENUMERATION level,
+// not the STS setup level.
+func TestFatalError_Binary_EnumerationLevel(t *testing.T) {
+	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
+	fixture.Setup()
+
+	restrictedRoleARN := fixture.Output("restricted_role_arn")
+	require.NotEmpty(t, restrictedRoleARN)
+
+	// Build binary with fatal_test_mode tag.
+	binDir := t.TempDir()
+	binPath := filepath.Join(binDir, "aurelian")
+	build := exec.Command("go", "build", "-tags", "fatal_test_mode", "-o", binPath, ".")
+	build.Dir = findRepoRootExec(t)
+	buildOut, err := build.CombinedOutput()
+	require.NoError(t, err, "go build failed: %s", string(buildOut))
+
+	// Set up restricted role profile.
+	profileDir := t.TempDir()
+	profileName := "aurelian-binary-fatal-enum"
+	sourceProfile := os.Getenv("AWS_PROFILE")
+	if sourceProfile == "" {
+		sourceProfile = "default"
+	}
+
+	homeDir, _ := os.UserHomeDir()
+	origConfig, _ := os.ReadFile(filepath.Join(homeDir, ".aws", "config"))
+	origCreds, _ := os.ReadFile(filepath.Join(homeDir, ".aws", "credentials"))
+
+	configContent := string(origConfig) + "\n[profile " + profileName + "]\n" +
+		"role_arn = " + restrictedRoleARN + "\n" +
+		"source_profile = " + sourceProfile + "\nregion = us-east-1\n"
+	require.NoError(t, os.WriteFile(filepath.Join(profileDir, "config"), []byte(configContent), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(profileDir, "credentials"), origCreds, 0o600))
+
+	outputDir := t.TempDir()
+
+	// Run — STS works, but first AccessDeniedException is now fatal.
+	cmd := exec.Command(binPath,
+		"aws", "recon", "list-all",
+		"--profile", profileName,
+		"--profile-dir", profileDir,
+		"--regions", "us-east-1",
+		"--scan-type", "summary",
+		"--output-dir", outputDir,
+		"--no-color",
+	)
+	cmd.Env = append(os.Environ(),
+		"AWS_CONFIG_FILE="+filepath.Join(profileDir, "config"),
+		"AWS_SHARED_CREDENTIALS_FILE="+filepath.Join(profileDir, "credentials"),
+	)
+	output, runErr := cmd.CombinedOutput()
+	outputStr := string(output)
+
+	t.Logf("Binary output:\n%s", outputStr)
+	t.Logf("Exit code error: %v", runErr)
+
+	// Binary must abort with Error — not skip.
+	assert.Contains(t, outputStr, "Error:",
+		"binary must abort when AccessDeniedException is fatal")
+	assert.Contains(t, outputStr, "AccessDeniedException",
+		"error must mention the denied operation")
+	assert.NotContains(t, outputStr, "skipped",
+		"binary must NOT show skip summary when the error is fatal")
+
+	// Verify some resources MAY have been collected before the fatal hit,
+	// but the pipeline stopped. The key assertion is Error in the output.
 }
 
 // TestFatalError_Binary_GoodCredentials_RestrictedRole runs the binary with
