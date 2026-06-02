@@ -30,6 +30,7 @@ const (
 	CategoryRecon   Category = "recon"
 	CategoryAnalyze Category = "analyze"
 	CategorySecrets Category = "secrets"
+	CategoryPush    Category = "push"
 )
 
 const (
