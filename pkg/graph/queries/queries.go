@@ -96,6 +96,9 @@ func EnrichAWS(ctx context.Context, db graph.GraphDatabase) error {
 
 		result, err := db.Query(ctx, query.Cypher, nil)
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
 			failures++
 			slog.Warn("enrichment query failed", "id", query.Metadata.ID, "error", err)
 			continue

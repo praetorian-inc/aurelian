@@ -30,9 +30,9 @@ func startNeo4jContainer(ctx context.Context) (string, func(), error) {
 }
 
 const (
-	attackerARN = "arn:aws:iam::123456789012:user/attacker"
-	victimARN   = "arn:aws:iam::123456789012:user/victim"
-	roleARN     = "arn:aws:iam::123456789012:role/target-role"
+	attackerARN    = "arn:aws:iam::123456789012:user/attacker"
+	victimARN      = "arn:aws:iam::123456789012:user/victim"
+	roleARN        = "arn:aws:iam::123456789012:role/target-role"
 	svcResourceARN = "arn:aws:lambda:us-east-1:123456789012:function:test"
 )
 
@@ -85,21 +85,21 @@ func passRoleCase(queryID, svcPermType string) privescTestCase {
 }
 
 // passRoleCaseFanOut builds a test case for new PassRole+service methods (43–89).
-// These methods fan-out CAN_PRIVESC to all Principals so paths are visible
-// to the privesc_paths.yaml analysis query (Concern B fixed for new methods).
+// After the CodeRabbit-validated fix, these methods create CAN_PRIVESC to the
+// specific passed IAM role (victim = passed role) rather than all Principals.
+// The passed role is created as :Principal (matching real IAM role node labeling).
 func passRoleCaseFanOut(queryID, svcPermType string) privescTestCase {
 	return privescTestCase{
 		queryID: queryID,
 		setup: fmt.Sprintf(`
 			CREATE (a:Principal {Arn: '%s'})
-			CREATE (v:Principal {Arn: '%s'})
-			CREATE (r:Resource  {Arn: '%s'})
+			CREATE (r:Principal {Arn: '%s'})
 			CREATE (s:Resource  {Arn: '%s'})
-			WITH a, v, r, s
+			WITH a, r, s
 			MERGE (a)-[:IAM_PASSROLE]->(r)
 			MERGE (a)-[:`+"`%s`"+`]->(s)
-		`, attackerARN, victimARN, roleARN, svcResourceARN, svcPermType),
-		verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+		`, attackerARN, roleARN, svcResourceARN, svcPermType),
+		verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 		wantEdges: 1,
 	}
 }
@@ -162,18 +162,19 @@ func allPrivescCases() []privescTestCase {
 		standaloneCase("aws/enrich/privesc/method_35", "SAGEMAKER_CREATEPRESIGNEDNOTEBOOKINSTANCEURL"),
 		passRoleCase("aws/enrich/privesc/method_36", "SAGEMAKER_CREATETRAININGJOB"),
 		passRoleCase("aws/enrich/privesc/method_37", "SAGEMAKER_CREATEPROCESSINGJOB"),
-		// method_39: lambda:UpdateFunctionCode + lambda:InvokeFunction (two-perm compound)
+		// method_39: lambda:UpdateFunctionCode + lambda:InvokeFunction (no PassRole — escalates via Lambda execution role)
 		{
 			queryID: "aws/enrich/privesc/method_39",
 			setup: fmt.Sprintf(`
 					CREATE (a:Principal {Arn: '%s'})
-					CREATE (v:Principal {Arn: '%s'})
+					CREATE (r:Principal {Arn: '%s'})
 					CREATE (f:Resource  {Arn: '%s'})
-					WITH a, v, f
+					WITH a, r, f
 					MERGE (a)-[:LAMBDA_UPDATEFUNCTIONCODE]->(f)
 					MERGE (a)-[:LAMBDA_INVOKEFUNCTION]->(f)
-				`, attackerARN, victimARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+					MERGE (f)-[:HAS_ROLE]->(r)
+				`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 		// method_38: iam:PassRole + ec2:CreateLaunchTemplate + autoscaling:CreateAutoScalingGroup
@@ -181,15 +182,14 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_38",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:EC2_CREATELAUNCHTEMPLATE]->(s)
 				MERGE (a)-[:AUTOSCALING_CREATEAUTOSCALINGGROUP]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 		// method_40: hyphens preserved by normalizer → BEDROCK-AGENTCORE_CREATECODEINTERPRETER (fan-out fixed)
@@ -288,18 +288,19 @@ func allPrivescCases() []privescTestCase {
 		// method_64: iam:PassRole + kinesisanalytics:CreateApplication
 		passRoleCaseFanOut("aws/enrich/privesc/method_64", "KINESISANALYTICS_CREATEAPPLICATION"),
 
-		// method_65: lambda:UpdateFunctionCode + lambda:AddPermission (two-perm compound)
+		// method_65: lambda:UpdateFunctionCode + lambda:AddPermission (no PassRole — escalates via Lambda execution role)
 		{
 			queryID: "aws/enrich/privesc/method_65",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (f:Resource  {Arn: '%s'})
-				WITH a, v, f
+				WITH a, r, f
 				MERGE (a)-[:LAMBDA_UPDATEFUNCTIONCODE]->(f)
 				MERGE (a)-[:LAMBDA_ADDPERMISSION]->(f)
-			`, attackerARN, victimARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+				MERGE (f)-[:HAS_ROLE]->(r)
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 
@@ -361,16 +362,15 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_75",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:AMPLIFY_CREATEAPP]->(s)
 				MERGE (a)-[:AMPLIFY_CREATEBRANCH]->(s)
 				MERGE (a)-[:AMPLIFY_STARTJOB]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 
@@ -395,15 +395,14 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_77",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GLUE_CREATEJOB]->(s)
 				MERGE (a)-[:GLUE_CREATETRIGGER]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 
@@ -412,15 +411,14 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_78",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GLUE_UPDATEJOB]->(s)
 				MERGE (a)-[:GLUE_CREATETRIGGER]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 
@@ -429,15 +427,14 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_79",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:LAMBDA_CREATEFUNCTION]->(s)
 				MERGE (a)-[:LAMBDA_ADDPERMISSION]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 
@@ -447,15 +444,14 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_80",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GLUE_CREATEJOB]->(s)
 				MERGE (a)-[:GLUE_STARTJOBRUN]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 
@@ -464,15 +460,14 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_81",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GLUE_UPDATEJOB]->(s)
 				MERGE (a)-[:GLUE_STARTJOBRUN]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 
@@ -481,15 +476,14 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_82",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GLUE_CREATESESSION]->(s)
 				MERGE (a)-[:GLUE_RUNSTATEMENT]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 
@@ -498,15 +492,14 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_83",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:STATES_CREATESTATEMACHINE]->(s)
 				MERGE (a)-[:STATES_STARTEXECUTION]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 
@@ -530,15 +523,14 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_85",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:`+"`EMR-SERVERLESS_CREATEAPPLICATION`"+`]->(s)
 				MERGE (a)-[:`+"`EMR-SERVERLESS_STARTJOBRUN`"+`]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 
@@ -547,15 +539,14 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_86",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:KINESISANALYTICS_CREATEAPPLICATION]->(s)
 				MERGE (a)-[:KINESISANALYTICS_STARTAPPLICATION]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 
@@ -564,35 +555,32 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_87",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:OMICS_CREATEWORKFLOW]->(s)
 				MERGE (a)-[:OMICS_STARTRUN]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 
 		// method_88: iam:PassRole + gamelift:CreateBuild + gamelift:CreateFleet
-		// (gamelift CreateBuild and CreateFleet target different resource types)
-		// Now fans out to victim Principal.
+		// CreateBuild and CreateFleet target different resource types — both check same passed role.
 		{
 			queryID: "aws/enrich/privesc/method_88",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
 				CREATE (s2:Resource {Arn: 'arn:aws:gamelift:us-east-1::fleet/test'})
-				WITH a, v, r, s, s2
+				WITH a, r, s, s2
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GAMELIFT_CREATEBUILD]->(s)
 				MERGE (a)-[:GAMELIFT_CREATEFLEET]->(s2)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 
@@ -601,15 +589,14 @@ func allPrivescCases() []privescTestCase {
 			queryID: "aws/enrich/privesc/method_89",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:IMAGEBUILDER_CREATEINFRASTRUCTURECONFIGURATION]->(s)
 				MERGE (a)-[:IMAGEBUILDER_CREATEIMAGE]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 	}
@@ -693,12 +680,12 @@ func TestEnrichAWSPrivescEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 
 	// Seed nodes and all non-hyphenated relationship types in one query.
+	// role must be :Principal so the scoped PassRole queries can find it as victim.
 	seedCypher := fmt.Sprintf(`
 		CREATE (attacker:Principal {Arn: '%s'})
-		CREATE (victim:Principal   {Arn: '%s'})
-		CREATE (role:Resource      {Arn: '%s'})
+		CREATE (role:Principal     {Arn: '%s'})
 		CREATE (svc:Resource       {Arn: '%s'})
-		WITH attacker, victim, role, svc
+		WITH attacker, role, svc
 		MERGE (attacker)-[:IAM_PASSROLE]->(role)
 		MERGE (attacker)-[:APPRUNNER_UPDATESERVICE]->(svc)
 		MERGE (attacker)-[:BATCH_SUBMITJOB]->(svc)
@@ -727,7 +714,7 @@ func TestEnrichAWSPrivescEndToEnd(t *testing.T) {
 		MERGE (attacker)-[:SSM_STARTAUTOMATIONEXECUTION]->(svc)
 		MERGE (attacker)-[:STATES_CREATESTATEMACHINE]->(svc)
 		MERGE (attacker)-[:STATES_UPDATESTATEMACHINE]->(svc)
-	`, attackerARN, victimARN, roleARN, svcResourceARN)
+	`, attackerARN, roleARN, svcResourceARN)
 
 	_, err = db.Query(ctx, seedCypher, nil)
 	require.NoError(t, err, "seed graph (non-hyphenated types)")
@@ -748,17 +735,16 @@ func TestEnrichAWSPrivescEndToEnd(t *testing.T) {
 	err = EnrichAWS(ctx, db)
 	require.NoError(t, err, "EnrichAWS should succeed")
 
-	// After the Concern B fix (methods 43–89 fan-out to all Principals), MERGE deduplicates all
-	// edges per (attacker, victim, type) — every method fires to the same victim node, producing
-	// exactly 1 shared CAN_PRIVESC edge. Assert that edge exists.
+	// After the scoped fix, PassRole methods create CAN_PRIVESC to the passed role (roleARN).
+	// MERGE deduplicates edges per (attacker, role) — all PassRole methods share this 1 edge.
 	result, err := db.Query(ctx,
-		fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+		fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 		nil)
 	require.NoError(t, err)
 	require.Len(t, result.Records, 1)
 	n, _ := toInt64(result.Records[0]["n"])
-	t.Logf("CAN_PRIVESC edges attacker→victim: %d", n)
-	assert.GreaterOrEqual(t, int(n), 1, "enrichment should produce at least 1 CAN_PRIVESC edge to victim")
+	t.Logf("CAN_PRIVESC edges attacker→role: %d", n)
+	assert.GreaterOrEqual(t, int(n), 1, "enrichment should produce at least 1 CAN_PRIVESC edge to the passed role")
 }
 
 // TestPrivescMultiHopPaths verifies that EnrichAWS produces CAN_PRIVESC edges
@@ -932,8 +918,14 @@ func TestPrivescAnalysisQuery(t *testing.T) {
 	})
 
 	t.Run("4_hop_d1_not_found", func(t *testing.T) {
-		assert.False(t, found[pathKey{"arn:aws:iam::1:user/d1", 4}],
-			"d1's 4-hop path exceeds CAN_PRIVESC*1..3 limit and must not appear")
+		// The analysis query bounds to CAN_PRIVESC*1..3, so hop_count can only be 1–3.
+		// Assert d1 never appears as attacker at ANY hop count — not just hop_count=4,
+		// which would be a structural no-op since the map never receives keys with hops:4.
+		for _, rec := range result.Records {
+			attacker, _ := rec["attacker_arn"].(string)
+			assert.NotEqual(t, "arn:aws:iam::1:user/d1", attacker,
+				"d1's 4-hop path exceeds CAN_PRIVESC*1..3 limit and must not appear at any hop count")
+		}
 	})
 
 	t.Run("admin_to_admin_excluded", func(t *testing.T) {
@@ -953,9 +945,12 @@ func TestPrivescAnalysisQuery(t *testing.T) {
 }
 
 // TestPassRoleServiceFanOutReachesAnalysisQuery is the critical end-to-end proof for the
-// Concern B fix: seeds a PassRole+service method (method_43), runs EnrichAWS, then runs
-// the registered aws/analysis/privesc_paths query and asserts the path appears in output.
-// Before the fix, enrichment produced 0 analysis results for PassRole+service attackers.
+// Concern B + CodeRabbit scoped-fix: seeds a PassRole+AppRunner scenario where the passed
+// role is itself an admin principal, runs EnrichAWS, then verifies the analysis query
+// finds a 1-hop path from attacker to that admin role.
+//
+// With the scoped fix, method_43 creates CAN_PRIVESC(attacker → passed_role). If the passed
+// role has _is_admin=true the analysis query reports it immediately as a 1-hop finding.
 func TestPassRoleServiceFanOutReachesAnalysisQuery(t *testing.T) {
 	ctx := context.Background()
 
@@ -968,23 +963,25 @@ func TestPassRoleServiceFanOutReachesAnalysisQuery(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	// Seed a principal with ONLY PassRole + AppRunner CreateService (method_43).
-	// Before the fan-out fix this would produce 0 analysis findings.
+	const adminRoleARN = "arn:aws:iam::123:role/admin"
+
+	// The attacker passes an admin IAM role to AppRunner.
+	// The passed role is :Principal with _is_admin=true so the scoped CAN_PRIVESC
+	// edge points directly to an admin target visible to the analysis query.
 	_, err = db.Query(ctx, fmt.Sprintf(`
 		CREATE (attacker:Principal {Arn: '%s', _is_admin: false})
-		CREATE (admin:Principal    {Arn: 'arn:aws:iam::123:role/admin', _is_admin: true})
-		CREATE (role:Resource      {Arn: '%s'})
+		CREATE (adminRole:Principal {Arn: '%s', _is_admin: true})
 		CREATE (svc:Resource       {Arn: '%s'})
-		WITH attacker, admin, role, svc
-		MERGE (attacker)-[:IAM_PASSROLE]->(role)
+		WITH attacker, adminRole, svc
+		MERGE (attacker)-[:IAM_PASSROLE]->(adminRole)
 		MERGE (attacker)-[:APPRUNNER_CREATESERVICE]->(svc)
-	`, attackerARN, roleARN, svcResourceARN), nil)
+	`, attackerARN, adminRoleARN, svcResourceARN), nil)
 	require.NoError(t, err)
 
 	err = EnrichAWS(ctx, db)
 	require.NoError(t, err)
 
-	// The analysis query must now find a path from this attacker to admin.
+	// The analysis query must find a path: attacker → adminRole (1 hop).
 	result, err := RunPlatformQuery(ctx, db, "aws/analysis/privesc_paths", nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -997,8 +994,8 @@ func TestPassRoleServiceFanOutReachesAnalysisQuery(t *testing.T) {
 		}
 	}
 	assert.True(t, found,
-		"PassRole+AppRunner attacker must appear in analysis output after fan-out fix — "+
-			"if this fails, method_43 (or another PassRole+service method) has regressed to pointing at service_resource")
+		"PassRole+AppRunner attacker must appear in analysis output — "+
+			"if this fails, method_43 has regressed: the scoped CAN_PRIVESC edge must point to the passed :Principal role, not a :Resource")
 }
 
 // TestPrivescEdgeMetadata verifies that CAN_PRIVESC edges created by enrichment
@@ -1039,13 +1036,12 @@ func TestPrivescEdgeMetadata(t *testing.T) {
 			queryID: "aws/enrich/privesc/method_43",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:APPRUNNER_CREATESERVICE]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			`, attackerARN, roleARN, svcResourceARN),
 			wantMethod:   "iam:PassRole + apprunner:CreateService",
 			wantSeverity: "high",
 		},
@@ -1054,13 +1050,12 @@ func TestPrivescEdgeMetadata(t *testing.T) {
 			queryID: "aws/enrich/privesc/method_70",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:STATES_CREATESTATEMACHINE]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			`, attackerARN, roleARN, svcResourceARN),
 			wantMethod:   "iam:PassRole + states:CreateStateMachine",
 			wantSeverity: "high",
 		},
@@ -1069,14 +1064,13 @@ func TestPrivescEdgeMetadata(t *testing.T) {
 			queryID: "aws/enrich/privesc/method_88",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GAMELIFT_CREATEBUILD]->(s)
 				MERGE (a)-[:GAMELIFT_CREATEFLEET]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			`, attackerARN, roleARN, svcResourceARN),
 			wantMethod:   "iam:PassRole + gamelift:CreateBuild + gamelift:CreateFleet",
 			wantSeverity: "high",
 		},
@@ -1093,13 +1087,14 @@ func TestPrivescEdgeMetadata(t *testing.T) {
 			_, err = RunPlatformQuery(ctx, db, tc.queryID, nil)
 			require.NoError(t, err, "run enrichment query")
 
+			// Verify edge goes to the passed role (roleARN), not a generic victim.
 			result, err := db.Query(ctx,
 				fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'})
-				             RETURN r.method AS method, r.severity AS severity`, attackerARN, victimARN),
+				             RETURN r.method AS method, r.severity AS severity`, attackerARN, roleARN),
 				nil)
 			require.NoError(t, err)
 			require.Len(t, result.Records, 1,
-				"expected exactly 1 CAN_PRIVESC edge from attacker to victim")
+				"expected exactly 1 CAN_PRIVESC edge from attacker to passed role")
 
 			assert.Equal(t, tc.wantMethod, result.Records[0]["method"],
 				"r.method must match the YAML method property — wrong value breaks pathfinding FP tests")
@@ -1149,11 +1144,10 @@ func TestPrivescNegativePermissions(t *testing.T) {
 			queryID: "aws/enrich/privesc/method_43",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
-				WITH a, v, r
+				CREATE (r:Principal {Arn: '%s'})
+				WITH a, r
 				MERGE (a)-[:IAM_PASSROLE]->(r)
-			`, attackerARN, victimARN, roleARN),
+			`, attackerARN, roleARN),
 			desc: "iam:PassRole alone must not trigger method_43 (requires apprunner:CreateService too)",
 		},
 		{
@@ -1161,11 +1155,10 @@ func TestPrivescNegativePermissions(t *testing.T) {
 			queryID: "aws/enrich/privesc/method_43",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, s
+				WITH a, s
 				MERGE (a)-[:APPRUNNER_CREATESERVICE]->(s)
-			`, attackerARN, victimARN, svcResourceARN),
+			`, attackerARN, svcResourceARN),
 			desc: "apprunner:CreateService alone must not trigger method_43 (requires iam:PassRole too)",
 		},
 		{
@@ -1173,13 +1166,12 @@ func TestPrivescNegativePermissions(t *testing.T) {
 			queryID: "aws/enrich/privesc/method_88",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GAMELIFT_CREATEBUILD]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			`, attackerARN, roleARN, svcResourceARN),
 			desc: "PassRole+CreateBuild without CreateFleet must not trigger method_88 — compound methods require ALL actions",
 		},
 		{
@@ -1187,17 +1179,16 @@ func TestPrivescNegativePermissions(t *testing.T) {
 			queryID: "aws/enrich/privesc/method_88",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, v, r, s
+				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GAMELIFT_CREATEFLEET]->(s)
-			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			`, attackerARN, roleARN, svcResourceARN),
 			desc: "PassRole+CreateFleet without CreateBuild must not trigger method_88",
 		},
 		{
-			name:    "method_43_no_principals_in_graph",
+			name:    "method_43_passrole_to_non_principal_resource",
 			queryID: "aws/enrich/privesc/method_43",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
@@ -1207,7 +1198,7 @@ func TestPrivescNegativePermissions(t *testing.T) {
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:APPRUNNER_CREATESERVICE]->(s)
 			`, attackerARN, roleARN, svcResourceARN),
-			desc: "fan-out method_43 with only 1 Principal (no other victim) must produce 0 edges — WHERE victim.Arn <> attacker.Arn eliminates self-loops",
+			desc: "PassRole targeting a :Resource node (not :Principal) must produce 0 edges — scoped fix only creates CAN_PRIVESC to :Principal targets",
 		},
 	}
 
@@ -1252,16 +1243,16 @@ func TestPrivescEnrichAWSIdempotent(t *testing.T) {
 	_, err = db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
 	require.NoError(t, err)
 
-	// Seed one attacker with PassRole + AppRunner (method_43) and one victim.
+	// Seed attacker with PassRole + AppRunner (method_43).
+	// Role must be :Principal so the scoped query can find it as the victim.
 	_, err = db.Query(ctx, fmt.Sprintf(`
 		CREATE (a:Principal {Arn: '%s'})
-		CREATE (v:Principal {Arn: '%s'})
-		CREATE (r:Resource  {Arn: '%s'})
+		CREATE (r:Principal {Arn: '%s'})
 		CREATE (s:Resource  {Arn: '%s'})
-		WITH a, v, r, s
+		WITH a, r, s
 		MERGE (a)-[:IAM_PASSROLE]->(r)
 		MERGE (a)-[:APPRUNNER_CREATESERVICE]->(s)
-	`, attackerARN, victimARN, roleARN, svcResourceARN), nil)
+	`, attackerARN, roleARN, svcResourceARN), nil)
 	require.NoError(t, err, "seed graph")
 
 	countEdges := func() int {
@@ -1288,14 +1279,15 @@ func TestPrivescEnrichAWSIdempotent(t *testing.T) {
 }
 
 // TestPrivescMultiHopThroughPassRoleMethod verifies that a CAN_PRIVESC edge
-// created by a PassRole+service fan-out method (method_43) can act as an
-// intermediate hop in a chain detected by the aws/analysis/privesc_paths query.
+// created by a PassRole+service method (method_43) can act as an intermediate
+// hop in a chain detected by the aws/analysis/privesc_paths query.
 //
-// Graph:  attacker --[method_43 fan-out]--> intermediate --[method_01 standalone]--> admin
+// Graph:  attacker --[method_43 scoped]--> intermediate (passed role)
+//                  intermediate --[method_01 standalone]--> admin
 //
-// Before the Concern B fix, method_43 created edges to the service resource node
-// (not a Principal), so no intermediate hop was possible. After the fix, intermediate
-// is a reachable Principal and the 2-hop chain is detectable.
+// The key: attacker passes an IAM role (intermediate) that itself has standalone
+// IAM escalation paths. The scoped fix ensures intermediate is a reachable
+// Principal node in the graph, enabling the 2-hop chain.
 func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 	ctx := context.Background()
 
@@ -1314,20 +1306,21 @@ func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 		policyARN = "arn:aws:iam::123456789012:policy/test-policy"
 	)
 
+	// intermediate IS the passed role: attacker passes it via IAM_PASSROLE so
+	// method_43 creates attacker → [CAN_PRIVESC] → intermediate (scoped victim).
+	// intermediate also has IAM_CREATEPOLICYVERSION so method_01 fans out
+	// intermediate → [CAN_PRIVESC] → admin.
 	_, err = db.Query(ctx, fmt.Sprintf(`
 		CREATE (attacker:Principal    {Arn: '%s', _is_admin: false})
 		CREATE (intermediate:Principal{Arn: '%s', _is_admin: false})
 		CREATE (admin:Principal       {Arn: '%s', _is_admin: true})
-		CREATE (role:Resource         {Arn: '%s'})
 		CREATE (svc:Resource          {Arn: '%s'})
 		CREATE (policy:Resource       {Arn: '%s'})
-		WITH attacker, intermediate, admin, role, svc, policy
-		// attacker: method_43 (PassRole + AppRunner) → fan-out to intermediate and admin
-		MERGE (attacker)-[:IAM_PASSROLE]->(role)
+		WITH attacker, intermediate, admin, svc, policy
+		MERGE (attacker)-[:IAM_PASSROLE]->(intermediate)
 		MERGE (attacker)-[:APPRUNNER_CREATESERVICE]->(svc)
-		// intermediate: method_01 (CreatePolicyVersion) → escalate to admin
 		MERGE (intermediate)-[:IAM_CREATEPOLICYVERSION]->(policy)
-	`, attackerARN, interARN, adminARN, roleARN, svcResourceARN, policyARN), nil)
+	`, attackerARN, interARN, adminARN, svcResourceARN, policyARN), nil)
 	require.NoError(t, err, "seed multi-hop graph")
 
 	require.NoError(t, EnrichAWS(ctx, db), "EnrichAWS")
@@ -1348,15 +1341,24 @@ func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 		t.Logf("  path: %s → %s (%d hops)", a, rec["target_arn"], h)
 	}
 
-	t.Run("attacker_1hop_to_admin_via_fanout", func(t *testing.T) {
-		assert.True(t, found[pathKey{attackerARN, 1}],
-			"attacker must reach admin in 1 hop via method_43 fan-out")
+	t.Run("attacker_1hop_to_intermediate_via_scoped_passrole", func(t *testing.T) {
+		// The analysis query looks for paths to admin; the 1-hop path only reaches
+		// intermediate which is NOT admin. So attacker should NOT appear at 1 hop
+		// (intermediate._is_admin = false means the analysis skips it as the terminal target).
+		// Verify attacker DOES have a CAN_PRIVESC edge to intermediate in the raw graph.
+		edgeResult, err := db.Query(ctx,
+			fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`,
+				attackerARN, interARN), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(edgeResult.Records[0]["n"])
+		assert.GreaterOrEqual(t, int(n), 1,
+			"method_43 scoped fix: attacker must have CAN_PRIVESC edge to the passed role (intermediate)")
 	})
 
 	t.Run("attacker_2hop_to_admin_via_intermediate", func(t *testing.T) {
 		assert.True(t, found[pathKey{attackerARN, 2}],
-			"attacker must reach admin in 2 hops: attacker→intermediate (method_43) → admin (method_01). "+
-				"Failure here means fan-out edges are not traversable as intermediate hops — Concern B regression")
+			"attacker must reach admin in 2 hops: attacker→intermediate (method_43 scoped) → admin (method_01). "+
+				"Failure here means the scoped CAN_PRIVESC edge is not traversable as an intermediate hop")
 	})
 
 	t.Run("intermediate_1hop_to_admin", func(t *testing.T) {

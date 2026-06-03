@@ -10,17 +10,15 @@ description: |
 severity: high
 order: 178
 cypher: |
-  MATCH (attacker:Principal)-[passrole]->(target)
+  MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker
+  WITH attacker, victim
   MATCH (attacker)-[update]->(svc)
   WHERE type(update) = 'GLUE_UPDATEJOB'
-  WITH attacker, svc
+  WITH attacker, victim, svc
   MATCH (attacker)-[trigger]->(svc)
   WHERE type(trigger) = 'GLUE_CREATETRIGGER'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
+  WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + glue:UpdateJob + glue:CreateTrigger',

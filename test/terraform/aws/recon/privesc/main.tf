@@ -36,9 +36,27 @@ resource "aws_iam_role" "passable" {
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect    = "Allow"
-      Action    = "sts:AssumeRole"
-      Principal = { Service = "lambda.amazonaws.com" }
+      Effect = "Allow"
+      Action = "sts:AssumeRole"
+      Principal = {
+        Service = [
+          "lambda.amazonaws.com",
+          "ecs-tasks.amazonaws.com",
+          "states.amazonaws.com",
+          "glue.amazonaws.com",
+          "ec2.amazonaws.com",
+          "batch.amazonaws.com",
+          "apprunner.amazonaws.com",
+          "imagebuilder.amazonaws.com",
+          "sagemaker.amazonaws.com",
+          "braket.amazonaws.com",
+          "emr-serverless.amazonaws.com",
+          "scheduler.amazonaws.com",
+          "ssm.amazonaws.com",
+          "omics.amazonaws.com",
+          "kinesisanalytics.amazonaws.com",
+        ]
+      }
     }]
   })
 

@@ -10,20 +10,18 @@ description: |
 severity: high
 order: 175
 cypher: |
-  MATCH (attacker:Principal)-[passrole]->(target)
+  MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker
+  WITH attacker, victim
   MATCH (attacker)-[app]->(svc)
   WHERE type(app) = 'AMPLIFY_CREATEAPP'
-  WITH attacker, svc
+  WITH attacker, victim, svc
   MATCH (attacker)-[branch]->(svc)
   WHERE type(branch) = 'AMPLIFY_CREATEBRANCH'
-  WITH attacker, svc
+  WITH attacker, victim, svc
   MATCH (attacker)-[job]->(svc)
   WHERE type(job) = 'AMPLIFY_STARTJOB'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
+  WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + amplify:CreateApp + amplify:CreateBranch + amplify:StartJob',

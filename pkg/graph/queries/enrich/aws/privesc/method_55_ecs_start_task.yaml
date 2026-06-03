@@ -10,14 +10,12 @@ description: |
 severity: high
 order: 155
 cypher: |
-  MATCH (attacker:Principal)-[passrole]->(target)
+  MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker
+  WITH attacker, victim
   MATCH (attacker)-[start]->(service_resource)
   WHERE type(start) = 'ECS_STARTTASK'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
+  WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + ecs:StartTask',
