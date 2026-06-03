@@ -13,8 +13,8 @@ order: 184
 cypher: |
   MATCH (attacker:Principal)-[create]->(target)
   WHERE type(create) = 'SSM_CREATEDOCUMENT'
-  WITH attacker
-  MATCH (attacker)-[start]->(svc)
+  WITH attacker, target
+  MATCH (attacker)-[start]->(target)
   WHERE type(start) = 'SSM_STARTAUTOMATIONEXECUTION'
   WITH attacker
   MATCH (victim:Principal)

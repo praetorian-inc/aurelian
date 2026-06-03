@@ -1200,6 +1200,36 @@ func TestPrivescNegativePermissions(t *testing.T) {
 			`, attackerARN, roleARN, svcResourceARN),
 			desc: "PassRole targeting a :Resource node (not :Principal) must produce 0 edges — scoped fix only creates CAN_PRIVESC to :Principal targets",
 		},
+		// method_75 (Amplify 3-action): missing one of three required service actions
+		{
+			name:    "method_75_missing_startjob_action",
+			queryID: "aws/enrich/privesc/method_75",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s'})
+				CREATE (s:Resource  {Arn: '%s'})
+				WITH a, r, s
+				MERGE (a)-[:IAM_PASSROLE]->(r)
+				MERGE (a)-[:AMPLIFY_CREATEAPP]->(s)
+				MERGE (a)-[:AMPLIFY_CREATEBRANCH]->(s)
+			`, attackerARN, roleARN, svcResourceARN),
+			desc: "method_75 requires all 3 Amplify actions on the same resource — missing StartJob must produce 0 edges",
+		},
+		// method_84 SSM: actions on different resources must not trigger (cross-resource FP guard)
+		{
+			name:    "method_84_cross_resource_no_edge",
+			queryID: "aws/enrich/privesc/method_84",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
+				CREATE (doc:Resource {Arn: 'arn:aws:ssm:us-east-1:123:document/my-doc'})
+				CREATE (other:Resource {Arn: 'arn:aws:ssm:us-east-1:123:document/other-doc'})
+				WITH a, v, doc, other
+				MERGE (a)-[:SSM_CREATEDOCUMENT]->(doc)
+				MERGE (a)-[:SSM_STARTAUTOMATIONEXECUTION]->(other)
+			`, attackerARN, victimARN),
+			desc: "method_84 must not fire when CreateDocument and StartAutomationExecution target different SSM documents — requires same resource",
+		},
 	}
 
 	for _, tc := range cases {
