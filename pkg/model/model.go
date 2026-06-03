@@ -3,9 +3,12 @@
 // between output, types, and plugin.
 package model
 
-// aurelianModelToken is an unexported type used to seal the AurelianModel interface.
-// External packages cannot construct this type, so they cannot implement
-// AurelianModel without embedding BaseAurelianModel.
+// aurelianModelToken is an unexported type historically used to seal the
+// AurelianModel interface. AurelianModel is now an open (empty) interface, so
+// any type satisfies it and embedding BaseAurelianModel is no longer required.
+// This token — and the BaseAurelianModel.IsAurelianModel() helper that returns
+// it — are retained only as source-compatibility markers for existing
+// embedders, not as an enforcement mechanism.
 type aurelianModelToken struct{}
 
 // AurelianModel is the marker type for Aurelian output models. It is an open

@@ -235,6 +235,8 @@ func TestNewTakeoverRisk_NotOwnedBucket(t *testing.T) {
 	desc := paragraphText(sectionByTitle(t, proof, "Summary"))
 	assert.Contains(t, desc, "not owned by this account")
 	assert.Contains(t, desc, "app.example.com")
+	assert.Contains(t, desc, "Route53 records are actively pointing to this distribution",
+		"not-owned bucket with active Route53 records should surface the DNS context")
 	assert.Contains(t, paragraphText(sectionByTitle(t, proof, "Impact")), "owned by another account")
 }
 

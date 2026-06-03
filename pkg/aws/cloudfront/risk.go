@@ -111,7 +111,12 @@ func takeoverDescription(f Finding, affectedDomains []string) string {
 				"An external party may already be serving content through this distribution.",
 			f.DistributionID, f.MissingBucket,
 		)
-		if len(affectedDomains) > 0 {
+		if len(f.Route53Records) > 0 {
+			desc += fmt.Sprintf(
+				" Route53 records are actively pointing to this distribution, exposing %d domain(s): %s",
+				len(affectedDomains), strings.Join(affectedDomains, ", "),
+			)
+		} else if len(affectedDomains) > 0 {
 			desc += fmt.Sprintf(" Affected domain(s): %s", strings.Join(affectedDomains, ", "))
 		}
 		return desc
