@@ -15,6 +15,7 @@ type mockGraphDB struct {
 	queriesCalled []string
 	queryResults  map[string]*graph.QueryResult
 	queryErrors   map[string]error
+	defaultError  error // returned for any query not in queryErrors
 }
 
 func newMockGraphDB() *mockGraphDB {
@@ -30,6 +31,10 @@ func (m *mockGraphDB) Query(ctx context.Context, cypher string, params map[strin
 
 	if err, exists := m.queryErrors[cypher]; exists {
 		return nil, err
+	}
+
+	if m.defaultError != nil {
+		return nil, m.defaultError
 	}
 
 	if result, exists := m.queryResults[cypher]; exists {
@@ -137,17 +142,32 @@ func TestEnrichAWSFiltersCorrectly(t *testing.T) {
 	}
 }
 
-// TestEnrichAWSReturnsErrorOnQueryFailure verifies EnrichAWS propagates query errors
-func TestEnrichAWSReturnsErrorOnQueryFailure(t *testing.T) {
+// TestEnrichAWSWarnsOnSingleQueryFailure verifies EnrichAWS warns but continues
+// when an individual query fails (ztgrace pattern: warn per failure, error only if all fail).
+func TestEnrichAWSWarnsOnSingleQueryFailure(t *testing.T) {
 	mock := newMockGraphDB()
 	ctx := context.Background()
 
-	// Set up error for any query containing the accounts pattern
+	// Fail only the accounts query — all others succeed.
 	mock.queryErrors["MATCH (n:Principal)\nWHERE n._resourceType STARTS WITH 'AWS::'\nSET n._enriched = true\nRETURN count(n) as enriched_count\n"] = assert.AnError
 
+	// A single failure should NOT return an error — EnrichAWS warns and continues.
 	err := EnrichAWS(ctx, mock)
-	require.Error(t, err, "should return error when query fails")
-	assert.Contains(t, err.Error(), "aws/enrich/accounts", "error should mention failing query ID")
+	assert.NoError(t, err, "single query failure should warn and continue, not abort enrichment")
+}
+
+// TestEnrichAWSReturnsErrorWhenAllQueriesFail verifies EnrichAWS returns an error
+// only when every query fails (ztgrace pattern: error if ALL methods failed).
+func TestEnrichAWSReturnsErrorWhenAllQueriesFail(t *testing.T) {
+	mock := newMockGraphDB()
+	ctx := context.Background()
+
+	// Make every query call return an error.
+	mock.defaultError = assert.AnError
+
+	err := EnrichAWS(ctx, mock)
+	require.Error(t, err, "should return error when all queries fail")
+	assert.Contains(t, err.Error(), "all", "error should mention all queries failed")
 }
 
 // TestRunPlatformQueryExecutesQuery verifies RunPlatformQuery executes the correct query
@@ -188,4 +208,74 @@ func TestRunPlatformQueryNotFound(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, result)
 	assert.Contains(t, err.Error(), "query not found", "error should indicate missing query")
+}
+
+// TestNewPrivescQueriesLoad verifies all new pathfinding.cloud gap-analysis methods load correctly.
+func TestNewPrivescQueriesLoad(t *testing.T) {
+	newMethods := []string{
+		// Initial gap-fill methods (43–72)
+		"aws/enrich/privesc/method_43",
+		"aws/enrich/privesc/method_44",
+		"aws/enrich/privesc/method_45",
+		"aws/enrich/privesc/method_46",
+		"aws/enrich/privesc/method_47",
+		"aws/enrich/privesc/method_48",
+		"aws/enrich/privesc/method_49",
+		"aws/enrich/privesc/method_50",
+		"aws/enrich/privesc/method_51",
+		"aws/enrich/privesc/method_52",
+		"aws/enrich/privesc/method_53",
+		"aws/enrich/privesc/method_54",
+		"aws/enrich/privesc/method_55",
+		"aws/enrich/privesc/method_56",
+		"aws/enrich/privesc/method_57",
+		"aws/enrich/privesc/method_58",
+		"aws/enrich/privesc/method_59",
+		"aws/enrich/privesc/method_60",
+		"aws/enrich/privesc/method_61",
+		"aws/enrich/privesc/method_62",
+		"aws/enrich/privesc/method_63",
+		"aws/enrich/privesc/method_64",
+		"aws/enrich/privesc/method_65",
+		"aws/enrich/privesc/method_66",
+		"aws/enrich/privesc/method_67",
+		"aws/enrich/privesc/method_68",
+		"aws/enrich/privesc/method_69",
+		"aws/enrich/privesc/method_70",
+		"aws/enrich/privesc/method_71",
+		"aws/enrich/privesc/method_72",
+		// Group A: wrong-API fixes (73–74)
+		"aws/enrich/privesc/method_73",
+		"aws/enrich/privesc/method_74",
+		// Group B: completely missing (75–79)
+		"aws/enrich/privesc/method_75",
+		"aws/enrich/privesc/method_76",
+		"aws/enrich/privesc/method_77",
+		"aws/enrich/privesc/method_78",
+		"aws/enrich/privesc/method_79",
+		// Group C: execution-gated compound methods (80–89)
+		"aws/enrich/privesc/method_80",
+		"aws/enrich/privesc/method_81",
+		"aws/enrich/privesc/method_82",
+		"aws/enrich/privesc/method_83",
+		"aws/enrich/privesc/method_84",
+		"aws/enrich/privesc/method_85",
+		"aws/enrich/privesc/method_86",
+		"aws/enrich/privesc/method_87",
+		"aws/enrich/privesc/method_88",
+		"aws/enrich/privesc/method_89",
+	}
+
+	for _, id := range newMethods {
+		t.Run(id, func(t *testing.T) {
+			q, exists := GetQuery(id)
+			require.True(t, exists, "query %s should exist", id)
+			require.NotNil(t, q)
+			assert.Equal(t, "aws", q.Metadata.Platform)
+			assert.Equal(t, "enrich", q.Metadata.Type)
+			assert.Equal(t, "privesc", q.Metadata.Category)
+			assert.NotEmpty(t, q.Cypher)
+			assert.Contains(t, q.Cypher, "CAN_PRIVESC", "should create CAN_PRIVESC relationship")
+		})
+	}
 }

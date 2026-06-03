@@ -1,0 +1,24 @@
+id: aws/enrich/privesc/method_68
+name: IAM PassRole + EventBridge Scheduler CreateSchedule Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both iam:PassRole and scheduler:CreateSchedule permissions
+  that can create an EventBridge Scheduler one-shot schedule targeting the universal
+  IAM target to invoke privileged API calls on a schedule.
+severity: high
+order: 168
+cypher: |
+  MATCH (attacker:Principal)-[passrole]->(victim:Principal)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+  WITH attacker, victim
+  MATCH (attacker)-[create]->(service_resource)
+  WHERE type(create) = 'SCHEDULER_CREATESCHEDULE'
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:PassRole + scheduler:CreateSchedule',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created
