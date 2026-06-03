@@ -1001,6 +1001,370 @@ func TestPassRoleServiceFanOutReachesAnalysisQuery(t *testing.T) {
 			"if this fails, method_43 (or another PassRole+service method) has regressed to pointing at service_resource")
 }
 
+// TestPrivescEdgeMetadata verifies that CAN_PRIVESC edges created by enrichment
+// methods carry the correct `method` and `severity` property values.
+// A wrong property value here would silently pass the TP count assertion in
+// TestPrivescQueriesNeo4j but break pathfinding.cloud method-specific FP tests.
+func TestPrivescEdgeMetadata(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	newAdapter := func(t *testing.T) graph.GraphDatabase {
+		t.Helper()
+		cfg := graph.NewConfig(boltURL, "", "")
+		adapter, err := adapters.NewNeo4jAdapter(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { adapter.Close() })
+		return adapter
+	}
+
+	clearDB := func(t *testing.T, db graph.GraphDatabase) {
+		t.Helper()
+		_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+		require.NoError(t, err)
+	}
+
+	cases := []struct {
+		name         string
+		queryID      string
+		setup        string
+		wantMethod   string
+		wantSeverity string
+	}{
+		{
+			name:    "method_43_simple_passrole_service",
+			queryID: "aws/enrich/privesc/method_43",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
+				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (s:Resource  {Arn: '%s'})
+				WITH a, v, r, s
+				MERGE (a)-[:IAM_PASSROLE]->(r)
+				MERGE (a)-[:APPRUNNER_CREATESERVICE]->(s)
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			wantMethod:   "iam:PassRole + apprunner:CreateService",
+			wantSeverity: "high",
+		},
+		{
+			name:    "method_70_stepfunctions",
+			queryID: "aws/enrich/privesc/method_70",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
+				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (s:Resource  {Arn: '%s'})
+				WITH a, v, r, s
+				MERGE (a)-[:IAM_PASSROLE]->(r)
+				MERGE (a)-[:STATES_CREATESTATEMACHINE]->(s)
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			wantMethod:   "iam:PassRole + states:CreateStateMachine",
+			wantSeverity: "high",
+		},
+		{
+			name:    "method_88_gamelift_compound",
+			queryID: "aws/enrich/privesc/method_88",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
+				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (s:Resource  {Arn: '%s'})
+				WITH a, v, r, s
+				MERGE (a)-[:IAM_PASSROLE]->(r)
+				MERGE (a)-[:GAMELIFT_CREATEBUILD]->(s)
+				MERGE (a)-[:GAMELIFT_CREATEFLEET]->(s)
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			wantMethod:   "iam:PassRole + gamelift:CreateBuild + gamelift:CreateFleet",
+			wantSeverity: "high",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newAdapter(t)
+			clearDB(t, db)
+
+			_, err := db.Query(ctx, tc.setup, nil)
+			require.NoError(t, err, "seed graph")
+
+			_, err = RunPlatformQuery(ctx, db, tc.queryID, nil)
+			require.NoError(t, err, "run enrichment query")
+
+			result, err := db.Query(ctx,
+				fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'})
+				             RETURN r.method AS method, r.severity AS severity`, attackerARN, victimARN),
+				nil)
+			require.NoError(t, err)
+			require.Len(t, result.Records, 1,
+				"expected exactly 1 CAN_PRIVESC edge from attacker to victim")
+
+			assert.Equal(t, tc.wantMethod, result.Records[0]["method"],
+				"r.method must match the YAML method property — wrong value breaks pathfinding FP tests")
+			assert.Equal(t, tc.wantSeverity, result.Records[0]["severity"],
+				"r.severity must be set to 'high'")
+		})
+	}
+}
+
+// TestPrivescNegativePermissions verifies that enrichment methods do NOT fire
+// when required permissions are absent or incomplete.
+// These are the unit-level false-positive guards that complement the Tier 3
+// pathfinding.cloud FP tests.
+func TestPrivescNegativePermissions(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	newAdapter := func(t *testing.T) graph.GraphDatabase {
+		t.Helper()
+		cfg := graph.NewConfig(boltURL, "", "")
+		adapter, err := adapters.NewNeo4jAdapter(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { adapter.Close() })
+		return adapter
+	}
+
+	clearDB := func(t *testing.T, db graph.GraphDatabase) {
+		t.Helper()
+		_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+		require.NoError(t, err)
+	}
+
+	noEdgeQuery := fmt.Sprintf(
+		`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->() RETURN count(r) AS n`, attackerARN)
+
+	cases := []struct {
+		name    string
+		queryID string
+		setup   string
+		desc    string
+	}{
+		{
+			name:    "method_43_passrole_only_no_service_action",
+			queryID: "aws/enrich/privesc/method_43",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
+				CREATE (r:Resource  {Arn: '%s'})
+				WITH a, v, r
+				MERGE (a)-[:IAM_PASSROLE]->(r)
+			`, attackerARN, victimARN, roleARN),
+			desc: "iam:PassRole alone must not trigger method_43 (requires apprunner:CreateService too)",
+		},
+		{
+			name:    "method_43_service_action_only_no_passrole",
+			queryID: "aws/enrich/privesc/method_43",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
+				CREATE (s:Resource  {Arn: '%s'})
+				WITH a, v, s
+				MERGE (a)-[:APPRUNNER_CREATESERVICE]->(s)
+			`, attackerARN, victimARN, svcResourceARN),
+			desc: "apprunner:CreateService alone must not trigger method_43 (requires iam:PassRole too)",
+		},
+		{
+			name:    "method_88_missing_createfleet_action",
+			queryID: "aws/enrich/privesc/method_88",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
+				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (s:Resource  {Arn: '%s'})
+				WITH a, v, r, s
+				MERGE (a)-[:IAM_PASSROLE]->(r)
+				MERGE (a)-[:GAMELIFT_CREATEBUILD]->(s)
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			desc: "PassRole+CreateBuild without CreateFleet must not trigger method_88 — compound methods require ALL actions",
+		},
+		{
+			name:    "method_88_missing_createbuild_action",
+			queryID: "aws/enrich/privesc/method_88",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s'})
+				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (s:Resource  {Arn: '%s'})
+				WITH a, v, r, s
+				MERGE (a)-[:IAM_PASSROLE]->(r)
+				MERGE (a)-[:GAMELIFT_CREATEFLEET]->(s)
+			`, attackerARN, victimARN, roleARN, svcResourceARN),
+			desc: "PassRole+CreateFleet without CreateBuild must not trigger method_88",
+		},
+		{
+			name:    "method_43_no_principals_in_graph",
+			queryID: "aws/enrich/privesc/method_43",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (r:Resource  {Arn: '%s'})
+				CREATE (s:Resource  {Arn: '%s'})
+				WITH a, r, s
+				MERGE (a)-[:IAM_PASSROLE]->(r)
+				MERGE (a)-[:APPRUNNER_CREATESERVICE]->(s)
+			`, attackerARN, roleARN, svcResourceARN),
+			desc: "fan-out method_43 with only 1 Principal (no other victim) must produce 0 edges — WHERE victim.Arn <> attacker.Arn eliminates self-loops",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newAdapter(t)
+			clearDB(t, db)
+
+			_, err := db.Query(ctx, tc.setup, nil)
+			require.NoError(t, err, "seed graph")
+
+			_, err = RunPlatformQuery(ctx, db, tc.queryID, nil)
+			require.NoError(t, err, "enrichment query must not error on incomplete permissions")
+
+			result, err := db.Query(ctx, noEdgeQuery, nil)
+			require.NoError(t, err)
+			require.Len(t, result.Records, 1)
+
+			n, _ := toInt64(result.Records[0]["n"])
+			assert.Equal(t, int64(0), n,
+				"FP guard: %s — got %d edge(s), want 0", tc.desc, n)
+		})
+	}
+}
+
+// TestPrivescEnrichAWSIdempotent verifies that running EnrichAWS twice on the
+// same graph does not create duplicate CAN_PRIVESC edges.
+// Idempotency is guaranteed by MERGE semantics, but this test guards against
+// regressions where a query accidentally uses CREATE instead of MERGE.
+func TestPrivescEnrichAWSIdempotent(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	cfg := graph.NewConfig(boltURL, "", "")
+	db, err := adapters.NewNeo4jAdapter(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	_, err = db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+	require.NoError(t, err)
+
+	// Seed one attacker with PassRole + AppRunner (method_43) and one victim.
+	_, err = db.Query(ctx, fmt.Sprintf(`
+		CREATE (a:Principal {Arn: '%s'})
+		CREATE (v:Principal {Arn: '%s'})
+		CREATE (r:Resource  {Arn: '%s'})
+		CREATE (s:Resource  {Arn: '%s'})
+		WITH a, v, r, s
+		MERGE (a)-[:IAM_PASSROLE]->(r)
+		MERGE (a)-[:APPRUNNER_CREATESERVICE]->(s)
+	`, attackerARN, victimARN, roleARN, svcResourceARN), nil)
+	require.NoError(t, err, "seed graph")
+
+	countEdges := func() int {
+		result, err := db.Query(ctx,
+			fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->() RETURN count(r) AS n`, attackerARN),
+			nil)
+		require.NoError(t, err)
+		require.Len(t, result.Records, 1)
+		n, _ := toInt64(result.Records[0]["n"])
+		return int(n)
+	}
+
+	require.NoError(t, EnrichAWS(ctx, db), "first EnrichAWS run")
+	countAfterFirst := countEdges()
+	require.Greater(t, countAfterFirst, 0, "first run must produce at least 1 CAN_PRIVESC edge")
+
+	require.NoError(t, EnrichAWS(ctx, db), "second EnrichAWS run")
+	countAfterSecond := countEdges()
+
+	assert.Equal(t, countAfterFirst, countAfterSecond,
+		"EnrichAWS is not idempotent: edge count changed from %d to %d on second run — "+
+			"check if any query uses CREATE instead of MERGE",
+		countAfterFirst, countAfterSecond)
+}
+
+// TestPrivescMultiHopThroughPassRoleMethod verifies that a CAN_PRIVESC edge
+// created by a PassRole+service fan-out method (method_43) can act as an
+// intermediate hop in a chain detected by the aws/analysis/privesc_paths query.
+//
+// Graph:  attacker --[method_43 fan-out]--> intermediate --[method_01 standalone]--> admin
+//
+// Before the Concern B fix, method_43 created edges to the service resource node
+// (not a Principal), so no intermediate hop was possible. After the fix, intermediate
+// is a reachable Principal and the 2-hop chain is detectable.
+func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	cfg := graph.NewConfig(boltURL, "", "")
+	db, err := adapters.NewNeo4jAdapter(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	const (
+		interARN  = "arn:aws:iam::123456789012:role/intermediate"
+		adminARN  = "arn:aws:iam::123456789012:role/admin"
+		policyARN = "arn:aws:iam::123456789012:policy/test-policy"
+	)
+
+	_, err = db.Query(ctx, fmt.Sprintf(`
+		CREATE (attacker:Principal    {Arn: '%s', _is_admin: false})
+		CREATE (intermediate:Principal{Arn: '%s', _is_admin: false})
+		CREATE (admin:Principal       {Arn: '%s', _is_admin: true})
+		CREATE (role:Resource         {Arn: '%s'})
+		CREATE (svc:Resource          {Arn: '%s'})
+		CREATE (policy:Resource       {Arn: '%s'})
+		WITH attacker, intermediate, admin, role, svc, policy
+		// attacker: method_43 (PassRole + AppRunner) → fan-out to intermediate and admin
+		MERGE (attacker)-[:IAM_PASSROLE]->(role)
+		MERGE (attacker)-[:APPRUNNER_CREATESERVICE]->(svc)
+		// intermediate: method_01 (CreatePolicyVersion) → escalate to admin
+		MERGE (intermediate)-[:IAM_CREATEPOLICYVERSION]->(policy)
+	`, attackerARN, interARN, adminARN, roleARN, svcResourceARN, policyARN), nil)
+	require.NoError(t, err, "seed multi-hop graph")
+
+	require.NoError(t, EnrichAWS(ctx, db), "EnrichAWS")
+
+	result, err := RunPlatformQuery(ctx, db, "aws/analysis/privesc_paths", nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	type pathKey struct {
+		attacker string
+		hops     int64
+	}
+	found := map[pathKey]bool{}
+	for _, rec := range result.Records {
+		a, _ := rec["attacker_arn"].(string)
+		h, _ := toInt64(rec["hop_count"])
+		found[pathKey{a, h}] = true
+		t.Logf("  path: %s → %s (%d hops)", a, rec["target_arn"], h)
+	}
+
+	t.Run("attacker_1hop_to_admin_via_fanout", func(t *testing.T) {
+		assert.True(t, found[pathKey{attackerARN, 1}],
+			"attacker must reach admin in 1 hop via method_43 fan-out")
+	})
+
+	t.Run("attacker_2hop_to_admin_via_intermediate", func(t *testing.T) {
+		assert.True(t, found[pathKey{attackerARN, 2}],
+			"attacker must reach admin in 2 hops: attacker→intermediate (method_43) → admin (method_01). "+
+				"Failure here means fan-out edges are not traversable as intermediate hops — Concern B regression")
+	})
+
+	t.Run("intermediate_1hop_to_admin", func(t *testing.T) {
+		assert.True(t, found[pathKey{interARN, 1}],
+			"intermediate must reach admin in 1 hop via method_01 (standalone IAM escalation)")
+	})
+}
+
 // toInt64 coerces common numeric types returned by the Neo4j driver to int64.
 func toInt64(v interface{}) (int64, bool) {
 	switch x := v.(type) {
