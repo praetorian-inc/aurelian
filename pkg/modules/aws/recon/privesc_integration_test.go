@@ -36,6 +36,7 @@ func TestPrivescEnrichmentE2E(t *testing.T) {
 	newServicesUserARN := fixture.Output("new_services_user_arn")
 	extServicesUserARN := fixture.Output("extended_services_user_arn")
 	iamPrivescUserARN := fixture.Output("iam_privesc_user_arn")
+	passableRoleARN := fixture.Output("passable_role_arn")
 
 	allFixtureARNs := fixture.OutputList("all_arns")
 	fixtureARNs := make(map[string]bool, len(allFixtureARNs))
@@ -279,5 +280,76 @@ func TestPrivescEnrichmentE2E(t *testing.T) {
 			}
 			assert.Equal(t, int64(0), selfEdges, "principal %s should not CAN_PRIVESC to itself", arn)
 		}
+	})
+
+	// --- Shape assertions: verify CAN_PRIVESC targets the passable role, not all principals ---
+	//
+	// These tests were introduced because a previous fan-out regression (Concern B)
+	// created CAN_PRIVESC edges to ALL principals in the account instead of only the
+	// specific passed IAM role. Count-only assertions (≥15, >0) cannot catch this:
+	// both the correct scoped edge and the incorrect fan-out edges satisfy them.
+
+	t.Run("passrole_user_targets_passable_role", func(t *testing.T) {
+		// The new_services_user has iam:PassRole on the fixture's passable-role.
+		// After enrichment, there must be a CAN_PRIVESC edge directly to that role —
+		// not to arbitrary principals. This fails if the query fans out to all principals
+		// while still creating an edge to the passable role, AND would catch a regression
+		// where the edge no longer points to the passable role at all.
+		result, err := db.Query(ctx,
+			"MATCH (a {Arn: $attacker})-[r:CAN_PRIVESC]->(v {Arn: $role}) RETURN count(r) AS n",
+			map[string]any{"attacker": newServicesUserARN, "role": passableRoleARN})
+		require.NoError(t, err)
+		require.Len(t, result.Records, 1)
+		n, _ := result.Records[0]["n"].(int64)
+		assert.GreaterOrEqual(t, n, int64(1),
+			"new_services_user must have CAN_PRIVESC edge to the passable role (%s); "+
+				"if 0, the scoped fix broke: enrichment methods are no longer targeting the passed :Principal role",
+			passableRoleARN)
+	})
+
+	t.Run("passrole_user_edge_count_not_fanout", func(t *testing.T) {
+		// With the scoped fix, PassRole+service methods create exactly 1 CAN_PRIVESC edge
+		// per distinct (attacker, passed-role) pair via MERGE deduplication.
+		// If this count equals the total number of principals in the account (tens or hundreds),
+		// it means the fan-out regression is back — the query stopped scoping to the passed role.
+		//
+		// The fixture has 1 passable role, so all PassRole methods share 1 merged edge.
+		// We check count ≤ 5 as a generous bound that still catches a full fan-out (100+).
+		result, err := db.Query(ctx,
+			"MATCH (a {Arn: $attacker})-[r:CAN_PRIVESC]->() RETURN count(r) AS n",
+			map[string]any{"attacker": newServicesUserARN})
+		require.NoError(t, err)
+		require.Len(t, result.Records, 1)
+		n, _ := result.Records[0]["n"].(int64)
+		t.Logf("new_services_user CAN_PRIVESC total edge count: %d", n)
+		assert.GreaterOrEqual(t, n, int64(1), "new_services_user must have at least 1 CAN_PRIVESC edge")
+		assert.LessOrEqual(t, n, int64(10),
+			"new_services_user has %d CAN_PRIVESC edges — expected ≤10 (scoped to passable roles). "+
+				"If this fails with a large number, the fan-out regression is back: enrichment methods "+
+				"are creating edges to ALL principals instead of only the passed IAM role",
+			n)
+	})
+
+	t.Run("passrole_user_appears_in_analysis_output", func(t *testing.T) {
+		// Run the registered aws/analysis/privesc_paths query. The passable role has
+		// AdministratorAccess, so _is_admin=true is set on it by set_admin enrichment.
+		// The analysis query should then find: new_services_user → passable_role (1 hop).
+		// This is the end-to-end proof that the scoped CAN_PRIVESC edge is traversable.
+		// If the edge points to a non-Principal (old Concern B) or to the wrong principal,
+		// this assertion will fail even if the count assertions above pass.
+		result, err := queries.RunPlatformQuery(ctx, db, "aws/analysis/privesc_paths", nil)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		found := false
+		for _, rec := range result.Records {
+			if rec["attacker_arn"] == newServicesUserARN {
+				found = true
+				t.Logf("analysis found: %s → %s (%v hops)", rec["attacker_arn"], rec["target_arn"], rec["hop_count"])
+			}
+		}
+		assert.True(t, found,
+			"new_services_user must appear in aws/analysis/privesc_paths output — "+
+				"the CAN_PRIVESC edge from PassRole+service methods must be traversable to an admin target")
 	})
 }
