@@ -8,11 +8,11 @@ package model
 // AurelianModel without embedding BaseAurelianModel.
 type aurelianModelToken struct{}
 
-// AurelianModel is a marker interface for all Aurelian output models.
-// Only types that embed BaseAurelianModel can satisfy this interface.
-type AurelianModel interface {
-	IsAurelianModel() aurelianModelToken
-}
+// AurelianModel is the marker type for Aurelian output models. It is an open
+// interface so platform types such as capmodel.Risk — external generated
+// structs we cannot attach methods to — can be emitted through the module
+// pipeline directly, without an Aurelian-side wrapper.
+type AurelianModel interface{}
 
 // BaseAurelianModel is embedded into output structs to satisfy the AurelianModel interface.
 type BaseAurelianModel struct{}
