@@ -428,5 +428,24 @@ func (s *stressEnumerator) stressBug_doubleClassifyThroughHelper(region string) 
 	}
 }
 
-// Ensure the types are used (prevent unused import errors).
-var _ = (*pipeline.P[output.AWSResource])(nil)
+// Keep all declarations alive for the linter — they're analyzed via SSA
+// by the Z3 test, not called directly from Go test functions.
+var (
+	_ = newStressEnumerator
+	_ = (*stressEnumerator).stressCorrect_errorThroughStructField
+	_ = (*stressEnumerator).stressCorrect_errorThroughHelper
+	_ = (*stressEnumerator).classifyAndLog
+	_ = (*stressEnumerator).stressCorrect_errorMultipleSDKCalls
+	_ = (*stressEnumerator).stressCorrect_multiCallPhiMerge
+	_ = (*stressEnumerator).stressCorrect_closureClassifiesInternally
+	_ = (*stressEnumerator).stressCorrect_goroutineClassifies
+	_ = (*stressEnumerator).stressCorrect_deepWrapChain
+	_ = (*stressEnumerator).stressCorrect_errorReturnedAndClassifiedByCaller
+	_ = (*stressEnumerator).stressBug_silentDrop
+	_ = (*stressEnumerator).stressBug_doubleClassify
+	_ = (*stressEnumerator).stressBug_classifyThenLeak
+	_ = (*stressEnumerator).stressBug_classifyWrongError
+	_ = (*stressEnumerator).stressBug_oneCallerDrops
+	_ = (*stressEnumerator).stressBug_doubleClassifyThroughHelper
+	_ = (*pipeline.P[output.AWSResource])(nil)
+)

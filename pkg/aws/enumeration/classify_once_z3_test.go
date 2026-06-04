@@ -1145,13 +1145,13 @@ func runZ3(t *testing.T, smt2 string) z3Result {
 	if err != nil {
 		t.Fatalf("create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 
 	if _, err := tmpFile.WriteString(smt2); err != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		t.Fatalf("write smt2: %v", err)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	cmd := exec.Command("z3", tmpFile.Name())
 	out, err := cmd.Output()
