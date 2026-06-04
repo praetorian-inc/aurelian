@@ -1412,9 +1412,25 @@ func (a *z3Analysis) verifySource(t *testing.T, src z3ErrSource) string {
 			// The graph has classify sites but no exits. This happens when:
 			// - The classify pattern is "classify, record, continue" (not return)
 			// - The error is absorbed by the caller after classification
-			// Add an implicit exit after each terminal classify site (one with
-			// no successors leading to another classify or exit).
+			// Only add an implicit exit for TERMINAL classify sites — those
+			// with no outgoing edge that reaches another classify site or
+			// an existing exit. Non-terminal classify sites feed into
+			// downstream classify calls and should not short-circuit.
+			classifySet := make(map[int]bool, len(graph.classifySites))
 			for _, cid := range graph.classifySites {
+				classifySet[cid] = true
+			}
+			for _, cid := range graph.classifySites {
+				hasDownstream := false
+				for _, e := range graph.edges {
+					if e.from == cid && (classifySet[e.to] || graph.nodes[e.to].kind == nkExit) {
+						hasDownstream = true
+						break
+					}
+				}
+				if hasDownstream {
+					continue
+				}
 				exitID := len(graph.nodes)
 				graph.nodes = append(graph.nodes, vfNode{
 					id: exitID, kind: nkExit, label: "implicit-exit (error absorbed after classify)",
