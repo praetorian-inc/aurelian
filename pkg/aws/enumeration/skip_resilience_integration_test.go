@@ -610,7 +610,7 @@ func TestSkipResilience_CloseWritesDetailFile(t *testing.T) {
 			for range out.Range() {
 			}
 		}()
-		_ = e.List("AWS::Amplify::App", out)
+		require.NoError(t, e.List("AWS::Amplify::App", out), "List must not return a fatal error — skippable errors should be classified and swallowed")
 		out.Close()
 	}()
 
