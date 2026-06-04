@@ -52,16 +52,9 @@ func (m *mockCognitoClient) ListUserPoolClients(ctx context.Context, params *cog
 
 func (m *mockCognitoClient) DescribeUserPoolClient(ctx context.Context, params *cognitoidentityprovider.DescribeUserPoolClientInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.DescribeUserPoolClientOutput, error) {
 	if m.describeClientFunc != nil {
-		return m.describeClientFunc(stringPtrVal(params.ClientId))
+		return m.describeClientFunc(aws.ToString(params.ClientId))
 	}
 	return m.describeClientOutput, m.describeClientError
-}
-
-func stringPtrVal(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
 }
 
 func (m *mockCognitoClient) ListGroups(ctx context.Context, params *cognitoidentityprovider.ListGroupsInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.ListGroupsOutput, error) {

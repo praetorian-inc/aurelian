@@ -4,7 +4,6 @@ package recon
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -22,14 +21,7 @@ func TestCognitoUserPoolEnricherGroupRoles(t *testing.T) {
 	fixture.Setup()
 
 	ctx := context.Background()
-	loadOpts := []func(*config.LoadOptions) error{
-		config.WithRegion("us-east-1"),
-	}
-	if profile := os.Getenv("AWS_PROFILE"); profile != "" {
-		loadOpts = append(loadOpts, config.WithSharedConfigProfile(profile))
-	}
-
-	awsCfg, err := config.LoadDefaultConfig(ctx, loadOpts...)
+	awsCfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
 	require.NoError(t, err)
 
 	poolID := fixture.Output("cognito_pool_id")
