@@ -16,8 +16,8 @@ import (
 // LAB-2525: AWS recon must continue past SCP/AccessDenied/OptInRequired errors
 // returned from a single (region, service) call. The enumerator pattern is:
 //
-//	if IsSkippableAWSError(err) {
-//	    skipReport.Record(SkippedOp{...})
+//	if op := ClassifySkippable(err, service, operation, region); op != nil {
+//	    skipped = append(skipped, *op)
 //	    return nil   // <-- swallow so CrossRegionActor's errgroup doesn't cancel siblings
 //	}
 //	return err       // fatal -> propagate

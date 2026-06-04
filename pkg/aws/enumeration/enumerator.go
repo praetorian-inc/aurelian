@@ -126,10 +126,15 @@ func (e *Enumerator) List(identifier string, out *pipeline.P[output.AWSResource]
 	return fmt.Errorf("identifier must be either an ARN or CloudControl resource type: %q", identifier)
 }
 
-// handleListError classifies err: skippable errors are recorded and nil is
-// returned so the pipeline continues; everything else is returned as-is.
+// handleListError is the dispatcher-level safety net. It classifies err:
+// skippable errors are recorded and nil is returned so the pipeline
+// continues; everything else is returned as-is. Enumerators should handle
+// errors internally for better skip report specificity — this catches
+// anything that leaks.
 func (e *Enumerator) handleListError(err error, service, operation, region string) error {
 	if op := ClassifySkippable(err, service, operation, region); op != nil {
+		slog.Debug("safety net caught leaked skippable error",
+			"service", service, "operation", operation, "region", region, "code", op.ErrorCode)
 		e.Skipped.Record(*op)
 		return nil
 	}

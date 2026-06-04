@@ -37,6 +37,8 @@ import (
 // Known gap: when running inside Guard, the consumer may not read the skip
 // report. Surfacing partial coverage to the security conclusion is a product
 // concern tracked separately.
+// DO NOT modify after init — read concurrently from multiple goroutines.
+// The only permitted mutation is in skiperror_fatal_test_mode.go's init().
 var fatalErrorCodes = map[string]struct{}{
 	"ExpiredToken":               {},
 	"ExpiredTokenException":      {},
