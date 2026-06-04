@@ -20,9 +20,11 @@ import (
 // fetches once per lifetime via sync.Once.
 type IAMEnumerator struct {
 	plugin.AWSCommonRecon
-	provider   *AWSConfigProvider
-	skipReport *SkipReport
-	accountID  string
+	provider    *AWSConfigProvider
+	skipReport  *SkipReport
+	accountID   string
+	accountOnce sync.Once
+	accountErr  error
 }
 
 // iamSubEnumerator implements ResourceEnumerator for a single IAM resource type.
@@ -89,22 +91,23 @@ func (e *IAMEnumerator) UserEnumerator() ResourceEnumerator {
 }
 
 func (e *IAMEnumerator) resolveAccountID() error {
-	if e.accountID != "" {
-		return nil
-	}
-	if e.provider == nil {
-		return fmt.Errorf("no provider configured")
-	}
-	region := "us-east-1"
-	if len(e.Regions) > 0 {
-		region = e.Regions[0]
-	}
-	id, err := e.provider.GetAccountID(region)
-	if err != nil {
-		return fmt.Errorf("get account ID: %w", err)
-	}
-	e.accountID = id
-	return nil
+	e.accountOnce.Do(func() {
+		if e.provider == nil {
+			e.accountErr = fmt.Errorf("no provider configured")
+			return
+		}
+		region := "us-east-1"
+		if len(e.Regions) > 0 {
+			region = e.Regions[0]
+		}
+		id, err := e.provider.GetAccountID(region)
+		if err != nil {
+			e.accountErr = fmt.Errorf("get account ID: %w", err)
+			return
+		}
+		e.accountID = id
+	})
+	return e.accountErr
 }
 
 func (e *IAMEnumerator) getIAMClient() (*iam.Client, error) {
