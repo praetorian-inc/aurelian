@@ -141,7 +141,7 @@ func (e *IAMEnumerator) listRoles(out *pipeline.P[output.AWSResource]) error {
 		if err != nil {
 			if op := ClassifySkippable(err, "iam", "ListRoles", "global"); op != nil {
 				e.skipReport.RecordBatch([]SkippedOp{*op})
-				return false, nil
+				return false, nil // Remaining pages unreachable — pagination token lost.
 			}
 			return false, fmt.Errorf("list IAM roles: %w", err)
 		}
@@ -194,7 +194,7 @@ func (e *IAMEnumerator) listPolicies(out *pipeline.P[output.AWSResource]) error 
 		if err != nil {
 			if op := ClassifySkippable(err, "iam", "ListPolicies", "global"); op != nil {
 				e.skipReport.RecordBatch([]SkippedOp{*op})
-				return false, nil
+				return false, nil // Remaining pages unreachable — pagination token lost.
 			}
 			return false, fmt.Errorf("list IAM policies: %w", err)
 		}
@@ -245,7 +245,7 @@ func (e *IAMEnumerator) listUsers(out *pipeline.P[output.AWSResource]) error {
 		if err != nil {
 			if op := ClassifySkippable(err, "iam", "ListUsers", "global"); op != nil {
 				e.skipReport.RecordBatch([]SkippedOp{*op})
-				return false, nil
+				return false, nil // Remaining pages unreachable — pagination token lost.
 			}
 			return false, fmt.Errorf("list IAM users: %w", err)
 		}
