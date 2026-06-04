@@ -13,6 +13,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/capability-sdk/pkg/capmodel"
 )
 
 func init() {
@@ -20,6 +21,12 @@ func init() {
 }
 
 var nsRoute53Pattern = regexp.MustCompile(`(?i)^ns-\d+\.awsdns-\d+\.\w+`)
+
+var nsReferences = []string{
+	"https://www.form3.tech/blog/engineering/dangling-danger",
+	"https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/protection-from-dangling-dns.html",
+	"https://0xpatrik.com/subdomain-takeover-ns/",
+}
 
 func checkNS(ctx CheckContext, rec Route53Record, out *pipeline.P[model.AurelianModel]) error {
 	// Skip apex NS records — these are the zone's own nameservers, not delegations.
@@ -52,28 +59,33 @@ func checkNS(ctx CheckContext, rec Route53Record, out *pipeline.P[model.Aurelian
 		"error_type", queryErr,
 	)
 
-	out.Send(NewTakeoverRisk(
-		"ns-delegation-takeover",
-		output.RiskSeverityHigh,
-		rec,
-		ctx.AccountID,
-		map[string]any{
-			"nameservers": route53NSes,
-			"query_error": queryErr,
-			"description": fmt.Sprintf(
-				"Route53 NS delegation %q delegates to Route53 nameservers (%s) "+
-					"but the hosted zone no longer exists (DNS: %s). An attacker can "+
-					"exploit the Form3 bypass to gain full DNS control.",
-				rec.RecordName, strings.Join(route53NSes, ", "), queryErr,
-			),
-			"recommendation": "Remove the stale NS delegation record from zone " + rec.ZoneName + ".",
-			"references": []string{
-				"https://www.form3.tech/blog/engineering/dangling-danger",
-				"https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/protection-from-dangling-dns.html",
-				"https://0xpatrik.com/subdomain-takeover-ns/",
-			},
+	risk, err := NewTakeoverRisk(takeoverFinding{
+		riskName:  "Dangling NS Delegation Takeover",
+		severity:  output.RiskSeverityHigh,
+		rec:       rec,
+		accountID: ctx.AccountID,
+		summary: fmt.Sprintf(
+			"Route53 NS delegation %q delegates to Route53 nameservers (%s) "+
+				"but the hosted zone no longer exists (DNS: %s). An attacker can "+
+				"exploit the Form3 bypass to gain full DNS control.",
+			rec.RecordName, strings.Join(route53NSes, ", "), queryErr,
+		),
+		detailRows: []capmodel.ProofKeyValueRow{
+			{Key: "Nameservers", Value: strings.Join(route53NSes, ", ")},
+			{Key: "Query Error", Value: queryErr},
 		},
-	))
+		impact: "An attacker can recreate the delegated hosted zone in Route53 until they are assigned the " +
+			"same nameservers, gaining full DNS control over the delegated subdomain.",
+		recommendation: []string{
+			"Remove the stale NS delegation record from zone " + rec.ZoneName + ".",
+		},
+		references: nsReferences,
+	})
+	if err != nil {
+		slog.Warn("failed to build takeover risk", "record", rec.RecordName, "error", err)
+		return nil
+	}
+	out.Send(risk)
 
 	return nil
 }
