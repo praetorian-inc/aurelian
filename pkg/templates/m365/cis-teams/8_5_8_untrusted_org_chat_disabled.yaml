@@ -1,0 +1,35 @@
+id: "8.5.8"
+title: "Ensure meeting chat is disabled for untrusted organizations"
+service: teams
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that meeting chat functionality is restricted for users
+  from untrusted (non-approved) external organizations.
+rationale: |
+  Meeting chat from untrusted organizations can be used to deliver
+  phishing links and social engineering content. Restricting chat
+  for untrusted organizations reduces the attack surface while
+  maintaining collaboration with approved partners.
+impact: |
+  Users from untrusted organizations will be unable to use meeting
+  chat. Approved partner organizations will be unaffected.
+remediation: |
+  Navigate to Teams Admin Center > Meetings > Meeting policies and
+  configure meeting chat restrictions for external untrusted
+  organization participants.
+references:
+  - "https://learn.microsoft.com/en-us/microsoftteams/meeting-policies-participants-and-guests"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 8.5.8"
+cis_controls:
+  - "v8: 6.1"
+guard:
+  finding_slug: "m365-cis-8-5-8-untrusted-org-chat-disabled"
+  phase_tag: "phase_m365_teams"
+  asset_type: "m365tenant"
+  cwe: "CWE-16"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - teams_meeting_policies

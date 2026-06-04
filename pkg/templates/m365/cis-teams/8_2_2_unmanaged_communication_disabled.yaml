@@ -1,0 +1,38 @@
+id: "8.2.2"
+title: "Ensure communication with unmanaged Teams users is disabled"
+service: teams
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that communication with unmanaged (personal) Teams users
+  is disabled to prevent interaction with accounts outside
+  organizational control.
+rationale: |
+  Unmanaged Teams accounts are personal accounts not governed by any
+  organization. Allowing communication with these accounts creates
+  phishing vectors and data exfiltration paths that cannot be
+  monitored or controlled by either organization.
+impact: |
+  Users will be unable to chat or call personal Teams account holders.
+  All external communication must be through managed organizational
+  accounts.
+remediation: |
+  Navigate to Teams Admin Center > External access and disable
+  "Users can communicate with other Skype for Business and Teams
+  users" for unmanaged accounts.
+references:
+  - "https://learn.microsoft.com/en-us/microsoftteams/manage-external-access"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 8.2.2"
+cis_controls:
+  - "v8: 6.1"
+  - "v8: 6.8"
+guard:
+  finding_slug: "m365-cis-8-2-2-unmanaged-communication-disabled"
+  phase_tag: "phase_m365_teams"
+  asset_type: "m365tenant"
+  cwe: "CWE-732"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - teams_external_access

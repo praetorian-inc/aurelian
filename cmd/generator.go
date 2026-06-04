@@ -49,7 +49,7 @@ var platformAliases = map[string][]string{
 	"azure": {"az"},
 	"aws":   {"amazon"},
 	"gcp":   {"google"},
-	// Add more platform aliases as needed
+	"m365":  {"microsoft365", "o365"},
 }
 
 // generateCommands builds the command tree based on registered modules

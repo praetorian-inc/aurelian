@@ -1,0 +1,39 @@
+id: "5.2.2.7"
+title: "Ensure a Conditional Access policy exists to block sign-in risk"
+service: entra
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that a Conditional Access policy is configured to block or
+  require MFA for sign-ins identified as high risk by Entra ID
+  Identity Protection.
+rationale: |
+  Sign-in risk detections identify suspicious authentication attempts
+  such as logins from anonymized IP addresses, atypical travel, or
+  password spray attacks. Without a policy to act on sign-in risk,
+  attackers can exploit compromised credentials unimpeded.
+impact: |
+  Users encountering high-risk sign-ins will need to complete MFA or
+  will be blocked, potentially causing friction during legitimate
+  unusual sign-ins such as travel.
+remediation: |
+  Create a Conditional Access policy targeting all users with the
+  condition "Sign-in risk" set to "High" and a grant control that
+  requires multifactor authentication or blocks access.
+references:
+  - "https://learn.microsoft.com/en-us/entra/id-protection/howto-identity-protection-configure-risk-policies"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 5.2.2.7"
+cis_controls:
+  - "v8: 6.3"
+  - "v8: 13.5"
+guard:
+  finding_slug: "m365-cis-5-2-2-7-sign-in-risk-ca-policy"
+  phase_tag: "phase_m365_entra"
+  asset_type: "m365tenant"
+  cwe: "CWE-287"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - conditional_access_policies
+  - identity_protection_settings
