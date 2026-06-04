@@ -295,6 +295,10 @@ func (e *IAMEnumerator) getRoleByARN(arn string, out *pipeline.P[output.AWSResou
 		RoleName: &roleName,
 	})
 	if err != nil {
+		if op := ClassifySkippable(err, "iam", "GetRole", "global"); op != nil {
+			e.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return fmt.Errorf("get IAM role %s: %w", roleName, err)
 	}
 
@@ -326,6 +330,10 @@ func (e *IAMEnumerator) getPolicyByARN(arn string, out *pipeline.P[output.AWSRes
 		PolicyArn: &arn,
 	})
 	if err != nil {
+		if op := ClassifySkippable(err, "iam", "GetPolicy", "global"); op != nil {
+			e.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return fmt.Errorf("get IAM policy %s: %w", arn, err)
 	}
 
@@ -360,6 +368,10 @@ func (e *IAMEnumerator) getUserByARN(arn string, out *pipeline.P[output.AWSResou
 		UserName: &userName,
 	})
 	if err != nil {
+		if op := ClassifySkippable(err, "iam", "GetUser", "global"); op != nil {
+			e.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return fmt.Errorf("get IAM user %s: %w", userName, err)
 	}
 

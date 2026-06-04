@@ -101,6 +101,18 @@ func (l *EC2ImageEnumerator) EnumerateByARN(arn string, out *pipeline.P[output.A
 				"image", imageID, "region", parsed.Region, "error", err)
 		}
 		resource = buildPartialResource(result.Images[0], parsed.AccountID, parsed.Region)
+	} else {
+		instances, err := findInstancesUsingImage(context.Background(), client, imageID)
+		if err != nil {
+			if op := ClassifySkippable(err, "ec2", "DescribeInstances", parsed.Region); op != nil {
+				l.skipReport.RecordBatch([]SkippedOp{*op})
+			} else {
+				slog.Warn("non-skippable DescribeInstances error, skipping instance enrichment",
+					"image", imageID, "region", parsed.Region, "error", err)
+			}
+		} else if len(instances) > 0 {
+			resource.Properties["InUseByInstances"] = instances
+		}
 	}
 	out.Send(resource)
 	return nil
