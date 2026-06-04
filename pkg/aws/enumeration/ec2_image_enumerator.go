@@ -96,9 +96,11 @@ func (l *EC2ImageEnumerator) EnumerateByARN(arn string, out *pipeline.P[output.A
 	if err != nil {
 		if op := ClassifySkippable(err, "ec2", "DescribeImageAttribute", parsed.Region); op != nil {
 			l.skipReport.RecordBatch([]SkippedOp{*op})
-			return nil
+		} else {
+			slog.Warn("non-skippable DescribeImageAttribute error, using partial resource",
+				"image", imageID, "region", parsed.Region, "error", err)
 		}
-		return err
+		resource = buildPartialResource(result.Images[0], parsed.AccountID, parsed.Region)
 	}
 	out.Send(resource)
 	return nil
@@ -133,17 +135,19 @@ func (l *EC2ImageEnumerator) listImagesInRegion(region, accountID string, out *p
 		if err != nil {
 			if op := ClassifySkippable(err, "ec2", "DescribeImageAttribute", region); op != nil {
 				skipped = append(skipped, *op)
-				resource = buildPartialResource(image, accountID, region)
 			} else {
-				return fmt.Errorf("build EC2 image resource %s: %w", aws.ToString(image.ImageId), err)
+				slog.Warn("non-skippable DescribeImageAttribute error, using partial resource",
+					"image", aws.ToString(image.ImageId), "region", region, "error", err)
 			}
+			resource = buildPartialResource(image, accountID, region)
 		} else {
 			instances, err := findInstancesUsingImage(context.Background(), client, aws.ToString(image.ImageId))
 			if err != nil {
 				if op := ClassifySkippable(err, "ec2", "DescribeInstances", region); op != nil {
 					skipped = append(skipped, *op)
 				} else {
-					return fmt.Errorf("find instances using image %s: %w", aws.ToString(image.ImageId), err)
+					slog.Warn("non-skippable DescribeInstances error, skipping instance enrichment",
+						"image", aws.ToString(image.ImageId), "region", region, "error", err)
 				}
 			} else if len(instances) > 0 {
 				resource.Properties["InUseByInstances"] = instances

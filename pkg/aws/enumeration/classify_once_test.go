@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -32,7 +33,22 @@ import (
 // nil-value problem: if a function returns nil instead of the error, the
 // nil constant is a DIFFERENT ssa.Value that isn't connected to the
 // original error's referrer chain.
+// TestClassifySkippableExactlyOnce verifies that every AWS SDK error reaches
+// ClassifySkippable exactly once. Prefers Z3 (formal proof) when available,
+// falls back to SSA value-flow tracing otherwise.
 func TestClassifySkippableExactlyOnce(t *testing.T) {
+	if _, err := exec.LookPath("z3"); err == nil {
+		t.Log("z3 found — using Z3 solver for formal verification")
+		testClassifySkippableExactlyOnce_Z3(t)
+		return
+	}
+	t.Log("z3 not found — falling back to SSA value-flow tracing")
+	testClassifySkippableExactlyOnce_SSA(t)
+}
+
+func testClassifySkippableExactlyOnce_SSA(t *testing.T) {
+	t.Helper()
+
 	cfg := &packages.Config{
 		Mode: packages.LoadAllSyntax,
 		Dir:  ".",
@@ -69,10 +85,11 @@ func TestClassifySkippableExactlyOnce(t *testing.T) {
 		if fn.Blocks == nil {
 			continue
 		}
-		prevLen := len(violations)
+		// Skip deliberate bug patterns from the stress enumerator.
+		if isStressBugFunc(fn) {
+			continue
+		}
 		checkFunctionExactlyOnce(fn, classifyFn, cg, prog.Fset, &violations)
-		_ = prevLen
-		// Count AWS SDK calls for this function
 		for _, block := range fn.Blocks {
 			for _, instr := range block.Instrs {
 				if call, ok := instr.(*ssa.Call); ok && isAWSSDKCall(call) {
@@ -86,6 +103,24 @@ func TestClassifySkippableExactlyOnce(t *testing.T) {
 	for _, v := range violations {
 		t.Error(v)
 	}
+}
+
+// isStressBugFunc returns true if fn or its parent is a deliberate bug pattern
+// (stressBug_ prefix) from the stress enumerator.
+func isStressBugFunc(fn *ssa.Function) bool {
+	for _, name := range []string{fn.Name(), ssaParentName(fn)} {
+		if strings.HasPrefix(name, "stressBug_") {
+			return true
+		}
+	}
+	return false
+}
+
+func ssaParentName(fn *ssa.Function) string {
+	if p := fn.Parent(); p != nil {
+		return p.Name()
+	}
+	return ""
 }
 
 // --- Per-function analysis ---
