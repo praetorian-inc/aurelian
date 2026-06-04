@@ -54,10 +54,10 @@ var fatalErrorCodes = map[string]struct{}{
 //
 // Note: this includes ThrottlingException. Throttling is a transient,
 // per-call condition — the SDK's adaptive retry mode (configured in
-// NewAWSConfig) handles retry automatically. If retries are exhausted and
-// the call still throttles, we record it as a skip rather than aborting
-// the entire pipeline. Retry/backoff policy belongs in the rate-limiting
-// layer (pkg/ratelimit), not in the error classifier.
+// internal/helpers/aws.NewAWSConfig) handles retry automatically. If
+// retries are exhausted and the call still throttles, we record it as a
+// skip rather than aborting the entire pipeline. Retry/backoff policy
+// belongs in the rate-limiting layer (pkg/ratelimit), not here.
 func IsSkippableAWSError(err error) bool {
 	if err == nil {
 		return false

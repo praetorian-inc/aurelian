@@ -450,13 +450,23 @@ func TestSkipResilience_PartialEC2Access(t *testing.T) {
 		return enumerator.List("AWS::EC2::Image", out)
 	})
 	require.NoError(t, err)
-	assert.Empty(t, results,
-		"all %d images should fail enrichment (DescribeImageAttribute denied)", len(fullResults))
 
-	// Per-item failures are Warns, not skips.
-	for _, op := range enumerator.Skipped.Snapshot() {
-		assert.NotEqual(t, "ec2", op.Service)
+	// With DescribeImageAttribute denied, each image falls back to a partial
+	// resource (no launch permissions or snapshot IDs). The count should match
+	// the full-access count — no images are lost, just unenriched.
+	assert.Equal(t, len(fullResults), len(results),
+		"partial EC2 role should produce the same number of images as full access (as partial resources)")
+
+	// DescribeImageAttribute errors are classified as skips.
+	snap := enumerator.Skipped.Snapshot()
+	hasEC2Skip := false
+	for _, op := range snap {
+		if op.Service == "ec2" && op.Operation == "DescribeImageAttribute" {
+			hasEC2Skip = true
+		}
 	}
+	assert.True(t, hasEC2Skip,
+		"SkipReport must contain ec2/DescribeImageAttribute entries for denied enrichment calls")
 }
 
 // TestSkipResilience_WiringCheck is the systematic behavioral test that

@@ -21,7 +21,7 @@ import (
 //
 // Why exactly once:
 //   - Zero times means an unhandled SDK error can abort the entire pipeline,
-//     defeating the resilience goal of PR #200 / LAB-2525.
+//     defeating the enumeration resilience goal (LAB-2525).
 //   - More than once means redundant classification — the error handling
 //     wiring is ambiguous (which level is responsible?) and risks double-
 //     recording in the SkipReport.
