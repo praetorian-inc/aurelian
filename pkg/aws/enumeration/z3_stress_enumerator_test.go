@@ -1,19 +1,25 @@
 package enumeration
 
-// z3_stress_enumerator.go is a deliberately adversarial enumerator used to
-// stress-test the Z3-based ClassifySkippable exactly-once verification.
+// z3_stress_enumerator_test.go contains adversarial error-handling patterns
+// for testing the Z3-based ClassifySkippable exactly-once verification.
 //
-// Every pattern here is designed to break naive static analysis:
+// "Correct" patterns (stressCorrect_) must pass the exactly-once check:
 // - errors stored in struct fields and retrieved later
-// - errors passed through channels
-// - errors accumulated in slices then classified in a loop
-// - errors returned from function-value calls through multiple indirections
-// - multiple AWS SDK calls whose errors merge at a phi node
-// - error classification delegated to a method selected at runtime via map lookup
-// - deep wrapping chains before classification
+// - errors passed through helper methods (interprocedural tracing)
+// - multiple independent SDK calls with separate classify paths
+// - two SDK calls whose errors merge at a phi node
+// - closures that classify internally
+// - goroutines that classify internally
+// - deep fmt.Errorf wrapping chains before classification
+// - errors returned from a closure and classified by the caller
 //
-// IMPORTANT: each "correct" function is SELF-CONTAINED — ClassifySkippable is
-// reached on every path within the function itself, not relying on external callers.
+// "Bug" patterns (stressBug_) must be detected as violations:
+// - silent drop (count=0)
+// - double classify (count=2)
+// - classify then leak (missing return, count=2)
+// - classify wrong error (real error has count=0)
+// - one caller drops (same closure, different handling at two call sites)
+// - double classify through helper (inner + outer both classify)
 
 import (
 	"context"

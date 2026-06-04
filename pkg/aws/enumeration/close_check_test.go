@@ -78,7 +78,7 @@ func TestNewEnumeratorRequiresClose(t *testing.T) {
 
     Add "defer lister.Close()" immediately after the NewEnumerator call:
 
-        lister := cclist.NewEnumerator(opts)
+        lister := enumeration.NewEnumerator(opts)
         defer lister.Close()
 
     Close() logs the skip summary so operators see which (region, service)
@@ -100,7 +100,7 @@ func importsAWSEnumeration(f *ast.File) bool {
 }
 
 // newEnumeratorVarName finds the variable name assigned from a NewEnumerator
-// call (e.g. "lister" from `lister := cclist.NewEnumerator(...)`). Returns ""
+// call (e.g. "lister" from `lister := enumeration.NewEnumerator(...)`). Returns ""
 // if no NewEnumerator call is found.
 func newEnumeratorVarName(body *ast.BlockStmt) string {
 	var varName string

@@ -15,27 +15,23 @@ import (
 	"golang.org/x/tools/go/ssa/ssautil"
 )
 
-// TestClassifySkippableExactlyOnce uses SSA + VTA call graph analysis to
-// verify that every AWS SDK error reaches ClassifySkippable exactly once.
+// TestClassifySkippableExactlyOnce verifies the enumeration resilience
+// invariant: every AWS SDK error in every enumerator reaches
+// ClassifySkippable exactly once on every execution path.
 //
-// The analysis:
-//  1. Loads the enumeration package AND dependencies (LoadAllSyntax) so that
-//     external functions like ratelimit.Paginate are available for tracing.
-//  2. Builds SSA and uses VTA (Variable Type Analysis) to construct a call
-//     graph that resolves function values stored in struct fields (e.g.,
-//     iamSubEnumerator.listFn → IAMEnumerator.listRoles).
-//  3. For each AWS SDK call that returns an error, traces the error Value
-//     through the SSA value graph using pure value-flow analysis.
-//  4. Counts how many times the error reaches ClassifySkippable as the
-//     first argument. Asserts exactly one.
+// Why exactly once:
+//   - Zero times means an unhandled SDK error can abort the entire pipeline,
+//     defeating the resilience goal of PR #200 / LAB-2525.
+//   - More than once means redundant classification — the error handling
+//     wiring is ambiguous (which level is responsible?) and risks double-
+//     recording in the SkipReport.
 //
-// The analysis uses pure value-flow tracing, which naturally avoids the
-// nil-value problem: if a function returns nil instead of the error, the
-// nil constant is a DIFFERENT ssa.Value that isn't connected to the
-// original error's referrer chain.
-// TestClassifySkippableExactlyOnce verifies that every AWS SDK error reaches
-// ClassifySkippable exactly once. Prefers Z3 (formal proof) when available,
-// falls back to SSA value-flow tracing otherwise.
+// Two implementations, automatic fallback:
+//   - Z3 (preferred): builds a value-flow graph from SSA, encodes it as
+//     SMT-LIB2, and uses the Z3 solver to formally prove the property
+//     across all execution paths. Produces counterexample paths on failure.
+//   - SSA (fallback): heuristic taint tracing through the SSA value graph.
+//     Used when z3 is not installed (e.g. CI).
 func TestClassifySkippableExactlyOnce(t *testing.T) {
 	if _, err := exec.LookPath("z3"); err == nil {
 		t.Log("z3 found — using Z3 solver for formal verification")

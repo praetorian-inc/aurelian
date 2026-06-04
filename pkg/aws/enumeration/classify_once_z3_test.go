@@ -1486,8 +1486,10 @@ func isBugPattern(src z3ErrSource) bool {
 	return isStressBugFunc(src.fn)
 }
 
-// testClassifySkippableExactlyOnce_Z3 verifies that every AWS SDK error in
-// production and correct stress-test code reaches ClassifySkippable exactly once.
+// testClassifySkippableExactlyOnce_Z3 is the Z3 implementation of the
+// exactly-once property check. For each AWS SDK error source, it builds a
+// value-flow graph, emits SMT-LIB2 constraints, and asks Z3 whether any
+// execution path exists where ClassifySkippable count != 1.
 func testClassifySkippableExactlyOnce_Z3(t *testing.T) {
 	t.Helper()
 	a := loadZ3Analysis(t)
@@ -1511,8 +1513,11 @@ func testClassifySkippableExactlyOnce_Z3(t *testing.T) {
 	}
 }
 
-// TestClassifySkippableExactlyOnce_BugPatterns verifies that deliberate bug
-// patterns (stressBug_ functions) are correctly detected as violations.
+// TestClassifySkippableExactlyOnce_BugPatterns verifies that the Z3 analysis
+// correctly detects deliberate bug patterns (stressBug_ functions in
+// z3_stress_enumerator_test.go). Each pattern violates the exactly-once
+// property in a specific way: silent drops (count=0), double classification
+// (count=2), classify-then-leak, wrong error classified, etc.
 // Requires z3 — skips if not installed.
 func TestClassifySkippableExactlyOnce_BugPatterns(t *testing.T) {
 	a := loadZ3Analysis(t)
