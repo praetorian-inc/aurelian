@@ -362,20 +362,11 @@ func countClassifyOnErrorPath(val ssa.Value, classifyFn *ssa.Function, cg *callg
 	return propagateCount
 }
 
-// countPropagateOnly re-traces the error value's propagation path (through
-// Returns to callers) with a fresh visited map, counting ClassifySkippable
-// calls at the caller level. This is used when we know the error was
-// classified at this level AND returned — the fresh trace ensures the
-// caller's ClassifySkippable isn't missed due to visited-map pollution.
-// countPropagateOnly re-traces the error with a fresh visited map and
-// returns the count of ClassifySkippable calls reachable through
-// propagation paths (excluding the classification at this level).
-// Uses the full recursive countClassifyOnErrorPath, then subtracts
-// the known classification at this level.
-// countPropagateOnly re-traces the error with a fresh visited map.
-// It counts ALL ClassifySkippable calls reachable (including at this level),
-// then subtracts 1 for the classification at this level.
-// Uses noCumulativeCheck=true to prevent recursive re-entry.
+// countPropagateOnly re-traces the error with a fresh visited map,
+// counting ClassifySkippable calls reachable through propagation paths
+// (Return, Store, ChangeInterface) while skipping the classification at
+// this level. Used when classify and propagate are on the same runtime
+// path to detect double-recording.
 func countPropagateOnly(val ssa.Value, classifyFn *ssa.Function, cg *callgraph.Graph) int {
 	freshVisited := make(map[ssa.Value]bool)
 	freshVisited[val] = true
@@ -599,8 +590,6 @@ func reachableFrom(start, target *ssa.BasicBlock, visited map[*ssa.BasicBlock]bo
 	return false
 }
 
-// errorReturnedInClassifyBranch checks if the error val is returned from
-// inside the true-branch of the `if op := ClassifySkippable(...); op != nil`
 // errorIsSilentlyDropped checks if an error value is only used in a BinOp
 // comparison (err != nil) and never passed to any function, returned, or
 // stored. This detects the pattern:
@@ -701,7 +690,7 @@ func traceClosureReturn(fn *ssa.Function, errIdx int, classifyFn *ssa.Function, 
 					if !ok {
 						continue
 					}
-					callErrVal := extractErrorFromAnyCall(call)
+					callErrVal := extractErrorFromCall(call)
 					if callErrVal != nil {
 						c := countClassifyOnErrorPath(callErrVal, classifyFn, cg, visited)
 						if c > maxCount {
@@ -937,10 +926,6 @@ func extractErrorFromCall(call *ssa.Call) ssa.Value {
 		}
 	}
 	return nil
-}
-
-func extractErrorFromAnyCall(call *ssa.Call) ssa.Value {
-	return extractErrorFromCall(call)
 }
 
 func isErrorType(t types.Type) bool {
