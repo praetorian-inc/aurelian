@@ -91,7 +91,8 @@ func TestFatalError_Binary_EnumerationLevel(t *testing.T) {
 	assert.Error(t, runErr, "binary must exit with non-zero code on fatal error")
 
 	// 4. No output file — the pipeline aborted before writing results.
-	entries, _ := os.ReadDir(outputDir)
+	entries, err := os.ReadDir(outputDir)
+	require.NoError(t, err, "failed to read output dir")
 	for _, e := range entries {
 		assert.NotContains(t, e.Name(), "list-all",
 			"no list-all output file should exist — pipeline aborted before writing")
