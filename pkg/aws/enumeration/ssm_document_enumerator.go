@@ -124,7 +124,7 @@ func (e *SSMDocumentEnumerator) listDocumentsInRegion(region, accountID string, 
 		if err != nil {
 			if op := ClassifySkippable(err, "ssm", "ListDocuments", region); op != nil {
 				skipped = append(skipped, *op)
-				break
+				break // Remaining pages are unreachable — the paginator token is lost.
 			}
 			return fmt.Errorf("list documents in %s: %w", region, err)
 		}
