@@ -3,11 +3,14 @@
 package enumeration_test
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,23 +39,13 @@ func TestFatalError_Binary_EnumerationLevel(t *testing.T) {
 	buildOut, err := build.CombinedOutput()
 	require.NoError(t, err, "go build failed: %s", string(buildOut))
 
-	// Set up restricted role profile.
-	profileDir := t.TempDir()
-	profileName := "aurelian-binary-fatal-enum"
-	sourceProfile := os.Getenv("AWS_PROFILE")
-	if sourceProfile == "" {
-		sourceProfile = "default"
-	}
+	// Set up restricted role profile using credential_source=Environment
+	// so we don't need to read ~/.aws/{config,credentials}.
+	profileDir, profileName := setupRestrictedProfileForBinary(t, restrictedRoleARN)
 
-	homeDir, _ := os.UserHomeDir()
-	origConfig, _ := os.ReadFile(filepath.Join(homeDir, ".aws", "config"))
-	origCreds, _ := os.ReadFile(filepath.Join(homeDir, ".aws", "credentials"))
-
-	configContent := string(origConfig) + "\n[profile " + profileName + "]\n" +
-		"role_arn = " + restrictedRoleARN + "\n" +
-		"source_profile = " + sourceProfile + "\nregion = us-east-1\n"
-	require.NoError(t, os.WriteFile(filepath.Join(profileDir, "config"), []byte(configContent), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(profileDir, "credentials"), origCreds, 0o600))
+	// Resolve current session credentials so the binary subprocess can
+	// use them via credential_source=Environment without reading ~/.aws/.
+	baseCreds := resolveBaseCredentials(t)
 
 	outputDir := t.TempDir()
 
@@ -69,6 +62,9 @@ func TestFatalError_Binary_EnumerationLevel(t *testing.T) {
 	cmd.Env = append(os.Environ(),
 		"AWS_CONFIG_FILE="+filepath.Join(profileDir, "config"),
 		"AWS_SHARED_CREDENTIALS_FILE="+filepath.Join(profileDir, "credentials"),
+		"AWS_ACCESS_KEY_ID="+baseCreds.AccessKeyID,
+		"AWS_SECRET_ACCESS_KEY="+baseCreds.SecretAccessKey,
+		"AWS_SESSION_TOKEN="+baseCreds.SessionToken,
 	)
 	output, runErr := cmd.CombinedOutput()
 	outputStr := string(output)
@@ -100,6 +96,40 @@ func TestFatalError_Binary_EnumerationLevel(t *testing.T) {
 		assert.NotContains(t, e.Name(), "list-all",
 			"no list-all output file should exist — pipeline aborted before writing")
 	}
+}
+
+// setupRestrictedProfileForBinary creates a self-contained profile directory
+// that uses credential_source=Environment instead of source_profile, so the
+// binary subprocess doesn't need access to ~/.aws/{config,credentials}.
+func setupRestrictedProfileForBinary(t *testing.T, roleARN string) (string, string) {
+	t.Helper()
+	profileDir := t.TempDir()
+	profileName := "aurelian-binary-fatal-enum"
+
+	configContent := "[profile " + profileName + "]\n" +
+		"role_arn = " + roleARN + "\n" +
+		"credential_source = Environment\n" +
+		"region = us-east-1\n"
+
+	require.NoError(t, os.WriteFile(filepath.Join(profileDir, "config"), []byte(configContent), 0o600))
+	// Empty credentials file — the binary reads from env vars instead.
+	require.NoError(t, os.WriteFile(filepath.Join(profileDir, "credentials"), []byte(""), 0o600))
+
+	return profileDir, profileName
+}
+
+// resolveBaseCredentials retrieves the current session's AWS credentials so
+// they can be injected as env vars into a subprocess.
+func resolveBaseCredentials(t *testing.T) aws.Credentials {
+	t.Helper()
+	cfg, err := config.LoadDefaultConfig(context.Background())
+	require.NoError(t, err, "failed to load default AWS config")
+
+	creds, err := cfg.Credentials.Retrieve(context.Background())
+	require.NoError(t, err, "failed to retrieve AWS credentials")
+	require.NotEmpty(t, creds.AccessKeyID, "AWS_ACCESS_KEY_ID is empty")
+
+	return creds
 }
 
 func findRepoRootExec(t *testing.T) string {

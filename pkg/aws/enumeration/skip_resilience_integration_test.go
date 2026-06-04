@@ -3,13 +3,14 @@
 package enumeration
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -634,28 +635,36 @@ func newRestrictedEnumerator(t *testing.T, fixture testutil.Fixture, roleARN str
 	})
 }
 
+// setupRestrictedProfile creates a self-contained profile directory using
+// credential_source=Environment so we don't need to read ~/.aws/{config,credentials}.
+// Base credentials are resolved from the default chain and injected as env vars.
 func setupRestrictedProfile(t *testing.T, roleARN string) (string, string) {
 	t.Helper()
 	profileDir := t.TempDir()
 	profileName := "aurelian-test-restricted"
-	sourceProfile := os.Getenv("AWS_PROFILE")
-	if sourceProfile == "" {
-		sourceProfile = "default"
-	}
 
 	configContent := "[profile " + profileName + "]\n" +
 		"role_arn = " + roleARN + "\n" +
-		"source_profile = " + sourceProfile + "\n" +
+		"credential_source = Environment\n" +
 		"region = us-east-1\n"
 
-	homeDir, err := os.UserHomeDir()
-	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(profileDir, "config"), []byte(configContent), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(profileDir, "credentials"), []byte(""), 0o600))
 
-	origConfig, _ := os.ReadFile(filepath.Join(homeDir, ".aws", "config"))
-	origCreds, _ := os.ReadFile(filepath.Join(homeDir, ".aws", "credentials"))
+	// Resolve base credentials from the default chain and set as env vars
+	// so credential_source=Environment can find them.
+	cfg, err := awsconfig.LoadDefaultConfig(context.Background())
+	require.NoError(t, err, "failed to load default AWS config for base credentials")
 
-	require.NoError(t, os.WriteFile(filepath.Join(profileDir, "config"), append(origConfig, []byte("\n"+configContent)...), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(profileDir, "credentials"), origCreds, 0o600))
+	creds, err := cfg.Credentials.Retrieve(context.Background())
+	require.NoError(t, err, "failed to retrieve base AWS credentials")
+	require.NotEmpty(t, creds.AccessKeyID, "base AWS_ACCESS_KEY_ID is empty")
+
+	t.Setenv("AWS_ACCESS_KEY_ID", creds.AccessKeyID)
+	t.Setenv("AWS_SECRET_ACCESS_KEY", creds.SecretAccessKey)
+	if creds.SessionToken != "" {
+		t.Setenv("AWS_SESSION_TOKEN", creds.SessionToken)
+	}
 
 	return profileDir, profileName
 }
@@ -690,7 +699,5 @@ func assertAllPresent(t *testing.T, index map[string]bool, expected []string, la
 		require.True(t, index[key], "%s %q must be present", label, key)
 	}
 }
-
-var _ = stscreds.NewAssumeRoleProvider
 
 func strPtr(s string) *string { return &s }
