@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
+	"github.com/praetorian-inc/capability-sdk/pkg/capmodel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -208,6 +208,8 @@ func TestHasResourceAccountCondition(t *testing.T) {
 	}
 }
 
+// TestGenerateBootstrapRisk covers the detector's emit/skip guards. Risk
+// construction itself is tested in TestNewBootstrapRisk (risk_test.go).
 func TestGenerateBootstrapRisk(t *testing.T) {
 	role := RoleInfo{
 		RoleName:   "cdk-hnb659fds-cfn-exec-role-123456789012-us-east-1",
@@ -235,22 +237,15 @@ func TestGenerateBootstrapRisk(t *testing.T) {
 	t.Run("version < 21 returns high risk", func(t *testing.T) {
 		info := BootstrapInfo{HasVersion: true, Version: 14, Region: "us-east-1", Qualifier: "hnb659fds"}
 		risk := generateBootstrapRisk(role, info)
-		assert.NotNil(t, risk)
+		require.NotNil(t, risk)
 		assert.Equal(t, "cdk-bootstrap-outdated", risk.Name)
 		assert.Equal(t, "TH", risk.Status)
-		assert.Equal(t, "aurelian-cdk-scanner", risk.Source)
-		assert.Equal(t, "123456789012", risk.DNS)
-		assert.Contains(t, risk.Description, "14")
-		assert.Contains(t, risk.Description, "us-east-1")
-		assert.NotNil(t, risk.Target)
-		assert.Equal(t, "AWS::IAM::Root", risk.Target.ResourceType)
-		assert.Equal(t, "arn:aws:iam::123456789012:root", risk.Target.ResourceID)
 	})
 
 	t.Run("version == 20 returns high risk", func(t *testing.T) {
 		info := BootstrapInfo{HasVersion: true, Version: 20, Region: "us-east-1", Qualifier: "hnb659fds"}
 		risk := generateBootstrapRisk(role, info)
-		assert.NotNil(t, risk)
+		require.NotNil(t, risk)
 		assert.Equal(t, "cdk-bootstrap-outdated", risk.Name)
 		assert.Equal(t, "TH", risk.Status)
 	})
@@ -258,77 +253,10 @@ func TestGenerateBootstrapRisk(t *testing.T) {
 	t.Run("missing version returns medium risk", func(t *testing.T) {
 		info := BootstrapInfo{HasVersion: false, Region: "us-east-1", Qualifier: "hnb659fds"}
 		risk := generateBootstrapRisk(role, info)
-		assert.NotNil(t, risk)
+		require.NotNil(t, risk)
 		assert.Equal(t, "cdk-bootstrap-missing", risk.Name)
 		assert.Equal(t, "TM", risk.Status)
-		assert.Equal(t, "aurelian-cdk-scanner", risk.Source)
-		assert.Contains(t, risk.Description, "not found")
-		assert.Contains(t, risk.Comment, "Missing")
 	})
-}
-
-func TestGenerateBucketTakeoverRisk(t *testing.T) {
-	role := RoleInfo{
-		RoleName:   "cdk-hnb659fds-file-publishing-role-123456789012-us-east-1",
-		BucketName: "cdk-hnb659fds-assets-123456789012-us-east-1",
-		Qualifier:  "hnb659fds",
-		Region:     "us-east-1",
-		AccountID:  "123456789012",
-	}
-
-	risk := generateBucketTakeoverRisk(role)
-	assert.NotNil(t, risk)
-	assert.Equal(t, "cdk-bucket-takeover", risk.Name)
-	assert.Equal(t, "TH", risk.Status)
-	assert.Equal(t, "aurelian-cdk-scanner", risk.Source)
-	assert.Equal(t, "123456789012", risk.DNS)
-	assert.Contains(t, risk.Description, role.BucketName)
-	assert.Contains(t, risk.Description, role.RoleName)
-	assert.Contains(t, risk.Description, "us-east-1")
-	assert.NotNil(t, risk.Target)
-	assert.Equal(t, "arn:aws:iam::123456789012:root", risk.Target.ResourceID)
-	assert.Equal(t, role.BucketName, risk.Target.Properties["BucketName"])
-	assert.Equal(t, role.RoleName, risk.Target.Properties["RoleName"])
-}
-
-func TestGenerateBucketHijackedRisk(t *testing.T) {
-	role := RoleInfo{
-		RoleName:   "cdk-hnb659fds-file-publishing-role-123456789012-us-east-1",
-		BucketName: "cdk-hnb659fds-assets-123456789012-us-east-1",
-		Qualifier:  "hnb659fds",
-		Region:     "us-east-1",
-		AccountID:  "123456789012",
-	}
-
-	risk := generateBucketHijackedRisk(role)
-	assert.NotNil(t, risk)
-	assert.Equal(t, "cdk-bucket-hijacked", risk.Name)
-	assert.Equal(t, "TM", risk.Status)
-	assert.Equal(t, "aurelian-cdk-scanner", risk.Source)
-	assert.Contains(t, risk.Description, role.BucketName)
-	assert.Contains(t, risk.Description, role.RoleName)
-	assert.Contains(t, risk.Description, "different account")
-}
-
-func TestGeneratePolicyRisk(t *testing.T) {
-	role := RoleInfo{
-		RoleName:   "cdk-hnb659fds-file-publishing-role-123456789012-us-east-1",
-		BucketName: "cdk-hnb659fds-assets-123456789012-us-east-1",
-		Qualifier:  "hnb659fds",
-		Region:     "us-east-1",
-		AccountID:  "123456789012",
-	}
-
-	risk := generatePolicyRisk(role)
-	assert.NotNil(t, risk)
-	assert.Equal(t, "cdk-policy-unrestricted", risk.Name)
-	assert.Equal(t, "TM", risk.Status)
-	assert.Equal(t, "aurelian-cdk-scanner", risk.Source)
-	assert.Contains(t, risk.Description, "FilePublishingRole")
-	assert.Contains(t, risk.Description, role.RoleName)
-	assert.Contains(t, risk.Recommendation, "us-east-1")
-	assert.Contains(t, risk.Recommendation, "cdk bootstrap")
-	assert.Equal(t, role.BucketName, risk.Target.Properties["BucketName"])
 }
 
 func TestCdkRoleTypes(t *testing.T) {
@@ -393,25 +321,25 @@ func TestProcessRegionRoles_SingleQualifier(t *testing.T) {
 	require.Len(t, roles, 5, "expected one role per cdkRoleType")
 
 	var bootstrapCalls, bucketCalls, policyCalls int
-	var risks []output.Risk
+	var risks []capmodel.Risk
 
 	processRegionRoles(roles,
-		func(role RoleInfo) *output.Risk {
+		func(role RoleInfo) *capmodel.Risk {
 			bootstrapCalls++
-			return &output.Risk{Name: "cdk-bootstrap-outdated"}
+			return &capmodel.Risk{Name: "cdk-bootstrap-outdated"}
 		},
-		func(role RoleInfo) *output.Risk {
+		func(role RoleInfo) *capmodel.Risk {
 			bucketCalls++
-			return &output.Risk{Name: "cdk-bucket-takeover"}
+			return &capmodel.Risk{Name: "cdk-bucket-takeover"}
 		},
-		func(role RoleInfo) *output.Risk {
+		func(role RoleInfo) *capmodel.Risk {
 			policyCalls++
 			if role.RoleType == "file-publishing-role" {
-				return &output.Risk{Name: "cdk-policy-unrestricted"}
+				return &capmodel.Risk{Name: "cdk-policy-unrestricted"}
 			}
 			return nil
 		},
-		func(r output.Risk) { risks = append(risks, r) },
+		func(r capmodel.Risk) { risks = append(risks, r) },
 	)
 
 	assert.Equal(t, 1, bootstrapCalls, "bootstrap check should run once per qualifier")
@@ -436,24 +364,24 @@ func TestProcessRegionRoles_MultipleQualifiers(t *testing.T) {
 
 	bootstrapByQualifier := map[string]int{}
 	bucketByQualifier := map[string]int{}
-	var risks []output.Risk
+	var risks []capmodel.Risk
 
 	processRegionRoles(roles,
-		func(role RoleInfo) *output.Risk {
+		func(role RoleInfo) *capmodel.Risk {
 			bootstrapByQualifier[role.Qualifier]++
-			return &output.Risk{Name: "cdk-bootstrap-outdated"}
+			return &capmodel.Risk{Name: "cdk-bootstrap-outdated"}
 		},
-		func(role RoleInfo) *output.Risk {
+		func(role RoleInfo) *capmodel.Risk {
 			bucketByQualifier[role.Qualifier]++
-			return &output.Risk{Name: "cdk-bucket-takeover"}
+			return &capmodel.Risk{Name: "cdk-bucket-takeover"}
 		},
-		func(role RoleInfo) *output.Risk {
+		func(role RoleInfo) *capmodel.Risk {
 			if role.RoleType == "file-publishing-role" {
-				return &output.Risk{Name: "cdk-policy-unrestricted"}
+				return &capmodel.Risk{Name: "cdk-policy-unrestricted"}
 			}
 			return nil
 		},
-		func(r output.Risk) { risks = append(risks, r) },
+		func(r capmodel.Risk) { risks = append(risks, r) },
 	)
 
 	assert.Equal(t, 1, bootstrapByQualifier["qual1"], "bootstrap for qual1 should run once")
@@ -467,13 +395,13 @@ func TestProcessRegionRoles_MultipleQualifiers(t *testing.T) {
 
 func TestProcessRegionRoles_NilRisksNotEmitted(t *testing.T) {
 	roles := makeRolesForQualifier("hnb659fds", "123456789012", "us-east-1")
-	var risks []output.Risk
+	var risks []capmodel.Risk
 
 	processRegionRoles(roles,
-		func(RoleInfo) *output.Risk { return nil },
-		func(RoleInfo) *output.Risk { return nil },
-		func(RoleInfo) *output.Risk { return nil },
-		func(r output.Risk) { risks = append(risks, r) },
+		func(RoleInfo) *capmodel.Risk { return nil },
+		func(RoleInfo) *capmodel.Risk { return nil },
+		func(RoleInfo) *capmodel.Risk { return nil },
+		func(r capmodel.Risk) { risks = append(risks, r) },
 	)
 
 	assert.Empty(t, risks)
@@ -482,10 +410,10 @@ func TestProcessRegionRoles_NilRisksNotEmitted(t *testing.T) {
 func TestProcessRegionRoles_EmptyRoles(t *testing.T) {
 	var called bool
 	processRegionRoles(nil,
-		func(RoleInfo) *output.Risk { called = true; return nil },
-		func(RoleInfo) *output.Risk { called = true; return nil },
-		func(RoleInfo) *output.Risk { called = true; return nil },
-		func(output.Risk) { called = true },
+		func(RoleInfo) *capmodel.Risk { called = true; return nil },
+		func(RoleInfo) *capmodel.Risk { called = true; return nil },
+		func(RoleInfo) *capmodel.Risk { called = true; return nil },
+		func(capmodel.Risk) { called = true },
 	)
 	assert.False(t, called, "no check functions should be called with empty roles")
 }

@@ -5,9 +5,9 @@ import (
 
 	cdkpkg "github.com/praetorian-inc/aurelian/pkg/aws/cdk"
 	"github.com/praetorian-inc/aurelian/pkg/model"
-	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/capability-sdk/pkg/capmodel"
 )
 
 func init() { plugin.Register(&AWSCdkBucketTakeoverModule{}) }
@@ -61,7 +61,7 @@ func (m *AWSCdkBucketTakeoverModule) Run(cfg plugin.Config, out *pipeline.P[mode
 		Concurrency: c.Concurrency,
 		Profile:     c.Profile,
 		ProfileDir:  c.ProfileDir,
-		OnRisk:      func(r output.Risk) { out.Send(r) },
+		OnRisk:      func(r capmodel.Risk) { out.Send(r) },
 	})
 	if err != nil {
 		return fmt.Errorf("cdk scan: %w", err)

@@ -1,6 +1,6 @@
 package cdk
 
-import "github.com/praetorian-inc/aurelian/pkg/output"
+import "github.com/praetorian-inc/capability-sdk/pkg/capmodel"
 
 // RoleInfo represents a detected CDK bootstrap role.
 type RoleInfo struct {
@@ -35,7 +35,7 @@ type ScanOptions struct {
 	ProfileDir  string
 	// OnRisk is called for each discovered risk as regions complete.
 	// It must be safe for concurrent use from multiple goroutines.
-	OnRisk func(output.Risk)
+	OnRisk func(capmodel.Risk)
 }
 
 // ScanResult contains metadata from a CDK bucket takeover scan.
