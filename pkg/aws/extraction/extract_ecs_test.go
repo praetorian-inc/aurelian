@@ -13,12 +13,14 @@ import (
 func runExtractECS(t *testing.T, r output.AWSResource) []output.ScanInput {
 	t.Helper()
 	out := pipeline.New[output.ScanInput]()
+	errCh := make(chan error, 1)
 	go func() {
 		defer out.Close()
-		require.NoError(t, extractECS(extractContext{}, r, out))
+		errCh <- extractECS(extractContext{}, r, out)
 	}()
 	items, err := out.Collect()
 	require.NoError(t, err)
+	require.NoError(t, <-errCh)
 	return items
 }
 
