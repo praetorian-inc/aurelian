@@ -9,10 +9,10 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
-	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
+	"github.com/praetorian-inc/capability-sdk/pkg/capmodel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,9 +40,9 @@ func TestAzureFindSecrets(t *testing.T) {
 	p2 := pipeline.New[model.AurelianModel]()
 	pipeline.Pipe(p1, mod.Run, p2)
 
-	var risks []output.AurelianRisk
+	var risks []capmodel.Risk
 	for m := range p2.Range() {
-		r, ok := m.(output.AurelianRisk)
+		r, ok := m.(capmodel.Risk)
 		if !ok {
 			continue
 		}
@@ -108,22 +108,21 @@ func TestAzureFindSecrets(t *testing.T) {
 		}
 	})
 
-	t.Run("all risks have severity set", func(t *testing.T) {
-		validSeverities := map[output.RiskSeverity]bool{
-			output.RiskSeverityLow:      true,
-			output.RiskSeverityMedium:   true,
-			output.RiskSeverityHigh:     true,
-			output.RiskSeverityCritical: true,
-		}
+	t.Run("all risks have a valid triage status", func(t *testing.T) {
+		validStatuses := map[string]bool{"TI": true, "TL": true, "TM": true, "TH": true, "TC": true}
 		for _, risk := range risks {
-			assert.True(t, validSeverities[risk.Severity],
-				"unexpected severity %q for risk %s", risk.Severity, risk.Name)
+			assert.True(t, validStatuses[risk.Status],
+				"unexpected status %q for risk %s", risk.Status, risk.Name)
 		}
 	})
 
-	t.Run("all risks have non-empty context", func(t *testing.T) {
+	t.Run("all risks have a versioned proof with finding_id", func(t *testing.T) {
 		for _, risk := range risks {
-			assert.NotEmpty(t, risk.Context, "risk context should not be empty for %s", risk.ImpactedResourceID)
+			require.NotEmpty(t, risk.Proof, "risk proof should not be empty for %s", risk.TargetName)
+			var proof map[string]any
+			require.NoError(t, json.Unmarshal(risk.Proof, &proof), "risk proof must be valid JSON")
+			assert.Equal(t, "v1.0.0", proof["version"], "proof should carry the v1.0.0 schema version")
+			assert.NotEmpty(t, proof["finding_id"], "proof should carry a non-empty finding_id")
 		}
 	})
 }
@@ -152,9 +151,9 @@ func TestAzureFindSecretsResource(t *testing.T) {
 	p2 := pipeline.New[model.AurelianModel]()
 	pipeline.Pipe(p1, mod.Run, p2)
 
-	var risks []output.AurelianRisk
+	var risks []capmodel.Risk
 	for m := range p2.Range() {
-		r, ok := m.(output.AurelianRisk)
+		r, ok := m.(capmodel.Risk)
 		if !ok {
 			continue
 		}
@@ -179,30 +178,31 @@ func TestAzureFindSecretsResource(t *testing.T) {
 		assert.True(t, found, "expected risk named 'azure-secret-aws' from planted fake AWS key in VM user_data")
 	})
 
-	t.Run("severity is medium for unvalidated secret", func(t *testing.T) {
+	t.Run("status is medium for unvalidated secret", func(t *testing.T) {
 		for _, risk := range risks {
 			if risk.Name == "azure-secret-aws" {
-				assert.Equal(t, output.RiskSeverityMedium, risk.Severity,
-					"fake AWS key should be medium severity (not validated)")
+				assert.Equal(t, "TM", risk.Status,
+					"fake AWS key should be medium severity → TM (not validated)")
 			}
 		}
 	})
 
 	t.Run("only targeted VM resource has risks", func(t *testing.T) {
 		for _, risk := range risks {
-			assert.True(t, strings.Contains(strings.ToLower(risk.ImpactedResourceID), strings.ToLower(vmID)),
-				"risk ImpactedResourceID %q should reference only the targeted VM, not other resources", risk.ImpactedResourceID)
+			assert.True(t, strings.Contains(strings.ToLower(risk.TargetName), strings.ToLower(vmID)),
+				"risk TargetName %q should reference only the targeted VM, not other resources", risk.TargetName)
 		}
 	})
 
 	t.Run("all risks have valid proof context", func(t *testing.T) {
 		for _, risk := range risks {
-			require.NotEmpty(t, risk.Context, "risk context should not be empty")
+			require.NotEmpty(t, risk.Proof, "risk proof should not be empty")
 			var ctx map[string]interface{}
-			require.NoError(t, json.Unmarshal(risk.Context, &ctx), "risk context must be valid JSON")
-			assert.NotEmpty(t, ctx["rule_text_id"], "risk context should have rule_text_id")
-			assert.NotEmpty(t, ctx["resource_ref"], "risk context should have resource_ref")
-			assert.NotEmpty(t, ctx["matches"], "risk context should have matches")
+			require.NoError(t, json.Unmarshal(risk.Proof, &ctx), "risk proof must be valid JSON")
+			assert.Equal(t, "v1.0.0", ctx["version"], "risk proof should carry the v1.0.0 schema version")
+			assert.NotEmpty(t, ctx["rule_text_id"], "risk proof should have rule_text_id")
+			assert.NotEmpty(t, ctx["resource_ref"], "risk proof should have resource_ref")
+			assert.NotEmpty(t, ctx["matches"], "risk proof should have matches")
 		}
 	})
 
@@ -214,7 +214,7 @@ func TestAzureFindSecretsResource(t *testing.T) {
 				continue
 			}
 			var ctx map[string]interface{}
-			require.NoError(t, json.Unmarshal(risk.Context, &ctx))
+			require.NoError(t, json.Unmarshal(risk.Proof, &ctx))
 			matches, ok := ctx["matches"].([]interface{})
 			if !ok || len(matches) == 0 {
 				continue
@@ -264,9 +264,9 @@ func TestAzureFindSecretsResourceMultiple(t *testing.T) {
 	p2 := pipeline.New[model.AurelianModel]()
 	pipeline.Pipe(p1, mod.Run, p2)
 
-	var risks []output.AurelianRisk
+	var risks []capmodel.Risk
 	for m := range p2.Range() {
-		r, ok := m.(output.AurelianRisk)
+		r, ok := m.(capmodel.Risk)
 		if !ok {
 			continue
 		}
@@ -307,9 +307,9 @@ func TestAzureFindSecretsResourcePolicyDefinition(t *testing.T) {
 	p2 := pipeline.New[model.AurelianModel]()
 	pipeline.Pipe(p1, mod.Run, p2)
 
-	var risks []output.AurelianRisk
+	var risks []capmodel.Risk
 	for m := range p2.Range() {
-		r, ok := m.(output.AurelianRisk)
+		r, ok := m.(capmodel.Risk)
 		if !ok {
 			continue
 		}
@@ -320,32 +320,28 @@ func TestAzureFindSecretsResourcePolicyDefinition(t *testing.T) {
 
 	t.Run("only targeted policy definition has risks", func(t *testing.T) {
 		for _, risk := range risks {
-			assert.True(t, strings.Contains(strings.ToLower(risk.ImpactedResourceID), strings.ToLower(policyID)),
-				"risk ImpactedResourceID %q should reference only the targeted policy definition", risk.ImpactedResourceID)
+			assert.True(t, strings.Contains(strings.ToLower(risk.TargetName), strings.ToLower(policyID)),
+				"risk TargetName %q should reference only the targeted policy definition", risk.TargetName)
 		}
 	})
 
-	t.Run("all risks have valid severity", func(t *testing.T) {
-		validSeverities := map[output.RiskSeverity]bool{
-			output.RiskSeverityLow:      true,
-			output.RiskSeverityMedium:   true,
-			output.RiskSeverityHigh:     true,
-			output.RiskSeverityCritical: true,
-		}
+	t.Run("all risks have a valid triage status", func(t *testing.T) {
+		validStatuses := map[string]bool{"TI": true, "TL": true, "TM": true, "TH": true, "TC": true}
 		for _, risk := range risks {
-			assert.True(t, validSeverities[risk.Severity],
-				"unexpected severity %q for risk %s", risk.Severity, risk.Name)
+			assert.True(t, validStatuses[risk.Status],
+				"unexpected status %q for risk %s", risk.Status, risk.Name)
 		}
 	})
 
 	t.Run("all risks have valid proof context", func(t *testing.T) {
 		for _, risk := range risks {
-			require.NotEmpty(t, risk.Context, "risk context should not be empty")
+			require.NotEmpty(t, risk.Proof, "risk proof should not be empty")
 			var ctx map[string]interface{}
-			require.NoError(t, json.Unmarshal(risk.Context, &ctx), "risk context must be valid JSON")
-			assert.NotEmpty(t, ctx["rule_text_id"], "risk context should have rule_text_id")
-			assert.NotEmpty(t, ctx["resource_ref"], "risk context should have resource_ref")
-			assert.NotEmpty(t, ctx["matches"], "risk context should have matches")
+			require.NoError(t, json.Unmarshal(risk.Proof, &ctx), "risk proof must be valid JSON")
+			assert.Equal(t, "v1.0.0", ctx["version"], "risk proof should carry the v1.0.0 schema version")
+			assert.NotEmpty(t, ctx["rule_text_id"], "risk proof should have rule_text_id")
+			assert.NotEmpty(t, ctx["resource_ref"], "risk proof should have resource_ref")
+			assert.NotEmpty(t, ctx["matches"], "risk proof should have matches")
 		}
 	})
 }
@@ -375,9 +371,9 @@ func TestAzureFindSecretsResourceARMDeployment(t *testing.T) {
 	p2 := pipeline.New[model.AurelianModel]()
 	pipeline.Pipe(p1, mod.Run, p2)
 
-	var risks []output.AurelianRisk
+	var risks []capmodel.Risk
 	for m := range p2.Range() {
-		r, ok := m.(output.AurelianRisk)
+		r, ok := m.(capmodel.Risk)
 		if !ok {
 			continue
 		}
@@ -388,18 +384,19 @@ func TestAzureFindSecretsResourceARMDeployment(t *testing.T) {
 
 	t.Run("only targeted deployment has risks", func(t *testing.T) {
 		for _, risk := range risks {
-			assert.True(t, strings.Contains(strings.ToLower(risk.ImpactedResourceID), strings.ToLower(deploymentID)),
-				"risk ImpactedResourceID %q should reference only the targeted deployment", risk.ImpactedResourceID)
+			assert.True(t, strings.Contains(strings.ToLower(risk.TargetName), strings.ToLower(deploymentID)),
+				"risk TargetName %q should reference only the targeted deployment", risk.TargetName)
 		}
 	})
 
 	t.Run("all risks have valid proof context", func(t *testing.T) {
 		for _, risk := range risks {
-			require.NotEmpty(t, risk.Context, "risk context should not be empty")
+			require.NotEmpty(t, risk.Proof, "risk proof should not be empty")
 			var ctx map[string]interface{}
-			require.NoError(t, json.Unmarshal(risk.Context, &ctx), "risk context must be valid JSON")
-			assert.NotEmpty(t, ctx["rule_text_id"], "risk context should have rule_text_id")
-			assert.NotEmpty(t, ctx["resource_ref"], "risk context should have resource_ref")
+			require.NoError(t, json.Unmarshal(risk.Proof, &ctx), "risk proof must be valid JSON")
+			assert.Equal(t, "v1.0.0", ctx["version"], "risk proof should carry the v1.0.0 schema version")
+			assert.NotEmpty(t, ctx["rule_text_id"], "risk proof should have rule_text_id")
+			assert.NotEmpty(t, ctx["resource_ref"], "risk proof should have resource_ref")
 		}
 	})
 }
@@ -432,9 +429,9 @@ func TestAzureFindSecretsResourceMixedScopes(t *testing.T) {
 	p2 := pipeline.New[model.AurelianModel]()
 	pipeline.Pipe(p1, mod.Run, p2)
 
-	var risks []output.AurelianRisk
+	var risks []capmodel.Risk
 	for m := range p2.Range() {
-		r, ok := m.(output.AurelianRisk)
+		r, ok := m.(capmodel.Risk)
 		if !ok {
 			continue
 		}
@@ -457,20 +454,20 @@ func TestAzureFindSecretsResourceMixedScopes(t *testing.T) {
 		lowerVM := strings.ToLower(vmID)
 		lowerPolicy := strings.ToLower(policyID)
 		for _, risk := range risks {
-			lower := strings.ToLower(risk.ImpactedResourceID)
+			lower := strings.ToLower(risk.TargetName)
 			referencesVM := strings.Contains(lower, lowerVM)
 			referencesPolicy := strings.Contains(lower, lowerPolicy)
 			assert.True(t, referencesVM || referencesPolicy,
-				"risk %q should reference one of the targeted resources, not leak to others", risk.ImpactedResourceID)
+				"risk %q should reference one of the targeted resources, not leak to others", risk.TargetName)
 		}
 	})
 }
 
-func hasRiskForAzureResource(risks []output.AurelianRisk, resourceID string) bool {
+func hasRiskForAzureResource(risks []capmodel.Risk, resourceID string) bool {
 	lowerID := strings.ToLower(resourceID)
 	for _, risk := range risks {
-		lowerImpacted := strings.ToLower(risk.ImpactedResourceID)
-		if lowerImpacted == lowerID || strings.Contains(lowerImpacted, lowerID) {
+		lowerTarget := strings.ToLower(risk.TargetName)
+		if lowerTarget == lowerID || strings.Contains(lowerTarget, lowerID) {
 			return true
 		}
 	}
