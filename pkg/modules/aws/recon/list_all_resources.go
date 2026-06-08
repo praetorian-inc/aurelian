@@ -56,6 +56,7 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model
 	c := m.ListAllConfig
 
 	lister := cclist.NewEnumerator(c.AWSCommonRecon)
+	defer func() { _ = lister.Close() }()
 	resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, selectResourceTypes(c.ScanType))
 	if err != nil {
 		return err
@@ -87,6 +88,7 @@ func (m *AWSListAllResourcesModule) Run(cfg plugin.Config, out *pipeline.P[model
 	if err := enriched.Wait(); err != nil {
 		return err
 	}
+
 	cfg.Success("enumerated %d resources", count)
 	return nil
 }

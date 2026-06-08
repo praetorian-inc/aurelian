@@ -17,15 +17,17 @@ import (
 // region filtering, avoiding the duplicate enumeration that CloudControl causes.
 type S3Enumerator struct {
 	plugin.AWSCommonRecon
-	provider  *AWSConfigProvider
-	accountID string
+	provider   *AWSConfigProvider
+	skipReport *SkipReport
+	accountID  string
 }
 
 // NewS3Enumerator creates an S3Enumerator that uses the native S3 SDK.
-func NewS3Enumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider) *S3Enumerator {
+func NewS3Enumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider, skipReport *SkipReport) *S3Enumerator {
 	return &S3Enumerator{
 		AWSCommonRecon: opts,
 		provider:       provider,
+		skipReport:     skipReport,
 	}
 }
 
@@ -78,6 +80,10 @@ func (l *S3Enumerator) EnumerateByARN(arn string, out *pipeline.P[output.AWSReso
 		Bucket: &bucketName,
 	})
 	if err != nil {
+		if op := ClassifySkippable(err, "s3", "HeadBucket", l.Regions[0]); op != nil {
+			l.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return fmt.Errorf("head bucket %s: %w", bucketName, err)
 	}
 
@@ -116,9 +122,10 @@ func (l *S3Enumerator) listBucketsInRegion(region string, out *pipeline.P[output
 	}
 	client := s3.NewFromConfig(*cfg)
 
+	var skipped []SkippedOp
 	var continuationToken *string
 	paginator := ratelimit.NewAWSPaginator()
-	return paginator.Paginate(func() (bool, error) {
+	err = paginator.Paginate(func() (bool, error) {
 		input := &s3.ListBucketsInput{
 			BucketRegion: &region,
 		}
@@ -128,6 +135,10 @@ func (l *S3Enumerator) listBucketsInRegion(region string, out *pipeline.P[output
 
 		result, err := client.ListBuckets(context.Background(), input)
 		if err != nil {
+			if op := ClassifySkippable(err, "s3", "ListBuckets", region); op != nil {
+				skipped = append(skipped, *op)
+				return false, nil
+			}
 			return false, fmt.Errorf("list buckets in %s: %w", region, err)
 		}
 
@@ -146,4 +157,7 @@ func (l *S3Enumerator) listBucketsInRegion(region string, out *pipeline.P[output
 		hasMorePages := continuationToken != nil
 		return hasMorePages, nil
 	})
+
+	l.skipReport.RecordBatch(skipped)
+	return err
 }
