@@ -452,6 +452,7 @@ func (m *AWSGraphModule) emitEscalationModel(out *pipeline.P[model.AurelianModel
 
 	coverage := escalation.NewCoverageTracker()
 	coverage.MarkIAMGAAD()
+	coverage.MarkGAADCoverage(m.gaadData)
 	coverage.MarkResourceTypes(m.resourcesWithPolicies)
 
 	solverModel := escalation.Assemble(escalation.AssembleInput{

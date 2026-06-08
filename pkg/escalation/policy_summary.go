@@ -31,12 +31,10 @@ func CollectPolicySummary(in PolicySummaryInput) []PolicySummaryEntry {
 		stmts := collectUserEffectiveStatements(u, in.GAAD)
 		stmts = append(stmts, scpStatements(u.Arn, in.OrgPolicies)...)
 		stmts = append(stmts, resourcePolicyGrants[u.Arn]...)
-		if len(stmts) > 0 {
-			entries = append(entries, PolicySummaryEntry{
-				Principal:           u.Arn,
-				EffectiveStatements: stmts,
-			})
-		}
+		entries = append(entries, PolicySummaryEntry{
+			Principal:           u.Arn,
+			EffectiveStatements: stmts,
+		})
 		return true
 	})
 
@@ -44,12 +42,10 @@ func CollectPolicySummary(in PolicySummaryInput) []PolicySummaryEntry {
 		stmts := collectRoleEffectiveStatements(r, in.GAAD)
 		stmts = append(stmts, scpStatements(r.Arn, in.OrgPolicies)...)
 		stmts = append(stmts, resourcePolicyGrants[r.Arn]...)
-		if len(stmts) > 0 {
-			entries = append(entries, PolicySummaryEntry{
-				Principal:           r.Arn,
-				EffectiveStatements: stmts,
-			})
-		}
+		entries = append(entries, PolicySummaryEntry{
+			Principal:           r.Arn,
+			EffectiveStatements: stmts,
+		})
 		return true
 	})
 

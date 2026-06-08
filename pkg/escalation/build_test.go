@@ -106,6 +106,7 @@ func newTestResources() store.Map[output.AWSResource] {
 		ResourceType: "AWS::EC2::Instance",
 		ARN:          "arn:aws:ec2:us-east-1:111111111111:instance/i-1234",
 		AccountRef:   "111111111111",
+		Properties:   map[string]any{"IamInstanceProfile": "arn:aws:iam::111111111111:instance-profile/AdminIP"},
 	})
 	m.Set("arn:aws:s3:::my-bucket", output.AWSResource{
 		ResourceType: "AWS::S3::Bucket",
@@ -239,8 +240,16 @@ func TestCollectStructuralFacts(t *testing.T) {
 	}
 	assert.True(t, found, "should find trust relationship from Admin role to Dev user")
 
-	// Instance profile: AdminIP -> Admin role
+	// Instance profile: EC2 instance → Admin role (resolved through instance profile)
 	require.Contains(t, types, FactInstanceProfile)
+	found = false
+	for _, f := range types[FactInstanceProfile] {
+		if f.From == "arn:aws:ec2:us-east-1:111111111111:instance/i-1234" &&
+			f.To == "arn:aws:iam::111111111111:role/Admin" {
+			found = true
+		}
+	}
+	assert.True(t, found, "should find instance_profile from EC2 instance to role")
 
 	// Lambda execution role: MyFunc -> LambdaRole
 	require.Contains(t, types, FactLambdaExecutionRole)

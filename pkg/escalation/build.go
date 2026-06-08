@@ -307,22 +307,24 @@ func CollectStructuralFacts(gaad *types.AuthorizationAccountDetails, resources s
 		return true
 	})
 
-	// Instance profiles: role → instance profile association
+	// Instance profiles: build IP ARN → role ARN(s) index from GAAD, then
+	// resolve EC2 instances through to their roles. Per spec section 3.5,
+	// from = EC2 instance ARN, to = IAM role ARN.
+	ipToRoles := make(map[string][]string)
 	gaad.Roles.Range(func(_ string, r types.RoleDetail) bool {
 		for _, ip := range r.InstanceProfileList {
 			for _, ipr := range ip.Roles {
-				facts = append(facts, StructuralFact{
-					Type:       FactInstanceProfile,
-					From:       ip.Arn,
-					To:         ipr.Arn,
-					Confidence: 1.0,
-				})
+				ipToRoles[ip.Arn] = append(ipToRoles[ip.Arn], ipr.Arn)
 			}
+			// Also index by instance profile name for CloudControl lookups
+			// where the property may be a name or ID rather than a full ARN.
+			ipToRoles[ip.InstanceProfileName] = ipToRoles[ip.Arn]
 		}
 		return true
 	})
 
-	// Lambda execution roles, CodeBuild service roles: from resource properties
+	// Lambda execution roles, CodeBuild service roles, EC2 instance profiles,
+	// ECS task roles: from resource properties.
 	resources.Range(func(_ string, r output.AWSResource) bool {
 		switch r.ResourceType {
 		case "AWS::Lambda::Function":
@@ -344,14 +346,18 @@ func CollectStructuralFacts(gaad *types.AuthorizationAccountDetails, resources s
 				})
 			}
 		case "AWS::EC2::Instance":
-			if profileARN, ok := extractProperty(r, "IamInstanceProfile"); ok {
-				// EC2 instance → instance profile (the IP→role is handled above from GAAD)
-				facts = append(facts, StructuralFact{
-					Type:       FactInstanceProfile,
-					From:       r.ARN,
-					To:         profileARN,
-					Confidence: 1.0,
-				})
+			if profileRef, ok := extractProperty(r, "IamInstanceProfile"); ok {
+				// Resolve instance profile → role(s) via the GAAD index.
+				if roles, found := ipToRoles[profileRef]; found {
+					for _, roleARN := range roles {
+						facts = append(facts, StructuralFact{
+							Type:       FactInstanceProfile,
+							From:       r.ARN,
+							To:         roleARN,
+							Confidence: 1.0,
+						})
+					}
+				}
 			}
 		case "AWS::ECS::TaskDefinition":
 			if roleARN, ok := extractProperty(r, "TaskRoleArn"); ok {
@@ -431,6 +437,22 @@ func (ct *CoverageTracker) MarkSNSTopicPolicies()        { ct.coverage.SNSTopicP
 // Build returns the current coverage state.
 func (ct *CoverageTracker) Build() *CollectionCoverage {
 	return &ct.coverage
+}
+
+// MarkGAADCoverage sets coverage flags for data available in GAAD. Instance
+// profiles are available from GAAD even without EC2 enumeration.
+func (ct *CoverageTracker) MarkGAADCoverage(gaad *types.AuthorizationAccountDetails) {
+	hasInstanceProfiles := false
+	gaad.Roles.Range(func(_ string, r types.RoleDetail) bool {
+		if len(r.InstanceProfileList) > 0 {
+			hasInstanceProfiles = true
+			return false
+		}
+		return true
+	})
+	if hasInstanceProfiles {
+		ct.coverage.EC2InstanceProfiles = true
+	}
 }
 
 // MarkResourceTypes marks coverage for resource types found in the collected resources.

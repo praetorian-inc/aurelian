@@ -140,8 +140,10 @@ func TestCollectPolicySummary_PrincipalWithNoPolicies(t *testing.T) {
 	resources := store.NewMap[output.AWSResource]()
 
 	entries := CollectPolicySummary(PolicySummaryInput{GAAD: gaad, Resources: resources})
-	// User with no identity policies should produce no entry
-	assert.Empty(t, entries)
+	// Principal with no policies should still get an entry (explicit coverage)
+	require.Len(t, entries, 1)
+	assert.Equal(t, "arn:aws:iam::111111111111:user/NoPolicies", entries[0].Principal)
+	assert.Empty(t, entries[0].EffectiveStatements)
 }
 
 func TestCollectPolicySummary_ResourcePolicyGrants(t *testing.T) {
