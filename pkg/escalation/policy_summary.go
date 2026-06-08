@@ -49,7 +49,31 @@ func CollectPolicySummary(in PolicySummaryInput) []PolicySummaryEntry {
 		return true
 	})
 
+	in.GAAD.Groups.Range(func(_ string, g types.GroupDetail) bool {
+		stmts := collectGroupEffectiveStatements(g, in.GAAD)
+		stmts = append(stmts, resourcePolicyGrants[g.Arn]...)
+		entries = append(entries, PolicySummaryEntry{
+			Principal:           g.Arn,
+			EffectiveStatements: stmts,
+		})
+		return true
+	})
+
 	return entries
+}
+
+// collectGroupEffectiveStatements gathers all identity statements for a group
+// (inline, managed). The solver uses these for the add_user_to_group rule.
+func collectGroupEffectiveStatements(group types.GroupDetail, gaad *types.AuthorizationAccountDetails) []PolicyStatement {
+	var stmts []PolicyStatement
+	for _, p := range group.GroupPolicyList {
+		source := fmt.Sprintf("group-inline:%s/%s", group.GroupName, p.PolicyName)
+		stmts = append(stmts, flattenStatements(p.PolicyDocument.Statement, source)...)
+	}
+	for _, mp := range group.AttachedManagedPolicies {
+		stmts = append(stmts, managedPolicyStatements(gaad, mp)...)
+	}
+	return stmts
 }
 
 // scpStatements extracts SCP statements for the principal's account and returns
