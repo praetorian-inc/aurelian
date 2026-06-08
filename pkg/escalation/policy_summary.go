@@ -33,7 +33,7 @@ func CollectPolicySummary(in PolicySummaryInput) []PolicySummaryEntry {
 		stmts = append(stmts, resourcePolicyGrants[u.Arn]...)
 		entries = append(entries, PolicySummaryEntry{
 			Principal:           u.Arn,
-			EffectiveStatements: stmts,
+			EffectiveStatements: ensureNonNil(stmts),
 		})
 		return true
 	})
@@ -44,7 +44,7 @@ func CollectPolicySummary(in PolicySummaryInput) []PolicySummaryEntry {
 		stmts = append(stmts, resourcePolicyGrants[r.Arn]...)
 		entries = append(entries, PolicySummaryEntry{
 			Principal:           r.Arn,
-			EffectiveStatements: stmts,
+			EffectiveStatements: ensureNonNil(stmts),
 		})
 		return true
 	})
@@ -54,7 +54,7 @@ func CollectPolicySummary(in PolicySummaryInput) []PolicySummaryEntry {
 		stmts = append(stmts, resourcePolicyGrants[g.Arn]...)
 		entries = append(entries, PolicySummaryEntry{
 			Principal:           g.Arn,
-			EffectiveStatements: stmts,
+			EffectiveStatements: ensureNonNil(stmts),
 		})
 		return true
 	})
@@ -306,6 +306,15 @@ func convertConditions(cond *types.Condition) []Condition {
 		}
 	}
 	return result
+}
+
+// ensureNonNil returns the slice as-is if non-nil, otherwise returns an
+// initialized empty slice. This ensures JSON serialization emits [] not null.
+func ensureNonNil(stmts []PolicyStatement) []PolicyStatement {
+	if stmts == nil {
+		return []PolicyStatement{}
+	}
+	return stmts
 }
 
 func normalizeEffect(effect string) string {

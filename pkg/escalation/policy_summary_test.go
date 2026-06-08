@@ -1,6 +1,7 @@
 package escalation
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -144,6 +145,12 @@ func TestCollectPolicySummary_PrincipalWithNoPolicies(t *testing.T) {
 	require.Len(t, entries, 1)
 	assert.Equal(t, "arn:aws:iam::111111111111:user/NoPolicies", entries[0].Principal)
 	assert.Empty(t, entries[0].EffectiveStatements)
+
+	// Spec requires [] not null in JSON
+	data, err := json.Marshal(entries[0])
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"effective_statements":[]`,
+		"empty statements must serialize as [] not null")
 }
 
 func TestCollectPolicySummary_ResourcePolicyGrants(t *testing.T) {

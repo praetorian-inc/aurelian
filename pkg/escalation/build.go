@@ -461,6 +461,9 @@ func (ct *CoverageTracker) MarkResourceTypes(resources store.Map[output.AWSResou
 		switch r.ResourceType {
 		case "AWS::Lambda::Function":
 			ct.coverage.LambdaExecutionRoles = true
+			if r.ResourcePolicy != nil {
+				ct.coverage.LambdaResourcePolicies = true
+			}
 		case "AWS::EC2::Instance":
 			ct.coverage.EC2InstanceProfiles = true
 		case "AWS::CodeBuild::Project":
