@@ -9,6 +9,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/aws/gaad"
 	gaadpkg "github.com/praetorian-inc/aurelian/pkg/aws/iam/gaad"
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcepolicies"
+	"github.com/praetorian-inc/aurelian/pkg/escalation"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -25,6 +26,8 @@ type GraphConfig struct {
 	plugin.AWSCommonRecon
 	plugin.GraphOutputBase
 	plugin.OrgPoliciesParam
+	Format           string `param:"format" desc:"Output format: json (default) or escalation-solver-v1" default:"json"`
+	PermissionFormat string `param:"permission-format" desc:"Permission source format: policy_summary (default) or evaluated_triples" default:"policy_summary"`
 }
 
 // AWSGraphModule is a refactored version of AWSGraphModule.
@@ -87,6 +90,10 @@ func (m *AWSGraphModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianMo
 
 	if err := m.collectInputs(); err != nil {
 		return fmt.Errorf("collecting inputs: %w", err)
+	}
+
+	if m.Format == "escalation-solver-v1" {
+		return m.emitEscalationModel(out)
 	}
 
 	if err := m.analyzeIAMPermissions(); err != nil {
@@ -430,6 +437,36 @@ func (m *AWSGraphModule) analyzeIAMPermissions() error {
 
 	m.log.Success("IAM analysis complete (%d relationships)", relationships.Len())
 	m.relationships = relationships
+	return nil
+}
+
+func (m *AWSGraphModule) emitEscalationModel(out *pipeline.P[model.AurelianModel]) error {
+	m.log.Info("assembling escalation-solver model (format: %s)", m.PermissionFormat)
+
+	// evaluated_triples requires the full IAM analysis to produce relationships.
+	if m.PermissionFormat == "evaluated_triples" {
+		if err := m.analyzeIAMPermissions(); err != nil {
+			return fmt.Errorf("analyzing IAM permissions for evaluated_triples: %w", err)
+		}
+	}
+
+	coverage := escalation.NewCoverageTracker()
+	coverage.MarkIAMGAAD()
+	coverage.MarkResourceTypes(m.resourcesWithPolicies)
+
+	solverModel := escalation.Assemble(escalation.AssembleInput{
+		GAAD:             m.gaadData,
+		OrgPolicies:      m.OrgPolicies,
+		Resources:        m.resourcesWithPolicies,
+		Relationships:    m.relationships,
+		Coverage:         coverage,
+		PermissionFormat: m.PermissionFormat,
+	})
+
+	m.log.Success("escalation-solver model assembled (principals: %d, resources: %d, structural_facts: %d)",
+		len(solverModel.Principals), len(solverModel.Resources), len(solverModel.StructuralFacts))
+
+	out.Send(solverModel)
 	return nil
 }
 

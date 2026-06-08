@@ -19,11 +19,18 @@ type JSONFormatter struct {
 	Pretty bool
 }
 
-// Format implements the Formatter interface for JSON output
+// Format implements the Formatter interface for JSON output.
+// If results contains exactly one SingleObjectOutput, it is written as a bare
+// JSON object instead of being wrapped in an array.
 func (f *JSONFormatter) Format(results []model.AurelianModel) error {
 	encoder := json.NewEncoder(f.Writer)
 	if f.Pretty {
 		encoder.SetIndent("", "  ")
+	}
+	if len(results) == 1 {
+		if _, ok := results[0].(model.SingleObjectOutput); ok {
+			return encoder.Encode(results[0])
+		}
 	}
 	return encoder.Encode(results)
 }

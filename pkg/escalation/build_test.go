@@ -1,0 +1,410 @@
+package escalation
+
+import (
+	"testing"
+
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/store"
+	"github.com/praetorian-inc/aurelian/pkg/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func newTestGAAD() *types.AuthorizationAccountDetails {
+	adminStmt := types.PolicyStatementList{
+		{
+			Effect:   "Allow",
+			Action:   &types.DynaString{"*"},
+			Resource: &types.DynaString{"*"},
+		},
+	}
+	adminPolicy := types.Policy{Statement: &adminStmt}
+
+	readOnlyStmt := types.PolicyStatementList{
+		{
+			Effect:   "Allow",
+			Action:   &types.DynaString{"s3:Get*", "s3:List*"},
+			Resource: &types.DynaString{"arn:aws:s3:::my-bucket/*"},
+		},
+	}
+	readOnlyPolicy := types.Policy{Statement: &readOnlyStmt}
+
+	trustStmt := types.PolicyStatementList{
+		{
+			Effect: "Allow",
+			Principal: &types.Principal{
+				AWS: &types.DynaString{"arn:aws:iam::111111111111:user/Dev"},
+			},
+			Action:   &types.DynaString{"sts:AssumeRole"},
+			Resource: &types.DynaString{"arn:aws:iam::111111111111:role/Admin"},
+		},
+	}
+	trustPolicy := types.Policy{Statement: &trustStmt}
+
+	return types.NewAuthorizationAccountDetails(
+		"111111111111",
+		[]types.UserDetail{
+			{
+				Arn:      "arn:aws:iam::111111111111:user/Dev",
+				UserName: "Dev",
+				GroupList: []string{"Developers"},
+				AttachedManagedPolicies: []types.ManagedPolicy{
+					{PolicyName: "ReadOnly", PolicyArn: "arn:aws:iam::111111111111:policy/ReadOnly"},
+				},
+			},
+		},
+		[]types.GroupDetail{
+			{
+				Arn:       "arn:aws:iam::111111111111:group/Developers",
+				GroupName: "Developers",
+			},
+		},
+		[]types.RoleDetail{
+			{
+				Arn:      "arn:aws:iam::111111111111:role/Admin",
+				RoleName: "Admin",
+				RolePolicyList: []types.InlinePolicy{
+					{PolicyName: "AdminAccess", PolicyDocument: adminPolicy},
+				},
+				AssumeRolePolicyDocument: trustPolicy,
+				InstanceProfileList: []types.InstanceProfile{
+					{
+						Arn:                 "arn:aws:iam::111111111111:instance-profile/AdminIP",
+						InstanceProfileName: "AdminIP",
+						Roles: []types.InstanceProfileRole{
+							{Arn: "arn:aws:iam::111111111111:role/Admin", RoleName: "Admin"},
+						},
+					},
+				},
+			},
+			{
+				Arn:      "arn:aws:iam::111111111111:role/LambdaRole",
+				RoleName: "LambdaRole",
+			},
+		},
+		[]types.ManagedPolicyDetail{
+			{
+				Arn:        "arn:aws:iam::111111111111:policy/ReadOnly",
+				PolicyName: "ReadOnly",
+				PolicyVersionList: []types.PolicyVersion{
+					{VersionId: "v1", IsDefaultVersion: true, Document: readOnlyPolicy},
+				},
+			},
+		},
+	)
+}
+
+func newTestResources() store.Map[output.AWSResource] {
+	m := store.NewMap[output.AWSResource]()
+	m.Set("arn:aws:lambda:us-east-1:111111111111:function:MyFunc", output.AWSResource{
+		ResourceType: "AWS::Lambda::Function",
+		ARN:          "arn:aws:lambda:us-east-1:111111111111:function:MyFunc",
+		AccountRef:   "111111111111",
+		Properties:   map[string]any{"Role": "arn:aws:iam::111111111111:role/LambdaRole"},
+	})
+	m.Set("arn:aws:ec2:us-east-1:111111111111:instance/i-1234", output.AWSResource{
+		ResourceType: "AWS::EC2::Instance",
+		ARN:          "arn:aws:ec2:us-east-1:111111111111:instance/i-1234",
+		AccountRef:   "111111111111",
+	})
+	m.Set("arn:aws:s3:::my-bucket", output.AWSResource{
+		ResourceType: "AWS::S3::Bucket",
+		ARN:          "arn:aws:s3:::my-bucket",
+		AccountRef:   "111111111111",
+		ResourcePolicy: &types.Policy{
+			Statement: &types.PolicyStatementList{
+				{Effect: "Allow", Action: &types.DynaString{"s3:GetObject"}, Resource: &types.DynaString{"arn:aws:s3:::my-bucket/*"}},
+			},
+		},
+	})
+	// IAM resources should be skipped (no solver type mapping)
+	m.Set("arn:aws:iam::111111111111:role/SomeRole", output.AWSResource{
+		ResourceType: "AWS::IAM::Role",
+		ARN:          "arn:aws:iam::111111111111:role/SomeRole",
+		AccountRef:   "111111111111",
+	})
+	return m
+}
+
+// ---------------------------------------------------------------------------
+// Principals (A.2)
+// ---------------------------------------------------------------------------
+
+func TestCollectPrincipals(t *testing.T) {
+	gaad := newTestGAAD()
+	principals := CollectPrincipals(gaad)
+
+	require.GreaterOrEqual(t, len(principals), 3) // 1 user + 2 roles + 1 group
+
+	byARN := make(map[string]Principal)
+	for _, p := range principals {
+		byARN[p.ARN] = p
+	}
+
+	// Admin role should be is_admin=true
+	admin, ok := byARN["arn:aws:iam::111111111111:role/Admin"]
+	require.True(t, ok)
+	assert.Equal(t, PrincipalTypeRole, admin.Type)
+	assert.True(t, admin.IsAdmin)
+	assert.Equal(t, "111111111111", admin.Account)
+
+	// Dev user should be is_admin=false (only has read-only)
+	dev, ok := byARN["arn:aws:iam::111111111111:user/Dev"]
+	require.True(t, ok)
+	assert.Equal(t, PrincipalTypeUser, dev.Type)
+	assert.False(t, dev.IsAdmin)
+
+	// Group should exist
+	group, ok := byARN["arn:aws:iam::111111111111:group/Developers"]
+	require.True(t, ok)
+	assert.Equal(t, PrincipalTypeGroup, group.Type)
+}
+
+func TestIsAdmin_WithDeny(t *testing.T) {
+	stmts := []types.PolicyStatement{
+		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
+		{Effect: "Deny", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
+	}
+	assert.False(t, isAdmin(stmts), "should not be admin with Deny *:* on *")
+}
+
+func TestIsAdmin_WithCondition(t *testing.T) {
+	cond := types.Condition{"StringEquals": types.ConditionStatement{"aws:RequestedRegion": types.DynaString{"us-east-1"}}}
+	stmts := []types.PolicyStatement{
+		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}, Condition: &cond},
+	}
+	assert.False(t, isAdmin(stmts), "should not be admin with conditions")
+}
+
+func TestIsAdmin_True(t *testing.T) {
+	stmts := []types.PolicyStatement{
+		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
+	}
+	assert.True(t, isAdmin(stmts))
+}
+
+// ---------------------------------------------------------------------------
+// Resources (A.3)
+// ---------------------------------------------------------------------------
+
+func TestCollectResources(t *testing.T) {
+	resources := newTestResources()
+	result := CollectResources(resources)
+
+	// Should include Lambda, EC2, S3 but NOT IAM::Role
+	byARN := make(map[string]Resource)
+	for _, r := range result {
+		byARN[r.ARN] = r
+	}
+
+	assert.Contains(t, byARN, "arn:aws:lambda:us-east-1:111111111111:function:MyFunc")
+	assert.Equal(t, ResourceTypeLambdaFunction, byARN["arn:aws:lambda:us-east-1:111111111111:function:MyFunc"].Type)
+
+	assert.Contains(t, byARN, "arn:aws:ec2:us-east-1:111111111111:instance/i-1234")
+	assert.Equal(t, ResourceTypeEC2Instance, byARN["arn:aws:ec2:us-east-1:111111111111:instance/i-1234"].Type)
+
+	assert.Contains(t, byARN, "arn:aws:s3:::my-bucket")
+	assert.Equal(t, ResourceTypeS3Bucket, byARN["arn:aws:s3:::my-bucket"].Type)
+
+	assert.NotContains(t, byARN, "arn:aws:iam::111111111111:role/SomeRole")
+}
+
+// ---------------------------------------------------------------------------
+// Structural Facts (A.4)
+// ---------------------------------------------------------------------------
+
+func TestCollectStructuralFacts(t *testing.T) {
+	gaad := newTestGAAD()
+	resources := newTestResources()
+	facts := CollectStructuralFacts(gaad, resources)
+
+	types := make(map[StructuralFactType][]StructuralFact)
+	for _, f := range facts {
+		types[f.Type] = append(types[f.Type], f)
+	}
+
+	// Group membership: Dev -> Developers group
+	require.Contains(t, types, FactGroupMembership)
+	assert.Len(t, types[FactGroupMembership], 1)
+	assert.Equal(t, "arn:aws:iam::111111111111:user/Dev", types[FactGroupMembership][0].From)
+	assert.Equal(t, "arn:aws:iam::111111111111:group/Developers", types[FactGroupMembership][0].To)
+
+	// Trust relationship: Admin role trusted by Dev user
+	require.Contains(t, types, FactTrustRelationship)
+	found := false
+	for _, f := range types[FactTrustRelationship] {
+		if f.From == "arn:aws:iam::111111111111:role/Admin" && f.To == "arn:aws:iam::111111111111:user/Dev" {
+			found = true
+		}
+	}
+	assert.True(t, found, "should find trust relationship from Admin role to Dev user")
+
+	// Instance profile: AdminIP -> Admin role
+	require.Contains(t, types, FactInstanceProfile)
+
+	// Lambda execution role: MyFunc -> LambdaRole
+	require.Contains(t, types, FactLambdaExecutionRole)
+	found = false
+	for _, f := range types[FactLambdaExecutionRole] {
+		if f.From == "arn:aws:lambda:us-east-1:111111111111:function:MyFunc" &&
+			f.To == "arn:aws:iam::111111111111:role/LambdaRole" {
+			found = true
+		}
+	}
+	assert.True(t, found, "should find lambda execution role from MyFunc to LambdaRole")
+}
+
+// ---------------------------------------------------------------------------
+// Coverage Tracker (A.6)
+// ---------------------------------------------------------------------------
+
+func TestCoverageTracker(t *testing.T) {
+	ct := NewCoverageTracker()
+	ct.MarkIAMGAAD()
+	ct.MarkResourceTypes(newTestResources())
+
+	cov := ct.Build()
+	assert.True(t, cov.IAMGAAD)
+	assert.True(t, cov.LambdaExecutionRoles)
+	assert.True(t, cov.EC2InstanceProfiles)
+	assert.True(t, cov.S3BucketPolicies)
+	assert.False(t, cov.ECSTaskRoles)
+	assert.False(t, cov.CodeBuildServiceRoles)
+	assert.False(t, cov.SQSQueuePolicies)
+}
+
+// ---------------------------------------------------------------------------
+// Resource Policies
+// ---------------------------------------------------------------------------
+
+func TestCollectResourcePolicies(t *testing.T) {
+	resources := newTestResources()
+	policies := CollectResourcePolicies(resources)
+
+	// Only the S3 bucket has a resource policy
+	require.Len(t, policies, 1)
+	assert.Equal(t, "arn:aws:s3:::my-bucket", policies[0].Resource)
+}
+
+// ---------------------------------------------------------------------------
+// Edge cases
+// ---------------------------------------------------------------------------
+
+func TestIsAdmin_IAMStarPlusStsAssumeRole(t *testing.T) {
+	stmts := []types.PolicyStatement{
+		{Effect: "Allow", Action: &types.DynaString{"iam:*"}, Resource: &types.DynaString{"*"}},
+		{Effect: "Allow", Action: &types.DynaString{"sts:AssumeRole"}, Resource: &types.DynaString{"*"}},
+	}
+	assert.True(t, isAdmin(stmts), "iam:* + sts:AssumeRole on * should be admin")
+}
+
+func TestIsAdmin_IAMStarOnly(t *testing.T) {
+	stmts := []types.PolicyStatement{
+		{Effect: "Allow", Action: &types.DynaString{"iam:*"}, Resource: &types.DynaString{"*"}},
+	}
+	assert.False(t, isAdmin(stmts), "iam:* alone without sts:AssumeRole should not be admin")
+}
+
+func TestIsAdmin_WildcardActionCoversIAMAndSTS(t *testing.T) {
+	// A single * action covers both iam:* and sts:AssumeRole
+	stmts := []types.PolicyStatement{
+		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
+	}
+	assert.True(t, isAdmin(stmts))
+}
+
+func TestIsAdmin_RestrictedResource(t *testing.T) {
+	stmts := []types.PolicyStatement{
+		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"arn:aws:s3:::bucket"}},
+	}
+	assert.False(t, isAdmin(stmts), "should not be admin with restricted resource")
+}
+
+func TestCollectPrincipals_EmptyGAAD(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
+	principals := CollectPrincipals(gaad)
+	assert.Empty(t, principals, "empty GAAD should produce no principals")
+}
+
+func TestCollectStructuralFacts_EmptyInputs(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
+	resources := store.NewMap[output.AWSResource]()
+	facts := CollectStructuralFacts(gaad, resources)
+	assert.Empty(t, facts)
+}
+
+func TestCollectResources_EmptyResources(t *testing.T) {
+	resources := store.NewMap[output.AWSResource]()
+	result := CollectResources(resources)
+	assert.Empty(t, result)
+}
+
+func TestCollectStructuralFacts_ECSTaskRole(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
+	resources := store.NewMap[output.AWSResource]()
+	resources.Set("arn:aws:ecs:us-east-1:111111111111:task-definition/myapp:1", output.AWSResource{
+		ResourceType: "AWS::ECS::TaskDefinition",
+		ARN:          "arn:aws:ecs:us-east-1:111111111111:task-definition/myapp:1",
+		AccountRef:   "111111111111",
+		Properties:   map[string]any{"TaskRoleArn": "arn:aws:iam::111111111111:role/ECSRole"},
+	})
+
+	facts := CollectStructuralFacts(gaad, resources)
+	found := false
+	for _, f := range facts {
+		if f.Type == FactECSTaskRole && f.To == "arn:aws:iam::111111111111:role/ECSRole" {
+			found = true
+		}
+	}
+	assert.True(t, found, "should find ECS task role fact")
+}
+
+func TestCollectStructuralFacts_LambdaWithNoRoleProperty(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
+	resources := store.NewMap[output.AWSResource]()
+	resources.Set("arn:aws:lambda:us-east-1:111111111111:function:NoRole", output.AWSResource{
+		ResourceType: "AWS::Lambda::Function",
+		ARN:          "arn:aws:lambda:us-east-1:111111111111:function:NoRole",
+		AccountRef:   "111111111111",
+		// No Properties → no execution role fact
+	})
+
+	facts := CollectStructuralFacts(gaad, resources)
+	for _, f := range facts {
+		assert.NotEqual(t, FactLambdaExecutionRole, f.Type, "should not create fact for Lambda without Role property")
+	}
+}
+
+func TestCollectStructuralFacts_CrossAccountTrust(t *testing.T) {
+	trustStmt := types.PolicyStatementList{
+		{
+			Effect: "Allow",
+			Principal: &types.Principal{
+				AWS: &types.DynaString{"arn:aws:iam::222222222222:role/CrossAccountRole"},
+			},
+			Action:   &types.DynaString{"sts:AssumeRole"},
+			Resource: &types.DynaString{"arn:aws:iam::111111111111:role/TrustedRole"},
+		},
+	}
+
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil,
+		[]types.RoleDetail{
+			{
+				Arn:                      "arn:aws:iam::111111111111:role/TrustedRole",
+				RoleName:                 "TrustedRole",
+				AssumeRolePolicyDocument: types.Policy{Statement: &trustStmt},
+			},
+		}, nil)
+	resources := store.NewMap[output.AWSResource]()
+
+	facts := CollectStructuralFacts(gaad, resources)
+	found := false
+	for _, f := range facts {
+		if f.Type == FactTrustRelationship &&
+			f.From == "arn:aws:iam::111111111111:role/TrustedRole" &&
+			f.To == "arn:aws:iam::222222222222:role/CrossAccountRole" {
+			found = true
+		}
+	}
+	assert.True(t, found, "should create cross-account trust relationship fact")
+}
