@@ -36,7 +36,7 @@ func TestAssemble_ProducesValidModel(t *testing.T) {
 	assert.NotNil(t, m.CollectionCoverage)
 	assert.True(t, m.CollectionCoverage.IAMGAAD)
 	assert.Equal(t, GoalReachAdmin, m.Goal.Type)
-	assert.NotEmpty(t, m.Goal.Attacker)
+	assert.Equal(t, "*", m.Goal.Attacker)
 
 	// Accounts
 	require.Len(t, m.Accounts, 1)
@@ -167,5 +167,5 @@ func TestAssemble_EmptyGAAD(t *testing.T) {
 	assert.Empty(t, m.StructuralFacts)
 	assert.Equal(t, PermSourcePolicySummary, m.PermissionSource.Type)
 	assert.Empty(t, m.PermissionSource.Entries)
-	assert.Equal(t, "", m.Goal.Attacker, "no principals means no default attacker")
+	assert.Equal(t, "*", m.Goal.Attacker, "default attacker should be * for all-principals mode")
 }

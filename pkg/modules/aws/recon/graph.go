@@ -28,6 +28,7 @@ type GraphConfig struct {
 	plugin.OrgPoliciesParam
 	Format           string `param:"format" desc:"Output format: json (default) or escalation-solver-v1" default:"json"`
 	PermissionFormat string `param:"permission-format" desc:"Permission source format: policy_summary (default) or evaluated_triples" default:"policy_summary"`
+	Attacker         string `param:"attacker" desc:"Attacker principal ARN for escalation-solver goal, or * for all principals" default:"*"`
 }
 
 // AWSGraphModule is a refactored version of AWSGraphModule.
@@ -462,6 +463,7 @@ func (m *AWSGraphModule) emitEscalationModel(out *pipeline.P[model.AurelianModel
 		Relationships:    m.relationships,
 		Coverage:         coverage,
 		PermissionFormat: m.PermissionFormat,
+		Attacker:         m.Attacker,
 	})
 
 	m.log.Success("escalation-solver model assembled (principals: %d, resources: %d, structural_facts: %d)",

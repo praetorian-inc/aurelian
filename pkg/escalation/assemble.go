@@ -21,6 +21,10 @@ type AssembleInput struct {
 	// PermissionFormat controls the permission_source type.
 	// Supported: "policy_summary" (default), "evaluated_triples".
 	PermissionFormat string
+
+	// Attacker is the goal.attacker value. Default "*" means all non-admin
+	// principals. A specific ARN pins the solver to one starting principal.
+	Attacker string
 }
 
 // Assemble builds a complete model-v1 Model from collected data.
@@ -35,7 +39,7 @@ func Assemble(in AssembleInput) *Model {
 		Accounts:         collectAccounts(in.GAAD),
 		Goal: Goal{
 			Type:     GoalReachAdmin,
-			Attacker: pickFirstPrincipal(in.GAAD),
+			Attacker: resolveAttacker(in.Attacker),
 		},
 	}
 
@@ -71,23 +75,13 @@ func collectAccounts(gaad *types.AuthorizationAccountDetails) []Account {
 	return []Account{{ID: gaad.AccountID}}
 }
 
-// pickFirstPrincipal returns the ARN of the first principal found. Used as a
-// default attacker when none is specified. The solver requires a valid attacker
-// ARN; the user is expected to override this.
-func pickFirstPrincipal(gaad *types.AuthorizationAccountDetails) string {
-	var first string
-	gaad.Users.Range(func(_ string, u types.UserDetail) bool {
-		first = u.Arn
-		return false
-	})
-	if first != "" {
-		return first
+// resolveAttacker returns the attacker value for the goal. Empty string
+// defaults to "*" (all non-admin principals), per spec section 3.8.
+func resolveAttacker(attacker string) string {
+	if attacker == "" {
+		return "*"
 	}
-	gaad.Roles.Range(func(_ string, r types.RoleDetail) bool {
-		first = r.Arn
-		return false
-	})
-	return first
+	return attacker
 }
 
 // collectEvaluatedTriples converts the analyzer's AWSIAMRelationship edges
