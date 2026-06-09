@@ -283,6 +283,50 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 			Progress: m.log.ProgressFunc("listing resources"),
 		})
 
+		// For escalation-solver format, keep ALL listed resources (not just
+		// ones with policies) because EC2/CodeBuild/ECS are needed for
+		// structural facts. Run policy collection as enrichment on top.
+		if c.Format == "escalation-solver-v1" {
+			// Collect all listed resources first.
+			allResources := store.NewMap[output.AWSResource]()
+			for r := range listed.Range() {
+				key := r.ARN
+				if key == "" {
+					key = r.ResourceID
+				}
+				allResources.Set(key, r)
+			}
+			if err := listed.Wait(); err != nil {
+				return fmt.Errorf("listing resources: %w", err)
+			}
+
+			// Enrich with resource policies where available.
+			enrichInput := pipeline.New[output.AWSResource]()
+			go func() {
+				defer enrichInput.Close()
+				allResources.Range(func(_ string, r output.AWSResource) bool {
+					enrichInput.Send(r)
+					return true
+				})
+			}()
+			enriched := pipeline.New[output.AWSResource]()
+			pipeline.Pipe(enrichInput, collector.Collect, enriched)
+			for r := range enriched.Range() {
+				key := r.ARN
+				if key == "" {
+					key = r.ResourceID
+				}
+				allResources.Set(key, r) // overwrite with policy-enriched version
+			}
+			if err := enriched.Wait(); err != nil {
+				return fmt.Errorf("collecting resource policies: %w", err)
+			}
+
+			m.log.Success("resources collected (%d)", allResources.Len())
+			m.resourcesWithPolicies = allResources
+			return nil
+		}
+
 		collected := pipeline.New[output.AWSResource]()
 		pipeline.Pipe(listed, collector.Collect, collected)
 
