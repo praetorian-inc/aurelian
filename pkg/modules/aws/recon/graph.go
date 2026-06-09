@@ -247,10 +247,24 @@ func (m *AWSGraphModule) collectAccountAuthorizationDetails(eg *errgroup.Group, 
 	})
 }
 
+// escalationExtraResourceTypes are resource types needed by the escalation-solver
+// format for structural facts (instance_profile, codebuild_service_role, ecs_task_role)
+// that are not covered by the resource policy collector.
+var escalationExtraResourceTypes = []string{
+	"AWS::EC2::Instance",
+	"AWS::CodeBuild::Project",
+	"AWS::ECS::TaskDefinition",
+}
+
 func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c GraphConfig, collector *resourcepolicies.ResourcePolicyCollector, resolvedRegions []string, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
 	eg.Go(func() error {
+		supportedTypes := collector.SupportedResourceTypes()
+		if c.Format == "escalation-solver-v1" {
+			supportedTypes = appendUnique(supportedTypes, escalationExtraResourceTypes...)
+		}
+
 		m.log.Info("enumerating cloud resources and collecting policies (%d types, %d regions)",
-			len(collector.SupportedResourceTypes()), len(resolvedRegions))
+			len(supportedTypes), len(resolvedRegions))
 
 		// Share the run-wide provider and SkipReport so the lister's skipped ops fold
 		// into the single aggregated summary collectInputs logs (the lister's Close
@@ -258,7 +272,7 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 		// the detail file).
 		lister := enumeration.NewEnumeratorWithProvider(c.AWSCommonRecon, provider, skipReport)
 		defer func() { _ = lister.Close() }()
-		resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, collector.SupportedResourceTypes())
+		resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, supportedTypes)
 		if err != nil {
 			return fmt.Errorf("resolving resource types: %w", err)
 		}
@@ -495,4 +509,19 @@ func (m *AWSGraphModule) emitOutputs(out *pipeline.P[model.AurelianModel]) {
 		out.Send(r)
 		return true
 	})
+}
+
+// appendUnique appends items to a slice, skipping duplicates.
+func appendUnique(base []string, items ...string) []string {
+	seen := make(map[string]bool, len(base))
+	for _, s := range base {
+		seen[s] = true
+	}
+	for _, s := range items {
+		if !seen[s] {
+			base = append(base, s)
+			seen[s] = true
+		}
+	}
+	return base
 }
