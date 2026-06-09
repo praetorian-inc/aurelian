@@ -287,28 +287,27 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 		// ones with policies) because EC2/CodeBuild/ECS are needed for
 		// structural facts. Run policy collection as enrichment on top.
 		if c.Format == "escalation-solver-v1" {
-			// Collect all listed resources first.
-			allResources := store.NewMap[output.AWSResource]()
+			// Collect all listed resources into a slice first.
+			var allListed []output.AWSResource
 			for r := range listed.Range() {
-				key := r.ARN
-				if key == "" {
-					key = r.ResourceID
-				}
-				allResources.Set(key, r)
+				allListed = append(allListed, r)
 			}
 			if err := listed.Wait(); err != nil {
 				return fmt.Errorf("listing resources: %w", err)
 			}
 
+			// Build base map from all listed resources.
+			results := store.NewMap[output.AWSResource]()
+			for _, r := range allListed {
+				key := r.ARN
+				if key == "" {
+					key = r.ResourceID
+				}
+				results.Set(key, r)
+			}
+
 			// Enrich with resource policies where available.
-			enrichInput := pipeline.New[output.AWSResource]()
-			go func() {
-				defer enrichInput.Close()
-				allResources.Range(func(_ string, r output.AWSResource) bool {
-					enrichInput.Send(r)
-					return true
-				})
-			}()
+			enrichInput := pipeline.From(allListed...)
 			enriched := pipeline.New[output.AWSResource]()
 			pipeline.Pipe(enrichInput, collector.Collect, enriched)
 			for r := range enriched.Range() {
@@ -316,14 +315,14 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 				if key == "" {
 					key = r.ResourceID
 				}
-				allResources.Set(key, r) // overwrite with policy-enriched version
+				results.Set(key, r) // overwrite with policy-enriched version
 			}
 			if err := enriched.Wait(); err != nil {
 				return fmt.Errorf("collecting resource policies: %w", err)
 			}
 
-			m.log.Success("resources collected (%d)", allResources.Len())
-			m.resourcesWithPolicies = allResources
+			m.log.Success("resources collected (%d)", results.Len())
+			m.resourcesWithPolicies = results
 			return nil
 		}
 
