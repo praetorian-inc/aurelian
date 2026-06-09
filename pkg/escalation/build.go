@@ -412,9 +412,12 @@ func CollectResourcePolicies(resources store.Map[output.AWSResource]) []Resource
 // Collection Coverage (A.6)
 // ---------------------------------------------------------------------------
 
-// CoverageTracker tracks which data sources were successfully collected.
+// CoverageTracker tracks which data sources were attempted and any errors.
+// Coverage semantics: true = attempted (even if zero results), false/absent =
+// not attempted. Errors record partial failures.
 type CoverageTracker struct {
 	coverage CollectionCoverage
+	errors   []CollectionError
 }
 
 // NewCoverageTracker returns a new tracker with all flags set to false.
@@ -422,64 +425,48 @@ func NewCoverageTracker() *CoverageTracker {
 	return &CoverageTracker{}
 }
 
-// MarkIAMGAAD marks IAM GAAD as collected.
-func (ct *CoverageTracker) MarkIAMGAAD()                { ct.coverage.IAMGAAD = true }
-func (ct *CoverageTracker) MarkEC2InstanceProfiles()     { ct.coverage.EC2InstanceProfiles = true }
-func (ct *CoverageTracker) MarkLambdaExecutionRoles()    { ct.coverage.LambdaExecutionRoles = true }
-func (ct *CoverageTracker) MarkECSTaskRoles()            { ct.coverage.ECSTaskRoles = true }
-func (ct *CoverageTracker) MarkCodeBuildServiceRoles()   { ct.coverage.CodeBuildServiceRoles = true }
-func (ct *CoverageTracker) MarkS3BucketPolicies()        { ct.coverage.S3BucketPolicies = true }
-func (ct *CoverageTracker) MarkLambdaResourcePolicies()  { ct.coverage.LambdaResourcePolicies = true }
-func (ct *CoverageTracker) MarkSQSQueuePolicies()        { ct.coverage.SQSQueuePolicies = true }
-func (ct *CoverageTracker) MarkKMSKeyPolicies()          { ct.coverage.KMSKeyPolicies = true }
-func (ct *CoverageTracker) MarkSNSTopicPolicies()        { ct.coverage.SNSTopicPolicies = true }
+// MarkIAMGAAD marks IAM GAAD as attempted.
+func (ct *CoverageTracker) MarkIAMGAAD() { ct.coverage.IAMGAAD = true }
+
+// MarkAttempted marks a resource type as attempted. Call this for every type
+// the enumerator tried, regardless of whether it found results.
+func (ct *CoverageTracker) MarkAttempted(resourceType string) {
+	switch resourceType {
+	case "AWS::Lambda::Function":
+		ct.coverage.LambdaExecutionRoles = true
+		ct.coverage.LambdaResourcePolicies = true
+	case "AWS::EC2::Instance":
+		ct.coverage.EC2InstanceProfiles = true
+	case "AWS::CodeBuild::Project":
+		ct.coverage.CodeBuildServiceRoles = true
+	case "AWS::ECS::TaskDefinition":
+		ct.coverage.ECSTaskRoles = true
+	case "AWS::S3::Bucket":
+		ct.coverage.S3BucketPolicies = true
+	case "AWS::SQS::Queue":
+		ct.coverage.SQSQueuePolicies = true
+	case "AWS::SNS::Topic":
+		ct.coverage.SNSTopicPolicies = true
+	case "AWS::KMS::Key":
+		ct.coverage.KMSKeyPolicies = true
+	}
+}
+
+// RecordError records a collection failure for a data source.
+func (ct *CoverageTracker) RecordError(source, errMsg string, regions ...string) {
+	ct.errors = append(ct.errors, CollectionError{
+		Source:  source,
+		Error:   errMsg,
+		Regions: regions,
+	})
+}
 
 // Build returns the current coverage state.
 func (ct *CoverageTracker) Build() *CollectionCoverage {
 	return &ct.coverage
 }
 
-// MarkGAADCoverage is reserved for coverage flags derivable from GAAD alone.
-// Note: ec2_instance_profiles is NOT set here — GAAD contains instance
-// profile definitions but not EC2 instance associations. The flag is only
-// set by MarkResourceTypes when EC2 instances are actually enumerated.
-func (ct *CoverageTracker) MarkGAADCoverage(_ *types.AuthorizationAccountDetails) {
-	// Currently a no-op. Future: could mark coverage for data only derivable
-	// from GAAD (e.g., permission boundaries).
-}
-
-// MarkResourceTypes marks coverage for resource types found in the collected resources.
-func (ct *CoverageTracker) MarkResourceTypes(resources store.Map[output.AWSResource]) {
-	resources.Range(func(_ string, r output.AWSResource) bool {
-		switch r.ResourceType {
-		case "AWS::Lambda::Function":
-			ct.coverage.LambdaExecutionRoles = true
-			if r.ResourcePolicy != nil {
-				ct.coverage.LambdaResourcePolicies = true
-			}
-		case "AWS::EC2::Instance":
-			ct.coverage.EC2InstanceProfiles = true
-		case "AWS::CodeBuild::Project":
-			ct.coverage.CodeBuildServiceRoles = true
-		case "AWS::S3::Bucket":
-			if r.ResourcePolicy != nil {
-				ct.coverage.S3BucketPolicies = true
-			}
-		case "AWS::SQS::Queue":
-			if r.ResourcePolicy != nil {
-				ct.coverage.SQSQueuePolicies = true
-			}
-		case "AWS::SNS::Topic":
-			if r.ResourcePolicy != nil {
-				ct.coverage.SNSTopicPolicies = true
-			}
-		case "AWS::KMS::Key":
-			if r.ResourcePolicy != nil {
-				ct.coverage.KMSKeyPolicies = true
-			}
-		case "AWS::ECS::TaskDefinition":
-			ct.coverage.ECSTaskRoles = true
-		}
-		return true
-	})
+// Errors returns any collection errors recorded.
+func (ct *CoverageTracker) Errors() []CollectionError {
+	return ct.errors
 }

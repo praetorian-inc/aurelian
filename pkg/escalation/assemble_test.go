@@ -17,7 +17,9 @@ func TestAssemble_ProducesValidModel(t *testing.T) {
 
 	coverage := NewCoverageTracker()
 	coverage.MarkIAMGAAD()
-	coverage.MarkResourceTypes(resources)
+	coverage.MarkAttempted("AWS::Lambda::Function")
+	coverage.MarkAttempted("AWS::EC2::Instance")
+	coverage.MarkAttempted("AWS::S3::Bucket")
 
 	m := Assemble(AssembleInput{
 		GAAD:             gaad,

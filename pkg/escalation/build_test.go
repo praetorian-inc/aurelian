@@ -270,16 +270,35 @@ func TestCollectStructuralFacts(t *testing.T) {
 func TestCoverageTracker(t *testing.T) {
 	ct := NewCoverageTracker()
 	ct.MarkIAMGAAD()
-	ct.MarkResourceTypes(newTestResources())
+	// Mark attempted types — even if zero results, they should be true.
+	ct.MarkAttempted("AWS::Lambda::Function")
+	ct.MarkAttempted("AWS::EC2::Instance")
+	ct.MarkAttempted("AWS::S3::Bucket")
 
 	cov := ct.Build()
 	assert.True(t, cov.IAMGAAD)
 	assert.True(t, cov.LambdaExecutionRoles)
+	assert.True(t, cov.LambdaResourcePolicies)
 	assert.True(t, cov.EC2InstanceProfiles)
 	assert.True(t, cov.S3BucketPolicies)
 	assert.False(t, cov.ECSTaskRoles)
 	assert.False(t, cov.CodeBuildServiceRoles)
 	assert.False(t, cov.SQSQueuePolicies)
+}
+
+func TestCoverageTracker_Errors(t *testing.T) {
+	ct := NewCoverageTracker()
+	ct.MarkAttempted("AWS::EC2::Instance")
+	ct.RecordError("ec2", "AccessDenied", "us-east-1", "us-west-2")
+
+	cov := ct.Build()
+	assert.True(t, cov.EC2InstanceProfiles, "should be true even with errors — we attempted")
+
+	errs := ct.Errors()
+	require.Len(t, errs, 1)
+	assert.Equal(t, "ec2", errs[0].Source)
+	assert.Equal(t, "AccessDenied", errs[0].Error)
+	assert.Equal(t, []string{"us-east-1", "us-west-2"}, errs[0].Regions)
 }
 
 // ---------------------------------------------------------------------------

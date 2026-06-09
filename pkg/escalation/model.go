@@ -17,6 +17,7 @@ type Model struct {
 	model.BaseAurelianModel `json:"-"`
 	Version            string              `json:"version"`
 	CollectionCoverage *CollectionCoverage `json:"collection_coverage,omitempty"`
+	CollectionErrors   []CollectionError   `json:"collection_errors,omitempty"`
 	Accounts           []Account           `json:"accounts,omitempty"`
 	Principals         []Principal         `json:"principals"`
 	Resources          []Resource          `json:"resources,omitempty"`
@@ -30,9 +31,9 @@ type Model struct {
 // IsSingleObjectOutput marks Model for bare-object JSON serialization.
 func (*Model) IsSingleObjectOutput() {}
 
-// CollectionCoverage flags which data sources were collected. Missing/false
-// keys mean the data source was not collected; the solver uses this for gap
-// reporting.
+// CollectionCoverage flags which data sources were attempted. true = attempted
+// (even if zero results found), false/absent = not attempted. Pair with
+// CollectionErrors to distinguish "empty account" from "collection failed".
 type CollectionCoverage struct {
 	IAMGAAD                bool `json:"iam_gaad,omitempty"`
 	EC2InstanceProfiles    bool `json:"ec2_instance_profiles,omitempty"`
@@ -44,6 +45,13 @@ type CollectionCoverage struct {
 	SQSQueuePolicies       bool `json:"sqs_queue_policies,omitempty"`
 	KMSKeyPolicies         bool `json:"kms_key_policies,omitempty"`
 	SNSTopicPolicies       bool `json:"sns_topic_policies,omitempty"`
+}
+
+// CollectionError records a failure during data collection.
+type CollectionError struct {
+	Source  string `json:"source"`  // data source key (matches collection_coverage keys)
+	Error   string `json:"error"`   // error message
+	Regions []string `json:"regions,omitempty"` // affected regions, if regional
 }
 
 // Account represents an AWS account in scope.

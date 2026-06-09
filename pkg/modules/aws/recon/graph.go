@@ -55,6 +55,8 @@ type AWSGraphModule struct {
 	launchTemplates       store.Map[output.AWSResource]
 	identityPools         store.Map[output.AWSResource]
 	relationships         store.Map[output.AWSIAMRelationship]
+	attemptedTypes        []string                     // resource types that were enumerated
+	skipReport            *enumeration.SkipReport       // skipped operations from enumeration
 }
 
 func (m *AWSGraphModule) ID() string                { return "graph" }
@@ -276,6 +278,8 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 		if err != nil {
 			return fmt.Errorf("resolving resource types: %w", err)
 		}
+		m.attemptedTypes = resourceTypes
+		m.skipReport = lister.Skipped
 
 		resourceTypePipeline := pipeline.From(resourceTypes...)
 		listed := pipeline.New[output.AWSResource]()
@@ -510,8 +514,18 @@ func (m *AWSGraphModule) emitEscalationModel(out *pipeline.P[model.AurelianModel
 
 	coverage := escalation.NewCoverageTracker()
 	coverage.MarkIAMGAAD()
-	coverage.MarkGAADCoverage(m.gaadData)
-	coverage.MarkResourceTypes(m.resourcesWithPolicies)
+
+	// Mark all attempted resource types (even if zero results).
+	for _, rt := range m.attemptedTypes {
+		coverage.MarkAttempted(rt)
+	}
+
+	// Record enumeration errors from the skip report.
+	if m.skipReport != nil {
+		for _, op := range m.skipReport.Snapshot() {
+			coverage.RecordError(op.Service, op.ErrorCode+": "+op.Detail, op.Region)
+		}
+	}
 
 	solverModel := escalation.Assemble(escalation.AssembleInput{
 		GAAD:             m.gaadData,
