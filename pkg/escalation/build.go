@@ -439,20 +439,13 @@ func (ct *CoverageTracker) Build() *CollectionCoverage {
 	return &ct.coverage
 }
 
-// MarkGAADCoverage sets coverage flags for data available in GAAD. Instance
-// profiles are available from GAAD even without EC2 enumeration.
-func (ct *CoverageTracker) MarkGAADCoverage(gaad *types.AuthorizationAccountDetails) {
-	hasInstanceProfiles := false
-	gaad.Roles.Range(func(_ string, r types.RoleDetail) bool {
-		if len(r.InstanceProfileList) > 0 {
-			hasInstanceProfiles = true
-			return false
-		}
-		return true
-	})
-	if hasInstanceProfiles {
-		ct.coverage.EC2InstanceProfiles = true
-	}
+// MarkGAADCoverage is reserved for coverage flags derivable from GAAD alone.
+// Note: ec2_instance_profiles is NOT set here — GAAD contains instance
+// profile definitions but not EC2 instance associations. The flag is only
+// set by MarkResourceTypes when EC2 instances are actually enumerated.
+func (ct *CoverageTracker) MarkGAADCoverage(_ *types.AuthorizationAccountDetails) {
+	// Currently a no-op. Future: could mark coverage for data only derivable
+	// from GAAD (e.g., permission boundaries).
 }
 
 // MarkResourceTypes marks coverage for resource types found in the collected resources.
