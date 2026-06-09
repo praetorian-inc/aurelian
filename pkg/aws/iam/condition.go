@@ -163,6 +163,9 @@ func evaluateCondition(operator string, key string, values []string, ctx *Reques
 
 	// Handle Null operator
 	if operator == "Null" {
+		if len(values) == 0 {
+			return false
+		}
 		wantNull := values[0] == "true"
 		return wantNull == !exists
 	}
@@ -582,8 +585,12 @@ func evaluateDateCondition(operator string, values []string, actualValue interfa
 }
 
 func evaluateBoolCondition(values []string, actualValue interface{}) bool {
+	if len(values) == 0 {
+		return false
+	}
 	// Convert string value to bool
 	expected := values[0] == "true"
+
 
 	switch v := actualValue.(type) {
 	case *bool:
