@@ -55,8 +55,7 @@ type AWSGraphModule struct {
 	launchTemplates       store.Map[output.AWSResource]
 	identityPools         store.Map[output.AWSResource]
 	relationships         store.Map[output.AWSIAMRelationship]
-	attemptedTypes        []string                     // resource types that were enumerated
-	skipReport            *enumeration.SkipReport       // skipped operations from enumeration
+	attemptedTypes        []string // resource types that were enumerated
 }
 
 func (m *AWSGraphModule) ID() string                { return "graph" }
@@ -279,7 +278,6 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 			return fmt.Errorf("resolving resource types: %w", err)
 		}
 		m.attemptedTypes = resourceTypes
-		m.skipReport = lister.Skipped
 
 		resourceTypePipeline := pipeline.From(resourceTypes...)
 		listed := pipeline.New[output.AWSResource]()
@@ -520,14 +518,7 @@ func (m *AWSGraphModule) emitEscalationModel(out *pipeline.P[model.AurelianModel
 		coverage.MarkAttempted(rt)
 	}
 
-	// Record enumeration errors from the skip report.
-	if m.skipReport != nil {
-		for _, op := range m.skipReport.Snapshot() {
-			coverage.RecordError(op.Service, op.ErrorCode+": "+op.Detail, op.Region)
-		}
-	}
-
-	solverModel := escalation.Assemble(escalation.AssembleInput{
+	solverModel, err := escalation.Assemble(escalation.AssembleInput{
 		GAAD:             m.gaadData,
 		OrgPolicies:      m.OrgPolicies,
 		Resources:        m.resourcesWithPolicies,
@@ -536,6 +527,9 @@ func (m *AWSGraphModule) emitEscalationModel(out *pipeline.P[model.AurelianModel
 		PermissionFormat: m.PermissionFormat,
 		Attacker:         m.Attacker,
 	})
+	if err != nil {
+		return fmt.Errorf("assembling escalation model: %w", err)
+	}
 
 	m.log.Success("escalation-solver model assembled (principals: %d, resources: %d, structural_facts: %d)",
 		len(solverModel.Principals), len(solverModel.Resources), len(solverModel.StructuralFacts))

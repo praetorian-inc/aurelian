@@ -193,3 +193,42 @@ func TestFilterRemovedStatements(t *testing.T) {
 	assert.Equal(t, "Deny", (*filtered)[1].Effect)
 	assert.Equal(t, "s3:DeleteBucket", (*(*filtered)[1].Action)[0])
 }
+
+func TestEvaluator_WithResourcePolicy(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111111111111",
+		nil,
+		nil,
+		[]types.RoleDetail{
+			{Arn: "arn:aws:iam::111111111111:role/NoIdentityPolicy", RoleName: "NoIdentityPolicy"},
+		},
+		nil,
+	)
+
+	// Resource policy grants the role access. The evaluator looks up resource
+	// policies by exact target ARN, so we use the target ARN as the map key.
+	bucketPolicy := &types.Policy{
+		Statement: &types.PolicyStatementList{
+			{
+				Effect:    "Allow",
+				Principal: &types.Principal{AWS: &types.DynaString{"arn:aws:iam::111111111111:role/NoIdentityPolicy"}},
+				Action:    &types.DynaString{"s3:GetObject"},
+				Resource:  &types.DynaString{"arn:aws:s3:::my-bucket"},
+			},
+		},
+	}
+	resourcePolicies := map[string]*types.Policy{
+		"arn:aws:s3:::my-bucket": bucketPolicy,
+	}
+
+	eval := NewEvaluator(gaad, nil, resourcePolicies)
+
+	// The role has no identity policy but the bucket policy grants access.
+	resp, err := eval.CheckSpecific(
+		"arn:aws:iam::111111111111:role/NoIdentityPolicy",
+		"s3:GetObject",
+		"arn:aws:s3:::my-bucket",
+	)
+	require.NoError(t, err)
+	// Same-account: resource policy with explicit principal allow → allowed
+	assert.Equal(t, "allowed", resp.Result)
+}

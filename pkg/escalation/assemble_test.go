@@ -21,12 +21,13 @@ func TestAssemble_ProducesValidModel(t *testing.T) {
 	coverage.MarkAttempted("AWS::EC2::Instance")
 	coverage.MarkAttempted("AWS::S3::Bucket")
 
-	m := Assemble(AssembleInput{
+	m, err := Assemble(AssembleInput{
 		GAAD:             gaad,
 		Resources:        resources,
 		Coverage:         coverage,
 		PermissionFormat: "policy_summary",
 	})
+	require.NoError(t, err)
 
 	assert.Equal(t, "1.0", m.Version)
 	assert.NotEmpty(t, m.Principals)
@@ -52,12 +53,13 @@ func TestAssemble_JSONSchemaCompliance(t *testing.T) {
 	coverage := NewCoverageTracker()
 	coverage.MarkIAMGAAD()
 
-	m := Assemble(AssembleInput{
+	m, err := Assemble(AssembleInput{
 		GAAD:             gaad,
 		Resources:        resources,
 		Coverage:         coverage,
 		PermissionFormat: "policy_summary",
 	})
+	require.NoError(t, err)
 
 	data, err := json.MarshalIndent(m, "", "  ")
 	require.NoError(t, err)
@@ -71,6 +73,16 @@ func TestAssemble_JSONSchemaCompliance(t *testing.T) {
 	assert.NotNil(t, raw["principals"])
 	assert.NotNil(t, raw["permission_source"])
 	assert.NotNil(t, raw["goal"])
+
+	// Verify no unexpected top-level keys (additionalProperties: false)
+	schemaKeys := map[string]bool{
+		"version": true, "collection_coverage": true, "accounts": true,
+		"principals": true, "resources": true, "permission_source": true,
+		"resource_policies": true, "structural_facts": true, "goal": true, "config": true,
+	}
+	for key := range raw {
+		assert.True(t, schemaKeys[key], "unexpected top-level key %q (additionalProperties: false)", key)
+	}
 
 	// Verify principals have required fields
 	principals := raw["principals"].([]interface{})
@@ -106,7 +118,6 @@ func TestAssemble_EvaluatedTriplesFormat(t *testing.T) {
 	gaad := newTestGAAD()
 	resources := newTestResources()
 
-	// Create relationships to verify they get converted to triples
 	relationships := store.NewMap[output.AWSIAMRelationship]()
 	relationships.Set("key1", output.AWSIAMRelationship{
 		Principal: output.AWSIAMResource{AWSResource: output.AWSResource{ARN: "arn:aws:iam::111111111111:role/Admin"}},
@@ -114,12 +125,13 @@ func TestAssemble_EvaluatedTriplesFormat(t *testing.T) {
 		Action:    "sts:AssumeRole",
 	})
 
-	m := Assemble(AssembleInput{
+	m, err := Assemble(AssembleInput{
 		GAAD:             gaad,
 		Resources:        resources,
 		Relationships:    relationships,
 		PermissionFormat: "evaluated_triples",
 	})
+	require.NoError(t, err)
 
 	assert.Equal(t, PermSourceEvaluatedTriples, m.PermissionSource.Type)
 	require.Len(t, m.PermissionSource.Triples, 1)
@@ -132,11 +144,12 @@ func TestAssemble_EvaluatedTriples_NoRelationships(t *testing.T) {
 	gaad := newTestGAAD()
 	resources := newTestResources()
 
-	m := Assemble(AssembleInput{
+	m, err := Assemble(AssembleInput{
 		GAAD:             gaad,
 		Resources:        resources,
 		PermissionFormat: "evaluated_triples",
 	})
+	require.NoError(t, err)
 
 	assert.Equal(t, PermSourceEvaluatedTriples, m.PermissionSource.Type)
 	assert.Nil(t, m.PermissionSource.Triples, "should be nil when no relationships")
@@ -146,28 +159,36 @@ func TestAssemble_DefaultFormat(t *testing.T) {
 	gaad := newTestGAAD()
 	resources := newTestResources()
 
-	m := Assemble(AssembleInput{
+	m, err := Assemble(AssembleInput{
 		GAAD:      gaad,
 		Resources: resources,
 	})
+	require.NoError(t, err)
 
 	assert.Equal(t, PermSourcePolicySummary, m.PermissionSource.Type)
 }
 
-func TestAssemble_EmptyGAAD(t *testing.T) {
+func TestAssemble_EmptyGAAD_ReturnsError(t *testing.T) {
 	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
 	resources := store.NewMap[output.AWSResource]()
 
-	m := Assemble(AssembleInput{
+	_, err := Assemble(AssembleInput{
 		GAAD:      gaad,
 		Resources: resources,
 	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no IAM principals")
+}
 
-	assert.Equal(t, "1.0", m.Version)
-	assert.Empty(t, m.Principals)
-	assert.Empty(t, m.Resources)
-	assert.Empty(t, m.StructuralFacts)
-	assert.Equal(t, PermSourcePolicySummary, m.PermissionSource.Type)
-	assert.Empty(t, m.PermissionSource.Entries)
-	assert.Equal(t, "*", m.Goal.Attacker, "default attacker should be * for all-principals mode")
+func TestAssemble_SpecificAttacker(t *testing.T) {
+	gaad := newTestGAAD()
+	resources := newTestResources()
+
+	m, err := Assemble(AssembleInput{
+		GAAD:     gaad,
+		Resources: resources,
+		Attacker: "arn:aws:iam::111111111111:user/Dev",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "arn:aws:iam::111111111111:user/Dev", m.Goal.Attacker)
 }

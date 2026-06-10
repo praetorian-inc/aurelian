@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/store"
 	"github.com/praetorian-inc/aurelian/pkg/types"
@@ -197,4 +198,92 @@ func TestCollectPolicySummary_ResourcePolicyGrants(t *testing.T) {
 		}
 	}
 	assert.True(t, found, "should include s3:GetObject from resource policy")
+}
+
+func TestCollectPolicySummary_GroupWithPolicies(t *testing.T) {
+	adminStmt := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
+	}
+	adminPolicy := types.Policy{Statement: &adminStmt}
+
+	gaad := types.NewAuthorizationAccountDetails("111111111111",
+		nil, // no users
+		[]types.GroupDetail{
+			{
+				Arn:       "arn:aws:iam::111111111111:group/Admins",
+				GroupName: "Admins",
+				AttachedManagedPolicies: []types.ManagedPolicy{
+					{PolicyName: "Admin", PolicyArn: "arn:aws:iam::aws:policy/AdministratorAccess"},
+				},
+			},
+		},
+		nil, // no roles
+		[]types.ManagedPolicyDetail{
+			{
+				Arn:        "arn:aws:iam::aws:policy/AdministratorAccess",
+				PolicyName: "AdministratorAccess",
+				PolicyVersionList: []types.PolicyVersion{
+					{VersionId: "v1", IsDefaultVersion: true, Document: adminPolicy},
+				},
+			},
+		},
+	)
+	resources := store.NewMap[output.AWSResource]()
+
+	entries := CollectPolicySummary(PolicySummaryInput{GAAD: gaad, Resources: resources})
+
+	require.Len(t, entries, 1)
+	assert.Equal(t, "arn:aws:iam::111111111111:group/Admins", entries[0].Principal)
+	require.NotEmpty(t, entries[0].EffectiveStatements)
+
+	found := false
+	for _, s := range entries[0].EffectiveStatements {
+		if s.Effect == "Allow" && s.Action == "*" && s.Resource == "*" {
+			found = true
+		}
+	}
+	assert.True(t, found, "group should have Allow *:* from managed policy")
+}
+
+func TestCollectPolicySummary_SCPIntegration(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111111111111",
+		nil,
+		nil,
+		[]types.RoleDetail{
+			{Arn: "arn:aws:iam::111111111111:role/TestRole", RoleName: "TestRole"},
+		},
+		nil,
+	)
+
+	// Create org policies with an SCP.
+	scpStmt := types.PolicyStatementList{
+		{Effect: "Deny", Action: &types.DynaString{"s3:DeleteBucket"}, Resource: &types.DynaString{"*"}},
+	}
+	scpArn := "arn:aws:organizations::111111111111:policy/scp-deny-delete"
+	op := &orgpolicies.OrgPolicies{
+		SCPs: []orgpolicies.PolicyData{{
+			PolicySummary: orgpolicies.PolicySummaryRef{Arn: &scpArn},
+			PolicyContent: types.Policy{Statement: &scpStmt},
+		}},
+		Targets: []orgpolicies.OrgPolicyTarget{{
+			Account: &orgpolicies.Account{ID: "111111111111"},
+			SCPs:    orgpolicies.OrgPolicyTargetPolicies{DirectPolicies: []string{scpArn}},
+		}},
+	}
+	resources := store.NewMap[output.AWSResource]()
+
+	entries := CollectPolicySummary(PolicySummaryInput{
+		GAAD:        gaad,
+		OrgPolicies: op,
+		Resources:   resources,
+	})
+
+	require.Len(t, entries, 1)
+	found := false
+	for _, s := range entries[0].EffectiveStatements {
+		if s.Effect == "Deny" && s.Action == "s3:DeleteBucket" && s.Source == "scp" {
+			found = true
+		}
+	}
+	assert.True(t, found, "should include SCP deny statement with scp source")
 }

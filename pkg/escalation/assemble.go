@@ -1,6 +1,8 @@
 package escalation
 
 import (
+	"fmt"
+
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam/orgpolicies"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/store"
@@ -29,10 +31,16 @@ type AssembleInput struct {
 
 // Assemble builds a complete model-v1 Model from collected data.
 // The returned model is ready for JSON serialization.
-func Assemble(in AssembleInput) *Model {
+// Returns an error if the model would be invalid (e.g., no principals).
+func Assemble(in AssembleInput) (*Model, error) {
+	principals := CollectPrincipals(in.GAAD)
+	if len(principals) == 0 {
+		return nil, fmt.Errorf("no IAM principals found in GAAD (account: %s); cannot produce a valid model (schema requires at least one principal)", in.GAAD.AccountID)
+	}
+
 	m := &Model{
 		Version:          "1.0",
-		Principals:       CollectPrincipals(in.GAAD),
+		Principals:       principals,
 		Resources:        CollectResources(in.Resources),
 		StructuralFacts:  CollectStructuralFacts(in.GAAD, in.Resources),
 		ResourcePolicies: CollectResourcePolicies(in.Resources),
@@ -45,7 +53,6 @@ func Assemble(in AssembleInput) *Model {
 
 	if in.Coverage != nil {
 		m.CollectionCoverage = in.Coverage.Build()
-		m.CollectionErrors = in.Coverage.Errors()
 	}
 
 	switch in.PermissionFormat {
@@ -65,7 +72,7 @@ func Assemble(in AssembleInput) *Model {
 		}
 	}
 
-	return m
+	return m, nil
 }
 
 // collectAccounts extracts the unique account ID from GAAD.

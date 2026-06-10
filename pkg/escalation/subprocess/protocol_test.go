@@ -3,6 +3,7 @@ package subprocess
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -177,4 +178,22 @@ func TestEmptyLines(t *testing.T) {
 	input := "\n\n" + `{"type":"handshake","version":"1.0"}` + "\n\n" + `{"type":"shutdown"}` + "\n"
 	lines := runProtocol(t, input, newAllowHandler())
 	require.Len(t, lines, 1, "empty lines should be skipped")
+}
+
+func TestHandlerError(t *testing.T) {
+	h := &mockHandler{
+		checkSpecificFn: func(_, _, _ string) (*CheckResponse, error) {
+			return nil, fmt.Errorf("internal evaluator error")
+		},
+		checkAnyTargetFn:      newAllowHandler().checkAnyTargetFn,
+		checkCounterfactualFn: newAllowHandler().checkCounterfactualFn,
+	}
+
+	input := `{"type":"check_specific","principal":"p","action":"a","target":"t"}` + "\n" + `{"type":"shutdown"}` + "\n"
+	lines := runProtocol(t, input, h)
+	require.Len(t, lines, 1)
+
+	var resp ErrorResponse
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &resp))
+	assert.Contains(t, resp.Error, "internal evaluator error")
 }
