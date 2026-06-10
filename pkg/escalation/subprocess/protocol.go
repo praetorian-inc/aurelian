@@ -69,6 +69,20 @@ type Condition struct {
 	Values   []string `json:"values"`
 }
 
+// WhoCanBulkResponse is the response to who_can_bulk. Only allowed grants
+// are included; denied pairs are omitted.
+type WhoCanBulkResponse struct {
+	Grants []Grant `json:"grants"`
+}
+
+// Grant is a single allowed permission in a who_can_bulk response.
+type Grant struct {
+	Principal  string      `json:"principal"`
+	Target     string      `json:"target"`
+	Result     string      `json:"result"`
+	Conditions []Condition `json:"conditions"`
+}
+
 // ErrorResponse is sent when a query fails.
 type ErrorResponse struct {
 	Error string `json:"error"`
@@ -89,7 +103,7 @@ func Serve(r io.Reader, w io.Writer, h Handler) error {
 	// Increase buffer for large who_can_bulk requests.
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
-	capabilities := []string{"check_specific", "check_any_target", "check_counterfactual"}
+	capabilities := []string{"check_specific", "check_any_target", "check_counterfactual", "who_can_bulk"}
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -138,8 +152,13 @@ func Serve(r io.Reader, w io.Writer, h Handler) error {
 			}
 
 		case TypeWhoCanBulk:
-			// Not implemented in v1 — respond with error per spec.
-			writeJSON(w, ErrorResponse{Error: "who_can_bulk not implemented"})
+			grants, err := handleWhoCanBulk(h, req.Action, req.Principals, req.Targets)
+			if err != nil {
+				slog.Error("who_can_bulk failed", "error", err)
+				writeJSON(w, ErrorResponse{Error: err.Error()})
+			} else {
+				writeJSON(w, WhoCanBulkResponse{Grants: grants})
+			}
 
 		case TypeShutdown:
 			return nil
@@ -150,6 +169,37 @@ func Serve(r io.Reader, w io.Writer, h Handler) error {
 	}
 
 	return scanner.Err()
+}
+
+// handleWhoCanBulk evaluates the cross-product of principals × targets for a
+// single action, returning only allowed grants. This replaces O(P×T) individual
+// check_specific IPC round-trips with one.
+func handleWhoCanBulk(h Handler, action string, principals, targets []string) ([]Grant, error) {
+	var grants []Grant
+	for _, principal := range principals {
+		for _, target := range targets {
+			resp, err := h.CheckSpecific(principal, action, target)
+			if err != nil {
+				return nil, fmt.Errorf("evaluating %s -> %s on %s: %w", principal, action, target, err)
+			}
+			if resp.Result == "allowed" {
+				conditions := resp.Conditions
+				if conditions == nil {
+					conditions = []Condition{}
+				}
+				grants = append(grants, Grant{
+					Principal:  principal,
+					Target:     target,
+					Result:     "allowed",
+					Conditions: conditions,
+				})
+			}
+		}
+	}
+	if grants == nil {
+		grants = []Grant{}
+	}
+	return grants, nil
 }
 
 // writeJSON writes a single JSON object followed by a newline.

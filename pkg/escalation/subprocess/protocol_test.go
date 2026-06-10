@@ -126,14 +126,39 @@ func TestCheckCounterfactual(t *testing.T) {
 	assert.Equal(t, "allowed", resp.Result)
 }
 
-func TestWhoCanBulk_NotImplemented(t *testing.T) {
-	input := `{"type":"who_can_bulk","action":"sts:AssumeRole","targets":["a"],"principals":["b"]}` + "\n" + `{"type":"shutdown"}` + "\n"
+func TestWhoCanBulk_AllAllowed(t *testing.T) {
+	input := `{"type":"who_can_bulk","action":"sts:AssumeRole","targets":["t1","t2"],"principals":["p1","p2"]}` + "\n" + `{"type":"shutdown"}` + "\n"
 	lines := runProtocol(t, input, newAllowHandler())
 	require.Len(t, lines, 1)
 
-	var resp ErrorResponse
+	var resp WhoCanBulkResponse
 	require.NoError(t, json.Unmarshal([]byte(lines[0]), &resp))
-	assert.Contains(t, resp.Error, "not implemented")
+	// 2 principals × 2 targets = 4 grants (all allowed by mock)
+	assert.Len(t, resp.Grants, 4)
+	for _, g := range resp.Grants {
+		assert.Equal(t, "allowed", g.Result)
+	}
+}
+
+func TestWhoCanBulk_AllDenied(t *testing.T) {
+	input := `{"type":"who_can_bulk","action":"iam:DeleteRole","targets":["t1"],"principals":["p1"]}` + "\n" + `{"type":"shutdown"}` + "\n"
+	lines := runProtocol(t, input, newDenyHandler())
+	require.Len(t, lines, 1)
+
+	var resp WhoCanBulkResponse
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &resp))
+	// All denied — grants should be empty array, not null
+	assert.Len(t, resp.Grants, 0)
+	assert.Contains(t, lines[0], `"grants":[]`)
+}
+
+func TestWhoCanBulk_Advertised(t *testing.T) {
+	lines := runProtocol(t, `{"type":"handshake","version":"1.0"}`+"\n"+`{"type":"shutdown"}`+"\n", newAllowHandler())
+	require.Len(t, lines, 1)
+
+	var resp HandshakeResponse
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &resp))
+	assert.Contains(t, resp.Capabilities, "who_can_bulk")
 }
 
 func TestShutdown(t *testing.T) {
