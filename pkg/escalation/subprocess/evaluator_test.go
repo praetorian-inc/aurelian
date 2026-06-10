@@ -1,6 +1,9 @@
 package subprocess
 
 import (
+	"bytes"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/types"
@@ -231,4 +234,29 @@ func TestEvaluator_WithResourcePolicy(t *testing.T) {
 	require.NoError(t, err)
 	// Same-account: resource policy with explicit principal allow → allowed
 	assert.Equal(t, "allowed", resp.Result)
+}
+
+func TestWhoCanBulk_MixedResults(t *testing.T) {
+	// Admin can do iam:PutRolePolicy, Dev cannot.
+	eval := NewEvaluator(newTestGAAD(), nil, nil)
+
+	// Run who_can_bulk through the protocol with the real evaluator.
+	input := `{"type":"who_can_bulk","action":"iam:PutRolePolicy","targets":["arn:aws:iam::111111111111:role/Admin"],"principals":["arn:aws:iam::111111111111:role/Admin","arn:aws:iam::111111111111:user/Dev"]}` + "\n" + `{"type":"shutdown"}` + "\n"
+
+	in := strings.NewReader(input)
+	var out bytes.Buffer
+	err := Serve(in, &out, eval)
+	require.NoError(t, err)
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	require.Len(t, lines, 1)
+
+	var resp WhoCanBulkResponse
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &resp))
+
+	// Only Admin should be allowed; Dev should be denied (omitted).
+	require.Len(t, resp.Grants, 1)
+	assert.Equal(t, "arn:aws:iam::111111111111:role/Admin", resp.Grants[0].Principal)
+	assert.Equal(t, "arn:aws:iam::111111111111:role/Admin", resp.Grants[0].Target)
+	assert.Equal(t, "allowed", resp.Grants[0].Result)
 }
