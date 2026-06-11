@@ -17,8 +17,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	helpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
-	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
+	"github.com/praetorian-inc/capability-sdk/pkg/capmodel"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -28,7 +28,7 @@ type Scanner struct {
 	accountID string
 	regions   []string
 	limiter   *ratelimit.AWSRegionLimiter
-	emit      func(output.Risk)
+	emit      func(capmodel.Risk)
 
 	mu       sync.Mutex
 	allRoles []RoleInfo
@@ -57,7 +57,7 @@ func newScanner(opts ScanOptions) (*Scanner, error) {
 	concurrency := max(opts.Concurrency, 1)
 	emit := opts.OnRisk
 	if emit == nil {
-		emit = func(output.Risk) {}
+		emit = func(capmodel.Risk) {}
 	}
 
 	return &Scanner{
@@ -180,12 +180,12 @@ func (s *Scanner) scanRegion(ctx context.Context, region string) error {
 	slog.Debug("detected CDK roles", "region", region, "count", len(roles))
 
 	processRegionRoles(roles,
-		func(role RoleInfo) *output.Risk {
+		func(role RoleInfo) *capmodel.Risk {
 			info := checkBootstrapVersion(ctx, ssmClient, s.accountID, region, role.Qualifier)
 			return generateBootstrapRisk(role, info)
 		},
-		func(role RoleInfo) *output.Risk { return validateBucket(ctx, s3Client, role) },
-		func(role RoleInfo) *output.Risk { return analyzePolicies(ctx, iamClient, role) },
+		func(role RoleInfo) *capmodel.Risk { return validateBucket(ctx, s3Client, role) },
+		func(role RoleInfo) *capmodel.Risk { return analyzePolicies(ctx, iamClient, role) },
 		s.emit,
 	)
 
@@ -200,10 +200,10 @@ func (s *Scanner) scanRegion(ctx context.Context, region string) error {
 // (bootstrap, bucket) once per qualifier and per-role checks (policy) for each role.
 func processRegionRoles(
 	roles []RoleInfo,
-	checkBootstrap func(RoleInfo) *output.Risk,
-	checkBucket func(RoleInfo) *output.Risk,
-	checkPolicy func(RoleInfo) *output.Risk,
-	emit func(output.Risk),
+	checkBootstrap func(RoleInfo) *capmodel.Risk,
+	checkBucket func(RoleInfo) *capmodel.Risk,
+	checkPolicy func(RoleInfo) *capmodel.Risk,
+	emit func(capmodel.Risk),
 ) {
 	byQualifier := make(map[string][]RoleInfo)
 	for _, role := range roles {

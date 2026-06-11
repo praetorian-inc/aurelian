@@ -10,11 +10,11 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iameval "github.com/praetorian-inc/aurelian/pkg/aws/iam"
-	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
+	"github.com/praetorian-inc/capability-sdk/pkg/capmodel"
 )
 
-func analyzePolicies(ctx context.Context, client *iam.Client, role RoleInfo) *output.Risk {
+func analyzePolicies(ctx context.Context, client *iam.Client, role RoleInfo) *capmodel.Risk {
 	if !strings.Contains(role.RoleType, "file-publishing-role") {
 		return nil
 	}
@@ -28,7 +28,12 @@ func analyzePolicies(ctx context.Context, client *iam.Client, role RoleInfo) *ou
 	}
 
 	slog.Debug("no account restriction found", "role", role.RoleName)
-	return generatePolicyRisk(role)
+	risk, err := NewPolicyRisk(role)
+	if err != nil {
+		slog.Warn("build cdk policy-unrestricted risk", "role", role.RoleName, "error", err)
+		return nil
+	}
+	return &risk
 }
 
 func analyzeRoleS3Policies(ctx context.Context, client *iam.Client, roleName, accountID string) (bool, error) {
@@ -163,30 +168,4 @@ func hasResourceAccountCondition(stmt *types.PolicyStatement, accountID string) 
 		}
 	}
 	return false
-}
-
-func generatePolicyRisk(role RoleInfo) *output.Risk {
-	accountArn := fmt.Sprintf("arn:aws:iam::%s:root", role.AccountID)
-	return &output.Risk{
-		Target: &output.AWSResource{
-			ResourceType: "AWS::IAM::Root",
-			ResourceID:   accountArn,
-			AccountRef:   role.AccountID,
-			Region:       role.Region,
-			Properties: map[string]any{
-				"RoleName":   role.RoleName,
-				"BucketName": role.BucketName,
-				"Qualifier":  role.Qualifier,
-			},
-		},
-		Name:           "cdk-policy-unrestricted",
-		DNS:            role.AccountID,
-		Status:         "TM",
-		Source:         "aurelian-cdk-scanner",
-		Description:    fmt.Sprintf("AWS CDK FilePublishingRole '%s' lacks proper account restrictions in S3 permissions. This role can potentially access S3 buckets in other accounts, making it vulnerable to bucket takeover attacks.", role.RoleName),
-		Impact:         "The role may inadvertently access attacker-controlled S3 buckets with the same predictable name, allowing CloudFormation template injection.",
-		Recommendation: fmt.Sprintf("Upgrade to CDK v2.149.0+ and re-run 'cdk bootstrap' in region %s, or manually add 'aws:ResourceAccount' condition to the role's S3 permissions.", role.Region),
-		References:     "https://www.aquasec.com/blog/aws-cdk-risk-exploiting-a-missing-s3-bucket-allowed-account-takeover/",
-		Comment:        fmt.Sprintf("Role: %s, Bucket: %s, Qualifier: %s, Region: %s", role.RoleName, role.BucketName, role.Qualifier, role.Region),
-	}
 }
