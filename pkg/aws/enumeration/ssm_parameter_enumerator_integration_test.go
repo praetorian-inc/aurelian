@@ -54,6 +54,7 @@ func TestSSMParameterEnumerator(t *testing.T) {
 			}
 		}
 		require.NotNil(t, param)
+		require.NotNil(t, param.Properties, "expected Properties map to be populated")
 		assert.Equal(t, "AWS::SSM::Parameter", param.ResourceType)
 		assert.Equal(t, paramARN, param.ARN)
 		assert.NotEmpty(t, param.AccountRef)
