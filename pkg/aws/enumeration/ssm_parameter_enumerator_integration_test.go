@@ -18,11 +18,11 @@ func TestSSMParameterEnumerator(t *testing.T) {
 	fixture.Setup()
 
 	provider := NewAWSConfigProvider(plugin.AWSCommonRecon{
-		Regions:     []string{"us-east-1"},
+		Regions:     []string{"us-east-2"},
 		Concurrency: 2,
 	})
 	enum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{
-		Regions:     []string{"us-east-1"},
+		Regions:     []string{"us-east-2"},
 		Concurrency: 2,
 	}, provider)
 
@@ -58,8 +58,9 @@ func TestSSMParameterEnumerator(t *testing.T) {
 		assert.Equal(t, "AWS::SSM::Parameter", param.ResourceType)
 		assert.Equal(t, paramARN, param.ARN)
 		assert.NotEmpty(t, param.AccountRef)
-		assert.Equal(t, "us-east-1", param.Region)
+		assert.Equal(t, "us-east-2", param.Region)
 		assert.Equal(t, "String", param.Properties["Type"])
+		assert.Equal(t, paramName, param.Properties["Name"], "Properties[Name] should equal the parameter name")
 	})
 
 	t.Run("EnumerateByARN round-trips", func(t *testing.T) {
