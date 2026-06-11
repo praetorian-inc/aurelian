@@ -349,6 +349,92 @@ func shouldRemove(stmt types.PolicyStatement, removed []RemovedStatement) bool {
 	return false
 }
 
+// ListGrants returns the effective policy statements for every principal.
+// The solver uses this to build a PermissionIndex for target/actor pruning.
+// Response shape mirrors policy_summary entries.
+func (e *Evaluator) ListGrants() (*ListGrantsResponse, error) {
+	var entries []ListGrantsEntry
+
+	e.gaad.Users.Range(func(_ string, u types.UserDetail) bool {
+		stmts := e.collectUserStatements(&u)
+		entries = append(entries, ListGrantsEntry{
+			Principal:           u.Arn,
+			EffectiveStatements: flattenToGrantStatements(stmts),
+		})
+		return true
+	})
+
+	e.gaad.Roles.Range(func(_ string, r types.RoleDetail) bool {
+		stmts := e.collectRoleStatements(&r)
+		entries = append(entries, ListGrantsEntry{
+			Principal:           r.Arn,
+			EffectiveStatements: flattenToGrantStatements(stmts),
+		})
+		return true
+	})
+
+	e.gaad.Groups.Range(func(_ string, g types.GroupDetail) bool {
+		var stmts types.PolicyStatementList
+		for _, p := range g.GroupPolicyList {
+			if p.PolicyDocument.Statement != nil {
+				stmts = append(stmts, *p.PolicyDocument.Statement...)
+			}
+		}
+		for _, mp := range g.AttachedManagedPolicies {
+			stmts = append(stmts, e.resolveManagedPolicy(mp)...)
+		}
+		entries = append(entries, ListGrantsEntry{
+			Principal:           g.Arn,
+			EffectiveStatements: flattenToGrantStatements(stmts),
+		})
+		return true
+	})
+
+	return &ListGrantsResponse{Entries: entries}, nil
+}
+
+// flattenToGrantStatements converts policy statements into the list_grants
+// response format. Each (action, resource) pair becomes a separate entry.
+// Conditions are omitted — the index only needs effect/action/resource.
+func flattenToGrantStatements(stmts types.PolicyStatementList) []ListGrantsStatement {
+	var result []ListGrantsStatement
+	for _, stmt := range stmts {
+		actions := stmtActions(&stmt)
+		resources := stmtResources(&stmt)
+		effect := "Allow"
+		if strings.EqualFold(stmt.Effect, "Deny") {
+			effect = "Deny"
+		}
+		for _, action := range actions {
+			for _, resource := range resources {
+				result = append(result, ListGrantsStatement{
+					Effect:   effect,
+					Action:   action,
+					Resource: resource,
+				})
+			}
+		}
+	}
+	if result == nil {
+		result = []ListGrantsStatement{}
+	}
+	return result
+}
+
+func stmtActions(stmt *types.PolicyStatement) []string {
+	if stmt.Action != nil {
+		return []string(*stmt.Action)
+	}
+	return []string{"*"}
+}
+
+func stmtResources(stmt *types.PolicyStatement) []string {
+	if stmt.Resource != nil {
+		return []string(*stmt.Resource)
+	}
+	return []string{"*"}
+}
+
 // NewEvaluatorFromData creates an evaluator from GAAD data and collected resources.
 // This is a convenience for the CLI module.
 func NewEvaluatorFromData(gaad *types.AuthorizationAccountDetails, orgPolicies *orgpolicies.OrgPolicies, resources store.Map[output.AWSResource]) *Evaluator {

@@ -22,6 +22,7 @@ const (
 	TypeCheckAnyTarget     = "check_any_target"
 	TypeCheckCounterfactual = "check_counterfactual"
 	TypeWhoCanBulk         = "who_can_bulk"
+	TypeListGrants         = "list_grants"
 	TypeShutdown           = "shutdown"
 )
 
@@ -83,6 +84,24 @@ type Grant struct {
 	Conditions []Condition `json:"conditions"`
 }
 
+// ListGrantsEntry is a principal's effective statements in a list_grants response.
+type ListGrantsEntry struct {
+	Principal           string               `json:"principal"`
+	EffectiveStatements []ListGrantsStatement `json:"effective_statements"`
+}
+
+// ListGrantsStatement is a single effective statement in a list_grants response.
+type ListGrantsStatement struct {
+	Effect   string `json:"effect"`
+	Action   string `json:"action"`
+	Resource string `json:"resource"`
+}
+
+// ListGrantsResponse is the response to list_grants.
+type ListGrantsResponse struct {
+	Entries []ListGrantsEntry `json:"entries"`
+}
+
 // ErrorResponse is sent when a query fails.
 type ErrorResponse struct {
 	Error string `json:"error"`
@@ -94,6 +113,7 @@ type Handler interface {
 	CheckSpecific(principal, action, target string) (*CheckResponse, error)
 	CheckAnyTarget(principal, action string) (*CheckResponse, error)
 	CheckCounterfactual(principal, action, target string, removed []RemovedStatement) (*CheckResponse, error)
+	ListGrants() (*ListGrantsResponse, error)
 }
 
 // Serve runs the subprocess protocol loop, reading from r and writing to w.
@@ -103,7 +123,7 @@ func Serve(r io.Reader, w io.Writer, h Handler) error {
 	// Increase buffer for large who_can_bulk requests.
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
-	capabilities := []string{"check_specific", "check_any_target", "check_counterfactual", "who_can_bulk"}
+	capabilities := []string{"check_specific", "check_any_target", "check_counterfactual", "who_can_bulk", "list_grants"}
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -158,6 +178,15 @@ func Serve(r io.Reader, w io.Writer, h Handler) error {
 				writeJSON(w, ErrorResponse{Error: err.Error()})
 			} else {
 				writeJSON(w, WhoCanBulkResponse{Grants: grants})
+			}
+
+		case TypeListGrants:
+			resp, err := h.ListGrants()
+			if err != nil {
+				slog.Error("list_grants failed", "error", err)
+				writeJSON(w, ErrorResponse{Error: err.Error()})
+			} else {
+				writeJSON(w, resp)
 			}
 
 		case TypeShutdown:

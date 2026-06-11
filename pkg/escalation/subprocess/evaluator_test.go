@@ -236,6 +236,36 @@ func TestEvaluator_WithResourcePolicy(t *testing.T) {
 	assert.Equal(t, "allowed", resp.Result)
 }
 
+func TestEvaluator_ListGrants(t *testing.T) {
+	eval := NewEvaluator(newTestGAAD(), nil, nil)
+	resp, err := eval.ListGrants()
+	require.NoError(t, err)
+
+	// Should have entries for all principals (2 users + 1 role)
+	require.Len(t, resp.Entries, 3)
+
+	byPrincipal := make(map[string]ListGrantsEntry)
+	for _, e := range resp.Entries {
+		byPrincipal[e.Principal] = e
+	}
+
+	// Admin role has Allow *:* — should appear as a statement
+	admin := byPrincipal["arn:aws:iam::111111111111:role/Admin"]
+	assert.NotEmpty(t, admin.EffectiveStatements)
+
+	found := false
+	for _, s := range admin.EffectiveStatements {
+		if s.Effect == "Allow" && s.Action == "*" && s.Resource == "*" {
+			found = true
+		}
+	}
+	assert.True(t, found, "Admin should have Allow *:*")
+
+	// Dev user has ReadOnly managed policy — should have s3:Get* / s3:List*
+	dev := byPrincipal["arn:aws:iam::111111111111:user/Dev"]
+	assert.NotEmpty(t, dev.EffectiveStatements)
+}
+
 func TestWhoCanBulk_MixedResults(t *testing.T) {
 	// Admin can do iam:PutRolePolicy, Dev cannot.
 	eval := NewEvaluator(newTestGAAD(), nil, nil)

@@ -13,9 +13,10 @@ import (
 
 // mockHandler implements Handler with configurable responses.
 type mockHandler struct {
-	checkSpecificFn      func(principal, action, target string) (*CheckResponse, error)
-	checkAnyTargetFn     func(principal, action string) (*CheckResponse, error)
+	checkSpecificFn       func(principal, action, target string) (*CheckResponse, error)
+	checkAnyTargetFn      func(principal, action string) (*CheckResponse, error)
 	checkCounterfactualFn func(principal, action, target string, removed []RemovedStatement) (*CheckResponse, error)
+	listGrantsFn          func() (*ListGrantsResponse, error)
 }
 
 func (m *mockHandler) CheckSpecific(principal, action, target string) (*CheckResponse, error) {
@@ -28,6 +29,13 @@ func (m *mockHandler) CheckAnyTarget(principal, action string) (*CheckResponse, 
 
 func (m *mockHandler) CheckCounterfactual(principal, action, target string, removed []RemovedStatement) (*CheckResponse, error) {
 	return m.checkCounterfactualFn(principal, action, target, removed)
+}
+
+func (m *mockHandler) ListGrants() (*ListGrantsResponse, error) {
+	if m.listGrantsFn != nil {
+		return m.listGrantsFn()
+	}
+	return &ListGrantsResponse{Entries: []ListGrantsEntry{}}, nil
 }
 
 func newAllowHandler() *mockHandler {
@@ -203,6 +211,36 @@ func TestEmptyLines(t *testing.T) {
 	input := "\n\n" + `{"type":"handshake","version":"1.0"}` + "\n\n" + `{"type":"shutdown"}` + "\n"
 	lines := runProtocol(t, input, newAllowHandler())
 	require.Len(t, lines, 1, "empty lines should be skipped")
+}
+
+func TestListGrants(t *testing.T) {
+	input := `{"type":"list_grants"}` + "\n" + `{"type":"shutdown"}` + "\n"
+	h := newAllowHandler()
+	h.listGrantsFn = func() (*ListGrantsResponse, error) {
+		return &ListGrantsResponse{Entries: []ListGrantsEntry{
+			{Principal: "arn:aws:iam::111:role/A", EffectiveStatements: []ListGrantsStatement{
+				{Effect: "Allow", Action: "*", Resource: "*"},
+			}},
+		}}, nil
+	}
+	lines := runProtocol(t, input, h)
+	require.Len(t, lines, 1)
+
+	var resp ListGrantsResponse
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &resp))
+	require.Len(t, resp.Entries, 1)
+	assert.Equal(t, "arn:aws:iam::111:role/A", resp.Entries[0].Principal)
+	require.Len(t, resp.Entries[0].EffectiveStatements, 1)
+	assert.Equal(t, "Allow", resp.Entries[0].EffectiveStatements[0].Effect)
+}
+
+func TestListGrants_Advertised(t *testing.T) {
+	lines := runProtocol(t, `{"type":"handshake","version":"1.0"}`+"\n"+`{"type":"shutdown"}`+"\n", newAllowHandler())
+	require.Len(t, lines, 1)
+
+	var resp HandshakeResponse
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &resp))
+	assert.Contains(t, resp.Capabilities, "list_grants")
 }
 
 func TestHandlerError(t *testing.T) {
