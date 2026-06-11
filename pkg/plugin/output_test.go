@@ -57,6 +57,66 @@ func TestExtractProofSidecar_PointerRisk(t *testing.T) {
 	assert.Equal(t, "example.cloudfront.net", entries[0].TargetName)
 }
 
+func TestExtractProofSidecar_NilPointerRisk(t *testing.T) {
+	var risk *capmodel.Risk
+
+	require.NotPanics(t, func() {
+		entries := ExtractProofSidecar([]model.AurelianModel{risk})
+		assert.Empty(t, entries)
+	})
+}
+
+// A typed-nil *capmodel.Risk appearing before a valid risk must be skipped
+// without panicking, and the valid risk that follows it must still be emitted.
+// This proves the nil guard's `continue` does not halt iteration.
+func TestExtractProofSidecar_MixedNilAndValid(t *testing.T) {
+	var nilRisk *capmodel.Risk
+	valid := newTestRisk(t)
+
+	var entries []ProofSidecarEntry
+	require.NotPanics(t, func() {
+		entries = ExtractProofSidecar([]model.AurelianModel{nilRisk, valid})
+	})
+
+	require.Len(t, entries, 1)
+	assert.Equal(t, "example.cloudfront.net", entries[0].TargetName)
+	assert.Equal(t, "CloudFront S3 Origin Takeover", entries[0].Name)
+}
+
+// With a typed-nil pointer and other skip-worthy results interleaved between two
+// valid risks, both valid risks must be emitted in order. This confirms every
+// `continue` (nil pointer, non-risk type, empty proof) targets the loop, so a
+// later valid entry is always reached.
+func TestExtractProofSidecar_NilDoesNotHaltIteration(t *testing.T) {
+	var nilRisk *capmodel.Risk
+
+	validA := newTestRisk(t)
+	validA.TargetName = "a.cloudfront.net"
+
+	validB := newTestRisk(t)
+	validB.TargetName = "b.cloudfront.net"
+
+	emptyProof := newTestRisk(t)
+	emptyProof.Proof = nil
+
+	type dummy struct{ Foo string }
+
+	var entries []ProofSidecarEntry
+	require.NotPanics(t, func() {
+		entries = ExtractProofSidecar([]model.AurelianModel{
+			validA,
+			nilRisk,
+			dummy{Foo: "bar"},
+			emptyProof,
+			validB,
+		})
+	})
+
+	require.Len(t, entries, 2)
+	assert.Equal(t, "a.cloudfront.net", entries[0].TargetName, "first valid risk emitted")
+	assert.Equal(t, "b.cloudfront.net", entries[1].TargetName, "valid risk after the nil/junk entries still reached")
+}
+
 func TestExtractProofSidecar_NonRiskIgnored(t *testing.T) {
 	type dummy struct{ Foo string }
 

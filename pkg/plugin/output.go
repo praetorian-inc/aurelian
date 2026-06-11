@@ -65,6 +65,9 @@ func ExtractProofSidecar(results []model.AurelianModel) []ProofSidecarEntry {
 		case capmodel.Risk:
 			risk = v
 		case *capmodel.Risk:
+			if v == nil {
+				continue
+			}
 			risk = *v
 		default:
 			continue
