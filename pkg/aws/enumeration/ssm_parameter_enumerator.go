@@ -20,13 +20,15 @@ import (
 // the correct storage location for secrets and requires kms:Decrypt to read.
 type SSMParameterEnumerator struct {
 	plugin.AWSCommonRecon
-	provider *AWSConfigProvider
+	provider   *AWSConfigProvider
+	skipReport *SkipReport
 }
 
-func NewSSMParameterEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider) *SSMParameterEnumerator {
+func NewSSMParameterEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider, skipReport *SkipReport) *SSMParameterEnumerator {
 	return &SSMParameterEnumerator{
 		AWSCommonRecon: opts,
 		provider:       provider,
+		skipReport:     skipReport,
 	}
 }
 
@@ -87,6 +89,10 @@ func (e *SSMParameterEnumerator) EnumerateByARN(arn string, out *pipeline.P[outp
 		},
 	})
 	if err != nil {
+		if op := ClassifySkippable(err, "ssm", "DescribeParameters", parsed.Region); op != nil {
+			e.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return fmt.Errorf("describe parameter %s: %w", paramName, err)
 	}
 
@@ -128,9 +134,14 @@ func (e *SSMParameterEnumerator) listParametersInRegion(region, accountID string
 		},
 	})
 
+	var skipped []SkippedOp
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(context.Background())
 		if err != nil {
+			if op := ClassifySkippable(err, "ssm", "DescribeParameters", region); op != nil {
+				skipped = append(skipped, *op)
+				break
+			}
 			return fmt.Errorf("describe parameters in %s: %w", region, err)
 		}
 
@@ -154,5 +165,6 @@ func (e *SSMParameterEnumerator) listParametersInRegion(region, accountID string
 			})
 		}
 	}
+	e.skipReport.RecordBatch(skipped)
 	return nil
 }
