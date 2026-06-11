@@ -1,9 +1,9 @@
 package recon
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/enrichment"
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
@@ -12,6 +12,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/publicresource"
 )
 
 func init() {
@@ -117,24 +118,50 @@ func riskFromResult(r publicaccess.PublicAccessResult, out *pipeline.P[model.Aur
 		return nil
 	}
 
-	resourceID := r.AWSResource.ResourceID
-	impactedARN := r.AWSResource.ARN
-	if impactedARN == "" {
-		impactedARN = resourceID
+	res := r.AWSResource
+	resourceID := res.ARN
+	if resourceID == "" {
+		resourceID = res.ResourceID
 	}
 
-	r.AWSResource = nil
-	ctx, err := json.Marshal(r)
+	risk, err := publicresource.NewRisk(publicresource.PublicResource{
+		Provider:     "AWS",
+		RiskName:     "public-aws-resource",
+		ResourceType: res.ResourceType,
+		ResourceID:   resourceID,
+		ResourceName: res.DisplayName,
+		Region:       res.Region,
+		Scope:        res.AccountRef,
+		ScopeLabel:   "AWS Account",
+		Severity:     severity,
+		Summary:      awsSummary(res, severity),
+		Exposure: []publicresource.Fact{
+			{Key: "Access Level", Value: string(res.AccessLevel)},
+			{Key: "Public", Value: strconv.FormatBool(r.IsPublic)},
+			{Key: "Needs Manual Triage", Value: strconv.FormatBool(r.NeedsManualTriage)},
+		},
+		Lists: []publicresource.NamedList{
+			{Title: "Allowed Actions", Items: r.AllowedActions},
+			{Title: "Evaluation Reasons", Items: r.EvaluationReasons},
+			{Title: "Public Endpoints", Items: append(append([]string{}, res.URLs...), res.IPs...)},
+		},
+		Properties: res.Properties,
+	})
 	if err != nil {
-		slog.Warn("failed to build risk context", "resource", resourceID, "error", err)
+		slog.Warn("failed to build public resource risk", "resource", resourceID, "error", err)
 		return nil
 	}
 
-	out.Send(output.AurelianRisk{
-		Name:        "public-aws-resource",
-		Severity:    severity,
-		ImpactedResourceID: impactedARN,
-		Context:     ctx,
-	})
+	out.Send(risk)
 	return nil
+}
+
+// awsSummary describes the exposure for the proof's Summary section.
+func awsSummary(res *output.AWSResource, severity output.RiskSeverity) string {
+	if severity == output.RiskSeverityMedium {
+		return fmt.Sprintf("AWS resource %s (%s) in account %s may be publicly accessible and requires manual triage.",
+			res.ResourceID, res.ResourceType, res.AccountRef)
+	}
+	return fmt.Sprintf("AWS resource %s (%s) in account %s is publicly accessible.",
+		res.ResourceID, res.ResourceType, res.AccountRef)
 }

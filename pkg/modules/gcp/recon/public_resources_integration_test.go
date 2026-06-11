@@ -13,9 +13,44 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
+	"github.com/praetorian-inc/capability-sdk/pkg/capmodel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// decodeProof unmarshals a Risk's proof bytes into a structured capmodel.Proof.
+func decodeProof(t *testing.T, risk capmodel.Risk) capmodel.Proof {
+	t.Helper()
+	var proof capmodel.Proof
+	require.NoError(t, json.Unmarshal(risk.Proof, &proof), "proof should decode into capmodel.Proof")
+	return proof
+}
+
+// sectionByTitle returns the named proof section, failing if it is absent.
+func sectionByTitle(t *testing.T, proof capmodel.Proof, title string) capmodel.ProofSection {
+	t.Helper()
+	for _, s := range proof.Sections {
+		if s.Title == title {
+			return s
+		}
+	}
+	require.Failf(t, "section not found", "proof has no %q section", title)
+	return capmodel.ProofSection{}
+}
+
+// keyValueMap flattens a section's key/value rows into a map for assertions.
+func keyValueMap(section capmodel.ProofSection) map[string]string {
+	out := make(map[string]string)
+	for _, el := range section.Elements {
+		if el.KeyValue == nil {
+			continue
+		}
+		for _, row := range el.KeyValue.Rows {
+			out[row.Key] = row.Value
+		}
+	}
+	return out
+}
 
 func TestGCPPublicResources(t *testing.T) {
 	fixture := testutil.NewGCPFixture(t, "gcp/recon/list")
@@ -50,12 +85,12 @@ func TestGCPPublicResources(t *testing.T) {
 	pipeline.Pipe(p1, mod.Run, p2)
 
 	var resources []output.GCPResource
-	var risks []output.AurelianRisk
+	var risks []capmodel.Risk
 	for m := range p2.Range() {
 		switch v := m.(type) {
 		case output.GCPResource:
 			resources = append(resources, v)
-		case output.AurelianRisk:
+		case capmodel.Risk:
 			risks = append(risks, v)
 		}
 	}
@@ -65,24 +100,25 @@ func TestGCPPublicResources(t *testing.T) {
 	t.Run("risk fields are populated", func(t *testing.T) {
 		for _, risk := range risks {
 			assert.NotEmpty(t, risk.Name, "risk Name must be set")
-			assert.Contains(t,
-				[]output.RiskSeverity{output.RiskSeverityHigh, output.RiskSeverityMedium},
-				risk.Severity,
-				"unexpected risk severity: %s", risk.Severity)
-			assert.NotEmpty(t, risk.ImpactedResourceID, "risk ImpactedResourceID must be set")
-			assert.NotEmpty(t, risk.Context, "risk Context must be set")
+			assert.Equal(t, "aurelian", risk.Source)
+			assert.Contains(t, []string{"TH", "TM"}, risk.Status,
+				"unexpected risk status: %s", risk.Status)
+			assert.NotEmpty(t, risk.TargetName, "risk TargetName must be set")
+			assert.NotEmpty(t, risk.Proof, "risk Proof must be set")
 		}
 	})
 
 	t.Run("risk context contains expected fields", func(t *testing.T) {
 		for _, risk := range risks {
-			var ctx map[string]any
-			require.NoError(t, json.Unmarshal(risk.Context, &ctx))
-			assert.Contains(t, ctx, "resourceType")
-			assert.Contains(t, ctx, "resourceID")
-			assert.Contains(t, ctx, "projectID")
-			assert.Contains(t, ctx, "publicNetwork")
-			assert.Contains(t, ctx, "anonymousAccess")
+			proof := decodeProof(t, risk)
+			assert.Equal(t, "v1.0.0", proof.Format)
+			resource := keyValueMap(sectionByTitle(t, proof, "Resource"))
+			assert.NotEmpty(t, resource["Resource Type"])
+			assert.NotEmpty(t, resource["Resource ID"])
+			assert.NotEmpty(t, resource["GCP Project"])
+			exposure := keyValueMap(sectionByTitle(t, proof, "Exposure"))
+			assert.Contains(t, exposure, "Public Network")
+			assert.Contains(t, exposure, "Anonymous Access")
 		}
 	})
 
@@ -119,18 +155,18 @@ func TestGCPPublicResources(t *testing.T) {
 		publicRunName := fixture.Output("cloud_run_public_name")
 		privateRunName := fixture.Output("cloud_run_private_name")
 
-		// Public Cloud Run (allUsers invoker) should have HIGH severity (public + anonymous).
+		// Public Cloud Run (allUsers invoker) should be HIGH severity (public + anonymous).
 		assert.Truef(t, hasRiskForNamedResource(resources, risks, publicRunName),
 			"expected risk for public cloud run service %q", publicRunName)
 
 		// Private Cloud Run still gets a public URL from GCP, so it's flagged as
-		// "public-gcp-resource" (MEDIUM). Both should have risks, but severity differs.
+		// "public-gcp-resource" (MEDIUM). Both should have risks, but status differs.
 		publicRisk := findRiskForNamedResource(resources, risks, publicRunName)
 		privateRisk := findRiskForNamedResource(resources, risks, privateRunName)
 		if publicRisk != nil && privateRisk != nil {
-			assert.Equal(t, output.RiskSeverityHigh, publicRisk.Severity,
+			assert.Equal(t, "TH", publicRisk.Status,
 				"public cloud run with allUsers should be HIGH")
-			assert.Equal(t, output.RiskSeverityMedium, privateRisk.Severity,
+			assert.Equal(t, "TM", privateRisk.Status,
 				"private cloud run (URL only) should be MEDIUM")
 		}
 	})
@@ -165,17 +201,17 @@ func TestGCPPublicResources(t *testing.T) {
 }
 
 // hasRiskForNamedResource finds a resource by display name, then checks if
-// there's a matching risk by ResourceID. This handles resources whose
+// there's a matching risk by TargetName. This handles resources whose
 // ResourceID is a numeric ID rather than a name.
-func hasRiskForNamedResource(resources []output.GCPResource, risks []output.AurelianRisk, name string) bool {
+func hasRiskForNamedResource(resources []output.GCPResource, risks []capmodel.Risk, name string) bool {
 	return findRiskForNamedResource(resources, risks, name) != nil
 }
 
-func findRiskForNamedResource(resources []output.GCPResource, risks []output.AurelianRisk, name string) *output.AurelianRisk {
+func findRiskForNamedResource(resources []output.GCPResource, risks []capmodel.Risk, name string) *capmodel.Risk {
 	for _, r := range resources {
 		if containsName(r, name) {
 			for i, risk := range risks {
-				if risk.ImpactedResourceID == r.ResourceID {
+				if risk.TargetName == r.ResourceID {
 					return &risks[i]
 				}
 			}
@@ -184,4 +220,3 @@ func findRiskForNamedResource(resources []output.GCPResource, risks []output.Aur
 	}
 	return nil
 }
-

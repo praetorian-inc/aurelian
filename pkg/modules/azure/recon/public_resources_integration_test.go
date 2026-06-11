@@ -8,12 +8,46 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
+	"github.com/praetorian-inc/capability-sdk/pkg/capmodel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// decodeProof unmarshals a Risk's proof bytes into a structured capmodel.Proof.
+func decodeProof(t *testing.T, risk capmodel.Risk) capmodel.Proof {
+	t.Helper()
+	var proof capmodel.Proof
+	require.NoError(t, json.Unmarshal(risk.Proof, &proof), "proof should decode into capmodel.Proof")
+	return proof
+}
+
+// sectionByTitle returns the named proof section, failing if it is absent.
+func sectionByTitle(t *testing.T, proof capmodel.Proof, title string) capmodel.ProofSection {
+	t.Helper()
+	for _, s := range proof.Sections {
+		if s.Title == title {
+			return s
+		}
+	}
+	require.Failf(t, "section not found", "proof has no %q section", title)
+	return capmodel.ProofSection{}
+}
+
+// keyValueMap flattens a section's key/value rows into a map for assertions.
+func keyValueMap(section capmodel.ProofSection) map[string]string {
+	out := make(map[string]string)
+	for _, el := range section.Elements {
+		if el.KeyValue == nil {
+			continue
+		}
+		for _, row := range el.KeyValue.Rows {
+			out[row.Key] = row.Value
+		}
+	}
+	return out
+}
 
 func TestAzurePublicResources(t *testing.T) {
 	fixture := testutil.NewAzureFixture(t, "azure/recon/public-resources")
@@ -39,28 +73,27 @@ func TestAzurePublicResources(t *testing.T) {
 	// Index risks by template ID for precise assertions.
 	// =====================================================================
 
-	type riskWithContext struct {
-		Risk       output.AurelianRisk
-		CtxMap     map[string]any
+	type riskWithProof struct {
+		Risk       capmodel.Risk
+		Proof      capmodel.Proof
 		Template   string
 		ResourceID string
 	}
 
-	var all []riskWithContext
-	byTemplate := make(map[string][]riskWithContext)
+	var all []riskWithProof
+	byTemplate := make(map[string][]riskWithProof)
 	for _, r := range results {
-		risk, ok := r.(output.AurelianRisk)
+		risk, ok := r.(capmodel.Risk)
 		if !ok {
 			continue
 		}
-		var ctx map[string]any
-		require.NoError(t, json.Unmarshal(risk.Context, &ctx))
-		tid, _ := ctx["templateId"].(string)
-		rc := riskWithContext{
+		proof := decodeProof(t, risk)
+		tid := keyValueMap(sectionByTitle(t, proof, "Exposure"))["Template ID"]
+		rc := riskWithProof{
 			Risk:       risk,
-			CtxMap:     ctx,
+			Proof:      proof,
 			Template:   tid,
-			ResourceID: risk.ImpactedResourceID,
+			ResourceID: risk.TargetName,
 		}
 		all = append(all, rc)
 		byTemplate[tid] = append(byTemplate[tid], rc)
@@ -74,7 +107,7 @@ func TestAzurePublicResources(t *testing.T) {
 	}
 
 	// Helper: find a risk for a specific fixture resource within a template.
-	findRisk := func(t *testing.T, templateID, fixtureResourceIDKey string) riskWithContext {
+	findRisk := func(t *testing.T, templateID, fixtureResourceIDKey string) riskWithProof {
 		t.Helper()
 		expectedID := strings.ToLower(fixture.Output(fixtureResourceIDKey))
 		require.NotEmpty(t, expectedID, "fixture output %q is empty", fixtureResourceIDKey)
@@ -87,23 +120,24 @@ func TestAzurePublicResources(t *testing.T) {
 		}
 		t.Fatalf("template %q has %d findings but none match fixture resource %q (%s)",
 			templateID, len(risks), expectedID, fixtureResourceIDKey)
-		return riskWithContext{} // unreachable
+		return riskWithProof{} // unreachable
 	}
 
 	// Helper: assert a specific risk's common fields.
 	// resourceNameSubstr is an environment-agnostic suffix (e.g., "-kv", "sa", "-aks")
-	// that must appear in the ImpactedResourceID to confirm the right resource was caught.
-	assertRisk := func(t *testing.T, rc riskWithContext, expectedTemplate string, expectedSeverity output.RiskSeverity, resourceNameSubstr string) {
+	// that must appear in the TargetName to confirm the right resource was caught.
+	assertRisk := func(t *testing.T, rc riskWithProof, expectedTemplate, expectedStatus, resourceNameSubstr string) {
 		t.Helper()
 		assert.Equal(t, "public-azure-resource", rc.Risk.Name)
-		assert.Equal(t, expectedSeverity, rc.Risk.Severity,
-			"template %s: expected severity %s, got %s", expectedTemplate, expectedSeverity, rc.Risk.Severity)
+		assert.Equal(t, "aurelian", rc.Risk.Source)
+		assert.Equal(t, expectedStatus, rc.Risk.Status,
+			"template %s: expected status %s, got %s", expectedTemplate, expectedStatus, rc.Risk.Status)
 		assert.Equal(t, expectedTemplate, rc.Template)
-		assert.NotEmpty(t, rc.Risk.ImpactedResourceID)
-		assert.NotEmpty(t, rc.Risk.Context)
-		assert.Contains(t, strings.ToLower(rc.Risk.ImpactedResourceID), strings.ToLower(resourceNameSubstr),
-			"template %s: ImpactedResourceID %q should contain resource name substring %q",
-			expectedTemplate, rc.Risk.ImpactedResourceID, resourceNameSubstr)
+		assert.NotEmpty(t, rc.Risk.TargetName)
+		assert.NotEmpty(t, rc.Risk.Proof)
+		assert.Contains(t, strings.ToLower(rc.Risk.TargetName), strings.ToLower(resourceNameSubstr),
+			"template %s: TargetName %q should contain resource name substring %q",
+			expectedTemplate, rc.Risk.TargetName, resourceNameSubstr)
 	}
 
 	// Per-template assertions: verify each template found the expected fixture resource
@@ -111,48 +145,52 @@ func TestAzurePublicResources(t *testing.T) {
 	templateTests := []struct {
 		templateID string
 		fixtureKey string
-		severity   output.RiskSeverity
+		status     string
 		substr     string
 		optional   bool // skip if fixture output is missing
 	}{
 		// Storage & Data
-		{"storage_accounts_public_access", "storage_account_id", output.RiskSeverityHigh, "sa", false},
-		{"key_vault_public_access", "key_vault_id", output.RiskSeverityHigh, "-kv", false},
-		{"cosmos_db_public_access", "cosmos_db_id", output.RiskSeverityHigh, "-cosmos", false},
-		{"redis_cache_public_access", "redis_cache_id", output.RiskSeverityLow, "-redis", false},
-		{"app_configuration_public_access", "app_configuration_id", output.RiskSeverityMedium, "-appconf", false},
+		{"storage_accounts_public_access", "storage_account_id", "TH", "sa", false},
+		{"key_vault_public_access", "key_vault_id", "TH", "-kv", false},
+		{"cosmos_db_public_access", "cosmos_db_id", "TH", "-cosmos", false},
+		{"app_configuration_public_access", "app_configuration_id", "TM", "-appconf", false},
+		// NOTE: redis_cache_public_access is intentionally NOT tested live. Classic
+		// Azure Cache for Redis (Microsoft.Cache/Redis) — the only type the
+		// redis_cache_public_access template matches — can no longer be created
+		// account-wide following the Azure Cache for Redis retirement (HTTP 400,
+		// reproduced in eastus2 and westus2). The fixture no longer provisions it.
 		// Databases
-		{"sql_servers_public_access", "sql_server_id", output.RiskSeverityHigh, "-w-sql", true},
-		{"postgresql_flexible_server_public_access", "postgresql_server_id", output.RiskSeverityMedium, "-pg", false},
+		{"sql_servers_public_access", "sql_server_id", "TH", "-w-sql", true},
+		{"postgresql_flexible_server_public_access", "postgresql_server_id", "TM", "-pg", false},
 		// Container & Registry
-		{"container_registries_public_access", "acr_id", output.RiskSeverityHigh, "acr", false},
-		{"acr_anonymous_pull_access", "acr_anon_pull_id", output.RiskSeverityHigh, "acranon", false},
-		{"container_apps_public_access", "container_app_id", output.RiskSeverityMedium, "-w-ca", true},
-		{"container_instances_public_access", "container_instance_id", output.RiskSeverityMedium, "-ci", false},
-		{"aks_public_access", "aks_id", output.RiskSeverityHigh, "-aks", false},
+		{"container_registries_public_access", "acr_id", "TH", "acr", false},
+		{"acr_anonymous_pull_access", "acr_anon_pull_id", "TH", "acranon", false},
+		{"container_apps_public_access", "container_app_id", "TM", "-w-ca", true},
+		{"container_instances_public_access", "container_instance_id", "TM", "-ci", false},
+		{"aks_public_access", "aks_id", "TH", "-aks", false},
 		// AI & Search
-		{"cognitive_services_public_access", "cognitive_account_id", output.RiskSeverityMedium, "-cog", false},
-		{"search_service_public_access", "search_service_id", output.RiskSeverityMedium, "-search", false},
+		{"cognitive_services_public_access", "cognitive_account_id", "TM", "-cog", false},
+		{"search_service_public_access", "search_service_id", "TM", "-search", false},
 		// Compute
-		{"virtual_machines_public_access", "virtual_machine_id", output.RiskSeverityHigh, "-vm", false},
-		{"databricks_public_access", "databricks_workspace_id", output.RiskSeverityMedium, "-dbw", false},
+		{"virtual_machines_public_access", "virtual_machine_id", "TH", "-vm", false},
+		{"databricks_public_access", "databricks_workspace_id", "TM", "-dbw", false},
 		// IoT & Messaging
-		{"iot_hub_public_access", "iot_hub_id", output.RiskSeverityMedium, "-iot", false},
-		{"event_grid_topics_public_access", "event_grid_topic_id", output.RiskSeverityMedium, "-egt", false},
-		{"notification_hubs_public_access", "notification_hub_namespace_id", output.RiskSeverityMedium, "-nhns", false},
-		{"service_bus_public_access", "service_bus_id", output.RiskSeverityLow, "-sbus", false},
-		{"event_hub_public_access", "event_hub_id", output.RiskSeverityHigh, "-eh", false},
+		{"iot_hub_public_access", "iot_hub_id", "TM", "-iot", false},
+		{"event_grid_topics_public_access", "event_grid_topic_id", "TM", "-egt", false},
+		{"notification_hubs_public_access", "notification_hub_namespace_id", "TM", "-nhns", false},
+		{"service_bus_public_access", "service_bus_id", "TL", "-sbus", false},
+		{"event_hub_public_access", "event_hub_id", "TH", "-eh", false},
 		// Analytics & Integration
-		{"synapse_public_access", "synapse_workspace_id", output.RiskSeverityMedium, "-w-syn", true},
-		{"ml_workspace_public_access", "ml_workspace_id", output.RiskSeverityMedium, "-w-mlw", true},
-		{"logic_apps_public_access", "logic_app_id", output.RiskSeverityMedium, "-la", false},
-		{"data_factory_public_access", "data_factory_id", output.RiskSeverityLow, "-adf", false},
-		{"log_analytics_public_access", "log_analytics_id", output.RiskSeverityLow, "-law", false},
-		{"data_explorer_public_access", "kusto_cluster_id", output.RiskSeverityMedium, "kusto", false},
+		{"synapse_public_access", "synapse_workspace_id", "TM", "-w-syn", true},
+		{"ml_workspace_public_access", "ml_workspace_id", "TM", "-w-mlw", true},
+		{"logic_apps_public_access", "logic_app_id", "TM", "-la", false},
+		{"data_factory_public_access", "data_factory_id", "TL", "-adf", false},
+		{"log_analytics_public_access", "log_analytics_id", "TL", "-law", false},
+		{"data_explorer_public_access", "kusto_cluster_id", "TM", "kusto", false},
 		// Networking
-		{"api_management_public_access", "api_management_id", output.RiskSeverityMedium, "-apim", false},
-		{"load_balancers_public", "load_balancer_id", output.RiskSeverityHigh, "-lb", false},
-		{"application_gateway_public_access", "application_gateway_id", output.RiskSeverityMedium, "-appgw", false},
+		{"api_management_public_access", "api_management_id", "TM", "-apim", false},
+		{"load_balancers_public", "load_balancer_id", "TH", "-lb", false},
+		{"application_gateway_public_access", "application_gateway_id", "TM", "-appgw", false},
 	}
 
 	for _, tt := range templateTests {
@@ -161,7 +199,7 @@ func TestAzurePublicResources(t *testing.T) {
 				t.Skipf("%s not provisioned in this environment", tt.fixtureKey)
 			}
 			rc := findRisk(t, tt.templateID, tt.fixtureKey)
-			assertRisk(t, rc, tt.templateID, tt.severity, tt.substr)
+			assertRisk(t, rc, tt.templateID, tt.status, tt.substr)
 		})
 	}
 
@@ -213,52 +251,46 @@ func TestAzurePublicResources(t *testing.T) {
 		}
 	})
 
-	t.Run("all risks have valid severity", func(t *testing.T) {
-		validSeverities := map[output.RiskSeverity]bool{
-			output.RiskSeverityInfo: true, output.RiskSeverityLow: true,
-			output.RiskSeverityMedium: true, output.RiskSeverityHigh: true,
-			output.RiskSeverityCritical: true,
-		}
+	t.Run("all risks have valid status", func(t *testing.T) {
+		validStatuses := map[string]bool{"TI": true, "TL": true, "TM": true, "TH": true, "TC": true}
 		for _, rc := range all {
-			assert.True(t, validSeverities[rc.Risk.Severity],
-				"template %q: invalid severity %q", rc.Template, rc.Risk.Severity)
+			assert.True(t, validStatuses[rc.Risk.Status],
+				"template %q: invalid status %q", rc.Template, rc.Risk.Status)
 		}
 	})
 
-	t.Run("all risks have non-empty resource ID", func(t *testing.T) {
+	t.Run("all risks have non-empty target name", func(t *testing.T) {
 		for _, rc := range all {
-			assert.NotEmpty(t, rc.Risk.ImpactedResourceID,
-				"template %q: ImpactedResourceID must not be empty", rc.Template)
+			assert.NotEmpty(t, rc.Risk.TargetName,
+				"template %q: TargetName must not be empty", rc.Template)
 		}
 	})
 
-	t.Run("all risks have valid JSON context with templateId", func(t *testing.T) {
+	t.Run("all risks have a Template ID in the Exposure section", func(t *testing.T) {
 		for _, rc := range all {
 			assert.NotEmpty(t, rc.Template,
-				"risk context must contain templateId")
+				"proof Exposure section must contain a Template ID")
 		}
 	})
 
-	t.Run("all risks have resourceId in context", func(t *testing.T) {
+	t.Run("all risks have Resource ID matching TargetName", func(t *testing.T) {
 		for _, rc := range all {
-			resID, _ := rc.CtxMap["resourceId"].(string)
-			assert.NotEmpty(t, resID,
-				"template %q: context should contain resourceId", rc.Template)
+			resource := keyValueMap(sectionByTitle(t, rc.Proof, "Resource"))
+			assert.Equal(t, rc.Risk.TargetName, resource["Resource ID"],
+				"template %q: Resource ID row should match TargetName", rc.Template)
 		}
 	})
 
-	t.Run("most risks have resourceType in context", func(t *testing.T) {
+	t.Run("most risks have resource type populated", func(t *testing.T) {
 		withType := 0
 		for _, rc := range all {
-			resType, _ := rc.CtxMap["resourceType"].(string)
-			if resType != "" {
+			if keyValueMap(sectionByTitle(t, rc.Proof, "Resource"))["Resource Type"] != "" {
 				withType++
 			}
 		}
-		// At least 80% of findings should have resourceType populated.
 		ratio := float64(withType) / float64(len(all))
 		assert.Greater(t, ratio, 0.8,
-			"only %d/%d findings have resourceType in context", withType, len(all))
+			"only %d/%d findings have Resource Type populated", withType, len(all))
 	})
 
 	t.Run("no duplicate findings per resource per template", func(t *testing.T) {
@@ -273,16 +305,13 @@ func TestAzurePublicResources(t *testing.T) {
 		}
 	})
 
-	t.Run("severity distribution has all expected levels", func(t *testing.T) {
-		sevCounts := make(map[output.RiskSeverity]int)
+	t.Run("status distribution has all expected levels", func(t *testing.T) {
+		counts := make(map[string]int)
 		for _, rc := range all {
-			sevCounts[rc.Risk.Severity]++
+			counts[rc.Risk.Status]++
 		}
-		assert.Greater(t, sevCounts[output.RiskSeverityHigh], 0,
-			"should have at least one high severity finding")
-		assert.Greater(t, sevCounts[output.RiskSeverityMedium], 0,
-			"should have at least one medium severity finding")
-		assert.Greater(t, sevCounts[output.RiskSeverityLow], 0,
-			"should have at least one low severity finding")
+		assert.Greater(t, counts["TH"], 0, "should have at least one high severity finding")
+		assert.Greater(t, counts["TM"], 0, "should have at least one medium severity finding")
+		assert.Greater(t, counts["TL"], 0, "should have at least one low severity finding")
 	})
 }

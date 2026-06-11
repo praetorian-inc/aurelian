@@ -4,16 +4,15 @@ package recon
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/enrichers"
-	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
+	"github.com/praetorian-inc/capability-sdk/pkg/capmodel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -50,9 +49,9 @@ func TestAWSPublicResources(t *testing.T) {
 	p2 := pipeline.New[model.AurelianModel]()
 	pipeline.Pipe(p1, mod.Run, p2)
 
-	var risks []output.AurelianRisk
+	var risks []capmodel.Risk
 	for m := range p2.Range() {
-		if r, ok := m.(output.AurelianRisk); ok {
+		if r, ok := m.(capmodel.Risk); ok {
 			risks = append(risks, r)
 		}
 	}
@@ -61,9 +60,10 @@ func TestAWSPublicResources(t *testing.T) {
 
 	for _, risk := range risks {
 		assert.Equal(t, "public-aws-resource", risk.Name)
-		assert.Contains(t, []output.RiskSeverity{output.RiskSeverityHigh, output.RiskSeverityMedium}, risk.Severity)
-		assert.NotContains(t, string(risk.Context), "aws_resource")
-		assert.NotEmpty(t, risk.ImpactedResourceID)
+		assert.Equal(t, "aurelian", risk.Source)
+		assert.Contains(t, []string{"TH", "TM"}, risk.Status)
+		assert.NotEmpty(t, risk.TargetName)
+		assert.NotEmpty(t, risk.Proof)
 	}
 
 	expectedImpactedResources := []string{
@@ -90,18 +90,13 @@ func TestAWSPublicResources(t *testing.T) {
 	hasInvokeFunctionURL := false
 	hasAmplifyGetApp := false
 	for _, risk := range risks {
-		var ctx struct {
-			AllowedActions []string `json:"allowed_actions"`
-		}
-		require.NoError(t, json.Unmarshal(risk.Context, &ctx))
-		for _, action := range ctx.AllowedActions {
-			if action == "lambda:InvokeFunction" {
+		for _, action := range optionalSectionLabels(t, risk, "Allowed Actions") {
+			switch action {
+			case "lambda:InvokeFunction":
 				hasInvokeFunction = true
-			}
-			if action == "lambda:InvokeFunctionUrl" {
+			case "lambda:InvokeFunctionUrl":
 				hasInvokeFunctionURL = true
-			}
-			if action == "amplify:GetApp" {
+			case "amplify:GetApp":
 				hasAmplifyGetApp = true
 			}
 		}
@@ -114,52 +109,63 @@ func TestAWSPublicResources(t *testing.T) {
 	amplifyAppID := fixture.Output("public_amplify_app_id")
 	amplifyRisk := findRiskForResource(risks, amplifyAppID)
 	if assert.NotNilf(t, amplifyRisk, "expected risk for Amplify app %s", amplifyAppID) {
-		assert.Equal(t, output.RiskSeverityHigh, amplifyRisk.Severity)
-		var ctx struct {
-			AllowedActions    []string `json:"allowed_actions"`
-			EvaluationReasons []string `json:"evaluation_reasons"`
-		}
-		require.NoError(t, json.Unmarshal(amplifyRisk.Context, &ctx))
-		assert.Contains(t, ctx.AllowedActions, "amplify:GetApp")
-		assert.NotEmpty(t, ctx.EvaluationReasons)
-		assert.Contains(t, ctx.EvaluationReasons[0], "publicly accessible branch URL(s)")
+		assert.Equal(t, "TH", amplifyRisk.Status)
+		assert.Contains(t, optionalSectionLabels(t, *amplifyRisk, "Allowed Actions"), "amplify:GetApp")
+		reasons := optionalSectionLabels(t, *amplifyRisk, "Evaluation Reasons")
+		require.NotEmpty(t, reasons)
+		assert.Contains(t, reasons[0], "publicly accessible branch URL(s)")
 	}
 
 	publicAMIID := fixture.Output("public_ami_id")
 	amiRisk := findRiskForResource(risks, publicAMIID)
 	if assert.NotNilf(t, amiRisk, "expected risk for public AMI %s", publicAMIID) {
-		assert.Contains(t, []output.RiskSeverity{output.RiskSeverityHigh, output.RiskSeverityMedium}, amiRisk.Severity)
-		var ctx struct {
-			AllowedActions    []string `json:"allowed_actions"`
-			EvaluationReasons []string `json:"evaluation_reasons"`
-		}
-		require.NoError(t, json.Unmarshal(amiRisk.Context, &ctx))
-		assert.Contains(t, ctx.AllowedActions, "ec2:RunInstances")
-		assert.NotEmpty(t, ctx.EvaluationReasons)
+		assert.Contains(t, []string{"TH", "TM"}, amiRisk.Status)
+		assert.Contains(t, optionalSectionLabels(t, *amiRisk, "Allowed Actions"), "ec2:RunInstances")
+		assert.NotEmpty(t, optionalSectionLabels(t, *amiRisk, "Evaluation Reasons"))
 	}
+
+	t.Run("proof carries the standardized public-resource structure", func(t *testing.T) {
+		proof := decodeProof(t, risks[0])
+		assert.Equal(t, "v1.0.0", proof.Format)
+		assert.NotEmpty(t, paragraphText(sectionByTitle(t, proof, "Summary")))
+		resource := keyValueMap(sectionByTitle(t, proof, "Resource"))
+		assert.Equal(t, risks[0].TargetName, resource["Resource ID"])
+		assert.NotEmpty(t, keyValueMap(sectionByTitle(t, proof, "Exposure")))
+	})
 }
 
-func findRiskForResource(risks []output.AurelianRisk, expected string) *output.AurelianRisk {
-	for _, risk := range risks {
-		if risk.ImpactedResourceID == expected ||
-			strings.HasSuffix(risk.ImpactedResourceID, "/"+expected) ||
-			strings.HasSuffix(risk.ImpactedResourceID, ":"+expected) ||
-			strings.Contains(risk.ImpactedResourceID, expected) {
-			return &risk
+// optionalSectionLabels returns the list labels of a proof section when present,
+// or nil when the section is absent (sectionByTitle fails on missing sections).
+func optionalSectionLabels(t *testing.T, risk capmodel.Risk, title string) []string {
+	t.Helper()
+	proof := decodeProof(t, risk)
+	for _, s := range proof.Sections {
+		if s.Title == title {
+			return listLabels(s)
 		}
 	}
 	return nil
 }
 
-func hasRiskForResource(risks []output.AurelianRisk, expected string) bool {
+func findRiskForResource(risks []capmodel.Risk, expected string) *capmodel.Risk {
+	for i := range risks {
+		id := risks[i].TargetName
+		if id == expected ||
+			strings.HasSuffix(id, "/"+expected) ||
+			strings.HasSuffix(id, ":"+expected) ||
+			strings.Contains(id, expected) {
+			return &risks[i]
+		}
+	}
+	return nil
+}
+
+func hasRiskForResource(risks []capmodel.Risk, expected string) bool {
 	for _, risk := range risks {
-		if risk.ImpactedResourceID == expected {
-			return true
-		}
-		if strings.HasSuffix(risk.ImpactedResourceID, "/"+expected) {
-			return true
-		}
-		if strings.HasSuffix(risk.ImpactedResourceID, ":"+expected) {
+		id := risk.TargetName
+		if id == expected ||
+			strings.HasSuffix(id, "/"+expected) ||
+			strings.HasSuffix(id, ":"+expected) {
 			return true
 		}
 	}

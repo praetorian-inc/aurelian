@@ -1,19 +1,22 @@
 package publicaccess
 
 import (
-	"encoding/json"
+	"fmt"
+	"log/slog"
+	"strconv"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/aurelian/pkg/publicresource"
 )
 
 // AccessEvaluator evaluates a GCPResource for public/anonymous access indicators
-// and emits both the resource and an AurelianRisk if applicable.
+// and emits both the resource and a capmodel.Risk if applicable.
 type AccessEvaluator struct{}
 
-// Evaluate sends the resource to out and, if public or anonymous access is detected,
-// also emits an AurelianRisk.
+// Evaluate sends the resource to out and, if public or anonymous access is
+// detected, also emits a standardized public-resource capmodel.Risk.
 func (e *AccessEvaluator) Evaluate(r output.GCPResource, out *pipeline.P[model.AurelianModel]) error {
 	out.Send(r)
 
@@ -28,35 +31,45 @@ func (e *AccessEvaluator) Evaluate(r output.GCPResource, out *pipeline.P[model.A
 	}
 
 	var severity output.RiskSeverity
-	var name string
+	var name, summary string
 	switch {
 	case hasPublicNetwork && hasAnonymousAccess:
-		severity = output.RiskSeverityHigh
-		name = "public-anonymous-gcp-resource"
+		severity, name = output.RiskSeverityHigh, "public-anonymous-gcp-resource"
+		summary = fmt.Sprintf("GCP resource %s (%s) in project %s is reachable from the internet and allows anonymous access.", r.ResourceID, r.ResourceType, r.ProjectID)
 	case hasAnonymousAccess:
-		severity = output.RiskSeverityMedium
-		name = "anonymous-gcp-resource"
+		severity, name = output.RiskSeverityMedium, "anonymous-gcp-resource"
+		summary = fmt.Sprintf("GCP resource %s (%s) in project %s allows anonymous access.", r.ResourceID, r.ResourceType, r.ProjectID)
 	default:
-		severity = output.RiskSeverityMedium
-		name = "public-gcp-resource"
+		severity, name = output.RiskSeverityMedium, "public-gcp-resource"
+		summary = fmt.Sprintf("GCP resource %s (%s) in project %s has public network exposure.", r.ResourceID, r.ResourceType, r.ProjectID)
 	}
 
-	ctx, _ := json.Marshal(map[string]any{
-		"resourceType":    r.ResourceType,
-		"resourceID":      r.ResourceID,
-		"projectID":       r.ProjectID,
-		"publicNetwork":   hasPublicNetwork,
-		"anonymousAccess": hasAnonymousAccess,
-		"ips":             r.IPs,
-		"urls":            r.URLs,
+	risk, err := publicresource.NewRisk(publicresource.PublicResource{
+		Provider:     "GCP",
+		RiskName:     name,
+		ResourceType: r.ResourceType,
+		ResourceID:   r.ResourceID,
+		ResourceName: r.DisplayName,
+		Region:       r.Location,
+		Scope:        r.ProjectID,
+		ScopeLabel:   "GCP Project",
+		Severity:     severity,
+		Summary:      summary,
+		Exposure: []publicresource.Fact{
+			{Key: "Public Network", Value: strconv.FormatBool(hasPublicNetwork)},
+			{Key: "Anonymous Access", Value: strconv.FormatBool(hasAnonymousAccess)},
+		},
+		Lists: []publicresource.NamedList{
+			{Title: "Public IPs", Items: r.IPs},
+			{Title: "Public URLs", Items: r.URLs},
+		},
+		Properties: r.Properties,
 	})
+	if err != nil {
+		slog.Warn("failed to build public resource risk", "resource", r.ResourceID, "error", err)
+		return nil
+	}
 
-	out.Send(output.AurelianRisk{
-		Name:        name,
-		Severity:    severity,
-		ImpactedResourceID: r.ResourceID,
-		Context:     ctx,
-	})
-
+	out.Send(risk)
 	return nil
 }

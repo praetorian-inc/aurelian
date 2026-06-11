@@ -1,8 +1,9 @@
 package recon
 
 import (
-	"encoding/json"
+	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/azure/resourcegraph"
 	"github.com/praetorian-inc/aurelian/pkg/azure/subscriptions"
@@ -11,6 +12,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/publicresource"
 	"github.com/praetorian-inc/aurelian/pkg/templates"
 	azuretemplates "github.com/praetorian-inc/aurelian/pkg/templates/azure/public-resources"
 )
@@ -122,17 +124,45 @@ func (m *AzurePublicResourcesModule) Run(_ plugin.Config, out *pipeline.P[model.
 }
 
 func resultToRisk(result templates.ARGQueryResult, out *pipeline.P[model.AurelianModel]) error {
-	ctx, err := json.Marshal(result)
+	tmpl := result.TemplateDetails
+	severity := output.RiskSeverityInfo
+	summary := fmt.Sprintf("Azure resource %s matched public-exposure query %s.", result.ResourceID, result.TemplateID)
+	exposure := []publicresource.Fact{{Key: "Template ID", Value: result.TemplateID}}
+	var references []string
+
+	if tmpl != nil {
+		severity = tmpl.Severity
+		if tmpl.Description != "" {
+			summary = tmpl.Description
+		}
+		references = tmpl.References
+		exposure = append(exposure,
+			publicresource.Fact{Key: "Template Name", Value: tmpl.Name},
+			publicresource.Fact{Key: "Category", Value: strings.Join(tmpl.Category, ", ")},
+			publicresource.Fact{Key: "Triage Notes", Value: tmpl.TriageNotes},
+		)
+	}
+
+	risk, err := publicresource.NewRisk(publicresource.PublicResource{
+		Provider:     "Azure",
+		RiskName:     "public-azure-resource",
+		ResourceType: result.ResourceType,
+		ResourceID:   result.ResourceID,
+		ResourceName: result.ResourceName,
+		Region:       result.Location,
+		Scope:        result.SubscriptionID,
+		ScopeLabel:   "Azure Subscription",
+		Severity:     severity,
+		Summary:      summary,
+		Exposure:     exposure,
+		References:   references,
+		Properties:   result.Properties,
+	})
 	if err != nil {
-		slog.Warn("failed to marshal risk context", "template", result.TemplateID, "error", err)
+		slog.Warn("failed to build public resource risk", "template", result.TemplateID, "error", err)
 		return nil
 	}
 
-	out.Send(output.AurelianRisk{
-		Name:        "public-azure-resource",
-		Severity:    result.TemplateDetails.Severity,
-		ImpactedResourceID: result.ResourceID,
-		Context:     ctx,
-	})
+	out.Send(risk)
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/capability-sdk/pkg/capmodel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -67,7 +68,9 @@ func TestEvaluate_BothPublicAndAnonymous_HighSeverity(t *testing.T) {
 	items, err := out.Collect()
 	require.NoError(t, err)
 	require.Len(t, items, 2)
-	risk, ok := items[1].(output.AurelianRisk)
+	risk, ok := items[1].(capmodel.Risk)
 	require.True(t, ok)
-	assert.Equal(t, output.RiskSeverityHigh, risk.Severity)
+	assert.Equal(t, "TH", risk.Status)
+	assert.Equal(t, "public-anonymous-gcp-resource", risk.Name)
+	assert.Equal(t, "id", risk.TargetName)
 }

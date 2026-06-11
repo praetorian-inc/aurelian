@@ -13,6 +13,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
+	"github.com/praetorian-inc/capability-sdk/pkg/capmodel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,12 +42,12 @@ func TestGCPListAllResources(t *testing.T) {
 	pipeline.Pipe(p1, mod.Run, p2)
 
 	var resources []output.GCPResource
-	var risks []output.AurelianRisk
+	var risks []capmodel.Risk
 	for m := range p2.Range() {
 		switch v := m.(type) {
 		case output.GCPResource:
 			resources = append(resources, v)
-		case output.AurelianRisk:
+		case capmodel.Risk:
 			risks = append(risks, v)
 		}
 	}
