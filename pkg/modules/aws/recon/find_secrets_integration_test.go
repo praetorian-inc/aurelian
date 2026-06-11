@@ -64,6 +64,7 @@ func TestAWSFindSecrets(t *testing.T) {
 		"CloudWatch Logs":    fixture.Output("log_group_name"),
 		"ECS Task Def":       fixture.Output("task_definition_arn"),
 		"SSM Document":       fixture.Output("ssm_document_name"),
+		"SSM Parameter":      fixture.Output("ssm_parameter_name"),
 		"Step Functions":     fixture.Output("state_machine_arn"),
 	}
 
@@ -73,6 +74,12 @@ func TestAWSFindSecrets(t *testing.T) {
 			assert.True(t, found, "expected a risk referencing %s (%s)", label, identifier)
 		})
 	}
+
+	t.Run("SecureString parameter is never scanned", func(t *testing.T) {
+		secureName := fixture.Output("ssm_securestring_name")
+		assert.False(t, hasRiskForIdentifier(risks, secureName),
+			"SecureString parameter %q must not produce a risk finding", secureName)
+	})
 
 	t.Run("all risks have aws-secret- prefix", func(t *testing.T) {
 		for _, risk := range risks {
