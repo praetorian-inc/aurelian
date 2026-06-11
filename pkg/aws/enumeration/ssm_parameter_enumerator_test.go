@@ -32,7 +32,7 @@ func TestSSMParameterEnumerator_ResourceType(t *testing.T) {
 	enum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{
 		Regions:     []string{"us-east-1"},
 		Concurrency: 2,
-	}, provider)
+	}, provider, NewSkipReport())
 
 	assert.Equal(t, "AWS::SSM::Parameter", enum.ResourceType())
 }
@@ -46,7 +46,7 @@ func TestNewEnumerator_RegistersSSMParameter(t *testing.T) {
 
 func TestSSMParameterEnumerator_EnumerateByARN_Errors(t *testing.T) {
 	provider := NewAWSConfigProvider(plugin.AWSCommonRecon{})
-	enum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, provider)
+	enum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, provider, NewSkipReport())
 	out := pipeline.New[output.AWSResource]()
 
 	t.Run("bad ARN returns error", func(t *testing.T) {
@@ -79,7 +79,7 @@ func TestSSMParameterEnumerator_EnumerateByARN_Errors(t *testing.T) {
 		}
 		secureProvider := NewAWSConfigProvider(plugin.AWSCommonRecon{})
 		secureProvider.configs["us-east-1"] = &fakeCfg
-		secureEnum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, secureProvider)
+		secureEnum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, secureProvider, NewSkipReport())
 
 		secureOut := pipeline.New[output.AWSResource]()
 		err := secureEnum.EnumerateByARN("arn:aws:ssm:us-east-1:123456789012:parameter/prefix/secure-param", secureOut)
@@ -100,7 +100,7 @@ func TestSSMParameterEnumerator_EnumerateByARN_Errors(t *testing.T) {
 		}
 		emptyNameProvider := NewAWSConfigProvider(plugin.AWSCommonRecon{})
 		emptyNameProvider.configs["us-east-1"] = &fakeCfg
-		emptyEnum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, emptyNameProvider)
+		emptyEnum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, emptyNameProvider, NewSkipReport())
 
 		emptyOut := pipeline.New[output.AWSResource]()
 		err := emptyEnum.EnumerateByARN("arn:aws:ssm:us-east-1:123456789012:parameter/my-param", emptyOut)
@@ -146,7 +146,7 @@ func TestSSMParameterEnumerator_EnumerateByARN_ParameterNames(t *testing.T) {
 			}
 			provider := NewAWSConfigProvider(plugin.AWSCommonRecon{})
 			provider.configs["us-east-1"] = &fakeCfg
-			enum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, provider)
+			enum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, provider, NewSkipReport())
 
 			out := pipeline.New[output.AWSResource]()
 			var enumErr error
@@ -174,7 +174,7 @@ func TestSSMParameterEnumerator_ListParametersInRegion(t *testing.T) {
 		}
 		provider := NewAWSConfigProvider(plugin.AWSCommonRecon{})
 		provider.configs["us-east-1"] = &fakeCfg
-		enum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, provider)
+		enum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, provider, NewSkipReport())
 
 		out := pipeline.New[output.AWSResource]()
 		var listErr error
@@ -204,7 +204,7 @@ func TestSSMParameterEnumerator_ListParametersInRegion(t *testing.T) {
 		}
 		provider := NewAWSConfigProvider(plugin.AWSCommonRecon{})
 		provider.configs["us-east-1"] = &fakeCfg
-		enum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, provider)
+		enum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, provider, NewSkipReport())
 
 		out := pipeline.New[output.AWSResource]()
 		go func() {
