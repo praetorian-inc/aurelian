@@ -266,6 +266,99 @@ func TestEvaluator_ListGrants(t *testing.T) {
 	assert.NotEmpty(t, dev.EffectiveStatements)
 }
 
+func TestEvaluator_ListGrants_IncludesGroups(t *testing.T) {
+	adminStmt := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
+	}
+	gaad := types.NewAuthorizationAccountDetails("111111111111",
+		nil, // no users
+		[]types.GroupDetail{{
+			Arn:       "arn:aws:iam::111111111111:group/Admins",
+			GroupName: "Admins",
+			GroupPolicyList: []types.InlinePolicy{
+				{PolicyName: "Admin", PolicyDocument: types.Policy{Statement: &adminStmt}},
+			},
+		}},
+		nil, // no roles
+		nil,
+	)
+	eval := NewEvaluator(gaad, nil, nil)
+	resp, err := eval.ListGrants()
+	require.NoError(t, err)
+
+	require.Len(t, resp.Entries, 1)
+	assert.Equal(t, "arn:aws:iam::111111111111:group/Admins", resp.Entries[0].Principal)
+	require.Len(t, resp.Entries[0].EffectiveStatements, 1)
+	assert.Equal(t, "Allow", resp.Entries[0].EffectiveStatements[0].Effect)
+}
+
+func TestEvaluator_ListGrants_EmptyGAAD(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
+	eval := NewEvaluator(gaad, nil, nil)
+	resp, err := eval.ListGrants()
+	require.NoError(t, err)
+	assert.Empty(t, resp.Entries)
+}
+
+func TestEvaluator_ListGrants_MixedAllowDeny(t *testing.T) {
+	stmts := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"s3:*"}, Resource: &types.DynaString{"*"}},
+		{Effect: "Deny", Action: &types.DynaString{"s3:DeleteBucket"}, Resource: &types.DynaString{"*"}},
+	}
+	gaad := types.NewAuthorizationAccountDetails("111111111111",
+		nil, nil,
+		[]types.RoleDetail{{
+			Arn:            "arn:aws:iam::111111111111:role/Mixed",
+			RoleName:       "Mixed",
+			RolePolicyList: []types.InlinePolicy{{PolicyName: "Mix", PolicyDocument: types.Policy{Statement: &stmts}}},
+		}},
+		nil,
+	)
+	eval := NewEvaluator(gaad, nil, nil)
+	resp, err := eval.ListGrants()
+	require.NoError(t, err)
+
+	require.Len(t, resp.Entries, 1)
+	allowCount := 0
+	denyCount := 0
+	for _, s := range resp.Entries[0].EffectiveStatements {
+		switch s.Effect {
+		case "Allow":
+			allowCount++
+		case "Deny":
+			denyCount++
+		}
+	}
+	assert.Equal(t, 1, allowCount, "should have 1 Allow")
+	assert.Equal(t, 1, denyCount, "should have 1 Deny")
+}
+
+func TestListGrants_EndToEnd(t *testing.T) {
+	eval := NewEvaluator(newTestGAAD(), nil, nil)
+	input := `{"type":"list_grants"}` + "\n" + `{"type":"shutdown"}` + "\n"
+
+	in := strings.NewReader(input)
+	var out bytes.Buffer
+	err := Serve(in, &out, eval)
+	require.NoError(t, err)
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	require.Len(t, lines, 1)
+
+	var resp ListGrantsResponse
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &resp))
+
+	// 2 users + 1 role from newTestGAAD
+	assert.Len(t, resp.Entries, 3)
+
+	// Verify Admin has statements
+	byPrincipal := make(map[string]ListGrantsEntry)
+	for _, e := range resp.Entries {
+		byPrincipal[e.Principal] = e
+	}
+	assert.NotEmpty(t, byPrincipal["arn:aws:iam::111111111111:role/Admin"].EffectiveStatements)
+}
+
 func TestWhoCanBulk_MixedResults(t *testing.T) {
 	// Admin can do iam:PutRolePolicy, Dev cannot.
 	eval := NewEvaluator(newTestGAAD(), nil, nil)
