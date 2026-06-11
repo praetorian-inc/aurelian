@@ -344,8 +344,9 @@ func (a *Neo4jAdapter) buildRelationshipMergeQuery(rel *graph.Relationship) stri
 	}
 	cypher += "})\n"
 
-	// MERGE the relationship
-	cypher += "MERGE (start)-[r:" + rel.Type + "]->(end)\n"
+	// MERGE the relationship (backtick-escape type names containing hyphens or other
+	// special characters that are not valid in bare Cypher relationship type syntax)
+	cypher += "MERGE (start)-[r:" + escapeLabel(rel.Type) + "]->(end)\n"
 	cypher += "SET r += rel.relProps\n"
 	cypher += "RETURN count(r) AS count"
 
@@ -395,7 +396,9 @@ func (a *Neo4jAdapter) Query(ctx context.Context, cypher string, params map[stri
 	}, nil
 }
 
-// Close releases database resources
+// Close releases database resources.
+// context.Background() is intentional: the graph.GraphDatabase interface defines
+// Close() without a context parameter, so no caller-supplied context is available.
 func (a *Neo4jAdapter) Close() error {
 	if a.driver != nil {
 		ctx := context.Background()

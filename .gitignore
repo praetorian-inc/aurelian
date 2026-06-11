@@ -36,3 +36,4 @@ docker-images
 .claude/.serena/
 .claude/.serena-warmup-status.json
 .claude/agent-memory/
+aurelian-binary

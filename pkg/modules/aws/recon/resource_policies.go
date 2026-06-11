@@ -54,6 +54,7 @@ func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, out *pipeline.P[model
 	c := m.ResourcePoliciesConfig
 
 	lister := cclist.NewEnumerator(c.AWSCommonRecon)
+	defer func() { _ = lister.Close() }()
 	collector := resourcepolicies.New(c.AWSCommonRecon)
 	resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, collector.SupportedResourceTypes())
 	if err != nil {
@@ -80,6 +81,7 @@ func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, out *pipeline.P[model
 	if err := collected.Wait(); err != nil {
 		return err
 	}
+
 	cfg.Success("collected %d resources with policies", count)
 	return nil
 }

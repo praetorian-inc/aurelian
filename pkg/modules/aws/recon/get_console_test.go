@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -162,6 +163,23 @@ func TestGetConsole_BuildConsoleURL(t *testing.T) {
 		_, err := buildConsoleURL(context.Background(), srv.URL, "AKID", "SECRET", "TOKEN", "federation-token", 3600)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "403")
+		assert.Contains(t, err.Error(), "forbidden", "error must include response body snippet for debuggability")
+	})
+
+	t.Run("federation endpoint returns long body - snippet is truncated", func(t *testing.T) {
+		longBody := strings.Repeat("x", 1024)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusBadGateway)
+			w.Write([]byte(longBody)) //nolint:errcheck
+		}))
+		defer srv.Close()
+
+		_, err := buildConsoleURL(context.Background(), srv.URL, "AKID", "SECRET", "TOKEN", "federation-token", 3600)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "502")
+		assert.Contains(t, err.Error(), "...", "long body snippet must be truncated with ellipsis")
+		// 512 char snippet + "..." + the prefix "federation endpoint returned status 502 Bad Gateway: " should be well under the full 1024-char body.
+		assert.Less(t, len(err.Error()), len(longBody), "error must be bounded, not contain the full body")
 	})
 
 	t.Run("federation endpoint returns empty SigninToken", func(t *testing.T) {

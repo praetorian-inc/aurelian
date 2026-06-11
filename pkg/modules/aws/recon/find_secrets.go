@@ -91,6 +91,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	}
 
 	lister := cclist.NewEnumerator(c.AWSCommonRecon)
+	defer func() { _ = lister.Close() }()
 	inputPipeline := pipeline.From(inputs...)
 	listed := pipeline.New[output.AWSResource]()
 	pipeline.Pipe(inputPipeline, lister.List, listed, &pipeline.PipeOpts{
@@ -117,6 +118,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	if err := out.Wait(); err != nil {
 		return err
 	}
+
 	cfg.Success("secret scanning complete")
 	return nil
 }

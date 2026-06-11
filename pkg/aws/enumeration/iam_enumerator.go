@@ -20,8 +20,11 @@ import (
 // fetches once per lifetime via sync.Once.
 type IAMEnumerator struct {
 	plugin.AWSCommonRecon
-	provider  *AWSConfigProvider
-	accountID string
+	provider    *AWSConfigProvider
+	skipReport  *SkipReport
+	accountID   string
+	accountOnce sync.Once
+	accountErr  error
 }
 
 // iamSubEnumerator implements ResourceEnumerator for a single IAM resource type.
@@ -49,10 +52,11 @@ func (s *iamSubEnumerator) EnumerateByARN(arn string, out *pipeline.P[output.AWS
 }
 
 // NewIAMEnumerator creates an IAMEnumerator.
-func NewIAMEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider) *IAMEnumerator {
+func NewIAMEnumerator(opts plugin.AWSCommonRecon, provider *AWSConfigProvider, skipReport *SkipReport) *IAMEnumerator {
 	return &IAMEnumerator{
 		AWSCommonRecon: opts,
 		provider:       provider,
+		skipReport:     skipReport,
 	}
 }
 
@@ -87,22 +91,23 @@ func (e *IAMEnumerator) UserEnumerator() ResourceEnumerator {
 }
 
 func (e *IAMEnumerator) resolveAccountID() error {
-	if e.accountID != "" {
-		return nil
-	}
-	if e.provider == nil {
-		return fmt.Errorf("no provider configured")
-	}
-	region := "us-east-1"
-	if len(e.Regions) > 0 {
-		region = e.Regions[0]
-	}
-	id, err := e.provider.GetAccountID(region)
-	if err != nil {
-		return fmt.Errorf("get account ID: %w", err)
-	}
-	e.accountID = id
-	return nil
+	e.accountOnce.Do(func() {
+		if e.provider == nil {
+			e.accountErr = fmt.Errorf("no provider configured")
+			return
+		}
+		region := "us-east-1"
+		if len(e.Regions) > 0 {
+			region = e.Regions[0]
+		}
+		id, err := e.provider.GetAccountID(region)
+		if err != nil {
+			e.accountErr = fmt.Errorf("get account ID: %w", err)
+			return
+		}
+		e.accountID = id
+	})
+	return e.accountErr
 }
 
 func (e *IAMEnumerator) getIAMClient() (*iam.Client, error) {
@@ -137,6 +142,10 @@ func (e *IAMEnumerator) listRoles(out *pipeline.P[output.AWSResource]) error {
 
 		result, err := client.ListRoles(context.Background(), input)
 		if err != nil {
+			if op := ClassifySkippable(err, "iam", "ListRoles", "global"); op != nil {
+				e.skipReport.RecordBatch([]SkippedOp{*op})
+				return false, nil // Remaining pages unreachable — pagination token lost.
+			}
 			return false, fmt.Errorf("list IAM roles: %w", err)
 		}
 
@@ -186,6 +195,10 @@ func (e *IAMEnumerator) listPolicies(out *pipeline.P[output.AWSResource]) error 
 
 		result, err := client.ListPolicies(context.Background(), input)
 		if err != nil {
+			if op := ClassifySkippable(err, "iam", "ListPolicies", "global"); op != nil {
+				e.skipReport.RecordBatch([]SkippedOp{*op})
+				return false, nil // Remaining pages unreachable — pagination token lost.
+			}
 			return false, fmt.Errorf("list IAM policies: %w", err)
 		}
 
@@ -233,6 +246,10 @@ func (e *IAMEnumerator) listUsers(out *pipeline.P[output.AWSResource]) error {
 
 		result, err := client.ListUsers(context.Background(), input)
 		if err != nil {
+			if op := ClassifySkippable(err, "iam", "ListUsers", "global"); op != nil {
+				e.skipReport.RecordBatch([]SkippedOp{*op})
+				return false, nil // Remaining pages unreachable — pagination token lost.
+			}
 			return false, fmt.Errorf("list IAM users: %w", err)
 		}
 
@@ -281,6 +298,10 @@ func (e *IAMEnumerator) getRoleByARN(arn string, out *pipeline.P[output.AWSResou
 		RoleName: &roleName,
 	})
 	if err != nil {
+		if op := ClassifySkippable(err, "iam", "GetRole", "global"); op != nil {
+			e.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return fmt.Errorf("get IAM role %s: %w", roleName, err)
 	}
 
@@ -312,6 +333,10 @@ func (e *IAMEnumerator) getPolicyByARN(arn string, out *pipeline.P[output.AWSRes
 		PolicyArn: &arn,
 	})
 	if err != nil {
+		if op := ClassifySkippable(err, "iam", "GetPolicy", "global"); op != nil {
+			e.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return fmt.Errorf("get IAM policy %s: %w", arn, err)
 	}
 
@@ -346,6 +371,10 @@ func (e *IAMEnumerator) getUserByARN(arn string, out *pipeline.P[output.AWSResou
 		UserName: &userName,
 	})
 	if err != nil {
+		if op := ClassifySkippable(err, "iam", "GetUser", "global"); op != nil {
+			e.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return fmt.Errorf("get IAM user %s: %w", userName, err)
 	}
 

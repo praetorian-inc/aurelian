@@ -115,7 +115,31 @@ func NodeFromAWSIAMResource(resource output.AWSIAMResource) *graph.Node {
 		}
 	}
 
-	// Fallback: non-IAM resources or missing OriginalData
+	// OriginalData absent but ResourceType identifies an IAM entity — preserve
+	// the Principal label so enrichment queries can match (attacker:Principal).
+	// Zach Grace: "the original code always applied a Label of `Principal` to
+	// any principal. We should leverage that assumption here."
+	switch resource.ResourceType {
+	case "AWS::IAM::User":
+		return &graph.Node{
+			Labels:     []string{"User", "Principal", "AWS::IAM::User"},
+			Properties: map[string]interface{}{"Arn": resource.ARN},
+			UniqueKey:  []string{"Arn"},
+		}
+	case "AWS::IAM::Role":
+		return &graph.Node{
+			Labels:     []string{"Role", "Principal", "AWS::IAM::Role"},
+			Properties: map[string]interface{}{"Arn": resource.ARN},
+			UniqueKey:  []string{"Arn"},
+		}
+	case "AWS::IAM::Group":
+		return &graph.Node{
+			Labels:     []string{"Group", "Principal", "AWS::IAM::Group"},
+			Properties: map[string]interface{}{"Arn": resource.ARN},
+			UniqueKey:  []string{"Arn"},
+		}
+	}
+
 	return NodeFromAWSResource(resource.AWSResource)
 }
 

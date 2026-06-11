@@ -1,0 +1,24 @@
+id: aws/enrich/privesc/method_55
+name: IAM PassRole + ECS StartTask Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both iam:PassRole and ecs:StartTask permissions
+  that can launch an ECS task on a specific container instance with a privileged
+  task role override to extract credentials and escalate privileges.
+severity: high
+order: 155
+cypher: |
+  MATCH (attacker:Principal)-[passrole]->(victim:Principal)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+  WITH attacker, victim
+  MATCH (attacker)-[start]->(service_resource)
+  WHERE type(start) = 'ECS_STARTTASK'
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:PassRole + ecs:StartTask',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

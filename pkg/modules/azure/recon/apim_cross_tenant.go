@@ -276,7 +276,7 @@ func (m *APIMCrossTenantModule) login(client *http.Client, target, mgmtVersion s
 	if err != nil {
 		return "", "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", "", fmt.Errorf("login returned %d", resp.StatusCode)
@@ -508,12 +508,12 @@ func (m *APIMCrossTenantModule) solveCaptcha(cfg plugin.Config, client *http.Cli
 	if tmpErr != nil {
 		return "", captcha, "", fmt.Errorf("creating captcha temp file: %w", tmpErr)
 	}
-	defer os.Remove(tmpFile.Name())
+	defer func() { _ = os.Remove(tmpFile.Name()) }()
 	if _, writeErr := tmpFile.Write(imgBytes); writeErr != nil {
-		tmpFile.Close()
+		_ = tmpFile.Close()
 		return "", captcha, "", fmt.Errorf("writing captcha image: %w", writeErr)
 	}
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	cfg.Info("captcha image saved to %s", tmpFile.Name())
 	fmt.Fprint(os.Stderr, "Enter captcha solution: ")
@@ -549,13 +549,13 @@ func (m *APIMCrossTenantModule) solveCaptchaAudio(client *http.Client, attacker 
 	if err != nil {
 		return "", captcha, fmt.Errorf("creating audio temp file: %w", err)
 	}
-	defer os.Remove(tmpAudio.Name())
+	defer func() { _ = os.Remove(tmpAudio.Name()) }()
 
 	if _, err := tmpAudio.Write(audioBytes); err != nil {
-		tmpAudio.Close()
+		_ = tmpAudio.Close()
 		return "", captcha, fmt.Errorf("writing audio: %w", err)
 	}
-	tmpAudio.Close()
+	_ = tmpAudio.Close()
 
 	transcribeCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -621,7 +621,7 @@ func (m *APIMCrossTenantModule) doJSON(client *http.Client, method, url string, 
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))

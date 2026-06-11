@@ -1,0 +1,24 @@
+id: aws/enrich/privesc/method_63
+name: IAM PassRole + EC2 Image Builder Pipeline Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both iam:PassRole and imagebuilder:CreateInfrastructureConfiguration
+  permissions that can create an EC2 Image Builder infrastructure configuration with
+  a privileged instance profile and trigger a build to extract admin credentials via IMDS.
+severity: high
+order: 163
+cypher: |
+  MATCH (attacker:Principal)-[passrole]->(victim:Principal)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+  WITH attacker, victim
+  MATCH (attacker)-[create]->(service_resource)
+  WHERE type(create) = 'IMAGEBUILDER_CREATEINFRASTRUCTURECONFIGURATION'
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'iam:PassRole + imagebuilder:CreateInfrastructureConfiguration',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

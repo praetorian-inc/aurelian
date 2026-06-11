@@ -102,8 +102,8 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 		ActionResourceMap: map[string][]string{
 			"addclientidtoopenidconnectprovider":      {"oidc-provider"},
 			"addroletoinstanceprofile":                {"instance-profile"},
-			"addusertogroup":                          {"group"},
-			"attachgrouppolicy":                       {"group"},
+			"addusertogroup":                          {"group", "service"},
+			"attachgrouppolicy":                       {"group", "service"},
 			"attachrolepolicy":                        {"role"},
 			"attachuserpolicy":                        {"user"},
 			"changepassword":                          {"user"},
@@ -187,7 +187,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"listuserpolicies":                        {"user"},
 			"listusertags":                            {"user"},
 			"passrole":                                {"role"},
-			"putgrouppolicy":                          {"group"},
+			"putgrouppolicy":                          {"group", "service"},
 			"putrolepermissionsboundary":              {"role"},
 			"putrolepolicy":                           {"role"},
 			"putuserpermissionsboundary":              {"user"},
@@ -242,8 +242,15 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"launch-template": regexp.MustCompile(`^arn:aws:ec2:[a-z-0-9]+:\d{12}:launch-template/.*`),
 		},
 		ActionResourceMap: map[string][]string{
-			"runinstances":         {"service"},
-			"createlaunchtemplate": {"service"},
+			"runinstances":                         {"service"},
+			"requestspotinstances":                 {"service"},
+			"createlaunchtemplate":                 {"service"},
+			"createlaunchtemplateversion":           {"service", "launch-template"},
+			"modifylaunchtemplate":                 {"service", "launch-template"},
+			"modifyinstanceattribute":              {"instance", "service"},
+			"stopinstances":                        {"instance", "service"},
+			"startinstances":                       {"instance", "service"},
+			"replaceiaminstanceprofileassociation": {"instance"},
 		},
 	},
 	"cloudformation": {
@@ -254,12 +261,12 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 		},
 		ActionResourceMap: map[string][]string{
 			"createstack":      {"service"},
-			"updatestack":      {"stack"},
+			"updatestack":      {"stack", "service"},
 			"setstackpolicy":   {"stack"},
-			"createchangeset":  {"stack"},
-			"executechangeset": {"stack"},
-			"createstackset":   {"stackset"},
-			"updatestackset":   {"stackset"},
+			"createchangeset":  {"stack", "service"},
+			"executechangeset": {"stack", "service"},
+			"createstackset":   {"stackset", "service"},
+			"updatestackset":   {"stackset", "service"},
 		},
 	},
 	"sts": {
@@ -341,6 +348,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 	},
 	"ecs": {
 		ResourcePatterns: map[string]*regexp.Regexp{
+			// Synthetic service resource created by analyzer_state for ecs.amazonaws.com
 			"service":        regexp.MustCompile(`^arn:aws:ecs:\*:\*:\*$`),
 			"cluster":        regexp.MustCompile(`^arn:aws:ecs:[a-z0-9-]+:\d{12}:cluster/.*$`),
 			"task":           regexp.MustCompile(`^arn:aws:ecs:[a-z0-9-]+:\d{12}:task/.*$`),
@@ -351,7 +359,9 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"runtask":                {"cluster", "task-def", "service"},
 			"registertaskdefinition": {"service"},
 			"starttask":              {"cluster", "task-def", "service"},
+			"createservice":          {"cluster", "service"},
 			"updateservice":          {"service"},
+			"executecommand":         {"task", "service"},
 		},
 	},
 	"ssm": {
@@ -363,20 +373,30 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"service":          regexp.MustCompile(`^arn:aws:ssm:\*:\*:\*$`),
 		},
 		ActionResourceMap: map[string][]string{
-			"sendcommand":              {"instance", "managed-instance", "document"},
-			"startsession":             {"instance", "managed-instance"},
+			"sendcommand":              {"instance", "managed-instance", "document", "service"},
+			"startsession":             {"instance", "managed-instance", "service"},
 			"resumesession":            {"instance", "managed-instance"},
-			"startautomationexecution": {"automation", "document"},
+			"createdocument":           {"service", "document"},
+			"startautomationexecution": {"automation", "document", "service"},
 		},
 	},
 	"glue": {
 		ResourcePatterns: map[string]*regexp.Regexp{
-			"devEndpoint": regexp.MustCompile(`^arn:aws:glue:[a-z0-9-]+:\d{12}:devEndpoint/.*$`),
+			// Synthetic service resource created by analyzer_state for glue.amazonaws.com
 			"service":     regexp.MustCompile(`^arn:aws:glue:\*:\*:\*$`),
+			"devEndpoint": regexp.MustCompile(`^arn:aws:glue:[a-z0-9-]+:\d{12}:devEndpoint/.*$`),
+			"job":         regexp.MustCompile(`^arn:aws:glue:[a-z0-9-]+:\d{12}:job/.*$`),
+			"session":     regexp.MustCompile(`^arn:aws:glue:[a-z0-9-]+:\d{12}:session/.*$`),
 		},
 		ActionResourceMap: map[string][]string{
 			"createdevendpoint": {"service"},
-			"updatedevendpoint": {"devEndpoint"},
+			"updatedevendpoint": {"devEndpoint", "service"},
+			"createjob":         {"service"},
+			"updatejob":         {"job", "service"},
+			"createsession":     {"service"},
+			"createtrigger":     {"service"},
+			"startjobrun":       {"job", "service"},
+			"runstatement":      {"session", "service"},
 		},
 	},
 	"codebuild": {
@@ -399,11 +419,12 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"service":           regexp.MustCompile(`^arn:aws:sagemaker:\*:\*:\*$`),
 		},
 		ActionResourceMap: map[string][]string{
-			"createnotebookinstance":             {"service"},
-			"createpresignednotebookinstanceurl": {"notebook-instance", "service"},
-			"createtrainingjob":                  {"service"},
-			"createprocessingjob":                {"service"},
-			"createhyperparametertuningjob":      {"service"},
+			"createnotebookinstance":                {"service"},
+			"createpresignednotebookinstanceurl":    {"notebook-instance", "service"},
+			"createtrainingjob":                     {"service"},
+			"createprocessingjob":                   {"service"},
+			"createhyperparametertuningjob":         {"service"},
+			"updatenotebookinstancelifecycleconfig": {"notebook-instance", "service"},
 		},
 	},
 	"autoscaling": {
@@ -416,6 +437,162 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 		ActionResourceMap: map[string][]string{
 			"createautoscalinggroup":    {"service", "launchTemplate"},
 			"createlaunchconfiguration": {"service"},
+		},
+	},
+	"amplify": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service": regexp.MustCompile(`^arn:aws:amplify:\*:\*:\*$`),
+			"app":     regexp.MustCompile(`^arn:aws:amplify:[a-z0-9-]+:\d{12}:apps/.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createapp":    {"service"},
+			"createbranch": {"app", "service"},
+			"startjob":     {"app", "service"},
+		},
+	},
+	"apprunner": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service": regexp.MustCompile(`^arn:aws:apprunner:\*:\*:\*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createservice": {"service"},
+			"updateservice": {"service"},
+		},
+	},
+	"batch": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service":        regexp.MustCompile(`^arn:aws:batch:\*:\*:\*$`),
+			"job-definition": regexp.MustCompile(`^arn:aws:batch:[a-z0-9-]+:\d{12}:job-definition/.*$`),
+			"job-queue":      regexp.MustCompile(`^arn:aws:batch:[a-z0-9-]+:\d{12}:job-queue/.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"registerjobdefinition": {"service"},
+			"submitjob":             {"service"},
+		},
+	},
+	"braket": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service": regexp.MustCompile(`^arn:aws:braket:\*:\*:\*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createjob": {"service"},
+		},
+	},
+	"cognito-identity": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service":       regexp.MustCompile(`^arn:aws:cognito-identity:\*:\*:\*$`),
+			"identity-pool": regexp.MustCompile(`^arn:aws:cognito-identity:[a-z0-9-]+:\d{12}:identitypool/.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"setidentitypoolroles": {"identity-pool", "service"},
+		},
+	},
+	"codedeploy": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service":          regexp.MustCompile(`^arn:aws:codedeploy:\*:\*:\*$`),
+			"deployment-group": regexp.MustCompile(`^arn:aws:codedeploy:[a-z0-9-]+:\d{12}:deploymentgroup:.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createdeployment": {"deployment-group", "service"},
+		},
+	},
+	"ec2-instance-connect": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service":  regexp.MustCompile(`^arn:aws:ec2-instance-connect:\*:\*:\*$`),
+			"instance": regexp.MustCompile(`^arn:aws:ec2:[a-z0-9-]+:\d{12}:instance/.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"sendsshpublickey": {"instance", "service"},
+		},
+	},
+	"elasticmapreduce": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service": regexp.MustCompile(`^arn:aws:elasticmapreduce:\*:\*:\*$`),
+			"cluster": regexp.MustCompile(`^arn:aws:elasticmapreduce:[a-z0-9-]+:\d{12}:cluster/.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"runjobflow": {"cluster", "service"},
+		},
+	},
+	"gamelift": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service": regexp.MustCompile(`^arn:aws:gamelift:\*:\*:\*$`),
+			"fleet":   regexp.MustCompile(`^arn:aws:gamelift:[a-z0-9-]+::fleet/.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createbuild": {"service"},
+			"createfleet": {"fleet", "service"},
+		},
+	},
+	"imagebuilder": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service":                      regexp.MustCompile(`^arn:aws:imagebuilder:\*:\*:\*$`),
+			"infrastructure-configuration": regexp.MustCompile(`^arn:aws:imagebuilder:[a-z0-9-]+:\d{12}:infrastructure-configuration/.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createcomponent":                   {"service"},
+			"createimagerecipe":                 {"service"},
+			"createinfrastructureconfiguration": {"infrastructure-configuration", "service"},
+			"createimage":                       {"service"},
+		},
+	},
+	"kinesisanalytics": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service":     regexp.MustCompile(`^arn:aws:kinesisanalytics:\*:\*:\*$`),
+			"application": regexp.MustCompile(`^arn:aws:kinesisanalytics:[a-z0-9-]+:\d{12}:application/.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createapplication":  {"application", "service"},
+			"startapplication":   {"application", "service"},
+		},
+	},
+	"omics": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service":  regexp.MustCompile(`^arn:aws:omics:\*:\*:\*$`),
+			"workflow": regexp.MustCompile(`^arn:aws:omics:[a-z0-9-]+:\d{12}:workflow/.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createworkflow": {"workflow", "service"},
+			"startrun":       {"workflow", "service"},
+		},
+	},
+	"scheduler": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service":  regexp.MustCompile(`^arn:aws:scheduler:\*:\*:\*$`),
+			"schedule": regexp.MustCompile(`^arn:aws:scheduler:[a-z0-9-]+:\d{12}:schedule/.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createschedule": {"schedule", "service"},
+		},
+	},
+	"emr-serverless": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service":     regexp.MustCompile(`^arn:aws:emr-serverless:\*:\*:\*$`),
+			"application": regexp.MustCompile(`^arn:aws:emr-serverless:[a-z0-9-]+:\d{12}:/applications/.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createapplication": {"service"},
+			"startjobrun":       {"application", "service"},
+		},
+	},
+	"bedrock-agentcore": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service": regexp.MustCompile(`^arn:aws:bedrock-agentcore:\*:\*:\*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createcodeinterpreter": {"service"},
+			"invokesession":         {"service"},
+		},
+	},
+	"states": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service":       regexp.MustCompile(`^arn:aws:states:\*:\*:\*$`),
+			"state-machine": regexp.MustCompile(`^arn:aws:states:[a-z0-9-]+:\d{12}:stateMachine:.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createstatemachine": {"state-machine", "service"},
+			"updatestatemachine": {"state-machine", "service"},
+			"startexecution":     {"state-machine", "service"},
 		},
 	},
 }

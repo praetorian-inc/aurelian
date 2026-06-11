@@ -140,9 +140,13 @@ func TestGetResourcePatternsFromAction(t *testing.T) {
 			},
 		},
 		{
-			name:     "Valid action with single resource pattern",
-			action:   "iam:AddUserToGroup",
-			expected: []*regexp.Regexp{regexp.MustCompile(`^arn:aws:iam::\d{12}:group/.*`)},
+			name:   "Valid action with single resource pattern",
+			action: "iam:AddUserToGroup",
+			// addusertogroup maps to group + service (service wildcard added for synthetic resource support)
+			expected: []*regexp.Regexp{
+				regexp.MustCompile(`^arn:aws:iam::\d{12}:group/.*`),
+				regexp.MustCompile(`^arn:aws:iam:\*:\*:\*$`),
+			},
 		},
 		{
 			name:   "Valid action with multiple resource patterns",

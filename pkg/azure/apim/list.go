@@ -115,7 +115,7 @@ func ListAPIs(ctx context.Context, cred azcore.TokenCredential, subscriptionID, 
 			// runtime helper consumes resp.Body on our behalf.
 			return false, runtime.NewResponseError(resp)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 
 		page, nextLink, perr := parsePager(resp)
 		if perr != nil {
@@ -160,7 +160,6 @@ func redactURL(u *url.URL) string {
 // parsePager reads the response body into an apiListResponse via the existing
 // page-parsing path.
 func parsePager(resp *http.Response) ([]APIInventoryItem, string, error) {
-	defer resp.Body.Close()
 	dec := json.NewDecoder(resp.Body)
 	var listResp apiListResponse
 	if err := dec.Decode(&listResp); err != nil {
