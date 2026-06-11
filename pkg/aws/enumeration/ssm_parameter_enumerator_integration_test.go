@@ -3,8 +3,11 @@
 package enumeration
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
+	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -71,6 +74,20 @@ func TestSSMParameterEnumerator(t *testing.T) {
 		require.Len(t, single, 1)
 		assert.Equal(t, paramName, single[0].ResourceID)
 		assert.Equal(t, paramARN, single[0].ARN)
+	})
+
+	t.Run("EnumerateByARN filters SecureString", func(t *testing.T) {
+		// Build the SecureString ARN from the String param ARN (same account + region).
+		parsed, err := awsarn.Parse(paramARN)
+		require.NoError(t, err)
+		secureARN := fmt.Sprintf("arn:aws:ssm:%s:%s:parameter/%s",
+			parsed.Region, parsed.AccountID, strings.TrimPrefix(secureName, "/"))
+
+		secureResults, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
+			return enum.EnumerateByARN(secureARN, out)
+		})
+		require.NoError(t, err)
+		assert.Empty(t, secureResults, "EnumerateByARN must not return SecureString parameters")
 	})
 
 	t.Run("all results are correct resource type", func(t *testing.T) {

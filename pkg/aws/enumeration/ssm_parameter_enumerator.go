@@ -86,6 +86,9 @@ func (e *SSMParameterEnumerator) EnumerateByARN(arn string, out *pipeline.P[outp
 	}
 
 	for _, p := range result.Parameters {
+		if p.Type == ssmtypes.ParameterTypeSecureString {
+			continue
+		}
 		name := aws.ToString(p.Name)
 		out.Send(output.AWSResource{
 			ResourceType: "AWS::SSM::Parameter",
