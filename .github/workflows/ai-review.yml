@@ -3,13 +3,11 @@ name: AI Review
 on:
   pull_request:
     types: [opened, ready_for_review]
-    branches: [main]
   issue_comment:
     types: [created]
 
 concurrency:
   group: ai-review-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -70,10 +68,6 @@ jobs:
           if [[ "$HEAD_REPO" != "$REPO" ]]; then
             echo "::error::PR head is on a fork ($HEAD_REPO); refusing."
             exit 1
-          fi
-          if [[ "$BASE" != "main" ]]; then
-            echo "::notice::PR #$NUM targets $BASE, not main; skipping review."
-            exit 0
           fi
           if [[ "$STATE" != "OPEN" ]]; then
             echo "::notice::PR #$NUM is $STATE; skipping review."
