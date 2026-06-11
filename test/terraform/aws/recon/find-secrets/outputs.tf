@@ -41,3 +41,15 @@ output "ssm_document_name" {
 output "state_machine_arn" {
   value = aws_sfn_state_machine.with_secret.arn
 }
+
+output "ssm_parameter_name" {
+  value = aws_ssm_parameter.string_with_secret.name
+}
+
+output "ssm_parameter_arn" {
+  value = aws_ssm_parameter.string_with_secret.arn
+}
+
+output "ssm_securestring_name" {
+  value = aws_ssm_parameter.securestring_no_scan.name
+}

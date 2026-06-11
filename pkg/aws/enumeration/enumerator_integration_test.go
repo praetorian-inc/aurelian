@@ -16,9 +16,12 @@ func Test_Enumerator_EnumerateByType_UsesReconListFixture(t *testing.T) {
 	fixture := testutil.NewAWSFixture(t, "aws/recon/list")
 	fixture.Setup()
 
+	regions := fixture.OutputList("test_regions")
+	require.NotEmpty(t, regions, "test_regions must be in Terraform outputs")
+
 	enumerator := NewEnumerator(plugin.AWSCommonRecon{
-		Regions:     []string{"us-east-1", "us-east-2"},
-		Concurrency: 2,
+		Regions:     regions,
+		Concurrency: len(regions),
 	})
 
 	instanceResults, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {

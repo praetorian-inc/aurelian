@@ -17,6 +17,9 @@ provider "aws" {
   region = var.region
 }
 
+# Accounts without a default VPC require an explicit subnet_id on EC2 resources.
+data "aws_subnets" "available" {}
+
 resource "random_id" "run" {
   byte_length = 4
 }
@@ -86,6 +89,7 @@ data "aws_ami" "amazon_linux" {
 resource "aws_instance" "with_secret" {
   ami           = data.aws_ami.amazon_linux.id
   instance_type = "t3.micro"
+  subnet_id     = tolist(data.aws_subnets.available.ids)[0]
 
   user_data = <<-EOF
     #!/bin/bash
@@ -265,4 +269,21 @@ resource "null_resource" "start_sfn_execution" {
         --input '{"aws_key":"AKIAIOSFODNN7EXAMPLE","aws_secret":"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}'
     CMD
   }
+}
+
+# ============================================================
+# 8. SSM Parameter — plaintext secret (String type)
+# ============================================================
+resource "aws_ssm_parameter" "string_with_secret" {
+  name  = "/${local.prefix}/fake-api-key"
+  type  = "String"
+  # .env-style value so Titus has key-name context to match against.
+  value = "AWS_ACCESS_KEY_ID=${local.fake_aws_key}\nAWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}"
+}
+
+# SecureString — must NOT be enumerated by find-secrets.
+resource "aws_ssm_parameter" "securestring_no_scan" {
+  name  = "/${local.prefix}/secure-param"
+  type  = "SecureString"
+  value = local.fake_aws_secret
 }

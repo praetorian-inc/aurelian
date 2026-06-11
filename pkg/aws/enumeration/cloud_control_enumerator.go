@@ -13,7 +13,6 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 	"github.com/praetorian-inc/aurelian/pkg/types"
-	"log/slog"
 	"strings"
 )
 
@@ -21,17 +20,19 @@ type CloudControlEnumerator struct {
 	plugin.AWSCommonRecon
 	CrossRegionActor *ratelimit.CrossRegionActor
 	provider         *AWSConfigProvider
+	skipReport       *SkipReport
 }
 
 func NewCloudControlEnumerator(options plugin.AWSCommonRecon) *CloudControlEnumerator {
-	return NewCloudControlEnumeratorWithProvider(options, NewAWSConfigProvider(options))
+	return NewCloudControlEnumeratorWithProvider(options, NewAWSConfigProvider(options), NewSkipReport())
 }
 
-func NewCloudControlEnumeratorWithProvider(options plugin.AWSCommonRecon, provider *AWSConfigProvider) *CloudControlEnumerator {
+func NewCloudControlEnumeratorWithProvider(options plugin.AWSCommonRecon, provider *AWSConfigProvider, skipReport *SkipReport) *CloudControlEnumerator {
 	return &CloudControlEnumerator{
 		AWSCommonRecon:   options,
 		CrossRegionActor: ratelimit.NewCrossRegionActor(options.Concurrency),
 		provider:         provider,
+		skipReport:       skipReport,
 	}
 }
 
@@ -51,11 +52,23 @@ func (cc *CloudControlEnumerator) List(identifier string, out *pipeline.P[output
 
 func (cc *CloudControlEnumerator) EnumerateByARN(resourceARN string, out *pipeline.P[output.AWSResource]) error {
 	resource, err := cc.getResourceByARN(resourceARN)
-	if cc.isSkippableError(err) {
-		slog.Debug("skipping arn", "arn", resourceARN, "error", err)
-		return nil
-	}
 	if err != nil {
+		// Design note: we re-parse the ARN here rather than reusing the
+		// resolved region from getResourceByARN, because getResourceByARN
+		// returns a zero-value AWSResource on error (no region).
+		// For most ARNs this gives the correct region. For S3 ARNs
+		// (which omit the region component), region will be empty —
+		// this is acceptable for the skip report since the inner loop in
+		// listInRegionByType handles per-region skips with full metadata.
+		// This path is the dispatcher safety net for by-ARN lookups.
+		region := ""
+		if parsed, parseErr := awsaarn.Parse(resourceARN); parseErr == nil {
+			region = parsed.Region
+		}
+		if op := ClassifySkippable(err, "cloudcontrol", "GetResource", region); op != nil {
+			cc.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return err
 	}
 
@@ -238,12 +251,11 @@ func (cc *CloudControlEnumerator) listInRegionByType(region, resourceType string
 	}
 
 	err = cc.listByType(client, accountID, region, resourceType, out)
-	if cc.isSkippableError(err) {
-		slog.Debug("skipping resource type", "type", resourceType, "region", region, "error", err)
-		return nil
-	}
 	if err != nil {
-		slog.Warn("error listing resources", "type", resourceType, "region", region, "error", err)
+		if op := ClassifySkippable(err, "cloudcontrol", "ListResources", region); op != nil {
+			cc.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
 		return err
 	}
 
@@ -281,16 +293,6 @@ func (cc *CloudControlEnumerator) listByType(
 		nextToken = result.NextToken
 		return nextToken != nil, nil
 	})
-}
-
-func (cc *CloudControlEnumerator) isSkippableError(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := err.Error()
-	return strings.Contains(s, "TypeNotFoundException") ||
-		strings.Contains(s, "UnsupportedActionException") ||
-		strings.Contains(s, "AccessDeniedException")
 }
 
 func (cc *CloudControlEnumerator) newCloudControlClient(region string) (*cloudcontrol.Client, error) {

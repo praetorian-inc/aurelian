@@ -48,6 +48,7 @@ func TestFindSecretsSupportedResourceTypes(t *testing.T) {
 		"AWS::Logs::LogGroup",
 		"AWS::ECS::TaskDefinition",
 		"AWS::SSM::Document",
+		"AWS::SSM::Parameter",
 		"AWS::StepFunctions::StateMachine",
 	}
 

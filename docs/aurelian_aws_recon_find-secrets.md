@@ -1,6 +1,6 @@
 ## aurelian aws recon find-secrets
 
-Enumerates AWS resources via Cloud Control, extracts content likely to contain hardcoded secrets (EC2 user data, Lambda code, CloudFormation templates, CloudWatch logs, ECS task definitions, SSM documents, Step Functions executions), and scans with Titus.
+Enumerates AWS resources via Cloud Control, extracts content likely to contain hardcoded secrets (EC2 user data, Lambda code, CloudFormation templates, CloudWatch logs, ECS task definitions, SSM documents and Parameter Store parameters, Step Functions executions), and scans with Titus.
 
 ```
 aurelian aws recon find-secrets [flags]

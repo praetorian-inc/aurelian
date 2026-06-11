@@ -3,7 +3,9 @@ package enumeration
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
+	"sync"
 
 	awsaarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -31,30 +33,61 @@ type ResourceEnumerator interface {
 type Enumerator struct {
 	enumerators map[string]ResourceEnumerator
 	cc          *CloudControlEnumerator
+	Skipped     *SkipReport
+	outputDir   string
+	closeOnce   sync.Once
 }
 
 // NewEnumerator creates an Enumerator with CloudControl fallback and registers
-// all built-in resource-specific enumerators.
+// all built-in resource-specific enumerators. A single SkipReport is shared
+// across all sub-enumerators so one Summary() call surfaces every skipped
+// (region, service) pair.
 func NewEnumerator(opts plugin.AWSCommonRecon) *Enumerator {
 	provider := NewAWSConfigProvider(opts)
-	cc := NewCloudControlEnumeratorWithProvider(opts, provider)
+	skipReport := NewSkipReport()
+	cc := NewCloudControlEnumeratorWithProvider(opts, provider, skipReport)
 	e := &Enumerator{
 		enumerators: make(map[string]ResourceEnumerator),
 		cc:          cc,
+		Skipped:     skipReport,
+		outputDir:   opts.OutputDir,
 	}
 	// Register built-in enumerators here as they are implemented.
-	e.Register(NewAmplifyAppEnumerator(opts, provider))
-	e.Register(NewS3Enumerator(opts, provider))
+	e.Register(NewAmplifyAppEnumerator(opts, provider, skipReport))
+	e.Register(NewS3Enumerator(opts, provider, skipReport))
 
-	iamEnum := NewIAMEnumerator(opts, provider)
+	iamEnum := NewIAMEnumerator(opts, provider, skipReport)
 	e.Register(iamEnum.RoleEnumerator())
 	e.Register(iamEnum.PolicyEnumerator())
 	e.Register(iamEnum.UserEnumerator())
 
-	e.Register(NewEC2ImageEnumerator(opts, provider))
-	e.Register(NewSSMDocumentEnumerator(opts, provider))
+	e.Register(NewEC2ImageEnumerator(opts, provider, skipReport))
+	e.Register(NewSSMDocumentEnumerator(opts, provider, skipReport))
+	e.Register(NewSSMParameterEnumerator(opts, provider, skipReport))
 
 	return e
+}
+
+// Close logs the skip summary and writes the full detail file exactly once.
+// Safe to call multiple times; use defer after NewEnumerator so the operator
+// always sees which (region, service) pairs were skipped, even on early-return
+// error paths.
+//
+// The summary is logged at Warn (always visible). The detail file
+// (enumeration-skips.json) is written to OutputDir for post-run analysis.
+//
+// TestNewEnumeratorRequiresClose enforces via AST analysis that every
+// non-test caller of NewEnumerator has a matching defer …Close().
+func (e *Enumerator) Close() error {
+	e.closeOnce.Do(func() {
+		e.Skipped.LogSummary()
+		if e.outputDir != "" {
+			if err := e.Skipped.WriteDetailFile(e.outputDir); err != nil {
+				slog.Warn("failed to write skip detail file", "error", err)
+			}
+		}
+	})
+	return nil
 }
 
 // Register adds a ResourceEnumerator to the registry.
@@ -64,17 +97,49 @@ func (e *Enumerator) Register(l ResourceEnumerator) {
 
 // List routes an identifier (ARN or resource type) to the appropriate enumerator.
 // This has the same signature as CloudControlEnumerator.List for drop-in replacement.
+// Skippable errors (access denied, unsupported type, region unavailable) are
+// recorded in the SkipReport and swallowed so the pipeline continues. Non-skippable
+// errors propagate so the caller sees real failures.
+//
+// This is the dispatcher-level safety net: inner-loop handling inside each
+// enumerator provides per-region granularity, but any skippable error that
+// escapes is still caught here.
 func (e *Enumerator) List(identifier string, out *pipeline.P[output.AWSResource]) error {
 	parsed, err := awsaarn.Parse(identifier)
 	if err == nil {
-		return e.listByARN(parsed, identifier, out)
+		if err := e.listByARN(parsed, identifier, out); err != nil {
+			return e.handleListError(err, parsed.Service, "GetResource", parsed.Region)
+		}
+		return nil
 	}
 
 	if strings.HasPrefix(identifier, "AWS::") {
-		return e.listByType(identifier, out)
+		if err := e.listByType(identifier, out); err != nil {
+			service := identifier
+			if parts := strings.Split(identifier, "::"); len(parts) >= 2 {
+				service = strings.ToLower(parts[1])
+			}
+			return e.handleListError(err, service, "List", "")
+		}
+		return nil
 	}
 
 	return fmt.Errorf("identifier must be either an ARN or CloudControl resource type: %q", identifier)
+}
+
+// handleListError is the dispatcher-level safety net. It classifies err:
+// skippable errors are recorded and nil is returned so the pipeline
+// continues; everything else is returned as-is. Enumerators should handle
+// errors internally for better skip report specificity — this catches
+// anything that leaks.
+func (e *Enumerator) handleListError(err error, service, operation, region string) error {
+	if op := ClassifySkippable(err, service, operation, region); op != nil {
+		slog.Debug("safety net caught leaked skippable error",
+			"service", service, "operation", operation, "region", region, "code", op.ErrorCode)
+		e.Skipped.Record(*op)
+		return nil
+	}
+	return err
 }
 
 func (e *Enumerator) listByARN(parsed awsaarn.ARN, rawARN string, out *pipeline.P[output.AWSResource]) error {

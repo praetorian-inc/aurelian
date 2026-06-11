@@ -40,7 +40,7 @@ func (m *AWSFindSecretsModule) Authors() []string         { return []string{"Pra
 func (m *AWSFindSecretsModule) Description() string {
 	return "Enumerates AWS resources via Cloud Control, extracts content likely to contain " +
 		"hardcoded secrets (EC2 user data, Lambda code, CloudFormation templates, CloudWatch logs, " +
-		"ECS task definitions, SSM documents, Step Functions executions), and scans with Titus."
+		"ECS task definitions, SSM documents and Parameter Store parameters, Step Functions executions), and scans with Titus."
 }
 
 func (m *AWSFindSecretsModule) References() []string {
@@ -57,6 +57,7 @@ func (m *AWSFindSecretsModule) SupportedResourceTypes() []string {
 		"AWS::Logs::LogGroup",
 		"AWS::ECS::TaskDefinition",
 		"AWS::SSM::Document",
+		"AWS::SSM::Parameter",
 		"AWS::StepFunctions::StateMachine",
 		// TODO: AWS::ECR::Repository — container image scanning deferred to follow-up PR.
 	}
@@ -90,6 +91,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	}
 
 	lister := cclist.NewEnumerator(c.AWSCommonRecon)
+	defer func() { _ = lister.Close() }()
 	inputPipeline := pipeline.From(inputs...)
 	listed := pipeline.New[output.AWSResource]()
 	pipeline.Pipe(inputPipeline, lister.List, listed, &pipeline.PipeOpts{
@@ -116,6 +118,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	if err := out.Wait(); err != nil {
 		return err
 	}
+
 	cfg.Success("secret scanning complete")
 	return nil
 }
