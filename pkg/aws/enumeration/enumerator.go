@@ -53,6 +53,7 @@ func NewEnumerator(opts plugin.AWSCommonRecon) *Enumerator {
 
 	e.Register(NewEC2ImageEnumerator(opts, provider))
 	e.Register(NewSSMDocumentEnumerator(opts, provider))
+	e.Register(NewSSMParameterEnumerator(opts, provider))
 
 	return e
 }
