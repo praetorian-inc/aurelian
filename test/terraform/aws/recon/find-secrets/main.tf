@@ -266,3 +266,19 @@ resource "null_resource" "start_sfn_execution" {
     CMD
   }
 }
+
+# ============================================================
+# 8. SSM Parameter — plaintext secret (String type)
+# ============================================================
+resource "aws_ssm_parameter" "string_with_secret" {
+  name  = "/${local.prefix}/fake-api-key"
+  type  = "String"
+  value = local.fake_aws_key
+}
+
+# SecureString — must NOT be enumerated by find-secrets.
+resource "aws_ssm_parameter" "securestring_no_scan" {
+  name  = "/${local.prefix}/secure-param"
+  type  = "SecureString"
+  value = local.fake_aws_secret
+}
