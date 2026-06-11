@@ -277,7 +277,8 @@ resource "null_resource" "start_sfn_execution" {
 resource "aws_ssm_parameter" "string_with_secret" {
   name  = "/${local.prefix}/fake-api-key"
   type  = "String"
-  value = local.fake_aws_key
+  # .env-style value so Titus has key-name context to match against.
+  value = "AWS_ACCESS_KEY_ID=${local.fake_aws_key}\nAWS_SECRET_ACCESS_KEY=${local.fake_aws_secret}"
 }
 
 # SecureString — must NOT be enumerated by find-secrets.
