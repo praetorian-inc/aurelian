@@ -321,7 +321,27 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		}
 
 		log.Success("output written to %s", outputPath)
+
+		// Write a human-readable sidecar with decoded risk proofs. The main
+		// results file encodes Risk.Proof as base64; this is non-fatal best-effort.
+		if entries := plugin.ExtractProofSidecar(results); len(entries) > 0 {
+			proofPath := plugin.ProofSidecarPath(outputPath)
+			if err := writeProofSidecar(proofPath, entries); err != nil {
+				log.Warn("failed to write proof sidecar: %v", err)
+			} else {
+				log.Success("proof written to %s", proofPath)
+			}
+		}
 	}
 
 	return nil
+}
+
+func writeProofSidecar(path string, entries []plugin.ProofSidecarEntry) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	return plugin.WriteProofSidecar(f, entries)
 }
