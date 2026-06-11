@@ -9,11 +9,40 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/templates"
+	"github.com/praetorian-inc/capability-sdk/pkg/capmodel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	publicresources "github.com/praetorian-inc/aurelian/pkg/templates/azure/public-resources"
 )
+
+// decodeRiskProof unmarshals a Risk's proof bytes into a capmodel.Proof.
+func decodeRiskProof(t *testing.T, risk capmodel.Risk) capmodel.Proof {
+	t.Helper()
+	var proof capmodel.Proof
+	require.NoError(t, json.Unmarshal(risk.Proof, &proof))
+	return proof
+}
+
+// riskKeyValues flattens the named section's key/value rows into a map.
+func riskKeyValues(t *testing.T, proof capmodel.Proof, title string) map[string]string {
+	t.Helper()
+	out := make(map[string]string)
+	for _, s := range proof.Sections {
+		if s.Title != title {
+			continue
+		}
+		for _, el := range s.Elements {
+			if el.KeyValue == nil {
+				continue
+			}
+			for _, row := range el.KeyValue.Rows {
+				out[row.Key] = row.Value
+			}
+		}
+	}
+	return out
+}
 
 func TestModuleMetadata(t *testing.T) {
 	m := &AzurePublicResourcesModule{}
@@ -64,7 +93,7 @@ func TestPublicResourcesTemplateLoader_LoadsAll36(t *testing.T) {
 		"app_configuration_public_access":          true,
 		"app_services_public_access":               true,
 		"application_gateway_public_access":        true,
-		"cognitive_services_public_access":          true,
+		"cognitive_services_public_access":         true,
 		"container_apps_public_access":             true,
 		"container_instances_public_access":        true,
 		"container_registries_public_access":       true,
@@ -126,7 +155,7 @@ func TestPublicResourcesTemplateLoader_SeveritiesMatchExpected(t *testing.T) {
 		"app_configuration_public_access":          output.RiskSeverityMedium,
 		"app_services_public_access":               output.RiskSeverityMedium,
 		"application_gateway_public_access":        output.RiskSeverityMedium,
-		"cognitive_services_public_access":          output.RiskSeverityMedium,
+		"cognitive_services_public_access":         output.RiskSeverityMedium,
 		"container_apps_public_access":             output.RiskSeverityMedium,
 		"container_instances_public_access":        output.RiskSeverityMedium,
 		"container_registries_public_access":       output.RiskSeverityHigh,
@@ -221,26 +250,56 @@ func TestResultToRisk(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 
-	risk, ok := items[0].(output.AurelianRisk)
+	risk, ok := items[0].(capmodel.Risk)
 	require.True(t, ok)
 
 	assert.Equal(t, "public-azure-resource", risk.Name)
-	assert.Equal(t, output.RiskSeverityHigh, risk.Severity)
-	assert.Equal(t, "/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/mystorage", risk.ImpactedResourceID)
-	assert.NotEmpty(t, risk.Context)
+	assert.Equal(t, "aurelian", risk.Source)
+	assert.Equal(t, "TH", risk.Status)
+	assert.Equal(t, "/subscriptions/xxx/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/mystorage", risk.TargetName)
+	assert.NotEmpty(t, risk.Proof)
 
-	var ctx map[string]any
-	require.NoError(t, json.Unmarshal(risk.Context, &ctx))
-	assert.Equal(t, "storage_accounts_public_access", ctx["templateId"])
-	assert.Equal(t, "mystorage", ctx["resourceName"])
-	assert.Equal(t, "Microsoft.Storage/storageAccounts", ctx["resourceType"])
-	assert.Equal(t, "xxx", ctx["subscriptionId"])
+	proof := decodeRiskProof(t, risk)
+	exposure := riskKeyValues(t, proof, "Exposure")
+	assert.Equal(t, "storage_accounts_public_access", exposure["Template ID"])
+
+	resource := riskKeyValues(t, proof, "Resource")
+	assert.Equal(t, "mystorage", resource["Name"])
+	assert.Equal(t, "Microsoft.Storage/storageAccounts", resource["Resource Type"])
+	assert.Equal(t, "xxx", resource["Azure Subscription"])
+}
+
+func TestResultToRisk_NilTemplateDetails(t *testing.T) {
+	result := templates.ARGQueryResult{
+		TemplateID: "orphan_template",
+		ResourceID: "/subscriptions/s/resourceGroups/r/providers/T/n",
+	}
+
+	out := pipeline.New[model.AurelianModel]()
+	go func() {
+		defer out.Close()
+		require.NoError(t, resultToRisk(result, out))
+	}()
+
+	items, err := out.Collect()
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+
+	risk := items[0].(capmodel.Risk)
+	assert.Equal(t, "TI", risk.Status, "nil TemplateDetails defaults to Info severity")
+	assert.Equal(t, "public-azure-resource", risk.Name)
+	assert.Equal(t, "/subscriptions/s/resourceGroups/r/providers/T/n", risk.TargetName)
 }
 
 func TestResultToRisk_SeverityPreserved(t *testing.T) {
-	severities := []string{"low", "medium", "high", "critical"}
+	cases := map[string]string{
+		"low":      "TL",
+		"medium":   "TM",
+		"high":     "TH",
+		"critical": "TC",
+	}
 
-	for _, sev := range severities {
+	for sev, wantStatus := range cases {
 		t.Run(sev, func(t *testing.T) {
 			tmpl := &templates.ARGQueryTemplate{
 				ID:       "test_" + sev,
@@ -263,8 +322,8 @@ func TestResultToRisk_SeverityPreserved(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, items, 1)
 
-			risk := items[0].(output.AurelianRisk)
-			assert.Equal(t, output.RiskSeverity(sev), risk.Severity)
+			risk := items[0].(capmodel.Risk)
+			assert.Equal(t, wantStatus, risk.Status)
 			assert.Equal(t, "public-azure-resource", risk.Name)
 		})
 	}
@@ -294,14 +353,16 @@ func TestResultToRisk_ContextContainsAllFields(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 
-	risk := items[0].(output.AurelianRisk)
-	var ctx map[string]any
-	require.NoError(t, json.Unmarshal(risk.Context, &ctx))
+	risk := items[0].(capmodel.Risk)
+	proof := decodeRiskProof(t, risk)
 
-	// All expected context fields must be present.
-	assert.Equal(t, "key_vault_public_access", ctx["templateId"])
-	assert.Equal(t, "myvault", ctx["resourceName"])
-	assert.Equal(t, "Microsoft.KeyVault/vaults", ctx["resourceType"])
-	assert.Equal(t, "sub-1", ctx["subscriptionId"])
-	assert.Equal(t, "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/myvault", ctx["resourceId"])
+	exposure := riskKeyValues(t, proof, "Exposure")
+	assert.Equal(t, "key_vault_public_access", exposure["Template ID"])
+
+	resource := riskKeyValues(t, proof, "Resource")
+	assert.Equal(t, "myvault", resource["Name"])
+	assert.Equal(t, "Microsoft.KeyVault/vaults", resource["Resource Type"])
+	assert.Equal(t, "sub-1", resource["Azure Subscription"])
+	assert.Equal(t, "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/myvault", resource["Resource ID"])
+	assert.Equal(t, "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.KeyVault/vaults/myvault", risk.TargetName)
 }

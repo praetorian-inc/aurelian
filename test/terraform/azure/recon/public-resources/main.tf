@@ -38,7 +38,7 @@
 // | 23 | Cosmos DB                    | cosmos_db_public                           | DETECTED |
 // | 24 | Service Bus                  | service_bus_public                         | DETECTED |
 // | 25 | Event Hub                    | event_hub_public                           | DETECTED |
-// | 26 | Redis Cache                  | redis_cache_public                         | DETECTED |
+// | 26 | Redis Cache                  | redis_cache_public                         | REMOVED (classic Redis creation retired by Azure) |
 // | 27 | ACR Anonymous Pull           | acr_anonymous_pull                         | DETECTED |
 // | 28 | AKS                          | aks_public_access                          | DETECTED |
 // | 29 | API Management               | api_management_public_access               | DETECTED |
@@ -260,12 +260,15 @@ resource "azurerm_cognitive_account" "public" {
 
 # ============================================================================
 # 8. Search Service — publicly accessible
+# Deployed to the secondary region: the primary region (eastus2) intermittently
+# returns InsufficientResourcesAvailable for new Search services. ARG queries are
+# subscription-wide, so the cross-region placement does not affect detection.
 # ============================================================================
 
 resource "azurerm_search_service" "public" {
   name                          = "${local.prefix}-search"
   resource_group_name           = azurerm_resource_group.test.name
-  location                      = local.location
+  location                      = var.location_secondary
   sku                           = "free"
   public_network_access_enabled = true
   tags                          = local.tags
@@ -593,22 +596,18 @@ resource "azurerm_eventhub_namespace" "public" {
 
 # ============================================================================
 # 26. Redis Cache — publicly accessible
+#
+# REMOVED: Classic Azure Cache for Redis (Microsoft.Cache/Redis) can no longer be
+# created. As of the Azure Cache for Redis retirement, the control plane rejects
+# new classic-Redis creation account-wide (HTTP 400 "Azure Cache for Redis is
+# retiring, create Azure Managed Redis instance instead"; reproduced in both
+# eastus2 and westus2). The replacement, Azure Managed Redis, is a different
+# resource type (Microsoft.Cache/redisEnterprise) that the
+# redis_cache_public_access ARG template (type =~ 'Microsoft.Cache/Redis') does
+# NOT match, so it cannot stand in for this fixture. The redis_cache_public_access
+# integration case is therefore omitted from the live test.
+# See https://aka.ms/AzureCacheForRedisRetirement
 # ============================================================================
-
-resource "azurerm_redis_cache" "public" {
-  name                          = "${local.prefix}-redis"
-  resource_group_name           = azurerm_resource_group.test.name
-  location                      = local.location
-  capacity                      = 0
-  family                        = "C"
-  sku_name                      = "Basic"
-  minimum_tls_version           = "1.2"
-  public_network_access_enabled = true
-
-  redis_configuration {}
-
-  tags = local.tags
-}
 
 # ============================================================================
 # 27. ACR with Anonymous Pull — publicly accessible
@@ -634,6 +633,12 @@ resource "azurerm_kubernetes_cluster" "public" {
   resource_group_name = azurerm_resource_group.test.name
   location            = local.location
   dns_prefix          = "${local.prefix}-aks"
+
+  # Azure enables the OIDC issuer on the managed cluster and refuses to disable
+  # it once enabled (HTTP 400 OIDCIssuerFeatureCannotBeDisabled). Declaring it
+  # here keeps the config in sync with the cluster's actual state so re-applies
+  # against a reused fixture do not plan a rejected update.
+  oidc_issuer_enabled = true
 
   default_node_pool {
     name       = "default"

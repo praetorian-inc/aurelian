@@ -90,9 +90,10 @@ output "event_hub_id" {
   value = azurerm_eventhub_namespace.public.id
 }
 
-output "redis_cache_id" {
-  value = azurerm_redis_cache.public.id
-}
+# redis_cache_id output removed: classic azurerm_redis_cache
+# (Microsoft.Cache/Redis) can no longer be created account-wide following the
+# Azure Cache for Redis retirement. The redis_cache_public_access test case is
+# omitted from the live test accordingly.
 
 output "acr_anon_pull_id" {
   value = azurerm_container_registry.anon_pull.id
@@ -118,24 +119,8 @@ output "application_gateway_id" {
   value = azurerm_application_gateway.public.id
 }
 
-# output "kusto_cluster_id" {
-#   value = azurerm_kusto_cluster.public.id
-# }
-
-output "app_service_id" {
-  value = azurerm_linux_web_app.public.id
-}
-
-output "function_app_id" {
-  value = azurerm_linux_function_app.public.id
-}
-
-output "mysql_server_id" {
-  value = azurerm_mysql_flexible_server.public.id
-}
-
-output "event_grid_domain_id" {
-  value = azurerm_eventgrid_domain.public.id
+output "kusto_cluster_id" {
+  value = azurerm_kusto_cluster.public.id
 }
 
 # Negative test outputs — secure resources that must NOT appear in findings
