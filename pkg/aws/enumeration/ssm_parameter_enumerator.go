@@ -61,8 +61,12 @@ func (e *SSMParameterEnumerator) EnumerateByARN(arn string, out *pipeline.P[outp
 	if !ok {
 		return fmt.Errorf("invalid SSM parameter ARN resource: %q", parsed.Resource)
 	}
-	// Restore leading slash for hierarchical parameter names.
-	paramName := "/" + paramPath
+	// Hierarchical names begin with "/"; top-level names (e.g. "MyParam") do not.
+	// The ARN always strips the leading slash, so restore it only for hierarchical names.
+	paramName := paramPath
+	if strings.Contains(paramPath, "/") {
+		paramName = "/" + paramPath
+	}
 
 	if parsed.Region == "" {
 		return fmt.Errorf("SSM parameter ARN missing region: %q", arn)
@@ -74,10 +78,11 @@ func (e *SSMParameterEnumerator) EnumerateByARN(arn string, out *pipeline.P[outp
 	}
 	client := ssm.NewFromConfig(*cfg)
 
+	// Exact-name filter: Option "Equals" is required to prevent prefix matching.
+	// Without it the Name filter could match unrelated parameters sharing this prefix.
+	// The Equals filter returns at most one result, so pagination is intentionally omitted.
 	result, err := client.DescribeParameters(context.Background(), &ssm.DescribeParametersInput{
 		ParameterFilters: []ssmtypes.ParameterStringFilter{
-			// Option "Equals" is required — the default is "BeginsWith", which would
-			// return any parameter whose name starts with paramName.
 			{Key: aws.String("Name"), Option: aws.String("Equals"), Values: []string{paramName}},
 		},
 	})
@@ -90,6 +95,9 @@ func (e *SSMParameterEnumerator) EnumerateByARN(arn string, out *pipeline.P[outp
 			continue
 		}
 		name := aws.ToString(p.Name)
+		if name == "" {
+			continue
+		}
 		out.Send(output.AWSResource{
 			ResourceType: "AWS::SSM::Parameter",
 			ResourceID:   name,
@@ -128,6 +136,9 @@ func (e *SSMParameterEnumerator) listParametersInRegion(region, accountID string
 
 		for _, p := range page.Parameters {
 			name := aws.ToString(p.Name)
+			if name == "" {
+				continue
+			}
 			out.Send(output.AWSResource{
 				ResourceType: "AWS::SSM::Parameter",
 				ResourceID:   name,

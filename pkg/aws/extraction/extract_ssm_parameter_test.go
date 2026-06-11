@@ -84,29 +84,40 @@ func TestExtractSSMParameter_UnknownTypeSkipped(t *testing.T) {
 	// Any type other than String/StringList must be rejected at the guard.
 	// This ensures a future refactor cannot accidentally allow unknown types
 	// by changing the guard from "allow-list" to "block SecureString only".
-	r := output.AWSResource{
-		ResourceType: "AWS::SSM::Parameter",
-		ResourceID:   "/test/param",
-		Region:       "us-east-1",
-		Properties: map[string]any{
-			"Name": "/test/param",
-			"Type": "CustomType",
-		},
+	// Missing/nil Properties must also be rejected — never call GetParameter
+	// on a parameter whose type is unknown.
+	cases := []struct {
+		name       string
+		properties map[string]any
+	}{
+		{"custom type", map[string]any{"Name": "/test/param", "Type": "CustomType"}},
+		{"nil properties", nil},
+		{"missing type key", map[string]any{"Name": "/test/param"}},
 	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := output.AWSResource{
+				ResourceType: "AWS::SSM::Parameter",
+				ResourceID:   "/test/param",
+				Region:       "us-east-1",
+				Properties:   tc.properties,
+			}
 
-	out := pipeline.New[output.ScanInput]()
-	go func() {
-		defer out.Close()
-		err := extractSSMParameter(extractContext{
-			Context:   context.Background(),
-			AWSConfig: aws.Config{},
-		}, r, out)
-		assert.NoError(t, err)
-	}()
+			out := pipeline.New[output.ScanInput]()
+			go func() {
+				defer out.Close()
+				err := extractSSMParameter(extractContext{
+					Context:   context.Background(),
+					AWSConfig: aws.Config{},
+				}, r, out)
+				assert.NoError(t, err)
+			}()
 
-	items, err := out.Collect()
-	require.NoError(t, err)
-	assert.Empty(t, items, "unknown parameter type must not produce scan inputs")
+			items, err := out.Collect()
+			require.NoError(t, err)
+			assert.Empty(t, items, "type %q must not produce scan inputs", tc.name)
+		})
+	}
 }
 
 // fakeSSMTransport is an http.RoundTripper that returns a hardcoded GetParameter response.
@@ -201,32 +212,43 @@ func TestExtractSSMParameter_EmptyValueSkipped(t *testing.T) {
 }
 
 func TestExtractSSMParameter_ValueIsSent(t *testing.T) {
-	r := output.AWSResource{
-		ResourceType: "AWS::SSM::Parameter",
-		ResourceID:   "/test/param",
-		Region:       "us-east-1",
-		Properties: map[string]any{
-			"Name": "/test/param",
-			"Type": "String",
-		},
-	}
-
 	const secretValue = "AKIAIOSFODNN7EXAMPLE"
-	cfg := fakeAWSConfigWithResponse(fakeGetParameterResponse("String", secretValue))
+	cases := []struct {
+		paramType string
+		value     string
+	}{
+		{"String", secretValue},
+		{"StringList", "val1,val2," + secretValue},
+	}
+	for _, tc := range cases {
+		t.Run(tc.paramType, func(t *testing.T) {
+			r := output.AWSResource{
+				ResourceType: "AWS::SSM::Parameter",
+				ResourceID:   "/test/param",
+				Region:       "us-east-1",
+				Properties: map[string]any{
+					"Name": "/test/param",
+					"Type": tc.paramType,
+				},
+			}
 
-	out := pipeline.New[output.ScanInput]()
-	go func() {
-		defer out.Close()
-		err := extractSSMParameter(extractContext{
-			Context:   context.Background(),
-			AWSConfig: cfg,
-		}, r, out)
-		assert.NoError(t, err)
-	}()
+			cfg := fakeAWSConfigWithResponse(fakeGetParameterResponse(tc.paramType, tc.value))
 
-	items, err := out.Collect()
-	require.NoError(t, err)
-	require.Len(t, items, 1, "non-empty String parameter must produce exactly one scan input")
-	assert.Equal(t, []byte(secretValue), items[0].Content)
-	assert.Equal(t, "Parameter", items[0].Label)
+			out := pipeline.New[output.ScanInput]()
+			go func() {
+				defer out.Close()
+				err := extractSSMParameter(extractContext{
+					Context:   context.Background(),
+					AWSConfig: cfg,
+				}, r, out)
+				assert.NoError(t, err)
+			}()
+
+			items, err := out.Collect()
+			require.NoError(t, err)
+			require.Len(t, items, 1, "%s parameter must produce exactly one scan input", tc.paramType)
+			assert.Equal(t, []byte(tc.value), items[0].Content)
+			assert.Equal(t, "Parameter", items[0].Label)
+		})
+	}
 }

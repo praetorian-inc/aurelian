@@ -41,9 +41,13 @@ func init() {
 }
 
 func extractSSMParameter(ctx extractContext, r output.AWSResource, out *pipeline.P[output.ScanInput]) error {
-	// SecureString values are KMS-encrypted — reading them requires kms:Decrypt and
-	// they are the correct place to store secrets. Only flag plaintext misuse.
-	if t, ok := r.Properties["Type"].(string); ok && t != "String" && t != "StringList" {
+	// Only scan String and StringList parameters. SecureString values are KMS-encrypted;
+	// reading plaintext requires both ssm:GetParameter and kms:Decrypt on the key — they
+	// represent intentionally secured secrets, not plaintext misuse. Skip anything whose
+	// type is unknown or missing: the enumerator always sets Type, so absence signals an
+	// unexpected code path that should not proceed to GetParameter.
+	t, ok := r.Properties["Type"].(string)
+	if !ok || (t != "String" && t != "StringList") {
 		return nil
 	}
 

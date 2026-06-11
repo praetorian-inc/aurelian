@@ -90,4 +90,126 @@ func TestSSMParameterEnumerator_EnumerateByARN_Errors(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, results, "EnumerateByARN must not return SecureString parameters")
 	})
+
+	t.Run("parameter with empty name is skipped", func(t *testing.T) {
+		// AWS always populates Name, but guard against a nil pointer returning "".
+		body := `{"Parameters":[{"Type":"String","Tier":"Standard"}]}`
+		fakeCfg := aws.Config{
+			HTTPClient: &http.Client{Transport: &fakeDescribeParamsTransport{body: body}},
+			Region:     "us-east-1",
+		}
+		emptyNameProvider := NewAWSConfigProvider(plugin.AWSCommonRecon{})
+		emptyNameProvider.configs["us-east-1"] = &fakeCfg
+		emptyEnum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, emptyNameProvider)
+
+		emptyOut := pipeline.New[output.AWSResource]()
+		err := emptyEnum.EnumerateByARN("arn:aws:ssm:us-east-1:123456789012:parameter/my-param", emptyOut)
+		require.NoError(t, err)
+
+		emptyOut.Close()
+		results, err := emptyOut.Collect()
+		require.NoError(t, err)
+		assert.Empty(t, results, "parameter with empty name must be skipped")
+	})
+}
+
+func TestSSMParameterEnumerator_EnumerateByARN_ParameterNames(t *testing.T) {
+	cases := []struct {
+		name         string
+		arn          string
+		apiName      string // Name the fake API returns
+		wantID       string
+		wantARNSuffix string
+	}{
+		{
+			name:          "hierarchical parameter",
+			arn:           "arn:aws:ssm:us-east-1:123456789012:parameter/my/nested/param",
+			apiName:       "/my/nested/param",
+			wantID:        "/my/nested/param",
+			wantARNSuffix: "parameter/my/nested/param",
+		},
+		{
+			name:          "top-level (non-hierarchical) parameter",
+			arn:           "arn:aws:ssm:us-east-1:123456789012:parameter/FlatParam",
+			apiName:       "FlatParam",
+			wantID:        "FlatParam",
+			wantARNSuffix: "parameter/FlatParam",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"Parameters":[{"Name":"` + tc.apiName + `","Type":"String","Tier":"Standard"}]}`
+			fakeCfg := aws.Config{
+				HTTPClient: &http.Client{Transport: &fakeDescribeParamsTransport{body: body}},
+				Region:     "us-east-1",
+			}
+			provider := NewAWSConfigProvider(plugin.AWSCommonRecon{})
+			provider.configs["us-east-1"] = &fakeCfg
+			enum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, provider)
+
+			out := pipeline.New[output.AWSResource]()
+			err := enum.EnumerateByARN(tc.arn, out)
+			require.NoError(t, err)
+			out.Close()
+			results, err := out.Collect()
+			require.NoError(t, err)
+			require.Len(t, results, 1)
+			assert.Equal(t, tc.wantID, results[0].ResourceID)
+			assert.True(t, strings.HasSuffix(results[0].ARN, tc.wantARNSuffix),
+				"ARN %q should end with %q", results[0].ARN, tc.wantARNSuffix)
+		})
+	}
+}
+
+func TestSSMParameterEnumerator_ListParametersInRegion(t *testing.T) {
+	t.Run("emits parameter with correct shape", func(t *testing.T) {
+		body := `{"Parameters":[{"Name":"/my/param","Type":"String","Tier":"Standard","DataType":"text"}]}`
+		fakeCfg := aws.Config{
+			HTTPClient: &http.Client{Transport: &fakeDescribeParamsTransport{body: body}},
+			Region:     "us-east-1",
+		}
+		provider := NewAWSConfigProvider(plugin.AWSCommonRecon{})
+		provider.configs["us-east-1"] = &fakeCfg
+		enum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, provider)
+
+		out := pipeline.New[output.AWSResource]()
+		var listErr error
+		go func() {
+			defer out.Close()
+			listErr = enum.listParametersInRegion("us-east-1", "123456789012", out)
+		}()
+		results, err := out.Collect()
+		require.NoError(t, err)
+		require.NoError(t, listErr)
+		require.Len(t, results, 1)
+		r := results[0]
+		assert.Equal(t, "AWS::SSM::Parameter", r.ResourceType)
+		assert.Equal(t, "/my/param", r.ResourceID)
+		assert.Equal(t, "arn:aws:ssm:us-east-1:123456789012:parameter/my/param", r.ARN)
+		assert.Equal(t, "123456789012", r.AccountRef)
+		assert.Equal(t, "us-east-1", r.Region)
+		assert.Equal(t, "String", r.Properties["Type"])
+		assert.Equal(t, "/my/param", r.Properties["Name"])
+	})
+
+	t.Run("skips parameter with empty name", func(t *testing.T) {
+		body := `{"Parameters":[{"Type":"String","Tier":"Standard"}]}`
+		fakeCfg := aws.Config{
+			HTTPClient: &http.Client{Transport: &fakeDescribeParamsTransport{body: body}},
+			Region:     "us-east-1",
+		}
+		provider := NewAWSConfigProvider(plugin.AWSCommonRecon{})
+		provider.configs["us-east-1"] = &fakeCfg
+		enum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, provider)
+
+		out := pipeline.New[output.AWSResource]()
+		go func() {
+			defer out.Close()
+			_ = enum.listParametersInRegion("us-east-1", "123456789012", out)
+		}()
+		results, err := out.Collect()
+		require.NoError(t, err)
+		assert.Empty(t, results, "parameter with empty name must be skipped")
+	})
 }
