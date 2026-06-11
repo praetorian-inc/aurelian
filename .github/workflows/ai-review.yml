@@ -2,14 +2,12 @@ name: AI Review
 
 on:
   pull_request:
-    types: [opened, ready_for_review]
-    branches: [main]
+    types: [opened, ready_for_review, synchronize]
   issue_comment:
     types: [created]
 
 concurrency:
   group: ai-review-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
