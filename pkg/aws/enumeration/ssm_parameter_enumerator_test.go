@@ -149,11 +149,14 @@ func TestSSMParameterEnumerator_EnumerateByARN_ParameterNames(t *testing.T) {
 			enum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{}, provider)
 
 			out := pipeline.New[output.AWSResource]()
-			err := enum.EnumerateByARN(tc.arn, out)
-			require.NoError(t, err)
-			out.Close()
+			var enumErr error
+			go func() {
+				defer out.Close()
+				enumErr = enum.EnumerateByARN(tc.arn, out)
+			}()
 			results, err := out.Collect()
 			require.NoError(t, err)
+			require.NoError(t, enumErr)
 			require.Len(t, results, 1)
 			assert.Equal(t, tc.wantID, results[0].ResourceID)
 			assert.True(t, strings.HasSuffix(results[0].ARN, tc.wantARNSuffix),
