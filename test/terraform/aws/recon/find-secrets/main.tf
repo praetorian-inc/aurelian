@@ -17,6 +17,9 @@ provider "aws" {
   region = var.region
 }
 
+# Accounts without a default VPC require an explicit subnet_id on EC2 resources.
+data "aws_subnets" "available" {}
+
 resource "random_id" "run" {
   byte_length = 4
 }
@@ -86,6 +89,7 @@ data "aws_ami" "amazon_linux" {
 resource "aws_instance" "with_secret" {
   ami           = data.aws_ami.amazon_linux.id
   instance_type = "t3.micro"
+  subnet_id     = tolist(data.aws_subnets.available.ids)[0]
 
   user_data = <<-EOF
     #!/bin/bash
