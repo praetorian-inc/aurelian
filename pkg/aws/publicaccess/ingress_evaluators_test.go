@@ -112,9 +112,33 @@ func TestEvaluateAppSync_APIKey(t *testing.T) {
 	assert.Contains(t, result.EvaluationReasons[0], "API_KEY")
 }
 
+func TestEvaluateAppSync_AdditionalProviderAPIKey(t *testing.T) {
+	e := newTestEvaluator()
+	r := &output.AWSResource{Properties: map[string]any{
+		"AuthenticationType": "AWS_IAM",
+		"AdditionalAuthenticationProviders": []any{
+			map[string]any{"AuthenticationType": "AWS_LAMBDA"},
+			map[string]any{"AuthenticationType": "API_KEY"},
+		},
+	}}
+	result := e.evaluateAppSync(r, aws.Config{}, "")
+	require.NotNil(t, result, "API_KEY in an additional provider must be detected even when primary auth is IAM")
+	assert.True(t, result.IsPublic)
+	assert.Contains(t, result.EvaluationReasons[0], "additional authentication provider")
+}
+
 func TestEvaluateAppSync_IAMAuth(t *testing.T) {
 	e := newTestEvaluator()
 	r := &output.AWSResource{Properties: map[string]any{"AuthenticationType": "AWS_IAM"}}
+	assert.Nil(t, e.evaluateAppSync(r, aws.Config{}, ""))
+}
+
+func TestEvaluateAppSync_IAMWithIAMAdditional(t *testing.T) {
+	e := newTestEvaluator()
+	r := &output.AWSResource{Properties: map[string]any{
+		"AuthenticationType":                "AWS_IAM",
+		"AdditionalAuthenticationProviders": []any{map[string]any{"AuthenticationType": "AMAZON_COGNITO_USER_POOLS"}},
+	}}
 	assert.Nil(t, e.evaluateAppSync(r, aws.Config{}, ""))
 }
 
@@ -126,21 +150,29 @@ func TestEvaluateAppSync_CognitoAuth(t *testing.T) {
 
 // --- OpenSearch / Elasticsearch ---
 
-func TestEvaluateOpenSearch_FGACDisabled(t *testing.T) {
+func TestEvaluateOpenSearch_FGACDisabledWildcardPolicy(t *testing.T) {
 	e := newTestEvaluator()
-	r := &output.AWSResource{Properties: map[string]any{"FGACEnabled": false}}
+	r := &output.AWSResource{Properties: map[string]any{"FGACEnabled": false, "HasWildcardAccessPolicy": true}}
 	result := e.evaluateOpenSearch(r, aws.Config{}, "")
 	require.NotNil(t, result)
 	assert.False(t, result.IsPublic, "FGAC-disabled is triage-only, not auto-public")
 	assert.True(t, result.NeedsManualTriage)
 	assert.Equal(t, []string{"es:ESHttpGet"}, result.AllowedActions)
-	assert.Contains(t, result.EvaluationReasons[0], "fine-grained access control disabled")
+	assert.Contains(t, result.EvaluationReasons[0], "wildcard principal")
+}
+
+func TestEvaluateOpenSearch_FGACDisabledRestrictivePolicy(t *testing.T) {
+	e := newTestEvaluator()
+	// FGAC off but the access policy does NOT grant a wildcard principal -> the
+	// policy still gates the domain, so it must not be flagged.
+	r := &output.AWSResource{Properties: map[string]any{"FGACEnabled": false, "HasWildcardAccessPolicy": false}}
+	assert.Nil(t, e.evaluateOpenSearch(r, aws.Config{}, ""))
 }
 
 func TestEvaluateOpenSearch_FGACEnabled(t *testing.T) {
 	e := newTestEvaluator()
-	r := &output.AWSResource{Properties: map[string]any{"FGACEnabled": true}}
-	assert.Nil(t, e.evaluateOpenSearch(r, aws.Config{}, ""))
+	r := &output.AWSResource{Properties: map[string]any{"FGACEnabled": true, "HasWildcardAccessPolicy": true}}
+	assert.Nil(t, e.evaluateOpenSearch(r, aws.Config{}, ""), "FGAC enforces user auth regardless of the resource policy")
 }
 
 // --- EKS ---
@@ -192,6 +224,41 @@ func TestEvaluateAPIGatewayRest_MissingProperty(t *testing.T) {
 	e := newTestEvaluator()
 	r := &output.AWSResource{Properties: map[string]any{}}
 	assert.Nil(t, e.evaluateAPIGatewayRest(r, aws.Config{}, ""))
+}
+
+func TestEvaluateAPIGatewayRest_PrivateEndpoint(t *testing.T) {
+	e := newTestEvaluator()
+	// PRIVATE endpoint type: reachable only via a VPC interface endpoint, so
+	// NONE-auth methods are not internet-exposed.
+	r := &output.AWSResource{Properties: map[string]any{
+		"UnauthenticatedMethodCount": 3,
+		"EndpointConfiguration":      map[string]any{"Types": []any{"PRIVATE"}},
+	}}
+	assert.Nil(t, e.evaluateAPIGatewayRest(r, aws.Config{}, ""))
+}
+
+func TestEvaluateAPIGatewayRest_RegionalEndpointFlagged(t *testing.T) {
+	e := newTestEvaluator()
+	r := &output.AWSResource{Properties: map[string]any{
+		"UnauthenticatedMethodCount": 2,
+		"EndpointConfiguration":      map[string]any{"Types": []any{"REGIONAL"}},
+	}}
+	result := e.evaluateAPIGatewayRest(r, aws.Config{}, "")
+	require.NotNil(t, result)
+	assert.True(t, result.IsPublic)
+}
+
+func TestEvaluateAPIGatewayRest_ResourcePolicyDowngradesToTriage(t *testing.T) {
+	e := newTestEvaluator()
+	r := &output.AWSResource{Properties: map[string]any{
+		"UnauthenticatedMethodCount": 2,
+		"Policy":                     map[string]any{"Version": "2012-10-17", "Statement": []any{map[string]any{}}},
+	}}
+	result := e.evaluateAPIGatewayRest(r, aws.Config{}, "")
+	require.NotNil(t, result)
+	assert.False(t, result.IsPublic, "a resource policy may restrict access; do not assert public")
+	assert.True(t, result.NeedsManualTriage)
+	assert.Contains(t, result.EvaluationReasons[0], "resource policy")
 }
 
 // --- API Gateway HTTP/WebSocket ---
