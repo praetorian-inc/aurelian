@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/praetorian-inc/aurelian/pkg/azure/enrichment"
@@ -146,8 +147,12 @@ func configScanToRisk(result templates.ARGQueryResult, out *pipeline.P[model.Aur
 		return nil
 	}
 
+	// Emit a distinct risk type per template (e.g. "azure-key-vault-access-policy-privilege-escalation")
+	// rather than collapsing every configuration finding into one generic "azure-configuration-scan"
+	// risk. Each template is a distinct vulnerability class, so it should carry its own risk identity
+	// and definition downstream.
 	out.Send(output.AurelianRisk{
-		Name:               "azure-configuration-scan",
+		Name:               "azure-" + strings.ReplaceAll(result.TemplateID, "_", "-"),
 		Severity:           result.TemplateDetails.Severity,
 		ImpactedResourceID: result.ResourceID,
 		Context:            ctx,
