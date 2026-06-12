@@ -1,0 +1,24 @@
+id: aws/enrich/privesc/bedrock_access_code_interpreter
+name: Bedrock AgentCore InvokeSession Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with bedrock-agentcore:InvokeSession permission that can
+  access an existing Bedrock code interpreter session carrying a privileged IAM
+  role and extract credentials from the MicroVM metadata service without
+  requiring iam:PassRole.
+severity: high
+order: 100
+cypher: |
+  MATCH (attacker:Principal)-[perm]->(target)
+  WHERE type(perm) = 'BEDROCK-AGENTCORE_INVOKESESSION'
+  WITH attacker
+  MATCH (victim:Principal)
+  WHERE victim.Arn <> attacker.Arn
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'bedrock-agentcore:InvokeSession',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

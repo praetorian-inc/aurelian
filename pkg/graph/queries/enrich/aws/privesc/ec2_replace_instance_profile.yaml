@@ -1,0 +1,23 @@
+id: aws/enrich/privesc/ec2_replace_instance_profile
+name: EC2 ReplaceIamInstanceProfileAssociation Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with ec2:ReplaceIamInstanceProfileAssociation permission
+  that can swap an existing EC2 instance's IAM instance profile for a privileged
+  one, then access the elevated credentials via IMDS or SSM.
+severity: high
+order: 100
+cypher: |
+  MATCH (attacker:Principal)-[perm]->(target)
+  WHERE type(perm) = 'EC2_REPLACEIAMINSTANCEPROFILEASSOCIATION'
+  WITH attacker
+  MATCH (victim:Principal)
+  WHERE victim.Arn <> attacker.Arn
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'ec2:ReplaceIamInstanceProfileAssociation',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created
