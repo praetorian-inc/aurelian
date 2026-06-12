@@ -115,6 +115,24 @@ func TestIsValidActionForResource(t *testing.T) {
 			resource: "arn:aws:nonexistent::123456789012:resource/test",
 			expected: true,
 		},
+		{
+			name:     "CreateRole on role ARN (regression: was mapped to service)",
+			action:   "iam:CreateRole",
+			resource: "arn:aws:iam::123456789012:role/NewRole",
+			expected: true,
+		},
+		{
+			name:     "CreateUser on user ARN (regression: was mapped to service)",
+			action:   "iam:CreateUser",
+			resource: "arn:aws:iam::123456789012:user/NewUser",
+			expected: true,
+		},
+		{
+			name:     "CreateGroup on group ARN (regression: was mapped to service)",
+			action:   "iam:CreateGroup",
+			resource: "arn:aws:iam::123456789012:group/NewGroup",
+			expected: true,
+		},
 	}
 
 	for _, tc := range testCases {
