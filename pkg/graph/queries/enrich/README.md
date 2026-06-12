@@ -211,7 +211,7 @@ path explosion over parallel per-method edges.
 - `omics_create_workflow`, `omics_startrun`
 - `kinesis_analytics`, `kinesisanalytics_startapplication`
 
-**Bedrock AgentCore / Cognito / App Runner / Amplify / Scheduler / DataPipeline (7):**
+**Bedrock AgentCore / Cognito / App Runner / Amplify / Scheduler (7):**
 - `bedrock_create_code_interpreter`, `bedrock_access_code_interpreter`
 - `cognito_set_identity_pool_roles`
 - `apprunner_create_service`, `apprunner_update_service`

@@ -224,16 +224,24 @@ func TestEnrichAWSTiebreaksByIDOnEqualOrder(t *testing.T) {
 	)
 
 	// Inject the pair (with inverted insertion order) into the shared registry, then restore.
+	// Snapshot any prior entries first so cleanup restores them instead of clobbering real
+	// registry queries that happen to share these IDs.
+	for _, id := range []string{loID, hiID} {
+		prior, existed := queryRegistry[id]
+		t.Cleanup(func() {
+			if existed {
+				queryRegistry[id] = prior
+			} else {
+				delete(queryRegistry, id)
+			}
+		})
+	}
 	for _, q := range []*Query{
 		{Metadata: QueryMetadata{ID: hiID, Platform: "aws", Type: "enrich", Order: 100}, Cypher: hiCypher},
 		{Metadata: QueryMetadata{ID: loID, Platform: "aws", Type: "enrich", Order: 100}, Cypher: loCypher},
 	} {
 		queryRegistry[q.Metadata.ID] = q
 	}
-	t.Cleanup(func() {
-		delete(queryRegistry, loID)
-		delete(queryRegistry, hiID)
-	})
 
 	mock := newMockGraphDB()
 	require.NoError(t, EnrichAWS(context.Background(), mock))

@@ -1515,6 +1515,57 @@ func TestPrivescNoCartesianFanOut(t *testing.T) {
 	})
 }
 
+// TestResourceToRoleNameFormHasRole locks down the NAME-form branch of the resource_to_role
+// enricher (Finding 1 regression). An AWS::EC2::Instance's IamInstanceProfile can be the
+// instance-profile ARN OR just the profile NAME (CloudControl-collected instances commonly
+// carry the NAME). Here the instance carries the NAME ('EC2-Profile') and the role's
+// InstanceProfileList is ARN-ONLY (no InstanceProfileName key) — the worst case. The fix's
+// second clause ('instance-profile/' + name + '"') must still create the HAS_ROLE edge.
+//
+// This FAILS against the old single-clause query ('"' + name + '"'), since '"EC2-Profile"'
+// does not appear in '...:instance-profile/EC2-Profile"' (the preceding char is '/'),
+// proving the test is non-vacuous.
+func TestResourceToRoleNameFormHasRole(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	cfg := graph.NewConfig(boltURL, "", "")
+	db, err := adapters.NewNeo4jAdapter(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	_, err = db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+	require.NoError(t, err, "clear db")
+
+	const (
+		instanceARN = "arn:aws:ec2:us-east-1:123456789012:instance/i-0name"
+		nameRoleARN = "arn:aws:iam::123456789012:role/name-form-role"
+		profileName = "EC2-Profile"
+		profileList = `[{"Arn":"arn:aws:iam::123456789012:instance-profile/EC2-Profile"}]`
+	)
+
+	// Instance carries the NAME form; role's InstanceProfileList is ARN-only (no name key).
+	_, err = db.Query(ctx, fmt.Sprintf(`
+		CREATE (i:Resource {Arn: '%s', _resourceType: 'AWS::EC2::Instance', IamInstanceProfile: '%s'})
+		CREATE (r:Role:Principal {Arn: '%s', InstanceProfileList: '%s'})
+	`, instanceARN, profileName, nameRoleARN, profileList), nil)
+	require.NoError(t, err, "seed name-form instance + ARN-only role")
+
+	_, err = RunPlatformQuery(ctx, db, "aws/enrich/resource_to_role", nil)
+	require.NoError(t, err, "run resource_to_role enricher")
+
+	result, err := db.Query(ctx, fmt.Sprintf(
+		`MATCH (i {Arn: '%s'})-[:HAS_ROLE]->(r {Arn: '%s'}) RETURN count(*) AS n`,
+		instanceARN, nameRoleARN), nil)
+	require.NoError(t, err)
+	n, _ := toInt64(result.Records[0]["n"])
+	assert.Equal(t, int64(1), n,
+		"name-form IamInstanceProfile must link to the role via HAS_ROLE — the second anchored CONTAINS clause covers this; the old single-clause query misses it")
+}
+
 // toInt64 coerces common numeric types returned by the Neo4j driver to int64.
 func toInt64(v interface{}) (int64, bool) {
 	switch x := v.(type) {
