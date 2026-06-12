@@ -4,20 +4,40 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with ec2:ReplaceIamInstanceProfileAssociation permission
-  that can swap an existing EC2 instance's IAM instance profile for a privileged
-  one, then access the elevated credentials via IMDS or SSM.
+  Detects principals with ec2:ReplaceIamInstanceProfileAssociation that can swap an
+  existing EC2 instance's IAM instance profile for a privileged one, then access the
+  elevated credentials via IMDS. Swapping in a new profile requires iam:PassRole on the
+  new role, so the escalation target is the PASSED ROLE (bound via the IAM_PASSROLE edge),
+  not an arbitrary principal. Guards: the role must trust ec2.amazonaws.com, have an
+  instance profile, not be a service-linked role, and be more privileged than the
+  attacker; an existing EC2 instance must be present to swap onto. Residual: the read
+  channel into the host (SSM/Instance Connect) and IMDS HttpEndpoint state are not in
+  the graph.
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[perm]->(target)
-  WHERE type(perm) = 'EC2_REPLACEIAMINSTANCEPROFILEASSOCIATION'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
+  // Replace-profile (catalog 141-145): target = the privileged role the attacker can pass
+  // onto an existing instance. Bind the role via IAM_PASSROLE (Replace requires PassRole on
+  // the new role) and require the attacker to hold the replace action via EXISTS. Require an
+  // existing EC2 instance Resource to swap onto. Guards: admin-as-source; self-target; ec2
+  // trust; instance profile present; exclude service-linked roles; privileged-target tiering.
+  MATCH (attacker:Principal)-[passrole]->(victim:Principal)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'ec2.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND coalesce(victim.InstanceProfileList, '') CONTAINS 'arn:aws:iam'
+    AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[rep]->() WHERE type(rep) = 'EC2_REPLACEIAMINSTANCEPROFILEASSOCIATION' }
+    AND EXISTS { (inst:Resource) WHERE inst._resourceType = 'AWS::EC2::Instance' }
+  WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'ec2:ReplaceIamInstanceProfileAssociation',
-      pe.severity = 'high',
+      pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

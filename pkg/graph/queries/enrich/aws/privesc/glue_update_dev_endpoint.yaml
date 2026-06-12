@@ -9,14 +9,31 @@ description: |
 severity: medium
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[perm]->(target)
+  // Existing-compute takeover: UpdateDevEndpoint pushes code/public-key to an EXISTING
+  // Glue dev endpoint; it cannot change the endpoint's (immutable) RoleArn. The reachable
+  // privilege is bounded by the role the existing dev endpoint RUNS AS, resolved via the
+  // (Resource)-[:HAS_ROLE]->(Role) edge from resource_service_role.yaml. Guards
+  // (per FP catalog method_29):
+  //   - mandatory HAS_ROLE join (fail-closed): no dev endpoint -> no edge, no fan-out.
+  //   - admin-as-source exclusion; self-target exclusion (cross-label coalesce).
+  //   - privileged-target: suppress non-privileged endpoint roles (lateral); tier
+  //     admin -> high, privileged -> medium.
+  MATCH (attacker:Principal)-[perm]->()
   WHERE type(perm) = 'GLUE_UPDATEDEVENDPOINT'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
+    AND coalesce(attacker._is_admin, false) <> true
+  WITH DISTINCT attacker
+  MATCH (resource:Resource)-[:HAS_ROLE]->(victim:Principal)
+  WHERE resource._resourceType = 'AWS::Glue::DevEndpoint'
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'glue:UpdateDevEndpoint',
-      pe.severity = 'medium',
+      pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

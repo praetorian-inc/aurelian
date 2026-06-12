@@ -10,15 +10,26 @@ description: |
 severity: high
 order: 100
 cypher: |
+  // New-passrole: target = passed role (the Flink application execution role), not a
+  // service resource. Mirrors iam_pass_role_ec2.yaml. Guards (cross-cutting / FP catalog):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - kinesisanalytics trust: 'kinesisanalytics.amazonaws.com' IN victim.trusted_services.
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
+  //   - create permission required via EXISTS (no second all-resources fan-out).
   MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker, victim
-  MATCH (attacker)-[create]->(service_resource)
-  WHERE type(create) = 'KINESISANALYTICS_CREATEAPPLICATION'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'kinesisanalytics.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[create]->() WHERE type(create) = 'KINESISANALYTICS_CREATEAPPLICATION' }
   WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + kinesisanalytics:CreateApplication',
-      pe.severity = 'high',
+      pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

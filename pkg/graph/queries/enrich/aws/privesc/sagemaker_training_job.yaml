@@ -9,14 +9,32 @@ description: |
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[passrole]->(target)
+  // New-passrole: target = passed role (not a SageMaker resource node). Guards
+  // (per FP catalog method_36):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - sagemaker trust: 'sagemaker.amazonaws.com' IN victim.trusted_services (else
+  //     CreateTrainingJob cannot assume the role; training container never runs as it).
+  //   - exclude service-linked roles (':role/aws-service-role/').
+  //   - privileged-target: suppress non-privileged targets; tier admin -> high,
+  //     privileged -> medium.
+  //   - bind BOTH permissions to the same passed role: PassRole victim is the target,
+  //     CreateTrainingJob required via EXISTS so an unrelated resource does not decouple.
+  MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker
-  MATCH (attacker)-[create]->(service_resource)
-  WHERE type(create) = 'SAGEMAKER_CREATETRAININGJOB'
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'sagemaker.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[create]->() WHERE type(create) = 'SAGEMAKER_CREATETRAININGJOB' }
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + sagemaker:CreateTrainingJob',
-      pe.severity = 'high',
+      pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

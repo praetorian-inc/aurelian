@@ -4,21 +4,51 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with iam:PassRole and cognito-identity:SetIdentityPoolRoles
-  permissions that can bind an admin role to an existing Cognito identity pool's
-  unauthenticated or authenticated role, then assume it via Cognito federation.
+  Detects principals with iam:PassRole and cognito-identity:SetIdentityPoolRoles that can
+  bind a privileged IAM role to an existing Cognito identity pool's authenticated or
+  unauthenticated role slot, then assume it via AssumeRoleWithWebIdentity through Cognito
+  federation. The escalation target is the PASSED ROLE bound to the pool (not the Cognito
+  service resource). Guards: the role must trust Cognito Identity
+  (cognito-identity.amazonaws.com), must live in the attacker's account, and must be more
+  privileged than the attacker.
+
+  To actually assume the bound role the attacker must obtain pool credentials, so this also
+  requires cognito-identity:GetId AND cognito-identity:GetCredentialsForIdentity (graphable
+  permission edges).
+
+  NOTE (precondition not blocked): SetIdentityPoolRoles requires a pre-existing identity pool
+  (or an unauthenticated-enabled pool as an alternative credential path), which needs an
+  AWS::Cognito::IdentityPool resource enricher (pool presence / AllowUnauthenticatedIdentities)
+  not yet in the graph; that precondition is not gated here.
 severity: high
 order: 100
 cypher: |
+  // New-passrole-style: target = passed role bound to the pool. Guards (per FP catalog / method_51):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - Cognito trust: 'cognito-identity.amazonaws.com' IN victim.trusted_services.
+  //   - same-account: PassRole is account-local.
+  //   - credential path: attacker must hold cognito-identity:GetId AND GetCredentialsForIdentity
+  //     to obtain pool credentials and assume the bound role (graphable as EXISTS perm edges).
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
   MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker, victim
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'cognito-identity.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND split(coalesce(victim.Arn, victim.arn), ':')[4] = split(coalesce(attacker.Arn, attacker.arn), ':')[4]
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[getid]->() WHERE type(getid) = 'COGNITO-IDENTITY_GETID' }
+    AND EXISTS { (attacker)-[getcreds]->() WHERE type(getcreds) = 'COGNITO-IDENTITY_GETCREDENTIALSFORIDENTITY' }
+  WITH DISTINCT attacker, victim
   MATCH (attacker)-[set_roles]->(service_resource)
   WHERE type(set_roles) = 'COGNITO-IDENTITY_SETIDENTITYPOOLROLES'
   WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + cognito-identity:SetIdentityPoolRoles',
-      pe.severity = 'high',
+      pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

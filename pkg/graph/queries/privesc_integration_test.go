@@ -31,626 +31,376 @@ func startNeo4jContainer(ctx context.Context) (string, func(), error) {
 
 const (
 	attackerARN    = "arn:aws:iam::123456789012:user/attacker"
-	victimARN      = "arn:aws:iam::123456789012:user/victim"
 	roleARN        = "arn:aws:iam::123456789012:role/target-role"
 	svcResourceARN = "arn:aws:lambda:us-east-1:123456789012:function:test"
+
+	// Shared-seed node identifiers (see sharedPrivescSeed). The corrected privesc
+	// methods scope their CAN_PRIVESC edge to one of these well-defined targets, so a
+	// test asserts the edge lands on the RIGHT node — not just that some edge exists.
+	sharedAdminRoleARN = "arn:aws:iam::123456789012:role/admin-target"                   // passed/assumed/HAS_ROLE target
+	sharedPrivUserARN  = "arn:aws:iam::123456789012:user/priv-victim"                    // access-key / login-profile target
+	sharedWildcardARN  = "arn:aws:batch:us-east-1:123456789012:service"                  // service-wildcard terminate-at-resource
+	sharedStackARN     = "arn:aws:cloudformation:us-east-1:123456789012:stack/changeset" // cfn change-set stub
 )
 
-// privescTestCase describes one enrichment query scenario.
-type privescTestCase struct {
-	// queryID is the enrichment query to execute (e.g. "aws/enrich/privesc/apprunner_create_service").
+// sharedPrivescSeed is ONE "all-guards-satisfied" graph reused by every per-method case in
+// TestPrivescQueriesNeo4j instead of 85 bespoke seeds. It seeds, in one account (123456789012):
+//
+//   - attacker (:User:Principal, NOT admin): member of a privileged group, holding a
+//     customer-managed policy attached to itself, and holding EVERY permission edge a privesc
+//     method keys off (all on the same `svc`/`policy`/`user` nodes so multi-perm methods that
+//     require co-resident actions on one node are satisfied).
+//   - adminRole (:Role:Principal, _is_admin): trusts ALL relevant service principals, has an
+//     InstanceProfileList, is SSM-enabled, is CAN_ASSUME-reachable from the attacker, and is the
+//     IAM_PASSROLE target. It is the correct edge target for new-passrole, trust-backed, and
+//     existing-compute (HAS_ROLE) methods.
+//   - one :Resource per _resourceType used by an existing-compute method, each HAS_ROLE->adminRole.
+//   - privUser (:User:Principal, _is_admin): the scoped target of iam:CreateAccessKey /
+//     Create/UpdateLoginProfile, with the paired (DeleteAccessKey / Create<->Update) edge.
+//   - privGroup (:Group:Principal, _is_admin) in the attacker's GroupList: self-escalation group target.
+//   - wildcard / stack stubs for the service-wildcard and change-set methods.
+//
+// Hyphenated relationship types (EC2-INSTANCE-CONNECT_*, BEDROCK-AGENTCORE_*, COGNITO-IDENTITY_*,
+// EMR-SERVERLESS_*) cannot appear in a Go raw-string literal, so they are seeded separately by
+// sharedPrivescHyphenatedSeeds.
+func sharedPrivescSeed() string {
+	return fmt.Sprintf(`
+		CREATE (a:User:Principal {Arn: '%s', _is_admin: false,
+			GroupList: ['priv-group'],
+			AttachedManagedPolicies: '[{"PolicyArn":"%s"}]'})
+		CREATE (adminRole:Role:Principal {Arn: '%s', _is_admin: true, _ssm_enabled: true,
+			trusted_services: [
+				'ec2.amazonaws.com', 'lambda.amazonaws.com', 'cloudformation.amazonaws.com',
+				'datapipeline.amazonaws.com', 'glue.amazonaws.com', 'sagemaker.amazonaws.com',
+				'ecs-tasks.amazonaws.com', 'states.amazonaws.com', 'scheduler.amazonaws.com',
+				'ssm.amazonaws.com', 'kinesisanalytics.amazonaws.com', 'omics.amazonaws.com',
+				'emr-serverless.amazonaws.com', 'gamelift.amazonaws.com', 'braket.amazonaws.com',
+				'bedrock-agentcore.amazonaws.com', 'tasks.apprunner.amazonaws.com',
+				'amplify.amazonaws.com', 'cognito-identity.amazonaws.com',
+				'codebuild.amazonaws.com'
+			],
+			InstanceProfileList: '[{"Arn":"arn:aws:iam::123456789012:instance-profile/ip"}]'})
+		CREATE (privUser:User:Principal {Arn: '%s', _is_admin: true})
+		CREATE (privGroup:Group:Principal {Arn: 'arn:aws:iam::123456789012:group/priv-group',
+			GroupName: 'priv-group', _is_admin: true})
+		CREATE (joinGroup:Group:Principal {Arn: 'arn:aws:iam::123456789012:group/join-group',
+			GroupName: 'join-group', _is_admin: true})
+		CREATE (policy:Resource {Arn: '%s'})
+		CREATE (svc:Resource {Arn: '%s'})
+		CREATE (wildcard:Resource {Arn: '%s'})
+		CREATE (stack:Resource {Arn: '%s'})
+		CREATE (cfnStack:Resource    {_resourceType: 'AWS::CloudFormation::Stack',       Arn: 'arn:aws:cloudformation:us-east-1:123456789012:stack/s'})
+		CREATE (cfnStackSet:Resource {_resourceType: 'AWS::CloudFormation::StackSet',    Arn: 'arn:aws:cloudformation:us-east-1:123456789012:stackset/ss'})
+		CREATE (cbProject:Resource   {_resourceType: 'AWS::CodeBuild::Project',          Arn: 'arn:aws:codebuild:us-east-1:123456789012:project/p'})
+		CREATE (glueEndpoint:Resource{_resourceType: 'AWS::Glue::DevEndpoint',           Arn: 'arn:aws:glue:us-east-1:123456789012:devEndpoint/de'})
+		CREATE (glueJob:Resource     {_resourceType: 'AWS::Glue::Job',                   Arn: 'arn:aws:glue:us-east-1:123456789012:job/j'})
+		CREATE (appRunner:Resource   {_resourceType: 'AWS::AppRunner::Service',          Arn: 'arn:aws:apprunner:us-east-1:123456789012:service/ar'})
+		CREATE (ecsTaskDef:Resource  {_resourceType: 'AWS::ECS::TaskDefinition',         Arn: 'arn:aws:ecs:us-east-1:123456789012:task-definition/td'})
+		CREATE (sfnMachine:Resource  {_resourceType: 'AWS::StepFunctions::StateMachine', Arn: 'arn:aws:states:us-east-1:123456789012:stateMachine/sm'})
+		CREATE (smNotebook:Resource  {_resourceType: 'AWS::SageMaker::NotebookInstance', Arn: 'arn:aws:sagemaker:us-east-1:123456789012:notebook-instance/nb'})
+		CREATE (ec2Instance:Resource {_resourceType: 'AWS::EC2::Instance',               Arn: 'arn:aws:ec2:us-east-1:123456789012:instance/i-1'})
+		WITH a, adminRole, privUser, privGroup, joinGroup, policy, svc, wildcard, stack,
+			cfnStack, cfnStackSet, cbProject, glueEndpoint, glueJob, appRunner,
+			ecsTaskDef, sfnMachine, smNotebook, ec2Instance
+		// adminRole reachability: attacker can both pass it and assume it.
+		MERGE (a)-[:IAM_PASSROLE]->(adminRole)
+		MERGE (a)-[:CAN_ASSUME]->(adminRole)
+		// Existing-compute resources all run as the privileged adminRole. svc itself carries
+		// HAS_ROLE too, so methods that bind their HAS_ROLE join FROM the permission-edge
+		// target (lambda_*, apprunner_update_service, stepfunctions_update) resolve the role.
+		MERGE (svc)-[:HAS_ROLE]->(adminRole)
+		MERGE (cfnStack)-[:HAS_ROLE]->(adminRole)
+		MERGE (cfnStackSet)-[:HAS_ROLE]->(adminRole)
+		MERGE (cbProject)-[:HAS_ROLE]->(adminRole)
+		MERGE (glueEndpoint)-[:HAS_ROLE]->(adminRole)
+		MERGE (glueJob)-[:HAS_ROLE]->(adminRole)
+		MERGE (appRunner)-[:HAS_ROLE]->(adminRole)
+		MERGE (ecsTaskDef)-[:HAS_ROLE]->(adminRole)
+		MERGE (sfnMachine)-[:HAS_ROLE]->(adminRole)
+		MERGE (smNotebook)-[:HAS_ROLE]->(adminRole)
+		MERGE (ec2Instance)-[:HAS_ROLE]->(adminRole)
+		// Self-policy methods: the customer-managed policy is attached to the attacker.
+		MERGE (a)-[:IAM_CREATEPOLICYVERSION]->(policy)
+		MERGE (a)-[:IAM_SETDEFAULTPOLICYVERSION]->(policy)
+		// Trust-backed direct takeover: write a policy onto / rewrite trust of the assumable role.
+		MERGE (a)-[:IAM_PUTROLEPOLICY]->(adminRole)
+		MERGE (a)-[:IAM_ATTACHROLEPOLICY]->(adminRole)
+		MERGE (a)-[:IAM_UPDATEASSUMEROLEPOLICY]->(adminRole)
+		// Self-escalation on self/group.
+		MERGE (a)-[:IAM_PUTUSERPOLICY]->(a)
+		MERGE (a)-[:IAM_ATTACHUSERPOLICY]->(a)
+		MERGE (a)-[:IAM_PUTGROUPPOLICY]->(privGroup)
+		MERGE (a)-[:IAM_ATTACHGROUPPOLICY]->(privGroup)
+		// AddUserToGroup must target a privileged group the attacker is NOT already in.
+		MERGE (a)-[:IAM_ADDUSERTOGROUP]->(joinGroup)
+		MERGE (a)-[:IAM_CREATESERVICELINKEDROLE]->(svc)
+		// Principal-access scoped to a privileged USER (with the paired action on the same user).
+		MERGE (a)-[:IAM_CREATEACCESSKEY]->(privUser)
+		MERGE (a)-[:IAM_DELETEACCESSKEY]->(privUser)
+		MERGE (a)-[:IAM_CREATELOGINPROFILE]->(privUser)
+		MERGE (a)-[:IAM_UPDATELOGINPROFILE]->(privUser)
+		// sts:AssumeRole (paired with the CAN_ASSUME trust edge above).
+		MERGE (a)-[:STS_ASSUMEROLE]->(svc)
+		// CloudFormation change-set: both actions on the SAME stub.
+		MERGE (a)-[:CLOUDFORMATION_CREATECHANGESET]->(stack)
+		MERGE (a)-[:CLOUDFORMATION_EXECUTECHANGESET]->(stack)
+		// New-passrole + existing-compute service actions (all on svc unless a method needs a
+		// specific _resourceType node, which it reaches via the HAS_ROLE edges above).
+		MERGE (a)-[:EC2_RUNINSTANCES]->(svc)
+		MERGE (a)-[:EC2_REQUESTSPOTINSTANCES]->(svc)
+		MERGE (a)-[:EC2_CREATELAUNCHTEMPLATE]->(svc)
+		MERGE (a)-[:EC2_CREATELAUNCHTEMPLATEVERSION]->(svc)
+		MERGE (a)-[:EC2_MODIFYLAUNCHTEMPLATE]->(svc)
+		MERGE (a)-[:EC2_MODIFYINSTANCEATTRIBUTE]->(svc)
+		MERGE (a)-[:EC2_STOPINSTANCES]->(svc)
+		MERGE (a)-[:EC2_STARTINSTANCES]->(svc)
+		MERGE (a)-[:EC2_REPLACEIAMINSTANCEPROFILEASSOCIATION]->(svc)
+		MERGE (a)-[:AUTOSCALING_CREATEAUTOSCALINGGROUP]->(svc)
+		MERGE (a)-[:LAMBDA_CREATEFUNCTION]->(svc)
+		MERGE (a)-[:LAMBDA_UPDATEFUNCTIONCODE]->(svc)
+		MERGE (a)-[:LAMBDA_INVOKEFUNCTION]->(svc)
+		MERGE (a)-[:LAMBDA_ADDPERMISSION]->(svc)
+		MERGE (a)-[:LAMBDA_CREATEEVENTSOURCEMAPPING]->(svc)
+		MERGE (a)-[:CLOUDFORMATION_CREATESTACK]->(svc)
+		MERGE (a)-[:CLOUDFORMATION_CREATESTACKSET]->(svc)
+		MERGE (a)-[:CLOUDFORMATION_CREATESTACKINSTANCES]->(svc)
+		MERGE (a)-[:CLOUDFORMATION_UPDATESTACK]->(svc)
+		MERGE (a)-[:CLOUDFORMATION_UPDATESTACKSET]->(svc)
+		MERGE (a)-[:CODEBUILD_CREATEPROJECT]->(svc)
+		MERGE (a)-[:CODEBUILD_UPDATEPROJECT]->(svc)
+		MERGE (a)-[:CODEBUILD_STARTBUILD]->(svc)
+		MERGE (a)-[:CODEDEPLOY_CREATEDEPLOYMENT]->(svc)
+		MERGE (a)-[:DATAPIPELINE_CREATEPIPELINE]->(svc)
+		MERGE (a)-[:DATAPIPELINE_PUTPIPELINEDEFINITION]->(svc)
+		MERGE (a)-[:DATAPIPELINE_ACTIVATEPIPELINE]->(svc)
+		MERGE (a)-[:GLUE_CREATEJOB]->(svc)
+		MERGE (a)-[:GLUE_UPDATEJOB]->(svc)
+		MERGE (a)-[:GLUE_STARTJOBRUN]->(svc)
+		MERGE (a)-[:GLUE_CREATETRIGGER]->(svc)
+		MERGE (a)-[:GLUE_CREATESESSION]->(svc)
+		MERGE (a)-[:GLUE_RUNSTATEMENT]->(svc)
+		MERGE (a)-[:GLUE_CREATEDEVENDPOINT]->(svc)
+		MERGE (a)-[:GLUE_UPDATEDEVENDPOINT]->(svc)
+		MERGE (a)-[:SAGEMAKER_CREATENOTEBOOKINSTANCE]->(svc)
+		MERGE (a)-[:SAGEMAKER_CREATETRAININGJOB]->(svc)
+		MERGE (a)-[:SAGEMAKER_CREATEPROCESSINGJOB]->(svc)
+		MERGE (a)-[:SAGEMAKER_CREATEPRESIGNEDNOTEBOOKINSTANCEURL]->(svc)
+		MERGE (a)-[:SAGEMAKER_UPDATENOTEBOOKINSTANCELIFECYCLECONFIG]->(svc)
+		MERGE (a)-[:ECS_CREATESERVICE]->(svc)
+		MERGE (a)-[:ECS_RUNTASK]->(svc)
+		MERGE (a)-[:ECS_STARTTASK]->(svc)
+		MERGE (a)-[:ECS_EXECUTECOMMAND]->(svc)
+		MERGE (a)-[:STATES_CREATESTATEMACHINE]->(svc)
+		MERGE (a)-[:STATES_UPDATESTATEMACHINE]->(svc)
+		MERGE (a)-[:STATES_STARTEXECUTION]->(svc)
+		MERGE (a)-[:SCHEDULER_CREATESCHEDULE]->(svc)
+		MERGE (a)-[:SSM_SENDCOMMAND]->(svc)
+		MERGE (a)-[:SSM_STARTSESSION]->(svc)
+		MERGE (a)-[:SSM_CREATEASSOCIATION]->(svc)
+		MERGE (a)-[:SSM_CREATEDOCUMENT]->(svc)
+		MERGE (a)-[:SSM_STARTAUTOMATIONEXECUTION]->(svc)
+		MERGE (a)-[:KINESISANALYTICS_CREATEAPPLICATION]->(svc)
+		MERGE (a)-[:KINESISANALYTICS_STARTAPPLICATION]->(svc)
+		MERGE (a)-[:OMICS_CREATEWORKFLOW]->(svc)
+		MERGE (a)-[:OMICS_STARTRUN]->(svc)
+		MERGE (a)-[:ELASTICMAPREDUCE_RUNJOBFLOW]->(svc)
+		MERGE (a)-[:GAMELIFT_CREATEBUILD]->(svc)
+		MERGE (a)-[:GAMELIFT_CREATEFLEET]->(svc)
+		MERGE (a)-[:BRAKET_CREATEJOB]->(svc)
+		MERGE (a)-[:APPRUNNER_CREATESERVICE]->(svc)
+		MERGE (a)-[:APPRUNNER_UPDATESERVICE]->(svc)
+		MERGE (a)-[:AMPLIFY_CREATEAPP]->(svc)
+		MERGE (a)-[:AMPLIFY_CREATEBRANCH]->(svc)
+		MERGE (a)-[:AMPLIFY_STARTJOB]->(svc)
+		MERGE (a)-[:IMAGEBUILDER_CREATEINFRASTRUCTURECONFIGURATION]->(svc)
+		MERGE (a)-[:IMAGEBUILDER_CREATEIMAGE]->(svc)
+		MERGE (a)-[:BATCH_REGISTERJOBDEFINITION]->(svc)
+		MERGE (a)-[:BATCH_SUBMITJOB]->(wildcard)
+		MERGE (a)-[:CODESTAR_CREATEPROJECT]->(wildcard)
+	`, attackerARN, "arn:aws:iam::123456789012:policy/custom",
+		sharedAdminRoleARN, sharedPrivUserARN, "arn:aws:iam::123456789012:policy/custom",
+		svcResourceARN, sharedWildcardARN, sharedStackARN)
+}
+
+// sharedPrivescHyphenatedSeeds returns the MERGE statements for relationship types that
+// contain hyphens (illegal in a Go raw-string literal), bound to the shared-seed attacker.
+func sharedPrivescHyphenatedSeeds() []string {
+	mk := func(relType, targetARN string) string {
+		return fmt.Sprintf("MATCH (a {Arn: '%s'}), (t {Arn: '%s'}) MERGE (a)-[:`%s`]->(t)",
+			attackerARN, targetARN, relType)
+	}
+	return []string{
+		mk("EC2-INSTANCE-CONNECT_SENDSSHPUBLICKEY", svcResourceARN),
+		mk("BEDROCK-AGENTCORE_CREATECODEINTERPRETER", svcResourceARN),
+		mk("BEDROCK-AGENTCORE_STARTCODEINTERPRETERSESSION", svcResourceARN),
+		mk("BEDROCK-AGENTCORE_INVOKESESSION", sharedWildcardARN),
+		mk("COGNITO-IDENTITY_SETIDENTITYPOOLROLES", svcResourceARN),
+		mk("COGNITO-IDENTITY_GETID", svcResourceARN),
+		mk("COGNITO-IDENTITY_GETCREDENTIALSFORIDENTITY", svcResourceARN),
+		mk("EMR-SERVERLESS_CREATEAPPLICATION", svcResourceARN),
+		mk("EMR-SERVERLESS_STARTJOBRUN", svcResourceARN),
+	}
+}
+
+// privescTarget identifies the node a corrected method's CAN_PRIVESC edge must terminate at.
+type privescTarget int
+
+const (
+	targetSelfLoop  privescTarget = iota // self-escalation: attacker -> attacker
+	targetAdminRole                      // new-passrole / trust-backed / existing-compute -> the privileged role
+	targetPrivUser                       // principal-access -> the privileged user node
+	targetWildcard                       // service-wildcard methods -> the service resource stub
+	targetStack                          // cloudformation_changeset -> the same stack stub
+	targetNone                           // method intentionally emits no edge (e.g. SLR)
+)
+
+// sharedSeedCase asserts that running queryID against the shared seed emits a correctly-scoped
+// CAN_PRIVESC edge to the target node (and, for targetNone, emits none).
+type sharedSeedCase struct {
 	queryID string
-	// setup is Cypher that seeds the graph before the query runs.
-	setup string
-	// verify returns the count of CAN_PRIVESC edges that should exist after the query.
-	verify string
-	// wantEdges is the minimum number of expected CAN_PRIVESC edges.
-	wantEdges int
+	target  privescTarget
 }
 
-// standaloneCase builds a test case for single-permission escalation methods.
-// The attacker holds permType on any target node; the query should create CAN_PRIVESC to the victim.
-func standaloneCase(queryID, permType string) privescTestCase {
-	return privescTestCase{
-		queryID: queryID,
-		setup: fmt.Sprintf(`
-			CREATE (a:Principal {Arn: '%s'})
-			CREATE (v:Principal {Arn: '%s'})
-			CREATE (t:Resource  {Arn: '%s'})
-			WITH a, t
-			MERGE (a)-[:`+"`%s`"+`]->(t)
-		`, attackerARN, victimARN, roleARN, permType),
-		verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
-		wantEdges: 1,
+func (tc sharedSeedCase) verify() (cypher string, wantZero bool) {
+	dst := func(arn string) string {
+		return fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`,
+			attackerARN, arn)
+	}
+	switch tc.target {
+	case targetSelfLoop:
+		return fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(a) RETURN count(r) AS n`, attackerARN), false
+	case targetAdminRole:
+		return dst(sharedAdminRoleARN), false
+	case targetPrivUser:
+		return dst(sharedPrivUserARN), false
+	case targetWildcard:
+		return dst(sharedWildcardARN), false
+	case targetStack:
+		return dst(sharedStackARN), false
+	default: // targetNone
+		return fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->() RETURN count(r) AS n`, attackerARN), true
 	}
 }
 
-// passRoleCase builds a test case for pre-existing PassRole+service methods (14–42).
-// These methods still create CAN_PRIVESC to the service resource node (pre-existing
-// Concern B design — tracked in Linear for a follow-up fix).
-func passRoleCase(queryID, svcPermType string) privescTestCase {
-	return privescTestCase{
-		queryID: queryID,
-		setup: fmt.Sprintf(`
-			CREATE (a:Principal {Arn: '%s'})
-			CREATE (r:Resource  {Arn: '%s'})
-			CREATE (s:Resource  {Arn: '%s'})
-			WITH a, r, s
-			MERGE (a)-[:IAM_PASSROLE]->(r)
-			MERGE (a)-[:`+"`%s`"+`]->(s)
-		`, attackerARN, roleARN, svcResourceARN, svcPermType),
-		verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(s {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, svcResourceARN),
-		wantEdges: 1,
+// allSharedSeedCases declares the expected edge target for every privesc method. Each method
+// runs against the same sharedPrivescSeed; the target encodes the correctly-scoped destination
+// the cartesian-fix + structural guards must produce (self-loop / passed role / reached role /
+// resource role / service stub) — and proves no method emits to an unexpected node.
+func allSharedSeedCases() []sharedSeedCase {
+	const p = "aws/enrich/privesc/"
+	return []sharedSeedCase{
+		// --- Self-escalation (target = attacker self-loop) ---
+		{p + "iam_create_policy_version", targetSelfLoop},
+		{p + "iam_set_default_policy_version", targetSelfLoop},
+		{p + "iam_put_user_policy", targetSelfLoop},
+		{p + "iam_attach_user_policy", targetSelfLoop},
+		{p + "iam_put_group_policy", targetSelfLoop},
+		{p + "iam_attach_group_policy", targetSelfLoop},
+		{p + "iam_add_user_to_group", targetSelfLoop},
+		{p + "ssm_createdocument_startautomation", targetSelfLoop},
+
+		// --- Intentional no-op (created SLR is not a usable escalation in the graph) ---
+		{p + "iam_create_service_linked_role", targetNone},
+
+		// --- Trust-backed direct takeover / principal-access ROLE target (-> adminRole) ---
+		{p + "iam_put_role_policy", targetAdminRole},
+		{p + "iam_attach_role_policy", targetAdminRole},
+		{p + "iam_update_assume_role_policy", targetAdminRole},
+		{p + "sts_assume_role", targetAdminRole},
+		{p + "passrole_modify_policy", targetAdminRole},
+		{p + "update_assume_role_passrole_service", targetAdminRole},
+
+		// --- Principal-access scoped to a privileged USER (-> privUser) ---
+		{p + "iam_create_access_key", targetPrivUser},
+		{p + "iam_create_login_profile", targetPrivUser},
+		{p + "iam_update_login_profile", targetPrivUser},
+
+		// --- New-passrole (-> passed adminRole) ---
+		{p + "iam_pass_role_ec2", targetAdminRole},
+		{p + "iam_pass_role_lambda", targetAdminRole},
+		{p + "iam_pass_role_cloudformation", targetAdminRole},
+		{p + "iam_pass_role_datapipeline", targetAdminRole},
+		{p + "iam_pass_role_glue", targetAdminRole},
+		{p + "iam_pass_role_sagemaker", targetAdminRole},
+		{p + "ec2_request_spot_instances", targetAdminRole},
+		{p + "ec2_replace_instance_profile", targetAdminRole},
+		{p + "autoscaling_launch_template", targetAdminRole},
+		{p + "apprunner_create_service", targetAdminRole},
+		{p + "batch_passrole", targetAdminRole},
+		{p + "braket_create_job", targetAdminRole},
+		{p + "cloudformation_create_stackset", targetAdminRole},
+		{p + "codebuild_create_project", targetAdminRole},
+		{p + "codebuild_update_project", targetAdminRole},
+		{p + "cognito_set_identity_pool_roles", targetAdminRole},
+		{p + "ecs_create_service", targetAdminRole},
+		{p + "ecs_passrole_runtask", targetAdminRole},
+		{p + "ecs_start_task", targetAdminRole},
+		{p + "emr_run_job_flow", targetAdminRole},
+		{p + "emr_serverless", targetAdminRole},
+		{p + "emr_serverless_startjobrun", targetAdminRole},
+		{p + "gamelift_create_fleet", targetAdminRole},
+		{p + "gamelift_createbuild_createfleet", targetAdminRole},
+		{p + "glue_create_dev_endpoint", targetAdminRole},
+		{p + "glue_create_session", targetAdminRole},
+		{p + "glue_createjob_createtrigger", targetAdminRole},
+		{p + "glue_createjob_startjobrun", targetAdminRole},
+		{p + "glue_createsession_runstatement", targetAdminRole},
+		{p + "imagebuilder_create_pipeline", targetAdminRole},
+		{p + "imagebuilder_createimage", targetAdminRole},
+		{p + "kinesis_analytics", targetAdminRole},
+		{p + "kinesisanalytics_startapplication", targetAdminRole},
+		{p + "lambda_passrole_createfunction_addpermission", targetAdminRole},
+		{p + "omics_create_workflow", targetAdminRole},
+		{p + "omics_startrun", targetAdminRole},
+		{p + "sagemaker_processing_job", targetAdminRole},
+		{p + "sagemaker_training_job", targetAdminRole},
+		{p + "scheduler_create_schedule", targetAdminRole},
+		{p + "ssm_start_automation", targetAdminRole},
+		{p + "stepfunctions_create", targetAdminRole},
+		{p + "stepfunctions_create_startexecution", targetAdminRole},
+		{p + "amplify_create_app", targetAdminRole},
+		{p + "bedrock_create_code_interpreter", targetAdminRole},
+
+		// --- Existing-compute via HAS_ROLE (-> the resource's adminRole) ---
+		{p + "lambda_update_function_code", targetAdminRole},
+		{p + "lambda_updatecode_invoke", targetAdminRole},
+		{p + "lambda_add_permission", targetAdminRole},
+		{p + "lambda_create_event_source_mapping", targetAdminRole},
+		{p + "cloudformation_update_stack", targetAdminRole},
+		{p + "cloudformation_update_stackset", targetAdminRole},
+		{p + "codebuild_start_build", targetAdminRole},
+		{p + "codedeploy_create_deployment", targetAdminRole},
+		{p + "apprunner_update_service", targetAdminRole},
+		{p + "ecs_execute_command", targetAdminRole},
+		{p + "stepfunctions_update", targetAdminRole},
+		{p + "glue_update_dev_endpoint", targetAdminRole},
+		{p + "glue_update_job", targetAdminRole},
+		{p + "glue_updatejob_startjobrun", targetAdminRole},
+		{p + "glue_updatejob_createtrigger", targetAdminRole},
+		{p + "sagemaker_lifecycle_config", targetAdminRole},
+		{p + "sagemaker_presigned_url", targetAdminRole},
+		{p + "ssm_send_command", targetAdminRole},
+		{p + "ssm_start_session", targetAdminRole},
+		{p + "ec2_instance_connect", targetAdminRole},
+		{p + "ec2_modify_instance_attribute", targetAdminRole},
+		{p + "ec2_ssm_association", targetAdminRole},
+		{p + "ec2_launch_template_version", targetAdminRole},
+
+		// --- Multi-perm same stub / service-wildcard terminate-at-resource ---
+		{p + "cloudformation_changeset", targetStack},
+		{p + "batch_submit_job", targetWildcard},
+		{p + "bedrock_access_code_interpreter", targetWildcard},
+		{p + "codestar_create_project", targetWildcard},
 	}
 }
 
-// passRoleCaseFanOut builds a test case for new PassRole+service methods (43–89).
-// After the CodeRabbit-validated fix, these methods create CAN_PRIVESC to the
-// specific passed IAM role (victim = passed role) rather than all Principals.
-// The passed role is created as :Principal (matching real IAM role node labeling).
-func passRoleCaseFanOut(queryID, svcPermType string) privescTestCase {
-	return privescTestCase{
-		queryID: queryID,
-		setup: fmt.Sprintf(`
-			CREATE (a:Principal {Arn: '%s'})
-			CREATE (r:Principal {Arn: '%s'})
-			CREATE (s:Resource  {Arn: '%s'})
-			WITH a, r, s
-			MERGE (a)-[:IAM_PASSROLE]->(r)
-			MERGE (a)-[:`+"`%s`"+`]->(s)
-		`, attackerARN, roleARN, svcResourceARN, svcPermType),
-		verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-		wantEdges: 1,
-	}
-}
-
-// newPrivescCases returns test cases for all 30 new privesc methods (43–72).
-// allPrivescCases returns test cases for every privesc method (methods 01–89).
-// Add new methods here — no separate "old" vs "new" split.
-func allPrivescCases() []privescTestCase {
-	return []privescTestCase{
-		// ---- Methods 01–42 (pre-PR baseline) ----
-		// iam_create_policy_version: Phase-2 self-escalation. The attacker can version a
-		// CUSTOMER-managed policy that is attached to themselves -> self-loop CAN_PRIVESC.
-		// (The old fan-out-to-every-principal behavior was the cartesian bug.)
-		{
-			queryID: "aws/enrich/privesc/iam_create_policy_version",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s', AttachedManagedPolicies: '[{"PolicyArn":"%s"}]'})
-				CREATE (p:Resource  {Arn: '%s'})
-				WITH a, p
-				MERGE (a)-[:IAM_CREATEPOLICYVERSION]->(p)
-			`, attackerARN, "arn:aws:iam::123456789012:policy/custom", "arn:aws:iam::123456789012:policy/custom"),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(a) RETURN count(r) AS n`, attackerARN),
-			wantEdges: 1,
-		},
-		standaloneCase("aws/enrich/privesc/iam_set_default_policy_version", "IAM_SETDEFAULTPOLICYVERSION"),
-		standaloneCase("aws/enrich/privesc/iam_create_access_key", "IAM_CREATEACCESSKEY"),
-		standaloneCase("aws/enrich/privesc/iam_create_login_profile", "IAM_CREATELOGINPROFILE"),
-		standaloneCase("aws/enrich/privesc/iam_update_login_profile", "IAM_UPDATELOGINPROFILE"),
-		standaloneCase("aws/enrich/privesc/iam_attach_user_policy", "IAM_ATTACHUSERPOLICY"),
-		standaloneCase("aws/enrich/privesc/iam_attach_group_policy", "IAM_ATTACHGROUPPOLICY"),
-		standaloneCase("aws/enrich/privesc/iam_attach_role_policy", "IAM_ATTACHROLEPOLICY"),
-		standaloneCase("aws/enrich/privesc/iam_put_user_policy", "IAM_PUTUSERPOLICY"),
-		standaloneCase("aws/enrich/privesc/iam_put_group_policy", "IAM_PUTGROUPPOLICY"),
-		standaloneCase("aws/enrich/privesc/iam_put_role_policy", "IAM_PUTROLEPOLICY"),
-		standaloneCase("aws/enrich/privesc/iam_add_user_to_group", "IAM_ADDUSERTOGROUP"),
-		standaloneCase("aws/enrich/privesc/iam_update_assume_role_policy", "IAM_UPDATEASSUMEROLEPOLICY"),
-		passRoleCase("aws/enrich/privesc/iam_pass_role_lambda", "LAMBDA_CREATEFUNCTION"),
-		// iam_pass_role_ec2: Phase-2 new-passrole fix. Target = the passed role (a
-		// :Principal), NOT the EC2 service resource. Guards: role trusts ec2, has an
-		// instance profile, and is privileged. The passed role is seeded with all three.
-		{
-			queryID: "aws/enrich/privesc/iam_pass_role_ec2",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s', _is_admin: true,
-					trusted_services: ['ec2.amazonaws.com'],
-					InstanceProfileList: '[{"Arn":"arn:aws:iam::123456789012:instance-profile/ip"}]'})
-				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-				MERGE (a)-[:EC2_RUNINSTANCES]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-		passRoleCase("aws/enrich/privesc/iam_pass_role_cloudformation", "CLOUDFORMATION_CREATESTACK"),
-		passRoleCase("aws/enrich/privesc/iam_pass_role_datapipeline", "DATAPIPELINE_CREATEPIPELINE"),
-		passRoleCase("aws/enrich/privesc/iam_pass_role_glue", "GLUE_CREATEJOB"),
-		passRoleCase("aws/enrich/privesc/iam_pass_role_sagemaker", "SAGEMAKER_CREATENOTEBOOKINSTANCE"),
-		standaloneCase("aws/enrich/privesc/lambda_update_function_code", "LAMBDA_UPDATEFUNCTIONCODE"),
-		standaloneCase("aws/enrich/privesc/lambda_create_event_source_mapping", "LAMBDA_CREATEEVENTSOURCEMAPPING"),
-		// sts_assume_role: Phase-2 trust-aware fix (B.7). Requires BOTH the STS_ASSUMEROLE
-		// permission AND a modeled CAN_ASSUME trust edge to the target role; the old
-		// fan-out to every principal (no trust check) was the cartesian bug.
-		{
-			queryID: "aws/enrich/privesc/sts_assume_role",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s', _is_admin: true})
-				CREATE (t:Resource  {Arn: '%s'})
-				WITH a, v, t
-				MERGE (a)-[:STS_ASSUMEROLE]->(t)
-				MERGE (a)-[:CAN_ASSUME]->(v)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-		standaloneCase("aws/enrich/privesc/ssm_send_command", "SSM_SENDCOMMAND"),
-		standaloneCase("aws/enrich/privesc/ssm_start_session", "SSM_STARTSESSION"),
-		standaloneCase("aws/enrich/privesc/ec2_ssm_association", "SSM_CREATEASSOCIATION"),
-		standaloneCase("aws/enrich/privesc/codestar_create_project", "CODESTAR_CREATEPROJECT"),
-		standaloneCase("aws/enrich/privesc/codebuild_create_project", "CODEBUILD_CREATEPROJECT"),
-		standaloneCase("aws/enrich/privesc/iam_create_service_linked_role", "IAM_CREATESERVICELINKEDROLE"),
-		// glue_update_dev_endpoint: standalone — UpdateDevEndpoint on existing Glue endpoint (no PassRole)
-		standaloneCase("aws/enrich/privesc/glue_update_dev_endpoint", "GLUE_UPDATEDEVENDPOINT"),
-		// cloudformation_update_stack: standalone — UpdateStack on existing stack, no PassRole needed
-		standaloneCase("aws/enrich/privesc/cloudformation_update_stack", "CLOUDFORMATION_UPDATESTACK"),
-		// cloudformation_changeset: Phase-2 multi-perm fix. Both change-set actions must
-		// resolve to the SAME stack stub, and the edge terminates at that stub (no fan-out
-		// to every principal). Stack->role binding is deferred to a fan-out enricher.
-		{
-			queryID: "aws/enrich/privesc/cloudformation_changeset",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (t:Resource  {Arn: '%s'})
-				WITH a, t
-				MERGE (a)-[:CLOUDFORMATION_CREATECHANGESET]->(t)
-				MERGE (a)-[:CLOUDFORMATION_EXECUTECHANGESET]->(t)
-			`, attackerARN, roleARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(t {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-		passRoleCase("aws/enrich/privesc/ecs_passrole_runtask", "ECS_RUNTASK"),
-		standaloneCase("aws/enrich/privesc/codebuild_start_build", "CODEBUILD_STARTBUILD"),
-		passRoleCase("aws/enrich/privesc/codebuild_update_project", "CODEBUILD_UPDATEPROJECT"),
-		standaloneCase("aws/enrich/privesc/sagemaker_presigned_url", "SAGEMAKER_CREATEPRESIGNEDNOTEBOOKINSTANCEURL"),
-		passRoleCase("aws/enrich/privesc/sagemaker_training_job", "SAGEMAKER_CREATETRAININGJOB"),
-		passRoleCase("aws/enrich/privesc/sagemaker_processing_job", "SAGEMAKER_CREATEPROCESSINGJOB"),
-		// lambda_updatecode_invoke: lambda:UpdateFunctionCode + lambda:InvokeFunction (no PassRole — escalates via Lambda execution role)
-		{
-			queryID: "aws/enrich/privesc/lambda_updatecode_invoke",
-			setup: fmt.Sprintf(`
-					CREATE (a:Principal {Arn: '%s'})
-					CREATE (r:Principal {Arn: '%s'})
-					CREATE (f:Resource  {Arn: '%s'})
-					WITH a, r, f
-					MERGE (a)-[:LAMBDA_UPDATEFUNCTIONCODE]->(f)
-					MERGE (a)-[:LAMBDA_INVOKEFUNCTION]->(f)
-					MERGE (f)-[:HAS_ROLE]->(r)
-				`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-		// autoscaling_launch_template: iam:PassRole + ec2:CreateLaunchTemplate + autoscaling:CreateAutoScalingGroup
-		{
-			queryID: "aws/enrich/privesc/autoscaling_launch_template",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
-				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-				MERGE (a)-[:EC2_CREATELAUNCHTEMPLATE]->(s)
-				MERGE (a)-[:AUTOSCALING_CREATEAUTOSCALINGGROUP]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-		// bedrock_create_code_interpreter: hyphens preserved by normalizer → BEDROCK-AGENTCORE_CREATECODEINTERPRETER (fan-out fixed)
-		passRoleCaseFanOut("aws/enrich/privesc/bedrock_create_code_interpreter", "BEDROCK-AGENTCORE_CREATECODEINTERPRETER"),
-		// passrole_modify_policy: iam:PassRole + (iam:PutRolePolicy or iam:AttachRolePolicy) on same role
-		{
-			queryID: "aws/enrich/privesc/passrole_modify_policy",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Role      {Arn: '%s'})
-				WITH a, r
-				MERGE (a)-[:IAM_PUTROLEPOLICY]->(r)
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-			`, attackerARN, roleARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(t {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-		// update_assume_role_passrole_service: iam:UpdateAssumeRolePolicy + iam:PassRole on same role
-		{
-			queryID: "aws/enrich/privesc/update_assume_role_passrole_service",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Role      {Arn: '%s'})
-				WITH a, r
-				MERGE (a)-[:IAM_UPDATEASSUMEROLEPOLICY]->(r)
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-			`, attackerARN, roleARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(t {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-
-		// ---- Methods 43–72 (initial gap-fill) ----
-		// apprunner_create_service: iam:PassRole + apprunner:CreateService
-		passRoleCaseFanOut("aws/enrich/privesc/apprunner_create_service", "APPRUNNER_CREATESERVICE"),
-
-		// apprunner_update_service: apprunner:UpdateService (standalone — no PassRole required)
-		standaloneCase("aws/enrich/privesc/apprunner_update_service", "APPRUNNER_UPDATESERVICE"),
-
-		// batch_passrole: iam:PassRole + batch:RegisterJobDefinition
-		passRoleCaseFanOut("aws/enrich/privesc/batch_passrole", "BATCH_REGISTERJOBDEFINITION"),
-
-		// batch_submit_job: batch:SubmitJob (standalone)
-		standaloneCase("aws/enrich/privesc/batch_submit_job", "BATCH_SUBMITJOB"),
-
-		// braket_create_job: iam:PassRole + braket:CreateJob
-		passRoleCaseFanOut("aws/enrich/privesc/braket_create_job", "BRAKET_CREATEJOB"),
-
-		// cloudformation_create_stackset: iam:PassRole + cloudformation:CreateStackSet
-		passRoleCaseFanOut("aws/enrich/privesc/cloudformation_create_stackset", "CLOUDFORMATION_CREATESTACKSET"),
-
-		// cloudformation_update_stackset: iam:PassRole + cloudformation:UpdateStackSet
-		passRoleCaseFanOut("aws/enrich/privesc/cloudformation_update_stackset", "CLOUDFORMATION_UPDATESTACKSET"),
-
-		// codedeploy_create_deployment: codedeploy:CreateDeployment (standalone)
-		standaloneCase("aws/enrich/privesc/codedeploy_create_deployment", "CODEDEPLOY_CREATEDEPLOYMENT"),
-
-		// cognito_set_identity_pool_roles: iam:PassRole + cognito-identity:SetIdentityPoolRoles
-		passRoleCaseFanOut("aws/enrich/privesc/cognito_set_identity_pool_roles", "COGNITO-IDENTITY_SETIDENTITYPOOLROLES"),
-
-		// ec2_instance_connect: ec2-instance-connect:SendSSHPublicKey (standalone)
-		standaloneCase("aws/enrich/privesc/ec2_instance_connect", "EC2-INSTANCE-CONNECT_SENDSSHPUBLICKEY"),
-
-		// ec2_replace_instance_profile: ec2:ReplaceIamInstanceProfileAssociation (standalone)
-		standaloneCase("aws/enrich/privesc/ec2_replace_instance_profile", "EC2_REPLACEIAMINSTANCEPROFILEASSOCIATION"),
-
-		// ecs_create_service: iam:PassRole + ecs:CreateService
-		passRoleCaseFanOut("aws/enrich/privesc/ecs_create_service", "ECS_CREATESERVICE"),
-
-		// ecs_start_task: iam:PassRole + ecs:StartTask
-		passRoleCaseFanOut("aws/enrich/privesc/ecs_start_task", "ECS_STARTTASK"),
-
-		// ecs_execute_command: ecs:ExecuteCommand (standalone)
-		standaloneCase("aws/enrich/privesc/ecs_execute_command", "ECS_EXECUTECOMMAND"),
-
-		// emr_run_job_flow: iam:PassRole + elasticmapreduce:RunJobFlow
-		passRoleCaseFanOut("aws/enrich/privesc/emr_run_job_flow", "ELASTICMAPREDUCE_RUNJOBFLOW"),
-
-		// emr_serverless: iam:PassRole + emr-serverless:CreateApplication
-		passRoleCaseFanOut("aws/enrich/privesc/emr_serverless", "EMR-SERVERLESS_CREATEAPPLICATION"),
-
-		// gamelift_create_fleet: iam:PassRole + gamelift:CreateFleet
-		passRoleCaseFanOut("aws/enrich/privesc/gamelift_create_fleet", "GAMELIFT_CREATEFLEET"),
-
-		// glue_create_dev_endpoint: iam:PassRole + glue:CreateDevEndpoint
-		passRoleCaseFanOut("aws/enrich/privesc/glue_create_dev_endpoint", "GLUE_CREATEDEVENDPOINT"),
-
-		// glue_update_job: iam:PassRole + glue:UpdateJob
-		passRoleCaseFanOut("aws/enrich/privesc/glue_update_job", "GLUE_UPDATEJOB"),
-
-		// glue_create_session: iam:PassRole + glue:CreateSession
-		passRoleCaseFanOut("aws/enrich/privesc/glue_create_session", "GLUE_CREATESESSION"),
-
-		// imagebuilder_create_pipeline: iam:PassRole + imagebuilder:CreateInfrastructureConfiguration
-		passRoleCaseFanOut("aws/enrich/privesc/imagebuilder_create_pipeline", "IMAGEBUILDER_CREATEINFRASTRUCTURECONFIGURATION"),
-
-		// kinesis_analytics: iam:PassRole + kinesisanalytics:CreateApplication
-		passRoleCaseFanOut("aws/enrich/privesc/kinesis_analytics", "KINESISANALYTICS_CREATEAPPLICATION"),
-
-		// lambda_add_permission: lambda:UpdateFunctionCode + lambda:AddPermission (no PassRole — escalates via Lambda execution role)
-		{
-			queryID: "aws/enrich/privesc/lambda_add_permission",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
-				CREATE (f:Resource  {Arn: '%s'})
-				WITH a, r, f
-				MERGE (a)-[:LAMBDA_UPDATEFUNCTIONCODE]->(f)
-				MERGE (a)-[:LAMBDA_ADDPERMISSION]->(f)
-				MERGE (f)-[:HAS_ROLE]->(r)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-
-		// omics_create_workflow: iam:PassRole + omics:CreateWorkflow
-		passRoleCaseFanOut("aws/enrich/privesc/omics_create_workflow", "OMICS_CREATEWORKFLOW"),
-
-		// sagemaker_lifecycle_config: sagemaker:UpdateNotebookInstanceLifecycleConfig (standalone)
-		standaloneCase("aws/enrich/privesc/sagemaker_lifecycle_config", "SAGEMAKER_UPDATENOTEBOOKINSTANCELIFECYCLECONFIG"),
-
-		// scheduler_create_schedule: iam:PassRole + scheduler:CreateSchedule
-		passRoleCaseFanOut("aws/enrich/privesc/scheduler_create_schedule", "SCHEDULER_CREATESCHEDULE"),
-
-		// ssm_start_automation: iam:PassRole + ssm:StartAutomationExecution
-		passRoleCaseFanOut("aws/enrich/privesc/ssm_start_automation", "SSM_STARTAUTOMATIONEXECUTION"),
-
-		// stepfunctions_create: iam:PassRole + states:CreateStateMachine
-		passRoleCaseFanOut("aws/enrich/privesc/stepfunctions_create", "STATES_CREATESTATEMACHINE"),
-
-		// stepfunctions_update: UpdateStateMachine + StartExecution on same target (no PassRole)
-		{
-			queryID: "aws/enrich/privesc/stepfunctions_update",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (t:Resource  {Arn: '%s'})
-				WITH a, v, t
-				MERGE (a)-[:STATES_UPDATESTATEMACHINE]->(t)
-				MERGE (a)-[:STATES_STARTEXECUTION]->(t)
-			`, attackerARN, victimARN, roleARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
-			wantEdges: 1,
-		},
-
-		// bedrock_access_code_interpreter: bedrock-agentcore:InvokeSession (standalone)
-		standaloneCase("aws/enrich/privesc/bedrock_access_code_interpreter", "BEDROCK-AGENTCORE_INVOKESESSION"),
-
-		// --- Group A: wrong-API fixes ---
-		// ec2_request_spot_instances: iam:PassRole + ec2:RequestSpotInstances (distinct from RunInstances)
-		passRoleCaseFanOut("aws/enrich/privesc/ec2_request_spot_instances", "EC2_REQUESTSPOTINSTANCES"),
-
-		// ec2_launch_template_version: ec2:CreateLaunchTemplateVersion + ec2:ModifyLaunchTemplate (no PassRole)
-		{
-			queryID: "aws/enrich/privesc/ec2_launch_template_version",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (t:Resource  {Arn: '%s'})
-				WITH a, v, t
-				MERGE (a)-[:`+"`EC2_CREATELAUNCHTEMPLATEVERSION`"+`]->(t)
-				MERGE (a)-[:EC2_MODIFYLAUNCHTEMPLATE]->(t)
-			`, attackerARN, victimARN, roleARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
-			wantEdges: 1,
-		},
-
-		// --- Group B: completely missing methods ---
-		// amplify_create_app: iam:PassRole + amplify:CreateApp + amplify:CreateBranch + amplify:StartJob (all same target)
-		{
-			queryID: "aws/enrich/privesc/amplify_create_app",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
-				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-				MERGE (a)-[:AMPLIFY_CREATEAPP]->(s)
-				MERGE (a)-[:AMPLIFY_CREATEBRANCH]->(s)
-				MERGE (a)-[:AMPLIFY_STARTJOB]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-
-		// ec2_modify_instance_attribute: ec2:ModifyInstanceAttribute + StopInstances + StartInstances (no PassRole)
-		{
-			queryID: "aws/enrich/privesc/ec2_modify_instance_attribute",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (t:Resource  {Arn: '%s'})
-				WITH a, v, t
-				MERGE (a)-[:EC2_MODIFYINSTANCEATTRIBUTE]->(t)
-				MERGE (a)-[:EC2_STOPINSTANCES]->(t)
-				MERGE (a)-[:EC2_STARTINSTANCES]->(t)
-			`, attackerARN, victimARN, roleARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
-			wantEdges: 1,
-		},
-
-		// glue_createjob_createtrigger: iam:PassRole + glue:CreateJob + glue:CreateTrigger
-		{
-			queryID: "aws/enrich/privesc/glue_createjob_createtrigger",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
-				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-				MERGE (a)-[:GLUE_CREATEJOB]->(s)
-				MERGE (a)-[:GLUE_CREATETRIGGER]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-
-		// glue_updatejob_createtrigger: iam:PassRole + glue:UpdateJob + glue:CreateTrigger
-		{
-			queryID: "aws/enrich/privesc/glue_updatejob_createtrigger",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
-				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-				MERGE (a)-[:GLUE_UPDATEJOB]->(s)
-				MERGE (a)-[:GLUE_CREATETRIGGER]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-
-		// lambda_passrole_createfunction_addpermission: iam:PassRole + lambda:CreateFunction + lambda:AddPermission
-		{
-			queryID: "aws/enrich/privesc/lambda_passrole_createfunction_addpermission",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
-				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-				MERGE (a)-[:LAMBDA_CREATEFUNCTION]->(s)
-				MERGE (a)-[:LAMBDA_ADDPERMISSION]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-
-		// --- Group C: execution-gated compound methods ---
-		// glue_createjob_startjobrun: iam:PassRole + glue:CreateJob + glue:StartJobRun
-		{
-			queryID: "aws/enrich/privesc/glue_createjob_startjobrun",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
-				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-				MERGE (a)-[:GLUE_CREATEJOB]->(s)
-				MERGE (a)-[:GLUE_STARTJOBRUN]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-
-		// glue_updatejob_startjobrun: iam:PassRole + glue:UpdateJob + glue:StartJobRun
-		{
-			queryID: "aws/enrich/privesc/glue_updatejob_startjobrun",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
-				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-				MERGE (a)-[:GLUE_UPDATEJOB]->(s)
-				MERGE (a)-[:GLUE_STARTJOBRUN]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-
-		// glue_createsession_runstatement: iam:PassRole + glue:CreateSession + glue:RunStatement
-		{
-			queryID: "aws/enrich/privesc/glue_createsession_runstatement",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
-				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-				MERGE (a)-[:GLUE_CREATESESSION]->(s)
-				MERGE (a)-[:GLUE_RUNSTATEMENT]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-
-		// stepfunctions_create_startexecution: iam:PassRole + states:CreateStateMachine + states:StartExecution
-		{
-			queryID: "aws/enrich/privesc/stepfunctions_create_startexecution",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
-				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-				MERGE (a)-[:STATES_CREATESTATEMACHINE]->(s)
-				MERGE (a)-[:STATES_STARTEXECUTION]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-
-		// ssm_createdocument_startautomation: ssm:CreateDocument + ssm:StartAutomationExecution (no PassRole)
-		{
-			queryID: "aws/enrich/privesc/ssm_createdocument_startautomation",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
-				CREATE (t:Resource  {Arn: '%s'})
-				WITH a, v, t
-				MERGE (a)-[:SSM_CREATEDOCUMENT]->(t)
-				MERGE (a)-[:SSM_STARTAUTOMATIONEXECUTION]->(t)
-			`, attackerARN, victimARN, roleARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
-			wantEdges: 1,
-		},
-
-		// emr_serverless_startjobrun: iam:PassRole + emr-serverless:CreateApplication + emr-serverless:StartJobRun
-		{
-			queryID: "aws/enrich/privesc/emr_serverless_startjobrun",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
-				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-				MERGE (a)-[:`+"`EMR-SERVERLESS_CREATEAPPLICATION`"+`]->(s)
-				MERGE (a)-[:`+"`EMR-SERVERLESS_STARTJOBRUN`"+`]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-
-		// kinesisanalytics_startapplication: iam:PassRole + kinesisanalytics:CreateApplication + StartApplication
-		{
-			queryID: "aws/enrich/privesc/kinesisanalytics_startapplication",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
-				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-				MERGE (a)-[:KINESISANALYTICS_CREATEAPPLICATION]->(s)
-				MERGE (a)-[:KINESISANALYTICS_STARTAPPLICATION]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-
-		// omics_startrun: iam:PassRole + omics:CreateWorkflow + omics:StartRun
-		{
-			queryID: "aws/enrich/privesc/omics_startrun",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
-				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-				MERGE (a)-[:OMICS_CREATEWORKFLOW]->(s)
-				MERGE (a)-[:OMICS_STARTRUN]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-
-		// gamelift_createbuild_createfleet: iam:PassRole + gamelift:CreateBuild + gamelift:CreateFleet
-		// CreateBuild and CreateFleet target different resource types — both check same passed role.
-		{
-			queryID: "aws/enrich/privesc/gamelift_createbuild_createfleet",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
-				CREATE (s:Resource  {Arn: '%s'})
-				CREATE (s2:Resource {Arn: 'arn:aws:gamelift:us-east-1::fleet/test'})
-				WITH a, r, s, s2
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-				MERGE (a)-[:GAMELIFT_CREATEBUILD]->(s)
-				MERGE (a)-[:GAMELIFT_CREATEFLEET]->(s2)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-
-		// imagebuilder_createimage: iam:PassRole + imagebuilder:CreateInfraConfig + imagebuilder:CreateImage
-		{
-			queryID: "aws/enrich/privesc/imagebuilder_createimage",
-			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
-				CREATE (s:Resource  {Arn: '%s'})
-				WITH a, r, s
-				MERGE (a)-[:IAM_PASSROLE]->(r)
-				MERGE (a)-[:IMAGEBUILDER_CREATEINFRASTRUCTURECONFIGURATION]->(s)
-				MERGE (a)-[:IMAGEBUILDER_CREATEIMAGE]->(s)
-			`, attackerARN, roleARN, svcResourceARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
-			wantEdges: 1,
-		},
-	}
-}
-
-// TestPrivescQueriesNeo4j verifies every privesc enrichment query creates
-// CAN_PRIVESC edges when the required IAM permission relationships are present.
-// Requires a Neo4j container (testcontainers).
+// TestPrivescQueriesNeo4j verifies every privesc enrichment query creates a
+// correctly-scoped CAN_PRIVESC edge under valid conditions. It seeds ONE shared
+// "all-guards-satisfied" graph (sharedPrivescSeed) and runs each method against a fresh
+// copy of it, asserting the edge lands on the method's correct target (self-loop / passed
+// role / reached role / resource role / service stub) per allSharedSeedCases — not just
+// that some edge exists. Requires a Neo4j container (testcontainers).
 func TestPrivescQueriesNeo4j(t *testing.T) {
 	ctx := context.Background()
 
@@ -667,47 +417,68 @@ func TestPrivescQueriesNeo4j(t *testing.T) {
 		return adapter
 	}
 
-	clearDB := func(t *testing.T, db graph.GraphDatabase) {
+	seed := func(t *testing.T, db graph.GraphDatabase) {
 		t.Helper()
 		_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
 		require.NoError(t, err, "clear graph for test isolation")
+		_, err = db.Query(ctx, sharedPrivescSeed(), nil)
+		require.NoError(t, err, "seed shared privesc graph")
+		for _, h := range sharedPrivescHyphenatedSeeds() {
+			_, err = db.Query(ctx, h, nil)
+			require.NoError(t, err, "seed hyphenated relationship type")
+		}
 	}
 
-	runCase := func(t *testing.T, tc privescTestCase) {
+	runCase := func(t *testing.T, tc sharedSeedCase) {
 		t.Helper()
 		db := newAdapter(t)
-		clearDB(t, db)
-
-		_, err := db.Query(ctx, tc.setup, nil)
-		require.NoError(t, err, "seed graph for %s", tc.queryID)
+		seed(t, db)
 
 		_, err = RunPlatformQuery(ctx, db, tc.queryID, nil)
 		require.NoError(t, err, "run enrichment query %s", tc.queryID)
 
-		result, err := db.Query(ctx, tc.verify, nil)
+		verify, wantZero := tc.verify()
+		result, err := db.Query(ctx, verify, nil)
 		require.NoError(t, err, "verify CAN_PRIVESC for %s", tc.queryID)
 
 		require.Len(t, result.Records, 1, "verify query should return exactly one row")
-		n, ok := result.Records[0]["n"]
-		require.True(t, ok, "verify query should return column 'n'")
+		count, ok := toInt64(result.Records[0]["n"])
+		require.True(t, ok, "count should be numeric, got %T", result.Records[0]["n"])
 
-		count, ok := toInt64(n)
-		require.True(t, ok, "count should be numeric, got %T", n)
-		assert.GreaterOrEqual(t, int(count), tc.wantEdges,
-			"method %s: expected at least %d CAN_PRIVESC edge(s), got %d",
-			tc.queryID, tc.wantEdges, count)
+		if wantZero {
+			assert.Equal(t, int64(0), count,
+				"method %s must emit NO CAN_PRIVESC edge (intentional no-op), got %d", tc.queryID, count)
+			return
+		}
+		assert.GreaterOrEqual(t, int(count), 1,
+			"method %s: expected a correctly-scoped CAN_PRIVESC edge to its target, got %d",
+			tc.queryID, count)
+
+		// Tighten: the method must NOT fan out to any OTHER principal target beyond its
+		// scoped one (the cartesian-bug signature). Self-loop methods are exempt (their
+		// only target IS the attacker).
+		if tc.target != targetSelfLoop {
+			fanResult, err := db.Query(ctx, fmt.Sprintf(
+				`MATCH (a {Arn: '%s'})-[:CAN_PRIVESC]->(b) RETURN count(DISTINCT b) AS n`, attackerARN), nil)
+			require.NoError(t, err)
+			fanout, _ := toInt64(fanResult.Records[0]["n"])
+			assert.LessOrEqual(t, fanout, int64(1),
+				"method %s must reach exactly one scoped target, not fan out (reached %d distinct nodes)",
+				tc.queryID, fanout)
+		}
 	}
 
-	for _, tc := range allPrivescCases() {
+	for _, tc := range allSharedSeedCases() {
 		t.Run(tc.queryID, func(t *testing.T) {
 			runCase(t, tc)
 		})
 	}
 }
 
-// TestEnrichAWSPrivescEndToEnd seeds a graph with all new-method permission
-// relationships and verifies that running EnrichAWS creates CAN_PRIVESC edges
-// for each new service pathway.
+// TestEnrichAWSPrivescEndToEnd runs the FULL EnrichAWS pipeline (all enrichers + all methods)
+// over the shared all-guards-satisfied graph and verifies the corrected end-to-end behavior:
+// the passed/assumed/HAS_ROLE methods all converge onto the single privileged role target
+// (MERGE dedups them into one edge), and no method fans out to an unrelated principal.
 func TestEnrichAWSPrivescEndToEnd(t *testing.T) {
 	ctx := context.Background()
 
@@ -720,81 +491,54 @@ func TestEnrichAWSPrivescEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	// Clear and seed the graph with one attacker holding every new-method permission.
 	_, err = db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
 	require.NoError(t, err)
-
-	// Seed nodes and all non-hyphenated relationship types in one query.
-	// role must be :Principal so the scoped PassRole queries can find it as victim.
-	seedCypher := fmt.Sprintf(`
-		CREATE (attacker:Principal {Arn: '%s'})
-		CREATE (role:Principal     {Arn: '%s'})
-		CREATE (svc:Resource       {Arn: '%s'})
-		WITH attacker, role, svc
-		MERGE (attacker)-[:IAM_PASSROLE]->(role)
-		MERGE (attacker)-[:APPRUNNER_UPDATESERVICE]->(svc)
-		MERGE (attacker)-[:BATCH_SUBMITJOB]->(svc)
-		MERGE (attacker)-[:CODEDEPLOY_CREATEDEPLOYMENT]->(svc)
-		MERGE (attacker)-[:EC2_REPLACEIAMINSTANCEPROFILEASSOCIATION]->(svc)
-		MERGE (attacker)-[:ECS_EXECUTECOMMAND]->(svc)
-		MERGE (attacker)-[:SAGEMAKER_UPDATENOTEBOOKINSTANCELIFECYCLECONFIG]->(svc)
-		MERGE (attacker)-[:APPRUNNER_CREATESERVICE]->(svc)
-		MERGE (attacker)-[:BATCH_REGISTERJOBDEFINITION]->(svc)
-		MERGE (attacker)-[:BRAKET_CREATEJOB]->(svc)
-		MERGE (attacker)-[:CLOUDFORMATION_CREATESTACKSET]->(svc)
-		MERGE (attacker)-[:CLOUDFORMATION_UPDATESTACKSET]->(svc)
-		MERGE (attacker)-[:ECS_CREATESERVICE]->(svc)
-		MERGE (attacker)-[:ECS_STARTTASK]->(svc)
-		MERGE (attacker)-[:ELASTICMAPREDUCE_RUNJOBFLOW]->(svc)
-		MERGE (attacker)-[:GAMELIFT_CREATEFLEET]->(svc)
-		MERGE (attacker)-[:GLUE_CREATEDEVENDPOINT]->(svc)
-		MERGE (attacker)-[:GLUE_UPDATEJOB]->(svc)
-		MERGE (attacker)-[:GLUE_CREATESESSION]->(svc)
-		MERGE (attacker)-[:IMAGEBUILDER_CREATEINFRASTRUCTURECONFIGURATION]->(svc)
-		MERGE (attacker)-[:KINESISANALYTICS_CREATEAPPLICATION]->(svc)
-		MERGE (attacker)-[:LAMBDA_UPDATEFUNCTIONCODE]->(svc)
-		MERGE (attacker)-[:LAMBDA_ADDPERMISSION]->(svc)
-		MERGE (attacker)-[:OMICS_CREATEWORKFLOW]->(svc)
-		MERGE (attacker)-[:SCHEDULER_CREATESCHEDULE]->(svc)
-		MERGE (attacker)-[:SSM_STARTAUTOMATIONEXECUTION]->(svc)
-		MERGE (attacker)-[:STATES_CREATESTATEMACHINE]->(svc)
-		MERGE (attacker)-[:STATES_UPDATESTATEMACHINE]->(svc)
-	`, attackerARN, roleARN, svcResourceARN)
-
-	_, err = db.Query(ctx, seedCypher, nil)
-	require.NoError(t, err, "seed graph (non-hyphenated types)")
-
-	// Hyphenated relationship types must be backtick-escaped in Cypher literal syntax
-	// but cannot appear inside a Go raw string literal — seed them as separate queries.
-	for _, hyphenatedSeed := range []string{
-		fmt.Sprintf("MATCH (a {Arn: '%s'}), (s {Arn: '%s'}) MERGE (a)-[:`EC2-INSTANCE-CONNECT_SENDSSHPUBLICKEY`]->(s)", attackerARN, svcResourceARN),
-		fmt.Sprintf("MATCH (a {Arn: '%s'}), (s {Arn: '%s'}) MERGE (a)-[:`BEDROCK-AGENTCORE_INVOKESESSION`]->(s)", attackerARN, svcResourceARN),
-		fmt.Sprintf("MATCH (a {Arn: '%s'}), (s {Arn: '%s'}) MERGE (a)-[:`COGNITO-IDENTITY_SETIDENTITYPOOLROLES`]->(s)", attackerARN, svcResourceARN),
-		fmt.Sprintf("MATCH (a {Arn: '%s'}), (s {Arn: '%s'}) MERGE (a)-[:`EMR-SERVERLESS_CREATEAPPLICATION`]->(s)", attackerARN, svcResourceARN),
-	} {
-		_, err = db.Query(ctx, hyphenatedSeed, nil)
+	_, err = db.Query(ctx, sharedPrivescSeed(), nil)
+	require.NoError(t, err, "seed shared privesc graph")
+	for _, h := range sharedPrivescHyphenatedSeeds() {
+		_, err = db.Query(ctx, h, nil)
 		require.NoError(t, err, "seed hyphenated relationship type")
 	}
 
-	// Run the full enrichment pipeline.
+	// Add bystander principals the OLD cartesian fan-out would have reached.
+	_, err = db.Query(ctx, `
+		UNWIND range(1, 10) AS i
+		CREATE (:Principal {Arn: 'arn:aws:iam::123456789012:user/bystander-' + toString(i), _is_admin: false})
+	`, nil)
+	require.NoError(t, err, "seed bystander population")
+
+	// Run the full enrichment pipeline (enrichers populate _is_admin/_is_privileged/trust/
+	// _ssm_enabled/HAS_ROLE; methods then emit CAN_PRIVESC).
 	err = EnrichAWS(ctx, db)
 	require.NoError(t, err, "EnrichAWS should succeed")
 
-	// After the scoped fix, PassRole methods create CAN_PRIVESC to the passed role (roleARN).
-	// MERGE deduplicates edges per (attacker, role) — all PassRole methods share this 1 edge.
+	// Corrected behavior: the privileged role is the convergent target of every passed/
+	// assumed/HAS_ROLE method, so it carries at least one CAN_PRIVESC edge.
 	result, err := db.Query(ctx,
-		fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
+		fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, sharedAdminRoleARN),
 		nil)
 	require.NoError(t, err)
 	require.Len(t, result.Records, 1)
 	n, _ := toInt64(result.Records[0]["n"])
-	t.Logf("CAN_PRIVESC edges attacker→role: %d", n)
-	assert.GreaterOrEqual(t, int(n), 1, "enrichment should produce at least 1 CAN_PRIVESC edge to the passed role")
+	t.Logf("CAN_PRIVESC edges attacker→admin role: %d", n)
+	assert.GreaterOrEqual(t, int(n), 1, "enrichment should produce a CAN_PRIVESC edge to the privileged role")
+
+	// No method may fan out to the bystander population (the cartesian-bug signature).
+	fanResult, err := db.Query(ctx, fmt.Sprintf(`
+		MATCH (a {Arn: '%s'})-[:CAN_PRIVESC]->(b)
+		WHERE b.Arn CONTAINS 'bystander-' RETURN count(DISTINCT b) AS n`, attackerARN), nil)
+	require.NoError(t, err)
+	fanout, _ := toInt64(fanResult.Records[0]["n"])
+	assert.Equal(t, int64(0), fanout,
+		"no privesc method may emit CAN_PRIVESC to an unrelated bystander principal")
 }
 
-// TestPrivescMultiHopPaths verifies that EnrichAWS produces CAN_PRIVESC edges
-// that form real principal-to-principal chains detectable by the analysis query.
-// Uses standalone IAM methods (which fire to ALL other principals) to build chains.
+// TestPrivescMultiHopPaths verifies that EnrichAWS produces CAN_PRIVESC edges that form real
+// principal-to-principal chains detectable by the analysis query, using the CORRECTED
+// (scoped) method behavior — no method fans out to every principal.
+//
+// Chain: mid --[iam_put_role_policy: CAN_ASSUME + PutRolePolicy on the SAME role]--> admin.
+// low self-escalates via iam_create_policy_version (a self-loop), which must NOT fan out.
 func TestPrivescMultiHopPaths(t *testing.T) {
 	ctx := context.Background()
 
@@ -807,31 +551,22 @@ func TestPrivescMultiHopPaths(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	// Seed Principal nodes with IAM permission edges so EnrichAWS creates CAN_PRIVESC
-	// edges. NOTE: in this Phase-2 slice iam_create_policy_version is now a SELF-LOOP
-	// (genuine self-escalation, scoped to a customer-managed policy attached to the
-	// attacker), not the old fan-out-to-every-principal. The other two methods used
-	// here (iam_put_role_policy, iam_update_login_profile) are NOT yet fixed and still
-	// fan out — they are used to keep the multi-hop chain assertions exercising the
-	// analysis traversal until those methods are corrected in fan-out.
 	_, err = db.Query(ctx, `
 		CREATE (low:Principal  {Arn: 'arn:aws:iam::123456789012:user/low',  _is_admin: false,
 			AttachedManagedPolicies: '[{"PolicyArn":"arn:aws:iam::123456789012:policy/p"}]'})
-		CREATE (mid:Principal  {Arn: 'arn:aws:iam::123456789012:role/mid',  _is_admin: false})
-		CREATE (high:Principal {Arn: 'arn:aws:iam::123456789012:role/high', _is_admin: false})
-		CREATE (admin:Principal{Arn: 'arn:aws:iam::123456789012:role/admin',_is_admin: true})
+		CREATE (mid:Role:Principal  {Arn: 'arn:aws:iam::123456789012:role/mid',  _is_admin: false})
+		CREATE (admin:Role:Principal{Arn: 'arn:aws:iam::123456789012:role/admin',_is_admin: true})
 		CREATE (policy:Resource{Arn: 'arn:aws:iam::123456789012:policy/p'})
-		WITH low, mid, high, admin, policy
+		WITH low, mid, admin, policy
 
 		// low: CreatePolicyVersion on a customer-managed policy attached to itself
-		//      → SELF-LOOP CAN_PRIVESC(low → low) (Phase-2 corrected self-escalation).
+		//      → SELF-LOOP CAN_PRIVESC(low → low) (corrected self-escalation, no fan-out).
 		MERGE (low)-[:IAM_CREATEPOLICYVERSION]->(policy)
 
-		// mid: PutRolePolicy → CAN_PRIVESC to low, high, admin (iam_put_role_policy, unfixed)
-		MERGE (mid)-[:IAM_PUTROLEPOLICY]->(policy)
-
-		// high: UpdateLoginProfile → CAN_PRIVESC to low, mid, admin (iam_update_login_profile, unfixed)
-		MERGE (high)-[:IAM_UPDATELOGINPROFILE]->(admin)
+		// mid: trust-backed direct takeover of admin — mid can assume admin AND write an
+		//      inline policy onto it (iam_put_role_policy, corrected) → CAN_PRIVESC(mid → admin).
+		MERGE (mid)-[:CAN_ASSUME]->(admin)
+		MERGE (mid)-[:IAM_PUTROLEPOLICY]->(admin)
 	`, nil)
 	require.NoError(t, err, "seed multi-hop graph")
 
@@ -839,8 +574,6 @@ func TestPrivescMultiHopPaths(t *testing.T) {
 	require.NoError(t, err, "EnrichAWS should succeed")
 
 	t.Run("self_escalation_low_self_loop_via_create_policy_version", func(t *testing.T) {
-		// Phase-2: iam_create_policy_version is a self-loop, not a fan-out. low can
-		// version a customer-managed policy attached to itself → CAN_PRIVESC(low → low).
 		result, err := db.Query(ctx,
 			`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/low'})-[r:CAN_PRIVESC]->(a)
 			 RETURN count(r) AS n`, nil)
@@ -851,8 +584,8 @@ func TestPrivescMultiHopPaths(t *testing.T) {
 	})
 
 	t.Run("create_policy_version_no_fanout_to_other_principals", func(t *testing.T) {
-		// Phase-2 cartesian fix: low's only escalation perm is CreatePolicyVersion, which
-		// now self-loops. It must NOT fan out to mid/high/admin.
+		// low's only escalation perm is CreatePolicyVersion, which self-loops; it must
+		// NOT fan out to mid/admin.
 		result, err := db.Query(ctx,
 			`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/low'})-[:CAN_PRIVESC]->(b:Principal)
 			 WHERE b.Arn <> a.Arn RETURN count(b) AS n`, nil)
@@ -868,7 +601,19 @@ func TestPrivescMultiHopPaths(t *testing.T) {
 			 RETURN count(r) AS n`, nil)
 		require.NoError(t, err)
 		n, _ := toInt64(result.Records[0]["n"])
-		assert.GreaterOrEqual(t, int(n), 1, "mid → admin direct 1-hop via iam_put_role_policy")
+		assert.GreaterOrEqual(t, int(n), 1,
+			"mid → admin direct 1-hop via iam_put_role_policy (trust-backed: CAN_ASSUME + PutRolePolicy on admin)")
+	})
+
+	t.Run("mid_does_not_fan_out", func(t *testing.T) {
+		// mid's only assumable+writable role is admin; it must not reach any other principal.
+		result, err := db.Query(ctx,
+			`MATCH (a {Arn: 'arn:aws:iam::123456789012:role/mid'})-[:CAN_PRIVESC]->(b:Principal)
+			 RETURN count(DISTINCT b) AS n`, nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.LessOrEqual(t, n, int64(1),
+			"mid must reach only the one assumable/writable role (admin), not fan out")
 	})
 }
 
@@ -1016,12 +761,13 @@ func TestPassRoleServiceFanOutReachesAnalysisQuery(t *testing.T) {
 
 	const adminRoleARN = "arn:aws:iam::123:role/admin"
 
-	// The attacker passes an admin IAM role to AppRunner.
-	// The passed role is :Principal with _is_admin=true so the scoped CAN_PRIVESC
-	// edge points directly to an admin target visible to the analysis query.
+	// The attacker passes an admin IAM role to AppRunner. The passed role is _is_admin and
+	// trusts App Runner so the scoped CAN_PRIVESC edge points directly to an admin target
+	// visible to the analysis query.
 	_, err = db.Query(ctx, fmt.Sprintf(`
 		CREATE (attacker:Principal {Arn: '%s', _is_admin: false})
-		CREATE (adminRole:Principal {Arn: '%s', _is_admin: true})
+		CREATE (adminRole:Role:Principal {Arn: '%s', _is_admin: true,
+			trusted_services: ['tasks.apprunner.amazonaws.com']})
 		CREATE (svc:Resource       {Arn: '%s'})
 		WITH attacker, adminRole, svc
 		MERGE (attacker)-[:IAM_PASSROLE]->(adminRole)
@@ -1087,7 +833,8 @@ func TestPrivescEdgeMetadata(t *testing.T) {
 			queryID: "aws/enrich/privesc/apprunner_create_service",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
+				CREATE (r:Role:Principal {Arn: '%s', _is_admin: true,
+					trusted_services: ['tasks.apprunner.amazonaws.com']})
 				CREATE (s:Resource  {Arn: '%s'})
 				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
@@ -1101,7 +848,8 @@ func TestPrivescEdgeMetadata(t *testing.T) {
 			queryID: "aws/enrich/privesc/stepfunctions_create",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
+				CREATE (r:Role:Principal {Arn: '%s', _is_admin: true,
+					trusted_services: ['states.amazonaws.com']})
 				CREATE (s:Resource  {Arn: '%s'})
 				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
@@ -1115,7 +863,9 @@ func TestPrivescEdgeMetadata(t *testing.T) {
 			queryID: "aws/enrich/privesc/gamelift_createbuild_createfleet",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
+				CREATE (r:Role:Principal {Arn: '%s', _is_admin: true,
+					trusted_services: ['gamelift.amazonaws.com'],
+					InstanceProfileList: '[{"Arn":"arn:aws:iam::123456789012:instance-profile/ip"}]'})
 				CREATE (s:Resource  {Arn: '%s'})
 				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
@@ -1195,11 +945,12 @@ func TestPrivescNegativePermissions(t *testing.T) {
 			queryID: "aws/enrich/privesc/apprunner_create_service",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
+				CREATE (r:Role:Principal {Arn: '%s', _is_admin: true,
+					trusted_services: ['tasks.apprunner.amazonaws.com']})
 				WITH a, r
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 			`, attackerARN, roleARN),
-			desc: "iam:PassRole alone must not trigger apprunner_create_service (requires apprunner:CreateService too)",
+			desc: "iam:PassRole alone (role trusts App Runner + privileged) must not trigger apprunner_create_service — the missing apprunner:CreateService is the sole rejection",
 		},
 		{
 			name:    "apprunner_service_action_only_no_passrole",
@@ -1217,26 +968,30 @@ func TestPrivescNegativePermissions(t *testing.T) {
 			queryID: "aws/enrich/privesc/gamelift_createbuild_createfleet",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
+				CREATE (r:Role:Principal {Arn: '%s', _is_admin: true,
+					trusted_services: ['gamelift.amazonaws.com'],
+					InstanceProfileList: '[{"Arn":"arn:aws:iam::123456789012:instance-profile/ip"}]'})
 				CREATE (s:Resource  {Arn: '%s'})
 				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GAMELIFT_CREATEBUILD]->(s)
 			`, attackerARN, roleARN, svcResourceARN),
-			desc: "PassRole+CreateBuild without CreateFleet must not trigger gamelift_createbuild_createfleet — compound methods require ALL actions",
+			desc: "PassRole+CreateBuild (role trusts GameLift + privileged) without CreateFleet must not trigger gamelift_createbuild_createfleet — the missing CreateFleet is the sole rejection",
 		},
 		{
 			name:    "gamelift_missing_createbuild_action",
 			queryID: "aws/enrich/privesc/gamelift_createbuild_createfleet",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
+				CREATE (r:Role:Principal {Arn: '%s', _is_admin: true,
+					trusted_services: ['gamelift.amazonaws.com'],
+					InstanceProfileList: '[{"Arn":"arn:aws:iam::123456789012:instance-profile/ip"}]'})
 				CREATE (s:Resource  {Arn: '%s'})
 				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GAMELIFT_CREATEFLEET]->(s)
 			`, attackerARN, roleARN, svcResourceARN),
-			desc: "PassRole+CreateFleet without CreateBuild must not trigger gamelift_createbuild_createfleet",
+			desc: "PassRole+CreateFleet (role trusts GameLift + privileged) without CreateBuild must not trigger gamelift_createbuild_createfleet — the missing CreateBuild is the sole rejection",
 		},
 		{
 			name:    "apprunner_passrole_to_non_principal_resource",
@@ -1257,29 +1012,31 @@ func TestPrivescNegativePermissions(t *testing.T) {
 			queryID: "aws/enrich/privesc/amplify_create_app",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (r:Principal {Arn: '%s'})
+				CREATE (r:Role:Principal {Arn: '%s', _is_admin: true,
+					trusted_services: ['amplify.amazonaws.com']})
 				CREATE (s:Resource  {Arn: '%s'})
 				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:AMPLIFY_CREATEAPP]->(s)
 				MERGE (a)-[:AMPLIFY_CREATEBRANCH]->(s)
 			`, attackerARN, roleARN, svcResourceARN),
-			desc: "amplify_create_app requires all 3 Amplify actions on the same resource — missing StartJob must produce 0 edges",
+			desc: "amplify_create_app requires all 3 Amplify actions (role trusts Amplify + privileged) — the missing StartJob is the sole rejection",
 		},
-		// ssm_createdocument_startautomation SSM: actions on different resources must not trigger (cross-resource FP guard)
+		// ssm_createdocument_startautomation is a self-escalation: it runs an attacker-authored
+		// automation document under the attacker's OWN identity, so both actions are required on
+		// the attacker (via EXISTS) but need NOT target the same resource (creating a document
+		// and running an automation are distinct resources). The FP guard is therefore the
+		// missing-action case: holding only CreateDocument must produce no edge.
 		{
-			name:    "ssm_cross_resource_no_edge",
+			name:    "ssm_createdocument_only_no_startautomation",
 			queryID: "aws/enrich/privesc/ssm_createdocument_startautomation",
 			setup: fmt.Sprintf(`
-				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
+				CREATE (a:Principal {Arn: '%s', _is_admin: false})
 				CREATE (doc:Resource {Arn: 'arn:aws:ssm:us-east-1:123:document/my-doc'})
-				CREATE (other:Resource {Arn: 'arn:aws:ssm:us-east-1:123:document/other-doc'})
-				WITH a, v, doc, other
+				WITH a, doc
 				MERGE (a)-[:SSM_CREATEDOCUMENT]->(doc)
-				MERGE (a)-[:SSM_STARTAUTOMATIONEXECUTION]->(other)
-			`, attackerARN, victimARN),
-			desc: "ssm_createdocument_startautomation must not fire when CreateDocument and StartAutomationExecution target different SSM documents — requires same resource",
+			`, attackerARN),
+			desc: "ssm_createdocument_startautomation must not fire with only ssm:CreateDocument — both actions are required",
 		},
 	}
 
@@ -1324,11 +1081,12 @@ func TestPrivescEnrichAWSIdempotent(t *testing.T) {
 	_, err = db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
 	require.NoError(t, err)
 
-	// Seed attacker with PassRole + AppRunner (apprunner_create_service).
-	// Role must be :Principal so the scoped query can find it as the victim.
+	// Seed attacker with PassRole + AppRunner (apprunner_create_service). The passed role
+	// must trust App Runner and be privileged to satisfy the corrected guards.
 	_, err = db.Query(ctx, fmt.Sprintf(`
-		CREATE (a:Principal {Arn: '%s'})
-		CREATE (r:Principal {Arn: '%s'})
+		CREATE (a:Principal {Arn: '%s', _is_admin: false})
+		CREATE (r:Role:Principal {Arn: '%s', _is_admin: true,
+			trusted_services: ['tasks.apprunner.amazonaws.com']})
 		CREATE (s:Resource  {Arn: '%s'})
 		WITH a, r, s
 		MERGE (a)-[:IAM_PASSROLE]->(r)
@@ -1359,20 +1117,17 @@ func TestPrivescEnrichAWSIdempotent(t *testing.T) {
 		countAfterFirst, countAfterSecond)
 }
 
-// TestPrivescMultiHopThroughPassRoleMethod verifies that a CAN_PRIVESC edge
-// created by a PassRole+service method (apprunner_create_service) can act as an intermediate
-// hop in a chain detected by the aws/analysis/privesc_paths query.
+// TestPrivescMultiHopThroughPassRoleMethod verifies that a CAN_PRIVESC edge created by a
+// PassRole+service method (apprunner_create_service) can act as an intermediate hop in a
+// chain detected by the aws/analysis/privesc_paths query.
 //
-// Graph:  attacker --[apprunner_create_service scoped]--> intermediate (passed role)
+// Graph:  attacker --[apprunner_create_service scoped]--> intermediate (passed App-Runner role)
 //
-//	intermediate --[iam_put_role_policy standalone]--> admin
+//	intermediate --[iam_put_role_policy: CAN_ASSUME + PutRolePolicy on admin]--> admin
 //
-// The key: attacker passes an IAM role (intermediate) that itself has standalone
-// IAM escalation paths. The scoped fix ensures intermediate is a reachable
-// Principal node in the graph, enabling the 2-hop chain.
-// NOTE: the intermediate→admin hop uses iam_put_role_policy (still a fan-out method,
-// not yet corrected in this Phase-2 slice). It previously used iam_create_policy_version,
-// which is now a self-loop and can no longer reach admin.
+// The scoped fix ensures intermediate is a reachable :Principal node, enabling the 2-hop chain.
+// The intermediate→admin hop uses the CORRECTED iam_put_role_policy (trust-backed: a CAN_ASSUME
+// edge plus PutRolePolicy on the SAME admin role), not the old fan-out.
 func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 	ctx := context.Background()
 
@@ -1386,26 +1141,26 @@ func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 
 	const (
-		interARN  = "arn:aws:iam::123456789012:role/intermediate"
-		adminARN  = "arn:aws:iam::123456789012:role/admin"
-		policyARN = "arn:aws:iam::123456789012:policy/test-policy"
+		interARN = "arn:aws:iam::123456789012:role/intermediate"
+		adminARN = "arn:aws:iam::123456789012:role/admin"
 	)
 
-	// intermediate IS the passed role: attacker passes it via IAM_PASSROLE so
+	// intermediate IS the passed role: it trusts App Runner and is privileged, so
 	// apprunner_create_service creates attacker → [CAN_PRIVESC] → intermediate (scoped victim).
-	// intermediate also has IAM_PUTROLEPOLICY so iam_put_role_policy fans out
-	// intermediate → [CAN_PRIVESC] → admin (still a fan-out method this slice).
+	// intermediate can assume admin AND write a policy onto it, so iam_put_role_policy
+	// creates intermediate → [CAN_PRIVESC] → admin (corrected trust-backed takeover).
 	_, err = db.Query(ctx, fmt.Sprintf(`
-		CREATE (attacker:Principal    {Arn: '%s', _is_admin: false})
-		CREATE (intermediate:Principal{Arn: '%s', _is_admin: false})
-		CREATE (admin:Principal       {Arn: '%s', _is_admin: true})
-		CREATE (svc:Resource          {Arn: '%s'})
-		CREATE (policy:Resource       {Arn: '%s'})
-		WITH attacker, intermediate, admin, svc, policy
+		CREATE (attacker:Principal      {Arn: '%s', _is_admin: false})
+		CREATE (intermediate:Role:Principal {Arn: '%s', _is_admin: false,
+			trusted_services: ['tasks.apprunner.amazonaws.com']})
+		CREATE (admin:Role:Principal    {Arn: '%s', _is_admin: true})
+		CREATE (svc:Resource            {Arn: '%s'})
+		WITH attacker, intermediate, admin, svc
 		MERGE (attacker)-[:IAM_PASSROLE]->(intermediate)
 		MERGE (attacker)-[:APPRUNNER_CREATESERVICE]->(svc)
-		MERGE (intermediate)-[:IAM_PUTROLEPOLICY]->(policy)
-	`, attackerARN, interARN, adminARN, svcResourceARN, policyARN), nil)
+		MERGE (intermediate)-[:CAN_ASSUME]->(admin)
+		MERGE (intermediate)-[:IAM_PUTROLEPOLICY]->(admin)
+	`, attackerARN, interARN, adminARN, svcResourceARN), nil)
 	require.NoError(t, err, "seed multi-hop graph")
 
 	require.NoError(t, EnrichAWS(ctx, db), "EnrichAWS")
@@ -1448,7 +1203,7 @@ func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 
 	t.Run("intermediate_1hop_to_admin", func(t *testing.T) {
 		assert.True(t, found[pathKey{interARN, 1}],
-			"intermediate must reach admin in 1 hop via iam_put_role_policy (standalone IAM escalation)")
+			"intermediate must reach admin in 1 hop via iam_put_role_policy (trust-backed: CAN_ASSUME + PutRolePolicy on admin)")
 	})
 }
 
@@ -1570,6 +1325,10 @@ func TestPrivescNoCartesianFanOut(t *testing.T) {
 	//           but the role trusts ONLY lambda.amazonaws.com, not ec2 — so the ec2-trust
 	//           guard is the SOLE reason the edge is suppressed (not a label mismatch).
 	//   fp_cfn: CreateChangeSet/ExecuteChangeSet on DIFFERENT stacks.
+	//   fp_pr:  PassRole+RunInstances to a role that trusts ec2 and has an instance profile
+	//           but is NOT privileged — the privileged-target guard is the SOLE rejection.
+	//   fp_hr:  Lambda UpdateFunctionCode+Invoke on a function whose HAS_ROLE execution role
+	//           is NOT privileged — the privileged-target guard is the SOLE rejection.
 	_, err = db.Query(ctx, `
 		UNWIND range(1, 20) AS i
 		CREATE (:Principal {Arn: 'arn:aws:iam::123456789012:user/bystander-' + toString(i), _is_admin: false})
@@ -1590,20 +1349,34 @@ func TestPrivescNoCartesianFanOut(t *testing.T) {
 		CREATE (cfn:Principal {Arn: 'arn:aws:iam::123456789012:user/fp_cfn', _is_admin: false})
 		CREATE (cfnStackA:Resource {Arn: 'arn:aws:cloudformation:us-east-1:123456789012:stack/a'})
 		CREATE (cfnStackB:Resource {Arn: 'arn:aws:cloudformation:us-east-1:123456789012:stack/b'})
-		WITH cpv, cpvPolicy, sts, stsRes, ec2, ec2Role, ec2Res, cfn, cfnStackA, cfnStackB
+		CREATE (pr:Principal {Arn: 'arn:aws:iam::123456789012:user/fp_pr', _is_admin: false})
+		CREATE (prRole:Role:Principal {Arn: 'arn:aws:iam::123456789012:role/unpriv-ec2', _is_admin: false,
+			trusted_services: ['ec2.amazonaws.com'],
+			InstanceProfileList: '[{"Arn":"arn:aws:iam::123456789012:instance-profile/ip"}]'})
+		CREATE (prRes:Resource {Arn: 'arn:aws:ec2:us-east-1:123456789012:reservation/r-1'})
+		CREATE (hr:Principal {Arn: 'arn:aws:iam::123456789012:user/fp_hr', _is_admin: false})
+		CREATE (hrFn:Resource {Arn: 'arn:aws:lambda:us-east-1:123456789012:function:unpriv'})
+		CREATE (hrRole:Role:Principal {Arn: 'arn:aws:iam::123456789012:role/unpriv-exec', _is_admin: false})
+		WITH cpv, cpvPolicy, sts, stsRes, ec2, ec2Role, ec2Res, cfn, cfnStackA, cfnStackB,
+			pr, prRole, prRes, hr, hrFn, hrRole
 		MERGE (cpv)-[:IAM_CREATEPOLICYVERSION]->(cpvPolicy)
 		MERGE (sts)-[:STS_ASSUMEROLE]->(stsRes)
 		MERGE (ec2)-[:IAM_PASSROLE]->(ec2Role)
 		MERGE (ec2)-[:EC2_RUNINSTANCES]->(ec2Res)
 		MERGE (cfn)-[:CLOUDFORMATION_CREATECHANGESET]->(cfnStackA)
 		MERGE (cfn)-[:CLOUDFORMATION_EXECUTECHANGESET]->(cfnStackB)
+		MERGE (pr)-[:IAM_PASSROLE]->(prRole)
+		MERGE (pr)-[:EC2_RUNINSTANCES]->(prRes)
+		MERGE (hr)-[:LAMBDA_UPDATEFUNCTIONCODE]->(hrFn)
+		MERGE (hr)-[:LAMBDA_INVOKEFUNCTION]->(hrFn)
+		MERGE (hrFn)-[:HAS_ROLE]->(hrRole)
 	`, nil)
 	require.NoError(t, err, "seed FP attackers")
 
 	require.NoError(t, EnrichAWS(ctx, db), "EnrichAWS")
 
 	// FP attackers must emit ZERO CAN_PRIVESC edges (they fail the structural guard).
-	for _, fp := range []string{"fp_cpv", "fp_sts", "fp_ec2", "fp_cfn"} {
+	for _, fp := range []string{"fp_cpv", "fp_sts", "fp_ec2", "fp_cfn", "fp_pr", "fp_hr"} {
 		t.Run("fp_zero_edges_"+fp, func(t *testing.T) {
 			result, err := db.Query(ctx, fmt.Sprintf(
 				`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/%s'})-[r:CAN_PRIVESC]->() RETURN count(r) AS n`, fp), nil)

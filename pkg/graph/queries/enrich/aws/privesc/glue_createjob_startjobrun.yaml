@@ -5,24 +5,38 @@ type: enrich
 category: privesc
 description: |
   Detects principals with iam:PassRole, glue:CreateJob, and glue:StartJobRun that can
-  create a Glue job with a privileged service role and immediately execute it to
-  escalate privileges. Both create and execute permissions are required to complete
-  the attack path.
+  create a Glue job with a privileged service role and immediately execute it to escalate
+  privileges. The escalation target is the PASSED ROLE (the IAM_PASSROLE victim), not the
+  Glue job stub. Guards: the role must trust glue.amazonaws.com, must not be a
+  service-linked role, and must be more privileged than the attacker.
 severity: high
 order: 100
 cypher: |
+  // Multi-perm new-passrole (B.5/B.1): target = passed role. Guards (FP catalog method_80):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - glue trust: 'glue.amazonaws.com' IN victim.trusted_services (StartJobRun cannot
+  //     obtain credentials for a role Glue cannot assume).
+  //   - exclude service-linked roles (aws-service-role path).
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
+  //   - CreateJob AND StartJobRun matched by type existence on the attacker, NOT forced
+  //     onto a shared svc stub node (sparse wildcard stubs drop valid TPs / validate
+  //     spurious combos - method_80). The escalation target is the role, not the job.
   MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker, victim
-  MATCH (attacker)-[create]->(svc)
-  WHERE type(create) = 'GLUE_CREATEJOB'
-  WITH attacker, victim, svc
-  MATCH (attacker)-[run]->(svc)
-  WHERE type(run) = 'GLUE_STARTJOBRUN'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'glue.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[create]->() WHERE type(create) = 'GLUE_CREATEJOB' }
+    AND EXISTS { (attacker)-[run]->() WHERE type(run) = 'GLUE_STARTJOBRUN' }
   WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + glue:CreateJob + glue:StartJobRun',
-      pe.severity = 'high',
+      pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

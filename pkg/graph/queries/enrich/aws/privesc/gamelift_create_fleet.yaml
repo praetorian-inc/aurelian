@@ -4,21 +4,37 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with both iam:PassRole and gamelift:CreateFleet permissions
-  that can upload a malicious game server build and create a GameLift fleet with
-  an admin instance role to extract credentials via IMDS.
+  Detects principals with both iam:PassRole and gamelift:CreateFleet that can upload a
+  malicious game server build and create a GameLift fleet carrying a privileged instance
+  role, then extract its credentials via IMDS. The escalation target is the PASSED ROLE
+  (not the GameLift service resource). Guards: the role must trust gamelift.amazonaws.com,
+  must have an instance profile (GameLift fleets are EC2-backed and attach the role via an
+  instance profile), and must be more privileged than the attacker.
 severity: high
 order: 100
 cypher: |
+  // New-passrole: target = passed role. Guards (per FP catalog / new-passrole template):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - gamelift trust: 'gamelift.amazonaws.com' IN victim.trusted_services.
+  //   - instance profile present: InstanceProfileList is a JSON string -> CONTAINS arn.
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
   MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker, victim
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'gamelift.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND coalesce(victim.InstanceProfileList, '') CONTAINS 'arn:aws:iam'
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
   MATCH (attacker)-[create]->(service_resource)
   WHERE type(create) = 'GAMELIFT_CREATEFLEET'
   WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + gamelift:CreateFleet',
-      pe.severity = 'high',
+      pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

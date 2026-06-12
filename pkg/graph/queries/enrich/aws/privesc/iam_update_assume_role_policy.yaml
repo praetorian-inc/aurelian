@@ -4,19 +4,40 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with iam:UpdateAssumeRolePolicy permission that can modify 
-  the trust policy to allow themselves to assume the role.
+  Detects principals with iam:UpdateAssumeRolePolicy on a specific role: the attacker
+  rewrites that role's trust policy to name themselves, then assumes it (the attacker
+  controls the new trust document, so this is a self-sufficient direct takeover). The
+  edge is SCOPED to the role the IAM_UPDATEASSUMEROLEPOLICY permission points at (no
+  all-principals fan-out), restricted to role targets, excludes service-linked roles
+  (their trust policy cannot be modified), and excludes self-target. As a trust-backed
+  direct takeover it fails-OPEN on target privilege (still emits to a sparse role whose
+  _is_admin/_is_privileged are unknown), with severity tiered: admin -> high,
+  privileged -> medium, unknown/non-privileged -> low (lateral).
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[perm]->(target)
+  // Principal-access / trust-rewrite (B.7): drop the all-principals fan-out. The victim
+  // is the role the IAM_UPDATEASSUMEROLEPOLICY permission edge actually points at.
+  // Guards (per FP catalog method_13):
+  //   - admin-as-source: skip attackers that are already admin.
+  //   - target must be a ROLE (UpdateAssumeRolePolicy only applies to roles).
+  //   - exclude service-linked roles ('/aws-service-role/') — trust is immutable.
+  //   - self-target exclusion (casing-tolerant coalesce).
+  //   - fail-open on privilege (direct trust takeover): tier severity, emit sparse/unknown at low.
+  MATCH (attacker:Principal)-[perm]->(victim:Principal)
   WHERE type(perm) = 'IAM_UPDATEASSUMEROLEPOLICY'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) CONTAINS ':role/'
+    AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+  WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:UpdateAssumeRolePolicy',
-      pe.severity = 'high',
+      pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

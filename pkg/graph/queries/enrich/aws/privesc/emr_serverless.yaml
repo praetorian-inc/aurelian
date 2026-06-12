@@ -4,21 +4,36 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with both iam:PassRole and emr-serverless:CreateApplication
-  permissions that can create an EMR Serverless application with a privileged
-  execution role and run a job to escalate privileges.
+  Detects principals with both iam:PassRole and emr-serverless:CreateApplication that can
+  create an EMR Serverless application bound to a privileged execution role and run a job
+  under it to escalate privileges. The escalation target is the PASSED EXECUTION ROLE (not
+  the EMR Serverless service resource). EMR Serverless is not EC2-backed, so there is no
+  instance profile; guards require the role to trust emr-serverless.amazonaws.com and to be
+  more privileged than the attacker.
 severity: high
 order: 100
 cypher: |
+  // New-passrole: target = passed execution role. Guards (new-passrole template):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - emr-serverless trust: 'emr-serverless.amazonaws.com' IN victim.trusted_services.
+  //   - no instance profile guard (EMR Serverless is not EC2-backed).
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
   MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker, victim
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'emr-serverless.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
   MATCH (attacker)-[create]->(service_resource)
   WHERE type(create) = 'EMR-SERVERLESS_CREATEAPPLICATION'
   WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + emr-serverless:CreateApplication',
-      pe.severity = 'high',
+      pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

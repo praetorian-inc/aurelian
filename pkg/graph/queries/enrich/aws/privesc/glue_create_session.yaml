@@ -4,21 +4,39 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with both iam:PassRole and glue:CreateSession permissions
-  that can create a Glue interactive session with a privileged IAM role and
-  run Python code to escalate privileges.
+  Detects principals with both iam:PassRole and glue:CreateSession permissions that can
+  create a Glue interactive session with a privileged IAM role and run Python code to
+  escalate privileges. The escalation target is the PASSED ROLE (the IAM_PASSROLE victim),
+  not the Glue service resource. Guards: the role must trust glue.amazonaws.com, must not
+  be a service-linked role, and must be more privileged than the attacker.
 severity: high
 order: 100
 cypher: |
+  // New-passrole (B.1): target = passed role. Guards (per FP catalog method_80/method_61):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - glue trust: 'glue.amazonaws.com' IN victim.trusted_services (else the session
+  //     cannot assume the role and the privileged code never runs).
+  //   - exclude service-linked roles (aws-service-role path is not a user-chosen Glue role).
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
+  //   - CreateSession itself spins up the interactive session; the execute step
+  //     (glue:RunStatement) is the companion combo (glue_createsession_runstatement).
+  //     Here only CreateSession+PassRole is asserted, matched by type existence on the
+  //     attacker (not forced onto a shared svc stub, which is brittle - method_80).
   MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker, victim
-  MATCH (attacker)-[create]->(service_resource)
-  WHERE type(create) = 'GLUE_CREATESESSION'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'glue.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[create]->() WHERE type(create) = 'GLUE_CREATESESSION' }
   WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + glue:CreateSession',
-      pe.severity = 'high',
+      pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

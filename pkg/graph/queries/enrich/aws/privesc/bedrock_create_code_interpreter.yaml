@@ -4,21 +4,43 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with iam:PassRole and bedrock-agentcore:CreateCodeInterpreter
-  permissions that can deploy a Bedrock AgentCore Code Interpreter resource with a
-  privileged IAM role, enabling arbitrary code execution with elevated permissions.
+  Detects principals with iam:PassRole, bedrock-agentcore:CreateCodeInterpreter AND a
+  data-plane invoke/start-session action that can deploy a Bedrock AgentCore Code
+  Interpreter carrying a privileged IAM role and run attacker code inside the sandbox to
+  steal that role's credentials. The escalation target is the PASSED ROLE (not the Bedrock
+  service resource). Guards: the role must trust Bedrock AgentCore
+  (bedrock-agentcore.amazonaws.com), must live in the attacker's account, and must be more
+  privileged than the attacker. Create-only is inert without a way to run code in the
+  sandbox, so an invoke/start-session action is required.
 severity: high
 order: 100
 cypher: |
+  // New-passrole: target = passed role. Guards (per FP catalog / method_40):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - AgentCore trust: 'bedrock-agentcore.amazonaws.com' IN victim.trusted_services.
+  //   - missing-permission combo: require a data-plane invoke/start-session action
+  //     (CreateCodeInterpreter alone cannot run code), expressed via EXISTS.
+  //   - same-account: PassRole is account-local.
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
   MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker, victim
-  MATCH (attacker)-[create]->(service_resource)
-  WHERE type(create) = 'BEDROCK-AGENTCORE_CREATECODEINTERPRETER'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'bedrock-agentcore.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND split(coalesce(victim.Arn, victim.arn), ':')[4] = split(coalesce(attacker.Arn, attacker.arn), ':')[4]
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[create]->() WHERE type(create) = 'BEDROCK-AGENTCORE_CREATECODEINTERPRETER' }
+    AND EXISTS { (attacker)-[invoke]->() WHERE type(invoke) IN [
+          'BEDROCK-AGENTCORE_STARTCODEINTERPRETERSESSION',
+          'BEDROCK-AGENTCORE_INVOKECODEINTERPRETER'
+        ] }
   WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:PassRole + bedrock-agentcore:CreateCodeInterpreter',
-      pe.severity = 'high',
+  SET pe.method = 'iam:PassRole + bedrock-agentcore:CreateCodeInterpreter + invoke',
+      pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

@@ -4,19 +4,45 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with lambda:UpdateFunctionCode permission that can modify 
-  Lambda function code to execute with the function's IAM role.
+  Detects principals with lambda:UpdateFunctionCode on a function whose privileged
+  execution role they can take over: they overwrite the code and execute it under that
+  role. The escalation target is the function's execution role (HAS_ROLE), not every
+  principal. Requires a trigger primitive (InvokeFunction / AddPermission /
+  CreateEventSourceMapping) since updated code does not run until invoked, and the
+  execution role must be more privileged than the attacker (least-privilege roles are
+  lateral, not escalation).
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[perm]->(target)
-  WHERE type(perm) = 'LAMBDA_UPDATEFUNCTIONCODE'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
+  // Compute-takeover: target = the execution role of the SPECIFIC function the
+  // attacker can edit (HAS_ROLE, mandatory/fail-closed), NOT every principal.
+  // Guards (per FP catalog method_20):
+  //   - admin-as-source exclusion; self-target exclusion (on resolved Principal).
+  //   - drop the all-principals fan-out; bind victim via (fn)-[:HAS_ROLE]->(role).
+  //   - trigger primitive required: UpdateFunctionCode alone never runs the new
+  //     code (InvokeFunction / AddPermission / CreateEventSourceMapping).
+  //   - privileged-target: a least-privilege execution role is lateral, not escalation.
+  //   - same-account: HAS_ROLE may key to a cross-account Arn stub that cannot actually
+  //     be assumed; require the role's account segment to match the attacker's.
+  MATCH (attacker:Principal)-[update]->(fn)
+  WHERE type(update) = 'LAMBDA_UPDATEFUNCTIONCODE'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND EXISTS {
+      (attacker)-[trigger]->()
+      WHERE type(trigger) IN ['LAMBDA_INVOKEFUNCTION', 'LAMBDA_ADDPERMISSION', 'LAMBDA_CREATEEVENTSOURCEMAPPING']
+    }
+  MATCH (fn)-[:HAS_ROLE]->(victim:Principal)
+  WHERE coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND split(coalesce(victim.Arn, victim.arn), ':')[4] = split(attacker.Arn, ':')[4]
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'lambda:UpdateFunctionCode',
-      pe.severity = 'high',
+      pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

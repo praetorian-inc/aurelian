@@ -6,22 +6,37 @@ category: privesc
 description: |
   Detects principals with iam:PassRole, glue:CreateSession, and glue:RunStatement that
   can create a Glue interactive session with a privileged role and execute arbitrary
-  Python code to escalate privileges. Both create and execute permissions required.
+  Python code to escalate privileges. The escalation target is the PASSED ROLE (the
+  IAM_PASSROLE victim), not the Glue session stub. Guards: the role must trust
+  glue.amazonaws.com, must not be a service-linked role, and must be more privileged
+  than the attacker.
 severity: high
 order: 100
 cypher: |
+  // Multi-perm new-passrole (B.5/B.1): target = passed role. Guards (FP catalog method_80):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - glue trust: 'glue.amazonaws.com' IN victim.trusted_services (the session cannot
+  //     assume a role Glue cannot back, so the privileged statement never runs).
+  //   - exclude service-linked roles (aws-service-role path).
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
+  //   - CreateSession AND RunStatement matched by type existence on the attacker, NOT
+  //     forced onto a shared svc stub node (brittle on sparse wildcard stubs - method_80).
   MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker, victim
-  MATCH (attacker)-[create]->(svc)
-  WHERE type(create) = 'GLUE_CREATESESSION'
-  WITH attacker, victim, svc
-  MATCH (attacker)-[run]->(svc)
-  WHERE type(run) = 'GLUE_RUNSTATEMENT'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'glue.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[create]->() WHERE type(create) = 'GLUE_CREATESESSION' }
+    AND EXISTS { (attacker)-[run]->() WHERE type(run) = 'GLUE_RUNSTATEMENT' }
   WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + glue:CreateSession + glue:RunStatement',
-      pe.severity = 'high',
+      pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

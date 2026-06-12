@@ -11,17 +11,35 @@ description: |
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[update]->(target)
+  // Compute-takeover: both actions on the SAME function (no fan-out); the attacker
+  // self-grants invoke via AddPermission then runs the overwritten code under the
+  // function's execution role via HAS_ROLE (mandatory/fail-closed). Guards (method_65):
+  //   - admin-as-source exclusion; self-target exclusion (on resolved Principal).
+  //   - keep MATCH (fn)-[:HAS_ROLE]->(victim) fail-closed (no OPTIONAL MATCH).
+  //   - privileged-target: the default logs-only execution role is lateral, not escalation.
+  //   - same-account: require the execution role's account segment to match the attacker's.
+  //   - NOTE: aws:SourceArn/SourceAccount conditions on AddPermission resolve at runtime
+  //     and are not projected onto the edge, so a condition-restricted self-grant cannot
+  //     be pruned in Cypher (catalog method_65 runtime-context FP).
+  MATCH (attacker:Principal)-[update]->(fn)
   WHERE type(update) = 'LAMBDA_UPDATEFUNCTIONCODE'
-  WITH attacker, target
-  MATCH (attacker)-[add_perm]->(target)
+    AND coalesce(attacker._is_admin, false) <> true
+  WITH attacker, fn
+  MATCH (attacker)-[add_perm]->(fn)
   WHERE type(add_perm) = 'LAMBDA_ADDPERMISSION'
-  WITH attacker, target
-  MATCH (target)-[:HAS_ROLE]->(victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
+  WITH attacker, fn
+  MATCH (fn)-[:HAS_ROLE]->(victim:Principal)
+  WHERE coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND split(coalesce(victim.Arn, victim.arn), ':')[4] = split(attacker.Arn, ':')[4]
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'lambda:UpdateFunctionCode + lambda:AddPermission',
-      pe.severity = 'high',
+      pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

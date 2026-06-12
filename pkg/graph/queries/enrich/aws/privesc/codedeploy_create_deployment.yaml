@@ -4,20 +4,43 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with codedeploy:CreateDeployment permission that can escalate
-  privileges by deploying a malicious revision whose lifecycle hooks execute as the
-  target EC2 instance's admin instance profile.
+  Detects principals with codedeploy:CreateDeployment that can deploy a malicious
+  revision whose lifecycle hook scripts execute on a target EC2 instance as that
+  instance's attached instance-profile role. The escalation target is the EC2 instance's
+  ROLE (reached via the resource_to_role enricher's HAS_ROLE edge from AWS::EC2::Instance),
+  not an arbitrary principal. The HAS_ROLE link is mandatory (fail-closed): an instance
+  with no instance profile exposes no credentials in IMDS, so the hooks run with no IAM
+  identity. Guards: the role must trust ec2.amazonaws.com and be more privileged than the
+  attacker.
+
+  NOTE (over-match): CreateDeployment edges carry no deployment-group/instance ARN, so
+  this binds the attacker to every privileged EC2-instance role in scope rather than only
+  the instances actually targeted by a deployment group the attacker controls; exact
+  deployment-group->instance binding would need an enricher. Whether targeted instances
+  are running is runtime state not in CloudControl.
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[perm]->(target)
+  // Compute-takeover (D / method_50): drop the all-principals fan-out. The victim is the
+  // privileged instance-profile role of an EC2 instance, reached via
+  // (Instance)-[:HAS_ROLE]->(role). HAS_ROLE mandatory (fail-closed): no profile -> no creds.
+  // Guards: admin-as-source exclusion; self-target exclusion; ec2 trust; privileged tiering.
+  MATCH (attacker:Principal)-[perm]->()
   WHERE type(perm) = 'CODEDEPLOY_CREATEDEPLOYMENT'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
+    AND coalesce(attacker._is_admin, false) <> true
+  WITH DISTINCT attacker
+  MATCH (instance:Resource)-[:HAS_ROLE]->(victim:Principal)
+  WHERE instance._resourceType = 'AWS::EC2::Instance'
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'ec2.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'codedeploy:CreateDeployment',
-      pe.severity = 'high',
+      pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

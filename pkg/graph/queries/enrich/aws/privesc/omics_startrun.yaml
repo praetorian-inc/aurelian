@@ -11,18 +11,27 @@ description: |
 severity: high
 order: 100
 cypher: |
+  // New-passrole + multi-perm: target = passed role (HealthOmics run execution role).
+  // Both create and start-run are required; expressed as EXISTS predicates on the SAME
+  // attacker so there is no fan-out to other principals/resources. Guards:
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - omics trust: 'omics.amazonaws.com' IN victim.trusted_services.
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
   MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker, victim
-  MATCH (attacker)-[create]->(svc)
-  WHERE type(create) = 'OMICS_CREATEWORKFLOW'
-  WITH attacker, victim, svc
-  MATCH (attacker)-[run]->(svc)
-  WHERE type(run) = 'OMICS_STARTRUN'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'omics.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[create]->() WHERE type(create) = 'OMICS_CREATEWORKFLOW' }
+    AND EXISTS { (attacker)-[run]->() WHERE type(run) = 'OMICS_STARTRUN' }
   WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
   ON CREATE SET pe._created = timestamp()
   SET pe.method = 'iam:PassRole + omics:CreateWorkflow + omics:StartRun',
-      pe.severity = 'high',
+      pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created
