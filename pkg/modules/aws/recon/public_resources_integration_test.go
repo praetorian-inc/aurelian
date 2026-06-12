@@ -60,18 +60,10 @@ func TestAWSPublicResources(t *testing.T) {
 		Context: context.Background(),
 	}
 
-	// TODO(feat/public-resources-ingress): extend the Terraform fixture at
-	// test/fixtures/aws/recon/public-resources with the ingress resources below,
-	// then add their fixture.Output(...) identifiers to expectedImpactedResources
-	// for full end-to-end assertions:
-	//   - internet-facing ALB                            -> "public_alb_arn"
-	//   - App Runner service (public ingress)            -> "public_apprunner_arn"
-	//   - CloudFront distribution                        -> "public_cloudfront_id"
-	//   - HTTP API with an AuthorizationType=NONE route  -> "unauth_httpapi_id"
-	//   - REST API with a NONE / no-api-key method       -> "unauth_restapi_id"
-	//   - OpenSearch domain with FGAC disabled           -> "no_fgac_domain_arn"
-	//   - EKS cluster, public endpoint open to 0.0.0.0/0 -> "public_eks_arn"
-	//   - Transfer Family server, PUBLIC endpoint        -> "public_transfer_id"
+	// The ingress cheap tranche (always deployed) is asserted below. The
+	// expensive fixtures (EKS, FGAC-off OpenSearch, Beanstalk) deploy only when
+	// the fixture is applied with -var deploy_expensive=true; their outputs are
+	// empty otherwise, so they are asserted separately further down.
 
 	p1 := pipeline.From(cfg)
 	p2 := pipeline.New[model.AurelianModel]()
@@ -106,11 +98,33 @@ func TestAWSPublicResources(t *testing.T) {
 		fixture.Output("public_cognito_pool_id"),
 		fixture.Output("public_rds_identifier"),
 		fixture.Output("public_ami_id"),
+		// Application ingress layer — cheap tranche (always deployed).
+		fixture.Output("public_alb_arn"),
+		fixture.Output("public_apprunner_arn"),
+		fixture.Output("public_cloudfront_id"),
+		fixture.Output("public_ga_arn"),
+		fixture.Output("public_transfer_id"),
+		fixture.Output("apikey_appsync_id"),
+		fixture.Output("unauth_restapi_id"),
+		fixture.Output("unauth_httpapi_id"),
 	}
 
 	for _, expected := range expectedImpactedResources {
 		assert.Truef(t, hasRiskForResource(risks, expected), "expected risk for resource %q", expected)
 		t.Logf("found risk for resource %q", expected)
+	}
+
+	// Negative controls: these must NOT be flagged.
+	for _, name := range []string{"internal_alb_arn", "iam_appsync_id"} {
+		id := fixture.Output(name)
+		assert.Falsef(t, hasRiskForResource(risks, id), "internal/authenticated resource %q (%s) must not be flagged", id, name)
+	}
+
+	// Expensive tranche: only asserted when deployed (outputs are empty otherwise).
+	for _, name := range []string{"public_eks_arn", "no_fgac_domain", "public_beanstalk_env"} {
+		if id := fixture.Output(name); id != "" {
+			assert.Truef(t, hasRiskForResource(risks, id), "expected risk for expensive resource %q (%s)", id, name)
+		}
 	}
 
 	hasInvokeFunction := false
