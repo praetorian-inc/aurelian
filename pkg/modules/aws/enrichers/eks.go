@@ -19,6 +19,9 @@ func enrichEKSWrapper(cfg plugin.EnricherConfig, r *output.AWSResource) error {
 // into whether the Kubernetes API server endpoint is publicly accessible and
 // whether public access is open to the entire internet (0.0.0.0/0).
 func EnrichEKSCluster(cfg plugin.EnricherConfig, r *output.AWSResource) error {
+	if _, ok := r.Properties["ResourcesVpcConfig"]; !ok {
+		hydrateFromCloudControl(cfg, r)
+	}
 	publicAccess := false
 	openToInternet := false
 	if vpc, ok := r.Properties["ResourcesVpcConfig"].(map[string]any); ok {
