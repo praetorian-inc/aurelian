@@ -27,6 +27,8 @@ resource "random_id" "run" {
   byte_length = 4
 }
 
+data "aws_caller_identity" "current" {}
+
 locals {
   prefix    = "aurelian-pub-test-${random_id.run.hex}"
   os_prefix = "aur-pt-${random_id.run.hex}"
@@ -689,6 +691,92 @@ resource "aws_apigatewayv2_route" "public" {
   route_key = "GET /public"
 }
 
+# --- API Gateway REST: PRIVATE endpoint + NONE-auth method (negative) ---
+# A PRIVATE REST API is reachable only from within the VPC via an interface
+# endpoint, so its NONE-auth method is not internet-exposed. The evaluator skips
+# PRIVATE APIs before counting unauthenticated methods, so this must NOT flag.
+resource "aws_api_gateway_rest_api" "private" {
+  name = "${local.os_prefix}-rest-priv"
+
+  endpoint_configuration {
+    types = ["PRIVATE"]
+  }
+}
+
+resource "aws_api_gateway_resource" "private" {
+  rest_api_id = aws_api_gateway_rest_api.private.id
+  parent_id   = aws_api_gateway_rest_api.private.root_resource_id
+  path_part   = "private"
+}
+
+resource "aws_api_gateway_method" "private" {
+  rest_api_id   = aws_api_gateway_rest_api.private.id
+  resource_id   = aws_api_gateway_resource.private.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "private" {
+  rest_api_id = aws_api_gateway_rest_api.private.id
+  resource_id = aws_api_gateway_resource.private.id
+  http_method = aws_api_gateway_method.private.http_method
+  type        = "MOCK"
+}
+
+# --- API Gateway REST: NONE-auth method + resource policy (positive, triage) ---
+# A resource policy can restrict invocation (source IP, VPC endpoint, account)
+# independently of method authorization, so the evaluator reports for triage with
+# a policy-specific reason rather than asserting public. Still flagged.
+resource "aws_api_gateway_rest_api" "policy" {
+  name = "${local.os_prefix}-rest-pol"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = "*"
+      Action    = "execute-api:Invoke"
+      Resource  = "execute-api:/*"
+      Condition = {
+        IpAddress = { "aws:SourceIp" = "10.0.0.0/8" }
+      }
+    }]
+  })
+}
+
+resource "aws_api_gateway_resource" "policy" {
+  rest_api_id = aws_api_gateway_rest_api.policy.id
+  parent_id   = aws_api_gateway_rest_api.policy.root_resource_id
+  path_part   = "policy"
+}
+
+resource "aws_api_gateway_method" "policy" {
+  rest_api_id   = aws_api_gateway_rest_api.policy.id
+  resource_id   = aws_api_gateway_resource.policy.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "policy" {
+  rest_api_id = aws_api_gateway_rest_api.policy.id
+  resource_id = aws_api_gateway_resource.policy.id
+  http_method = aws_api_gateway_method.policy.http_method
+  type        = "MOCK"
+}
+
+# --- AppSync: AWS_IAM primary + additional API_KEY provider (positive) ---
+# A non-API_KEY primary auth type does not preclude an additional API_KEY
+# provider; any holder of an API key can call the full schema, so this flags.
+resource "aws_appsync_graphql_api" "additional_apikey" {
+  name                = "${local.os_prefix}-appsync-addl"
+  authentication_type = "AWS_IAM"
+  schema              = "type Query { hello: String }"
+
+  additional_authentication_provider {
+    authentication_type = "API_KEY"
+  }
+}
+
 # ============================================================
 # Expensive / slow fixtures (var.deploy_expensive)
 # ============================================================
@@ -710,6 +798,10 @@ resource "aws_opensearch_domain" "no_fgac" {
     volume_type = "gp3"
   }
 
+  # Wildcard ("*") principal — what the evaluator flags. AWS rejects a fully
+  # open FGAC-off public domain, so an IpAddress condition is attached to make
+  # the policy "restrictive" enough to create. The evaluator inspects only the
+  # principal (conditions are a known follow-up), so this still flags as public.
   access_policies = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -717,11 +809,49 @@ resource "aws_opensearch_domain" "no_fgac" {
       Principal = "*"
       Action    = "es:ESHttpGet"
       Resource  = "arn:aws:es:${var.region}:*:domain/${local.os_prefix}-nofgac/*"
+      Condition = {
+        IpAddress = { "aws:SourceIp" = "3.0.0.0/8" }
+      }
     }]
   })
 
   tags = {
     Name = "${local.os_prefix}-nofgac"
+  }
+}
+
+# --- OpenSearch: FGAC-OFF + restrictive (non-wildcard) policy (negative) ---
+# With FGAC disabled the access policy is the only authorization layer. A policy
+# scoped to a specific principal still gates the domain, so it must NOT flag —
+# only a wildcard-principal policy does. Mirror of the no_fgac positive above.
+resource "aws_opensearch_domain" "no_fgac_restrictive" {
+  count          = var.deploy_expensive ? 1 : 0
+  domain_name    = "${local.os_prefix}-nofgacr"
+  engine_version = "OpenSearch_2.11"
+
+  cluster_config {
+    instance_type  = "t3.small.search"
+    instance_count = 1
+  }
+
+  ebs_options {
+    ebs_enabled = true
+    volume_size = 10
+    volume_type = "gp3"
+  }
+
+  access_policies = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+      Action    = "es:ESHttpGet"
+      Resource  = "arn:aws:es:${var.region}:*:domain/${local.os_prefix}-nofgacr/*"
+    }]
+  })
+
+  tags = {
+    Name = "${local.os_prefix}-nofgacr"
   }
 }
 
