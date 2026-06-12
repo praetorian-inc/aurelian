@@ -130,7 +130,7 @@ func TestConfigScanToRisk(t *testing.T) {
 	risk, ok := items[0].(output.AurelianRisk)
 	require.True(t, ok)
 
-	assert.Equal(t, "azure-configuration-scan", risk.Name)
+	assert.Equal(t, "azure-test-misconfig", risk.Name)
 	assert.Equal(t, output.RiskSeverity("high"), risk.Severity)
 	assert.Equal(t, "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm-1", risk.ImpactedResourceID)
 	assert.NotEmpty(t, risk.Context)
