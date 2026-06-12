@@ -38,7 +38,7 @@ const (
 
 // privescTestCase describes one enrichment query scenario.
 type privescTestCase struct {
-	// queryID is the enrichment query to execute (e.g. "aws/enrich/privesc/method_43").
+	// queryID is the enrichment query to execute (e.g. "aws/enrich/privesc/apprunner_create_service").
 	queryID string
 	// setup is Cypher that seeds the graph before the query runs.
 	setup string
@@ -110,41 +110,41 @@ func passRoleCaseFanOut(queryID, svcPermType string) privescTestCase {
 func allPrivescCases() []privescTestCase {
 	return []privescTestCase{
 		// ---- Methods 01–42 (pre-PR baseline) ----
-		standaloneCase("aws/enrich/privesc/method_01", "IAM_CREATEPOLICYVERSION"),
-		standaloneCase("aws/enrich/privesc/method_02", "IAM_SETDEFAULTPOLICYVERSION"),
-		standaloneCase("aws/enrich/privesc/method_03", "IAM_CREATEACCESSKEY"),
-		standaloneCase("aws/enrich/privesc/method_04", "IAM_CREATELOGINPROFILE"),
-		standaloneCase("aws/enrich/privesc/method_05", "IAM_UPDATELOGINPROFILE"),
-		standaloneCase("aws/enrich/privesc/method_06", "IAM_ATTACHUSERPOLICY"),
-		standaloneCase("aws/enrich/privesc/method_07", "IAM_ATTACHGROUPPOLICY"),
-		standaloneCase("aws/enrich/privesc/method_08", "IAM_ATTACHROLEPOLICY"),
-		standaloneCase("aws/enrich/privesc/method_09", "IAM_PUTUSERPOLICY"),
-		standaloneCase("aws/enrich/privesc/method_10", "IAM_PUTGROUPPOLICY"),
-		standaloneCase("aws/enrich/privesc/method_11", "IAM_PUTROLEPOLICY"),
-		standaloneCase("aws/enrich/privesc/method_12", "IAM_ADDUSERTOGROUP"),
-		standaloneCase("aws/enrich/privesc/method_13", "IAM_UPDATEASSUMEROLEPOLICY"),
-		passRoleCase("aws/enrich/privesc/method_14", "LAMBDA_CREATEFUNCTION"),
-		passRoleCase("aws/enrich/privesc/method_15", "EC2_RUNINSTANCES"),
-		passRoleCase("aws/enrich/privesc/method_16", "CLOUDFORMATION_CREATESTACK"),
-		passRoleCase("aws/enrich/privesc/method_17", "DATAPIPELINE_CREATEPIPELINE"),
-		passRoleCase("aws/enrich/privesc/method_18", "GLUE_CREATEJOB"),
-		passRoleCase("aws/enrich/privesc/method_19", "SAGEMAKER_CREATENOTEBOOKINSTANCE"),
-		standaloneCase("aws/enrich/privesc/method_20", "LAMBDA_UPDATEFUNCTIONCODE"),
-		standaloneCase("aws/enrich/privesc/method_21", "LAMBDA_CREATEEVENTSOURCEMAPPING"),
-		standaloneCase("aws/enrich/privesc/method_22", "STS_ASSUMEROLE"),
-		standaloneCase("aws/enrich/privesc/method_23", "SSM_SENDCOMMAND"),
-		standaloneCase("aws/enrich/privesc/method_24", "SSM_STARTSESSION"),
-		standaloneCase("aws/enrich/privesc/method_25", "SSM_CREATEASSOCIATION"),
-		standaloneCase("aws/enrich/privesc/method_26", "CODESTAR_CREATEPROJECT"),
-		standaloneCase("aws/enrich/privesc/method_27", "CODEBUILD_CREATEPROJECT"),
-		standaloneCase("aws/enrich/privesc/method_28", "IAM_CREATESERVICELINKEDROLE"),
-		// method_29: standalone — UpdateDevEndpoint on existing Glue endpoint (no PassRole)
-		standaloneCase("aws/enrich/privesc/method_29", "GLUE_UPDATEDEVENDPOINT"),
-		// method_30: standalone — UpdateStack on existing stack, no PassRole needed
-		standaloneCase("aws/enrich/privesc/method_30", "CLOUDFORMATION_UPDATESTACK"),
-		// method_31: CreateChangeSet + ExecuteChangeSet on the SAME stack (no PassRole)
+		standaloneCase("aws/enrich/privesc/iam_create_policy_version", "IAM_CREATEPOLICYVERSION"),
+		standaloneCase("aws/enrich/privesc/iam_set_default_policy_version", "IAM_SETDEFAULTPOLICYVERSION"),
+		standaloneCase("aws/enrich/privesc/iam_create_access_key", "IAM_CREATEACCESSKEY"),
+		standaloneCase("aws/enrich/privesc/iam_create_login_profile", "IAM_CREATELOGINPROFILE"),
+		standaloneCase("aws/enrich/privesc/iam_update_login_profile", "IAM_UPDATELOGINPROFILE"),
+		standaloneCase("aws/enrich/privesc/iam_attach_user_policy", "IAM_ATTACHUSERPOLICY"),
+		standaloneCase("aws/enrich/privesc/iam_attach_group_policy", "IAM_ATTACHGROUPPOLICY"),
+		standaloneCase("aws/enrich/privesc/iam_attach_role_policy", "IAM_ATTACHROLEPOLICY"),
+		standaloneCase("aws/enrich/privesc/iam_put_user_policy", "IAM_PUTUSERPOLICY"),
+		standaloneCase("aws/enrich/privesc/iam_put_group_policy", "IAM_PUTGROUPPOLICY"),
+		standaloneCase("aws/enrich/privesc/iam_put_role_policy", "IAM_PUTROLEPOLICY"),
+		standaloneCase("aws/enrich/privesc/iam_add_user_to_group", "IAM_ADDUSERTOGROUP"),
+		standaloneCase("aws/enrich/privesc/iam_update_assume_role_policy", "IAM_UPDATEASSUMEROLEPOLICY"),
+		passRoleCase("aws/enrich/privesc/iam_pass_role_lambda", "LAMBDA_CREATEFUNCTION"),
+		passRoleCase("aws/enrich/privesc/iam_pass_role_ec2", "EC2_RUNINSTANCES"),
+		passRoleCase("aws/enrich/privesc/iam_pass_role_cloudformation", "CLOUDFORMATION_CREATESTACK"),
+		passRoleCase("aws/enrich/privesc/iam_pass_role_datapipeline", "DATAPIPELINE_CREATEPIPELINE"),
+		passRoleCase("aws/enrich/privesc/iam_pass_role_glue", "GLUE_CREATEJOB"),
+		passRoleCase("aws/enrich/privesc/iam_pass_role_sagemaker", "SAGEMAKER_CREATENOTEBOOKINSTANCE"),
+		standaloneCase("aws/enrich/privesc/lambda_update_function_code", "LAMBDA_UPDATEFUNCTIONCODE"),
+		standaloneCase("aws/enrich/privesc/lambda_create_event_source_mapping", "LAMBDA_CREATEEVENTSOURCEMAPPING"),
+		standaloneCase("aws/enrich/privesc/sts_assume_role", "STS_ASSUMEROLE"),
+		standaloneCase("aws/enrich/privesc/ssm_send_command", "SSM_SENDCOMMAND"),
+		standaloneCase("aws/enrich/privesc/ssm_start_session", "SSM_STARTSESSION"),
+		standaloneCase("aws/enrich/privesc/ec2_ssm_association", "SSM_CREATEASSOCIATION"),
+		standaloneCase("aws/enrich/privesc/codestar_create_project", "CODESTAR_CREATEPROJECT"),
+		standaloneCase("aws/enrich/privesc/codebuild_create_project", "CODEBUILD_CREATEPROJECT"),
+		standaloneCase("aws/enrich/privesc/iam_create_service_linked_role", "IAM_CREATESERVICELINKEDROLE"),
+		// glue_update_dev_endpoint: standalone — UpdateDevEndpoint on existing Glue endpoint (no PassRole)
+		standaloneCase("aws/enrich/privesc/glue_update_dev_endpoint", "GLUE_UPDATEDEVENDPOINT"),
+		// cloudformation_update_stack: standalone — UpdateStack on existing stack, no PassRole needed
+		standaloneCase("aws/enrich/privesc/cloudformation_update_stack", "CLOUDFORMATION_UPDATESTACK"),
+		// cloudformation_changeset: CreateChangeSet + ExecuteChangeSet on the SAME stack (no PassRole)
 		{
-			queryID: "aws/enrich/privesc/method_31",
+			queryID: "aws/enrich/privesc/cloudformation_changeset",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (v:Principal {Arn: '%s'})
@@ -156,15 +156,15 @@ func allPrivescCases() []privescTestCase {
 			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
 			wantEdges: 1,
 		},
-		passRoleCase("aws/enrich/privesc/method_32", "ECS_RUNTASK"),
-		standaloneCase("aws/enrich/privesc/method_33", "CODEBUILD_STARTBUILD"),
-		passRoleCase("aws/enrich/privesc/method_34", "CODEBUILD_UPDATEPROJECT"),
-		standaloneCase("aws/enrich/privesc/method_35", "SAGEMAKER_CREATEPRESIGNEDNOTEBOOKINSTANCEURL"),
-		passRoleCase("aws/enrich/privesc/method_36", "SAGEMAKER_CREATETRAININGJOB"),
-		passRoleCase("aws/enrich/privesc/method_37", "SAGEMAKER_CREATEPROCESSINGJOB"),
-		// method_39: lambda:UpdateFunctionCode + lambda:InvokeFunction (no PassRole — escalates via Lambda execution role)
+		passRoleCase("aws/enrich/privesc/ecs_passrole_runtask", "ECS_RUNTASK"),
+		standaloneCase("aws/enrich/privesc/codebuild_start_build", "CODEBUILD_STARTBUILD"),
+		passRoleCase("aws/enrich/privesc/codebuild_update_project", "CODEBUILD_UPDATEPROJECT"),
+		standaloneCase("aws/enrich/privesc/sagemaker_presigned_url", "SAGEMAKER_CREATEPRESIGNEDNOTEBOOKINSTANCEURL"),
+		passRoleCase("aws/enrich/privesc/sagemaker_training_job", "SAGEMAKER_CREATETRAININGJOB"),
+		passRoleCase("aws/enrich/privesc/sagemaker_processing_job", "SAGEMAKER_CREATEPROCESSINGJOB"),
+		// lambda_updatecode_invoke: lambda:UpdateFunctionCode + lambda:InvokeFunction (no PassRole — escalates via Lambda execution role)
 		{
-			queryID: "aws/enrich/privesc/method_39",
+			queryID: "aws/enrich/privesc/lambda_updatecode_invoke",
 			setup: fmt.Sprintf(`
 					CREATE (a:Principal {Arn: '%s'})
 					CREATE (r:Principal {Arn: '%s'})
@@ -177,9 +177,9 @@ func allPrivescCases() []privescTestCase {
 			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
-		// method_38: iam:PassRole + ec2:CreateLaunchTemplate + autoscaling:CreateAutoScalingGroup
+		// autoscaling_launch_template: iam:PassRole + ec2:CreateLaunchTemplate + autoscaling:CreateAutoScalingGroup
 		{
-			queryID: "aws/enrich/privesc/method_38",
+			queryID: "aws/enrich/privesc/autoscaling_launch_template",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -192,11 +192,11 @@ func allPrivescCases() []privescTestCase {
 			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
-		// method_40: hyphens preserved by normalizer → BEDROCK-AGENTCORE_CREATECODEINTERPRETER (fan-out fixed)
-		passRoleCaseFanOut("aws/enrich/privesc/method_40", "BEDROCK-AGENTCORE_CREATECODEINTERPRETER"),
-		// method_41: iam:PassRole + (iam:PutRolePolicy or iam:AttachRolePolicy) on same role
+		// bedrock_create_code_interpreter: hyphens preserved by normalizer → BEDROCK-AGENTCORE_CREATECODEINTERPRETER (fan-out fixed)
+		passRoleCaseFanOut("aws/enrich/privesc/bedrock_create_code_interpreter", "BEDROCK-AGENTCORE_CREATECODEINTERPRETER"),
+		// passrole_modify_policy: iam:PassRole + (iam:PutRolePolicy or iam:AttachRolePolicy) on same role
 		{
-			queryID: "aws/enrich/privesc/method_41",
+			queryID: "aws/enrich/privesc/passrole_modify_policy",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Role      {Arn: '%s'})
@@ -207,9 +207,9 @@ func allPrivescCases() []privescTestCase {
 			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(t {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
-		// method_42: iam:UpdateAssumeRolePolicy + iam:PassRole on same role
+		// update_assume_role_passrole_service: iam:UpdateAssumeRolePolicy + iam:PassRole on same role
 		{
-			queryID: "aws/enrich/privesc/method_42",
+			queryID: "aws/enrich/privesc/update_assume_role_passrole_service",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Role      {Arn: '%s'})
@@ -222,75 +222,75 @@ func allPrivescCases() []privescTestCase {
 		},
 
 		// ---- Methods 43–72 (initial gap-fill) ----
-		// method_43: iam:PassRole + apprunner:CreateService
-		passRoleCaseFanOut("aws/enrich/privesc/method_43", "APPRUNNER_CREATESERVICE"),
+		// apprunner_create_service: iam:PassRole + apprunner:CreateService
+		passRoleCaseFanOut("aws/enrich/privesc/apprunner_create_service", "APPRUNNER_CREATESERVICE"),
 
-		// method_44: apprunner:UpdateService (standalone — no PassRole required)
-		standaloneCase("aws/enrich/privesc/method_44", "APPRUNNER_UPDATESERVICE"),
+		// apprunner_update_service: apprunner:UpdateService (standalone — no PassRole required)
+		standaloneCase("aws/enrich/privesc/apprunner_update_service", "APPRUNNER_UPDATESERVICE"),
 
-		// method_45: iam:PassRole + batch:RegisterJobDefinition
-		passRoleCaseFanOut("aws/enrich/privesc/method_45", "BATCH_REGISTERJOBDEFINITION"),
+		// batch_passrole: iam:PassRole + batch:RegisterJobDefinition
+		passRoleCaseFanOut("aws/enrich/privesc/batch_passrole", "BATCH_REGISTERJOBDEFINITION"),
 
-		// method_46: batch:SubmitJob (standalone)
-		standaloneCase("aws/enrich/privesc/method_46", "BATCH_SUBMITJOB"),
+		// batch_submit_job: batch:SubmitJob (standalone)
+		standaloneCase("aws/enrich/privesc/batch_submit_job", "BATCH_SUBMITJOB"),
 
-		// method_47: iam:PassRole + braket:CreateJob
-		passRoleCaseFanOut("aws/enrich/privesc/method_47", "BRAKET_CREATEJOB"),
+		// braket_create_job: iam:PassRole + braket:CreateJob
+		passRoleCaseFanOut("aws/enrich/privesc/braket_create_job", "BRAKET_CREATEJOB"),
 
-		// method_48: iam:PassRole + cloudformation:CreateStackSet
-		passRoleCaseFanOut("aws/enrich/privesc/method_48", "CLOUDFORMATION_CREATESTACKSET"),
+		// cloudformation_create_stackset: iam:PassRole + cloudformation:CreateStackSet
+		passRoleCaseFanOut("aws/enrich/privesc/cloudformation_create_stackset", "CLOUDFORMATION_CREATESTACKSET"),
 
-		// method_49: iam:PassRole + cloudformation:UpdateStackSet
-		passRoleCaseFanOut("aws/enrich/privesc/method_49", "CLOUDFORMATION_UPDATESTACKSET"),
+		// cloudformation_update_stackset: iam:PassRole + cloudformation:UpdateStackSet
+		passRoleCaseFanOut("aws/enrich/privesc/cloudformation_update_stackset", "CLOUDFORMATION_UPDATESTACKSET"),
 
-		// method_50: codedeploy:CreateDeployment (standalone)
-		standaloneCase("aws/enrich/privesc/method_50", "CODEDEPLOY_CREATEDEPLOYMENT"),
+		// codedeploy_create_deployment: codedeploy:CreateDeployment (standalone)
+		standaloneCase("aws/enrich/privesc/codedeploy_create_deployment", "CODEDEPLOY_CREATEDEPLOYMENT"),
 
-		// method_51: iam:PassRole + cognito-identity:SetIdentityPoolRoles
-		passRoleCaseFanOut("aws/enrich/privesc/method_51", "COGNITO-IDENTITY_SETIDENTITYPOOLROLES"),
+		// cognito_set_identity_pool_roles: iam:PassRole + cognito-identity:SetIdentityPoolRoles
+		passRoleCaseFanOut("aws/enrich/privesc/cognito_set_identity_pool_roles", "COGNITO-IDENTITY_SETIDENTITYPOOLROLES"),
 
-		// method_52: ec2-instance-connect:SendSSHPublicKey (standalone)
-		standaloneCase("aws/enrich/privesc/method_52", "EC2-INSTANCE-CONNECT_SENDSSHPUBLICKEY"),
+		// ec2_instance_connect: ec2-instance-connect:SendSSHPublicKey (standalone)
+		standaloneCase("aws/enrich/privesc/ec2_instance_connect", "EC2-INSTANCE-CONNECT_SENDSSHPUBLICKEY"),
 
-		// method_53: ec2:ReplaceIamInstanceProfileAssociation (standalone)
-		standaloneCase("aws/enrich/privesc/method_53", "EC2_REPLACEIAMINSTANCEPROFILEASSOCIATION"),
+		// ec2_replace_instance_profile: ec2:ReplaceIamInstanceProfileAssociation (standalone)
+		standaloneCase("aws/enrich/privesc/ec2_replace_instance_profile", "EC2_REPLACEIAMINSTANCEPROFILEASSOCIATION"),
 
-		// method_54: iam:PassRole + ecs:CreateService
-		passRoleCaseFanOut("aws/enrich/privesc/method_54", "ECS_CREATESERVICE"),
+		// ecs_create_service: iam:PassRole + ecs:CreateService
+		passRoleCaseFanOut("aws/enrich/privesc/ecs_create_service", "ECS_CREATESERVICE"),
 
-		// method_55: iam:PassRole + ecs:StartTask
-		passRoleCaseFanOut("aws/enrich/privesc/method_55", "ECS_STARTTASK"),
+		// ecs_start_task: iam:PassRole + ecs:StartTask
+		passRoleCaseFanOut("aws/enrich/privesc/ecs_start_task", "ECS_STARTTASK"),
 
-		// method_56: ecs:ExecuteCommand (standalone)
-		standaloneCase("aws/enrich/privesc/method_56", "ECS_EXECUTECOMMAND"),
+		// ecs_execute_command: ecs:ExecuteCommand (standalone)
+		standaloneCase("aws/enrich/privesc/ecs_execute_command", "ECS_EXECUTECOMMAND"),
 
-		// method_57: iam:PassRole + elasticmapreduce:RunJobFlow
-		passRoleCaseFanOut("aws/enrich/privesc/method_57", "ELASTICMAPREDUCE_RUNJOBFLOW"),
+		// emr_run_job_flow: iam:PassRole + elasticmapreduce:RunJobFlow
+		passRoleCaseFanOut("aws/enrich/privesc/emr_run_job_flow", "ELASTICMAPREDUCE_RUNJOBFLOW"),
 
-		// method_58: iam:PassRole + emr-serverless:CreateApplication
-		passRoleCaseFanOut("aws/enrich/privesc/method_58", "EMR-SERVERLESS_CREATEAPPLICATION"),
+		// emr_serverless: iam:PassRole + emr-serverless:CreateApplication
+		passRoleCaseFanOut("aws/enrich/privesc/emr_serverless", "EMR-SERVERLESS_CREATEAPPLICATION"),
 
-		// method_59: iam:PassRole + gamelift:CreateFleet
-		passRoleCaseFanOut("aws/enrich/privesc/method_59", "GAMELIFT_CREATEFLEET"),
+		// gamelift_create_fleet: iam:PassRole + gamelift:CreateFleet
+		passRoleCaseFanOut("aws/enrich/privesc/gamelift_create_fleet", "GAMELIFT_CREATEFLEET"),
 
-		// method_60: iam:PassRole + glue:CreateDevEndpoint
-		passRoleCaseFanOut("aws/enrich/privesc/method_60", "GLUE_CREATEDEVENDPOINT"),
+		// glue_create_dev_endpoint: iam:PassRole + glue:CreateDevEndpoint
+		passRoleCaseFanOut("aws/enrich/privesc/glue_create_dev_endpoint", "GLUE_CREATEDEVENDPOINT"),
 
-		// method_61: iam:PassRole + glue:UpdateJob
-		passRoleCaseFanOut("aws/enrich/privesc/method_61", "GLUE_UPDATEJOB"),
+		// glue_update_job: iam:PassRole + glue:UpdateJob
+		passRoleCaseFanOut("aws/enrich/privesc/glue_update_job", "GLUE_UPDATEJOB"),
 
-		// method_62: iam:PassRole + glue:CreateSession
-		passRoleCaseFanOut("aws/enrich/privesc/method_62", "GLUE_CREATESESSION"),
+		// glue_create_session: iam:PassRole + glue:CreateSession
+		passRoleCaseFanOut("aws/enrich/privesc/glue_create_session", "GLUE_CREATESESSION"),
 
-		// method_63: iam:PassRole + imagebuilder:CreateInfrastructureConfiguration
-		passRoleCaseFanOut("aws/enrich/privesc/method_63", "IMAGEBUILDER_CREATEINFRASTRUCTURECONFIGURATION"),
+		// imagebuilder_create_pipeline: iam:PassRole + imagebuilder:CreateInfrastructureConfiguration
+		passRoleCaseFanOut("aws/enrich/privesc/imagebuilder_create_pipeline", "IMAGEBUILDER_CREATEINFRASTRUCTURECONFIGURATION"),
 
-		// method_64: iam:PassRole + kinesisanalytics:CreateApplication
-		passRoleCaseFanOut("aws/enrich/privesc/method_64", "KINESISANALYTICS_CREATEAPPLICATION"),
+		// kinesis_analytics: iam:PassRole + kinesisanalytics:CreateApplication
+		passRoleCaseFanOut("aws/enrich/privesc/kinesis_analytics", "KINESISANALYTICS_CREATEAPPLICATION"),
 
-		// method_65: lambda:UpdateFunctionCode + lambda:AddPermission (no PassRole — escalates via Lambda execution role)
+		// lambda_add_permission: lambda:UpdateFunctionCode + lambda:AddPermission (no PassRole — escalates via Lambda execution role)
 		{
-			queryID: "aws/enrich/privesc/method_65",
+			queryID: "aws/enrich/privesc/lambda_add_permission",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -304,24 +304,24 @@ func allPrivescCases() []privescTestCase {
 			wantEdges: 1,
 		},
 
-		// method_66: iam:PassRole + omics:CreateWorkflow
-		passRoleCaseFanOut("aws/enrich/privesc/method_66", "OMICS_CREATEWORKFLOW"),
+		// omics_create_workflow: iam:PassRole + omics:CreateWorkflow
+		passRoleCaseFanOut("aws/enrich/privesc/omics_create_workflow", "OMICS_CREATEWORKFLOW"),
 
-		// method_67: sagemaker:UpdateNotebookInstanceLifecycleConfig (standalone)
-		standaloneCase("aws/enrich/privesc/method_67", "SAGEMAKER_UPDATENOTEBOOKINSTANCELIFECYCLECONFIG"),
+		// sagemaker_lifecycle_config: sagemaker:UpdateNotebookInstanceLifecycleConfig (standalone)
+		standaloneCase("aws/enrich/privesc/sagemaker_lifecycle_config", "SAGEMAKER_UPDATENOTEBOOKINSTANCELIFECYCLECONFIG"),
 
-		// method_68: iam:PassRole + scheduler:CreateSchedule
-		passRoleCaseFanOut("aws/enrich/privesc/method_68", "SCHEDULER_CREATESCHEDULE"),
+		// scheduler_create_schedule: iam:PassRole + scheduler:CreateSchedule
+		passRoleCaseFanOut("aws/enrich/privesc/scheduler_create_schedule", "SCHEDULER_CREATESCHEDULE"),
 
-		// method_69: iam:PassRole + ssm:StartAutomationExecution
-		passRoleCaseFanOut("aws/enrich/privesc/method_69", "SSM_STARTAUTOMATIONEXECUTION"),
+		// ssm_start_automation: iam:PassRole + ssm:StartAutomationExecution
+		passRoleCaseFanOut("aws/enrich/privesc/ssm_start_automation", "SSM_STARTAUTOMATIONEXECUTION"),
 
-		// method_70: iam:PassRole + states:CreateStateMachine
-		passRoleCaseFanOut("aws/enrich/privesc/method_70", "STATES_CREATESTATEMACHINE"),
+		// stepfunctions_create: iam:PassRole + states:CreateStateMachine
+		passRoleCaseFanOut("aws/enrich/privesc/stepfunctions_create", "STATES_CREATESTATEMACHINE"),
 
-		// method_71: UpdateStateMachine + StartExecution on same target (no PassRole)
+		// stepfunctions_update: UpdateStateMachine + StartExecution on same target (no PassRole)
 		{
-			queryID: "aws/enrich/privesc/method_71",
+			queryID: "aws/enrich/privesc/stepfunctions_update",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (v:Principal {Arn: '%s'})
@@ -334,16 +334,16 @@ func allPrivescCases() []privescTestCase {
 			wantEdges: 1,
 		},
 
-		// method_72: bedrock-agentcore:InvokeSession (standalone)
-		standaloneCase("aws/enrich/privesc/method_72", "BEDROCK-AGENTCORE_INVOKESESSION"),
+		// bedrock_access_code_interpreter: bedrock-agentcore:InvokeSession (standalone)
+		standaloneCase("aws/enrich/privesc/bedrock_access_code_interpreter", "BEDROCK-AGENTCORE_INVOKESESSION"),
 
 		// --- Group A: wrong-API fixes ---
-		// method_73: iam:PassRole + ec2:RequestSpotInstances (distinct from RunInstances)
-		passRoleCaseFanOut("aws/enrich/privesc/method_73", "EC2_REQUESTSPOTINSTANCES"),
+		// ec2_request_spot_instances: iam:PassRole + ec2:RequestSpotInstances (distinct from RunInstances)
+		passRoleCaseFanOut("aws/enrich/privesc/ec2_request_spot_instances", "EC2_REQUESTSPOTINSTANCES"),
 
-		// method_74: ec2:CreateLaunchTemplateVersion + ec2:ModifyLaunchTemplate (no PassRole)
+		// ec2_launch_template_version: ec2:CreateLaunchTemplateVersion + ec2:ModifyLaunchTemplate (no PassRole)
 		{
-			queryID: "aws/enrich/privesc/method_74",
+			queryID: "aws/enrich/privesc/ec2_launch_template_version",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (v:Principal {Arn: '%s'})
@@ -357,9 +357,9 @@ func allPrivescCases() []privescTestCase {
 		},
 
 		// --- Group B: completely missing methods ---
-		// method_75: iam:PassRole + amplify:CreateApp + amplify:CreateBranch + amplify:StartJob (all same target)
+		// amplify_create_app: iam:PassRole + amplify:CreateApp + amplify:CreateBranch + amplify:StartJob (all same target)
 		{
-			queryID: "aws/enrich/privesc/method_75",
+			queryID: "aws/enrich/privesc/amplify_create_app",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -374,9 +374,9 @@ func allPrivescCases() []privescTestCase {
 			wantEdges: 1,
 		},
 
-		// method_76: ec2:ModifyInstanceAttribute + StopInstances + StartInstances (no PassRole)
+		// ec2_modify_instance_attribute: ec2:ModifyInstanceAttribute + StopInstances + StartInstances (no PassRole)
 		{
-			queryID: "aws/enrich/privesc/method_76",
+			queryID: "aws/enrich/privesc/ec2_modify_instance_attribute",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (v:Principal {Arn: '%s'})
@@ -390,9 +390,9 @@ func allPrivescCases() []privescTestCase {
 			wantEdges: 1,
 		},
 
-		// method_77: iam:PassRole + glue:CreateJob + glue:CreateTrigger
+		// glue_createjob_createtrigger: iam:PassRole + glue:CreateJob + glue:CreateTrigger
 		{
-			queryID: "aws/enrich/privesc/method_77",
+			queryID: "aws/enrich/privesc/glue_createjob_createtrigger",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -406,9 +406,9 @@ func allPrivescCases() []privescTestCase {
 			wantEdges: 1,
 		},
 
-		// method_78: iam:PassRole + glue:UpdateJob + glue:CreateTrigger
+		// glue_updatejob_createtrigger: iam:PassRole + glue:UpdateJob + glue:CreateTrigger
 		{
-			queryID: "aws/enrich/privesc/method_78",
+			queryID: "aws/enrich/privesc/glue_updatejob_createtrigger",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -422,9 +422,9 @@ func allPrivescCases() []privescTestCase {
 			wantEdges: 1,
 		},
 
-		// method_79: iam:PassRole + lambda:CreateFunction + lambda:AddPermission
+		// lambda_passrole_createfunction_addpermission: iam:PassRole + lambda:CreateFunction + lambda:AddPermission
 		{
-			queryID: "aws/enrich/privesc/method_79",
+			queryID: "aws/enrich/privesc/lambda_passrole_createfunction_addpermission",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -439,9 +439,9 @@ func allPrivescCases() []privescTestCase {
 		},
 
 		// --- Group C: execution-gated compound methods ---
-		// method_80: iam:PassRole + glue:CreateJob + glue:StartJobRun
+		// glue_createjob_startjobrun: iam:PassRole + glue:CreateJob + glue:StartJobRun
 		{
-			queryID: "aws/enrich/privesc/method_80",
+			queryID: "aws/enrich/privesc/glue_createjob_startjobrun",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -455,9 +455,9 @@ func allPrivescCases() []privescTestCase {
 			wantEdges: 1,
 		},
 
-		// method_81: iam:PassRole + glue:UpdateJob + glue:StartJobRun
+		// glue_updatejob_startjobrun: iam:PassRole + glue:UpdateJob + glue:StartJobRun
 		{
-			queryID: "aws/enrich/privesc/method_81",
+			queryID: "aws/enrich/privesc/glue_updatejob_startjobrun",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -471,9 +471,9 @@ func allPrivescCases() []privescTestCase {
 			wantEdges: 1,
 		},
 
-		// method_82: iam:PassRole + glue:CreateSession + glue:RunStatement
+		// glue_createsession_runstatement: iam:PassRole + glue:CreateSession + glue:RunStatement
 		{
-			queryID: "aws/enrich/privesc/method_82",
+			queryID: "aws/enrich/privesc/glue_createsession_runstatement",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -487,9 +487,9 @@ func allPrivescCases() []privescTestCase {
 			wantEdges: 1,
 		},
 
-		// method_83: iam:PassRole + states:CreateStateMachine + states:StartExecution
+		// stepfunctions_create_startexecution: iam:PassRole + states:CreateStateMachine + states:StartExecution
 		{
-			queryID: "aws/enrich/privesc/method_83",
+			queryID: "aws/enrich/privesc/stepfunctions_create_startexecution",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -503,9 +503,9 @@ func allPrivescCases() []privescTestCase {
 			wantEdges: 1,
 		},
 
-		// method_84: ssm:CreateDocument + ssm:StartAutomationExecution (no PassRole)
+		// ssm_createdocument_startautomation: ssm:CreateDocument + ssm:StartAutomationExecution (no PassRole)
 		{
-			queryID: "aws/enrich/privesc/method_84",
+			queryID: "aws/enrich/privesc/ssm_createdocument_startautomation",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (v:Principal {Arn: '%s'})
@@ -518,9 +518,9 @@ func allPrivescCases() []privescTestCase {
 			wantEdges: 1,
 		},
 
-		// method_85: iam:PassRole + emr-serverless:CreateApplication + emr-serverless:StartJobRun
+		// emr_serverless_startjobrun: iam:PassRole + emr-serverless:CreateApplication + emr-serverless:StartJobRun
 		{
-			queryID: "aws/enrich/privesc/method_85",
+			queryID: "aws/enrich/privesc/emr_serverless_startjobrun",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -534,9 +534,9 @@ func allPrivescCases() []privescTestCase {
 			wantEdges: 1,
 		},
 
-		// method_86: iam:PassRole + kinesisanalytics:CreateApplication + StartApplication
+		// kinesisanalytics_startapplication: iam:PassRole + kinesisanalytics:CreateApplication + StartApplication
 		{
-			queryID: "aws/enrich/privesc/method_86",
+			queryID: "aws/enrich/privesc/kinesisanalytics_startapplication",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -550,9 +550,9 @@ func allPrivescCases() []privescTestCase {
 			wantEdges: 1,
 		},
 
-		// method_87: iam:PassRole + omics:CreateWorkflow + omics:StartRun
+		// omics_startrun: iam:PassRole + omics:CreateWorkflow + omics:StartRun
 		{
-			queryID: "aws/enrich/privesc/method_87",
+			queryID: "aws/enrich/privesc/omics_startrun",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -566,10 +566,10 @@ func allPrivescCases() []privescTestCase {
 			wantEdges: 1,
 		},
 
-		// method_88: iam:PassRole + gamelift:CreateBuild + gamelift:CreateFleet
+		// gamelift_createbuild_createfleet: iam:PassRole + gamelift:CreateBuild + gamelift:CreateFleet
 		// CreateBuild and CreateFleet target different resource types — both check same passed role.
 		{
-			queryID: "aws/enrich/privesc/method_88",
+			queryID: "aws/enrich/privesc/gamelift_createbuild_createfleet",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -584,9 +584,9 @@ func allPrivescCases() []privescTestCase {
 			wantEdges: 1,
 		},
 
-		// method_89: iam:PassRole + imagebuilder:CreateInfraConfig + imagebuilder:CreateImage
+		// imagebuilder_createimage: iam:PassRole + imagebuilder:CreateInfraConfig + imagebuilder:CreateImage
 		{
-			queryID: "aws/enrich/privesc/method_89",
+			queryID: "aws/enrich/privesc/imagebuilder_createimage",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -601,7 +601,6 @@ func allPrivescCases() []privescTestCase {
 		},
 	}
 }
-
 
 // TestPrivescQueriesNeo4j verifies every privesc enrichment query creates
 // CAN_PRIVESC edges when the required IAM permission relationships are present.
@@ -773,13 +772,13 @@ func TestPrivescMultiHopPaths(t *testing.T) {
 		CREATE (policy:Resource{Arn: 'arn:aws:iam::123456789012:policy/p'})
 		WITH low, mid, high, admin, policy
 
-		// low: CreatePolicyVersion → CAN_PRIVESC to mid, high, admin (method_01)
+		// low: CreatePolicyVersion → CAN_PRIVESC to mid, high, admin (iam_create_policy_version)
 		MERGE (low)-[:IAM_CREATEPOLICYVERSION]->(policy)
 
-		// mid: PutRolePolicy → CAN_PRIVESC to low, high, admin (method_11)
+		// mid: PutRolePolicy → CAN_PRIVESC to low, high, admin (iam_put_role_policy)
 		MERGE (mid)-[:IAM_PUTROLEPOLICY]->(policy)
 
-		// high: UpdateLoginProfile → CAN_PRIVESC to low, mid, admin (method_05)
+		// high: UpdateLoginProfile → CAN_PRIVESC to low, mid, admin (iam_update_login_profile)
 		MERGE (high)-[:IAM_UPDATELOGINPROFILE]->(admin)
 	`, nil)
 	require.NoError(t, err, "seed multi-hop graph")
@@ -793,7 +792,7 @@ func TestPrivescMultiHopPaths(t *testing.T) {
 			 RETURN count(r) AS n`, nil)
 		require.NoError(t, err)
 		n, _ := toInt64(result.Records[0]["n"])
-		assert.GreaterOrEqual(t, int(n), 1, "low → admin direct 1-hop via method_01")
+		assert.GreaterOrEqual(t, int(n), 1, "low → admin direct 1-hop via iam_create_policy_version")
 	})
 
 	t.Run("enrichment_creates_1hop_mid_to_admin", func(t *testing.T) {
@@ -802,7 +801,7 @@ func TestPrivescMultiHopPaths(t *testing.T) {
 			 RETURN count(r) AS n`, nil)
 		require.NoError(t, err)
 		n, _ := toInt64(result.Records[0]["n"])
-		assert.GreaterOrEqual(t, int(n), 1, "mid → admin direct 1-hop via method_11")
+		assert.GreaterOrEqual(t, int(n), 1, "mid → admin direct 1-hop via iam_put_role_policy")
 	})
 
 	t.Run("enrichment_creates_principal_to_principal_edges", func(t *testing.T) {
@@ -893,7 +892,10 @@ func TestPrivescAnalysisQuery(t *testing.T) {
 	require.NotNil(t, result)
 
 	// Index results by (attacker, hop_count) for assertions.
-	type pathKey struct{ attacker string; hops int64 }
+	type pathKey struct {
+		attacker string
+		hops     int64
+	}
 	found := map[pathKey]bool{}
 	for _, rec := range result.Records {
 		attacker, _ := rec["attacker_arn"].(string)
@@ -949,7 +951,7 @@ func TestPrivescAnalysisQuery(t *testing.T) {
 // role is itself an admin principal, runs EnrichAWS, then verifies the analysis query
 // finds a 1-hop path from attacker to that admin role.
 //
-// With the scoped fix, method_43 creates CAN_PRIVESC(attacker → passed_role). If the passed
+// With the scoped fix, apprunner_create_service creates CAN_PRIVESC(attacker → passed_role). If the passed
 // role has _is_admin=true the analysis query reports it immediately as a 1-hop finding.
 func TestPassRoleServiceFanOutReachesAnalysisQuery(t *testing.T) {
 	ctx := context.Background()
@@ -995,7 +997,7 @@ func TestPassRoleServiceFanOutReachesAnalysisQuery(t *testing.T) {
 	}
 	assert.True(t, found,
 		"PassRole+AppRunner attacker must appear in analysis output — "+
-			"if this fails, method_43 has regressed: the scoped CAN_PRIVESC edge must point to the passed :Principal role, not a :Resource")
+			"if this fails, apprunner_create_service has regressed: the scoped CAN_PRIVESC edge must point to the passed :Principal role, not a :Resource")
 }
 
 // TestPrivescEdgeMetadata verifies that CAN_PRIVESC edges created by enrichment
@@ -1032,8 +1034,8 @@ func TestPrivescEdgeMetadata(t *testing.T) {
 		wantSeverity string
 	}{
 		{
-			name:    "method_43_simple_passrole_service",
-			queryID: "aws/enrich/privesc/method_43",
+			name:    "apprunner_simple_passrole_service",
+			queryID: "aws/enrich/privesc/apprunner_create_service",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -1046,8 +1048,8 @@ func TestPrivescEdgeMetadata(t *testing.T) {
 			wantSeverity: "high",
 		},
 		{
-			name:    "method_70_stepfunctions",
-			queryID: "aws/enrich/privesc/method_70",
+			name:    "stepfunctions_create_passrole_service",
+			queryID: "aws/enrich/privesc/stepfunctions_create",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -1060,8 +1062,8 @@ func TestPrivescEdgeMetadata(t *testing.T) {
 			wantSeverity: "high",
 		},
 		{
-			name:    "method_88_gamelift_compound",
-			queryID: "aws/enrich/privesc/method_88",
+			name:    "gamelift_compound",
+			queryID: "aws/enrich/privesc/gamelift_createbuild_createfleet",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -1140,30 +1142,30 @@ func TestPrivescNegativePermissions(t *testing.T) {
 		desc    string
 	}{
 		{
-			name:    "method_43_passrole_only_no_service_action",
-			queryID: "aws/enrich/privesc/method_43",
+			name:    "apprunner_passrole_only_no_service_action",
+			queryID: "aws/enrich/privesc/apprunner_create_service",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
 				WITH a, r
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 			`, attackerARN, roleARN),
-			desc: "iam:PassRole alone must not trigger method_43 (requires apprunner:CreateService too)",
+			desc: "iam:PassRole alone must not trigger apprunner_create_service (requires apprunner:CreateService too)",
 		},
 		{
-			name:    "method_43_service_action_only_no_passrole",
-			queryID: "aws/enrich/privesc/method_43",
+			name:    "apprunner_service_action_only_no_passrole",
+			queryID: "aws/enrich/privesc/apprunner_create_service",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (s:Resource  {Arn: '%s'})
 				WITH a, s
 				MERGE (a)-[:APPRUNNER_CREATESERVICE]->(s)
 			`, attackerARN, svcResourceARN),
-			desc: "apprunner:CreateService alone must not trigger method_43 (requires iam:PassRole too)",
+			desc: "apprunner:CreateService alone must not trigger apprunner_create_service (requires iam:PassRole too)",
 		},
 		{
-			name:    "method_88_missing_createfleet_action",
-			queryID: "aws/enrich/privesc/method_88",
+			name:    "gamelift_missing_createfleet_action",
+			queryID: "aws/enrich/privesc/gamelift_createbuild_createfleet",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -1172,11 +1174,11 @@ func TestPrivescNegativePermissions(t *testing.T) {
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GAMELIFT_CREATEBUILD]->(s)
 			`, attackerARN, roleARN, svcResourceARN),
-			desc: "PassRole+CreateBuild without CreateFleet must not trigger method_88 — compound methods require ALL actions",
+			desc: "PassRole+CreateBuild without CreateFleet must not trigger gamelift_createbuild_createfleet — compound methods require ALL actions",
 		},
 		{
-			name:    "method_88_missing_createbuild_action",
-			queryID: "aws/enrich/privesc/method_88",
+			name:    "gamelift_missing_createbuild_action",
+			queryID: "aws/enrich/privesc/gamelift_createbuild_createfleet",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -1185,11 +1187,11 @@ func TestPrivescNegativePermissions(t *testing.T) {
 				MERGE (a)-[:IAM_PASSROLE]->(r)
 				MERGE (a)-[:GAMELIFT_CREATEFLEET]->(s)
 			`, attackerARN, roleARN, svcResourceARN),
-			desc: "PassRole+CreateFleet without CreateBuild must not trigger method_88",
+			desc: "PassRole+CreateFleet without CreateBuild must not trigger gamelift_createbuild_createfleet",
 		},
 		{
-			name:    "method_43_passrole_to_non_principal_resource",
-			queryID: "aws/enrich/privesc/method_43",
+			name:    "apprunner_passrole_to_non_principal_resource",
+			queryID: "aws/enrich/privesc/apprunner_create_service",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Resource  {Arn: '%s'})
@@ -1200,10 +1202,10 @@ func TestPrivescNegativePermissions(t *testing.T) {
 			`, attackerARN, roleARN, svcResourceARN),
 			desc: "PassRole targeting a :Resource node (not :Principal) must produce 0 edges — scoped fix only creates CAN_PRIVESC to :Principal targets",
 		},
-		// method_75 (Amplify 3-action): missing one of three required service actions
+		// amplify_create_app (Amplify 3-action): missing one of three required service actions
 		{
-			name:    "method_75_missing_startjob_action",
-			queryID: "aws/enrich/privesc/method_75",
+			name:    "amplify_missing_startjob_action",
+			queryID: "aws/enrich/privesc/amplify_create_app",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (r:Principal {Arn: '%s'})
@@ -1213,12 +1215,12 @@ func TestPrivescNegativePermissions(t *testing.T) {
 				MERGE (a)-[:AMPLIFY_CREATEAPP]->(s)
 				MERGE (a)-[:AMPLIFY_CREATEBRANCH]->(s)
 			`, attackerARN, roleARN, svcResourceARN),
-			desc: "method_75 requires all 3 Amplify actions on the same resource — missing StartJob must produce 0 edges",
+			desc: "amplify_create_app requires all 3 Amplify actions on the same resource — missing StartJob must produce 0 edges",
 		},
-		// method_84 SSM: actions on different resources must not trigger (cross-resource FP guard)
+		// ssm_createdocument_startautomation SSM: actions on different resources must not trigger (cross-resource FP guard)
 		{
-			name:    "method_84_cross_resource_no_edge",
-			queryID: "aws/enrich/privesc/method_84",
+			name:    "ssm_cross_resource_no_edge",
+			queryID: "aws/enrich/privesc/ssm_createdocument_startautomation",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
 				CREATE (v:Principal {Arn: '%s'})
@@ -1228,7 +1230,7 @@ func TestPrivescNegativePermissions(t *testing.T) {
 				MERGE (a)-[:SSM_CREATEDOCUMENT]->(doc)
 				MERGE (a)-[:SSM_STARTAUTOMATIONEXECUTION]->(other)
 			`, attackerARN, victimARN),
-			desc: "method_84 must not fire when CreateDocument and StartAutomationExecution target different SSM documents — requires same resource",
+			desc: "ssm_createdocument_startautomation must not fire when CreateDocument and StartAutomationExecution target different SSM documents — requires same resource",
 		},
 	}
 
@@ -1273,7 +1275,7 @@ func TestPrivescEnrichAWSIdempotent(t *testing.T) {
 	_, err = db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
 	require.NoError(t, err)
 
-	// Seed attacker with PassRole + AppRunner (method_43).
+	// Seed attacker with PassRole + AppRunner (apprunner_create_service).
 	// Role must be :Principal so the scoped query can find it as the victim.
 	_, err = db.Query(ctx, fmt.Sprintf(`
 		CREATE (a:Principal {Arn: '%s'})
@@ -1309,11 +1311,12 @@ func TestPrivescEnrichAWSIdempotent(t *testing.T) {
 }
 
 // TestPrivescMultiHopThroughPassRoleMethod verifies that a CAN_PRIVESC edge
-// created by a PassRole+service method (method_43) can act as an intermediate
+// created by a PassRole+service method (apprunner_create_service) can act as an intermediate
 // hop in a chain detected by the aws/analysis/privesc_paths query.
 //
-// Graph:  attacker --[method_43 scoped]--> intermediate (passed role)
-//                  intermediate --[method_01 standalone]--> admin
+// Graph:  attacker --[apprunner_create_service scoped]--> intermediate (passed role)
+//
+//	intermediate --[iam_create_policy_version standalone]--> admin
 //
 // The key: attacker passes an IAM role (intermediate) that itself has standalone
 // IAM escalation paths. The scoped fix ensures intermediate is a reachable
@@ -1337,8 +1340,8 @@ func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 	)
 
 	// intermediate IS the passed role: attacker passes it via IAM_PASSROLE so
-	// method_43 creates attacker → [CAN_PRIVESC] → intermediate (scoped victim).
-	// intermediate also has IAM_CREATEPOLICYVERSION so method_01 fans out
+	// apprunner_create_service creates attacker → [CAN_PRIVESC] → intermediate (scoped victim).
+	// intermediate also has IAM_CREATEPOLICYVERSION so iam_create_policy_version fans out
 	// intermediate → [CAN_PRIVESC] → admin.
 	_, err = db.Query(ctx, fmt.Sprintf(`
 		CREATE (attacker:Principal    {Arn: '%s', _is_admin: false})
@@ -1382,18 +1385,18 @@ func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 		require.NoError(t, err)
 		n, _ := toInt64(edgeResult.Records[0]["n"])
 		assert.GreaterOrEqual(t, int(n), 1,
-			"method_43 scoped fix: attacker must have CAN_PRIVESC edge to the passed role (intermediate)")
+			"apprunner_create_service scoped fix: attacker must have CAN_PRIVESC edge to the passed role (intermediate)")
 	})
 
 	t.Run("attacker_2hop_to_admin_via_intermediate", func(t *testing.T) {
 		assert.True(t, found[pathKey{attackerARN, 2}],
-			"attacker must reach admin in 2 hops: attacker→intermediate (method_43 scoped) → admin (method_01). "+
+			"attacker must reach admin in 2 hops: attacker→intermediate (apprunner_create_service scoped) → admin (iam_create_policy_version). "+
 				"Failure here means the scoped CAN_PRIVESC edge is not traversable as an intermediate hop")
 	})
 
 	t.Run("intermediate_1hop_to_admin", func(t *testing.T) {
 		assert.True(t, found[pathKey{interARN, 1}],
-			"intermediate must reach admin in 1 hop via method_01 (standalone IAM escalation)")
+			"intermediate must reach admin in 1 hop via iam_create_policy_version (standalone IAM escalation)")
 	})
 }
 

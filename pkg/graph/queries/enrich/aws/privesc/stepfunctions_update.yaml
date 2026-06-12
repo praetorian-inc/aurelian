@@ -1,0 +1,26 @@
+id: aws/enrich/privesc/stepfunctions_update
+name: Step Functions UpdateStateMachine + StartExecution Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with states:UpdateStateMachine and states:StartExecution that can
+  replace an existing state machine's definition with malicious IAM API calls and execute it.
+  No iam:PassRole required since the execution role is already attached to the state machine.
+severity: high
+order: 100
+cypher: |
+  MATCH (attacker:Principal)-[update]->(target)
+  WHERE type(update) = 'STATES_UPDATESTATEMACHINE'
+  WITH attacker, target
+  MATCH (attacker)-[start]->(target)
+  WHERE type(start) = 'STATES_STARTEXECUTION'
+  WITH attacker
+  MATCH (victim:Principal)
+  WHERE victim.Arn <> attacker.Arn
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'states:UpdateStateMachine + states:StartExecution',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

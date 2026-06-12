@@ -2,7 +2,7 @@ package queries
 
 // QueryMetadata describes a Cypher query loaded from YAML
 type QueryMetadata struct {
-	ID          string   `yaml:"id"`          // Unique identifier (e.g., "aws/enrich/privesc/method_01")
+	ID          string   `yaml:"id"`          // Unique identifier (e.g., "aws/enrich/privesc/iam_create_policy_version")
 	Name        string   `yaml:"name"`        // Human-readable name
 	Platform    string   `yaml:"platform"`    // aws, azure, gcp
 	Type        string   `yaml:"type"`        // enrich, analysis

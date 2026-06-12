@@ -227,26 +227,26 @@ func TestPrivescEnrichmentE2E(t *testing.T) {
 
 		checks := []edgeCheck{
 			// IAM-level permissions: always produce edges since IAM entities exist in every account.
-			{iamPrivescUserARN, "iam:PassRole (method_14/15…)", "IAM_PASSROLE", true},
-			{iamPrivescUserARN, "iam:CreatePolicyVersion (method_01)", "IAM_CREATEPOLICYVERSION", true},
-			{iamPrivescUserARN, "iam:CreateAccessKey (method_03)", "IAM_CREATEACCESSKEY", true},
+			{iamPrivescUserARN, "iam:PassRole (iam_pass_role_lambda/iam_pass_role_ec2…)", "IAM_PASSROLE", true},
+			{iamPrivescUserARN, "iam:CreatePolicyVersion (iam_create_policy_version)", "IAM_CREATEPOLICYVERSION", true},
+			{iamPrivescUserARN, "iam:CreateAccessKey (iam_create_access_key)", "IAM_CREATEACCESSKEY", true},
 			// Service resources deployed by fixture — recon should collect edges to these.
-			{extServicesUserARN, "ecs:CreateService (method_54)", "ECS_CREATESERVICE", true},
-			{extServicesUserARN, "states:CreateStateMachine (method_70)", "STATES_CREATESTATEMACHINE", true},
-			{extServicesUserARN, "states:UpdateStateMachine (method_71)", "STATES_UPDATESTATEMACHINE", true},
-			{extServicesUserARN, "glue:UpdateJob (method_61)", "GLUE_UPDATEJOB", true},
-			{extServicesUserARN, "scheduler:CreateSchedule (method_68)", "SCHEDULER_CREATESCHEDULE", true},
-			{extServicesUserARN, "batch:SubmitJob (method_46)", "BATCH_SUBMITJOB", true},
-			{extServicesUserARN, "batch:RegisterJobDefinition (method_45)", "BATCH_REGISTERJOBDEFINITION", true},
-			{extServicesUserARN, "cognito-identity:SetIdentityPoolRoles (method_51)", "COGNITO-IDENTITY_SETIDENTITYPOOLROLES", true},
+			{extServicesUserARN, "ecs:CreateService (ecs_create_service)", "ECS_CREATESERVICE", true},
+			{extServicesUserARN, "states:CreateStateMachine (stepfunctions_create)", "STATES_CREATESTATEMACHINE", true},
+			{extServicesUserARN, "states:UpdateStateMachine (stepfunctions_update)", "STATES_UPDATESTATEMACHINE", true},
+			{extServicesUserARN, "glue:UpdateJob (glue_update_job)", "GLUE_UPDATEJOB", true},
+			{extServicesUserARN, "scheduler:CreateSchedule (scheduler_create_schedule)", "SCHEDULER_CREATESCHEDULE", true},
+			{extServicesUserARN, "batch:SubmitJob (batch_submit_job)", "BATCH_SUBMITJOB", true},
+			{extServicesUserARN, "batch:RegisterJobDefinition (batch_passrole)", "BATCH_REGISTERJOBDEFINITION", true},
+			{extServicesUserARN, "cognito-identity:SetIdentityPoolRoles (cognito_set_identity_pool_roles)", "COGNITO-IDENTITY_SETIDENTITYPOOLROLES", true},
 			// Compound execution methods — now confirmed via extended_services_exec policy.
-			{extServicesUserARN, "ssm:CreateDocument (method_84)", "SSM_CREATEDOCUMENT", true},
-			{extServicesUserARN, "glue:CreateJob (method_77/80)", "GLUE_CREATEJOB", true},
-			{extServicesUserARN, "glue:CreateTrigger (method_77/78)", "GLUE_CREATETRIGGER", true},
+			{extServicesUserARN, "ssm:CreateDocument (ssm_createdocument_startautomation)", "SSM_CREATEDOCUMENT", true},
+			{extServicesUserARN, "glue:CreateJob (glue_createjob_createtrigger)", "GLUE_CREATEJOB", true},
+			{extServicesUserARN, "glue:CreateTrigger (glue_createjob_createtrigger)", "GLUE_CREATETRIGGER", true},
 			// Confirmed via synthetic service wildcard resources (no real deployment needed).
-			{newServicesUserARN, "apprunner:CreateService (method_43)", "APPRUNNER_CREATESERVICE", true},
-			{newServicesUserARN, "braket:CreateJob (method_47)", "BRAKET_CREATEJOB", true},
-			{newServicesUserARN, "gamelift:CreateFleet (method_59)", "GAMELIFT_CREATEFLEET", true},
+			{newServicesUserARN, "apprunner:CreateService (apprunner_create_service)", "APPRUNNER_CREATESERVICE", true},
+			{newServicesUserARN, "braket:CreateJob (braket_create_job)", "BRAKET_CREATEJOB", true},
+			{newServicesUserARN, "gamelift:CreateFleet (gamelift_create_fleet)", "GAMELIFT_CREATEFLEET", true},
 		}
 
 		for _, c := range checks {

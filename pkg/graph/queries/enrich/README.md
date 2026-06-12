@@ -18,34 +18,34 @@ enrich/
     ├── set_privileged_access.yaml                 # Order 12: Privileged flag
     ├── set_ssm_enabled_roles.yaml                 # Order 13: SSM-enabled flag
     └── privesc/
-        ├── method_01_iam_create_policy_version.yaml
-        ├── method_02_iam_set_default_policy_version.yaml
-        ├── method_03_iam_create_access_key.yaml
-        ├── method_04_iam_create_login_profile.yaml
-        ├── method_05_iam_update_login_profile.yaml
-        ├── method_06_iam_attach_user_policy.yaml
-        ├── method_07_iam_attach_group_policy.yaml
-        ├── method_08_iam_attach_role_policy.yaml
-        ├── method_09_iam_put_user_policy.yaml
-        ├── method_10_iam_put_group_policy.yaml
-        ├── method_11_iam_put_role_policy.yaml
-        ├── method_12_iam_add_user_to_group.yaml
-        ├── method_13_iam_update_assume_role_policy.yaml
-        ├── method_14_iam_pass_role_lambda.yaml
-        ├── method_15_iam_pass_role_ec2.yaml
-        ├── method_16_iam_pass_role_cloudformation.yaml
-        ├── method_17_iam_pass_role_datapipeline.yaml
-        ├── method_18_iam_pass_role_glue.yaml
-        ├── method_19_iam_pass_role_sagemaker.yaml
-        ├── method_20_lambda_update_function_code.yaml
-        ├── method_21_lambda_create_event_source_mapping.yaml
-        ├── method_22_sts_assume_role.yaml
-        ├── method_23_ssm_send_command.yaml
-        ├── method_24_ssm_start_session.yaml
-        ├── method_25_ec2_ssm_association.yaml
-        ├── method_26_codestar_create_project.yaml
-        ├── method_27_codebuild_create_project.yaml
-        └── method_28_iam_create_service_linked_role.yaml
+        ├── iam_create_policy_version.yaml
+        ├── iam_set_default_policy_version.yaml
+        ├── iam_create_access_key.yaml
+        ├── iam_create_login_profile.yaml
+        ├── iam_update_login_profile.yaml
+        ├── iam_attach_user_policy.yaml
+        ├── iam_attach_group_policy.yaml
+        ├── iam_attach_role_policy.yaml
+        ├── iam_put_user_policy.yaml
+        ├── iam_put_group_policy.yaml
+        ├── iam_put_role_policy.yaml
+        ├── iam_add_user_to_group.yaml
+        ├── iam_update_assume_role_policy.yaml
+        ├── iam_pass_role_lambda.yaml
+        ├── iam_pass_role_ec2.yaml
+        ├── iam_pass_role_cloudformation.yaml
+        ├── iam_pass_role_datapipeline.yaml
+        ├── iam_pass_role_glue.yaml
+        ├── iam_pass_role_sagemaker.yaml
+        ├── lambda_update_function_code.yaml
+        ├── lambda_create_event_source_mapping.yaml
+        ├── sts_assume_role.yaml
+        ├── ssm_send_command.yaml
+        ├── ssm_start_session.yaml
+        ├── ec2_ssm_association.yaml
+        ├── codestar_create_project.yaml
+        ├── codebuild_create_project.yaml
+        └── iam_create_service_linked_role.yaml
 ```
 
 ## Execution Order
@@ -54,7 +54,7 @@ Queries are executed in ascending `order` field:
 
 1. **Order 0-4**: Base enrichment (metadata, resource links, trust relationships)
 2. **Order 10-13**: Admin/privilege detection
-3. **Order 101-128**: Privilege escalation path detection (28 methods)
+3. **Order 100**: Privilege escalation path detection (privesc methods, mutually order-independent)
 
 ## YAML Format
 

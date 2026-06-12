@@ -1,0 +1,27 @@
+id: aws/enrich/privesc/lambda_add_permission
+name: Lambda UpdateFunctionCode + AddPermission Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both lambda:UpdateFunctionCode and lambda:AddPermission
+  permissions that can modify existing Lambda function code, grant themselves
+  invocation permission, and execute malicious logic under the function's
+  privileged IAM execution role.
+severity: high
+order: 100
+cypher: |
+  MATCH (attacker:Principal)-[update]->(target)
+  WHERE type(update) = 'LAMBDA_UPDATEFUNCTIONCODE'
+  WITH attacker, target
+  MATCH (attacker)-[add_perm]->(target)
+  WHERE type(add_perm) = 'LAMBDA_ADDPERMISSION'
+  WITH attacker, target
+  MATCH (target)-[:HAS_ROLE]->(victim:Principal)
+  WHERE victim.Arn <> attacker.Arn
+  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.method = 'lambda:UpdateFunctionCode + lambda:AddPermission',
+      pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created
