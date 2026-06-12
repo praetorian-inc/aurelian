@@ -110,6 +110,36 @@ func TestEnrichOpenSearch(t *testing.T) {
 	}
 }
 
+func TestEnrichOpenSearch_WildcardPolicy(t *testing.T) {
+	allow := func(principal string) string {
+		return `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":` + principal + `,"Action":"es:ESHttpGet"}]}`
+	}
+	cases := []struct {
+		name   string
+		policy string
+		want   bool
+	}{
+		{"string wildcard", allow(`"*"`), true},
+		{"AWS wildcard string", allow(`{"AWS":"*"}`), true},
+		{"AWS wildcard list", allow(`{"AWS":["arn:aws:iam::111:root","*"]}`), true},
+		{"restrictive principal", allow(`{"AWS":"arn:aws:iam::111:root"}`), false},
+		{"single statement object", `{"Statement":{"Effect":"Allow","Principal":"*"}}`, true},
+		{"deny wildcard not counted", `{"Statement":[{"Effect":"Deny","Principal":"*"}]}`, false},
+		{"malformed", `{not json`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &output.AWSResource{Properties: map[string]any{
+				"AdvancedSecurityOptions": map[string]any{"Enabled": false},
+				"AccessPolicies":          tc.policy,
+			}}
+			require.NoError(t, enrichers.EnrichOpenSearchDomain(plugin.EnricherConfig{}, r))
+			assert.Equal(t, false, r.Properties["FGACEnabled"])
+			assert.Equal(t, tc.want, r.Properties["HasWildcardAccessPolicy"], tc.name)
+		})
+	}
+}
+
 func TestEnrichEKS(t *testing.T) {
 	cases := []struct {
 		name           string

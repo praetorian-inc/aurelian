@@ -397,8 +397,13 @@ func (e *ResourceEvaluator) evaluateTransfer(resource *output.AWSResource, _ aws
 }
 
 func (e *ResourceEvaluator) evaluateAppSync(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
-	authType, _ := resource.Properties["AuthenticationType"].(string)
-	if authType != "API_KEY" {
+	via := ""
+	if primary, _ := resource.Properties["AuthenticationType"].(string); primary == "API_KEY" {
+		via = "primary authentication"
+	} else if appSyncHasAPIKeyProvider(resource.Properties["AdditionalAuthenticationProviders"]) {
+		via = "an additional authentication provider"
+	}
+	if via == "" {
 		return nil
 	}
 	return &PublicAccessResult{
@@ -406,9 +411,29 @@ func (e *ResourceEvaluator) evaluateAppSync(resource *output.AWSResource, _ aws.
 		NeedsManualTriage: true,
 		AllowedActions:    []string{"appsync:GraphQL"},
 		EvaluationReasons: []string{
-			"AppSync GraphQL API uses API_KEY as its primary authentication; any holder of the API key can call the full GraphQL schema",
+			fmt.Sprintf("AppSync GraphQL API accepts API_KEY authentication via %s; any holder of an API key can call the full GraphQL schema", via),
 		},
 	}
+}
+
+// appSyncHasAPIKeyProvider reports whether any entry in an AppSync
+// AdditionalAuthenticationProviders list uses API_KEY. A non-API_KEY primary
+// auth type does not preclude an additional API_KEY provider.
+func appSyncHasAPIKeyProvider(raw any) bool {
+	providers, ok := raw.([]any)
+	if !ok {
+		return false
+	}
+	for _, p := range providers {
+		m, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+		if t, _ := m["AuthenticationType"].(string); t == "API_KEY" {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *ResourceEvaluator) evaluateOpenSearch(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
@@ -416,11 +441,18 @@ func (e *ResourceEvaluator) evaluateOpenSearch(resource *output.AWSResource, _ a
 	if fgacEnabled {
 		return nil
 	}
+	// With FGAC disabled the access policy is the only authorization layer. A
+	// restrictive policy still gates the domain, so only flag when the policy
+	// grants a wildcard principal (no identity required).
+	wildcard, _ := resource.Properties["HasWildcardAccessPolicy"].(bool)
+	if !wildcard {
+		return nil
+	}
 	return &PublicAccessResult{
 		NeedsManualTriage: true,
 		AllowedActions:    []string{"es:ESHttpGet"},
 		EvaluationReasons: []string{
-			"OpenSearch/Elasticsearch domain has fine-grained access control disabled; the domain access policy is the only authorization layer and requires manual review",
+			"OpenSearch/Elasticsearch domain has fine-grained access control disabled and an access policy granting a wildcard principal; any network-reachable client can call the domain with no credentials",
 		},
 	}
 }
@@ -450,9 +482,27 @@ func (e *ResourceEvaluator) evaluateEKS(resource *output.AWSResource, _ aws.Conf
 }
 
 func (e *ResourceEvaluator) evaluateAPIGatewayRest(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	// A PRIVATE REST API is reachable only from within the VPC via an interface
+	// endpoint, so NONE-auth methods are not internet-exposed.
+	if apiGatewayIsPrivate(resource.Properties["EndpointConfiguration"]) {
+		return nil
+	}
 	unauth, _ := resource.Properties["UnauthenticatedMethodCount"].(int)
 	if unauth <= 0 {
 		return nil
+	}
+	// A resource policy can restrict invocation (source IP, VPC endpoint, account)
+	// independently of method authorization. Its presence means access cannot be
+	// confirmed open from configuration alone, so report for triage rather than
+	// asserting public.
+	if hasNonEmptyResourcePolicy(resource.Properties["Policy"]) {
+		return &PublicAccessResult{
+			NeedsManualTriage: true,
+			AllowedActions:    []string{"execute-api:Invoke"},
+			EvaluationReasons: []string{
+				fmt.Sprintf("REST API has %d method(s) with AuthorizationType NONE and no API key, but a resource policy is attached; review whether the policy restricts invocation", unauth),
+			},
+		}
 	}
 	return &PublicAccessResult{
 		IsPublic:       true,
@@ -460,6 +510,39 @@ func (e *ResourceEvaluator) evaluateAPIGatewayRest(resource *output.AWSResource,
 		EvaluationReasons: []string{
 			fmt.Sprintf("REST API has %d method(s) with AuthorizationType NONE and no API key required (unauthenticated invocation)", unauth),
 		},
+	}
+}
+
+// apiGatewayIsPrivate reports whether a REST API's EndpointConfiguration.Types
+// contains PRIVATE (reachable only via a VPC interface endpoint).
+func apiGatewayIsPrivate(raw any) bool {
+	cfg, ok := raw.(map[string]any)
+	if !ok {
+		return false
+	}
+	types, ok := cfg["Types"].([]any)
+	if !ok {
+		return false
+	}
+	for _, t := range types {
+		if s, _ := t.(string); s == "PRIVATE" {
+			return true
+		}
+	}
+	return false
+}
+
+// hasNonEmptyResourcePolicy reports whether a resource policy is attached. The
+// policy is returned by CloudControl as a string or a decoded map depending on
+// the resource type.
+func hasNonEmptyResourcePolicy(raw any) bool {
+	switch v := raw.(type) {
+	case string:
+		return v != "" && v != "null"
+	case map[string]any:
+		return len(v) > 0
+	default:
+		return false
 	}
 }
 

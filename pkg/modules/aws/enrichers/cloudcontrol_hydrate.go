@@ -18,6 +18,10 @@ func init() {
 	plugin.RegisterEnricher("AWS::AppSync::GraphQLApi", enrichViaHydrate)
 	plugin.RegisterEnricher("AWS::GlobalAccelerator::Accelerator", enrichViaHydrate)
 	plugin.RegisterEnricher("AWS::ElasticBeanstalk::Environment", enrichViaHydrate)
+	// REST APIs also run a method-fetch enricher (apigateway.go); hydrate adds
+	// EndpointConfiguration + Policy, which the evaluator uses to skip PRIVATE
+	// endpoints and downgrade resource-policy-gated APIs.
+	plugin.RegisterEnricher("AWS::ApiGateway::RestApi", enrichViaHydrate)
 }
 
 func enrichViaHydrate(cfg plugin.EnricherConfig, r *output.AWSResource) error {
