@@ -18,7 +18,7 @@ func newTestEvaluator() *ResourceEvaluator {
 
 func TestSupportedResourceTypes(t *testing.T) {
 	types := SupportedResourceTypes()
-	assert.Len(t, types, 11)
+	assert.Len(t, types, 13)
 
 	e := newTestEvaluator()
 	registry := e.evaluators()
@@ -52,6 +52,60 @@ func TestEvaluateEC2_WithoutPublicIP(t *testing.T) {
 	}
 
 	result := e.evaluateEC2(resource, aws.Config{}, "")
+	assert.Nil(t, result)
+}
+
+func TestEvaluateELBv2_InternetFacing(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::ElasticLoadBalancingV2::LoadBalancer",
+		ResourceID:   "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/web/abc123",
+		Properties:   map[string]any{"IsInternetFacing": true, "LoadBalancerName": "web"},
+	}
+
+	result := e.evaluateELBv2(resource, aws.Config{}, "")
+	require.NotNil(t, result)
+	assert.True(t, result.IsPublic)
+	assert.True(t, result.NeedsManualTriage)
+	assert.Contains(t, result.AllowedActions, "elasticloadbalancing:NetworkAccess")
+}
+
+func TestEvaluateELBv2_Internal(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::ElasticLoadBalancingV2::LoadBalancer",
+		ResourceID:   "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/internal/abc123",
+		Properties:   map[string]any{"IsInternetFacing": false},
+	}
+
+	result := e.evaluateELBv2(resource, aws.Config{}, "")
+	assert.Nil(t, result)
+}
+
+func TestEvaluateAppRunner_Public(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::AppRunner::Service",
+		ResourceID:   "arn:aws:apprunner:us-east-1:123456789012:service/api/abc123",
+		Properties:   map[string]any{"IsPubliclyAccessible": true, "ServiceUrl": "abc123.us-east-1.awsapprunner.com"},
+	}
+
+	result := e.evaluateAppRunner(resource, aws.Config{}, "")
+	require.NotNil(t, result)
+	assert.True(t, result.IsPublic)
+	assert.True(t, result.NeedsManualTriage)
+	assert.Contains(t, result.AllowedActions, "apprunner:NetworkAccess")
+}
+
+func TestEvaluateAppRunner_NotPublic(t *testing.T) {
+	e := newTestEvaluator()
+	resource := &output.AWSResource{
+		ResourceType: "AWS::AppRunner::Service",
+		ResourceID:   "arn:aws:apprunner:us-east-1:123456789012:service/api/abc123",
+		Properties:   map[string]any{"IsPubliclyAccessible": false},
+	}
+
+	result := e.evaluateAppRunner(resource, aws.Config{}, "")
 	assert.Nil(t, result)
 }
 

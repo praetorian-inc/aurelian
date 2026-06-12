@@ -40,6 +40,8 @@ func (e *ResourceEvaluator) evaluators() map[string]evaluator {
 		"AWS::SQS::Queue":         e.evaluateSQS,
 		"AWS::EFS::FileSystem":    e.evaluateEFS,
 		"AWS::EC2::Image":         e.evaluateEC2Image,
+		"AWS::ElasticLoadBalancingV2::LoadBalancer": e.evaluateELBv2,
+		"AWS::AppRunner::Service":                   e.evaluateAppRunner,
 	}
 }
 
@@ -58,6 +60,8 @@ func SupportedResourceTypes() []string {
 		"AWS::RDS::DBInstance",
 		"AWS::Redshift::Cluster",
 		"AWS::EC2::Image",
+		"AWS::ElasticLoadBalancingV2::LoadBalancer",
+		"AWS::AppRunner::Service",
 	}
 }
 
@@ -272,6 +276,41 @@ func (e *ResourceEvaluator) evaluateEC2Image(resource *output.AWSResource, _ aws
 				name, imageID),
 			"While not actively deployed, the AMI may contain sensitive data; recommend removing public access",
 		},
+	}
+}
+
+func (e *ResourceEvaluator) evaluateELBv2(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	internetFacing, _ := resource.Properties["IsInternetFacing"].(bool)
+	if !internetFacing {
+		return nil
+	}
+	name, _ := resource.Properties["LoadBalancerName"].(string)
+	label := cmp.Or(name, resource.ResourceID)
+	return &PublicAccessResult{
+		IsPublic:          true,
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"elasticloadbalancing:NetworkAccess"},
+		EvaluationReasons: []string{
+			fmt.Sprintf("Load balancer '%s' is internet-facing (Scheme=internet-facing); listeners, target groups, and any authentication require manual review", label),
+		},
+	}
+}
+
+func (e *ResourceEvaluator) evaluateAppRunner(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	isPublic, _ := resource.Properties["IsPubliclyAccessible"].(bool)
+	if !isPublic {
+		return nil
+	}
+	serviceURL, _ := resource.Properties["ServiceUrl"].(string)
+	reason := "App Runner service accepts public ingress (NetworkConfiguration.IngressConfiguration.IsPubliclyAccessible=true)"
+	if serviceURL != "" {
+		reason = fmt.Sprintf("%s at %s", reason, serviceURL)
+	}
+	return &PublicAccessResult{
+		IsPublic:          true,
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"apprunner:NetworkAccess"},
+		EvaluationReasons: []string{reason},
 	}
 }
 
