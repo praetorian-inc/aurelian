@@ -36,10 +36,9 @@ cypher: |
     AND split(coalesce(victim.Arn, victim.arn), ':')[4] = split(coalesce(attacker.Arn, attacker.arn), ':')[4]
     AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
   WITH DISTINCT attacker, victim
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'lambda:UpdateFunctionCode'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'lambda:UpdateFunctionCode',
-      pe.severity = CASE
+  SET pe.severity = CASE
         WHEN coalesce(victim._is_admin, false) = true THEN 'high'
         WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
         ELSE 'low'

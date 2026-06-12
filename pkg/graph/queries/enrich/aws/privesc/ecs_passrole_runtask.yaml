@@ -35,10 +35,9 @@ cypher: |
   MATCH (attacker)-[run]->(service_resource)
   WHERE type(run) = 'ECS_RUNTASK'
   WITH DISTINCT attacker, victim
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + ecs:RunTask'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:PassRole + ecs:RunTask',
-      pe.severity = CASE
+  SET pe.severity = CASE
         WHEN coalesce(victim._is_admin, false) = true THEN 'high'
         ELSE 'medium'
       END,

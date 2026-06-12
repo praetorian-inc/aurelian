@@ -39,9 +39,8 @@ cypher: |
     AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
     AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
   WITH DISTINCT attacker, victim
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'glue:UpdateJob'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'glue:UpdateJob',
-      pe.severity = 'low',
+  SET pe.severity = 'low',
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

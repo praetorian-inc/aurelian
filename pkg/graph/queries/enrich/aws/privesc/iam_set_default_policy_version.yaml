@@ -25,9 +25,8 @@ cypher: |
     AND NOT coalesce(policy.Arn, policy.arn) CONTAINS ':iam::aws:policy/'
     AND coalesce(attacker.AttachedManagedPolicies, '') CONTAINS coalesce(policy.Arn, policy.arn)
   WITH DISTINCT attacker
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(attacker)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:SetDefaultPolicyVersion'}]->(attacker)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:SetDefaultPolicyVersion',
-      pe.severity = 'high',
+  SET pe.severity = 'high',
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

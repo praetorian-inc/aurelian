@@ -34,10 +34,9 @@ cypher: |
     AND (coalesce(target._is_admin, false) = true OR coalesce(target._is_privileged, false) = true)
     AND EXISTS { (attacker)-[pr]->(target) WHERE type(pr) = 'IAM_PASSROLE' }
   WITH DISTINCT attacker, target
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(target)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:UpdateAssumeRolePolicy + iam:PassRole + service'}]->(target)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:UpdateAssumeRolePolicy + iam:PassRole + service',
-      pe.severity = CASE
+  SET pe.severity = CASE
         WHEN coalesce(target._is_admin, false) = true THEN 'high'
         WHEN coalesce(target._is_privileged, false) = true THEN 'medium'
         ELSE 'low'

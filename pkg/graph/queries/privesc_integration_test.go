@@ -481,8 +481,10 @@ func TestPrivescQueriesNeo4j(t *testing.T) {
 
 // TestEnrichAWSPrivescEndToEnd runs the FULL EnrichAWS pipeline (all enrichers + all methods)
 // over the shared all-guards-satisfied graph and verifies the corrected end-to-end behavior:
-// the passed/assumed/HAS_ROLE methods all converge onto the single privileged role target
-// (MERGE dedups them into one edge), and no method fans out to an unrelated principal.
+// the passed/assumed/HAS_ROLE methods all converge onto the SAME privileged role target.
+// CAN_PRIVESC is multi-edge (one edge per method), so each converging method contributes its
+// own method-edge to that role (>= 1 edge to the role), and no method fans out to an
+// unrelated principal (no edge to any bystander node).
 func TestEnrichAWSPrivescEndToEnd(t *testing.T) {
 	ctx := context.Background()
 
@@ -699,8 +701,22 @@ func TestPrivescAnalysisQuery(t *testing.T) {
 		attacker, _ := rec["attacker_arn"].(string)
 		hops, _ := toInt64(rec["hop_count"])
 		found[pathKey{attacker, hops}] = true
-		t.Logf("  path: %s → %s (%d hops)", attacker, rec["target_arn"], hops)
+		t.Logf("  path: %s → %s (%d hops) methods=%v", attacker, rec["target_arn"], hops, rec["methods"])
 	}
+
+	t.Run("methods_column_present_and_sized_to_hops", func(t *testing.T) {
+		// The analysis query must surface the per-hop method sequence so consumers can
+		// enumerate distinct method-paths. Each record's `methods` list must have exactly
+		// hop_count entries (one method per CAN_PRIVESC edge traversed).
+		require.NotEmpty(t, result.Records, "analysis query returned no paths")
+		for _, rec := range result.Records {
+			methods, ok := rec["methods"].([]any)
+			require.True(t, ok, "methods column must be a list, got %T", rec["methods"])
+			hops, _ := toInt64(rec["hop_count"])
+			assert.Len(t, methods, int(hops),
+				"methods list length must equal hop_count (%d) for %v → %v", hops, rec["attacker_arn"], rec["target_arn"])
+		}
+	})
 
 	t.Run("1_hop_a1_to_admin", func(t *testing.T) {
 		assert.True(t, found[pathKey{"arn:aws:iam::1:user/a1", 1}],
@@ -791,12 +807,100 @@ func TestPassRoleServiceFanOutReachesAnalysisQuery(t *testing.T) {
 	for _, rec := range result.Records {
 		if rec["attacker_arn"] == attackerARN {
 			found = true
-			t.Logf("Found: %s → %s (%v hops)", rec["attacker_arn"], rec["target_arn"], rec["hop_count"])
+			t.Logf("Found: %s → %s (%v hops) methods=%v", rec["attacker_arn"], rec["target_arn"], rec["hop_count"], rec["methods"])
 		}
 	}
 	assert.True(t, found,
 		"PassRole+AppRunner attacker must appear in analysis output — "+
 			"if this fails, apprunner_create_service has regressed: the scoped CAN_PRIVESC edge must point to the passed :Principal role, not a :Resource")
+}
+
+// TestPrivescMultiEdgePerMethod is the focused proof of the multi-edge model: a single
+// (attacker, target) pair reachable by TWO distinct privesc methods must yield TWO distinct
+// CAN_PRIVESC edges (one per method), and the analysis query must surface them as TWO
+// distinct method-paths. Under the old single-edge model these would have collapsed onto
+// one edge with a last-write-wins `method`, hiding the second path.
+//
+// Seed: attacker can both assume the admin role (sts:AssumeRole, via CAN_ASSUME +
+// STS_ASSUMEROLE) AND write an inline policy onto it then assume it (iam:PutRolePolicy, via
+// CAN_ASSUME + IAM_PUTROLEPOLICY on the SAME role). Both target the same admin role.
+func TestPrivescMultiEdgePerMethod(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	cfg := graph.NewConfig(boltURL, "", "")
+	db, err := adapters.NewNeo4jAdapter(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	const adminARN = "arn:aws:iam::123456789012:role/multi-method-admin"
+
+	_, err = db.Query(ctx, fmt.Sprintf(`
+		CREATE (attacker:Principal {Arn: '%s', _is_admin: false})
+		CREATE (admin:Role:Principal {Arn: '%s', _is_admin: true})
+		CREATE (svc:Resource {Arn: '%s'})
+		WITH attacker, admin, svc
+		// CAN_ASSUME trust path to admin (required by both methods).
+		MERGE (attacker)-[:CAN_ASSUME]->(admin)
+		// sts:AssumeRole: independent STS_ASSUMEROLE permission.
+		MERGE (attacker)-[:STS_ASSUMEROLE]->(svc)
+		// iam:PutRolePolicy: write inline policy onto the SAME assumable role.
+		MERGE (attacker)-[:IAM_PUTROLEPOLICY]->(admin)
+	`, attackerARN, adminARN, svcResourceARN), nil)
+	require.NoError(t, err, "seed multi-method graph")
+
+	require.NoError(t, EnrichAWS(ctx, db), "EnrichAWS should succeed")
+
+	t.Run("two_distinct_method_edges_between_pair", func(t *testing.T) {
+		result, err := db.Query(ctx, fmt.Sprintf(`
+			MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'})
+			RETURN count(DISTINCT r.method) AS methods, count(r) AS edges`,
+			attackerARN, adminARN), nil)
+		require.NoError(t, err)
+		require.Len(t, result.Records, 1)
+		methods, _ := toInt64(result.Records[0]["methods"])
+		edges, _ := toInt64(result.Records[0]["edges"])
+		t.Logf("attacker→admin: %d edges, %d distinct methods", edges, methods)
+		assert.GreaterOrEqual(t, int(methods), 2,
+			"a pair reachable by ≥2 methods must carry ≥2 distinct CAN_PRIVESC method-edges (multi-edge model)")
+		assert.GreaterOrEqual(t, int(edges), 2,
+			"distinct methods must each be their own edge, not collapsed onto one")
+	})
+
+	t.Run("both_specific_method_edges_exist", func(t *testing.T) {
+		for _, m := range []string{"sts:AssumeRole", "iam:PutRolePolicy"} {
+			result, err := db.Query(ctx, fmt.Sprintf(`
+				MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC {method: '%s'}]->(v {Arn: '%s'})
+				RETURN count(r) AS n`, attackerARN, m, adminARN), nil)
+			require.NoError(t, err)
+			n, _ := toInt64(result.Records[0]["n"])
+			assert.Equal(t, int64(1), n, "exactly one CAN_PRIVESC edge for method %q", m)
+		}
+	})
+
+	t.Run("analysis_query_returns_two_distinct_method_paths", func(t *testing.T) {
+		result, err := RunPlatformQuery(ctx, db, "aws/analysis/privesc_paths", nil)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		distinctMethods := map[string]bool{}
+		for _, rec := range result.Records {
+			if rec["attacker_arn"] != attackerARN || rec["target_arn"] != adminARN {
+				continue
+			}
+			methods, ok := rec["methods"].([]any)
+			require.True(t, ok, "methods column must be a list, got %T", rec["methods"])
+			require.Len(t, methods, 1, "this is a 1-hop path, so exactly one method per record")
+			m, _ := methods[0].(string)
+			distinctMethods[m] = true
+			t.Logf("  method-path: %s → %s methods=%v", rec["attacker_arn"], rec["target_arn"], methods)
+		}
+		assert.GreaterOrEqual(t, len(distinctMethods), 2,
+			"analysis query must enumerate ≥2 distinct method-paths for the multi-method pair, got %v", distinctMethods)
+	})
 }
 
 // TestPrivescEdgeMetadata verifies that CAN_PRIVESC edges created by enrichment
@@ -892,14 +996,18 @@ func TestPrivescEdgeMetadata(t *testing.T) {
 			_, err = RunPlatformQuery(ctx, db, tc.queryID, nil)
 			require.NoError(t, err, "run enrichment query")
 
-			// Verify edge goes to the passed role (roleARN), not a generic victim.
+			// CAN_PRIVESC is multi-edge (one edge per method). Match the edge BY method so
+			// the assertion stays sound even when a pair is reachable by several methods —
+			// we verify THIS method's edge exists to the passed role (roleARN) and carries
+			// the expected severity. We do NOT assert "exactly one edge total" between the pair.
 			result, err := db.Query(ctx,
-				fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'})
-				             RETURN r.method AS method, r.severity AS severity`, attackerARN, roleARN),
+				fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC {method: '%s'}]->(v {Arn: '%s'})
+				             RETURN r.method AS method, r.severity AS severity`,
+					attackerARN, tc.wantMethod, roleARN),
 				nil)
 			require.NoError(t, err)
 			require.Len(t, result.Records, 1,
-				"expected exactly 1 CAN_PRIVESC edge from attacker to passed role")
+				"expected exactly 1 CAN_PRIVESC edge for method %q from attacker to passed role", tc.wantMethod)
 
 			assert.Equal(t, tc.wantMethod, result.Records[0]["method"],
 				"r.method must match the YAML method property — wrong value breaks pathfinding FP tests")

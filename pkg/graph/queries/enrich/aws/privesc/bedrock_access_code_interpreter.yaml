@@ -45,9 +45,8 @@ cypher: |
     AND split(coalesce(execrole.Arn, execrole.arn), ':')[4] = split(coalesce(attacker.Arn, attacker.arn), ':')[4]
   WITH attacker, target,
        max(CASE WHEN coalesce(execrole._is_admin, false) = true THEN 2 ELSE 1 END) AS best_tier
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(target)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'bedrock-agentcore:InvokeSession'}]->(target)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'bedrock-agentcore:InvokeSession',
-      pe.severity = CASE WHEN best_tier = 2 THEN 'high' ELSE 'medium' END,
+  SET pe.severity = CASE WHEN best_tier = 2 THEN 'high' ELSE 'medium' END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

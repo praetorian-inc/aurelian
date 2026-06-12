@@ -226,7 +226,11 @@ var pathfindingLabCases = []labTestCase{
 // edge's r.method property stores the human-readable string — matching the slug
 // would never match, making the FP check vacuous. Reading it from the loaded
 // query's Cypher keeps the test in sync with the YAML rather than a hardcoded map.
-var peMethodRe = regexp.MustCompile(`pe\.method\s*=\s*'([^']*)'`)
+//
+// CAN_PRIVESC is now a multi-edge relationship: `method` lives in the MERGE
+// relationship pattern (`MERGE (a)-[pe:CAN_PRIVESC {method: '<M>'}]->(t)`), not in
+// a `SET pe.method = '<M>'` clause, so we match the `{method: '<M>'}` literal.
+var peMethodRe = regexp.MustCompile(`CAN_PRIVESC\s*\{method:\s*'([^']*)'\}`)
 
 func peMethodLiteral(methodID string) (string, bool) {
 	q, ok := queries.GetQuery(methodID)
@@ -508,6 +512,11 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 				// keeps the assertion sound: it fails iff THIS method fired. Other,
 				// simpler methods may legitimately fire on the same attacker — expected
 				// (e.g. lab_fp_sfn_no_startexecution also legitimately fires stepfunctions_create).
+				//
+				// With multi-edge CAN_PRIVESC (one edge per method) this check is now fully
+				// SOUND: each method owns its own edge keyed by `method`, so r.method = $method
+				// counts exactly THIS method's edge. Under the old single-edge model a
+				// last-write-wins `method` could mask an earlier method's edge from this count.
 				method, ok := peMethodLiteral(tc.methodID)
 				require.True(t, ok,
 					"could not extract pe.method literal for %s — FP check would be vacuous", tc.methodID)

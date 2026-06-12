@@ -30,10 +30,9 @@ cypher: |
   WHERE coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
     AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
   WITH DISTINCT attacker, victim
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'states:UpdateStateMachine + states:StartExecution'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'states:UpdateStateMachine + states:StartExecution',
-      pe.severity = CASE
+  SET pe.severity = CASE
         WHEN coalesce(victim._is_admin, false) = true THEN 'high'
         WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
         ELSE 'low'

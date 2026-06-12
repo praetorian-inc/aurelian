@@ -41,10 +41,9 @@ cypher: |
     AND EXISTS { (attacker)-[create]->() WHERE type(create) = 'GLUE_CREATEJOB' }
     AND EXISTS { (attacker)-[trigger]->() WHERE type(trigger) = 'GLUE_CREATETRIGGER' }
   WITH DISTINCT attacker, victim
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + glue:CreateJob + glue:CreateTrigger'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:PassRole + glue:CreateJob + glue:CreateTrigger',
-      pe.severity = CASE
+  SET pe.severity = CASE
         WHEN coalesce(victim._is_admin, false) = true THEN 'high'
         ELSE 'medium'
       END,

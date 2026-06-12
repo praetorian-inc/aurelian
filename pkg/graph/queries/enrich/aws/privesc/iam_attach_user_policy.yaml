@@ -23,9 +23,8 @@ cypher: |
   WHERE type(perm) = 'IAM_ATTACHUSERPOLICY'
     AND coalesce(attacker._is_admin, false) <> true
   WITH DISTINCT attacker
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(attacker)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:AttachUserPolicy'}]->(attacker)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:AttachUserPolicy',
-      pe.severity = 'high',
+  SET pe.severity = 'high',
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

@@ -30,10 +30,9 @@ cypher: |
          OR 'ssm.amazonaws.com' IN coalesce(victim.trusted_services, []))
     AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
   WITH DISTINCT attacker, victim
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'ssm:SendCommand'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'ssm:SendCommand',
-      pe.severity = CASE
+  SET pe.severity = CASE
         WHEN coalesce(victim._is_admin, false) = true THEN 'high'
         WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
         ELSE 'low'

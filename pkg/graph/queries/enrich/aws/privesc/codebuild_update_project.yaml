@@ -29,10 +29,9 @@ cypher: |
     AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
     AND EXISTS { (attacker)-[u]->() WHERE type(u) = 'CODEBUILD_UPDATEPROJECT' }
   WITH DISTINCT attacker, victim
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + codebuild:UpdateProject'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:PassRole + codebuild:UpdateProject',
-      pe.severity = CASE
+  SET pe.severity = CASE
         WHEN coalesce(victim._is_admin, false) = true THEN 'high'
         ELSE 'medium'
       END,

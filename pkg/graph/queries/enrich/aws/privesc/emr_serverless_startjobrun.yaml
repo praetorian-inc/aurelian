@@ -33,10 +33,9 @@ cypher: |
   MATCH (attacker)-[run]->(svc)
   WHERE type(run) = 'EMR-SERVERLESS_STARTJOBRUN'
   WITH DISTINCT attacker, victim
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + emr-serverless:CreateApplication + emr-serverless:StartJobRun'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:PassRole + emr-serverless:CreateApplication + emr-serverless:StartJobRun',
-      pe.severity = CASE
+  SET pe.severity = CASE
         WHEN coalesce(victim._is_admin, false) = true THEN 'high'
         ELSE 'medium'
       END,

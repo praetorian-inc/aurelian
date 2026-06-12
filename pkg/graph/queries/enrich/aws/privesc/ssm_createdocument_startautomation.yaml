@@ -24,9 +24,8 @@ cypher: |
     AND EXISTS { (attacker)-[c]->() WHERE type(c) = 'SSM_CREATEDOCUMENT' }
     AND EXISTS { (attacker)-[s]->() WHERE type(s) = 'SSM_STARTAUTOMATIONEXECUTION' }
   WITH DISTINCT attacker
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(attacker)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'ssm:CreateDocument + ssm:StartAutomationExecution'}]->(attacker)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'ssm:CreateDocument + ssm:StartAutomationExecution',
-      pe.severity = 'high',
+  SET pe.severity = 'high',
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

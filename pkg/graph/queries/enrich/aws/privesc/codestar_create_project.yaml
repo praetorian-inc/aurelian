@@ -31,9 +31,8 @@ cypher: |
     AND coalesce(attacker._is_admin, false) <> true
     AND coalesce(target.Arn, target.arn, '') <> coalesce(attacker.Arn, attacker.arn, '')
   WITH DISTINCT attacker, target
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(target)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'codestar:CreateProject'}]->(target)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'codestar:CreateProject',
-      pe.severity = 'medium',
+  SET pe.severity = 'medium',
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

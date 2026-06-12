@@ -27,10 +27,9 @@ cypher: |
     AND EXISTS { (attacker)-[branch]->() WHERE type(branch) = 'AMPLIFY_CREATEBRANCH' }
     AND EXISTS { (attacker)-[job]->() WHERE type(job) = 'AMPLIFY_STARTJOB' }
   WITH DISTINCT attacker, victim
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + amplify:CreateApp + amplify:CreateBranch + amplify:StartJob'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:PassRole + amplify:CreateApp + amplify:CreateBranch + amplify:StartJob',
-      pe.severity = CASE
+  SET pe.severity = CASE
         WHEN coalesce(victim._is_admin, false) = true THEN 'high'
         ELSE 'medium'
       END,

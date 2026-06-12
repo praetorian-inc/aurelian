@@ -31,10 +31,9 @@ cypher: |
     AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
     AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
   WITH DISTINCT attacker, victim
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:UpdateAssumeRolePolicy'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:UpdateAssumeRolePolicy',
-      pe.severity = CASE
+  SET pe.severity = CASE
         WHEN coalesce(victim._is_admin, false) = true THEN 'high'
         WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
         ELSE 'low'

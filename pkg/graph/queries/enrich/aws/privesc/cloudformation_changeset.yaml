@@ -28,9 +28,8 @@ cypher: |
   WHERE type(execute) = 'CLOUDFORMATION_EXECUTECHANGESET'
     AND coalesce(target.Arn, target.arn) <> coalesce(attacker.Arn, attacker.arn)
   WITH DISTINCT attacker, target
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(target)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'cloudformation:CreateChangeSet + cloudformation:ExecuteChangeSet'}]->(target)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'cloudformation:CreateChangeSet + cloudformation:ExecuteChangeSet',
-      pe.severity = 'high',
+  SET pe.severity = 'high',
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

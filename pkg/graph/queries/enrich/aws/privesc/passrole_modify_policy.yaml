@@ -37,9 +37,8 @@ cypher: |
       OR size(coalesce(target.trusted_services, [])) > 0
     )
   WITH DISTINCT attacker, target
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(target)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + policy modification'}]->(target)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:PassRole + policy modification',
-      pe.severity = 'high',
+  SET pe.severity = 'high',
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

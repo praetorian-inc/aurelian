@@ -35,10 +35,9 @@ cypher: |
     AND (coalesce(target._is_admin, false) = true OR coalesce(target._is_privileged, false) = true)
     AND EXISTS { (attacker)-[u]->(target) WHERE type(u) = 'IAM_UPDATELOGINPROFILE' }
   WITH DISTINCT attacker, target
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(target)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:CreateLoginProfile'}]->(target)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:CreateLoginProfile',
-      pe.severity = CASE
+  SET pe.severity = CASE
         WHEN coalesce(target._is_admin, false) = true THEN 'high'
         WHEN coalesce(target._is_privileged, false) = true THEN 'medium'
         ELSE 'low'

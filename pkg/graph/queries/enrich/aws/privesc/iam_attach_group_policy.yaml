@@ -25,9 +25,8 @@ cypher: |
     AND coalesce(attacker._is_admin, false) <> true
     AND coalesce(group.GroupName, '') IN coalesce(attacker.GroupList, [])
   WITH DISTINCT attacker
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(attacker)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:AttachGroupPolicy'}]->(attacker)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:AttachGroupPolicy',
-      pe.severity = 'high',
+  SET pe.severity = 'high',
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

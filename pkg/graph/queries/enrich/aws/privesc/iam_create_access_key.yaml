@@ -36,10 +36,9 @@ cypher: |
     AND (coalesce(target._is_admin, false) = true OR coalesce(target._is_privileged, false) = true)
     AND EXISTS { (attacker)-[d]->(target) WHERE type(d) = 'IAM_DELETEACCESSKEY' }
   WITH DISTINCT attacker, target
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(target)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:CreateAccessKey'}]->(target)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:CreateAccessKey',
-      pe.severity = CASE
+  SET pe.severity = CASE
         WHEN coalesce(target._is_admin, false) = true THEN 'high'
         WHEN coalesce(target._is_privileged, false) = true THEN 'medium'
         ELSE 'low'
