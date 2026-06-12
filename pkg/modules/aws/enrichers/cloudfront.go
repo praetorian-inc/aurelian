@@ -17,9 +17,7 @@ func enrichCloudFrontWrapper(cfg plugin.EnricherConfig, r *output.AWSResource) e
 // CloudControl as a nested map) into top-level booleans: whether the
 // distribution is enabled and whether a WAF web ACL is attached.
 func EnrichCloudFrontDistribution(cfg plugin.EnricherConfig, r *output.AWSResource) error {
-	if _, ok := r.Properties["DistributionConfig"]; !ok {
-		hydrateFromCloudControl(cfg, r)
-	}
+	hydrateIfMissing(cfg, r, "DistributionConfig", "Enabled")
 	enabled := false
 	hasWebACL := false
 	if dc, ok := r.Properties["DistributionConfig"].(map[string]any); ok {

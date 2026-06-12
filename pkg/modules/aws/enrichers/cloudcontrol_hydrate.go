@@ -29,6 +29,55 @@ func enrichViaHydrate(cfg plugin.EnricherConfig, r *output.AWSResource) error {
 	return nil
 }
 
+// hydrateIfMissing runs hydrateFromCloudControl only when the value at the given
+// nested property path is absent. This guards against the sparse-ListResources
+// case where a container property exists but the specific leaf the evaluator
+// reads is missing — checking only the top-level container would skip the
+// needed hydration.
+func hydrateIfMissing(cfg plugin.EnricherConfig, r *output.AWSResource, path ...string) {
+	if nestedValuePresent(r.Properties, path...) {
+		return
+	}
+	hydrateFromCloudControl(cfg, r)
+}
+
+// nestedValuePresent reports whether a value exists at the given path, descending
+// through map[string]any nodes.
+func nestedValuePresent(props map[string]any, path ...string) bool {
+	var cur any = props
+	for _, key := range path {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return false
+		}
+		v, ok := m[key]
+		if !ok {
+			return false
+		}
+		cur = v
+	}
+	return true
+}
+
+// mergeMissing fills keys present in src but absent in dst. When a key exists in
+// both and both values are maps, it recurses to fill missing leaves without
+// overwriting existing scalar/list values. This lets a full GetResource payload
+// complete a partial container returned by ListResources.
+func mergeMissing(dst, src map[string]any) {
+	for k, sv := range src {
+		dv, exists := dst[k]
+		if !exists {
+			dst[k] = sv
+			continue
+		}
+		dm, dok := dv.(map[string]any)
+		sm, sok := sv.(map[string]any)
+		if dok && sok {
+			mergeMissing(dm, sm)
+		}
+	}
+}
+
 // hydrateFromCloudControl fetches the full CloudControl property set for a
 // resource via GetResource and merges any properties missing from the sparse
 // ListResources payload. Existing properties are never overwritten. Failures
@@ -63,9 +112,5 @@ func hydrateFromCloudControl(cfg plugin.EnricherConfig, r *output.AWSResource) {
 	if r.Properties == nil {
 		r.Properties = make(map[string]any)
 	}
-	for k, v := range full {
-		if _, exists := r.Properties[k]; !exists {
-			r.Properties[k] = v
-		}
-	}
+	mergeMissing(r.Properties, full)
 }

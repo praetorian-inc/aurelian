@@ -28,8 +28,13 @@ func enrichAPIGatewayV2Wrapper(cfg plugin.EnricherConfig, r *output.AWSResource)
 // AuthorizationType is NONE (unauthenticated). Routes are independent
 // sub-resources not returned by CloudControl, so they must be fetched.
 func EnrichAPIGatewayV2(cfg plugin.EnricherConfig, r *output.AWSResource, client APIGatewayV2Client) error {
-	apiID, ok := r.Properties["ApiId"].(string)
-	if !ok || apiID == "" {
+	apiID, _ := r.Properties["ApiId"].(string)
+	if apiID == "" {
+		// ApiId is the CloudControl primary identifier, so ResourceID holds it
+		// when the sparse list payload omits the property.
+		apiID = r.ResourceID
+	}
+	if apiID == "" {
 		return nil
 	}
 
