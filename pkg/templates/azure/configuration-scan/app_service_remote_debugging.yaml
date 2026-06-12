@@ -1,7 +1,7 @@
 id: app_service_remote_debugging_enabled
 name: App Service Remote Debugging Enabled
 description: Detects Azure App Services with remote debugging enabled, which provides RCE-equivalent access to application code, environment variables, and memory. Remote debugging should be disabled in production environments to minimize attack surface.
-severity: High
+severity: Medium
 category: ["Access Control", "arg-scan"]
 reportability: Automatic
 triageNotes: |

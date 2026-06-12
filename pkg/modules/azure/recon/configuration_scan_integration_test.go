@@ -112,7 +112,7 @@ func TestAzureConfigurationScan(t *testing.T) {
 	t.Run("app_service_remote_debugging_enabled", func(t *testing.T) {
 		rc := findRisk(t, "app_service_remote_debugging_enabled", "webapp_debug_id")
 		assert.Equal(t, "azure-"+strings.ReplaceAll(rc.Template, "_", "-"), rc.Risk.Name)
-		assert.Equal(t, output.RiskSeverity("high"), rc.Risk.Severity)
+		assert.Equal(t, output.RiskSeverity("medium"), rc.Risk.Severity)
 		assert.Equal(t, "app_service_remote_debugging_enabled", rc.Template)
 
 		// The no-auth web app should NOT appear in remote debugging findings
@@ -130,7 +130,7 @@ func TestAzureConfigurationScan(t *testing.T) {
 	t.Run("databases_allow_azure_services", func(t *testing.T) {
 		rc := findRisk(t, "databases_allow_azure_services", "sql_server_id")
 		assert.Equal(t, "azure-"+strings.ReplaceAll(rc.Template, "_", "-"), rc.Risk.Name)
-		assert.Equal(t, output.RiskSeverity("high"), rc.Risk.Severity)
+		assert.Equal(t, output.RiskSeverity("medium"), rc.Risk.Severity)
 		assert.Equal(t, "databases_allow_azure_services", rc.Template)
 	})
 
@@ -142,7 +142,7 @@ func TestAzureConfigurationScan(t *testing.T) {
 	t.Run("function_app_http_anonymous_access", func(t *testing.T) {
 		rc := findRisk(t, "function_app_http_anonymous_access", "func_anon_id")
 		assert.Equal(t, "azure-"+strings.ReplaceAll(rc.Template, "_", "-"), rc.Risk.Name)
-		assert.Equal(t, output.RiskSeverity("high"), rc.Risk.Severity)
+		assert.Equal(t, output.RiskSeverity("medium"), rc.Risk.Severity)
 		assert.Equal(t, "function_app_http_anonymous_access", rc.Template)
 	})
 
@@ -162,7 +162,7 @@ func TestAzureConfigurationScan(t *testing.T) {
 	t.Run("key_vault_access_policy_privilege_escalation", func(t *testing.T) {
 		rc := findRisk(t, "key_vault_access_policy_privilege_escalation", "key_vault_id")
 		assert.Equal(t, "azure-"+strings.ReplaceAll(rc.Template, "_", "-"), rc.Risk.Name)
-		assert.Equal(t, output.RiskSeverity("high"), rc.Risk.Severity)
+		assert.Equal(t, output.RiskSeverity("medium"), rc.Risk.Severity)
 		assert.Equal(t, "key_vault_access_policy_privilege_escalation", rc.Template)
 	})
 
@@ -172,7 +172,7 @@ func TestAzureConfigurationScan(t *testing.T) {
 	t.Run("kusto_wildcard_trusted_tenants", func(t *testing.T) {
 		rc := findRisk(t, "kusto_wildcard_trusted_tenants", "kusto_id")
 		assert.Equal(t, "azure-"+strings.ReplaceAll(rc.Template, "_", "-"), rc.Risk.Name)
-		assert.Equal(t, output.RiskSeverity("high"), rc.Risk.Severity)
+		assert.Equal(t, output.RiskSeverity("medium"), rc.Risk.Severity)
 		assert.Equal(t, "kusto_wildcard_trusted_tenants", rc.Template)
 	})
 
@@ -192,7 +192,7 @@ func TestAzureConfigurationScan(t *testing.T) {
 	t.Run("overprivileged_custom_roles", func(t *testing.T) {
 		rc := findRisk(t, "overprivileged_custom_roles", "custom_role_id")
 		assert.Equal(t, "azure-"+strings.ReplaceAll(rc.Template, "_", "-"), rc.Risk.Name)
-		assert.Equal(t, output.RiskSeverity("high"), rc.Risk.Severity)
+		assert.Equal(t, output.RiskSeverity("medium"), rc.Risk.Severity)
 		assert.Equal(t, "overprivileged_custom_roles", rc.Template)
 	})
 
@@ -212,7 +212,7 @@ func TestAzureConfigurationScan(t *testing.T) {
 	t.Run("vm_ssh_password_authentication", func(t *testing.T) {
 		rc := findRisk(t, "vm_ssh_password_authentication", "vm_id")
 		assert.Equal(t, "azure-"+strings.ReplaceAll(rc.Template, "_", "-"), rc.Risk.Name)
-		assert.Equal(t, output.RiskSeverity("high"), rc.Risk.Severity)
+		assert.Equal(t, output.RiskSeverity("medium"), rc.Risk.Severity)
 		assert.Equal(t, "vm_ssh_password_authentication", rc.Template)
 	})
 

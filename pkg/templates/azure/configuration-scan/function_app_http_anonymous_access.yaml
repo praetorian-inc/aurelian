@@ -1,7 +1,7 @@
 id: function_app_http_anonymous_access
 name: Function App HTTP Triggers Without Access Keys
 description: Detects Azure Function Apps with HTTP triggers configured for anonymous access (authLevel=anonymous), allowing unauthenticated public execution. HTTP-triggered functions without authentication requirements can be invoked by anyone with knowledge of the function URL, potentially exposing sensitive business logic and data.
-severity: High
+severity: Medium
 category: ["Access Control", "arg-scan"]
 reportability: Automatic
 triageNotes: |
