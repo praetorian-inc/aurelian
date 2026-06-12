@@ -6,8 +6,9 @@ import (
 )
 
 func init() {
+	// OpenSearch and legacy Elasticsearch domains are both enumerated by the
+	// native OpenSearchDomainEnumerator and reported under this single type.
 	plugin.RegisterEnricher("AWS::OpenSearchService::Domain", enrichOpenSearchWrapper)
-	plugin.RegisterEnricher("AWS::Elasticsearch::Domain", enrichOpenSearchWrapper)
 }
 
 func enrichOpenSearchWrapper(cfg plugin.EnricherConfig, r *output.AWSResource) error {

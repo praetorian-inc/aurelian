@@ -52,7 +52,6 @@ func TestAWSPublicResources(t *testing.T) {
 				"AWS::Transfer::Server",
 				"AWS::AppSync::GraphQLApi",
 				"AWS::OpenSearchService::Domain",
-				"AWS::Elasticsearch::Domain",
 				"AWS::EKS::Cluster",
 				"AWS::ApiGateway::RestApi",
 				"AWS::ApiGatewayV2::Api",
