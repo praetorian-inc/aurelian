@@ -4,14 +4,15 @@ package recon
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
-	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/test/testutil"
+	"github.com/praetorian-inc/capability-sdk/pkg/capmodel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -47,25 +48,25 @@ func TestAWSFindSecrets(t *testing.T) {
 	p2 := pipeline.New[model.AurelianModel]()
 	pipeline.Pipe(p1, mod.Run, p2)
 
-	var risks []output.AurelianRisk
+	var risks []capmodel.Risk
 	for m := range p2.Range() {
-		if r, ok := m.(output.AurelianRisk); ok {
+		if r, ok := m.(capmodel.Risk); ok {
 			risks = append(risks, r)
 		}
 	}
 	require.NoError(t, p2.Wait())
 	require.NotEmpty(t, risks, "expected at least one secret risk finding")
 
-	// Map of resource type label → fixture output identifier to look for in ImpactedResourceID.
+	// Map of resource type label → fixture output identifier to look for in TargetName.
 	expectedResources := map[string]string{
-		"EC2 Instance":       fixture.Output("instance_id"),
-		"Lambda Function":    fixture.Output("function_name"),
-		"CloudFormation":     fixture.Output("stack_name"),
-		"CloudWatch Logs":    fixture.Output("log_group_name"),
-		"ECS Task Def":       fixture.Output("task_definition_arn"),
-		"SSM Document":       fixture.Output("ssm_document_name"),
-		"SSM Parameter":      fixture.Output("ssm_parameter_name"),
-		"Step Functions":     fixture.Output("state_machine_arn"),
+		"EC2 Instance":    fixture.Output("instance_id"),
+		"Lambda Function": fixture.Output("function_name"),
+		"CloudFormation":  fixture.Output("stack_name"),
+		"CloudWatch Logs": fixture.Output("log_group_name"),
+		"ECS Task Def":    fixture.Output("task_definition_arn"),
+		"SSM Document":    fixture.Output("ssm_document_name"),
+		"SSM Parameter":   fixture.Output("ssm_parameter_name"),
+		"Step Functions":  fixture.Output("state_machine_arn"),
 	}
 
 	for label, identifier := range expectedResources {
@@ -88,30 +89,29 @@ func TestAWSFindSecrets(t *testing.T) {
 		}
 	})
 
-	t.Run("all risks have severity set", func(t *testing.T) {
-		validSeverities := map[output.RiskSeverity]bool{
-			output.RiskSeverityLow:      true,
-			output.RiskSeverityMedium:   true,
-			output.RiskSeverityHigh:     true,
-			output.RiskSeverityCritical: true,
-		}
+	t.Run("all risks have a valid triage status", func(t *testing.T) {
+		validStatuses := map[string]bool{"TI": true, "TL": true, "TM": true, "TH": true, "TC": true}
 		for _, risk := range risks {
-			assert.True(t, validSeverities[risk.Severity],
-				"unexpected severity %q for risk %s", risk.Severity, risk.Name)
+			assert.True(t, validStatuses[risk.Status],
+				"unexpected status %q for risk %s", risk.Status, risk.Name)
 		}
 	})
 
-	t.Run("all risks have non-empty context", func(t *testing.T) {
+	t.Run("all risks have a versioned proof with finding_id", func(t *testing.T) {
 		for _, risk := range risks {
-			assert.NotEmpty(t, risk.Context, "risk context should not be empty for %s", risk.ImpactedResourceID)
+			require.NotEmpty(t, risk.Proof, "risk proof should not be empty for %s", risk.TargetName)
+			var proof map[string]any
+			require.NoError(t, json.Unmarshal(risk.Proof, &proof), "risk proof must be valid JSON")
+			assert.Equal(t, "v1.0.0", proof["version"], "proof should carry the v1.0.0 schema version")
+			assert.NotEmpty(t, proof["finding_id"], "proof should carry a non-empty finding_id")
 		}
 	})
 }
 
-func hasRiskForIdentifier(risks []output.AurelianRisk, identifier string) bool {
+func hasRiskForIdentifier(risks []capmodel.Risk, identifier string) bool {
 	for _, risk := range risks {
-		if risk.ImpactedResourceID == identifier ||
-			strings.Contains(risk.ImpactedResourceID, identifier) {
+		if risk.TargetName == identifier ||
+			strings.Contains(risk.TargetName, identifier) {
 			return true
 		}
 	}

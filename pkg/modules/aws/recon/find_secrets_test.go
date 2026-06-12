@@ -11,6 +11,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/secrets"
+	"github.com/praetorian-inc/capability-sdk/pkg/capmodel"
 	"github.com/praetorian-inc/titus/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -160,7 +161,7 @@ func TestToRisk_ProofData(t *testing.T) {
 	require.NoError(t, err)
 
 	var proof map[string]any
-	require.NoError(t, json.Unmarshal(risk.Context, &proof))
+	require.NoError(t, json.Unmarshal(risk.Proof, &proof))
 
 	assert.Equal(t, "abc123def456", proof["finding_id"])
 	assert.Equal(t, "AWS API Key", proof["rule_name"])
@@ -223,7 +224,7 @@ func TestToRisk_WithValidation(t *testing.T) {
 	require.NoError(t, err)
 
 	var proof map[string]any
-	require.NoError(t, json.Unmarshal(risk.Context, &proof))
+	require.NoError(t, json.Unmarshal(risk.Proof, &proof))
 
 	validation := proof["validation"].(map[string]any)
 	assert.Equal(t, string(types.StatusValid), validation["status"])
@@ -264,7 +265,7 @@ func TestToRisk_RoundTrip(t *testing.T) {
 	require.NoError(t, err)
 
 	var decoded map[string]any
-	require.NoError(t, json.Unmarshal(risk.Context, &decoded))
+	require.NoError(t, json.Unmarshal(risk.Proof, &decoded))
 
 	assert.Equal(t, "abc123def456", decoded["finding_id"])
 	assert.Equal(t, "AWS API Key", decoded["rule_name"])
@@ -296,11 +297,14 @@ func TestRiskFromScanResult_ImpactedResourceID_IncludesFindingID(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 
-	risk := items[0].(output.AurelianRisk)
-	assert.Equal(t, "arn:aws:lambda:us-east-1:123:function:demo:abc123de", risk.ImpactedResourceID)
-	assert.Equal(t, "abc123def456", risk.DeduplicationID)
+	risk := items[0].(capmodel.Risk)
+	assert.Equal(t, "arn:aws:lambda:us-east-1:123:function:demo:abc123de", risk.TargetName)
 	assert.Equal(t, "aws-secret-aws", risk.Name)
-	assert.Equal(t, output.RiskSeverityMedium, risk.Severity)
+	assert.Equal(t, "TM", risk.Status)
+
+	var proof map[string]any
+	require.NoError(t, json.Unmarshal(risk.Proof, &proof))
+	assert.Equal(t, "abc123def456", proof["finding_id"], "dedup identity is preserved via proof finding_id")
 }
 
 func TestRiskFromScanResult_ImpactedResourceID_NoFindingID(t *testing.T) {
@@ -326,6 +330,6 @@ func TestRiskFromScanResult_ImpactedResourceID_NoFindingID(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, items, 1)
 
-	risk := items[0].(output.AurelianRisk)
-	assert.Equal(t, "i-08da3f571f1346176", risk.ImpactedResourceID, "should use bare ResourceRef when FindingID is empty")
+	risk := items[0].(capmodel.Risk)
+	assert.Equal(t, "i-08da3f571f1346176", risk.TargetName, "should use bare ResourceRef when FindingID is empty")
 }
