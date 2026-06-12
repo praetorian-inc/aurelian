@@ -27,6 +27,8 @@ resource "random_id" "run" {
   byte_length = 4
 }
 
+data "aws_caller_identity" "current" {}
+
 locals {
   prefix    = "aurelian-pub-test-${random_id.run.hex}"
   os_prefix = "aur-pt-${random_id.run.hex}"
@@ -529,5 +531,431 @@ resource "aws_opensearch_domain" "public" {
 
   tags = {
     Name = "${local.os_prefix}-os"
+  }
+}
+
+# ============================================================
+# APPLICATION INGRESS LAYER (feat/public-resources-ingress)
+# Cheap tranche below is always deployed. Slow/expensive resources
+# (EKS, FGAC-off OpenSearch, Elastic Beanstalk) are gated behind
+# var.deploy_expensive (default false) to keep the default run fast.
+# ============================================================
+
+variable "deploy_expensive" {
+  description = "Deploy slow/costly fixtures (EKS, extra OpenSearch domain, Beanstalk)."
+  type        = bool
+  default     = false
+}
+
+# --- ELBv2: internet-facing ALB (positive) + internal ALB (negative) ---
+resource "aws_lb" "public" {
+  name               = "${local.os_prefix}-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.ec2.id]
+  subnets            = [aws_subnet.public.id, aws_subnet.public_b.id]
+}
+
+resource "aws_lb" "internal" {
+  name               = "${local.os_prefix}-ialb"
+  internal           = true
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.ec2.id]
+  subnets            = [aws_subnet.public.id, aws_subnet.public_b.id]
+}
+
+# --- App Runner: public ingress (positive) ---
+resource "aws_apprunner_service" "public" {
+  service_name = "${local.os_prefix}-apprunner"
+
+  source_configuration {
+    auto_deployments_enabled = false
+    image_repository {
+      image_identifier      = "public.ecr.aws/aws-containers/hello-app-runner:latest"
+      image_repository_type = "ECR_PUBLIC"
+      image_configuration {
+        port = "8000"
+      }
+    }
+  }
+
+  network_configuration {
+    ingress_configuration {
+      is_publicly_accessible = true
+    }
+  }
+}
+
+# --- CloudFront: enabled distribution (positive) ---
+resource "aws_cloudfront_distribution" "public" {
+  enabled = true
+
+  origin {
+    domain_name = "example.com"
+    origin_id   = "primary"
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "https-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  default_cache_behavior {
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "primary"
+    viewer_protocol_policy = "allow-all"
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+}
+
+# --- Global Accelerator: enabled (positive) ---
+resource "aws_globalaccelerator_accelerator" "public" {
+  name    = "${local.os_prefix}-ga"
+  enabled = true
+}
+
+# --- Transfer Family: PUBLIC SFTP endpoint (positive) ---
+resource "aws_transfer_server" "public" {
+  endpoint_type          = "PUBLIC"
+  protocols              = ["SFTP"]
+  identity_provider_type = "SERVICE_MANAGED"
+
+  tags = {
+    Name = "${local.os_prefix}-transfer"
+  }
+}
+
+# --- AppSync: API_KEY auth (positive) + AWS_IAM auth (negative) ---
+resource "aws_appsync_graphql_api" "apikey" {
+  name                = "${local.os_prefix}-appsync-key"
+  authentication_type = "API_KEY"
+  schema              = "type Query { hello: String }"
+}
+
+resource "aws_appsync_graphql_api" "iam" {
+  name                = "${local.os_prefix}-appsync-iam"
+  authentication_type = "AWS_IAM"
+  schema              = "type Query { hello: String }"
+}
+
+# --- API Gateway REST: NONE-auth method (positive) ---
+resource "aws_api_gateway_rest_api" "public" {
+  name = "${local.os_prefix}-rest"
+}
+
+resource "aws_api_gateway_resource" "public" {
+  rest_api_id = aws_api_gateway_rest_api.public.id
+  parent_id   = aws_api_gateway_rest_api.public.root_resource_id
+  path_part   = "public"
+}
+
+resource "aws_api_gateway_method" "public" {
+  rest_api_id   = aws_api_gateway_rest_api.public.id
+  resource_id   = aws_api_gateway_resource.public.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "public" {
+  rest_api_id = aws_api_gateway_rest_api.public.id
+  resource_id = aws_api_gateway_resource.public.id
+  http_method = aws_api_gateway_method.public.http_method
+  type        = "MOCK"
+}
+
+# --- API Gateway HTTP: NONE-auth route (positive) ---
+resource "aws_apigatewayv2_api" "public" {
+  name          = "${local.os_prefix}-http"
+  protocol_type = "HTTP"
+}
+
+resource "aws_apigatewayv2_route" "public" {
+  api_id    = aws_apigatewayv2_api.public.id
+  route_key = "GET /public"
+}
+
+# --- API Gateway REST: PRIVATE endpoint + NONE-auth method (negative) ---
+# A PRIVATE REST API is reachable only from within the VPC via an interface
+# endpoint, so its NONE-auth method is not internet-exposed. The evaluator skips
+# PRIVATE APIs before counting unauthenticated methods, so this must NOT flag.
+resource "aws_api_gateway_rest_api" "private" {
+  name = "${local.os_prefix}-rest-priv"
+
+  endpoint_configuration {
+    types = ["PRIVATE"]
+  }
+}
+
+resource "aws_api_gateway_resource" "private" {
+  rest_api_id = aws_api_gateway_rest_api.private.id
+  parent_id   = aws_api_gateway_rest_api.private.root_resource_id
+  path_part   = "private"
+}
+
+resource "aws_api_gateway_method" "private" {
+  rest_api_id   = aws_api_gateway_rest_api.private.id
+  resource_id   = aws_api_gateway_resource.private.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "private" {
+  rest_api_id = aws_api_gateway_rest_api.private.id
+  resource_id = aws_api_gateway_resource.private.id
+  http_method = aws_api_gateway_method.private.http_method
+  type        = "MOCK"
+}
+
+# --- API Gateway REST: NONE-auth method + resource policy (positive, triage) ---
+# A resource policy can restrict invocation (source IP, VPC endpoint, account)
+# independently of method authorization, so the evaluator reports for triage with
+# a policy-specific reason rather than asserting public. Still flagged.
+resource "aws_api_gateway_rest_api" "policy" {
+  name = "${local.os_prefix}-rest-pol"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = "*"
+      Action    = "execute-api:Invoke"
+      Resource  = "execute-api:/*"
+      Condition = {
+        IpAddress = { "aws:SourceIp" = "10.0.0.0/8" }
+      }
+    }]
+  })
+}
+
+resource "aws_api_gateway_resource" "policy" {
+  rest_api_id = aws_api_gateway_rest_api.policy.id
+  parent_id   = aws_api_gateway_rest_api.policy.root_resource_id
+  path_part   = "policy"
+}
+
+resource "aws_api_gateway_method" "policy" {
+  rest_api_id   = aws_api_gateway_rest_api.policy.id
+  resource_id   = aws_api_gateway_resource.policy.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
+resource "aws_api_gateway_integration" "policy" {
+  rest_api_id = aws_api_gateway_rest_api.policy.id
+  resource_id = aws_api_gateway_resource.policy.id
+  http_method = aws_api_gateway_method.policy.http_method
+  type        = "MOCK"
+}
+
+# --- AppSync: AWS_IAM primary + additional API_KEY provider (positive) ---
+# A non-API_KEY primary auth type does not preclude an additional API_KEY
+# provider; any holder of an API key can call the full schema, so this flags.
+resource "aws_appsync_graphql_api" "additional_apikey" {
+  name                = "${local.os_prefix}-appsync-addl"
+  authentication_type = "AWS_IAM"
+  schema              = "type Query { hello: String }"
+
+  additional_authentication_provider {
+    authentication_type = "API_KEY"
+  }
+}
+
+# ============================================================
+# Expensive / slow fixtures (var.deploy_expensive)
+# ============================================================
+
+# --- OpenSearch: FGAC-OFF domain (positive); the FGAC-ON domain above is the negative ---
+resource "aws_opensearch_domain" "no_fgac" {
+  count          = var.deploy_expensive ? 1 : 0
+  domain_name    = "${local.os_prefix}-nofgac"
+  engine_version = "OpenSearch_2.11"
+
+  cluster_config {
+    instance_type  = "t3.small.search"
+    instance_count = 1
+  }
+
+  ebs_options {
+    ebs_enabled = true
+    volume_size = 10
+    volume_type = "gp3"
+  }
+
+  # Wildcard ("*") principal — what the evaluator flags. AWS rejects a fully
+  # open FGAC-off public domain, so an IpAddress condition is attached to make
+  # the policy "restrictive" enough to create. The evaluator inspects only the
+  # principal (conditions are a known follow-up), so this still flags as public.
+  access_policies = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = "*"
+      Action    = "es:ESHttpGet"
+      Resource  = "arn:aws:es:${var.region}:*:domain/${local.os_prefix}-nofgac/*"
+      Condition = {
+        IpAddress = { "aws:SourceIp" = "3.0.0.0/8" }
+      }
+    }]
+  })
+
+  tags = {
+    Name = "${local.os_prefix}-nofgac"
+  }
+}
+
+# --- OpenSearch: FGAC-OFF + restrictive (non-wildcard) policy (negative) ---
+# With FGAC disabled the access policy is the only authorization layer. A policy
+# scoped to a specific principal still gates the domain, so it must NOT flag —
+# only a wildcard-principal policy does. Mirror of the no_fgac positive above.
+resource "aws_opensearch_domain" "no_fgac_restrictive" {
+  count          = var.deploy_expensive ? 1 : 0
+  domain_name    = "${local.os_prefix}-nofgacr"
+  engine_version = "OpenSearch_2.11"
+
+  cluster_config {
+    instance_type  = "t3.small.search"
+    instance_count = 1
+  }
+
+  ebs_options {
+    ebs_enabled = true
+    volume_size = 10
+    volume_type = "gp3"
+  }
+
+  access_policies = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+      Action    = "es:ESHttpGet"
+      Resource  = "arn:aws:es:${var.region}:*:domain/${local.os_prefix}-nofgacr/*"
+    }]
+  })
+
+  tags = {
+    Name = "${local.os_prefix}-nofgacr"
+  }
+}
+
+# --- EKS: public endpoint open to 0.0.0.0/0 (positive) ---
+resource "aws_iam_role" "eks" {
+  count = var.deploy_expensive ? 1 : 0
+  name  = "${local.os_prefix}-eks-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "eks.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "eks_cluster" {
+  count      = var.deploy_expensive ? 1 : 0
+  role       = aws_iam_role.eks[0].name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+}
+
+resource "aws_eks_cluster" "public" {
+  count    = var.deploy_expensive ? 1 : 0
+  name     = "${local.os_prefix}-eks"
+  role_arn = aws_iam_role.eks[0].arn
+
+  vpc_config {
+    subnet_ids              = [aws_subnet.public.id, aws_subnet.public_b.id]
+    endpoint_public_access  = true
+    endpoint_private_access = false
+    public_access_cidrs     = ["0.0.0.0/0"]
+  }
+
+  depends_on = [aws_iam_role_policy_attachment.eks_cluster]
+}
+
+# --- Elastic Beanstalk: public environment (positive) ---
+data "aws_elastic_beanstalk_solution_stack" "python" {
+  count       = var.deploy_expensive ? 1 : 0
+  most_recent = true
+  name_regex  = "^64bit Amazon Linux 2023 (.*) running Python (.*)$"
+}
+
+resource "aws_iam_role" "beanstalk_ec2" {
+  count = var.deploy_expensive ? 1 : 0
+  name  = "${local.os_prefix}-eb-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "beanstalk_web" {
+  count      = var.deploy_expensive ? 1 : 0
+  role       = aws_iam_role.beanstalk_ec2[0].name
+  policy_arn = "arn:aws:iam::aws:policy/AWSElasticBeanstalkWebTier"
+}
+
+resource "aws_iam_instance_profile" "beanstalk_ec2" {
+  count = var.deploy_expensive ? 1 : 0
+  name  = "${local.os_prefix}-eb-profile"
+  role  = aws_iam_role.beanstalk_ec2[0].name
+}
+
+resource "aws_elastic_beanstalk_application" "public" {
+  count = var.deploy_expensive ? 1 : 0
+  name  = "${local.os_prefix}-eb"
+}
+
+resource "aws_elastic_beanstalk_environment" "public" {
+  count               = var.deploy_expensive ? 1 : 0
+  name                = "${local.os_prefix}-env"
+  application         = aws_elastic_beanstalk_application.public[0].name
+  solution_stack_name = data.aws_elastic_beanstalk_solution_stack.python[0].name
+
+  setting {
+    namespace = "aws:autoscaling:launchconfiguration"
+    name      = "IamInstanceProfile"
+    value     = aws_iam_instance_profile.beanstalk_ec2[0].name
+  }
+
+  setting {
+    namespace = "aws:ec2:vpc"
+    name      = "VPCId"
+    value     = aws_vpc.main.id
+  }
+
+  setting {
+    namespace = "aws:ec2:vpc"
+    name      = "Subnets"
+    value     = aws_subnet.public.id
+  }
+
+  setting {
+    namespace = "aws:ec2:vpc"
+    name      = "AssociatePublicIpAddress"
+    value     = "true"
   }
 }

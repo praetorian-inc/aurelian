@@ -102,6 +102,28 @@ func BuildResourceARN(identifier, typeName, region, accountId string) arn.ARN {
 			AccountID: "*",
 			Resource:  "*",
 		}
+	// CloudControl ListResources returns a bare name/ID (not an ARN) as the
+	// identifier for these types. Synthesize the correct ARN grammar so the
+	// finding's ImpactedResourceID is well-formed; each grammar is validated
+	// against the live resource's real ARN in the package test.
+	case "AWS::EKS::Cluster":
+		return cloudControlARN(identifier, "eks", region, accountId, "cluster/")
+	case "AWS::Transfer::Server":
+		return cloudControlARN(identifier, "transfer", region, accountId, "server/")
+	case "AWS::CloudFront::Distribution":
+		// CloudFront is a global service: ARNs carry no region.
+		return cloudControlARN(identifier, "cloudfront", "", accountId, "distribution/")
+	case "AWS::AppSync::GraphQLApi":
+		return cloudControlARN(identifier, "appsync", region, accountId, "apis/")
+	case "AWS::ApiGateway::RestApi":
+		// API Gateway ARNs are path-style and carry no account ID.
+		return cloudControlARN(identifier, "apigateway", region, "", "/restapis/")
+	case "AWS::ApiGatewayV2::Api":
+		return cloudControlARN(identifier, "apigateway", region, "", "/apis/")
+	case "AWS::Cognito::UserPool":
+		return cloudControlARN(identifier, "cognito-idp", region, accountId, "userpool/")
+	case "AWS::RDS::DBInstance":
+		return cloudControlARN(identifier, "rds", region, accountId, "db:")
 	default:
 		parsed, err := arn.Parse(identifier)
 		if err == nil {
@@ -114,6 +136,22 @@ func BuildResourceARN(identifier, typeName, region, accountId string) arn.ARN {
 			AccountID: accountId,
 			Resource:  identifier,
 		}
+	}
+}
+
+// cloudControlARN builds an ARN for a CloudControl resource whose identifier is a
+// bare name/ID. If the identifier is already a valid ARN it is returned as-is, so
+// callers that pass an ARN (e.g. the by-ARN enumeration path) are not double-qualified.
+func cloudControlARN(identifier, service, region, accountID, resourcePrefix string) arn.ARN {
+	if parsed, err := arn.Parse(identifier); err == nil {
+		return parsed
+	}
+	return arn.ARN{
+		Partition: "aws",
+		Service:   service,
+		Region:    region,
+		AccountID: accountID,
+		Resource:  resourcePrefix + identifier,
 	}
 }
 

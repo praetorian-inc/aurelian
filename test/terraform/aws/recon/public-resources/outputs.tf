@@ -69,3 +69,75 @@ output "public_opensearch_domain" {
 output "prefix" {
   value = local.prefix
 }
+
+# --- Application ingress layer (feat/public-resources-ingress) ---
+
+output "public_alb_arn" {
+  value = aws_lb.public.arn
+}
+
+output "internal_alb_arn" {
+  value = aws_lb.internal.arn
+}
+
+output "public_apprunner_arn" {
+  value = aws_apprunner_service.public.arn
+}
+
+output "public_cloudfront_id" {
+  value = aws_cloudfront_distribution.public.id
+}
+
+output "public_ga_arn" {
+  value = aws_globalaccelerator_accelerator.public.arn
+}
+
+output "public_transfer_id" {
+  value = aws_transfer_server.public.id
+}
+
+output "apikey_appsync_id" {
+  value = aws_appsync_graphql_api.apikey.id
+}
+
+output "iam_appsync_id" {
+  value = aws_appsync_graphql_api.iam.id
+}
+
+output "unauth_restapi_id" {
+  value = aws_api_gateway_rest_api.public.id
+}
+
+output "unauth_httpapi_id" {
+  value = aws_apigatewayv2_api.public.id
+}
+
+output "private_restapi_id" {
+  value = aws_api_gateway_rest_api.private.id
+}
+
+output "policy_restapi_id" {
+  value = aws_api_gateway_rest_api.policy.id
+}
+
+output "additional_apikey_appsync_id" {
+  value = aws_appsync_graphql_api.additional_apikey.id
+}
+
+output "no_fgac_domain" {
+  value = var.deploy_expensive ? aws_opensearch_domain.no_fgac[0].domain_name : ""
+}
+
+output "restrictive_nofgac_domain" {
+  value = var.deploy_expensive ? aws_opensearch_domain.no_fgac_restrictive[0].domain_name : ""
+}
+
+output "public_eks_arn" {
+  value = var.deploy_expensive ? aws_eks_cluster.public[0].arn : ""
+}
+
+output "public_beanstalk_env" {
+  # Full environment ARN (not the e-* id): the scanner emits the
+  # environment/<app>/<env> ARN, which the env id would never match.
+  value = var.deploy_expensive ? aws_elastic_beanstalk_environment.public[0].arn : ""
+}
