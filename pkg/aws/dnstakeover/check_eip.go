@@ -17,6 +17,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
+	"github.com/praetorian-inc/capability-sdk/pkg/capmodel"
 )
 
 func init() {
@@ -24,6 +25,11 @@ func init() {
 }
 
 const awsIPRangesURL = "https://ip-ranges.amazonaws.com/ip-ranges.json"
+
+var eipReferences = []string{
+	"https://bishopfox.com/blog/fishing-the-aws-ip-pool-for-dangling-domains",
+	"https://kmsec.uk/blog/passive-takeover/",
+}
 
 type ipPrefixEntry struct {
 	IPPrefix string `json:"ip_prefix"`
@@ -53,27 +59,33 @@ func checkEIP(ctx CheckContext, rec Route53Record, out *pipeline.P[model.Aurelia
 			continue
 		}
 
-		out.Send(NewTakeoverRisk(
-			"eip-dangling-a-record",
-			output.RiskSeverityMedium,
-			rec,
-			ctx.AccountID,
-			map[string]any{
-				"dangling_ip": ip,
-				"aws_region":  awsRegion,
-				"aws_service": awsService,
-				"description": fmt.Sprintf(
-					"Route53 A record %q points to %s which is in AWS IP space (%s/%s) "+
-						"but is not allocated as an EIP in this account.",
-					rec.RecordName, ip, awsService, awsRegion,
-				),
-				"recommendation": "Remove the stale A record or re-allocate the Elastic IP.",
-				"references": []string{
-					"https://bishopfox.com/blog/fishing-the-aws-ip-pool-for-dangling-domains",
-					"https://kmsec.uk/blog/passive-takeover/",
-				},
+		risk, err := NewTakeoverRisk(takeoverFinding{
+			riskName:  "Dangling Elastic IP A Record",
+			severity:  output.RiskSeverityMedium,
+			rec:       rec,
+			accountID: ctx.AccountID,
+			summary: fmt.Sprintf(
+				"Route53 A record %q points to %s which is in AWS IP space (%s/%s) "+
+					"but is not allocated as an EIP in this account.",
+				rec.RecordName, ip, awsService, awsRegion,
+			),
+			detailRows: []capmodel.ProofKeyValueRow{
+				{Key: "Dangling IP", Value: ip, Copyable: true},
+				{Key: "AWS Region", Value: awsRegion},
+				{Key: "AWS Service", Value: awsService},
 			},
-		))
+			impact: "An attacker can repeatedly allocate Elastic IPs until they obtain the dangling address, " +
+				"then serve arbitrary content on the subdomain.",
+			recommendation: []string{
+				"Remove the stale A record or re-allocate the Elastic IP.",
+			},
+			references: eipReferences,
+		})
+		if err != nil {
+			slog.Warn("failed to build takeover risk", "record", rec.RecordName, "error", err)
+			continue
+		}
+		out.Send(risk)
 	}
 
 	return nil
