@@ -107,6 +107,11 @@ func TestAWSPublicResources(t *testing.T) {
 		fixture.Output("apikey_appsync_id"),
 		fixture.Output("unauth_restapi_id"),
 		fixture.Output("unauth_httpapi_id"),
+		// Recently-changed branches that still flag (edge positives): a REST API
+		// gated by a resource policy is reported for triage, and an additional
+		// API_KEY provider on a non-API_KEY AppSync API is reported.
+		fixture.Output("policy_restapi_id"),
+		fixture.Output("additional_apikey_appsync_id"),
 	}
 
 	for _, expected := range expectedImpactedResources {
@@ -114,16 +119,25 @@ func TestAWSPublicResources(t *testing.T) {
 		t.Logf("found risk for resource %q", expected)
 	}
 
-	// Negative controls: these must NOT be flagged.
-	for _, name := range []string{"internal_alb_arn", "iam_appsync_id"} {
+	// Negative controls: these must NOT be flagged. private_restapi_id is a
+	// PRIVATE REST API whose NONE-auth method is not internet-exposed.
+	for _, name := range []string{"internal_alb_arn", "iam_appsync_id", "private_restapi_id"} {
 		id := fixture.Output(name)
 		assert.Falsef(t, hasRiskForResource(risks, id), "internal/authenticated resource %q (%s) must not be flagged", id, name)
 	}
 
-	// Expensive tranche: only asserted when deployed (outputs are empty otherwise).
+	// Expensive tranche positives: only asserted when deployed (outputs are empty otherwise).
 	for _, name := range []string{"public_eks_arn", "no_fgac_domain", "public_beanstalk_env"} {
 		if id := fixture.Output(name); id != "" {
 			assert.Truef(t, hasRiskForResource(risks, id), "expected risk for expensive resource %q (%s)", id, name)
+		}
+	}
+
+	// Expensive tranche negatives: a FGAC-off domain with a policy scoped to a
+	// specific principal (not a wildcard) must NOT be flagged. Only asserted when deployed.
+	for _, name := range []string{"restrictive_nofgac_domain"} {
+		if id := fixture.Output(name); id != "" {
+			assert.Falsef(t, hasRiskForResource(risks, id), "FGAC-off restrictive-policy resource %q (%s) must not be flagged", id, name)
 		}
 	}
 
