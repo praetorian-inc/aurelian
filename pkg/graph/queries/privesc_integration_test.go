@@ -391,7 +391,11 @@ func allSharedSeedCases() []sharedSeedCase {
 		{p + "cloudformation_changeset", targetStack},
 		{p + "batch_submit_job", targetWildcard},
 		{p + "bedrock_access_code_interpreter", targetWildcard},
-		{p + "codestar_create_project", targetWildcard},
+		// codestar_create_project now constrains the permission target to :Principal; the
+		// seeded CODESTAR_CREATEPROJECT edge points at the wildcard :Resource stub, which is
+		// not a Principal, so the method correctly emits NO edge (matches its description:
+		// no graph target until a CodeStar resource->role enricher lands).
+		{p + "codestar_create_project", targetNone},
 	}
 }
 
@@ -759,7 +763,7 @@ func TestPassRoleServiceFanOutReachesAnalysisQuery(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	const adminRoleARN = "arn:aws:iam::123:role/admin"
+	const adminRoleARN = "arn:aws:iam::123456789012:role/admin"
 
 	// The attacker passes an admin IAM role to AppRunner. The passed role is _is_admin and
 	// trusts App Runner so the scoped CAN_PRIVESC edge points directly to an admin target
