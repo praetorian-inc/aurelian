@@ -81,8 +81,13 @@ func EnrichAWS(ctx context.Context, db graph.GraphDatabase) error {
 		}
 	}
 
+	// Order is the primary key; ID is a stable tiebreak so queries sharing the
+	// same order (e.g. all privesc methods at order:100) execute deterministically.
 	sort.Slice(enrichQueries, func(i, j int) bool {
-		return enrichQueries[i].Metadata.Order < enrichQueries[j].Metadata.Order
+		if enrichQueries[i].Metadata.Order != enrichQueries[j].Metadata.Order {
+			return enrichQueries[i].Metadata.Order < enrichQueries[j].Metadata.Order
+		}
+		return enrichQueries[i].Metadata.ID < enrichQueries[j].Metadata.ID
 	})
 
 	slog.Info("running AWS enrichment queries", "count", len(enrichQueries))
