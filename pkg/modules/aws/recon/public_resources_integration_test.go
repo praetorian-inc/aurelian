@@ -41,10 +41,38 @@ func TestAWSPublicResources(t *testing.T) {
 				"AWS::Cognito::UserPool",
 				"AWS::RDS::DBInstance",
 				"AWS::EC2::Image",
+				// Application ingress layer (feat/public-resources-ingress).
+				// Enumerated and evaluated on a live run. Full fixture-backed
+				// assertions require the Terraform resources noted in the TODO below.
+				"AWS::ElasticLoadBalancingV2::LoadBalancer",
+				"AWS::AppRunner::Service",
+				"AWS::CloudFront::Distribution",
+				"AWS::GlobalAccelerator::Accelerator",
+				"AWS::ElasticBeanstalk::Environment",
+				"AWS::Transfer::Server",
+				"AWS::AppSync::GraphQLApi",
+				"AWS::OpenSearchService::Domain",
+				"AWS::Elasticsearch::Domain",
+				"AWS::EKS::Cluster",
+				"AWS::ApiGateway::RestApi",
+				"AWS::ApiGatewayV2::Api",
 			},
 		},
 		Context: context.Background(),
 	}
+
+	// TODO(feat/public-resources-ingress): extend the Terraform fixture at
+	// test/fixtures/aws/recon/public-resources with the ingress resources below,
+	// then add their fixture.Output(...) identifiers to expectedImpactedResources
+	// for full end-to-end assertions:
+	//   - internet-facing ALB                            -> "public_alb_arn"
+	//   - App Runner service (public ingress)            -> "public_apprunner_arn"
+	//   - CloudFront distribution                        -> "public_cloudfront_id"
+	//   - HTTP API with an AuthorizationType=NONE route  -> "unauth_httpapi_id"
+	//   - REST API with a NONE / no-api-key method       -> "unauth_restapi_id"
+	//   - OpenSearch domain with FGAC disabled           -> "no_fgac_domain_arn"
+	//   - EKS cluster, public endpoint open to 0.0.0.0/0 -> "public_eks_arn"
+	//   - Transfer Family server, PUBLIC endpoint        -> "public_transfer_id"
 
 	p1 := pipeline.From(cfg)
 	p2 := pipeline.New[model.AurelianModel]()

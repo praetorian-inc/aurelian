@@ -18,7 +18,7 @@ func newTestEvaluator() *ResourceEvaluator {
 
 func TestSupportedResourceTypes(t *testing.T) {
 	types := SupportedResourceTypes()
-	assert.Len(t, types, 13)
+	assert.Len(t, types, 23)
 
 	e := newTestEvaluator()
 	registry := e.evaluators()
