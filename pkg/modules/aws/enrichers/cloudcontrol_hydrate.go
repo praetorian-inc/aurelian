@@ -17,7 +17,8 @@ func init() {
 	plugin.RegisterEnricher("AWS::Transfer::Server", enrichViaHydrate)
 	plugin.RegisterEnricher("AWS::AppSync::GraphQLApi", enrichViaHydrate)
 	plugin.RegisterEnricher("AWS::GlobalAccelerator::Accelerator", enrichViaHydrate)
-	plugin.RegisterEnricher("AWS::ElasticBeanstalk::Environment", enrichViaHydrate)
+	// AWS::ElasticBeanstalk::Environment uses a dedicated enricher (beanstalk.go)
+	// that hydrates and also rewrites the ARN from ApplicationName + EnvironmentName.
 	// REST APIs also run a method-fetch enricher (apigateway.go); hydrate adds
 	// EndpointConfiguration + Policy, which the evaluator uses to skip PRIVATE
 	// endpoints and downgrade resource-policy-gated APIs.
