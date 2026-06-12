@@ -9,11 +9,12 @@ description: |
   The edge is SCOPED to the principal the IAM_UPDATELOGINPROFILE permission points at
   (no all-principals fan-out), restricted to user targets, and suppressed unless the
   target user is admin/privileged (resetting a non-privileged user is lateral).
-  The existing-login-profile precondition (else UpdateLoginProfile returns NoSuchEntity)
-  is not directly in the graph; the cypher-expressible proxy is to also require
-  iam:CreateLoginProfile on the SAME target user, so the attacker can bootstrap a profile
-  if none exists (catalog row 246). Exact profile existence and console-MFA gating still
-  need a GetLoginProfile/MFA enricher; noted.
+  The existing-login-profile precondition (UpdateLoginProfile returns NoSuchEntity when the
+  target user has no console profile) is out-of-graph and deferred to a future
+  GetLoginProfile/MFA enricher; until then the method accepts the residual FP of a
+  privileged target with no existing profile. Note: iam:CreateLoginProfile is NOT required —
+  the common real path is a target that already has a console profile and an attacker holding
+  only iam:UpdateLoginProfile, so requiring CreateLoginProfile would be a false negative.
 severity: high
 order: 100
 cypher: |
@@ -24,16 +25,17 @@ cypher: |
   //   - target must be an IAM USER (login profiles exist only on users; roles/groups have none).
   //   - self-target exclusion (casing-tolerant coalesce).
   //   - lateral-vs-admin: suppress non-privileged targets; tier severity by target.
-  //   - profile-state fallback: also require IAM_CREATELOGINPROFILE to the SAME target node
-  //     (same-node is the proxy for same-user), so the attacker can bootstrap a profile
-  //     if UpdateLoginProfile would hit NoSuchEntity.
+  //   - login-profile existence is out-of-graph (UpdateLoginProfile -> NoSuchEntity when the
+  //     target has no console profile); deferred to a future GetLoginProfile/MFA enricher.
+  //     We do NOT require IAM_CREATELOGINPROFILE: the common real path is a target that already
+  //     has a profile with the attacker holding only UpdateLoginProfile, so requiring it would
+  //     be a false negative. We accept the residual FP (privileged target with no profile).
   MATCH (attacker:Principal)-[perm]->(target:Principal)
   WHERE type(perm) = 'IAM_UPDATELOGINPROFILE'
     AND coalesce(attacker._is_admin, false) <> true
     AND coalesce(target.Arn, target.arn) CONTAINS ':user/'
     AND coalesce(target.Arn, target.arn) <> coalesce(attacker.Arn, attacker.arn)
     AND (coalesce(target._is_admin, false) = true OR coalesce(target._is_privileged, false) = true)
-    AND EXISTS { (attacker)-[c]->(target) WHERE type(c) = 'IAM_CREATELOGINPROFILE' }
   WITH DISTINCT attacker, target
   MERGE (attacker)-[pe:CAN_PRIVESC]->(target)
   ON CREATE SET pe._created = timestamp()

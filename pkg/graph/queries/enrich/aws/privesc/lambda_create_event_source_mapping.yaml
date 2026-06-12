@@ -34,7 +34,7 @@ cypher: |
   WITH attacker, fn
   MATCH (fn)-[:HAS_ROLE]->(victim:Principal)
   WHERE coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
-    AND split(coalesce(victim.Arn, victim.arn), ':')[4] = split(attacker.Arn, ':')[4]
+    AND split(coalesce(victim.Arn, victim.arn), ':')[4] = split(coalesce(attacker.Arn, attacker.arn), ':')[4]
     AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
   WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)

@@ -19,12 +19,12 @@ cypher: |
   // instance is reached via HAS_ROLE (mirrors the SSM compute-takeover pattern).
   // Guards: admin-as-source; self-target; privileged-target (suppress non-privileged);
   // exclude service-linked roles.
-  MATCH (instance:Resource)-[:HAS_ROLE]->(victim:Principal)
-  WHERE instance._resourceType = 'AWS::EC2::Instance'
   MATCH (attacker:Principal)
   WHERE coalesce(attacker._is_admin, false) <> true
     AND EXISTS { (attacker)-[perm]->() WHERE type(perm) = 'EC2-INSTANCE-CONNECT_SENDSSHPUBLICKEY' }
-    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+  WITH DISTINCT attacker
+  MATCH (instance:Resource {_resourceType: 'AWS::EC2::Instance'})-[:HAS_ROLE]->(victim:Principal)
+  WHERE coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
     AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
     AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
   WITH DISTINCT attacker, victim

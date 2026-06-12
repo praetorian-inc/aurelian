@@ -27,7 +27,7 @@ cypher: |
   WHERE type(passrole) = 'IAM_PASSROLE'
     AND coalesce(attacker._is_admin, false) <> true
     AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
-    AND split(coalesce(victim.Arn, victim.arn), ':')[4] = split(attacker.Arn, ':')[4]
+    AND split(coalesce(victim.Arn, victim.arn), ':')[4] = split(coalesce(attacker.Arn, attacker.arn), ':')[4]
     AND 'lambda.amazonaws.com' IN coalesce(victim.trusted_services, [])
     AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
     AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
