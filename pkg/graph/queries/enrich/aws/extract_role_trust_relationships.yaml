@@ -4,7 +4,11 @@ platform: aws
 type: enrich
 category: trust-extraction
 description: |
-  Creates TRUSTS_ROLE relationships between principals based on AssumeRolePolicyDocument.
+  Creates CAN_ASSUME relationships from principals to roles based on the role's
+  AssumeRolePolicyDocument. Covers both explicit-principal trust (the doc names the
+  principal's ARN) and account-root trust (the doc names arn:aws:iam::<ACCT>:root,
+  which implicitly trusts every same-account principal). Root-trust is scoped to the
+  principal's own account by building the root ARN from split(principal.Arn,':')[4].
 severity: info
 order: 2
 cypher: |
@@ -12,6 +16,10 @@ cypher: |
   MATCH (principal:Principal)
   WHERE principal.Arn IS NOT NULL
   AND role.AssumeRolePolicyDocument IS NOT NULL
-  AND role.AssumeRolePolicyDocument CONTAINS principal.Arn
+  AND (
+    role.AssumeRolePolicyDocument CONTAINS principal.Arn
+    OR role.AssumeRolePolicyDocument CONTAINS
+       ('arn:aws:iam::' + split(principal.Arn, ':')[4] + ':root')
+  )
   MERGE (principal)-[:CAN_ASSUME]->(role)
   RETURN count(*) as trust_relationships

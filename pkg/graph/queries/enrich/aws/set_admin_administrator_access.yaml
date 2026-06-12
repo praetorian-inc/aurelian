@@ -8,9 +8,11 @@ description: |
 severity: high
 order: 10
 cypher: |
+  // AttachedManagedPolicies flattens to a JSON STRING (array-of-objects), not a
+  // Neo4j list — ANY(... IN ...) iterated string characters and never matched.
+  // CONTAINS the policy name is the no-APOC fix.
   MATCH (p:Principal)
-  WHERE ANY(policy IN p.AttachedManagedPolicies
-    WHERE policy CONTAINS 'AdministratorAccess')
+  WHERE coalesce(p.AttachedManagedPolicies, '') CONTAINS 'AdministratorAccess'
   SET p._is_admin = true,
       p._admin_reason = 'AdministratorAccess managed policy'
   RETURN count(p) as admin_principals

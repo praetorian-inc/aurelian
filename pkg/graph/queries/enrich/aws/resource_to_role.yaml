@@ -4,15 +4,24 @@ platform: aws
 type: enrich
 category: resource-to-role
 description: |
-  Links EC2 instances and Lambda functions to their IAM roles via instance profiles.
+  Links EC2 instances and Lambda functions to their IAM roles.
+  Role.InstanceProfileList is a JSON STRING (array-of-objects), not a Neo4j list, so
+  the EC2 match CONTAINS-substring-matches the instance's IamInstanceProfile value
+  inside the role's InstanceProfileList rather than parsing it (no APOC). Falls back
+  to a direct Role-ARN match (Lambda functions and instances that emit Role directly).
 severity: info
 order: 1
 cypher: |
   MATCH (role:Role)
-  WHERE role.InstanceProfileList IS NOT NULL
-  WITH role, role.InstanceProfileList AS profiles
   MATCH (resource:Resource)
   WHERE resource._resourceType IN ['AWS::EC2::Instance', 'AWS::Lambda::Function']
-  AND ANY(profile IN profiles WHERE resource.IamInstanceProfile = profile OR resource.Role = role.Arn)
+  AND (
+    resource.Role = role.Arn
+    OR (
+      role.InstanceProfileList IS NOT NULL
+      AND resource.IamInstanceProfile IS NOT NULL
+      AND role.InstanceProfileList CONTAINS resource.IamInstanceProfile
+    )
+  )
   MERGE (resource)-[:HAS_ROLE]->(role)
   RETURN count(*) as links_created
