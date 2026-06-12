@@ -19,9 +19,7 @@ func enrichELBv2Wrapper(cfg plugin.EnricherConfig, r *output.AWSResource) error 
 // The Scheme property comes from CloudControl; this enricher normalizes it to a
 // boolean for consistent downstream consumption.
 func EnrichELBv2LoadBalancer(cfg plugin.EnricherConfig, r *output.AWSResource) error {
-	if _, ok := r.Properties["Scheme"]; !ok {
-		hydrateFromCloudControl(cfg, r)
-	}
+	hydrateIfMissing(cfg, r, "Scheme")
 	scheme, _ := r.Properties["Scheme"].(string)
 	r.Properties["IsInternetFacing"] = strings.EqualFold(scheme, "internet-facing")
 	return nil

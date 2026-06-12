@@ -18,9 +18,7 @@ func enrichAppRunnerWrapper(cfg plugin.EnricherConfig, r *output.AWSResource) er
 // from CloudControl as nested maps; this enricher normalizes it to a top-level
 // boolean and surfaces the service URL for downstream consumption.
 func EnrichAppRunnerService(cfg plugin.EnricherConfig, r *output.AWSResource) error {
-	if _, ok := r.Properties["NetworkConfiguration"]; !ok {
-		hydrateFromCloudControl(cfg, r)
-	}
+	hydrateIfMissing(cfg, r, "NetworkConfiguration", "IngressConfiguration", "IsPubliclyAccessible")
 	publiclyAccessible := false
 	if nc, ok := r.Properties["NetworkConfiguration"].(map[string]any); ok {
 		if ic, ok := nc["IngressConfiguration"].(map[string]any); ok {

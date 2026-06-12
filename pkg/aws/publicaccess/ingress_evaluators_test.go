@@ -89,8 +89,8 @@ func TestEvaluateTransfer_Public(t *testing.T) {
 	r := &output.AWSResource{Properties: map[string]any{"EndpointType": "PUBLIC"}}
 	result := e.evaluateTransfer(r, aws.Config{}, "")
 	require.NotNil(t, result)
-	assert.True(t, result.IsPublic)
-	assert.False(t, result.NeedsManualTriage)
+	assert.False(t, result.IsPublic, "PUBLIC SFTP endpoint is credential-gated; triage, not auto-public")
+	assert.True(t, result.NeedsManualTriage)
 	assert.Equal(t, []string{"transfer:NetworkAccess"}, result.AllowedActions)
 }
 
@@ -182,8 +182,8 @@ func TestEvaluateEKS_PublicOpenToInternet(t *testing.T) {
 	r := &output.AWSResource{Properties: map[string]any{"EndpointPublicAccess": true, "PublicAccessOpenToInternet": true}}
 	result := e.evaluateEKS(r, aws.Config{}, "")
 	require.NotNil(t, result)
-	assert.True(t, result.IsPublic, "public endpoint open to 0.0.0.0/0 is public, not just triage")
-	assert.False(t, result.NeedsManualTriage)
+	assert.False(t, result.IsPublic, "EKS endpoint is k8s/IAM-auth-gated; triage, not auto-public")
+	assert.True(t, result.NeedsManualTriage)
 	assert.Contains(t, result.EvaluationReasons[0], "0.0.0.0/0")
 }
 
@@ -209,7 +209,8 @@ func TestEvaluateAPIGatewayRest_HasUnauthMethods(t *testing.T) {
 	r := &output.AWSResource{Properties: map[string]any{"UnauthenticatedMethodCount": 3, "TotalMethodCount": 5}}
 	result := e.evaluateAPIGatewayRest(r, aws.Config{}, "")
 	require.NotNil(t, result)
-	assert.True(t, result.IsPublic)
+	assert.False(t, result.IsPublic, "NONE-auth methods need a reachable deployed stage; triage, not auto-public")
+	assert.True(t, result.NeedsManualTriage)
 	assert.Equal(t, []string{"execute-api:Invoke"}, result.AllowedActions)
 	assert.Contains(t, result.EvaluationReasons[0], "3 method(s)")
 }
@@ -244,8 +245,8 @@ func TestEvaluateAPIGatewayRest_RegionalEndpointFlagged(t *testing.T) {
 		"EndpointConfiguration":      map[string]any{"Types": []any{"REGIONAL"}},
 	}}
 	result := e.evaluateAPIGatewayRest(r, aws.Config{}, "")
-	require.NotNil(t, result)
-	assert.True(t, result.IsPublic)
+	require.NotNil(t, result, "a REGIONAL (non-private) endpoint with NONE methods is flagged for triage")
+	assert.True(t, result.NeedsManualTriage)
 }
 
 func TestEvaluateAPIGatewayRest_ResourcePolicyDowngradesToTriage(t *testing.T) {
@@ -268,7 +269,8 @@ func TestEvaluateAPIGatewayV2_HasUnauthRoutes(t *testing.T) {
 	r := &output.AWSResource{Properties: map[string]any{"UnauthenticatedRouteCount": 2, "TotalRouteCount": 4}}
 	result := e.evaluateAPIGatewayV2(r, aws.Config{}, "")
 	require.NotNil(t, result)
-	assert.True(t, result.IsPublic)
+	assert.False(t, result.IsPublic, "NONE-auth routes need a reachable deployed stage; triage, not auto-public")
+	assert.True(t, result.NeedsManualTriage)
 	assert.Contains(t, result.EvaluationReasons[0], "2 route(s)")
 }
 
@@ -296,22 +298,22 @@ func TestEvaluateCore_IngressDispatch(t *testing.T) {
 			expectLevel: output.AccessLevelNeedsTriage,
 		},
 		{
-			name: "public Transfer server -> Public",
+			name: "public Transfer server -> NeedsTriage",
 			resource: &output.AWSResource{
 				ResourceType: "AWS::Transfer::Server",
 				ResourceID:   "s-abc",
 				Properties:   map[string]any{"EndpointType": "PUBLIC"},
 			},
-			expectLevel: output.AccessLevelPublic,
+			expectLevel: output.AccessLevelNeedsTriage,
 		},
 		{
-			name: "unauthenticated HTTP API -> Public",
+			name: "unauthenticated HTTP API -> NeedsTriage",
 			resource: &output.AWSResource{
 				ResourceType: "AWS::ApiGatewayV2::Api",
 				ResourceID:   "api-abc",
 				Properties:   map[string]any{"UnauthenticatedRouteCount": 1},
 			},
-			expectLevel: output.AccessLevelPublic,
+			expectLevel: output.AccessLevelNeedsTriage,
 		},
 		{
 			name: "FGAC-enabled OpenSearch -> Private",

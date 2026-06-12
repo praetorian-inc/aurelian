@@ -388,10 +388,10 @@ func (e *ResourceEvaluator) evaluateTransfer(resource *output.AWSResource, _ aws
 		return nil
 	}
 	return &PublicAccessResult{
-		IsPublic:       true,
-		AllowedActions: []string{"transfer:NetworkAccess"},
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"transfer:NetworkAccess"},
 		EvaluationReasons: []string{
-			"Transfer Family server has a PUBLIC endpoint reachable from the internet",
+			"Transfer Family server has a PUBLIC endpoint reachable from the internet; access is gated by the server's identity provider (SSH key, password, or custom IdP), which requires manual review",
 		},
 	}
 }
@@ -463,21 +463,14 @@ func (e *ResourceEvaluator) evaluateEKS(resource *output.AWSResource, _ aws.Conf
 		return nil
 	}
 	openToInternet, _ := resource.Properties["PublicAccessOpenToInternet"].(bool)
+	reason := "EKS cluster API server endpoint is publicly accessible but restricted to specific CIDRs; review the allowed ranges"
 	if openToInternet {
-		return &PublicAccessResult{
-			IsPublic:       true,
-			AllowedActions: []string{"eks:NetworkAccess"},
-			EvaluationReasons: []string{
-				"EKS cluster API server endpoint is publicly accessible from the entire internet (PublicAccessCidrs includes 0.0.0.0/0)",
-			},
-		}
+		reason = "EKS cluster API server endpoint is publicly accessible from the entire internet (PublicAccessCidrs includes 0.0.0.0/0 or ::/0); the endpoint still requires Kubernetes/IAM authentication, which requires manual review"
 	}
 	return &PublicAccessResult{
 		NeedsManualTriage: true,
 		AllowedActions:    []string{"eks:NetworkAccess"},
-		EvaluationReasons: []string{
-			"EKS cluster API server endpoint is publicly accessible but restricted to specific CIDRs; review the allowed ranges",
-		},
+		EvaluationReasons: []string{reason},
 	}
 }
 
@@ -505,10 +498,10 @@ func (e *ResourceEvaluator) evaluateAPIGatewayRest(resource *output.AWSResource,
 		}
 	}
 	return &PublicAccessResult{
-		IsPublic:       true,
-		AllowedActions: []string{"execute-api:Invoke"},
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"execute-api:Invoke"},
 		EvaluationReasons: []string{
-			fmt.Sprintf("REST API has %d method(s) with AuthorizationType NONE and no API key required (unauthenticated invocation)", unauth),
+			fmt.Sprintf("REST API has %d method(s) with AuthorizationType NONE and no API key required; confirm the API is deployed to a reachable stage with the default execute-api endpoint enabled", unauth),
 		},
 	}
 }
@@ -552,10 +545,10 @@ func (e *ResourceEvaluator) evaluateAPIGatewayV2(resource *output.AWSResource, _
 		return nil
 	}
 	return &PublicAccessResult{
-		IsPublic:       true,
-		AllowedActions: []string{"execute-api:Invoke"},
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"execute-api:Invoke"},
 		EvaluationReasons: []string{
-			fmt.Sprintf("HTTP/WebSocket API has %d route(s) with AuthorizationType NONE (unauthenticated invocation)", unauth),
+			fmt.Sprintf("HTTP/WebSocket API has %d route(s) with AuthorizationType NONE; confirm the API is deployed to a reachable stage with the default execute-api endpoint enabled", unauth),
 		},
 	}
 }

@@ -28,8 +28,13 @@ func enrichAPIGatewayWrapper(cfg plugin.EnricherConfig, r *output.AWSResource) e
 // returned by CloudControl; GetResources with the "methods" embed returns them
 // with their authorization settings, avoiding a GetMethod call per method.
 func EnrichAPIGatewayRestAPI(cfg plugin.EnricherConfig, r *output.AWSResource, client APIGatewayClient) error {
-	apiID, ok := r.Properties["RestApiId"].(string)
-	if !ok || apiID == "" {
+	apiID, _ := r.Properties["RestApiId"].(string)
+	if apiID == "" {
+		// RestApiId is the CloudControl primary identifier, so ResourceID holds
+		// it when the sparse list payload omits the property.
+		apiID = r.ResourceID
+	}
+	if apiID == "" {
 		return nil
 	}
 
