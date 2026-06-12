@@ -30,8 +30,9 @@ cypher: |
   // second fan-out MATCH to every Principal). Expressible guards:
   //   - admin-as-source exclusion; self-target exclusion.
   //   - trust + privilege applied as an existence precondition: require >=1
-  //     bedrock-agentcore-trusting privileged Role in the account; suppress when none
-  //     exists; tier severity by the best.
+  //     bedrock-agentcore-trusting privileged Role IN THE ATTACKER'S ACCOUNT (ARN segment 4
+  //     equality); suppress when none exists; tier severity by the best. The account guard
+  //     stops a candidate role in another tenant's account from satisfying the precondition.
   MATCH (attacker:Principal)-[perm]->(target)
   WHERE type(perm) = 'BEDROCK-AGENTCORE_INVOKESESSION'
     AND coalesce(attacker._is_admin, false) <> true
@@ -41,6 +42,7 @@ cypher: |
   WHERE 'bedrock-agentcore.amazonaws.com' IN coalesce(execrole.trusted_services, [])
     AND (coalesce(execrole._is_admin, false) = true OR coalesce(execrole._is_privileged, false) = true)
     AND coalesce(execrole.Arn, execrole.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND split(coalesce(execrole.Arn, execrole.arn), ':')[4] = split(coalesce(attacker.Arn, attacker.arn), ':')[4]
   WITH attacker, target,
        max(CASE WHEN coalesce(execrole._is_admin, false) = true THEN 2 ELSE 1 END) AS best_tier
   MERGE (attacker)-[pe:CAN_PRIVESC]->(target)

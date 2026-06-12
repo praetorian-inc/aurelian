@@ -15,6 +15,8 @@ order: 100
 cypher: |
   // New-passrole: target = passed EMR EC2 instance role. Guards (new-passrole template):
   //   - admin-as-source exclusion; self-target exclusion.
+  //   - service-linked-role exclusion (':role/aws-service-role/'): SLRs are AWS-owned and
+  //     cannot be passed as an EMR instance role, matching the other EC2/instance methods.
   //   - ec2 trust: 'ec2.amazonaws.com' IN victim.trusted_services (EMR nodes are EC2).
   //   - instance profile present: InstanceProfileList is a JSON string -> CONTAINS arn.
   //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
@@ -22,6 +24,7 @@ cypher: |
   WHERE type(passrole) = 'IAM_PASSROLE'
     AND coalesce(attacker._is_admin, false) <> true
     AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
     AND 'ec2.amazonaws.com' IN coalesce(victim.trusted_services, [])
     AND coalesce(victim.InstanceProfileList, '') CONTAINS 'arn:aws:iam'
     AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)

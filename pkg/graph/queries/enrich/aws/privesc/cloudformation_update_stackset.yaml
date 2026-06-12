@@ -1,5 +1,5 @@
 id: aws/enrich/privesc/cloudformation_update_stackset
-name: IAM PassRole + CloudFormation UpdateStackSet Privilege Escalation
+name: CloudFormation UpdateStackSet Privilege Escalation
 platform: aws
 type: enrich
 category: privesc

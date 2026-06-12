@@ -5,10 +5,13 @@ type: enrich
 category: resource-to-role
 description: |
   Links EC2 instances and Lambda functions to their IAM roles.
-  Role.InstanceProfileList is a JSON STRING (array-of-objects), not a Neo4j list, so
-  the EC2 match CONTAINS-substring-matches the instance's IamInstanceProfile value
-  inside the role's InstanceProfileList rather than parsing it (no APOC). Falls back
-  to a direct Role-ARN match (Lambda functions and instances that emit Role directly).
+  Role.InstanceProfileList is a JSON STRING (array-of-objects each carrying a quoted
+  "Arn":"arn:aws:iam::<acct>:instance-profile/<name>"), not a Neo4j list, so the EC2
+  match QUOTE-BINDS the instance's IamInstanceProfile ARN ('"' + arn + '"') as a
+  substring of the role's InstanceProfileList rather than parsing it (no APOC). Binding
+  the surrounding quotes stops a shorter profile ARN (instance-profile/ip) from
+  prefix-colliding with a longer one (instance-profile/ip-2). Falls back to a direct
+  Role-ARN match (Lambda functions and instances that emit Role directly).
 severity: info
 order: 1
 cypher: |
@@ -20,7 +23,7 @@ cypher: |
     OR (
       role.InstanceProfileList IS NOT NULL
       AND resource.IamInstanceProfile IS NOT NULL
-      AND role.InstanceProfileList CONTAINS resource.IamInstanceProfile
+      AND role.InstanceProfileList CONTAINS ('"' + resource.IamInstanceProfile + '"')
     )
   )
   MERGE (resource)-[:HAS_ROLE]->(role)

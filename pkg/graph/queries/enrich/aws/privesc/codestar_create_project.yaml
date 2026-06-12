@@ -13,20 +13,23 @@ description: |
   NOTE (no HAS_ROLE / no resource link): CodeStar projects are not modeled as a resource
   type by either resource-to-role enricher (no AWS::CodeStar::Project in the HAS_ROLE
   scope) and CodeStar has no service-trust principal to key a passed-role guard on, so
-  there is no graph target for the escalation. The query terminates at the matched
-  permission target node with the admin-as-source and self-target guards applied (target
-  privilege is fail-open on the sparse stub). Re-point CAN_PRIVESC at the toolchain
-  role once a CodeStar resource->role enricher lands.
+  there is no graph target for the escalation. The permission target is constrained to
+  :Principal so the method only merges CAN_PRIVESC to an actual principal — never to a
+  resource/service stub the permission edge happens to point at; codestar:CreateProject
+  resolves to the CodeStar service wildcard (a :Resource), so with no Principal target
+  this method emits no edge until a CodeStar resource->role enricher lands and the
+  CAN_PRIVESC edge can be re-pointed at the toolchain role.
 severity: medium
 order: 100
 cypher: |
   // No-resource-link (terminate at the permission target; drop the all-principals fan-out).
-  // Guards: admin-as-source exclusion; self-target exclusion. Target privilege fail-open
-  // on the sparse stub (no HAS_ROLE / no service-trust target available for CodeStar).
-  MATCH (attacker:Principal)-[perm]->(target)
+  // Constrain the target to :Principal so a non-Principal stub (CodeStar service wildcard)
+  // never receives a bogus CAN_PRIVESC. Guards: admin-as-source exclusion; self-target
+  // exclusion. Target privilege fail-open (no HAS_ROLE / no service-trust target for CodeStar).
+  MATCH (attacker:Principal)-[perm]->(target:Principal)
   WHERE type(perm) = 'CODESTAR_CREATEPROJECT'
     AND coalesce(attacker._is_admin, false) <> true
-    AND coalesce(target.Arn, target.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND coalesce(target.Arn, target.arn, '') <> coalesce(attacker.Arn, attacker.arn, '')
   WITH DISTINCT attacker, target
   MERGE (attacker)-[pe:CAN_PRIVESC]->(target)
   ON CREATE SET pe._created = timestamp()

@@ -15,9 +15,11 @@ description: |
 
   The role-bearing property lives INSIDE the flattened `properties` JSON STRING (the
   CloudControl Properties map is serialized to a string by the transformer, not exploded
-  into top-level node props), so this matches the role's ARN as a SUBSTRING of
-  `resource.properties` (no APOC, mirroring resource_to_role.yaml's InstanceProfileList
-  CONTAINS approach). The match is keyless: whichever property carries the role ARN
+  into top-level node props), so this matches the role's ARN as a QUOTED-VALUE substring
+  of `resource.properties` ('"' + arn + '"', no APOC, mirroring resource_to_role.yaml's
+  InstanceProfileList CONTAINS approach). Binding the surrounding quotes stops a shorter
+  role ARN from prefix-colliding with a longer one. The match is keyless: whichever
+  property carries the role ARN
   (RoleARN / ServiceRole / RoleArn / ExecutionRoleArn / TaskRoleArn / AdministrationRoleARN
   / InstanceRoleArn) appears as a value in that JSON and is matched the same way.
 
@@ -31,7 +33,9 @@ severity: info
 order: 15
 cypher: |
   // Service resource -> service role linkage. The role ARN is a value inside the
-  // flattened `properties` JSON string, so CONTAINS-substring-match it (no parsing/APOC).
+  // flattened `properties` JSON string, so QUOTE-BIND it ('"' + arn + '"'): the ARN
+  // appears as a quoted JSON value, and binding the closing quote stops a shorter
+  // role ARN from prefix-colliding with a longer one (e.g. role/svc vs role/svc-2).
   // Scoped to the resource types whose privesc methods re-point CAN_PRIVESC at the role.
   MATCH (role:Role)
   WHERE coalesce(role.Arn, role.arn) IS NOT NULL
@@ -49,6 +53,6 @@ cypher: |
       'AWS::DataPipeline::Pipeline'
     ]
     AND resource.properties IS NOT NULL
-    AND resource.properties CONTAINS coalesce(role.Arn, role.arn)
+    AND resource.properties CONTAINS ('"' + coalesce(role.Arn, role.arn) + '"')
   MERGE (resource)-[:HAS_ROLE]->(role)
   RETURN count(*) as links_created

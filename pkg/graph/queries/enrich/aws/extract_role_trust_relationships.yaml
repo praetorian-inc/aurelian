@@ -12,14 +12,17 @@ description: |
 severity: info
 order: 2
 cypher: |
+  // AssumeRolePolicyDocument is a JSON STRING. A bare CONTAINS of the principal ARN
+  // prefix-collides (':user/attacker' substring-matches ':user/attacker2'), so QUOTE-BIND
+  // both trust branches: trust docs name ARNs as fully-quoted JSON values ("arn:...").
   MATCH (role:Role)
   MATCH (principal:Principal)
   WHERE principal.Arn IS NOT NULL
   AND role.AssumeRolePolicyDocument IS NOT NULL
   AND (
-    role.AssumeRolePolicyDocument CONTAINS principal.Arn
+    role.AssumeRolePolicyDocument CONTAINS ('"' + principal.Arn + '"')
     OR role.AssumeRolePolicyDocument CONTAINS
-       ('arn:aws:iam::' + split(principal.Arn, ':')[4] + ':root')
+       ('"' + 'arn:aws:iam::' + split(principal.Arn, ':')[4] + ':root' + '"')
   )
   MERGE (principal)-[:CAN_ASSUME]->(role)
   RETURN count(*) as trust_relationships
