@@ -5,6 +5,7 @@ package recon
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -217,6 +218,30 @@ var pathfindingLabCases = []labTestCase{
 	// Step Functions: UpdateStateMachine alone
 	{"lab_fp_sfn_updatestatemachine_only_arn", "aws/enrich/privesc/stepfunctions_update", false,
 		"states:UpdateStateMachine alone → stepfunctions_update must NOT fire"},
+}
+
+// peMethodLiteral extracts the human-readable method string a privesc query
+// stamps onto its CAN_PRIVESC edge (e.g. "iam:PassRole + lambda:CreateFunction").
+// FP assertions match this exact value rather than the query-ID slug, because the
+// edge's r.method property stores the human-readable string — matching the slug
+// would never match, making the FP check vacuous. Reading it from the loaded
+// query's Cypher keeps the test in sync with the YAML rather than a hardcoded map.
+//
+// CAN_PRIVESC is now a multi-edge relationship: `method` lives in the MERGE
+// relationship pattern (`MERGE (a)-[pe:CAN_PRIVESC {method: '<M>'}]->(t)`), not in
+// a `SET pe.method = '<M>'` clause, so we match the `{method: '<M>'}` literal.
+var peMethodRe = regexp.MustCompile(`CAN_PRIVESC\s*\{method:\s*'([^']*)'\}`)
+
+func peMethodLiteral(methodID string) (string, bool) {
+	q, ok := queries.GetQuery(methodID)
+	if !ok {
+		return "", false
+	}
+	m := peMethodRe.FindStringSubmatch(q.Cypher)
+	if len(m) != 2 {
+		return "", false
+	}
+	return m[1], true
 }
 
 // TestPrivescPathfindingCloudE2E is a table-driven full-stack integration test
@@ -455,10 +480,7 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 				return
 			}
 
-			// Derive the method string from the methodID path (e.g. "iam_pass_role_lambda" → "iam_pass_role_lambda").
-			// The CAN_PRIVESC edge carries a "method" property set by each enrichment query.
-			// For FP tests we check that specific method didn't fire — not total count —
-			// because other simpler methods may legitimately fire on the same attacker.
+			// methodSuffix is the query-ID slug, used only for readable failure messages.
 			methodSuffix := tc.methodID[strings.LastIndex(tc.methodID, "/")+1:]
 
 			if tc.shouldFire {
@@ -481,15 +503,30 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 				assert.Greater(t, int(count), 0,
 					"[TP FAIL] %s (%s) — %s", tc.methodID, methodSuffix, tc.description)
 			} else {
-				// FP: the SPECIFIC method must not have fired.
-				// Check by matching the `method` property set by the enrichment Cypher.
-				// Other methods may legitimately fire on this attacker — that's expected.
+				// FP: the SPECIFIC method must not have fired for this attacker.
+				// The CAN_PRIVESC edge stores a human-readable r.method (e.g.
+				// "iam:PassRole + lambda:CreateFunction"), NOT the query-ID slug, so we
+				// match the exact method literal the query stamps — read from its Cypher.
+				// require() (not assert+skip) so a renamed/missing literal fails loud
+				// rather than turning the FP check vacuous. Exact equality (not CONTAINS)
+				// keeps the assertion sound: it fails iff THIS method fired. Other,
+				// simpler methods may legitimately fire on the same attacker — expected
+				// (e.g. lab_fp_sfn_no_startexecution also legitimately fires stepfunctions_create).
+				//
+				// With multi-edge CAN_PRIVESC (one edge per method) this check is now fully
+				// SOUND: each method owns its own edge keyed by `method`, so r.method = $method
+				// counts exactly THIS method's edge. Under the old single-edge model a
+				// last-write-wins `method` could mask an earlier method's edge from this count.
+				method, ok := peMethodLiteral(tc.methodID)
+				require.True(t, ok,
+					"could not extract pe.method literal for %s — FP check would be vacuous", tc.methodID)
+
 				result, err := db.Query(ctx,
 					`MATCH (a)-[r:CAN_PRIVESC]->()
 					 WHERE (a.Arn = $arn OR a.arn = $arn)
-					   AND r.method CONTAINS $method
+					   AND r.method = $method
 					 RETURN count(r) AS n`,
-					map[string]any{"arn": attackerARN, "method": methodSuffix})
+					map[string]any{"arn": attackerARN, "method": method})
 				require.NoError(t, err)
 				var count int64
 				if len(result.Records) > 0 {
@@ -501,7 +538,8 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 					}
 				}
 				assert.Equal(t, int64(0), count,
-					"[FP FAIL] %s (%s) — %s", tc.methodID, methodSuffix, tc.description)
+					"[FP FAIL] %s (%s, method=%q) fired for %s — %s",
+					tc.methodID, methodSuffix, method, attackerARN, tc.description)
 			}
 		})
 	}

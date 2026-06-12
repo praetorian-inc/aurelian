@@ -4,19 +4,29 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with iam:SetDefaultPolicyVersion permission that can 
-  activate previous policy versions to gain elevated access.
+  Detects principals with iam:SetDefaultPolicyVersion on a CUSTOMER-managed policy that
+  is attached to themselves: they can activate a previously-created (broader) policy
+  version, escalating their OWN privileges. Modeled as a self-loop (genuine
+  self-escalation), not a fan-out to every principal.
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[perm]->(target)
+  // Self-escalation: the attacker activates an inactive version of a managed policy
+  // attached to THEMSELVES. Guards (per FP catalog):
+  //   - admin-as-source: skip principals that are already admin.
+  //   - customer-managed only: AWS-managed policies (':iam::aws:policy/') are immutable.
+  //   - attached-to-attacker: AttachedManagedPolicies is a JSON string -> CONTAINS.
+  // NOTE (precondition not in graph): only escalates if the policy has >1 version AND a
+  // non-default version is broader than the current default. Version count / per-version
+  // documents are not projected, so that precondition is not enforced here.
+  MATCH (attacker:Principal)-[perm]->(policy)
   WHERE type(perm) = 'IAM_SETDEFAULTPOLICYVERSION'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+    AND coalesce(attacker._is_admin, false) <> true
+    AND NOT coalesce(policy.Arn, policy.arn) CONTAINS ':iam::aws:policy/'
+    AND coalesce(attacker.AttachedManagedPolicies, '') CONTAINS coalesce(policy.Arn, policy.arn)
+  WITH DISTINCT attacker
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:SetDefaultPolicyVersion'}]->(attacker)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:SetDefaultPolicyVersion',
-      pe.severity = 'high',
+  SET pe.severity = 'high',
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

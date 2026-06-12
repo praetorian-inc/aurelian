@@ -6,16 +6,33 @@ category: privesc-analysis
 description: |
   Identifies principals that can escalate to admin privileges through
   CAN_PRIVESC relationships. Maps privilege escalation chains of 1-3 hops
-  from non-admin principals to admin targets.
+  from non-admin principals to admin targets. CAN_PRIVESC is a multi-edge
+  relationship (one edge per method), so a single (attacker, target) pair may
+  yield several distinct method-paths — each is surfaced separately via the
+  per-hop `methods` sequence.
 severity: high
 order: 2
 cypher: |
+  // Each CAN_PRIVESC edge carries a `method`; with multi-edge relationships a pair
+  // may be reachable by several methods, so we enumerate the per-hop method sequence
+  // and dedup on the (attacker, target, methods) tuple to surface distinct method-paths.
+  //
+  // Path-explosion guardrail: *1..3 over parallel per-method edges can multiply paths
+  // combinatorially. We ORDER BY deterministically (shortest first, then ARNs/methods)
+  // and LIMIT 2000 so a pathological graph is bounded and any truncation is stable and
+  // reproducible — not a silent random drop. 2000 comfortably covers every realistic
+  // admin-reachable method-path in a single account scan.
   MATCH path = (attacker:Principal)-[:CAN_PRIVESC*1..3]->(target:Principal)
-  WHERE target._is_admin = true
-  AND NOT attacker._is_admin = true
-  AND attacker.Arn <> target.Arn
-  WITH attacker, target, length(path) AS hops, path
-  ORDER BY hops ASC
-  RETURN DISTINCT attacker.Arn AS attacker_arn,
-         target.Arn AS target_arn,
+  WHERE coalesce(target._is_admin, false) = true
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(attacker.Arn, attacker.arn) <> coalesce(target.Arn, target.arn)
+  WITH coalesce(attacker.Arn, attacker.arn) AS attacker_arn,
+       coalesce(target.Arn, target.arn) AS target_arn,
+       [r IN relationships(path) | r.method] AS methods,
+       length(path) AS hops
+  RETURN DISTINCT attacker_arn,
+         target_arn,
+         methods,
          hops AS hop_count
+  ORDER BY hop_count ASC, attacker_arn, target_arn, methods
+  LIMIT 2000

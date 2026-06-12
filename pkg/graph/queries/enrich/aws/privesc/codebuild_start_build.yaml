@@ -4,19 +4,35 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with codebuild:StartBuild permission that can start builds
-  on CodeBuild projects with elevated service roles.
+  Detects principals with codebuild:StartBuild (or StartBuildBatch) that can trigger a
+  build on an existing project and run arbitrary buildspec commands as that project's
+  already-attached service role. The escalation target is the project's SERVICE ROLE
+  (reached via the resource_service_role enricher's HAS_ROLE edge from
+  AWS::CodeBuild::Project), not an arbitrary principal — StartBuild re-uses the project's
+  role and cannot choose a new one. The HAS_ROLE link is mandatory (fail-closed): no
+  existing project means no role to inherit. Guards: target role must be more privileged
+  than the attacker.
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[perm]->(target)
+  // Existing-resource takeover (D / method_33): drop the all-principals fan-out. The
+  // victim is the privileged service role bound to a project the attacker can build,
+  // reached via (Project)-[:HAS_ROLE]->(role). HAS_ROLE mandatory (fail-closed).
+  // Guards: admin-as-source exclusion; self-target exclusion; privileged-target tiering.
+  MATCH (attacker:Principal)-[perm]->()
   WHERE type(perm) IN ['CODEBUILD_STARTBUILD', 'CODEBUILD_STARTBUILDBATCH']
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+    AND coalesce(attacker._is_admin, false) <> true
+  WITH DISTINCT attacker
+  MATCH (project:Resource)-[:HAS_ROLE]->(victim:Principal)
+  WHERE project._resourceType = 'AWS::CodeBuild::Project'
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'codebuild:StartBuild'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'codebuild:StartBuild',
-      pe.severity = 'high',
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

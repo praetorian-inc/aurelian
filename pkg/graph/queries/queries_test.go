@@ -210,6 +210,57 @@ func TestRunPlatformQueryNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "query not found", "error should indicate missing query")
 }
 
+// TestEnrichAWSTiebreaksByIDOnEqualOrder locks down the Metadata.ID tiebreaker in EnrichAWS's
+// sort: two AWS enrich queries sharing the same Order must execute in deterministic ID order
+// regardless of map-iteration order. Without the tiebreak, the map-backed registry would
+// surface them nondeterministically.
+func TestEnrichAWSTiebreaksByIDOnEqualOrder(t *testing.T) {
+	const (
+		loID = "aws/enrich/zz_tiebreak_a"
+		hiID = "aws/enrich/zz_tiebreak_b"
+		// Distinctive cypher so we can find each query's position in the call log.
+		loCypher = "MERGE (:TiebreakMarker {id: 'a'}) RETURN 1"
+		hiCypher = "MERGE (:TiebreakMarker {id: 'b'}) RETURN 1"
+	)
+
+	// Inject the pair (with inverted insertion order) into the shared registry, then restore.
+	// Snapshot any prior entries first so cleanup restores them instead of clobbering real
+	// registry queries that happen to share these IDs.
+	for _, id := range []string{loID, hiID} {
+		prior, existed := queryRegistry[id]
+		t.Cleanup(func() {
+			if existed {
+				queryRegistry[id] = prior
+			} else {
+				delete(queryRegistry, id)
+			}
+		})
+	}
+	for _, q := range []*Query{
+		{Metadata: QueryMetadata{ID: hiID, Platform: "aws", Type: "enrich", Order: 100}, Cypher: hiCypher},
+		{Metadata: QueryMetadata{ID: loID, Platform: "aws", Type: "enrich", Order: 100}, Cypher: loCypher},
+	} {
+		queryRegistry[q.Metadata.ID] = q
+	}
+
+	mock := newMockGraphDB()
+	require.NoError(t, EnrichAWS(context.Background(), mock))
+
+	loPos, hiPos := -1, -1
+	for i, cypher := range mock.queriesCalled {
+		switch cypher {
+		case loCypher:
+			loPos = i
+		case hiCypher:
+			hiPos = i
+		}
+	}
+	require.NotEqual(t, -1, loPos, "lower-ID tiebreak query should have executed")
+	require.NotEqual(t, -1, hiPos, "higher-ID tiebreak query should have executed")
+	assert.Less(t, loPos, hiPos,
+		"queries sharing the same Order must execute in ascending ID order (zz_tiebreak_a before zz_tiebreak_b)")
+}
+
 // TestNewPrivescQueriesLoad verifies all new pathfinding.cloud gap-analysis methods load correctly.
 func TestNewPrivescQueriesLoad(t *testing.T) {
 	newMethods := []string{
@@ -271,9 +322,11 @@ func TestNewPrivescQueriesLoad(t *testing.T) {
 			q, exists := GetQuery(id)
 			require.True(t, exists, "query %s should exist", id)
 			require.NotNil(t, q)
+			assert.Equal(t, id, q.Metadata.ID, "loaded query ID must match its registry key")
 			assert.Equal(t, "aws", q.Metadata.Platform)
 			assert.Equal(t, "enrich", q.Metadata.Type)
 			assert.Equal(t, "privesc", q.Metadata.Category)
+			assert.Equal(t, 100, q.Metadata.Order, "privesc methods run at order:100")
 			assert.NotEmpty(t, q.Cypher)
 			assert.Contains(t, q.Cypher, "CAN_PRIVESC", "should create CAN_PRIVESC relationship")
 		})

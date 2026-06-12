@@ -4,19 +4,36 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with iam:AddUserToGroup permission that can add users 
-  to groups with elevated permissions.
+  Detects principals with iam:AddUserToGroup that can add themselves to a PRIVILEGED
+  group they are not already a member of, inheriting that group's elevated permissions.
+  The escalation accrues to the attacker, so this is modeled as a self-loop
+  (self-escalation), not a fan-out to every principal. Suppressed when the reachable
+  group is not privileged (lateral) or the attacker is already a member (no-op).
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[perm]->(target)
+  // Self-escalation: attacker (a User) joins a privileged group not already in their
+  // GroupList. iam:AddUserToGroup resolves to a real :Group node (the action maps to the
+  // group ARN resource type), so scope to THAT group — do not re-MATCH every Group, which
+  // would flag an attacker scoped to one group for every privileged group AND make the
+  // self-loop's severity nondeterministic (set from whichever group sorted last). Group
+  // nodes carry the :Principal label, so set_admin_*/set_privileged flag them too.
+  // Guards (per FP catalog method_311/312):
+  //   - admin-as-source: skip principals that are already admin.
+  //   - target group must be privileged (admin or privileged), else suppress (lateral).
+  //   - attacker must NOT already be a member (GroupName not in attacker.GroupList).
+  MATCH (attacker:User)-[perm]->(group:Group)
   WHERE type(perm) = 'IAM_ADDUSERTOGROUP'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+    AND coalesce(attacker._is_admin, false) <> true
+    AND (coalesce(group._is_admin, false) = true OR coalesce(group._is_privileged, false) = true)
+    AND NOT coalesce(group.GroupName, '') IN coalesce(attacker.GroupList, [])
+  // Aggregate to the STRONGEST joinable group so the self-loop severity is deterministic
+  // when the attacker can add itself to several privileged groups (admin -> high beats
+  // privileged-only -> medium), rather than last-write-wins across rows.
+  WITH attacker,
+       max(CASE WHEN coalesce(group._is_admin, false) = true THEN 2 ELSE 1 END) AS best_tier
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:AddUserToGroup'}]->(attacker)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:AddUserToGroup',
-      pe.severity = 'high',
+  SET pe.severity = CASE WHEN best_tier = 2 THEN 'high' ELSE 'medium' END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

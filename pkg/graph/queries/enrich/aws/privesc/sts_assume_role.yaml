@@ -4,19 +4,34 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with sts:AssumeRole permission that can assume roles 
-  with elevated privileges.
+  Detects principals that can assume a role whose trust policy actually names them:
+  requires both the sts:AssumeRole permission edge AND a modeled CAN_ASSUME trust edge
+  (built by extract_role_trust_relationships from the role's AssumeRolePolicyDocument).
+  Trust-backed direct takeover is the finding, so this fails-OPEN on target privilege
+  (still emits to a sparse role whose _is_admin/_is_privileged are unknown), but the
+  severity is tiered: admin target -> high, privileged target -> medium, and an
+  unknown-sparse OR known-non-privileged target -> low (a lateral takeover, not high).
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[perm]->(target)
-  WHERE type(perm) = 'STS_ASSUMEROLE'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  // Trust-aware (B.7): drop the all-principals fan-out. The victim is the role the
+  // attacker can actually assume (a modeled CAN_ASSUME trust edge), AND the attacker
+  // must independently hold the sts:AssumeRole permission. The STS_ASSUMEROLE permission
+  // edge is resource-scoped by the evaluator but may target a Resource stub rather than
+  // the role Principal, so we require it via EXISTS rather than as the victim join.
+  // Guards: admin-as-source exclusion; self-target exclusion.
+  // Tiering (fail-open): admin -> high, privileged -> medium, unknown/non-privileged -> low.
+  MATCH (attacker:Principal)-[:CAN_ASSUME]->(victim:Principal)
+  WHERE coalesce(attacker._is_admin, false) <> true
+    AND EXISTS { (attacker)-[perm]->() WHERE type(perm) = 'STS_ASSUMEROLE' }
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'sts:AssumeRole'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'sts:AssumeRole',
-      pe.severity = 'high',
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

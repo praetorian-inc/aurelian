@@ -4,20 +4,33 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with apprunner:UpdateService permission that can modify an
-  existing App Runner service to execute privilege escalation commands under the
-  service's attached IAM role.
+  Detects principals with apprunner:UpdateService that can modify an EXISTING App Runner
+  service to run attacker code under that service's already-attached instance role and
+  steal its credentials (no iam:PassRole required). The escalation target is the role the
+  service RUNS AS, resolved via the (Resource)-[:HAS_ROLE]->(Role) enricher
+  (resource_service_role). Guards: the resource link is mandatory (fail-closed — no
+  arbitrary-principal fan-out), and the service role must be more privileged than the attacker.
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[perm]->(target)
+  // Existing-passrole / compute-takeover (per FP catalog / method_44): the victim is the
+  // role the EXISTING App Runner service runs as, joined via HAS_ROLE (mandatory; drop the
+  // all-principals cartesian fan-out). Guards:
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
+  MATCH (attacker:Principal)-[perm]->(resource)
   WHERE type(perm) = 'APPRUNNER_UPDATESERVICE'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+    AND coalesce(attacker._is_admin, false) <> true
+  WITH DISTINCT attacker, resource
+  MATCH (resource:Resource)-[:HAS_ROLE]->(victim:Principal)
+  WHERE coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'apprunner:UpdateService'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'apprunner:UpdateService',
-      pe.severity = 'high',
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

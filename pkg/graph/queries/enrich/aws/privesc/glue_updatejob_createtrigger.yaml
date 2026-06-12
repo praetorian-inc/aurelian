@@ -4,24 +4,51 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with iam:PassRole, glue:UpdateJob, and glue:CreateTrigger that can
-  modify an existing Glue job to use a privileged service role and create an automated
-  trigger for persistent execution without requiring on-demand StartJobRun permission.
+  Detects principals with glue:UpdateJob and glue:CreateTrigger that can repoint an EXISTING
+  Glue job at a privileged service role (or inject a malicious script) and create an
+  automated trigger for persistent execution without on-demand StartJobRun. This is an
+  existing-resource takeover: the escalation target is the SERVICE ROLE bound to a Glue job
+  the attacker can modify, reached via the resource_service_role enricher's
+  (Resource{AWS::Glue::Job})-[:HAS_ROLE]->(Role) edge. The HAS_ROLE link is MANDATORY
+  (fail-closed): no resolvable Glue job role -> no edge, which directly enforces the
+  FP-catalog method_78 "require at least one existing Glue Job resource" precondition (the
+  resource_service_role.yaml enricher DOES tag AWS::Glue::Job nodes). Guard: the target role
+  must be more privileged than the attacker.
+
+  RESIDUAL (deliberately fail-open, unobservable in the graph): CreateTrigger alone does not
+  fire a SCHEDULED/CONDITIONAL trigger - activation needs glue:StartTrigger or
+  start_on_creation. glue:StartTrigger is NOT one of the Glue actions the IAM evaluator
+  tracks (see pkg/aws/iam/action.go), so a GLUE_STARTTRIGGER edge is never emitted; gating on
+  it would be an always-false predicate that drops every true positive. Trigger-activation
+  feasibility is therefore left fail-open and flagged here, not enforced in Cypher.
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[passrole]->(victim:Principal)
-  WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker, victim
-  MATCH (attacker)-[update]->(svc)
+  // Existing-resource takeover (D/B.4 + FP catalog method_78): drop the all-principals
+  // fan-out AND the IAM_PASSROLE join. UpdateJob mutates an EXISTING job, so the victim is
+  // the privileged role bound to a Glue job the attacker can update, reached via
+  // (Resource{AWS::Glue::Job})-[:HAS_ROLE]->(role). resource_service_role.yaml (order 15)
+  // populates this edge for AWS::Glue::Job, so the catalog's existing-job precondition is
+  // gated fail-closed (no job -> no HAS_ROLE -> no edge). Glue-trust and SLR guards are
+  // implied (a role bound to a live Glue job is Glue-assumable and not an SLR). Guards:
+  // admin-as-source exclusion; self-target exclusion; privileged-target tiering.
+  // RESIDUAL (fail-open): trigger activation (glue:StartTrigger) is NOT a tracked action and
+  // never reaches the graph, so it cannot be gated - documented in the description.
+  MATCH (attacker:Principal)-[update]->()
   WHERE type(update) = 'GLUE_UPDATEJOB'
-  WITH attacker, victim, svc
-  MATCH (attacker)-[trigger]->(svc)
-  WHERE type(trigger) = 'GLUE_CREATETRIGGER'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND EXISTS { (attacker)-[trigger]->() WHERE type(trigger) = 'GLUE_CREATETRIGGER' }
+  WITH DISTINCT attacker
+  MATCH (job:Resource)-[:HAS_ROLE]->(victim:Principal)
+  WHERE job._resourceType = 'AWS::Glue::Job'
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
   WITH DISTINCT attacker, victim
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'glue:UpdateJob + glue:CreateTrigger'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:PassRole + glue:UpdateJob + glue:CreateTrigger',
-      pe.severity = 'high',
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

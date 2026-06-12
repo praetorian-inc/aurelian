@@ -4,21 +4,41 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with both iam:PassRole and cloudformation:CreateStackSet
-  permissions that can create a CloudFormation StackSet with an administrative
-  execution role to deploy escalated IAM resources across accounts.
+  Detects principals with both iam:PassRole and cloudformation:CreateStackSet that can
+  create a self-managed StackSet with a privileged execution role and deploy escalated
+  IAM resources. The escalation target is the PASSED execution role (not the StackSet
+  resource). Guards: the role must trust cloudformation.amazonaws.com, must not be a
+  service-linked role, and must be more privileged than the attacker.
+
+  NOTE (missing-precondition): self-managed StackSet deployment also requires
+  cloudformation:CreateStackInstances plus Organizations StackSet trusted-access and a
+  target-account inventory. CreateStackInstances IS expressible, so it is required here;
+  org/trusted-access state and target-account inventory are not in the graph and are
+  left as an engine/data dependency.
 severity: high
 order: 100
 cypher: |
+  // New-passrole (B / method_48): target = passed StackSet execution role. Guards:
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - cloudformation trust: 'cloudformation.amazonaws.com' IN victim.trusted_services.
+  //   - exclude service-linked roles (':role/aws-service-role/' cannot serve as execution role).
+  //   - require CreateStackInstances too (CreateStackSet alone never instantiates IAM).
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
   MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker, victim
-  MATCH (attacker)-[create]->(service_resource)
-  WHERE type(create) = 'CLOUDFORMATION_CREATESTACKSET'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'cloudformation.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[c]->() WHERE type(c) = 'CLOUDFORMATION_CREATESTACKSET' }
+    AND EXISTS { (attacker)-[i]->() WHERE type(i) = 'CLOUDFORMATION_CREATESTACKINSTANCES' }
   WITH DISTINCT attacker, victim
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + cloudformation:CreateStackSet'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:PassRole + cloudformation:CreateStackSet',
-      pe.severity = 'high',
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

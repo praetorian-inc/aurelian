@@ -11,18 +11,32 @@ description: |
 severity: high
 order: 100
 cypher: |
+  // New-passrole, complete combo (B-cat 3): target = passed role (the execution role).
+  // CreateStateMachine + StartExecution together author AND run the IAM-calling workflow.
+  // Guards (per FP catalog rows 373-376):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - same-account: iam:PassRole is account-local, so attacker & passed-role accounts
+  //     (5th ':'-field of the ARN) must match (per FP catalog rows 18, 605).
+  //   - states trust: 'states.amazonaws.com' IN victim.trusted_services.
+  //   - BOTH actions held by the same attacker via EXISTS (matched by type, not on a shared
+  //     sparse svc stub: create may key off statemachine/* while start keys off the ARN, so
+  //     forcing the same node would drop valid attackers — see the Glue same-stub note).
+  //   - privileged-target suppression (lateral => drop).
   MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker, victim
-  MATCH (attacker)-[create]->(svc)
-  WHERE type(create) = 'STATES_CREATESTATEMACHINE'
-  WITH attacker, victim, svc
-  MATCH (attacker)-[start]->(svc)
-  WHERE type(start) = 'STATES_STARTEXECUTION'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND split(coalesce(attacker.Arn, attacker.arn), ':')[4] = split(coalesce(victim.Arn, victim.arn), ':')[4]
+    AND 'states.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[create]->() WHERE type(create) = 'STATES_CREATESTATEMACHINE' }
+    AND EXISTS { (attacker)-[start]->() WHERE type(start) = 'STATES_STARTEXECUTION' }
   WITH DISTINCT attacker, victim
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + states:CreateStateMachine + states:StartExecution'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:PassRole + states:CreateStateMachine + states:StartExecution',
-      pe.severity = 'high',
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

@@ -6,18 +6,34 @@ category: privesc
 description: |
   Detects principals with ec2-instance-connect:SendSSHPublicKey permission that
   can push a temporary SSH public key to an EC2 instance, SSH in, and extract
-  IAM role credentials from the instance metadata service (IMDS).
+  IAM role credentials from the instance metadata service (IMDS). The escalation
+  target is the IAM role attached to the reachable instance (via HAS_ROLE), NOT an
+  arbitrary principal, and must be more privileged than the attacker. Residual: SSH
+  network reachability and IMDS HttpEndpoint state are not in the graph.
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[perm]->(target)
-  WHERE type(perm) = 'EC2-INSTANCE-CONNECT_SENDSSHPUBLICKEY'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  // Compute-takeover (catalog 136-139): target = the role on an instance the attacker
+  // can SSH into (HAS_ROLE, fail-closed). The action edge often resolves to a '*'/Resource
+  // stub rather than the instance node, so the action is required via EXISTS and the
+  // instance is reached via HAS_ROLE (mirrors the SSM compute-takeover pattern).
+  // Guards: admin-as-source; self-target; privileged-target (suppress non-privileged);
+  // exclude service-linked roles.
+  MATCH (attacker:Principal)
+  WHERE coalesce(attacker._is_admin, false) <> true
+    AND EXISTS { (attacker)-[perm]->() WHERE type(perm) = 'EC2-INSTANCE-CONNECT_SENDSSHPUBLICKEY' }
+  WITH DISTINCT attacker
+  MATCH (instance:Resource {_resourceType: 'AWS::EC2::Instance'})-[:HAS_ROLE]->(victim:Principal)
+  WHERE coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'ec2-instance-connect:SendSSHPublicKey'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'ec2-instance-connect:SendSSHPublicKey',
-      pe.severity = 'high',
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

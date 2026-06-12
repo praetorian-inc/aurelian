@@ -4,22 +4,42 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals that can update a role's trust policy, pass the role,
-  and invoke a service to assume it. This compound method covers scenarios
-  where the attacker modifies a trust policy to allow a service, passes the
-  role to that service, then uses the service to assume the now-trusted role.
+  Detects principals that can rewrite a role's trust policy (iam:UpdateAssumeRolePolicy) AND
+  pass that SAME role to a service (iam:PassRole), gaining the role's standing privileges by
+  making it assumable. The escalation target is the role whose trust is rewritten. Because
+  the attacker controls the new trust document, the rewrite is self-sufficient for
+  assumption (they can add themselves or the service they pass it to), so no pre-existing
+  CAN_ASSUME path is required. Unlike a policy write, rewriting trust does not add power to
+  the role, so a privileged-target guard IS applied: a non-privileged role is lateral
+  movement, not escalation. Guards: admin-as-source and self-target exclusion, Role-only
+  target scoping, exclusion of service-linked roles (trust policy cannot be modified on
+  SLRs), the PassRole leg bound to the SAME role, and privileged-target tiering.
 severity: high
 order: 100
 cypher: |
+  // Multi-perm on one target role (per FP catalog method_13/42 / 248-252):
+  //   - both UpdateAssumeRolePolicy AND PassRole must resolve to the SAME role node.
+  //   - admin-as-source exclusion; self-target exclusion (casing-safe coalesce).
+  //   - require the :Role label (UpdateAssumeRolePolicy only applies to roles).
+  //   - exclude service-linked roles (trust policy immutable on SLRs).
+  //   - privileged-target tiering (rewriting trust grants entry, not new power):
+  //     admin -> high, privileged -> medium, else suppress.
+  //   - assume capability is satisfied by the trust rewrite itself (attacker controls the
+  //     new trust doc), so no separate CAN_ASSUME precondition is needed (catalog 249).
   MATCH (attacker:Principal)-[update]->(target:Role)
   WHERE type(update) = 'IAM_UPDATEASSUMEROLEPOLICY'
-  AND target.Arn <> attacker.Arn
-  WITH attacker, target
-  MATCH (attacker)-[passrole]->(target)
-  WHERE type(passrole) = 'IAM_PASSROLE'
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(target)
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(target.Arn, target.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND NOT coalesce(target.Arn, target.arn) CONTAINS ':role/aws-service-role/'
+    AND (coalesce(target._is_admin, false) = true OR coalesce(target._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[pr]->(target) WHERE type(pr) = 'IAM_PASSROLE' }
+  WITH DISTINCT attacker, target
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:UpdateAssumeRolePolicy + iam:PassRole + service'}]->(target)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:UpdateAssumeRolePolicy + iam:PassRole + service',
-      pe.severity = 'high',
+  SET pe.severity = CASE
+        WHEN coalesce(target._is_admin, false) = true THEN 'high'
+        WHEN coalesce(target._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

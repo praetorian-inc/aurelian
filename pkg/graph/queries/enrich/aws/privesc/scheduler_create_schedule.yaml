@@ -10,15 +10,29 @@ description: |
 severity: high
 order: 100
 cypher: |
+  // New-passrole (B-cat 3): target = passed role that EventBridge Scheduler assumes to
+  // invoke the scheduled (privileged) API call. The role must trust scheduler.amazonaws.com.
+  // Guards (per FP catalog rows 377-379):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - same-account: iam:PassRole is account-local, so attacker & passed-role accounts
+  //     (5th ':'-field of the ARN) must match (per FP catalog rows 18, 605).
+  //   - scheduler trust: 'scheduler.amazonaws.com' IN victim.trusted_services.
+  //   - CreateSchedule held by the same attacker (EXISTS, not a fan-out join).
+  //   - privileged-target suppression (lateral => drop).
   MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker, victim
-  MATCH (attacker)-[create]->(service_resource)
-  WHERE type(create) = 'SCHEDULER_CREATESCHEDULE'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND split(coalesce(attacker.Arn, attacker.arn), ':')[4] = split(coalesce(victim.Arn, victim.arn), ':')[4]
+    AND 'scheduler.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[create]->() WHERE type(create) = 'SCHEDULER_CREATESCHEDULE' }
   WITH DISTINCT attacker, victim
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + scheduler:CreateSchedule'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:PassRole + scheduler:CreateSchedule',
-      pe.severity = 'high',
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

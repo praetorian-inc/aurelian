@@ -10,17 +10,30 @@ description: |
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[update]->(target)
+  // Compute-takeover: both actions on the SAME function (no fan-out); target = that
+  // function's execution role via HAS_ROLE (mandatory/fail-closed). Guards (method_39):
+  //   - admin-as-source exclusion; self-target exclusion (on resolved Principal).
+  //   - keep MATCH (fn)-[:HAS_ROLE]->(victim) fail-closed (no OPTIONAL MATCH).
+  //   - privileged-target: the default logs-only execution role is lateral, not escalation.
+  //   - same-account: require the execution role's account segment to match the attacker's.
+  MATCH (attacker:Principal)-[update]->(fn)
   WHERE type(update) = 'LAMBDA_UPDATEFUNCTIONCODE'
-  WITH attacker, target
-  MATCH (attacker)-[invoke]->(target)
+    AND coalesce(attacker._is_admin, false) <> true
+  WITH attacker, fn
+  MATCH (attacker)-[invoke]->(fn)
   WHERE type(invoke) = 'LAMBDA_INVOKEFUNCTION'
-  WITH attacker, target
-  MATCH (target)-[:HAS_ROLE]->(victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  WITH attacker, fn
+  MATCH (fn)-[:HAS_ROLE]->(victim:Principal)
+  WHERE coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND split(coalesce(victim.Arn, victim.arn), ':')[4] = split(coalesce(attacker.Arn, attacker.arn), ':')[4]
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'lambda:UpdateFunctionCode + lambda:InvokeFunction'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'lambda:UpdateFunctionCode + lambda:InvokeFunction',
-      pe.severity = 'high',
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

@@ -4,19 +4,44 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with iam:CreateAccessKey permission that can create 
-  access keys for other users.
+  Detects principals with iam:CreateAccessKey on a specific privileged IAM USER:
+  the attacker mints long-lived programmatic credentials for that user and acts as
+  them. The edge is SCOPED to the principal the IAM_CREATEACCESSKEY permission points
+  at (no all-principals fan-out), restricted to user targets, and suppressed unless
+  the target user is admin/privileged (resetting a non-privileged user is lateral).
+  The <2-active-access-keys precondition (else CreateAccessKey returns LimitExceeded)
+  is not directly in the graph; the cypher-expressible proxy is to also require
+  iam:DeleteAccessKey on the SAME target user, so the attacker can free a key slot if
+  the user already holds two keys (catalog method_03+28 combo). Exact key count still
+  needs a ListAccessKeys enricher; noted.
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[perm]->(target)
+  // Principal-access (B.7): drop the all-principals fan-out. The victim is the principal
+  // the IAM_CREATEACCESSKEY permission edge actually points at.
+  // Guards (per FP catalog method_03 / row 238):
+  //   - admin-as-source: skip attackers that are already admin.
+  //   - target must be an IAM USER (access keys exist only on users; roles use STS,
+  //     groups have no credentials).
+  //   - self-target exclusion (casing-tolerant coalesce).
+  //   - lateral-vs-admin: suppress non-privileged targets; tier severity by target.
+  //   - key-slot fallback: also require IAM_DELETEACCESSKEY to the SAME target node
+  //     (permission edges carry no resource ARN, so same-node is the proxy for same-user),
+  //     covering the <2-keys precondition by letting the attacker free a slot.
+  MATCH (attacker:Principal)-[perm]->(target:Principal)
   WHERE type(perm) = 'IAM_CREATEACCESSKEY'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(target.Arn, target.arn) CONTAINS ':user/'
+    AND coalesce(target.Arn, target.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND (coalesce(target._is_admin, false) = true OR coalesce(target._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[d]->(target) WHERE type(d) = 'IAM_DELETEACCESSKEY' }
+  WITH DISTINCT attacker, target
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:CreateAccessKey'}]->(target)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:CreateAccessKey',
-      pe.severity = 'high',
+  SET pe.severity = CASE
+        WHEN coalesce(target._is_admin, false) = true THEN 'high'
+        WHEN coalesce(target._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created
