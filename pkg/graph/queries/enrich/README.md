@@ -56,6 +56,24 @@ Queries are executed in ascending `order` field:
 2. **Order 10-13**: Admin/privilege detection
 3. **Order 100**: Privilege escalation path detection (privesc methods, mutually order-independent)
 
+## Cross-cutting privesc-method guards (Phase 2)
+
+Reusable Cypher clauses applied to every corrected CAN_PRIVESC method (depend on the
+order 10-13 enrichers having run). Apply these mechanically when fanning out a method:
+
+- **Admin-as-source exclusion** (every method): `coalesce(attacker._is_admin, false) <> true`.
+- **Self-target exclusion** (every non-self-escalation method):
+  `coalesce(target.Arn, target.arn) <> coalesce(attacker.Arn, attacker.arn)`.
+  Genuine self-escalation methods deliberately MERGE a self-loop instead.
+- **Lateral-vs-admin severity tiering** on the privesc target:
+  `severity = 'high'` when `target._is_admin`, `'medium'` when `target._is_privileged`
+  (not admin), and SUPPRESS (do not emit) when neither — EXCEPT trust-backed
+  direct-takeover (e.g. `sts:AssumeRole` via a real `CAN_ASSUME` edge), which fails-OPEN
+  (emits even on a sparse target whose privilege is unknown) because the takeover is the
+  finding.
+- **No APOC**: JSON-string props (`AttachedManagedPolicies`, `InstanceProfileList`,
+  `AssumeRolePolicyDocument`) are matched with `CONTAINS`, never parsed.
+
 ## YAML Format
 
 Each query follows this structure:

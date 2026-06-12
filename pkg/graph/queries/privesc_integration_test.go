@@ -110,7 +110,20 @@ func passRoleCaseFanOut(queryID, svcPermType string) privescTestCase {
 func allPrivescCases() []privescTestCase {
 	return []privescTestCase{
 		// ---- Methods 01–42 (pre-PR baseline) ----
-		standaloneCase("aws/enrich/privesc/iam_create_policy_version", "IAM_CREATEPOLICYVERSION"),
+		// iam_create_policy_version: Phase-2 self-escalation. The attacker can version a
+		// CUSTOMER-managed policy that is attached to themselves -> self-loop CAN_PRIVESC.
+		// (The old fan-out-to-every-principal behavior was the cartesian bug.)
+		{
+			queryID: "aws/enrich/privesc/iam_create_policy_version",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s', AttachedManagedPolicies: '[{"PolicyArn":"%s"}]'})
+				CREATE (p:Resource  {Arn: '%s'})
+				WITH a, p
+				MERGE (a)-[:IAM_CREATEPOLICYVERSION]->(p)
+			`, attackerARN, "arn:aws:iam::123456789012:policy/custom", "arn:aws:iam::123456789012:policy/custom"),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(a) RETURN count(r) AS n`, attackerARN),
+			wantEdges: 1,
+		},
 		standaloneCase("aws/enrich/privesc/iam_set_default_policy_version", "IAM_SETDEFAULTPOLICYVERSION"),
 		standaloneCase("aws/enrich/privesc/iam_create_access_key", "IAM_CREATEACCESSKEY"),
 		standaloneCase("aws/enrich/privesc/iam_create_login_profile", "IAM_CREATELOGINPROFILE"),
@@ -124,14 +137,46 @@ func allPrivescCases() []privescTestCase {
 		standaloneCase("aws/enrich/privesc/iam_add_user_to_group", "IAM_ADDUSERTOGROUP"),
 		standaloneCase("aws/enrich/privesc/iam_update_assume_role_policy", "IAM_UPDATEASSUMEROLEPOLICY"),
 		passRoleCase("aws/enrich/privesc/iam_pass_role_lambda", "LAMBDA_CREATEFUNCTION"),
-		passRoleCase("aws/enrich/privesc/iam_pass_role_ec2", "EC2_RUNINSTANCES"),
+		// iam_pass_role_ec2: Phase-2 new-passrole fix. Target = the passed role (a
+		// :Principal), NOT the EC2 service resource. Guards: role trusts ec2, has an
+		// instance profile, and is privileged. The passed role is seeded with all three.
+		{
+			queryID: "aws/enrich/privesc/iam_pass_role_ec2",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (r:Principal {Arn: '%s', _is_admin: true,
+					trusted_services: ['ec2.amazonaws.com'],
+					InstanceProfileList: '[{"Arn":"arn:aws:iam::123456789012:instance-profile/ip"}]'})
+				CREATE (s:Resource  {Arn: '%s'})
+				WITH a, r, s
+				MERGE (a)-[:IAM_PASSROLE]->(r)
+				MERGE (a)-[:EC2_RUNINSTANCES]->(s)
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
+			wantEdges: 1,
+		},
 		passRoleCase("aws/enrich/privesc/iam_pass_role_cloudformation", "CLOUDFORMATION_CREATESTACK"),
 		passRoleCase("aws/enrich/privesc/iam_pass_role_datapipeline", "DATAPIPELINE_CREATEPIPELINE"),
 		passRoleCase("aws/enrich/privesc/iam_pass_role_glue", "GLUE_CREATEJOB"),
 		passRoleCase("aws/enrich/privesc/iam_pass_role_sagemaker", "SAGEMAKER_CREATENOTEBOOKINSTANCE"),
 		standaloneCase("aws/enrich/privesc/lambda_update_function_code", "LAMBDA_UPDATEFUNCTIONCODE"),
 		standaloneCase("aws/enrich/privesc/lambda_create_event_source_mapping", "LAMBDA_CREATEEVENTSOURCEMAPPING"),
-		standaloneCase("aws/enrich/privesc/sts_assume_role", "STS_ASSUMEROLE"),
+		// sts_assume_role: Phase-2 trust-aware fix (B.7). Requires BOTH the STS_ASSUMEROLE
+		// permission AND a modeled CAN_ASSUME trust edge to the target role; the old
+		// fan-out to every principal (no trust check) was the cartesian bug.
+		{
+			queryID: "aws/enrich/privesc/sts_assume_role",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (v:Principal {Arn: '%s', _is_admin: true})
+				CREATE (t:Resource  {Arn: '%s'})
+				WITH a, v, t
+				MERGE (a)-[:STS_ASSUMEROLE]->(t)
+				MERGE (a)-[:CAN_ASSUME]->(v)
+			`, attackerARN, roleARN, svcResourceARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
+			wantEdges: 1,
+		},
 		standaloneCase("aws/enrich/privesc/ssm_send_command", "SSM_SENDCOMMAND"),
 		standaloneCase("aws/enrich/privesc/ssm_start_session", "SSM_STARTSESSION"),
 		standaloneCase("aws/enrich/privesc/ec2_ssm_association", "SSM_CREATEASSOCIATION"),
@@ -142,18 +187,19 @@ func allPrivescCases() []privescTestCase {
 		standaloneCase("aws/enrich/privesc/glue_update_dev_endpoint", "GLUE_UPDATEDEVENDPOINT"),
 		// cloudformation_update_stack: standalone — UpdateStack on existing stack, no PassRole needed
 		standaloneCase("aws/enrich/privesc/cloudformation_update_stack", "CLOUDFORMATION_UPDATESTACK"),
-		// cloudformation_changeset: CreateChangeSet + ExecuteChangeSet on the SAME stack (no PassRole)
+		// cloudformation_changeset: Phase-2 multi-perm fix. Both change-set actions must
+		// resolve to the SAME stack stub, and the edge terminates at that stub (no fan-out
+		// to every principal). Stack->role binding is deferred to a fan-out enricher.
 		{
 			queryID: "aws/enrich/privesc/cloudformation_changeset",
 			setup: fmt.Sprintf(`
 				CREATE (a:Principal {Arn: '%s'})
-				CREATE (v:Principal {Arn: '%s'})
 				CREATE (t:Resource  {Arn: '%s'})
-				WITH a, v, t
+				WITH a, t
 				MERGE (a)-[:CLOUDFORMATION_CREATECHANGESET]->(t)
 				MERGE (a)-[:CLOUDFORMATION_EXECUTECHANGESET]->(t)
-			`, attackerARN, victimARN, roleARN),
-			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, victimARN),
+			`, attackerARN, roleARN),
+			verify:    fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(t {Arn: '%s'}) RETURN count(r) AS n`, attackerARN, roleARN),
 			wantEdges: 1,
 		},
 		passRoleCase("aws/enrich/privesc/ecs_passrole_runtask", "ECS_RUNTASK"),
@@ -761,24 +807,30 @@ func TestPrivescMultiHopPaths(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { db.Close() })
 
-	// Seed four Principal nodes with IAM permission edges so EnrichAWS creates
-	// CAN_PRIVESC edges between them via standalone methods (methods 01–13 fire
-	// for ALL other principals, building a fully-connected escalation graph).
+	// Seed Principal nodes with IAM permission edges so EnrichAWS creates CAN_PRIVESC
+	// edges. NOTE: in this Phase-2 slice iam_create_policy_version is now a SELF-LOOP
+	// (genuine self-escalation, scoped to a customer-managed policy attached to the
+	// attacker), not the old fan-out-to-every-principal. The other two methods used
+	// here (iam_put_role_policy, iam_update_login_profile) are NOT yet fixed and still
+	// fan out — they are used to keep the multi-hop chain assertions exercising the
+	// analysis traversal until those methods are corrected in fan-out.
 	_, err = db.Query(ctx, `
-		CREATE (low:Principal  {Arn: 'arn:aws:iam::123456789012:user/low',  _is_admin: false})
+		CREATE (low:Principal  {Arn: 'arn:aws:iam::123456789012:user/low',  _is_admin: false,
+			AttachedManagedPolicies: '[{"PolicyArn":"arn:aws:iam::123456789012:policy/p"}]'})
 		CREATE (mid:Principal  {Arn: 'arn:aws:iam::123456789012:role/mid',  _is_admin: false})
 		CREATE (high:Principal {Arn: 'arn:aws:iam::123456789012:role/high', _is_admin: false})
 		CREATE (admin:Principal{Arn: 'arn:aws:iam::123456789012:role/admin',_is_admin: true})
 		CREATE (policy:Resource{Arn: 'arn:aws:iam::123456789012:policy/p'})
 		WITH low, mid, high, admin, policy
 
-		// low: CreatePolicyVersion → CAN_PRIVESC to mid, high, admin (iam_create_policy_version)
+		// low: CreatePolicyVersion on a customer-managed policy attached to itself
+		//      → SELF-LOOP CAN_PRIVESC(low → low) (Phase-2 corrected self-escalation).
 		MERGE (low)-[:IAM_CREATEPOLICYVERSION]->(policy)
 
-		// mid: PutRolePolicy → CAN_PRIVESC to low, high, admin (iam_put_role_policy)
+		// mid: PutRolePolicy → CAN_PRIVESC to low, high, admin (iam_put_role_policy, unfixed)
 		MERGE (mid)-[:IAM_PUTROLEPOLICY]->(policy)
 
-		// high: UpdateLoginProfile → CAN_PRIVESC to low, mid, admin (iam_update_login_profile)
+		// high: UpdateLoginProfile → CAN_PRIVESC to low, mid, admin (iam_update_login_profile, unfixed)
 		MERGE (high)-[:IAM_UPDATELOGINPROFILE]->(admin)
 	`, nil)
 	require.NoError(t, err, "seed multi-hop graph")
@@ -786,13 +838,28 @@ func TestPrivescMultiHopPaths(t *testing.T) {
 	err = EnrichAWS(ctx, db)
 	require.NoError(t, err, "EnrichAWS should succeed")
 
-	t.Run("enrichment_creates_1hop_low_to_admin", func(t *testing.T) {
+	t.Run("self_escalation_low_self_loop_via_create_policy_version", func(t *testing.T) {
+		// Phase-2: iam_create_policy_version is a self-loop, not a fan-out. low can
+		// version a customer-managed policy attached to itself → CAN_PRIVESC(low → low).
 		result, err := db.Query(ctx,
-			`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/low'})-[r:CAN_PRIVESC]->(b {Arn: 'arn:aws:iam::123456789012:role/admin'})
+			`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/low'})-[r:CAN_PRIVESC]->(a)
 			 RETURN count(r) AS n`, nil)
 		require.NoError(t, err)
 		n, _ := toInt64(result.Records[0]["n"])
-		assert.GreaterOrEqual(t, int(n), 1, "low → admin direct 1-hop via iam_create_policy_version")
+		assert.GreaterOrEqual(t, int(n), 1,
+			"low → low self-loop via iam_create_policy_version (corrected self-escalation)")
+	})
+
+	t.Run("create_policy_version_no_fanout_to_other_principals", func(t *testing.T) {
+		// Phase-2 cartesian fix: low's only escalation perm is CreatePolicyVersion, which
+		// now self-loops. It must NOT fan out to mid/high/admin.
+		result, err := db.Query(ctx,
+			`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/low'})-[:CAN_PRIVESC]->(b:Principal)
+			 WHERE b.Arn <> a.Arn RETURN count(b) AS n`, nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.Equal(t, int64(0), n,
+			"low must NOT fan out to other principals — iam_create_policy_version self-loops")
 	})
 
 	t.Run("enrichment_creates_1hop_mid_to_admin", func(t *testing.T) {
@@ -802,24 +869,6 @@ func TestPrivescMultiHopPaths(t *testing.T) {
 		require.NoError(t, err)
 		n, _ := toInt64(result.Records[0]["n"])
 		assert.GreaterOrEqual(t, int(n), 1, "mid → admin direct 1-hop via iam_put_role_policy")
-	})
-
-	t.Run("enrichment_creates_principal_to_principal_edges", func(t *testing.T) {
-		// Standalone methods fire for ALL other principals; low should have edges to mid and high.
-		result, err := db.Query(ctx,
-			`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/low'})-[:CAN_PRIVESC]->(b:Principal)
-			 WHERE b.Arn <> a.Arn RETURN count(b) AS n`, nil)
-		require.NoError(t, err)
-		n, _ := toInt64(result.Records[0]["n"])
-		assert.GreaterOrEqual(t, int(n), 3,
-			"low should have CAN_PRIVESC edges to mid, high, and admin (at least 3 principals)")
-	})
-
-	t.Run("no_self_privesc_edges", func(t *testing.T) {
-		result, err := db.Query(ctx, `MATCH (a)-[r:CAN_PRIVESC]->(a) RETURN count(r) AS n`, nil)
-		require.NoError(t, err)
-		n, _ := toInt64(result.Records[0]["n"])
-		assert.Equal(t, int64(0), n, "no principal should have a CAN_PRIVESC edge to itself")
 	})
 }
 
@@ -1316,11 +1365,14 @@ func TestPrivescEnrichAWSIdempotent(t *testing.T) {
 //
 // Graph:  attacker --[apprunner_create_service scoped]--> intermediate (passed role)
 //
-//	intermediate --[iam_create_policy_version standalone]--> admin
+//	intermediate --[iam_put_role_policy standalone]--> admin
 //
 // The key: attacker passes an IAM role (intermediate) that itself has standalone
 // IAM escalation paths. The scoped fix ensures intermediate is a reachable
 // Principal node in the graph, enabling the 2-hop chain.
+// NOTE: the intermediate→admin hop uses iam_put_role_policy (still a fan-out method,
+// not yet corrected in this Phase-2 slice). It previously used iam_create_policy_version,
+// which is now a self-loop and can no longer reach admin.
 func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 	ctx := context.Background()
 
@@ -1341,8 +1393,8 @@ func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 
 	// intermediate IS the passed role: attacker passes it via IAM_PASSROLE so
 	// apprunner_create_service creates attacker → [CAN_PRIVESC] → intermediate (scoped victim).
-	// intermediate also has IAM_CREATEPOLICYVERSION so iam_create_policy_version fans out
-	// intermediate → [CAN_PRIVESC] → admin.
+	// intermediate also has IAM_PUTROLEPOLICY so iam_put_role_policy fans out
+	// intermediate → [CAN_PRIVESC] → admin (still a fan-out method this slice).
 	_, err = db.Query(ctx, fmt.Sprintf(`
 		CREATE (attacker:Principal    {Arn: '%s', _is_admin: false})
 		CREATE (intermediate:Principal{Arn: '%s', _is_admin: false})
@@ -1352,7 +1404,7 @@ func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 		WITH attacker, intermediate, admin, svc, policy
 		MERGE (attacker)-[:IAM_PASSROLE]->(intermediate)
 		MERGE (attacker)-[:APPRUNNER_CREATESERVICE]->(svc)
-		MERGE (intermediate)-[:IAM_CREATEPOLICYVERSION]->(policy)
+		MERGE (intermediate)-[:IAM_PUTROLEPOLICY]->(policy)
 	`, attackerARN, interARN, adminARN, svcResourceARN, policyARN), nil)
 	require.NoError(t, err, "seed multi-hop graph")
 
@@ -1390,13 +1442,191 @@ func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 
 	t.Run("attacker_2hop_to_admin_via_intermediate", func(t *testing.T) {
 		assert.True(t, found[pathKey{attackerARN, 2}],
-			"attacker must reach admin in 2 hops: attacker→intermediate (apprunner_create_service scoped) → admin (iam_create_policy_version). "+
+			"attacker must reach admin in 2 hops: attacker→intermediate (apprunner_create_service scoped) → admin (iam_put_role_policy). "+
 				"Failure here means the scoped CAN_PRIVESC edge is not traversable as an intermediate hop")
 	})
 
 	t.Run("intermediate_1hop_to_admin", func(t *testing.T) {
 		assert.True(t, found[pathKey{interARN, 1}],
-			"intermediate must reach admin in 1 hop via iam_create_policy_version (standalone IAM escalation)")
+			"intermediate must reach admin in 1 hop via iam_put_role_policy (standalone IAM escalation)")
+	})
+}
+
+// TestPrivescEnrichersPopulate verifies the foundational Phase-2 enrichers actually
+// populate the guard inputs the corrected methods depend on:
+//   - set_admin_administrator_access sets _is_admin via JSON-string CONTAINS (the old
+//     ANY(... IN <json string> ...) silently never matched).
+//   - extract_role_trust_relationships emits CAN_ASSUME for explicit-principal trust
+//     AND for account-root trust (arn:aws:iam::<ACCT>:root).
+func TestPrivescEnrichersPopulate(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	cfg := graph.NewConfig(boltURL, "", "")
+	db, err := adapters.NewNeo4jAdapter(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	_, err = db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+	require.NoError(t, err)
+
+	// adminUser carries AdministratorAccess as a JSON STRING (the real flattened form).
+	// explicitRole's trust doc names the attacker ARN; rootRole's trust doc names the
+	// same-account root; foreignAttacker is in a different account (must NOT get root
+	// trust to rootRole).
+	_, err = db.Query(ctx, `
+		CREATE (adminUser:User:Principal {Arn: 'arn:aws:iam::123456789012:user/admin',
+			AttachedManagedPolicies: '[{"PolicyName":"AdministratorAccess","PolicyArn":"arn:aws:iam::aws:policy/AdministratorAccess"}]'})
+		CREATE (plainUser:User:Principal {Arn: 'arn:aws:iam::123456789012:user/plain',
+			AttachedManagedPolicies: '[{"PolicyName":"ReadOnlyAccess","PolicyArn":"arn:aws:iam::aws:policy/ReadOnlyAccess"}]'})
+		CREATE (attacker:User:Principal {Arn: 'arn:aws:iam::123456789012:user/attacker'})
+		CREATE (foreign:User:Principal  {Arn: 'arn:aws:iam::999999999999:user/foreign'})
+		CREATE (explicitRole:Role:Principal {Arn: 'arn:aws:iam::123456789012:role/explicit',
+			AssumeRolePolicyDocument: '{"Statement":[{"Principal":{"AWS":"arn:aws:iam::123456789012:user/attacker"}}]}'})
+		CREATE (rootRole:Role:Principal {Arn: 'arn:aws:iam::123456789012:role/root-trusted',
+			AssumeRolePolicyDocument: '{"Statement":[{"Principal":{"AWS":"arn:aws:iam::123456789012:root"}}]}'})
+	`, nil)
+	require.NoError(t, err, "seed enricher graph")
+
+	require.NoError(t, EnrichAWS(ctx, db), "EnrichAWS")
+
+	t.Run("is_admin_set_via_contains", func(t *testing.T) {
+		result, err := db.Query(ctx,
+			`MATCH (p {Arn: 'arn:aws:iam::123456789012:user/admin'}) RETURN coalesce(p._is_admin,false) AS adm`, nil)
+		require.NoError(t, err)
+		adm, _ := result.Records[0]["adm"].(bool)
+		assert.True(t, adm, "_is_admin must be set on the AdministratorAccess user (JSON-string CONTAINS fix)")
+	})
+
+	t.Run("is_admin_not_set_on_non_admin", func(t *testing.T) {
+		result, err := db.Query(ctx,
+			`MATCH (p {Arn: 'arn:aws:iam::123456789012:user/plain'}) RETURN coalesce(p._is_admin,false) AS adm`, nil)
+		require.NoError(t, err)
+		adm, _ := result.Records[0]["adm"].(bool)
+		assert.False(t, adm, "_is_admin must NOT be set on a ReadOnlyAccess user")
+	})
+
+	t.Run("can_assume_explicit_principal_trust", func(t *testing.T) {
+		result, err := db.Query(ctx,
+			`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/attacker'})-[:CAN_ASSUME]->(r {Arn: 'arn:aws:iam::123456789012:role/explicit'})
+			 RETURN count(*) AS n`, nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.GreaterOrEqual(t, int(n), 1, "explicit-principal trust must produce a CAN_ASSUME edge")
+	})
+
+	t.Run("can_assume_account_root_trust", func(t *testing.T) {
+		result, err := db.Query(ctx,
+			`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/attacker'})-[:CAN_ASSUME]->(r {Arn: 'arn:aws:iam::123456789012:role/root-trusted'})
+			 RETURN count(*) AS n`, nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.GreaterOrEqual(t, int(n), 1,
+			"account-root trust must produce a CAN_ASSUME edge for a same-account principal")
+	})
+
+	t.Run("can_assume_root_trust_scoped_to_same_account", func(t *testing.T) {
+		// A principal in a DIFFERENT account must not get a root-trust CAN_ASSUME edge
+		// to a role whose trust doc only names the role's own account root.
+		result, err := db.Query(ctx,
+			`MATCH (f {Arn: 'arn:aws:iam::999999999999:user/foreign'})-[:CAN_ASSUME]->(r {Arn: 'arn:aws:iam::123456789012:role/root-trusted'})
+			 RETURN count(*) AS n`, nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.Equal(t, int64(0), n,
+			"cross-account principal must NOT get a root-trust CAN_ASSUME edge (root trust is account-scoped)")
+	})
+}
+
+// TestPrivescNoCartesianFanOut is the structural FP assertion from the Phase-0 baseline:
+// after EnrichAWS, no single non-admin principal whose ONLY escalation primitive is a
+// (now-corrected) representative method may emit CAN_PRIVESC to a large fan of distinct
+// targets. It seeds a population of bystander principals plus FP attackers that hold a
+// permission but FAIL the structural guard, then asserts those FP attackers emit ZERO
+// edges and that no source's distinct-target out-degree scales with the population.
+func TestPrivescNoCartesianFanOut(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	cfg := graph.NewConfig(boltURL, "", "")
+	db, err := adapters.NewNeo4jAdapter(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	_, err = db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+	require.NoError(t, err)
+
+	// 20 bystander principals create a population the old cartesian fan-out would
+	// have reached. FP attackers each hold a permission but miss the structural guard:
+	//   fp_cpv: CreatePolicyVersion on a policy NOT attached to itself.
+	//   fp_sts: STS_ASSUMEROLE with NO CAN_ASSUME trust edge.
+	//   fp_ec2: PassRole (to a privileged role with an instance profile) + RunInstances,
+	//           but the role trusts ONLY lambda.amazonaws.com, not ec2 — so the ec2-trust
+	//           guard is the SOLE reason the edge is suppressed (not a label mismatch).
+	//   fp_cfn: CreateChangeSet/ExecuteChangeSet on DIFFERENT stacks.
+	_, err = db.Query(ctx, `
+		UNWIND range(1, 20) AS i
+		CREATE (:Principal {Arn: 'arn:aws:iam::123456789012:user/bystander-' + toString(i), _is_admin: false})
+	`, nil)
+	require.NoError(t, err, "seed bystander population")
+
+	_, err = db.Query(ctx, `
+		CREATE (cpv:Principal {Arn: 'arn:aws:iam::123456789012:user/fp_cpv', _is_admin: false})
+		CREATE (cpvPolicy:Resource {Arn: 'arn:aws:iam::123456789012:policy/unattached'})
+		CREATE (sts:Principal {Arn: 'arn:aws:iam::123456789012:user/fp_sts', _is_admin: false})
+		CREATE (stsRole:Principal {Arn: 'arn:aws:iam::123456789012:role/no-trust', _is_admin: true})
+		CREATE (stsRes:Resource {Arn: 'arn:aws:sts::123456789012:role/no-trust'})
+		CREATE (ec2:Principal {Arn: 'arn:aws:iam::123456789012:user/fp_ec2', _is_admin: false})
+		CREATE (ec2Role:Principal {Arn: 'arn:aws:iam::123456789012:role/lambda-only', _is_admin: true,
+			trusted_services: ['lambda.amazonaws.com'],
+			InstanceProfileList: '[{"Arn":"arn:aws:iam::123456789012:instance-profile/ip"}]'})
+		CREATE (ec2Res:Resource {Arn: 'arn:aws:ec2:us-east-1:123456789012:instance/i-1'})
+		CREATE (cfn:Principal {Arn: 'arn:aws:iam::123456789012:user/fp_cfn', _is_admin: false})
+		CREATE (cfnStackA:Resource {Arn: 'arn:aws:cloudformation:us-east-1:123456789012:stack/a'})
+		CREATE (cfnStackB:Resource {Arn: 'arn:aws:cloudformation:us-east-1:123456789012:stack/b'})
+		WITH cpv, cpvPolicy, sts, stsRes, ec2, ec2Role, ec2Res, cfn, cfnStackA, cfnStackB
+		MERGE (cpv)-[:IAM_CREATEPOLICYVERSION]->(cpvPolicy)
+		MERGE (sts)-[:STS_ASSUMEROLE]->(stsRes)
+		MERGE (ec2)-[:IAM_PASSROLE]->(ec2Role)
+		MERGE (ec2)-[:EC2_RUNINSTANCES]->(ec2Res)
+		MERGE (cfn)-[:CLOUDFORMATION_CREATECHANGESET]->(cfnStackA)
+		MERGE (cfn)-[:CLOUDFORMATION_EXECUTECHANGESET]->(cfnStackB)
+	`, nil)
+	require.NoError(t, err, "seed FP attackers")
+
+	require.NoError(t, EnrichAWS(ctx, db), "EnrichAWS")
+
+	// FP attackers must emit ZERO CAN_PRIVESC edges (they fail the structural guard).
+	for _, fp := range []string{"fp_cpv", "fp_sts", "fp_ec2", "fp_cfn"} {
+		t.Run("fp_zero_edges_"+fp, func(t *testing.T) {
+			result, err := db.Query(ctx, fmt.Sprintf(
+				`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/%s'})-[r:CAN_PRIVESC]->() RETURN count(r) AS n`, fp), nil)
+			require.NoError(t, err)
+			n, _ := toInt64(result.Records[0]["n"])
+			assert.Equal(t, int64(0), n,
+				"FP principal %s must emit ZERO CAN_PRIVESC edges (failed the structural guard)", fp)
+		})
+	}
+
+	// Cartesian regression guard: no source may reach a large fan of DISTINCT targets.
+	// With the cartesian bug a single source reached ~all 26 principals; corrected,
+	// the max distinct-target out-degree across all non-admin sources must stay small.
+	t.Run("no_source_reaches_many_distinct_targets", func(t *testing.T) {
+		result, err := db.Query(ctx, `
+			MATCH (a:Principal)-[:CAN_PRIVESC]->(b)
+			WITH a, count(DISTINCT b) AS targets
+			RETURN coalesce(max(targets), 0) AS maxTargets
+		`, nil)
+		require.NoError(t, err)
+		maxTargets, _ := toInt64(result.Records[0]["maxTargets"])
+		assert.LessOrEqual(t, maxTargets, int64(3),
+			"no single source should reach >3 distinct CAN_PRIVESC targets — a large fan is the cartesian-bug signature")
 	})
 }
 
