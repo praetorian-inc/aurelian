@@ -58,50 +58,31 @@ type labCase struct {
 	desc        string
 }
 
-// knownGaps marks cases that STILL cannot fire on real data after the Phase-3 follow-up
-// closures. Such a case is t.Skip-logged with its reason (never silently dropped) so the
-// limitation stays visible. Keyed by attackerKey.
+// knownGaps marks cases that cannot fire on real data. A case here is t.Skip-logged with its
+// reason (never silently dropped) so any limitation stays visible. Keyed by attackerKey.
 //
-// Phase-3 CLOSED (removed from this map; now live-verified TPs): iam_create_access_key,
-// ec2_ssm_association, cloudform_create_stackset, bedrock_create_ci, ec2_replace_profile.
-//   - The first four closed via the A1 allowlist + resource-map data (action.go +
-//     service_action_resource_map.go) so the evaluator now emits the required action edges
-//     (DeleteAccessKey, CreateAssociation, CreateStackInstances, the bedrock Start/Invoke).
-//   - ec2_replace_profile closed via the A2 EC2-instance collector: graph recon now enumerates
+// As of the Phase-3 follow-ups + Bucket-E completion, ALL 7 prior gaps are CLOSED and now
+// live-verified TPs — the map is intentionally EMPTY. The closures:
+//   - iam_create_access_key / ec2_ssm_association / cloudform_create_stackset / bedrock_create_ci:
+//     A1 allowlist + resource-map data (action.go + service_action_resource_map.go) so the
+//     evaluator emits the required action edges (DeleteAccessKey, CreateAssociation,
+//     CreateStackInstances, the bedrock Start/Invoke).
+//   - ec2_replace_profile: the A2 EC2-instance collector — graph recon now enumerates
 //     AWS::EC2::Instance, so an `instance`-pattern resource reaches the resource store and
-//     ec2:ReplaceIamInstanceProfileAssociation (instance-scoped) resolves. The live EC2
-//     instance must be RUNNING/present for the collector to enumerate it.
+//     ec2:ReplaceIamInstanceProfileAssociation resolves. The live EC2 instance must be present.
+//   - iam_pass_role_datapipeline: A1 allowlisted+mapped the three datapipeline actions; Bucket E
+//     completed the data by adding datapipeline.amazonaws.com to addServicesToResourceCache
+//     commonServices (analyzer_state.go) so the arn:aws:datapipeline:*:*:* service stub exists in
+//     the resource store and GetResourcesByAction resolves → the DATAPIPELINE_* edges are emitted.
+//   - cognito_set_pool_roles: A3 surfaces the role's Federated cognito trust as trusted_federated;
+//     Bucket E completed the data by allowlisting cognito-identity:GetId +
+//     GetCredentialsForIdentity (action.go) and mapping them (service_action_resource_map.go), so
+//     the evaluator emits the COGNITO-IDENTITY_GETID/_GETCREDENTIALSFORIDENTITY edges the guard
+//     EXISTS-requires. The fixture grants all three cognito actions + PassRole.
 //
-// The two below are HONEST residual gaps: each method's guard EXISTS-requires an action edge
-// the frozen evaluator still PROVABLY never emits. No fixture grant can satisfy a never-emitted
-// edge, so seeding/faking it would mask a false-negative. Closing each needs a one-line additive
-// evaluator-DATA change (developer task, frozen this PR) — documented precisely below.
-var knownGaps = map[string]string{
-	// cognito_set_identity_pool_roles.yaml EXISTS-requires THREE cognito action edges:
-	// COGNITO-IDENTITY_SETIDENTITYPOOLROLES (allowlisted, action.go) AND COGNITO-IDENTITY_GETID
-	// AND COGNITO-IDENTITY_GETCREDENTIALSFORIDENTITY. The A3 transformer change correctly surfaces
-	// the role's Federated cognito trust as trusted_federated and the guard now accepts it — but
-	// GetId and GetCredentialsForIdentity are NOT in the frozen privEscActions allowlist (action.go
-	// has only cognito-identity:SetIdentityPoolRoles), so generatePrincipalEvalRequests
-	// (process_permissions.go:212, gated by IsPrivEscAction) never emits those two edges and the two
-	// EXISTS clauses can never be satisfied on live data. The fixture grants both actions; the
-	// residual blocker is purely the allowlist. Closing it needs adding cognito-identity:GetId +
-	// GetCredentialsForIdentity to privEscActions (+ resource map) — a developer evaluator-data
-	// change, frozen this PR.
-	"cognito_set_pool_roles": "cognito_set_identity_pool_roles.yaml EXISTS-requires COGNITO-IDENTITY_GETID and COGNITO-IDENTITY_GETCREDENTIALSFORIDENTITY edges, but neither cognito-identity:GetId nor GetCredentialsForIdentity is in the frozen privEscActions allowlist (action.go has only SetIdentityPoolRoles), so the evaluator never emits them; the A3 trusted_federated fix is necessary but not sufficient — cannot fire without adding the two actions to the frozen allowlist (developer task)",
-
-	// iam_pass_role_datapipeline.yaml EXISTS-requires DATAPIPELINE_CREATEPIPELINE +
-	// PUTPIPELINEDEFINITION + ACTIVATEPIPELINE. The A1 change allowlisted all three actions
-	// (action.go) AND mapped them in service_action_resource_map.go (the `datapipeline` service
-	// block + the privesc map unit test pass). BUT GetResourcesByAction can only resolve an action
-	// to a resource that EXISTS in the resource store, and the datapipeline service stub
-	// (arn:aws:datapipeline:*:*:*) is NOT seeded: datapipeline.amazonaws.com is absent from
-	// addServicesToResourceCache's commonServices list (analyzer_state.go:88), and no datapipeline
-	// resource is collected. So GetResourcesByAction returns 0 for every datapipeline action and the
-	// evaluator emits no DATAPIPELINE_* edge. Closing it needs adding datapipeline.amazonaws.com to
-	// commonServices — a one-line additive evaluator-data change, frozen this PR (developer task).
-	"iam_pass_role_datapipeline": "iam_pass_role_datapipeline.yaml EXISTS-requires DATAPIPELINE_{CREATEPIPELINE,PUTPIPELINEDEFINITION,ACTIVATEPIPELINE}; A1 allowlisted+mapped all three, but datapipeline.amazonaws.com is NOT in addServicesToResourceCache commonServices (analyzer_state.go:88) so no arn:aws:datapipeline:*:*:* stub exists in the resource store and GetResourcesByAction returns 0 → the evaluator emits no DATAPIPELINE_* edge — cannot fire without adding datapipeline to the frozen service stub list (developer task)",
-}
+// All additions are additive COVERAGE DATA (allowlist / resource-map / service-stub tables) — the
+// policy-eval algorithm is untouched, consistent with the locked A1 decision.
+var knownGaps = map[string]string{}
 
 type tier int
 
@@ -155,8 +136,10 @@ var labCases = []labCase{
 	{"apprunner_create_service", m("apprunner_create_service"), true, tgtServiceRole, "apprunner", tierCommon, "PassRole(apprunner) + CreateService"},
 	{"codebuild_create_project", m("codebuild_create_project"), true, tgtServiceRole, "codebuild", tierCommon, "PassRole(codebuild) + CreateProject"},
 	{"codebuild_update_project", m("codebuild_update_project"), true, tgtServiceRole, "codebuild", tierCommon, "PassRole(codebuild) + UpdateProject"},
-	// cognito_set_pool_roles is a frozen-query KNOWN GAP (see knownGaps) — skip-logged, not a TP.
-	{"cognito_set_pool_roles", m("cognito_set_identity_pool_roles"), true, tgtServiceRole, "cognito", tierCommon, "PassRole(cognito) + SetIdentityPoolRoles"},
+	// cognito_set_pool_roles: now a live TP — A3 surfaces the role's Federated cognito trust as
+	// trusted_federated and Bucket E allowlisted GetId+GetCredentialsForIdentity so the guard's
+	// two EXISTS clauses are satisfied by real evaluator-emitted edges.
+	{"cognito_set_pool_roles", m("cognito_set_identity_pool_roles"), true, tgtServiceRole, "cognito", tierCommon, "PassRole(cognito) + SetIdentityPoolRoles + GetId + GetCredentialsForIdentity"},
 	{"ecs_create_service", m("ecs_create_service"), true, tgtServiceRole, "ecstasks", tierCommon, "PassRole(ecs-tasks) + CreateService"},
 	{"ecs_passrole_runtask", m("ecs_passrole_runtask"), true, tgtServiceRole, "ecstasks", tierCommon, "PassRole(ecs-tasks) + RunTask"},
 	{"ecs_start_task", m("ecs_start_task"), true, tgtServiceRole, "ecstasks", tierCommon, "PassRole(ecs-tasks) + StartTask"},

@@ -498,6 +498,12 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 		},
 		ActionResourceMap: map[string][]string{
 			"setidentitypoolroles": {"identity-pool", "service"},
+			// GetId / GetCredentialsForIdentity are pool-scoped data-plane calls; map them to
+			// the identity-pool and service stub so the evaluator resolves them against the
+			// always-present cognito-identity service stub and emits the COGNITO-IDENTITY_GETID /
+			// _GETCREDENTIALSFORIDENTITY edges that cognito_set_identity_pool_roles.yaml requires.
+			"getid":                     {"identity-pool", "service"},
+			"getcredentialsforidentity": {"identity-pool", "service"},
 		},
 	},
 	"codedeploy": {

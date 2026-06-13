@@ -409,7 +409,7 @@ locals {
     apprunner_create_service   = [{ actions = ["iam:PassRole", "apprunner:CreateService"], resources = ["*"] }]
     codebuild_create_project   = [{ actions = ["iam:PassRole", "codebuild:CreateProject"], resources = ["*"] }]
     codebuild_update_project   = [{ actions = ["iam:PassRole", "codebuild:UpdateProject"], resources = ["*"] }]
-    cognito_set_pool_roles     = [{ actions = ["iam:PassRole", "cognito-identity:SetIdentityPoolRoles"], resources = ["*"] }]
+    cognito_set_pool_roles     = [{ actions = ["iam:PassRole", "cognito-identity:SetIdentityPoolRoles", "cognito-identity:GetId", "cognito-identity:GetCredentialsForIdentity"], resources = ["*"] }]
     ecs_create_service         = [{ actions = ["iam:PassRole", "ecs:CreateService"], resources = ["*"] }]
     ecs_passrole_runtask       = [{ actions = ["iam:PassRole", "ecs:RunTask"], resources = ["*"] }]
     ecs_start_task             = [{ actions = ["iam:PassRole", "ecs:StartTask"], resources = ["*"] }]

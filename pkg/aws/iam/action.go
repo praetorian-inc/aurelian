@@ -55,7 +55,13 @@ var privEscActions = []string{
 	// CodeStar (method 26)
 	"codestar:AssociateTeamMember",
 	"codestar:CreateProject",
-	// Cognito Identity (method 51)
+	// Cognito Identity (method 51): SetIdentityPoolRoles binds the passed role to the pool;
+	// GetId + GetCredentialsForIdentity are the credential-retrieval half the
+	// cognito_set_identity_pool_roles.yaml guard EXISTS-requires to obtain pool credentials
+	// and assume the bound role. All three must be allowlisted for the evaluator to emit the
+	// COGNITO-IDENTITY_* edges (additive coverage data, mirroring the A1 closures).
+	"cognito-identity:GetCredentialsForIdentity",
+	"cognito-identity:GetId",
 	"cognito-identity:SetIdentityPoolRoles",
 	// EC2 (methods 15, 38, 52–53, 73–76)
 	"ec2:CreateLaunchTemplate",

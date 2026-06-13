@@ -16,9 +16,15 @@ output "admin_target_arn" {
 }
 
 # Per-service admin target roles: target of the new-passrole methods. Keyed by the
-# local.service_trust_principals key (ec2, lambda, glue, …).
+# local.service_trust_principals key (ec2, lambda, glue, …). The cognito identity-pool
+# admin role is broken out of the service_admin for_each (it carries a Federated trust,
+# not a Service trust) but is the cognito_set_pool_roles new-passrole TP target, so it is
+# merged in under the "cognito" key the labCase resolves.
 output "service_admin_arns" {
-  value = { for k, r in aws_iam_role.service_admin : k => r.arn }
+  value = merge(
+    { for k, r in aws_iam_role.service_admin : k => r.arn },
+    { cognito = aws_iam_role.cognito_admin.arn },
+  )
 }
 
 # The EC2/SSM/Lambda compute exec role: target of the existing-compute HAS_ROLE methods.

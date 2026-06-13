@@ -15,6 +15,9 @@ func TestPrivescGapActionsAllowlisted(t *testing.T) {
 		"cloudformation:CreateStackInstances",
 		"bedrock-agentcore:StartCodeInterpreterSession",
 		"bedrock-agentcore:InvokeCodeInterpreter",
+		// Bucket E closure of cognito_set_pool_roles: the credential-retrieval half.
+		"cognito-identity:GetId",
+		"cognito-identity:GetCredentialsForIdentity",
 	}
 	for _, action := range actions {
 		t.Run(action, func(t *testing.T) {
@@ -106,6 +109,24 @@ func TestPrivescGapActionResourceMappings(t *testing.T) {
 			action:   "bedrock-agentcore:InvokeCodeInterpreter",
 			resource: "arn:aws:bedrock-agentcore:*:*:*",
 			expected: true,
+		},
+		{
+			name:     "cognito-identity:GetId on cognito-identity service stub",
+			action:   "cognito-identity:GetId",
+			resource: "arn:aws:cognito-identity:*:*:*",
+			expected: true,
+		},
+		{
+			name:     "cognito-identity:GetCredentialsForIdentity on identity-pool ARN",
+			action:   "cognito-identity:GetCredentialsForIdentity",
+			resource: "arn:aws:cognito-identity:us-east-2:123456789012:identitypool/us-east-2:abc",
+			expected: true,
+		},
+		{
+			name:     "cognito-identity:GetId on S3 bucket (wrong resource type)",
+			action:   "cognito-identity:GetId",
+			resource: "arn:aws:s3:::my-bucket",
+			expected: false,
 		},
 	}
 
