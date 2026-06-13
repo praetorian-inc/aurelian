@@ -36,8 +36,16 @@ type AWSGraphModule struct {
 	resourcesWithPolicies store.Map[output.AWSResource]
 	ec2Instances          store.Map[output.AWSResource]
 	cfnStacks             store.Map[output.AWSResource]
+	cfnStackSets          store.Map[output.AWSResource]
 	batchJobDefs          store.Map[output.AWSResource]
 	codeInterpreters      store.Map[output.AWSResource]
+	codeBuildProjects     store.Map[output.AWSResource]
+	glueJobs              store.Map[output.AWSResource]
+	glueDevEndpoints      store.Map[output.AWSResource]
+	appRunnerServices     store.Map[output.AWSResource]
+	ecsTaskDefinitions    store.Map[output.AWSResource]
+	sfnStateMachines      store.Map[output.AWSResource]
+	sageMakerNotebooks    store.Map[output.AWSResource]
 	relationships         store.Map[output.AWSIAMRelationship]
 }
 
@@ -94,8 +102,16 @@ func (m *AWSGraphModule) collectInputs() error {
 	m.collectResourcesWithPolicies(&eg, m.GraphConfig, policyCollector, regions)
 	m.collectEC2Instances(&eg, m.GraphConfig)
 	m.collectCloudFormationStacks(&eg, m.GraphConfig)
+	m.collectCloudFormationStackSets(&eg, m.GraphConfig)
 	m.collectBatchJobDefinitions(&eg, m.GraphConfig)
 	m.collectCodeInterpreters(&eg, m.GraphConfig)
+	m.collectCodeBuildProjects(&eg, m.GraphConfig)
+	m.collectGlueJobs(&eg, m.GraphConfig)
+	m.collectGlueDevEndpoints(&eg, m.GraphConfig)
+	m.collectAppRunnerServices(&eg, m.GraphConfig)
+	m.collectECSTaskDefinitions(&eg, m.GraphConfig)
+	m.collectSFNStateMachines(&eg, m.GraphConfig)
+	m.collectSageMakerNotebookInstances(&eg, m.GraphConfig)
 	if err := eg.Wait(); err != nil {
 		return err
 	}
@@ -132,6 +148,26 @@ func (m *AWSGraphModule) collectInputs() error {
 		m.resourcesWithPolicies.Set(key, r)
 		return true
 	})
+
+	// These existing-compute resource types carry no resource policy; merge them in so the
+	// resource_service_role enricher can link each to the service role it runs as (the role
+	// ARN(s) captured in the resource's Properties) and the matching privesc method re-points
+	// its CAN_PRIVESC edge at that role.
+	for _, collected := range []store.Map[output.AWSResource]{
+		m.cfnStackSets,
+		m.codeBuildProjects,
+		m.glueJobs,
+		m.glueDevEndpoints,
+		m.appRunnerServices,
+		m.ecsTaskDefinitions,
+		m.sfnStateMachines,
+		m.sageMakerNotebooks,
+	} {
+		collected.Range(func(key string, r output.AWSResource) bool {
+			m.resourcesWithPolicies.Set(key, r)
+			return true
+		})
+	}
 
 	return nil
 }
@@ -308,6 +344,96 @@ func (m *AWSGraphModule) collectCodeInterpreters(eg *errgroup.Group, c GraphConf
 		m.codeInterpreters = results
 		return nil
 	})
+}
+
+// enumerateAller is the shared entry point of the existing-compute resource enumerators
+// (CodeBuild, Glue, App Runner, ECS, Step Functions, SageMaker, CloudFormation stack
+// sets). It lets collectResources drive any of them through one resilient drain.
+type enumerateAller interface {
+	EnumerateAll(out *pipeline.P[output.AWSResource]) error
+}
+
+// collectResources drains a single enumerator's EnumerateAll into a store keyed by ARN,
+// reporting progress under label and storing the result into dst. It encapsulates the
+// resilient enumerate-and-drain pattern shared by the existing-compute collectors below
+// (each enumerator is per-region/per-resource resilient internally — a denied or
+// unsupported region is skipped, never fatal).
+func (m *AWSGraphModule) collectResources(eg *errgroup.Group, c GraphConfig, label string, newEnum func(plugin.AWSCommonRecon, *enumeration.AWSConfigProvider, *enumeration.SkipReport) enumerateAller, dst *store.Map[output.AWSResource]) {
+	eg.Go(func() error {
+		m.log.Info("enumerating %s", label)
+
+		provider := enumeration.NewAWSConfigProvider(c.AWSCommonRecon)
+		skipReport := enumeration.NewSkipReport()
+		defer skipReport.LogSummary()
+		enum := newEnum(c.AWSCommonRecon, provider, skipReport)
+
+		collected := pipeline.New[output.AWSResource]()
+		var enumErr error
+		go func() {
+			defer collected.Close()
+			enumErr = enum.EnumerateAll(collected)
+		}()
+
+		results := store.NewMap[output.AWSResource]()
+		for r := range collected.Range() {
+			results.Set(r.ARN, r)
+		}
+		if enumErr != nil {
+			return fmt.Errorf("enumerating %s: %w", label, enumErr)
+		}
+
+		m.log.Success("%s collected (%d)", label, results.Len())
+		*dst = results
+		return nil
+	})
+}
+
+func (m *AWSGraphModule) collectCloudFormationStackSets(eg *errgroup.Group, c GraphConfig) {
+	m.collectResources(eg, c, "CloudFormation stack sets", func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+		return enumeration.NewCloudFormationStackSetEnumerator(o, p, s)
+	}, &m.cfnStackSets)
+}
+
+func (m *AWSGraphModule) collectCodeBuildProjects(eg *errgroup.Group, c GraphConfig) {
+	m.collectResources(eg, c, "CodeBuild projects", func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+		return enumeration.NewCodeBuildProjectEnumerator(o, p, s)
+	}, &m.codeBuildProjects)
+}
+
+func (m *AWSGraphModule) collectGlueJobs(eg *errgroup.Group, c GraphConfig) {
+	m.collectResources(eg, c, "Glue jobs", func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+		return enumeration.NewGlueJobEnumerator(o, p, s)
+	}, &m.glueJobs)
+}
+
+func (m *AWSGraphModule) collectGlueDevEndpoints(eg *errgroup.Group, c GraphConfig) {
+	m.collectResources(eg, c, "Glue dev endpoints", func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+		return enumeration.NewGlueDevEndpointEnumerator(o, p, s)
+	}, &m.glueDevEndpoints)
+}
+
+func (m *AWSGraphModule) collectAppRunnerServices(eg *errgroup.Group, c GraphConfig) {
+	m.collectResources(eg, c, "App Runner services", func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+		return enumeration.NewAppRunnerServiceEnumerator(o, p, s)
+	}, &m.appRunnerServices)
+}
+
+func (m *AWSGraphModule) collectECSTaskDefinitions(eg *errgroup.Group, c GraphConfig) {
+	m.collectResources(eg, c, "ECS task definitions", func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+		return enumeration.NewECSTaskDefinitionEnumerator(o, p, s)
+	}, &m.ecsTaskDefinitions)
+}
+
+func (m *AWSGraphModule) collectSFNStateMachines(eg *errgroup.Group, c GraphConfig) {
+	m.collectResources(eg, c, "Step Functions state machines", func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+		return enumeration.NewSFNStateMachineEnumerator(o, p, s)
+	}, &m.sfnStateMachines)
+}
+
+func (m *AWSGraphModule) collectSageMakerNotebookInstances(eg *errgroup.Group, c GraphConfig) {
+	m.collectResources(eg, c, "SageMaker notebook instances", func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+		return enumeration.NewSageMakerNotebookInstanceEnumerator(o, p, s)
+	}, &m.sageMakerNotebooks)
 }
 
 func (m *AWSGraphModule) analyzeIAMPermissions() error {
