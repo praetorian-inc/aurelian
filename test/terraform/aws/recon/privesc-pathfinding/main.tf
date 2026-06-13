@@ -171,20 +171,35 @@ resource "aws_iam_role_policy_attachment" "cognito_admin" {
 }
 
 # The shared compute exec role is consumed by the real EC2 instance, the SSM HAS_ROLE
-# methods, AND the real Lambda function, so its trust must name all three consuming
-# services: ec2 (to be an instance-profile role), ssm (so set_ssm_enabled_roles marks it
-# _ssm_enabled for the SSM HAS_ROLE methods) AND lambda (Lambda CreateFunction validates
-# lambda.amazonaws.com trust at create time). No PassRole TP/FP case targets this role (the
-# lambda-trusting PassRole target is the separate service_admin["lambda"] role), so the
-# extra lambda trust does not flip any case.
+# methods, the real Lambda function, AND (Phase-2a) the real backing service resources that
+# back the existing-compute HAS_ROLE methods targeting tgtComputeRole — the CloudFormation
+# stack/stackset, Step Functions state machine, Glue job, CodeBuild project, and ECS task
+# definition all RUN AS this admin role so resource_service_role builds a real
+# (Resource)-[:HAS_ROLE]->(compute_admin) edge. Its trust therefore names every consuming
+# service: ec2 (instance-profile role), ssm (so set_ssm_enabled_roles marks it _ssm_enabled),
+# lambda (Lambda CreateFunction validates lambda.amazonaws.com trust at create time),
+# cloudformation (CFN service role), states (SFN CreateStateMachine validates trust),
+# glue (Glue CreateJob validates trust), codebuild (CodeBuild CreateProject validates trust),
+# and ecs-tasks (ECS task role / execution role). No PassRole TP/FP case targets this role
+# (the per-service PassRole targets are the separate service_admin[...] roles), so the extra
+# service trusts do not flip any case.
 resource "aws_iam_role" "compute_admin" {
   name = "${local.prefix}-compute-admin"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect    = "Allow"
-      Action    = "sts:AssumeRole"
-      Principal = { Service = ["ec2.amazonaws.com", "ssm.amazonaws.com", "lambda.amazonaws.com"] }
+      Effect = "Allow"
+      Action = "sts:AssumeRole"
+      Principal = { Service = [
+        "ec2.amazonaws.com",
+        "ssm.amazonaws.com",
+        "lambda.amazonaws.com",
+        "cloudformation.amazonaws.com",
+        "states.amazonaws.com",
+        "glue.amazonaws.com",
+        "codebuild.amazonaws.com",
+        "ecs-tasks.amazonaws.com",
+      ] }
     }]
   })
   tags = local.tags
@@ -360,6 +375,163 @@ resource "aws_instance" "compute" {
   instance_type        = "t3.micro"
   iam_instance_profile = aws_iam_instance_profile.compute_admin.name
   tags                 = merge(local.tags, { Name = "${local.prefix}-compute" })
+}
+
+# =============================================================================
+# Phase-2a REAL backing service resources for the existing-compute HAS_ROLE methods.
+#
+# Each resource RUNS AS a privileged role so the Phase-1 recon collectors enumerate it,
+# resource_service_role builds a real (Resource)-[:HAS_ROLE]->(role) edge on REAL CloudControl-
+# shaped data, and the matching existing-compute privesc method re-points its CAN_PRIVESC edge
+# at that role — replacing the synthetic stand-in that previously seeded the HAS_ROLE source.
+#
+# All run the compute_admin role (an admin role, _is_admin=true → method severity high) EXCEPT
+# the Batch job definition, whose jobRoleArn must be the ecs-tasks-trusting svcadmin role (the
+# batch_submit_job re-point targets tgtServiceRole["ecstasks"]).
+#
+# Only the cheap, free-at-rest, no-VPC, no-image types are provisioned here:
+#   CFN stack/stackset, Batch job def, ECS task def, SFN state machine, Glue job, CodeBuild
+#   project. The heavy/costly types (App Runner = needs a running container image; SageMaker
+#   notebook instance = bills while running; Glue dev endpoint = needs a VPC + bills hourly;
+#   Bedrock AgentCore code interpreter = no Terraform provider resource) are KEPT synthetic in
+#   the Go harness with a documented comment — their collectors are unit-tested.
+# =============================================================================
+
+# --- CloudFormation stack (backs cloudform_update_stack + cloudform_changeset; RoleARN in
+#     DescribeStacks → resource_service_role HAS_ROLE → compute_admin). Minimal template: a
+#     WaitConditionHandle is free, provisions instantly, and needs no role action at create
+#     time (so the service role's lack of cloudformation-specific perms is irrelevant). ---
+resource "aws_cloudformation_stack" "compute" {
+  name         = "${local.prefix}-compute-stack"
+  iam_role_arn = aws_iam_role.compute_admin.arn
+  template_body = jsonencode({
+    Resources = {
+      Wait = { Type = "AWS::CloudFormation::WaitConditionHandle" }
+    }
+  })
+  tags = local.tags
+}
+
+# --- CloudFormation stack set (backs cloudform_update_stackset; AdministrationRoleARN in
+#     DescribeStackSet → resource_service_role HAS_ROLE → compute_admin). SELF_MANAGED
+#     permissions, no instances → free + instant. ---
+resource "aws_cloudformation_stack_set" "compute" {
+  name                    = "${local.prefix}-compute-stackset"
+  permission_model        = "SELF_MANAGED"
+  administration_role_arn = aws_iam_role.compute_admin.arn
+  template_body = jsonencode({
+    Resources = {
+      Wait = { Type = "AWS::CloudFormation::WaitConditionHandle" }
+    }
+  })
+  tags = local.tags
+}
+
+# --- Batch job definition (backs batch_submit_job; jobRoleArn → resource_service_role
+#     HAS_ROLE → the ecs-tasks-trusting svcadmin role, which is what the batch_submit_job
+#     re-point's trust + privileged-target guards require). FARGATE container definition —
+#     a job DEFINITION needs NO compute environment / queue / VPC (those are only needed to
+#     RUN a job), so this is free + instant. executionRoleArn is the same svcadmin role. ---
+resource "aws_batch_job_definition" "compute" {
+  name                  = "${local.prefix}-compute-jobdef"
+  type                  = "container"
+  platform_capabilities = ["FARGATE"]
+  container_properties = jsonencode({
+    image                        = "public.ecr.aws/amazonlinux/amazonlinux:2"
+    command                      = ["echo", "aurelian-pathfinding"]
+    jobRoleArn                   = aws_iam_role.service_admin["ecstasks"].arn
+    executionRoleArn             = aws_iam_role.service_admin["ecstasks"].arn
+    fargatePlatformConfiguration = { platformVersion = "LATEST" }
+    resourceRequirements = [
+      { type = "VCPU", value = "0.25" },
+      { type = "MEMORY", value = "512" },
+    ]
+    networkConfiguration = { assignPublicIp = "DISABLED" }
+  })
+  tags = local.tags
+}
+
+# --- ECS task definition (backs ecs_execute_command; taskRoleArn + executionRoleArn →
+#     resource_service_role HAS_ROLE → compute_admin). A task DEFINITION needs no running
+#     task / cluster, so it is free. FARGATE-compatible. ---
+resource "aws_ecs_task_definition" "compute" {
+  family                   = "${local.prefix}-compute-taskdef"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = "256"
+  memory                   = "512"
+  task_role_arn            = aws_iam_role.compute_admin.arn
+  execution_role_arn       = aws_iam_role.compute_admin.arn
+  container_definitions = jsonencode([{
+    name      = "main"
+    image     = "public.ecr.aws/amazonlinux/amazonlinux:2"
+    essential = true
+  }])
+  tags = local.tags
+}
+
+# --- Step Functions state machine (backs stepfunctions_update; roleArn → resource_service_role
+#     HAS_ROLE → compute_admin). STANDARD type is free at rest (pay only per state transition,
+#     and this machine is never executed). compute_admin trusts states.amazonaws.com so
+#     CreateStateMachine's trust validation passes. ---
+resource "aws_sfn_state_machine" "compute" {
+  name     = "${local.prefix}-compute-sfn"
+  role_arn = aws_iam_role.compute_admin.arn
+  definition = jsonencode({
+    Comment = "aurelian pathfinding fixture — never executed"
+    StartAt = "Done"
+    States  = { Done = { Type = "Pass", End = true } }
+  })
+  tags = local.tags
+}
+
+# --- Glue job (backs glue_update_job + glue_updatejob_startjobrun + glue_updatejob_trigger;
+#     Role → resource_service_role HAS_ROLE → compute_admin). role_arn MUST be the FULL ARN
+#     (the collector captures Job.Role; only the ARN form substring-matches a role node — a
+#     role NAME is fail-closed by design). Needs an S3 script object (free). compute_admin
+#     trusts glue.amazonaws.com so CreateJob's trust validation passes. Free unless run. ---
+resource "aws_s3_bucket" "glue_scripts" {
+  bucket        = "${local.prefix}-glue-scripts"
+  force_destroy = true
+  tags          = local.tags
+}
+resource "aws_s3_object" "glue_script" {
+  bucket  = aws_s3_bucket.glue_scripts.id
+  key     = "placeholder.py"
+  content = "# aurelian pathfinding fixture placeholder\n"
+}
+resource "aws_glue_job" "compute" {
+  name         = "${local.prefix}-compute-glue"
+  role_arn     = aws_iam_role.compute_admin.arn
+  glue_version = "4.0"
+  command {
+    script_location = "s3://${aws_s3_bucket.glue_scripts.bucket}/${aws_s3_object.glue_script.key}"
+    python_version  = "3"
+  }
+  default_arguments = { "--job-language" = "python" }
+  tags              = local.tags
+}
+
+# --- CodeBuild project (backs codebuild_start_build; ServiceRole → resource_service_role
+#     HAS_ROLE → compute_admin). NO_SOURCE source needs no repo; a tiny inline buildspec
+#     satisfies the NO_SOURCE requirement. compute_admin trusts codebuild.amazonaws.com so
+#     CreateProject's trust validation passes. Free unless built. ---
+resource "aws_codebuild_project" "compute" {
+  name         = "${local.prefix}-compute-codebuild"
+  service_role = aws_iam_role.compute_admin.arn
+  artifacts {
+    type = "NO_ARTIFACTS"
+  }
+  environment {
+    compute_type = "BUILD_GENERAL1_SMALL"
+    image        = "aws/codebuild/amazonlinux2-x86_64-standard:5.0"
+    type         = "LINUX_CONTAINER"
+  }
+  source {
+    type      = "NO_SOURCE"
+    buildspec = "version: 0.2\nphases:\n  build:\n    commands:\n      - echo aurelian\n"
+  }
+  tags = local.tags
 }
 
 # =============================================================================

@@ -84,6 +84,32 @@ output "svcadmin_ec2_instance_profile_name" {
   value = aws_iam_instance_profile.svcadmin_ec2.name
 }
 
+# --- Phase-2a real backing service resources (collected by recon → resource_service_role
+#     HAS_ROLE → privileged role; replace the synthetic stand-ins). The Go harness uses these
+#     real ARNs to assert the REAL :Resource node exists (real-account ARN, not the synthetic
+#     000000000000 placeholder) and that (Resource)-[:HAS_ROLE]->(role) was built. ---
+output "cfn_stack_id" {
+  value = aws_cloudformation_stack.compute.id
+}
+output "cfn_stackset_id" {
+  value = aws_cloudformation_stack_set.compute.stack_set_id
+}
+output "batch_jobdef_arn" {
+  value = aws_batch_job_definition.compute.arn
+}
+output "ecs_taskdef_arn" {
+  value = aws_ecs_task_definition.compute.arn
+}
+output "sfn_state_machine_arn" {
+  value = aws_sfn_state_machine.compute.arn
+}
+output "glue_job_name" {
+  value = aws_glue_job.compute.name
+}
+output "codebuild_project_arn" {
+  value = aws_codebuild_project.compute.arn
+}
+
 # --- Attacker principals (TP + FP), keyed by local.attackers key ---
 # Map output → expected verdict/target is encoded in the Go case table
 # (privesc_pathfinding_test.go), keyed by the same map key.

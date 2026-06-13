@@ -169,37 +169,35 @@ var labCases = []labCase{
 	{"ec2_ssm_association", m("ec2_ssm_association"), true, tgtComputeRole, "", tierCommon, "CreateAssociation on the ssm-enabled admin EC2 instance"},
 	{"ssm_send_command", m("ssm_send_command"), true, tgtComputeRole, "", tierCommon, "SendCommand to the ssm-enabled admin EC2 instance"},
 	{"ssm_start_session", m("ssm_start_session"), true, tgtComputeRole, "", tierCommon, "StartSession on the ssm-enabled admin EC2 instance"},
-	{"cloudform_update_stack", m("cloudformation_update_stack"), true, tgtComputeRole, "", tierCommon, "UpdateStack on a stack running the admin role (synthetic resource)"},
-	{"cloudform_update_stackset", m("cloudformation_update_stackset"), true, tgtComputeRole, "", tierCommon, "UpdateStackSet on a stackset running the admin role (synthetic)"},
-	{"codebuild_start_build", m("codebuild_start_build"), true, tgtComputeRole, "", tierCommon, "StartBuild on a project running the admin role (synthetic)"},
+	{"cloudform_update_stack", m("cloudformation_update_stack"), true, tgtComputeRole, "", tierCommon, "UpdateStack on a stack running the admin role (REAL fixture CFN stack, RoleARN→compute_admin)"},
+	{"cloudform_update_stackset", m("cloudformation_update_stackset"), true, tgtComputeRole, "", tierCommon, "UpdateStackSet on a stackset running the admin role (REAL fixture CFN stackset, AdministrationRoleARN→compute_admin)"},
+	{"codebuild_start_build", m("codebuild_start_build"), true, tgtComputeRole, "", tierCommon, "StartBuild on a project running the admin role (REAL fixture CodeBuild project, ServiceRole→compute_admin)"},
 	{"codedeploy_create_deploy", m("codedeploy_create_deployment"), true, tgtComputeRole, "", tierCommon, "CreateDeployment onto the admin-role EC2 instance"},
-	{"apprunner_update_service", m("apprunner_update_service"), true, tgtComputeRole, "", tierCommon, "UpdateService on a service running the admin role (synthetic)"},
-	{"ecs_execute_command", m("ecs_execute_command"), true, tgtComputeRole, "", tierCommon, "ExecuteCommand on a task running the admin role (synthetic)"},
-	{"stepfunctions_update", m("stepfunctions_update"), true, tgtComputeRole, "", tierCommon, "UpdateStateMachine+StartExecution on an admin-role state machine (synthetic)"},
-	{"glue_update_dev_endpoint", m("glue_update_dev_endpoint"), true, tgtComputeRole, "", tierCommon, "UpdateDevEndpoint on an admin-role dev endpoint (synthetic)"},
-	{"glue_update_job", m("glue_update_job"), true, tgtComputeRole, "", tierCommon, "UpdateJob on an admin-role glue job (synthetic)"},
-	{"glue_updatejob_startjobrun", m("glue_updatejob_startjobrun"), true, tgtComputeRole, "", tierCommon, "UpdateJob+StartJobRun on an admin-role glue job (synthetic)"},
-	{"glue_updatejob_trigger", m("glue_updatejob_createtrigger"), true, tgtComputeRole, "", tierCommon, "UpdateJob+CreateTrigger on an admin-role glue job (synthetic)"},
-	{"sagemaker_lifecycle", m("sagemaker_lifecycle_config"), true, tgtComputeRole, "", tierCommon, "UpdateNotebookInstanceLifecycleConfig on an admin-role notebook (synthetic)"},
-	{"sagemaker_presigned", m("sagemaker_presigned_url"), true, tgtComputeRole, "", tierCommon, "CreatePresignedNotebookInstanceUrl on an admin-role notebook (synthetic)"},
+	{"apprunner_update_service", m("apprunner_update_service"), true, tgtComputeRole, "", tierCommon, "UpdateService on a service running the admin role (synthetic — App Runner not provisioned)"},
+	{"ecs_execute_command", m("ecs_execute_command"), true, tgtComputeRole, "", tierCommon, "ExecuteCommand on a task running the admin role (REAL fixture ECS task definition, TaskRoleArn→compute_admin)"},
+	{"stepfunctions_update", m("stepfunctions_update"), true, tgtComputeRole, "", tierCommon, "UpdateStateMachine+StartExecution on an admin-role state machine (REAL fixture SFN state machine, RoleArn→compute_admin)"},
+	{"glue_update_dev_endpoint", m("glue_update_dev_endpoint"), true, tgtComputeRole, "", tierCommon, "UpdateDevEndpoint on an admin-role dev endpoint (synthetic — Glue DevEndpoint not provisioned)"},
+	{"glue_update_job", m("glue_update_job"), true, tgtComputeRole, "", tierCommon, "UpdateJob on an admin-role glue job (REAL fixture Glue job, Role→compute_admin ARN)"},
+	{"glue_updatejob_startjobrun", m("glue_updatejob_startjobrun"), true, tgtComputeRole, "", tierCommon, "UpdateJob+StartJobRun on an admin-role glue job (REAL fixture Glue job)"},
+	{"glue_updatejob_trigger", m("glue_updatejob_createtrigger"), true, tgtComputeRole, "", tierCommon, "UpdateJob+CreateTrigger on an admin-role glue job (REAL fixture Glue job)"},
+	{"sagemaker_lifecycle", m("sagemaker_lifecycle_config"), true, tgtComputeRole, "", tierCommon, "UpdateNotebookInstanceLifecycleConfig on an admin-role notebook (synthetic — SageMaker notebook not provisioned)"},
+	{"sagemaker_presigned", m("sagemaker_presigned_url"), true, tgtComputeRole, "", tierCommon, "CreatePresignedNotebookInstanceUrl on an admin-role notebook (synthetic — SageMaker notebook not provisioned)"},
 
 	// ===== Existing-resource takeover via HAS_ROLE (D4 re-point: target = the backing
 	// resource's privileged role, no longer a service-wildcard stub) =====
 	// The D4 commits re-pointed these three from the fail-open service stub to a specific
 	// privileged role reached via (Resource)-[:HAS_ROLE]->(role). The action edges
 	// (BATCH_SUBMITJOB / BEDROCK-AGENTCORE_INVOKESESSION / CLOUDFORMATION_{CREATE,EXECUTE}CHANGESET)
-	// are genuinely evaluator-emitted on live data (allowlisted + mapped to the service stub), but
-	// the backing Resource (Batch JobDefinition / AgentCore CodeInterpreter / CFN Stack) is not
-	// provisionable in the default-tier fixture (Batch needs a compute env/VPC; AgentCore has no
-	// TF provider resource; the pathfinding harness does not seed collected non-IAM AWSResources),
-	// so the HAS_ROLE source is a SYNTHETIC Resource node — the same compromise the other ~10
-	// HAS_ROLE methods (cloudform_update_stack, codebuild_*, glue_update_*, etc.) already use in
-	// syntheticComputeResources. Each synthetic resource points at the correctly-trusted privileged
-	// role so the re-pointed query's trust + privileged-target guards are exercised on real edge
-	// structure.
-	{"batch_submit_job", m("batch_submit_job"), true, tgtServiceRole, "ecstasks", tierCommon, "SubmitJob on a synthetic Batch JobDefinition whose JobRoleArn is the privileged ecs-tasks-trusting svcadmin role"},
-	{"bedrock_invoke", m("bedrock_access_code_interpreter"), true, tgtServiceRole, "bedrock", tierCommon, "InvokeSession on a synthetic AgentCore CodeInterpreter whose ExecutionRoleArn is the privileged bedrock-agentcore svcadmin role"},
-	{"cloudform_changeset", m("cloudformation_changeset"), true, tgtComputeRole, "", tierCommon, "CreateChangeSet+ExecuteChangeSet against a synthetic CFN Stack whose RoleARN is the privileged compute admin role"},
+	// are genuinely evaluator-emitted on live data (allowlisted + mapped to the service stub).
+	// Phase-2a: Batch JobDefinition AND CFN Stack are now REAL fixture resources (collected by
+	// recon, seeded via NodeFromAWSResource → real HAS_ROLE), so batch_submit_job and
+	// cloudform_changeset run on the REAL path (verified by real_path/batch_jobdef + the CFN
+	// real_path subtests). AgentCore CodeInterpreter has NO Terraform provider resource (preview
+	// service), so bedrock_invoke keeps a SYNTHETIC HAS_ROLE source pointing at the correctly-trusted
+	// bedrock-agentcore svcadmin role; its collector is unit-tested, live-path verification deferred.
+	{"batch_submit_job", m("batch_submit_job"), true, tgtServiceRole, "ecstasks", tierCommon, "SubmitJob on a REAL fixture Batch JobDefinition whose jobRoleArn is the privileged ecs-tasks-trusting svcadmin role"},
+	{"bedrock_invoke", m("bedrock_access_code_interpreter"), true, tgtServiceRole, "bedrock", tierCommon, "InvokeSession on a synthetic AgentCore CodeInterpreter whose ExecutionRoleArn is the privileged bedrock-agentcore svcadmin role (AgentCore not provisionable via TF)"},
+	{"cloudform_changeset", m("cloudformation_changeset"), true, tgtComputeRole, "", tierCommon, "CreateChangeSet+ExecuteChangeSet against a REAL fixture CFN Stack whose RoleARN is the privileged compute admin role"},
 
 	// ===== Intentional no-op (target = none) =====
 	{"iam_create_slr", m("iam_create_service_linked_role"), false, tgtNone, "", tierCommon, "CreateServiceLinkedRole emits no CAN_PRIVESC (RETURN 0)"},
@@ -281,8 +279,13 @@ type fixtureFacts struct {
 	computeAdminARN  string
 	privUserARN      string
 	prefix           string   // this fixture's "aur-pf-<id>" name prefix (scopes the no-fan-out guard)
+	accountID        string   // the fixture's AWS account id (distinguishes real vs synthetic 000000000000)
 	decoyARNs        []string // FP decoy role ARNs (legitimately modifiable role targets)
 }
+
+// account returns the fixture's real AWS account id (e.g. "196766918487"), used to assert that a
+// collected :Resource node carries a REAL-account ARN rather than the synthetic 000000000000 one.
+func (f fixtureFacts) account() string { return f.accountID }
 
 // targetARN resolves the expected TP edge destination for a case.
 func (f fixtureFacts) targetARN(tc labCase) string {
@@ -334,6 +337,7 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 		computeAdminARN:  fixture.Output("compute_admin_arn"),
 		privUserARN:      fixture.Output("priv_user_arn"),
 		prefix:           fixture.Output("prefix"),
+		accountID:        fixture.Output("account_id"),
 		// Admin/decoy roles no per-case TP points at but a broad-Resource attacker (e.g.
 		// iam:UpdateAssumeRolePolicy on "*") can legitimately reach, so they belong in the
 		// no-fan-out allowlist. Includes the FP-category decoys and the Federated-trust cognito
@@ -356,13 +360,13 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 	t.Logf("Loaded %d attacker ARNs, %d service-admin ARNs (full=%v)",
 		len(facts.attackerARNs), len(facts.serviceAdminARNs), fullTier)
 
-	// The synthetic compute Resource ARNs (for HAS_ROLE methods not backed by real Lambda/
-	// EC2) run a privileged role and must be treated as fixture-owned. The D4 Batch/Bedrock-CI
-	// re-points need service-specifically-trusted roles (ecs-tasks / bedrock-agentcore).
+	// The synthetic compute Resource ARNs (for HAS_ROLE methods whose backing service is NOT
+	// provisioned in the fixture — App Runner, Glue DevEndpoint, SageMaker notebook, Bedrock-CI,
+	// plus the Lambda/EC2 same-node anchors) run a privileged role and must be treated as
+	// fixture-owned. The kept Bedrock-CI re-point needs the bedrock-agentcore-trusting svcadmin role.
 	syntheticResources := syntheticComputeResources(
 		facts.computeAdminARN,
 		fixture.Output("ec2_instance_arn"),
-		facts.serviceAdminARNs["ecstasks"],
 		facts.serviceAdminARNs["bedrock"],
 	)
 	for _, r := range syntheticResources {
@@ -380,16 +384,37 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 
 	var iamResources []output.AWSIAMResource
 	var iamRels []output.AWSIAMRelationship
+	var collectedResources []output.AWSResource // real non-IAM resources (CFN/ECS/SFN/Glue/CodeBuild/Batch/…)
 	for m := range p2.Range() {
 		switch v := m.(type) {
 		case output.AWSIAMResource:
 			iamResources = append(iamResources, v)
 		case output.AWSIAMRelationship:
 			iamRels = append(iamRels, v)
+		case output.AWSResource:
+			// The graph module ALSO emits the Phase-1-collected service resources
+			// (resourcesWithPolicies). These are the REAL backing resources the
+			// existing-compute HAS_ROLE methods re-point at; capture them so the REAL
+			// collection → resource_service_role → HAS_ROLE path is exercised end-to-end
+			// (previously dropped, so the synthetic stand-ins were the only HAS_ROLE source).
+			collectedResources = append(collectedResources, v)
 		}
 	}
 	require.NoError(t, p2.Wait())
 	require.NotEmpty(t, iamRels, "recon should produce IAM relationships")
+
+	// Keep only this fixture's collected resources: every fixture backing-resource runs a
+	// fixture role whose ARN carries the run prefix (aur-pf-<id>), and the role ARN appears as
+	// a quoted value inside the flattened properties JSON (or a top-level Role prop). Matching
+	// the prefix bounds the graph against the shared bfr account's other live fixtures.
+	var fixtureCollected []output.AWSResource
+	for _, r := range collectedResources {
+		if resourceReferencesPrefix(r, facts.prefix) {
+			fixtureCollected = append(fixtureCollected, r)
+		}
+	}
+	t.Logf("Collected resources: %d total, %d fixture-owned (prefix %s)",
+		len(collectedResources), len(fixtureCollected), facts.prefix)
 
 	// --- Step 3: Write to Neo4j ---
 	boltURL, cleanup, err := testutil.StartNeo4jContainer(ctx)
@@ -426,12 +451,21 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 		addNode(awstransformers.NodeFromAWSIAMResource(r))
 	}
 
-	// 3b. Seed synthetic compute Resource nodes so resource_to_role / resource_service_role
-	// build (Resource)-[:HAS_ROLE]->(compute admin role) for the HAS_ROLE methods whose
-	// backing service is not provisioned in the default tier. Real Lambda + EC2 are also
-	// seeded here (CloudControl is not collected for compute by graph recon), shaped exactly
-	// as the production transformer would emit them, so the enricher contract is exercised
-	// on real edge structure.
+	// 3b-real. Seed the REAL Phase-1-collected backing resources (CFN stack/stackset, ECS task
+	// def, SFN state machine, Glue job, CodeBuild project, Batch job def) through the PRODUCTION
+	// transformer NodeFromAWSResource — exactly as `recon graph` seeds them. resource_service_role
+	// then builds (realResource)-[:HAS_ROLE]->(privileged role) by substring-matching the role ARN
+	// inside the flattened properties JSON. This is the REAL collection → HAS_ROLE path; the
+	// provisioned types no longer rely on a synthetic stand-in.
+	for _, r := range fixtureCollected {
+		addNode(awstransformers.NodeFromAWSResource(r))
+	}
+
+	// 3b-synthetic. Seed synthetic compute Resource nodes for the HAS_ROLE methods whose backing
+	// service is NOT provisioned in the fixture (cost/complexity — see syntheticComputeResources):
+	// App Runner, SageMaker notebook, Glue dev endpoint, Bedrock AgentCore code interpreter; plus
+	// real Lambda + EC2 (still seeded here for the same-node-binding action edges in 3d). Their
+	// collectors are unit-tested; live-path verification is deferred for those types.
 	for _, sr := range syntheticResources {
 		addNode(sr.node())
 	}
@@ -450,15 +484,21 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 	}
 	require.NotEmpty(t, rels, "fixture principals should have IAM relationships")
 
-	// 3d. Seed action edges from the same-node-binding HAS_ROLE attackers to the synthetic
-	// compute Resource node carrying HAS_ROLE. The lambda_*/apprunner_update_service/
-	// stepfunctions_update guards MATCH the action edge and the (Resource)-[:HAS_ROLE]->(role)
-	// edge on the SAME node, but real recon resolves a '*' action to the AWS::Service stub, not
-	// to the synthetic Resource. On a real account the action resolves to the real resource
-	// (which is also the HAS_ROLE source), so these edges faithfully model production recon.
-	// (Decoupled HAS_ROLE methods — ssm/glue/codebuild/ec2_modify — need no such edge: they
+	// 3d. Seed action edges from the same-node-binding HAS_ROLE attackers to the Resource node
+	// carrying HAS_ROLE. The lambda_*/apprunner_update_service/stepfunctions_update guards MATCH the
+	// action edge and the (Resource)-[:HAS_ROLE]->(role) edge on the SAME node, but real recon
+	// resolves a '*' action to the AWS::Service stub, not to the specific Resource. On a real account
+	// the action resolves to the real resource (which is also the HAS_ROLE source), so these edges
+	// faithfully model production recon. For stepfunctions_update the real SFN StateMachine is now
+	// collected (Phase-2a), so its action edges attach to the REAL node (realResourceARNs); lambda /
+	// apprunner stay on their synthetic stand-ins.
+	// (Decoupled HAS_ROLE methods — ssm/glue/codebuild/ec2_modify/cfn — need no such edge: they
 	// EXISTS the action against any target and reach the resource via a separate HAS_ROLE MATCH.)
-	rels = append(rels, syntheticActionEdges(facts.attackerARNs, syntheticResources)...)
+	realResourceARNs := map[string]string{}
+	for _, r := range fixtureCollected {
+		realResourceARNs[r.ResourceType] = r.ARN
+	}
+	rels = append(rels, syntheticActionEdges(facts.attackerARNs, syntheticResources, realResourceARNs)...)
 
 	// 3e. Same-node-binding relocation for lambda_passrole_createfunction_addpermission (same
 	// soundness class as 3d, not an evaluator-emission gap). lambda:CreateFunction AND
@@ -511,6 +551,60 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 			} else {
 				assertFP(t, ctx, db, tc, attacker)
 			}
+		})
+	}
+
+	// --- Step 5b: REAL-path HAS_ROLE verification (independent of CAN_PRIVESC) ---
+	// For each Phase-2a provisioned backing resource, prove the REAL path INDEPENDENTLY of the
+	// privesc method: (a) the collector enumerated the REAL resource — a :Resource node with the
+	// right _resourceType and a REAL-ACCOUNT ARN (not the synthetic 000000000000 placeholder)
+	// exists, and (b) resource_service_role/resource_to_role built (realResource)-[:HAS_ROLE]->(role)
+	// to the expected privileged role. With synthetics still present (Step 2), this distinguishes
+	// the real path: it asserts on the REAL ARN, never the synthetic one.
+	realPathCases := []struct {
+		name         string
+		resourceType string
+		realARN      string // the real fixture resource ARN/identifier (must NOT be 000000000000)
+		roleARN      string // the expected HAS_ROLE target
+	}{
+		{"cfn_stack", "AWS::CloudFormation::Stack", fixture.Output("cfn_stack_id"), facts.computeAdminARN},
+		{"cfn_stackset", "AWS::CloudFormation::StackSet", fixture.Output("cfn_stackset_id"), facts.computeAdminARN},
+		{"ecs_taskdef", "AWS::ECS::TaskDefinition", fixture.Output("ecs_taskdef_arn"), facts.computeAdminARN},
+		{"sfn_state_machine", "AWS::StepFunctions::StateMachine", fixture.Output("sfn_state_machine_arn"), facts.computeAdminARN},
+		{"glue_job", "AWS::Glue::Job", fixture.Output("glue_job_name"), facts.computeAdminARN},
+		{"codebuild_project", "AWS::CodeBuild::Project", fixture.Output("codebuild_project_arn"), facts.computeAdminARN},
+		{"batch_jobdef", "AWS::Batch::JobDefinition", fixture.Output("batch_jobdef_arn"), facts.serviceAdminARNs["ecstasks"]},
+	}
+	for _, rc := range realPathCases {
+		rc := rc
+		t.Run("real_path/"+rc.name, func(t *testing.T) {
+			require.NotEmpty(t, rc.realARN, "fixture must output a real ARN/id for %s", rc.name)
+			require.NotContains(t, rc.realARN, "000000000000",
+				"%s must be a REAL-account resource, not the synthetic placeholder", rc.name)
+
+			// (a) the REAL resource node exists (collected), keyed by a real-account identifier.
+			// Match by _resourceType AND that the node's arn contains the real account / matches the
+			// real ARN/name — distinguishing it from the synthetic 000000000000 node of the same type.
+			nNode := countEdges(t, ctx, db,
+				`MATCH (r:Resource)
+				 WHERE r._resourceType = $rt
+				   AND coalesce(r.arn, r.Arn) IS NOT NULL
+				   AND (coalesce(r.arn, r.Arn) = $arn OR coalesce(r.arn, r.Arn) CONTAINS $acct)
+				 RETURN count(r) AS n`,
+				map[string]any{"rt": rc.resourceType, "arn": rc.realARN, "acct": facts.account()})
+			assert.Positive(t, nNode,
+				"[REAL-PATH] no collected %s :Resource node with a real-account ARN found", rc.resourceType)
+
+			// (b) the REAL resource node HAS_ROLE → the expected privileged role.
+			nEdge := countEdges(t, ctx, db,
+				`MATCH (r:Resource)-[:HAS_ROLE]->(role)
+				 WHERE r._resourceType = $rt
+				   AND coalesce(r.arn, r.Arn) CONTAINS $acct
+				   AND (role.Arn = $role OR role.arn = $role)
+				 RETURN count(*) AS n`,
+				map[string]any{"rt": rc.resourceType, "acct": facts.account(), "role": rc.roleARN})
+			assert.Positive(t, nEdge,
+				"[REAL-PATH] real %s missing (Resource)-[:HAS_ROLE]->(%s)", rc.resourceType, rc.roleARN)
 		})
 	}
 
@@ -625,6 +719,25 @@ func assertTargetAllowlist(t *testing.T, ctx context.Context, db graph.GraphData
 		"CAN_PRIVESC reached IAM principals outside the passable-target allowlist — cartesian fan-out regression: %v", off)
 }
 
+// resourceReferencesPrefix reports whether a collected resource is owned by THIS fixture: its
+// role-bearing properties (or top-level Role/IamInstanceProfile) reference a fixture role whose
+// ARN carries the run prefix (aur-pf-<id>). Used to bound the seeded graph against the shared
+// account's other live fixtures.
+func resourceReferencesPrefix(r output.AWSResource, prefix string) bool {
+	if prefix == "" {
+		return false
+	}
+	if strings.Contains(r.ARN, prefix) {
+		return true
+	}
+	for _, v := range r.Properties {
+		if s, ok := v.(string); ok && strings.Contains(s, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func countEdges(t *testing.T, ctx context.Context, db graph.GraphDatabase, cypher string, params map[string]any) int64 {
 	t.Helper()
 	result, err := db.Query(ctx, cypher, params)
@@ -664,18 +777,31 @@ func (s syntheticResource) node() *graph.Node {
 	return &graph.Node{Labels: []string{"Resource", s.resourceType}, Properties: props, UniqueKey: []string{"arn"}}
 }
 
-// syntheticComputeResources returns the compute resources that run a privileged role. The Lambda
-// and EC2 instance mirror what the production CloudControl transformer would emit (resource_to_role
-// keys Lambda on Role and EC2 on InstanceProfileList); the remaining service resource types key
-// resource_service_role on the role ARN appearing as a quoted value inside `properties`.
+// syntheticComputeResources returns the SYNTHETIC compute Resource nodes still required for the
+// HAS_ROLE methods whose backing service is NOT provisioned in the fixture. Phase-2a provisioned
+// REAL backing resources for CFN Stack/StackSet, CodeBuild Project, Glue Job, ECS TaskDefinition,
+// SFN StateMachine, and Batch JobDefinition — those are now collected live and seeded via
+// NodeFromAWSResource (Step 3b-real), so their synthetic stand-ins were DROPPED. The live path
+// (collection → resource_service_role → HAS_ROLE → method) is verified by the real_path/* subtests.
 //
-// Most resources run the compute admin role. The D4 re-pointed Batch JobDefinition and AgentCore
-// CodeInterpreter must instead run a role the re-pointed query's trust guard accepts: the Batch
-// job role must trust ecs-tasks.amazonaws.com (the ecstasks svcadmin role) and the CodeInterpreter
-// exec role must trust bedrock-agentcore.amazonaws.com (the bedrock svcadmin role) — hence the two
-// extra role-ARN params. (The CFN Stack stays on compute admin: cloudformation_changeset's guard
-// only requires a privileged target, not a service-specific trust.)
-func syntheticComputeResources(computeRoleARN, ec2InstanceARN, batchJobRoleARN, bedrockExecRoleARN string) []syntheticResource {
+// KEPT SYNTHETIC (collector unit-tested; live-fixture provisioning deferred for cost/complexity):
+//   - AWS::Lambda::Function: real Lambda IS collected, but this synthetic node also anchors the
+//     same-node-binding lambda_* action edges (3d). Real Lambda + this node share the same role;
+//     kept so the lambda same-node binding stays sound. (Lambda's own HAS_ROLE works on the real
+//     node via resource_to_role's Role match.)
+//   - AWS::EC2::Instance: real instance IS collected; this node carries the IamInstanceProfile
+//     prop the EC2/SSM HAS_ROLE methods and the ec2_replace_profile EXISTS clause read. Kept.
+//   - AWS::AppRunner::Service: App Runner needs a runnable container-image source and bills while
+//     running — disproportionate. Synthetic stand-in (anchors the apprunner_update_service
+//     same-node binding). Collector unit-tested; real-path verification deferred.
+//   - AWS::Glue::DevEndpoint: requires a VPC and bills hourly per DPU — disproportionate.
+//     Synthetic stand-in. Collector unit-tested; real-path verification deferred.
+//   - AWS::SageMaker::NotebookInstance: bills while InService, slow to provision/delete —
+//     disproportionate. Synthetic stand-in. Collector unit-tested; real-path verification deferred.
+//   - AWS::BedrockAgentCore::CodeInterpreter: AgentCore is a preview service with NO Terraform
+//     provider resource — not provisionable via TF. Synthetic stand-in. Collector unit-tested;
+//     real-path verification deferred.
+func syntheticComputeResources(computeRoleARN, ec2InstanceARN, bedrockExecRoleARN string) []syntheticResource {
 	// resource_service_role matches '"' + role.Arn + '"' inside the flattened properties JSON.
 	svcRoleARN := func(rt, resArn, roleARN string) syntheticResource {
 		return syntheticResource{arn: resArn, resourceType: rt,
@@ -692,19 +818,18 @@ func syntheticComputeResources(computeRoleARN, ec2InstanceARN, batchJobRoleARN, 
 		// the name-form clause ('instance-profile/' + name + '"') resolves.
 		{arn: ec2InstanceARN, resourceType: "AWS::EC2::Instance",
 			props: map[string]any{"Role": computeRoleARN}},
-		svcRole("AWS::CloudFormation::Stack", "arn:aws:cloudformation:us-east-2:000000000000:stack/pf/1"),
-		svcRole("AWS::CloudFormation::StackSet", "arn:aws:cloudformation:us-east-2:000000000000:stackset/pf"),
-		svcRole("AWS::CodeBuild::Project", "arn:aws:codebuild:us-east-2:000000000000:project/pf"),
-		svcRole("AWS::Glue::DevEndpoint", "arn:aws:glue:us-east-2:000000000000:devEndpoint/pf"),
-		svcRole("AWS::Glue::Job", "arn:aws:glue:us-east-2:000000000000:job/pf"),
+		// synthetic stand-in — App Runner not provisioned in fixture (needs a running container
+		// image; cost/complexity); collector is unit-tested; real-path verification deferred.
 		svcRole("AWS::AppRunner::Service", "arn:aws:apprunner:us-east-2:000000000000:service/pf"),
-		svcRole("AWS::ECS::TaskDefinition", "arn:aws:ecs:us-east-2:000000000000:task-definition/pf"),
-		svcRole("AWS::StepFunctions::StateMachine", "arn:aws:states:us-east-2:000000000000:stateMachine/pf"),
+		// synthetic stand-in — Glue DevEndpoint not provisioned in fixture (needs a VPC + bills
+		// hourly per DPU); collector is unit-tested; real-path verification deferred.
+		svcRole("AWS::Glue::DevEndpoint", "arn:aws:glue:us-east-2:000000000000:devEndpoint/pf"),
+		// synthetic stand-in — SageMaker NotebookInstance not provisioned in fixture (bills while
+		// InService, slow); collector is unit-tested; real-path verification deferred.
 		svcRole("AWS::SageMaker::NotebookInstance", "arn:aws:sagemaker:us-east-2:000000000000:notebook-instance/pf"),
-		// D4 re-point backing resources: Batch JobDefinition -> ecs-tasks-trusting svcadmin role;
-		// AgentCore CodeInterpreter -> bedrock-agentcore-trusting svcadmin role. resource_service_role
-		// covers both _resourceTypes and matches the role ARN as a quoted properties substring.
-		svcRoleARN("AWS::Batch::JobDefinition", "arn:aws:batch:us-east-2:000000000000:job-definition/pf:1", batchJobRoleARN),
+		// synthetic stand-in — Bedrock AgentCore CodeInterpreter not provisioned in fixture (preview
+		// service, no Terraform provider resource); collector is unit-tested; real-path verification
+		// deferred. Runs the bedrock-agentcore-trusting svcadmin role the re-pointed query expects.
 		svcRoleARN("AWS::BedrockAgentCore::CodeInterpreter", "arn:aws:bedrock-agentcore:us-east-2:000000000000:code-interpreter/pf", bedrockExecRoleARN),
 	}
 }
@@ -727,20 +852,41 @@ var sameNodeActionBindings = map[string]struct {
 	"stepfunctions_update":     {"AWS::StepFunctions::StateMachine", []string{"STATES_UPDATESTATEMACHINE", "STATES_STARTEXECUTION"}},
 }
 
-// syntheticActionEdges builds the attacker->synthetic-resource action relationships the
-// same-node-binding HAS_ROLE methods need. Each edge points the attacker's action at the
-// synthetic Resource node that carries (Resource)-[:HAS_ROLE]->(compute admin role), so the
-// guard's same-node MATCH resolves — exactly what production recon would emit if the real
-// resource were collected.
-func syntheticActionEdges(attackerARNs map[string]string, resources []syntheticResource) []*graph.Relationship {
-	nodeByType := map[string]*graph.Node{}
+// syntheticActionEdges builds the attacker->resource action relationships the same-node-binding
+// HAS_ROLE methods need. Each edge points the attacker's action at the Resource node that carries
+// (Resource)-[:HAS_ROLE]->(privileged role), so the guard's same-node MATCH resolves — exactly
+// what production recon would emit if the real resource's '*'-scoped action edge bound to it
+// instead of the AWS::Service stub.
+//
+// For a type whose REAL backing resource was provisioned + collected (e.g. SFN StateMachine after
+// Phase-2a), the action edge attaches to the REAL node's arn (realByType) so the SAME real node
+// carries both the action edge and HAS_ROLE. For a KEPT-synthetic type (App Runner, Lambda), it
+// attaches to the synthetic node (resources). This keeps stepfunctions_update on the real path
+// while apprunner_update_service / lambda_* stay on their synthetic stand-ins.
+func syntheticActionEdges(attackerARNs map[string]string, resources []syntheticResource, realByType map[string]string) []*graph.Relationship {
+	// Prefer a real collected node's arn; fall back to the synthetic node's arn.
+	arnByType := map[string]string{}
 	for _, r := range resources {
-		nodeByType[r.resourceType] = r.node()
+		arnByType[r.resourceType] = r.arn
+	}
+	for rt, arn := range realByType {
+		arnByType[rt] = arn // real overrides synthetic when both exist
+	}
+	endNode := func(rt string) *graph.Node {
+		arn := arnByType[rt]
+		if arn == "" {
+			return nil
+		}
+		return &graph.Node{
+			Labels:     []string{"Resource", rt},
+			Properties: map[string]any{"arn": arn, "_type": "Resource", "_resourceType": rt},
+			UniqueKey:  []string{"arn"},
+		}
 	}
 	var rels []*graph.Relationship
 	for key, b := range sameNodeActionBindings {
 		attacker := attackerARNs[key]
-		end := nodeByType[b.resourceType]
+		end := endNode(b.resourceType)
 		if attacker == "" || end == nil {
 			continue
 		}
