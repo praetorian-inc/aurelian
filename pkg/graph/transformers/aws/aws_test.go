@@ -204,6 +204,78 @@ func TestNodeFromAWSResource(t *testing.T) {
 	}
 }
 
+// TestNodeFromAWSResourcePromotesRoleReference locks down the fix for the A2
+// HAS_ROLE defect: flattenStruct serializes cr.Properties into a single JSON
+// string under "properties", so the role reference resource_to_role.yaml reads
+// as a TOP-LEVEL Cypher property (resource.IamInstanceProfile / resource.Role)
+// would otherwise always be null for collector- and ERD-derived resources.
+// NodeFromAWSResource must promote it to a top-level node property. This test
+// FAILS if the promotion is removed.
+func TestNodeFromAWSResourcePromotesRoleReference(t *testing.T) {
+	const (
+		profileARN = "arn:aws:iam::123456789012:instance-profile/ip"
+		roleARN    = "arn:aws:iam::123456789012:role/lambda-role"
+	)
+
+	tests := []struct {
+		name     string
+		resource output.AWSResource
+		wantKey  string
+		wantVal  string
+	}{
+		{
+			name: "EC2 instance-profile ARN string form",
+			resource: output.AWSResource{
+				ResourceType: "AWS::EC2::Instance",
+				ARN:          "arn:aws:ec2:us-east-1:123456789012:instance/i-0string",
+				Properties:   map[string]any{"IamInstanceProfile": profileARN},
+			},
+			wantKey: "IamInstanceProfile",
+			wantVal: profileARN,
+		},
+		{
+			name: "EC2 instance-profile {Arn:...} map form",
+			resource: output.AWSResource{
+				ResourceType: "AWS::EC2::Instance",
+				ARN:          "arn:aws:ec2:us-east-1:123456789012:instance/i-0map",
+				Properties:   map[string]any{"IamInstanceProfile": map[string]any{"Arn": profileARN}},
+			},
+			wantKey: "IamInstanceProfile",
+			wantVal: profileARN,
+		},
+		{
+			name: "Lambda function role",
+			resource: output.AWSResource{
+				ResourceType: "AWS::Lambda::Function",
+				ARN:          "arn:aws:lambda:us-east-1:123456789012:function:fn",
+				Properties:   map[string]any{"Role": roleARN},
+			},
+			wantKey: "Role",
+			wantVal: roleARN,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := NodeFromAWSResource(tt.resource)
+			require.NotNil(t, node)
+			assert.Equal(t, tt.wantVal, node.Properties[tt.wantKey],
+				"role reference must be promoted to a top-level node property so resource_to_role.yaml can read it")
+		})
+	}
+
+	t.Run("no role reference does not instantiate empty key", func(t *testing.T) {
+		node := NodeFromAWSResource(output.AWSResource{
+			ResourceType: "AWS::EC2::Instance",
+			ARN:          "arn:aws:ec2:us-east-1:123456789012:instance/i-0none",
+			Properties:   map[string]any{"State": "running"},
+		})
+		require.NotNil(t, node)
+		_, present := node.Properties["IamInstanceProfile"]
+		assert.False(t, present, "must not set an empty IamInstanceProfile when none is present")
+	})
+}
+
 func TestNodeFromServicePrincipal(t *testing.T) {
 	node := NodeFromServicePrincipal("lambda.amazonaws.com")
 

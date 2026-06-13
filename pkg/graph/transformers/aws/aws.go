@@ -90,6 +90,20 @@ func NodeFromAWSResource(cr output.AWSResource) *graph.Node {
 	props["_type"] = "Resource"
 	props["_resourceType"] = cr.ResourceType
 
+	// flattenStruct buries cr.Properties as a single JSON string under the
+	// "properties" key, so the role reference resource_to_role.yaml needs is not
+	// reachable as a top-level Cypher property. Promote it to a top-level node
+	// property (EC2 -> IamInstanceProfile, Lambda -> Role) so HAS_ROLE edges are
+	// created for collector- and ERD-derived resources, not just hand-seeded ones.
+	if ref := types.RoleReferenceFromProperties(cr.Properties, cr.ResourceType); ref != "" {
+		switch cr.ResourceType {
+		case "AWS::EC2::Instance":
+			props["IamInstanceProfile"] = ref
+		case "AWS::Lambda::Function":
+			props["Role"] = ref
+		}
+	}
+
 	// Parse resource type to get short name
 	var labels []string
 	parts := parseResourceType(cr.ResourceType)

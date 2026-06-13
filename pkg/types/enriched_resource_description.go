@@ -276,7 +276,17 @@ func (e *EnrichedResourceDescription) GetRoleArn() string {
 		return ""
 	}
 
-	switch e.TypeName {
+	return RoleReferenceFromProperties(props, e.TypeName)
+}
+
+// RoleReferenceFromProperties extracts the IAM role reference a resource binds
+// to from its CloudControl-style Properties map. The reference is the value that
+// resource_to_role.yaml matches against a role (an instance-profile ARN/name for
+// EC2, the role ARN for Lambda/CloudFormation). Returns "" when no reference is
+// present. Shared by GetRoleArn and the graph transformer so both agree on the
+// extraction (the transformer promotes this onto a top-level node property).
+func RoleReferenceFromProperties(props map[string]any, typeName string) string {
+	switch typeName {
 	case "AWS::Lambda::Function":
 		if roleArn, ok := props["Role"].(string); ok {
 			return roleArn

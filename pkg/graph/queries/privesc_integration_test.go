@@ -9,6 +9,8 @@ import (
 
 	"github.com/praetorian-inc/aurelian/pkg/graph"
 	"github.com/praetorian-inc/aurelian/pkg/graph/adapters"
+	transformaws "github.com/praetorian-inc/aurelian/pkg/graph/transformers/aws"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	neo4jcontainer "github.com/testcontainers/testcontainers-go/modules/neo4j"
@@ -1569,6 +1571,68 @@ func TestResourceToRoleNameFormHasRole(t *testing.T) {
 	n, _ := toInt64(result.Records[0]["n"])
 	assert.Equal(t, int64(1), n,
 		"name-form IamInstanceProfile must link to the role via HAS_ROLE — the second anchored CONTAINS clause covers this; the old single-clause query misses it")
+}
+
+// TestResourceToRoleViaTransformerHasRole proves the A2 HAS_ROLE closure through
+// the REAL production path, not hand-seeded top-level properties. The instance
+// node is built by NodeFromAWSResource (which buries Properties as a JSON string
+// and must PROMOTE IamInstanceProfile to a top-level node property) and written
+// via the production CreateNodes path. The enricher then matches that promoted
+// property against the role's InstanceProfileList. Without the promotion fix,
+// resource.IamInstanceProfile is null on the written node and no HAS_ROLE edge is
+// created — so this test is non-vacuous for the fix and demonstrates that
+// ec2_ssm_association can now resolve (instance)-[:HAS_ROLE]->(victim) on real data.
+func TestResourceToRoleViaTransformerHasRole(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	cfg := graph.NewConfig(boltURL, "", "")
+	db, err := adapters.NewNeo4jAdapter(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	_, err = db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+	require.NoError(t, err, "clear db")
+
+	const (
+		instanceARN = "arn:aws:ec2:us-east-1:123456789012:instance/i-0real"
+		roleARN     = "arn:aws:iam::123456789012:role/transformer-role"
+		profileARN  = "arn:aws:iam::123456789012:instance-profile/ip"
+		profileList = `[{"Arn":"arn:aws:iam::123456789012:instance-profile/ip"}]`
+	)
+
+	// Build the instance node via the production transformer (Properties carries
+	// the instance-profile ARN; NodeFromAWSResource must promote it to top-level)
+	// and write it via the production CreateNodes path — NOT a hand-seeded property.
+	instanceNode := transformaws.NodeFromAWSResource(output.AWSResource{
+		ResourceType: "AWS::EC2::Instance",
+		ARN:          instanceARN,
+		AccountRef:   "123456789012",
+		Region:       "us-east-1",
+		Properties:   map[string]any{"IamInstanceProfile": profileARN},
+	})
+	_, err = db.CreateNodes(ctx, []*graph.Node{instanceNode})
+	require.NoError(t, err, "write transformer-built instance node")
+
+	// Role with the JSON-string InstanceProfileList the enricher CONTAINS-matches.
+	_, err = db.Query(ctx, fmt.Sprintf(
+		`CREATE (r:Role:Principal {Arn: '%s', InstanceProfileList: '%s'})`,
+		roleARN, profileList), nil)
+	require.NoError(t, err, "seed role with InstanceProfileList")
+
+	_, err = RunPlatformQuery(ctx, db, "aws/enrich/resource_to_role", nil)
+	require.NoError(t, err, "run resource_to_role enricher")
+
+	result, err := db.Query(ctx, fmt.Sprintf(
+		`MATCH (i {arn: '%s'})-[:HAS_ROLE]->(r:Role {Arn: '%s'}) RETURN count(*) AS n`,
+		instanceARN, roleARN), nil)
+	require.NoError(t, err)
+	n, _ := toInt64(result.Records[0]["n"])
+	assert.Equal(t, int64(1), n,
+		"transformer-built instance must link to the role via HAS_ROLE — requires NodeFromAWSResource to promote IamInstanceProfile to a top-level node property")
 }
 
 // toInt64 coerces common numeric types returned by the Neo4j driver to int64.
