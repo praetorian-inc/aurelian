@@ -10,15 +10,22 @@ description: |
   removed: CreateProject cannot reach arbitrary existing principals, only the roles the
   project's own toolchain template would create.
 
-  NOTE (no HAS_ROLE / no resource link): CodeStar projects are not modeled as a resource
-  type by either resource-to-role enricher (no AWS::CodeStar::Project in the HAS_ROLE
-  scope) and CodeStar has no service-trust principal to key a passed-role guard on, so
-  there is no graph target for the escalation. The permission target is constrained to
-  :Principal so the method only merges CAN_PRIVESC to an actual principal — never to a
-  resource/service stub the permission edge happens to point at; codestar:CreateProject
-  resolves to the CodeStar service wildcard (a :Resource), so with no Principal target
-  this method emits no edge until a CodeStar resource->role enricher lands and the
-  CAN_PRIVESC edge can be re-pointed at the toolchain role.
+  STILL-DEFERRED (D4 — service EOL, collector unjustified): AWS CodeStar reached
+  end-of-life on 31 July 2024 — no new CodeStar projects can be created in any account, so
+  codestar:CreateProject can no longer provision a toolchain stack/role to escalate into.
+  Collecting AWS::CodeStar::Project to build a resource->role enricher is therefore
+  unjustified (no live targets to link), and the AWS SDK module
+  github.com/aws/aws-sdk-go-v2/service/codestar is not even a dependency of this repo
+  (absent from go.mod AND go.sum). Building a collector for an EOL service is out of scope.
+
+  CodeStar projects are not modeled as a resource type by either resource-to-role enricher
+  (no AWS::CodeStar::Project in the HAS_ROLE scope) and CodeStar has no service-trust
+  principal to key a passed-role guard on, so there is no graph target for the escalation.
+  The permission target is constrained to :Principal so the method only merges CAN_PRIVESC
+  to an actual principal — never to a resource/service stub the permission edge happens to
+  point at; codestar:CreateProject resolves to the CodeStar service wildcard (a :Resource),
+  so with no Principal target this method emits no edge. This is the sound terminal form
+  for an EOL service: no edge rather than a fabricated one.
 severity: medium
 order: 100
 cypher: |

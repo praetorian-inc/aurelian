@@ -8,12 +8,19 @@ description: |
   definition carrying a privileged jobRoleArn, overriding the container command to steal
   that role's credentials (no iam:PassRole required).
 
+  STILL-DEFERRED (D4 — backing resource NOT collected, SDK not a dependency): re-pointing at
+  the real role requires collecting AWS::Batch::JobDefinition
+  (batch:DescribeJobDefinitions -> ContainerProperties.JobRoleArn / ExecutionRoleArn) and
+  linking it via HAS_ROLE. The API exists and exposes the role ARNs, BUT the AWS SDK module
+  github.com/aws/aws-sdk-go-v2/service/batch is NOT a dependency of this repo (absent from
+  go.mod AND go.sum); adding a new SDK dependency is out of scope. JobDefinitions are
+  therefore not in the graph, so a JobDefinition->Role enricher could never fire (it would be
+  vacuous — worse than this honest fail-open). The sound fail-open existence-precondition
+  below is retained until the batch SDK is added and a collector lands.
+
   The batch:SubmitJob permission edge resolves to the Batch SERVICE wildcard resource
   (arn:aws:batch:*:*:*), NOT to a specific job-definition node, so the graph carries no
-  JobDefinition->Role linkage to identify the exact target role (the JobDefinition->Role
-  enricher for AWS::Batch::JobDefinition ContainerProperties.JobRoleArn is not yet present;
-  resource_service_role covers CFN/CodeBuild/Glue/AppRunner/ECS/StepFunctions/SageMaker/
-  DataPipeline only). The escalation edge therefore terminates at the matched Batch service
+  JobDefinition->Role linkage to identify the exact target role. The escalation edge therefore terminates at the matched Batch service
   resource (NOT at an arbitrary Role — that would re-introduce a filtered cartesian fan-out
   to roles no job definition references). The catalog's trust + privileged-target guards
   ARE applied, in the only sound form available without the link: as an EXISTENCE
