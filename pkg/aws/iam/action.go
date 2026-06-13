@@ -20,7 +20,7 @@ func IsPrivEscAction(action string) bool {
 }
 
 var privEscActions = []string{
-	// Amplify (method 75)
+	// Amplify
 	"amplify:CreateApp",
 	"amplify:CreateBranch",
 	"amplify:StartJob",
@@ -30,11 +30,12 @@ var privEscActions = []string{
 	// AWS Batch (methods 45–46)
 	"batch:RegisterJobDefinition",
 	"batch:SubmitJob",
-	// Amazon Braket (method 47)
+	// Amazon Braket
 	"braket:CreateJob",
 	// CloudFormation (methods 16, 30, 31, 48–49)
 	"cloudformation:CreateChangeSet",
 	"cloudformation:CreateStack",
+	"cloudformation:CreateStackInstances",
 	"cloudformation:CreateStackSet",
 	"cloudformation:ExecuteChangeSet",
 	"cloudformation:SetStackPolicy",
@@ -45,12 +46,22 @@ var privEscActions = []string{
 	"codebuild:StartBuild",
 	"codebuild:StartBuildBatch",
 	"codebuild:UpdateProject",
-	// CodeDeploy (method 50)
+	// CodeDeploy
 	"codedeploy:CreateDeployment",
-	// CodeStar (method 26)
+	// Data Pipeline
+	"datapipeline:ActivatePipeline",
+	"datapipeline:CreatePipeline",
+	"datapipeline:PutPipelineDefinition",
+	// CodeStar
 	"codestar:AssociateTeamMember",
 	"codestar:CreateProject",
-	// Cognito Identity (method 51)
+	// Cognito Identity: SetIdentityPoolRoles binds the passed role to the pool;
+	// GetId + GetCredentialsForIdentity are the credential-retrieval half the
+	// cognito_set_identity_pool_roles.yaml guard EXISTS-requires to obtain pool credentials
+	// and assume the bound role. All three must be allowlisted for the evaluator to emit the
+	// COGNITO-IDENTITY_* edges (additive coverage data).
+	"cognito-identity:GetCredentialsForIdentity",
+	"cognito-identity:GetId",
 	"cognito-identity:SetIdentityPoolRoles",
 	// EC2 (methods 15, 38, 52–53, 73–76)
 	"ec2:CreateLaunchTemplate",
@@ -69,7 +80,7 @@ var privEscActions = []string{
 	"ecs:RegisterTaskDefinition",
 	"ecs:RunTask",
 	"ecs:StartTask",
-	// EMR (method 57)
+	// EMR
 	"elasticmapreduce:RunJobFlow",
 	// EMR Serverless (methods 58, 85)
 	"emr-serverless:CreateApplication",
@@ -97,6 +108,7 @@ var privEscActions = []string{
 	"iam:CreateRole",
 	"iam:CreateServiceLinkedRole",
 	"iam:CreateUser",
+	"iam:DeleteAccessKey",
 	"iam:PassRole",
 	"iam:PutGroupPolicy",
 	"iam:PutRolePolicy",
@@ -122,10 +134,10 @@ var privEscActions = []string{
 	// HealthOmics (methods 66, 87)
 	"omics:CreateWorkflow",
 	"omics:StartRun",
-	// AutoScaling (method 38)
+	// AutoScaling
 	"autoscaling:CreateAutoScalingGroup",
 	"autoscaling:CreateLaunchConfiguration",
-	// EventBridge Scheduler (method 68)
+	// EventBridge Scheduler
 	"scheduler:CreateSchedule",
 	// SageMaker (methods 19, 35–37, 67)
 	"sagemaker:CreateHyperParameterTuningJob",
@@ -145,12 +157,14 @@ var privEscActions = []string{
 	"states:CreateStateMachine",
 	"states:StartExecution",
 	"states:UpdateStateMachine",
-	// STS (method 22)
+	// STS
 	"sts:AssumeRole",
 	"sts:AssumeRoleWithSAML",
 	"sts:AssumeRoleWithWebIdentity",
 	"sts:GetFederationToken",
 	// Bedrock AgentCore (methods 40, 72)
 	"bedrock-agentcore:CreateCodeInterpreter",
+	"bedrock-agentcore:InvokeCodeInterpreter",
 	"bedrock-agentcore:InvokeSession",
+	"bedrock-agentcore:StartCodeInterpreterSession",
 }

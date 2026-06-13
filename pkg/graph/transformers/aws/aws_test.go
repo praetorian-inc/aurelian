@@ -73,6 +73,44 @@ func TestNodeFromGaadRole(t *testing.T) {
 	trustedServices, ok := node.Properties["trusted_services"].([]string)
 	assert.True(t, ok, "trusted_services should be a []string")
 	assert.ElementsMatch(t, []string{"lambda.amazonaws.com", "ec2.amazonaws.com"}, trustedServices)
+
+	// A pure-service trust must not produce a trusted_federated property.
+	_, hasFederated := node.Properties["trusted_federated"]
+	assert.False(t, hasFederated, "trusted_federated should be absent for service-only trust")
+}
+
+// TestNodeFromGaadRoleFederatedTrust verifies that a Federated principal (e.g. a
+// Cognito identity pool role trusting cognito-identity.amazonaws.com) is surfaced
+// as trusted_federated, separate from trusted_services, so the cognito privesc
+// guard can match it without polluting SERVICE_TRUSTS edges.
+func TestNodeFromGaadRoleFederatedTrust(t *testing.T) {
+	role := types.RoleDetail{
+		Arn:      "arn:aws:iam::123456789012:role/cognito-pool-authrole",
+		RoleName: "cognito-pool-authrole",
+		AssumeRolePolicyDocument: types.Policy{
+			Version: "2012-10-17",
+			Statement: &types.PolicyStatementList{
+				{
+					Effect: "Allow",
+					Principal: &types.Principal{
+						Federated: &types.DynaString{"cognito-identity.amazonaws.com"},
+					},
+					Action: &types.DynaString{"sts:AssumeRoleWithWebIdentity"},
+				},
+			},
+		},
+	}
+
+	node := NodeFromGaadRole(role)
+
+	require.NotNil(t, node)
+	trustedFederated, ok := node.Properties["trusted_federated"].([]string)
+	assert.True(t, ok, "trusted_federated should be a []string")
+	assert.ElementsMatch(t, []string{"cognito-identity.amazonaws.com"}, trustedFederated)
+
+	// Federated trust must not leak into trusted_services (SERVICE_TRUSTS source).
+	_, hasServices := node.Properties["trusted_services"]
+	assert.False(t, hasServices, "trusted_services should be absent for federated-only trust")
 }
 
 func TestNodeFromGaadGroup(t *testing.T) {
@@ -164,6 +202,78 @@ func TestNodeFromAWSResource(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestNodeFromAWSResourcePromotesRoleReference locks down the role-reference
+// promotion: flattenStruct serializes cr.Properties into a single JSON
+// string under "properties", so the role reference resource_to_role.yaml reads
+// as a TOP-LEVEL Cypher property (resource.IamInstanceProfile / resource.Role)
+// would otherwise always be null for collector- and ERD-derived resources.
+// NodeFromAWSResource must promote it to a top-level node property. This test
+// FAILS if the promotion is removed.
+func TestNodeFromAWSResourcePromotesRoleReference(t *testing.T) {
+	const (
+		profileARN = "arn:aws:iam::123456789012:instance-profile/ip"
+		roleARN    = "arn:aws:iam::123456789012:role/lambda-role"
+	)
+
+	tests := []struct {
+		name     string
+		resource output.AWSResource
+		wantKey  string
+		wantVal  string
+	}{
+		{
+			name: "EC2 instance-profile ARN string form",
+			resource: output.AWSResource{
+				ResourceType: "AWS::EC2::Instance",
+				ARN:          "arn:aws:ec2:us-east-1:123456789012:instance/i-0string",
+				Properties:   map[string]any{"IamInstanceProfile": profileARN},
+			},
+			wantKey: "IamInstanceProfile",
+			wantVal: profileARN,
+		},
+		{
+			name: "EC2 instance-profile {Arn:...} map form",
+			resource: output.AWSResource{
+				ResourceType: "AWS::EC2::Instance",
+				ARN:          "arn:aws:ec2:us-east-1:123456789012:instance/i-0map",
+				Properties:   map[string]any{"IamInstanceProfile": map[string]any{"Arn": profileARN}},
+			},
+			wantKey: "IamInstanceProfile",
+			wantVal: profileARN,
+		},
+		{
+			name: "Lambda function role",
+			resource: output.AWSResource{
+				ResourceType: "AWS::Lambda::Function",
+				ARN:          "arn:aws:lambda:us-east-1:123456789012:function:fn",
+				Properties:   map[string]any{"Role": roleARN},
+			},
+			wantKey: "Role",
+			wantVal: roleARN,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			node := NodeFromAWSResource(tt.resource)
+			require.NotNil(t, node)
+			assert.Equal(t, tt.wantVal, node.Properties[tt.wantKey],
+				"role reference must be promoted to a top-level node property so resource_to_role.yaml can read it")
+		})
+	}
+
+	t.Run("no role reference does not instantiate empty key", func(t *testing.T) {
+		node := NodeFromAWSResource(output.AWSResource{
+			ResourceType: "AWS::EC2::Instance",
+			ARN:          "arn:aws:ec2:us-east-1:123456789012:instance/i-0none",
+			Properties:   map[string]any{"State": "running"},
+		})
+		require.NotNil(t, node)
+		_, present := node.Properties["IamInstanceProfile"]
+		assert.False(t, present, "must not set an empty IamInstanceProfile when none is present")
+	})
 }
 
 func TestNodeFromServicePrincipal(t *testing.T) {

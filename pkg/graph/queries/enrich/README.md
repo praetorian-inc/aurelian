@@ -33,7 +33,7 @@ Queries are executed in ascending `order` field:
 2. **Order 10-13**: Admin/privilege detection
 3. **Order 100**: Privilege escalation path detection (privesc methods, mutually order-independent)
 
-## Cross-cutting privesc-method guards (Phase 2)
+## Cross-cutting privesc-method guards
 
 Reusable Cypher clauses applied to every corrected CAN_PRIVESC method (depend on the
 order 10-13 enrichers having run). Apply these mechanically when fanning out a method:
@@ -130,8 +130,8 @@ See `pkg/graph/queries/enrich_test.go` for test suite.
 ## Privilege Escalation Methods
 
 There are **89** privesc method YAMLs, originally seeded from Rhino Security Labs' AWS IAM
-privilege escalation research and expanded with the pathfinding.cloud gap-analysis set
-(Phase 2). Each method is one YAML in `aws/privesc/` and represents a distinct attack vector
+privilege escalation research and expanded with the pathfinding.cloud gap-analysis set. Each method is one YAML in
+`aws/privesc/` and represents a distinct attack vector
 where IAM permissions can be chained to gain elevated access. All run at `order: 100` and
 MERGE a `CAN_PRIVESC` edge to a correctly-scoped target (self-loop / passed role / reached
 role / resource service role / service stub).

@@ -8,6 +8,13 @@ description: |
   attached to themselves: they can publish a new default policy version granting *:*,
   escalating their OWN privileges. Modeled as a self-loop (genuine self-escalation),
   not a fan-out to every principal.
+
+  AWS caps a managed policy at 5 versions; at 5, CreatePolicyVersion fails (LimitExceeded)
+  unless an existing version is deleted first. The transformer surfaces the GAAD
+  PolicyVersionList length as policy.policy_version_count, so this method requires that
+  count < 5 when present. The guard is FAIL-OPEN: graphs collected before the enricher (or
+  policies discovered without version data) carry no policy_version_count prop and behave as
+  before (no version-limit guard).
 severity: high
 order: 100
 cypher: |
@@ -16,11 +23,15 @@ cypher: |
   //   - admin-as-source: skip principals that are already admin.
   //   - customer-managed only: AWS-managed policies (':iam::aws:policy/') are immutable.
   //   - attached-to-attacker: AttachedManagedPolicies is a JSON string -> CONTAINS.
+  //   - <5-versions precondition (FAIL-OPEN): at 5 versions CreatePolicyVersion fails without
+  //     a delete. policy.policy_version_count (transformer-surfaced len of PolicyVersionList) is
+  //     required < 5 when present; absent (pre-enricher graph) leaves the method as before.
   MATCH (attacker:Principal)-[perm]->(policy)
   WHERE type(perm) = 'IAM_CREATEPOLICYVERSION'
     AND coalesce(attacker._is_admin, false) <> true
     AND NOT coalesce(policy.Arn, policy.arn) CONTAINS ':iam::aws:policy/'
     AND coalesce(attacker.AttachedManagedPolicies, '') CONTAINS coalesce(policy.Arn, policy.arn)
+    AND (policy.policy_version_count IS NULL OR policy.policy_version_count < 5)
   WITH DISTINCT attacker
   MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:CreatePolicyVersion'}]->(attacker)
   ON CREATE SET pe._created = timestamp()

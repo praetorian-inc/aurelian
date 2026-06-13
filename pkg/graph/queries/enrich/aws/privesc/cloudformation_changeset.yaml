@@ -5,31 +5,47 @@ type: enrich
 category: privesc
 description: |
   Detects principals with cloudformation:CreateChangeSet and cloudformation:ExecuteChangeSet
-  on the SAME stack that can inherit admin permissions from that stack's service role —
-  no iam:PassRole required since the role is already attached to the stack.
-
-  NOTE (fan-out): the privesc target is the matched stack stub, NOT the stack's service
-  role, because the stack -> service-role binding requires a stack->role enricher
-  (CloudControl AWS::CloudFormation::Stack RoleARN -> HAS_ROLE Role) that is NOT yet in
-  the graph. That enricher is deferred to fan-out; once it lands, re-point the edge at
-  the stack's HAS_ROLE role and add the privileged-target guard on it. Until then the
-  cartesian all-principals fan-out is removed (the dominant FP) and only the
-  admin-as-source guard is applied; target tiering is fail-open on the sparse stub.
+  that can inherit admin permissions from an existing CloudFormation stack's service role —
+  no iam:PassRole required since the role is already attached to the stack. The escalation
+  target is the stack's SERVICE ROLE (reached via the resource_service_role enricher's
+  HAS_ROLE edge from AWS::CloudFormation::Stack — Stack.RoleARN, now collected by the graph
+  recon module's CloudFormation-stack collector), not an arbitrary principal. A stack with
+  no service role executes the change set with the caller's own credentials and confers no
+  escalation, so the HAS_ROLE link is mandatory (fail-closed). Guards: target role must be
+  more privileged than the attacker.
 severity: high
 order: 100
 cypher: |
-  // Multi-perm: both change-set actions must resolve to the SAME stack stub (no fan-out).
-  // Guard: admin-as-source exclusion. Stack->role binding deferred to a fan-out enricher.
-  MATCH (attacker:Principal)-[create]->(target)
+  // Existing-resource takeover (D4): drop the all-principals fan-out and the stack-stub
+  // terminal. The victim is the privileged service role bound to a stack the attacker can
+  // both stage AND execute a change set against, reached via (Stack)-[:HAS_ROLE]->(role).
+  // HAS_ROLE is mandatory (fail-closed): a roleless stack runs as the caller, conferring
+  // nothing. CreateChangeSet/ExecuteChangeSet map to {stack, service}, and real policies
+  // usually grant Resource:* so the permission edges resolve to the SERVICE stub, not the
+  // specific stack node — carrying them through would break the HAS_ROLE join (false
+  // negatives). So keep the cross-product (Stack)-[:HAS_ROLE]->(victim) MATCH (mirrors
+  // cloudformation_update_stack) and constrain it with a SAME-ACCOUNT guard between attacker
+  // and victim (ARN segment 4) so a multi-tenant graph can't link a stack in one account to
+  // an attacker in another. Both change-set actions remain required.
+  // Guards: admin-as-source; self-target; privileged-target tiering.
+  MATCH (attacker:Principal)-[create]->()
   WHERE type(create) = 'CLOUDFORMATION_CREATECHANGESET'
     AND coalesce(attacker._is_admin, false) <> true
-  WITH attacker, target
-  MATCH (attacker)-[execute]->(target)
+  WITH DISTINCT attacker
+  MATCH (attacker)-[execute]->()
   WHERE type(execute) = 'CLOUDFORMATION_EXECUTECHANGESET'
-    AND coalesce(target.Arn, target.arn) <> coalesce(attacker.Arn, attacker.arn)
-  WITH DISTINCT attacker, target
-  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'cloudformation:CreateChangeSet + cloudformation:ExecuteChangeSet'}]->(target)
+  WITH DISTINCT attacker
+  MATCH (stack:Resource)-[:HAS_ROLE]->(victim:Principal)
+  WHERE stack._resourceType = 'AWS::CloudFormation::Stack'
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND split(coalesce(victim.Arn, victim.arn), ':')[4] = split(coalesce(attacker.Arn, attacker.arn), ':')[4]
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'cloudformation:CreateChangeSet + cloudformation:ExecuteChangeSet'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.severity = 'high',
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

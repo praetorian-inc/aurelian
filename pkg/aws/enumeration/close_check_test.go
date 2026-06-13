@@ -99,9 +99,12 @@ func importsAWSEnumeration(f *ast.File) bool {
 	return false
 }
 
-// newEnumeratorVarName finds the variable name assigned from a NewEnumerator
-// call (e.g. "lister" from `lister := enumeration.NewEnumerator(...)`). Returns ""
-// if no NewEnumerator call is found.
+// newEnumeratorVarName finds the variable name assigned from a NewEnumerator or
+// NewEnumeratorWithProvider call (e.g. "lister" from
+// `lister := enumeration.NewEnumerator(...)`). Returns "" if no such call is
+// found. Both constructors return an *Enumerator whose Close() writes the skip
+// detail file (and, for the owning variant, logs the summary), so both require a
+// matching defer Close().
 func newEnumeratorVarName(body *ast.BlockStmt) string {
 	var varName string
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -113,7 +116,7 @@ func newEnumeratorVarName(body *ast.BlockStmt) string {
 			return true
 		}
 		call, ok := assign.Rhs[0].(*ast.CallExpr)
-		if !ok || !nameMatches(call.Fun, "NewEnumerator") {
+		if !ok || (!nameMatches(call.Fun, "NewEnumerator") && !nameMatches(call.Fun, "NewEnumeratorWithProvider")) {
 			return true
 		}
 		if ident, ok := assign.Lhs[0].(*ast.Ident); ok {
@@ -397,13 +400,16 @@ func TestClassifySkippableServiceNames(t *testing.T) {
 	}
 }
 
-// TestNewEnumeratorSharesSkipReport verifies two things inside NewEnumerator:
+// TestNewEnumeratorSharesSkipReport verifies the shared-SkipReport invariant
+// across the two constructors:
 //
-//  1. NewSkipReport() is called exactly once (the shared instance).
-//  2. Every function call that has an argument named "skipReport" passes the
-//     identifier `skipReport` — not a NewSkipReport() call, a helper function,
+//  1. NewEnumerator calls NewSkipReport() exactly once — it owns the single
+//     shared instance it hands to NewEnumeratorWithProvider.
+//  2. Inside NewEnumeratorWithProvider (where every sub-enumerator is wired),
+//     every New*Enumerator*/New*CloudControl* call passes the identifier
+//     `skipReport` as its last argument — not a NewSkipReport() call, a helper,
 //     or any other expression. This ensures all enumerators share the same
-//     report instance.
+//     report instance that the caller supplied.
 func TestNewEnumeratorSharesSkipReport(t *testing.T) {
 	enumDir := filepath.Join(findRepoRoot(t), "pkg", "aws", "enumeration")
 	fset := token.NewFileSet()
@@ -417,37 +423,36 @@ func TestNewEnumeratorSharesSkipReport(t *testing.T) {
 
 	ast.Inspect(f, func(n ast.Node) bool {
 		fn, ok := n.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != "NewEnumerator" || fn.Body == nil {
+		if !ok || fn.Body == nil {
 			return true
 		}
 
-		// Check 1: exactly one NewSkipReport() call.
-		newSkipReportCount := 0
-		ast.Inspect(fn.Body, func(inner ast.Node) bool {
-			call, ok := inner.(*ast.CallExpr)
-			if !ok {
+		// Check 1: NewEnumerator owns exactly one NewSkipReport() call.
+		if fn.Name.Name == "NewEnumerator" {
+			newSkipReportCount := 0
+			ast.Inspect(fn.Body, func(inner ast.Node) bool {
+				if call, ok := inner.(*ast.CallExpr); ok && nameMatches(call.Fun, "NewSkipReport") {
+					newSkipReportCount++
+				}
 				return true
-			}
-			if nameMatches(call.Fun, "NewSkipReport") {
-				newSkipReportCount++
+			})
+			if newSkipReportCount != 1 {
+				violations = append(violations, fmt.Sprintf(
+					"NewEnumerator has %d NewSkipReport() calls, expected exactly 1", newSkipReportCount))
 			}
 			return true
-		})
-		if newSkipReportCount != 1 {
-			violations = append(violations, fmt.Sprintf(
-				"NewEnumerator has %d NewSkipReport() calls, expected exactly 1", newSkipReportCount))
 		}
 
-		// Check 2: every call whose last argument position could be a
-		// *SkipReport must pass the identifier `skipReport`, not any
-		// other expression.
+		// Check 2: inside NewEnumeratorWithProvider every sub-enumerator
+		// constructor passes the shared `skipReport` identifier as its last arg.
+		if fn.Name.Name != "NewEnumeratorWithProvider" {
+			return true
+		}
 		ast.Inspect(fn.Body, func(inner ast.Node) bool {
 			call, ok := inner.(*ast.CallExpr)
 			if !ok || len(call.Args) == 0 {
 				return true
 			}
-			// Check every argument — if it's the identifier "skipReport", good.
-			// If it's a different expression but resolves to SkipReport, bad.
 			// We can't do type resolution in AST, so we use a heuristic:
 			// any call to a function named New*Enumerator* or
 			// New*CloudControl* must have its last arg be `skipReport`.
@@ -484,7 +489,7 @@ func TestNewEnumeratorSharesSkipReport(t *testing.T) {
 			return true
 		})
 
-		return false
+		return true
 	})
 
 	for _, v := range violations {
@@ -753,7 +758,6 @@ func TestExactlyOneClassifyPerAWSError(t *testing.T) {
 		t.Error(v)
 	}
 }
-
 
 // TestAWSClientErrorsMustBeClassifiedOrReturned is a static-analysis test that
 // ensures every error returned from an AWS SDK client method call is either

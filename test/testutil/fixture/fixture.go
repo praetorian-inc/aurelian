@@ -24,15 +24,15 @@ const (
 
 // Config holds the parameters needed to set up a Terraform fixture.
 type Config struct {
-	Provider    Provider
-	ModuleDir   string
-	FixtureDir  string
-	ExecPath    string
-	ContainerID string
-	StateKey    string
-	StateURI    string
+	Provider     Provider
+	ModuleDir    string
+	FixtureDir   string
+	ExecPath     string
+	ContainerID  string
+	StateKey     string
+	StateURI     string
 	ArtifactsURI string
-	InitOpts    []tfexec.InitOption
+	InitOpts     []tfexec.InitOption
 }
 
 // Fixture is the public interface for integration test fixtures.
@@ -40,6 +40,7 @@ type Fixture interface {
 	Setup()
 	Output(string) string
 	OutputList(string) []string
+	OutputMap(string) map[string]string
 }
 
 // ops abstracts the operations that a fixture lifecycle depends on,
@@ -243,6 +244,25 @@ func (f *BaseFixture) OutputList(key string) []string {
 	err := json.Unmarshal(meta.Value, &result)
 	if err != nil {
 		f.t.Fatalf("terraform output %q is not a string list: %s", key, string(meta.Value))
+	}
+
+	return result
+}
+
+// OutputMap returns a Terraform output as a string-to-string map (e.g. an output of the form
+// { for k, v in resource : k => v.arn }). Fatals if the output is missing or not a string map.
+func (f *BaseFixture) OutputMap(key string) map[string]string {
+	f.t.Helper()
+
+	meta, ok := f.outputs[key]
+	if !ok {
+		f.t.Fatalf("terraform output %q not found", key)
+	}
+
+	result := map[string]string{}
+	err := json.Unmarshal(meta.Value, &result)
+	if err != nil {
+		f.t.Fatalf("terraform output %q is not a string map: %s", key, string(meta.Value))
 	}
 
 	return result

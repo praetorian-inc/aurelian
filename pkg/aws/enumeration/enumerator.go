@@ -34,17 +34,36 @@ type Enumerator struct {
 	enumerators map[string]ResourceEnumerator
 	cc          *CloudControlEnumerator
 	Skipped     *SkipReport
-	outputDir   string
-	closeOnce   sync.Once
+	// ownsSkipReport is true only when this Enumerator created its own SkipReport
+	// (via NewEnumerator). When false, the SkipReport is shared with the caller,
+	// which owns logging the aggregated summary, so Close skips the summary log to
+	// avoid double-logging.
+	ownsSkipReport bool
+	outputDir      string
+	closeOnce      sync.Once
 }
 
 // NewEnumerator creates an Enumerator with CloudControl fallback and registers
-// all built-in resource-specific enumerators. A single SkipReport is shared
-// across all sub-enumerators so one Summary() call surfaces every skipped
-// (region, service) pair.
+// all built-in resource-specific enumerators. It owns a fresh AWSConfigProvider
+// and SkipReport; callers that want to share those with other enumerators (so
+// one aggregated skip summary covers every path) should use
+// NewEnumeratorWithProvider instead.
 func NewEnumerator(opts plugin.AWSCommonRecon) *Enumerator {
-	provider := NewAWSConfigProvider(opts)
-	skipReport := NewSkipReport()
+	e := NewEnumeratorWithProvider(opts, NewAWSConfigProvider(opts), NewSkipReport())
+	e.ownsSkipReport = true
+	return e
+}
+
+// NewEnumeratorWithProvider creates an Enumerator that shares the given
+// AWSConfigProvider and SkipReport with its caller (and any sibling
+// enumerators). Both are safe for concurrent use, so a single provider reuses
+// one SDK config cache and a single SkipReport surfaces every skipped
+// (region, service) pair across all enumerators in one Summary().
+//
+// When the SkipReport is shared, the owner is responsible for logging the
+// summary exactly once (see Enumerator.Close, which logs only when it created
+// the report). Mirrors NewCloudControlEnumeratorWithProvider.
+func NewEnumeratorWithProvider(opts plugin.AWSCommonRecon, provider *AWSConfigProvider, skipReport *SkipReport) *Enumerator {
 	cc := NewCloudControlEnumeratorWithProvider(opts, provider, skipReport)
 	e := &Enumerator{
 		enumerators: make(map[string]ResourceEnumerator),
@@ -73,14 +92,19 @@ func NewEnumerator(opts plugin.AWSCommonRecon) *Enumerator {
 // always sees which (region, service) pairs were skipped, even on early-return
 // error paths.
 //
-// The summary is logged at Warn (always visible). The detail file
-// (enumeration-skips.json) is written to OutputDir for post-run analysis.
+// The summary is logged at Warn (always visible), but only when this Enumerator
+// owns its SkipReport (NewEnumerator). When the report is shared
+// (NewEnumeratorWithProvider), the caller owns logging the single aggregated
+// summary, so Close logs nothing and only writes the detail file. The detail
+// file (enumeration-skips.json) is written to OutputDir for post-run analysis.
 //
 // TestNewEnumeratorRequiresClose enforces via AST analysis that every
 // non-test caller of NewEnumerator has a matching defer …Close().
 func (e *Enumerator) Close() error {
 	e.closeOnce.Do(func() {
-		e.Skipped.LogSummary()
+		if e.ownsSkipReport {
+			e.Skipped.LogSummary()
+		}
 		if e.outputDir != "" {
 			if err := e.Skipped.WriteDetailFile(e.outputDir); err != nil {
 				slog.Warn("failed to write skip detail file", "error", err)

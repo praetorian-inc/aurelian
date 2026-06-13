@@ -22,6 +22,9 @@ out.json
 .idea/workspace.xml
 debug.log*
 *.json
+# Committed test fixture: the privesc recon snapshot the AWS-free replay/freshness tests load.
+# Negation must follow the broad *.json ignore above (its parent dir testdata/ is not excluded).
+!pkg/modules/aws/recon/testdata/privesc_recon_snapshot.json
 docker-images
 .claude/*
 .worktrees/

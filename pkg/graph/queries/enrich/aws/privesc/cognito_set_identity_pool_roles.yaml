@@ -25,7 +25,10 @@ order: 100
 cypher: |
   // New-passrole-style: target = passed role bound to the pool. Guards (per FP catalog / method_51):
   //   - admin-as-source exclusion; self-target exclusion.
-  //   - Cognito trust: 'cognito-identity.amazonaws.com' IN victim.trusted_services.
+  //   - Cognito trust: 'cognito-identity.amazonaws.com' IN victim.trusted_services OR
+  //     victim.trusted_federated. Cognito identity-pool roles trust the service as a
+  //     Federated principal (Principal.Federated), surfaced as trusted_federated by the
+  //     GAAD transformer; service-form trust is also accepted for completeness.
   //   - same-account: PassRole is account-local.
   //   - credential path: attacker must hold cognito-identity:GetId AND GetCredentialsForIdentity
   //     to obtain pool credentials and assume the bound role (graphable as EXISTS perm edges).
@@ -34,7 +37,8 @@ cypher: |
   WHERE type(passrole) = 'IAM_PASSROLE'
     AND coalesce(attacker._is_admin, false) <> true
     AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
-    AND 'cognito-identity.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND ('cognito-identity.amazonaws.com' IN coalesce(victim.trusted_services, [])
+         OR 'cognito-identity.amazonaws.com' IN coalesce(victim.trusted_federated, []))
     AND split(coalesce(victim.Arn, victim.arn), ':')[4] = split(coalesce(attacker.Arn, attacker.arn), ':')[4]
     AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
     AND EXISTS { (attacker)-[getid]->() WHERE type(getid) = 'COGNITO-IDENTITY_GETID' }
