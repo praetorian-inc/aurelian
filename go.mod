@@ -40,6 +40,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
 	github.com/aws/aws-sdk-go-v2/service/account v1.24.0
 	github.com/aws/aws-sdk-go-v2/service/amplify v1.38.13
+	github.com/aws/aws-sdk-go-v2/service/batch v1.63.0
+	github.com/aws/aws-sdk-go-v2/service/bedrockagentcorecontrol v1.25.0
 	github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.23.11
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.6
 	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.54.4

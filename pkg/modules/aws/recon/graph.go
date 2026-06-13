@@ -36,6 +36,8 @@ type AWSGraphModule struct {
 	resourcesWithPolicies store.Map[output.AWSResource]
 	ec2Instances          store.Map[output.AWSResource]
 	cfnStacks             store.Map[output.AWSResource]
+	batchJobDefs          store.Map[output.AWSResource]
+	codeInterpreters      store.Map[output.AWSResource]
 	relationships         store.Map[output.AWSIAMRelationship]
 }
 
@@ -92,6 +94,8 @@ func (m *AWSGraphModule) collectInputs() error {
 	m.collectResourcesWithPolicies(&eg, m.GraphConfig, policyCollector, regions)
 	m.collectEC2Instances(&eg, m.GraphConfig)
 	m.collectCloudFormationStacks(&eg, m.GraphConfig)
+	m.collectBatchJobDefinitions(&eg, m.GraphConfig)
+	m.collectCodeInterpreters(&eg, m.GraphConfig)
 	if err := eg.Wait(); err != nil {
 		return err
 	}
@@ -109,6 +113,22 @@ func (m *AWSGraphModule) collectInputs() error {
 	// resource_service_role enricher can link a stack to its service role (RoleARN)
 	// and the cloudformation_changeset privesc method re-points at that role.
 	m.cfnStacks.Range(func(key string, r output.AWSResource) bool {
+		m.resourcesWithPolicies.Set(key, r)
+		return true
+	})
+
+	// Batch job definitions carry no resource policy; merge them in so the
+	// resource_service_role enricher can link a job definition to its JobRoleArn /
+	// ExecutionRoleArn and the batch_submit_job privesc method re-points at that role.
+	m.batchJobDefs.Range(func(key string, r output.AWSResource) bool {
+		m.resourcesWithPolicies.Set(key, r)
+		return true
+	})
+
+	// Bedrock AgentCore code interpreters carry no resource policy; merge them in so the
+	// resource_service_role enricher can link an interpreter to its ExecutionRoleArn and
+	// the bedrock_access_code_interpreter privesc method re-points at that role.
+	m.codeInterpreters.Range(func(key string, r output.AWSResource) bool {
 		m.resourcesWithPolicies.Set(key, r)
 		return true
 	})
@@ -226,6 +246,66 @@ func (m *AWSGraphModule) collectCloudFormationStacks(eg *errgroup.Group, c Graph
 
 		m.log.Success("CloudFormation stacks collected (%d)", results.Len())
 		m.cfnStacks = results
+		return nil
+	})
+}
+
+func (m *AWSGraphModule) collectBatchJobDefinitions(eg *errgroup.Group, c GraphConfig) {
+	eg.Go(func() error {
+		m.log.Info("enumerating Batch job definitions")
+
+		provider := enumeration.NewAWSConfigProvider(c.AWSCommonRecon)
+		skipReport := enumeration.NewSkipReport()
+		defer skipReport.LogSummary()
+		jobDefEnum := enumeration.NewBatchJobDefinitionEnumerator(c.AWSCommonRecon, provider, skipReport)
+
+		collected := pipeline.New[output.AWSResource]()
+		var enumErr error
+		go func() {
+			defer collected.Close()
+			enumErr = jobDefEnum.EnumerateAll(collected)
+		}()
+
+		results := store.NewMap[output.AWSResource]()
+		for r := range collected.Range() {
+			results.Set(r.ARN, r)
+		}
+		if enumErr != nil {
+			return fmt.Errorf("enumerating Batch job definitions: %w", enumErr)
+		}
+
+		m.log.Success("Batch job definitions collected (%d)", results.Len())
+		m.batchJobDefs = results
+		return nil
+	})
+}
+
+func (m *AWSGraphModule) collectCodeInterpreters(eg *errgroup.Group, c GraphConfig) {
+	eg.Go(func() error {
+		m.log.Info("enumerating Bedrock AgentCore code interpreters")
+
+		provider := enumeration.NewAWSConfigProvider(c.AWSCommonRecon)
+		skipReport := enumeration.NewSkipReport()
+		defer skipReport.LogSummary()
+		ciEnum := enumeration.NewBedrockCodeInterpreterEnumerator(c.AWSCommonRecon, provider, skipReport)
+
+		collected := pipeline.New[output.AWSResource]()
+		var enumErr error
+		go func() {
+			defer collected.Close()
+			enumErr = ciEnum.EnumerateAll(collected)
+		}()
+
+		results := store.NewMap[output.AWSResource]()
+		for r := range collected.Range() {
+			results.Set(r.ARN, r)
+		}
+		if enumErr != nil {
+			return fmt.Errorf("enumerating Bedrock code interpreters: %w", enumErr)
+		}
+
+		m.log.Success("Bedrock code interpreters collected (%d)", results.Len())
+		m.codeInterpreters = results
 		return nil
 	})
 }

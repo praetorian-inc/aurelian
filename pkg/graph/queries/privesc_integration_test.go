@@ -112,9 +112,11 @@ func sharedPrivescSeed() string {
 		CREATE (sfnMachine:Resource  {_resourceType: 'AWS::StepFunctions::StateMachine', Arn: 'arn:aws:states:us-east-1:123456789012:stateMachine/sm'})
 		CREATE (smNotebook:Resource  {_resourceType: 'AWS::SageMaker::NotebookInstance', Arn: 'arn:aws:sagemaker:us-east-1:123456789012:notebook-instance/nb'})
 		CREATE (ec2Instance:Resource {_resourceType: 'AWS::EC2::Instance',               Arn: 'arn:aws:ec2:us-east-1:123456789012:instance/i-1'})
+		CREATE (batchJobDef:Resource {_resourceType: 'AWS::Batch::JobDefinition',        Arn: 'arn:aws:batch:us-east-1:123456789012:job-definition/jd:1'})
+		CREATE (codeInterp:Resource  {_resourceType: 'AWS::BedrockAgentCore::CodeInterpreter', Arn: 'arn:aws:bedrock-agentcore:us-east-1:123456789012:code-interpreter/ci-1'})
 		WITH a, adminRole, privUser, privGroup, joinGroup, policy, svc, wildcard, stack,
 			cfnStack, cfnStackSet, cbProject, glueEndpoint, glueJob, appRunner,
-			ecsTaskDef, sfnMachine, smNotebook, ec2Instance
+			ecsTaskDef, sfnMachine, smNotebook, ec2Instance, batchJobDef, codeInterp
 		// adminRole reachability: attacker can both pass it and assume it.
 		MERGE (a)-[:IAM_PASSROLE]->(adminRole)
 		MERGE (a)-[:CAN_ASSUME]->(adminRole)
@@ -132,6 +134,10 @@ func sharedPrivescSeed() string {
 		MERGE (sfnMachine)-[:HAS_ROLE]->(adminRole)
 		MERGE (smNotebook)-[:HAS_ROLE]->(adminRole)
 		MERGE (ec2Instance)-[:HAS_ROLE]->(adminRole)
+		// Batch job definition / Bedrock code interpreter run as adminRole, reached by the
+		// re-pointed batch_submit_job / bedrock_access_code_interpreter methods via HAS_ROLE.
+		MERGE (batchJobDef)-[:HAS_ROLE]->(adminRole)
+		MERGE (codeInterp)-[:HAS_ROLE]->(adminRole)
 		// Self-policy methods: the customer-managed policy is attached to the attacker.
 		MERGE (a)-[:IAM_CREATEPOLICYVERSION]->(policy)
 		MERGE (a)-[:IAM_SETDEFAULTPOLICYVERSION]->(policy)
@@ -397,13 +403,16 @@ func allSharedSeedCases() []sharedSeedCase {
 		{p + "ec2_ssm_association", targetAdminRole},
 		{p + "ec2_launch_template_version", targetAdminRole},
 
-		// --- Multi-perm same stub / service-wildcard terminate-at-resource ---
+		// --- Multi-perm same stub / re-pointed-at-service-role ---
 		// cloudformation_changeset is now re-pointed (D4) at the CFN stack's SERVICE ROLE via
 		// (cfnStack)-[:HAS_ROLE]->(adminRole), not the bare stack stub: requires both
 		// CreateChangeSet AND ExecuteChangeSet, then lands on the privileged role.
 		{p + "cloudformation_changeset", targetAdminRole},
-		{p + "batch_submit_job", targetWildcard},
-		{p + "bedrock_access_code_interpreter", targetWildcard},
+		// batch_submit_job / bedrock_access_code_interpreter are now re-pointed (D4 pass 3) at
+		// the backing resource's role via (JobDefinition|CodeInterpreter)-[:HAS_ROLE]->(adminRole),
+		// not the service-wildcard stub: requires the resource node + a trusting privileged role.
+		{p + "batch_submit_job", targetAdminRole},
+		{p + "bedrock_access_code_interpreter", targetAdminRole},
 		// codestar_create_project now constrains the permission target to :Principal; the
 		// seeded CODESTAR_CREATEPROJECT edge points at the wildcard :Resource stub, which is
 		// not a Principal, so the method correctly emits NO edge (matches its description:
@@ -1780,6 +1789,266 @@ func TestPrivescChangesetStackRoleHasRole(t *testing.T) {
 
 			_, err = RunPlatformQuery(ctx, db, queryID, nil)
 			require.NoError(t, err, "run cloudformation_changeset enricher")
+
+			n := edgeCount(t, db)
+			if tc.wantEdge {
+				assert.Equal(t, int64(1), n, tc.desc)
+			} else {
+				assert.Equal(t, int64(0), n, tc.desc)
+			}
+		})
+	}
+}
+
+// TestPrivescBatchJobRoleHasRole locks down D4-pass-3's re-point of batch_submit_job at the
+// job definition's JOB ROLE via (JobDefinition)-[:HAS_ROLE]->(jobrole) — replacing the old
+// existence-precondition stub. The attacker holds batch:SubmitJob; the edge must land on the
+// privileged, ecs-tasks-trusting job role, and HAS_ROLE + trust + privileged-target +
+// same-account must each be the SOLE rejection in their respective FP cases.
+func TestPrivescBatchJobRoleHasRole(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	newAdapter := func(t *testing.T) graph.GraphDatabase {
+		t.Helper()
+		cfg := graph.NewConfig(boltURL, "", "")
+		adapter, err := adapters.NewNeo4jAdapter(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { adapter.Close() })
+		return adapter
+	}
+
+	const (
+		attacker = "arn:aws:iam::123456789012:user/batch-attacker"
+		queryID  = "aws/enrich/privesc/batch_submit_job"
+	)
+
+	// setup seeds: attacker with batch:SubmitJob on a service stub, a Batch job definition,
+	// and (when hasRole) a (jobdef)-[:HAS_ROLE]->(jobrole) edge. roleProps controls
+	// _is_admin/trust; roleAccount exercises the same-account guard.
+	setup := func(roleProps, roleAccount, hasRole string) string {
+		roleARN := fmt.Sprintf("arn:aws:iam::%s:role/batch-job-role", roleAccount)
+		return fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
+			CREATE (svc:Resource {Arn: 'arn:aws:batch:us-east-1:123456789012:*'})
+			CREATE (jobdef:Resource {Arn: 'arn:aws:batch:us-east-1:123456789012:job-definition/jd:1', _resourceType: 'AWS::Batch::JobDefinition'})
+			CREATE (role:Role:Principal {Arn: '%s'%s})
+			WITH a, svc, jobdef, role
+			MERGE (a)-[:BATCH_SUBMITJOB]->(svc)
+			%s
+		`, attacker, roleARN, roleProps, hasRole)
+	}
+	const (
+		hasRoleEdge = `MERGE (jobdef)-[:HAS_ROLE]->(role)`
+		noRoleEdge  = ``
+	)
+	const (
+		adminTrusted    = `, _is_admin: true, trusted_services: ['ecs-tasks.amazonaws.com']`
+		unprivTrusted   = `, _is_admin: false, trusted_services: ['ecs-tasks.amazonaws.com']`
+		adminWrongTrust = `, _is_admin: true, trusted_services: ['lambda.amazonaws.com']`
+	)
+
+	edgeCount := func(t *testing.T, db graph.GraphDatabase) int64 {
+		t.Helper()
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(:Role) RETURN count(r) AS n`, attacker), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		return n
+	}
+
+	cases := []struct {
+		name        string
+		roleProps   string
+		roleAccount string
+		hasRole     string
+		wantEdge    bool
+		desc        string
+	}{
+		{
+			name:        "admin_role_via_hasrole",
+			roleProps:   adminTrusted,
+			roleAccount: "123456789012",
+			hasRole:     hasRoleEdge,
+			wantEdge:    true,
+			desc:        "SubmitJob + (jobdef)-[:HAS_ROLE]->(ecs-tasks-trusting admin role) → edge fires to the role",
+		},
+		{
+			name:        "no_hasrole_no_edge",
+			roleProps:   adminTrusted,
+			roleAccount: "123456789012",
+			hasRole:     noRoleEdge,
+			wantEdge:    false,
+			desc:        "no HAS_ROLE link → roleless job definition confers nothing → NO edge (HAS_ROLE is the sole rejection)",
+		},
+		{
+			name:        "unprivileged_role_no_edge",
+			roleProps:   unprivTrusted,
+			roleAccount: "123456789012",
+			hasRole:     hasRoleEdge,
+			wantEdge:    false,
+			desc:        "job role is NOT privileged → privileged-target guard is the sole rejection → NO edge",
+		},
+		{
+			name:        "wrong_trust_no_edge",
+			roleProps:   adminWrongTrust,
+			roleAccount: "123456789012",
+			hasRole:     hasRoleEdge,
+			wantEdge:    false,
+			desc:        "job role does NOT trust ecs-tasks → trust guard is the sole rejection → NO edge",
+		},
+		{
+			name:        "cross_account_role_no_edge",
+			roleProps:   adminTrusted,
+			roleAccount: "999999999999",
+			hasRole:     hasRoleEdge,
+			wantEdge:    false,
+			desc:        "privileged job role in a DIFFERENT account → same-account guard (ARN seg 4) is the sole rejection → NO edge",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newAdapter(t)
+			_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+			require.NoError(t, err, "clear db")
+			_, err = db.Query(ctx, setup(tc.roleProps, tc.roleAccount, tc.hasRole), nil)
+			require.NoError(t, err, "seed batch graph")
+
+			_, err = RunPlatformQuery(ctx, db, queryID, nil)
+			require.NoError(t, err, "run batch_submit_job enricher")
+
+			n := edgeCount(t, db)
+			if tc.wantEdge {
+				assert.Equal(t, int64(1), n, tc.desc)
+			} else {
+				assert.Equal(t, int64(0), n, tc.desc)
+			}
+		})
+	}
+}
+
+// TestPrivescCodeInterpreterRoleHasRole locks down D4-pass-3's re-point of
+// bedrock_access_code_interpreter at the interpreter's EXECUTION ROLE via
+// (CodeInterpreter)-[:HAS_ROLE]->(execrole) — replacing the old existence-precondition stub.
+// The attacker holds bedrock-agentcore:InvokeSession; the edge must land on the privileged,
+// bedrock-agentcore-trusting execution role, and HAS_ROLE + trust + privileged-target +
+// same-account must each be the SOLE rejection in their respective FP cases.
+func TestPrivescCodeInterpreterRoleHasRole(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	newAdapter := func(t *testing.T) graph.GraphDatabase {
+		t.Helper()
+		cfg := graph.NewConfig(boltURL, "", "")
+		adapter, err := adapters.NewNeo4jAdapter(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { adapter.Close() })
+		return adapter
+	}
+
+	const (
+		attacker = "arn:aws:iam::123456789012:user/bedrock-attacker"
+		queryID  = "aws/enrich/privesc/bedrock_access_code_interpreter"
+	)
+
+	setup := func(roleProps, roleAccount, hasRole string) string {
+		roleARN := fmt.Sprintf("arn:aws:iam::%s:role/ci-exec-role", roleAccount)
+		return fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
+			CREATE (svc:Resource {Arn: 'arn:aws:bedrock-agentcore:us-east-1:123456789012:*'})
+			CREATE (ci:Resource {Arn: 'arn:aws:bedrock-agentcore:us-east-1:123456789012:code-interpreter/ci-1', _resourceType: 'AWS::BedrockAgentCore::CodeInterpreter'})
+			CREATE (role:Role:Principal {Arn: '%s'%s})
+			WITH a, svc, ci, role
+			MERGE (a)-[:`+"`BEDROCK-AGENTCORE_INVOKESESSION`"+`]->(svc)
+			%s
+		`, attacker, roleARN, roleProps, hasRole)
+	}
+	const (
+		hasRoleEdge = `MERGE (ci)-[:HAS_ROLE]->(role)`
+		noRoleEdge  = ``
+	)
+	const (
+		adminTrusted    = `, _is_admin: true, trusted_services: ['bedrock-agentcore.amazonaws.com']`
+		unprivTrusted   = `, _is_admin: false, trusted_services: ['bedrock-agentcore.amazonaws.com']`
+		adminWrongTrust = `, _is_admin: true, trusted_services: ['lambda.amazonaws.com']`
+	)
+
+	edgeCount := func(t *testing.T, db graph.GraphDatabase) int64 {
+		t.Helper()
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(:Role) RETURN count(r) AS n`, attacker), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		return n
+	}
+
+	cases := []struct {
+		name        string
+		roleProps   string
+		roleAccount string
+		hasRole     string
+		wantEdge    bool
+		desc        string
+	}{
+		{
+			name:        "admin_role_via_hasrole",
+			roleProps:   adminTrusted,
+			roleAccount: "123456789012",
+			hasRole:     hasRoleEdge,
+			wantEdge:    true,
+			desc:        "InvokeSession + (ci)-[:HAS_ROLE]->(bedrock-agentcore-trusting admin role) → edge fires to the role",
+		},
+		{
+			name:        "no_hasrole_no_edge",
+			roleProps:   adminTrusted,
+			roleAccount: "123456789012",
+			hasRole:     noRoleEdge,
+			wantEdge:    false,
+			desc:        "no HAS_ROLE link → roleless interpreter confers nothing → NO edge (HAS_ROLE is the sole rejection)",
+		},
+		{
+			name:        "unprivileged_role_no_edge",
+			roleProps:   unprivTrusted,
+			roleAccount: "123456789012",
+			hasRole:     hasRoleEdge,
+			wantEdge:    false,
+			desc:        "execution role is NOT privileged → privileged-target guard is the sole rejection → NO edge",
+		},
+		{
+			name:        "wrong_trust_no_edge",
+			roleProps:   adminWrongTrust,
+			roleAccount: "123456789012",
+			hasRole:     hasRoleEdge,
+			wantEdge:    false,
+			desc:        "execution role does NOT trust bedrock-agentcore → trust guard is the sole rejection → NO edge",
+		},
+		{
+			name:        "cross_account_role_no_edge",
+			roleProps:   adminTrusted,
+			roleAccount: "999999999999",
+			hasRole:     hasRoleEdge,
+			wantEdge:    false,
+			desc:        "privileged execution role in a DIFFERENT account → same-account guard (ARN seg 4) is the sole rejection → NO edge",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newAdapter(t)
+			_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+			require.NoError(t, err, "clear db")
+			_, err = db.Query(ctx, setup(tc.roleProps, tc.roleAccount, tc.hasRole), nil)
+			require.NoError(t, err, "seed bedrock graph")
+
+			_, err = RunPlatformQuery(ctx, db, queryID, nil)
+			require.NoError(t, err, "run bedrock_access_code_interpreter enricher")
 
 			n := edgeCount(t, db)
 			if tc.wantEdge {
