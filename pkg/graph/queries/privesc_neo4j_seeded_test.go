@@ -568,12 +568,12 @@ func TestEnrichAWSPrivescEndToEnd(t *testing.T) {
 // Chain: mid --[iam_put_role_policy: CAN_ASSUME + PutRolePolicy on the SAME role]--> admin.
 // low self-escalates via iam_create_policy_version (a self-loop), which must NOT fan out.
 //
-// cat-6 admin-source-or-middle boundary: the no-fan-out subtests (create_policy_version_no_fanout
+// admin-source-or-middle boundary: the no-fan-out subtests (create_policy_version_no_fanout
 // / mid_does_not_fan_out) prove a corrected method reaches only its one scoped target, which is
-// what prevents a single source from double-counting an admin mid-node into a longer chain. The
-// catalog's admin-in-the-middle multi-hop TRUNCATION guard (terminate the *1..3 walk at the FIRST
-// admin) is NOT implemented in aws/analysis/privesc_paths.yaml, so GAP G5 is DEFERRED rather than
-// tested here (no guard to isolate without a detection change — see dev-summary).
+// what prevents a single source from double-counting an admin mid-node into a longer chain. An
+// admin-in-the-middle multi-hop TRUNCATION guard (terminate the *1..3 walk at the FIRST admin) is
+// NOT implemented in aws/analysis/privesc_paths.yaml, so GAP G5 is DEFERRED rather than tested
+// here (no guard to isolate without a detection change — see dev-summary).
 func TestPrivescMultiHopPaths(t *testing.T) {
 	ctx := context.Background()
 
@@ -1437,30 +1437,26 @@ func TestPrivescEnrichersPopulate(t *testing.T) {
 	})
 }
 
-// FALSE-POSITIVE / GUARD-ISOLATION CATALOG CROSS-REFERENCE (seeded suite)
+// FALSE-POSITIVE / GUARD-ISOLATION COVERAGE (seeded suite)
 // -----------------------------------------------------------------------------------------
 // The FP / guard-isolation tests below (TestPrivescNoCartesianFanOut and its fp_* attackers;
 // the HAS_ROLE no_hasrole_no_edge cases; TestPrivescAccessKeyCountGuard / LoginProfileGuard /
-// PolicyVersionCountGuard; the new SLR-target and non-User-victim gap tests; the MultiHop
-// no-fan-out behaviors) are cross-referenced to the authoritative FP guard catalog at
-// .claude/.output/privesc-fp-guard-catalog.md by FP CATEGORY (cat-1..cat-7) plus a descriptive
-// technique name. Legend:
+// PolicyVersionCountGuard; the SLR-target and non-User-victim gap tests; the MultiHop
+// no-fan-out behaviors) are each labelled by the FP TYPE they isolate plus a descriptive
+// technique name. The FP types:
 //
-//	cat-1 missing-permission           cat-5 service/api-precondition
-//	cat-2 trust-policy-mismatch        cat-6 admin-source-or-middle
-//	cat-3 no-usable-resource           cat-7 runtime-context-or-org-policy (NOT-in-cypher)
-//	cat-4 target-not-privileged
+//	missing-permission        service/api-precondition
+//	trust-policy-mismatch     admin-source-or-middle
+//	no-usable-resource
+//	target-not-privileged
 //
-// The catalog's inline `method_NN` ids are HISTORICAL PROVENANCE only and are deliberately NOT
-// reintroduced here — guards are identified by cat-N + technique name, never method_NN.
+// Runtime-context / org-policy FPs (MFA, source-IP/VPC, aws:PrincipalOrgID, SCPs) cannot be
+// produced by any query against current graph data, so they are intentionally UNTESTED here —
+// a stated boundary, not a gap.
 //
-// Cat-7 (runtime-context / org-policy) is NOT-in-cypher: no query can produce the signal from
-// current graph data (see the catalog's "Guards NOT expressible in Cypher" section), so it is
-// intentionally UNTESTED here — a stated boundary, not a gap.
-//
-// GAP-COVERAGE — cat-3 resource-absence (catalog gap items "G4/G7/G8": UpdateX / StartBuild /
-// instance-bound method with NO existing backing resource -> inert). The guard the catalog
-// prescribes — bind the escalation target to the role reached via a MANDATORY
+// GAP-COVERAGE — no-usable-resource / resource-absence (UpdateX / StartBuild / instance-bound
+// method with NO existing backing resource -> inert). The guard — bind the escalation target to
+// the role reached via a MANDATORY
 // (Resource{_resourceType: …})-[:HAS_ROLE]->(role) MATCH, fail-closed so a method with no backing
 // resource/role draws no edge — is now LOCKED by a dedicated standalone test PLUS the pre-existing
 // per-method no_hasrole_no_edge cases:
@@ -1502,30 +1498,30 @@ func TestPrivescNoCartesianFanOut(t *testing.T) {
 
 	// 20 bystander principals create a population the old cartesian fan-out would
 	// have reached. FP attackers each hold a permission but miss the structural guard:
-	//   fp_cpv (cat-3 no-usable-resource): CreatePolicyVersion on a policy NOT attached to itself.
-	//   fp_sts (cat-2 trust-policy-mismatch): STS_ASSUMEROLE with NO CAN_ASSUME trust edge.
-	//   fp_ec2 (cat-2 trust-policy-mismatch): PassRole (to a privileged role with an instance
+	//   fp_cpv (no-usable-resource): CreatePolicyVersion on a policy NOT attached to itself.
+	//   fp_sts (trust-policy-mismatch): STS_ASSUMEROLE with NO CAN_ASSUME trust edge.
+	//   fp_ec2 (trust-policy-mismatch): PassRole (to a privileged role with an instance
 	//           profile) + RunInstances, but the role trusts ONLY lambda.amazonaws.com, not ec2 —
 	//           so the ec2-trust guard is the SOLE reason the edge is suppressed (not a label
 	//           mismatch).
-	//   fp_cfn (cat-3 no-usable-resource): CreateChangeSet/ExecuteChangeSet on stacks that carry
+	//   fp_cfn (no-usable-resource): CreateChangeSet/ExecuteChangeSet on stacks that carry
 	//           NO (Stack)-[:HAS_ROLE]->(privileged role) edge — the changeset method requires a
 	//           privileged stack service role reached via HAS_ROLE, so the missing link is the
 	//           SOLE rejection (fail-closed: a roleless stack confers nothing).
-	//   fp_pr  (cat-4 target-not-privileged): PassRole+RunInstances to a role that trusts ec2 and
+	//   fp_pr  (target-not-privileged): PassRole+RunInstances to a role that trusts ec2 and
 	//           has an instance profile but is NOT privileged — the privileged-target guard is the
 	//           SOLE rejection.
-	//   fp_hr  (cat-4 target-not-privileged): Lambda UpdateFunctionCode+Invoke on a function whose
+	//   fp_hr  (target-not-privileged): Lambda UpdateFunctionCode+Invoke on a function whose
 	//           HAS_ROLE execution role is NOT privileged — the privileged-target guard is the
 	//           SOLE rejection.
-	//   fp_adm (cat-6 admin-source-or-middle): CreatePolicyVersion on a self-attached customer
+	//   fp_adm (admin-source-or-middle): CreatePolicyVersion on a self-attached customer
 	//           policy, but the attacker is ALREADY admin — the self-loop methods' admin-as-source
 	//           guard is the SOLE rejection (everything else the iam_create_policy_version guard
 	//           needs is satisfied).
-	//   fp_aug (cat-4 target-not-privileged): AddUserToGroup, but the only reachable group is
+	//   fp_aug (target-not-privileged): AddUserToGroup, but the only reachable group is
 	//           NON-privileged and the attacker is already a member of the privileged group — the
 	//           privileged-group requirement is the SOLE rejection.
-	//   fp_pgp (cat-4 target-not-privileged): PutGroupPolicy on a privileged group the attacker is
+	//   fp_pgp (target-not-privileged): PutGroupPolicy on a privileged group the attacker is
 	//           NOT a member of — the membership requirement (GroupName in attacker.GroupList) is
 	//           the SOLE rejection.
 	_, err = db.Query(ctx, `
@@ -1762,9 +1758,9 @@ func TestResourceToRoleViaTransformerHasRole(t *testing.T) {
 // either flips it to 0); each FP case isolates one guard. This is the synthetic proof that
 // the re-pointed method fires to the real role, not a vacuous never-firing enricher.
 // TestPrivescChangesetStackRoleHasRole isolates the cloudformation_changeset guards by category:
-// no_hasrole_no_edge = cat-3 no-usable-resource (a roleless stack confers nothing — covers the
-// resource-absence GAP for this method); unprivileged_role_no_edge = cat-4 target-not-privileged;
-// single_action_no_edge = cat-1 missing-permission; cross_account_role_no_edge = cat-2
+// no_hasrole_no_edge = no-usable-resource (a roleless stack confers nothing — covers the
+// resource-absence GAP for this method); unprivileged_role_no_edge = target-not-privileged;
+// single_action_no_edge = missing-permission; cross_account_role_no_edge =
 // trust-policy-mismatch (same-account).
 func TestPrivescChangesetStackRoleHasRole(t *testing.T) {
 	ctx := context.Background()
@@ -1904,9 +1900,9 @@ func TestPrivescChangesetStackRoleHasRole(t *testing.T) {
 // existence-precondition stub. The attacker holds batch:SubmitJob; the edge must land on the
 // privileged, ecs-tasks-trusting job role, and HAS_ROLE + trust + privileged-target +
 // same-account must each be the SOLE rejection in their respective FP cases.
-// Catalog categories isolated: no_hasrole_no_edge = cat-3 no-usable-resource (resource-absence
-// GAP for batch_submit_job); unprivileged_role_no_edge = cat-4 target-not-privileged;
-// wrong_trust_no_edge / cross_account_role_no_edge = cat-2 trust-policy-mismatch.
+// FP types isolated: no_hasrole_no_edge = no-usable-resource (resource-absence
+// GAP for batch_submit_job); unprivileged_role_no_edge = target-not-privileged;
+// wrong_trust_no_edge / cross_account_role_no_edge = trust-policy-mismatch.
 func TestPrivescBatchJobRoleHasRole(t *testing.T) {
 	ctx := context.Background()
 
@@ -2039,9 +2035,9 @@ func TestPrivescBatchJobRoleHasRole(t *testing.T) {
 // The attacker holds bedrock-agentcore:InvokeSession; the edge must land on the privileged,
 // bedrock-agentcore-trusting execution role, and HAS_ROLE + trust + privileged-target +
 // same-account must each be the SOLE rejection in their respective FP cases.
-// Catalog categories isolated: no_hasrole_no_edge = cat-3 no-usable-resource (resource-absence
-// GAP for this method); unprivileged_role_no_edge = cat-4 target-not-privileged;
-// wrong_trust_no_edge / cross_account_role_no_edge = cat-2 trust-policy-mismatch.
+// FP types isolated: no_hasrole_no_edge = no-usable-resource (resource-absence
+// GAP for this method); unprivileged_role_no_edge = target-not-privileged;
+// wrong_trust_no_edge / cross_account_role_no_edge = trust-policy-mismatch.
 func TestPrivescCodeInterpreterRoleHasRole(t *testing.T) {
 	ctx := context.Background()
 
@@ -2165,7 +2161,7 @@ func TestPrivescCodeInterpreterRoleHasRole(t *testing.T) {
 	}
 }
 
-// TestPrivescSlrPassRoleTargetGuard (cat-5 service/api-precondition) — GAP G3.
+// TestPrivescSlrPassRoleTargetGuard (service/api-precondition) — GAP G3.
 // A PassRole-family method must NOT draw a CAN_PRIVESC edge when the passed/victim role is a
 // SERVICE-LINKED role (Arn under /aws-service-role/): SLRs trust only their owning service and
 // are not user-assumable, so passing one yields no usable escalation. iam_pass_role_lambda
@@ -2180,9 +2176,9 @@ func TestPrivescCodeInterpreterRoleHasRole(t *testing.T) {
 // /aws-service-role/ path clause is the SOLE reason the edge is suppressed. The control case (an
 // identical NON-SLR admin role under :role/) fires, proving the seed is otherwise complete and
 // removing the SLR clause would flip the SLR case to fire.
-// TestPrivescExistingComputeResourceAbsenceGuard (cat-3 no-usable-resource) — GAP G4/G7/G8.
+// TestPrivescExistingComputeResourceAbsenceGuard (no-usable-resource) — GAP G4/G7/G8.
 // "An existing-compute / UpdateX / StartBuild method must emit NOTHING when its backing resource
-// node is absent" (catalog: cloudformation:UpdateStack / cloudformation:UpdateStackSet /
+// node is absent" (cloudformation:UpdateStack / cloudformation:UpdateStackSet /
 // codebuild:StartBuild "MASSIVE over-match … no stack/project/stackset" rows). Each of these
 // methods has its OWN mandatory `MATCH (Resource{_resourceType: …})-[:HAS_ROLE]->(victim)` join
 // (fail-closed) — a DISTINCT guard per method, not the changeset/batch/code-interpreter join those
@@ -2394,7 +2390,7 @@ func TestPrivescSlrPassRoleTargetGuard(t *testing.T) {
 	}
 }
 
-// TestPrivescCreateAccessKeyNonUserGuard (cat-5 service/api-precondition) — GAP G6.
+// TestPrivescCreateAccessKeyNonUserGuard (service/api-precondition) — GAP G6.
 // iam:CreateAccessKey can only mint credentials for an IAM USER — roles use STS and groups have
 // no credentials — so the technique is structurally impossible when the victim is a Role or
 // Group. iam_create_access_key carries the explicit `coalesce(target.Arn,target.arn) CONTAINS
@@ -2498,7 +2494,7 @@ func TestPrivescCreateAccessKeyNonUserGuard(t *testing.T) {
 	}
 }
 
-// TestPrivescAccessKeyCountGuard (cat-5 service/api-precondition) locks down the real
+// TestPrivescAccessKeyCountGuard (service/api-precondition) locks down the real
 // <2-active-keys precondition for iam_create_access_key. The method now guards on the collected
 // target.AccessKeyCount:
 //   - count >= 2  → NO edge (CreateAccessKey would hit the 2-key limit).
@@ -2611,7 +2607,7 @@ func TestPrivescAccessKeyCountGuard(t *testing.T) {
 	}
 }
 
-// TestPrivescLoginProfileGuard (cat-5 service/api-precondition) locks down the real
+// TestPrivescLoginProfileGuard (service/api-precondition) locks down the real
 // existing-login-profile precondition for iam_update_login_profile. The method guards on the
 // collected target.HasLoginProfile, and the
 // victim node is built via the REAL NodeFromGaadUser serialization path (not a hand-seeded
@@ -2723,7 +2719,7 @@ func TestPrivescLoginProfileGuard(t *testing.T) {
 	}
 }
 
-// TestPrivescPolicyVersionCountGuard (cat-5 service/api-precondition) locks down the
+// TestPrivescPolicyVersionCountGuard (service/api-precondition) locks down the
 // <5-versions precondition for iam_create_policy_version. The transformer surfaces
 // policy.policy_version_count; the method:
 //   - count = 5     → NO edge (CreatePolicyVersion fails at the 5-version limit).

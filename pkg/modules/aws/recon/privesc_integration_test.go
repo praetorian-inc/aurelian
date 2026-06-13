@@ -105,25 +105,20 @@ const methodPrefix = "aws/enrich/privesc/"
 
 func m(s string) string { return methodPrefix + s }
 
-// FALSE-POSITIVE CATALOG CROSS-REFERENCE
+// FALSE-POSITIVE COVERAGE
 // -----------------------------------------------------------------------------------------
-// Every want=false (FP) row below is cross-referenced to the authoritative FP guard catalog
-// at .claude/.output/privesc-fp-guard-catalog.md by FP CATEGORY (cat-1..cat-7) plus a
-// descriptive technique name naming the guard the row isolates. The category legend:
+// Each want=false (FP) row below is labelled by the FP TYPE it isolates — the guard whose
+// removal would flip the row to a true positive. The FP types:
 //
-//	cat-1 missing-permission           cat-5 service/api-precondition
-//	cat-2 trust-policy-mismatch        cat-6 admin-source-or-middle
-//	cat-3 no-usable-resource           cat-7 runtime-context-or-org-policy (NOT-in-cypher)
-//	cat-4 target-not-privileged
+//	missing-permission        service/api-precondition
+//	trust-policy-mismatch     admin-source-or-middle
+//	no-usable-resource
+//	target-not-privileged
 //
-// The catalog's inline `method_NN` ids are HISTORICAL PROVENANCE only and are deliberately
-// NOT reintroduced here — rows are identified by cat-N + technique name, never method_NN.
-//
-// Cat-7 (runtime-context / org-policy: MFA-gated actions, source-IP/VPC, aws:PrincipalOrgID,
-// SCPs without --org-policies-file) is NOT-in-cypher: the signal cannot be produced by any
-// query against current graph data (see the catalog's "Guards NOT expressible in Cypher"
-// section). Its absence from this matrix is therefore a STATED BOUNDARY, not a coverage gap —
-// no cat-7 FP row exists or should be added without a prior engine/enricher change.
+// Runtime-context / org-policy FPs (MFA-gated actions, source-IP/VPC, aws:PrincipalOrgID,
+// SCPs without --org-policies-file) cannot be produced by any query against current graph
+// data, so they are a STATED BOUNDARY rather than a coverage gap — no such FP row exists or
+// should be added without a prior engine/enricher change.
 //
 // labCases is the ground-truth table. Each TP row asserts the edge target identity; each FP
 // row asserts 0 edges for the named method (sound: removing the guard flips the assertion).
@@ -233,45 +228,45 @@ var labCases = []labCase{
 	{"bedrock_invoke", m("bedrock_access_code_interpreter"), true, tgtServiceRole, "bedrock", tierCommon, "InvokeSession on a synthetic AgentCore CodeInterpreter whose ExecutionRoleArn is the privileged bedrock-agentcore svcadmin role (AgentCore not provisionable via TF)"},
 	{"cloudform_changeset", m("cloudformation_changeset"), true, tgtComputeRole, "", tierCommon, "CreateChangeSet+ExecuteChangeSet against a REAL fixture CFN Stack whose RoleARN is the privileged compute admin role"},
 
-	// ===== Intentional no-op (target = none) — cat-3 no-usable-resource =====
+	// ===== Intentional no-op (target = none) — no-usable-resource =====
 	// These methods can never draw a usable CAN_PRIVESC edge: the SLR creator gains no assumable
 	// identity, and CreateProject's only target is a non-Principal service stub.
-	{"iam_create_slr", m("iam_create_service_linked_role"), false, tgtNone, "", tierCommon, "cat-3 no-usable-resource: CreateServiceLinkedRole — created SLR is unassumable/immutable, emits no CAN_PRIVESC (RETURN 0)"},
-	{"codestar_create", m("codestar_create_project"), false, tgtNone, "", tierCommon, "cat-3 no-usable-resource: CreateProject points at a service stub (not a Principal) on the live fixture → no edge"},
+	{"iam_create_slr", m("iam_create_service_linked_role"), false, tgtNone, "", tierCommon, "no-usable-resource: CreateServiceLinkedRole — created SLR is unassumable/immutable, emits no CAN_PRIVESC (RETURN 0)"},
+	{"codestar_create", m("codestar_create_project"), false, tgtNone, "", tierCommon, "no-usable-resource: CreateProject points at a service stub (not a Principal) on the live fixture → no edge"},
 
 	// =========================================================================
 	// FALSE POSITIVES — the named method must NOT fire (0 edges by-method).
 	// =========================================================================
 
-	// cat-1 missing-permission
-	{"fp_passrole_only", m("iam_pass_role_lambda"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: PassRole alone (no CreateFunction)"},
-	{"fp_passrole_only", m("iam_pass_role_ec2"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: PassRole alone (no RunInstances)"},
-	{"fp_lambda_create_only", m("iam_pass_role_lambda"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: CreateFunction alone (no PassRole)"},
-	{"fp_lambda_invoke_only", m("lambda_updatecode_invoke"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: InvokeFunction alone (no UpdateFunctionCode)"},
-	{"fp_lambda_no_trigger", m("lambda_updatecode_invoke"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: UpdateFunctionCode alone (no trigger primitive)"},
-	{"fp_ec2_run_only", m("iam_pass_role_ec2"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: RunInstances alone (no PassRole)"},
-	{"fp_cfn_create_only", m("iam_pass_role_cloudformation"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: CreateStack alone (no PassRole)"},
-	{"fp_glue_createjob_only", m("glue_createjob_startjobrun"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: CreateJob alone (no PassRole/StartJobRun)"},
-	{"fp_sfn_no_start", m("stepfunctions_create_startexecution"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: PassRole+CreateStateMachine (no StartExecution)"},
+	// missing-permission
+	{"fp_passrole_only", m("iam_pass_role_lambda"), false, tgtNone, "", tierCommon, "missing-permission: PassRole alone (no CreateFunction)"},
+	{"fp_passrole_only", m("iam_pass_role_ec2"), false, tgtNone, "", tierCommon, "missing-permission: PassRole alone (no RunInstances)"},
+	{"fp_lambda_create_only", m("iam_pass_role_lambda"), false, tgtNone, "", tierCommon, "missing-permission: CreateFunction alone (no PassRole)"},
+	{"fp_lambda_invoke_only", m("lambda_updatecode_invoke"), false, tgtNone, "", tierCommon, "missing-permission: InvokeFunction alone (no UpdateFunctionCode)"},
+	{"fp_lambda_no_trigger", m("lambda_updatecode_invoke"), false, tgtNone, "", tierCommon, "missing-permission: UpdateFunctionCode alone (no trigger primitive)"},
+	{"fp_ec2_run_only", m("iam_pass_role_ec2"), false, tgtNone, "", tierCommon, "missing-permission: RunInstances alone (no PassRole)"},
+	{"fp_cfn_create_only", m("iam_pass_role_cloudformation"), false, tgtNone, "", tierCommon, "missing-permission: CreateStack alone (no PassRole)"},
+	{"fp_glue_createjob_only", m("glue_createjob_startjobrun"), false, tgtNone, "", tierCommon, "missing-permission: CreateJob alone (no PassRole/StartJobRun)"},
+	{"fp_sfn_no_start", m("stepfunctions_create_startexecution"), false, tgtNone, "", tierCommon, "missing-permission: PassRole+CreateStateMachine (no StartExecution)"},
 	{"fp_sfn_no_start", m("stepfunctions_create"), true, tgtServiceRole, "states", tierCommon, "PassRole+CreateStateMachine → stepfunctions_create SHOULD still fire"},
-	{"fp_ecs_create_only", m("ecs_create_service"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: CreateService alone (no PassRole)"},
-	{"fp_ssm_createdoc_only", m("ssm_createdocument_startautomation"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: CreateDocument alone (no StartAutomationExecution)"},
-	{"fp_changeset_create_only", m("cloudformation_changeset"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: CreateChangeSet alone (no ExecuteChangeSet)"},
-	// cat-1 (legacy-matrix parity): preserve the FP coverage the old suite had for these methods.
-	{"fp_passrole_only", m("ec2_request_spot_instances"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: PassRole alone (no RequestSpotInstances)"},
-	{"fp_passrole_only", m("glue_create_dev_endpoint"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: PassRole alone (no CreateDevEndpoint)"},
-	{"fp_lambda_no_trigger", m("lambda_add_permission"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: UpdateFunctionCode alone (no AddPermission)"},
-	{"fp_ecs_runtask_no_passrole", m("ecs_passrole_runtask"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: RunTask alone (no PassRole)"},
-	{"fp_sfn_updatesm_only", m("stepfunctions_update"), false, tgtNone, "", tierCommon, "cat-1 missing-permission: UpdateStateMachine alone (no StartExecution)"},
+	{"fp_ecs_create_only", m("ecs_create_service"), false, tgtNone, "", tierCommon, "missing-permission: CreateService alone (no PassRole)"},
+	{"fp_ssm_createdoc_only", m("ssm_createdocument_startautomation"), false, tgtNone, "", tierCommon, "missing-permission: CreateDocument alone (no StartAutomationExecution)"},
+	{"fp_changeset_create_only", m("cloudformation_changeset"), false, tgtNone, "", tierCommon, "missing-permission: CreateChangeSet alone (no ExecuteChangeSet)"},
+	// missing-permission (legacy-matrix parity): preserve the FP coverage the old suite had for these methods.
+	{"fp_passrole_only", m("ec2_request_spot_instances"), false, tgtNone, "", tierCommon, "missing-permission: PassRole alone (no RequestSpotInstances)"},
+	{"fp_passrole_only", m("glue_create_dev_endpoint"), false, tgtNone, "", tierCommon, "missing-permission: PassRole alone (no CreateDevEndpoint)"},
+	{"fp_lambda_no_trigger", m("lambda_add_permission"), false, tgtNone, "", tierCommon, "missing-permission: UpdateFunctionCode alone (no AddPermission)"},
+	{"fp_ecs_runtask_no_passrole", m("ecs_passrole_runtask"), false, tgtNone, "", tierCommon, "missing-permission: RunTask alone (no PassRole)"},
+	{"fp_sfn_updatesm_only", m("stepfunctions_update"), false, tgtNone, "", tierCommon, "missing-permission: UpdateStateMachine alone (no StartExecution)"},
 
-	// cat-2 trust-policy-mismatch (PassRole scoped to the wrong-service decoy role)
-	{"fp_passrole_wrong_service", m("iam_pass_role_lambda"), false, tgtNone, "", tierCommon, "cat-2 trust-policy-mismatch: PassRole scoped to a non-lambda-trusting (sqs) role → iam_pass_role_lambda must NOT fire"},
+	// trust-policy-mismatch (PassRole scoped to the wrong-service decoy role)
+	{"fp_passrole_wrong_service", m("iam_pass_role_lambda"), false, tgtNone, "", tierCommon, "trust-policy-mismatch: PassRole scoped to a non-lambda-trusting (sqs) role → iam_pass_role_lambda must NOT fire"},
 
-	// cat-4 target-not-privileged (PassRole/CreateAccessKey scoped to a non-privileged target)
-	{"fp_passrole_nonpriv_target", m("iam_pass_role_lambda"), false, tgtNone, "", tierCommon, "cat-4 target-not-privileged: PassRole scoped to a lambda-trusting but NON-privileged role → must NOT fire"},
-	{"fp_accesskey_nonpriv", m("iam_create_access_key"), false, tgtNone, "", tierCommon, "cat-4 target-not-privileged: CreateAccessKey+DeleteAccessKey but the only reachable user is non-privileged"},
+	// target-not-privileged (PassRole/CreateAccessKey scoped to a non-privileged target)
+	{"fp_passrole_nonpriv_target", m("iam_pass_role_lambda"), false, tgtNone, "", tierCommon, "target-not-privileged: PassRole scoped to a lambda-trusting but NON-privileged role → must NOT fire"},
+	{"fp_accesskey_nonpriv", m("iam_create_access_key"), false, tgtNone, "", tierCommon, "target-not-privileged: CreateAccessKey+DeleteAccessKey but the only reachable user is non-privileged"},
 
-	// cat-2 trust-policy-mismatch — trust-backed direct-takeover FPs (no usable CAN_ASSUME path to
+	// trust-policy-mismatch — trust-backed direct-takeover FPs (no usable CAN_ASSUME path to
 	// the modify target): iam_attach_role_policy / iam_put_role_policy require BOTH a
 	// usable assume path (CAN_ASSUME) to the victim AND the modify-permission edge to the SAME
 	// victim. The attacker scopes its modify permission to a decoy role it CANNOT assume, so neither
@@ -283,27 +278,27 @@ var labCases = []labCase{
 	// CAN_ASSUME, and admin_target trusts :root so every attacker holding sts:AssumeRole genuinely
 	// escalates to it (a real TP, not an FP). See dev-summary.
 	// service-only trust: the role trusts ONLY a service principal → no CAN_ASSUME for any attacker.
-	{"fp_attachrolepolicy_service_only", m("iam_attach_role_policy"), false, tgtNone, "", tierCommon, "cat-2 trust-policy-mismatch: AttachRolePolicy scoped to a service-only-trusted role (no CAN_ASSUME to it) → must NOT fire"},
+	{"fp_attachrolepolicy_service_only", m("iam_attach_role_policy"), false, tgtNone, "", tierCommon, "trust-policy-mismatch: AttachRolePolicy scoped to a service-only-trusted role (no CAN_ASSUME to it) → must NOT fire"},
 	// not-assumable: the decoy trusts a DIFFERENT principal (the non-priv user) → no CAN_ASSUME.
-	{"fp_putrolepolicy_not_assumable", m("iam_put_role_policy"), false, tgtNone, "", tierCommon, "cat-2 trust-policy-mismatch: PutRolePolicy scoped to a role the attacker can't assume (trust names someone else) → must NOT fire"},
+	{"fp_putrolepolicy_not_assumable", m("iam_put_role_policy"), false, tgtNone, "", tierCommon, "trust-policy-mismatch: PutRolePolicy scoped to a role the attacker can't assume (trust names someone else) → must NOT fire"},
 
 	// self-escalation FPs: the named guard is the SOLE reason each is suppressed; each pairs with a
 	// satisfying TP twin above (iam_create_policy_version / iam_add_user_to_group / iam_put_group_policy).
 	// (S+L) — also verified in the seeded suite (TestPrivescNoCartesianFanOut).
-	// cat-6 admin-source-or-middle: an already-admin attacker is not escalating.
-	{"fp_already_admin", m("iam_create_policy_version"), false, tgtNone, "", tierCommon, "cat-6 admin-source-or-middle: CreatePolicyVersion on a self-attached policy but the attacker is already admin → admin-as-source guard suppresses"},
-	// cat-4 target-not-privileged: joining/owning a non-privileged group (or a group the attacker
+	// admin-source-or-middle: an already-admin attacker is not escalating.
+	{"fp_already_admin", m("iam_create_policy_version"), false, tgtNone, "", tierCommon, "admin-source-or-middle: CreatePolicyVersion on a self-attached policy but the attacker is already admin → admin-as-source guard suppresses"},
+	// target-not-privileged: joining/owning a non-privileged group (or a group the attacker
 	// cannot reach) confers no new privilege.
-	{"fp_adduser_nonpriv_group", m("iam_add_user_to_group"), false, tgtNone, "", tierCommon, "cat-4 target-not-privileged: AddUserToGroup but the only joinable group is non-privileged (already a member of the admin group) → privileged-group guard suppresses"},
-	{"fp_putgrouppolicy_not_member", m("iam_put_group_policy"), false, tgtNone, "", tierCommon, "cat-4 target-not-privileged: PutGroupPolicy on a group the attacker is NOT a member of → membership guard suppresses"},
+	{"fp_adduser_nonpriv_group", m("iam_add_user_to_group"), false, tgtNone, "", tierCommon, "target-not-privileged: AddUserToGroup but the only joinable group is non-privileged (already a member of the admin group) → privileged-group guard suppresses"},
+	{"fp_putgrouppolicy_not_member", m("iam_put_group_policy"), false, tgtNone, "", tierCommon, "target-not-privileged: PutGroupPolicy on a group the attacker is NOT a member of → membership guard suppresses"},
 
-	// cat-5 service/api-precondition — login-profile / access-key FPs: the tri-state confirmed-false
+	// service/api-precondition — login-profile / access-key FPs: the tri-state confirmed-false
 	// signal comes from the live GAAD collector. Each pairs with its satisfying TP twin above
 	// (iam_update_login_profile / iam_create_access_key on priv_user). (L primary; S by seeding the
 	// prop — already locked by TestPrivescLoginProfileGuard / TestPrivescAccessKeyCountGuard in the
 	// seeded suite.)
-	{"fp_updateloginprofile_no_profile", m("iam_update_login_profile"), false, tgtNone, "", tierCommon, "cat-5 service/api-precondition: UpdateLoginProfile on a privileged user with NO console profile (HasLoginProfile=false → NoSuchEntity) → suppresses"},
-	{"fp_createaccesskey_two_keys", m("iam_create_access_key"), false, tgtNone, "", tierCommon, "cat-5 service/api-precondition: CreateAccessKey on a privileged user already holding 2 active keys (AccessKeyCount=2 → LimitExceeded) → suppresses"},
+	{"fp_updateloginprofile_no_profile", m("iam_update_login_profile"), false, tgtNone, "", tierCommon, "service/api-precondition: UpdateLoginProfile on a privileged user with NO console profile (HasLoginProfile=false → NoSuchEntity) → suppresses"},
+	{"fp_createaccesskey_two_keys", m("iam_create_access_key"), false, tgtNone, "", tierCommon, "service/api-precondition: CreateAccessKey on a privileged user already holding 2 active keys (AccessKeyCount=2 → LimitExceeded) → suppresses"},
 
 	// ===== Full-tier (skipped unless AURELIAN_E2E_FULL=1) =====
 	{"emr_run_job_flow", m("emr_run_job_flow"), true, tgtServiceRole, "emr", tierFull, "PassRole(emr) + RunJobFlow"},
@@ -318,9 +313,9 @@ var labCases = []labCase{
 	{"omics_startrun", m("omics_startrun"), true, tgtServiceRole, "omics", tierFull, "PassRole(omics) + CreateWorkflow+StartRun"},
 	{"kinesisanalytics", m("kinesis_analytics"), true, tgtServiceRole, "kinesisanalytics", tierFull, "PassRole(kinesisanalytics) + CreateApplication"},
 	{"kinesisanalytics_startapp", m("kinesisanalytics_startapplication"), true, tgtServiceRole, "kinesisanalytics", tierFull, "PassRole(kinesisanalytics) + CreateApplication+StartApplication"},
-	// cat-1 missing-permission (full tier)
-	{"fp_emr_runjobflow_no_passrole", m("emr_run_job_flow"), false, tgtNone, "", tierFull, "cat-1 missing-permission: RunJobFlow alone (no PassRole)"},
-	{"fp_emrserverless_no_start", m("emr_serverless_startjobrun"), false, tgtNone, "", tierFull, "cat-1 missing-permission: PassRole+CreateApplication (no StartJobRun)"},
+	// missing-permission (full tier)
+	{"fp_emr_runjobflow_no_passrole", m("emr_run_job_flow"), false, tgtNone, "", tierFull, "missing-permission: RunJobFlow alone (no PassRole)"},
+	{"fp_emrserverless_no_start", m("emr_serverless_startjobrun"), false, tgtNone, "", tierFull, "missing-permission: PassRole+CreateApplication (no StartJobRun)"},
 }
 
 // peMethodLiteral extracts the human-readable method string a privesc query stamps onto its
