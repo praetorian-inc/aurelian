@@ -39,13 +39,14 @@ import (
 type targetKind int
 
 const (
-	tgtNone        targetKind = iota // method must emit NO edge for this attacker (FP / no-op)
-	tgtSelf                          // self-escalation: attacker -> attacker
-	tgtAdminRole                     // trust-backed direct takeover: the :root-trusted admin role
-	tgtServiceRole                   // new-passrole: the service-trusted admin role (keyed by svcKey)
-	tgtComputeRole                   // existing-compute HAS_ROLE: the compute admin exec role
-	tgtPrivUser                      // principal-access: the privileged user
-	tgtStub                          // service-wildcard / changeset fail-open: any edge for the method
+	tgtNone                targetKind = iota // method must emit NO edge for this attacker (FP / no-op)
+	tgtSelf                                  // self-escalation: attacker -> attacker
+	tgtAdminRole                             // trust-backed direct takeover: the :root-trusted admin role
+	tgtServiceRole                           // new-passrole: the service-trusted admin role (keyed by svcKey)
+	tgtComputeRole                           // existing-compute HAS_ROLE: the compute admin exec role
+	tgtPrivUser                              // principal-access: the privileged user
+	tgtAttackerTrustedRole                   // trust-mismatch: the admin role whose trust names the attacker
+	tgtStub                                  // service-wildcard / changeset fail-open: any edge for the method
 )
 
 // labCase is one pathfinding.cloud-style scenario.
@@ -126,7 +127,12 @@ var labCases = []labCase{
 	{"iam_put_role_policy", m("iam_put_role_policy"), true, tgtAdminRole, "", tierCommon, "PutRolePolicy + assumable (:root trust) admin role"},
 	{"iam_attach_role_policy", m("iam_attach_role_policy"), true, tgtAdminRole, "", tierCommon, "AttachRolePolicy + assumable admin role"},
 	{"iam_update_assume_role_policy", m("iam_update_assume_role_policy"), true, tgtAdminRole, "", tierCommon, "UpdateAssumeRolePolicy on the admin role"},
+	// Trust-mismatch matrix, trusts-:root-same-account cell = TP: the admin role trusts :root, so
+	// every same-account principal gets CAN_ASSUME → sts_assume_role fires.
 	{"sts_assume_role", m("sts_assume_role"), true, tgtAdminRole, "", tierCommon, "AssumeRole + :root trust → CAN_ASSUME to admin role"},
+	// Trust-mismatch matrix, trusts-attacker-explicitly cell = TP: the admin role's trust policy
+	// NAMES this attacker → CAN_ASSUME → sts_assume_role fires to that role.
+	{"sts_assume_attacker_trusted", m("sts_assume_role"), true, tgtAttackerTrustedRole, "", tierCommon, "AssumeRole + a role whose trust names the attacker → CAN_ASSUME to the attacker-trusted admin role"},
 	{"passrole_modify_policy", m("passrole_modify_policy"), true, tgtAdminRole, "", tierCommon, "PassRole + AttachRolePolicy on the admin role"},
 	{"update_assume_role_passrole_service", m("update_assume_role_passrole_service"), true, tgtAdminRole, "", tierCommon, "UpdateAssumeRolePolicy + PassRole on the admin role"},
 
@@ -243,6 +249,35 @@ var labCases = []labCase{
 	{"fp_passrole_nonpriv_target", m("iam_pass_role_lambda"), false, tgtNone, "", tierCommon, "PassRole scoped to a lambda-trusting but NON-privileged role → must NOT fire"},
 	{"fp_accesskey_nonpriv", m("iam_create_access_key"), false, tgtNone, "", tierCommon, "CreateAccessKey+DeleteAccessKey but the only reachable user is non-privileged"},
 
+	// trust-backed direct-takeover FPs: iam_attach_role_policy / iam_put_role_policy require BOTH a
+	// usable assume path (CAN_ASSUME) to the victim AND the modify-permission edge to the SAME
+	// victim. The attacker scopes its modify permission to a decoy role it CANNOT assume, so neither
+	// the decoy (modify yes, no CAN_ASSUME) nor the :root-trusted admin_target (CAN_ASSUME yes, but
+	// the modify edge does not point at it) matches → 0 edges. Each pairs with its TP twin above
+	// (iam_attach_role_policy / iam_put_role_policy on admin_target, where both legs coincide).
+	// (L) — needs the live trust extraction. NOTE: sts_assume_role has NO sound scoped FP in this
+	// fixture — its guard accepts ANY sts:AssumeRole edge (EXISTS, not victim-scoped) plus a
+	// CAN_ASSUME, and admin_target trusts :root so every attacker holding sts:AssumeRole genuinely
+	// escalates to it (a real TP, not an FP). See dev-summary.
+	// service-only trust: the role trusts ONLY a service principal → no CAN_ASSUME for any attacker.
+	{"fp_attachrolepolicy_service_only", m("iam_attach_role_policy"), false, tgtNone, "", tierCommon, "AttachRolePolicy scoped to a service-only-trusted role (no CAN_ASSUME to it) → must NOT fire"},
+	// not-assumable: the decoy trusts a DIFFERENT principal (the non-priv user) → no CAN_ASSUME.
+	{"fp_putrolepolicy_not_assumable", m("iam_put_role_policy"), false, tgtNone, "", tierCommon, "PutRolePolicy scoped to a role the attacker can't assume (trust names someone else) → must NOT fire"},
+
+	// self-escalation FPs: the named guard is the SOLE reason each is suppressed; each pairs with a
+	// satisfying TP twin above (iam_create_policy_version / iam_add_user_to_group / iam_put_group_policy).
+	// (S+L) — also verified in the seeded suite (TestPrivescNoCartesianFanOut).
+	{"fp_already_admin", m("iam_create_policy_version"), false, tgtNone, "", tierCommon, "CreatePolicyVersion on a self-attached policy but the attacker is already admin → admin-as-source guard suppresses"},
+	{"fp_adduser_nonpriv_group", m("iam_add_user_to_group"), false, tgtNone, "", tierCommon, "AddUserToGroup but the only joinable group is non-privileged (already a member of the admin group) → privileged-group guard suppresses"},
+	{"fp_putgrouppolicy_not_member", m("iam_put_group_policy"), false, tgtNone, "", tierCommon, "PutGroupPolicy on a group the attacker is NOT a member of → membership guard suppresses"},
+
+	// login-profile / access-key FPs: the tri-state confirmed-false signal comes from the live GAAD
+	// collector. Each pairs with its satisfying TP twin above (iam_update_login_profile /
+	// iam_create_access_key on priv_user). (L primary; S by seeding the prop — already locked by
+	// TestPrivescLoginProfileGuard / TestPrivescAccessKeyCountGuard in the seeded suite.)
+	{"fp_updateloginprofile_no_profile", m("iam_update_login_profile"), false, tgtNone, "", tierCommon, "UpdateLoginProfile on a privileged user with NO console profile (HasLoginProfile=false) → suppresses"},
+	{"fp_createaccesskey_two_keys", m("iam_create_access_key"), false, tgtNone, "", tierCommon, "CreateAccessKey on a privileged user already holding 2 active keys (AccessKeyCount=2) → suppresses"},
+
 	// ===== Full-tier (skipped unless AURELIAN_E2E_FULL=1) =====
 	{"emr_run_job_flow", m("emr_run_job_flow"), true, tgtServiceRole, "emr", tierFull, "PassRole(emr) + RunJobFlow"},
 	{"emr_serverless", m("emr_serverless"), true, tgtServiceRole, "emrserverless", tierFull, "PassRole(emr-serverless) + CreateApplication"},
@@ -281,14 +316,21 @@ func peMethodLiteral(methodID string) (string, bool) {
 
 // fixtureFacts holds the resolved fixture ARNs the case table needs.
 type fixtureFacts struct {
-	attackerARNs     map[string]string // attackerKey -> ARN (common + full merged)
-	serviceAdminARNs map[string]string // svcKey -> ARN (common + full merged)
-	adminTargetARN   string
-	computeAdminARN  string
-	privUserARN      string
-	prefix           string   // this fixture's "aur-pf-<id>" name prefix (scopes the no-fan-out guard)
-	accountID        string   // the fixture's AWS account id (distinguishes real vs synthetic 000000000000)
-	decoyARNs        []string // FP decoy role ARNs (legitimately modifiable role targets)
+	attackerARNs           map[string]string // attackerKey -> ARN (common + full merged)
+	serviceAdminARNs       map[string]string // svcKey -> ARN (common + full merged)
+	adminTargetARN         string
+	computeAdminARN        string
+	privUserARN            string
+	attackerTrustedRoleARN string   // admin role whose trust names the attacker (trusts-attacker-explicitly TP)
+	prefix                 string   // this fixture's "aur-pf-<id>" name prefix (scopes the no-fan-out guard)
+	accountID              string   // the fixture's AWS account id (distinguishes real vs synthetic 000000000000)
+	decoyARNs              []string // FP decoy role ARNs (legitimately modifiable role targets)
+	// Privileged-USER FP targets. These are the per-method FP victims (no-profile / two-keys), but
+	// they are ADMIN users, so a broad-resource principal-access TP attacker (e.g.
+	// iam:CreateAccessKey/CreateLoginProfile on "*") can legitimately reach the one whose own
+	// guard signal does not suppress it (the no-profile user still has <2 keys; the two-key user
+	// still has a console profile). They therefore belong in the no-fan-out allowlist.
+	privUserFPTargetARNs []string
 }
 
 // account returns the fixture's real AWS account id (e.g. "196766918487"), used to assert that a
@@ -308,6 +350,8 @@ func (f fixtureFacts) targetARN(tc labCase) string {
 		return f.computeAdminARN
 	case tgtPrivUser:
 		return f.privUserARN
+	case tgtAttackerTrustedRole:
+		return f.attackerTrustedRoleARN
 	default:
 		return ""
 	}
@@ -339,13 +383,14 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 	}
 
 	facts := fixtureFacts{
-		attackerARNs:     fixture.OutputMap("attacker_arns"),
-		serviceAdminARNs: fixture.OutputMap("service_admin_arns"),
-		adminTargetARN:   fixture.Output("admin_target_arn"),
-		computeAdminARN:  fixture.Output("compute_admin_arn"),
-		privUserARN:      fixture.Output("priv_user_arn"),
-		prefix:           fixture.Output("prefix"),
-		accountID:        fixture.Output("account_id"),
+		attackerARNs:           fixture.OutputMap("attacker_arns"),
+		serviceAdminARNs:       fixture.OutputMap("service_admin_arns"),
+		adminTargetARN:         fixture.Output("admin_target_arn"),
+		computeAdminARN:        fixture.Output("compute_admin_arn"),
+		privUserARN:            fixture.Output("priv_user_arn"),
+		attackerTrustedRoleARN: fixture.Output("attacker_trusted_role_arn"),
+		prefix:                 fixture.Output("prefix"),
+		accountID:              fixture.Output("account_id"),
 		// Admin/decoy roles no per-case TP points at but a broad-Resource attacker (e.g.
 		// iam:UpdateAssumeRolePolicy on "*") can legitimately reach, so they belong in the
 		// no-fan-out allowlist. Includes the FP-category decoys and the Federated-trust cognito
@@ -354,7 +399,12 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 			fixture.Output("trust_mismatch_target_arn"),
 			fixture.Output("wrong_service_target_arn"),
 			fixture.Output("nonpriv_lambda_target_arn"),
+			fixture.Output("service_only_trust_role_arn"),
 			fixture.Output("cognito_admin_arn"),
+		},
+		privUserFPTargetARNs: []string{
+			fixture.Output("noprofile_user_arn"),
+			fixture.Output("twokey_user_arn"),
 		},
 	}
 	if fullTier {
@@ -442,16 +492,18 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 			}
 		}
 		inputs := privescsynth.SyntheticInputs{
-			ComputeAdminARN:  facts.computeAdminARN,
-			EC2InstanceARN:   fixture.Output("ec2_instance_arn"),
-			BedrockExecRole:  facts.serviceAdminARNs["bedrock"],
-			AdminTargetARN:   facts.adminTargetARN,
-			PrivUserARN:      facts.privUserARN,
-			Prefix:           facts.prefix,
-			AccountID:        facts.accountID,
-			ServiceAdminARNs: facts.serviceAdminARNs,
-			AttackerARNs:     facts.attackerARNs,
-			DecoyARNs:        facts.decoyARNs,
+			ComputeAdminARN:        facts.computeAdminARN,
+			EC2InstanceARN:         fixture.Output("ec2_instance_arn"),
+			BedrockExecRole:        facts.serviceAdminARNs["bedrock"],
+			AdminTargetARN:         facts.adminTargetARN,
+			PrivUserARN:            facts.privUserARN,
+			AttackerTrustedRoleARN: facts.attackerTrustedRoleARN,
+			Prefix:                 facts.prefix,
+			AccountID:              facts.accountID,
+			ServiceAdminARNs:       facts.serviceAdminARNs,
+			AttackerARNs:           facts.attackerARNs,
+			DecoyARNs:              facts.decoyARNs,
+			PrivUserFPTargetARNs:   facts.privUserFPTargetARNs,
 		}
 		require.NoError(t, privescsynth.CaptureToFile(privescsynth.SnapshotPath, fixtureIAM, fixtureRels, fixtureCollected, inputs))
 		t.Logf("captured privesc recon snapshot to %s", privescsynth.SnapshotPath)
@@ -769,15 +821,19 @@ func assertTargetAllowlist(t *testing.T, ctx context.Context, db graph.GraphData
 	t.Helper()
 	require.NotEmpty(t, facts.prefix, "fixture prefix must be set to scope the no-fan-out guard")
 	allow := map[string]bool{
-		facts.adminTargetARN:  true,
-		facts.computeAdminARN: true,
-		facts.privUserARN:     true,
+		facts.adminTargetARN:         true,
+		facts.computeAdminARN:        true,
+		facts.privUserARN:            true,
+		facts.attackerTrustedRoleARN: true, // the trusts-attacker-explicitly TP role (sts_assume_attacker_trusted)
 	}
 	for _, arn := range facts.serviceAdminARNs {
 		allow[arn] = true
 	}
 	for _, arn := range facts.decoyARNs {
 		allow[arn] = true // modifiable role targets (UpdateAssumeRolePolicy/AttachRolePolicy on "*")
+	}
+	for _, arn := range facts.privUserFPTargetARNs {
+		allow[arn] = true // admin users a broad principal-access TP attacker legitimately reaches
 	}
 	for _, arn := range facts.attackerARNs {
 		allow[arn] = true // self-loops + stub targets (permission edges point at the attacker's own action resources)

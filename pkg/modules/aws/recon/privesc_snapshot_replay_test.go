@@ -24,14 +24,16 @@ import (
 // the live test.
 func factsFromInputs(in privescsynth.SyntheticInputs) fixtureFacts {
 	return fixtureFacts{
-		attackerARNs:     in.AttackerARNs,
-		serviceAdminARNs: in.ServiceAdminARNs,
-		adminTargetARN:   in.AdminTargetARN,
-		computeAdminARN:  in.ComputeAdminARN,
-		privUserARN:      in.PrivUserARN,
-		prefix:           in.Prefix,
-		accountID:        in.AccountID,
-		decoyARNs:        in.DecoyARNs,
+		attackerARNs:           in.AttackerARNs,
+		serviceAdminARNs:       in.ServiceAdminARNs,
+		adminTargetARN:         in.AdminTargetARN,
+		computeAdminARN:        in.ComputeAdminARN,
+		privUserARN:            in.PrivUserARN,
+		attackerTrustedRoleARN: in.AttackerTrustedRoleARN,
+		prefix:                 in.Prefix,
+		accountID:              in.AccountID,
+		decoyARNs:              in.DecoyARNs,
+		privUserFPTargetARNs:   in.PrivUserFPTargetARNs,
 	}
 }
 

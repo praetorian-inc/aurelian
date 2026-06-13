@@ -1466,6 +1466,14 @@ func TestPrivescNoCartesianFanOut(t *testing.T) {
 	//           but is NOT privileged — the privileged-target guard is the SOLE rejection.
 	//   fp_hr:  Lambda UpdateFunctionCode+Invoke on a function whose HAS_ROLE execution role
 	//           is NOT privileged — the privileged-target guard is the SOLE rejection.
+	//   fp_adm: CreatePolicyVersion on a self-attached customer policy, but the attacker is
+	//           ALREADY admin — the self-loop methods' admin-as-source guard is the SOLE rejection
+	//           (everything else the iam_create_policy_version guard needs is satisfied).
+	//   fp_aug: AddUserToGroup, but the only reachable group is NON-privileged and the attacker is
+	//           already a member of the privileged group — the privileged-group requirement is the
+	//           SOLE rejection.
+	//   fp_pgp: PutGroupPolicy on a privileged group the attacker is NOT a member of — the
+	//           membership requirement (GroupName in attacker.GroupList) is the SOLE rejection.
 	_, err = db.Query(ctx, `
 		UNWIND range(1, 20) AS i
 		CREATE (:Principal {Arn: 'arn:aws:iam::123456789012:user/bystander-' + toString(i), _is_admin: false})
@@ -1515,10 +1523,42 @@ func TestPrivescNoCartesianFanOut(t *testing.T) {
 	`, nil)
 	require.NoError(t, err, "seed FP attackers")
 
+	// Self-escalation FP attackers. Each satisfies EVERY guard of its method except the one named
+	// in the comment above, so removing that single guard would flip the case to fire.
+	_, err = db.Query(ctx, `
+		// fp_adm: holds a self-attached CUSTOMER-managed policy (the iam_create_policy_version
+		// CONTAINS check) AND AdministratorAccess (so set_admin marks it _is_admin → the
+		// admin-as-source guard is the SOLE rejection).
+		CREATE (adm:User:Principal {Arn: 'arn:aws:iam::123456789012:user/fp_adm',
+			AttachedManagedPolicies: '[{"PolicyArn":"arn:aws:iam::aws:policy/AdministratorAccess"},{"PolicyArn":"arn:aws:iam::123456789012:policy/adm-custom"}]'})
+		CREATE (admPolicy:Resource {Arn: 'arn:aws:iam::123456789012:policy/adm-custom'})
+		// fp_aug: AddUserToGroup. Already a member of the privileged admin group (excluded by the
+		// not-already-member clause); the only OTHER reachable group is NON-privileged (excluded by
+		// the privileged-group clause) → the privileged-group requirement is the SOLE rejection.
+		CREATE (aug:User:Principal {Arn: 'arn:aws:iam::123456789012:user/fp_aug', _is_admin: false,
+			GroupList: ['aug-admin-grp']})
+		CREATE (augAdminGrp:Group:Principal {Arn: 'arn:aws:iam::123456789012:group/aug-admin-grp',
+			GroupName: 'aug-admin-grp', _is_admin: true})
+		CREATE (augNonprivGrp:Group:Principal {Arn: 'arn:aws:iam::123456789012:group/aug-nonpriv-grp',
+			GroupName: 'aug-nonpriv-grp', _is_admin: false})
+		// fp_pgp: PutGroupPolicy on a PRIVILEGED group the attacker is NOT a member of (empty
+		// GroupList) → the membership requirement is the SOLE rejection.
+		CREATE (pgp:User:Principal {Arn: 'arn:aws:iam::123456789012:user/fp_pgp', _is_admin: false,
+			GroupList: []})
+		CREATE (pgpGrp:Group:Principal {Arn: 'arn:aws:iam::123456789012:group/pgp-grp',
+			GroupName: 'pgp-grp', _is_admin: true})
+		WITH adm, admPolicy, aug, augAdminGrp, augNonprivGrp, pgp, pgpGrp
+		MERGE (adm)-[:IAM_CREATEPOLICYVERSION]->(admPolicy)
+		MERGE (aug)-[:IAM_ADDUSERTOGROUP]->(augAdminGrp)
+		MERGE (aug)-[:IAM_ADDUSERTOGROUP]->(augNonprivGrp)
+		MERGE (pgp)-[:IAM_PUTGROUPPOLICY]->(pgpGrp)
+	`, nil)
+	require.NoError(t, err, "seed self-escalation FP attackers")
+
 	require.NoError(t, EnrichAWS(ctx, db), "EnrichAWS")
 
 	// FP attackers must emit ZERO CAN_PRIVESC edges (they fail the structural guard).
-	for _, fp := range []string{"fp_cpv", "fp_sts", "fp_ec2", "fp_cfn", "fp_pr", "fp_hr"} {
+	for _, fp := range []string{"fp_cpv", "fp_sts", "fp_ec2", "fp_cfn", "fp_pr", "fp_hr", "fp_adm", "fp_aug", "fp_pgp"} {
 		t.Run("fp_zero_edges_"+fp, func(t *testing.T) {
 			result, err := db.Query(ctx, fmt.Sprintf(
 				`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/%s'})-[r:CAN_PRIVESC]->() RETURN count(r) AS n`, fp), nil)
