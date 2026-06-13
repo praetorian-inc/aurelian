@@ -35,6 +35,7 @@ var privEscActions = []string{
 	// CloudFormation (methods 16, 30, 31, 48–49)
 	"cloudformation:CreateChangeSet",
 	"cloudformation:CreateStack",
+	"cloudformation:CreateStackInstances",
 	"cloudformation:CreateStackSet",
 	"cloudformation:ExecuteChangeSet",
 	"cloudformation:SetStackPolicy",
@@ -47,6 +48,10 @@ var privEscActions = []string{
 	"codebuild:UpdateProject",
 	// CodeDeploy (method 50)
 	"codedeploy:CreateDeployment",
+	// Data Pipeline (method 17)
+	"datapipeline:ActivatePipeline",
+	"datapipeline:CreatePipeline",
+	"datapipeline:PutPipelineDefinition",
 	// CodeStar (method 26)
 	"codestar:AssociateTeamMember",
 	"codestar:CreateProject",
@@ -97,6 +102,7 @@ var privEscActions = []string{
 	"iam:CreateRole",
 	"iam:CreateServiceLinkedRole",
 	"iam:CreateUser",
+	"iam:DeleteAccessKey",
 	"iam:PassRole",
 	"iam:PutGroupPolicy",
 	"iam:PutRolePolicy",
@@ -152,5 +158,7 @@ var privEscActions = []string{
 	"sts:GetFederationToken",
 	// Bedrock AgentCore (methods 40, 72)
 	"bedrock-agentcore:CreateCodeInterpreter",
+	"bedrock-agentcore:InvokeCodeInterpreter",
 	"bedrock-agentcore:InvokeSession",
+	"bedrock-agentcore:StartCodeInterpreterSession",
 }

@@ -245,7 +245,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"runinstances":                         {"service"},
 			"requestspotinstances":                 {"service"},
 			"createlaunchtemplate":                 {"service"},
-			"createlaunchtemplateversion":           {"service", "launch-template"},
+			"createlaunchtemplateversion":          {"service", "launch-template"},
 			"modifylaunchtemplate":                 {"service", "launch-template"},
 			"modifyinstanceattribute":              {"instance", "service"},
 			"stopinstances":                        {"instance", "service"},
@@ -260,13 +260,25 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"stackset": regexp.MustCompile(`^arn:aws:cloudformation:[a-z-0-9]+:\d{12}:stackset/.*`),
 		},
 		ActionResourceMap: map[string][]string{
-			"createstack":      {"service"},
-			"updatestack":      {"stack", "service"},
-			"setstackpolicy":   {"stack"},
-			"createchangeset":  {"stack", "service"},
-			"executechangeset": {"stack", "service"},
-			"createstackset":   {"stackset", "service"},
-			"updatestackset":   {"stackset", "service"},
+			"createstack":          {"service"},
+			"updatestack":          {"stack", "service"},
+			"setstackpolicy":       {"stack"},
+			"createchangeset":      {"stack", "service"},
+			"executechangeset":     {"stack", "service"},
+			"createstackset":       {"stackset", "service"},
+			"createstackinstances": {"stackset", "service"},
+			"updatestackset":       {"stackset", "service"},
+		},
+	},
+	"datapipeline": {
+		ResourcePatterns: map[string]*regexp.Regexp{
+			"service":  regexp.MustCompile(`^arn:aws:datapipeline:\*:\*:\*$`),
+			"pipeline": regexp.MustCompile(`^arn:aws:datapipeline:[a-z0-9-]+:\d{12}:pipeline/.*$`),
+		},
+		ActionResourceMap: map[string][]string{
+			"createpipeline":        {"pipeline", "service"},
+			"putpipelinedefinition": {"pipeline", "service"},
+			"activatepipeline":      {"pipeline", "service"},
 		},
 	},
 	"sts": {
@@ -377,6 +389,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"startsession":             {"instance", "managed-instance", "service"},
 			"resumesession":            {"instance", "managed-instance"},
 			"createdocument":           {"service", "document"},
+			"createassociation":        {"instance", "managed-instance", "document", "service"},
 			"startautomationexecution": {"automation", "document", "service"},
 		},
 	},
@@ -542,8 +555,8 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"application": regexp.MustCompile(`^arn:aws:kinesisanalytics:[a-z0-9-]+:\d{12}:application/.*$`),
 		},
 		ActionResourceMap: map[string][]string{
-			"createapplication":  {"application", "service"},
-			"startapplication":   {"application", "service"},
+			"createapplication": {"application", "service"},
+			"startapplication":  {"application", "service"},
 		},
 	},
 	"omics": {
@@ -580,8 +593,10 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"service": regexp.MustCompile(`^arn:aws:bedrock-agentcore:\*:\*:\*$`),
 		},
 		ActionResourceMap: map[string][]string{
-			"createcodeinterpreter": {"service"},
-			"invokesession":         {"service"},
+			"createcodeinterpreter":       {"service"},
+			"invokecodeinterpreter":       {"service"},
+			"invokesession":               {"service"},
+			"startcodeinterpretersession": {"service"},
 		},
 	},
 	"states": {
