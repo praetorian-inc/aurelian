@@ -29,10 +29,12 @@ cypher: |
   WITH coalesce(attacker.Arn, attacker.arn) AS attacker_arn,
        coalesce(target.Arn, target.arn) AS target_arn,
        [r IN relationships(path) | r.method] AS methods,
+       [r IN relationships(path) | r.severity] AS method_severities,
        length(path) AS hops
   RETURN DISTINCT attacker_arn,
          target_arn,
          methods,
+         method_severities,
          hops AS hop_count
   ORDER BY hop_count ASC, attacker_arn, target_arn, methods
   LIMIT 2000
