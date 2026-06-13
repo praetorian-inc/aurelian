@@ -3,6 +3,7 @@ package analyze
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/graph"
@@ -112,6 +113,11 @@ func riskFromRecord(rec map[string]any) (output.AurelianRisk, bool) {
 
 	methods := toStringSlice(rec["methods"])
 	if len(methods) == 0 {
+		// Production recon always stamps a method on CAN_PRIVESC edges, so an
+		// empty methods list points at a hand-seeded graph; log the drop with the
+		// path endpoints to aid diagnosis. Behavior (drop) is unchanged.
+		slog.Warn("dropping privesc path with no decoded methods",
+			"attacker_arn", attackerARN, "target_arn", targetARN)
 		return output.AurelianRisk{}, false
 	}
 	severities := toStringSlice(rec["method_severities"])
