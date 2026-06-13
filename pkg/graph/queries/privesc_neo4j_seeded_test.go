@@ -403,14 +403,14 @@ func allSharedSeedCases() []sharedSeedCase {
 		{p + "ec2_ssm_association", targetAdminRole},
 		{p + "ec2_launch_template_version", targetAdminRole},
 
-		// --- Multi-perm same stub / re-pointed-at-service-role ---
-		// cloudformation_changeset is now re-pointed (D4) at the CFN stack's SERVICE ROLE via
+		// --- Multi-perm same stub / resource-service-role takeover ---
+		// cloudformation_changeset targets the CFN stack's SERVICE ROLE via
 		// (cfnStack)-[:HAS_ROLE]->(adminRole), not the bare stack stub: requires both
 		// CreateChangeSet AND ExecuteChangeSet, then lands on the privileged role.
 		{p + "cloudformation_changeset", targetAdminRole},
-		// batch_submit_job / bedrock_access_code_interpreter are now re-pointed (D4 pass 3) at
-		// the backing resource's role via (JobDefinition|CodeInterpreter)-[:HAS_ROLE]->(adminRole),
-		// not the service-wildcard stub: requires the resource node + a trusting privileged role.
+		// batch_submit_job / bedrock_access_code_interpreter target the backing resource's role
+		// via (JobDefinition|CodeInterpreter)-[:HAS_ROLE]->(adminRole), not the service-wildcard
+		// stub: requires the resource node + a trusting privileged role.
 		{p + "batch_submit_job", targetAdminRole},
 		{p + "bedrock_access_code_interpreter", targetAdminRole},
 		// codestar_create_project now constrains the permission target to :Principal; the
@@ -783,7 +783,7 @@ func TestPrivescAnalysisQuery(t *testing.T) {
 }
 
 // TestPassRoleServiceFanOutReachesAnalysisQuery is the critical end-to-end proof for the
-// Concern B + CodeRabbit scoped-fix: seeds a PassRole+AppRunner scenario where the passed
+// Seeds a PassRole+AppRunner scenario where the passed
 // role is itself an admin principal, runs EnrichAWS, then verifies the analysis query
 // finds a 1-hop path from attacker to that admin role.
 //
@@ -1459,7 +1459,7 @@ func TestPrivescNoCartesianFanOut(t *testing.T) {
 	//           but the role trusts ONLY lambda.amazonaws.com, not ec2 — so the ec2-trust
 	//           guard is the SOLE reason the edge is suppressed (not a label mismatch).
 	//   fp_cfn: CreateChangeSet/ExecuteChangeSet on stacks that carry NO (Stack)-[:HAS_ROLE]->
-	//           (privileged role) edge — the re-pointed changeset method (D4) requires a
+	//           (privileged role) edge — the changeset method requires a
 	//           privileged stack service role reached via HAS_ROLE, so the missing link is the
 	//           SOLE rejection (fail-closed: a roleless stack confers nothing).
 	//   fp_pr:  PassRole+RunInstances to a role that trusts ec2 and has an instance profile
@@ -1596,7 +1596,7 @@ func TestResourceToRoleNameFormHasRole(t *testing.T) {
 		"name-form IamInstanceProfile must link to the role via HAS_ROLE — the second anchored CONTAINS clause covers this; the old single-clause query misses it")
 }
 
-// TestResourceToRoleViaTransformerHasRole proves the A2 HAS_ROLE closure through
+// TestResourceToRoleViaTransformerHasRole proves the instance HAS_ROLE link through
 // the REAL production path, not hand-seeded top-level properties. The instance
 // node is built by NodeFromAWSResource (which buries Properties as a JSON string
 // and must PROMOTE IamInstanceProfile to a top-level node property) and written
@@ -1658,7 +1658,7 @@ func TestResourceToRoleViaTransformerHasRole(t *testing.T) {
 		"transformer-built instance must link to the role via HAS_ROLE — requires NodeFromAWSResource to promote IamInstanceProfile to a top-level node property")
 }
 
-// TestPrivescChangesetStackRoleHasRole locks down D4's re-point of cloudformation_changeset
+// TestPrivescChangesetStackRoleHasRole locks down cloudformation_changeset's link
 // at the CFN stack's SERVICE ROLE via (Stack)-[:HAS_ROLE]->(role) — replacing the old
 // fan-out to the bare stack stub. The attacker holds both change-set actions; the edge must
 // land on the privileged stack role, and the privileged-target + HAS_ROLE + same-account +
@@ -1800,7 +1800,7 @@ func TestPrivescChangesetStackRoleHasRole(t *testing.T) {
 	}
 }
 
-// TestPrivescBatchJobRoleHasRole locks down D4-pass-3's re-point of batch_submit_job at the
+// TestPrivescBatchJobRoleHasRole locks down batch_submit_job's link to the
 // job definition's JOB ROLE via (JobDefinition)-[:HAS_ROLE]->(jobrole) — replacing the old
 // existence-precondition stub. The attacker holds batch:SubmitJob; the edge must land on the
 // privileged, ecs-tasks-trusting job role, and HAS_ROLE + trust + privileged-target +
@@ -1931,8 +1931,8 @@ func TestPrivescBatchJobRoleHasRole(t *testing.T) {
 	}
 }
 
-// TestPrivescCodeInterpreterRoleHasRole locks down D4-pass-3's re-point of
-// bedrock_access_code_interpreter at the interpreter's EXECUTION ROLE via
+// TestPrivescCodeInterpreterRoleHasRole locks down bedrock_access_code_interpreter's
+// link to the interpreter's EXECUTION ROLE via
 // (CodeInterpreter)-[:HAS_ROLE]->(execrole) — replacing the old existence-precondition stub.
 // The attacker holds bedrock-agentcore:InvokeSession; the edge must land on the privileged,
 // bedrock-agentcore-trusting execution role, and HAS_ROLE + trust + privileged-target +
@@ -2060,7 +2060,7 @@ func TestPrivescCodeInterpreterRoleHasRole(t *testing.T) {
 	}
 }
 
-// TestPrivescAccessKeyCountGuard locks down D1's real <2-active-keys precondition for
+// TestPrivescAccessKeyCountGuard locks down the real <2-active-keys precondition for
 // iam_create_access_key. The method now guards on the collected target.AccessKeyCount:
 //   - count >= 2  → NO edge (CreateAccessKey would hit the 2-key limit).
 //   - count <  2  → edge fires on the real signal alone (no DeleteAccessKey proxy needed).
@@ -2172,7 +2172,7 @@ func TestPrivescAccessKeyCountGuard(t *testing.T) {
 	}
 }
 
-// TestPrivescLoginProfileGuard locks down D1's real existing-login-profile precondition for
+// TestPrivescLoginProfileGuard locks down the real existing-login-profile precondition for
 // iam_update_login_profile. The method guards on the collected target.HasLoginProfile, and the
 // victim node is built via the REAL NodeFromGaadUser serialization path (not a hand-seeded
 // Cypher prop) so the test proves the production collector can actually suppress:
@@ -2283,7 +2283,7 @@ func TestPrivescLoginProfileGuard(t *testing.T) {
 	}
 }
 
-// TestPrivescPolicyVersionCountGuard locks down D2's <5-versions precondition for
+// TestPrivescPolicyVersionCountGuard locks down the <5-versions precondition for
 // iam_create_policy_version. The transformer surfaces policy.policy_version_count; the method:
 //   - count = 5     → NO edge (CreatePolicyVersion fails at the 5-version limit).
 //   - count < 5     → edge fires (self-loop).
