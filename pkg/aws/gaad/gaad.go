@@ -24,6 +24,14 @@ import (
 // so a large account does not burst IAM's (low) global rate limit.
 const userEnrichConcurrency = 5
 
+// userEnrichClient is the subset of the IAM API the per-user enrichment pass uses.
+// Extracted so the enrichment logic (NoSuchEntity classification, active-only
+// counting, fail-open-on-error) can be unit-tested with a mock.
+type userEnrichClient interface {
+	ListAccessKeys(context.Context, *iam.ListAccessKeysInput, ...func(*iam.Options)) (*iam.ListAccessKeysOutput, error)
+	GetLoginProfile(context.Context, *iam.GetLoginProfileInput, ...func(*iam.Options)) (*iam.GetLoginProfileOutput, error)
+}
+
 // GAAD wraps the collection of AWS IAM Account Authorization Details.
 type GAAD struct {
 	opts         plugin.AWSReconBase
@@ -86,7 +94,7 @@ func (g *GAAD) Get() (*iampkg.AuthorizationAccountDetails, error) {
 
 	// GAAD does not return access keys or login profiles. Enrich each user with
 	// those signals out-of-band so privesc methods can guard on real data.
-	g.enrichUsers(ctx, gaadData.Users)
+	enrichUsers(ctx, g.iamClient, gaadData.Users)
 
 	return gaadData, nil
 }
@@ -94,9 +102,11 @@ func (g *GAAD) Get() (*iampkg.AuthorizationAccountDetails, error) {
 // enrichUsers augments each collected user with AccessKeyCount (active keys) and
 // HasLoginProfile via per-user IAM calls GAAD itself does not surface. The pass is
 // bounded-concurrent and resilient: a per-user error (AccessDenied, throttle, etc.)
-// is logged and skipped so it never fails the whole collection — the affected user
-// simply keeps its zero-value (fail-open) enrichment fields.
-func (g *GAAD) enrichUsers(ctx context.Context, users store.Map[iampkg.UserDetail]) {
+// is logged and the affected field is left nil (tri-state "unknown" → fail-open)
+// so it never fails the whole collection. A confirmed result (NoSuchEntity for the
+// login profile, a successful key listing) is recorded as a non-nil value so the
+// guard reads the real signal rather than falling open.
+func enrichUsers(ctx context.Context, client userEnrichClient, users store.Map[iampkg.UserDetail]) {
 	var enriched []iampkg.UserDetail
 	users.Range(func(_ string, u iampkg.UserDetail) bool {
 		enriched = append(enriched, u)
@@ -109,8 +119,8 @@ func (g *GAAD) enrichUsers(ctx context.Context, users store.Map[iampkg.UserDetai
 	grp.SetLimit(userEnrichConcurrency)
 	for i := range enriched {
 		grp.Go(func() error {
-			enriched[i].AccessKeyCount = g.countActiveAccessKeys(ctx, enriched[i].UserName)
-			enriched[i].HasLoginProfile = g.hasLoginProfile(ctx, enriched[i].UserName)
+			enriched[i].AccessKeyCount = countActiveAccessKeys(ctx, client, enriched[i].UserName)
+			enriched[i].HasLoginProfile = hasLoginProfile(ctx, client, enriched[i].UserName)
 			return nil
 		})
 	}
@@ -121,17 +131,19 @@ func (g *GAAD) enrichUsers(ctx context.Context, users store.Map[iampkg.UserDetai
 	}
 }
 
-// countActiveAccessKeys returns the number of ACTIVE access keys on the user, or 0
-// if the user name is empty or the call fails (fail-open).
-func (g *GAAD) countActiveAccessKeys(ctx context.Context, userName string) int {
+// countActiveAccessKeys returns a non-nil count of ACTIVE access keys on the user,
+// or nil when the count is unknown (empty user name, or the call failed). A nil
+// return serializes to an absent node prop so the guard fails open; a non-nil 0/1/2+
+// records the real count so the guard reads it.
+func countActiveAccessKeys(ctx context.Context, client userEnrichClient, userName string) *int {
 	if userName == "" {
-		return 0
+		return nil
 	}
-	out, err := g.iamClient.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: &userName})
+	out, err := client.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: &userName})
 	if err != nil {
 		slog.Warn("gaad: ListAccessKeys failed; treating access-key count as unknown",
 			"user", userName, "error", err)
-		return 0
+		return nil
 	}
 	count := 0
 	for _, k := range out.AccessKeyMetadata {
@@ -139,27 +151,31 @@ func (g *GAAD) countActiveAccessKeys(ctx context.Context, userName string) int {
 			count++
 		}
 	}
-	return count
+	return &count
 }
 
-// hasLoginProfile reports whether the user has a console login profile. A
-// NoSuchEntity error means no profile (not a failure); any other error is logged
-// and reported as no profile (fail-open).
-func (g *GAAD) hasLoginProfile(ctx context.Context, userName string) bool {
+// hasLoginProfile reports whether the user has a console login profile as a
+// tri-state: non-nil true (profile exists), non-nil false (confirmed NoSuchEntity —
+// no profile), or nil (unknown: empty user name or any non-NoSuchEntity error such
+// as AccessDenied/throttle). nil serializes to an absent node prop so the guard
+// fails open; a non-nil false serializes present so the guard suppresses.
+func hasLoginProfile(ctx context.Context, client userEnrichClient, userName string) *bool {
 	if userName == "" {
-		return false
+		return nil
 	}
-	_, err := g.iamClient.GetLoginProfile(ctx, &iam.GetLoginProfileInput{UserName: &userName})
+	_, err := client.GetLoginProfile(ctx, &iam.GetLoginProfileInput{UserName: &userName})
 	if err == nil {
-		return true
+		return boolPtr(true)
 	}
 	if isNoSuchEntity(err) {
-		return false
+		return boolPtr(false)
 	}
-	slog.Warn("gaad: GetLoginProfile failed; treating login profile as absent",
+	slog.Warn("gaad: GetLoginProfile failed; treating login profile as unknown",
 		"user", userName, "error", err)
-	return false
+	return nil
 }
+
+func boolPtr(b bool) *bool { return &b }
 
 // isNoSuchEntity reports whether err is IAM's NoSuchEntity (the expected response
 // when a user has no login profile).

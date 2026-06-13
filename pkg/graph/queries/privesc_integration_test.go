@@ -11,6 +11,7 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/graph/adapters"
 	transformaws "github.com/praetorian-inc/aurelian/pkg/graph/transformers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	neo4jcontainer "github.com/testcontainers/testcontainers-go/modules/neo4j"
@@ -1903,13 +1904,18 @@ func TestPrivescAccessKeyCountGuard(t *testing.T) {
 }
 
 // TestPrivescLoginProfileGuard locks down D1's real existing-login-profile precondition for
-// iam_update_login_profile. The method now guards on the collected target.HasLoginProfile:
-//   - HasLoginProfile = false  → NO edge (UpdateLoginProfile returns NoSuchEntity).
-//   - HasLoginProfile = true   → edge fires.
-//   - HasLoginProfile ABSENT   → FAIL-OPEN (coalesce default true) → edge fires as before.
+// iam_update_login_profile. The method guards on the collected target.HasLoginProfile, and the
+// victim node is built via the REAL NodeFromGaadUser serialization path (not a hand-seeded
+// Cypher prop) so the test proves the production collector can actually suppress:
+//   - HasLoginProfile = false (non-nil) → NO edge (UpdateLoginProfile returns NoSuchEntity).
+//   - HasLoginProfile = true            → edge fires.
+//   - HasLoginProfile nil (unknown)     → field serializes to null → dropped → ABSENT →
+//     FAIL-OPEN (coalesce default true) → edge fires as before.
 //
 // Non-vacuous: dropping the HasLoginProfile guard would make the "false" case fire — but it
-// must NOT. The absent case proves the coalesce default keeps pre-enricher graphs behaving as today.
+// must NOT. The nil case proves the coalesce default keeps pre-enricher / call-failed graphs
+// behaving as today. Driving the false node through NodeFromGaadUser is the regression guard
+// against the omitempty bug (a confirmed false MUST land on the node, not be dropped).
 func TestPrivescLoginProfileGuard(t *testing.T) {
 	ctx := context.Background()
 
@@ -1932,14 +1938,7 @@ func TestPrivescLoginProfileGuard(t *testing.T) {
 	)
 	const queryID = "aws/enrich/privesc/iam_update_login_profile"
 
-	setup := func(victimProps string) string {
-		return fmt.Sprintf(`
-			CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
-			CREATE (v:User:Principal {Arn: '%s', _is_admin: true%s})
-			WITH a, v
-			MERGE (a)-[:IAM_UPDATELOGINPROFILE]->(v)
-		`, attacker, victim, victimProps)
-	}
+	bptr := func(b bool) *bool { return &b }
 
 	edgeCount := func(t *testing.T, db graph.GraphDatabase) int64 {
 		t.Helper()
@@ -1952,28 +1951,28 @@ func TestPrivescLoginProfileGuard(t *testing.T) {
 	}
 
 	cases := []struct {
-		name        string
-		victimProps string
-		wantEdge    bool
-		desc        string
+		name            string
+		hasLoginProfile *bool
+		wantEdge        bool
+		desc            string
 	}{
 		{
-			name:        "no_profile_no_edge",
-			victimProps: ", HasLoginProfile: false",
-			wantEdge:    false,
-			desc:        "victim has no console login profile → UpdateLoginProfile → NoSuchEntity → NO edge",
+			name:            "no_profile_no_edge",
+			hasLoginProfile: bptr(false),
+			wantEdge:        false,
+			desc:            "victim has no console login profile (confirmed false survives NodeFromGaadUser) → UpdateLoginProfile → NoSuchEntity → NO edge",
 		},
 		{
-			name:        "has_profile_edge",
-			victimProps: ", HasLoginProfile: true",
-			wantEdge:    true,
-			desc:        "victim has an existing console login profile → UpdateLoginProfile resets it → edge fires",
+			name:            "has_profile_edge",
+			hasLoginProfile: bptr(true),
+			wantEdge:        true,
+			desc:            "victim has an existing console login profile → UpdateLoginProfile resets it → edge fires",
 		},
 		{
-			name:        "profile_absent_failopen",
-			victimProps: "",
-			wantEdge:    true,
-			desc:        "HasLoginProfile absent (pre-enricher graph) → coalesce default true → FAIL-OPEN → edge fires as before",
+			name:            "profile_unknown_failopen",
+			hasLoginProfile: nil,
+			wantEdge:        true,
+			desc:            "HasLoginProfile nil (call not made/failed) → null → dropped → ABSENT → coalesce default true → FAIL-OPEN → edge fires as before",
 		},
 	}
 
@@ -1982,8 +1981,25 @@ func TestPrivescLoginProfileGuard(t *testing.T) {
 			db := newAdapter(t)
 			_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
 			require.NoError(t, err)
-			_, err = db.Query(ctx, setup(tc.victimProps), nil)
-			require.NoError(t, err, "seed")
+
+			// Build the victim node through the production transformer so a confirmed
+			// HasLoginProfile=false actually serializes onto the node (the omitempty bug
+			// would have dropped it). _is_admin is set after CreateNodes since it is an
+			// enricher-derived prop, not a GAAD field.
+			victimNode := transformaws.NodeFromGaadUser(types.UserDetail{
+				Arn:             victim,
+				UserName:        "lp-victim",
+				HasLoginProfile: tc.hasLoginProfile,
+			})
+			_, err = db.CreateNodes(ctx, []*graph.Node{victimNode})
+			require.NoError(t, err, "write transformer-built victim node")
+
+			_, err = db.Query(ctx, fmt.Sprintf(`
+				MATCH (v:User {Arn: '%s'}) SET v._is_admin = true
+				CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
+				MERGE (a)-[:IAM_UPDATELOGINPROFILE]->(v)
+			`, victim, attacker), nil)
+			require.NoError(t, err, "seed attacker + edge")
 
 			_, err = RunPlatformQuery(ctx, db, queryID, nil)
 			require.NoError(t, err, "run %s", queryID)
