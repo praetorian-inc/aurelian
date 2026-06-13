@@ -244,6 +244,38 @@ resource "aws_iam_user" "nonpriv_user" {
   tags = local.tags
 }
 
+# A privileged USER with NO console login profile. The GAAD collector's iam:GetLoginProfile
+# returns NoSuchEntity → HasLoginProfile=confirmed-false → the iam_update_login_profile guard
+# coalesce(target.HasLoginProfile, true) = true is unmet → the method SUPPRESSES (UpdateLoginProfile
+# would itself return NoSuchEntity). Backs fp_updateloginprofile_no_profile. Admin so the
+# suppression is purely about the missing profile, not target privilege.
+resource "aws_iam_user" "noprofile_user" {
+  name = "${local.prefix}-noprofile-user"
+  tags = local.tags
+}
+resource "aws_iam_user_policy_attachment" "noprofile_user" {
+  user       = aws_iam_user.noprofile_user.name
+  policy_arn = local.admin_policy
+}
+
+# A privileged USER that already holds TWO active access keys. The GAAD collector's
+# iam:ListAccessKeys returns AccessKeyCount=2 → the iam_create_access_key guard
+# (AccessKeyCount < 2) is unmet → the method SUPPRESSES (AWS caps a user at 2 active keys, so
+# CreateAccessKey would return LimitExceeded). Backs fp_createaccesskey_two_keys. Admin so the
+# suppression is purely about the key-count limit, not target privilege.
+resource "aws_iam_user" "twokey_user" {
+  name = "${local.prefix}-twokey-user"
+  tags = local.tags
+}
+resource "aws_iam_user_policy_attachment" "twokey_user" {
+  user       = aws_iam_user.twokey_user.name
+  policy_arn = local.admin_policy
+}
+resource "aws_iam_access_key" "twokey_user" {
+  count = 2
+  user  = aws_iam_user.twokey_user.name
+}
+
 # An admin GROUP target for iam_add_user_to_group (self-escalation by JOINing it). The
 # AddUserToGroup attacker must NOT already be a member, so nothing is wired into this group.
 resource "aws_iam_group" "admin_group" {
@@ -268,6 +300,16 @@ resource "aws_iam_user_group_membership" "put_group_policy" {
 resource "aws_iam_user_group_membership" "attach_group_policy" {
   user   = aws_iam_user.attacker["iam_attach_group_policy"].name
   groups = [aws_iam_group.member_group.name]
+}
+
+# fp_adduser_nonpriv_group is ALREADY a member of the privileged admin_group (so that group is
+# excluded by the guard's "not already a member" clause), leaving only the NON-privileged
+# member_group reachable — which the guard's "target group must be privileged" clause excludes.
+# It is deliberately NOT a member of member_group, so removing the privileged-group guard would
+# let it fire on member_group (proving the FP is sound, not vacuous).
+resource "aws_iam_user_group_membership" "fp_adduser_nonpriv_group" {
+  user   = aws_iam_user.attacker["fp_adduser_nonpriv_group"].name
+  groups = [aws_iam_group.admin_group.name]
 }
 
 # DECOY: a role whose trust names a DIFFERENT principal (the non-priv user), not :root and
@@ -307,6 +349,50 @@ resource "aws_iam_role" "wrong_service_target" {
 }
 resource "aws_iam_role_policy_attachment" "wrong_service_target" {
   role       = aws_iam_role.wrong_service_target.name
+  policy_arn = local.admin_policy
+}
+
+# DECOY: an admin role whose trust names ONLY a service principal (lambda) — never :root and
+# never an attacker user. extract_role_trust_relationships builds a CAN_ASSUME edge only when the
+# trust doc names the principal's ARN or the account :root, so NO attacker gets a CAN_ASSUME to
+# this role. Backs the iam_attach_role_policy trust-backed FP: an attacker scoping AttachRolePolicy
+# to this role has the modify edge but no CAN_ASSUME path, so the method must NOT fire. It is admin
+# so the suppression is purely about the missing assume path, not target privilege.
+resource "aws_iam_role" "service_only_trust_role" {
+  name = "${local.prefix}-service-only-trust"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { Service = "lambda.amazonaws.com" }
+    }]
+  })
+  tags = local.tags
+}
+resource "aws_iam_role_policy_attachment" "service_only_trust_role" {
+  role       = aws_iam_role.service_only_trust_role.name
+  policy_arn = local.admin_policy
+}
+
+# An admin role whose trust policy EXPLICITLY names the attacker_trusted attacker user's ARN, so
+# extract_role_trust_relationships builds a CAN_ASSUME edge from that attacker to this role. Paired
+# with the attacker holding sts:AssumeRole scoped to it → sts_assume_role fires (TP), completing
+# the trust-mismatch matrix's "trusts-attacker-explicitly = TP" cell.
+resource "aws_iam_role" "attacker_trusted_role" {
+  name = "${local.prefix}-attacker-trusted"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { AWS = aws_iam_user.attacker["sts_assume_attacker_trusted"].arn }
+    }]
+  })
+  tags = local.tags
+}
+resource "aws_iam_role_policy_attachment" "attacker_trusted_role" {
+  role       = aws_iam_role.attacker_trusted_role.name
   policy_arn = local.admin_policy
 }
 
@@ -566,6 +652,13 @@ locals {
     passrole_modify_policy              = [{ actions = ["iam:PassRole", "iam:AttachRolePolicy", "iam:UpdateAssumeRolePolicy"], resources = ["*"] }]
     update_assume_role_passrole_service = [{ actions = ["iam:UpdateAssumeRolePolicy", "iam:PassRole"], resources = ["*"] }]
 
+    # Trust-mismatch matrix: a role that EXPLICITLY names this attacker in its trust policy →
+    # extract_role_trust_relationships builds a CAN_ASSUME edge → sts_assume_role fires (TP) to that
+    # role. The ":root-trusted same-account = TP" matrix cell is already covered by the
+    # sts_assume_role attacker above (admin_target trusts :root). sts:AssumeRole is on "*" (the
+    # method requires the permission via EXISTS against any target plus the CAN_ASSUME trust edge).
+    sts_assume_attacker_trusted = [{ actions = ["sts:AssumeRole"], resources = ["*"] }]
+
     # ---- New-passrole + create compute (target = service-trusted admin role) ----
     iam_pass_role_ec2          = [{ actions = ["iam:PassRole", "ec2:RunInstances"], resources = ["*"] }]
     iam_pass_role_lambda       = [{ actions = ["iam:PassRole", "lambda:CreateFunction"], resources = ["*"] }]
@@ -670,6 +763,60 @@ locals {
       { actions = ["lambda:CreateFunction"], resources = ["*"] },
     ]
     fp_accesskey_nonpriv = [{ actions = ["iam:CreateAccessKey", "iam:DeleteAccessKey"], resources = [aws_iam_user.nonpriv_user.arn] }]
+
+    # ---- Trust-backed direct-takeover FPs ----
+    # iam_attach_role_policy / iam_put_role_policy require BOTH a CAN_ASSUME path to the victim AND
+    # the modify-permission edge to the SAME victim. AttachRolePolicy / PutRolePolicy are SCOPED to a
+    # decoy role the attacker CANNOT assume (no CAN_ASSUME built for it), so the modify edge points
+    # only at the un-assumable decoy → neither leg coincides on any role → 0 edges. Removing the
+    # CAN_ASSUME requirement would let the method fire on the decoy (proving the FP is sound). Twins:
+    # the iam_attach_role_policy / iam_put_role_policy attackers above fire on the :root-trusted
+    # admin_target (both legs coincide there).
+    #
+    # NOTE — NO sound sts_assume_role / iam_update_assume_role_policy scoped FP exists in this
+    # fixture: sts_assume_role accepts ANY sts:AssumeRole edge (EXISTS, not victim-scoped) plus a
+    # CAN_ASSUME, and admin_target trusts :root, so every attacker holding sts:AssumeRole genuinely
+    # escalates to admin_target (a real TP). iam_update_assume_role_policy rewrites the role's trust
+    # to insert the attacker (self-sufficient, no CAN_ASSUME precondition), so a service-only-trusted
+    # role is still a genuine takeover (TP). Both are reported, not authored as unsound FPs.
+
+    # service-only trust: the role trusts ONLY the lambda service (no :root, no attacker) → no
+    # CAN_ASSUME built → AttachRolePolicy scoped to it cannot land on an assumable role.
+    fp_attachrolepolicy_service_only = [{ actions = ["iam:AttachRolePolicy"], resources = [aws_iam_role.service_only_trust_role.arn] }]
+
+    # not-assumable: the decoy trusts a DIFFERENT principal (the non-priv user), not :root and not
+    # this attacker → no CAN_ASSUME → PutRolePolicy scoped to it cannot land on an assumable role.
+    fp_putrolepolicy_not_assumable = [{ actions = ["iam:PutRolePolicy"], resources = [aws_iam_role.trust_mismatch_target.arn] }]
+
+    # ---- Self-escalation FPs ----
+    # Holds iam:CreatePolicyVersion on a self-attached customer policy, but ALSO carries
+    # AdministratorAccess (attached separately below) → set_admin marks it _is_admin → the
+    # self-loop methods' admin-as-source guard (attacker._is_admin <> true) suppresses (an admin
+    # gains nothing by self-escalating). Twin: the iam_create_policy_version attacker (non-admin).
+    fp_already_admin = [{ actions = ["iam:CreatePolicyVersion"], resources = ["*"] }]
+
+    # Holds iam:AddUserToGroup but the only group it can join is the NON-privileged member_group
+    # (wired below); the admin group it could join, it is already a member of (wired below). The
+    # guard requires a PRIVILEGED group the attacker is NOT already in → suppressed. Twin: the
+    # iam_add_user_to_group attacker (joins the admin_group, not already a member).
+    fp_adduser_nonpriv_group = [{ actions = ["iam:AddUserToGroup"], resources = ["*"] }]
+
+    # Holds iam:PutGroupPolicy but is NOT a member of any group, so writing an inline policy to a
+    # group changes its own effective permissions not at all → the guard's membership requirement
+    # (GroupName IN attacker.GroupList) is unmet → suppressed. Twin: the iam_put_group_policy
+    # attacker (a member of member_group).
+    fp_putgrouppolicy_not_member = [{ actions = ["iam:PutGroupPolicy"], resources = ["*"] }]
+
+    # ---- Login-profile / access-key FPs (live tri-state from the GAAD collector) ----
+    # iam:UpdateLoginProfile scoped to noprofile_user (a privileged user with NO console login
+    # profile). The collector's GetLoginProfile returns NoSuchEntity → HasLoginProfile=false → the
+    # guard suppresses. Twin: the iam_update_login_profile attacker (priv_user HAS a profile).
+    fp_updateloginprofile_no_profile = [{ actions = ["iam:UpdateLoginProfile"], resources = [aws_iam_user.noprofile_user.arn] }]
+
+    # iam:CreateAccessKey+DeleteAccessKey scoped to twokey_user (a privileged user already holding
+    # 2 active access keys). The collector's ListAccessKeys returns AccessKeyCount=2 → the guard
+    # (AccessKeyCount < 2) suppresses. Twin: the iam_create_access_key attacker (priv_user has <2).
+    fp_createaccesskey_two_keys = [{ actions = ["iam:CreateAccessKey", "iam:DeleteAccessKey"], resources = [aws_iam_user.twokey_user.arn] }]
   }
 }
 
@@ -710,4 +857,18 @@ resource "aws_iam_user_policy_attachment" "create_policy_version_custom" {
 resource "aws_iam_user_policy_attachment" "set_default_policy_version_custom" {
   user       = aws_iam_user.attacker["iam_set_default_policy_version"].name
   policy_arn = aws_iam_policy.custom.arn
+}
+
+# fp_already_admin holds the SAME self-attached customer policy as the iam_create_policy_version
+# TP twin (so the self-loop guard's attached-to-attacker CONTAINS check passes) AND
+# AdministratorAccess — so set_admin marks it _is_admin and the self-loop's admin-as-source guard
+# suppresses. Removing ONLY the admin-as-source guard would let the edge fire (the policy is
+# attached and under the version limit), proving the FP is sound.
+resource "aws_iam_user_policy_attachment" "fp_already_admin_custom" {
+  user       = aws_iam_user.attacker["fp_already_admin"].name
+  policy_arn = aws_iam_policy.custom.arn
+}
+resource "aws_iam_user_policy_attachment" "fp_already_admin_admin" {
+  user       = aws_iam_user.attacker["fp_already_admin"].name
+  policy_arn = local.admin_policy
 }

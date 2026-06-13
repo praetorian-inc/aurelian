@@ -51,6 +51,18 @@ output "nonpriv_user_arn" {
   value = aws_iam_user.nonpriv_user.arn
 }
 
+# Privileged user with NO console login profile: the iam_update_login_profile FP target
+# (collector → HasLoginProfile=false → suppress).
+output "noprofile_user_arn" {
+  value = aws_iam_user.noprofile_user.arn
+}
+
+# Privileged user already holding 2 active access keys: the iam_create_access_key FP target
+# (collector → AccessKeyCount=2 → suppress).
+output "twokey_user_arn" {
+  value = aws_iam_user.twokey_user.arn
+}
+
 # Admin group: target of iam_add_user_to_group (joined for self-escalation).
 output "admin_group_arn" {
   value = aws_iam_group.admin_group.arn
@@ -65,6 +77,18 @@ output "wrong_service_target_arn" {
 }
 output "nonpriv_lambda_target_arn" {
   value = aws_iam_role.nonpriv_lambda_target.arn
+}
+
+# Admin decoy that trusts ONLY a service principal (no :root, no attacker) → no CAN_ASSUME built
+# → the trust-backed direct-takeover FPs (AttachRolePolicy/AssumeRole scoped to it) must not fire.
+output "service_only_trust_role_arn" {
+  value = aws_iam_role.service_only_trust_role.arn
+}
+
+# Admin role whose trust EXPLICITLY names the sts_assume_attacker_trusted attacker → CAN_ASSUME is
+# built → sts_assume_role fires (TP). Completes the trust-mismatch matrix's trusts-attacker cell.
+output "attacker_trusted_role_arn" {
+  value = aws_iam_role.attacker_trusted_role.arn
 }
 
 # --- Real common-tier compute (backing the HAS_ROLE methods on real CloudControl data) ---
@@ -133,11 +157,15 @@ output "all_arns" {
       aws_iam_role.compute_admin.arn,
       aws_iam_user.priv_user.arn,
       aws_iam_user.nonpriv_user.arn,
+      aws_iam_user.noprofile_user.arn,
+      aws_iam_user.twokey_user.arn,
       aws_iam_group.admin_group.arn,
       aws_iam_group.member_group.arn,
       aws_iam_role.trust_mismatch_target.arn,
       aws_iam_role.wrong_service_target.arn,
       aws_iam_role.nonpriv_lambda_target.arn,
+      aws_iam_role.service_only_trust_role.arn,
+      aws_iam_role.attacker_trusted_role.arn,
       aws_iam_role.cognito_admin.arn,
       aws_lambda_function.compute.arn,
       aws_instance.compute.arn,
