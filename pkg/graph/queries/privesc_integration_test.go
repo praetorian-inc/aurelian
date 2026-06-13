@@ -76,9 +76,14 @@ func sharedPrivescSeed() string {
 				'ssm.amazonaws.com', 'kinesisanalytics.amazonaws.com', 'omics.amazonaws.com',
 				'emr-serverless.amazonaws.com', 'gamelift.amazonaws.com', 'braket.amazonaws.com',
 				'bedrock-agentcore.amazonaws.com', 'tasks.apprunner.amazonaws.com',
-				'amplify.amazonaws.com', 'cognito-identity.amazonaws.com',
+				'amplify.amazonaws.com',
 				'codebuild.amazonaws.com'
 			],
+			// Cognito identity-pool roles trust the service as a FEDERATED principal, surfaced
+			// by the transformer as trusted_federated (NOT trusted_services). Seeding it here
+			// (and only here) keeps cognito_set_identity_pool_roles non-vacuous: removing the
+			// trusted_federated guard branch leaves cognito untrusted -> 0 edges -> test fails.
+			trusted_federated: ['cognito-identity.amazonaws.com'],
 			InstanceProfileList: '[{"Arn":"arn:aws:iam::123456789012:instance-profile/ip"}]'})
 		CREATE (privUser:User:Principal {Arn: '%s', _is_admin: true})
 		CREATE (privGroup:Group:Principal {Arn: 'arn:aws:iam::123456789012:group/priv-group',

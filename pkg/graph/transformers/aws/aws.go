@@ -28,22 +28,35 @@ func NodeFromGaadUser(user types.UserDetail) *graph.Node {
 // NodeFromGaadRole creates a graph node from an IAM Role
 // Labels: ["Role", "Principal", "AWS::IAM::Role"]
 // UniqueKey: ["Arn"]
-// Extracts trusted_services from AssumeRolePolicyDocument if present
+// Extracts trusted_services and trusted_federated from AssumeRolePolicyDocument if present
 func NodeFromGaadRole(role types.RoleDetail) *graph.Node {
 	props := flattenStruct(role)
 	props["_type"] = "Role"
 	props["_resourceType"] = "AWS::IAM::Role"
 
-	// Extract trusted services from AssumeRolePolicyDocument
+	// Extract trusted service and federated principals from AssumeRolePolicyDocument.
+	// Federated principals (e.g. cognito-identity.amazonaws.com, SAML/OIDC providers)
+	// are kept in a separate property from trusted_services so SERVICE_TRUSTS edges
+	// (extract_role_trusted_services) are not polluted with non-service principals.
 	if role.AssumeRolePolicyDocument.Statement != nil {
 		var trustedServices []string
+		var trustedFederated []string
 		for _, stmt := range *role.AssumeRolePolicyDocument.Statement {
-			if stmt.Principal != nil && stmt.Principal.Service != nil {
+			if stmt.Principal == nil {
+				continue
+			}
+			if stmt.Principal.Service != nil {
 				trustedServices = append(trustedServices, *stmt.Principal.Service...)
+			}
+			if stmt.Principal.Federated != nil {
+				trustedFederated = append(trustedFederated, *stmt.Principal.Federated...)
 			}
 		}
 		if len(trustedServices) > 0 {
 			props["trusted_services"] = trustedServices
+		}
+		if len(trustedFederated) > 0 {
+			props["trusted_federated"] = trustedFederated
 		}
 	}
 

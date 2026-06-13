@@ -73,6 +73,44 @@ func TestNodeFromGaadRole(t *testing.T) {
 	trustedServices, ok := node.Properties["trusted_services"].([]string)
 	assert.True(t, ok, "trusted_services should be a []string")
 	assert.ElementsMatch(t, []string{"lambda.amazonaws.com", "ec2.amazonaws.com"}, trustedServices)
+
+	// A pure-service trust must not produce a trusted_federated property.
+	_, hasFederated := node.Properties["trusted_federated"]
+	assert.False(t, hasFederated, "trusted_federated should be absent for service-only trust")
+}
+
+// TestNodeFromGaadRoleFederatedTrust verifies that a Federated principal (e.g. a
+// Cognito identity pool role trusting cognito-identity.amazonaws.com) is surfaced
+// as trusted_federated, separate from trusted_services, so the cognito privesc
+// guard can match it without polluting SERVICE_TRUSTS edges.
+func TestNodeFromGaadRoleFederatedTrust(t *testing.T) {
+	role := types.RoleDetail{
+		Arn:      "arn:aws:iam::123456789012:role/cognito-pool-authrole",
+		RoleName: "cognito-pool-authrole",
+		AssumeRolePolicyDocument: types.Policy{
+			Version: "2012-10-17",
+			Statement: &types.PolicyStatementList{
+				{
+					Effect: "Allow",
+					Principal: &types.Principal{
+						Federated: &types.DynaString{"cognito-identity.amazonaws.com"},
+					},
+					Action: &types.DynaString{"sts:AssumeRoleWithWebIdentity"},
+				},
+			},
+		},
+	}
+
+	node := NodeFromGaadRole(role)
+
+	require.NotNil(t, node)
+	trustedFederated, ok := node.Properties["trusted_federated"].([]string)
+	assert.True(t, ok, "trusted_federated should be a []string")
+	assert.ElementsMatch(t, []string{"cognito-identity.amazonaws.com"}, trustedFederated)
+
+	// Federated trust must not leak into trusted_services (SERVICE_TRUSTS source).
+	_, hasServices := node.Properties["trusted_services"]
+	assert.False(t, hasServices, "trusted_services should be absent for federated-only trust")
 }
 
 func TestNodeFromGaadGroup(t *testing.T) {
