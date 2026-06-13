@@ -97,21 +97,35 @@ func (m *AWSGraphModule) collectInputs() error {
 	policyCollector := resourcepolicies.New(m.AWSCommonRecon)
 	regions := m.Regions
 
+	// One AWSConfigProvider and one SkipReport are shared across every resource
+	// enumerator below AND the resource-policy lister (via NewEnumeratorWithProvider).
+	// Both are concurrency-safe (the provider guards its config cache with an
+	// RWMutex+Once, the SkipReport its op slice with a mutex), so the parallel
+	// enumerators can write the same instances without extra locking. This reuses a
+	// single SDK config cache and yields ONE aggregated skip summary (logged below via
+	// defer) instead of one per collector.
+	provider := enumeration.NewAWSConfigProvider(m.AWSCommonRecon)
+	skipReport := enumeration.NewSkipReport()
+	// Log the aggregated summary on every exit path (including an early error return)
+	// so the operator always sees which (region, service) pairs were skipped, matching
+	// the prior per-collector defer behavior.
+	defer skipReport.LogSummary()
+
 	var eg errgroup.Group
 	m.collectAccountAuthorizationDetails(&eg, m.GraphConfig)
-	m.collectResourcesWithPolicies(&eg, m.GraphConfig, policyCollector, regions)
-	m.collectEC2Instances(&eg, m.GraphConfig)
-	m.collectCloudFormationStacks(&eg, m.GraphConfig)
-	m.collectCloudFormationStackSets(&eg, m.GraphConfig)
-	m.collectBatchJobDefinitions(&eg, m.GraphConfig)
-	m.collectCodeInterpreters(&eg, m.GraphConfig)
-	m.collectCodeBuildProjects(&eg, m.GraphConfig)
-	m.collectGlueJobs(&eg, m.GraphConfig)
-	m.collectGlueDevEndpoints(&eg, m.GraphConfig)
-	m.collectAppRunnerServices(&eg, m.GraphConfig)
-	m.collectECSTaskDefinitions(&eg, m.GraphConfig)
-	m.collectSFNStateMachines(&eg, m.GraphConfig)
-	m.collectSageMakerNotebookInstances(&eg, m.GraphConfig)
+	m.collectResourcesWithPolicies(&eg, m.GraphConfig, policyCollector, regions, provider, skipReport)
+	m.collectEC2Instances(&eg, m.GraphConfig, provider, skipReport)
+	m.collectCloudFormationStacks(&eg, m.GraphConfig, provider, skipReport)
+	m.collectCloudFormationStackSets(&eg, m.GraphConfig, provider, skipReport)
+	m.collectBatchJobDefinitions(&eg, m.GraphConfig, provider, skipReport)
+	m.collectCodeInterpreters(&eg, m.GraphConfig, provider, skipReport)
+	m.collectCodeBuildProjects(&eg, m.GraphConfig, provider, skipReport)
+	m.collectGlueJobs(&eg, m.GraphConfig, provider, skipReport)
+	m.collectGlueDevEndpoints(&eg, m.GraphConfig, provider, skipReport)
+	m.collectAppRunnerServices(&eg, m.GraphConfig, provider, skipReport)
+	m.collectECSTaskDefinitions(&eg, m.GraphConfig, provider, skipReport)
+	m.collectSFNStateMachines(&eg, m.GraphConfig, provider, skipReport)
+	m.collectSageMakerNotebookInstances(&eg, m.GraphConfig, provider, skipReport)
 	if err := eg.Wait(); err != nil {
 		return err
 	}
@@ -187,12 +201,16 @@ func (m *AWSGraphModule) collectAccountAuthorizationDetails(eg *errgroup.Group, 
 	})
 }
 
-func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c GraphConfig, collector *resourcepolicies.ResourcePolicyCollector, resolvedRegions []string) {
+func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c GraphConfig, collector *resourcepolicies.ResourcePolicyCollector, resolvedRegions []string, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
 	eg.Go(func() error {
 		m.log.Info("enumerating cloud resources and collecting policies (%d types, %d regions)",
 			len(collector.SupportedResourceTypes()), len(resolvedRegions))
 
-		lister := enumeration.NewEnumerator(c.AWSCommonRecon)
+		// Share the run-wide provider and SkipReport so the lister's skipped ops fold
+		// into the single aggregated summary collectInputs logs (the lister's Close
+		// no longer logs its own summary when the report is shared; it still writes
+		// the detail file).
+		lister := enumeration.NewEnumeratorWithProvider(c.AWSCommonRecon, provider, skipReport)
 		defer func() { _ = lister.Close() }()
 		resourceTypes, err := resolveRequestedResourceTypes(c.ResourceType, collector.SupportedResourceTypes())
 		if err != nil {
@@ -226,145 +244,25 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 	})
 }
 
-func (m *AWSGraphModule) collectEC2Instances(eg *errgroup.Group, c GraphConfig) {
-	eg.Go(func() error {
-		m.log.Info("enumerating EC2 instances")
-
-		provider := enumeration.NewAWSConfigProvider(c.AWSCommonRecon)
-		skipReport := enumeration.NewSkipReport()
-		defer skipReport.LogSummary()
-		instanceEnum := enumeration.NewEC2InstanceEnumerator(c.AWSCommonRecon, provider, skipReport)
-
-		collected := pipeline.New[output.AWSResource]()
-		var enumErr error
-		go func() {
-			defer collected.Close()
-			enumErr = instanceEnum.EnumerateAll(collected)
-		}()
-
-		results := store.NewMap[output.AWSResource]()
-		for r := range collected.Range() {
-			results.Set(r.ARN, r)
-		}
-		if enumErr != nil {
-			return fmt.Errorf("enumerating EC2 instances: %w", enumErr)
-		}
-
-		m.log.Success("EC2 instances collected (%d)", results.Len())
-		m.ec2Instances = results
-		return nil
-	})
-}
-
-func (m *AWSGraphModule) collectCloudFormationStacks(eg *errgroup.Group, c GraphConfig) {
-	eg.Go(func() error {
-		m.log.Info("enumerating CloudFormation stacks")
-
-		provider := enumeration.NewAWSConfigProvider(c.AWSCommonRecon)
-		skipReport := enumeration.NewSkipReport()
-		defer skipReport.LogSummary()
-		stackEnum := enumeration.NewCloudFormationStackEnumerator(c.AWSCommonRecon, provider, skipReport)
-
-		collected := pipeline.New[output.AWSResource]()
-		var enumErr error
-		go func() {
-			defer collected.Close()
-			enumErr = stackEnum.EnumerateAll(collected)
-		}()
-
-		results := store.NewMap[output.AWSResource]()
-		for r := range collected.Range() {
-			results.Set(r.ARN, r)
-		}
-		if enumErr != nil {
-			return fmt.Errorf("enumerating CloudFormation stacks: %w", enumErr)
-		}
-
-		m.log.Success("CloudFormation stacks collected (%d)", results.Len())
-		m.cfnStacks = results
-		return nil
-	})
-}
-
-func (m *AWSGraphModule) collectBatchJobDefinitions(eg *errgroup.Group, c GraphConfig) {
-	eg.Go(func() error {
-		m.log.Info("enumerating Batch job definitions")
-
-		provider := enumeration.NewAWSConfigProvider(c.AWSCommonRecon)
-		skipReport := enumeration.NewSkipReport()
-		defer skipReport.LogSummary()
-		jobDefEnum := enumeration.NewBatchJobDefinitionEnumerator(c.AWSCommonRecon, provider, skipReport)
-
-		collected := pipeline.New[output.AWSResource]()
-		var enumErr error
-		go func() {
-			defer collected.Close()
-			enumErr = jobDefEnum.EnumerateAll(collected)
-		}()
-
-		results := store.NewMap[output.AWSResource]()
-		for r := range collected.Range() {
-			results.Set(r.ARN, r)
-		}
-		if enumErr != nil {
-			return fmt.Errorf("enumerating Batch job definitions: %w", enumErr)
-		}
-
-		m.log.Success("Batch job definitions collected (%d)", results.Len())
-		m.batchJobDefs = results
-		return nil
-	})
-}
-
-func (m *AWSGraphModule) collectCodeInterpreters(eg *errgroup.Group, c GraphConfig) {
-	eg.Go(func() error {
-		m.log.Info("enumerating Bedrock AgentCore code interpreters")
-
-		provider := enumeration.NewAWSConfigProvider(c.AWSCommonRecon)
-		skipReport := enumeration.NewSkipReport()
-		defer skipReport.LogSummary()
-		ciEnum := enumeration.NewBedrockCodeInterpreterEnumerator(c.AWSCommonRecon, provider, skipReport)
-
-		collected := pipeline.New[output.AWSResource]()
-		var enumErr error
-		go func() {
-			defer collected.Close()
-			enumErr = ciEnum.EnumerateAll(collected)
-		}()
-
-		results := store.NewMap[output.AWSResource]()
-		for r := range collected.Range() {
-			results.Set(r.ARN, r)
-		}
-		if enumErr != nil {
-			return fmt.Errorf("enumerating Bedrock code interpreters: %w", enumErr)
-		}
-
-		m.log.Success("Bedrock code interpreters collected (%d)", results.Len())
-		m.codeInterpreters = results
-		return nil
-	})
-}
-
-// enumerateAller is the shared entry point of the existing-compute resource enumerators
-// (CodeBuild, Glue, App Runner, ECS, Step Functions, SageMaker, CloudFormation stack
-// sets). It lets collectResources drive any of them through one resilient drain.
+// enumerateAller is the shared entry point of every resource enumerator the graph
+// module drains (EC2, CloudFormation stacks/stack sets, Batch, Bedrock code
+// interpreters, CodeBuild, Glue, App Runner, ECS, Step Functions, SageMaker). It lets
+// collectResources drive any of them through one resilient drain.
 type enumerateAller interface {
 	EnumerateAll(out *pipeline.P[output.AWSResource]) error
 }
 
 // collectResources drains a single enumerator's EnumerateAll into a store keyed by ARN,
 // reporting progress under label and storing the result into dst. It encapsulates the
-// resilient enumerate-and-drain pattern shared by the existing-compute collectors below
-// (each enumerator is per-region/per-resource resilient internally — a denied or
-// unsupported region is skipped, never fatal).
-func (m *AWSGraphModule) collectResources(eg *errgroup.Group, c GraphConfig, label string, newEnum func(plugin.AWSCommonRecon, *enumeration.AWSConfigProvider, *enumeration.SkipReport) enumerateAller, dst *store.Map[output.AWSResource]) {
+// resilient enumerate-and-drain pattern shared by every resource collector below (each
+// enumerator is per-region/per-resource resilient internally — a denied or unsupported
+// region is skipped, never fatal). The shared provider and skipReport are threaded in
+// from collectInputs so all collectors reuse one SDK config cache and one aggregated
+// skip summary.
+func (m *AWSGraphModule) collectResources(eg *errgroup.Group, c GraphConfig, label string, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport, newEnum func(plugin.AWSCommonRecon, *enumeration.AWSConfigProvider, *enumeration.SkipReport) enumerateAller, dst *store.Map[output.AWSResource]) {
 	eg.Go(func() error {
 		m.log.Info("enumerating %s", label)
 
-		provider := enumeration.NewAWSConfigProvider(c.AWSCommonRecon)
-		skipReport := enumeration.NewSkipReport()
-		defer skipReport.LogSummary()
 		enum := newEnum(c.AWSCommonRecon, provider, skipReport)
 
 		collected := pipeline.New[output.AWSResource]()
@@ -388,50 +286,74 @@ func (m *AWSGraphModule) collectResources(eg *errgroup.Group, c GraphConfig, lab
 	})
 }
 
-func (m *AWSGraphModule) collectCloudFormationStackSets(eg *errgroup.Group, c GraphConfig) {
-	m.collectResources(eg, c, "CloudFormation stack sets", func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+func (m *AWSGraphModule) collectEC2Instances(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
+	m.collectResources(eg, c, "EC2 instances", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+		return enumeration.NewEC2InstanceEnumerator(o, p, s)
+	}, &m.ec2Instances)
+}
+
+func (m *AWSGraphModule) collectCloudFormationStacks(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
+	m.collectResources(eg, c, "CloudFormation stacks", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+		return enumeration.NewCloudFormationStackEnumerator(o, p, s)
+	}, &m.cfnStacks)
+}
+
+func (m *AWSGraphModule) collectBatchJobDefinitions(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
+	m.collectResources(eg, c, "Batch job definitions", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+		return enumeration.NewBatchJobDefinitionEnumerator(o, p, s)
+	}, &m.batchJobDefs)
+}
+
+func (m *AWSGraphModule) collectCodeInterpreters(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
+	m.collectResources(eg, c, "Bedrock AgentCore code interpreters", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+		return enumeration.NewBedrockCodeInterpreterEnumerator(o, p, s)
+	}, &m.codeInterpreters)
+}
+
+func (m *AWSGraphModule) collectCloudFormationStackSets(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
+	m.collectResources(eg, c, "CloudFormation stack sets", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
 		return enumeration.NewCloudFormationStackSetEnumerator(o, p, s)
 	}, &m.cfnStackSets)
 }
 
-func (m *AWSGraphModule) collectCodeBuildProjects(eg *errgroup.Group, c GraphConfig) {
-	m.collectResources(eg, c, "CodeBuild projects", func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+func (m *AWSGraphModule) collectCodeBuildProjects(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
+	m.collectResources(eg, c, "CodeBuild projects", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
 		return enumeration.NewCodeBuildProjectEnumerator(o, p, s)
 	}, &m.codeBuildProjects)
 }
 
-func (m *AWSGraphModule) collectGlueJobs(eg *errgroup.Group, c GraphConfig) {
-	m.collectResources(eg, c, "Glue jobs", func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+func (m *AWSGraphModule) collectGlueJobs(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
+	m.collectResources(eg, c, "Glue jobs", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
 		return enumeration.NewGlueJobEnumerator(o, p, s)
 	}, &m.glueJobs)
 }
 
-func (m *AWSGraphModule) collectGlueDevEndpoints(eg *errgroup.Group, c GraphConfig) {
-	m.collectResources(eg, c, "Glue dev endpoints", func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+func (m *AWSGraphModule) collectGlueDevEndpoints(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
+	m.collectResources(eg, c, "Glue dev endpoints", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
 		return enumeration.NewGlueDevEndpointEnumerator(o, p, s)
 	}, &m.glueDevEndpoints)
 }
 
-func (m *AWSGraphModule) collectAppRunnerServices(eg *errgroup.Group, c GraphConfig) {
-	m.collectResources(eg, c, "App Runner services", func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+func (m *AWSGraphModule) collectAppRunnerServices(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
+	m.collectResources(eg, c, "App Runner services", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
 		return enumeration.NewAppRunnerServiceEnumerator(o, p, s)
 	}, &m.appRunnerServices)
 }
 
-func (m *AWSGraphModule) collectECSTaskDefinitions(eg *errgroup.Group, c GraphConfig) {
-	m.collectResources(eg, c, "ECS task definitions", func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+func (m *AWSGraphModule) collectECSTaskDefinitions(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
+	m.collectResources(eg, c, "ECS task definitions", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
 		return enumeration.NewECSTaskDefinitionEnumerator(o, p, s)
 	}, &m.ecsTaskDefinitions)
 }
 
-func (m *AWSGraphModule) collectSFNStateMachines(eg *errgroup.Group, c GraphConfig) {
-	m.collectResources(eg, c, "Step Functions state machines", func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+func (m *AWSGraphModule) collectSFNStateMachines(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
+	m.collectResources(eg, c, "Step Functions state machines", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
 		return enumeration.NewSFNStateMachineEnumerator(o, p, s)
 	}, &m.sfnStateMachines)
 }
 
-func (m *AWSGraphModule) collectSageMakerNotebookInstances(eg *errgroup.Group, c GraphConfig) {
-	m.collectResources(eg, c, "SageMaker notebook instances", func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+func (m *AWSGraphModule) collectSageMakerNotebookInstances(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
+	m.collectResources(eg, c, "SageMaker notebook instances", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
 		return enumeration.NewSageMakerNotebookInstanceEnumerator(o, p, s)
 	}, &m.sageMakerNotebooks)
 }

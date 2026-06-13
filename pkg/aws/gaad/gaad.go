@@ -24,6 +24,12 @@ import (
 // so a large account does not burst IAM's (low) global rate limit.
 const userEnrichConcurrency = 5
 
+// iamGlobalRegion is the region key the per-user enrichment shares with the rest of
+// the recon path's IAM calls (the IAM enumerator classifies its skips under "global").
+// CrossRegionActor keys its package-global limiter by region string, so acting under
+// the same key coordinates this enrichment burst with any other "global" IAM work.
+const iamGlobalRegion = "global"
+
 // userEnrichClient is the subset of the IAM API the per-user enrichment pass uses.
 // Extracted so the enrichment logic (NoSuchEntity classification, active-only
 // counting, fail-open-on-error) can be unit-tested with a mock.
@@ -101,11 +107,15 @@ func (g *GAAD) Get() (*iampkg.AuthorizationAccountDetails, error) {
 
 // enrichUsers augments each collected user with AccessKeyCount (active keys) and
 // HasLoginProfile via per-user IAM calls GAAD itself does not surface. The pass is
-// bounded-concurrent and resilient: a per-user error (AccessDenied, throttle, etc.)
-// is logged and the affected field is left nil (tri-state "unknown" → fail-open)
-// so it never fails the whole collection. A confirmed result (NoSuchEntity for the
-// login profile, a successful key listing) is recorded as a non-nil value so the
-// guard reads the real signal rather than falling open.
+// rate-limited and resilient: a per-user error (AccessDenied, throttle, etc.) is
+// logged and the affected field is left nil (tri-state "unknown" → fail-open) so it
+// never fails the whole collection. A confirmed result (NoSuchEntity for the login
+// profile, a successful key listing) is recorded as a non-nil value so the guard reads
+// the real signal rather than falling open.
+//
+// Concurrency and rate limiting are delegated to a CrossRegionActor acting under the
+// shared "global" IAM region key, so the per-user burst is bounded AND coordinated with
+// the rest of the recon path's IAM calls instead of bursting an isolated errgroup.
 func enrichUsers(ctx context.Context, client userEnrichClient, users store.Map[iampkg.UserDetail]) {
 	var enriched []iampkg.UserDetail
 	users.Range(func(_ string, u iampkg.UserDetail) bool {
@@ -115,13 +125,16 @@ func enrichUsers(ctx context.Context, client userEnrichClient, users store.Map[i
 
 	// Each goroutine writes only its own slice slot, so the parallel ListAccessKeys/
 	// GetLoginProfile calls need no lock; the Set write-back happens sequentially after.
+	actor := ratelimit.NewCrossRegionActor(userEnrichConcurrency)
 	grp := errgroup.Group{}
 	grp.SetLimit(userEnrichConcurrency)
 	for i := range enriched {
 		grp.Go(func() error {
-			enriched[i].AccessKeyCount = countActiveAccessKeys(ctx, client, enriched[i].UserName)
-			enriched[i].HasLoginProfile = hasLoginProfile(ctx, client, enriched[i].UserName)
-			return nil
+			return actor.ActInRegion(iamGlobalRegion, func() error {
+				enriched[i].AccessKeyCount = countActiveAccessKeys(ctx, client, enriched[i].UserName)
+				enriched[i].HasLoginProfile = hasLoginProfile(ctx, client, enriched[i].UserName)
+				return nil
+			})
 		})
 	}
 	_ = grp.Wait() // grp.Go funcs never return an error; per-user failures are handled inline.

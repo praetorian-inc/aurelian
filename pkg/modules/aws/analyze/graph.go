@@ -66,6 +66,10 @@ func (m *AWSGraphAnalyzeModule) Parameters() any {
 }
 
 func (m *AWSGraphAnalyzeModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
+	// GraphOutputBase declares --neo4j-uri with default:"" and no required:"true" tag
+	// (the param framework only enforces presence for required:"true" fields), so this
+	// manual check is the only guard against an empty URI. The graph is the sole input
+	// source for this analysis, so an empty URI is fatal rather than a silent no-op.
 	if m.Neo4jURI == "" {
 		return fmt.Errorf("--neo4j-uri is required: the graph is the input source for this analysis")
 	}
