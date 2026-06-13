@@ -44,7 +44,8 @@ const (
 	tgtAdminRole                             // trust-backed direct takeover: the :root-trusted admin role
 	tgtServiceRole                           // new-passrole: the service-trusted admin role (keyed by svcKey)
 	tgtComputeRole                           // existing-compute HAS_ROLE: the compute admin exec role
-	tgtPrivUser                              // principal-access: the privileged user
+	tgtPrivUser                              // principal-access: the privileged user (HAS a console profile)
+	tgtNoProfileUser                         // principal-access: the privileged user with NO console profile
 	tgtAttackerTrustedRole                   // trust-mismatch: the admin role whose trust names the attacker
 	tgtStub                                  // service-wildcard / changeset fail-open: any edge for the method
 )
@@ -135,7 +136,11 @@ var labCases = []labCase{
 
 	// ===== IAM principal-access (target = privileged user) =====
 	{"iam_create_access_key", m("iam_create_access_key"), true, tgtPrivUser, "", tierCommon, "CreateAccessKey+DeleteAccessKey on the privileged user"},
-	{"iam_create_login_profile", m("iam_create_login_profile"), true, tgtPrivUser, "", tierCommon, "CreateLoginProfile+UpdateLoginProfile on the privileged user"},
+	// G1: CreateLoginProfile returns EntityAlreadyExists when the target already has a console
+	// profile, so the method now fires only when the target has NO profile. The attacker scopes
+	// to "*" so the edge lands on the privileged NO-profile user (noprofile_user); priv_user (which
+	// HAS a profile) is correctly suppressed and is the fp_createloginprofile_has_profile FP twin.
+	{"iam_create_login_profile", m("iam_create_login_profile"), true, tgtNoProfileUser, "", tierCommon, "CreateLoginProfile+UpdateLoginProfile on a privileged user with NO console profile (HasLoginProfile=false → bootstrap)"},
 	{"iam_update_login_profile", m("iam_update_login_profile"), true, tgtPrivUser, "", tierCommon, "UpdateLoginProfile on the privileged user"},
 
 	// ===== IAM trust-backed direct takeover (target = :root-trusted admin role) =====
@@ -299,6 +304,14 @@ var labCases = []labCase{
 	// seeded suite.)
 	{"fp_updateloginprofile_no_profile", m("iam_update_login_profile"), false, tgtNone, "", tierCommon, "service/api-precondition: UpdateLoginProfile on a privileged user with NO console profile (HasLoginProfile=false → NoSuchEntity) → suppresses"},
 	{"fp_createaccesskey_two_keys", m("iam_create_access_key"), false, tgtNone, "", tierCommon, "service/api-precondition: CreateAccessKey on a privileged user already holding 2 active keys (AccessKeyCount=2 → LimitExceeded) → suppresses"},
+	// G1 FP twin — TESTER TODO: add a fixture attacker `fp_createloginprofile_has_profile` granting
+	// iam:CreateLoginProfile+iam:UpdateLoginProfile scoped to priv_user (which HAS a console
+	// profile → HasLoginProfile=true → CreateLoginProfile returns EntityAlreadyExists), then add:
+	//   {"fp_createloginprofile_has_profile", m("iam_create_login_profile"), false, tgtNone, "", tierCommon,
+	//     "service/api-precondition: CreateLoginProfile on a privileged user that already has a console profile → suppresses"},
+	// The existing `*`-scoped iam_create_login_profile TP attacker now lands on noprofile_user, so it
+	// cannot double as this FP. G1's FP soundness is locked in the seeded suite by
+	// TestPrivescCreateLoginProfileGuard until the narrowly-scoped fixture attacker exists.
 
 	// ===== Full-tier (skipped unless AURELIAN_E2E_FULL=1) =====
 	{"emr_run_job_flow", m("emr_run_job_flow"), true, tgtServiceRole, "emr", tierFull, "PassRole(emr) + RunJobFlow"},
@@ -344,6 +357,7 @@ type fixtureFacts struct {
 	adminTargetARN         string
 	computeAdminARN        string
 	privUserARN            string
+	noProfileUserARN       string   // privileged user with NO console profile (iam_create_login_profile TP target)
 	attackerTrustedRoleARN string   // admin role whose trust names the attacker (trusts-attacker-explicitly TP)
 	prefix                 string   // this fixture's "aur-pf-<id>" name prefix (scopes the no-fan-out guard)
 	accountID              string   // the fixture's AWS account id (distinguishes real vs synthetic 000000000000)
@@ -373,6 +387,8 @@ func (f fixtureFacts) targetARN(tc labCase) string {
 		return f.computeAdminARN
 	case tgtPrivUser:
 		return f.privUserARN
+	case tgtNoProfileUser:
+		return f.noProfileUserARN
 	case tgtAttackerTrustedRole:
 		return f.attackerTrustedRoleARN
 	default:
@@ -411,6 +427,7 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 		adminTargetARN:         fixture.Output("admin_target_arn"),
 		computeAdminARN:        fixture.Output("compute_admin_arn"),
 		privUserARN:            fixture.Output("priv_user_arn"),
+		noProfileUserARN:       fixture.Output("noprofile_user_arn"),
 		attackerTrustedRoleARN: fixture.Output("attacker_trusted_role_arn"),
 		prefix:                 fixture.Output("prefix"),
 		accountID:              fixture.Output("account_id"),
@@ -520,6 +537,7 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 			BedrockExecRole:        facts.serviceAdminARNs["bedrock"],
 			AdminTargetARN:         facts.adminTargetARN,
 			PrivUserARN:            facts.privUserARN,
+			NoProfileUserARN:       facts.noProfileUserARN,
 			AttackerTrustedRoleARN: facts.attackerTrustedRoleARN,
 			Prefix:                 facts.prefix,
 			AccountID:              facts.accountID,

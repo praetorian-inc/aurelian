@@ -22,10 +22,20 @@ cypher: |
   // and LIMIT 2000 so a pathological graph is bounded and any truncation is stable and
   // reproducible — not a silent random drop. 2000 comfortably covers every realistic
   // admin-reachable method-path in a single account scan.
+  //
+  // Terminate-at-first-admin: a path A→AdminMid→AdminTarget is redundant — once A reaches the
+  // admin AdminMid the escalation is COMPLETE, so continuing on to AdminTarget would distort
+  // ranking and double-count the same compromise. Every INTERMEDIATE node (path[1..-1],
+  // excluding the non-admin attacker source and the admin target endpoint) must be NON-admin, so
+  // the walk stops at the first admin reached. The real A→AdminMid escalation is itself returned
+  // (as a hop-1 path with no intermediates); only the pass-through-an-admin CONTINUATION is
+  // dropped. FAIL-OPEN: a node missing _is_admin coalesces to false (treated as non-admin), so
+  // pre-enricher graphs are unaffected.
   MATCH path = (attacker:Principal)-[:CAN_PRIVESC*1..3]->(target:Principal)
   WHERE coalesce(target._is_admin, false) = true
     AND coalesce(attacker._is_admin, false) <> true
     AND coalesce(attacker.Arn, attacker.arn) <> coalesce(target.Arn, target.arn)
+    AND ALL(n IN nodes(path)[1..-1] WHERE coalesce(n._is_admin, false) <> true)
   WITH coalesce(attacker.Arn, attacker.arn) AS attacker_arn,
        coalesce(target.Arn, target.arn) AS target_arn,
        [r IN relationships(path) | r.method] AS methods,

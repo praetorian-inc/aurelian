@@ -40,10 +40,11 @@ const (
 	// Shared-seed node identifiers (see sharedPrivescSeed). The corrected privesc
 	// methods scope their CAN_PRIVESC edge to one of these well-defined targets, so a
 	// test asserts the edge lands on the RIGHT node — not just that some edge exists.
-	sharedAdminRoleARN = "arn:aws:iam::123456789012:role/admin-target"                   // passed/assumed/HAS_ROLE target
-	sharedPrivUserARN  = "arn:aws:iam::123456789012:user/priv-victim"                    // access-key / login-profile target
-	sharedWildcardARN  = "arn:aws:batch:us-east-1:123456789012:service"                  // service-wildcard terminate-at-resource
-	sharedStackARN     = "arn:aws:cloudformation:us-east-1:123456789012:stack/changeset" // cfn change-set stub
+	sharedAdminRoleARN     = "arn:aws:iam::123456789012:role/admin-target"                   // passed/assumed/HAS_ROLE target
+	sharedPrivUserARN      = "arn:aws:iam::123456789012:user/priv-victim"                    // access-key / update-login-profile target (HAS a console profile)
+	sharedNoProfileUserARN = "arn:aws:iam::123456789012:user/noprofile-victim"               // create-login-profile target (NO console profile)
+	sharedWildcardARN      = "arn:aws:batch:us-east-1:123456789012:service"                  // service-wildcard terminate-at-resource
+	sharedStackARN         = "arn:aws:cloudformation:us-east-1:123456789012:stack/changeset" // cfn change-set stub
 )
 
 // sharedPrivescSeed is ONE "all-guards-satisfied" graph reused by every per-method case in
@@ -94,6 +95,12 @@ func sharedPrivescSeed() string {
 		// keeps iam_create_access_key / iam_update_login_profile firing on the true signal, not
 		// only the fail-open fallback.
 		CREATE (privUser:User:Principal {Arn: '%s', _is_admin: true, AccessKeyCount: 1, HasLoginProfile: true})
+		// noProfileUser is the iam:CreateLoginProfile target: a privileged user with NO console
+		// profile (HasLoginProfile=false). CreateLoginProfile fires only when no profile exists
+		// (else EntityAlreadyExists), the EXACT INVERSE of iam_update_login_profile, which targets
+		// privUser (HasLoginProfile=true). Keeping the two on distinct nodes lets BOTH methods fire
+		// on their real signal in the shared seed.
+		CREATE (noProfileUser:User:Principal {Arn: '%s', _is_admin: true, HasLoginProfile: false})
 		CREATE (privGroup:Group:Principal {Arn: 'arn:aws:iam::123456789012:group/priv-group',
 			GroupName: 'priv-group', _is_admin: true})
 		CREATE (joinGroup:Group:Principal {Arn: 'arn:aws:iam::123456789012:group/join-group',
@@ -114,7 +121,7 @@ func sharedPrivescSeed() string {
 		CREATE (ec2Instance:Resource {_resourceType: 'AWS::EC2::Instance',               Arn: 'arn:aws:ec2:us-east-1:123456789012:instance/i-1'})
 		CREATE (batchJobDef:Resource {_resourceType: 'AWS::Batch::JobDefinition',        Arn: 'arn:aws:batch:us-east-1:123456789012:job-definition/jd:1'})
 		CREATE (codeInterp:Resource  {_resourceType: 'AWS::BedrockAgentCore::CodeInterpreter', Arn: 'arn:aws:bedrock-agentcore:us-east-1:123456789012:code-interpreter/ci-1'})
-		WITH a, adminRole, privUser, privGroup, joinGroup, policy, svc, wildcard, stack,
+		WITH a, adminRole, privUser, noProfileUser, privGroup, joinGroup, policy, svc, wildcard, stack,
 			cfnStack, cfnStackSet, cbProject, glueEndpoint, glueJob, appRunner,
 			ecsTaskDef, sfnMachine, smNotebook, ec2Instance, batchJobDef, codeInterp
 		// adminRole reachability: attacker can both pass it and assume it.
@@ -156,8 +163,12 @@ func sharedPrivescSeed() string {
 		// Principal-access scoped to a privileged USER (with the paired action on the same user).
 		MERGE (a)-[:IAM_CREATEACCESSKEY]->(privUser)
 		MERGE (a)-[:IAM_DELETEACCESSKEY]->(privUser)
-		MERGE (a)-[:IAM_CREATELOGINPROFILE]->(privUser)
+		// iam:UpdateLoginProfile targets privUser (HAS a console profile → resets it).
 		MERGE (a)-[:IAM_UPDATELOGINPROFILE]->(privUser)
+		// iam:CreateLoginProfile targets noProfileUser (NO console profile → bootstraps one). Its
+		// same-target UpdateLoginProfile proxy edge points at the SAME node.
+		MERGE (a)-[:IAM_CREATELOGINPROFILE]->(noProfileUser)
+		MERGE (a)-[:IAM_UPDATELOGINPROFILE]->(noProfileUser)
 		// sts:AssumeRole (paired with the CAN_ASSUME trust edge above).
 		MERGE (a)-[:STS_ASSUMEROLE]->(svc)
 		// CloudFormation change-set: both actions on the SAME stub.
@@ -237,7 +248,7 @@ func sharedPrivescSeed() string {
 		MERGE (a)-[:BATCH_SUBMITJOB]->(wildcard)
 		MERGE (a)-[:CODESTAR_CREATEPROJECT]->(wildcard)
 	`, attackerARN, "arn:aws:iam::123456789012:policy/custom",
-		sharedAdminRoleARN, sharedPrivUserARN, "arn:aws:iam::123456789012:policy/custom",
+		sharedAdminRoleARN, sharedPrivUserARN, sharedNoProfileUserARN, "arn:aws:iam::123456789012:policy/custom",
 		svcResourceARN, sharedWildcardARN, sharedStackARN)
 }
 
@@ -265,11 +276,12 @@ func sharedPrivescHyphenatedSeeds() []string {
 type privescTarget int
 
 const (
-	targetSelfLoop  privescTarget = iota // self-escalation: attacker -> attacker
-	targetAdminRole                      // new-passrole / trust-backed / existing-compute -> the privileged role
-	targetPrivUser                       // principal-access -> the privileged user node
-	targetWildcard                       // service-wildcard methods -> the service resource stub
-	targetNone                           // method intentionally emits no edge (e.g. SLR)
+	targetSelfLoop      privescTarget = iota // self-escalation: attacker -> attacker
+	targetAdminRole                          // new-passrole / trust-backed / existing-compute -> the privileged role
+	targetPrivUser                           // principal-access -> the privileged user node (HAS a console profile)
+	targetNoProfileUser                      // create-login-profile -> the privileged user with NO console profile
+	targetWildcard                           // service-wildcard methods -> the service resource stub
+	targetNone                               // method intentionally emits no edge (e.g. SLR)
 )
 
 // sharedSeedCase asserts that running queryID against the shared seed emits a correctly-scoped
@@ -292,6 +304,8 @@ func (tc sharedSeedCase) verify() (cypher string, wantZero bool) {
 		return dst(sharedAdminRoleARN), false
 	case targetPrivUser:
 		return dst(sharedPrivUserARN), false
+	case targetNoProfileUser:
+		return dst(sharedNoProfileUserARN), false
 	case targetWildcard:
 		return dst(sharedWildcardARN), false
 	default: // targetNone
@@ -329,7 +343,9 @@ func allSharedSeedCases() []sharedSeedCase {
 
 		// --- Principal-access scoped to a privileged USER (-> privUser) ---
 		{p + "iam_create_access_key", targetPrivUser},
-		{p + "iam_create_login_profile", targetPrivUser},
+		// iam_create_login_profile fires only when the target has NO console profile (else
+		// EntityAlreadyExists), so it targets the noProfileUser node, not privUser.
+		{p + "iam_create_login_profile", targetNoProfileUser},
 		{p + "iam_update_login_profile", targetPrivUser},
 
 		// --- New-passrole (-> passed adminRole) ---
@@ -570,10 +586,9 @@ func TestEnrichAWSPrivescEndToEnd(t *testing.T) {
 //
 // admin-source-or-middle boundary: the no-fan-out subtests (create_policy_version_no_fanout
 // / mid_does_not_fan_out) prove a corrected method reaches only its one scoped target, which is
-// what prevents a single source from double-counting an admin mid-node into a longer chain. An
-// admin-in-the-middle multi-hop TRUNCATION guard (terminate the *1..3 walk at the FIRST admin) is
-// NOT implemented in aws/analysis/privesc_paths.yaml, so GAP G5 is DEFERRED rather than tested
-// here (no guard to isolate without a detection change — see dev-summary).
+// what prevents a single source from double-counting an admin mid-node into a longer chain. The
+// admin-in-the-middle multi-hop TRUNCATION guard (terminate the *1..3 walk at the FIRST admin) now
+// lives in aws/analysis/privesc_paths.yaml and is isolated by TestPrivescAnalysisTruncatesAtFirstAdmin.
 func TestPrivescMultiHopPaths(t *testing.T) {
 	ctx := context.Background()
 
@@ -786,6 +801,90 @@ func TestPrivescAnalysisQuery(t *testing.T) {
 			assert.NotEqual(t, rec["attacker_arn"], rec["target_arn"],
 				"attacker and target should never be the same principal")
 		}
+	})
+}
+
+// TestPrivescAnalysisTruncatesAtFirstAdmin locks down the terminate-at-first-admin guard in
+// aws/analysis/privesc_paths: once a path reaches an admin node the escalation is COMPLETE, so a
+// path that PASSES THROUGH an admin intermediate to reach a farther admin is redundant and must be
+// dropped (it would double-count the same compromise and distort hop-count ranking). The query
+// requires every INTERMEDIATE node to be non-admin.
+//
+// It seeds two parallel chains from a common non-admin source:
+//   - A → adminMid → adminFar : adminMid IS admin, so the only valid path is A → adminMid (hop 1);
+//     the A → adminFar (hop 2) continuation passing through adminMid must NOT appear.
+//   - A → cleanMid → adminClean : cleanMid is NON-admin, so the real A → adminClean (hop 2) path
+//     through a clean intermediate is STILL returned (no false negative).
+//
+// Non-vacuous: removing the ALL(intermediate non-admin) clause makes the redundant A → adminFar
+// 2-hop path reappear, flipping the truncation subtest.
+func TestPrivescAnalysisTruncatesAtFirstAdmin(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	cfg := graph.NewConfig(boltURL, "", "")
+	db, err := adapters.NewNeo4jAdapter(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	const (
+		srcARN        = "arn:aws:iam::1:user/trunc-src"
+		adminMidARN   = "arn:aws:iam::1:role/trunc-admin-mid"
+		adminFarARN   = "arn:aws:iam::1:role/trunc-admin-far"
+		cleanMidARN   = "arn:aws:iam::1:role/trunc-clean-mid"
+		adminCleanARN = "arn:aws:iam::1:role/trunc-admin-clean"
+	)
+
+	_, err = db.Query(ctx, fmt.Sprintf(`
+		CREATE (src:Principal       {Arn: '%s', _is_admin: false})
+		CREATE (adminMid:Principal  {Arn: '%s', _is_admin: true})
+		CREATE (adminFar:Principal  {Arn: '%s', _is_admin: true})
+		CREATE (cleanMid:Principal  {Arn: '%s', _is_admin: false})
+		CREATE (adminClean:Principal{Arn: '%s', _is_admin: true})
+		WITH src, adminMid, adminFar, cleanMid, adminClean
+		// Pass-through-admin chain: src → adminMid (admin) → adminFar (admin). The walk must stop
+		// at adminMid; the src → adminFar continuation through an admin must be dropped.
+		MERGE (src)-[:CAN_PRIVESC {method: 'm', severity: 'high'}]->(adminMid)
+		MERGE (adminMid)-[:CAN_PRIVESC {method: 'm', severity: 'high'}]->(adminFar)
+		// Clean chain: src → cleanMid (non-admin) → adminClean (admin). The real 2-hop path must
+		// still be returned.
+		MERGE (src)-[:CAN_PRIVESC {method: 'm', severity: 'high'}]->(cleanMid)
+		MERGE (cleanMid)-[:CAN_PRIVESC {method: 'm', severity: 'high'}]->(adminClean)
+	`, srcARN, adminMidARN, adminFarARN, cleanMidARN, adminCleanARN), nil)
+	require.NoError(t, err, "seed truncation graph")
+
+	result, err := RunPlatformQuery(ctx, db, "aws/analysis/privesc_paths", nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	type path struct {
+		attacker string
+		target   string
+	}
+	got := map[path]bool{}
+	for _, rec := range result.Records {
+		a, _ := rec["attacker_arn"].(string)
+		tg, _ := rec["target_arn"].(string)
+		got[path{a, tg}] = true
+		t.Logf("  path: %s → %s (%v hops)", a, tg, rec["hop_count"])
+	}
+
+	t.Run("real_1hop_to_admin_mid_returned", func(t *testing.T) {
+		assert.True(t, got[path{srcARN, adminMidARN}],
+			"src → adminMid (the real 1-hop escalation) must still be returned")
+	})
+
+	t.Run("real_2hop_through_clean_intermediate_returned", func(t *testing.T) {
+		assert.True(t, got[path{srcARN, adminCleanARN}],
+			"src → cleanMid → adminClean (real 2-hop through a NON-admin intermediate) must still be returned")
+	})
+
+	t.Run("redundant_pass_through_admin_path_dropped", func(t *testing.T) {
+		assert.False(t, got[path{srcARN, adminFarARN}],
+			"src → adminMid → adminFar passes through an admin intermediate — redundant continuation must be dropped")
 	})
 }
 
@@ -2705,6 +2804,209 @@ func TestPrivescLoginProfileGuard(t *testing.T) {
 				MERGE (a)-[:IAM_UPDATELOGINPROFILE]->(v)
 			`, victim, attacker), nil)
 			require.NoError(t, err, "seed attacker + edge")
+
+			_, err = RunPlatformQuery(ctx, db, queryID, nil)
+			require.NoError(t, err, "run %s", queryID)
+
+			n := edgeCount(t, db)
+			if tc.wantEdge {
+				assert.GreaterOrEqual(t, n, int64(1), tc.desc)
+			} else {
+				assert.Equal(t, int64(0), n, tc.desc)
+			}
+		})
+	}
+}
+
+// TestPrivescCreateLoginProfileGuard (service/api-precondition) locks down the
+// no-existing-profile precondition for iam_create_login_profile. CreateLoginProfile returns
+// EntityAlreadyExists when the target already has a console profile, so the method is the
+// EXACT INVERSE of iam_update_login_profile and guards on the collected target.HasLoginProfile:
+//   - HasLoginProfile = true  → NO edge (CreateLoginProfile → EntityAlreadyExists).
+//   - HasLoginProfile = false → edge fires (no profile yet → bootstrap one).
+//   - HasLoginProfile absent (unknown) → coalesce default false → FAIL-OPEN → edge fires as before.
+//
+// Non-vacuous: dropping the HasLoginProfile guard would make the "true" case fire — but it must
+// NOT, since a target that already has a profile cannot be CreateLoginProfile'd. The absent case
+// proves the coalesce default keeps pre-enricher / call-failed graphs firing as today.
+func TestPrivescCreateLoginProfileGuard(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	newAdapter := func(t *testing.T) graph.GraphDatabase {
+		t.Helper()
+		cfg := graph.NewConfig(boltURL, "", "")
+		adapter, err := adapters.NewNeo4jAdapter(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { adapter.Close() })
+		return adapter
+	}
+
+	const (
+		attacker = "arn:aws:iam::123456789012:user/clp-attacker"
+		victim   = "arn:aws:iam::123456789012:user/clp-victim"
+	)
+	const queryID = "aws/enrich/privesc/iam_create_login_profile"
+
+	// victimProps sets/omits HasLoginProfile on the privileged victim. The attacker holds BOTH
+	// CreateLoginProfile and UpdateLoginProfile on the victim (the method's same-target proxy),
+	// so HasLoginProfile is the SOLE remaining gate.
+	setup := func(victimProps string) string {
+		return fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
+			CREATE (v:User:Principal {Arn: '%s', _is_admin: true%s})
+			WITH a, v
+			MERGE (a)-[:IAM_CREATELOGINPROFILE]->(v)
+			MERGE (a)-[:IAM_UPDATELOGINPROFILE]->(v)
+		`, attacker, victim, victimProps)
+	}
+
+	edgeCount := func(t *testing.T, db graph.GraphDatabase) int64 {
+		t.Helper()
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`,
+			attacker, victim), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		return n
+	}
+
+	cases := []struct {
+		name        string
+		victimProps string
+		wantEdge    bool
+		desc        string
+	}{
+		{
+			name:        "has_profile_no_edge",
+			victimProps: ", HasLoginProfile: true",
+			wantEdge:    false,
+			desc:        "victim already has a console login profile → CreateLoginProfile → EntityAlreadyExists → NO edge",
+		},
+		{
+			name:        "no_profile_edge",
+			victimProps: ", HasLoginProfile: false",
+			wantEdge:    true,
+			desc:        "victim has no console login profile → CreateLoginProfile bootstraps one → edge fires",
+		},
+		{
+			name:        "profile_unknown_failopen",
+			victimProps: "",
+			wantEdge:    true,
+			desc:        "HasLoginProfile absent (pre-enricher graph / call failed) → coalesce default false → FAIL-OPEN → edge fires as before",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newAdapter(t)
+			_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+			require.NoError(t, err)
+			_, err = db.Query(ctx, setup(tc.victimProps), nil)
+			require.NoError(t, err, "seed")
+
+			_, err = RunPlatformQuery(ctx, db, queryID, nil)
+			require.NoError(t, err, "run %s", queryID)
+
+			n := edgeCount(t, db)
+			if tc.wantEdge {
+				assert.GreaterOrEqual(t, n, int64(1), tc.desc)
+			} else {
+				assert.Equal(t, int64(0), n, tc.desc)
+			}
+		})
+	}
+}
+
+// TestPrivescSetDefaultPolicyVersionGuard (service/api-precondition) locks down the
+// >1-version precondition for iam_set_default_policy_version. SetDefaultPolicyVersion only
+// escalates if a non-default version exists to switch to; a single-version policy is inert.
+// The transformer surfaces policy.policy_version_count; the method:
+//   - count = 1     → NO edge (nothing to switch to).
+//   - count > 1     → edge fires (self-loop).
+//   - count ABSENT  → coalesce default 2 → FAIL-OPEN → edge fires as before (pre-enricher graph).
+//
+// Non-vacuous: dropping the >1 guard would make the count=1 case fire — but it must NOT.
+func TestPrivescSetDefaultPolicyVersionGuard(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	newAdapter := func(t *testing.T) graph.GraphDatabase {
+		t.Helper()
+		cfg := graph.NewConfig(boltURL, "", "")
+		adapter, err := adapters.NewNeo4jAdapter(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { adapter.Close() })
+		return adapter
+	}
+
+	const (
+		attacker  = "arn:aws:iam::123456789012:user/sdpv-attacker"
+		policyARN = "arn:aws:iam::123456789012:policy/sdpv-custom"
+	)
+	const queryID = "aws/enrich/privesc/iam_set_default_policy_version"
+
+	// The attacker holds the customer-managed policy (AttachedManagedPolicies CONTAINS its ARN)
+	// and IAM_SETDEFAULTPOLICYVERSION on it; policyProps sets/omits policy_version_count.
+	setup := func(policyProps string) string {
+		return fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: false,
+				AttachedManagedPolicies: '[{"PolicyArn":"%s"}]'})
+			CREATE (p:Resource {Arn: '%s'%s})
+			WITH a, p
+			MERGE (a)-[:IAM_SETDEFAULTPOLICYVERSION]->(p)
+		`, attacker, policyARN, policyARN, policyProps)
+	}
+
+	// iam_set_default_policy_version is a self-loop (attacker → attacker).
+	edgeCount := func(t *testing.T, db graph.GraphDatabase) int64 {
+		t.Helper()
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(a) RETURN count(r) AS n`, attacker), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		return n
+	}
+
+	cases := []struct {
+		name        string
+		policyProps string
+		wantEdge    bool
+		desc        string
+	}{
+		{
+			name:        "one_version_no_edge",
+			policyProps: ", policy_version_count: 1",
+			wantEdge:    false,
+			desc:        "policy has a single version → no non-default version to activate → inert → NO edge",
+		},
+		{
+			name:        "multi_version_edge",
+			policyProps: ", policy_version_count: 2",
+			wantEdge:    true,
+			desc:        "policy has >1 version → a non-default version can be activated → self-loop edge fires",
+		},
+		{
+			name:        "count_absent_failopen",
+			policyProps: "",
+			wantEdge:    true,
+			desc:        "policy_version_count absent (pre-enricher graph) → coalesce default 2 → FAIL-OPEN → edge fires as before",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newAdapter(t)
+			_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+			require.NoError(t, err)
+			_, err = db.Query(ctx, setup(tc.policyProps), nil)
+			require.NoError(t, err, "seed")
 
 			_, err = RunPlatformQuery(ctx, db, queryID, nil)
 			require.NoError(t, err, "run %s", queryID)

@@ -240,6 +240,7 @@ type SyntheticInputs struct {
 	BedrockExecRole        string            `json:"bedrock_exec_role_arn"`
 	AdminTargetARN         string            `json:"admin_target_arn"`
 	PrivUserARN            string            `json:"priv_user_arn"`
+	NoProfileUserARN       string            `json:"noprofile_user_arn"`
 	AttackerTrustedRoleARN string            `json:"attacker_trusted_role_arn"`
 	Prefix                 string            `json:"prefix"`
 	AccountID              string            `json:"account_id"`

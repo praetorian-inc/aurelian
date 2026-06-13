@@ -29,6 +29,7 @@ func factsFromInputs(in privescsynth.SyntheticInputs) fixtureFacts {
 		adminTargetARN:         in.AdminTargetARN,
 		computeAdminARN:        in.ComputeAdminARN,
 		privUserARN:            in.PrivUserARN,
+		noProfileUserARN:       in.NoProfileUserARN,
 		attackerTrustedRoleARN: in.AttackerTrustedRoleARN,
 		prefix:                 in.Prefix,
 		accountID:              in.AccountID,

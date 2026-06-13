@@ -9,30 +9,41 @@ description: |
   The edge is SCOPED to the principal the IAM_CREATELOGINPROFILE permission points at
   (no all-principals fan-out), restricted to user targets, and suppressed unless the
   target user is admin/privileged (console access to a non-privileged user is lateral).
-  The no-existing-login-profile precondition (else CreateLoginProfile returns
-  EntityAlreadyExists) is not directly in the graph; the cypher-expressible proxy is to
-  also require iam:UpdateLoginProfile on the SAME target user, so the attacker can reset
-  the password if a profile already exists (catalog row 241). Exact profile existence
-  and console-MFA gating still need a GetLoginProfile/MFA enricher; noted.
+  The no-existing-login-profile precondition is enforced from a real collected signal:
+  CreateLoginProfile returns EntityAlreadyExists when the target user already has a console
+  profile. The GAAD collector records target.HasLoginProfile (via iam:GetLoginProfile) — the
+  EXACT INVERSE of iam_update_login_profile, which fires only when a profile EXISTS. Here we
+  fire only when NO profile exists. The signal is FAIL-OPEN: graphs collected before this
+  enricher (or users whose GetLoginProfile call failed) carry no HasLoginProfile prop and
+  behave as before. As a defensive proxy we also require iam:UpdateLoginProfile on the SAME
+  target user, so the attacker can still reset the password if a profile materializes between
+  collection and exploitation. Console-MFA gating still needs an MFA enricher; noted.
 severity: high
 order: 100
 cypher: |
   // Principal-access (B.7): drop the all-principals fan-out. The victim is the principal
   // the IAM_CREATELOGINPROFILE permission edge actually points at.
-  // Guards (per FP catalog method_04 / row 241):
+  // Guards:
   //   - admin-as-source: skip attackers that are already admin.
   //   - target must be an IAM USER (login profiles exist only on users; roles/groups have none).
   //   - self-target exclusion (casing-tolerant coalesce).
   //   - lateral-vs-admin: suppress non-privileged targets; tier severity by target.
+  //   - no-existing-profile (FAIL-OPEN on the real signal): CreateLoginProfile returns
+  //     EntityAlreadyExists when the target already has a console profile. The GAAD collector
+  //     records target.HasLoginProfile; this is the EXACT INVERSE of iam_update_login_profile —
+  //     coalesce(target.HasLoginProfile, false) = false fires only when the prop is a confirmed
+  //     false (no profile), and behaves as before (no guard) when the prop is absent (pre-enricher
+  //     graph, or the *bool is nil because the call failed — fail-open default false).
   //   - profile-state fallback: also require IAM_UPDATELOGINPROFILE to the SAME target node
-  //     (same-node is the proxy for same-user), so the attacker can reset an existing
-  //     profile if CreateLoginProfile would conflict.
+  //     (same-node is the proxy for same-user), so the attacker can reset the profile if one
+  //     materializes between collection and exploitation.
   MATCH (attacker:Principal)-[perm]->(target:Principal)
   WHERE type(perm) = 'IAM_CREATELOGINPROFILE'
     AND coalesce(attacker._is_admin, false) <> true
     AND coalesce(target.Arn, target.arn) CONTAINS ':user/'
     AND coalesce(target.Arn, target.arn) <> coalesce(attacker.Arn, attacker.arn)
     AND (coalesce(target._is_admin, false) = true OR coalesce(target._is_privileged, false) = true)
+    AND coalesce(target.HasLoginProfile, false) = false
     AND EXISTS { (attacker)-[u]->(target) WHERE type(u) = 'IAM_UPDATELOGINPROFILE' }
   WITH DISTINCT attacker, target
   MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:CreateLoginProfile'}]->(target)
