@@ -99,10 +99,10 @@ func SyntheticComputeResources(computeRoleARN, ec2InstanceARN, bedrockExecRoleAR
 		// Lambda: resource_to_role matches resource.Role = role.Arn.
 		{ARN: "arn:aws:lambda:us-east-2:000000000000:function:pf-compute", ResourceType: "AWS::Lambda::Function",
 			Props: map[string]any{"Role": computeRoleARN}},
-		// EC2: resource_to_role matches InstanceProfileList CONTAINS the role's instance-profile.
-		// The role's InstanceProfileList carries the compute-admin instance-profile ARN (seeded
-		// via the rich GAAD role node); here we provide the matching IamInstanceProfile NAME so
-		// the name-form clause ('instance-profile/' + name + '"') resolves.
+		// EC2: this node carries a top-level Role prop set to the compute-admin role ARN, the
+		// signal the same-node-binding action edges and the ec2_replace_profile EXISTS clause read
+		// against the EC2 instance node. (The role's InstanceProfileList — needed by the EC2-family
+		// new-passrole guards — is seeded separately on the rich GAAD role node, not here.)
 		{ARN: ec2InstanceARN, ResourceType: "AWS::EC2::Instance",
 			Props: map[string]any{"Role": computeRoleARN}},
 		// App Runner not provisioned in fixture (needs a running container image; cost/complexity).
@@ -235,16 +235,18 @@ func SameNodeStubEdges(attackerARNs map[string]string, stub *graph.Node) []*grap
 // ARN map, so a replay run can reconstruct the synthetic resources/edges and the case-target facts
 // without any AWS access.
 type SyntheticInputs struct {
-	ComputeAdminARN  string            `json:"compute_admin_arn"`
-	EC2InstanceARN   string            `json:"ec2_instance_arn"`
-	BedrockExecRole  string            `json:"bedrock_exec_role_arn"`
-	AdminTargetARN   string            `json:"admin_target_arn"`
-	PrivUserARN      string            `json:"priv_user_arn"`
-	Prefix           string            `json:"prefix"`
-	AccountID        string            `json:"account_id"`
-	ServiceAdminARNs map[string]string `json:"service_admin_arns"`
-	AttackerARNs     map[string]string `json:"attacker_arns"`
-	DecoyARNs        []string          `json:"decoy_arns"`
+	ComputeAdminARN        string            `json:"compute_admin_arn"`
+	EC2InstanceARN         string            `json:"ec2_instance_arn"`
+	BedrockExecRole        string            `json:"bedrock_exec_role_arn"`
+	AdminTargetARN         string            `json:"admin_target_arn"`
+	PrivUserARN            string            `json:"priv_user_arn"`
+	AttackerTrustedRoleARN string            `json:"attacker_trusted_role_arn"`
+	Prefix                 string            `json:"prefix"`
+	AccountID              string            `json:"account_id"`
+	ServiceAdminARNs       map[string]string `json:"service_admin_arns"`
+	AttackerARNs           map[string]string `json:"attacker_arns"`
+	DecoyARNs              []string          `json:"decoy_arns"`
+	PrivUserFPTargetARNs   []string          `json:"priv_user_fp_target_arns"`
 }
 
 // PrivescReconSnapshot is the captured, replay-able recon output for the privesc fixture. The IAM
@@ -309,7 +311,7 @@ func SnapshotExists(path string) bool {
 func LoadFromFile(path string) (*PrivescReconSnapshot, error) {
 	data, err := os.ReadFile(resolvePath(path))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("read snapshot: %w", err)
 	}
 	var snap PrivescReconSnapshot
 	if err := json.Unmarshal(data, &snap); err != nil {
