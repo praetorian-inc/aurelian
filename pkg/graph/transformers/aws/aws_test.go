@@ -204,8 +204,8 @@ func TestNodeFromAWSResource(t *testing.T) {
 	}
 }
 
-// TestNodeFromAWSResourcePromotesRoleReference locks down the fix for the A2
-// HAS_ROLE defect: flattenStruct serializes cr.Properties into a single JSON
+// TestNodeFromAWSResourcePromotesRoleReference locks down the role-reference
+// promotion: flattenStruct serializes cr.Properties into a single JSON
 // string under "properties", so the role reference resource_to_role.yaml reads
 // as a TOP-LEVEL Cypher property (resource.IamInstanceProfile / resource.Role)
 // would otherwise always be null for collector- and ERD-derived resources.

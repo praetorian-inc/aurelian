@@ -10,7 +10,7 @@ description: |
   removed: CreateProject cannot reach arbitrary existing principals, only the roles the
   project's own toolchain template would create.
 
-  STILL-DEFERRED (D4 — service EOL, collector unjustified): AWS CodeStar reached
+  No resource-to-role collector (service EOL, collector unjustified): AWS CodeStar reached
   end-of-life on 31 July 2024 — no new CodeStar projects can be created in any account, so
   codestar:CreateProject can no longer provision a toolchain stack/role to escalate into.
   Collecting AWS::CodeStar::Project to build a resource->role enricher is therefore

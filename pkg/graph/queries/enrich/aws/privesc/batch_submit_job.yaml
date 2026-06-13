@@ -19,14 +19,14 @@ description: |
 severity: high
 order: 100
 cypher: |
-  // Existing-passrole / compute-takeover (per FP catalog / method_46): SubmitJob hijacks an
-  // existing job definition's jobRoleArn. Re-pointed (D4 pass 3) from the existence-precondition
-  // stub at the SPECIFIC job role via (jobdef)-[:HAS_ROLE]->(jobrole). HAS_ROLE is mandatory
+  // Existing-passrole / compute-takeover: SubmitJob hijacks an existing job definition's
+  // jobRoleArn. The method targets the SPECIFIC job role via (jobdef)-[:HAS_ROLE]->(jobrole),
+  // not the bare service stub. HAS_ROLE is mandatory
   // (fail-closed): a roleless job definition runs as the agent, conferring nothing. SubmitJob
   // maps to the Batch service wildcard, so its permission edge resolves to the service stub,
   // not the specific job-definition node — carrying it through would break the HAS_ROLE join
   // (false negatives). So keep the cross-product (jobdef)-[:HAS_ROLE]->(jobrole) MATCH (mirrors
-  // cloudformation_changeset) and constrain it. Expressible guards (catalog method_46):
+  // cloudformation_changeset) and constrain it. Expressible guards:
   //   - admin-as-source exclusion; self-target exclusion.
   //   - ecs-tasks trust: the job role is assumed by the container agent (ecs-tasks.amazonaws.com).
   //   - privileged-target: suppress non-privileged job roles; tier severity by the target.

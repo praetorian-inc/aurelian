@@ -117,9 +117,8 @@ func (s *AnalyzerState) addServicesToResourceCache() {
 		"batch.amazonaws.com",
 		"braket.amazonaws.com",
 		"cognito-identity.amazonaws.com",
-		// datapipeline: completes the A1 allowlist+resource-map data so the
-		// arn:aws:datapipeline:*:*:* service stub exists in the resource store and
-		// GetResourcesByAction resolves datapipeline:CreatePipeline/PutPipelineDefinition/
+		// datapipeline: so the arn:aws:datapipeline:*:*:* service stub exists in the resource
+		// store and GetResourcesByAction resolves datapipeline:CreatePipeline/PutPipelineDefinition/
 		// ActivatePipeline → the evaluator emits the DATAPIPELINE_* edges that
 		// iam_pass_role_datapipeline.yaml EXISTS-requires.
 		"datapipeline.amazonaws.com",

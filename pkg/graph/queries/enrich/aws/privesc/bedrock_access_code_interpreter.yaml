@@ -20,8 +20,8 @@ severity: high
 order: 100
 cypher: |
   // Existing-passrole / compute-takeover: InvokeSession hijacks an existing code interpreter's
-  // execution role. Re-pointed (D4 pass 3) from the existence-precondition stub at the SPECIFIC
-  // execution role via (ci)-[:HAS_ROLE]->(execrole). HAS_ROLE is mandatory (fail-closed): a
+  // execution role. The method targets the SPECIFIC execution role via
+  // (ci)-[:HAS_ROLE]->(execrole), not the bare service stub. HAS_ROLE is mandatory (fail-closed): a
   // roleless interpreter inherits nothing. InvokeSession maps to the AgentCore service wildcard,
   // so its permission edge resolves to the service stub, not the specific interpreter node —
   // carrying it through would break the HAS_ROLE join (false negatives). So keep the
