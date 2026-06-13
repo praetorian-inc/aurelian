@@ -35,6 +35,7 @@ type AWSGraphModule struct {
 	gaadData              *types.AuthorizationAccountDetails
 	resourcesWithPolicies store.Map[output.AWSResource]
 	ec2Instances          store.Map[output.AWSResource]
+	cfnStacks             store.Map[output.AWSResource]
 	relationships         store.Map[output.AWSIAMRelationship]
 }
 
@@ -90,6 +91,7 @@ func (m *AWSGraphModule) collectInputs() error {
 	m.collectAccountAuthorizationDetails(&eg, m.GraphConfig)
 	m.collectResourcesWithPolicies(&eg, m.GraphConfig, policyCollector, regions)
 	m.collectEC2Instances(&eg, m.GraphConfig)
+	m.collectCloudFormationStacks(&eg, m.GraphConfig)
 	if err := eg.Wait(); err != nil {
 		return err
 	}
@@ -99,6 +101,14 @@ func (m *AWSGraphModule) collectInputs() error {
 	// so instance-scoped privesc actions (ec2:ReplaceIamInstanceProfileAssociation)
 	// can resolve against a concrete instance ARN.
 	m.ec2Instances.Range(func(key string, r output.AWSResource) bool {
+		m.resourcesWithPolicies.Set(key, r)
+		return true
+	})
+
+	// CloudFormation stacks carry no resource policy either; merge them in so the
+	// resource_service_role enricher can link a stack to its service role (RoleARN)
+	// and the cloudformation_changeset privesc method re-points at that role.
+	m.cfnStacks.Range(func(key string, r output.AWSResource) bool {
 		m.resourcesWithPolicies.Set(key, r)
 		return true
 	})
@@ -186,6 +196,36 @@ func (m *AWSGraphModule) collectEC2Instances(eg *errgroup.Group, c GraphConfig) 
 
 		m.log.Success("EC2 instances collected (%d)", results.Len())
 		m.ec2Instances = results
+		return nil
+	})
+}
+
+func (m *AWSGraphModule) collectCloudFormationStacks(eg *errgroup.Group, c GraphConfig) {
+	eg.Go(func() error {
+		m.log.Info("enumerating CloudFormation stacks")
+
+		provider := enumeration.NewAWSConfigProvider(c.AWSCommonRecon)
+		skipReport := enumeration.NewSkipReport()
+		defer skipReport.LogSummary()
+		stackEnum := enumeration.NewCloudFormationStackEnumerator(c.AWSCommonRecon, provider, skipReport)
+
+		collected := pipeline.New[output.AWSResource]()
+		var enumErr error
+		go func() {
+			defer collected.Close()
+			enumErr = stackEnum.EnumerateAll(collected)
+		}()
+
+		results := store.NewMap[output.AWSResource]()
+		for r := range collected.Range() {
+			results.Set(r.ARN, r)
+		}
+		if enumErr != nil {
+			return fmt.Errorf("enumerating CloudFormation stacks: %w", enumErr)
+		}
+
+		m.log.Success("CloudFormation stacks collected (%d)", results.Len())
+		m.cfnStacks = results
 		return nil
 	})
 }

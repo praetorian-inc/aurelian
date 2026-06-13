@@ -262,7 +262,6 @@ const (
 	targetAdminRole                      // new-passrole / trust-backed / existing-compute -> the privileged role
 	targetPrivUser                       // principal-access -> the privileged user node
 	targetWildcard                       // service-wildcard methods -> the service resource stub
-	targetStack                          // cloudformation_changeset -> the same stack stub
 	targetNone                           // method intentionally emits no edge (e.g. SLR)
 )
 
@@ -288,8 +287,6 @@ func (tc sharedSeedCase) verify() (cypher string, wantZero bool) {
 		return dst(sharedPrivUserARN), false
 	case targetWildcard:
 		return dst(sharedWildcardARN), false
-	case targetStack:
-		return dst(sharedStackARN), false
 	default: // targetNone
 		return fmt.Sprintf(`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->() RETURN count(r) AS n`, attackerARN), true
 	}
@@ -400,7 +397,10 @@ func allSharedSeedCases() []sharedSeedCase {
 		{p + "ec2_launch_template_version", targetAdminRole},
 
 		// --- Multi-perm same stub / service-wildcard terminate-at-resource ---
-		{p + "cloudformation_changeset", targetStack},
+		// cloudformation_changeset is now re-pointed (D4) at the CFN stack's SERVICE ROLE via
+		// (cfnStack)-[:HAS_ROLE]->(adminRole), not the bare stack stub: requires both
+		// CreateChangeSet AND ExecuteChangeSet, then lands on the privileged role.
+		{p + "cloudformation_changeset", targetAdminRole},
 		{p + "batch_submit_job", targetWildcard},
 		{p + "bedrock_access_code_interpreter", targetWildcard},
 		// codestar_create_project now constrains the permission target to :Principal; the
@@ -1448,7 +1448,10 @@ func TestPrivescNoCartesianFanOut(t *testing.T) {
 	//   fp_ec2: PassRole (to a privileged role with an instance profile) + RunInstances,
 	//           but the role trusts ONLY lambda.amazonaws.com, not ec2 — so the ec2-trust
 	//           guard is the SOLE reason the edge is suppressed (not a label mismatch).
-	//   fp_cfn: CreateChangeSet/ExecuteChangeSet on DIFFERENT stacks.
+	//   fp_cfn: CreateChangeSet/ExecuteChangeSet on stacks that carry NO (Stack)-[:HAS_ROLE]->
+	//           (privileged role) edge — the re-pointed changeset method (D4) requires a
+	//           privileged stack service role reached via HAS_ROLE, so the missing link is the
+	//           SOLE rejection (fail-closed: a roleless stack confers nothing).
 	//   fp_pr:  PassRole+RunInstances to a role that trusts ec2 and has an instance profile
 	//           but is NOT privileged — the privileged-target guard is the SOLE rejection.
 	//   fp_hr:  Lambda UpdateFunctionCode+Invoke on a function whose HAS_ROLE execution role
@@ -1471,8 +1474,9 @@ func TestPrivescNoCartesianFanOut(t *testing.T) {
 			InstanceProfileList: '[{"Arn":"arn:aws:iam::123456789012:instance-profile/ip"}]'})
 		CREATE (ec2Res:Resource {Arn: 'arn:aws:ec2:us-east-1:123456789012:instance/i-1'})
 		CREATE (cfn:Principal {Arn: 'arn:aws:iam::123456789012:user/fp_cfn', _is_admin: false})
-		CREATE (cfnStackA:Resource {Arn: 'arn:aws:cloudformation:us-east-1:123456789012:stack/a'})
-		CREATE (cfnStackB:Resource {Arn: 'arn:aws:cloudformation:us-east-1:123456789012:stack/b'})
+		CREATE (cfnStackA:Resource {Arn: 'arn:aws:cloudformation:us-east-1:123456789012:stack/a', _resourceType: 'AWS::CloudFormation::Stack'})
+		CREATE (cfnStackB:Resource {Arn: 'arn:aws:cloudformation:us-east-1:123456789012:stack/b', _resourceType: 'AWS::CloudFormation::Stack'})
+		CREATE (cfnUnprivRole:Role:Principal {Arn: 'arn:aws:iam::123456789012:role/unpriv-cfn', _is_admin: false})
 		CREATE (pr:Principal {Arn: 'arn:aws:iam::123456789012:user/fp_pr', _is_admin: false})
 		CREATE (prRole:Role:Principal {Arn: 'arn:aws:iam::123456789012:role/unpriv-ec2', _is_admin: false,
 			trusted_services: ['ec2.amazonaws.com'],
@@ -1482,13 +1486,17 @@ func TestPrivescNoCartesianFanOut(t *testing.T) {
 		CREATE (hrFn:Resource {Arn: 'arn:aws:lambda:us-east-1:123456789012:function:unpriv'})
 		CREATE (hrRole:Role:Principal {Arn: 'arn:aws:iam::123456789012:role/unpriv-exec', _is_admin: false})
 		WITH cpv, cpvPolicy, sts, stsRes, ec2, ec2Role, ec2Res, cfn, cfnStackA, cfnStackB,
-			pr, prRole, prRes, hr, hrFn, hrRole
+			cfnUnprivRole, pr, prRole, prRes, hr, hrFn, hrRole
 		MERGE (cpv)-[:IAM_CREATEPOLICYVERSION]->(cpvPolicy)
 		MERGE (sts)-[:STS_ASSUMEROLE]->(stsRes)
 		MERGE (ec2)-[:IAM_PASSROLE]->(ec2Role)
 		MERGE (ec2)-[:EC2_RUNINSTANCES]->(ec2Res)
 		MERGE (cfn)-[:CLOUDFORMATION_CREATECHANGESET]->(cfnStackA)
 		MERGE (cfn)-[:CLOUDFORMATION_EXECUTECHANGESET]->(cfnStackB)
+		// Stacks carry HAS_ROLE to a NON-privileged role, so the privileged-target guard is
+		// the SOLE reason fp_cfn is suppressed (not a missing HAS_ROLE link or _resourceType).
+		MERGE (cfnStackA)-[:HAS_ROLE]->(cfnUnprivRole)
+		MERGE (cfnStackB)-[:HAS_ROLE]->(cfnUnprivRole)
 		MERGE (pr)-[:IAM_PASSROLE]->(prRole)
 		MERGE (pr)-[:EC2_RUNINSTANCES]->(prRes)
 		MERGE (hr)-[:LAMBDA_UPDATEFUNCTIONCODE]->(hrFn)
@@ -1638,6 +1646,148 @@ func TestResourceToRoleViaTransformerHasRole(t *testing.T) {
 	n, _ := toInt64(result.Records[0]["n"])
 	assert.Equal(t, int64(1), n,
 		"transformer-built instance must link to the role via HAS_ROLE — requires NodeFromAWSResource to promote IamInstanceProfile to a top-level node property")
+}
+
+// TestPrivescChangesetStackRoleHasRole locks down D4's re-point of cloudformation_changeset
+// at the CFN stack's SERVICE ROLE via (Stack)-[:HAS_ROLE]->(role) — replacing the old
+// fan-out to the bare stack stub. The attacker holds both change-set actions; the edge must
+// land on the privileged stack role, and the privileged-target + HAS_ROLE + same-account +
+// both-actions guards must each be the SOLE rejection in their respective FP cases.
+//
+// Non-vacuous: the happy case requires the HAS_ROLE edge AND a privileged role (removing
+// either flips it to 0); each FP case isolates one guard. This is the synthetic proof that
+// the re-pointed method fires to the real role, not a vacuous never-firing enricher.
+func TestPrivescChangesetStackRoleHasRole(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	newAdapter := func(t *testing.T) graph.GraphDatabase {
+		t.Helper()
+		cfg := graph.NewConfig(boltURL, "", "")
+		adapter, err := adapters.NewNeo4jAdapter(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { adapter.Close() })
+		return adapter
+	}
+
+	const (
+		attacker = "arn:aws:iam::123456789012:user/cs-attacker"
+		role     = "arn:aws:iam::123456789012:role/cs-stack-role"
+		queryID  = "aws/enrich/privesc/cloudformation_changeset"
+	)
+
+	// setup seeds: attacker with both change-set actions on a stub, a CFN stack with the
+	// given _is_admin role props, and (when hasRole) a (stack)-[:HAS_ROLE]->(role) edge.
+	// actions controls which change-set permissions the attacker holds; roleAccount lets a
+	// case place the role in another account to exercise the same-account guard.
+	setup := func(actions, roleProps, roleAccount, hasRole string) string {
+		roleARN := fmt.Sprintf("arn:aws:iam::%s:role/cs-stack-role", roleAccount)
+		return fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
+			CREATE (stub:Resource {Arn: 'arn:aws:cloudformation:us-east-1:123456789012:stack/stub'})
+			CREATE (stack:Resource {Arn: 'arn:aws:cloudformation:us-east-1:123456789012:stack/s', _resourceType: 'AWS::CloudFormation::Stack'})
+			CREATE (role:Role:Principal {Arn: '%s'%s})
+			WITH a, stub, stack, role
+			%s
+			%s
+		`, attacker, roleARN, roleProps, actions, hasRole)
+	}
+	const (
+		bothActions = `MERGE (a)-[:CLOUDFORMATION_CREATECHANGESET]->(stub)
+			MERGE (a)-[:CLOUDFORMATION_EXECUTECHANGESET]->(stub)`
+		createOnly  = `MERGE (a)-[:CLOUDFORMATION_CREATECHANGESET]->(stub)`
+		hasRoleEdge = `MERGE (stack)-[:HAS_ROLE]->(role)`
+		noRoleEdge  = ``
+	)
+
+	// edgeCount counts CAN_PRIVESC edges from the attacker to the role (any account).
+	edgeCount := func(t *testing.T, db graph.GraphDatabase) int64 {
+		t.Helper()
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(:Role) RETURN count(r) AS n`, attacker), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		return n
+	}
+
+	cases := []struct {
+		name        string
+		actions     string
+		roleProps   string
+		roleAccount string
+		hasRole     string
+		wantEdge    bool
+		desc        string
+	}{
+		{
+			name:        "admin_role_via_hasrole",
+			actions:     bothActions,
+			roleProps:   ", _is_admin: true",
+			roleAccount: "123456789012",
+			hasRole:     hasRoleEdge,
+			wantEdge:    true,
+			desc:        "both change-set actions + (stack)-[:HAS_ROLE]->(admin role) → edge fires to the role",
+		},
+		{
+			name:        "no_hasrole_no_edge",
+			actions:     bothActions,
+			roleProps:   ", _is_admin: true",
+			roleAccount: "123456789012",
+			hasRole:     noRoleEdge,
+			wantEdge:    false,
+			desc:        "no HAS_ROLE link → roleless stack confers nothing → NO edge (HAS_ROLE is the sole rejection)",
+		},
+		{
+			name:        "unprivileged_role_no_edge",
+			actions:     bothActions,
+			roleProps:   ", _is_admin: false",
+			roleAccount: "123456789012",
+			hasRole:     hasRoleEdge,
+			wantEdge:    false,
+			desc:        "stack role is NOT privileged → privileged-target guard is the sole rejection → NO edge",
+		},
+		{
+			name:        "single_action_no_edge",
+			actions:     createOnly,
+			roleProps:   ", _is_admin: true",
+			roleAccount: "123456789012",
+			hasRole:     hasRoleEdge,
+			wantEdge:    false,
+			desc:        "only CreateChangeSet (no ExecuteChangeSet) → both-actions requirement is the sole rejection → NO edge",
+		},
+		{
+			name:        "cross_account_role_no_edge",
+			actions:     bothActions,
+			roleProps:   ", _is_admin: true",
+			roleAccount: "999999999999",
+			hasRole:     hasRoleEdge,
+			wantEdge:    false,
+			desc:        "privileged stack role in a DIFFERENT account → same-account guard (ARN seg 4) is the sole rejection → NO edge",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newAdapter(t)
+			_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+			require.NoError(t, err, "clear db")
+			_, err = db.Query(ctx, setup(tc.actions, tc.roleProps, tc.roleAccount, tc.hasRole), nil)
+			require.NoError(t, err, "seed changeset graph")
+
+			_, err = RunPlatformQuery(ctx, db, queryID, nil)
+			require.NoError(t, err, "run cloudformation_changeset enricher")
+
+			n := edgeCount(t, db)
+			if tc.wantEdge {
+				assert.Equal(t, int64(1), n, tc.desc)
+			} else {
+				assert.Equal(t, int64(0), n, tc.desc)
+			}
+		})
+	}
 }
 
 // TestPrivescAccessKeyCountGuard locks down D1's real <2-active-keys precondition for
