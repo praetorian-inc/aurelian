@@ -34,6 +34,7 @@ type AWSGraphModule struct {
 	log                   *plugin.Logger
 	gaadData              *types.AuthorizationAccountDetails
 	resourcesWithPolicies store.Map[output.AWSResource]
+	ec2Instances          store.Map[output.AWSResource]
 	relationships         store.Map[output.AWSIAMRelationship]
 }
 
@@ -88,9 +89,19 @@ func (m *AWSGraphModule) collectInputs() error {
 	var eg errgroup.Group
 	m.collectAccountAuthorizationDetails(&eg, m.GraphConfig)
 	m.collectResourcesWithPolicies(&eg, m.GraphConfig, policyCollector, regions)
+	m.collectEC2Instances(&eg, m.GraphConfig)
 	if err := eg.Wait(); err != nil {
 		return err
 	}
+
+	// EC2 instances carry no resource policy, so they are collected separately from
+	// the policy-bearing types. Merge them into the resource set the analyzer sees
+	// so instance-scoped privesc actions (ec2:ReplaceIamInstanceProfileAssociation)
+	// can resolve against a concrete instance ARN.
+	m.ec2Instances.Range(func(key string, r output.AWSResource) bool {
+		m.resourcesWithPolicies.Set(key, r)
+		return true
+	})
 
 	return nil
 }
@@ -145,6 +156,36 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 
 		m.log.Success("resources with policies collected (%d)", results.Len())
 		m.resourcesWithPolicies = results
+		return nil
+	})
+}
+
+func (m *AWSGraphModule) collectEC2Instances(eg *errgroup.Group, c GraphConfig) {
+	eg.Go(func() error {
+		m.log.Info("enumerating EC2 instances")
+
+		provider := enumeration.NewAWSConfigProvider(c.AWSCommonRecon)
+		skipReport := enumeration.NewSkipReport()
+		defer skipReport.LogSummary()
+		instanceEnum := enumeration.NewEC2InstanceEnumerator(c.AWSCommonRecon, provider, skipReport)
+
+		collected := pipeline.New[output.AWSResource]()
+		var enumErr error
+		go func() {
+			defer collected.Close()
+			enumErr = instanceEnum.EnumerateAll(collected)
+		}()
+
+		results := store.NewMap[output.AWSResource]()
+		for r := range collected.Range() {
+			results.Set(r.ARN, r)
+		}
+		if enumErr != nil {
+			return fmt.Errorf("enumerating EC2 instances: %w", enumErr)
+		}
+
+		m.log.Success("EC2 instances collected (%d)", results.Len())
+		m.ec2Instances = results
 		return nil
 	})
 }
