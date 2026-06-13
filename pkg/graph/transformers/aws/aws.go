@@ -137,8 +137,13 @@ func NodeFromAWSIAMResource(resource output.AWSIAMResource) *graph.Node {
 		case types.GroupDetail:
 			return NodeFromGaadGroup(data)
 		case types.ManagedPolicyDetail:
-			// Policies don't have a GAAD node type; use AWSResource style
-			return NodeFromAWSResource(resource.AWSResource)
+			// Policies don't have a GAAD node type; use AWSResource style, then surface
+			// policy_version_count (len of the GAAD PolicyVersionList) as a top-level prop.
+			// AWS caps a managed policy at 5 versions; at 5, CreatePolicyVersion fails unless
+			// a version is deleted first, so iam_create_policy_version guards on this count.
+			node := NodeFromAWSResource(resource.AWSResource)
+			node.Properties["policy_version_count"] = len(data.PolicyVersionList)
+			return node
 		}
 	}
 

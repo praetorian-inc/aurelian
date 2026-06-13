@@ -1848,6 +1848,104 @@ func TestPrivescLoginProfileGuard(t *testing.T) {
 	}
 }
 
+// TestPrivescPolicyVersionCountGuard locks down D2's <5-versions precondition for
+// iam_create_policy_version. The transformer surfaces policy.policy_version_count; the method:
+//   - count = 5     → NO edge (CreatePolicyVersion fails at the 5-version limit).
+//   - count < 5     → edge fires (self-loop).
+//   - count ABSENT  → FAIL-OPEN → edge fires as before (pre-enricher graph).
+//
+// Non-vacuous: dropping the <5 guard would make the count=5 case fire — but it must NOT.
+func TestPrivescPolicyVersionCountGuard(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	newAdapter := func(t *testing.T) graph.GraphDatabase {
+		t.Helper()
+		cfg := graph.NewConfig(boltURL, "", "")
+		adapter, err := adapters.NewNeo4jAdapter(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { adapter.Close() })
+		return adapter
+	}
+
+	const (
+		attacker  = "arn:aws:iam::123456789012:user/pv-attacker"
+		policyARN = "arn:aws:iam::123456789012:policy/pv-custom"
+	)
+	const queryID = "aws/enrich/privesc/iam_create_policy_version"
+
+	// The attacker holds the customer-managed policy (AttachedManagedPolicies CONTAINS its ARN)
+	// and IAM_CREATEPOLICYVERSION on it; policyProps sets/omits policy_version_count.
+	setup := func(policyProps string) string {
+		return fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: false,
+				AttachedManagedPolicies: '[{"PolicyArn":"%s"}]'})
+			CREATE (p:Resource {Arn: '%s'%s})
+			WITH a, p
+			MERGE (a)-[:IAM_CREATEPOLICYVERSION]->(p)
+		`, attacker, policyARN, policyARN, policyProps)
+	}
+
+	// iam_create_policy_version is a self-loop (attacker → attacker).
+	edgeCount := func(t *testing.T, db graph.GraphDatabase) int64 {
+		t.Helper()
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(a) RETURN count(r) AS n`, attacker), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		return n
+	}
+
+	cases := []struct {
+		name        string
+		policyProps string
+		wantEdge    bool
+		desc        string
+	}{
+		{
+			name:        "five_versions_no_edge",
+			policyProps: ", policy_version_count: 5",
+			wantEdge:    false,
+			desc:        "policy already has 5 versions → CreatePolicyVersion fails at the limit → NO edge",
+		},
+		{
+			name:        "under_five_versions_edge",
+			policyProps: ", policy_version_count: 4",
+			wantEdge:    true,
+			desc:        "policy has <5 versions → CreatePolicyVersion succeeds → self-loop edge fires",
+		},
+		{
+			name:        "count_absent_failopen",
+			policyProps: "",
+			wantEdge:    true,
+			desc:        "policy_version_count absent (pre-enricher graph) → FAIL-OPEN → edge fires as before",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newAdapter(t)
+			_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+			require.NoError(t, err)
+			_, err = db.Query(ctx, setup(tc.policyProps), nil)
+			require.NoError(t, err, "seed")
+
+			_, err = RunPlatformQuery(ctx, db, queryID, nil)
+			require.NoError(t, err, "run %s", queryID)
+
+			n := edgeCount(t, db)
+			if tc.wantEdge {
+				assert.GreaterOrEqual(t, n, int64(1), tc.desc)
+			} else {
+				assert.Equal(t, int64(0), n, tc.desc)
+			}
+		})
+	}
+}
+
 // toInt64 coerces common numeric types returned by the Neo4j driver to int64.
 func toInt64(v interface{}) (int64, bool) {
 	switch x := v.(type) {
