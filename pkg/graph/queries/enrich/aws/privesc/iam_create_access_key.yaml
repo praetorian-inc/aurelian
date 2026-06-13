@@ -10,10 +10,13 @@ description: |
   at (no all-principals fan-out), restricted to user targets, and suppressed unless
   the target user is admin/privileged (resetting a non-privileged user is lateral).
   The <2-active-access-keys precondition (else CreateAccessKey returns LimitExceeded)
-  is not directly in the graph; the cypher-expressible proxy is to also require
-  iam:DeleteAccessKey on the SAME target user, so the attacker can free a key slot if
-  the user already holds two keys (catalog method_03+28 combo). Exact key count still
-  needs a ListAccessKeys enricher; noted.
+  is now enforced from a real collected signal: the GAAD collector enriches each user
+  with target.AccessKeyCount (count of ACTIVE keys via iam:ListAccessKeys). When that
+  count is present we require it to be < 2. The signal is FAIL-OPEN: graphs collected
+  before this enricher (or users whose ListAccessKeys call failed) carry no
+  AccessKeyCount prop, and for those we fall back to the original cypher proxy —
+  also require iam:DeleteAccessKey on the SAME target user so the attacker could free a
+  key slot if the user already holds two keys (catalog method_03+28 combo).
 severity: high
 order: 100
 cypher: |
@@ -25,16 +28,26 @@ cypher: |
   //     groups have no credentials).
   //   - self-target exclusion (casing-tolerant coalesce).
   //   - lateral-vs-admin: suppress non-privileged targets; tier severity by target.
-  //   - key-slot fallback: also require IAM_DELETEACCESSKEY to the SAME target node
-  //     (permission edges carry no resource ARN, so same-node is the proxy for same-user),
-  //     covering the <2-keys precondition by letting the attacker free a slot.
+  //   - <2-active-keys precondition (FAIL-OPEN on the real signal):
+  //       * when target.AccessKeyCount is present (collected via iam:ListAccessKeys; the GAAD
+  //         struct field flattens to this PascalCase node prop), require it < 2 (AWS caps a
+  //         user at 2 active keys; at 2 CreateAccessKey fails).
+  //       * when it is ABSENT (pre-enricher graph, ListAccessKeys failed, or a user with 0
+  //         active keys whose omitempty field is dropped — all fail-open), fall back to the
+  //         original key-slot proxy: require IAM_DELETEACCESSKEY to the SAME target node
+  //         (permission edges carry no resource ARN, so same-node is the proxy for same-user)
+  //         so the attacker could free a slot if the user already holds two keys.
   MATCH (attacker:Principal)-[perm]->(target:Principal)
   WHERE type(perm) = 'IAM_CREATEACCESSKEY'
     AND coalesce(attacker._is_admin, false) <> true
     AND coalesce(target.Arn, target.arn) CONTAINS ':user/'
     AND coalesce(target.Arn, target.arn) <> coalesce(attacker.Arn, attacker.arn)
     AND (coalesce(target._is_admin, false) = true OR coalesce(target._is_privileged, false) = true)
-    AND EXISTS { (attacker)-[d]->(target) WHERE type(d) = 'IAM_DELETEACCESSKEY' }
+    AND (
+      target.AccessKeyCount < 2
+      OR (target.AccessKeyCount IS NULL
+          AND EXISTS { (attacker)-[d]->(target) WHERE type(d) = 'IAM_DELETEACCESSKEY' })
+    )
   WITH DISTINCT attacker, target
   MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:CreateAccessKey'}]->(target)
   ON CREATE SET pe._created = timestamp()

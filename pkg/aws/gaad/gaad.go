@@ -3,10 +3,16 @@ package gaad
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithy "github.com/aws/smithy-go"
+	"golang.org/x/sync/errgroup"
+
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
@@ -14,10 +20,15 @@ import (
 	iampkg "github.com/praetorian-inc/aurelian/pkg/types"
 )
 
+// userEnrichConcurrency bounds the per-user ListAccessKeys/GetLoginProfile calls
+// so a large account does not burst IAM's (low) global rate limit.
+const userEnrichConcurrency = 5
+
 // GAAD wraps the collection of AWS IAM Account Authorization Details.
 type GAAD struct {
 	opts         plugin.AWSReconBase
 	accountID    string
+	iamClient    *iam.Client
 	iamPaginator *iam.GetAccountAuthorizationDetailsPaginator
 }
 
@@ -73,7 +84,92 @@ func (g *GAAD) Get() (*iampkg.AuthorizationAccountDetails, error) {
 		return nil, fmt.Errorf("error retrieving authorization details: %w", err)
 	}
 
+	// GAAD does not return access keys or login profiles. Enrich each user with
+	// those signals out-of-band so privesc methods can guard on real data.
+	g.enrichUsers(ctx, gaadData.Users)
+
 	return gaadData, nil
+}
+
+// enrichUsers augments each collected user with AccessKeyCount (active keys) and
+// HasLoginProfile via per-user IAM calls GAAD itself does not surface. The pass is
+// bounded-concurrent and resilient: a per-user error (AccessDenied, throttle, etc.)
+// is logged and skipped so it never fails the whole collection — the affected user
+// simply keeps its zero-value (fail-open) enrichment fields.
+func (g *GAAD) enrichUsers(ctx context.Context, users store.Map[iampkg.UserDetail]) {
+	var enriched []iampkg.UserDetail
+	users.Range(func(_ string, u iampkg.UserDetail) bool {
+		enriched = append(enriched, u)
+		return true
+	})
+
+	// Each goroutine writes only its own slice slot, so the parallel ListAccessKeys/
+	// GetLoginProfile calls need no lock; the Set write-back happens sequentially after.
+	grp := errgroup.Group{}
+	grp.SetLimit(userEnrichConcurrency)
+	for i := range enriched {
+		grp.Go(func() error {
+			enriched[i].AccessKeyCount = g.countActiveAccessKeys(ctx, enriched[i].UserName)
+			enriched[i].HasLoginProfile = g.hasLoginProfile(ctx, enriched[i].UserName)
+			return nil
+		})
+	}
+	_ = grp.Wait() // grp.Go funcs never return an error; per-user failures are handled inline.
+
+	for _, u := range enriched {
+		users.Set(u.Arn, u)
+	}
+}
+
+// countActiveAccessKeys returns the number of ACTIVE access keys on the user, or 0
+// if the user name is empty or the call fails (fail-open).
+func (g *GAAD) countActiveAccessKeys(ctx context.Context, userName string) int {
+	if userName == "" {
+		return 0
+	}
+	out, err := g.iamClient.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: &userName})
+	if err != nil {
+		slog.Warn("gaad: ListAccessKeys failed; treating access-key count as unknown",
+			"user", userName, "error", err)
+		return 0
+	}
+	count := 0
+	for _, k := range out.AccessKeyMetadata {
+		if k.Status == iamtypes.StatusTypeActive {
+			count++
+		}
+	}
+	return count
+}
+
+// hasLoginProfile reports whether the user has a console login profile. A
+// NoSuchEntity error means no profile (not a failure); any other error is logged
+// and reported as no profile (fail-open).
+func (g *GAAD) hasLoginProfile(ctx context.Context, userName string) bool {
+	if userName == "" {
+		return false
+	}
+	_, err := g.iamClient.GetLoginProfile(ctx, &iam.GetLoginProfileInput{UserName: &userName})
+	if err == nil {
+		return true
+	}
+	if isNoSuchEntity(err) {
+		return false
+	}
+	slog.Warn("gaad: GetLoginProfile failed; treating login profile as absent",
+		"user", userName, "error", err)
+	return false
+}
+
+// isNoSuchEntity reports whether err is IAM's NoSuchEntity (the expected response
+// when a user has no login profile).
+func isNoSuchEntity(err error) bool {
+	var notFound *iamtypes.NoSuchEntityException
+	if errors.As(err, &notFound) {
+		return true
+	}
+	var apiErr smithy.APIError
+	return errors.As(err, &apiErr) && apiErr.ErrorCode() == "NoSuchEntity"
 }
 
 // initializeGAADClient sets up the AWS config, resolves the account ID,
@@ -97,9 +193,9 @@ func (g *GAAD) initializeGAADClient() error {
 	}
 	g.accountID = accountID
 
-	iamClient := iam.NewFromConfig(awsCfg)
+	g.iamClient = iam.NewFromConfig(awsCfg)
 	maxItems := int32(1000)
-	g.iamPaginator = iam.NewGetAccountAuthorizationDetailsPaginator(iamClient, &iam.GetAccountAuthorizationDetailsInput{
+	g.iamPaginator = iam.NewGetAccountAuthorizationDetailsPaginator(g.iamClient, &iam.GetAccountAuthorizationDetailsInput{
 		MaxItems: &maxItems,
 	})
 

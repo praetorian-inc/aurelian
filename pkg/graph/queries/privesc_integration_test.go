@@ -87,7 +87,12 @@ func sharedPrivescSeed() string {
 			// trusted_federated guard branch leaves cognito untrusted -> 0 edges -> test fails.
 			trusted_federated: ['cognito-identity.amazonaws.com'],
 			InstanceProfileList: '[{"Arn":"arn:aws:iam::123456789012:instance-profile/ip"}]'})
-		CREATE (privUser:User:Principal {Arn: '%s', _is_admin: true})
+		// privUser carries the REAL collected signals the tightened principal-access methods now
+		// guard on: AccessKeyCount < 2 (iam:CreateAccessKey can mint a key) and HasLoginProfile
+		// (iam:UpdateLoginProfile can reset an existing console password). Seeding the real props
+		// keeps iam_create_access_key / iam_update_login_profile firing on the true signal, not
+		// only the fail-open fallback.
+		CREATE (privUser:User:Principal {Arn: '%s', _is_admin: true, AccessKeyCount: 1, HasLoginProfile: true})
 		CREATE (privGroup:Group:Principal {Arn: 'arn:aws:iam::123456789012:group/priv-group',
 			GroupName: 'priv-group', _is_admin: true})
 		CREATE (joinGroup:Group:Principal {Arn: 'arn:aws:iam::123456789012:group/join-group',
@@ -1633,6 +1638,214 @@ func TestResourceToRoleViaTransformerHasRole(t *testing.T) {
 	n, _ := toInt64(result.Records[0]["n"])
 	assert.Equal(t, int64(1), n,
 		"transformer-built instance must link to the role via HAS_ROLE — requires NodeFromAWSResource to promote IamInstanceProfile to a top-level node property")
+}
+
+// TestPrivescAccessKeyCountGuard locks down D1's real <2-active-keys precondition for
+// iam_create_access_key. The method now guards on the collected target.AccessKeyCount:
+//   - count >= 2  → NO edge (CreateAccessKey would hit the 2-key limit).
+//   - count <  2  → edge fires on the real signal alone (no DeleteAccessKey proxy needed).
+//   - count ABSENT (pre-enricher graph) → FAIL-OPEN to the original DeleteAccessKey proxy.
+//
+// Non-vacuous: dropping the AccessKeyCount branch (leaving only the proxy) would make the
+// "count=1, no proxy" case fire — but it must NOT, since the real signal is the gate. And
+// dropping the IS NULL fail-open would make the "absent, with proxy" case stop firing.
+func TestPrivescAccessKeyCountGuard(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	newAdapter := func(t *testing.T) graph.GraphDatabase {
+		t.Helper()
+		cfg := graph.NewConfig(boltURL, "", "")
+		adapter, err := adapters.NewNeo4jAdapter(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { adapter.Close() })
+		return adapter
+	}
+
+	const (
+		attacker = "arn:aws:iam::123456789012:user/ak-attacker"
+		victim   = "arn:aws:iam::123456789012:user/ak-victim"
+	)
+	const queryID = "aws/enrich/privesc/iam_create_access_key"
+
+	// setup builds the attacker→victim graph. victimProps lets each case set/omit the
+	// AccessKeyCount prop; withProxy adds the IAM_DELETEACCESSKEY fallback edge.
+	setup := func(victimProps, withProxy string) string {
+		return fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
+			CREATE (v:User:Principal {Arn: '%s', _is_admin: true%s})
+			WITH a, v
+			MERGE (a)-[:IAM_CREATEACCESSKEY]->(v)
+			%s
+		`, attacker, victim, victimProps, withProxy)
+	}
+	const proxyEdge = "MERGE (a)-[:IAM_DELETEACCESSKEY]->(v)"
+
+	edgeCount := func(t *testing.T, db graph.GraphDatabase) int64 {
+		t.Helper()
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`,
+			attacker, victim), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		return n
+	}
+
+	cases := []struct {
+		name        string
+		victimProps string
+		withProxy   string
+		wantEdge    bool
+		desc        string
+	}{
+		{
+			name:        "count_2_no_edge",
+			victimProps: ", AccessKeyCount: 2",
+			withProxy:   proxyEdge,
+			wantEdge:    false,
+			desc:        "victim already holds 2 active keys → CreateAccessKey limit hit → NO edge even with the DeleteAccessKey proxy present",
+		},
+		{
+			name:        "count_1_edge_on_real_signal",
+			victimProps: ", AccessKeyCount: 1",
+			withProxy:   "",
+			wantEdge:    true,
+			desc:        "victim has <2 active keys → edge fires on the REAL signal alone, no DeleteAccessKey proxy required",
+		},
+		{
+			name:        "count_absent_failopen_with_proxy",
+			victimProps: "",
+			withProxy:   proxyEdge,
+			wantEdge:    true,
+			desc:        "AccessKeyCount absent (pre-enricher graph) → FAIL-OPEN to the DeleteAccessKey proxy → edge fires as before",
+		},
+		{
+			name:        "count_absent_no_proxy_no_edge",
+			victimProps: "",
+			withProxy:   "",
+			wantEdge:    false,
+			desc:        "AccessKeyCount absent AND no DeleteAccessKey proxy → original proxy precondition unmet → NO edge (proves fail-open is the proxy, not unconditional)",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newAdapter(t)
+			_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+			require.NoError(t, err)
+			_, err = db.Query(ctx, setup(tc.victimProps, tc.withProxy), nil)
+			require.NoError(t, err, "seed")
+
+			_, err = RunPlatformQuery(ctx, db, queryID, nil)
+			require.NoError(t, err, "run %s", queryID)
+
+			n := edgeCount(t, db)
+			if tc.wantEdge {
+				assert.GreaterOrEqual(t, n, int64(1), tc.desc)
+			} else {
+				assert.Equal(t, int64(0), n, tc.desc)
+			}
+		})
+	}
+}
+
+// TestPrivescLoginProfileGuard locks down D1's real existing-login-profile precondition for
+// iam_update_login_profile. The method now guards on the collected target.HasLoginProfile:
+//   - HasLoginProfile = false  → NO edge (UpdateLoginProfile returns NoSuchEntity).
+//   - HasLoginProfile = true   → edge fires.
+//   - HasLoginProfile ABSENT   → FAIL-OPEN (coalesce default true) → edge fires as before.
+//
+// Non-vacuous: dropping the HasLoginProfile guard would make the "false" case fire — but it
+// must NOT. The absent case proves the coalesce default keeps pre-enricher graphs behaving as today.
+func TestPrivescLoginProfileGuard(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	newAdapter := func(t *testing.T) graph.GraphDatabase {
+		t.Helper()
+		cfg := graph.NewConfig(boltURL, "", "")
+		adapter, err := adapters.NewNeo4jAdapter(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { adapter.Close() })
+		return adapter
+	}
+
+	const (
+		attacker = "arn:aws:iam::123456789012:user/lp-attacker"
+		victim   = "arn:aws:iam::123456789012:user/lp-victim"
+	)
+	const queryID = "aws/enrich/privesc/iam_update_login_profile"
+
+	setup := func(victimProps string) string {
+		return fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
+			CREATE (v:User:Principal {Arn: '%s', _is_admin: true%s})
+			WITH a, v
+			MERGE (a)-[:IAM_UPDATELOGINPROFILE]->(v)
+		`, attacker, victim, victimProps)
+	}
+
+	edgeCount := func(t *testing.T, db graph.GraphDatabase) int64 {
+		t.Helper()
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`,
+			attacker, victim), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		return n
+	}
+
+	cases := []struct {
+		name        string
+		victimProps string
+		wantEdge    bool
+		desc        string
+	}{
+		{
+			name:        "no_profile_no_edge",
+			victimProps: ", HasLoginProfile: false",
+			wantEdge:    false,
+			desc:        "victim has no console login profile → UpdateLoginProfile → NoSuchEntity → NO edge",
+		},
+		{
+			name:        "has_profile_edge",
+			victimProps: ", HasLoginProfile: true",
+			wantEdge:    true,
+			desc:        "victim has an existing console login profile → UpdateLoginProfile resets it → edge fires",
+		},
+		{
+			name:        "profile_absent_failopen",
+			victimProps: "",
+			wantEdge:    true,
+			desc:        "HasLoginProfile absent (pre-enricher graph) → coalesce default true → FAIL-OPEN → edge fires as before",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newAdapter(t)
+			_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+			require.NoError(t, err)
+			_, err = db.Query(ctx, setup(tc.victimProps), nil)
+			require.NoError(t, err, "seed")
+
+			_, err = RunPlatformQuery(ctx, db, queryID, nil)
+			require.NoError(t, err, "run %s", queryID)
+
+			n := edgeCount(t, db)
+			if tc.wantEdge {
+				assert.GreaterOrEqual(t, n, int64(1), tc.desc)
+			} else {
+				assert.Equal(t, int64(0), n, tc.desc)
+			}
+		})
+	}
 }
 
 // toInt64 coerces common numeric types returned by the Neo4j driver to int64.
