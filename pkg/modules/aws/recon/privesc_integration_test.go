@@ -304,14 +304,18 @@ var labCases = []labCase{
 	// seeded suite.)
 	{"fp_updateloginprofile_no_profile", m("iam_update_login_profile"), false, tgtNone, "", tierCommon, "service/api-precondition: UpdateLoginProfile on a privileged user with NO console profile (HasLoginProfile=false → NoSuchEntity) → suppresses"},
 	{"fp_createaccesskey_two_keys", m("iam_create_access_key"), false, tgtNone, "", tierCommon, "service/api-precondition: CreateAccessKey on a privileged user already holding 2 active keys (AccessKeyCount=2 → LimitExceeded) → suppresses"},
-	// G1 FP twin — TESTER TODO: add a fixture attacker `fp_createloginprofile_has_profile` granting
-	// iam:CreateLoginProfile+iam:UpdateLoginProfile scoped to priv_user (which HAS a console
-	// profile → HasLoginProfile=true → CreateLoginProfile returns EntityAlreadyExists), then add:
-	//   {"fp_createloginprofile_has_profile", m("iam_create_login_profile"), false, tgtNone, "", tierCommon,
-	//     "service/api-precondition: CreateLoginProfile on a privileged user that already has a console profile → suppresses"},
-	// The existing `*`-scoped iam_create_login_profile TP attacker now lands on noprofile_user, so it
-	// cannot double as this FP. G1's FP soundness is locked in the seeded suite by
-	// TestPrivescCreateLoginProfileGuard until the narrowly-scoped fixture attacker exists.
+	// G1 FP twin (live): CreateLoginProfile+UpdateLoginProfile scoped to priv_user (which HAS a
+	// console profile → collector GetLoginProfile succeeds → HasLoginProfile=true → the G1 guard
+	// coalesce(target.HasLoginProfile, false) = false is unmet → CreateLoginProfile would return
+	// EntityAlreadyExists → suppressed). Twin: the iam_create_login_profile TP attacker (scoped to
+	// "*", lands on noprofile_user which has NO profile). G1 is the SOLE rejecting guard here.
+	{"fp_createloginprofile_has_profile", m("iam_create_login_profile"), false, tgtNone, "", tierCommon, "service/api-precondition: CreateLoginProfile on a privileged user that already has a console profile (HasLoginProfile=true → EntityAlreadyExists) → suppresses"},
+	// G2 FP twin (live): SetDefaultPolicyVersion on a self-attached customer-managed policy with a
+	// SINGLE version (single_ver) → transformer surfaces policy_version_count=1 → the G2 guard
+	// coalesce(policy.policy_version_count, 2) > 1 is unmet → nothing to activate → suppressed. Twin:
+	// the iam_set_default_policy_version TP attacker (self-attaches the 2-version custom policy). G2 is
+	// the SOLE rejecting guard here (attacker non-admin, policy customer-managed + attached to self).
+	{"fp_setdefaultversion_single_version", m("iam_set_default_policy_version"), false, tgtNone, "", tierCommon, "service/api-precondition: SetDefaultPolicyVersion on a self-attached single-version customer policy (policy_version_count=1 → nothing to activate) → suppresses"},
 
 	// ===== Full-tier (skipped unless AURELIAN_E2E_FULL=1) =====
 	{"emr_run_job_flow", m("emr_run_job_flow"), true, tgtServiceRole, "emr", tierFull, "PassRole(emr) + RunJobFlow"},

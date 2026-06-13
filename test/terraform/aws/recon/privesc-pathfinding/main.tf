@@ -817,6 +817,27 @@ locals {
     # 2 active access keys). The collector's ListAccessKeys returns AccessKeyCount=2 → the guard
     # (AccessKeyCount < 2) suppresses. Twin: the iam_create_access_key attacker (priv_user has <2).
     fp_createaccesskey_two_keys = [{ actions = ["iam:CreateAccessKey", "iam:DeleteAccessKey"], resources = [aws_iam_user.twokey_user.arn] }]
+
+    # G1 FP twin (login-profile already-exists). iam:CreateLoginProfile+iam:UpdateLoginProfile SCOPED
+    # to priv_user — a PRIVILEGED user that ALREADY has a console login profile
+    # (aws_iam_user_login_profile.priv_user). The GAAD collector's iam:GetLoginProfile SUCCEEDS →
+    # HasLoginProfile=true → the iam_create_login_profile guard coalesce(target.HasLoginProfile,
+    # false) = false is unmet → the method SUPPRESSES (CreateLoginProfile on a user that already has
+    # one returns EntityAlreadyExists). This is the EXACT INVERSE of the iam_create_login_profile TP
+    # attacker (scoped to "*", lands on noprofile_user which has NO profile). priv_user is admin, so
+    # the suppression is purely about the existing profile, not target privilege. Removing ONLY the
+    # G1 HasLoginProfile guard would let this fire on priv_user, proving the FP is sound (not vacuous).
+    fp_createloginprofile_has_profile = [{ actions = ["iam:CreateLoginProfile", "iam:UpdateLoginProfile"], resources = [aws_iam_user.priv_user.arn] }]
+
+    # G2 FP twin (single-version policy → SetDefaultPolicyVersion is inert). iam:SetDefaultPolicyVersion
+    # on a self-attached customer-managed policy that has only ONE version (aws_iam_policy.single_ver,
+    # attached below). The transformer surfaces policy.policy_version_count = 1 → the
+    # iam_set_default_policy_version guard coalesce(policy.policy_version_count, 2) > 1 is unmet → the
+    # method SUPPRESSES (there is no non-default version to activate, so SetDefaultPolicyVersion grants
+    # no new privilege). Twin: the iam_set_default_policy_version TP attacker (self-attaches the
+    # multi-version aws_iam_policy.custom). Removing ONLY the G2 version-count guard would let this fire,
+    # proving the FP is sound.
+    fp_setdefaultversion_single_version = [{ actions = ["iam:SetDefaultPolicyVersion"], resources = ["*"] }]
   }
 }
 
@@ -843,12 +864,44 @@ resource "aws_iam_user_policy" "attacker" {
 # The customer-managed policy attached to the CreatePolicyVersion / SetDefaultPolicyVersion
 # attackers (so set_admin sees nothing, but the self-loop guard's attached-to-attacker
 # CONTAINS check passes). Grants only a harmless read.
+#
+# This policy carries TWO versions (the inline `policy` body is v1; null_resource.custom_v2 below
+# creates a non-default v2 via the AWS CLI — the AWS provider has no managed resource for policy
+# versions). The transformer surfaces policy.policy_version_count = 2, which satisfies BOTH:
+#   - iam_create_policy_version's guard `policy_version_count < 5` (2 < 5 → TP fires), and
+#   - iam_set_default_policy_version's G2 guard `coalesce(policy.policy_version_count, 2) > 1`
+#     (2 > 1 → TP fires: there IS a non-default version to activate).
+# A SINGLE-version policy would (correctly) suppress the SetDefaultPolicyVersion TP under G2 — that
+# inert case is the new fp_setdefaultversion_single_version FP twin (aws_iam_policy.single_ver below).
 resource "aws_iam_policy" "custom" {
   name = "${local.prefix}-custom"
   policy = jsonencode({
     Version   = "2012-10-17"
     Statement = [{ Effect = "Allow", Action = ["iam:GetUser"], Resource = "*" }]
   })
+}
+# A second (non-default) version of the custom policy so policy_version_count = 2 (>1). This is what
+# makes the iam_set_default_policy_version TP legitimately escalatory: there is a non-default version
+# to activate. --no-set-as-default keeps v1 the default (the inline body) so this is purely a
+# version-count signal, not a behavior change to the attached policy. The retry loop tolerates IAM
+# eventual consistency right after the policy is created; the `|| true` makes a re-run idempotent
+# (a policy that already has v2 simply ignores a duplicate). Created via the CLI because the AWS
+# provider exposes no aws_iam_policy_version resource.
+resource "null_resource" "custom_v2" {
+  depends_on = [aws_iam_policy.custom]
+  triggers   = { policy_arn = aws_iam_policy.custom.arn }
+  provisioner "local-exec" {
+    command = <<-EOT
+      for i in 1 2 3 4 5; do
+        aws iam create-policy-version \
+          --policy-arn ${aws_iam_policy.custom.arn} \
+          --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["iam:ListUsers"],"Resource":"*"}]}' \
+          --no-set-as-default && break
+        echo "create-policy-version attempt $i failed, retrying in $((i * 2))s..."
+        sleep $((i * 2))
+      done || true
+    EOT
+  }
 }
 resource "aws_iam_user_policy_attachment" "create_policy_version_custom" {
   user       = aws_iam_user.attacker["iam_create_policy_version"].name
@@ -857,6 +910,23 @@ resource "aws_iam_user_policy_attachment" "create_policy_version_custom" {
 resource "aws_iam_user_policy_attachment" "set_default_policy_version_custom" {
   user       = aws_iam_user.attacker["iam_set_default_policy_version"].name
   policy_arn = aws_iam_policy.custom.arn
+}
+
+# G2 FP: a customer-managed policy with a SINGLE version (only the inline body, no
+# aws_iam_policy_version). The transformer surfaces policy.policy_version_count = 1, so the
+# iam_set_default_policy_version G2 guard coalesce(policy.policy_version_count, 2) > 1 is UNMET → the
+# method SUPPRESSES. Self-attached to fp_setdefaultversion_single_version (so the self-loop guard's
+# attached-to-attacker CONTAINS check passes — proving the version-count guard is the SOLE rejection).
+resource "aws_iam_policy" "single_ver" {
+  name = "${local.prefix}-single-ver"
+  policy = jsonencode({
+    Version   = "2012-10-17"
+    Statement = [{ Effect = "Allow", Action = ["iam:GetUser"], Resource = "*" }]
+  })
+}
+resource "aws_iam_user_policy_attachment" "fp_setdefaultversion_single_version" {
+  user       = aws_iam_user.attacker["fp_setdefaultversion_single_version"].name
+  policy_arn = aws_iam_policy.single_ver.arn
 }
 
 # fp_already_admin holds the SAME self-attached customer policy as the iam_create_policy_version

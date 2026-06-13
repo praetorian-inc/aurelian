@@ -91,6 +91,20 @@ output "attacker_trusted_role_arn" {
   value = aws_iam_role.attacker_trusted_role.arn
 }
 
+# Customer-managed policy ARNs for the policy-version methods. These must be seeded as RICH nodes
+# (carrying policy_version_count from the GAAD PolicyVersionList) — NOT bare relationship-endpoint
+# stubs — so the version-count guards read a real signal. custom has 2 versions (>1 → the
+# iam_set_default_policy_version TP and iam_create_policy_version TP fire); single_ver has 1 version
+# (=1 → the fp_setdefaultversion_single_version G2 FP is suppressed). They are added to all_arns so
+# the harness seeds them via NodeFromAWSIAMResource. Without this they fall back to the fail-open
+# default (2 → >1), which would let the single-version FP FIRE — a false positive.
+output "custom_policy_arn" {
+  value = aws_iam_policy.custom.arn
+}
+output "single_ver_policy_arn" {
+  value = aws_iam_policy.single_ver.arn
+}
+
 # --- Real common-tier compute (backing the HAS_ROLE methods on real CloudControl data) ---
 output "lambda_function_arn" {
   value = aws_lambda_function.compute.arn
@@ -167,6 +181,8 @@ output "all_arns" {
       aws_iam_role.service_only_trust_role.arn,
       aws_iam_role.attacker_trusted_role.arn,
       aws_iam_role.cognito_admin.arn,
+      aws_iam_policy.custom.arn,
+      aws_iam_policy.single_ver.arn,
       aws_lambda_function.compute.arn,
       aws_instance.compute.arn,
     ],
