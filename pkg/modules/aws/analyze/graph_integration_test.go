@@ -19,6 +19,12 @@ import (
 	"github.com/praetorian-inc/aurelian/test/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	// Register the recon `graph` module (step 2 drives plugin.Get(...CategoryRecon,"graph"))
+	// and the AWS enrichers used by EnrichAWS. The analyze package's own init() registers the
+	// analyze `graph` module, but NOT the recon one, so without this blank import
+	// plugin.Get(PlatformAWS, CategoryRecon, "graph") returns false.
+	_ "github.com/praetorian-inc/aurelian/pkg/modules/aws/recon"
 )
 
 // TestGraphAnalyzePrivescPathsE2E is a full-stack integration test that:
@@ -55,13 +61,18 @@ func TestGraphAnalyzePrivescPathsE2E(t *testing.T) {
 	pipeline.Pipe(rp1, reconMod.Run, rp2)
 
 	var iamRels []output.AWSIAMRelationship
+	var iamResources []output.AWSIAMResource
 	for m := range rp2.Range() {
-		if v, ok := m.(output.AWSIAMRelationship); ok {
+		switch v := m.(type) {
+		case output.AWSIAMRelationship:
 			iamRels = append(iamRels, v)
+		case output.AWSIAMResource:
+			iamResources = append(iamResources, v)
 		}
 	}
 	require.NoError(t, rp2.Wait())
 	require.NotEmpty(t, iamRels, "recon should produce IAM relationships")
+	require.NotEmpty(t, iamResources, "recon should produce IAM entities")
 
 	var fixtureRels []output.AWSIAMRelationship
 	for _, r := range iamRels {
@@ -106,6 +117,21 @@ func TestGraphAnalyzePrivescPathsE2E(t *testing.T) {
 			seen[key] = true
 			nodes = append(nodes, n)
 		}
+	}
+	// Seed RICH GAAD entity nodes (with OriginalData → AttachedManagedPolicies / trust /
+	// etc.) for every fixture-owned IAM resource BEFORE the relationship-endpoint nodes.
+	// addNode dedups by UniqueKey, so the rich node wins over the thin {Arn}-only endpoint
+	// node that RelationshipFromAWSIAMRelationship would otherwise create. This is required
+	// for the analysis path: privesc_paths.yaml filters on target._is_admin, and the
+	// set_admin enricher only marks a role _is_admin from its AttachedManagedPolicies (the
+	// admin policy ARN), which lives on the rich GAAD node — not on a thin endpoint node.
+	// Without this, CAN_PRIVESC edges still form (their guards also accept _is_privileged)
+	// but NO admin-target path exists, so the analyze module emits zero risks.
+	for _, r := range iamResources {
+		if r.ARN != "" && !fixtureARNs[r.ARN] {
+			continue // only seed fixture-owned entities to keep the graph bounded
+		}
+		addNode(awstransformers.NodeFromAWSIAMResource(r))
 	}
 	for _, rel := range rels {
 		addNode(rel.StartNode)

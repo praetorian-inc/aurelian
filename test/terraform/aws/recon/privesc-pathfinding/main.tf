@@ -208,6 +208,21 @@ resource "aws_iam_user_policy_attachment" "priv_user" {
   policy_arn = local.admin_policy
 }
 
+# The privileged user carries a CONSOLE LOGIN PROFILE so the D1-tightened
+# iam_update_login_profile guard fires on the real signal: the GAAD collector's
+# iam:GetLoginProfile succeeds → HasLoginProfile=true (a *bool tri-state) → the guard
+# coalesce(target.HasLoginProfile, true) = true holds. WITHOUT this profile,
+# GetLoginProfile returns NoSuchEntity → HasLoginProfile=confirmed-false → the guard
+# correctly SUPPRESSES iam_update_login_profile (a NoSuchEntity at UpdateLoginProfile
+# time), which is the exact false-negative the D1 loopback fix introduced and which this
+# resource closes for the TP. No PGP key is supplied, so the generated password lands in
+# Terraform state (sensitive); the profile is never actually used — only collected.
+resource "aws_iam_user_login_profile" "priv_user" {
+  user                    = aws_iam_user.priv_user.name
+  password_length         = 20
+  password_reset_required = false
+}
+
 # A NON-privileged USER target for the target-not-privileged FP category.
 resource "aws_iam_user" "nonpriv_user" {
   name = "${local.prefix}-nonpriv-user"

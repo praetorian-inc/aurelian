@@ -58,44 +58,49 @@ type labCase struct {
 	desc        string
 }
 
-// knownGaps marks cases the FROZEN method+enricher cannot satisfy on real data without
-// changing a Phase-2-final query. Such a case is t.Skip-logged with its reason (never
-// silently dropped) so the limitation stays visible. Keyed by attackerKey.
+// knownGaps marks cases that STILL cannot fire on real data after the Phase-3 follow-up
+// closures. Such a case is t.Skip-logged with its reason (never silently dropped) so the
+// limitation stays visible. Keyed by attackerKey.
+//
+// Phase-3 CLOSED (removed from this map; now live-verified TPs): iam_create_access_key,
+// ec2_ssm_association, cloudform_create_stackset, bedrock_create_ci, ec2_replace_profile.
+//   - The first four closed via the A1 allowlist + resource-map data (action.go +
+//     service_action_resource_map.go) so the evaluator now emits the required action edges
+//     (DeleteAccessKey, CreateAssociation, CreateStackInstances, the bedrock Start/Invoke).
+//   - ec2_replace_profile closed via the A2 EC2-instance collector: graph recon now enumerates
+//     AWS::EC2::Instance, so an `instance`-pattern resource reaches the resource store and
+//     ec2:ReplaceIamInstanceProfileAssociation (instance-scoped) resolves. The live EC2
+//     instance must be RUNNING/present for the collector to enumerate it.
+//
+// The two below are HONEST residual gaps: each method's guard EXISTS-requires an action edge
+// the frozen evaluator still PROVABLY never emits. No fixture grant can satisfy a never-emitted
+// edge, so seeding/faking it would mask a false-negative. Closing each needs a one-line additive
+// evaluator-DATA change (developer task, frozen this PR) — documented precisely below.
 var knownGaps = map[string]string{
-	// Cognito identity-pool roles trust cognito-identity.amazonaws.com as a FEDERATED principal
-	// (AWS rejects it as a Service principal). The frozen GAAD transformer NodeFromGaadRole
-	// extracts ONLY Principal.Service into trusted_services, and the frozen
-	// cognito_set_identity_pool_roles guard requires 'cognito-identity.amazonaws.com' IN
-	// victim.trusted_services — so the TP cannot fire for a Federated trust without changing a
-	// frozen query.
-	"cognito_set_pool_roles": "Federated cognito trust is not surfaced into trusted_services by the frozen NodeFromGaadRole transformer; the frozen guard requires it — cannot fire without changing a frozen query",
+	// cognito_set_identity_pool_roles.yaml EXISTS-requires THREE cognito action edges:
+	// COGNITO-IDENTITY_SETIDENTITYPOOLROLES (allowlisted, action.go) AND COGNITO-IDENTITY_GETID
+	// AND COGNITO-IDENTITY_GETCREDENTIALSFORIDENTITY. The A3 transformer change correctly surfaces
+	// the role's Federated cognito trust as trusted_federated and the guard now accepts it — but
+	// GetId and GetCredentialsForIdentity are NOT in the frozen privEscActions allowlist (action.go
+	// has only cognito-identity:SetIdentityPoolRoles), so generatePrincipalEvalRequests
+	// (process_permissions.go:212, gated by IsPrivEscAction) never emits those two edges and the two
+	// EXISTS clauses can never be satisfied on live data. The fixture grants both actions; the
+	// residual blocker is purely the allowlist. Closing it needs adding cognito-identity:GetId +
+	// GetCredentialsForIdentity to privEscActions (+ resource map) — a developer evaluator-data
+	// change, frozen this PR.
+	"cognito_set_pool_roles": "cognito_set_identity_pool_roles.yaml EXISTS-requires COGNITO-IDENTITY_GETID and COGNITO-IDENTITY_GETCREDENTIALSFORIDENTITY edges, but neither cognito-identity:GetId nor GetCredentialsForIdentity is in the frozen privEscActions allowlist (action.go has only SetIdentityPoolRoles), so the evaluator never emits them; the A3 trusted_federated fix is necessary but not sufficient — cannot fire without adding the two actions to the frozen allowlist (developer task)",
 
-	// The 5 cases below are real DETECTOR gaps, not fixture deficiencies: each method's frozen
-	// guard EXISTS-requires an action edge the frozen evaluator PROVABLY never emits, because the
-	// action is dropped by the privEscActions allowlist (action.go, gated at
-	// process_permissions.go:86) or unmapped in service_action_resource_map.go (gated at
-	// evaluator.go:185). The fixture genuinely grants the underlying IAM action, so a real attacker
-	// holding it would go UNDETECTED — closing the gap needs an out-of-scope evaluator/collector
-	// change (extend the allowlist / resource map), which is frozen this PR. Seeding the edge would
-	// mask the false-negative, so these are skip-logged known gaps instead.
-	"iam_create_access_key":      "iam:DeleteAccessKey is absent from the frozen privEscActions allowlist (action.go), so the evaluator emits no IAM_DELETEACCESSKEY edge; iam_create_access_key.yaml EXISTS-requires it — cannot fire on real data without unfreezing the allowlist",
-	"ec2_ssm_association":        "ssm:CreateAssociation is allowlisted but `createassociation` is unmapped in the frozen ssm ActionResourceMap (service_action_resource_map.go), so IsValidActionForResource rejects it and no SSM_CREATEASSOCIATION edge is emitted; ec2_ssm_association.yaml EXISTS-requires it — cannot fire without unfreezing the resource map",
-	"iam_pass_role_datapipeline": "datapipeline:* is entirely unmodeled — no datapipeline actions in the frozen allowlist (action.go) and no datapipeline service in the resource map — so no DATAPIPELINE_* edge is ever emitted; iam_pass_role_datapipeline.yaml EXISTS-requires all three — cannot fire without unfreezing the allowlist/resource map",
-	"cloudform_create_stackset":  "cloudformation:CreateStackInstances is absent from the frozen allowlist (action.go) and the cfn resource map, so no CLOUDFORMATION_CREATESTACKINSTANCES edge is emitted; cloudformation_create_stackset.yaml EXISTS-requires it — cannot fire without unfreezing the allowlist",
-	"bedrock_create_ci":          "the frozen bedrock-agentcore allowlist/resource map carry only CreateCodeInterpreter+InvokeSession; bedrock_create_code_interpreter.yaml requires the invoke EXISTS to be StartCodeInterpreterSession/InvokeCodeInterpreter, neither of which is allowlisted/mapped, so no such edge is emitted — cannot fire without unfreezing the allowlist",
-
-	// ec2:ReplaceIamInstanceProfileAssociation IS allowlisted (action.go:60) AND mapped
-	// (service_action_resource_map.go:253), but it maps ONLY to the `instance` resource type — a
-	// concrete arn:aws:ec2:<region>:<acct>:instance/... ARN. The frozen graph recon path collects
-	// resources solely from ResourcePolicyCollector.registry() (S3/Lambda/SNS/SQS/EFS/OpenSearch/
-	// Elasticsearch); AWS::EC2::Instance is NOT collected, so no `instance`-pattern resource reaches
-	// the analyzer's resourceStore. generatePrincipalEvalRequests → GetResourcesByAction therefore
-	// returns zero resources for this action and the evaluator never emits an
-	// EC2_REPLACEIAMINSTANCEPROFILEASSOCIATION edge; ec2_replace_instance_profile.yaml EXISTS-requires
-	// it — cannot fire without unfreezing the collector/resource map. (Its siblings runinstances/
-	// requestspotinstances map to `service`, which matches the always-present arn:aws:ec2:*:*:* stub,
-	// so they fire — this gap is specific to the instance-scoped action.)
-	"ec2_replace_profile": "ec2:ReplaceIamInstanceProfileAssociation maps only to the `instance` resource type (service_action_resource_map.go:253), but the frozen graph recon collector never enumerates AWS::EC2::Instance (only the 7 resource-policy types), so no instance-pattern resource exists and the evaluator emits no EC2_REPLACEIAMINSTANCEPROFILEASSOCIATION edge; ec2_replace_instance_profile.yaml EXISTS-requires it — cannot fire without unfreezing the collector/resource map",
+	// iam_pass_role_datapipeline.yaml EXISTS-requires DATAPIPELINE_CREATEPIPELINE +
+	// PUTPIPELINEDEFINITION + ACTIVATEPIPELINE. The A1 change allowlisted all three actions
+	// (action.go) AND mapped them in service_action_resource_map.go (the `datapipeline` service
+	// block + the privesc map unit test pass). BUT GetResourcesByAction can only resolve an action
+	// to a resource that EXISTS in the resource store, and the datapipeline service stub
+	// (arn:aws:datapipeline:*:*:*) is NOT seeded: datapipeline.amazonaws.com is absent from
+	// addServicesToResourceCache's commonServices list (analyzer_state.go:88), and no datapipeline
+	// resource is collected. So GetResourcesByAction returns 0 for every datapipeline action and the
+	// evaluator emits no DATAPIPELINE_* edge. Closing it needs adding datapipeline.amazonaws.com to
+	// commonServices — a one-line additive evaluator-data change, frozen this PR (developer task).
+	"iam_pass_role_datapipeline": "iam_pass_role_datapipeline.yaml EXISTS-requires DATAPIPELINE_{CREATEPIPELINE,PUTPIPELINEDEFINITION,ACTIVATEPIPELINE}; A1 allowlisted+mapped all three, but datapipeline.amazonaws.com is NOT in addServicesToResourceCache commonServices (analyzer_state.go:88) so no arn:aws:datapipeline:*:*:* stub exists in the resource store and GetResourcesByAction returns 0 → the evaluator emits no DATAPIPELINE_* edge — cannot fire without adding datapipeline to the frozen service stub list (developer task)",
 }
 
 type tier int
@@ -195,10 +200,23 @@ var labCases = []labCase{
 	{"sagemaker_lifecycle", m("sagemaker_lifecycle_config"), true, tgtComputeRole, "", tierCommon, "UpdateNotebookInstanceLifecycleConfig on an admin-role notebook (synthetic)"},
 	{"sagemaker_presigned", m("sagemaker_presigned_url"), true, tgtComputeRole, "", tierCommon, "CreatePresignedNotebookInstanceUrl on an admin-role notebook (synthetic)"},
 
-	// ===== Service-wildcard fail-open + changeset (target = permission stub) =====
-	{"batch_submit_job", m("batch_submit_job"), true, tgtStub, "", tierCommon, "SubmitJob + a privileged ecs-tasks-trusting role exists"},
-	{"bedrock_invoke", m("bedrock_access_code_interpreter"), true, tgtStub, "", tierCommon, "InvokeSession + a privileged bedrock-agentcore role exists"},
-	{"cloudform_changeset", m("cloudformation_changeset"), true, tgtStub, "", tierCommon, "CreateChangeSet+ExecuteChangeSet on the same stack stub"},
+	// ===== Existing-resource takeover via HAS_ROLE (D4 re-point: target = the backing
+	// resource's privileged role, no longer a service-wildcard stub) =====
+	// The D4 commits re-pointed these three from the fail-open service stub to a specific
+	// privileged role reached via (Resource)-[:HAS_ROLE]->(role). The action edges
+	// (BATCH_SUBMITJOB / BEDROCK-AGENTCORE_INVOKESESSION / CLOUDFORMATION_{CREATE,EXECUTE}CHANGESET)
+	// are genuinely evaluator-emitted on live data (allowlisted + mapped to the service stub), but
+	// the backing Resource (Batch JobDefinition / AgentCore CodeInterpreter / CFN Stack) is not
+	// provisionable in the default-tier fixture (Batch needs a compute env/VPC; AgentCore has no
+	// TF provider resource; the pathfinding harness does not seed collected non-IAM AWSResources),
+	// so the HAS_ROLE source is a SYNTHETIC Resource node — the same compromise the other ~10
+	// HAS_ROLE methods (cloudform_update_stack, codebuild_*, glue_update_*, etc.) already use in
+	// syntheticComputeResources. Each synthetic resource points at the correctly-trusted privileged
+	// role so the re-pointed query's trust + privileged-target guards are exercised on real edge
+	// structure.
+	{"batch_submit_job", m("batch_submit_job"), true, tgtServiceRole, "ecstasks", tierCommon, "SubmitJob on a synthetic Batch JobDefinition whose JobRoleArn is the privileged ecs-tasks-trusting svcadmin role"},
+	{"bedrock_invoke", m("bedrock_access_code_interpreter"), true, tgtServiceRole, "bedrock", tierCommon, "InvokeSession on a synthetic AgentCore CodeInterpreter whose ExecutionRoleArn is the privileged bedrock-agentcore svcadmin role"},
+	{"cloudform_changeset", m("cloudformation_changeset"), true, tgtComputeRole, "", tierCommon, "CreateChangeSet+ExecuteChangeSet against a synthetic CFN Stack whose RoleARN is the privileged compute admin role"},
 
 	// ===== Intentional no-op (target = none) =====
 	{"iam_create_slr", m("iam_create_service_linked_role"), false, tgtNone, "", tierCommon, "CreateServiceLinkedRole emits no CAN_PRIVESC (RETURN 0)"},
@@ -356,8 +374,14 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 		len(facts.attackerARNs), len(facts.serviceAdminARNs), fullTier)
 
 	// The synthetic compute Resource ARNs (for HAS_ROLE methods not backed by real Lambda/
-	// EC2) all run the compute admin role and must be treated as fixture-owned.
-	syntheticResources := syntheticComputeResources(facts.computeAdminARN, fixture.Output("ec2_instance_arn"))
+	// EC2) run a privileged role and must be treated as fixture-owned. The D4 Batch/Bedrock-CI
+	// re-points need service-specifically-trusted roles (ecs-tasks / bedrock-agentcore).
+	syntheticResources := syntheticComputeResources(
+		facts.computeAdminARN,
+		fixture.Output("ec2_instance_arn"),
+		facts.serviceAdminARNs["ecstasks"],
+		facts.serviceAdminARNs["bedrock"],
+	)
 	for _, r := range syntheticResources {
 		fixtureARNs[r.arn] = true
 	}
@@ -657,16 +681,24 @@ func (s syntheticResource) node() *graph.Node {
 	return &graph.Node{Labels: []string{"Resource", s.resourceType}, Properties: props, UniqueKey: []string{"arn"}}
 }
 
-// syntheticComputeResources returns the compute resources that run the admin role. The Lambda
+// syntheticComputeResources returns the compute resources that run a privileged role. The Lambda
 // and EC2 instance mirror what the production CloudControl transformer would emit (resource_to_role
 // keys Lambda on Role and EC2 on InstanceProfileList); the remaining service resource types key
 // resource_service_role on the role ARN appearing as a quoted value inside `properties`.
-func syntheticComputeResources(computeRoleARN, ec2InstanceARN string) []syntheticResource {
+//
+// Most resources run the compute admin role. The D4 re-pointed Batch JobDefinition and AgentCore
+// CodeInterpreter must instead run a role the re-pointed query's trust guard accepts: the Batch
+// job role must trust ecs-tasks.amazonaws.com (the ecstasks svcadmin role) and the CodeInterpreter
+// exec role must trust bedrock-agentcore.amazonaws.com (the bedrock svcadmin role) — hence the two
+// extra role-ARN params. (The CFN Stack stays on compute admin: cloudformation_changeset's guard
+// only requires a privileged target, not a service-specific trust.)
+func syntheticComputeResources(computeRoleARN, ec2InstanceARN, batchJobRoleARN, bedrockExecRoleARN string) []syntheticResource {
 	// resource_service_role matches '"' + role.Arn + '"' inside the flattened properties JSON.
-	svcRole := func(rt, arn string) syntheticResource {
-		return syntheticResource{arn: arn, resourceType: rt,
-			props: map[string]any{"properties": fmt.Sprintf(`{"RoleArn":"%s"}`, computeRoleARN)}}
+	svcRoleARN := func(rt, resArn, roleARN string) syntheticResource {
+		return syntheticResource{arn: resArn, resourceType: rt,
+			props: map[string]any{"properties": fmt.Sprintf(`{"RoleArn":"%s"}`, roleARN)}}
 	}
+	svcRole := func(rt, resArn string) syntheticResource { return svcRoleARN(rt, resArn, computeRoleARN) }
 	return []syntheticResource{
 		// Lambda: resource_to_role matches resource.Role = role.Arn.
 		{arn: "arn:aws:lambda:us-east-2:000000000000:function:pf-compute", resourceType: "AWS::Lambda::Function",
@@ -686,6 +718,11 @@ func syntheticComputeResources(computeRoleARN, ec2InstanceARN string) []syntheti
 		svcRole("AWS::ECS::TaskDefinition", "arn:aws:ecs:us-east-2:000000000000:task-definition/pf"),
 		svcRole("AWS::StepFunctions::StateMachine", "arn:aws:states:us-east-2:000000000000:stateMachine/pf"),
 		svcRole("AWS::SageMaker::NotebookInstance", "arn:aws:sagemaker:us-east-2:000000000000:notebook-instance/pf"),
+		// D4 re-point backing resources: Batch JobDefinition -> ecs-tasks-trusting svcadmin role;
+		// AgentCore CodeInterpreter -> bedrock-agentcore-trusting svcadmin role. resource_service_role
+		// covers both _resourceTypes and matches the role ARN as a quoted properties substring.
+		svcRoleARN("AWS::Batch::JobDefinition", "arn:aws:batch:us-east-2:000000000000:job-definition/pf:1", batchJobRoleARN),
+		svcRoleARN("AWS::BedrockAgentCore::CodeInterpreter", "arn:aws:bedrock-agentcore:us-east-2:000000000000:code-interpreter/pf", bedrockExecRoleARN),
 	}
 }
 
