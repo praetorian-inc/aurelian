@@ -292,6 +292,31 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 
 	// Output results if there are any
 	if len(results) > 0 {
+		// When the module exposes Neo4j connection params and the user supplied a
+		// --neo4j-uri, the graph database is the output sink: seed nodes/edges and
+		// run enrichment via GraphFormatter instead of writing JSON. Default
+		// behavior (no --neo4j-uri) is unchanged and still writes JSON.
+		if uri, _ := argsMap["neo4j-uri"].(string); uri != "" {
+			username, _ := argsMap["neo4j-username"].(string)
+			if username == "" {
+				username = "neo4j"
+			}
+			password, _ := argsMap["neo4j-password"].(string)
+			if password == "" {
+				password = "neo4j"
+			}
+			formatter, err := plugin.NewGraphFormatter(uri, username, password)
+			if err != nil {
+				return fmt.Errorf("connecting to Neo4j: %w", err)
+			}
+			defer func() { _ = formatter.Close() }()
+			if err := formatter.Format(results); err != nil {
+				return fmt.Errorf("writing results to Neo4j: %w", err)
+			}
+			log.Success("results written to Neo4j at %s", uri)
+			return nil
+		}
+
 		// Determine output file path
 		var outputPath string
 		if outputFile != "" {
