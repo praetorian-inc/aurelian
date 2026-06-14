@@ -332,6 +332,67 @@ func TestAnalyze_AssumeRoleTrustPolicy(t *testing.T) {
 	assert.True(t, foundAssumeRole, "Expected lambda.amazonaws.com to be able to assume the role")
 }
 
+// TestAnalyze_AssumeRoleDirectTrustNoIdentityGrant locks the F6 direct-trust producer path:
+// a user with NO identity sts:AssumeRole grant that is DIRECTLY NAMED by exact ARN in a role's
+// trust policy STILL gets an sts:AssumeRole relationship (same-account exact-ARN trust is
+// sufficient alone). A sibling role that trusts only account :root yields NO real-principal
+// edge from that user without a grant (the :root FP-safety boundary).
+func TestAnalyze_AssumeRoleDirectTrustNoIdentityGrant(t *testing.T) {
+	const acct = "111122223333"
+	const userArn = "arn:aws:iam::" + acct + ":user/no-grant-user"
+	const directRoleArn = "arn:aws:iam::" + acct + ":role/direct-trust-role"
+	const rootRoleArn = "arn:aws:iam::" + acct + ":role/root-trust-role"
+
+	trustAction := types.DynaString{"sts:AssumeRole"}
+	trustResource := types.DynaString{"*"}
+	directPrincipal := types.DynaString{userArn}
+	rootPrincipal := types.DynaString{"arn:aws:iam::" + acct + ":root"}
+
+	directTrust := types.PolicyStatementList{
+		{Effect: "Allow", Action: &trustAction, Resource: &trustResource, Principal: &types.Principal{AWS: &directPrincipal}},
+	}
+	rootTrust := types.PolicyStatementList{
+		{Effect: "Allow", Action: &trustAction, Resource: &trustResource, Principal: &types.Principal{AWS: &rootPrincipal}},
+	}
+
+	gaad := newTestGAADFromOpts(newTestGAADOpts{
+		accountID: acct,
+		// User has NO identity policy at all → no sts:AssumeRole grant.
+		users: []types.UserDetail{
+			{Arn: userArn, UserName: "no-grant-user", UserId: "AIDA999", Path: "/"},
+		},
+		roles: []types.RoleDetail{
+			{
+				Arn: directRoleArn, RoleName: "direct-trust-role", RoleId: "AROA001", Path: "/",
+				AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &directTrust},
+			},
+			{
+				Arn: rootRoleArn, RoleName: "root-trust-role", RoleId: "AROA002", Path: "/",
+				AssumeRolePolicyDocument: types.Policy{Version: "2012-10-17", Statement: &rootTrust},
+			},
+		},
+	})
+
+	results, err := NewGaadAnalyzer().Analyze(gaad, orgpolicies.NewDefaultOrgPolicies(), store.Map[output.AWSResource]{})
+	require.NoError(t, err)
+
+	foundDirect := false
+	foundRootFromUser := false
+	for _, rel := range collectRelationships(results) {
+		if rel.Action != "sts:AssumeRole" {
+			continue
+		}
+		if rel.Principal.ARN == userArn && rel.Resource.ARN == directRoleArn {
+			foundDirect = true
+		}
+		if rel.Principal.ARN == userArn && rel.Resource.ARN == rootRoleArn {
+			foundRootFromUser = true
+		}
+	}
+	assert.True(t, foundDirect, "exact-ARN direct trust must yield an sts:AssumeRole edge with NO identity grant")
+	assert.False(t, foundRootFromUser, ":root trust must NOT yield an sts:AssumeRole edge from a user with no identity grant")
+}
+
 func TestAnalyze_ResourcePolicy(t *testing.T) {
 	// A resource with a resource policy granting lambda:InvokeFunction to lambda.amazonaws.com
 	trustAction := types.DynaString{"sts:AssumeRole"}

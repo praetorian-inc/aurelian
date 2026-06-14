@@ -36,8 +36,8 @@ func NodeFromGaadRole(role types.RoleDetail) *graph.Node {
 
 	// Extract trusted service and federated principals from AssumeRolePolicyDocument.
 	// Federated principals (e.g. cognito-identity.amazonaws.com, SAML/OIDC providers)
-	// are kept in a separate property from trusted_services so SERVICE_TRUSTS edges
-	// (extract_role_trusted_services) are not polluted with non-service principals.
+	// are kept in a separate property so the trusted_services property (consumed by
+	// passrole privesc enrichers) is not polluted with non-service principals.
 	if role.AssumeRolePolicyDocument.Statement != nil {
 		var trustedServices []string
 		var trustedFederated []string

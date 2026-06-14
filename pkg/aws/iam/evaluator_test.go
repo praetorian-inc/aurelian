@@ -1377,59 +1377,180 @@ func TestHasExplicitPrincipalAllow(t *testing.T) {
 func TestPolicyEvaluator_SameAccountAssumeRole_TrustPolicyValidation(t *testing.T) {
 	accountID := "460568892256"
 	sourceRoleArn := "arn:aws:iam::" + accountID + ":role/attacker-role"
-	targetRoleArn := "arn:aws:iam::" + accountID + ":role/restricted-role"
 	allowedRoleArn := "arn:aws:iam::" + accountID + ":role/allowed-role"
+	// restrictedRoleArn's trust names only allowedRole (an exact ARN, NOT the source).
+	restrictedRoleArn := "arn:aws:iam::" + accountID + ":role/restricted-role"
+	// rootTrustRoleArn's trust names only the account :root.
+	rootTrustRoleArn := "arn:aws:iam::" + accountID + ":role/root-trust-role"
+	// condGatedRoleArn's trust names sourceRole by exact ARN in a CONDITION-GATED (failing)
+	// statement, plus a separate :root Allow. The exact-ARN statement does NOT actually grant.
+	condGatedRoleArn := "arn:aws:iam::" + accountID + ":role/cond-gated-role"
+	// wrongActionRoleArn's trust names sourceRole by exact ARN but for sts:TagSession (NOT
+	// AssumeRole), plus a separate :root Allow. The exact-ARN statement does NOT grant AssumeRole.
+	wrongActionRoleArn := "arn:aws:iam::" + accountID + ":role/wrong-action-role"
 
-	// Source role's identity policy - allows sts:AssumeRole on any role
-	identityStatements := &types.PolicyStatementList{
+	identityGrant := &types.PolicyStatementList{
 		{
 			Effect:   "Allow",
 			Action:   types.NewDynaString([]string{"sts:AssumeRole"}),
 			Resource: types.NewDynaString([]string{"arn:aws:iam::" + accountID + ":role/*"}),
 		},
 	}
+	noIdentityGrant := &types.PolicyStatementList{}
 
-	// Target role's trust policy - only allows a specific role, NOT the source role
-	targetTrustPolicy := &types.Policy{
+	// restricted-role trusts allowedRole by EXACT ARN, NOT the source role.
+	restrictedTrustPolicy := &types.Policy{
 		Version: "2012-10-17",
 		Statement: &types.PolicyStatementList{
 			{
-				Effect: "Allow",
-				Principal: &types.Principal{
-					AWS: types.NewDynaString([]string{allowedRoleArn}), // Only allows allowedRole, not attacker-role
-				},
-				Action:   types.NewDynaString([]string{"sts:AssumeRole"}),
-				Resource: types.NewDynaString([]string{targetRoleArn}),
+				Effect:    "Allow",
+				Principal: &types.Principal{AWS: types.NewDynaString([]string{allowedRoleArn})},
+				Action:    types.NewDynaString([]string{"sts:AssumeRole"}),
+				Resource:  types.NewDynaString([]string{restrictedRoleArn}),
+			},
+		},
+	}
+	// root-trust-role trusts only account :root (delegates to identity policies).
+	rootTrustPolicy := &types.Policy{
+		Version: "2012-10-17",
+		Statement: &types.PolicyStatementList{
+			{
+				Effect:    "Allow",
+				Principal: &types.Principal{AWS: types.NewDynaString([]string{"arn:aws:iam::" + accountID + ":root"})},
+				Action:    types.NewDynaString([]string{"sts:AssumeRole"}),
+				Resource:  types.NewDynaString([]string{rootTrustRoleArn}),
 			},
 		},
 	}
 
-	// Create PolicyData with the trust policy in ResourcePolicies (as done in AddResourcePolicies)
+	// cond-gated-role: a NON-granting exact-ARN Allow (condition fails) PLUS a separate :root Allow.
+	// The exact-ARN statement names sourceRole but its StringEquals on aws:PrincipalArn can never
+	// match (bogus value), so it does NOT grant. Only the :root statement evaluates to an allow, and
+	// :root delegates to identity policies. A raw Principal.AWS scan would wrongly treat the
+	// (different) condition-gated statement as the direct-trust grant -> false positive.
+	condGatedTrustPolicy := &types.Policy{
+		Version: "2012-10-17",
+		Statement: &types.PolicyStatementList{
+			{
+				Effect:    "Allow",
+				Principal: &types.Principal{AWS: types.NewDynaString([]string{sourceRoleArn})},
+				Action:    types.NewDynaString([]string{"sts:AssumeRole"}),
+				Resource:  types.NewDynaString([]string{condGatedRoleArn}),
+				Condition: &types.Condition{
+					"StringEquals": {"aws:PrincipalArn": []string{"arn:aws:iam::" + accountID + ":role/nonexistent-principal"}},
+				},
+			},
+			{
+				Effect:    "Allow",
+				Principal: &types.Principal{AWS: types.NewDynaString([]string{"arn:aws:iam::" + accountID + ":root"})},
+				Action:    types.NewDynaString([]string{"sts:AssumeRole"}),
+				Resource:  types.NewDynaString([]string{condGatedRoleArn}),
+			},
+		},
+	}
+	// wrong-action-role: an exact-ARN Allow scoped to sts:TagSession (NOT AssumeRole) PLUS a
+	// separate :root Allow. The exact-ARN statement names sourceRole but does NOT grant AssumeRole.
+	// A raw scan ignoring Action would wrongly treat it as the direct-trust grant -> false positive.
+	wrongActionTrustPolicy := &types.Policy{
+		Version: "2012-10-17",
+		Statement: &types.PolicyStatementList{
+			{
+				Effect:    "Allow",
+				Principal: &types.Principal{AWS: types.NewDynaString([]string{sourceRoleArn})},
+				Action:    types.NewDynaString([]string{"sts:TagSession"}),
+				Resource:  types.NewDynaString([]string{wrongActionRoleArn}),
+			},
+			{
+				Effect:    "Allow",
+				Principal: &types.Principal{AWS: types.NewDynaString([]string{"arn:aws:iam::" + accountID + ":root"})},
+				Action:    types.NewDynaString([]string{"sts:AssumeRole"}),
+				Resource:  types.NewDynaString([]string{wrongActionRoleArn}),
+			},
+		},
+	}
+
 	policyData := &PolicyData{
 		ResourcePolicies: map[string]*types.Policy{
-			targetRoleArn: targetTrustPolicy,
+			restrictedRoleArn:  restrictedTrustPolicy,
+			rootTrustRoleArn:   rootTrustPolicy,
+			condGatedRoleArn:   condGatedTrustPolicy,
+			wrongActionRoleArn: wrongActionTrustPolicy,
 		},
 	}
 
 	evaluator := NewPolicyEvaluator(policyData)
 
 	tests := []struct {
-		name         string
-		principalArn string
-		wantAllowed  bool
-		description  string
+		name               string
+		principalArn       string
+		target             string
+		identityStatements *types.PolicyStatementList
+		wantAllowed        bool
+		description        string
 	}{
 		{
-			name:         "Source role NOT in trust policy - should be DENIED",
-			principalArn: sourceRoleArn,
-			wantAllowed:  false,
-			description:  "Source role has sts:AssumeRole permission but target's trust policy does not allow it",
+			name:               "Source role NOT in trust policy - should be DENIED",
+			principalArn:       sourceRoleArn,
+			target:             restrictedRoleArn,
+			identityStatements: identityGrant,
+			wantAllowed:        false,
+			description:        "Source role has sts:AssumeRole permission but target's trust policy does not name it",
 		},
 		{
-			name:         "Allowed role in trust policy - should be ALLOWED",
-			principalArn: allowedRoleArn,
-			wantAllowed:  true,
-			description:  "Allowed role has both sts:AssumeRole permission AND is in target's trust policy",
+			name:               "Allowed role exactly named in trust + identity grant - should be ALLOWED",
+			principalArn:       allowedRoleArn,
+			target:             restrictedRoleArn,
+			identityStatements: identityGrant,
+			wantAllowed:        true,
+			description:        "Allowed role has both sts:AssumeRole permission AND is exactly named in target's trust policy",
+		},
+		{
+			name:               "Trust DIRECTLY names principal ARN + NO identity grant - should be ALLOWED",
+			principalArn:       allowedRoleArn,
+			target:             restrictedRoleArn,
+			identityStatements: noIdentityGrant,
+			wantAllowed:        true,
+			description:        "AWS allows same-account AssumeRole from a directly-named exact ARN even without an identity grant",
+		},
+		{
+			name:               ":root trust + NO identity grant - should be DENIED (FP-safety boundary)",
+			principalArn:       sourceRoleArn,
+			target:             rootTrustRoleArn,
+			identityStatements: noIdentityGrant,
+			wantAllowed:        false,
+			description:        ":root trust delegates to identity policies, so without an identity sts:AssumeRole grant the assumption is denied",
+		},
+		{
+			name:               ":root trust + identity grant - should be ALLOWED",
+			principalArn:       sourceRoleArn,
+			target:             rootTrustRoleArn,
+			identityStatements: identityGrant,
+			wantAllowed:        true,
+			description:        ":root trust plus an identity sts:AssumeRole grant satisfies AND-semantics",
+		},
+		{
+			// Regression for the statement-correlation FP hole: exact-ARN named in a CONDITION-GATED
+			// (failing) statement + a separate :root Allow + NO identity grant. The direct-trust leg
+			// must NOT fire because the exact-ARN statement does not actually grant; :root requires an
+			// identity grant the principal lacks. A raw Principal.AWS scan would WRONGLY allow this.
+			name:               "exact-ARN in failing-condition statement + :root, no grant - should be DENIED",
+			principalArn:       sourceRoleArn,
+			target:             condGatedRoleArn,
+			identityStatements: noIdentityGrant,
+			wantAllowed:        false,
+			description:        "exact-ARN trust whose condition fails does not grant; the separate :root Allow needs an identity grant",
+		},
+		{
+			// Regression for the statement-correlation FP hole: exact-ARN named for sts:TagSession
+			// (NOT AssumeRole) + a separate :root Allow + NO identity grant. The direct-trust leg must
+			// NOT fire because the exact-ARN statement does not grant sts:AssumeRole. A raw scan that
+			// ignores Action would WRONGLY allow this.
+			name:               "exact-ARN scoped to sts:TagSession + :root, no grant - should be DENIED",
+			principalArn:       sourceRoleArn,
+			target:             wrongActionRoleArn,
+			identityStatements: noIdentityGrant,
+			wantAllowed:        false,
+			description:        "exact-ARN trust scoped to a non-AssumeRole action does not grant AssumeRole; :root needs an identity grant",
 		},
 	}
 
@@ -1437,13 +1558,13 @@ func TestPolicyEvaluator_SameAccountAssumeRole_TrustPolicyValidation(t *testing.
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := createRequestContext(tt.principalArn)
 			ctx.PrincipalAccount = accountID
-			assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys(targetRoleArn))
+			assert.NoError(t, ctx.PopulateDefaultRequestConditionKeys(tt.target))
 
 			req := &EvaluationRequest{
 				Action:             "sts:AssumeRole",
-				Resource:           targetRoleArn,
+				Resource:           tt.target,
 				Context:            ctx,
-				IdentityStatements: identityStatements,
+				IdentityStatements: tt.identityStatements,
 			}
 
 			result, err := evaluator.Evaluate(req)
@@ -1452,15 +1573,15 @@ func TestPolicyEvaluator_SameAccountAssumeRole_TrustPolicyValidation(t *testing.
 			t.Logf("Test: %s", tt.name)
 			t.Logf("Description: %s", tt.description)
 			t.Logf("Principal: %s", tt.principalArn)
-			t.Logf("Target: %s", targetRoleArn)
+			t.Logf("Target: %s", tt.target)
 			t.Logf("Expected Allowed: %v, Got: %v", tt.wantAllowed, result.Allowed)
 			t.Logf("CrossAccountAccess: %v", result.CrossAccountAccess)
 			t.Logf("EvaluationDetails: %s", result.EvaluationDetails)
 			t.Logf("PolicyResult: %+v", result.PolicyResult)
 
 			assert.Equal(t, tt.wantAllowed, result.Allowed,
-				"For same-account AssumeRole, access should only be allowed when BOTH "+
-					"identity policy grants sts:AssumeRole AND trust policy allows the principal")
+				"same-account AssumeRole: allowed iff the trust directly names the principal's exact ARN, "+
+					"OR identity grants sts:AssumeRole AND the trust allows the principal")
 		})
 	}
 }
@@ -1476,88 +1597,88 @@ func TestPolicyEvaluator_SameAccountAssumeRole_WithGaadFlow(t *testing.T) {
 
 	// Create a GAAD with the real structure
 	gaad := types.NewAuthorizationAccountDetails("", nil, nil, []types.RoleDetail{
-			{
-				Arn:      attackerRoleArn,
-				RoleName: "privesc-method24-sts-assumerole-attacker-55gvbw",
-				AssumeRolePolicyDocument: types.Policy{
-					Version: "2012-10-17",
-					Statement: &types.PolicyStatementList{
-						{
-							Effect: "Allow",
-							Principal: &types.Principal{
-								AWS: types.NewDynaString([]string{"arn:aws:iam::" + accountID + ":user/weili-sandbox"}),
-							},
-							Action: types.NewDynaString([]string{"sts:AssumeRole"}),
-						},
-					},
-				},
-				RolePolicyList: []types.InlinePolicy{
+		{
+			Arn:      attackerRoleArn,
+			RoleName: "privesc-method24-sts-assumerole-attacker-55gvbw",
+			AssumeRolePolicyDocument: types.Policy{
+				Version: "2012-10-17",
+				Statement: &types.PolicyStatementList{
 					{
-						PolicyName: "privesc-method24-assumerole-policy",
-						PolicyDocument: types.Policy{
-							Version: "2012-10-17",
-							Statement: &types.PolicyStatementList{
-								{
-									Effect:   "Allow",
-									Action:   types.NewDynaString([]string{"sts:AssumeRole"}),
-									Resource: types.NewDynaString([]string{assumableAdminRoleArn, restrictedRoleArn}),
-								},
+						Effect: "Allow",
+						Principal: &types.Principal{
+							AWS: types.NewDynaString([]string{"arn:aws:iam::" + accountID + ":user/weili-sandbox"}),
+						},
+						Action: types.NewDynaString([]string{"sts:AssumeRole"}),
+					},
+				},
+			},
+			RolePolicyList: []types.InlinePolicy{
+				{
+					PolicyName: "privesc-method24-assumerole-policy",
+					PolicyDocument: types.Policy{
+						Version: "2012-10-17",
+						Statement: &types.PolicyStatementList{
+							{
+								Effect:   "Allow",
+								Action:   types.NewDynaString([]string{"sts:AssumeRole"}),
+								Resource: types.NewDynaString([]string{assumableAdminRoleArn, restrictedRoleArn}),
 							},
 						},
 					},
 				},
 			},
-			{
-				Arn:      restrictedRoleArn,
-				RoleName: "privesc-method24-test-restricted-role-55gvbw",
-				AssumeRolePolicyDocument: types.Policy{
-					Version: "2012-10-17",
-					Statement: &types.PolicyStatementList{
-						{
-							Effect: "Allow",
-							Principal: &types.Principal{
-								// ONLY allows decoy role, NOT attacker role
-								AWS: types.NewDynaString([]string{decoyRoleArn}),
-							},
-							Action: types.NewDynaString([]string{"sts:AssumeRole"}),
+		},
+		{
+			Arn:      restrictedRoleArn,
+			RoleName: "privesc-method24-test-restricted-role-55gvbw",
+			AssumeRolePolicyDocument: types.Policy{
+				Version: "2012-10-17",
+				Statement: &types.PolicyStatementList{
+					{
+						Effect: "Allow",
+						Principal: &types.Principal{
+							// ONLY allows decoy role, NOT attacker role
+							AWS: types.NewDynaString([]string{decoyRoleArn}),
 						},
+						Action: types.NewDynaString([]string{"sts:AssumeRole"}),
 					},
 				},
 			},
-			{
-				Arn:      assumableAdminRoleArn,
-				RoleName: "privesc-shared-assumable-admin-role-55gvbw",
-				AssumeRolePolicyDocument: types.Policy{
-					Version: "2012-10-17",
-					Statement: &types.PolicyStatementList{
-						{
-							Effect: "Allow",
-							Principal: &types.Principal{
-								// Allows anyone in the account via :root
-								AWS: types.NewDynaString([]string{"arn:aws:iam::" + accountID + ":root"}),
-							},
-							Action: types.NewDynaString([]string{"sts:AssumeRole"}),
+		},
+		{
+			Arn:      assumableAdminRoleArn,
+			RoleName: "privesc-shared-assumable-admin-role-55gvbw",
+			AssumeRolePolicyDocument: types.Policy{
+				Version: "2012-10-17",
+				Statement: &types.PolicyStatementList{
+					{
+						Effect: "Allow",
+						Principal: &types.Principal{
+							// Allows anyone in the account via :root
+							AWS: types.NewDynaString([]string{"arn:aws:iam::" + accountID + ":root"}),
 						},
+						Action: types.NewDynaString([]string{"sts:AssumeRole"}),
 					},
 				},
 			},
-			{
-				Arn:      decoyRoleArn,
-				RoleName: "privesc-method24-decoy-trusted-role-55gvbw",
-				AssumeRolePolicyDocument: types.Policy{
-					Version: "2012-10-17",
-					Statement: &types.PolicyStatementList{
-						{
-							Effect: "Allow",
-							Principal: &types.Principal{
-								AWS: types.NewDynaString([]string{"arn:aws:iam::" + accountID + ":root"}),
-							},
-							Action: types.NewDynaString([]string{"sts:AssumeRole"}),
+		},
+		{
+			Arn:      decoyRoleArn,
+			RoleName: "privesc-method24-decoy-trusted-role-55gvbw",
+			AssumeRolePolicyDocument: types.Policy{
+				Version: "2012-10-17",
+				Statement: &types.PolicyStatementList{
+					{
+						Effect: "Allow",
+						Principal: &types.Principal{
+							AWS: types.NewDynaString([]string{"arn:aws:iam::" + accountID + ":root"}),
 						},
+						Action: types.NewDynaString([]string{"sts:AssumeRole"}),
 					},
 				},
 			},
-		}, nil)
+		},
+	}, nil)
 
 	// Use NewPolicyData which calls AddResourcePolicies() - this is the real flow
 	policyData := NewPolicyData(gaad, nil, nil, nil)

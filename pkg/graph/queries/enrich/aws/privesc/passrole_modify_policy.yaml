@@ -10,10 +10,12 @@ description: |
   Because the attacker grants the privilege via the policy write, the role BECOMES
   privileged, so a privileged-target guard is intentionally NOT applied (it would suppress
   true positives). A usable assumption path is required so the granted privilege is
-  reachable: the role must EITHER be directly assumable by the attacker (CAN_ASSUME) OR
-  trust a consuming service the attacker passes it to (the role has at least one trusted
-  service principal). Guards: admin-as-source and self-target exclusion, Role-only target
-  scoping, and exclusion of service-linked roles (policy writes are blocked on SLRs).
+  reachable: the role must EITHER be directly assumable by the attacker (the validated
+  STS_ASSUMEROLE base edge, which the evaluator emits for identity-grant + trust, OR for an
+  exact-ARN direct trust) OR trust a consuming service
+  the attacker passes it to (the role has at least one trusted service principal). Guards:
+  admin-as-source and self-target exclusion, Role-only target scoping, and exclusion of
+  service-linked roles (policy writes are blocked on SLRs).
 severity: high
 order: 100
 cypher: |
@@ -22,9 +24,11 @@ cypher: |
   //   - admin-as-source exclusion; self-target exclusion (casing-safe coalesce).
   //   - require the :Role label (Put/AttachRolePolicy only apply to roles).
   //   - exclude service-linked roles (policy writes blocked on SLRs).
-  //   - require a usable assumption path so the granted privilege is reachable: a direct
-  //     CAN_ASSUME trust edge, OR a consuming service to pass the role to (trusted_services
-  //     non-empty). PassRole to a role no service can run is not escalation.
+  //   - require a usable assumption path so the granted privilege is reachable: the
+  //     validated STS_ASSUMEROLE base edge to the role (identity-grant + trust, OR exact-ARN
+  //     direct trust), OR a consuming
+  //     service to pass the role to (trusted_services non-empty). PassRole to a role no
+  //     service can run is not escalation.
   //   - do NOT apply privileged-target guard: the attacker writes the privilege in.
   MATCH (attacker:Principal)-[modify]->(target:Role)
   WHERE type(modify) IN ['IAM_PUTROLEPOLICY', 'IAM_ATTACHROLEPOLICY']
@@ -33,7 +37,7 @@ cypher: |
     AND NOT coalesce(target.Arn, target.arn) CONTAINS ':role/aws-service-role/'
     AND EXISTS { (attacker)-[pr]->(target) WHERE type(pr) = 'IAM_PASSROLE' }
     AND (
-      EXISTS { (attacker)-[:CAN_ASSUME]->(target) }
+      EXISTS { (attacker)-[:STS_ASSUMEROLE]->(target) }
       OR size(coalesce(target.trusted_services, [])) > 0
     )
   WITH DISTINCT attacker, target

@@ -39,15 +39,16 @@ import (
 type targetKind int
 
 const (
-	tgtNone                targetKind = iota // method must emit NO edge for this attacker (FP / no-op)
-	tgtSelf                                  // self-escalation: attacker -> attacker
-	tgtAdminRole                             // trust-backed direct takeover: the :root-trusted admin role
-	tgtServiceRole                           // new-passrole: the service-trusted admin role (keyed by svcKey)
-	tgtComputeRole                           // existing-compute HAS_ROLE: the compute admin exec role
-	tgtPrivUser                              // principal-access: the privileged user (HAS a console profile)
-	tgtNoProfileUser                         // principal-access: the privileged user with NO console profile
-	tgtAttackerTrustedRole                   // trust-mismatch: the admin role whose trust names the attacker
-	tgtStub                                  // service-wildcard / changeset fail-open: any edge for the method
+	tgtNone                 targetKind = iota // method must emit NO edge for this attacker (FP / no-op)
+	tgtSelf                                   // self-escalation: attacker -> attacker
+	tgtAdminRole                              // trust-backed direct takeover: the :root-trusted admin role
+	tgtServiceRole                            // new-passrole: the service-trusted admin role (keyed by svcKey)
+	tgtComputeRole                            // existing-compute HAS_ROLE: the compute admin exec role
+	tgtPrivUser                               // principal-access: the privileged user (HAS a console profile)
+	tgtNoProfileUser                          // principal-access: the privileged user with NO console profile
+	tgtAttackerTrustedRole                    // trust-mismatch: the admin role whose trust names the attacker
+	tgtDirectTrustAdminRole                   // F6: admin role whose trust DIRECTLY names the attacker's exact ARN (no identity grant)
+	tgtStub                                   // service-wildcard / changeset fail-open: any edge for the method
 )
 
 // labCase is one pathfinding.cloud-style scenario.
@@ -147,12 +148,18 @@ var labCases = []labCase{
 	{"iam_put_role_policy", m("iam_put_role_policy"), true, tgtAdminRole, "", tierCommon, "PutRolePolicy + assumable (:root trust) admin role"},
 	{"iam_attach_role_policy", m("iam_attach_role_policy"), true, tgtAdminRole, "", tierCommon, "AttachRolePolicy + assumable admin role"},
 	{"iam_update_assume_role_policy", m("iam_update_assume_role_policy"), true, tgtAdminRole, "", tierCommon, "UpdateAssumeRolePolicy on the admin role"},
-	// Trust-mismatch matrix, trusts-:root-same-account cell = TP: the admin role trusts :root, so
-	// every same-account principal gets CAN_ASSUME → sts_assume_role fires.
-	{"sts_assume_role", m("sts_assume_role"), true, tgtAdminRole, "", tierCommon, "AssumeRole + :root trust → CAN_ASSUME to admin role"},
+	// Trust-mismatch matrix, trusts-:root-same-account cell = TP: the admin role trusts :root and
+	// the attacker holds sts:AssumeRole, so the IAM evaluator emits STS_ASSUMEROLE → admin role
+	// (identity AND trust) → sts_assume_role fires.
+	{"sts_assume_role", m("sts_assume_role"), true, tgtAdminRole, "", tierCommon, "AssumeRole + :root trust → validated STS_ASSUMEROLE to admin role"},
 	// Trust-mismatch matrix, trusts-attacker-explicitly cell = TP: the admin role's trust policy
-	// NAMES this attacker → CAN_ASSUME → sts_assume_role fires to that role.
-	{"sts_assume_attacker_trusted", m("sts_assume_role"), true, tgtAttackerTrustedRole, "", tierCommon, "AssumeRole + a role whose trust names the attacker → CAN_ASSUME to the attacker-trusted admin role"},
+	// NAMES this attacker and the attacker holds sts:AssumeRole → STS_ASSUMEROLE → sts_assume_role
+	// fires to that role.
+	{"sts_assume_attacker_trusted", m("sts_assume_role"), true, tgtAttackerTrustedRole, "", tierCommon, "AssumeRole + a role whose trust names the attacker → validated STS_ASSUMEROLE to the attacker-trusted admin role"},
+	// F6 HEADLINE: the attacker holds NO sts:AssumeRole grant (only benign sts:GetCallerIdentity) but is
+	// DIRECTLY NAMED by exact ARN in direct_trust_admin_role's trust → the evaluator emits a validated
+	// STS_ASSUMEROLE edge PURELY from same-account exact-ARN direct trust → sts_assume_role fires (TP).
+	{"sts_assume_direct_trust", m("sts_assume_role"), true, tgtDirectTrustAdminRole, "", tierCommon, "F6: exact-ARN DIRECT TRUST with NO identity grant → validated STS_ASSUMEROLE → CAN_PRIVESC{sts:AssumeRole} to the direct-trust admin role"},
 	{"passrole_modify_policy", m("passrole_modify_policy"), true, tgtAdminRole, "", tierCommon, "PassRole + AttachRolePolicy on the admin role"},
 	{"update_assume_role_passrole_service", m("update_assume_role_passrole_service"), true, tgtAdminRole, "", tierCommon, "UpdateAssumeRolePolicy + PassRole on the admin role"},
 
@@ -319,20 +326,21 @@ var labCases = []labCase{
 	{"fp_passrole_nonpriv_target", m("iam_pass_role_lambda"), false, tgtNone, "", tierCommon, "target-not-privileged: PassRole scoped to a lambda-trusting but NON-privileged role → must NOT fire"},
 	{"fp_accesskey_nonpriv", m("iam_create_access_key"), false, tgtNone, "", tierCommon, "target-not-privileged: CreateAccessKey+DeleteAccessKey but the only reachable user is non-privileged"},
 
-	// trust-policy-mismatch — trust-backed direct-takeover FPs (no usable CAN_ASSUME path to
-	// the modify target): iam_attach_role_policy / iam_put_role_policy require BOTH a
-	// usable assume path (CAN_ASSUME) to the victim AND the modify-permission edge to the SAME
-	// victim. The attacker scopes its modify permission to a decoy role it CANNOT assume, so neither
-	// the decoy (modify yes, no CAN_ASSUME) nor the :root-trusted admin_target (CAN_ASSUME yes, but
-	// the modify edge does not point at it) matches → 0 edges. Each pairs with its TP twin above
-	// (iam_attach_role_policy / iam_put_role_policy on admin_target, where both legs coincide).
-	// (L) — needs the live trust extraction. NOTE: sts_assume_role has NO sound scoped FP in this
-	// fixture — its guard accepts ANY sts:AssumeRole edge (EXISTS, not victim-scoped) plus a
-	// CAN_ASSUME, and admin_target trusts :root so every attacker holding sts:AssumeRole genuinely
-	// escalates to it (a real TP, not an FP). See dev-summary.
-	// service-only trust: the role trusts ONLY a service principal → no CAN_ASSUME for any attacker.
-	{"fp_attachrolepolicy_service_only", m("iam_attach_role_policy"), false, tgtNone, "", tierCommon, "trust-policy-mismatch: AttachRolePolicy scoped to a service-only-trusted role (no CAN_ASSUME to it) → must NOT fire"},
-	// not-assumable: the decoy trusts a DIFFERENT principal (the non-priv user) → no CAN_ASSUME.
+	// trust-policy-mismatch — trust-backed direct-takeover FPs (no usable assume path to the
+	// modify target): iam_attach_role_policy / iam_put_role_policy require BOTH the validated
+	// STS_ASSUMEROLE base edge (identity AND trust) to the victim AND the modify-permission edge to
+	// the SAME victim. The attacker scopes its modify permission to a decoy role it CANNOT assume,
+	// so neither the decoy (modify yes, no STS_ASSUMEROLE — trust does not allow the attacker) nor
+	// the :root-trusted admin_target (STS_ASSUMEROLE yes, but the modify edge does not point at it)
+	// matches → 0 edges. Each pairs with its TP twin above (iam_attach_role_policy /
+	// iam_put_role_policy on admin_target, where both legs coincide).
+	// NOTE: sts_assume_role has NO sound scoped FP in this fixture — under F4 it gates directly on
+	// the STS_ASSUMEROLE edge to the victim, and admin_target trusts :root so every attacker
+	// holding sts:AssumeRole genuinely escalates to it (a real TP, not an FP). See dev-summary.
+	// service-only trust: the role trusts ONLY a service principal → trust does not allow any
+	// attacker → the evaluator emits NO STS_ASSUMEROLE edge to it.
+	{"fp_attachrolepolicy_service_only", m("iam_attach_role_policy"), false, tgtNone, "", tierCommon, "trust-policy-mismatch: AttachRolePolicy scoped to a service-only-trusted role (no STS_ASSUMEROLE to it) → must NOT fire"},
+	// not-assumable: the decoy trusts a DIFFERENT principal (the non-priv user) → no STS_ASSUMEROLE.
 	{"fp_putrolepolicy_not_assumable", m("iam_put_role_policy"), false, tgtNone, "", tierCommon, "trust-policy-mismatch: PutRolePolicy scoped to a role the attacker can't assume (trust names someone else) → must NOT fire"},
 
 	// self-escalation FPs: the named guard is the SOLE reason each is suppressed; each pairs with a
@@ -430,16 +438,17 @@ func peMethodLiteral(methodID string) (string, bool) {
 
 // fixtureFacts holds the resolved fixture ARNs the case table needs.
 type fixtureFacts struct {
-	attackerARNs           map[string]string // attackerKey -> ARN (common + full merged)
-	serviceAdminARNs       map[string]string // svcKey -> ARN (common + full merged)
-	adminTargetARN         string
-	computeAdminARN        string
-	privUserARN            string
-	noProfileUserARN       string   // privileged user with NO console profile (iam_create_login_profile TP target)
-	attackerTrustedRoleARN string   // admin role whose trust names the attacker (trusts-attacker-explicitly TP)
-	prefix                 string   // this fixture's "aur-pf-<id>" name prefix (scopes the no-fan-out guard)
-	accountID              string   // the fixture's AWS account id (distinguishes real vs synthetic 000000000000)
-	decoyARNs              []string // FP decoy role ARNs (legitimately modifiable role targets)
+	attackerARNs            map[string]string // attackerKey -> ARN (common + full merged)
+	serviceAdminARNs        map[string]string // svcKey -> ARN (common + full merged)
+	adminTargetARN          string
+	computeAdminARN         string
+	privUserARN             string
+	noProfileUserARN        string   // privileged user with NO console profile (iam_create_login_profile TP target)
+	attackerTrustedRoleARN  string   // admin role whose trust names the attacker (trusts-attacker-explicitly TP)
+	directTrustAdminRoleARN string   // F6: admin role whose trust DIRECTLY names the no-grant attacker's exact ARN
+	prefix                  string   // this fixture's "aur-pf-<id>" name prefix (scopes the no-fan-out guard)
+	accountID               string   // the fixture's AWS account id (distinguishes real vs synthetic 000000000000)
+	decoyARNs               []string // FP decoy role ARNs (legitimately modifiable role targets)
 	// Privileged-USER FP targets. These are the per-method FP victims (no-profile / two-keys), but
 	// they are ADMIN users, so a broad-resource principal-access TP attacker (e.g.
 	// iam:CreateAccessKey/CreateLoginProfile on "*") can legitimately reach the one whose own
@@ -469,6 +478,8 @@ func (f fixtureFacts) targetARN(tc labCase) string {
 		return f.noProfileUserARN
 	case tgtAttackerTrustedRole:
 		return f.attackerTrustedRoleARN
+	case tgtDirectTrustAdminRole:
+		return f.directTrustAdminRoleARN
 	default:
 		return ""
 	}
@@ -500,21 +511,29 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 	}
 
 	facts := fixtureFacts{
-		attackerARNs:           fixture.OutputMap("attacker_arns"),
-		serviceAdminARNs:       fixture.OutputMap("service_admin_arns"),
-		adminTargetARN:         fixture.Output("admin_target_arn"),
-		computeAdminARN:        fixture.Output("compute_admin_arn"),
-		privUserARN:            fixture.Output("priv_user_arn"),
-		noProfileUserARN:       fixture.Output("noprofile_user_arn"),
-		attackerTrustedRoleARN: fixture.Output("attacker_trusted_role_arn"),
-		prefix:                 fixture.Output("prefix"),
-		accountID:              fixture.Output("account_id"),
+		attackerARNs:            fixture.OutputMap("attacker_arns"),
+		serviceAdminARNs:        fixture.OutputMap("service_admin_arns"),
+		adminTargetARN:          fixture.Output("admin_target_arn"),
+		computeAdminARN:         fixture.Output("compute_admin_arn"),
+		privUserARN:             fixture.Output("priv_user_arn"),
+		noProfileUserARN:        fixture.Output("noprofile_user_arn"),
+		attackerTrustedRoleARN:  fixture.Output("attacker_trusted_role_arn"),
+		directTrustAdminRoleARN: fixture.Output("direct_trust_admin_role_arn"),
+		prefix:                  fixture.Output("prefix"),
+		accountID:               fixture.Output("account_id"),
 		// Admin/decoy roles no per-case TP points at but a broad-Resource attacker (e.g.
 		// iam:UpdateAssumeRolePolicy on "*") can legitimately reach, so they belong in the
 		// no-fan-out allowlist. Includes the FP-category decoys and the Federated-trust cognito
 		// role (a frozen-query known gap, not a passrole TP target — see the cognito labCase).
 		decoyARNs: []string{
 			fixture.Output("trust_mismatch_target_arn"),
+			// trust_mismatch_decoy role: belongs here because it receives the broad role-fan-out
+			// CAN_PRIVESC edges that land on every modifiable/service-trusted role —
+			// iam_update_assume_role_policy (medium), passrole_modify_policy (high, via its
+			// trusted_services=[ec2.amazonaws.com] service-trust OR-leg), and
+			// update_assume_role_passrole_service (medium) — the SAME edge classes already accepted
+			// for the sibling no-fan-out decoy roles wrong_service_target / service_only_trust_role.
+			fixture.Output("trust_mismatch_decoy_arn"),
 			fixture.Output("wrong_service_target_arn"),
 			fixture.Output("nonpriv_lambda_target_arn"),
 			fixture.Output("service_only_trust_role_arn"),
@@ -974,6 +993,83 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 	t.Run("global_no_cartesian_fanout", func(t *testing.T) {
 		assertTargetAllowlist(t, ctx, db, facts)
 	})
+
+	// --- Step 7 (F4): CAN_ASSUME is gone + graph-density log ---
+	// F4 deleted the trust-only CAN_ASSUME creator enrichers and re-gated the four assume-based
+	// privesc methods onto the validated STS_ASSUMEROLE base edge (identity AND trust, emitted by
+	// the IAM evaluator). The CAN_ASSUME relationship type must no longer appear anywhere in the
+	// graph, and removing the :root CAN_ASSUME fan-out should reduce (or not increase) density.
+	t.Run("f4_no_can_assume_edges", func(t *testing.T) {
+		n := countEdges(t, ctx, db,
+			`MATCH ()-[r:CAN_ASSUME]->() RETURN count(r) AS n`, nil)
+		assert.Zero(t, n,
+			"[F4] CAN_ASSUME edges must be absent from the live graph (the trust-only creator enrichers were deleted), got %d", n)
+	})
+
+	t.Run("f4_graph_density_log", func(t *testing.T) {
+		totalRels := countEdges(t, ctx, db, `MATCH ()-[r]->() RETURN count(r) AS n`, nil)
+		totalCanPrivesc := countEdges(t, ctx, db, `MATCH ()-[r:CAN_PRIVESC]->() RETURN count(r) AS n`, nil)
+		totalStsAssume := countEdges(t, ctx, db, `MATCH ()-[r:STS_ASSUMEROLE]->() RETURN count(r) AS n`, nil)
+		fixtureCanPrivesc := countEdges(t, ctx, db,
+			`MATCH (a:Principal)-[r:CAN_PRIVESC]->()
+			 WHERE a.Arn STARTS WITH 'arn:aws:iam:' AND a.Arn CONTAINS $prefix
+			 RETURN count(r) AS n`,
+			map[string]any{"prefix": facts.prefix})
+		t.Logf("[F4 DENSITY] total relationships=%d, total CAN_PRIVESC=%d (fixture attackers=%d), total STS_ASSUMEROLE=%d, CAN_ASSUME=0",
+			totalRels, totalCanPrivesc, fixtureCanPrivesc, totalStsAssume)
+	})
+
+	// --- Step 8 (F6): exact-ARN DIRECT-TRUST STS_ASSUMEROLE accuracy ---
+	// F6 makes the IAM evaluator emit a validated STS_ASSUMEROLE edge for a SAME-ACCOUNT exact-ARN
+	// direct trust WITHOUT an identity grant (`:root`/wildcard still require the grant, correlated
+	// to the same statement). The sts_assume_direct_trust attacker holds ONLY benign
+	// sts:GetCallerIdentity (NO sts:AssumeRole) and is DIRECTLY NAMED by exact ARN in
+	// direct_trust_admin_role's trust. These subtests prove BOTH the producer path (the validated
+	// edge forms purely from the direct trust) AND that the `:root` boundary the F4 FP removed stays
+	// removed (a no-grant principal gets NO validated edge to a `:root`-only role).
+	t.Run("f6_direct_trust_assumerole_edge", func(t *testing.T) {
+		attacker := facts.attackerARNs["sts_assume_direct_trust"]
+		require.NotEmpty(t, attacker, "fixture must expose the sts_assume_direct_trust attacker")
+		require.NotEmpty(t, facts.directTrustAdminRoleARN, "fixture must output direct_trust_admin_role_arn")
+		// PRODUCER PROOF: the validated STS_ASSUMEROLE base edge must exist from the no-grant attacker
+		// to the direct-trust admin role — emitted by the evaluator from the exact-ARN direct trust ALONE.
+		n := countEdges(t, ctx, db,
+			`MATCH (a:Principal)-[r:STS_ASSUMEROLE]->(v)
+			 WHERE (a.Arn = $att OR a.arn = $att) AND (v.Arn = $role OR v.arn = $role)
+			 RETURN count(r) AS n`,
+			map[string]any{"att": attacker, "role": facts.directTrustAdminRoleARN})
+		assert.Positive(t, n,
+			"[F6 PRODUCER] no validated STS_ASSUMEROLE edge from the no-grant attacker %s to the exact-ARN "+
+				"direct-trust admin role %s — the evaluator did NOT emit the edge from the direct trust",
+			attacker, facts.directTrustAdminRoleARN)
+	})
+
+	t.Run("f6_no_grant_root_only_role_no_edge", func(t *testing.T) {
+		// FP-BOUNDARY (the F4 `:root` FP must stay removed): the SAME no-grant attacker must NOT get a
+		// validated STS_ASSUMEROLE edge to a `:root`-only-trusting role (admin_target), and therefore no
+		// CAN_PRIVESC{sts:AssumeRole} to it. `:root`/wildcard trust still requires the identity grant the
+		// attacker lacks, so the broad same-account-`:root` fan-out F4 removed does not creep back in.
+		attacker := facts.attackerARNs["sts_assume_direct_trust"]
+		require.NotEmpty(t, attacker, "fixture must expose the sts_assume_direct_trust attacker")
+		require.NotEmpty(t, facts.adminTargetARN, "fixture must output admin_target_arn (:root-only role)")
+		nEdge := countEdges(t, ctx, db,
+			`MATCH (a:Principal)-[r:STS_ASSUMEROLE]->(v)
+			 WHERE (a.Arn = $att OR a.arn = $att) AND (v.Arn = $role OR v.arn = $role)
+			 RETURN count(r) AS n`,
+			map[string]any{"att": attacker, "role": facts.adminTargetARN})
+		assert.Zero(t, nEdge,
+			"[F6 FP] no-grant attacker %s got a validated STS_ASSUMEROLE edge to the :root-only role %s — "+
+				"the F4 :root fan-out FP has crept back (exact-ARN-only relaxation must exclude :root/wildcard)",
+			attacker, facts.adminTargetARN)
+		nPrivesc := countEdges(t, ctx, db,
+			`MATCH (a:Principal)-[r:CAN_PRIVESC {method:'sts:AssumeRole'}]->(v)
+			 WHERE (a.Arn = $att OR a.arn = $att) AND (v.Arn = $role OR v.arn = $role)
+			 RETURN count(r) AS n`,
+			map[string]any{"att": attacker, "role": facts.adminTargetARN})
+		assert.Zero(t, nPrivesc,
+			"[F6 FP] no-grant attacker %s got CAN_PRIVESC{sts:AssumeRole} to the :root-only role %s — the F4 :root FP is back",
+			attacker, facts.adminTargetARN)
+	})
 }
 
 // assertTP verifies a TP case emits ≥1 CAN_PRIVESC edge to the expected target node (identity,
@@ -1043,10 +1139,11 @@ func assertTargetAllowlist(t *testing.T, ctx context.Context, db graph.GraphData
 	t.Helper()
 	require.NotEmpty(t, facts.prefix, "fixture prefix must be set to scope the no-fan-out guard")
 	allow := map[string]bool{
-		facts.adminTargetARN:         true,
-		facts.computeAdminARN:        true,
-		facts.privUserARN:            true,
-		facts.attackerTrustedRoleARN: true, // the trusts-attacker-explicitly TP role (sts_assume_attacker_trusted)
+		facts.adminTargetARN:          true,
+		facts.computeAdminARN:         true,
+		facts.privUserARN:             true,
+		facts.attackerTrustedRoleARN:  true, // the trusts-attacker-explicitly TP role (sts_assume_attacker_trusted)
+		facts.directTrustAdminRoleARN: true, // F6: the exact-ARN direct-trust TP role (sts_assume_direct_trust)
 	}
 	for _, arn := range facts.serviceAdminARNs {
 		allow[arn] = true

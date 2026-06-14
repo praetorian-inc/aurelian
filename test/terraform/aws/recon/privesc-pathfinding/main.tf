@@ -89,9 +89,9 @@ locals {
 # Shared targets
 # -----------------------------------------------------------------------------
 
-# Admin role trusted by the account root → extract_role_trust_relationships builds a
-# CAN_ASSUME edge from every same-account principal holding sts:AssumeRole. The escalation
-# target for the trust-backed direct-takeover methods (sts_assume_role, iam_put_role_policy,
+# Admin role trusted by the account root → every same-account principal holding sts:AssumeRole
+# gets a validated STS_ASSUMEROLE edge to it (the evaluator emits it from identity AND trust).
+# The escalation target for the trust-backed direct-takeover methods (sts_assume_role, iam_put_role_policy,
 # iam_attach_role_policy, passrole_modify_policy) and the privileged-target for
 # iam_update_assume_role_policy / update_assume_role_passrole_service.
 resource "aws_iam_role" "admin_target" {
@@ -338,9 +338,49 @@ resource "aws_iam_user_group_membership" "fp_adduser_nonpriv_group" {
   groups = [aws_iam_group.admin_group.name]
 }
 
-# DECOY: a role whose trust names a DIFFERENT principal (the non-priv user), not :root and
-# not the attacker → no CAN_ASSUME is built for an arbitrary attacker. Backs the AssumeRole
-# trust-policy-mismatch FP. It is admin so the FP is purely about TRUST, not privilege.
+# A DECOY ROLE that exists ONLY to be the IAM principal named in trust_mismatch_target's trust
+# below (so that trust names a REAL same-account principal — keeping the FP exercising the
+# "trust names a different principal than the attacker" case, not just a service-only trust).
+# It is a ROLE, not a user, on purpose: under F6 it gains a validated STS_ASSUMEROLE edge to the
+# admin trust_mismatch_target purely from the exact-ARN direct trust → it becomes _is_privileged.
+# That privilege is HARMLESS here because:
+#   - The broad principal-access methods (iam_create_access_key / iam_create_login_profile) gate on
+#     target ARN CONTAINS ':user/', so they CANNOT target a role — a privileged role is not a
+#     principal-access target.
+#   - This role's OWN trust is a BENIGN service principal (ec2.amazonaws.com), not :root and not any
+#     attacker, so the IAM evaluator emits NO inbound STS_ASSUMEROLE edge for any attacker → the
+#     STS_ASSUMEROLE-gated role methods (iam_put_role_policy / iam_attach_role_policy) cannot draw a
+#     CAN_PRIVESC edge into it either.
+# Its only OUTBOUND CAN_PRIVESC is the legit CAN_PRIVESC{sts:AssumeRole} -> trust_mismatch_target
+# (a real F6 direct-trust path; that target is already no-fan-out allowlisted).
+# Its INBOUND CAN_PRIVESC edges are the broad role-fan-out edges that land on EVERY modifiable /
+# privileged role — because it is _is_privileged (the outbound F6 edge above) AND carries a non-empty
+# service trust (trusted_services=[ec2.amazonaws.com]):
+#   - iam_update_assume_role_policy (MEDIUM — fails open on privilege; privileged target → medium),
+#   - passrole_modify_policy (HIGH — its service-trust OR-leg is satisfied by trusted_services=[ec2]),
+#   - update_assume_role_passrole_service (MEDIUM — privileged target + PassRole).
+# These are the SAME broad role-fan-out edge classes already accepted for the sibling decoy roles
+# wrong_service_target and service_only_trust_role, which is WHY this role is added to the test's
+# decoyARNs allowlist (no-fan-out-allowlisted decoy targets, not masking a real finding). It holds NO
+# policies.
+resource "aws_iam_role" "trust_mismatch_decoy" {
+  name = "${local.prefix}-trust-mismatch-decoy"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { Service = "ec2.amazonaws.com" }
+    }]
+  })
+  tags = local.tags
+}
+
+# DECOY: a role whose trust names ONLY the trust_mismatch_decoy ROLE (not :root and not any
+# attacker) → no STS_ASSUMEROLE edge is emitted for an arbitrary attacker (the trust does not
+# allow them). Backs the AssumeRole trust-policy-mismatch FP (fp_putrolepolicy_not_assumable): a
+# PutRolePolicy attacker scoped to this role has the modify edge but no assume path, so the method
+# must NOT fire. It is admin so the FP is purely about TRUST, not privilege.
 resource "aws_iam_role" "trust_mismatch_target" {
   name = "${local.prefix}-trust-mismatch"
   assume_role_policy = jsonencode({
@@ -348,7 +388,7 @@ resource "aws_iam_role" "trust_mismatch_target" {
     Statement = [{
       Effect    = "Allow"
       Action    = "sts:AssumeRole"
-      Principal = { AWS = aws_iam_user.nonpriv_user.arn }
+      Principal = { AWS = aws_iam_role.trust_mismatch_decoy.arn }
     }]
   })
   tags = local.tags
@@ -379,11 +419,11 @@ resource "aws_iam_role_policy_attachment" "wrong_service_target" {
 }
 
 # DECOY: an admin role whose trust names ONLY a service principal (lambda) — never :root and
-# never an attacker user. extract_role_trust_relationships builds a CAN_ASSUME edge only when the
-# trust doc names the principal's ARN or the account :root, so NO attacker gets a CAN_ASSUME to
-# this role. Backs the iam_attach_role_policy trust-backed FP: an attacker scoping AttachRolePolicy
-# to this role has the modify edge but no CAN_ASSUME path, so the method must NOT fire. It is admin
-# so the suppression is purely about the missing assume path, not target privilege.
+# never an attacker user. The evaluator emits an STS_ASSUMEROLE edge only when the role's trust
+# allows the principal AND the principal holds sts:AssumeRole, so NO attacker gets an
+# STS_ASSUMEROLE edge to this role. Backs the iam_attach_role_policy trust-backed FP: an attacker
+# scoping AttachRolePolicy to this role has the modify edge but no assume path, so the method must
+# NOT fire. It is admin so the suppression is purely about the missing assume path, not target privilege.
 resource "aws_iam_role" "service_only_trust_role" {
   name = "${local.prefix}-service-only-trust"
   assume_role_policy = jsonencode({
@@ -401,10 +441,10 @@ resource "aws_iam_role_policy_attachment" "service_only_trust_role" {
   policy_arn = local.admin_policy
 }
 
-# An admin role whose trust policy EXPLICITLY names the attacker_trusted attacker user's ARN, so
-# extract_role_trust_relationships builds a CAN_ASSUME edge from that attacker to this role. Paired
-# with the attacker holding sts:AssumeRole scoped to it → sts_assume_role fires (TP), completing
-# the trust-mismatch matrix's "trusts-attacker-explicitly = TP" cell.
+# An admin role whose trust policy EXPLICITLY names the attacker_trusted attacker user's ARN, and
+# that attacker holds sts:AssumeRole scoped to it → the evaluator emits a validated STS_ASSUMEROLE
+# edge from that attacker to this role → sts_assume_role fires (TP), completing the
+# trust-mismatch matrix's "trusts-attacker-explicitly = TP" cell.
 resource "aws_iam_role" "attacker_trusted_role" {
   name = "${local.prefix}-attacker-trusted"
   assume_role_policy = jsonencode({
@@ -419,6 +459,29 @@ resource "aws_iam_role" "attacker_trusted_role" {
 }
 resource "aws_iam_role_policy_attachment" "attacker_trusted_role" {
   role       = aws_iam_role.attacker_trusted_role.name
+  policy_arn = local.admin_policy
+}
+
+# F6: an admin role whose trust policy DIRECTLY names the sts_assume_direct_trust attacker's exact
+# ARN. That attacker holds NO sts:AssumeRole grant — same-account exact-ARN trust is sufficient
+# ALONE (AWS allows the assumption with no identity entitlement), so the evaluator emits a validated
+# STS_ASSUMEROLE edge from the direct trust → sts_assume_role fires (TP) PURELY from the direct-trust
+# path. This is the new direct-trust e2e scenario; it does not disturb admin_target (:root trust) or
+# attacker_trusted_role (trust + grant).
+resource "aws_iam_role" "direct_trust_admin_role" {
+  name = "${local.prefix}-direct-trust-admin"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { AWS = aws_iam_user.attacker["sts_assume_direct_trust"].arn }
+    }]
+  })
+  tags = local.tags
+}
+resource "aws_iam_role_policy_attachment" "direct_trust_admin_role" {
+  role       = aws_iam_role.direct_trust_admin_role.name
   policy_arn = local.admin_policy
 }
 
@@ -836,18 +899,32 @@ locals {
     iam_update_login_profile = [{ actions = ["iam:UpdateLoginProfile"], resources = ["*"] }]
 
     # ---- IAM trust-backed direct takeover (target = :root-trusted admin role) ----
-    iam_put_role_policy                 = [{ actions = ["iam:PutRolePolicy", "sts:AssumeRole"], resources = ["*"] }]
-    iam_attach_role_policy              = [{ actions = ["iam:AttachRolePolicy", "sts:AssumeRole"], resources = ["*"] }]
-    iam_update_assume_role_policy       = [{ actions = ["iam:UpdateAssumeRolePolicy"], resources = ["*"] }]
-    sts_assume_role                     = [{ actions = ["sts:AssumeRole"], resources = ["*"] }]
-    passrole_modify_policy              = [{ actions = ["iam:PassRole", "iam:AttachRolePolicy", "iam:UpdateAssumeRolePolicy"], resources = ["*"] }]
+    iam_put_role_policy           = [{ actions = ["iam:PutRolePolicy", "sts:AssumeRole"], resources = ["*"] }]
+    iam_attach_role_policy        = [{ actions = ["iam:AttachRolePolicy", "sts:AssumeRole"], resources = ["*"] }]
+    iam_update_assume_role_policy = [{ actions = ["iam:UpdateAssumeRolePolicy"], resources = ["*"] }]
+    sts_assume_role               = [{ actions = ["sts:AssumeRole"], resources = ["*"] }]
+    # passrole_modify_policy modifies the role's policy AND must be able to USE the role. The
+    # admin_target trusts only :root (no service), so the only usable assume path is sts:AssumeRole —
+    # the evaluator emits the validated STS_ASSUMEROLE edge from this grant + the :root trust, which
+    # the enricher's assume-gate requires. (Twin of the iam_put_role_policy / iam_attach_role_policy
+    # attackers above, which also carry sts:AssumeRole.)
+    passrole_modify_policy              = [{ actions = ["iam:PassRole", "iam:AttachRolePolicy", "iam:UpdateAssumeRolePolicy", "sts:AssumeRole"], resources = ["*"] }]
     update_assume_role_passrole_service = [{ actions = ["iam:UpdateAssumeRolePolicy", "iam:PassRole"], resources = ["*"] }]
 
-    # Trust-mismatch matrix: a role that EXPLICITLY names this attacker in its trust policy →
-    # extract_role_trust_relationships builds a CAN_ASSUME edge → sts_assume_role fires (TP) to that
-    # role. The ":root-trusted same-account = TP" matrix cell is already covered by the
-    # sts_assume_role attacker above (admin_target trusts :root). sts:AssumeRole is on "*" (the
-    # method requires the permission via EXISTS against any target plus the CAN_ASSUME trust edge).
+    # F6 direct-trust path: this attacker has NO sts:AssumeRole grant (and no other privesc-relevant
+    # identity perm) — only a benign read. It is DIRECTLY NAMED by ARN in direct_trust_admin_role's
+    # trust policy below. Same-account exact-ARN trust is sufficient ALONE (AWS allows the assumption
+    # with no identity grant), so the evaluator emits a validated STS_ASSUMEROLE edge purely from the
+    # direct trust → sts_assume_role fires (TP) to direct_trust_admin_role. Exercises ONLY the F6
+    # direct-trust path (distinct from sts_assume_role, which relies on a grant + :root trust, and
+    # from sts_assume_attacker_trusted, which has BOTH a trust naming it AND a grant).
+    sts_assume_direct_trust = [{ actions = ["sts:GetCallerIdentity"], resources = ["*"] }]
+
+    # Trust-mismatch matrix: a role that EXPLICITLY names this attacker in its trust policy, paired
+    # with sts:AssumeRole on it → the evaluator emits a validated STS_ASSUMEROLE edge → sts_assume_role
+    # fires (TP) to that role. The ":root-trusted same-account = TP" matrix cell is already covered by
+    # the sts_assume_role attacker above (admin_target trusts :root). sts:AssumeRole is on "*" (the
+    # method joins the STS_ASSUMEROLE edge, which already encodes identity AND trust, to the victim).
     sts_assume_attacker_trusted = [{ actions = ["sts:AssumeRole"], resources = ["*"] }]
 
     # ---- New-passrole + create compute (target = service-trusted admin role) ----
@@ -1001,27 +1078,30 @@ locals {
     fp_accesskey_nonpriv = [{ actions = ["iam:CreateAccessKey", "iam:DeleteAccessKey"], resources = [aws_iam_user.nonpriv_user.arn] }]
 
     # ---- Trust-backed direct-takeover FPs ----
-    # iam_attach_role_policy / iam_put_role_policy require BOTH a CAN_ASSUME path to the victim AND
-    # the modify-permission edge to the SAME victim. AttachRolePolicy / PutRolePolicy are SCOPED to a
-    # decoy role the attacker CANNOT assume (no CAN_ASSUME built for it), so the modify edge points
-    # only at the un-assumable decoy → neither leg coincides on any role → 0 edges. Removing the
-    # CAN_ASSUME requirement would let the method fire on the decoy (proving the FP is sound). Twins:
-    # the iam_attach_role_policy / iam_put_role_policy attackers above fire on the :root-trusted
-    # admin_target (both legs coincide there).
+    # iam_attach_role_policy / iam_put_role_policy require BOTH a validated STS_ASSUMEROLE edge to the
+    # victim AND the modify-permission edge to the SAME victim. AttachRolePolicy / PutRolePolicy are
+    # SCOPED to a decoy role the attacker CANNOT assume (the evaluator emits no STS_ASSUMEROLE edge to
+    # it), so the modify edge points only at the un-assumable decoy → neither leg coincides on any
+    # role → 0 edges. Removing the assume-path requirement would let the method fire on the decoy
+    # (proving the FP is sound). Twins: the iam_attach_role_policy / iam_put_role_policy attackers
+    # above fire on the :root-trusted admin_target (both legs coincide there).
     #
     # NOTE — NO sound sts_assume_role / iam_update_assume_role_policy scoped FP exists in this
-    # fixture: sts_assume_role accepts ANY sts:AssumeRole edge (EXISTS, not victim-scoped) plus a
-    # CAN_ASSUME, and admin_target trusts :root, so every attacker holding sts:AssumeRole genuinely
-    # escalates to admin_target (a real TP). iam_update_assume_role_policy rewrites the role's trust
-    # to insert the attacker (self-sufficient, no CAN_ASSUME precondition), so a service-only-trusted
-    # role is still a genuine takeover (TP). Both are reported, not authored as unsound FPs.
+    # fixture: sts_assume_role now joins the validated STS_ASSUMEROLE edge directly to the victim
+    # (the edge already encodes identity AND trust), and admin_target trusts :root, so every attacker
+    # holding sts:AssumeRole genuinely escalates to admin_target (a real TP). iam_update_assume_role_policy
+    # rewrites the role's trust to insert the attacker (self-sufficient, no pre-existing assume-path
+    # precondition), so a service-only-trusted role is still a genuine takeover (TP). Both are reported,
+    # not authored as unsound FPs.
 
-    # service-only trust: the role trusts ONLY the lambda service (no :root, no attacker) → no
-    # CAN_ASSUME built → AttachRolePolicy scoped to it cannot land on an assumable role.
+    # service-only trust: the role trusts ONLY the lambda service (no :root, no attacker) → the
+    # evaluator emits no STS_ASSUMEROLE edge to it → AttachRolePolicy scoped to it cannot land on an
+    # assumable role.
     fp_attachrolepolicy_service_only = [{ actions = ["iam:AttachRolePolicy"], resources = [aws_iam_role.service_only_trust_role.arn] }]
 
-    # not-assumable: the decoy trusts a DIFFERENT principal (the non-priv user), not :root and not
-    # this attacker → no CAN_ASSUME → PutRolePolicy scoped to it cannot land on an assumable role.
+    # not-assumable: trust_mismatch_target trusts ONLY the trust_mismatch_decoy ROLE, not :root and
+    # not this attacker → no STS_ASSUMEROLE edge for this attacker → PutRolePolicy scoped to it
+    # cannot land on an assumable role.
     fp_putrolepolicy_not_assumable = [{ actions = ["iam:PutRolePolicy"], resources = [aws_iam_role.trust_mismatch_target.arn] }]
 
     # ---- Self-escalation FPs ----

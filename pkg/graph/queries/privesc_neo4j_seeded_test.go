@@ -55,9 +55,10 @@ const (
 //     method keys off (all on the same `svc`/`policy`/`user` nodes so multi-perm methods that
 //     require co-resident actions on one node are satisfied).
 //   - adminRole (:Role:Principal, _is_admin): trusts ALL relevant service principals, has an
-//     InstanceProfileList, is SSM-enabled, is CAN_ASSUME-reachable from the attacker, and is the
-//     IAM_PASSROLE target. It is the correct edge target for new-passrole, trust-backed, and
-//     existing-compute (HAS_ROLE) methods.
+//     InstanceProfileList, is SSM-enabled, is STS_ASSUMEROLE-reachable from the attacker (the
+//     validated identity-AND-trust assume edge the IAM evaluator emits), and is the IAM_PASSROLE
+//     target. It is the correct edge target for new-passrole, trust-backed, and existing-compute
+//     (HAS_ROLE) methods.
 //   - one :Resource per _resourceType used by an existing-compute method, each HAS_ROLE->adminRole.
 //   - privUser (:User:Principal, _is_admin): the scoped target of iam:CreateAccessKey /
 //     Create/UpdateLoginProfile, with the paired (DeleteAccessKey / Create<->Update) edge.
@@ -124,9 +125,12 @@ func sharedPrivescSeed() string {
 		WITH a, adminRole, privUser, noProfileUser, privGroup, joinGroup, policy, svc, wildcard, stack,
 			cfnStack, cfnStackSet, cbProject, glueEndpoint, glueJob, appRunner,
 			ecsTaskDef, sfnMachine, smNotebook, ec2Instance, batchJobDef, codeInterp
-		// adminRole reachability: attacker can both pass it and assume it.
+		// adminRole reachability: attacker can both pass it and assume it. The assume path is the
+		// validated STS_ASSUMEROLE base edge (identity AND trust), which is exactly what the four
+		// re-gated assume-based methods (sts_assume_role / iam_put_role_policy /
+		// iam_attach_role_policy / passrole_modify_policy) now gate on — directly to THE victim role.
 		MERGE (a)-[:IAM_PASSROLE]->(adminRole)
-		MERGE (a)-[:CAN_ASSUME]->(adminRole)
+		MERGE (a)-[:STS_ASSUMEROLE]->(adminRole)
 		// Existing-compute resources all run as the privileged adminRole. svc itself carries
 		// HAS_ROLE too, so methods that bind their HAS_ROLE join FROM the permission-edge
 		// target (lambda_*, apprunner_update_service, stepfunctions_update) resolve the role.
@@ -169,7 +173,10 @@ func sharedPrivescSeed() string {
 		// same-target UpdateLoginProfile proxy edge points at the SAME node.
 		MERGE (a)-[:IAM_CREATELOGINPROFILE]->(noProfileUser)
 		MERGE (a)-[:IAM_UPDATELOGINPROFILE]->(noProfileUser)
-		// sts:AssumeRole (paired with the CAN_ASSUME trust edge above).
+		// A STS_ASSUMEROLE edge to the svc :Resource stub (NOT a :Principal/:Role): retained as a
+		// negative control — the re-gated assume methods MATCH (victim:Principal)/(victim:Role), so
+		// this resource-targeted edge produces NO spurious CAN_PRIVESC. The real assume target is
+		// adminRole via the STS_ASSUMEROLE edge above.
 		MERGE (a)-[:STS_ASSUMEROLE]->(svc)
 		// CloudFormation change-set: both actions on the SAME stub.
 		MERGE (a)-[:CLOUDFORMATION_CREATECHANGESET]->(stack)
@@ -587,7 +594,7 @@ func TestEnrichAWSPrivescEndToEnd(t *testing.T) {
 // principal-to-principal chains detectable by the analysis query, using the CORRECTED
 // (scoped) method behavior — no method fans out to every principal.
 //
-// Chain: mid --[iam_put_role_policy: CAN_ASSUME + PutRolePolicy on the SAME role]--> admin.
+// Chain: mid --[iam_put_role_policy: STS_ASSUMEROLE + PutRolePolicy on the SAME role]--> admin.
 // low self-escalates via iam_create_policy_version (a self-loop), which must NOT fan out.
 //
 // admin-source-or-middle boundary: the no-fan-out subtests (create_policy_version_no_fanout
@@ -619,9 +626,10 @@ func TestPrivescMultiHopPaths(t *testing.T) {
 		//      → SELF-LOOP CAN_PRIVESC(low → low) (corrected self-escalation, no fan-out).
 		MERGE (low)-[:IAM_CREATEPOLICYVERSION]->(policy)
 
-		// mid: trust-backed direct takeover of admin — mid can assume admin AND write an
-		//      inline policy onto it (iam_put_role_policy, corrected) → CAN_PRIVESC(mid → admin).
-		MERGE (mid)-[:CAN_ASSUME]->(admin)
+		// mid: trust-backed direct takeover of admin — mid can assume admin (validated
+		//      STS_ASSUMEROLE base edge: identity AND trust) AND write an inline policy onto it
+		//      (iam_put_role_policy, corrected) → CAN_PRIVESC(mid → admin).
+		MERGE (mid)-[:STS_ASSUMEROLE]->(admin)
 		MERGE (mid)-[:IAM_PUTROLEPOLICY]->(admin)
 	`, nil)
 	require.NoError(t, err, "seed multi-hop graph")
@@ -658,7 +666,7 @@ func TestPrivescMultiHopPaths(t *testing.T) {
 		require.NoError(t, err)
 		n, _ := toInt64(result.Records[0]["n"])
 		assert.GreaterOrEqual(t, int(n), 1,
-			"mid → admin direct 1-hop via iam_put_role_policy (trust-backed: CAN_ASSUME + PutRolePolicy on admin)")
+			"mid → admin direct 1-hop via iam_put_role_policy (trust-backed: STS_ASSUMEROLE + PutRolePolicy on admin)")
 	})
 
 	t.Run("mid_does_not_fan_out", func(t *testing.T) {
@@ -1054,9 +1062,10 @@ func TestPassRoleServiceFanOutReachesAnalysisQuery(t *testing.T) {
 // hiding the second method; the multi-edge model keeps both, and the rewritten analysis query
 // re-attaches both per hop without re-exploding into separate path rows.
 //
-// Seed: attacker can both assume the admin role (sts:AssumeRole, via CAN_ASSUME +
-// STS_ASSUMEROLE) AND write an inline policy onto it then assume it (iam:PutRolePolicy, via
-// CAN_ASSUME + IAM_PUTROLEPOLICY on the SAME role). Both target the same admin role.
+// Seed: attacker can assume the admin role — the validated STS_ASSUMEROLE base edge (identity
+// AND trust) — which BOTH proven methods now gate on: sts:AssumeRole fires on that edge directly,
+// and iam:PutRolePolicy fires on that edge plus IAM_PUTROLEPOLICY on the SAME role. Both target
+// the same admin role.
 func TestPrivescMultiEdgePerMethod(t *testing.T) {
 	ctx := context.Background()
 
@@ -1076,10 +1085,10 @@ func TestPrivescMultiEdgePerMethod(t *testing.T) {
 		CREATE (admin:Role:Principal {Arn: '%s', _is_admin: true})
 		CREATE (svc:Resource {Arn: '%s'})
 		WITH attacker, admin, svc
-		// CAN_ASSUME trust path to admin (required by both methods).
-		MERGE (attacker)-[:CAN_ASSUME]->(admin)
-		// sts:AssumeRole: independent STS_ASSUMEROLE permission.
-		MERGE (attacker)-[:STS_ASSUMEROLE]->(svc)
+		// Validated STS_ASSUMEROLE base edge to admin (identity AND trust). This single edge is the
+		// gate for BOTH methods: sts:AssumeRole fires on it directly, and iam:PutRolePolicy fires on
+		// it paired with the IAM_PUTROLEPOLICY write below.
+		MERGE (attacker)-[:STS_ASSUMEROLE]->(admin)
 		// iam:PutRolePolicy: write inline policy onto the SAME assumable role.
 		MERGE (attacker)-[:IAM_PUTROLEPOLICY]->(admin)
 	`, attackerARN, adminARN, svcResourceARN), nil)
@@ -1595,11 +1604,11 @@ func TestPrivescEnrichAWSIdempotent(t *testing.T) {
 //
 // Graph:  attacker --[apprunner_create_service scoped]--> intermediate (passed App-Runner role)
 //
-//	intermediate --[iam_put_role_policy: CAN_ASSUME + PutRolePolicy on admin]--> admin
+//	intermediate --[iam_put_role_policy: STS_ASSUMEROLE + PutRolePolicy on admin]--> admin
 //
 // The scoped fix ensures intermediate is a reachable :Principal node, enabling the 2-hop chain.
-// The intermediate→admin hop uses the CORRECTED iam_put_role_policy (trust-backed: a CAN_ASSUME
-// edge plus PutRolePolicy on the SAME admin role), not the old fan-out.
+// The intermediate→admin hop uses the CORRECTED iam_put_role_policy (trust-backed: a validated
+// STS_ASSUMEROLE base edge plus PutRolePolicy on the SAME admin role), not the old fan-out.
 func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 	ctx := context.Background()
 
@@ -1619,8 +1628,9 @@ func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 
 	// intermediate IS the passed role: it trusts App Runner and is privileged, so
 	// apprunner_create_service creates attacker → [CAN_PRIVESC] → intermediate (scoped victim).
-	// intermediate can assume admin AND write a policy onto it, so iam_put_role_policy
-	// creates intermediate → [CAN_PRIVESC] → admin (corrected trust-backed takeover).
+	// intermediate can assume admin (validated STS_ASSUMEROLE base edge: identity AND trust) AND
+	// write a policy onto it, so iam_put_role_policy creates intermediate → [CAN_PRIVESC] → admin
+	// (corrected trust-backed takeover).
 	_, err = db.Query(ctx, fmt.Sprintf(`
 		CREATE (attacker:Principal      {Arn: '%s', _is_admin: false})
 		CREATE (intermediate:Role:Principal {Arn: '%s', _is_admin: false,
@@ -1630,7 +1640,7 @@ func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 		WITH attacker, intermediate, admin, svc
 		MERGE (attacker)-[:IAM_PASSROLE]->(intermediate)
 		MERGE (attacker)-[:APPRUNNER_CREATESERVICE]->(svc)
-		MERGE (intermediate)-[:CAN_ASSUME]->(admin)
+		MERGE (intermediate)-[:STS_ASSUMEROLE]->(admin)
 		MERGE (intermediate)-[:IAM_PUTROLEPOLICY]->(admin)
 	`, attackerARN, interARN, adminARN, svcResourceARN), nil)
 	require.NoError(t, err, "seed multi-hop graph")
@@ -1675,7 +1685,7 @@ func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 
 	t.Run("intermediate_1hop_to_admin", func(t *testing.T) {
 		assert.True(t, found[pathKey{interARN, 1}],
-			"intermediate must reach admin in 1 hop via iam_put_role_policy (trust-backed: CAN_ASSUME + PutRolePolicy on admin)")
+			"intermediate must reach admin in 1 hop via iam_put_role_policy (trust-backed: STS_ASSUMEROLE + PutRolePolicy on admin)")
 	})
 }
 
@@ -1683,8 +1693,14 @@ func TestPrivescMultiHopThroughPassRoleMethod(t *testing.T) {
 // populate the guard inputs the corrected methods depend on:
 //   - set_admin_administrator_access sets _is_admin via JSON-string CONTAINS (the old
 //     ANY(... IN <json string> ...) silently never matched).
-//   - extract_role_trust_relationships emits CAN_ASSUME for explicit-principal trust
-//     AND for account-root trust (arn:aws:iam::<ACCT>:root).
+//   - set_ssm_enabled_roles flags an SSM-capable role from the AmazonSSMManagedInstanceCore
+//     managed policy, and the tightened exact-match trust guard does NOT flag an
+//     ssm-incidents-trusting role.
+//
+// NOTE (F4): the former extract_role_trust_relationships subtests (can_assume_*) were REMOVED.
+// That enricher — the trust-only CAN_ASSUME creator — was DELETED; the assume-based privesc
+// methods now gate on the validated STS_ASSUMEROLE base edge (emitted by the IAM evaluator only
+// when identity AND trust both allow the assumption), so there is no CAN_ASSUME edge to assert.
 func TestPrivescEnrichersPopulate(t *testing.T) {
 	ctx := context.Background()
 
@@ -1700,10 +1716,8 @@ func TestPrivescEnrichersPopulate(t *testing.T) {
 	_, err = db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
 	require.NoError(t, err)
 
-	// adminUser carries AdministratorAccess as a JSON STRING (the real flattened form).
-	// explicitRole's trust doc names the attacker ARN; rootRole's trust doc names the
-	// same-account root; foreignAttacker is in a different account (must NOT get root
-	// trust to rootRole).
+	// adminUser carries AdministratorAccess as a JSON STRING (the real flattened form);
+	// plainUser carries ReadOnlyAccess (must NOT be flagged admin).
 	//
 	// ssmEc2Role is the REAL SSM-managed EC2 instance role (labs ssm-001/002, cspm-ec2-001): it
 	// trusts ec2.amazonaws.com (NOT ssm) and is SSM-capable ONLY via the AmazonSSMManagedInstanceCore
@@ -1717,12 +1731,6 @@ func TestPrivescEnrichersPopulate(t *testing.T) {
 			AttachedManagedPolicies: '[{"PolicyName":"AdministratorAccess","PolicyArn":"arn:aws:iam::aws:policy/AdministratorAccess"}]'})
 		CREATE (plainUser:User:Principal {Arn: 'arn:aws:iam::123456789012:user/plain',
 			AttachedManagedPolicies: '[{"PolicyName":"ReadOnlyAccess","PolicyArn":"arn:aws:iam::aws:policy/ReadOnlyAccess"}]'})
-		CREATE (attacker:User:Principal {Arn: 'arn:aws:iam::123456789012:user/attacker'})
-		CREATE (foreign:User:Principal  {Arn: 'arn:aws:iam::999999999999:user/foreign'})
-		CREATE (explicitRole:Role:Principal {Arn: 'arn:aws:iam::123456789012:role/explicit',
-			AssumeRolePolicyDocument: '{"Statement":[{"Principal":{"AWS":"arn:aws:iam::123456789012:user/attacker"}}]}'})
-		CREATE (rootRole:Role:Principal {Arn: 'arn:aws:iam::123456789012:role/root-trusted',
-			AssumeRolePolicyDocument: '{"Statement":[{"Principal":{"AWS":"arn:aws:iam::123456789012:root"}}]}'})
 		CREATE (ssmAttacker:User:Principal {Arn: 'arn:aws:iam::123456789012:user/ssm-attacker', _is_admin: false})
 		CREATE (ssmEc2Role:Role:Principal {Arn: 'arn:aws:iam::123456789012:role/ssm-ec2-role',
 			_is_admin: true, trusted_services: ['ec2.amazonaws.com'],
@@ -1756,36 +1764,11 @@ func TestPrivescEnrichersPopulate(t *testing.T) {
 		assert.False(t, adm, "_is_admin must NOT be set on a ReadOnlyAccess user")
 	})
 
-	t.Run("can_assume_explicit_principal_trust", func(t *testing.T) {
-		result, err := db.Query(ctx,
-			`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/attacker'})-[:CAN_ASSUME]->(r {Arn: 'arn:aws:iam::123456789012:role/explicit'})
-			 RETURN count(*) AS n`, nil)
-		require.NoError(t, err)
-		n, _ := toInt64(result.Records[0]["n"])
-		assert.GreaterOrEqual(t, int(n), 1, "explicit-principal trust must produce a CAN_ASSUME edge")
-	})
-
-	t.Run("can_assume_account_root_trust", func(t *testing.T) {
-		result, err := db.Query(ctx,
-			`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/attacker'})-[:CAN_ASSUME]->(r {Arn: 'arn:aws:iam::123456789012:role/root-trusted'})
-			 RETURN count(*) AS n`, nil)
-		require.NoError(t, err)
-		n, _ := toInt64(result.Records[0]["n"])
-		assert.GreaterOrEqual(t, int(n), 1,
-			"account-root trust must produce a CAN_ASSUME edge for a same-account principal")
-	})
-
-	t.Run("can_assume_root_trust_scoped_to_same_account", func(t *testing.T) {
-		// A principal in a DIFFERENT account must not get a root-trust CAN_ASSUME edge
-		// to a role whose trust doc only names the role's own account root.
-		result, err := db.Query(ctx,
-			`MATCH (f {Arn: 'arn:aws:iam::999999999999:user/foreign'})-[:CAN_ASSUME]->(r {Arn: 'arn:aws:iam::123456789012:role/root-trusted'})
-			 RETURN count(*) AS n`, nil)
-		require.NoError(t, err)
-		n, _ := toInt64(result.Records[0]["n"])
-		assert.Equal(t, int64(0), n,
-			"cross-account principal must NOT get a root-trust CAN_ASSUME edge (root trust is account-scoped)")
-	})
+	// NOTE (F4): can_assume_* subtests removed — extract_role_trust_relationships (the trust-only
+	// CAN_ASSUME creator) was deleted; assume-based methods now gate on the validated
+	// STS_ASSUMEROLE base edge, which the IAM evaluator emits (identity AND trust). The
+	// same-account / cross-account / explicit-vs-root trust semantics those subtests covered are
+	// now enforced inside the evaluator and exercised by the live e2e (TestPrivescPathfindingCloudE2E).
 
 	t.Run("ssm_enabled_set_via_managed_policy", func(t *testing.T) {
 		// An EC2-trusting role with NO preset _ssm_enabled must be flagged SSM-capable purely from
@@ -1892,7 +1875,13 @@ func TestPrivescNoCartesianFanOut(t *testing.T) {
 	// 20 bystander principals create a population the old cartesian fan-out would
 	// have reached. FP attackers each hold a permission but miss the structural guard:
 	//   fp_cpv (no-usable-resource): CreatePolicyVersion on a policy NOT attached to itself.
-	//   fp_sts (trust-policy-mismatch): STS_ASSUMEROLE with NO CAN_ASSUME trust edge.
+	//   fp_sts (trust-policy-mismatch): holds IAM_PUTROLEPOLICY on a privileged admin role it
+	//           CANNOT assume — NO STS_ASSUMEROLE edge to that role (and the role has no
+	//           trusted_services and no IAM_PASSROLE), and NO STS_ASSUMEROLE edge to any
+	//           Principal at all. Under the F4 gate (assume methods key on the validated
+	//           STS_ASSUMEROLE base edge to the victim), the missing usable assume path is the
+	//           SOLE reason iam_put_role_policy / passrole_modify_policy / sts_assume_role draw
+	//           ZERO edges: writing a policy onto a role you can never enter confers nothing.
 	//   fp_ec2 (trust-policy-mismatch): PassRole (to a privileged role with an instance
 	//           profile) + RunInstances, but the role trusts ONLY lambda.amazonaws.com, not ec2 —
 	//           so the ec2-trust guard is the SOLE reason the edge is suppressed (not a label
@@ -1927,8 +1916,12 @@ func TestPrivescNoCartesianFanOut(t *testing.T) {
 		CREATE (cpv:Principal {Arn: 'arn:aws:iam::123456789012:user/fp_cpv', _is_admin: false})
 		CREATE (cpvPolicy:Resource {Arn: 'arn:aws:iam::123456789012:policy/unattached'})
 		CREATE (sts:Principal {Arn: 'arn:aws:iam::123456789012:user/fp_sts', _is_admin: false})
-		CREATE (stsRole:Principal {Arn: 'arn:aws:iam::123456789012:role/no-trust', _is_admin: true})
-		CREATE (stsRes:Resource {Arn: 'arn:aws:sts::123456789012:role/no-trust'})
+		// stsRole: a PRIVILEGED admin role the attacker can modify (IAM_PUTROLEPOLICY below) but
+		// CANNOT assume — NO STS_ASSUMEROLE edge points at it, it has no trusted_services, and the
+		// attacker holds no IAM_PASSROLE to it. So under the F4 gate the missing usable assume path
+		// is the SOLE reason iam_put_role_policy / passrole_modify_policy emit nothing, and
+		// sts_assume_role finds no STS_ASSUMEROLE->Principal edge for this attacker at all.
+		CREATE (stsRole:Role:Principal {Arn: 'arn:aws:iam::123456789012:role/no-trust', _is_admin: true})
 		CREATE (ec2:Principal {Arn: 'arn:aws:iam::123456789012:user/fp_ec2', _is_admin: false})
 		CREATE (ec2Role:Principal {Arn: 'arn:aws:iam::123456789012:role/lambda-only', _is_admin: true,
 			trusted_services: ['lambda.amazonaws.com'],
@@ -1946,10 +1939,13 @@ func TestPrivescNoCartesianFanOut(t *testing.T) {
 		CREATE (hr:Principal {Arn: 'arn:aws:iam::123456789012:user/fp_hr', _is_admin: false})
 		CREATE (hrFn:Resource {Arn: 'arn:aws:lambda:us-east-1:123456789012:function:unpriv'})
 		CREATE (hrRole:Role:Principal {Arn: 'arn:aws:iam::123456789012:role/unpriv-exec', _is_admin: false})
-		WITH cpv, cpvPolicy, sts, stsRes, ec2, ec2Role, ec2Res, cfn, cfnStackA, cfnStackB,
+		WITH cpv, cpvPolicy, sts, stsRole, ec2, ec2Role, ec2Res, cfn, cfnStackA, cfnStackB,
 			cfnUnprivRole, pr, prRole, prRes, hr, hrFn, hrRole
 		MERGE (cpv)-[:IAM_CREATEPOLICYVERSION]->(cpvPolicy)
-		MERGE (sts)-[:STS_ASSUMEROLE]->(stsRes)
+		// fp_sts: modify perm on an admin role with NO usable assume path (no STS_ASSUMEROLE edge,
+		// no trusted_services, no PassRole) → iam_put_role_policy / passrole_modify_policy /
+		// sts_assume_role all emit ZERO edges under the F4 gate.
+		MERGE (sts)-[:IAM_PUTROLEPOLICY]->(stsRole)
 		MERGE (ec2)-[:IAM_PASSROLE]->(ec2Role)
 		MERGE (ec2)-[:EC2_RUNINSTANCES]->(ec2Res)
 		MERGE (cfn)-[:CLOUDFORMATION_CREATECHANGESET]->(cfnStackA)

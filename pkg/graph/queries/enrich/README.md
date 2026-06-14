@@ -9,8 +9,6 @@ enrich/
 └── aws/
     ├── accounts.yaml                              # Order 0: Account metadata
     ├── resource_to_role.yaml                      # Order 1: EC2/Lambda → Role links
-    ├── extract_role_trust_relationships.yaml      # Order 2: Principal trust extraction
-    ├── extract_role_trusted_services.yaml         # Order 3: Service trust extraction
     ├── iam/
     │   └── link_policies_to_roles.yaml            # Order 4: Policy attachment metadata
     ├── set_admin_administrator_access.yaml        # Order 10: Admin flag (managed policy)
@@ -29,7 +27,7 @@ section below rather than duplicated here.
 
 Queries are executed in ascending `order` field:
 
-1. **Order 0-4**: Base enrichment (metadata, resource links, trust relationships)
+1. **Order 0-4**: Base enrichment (metadata, resource links, policy attachment)
 2. **Order 10-13**: Admin/privilege detection
 3. **Order 100**: Privilege escalation path detection (privesc methods, mutually order-independent)
 
@@ -45,9 +43,10 @@ order 10-13 enrichers having run). Apply these mechanically when fanning out a m
 - **Lateral-vs-admin severity tiering** on the privesc target:
   `severity = 'high'` when `target._is_admin`, `'medium'` when `target._is_privileged`
   (not admin), and SUPPRESS (do not emit) when neither — EXCEPT trust-backed
-  direct-takeover (e.g. `sts:AssumeRole` via a real `CAN_ASSUME` edge), which fails-OPEN
-  (emits even on a sparse target whose privilege is unknown) because the takeover is the
-  finding.
+  direct-takeover (e.g. `sts:AssumeRole` via the validated `STS_ASSUMEROLE` base edge,
+  which the IAM evaluator emits only when identity AND trust both allow the assumption),
+  which fails-OPEN (emits even on a sparse target whose privilege is unknown) because the
+  takeover is the finding.
 - **No APOC**: JSON-string props (`AttachedManagedPolicies`, `InstanceProfileList`,
   `AssumeRolePolicyDocument`) are matched with `CONTAINS`, never parsed.
 
@@ -60,7 +59,7 @@ id: aws/enrich/category/name
 name: Human-Readable Name
 platform: aws
 type: enrich
-category: metadata|admin-detection|privesc|ssm|trust-extraction|resource-to-role|iam
+category: metadata|admin-detection|privesc|ssm|resource-to-role|iam
 description: |
   Multi-line description of what this query detects.
 severity: info|low|medium|high|critical
@@ -75,7 +74,6 @@ cypher: |
 
 - **metadata**: Account-level enrichment
 - **resource-to-role**: Links compute resources to IAM roles
-- **trust-extraction**: Extracts trust relationships from AssumeRolePolicyDocument
 - **iam**: Policy attachment metadata
 - **admin-detection**: Flags principals with admin-level access
 - **ssm**: SSM session manager capability detection
@@ -90,7 +88,10 @@ cypher: |
 - `ServicePrincipal` (AWS service principals)
 
 **Relationship Types:**
-- `CAN_ASSUME` - Trust relationship (principal → role or service → role)
+- `STS_ASSUMEROLE` - Validated assume edge (attacker → role). The IAM evaluator emits it
+  only when the attacker's identity policy grants `sts:AssumeRole` on the role AND the
+  role's trust policy allows the attacker, so it already encodes identity ∧ trust; no
+  separate trust-only edge is needed.
 - `HAS_ROLE` - Resource assignment (EC2/Lambda → role)
 - `CAN_PRIVESC` - Privilege escalation path (attacker → victim). Multi-edge: `method`
   is part of the edge identity, so each distinct attack method between the same

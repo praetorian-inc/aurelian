@@ -133,6 +133,16 @@ output "admin_group_arn" {
 output "trust_mismatch_target_arn" {
   value = aws_iam_role.trust_mismatch_target.arn
 }
+
+# The benign-service-trusted ROLE named in trust_mismatch_target's trust. No attacker can assume it
+# (its own trust is ec2.amazonaws.com only), so it never receives an STS_ASSUMEROLE edge. Being
+# _is_privileged with a non-empty service trust, it does receive the broad role-fan-out CAN_PRIVESC
+# edges that hit every modifiable/privileged role — iam_update_assume_role_policy (medium),
+# passrole_modify_policy (high), update_assume_role_passrole_service (medium) — the same edge classes
+# already accepted for the sibling decoy roles, so it belongs in the no-fan-out decoyARNs allowlist.
+output "trust_mismatch_decoy_arn" {
+  value = aws_iam_role.trust_mismatch_decoy.arn
+}
 output "wrong_service_target_arn" {
   value = aws_iam_role.wrong_service_target.arn
 }
@@ -140,16 +150,31 @@ output "nonpriv_lambda_target_arn" {
   value = aws_iam_role.nonpriv_lambda_target.arn
 }
 
-# Admin decoy that trusts ONLY a service principal (no :root, no attacker) → no CAN_ASSUME built
-# → the trust-backed direct-takeover FPs (AttachRolePolicy/AssumeRole scoped to it) must not fire.
+# Admin decoy that trusts ONLY a service principal (no :root, no attacker) → no attacker gets an
+# STS_ASSUMEROLE edge to it → the trust-backed direct-takeover FPs (AttachRolePolicy/AssumeRole
+# scoped to it) must not fire.
 output "service_only_trust_role_arn" {
   value = aws_iam_role.service_only_trust_role.arn
 }
 
-# Admin role whose trust EXPLICITLY names the sts_assume_attacker_trusted attacker → CAN_ASSUME is
-# built → sts_assume_role fires (TP). Completes the trust-mismatch matrix's trusts-attacker cell.
+# Admin role whose trust EXPLICITLY names the sts_assume_attacker_trusted attacker → that attacker,
+# holding sts:AssumeRole, gets a validated STS_ASSUMEROLE edge → sts_assume_role fires (TP).
+# Completes the trust-mismatch matrix's trusts-attacker cell.
 output "attacker_trusted_role_arn" {
   value = aws_iam_role.attacker_trusted_role.arn
+}
+
+# F6: the no-grant attacker that is DIRECTLY NAMED in direct_trust_admin_role's trust policy. With
+# NO sts:AssumeRole identity grant, the validated STS_ASSUMEROLE edge forms purely from the exact-ARN
+# direct trust → sts_assume_role fires (TP) to direct_trust_admin_role.
+output "sts_assume_direct_trust_attacker_arn" {
+  value = aws_iam_user.attacker["sts_assume_direct_trust"].arn
+}
+
+# F6: the admin role whose trust DIRECTLY names the sts_assume_direct_trust attacker's exact ARN.
+# The CAN_PRIVESC{sts:AssumeRole} target — add to the no-fan-out allowlist in the Go harness.
+output "direct_trust_admin_role_arn" {
+  value = aws_iam_role.direct_trust_admin_role.arn
 }
 
 # Customer-managed policy ARNs for the policy-version methods. These must be seeded as RICH nodes
@@ -248,10 +273,12 @@ output "all_arns" {
       aws_iam_group.admin_group.arn,
       aws_iam_group.member_group.arn,
       aws_iam_role.trust_mismatch_target.arn,
+      aws_iam_role.trust_mismatch_decoy.arn,
       aws_iam_role.wrong_service_target.arn,
       aws_iam_role.nonpriv_lambda_target.arn,
       aws_iam_role.service_only_trust_role.arn,
       aws_iam_role.attacker_trusted_role.arn,
+      aws_iam_role.direct_trust_admin_role.arn,
       aws_iam_role.cognito_admin.arn,
       aws_iam_policy.custom.arn,
       aws_iam_policy.single_ver.arn,
