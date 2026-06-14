@@ -38,7 +38,12 @@ func TestRiskFromRecord(t *testing.T) {
 			"target_arn":        "arn:aws:iam::111:role/admin",
 			"methods":           []any{"iam:PassRole+lambda:CreateFunction", "iam:CreateAccessKey"},
 			"method_severities": []any{"high", "low"},
-			"hop_count":         int64(2),
+			// methods_per_hop: every parallel method available per hop (multigraph collapse).
+			"methods_per_hop": []any{
+				[]any{"iam:PassRole+lambda:CreateFunction", "iam:PassRole+ec2:RunInstances"},
+				[]any{"iam:CreateAccessKey"},
+			},
+			"hop_count": int64(2),
 		}
 
 		risk, ok := riskFromRecord(rec)
@@ -51,16 +56,21 @@ func TestRiskFromRecord(t *testing.T) {
 			risk.DeduplicationID)
 
 		var ctx struct {
-			AttackerARN  string   `json:"attacker_arn"`
-			TargetARN    string   `json:"target_arn"`
-			Methods      []string `json:"methods"`
-			HopCount     int64    `json:"hop_count"`
-			PathSeverity string   `json:"path_severity"`
+			AttackerARN   string     `json:"attacker_arn"`
+			TargetARN     string     `json:"target_arn"`
+			Methods       []string   `json:"methods"`
+			MethodsPerHop [][]string `json:"methods_per_hop"`
+			HopCount      int64      `json:"hop_count"`
+			PathSeverity  string     `json:"path_severity"`
 		}
 		require.NoError(t, json.Unmarshal(risk.Context, &ctx))
 		assert.Equal(t, "arn:aws:iam::111:user/attacker", ctx.AttackerARN)
 		assert.Equal(t, "arn:aws:iam::111:role/admin", ctx.TargetARN)
 		assert.Equal(t, []string{"iam:PassRole+lambda:CreateFunction", "iam:CreateAccessKey"}, ctx.Methods)
+		assert.Equal(t, [][]string{
+			{"iam:PassRole+lambda:CreateFunction", "iam:PassRole+ec2:RunInstances"},
+			{"iam:CreateAccessKey"},
+		}, ctx.MethodsPerHop)
 		assert.Equal(t, int64(2), ctx.HopCount)
 		assert.Equal(t, "high", ctx.PathSeverity)
 	})

@@ -291,7 +291,11 @@ func RoleReferenceFromProperties(props map[string]any, typeName string) string {
 		if roleArn, ok := props["Role"].(string); ok {
 			return roleArn
 		}
-	case "AWS::EC2::Instance":
+	case "AWS::EC2::Instance", "AWS::EC2::LaunchTemplate":
+		// A launch template references the role its instances run as via an instance
+		// profile (ARN or name), exactly like an EC2 instance, so both resolve to the role
+		// through the same instance-profile -> role match against the role's
+		// InstanceProfileList.
 		if profile, ok := props["IamInstanceProfile"].(string); ok {
 			return profile
 		}

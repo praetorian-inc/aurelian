@@ -4,47 +4,120 @@ platform: aws
 type: analysis
 category: privesc-analysis
 description: |
-  Identifies principals that can escalate to admin privileges through
-  CAN_PRIVESC relationships. Maps privilege escalation chains of 1-3 hops
-  from non-admin principals to admin targets. CAN_PRIVESC is a multi-edge
-  relationship (one edge per method), so a single (attacker, target) pair may
-  yield several distinct method-paths — each is surfaced separately via the
-  per-hop `methods` sequence.
+  Identifies non-admin principals that can escalate to admin privileges through
+  CAN_PRIVESC relationships, in 1, 2 or 3 hops. CAN_PRIVESC is a MULTIGRAPH (one
+  edge per escalation method), so a single (src, dst) pair may carry many parallel
+  method-edges. This query finds reachability over the DISTINCT node tuple (one
+  finding per node-path, NOT one per method-combination) and re-attaches, per hop,
+  every method available for that hop (`methods_per_hop`) plus a deterministic
+  representative method (`methods`) and the most-severe severity (`method_severities`).
 severity: high
 order: 2
 cypher: |
-  // Each CAN_PRIVESC edge carries a `method`; with multi-edge relationships a pair
-  // may be reachable by several methods, so we enumerate the per-hop method sequence
-  // and dedup on the (attacker, target, methods) tuple to surface distinct method-paths.
+  // PERFORMANCE / CORRECTNESS rewrite (replaces a single `CAN_PRIVESC*1..3` + post-WHERE).
   //
-  // Path-explosion guardrail: *1..3 over parallel per-method edges can multiply paths
-  // combinatorially. We ORDER BY deterministically (shortest first, then ARNs/methods)
-  // and LIMIT 2000 so a pathological graph is bounded and any truncation is stable and
-  // reproducible — not a silent random drop. 2000 comfortably covers every realistic
-  // admin-reachable method-path in a single account scan.
+  // Two structural problems the old `MATCH path = (a)-[:CAN_PRIVESC*1..3]->(t)` had on a
+  // dense multigraph (15k+ edges, 3.3–14 parallel method-edges per pair, ~890 out-degree):
   //
-  // Terminate-at-first-admin: a path A→AdminMid→AdminTarget is redundant — once A reaches the
-  // admin AdminMid the escalation is COMPLETE, so continuing on to AdminTarget would distort
-  // ranking and double-count the same compromise. Every INTERMEDIATE node (path[1..-1],
-  // excluding the non-admin attacker source and the admin target endpoint) must be NON-admin, so
-  // the walk stops at the first admin reached. The real A→AdminMid escalation is itself returned
-  // (as a hop-1 path with no intermediates); only the pass-through-an-admin CONTINUATION is
-  // dropped. FAIL-OPEN: a node missing _is_admin coalesces to false (treated as non-admin), so
-  // pre-enricher graphs are unaffected.
-  MATCH path = (attacker:Principal)-[:CAN_PRIVESC*1..3]->(target:Principal)
-  WHERE coalesce(target._is_admin, false) = true
-    AND coalesce(attacker._is_admin, false) <> true
-    AND coalesce(attacker.Arn, attacker.arn) <> coalesce(target.Arn, target.arn)
-    AND ALL(n IN nodes(path)[1..-1] WHERE coalesce(n._is_admin, false) <> true)
-  WITH coalesce(attacker.Arn, attacker.arn) AS attacker_arn,
-       coalesce(target.Arn, target.arn) AS target_arn,
-       [r IN relationships(path) | r.method] AS methods,
-       [r IN relationships(path) | r.severity] AS method_severities,
-       length(path) AS hops
-  RETURN DISTINCT attacker_arn,
-         target_arn,
-         methods,
-         method_severities,
-         hops AS hop_count
+  //   1. PASS-THROUGH-ADMIN EXPANSION. The variable-length walk materialized EVERY path,
+  //      including those running THROUGH admin intermediates, and only a trailing
+  //      `ALL(n IN nodes(path)[1..-1] ...)` discarded them AFTER enumeration; the planner
+  //      still expanded (and re-expanded) past every admin. Here each fixed-hop block
+  //      constrains every INTERMEDIATE node `_is_admin <> true` INLINE in the WHERE, so the
+  //      planner prunes admins DURING expansion and never walks past the first admin reached.
+  //      The real attacker→firstAdmin escalation is still returned (it is the hop whose
+  //      target is the first admin); only the redundant pass-through-admin CONTINUATION is
+  //      dropped — it would double-count the same compromise and distort hop-count ranking.
+  //
+  //   2. PARALLEL-EDGE MULTIPLICATION. With one edge per method, a 3-hop walk multiplied the
+  //      path count by ~3.3–14× PER HOP (hundreds of millions of materialized paths, each
+  //      carrying its node+relationship list). Here each block `WITH DISTINCT` the node tuple
+  //      FIRST (collapsing parallel method-edges to a single tuple), then RE-ATTACHES the
+  //      per-hop method/severity lists with cheap pattern comprehensions keyed by each
+  //      consecutive (src,dst) pair — so cost scales with DISTINCT node tuples, not with the
+  //      product of parallel edges across hops.
+  //
+  // ORDER BY (shortest first, then ARNs/representative methods) + LIMIT 2000 remain a
+  // deterministic, reproducible backstop. FAIL-OPEN: a node missing `_is_admin` coalesces to
+  // false (treated as non-admin), so pre-enricher graphs are unaffected.
+  //
+  // Output per row (one row per distinct attacker→...→admin node-path):
+  //   attacker_arn, target_arn, hop_count,
+  //   methods           — representative (lexicographically-min) method per hop  (len == hop_count)
+  //   method_severities — most-severe severity per hop                          (len == hop_count)
+  //   methods_per_hop   — list-of-lists: ALL methods available for each hop      (len == hop_count)
+  CALL {
+    // ---- 1 hop: attacker (non-admin) -> target (admin) ----
+    MATCH (attacker:Principal)-[:CAN_PRIVESC]->(target:Principal)
+    WHERE coalesce(attacker._is_admin, false) <> true
+      AND coalesce(target._is_admin, false) = true
+      AND coalesce(attacker.Arn, attacker.arn) <> coalesce(target.Arn, target.arn)
+    WITH DISTINCT attacker, target
+    RETURN coalesce(attacker.Arn, attacker.arn) AS attacker_arn,
+           coalesce(target.Arn, target.arn) AS target_arn,
+           1 AS hop_count,
+           [ [(attacker)-[r:CAN_PRIVESC]->(target) | r.method] ] AS hop_methods,
+           [ [(attacker)-[r:CAN_PRIVESC]->(target) | coalesce(r.severity, 'high')] ] AS hop_severities
+    UNION
+    // ---- 2 hops: attacker (non-admin) -> mid (non-admin) -> target (admin) ----
+    MATCH (attacker:Principal)-[:CAN_PRIVESC]->(mid:Principal)-[:CAN_PRIVESC]->(target:Principal)
+    WHERE coalesce(attacker._is_admin, false) <> true
+      AND coalesce(mid._is_admin, false) <> true
+      AND coalesce(target._is_admin, false) = true
+      AND coalesce(attacker.Arn, attacker.arn) <> coalesce(target.Arn, target.arn)
+      AND coalesce(attacker.Arn, attacker.arn) <> coalesce(mid.Arn, mid.arn)
+      AND coalesce(mid.Arn, mid.arn) <> coalesce(target.Arn, target.arn)
+    WITH DISTINCT attacker, mid, target
+    RETURN coalesce(attacker.Arn, attacker.arn) AS attacker_arn,
+           coalesce(target.Arn, target.arn) AS target_arn,
+           2 AS hop_count,
+           [ [(attacker)-[r:CAN_PRIVESC]->(mid) | r.method],
+             [(mid)-[r:CAN_PRIVESC]->(target) | r.method] ] AS hop_methods,
+           [ [(attacker)-[r:CAN_PRIVESC]->(mid) | coalesce(r.severity, 'high')],
+             [(mid)-[r:CAN_PRIVESC]->(target) | coalesce(r.severity, 'high')] ] AS hop_severities
+    UNION
+    // ---- 3 hops: attacker (non-admin) -> m1 (non-admin) -> m2 (non-admin) -> target (admin) ----
+    MATCH (attacker:Principal)-[:CAN_PRIVESC]->(m1:Principal)-[:CAN_PRIVESC]->(m2:Principal)-[:CAN_PRIVESC]->(target:Principal)
+    WHERE coalesce(attacker._is_admin, false) <> true
+      AND coalesce(m1._is_admin, false) <> true
+      AND coalesce(m2._is_admin, false) <> true
+      AND coalesce(target._is_admin, false) = true
+      AND coalesce(attacker.Arn, attacker.arn) <> coalesce(target.Arn, target.arn)
+      AND coalesce(attacker.Arn, attacker.arn) <> coalesce(m1.Arn, m1.arn)
+      AND coalesce(attacker.Arn, attacker.arn) <> coalesce(m2.Arn, m2.arn)
+      AND coalesce(m1.Arn, m1.arn) <> coalesce(m2.Arn, m2.arn)
+      AND coalesce(m1.Arn, m1.arn) <> coalesce(target.Arn, target.arn)
+      AND coalesce(m2.Arn, m2.arn) <> coalesce(target.Arn, target.arn)
+    WITH DISTINCT attacker, m1, m2, target
+    RETURN coalesce(attacker.Arn, attacker.arn) AS attacker_arn,
+           coalesce(target.Arn, target.arn) AS target_arn,
+           3 AS hop_count,
+           [ [(attacker)-[r:CAN_PRIVESC]->(m1) | r.method],
+             [(m1)-[r:CAN_PRIVESC]->(m2) | r.method],
+             [(m2)-[r:CAN_PRIVESC]->(target) | r.method] ] AS hop_methods,
+           [ [(attacker)-[r:CAN_PRIVESC]->(m1) | coalesce(r.severity, 'high')],
+             [(m1)-[r:CAN_PRIVESC]->(m2) | coalesce(r.severity, 'high')],
+             [(m2)-[r:CAN_PRIVESC]->(target) | coalesce(r.severity, 'high')] ] AS hop_severities
+  }
+  // Reduce the per-hop multigraph fan-out to stable scalars per hop:
+  //   methods[i]           = lexicographically-min method available for hop i (deterministic representative)
+  //   method_severities[i] = most-severe severity available for hop i (low<medium<high)
+  //   methods_per_hop[i]   = de-duplicated list of EVERY method available for hop i
+  WITH attacker_arn, target_arn, hop_count,
+       [hop IN hop_methods |
+         reduce(best = head(hop), m IN hop | CASE WHEN m < best THEN m ELSE best END)
+       ] AS methods,
+       [sevs IN hop_severities |
+         reduce(best = 'low', s IN sevs |
+           CASE
+             WHEN s = 'high' THEN 'high'
+             WHEN s = 'medium' AND best <> 'high' THEN 'medium'
+             ELSE best
+           END)
+       ] AS method_severities,
+       [hop IN hop_methods |
+         reduce(uniq = [], m IN hop | CASE WHEN m IN uniq THEN uniq ELSE uniq + m END)
+       ] AS methods_per_hop
+  RETURN attacker_arn, target_arn, hop_count, methods, method_severities, methods_per_hop
   ORDER BY hop_count ASC, attacker_arn, target_arn, methods
   LIMIT 2000

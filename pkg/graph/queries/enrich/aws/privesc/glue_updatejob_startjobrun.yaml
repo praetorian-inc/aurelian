@@ -4,37 +4,63 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with glue:UpdateJob and glue:StartJobRun that can repoint an EXISTING
-  Glue job at a privileged service role and execute it to escalate privileges. This is an
-  existing-resource takeover: the escalation target is the SERVICE ROLE bound to a Glue job
-  the attacker can modify, reached via the resource_service_role enricher's
-  (Resource{AWS::Glue::Job})-[:HAS_ROLE]->(Role) edge. The HAS_ROLE link is MANDATORY
-  (fail-closed): a Glue job whose service role is not resolvable in the graph (or an account
-  with no Glue jobs at all) is not a usable escalation vehicle, so no edge is emitted -
-  this enforces the FP-catalog method_81 "require at least one existing Glue Job resource"
-  precondition directly, since resource_service_role.yaml DOES tag AWS::Glue::Job nodes.
-  Guard: the target role must be more privileged than the attacker.
+  Detects principals with glue:UpdateJob and glue:StartJobRun that can run a Glue job under a
+  privileged service role and abuse its credentials. TWO escalation vectors are modelled:
+
+  1. Existing-resource takeover: repoint an EXISTING Glue job at a privileged service role and
+     execute it. The escalation target is the SERVICE ROLE bound to a Glue job the attacker can
+     modify, reached via the resource_service_role enricher's
+     (Resource{AWS::Glue::Job})-[:HAS_ROLE]->(Role) edge. The HAS_ROLE link is MANDATORY
+     (fail-closed): a Glue job whose service role is not resolvable in the graph (or an account
+     with no Glue jobs at all) is not a usable escalation vehicle, so no edge is emitted — this
+     enforces the FP-catalog method_81 "require at least one existing Glue Job resource"
+     precondition directly, since resource_service_role.yaml DOES tag AWS::Glue::Job nodes.
+
+  2. New-passrole: the attacker holds iam:PassRole to a privileged glue-trusting
+     role and can author a NEW Glue job under it via UpdateJob+StartJobRun. The escalation target
+     is the PASSED role (reached via IAM_PASSROLE). This branch needs no pre-existing Glue job; it
+     is the canonical passrole escalation, independent of the existing-resource branch.
+
+  Both vectors require the target role to be more privileged than the attacker.
 severity: high
 order: 100
 cypher: |
-  // Existing-resource takeover (D/B.4 + FP catalog method_81): drop the all-principals
-  // fan-out AND the IAM_PASSROLE join. UpdateJob mutates an EXISTING job, so the victim is
-  // the privileged role bound to a Glue job the attacker can update+run, reached via
-  // (Resource{AWS::Glue::Job})-[:HAS_ROLE]->(role). resource_service_role.yaml (order 15)
-  // populates this edge for AWS::Glue::Job, so the catalog's existing-job precondition is
-  // now expressible and gated fail-closed (no job -> no HAS_ROLE -> no edge). The Glue-trust
-  // and service-linked-role guards are implied: a role HAS_ROLE-bound to a live Glue job is
-  // by construction Glue-assumable and not an SLR. Guards: admin-as-source exclusion;
-  // self-target exclusion (cross-label coalesce); privileged-target tiering.
-  MATCH (attacker:Principal)-[update]->()
-  WHERE type(update) = 'GLUE_UPDATEJOB'
-    AND coalesce(attacker._is_admin, false) <> true
-    AND EXISTS { (attacker)-[run]->() WHERE type(run) = 'GLUE_STARTJOBRUN' }
-  WITH DISTINCT attacker
-  MATCH (job:Resource)-[:HAS_ROLE]->(victim:Principal)
-  WHERE job._resourceType = 'AWS::Glue::Job'
-    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
-    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  // Two convergent escalation branches feed a single MERGE (CALL{...UNION...}):
+  //   (1) Existing-resource takeover (D/B.4 + FP catalog method_81): UpdateJob mutates an EXISTING
+  //       job, so the victim is the privileged role bound to a Glue job the attacker can update+run,
+  //       reached via (Resource{AWS::Glue::Job})-[:HAS_ROLE]->(role). resource_service_role.yaml
+  //       (order 15) populates this edge, so the existing-job precondition is gated fail-closed
+  //       (no job -> no HAS_ROLE -> no edge). Glue-trust and SLR guards are implied (a role bound to
+  //       a live Glue job is Glue-assumable and not an SLR).
+  //   (2) New-passrole (lab glue-005): the attacker can pass a privileged glue-trusting role into a
+  //       NEW job authored via UpdateJob+StartJobRun. Victim = the passed role (via IAM_PASSROLE).
+  //       Mirrors iam_pass_role_glue: glue trust + not-SLR + privileged-target. No existing job
+  //       needed, so an unconditional IAM_PASSROLE to an admin role is detected.
+  // Shared guards: admin-as-source exclusion; self-target exclusion (cross-label coalesce);
+  // privileged-target tiering.
+  CALL {
+    MATCH (attacker:Principal)-[update]->()
+    WHERE type(update) = 'GLUE_UPDATEJOB'
+      AND coalesce(attacker._is_admin, false) <> true
+      AND EXISTS { (attacker)-[run]->() WHERE type(run) = 'GLUE_STARTJOBRUN' }
+    WITH DISTINCT attacker
+    MATCH (job:Resource)-[:HAS_ROLE]->(victim:Principal)
+    WHERE job._resourceType = 'AWS::Glue::Job'
+      AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+      AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    RETURN attacker, victim
+    UNION
+    MATCH (attacker:Principal)-[passrole]->(victim:Principal)
+    WHERE type(passrole) = 'IAM_PASSROLE'
+      AND coalesce(attacker._is_admin, false) <> true
+      AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+      AND 'glue.amazonaws.com' IN coalesce(victim.trusted_services, [])
+      AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+      AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+      AND EXISTS { (attacker)-[update]->() WHERE type(update) = 'GLUE_UPDATEJOB' }
+      AND EXISTS { (attacker)-[run]->() WHERE type(run) = 'GLUE_STARTJOBRUN' }
+    RETURN attacker, victim
+  }
   WITH DISTINCT attacker, victim
   MERGE (attacker)-[pe:CAN_PRIVESC {method: 'glue:UpdateJob + glue:StartJobRun'}]->(victim)
   ON CREATE SET pe._created = timestamp()

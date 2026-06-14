@@ -40,6 +40,10 @@ cypher: |
   // Scoped to the resource types whose privesc methods re-point CAN_PRIVESC at the role.
   // Batch::JobDefinition carries JobRoleArn/ExecutionRoleArn; BedrockAgentCore::CodeInterpreter
   // carries ExecutionRoleArn — both land as quoted ARN values in the flattened properties JSON.
+  // Cognito::IdentityPool carries the bound authenticated/unauthenticated role ARN(s), which
+  // also land as quoted ARN values here. EC2::LaunchTemplate is listed for completeness when a
+  // template emits a role ARN directly; its usual instance-profile reference is resolved to the
+  // role by set_launch_template_role.yaml (the InstanceProfileList match), not by this query.
   MATCH (role:Role)
   WHERE coalesce(role.Arn, role.arn) IS NOT NULL
   MATCH (resource:Resource)
@@ -55,7 +59,9 @@ cypher: |
       'AWS::SageMaker::NotebookInstance',
       'AWS::DataPipeline::Pipeline',
       'AWS::Batch::JobDefinition',
-      'AWS::BedrockAgentCore::CodeInterpreter'
+      'AWS::BedrockAgentCore::CodeInterpreter',
+      'AWS::Cognito::IdentityPool',
+      'AWS::EC2::LaunchTemplate'
     ]
     AND resource.properties IS NOT NULL
     AND resource.properties CONTAINS ('"' + coalesce(role.Arn, role.arn) + '"')

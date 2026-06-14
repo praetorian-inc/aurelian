@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/iam"
+	"github.com/praetorian-inc/aurelian/pkg/graph"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 	"github.com/stretchr/testify/assert"
@@ -274,6 +275,172 @@ func TestNodeFromAWSResourcePromotesRoleReference(t *testing.T) {
 		_, present := node.Properties["IamInstanceProfile"]
 		assert.False(t, present, "must not set an empty IamInstanceProfile when none is present")
 	})
+}
+
+// TestProductionLoadPathBuildsComputeNodeWithRole locks down the LIVE neo4j load path:
+// plugin.GraphFormatter.Format builds nodes ONLY from output.AWSIAMResource via
+// NodeFromAWSIAMResource. The graph recon module emits collected compute resources as plain
+// output.AWSResource wrapped with output.FromAWSResource so they match that case. This test
+// drives that exact production transform — FromAWSResource -> NodeFromAWSIAMResource — and
+// asserts each compute type (a) becomes a node with the right _resourceType and (b) carries
+// the role reference where the HAS_ROLE enricher reads it:
+//   - service types (AppRunner / Batch / Bedrock): the role ARN appears as a QUOTED value
+//     inside the flattened `properties` JSON string (resource_service_role.yaml's match).
+//   - Lambda: the role ARN is promoted to a top-level `Role` node prop (resource_to_role.yaml).
+//
+// It guards against a plain AWSResource being dropped before CreateNodes; the integration and
+// seeded-neo4j tests bypass GraphFormatter.Format and so do not exercise this path.
+func TestProductionLoadPathBuildsComputeNodeWithRole(t *testing.T) {
+	const (
+		apprunnerRole = "arn:aws:iam::000000000000:role/pl-apprunner-002-instance-role"
+		batchRole     = "arn:aws:iam::000000000000:role/pl-batch-002-job-role"
+		bedrockRole   = "arn:aws:iam::000000000000:role/pl-bedrock-002-exec-role"
+		lambdaRole    = "arn:aws:iam::000000000000:role/pl-lambda-003-exec-role"
+		cognitoRole   = "arn:aws:iam::000000000000:role/pl-cognito-001-unauth-role"
+	)
+
+	// servicePropertyRole asserts the role ARN appears as a quoted value inside the
+	// flattened `properties` JSON string — exactly what resource_service_role.yaml's
+	// `resource.properties CONTAINS ('"' + role.Arn + '"')` clause matches.
+	servicePropertyRole := func(t *testing.T, node *graph.Node, roleARN string) {
+		t.Helper()
+		props, ok := node.Properties["properties"].(string)
+		require.True(t, ok, "flattened properties must be a JSON string for resource_service_role.yaml to match")
+		assert.Contains(t, props, `"`+roleARN+`"`,
+			"role ARN must appear as a quoted value in the properties JSON for the HAS_ROLE match")
+	}
+
+	tests := []struct {
+		name     string
+		resource output.AWSResource
+		assert   func(t *testing.T, node *graph.Node)
+	}{
+		{
+			name: "AppRunner service",
+			resource: output.AWSResource{
+				ResourceType: "AWS::AppRunner::Service",
+				ARN:          "arn:aws:apprunner:us-east-1:000000000000:service/pl-apprunner-002/abc",
+				AccountRef:   "000000000000",
+				Region:       "us-east-1",
+				Properties:   map[string]any{"InstanceRoleArn": apprunnerRole},
+			},
+			assert: func(t *testing.T, node *graph.Node) { servicePropertyRole(t, node, apprunnerRole) },
+		},
+		{
+			name: "Batch job definition",
+			resource: output.AWSResource{
+				ResourceType: "AWS::Batch::JobDefinition",
+				ARN:          "arn:aws:batch:us-east-1:000000000000:job-definition/pl-batch-002:1",
+				AccountRef:   "000000000000",
+				Region:       "us-east-1",
+				Properties:   map[string]any{"JobRoleArn": batchRole},
+			},
+			assert: func(t *testing.T, node *graph.Node) { servicePropertyRole(t, node, batchRole) },
+		},
+		{
+			name: "Bedrock AgentCore code interpreter",
+			resource: output.AWSResource{
+				ResourceType: "AWS::BedrockAgentCore::CodeInterpreter",
+				ARN:          "arn:aws:bedrock-agentcore:us-east-1:000000000000:code-interpreter/pl-bedrock-002",
+				AccountRef:   "000000000000",
+				Region:       "us-east-1",
+				Properties:   map[string]any{"ExecutionRoleArn": bedrockRole},
+			},
+			assert: func(t *testing.T, node *graph.Node) { servicePropertyRole(t, node, bedrockRole) },
+		},
+		{
+			name: "Lambda function without resource policy",
+			resource: output.AWSResource{
+				ResourceType: "AWS::Lambda::Function",
+				ARN:          "arn:aws:lambda:us-east-1:000000000000:function:pl-lambda-003-target",
+				AccountRef:   "000000000000",
+				Region:       "us-east-1",
+				Properties:   map[string]any{"Role": lambdaRole},
+			},
+			assert: func(t *testing.T, node *graph.Node) {
+				// resource_to_role.yaml reads the TOP-LEVEL promoted Role prop, not properties.
+				assert.Equal(t, lambdaRole, node.Properties["Role"],
+					"Lambda Role must be promoted to a top-level node prop for resource_to_role.yaml")
+			},
+		},
+		{
+			// A launch template references its role via an instance profile (ARN or name),
+			// promoted to a top-level IamInstanceProfile prop so set_launch_template_role.yaml
+			// can match it against the role's InstanceProfileList (same path as an EC2 instance).
+			name: "EC2 launch template",
+			resource: output.AWSResource{
+				ResourceType: "AWS::EC2::LaunchTemplate",
+				ARN:          "arn:aws:ec2:us-east-1:000000000000:launch-template/lt-ec2-005",
+				AccountRef:   "000000000000",
+				Region:       "us-east-1",
+				Properties:   map[string]any{"IamInstanceProfile": "arn:aws:iam::000000000000:instance-profile/lt-ip"},
+			},
+			assert: func(t *testing.T, node *graph.Node) {
+				assert.Equal(t, "arn:aws:iam::000000000000:instance-profile/lt-ip", node.Properties["IamInstanceProfile"],
+					"launch-template IamInstanceProfile must be promoted to a top-level node prop for set_launch_template_role.yaml")
+			},
+		},
+		{
+			// An identity pool binds its role ARN directly (resource_service_role.yaml's
+			// quoted-properties match) and promotes AllowUnauthenticatedIdentities so the
+			// cognito enricher can relax its GetId/GetCredentials guard for unauth pools.
+			name: "Cognito identity pool",
+			resource: output.AWSResource{
+				ResourceType: "AWS::Cognito::IdentityPool",
+				ARN:          "arn:aws:cognito-identity:us-east-1:000000000000:identitypool/us-east-1:pool-1",
+				AccountRef:   "000000000000",
+				Region:       "us-east-1",
+				Properties: map[string]any{
+					"AllowUnauthenticatedIdentities": true,
+					"unauthenticatedRole":            cognitoRole,
+				},
+			},
+			assert: func(t *testing.T, node *graph.Node) {
+				servicePropertyRole(t, node, cognitoRole)
+				assert.Equal(t, true, node.Properties["AllowUnauthenticatedIdentities"],
+					"AllowUnauthenticatedIdentities must be promoted to a top-level node prop for the cognito enricher relax")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Drive the production load path exactly: GraphFormatter.Format wraps the
+			// emitted result and calls NodeFromAWSIAMResource on it.
+			entity := output.FromAWSResource(tt.resource)
+			node := NodeFromAWSIAMResource(entity)
+
+			require.NotNil(t, node, "production load path must produce a node, not drop the resource")
+			assert.Equal(t, tt.resource.ResourceType, node.Properties["_resourceType"])
+			assert.Equal(t, "Resource", node.Properties["_type"])
+			assert.Contains(t, node.Labels, tt.resource.ResourceType)
+			assert.Equal(t, tt.resource.ARN, node.Properties["arn"])
+			tt.assert(t, node)
+		})
+	}
+}
+
+// TestGraphFormatterTypeSwitchContract documents the exact reason the recon module wraps
+// emitted resources: plugin.GraphFormatter.Format selects nodes with a Go type switch on
+// `case output.AWSIAMResource`. A plain output.AWSResource does NOT satisfy that case even
+// though AWSIAMResource embeds it (Go type switches match the dynamic type exactly, not an
+// embedded field), so an unwrapped resource is dropped; the FromAWSResource-wrapped form is
+// matched and loaded. This test fails if that embedding assumption ever changes.
+func TestGraphFormatterTypeSwitchContract(t *testing.T) {
+	plain := output.AWSResource{ResourceType: "AWS::Batch::JobDefinition", ARN: "arn:aws:batch:us-east-1:000000000000:job-definition/x:1"}
+
+	// Mirror GraphFormatter.Format's selection contract over model.AurelianModel values.
+	matched := func(v any) bool {
+		switch v.(type) {
+		case output.AWSIAMResource:
+			return true
+		default:
+			return false
+		}
+	}
+
+	assert.False(t, matched(plain), "plain AWSResource must NOT match the load path's AWSIAMResource case, so an unwrapped resource is dropped")
+	assert.True(t, matched(output.FromAWSResource(plain)), "FromAWSResource-wrapped resource must match so it loads as a node")
 }
 
 func TestNodeFromServicePrincipal(t *testing.T) {

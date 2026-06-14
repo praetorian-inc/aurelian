@@ -1,13 +1,12 @@
 package iam
 
 import (
-	"github.com/praetorian-inc/aurelian/pkg/types"
 	"fmt"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	"net"
 	"strconv"
 	"strings"
 	"time"
-
 )
 
 // ConditionEvalResult represents the outcome of evaluating policy conditions
@@ -45,8 +44,6 @@ func (c *ConditionEval) Allowed() bool {
 	}
 	return false
 }
-
-
 
 // KeyEvaluation represents the evaluation of a single condition key
 type KeyEvaluation struct {
@@ -87,8 +84,9 @@ func EvaluateConditions(conditions *types.Condition, ctx *RequestContext) *Condi
 				// Key doesn't exist and we're not using IfExists or Null operator
 				eval.MissingKeys = append(eval.MissingKeys, key)
 
-				// Determine if this is a critical key we should default to inconclusive
-				if isCriticalConditionKey(key) {
+				// Determine if this is a key we should default to inconclusive
+				// rather than failing closed when its context value is absent.
+				if isCriticalConditionKey(key) || isPassRolePermissiveKey(key) {
 					eval.Result = ConditionInconclusive
 					eval.KeyResults[key] = KeyEvaluation{
 						Key:      key,
@@ -148,6 +146,30 @@ func isCriticalConditionKey(key string) bool {
 	}
 
 	return criticalKeys[key]
+}
+
+// isPassRolePermissiveKey identifies iam:PassRole-scoping condition keys that
+// must be treated as satisfiable (Inconclusive) when their context value is
+// absent, instead of failing closed.
+//
+// Recon does not populate iam:PassedToService (it depends on resolving the passed
+// role's trusted services into the request context, which the evaluator does not
+// wire), so a PassRole scoped by {iam:PassedToService: <svc>} would otherwise
+// evaluate to ConditionFailed and drop the IAM_PASSROLE edge. Treating it as
+// inconclusive keeps that edge. The residual false-positive is bounded: every
+// downstream passrole privesc enricher independently re-checks the passed role's
+// trust for the consuming service, so a satisfiable-but-mismatched pass does not
+// by itself produce a spurious escalation finding.
+//
+// When PassedToServices is populated on the RequestContext, findContextKeyValue
+// resolves the key and it evaluates precisely; this set only governs the
+// missing-value default.
+func isPassRolePermissiveKey(key string) bool {
+	switch strings.ToLower(key) {
+	case "iam:passedtoservice", "iam:associatedresourcearn":
+		return true
+	}
+	return false
 }
 
 // evaluateCondition evaluates a single condition
@@ -390,6 +412,14 @@ func findContextKeyValue(key string, ctx *RequestContext) (exists bool, value in
 		return len(ctx.ResourceOrgPaths) > 0, ctx.ResourceOrgPaths
 	}
 
+	// Handle PassRole Properties. iam:PassedToService is multivalued (the set of
+	// services the passed role trusts); resolve it only when populated so an
+	// unpopulated key falls through to the inconclusive default in
+	// EvaluateConditions rather than reporting a present-but-empty value.
+	if lowerKey == "iam:passedtoservice" {
+		return len(ctx.PassedToServices) > 0, ctx.PassedToServices
+	}
+
 	// Handle Request Properties
 	switch lowerKey {
 	case "aws:currenttime":
@@ -457,7 +487,6 @@ func findContextKeyValue(key string, ctx *RequestContext) (exists bool, value in
 	}
 	return false, nil
 }
-
 
 func evaluateStringCondition(operator string, values []string, actualValue interface{}) bool {
 	actual := fmt.Sprintf("%v", actualValue) // Convert any type to string
@@ -590,7 +619,6 @@ func evaluateBoolCondition(values []string, actualValue interface{}) bool {
 	}
 	// Convert string value to bool
 	expected := values[0] == "true"
-
 
 	switch v := actualValue.(type) {
 	case *bool:

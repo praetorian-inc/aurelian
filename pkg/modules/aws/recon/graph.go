@@ -46,6 +46,9 @@ type AWSGraphModule struct {
 	ecsTaskDefinitions    store.Map[output.AWSResource]
 	sfnStateMachines      store.Map[output.AWSResource]
 	sageMakerNotebooks    store.Map[output.AWSResource]
+	lambdaFunctions       store.Map[output.AWSResource]
+	launchTemplates       store.Map[output.AWSResource]
+	identityPools         store.Map[output.AWSResource]
 	relationships         store.Map[output.AWSIAMRelationship]
 }
 
@@ -126,6 +129,9 @@ func (m *AWSGraphModule) collectInputs() error {
 	m.collectECSTaskDefinitions(&eg, m.GraphConfig, provider, skipReport)
 	m.collectSFNStateMachines(&eg, m.GraphConfig, provider, skipReport)
 	m.collectSageMakerNotebookInstances(&eg, m.GraphConfig, provider, skipReport)
+	m.collectLambdaFunctions(&eg, m.GraphConfig, provider, skipReport)
+	m.collectLaunchTemplates(&eg, m.GraphConfig, provider, skipReport)
+	m.collectIdentityPools(&eg, m.GraphConfig, provider, skipReport)
 	if err := eg.Wait(); err != nil {
 		return err
 	}
@@ -167,6 +173,13 @@ func (m *AWSGraphModule) collectInputs() error {
 	// resource_service_role enricher can link each to the service role it runs as (the role
 	// ARN(s) captured in the resource's Properties) and the matching privesc method re-points
 	// its CAN_PRIVESC edge at that role.
+	//
+	// Launch templates and Cognito identity pools also carry no resource policy: a launch
+	// template links to the role its instances run as via an instance profile
+	// (set_launch_template_role.yaml), and an identity pool links to its bound auth/unauth
+	// role(s) (resource_service_role.yaml). Their privesc methods
+	// (ec2_launch_template_version existing-template branch, cognito_set_identity_pool_roles)
+	// re-point CAN_PRIVESC at those roles.
 	for _, collected := range []store.Map[output.AWSResource]{
 		m.cfnStackSets,
 		m.codeBuildProjects,
@@ -176,12 +189,27 @@ func (m *AWSGraphModule) collectInputs() error {
 		m.ecsTaskDefinitions,
 		m.sfnStateMachines,
 		m.sageMakerNotebooks,
+		m.launchTemplates,
+		m.identityPools,
 	} {
 		collected.Range(func(key string, r output.AWSResource) bool {
 			m.resourcesWithPolicies.Set(key, r)
 			return true
 		})
 	}
+
+	// Lambda functions are collected independently of any resource policy so plain
+	// functions (no function policy) still get a node + HAS_ROLE for the
+	// lambda:UpdateFunctionCode / AddPermission takeover methods. The resource-policy
+	// collector already merged any policy-BEARING functions into resourcesWithPolicies,
+	// so only add a function the policy collector did NOT see — never clobber a
+	// policy-bearing entry (which carries ResourcePolicy) with a policy-less one.
+	m.lambdaFunctions.Range(func(key string, r output.AWSResource) bool {
+		if _, ok := m.resourcesWithPolicies.Get(key); !ok {
+			m.resourcesWithPolicies.Set(key, r)
+		}
+		return true
+	})
 
 	return nil
 }
@@ -358,6 +386,24 @@ func (m *AWSGraphModule) collectSageMakerNotebookInstances(eg *errgroup.Group, c
 	}, &m.sageMakerNotebooks)
 }
 
+func (m *AWSGraphModule) collectLambdaFunctions(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
+	m.collectResources(eg, c, "Lambda functions", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+		return enumeration.NewLambdaFunctionEnumerator(o, p, s)
+	}, &m.lambdaFunctions)
+}
+
+func (m *AWSGraphModule) collectLaunchTemplates(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
+	m.collectResources(eg, c, "EC2 launch templates", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+		return enumeration.NewEC2LaunchTemplateEnumerator(o, p, s)
+	}, &m.launchTemplates)
+}
+
+func (m *AWSGraphModule) collectIdentityPools(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
+	m.collectResources(eg, c, "Cognito identity pools", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+		return enumeration.NewCognitoIdentityPoolEnumerator(o, p, s)
+	}, &m.identityPools)
+}
+
 func (m *AWSGraphModule) analyzeIAMPermissions() error {
 	m.log.Info("analyzing IAM permissions")
 	analyzer := gaadpkg.NewGaadAnalyzer()
@@ -376,8 +422,16 @@ func (m *AWSGraphModule) emitOutputs(out *pipeline.P[model.AurelianModel]) {
 		out.Send(i)
 	})
 
+	// Emit collected resources as AWSIAMResource (with empty IAM fields). The live neo4j
+	// load path (plugin.GraphFormatter.Format) type-switches results into nodes only on
+	// `case output.AWSIAMResource`; a plain output.AWSResource does NOT match that case
+	// (Go type switches are exact, not embedded-aware), so every collected compute
+	// resource — AppRunner/Batch/Bedrock and the rest, each carrying its role ARN in
+	// Properties — was silently dropped before CreateNodes, leaving resource_service_role /
+	// resource_to_role with no node to attach a HAS_ROLE edge to. Wrapping here keeps the
+	// JSON output identical (omitempty IAM fields) while ensuring the nodes load.
 	m.resourcesWithPolicies.Range(func(_ string, r output.AWSResource) bool {
-		out.Send(r)
+		out.Send(output.FromAWSResource(r))
 		return true
 	})
 

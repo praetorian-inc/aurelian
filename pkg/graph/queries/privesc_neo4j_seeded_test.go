@@ -215,6 +215,8 @@ func sharedPrivescSeed() string {
 		MERGE (a)-[:SAGEMAKER_CREATETRAININGJOB]->(svc)
 		MERGE (a)-[:SAGEMAKER_CREATEPROCESSINGJOB]->(svc)
 		MERGE (a)-[:SAGEMAKER_CREATEPRESIGNEDNOTEBOOKINSTANCEURL]->(svc)
+		MERGE (a)-[:SAGEMAKER_CREATENOTEBOOKINSTANCELIFECYCLECONFIG]->(svc)
+		MERGE (a)-[:SAGEMAKER_UPDATENOTEBOOKINSTANCE]->(smNotebook)
 		MERGE (a)-[:SAGEMAKER_UPDATENOTEBOOKINSTANCELIFECYCLECONFIG]->(svc)
 		MERGE (a)-[:ECS_CREATESERVICE]->(svc)
 		MERGE (a)-[:ECS_RUNTASK]->(svc)
@@ -262,7 +264,11 @@ func sharedPrivescHyphenatedSeeds() []string {
 	return []string{
 		mk("EC2-INSTANCE-CONNECT_SENDSSHPUBLICKEY", svcResourceARN),
 		mk("BEDROCK-AGENTCORE_CREATECODEINTERPRETER", svcResourceARN),
+		// bedrock_access_code_interpreter (lab bedrock-002) now keys on the start+invoke combo
+		// recon actually emits; INVOKESESSION (the old, never-emitted trigger) is retained only
+		// to prove the corrected method does NOT fire on it.
 		mk("BEDROCK-AGENTCORE_STARTCODEINTERPRETERSESSION", svcResourceARN),
+		mk("BEDROCK-AGENTCORE_INVOKECODEINTERPRETER", svcResourceARN),
 		mk("BEDROCK-AGENTCORE_INVOKESESSION", sharedWildcardARN),
 		mk("COGNITO-IDENTITY_SETIDENTITYPOOLROLES", svcResourceARN),
 		mk("COGNITO-IDENTITY_GETID", svcResourceARN),
@@ -667,6 +673,82 @@ func TestPrivescMultiHopPaths(t *testing.T) {
 	})
 }
 
+// TestSageMakerLifecycleCreateUpdateNotebook isolates the sagemaker-005 attack variant:
+// the attacker holds NO sagemaker:UpdateNotebookInstanceLifecycleConfig, only
+// sagemaker:CreateNotebookInstanceLifecycleConfig (author a malicious lifecycle script)
+// co-resident with sagemaker:UpdateNotebookInstance (attach it to an EXISTING notebook
+// instance). The script runs as that notebook's privileged execution role on next restart,
+// so the CAN_PRIVESC edge must land on the notebook's role via (NotebookInstance)-[:HAS_ROLE]->(role).
+// This branch is distinct from the shared-seed case (which also holds UpdateConfig), proving
+// the combo alone fires and is scoped to the notebook's role, with no fan-out.
+func TestSageMakerLifecycleCreateUpdateNotebook(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	cfg := graph.NewConfig(boltURL, "", "")
+	db, err := adapters.NewNeo4jAdapter(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	const (
+		attacker = "arn:aws:iam::123456789012:user/sm005-attacker"
+		nbRole   = "arn:aws:iam::123456789012:role/sm005-notebook-role"
+		other    = "arn:aws:iam::123456789012:role/sm005-bystander"
+	)
+
+	_, err = db.Query(ctx, fmt.Sprintf(`
+		CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
+		CREATE (role:Role:Principal {Arn: '%s', _is_admin: true})
+		// A bystander privileged role with NO notebook instance — must NOT be reached.
+		CREATE (other:Role:Principal {Arn: '%s', _is_admin: true})
+		CREATE (svc:Resource {Arn: 'arn:aws:sagemaker:us-east-1:123456789012:notebook-instance-lifecycle-config/lc'})
+		CREATE (nb:Resource {_resourceType: 'AWS::SageMaker::NotebookInstance',
+			Arn: 'arn:aws:sagemaker:us-east-1:123456789012:notebook-instance/sm005-nb'})
+		WITH a, role, svc, nb
+		MERGE (nb)-[:HAS_ROLE]->(role)
+		// ONLY the create-lifecycle + update-notebook combo — no UpdateNotebookInstanceLifecycleConfig.
+		MERGE (a)-[:SAGEMAKER_CREATENOTEBOOKINSTANCELIFECYCLECONFIG]->(svc)
+		MERGE (a)-[:SAGEMAKER_UPDATENOTEBOOKINSTANCE]->(nb)
+	`, attacker, nbRole, other), nil)
+	require.NoError(t, err, "seed sagemaker-005 graph")
+
+	_, err = RunPlatformQuery(ctx, db, "aws/enrich/privesc/sagemaker_lifecycle_config", nil)
+	require.NoError(t, err, "run sagemaker_lifecycle_config enricher")
+
+	t.Run("edge_lands_on_notebook_role", func(t *testing.T) {
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`,
+			attacker, nbRole), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.GreaterOrEqual(t, int(n), 1,
+			"create-lifecycle + update-notebook combo must reach the notebook's execution role")
+	})
+
+	t.Run("method_label_is_combo", func(t *testing.T) {
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN r.method AS m`,
+			attacker, nbRole), nil)
+		require.NoError(t, err)
+		require.GreaterOrEqual(t, len(result.Records), 1)
+		assert.Equal(t, "sagemaker:CreateNotebookInstanceLifecycleConfig + sagemaker:UpdateNotebookInstance",
+			result.Records[0]["m"], "combo variant must be labeled distinctly from the UpdateConfig variant")
+	})
+
+	t.Run("no_fanout_to_other_principals", func(t *testing.T) {
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[:CAN_PRIVESC]->(b:Principal) RETURN count(DISTINCT b) AS n`,
+			attacker), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.LessOrEqual(t, n, int64(1),
+			"must reach only the notebook's role, not the bystander privileged role")
+	})
+}
+
 // TestPrivescAnalysisQuery tests the registered aws/analysis/privesc_paths query
 // end-to-end via RunPlatformQuery with controlled CAN_PRIVESC edge scenarios.
 func TestPrivescAnalysisQuery(t *testing.T) {
@@ -707,26 +789,29 @@ func TestPrivescAnalysisQuery(t *testing.T) {
 
 		WITH a1, b1, b2, c1, c2, c3, d1, d2, d3, d4, admin, admin2
 
+		// Every edge carries a method+severity so the rewritten query's per-hop
+		// method/severity re-attachment is exercised (not just null columns).
+
 		// 1-hop path
-		MERGE (a1)-[:CAN_PRIVESC]->(admin)
+		MERGE (a1)-[:CAN_PRIVESC {method: 'm-a1', severity: 'high'}]->(admin)
 
 		// 2-hop path (no direct b1→admin edge)
-		MERGE (b1)-[:CAN_PRIVESC]->(b2)
-		MERGE (b2)-[:CAN_PRIVESC]->(admin)
+		MERGE (b1)-[:CAN_PRIVESC {method: 'm-b1', severity: 'high'}]->(b2)
+		MERGE (b2)-[:CAN_PRIVESC {method: 'm-b2', severity: 'high'}]->(admin)
 
 		// 3-hop path
-		MERGE (c1)-[:CAN_PRIVESC]->(c2)
-		MERGE (c2)-[:CAN_PRIVESC]->(c3)
-		MERGE (c3)-[:CAN_PRIVESC]->(admin)
+		MERGE (c1)-[:CAN_PRIVESC {method: 'm-c1', severity: 'high'}]->(c2)
+		MERGE (c2)-[:CAN_PRIVESC {method: 'm-c2', severity: 'high'}]->(c3)
+		MERGE (c3)-[:CAN_PRIVESC {method: 'm-c3', severity: 'high'}]->(admin)
 
 		// 4-hop (should NOT appear in results — beyond 1..3 limit)
-		MERGE (d1)-[:CAN_PRIVESC]->(d2)
-		MERGE (d2)-[:CAN_PRIVESC]->(d3)
-		MERGE (d3)-[:CAN_PRIVESC]->(d4)
-		MERGE (d4)-[:CAN_PRIVESC]->(admin)
+		MERGE (d1)-[:CAN_PRIVESC {method: 'm-d1', severity: 'high'}]->(d2)
+		MERGE (d2)-[:CAN_PRIVESC {method: 'm-d2', severity: 'high'}]->(d3)
+		MERGE (d3)-[:CAN_PRIVESC {method: 'm-d3', severity: 'high'}]->(d4)
+		MERGE (d4)-[:CAN_PRIVESC {method: 'm-d4', severity: 'high'}]->(admin)
 
 		// admin→admin (should be excluded because attacker._is_admin=true)
-		MERGE (admin)-[:CAN_PRIVESC]->(admin2)
+		MERGE (admin)-[:CAN_PRIVESC {method: 'm-adm', severity: 'high'}]->(admin2)
 	`, nil)
 	require.NoError(t, err, "seed analysis query graph")
 
@@ -749,9 +834,9 @@ func TestPrivescAnalysisQuery(t *testing.T) {
 	}
 
 	t.Run("methods_column_present_and_sized_to_hops", func(t *testing.T) {
-		// The analysis query must surface the per-hop method sequence so consumers can
-		// enumerate distinct method-paths. Each record's `methods` list must have exactly
-		// hop_count entries (one method per CAN_PRIVESC edge traversed).
+		// The analysis query surfaces ONE representative method per hop so consumers see a
+		// per-hop method sequence. Each record's `methods` list must have exactly hop_count
+		// entries (one representative method per CAN_PRIVESC hop traversed).
 		require.NotEmpty(t, result.Records, "analysis query returned no paths")
 		for _, rec := range result.Records {
 			methods, ok := rec["methods"].([]any)
@@ -759,6 +844,22 @@ func TestPrivescAnalysisQuery(t *testing.T) {
 			hops, _ := toInt64(rec["hop_count"])
 			assert.Len(t, methods, int(hops),
 				"methods list length must equal hop_count (%d) for %v → %v", hops, rec["attacker_arn"], rec["target_arn"])
+		}
+	})
+
+	t.Run("methods_per_hop_column_present_and_sized_to_hops", func(t *testing.T) {
+		// methods_per_hop is the multigraph-collapse column: a list-of-lists, one inner list
+		// (ALL methods available for that hop) per hop. Its outer length must equal hop_count.
+		for _, rec := range result.Records {
+			perHop, ok := rec["methods_per_hop"].([]any)
+			require.True(t, ok, "methods_per_hop column must be a list, got %T", rec["methods_per_hop"])
+			hops, _ := toInt64(rec["hop_count"])
+			assert.Len(t, perHop, int(hops),
+				"methods_per_hop outer length must equal hop_count (%d) for %v → %v", hops, rec["attacker_arn"], rec["target_arn"])
+			for _, inner := range perHop {
+				_, ok := inner.([]any)
+				assert.True(t, ok, "each methods_per_hop entry must itself be a list, got %T", inner)
+			}
 		}
 	})
 
@@ -943,11 +1044,15 @@ func TestPassRoleServiceFanOutReachesAnalysisQuery(t *testing.T) {
 			"if this fails, apprunner_create_service has regressed: the scoped CAN_PRIVESC edge must point to the passed :Principal role, not a :Resource")
 }
 
-// TestPrivescMultiEdgePerMethod is the focused proof of the multi-edge model: a single
-// (attacker, target) pair reachable by TWO distinct privesc methods must yield TWO distinct
-// CAN_PRIVESC edges (one per method), and the analysis query must surface them as TWO
-// distinct method-paths. Under the old single-edge model these would have collapsed onto
-// one edge with a last-write-wins `method`, hiding the second path.
+// TestPrivescMultiEdgePerMethod is the focused proof of the multi-edge ENRICHMENT model AND
+// the analysis-side multigraph COLLAPSE: a single (attacker, target) pair reachable by TWO
+// distinct privesc methods must yield TWO distinct CAN_PRIVESC edges (one per method) in the
+// graph — but the analysis query must collapse those parallel edges into ONE path-finding for
+// the node-pair (NOT one per method-combination, which is what drove the path explosion),
+// while still surfacing BOTH methods for the hop via methods_per_hop. Under the old single-edge
+// model the two edges would have collapsed onto one edge with a last-write-wins `method`,
+// hiding the second method; the multi-edge model keeps both, and the rewritten analysis query
+// re-attaches both per hop without re-exploding into separate path rows.
 //
 // Seed: attacker can both assume the admin role (sts:AssumeRole, via CAN_ASSUME +
 // STS_ASSUMEROLE) AND write an inline policy onto it then assume it (iam:PutRolePolicy, via
@@ -1009,25 +1114,131 @@ func TestPrivescMultiEdgePerMethod(t *testing.T) {
 		}
 	})
 
-	t.Run("analysis_query_returns_two_distinct_method_paths", func(t *testing.T) {
+	t.Run("analysis_collapses_to_one_finding_surfacing_both_methods", func(t *testing.T) {
+		// MULTIGRAPH COLLAPSE: the two parallel method-edges between the SAME (attacker, admin)
+		// pair must produce exactly ONE analysis path-finding (not two), and that single
+		// finding must surface BOTH methods for the hop via methods_per_hop. This is the
+		// behavior that removes the 3.3–14× parallel-edge multiplier from the expansion.
 		result, err := RunPlatformQuery(ctx, db, "aws/analysis/privesc_paths", nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
-		distinctMethods := map[string]bool{}
+		var rows []map[string]any
 		for _, rec := range result.Records {
-			if rec["attacker_arn"] != attackerARN || rec["target_arn"] != adminARN {
-				continue
+			if rec["attacker_arn"] == attackerARN && rec["target_arn"] == adminARN {
+				rows = append(rows, rec)
+				t.Logf("  finding: %s → %s methods=%v methods_per_hop=%v",
+					rec["attacker_arn"], rec["target_arn"], rec["methods"], rec["methods_per_hop"])
 			}
-			methods, ok := rec["methods"].([]any)
-			require.True(t, ok, "methods column must be a list, got %T", rec["methods"])
-			require.Len(t, methods, 1, "this is a 1-hop path, so exactly one method per record")
-			m, _ := methods[0].(string)
-			distinctMethods[m] = true
-			t.Logf("  method-path: %s → %s methods=%v", rec["attacker_arn"], rec["target_arn"], methods)
 		}
-		assert.GreaterOrEqual(t, len(distinctMethods), 2,
-			"analysis query must enumerate ≥2 distinct method-paths for the multi-method pair, got %v", distinctMethods)
+		require.Len(t, rows, 1,
+			"multi-method pair must collapse to exactly ONE path-finding (multigraph collapse), got %d", len(rows))
+
+		perHop, ok := rows[0]["methods_per_hop"].([]any)
+		require.True(t, ok, "methods_per_hop must be a list, got %T", rows[0]["methods_per_hop"])
+		require.Len(t, perHop, 1, "1-hop path has exactly one hop")
+		hop0, ok := perHop[0].([]any)
+		require.True(t, ok, "hop-0 methods must be a list, got %T", perHop[0])
+
+		got := map[string]bool{}
+		for _, m := range hop0 {
+			if s, ok := m.(string); ok {
+				got[s] = true
+			}
+		}
+		assert.True(t, got["sts:AssumeRole"], "hop-0 methods_per_hop must surface sts:AssumeRole, got %v", hop0)
+		assert.True(t, got["iam:PutRolePolicy"], "hop-0 methods_per_hop must surface iam:PutRolePolicy, got %v", hop0)
+	})
+}
+
+// TestPrivescAnalysisMultigraphCollapse is the dedicated proof for Option 2 (collapse the
+// CAN_PRIVESC multigraph for pathfinding): N PARALLEL CAN_PRIVESC edges (each a distinct
+// `method`) between the SAME (attacker, admin) pair must yield exactly ONE path-finding from
+// the analysis query — NOT N. The single finding must still surface ALL N methods for that hop
+// via methods_per_hop (and a deterministic representative in methods). The old `*1..3`
+// expansion produced one path per edge, multiplying findings by the parallel-edge count; this
+// test fails (≥N rows) if that multiplier returns.
+func TestPrivescAnalysisMultigraphCollapse(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	cfg := graph.NewConfig(boltURL, "", "")
+	db, err := adapters.NewNeo4jAdapter(cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { db.Close() })
+
+	const (
+		atkARN = "arn:aws:iam::1:user/mg-attacker"
+		admARN = "arn:aws:iam::1:role/mg-admin"
+	)
+	const parallelEdges = 5
+
+	// Seed N parallel CAN_PRIVESC edges (distinct method per edge) between the same pair.
+	_, err = db.Query(ctx, fmt.Sprintf(`
+		CREATE (a:Principal {Arn: '%s', _is_admin: false})
+		CREATE (adm:Principal {Arn: '%s', _is_admin: true})
+		WITH a, adm
+		UNWIND range(1, %d) AS i
+		CREATE (a)-[:CAN_PRIVESC {method: 'method-' + toString(i), severity: 'high'}]->(adm)
+	`, atkARN, admARN, parallelEdges), nil)
+	require.NoError(t, err, "seed parallel-edge multigraph")
+
+	// Sanity: the graph really does carry N parallel edges between the pair.
+	edgeCount, err := db.Query(ctx, fmt.Sprintf(
+		`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, atkARN, admARN), nil)
+	require.NoError(t, err)
+	n, _ := toInt64(edgeCount.Records[0]["n"])
+	require.Equal(t, int64(parallelEdges), n, "seed must create %d parallel edges", parallelEdges)
+
+	result, err := RunPlatformQuery(ctx, db, "aws/analysis/privesc_paths", nil)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	var rows []map[string]any
+	for _, rec := range result.Records {
+		if rec["attacker_arn"] == atkARN && rec["target_arn"] == admARN {
+			rows = append(rows, rec)
+		}
+	}
+
+	t.Run("one_finding_not_N", func(t *testing.T) {
+		require.Len(t, rows, 1,
+			"%d parallel method-edges must collapse to ONE path-finding, got %d (parallel-edge multiplier regressed)",
+			parallelEdges, len(rows))
+	})
+
+	t.Run("all_methods_surfaced_in_methods_per_hop", func(t *testing.T) {
+		require.Len(t, rows, 1)
+		perHop, ok := rows[0]["methods_per_hop"].([]any)
+		require.True(t, ok, "methods_per_hop must be a list, got %T", rows[0]["methods_per_hop"])
+		require.Len(t, perHop, 1, "1-hop path has exactly one hop")
+		hop0, ok := perHop[0].([]any)
+		require.True(t, ok)
+
+		got := map[string]bool{}
+		for _, m := range hop0 {
+			if s, ok := m.(string); ok {
+				got[s] = true
+			}
+		}
+		for i := 1; i <= parallelEdges; i++ {
+			m := fmt.Sprintf("method-%d", i)
+			assert.True(t, got[m], "methods_per_hop must surface all %d parallel methods; missing %q (got %v)",
+				parallelEdges, m, hop0)
+		}
+	})
+
+	t.Run("representative_method_is_deterministic_min", func(t *testing.T) {
+		require.Len(t, rows, 1)
+		methods, ok := rows[0]["methods"].([]any)
+		require.True(t, ok, "methods must be a list, got %T", rows[0]["methods"])
+		require.Len(t, methods, 1, "1-hop path has exactly one representative method")
+		// Lexicographically-min over method-1..method-5 is "method-1".
+		assert.Equal(t, "method-1", methods[0],
+			"representative method must be the deterministic lexicographically-min for stable dedup/ordering")
 	})
 }
 
@@ -1102,6 +1313,27 @@ func TestPrivescEdgeMetadata(t *testing.T) {
 				CREATE (r:Role:Principal {Arn: '%s', _is_admin: true,
 					trusted_services: ['gamelift.amazonaws.com'],
 					InstanceProfileList: '[{"Arn":"arn:aws:iam::123456789012:instance-profile/ip"}]'})
+				CREATE (s:Resource  {Arn: '%s'})
+				WITH a, r, s
+				MERGE (a)-[:IAM_PASSROLE]->(r)
+				MERGE (a)-[:GAMELIFT_CREATEBUILD]->(s)
+				MERGE (a)-[:GAMELIFT_CREATEFLEET]->(s)
+			`, attackerARN, roleARN, svcResourceARN),
+			wantMethod:   "iam:PassRole + gamelift:CreateBuild + gamelift:CreateFleet",
+			wantSeverity: "high",
+		},
+		{
+			// gamelift-001 live-graph regression: a GameLift fleet instance role is ASSUMED by
+			// the GameLift service (trusts gamelift.amazonaws.com) and carries NO EC2 instance
+			// profile, so its InstanceProfileList is NULL. The enricher must still fire — the old
+			// `InstanceProfileList CONTAINS 'arn:aws:iam'` guard wrongly suppressed this real
+			// escalation. Trust + privilege are the sufficient discriminators.
+			name:    "gamelift_compound_no_instance_profile",
+			queryID: "aws/enrich/privesc/gamelift_createbuild_createfleet",
+			setup: fmt.Sprintf(`
+				CREATE (a:Principal {Arn: '%s'})
+				CREATE (r:Role:Principal {Arn: '%s', _is_admin: true,
+					trusted_services: ['gamelift.amazonaws.com']})
 				CREATE (s:Resource  {Arn: '%s'})
 				WITH a, r, s
 				MERGE (a)-[:IAM_PASSROLE]->(r)
@@ -1472,6 +1704,14 @@ func TestPrivescEnrichersPopulate(t *testing.T) {
 	// explicitRole's trust doc names the attacker ARN; rootRole's trust doc names the
 	// same-account root; foreignAttacker is in a different account (must NOT get root
 	// trust to rootRole).
+	//
+	// ssmEc2Role is the REAL SSM-managed EC2 instance role (labs ssm-001/002, cspm-ec2-001): it
+	// trusts ec2.amazonaws.com (NOT ssm) and is SSM-capable ONLY via the AmazonSSMManagedInstanceCore
+	// managed policy (a JSON STRING), with NO preset _ssm_enabled. set_ssm_enabled_roles must flag it
+	// from the managed policy, after which ssm_start_session / ssm_send_command emit CAN_PRIVESC from
+	// ssmAttacker (who holds SSM_STARTSESSION + SSM_SENDCOMMAND on the instance's bound role).
+	// ssmIncidentsRole trusts ssm-incidents.amazonaws.com (CONTAINS 'ssm' but NOT exactly
+	// ssm.amazonaws.com) and has no managed policy: the tightened exact-match guard must NOT flag it.
 	_, err = db.Query(ctx, `
 		CREATE (adminUser:User:Principal {Arn: 'arn:aws:iam::123456789012:user/admin',
 			AttachedManagedPolicies: '[{"PolicyName":"AdministratorAccess","PolicyArn":"arn:aws:iam::aws:policy/AdministratorAccess"}]'})
@@ -1483,6 +1723,18 @@ func TestPrivescEnrichersPopulate(t *testing.T) {
 			AssumeRolePolicyDocument: '{"Statement":[{"Principal":{"AWS":"arn:aws:iam::123456789012:user/attacker"}}]}'})
 		CREATE (rootRole:Role:Principal {Arn: 'arn:aws:iam::123456789012:role/root-trusted',
 			AssumeRolePolicyDocument: '{"Statement":[{"Principal":{"AWS":"arn:aws:iam::123456789012:root"}}]}'})
+		CREATE (ssmAttacker:User:Principal {Arn: 'arn:aws:iam::123456789012:user/ssm-attacker', _is_admin: false})
+		CREATE (ssmEc2Role:Role:Principal {Arn: 'arn:aws:iam::123456789012:role/ssm-ec2-role',
+			_is_admin: true, trusted_services: ['ec2.amazonaws.com'],
+			AttachedManagedPolicies: '[{"PolicyName":"AmazonSSMManagedInstanceCore","PolicyArn":"arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"}]'})
+		CREATE (ssmIncidentsRole:Role:Principal {Arn: 'arn:aws:iam::123456789012:role/ssm-incidents-role',
+			trusted_services: ['ssm-incidents.amazonaws.com']})
+		CREATE (ssmInstance:Resource {Arn: 'arn:aws:ec2:us-east-1:123456789012:instance/i-ssm', _resourceType: 'AWS::EC2::Instance'})
+		CREATE (ssmStub:Resource {Arn: 'arn:aws:ssm:us-east-1:123456789012:stub'})
+		WITH ssmAttacker, ssmEc2Role, ssmInstance, ssmStub
+		MERGE (ssmInstance)-[:HAS_ROLE]->(ssmEc2Role)
+		MERGE (ssmAttacker)-[:SSM_STARTSESSION]->(ssmStub)
+		MERGE (ssmAttacker)-[:SSM_SENDCOMMAND]->(ssmStub)
 	`, nil)
 	require.NoError(t, err, "seed enricher graph")
 
@@ -1533,6 +1785,48 @@ func TestPrivescEnrichersPopulate(t *testing.T) {
 		n, _ := toInt64(result.Records[0]["n"])
 		assert.Equal(t, int64(0), n,
 			"cross-account principal must NOT get a root-trust CAN_ASSUME edge (root trust is account-scoped)")
+	})
+
+	t.Run("ssm_enabled_set_via_managed_policy", func(t *testing.T) {
+		// An EC2-trusting role with NO preset _ssm_enabled must be flagged SSM-capable purely from
+		// the AmazonSSMManagedInstanceCore managed policy (matched via JSON-string CONTAINS).
+		result, err := db.Query(ctx,
+			`MATCH (r {Arn: 'arn:aws:iam::123456789012:role/ssm-ec2-role'}) RETURN coalesce(r._ssm_enabled,false) AS s`, nil)
+		require.NoError(t, err)
+		s, _ := result.Records[0]["s"].(bool)
+		assert.True(t, s, "_ssm_enabled must be set from AmazonSSMManagedInstanceCore on an ec2-trusting role")
+	})
+
+	t.Run("ssm_enabled_not_set_on_ssm_incidents_role", func(t *testing.T) {
+		// ssm-incidents.amazonaws.com CONTAINS 'ssm' but is NOT ssm.amazonaws.com; the tightened
+		// exact-match trust guard must NOT flag it (and it has no managed policy).
+		result, err := db.Query(ctx,
+			`MATCH (r {Arn: 'arn:aws:iam::123456789012:role/ssm-incidents-role'}) RETURN coalesce(r._ssm_enabled,false) AS s`, nil)
+		require.NoError(t, err)
+		s, _ := result.Records[0]["s"].(bool)
+		assert.False(t, s, "exact 'ssm.amazonaws.com' trust must NOT flag an ssm-incidents-trusting role")
+	})
+
+	t.Run("ssm_start_session_via_managed_policy_role", func(t *testing.T) {
+		// ssm:StartSession compute takeover fires on the managed-policy SSM-capable instance role.
+		result, err := db.Query(ctx,
+			`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/ssm-attacker'})-[r:CAN_PRIVESC {method: 'ssm:StartSession'}]->(v {Arn: 'arn:aws:iam::123456789012:role/ssm-ec2-role'})
+			 RETURN count(r) AS n`, nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.GreaterOrEqual(t, int(n), 1,
+			"ssm:StartSession must yield CAN_PRIVESC to the managed-policy SSM-capable instance role")
+	})
+
+	t.Run("ssm_send_command_via_managed_policy_role", func(t *testing.T) {
+		// ssm:SendCommand compute takeover fires on the same managed-policy SSM-capable role.
+		result, err := db.Query(ctx,
+			`MATCH (a {Arn: 'arn:aws:iam::123456789012:user/ssm-attacker'})-[r:CAN_PRIVESC {method: 'ssm:SendCommand'}]->(v {Arn: 'arn:aws:iam::123456789012:role/ssm-ec2-role'})
+			 RETURN count(r) AS n`, nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.GreaterOrEqual(t, int(n), 1,
+			"ssm:SendCommand must yield CAN_PRIVESC to the managed-policy SSM-capable instance role")
 	})
 }
 
@@ -2131,12 +2425,15 @@ func TestPrivescBatchJobRoleHasRole(t *testing.T) {
 // TestPrivescCodeInterpreterRoleHasRole locks down bedrock_access_code_interpreter's
 // link to the interpreter's EXECUTION ROLE via
 // (CodeInterpreter)-[:HAS_ROLE]->(execrole) — replacing the old existence-precondition stub.
-// The attacker holds bedrock-agentcore:InvokeSession; the edge must land on the privileged,
-// bedrock-agentcore-trusting execution role, and HAS_ROLE + trust + privileged-target +
-// same-account must each be the SOLE rejection in their respective FP cases.
-// FP types isolated: no_hasrole_no_edge = no-usable-resource (resource-absence
-// GAP for this method); unprivileged_role_no_edge = target-not-privileged;
-// wrong_trust_no_edge / cross_account_role_no_edge = trust-policy-mismatch.
+// The attacker holds bedrock-agentcore:StartCodeInterpreterSession + InvokeCodeInterpreter (the
+// real emitted action combo for lab bedrock-002 — NOT the old, never-emitted InvokeSession); the
+// edge must land on the privileged, bedrock-agentcore-trusting execution role, and the action
+// combo + HAS_ROLE + trust + privileged-target + same-account must each be the SOLE rejection in
+// their respective FP cases.
+// FP types isolated: missing_invoke_no_edge = service/api-precondition (the start+invoke combo);
+// no_hasrole_no_edge = no-usable-resource (resource-absence GAP for this method);
+// unprivileged_role_no_edge = target-not-privileged; wrong_trust_no_edge /
+// cross_account_role_no_edge = trust-policy-mismatch.
 func TestPrivescCodeInterpreterRoleHasRole(t *testing.T) {
 	ctx := context.Background()
 
@@ -2158,7 +2455,9 @@ func TestPrivescCodeInterpreterRoleHasRole(t *testing.T) {
 		queryID  = "aws/enrich/privesc/bedrock_access_code_interpreter"
 	)
 
-	setup := func(roleProps, roleAccount, hasRole string) string {
+	// actions seeds the attacker's bedrock-agentcore permission edges (on the service stub).
+	// The method requires the StartCodeInterpreterSession + InvokeCodeInterpreter combo.
+	setup := func(roleProps, roleAccount, hasRole, actions string) string {
 		roleARN := fmt.Sprintf("arn:aws:iam::%s:role/ci-exec-role", roleAccount)
 		return fmt.Sprintf(`
 			CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
@@ -2166,10 +2465,15 @@ func TestPrivescCodeInterpreterRoleHasRole(t *testing.T) {
 			CREATE (ci:Resource {Arn: 'arn:aws:bedrock-agentcore:us-east-1:123456789012:code-interpreter/ci-1', _resourceType: 'AWS::BedrockAgentCore::CodeInterpreter'})
 			CREATE (role:Role:Principal {Arn: '%s'%s})
 			WITH a, svc, ci, role
-			MERGE (a)-[:`+"`BEDROCK-AGENTCORE_INVOKESESSION`"+`]->(svc)
 			%s
-		`, attacker, roleARN, roleProps, hasRole)
+			%s
+		`, attacker, roleARN, roleProps, actions, hasRole)
 	}
+	const (
+		startAndInvoke = "MERGE (a)-[:`BEDROCK-AGENTCORE_STARTCODEINTERPRETERSESSION`]->(svc)\n" +
+			"\t\t\tMERGE (a)-[:`BEDROCK-AGENTCORE_INVOKECODEINTERPRETER`]->(svc)"
+		startOnly = "MERGE (a)-[:`BEDROCK-AGENTCORE_STARTCODEINTERPRETERSESSION`]->(svc)"
+	)
 	const (
 		hasRoleEdge = `MERGE (ci)-[:HAS_ROLE]->(role)`
 		noRoleEdge  = ``
@@ -2194,6 +2498,7 @@ func TestPrivescCodeInterpreterRoleHasRole(t *testing.T) {
 		roleProps   string
 		roleAccount string
 		hasRole     string
+		actions     string
 		wantEdge    bool
 		desc        string
 	}{
@@ -2202,14 +2507,25 @@ func TestPrivescCodeInterpreterRoleHasRole(t *testing.T) {
 			roleProps:   adminTrusted,
 			roleAccount: "123456789012",
 			hasRole:     hasRoleEdge,
+			actions:     startAndInvoke,
 			wantEdge:    true,
-			desc:        "InvokeSession + (ci)-[:HAS_ROLE]->(bedrock-agentcore-trusting admin role) → edge fires to the role",
+			desc:        "StartCodeInterpreterSession + InvokeCodeInterpreter + (ci)-[:HAS_ROLE]->(bedrock-agentcore-trusting admin role) → edge fires to the role",
+		},
+		{
+			name:        "missing_invoke_no_edge",
+			roleProps:   adminTrusted,
+			roleAccount: "123456789012",
+			hasRole:     hasRoleEdge,
+			actions:     startOnly,
+			wantEdge:    false,
+			desc:        "StartCodeInterpreterSession alone (no InvokeCodeInterpreter) → cannot run code → the start+invoke combo is the sole rejection → NO edge",
 		},
 		{
 			name:        "no_hasrole_no_edge",
 			roleProps:   adminTrusted,
 			roleAccount: "123456789012",
 			hasRole:     noRoleEdge,
+			actions:     startAndInvoke,
 			wantEdge:    false,
 			desc:        "no HAS_ROLE link → roleless interpreter confers nothing → NO edge (HAS_ROLE is the sole rejection)",
 		},
@@ -2218,6 +2534,7 @@ func TestPrivescCodeInterpreterRoleHasRole(t *testing.T) {
 			roleProps:   unprivTrusted,
 			roleAccount: "123456789012",
 			hasRole:     hasRoleEdge,
+			actions:     startAndInvoke,
 			wantEdge:    false,
 			desc:        "execution role is NOT privileged → privileged-target guard is the sole rejection → NO edge",
 		},
@@ -2226,6 +2543,7 @@ func TestPrivescCodeInterpreterRoleHasRole(t *testing.T) {
 			roleProps:   adminWrongTrust,
 			roleAccount: "123456789012",
 			hasRole:     hasRoleEdge,
+			actions:     startAndInvoke,
 			wantEdge:    false,
 			desc:        "execution role does NOT trust bedrock-agentcore → trust guard is the sole rejection → NO edge",
 		},
@@ -2234,6 +2552,7 @@ func TestPrivescCodeInterpreterRoleHasRole(t *testing.T) {
 			roleProps:   adminTrusted,
 			roleAccount: "999999999999",
 			hasRole:     hasRoleEdge,
+			actions:     startAndInvoke,
 			wantEdge:    false,
 			desc:        "privileged execution role in a DIFFERENT account → same-account guard (ARN seg 4) is the sole rejection → NO edge",
 		},
@@ -2244,7 +2563,7 @@ func TestPrivescCodeInterpreterRoleHasRole(t *testing.T) {
 			db := newAdapter(t)
 			_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
 			require.NoError(t, err, "clear db")
-			_, err = db.Query(ctx, setup(tc.roleProps, tc.roleAccount, tc.hasRole), nil)
+			_, err = db.Query(ctx, setup(tc.roleProps, tc.roleAccount, tc.hasRole, tc.actions), nil)
 			require.NoError(t, err, "seed bedrock graph")
 
 			_, err = RunPlatformQuery(ctx, db, queryID, nil)
@@ -2256,6 +2575,121 @@ func TestPrivescCodeInterpreterRoleHasRole(t *testing.T) {
 			} else {
 				assert.Equal(t, int64(0), n, tc.desc)
 			}
+		})
+	}
+}
+
+// TestPrivescGlueUpdateJobDualBranch locks down the TWO independent escalation vectors of
+// glue_updatejob_startjobrun / glue_updatejob_createtrigger:
+//   - existing-resource: an EXISTING Glue job whose HAS_ROLE-bound service role is privileged
+//     (no IAM_PASSROLE needed) — existing-resource takeover.
+//   - new-passrole: an unconditional IAM_PASSROLE to a privileged glue-trusting role
+//     (no existing Glue job needed) — the canonical passrole escalation.
+//
+// Each branch is isolated (the other branch's inputs are absent) so a single edge proves THAT
+// branch fired. The non_glue_trust_passrole_no_edge FP case proves the passrole branch's glue-trust
+// guard is the sole rejection (control: the same role made glue-trusting fires).
+func TestPrivescGlueUpdateJobDualBranch(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	newAdapter := func(t *testing.T) graph.GraphDatabase {
+		t.Helper()
+		cfg := graph.NewConfig(boltURL, "", "")
+		adapter, err := adapters.NewNeo4jAdapter(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { adapter.Close() })
+		return adapter
+	}
+
+	const (
+		attacker = "arn:aws:iam::123456789012:user/glue-attacker"
+		role     = "arn:aws:iam::123456789012:role/glue-target-role"
+		svc      = "arn:aws:glue:us-east-1:123456789012:stub"
+		job      = "arn:aws:glue:us-east-1:123456789012:job/j"
+	)
+
+	// branch selects which escalation vector's inputs to seed; the attacker always holds UpdateJob +
+	// the paired action (StartJobRun or CreateTrigger). roleTrust sets the target role's trust.
+	setup := func(branch, secondAction, roleTrust string) string {
+		base := fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
+			CREATE (svc:Resource {Arn: '%s'})
+			CREATE (role:Role:Principal {Arn: '%s', _is_admin: true, trusted_services: %s})
+			WITH a, svc, role
+			MERGE (a)-[:GLUE_UPDATEJOB]->(svc)
+			MERGE (a)-[:%s]->(svc)
+		`, attacker, svc, role, roleTrust, secondAction)
+		switch branch {
+		case "existing":
+			// An existing Glue job whose service role is the privileged role; no IAM_PASSROLE.
+			base += fmt.Sprintf(`
+			WITH a, role
+			CREATE (job:Resource {Arn: '%s', _resourceType: 'AWS::Glue::Job'})
+			MERGE (job)-[:HAS_ROLE]->(role)
+		`, job)
+		case "passrole":
+			// An unconditional IAM_PASSROLE to the privileged role; no existing Glue job.
+			base += `
+			WITH a, role
+			MERGE (a)-[:IAM_PASSROLE]->(role)
+		`
+		}
+		return base
+	}
+
+	edgeCount := func(t *testing.T, db graph.GraphDatabase) int64 {
+		t.Helper()
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`, attacker, role), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		return n
+	}
+
+	const (
+		glueTrust   = `['glue.amazonaws.com']`
+		noGlueTrust = `['lambda.amazonaws.com']`
+	)
+
+	methods := []struct {
+		name         string
+		queryID      string
+		secondAction string
+	}{
+		{"startjobrun", "aws/enrich/privesc/glue_updatejob_startjobrun", "GLUE_STARTJOBRUN"},
+		{"createtrigger", "aws/enrich/privesc/glue_updatejob_createtrigger", "GLUE_CREATETRIGGER"},
+	}
+
+	for _, mth := range methods {
+		mth := mth
+		t.Run(mth.name, func(t *testing.T) {
+			run := func(t *testing.T, seed string) int64 {
+				db := newAdapter(t)
+				_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+				require.NoError(t, err, "clear db")
+				_, err = db.Query(ctx, seed, nil)
+				require.NoError(t, err, "seed glue graph")
+				_, err = RunPlatformQuery(ctx, db, mth.queryID, nil)
+				require.NoError(t, err, "run %s", mth.queryID)
+				return edgeCount(t, db)
+			}
+
+			t.Run("existing_resource_branch", func(t *testing.T) {
+				assert.Equal(t, int64(1), run(t, setup("existing", mth.secondAction, glueTrust)),
+					"existing Glue job HAS_ROLE→privileged role (no passrole) → existing-resource branch fires")
+			})
+			t.Run("new_passrole_branch", func(t *testing.T) {
+				assert.Equal(t, int64(1), run(t, setup("passrole", mth.secondAction, glueTrust)),
+					"IAM_PASSROLE→privileged glue-trusting role (no existing job) → passrole branch fires")
+			})
+			t.Run("non_glue_trust_passrole_no_edge", func(t *testing.T) {
+				assert.Equal(t, int64(0), run(t, setup("passrole", mth.secondAction, noGlueTrust)),
+					"passrole victim does NOT trust glue → passrole-branch glue-trust guard is the sole rejection → NO edge")
+			})
 		})
 	}
 }
@@ -2400,6 +2834,105 @@ func TestPrivescExistingComputeResourceAbsenceGuard(t *testing.T) {
 			})
 		})
 	}
+}
+
+// TestPrivescEcsExecuteCommandExistingCompute isolates ecs-006: an attacker holding
+// ecs:ExecuteCommand (ECS_EXECUTECOMMAND base edge) can open a shell into a running task and
+// steal the TASK ROLE's credentials. The escalation target is the task role reached via
+// (Resource:AWS::ECS::TaskDefinition)-[:HAS_ROLE]->(role). The base edge's own target node is
+// irrelevant (the grant may be scoped to a cluster/task/service stub the graph doesn't correlate
+// to the task def), so the enricher only requires its EXISTENCE on the attacker, then joins the
+// task def→role independently. This proves: (1) the edge fires to the task role, (2) no fan-out
+// to bystander principals, (3) fail-closed when no task def / HAS_ROLE exists.
+func TestPrivescEcsExecuteCommandExistingCompute(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	newAdapter := func(t *testing.T) graph.GraphDatabase {
+		t.Helper()
+		cfg := graph.NewConfig(boltURL, "", "")
+		adapter, err := adapters.NewNeo4jAdapter(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { adapter.Close() })
+		return adapter
+	}
+
+	const (
+		attacker = "arn:aws:iam::123456789012:user/ecs006-attacker"
+		taskRole = "arn:aws:iam::123456789012:role/ecs006-task-role"
+		// A privileged bystander role with NO task definition — must NOT be reached.
+		other = "arn:aws:iam::123456789012:role/ecs006-bystander"
+		// The base edge anchors on the stub the grant resolves to (cluster/task/service); the
+		// enricher must not care WHICH, only that the attacker holds ECS_EXECUTECOMMAND.
+		execTarget = "arn:aws:ecs:us-east-1:123456789012:cluster/ecs006-cluster"
+		taskDefARN = "arn:aws:ecs:us-east-1:123456789012:task-definition/ecs006-task:1"
+	)
+
+	// edge_fires: the task def HAS_ROLE→privileged task role → CAN_PRIVESC to that role, no fan-out.
+	t.Run("edge_fires_to_task_role", func(t *testing.T) {
+		db := newAdapter(t)
+		_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+		require.NoError(t, err, "clear db")
+		_, err = db.Query(ctx, fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
+			CREATE (role:Role:Principal {Arn: '%s', _is_admin: true})
+			CREATE (other:Role:Principal {Arn: '%s', _is_admin: true})
+			CREATE (exec:Resource {Arn: '%s'})
+			CREATE (td:Resource {Arn: '%s', _resourceType: 'AWS::ECS::TaskDefinition'})
+			WITH a, role, exec, td
+			MERGE (a)-[:ECS_EXECUTECOMMAND]->(exec)
+			MERGE (td)-[:HAS_ROLE]->(role)
+		`, attacker, taskRole, other, execTarget, taskDefARN), nil)
+		require.NoError(t, err, "seed ecs-006 graph")
+
+		_, err = RunPlatformQuery(ctx, db, "aws/enrich/privesc/ecs_execute_command", nil)
+		require.NoError(t, err, "run ecs_execute_command enricher")
+
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`,
+			attacker, taskRole), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.GreaterOrEqual(t, int(n), 1,
+			"ecs:ExecuteCommand must reach the task definition's privileged task role via HAS_ROLE")
+
+		fanResult, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[:CAN_PRIVESC]->(b:Principal) RETURN count(DISTINCT b) AS n`,
+			attacker), nil)
+		require.NoError(t, err)
+		fanout, _ := toInt64(fanResult.Records[0]["n"])
+		assert.LessOrEqual(t, fanout, int64(1),
+			"must reach only the task role, not the privileged bystander role (no fan-out)")
+	})
+
+	// no_taskdef_no_edge: the mandatory (TaskDefinition)-[:HAS_ROLE]->(role) join is the sole
+	// rejection — with the ECS_EXECUTECOMMAND edge present but no task def, no edge forms.
+	t.Run("no_taskdef_no_edge", func(t *testing.T) {
+		db := newAdapter(t)
+		_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+		require.NoError(t, err, "clear db")
+		_, err = db.Query(ctx, fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
+			CREATE (role:Role:Principal {Arn: '%s', _is_admin: true})
+			CREATE (exec:Resource {Arn: '%s'})
+			WITH a, exec
+			MERGE (a)-[:ECS_EXECUTECOMMAND]->(exec)
+		`, attacker, taskRole, execTarget), nil)
+		require.NoError(t, err, "seed ecs-006 graph without task def")
+
+		_, err = RunPlatformQuery(ctx, db, "aws/enrich/privesc/ecs_execute_command", nil)
+		require.NoError(t, err, "run ecs_execute_command enricher")
+
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->() RETURN count(r) AS n`, attacker), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.Equal(t, int64(0), n,
+			"no AWS::ECS::TaskDefinition with HAS_ROLE → mandatory join fails → NO edge (fail-closed)")
+	})
 }
 
 func TestPrivescSlrPassRoleTargetGuard(t *testing.T) {
@@ -3113,6 +3646,480 @@ func TestPrivescPolicyVersionCountGuard(t *testing.T) {
 			n := edgeCount(t, db)
 			if tc.wantEdge {
 				assert.GreaterOrEqual(t, n, int64(1), tc.desc)
+			} else {
+				assert.Equal(t, int64(0), n, tc.desc)
+			}
+		})
+	}
+}
+
+// TestPrivescLaunchTemplateExistingHasRole locks down the existing-template vector for
+// ec2_launch_template_version. It proves the FULL production path: a collected
+// launch template (built by NodeFromAWSResource, which promotes its instance-profile reference)
+// resolves to the role its instances run as via set_launch_template_role.yaml's
+// instance-profile → InstanceProfileList match, yielding a (LaunchTemplate)-[:HAS_ROLE]->(role)
+// edge — then the existing-template branch re-points CAN_PRIVESC at that privileged role with NO
+// iam:PassRole, mirroring apprunner_update_service / batch_submit_job. FP cases isolate each guard:
+// no_hasrole = no-usable-resource (template role unresolvable); unprivileged_role = target-not-
+// privileged; single_action = missing the second template-edit action; cross_account = same-account.
+func TestPrivescLaunchTemplateExistingHasRole(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	newAdapter := func(t *testing.T) graph.GraphDatabase {
+		t.Helper()
+		cfg := graph.NewConfig(boltURL, "", "")
+		adapter, err := adapters.NewNeo4jAdapter(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { adapter.Close() })
+		return adapter
+	}
+
+	const (
+		attacker    = "arn:aws:iam::123456789012:user/lt-attacker"
+		templateARN = "arn:aws:ec2:us-east-1:123456789012:launch-template/lt-ec2-005"
+		profileARN  = "arn:aws:iam::123456789012:instance-profile/lt-ip"
+		queryID     = "aws/enrich/privesc/ec2_launch_template_version"
+		method      = "ec2:CreateLaunchTemplateVersion + ec2:ModifyLaunchTemplate (existing-template variant)"
+	)
+
+	// seed builds the launch-template node via the production transformer (promotes the
+	// instance-profile reference), seeds the role (with the given props/account), runs the
+	// instance-profile → role enricher to populate HAS_ROLE, then wires the attacker's
+	// template-edit actions on a service stub. actions controls which edits are held.
+	seed := func(t *testing.T, db graph.GraphDatabase, roleProps, roleAccount, actions string) {
+		t.Helper()
+		_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+		require.NoError(t, err, "clear db")
+
+		// Production transform: NodeFromAWSResource must promote IamInstanceProfile so the
+		// instance-profile → role enricher can read it (not a hand-seeded top-level prop).
+		tmplNode := transformaws.NodeFromAWSResource(output.AWSResource{
+			ResourceType: "AWS::EC2::LaunchTemplate",
+			ARN:          templateARN,
+			AccountRef:   "123456789012",
+			Region:       "us-east-1",
+			Properties:   map[string]any{"IamInstanceProfile": profileARN},
+		})
+		_, err = db.CreateNodes(ctx, []*graph.Node{tmplNode})
+		require.NoError(t, err, "write transformer-built launch-template node")
+
+		// A cross-account role's instance profile lives in ITS account, so its
+		// InstanceProfileList cannot contain the template's (account-123) instance-profile ARN —
+		// the account scoping is structural in the instance-profile ARN, so no HAS_ROLE forms.
+		roleARN := fmt.Sprintf("arn:aws:iam::%s:role/lt-instance-role", roleAccount)
+		roleProfileList := fmt.Sprintf(`[{"Arn":"arn:aws:iam::%s:instance-profile/lt-ip"}]`, roleAccount)
+		_, err = db.Query(ctx, fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
+			CREATE (svc:Resource {Arn: 'arn:aws:ec2:us-east-1:123456789012:*'})
+			CREATE (role:Role:Principal {Arn: '%s', InstanceProfileList: '%s'%s})
+			WITH a, svc
+			%s
+		`, attacker, roleARN, roleProfileList, roleProps, actions), nil)
+		require.NoError(t, err, "seed attacker/role/actions")
+
+		// set_launch_template_role builds (LaunchTemplate)-[:HAS_ROLE]->(role) from the
+		// promoted instance-profile reference, exactly as in production.
+		_, err = RunPlatformQuery(ctx, db, "aws/enrich/set_launch_template_role", nil)
+		require.NoError(t, err, "run set_launch_template_role enricher")
+	}
+
+	const (
+		bothActions = `MERGE (a)-[:EC2_CREATELAUNCHTEMPLATEVERSION]->(svc)
+			MERGE (a)-[:EC2_MODIFYLAUNCHTEMPLATE]->(svc)`
+		createOnly = `MERGE (a)-[:EC2_CREATELAUNCHTEMPLATEVERSION]->(svc)`
+	)
+	const (
+		adminRole  = `, _is_admin: true`
+		unprivRole = `, _is_admin: false`
+	)
+
+	edgeCount := func(t *testing.T, db graph.GraphDatabase) int64 {
+		t.Helper()
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC {method: '%s'}]->(:Role) RETURN count(r) AS n`,
+			attacker, method), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		return n
+	}
+
+	// hasRoleCount proves the production transform path yields the HAS_ROLE edge (the
+	// "node + HAS_ROLE" regression assertion) before the privesc method runs.
+	hasRoleCount := func(t *testing.T, db graph.GraphDatabase) int64 {
+		t.Helper()
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (t {arn: '%s'})-[:HAS_ROLE]->(:Role) RETURN count(*) AS n`, templateARN), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		return n
+	}
+
+	cases := []struct {
+		name        string
+		roleProps   string
+		roleAccount string
+		actions     string
+		hasRoleEdge bool
+		wantEdge    bool
+		desc        string
+	}{
+		{
+			name:        "admin_role_existing_template",
+			roleProps:   adminRole,
+			roleAccount: "123456789012",
+			actions:     bothActions,
+			hasRoleEdge: true,
+			wantEdge:    true,
+			desc:        "transformer-built template HAS_ROLE→admin instance-role + both edit actions → existing-template edge fires (no PassRole)",
+		},
+		{
+			name:        "single_action_no_edge",
+			roleProps:   adminRole,
+			roleAccount: "123456789012",
+			actions:     createOnly,
+			hasRoleEdge: true,
+			wantEdge:    false,
+			desc:        "only CreateLaunchTemplateVersion (no ModifyLaunchTemplate) → both-actions guard is the sole rejection → NO edge",
+		},
+		{
+			name:        "unprivileged_role_no_edge",
+			roleProps:   unprivRole,
+			roleAccount: "123456789012",
+			actions:     bothActions,
+			hasRoleEdge: true,
+			wantEdge:    false,
+			desc:        "instance role is NOT privileged → privileged-target guard is the sole rejection → NO edge",
+		},
+		{
+			name:        "cross_account_role_no_edge",
+			roleProps:   adminRole,
+			roleAccount: "999999999999",
+			actions:     bothActions,
+			hasRoleEdge: false,
+			wantEdge:    false,
+			desc:        "role in a DIFFERENT account → its InstanceProfileList ARN can't match → no HAS_ROLE → NO edge",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newAdapter(t)
+			seed(t, db, tc.roleProps, tc.roleAccount, tc.actions)
+
+			if tc.hasRoleEdge {
+				assert.Equal(t, int64(1), hasRoleCount(t, db),
+					"production transform + set_launch_template_role must yield (LaunchTemplate)-[:HAS_ROLE]->(role)")
+			} else {
+				assert.Equal(t, int64(0), hasRoleCount(t, db),
+					"cross-account instance profile must NOT match → no HAS_ROLE")
+			}
+
+			_, err = RunPlatformQuery(ctx, db, queryID, nil)
+			require.NoError(t, err, "run %s", queryID)
+
+			n := edgeCount(t, db)
+			if tc.wantEdge {
+				assert.Equal(t, int64(1), n, tc.desc)
+			} else {
+				assert.Equal(t, int64(0), n, tc.desc)
+			}
+		})
+	}
+}
+
+// TestPrivescCognitoUnauthIdentityPool locks down the unauthenticated-identity vector for
+// cognito_set_identity_pool_roles. It proves the FULL production
+// path: a collected identity pool (built by NodeFromAWSResource, which promotes
+// AllowUnauthenticatedIdentities and serializes the bound role ARN into properties) resolves
+// to the bound role via resource_service_role.yaml, yielding a (IdentityPool)-[:HAS_ROLE]->(role)
+// edge — then the enricher fires WITHOUT GetId/GetCredentials grants when the pool allows
+// unauthenticated identities, and STILL requires those grants for an authenticated-only pool
+// (no FP regression). Other guards (passrole, cognito trust, same-account, privileged target,
+// not-self) remain in force.
+func TestPrivescCognitoUnauthIdentityPool(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	newAdapter := func(t *testing.T) graph.GraphDatabase {
+		t.Helper()
+		cfg := graph.NewConfig(boltURL, "", "")
+		adapter, err := adapters.NewNeo4jAdapter(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { adapter.Close() })
+		return adapter
+	}
+
+	const (
+		attacker = "arn:aws:iam::123456789012:user/cog-attacker"
+		role     = "arn:aws:iam::123456789012:role/cog-unauth-role"
+		poolARN  = "arn:aws:cognito-identity:us-east-1:123456789012:identitypool/us-east-1:p1"
+		queryID  = "aws/enrich/privesc/cognito_set_identity_pool_roles"
+	)
+
+	// seed builds the identity-pool node via the production transformer (promotes
+	// AllowUnauthenticatedIdentities, serializes the bound role ARN), seeds the cognito-trusting
+	// privileged role + passrole + SetIdentityPoolRoles, optionally seeds the GetId/GetCredentials
+	// grants, runs resource_service_role to populate HAS_ROLE, exactly as in production.
+	seed := func(t *testing.T, db graph.GraphDatabase, allowUnauth, withGrants bool) {
+		t.Helper()
+		_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+		require.NoError(t, err, "clear db")
+
+		poolNode := transformaws.NodeFromAWSResource(output.AWSResource{
+			ResourceType: "AWS::Cognito::IdentityPool",
+			ARN:          poolARN,
+			AccountRef:   "123456789012",
+			Region:       "us-east-1",
+			Properties: map[string]any{
+				"AllowUnauthenticatedIdentities": allowUnauth,
+				"unauthenticatedRole":            role,
+			},
+		})
+		_, err = db.CreateNodes(ctx, []*graph.Node{poolNode})
+		require.NoError(t, err, "write transformer-built identity-pool node")
+
+		_, err = db.Query(ctx, fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
+			CREATE (svc:Resource {Arn: 'arn:aws:cognito-identity:us-east-1:123456789012:*'})
+			CREATE (role:Role:Principal {Arn: '%s', _is_admin: true,
+				trusted_federated: ['cognito-identity.amazonaws.com']})
+			WITH a, svc, role
+			MERGE (a)-[:IAM_PASSROLE]->(role)
+			MERGE (a)-[:`+"`COGNITO-IDENTITY_SETIDENTITYPOOLROLES`"+`]->(svc)
+		`, attacker, role), nil)
+		require.NoError(t, err, "seed attacker/role/passrole/setroles")
+
+		if withGrants {
+			_, err = db.Query(ctx, fmt.Sprintf(`
+				MATCH (a {Arn: '%s'}), (svc {Arn: 'arn:aws:cognito-identity:us-east-1:123456789012:*'})
+				MERGE (a)-[:`+"`COGNITO-IDENTITY_GETID`"+`]->(svc)
+				MERGE (a)-[:`+"`COGNITO-IDENTITY_GETCREDENTIALSFORIDENTITY`"+`]->(svc)
+			`, attacker), nil)
+			require.NoError(t, err, "seed GetId/GetCredentials grants")
+		}
+
+		// resource_service_role builds (IdentityPool)-[:HAS_ROLE]->(role) from the bound role
+		// ARN serialized in the pool's properties JSON, exactly as in production.
+		_, err = RunPlatformQuery(ctx, db, "aws/enrich/resource_service_role", nil)
+		require.NoError(t, err, "run resource_service_role enricher")
+	}
+
+	edgeCount := func(t *testing.T, db graph.GraphDatabase) int64 {
+		t.Helper()
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(:Role {Arn: '%s'}) RETURN count(r) AS n`,
+			attacker, role), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		return n
+	}
+
+	hasRoleCount := func(t *testing.T, db graph.GraphDatabase) int64 {
+		t.Helper()
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (p {arn: '%s'})-[:HAS_ROLE]->(:Role) RETURN count(*) AS n`, poolARN), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		return n
+	}
+
+	cases := []struct {
+		name        string
+		allowUnauth bool
+		withGrants  bool
+		wantEdge    bool
+		desc        string
+	}{
+		{
+			name:        "unauth_pool_no_grants_edge",
+			allowUnauth: true,
+			withGrants:  false,
+			wantEdge:    true,
+			desc:        "unauth-enabled pool HAS_ROLE→admin role → GetId/GetCredentials NOT required → edge fires (lab cognito-identity-001)",
+		},
+		{
+			name:        "auth_only_pool_no_grants_no_edge",
+			allowUnauth: false,
+			withGrants:  false,
+			wantEdge:    false,
+			desc:        "authenticated-only pool + no GetId/GetCredentials grants → credential-path guard is the sole rejection → NO edge (no FP regression)",
+		},
+		{
+			name:        "auth_only_pool_with_grants_edge",
+			allowUnauth: false,
+			withGrants:  true,
+			wantEdge:    true,
+			desc:        "authenticated-only pool WITH GetId/GetCredentials grants → original behavior preserved → edge fires",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newAdapter(t)
+			seed(t, db, tc.allowUnauth, tc.withGrants)
+
+			assert.Equal(t, int64(1), hasRoleCount(t, db),
+				"production transform + resource_service_role must yield (IdentityPool)-[:HAS_ROLE]->(role)")
+
+			_, err = RunPlatformQuery(ctx, db, queryID, nil)
+			require.NoError(t, err, "run %s", queryID)
+
+			n := edgeCount(t, db)
+			if tc.wantEdge {
+				assert.Equal(t, int64(1), n, tc.desc)
+			} else {
+				assert.Equal(t, int64(0), n, tc.desc)
+			}
+		})
+	}
+}
+
+// TestPrivescCognitoUnauthPoolNoPrebind locks down the live-lab (cognito-identity-001) shape
+// the prior HAS_ROLE-gated relax missed: the unauthenticated-enabled IdentityPool is NOT
+// pre-bound to the victim role (no HAS_ROLE) because the attacker BINDS the passed role to the
+// pool's unauth slot DURING the attack via SetIdentityPoolRoles. The relax must therefore fire
+// on the mere EXISTENCE of an unauth-enabled pool in the victim's account (no GetId/GetCredentials
+// grants required), while an account with NO unauth pool and no grants still yields no edge.
+func TestPrivescCognitoUnauthPoolNoPrebind(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	newAdapter := func(t *testing.T) graph.GraphDatabase {
+		t.Helper()
+		cfg := graph.NewConfig(boltURL, "", "")
+		adapter, err := adapters.NewNeo4jAdapter(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { adapter.Close() })
+		return adapter
+	}
+
+	const (
+		attacker = "arn:aws:iam::123456789012:user/cog-attacker"
+		role     = "arn:aws:iam::123456789012:role/cog-unauth-role"
+		poolARN  = "arn:aws:cognito-identity:us-east-1:123456789012:identitypool/us-east-1:p2"
+		queryID  = "aws/enrich/privesc/cognito_set_identity_pool_roles"
+	)
+
+	// seed builds an identity-pool node via the production transformer WITHOUT a bound role
+	// (no unauthenticatedRole/authenticatedRole), so resource_service_role produces NO HAS_ROLE
+	// edge — exactly the pre-attack live-lab shape. allowUnauth toggles the pool's unauth flag.
+	// withGrants seeds GetId/GetCredentials so we can prove the auth-path still works as before.
+	seed := func(t *testing.T, db graph.GraphDatabase, allowUnauth, withGrants bool) {
+		t.Helper()
+		_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+		require.NoError(t, err, "clear db")
+
+		poolNode := transformaws.NodeFromAWSResource(output.AWSResource{
+			ResourceType: "AWS::Cognito::IdentityPool",
+			ARN:          poolARN,
+			AccountRef:   "123456789012",
+			Region:       "us-east-1",
+			Properties: map[string]any{
+				"AllowUnauthenticatedIdentities": allowUnauth,
+			},
+		})
+		_, err = db.CreateNodes(ctx, []*graph.Node{poolNode})
+		require.NoError(t, err, "write transformer-built identity-pool node")
+
+		_, err = db.Query(ctx, fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
+			CREATE (svc:Resource {Arn: 'arn:aws:cognito-identity:us-east-1:123456789012:*'})
+			CREATE (role:Role:Principal {Arn: '%s', _is_admin: true,
+				trusted_federated: ['cognito-identity.amazonaws.com']})
+			WITH a, svc, role
+			MERGE (a)-[:IAM_PASSROLE]->(role)
+			MERGE (a)-[:`+"`COGNITO-IDENTITY_SETIDENTITYPOOLROLES`"+`]->(svc)
+		`, attacker, role), nil)
+		require.NoError(t, err, "seed attacker/role/passrole/setroles")
+
+		if withGrants {
+			_, err = db.Query(ctx, fmt.Sprintf(`
+				MATCH (a {Arn: '%s'}), (svc {Arn: 'arn:aws:cognito-identity:us-east-1:123456789012:*'})
+				MERGE (a)-[:`+"`COGNITO-IDENTITY_GETID`"+`]->(svc)
+				MERGE (a)-[:`+"`COGNITO-IDENTITY_GETCREDENTIALSFORIDENTITY`"+`]->(svc)
+			`, attacker), nil)
+			require.NoError(t, err, "seed GetId/GetCredentials grants")
+		}
+
+		// resource_service_role runs as in production; with no bound role serialized it produces
+		// NO HAS_ROLE edge, which the assertions below verify.
+		_, err = RunPlatformQuery(ctx, db, "aws/enrich/resource_service_role", nil)
+		require.NoError(t, err, "run resource_service_role enricher")
+	}
+
+	edgeCount := func(t *testing.T, db graph.GraphDatabase) int64 {
+		t.Helper()
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(:Role {Arn: '%s'}) RETURN count(r) AS n`,
+			attacker, role), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		return n
+	}
+
+	poolHasRoleCount := func(t *testing.T, db graph.GraphDatabase) int64 {
+		t.Helper()
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (p {arn: '%s'})-[:HAS_ROLE]->() RETURN count(*) AS n`, poolARN), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		return n
+	}
+
+	cases := []struct {
+		name        string
+		allowUnauth bool
+		withGrants  bool
+		wantEdge    bool
+		desc        string
+	}{
+		{
+			name:        "unauth_pool_no_prebind_no_grants_edge",
+			allowUnauth: true,
+			withGrants:  false,
+			wantEdge:    true,
+			desc:        "unauth-enabled pool exists in victim's account but is NOT pre-bound (no HAS_ROLE) + passrole→priv + SetIdentityPoolRoles → edge fires without GetId/GetCredentials (lab cognito-identity-001)",
+		},
+		{
+			name:        "auth_only_pool_no_prebind_no_grants_no_edge",
+			allowUnauth: false,
+			withGrants:  false,
+			wantEdge:    false,
+			desc:        "no unauth-enabled pool + no GetId/GetCredentials grants → credential-path guard is the sole rejection → NO edge (relax is not blanket)",
+		},
+		{
+			name:        "auth_only_pool_with_grants_edge",
+			allowUnauth: false,
+			withGrants:  true,
+			wantEdge:    true,
+			desc:        "authenticated-only pool WITH GetId/GetCredentials grants → original auth credential path still fires (no regression)",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newAdapter(t)
+			seed(t, db, tc.allowUnauth, tc.withGrants)
+
+			assert.Equal(t, int64(0), poolHasRoleCount(t, db),
+				"pool has no bound role serialized → resource_service_role must NOT create HAS_ROLE (pre-attack shape)")
+
+			_, err = RunPlatformQuery(ctx, db, queryID, nil)
+			require.NoError(t, err, "run %s", queryID)
+
+			n := edgeCount(t, db)
+			if tc.wantEdge {
+				assert.Equal(t, int64(1), n, tc.desc)
 			} else {
 				assert.Equal(t, int64(0), n, tc.desc)
 			}

@@ -2,9 +2,9 @@ package iam
 
 import "testing"
 
-// TestPrivescGapActionsAllowlisted asserts the privesc actions added to close the
-// Phase-3 known-gap skips are recognized as priv-esc actions. Each case fails if
-// the corresponding allowlist entry in action.go is removed.
+// TestPrivescGapActionsAllowlisted asserts that each of these privesc actions is
+// recognized as a priv-esc action. Each case fails if the corresponding allowlist
+// entry in action.go is removed.
 func TestPrivescGapActionsAllowlisted(t *testing.T) {
 	actions := []string{
 		"iam:DeleteAccessKey",
@@ -15,9 +15,13 @@ func TestPrivescGapActionsAllowlisted(t *testing.T) {
 		"cloudformation:CreateStackInstances",
 		"bedrock-agentcore:StartCodeInterpreterSession",
 		"bedrock-agentcore:InvokeCodeInterpreter",
-		// Bucket E closure of cognito_set_pool_roles: the credential-retrieval half.
+		// cognito_set_pool_roles credential-retrieval half.
 		"cognito-identity:GetId",
 		"cognito-identity:GetCredentialsForIdentity",
+		// SageMaker lifecycle takeover: author a malicious lifecycle
+		// script and attach it to an existing notebook instance.
+		"sagemaker:CreateNotebookInstanceLifecycleConfig",
+		"sagemaker:UpdateNotebookInstance",
 	}
 	for _, action := range actions {
 		t.Run(action, func(t *testing.T) {
@@ -28,9 +32,9 @@ func TestPrivescGapActionsAllowlisted(t *testing.T) {
 	}
 }
 
-// TestPrivescGapActionResourceMappings asserts the action→resource map entries added
-// to close the Phase-3 known-gap skips resolve against the expected resource ARNs.
-// Each case fails if the corresponding ActionResourceMap entry is removed.
+// TestPrivescGapActionResourceMappings asserts that the action→resource map entries
+// resolve against the expected resource ARNs. Each case fails if the corresponding
+// ActionResourceMap entry is removed.
 func TestPrivescGapActionResourceMappings(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -127,6 +131,66 @@ func TestPrivescGapActionResourceMappings(t *testing.T) {
 			action:   "cognito-identity:GetId",
 			resource: "arn:aws:s3:::my-bucket",
 			expected: false,
+		},
+		{
+			name:     "sagemaker:CreateNotebookInstanceLifecycleConfig on concrete lifecycle-config ARN",
+			action:   "sagemaker:CreateNotebookInstanceLifecycleConfig",
+			resource: "arn:aws:sagemaker:us-east-1:123456789012:notebook-instance-lifecycle-config/pl-lc",
+			expected: true,
+		},
+		{
+			name:     "sagemaker:UpdateNotebookInstanceLifecycleConfig on concrete lifecycle-config ARN",
+			action:   "sagemaker:UpdateNotebookInstanceLifecycleConfig",
+			resource: "arn:aws:sagemaker:us-east-1:123456789012:notebook-instance-lifecycle-config/pl-lc",
+			expected: true,
+		},
+		{
+			name:     "sagemaker:CreateNotebookInstanceLifecycleConfig on bare notebook-instance ARN (wrong resource type)",
+			action:   "sagemaker:CreateNotebookInstanceLifecycleConfig",
+			resource: "arn:aws:sagemaker:us-east-1:123456789012:notebook-instance/pl-nb",
+			expected: false,
+		},
+		{
+			name:     "sagemaker:UpdateNotebookInstanceLifecycleConfig on bare notebook-instance ARN (wrong resource type)",
+			action:   "sagemaker:UpdateNotebookInstanceLifecycleConfig",
+			resource: "arn:aws:sagemaker:us-east-1:123456789012:notebook-instance/pl-nb",
+			expected: false,
+		},
+		{
+			name:     "sagemaker:UpdateNotebookInstance on concrete notebook-instance ARN",
+			action:   "sagemaker:UpdateNotebookInstance",
+			resource: "arn:aws:sagemaker:us-east-1:123456789012:notebook-instance/pl-nb",
+			expected: true,
+		},
+		{
+			name:     "sagemaker:UpdateNotebookInstance on IAM role (wrong resource type)",
+			action:   "sagemaker:UpdateNotebookInstance",
+			resource: "arn:aws:iam::123456789012:role/admin",
+			expected: false,
+		},
+		{
+			name:     "apprunner:UpdateService on concrete service ARN",
+			action:   "apprunner:UpdateService",
+			resource: "arn:aws:apprunner:us-east-1:123456789012:service/pl-apprunner-002/abc123",
+			expected: true,
+		},
+		{
+			name:     "apprunner:CreateService on concrete service ARN",
+			action:   "apprunner:CreateService",
+			resource: "arn:aws:apprunner:us-east-1:123456789012:service/pl-apprunner-002/abc123",
+			expected: true,
+		},
+		{
+			name:     "ecs:ExecuteCommand on concrete cluster ARN",
+			action:   "ecs:ExecuteCommand",
+			resource: "arn:aws:ecs:us-east-1:123456789012:cluster/pl-ecs-006",
+			expected: true,
+		},
+		{
+			name:     "ecs:ExecuteCommand on concrete task ARN",
+			action:   "ecs:ExecuteCommand",
+			resource: "arn:aws:ecs:us-east-1:123456789012:task/pl-ecs-006/abc123",
+			expected: true,
 		},
 	}
 

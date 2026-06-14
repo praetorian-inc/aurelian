@@ -899,13 +899,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions subject equals specific repo and branch",
 			conditions: &types.Condition{
 				"StringEquals": {
-					"token.actions.githubusercontent.com:sub":   {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+					"token.actions.githubusercontent.com:sub": {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
 					"token.actions.githubusercontent.com:aud": {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					"token.actions.githubusercontent.com:sub":   "repo:praetorian-inc/nebula:ref:refs/heads/main",
+					"token.actions.githubusercontent.com:sub": "repo:praetorian-inc/nebula:ref:refs/heads/main",
 					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
 				},
 			},
@@ -917,13 +917,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions subject does not match - different branch",
 			conditions: &types.Condition{
 				"StringEquals": {
-					"token.actions.githubusercontent.com:sub":   {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+					"token.actions.githubusercontent.com:sub": {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
 					"token.actions.githubusercontent.com:aud": {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					"token.actions.githubusercontent.com:sub":   "repo:praetorian-inc/nebula:ref:refs/heads/develop",
+					"token.actions.githubusercontent.com:sub": "repo:praetorian-inc/nebula:ref:refs/heads/develop",
 					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
 				},
 			},
@@ -935,13 +935,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions subject with wildcard matching any context",
 			conditions: &types.Condition{
 				"StringLike": {
-					"token.actions.githubusercontent.com:sub":   {"repo:praetorian-inc/nebula:*"},
+					"token.actions.githubusercontent.com:sub": {"repo:praetorian-inc/nebula:*"},
 					"token.actions.githubusercontent.com:aud": {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					"token.actions.githubusercontent.com:sub":   "repo:praetorian-inc/nebula:environment:production",
+					"token.actions.githubusercontent.com:sub": "repo:praetorian-inc/nebula:environment:production",
 					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
 				},
 			},
@@ -953,13 +953,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions subject with wildcard not matching different repo",
 			conditions: &types.Condition{
 				"StringLike": {
-					"token.actions.githubusercontent.com:sub":   {"repo:praetorian-inc/nebula:*"},
+					"token.actions.githubusercontent.com:sub": {"repo:praetorian-inc/nebula:*"},
 					"token.actions.githubusercontent.com:aud": {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					"token.actions.githubusercontent.com:sub":   "repo:different-org/other-repo:ref:refs/heads/main",
+					"token.actions.githubusercontent.com:sub": "repo:different-org/other-repo:ref:refs/heads/main",
 					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
 				},
 			},
@@ -971,13 +971,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions environment-specific access",
 			conditions: &types.Condition{
 				"StringEquals": {
-					"token.actions.githubusercontent.com:sub":   {"repo:praetorian-inc/nebula:environment:production"},
+					"token.actions.githubusercontent.com:sub": {"repo:praetorian-inc/nebula:environment:production"},
 					"token.actions.githubusercontent.com:aud": {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					"token.actions.githubusercontent.com:sub":   "repo:praetorian-inc/nebula:environment:production",
+					"token.actions.githubusercontent.com:sub": "repo:praetorian-inc/nebula:environment:production",
 					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
 				},
 			},
@@ -989,13 +989,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions environment mismatch",
 			conditions: &types.Condition{
 				"StringEquals": {
-					"token.actions.githubusercontent.com:sub":   {"repo:praetorian-inc/nebula:environment:production"},
+					"token.actions.githubusercontent.com:sub": {"repo:praetorian-inc/nebula:environment:production"},
 					"token.actions.githubusercontent.com:aud": {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					"token.actions.githubusercontent.com:sub":   "repo:praetorian-inc/nebula:environment:staging",
+					"token.actions.githubusercontent.com:sub": "repo:praetorian-inc/nebula:environment:staging",
 					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
 				},
 			},
@@ -1007,13 +1007,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions pull request context",
 			conditions: &types.Condition{
 				"StringEquals": {
-					"token.actions.githubusercontent.com:sub":   {"repo:praetorian-inc/nebula:pull_request"},
+					"token.actions.githubusercontent.com:sub": {"repo:praetorian-inc/nebula:pull_request"},
 					"token.actions.githubusercontent.com:aud": {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					"token.actions.githubusercontent.com:sub":   "repo:praetorian-inc/nebula:pull_request",
+					"token.actions.githubusercontent.com:sub": "repo:praetorian-inc/nebula:pull_request",
 					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
 				},
 			},
@@ -1025,7 +1025,7 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions subject missing should fail",
 			conditions: &types.Condition{
 				"StringEquals": {
-					"token.actions.githubusercontent.com:sub":   {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+					"token.actions.githubusercontent.com:sub": {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
 					"token.actions.githubusercontent.com:aud": {"sts.amazonaws.com"},
 				},
 			},
@@ -1044,7 +1044,7 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions audience missing should fail",
 			conditions: &types.Condition{
 				"StringEquals": {
-					"token.actions.githubusercontent.com:sub":   {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
+					"token.actions.githubusercontent.com:sub": {"repo:praetorian-inc/nebula:ref:refs/heads/main"},
 					"token.actions.githubusercontent.com:aud": {"sts.amazonaws.com"},
 				},
 			},
@@ -1072,7 +1072,7 @@ func TestEvaluateConditions(t *testing.T) {
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					"token.actions.githubusercontent.com:sub":   "repo:praetorian-inc/nebula:environment:production",
+					"token.actions.githubusercontent.com:sub": "repo:praetorian-inc/nebula:environment:production",
 					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
 				},
 			},
@@ -1087,13 +1087,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions StringNotEquals - fails because aud matches condition value",
 			conditions: &types.Condition{
 				"StringNotEquals": {
-					"token.actions.githubusercontent.com:sub":   {"repo:blocked-org/blocked-repo:*"},
+					"token.actions.githubusercontent.com:sub": {"repo:blocked-org/blocked-repo:*"},
 					"token.actions.githubusercontent.com:aud": {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					"token.actions.githubusercontent.com:sub":   "repo:praetorian-inc/nebula:ref:refs/heads/main",
+					"token.actions.githubusercontent.com:sub": "repo:praetorian-inc/nebula:ref:refs/heads/main",
 					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
 				},
 			},
@@ -1105,13 +1105,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions StringNotEquals - should fail for matching subject",
 			conditions: &types.Condition{
 				"StringNotEquals": {
-					"token.actions.githubusercontent.com:sub":   {"repo:praetorian-inc/nebula:*"},
+					"token.actions.githubusercontent.com:sub": {"repo:praetorian-inc/nebula:*"},
 					"token.actions.githubusercontent.com:aud": {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					"token.actions.githubusercontent.com:sub":   "repo:praetorian-inc/nebula:ref:refs/heads/main",
+					"token.actions.githubusercontent.com:sub": "repo:praetorian-inc/nebula:ref:refs/heads/main",
 					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
 				},
 			},
@@ -1132,7 +1132,7 @@ func TestEvaluateConditions(t *testing.T) {
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					"token.actions.githubusercontent.com:sub":   "repo:praetorian-inc/nebula:ref:refs/heads/main",
+					"token.actions.githubusercontent.com:sub": "repo:praetorian-inc/nebula:ref:refs/heads/main",
 					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
 				},
 			},
@@ -1144,13 +1144,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions multi-level repository name",
 			conditions: &types.Condition{
 				"StringEquals": {
-					"token.actions.githubusercontent.com:sub":   {"repo:org/sub-org/repo-name:ref:refs/heads/main"},
+					"token.actions.githubusercontent.com:sub": {"repo:org/sub-org/repo-name:ref:refs/heads/main"},
 					"token.actions.githubusercontent.com:aud": {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					"token.actions.githubusercontent.com:sub":   "repo:org/sub-org/repo-name:ref:refs/heads/main",
+					"token.actions.githubusercontent.com:sub": "repo:org/sub-org/repo-name:ref:refs/heads/main",
 					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
 				},
 			},
@@ -1162,13 +1162,13 @@ func TestEvaluateConditions(t *testing.T) {
 			name: "GitHub Actions tag-based deployment",
 			conditions: &types.Condition{
 				"StringLike": {
-					"token.actions.githubusercontent.com:sub":   {"repo:praetorian-inc/nebula:ref:refs/tags/v*"},
+					"token.actions.githubusercontent.com:sub": {"repo:praetorian-inc/nebula:ref:refs/tags/v*"},
 					"token.actions.githubusercontent.com:aud": {"sts.amazonaws.com"},
 				},
 			},
 			context: &RequestContext{
 				RequestParameters: map[string]string{
-					"token.actions.githubusercontent.com:sub":   "repo:praetorian-inc/nebula:ref:refs/tags/v1.2.3",
+					"token.actions.githubusercontent.com:sub": "repo:praetorian-inc/nebula:ref:refs/tags/v1.2.3",
 					"token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
 				},
 			},
@@ -1279,6 +1279,104 @@ func TestEvaluateConditions(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestEvaluateConditions_PassedToService verifies that an iam:PassRole scoped by
+// Condition {iam:PassedToService: <svc>} does not fail closed when the context
+// key is absent, but still evaluates precisely when the passed role's trusted
+// services are populated on the RequestContext.
+func TestEvaluateConditions_PassedToService(t *testing.T) {
+	passedToService := func(op string, svc string) *types.Condition {
+		return &types.Condition{
+			op: types.ConditionStatement{
+				"iam:PassedToService": []string{svc},
+			},
+		}
+	}
+
+	t.Run("missing key is inconclusive and allowed (fallback)", func(t *testing.T) {
+		// No PassedToServices in context. Must be satisfiable so the
+		// IAM_PASSROLE edge is built, not failed closed.
+		result := EvaluateConditions(
+			passedToService("StringEquals", "lambda.amazonaws.com"),
+			&RequestContext{PrincipalArn: "arn:aws:iam::123456789012:role/example-role"},
+		)
+		if result.Result != ConditionInconclusive {
+			t.Fatalf("expected ConditionInconclusive, got %v", result.Result)
+		}
+		if !result.Allowed() {
+			t.Fatalf("expected Allowed()=true for inconclusive PassedToService")
+		}
+	})
+
+	t.Run("associated resource arn missing key is inconclusive", func(t *testing.T) {
+		result := EvaluateConditions(
+			&types.Condition{
+				"ArnLike": types.ConditionStatement{
+					"iam:AssociatedResourceArn": []string{"arn:aws:lambda:*:*:function:*"},
+				},
+			},
+			&RequestContext{PrincipalArn: "arn:aws:iam::123456789012:role/example-role"},
+		)
+		if result.Result != ConditionInconclusive {
+			t.Fatalf("expected ConditionInconclusive, got %v", result.Result)
+		}
+	})
+
+	t.Run("populated trusted services match is allowed (precise)", func(t *testing.T) {
+		// Principled path: the role trusts lambda and the policy allows pass-to
+		// lambda, so the condition matches exactly.
+		result := EvaluateConditions(
+			passedToService("ForAnyValue:StringEquals", "lambda.amazonaws.com"),
+			&RequestContext{
+				PrincipalArn:     "arn:aws:iam::123456789012:role/example-role",
+				PassedToServices: []string{"lambda.amazonaws.com"},
+			},
+		)
+		if result.Result != ConditionMatched {
+			t.Fatalf("expected ConditionMatched, got %v", result.Result)
+		}
+		if !result.Allowed() {
+			t.Fatalf("expected Allowed()=true for matching PassedToService")
+		}
+	})
+
+	t.Run("populated trusted services mismatch is failed (FP guard)", func(t *testing.T) {
+		// Principled path: the policy allows pass-to ec2 but the role trusts only
+		// lambda, so the pass is not usable and the condition must fail.
+		result := EvaluateConditions(
+			passedToService("ForAnyValue:StringEquals", "ec2.amazonaws.com"),
+			&RequestContext{
+				PrincipalArn:     "arn:aws:iam::123456789012:role/example-role",
+				PassedToServices: []string{"lambda.amazonaws.com"},
+			},
+		)
+		if result.Result != ConditionFailed {
+			t.Fatalf("expected ConditionFailed, got %v", result.Result)
+		}
+		if result.Allowed() {
+			t.Fatalf("expected Allowed()=false for mismatched PassedToService")
+		}
+	})
+
+	t.Run("unrelated missing non-critical key still fails closed (regression)", func(t *testing.T) {
+		// The permissive default must be scoped to PassRole keys only; an
+		// unrelated non-critical missing key must keep failing closed.
+		result := EvaluateConditions(
+			&types.Condition{
+				"StringEquals": types.ConditionStatement{
+					"s3:prefix": []string{"documents/"},
+				},
+			},
+			&RequestContext{PrincipalArn: "arn:aws:iam::123456789012:role/example-role"},
+		)
+		if result.Result != ConditionFailed {
+			t.Fatalf("expected ConditionFailed, got %v", result.Result)
+		}
+		if result.Allowed() {
+			t.Fatalf("expected Allowed()=false for unrelated missing key")
+		}
+	})
 }
 
 func TestToFloat64(t *testing.T) {

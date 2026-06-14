@@ -1,0 +1,46 @@
+id: aws/enrich/set_launch_template_role
+name: Launch Template to Role Mapping
+platform: aws
+type: enrich
+category: resource-to-role
+description: |
+  Links EC2 launch templates to the IAM role their instances RUN AS via a
+  (LaunchTemplate)-[:HAS_ROLE]->(Role) edge. A launch template references that role
+  indirectly through an IAM instance profile, exactly like an EC2 instance, so the role
+  is resolved the SAME way resource_to_role.yaml resolves an instance: by substring
+  CONTAINS against the role's InstanceProfileList (a JSON STRING of
+  "Arn":"...:instance-profile/<name>" objects, not a Neo4j list, so no APOC).
+
+  resource.IamInstanceProfile (promoted to a top-level node prop by the transformer) has
+  TWO forms — the instance-profile ARN, or just the profile NAME — so two anchored clauses
+  cover both, each binding the closing quote (and the 'instance-profile/' prefix for the
+  name form) to avoid prefix collisions. The existing-template privesc method
+  (ec2_launch_template_version) re-points its CAN_PRIVESC edge at this role and applies a
+  privileged-target guard.
+
+  Same-account scoping: the ARN form is structurally same-account (the account-id is
+  embedded in the instance-profile ARN being matched). The NAME form carries no account-id,
+  so in a MULTI-account graph a role in account B with a same-named instance profile could
+  otherwise form a cross-account HAS_ROLE; the name-form clause therefore additionally
+  requires the launch template and the role to share an account-id
+  (split(arn,':')[4]). An empty IamInstanceProfile is excluded outright so it never matches.
+severity: info
+order: 16
+cypher: |
+  MATCH (role:Role)
+  WHERE role.InstanceProfileList IS NOT NULL
+  MATCH (tmpl:Resource)
+  WHERE tmpl._resourceType = 'AWS::EC2::LaunchTemplate'
+    AND tmpl.IamInstanceProfile IS NOT NULL
+    AND coalesce(tmpl.IamInstanceProfile, '') <> ''
+    AND (
+      // ARN form: structurally same-account (instance-profile ARN embeds the account-id).
+      role.InstanceProfileList CONTAINS ('"' + tmpl.IamInstanceProfile + '"')
+      // Name form: account-less, so require the launch template and role to share an account.
+      OR (
+        role.InstanceProfileList CONTAINS ('instance-profile/' + tmpl.IamInstanceProfile + '"')
+        AND split(coalesce(tmpl.Arn, tmpl.arn), ':')[4] = split(coalesce(role.Arn, role.arn), ':')[4]
+      )
+    )
+  MERGE (tmpl)-[:HAS_ROLE]->(role)
+  RETURN count(*) as links_created

@@ -373,7 +373,7 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 			"starttask":              {"cluster", "task-def", "service"},
 			"createservice":          {"cluster", "service"},
 			"updateservice":          {"service"},
-			"executecommand":         {"task", "service"},
+			"executecommand":         {"task", "cluster", "service"},
 		},
 	},
 	"ssm": {
@@ -426,18 +426,21 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 	},
 	"sagemaker": {
 		ResourcePatterns: map[string]*regexp.Regexp{
-			"notebook-instance": regexp.MustCompile(`^arn:aws:sagemaker:[a-z0-9-]+:\d{12}:notebook-instance/.*$`),
-			"training-job":      regexp.MustCompile(`^arn:aws:sagemaker:[a-z0-9-]+:\d{12}:training-job/.*$`),
-			"processing-job":    regexp.MustCompile(`^arn:aws:sagemaker:[a-z0-9-]+:\d{12}:processing-job/.*$`),
-			"service":           regexp.MustCompile(`^arn:aws:sagemaker:\*:\*:\*$`),
+			"notebook-instance":                  regexp.MustCompile(`^arn:aws:sagemaker:[a-z0-9-]+:\d{12}:notebook-instance/.*$`),
+			"notebook-instance-lifecycle-config": regexp.MustCompile(`^arn:aws:sagemaker:[a-z0-9-]+:\d{12}:notebook-instance-lifecycle-config/.*$`),
+			"training-job":                       regexp.MustCompile(`^arn:aws:sagemaker:[a-z0-9-]+:\d{12}:training-job/.*$`),
+			"processing-job":                     regexp.MustCompile(`^arn:aws:sagemaker:[a-z0-9-]+:\d{12}:processing-job/.*$`),
+			"service":                            regexp.MustCompile(`^arn:aws:sagemaker:\*:\*:\*$`),
 		},
 		ActionResourceMap: map[string][]string{
 			"createnotebookinstance":                {"service"},
+			"createnotebookinstancelifecycleconfig": {"notebook-instance-lifecycle-config", "service"},
 			"createpresignednotebookinstanceurl":    {"notebook-instance", "service"},
 			"createtrainingjob":                     {"service"},
 			"createprocessingjob":                   {"service"},
 			"createhyperparametertuningjob":         {"service"},
-			"updatenotebookinstancelifecycleconfig": {"notebook-instance", "service"},
+			"updatenotebookinstance":                {"notebook-instance", "service"},
+			"updatenotebookinstancelifecycleconfig": {"notebook-instance-lifecycle-config", "service"},
 		},
 	},
 	"autoscaling": {
@@ -465,11 +468,12 @@ var serviceResourceMaps = map[string]ServiceResourceMap{
 	},
 	"apprunner": {
 		ResourcePatterns: map[string]*regexp.Regexp{
-			"service": regexp.MustCompile(`^arn:aws:apprunner:\*:\*:\*$`),
+			"service":          regexp.MustCompile(`^arn:aws:apprunner:\*:\*:\*$`),
+			"service-concrete": regexp.MustCompile(`^arn:aws:apprunner:[a-z0-9-]+:\d{12}:service/.*$`),
 		},
 		ActionResourceMap: map[string][]string{
-			"createservice": {"service"},
-			"updateservice": {"service"},
+			"createservice": {"service", "service-concrete"},
+			"updateservice": {"service", "service-concrete"},
 		},
 	},
 	"batch": {

@@ -142,9 +142,11 @@ var privEscActions = []string{
 	// SageMaker (methods 19, 35–37, 67)
 	"sagemaker:CreateHyperParameterTuningJob",
 	"sagemaker:CreateNotebookInstance",
+	"sagemaker:CreateNotebookInstanceLifecycleConfig",
 	"sagemaker:CreatePresignedNotebookInstanceUrl",
 	"sagemaker:CreateProcessingJob",
 	"sagemaker:CreateTrainingJob",
+	"sagemaker:UpdateNotebookInstance",
 	"sagemaker:UpdateNotebookInstanceLifecycleConfig",
 	// SSM (methods 23–25, 69, 84)
 	"ssm:CreateAssociation",

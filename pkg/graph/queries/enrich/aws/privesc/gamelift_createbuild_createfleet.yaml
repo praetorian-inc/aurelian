@@ -10,8 +10,9 @@ description: |
   ROLE (not the GameLift service resource). All three actions are required; the two gamelift
   actions act on DIFFERENT resources (a build artifact and a fleet referencing it), so they
   are co-existence checks on the attacker rather than a join on one shared node. Guards: the
-  role must trust gamelift.amazonaws.com, must have an instance profile (GameLift fleets are
-  EC2-backed), and must be more privileged than the attacker.
+  role must trust gamelift.amazonaws.com (the GameLift service ASSUMES the fleet instance
+  role via this principal — there is NO EC2 instance profile, so trust alone identifies a
+  GameLift fleet role) and must be more privileged than the attacker.
 severity: high
 order: 100
 cypher: |
@@ -21,15 +22,22 @@ cypher: |
   // single resource carrying both actions). The escalation target is still ONLY the passed
   // role, so this introduces no second fan-out. Guards (new-passrole + multi-perm templates):
   //   - admin-as-source exclusion; self-target exclusion.
-  //   - gamelift trust: 'gamelift.amazonaws.com' IN victim.trusted_services.
-  //   - instance profile present: InstanceProfileList is a JSON string -> CONTAINS arn.
+  //   - gamelift trust: 'gamelift.amazonaws.com' IN victim.trusted_services. This is the sole
+  //     resource-type discriminator: a GameLift fleet's instance role is ASSUMED by the
+  //     GameLift service (trust principal gamelift.amazonaws.com), NOT attached as an EC2
+  //     instance profile, so the role carries NO InstanceProfileList. An instance-profile
+  //     guard here wrongly suppressed the real escalation (live admin role: trusts gamelift,
+  //     InstanceProfileList = null).
+  //   - service-linked-role exclusion (aws-service-role path is not attacker-controllable).
+  //   - same-account: PassRole is account-local (role's account segment must match attacker).
   //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
   MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
     AND coalesce(attacker._is_admin, false) <> true
     AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
     AND 'gamelift.amazonaws.com' IN coalesce(victim.trusted_services, [])
-    AND coalesce(victim.InstanceProfileList, '') CONTAINS 'arn:aws:iam'
+    AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+    AND split(coalesce(victim.Arn, victim.arn), ':')[4] = split(coalesce(attacker.Arn, attacker.arn), ':')[4]
     AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
     AND EXISTS { (attacker)-[build]->() WHERE type(build) = 'GAMELIFT_CREATEBUILD' }
     AND EXISTS { (attacker)-[fleet]->() WHERE type(fleet) = 'GAMELIFT_CREATEFLEET' }

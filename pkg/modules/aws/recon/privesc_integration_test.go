@@ -72,8 +72,8 @@ type labCase struct {
 // knownGaps marks cases that cannot fire on real data. A case here is t.Skip-logged with its
 // reason (never silently dropped) so any limitation stays visible. Keyed by attackerKey.
 //
-// Every case the table covers now fires on live data, so the map is intentionally EMPTY. The
-// detection coverage that makes each previously-missing case fire:
+// Every case the table covers fires on live data, so the map is intentionally EMPTY. The
+// detection coverage that makes each case fire:
 //   - iam_create_access_key / ec2_ssm_association / cloudform_create_stackset / bedrock_create_ci:
 //     the action allowlist + resource map (action.go + service_action_resource_map.go) let the
 //     evaluator emit the required action edges (DeleteAccessKey, CreateAssociation,
@@ -230,8 +230,51 @@ var labCases = []labCase{
 	// correctly-trusted bedrock-agentcore svcadmin role; its collector is unit-tested, live-path
 	// verification deferred.
 	{"batch_submit_job", m("batch_submit_job"), true, tgtServiceRole, "ecstasks", tierCommon, "SubmitJob on a REAL fixture Batch JobDefinition whose jobRoleArn is the privileged ecs-tasks-trusting svcadmin role"},
-	{"bedrock_invoke", m("bedrock_access_code_interpreter"), true, tgtServiceRole, "bedrock", tierCommon, "InvokeSession on a synthetic AgentCore CodeInterpreter whose ExecutionRoleArn is the privileged bedrock-agentcore svcadmin role (AgentCore not provisionable via TF)"},
+	{"bedrock_invoke", m("bedrock_access_code_interpreter"), true, tgtServiceRole, "bedrock", tierCommon, "StartCodeInterpreterSession + InvokeCodeInterpreter on a synthetic AgentCore CodeInterpreter whose ExecutionRoleArn is the privileged bedrock-agentcore svcadmin role (AgentCore not provisionable via TF)"},
 	{"cloudform_changeset", m("cloudformation_changeset"), true, tgtComputeRole, "", tierCommon, "CreateChangeSet+ExecuteChangeSet against a REAL fixture CFN Stack whose RoleARN is the privileged compute admin role"},
+
+	// =========================================================================
+	// Branch coverage — each row exercises a distinct BRANCH: a conditional PassRole,
+	// the managed-policy SSM path, the real-Lambda HAS_ROLE path, the Glue new-passrole
+	// UNION branch, the existing-launch-template branch, the cognito unauth-relax branch,
+	// plus (full-tier) the concrete-ARN AppRunner and the SageMaker lifecycle-create variant.
+	// =========================================================================
+	// Conditional iam:PassRole (StringEquals iam:PassedToService=lambda) + lambda:CreateFunction.
+	{"iam_pass_role_lambda_cond", m("iam_pass_role_lambda"), true, tgtServiceRole, "lambda", tierCommon, "conditional PassRole {iam:PassedToService=lambda.amazonaws.com} + CreateFunction → IAM_PASSROLE edge still forms (permissive-when-absent) → lambda svcadmin role"},
+	// SSM via the AmazonSSMManagedInstanceCore managed policy (ec2-trusting role, NOT ssm trust).
+	{"ssm_managed_send_command", m("ssm_send_command"), true, tgtServiceRole, "ssm_managed", tierCommon, "SendCommand to the ec2-instance running the ec2-trusting role made _ssm_enabled by AmazonSSMManagedInstanceCore (managed-policy path, not ssm trust)"},
+	{"ssm_managed_start_session", m("ssm_start_session"), true, tgtServiceRole, "ssm_managed", tierCommon, "StartSession on the ec2-instance running the managed-policy-SSM role"},
+	// Existing-compute Lambda on the REAL collected lambda function (no resource policy).
+	{"lambda_update_code_real", m("lambda_update_function_code"), true, tgtComputeRole, "", tierCommon, "UpdateFunctionCode+InvokeFunction on the REAL fixture Lambda (no resource policy) → real (fn)-[:HAS_ROLE]->(compute_admin)"},
+	// Glue new-passrole UNION branch (PassRole glue + UpdateJob + StartJobRun, no existing job).
+	{"glue_passrole_updatejob", m("glue_updatejob_startjobrun"), true, tgtServiceRole, "glue", tierCommon, "new-passrole branch: PassRole(glue) + UpdateJob + StartJobRun → passed glue svcadmin role via IAM_PASSROLE (no pre-existing Glue job needed)"},
+	// Existing-launch-template branch (CreateLaunchTemplateVersion + ModifyLaunchTemplate, no PassRole).
+	{"ec2_launch_template_existing", m("ec2_launch_template_version"), true, tgtComputeRole, "", tierCommon, "existing-template variant: CreateLaunchTemplateVersion+ModifyLaunchTemplate on a REAL launch template referencing compute_admin's instance profile → (LaunchTemplate)-[:HAS_ROLE]->(compute_admin)"},
+	// Cognito unauth-relax branch (PassRole + SetIdentityPoolRoles, NO GetId/GetCredentials).
+	{"cognito_unauth_pool", m("cognito_set_identity_pool_roles"), true, tgtServiceRole, "cognito_unauth", tierCommon, "PassRole + SetIdentityPoolRoles with NO GetId/GetCredentials → fires only via the unauth-relax branch (REAL pool AllowUnauthenticatedIdentities=true → (IdentityPool)-[:HAS_ROLE]->(role))"},
+	// Full tier (AppRunner bills while running): concrete-ARN-scoped UpdateService on a REAL service.
+	{"apprunner_update_concrete", m("apprunner_update_service"), true, tgtServiceRole, "apprunner_instance", tierFull, "UpdateService scoped to the CONCRETE service ARN on a REAL App Runner service → its instance role via real (Service)-[:HAS_ROLE]->(role) (validates compute-node load + concrete-ARN token)"},
+	// Full tier (SageMaker notebook bills while InService): lifecycle CREATE variant on a real notebook.
+	{"sagemaker_lifecycle_create", m("sagemaker_lifecycle_config"), true, tgtComputeRole, "", tierFull, "CreateNotebookInstanceLifecycleConfig + UpdateNotebookInstance on a REAL notebook instance running compute_admin → lifecycle-create variant (distinct from the synthetic Update-config case)"},
+
+	// ----- Branch-coverage FALSE POSITIVES -----
+	// Conditional PassRole but no consuming action → must NOT fire.
+	{"fp_passrole_cond_only", m("iam_pass_role_lambda"), false, tgtNone, "", tierCommon, "missing-permission: conditional PassRole {iam:PassedToService=lambda} alone (no lambda:CreateFunction) → IAM_PASSROLE edge forms but no create primitive → no edge"},
+	// ssm-managed instance + _ssm_enabled role exist, but no SendCommand/StartSession.
+	{"fp_ssm_managed_no_send", m("ssm_send_command"), false, tgtNone, "", tierCommon, "missing-permission: ssm-managed instance + _ssm_enabled role present, but attacker holds neither ssm:SendCommand nor ssm:StartSession → no edge"},
+	// Account-scoped unauth-relax: the validated enricher requires only that an unauth-enabled
+	// identity pool EXISTS in the victim's account (NOT a pre-bound pool->victim HAS_ROLE), so a
+	// PassRole+SetIdentityPoolRoles attacker (NO GetId/GetCredentials) CAN escalate to ANY
+	// cognito-trusting admin role in the account by binding it to the EXISTING unauth pool's
+	// unauth slot at attack time. The auth-only-pool admin role is therefore a genuine TP target,
+	// not a false positive — the relax cannot tell which pool SetIdentityPoolRoles will bind. The
+	// (real) FP boundary is "no unauth pool anywhere in the account", which this fixture (which
+	// has the cognito_unauth pool) cannot isolate; that boundary is exercised by the auth branch
+	// requiring GetId/GetCredentials, covered by cognito_set_pool_roles. Renamed-in-place key
+	// kept to avoid renaming the attacker IAM user; want flipped to TP.
+	{"fp_cognito_authpool_no_getid", m("cognito_set_identity_pool_roles"), true, tgtServiceRole, "cognito_authonly", tierCommon, "account-scoped unauth-relax: PassRole+SetIdentityPoolRoles + an unauth-enabled pool EXISTING in the account → escalates to the auth-only-pool's cognito-trusting admin role (the validated relax is account-scoped, not pool-bound)"},
+	// PassRole(ec2) only, no template-edit actions → neither launch-template branch fires.
+	{"fp_ec2_lt_passrole_only", m("ec2_launch_template_version"), false, tgtNone, "", tierCommon, "missing-permission: PassRole(ec2) alone (no CreateLaunchTemplateVersion/ModifyLaunchTemplate) → neither ec2_launch_template_version branch fires"},
 
 	// ===== Intentional no-op (target = none) — no-usable-resource =====
 	// These methods can never draw a usable CAN_PRIVESC edge: the SLR creator gains no assumable
@@ -342,6 +385,32 @@ var labCases = []labCase{
 // in the MERGE relationship pattern, so we match the `{method: '<M>'}` literal.
 var peMethodRe = regexp.MustCompile(`CAN_PRIVESC\s*\{method:\s*'([^']*)'\}`)
 
+// methodLitOverride maps an attackerKey to the EXACT pe.method literal its CAN_PRIVESC edge
+// carries, for enrichers that compute `method` as a Cypher VARIABLE in the MERGE pattern
+// (CAN_PRIVESC {method: method}) rather than an inline string literal. peMethodLiteral's regex
+// only sees inline literals, so these UNION/CASE-branch methods (ec2_launch_template_version,
+// sagemaker_lifecycle_config — each emits TWO distinct method strings) need their per-branch
+// literal named explicitly so the TP/FP assertion targets the right branch's edge. Keyed by
+// attackerKey (unique per labCase). The enricher Cypher is the source of truth; these strings
+// are copied verbatim from its RETURN ... AS method / CASE ... AS method clauses.
+var methodLitOverride = map[string]string{
+	"ec2_launch_template_ver":      "ec2:CreateLaunchTemplateVersion + ec2:ModifyLaunchTemplate",
+	"ec2_launch_template_existing": "ec2:CreateLaunchTemplateVersion + ec2:ModifyLaunchTemplate (existing-template variant)",
+	"fp_ec2_lt_passrole_only":      "ec2:CreateLaunchTemplateVersion + ec2:ModifyLaunchTemplate",
+	"sagemaker_lifecycle":          "sagemaker:UpdateNotebookInstanceLifecycleConfig",
+	"sagemaker_lifecycle_create":   "sagemaker:CreateNotebookInstanceLifecycleConfig + sagemaker:UpdateNotebookInstance",
+}
+
+// caseMethodLiteral returns the pe.method literal a case's CAN_PRIVESC edge carries: the explicit
+// per-branch override when the enricher computes `method` as a variable, else the inline literal
+// extracted from the enricher Cypher by peMethodLiteral.
+func caseMethodLiteral(tc labCase) (string, bool) {
+	if lit, ok := methodLitOverride[tc.attackerKey]; ok {
+		return lit, true
+	}
+	return peMethodLiteral(tc.methodID)
+}
+
 func peMethodLiteral(methodID string) (string, bool) {
 	q, ok := queries.GetQuery(methodID)
 	if !ok {
@@ -445,6 +514,8 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 			fixture.Output("nonpriv_lambda_target_arn"),
 			fixture.Output("service_only_trust_role_arn"),
 			fixture.Output("cognito_admin_arn"),
+			// the auth-only pool's admin role — a legitimate broad-resource target.
+			fixture.Output("cognito_authonly_admin_arn"),
 		},
 		privUserFPTargetARNs: []string{
 			fixture.Output("noprofile_user_arn"),
@@ -457,6 +528,12 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 		}
 		for k, v := range fixture.OutputMap("full_service_admin_arns") {
 			facts.serviceAdminARNs[k] = v
+		}
+		// The AppRunner service's instance role is a dedicated admin role (not in the
+		// service_admin map). Expose it under the svcKey the apprunner_update_concrete labCase
+		// resolves (full-tier only — the resource is var.enable_full-gated).
+		if arn := fixture.Output("apprunner_instance_role_arn"); arn != "" {
+			facts.serviceAdminARNs["apprunner_instance"] = arn
 		}
 	}
 	t.Logf("Loaded %d attacker ARNs, %d service-admin ARNs (full=%v)",
@@ -491,14 +568,21 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 		switch v := m.(type) {
 		case output.AWSIAMResource:
 			iamResources = append(iamResources, v)
+			// The graph module emits the collected service resources
+			// (resourcesWithPolicies) WRAPPED as AWSIAMResource via output.FromAWSResource
+			// (so the live neo4j formatter, which type-switches only on AWSIAMResource,
+			// loads them — see graph.go emitOutputs). A collected backing resource carries a
+			// non-IAM ResourceType (e.g. AWS::Batch::JobDefinition, AWS::CloudFormation::Stack);
+			// real IAM entities carry AWS::IAM::*. Un-wrap the embedded AWSResource for the
+			// non-IAM ones so the REAL collection → resource_service_role → HAS_ROLE path is
+			// exercised end-to-end rather than only via the synthetic stand-ins.
+			if v.ResourceType != "" && !strings.HasPrefix(v.ResourceType, "AWS::IAM::") {
+				collectedResources = append(collectedResources, v.AWSResource)
+			}
 		case output.AWSIAMRelationship:
 			iamRels = append(iamRels, v)
 		case output.AWSResource:
-			// The graph module ALSO emits the collected service resources
-			// (resourcesWithPolicies). These are the REAL backing resources the
-			// existing-compute HAS_ROLE methods re-point at; capture them so the REAL
-			// collection → resource_service_role → HAS_ROLE path is exercised end-to-end
-			// (previously dropped, so the synthetic stand-ins were the only HAS_ROLE source).
+			// Defensive: if a future module emits a plain AWSResource directly, still capture it.
 			collectedResources = append(collectedResources, v)
 		}
 	}
@@ -676,7 +760,7 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 			tc.attackerKey, tc.methodID[strings.LastIndex(tc.methodID, "/")+1:])
 		t.Run(name, func(t *testing.T) {
 			if reason, gap := knownGaps[tc.attackerKey]; gap {
-				t.Skipf("known gap (frozen query, not fixed this PR): %s — %s", tc.desc, reason)
+				t.Skipf("known gap (frozen query): %s — %s", tc.desc, reason)
 			}
 			if tc.tier == tierFull && !fullTier {
 				t.Skipf("tier=full, AURELIAN_E2E_FULL not set — case authored but backing resources not provisioned: %s", tc.desc)
@@ -759,6 +843,18 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 		{"glue_job", "AWS::Glue::Job", fixture.Output("glue_job_name"), facts.computeAdminARN},
 		{"codebuild_project", "AWS::CodeBuild::Project", fixture.Output("codebuild_project_arn"), facts.computeAdminARN},
 		{"batch_jobdef", "AWS::Batch::JobDefinition", fixture.Output("batch_jobdef_arn"), facts.serviceAdminARNs["ecstasks"]},
+		// Real-path HAS_ROLE checks. Common-tier, free-at-rest backing.
+		{"launch_template", "AWS::EC2::LaunchTemplate", fixture.Output("launch_template_id"), facts.computeAdminARN},
+		{"cognito_identity_pool", "AWS::Cognito::IdentityPool", fixture.Output("cognito_unauth_pool_id"), fixture.Output("cognito_unauth_admin_arn")},
+	}
+	// Full-tier real-path check for the AppRunner service (var.enable_full-gated resource).
+	if fullTier {
+		realPathCases = append(realPathCases, struct {
+			name         string
+			resourceType string
+			realARN      string
+			roleARN      string
+		}{"apprunner_service", "AWS::AppRunner::Service", fixture.Output("apprunner_service_arn"), fixture.Output("apprunner_instance_role_arn")})
 	}
 	for _, rc := range realPathCases {
 		rc := rc
@@ -804,7 +900,7 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 // service-wildcard / changeset methods MERGE onto a permission stub, so no clean identity).
 func assertTP(t *testing.T, ctx context.Context, db graph.GraphDatabase, facts fixtureFacts, tc labCase, attacker string) {
 	t.Helper()
-	method, ok := peMethodLiteral(tc.methodID)
+	method, ok := caseMethodLiteral(tc)
 	require.True(t, ok, "could not extract pe.method literal for %s", tc.methodID)
 
 	if tc.target == tgtStub {
@@ -839,7 +935,7 @@ func assertFP(t *testing.T, ctx context.Context, db graph.GraphDatabase, tc labC
 		assert.Zero(t, n, "[FP FAIL] %s fired — %s", tc.methodID, tc.desc)
 		return
 	}
-	method, ok := peMethodLiteral(tc.methodID)
+	method, ok := caseMethodLiteral(tc)
 	require.True(t, ok, "could not extract pe.method literal for %s — FP check would be vacuous", tc.methodID)
 	n := countEdges(t, ctx, db,
 		`MATCH (a)-[r:CAN_PRIVESC {method:$method}]->()

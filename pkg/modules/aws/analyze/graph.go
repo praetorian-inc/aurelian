@@ -129,18 +129,26 @@ func riskFromRecord(rec map[string]any) (output.AurelianRisk, bool) {
 
 	pathSeverity := maxSeverity(severities)
 
+	// methods_per_hop is the multigraph-collapse column: for each hop, EVERY CAN_PRIVESC
+	// method available between that hop's (src,dst) pair. `methods` carries one
+	// representative method per hop; methods_per_hop preserves the full set so a finding
+	// surfaces all parallel methods of a collapsed multi-edge without re-exploding paths.
+	methodsPerHop := toStringMatrix(rec["methods_per_hop"])
+
 	context, err := json.Marshal(struct {
-		AttackerARN  string   `json:"attacker_arn"`
-		TargetARN    string   `json:"target_arn"`
-		Methods      []string `json:"methods"`
-		HopCount     int64    `json:"hop_count"`
-		PathSeverity string   `json:"path_severity"`
+		AttackerARN   string     `json:"attacker_arn"`
+		TargetARN     string     `json:"target_arn"`
+		Methods       []string   `json:"methods"`
+		MethodsPerHop [][]string `json:"methods_per_hop,omitempty"`
+		HopCount      int64      `json:"hop_count"`
+		PathSeverity  string     `json:"path_severity"`
 	}{
-		AttackerARN:  attackerARN,
-		TargetARN:    targetARN,
-		Methods:      methods,
-		HopCount:     hopCount,
-		PathSeverity: string(pathSeverity),
+		AttackerARN:   attackerARN,
+		TargetARN:     targetARN,
+		Methods:       methods,
+		MethodsPerHop: methodsPerHop,
+		HopCount:      hopCount,
+		PathSeverity:  string(pathSeverity),
 	})
 	if err != nil {
 		return output.AurelianRisk{}, false
@@ -188,6 +196,21 @@ func toStringSlice(v any) []string {
 		if s, ok := e.(string); ok {
 			out = append(out, s)
 		}
+	}
+	return out
+}
+
+// toStringMatrix coerces a Neo4j list-of-lists column (decoded as []interface{} of
+// []interface{} of string) into a [][]string, skipping non-list rows and non-string
+// elements. Used for the methods_per_hop column (one method-list per hop).
+func toStringMatrix(v any) [][]string {
+	raw, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+	out := make([][]string, 0, len(raw))
+	for _, row := range raw {
+		out = append(out, toStringSlice(row))
 	}
 	return out
 }

@@ -24,12 +24,73 @@ output "service_admin_arns" {
   value = merge(
     { for k, r in aws_iam_role.service_admin : k => r.arn },
     { cognito = aws_iam_role.cognito_admin.arn },
+    # Branch-coverage TP targets resolved by svcKey in the labCase table:
+    #   ssm_managed    -> the ec2-trusting + AmazonSSMManagedInstanceCore admin role
+    #   cognito_unauth -> the role bound to the unauthenticated-enabled identity pool
+    { ssm_managed = aws_iam_role.ssm_managed_admin.arn },
+    { cognito_unauth = aws_iam_role.cognito_unauth_admin.arn },
+    # The auth-only-pool admin role. Under the account-scoped unauth-relax (the enricher only
+    # requires an unauth-enabled pool to EXIST in the account, not a pre-bound pool->victim
+    # HAS_ROLE), a PassRole+SetIdentityPoolRoles attacker can bind this cognito-trusting admin
+    # role to the EXISTING unauth pool's unauth slot, so it is a legitimate escalation target.
+    { cognito_authonly = aws_iam_role.cognito_authonly_admin.arn },
   )
 }
 
 # The EC2/SSM/Lambda compute exec role: target of the existing-compute HAS_ROLE methods.
 output "compute_admin_arn" {
   value = aws_iam_role.compute_admin.arn
+}
+
+# --- Branch-coverage targets / real backing resources ---
+
+# The ec2-trusting + AmazonSSMManagedInstanceCore admin role (ssm-capable via the managed
+# policy, NOT ssm trust). Target of ssm_managed_send_command / ssm_managed_start_session.
+output "ssm_managed_admin_arn" {
+  value = aws_iam_role.ssm_managed_admin.arn
+}
+# The real ec2 instance running the ssm_managed_admin role (collected by the EC2-instance
+# enumerator -> (instance)-[:HAS_ROLE]->(ssm_managed_admin)).
+output "ssm_managed_instance_arn" {
+  value = aws_instance.ssm_managed.arn
+}
+
+# The role bound to the UNAUTHENTICATED-enabled identity pool (cognito_unauth_pool TP target).
+output "cognito_unauth_admin_arn" {
+  value = aws_iam_role.cognito_unauth_admin.arn
+}
+output "cognito_unauth_pool_id" {
+  value = aws_cognito_identity_pool.unauth.id
+}
+# The role bound to the AUTH-ONLY pool. An admin role broad-resource methods can reach,
+# so it belongs in the no-fan-out allowlist (in facts.decoyARNs in the Go harness).
+output "cognito_authonly_admin_arn" {
+  value = aws_iam_role.cognito_authonly_admin.arn
+}
+output "cognito_authonly_pool_id" {
+  value = aws_cognito_identity_pool.authonly.id
+}
+
+# The existing launch template referencing the compute_admin instance profile
+# (real_path/launch_template asserts (LaunchTemplate)-[:HAS_ROLE]->(compute_admin)).
+output "launch_template_id" {
+  value = aws_launch_template.existing.id
+}
+
+# --- Full-tier real backing resources (only present when var.enable_full) ---
+# A real App Runner service whose instance role is the apprunner-trusting admin role.
+output "apprunner_service_arn" {
+  value = var.enable_full ? aws_apprunner_service.existing[0].arn : ""
+}
+output "apprunner_instance_role_arn" {
+  value = var.enable_full ? aws_iam_role.apprunner_instance[0].arn : ""
+}
+# A real SageMaker notebook instance running the compute_admin role.
+output "sagemaker_notebook_name" {
+  value = var.enable_full ? aws_sagemaker_notebook_instance.existing[0].name : ""
+}
+output "sagemaker_notebook_role_arn" {
+  value = var.enable_full ? aws_iam_role.compute_admin.arn : ""
 }
 
 # The Federated-trust cognito identity-pool admin role. Not a new-passrole TP target (the
@@ -157,7 +218,10 @@ output "attacker_arns" {
 
 # --- Full-tier principals (empty unless var.enable_full) ---
 output "full_attacker_arns" {
-  value = { for k, u in aws_iam_user.full_attacker : k => u.arn }
+  value = merge(
+    { for k, u in aws_iam_user.full_attacker : k => u.arn },
+    { for k, u in aws_iam_user.full_attacker_new : k => u.arn },
+  )
 }
 output "full_service_admin_arns" {
   value = { for k, r in aws_iam_role.full_service_admin : k => r.arn }
@@ -185,10 +249,18 @@ output "all_arns" {
       aws_iam_policy.single_ver.arn,
       aws_lambda_function.compute.arn,
       aws_instance.compute.arn,
+      # Branch-coverage targets / real backing resources.
+      aws_iam_role.ssm_managed_admin.arn,
+      aws_instance.ssm_managed.arn,
+      aws_iam_role.cognito_unauth_admin.arn,
+      aws_iam_role.cognito_authonly_admin.arn,
+      aws_launch_template.existing.arn,
     ],
     [for r in aws_iam_role.service_admin : r.arn],
     [for u in aws_iam_user.attacker : u.arn],
     [for u in aws_iam_user.full_attacker : u.arn],
+    [for u in aws_iam_user.full_attacker_new : u.arn],
     [for r in aws_iam_role.full_service_admin : r.arn],
+    var.enable_full ? [aws_iam_role.apprunner_instance[0].arn] : [],
   )
 }

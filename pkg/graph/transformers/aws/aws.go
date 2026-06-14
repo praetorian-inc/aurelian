@@ -97,10 +97,20 @@ func NodeFromAWSResource(cr output.AWSResource) *graph.Node {
 	// created for collector- and ERD-derived resources, not just hand-seeded ones.
 	if ref := types.RoleReferenceFromProperties(cr.Properties, cr.ResourceType); ref != "" {
 		switch cr.ResourceType {
-		case "AWS::EC2::Instance":
+		case "AWS::EC2::Instance", "AWS::EC2::LaunchTemplate":
 			props["IamInstanceProfile"] = ref
 		case "AWS::Lambda::Function":
 			props["Role"] = ref
+		}
+	}
+
+	// Cognito identity pools carry an AllowUnauthenticatedIdentities flag inside the
+	// flattened properties JSON; promote it to a top-level node property so
+	// cognito_set_identity_pool_roles can relax its GetId/GetCredentials guard for pools
+	// reachable without authentication.
+	if cr.ResourceType == "AWS::Cognito::IdentityPool" {
+		if allow, ok := cr.Properties["AllowUnauthenticatedIdentities"].(bool); ok {
+			props["AllowUnauthenticatedIdentities"] = allow
 		}
 	}
 

@@ -57,6 +57,32 @@ locals {
 # Each user holds EXACTLY the permissions for its scenario, mirroring pathfinding.cloud
 # labs, so per-method TP and FP can be asserted independently. Outputs map each principal
 # to its expected verdict + target (see outputs.tf).
+#
+# ==================== BRANCH-COVERAGE TEST CASES ====================
+# Each row exercises a distinct BRANCH of its method (other rows cover a different
+# branch of the same method). Verdict is asserted by privesc_integration_test.go labCases.
+#
+# | Case key                     | Method                          | Tier   | Verdict | Backing resource          |
+# |------------------------------|---------------------------------|--------|---------|---------------------------|
+# | iam_pass_role_lambda_cond    | iam_pass_role_lambda            | common | FLAGGED | none (IAM-only, cond.)    |
+# | ssm_managed_send_command     | ssm_send_command                | common | FLAGGED | ssm_managed role + EC2    |
+# | ssm_managed_start_session    | ssm_start_session               | common | FLAGGED | ssm_managed role + EC2    |
+# | lambda_update_code_real      | lambda_update_function_code     | common | FLAGGED | real aws_lambda_function  |
+# | glue_passrole_updatejob      | glue_updatejob_startjobrun      | common | FLAGGED | none (IAM-only passrole)  |
+# | ec2_launch_template_existing | ec2_launch_template_version     | common | FLAGGED | aws_launch_template       |
+# | cognito_unauth_pool          | cognito_set_identity_pool_roles | common | FLAGGED | unauth identity pool      |
+# | apprunner_update_concrete    | apprunner_update_service        | full   | FLAGGED | aws_apprunner_service     |
+# | sagemaker_lifecycle_create   | sagemaker_lifecycle_config      | full   | FLAGGED | sagemaker notebook        |
+# | fp_passrole_cond_only        | iam_pass_role_lambda            | common | NOT     | none                      |
+# | fp_ssm_managed_no_send       | ssm_send_command                | common | NOT     | ssm_managed role + EC2    |
+# | fp_cognito_authpool_no_getid | cognito_set_identity_pool_roles | common | NOT     | auth-only identity pool   |
+# | fp_ec2_lt_passrole_only      | ec2_launch_template_version     | common | NOT     | aws_launch_template       |
+#
+# FP Rationale:
+#   fp_passrole_cond_only:        conditional PassRole forms IAM_PASSROLE but no lambda:CreateFunction.
+#   fp_ssm_managed_no_send:       HAS_ROLE + _ssm_enabled present, but no ssm:SendCommand/StartSession.
+#   fp_cognito_authpool_no_getid: auth-only pool + no GetId/GetCredentials -> unauth relax is scoped out.
+#   fp_ec2_lt_passrole_only:      PassRole(ec2) only, no CreateLaunchTemplateVersion/ModifyLaunchTemplate.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -466,10 +492,10 @@ resource "aws_instance" "compute" {
 # =============================================================================
 # Phase-2a REAL backing service resources for the existing-compute HAS_ROLE methods.
 #
-# Each resource RUNS AS a privileged role so the Phase-1 recon collectors enumerate it,
+# Each resource RUNS AS a privileged role so the recon collectors enumerate it,
 # resource_service_role builds a real (Resource)-[:HAS_ROLE]->(role) edge on REAL CloudControl-
 # shaped data, and the matching existing-compute privesc method re-points its CAN_PRIVESC edge
-# at that role — replacing the synthetic stand-in that previously seeded the HAS_ROLE source.
+# at that role on real collected data rather than a synthetic stand-in.
 #
 # All run the compute_admin role (an admin role, _is_admin=true → method severity high) EXCEPT
 # the Batch job definition, whose jobRoleArn must be the ecs-tasks-trusting svcadmin role (the
@@ -621,6 +647,153 @@ resource "aws_codebuild_project" "compute" {
 }
 
 # =============================================================================
+# Branch-coverage shared targets + real backing resources.
+#
+# Each block backs a labCase BRANCH (other rows cover a DIFFERENT branch of the same
+# method YAML). All collectors / transformer
+# promotions / enrichers these rely on already exist and are wired into graph.go.
+# =============================================================================
+
+#==============================================================================
+# SSM via the AmazonSSMManagedInstanceCore MANAGED POLICY (not ssm trust).
+# An admin role that TRUSTS ec2.amazonaws.com (NOT ssm) and attaches
+# AmazonSSMManagedInstanceCore. set_ssm_enabled_roles.yaml flags it _ssm_enabled via the
+# managed-policy CONTAINS clause (the canonical real-world EC2->SSM path), so ssm_send_command
+# / ssm_start_session fire on it even though it does not trust ssm. The prior ssm cases use
+# compute_admin, which TRUSTS ssm — this is the distinct managed-policy path.
+#==============================================================================
+resource "aws_iam_role" "ssm_managed_admin" {
+  name = "${local.prefix}-ssm-managed-admin"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRole"
+      Principal = { Service = "ec2.amazonaws.com" } # NOT ssm — SSM capability comes from the managed policy
+    }]
+  })
+  tags = local.tags
+}
+resource "aws_iam_role_policy_attachment" "ssm_managed_admin_admin" {
+  role       = aws_iam_role.ssm_managed_admin.name
+  policy_arn = local.admin_policy
+}
+resource "aws_iam_role_policy_attachment" "ssm_managed_admin_ssmcore" {
+  role       = aws_iam_role.ssm_managed_admin.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+resource "aws_iam_instance_profile" "ssm_managed" {
+  name = "${local.prefix}-ssm-managed"
+  role = aws_iam_role.ssm_managed_admin.name
+}
+# A free-at-rest t3.micro running the ssm-managed admin role, so the EC2-instance collector
+# enumerates it and resource_to_role builds (instance)-[:HAS_ROLE]->(ssm_managed_admin).
+resource "aws_instance" "ssm_managed" {
+  ami                  = data.aws_ami.al2023.id
+  instance_type        = "t3.micro"
+  iam_instance_profile = aws_iam_instance_profile.ssm_managed.name
+  tags                 = merge(local.tags, { Name = "${local.prefix}-ssm-managed" })
+}
+
+#==============================================================================
+# Cognito UNAUTHENTICATED identity pool (unauth-relax branch).
+# A real identity pool with AllowUnauthenticatedIdentities=true bound to a cognito-trusting
+# admin role. The cognito_set_identity_pool_roles unauth branch fires for an attacker holding
+# PassRole + SetIdentityPoolRoles but NO GetId/GetCredentials, gated on the connected
+# (IdentityPool{AllowUnauthenticatedIdentities:true})-[:HAS_ROLE]->(role) edge. The prior
+# cognito case requires GetId+GetCredentials (the authenticated branch).
+#==============================================================================
+resource "aws_iam_role" "cognito_unauth_admin" {
+  name = "${local.prefix}-cognito-unauth-admin"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Principal = { Federated = "cognito-identity.amazonaws.com" }
+      Condition = {
+        StringEquals = {
+          "cognito-identity.amazonaws.com:aud" = aws_cognito_identity_pool.unauth.id
+        }
+      }
+    }]
+  })
+  tags = local.tags
+}
+resource "aws_iam_role_policy_attachment" "cognito_unauth_admin" {
+  role       = aws_iam_role.cognito_unauth_admin.name
+  policy_arn = local.admin_policy
+}
+resource "aws_cognito_identity_pool" "unauth" {
+  identity_pool_name               = "${local.prefix}-unauth"
+  allow_unauthenticated_identities = true
+  tags                             = local.tags
+}
+resource "aws_cognito_identity_pool_roles_attachment" "unauth" {
+  identity_pool_id = aws_cognito_identity_pool.unauth.id
+  roles = {
+    authenticated   = aws_iam_role.cognito_unauth_admin.arn
+    unauthenticated = aws_iam_role.cognito_unauth_admin.arn
+  }
+}
+
+#==============================================================================
+# An AUTHENTICATED-ONLY identity pool (AllowUnauthenticatedIdentities=false) bound to
+# a cognito admin role. The fp_cognito_authpool_no_getid attacker holds PassRole +
+# SetIdentityPoolRoles but NO GetId/GetCredentials, so neither the authenticated branch (needs
+# those two perms) nor the unauth-relax branch (needs AllowUnauthenticatedIdentities=true)
+# is satisfied -> the method must NOT fire. Proves the unauth relax is scoped, not blanket.
+#==============================================================================
+resource "aws_iam_role" "cognito_authonly_admin" {
+  name = "${local.prefix}-cognito-authonly-admin"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Principal = { Federated = "cognito-identity.amazonaws.com" }
+      Condition = {
+        StringEquals = {
+          "cognito-identity.amazonaws.com:aud" = aws_cognito_identity_pool.authonly.id
+        }
+      }
+    }]
+  })
+  tags = local.tags
+}
+resource "aws_iam_role_policy_attachment" "cognito_authonly_admin" {
+  role       = aws_iam_role.cognito_authonly_admin.name
+  policy_arn = local.admin_policy
+}
+resource "aws_cognito_identity_pool" "authonly" {
+  identity_pool_name               = "${local.prefix}-authonly"
+  allow_unauthenticated_identities = false
+  tags                             = local.tags
+}
+resource "aws_cognito_identity_pool_roles_attachment" "authonly" {
+  identity_pool_id = aws_cognito_identity_pool.authonly.id
+  roles = {
+    authenticated = aws_iam_role.cognito_authonly_admin.arn
+  }
+}
+
+#==============================================================================
+# An EXISTING EC2 launch template referencing the compute_admin instance profile.
+# The launch-template collector enumerates it; the transformer promotes IamInstanceProfile;
+# set_launch_template_role.yaml builds (LaunchTemplate)-[:HAS_ROLE]->(compute_admin). The
+# ec2_launch_template_version existing-template UNION branch re-points its CAN_PRIVESC edge at
+# that role for an attacker holding CreateLaunchTemplateVersion+ModifyLaunchTemplate (NO
+# PassRole). The prior launch-template case is the new-passrole branch.
+#==============================================================================
+resource "aws_launch_template" "existing" {
+  name = "${local.prefix}-existing-lt"
+  iam_instance_profile {
+    arn = aws_iam_instance_profile.compute_admin.arn
+  }
+  tags = local.tags
+}
+
+# =============================================================================
 # Attacker users. Each entry in local.attackers becomes one aws_iam_user +
 # aws_iam_user_policy. `statements` is the inline policy statement list; group
 # membership / managed-policy attachment for the self-escalation attackers that
@@ -718,9 +891,37 @@ locals {
     sagemaker_lifecycle        = [{ actions = ["sagemaker:UpdateNotebookInstanceLifecycleConfig"], resources = ["*"] }]
     sagemaker_presigned        = [{ actions = ["sagemaker:CreatePresignedNotebookInstanceUrl"], resources = ["*"] }]
 
+    # ---- Branch-coverage TP attackers ----
+    # Conditional PassRole — StringEquals { iam:PassedToService = lambda.amazonaws.com } +
+    #     lambda:CreateFunction. The evaluator's permissive-when-absent handling of
+    #     iam:PassedToService keeps the IAM_PASSROLE edge, and iam_pass_role_lambda re-checks the
+    #     role's lambda trust -> CAN_PRIVESC forms to the lambda svcadmin role.
+    iam_pass_role_lambda_cond = [
+      { actions = ["iam:PassRole"], resources = ["*"], condition = { StringEquals = { "iam:PassedToService" = "lambda.amazonaws.com" } } },
+      { actions = ["lambda:CreateFunction"], resources = ["*"] },
+    ]
+    # SSM via managed-policy (ec2-trusting role + AmazonSSMManagedInstanceCore). Same actions
+    #     as the other ssm cases; the distinct path is the TARGET role (ssm_managed_admin) reached
+    #     via the ec2 instance whose role is _ssm_enabled by the managed-policy flag.
+    ssm_managed_send_command  = [{ actions = ["ssm:SendCommand"], resources = ["*"] }]
+    ssm_managed_start_session = [{ actions = ["ssm:StartSession"], resources = ["*"] }]
+    # Existing-compute Lambda on the REAL collected aws_lambda_function.compute (no resource
+    #     policy). Distinct from lambda_update_code (synthetic stand-in): asserts the REAL
+    #     (fn)-[:HAS_ROLE]->(compute_admin) path.
+    lambda_update_code_real = [{ actions = ["lambda:UpdateFunctionCode", "lambda:InvokeFunction"], resources = ["*"] }]
+    # Glue new-passrole UNION branch — PassRole(glue) + UpdateJob + StartJobRun with NO
+    #     pre-existing Glue job. Target = the passed glue svcadmin role (via IAM_PASSROLE).
+    glue_passrole_updatejob = [{ actions = ["iam:PassRole", "glue:UpdateJob", "glue:StartJobRun"], resources = ["*"] }]
+    # Existing-template branch — CreateLaunchTemplateVersion + ModifyLaunchTemplate, NO
+    #      PassRole. Target = compute_admin via (LaunchTemplate)-[:HAS_ROLE]->(role).
+    ec2_launch_template_existing = [{ actions = ["ec2:CreateLaunchTemplateVersion", "ec2:ModifyLaunchTemplate"], resources = ["*"] }]
+    # Cognito unauth-relax — PassRole + SetIdentityPoolRoles, NO GetId/GetCredentials. Fires
+    #      only because the bound pool allows unauthenticated identities.
+    cognito_unauth_pool = [{ actions = ["iam:PassRole", "cognito-identity:SetIdentityPoolRoles"], resources = ["*"] }]
+
     # ---- Service-wildcard fail-open (target = permission stub) ----
     batch_submit_job    = [{ actions = ["batch:SubmitJob"], resources = ["*"] }]
-    bedrock_invoke      = [{ actions = ["bedrock-agentcore:InvokeSession"], resources = ["*"] }]
+    bedrock_invoke      = [{ actions = ["bedrock-agentcore:StartCodeInterpreterSession", "bedrock-agentcore:InvokeCodeInterpreter"], resources = ["*"] }]
     cloudform_changeset = [{ actions = ["cloudformation:CreateChangeSet", "cloudformation:ExecuteChangeSet"], resources = ["*"] }]
 
     # ---- Intentional no-op ----
@@ -838,6 +1039,26 @@ locals {
     # multi-version aws_iam_policy.custom). Removing ONLY the G2 version-count guard would let this fire,
     # proving the FP is sound.
     fp_setdefaultversion_single_version = [{ actions = ["iam:SetDefaultPolicyVersion"], resources = ["*"] }]
+
+    # ---- Branch-coverage FP attackers ----
+    # Conditional PassRole (PassedToService=lambda) but NO lambda:CreateFunction ->
+    # iam_pass_role_lambda must NOT fire (the conditional-PassRole path still requires the
+    # consuming action; the IAM_PASSROLE edge forms but there is no create primitive).
+    fp_passrole_cond_only = [
+      { actions = ["iam:PassRole"], resources = ["*"], condition = { StringEquals = { "iam:PassedToService" = "lambda.amazonaws.com" } } },
+    ]
+    # The ssm-managed instance + _ssm_enabled role exist, but this attacker holds
+    # NEITHER ssm:SendCommand NOR ssm:StartSession (only a read action) -> ssm_send_command must
+    # NOT fire (missing-permission; isolates the action requirement from the HAS_ROLE/_ssm_enabled
+    # preconditions, which ARE satisfied).
+    fp_ssm_managed_no_send = [{ actions = ["ssm:DescribeInstanceInformation"], resources = ["*"] }]
+    # PassRole + SetIdentityPoolRoles scoped at the AUTH-ONLY pool's role, NO
+    # GetId/GetCredentials. The authenticated branch needs those two perms; the unauth-relax
+    # branch needs AllowUnauthenticatedIdentities=true (the bound pool is false) -> NO edge.
+    fp_cognito_authpool_no_getid = [{ actions = ["iam:PassRole", "cognito-identity:SetIdentityPoolRoles"], resources = ["*"] }]
+    # PassRole(ec2) ONLY, no CreateLaunchTemplateVersion/ModifyLaunchTemplate ->
+    # neither ec2_launch_template_version branch (both require the two edit actions) fires.
+    fp_ec2_lt_passrole_only = [{ actions = ["iam:PassRole"], resources = ["*"] }]
   }
 }
 
@@ -853,11 +1074,20 @@ resource "aws_iam_user_policy" "attacker" {
   user     = aws_iam_user.attacker[each.key].name
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [for s in each.value : {
-      Effect   = "Allow"
-      Action   = s.actions
-      Resource = s.resources
-    }]
+    # A statement may carry an optional `condition` map (operator -> { key -> value }), emitted
+    # as a Condition block ONLY when present — condition-less statements emit no Condition block.
+    # Used by the conditional-PassRole TP/FP: a PassRole scoped by
+    # StringEquals { iam:PassedToService = lambda.amazonaws.com }. The evaluator treats
+    # iam:PassedToService as permissive-when-absent (isPassRolePermissiveKey), so the IAM_PASSROLE
+    # edge still forms and iam_pass_role_lambda re-checks the role's lambda trust downstream.
+    Statement = [for s in each.value : merge(
+      {
+        Effect   = "Allow"
+        Action   = s.actions
+        Resource = s.resources
+      },
+      lookup(s, "condition", null) == null ? {} : { Condition = s.condition },
+    )]
   })
 }
 
