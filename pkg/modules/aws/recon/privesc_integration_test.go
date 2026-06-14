@@ -210,6 +210,11 @@ var labCases = []labCase{
 	{"codedeploy_create_deploy", m("codedeploy_create_deployment"), true, tgtComputeRole, "", tierCommon, "CreateDeployment onto the admin-role EC2 instance"},
 	{"apprunner_update_service", m("apprunner_update_service"), true, tgtComputeRole, "", tierCommon, "UpdateService on a service running the admin role (synthetic — App Runner not provisioned)"},
 	{"ecs_execute_command", m("ecs_execute_command"), true, tgtComputeRole, "", tierCommon, "ExecuteCommand on a task running the admin role (REAL fixture ECS task definition, TaskRoleArn→compute_admin)"},
+	// F2 (ecs-006): ExecuteCommand scoped ONLY to the REAL fixture ECS CLUSTER ARN (not wildcard,
+	// not task-def). The grant resolves against the AWS::ECS::Cluster node the ECSClusterEnumerator
+	// collects → base ECS_EXECUTECOMMAND edge to the cluster → enricher reaches compute_admin via
+	// the task def HAS_ROLE. Dedicated F2 subtests (Step 5d) assert the collector + base edge directly.
+	{"ecs_execute_command_cluster", m("ecs_execute_command"), true, tgtComputeRole, "", tierCommon, "cluster-scoped ExecuteCommand on the REAL fixture ECS cluster (F2: AWS::ECS::Cluster node → ECS_EXECUTECOMMAND → compute_admin via task def HAS_ROLE)"},
 	{"stepfunctions_update", m("stepfunctions_update"), true, tgtComputeRole, "", tierCommon, "UpdateStateMachine+StartExecution on an admin-role state machine (REAL fixture SFN state machine, RoleArn→compute_admin)"},
 	{"glue_update_dev_endpoint", m("glue_update_dev_endpoint"), true, tgtComputeRole, "", tierCommon, "UpdateDevEndpoint on an admin-role dev endpoint (synthetic — Glue DevEndpoint not provisioned)"},
 	{"glue_update_job", m("glue_update_job"), true, tgtComputeRole, "", tierCommon, "UpdateJob on an admin-role glue job (REAL fixture Glue job, Role→compute_admin ARN)"},
@@ -888,6 +893,82 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 				"[REAL-PATH] real %s missing (Resource)-[:HAS_ROLE]->(%s)", rc.resourceType, rc.roleARN)
 		})
 	}
+
+	// --- Step 5d: F2 ECS cluster collector — direct proof the cluster-node path works (ecs-006) ---
+	// F2 adds the ECSClusterEnumerator so a cluster-scoped ecs:ExecuteCommand grant resolves
+	// against a concrete AWS::ECS::Cluster node, forming the base ECS_EXECUTECOMMAND edge that was
+	// MISSING before F2. These subtests assert that path directly on the rebuilt live graph:
+	//   (1) the collector produced a real AWS::ECS::Cluster node,
+	//   (2) the base ECS_EXECUTECOMMAND edge from the cluster-scoped attacker points at it,
+	//   (3) the privesc enricher fired (CAN_PRIVESC{ecs:ExecuteCommand} → compute_admin task role),
+	//   (4) collecting the cluster did NOT fan out a spurious ECS_EXECUTECOMMAND edge to a benign
+	//       principal that lacks the action (collector precision).
+	t.Run("f2_ecs_cluster", func(t *testing.T) {
+		clusterARN := fixture.Output("ecs_cluster_arn")
+		require.NotEmpty(t, clusterARN, "fixture must output ecs_cluster_arn")
+		require.NotContains(t, clusterARN, "000000000000",
+			"ecs_cluster_arn must be a REAL-account ARN, not the synthetic placeholder")
+
+		clusterAttacker := facts.attackerARNs["ecs_execute_command_cluster"]
+		require.NotEmpty(t, clusterAttacker, "fixture must expose the ecs_execute_command_cluster attacker")
+		benignAttacker := facts.attackerARNs["fp_ecs_no_execute_command"]
+		require.NotEmpty(t, benignAttacker, "fixture must expose the fp_ecs_no_execute_command attacker")
+
+		// (1) Collector: a real AWS::ECS::Cluster :Resource node with the fixture's cluster ARN.
+		t.Run("collector_cluster_node_exists", func(t *testing.T) {
+			n := countEdges(t, ctx, db,
+				`MATCH (r:Resource)
+				 WHERE r._resourceType = 'AWS::ECS::Cluster'
+				   AND coalesce(r.arn, r.Arn) = $arn
+				 RETURN count(r) AS n`,
+				map[string]any{"arn": clusterARN})
+			assert.Positive(t, n,
+				"[F2] no collected AWS::ECS::Cluster :Resource node for fixture cluster %s — collector did not run", clusterARN)
+		})
+
+		// (2) Base edge: attacker -[ECS_EXECUTECOMMAND]-> the cluster node. This is the edge that
+		//     was absent before F2 (no cluster node → no resolution target for the scoped grant).
+		t.Run("base_edge_to_cluster_node", func(t *testing.T) {
+			n := countEdges(t, ctx, db,
+				`MATCH (a:Principal)-[:ECS_EXECUTECOMMAND]->(r:Resource)
+				 WHERE (a.Arn = $att OR a.arn = $att)
+				   AND r._resourceType = 'AWS::ECS::Cluster'
+				   AND coalesce(r.arn, r.Arn) = $cluster
+				 RETURN count(*) AS n`,
+				map[string]any{"att": clusterAttacker, "cluster": clusterARN})
+			assert.Positive(t, n,
+				"[F2] base ECS_EXECUTECOMMAND edge from %s to the cluster node %s missing — the cluster-scoped grant did not resolve against the collected cluster",
+				clusterAttacker, clusterARN)
+		})
+
+		// (3) Privesc edge (TP): the enricher reaches the compute_admin task role via the task def
+		//     HAS_ROLE, anchored on the cluster-node base edge.
+		t.Run("privesc_edge_to_compute_admin", func(t *testing.T) {
+			n := countEdges(t, ctx, db,
+				`MATCH (a:Principal)-[r:CAN_PRIVESC {method: 'ecs:ExecuteCommand'}]->(v)
+				 WHERE (a.Arn = $att OR a.arn = $att) AND (v.Arn = $compute OR v.arn = $compute)
+				 RETURN count(r) AS n`,
+				map[string]any{"att": clusterAttacker, "compute": facts.computeAdminARN})
+			assert.Positive(t, n,
+				"[F2 TP] CAN_PRIVESC{ecs:ExecuteCommand} from %s to compute_admin (%s) missing — F2 cluster path did not light up the enricher",
+				clusterAttacker, facts.computeAdminARN)
+		})
+
+		// (4) Collector precision (FP-1): a benign principal WITHOUT ecs:ExecuteCommand must NOT
+		//     have any ECS_EXECUTECOMMAND edge to the cluster — collecting the cluster must not
+		//     fan out spurious base edges.
+		t.Run("fp_benign_principal_no_base_edge", func(t *testing.T) {
+			n := countEdges(t, ctx, db,
+				`MATCH (a:Principal)-[:ECS_EXECUTECOMMAND]->(r:Resource)
+				 WHERE (a.Arn = $att OR a.arn = $att)
+				   AND r._resourceType = 'AWS::ECS::Cluster'
+				 RETURN count(*) AS n`,
+				map[string]any{"att": benignAttacker})
+			assert.Zero(t, n,
+				"[F2 FP] benign principal %s (no ecs:ExecuteCommand) has an ECS_EXECUTECOMMAND edge to the cluster — collector fanned out a spurious edge",
+				benignAttacker)
+		})
+	})
 
 	// --- Step 6: Global no-fan-out / target-allowlist guard ---
 	t.Run("global_no_cartesian_fanout", func(t *testing.T) {

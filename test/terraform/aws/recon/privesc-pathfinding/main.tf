@@ -563,6 +563,24 @@ resource "aws_batch_job_definition" "compute" {
   tags = local.tags
 }
 
+#==============================================================================
+# F2: ECS CLUSTER (backs the cluster-scoped ecs:ExecuteCommand path / ecs-006)
+# Expected: COLLECTED as AWS::ECS::Cluster + base ECS_EXECUTECOMMAND edge target
+#
+# The ECSClusterEnumerator (F2) collects this as an AWS::ECS::Cluster :Resource node.
+# A cluster-scoped ecs:ExecuteCommand grant (see the ecs_execute_command_cluster attacker)
+# resolves against this concrete cluster ARN → the base ECS_EXECUTECOMMAND edge forms to this
+# node → the ecs_execute_command privesc enricher fires (joins the task def HAS_ROLE → task
+# role independently). Before F2 no cluster node existed, so a cluster-scoped grant produced NO
+# base edge → ecs-006 was a miss. An empty cluster is free at rest (no running tasks).
+# The cluster name carries the run prefix so its ARN is kept by the harness's
+# resourceReferencesPrefix bound and added to all_arns.
+#==============================================================================
+resource "aws_ecs_cluster" "exec" {
+  name = "${local.prefix}-exec-cluster"
+  tags = local.tags
+}
+
 # --- ECS task definition (backs ecs_execute_command; taskRoleArn + executionRoleArn →
 #     resource_service_role HAS_ROLE → compute_admin). A task DEFINITION needs no running
 #     task / cluster, so it is free. FARGATE-compatible. ---
@@ -868,21 +886,33 @@ locals {
     batch_passrole             = [{ actions = ["iam:PassRole", "batch:RegisterJobDefinition", "batch:SubmitJob"], resources = ["*"] }]
 
     # ---- Existing-compute via HAS_ROLE (target = the resource's admin exec role) ----
-    lambda_update_code         = [{ actions = ["lambda:UpdateFunctionCode", "lambda:InvokeFunction"], resources = ["*"] }]
-    lambda_updatecode_invoke   = [{ actions = ["lambda:UpdateFunctionCode", "lambda:InvokeFunction"], resources = ["*"] }]
-    lambda_add_permission      = [{ actions = ["lambda:UpdateFunctionCode", "lambda:AddPermission"], resources = ["*"] }]
-    lambda_create_esm          = [{ actions = ["lambda:UpdateFunctionCode", "lambda:CreateEventSourceMapping"], resources = ["*"] }]
-    ec2_modify_attribute       = [{ actions = ["ec2:ModifyInstanceAttribute", "ec2:StopInstances", "ec2:StartInstances"], resources = ["*"] }]
-    ec2_instance_connect       = [{ actions = ["ec2-instance-connect:SendSSHPublicKey"], resources = ["*"] }]
-    ec2_ssm_association        = [{ actions = ["ssm:CreateAssociation"], resources = ["*"] }]
-    ssm_send_command           = [{ actions = ["ssm:SendCommand"], resources = ["*"] }]
-    ssm_start_session          = [{ actions = ["ssm:StartSession"], resources = ["*"] }]
-    cloudform_update_stack     = [{ actions = ["cloudformation:UpdateStack"], resources = ["*"] }]
-    cloudform_update_stackset  = [{ actions = ["cloudformation:UpdateStackSet"], resources = ["*"] }]
-    codebuild_start_build      = [{ actions = ["codebuild:StartBuild"], resources = ["*"] }]
-    codedeploy_create_deploy   = [{ actions = ["codedeploy:CreateDeployment"], resources = ["*"] }]
-    apprunner_update_service   = [{ actions = ["apprunner:UpdateService"], resources = ["*"] }]
-    ecs_execute_command        = [{ actions = ["ecs:ExecuteCommand", "ecs:DescribeTasks"], resources = ["*"] }]
+    lambda_update_code        = [{ actions = ["lambda:UpdateFunctionCode", "lambda:InvokeFunction"], resources = ["*"] }]
+    lambda_updatecode_invoke  = [{ actions = ["lambda:UpdateFunctionCode", "lambda:InvokeFunction"], resources = ["*"] }]
+    lambda_add_permission     = [{ actions = ["lambda:UpdateFunctionCode", "lambda:AddPermission"], resources = ["*"] }]
+    lambda_create_esm         = [{ actions = ["lambda:UpdateFunctionCode", "lambda:CreateEventSourceMapping"], resources = ["*"] }]
+    ec2_modify_attribute      = [{ actions = ["ec2:ModifyInstanceAttribute", "ec2:StopInstances", "ec2:StartInstances"], resources = ["*"] }]
+    ec2_instance_connect      = [{ actions = ["ec2-instance-connect:SendSSHPublicKey"], resources = ["*"] }]
+    ec2_ssm_association       = [{ actions = ["ssm:CreateAssociation"], resources = ["*"] }]
+    ssm_send_command          = [{ actions = ["ssm:SendCommand"], resources = ["*"] }]
+    ssm_start_session         = [{ actions = ["ssm:StartSession"], resources = ["*"] }]
+    cloudform_update_stack    = [{ actions = ["cloudformation:UpdateStack"], resources = ["*"] }]
+    cloudform_update_stackset = [{ actions = ["cloudformation:UpdateStackSet"], resources = ["*"] }]
+    codebuild_start_build     = [{ actions = ["codebuild:StartBuild"], resources = ["*"] }]
+    codedeploy_create_deploy  = [{ actions = ["codedeploy:CreateDeployment"], resources = ["*"] }]
+    apprunner_update_service  = [{ actions = ["apprunner:UpdateService"], resources = ["*"] }]
+    ecs_execute_command       = [{ actions = ["ecs:ExecuteCommand", "ecs:DescribeTasks"], resources = ["*"] }]
+    # F2 (ecs-006): ecs:ExecuteCommand scoped ONLY to the cluster ARN (and its tasks) — NOT a
+    #     wildcard, NOT a task-def ARN. This specifically exercises the cluster-node path F2 adds:
+    #     the grant resolves against the AWS::ECS::Cluster node the ECSClusterEnumerator collects,
+    #     so the base ECS_EXECUTECOMMAND edge forms to the cluster and the enricher reaches the
+    #     task def's task role (compute_admin) via HAS_ROLE. Mirrors the real ecs-006 lab.
+    ecs_execute_command_cluster = [{
+      actions = ["ecs:ExecuteCommand", "ecs:DescribeTasks"]
+      resources = [
+        aws_ecs_cluster.exec.arn,
+        "arn:aws:ecs:${var.region}:${local.account_id}:task/${aws_ecs_cluster.exec.name}/*",
+      ]
+    }]
     stepfunctions_update       = [{ actions = ["states:UpdateStateMachine", "states:StartExecution"], resources = ["*"] }]
     glue_update_dev_endpoint   = [{ actions = ["glue:UpdateDevEndpoint"], resources = ["*"] }]
     glue_update_job            = [{ actions = ["glue:UpdateJob"], resources = ["*"] }]
@@ -946,6 +976,11 @@ locals {
     fp_changeset_create_only   = [{ actions = ["cloudformation:CreateChangeSet"], resources = ["*"] }]
     fp_ecs_runtask_no_passrole = [{ actions = ["ecs:RunTask"], resources = ["*"] }]
     fp_sfn_updatesm_only       = [{ actions = ["states:UpdateStateMachine"], resources = ["*"] }]
+    # F2 collector-precision FP: a benign principal that can READ the ECS cluster but holds NO
+    #     ecs:ExecuteCommand. Collecting the cluster (F2) must NOT fan out a spurious
+    #     ECS_EXECUTECOMMAND edge to this principal (only the action grant creates that edge). The
+    #     harness asserts this attacker has ZERO ECS_EXECUTECOMMAND edges to the cluster node.
+    fp_ecs_no_execute_command = [{ actions = ["ecs:DescribeClusters", "ecs:ListClusters"], resources = ["*"] }]
 
     # cat-2 trust-policy-mismatch — PassRole is SCOPED to the wrong-service decoy role, so the
     # IAM_PASSROLE permission edge targets ONLY that role (the evaluator resource-scopes edges).

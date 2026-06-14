@@ -2935,6 +2935,166 @@ func TestPrivescEcsExecuteCommandExistingCompute(t *testing.T) {
 	})
 }
 
+// TestPrivescEcsExecuteCommandClusterNode is the F2-specific seeded variant. It proves the
+// ecs_execute_command enricher is AGNOSTIC to which resource the base ECS_EXECUTECOMMAND edge
+// points at: when the attacker's grant is cluster-scoped, F2's ECSClusterEnumerator makes the
+// base edge resolve to an (:Resource {_resourceType:'AWS::ECS::Cluster'}) node (instead of the
+// bare/uncorrelated stub the prior fixture used). The enricher only requires the edge to EXIST
+// on the attacker, then joins the task def → task role independently — so anchoring the base
+// edge on the F2 cluster node must still produce the CAN_PRIVESC edge to the privileged task
+// role (TP). It also owns the three guard FPs that are hard to isolate in the shared live
+// account: admin-as-source, target-not-privileged, and self-target.
+func TestPrivescEcsExecuteCommandClusterNode(t *testing.T) {
+	ctx := context.Background()
+
+	boltURL, cleanup, err := startNeo4jContainer(ctx)
+	require.NoError(t, err, "start Neo4j container")
+	t.Cleanup(cleanup)
+
+	newAdapter := func(t *testing.T) graph.GraphDatabase {
+		t.Helper()
+		cfg := graph.NewConfig(boltURL, "", "")
+		adapter, err := adapters.NewNeo4jAdapter(cfg)
+		require.NoError(t, err)
+		t.Cleanup(func() { adapter.Close() })
+		return adapter
+	}
+
+	const (
+		attacker = "arn:aws:iam::123456789012:user/ecs006-cluster-attacker"
+		taskRole = "arn:aws:iam::123456789012:role/ecs006-task-role"
+		// The F2 base-edge anchor: a real cluster :Resource carrying the AWS::ECS::Cluster type
+		// (what the ECSClusterEnumerator collects), NOT a bare/uncorrelated stub.
+		clusterARN = "arn:aws:ecs:us-east-1:123456789012:cluster/ecs006-cluster"
+		taskDefARN = "arn:aws:ecs:us-east-1:123456789012:task-definition/ecs006-task:1"
+		queryID    = "aws/enrich/privesc/ecs_execute_command"
+	)
+
+	// TP: base edge anchored on the AWS::ECS::Cluster node → CAN_PRIVESC still reaches the task
+	// role (proving anchor-agnostic), and no fan-out beyond that single privileged role.
+	t.Run("cluster_anchored_edge_fires_to_task_role", func(t *testing.T) {
+		db := newAdapter(t)
+		_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+		require.NoError(t, err, "clear db")
+		_, err = db.Query(ctx, fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
+			CREATE (role:Role:Principal {Arn: '%s', _is_admin: true})
+			CREATE (cluster:Resource {Arn: '%s', _resourceType: 'AWS::ECS::Cluster'})
+			CREATE (td:Resource {Arn: '%s', _resourceType: 'AWS::ECS::TaskDefinition'})
+			WITH a, role, cluster, td
+			MERGE (a)-[:ECS_EXECUTECOMMAND]->(cluster)
+			MERGE (td)-[:HAS_ROLE]->(role)
+		`, attacker, taskRole, clusterARN, taskDefARN), nil)
+		require.NoError(t, err, "seed F2 cluster-anchored ecs-006 graph")
+
+		_, err = RunPlatformQuery(ctx, db, queryID, nil)
+		require.NoError(t, err, "run ecs_execute_command enricher")
+
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC {method: 'ecs:ExecuteCommand'}]->(v {Arn: '%s'}) RETURN count(r) AS n`,
+			attacker, taskRole), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.GreaterOrEqual(t, int(n), 1,
+			"base edge anchored on the AWS::ECS::Cluster node (F2) must still reach the task role — enricher is anchor-agnostic")
+
+		fanResult, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[:CAN_PRIVESC]->(b:Principal) RETURN count(DISTINCT b) AS n`,
+			attacker), nil)
+		require.NoError(t, err)
+		fanout, _ := toInt64(fanResult.Records[0]["n"])
+		assert.LessOrEqual(t, fanout, int64(1),
+			"cluster-anchored base edge must not fan out beyond the single privileged task role")
+	})
+
+	// FP-A1 admin-as-source: an attacker already flagged _is_admin gains nothing from ecs-006, so
+	// the enricher's coalesce(attacker._is_admin,false) <> true guard must suppress (no edge),
+	// even though the cluster anchor + privileged task role are both present.
+	t.Run("fp_admin_source_no_edge", func(t *testing.T) {
+		db := newAdapter(t)
+		_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+		require.NoError(t, err, "clear db")
+		_, err = db.Query(ctx, fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: true})
+			CREATE (role:Role:Principal {Arn: '%s', _is_admin: true})
+			CREATE (cluster:Resource {Arn: '%s', _resourceType: 'AWS::ECS::Cluster'})
+			CREATE (td:Resource {Arn: '%s', _resourceType: 'AWS::ECS::TaskDefinition'})
+			WITH a, role, cluster, td
+			MERGE (a)-[:ECS_EXECUTECOMMAND]->(cluster)
+			MERGE (td)-[:HAS_ROLE]->(role)
+		`, attacker, taskRole, clusterARN, taskDefARN), nil)
+		require.NoError(t, err, "seed admin-source graph")
+
+		_, err = RunPlatformQuery(ctx, db, queryID, nil)
+		require.NoError(t, err, "run ecs_execute_command enricher")
+
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->() RETURN count(r) AS n`, attacker), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.Equal(t, int64(0), n,
+			"admin-as-source guard: an _is_admin attacker must produce NO CAN_PRIVESC via ecs:ExecuteCommand")
+	})
+
+	// FP-A2 target-privilege gate: the task def's HAS_ROLE target role is neither _is_admin nor
+	// _is_privileged, so the enricher's victim-privilege guard must suppress (no edge to that role).
+	t.Run("fp_nonpriv_target_no_edge", func(t *testing.T) {
+		db := newAdapter(t)
+		_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+		require.NoError(t, err, "clear db")
+		nonprivRole := "arn:aws:iam::123456789012:role/ecs006-nonpriv-role"
+		_, err = db.Query(ctx, fmt.Sprintf(`
+			CREATE (a:User:Principal {Arn: '%s', _is_admin: false})
+			CREATE (role:Role:Principal {Arn: '%s', _is_admin: false, _is_privileged: false})
+			CREATE (cluster:Resource {Arn: '%s', _resourceType: 'AWS::ECS::Cluster'})
+			CREATE (td:Resource {Arn: '%s', _resourceType: 'AWS::ECS::TaskDefinition'})
+			WITH a, role, cluster, td
+			MERGE (a)-[:ECS_EXECUTECOMMAND]->(cluster)
+			MERGE (td)-[:HAS_ROLE]->(role)
+		`, attacker, nonprivRole, clusterARN, taskDefARN), nil)
+		require.NoError(t, err, "seed nonpriv-target graph")
+
+		_, err = RunPlatformQuery(ctx, db, queryID, nil)
+		require.NoError(t, err, "run ecs_execute_command enricher")
+
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(v {Arn: '%s'}) RETURN count(r) AS n`,
+			attacker, nonprivRole), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.Equal(t, int64(0), n,
+			"target-privilege gate: a non-admin, non-privileged task role must NOT receive CAN_PRIVESC")
+	})
+
+	// FP-A3 self-target: the task def's HAS_ROLE target IS the attacker (a privileged, non-admin
+	// principal so it passes the source/victim privilege guards), so only the self-exclusion guard
+	// (victim.Arn <> attacker.Arn) can prevent a self-loop. No (a)-[:CAN_PRIVESC]->(a) must form.
+	t.Run("fp_self_target_no_loop", func(t *testing.T) {
+		db := newAdapter(t)
+		_, err := db.Query(ctx, "MATCH (n) DETACH DELETE n", nil)
+		require.NoError(t, err, "clear db")
+		_, err = db.Query(ctx, fmt.Sprintf(`
+			CREATE (a:Role:Principal {Arn: '%s', _is_admin: false, _is_privileged: true})
+			CREATE (cluster:Resource {Arn: '%s', _resourceType: 'AWS::ECS::Cluster'})
+			CREATE (td:Resource {Arn: '%s', _resourceType: 'AWS::ECS::TaskDefinition'})
+			WITH a, cluster, td
+			MERGE (a)-[:ECS_EXECUTECOMMAND]->(cluster)
+			MERGE (td)-[:HAS_ROLE]->(a)
+		`, attacker, clusterARN, taskDefARN), nil)
+		require.NoError(t, err, "seed self-target graph")
+
+		_, err = RunPlatformQuery(ctx, db, queryID, nil)
+		require.NoError(t, err, "run ecs_execute_command enricher")
+
+		result, err := db.Query(ctx, fmt.Sprintf(
+			`MATCH (a {Arn: '%s'})-[r:CAN_PRIVESC]->(a) RETURN count(r) AS n`, attacker), nil)
+		require.NoError(t, err)
+		n, _ := toInt64(result.Records[0]["n"])
+		assert.Equal(t, int64(0), n,
+			"self-target guard: attacker == victim must NOT produce a self-loop CAN_PRIVESC")
+	})
+}
+
 func TestPrivescSlrPassRoleTargetGuard(t *testing.T) {
 	ctx := context.Background()
 

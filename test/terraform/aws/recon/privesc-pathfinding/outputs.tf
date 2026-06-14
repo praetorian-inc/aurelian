@@ -199,6 +199,14 @@ output "batch_jobdef_arn" {
 output "ecs_taskdef_arn" {
   value = aws_ecs_task_definition.compute.arn
 }
+
+# F2 (ecs-006): the ECS cluster the ECSClusterEnumerator collects as an AWS::ECS::Cluster node.
+# The cluster-scoped ecs:ExecuteCommand attacker resolves its grant against this ARN, so the base
+# ECS_EXECUTECOMMAND edge forms to this node (the gap F2 closes). Added to all_arns so the harness
+# keeps the cluster node and the base edge when bounding the seeded graph.
+output "ecs_cluster_arn" {
+  value = aws_ecs_cluster.exec.arn
+}
 output "sfn_state_machine_arn" {
   value = aws_sfn_state_machine.compute.arn
 }
@@ -255,6 +263,9 @@ output "all_arns" {
       aws_iam_role.cognito_unauth_admin.arn,
       aws_iam_role.cognito_authonly_admin.arn,
       aws_launch_template.existing.arn,
+      # F2 (ecs-006): the collected ECS cluster — kept so the base ECS_EXECUTECOMMAND edge to the
+      # cluster node (whose endpoint is this ARN) survives the harness's fixtureARNs relationship filter.
+      aws_ecs_cluster.exec.arn,
     ],
     [for r in aws_iam_role.service_admin : r.arn],
     [for u in aws_iam_user.attacker : u.arn],

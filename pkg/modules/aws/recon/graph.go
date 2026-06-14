@@ -44,6 +44,7 @@ type AWSGraphModule struct {
 	glueDevEndpoints      store.Map[output.AWSResource]
 	appRunnerServices     store.Map[output.AWSResource]
 	ecsTaskDefinitions    store.Map[output.AWSResource]
+	ecsClusters           store.Map[output.AWSResource]
 	sfnStateMachines      store.Map[output.AWSResource]
 	sageMakerNotebooks    store.Map[output.AWSResource]
 	lambdaFunctions       store.Map[output.AWSResource]
@@ -127,6 +128,7 @@ func (m *AWSGraphModule) collectInputs() error {
 	m.collectGlueDevEndpoints(&eg, m.GraphConfig, provider, skipReport)
 	m.collectAppRunnerServices(&eg, m.GraphConfig, provider, skipReport)
 	m.collectECSTaskDefinitions(&eg, m.GraphConfig, provider, skipReport)
+	m.collectECSClusters(&eg, m.GraphConfig, provider, skipReport)
 	m.collectSFNStateMachines(&eg, m.GraphConfig, provider, skipReport)
 	m.collectSageMakerNotebookInstances(&eg, m.GraphConfig, provider, skipReport)
 	m.collectLambdaFunctions(&eg, m.GraphConfig, provider, skipReport)
@@ -180,6 +182,13 @@ func (m *AWSGraphModule) collectInputs() error {
 	// role(s) (resource_service_role.yaml). Their privesc methods
 	// (ec2_launch_template_version existing-template branch, cognito_set_identity_pool_roles)
 	// re-point CAN_PRIVESC at those roles.
+	//
+	// ECS clusters are the exception: they carry NO IAM role and so emit NO HAS_ROLE edge.
+	// They are merged here purely so the cluster node EXISTS as an IAM-evaluation candidate.
+	// An attacker policy that scopes ecs:ExecuteCommand to a cluster ARN only yields a base
+	// ECS_EXECUTECOMMAND edge when the evaluator can match that grant against a concrete
+	// cluster resource; the ecs_execute_command privesc method then reaches the target via the
+	// task definition's HAS_ROLE.
 	for _, collected := range []store.Map[output.AWSResource]{
 		m.cfnStackSets,
 		m.codeBuildProjects,
@@ -187,6 +196,7 @@ func (m *AWSGraphModule) collectInputs() error {
 		m.glueDevEndpoints,
 		m.appRunnerServices,
 		m.ecsTaskDefinitions,
+		m.ecsClusters,
 		m.sfnStateMachines,
 		m.sageMakerNotebooks,
 		m.launchTemplates,
@@ -372,6 +382,12 @@ func (m *AWSGraphModule) collectECSTaskDefinitions(eg *errgroup.Group, c GraphCo
 	m.collectResources(eg, c, "ECS task definitions", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
 		return enumeration.NewECSTaskDefinitionEnumerator(o, p, s)
 	}, &m.ecsTaskDefinitions)
+}
+
+func (m *AWSGraphModule) collectECSClusters(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
+	m.collectResources(eg, c, "ECS clusters", provider, skipReport, func(o plugin.AWSCommonRecon, p *enumeration.AWSConfigProvider, s *enumeration.SkipReport) enumerateAller {
+		return enumeration.NewECSClusterEnumerator(o, p, s)
+	}, &m.ecsClusters)
 }
 
 func (m *AWSGraphModule) collectSFNStateMachines(eg *errgroup.Group, c GraphConfig, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {
