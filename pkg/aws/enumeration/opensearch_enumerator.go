@@ -60,6 +60,9 @@ func (e *OpenSearchDomainEnumerator) EnumerateByARN(arn string, out *pipeline.P[
 	if !ok {
 		return fmt.Errorf("invalid OpenSearch domain ARN resource: %q", parsed.Resource)
 	}
+	if name == "" {
+		return fmt.Errorf("OpenSearch domain ARN missing domain name: %q", arn)
+	}
 	if parsed.Region == "" {
 		return fmt.Errorf("OpenSearch domain ARN missing region: %q", arn)
 	}
