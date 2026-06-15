@@ -374,12 +374,17 @@ func (e *ResourceEvaluator) evaluateElasticBeanstalk(resource *output.AWSResourc
 	if endpointURL == "" {
 		return nil
 	}
+	// An environment behind an internal load balancer still has an endpoint/CNAME
+	// but is not internet-reachable.
+	if internalLB, _ := resource.Properties["IsInternalLB"].(bool); internalLB {
+		return nil
+	}
 	return &PublicAccessResult{
 		IsPublic:          true,
 		NeedsManualTriage: true,
 		AllowedActions:    []string{"elasticbeanstalk:NetworkAccess"},
 		EvaluationReasons: []string{
-			fmt.Sprintf("Elastic Beanstalk environment exposes endpoint %s; review the fronting load balancer and application authentication", endpointURL),
+			fmt.Sprintf("Elastic Beanstalk environment exposes internet-facing endpoint %s; review the fronting load balancer and application authentication", endpointURL),
 		},
 	}
 }

@@ -9,6 +9,7 @@ import (
 	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
 	elbtypes "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing/types"
+	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -41,13 +42,12 @@ func (e *ClassicELBEnumerator) EnumerateAll(out *pipeline.P[output.AWSResource])
 	if len(e.Regions) == 0 {
 		return fmt.Errorf("no regions configured")
 	}
-	accountID, err := e.provider.GetAccountID(e.Regions[0])
-	if err != nil {
-		return fmt.Errorf("get account ID: %w", err)
-	}
+	// Account ID is resolved inside each region's own (already-validated) config
+	// rather than from a single prerequisite region, so one disabled region does
+	// not abort the whole enumeration.
 	actor := ratelimit.NewCrossRegionActor(e.Concurrency)
 	return actor.ActInRegions(e.Regions, func(region string) error {
-		return e.listInRegion(region, accountID, out)
+		return e.listInRegion(region, out)
 	})
 }
 
@@ -84,10 +84,18 @@ func (e *ClassicELBEnumerator) EnumerateByARN(arn string, out *pipeline.P[output
 	return nil
 }
 
-func (e *ClassicELBEnumerator) listInRegion(region, accountID string, out *pipeline.P[output.AWSResource]) error {
+func (e *ClassicELBEnumerator) listInRegion(region string, out *pipeline.P[output.AWSResource]) error {
 	cfg, err := e.provider.GetAWSConfig(region)
 	if err != nil {
 		return fmt.Errorf("create ELB client for %s: %w", region, err)
+	}
+	accountID, err := awshelpers.GetAccountId(*cfg)
+	if err != nil {
+		if op := ClassifySkippable(err, "sts", "GetCallerIdentity", region); op != nil {
+			e.skipReport.RecordBatch([]SkippedOp{*op})
+			return nil
+		}
+		return fmt.Errorf("resolve account for %s: %w", region, err)
 	}
 	client := elasticloadbalancing.NewFromConfig(*cfg)
 

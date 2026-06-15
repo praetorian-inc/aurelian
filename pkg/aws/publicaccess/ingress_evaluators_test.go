@@ -107,6 +107,16 @@ func TestEvaluateElasticBeanstalk_NoEndpoint(t *testing.T) {
 	assert.Nil(t, e.evaluateElasticBeanstalk(r, aws.Config{}, ""))
 }
 
+func TestEvaluateElasticBeanstalk_InternalLB(t *testing.T) {
+	e := newTestEvaluator()
+	// Has an endpoint, but fronted by an internal LB -> not internet-reachable.
+	r := &output.AWSResource{Properties: map[string]any{
+		"EndpointURL":  "myenv.us-east-1.elasticbeanstalk.com",
+		"IsInternalLB": true,
+	}}
+	assert.Nil(t, e.evaluateElasticBeanstalk(r, aws.Config{}, ""))
+}
+
 // --- Transfer Family ---
 
 func TestEvaluateTransfer_Public(t *testing.T) {

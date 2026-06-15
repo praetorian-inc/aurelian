@@ -9,6 +9,8 @@ import (
 	apigwtypes "github.com/aws/aws-sdk-go-v2/service/apigateway/types"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewayv2"
 	apiv2types "github.com/aws/aws-sdk-go-v2/service/apigatewayv2/types"
+	"github.com/aws/aws-sdk-go-v2/service/elasticbeanstalk"
+	ebtypes "github.com/aws/aws-sdk-go-v2/service/elasticbeanstalk/types"
 	"github.com/praetorian-inc/aurelian/pkg/modules/aws/enrichers"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -160,6 +162,59 @@ func TestEnrichEKS(t *testing.T) {
 			assert.Equal(t, tc.wantOpenToNet, r.Properties["PublicAccessOpenToInternet"])
 		})
 	}
+}
+
+// --- Beanstalk (mock client) ---
+
+type mockBeanstalkClient struct {
+	envType   string
+	elbScheme string
+}
+
+func (m *mockBeanstalkClient) DescribeConfigurationSettings(_ context.Context, _ *elasticbeanstalk.DescribeConfigurationSettingsInput, _ ...func(*elasticbeanstalk.Options)) (*elasticbeanstalk.DescribeConfigurationSettingsOutput, error) {
+	var opts []ebtypes.ConfigurationOptionSetting
+	if m.envType != "" {
+		opts = append(opts, ebtypes.ConfigurationOptionSetting{
+			Namespace: strPtr("aws:elasticbeanstalk:environment"), OptionName: strPtr("EnvironmentType"), Value: strPtr(m.envType),
+		})
+	}
+	if m.elbScheme != "" {
+		opts = append(opts, ebtypes.ConfigurationOptionSetting{
+			Namespace: strPtr("aws:ec2:vpc"), OptionName: strPtr("ELBScheme"), Value: strPtr(m.elbScheme),
+		})
+	}
+	return &elasticbeanstalk.DescribeConfigurationSettingsOutput{
+		ConfigurationSettings: []ebtypes.ConfigurationSettingsDescription{{OptionSettings: opts}},
+	}, nil
+}
+
+func TestEnrichBeanstalk_InternalVsPublic(t *testing.T) {
+	cases := []struct {
+		name           string
+		envType        string
+		elbScheme      string
+		wantInternalLB bool
+	}{
+		{"load-balanced internal", "LoadBalanced", "internal", true},
+		{"load-balanced public", "LoadBalanced", "public", false},
+		{"single instance", "SingleInstance", "", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &output.AWSResource{Properties: map[string]any{"ApplicationName": "app", "EnvironmentName": "env"}}
+			mock := &mockBeanstalkClient{envType: tc.envType, elbScheme: tc.elbScheme}
+			require.NoError(t, enrichers.EnrichBeanstalkEnvironment(plugin.EnricherConfig{Context: context.Background()}, r, mock))
+			assert.Equal(t, tc.wantInternalLB, r.Properties["IsInternalLB"], tc.name)
+		})
+	}
+}
+
+func TestEnrichBeanstalk_MissingAppEnv(t *testing.T) {
+	r := &output.AWSResource{Properties: map[string]any{}}
+	mock := &mockBeanstalkClient{envType: "LoadBalanced", elbScheme: "internal"}
+	require.NoError(t, enrichers.EnrichBeanstalkEnvironment(plugin.EnricherConfig{Context: context.Background()}, r, mock))
+	_, set := r.Properties["IsInternalLB"]
+	assert.False(t, set, "no config lookup without app/env")
 }
 
 // --- API Gateway REST (mock client) ---
