@@ -206,9 +206,12 @@ resource "aws_iam_role_policy_attachment" "cognito_admin" {
 # lambda (Lambda CreateFunction validates lambda.amazonaws.com trust at create time),
 # cloudformation (CFN service role), states (SFN CreateStateMachine validates trust),
 # glue (Glue CreateJob validates trust), codebuild (CodeBuild CreateProject validates trust),
-# and ecs-tasks (ECS task role / execution role). No PassRole TP/FP case targets this role
-# (the per-service PassRole targets are the separate service_admin[...] roles), so the extra
-# service trusts do not flip any case.
+# ecs-tasks (ECS task role / execution role), and sagemaker (the full-tier real SageMaker
+# notebook instance aws_sagemaker_notebook_instance.existing in full.tf, gated by
+# var.enable_full, runs this role as its execution role and SageMaker validates the
+# sagemaker.amazonaws.com trust at notebook-create time). No PassRole TP/FP case targets this
+# role (the per-service PassRole targets are the separate service_admin[...] roles), so the
+# extra service trusts do not flip any case.
 resource "aws_iam_role" "compute_admin" {
   name = "${local.prefix}-compute-admin"
   assume_role_policy = jsonencode({
@@ -225,6 +228,7 @@ resource "aws_iam_role" "compute_admin" {
         "glue.amazonaws.com",
         "codebuild.amazonaws.com",
         "ecs-tasks.amazonaws.com",
+        "sagemaker.amazonaws.com",
       ] }
     }]
   })

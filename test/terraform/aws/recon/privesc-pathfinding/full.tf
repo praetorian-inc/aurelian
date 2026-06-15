@@ -19,8 +19,15 @@
 locals {
   # Per-service admin target roles for the full-tier PassRole methods. Same shape as
   # local.service_trust_principals but only provisioned with the flag on.
+  #
+  # emr and imagebuilder are EC2-BACKED: RunJobFlow passes the EMR cluster's EC2 instance-profile
+  # role and Image Builder build instances run with an EC2 instance profile, so the escalation
+  # TARGET is an EC2 instance role (creds via IMDS). Their queries therefore require the victim to
+  # trust ec2.amazonaws.com AND have an instance profile — so both trust ec2 here and get an
+  # aws_iam_instance_profile below. The other services (gamelift/braket/omics/kinesisanalytics/
+  # emrserverless) are trust-ASSUMED by their service principal directly (no instance profile).
   full_service_trust_principals = {
-    emr              = "elasticmapreduce.amazonaws.com"
+    emr              = "ec2.amazonaws.com"
     emrserverless    = "emr-serverless.amazonaws.com"
     gamelift         = "gamelift.amazonaws.com"
     imagebuilder     = "ec2.amazonaws.com"
@@ -28,6 +35,10 @@ locals {
     omics            = "omics.amazonaws.com"
     kinesisanalytics = "kinesisanalytics.amazonaws.com"
   }
+
+  # EC2-backed full-tier services whose admin role needs an EC2 instance profile (the escalation
+  # target is an EC2 instance role reached via IMDS).
+  full_ec2_backed_services = toset(["emr", "imagebuilder"])
 
   # Full-tier attacker users: TP (PassRole + the create action) per expensive technique,
   # plus the missing-permission FP variants the legacy suite carried.
@@ -68,6 +79,16 @@ resource "aws_iam_role_policy_attachment" "full_service_admin" {
   for_each   = var.enable_full ? local.full_service_trust_principals : {}
   role       = aws_iam_role.full_service_admin[each.key].name
   policy_arn = local.admin_policy
+}
+
+# Instance profiles for the EC2-backed full-tier services (emr, imagebuilder). Their privesc
+# queries require the passed role to have an instance profile (InstanceProfileList CONTAINS arn)
+# because the escalation target is an EC2 instance role reached via IMDS.
+resource "aws_iam_instance_profile" "full_service_admin" {
+  for_each = var.enable_full ? local.full_ec2_backed_services : []
+  name     = "${local.prefix}-fulladmin-${each.key}"
+  role     = aws_iam_role.full_service_admin[each.key].name
+  tags     = local.tags
 }
 
 resource "aws_iam_user" "full_attacker" {

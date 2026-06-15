@@ -140,19 +140,23 @@ var sameNodeActionBindings = map[string]struct {
 // (Resource)-[:HAS_ROLE]->(privileged role), so the guard's same-node MATCH resolves — exactly
 // what production recon emits when the real resource's '*'-scoped action edge binds to it.
 //
-// For a type whose REAL backing resource was provisioned + collected (e.g. SFN StateMachine), the
-// action edge attaches to the REAL node's arn (realByType) so the SAME real node carries both the
-// action edge and HAS_ROLE. For a kept-synthetic type (App Runner, Lambda) it attaches to the
-// synthetic node (resources). This keeps stepfunctions_update on the real path while
-// apprunner_update_service / lambda_* stay on their synthetic stand-ins.
+// A kept-synthetic type (App Runner, Lambda, …) ALWAYS stays on its synthetic stand-in, which
+// carries the compute_admin role the labCase expects: in full tier a REAL backing resource of the
+// same type (e.g. an App Runner service running apprunner_instance) may also be collected, but it
+// runs a DIFFERENT role, so letting it override would send the action edge to the wrong role.
+// realByType therefore only supplies types collected live WITHOUT a synthetic stand-in (SFN
+// StateMachine / CFN / CodeBuild / Glue Job / ECS / Batch), keeping stepfunctions_update on the
+// real path while apprunner_update_service / lambda_* stay on their synthetic nodes.
 func SyntheticActionEdges(attackerARNs map[string]string, resources []SyntheticResource, realByType map[string]string) []*graph.Relationship {
-	// Prefer a real collected node's arn; fall back to the synthetic node's arn.
+	// Prefer the synthetic node's arn; let a real collected node fill ONLY types with no synthetic.
 	arnByType := map[string]string{}
 	for _, r := range resources {
 		arnByType[r.ResourceType] = r.ARN
 	}
 	for rt, arn := range realByType {
-		arnByType[rt] = arn // real overrides synthetic when both exist
+		if _, hasSynthetic := arnByType[rt]; !hasSynthetic {
+			arnByType[rt] = arn // real fills ONLY types with no kept-synthetic stand-in
+		}
 	}
 	endNode := func(rt string) *graph.Node {
 		arn := arnByType[rt]
@@ -235,19 +239,21 @@ func SameNodeStubEdges(attackerARNs map[string]string, stub *graph.Node) []*grap
 // ARN map, so a replay run can reconstruct the synthetic resources/edges and the case-target facts
 // without any AWS access.
 type SyntheticInputs struct {
-	ComputeAdminARN        string            `json:"compute_admin_arn"`
-	EC2InstanceARN         string            `json:"ec2_instance_arn"`
-	BedrockExecRole        string            `json:"bedrock_exec_role_arn"`
-	AdminTargetARN         string            `json:"admin_target_arn"`
-	PrivUserARN            string            `json:"priv_user_arn"`
-	NoProfileUserARN       string            `json:"noprofile_user_arn"`
-	AttackerTrustedRoleARN string            `json:"attacker_trusted_role_arn"`
-	Prefix                 string            `json:"prefix"`
-	AccountID              string            `json:"account_id"`
-	ServiceAdminARNs       map[string]string `json:"service_admin_arns"`
-	AttackerARNs           map[string]string `json:"attacker_arns"`
-	DecoyARNs              []string          `json:"decoy_arns"`
-	PrivUserFPTargetARNs   []string          `json:"priv_user_fp_target_arns"`
+	ComputeAdminARN        string `json:"compute_admin_arn"`
+	EC2InstanceARN         string `json:"ec2_instance_arn"`
+	BedrockExecRole        string `json:"bedrock_exec_role_arn"`
+	AdminTargetARN         string `json:"admin_target_arn"`
+	PrivUserARN            string `json:"priv_user_arn"`
+	NoProfileUserARN       string `json:"noprofile_user_arn"`
+	AttackerTrustedRoleARN string `json:"attacker_trusted_role_arn"`
+	// F6: admin role whose trust DIRECTLY names the no-grant attacker's exact ARN (sts_assume_direct_trust target).
+	DirectTrustAdminRoleARN string            `json:"direct_trust_admin_role_arn"`
+	Prefix                  string            `json:"prefix"`
+	AccountID               string            `json:"account_id"`
+	ServiceAdminARNs        map[string]string `json:"service_admin_arns"`
+	AttackerARNs            map[string]string `json:"attacker_arns"`
+	DecoyARNs               []string          `json:"decoy_arns"`
+	PrivUserFPTargetARNs    []string          `json:"priv_user_fp_target_arns"`
 }
 
 // PrivescReconSnapshot is the captured, replay-able recon output for the privesc fixture. The IAM

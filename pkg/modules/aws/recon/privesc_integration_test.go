@@ -644,19 +644,20 @@ func TestPrivescPathfindingCloudE2E(t *testing.T) {
 			}
 		}
 		inputs := privescsynth.SyntheticInputs{
-			ComputeAdminARN:        facts.computeAdminARN,
-			EC2InstanceARN:         fixture.Output("ec2_instance_arn"),
-			BedrockExecRole:        facts.serviceAdminARNs["bedrock"],
-			AdminTargetARN:         facts.adminTargetARN,
-			PrivUserARN:            facts.privUserARN,
-			NoProfileUserARN:       facts.noProfileUserARN,
-			AttackerTrustedRoleARN: facts.attackerTrustedRoleARN,
-			Prefix:                 facts.prefix,
-			AccountID:              facts.accountID,
-			ServiceAdminARNs:       facts.serviceAdminARNs,
-			AttackerARNs:           facts.attackerARNs,
-			DecoyARNs:              facts.decoyARNs,
-			PrivUserFPTargetARNs:   facts.privUserFPTargetARNs,
+			ComputeAdminARN:         facts.computeAdminARN,
+			EC2InstanceARN:          fixture.Output("ec2_instance_arn"),
+			BedrockExecRole:         facts.serviceAdminARNs["bedrock"],
+			AdminTargetARN:          facts.adminTargetARN,
+			PrivUserARN:             facts.privUserARN,
+			NoProfileUserARN:        facts.noProfileUserARN,
+			AttackerTrustedRoleARN:  facts.attackerTrustedRoleARN,
+			DirectTrustAdminRoleARN: facts.directTrustAdminRoleARN,
+			Prefix:                  facts.prefix,
+			AccountID:               facts.accountID,
+			ServiceAdminARNs:        facts.serviceAdminARNs,
+			AttackerARNs:            facts.attackerARNs,
+			DecoyARNs:               facts.decoyARNs,
+			PrivUserFPTargetARNs:    facts.privUserFPTargetARNs,
 		}
 		require.NoError(t, privescsynth.CaptureToFile(privescsynth.SnapshotPath, fixtureIAM, fixtureRels, fixtureCollected, inputs))
 		t.Logf("captured privesc recon snapshot to %s", privescsynth.SnapshotPath)
