@@ -9,6 +9,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// --- Classic ELB (ELBv1) shares evaluateELBv2 via IsInternetFacing ---
+
+func TestEvaluateClassicELB_InternetFacing(t *testing.T) {
+	e := newTestEvaluator()
+	r := &output.AWSResource{
+		ResourceType: "AWS::ElasticLoadBalancing::LoadBalancer",
+		ResourceID:   "my-classic-elb",
+		Properties:   map[string]any{"IsInternetFacing": true, "LoadBalancerName": "my-classic-elb"},
+	}
+	result := e.evaluateELBv2(r, aws.Config{}, "")
+	require.NotNil(t, result)
+	assert.True(t, result.NeedsManualTriage)
+	assert.Contains(t, result.AllowedActions, "elasticloadbalancing:NetworkAccess")
+}
+
+func TestEvaluateClassicELB_Internal(t *testing.T) {
+	e := newTestEvaluator()
+	r := &output.AWSResource{
+		ResourceType: "AWS::ElasticLoadBalancing::LoadBalancer",
+		ResourceID:   "internal-classic-elb",
+		Properties:   map[string]any{"IsInternetFacing": false},
+	}
+	assert.Nil(t, e.evaluateELBv2(r, aws.Config{}, ""))
+}
+
 // --- CloudFront ---
 
 func TestEvaluateCloudFront_EnabledNoWAF(t *testing.T) {

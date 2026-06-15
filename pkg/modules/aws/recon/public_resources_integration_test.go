@@ -45,6 +45,7 @@ func TestAWSPublicResources(t *testing.T) {
 				// Enumerated and evaluated on a live run. Full fixture-backed
 				// assertions require the Terraform resources noted in the TODO below.
 				"AWS::ElasticLoadBalancingV2::LoadBalancer",
+				"AWS::ElasticLoadBalancing::LoadBalancer",
 				"AWS::AppRunner::Service",
 				"AWS::CloudFront::Distribution",
 				"AWS::GlobalAccelerator::Accelerator",

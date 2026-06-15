@@ -65,6 +65,7 @@ func NewEnumerator(opts plugin.AWSCommonRecon) *Enumerator {
 	e.Register(NewSSMDocumentEnumerator(opts, provider, skipReport))
 	e.Register(NewSSMParameterEnumerator(opts, provider, skipReport))
 	e.Register(NewOpenSearchDomainEnumerator(opts, provider, skipReport))
+	e.Register(NewClassicELBEnumerator(opts, provider, skipReport))
 
 	return e
 }
