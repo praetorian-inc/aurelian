@@ -1104,8 +1104,10 @@ func TestPolicyEvaluator_CreateWithServiceAsResource(t *testing.T) {
 	result, err = evaluator.Evaluate(req)
 	t.Log(result)
 	assert.NoError(t, err)
-	// CreateFunction is NOT valid for an existing function ARN resource - it maps to service type
-	assert.False(t, result.Allowed)
+	// A principal with Allow *:* on * is allowed on any concrete resource,
+	// including a specific function ARN. AWS evaluates the policy, not the
+	// action-resource-type map.
+	assert.True(t, result.Allowed)
 }
 
 func TestPolicyEvaluator_SCPServiceLinkedRole(t *testing.T) {
@@ -1761,7 +1763,7 @@ func TestPolicyToStatementList(t *testing.T) {
 	})
 }
 
-func TestPolicyEvaluator_InvalidActionForResource(t *testing.T) {
+func TestPolicyEvaluator_ActionOnConcreteResourceARN(t *testing.T) {
 	evaluator := NewPolicyEvaluator(&PolicyData{})
 
 	identityStatements := &types.PolicyStatementList{
@@ -1779,10 +1781,11 @@ func TestPolicyEvaluator_InvalidActionForResource(t *testing.T) {
 		IdentityStatements: identityStatements,
 	}
 
+	// A principal with Allow *:* on * must be allowed on any concrete resource.
+	// Previously this was incorrectly denied by IsValidActionForResource pre-filter.
 	result, err := evaluator.Evaluate(req)
 	assert.NoError(t, err)
-	assert.False(t, result.Allowed)
-	assert.Contains(t, result.EvaluationDetails, "is not valid for resource")
+	assert.True(t, result.Allowed)
 }
 
 func TestPolicyEvaluator_CrossAccountAssumeRole(t *testing.T) {

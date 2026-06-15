@@ -181,14 +181,11 @@ func policyToStatementList(policy *types.Policy) *types.PolicyStatementList {
 
 // Evaluate performs the full policy evaluation
 func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, error) {
-	// First validate that the action is valid for the resource type
-	if !IsValidActionForResource(req.Action, req.Resource) {
-		return &EvaluationResult{
-			Allowed:           false,
-			PolicyResult:      NewPolicyResult(),
-			EvaluationDetails: fmt.Sprintf("Action %s is not valid for resource %s", req.Action, req.Resource),
-		}, nil
-	}
+	// NOTE: IsValidActionForResource was previously used here as a pre-filter
+	// but it incorrectly rejected valid evaluations (e.g., lambda:CreateFunction
+	// on a concrete Lambda ARN when the policy grants Resource:"*"). The
+	// statement-level evaluation already handles resource matching correctly.
+	// See: 2026-06-15-AURELIAN-BUG-check-specific-service-arn.md
 
 	result := &EvaluationResult{
 		PolicyResult: NewPolicyResult(),
