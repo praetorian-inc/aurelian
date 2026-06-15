@@ -40,6 +40,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
 	github.com/aws/aws-sdk-go-v2/service/account v1.24.0
 	github.com/aws/aws-sdk-go-v2/service/amplify v1.38.13
+	github.com/aws/aws-sdk-go-v2/service/apigateway v1.40.6
+	github.com/aws/aws-sdk-go-v2/service/apigatewayv2 v1.35.6
 	github.com/aws/aws-sdk-go-v2/service/cloudcontrol v1.23.11
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.71.6
 	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.54.4
@@ -83,11 +85,7 @@ require (
 	modernc.org/sqlite v1.46.1
 )
 
-require (
-	github.com/aws/aws-sdk-go-v2/service/apigateway v1.40.6 // indirect
-	github.com/aws/aws-sdk-go-v2/service/apigatewayv2 v1.35.6 // indirect
-	golang.org/x/mod v0.36.0 // indirect
-)
+require golang.org/x/mod v0.36.0 // indirect
 
 require (
 	cloud.google.com/go/auth v0.18.2 // indirect
