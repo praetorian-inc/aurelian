@@ -45,3 +45,29 @@ func TestBuildResourceARN(t *testing.T) {
 		})
 	}
 }
+
+// TestResolveResourceType_OpenSearch locks the by-ARN dispatch for OpenSearch /
+// legacy Elasticsearch domains. Both use the "es" service segment, and they must
+// resolve to the type the native OpenSearchDomainEnumerator is registered under
+// (CloudControl cannot list either), otherwise --resource-arn targeting falls
+// through to CloudControl and silently skips the domain.
+func TestResolveResourceType_OpenSearch(t *testing.T) {
+	cases := []struct {
+		name     string
+		service  string
+		resource string
+		wantType string
+		wantOK   bool
+	}{
+		{"opensearch domain by es ARN", "es", "domain/my-domain", "AWS::OpenSearchService::Domain", true},
+		{"legacy es domain by es ARN", "es", "domain/legacy-es", "AWS::OpenSearchService::Domain", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := ResolveResourceType(tc.service, tc.resource)
+			if got != tc.wantType || ok != tc.wantOK {
+				t.Errorf("ResolveResourceType(%q, %q)\n  got:  (%q, %v)\n  want: (%q, %v)", tc.service, tc.resource, got, ok, tc.wantType, tc.wantOK)
+			}
+		})
+	}
+}

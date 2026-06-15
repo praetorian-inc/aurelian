@@ -122,6 +122,11 @@ func (e *OpenSearchDomainEnumerator) describeAndSend(client *opensearch.Client, 
 		fgacEnabled = aws.ToBool(d.AdvancedSecurityOptions.Enabled)
 	}
 
+	// A non-nil VPCOptions means the domain is VPC-scoped (reachable only from
+	// within its VPC) rather than exposed on a public endpoint. The evaluator
+	// uses this to describe the blast radius accurately.
+	vpcScoped := d.VPCOptions != nil
+
 	out.Send(output.AWSResource{
 		ResourceType: "AWS::OpenSearchService::Domain",
 		ResourceID:   aws.ToString(d.DomainName),
@@ -135,6 +140,7 @@ func (e *OpenSearchDomainEnumerator) describeAndSend(client *opensearch.Client, 
 			"Endpoint":                aws.ToString(d.Endpoint),
 			"AccessPolicies":          aws.ToString(d.AccessPolicies),
 			"AdvancedSecurityOptions": map[string]any{"Enabled": fgacEnabled},
+			"VPCScoped":               vpcScoped,
 		},
 	})
 	return nil

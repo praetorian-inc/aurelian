@@ -150,8 +150,9 @@ func TestEvaluateAppSync_CognitoAuth(t *testing.T) {
 
 // --- OpenSearch / Elasticsearch ---
 
-func TestEvaluateOpenSearch_FGACDisabledWildcardPolicy(t *testing.T) {
+func TestEvaluateOpenSearch_FGACDisabledWildcardPublicEndpoint(t *testing.T) {
 	e := newTestEvaluator()
+	// No VPCScoped property -> public-endpoint reachability.
 	r := &output.AWSResource{Properties: map[string]any{"FGACEnabled": false, "HasWildcardAccessPolicy": true}}
 	result := e.evaluateOpenSearch(r, aws.Config{}, "")
 	require.NotNil(t, result)
@@ -159,6 +160,19 @@ func TestEvaluateOpenSearch_FGACDisabledWildcardPolicy(t *testing.T) {
 	assert.True(t, result.NeedsManualTriage)
 	assert.Equal(t, []string{"es:ESHttpGet"}, result.AllowedActions)
 	assert.Contains(t, result.EvaluationReasons[0], "wildcard principal")
+	assert.Contains(t, result.EvaluationReasons[0], "public endpoint over the internet")
+}
+
+func TestEvaluateOpenSearch_FGACDisabledWildcardVPCScoped(t *testing.T) {
+	e := newTestEvaluator()
+	// VPC-scoped domains are still flagged for triage (the engagement's ES-UNAUTH
+	// finding was a VPC-scoped no-auth domain), but the reach is described as in-VPC.
+	r := &output.AWSResource{Properties: map[string]any{"FGACEnabled": false, "HasWildcardAccessPolicy": true, "VPCScoped": true}}
+	result := e.evaluateOpenSearch(r, aws.Config{}, "")
+	require.NotNil(t, result)
+	assert.True(t, result.NeedsManualTriage)
+	assert.Contains(t, result.EvaluationReasons[0], "within the domain's VPC")
+	assert.NotContains(t, result.EvaluationReasons[0], "over the internet")
 }
 
 func TestEvaluateOpenSearch_FGACDisabledRestrictivePolicy(t *testing.T) {

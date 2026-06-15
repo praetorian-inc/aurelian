@@ -409,6 +409,11 @@ var serviceDefaultResourceType = map[string]string{
 	"ecs":               "AWS::ECS::Cluster",
 	"elasticache":       "AWS::ElastiCache::CacheCluster",
 	"elasticsearch":     "AWS::Elasticsearch::Domain",
+	// OpenSearch and legacy Elasticsearch domain ARNs both use the "es" service
+	// segment (arn:aws:es:...:domain/<name>). Route them to the type the native
+	// OpenSearchDomainEnumerator is registered under so by-ARN targeting works;
+	// CloudControl cannot list either domain type.
+	"es":                "AWS::OpenSearchService::Domain",
 	"apigateway":        "AWS::ApiGateway::RestApi",
 	"kms":               "AWS::KMS::Key",
 	"secretsmanager":    "AWS::SecretsManager::Secret",

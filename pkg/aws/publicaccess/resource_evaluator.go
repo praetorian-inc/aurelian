@@ -448,11 +448,15 @@ func (e *ResourceEvaluator) evaluateOpenSearch(resource *output.AWSResource, _ a
 	if !wildcard {
 		return nil
 	}
+	reach := "any client that can reach the domain's public endpoint over the internet"
+	if vpcScoped, _ := resource.Properties["VPCScoped"].(bool); vpcScoped {
+		reach = "any client within the domain's VPC"
+	}
 	return &PublicAccessResult{
 		NeedsManualTriage: true,
 		AllowedActions:    []string{"es:ESHttpGet"},
 		EvaluationReasons: []string{
-			"OpenSearch/Elasticsearch domain has fine-grained access control disabled and an access policy granting a wildcard principal; any network-reachable client can call the domain with no credentials",
+			fmt.Sprintf("OpenSearch/Elasticsearch domain has fine-grained access control disabled and an access policy granting a wildcard principal; %s can call the domain with no credentials", reach),
 		},
 	}
 }
