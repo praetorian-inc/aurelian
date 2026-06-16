@@ -61,10 +61,10 @@ func (e *ClassicELBEnumerator) EnumerateByARN(arn string, out *pipeline.P[output
 		return fmt.Errorf("invalid Classic ELB ARN resource: %q", parsed.Resource)
 	}
 	if name == "" {
-		return fmt.Errorf("Classic ELB ARN missing load balancer name: %q", arn)
+		return fmt.Errorf("missing load balancer name in Classic ELB ARN: %q", arn)
 	}
 	if parsed.Region == "" {
-		return fmt.Errorf("Classic ELB ARN missing region: %q", arn)
+		return fmt.Errorf("missing region in Classic ELB ARN: %q", arn)
 	}
 	cfg, err := e.provider.GetAWSConfig(parsed.Region)
 	if err != nil {
