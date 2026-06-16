@@ -28,22 +28,35 @@ func NodeFromGaadUser(user types.UserDetail) *graph.Node {
 // NodeFromGaadRole creates a graph node from an IAM Role
 // Labels: ["Role", "Principal", "AWS::IAM::Role"]
 // UniqueKey: ["Arn"]
-// Extracts trusted_services from AssumeRolePolicyDocument if present
+// Extracts trusted_services and trusted_federated from AssumeRolePolicyDocument if present
 func NodeFromGaadRole(role types.RoleDetail) *graph.Node {
 	props := flattenStruct(role)
 	props["_type"] = "Role"
 	props["_resourceType"] = "AWS::IAM::Role"
 
-	// Extract trusted services from AssumeRolePolicyDocument
+	// Extract trusted service and federated principals from AssumeRolePolicyDocument.
+	// Federated principals (e.g. cognito-identity.amazonaws.com, SAML/OIDC providers)
+	// are kept in a separate property so the trusted_services property (consumed by
+	// passrole privesc enrichers) is not polluted with non-service principals.
 	if role.AssumeRolePolicyDocument.Statement != nil {
 		var trustedServices []string
+		var trustedFederated []string
 		for _, stmt := range *role.AssumeRolePolicyDocument.Statement {
-			if stmt.Principal != nil && stmt.Principal.Service != nil {
+			if stmt.Principal == nil {
+				continue
+			}
+			if stmt.Principal.Service != nil {
 				trustedServices = append(trustedServices, *stmt.Principal.Service...)
+			}
+			if stmt.Principal.Federated != nil {
+				trustedFederated = append(trustedFederated, *stmt.Principal.Federated...)
 			}
 		}
 		if len(trustedServices) > 0 {
 			props["trusted_services"] = trustedServices
+		}
+		if len(trustedFederated) > 0 {
+			props["trusted_federated"] = trustedFederated
 		}
 	}
 
@@ -76,6 +89,30 @@ func NodeFromAWSResource(cr output.AWSResource) *graph.Node {
 	props := flattenStruct(cr)
 	props["_type"] = "Resource"
 	props["_resourceType"] = cr.ResourceType
+
+	// flattenStruct buries cr.Properties as a single JSON string under the
+	// "properties" key, so the role reference resource_to_role.yaml needs is not
+	// reachable as a top-level Cypher property. Promote it to a top-level node
+	// property (EC2 -> IamInstanceProfile, Lambda -> Role) so HAS_ROLE edges are
+	// created for collector- and ERD-derived resources, not just hand-seeded ones.
+	if ref := types.RoleReferenceFromProperties(cr.Properties, cr.ResourceType); ref != "" {
+		switch cr.ResourceType {
+		case "AWS::EC2::Instance", "AWS::EC2::LaunchTemplate":
+			props["IamInstanceProfile"] = ref
+		case "AWS::Lambda::Function":
+			props["Role"] = ref
+		}
+	}
+
+	// Cognito identity pools carry an AllowUnauthenticatedIdentities flag inside the
+	// flattened properties JSON; promote it to a top-level node property so
+	// cognito_set_identity_pool_roles can relax its GetId/GetCredentials guard for pools
+	// reachable without authentication.
+	if cr.ResourceType == "AWS::Cognito::IdentityPool" {
+		if allow, ok := cr.Properties["AllowUnauthenticatedIdentities"].(bool); ok {
+			props["AllowUnauthenticatedIdentities"] = allow
+		}
+	}
 
 	// Parse resource type to get short name
 	var labels []string
@@ -110,8 +147,13 @@ func NodeFromAWSIAMResource(resource output.AWSIAMResource) *graph.Node {
 		case types.GroupDetail:
 			return NodeFromGaadGroup(data)
 		case types.ManagedPolicyDetail:
-			// Policies don't have a GAAD node type; use AWSResource style
-			return NodeFromAWSResource(resource.AWSResource)
+			// Policies don't have a GAAD node type; use AWSResource style, then surface
+			// policy_version_count (len of the GAAD PolicyVersionList) as a top-level prop.
+			// AWS caps a managed policy at 5 versions; at 5, CreatePolicyVersion fails unless
+			// a version is deleted first, so iam_create_policy_version guards on this count.
+			node := NodeFromAWSResource(resource.AWSResource)
+			node.Properties["policy_version_count"] = len(data.PolicyVersionList)
+			return node
 		}
 	}
 

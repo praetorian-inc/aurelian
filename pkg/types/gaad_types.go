@@ -119,6 +119,26 @@ type UserDetail struct {
 	UserPolicyList          []InlinePolicy  `json:"UserPolicyList"`
 	PermissionsBoundary     ManagedPolicy   `json:"PermissionsBoundary"`
 	AttachedManagedPolicies []ManagedPolicy `json:"AttachedManagedPolicies"`
+
+	// AccessKeyCount is the number of ACTIVE access keys on the user, collected
+	// out-of-band via iam:ListAccessKeys (GAAD does not return access keys). AWS
+	// caps a user at 2 active keys, so privesc methods use this to know whether
+	// iam:CreateAccessKey would succeed. Tri-state pointer: nil = unknown (the
+	// ListAccessKeys call was not made or failed) and serializes to null, which
+	// flattenStruct drops so the node prop is ABSENT and downstream guards
+	// fail-open; a non-nil 0/1/2+ serializes the real count present on the node so
+	// the guard reads it. A plain int + omitempty would drop a confirmed 0,
+	// re-introducing the absent/fail-open ambiguity.
+	AccessKeyCount *int `json:"AccessKeyCount,omitempty"`
+	// HasLoginProfile records whether the user has a console login profile,
+	// collected out-of-band via iam:GetLoginProfile. Tri-state pointer: nil =
+	// unknown (call not made or failed other than NoSuchEntity) and serializes to
+	// null → dropped → absent → fail-open; non-nil false = confirmed NoSuchEntity
+	// (no profile) and serializes present so the guard suppresses; non-nil true =
+	// profile exists. A plain bool + omitempty would drop a confirmed false,
+	// making the node carry no prop and the guard's coalesce(...,true) always
+	// fire — defeating the suppression.
+	HasLoginProfile *bool `json:"HasLoginProfile,omitempty"`
 }
 
 type RoleDetail struct {

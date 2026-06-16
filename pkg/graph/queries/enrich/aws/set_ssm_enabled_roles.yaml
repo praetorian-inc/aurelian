@@ -4,12 +4,23 @@ platform: aws
 type: enrich
 category: ssm
 description: |
-  Identifies roles with SSM-related trusted services or permissions.
+  Flags roles as SSM-capable (Systems Manager agent registers, so ssm:StartSession /
+  ssm:SendCommand can reach instances running under the role). A role is SSM-capable when EITHER:
+    - it trusts ssm.amazonaws.com directly (a hybrid/managed-instance activation role), OR
+    - it attaches the AWS-managed AmazonSSMManagedInstanceCore policy — the canonical real-world
+      path: a normal EC2 instance role trusts ec2.amazonaws.com (NOT ssm) and obtains SSM via
+      that managed policy (labs ssm-001, ssm-002, cspm-ec2-001).
 severity: info
 order: 13
 cypher: |
+  // Exact 'ssm.amazonaws.com' IN trusted_services (not CONTAINS 'ssm') so an unrelated ssm* service
+  // principal (e.g. ssmmessages / ssm-incidents / ssm-quicksetup) doesn't falsely flag the role.
+  // AttachedManagedPolicies flattens to a JSON STRING (array-of-objects), not a Neo4j list, so use
+  // CONTAINS-substring against the managed-policy ARN — the same no-APOC pattern as
+  // set_admin_administrator_access.yaml. AmazonSSMManagedInstanceCore is the AWS-managed policy that
+  // grants the SSM instance permissions, so a role attaching it is SSM-capable regardless of trust.
   MATCH (role:Role)
-  WHERE role.trusted_services IS NOT NULL
-  AND ANY(svc IN role.trusted_services WHERE svc CONTAINS 'ssm')
+  WHERE 'ssm.amazonaws.com' IN coalesce(role.trusted_services, [])
+     OR coalesce(role.AttachedManagedPolicies, '') CONTAINS 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
   SET role._ssm_enabled = true
   RETURN count(role) as ssm_roles

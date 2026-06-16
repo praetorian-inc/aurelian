@@ -17,6 +17,13 @@ description: |
   escalation. A future enricher that projects each AWS service's SLR template and flags
   the resulting managed policy as admin/privileged would be required before any edge could
   legitimately be emitted; until then this method deliberately matches nothing.
+
+  Decision: the no-op is deliberately RETAINED. Other privesc methods replaced cypher proxies
+  with real collected signals (access-key count, login-profile existence, managed-policy version
+  count) to cut false positives. CreateServiceLinkedRole has no analogous signal that would turn
+  it into a real escalation — the immutable AWS-managed policy, single-service trust, and
+  non-assumable identity hold regardless of any collected data — so no enricher was added and
+  this query stays a documented no-op.
 severity: medium
 order: 100
 cypher: |

@@ -17,6 +17,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// isIAMResourceType reports whether an emitted AWSIAMResource is a GAAD IAM principal/policy
+// entity (vs a collected cloud resource). Both are emitted as AWSIAMResource, but the cloud
+// resource assertions only care about the latter.
+func isIAMResourceType(resourceType string) bool {
+	switch resourceType {
+	case "AWS::IAM::User", "AWS::IAM::Role", "AWS::IAM::Group",
+		"AWS::IAM::ManagedPolicy", "AWS::IAM::Policy":
+		return true
+	default:
+		return false
+	}
+}
+
 // relKey is a (principal, resource, action) triple used for relationship lookups.
 type relKey struct {
 	principalARN string
@@ -132,6 +145,14 @@ func TestAWSGraph(t *testing.T) {
 		switch v := m.(type) {
 		case output.AWSIAMResource:
 			entities = append(entities, v)
+			// Collected cloud resources are emitted wrapped as AWSIAMResource (with empty
+			// IAM fields) so the live neo4j load path (GraphFormatter.Format), which builds
+			// nodes only on `case output.AWSIAMResource`, does not drop them. The resource
+			// assertions below still need their AWSResource view, so unwrap non-IAM entities
+			// back into the resources slice. IAM entities keep going to `entities`.
+			if !isIAMResourceType(v.ResourceType) {
+				resources = append(resources, v.AWSResource)
+			}
 		case output.AWSResource:
 			resources = append(resources, v)
 		case output.AWSIAMRelationship:

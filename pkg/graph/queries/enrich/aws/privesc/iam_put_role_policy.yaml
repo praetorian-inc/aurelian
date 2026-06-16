@@ -6,7 +6,9 @@ category: privesc
 description: |
   Detects principals with iam:PutRolePolicy on a role they can ALSO assume: they write
   an inline admin policy onto that role and then assume it. The escalation target is the
-  role whose trust the attacker can enter (a modeled CAN_ASSUME trust edge), not every
+  role whose trust the attacker can enter (the validated STS_ASSUMEROLE base edge, which
+  the evaluator emits when identity-grant + trust allow the assumption, OR when trust
+  directly names the attacker's exact ARN), not every
   principal. Writing an inline policy to a role with no assumption path grants privilege
   the attacker can never use, so a usable assume path is required.
 
@@ -20,11 +22,13 @@ cypher: |
   // Trust-backed: PutRolePolicy + an assume path to the SAME role (the target).
   // Guards (per FP catalog method_261/262, method_288/289):
   //   - admin-as-source exclusion; self-target exclusion.
-  //   - require a usable assumption path: a modeled CAN_ASSUME trust edge to the role.
+  //   - require a usable assumption path: the validated STS_ASSUMEROLE base edge to the
+  //     role (the evaluator emits it when identity-grant + trust allow assumption, OR when
+  //     trust directly names the attacker's exact ARN).
   //   - exclude service-linked roles (PutRolePolicy is blocked on SLRs; not assumable).
   //   - NO privileged-target suppression: the attacker grants the privilege via the
   //     inline write, so a non-privileged target is still a real takeover (low).
-  MATCH (attacker:Principal)-[:CAN_ASSUME]->(victim:Role)
+  MATCH (attacker:Principal)-[:STS_ASSUMEROLE]->(victim:Role)
   WHERE coalesce(attacker._is_admin, false) <> true
     AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
     AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'

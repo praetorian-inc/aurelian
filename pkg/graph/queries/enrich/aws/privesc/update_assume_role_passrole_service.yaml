@@ -9,7 +9,7 @@ description: |
   making it assumable. The escalation target is the role whose trust is rewritten. Because
   the attacker controls the new trust document, the rewrite is self-sufficient for
   assumption (they can add themselves or the service they pass it to), so no pre-existing
-  CAN_ASSUME path is required. Unlike a policy write, rewriting trust does not add power to
+  assume path (STS_ASSUMEROLE edge) is required. Unlike a policy write, rewriting trust does not add power to
   the role, so a privileged-target guard IS applied: a non-privileged role is lateral
   movement, not escalation. Guards: admin-as-source and self-target exclusion, Role-only
   target scoping, exclusion of service-linked roles (trust policy cannot be modified on
@@ -25,7 +25,7 @@ cypher: |
   //   - privileged-target tiering (rewriting trust grants entry, not new power):
   //     admin -> high, privileged -> medium, else suppress.
   //   - assume capability is satisfied by the trust rewrite itself (attacker controls the
-  //     new trust doc), so no separate CAN_ASSUME precondition is needed (catalog 249).
+  //     new trust doc), so no separate assume-path precondition is needed (catalog 249).
   MATCH (attacker:Principal)-[update]->(target:Role)
   WHERE type(update) = 'IAM_UPDATEASSUMEROLEPOLICY'
     AND coalesce(attacker._is_admin, false) <> true

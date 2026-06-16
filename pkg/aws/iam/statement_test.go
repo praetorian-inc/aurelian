@@ -467,11 +467,11 @@ func TestEvaluateStatement(t *testing.T) {
 				},
 			},
 			expected: &StatementEvaluation{
-				ExplicitAllow:   false,
-				ExplicitDeny:    false,
-				ImplicitDeny:    true,
-				MatchedAction:   true,
-				MatchedResource: true,
+				ExplicitAllow:    false,
+				ExplicitDeny:     false,
+				ImplicitDeny:     true,
+				MatchedAction:    true,
+				MatchedResource:  true,
 				MatchedPrincipal: true,
 				ConditionEvaluation: &ConditionEval{
 					Result: ConditionFailed,
@@ -581,11 +581,11 @@ func TestEvaluateStatement(t *testing.T) {
 				},
 			},
 			expected: &StatementEvaluation{
-				ExplicitAllow:   false,
-				ExplicitDeny:    false,
-				ImplicitDeny:    true,
-				MatchedAction:   true,
-				MatchedResource: true,
+				ExplicitAllow:    false,
+				ExplicitDeny:     false,
+				ImplicitDeny:     true,
+				MatchedAction:    true,
+				MatchedResource:  true,
 				MatchedPrincipal: true,
 				ConditionEvaluation: &ConditionEval{
 					Result: ConditionFailed,
@@ -632,6 +632,67 @@ func TestEvaluateStatement(t *testing.T) {
 				MatchedAction:    true,
 				MatchedResource:  true,
 				MatchedPrincipal: true,
+			},
+		},
+		{
+			// A PassRole scoped by iam:PassedToService must not fail closed
+			// when the context key is absent, so the IAM_PASSROLE edge is built.
+			name: "PassRole with PassedToService condition is allowed when key absent",
+			stmt: &types.PolicyStatement{
+				Effect:   "Allow",
+				Action:   &types.DynaString{"iam:PassRole"},
+				Resource: &types.DynaString{"arn:aws:iam::123456789012:role/target-role"},
+				Condition: &types.Condition{
+					"StringEquals": {
+						"iam:PassedToService": types.DynaString{"lambda.amazonaws.com"},
+					},
+				},
+			},
+			requestedAction:   "iam:PassRole",
+			requestedResource: "arn:aws:iam::123456789012:role/target-role",
+			context: &RequestContext{
+				PrincipalArn: "arn:aws:iam::123456789012:user/attacker",
+			},
+			expected: &StatementEvaluation{
+				ExplicitAllow:   true,
+				ExplicitDeny:    false,
+				ImplicitDeny:    false,
+				MatchedAction:   true,
+				MatchedResource: true,
+				ConditionEvaluation: &ConditionEval{
+					Result: ConditionInconclusive,
+				},
+			},
+		},
+		{
+			// Regression: the permissive default is scoped to PassRole keys only.
+			// A non-PassRole statement with an unrelated missing condition key
+			// must still implicit-deny.
+			name: "Non-PassRole with missing condition key still implicit denies",
+			stmt: &types.PolicyStatement{
+				Effect:   "Allow",
+				Action:   &types.DynaString{"s3:GetObject"},
+				Resource: &types.DynaString{"arn:aws:s3:::mybucket/*"},
+				Condition: &types.Condition{
+					"StringEquals": {
+						"s3:prefix": types.DynaString{"documents/"},
+					},
+				},
+			},
+			requestedAction:   "s3:GetObject",
+			requestedResource: "arn:aws:s3:::mybucket/myfile.txt",
+			context: &RequestContext{
+				PrincipalArn: "arn:aws:iam::123456789012:user/attacker",
+			},
+			expected: &StatementEvaluation{
+				ExplicitAllow:   false,
+				ExplicitDeny:    false,
+				ImplicitDeny:    true,
+				MatchedAction:   true,
+				MatchedResource: true,
+				ConditionEvaluation: &ConditionEval{
+					Result: ConditionFailed,
+				},
 			},
 		},
 	}
@@ -1030,7 +1091,7 @@ func TestMatchesPrincipal(t *testing.T) {
 			want:               true,
 		},
 		{
-			name: "empty principal fields returns false",
+			name:      "empty principal fields returns false",
 			principal: &types.Principal{
 				// All fields nil
 			},

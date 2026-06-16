@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/utils"
@@ -292,6 +293,7 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 
 	// Output results if there are any
 	if len(results) > 0 {
+		// Always write the JSON output file first.
 		// Determine output file path
 		var outputPath string
 		if outputFile != "" {
@@ -321,7 +323,48 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		}
 
 		log.Success("output written to %s", outputPath)
+
+		// Additionally seed Neo4j when the user supplied a --neo4j-uri AND the
+		// results actually contain graph entities. This makes Neo4j an additive
+		// sink alongside the JSON file. We gate on result CONTENT (not the flag
+		// alone) so that modules which only READ the graph and emit findings
+		// (e.g. `analyze graph` → AurelianRisk) skip seeding — they have no
+		// entities to seed, and their JSON findings are already written above.
+		if uri, _ := argsMap["neo4j-uri"].(string); uri != "" && resultsContainGraphEntities(results) {
+			username, _ := argsMap["neo4j-username"].(string)
+			if username == "" {
+				username = "neo4j"
+			}
+			password, _ := argsMap["neo4j-password"].(string)
+			if password == "" {
+				password = "neo4j"
+			}
+			graphFormatter, err := plugin.NewGraphFormatter(uri, username, password)
+			if err != nil {
+				return fmt.Errorf("connecting to Neo4j: %w", err)
+			}
+			defer func() { _ = graphFormatter.Close() }()
+			if err := graphFormatter.Format(results); err != nil {
+				return fmt.Errorf("writing results to Neo4j: %w", err)
+			}
+			log.Success("results also written to Neo4j at %s", uri)
+		}
 	}
 
 	return nil
+}
+
+// resultsContainGraphEntities reports whether the results contain at least one
+// graph entity (an AWSIAMResource or AWSIAMRelationship) that GraphFormatter can
+// seed into Neo4j. This mirrors GraphFormatter.Format's own collection contract,
+// so it cleanly distinguishes "seed the graph" (recon graph) from "read the
+// graph + emit findings" (analyze graph → AurelianRisk → no entities).
+func resultsContainGraphEntities(results []model.AurelianModel) bool {
+	for _, result := range results {
+		switch result.(type) {
+		case output.AWSIAMResource, output.AWSIAMRelationship:
+			return true
+		}
+	}
+	return false
 }
