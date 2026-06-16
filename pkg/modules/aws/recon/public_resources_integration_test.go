@@ -41,10 +41,30 @@ func TestAWSPublicResources(t *testing.T) {
 				"AWS::Cognito::UserPool",
 				"AWS::RDS::DBInstance",
 				"AWS::EC2::Image",
+				// Application ingress layer (feat/public-resources-ingress).
+				// Enumerated and evaluated on a live run. Full fixture-backed
+				// assertions require the Terraform resources noted in the TODO below.
+				"AWS::ElasticLoadBalancingV2::LoadBalancer",
+				"AWS::ElasticLoadBalancing::LoadBalancer",
+				"AWS::AppRunner::Service",
+				"AWS::CloudFront::Distribution",
+				"AWS::GlobalAccelerator::Accelerator",
+				"AWS::ElasticBeanstalk::Environment",
+				"AWS::Transfer::Server",
+				"AWS::AppSync::GraphQLApi",
+				"AWS::OpenSearchService::Domain",
+				"AWS::EKS::Cluster",
+				"AWS::ApiGateway::RestApi",
+				"AWS::ApiGatewayV2::Api",
 			},
 		},
 		Context: context.Background(),
 	}
+
+	// The ingress cheap tranche (always deployed) is asserted below. The
+	// expensive fixtures (EKS, FGAC-off OpenSearch, Beanstalk) deploy only when
+	// the fixture is applied with -var deploy_expensive=true; their outputs are
+	// empty otherwise, so they are asserted separately further down.
 
 	p1 := pipeline.From(cfg)
 	p2 := pipeline.New[model.AurelianModel]()
@@ -79,11 +99,47 @@ func TestAWSPublicResources(t *testing.T) {
 		fixture.Output("public_cognito_pool_id"),
 		fixture.Output("public_rds_identifier"),
 		fixture.Output("public_ami_id"),
+		// Application ingress layer — cheap tranche (always deployed).
+		fixture.Output("public_alb_arn"),
+		fixture.Output("public_apprunner_arn"),
+		fixture.Output("public_cloudfront_id"),
+		fixture.Output("public_ga_arn"),
+		fixture.Output("public_transfer_id"),
+		fixture.Output("apikey_appsync_id"),
+		fixture.Output("unauth_restapi_id"),
+		fixture.Output("unauth_httpapi_id"),
+		// Recently-changed branches that still flag (edge positives): a REST API
+		// gated by a resource policy is reported for triage, and an additional
+		// API_KEY provider on a non-API_KEY AppSync API is reported.
+		fixture.Output("policy_restapi_id"),
+		fixture.Output("additional_apikey_appsync_id"),
 	}
 
 	for _, expected := range expectedImpactedResources {
 		assert.Truef(t, hasRiskForResource(risks, expected), "expected risk for resource %q", expected)
 		t.Logf("found risk for resource %q", expected)
+	}
+
+	// Negative controls: these must NOT be flagged. private_restapi_id is a
+	// PRIVATE REST API whose NONE-auth method is not internet-exposed.
+	for _, name := range []string{"internal_alb_arn", "iam_appsync_id", "private_restapi_id"} {
+		id := fixture.Output(name)
+		assert.Falsef(t, hasRiskForResource(risks, id), "internal/authenticated resource %q (%s) must not be flagged", id, name)
+	}
+
+	// Expensive tranche positives: only asserted when deployed (outputs are empty otherwise).
+	for _, name := range []string{"public_eks_arn", "no_fgac_domain", "public_beanstalk_env"} {
+		if id := fixture.Output(name); id != "" {
+			assert.Truef(t, hasRiskForResource(risks, id), "expected risk for expensive resource %q (%s)", id, name)
+		}
+	}
+
+	// Expensive tranche negatives: a FGAC-off domain with a policy scoped to a
+	// specific principal (not a wildcard) must NOT be flagged. Only asserted when deployed.
+	for _, name := range []string{"restrictive_nofgac_domain"} {
+		if id := fixture.Output(name); id != "" {
+			assert.Falsef(t, hasRiskForResource(risks, id), "FGAC-off restrictive-policy resource %q (%s) must not be flagged", id, name)
+		}
 	}
 
 	hasInvokeFunction := false

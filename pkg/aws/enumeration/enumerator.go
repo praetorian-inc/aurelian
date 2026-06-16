@@ -83,6 +83,8 @@ func NewEnumeratorWithProvider(opts plugin.AWSCommonRecon, provider *AWSConfigPr
 	e.Register(NewEC2ImageEnumerator(opts, provider, skipReport))
 	e.Register(NewSSMDocumentEnumerator(opts, provider, skipReport))
 	e.Register(NewSSMParameterEnumerator(opts, provider, skipReport))
+	e.Register(NewOpenSearchDomainEnumerator(opts, provider, skipReport))
+	e.Register(NewClassicELBEnumerator(opts, provider, skipReport))
 
 	return e
 }

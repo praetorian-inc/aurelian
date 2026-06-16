@@ -40,6 +40,18 @@ func (e *ResourceEvaluator) evaluators() map[string]evaluator {
 		"AWS::SQS::Queue":         e.evaluateSQS,
 		"AWS::EFS::FileSystem":    e.evaluateEFS,
 		"AWS::EC2::Image":         e.evaluateEC2Image,
+		"AWS::ElasticLoadBalancingV2::LoadBalancer": e.evaluateELBv2,
+		"AWS::ElasticLoadBalancing::LoadBalancer":   e.evaluateELBv2,
+		"AWS::AppRunner::Service":                   e.evaluateAppRunner,
+		"AWS::CloudFront::Distribution":             e.evaluateCloudFront,
+		"AWS::GlobalAccelerator::Accelerator":       e.evaluateGlobalAccelerator,
+		"AWS::ElasticBeanstalk::Environment":        e.evaluateElasticBeanstalk,
+		"AWS::Transfer::Server":                     e.evaluateTransfer,
+		"AWS::AppSync::GraphQLApi":                  e.evaluateAppSync,
+		"AWS::OpenSearchService::Domain":            e.evaluateOpenSearch,
+		"AWS::EKS::Cluster":                         e.evaluateEKS,
+		"AWS::ApiGateway::RestApi":                  e.evaluateAPIGatewayRest,
+		"AWS::ApiGatewayV2::Api":                    e.evaluateAPIGatewayV2,
 	}
 }
 
@@ -58,6 +70,18 @@ func SupportedResourceTypes() []string {
 		"AWS::RDS::DBInstance",
 		"AWS::Redshift::Cluster",
 		"AWS::EC2::Image",
+		"AWS::ElasticLoadBalancingV2::LoadBalancer",
+		"AWS::ElasticLoadBalancing::LoadBalancer",
+		"AWS::AppRunner::Service",
+		"AWS::CloudFront::Distribution",
+		"AWS::GlobalAccelerator::Accelerator",
+		"AWS::ElasticBeanstalk::Environment",
+		"AWS::Transfer::Server",
+		"AWS::AppSync::GraphQLApi",
+		"AWS::OpenSearchService::Domain",
+		"AWS::EKS::Cluster",
+		"AWS::ApiGateway::RestApi",
+		"AWS::ApiGatewayV2::Api",
 	}
 }
 
@@ -271,6 +295,271 @@ func (e *ResourceEvaluator) evaluateEC2Image(resource *output.AWSResource, _ aws
 			fmt.Sprintf("AMI '%s' (%s) is publicly accessible but not in use by any running instances",
 				name, imageID),
 			"While not actively deployed, the AMI may contain sensitive data; recommend removing public access",
+		},
+	}
+}
+
+func (e *ResourceEvaluator) evaluateELBv2(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	internetFacing, _ := resource.Properties["IsInternetFacing"].(bool)
+	if !internetFacing {
+		return nil
+	}
+	name, _ := resource.Properties["LoadBalancerName"].(string)
+	label := cmp.Or(name, resource.ResourceID)
+	return &PublicAccessResult{
+		IsPublic:          true,
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"elasticloadbalancing:NetworkAccess"},
+		EvaluationReasons: []string{
+			fmt.Sprintf("Load balancer '%s' is internet-facing (Scheme=internet-facing); listeners, target groups, and any authentication require manual review", label),
+		},
+	}
+}
+
+func (e *ResourceEvaluator) evaluateAppRunner(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	isPublic, _ := resource.Properties["IsPubliclyAccessible"].(bool)
+	if !isPublic {
+		return nil
+	}
+	serviceURL, _ := resource.Properties["ServiceUrl"].(string)
+	reason := "App Runner service accepts public ingress (NetworkConfiguration.IngressConfiguration.IsPubliclyAccessible=true)"
+	if serviceURL != "" {
+		reason = fmt.Sprintf("%s at %s", reason, serviceURL)
+	}
+	return &PublicAccessResult{
+		IsPublic:          true,
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"apprunner:NetworkAccess"},
+		EvaluationReasons: []string{reason},
+	}
+}
+
+func (e *ResourceEvaluator) evaluateCloudFront(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	enabled, _ := resource.Properties["DistributionEnabled"].(bool)
+	if !enabled {
+		return nil
+	}
+	hasWAF, _ := resource.Properties["HasWebACL"].(bool)
+	reason := "CloudFront distribution is internet-facing"
+	if hasWAF {
+		reason += " and has a WAF web ACL attached; review origin access and cache behaviors"
+	} else {
+		reason += " with no WAF web ACL attached; review origin access, cache behaviors, and consider attaching a WAF"
+	}
+	return &PublicAccessResult{
+		IsPublic:          true,
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"cloudfront:NetworkAccess"},
+		EvaluationReasons: []string{reason},
+	}
+}
+
+func (e *ResourceEvaluator) evaluateGlobalAccelerator(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	enabled, _ := resource.Properties["Enabled"].(bool)
+	if !enabled {
+		return nil
+	}
+	return &PublicAccessResult{
+		IsPublic:          true,
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"globalaccelerator:NetworkAccess"},
+		EvaluationReasons: []string{
+			"Global Accelerator is enabled and routes internet traffic to backend endpoints; review listeners and endpoint groups",
+		},
+	}
+}
+
+func (e *ResourceEvaluator) evaluateElasticBeanstalk(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	endpointURL, _ := resource.Properties["EndpointURL"].(string)
+	if endpointURL == "" {
+		return nil
+	}
+	// An environment behind an internal load balancer still has an endpoint/CNAME
+	// but is not internet-reachable.
+	if internalLB, _ := resource.Properties["IsInternalLB"].(bool); internalLB {
+		return nil
+	}
+	return &PublicAccessResult{
+		IsPublic:          true,
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"elasticbeanstalk:NetworkAccess"},
+		EvaluationReasons: []string{
+			fmt.Sprintf("Elastic Beanstalk environment exposes internet-facing endpoint %s; review the fronting load balancer and application authentication", endpointURL),
+		},
+	}
+}
+
+func (e *ResourceEvaluator) evaluateTransfer(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	endpointType, _ := resource.Properties["EndpointType"].(string)
+	if endpointType != "PUBLIC" {
+		return nil
+	}
+	return &PublicAccessResult{
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"transfer:NetworkAccess"},
+		EvaluationReasons: []string{
+			"Transfer Family server has a PUBLIC endpoint reachable from the internet; access is gated by the server's identity provider (SSH key, password, or custom IdP), which requires manual review",
+		},
+	}
+}
+
+func (e *ResourceEvaluator) evaluateAppSync(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	via := ""
+	if primary, _ := resource.Properties["AuthenticationType"].(string); primary == "API_KEY" {
+		via = "primary authentication"
+	} else if appSyncHasAPIKeyProvider(resource.Properties["AdditionalAuthenticationProviders"]) {
+		via = "an additional authentication provider"
+	}
+	if via == "" {
+		return nil
+	}
+	return &PublicAccessResult{
+		IsPublic:          true,
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"appsync:GraphQL"},
+		EvaluationReasons: []string{
+			fmt.Sprintf("AppSync GraphQL API accepts API_KEY authentication via %s; any holder of an API key can call the full GraphQL schema", via),
+		},
+	}
+}
+
+// appSyncHasAPIKeyProvider reports whether any entry in an AppSync
+// AdditionalAuthenticationProviders list uses API_KEY. A non-API_KEY primary
+// auth type does not preclude an additional API_KEY provider.
+func appSyncHasAPIKeyProvider(raw any) bool {
+	providers, ok := raw.([]any)
+	if !ok {
+		return false
+	}
+	for _, p := range providers {
+		m, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+		if t, _ := m["AuthenticationType"].(string); t == "API_KEY" {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *ResourceEvaluator) evaluateOpenSearch(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	fgacEnabled, _ := resource.Properties["FGACEnabled"].(bool)
+	if fgacEnabled {
+		return nil
+	}
+	// With FGAC disabled the access policy is the only authorization layer. A
+	// restrictive policy still gates the domain, so only flag when the policy
+	// grants a wildcard principal (no identity required).
+	wildcard, _ := resource.Properties["HasWildcardAccessPolicy"].(bool)
+	if !wildcard {
+		return nil
+	}
+	reach := "any client that can reach the domain's public endpoint over the internet"
+	if vpcScoped, _ := resource.Properties["VPCScoped"].(bool); vpcScoped {
+		reach = "any client within the domain's VPC"
+	}
+	return &PublicAccessResult{
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"es:ESHttpGet"},
+		EvaluationReasons: []string{
+			fmt.Sprintf("OpenSearch/Elasticsearch domain has fine-grained access control disabled and an access policy granting a wildcard principal; %s can call the domain with no credentials", reach),
+		},
+	}
+}
+
+func (e *ResourceEvaluator) evaluateEKS(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	publicAccess, _ := resource.Properties["EndpointPublicAccess"].(bool)
+	if !publicAccess {
+		return nil
+	}
+	openToInternet, _ := resource.Properties["PublicAccessOpenToInternet"].(bool)
+	reason := "EKS cluster API server endpoint is publicly accessible but restricted to specific CIDRs; review the allowed ranges"
+	if openToInternet {
+		reason = "EKS cluster API server endpoint is publicly accessible from the entire internet (PublicAccessCidrs includes 0.0.0.0/0 or ::/0); the endpoint still requires Kubernetes/IAM authentication, which requires manual review"
+	}
+	return &PublicAccessResult{
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"eks:NetworkAccess"},
+		EvaluationReasons: []string{reason},
+	}
+}
+
+func (e *ResourceEvaluator) evaluateAPIGatewayRest(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	// A PRIVATE REST API is reachable only from within the VPC via an interface
+	// endpoint, so NONE-auth methods are not internet-exposed.
+	if apiGatewayIsPrivate(resource.Properties["EndpointConfiguration"]) {
+		return nil
+	}
+	unauth, _ := resource.Properties["UnauthenticatedMethodCount"].(int)
+	if unauth <= 0 {
+		return nil
+	}
+	// A resource policy can restrict invocation (source IP, VPC endpoint, account)
+	// independently of method authorization. Its presence means access cannot be
+	// confirmed open from configuration alone, so report for triage rather than
+	// asserting public.
+	if hasNonEmptyResourcePolicy(resource.Properties["Policy"]) {
+		return &PublicAccessResult{
+			NeedsManualTriage: true,
+			AllowedActions:    []string{"execute-api:Invoke"},
+			EvaluationReasons: []string{
+				fmt.Sprintf("REST API has %d method(s) with AuthorizationType NONE and no API key, but a resource policy is attached; review whether the policy restricts invocation", unauth),
+			},
+		}
+	}
+	return &PublicAccessResult{
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"execute-api:Invoke"},
+		EvaluationReasons: []string{
+			fmt.Sprintf("REST API has %d method(s) with AuthorizationType NONE and no API key required; confirm the API is deployed to a reachable stage with the default execute-api endpoint enabled", unauth),
+		},
+	}
+}
+
+// apiGatewayIsPrivate reports whether a REST API's EndpointConfiguration.Types
+// contains PRIVATE (reachable only via a VPC interface endpoint).
+func apiGatewayIsPrivate(raw any) bool {
+	cfg, ok := raw.(map[string]any)
+	if !ok {
+		return false
+	}
+	types, ok := cfg["Types"].([]any)
+	if !ok {
+		return false
+	}
+	for _, t := range types {
+		if s, _ := t.(string); s == "PRIVATE" {
+			return true
+		}
+	}
+	return false
+}
+
+// hasNonEmptyResourcePolicy reports whether a resource policy is attached. The
+// policy is returned by CloudControl as a string or a decoded map depending on
+// the resource type.
+func hasNonEmptyResourcePolicy(raw any) bool {
+	switch v := raw.(type) {
+	case string:
+		return v != "" && v != "null"
+	case map[string]any:
+		return len(v) > 0
+	default:
+		return false
+	}
+}
+
+func (e *ResourceEvaluator) evaluateAPIGatewayV2(resource *output.AWSResource, _ aws.Config, _ string) *PublicAccessResult {
+	unauth, _ := resource.Properties["UnauthenticatedRouteCount"].(int)
+	if unauth <= 0 {
+		return nil
+	}
+	return &PublicAccessResult{
+		NeedsManualTriage: true,
+		AllowedActions:    []string{"execute-api:Invoke"},
+		EvaluationReasons: []string{
+			fmt.Sprintf("HTTP/WebSocket API has %d route(s) with AuthorizationType NONE; confirm the API is deployed to a reachable stage with the default execute-api endpoint enabled", unauth),
 		},
 	}
 }
