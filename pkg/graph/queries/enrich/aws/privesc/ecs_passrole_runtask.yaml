@@ -1,0 +1,45 @@
+id: aws/enrich/privesc/ecs_passrole_runtask
+name: IAM PassRole + ECS RunTask Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both iam:PassRole and ecs:RunTask that can run a task whose
+  task role is a privileged role, then steal that role's credentials from the container
+  metadata endpoint. The escalation target is the PASSED ROLE — not the cluster/task-def
+  resource the prior query MERGEd onto (the bug: PassRole-to-anything plus RunTask-on-
+  anything was never correlated). Guards: the role must trust ecs-tasks.amazonaws.com,
+  must not be a service-linked role, and must be more privileged than the attacker.
+
+  PRECONDITION (not in graph): RunTask runs a REGISTERED task definition that names the
+  privileged role, so the attacker also needs ecs:RegisterTaskDefinition (and, for
+  awsvpc/Fargate, PassRole on the execution role too) or a pre-existing matching task
+  def; cluster capacity is runtime-only. None of these are correlatable in the graph, so
+  they are noted but not gated.
+severity: high
+order: 100
+cypher: |
+  // New-passrole: target = passed ECS task role (mirrors iam_pass_role_ec2). Guards:
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - ecs trust: 'ecs-tasks.amazonaws.com' IN victim.trusted_services (fail-closed).
+  //   - exclude service-linked roles (':role/aws-service-role/').
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
+  MATCH (attacker:Principal)-[passrole]->(victim:Principal)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'ecs-tasks.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
+  MATCH (attacker)-[run]->(service_resource)
+  WHERE type(run) = 'ECS_RUNTASK'
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + ecs:RunTask'}]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

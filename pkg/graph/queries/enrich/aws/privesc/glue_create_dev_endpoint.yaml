@@ -1,0 +1,40 @@
+id: aws/enrich/privesc/glue_create_dev_endpoint
+name: IAM PassRole + Glue CreateDevEndpoint Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both iam:PassRole and glue:CreateDevEndpoint permissions
+  that can create a Glue development endpoint with a privileged IAM role and
+  execute commands via SSH to escalate privileges.
+severity: high
+order: 100
+cypher: |
+  // New-passrole: target = passed role. Guards (per FP catalog method_60):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - glue trust: 'glue.amazonaws.com' IN victim.trusted_services (else CreateDevEndpoint
+  //     rejects a role Glue cannot assume; no privileged context obtained).
+  //   - exclude service-linked roles (':role/aws-service-role/').
+  //   - privileged-target: suppress non-privileged targets; tier admin -> high,
+  //     privileged -> medium.
+  //   - bind BOTH permissions to the same passed role: the PassRole victim must also be
+  //     Glue-trusting + privileged, so a passable-but-non-Glue role is dropped;
+  //     CreateDevEndpoint is required via EXISTS rather than as a second fan-out match.
+  MATCH (attacker:Principal)-[passrole]->(victim:Principal)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'glue.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[create]->() WHERE type(create) = 'GLUE_CREATEDEVENDPOINT' }
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + glue:CreateDevEndpoint'}]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

@@ -1,0 +1,42 @@
+id: aws/enrich/privesc/ec2_modify_instance_attribute
+name: EC2 ModifyInstanceAttribute + StopInstances + StartInstances Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with ec2:ModifyInstanceAttribute, ec2:StopInstances, and
+  ec2:StartInstances that can inject malicious userData into an existing EC2 instance
+  with a privileged role, then stop/start it to execute the script and extract
+  credentials via IMDS on restart. All three actions are mandatory (userData edits
+  require the instance stopped). The escalation target is the IAM role attached to a
+  reachable instance (via HAS_ROLE), NOT an arbitrary principal, and must be more
+  privileged than the attacker. Residual: instance running-state / ASG-replacement
+  and IMDS HttpEndpoint state are not in the graph.
+severity: high
+order: 100
+cypher: |
+  // Compute-takeover (catalog 126-131): all three actions required; target = the role on
+  // an instance the attacker can modify (HAS_ROLE, fail-closed). The action edges often
+  // resolve to a '*'/Resource stub rather than the instance node, so the three actions are
+  // required via EXISTS and the instance is reached via HAS_ROLE. Guards: admin-as-source;
+  // self-target; privileged-target (suppress non-privileged); exclude service-linked roles.
+  MATCH (attacker:Principal)
+  WHERE coalesce(attacker._is_admin, false) <> true
+    AND EXISTS { (attacker)-[m]->() WHERE type(m) = 'EC2_MODIFYINSTANCEATTRIBUTE' }
+    AND EXISTS { (attacker)-[s]->() WHERE type(s) = 'EC2_STOPINSTANCES' }
+    AND EXISTS { (attacker)-[r]->() WHERE type(r) = 'EC2_STARTINSTANCES' }
+  WITH DISTINCT attacker
+  MATCH (instance:Resource {_resourceType: 'AWS::EC2::Instance'})-[:HAS_ROLE]->(victim:Principal)
+  WHERE coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'ec2:ModifyInstanceAttribute + ec2:StopInstances + ec2:StartInstances'}]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

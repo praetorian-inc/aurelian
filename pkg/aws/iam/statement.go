@@ -1,8 +1,8 @@
 package iam
 
 import (
-	"github.com/praetorian-inc/aurelian/pkg/types"
 	"fmt"
+	"github.com/praetorian-inc/aurelian/pkg/types"
 	"regexp"
 	"strings"
 	"time"
@@ -178,6 +178,14 @@ type RequestContext struct {
 	ResourceAccount  string            // Account ID owning the resource
 	ResourceOrgID    string            // Org ID owning the resource
 	ResourceOrgPaths []string          // Org paths for the resource
+
+	// PassRole Properties
+	// PassedToServices is the set of service principals the role being passed
+	// actually trusts (from its AssumeRolePolicyDocument). When populated, it
+	// resolves the iam:PassedToService condition key so a PassRole scoped by
+	// {iam:PassedToService: <svc>} evaluates precisely. When empty, that key is
+	// treated as inconclusive rather than failing closed (see condition.go).
+	PassedToServices []string
 
 	// Request Properties
 	CalledVia       []string          // Chain of services that made request
@@ -406,7 +414,6 @@ func determinePrincipalType(principalArn string) PrincipalType {
 	return PrincipalTypeUnknown
 }
 
-
 // getUsernameFromArn extracts the username from an ARN
 func getUsernameFromArn(principalArn string) string {
 	if principalArn == "" {
@@ -458,7 +465,6 @@ func getServiceNameFromArn(principalArn string) string {
 
 	return ""
 }
-
 
 // matchesPrincipal checks if the requestedPrincipal matches the principal definition
 func matchesPrincipal(principal *types.Principal, requestedPrincipal string) bool {

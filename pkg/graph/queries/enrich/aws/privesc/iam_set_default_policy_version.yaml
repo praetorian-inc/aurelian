@@ -1,0 +1,45 @@
+id: aws/enrich/privesc/iam_set_default_policy_version
+name: IAM SetDefaultPolicyVersion Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with iam:SetDefaultPolicyVersion on a CUSTOMER-managed policy that
+  is attached to themselves: they can activate a previously-created (broader) policy
+  version, escalating their OWN privileges. Modeled as a self-loop (genuine
+  self-escalation), not a fan-out to every principal.
+
+  A policy with only one version has no non-default version to switch to, so the method
+  requires policy.policy_version_count > 1 when the transformer surfaces it. The guard is
+  FAIL-OPEN: graphs collected before the enricher (or policies discovered without version
+  data) carry no policy_version_count prop and behave as before (no version-count guard).
+severity: high
+order: 100
+cypher: |
+  // Self-escalation: the attacker activates an inactive version of a managed policy
+  // attached to THEMSELVES. Guards (per FP catalog):
+  //   - admin-as-source: skip principals that are already admin.
+  //   - customer-managed only: AWS-managed policies (':iam::aws:policy/') are immutable.
+  //   - attached-to-attacker: AttachedManagedPolicies is a JSON string -> CONTAINS.
+  //   - >1-version precondition (FAIL-OPEN): SetDefaultPolicyVersion only escalates if a
+  //     more-privileged NON-DEFAULT version exists to switch to; a policy with a single version
+  //     has nothing to activate. The transformer surfaces policy.policy_version_count (len of
+  //     PolicyVersionList — the same prop iam_create_policy_version guards on). coalesce(
+  //     policy.policy_version_count, 2) > 1 requires >1 version when present (so a single-version
+  //     policy is suppressed) and behaves as before (no guard) when absent — pre-enricher graph,
+  //     or a policy discovered without version data (fail-open default 2).
+  // NOTE (precondition not fully in graph): we cannot confirm a non-default version is BROADER
+  // than the current default — per-version documents are not projected — so a multi-version
+  // policy whose non-default versions are all narrower is a residual FP.
+  MATCH (attacker:Principal)-[perm]->(policy)
+  WHERE type(perm) = 'IAM_SETDEFAULTPOLICYVERSION'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND NOT coalesce(policy.Arn, policy.arn) CONTAINS ':iam::aws:policy/'
+    AND coalesce(attacker.AttachedManagedPolicies, '') CONTAINS coalesce(policy.Arn, policy.arn)
+    AND coalesce(policy.policy_version_count, 2) > 1
+  WITH DISTINCT attacker
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:SetDefaultPolicyVersion'}]->(attacker)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

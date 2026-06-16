@@ -1,0 +1,41 @@
+id: aws/enrich/privesc/sagemaker_presigned_url
+name: SageMaker CreatePresignedNotebookInstanceUrl Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with sagemaker:CreatePresignedNotebookInstanceUrl permission
+  that can access SageMaker notebook instances with elevated execution roles.
+severity: high
+order: 100
+cypher: |
+  // Existing-compute takeover: a presigned URL grants an interactive session INTO an
+  // EXISTING notebook instance, executing as that notebook's execution role. It cannot
+  // reach arbitrary users/groups/non-notebook roles, and cannot create a notebook. The
+  // reachable privilege is the role an EXISTING notebook instance RUNS AS, resolved via
+  // the (Resource)-[:HAS_ROLE]->(Role) edge from resource_service_role.yaml. Guards
+  // (per FP catalog method_35):
+  //   - mandatory HAS_ROLE join (fail-closed): no notebook instance -> no edge, no fan-out.
+  //   - admin-as-source exclusion; self-target exclusion (cross-label coalesce).
+  //   - privileged-target: suppress non-privileged notebook roles (lateral); tier
+  //     admin -> high, privileged -> medium.
+  // NOTE: notebook must be InService and the attacker also needs DescribeNotebookInstance
+  //   + network reachability; those are runtime/precondition facts not on the graph.
+  MATCH (attacker:Principal)-[perm]->()
+  WHERE type(perm) = 'SAGEMAKER_CREATEPRESIGNEDNOTEBOOKINSTANCEURL'
+    AND coalesce(attacker._is_admin, false) <> true
+  WITH DISTINCT attacker
+  MATCH (resource:Resource)-[:HAS_ROLE]->(victim:Principal)
+  WHERE resource._resourceType = 'AWS::SageMaker::NotebookInstance'
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'sagemaker:CreatePresignedNotebookInstanceUrl'}]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

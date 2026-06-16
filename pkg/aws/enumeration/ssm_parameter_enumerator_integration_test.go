@@ -27,7 +27,7 @@ func TestSSMParameterEnumerator(t *testing.T) {
 	enum := NewSSMParameterEnumerator(plugin.AWSCommonRecon{
 		Regions:     []string{"us-east-2"},
 		Concurrency: 2,
-	}, provider)
+	}, provider, NewSkipReport())
 
 	results, err := collectResources(func(out *pipeline.P[output.AWSResource]) error {
 		return enum.EnumerateAll(out)

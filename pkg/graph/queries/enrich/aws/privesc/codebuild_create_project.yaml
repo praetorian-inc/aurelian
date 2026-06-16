@@ -1,0 +1,39 @@
+id: aws/enrich/privesc/codebuild_create_project
+name: CodeBuild CreateProject Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both iam:PassRole and codebuild:CreateProject that can create
+  a build project carrying a privileged service role and run arbitrary buildspec commands
+  as that role. The escalation target is the PASSED service role (not the CodeBuild
+  resource). CreateProject alone is insufficient — without iam:PassRole the attacker
+  cannot attach an elevated role to the new project. Guards: the role must trust
+  codebuild.amazonaws.com, must not be a service-linked role, and must be more privileged
+  than the attacker.
+severity: medium
+order: 100
+cypher: |
+  // New-passrole (B / method_27): target = passed CodeBuild service role. Guards:
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - codebuild trust: 'codebuild.amazonaws.com' IN victim.trusted_services.
+  //   - exclude service-linked roles (':role/aws-service-role/' cannot be a serviceRole).
+  //   - require both IAM_PASSROLE and CreateProject (CreateProject alone grants nothing).
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
+  MATCH (attacker:Principal)-[passrole]->(victim:Principal)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'codebuild.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[c]->() WHERE type(c) = 'CODEBUILD_CREATEPROJECT' }
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + codebuild:CreateProject'}]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

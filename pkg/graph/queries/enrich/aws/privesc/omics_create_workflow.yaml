@@ -1,0 +1,34 @@
+id: aws/enrich/privesc/omics_create_workflow
+name: IAM PassRole + AWS HealthOmics Workflow Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both iam:PassRole and omics:CreateWorkflow permissions
+  that can create an AWS HealthOmics WDL workflow with an admin execution role
+  whose task exfiltrates credentials to S3, enabling privilege escalation.
+severity: high
+order: 100
+cypher: |
+  // New-passrole: target = passed role (the HealthOmics workflow execution role), not a
+  // service resource. Mirrors iam_pass_role_ec2.yaml. Guards (cross-cutting / FP catalog):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - omics trust: 'omics.amazonaws.com' IN victim.trusted_services.
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
+  //   - create permission required via EXISTS (no second all-resources fan-out).
+  MATCH (attacker:Principal)-[passrole]->(victim:Principal)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'omics.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[create]->() WHERE type(create) = 'OMICS_CREATEWORKFLOW' }
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + omics:CreateWorkflow'}]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

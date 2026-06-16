@@ -1,0 +1,32 @@
+id: aws/enrich/privesc/iam_attach_group_policy
+name: IAM AttachGroupPolicy Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with iam:AttachGroupPolicy that can attach AdministratorAccess (or
+  any privileged managed policy) onto a group they are a MEMBER of, escalating their own
+  privileges. iam:AttachGroupPolicy only operates on groups, roles are never group
+  members, and attaching to a group the attacker does not belong to changes their
+  effective permissions not at all, so this is modeled as a self-loop (self-escalation)
+  gated on group membership, not a fan-out to every principal.
+severity: high
+order: 100
+cypher: |
+  // Self-escalation: attacker (a User) attaches a privileged managed policy to a group
+  // it is in. Guards (per FP catalog method_306):
+  //   - admin-as-source: skip principals that are already admin.
+  //   - target must be a Group, and the attacker must already be a member
+  //     (GroupName in attacker.GroupList) so the granted privilege accrues to them.
+  // NOTE: an attacker with iam:AddUserToGroup could join a non-member group first; that
+  //   join is modeled by iam_add_user_to_group, so it is not folded in here.
+  MATCH (attacker:User)-[perm]->(group:Group)
+  WHERE type(perm) = 'IAM_ATTACHGROUPPOLICY'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(group.GroupName, '') IN coalesce(attacker.GroupList, [])
+  WITH DISTINCT attacker
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:AttachGroupPolicy'}]->(attacker)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

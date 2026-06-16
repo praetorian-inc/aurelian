@@ -1,0 +1,44 @@
+id: aws/enrich/privesc/stepfunctions_create
+name: IAM PassRole + Step Functions CreateStateMachine Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with both iam:PassRole and states:CreateStateMachine that can create
+  a Step Functions state machine carrying a privileged role which calls IAM APIs via SDK
+  service integration. The escalation target is the PASSED ROLE (not the Step Functions
+  resource), which must trust states.amazonaws.com and be more privileged than the attacker.
+
+  NOTE (incomplete combo, per FP catalog row 373): CreateStateMachine alone defines but
+  never runs the machine — execution needs states:StartExecution (or an EventBridge/
+  scheduler trigger). The complete combo is modeled by stepfunctions_create_startexecution;
+  this create-only variant is the broader/weaker signal and intentionally fails open on the
+  trigger precondition (the attacker may trigger it by other means).
+severity: high
+order: 100
+cypher: |
+  // New-passrole (B-cat 3): target = passed role (the state machine's execution role).
+  // Guards (per FP catalog rows 373-376):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - same-account: iam:PassRole is account-local, so attacker & passed-role accounts
+  //     (5th ':'-field of the ARN) must match (per FP catalog rows 18, 605).
+  //   - states trust: 'states.amazonaws.com' IN victim.trusted_services.
+  //   - CreateStateMachine held by the same attacker (EXISTS, not a fan-out join).
+  //   - privileged-target suppression (lateral => drop).
+  MATCH (attacker:Principal)-[passrole]->(victim:Principal)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND split(coalesce(attacker.Arn, attacker.arn), ':')[4] = split(coalesce(victim.Arn, victim.arn), ':')[4]
+    AND 'states.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[create]->() WHERE type(create) = 'STATES_CREATESTATEMACHINE' }
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + states:CreateStateMachine'}]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

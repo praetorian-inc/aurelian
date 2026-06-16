@@ -1,0 +1,41 @@
+id: aws/enrich/privesc/stepfunctions_update
+name: Step Functions UpdateStateMachine + StartExecution Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with states:UpdateStateMachine and states:StartExecution that can
+  replace an EXISTING state machine's definition with malicious IAM API calls and execute
+  it. No iam:PassRole is required — the execution role is already attached to the machine,
+  so the escalation target is that machine's service role (reached via HAS_ROLE), NOT an
+  arbitrary principal. Guards: the state machine must have a bound role (HAS_ROLE,
+  fail-closed) which must be more privileged than the attacker; both actions must resolve
+  to the SAME state machine.
+severity: high
+order: 100
+cypher: |
+  // Existing-passrole / resource takeover (B-cat 4 + 5): target = the state machine's
+  // service role via HAS_ROLE (resource_service_role enricher provides HAS_ROLE for
+  // StepFunctions). Both UpdateStateMachine + StartExecution must land on the SAME machine.
+  // Guards: admin-as-source exclusion; HAS_ROLE mandatory (fail-closed); self-target
+  // exclusion; privileged-target suppression (lateral => drop).
+  MATCH (attacker:Principal)-[update]->(machine:Resource)
+  WHERE type(update) = 'STATES_UPDATESTATEMACHINE'
+    AND coalesce(attacker._is_admin, false) <> true
+  WITH attacker, machine
+  MATCH (attacker)-[start]->(machine)
+  WHERE type(start) = 'STATES_STARTEXECUTION'
+  WITH DISTINCT attacker, machine
+  MATCH (machine)-[:HAS_ROLE]->(victim:Principal)
+  WHERE coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'states:UpdateStateMachine + states:StartExecution'}]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

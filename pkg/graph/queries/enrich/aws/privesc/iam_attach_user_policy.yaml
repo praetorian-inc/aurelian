@@ -1,0 +1,30 @@
+id: aws/enrich/privesc/iam_attach_user_policy
+name: IAM AttachUserPolicy Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with iam:AttachUserPolicy that can attach AdministratorAccess (or
+  any privileged managed policy) onto their OWN user, escalating their own privileges.
+  iam:AttachUserPolicy only operates on users, and granting admin to an unrelated user is
+  only escalation if the attacker can also obtain that user's credentials (a separate
+  access-key/login-profile chain), so this is modeled as a self-loop (self-escalation),
+  not a fan-out to every principal.
+severity: high
+order: 100
+cypher: |
+  // Self-escalation: attacker (a User) attaches a privileged managed policy to itself.
+  // Guards (per FP catalog method_283/285 analogue):
+  //   - admin-as-source: skip principals that are already admin.
+  //   - attacker must be a User (AttachUserPolicy only targets users).
+  // NOTE: targeting OTHER users requires a credential-control chain (CreateAccessKey /
+  // Create/UpdateLoginProfile) that those dedicated methods model; not folded in here.
+  MATCH (attacker:User)-[perm]->(target)
+  WHERE type(perm) = 'IAM_ATTACHUSERPOLICY'
+    AND coalesce(attacker._is_admin, false) <> true
+  WITH DISTINCT attacker
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:AttachUserPolicy'}]->(attacker)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

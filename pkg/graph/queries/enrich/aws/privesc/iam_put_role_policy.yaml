@@ -1,0 +1,45 @@
+id: aws/enrich/privesc/iam_put_role_policy
+name: IAM PutRolePolicy Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with iam:PutRolePolicy on a role they can ALSO assume: they write
+  an inline admin policy onto that role and then assume it. The escalation target is the
+  role whose trust the attacker can enter (the validated STS_ASSUMEROLE base edge, which
+  the evaluator emits when identity-grant + trust allow the assumption, OR when trust
+  directly names the attacker's exact ARN), not every
+  principal. Writing an inline policy to a role with no assumption path grants privilege
+  the attacker can never use, so a usable assume path is required.
+
+  Because the attacker GRANTS the privilege via the inline write, the role need not be
+  pre-privileged (no privileged-target suppression); this trust-backed direct takeover
+  fails OPEN on target privilege, with severity tiered admin -> high, privileged ->
+  medium, unknown/non-privileged -> low.
+severity: high
+order: 100
+cypher: |
+  // Trust-backed: PutRolePolicy + an assume path to the SAME role (the target).
+  // Guards (per FP catalog method_261/262, method_288/289):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - require a usable assumption path: the validated STS_ASSUMEROLE base edge to the
+  //     role (the evaluator emits it when identity-grant + trust allow assumption, OR when
+  //     trust directly names the attacker's exact ARN).
+  //   - exclude service-linked roles (PutRolePolicy is blocked on SLRs; not assumable).
+  //   - NO privileged-target suppression: the attacker grants the privilege via the
+  //     inline write, so a non-privileged target is still a real takeover (low).
+  MATCH (attacker:Principal)-[:STS_ASSUMEROLE]->(victim:Role)
+  WHERE coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+    AND EXISTS { (attacker)-[perm]->(victim) WHERE type(perm) = 'IAM_PUTROLEPOLICY' }
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PutRolePolicy'}]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

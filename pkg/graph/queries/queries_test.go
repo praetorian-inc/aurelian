@@ -210,60 +210,111 @@ func TestRunPlatformQueryNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "query not found", "error should indicate missing query")
 }
 
+// TestEnrichAWSTiebreaksByIDOnEqualOrder locks down the Metadata.ID tiebreaker in EnrichAWS's
+// sort: two AWS enrich queries sharing the same Order must execute in deterministic ID order
+// regardless of map-iteration order. Without the tiebreak, the map-backed registry would
+// surface them nondeterministically.
+func TestEnrichAWSTiebreaksByIDOnEqualOrder(t *testing.T) {
+	const (
+		loID = "aws/enrich/zz_tiebreak_a"
+		hiID = "aws/enrich/zz_tiebreak_b"
+		// Distinctive cypher so we can find each query's position in the call log.
+		loCypher = "MERGE (:TiebreakMarker {id: 'a'}) RETURN 1"
+		hiCypher = "MERGE (:TiebreakMarker {id: 'b'}) RETURN 1"
+	)
+
+	// Inject the pair (with inverted insertion order) into the shared registry, then restore.
+	// Snapshot any prior entries first so cleanup restores them instead of clobbering real
+	// registry queries that happen to share these IDs.
+	for _, id := range []string{loID, hiID} {
+		prior, existed := queryRegistry[id]
+		t.Cleanup(func() {
+			if existed {
+				queryRegistry[id] = prior
+			} else {
+				delete(queryRegistry, id)
+			}
+		})
+	}
+	for _, q := range []*Query{
+		{Metadata: QueryMetadata{ID: hiID, Platform: "aws", Type: "enrich", Order: 100}, Cypher: hiCypher},
+		{Metadata: QueryMetadata{ID: loID, Platform: "aws", Type: "enrich", Order: 100}, Cypher: loCypher},
+	} {
+		queryRegistry[q.Metadata.ID] = q
+	}
+
+	mock := newMockGraphDB()
+	require.NoError(t, EnrichAWS(context.Background(), mock))
+
+	loPos, hiPos := -1, -1
+	for i, cypher := range mock.queriesCalled {
+		switch cypher {
+		case loCypher:
+			loPos = i
+		case hiCypher:
+			hiPos = i
+		}
+	}
+	require.NotEqual(t, -1, loPos, "lower-ID tiebreak query should have executed")
+	require.NotEqual(t, -1, hiPos, "higher-ID tiebreak query should have executed")
+	assert.Less(t, loPos, hiPos,
+		"queries sharing the same Order must execute in ascending ID order (zz_tiebreak_a before zz_tiebreak_b)")
+}
+
 // TestNewPrivescQueriesLoad verifies all new pathfinding.cloud gap-analysis methods load correctly.
 func TestNewPrivescQueriesLoad(t *testing.T) {
 	newMethods := []string{
 		// Initial gap-fill methods (43–72)
-		"aws/enrich/privesc/method_43",
-		"aws/enrich/privesc/method_44",
-		"aws/enrich/privesc/method_45",
-		"aws/enrich/privesc/method_46",
-		"aws/enrich/privesc/method_47",
-		"aws/enrich/privesc/method_48",
-		"aws/enrich/privesc/method_49",
-		"aws/enrich/privesc/method_50",
-		"aws/enrich/privesc/method_51",
-		"aws/enrich/privesc/method_52",
-		"aws/enrich/privesc/method_53",
-		"aws/enrich/privesc/method_54",
-		"aws/enrich/privesc/method_55",
-		"aws/enrich/privesc/method_56",
-		"aws/enrich/privesc/method_57",
-		"aws/enrich/privesc/method_58",
-		"aws/enrich/privesc/method_59",
-		"aws/enrich/privesc/method_60",
-		"aws/enrich/privesc/method_61",
-		"aws/enrich/privesc/method_62",
-		"aws/enrich/privesc/method_63",
-		"aws/enrich/privesc/method_64",
-		"aws/enrich/privesc/method_65",
-		"aws/enrich/privesc/method_66",
-		"aws/enrich/privesc/method_67",
-		"aws/enrich/privesc/method_68",
-		"aws/enrich/privesc/method_69",
-		"aws/enrich/privesc/method_70",
-		"aws/enrich/privesc/method_71",
-		"aws/enrich/privesc/method_72",
+		"aws/enrich/privesc/apprunner_create_service",
+		"aws/enrich/privesc/apprunner_update_service",
+		"aws/enrich/privesc/batch_passrole",
+		"aws/enrich/privesc/batch_submit_job",
+		"aws/enrich/privesc/braket_create_job",
+		"aws/enrich/privesc/cloudformation_create_stackset",
+		"aws/enrich/privesc/cloudformation_update_stackset",
+		"aws/enrich/privesc/codedeploy_create_deployment",
+		"aws/enrich/privesc/cognito_set_identity_pool_roles",
+		"aws/enrich/privesc/ec2_instance_connect",
+		"aws/enrich/privesc/ec2_replace_instance_profile",
+		"aws/enrich/privesc/ecs_create_service",
+		"aws/enrich/privesc/ecs_start_task",
+		"aws/enrich/privesc/ecs_execute_command",
+		"aws/enrich/privesc/emr_run_job_flow",
+		"aws/enrich/privesc/emr_serverless",
+		"aws/enrich/privesc/gamelift_create_fleet",
+		"aws/enrich/privesc/glue_create_dev_endpoint",
+		"aws/enrich/privesc/glue_update_job",
+		"aws/enrich/privesc/glue_create_session",
+		"aws/enrich/privesc/imagebuilder_create_pipeline",
+		"aws/enrich/privesc/kinesis_analytics",
+		"aws/enrich/privesc/lambda_add_permission",
+		"aws/enrich/privesc/omics_create_workflow",
+		"aws/enrich/privesc/sagemaker_lifecycle_config",
+		"aws/enrich/privesc/scheduler_create_schedule",
+		"aws/enrich/privesc/ssm_start_automation",
+		"aws/enrich/privesc/stepfunctions_create",
+		"aws/enrich/privesc/stepfunctions_update",
+		"aws/enrich/privesc/bedrock_access_code_interpreter",
 		// Group A: wrong-API fixes (73–74)
-		"aws/enrich/privesc/method_73",
-		"aws/enrich/privesc/method_74",
+		"aws/enrich/privesc/ec2_request_spot_instances",
+		"aws/enrich/privesc/ec2_launch_template_version",
 		// Group B: completely missing (75–79)
-		"aws/enrich/privesc/method_75",
-		"aws/enrich/privesc/method_76",
-		"aws/enrich/privesc/method_77",
-		"aws/enrich/privesc/method_78",
-		"aws/enrich/privesc/method_79",
+		"aws/enrich/privesc/amplify_create_app",
+		"aws/enrich/privesc/ec2_modify_instance_attribute",
+		"aws/enrich/privesc/glue_createjob_createtrigger",
+		"aws/enrich/privesc/glue_updatejob_createtrigger",
+		"aws/enrich/privesc/lambda_passrole_createfunction_addpermission",
 		// Group C: execution-gated compound methods (80–89)
-		"aws/enrich/privesc/method_80",
-		"aws/enrich/privesc/method_81",
-		"aws/enrich/privesc/method_82",
-		"aws/enrich/privesc/method_83",
-		"aws/enrich/privesc/method_84",
-		"aws/enrich/privesc/method_85",
-		"aws/enrich/privesc/method_86",
-		"aws/enrich/privesc/method_87",
-		"aws/enrich/privesc/method_88",
-		"aws/enrich/privesc/method_89",
+		"aws/enrich/privesc/glue_createjob_startjobrun",
+		"aws/enrich/privesc/glue_updatejob_startjobrun",
+		"aws/enrich/privesc/glue_createsession_runstatement",
+		"aws/enrich/privesc/stepfunctions_create_startexecution",
+		"aws/enrich/privesc/ssm_createdocument_startautomation",
+		"aws/enrich/privesc/emr_serverless_startjobrun",
+		"aws/enrich/privesc/kinesisanalytics_startapplication",
+		"aws/enrich/privesc/omics_startrun",
+		"aws/enrich/privesc/gamelift_createbuild_createfleet",
+		"aws/enrich/privesc/imagebuilder_createimage",
 	}
 
 	for _, id := range newMethods {
@@ -271,9 +322,11 @@ func TestNewPrivescQueriesLoad(t *testing.T) {
 			q, exists := GetQuery(id)
 			require.True(t, exists, "query %s should exist", id)
 			require.NotNil(t, q)
+			assert.Equal(t, id, q.Metadata.ID, "loaded query ID must match its registry key")
 			assert.Equal(t, "aws", q.Metadata.Platform)
 			assert.Equal(t, "enrich", q.Metadata.Type)
 			assert.Equal(t, "privesc", q.Metadata.Category)
+			assert.Equal(t, 100, q.Metadata.Order, "privesc methods run at order:100")
 			assert.NotEmpty(t, q.Cypher)
 			assert.Contains(t, q.Cypher, "CAN_PRIVESC", "should create CAN_PRIVESC relationship")
 		})

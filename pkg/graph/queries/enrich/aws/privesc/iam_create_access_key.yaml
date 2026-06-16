@@ -1,0 +1,63 @@
+id: aws/enrich/privesc/iam_create_access_key
+name: IAM CreateAccessKey Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with iam:CreateAccessKey on a specific privileged IAM USER:
+  the attacker mints long-lived programmatic credentials for that user and acts as
+  them. The edge is SCOPED to the principal the IAM_CREATEACCESSKEY permission points
+  at (no all-principals fan-out), restricted to user targets, and suppressed unless
+  the target user is admin/privileged (resetting a non-privileged user is lateral).
+  The <2-active-access-keys precondition (else CreateAccessKey returns LimitExceeded)
+  is now enforced from a real collected signal: the GAAD collector enriches each user
+  with target.AccessKeyCount (count of ACTIVE keys via iam:ListAccessKeys). The field is
+  a TRI-STATE pointer (*int): a non-nil count (including a confirmed 0) serializes to the
+  node and we require it < 2; nil (the ListAccessKeys call was not made or failed) is
+  UNKNOWN, serializes to null → the prop is absent → IS NULL. The signal is FAIL-OPEN:
+  graphs collected before this enricher (or users whose ListAccessKeys call failed) carry
+  no AccessKeyCount prop, and for those we fall back to the original cypher proxy — also
+  require iam:DeleteAccessKey on the SAME target user so the attacker could free a key slot
+  if the user already holds two keys (catalog method_03+28 combo).
+severity: high
+order: 100
+cypher: |
+  // Principal-access (B.7): drop the all-principals fan-out. The victim is the principal
+  // the IAM_CREATEACCESSKEY permission edge actually points at.
+  // Guards (per FP catalog method_03 / row 238):
+  //   - admin-as-source: skip attackers that are already admin.
+  //   - target must be an IAM USER (access keys exist only on users; roles use STS,
+  //     groups have no credentials).
+  //   - self-target exclusion (casing-tolerant coalesce).
+  //   - lateral-vs-admin: suppress non-privileged targets; tier severity by target.
+  //   - <2-active-keys precondition (FAIL-OPEN on the real signal):
+  //       * when target.AccessKeyCount is present (collected via iam:ListAccessKeys; the GAAD
+  //         *int struct field flattens to this PascalCase node prop — a confirmed 0 is present,
+  //         NOT dropped), require it < 2 (AWS caps a user at 2 active keys; at 2 CreateAccessKey
+  //         fails).
+  //       * when it is ABSENT (pre-enricher graph, or ListAccessKeys failed → the *int is nil →
+  //         null → dropped — both fail-open), fall back to the original key-slot proxy: require
+  //         IAM_DELETEACCESSKEY to the SAME target node (permission edges carry no resource ARN,
+  //         so same-node is the proxy for same-user) so the attacker could free a slot if the
+  //         user already holds two keys.
+  MATCH (attacker:Principal)-[perm]->(target:Principal)
+  WHERE type(perm) = 'IAM_CREATEACCESSKEY'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(target.Arn, target.arn) CONTAINS ':user/'
+    AND coalesce(target.Arn, target.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND (coalesce(target._is_admin, false) = true OR coalesce(target._is_privileged, false) = true)
+    AND (
+      target.AccessKeyCount < 2
+      OR (target.AccessKeyCount IS NULL
+          AND EXISTS { (attacker)-[d]->(target) WHERE type(d) = 'IAM_DELETEACCESSKEY' })
+    )
+  WITH DISTINCT attacker, target
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:CreateAccessKey'}]->(target)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = CASE
+        WHEN coalesce(target._is_admin, false) = true THEN 'high'
+        WHEN coalesce(target._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

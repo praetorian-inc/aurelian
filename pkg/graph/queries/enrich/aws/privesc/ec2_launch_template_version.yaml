@@ -1,0 +1,78 @@
+id: aws/enrich/privesc/ec2_launch_template_version
+name: EC2 CreateLaunchTemplateVersion + ModifyLaunchTemplate Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with ec2:CreateLaunchTemplateVersion and ec2:ModifyLaunchTemplate
+  that can create a new version of a launch template referencing a privileged instance
+  profile and set it as default, causing new instances launched from the template to
+  use the elevated role and exposing its credentials via IMDS.
+
+  Two vectors:
+    - New-passrole: embedding a NEW privileged instance-profile ARN in a template version
+      requires iam:PassRole on that role, so the target = the passed role (IAM_PASSROLE edge).
+    - Existing-template (lab ec2-005): editing an EXISTING launch template that already
+      references a privileged instance profile needs NO iam:PassRole — the target = the role
+      that template's instances already RUN AS, resolved via
+      (LaunchTemplate)-[:HAS_ROLE]->(Role) (set_launch_template_role) and re-pointed at, the
+      same way apprunner_update_service / batch_submit_job re-point at an existing resource role.
+
+  Guards (both vectors): admin-as-source exclusion; self-target exclusion; the role must be
+  more privileged than the attacker. The new-passrole vector additionally requires the role to
+  trust ec2.amazonaws.com, have an instance profile, and not be a service-linked role.
+  Residual: whether an ASG/launcher actually consumes the template is not modeled.
+severity: high
+order: 100
+cypher: |
+  // Two convergent escalation branches feed a single MERGE (CALL{...UNION...}), each carrying
+  // its own method label so the new-passrole and existing-template vectors are distinct edges:
+  //   (1) New-passrole (catalog 132-135): referencing a NEW privileged instance profile in a
+  //       template version requires iam:PassRole. Target = passed role (IAM_PASSROLE edge).
+  //       Guards: ec2 trust; instance profile present; exclude service-linked roles.
+  //   (2) Existing-template (lab ec2-005): editing an EXISTING launch template that already
+  //       references a privileged instance profile needs NO iam:PassRole. Target = the role that
+  //       template's instances RUN AS, reached via (LaunchTemplate)-[:HAS_ROLE]->(role) (the
+  //       set_launch_template_role enricher). The HAS_ROLE link is MANDATORY (fail-closed): a
+  //       template whose role is unresolvable (or an account with no launch templates) is not a
+  //       usable escalation vehicle. ec2-trust / instance-profile / SLR guards are implied (a role
+  //       bound to a live launch template is ec2-assumable via its instance profile and not an SLR).
+  // Both branches require BOTH template-edit actions (Create authors the version, Modify sets it
+  // default) via EXISTS, and shared guards: admin-as-source exclusion; self-target exclusion;
+  // same-account (attacker/victim share split(arn,':')[4]); privileged-target tiering.
+  CALL {
+    MATCH (attacker:Principal)-[passrole]->(victim:Principal)
+    WHERE type(passrole) = 'IAM_PASSROLE'
+      AND coalesce(attacker._is_admin, false) <> true
+      AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+      AND 'ec2.amazonaws.com' IN coalesce(victim.trusted_services, [])
+      AND coalesce(victim.InstanceProfileList, '') CONTAINS 'arn:aws:iam'
+      AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+      AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+      AND EXISTS { (attacker)-[c]->() WHERE type(c) = 'EC2_CREATELAUNCHTEMPLATEVERSION' }
+      AND EXISTS { (attacker)-[m]->() WHERE type(m) = 'EC2_MODIFYLAUNCHTEMPLATE' }
+    RETURN attacker, victim,
+      'ec2:CreateLaunchTemplateVersion + ec2:ModifyLaunchTemplate' AS method
+    UNION
+    MATCH (attacker:Principal)-[c]->()
+    WHERE type(c) = 'EC2_CREATELAUNCHTEMPLATEVERSION'
+      AND coalesce(attacker._is_admin, false) <> true
+      AND EXISTS { (attacker)-[m]->() WHERE type(m) = 'EC2_MODIFYLAUNCHTEMPLATE' }
+    WITH DISTINCT attacker
+    MATCH (tmpl:Resource)-[:HAS_ROLE]->(victim:Principal)
+    WHERE tmpl._resourceType = 'AWS::EC2::LaunchTemplate'
+      AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+      AND split(coalesce(victim.Arn, victim.arn), ':')[4] = split(coalesce(attacker.Arn, attacker.arn), ':')[4]
+      AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    RETURN attacker, victim,
+      'ec2:CreateLaunchTemplateVersion + ec2:ModifyLaunchTemplate (existing-template variant)' AS method
+  }
+  WITH DISTINCT attacker, victim, method
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: method}]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

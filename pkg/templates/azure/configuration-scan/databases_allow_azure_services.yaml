@@ -2,7 +2,7 @@ id: databases_allow_azure_services
 name: Database Azure Services Access Detection
 category: ["Access Control", "arg-scan"]
 description: Detects database servers with "Allow Azure services" firewall rules enabled using enrichment analysis
-severity: High
+severity: Medium
 reportability: Automatic
 triageNotes: |
   This template identifies database resources that may have "Allow Azure services" firewall rules enabled.

@@ -1,0 +1,31 @@
+id: aws/enrich/privesc/ssm_createdocument_startautomation
+name: SSM CreateDocument + StartAutomationExecution Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with ssm:CreateDocument and ssm:StartAutomationExecution that can
+  author a custom SSM Automation document with a Python aws:executeScript step and run it
+  to execute privileged AWS API calls. With no iam:PassRole, the executeScript step runs
+  under the STARTING PRINCIPAL'S OWN permissions, so this is genuine self-escalation
+  (running script as themselves to widen their effective access), modeled as a self-loop
+  rather than a fan-out to every principal.
+
+  NOTE: the inline-AssumeRole variant (passing a privileged AutomationAssumeRole) is
+  covered separately by ssm_start_automation, which keys off the IAM_PASSROLE edge.
+severity: high
+order: 100
+cypher: |
+  // Self-escalation (B-cat 1): both SSM actions held by the SAME attacker; the automation
+  // runs as the attacker, so the escalation target is the attacker (self-loop, no fan-out).
+  // Guards: admin-as-source exclusion; both perms required via EXISTS (no all-principals MATCH).
+  MATCH (attacker:Principal)
+  WHERE coalesce(attacker._is_admin, false) <> true
+    AND EXISTS { (attacker)-[c]->() WHERE type(c) = 'SSM_CREATEDOCUMENT' }
+    AND EXISTS { (attacker)-[s]->() WHERE type(s) = 'SSM_STARTAUTOMATIONEXECUTION' }
+  WITH DISTINCT attacker
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'ssm:CreateDocument + ssm:StartAutomationExecution'}]->(attacker)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = 'high',
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

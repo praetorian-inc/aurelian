@@ -2,7 +2,7 @@ id: kusto_wildcard_trusted_tenants
 name: Kusto Clusters with Wildcard Trusted External Tenants
 category: ["Access Control", "arg-scan"]
 description: Detects Azure Data Explorer (Kusto) clusters configured with wildcard trusted external tenants, allowing authentication from any Azure AD tenant
-severity: High
+severity: Medium
 reportability: Automatic
 triageNotes: |
   1. **Immediate Threat**: Wildcard trustedExternalTenants ("*") allows authentication attempts from ANY Azure AD tenant globally

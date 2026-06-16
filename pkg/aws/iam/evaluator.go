@@ -141,7 +141,6 @@ type EvaluationRequest struct {
 	BoundaryStatements *types.PolicyStatementList // Optional permission boundary
 }
 
-
 // EvaluationResult represents the final evaluation outcome
 type EvaluationResult struct {
 	Allowed            bool
@@ -152,8 +151,6 @@ type EvaluationResult struct {
 	// SSM-specific fields for tracking document restrictions
 	SSMDocumentRestrictions []string // List of allowed SSM document ARNs/patterns (e.g., ["arn:aws:ssm:*:*:document/AWS-RunShellScript", "*"])
 }
-
-
 
 // PolicyEvaluator handles AWS IAM policy evaluation
 type PolicyEvaluator struct {
@@ -326,6 +323,7 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 	// 6. Evaluate resource-based policy if present
 	resourceAllowed := false
 	explicitPrincipalAllow := false
+	trustNamesExactArn := false
 
 	// Check if this is an AssumeRole operation on an IAM role (needed for early return check)
 	isAssumeRoleOperation := strings.HasPrefix(req.Action, "sts:AssumeRole") &&
@@ -344,6 +342,13 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 
 			// Check if principal is explicitly allowed
 			explicitPrincipalAllow = e.hasExplicitPrincipalAllow(resourceStatements, req.Context.PrincipalArn)
+
+			// Whether a single trust statement DIRECTLY names the principal's exact ARN (not :root,
+			// not a wildcard) AND grants this request. Same-account AssumeRole is allowed by such a
+			// direct trust alone (no identity grant); the grant check on the same statement prevents
+			// a non-granting exact-ARN entry pairing with a separate :root Allow (false positive).
+			trustNamesExactArn = trustNamesExactPrincipalArn(resourceStatements, req.Context.PrincipalArn,
+				req.Action, req.Resource, req.Context)
 
 			// For non-AssumeRole operations, we can early-return if explicitly allowed by resource policy.
 			// For AssumeRole, we MUST also check identity policy, so don't early return.
@@ -382,14 +387,17 @@ func (e *PolicyEvaluator) Evaluate(req *EvaluationRequest) (*EvaluationResult, e
 	} else {
 		// Same account access
 		if isAssumeRoleOperation {
-			// Special case: AssumeRole ALWAYS requires BOTH:
-			// 1. Identity policy grants sts:AssumeRole permission
-			// 2. Target role's trust policy allows the principal (resourceAllowed)
-			// This is different from other resources where same-account access
-			// can be granted by either identity OR resource policy alone.
-			// Note: resourceAllowed already includes principal matching since
-			// evaluateStatement() only sets ExplicitAllow when principal matches.
-			result.Allowed = result.PolicyResult.hasTypeAllow(EvalTypeIdentity) && resourceAllowed
+			// Same-account AssumeRole is allowed when EITHER:
+			//  (a) the trust DIRECTLY names the principal's exact ARN — AWS permits this with
+			//      no identity sts:AssumeRole grant (direct same-account delegation), OR
+			//  (b) identity policy grants sts:AssumeRole AND the trust allows the principal.
+			// Case (b) covers :root/wildcard trust, which delegates to identity policies and so
+			// still requires the identity grant. The exact-ARN check (a) deliberately excludes
+			// :root and wildcards so they do NOT short-circuit the identity requirement.
+			// resourceAllowed already includes principal matching (evaluateStatement only sets
+			// ExplicitAllow when the principal matches).
+			result.Allowed = (resourceAllowed && trustNamesExactArn) ||
+				(result.PolicyResult.hasTypeAllow(EvalTypeIdentity) && resourceAllowed)
 			result.EvaluationDetails = "Same-account assume role access"
 		} else {
 			// Normal same-account access allows if:
@@ -577,6 +585,45 @@ func (e *PolicyEvaluator) hasExplicitPrincipalAllow(statements *types.PolicyStat
 	return false
 }
 
+// trustNamesExactPrincipalArn reports whether a SINGLE non-Deny trust statement BOTH names the
+// principal's EXACT ARN as a literal Principal.AWS entry AND evaluates to an ExplicitAllow for THIS
+// request (same action, resource, and conditions). It deliberately does NOT match account ":root"
+// principals, "*", or any wildcard entry: AWS allows same-account AssumeRole without an identity
+// grant ONLY when the trust directly names the principal's ARN. A ":root"/wildcard trust delegates
+// to identity policies, so it still requires an identity sts:AssumeRole grant (the AND-semantics in
+// the caller). This is the precise discriminator hasExplicitPrincipalAllow lacks (that one also
+// returns true for :root/wildcard).
+//
+// The grant check (evaluateStatement -> ExplicitAllow) is essential: the literal exact ARN and the
+// request grant must come from the SAME statement. A raw scan of Principal.AWS alone would ignore
+// Action/Resource/Condition, letting a non-granting exact-ARN statement (condition-gated off, or
+// scoped to a different action such as sts:TagSession) combine with a separate :root Allow to
+// satisfy the direct-trust leg via different statements — a false positive AWS denies.
+func trustNamesExactPrincipalArn(statements *types.PolicyStatementList, principalArn, action, resource string, ctx *RequestContext) bool {
+	if principalArn == "" {
+		return false
+	}
+	for _, statement := range *statements {
+		if strings.EqualFold(statement.Effect, "Deny") || statement.Principal == nil || statement.Principal.AWS == nil {
+			continue
+		}
+		namesExactArn := false
+		for _, allowedPrincipal := range *statement.Principal.AWS {
+			if strings.Contains(allowedPrincipal, "*") || strings.HasSuffix(allowedPrincipal, ":root") {
+				continue
+			}
+			if allowedPrincipal == principalArn {
+				namesExactArn = true
+				break
+			}
+		}
+		if namesExactArn && evaluateStatement(&statement, action, resource, ctx).ExplicitAllow {
+			return true
+		}
+	}
+	return false
+}
+
 type StatementEvaluation struct {
 	ExplicitAllow       bool           // Statement matched and explicitly allows
 	ExplicitDeny        bool           // Statement matched and explicitly denies
@@ -587,7 +634,6 @@ type StatementEvaluation struct {
 	ConditionEvaluation *ConditionEval // Detailed condition evaluation results
 	Origin              string
 }
-
 
 // extractSSMDocumentRestrictions extracts the allowed SSM document ARNs/patterns from policy statements
 // for SSM actions that require document resources (e.g., ssm:SendCommand, ssm:StartAutomationExecution)

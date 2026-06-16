@@ -1,0 +1,59 @@
+id: aws/enrich/privesc/bedrock_access_code_interpreter
+name: Bedrock AgentCore Code Interpreter Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with bedrock-agentcore:StartCodeInterpreterSession AND
+  bedrock-agentcore:InvokeCodeInterpreter that can open a session on an EXISTING Bedrock code
+  interpreter carrying a privileged IAM execution role and execute code as that role to extract
+  credentials from the MicroVM metadata service (no iam:PassRole required) — lab bedrock-002.
+
+  The escalation target is the code interpreter's EXECUTION ROLE (reached via the
+  resource_service_role enricher's HAS_ROLE edge from AWS::BedrockAgentCore::CodeInterpreter
+  — GetCodeInterpreter.ExecutionRoleArn, collected by the graph recon module's code
+  interpreter collector via bedrock-agentcore-control:ListCodeInterpreters +
+  GetCodeInterpreter), not an arbitrary principal. A code interpreter with no execution role
+  runs sessions with no inherited role and confers no escalation, so the HAS_ROLE link is
+  mandatory (fail-closed). Guards: the execution role must be bedrock-agentcore-trusting,
+  more privileged than the attacker, and in the attacker's account.
+severity: high
+order: 100
+cypher: |
+  // Existing-resource / compute-takeover: opening a session (StartCodeInterpreterSession) on an
+  // existing interpreter and running code in it (InvokeCodeInterpreter) hijacks that interpreter's
+  // execution role. Both actions are required — a session alone runs no code, and InvokeCodeInterpreter
+  // needs a live session. The method keys on BEDROCK-AGENTCORE_STARTCODEINTERPRETERSESSION and
+  // BEDROCK-AGENTCORE_INVOKECODEINTERPRETER, the action edges recon emits for the existing-interpreter
+  // takeover. The method targets the SPECIFIC execution role via (ci)-[:HAS_ROLE]->(execrole), not
+  // the bare service stub.
+  // HAS_ROLE is mandatory (fail-closed): a roleless interpreter inherits nothing. Both actions map to
+  // the AgentCore service wildcard, so their permission edges resolve to the service stub, not the
+  // specific interpreter node — carrying them through would break the HAS_ROLE join (false negatives).
+  // So keep the cross-product (ci)-[:HAS_ROLE]->(execrole) MATCH (mirrors batch_submit_job) and
+  // constrain it. Expressible guards:
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - bedrock-agentcore trust: the execution role is assumed by the AgentCore service.
+  //   - privileged-target: suppress non-privileged execution roles; tier severity by the target.
+  //   - same-account guard (ARN segment 4 equality) so a multi-tenant graph can't link an
+  //     interpreter in one account to an attacker in another.
+  MATCH (attacker:Principal)-[perm]->()
+  WHERE type(perm) = 'BEDROCK-AGENTCORE_STARTCODEINTERPRETERSESSION'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND EXISTS { (attacker)-[invoke]->() WHERE type(invoke) = 'BEDROCK-AGENTCORE_INVOKECODEINTERPRETER' }
+  WITH DISTINCT attacker
+  MATCH (ci:Resource)-[:HAS_ROLE]->(execrole:Role)
+  WHERE ci._resourceType = 'AWS::BedrockAgentCore::CodeInterpreter'
+    AND 'bedrock-agentcore.amazonaws.com' IN coalesce(execrole.trusted_services, [])
+    AND (coalesce(execrole._is_admin, false) = true OR coalesce(execrole._is_privileged, false) = true)
+    AND coalesce(execrole.Arn, execrole.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND split(coalesce(execrole.Arn, execrole.arn), ':')[4] = split(coalesce(attacker.Arn, attacker.arn), ':')[4]
+  WITH DISTINCT attacker, execrole
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'bedrock-agentcore:StartCodeInterpreterSession + InvokeCodeInterpreter'}]->(execrole)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = CASE
+        WHEN coalesce(execrole._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

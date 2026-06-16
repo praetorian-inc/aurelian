@@ -2,7 +2,7 @@ id: aks_rbac_disabled
 name: AKS Clusters with RBAC Disabled
 description: Detects AKS clusters without Kubernetes RBAC enabled, allowing any authenticated user cluster-wide permissions
 category: ["Privilege Escalation", "arg-scan"]
-severity: High
+severity: Medium
 reportability: Automatic
 triageNotes: |
   This finding identifies AKS clusters that have Kubernetes RBAC disabled, which creates significant security risks:

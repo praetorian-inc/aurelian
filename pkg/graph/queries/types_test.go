@@ -9,7 +9,7 @@ import (
 )
 
 func TestQueryMetadata_YAMLParsing(t *testing.T) {
-	yamlContent := `id: aws/enrich/privesc/method_01
+	yamlContent := `id: aws/enrich/privesc/iam_create_policy_version
 name: IAM CreatePolicyVersion Privilege Escalation
 platform: aws
 type: enrich
@@ -30,7 +30,7 @@ parameters:
 	require.NoError(t, err, "Should unmarshal valid YAML without error")
 
 	// Verify all fields populated correctly
-	assert.Equal(t, "aws/enrich/privesc/method_01", metadata.ID)
+	assert.Equal(t, "aws/enrich/privesc/iam_create_policy_version", metadata.ID)
 	assert.Equal(t, "IAM CreatePolicyVersion Privilege Escalation", metadata.Name)
 	assert.Equal(t, "aws", metadata.Platform)
 	assert.Equal(t, "enrich", metadata.Type)

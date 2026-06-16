@@ -1,0 +1,76 @@
+id: aws/enrich/privesc/cognito_set_identity_pool_roles
+name: IAM PassRole + Cognito SetIdentityPoolRoles Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with iam:PassRole and cognito-identity:SetIdentityPoolRoles that can
+  bind a privileged IAM role to an existing Cognito identity pool's authenticated or
+  unauthenticated role slot, then assume it via AssumeRoleWithWebIdentity through Cognito
+  federation. The escalation target is the PASSED ROLE bound to the pool (not the Cognito
+  service resource). Guards: the role must trust Cognito Identity
+  (cognito-identity.amazonaws.com), must live in the attacker's account, and must be more
+  privileged than the attacker.
+
+  To actually assume the bound role the attacker must obtain pool credentials. There are two
+  credential paths:
+    - Authenticated pool: the attacker needs cognito-identity:GetId AND
+      cognito-identity:GetCredentialsForIdentity (graphable permission edges).
+    - Unauthenticated-enabled pool: GetId/GetCredentialsForIdentity require NO IAM permission,
+      so when an unauthenticated-enabled pool exists in the attacker's account those grants are
+      not required. The pool is NOT required to already be bound (HAS_ROLE) to the victim — the
+      attacker BINDS the passed role to the pool's unauth slot during the attack
+      (SetIdentityPoolRoles), so the pre-attack graph shows an unauth pool with no role edge
+      (lab cognito-identity-001). The relax is therefore gated on the EXISTENCE of an
+      (IdentityPool {AllowUnauthenticatedIdentities:true}) in the same account as the victim,
+      collected by the AWS::Cognito::IdentityPool enumerator. It preserves the
+      GetId/GetCredentials requirement for accounts with no unauth-enabled pool.
+severity: high
+order: 100
+cypher: |
+  // New-passrole-style: target = passed role bound to the pool. Guards (per FP catalog / method_51):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - Cognito trust: 'cognito-identity.amazonaws.com' IN victim.trusted_services OR
+  //     victim.trusted_federated. Cognito identity-pool roles trust the service as a
+  //     Federated principal (Principal.Federated), surfaced as trusted_federated by the
+  //     GAAD transformer; service-form trust is also accepted for completeness.
+  //   - same-account: PassRole is account-local.
+  //   - credential path: EITHER the attacker holds cognito-identity:GetId AND
+  //     GetCredentialsForIdentity (authenticated pool — graphable EXISTS perm edges), OR an
+  //     UNAUTHENTICATED-enabled IdentityPool exists in the victim's account (GetId/
+  //     GetCredentialsForIdentity need no IAM permission for such a pool). The pool need NOT
+  //     pre-bind the victim via HAS_ROLE — SetIdentityPoolRoles binds the passed role to the
+  //     unauth slot DURING the attack, so the pre-attack graph shows an unauth pool with no
+  //     role edge (lab cognito-identity-001). Scoped by same-account on the pool ARN segment so
+  //     the relax cannot be triggered by an unauth pool in an unrelated account.
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
+  MATCH (attacker:Principal)-[passrole]->(victim:Principal)
+  WHERE type(passrole) = 'IAM_PASSROLE'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND ('cognito-identity.amazonaws.com' IN coalesce(victim.trusted_services, [])
+         OR 'cognito-identity.amazonaws.com' IN coalesce(victim.trusted_federated, []))
+    AND split(coalesce(victim.Arn, victim.arn), ':')[4] = split(coalesce(attacker.Arn, attacker.arn), ':')[4]
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+    AND (
+      (EXISTS { (attacker)-[getid]->() WHERE type(getid) = 'COGNITO-IDENTITY_GETID' }
+       AND EXISTS { (attacker)-[getcreds]->() WHERE type(getcreds) = 'COGNITO-IDENTITY_GETCREDENTIALSFORIDENTITY' })
+      OR EXISTS {
+        (pool:Resource)
+        WHERE pool._resourceType = 'AWS::Cognito::IdentityPool'
+          AND coalesce(pool.AllowUnauthenticatedIdentities, false) = true
+          AND split(coalesce(pool.Arn, pool.arn), ':')[4] = split(coalesce(victim.Arn, victim.arn), ':')[4]
+      }
+    )
+  WITH DISTINCT attacker, victim
+  MATCH (attacker)-[set_roles]->(service_resource)
+  WHERE type(set_roles) = 'COGNITO-IDENTITY_SETIDENTITYPOOLROLES'
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + cognito-identity:SetIdentityPoolRoles'}]->(victim)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created

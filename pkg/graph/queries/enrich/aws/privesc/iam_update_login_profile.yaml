@@ -1,0 +1,60 @@
+id: aws/enrich/privesc/iam_update_login_profile
+name: IAM UpdateLoginProfile Privilege Escalation
+platform: aws
+type: enrich
+category: privesc
+description: |
+  Detects principals with iam:UpdateLoginProfile on a specific privileged IAM USER:
+  the attacker resets that user's existing console password and signs in as them.
+  The edge is SCOPED to the principal the IAM_UPDATELOGINPROFILE permission points at
+  (no all-principals fan-out), restricted to user targets, and suppressed unless the
+  target user is admin/privileged (resetting a non-privileged user is lateral).
+  The existing-login-profile precondition (UpdateLoginProfile returns NoSuchEntity when the
+  target user has no console profile) is now enforced from a real collected signal: the GAAD
+  collector enriches each user with target.HasLoginProfile (via iam:GetLoginProfile). The field
+  is a TRI-STATE pointer (*bool): non-nil true (profile exists) and non-nil false (confirmed
+  NoSuchEntity — no profile) both serialize to the node, while nil (the call was not made or
+  failed with a non-NoSuchEntity error like AccessDenied/throttle) serializes to null → the prop
+  is absent. When the prop is present we require it = true, so a confirmed-false target is now
+  SUPPRESSED. The signal is FAIL-OPEN: graphs collected before this enricher (or users whose
+  GetLoginProfile call failed) carry no HasLoginProfile prop, and for those the method behaves
+  as it did before (accepting the residual FP of a privileged target with no profile). Note:
+  iam:CreateLoginProfile is NOT required — the common real path is a target that already has a
+  console profile and an attacker holding only iam:UpdateLoginProfile, so requiring
+  CreateLoginProfile would be a false negative.
+severity: high
+order: 100
+cypher: |
+  // Principal-access (B.7): drop the all-principals fan-out. The victim is the principal
+  // the IAM_UPDATELOGINPROFILE permission edge actually points at.
+  // Guards (per FP catalog method_05 / row 246):
+  //   - admin-as-source: skip attackers that are already admin.
+  //   - target must be an IAM USER (login profiles exist only on users; roles/groups have none).
+  //   - self-target exclusion (casing-tolerant coalesce).
+  //   - lateral-vs-admin: suppress non-privileged targets; tier severity by target.
+  //   - login-profile existence (FAIL-OPEN on the real signal): UpdateLoginProfile returns
+  //     NoSuchEntity when the target has no console profile. The GAAD collector now records
+  //     target.HasLoginProfile (via iam:GetLoginProfile; the GAAD *bool struct field flattens
+  //     to this PascalCase node prop — a confirmed false is PRESENT, not dropped).
+  //     coalesce(target.HasLoginProfile, true) requires it = true when present (so a
+  //     confirmed-false target is suppressed) and behaves as before (no guard) when absent
+  //     (pre-enricher graph, or the *bool is nil because the call failed — fail-open). We do NOT require
+  //     IAM_CREATELOGINPROFILE: the common real path is a target that already has a profile with
+  //     the attacker holding only UpdateLoginProfile, so requiring it would be a false negative.
+  MATCH (attacker:Principal)-[perm]->(target:Principal)
+  WHERE type(perm) = 'IAM_UPDATELOGINPROFILE'
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(target.Arn, target.arn) CONTAINS ':user/'
+    AND coalesce(target.Arn, target.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND (coalesce(target._is_admin, false) = true OR coalesce(target._is_privileged, false) = true)
+    AND coalesce(target.HasLoginProfile, true) = true
+  WITH DISTINCT attacker, target
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:UpdateLoginProfile'}]->(target)
+  ON CREATE SET pe._created = timestamp()
+  SET pe.severity = CASE
+        WHEN coalesce(target._is_admin, false) = true THEN 'high'
+        WHEN coalesce(target._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
+      pe._updated = timestamp()
+  RETURN count(pe) as edges_created
