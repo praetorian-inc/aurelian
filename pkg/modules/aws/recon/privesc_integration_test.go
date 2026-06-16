@@ -190,9 +190,11 @@ func TestPrivescEnrichmentE2E(t *testing.T) {
 	t.Run("new_services_user_has_passrole_edges", func(t *testing.T) {
 		count := hasPrivesc(newServicesUserARN)
 		t.Logf("new_services_user CAN_PRIVESC edges: %d", count)
-		// This user has PassRole + 20+ new service actions — each PassRole+service pair fires.
+		// This user has PassRole + 20+ new service actions. CAN_PRIVESC is multi-edge
+		// (one edge per method), so each PassRole+service method emits its own edge to the
+		// passable role — ≥15 distinct method-edges, not a single merged edge.
 		assert.GreaterOrEqual(t, count, 15,
-			"user with PassRole+new-service permissions should have ≥15 CAN_PRIVESC edges")
+			"user with PassRole+new-service permissions should have ≥15 CAN_PRIVESC method-edges")
 	})
 
 	t.Run("extended_services_user_has_edges", func(t *testing.T) {
@@ -308,23 +310,23 @@ func TestPrivescEnrichmentE2E(t *testing.T) {
 	})
 
 	t.Run("passrole_user_edge_count_not_fanout", func(t *testing.T) {
-		// With the scoped fix, PassRole+service methods create exactly 1 CAN_PRIVESC edge
-		// per distinct (attacker, passed-role) pair via MERGE deduplication.
-		// If this count equals the total number of principals in the account (tens or hundreds),
-		// it means the fan-out regression is back — the query stopped scoping to the passed role.
-		//
-		// The fixture has 1 passable role, so all PassRole methods share 1 merged edge.
-		// We check count ≤ 5 as a generous bound that still catches a full fan-out (100+).
+		// CAN_PRIVESC is a multi-edge relationship (one edge per method). The PassRole+service
+		// methods all point at the SAME passable role, but each is its own method-edge, so the
+		// raw edge count legitimately equals the number of distinct PassRole+service methods
+		// (~15-20) — NOT 1. The fan-out regression we guard against is "reaches ALL principals
+		// in the account", which is a property of distinct TARGET NODES, not edge count. So we
+		// assert on count(DISTINCT target): a scoped result reaches only the passable role(s)
+		// (a handful), whereas the old cartesian fan-out reached every principal (tens/hundreds).
 		result, err := db.Query(ctx,
-			"MATCH (a {Arn: $attacker})-[r:CAN_PRIVESC]->() RETURN count(r) AS n",
+			"MATCH (a {Arn: $attacker})-[r:CAN_PRIVESC]->(target) RETURN count(DISTINCT target) AS n",
 			map[string]any{"attacker": newServicesUserARN})
 		require.NoError(t, err)
 		require.Len(t, result.Records, 1)
 		n, _ := result.Records[0]["n"].(int64)
-		t.Logf("new_services_user CAN_PRIVESC total edge count: %d", n)
-		assert.GreaterOrEqual(t, n, int64(1), "new_services_user must have at least 1 CAN_PRIVESC edge")
+		t.Logf("new_services_user distinct CAN_PRIVESC targets: %d", n)
+		assert.GreaterOrEqual(t, n, int64(1), "new_services_user must reach at least 1 CAN_PRIVESC target")
 		assert.LessOrEqual(t, n, int64(10),
-			"new_services_user has %d CAN_PRIVESC edges — expected ≤10 (scoped to passable roles). "+
+			"new_services_user reaches %d distinct CAN_PRIVESC targets — expected ≤10 (scoped to passable roles). "+
 				"If this fails with a large number, the fan-out regression is back: enrichment methods "+
 				"are creating edges to ALL principals instead of only the passed IAM role",
 			n)

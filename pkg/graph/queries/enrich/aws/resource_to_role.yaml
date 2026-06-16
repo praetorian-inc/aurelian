@@ -4,15 +4,38 @@ platform: aws
 type: enrich
 category: resource-to-role
 description: |
-  Links EC2 instances and Lambda functions to their IAM roles via instance profiles.
+  Links EC2 instances and Lambda functions to their IAM roles.
+  Role.InstanceProfileList is a JSON STRING (array-of-objects each carrying a quoted
+  "Arn":"arn:aws:iam::<acct>:instance-profile/<name>"), not a Neo4j list, so the EC2
+  match does substring CONTAINS against that string rather than parsing it (no APOC).
+  resource.IamInstanceProfile has TWO forms: the instance-profile ARN, or just the
+  profile NAME (CloudControl-collected instances commonly carry the NAME). Two clauses
+  cover both, each anchored to avoid prefix collisions:
+    1. '"' + IamInstanceProfile + '"' — matches the ARN form (the full quoted
+       "Arn":"arn:...:instance-profile/<name>" token) and an exact quoted name token
+       ("InstanceProfileName":"<name>") when present.
+    2. 'instance-profile/' + IamInstanceProfile + '"' — matches the NAME form against
+       the ARN's trailing segment (instance-profile/<name>"), anchored on BOTH sides
+       (instance-profile/ prefix + closing quote) so it does not prefix-collide
+       (instance-profile/ip-2" won't match instance-profile/ip").
+  Falls back to a direct Role-ARN match (Lambda functions and instances that emit
+  Role directly).
 severity: info
 order: 1
 cypher: |
   MATCH (role:Role)
-  WHERE role.InstanceProfileList IS NOT NULL
-  WITH role, role.InstanceProfileList AS profiles
   MATCH (resource:Resource)
   WHERE resource._resourceType IN ['AWS::EC2::Instance', 'AWS::Lambda::Function']
-  AND ANY(profile IN profiles WHERE resource.IamInstanceProfile = profile OR resource.Role = role.Arn)
+  AND (
+    resource.Role = role.Arn
+    OR (
+      role.InstanceProfileList IS NOT NULL
+      AND resource.IamInstanceProfile IS NOT NULL
+      AND (
+        role.InstanceProfileList CONTAINS ('"' + resource.IamInstanceProfile + '"')
+        OR role.InstanceProfileList CONTAINS ('instance-profile/' + resource.IamInstanceProfile + '"')
+      )
+    )
+  )
   MERGE (resource)-[:HAS_ROLE]->(role)
   RETURN count(*) as links_created

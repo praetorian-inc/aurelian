@@ -1,0 +1,58 @@
+id: aws/enrich/resource_service_role
+name: Resource to Service Role Mapping
+platform: aws
+type: enrich
+category: resource-to-role
+description: |
+  Links CloudControl service resources (CloudFormation stacks/stacksets, CodeBuild
+  projects, Glue jobs/dev-endpoints, App Runner services, ECS task definitions, Step
+  Functions state machines, SageMaker/data-pipeline-style compute) to the IAM Role they
+  RUN AS via a (Resource)-[:HAS_ROLE]->(Role) edge. The privesc methods for these
+  resource types (cloudformation_update_stack, cloudformation_*_stackset, codebuild_*,
+  glue_update_*, apprunner_update_service, ecs_execute_command, etc.) re-point
+  CAN_PRIVESC at this service role instead of fanning out to every principal, then apply
+  a privileged-target guard on it.
+
+  The role-bearing property lives INSIDE the flattened `properties` JSON STRING (the
+  CloudControl Properties map is serialized to a string by the transformer, not exploded
+  into top-level node props), so this matches the role's ARN as a QUOTED-VALUE substring
+  of `resource.properties` ('"' + arn + '"', no APOC, mirroring resource_to_role.yaml's
+  InstanceProfileList CONTAINS approach). Binding the surrounding quotes stops a shorter
+  role ARN from prefix-colliding with a longer one. The match is keyless: whichever
+  property carries the role ARN
+  (RoleARN / ServiceRole / RoleArn / ExecutionRoleArn / TaskRoleArn / AdministrationRoleARN
+  / InstanceRoleArn) appears as a value in that JSON and is matched the same way.
+
+  Properties that hold a role NAME rather than a full ARN (e.g. AWS::Glue::Job `Role`
+  when given as a name, AWS::CloudFormation::StackSet `ExecutionRoleName`) will NOT
+  substring-match an ARN and are left unlinked — fail-closed, consistent with
+  resource_to_role.yaml's recall tradeoff (a resource with no resolvable service role is
+  not a usable escalation vehicle). Same-account scoping is structural: the role's own
+  account-id segment is embedded in its ARN, so a substring match cannot cross accounts.
+severity: info
+order: 15
+cypher: |
+  // Service resource -> service role linkage. The role ARN is a value inside the
+  // flattened `properties` JSON string, so QUOTE-BIND it ('"' + arn + '"'): the ARN
+  // appears as a quoted JSON value, and binding the closing quote stops a shorter
+  // role ARN from prefix-colliding with a longer one (e.g. role/svc vs role/svc-2).
+  // Scoped to the resource types whose privesc methods re-point CAN_PRIVESC at the role.
+  MATCH (role:Role)
+  WHERE coalesce(role.Arn, role.arn) IS NOT NULL
+  MATCH (resource:Resource)
+  WHERE resource._resourceType IN [
+      'AWS::CloudFormation::Stack',
+      'AWS::CloudFormation::StackSet',
+      'AWS::CodeBuild::Project',
+      'AWS::Glue::DevEndpoint',
+      'AWS::Glue::Job',
+      'AWS::AppRunner::Service',
+      'AWS::ECS::TaskDefinition',
+      'AWS::StepFunctions::StateMachine',
+      'AWS::SageMaker::NotebookInstance',
+      'AWS::DataPipeline::Pipeline'
+    ]
+    AND resource.properties IS NOT NULL
+    AND resource.properties CONTAINS ('"' + coalesce(role.Arn, role.arn) + '"')
+  MERGE (resource)-[:HAS_ROLE]->(role)
+  RETURN count(*) as links_created

@@ -8,9 +8,17 @@ description: |
 severity: high
 order: 10
 cypher: |
+  // AttachedManagedPolicies flattens to a JSON STRING (array-of-objects with PolicyName +
+  // PolicyArn), not a Neo4j list — ANY(... IN ...) iterated string characters and never
+  // matched, so CONTAINS-substring-match is the no-APOC fix.
+  // Anchor on the AWS-managed PolicyArn with a trailing quote
+  // ('arn:aws:iam::aws:policy/AdministratorAccess"'). The ':aws:policy/' account segment
+  // rejects a CUSTOMER-managed policy merely named AdministratorAccess
+  // (arn:aws:iam::<acct>:policy/AdministratorAccess — not admin), and the trailing quote
+  // rejects AWS's scoped policies that share the name prefix (AdministratorAccess-Amplify,
+  // AdministratorAccess-AWSElasticBeanstalk), which are NOT full admin.
   MATCH (p:Principal)
-  WHERE ANY(policy IN p.AttachedManagedPolicies
-    WHERE policy CONTAINS 'AdministratorAccess')
+  WHERE coalesce(p.AttachedManagedPolicies, '') CONTAINS 'arn:aws:iam::aws:policy/AdministratorAccess"'
   SET p._is_admin = true,
       p._admin_reason = 'AdministratorAccess managed policy'
   RETURN count(p) as admin_principals

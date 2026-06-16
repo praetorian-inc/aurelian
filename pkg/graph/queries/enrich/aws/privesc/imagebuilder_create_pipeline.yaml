@@ -5,20 +5,35 @@ type: enrich
 category: privesc
 description: |
   Detects principals with both iam:PassRole and imagebuilder:CreateInfrastructureConfiguration
-  permissions that can create an EC2 Image Builder infrastructure configuration with
-  a privileged instance profile and trigger a build to extract admin credentials via IMDS.
+  that can create an EC2 Image Builder infrastructure configuration carrying a privileged
+  instance profile and trigger a build to steal admin credentials via IMDS. The escalation
+  target is the PASSED ROLE (not the Image Builder service resource). Guards: the role must
+  trust ec2.amazonaws.com (Image Builder builds run on EC2 instances), must have an instance
+  profile, and must be more privileged than the attacker.
 severity: high
 order: 100
 cypher: |
+  // New-passrole: target = passed role. Guards (new-passrole template):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - ec2 trust: 'ec2.amazonaws.com' IN victim.trusted_services (Image Builder uses EC2).
+  //   - instance profile present: InstanceProfileList is a JSON string -> CONTAINS arn.
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
   MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker, victim
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'ec2.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND coalesce(victim.InstanceProfileList, '') CONTAINS 'arn:aws:iam'
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
   MATCH (attacker)-[create]->(service_resource)
   WHERE type(create) = 'IMAGEBUILDER_CREATEINFRASTRUCTURECONFIGURATION'
   WITH DISTINCT attacker, victim
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + imagebuilder:CreateInfrastructureConfiguration'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:PassRole + imagebuilder:CreateInfrastructureConfiguration',
-      pe.severity = 'high',
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

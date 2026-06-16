@@ -4,19 +4,43 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with iam:CreateLoginProfile permission that can create 
-  console passwords for other IAM users.
+  Detects principals with iam:CreateLoginProfile on a specific privileged IAM USER:
+  the attacker bootstraps a console password for that user and signs in as them.
+  The edge is SCOPED to the principal the IAM_CREATELOGINPROFILE permission points at
+  (no all-principals fan-out), restricted to user targets, and suppressed unless the
+  target user is admin/privileged (console access to a non-privileged user is lateral).
+  The no-existing-login-profile precondition (else CreateLoginProfile returns
+  EntityAlreadyExists) is not directly in the graph; the cypher-expressible proxy is to
+  also require iam:UpdateLoginProfile on the SAME target user, so the attacker can reset
+  the password if a profile already exists (catalog row 241). Exact profile existence
+  and console-MFA gating still need a GetLoginProfile/MFA enricher; noted.
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[perm]->(target)
+  // Principal-access (B.7): drop the all-principals fan-out. The victim is the principal
+  // the IAM_CREATELOGINPROFILE permission edge actually points at.
+  // Guards (per FP catalog method_04 / row 241):
+  //   - admin-as-source: skip attackers that are already admin.
+  //   - target must be an IAM USER (login profiles exist only on users; roles/groups have none).
+  //   - self-target exclusion (casing-tolerant coalesce).
+  //   - lateral-vs-admin: suppress non-privileged targets; tier severity by target.
+  //   - profile-state fallback: also require IAM_UPDATELOGINPROFILE to the SAME target node
+  //     (same-node is the proxy for same-user), so the attacker can reset an existing
+  //     profile if CreateLoginProfile would conflict.
+  MATCH (attacker:Principal)-[perm]->(target:Principal)
   WHERE type(perm) = 'IAM_CREATELOGINPROFILE'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(target.Arn, target.arn) CONTAINS ':user/'
+    AND coalesce(target.Arn, target.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND (coalesce(target._is_admin, false) = true OR coalesce(target._is_privileged, false) = true)
+    AND EXISTS { (attacker)-[u]->(target) WHERE type(u) = 'IAM_UPDATELOGINPROFILE' }
+  WITH DISTINCT attacker, target
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:CreateLoginProfile'}]->(target)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:CreateLoginProfile',
-      pe.severity = 'high',
+  SET pe.severity = CASE
+        WHEN coalesce(target._is_admin, false) = true THEN 'high'
+        WHEN coalesce(target._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

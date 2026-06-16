@@ -4,19 +4,45 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with lambda:CreateEventSourceMapping permission that can 
-  trigger existing Lambda functions with malicious input.
+  Detects principals who can take over a Lambda function's privileged execution role by
+  pairing lambda:CreateEventSourceMapping (the trigger primitive) with
+  lambda:UpdateFunctionCode (code control) on the SAME function: they overwrite the code
+  and wire an event source to invoke it, running under the function's role. The
+  escalation target is that execution role (HAS_ROLE), not every principal.
+  CreateEventSourceMapping alone only triggers code the attacker did not author and so is
+  not escalation; the privileged-execution-role requirement keeps lateral cases out.
 severity: medium
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[perm]->(target)
-  WHERE type(perm) = 'LAMBDA_CREATEEVENTSOURCEMAPPING'
-  WITH attacker
-  MATCH (victim:Principal)
-  WHERE victim.Arn <> attacker.Arn
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(victim)
+  // Trigger primitive: CreateEventSourceMapping only wires an event source to an
+  // EXISTING function; standalone it neither changes code nor the role, so it is not
+  // escalation. It completes a chain only alongside lambda:UpdateFunctionCode on the
+  // SAME function. Guards (per FP catalog method_21):
+  //   - drop the all-principals fan-out; require UpdateFunctionCode on the same function.
+  //   - bind victim to that function's execution role via HAS_ROLE (mandatory/fail-closed).
+  //   - admin-as-source exclusion; self-target exclusion (on resolved Principal).
+  //   - privileged-target: a least-privilege execution role is lateral, not escalation.
+  //   - same-account: require the execution role's account segment to match the attacker's.
+  //   - NOTE: attacker-controllability of the event source (SQS/DynamoDB/Kinesis) is not
+  //     modeled in the graph (catalog method_21 service/api-precondition FP).
+  MATCH (attacker:Principal)-[esm]->(fn)
+  WHERE type(esm) = 'LAMBDA_CREATEEVENTSOURCEMAPPING'
+    AND coalesce(attacker._is_admin, false) <> true
+  WITH attacker, fn
+  MATCH (attacker)-[update]->(fn)
+  WHERE type(update) = 'LAMBDA_UPDATEFUNCTIONCODE'
+  WITH attacker, fn
+  MATCH (fn)-[:HAS_ROLE]->(victim:Principal)
+  WHERE coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND split(coalesce(victim.Arn, victim.arn), ':')[4] = split(coalesce(attacker.Arn, attacker.arn), ':')[4]
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'lambda:CreateEventSourceMapping + lambda:UpdateFunctionCode'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'lambda:CreateEventSourceMapping',
-      pe.severity = 'medium',
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        WHEN coalesce(victim._is_privileged, false) = true THEN 'medium'
+        ELSE 'low'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created

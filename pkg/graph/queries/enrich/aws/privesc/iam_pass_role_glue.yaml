@@ -4,19 +4,34 @@ platform: aws
 type: enrich
 category: privesc
 description: |
-  Detects principals with both iam:PassRole and glue:CreateJob permissions 
-  that can create Glue jobs with elevated IAM roles.
+  Detects principals with both iam:PassRole and glue:CreateJob that can run a Glue job under
+  a privileged role and abuse its credentials. The escalation target is the PASSED ROLE (not
+  the Glue service resource). Guards: the role must trust glue.amazonaws.com, must not be
+  service-linked, and must be more privileged than the attacker.
 severity: high
 order: 100
 cypher: |
-  MATCH (attacker:Principal)-[passrole]->(target)
+  // New-passrole: target = passed role. Guards (per FP catalog / B.1):
+  //   - admin-as-source exclusion; self-target exclusion.
+  //   - glue trust: 'glue.amazonaws.com' IN victim.trusted_services.
+  //   - exclude service-linked roles.
+  //   - privileged-target tiering: admin -> high, privileged -> medium, else suppress.
+  MATCH (attacker:Principal)-[passrole]->(victim:Principal)
   WHERE type(passrole) = 'IAM_PASSROLE'
-  WITH attacker
+    AND coalesce(attacker._is_admin, false) <> true
+    AND coalesce(victim.Arn, victim.arn) <> coalesce(attacker.Arn, attacker.arn)
+    AND 'glue.amazonaws.com' IN coalesce(victim.trusted_services, [])
+    AND NOT coalesce(victim.Arn, victim.arn) CONTAINS ':role/aws-service-role/'
+    AND (coalesce(victim._is_admin, false) = true OR coalesce(victim._is_privileged, false) = true)
+  WITH DISTINCT attacker, victim
   MATCH (attacker)-[create]->(service_resource)
   WHERE type(create) = 'GLUE_CREATEJOB'
-  MERGE (attacker)-[pe:CAN_PRIVESC]->(service_resource)
+  WITH DISTINCT attacker, victim
+  MERGE (attacker)-[pe:CAN_PRIVESC {method: 'iam:PassRole + glue:CreateJob'}]->(victim)
   ON CREATE SET pe._created = timestamp()
-  SET pe.method = 'iam:PassRole + glue:CreateJob',
-      pe.severity = 'high',
+  SET pe.severity = CASE
+        WHEN coalesce(victim._is_admin, false) = true THEN 'high'
+        ELSE 'medium'
+      END,
       pe._updated = timestamp()
   RETURN count(pe) as edges_created
