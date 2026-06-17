@@ -432,3 +432,161 @@ func TestWhoCanBulk_MixedResults(t *testing.T) {
 	assert.Equal(t, "arn:aws:iam::111111111111:role/Admin", resp.Grants[0].Target)
 	assert.Equal(t, "allowed", resp.Grants[0].Result)
 }
+
+// referenceWhoCanBulk reproduces the original per-call serial path: one
+// CheckSpecific per (principal, target) cell. The hoisted Evaluator.WhoCanBulk
+// must produce an identical grant set to this reference for any input.
+func referenceWhoCanBulk(t *testing.T, e *Evaluator, action string, principals, targets []string) []Grant {
+	t.Helper()
+	var grants []Grant
+	for _, principal := range principals {
+		for _, target := range targets {
+			resp, err := e.CheckSpecific(principal, action, target)
+			require.NoError(t, err)
+			if resp.Result == "allowed" {
+				conditions := resp.Conditions
+				if conditions == nil {
+					conditions = []Condition{}
+				}
+				grants = append(grants, Grant{
+					Principal:  principal,
+					Target:     target,
+					Result:     "allowed",
+					Conditions: conditions,
+				})
+			}
+		}
+	}
+	if grants == nil {
+		grants = []Grant{}
+	}
+	return grants
+}
+
+// bulkFixtureGAAD builds a multi-principal account with a mix of allow/deny so
+// the cross-product yields both granted and denied cells.
+func bulkFixtureGAAD() *types.AuthorizationAccountDetails {
+	adminStmt := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
+	}
+	s3Stmt := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"s3:*"}, Resource: &types.DynaString{"*"}},
+	}
+	return types.NewAuthorizationAccountDetails("111111111111",
+		[]types.UserDetail{
+			{
+				Arn: "arn:aws:iam::111111111111:user/AdminUser", UserName: "AdminUser",
+				UserPolicyList: []types.InlinePolicy{{PolicyName: "Admin", PolicyDocument: types.Policy{Statement: &adminStmt}}},
+			},
+			{
+				Arn: "arn:aws:iam::111111111111:user/S3User", UserName: "S3User",
+				UserPolicyList: []types.InlinePolicy{{PolicyName: "S3", PolicyDocument: types.Policy{Statement: &s3Stmt}}},
+			},
+			{Arn: "arn:aws:iam::111111111111:user/NoAccess", UserName: "NoAccess"},
+		},
+		nil,
+		[]types.RoleDetail{
+			{
+				Arn: "arn:aws:iam::111111111111:role/AdminRole", RoleName: "AdminRole",
+				RolePolicyList: []types.InlinePolicy{{PolicyName: "Admin", PolicyDocument: types.Policy{Statement: &adminStmt}}},
+			},
+		},
+		nil,
+	)
+}
+
+func TestWhoCanBulk_EquivalentToSerialReference(t *testing.T) {
+	eval := NewEvaluator(bulkFixtureGAAD(), nil, nil)
+
+	principals := []string{
+		"arn:aws:iam::111111111111:user/AdminUser",
+		"arn:aws:iam::111111111111:user/S3User",
+		"arn:aws:iam::111111111111:user/NoAccess",
+		"arn:aws:iam::111111111111:role/AdminRole",
+		"arn:aws:iam::111111111111:role/Missing", // unknown principal
+	}
+	targets := []string{
+		"arn:aws:iam::111111111111:role/AdminRole",
+		"arn:aws:s3:::my-bucket/object.txt",
+		"arn:aws:iam::111111111111:user/AdminUser",
+	}
+
+	// Run for several actions so allow/deny patterns differ per cell.
+	for _, action := range []string{"iam:PutRolePolicy", "s3:GetObject", "ec2:RunInstances"} {
+		t.Run(action, func(t *testing.T) {
+			want := referenceWhoCanBulk(t, eval, action, principals, targets)
+			got, err := eval.WhoCanBulk(action, principals, targets)
+			require.NoError(t, err)
+			// Identical content and order: WhoCanBulk must iterate
+			// principals-outer, targets-inner just like the reference.
+			assert.Equal(t, want, got)
+		})
+	}
+}
+
+func TestWhoCanBulk_EmptyInputs(t *testing.T) {
+	eval := NewEvaluator(bulkFixtureGAAD(), nil, nil)
+
+	got, err := eval.WhoCanBulk("s3:GetObject", nil, nil)
+	require.NoError(t, err)
+	assert.Equal(t, []Grant{}, got, "no principals/targets yields an empty, non-nil slice")
+}
+
+// benchGAAD builds a managed-policy- and group-heavy account: the realistic
+// shape where per-principal statement collection (managed-policy resolution +
+// group walking) is expensive, so hoisting it out of the target loop matters.
+func benchGAAD(nUsers, nManaged int) *types.AuthorizationAccountDetails {
+	managed := make([]types.ManagedPolicyDetail, nManaged)
+	attached := make([]types.ManagedPolicy, nManaged)
+	for i := 0; i < nManaged; i++ {
+		arn := "arn:aws:iam::111111111111:policy/Managed" + string(rune('A'+i%26)) + string(rune('0'+i/26))
+		doc := types.Policy{Statement: &types.PolicyStatementList{
+			{Effect: "Allow", Action: &types.DynaString{"s3:Get*", "s3:List*"}, Resource: &types.DynaString{"*"}},
+		}}
+		managed[i] = types.ManagedPolicyDetail{
+			Arn: arn, PolicyName: "Managed" + string(rune('A'+i%26)),
+			PolicyVersionList: []types.PolicyVersion{{VersionId: "v1", IsDefaultVersion: true, Document: doc}},
+		}
+		attached[i] = types.ManagedPolicy{PolicyName: managed[i].PolicyName, PolicyArn: arn}
+	}
+
+	group := types.GroupDetail{
+		Arn: "arn:aws:iam::111111111111:group/Eng", GroupName: "Eng",
+		AttachedManagedPolicies: attached,
+	}
+
+	users := make([]types.UserDetail, nUsers)
+	for i := 0; i < nUsers; i++ {
+		users[i] = types.UserDetail{
+			Arn:                     "arn:aws:iam::111111111111:user/U" + string(rune('a'+i%26)) + string(rune('0'+i/26)),
+			UserName:                "U" + string(rune('a'+i%26)),
+			AttachedManagedPolicies: attached,
+			GroupList:               []string{"Eng"},
+		}
+	}
+	return types.NewAuthorizationAccountDetails("111111111111", users, []types.GroupDetail{group}, nil, managed)
+}
+
+func benchInputs(gaad *types.AuthorizationAccountDetails) (principals, targets []string) {
+	gaad.Users.Range(func(_ string, u types.UserDetail) bool {
+		principals = append(principals, u.Arn)
+		return true
+	})
+	for i := 0; i < 200; i++ {
+		targets = append(targets, "arn:aws:s3:::bucket-"+string(rune('a'+i%26))+"/key")
+	}
+	return principals, targets
+}
+
+func BenchmarkWhoCanBulk(b *testing.B) {
+	eval := NewEvaluator(benchGAAD(10, 8), nil, nil)
+	principals, targets := benchInputs(eval.gaad)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := eval.WhoCanBulk("s3:GetObject", principals, targets); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

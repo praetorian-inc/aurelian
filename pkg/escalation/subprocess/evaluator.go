@@ -36,7 +36,15 @@ func NewEvaluator(gaad *types.AuthorizationAccountDetails, orgPolicies *orgpolic
 // CheckSpecific evaluates whether principal can perform action on target.
 func (e *Evaluator) CheckSpecific(principal, action, target string) (*CheckResponse, error) {
 	identityStmts, boundaryStmts := e.collectStatementsForPrincipal(principal)
+	return e.checkWithStatements(principal, action, target, identityStmts, boundaryStmts)
+}
 
+// checkWithStatements runs the target-dependent half of an evaluation against
+// pre-collected principal statements. CheckSpecific collects per call;
+// WhoCanBulk collects once per principal and reuses the result across every
+// target. The statements are read-only input to Evaluate, so sharing one copy
+// across targets is safe and yields identical results to a per-call collection.
+func (e *Evaluator) checkWithStatements(principal, action, target string, identityStmts, boundaryStmts *types.PolicyStatementList) (*CheckResponse, error) {
 	rc := e.buildRequestContext(principal, target)
 	if err := rc.PopulateDefaultRequestConditionKeys(target); err != nil {
 		return nil, fmt.Errorf("populating request context: %w", err)
@@ -63,6 +71,39 @@ func (e *Evaluator) CheckSpecific(principal, action, target string) (*CheckRespo
 		Conditions:         conditions,
 		ResourceConstraint: nil,
 	}, nil
+}
+
+// WhoCanBulk evaluates the principals × targets cross-product for a single
+// action, returning only allowed grants in principals-outer, targets-inner
+// order. Per-principal statement collection is hoisted out of the target loop:
+// it depends only on the principal, so collecting it once per principal instead
+// of once per (principal, target) cell removes a T-fold repetition of policy
+// resolution at account scale.
+func (e *Evaluator) WhoCanBulk(action string, principals, targets []string) ([]Grant, error) {
+	grants := make([]Grant, 0)
+	for _, principal := range principals {
+		identityStmts, boundaryStmts := e.collectStatementsForPrincipal(principal)
+		for _, target := range targets {
+			resp, err := e.checkWithStatements(principal, action, target, identityStmts, boundaryStmts)
+			if err != nil {
+				return nil, fmt.Errorf("evaluating %s -> %s on %s: %w", principal, action, target, err)
+			}
+			if resp.Result != "allowed" {
+				continue
+			}
+			conditions := resp.Conditions
+			if conditions == nil {
+				conditions = []Condition{}
+			}
+			grants = append(grants, Grant{
+				Principal:  principal,
+				Target:     target,
+				Result:     "allowed",
+				Conditions: conditions,
+			})
+		}
+	}
+	return grants, nil
 }
 
 // CheckAnyTarget evaluates whether principal can perform action on any resource.

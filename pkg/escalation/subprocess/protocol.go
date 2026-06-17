@@ -113,6 +113,7 @@ type Handler interface {
 	CheckSpecific(principal, action, target string) (*CheckResponse, error)
 	CheckAnyTarget(principal, action string) (*CheckResponse, error)
 	CheckCounterfactual(principal, action, target string, removed []RemovedStatement) (*CheckResponse, error)
+	WhoCanBulk(action string, principals, targets []string) ([]Grant, error)
 	ListGrants() (*ListGrantsResponse, error)
 }
 
@@ -172,7 +173,7 @@ func Serve(r io.Reader, w io.Writer, h Handler) error {
 			}
 
 		case TypeWhoCanBulk:
-			grants, err := handleWhoCanBulk(h, req.Action, req.Principals, req.Targets)
+			grants, err := h.WhoCanBulk(req.Action, req.Principals, req.Targets)
 			if err != nil {
 				slog.Error("who_can_bulk failed", "error", err)
 				writeJSON(w, ErrorResponse{Error: err.Error()})
@@ -198,37 +199,6 @@ func Serve(r io.Reader, w io.Writer, h Handler) error {
 	}
 
 	return scanner.Err()
-}
-
-// handleWhoCanBulk evaluates the cross-product of principals × targets for a
-// single action, returning only allowed grants. This replaces O(P×T) individual
-// check_specific IPC round-trips with one.
-func handleWhoCanBulk(h Handler, action string, principals, targets []string) ([]Grant, error) {
-	var grants []Grant
-	for _, principal := range principals {
-		for _, target := range targets {
-			resp, err := h.CheckSpecific(principal, action, target)
-			if err != nil {
-				return nil, fmt.Errorf("evaluating %s -> %s on %s: %w", principal, action, target, err)
-			}
-			if resp.Result == "allowed" {
-				conditions := resp.Conditions
-				if conditions == nil {
-					conditions = []Condition{}
-				}
-				grants = append(grants, Grant{
-					Principal:  principal,
-					Target:     target,
-					Result:     "allowed",
-					Conditions: conditions,
-				})
-			}
-		}
-	}
-	if grants == nil {
-		grants = []Grant{}
-	}
-	return grants, nil
 }
 
 // writeJSON writes a single JSON object followed by a newline.

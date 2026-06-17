@@ -16,6 +16,7 @@ type mockHandler struct {
 	checkSpecificFn       func(principal, action, target string) (*CheckResponse, error)
 	checkAnyTargetFn      func(principal, action string) (*CheckResponse, error)
 	checkCounterfactualFn func(principal, action, target string, removed []RemovedStatement) (*CheckResponse, error)
+	whoCanBulkFn          func(action string, principals, targets []string) ([]Grant, error)
 	listGrantsFn          func() (*ListGrantsResponse, error)
 }
 
@@ -29,6 +30,39 @@ func (m *mockHandler) CheckAnyTarget(principal, action string) (*CheckResponse, 
 
 func (m *mockHandler) CheckCounterfactual(principal, action, target string, removed []RemovedStatement) (*CheckResponse, error) {
 	return m.checkCounterfactualFn(principal, action, target, removed)
+}
+
+// WhoCanBulk delegates to whoCanBulkFn when set; otherwise it runs the
+// principals × targets cross-product over checkSpecificFn, mirroring the
+// protocol's documented bulk semantics so handlers only need to configure
+// per-cell responses.
+func (m *mockHandler) WhoCanBulk(action string, principals, targets []string) ([]Grant, error) {
+	if m.whoCanBulkFn != nil {
+		return m.whoCanBulkFn(action, principals, targets)
+	}
+	grants := make([]Grant, 0)
+	for _, principal := range principals {
+		for _, target := range targets {
+			resp, err := m.checkSpecificFn(principal, action, target)
+			if err != nil {
+				return nil, err
+			}
+			if resp.Result != "allowed" {
+				continue
+			}
+			conditions := resp.Conditions
+			if conditions == nil {
+				conditions = []Condition{}
+			}
+			grants = append(grants, Grant{
+				Principal:  principal,
+				Target:     target,
+				Result:     "allowed",
+				Conditions: conditions,
+			})
+		}
+	}
+	return grants, nil
 }
 
 func (m *mockHandler) ListGrants() (*ListGrantsResponse, error) {
