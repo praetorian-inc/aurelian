@@ -58,6 +58,7 @@ func CollectPrincipals(gaad *types.AuthorizationAccountDetails) []Principal {
 			ARN:     g.Arn,
 			Account: a.AccountID,
 			Type:    PrincipalTypeGroup,
+			IsAdmin: isAdminGroup(g, gaad),
 		})
 		return true
 	})
@@ -76,6 +77,12 @@ func isAdminRole(role types.RoleDetail, gaad *types.AuthorizationAccountDetails)
 // admin-level access.
 func isAdminUser(user types.UserDetail, gaad *types.AuthorizationAccountDetails) bool {
 	stmts := collectAllUserStatements(user, gaad)
+	return isAdmin(stmts)
+}
+
+// isAdminGroup returns true if the group's own policies grant admin-level access.
+func isAdminGroup(group types.GroupDetail, gaad *types.AuthorizationAccountDetails) bool {
+	stmts := collectAllGroupStatements(group, gaad)
 	return isAdmin(stmts)
 }
 
@@ -174,6 +181,28 @@ func collectAllRoleStatements(role types.RoleDetail, gaad *types.AuthorizationAc
 		}
 	}
 	for _, mp := range role.AttachedManagedPolicies {
+		policy, ok := gaad.Policies.Get(mp.PolicyArn)
+		if !ok {
+			continue
+		}
+		doc := policy.DefaultPolicyDocument()
+		if doc != nil && doc.Statement != nil {
+			stmts = append(stmts, *doc.Statement...)
+		}
+	}
+	return stmts
+}
+
+// collectAllGroupStatements gathers all identity policy statements for a group
+// (inline + attached-managed).
+func collectAllGroupStatements(group types.GroupDetail, gaad *types.AuthorizationAccountDetails) []types.PolicyStatement {
+	var stmts []types.PolicyStatement
+	for _, p := range group.GroupPolicyList {
+		if p.PolicyDocument.Statement != nil {
+			stmts = append(stmts, *p.PolicyDocument.Statement...)
+		}
+	}
+	for _, mp := range group.AttachedManagedPolicies {
 		policy, ok := gaad.Policies.Get(mp.PolicyArn)
 		if !ok {
 			continue

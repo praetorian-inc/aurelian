@@ -58,6 +58,13 @@ func newTestGAAD() *types.AuthorizationAccountDetails {
 				Arn:       "arn:aws:iam::111111111111:group/Developers",
 				GroupName: "Developers",
 			},
+			{
+				Arn:       "arn:aws:iam::111111111111:group/Admin",
+				GroupName: "Admin",
+				AttachedManagedPolicies: []types.ManagedPolicy{
+					{PolicyName: "AdministratorAccess", PolicyArn: "arn:aws:iam::aws:policy/AdministratorAccess"},
+				},
+			},
 		},
 		[]types.RoleDetail{
 			{
@@ -88,6 +95,13 @@ func newTestGAAD() *types.AuthorizationAccountDetails {
 				PolicyName: "ReadOnly",
 				PolicyVersionList: []types.PolicyVersion{
 					{VersionId: "v1", IsDefaultVersion: true, Document: readOnlyPolicy},
+				},
+			},
+			{
+				Arn:        "arn:aws:iam::aws:policy/AdministratorAccess",
+				PolicyName: "AdministratorAccess",
+				PolicyVersionList: []types.PolicyVersion{
+					{VersionId: "v1", IsDefaultVersion: true, Document: adminPolicy},
 				},
 			},
 		},
@@ -135,7 +149,7 @@ func TestCollectPrincipals(t *testing.T) {
 	gaad := newTestGAAD()
 	principals := CollectPrincipals(gaad)
 
-	require.GreaterOrEqual(t, len(principals), 3) // 1 user + 2 roles + 1 group
+	require.GreaterOrEqual(t, len(principals), 4) // 1 user + 2 roles + 2 groups
 
 	byARN := make(map[string]Principal)
 	for _, p := range principals {
@@ -155,10 +169,17 @@ func TestCollectPrincipals(t *testing.T) {
 	assert.Equal(t, PrincipalTypeUser, dev.Type)
 	assert.False(t, dev.IsAdmin)
 
-	// Group should exist
-	group, ok := byARN["arn:aws:iam::111111111111:group/Developers"]
+	// Developers group: no policies → is_admin=false
+	devGroup, ok := byARN["arn:aws:iam::111111111111:group/Developers"]
 	require.True(t, ok)
-	assert.Equal(t, PrincipalTypeGroup, group.Type)
+	assert.Equal(t, PrincipalTypeGroup, devGroup.Type)
+	assert.False(t, devGroup.IsAdmin)
+
+	// Admin group: attached AdministratorAccess → is_admin=true
+	adminGroup, ok := byARN["arn:aws:iam::111111111111:group/Admin"]
+	require.True(t, ok)
+	assert.Equal(t, PrincipalTypeGroup, adminGroup.Type)
+	assert.True(t, adminGroup.IsAdmin, "group with AdministratorAccess should be is_admin=true")
 }
 
 func TestIsAdmin_WithDeny(t *testing.T) {
@@ -401,6 +422,72 @@ func TestCollectStructuralFacts_LambdaWithNoRoleProperty(t *testing.T) {
 	for _, f := range facts {
 		assert.NotEqual(t, FactLambdaExecutionRole, f.Type, "should not create fact for Lambda without Role property")
 	}
+}
+
+func TestIsAdminGroup_AttachedManagedPolicy(t *testing.T) {
+	adminStmt := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
+	}
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil,
+		[]types.ManagedPolicyDetail{
+			{
+				Arn:        "arn:aws:iam::aws:policy/AdministratorAccess",
+				PolicyName: "AdministratorAccess",
+				PolicyVersionList: []types.PolicyVersion{
+					{VersionId: "v1", IsDefaultVersion: true, Document: types.Policy{Statement: &adminStmt}},
+				},
+			},
+		})
+
+	group := types.GroupDetail{
+		Arn:       "arn:aws:iam::111111111111:group/Admin",
+		GroupName: "Admin",
+		AttachedManagedPolicies: []types.ManagedPolicy{
+			{PolicyName: "AdministratorAccess", PolicyArn: "arn:aws:iam::aws:policy/AdministratorAccess"},
+		},
+	}
+	assert.True(t, isAdminGroup(group, gaad), "group attaching AdministratorAccess should be admin")
+}
+
+func TestIsAdminGroup_InlinePolicy(t *testing.T) {
+	adminStmt := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
+	}
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
+
+	group := types.GroupDetail{
+		Arn:       "arn:aws:iam::111111111111:group/InlineAdmin",
+		GroupName: "InlineAdmin",
+		GroupPolicyList: []types.InlinePolicy{
+			{PolicyName: "FullAccess", PolicyDocument: types.Policy{Statement: &adminStmt}},
+		},
+	}
+	assert.True(t, isAdminGroup(group, gaad), "group with inline *:* policy should be admin")
+}
+
+func TestIsAdminGroup_NonAdmin(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
+
+	group := types.GroupDetail{
+		Arn:       "arn:aws:iam::111111111111:group/ReadOnly",
+		GroupName: "ReadOnly",
+		GroupPolicyList: []types.InlinePolicy{
+			{PolicyName: "ReadOnly", PolicyDocument: types.Policy{Statement: &types.PolicyStatementList{
+				{Effect: "Allow", Action: &types.DynaString{"s3:Get*"}, Resource: &types.DynaString{"*"}},
+			}}},
+		},
+	}
+	assert.False(t, isAdminGroup(group, gaad), "group with limited permissions should not be admin")
+}
+
+func TestIsAdminGroup_NoPolicies(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
+
+	group := types.GroupDetail{
+		Arn:       "arn:aws:iam::111111111111:group/Empty",
+		GroupName: "Empty",
+	}
+	assert.False(t, isAdminGroup(group, gaad), "group with no policies should not be admin")
 }
 
 func TestCollectStructuralFacts_CrossAccountTrust(t *testing.T) {
