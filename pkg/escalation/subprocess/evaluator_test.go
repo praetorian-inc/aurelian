@@ -641,6 +641,66 @@ func TestWhoCanBulk_PropagatesEvaluationError(t *testing.T) {
 	assert.Contains(t, err.Error(), "not-a-valid-arn", "error should identify the offending cell")
 }
 
+// TestWhoCanBulk_ParallelMatchesSerial proves the worker-pool path produces a
+// byte-identical grant set to the serial reference for any worker count. Run
+// under `go test -race` this also exercises the concurrency-safety claim:
+// Evaluate over a frozen GAAD plus read-only reuse of per-principal statements.
+func TestWhoCanBulk_ParallelMatchesSerial(t *testing.T) {
+	eval := NewEvaluator(bulkFixtureGAAD(), nil, nil)
+
+	principals := []string{
+		"arn:aws:iam::111111111111:user/AdminUser",
+		"arn:aws:iam::111111111111:user/ResUser",
+		"arn:aws:iam::111111111111:user/BoundedUser",
+		"arn:aws:iam::111111111111:user/GroupUser",
+		"arn:aws:iam::111111111111:user/CondUser",
+		"arn:aws:iam::111111111111:user/NoAccess",
+		"arn:aws:iam::111111111111:role/AdminRole",
+		"arn:aws:iam::111111111111:role/Missing",
+	}
+	targets := []string{
+		"arn:aws:s3:::bucket-allowed/object.txt",
+		"arn:aws:s3:::bucket-denied/object.txt",
+		"arn:aws:s3:::bucket-allowed/other.txt",
+		"arn:aws:iam::111111111111:role/AdminRole",
+		"arn:aws:iam::111111111111:user/AdminUser",
+	}
+
+	for _, workers := range []string{"1", "2", "4", "8", "100"} {
+		t.Run("workers="+workers, func(t *testing.T) {
+			t.Setenv("AURELIAN_EVAL_WORKERS", workers)
+			for _, action := range []string{"iam:PutRolePolicy", "s3:GetObject", "s3:ListBucket", "ec2:RunInstances"} {
+				want := referenceWhoCanBulk(t, eval, action, principals, targets)
+				got, err := eval.WhoCanBulk(action, principals, targets)
+				require.NoError(t, err)
+				assert.Equal(t, want, got, "parallel output must match serial reference exactly, including order")
+			}
+		})
+	}
+}
+
+// TestWhoCanBulk_ParallelPropagatesError confirms an error in any cell still
+// surfaces (and yields no partial grants) when running with multiple workers.
+func TestWhoCanBulk_ParallelPropagatesError(t *testing.T) {
+	t.Setenv("AURELIAN_EVAL_WORKERS", "8")
+	eval := NewEvaluator(bulkFixtureGAAD(), nil, nil)
+
+	principals := []string{
+		"arn:aws:iam::111111111111:user/AdminUser",
+		"arn:aws:iam::111111111111:user/ResUser",
+	}
+	targets := []string{
+		"arn:aws:s3:::bucket-allowed/x",
+		"not-a-valid-arn", // one bad cell among many
+		"arn:aws:s3:::bucket-allowed/y",
+	}
+
+	got, err := eval.WhoCanBulk("s3:GetObject", principals, targets)
+	require.Error(t, err)
+	assert.Nil(t, got, "no partial grants on error")
+	assert.Contains(t, err.Error(), "not-a-valid-arn")
+}
+
 // benchGAAD builds a managed-policy- and group-heavy account: the realistic
 // shape where per-principal statement collection (managed-policy resolution +
 // group walking) is expensive, so hoisting it out of the target loop matters.

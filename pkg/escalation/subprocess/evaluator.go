@@ -2,7 +2,11 @@ package subprocess
 
 import (
 	"fmt"
+	"os"
+	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -73,13 +77,113 @@ func (e *Evaluator) checkWithStatements(principal, action, target string, identi
 	}, nil
 }
 
+// bulkJob is one (principal, target) cell of a who_can_bulk cross-product. The
+// statement slices are collected once per principal and shared read-only across
+// that principal's targets; Evaluate never mutates them, so this is concurrency
+// safe (see checkWithStatements).
+type bulkJob struct {
+	principal     string
+	target        string
+	identityStmts *types.PolicyStatementList
+	boundaryStmts *types.PolicyStatementList
+}
+
 // WhoCanBulk evaluates the principals × targets cross-product for a single
 // action, returning only allowed grants in principals-outer, targets-inner
-// order. Per-principal statement collection is hoisted out of the target loop:
-// it depends only on the principal, so collecting it once per principal instead
-// of once per (principal, target) cell removes a T-fold repetition of policy
-// resolution at account scale.
+// order. Per-principal statement collection is hoisted out of the target loop,
+// and the per-cell evaluations (the dominant cost) are spread across a worker
+// pool sized by AURELIAN_EVAL_WORKERS, defaulting to GOMAXPROCS. Output order is
+// independent of completion order, so results are deterministic and identical to
+// a serial run regardless of worker count.
 func (e *Evaluator) WhoCanBulk(action string, principals, targets []string) ([]Grant, error) {
+	workers := bulkWorkerCount()
+	if workers <= 1 || len(principals) == 0 || len(targets) == 0 {
+		return e.whoCanBulkSerial(action, principals, targets)
+	}
+
+	// Collect per-principal statements once (here, on the dispatching goroutine —
+	// workers never collect, so the GAAD is only read concurrently) and flatten
+	// the cross-product into indexed jobs.
+	jobs := make([]bulkJob, 0, len(principals)*len(targets))
+	for _, principal := range principals {
+		identityStmts, boundaryStmts := e.collectStatementsForPrincipal(principal)
+		for _, target := range targets {
+			jobs = append(jobs, bulkJob{principal, target, identityStmts, boundaryStmts})
+		}
+	}
+
+	// results[i] holds the grant for jobs[i] (nil = denied/skipped). Each index
+	// is written by exactly one worker, so no synchronization is needed on it.
+	results := make([]*Grant, len(jobs))
+	var (
+		firstErr error
+		errOnce  sync.Once
+	)
+	done := make(chan struct{})
+	idx := make(chan int)
+
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range idx {
+				j := jobs[i]
+				resp, err := e.checkWithStatements(j.principal, action, j.target, j.identityStmts, j.boundaryStmts)
+				if err != nil {
+					errOnce.Do(func() {
+						firstErr = fmt.Errorf("evaluating %s -> %s on %s: %w", j.principal, action, j.target, err)
+						close(done)
+					})
+					return
+				}
+				if resp.Result != "allowed" {
+					continue
+				}
+				conditions := resp.Conditions
+				if conditions == nil {
+					conditions = []Condition{}
+				}
+				results[i] = &Grant{
+					Principal:  j.principal,
+					Target:     j.target,
+					Result:     "allowed",
+					Conditions: conditions,
+				}
+			}
+		}()
+	}
+
+	// Feed job indices, stopping early if a worker reports an error.
+	go func() {
+		defer close(idx)
+		for i := range jobs {
+			select {
+			case idx <- i:
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+
+	// Compact in index order → identical ordering to the serial path.
+	grants := make([]Grant, 0, len(jobs))
+	for _, g := range results {
+		if g != nil {
+			grants = append(grants, *g)
+		}
+	}
+	return grants, nil
+}
+
+// whoCanBulkSerial is the single-threaded cross-product. It is the worker=1
+// fallback and the reference behavior the parallel path must match exactly.
+func (e *Evaluator) whoCanBulkSerial(action string, principals, targets []string) ([]Grant, error) {
 	grants := make([]Grant, 0)
 	for _, principal := range principals {
 		identityStmts, boundaryStmts := e.collectStatementsForPrincipal(principal)
@@ -104,6 +208,17 @@ func (e *Evaluator) WhoCanBulk(action string, principals, targets []string) ([]G
 		}
 	}
 	return grants, nil
+}
+
+// bulkWorkerCount returns the configured worker pool size for WhoCanBulk:
+// AURELIAN_EVAL_WORKERS if set to a positive integer, else GOMAXPROCS.
+func bulkWorkerCount() int {
+	if v := os.Getenv("AURELIAN_EVAL_WORKERS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return runtime.GOMAXPROCS(0)
 }
 
 // CheckAnyTarget evaluates whether principal can perform action on any resource.
