@@ -179,6 +179,55 @@ func TestEvaluator_UnknownPrincipal(t *testing.T) {
 	assert.Equal(t, "denied", resp.Result)
 }
 
+func TestEvaluator_collectStatementsForPrincipal(t *testing.T) {
+	eval := NewEvaluator(newTestGAAD(), nil, nil)
+
+	t.Run("resolves a user by ARN with its boundary", func(t *testing.T) {
+		// Restricted has an inline Allow * and a DenyIAM permissions boundary.
+		identity, boundary := eval.collectStatementsForPrincipal("arn:aws:iam::111111111111:user/Restricted")
+		require.NotNil(t, identity)
+		require.Len(t, *identity, 1)
+		assert.Equal(t, "Allow", (*identity)[0].Effect)
+		require.NotNil(t, boundary, "Restricted has a permissions boundary")
+		require.Len(t, *boundary, 1)
+		assert.Equal(t, "Deny", (*boundary)[0].Effect)
+	})
+
+	t.Run("resolves a user with a managed policy and no boundary", func(t *testing.T) {
+		// Dev has the ReadOnly managed policy and no boundary.
+		identity, boundary := eval.collectStatementsForPrincipal("arn:aws:iam::111111111111:user/Dev")
+		require.NotNil(t, identity)
+		require.Len(t, *identity, 1, "ReadOnly managed policy contributes one statement")
+		assert.Equal(t, "Allow", (*identity)[0].Effect)
+		assert.Nil(t, boundary, "Dev has no permissions boundary")
+	})
+
+	t.Run("resolves a role by ARN", func(t *testing.T) {
+		identity, boundary := eval.collectStatementsForPrincipal("arn:aws:iam::111111111111:role/Admin")
+		require.NotNil(t, identity)
+		require.Len(t, *identity, 1)
+		assert.Equal(t, "Allow", (*identity)[0].Effect)
+		assert.Nil(t, boundary, "Admin has no permissions boundary")
+	})
+
+	t.Run("returns empty statements for an unknown principal", func(t *testing.T) {
+		identity, boundary := eval.collectStatementsForPrincipal("arn:aws:iam::111111111111:role/DoesNotExist")
+		require.NotNil(t, identity)
+		assert.Empty(t, *identity)
+		assert.Nil(t, boundary)
+	})
+
+	t.Run("does not match a role ARN against the users map", func(t *testing.T) {
+		// A role ARN must resolve to the role's statements, never fall through
+		// to an unrelated user. This pins the per-map keying so the O(1) Get
+		// lookup stays equivalent to the original linear scan.
+		identity, _ := eval.collectStatementsForPrincipal("arn:aws:iam::111111111111:role/Admin")
+		require.NotNil(t, identity)
+		require.Len(t, *identity, 1)
+		assert.Equal(t, "Allow", (*identity)[0].Effect, "Admin role grants Allow *:*")
+	})
+}
+
 func TestFilterRemovedStatements(t *testing.T) {
 	stmts := &types.PolicyStatementList{
 		{Effect: "Allow", Action: &types.DynaString{"s3:*"}, Resource: &types.DynaString{"*"}},

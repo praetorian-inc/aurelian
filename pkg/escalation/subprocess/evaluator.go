@@ -157,32 +157,21 @@ func (e *Evaluator) CheckCounterfactual(principal, action, target string, remove
 // collectStatementsForPrincipal gathers identity and boundary statements for a
 // principal ARN by looking it up in the GAAD.
 func (e *Evaluator) collectStatementsForPrincipal(principalArn string) (*types.PolicyStatementList, *types.PolicyStatementList) {
+	// The GAAD maps are keyed by ARN (see types.NewAuthorizationAccountDetails),
+	// so look the principal up directly rather than scanning every entry. This
+	// runs once per (principal, target) pair in who_can_bulk, so an O(1) Get
+	// instead of an O(users+roles) Range is a large win at account scale.
+
 	// Try as a user.
-	var user *types.UserDetail
-	e.gaad.Users.Range(func(_ string, u types.UserDetail) bool {
-		if u.Arn == principalArn {
-			user = &u
-			return false
-		}
-		return true
-	})
-	if user != nil {
-		identity := e.collectUserStatements(user)
+	if user, ok := e.gaad.Users.Get(principalArn); ok {
+		identity := e.collectUserStatements(&user)
 		boundary := e.resolveBoundary(user.PermissionsBoundary)
 		return &identity, boundary
 	}
 
 	// Try as a role.
-	var role *types.RoleDetail
-	e.gaad.Roles.Range(func(_ string, r types.RoleDetail) bool {
-		if r.Arn == principalArn {
-			role = &r
-			return false
-		}
-		return true
-	})
-	if role != nil {
-		identity := e.collectRoleStatements(role)
+	if role, ok := e.gaad.Roles.Get(principalArn); ok {
+		identity := e.collectRoleStatements(&role)
 		boundary := e.resolveBoundary(role.PermissionsBoundary)
 		return &identity, boundary
 	}
