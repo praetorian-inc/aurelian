@@ -2,6 +2,7 @@ package subprocess
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"runtime"
 	"strconv"
@@ -97,6 +98,21 @@ type bulkJob struct {
 // a serial run regardless of worker count.
 func (e *Evaluator) WhoCanBulk(action string, principals, targets []string) ([]Grant, error) {
 	workers := bulkWorkerCount()
+	cells := len(principals) * len(targets)
+	started := time.Now()
+	defer func() {
+		// Per-call progress to stderr (stdout carries the protocol stream).
+		// Pairs with the engine's "prewarm call i" line for a both-sides view.
+		slog.Info("who_can_bulk done",
+			"action", action,
+			"principals", len(principals),
+			"targets", len(targets),
+			"cells", cells,
+			"workers", workers,
+			"elapsed", time.Since(started).String(),
+		)
+	}()
+
 	if workers <= 1 || len(principals) == 0 || len(targets) == 0 {
 		return e.whoCanBulkSerial(action, principals, targets)
 	}
