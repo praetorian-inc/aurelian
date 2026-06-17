@@ -463,15 +463,40 @@ func referenceWhoCanBulk(t *testing.T, e *Evaluator, action string, principals, 
 	return grants
 }
 
-// bulkFixtureGAAD builds a multi-principal account with a mix of allow/deny so
-// the cross-product yields both granted and denied cells.
+// bulkFixtureGAAD builds an account that stresses every input dimension fix #2
+// hoists out of the target loop, so the equivalence assertion can actually
+// catch a hoisting bug:
+//   - AdminUser:   inline Allow *:* (baseline, uniform across targets)
+//   - ResUser:     resource-scoped Allow — grants differ PER TARGET, so any
+//                  cross-target corruption of the reused statement slice flips
+//                  a result. This is the key guard against unsafe slice reuse.
+//   - BoundedUser: inline Allow *:* with a permissions boundary restricting to
+//                  s3:* — exercises BOUNDARY hoisting (the second reused slice).
+//   - GroupUser:   no inline policy; gets s3:List* via a group's managed policy
+//                  — exercises group-walk + managed-policy resolution hoisting.
+//   - CondUser:    conditional Allow — exercises the condition-bearing path.
+//   - NoAccess:    no policies (denied everywhere).
 func bulkFixtureGAAD() *types.AuthorizationAccountDetails {
 	adminStmt := types.PolicyStatementList{
 		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
 	}
-	s3Stmt := types.PolicyStatementList{
-		{Effect: "Allow", Action: &types.DynaString{"s3:*"}, Resource: &types.DynaString{"*"}},
+	// Resource-scoped: only objects under bucket-allowed are granted.
+	resScopedStmt := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"s3:GetObject"}, Resource: &types.DynaString{"arn:aws:s3:::bucket-allowed/*"}},
 	}
+	condStmt := types.PolicyStatementList{
+		{
+			Effect: "Allow", Action: &types.DynaString{"s3:GetObject"}, Resource: &types.DynaString{"*"},
+			Condition: &types.Condition{"StringEquals": {"aws:username": {"CondUser"}}},
+		},
+	}
+	s3BoundaryDoc := types.Policy{Statement: &types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"s3:*"}, Resource: &types.DynaString{"*"}},
+	}}
+	groupManagedDoc := types.Policy{Statement: &types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"s3:List*"}, Resource: &types.DynaString{"*"}},
+	}}
+
 	return types.NewAuthorizationAccountDetails("111111111111",
 		[]types.UserDetail{
 			{
@@ -479,19 +504,50 @@ func bulkFixtureGAAD() *types.AuthorizationAccountDetails {
 				UserPolicyList: []types.InlinePolicy{{PolicyName: "Admin", PolicyDocument: types.Policy{Statement: &adminStmt}}},
 			},
 			{
-				Arn: "arn:aws:iam::111111111111:user/S3User", UserName: "S3User",
-				UserPolicyList: []types.InlinePolicy{{PolicyName: "S3", PolicyDocument: types.Policy{Statement: &s3Stmt}}},
+				Arn: "arn:aws:iam::111111111111:user/ResUser", UserName: "ResUser",
+				UserPolicyList: []types.InlinePolicy{{PolicyName: "ResScoped", PolicyDocument: types.Policy{Statement: &resScopedStmt}}},
+			},
+			{
+				Arn: "arn:aws:iam::111111111111:user/BoundedUser", UserName: "BoundedUser",
+				UserPolicyList: []types.InlinePolicy{{PolicyName: "Admin", PolicyDocument: types.Policy{Statement: &adminStmt}}},
+				PermissionsBoundary: types.ManagedPolicy{
+					PolicyName: "S3Boundary", PolicyArn: "arn:aws:iam::111111111111:policy/S3Boundary",
+				},
+			},
+			{
+				Arn: "arn:aws:iam::111111111111:user/GroupUser", UserName: "GroupUser",
+				GroupList: []string{"S3Listers"},
+			},
+			{
+				Arn: "arn:aws:iam::111111111111:user/CondUser", UserName: "CondUser",
+				UserPolicyList: []types.InlinePolicy{{PolicyName: "Cond", PolicyDocument: types.Policy{Statement: &condStmt}}},
 			},
 			{Arn: "arn:aws:iam::111111111111:user/NoAccess", UserName: "NoAccess"},
 		},
-		nil,
+		[]types.GroupDetail{
+			{
+				Arn: "arn:aws:iam::111111111111:group/S3Listers", GroupName: "S3Listers",
+				AttachedManagedPolicies: []types.ManagedPolicy{
+					{PolicyName: "S3List", PolicyArn: "arn:aws:iam::111111111111:policy/S3List"},
+				},
+			},
+		},
 		[]types.RoleDetail{
 			{
 				Arn: "arn:aws:iam::111111111111:role/AdminRole", RoleName: "AdminRole",
 				RolePolicyList: []types.InlinePolicy{{PolicyName: "Admin", PolicyDocument: types.Policy{Statement: &adminStmt}}},
 			},
 		},
-		nil,
+		[]types.ManagedPolicyDetail{
+			{
+				Arn: "arn:aws:iam::111111111111:policy/S3Boundary", PolicyName: "S3Boundary",
+				PolicyVersionList: []types.PolicyVersion{{VersionId: "v1", IsDefaultVersion: true, Document: s3BoundaryDoc}},
+			},
+			{
+				Arn: "arn:aws:iam::111111111111:policy/S3List", PolicyName: "S3List",
+				PolicyVersionList: []types.PolicyVersion{{VersionId: "v1", IsDefaultVersion: true, Document: groupManagedDoc}},
+			},
+		},
 	)
 }
 
@@ -500,19 +556,28 @@ func TestWhoCanBulk_EquivalentToSerialReference(t *testing.T) {
 
 	principals := []string{
 		"arn:aws:iam::111111111111:user/AdminUser",
-		"arn:aws:iam::111111111111:user/S3User",
+		"arn:aws:iam::111111111111:user/ResUser",
+		"arn:aws:iam::111111111111:user/BoundedUser",
+		"arn:aws:iam::111111111111:user/GroupUser",
+		"arn:aws:iam::111111111111:user/CondUser",
 		"arn:aws:iam::111111111111:user/NoAccess",
 		"arn:aws:iam::111111111111:role/AdminRole",
 		"arn:aws:iam::111111111111:role/Missing", // unknown principal
 	}
+	// Multiple targets per principal, deliberately including ones that ResUser's
+	// resource-scoped grant treats differently (bucket-allowed vs bucket-denied),
+	// so a stale/shared statement slice across targets would change the result.
 	targets := []string{
+		"arn:aws:s3:::bucket-allowed/object.txt",
+		"arn:aws:s3:::bucket-denied/object.txt",
+		"arn:aws:s3:::bucket-allowed/other.txt",
 		"arn:aws:iam::111111111111:role/AdminRole",
-		"arn:aws:s3:::my-bucket/object.txt",
 		"arn:aws:iam::111111111111:user/AdminUser",
 	}
 
-	// Run for several actions so allow/deny patterns differ per cell.
-	for _, action := range []string{"iam:PutRolePolicy", "s3:GetObject", "ec2:RunInstances"} {
+	// Run for several actions so allow/deny patterns differ per cell, including
+	// iam:* (denied by BoundedUser's boundary but allowed by AdminUser).
+	for _, action := range []string{"iam:PutRolePolicy", "s3:GetObject", "s3:ListBucket", "ec2:RunInstances"} {
 		t.Run(action, func(t *testing.T) {
 			want := referenceWhoCanBulk(t, eval, action, principals, targets)
 			got, err := eval.WhoCanBulk(action, principals, targets)
@@ -524,12 +589,56 @@ func TestWhoCanBulk_EquivalentToSerialReference(t *testing.T) {
 	}
 }
 
+// TestWhoCanBulk_FixtureExercisesDivergence guards the guard: it asserts the
+// fixture actually produces per-target divergence and boundary-driven denials,
+// so the equivalence test above has something a hoisting bug could break. If
+// this fails, the fixture has gone uniform and the equivalence test is toothless.
+func TestWhoCanBulk_FixtureExercisesDivergence(t *testing.T) {
+	eval := NewEvaluator(bulkFixtureGAAD(), nil, nil)
+
+	// ResUser: same principal, same action, different target → different result.
+	allowed, err := eval.CheckSpecific("arn:aws:iam::111111111111:user/ResUser", "s3:GetObject", "arn:aws:s3:::bucket-allowed/x")
+	require.NoError(t, err)
+	denied, err := eval.CheckSpecific("arn:aws:iam::111111111111:user/ResUser", "s3:GetObject", "arn:aws:s3:::bucket-denied/x")
+	require.NoError(t, err)
+	require.Equal(t, "allowed", allowed.Result, "ResUser must be allowed on bucket-allowed")
+	require.Equal(t, "denied", denied.Result, "ResUser must be denied on bucket-denied — this is the per-target divergence")
+
+	// BoundedUser: Allow *:* but S3 boundary → s3 allowed, iam denied.
+	s3ok, err := eval.CheckSpecific("arn:aws:iam::111111111111:user/BoundedUser", "s3:GetObject", "arn:aws:s3:::bucket-allowed/x")
+	require.NoError(t, err)
+	iamno, err := eval.CheckSpecific("arn:aws:iam::111111111111:user/BoundedUser", "iam:PutRolePolicy", "arn:aws:iam::111111111111:role/AdminRole")
+	require.NoError(t, err)
+	require.Equal(t, "allowed", s3ok.Result, "BoundedUser s3 within boundary")
+	require.Equal(t, "denied", iamno.Result, "BoundedUser iam blocked by boundary — exercises boundary hoisting")
+
+	// GroupUser: access only via group's managed policy.
+	grp, err := eval.CheckSpecific("arn:aws:iam::111111111111:user/GroupUser", "s3:ListBucket", "arn:aws:s3:::bucket-allowed")
+	require.NoError(t, err)
+	require.Equal(t, "allowed", grp.Result, "GroupUser s3:List via group managed policy — exercises group/managed hoisting")
+}
+
 func TestWhoCanBulk_EmptyInputs(t *testing.T) {
 	eval := NewEvaluator(bulkFixtureGAAD(), nil, nil)
 
 	got, err := eval.WhoCanBulk("s3:GetObject", nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, []Grant{}, got, "no principals/targets yields an empty, non-nil slice")
+}
+
+// TestWhoCanBulk_PropagatesEvaluationError pins that a per-cell evaluation
+// error surfaces from WhoCanBulk (rather than being swallowed or producing a
+// partial grant set). An unparseable target ARN fails request-context setup.
+func TestWhoCanBulk_PropagatesEvaluationError(t *testing.T) {
+	eval := NewEvaluator(bulkFixtureGAAD(), nil, nil)
+
+	principals := []string{"arn:aws:iam::111111111111:user/AdminUser"}
+	targets := []string{"not-a-valid-arn"}
+
+	got, err := eval.WhoCanBulk("s3:GetObject", principals, targets)
+	require.Error(t, err, "an unparseable target ARN must surface as an error")
+	assert.Nil(t, got, "no partial grants on error")
+	assert.Contains(t, err.Error(), "not-a-valid-arn", "error should identify the offending cell")
 }
 
 // benchGAAD builds a managed-policy- and group-heavy account: the realistic
