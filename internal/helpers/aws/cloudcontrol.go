@@ -15,6 +15,9 @@ func CloudControlToAWSResource(desc cctypes.ResourceDescription, resourceType, a
 		region = ""
 	}
 
+	if desc.Identifier == nil {
+		return output.AWSResource{}
+	}
 	identifier := *desc.Identifier
 	a := types.BuildResourceARN(identifier, resourceType, region, accountID)
 
@@ -31,6 +34,10 @@ func CloudControlToAWSResource(desc cctypes.ResourceDescription, resourceType, a
 		Region:       region,
 	}
 
+	if desc.Properties == nil {
+		resource.Properties = map[string]any{}
+		return resource
+	}
 	var props map[string]any
 	if err := json.Unmarshal([]byte(*desc.Properties), &props); err == nil {
 		resource.Properties = props
