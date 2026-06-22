@@ -70,7 +70,7 @@ func (m *AWSResourcePoliciesModule) Run(cfg plugin.Config, out *pipeline.P[model
 	})
 
 	collected := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(listed, collector.Collect, collected)
+	pipeline.Pipe(listed, collector.Collect, collected, &pipeline.PipeOpts{Concurrency: c.Concurrency})
 
 	count := 0
 	for r := range collected.Range() {

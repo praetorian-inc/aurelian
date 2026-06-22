@@ -287,39 +287,23 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 
 		// For escalation-solver format, keep ALL listed resources (not just
 		// ones with policies) because EC2/CodeBuild/ECS are needed for
-		// structural facts. Run policy collection as enrichment on top.
+		// structural facts. Collection runs as streamed enrichment overlapping
+		// listing: each resource is emitted as a base copy and, when a policy
+		// exists, again as a policy-enriched copy that overwrites the base by
+		// key in the single-threaded consumer loop below.
 		if c.Format == "escalation-solver-v1" {
-			// Collect all listed resources into a slice first.
-			var allListed []output.AWSResource
-			for r := range listed.Range() {
-				allListed = append(allListed, r)
-			}
-			if err := listed.Wait(); err != nil {
-				return fmt.Errorf("listing resources: %w", err)
-			}
+			collected := pipeline.New[output.AWSResource]()
+			pipeline.Pipe(listed, keepAllAndCollect(collector), collected, &pipeline.PipeOpts{Concurrency: c.Concurrency})
 
-			// Build base map from all listed resources.
 			results := store.NewMap[output.AWSResource]()
-			for _, r := range allListed {
+			for r := range collected.Range() {
 				key := r.ARN
 				if key == "" {
 					key = r.ResourceID
 				}
-				results.Set(key, r)
+				results.Set(key, r) // enriched copy arrives after its base, overwriting it
 			}
-
-			// Enrich with resource policies where available.
-			enrichInput := pipeline.From(allListed...)
-			enriched := pipeline.New[output.AWSResource]()
-			pipeline.Pipe(enrichInput, collector.Collect, enriched)
-			for r := range enriched.Range() {
-				key := r.ARN
-				if key == "" {
-					key = r.ResourceID
-				}
-				results.Set(key, r) // overwrite with policy-enriched version
-			}
-			if err := enriched.Wait(); err != nil {
+			if err := collected.Wait(); err != nil {
 				return fmt.Errorf("collecting resource policies: %w", err)
 			}
 
@@ -329,7 +313,7 @@ func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c Grap
 		}
 
 		collected := pipeline.New[output.AWSResource]()
-		pipeline.Pipe(listed, collector.Collect, collected)
+		pipeline.Pipe(listed, collector.Collect, collected, &pipeline.PipeOpts{Concurrency: c.Concurrency})
 
 		results := store.NewMap[output.AWSResource]()
 		for r := range collected.Range() {
@@ -560,6 +544,19 @@ func (m *AWSGraphModule) emitOutputs(out *pipeline.P[model.AurelianModel]) {
 		out.Send(r)
 		return true
 	})
+}
+
+// keepAllAndCollect returns a pipeline stage that emits every listed resource
+// as a base copy (so resources without a resource policy — e.g. EC2/CodeBuild/ECS,
+// which the collector does not handle — still reach the result map), then runs
+// policy collection, which emits a policy-enriched copy when one exists. The
+// enriched copy is sent after its base by the same goroutine, so it overwrites
+// the base by key in the consumer loop.
+func keepAllAndCollect(collector *resourcepolicies.ResourcePolicyCollector) func(output.AWSResource, *pipeline.P[output.AWSResource]) error {
+	return func(r output.AWSResource, out *pipeline.P[output.AWSResource]) error {
+		out.Send(r)
+		return collector.Collect(r, out)
+	}
 }
 
 // appendUnique appends items to a slice, skipping duplicates.
