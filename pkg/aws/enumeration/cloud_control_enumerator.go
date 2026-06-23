@@ -3,6 +3,8 @@ package enumeration
 import (
 	"context"
 	"fmt"
+	"log/slog"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsaarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/cloudcontrol"
@@ -51,7 +53,7 @@ func (cc *CloudControlEnumerator) List(identifier string, out *pipeline.P[output
 }
 
 func (cc *CloudControlEnumerator) EnumerateByARN(resourceARN string, out *pipeline.P[output.AWSResource]) error {
-	resource, err := cc.getResourceByARN(resourceARN)
+	resource, ok, err := cc.getResourceByARN(resourceARN)
 	if err != nil {
 		// Design note: we re-parse the ARN here rather than reusing the
 		// resolved region from getResourceByARN, because getResourceByARN
@@ -72,24 +74,35 @@ func (cc *CloudControlEnumerator) EnumerateByARN(resourceARN string, out *pipeli
 		return err
 	}
 
+	// ok is false when GetResource returned a malformed description (e.g. a nil
+	// Identifier). The helper has already logged the anomaly; skip the send
+	// rather than forwarding a phantom zero-value resource.
+	if !ok {
+		return nil
+	}
+
 	out.Send(resource)
 	return nil
 }
 
-func (cc *CloudControlEnumerator) getResourceByARN(arn string) (output.AWSResource, error) {
+// getResourceByARN fetches a single resource via GetResource. The returned bool
+// is false when the response cannot yield a valid resource — either a nil
+// ResourceDescription or a description with a nil Identifier — in which case the
+// caller must skip emitting it. err is reserved for genuine fetch failures.
+func (cc *CloudControlEnumerator) getResourceByARN(arn string) (output.AWSResource, bool, error) {
 	region, resourceType, identifier, err := cc.resolveARNTarget(arn)
 	if err != nil {
-		return output.AWSResource{}, err
+		return output.AWSResource{}, false, err
 	}
 
 	client, err := cc.newCloudControlClient(region)
 	if err != nil {
-		return output.AWSResource{}, fmt.Errorf("create client: %w", err)
+		return output.AWSResource{}, false, fmt.Errorf("create client: %w", err)
 	}
 
 	accountID, err := cc.provider.GetAccountID(region)
 	if err != nil {
-		return output.AWSResource{}, err
+		return output.AWSResource{}, false, err
 	}
 
 	result, err := client.GetResource(context.Background(), &cloudcontrol.GetResourceInput{
@@ -97,11 +110,17 @@ func (cc *CloudControlEnumerator) getResourceByARN(arn string) (output.AWSResour
 		Identifier: aws.String(identifier),
 	})
 	if err != nil {
-		return output.AWSResource{}, fmt.Errorf("get %s %s: %w", resourceType, identifier, err)
+		return output.AWSResource{}, false, fmt.Errorf("get %s %s: %w", resourceType, identifier, err)
 	}
 
-	cr := awshelpers.CloudControlToAWSResource(*result.ResourceDescription, resourceType, accountID, region)
-	return cr, nil
+	if result.ResourceDescription == nil {
+		slog.Warn("cloudcontrol: GetResource returned nil ResourceDescription, skipping",
+			"resourceType", resourceType, "identifier", identifier, "region", region)
+		return output.AWSResource{}, false, nil
+	}
+
+	cr, ok := awshelpers.CloudControlToAWSResource(*result.ResourceDescription, resourceType, accountID, region)
+	return cr, ok, nil
 }
 
 func (cc *CloudControlEnumerator) resolveARNTarget(resourceARN string) (string, string, string, error) {
@@ -286,7 +305,10 @@ func (cc *CloudControlEnumerator) listByType(
 		}
 
 		for _, desc := range result.ResourceDescriptions {
-			cr := awshelpers.CloudControlToAWSResource(desc, resourceType, accountID, region)
+			cr, ok := awshelpers.CloudControlToAWSResource(desc, resourceType, accountID, region)
+			if !ok {
+				continue
+			}
 			out.Send(cr)
 		}
 
