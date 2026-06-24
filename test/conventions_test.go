@@ -69,8 +69,15 @@ func TestIntegrationFixturePackagesDrainViaRunTests(t *testing.T) {
 	}
 	facts := map[string]*pkgFacts{}
 	keyOf := func(p *packages.Package) string {
-		// Collapse "pkg.test", "pkg [pkg.test]", "pkg_test [pkg.test]" to "pkg".
+		// Collapse every go/packages variant of one directory to a single key.
+		// We key off PkgPath, where the test-variant marker is only ever the
+		// ".test"/"_test" suffix — the bracketed " [pkg.test]" form appears in
+		// p.ID, NOT p.PkgPath. We still defensively strip a trailing bracket so
+		// the skip stays correct even if a caller ever passes an ID-shaped value.
 		k := p.PkgPath
+		if i := strings.IndexByte(k, ' '); i >= 0 { // "pkg [pkg.test]" -> "pkg"
+			k = k[:i]
+		}
 		k = strings.TrimSuffix(k, ".test")
 		k = strings.TrimSuffix(k, "_test")
 		return k
