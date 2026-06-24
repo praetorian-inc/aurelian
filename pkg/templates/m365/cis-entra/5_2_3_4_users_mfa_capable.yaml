@@ -1,0 +1,37 @@
+id: "5.2.3.4"
+title: "Ensure all users are MFA capable"
+service: entra
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that all enabled users in the tenant have registered at
+  least one MFA method and are capable of completing MFA challenges.
+rationale: |
+  Users without registered MFA methods represent a significant
+  security gap even when MFA policies exist. If a user has no MFA
+  methods registered, MFA enforcement policies cannot protect their
+  account from credential compromise.
+impact: |
+  Users who have not registered MFA methods will need to complete
+  MFA registration, which requires a one-time setup process.
+remediation: |
+  Review the Authentication Methods registration report in Entra ID
+  and ensure all users have registered at least one MFA method.
+  Consider using MFA registration campaigns to drive enrollment.
+references:
+  - "https://learn.microsoft.com/en-us/entra/identity/authentication/howto-mfa-reporting"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 5.2.3.4"
+cis_controls:
+  - "v8: 6.3"
+  - "v8: 6.4"
+guard:
+  finding_slug: "m365-cis-5-2-3-4-users-mfa-capable"
+  phase_tag: "phase_m365_entra"
+  asset_type: "m365tenant"
+  cwe: "CWE-308"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - user_registration_details
+  - authentication_methods
