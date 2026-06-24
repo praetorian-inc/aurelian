@@ -10,11 +10,13 @@ import (
 	"time"
 )
 
-// destroyTimeout bounds a single DestroyAll pass. Sized generously to
-// accommodate slow cloud teardowns (EKS, CloudFront) without running up
-// against typical `go test -timeout 30m` ceilings. This is an outer
-// bound — DestroyAll additionally enforces a per-fixture timeout.
-const destroyTimeout = 15 * time.Minute
+// destroyTimeout is a coarse backstop on the whole DestroyAll pass, sized so a
+// pathological hang is still interrupted before `go test`'s own -timeout (30m
+// by default) SIGKILLs the process and skips cleanup entirely. It is NOT the
+// effective per-fixture budget: DestroyAll gives each fixture an independent
+// perFixtureDestroyTimeout, so this bound only needs to exceed the realistic
+// sum of sequential teardowns, not a single one.
+const destroyTimeout = 25 * time.Minute
 
 // runner is the interface satisfied by *testing.M; declared here so
 // runTestsWith can be unit-tested with a stub.

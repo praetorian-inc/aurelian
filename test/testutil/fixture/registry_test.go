@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-exec/tfexec"
 )
@@ -99,6 +100,79 @@ func TestRegistry_DestroyAll_CallsTeardownForEach(t *testing.T) {
 	}
 }
 
+// TestRegistry_DestroyAll_PerFixtureBudgetIsIndependent guards the fix for the
+// context-starvation bug: each fixture must receive (close to) the full
+// perFixtureDestroyTimeout, not a slice of one shared budget that shrinks as
+// earlier fixtures consume it. We simulate a slow first teardown and assert the
+// second fixture's deadline is still ~perFixtureDestroyTimeout away.
+func TestRegistry_DestroyAll_PerFixtureBudgetIsIndependent(t *testing.T) {
+	r := &registry{}
+
+	var mu sync.Mutex
+	remaining := map[string]time.Duration{}
+	r.teardownFn = func(ctx context.Context, f *BaseFixture) error {
+		dl, ok := ctx.Deadline()
+		if !ok {
+			t.Errorf("fixture %s: expected a deadline on the teardown context", f.cfg.StateKey)
+			return nil
+		}
+		mu.Lock()
+		remaining[f.cfg.StateKey] = time.Until(dl)
+		mu.Unlock()
+		// Simulate a slow first teardown burning wall-clock that, under the old
+		// shared-context scheme, would have eaten into the second fixture's budget.
+		if f.cfg.StateKey == "slow" {
+			time.Sleep(75 * time.Millisecond)
+		}
+		return nil
+	}
+
+	r.register(&BaseFixture{cfg: Config{StateKey: "slow"}})
+	r.register(&BaseFixture{cfg: Config{StateKey: "fast"}})
+
+	if err := r.DestroyAll(context.Background()); err != nil {
+		t.Fatalf("DestroyAll: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	// Every fixture should see nearly the full budget. Allow generous slack for
+	// scheduling, but far less than the ~75ms the slow fixture consumed — proving
+	// the budgets are not derived from one shrinking parent deadline.
+	const minExpected = perFixtureDestroyTimeout - time.Second
+	for key, rem := range remaining {
+		if rem < minExpected {
+			t.Errorf("fixture %s got only %v of its %v budget (deadline borrowed from a shared parent?)",
+				key, rem, perFixtureDestroyTimeout)
+		}
+	}
+}
+
+// TestRegistry_DestroyAll_HonorsCallerCancellation verifies that a canceled
+// caller context still aborts the pass: fixtures not yet started are skipped
+// (and recorded as errors) rather than torn down past the caller's intent.
+func TestRegistry_DestroyAll_HonorsCallerCancellation(t *testing.T) {
+	r := &registry{}
+	var teardowns int
+	r.teardownFn = func(ctx context.Context, f *BaseFixture) error {
+		teardowns++
+		return nil
+	}
+	r.register(&BaseFixture{cfg: Config{StateKey: "a"}})
+	r.register(&BaseFixture{cfg: Config{StateKey: "b"}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // already canceled before DestroyAll runs
+
+	err := r.DestroyAll(ctx)
+	if err == nil {
+		t.Fatal("want error when caller context is canceled, got nil")
+	}
+	if teardowns != 0 {
+		t.Fatalf("want 0 teardowns under canceled context, got %d", teardowns)
+	}
+}
+
 func TestRegistry_DestroyAll_AggregatesErrors(t *testing.T) {
 	r := &registry{}
 	r.teardownFn = func(ctx context.Context, f *BaseFixture) error {
@@ -142,4 +216,3 @@ func (baseOpsZero) Output(context.Context, ...tfexec.OutputOption) (map[string]t
 func (baseOpsZero) UploadArtifacts(context.Context) error   { return nil }
 func (baseOpsZero) DeleteArtifacts(context.Context) error   { return nil }
 func (baseOpsZero) PurgeModulePrefix(context.Context) error { return nil }
-

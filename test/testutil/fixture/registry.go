@@ -75,17 +75,42 @@ func (r *registry) DestroyAll(ctx context.Context) error {
 
 	var errs []error
 	for _, f := range fixtures {
-		fixtureCtx, cancel := context.WithTimeout(ctx, perFixtureDestroyTimeout)
-		if err := fn(fixtureCtx, f); err != nil {
+		// Stop early if the caller's context is already done, but otherwise
+		// give each fixture its own full per-fixture budget. The per-fixture
+		// deadline is rooted independently (not derived from ctx) so a slow
+		// first fixture cannot starve later ones of their teardown time and
+		// leak cloud resources mid-`terraform destroy`. Caller cancellation is
+		// still honored — see destroyOne.
+		if err := ctx.Err(); err != nil {
+			errs = append(errs, fmt.Errorf("destroy %s: %w", f.cfg.StateKey, err))
+			continue
+		}
+		if err := destroyOne(ctx, fn, f); err != nil {
 			errs = append(errs, fmt.Errorf("destroy %s: %w", f.cfg.StateKey, err))
 		}
-		cancel()
 	}
 
 	if len(errs) == 0 {
 		return nil
 	}
 	return errors.Join(errs...)
+}
+
+// destroyOne runs a single fixture's teardown with an independent
+// perFixtureDestroyTimeout budget that does not borrow from the caller's
+// remaining time, while still aborting if the caller's context is canceled.
+func destroyOne(parent context.Context, fn func(context.Context, *BaseFixture) error, f *BaseFixture) error {
+	// Independent deadline: rooted at Background so each fixture gets the full
+	// timeout regardless of how long earlier fixtures took.
+	fixtureCtx, cancel := context.WithTimeout(context.Background(), perFixtureDestroyTimeout)
+	defer cancel()
+
+	// Propagate caller cancellation (e.g. an outer bound or SIGINT) into the
+	// independent context without importing the caller's deadline.
+	stop := context.AfterFunc(parent, cancel)
+	defer stop()
+
+	return fn(fixtureCtx, f)
 }
 
 // defaultTeardown is the production teardown path: destroy terraform

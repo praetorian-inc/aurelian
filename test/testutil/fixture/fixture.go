@@ -25,15 +25,15 @@ const (
 
 // Config holds the parameters needed to set up a Terraform fixture.
 type Config struct {
-	Provider    Provider
-	ModuleDir   string
-	FixtureDir  string
-	ExecPath    string
-	ContainerID string
-	StateKey    string
-	StateURI    string
+	Provider     Provider
+	ModuleDir    string
+	FixtureDir   string
+	ExecPath     string
+	ContainerID  string
+	StateKey     string
+	StateURI     string
 	ArtifactsURI string
-	InitOpts    []tfexec.InitOption
+	InitOpts     []tfexec.InitOption
 }
 
 // Fixture is the public interface for integration test fixtures.

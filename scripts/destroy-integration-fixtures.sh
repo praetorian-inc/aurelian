@@ -125,7 +125,7 @@ fi
 # Derive moduleDir (everything between STATE_PREFIX and /terraform.tfstate).
 declare -a MODULES=()
 for key in "${STATE_KEYS[@]}"; do
-  module="${key#${STATE_PREFIX}}"
+  module="${key#"${STATE_PREFIX}"}"
   module="${module%/terraform.tfstate}"
   MODULES+=("$module")
 done
