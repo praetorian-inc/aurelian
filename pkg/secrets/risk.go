@@ -71,7 +71,7 @@ func (r SecretScanResult) proofData() map[string]any {
 
 // ToRisk converts a scan result into an AurelianRisk with marshalled proof.
 func (r SecretScanResult) ToRisk() (output.AurelianRisk, error) {
-	proofBytes, err := json.MarshalIndent(r.proofData(), "", "  ")
+	proofBytes, err := json.Marshal(r.proofData())
 	if err != nil {
 		return output.AurelianRisk{}, fmt.Errorf("marshalling proof: %w", err)
 	}
