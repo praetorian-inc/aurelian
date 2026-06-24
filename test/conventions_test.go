@@ -10,6 +10,7 @@ package conventions_test
 
 import (
 	"go/ast"
+	"go/token"
 	"go/types"
 	"sort"
 	"strings"
@@ -101,11 +102,13 @@ func TestIntegrationFixturePackagesDrainViaRunTests(t *testing.T) {
 		if p.TypesInfo == nil || len(p.Syntax) == 0 {
 			continue
 		}
-		// Skip the fixture package itself and the testutil helpers: the former
-		// owns the lifecycle (and its own TestMain), the latter only defines the
-		// constructors (it deploys nothing at test time).
+		// Skip the fixture package itself: it legitimately calls NewBase from
+		// its own in-package tests and owns the canonical TestMain. Helper
+		// packages like test/testutil need no special-casing — the _test.go
+		// gate below means we only count fixtures actually deployed by a test,
+		// not constructors merely defined in a non-test helper file.
 		base := keyOf(p)
-		if base == fixturePkgPath || base == modulePath+"/test/testutil" {
+		if base == fixturePkgPath {
 			continue
 		}
 
@@ -116,6 +119,13 @@ func TestIntegrationFixturePackagesDrainViaRunTests(t *testing.T) {
 		}
 
 		for _, file := range p.Syntax {
+			// Only test files deploy fixtures at run time. A constructor wrapper
+			// defined in a non-test .go file does not run during `go test`, so it
+			// must not count as a deploy (it would force a needless TestMain and
+			// surprise contributors who factor helpers out of a test package).
+			if !isTestFile(p.Fset, file) {
+				continue
+			}
 			ast.Inspect(file, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok {
@@ -167,6 +177,16 @@ func TestIntegrationFixturePackagesDrainViaRunTests(t *testing.T) {
 			"Without it, the package's fixtures are never destroyed after a successful run (idle cloud cost).",
 			strings.Join(offenders, "\n  - "), fixturePkgPath)
 	}
+}
+
+// isTestFile reports whether the syntax file is a Go test file (its name ends
+// in _test.go). Resolved via the FileSet because *ast.File carries no path.
+func isTestFile(fset *token.FileSet, file *ast.File) bool {
+	if fset == nil {
+		return false
+	}
+	name := fset.File(file.Pos()).Name()
+	return strings.HasSuffix(name, "_test.go")
 }
 
 // isFixtureObj reports whether obj is the named object `name` declared in the

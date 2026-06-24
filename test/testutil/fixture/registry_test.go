@@ -101,12 +101,21 @@ func TestRegistry_DestroyAll_CallsTeardownForEach(t *testing.T) {
 }
 
 // TestRegistry_DestroyAll_PerFixtureBudgetIsIndependent guards the fix for the
-// context-starvation bug: each fixture must receive (close to) the full
-// perFixtureDestroyTimeout, not a slice of one shared budget that shrinks as
-// earlier fixtures consume it. We simulate a slow first teardown and assert the
-// second fixture's deadline is still ~perFixtureDestroyTimeout away.
+// context-starvation bug: each fixture's teardown deadline must be its own full
+// perFixtureDestroyTimeout, NOT derived from (and thus capped by) the caller's
+// remaining time.
+//
+// The test is constructed so it distinguishes the fix from the bug. The caller
+// context is given a deadline far SHORTER than perFixtureDestroyTimeout. Under
+// the old code (context.WithTimeout(ctx, perFixtureDestroyTimeout)) the child
+// deadline would be capped at the caller's ~2s remaining; under the fix
+// (rooted at context.Background via destroyOne) each fixture sees ~10m. We
+// assert the observed deadline is well beyond the caller's, which fails on the
+// old implementation and passes on the new one.
 func TestRegistry_DestroyAll_PerFixtureBudgetIsIndependent(t *testing.T) {
 	r := &registry{}
+
+	const callerBudget = 2 * time.Second
 
 	var mu sync.Mutex
 	remaining := map[string]time.Duration{}
@@ -119,31 +128,34 @@ func TestRegistry_DestroyAll_PerFixtureBudgetIsIndependent(t *testing.T) {
 		mu.Lock()
 		remaining[f.cfg.StateKey] = time.Until(dl)
 		mu.Unlock()
-		// Simulate a slow first teardown burning wall-clock that, under the old
-		// shared-context scheme, would have eaten into the second fixture's budget.
-		if f.cfg.StateKey == "slow" {
-			time.Sleep(75 * time.Millisecond)
-		}
 		return nil
 	}
 
-	r.register(&BaseFixture{cfg: Config{StateKey: "slow"}})
-	r.register(&BaseFixture{cfg: Config{StateKey: "fast"}})
+	r.register(&BaseFixture{cfg: Config{StateKey: "a"}})
+	r.register(&BaseFixture{cfg: Config{StateKey: "b"}})
 
-	if err := r.DestroyAll(context.Background()); err != nil {
+	// Caller deadline deliberately << perFixtureDestroyTimeout.
+	ctx, cancel := context.WithTimeout(context.Background(), callerBudget)
+	defer cancel()
+
+	if err := r.DestroyAll(ctx); err != nil {
 		t.Fatalf("DestroyAll: %v", err)
 	}
 
 	mu.Lock()
 	defer mu.Unlock()
-	// Every fixture should see nearly the full budget. Allow generous slack for
-	// scheduling, but far less than the ~75ms the slow fixture consumed — proving
-	// the budgets are not derived from one shrinking parent deadline.
-	const minExpected = perFixtureDestroyTimeout - time.Second
+	if len(remaining) != 2 {
+		t.Fatalf("want 2 fixtures torn down, got %d", len(remaining))
+	}
+	// Each fixture must see far more than the caller's tiny budget — i.e. its
+	// own independent perFixtureDestroyTimeout, not a slice of the caller's.
+	// Generous lower bound to tolerate scheduling jitter while still being well
+	// above callerBudget.
+	minExpected := callerBudget * 10
 	for key, rem := range remaining {
-		if rem < minExpected {
-			t.Errorf("fixture %s got only %v of its %v budget (deadline borrowed from a shared parent?)",
-				key, rem, perFixtureDestroyTimeout)
+		if rem <= minExpected {
+			t.Errorf("fixture %s teardown deadline only %v away (<= %v); budget appears derived from the caller context, not rooted independently",
+				key, rem, minExpected)
 		}
 	}
 }
