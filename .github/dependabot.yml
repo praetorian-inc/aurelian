@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Only watch the internal Praetorian dependency (github.com/praetorian-inc/titus).
+    # The AWS/Azure SDK surface is large and churns constantly, so it is intentionally
+    # excluded here to avoid PR noise.
+    allow:
+      - dependency-name: "github.com/praetorian-inc/titus"
+    commit-message:
+      prefix: "chore(deps)"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 5
