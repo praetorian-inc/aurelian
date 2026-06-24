@@ -21,12 +21,12 @@ func (f *BaseFixture) loadOutputs(ctx context.Context) error {
 }
 
 func (f *BaseFixture) deployStack(ctx context.Context, hash string) error {
-	f.t.Log("terraform fixture action: deploy start")
+	f.logf("terraform fixture action: deploy start")
 	err := f.ops.Apply(ctx)
 	if err != nil {
 		return fmt.Errorf("terraform apply: %w", err)
 	}
-	f.t.Log("terraform fixture action: deploy complete")
+	f.logf("terraform fixture action: deploy complete")
 
 	err = f.ops.UploadArtifacts(ctx)
 	if err != nil {
@@ -41,12 +41,16 @@ func (f *BaseFixture) deployStack(ctx context.Context, hash string) error {
 	return nil
 }
 
-func (f *BaseFixture) redeployStack(ctx context.Context, hash string) error {
-	f.t.Log("terraform fixture action: teardown start")
+// teardownStack destroys existing infrastructure using the most
+// authoritative source of .tf files — the artifacts snapshot in S3
+// if present, otherwise the local fixture directory — then deletes
+// the artifacts/ prefix from S3.
+func (f *BaseFixture) teardownStack(ctx context.Context) error {
+	f.logf("terraform fixture action: teardown start")
 
 	tmpDir, downloadErr := f.downloadArtifactsToTempDir(ctx)
 	if downloadErr != nil {
-		f.t.Logf("terraform fixture: failed to download remote artifacts, falling back to local destroy: %v", downloadErr)
+		f.logf("terraform fixture: failed to download remote artifacts, falling back to local destroy: %v", downloadErr)
 		if err := f.ops.Destroy(ctx); err != nil {
 			return fmt.Errorf("terraform destroy (fallback): %w", err)
 		}
@@ -70,7 +74,18 @@ func (f *BaseFixture) redeployStack(ctx context.Context, hash string) error {
 	if err := f.ops.DeleteArtifacts(ctx); err != nil {
 		return fmt.Errorf("delete fixture artifacts: %w", err)
 	}
-	f.t.Log("terraform fixture action: teardown complete")
+	f.logf("terraform fixture action: teardown complete")
+
+	return nil
+}
+
+// redeployStack tears down existing infrastructure and deploys fresh.
+// The remote destroy may have changed backend state, so the local
+// working directory is re-initialised before deploying.
+func (f *BaseFixture) redeployStack(ctx context.Context, hash string) error {
+	if err := f.teardownStack(ctx); err != nil {
+		return err
+	}
 
 	// Re-init local dir since remote artifact destroy may have changed backend state.
 	if err := f.ops.Init(ctx, f.cfg.InitOpts...); err != nil {
