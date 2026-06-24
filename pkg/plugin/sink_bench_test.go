@@ -31,9 +31,7 @@ func BenchmarkOutputCollect(b *testing.B) {
 			b.ReportAllocs()
 			for i := 0; i < b.N; i++ {
 				var results []model.AurelianModel // grow like Collect()
-				for _, it := range items {
-					results = append(results, it)
-				}
+				results = append(results, items...)
 				f := &JSONFormatter{Writer: io.Discard, Pretty: true}
 				if err := f.Format(results); err != nil {
 					b.Fatal(err)
