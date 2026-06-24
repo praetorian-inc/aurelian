@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/graph"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,4 +66,35 @@ func TestJSONLSink_AbortRemovesPartialFile(t *testing.T) {
 
 	_, statErr := os.Stat(path)
 	assert.True(t, os.IsNotExist(statErr), "Abort removes the partial file")
+}
+
+func TestNeo4jSink_SeedsOnlyGraphEntities(t *testing.T) {
+	mock := &mockGraphDB{}
+	gf := &GraphFormatter{db: mock, config: graph.NewConfig("bolt://x", "u", "p")}
+	s := newNeo4jSinkWithFormatter(gf)
+
+	// Mixed stream: a finding (ignored) + one node + one relationship (a rel
+	// carries its own start/end nodes, which GraphFormatter ensures internally).
+	require.NoError(t, s.Write(output.AurelianRisk{Name: "ignored-finding"}))
+	require.NoError(t, s.Write(output.AWSIAMResource{}))
+	require.NoError(t, s.Write(output.AWSIAMRelationship{Action: "iam:PassRole"}))
+
+	require.NoError(t, s.Close())
+
+	assert.NotEmpty(t, mock.nodesCreated, "graph entities are seeded")
+	assert.NotEmpty(t, mock.queries, "enrichment queries run")
+}
+
+func TestNeo4jSink_EmptyEntitiesIsNoOpNotError(t *testing.T) {
+	mock := &mockGraphDB{}
+	gf := &GraphFormatter{db: mock, config: graph.NewConfig("bolt://x", "u", "p")}
+	s := newNeo4jSinkWithFormatter(gf)
+
+	// analyze-graph case: only findings, no graph entities.
+	require.NoError(t, s.Write(output.AurelianRisk{Name: "risk-1"}))
+	require.NoError(t, s.Write(output.AurelianRisk{Name: "risk-2"}))
+
+	err := s.Close()
+	require.NoError(t, err, "empty graph-entity buffer must be a no-op, not an error")
+	assert.Empty(t, mock.nodesCreated, "nothing seeded when no graph entities present")
 }

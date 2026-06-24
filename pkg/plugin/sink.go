@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/utils"
 )
 
@@ -87,4 +89,64 @@ func (s *JSONLSink) Abort() error {
 	_ = s.f.Close()
 	s.f, s.w, s.enc = nil, nil, nil
 	return os.Remove(s.path)
+}
+
+// Neo4jSink buffers graph entities (AWSIAMResource / AWSIAMRelationship) as they
+// stream and seeds them into Neo4j in a single batch at Close. Seeding is inherently
+// batch (nodes -> relationships -> whole-graph enrichment), so it cannot stream; the
+// buffered entity set is bounded by AWS IAM account quotas. Non-graph results (e.g.
+// AurelianRisk from analyze-graph) are ignored, and an empty buffer is a logged
+// no-op rather than an error.
+type Neo4jSink struct {
+	gf     *GraphFormatter
+	buffer []model.AurelianModel
+}
+
+// NewNeo4jSink connects to Neo4j (verifying connectivity, so an unreachable URI
+// fails before the scan begins) and returns a sink that seeds on Close.
+func NewNeo4jSink(uri, username, password string) (*Neo4jSink, error) {
+	gf, err := NewGraphFormatter(uri, username, password)
+	if err != nil {
+		return nil, err
+	}
+	return newNeo4jSinkWithFormatter(gf), nil
+}
+
+// newNeo4jSinkWithFormatter wraps an already-constructed GraphFormatter. Used by
+// tests to inject a fake graph.GraphDatabase without a live connection.
+func newNeo4jSinkWithFormatter(gf *GraphFormatter) *Neo4jSink {
+	return &Neo4jSink{gf: gf}
+}
+
+func isGraphEntity(item model.AurelianModel) bool {
+	switch item.(type) {
+	case output.AWSIAMResource, output.AWSIAMRelationship:
+		return true
+	default:
+		return false
+	}
+}
+
+// Write buffers item only if it is a graph entity; all other types are ignored.
+func (s *Neo4jSink) Write(item model.AurelianModel) error {
+	if isGraphEntity(item) {
+		s.buffer = append(s.buffer, item)
+	}
+	return nil
+}
+
+// Close seeds the buffered graph entities into Neo4j, then closes the connection.
+// An empty buffer (no graph entities streamed) is a logged no-op, not an error.
+func (s *Neo4jSink) Close() error {
+	defer func() { _ = s.gf.Close() }()
+	if len(s.buffer) == 0 {
+		slog.Info("no graph entities in results, skipping Neo4j seeding")
+		return nil
+	}
+	return s.gf.Format(s.buffer)
+}
+
+// Abort closes the Neo4j connection without seeding.
+func (s *Neo4jSink) Abort() error {
+	return s.gf.Close()
 }
