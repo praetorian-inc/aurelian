@@ -363,6 +363,7 @@ func (f *BaseFixture) purgeModulePrefix(ctx context.Context) error {
 	bucket := stateBucket
 	prefix := filepath.ToSlash(filepath.Dir(f.cfg.StateKey)) + "/"
 
+	var partialErrs []error
 	var continuationToken *string
 	for {
 		listOutput, err := client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
@@ -391,17 +392,20 @@ func (f *BaseFixture) purgeModulePrefix(ctx context.Context) error {
 				if err != nil {
 					return fmt.Errorf("delete module prefix objects: %w", err)
 				}
+				// Record per-object failures but keep paginating: returning here
+				// would leave objects on pages 2+ undeleted, breaking the
+				// "prefix empty after destroy" contract on large fixtures.
 				if len(deleteOutput.Errors) > 0 {
 					e := deleteOutput.Errors[0]
-					return fmt.Errorf("delete module prefix objects: partial failure: key=%q code=%q message=%q (and %d more)",
-						aws.ToString(e.Key), aws.ToString(e.Code), aws.ToString(e.Message), len(deleteOutput.Errors)-1)
+					partialErrs = append(partialErrs, fmt.Errorf("delete module prefix objects: partial failure: key=%q code=%q message=%q (and %d more)",
+						aws.ToString(e.Key), aws.ToString(e.Code), aws.ToString(e.Message), len(deleteOutput.Errors)-1))
 				}
 			}
 		}
 
 		isTruncated := listOutput.IsTruncated != nil && *listOutput.IsTruncated
 		if !isTruncated {
-			return nil
+			return errors.Join(partialErrs...)
 		}
 
 		continuationToken = listOutput.NextContinuationToken
