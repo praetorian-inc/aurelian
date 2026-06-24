@@ -346,10 +346,16 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 	}
 
 	// Finalize sinks in order: JSONL first (file survives a later Neo4j failure).
+	// Always attempt to close every sink so a later sink's connection is released
+	// even if an earlier sink's Close fails; return the first error encountered.
+	var closeErr error
 	for _, s := range sinks {
-		if err := s.Close(); err != nil {
-			return err
+		if err := s.Close(); err != nil && closeErr == nil {
+			closeErr = err
 		}
+	}
+	if closeErr != nil {
+		return closeErr
 	}
 
 	if count > 0 {
