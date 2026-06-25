@@ -160,7 +160,7 @@ func TestRunModule_StreamsJSONLToFile(t *testing.T) {
 		PlatformValue: plugin.PlatformAWS,
 		CategoryValue: plugin.CategoryRecon,
 		RunFn: func(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
-			for i := 0; i < n; i++ {
+			for i := range n {
 				out.Send(output.AurelianRisk{
 					Name:               "aws-secret-finding",
 					Severity:           output.RiskSeverityHigh,
@@ -257,7 +257,7 @@ func TestRunModule_UnreachableNeo4jStillWritesJSONL(t *testing.T) {
 		PlatformValue: plugin.PlatformAWS,
 		CategoryValue: plugin.CategoryRecon,
 		RunFn: func(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
-			for i := 0; i < n; i++ {
+			for i := range n {
 				out.Send(output.AurelianRisk{Name: "finding", ImpactedResourceID: "r-" + string(rune('A'+i))})
 			}
 			return nil

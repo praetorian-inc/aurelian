@@ -332,12 +332,10 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 	for item := range p2.Range() {
 		for _, s := range sinks {
 			if err := s.Write(item); err != nil {
-				// Drain the rest so the unbuffered pipeline producer never blocks,
-				// then surface both the write error and any producer error.
-				for range p2.Range() {
-				}
 				abortAll()
-				return errors.Join(fmt.Errorf("writing output: %w", err), p2.Wait())
+				// Drain consumes the rest so the unbuffered producer never blocks,
+				// then Waits; surface both the write error and any producer error.
+				return errors.Join(fmt.Errorf("writing output: %w", err), p2.Drain())
 			}
 		}
 		count++
@@ -352,14 +350,12 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 	// Finalize sinks in order: JSONL first (file survives a later Neo4j failure).
 	// Always attempt to close every sink so a later sink's connection is released
 	// even if an earlier sink's Close fails; return the first error encountered.
-	var closeErr error
+	var closeErrs []error
 	for _, s := range sinks {
-		if err := s.Close(); err != nil && closeErr == nil {
-			closeErr = err
-		}
+		closeErrs = append(closeErrs, s.Close())
 	}
-	if closeErr != nil {
-		return closeErr
+	if err := errors.Join(closeErrs...); err != nil {
+		return err
 	}
 
 	if count > 0 {

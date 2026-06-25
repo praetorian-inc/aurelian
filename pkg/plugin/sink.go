@@ -36,6 +36,10 @@ type Sink interface {
 // observe a partial file. The temp file (and the parent directory) is created
 // lazily on the first Write, so a run that produces zero items leaves nothing
 // behind.
+//
+// The temp file is created in the same directory as the final path (required for
+// the atomic rename). Graceful Close/Abort always clean it up; only an ungraceful
+// kill (SIGKILL / power loss) can leave a "<name>.*.tmp" file behind.
 type JSONLSink struct {
 	path string
 	tmp  string
@@ -102,13 +106,13 @@ func (s *JSONLSink) Close() error {
 }
 
 // Abort closes and removes the temp file, leaving the final path untouched.
-// No-op if nothing was written.
+// No-op if nothing was written. The buffered writer is not flushed — its
+// contents are about to be discarded.
 func (s *JSONLSink) Abort() error {
 	if s.f == nil {
 		return nil
 	}
 	tmp := s.tmp
-	_ = s.w.Flush()
 	_ = s.f.Close()
 	s.f, s.w, s.enc, s.tmp = nil, nil, nil, ""
 	return os.Remove(tmp)
