@@ -129,13 +129,22 @@ func (s *SecretScanner) ScanAndFlush(in *pipeline.P[output.ScanInput], out *pipe
 	pipeline.Pipe(in, s.Scan, scanned, opts...)
 
 	go func() {
+		// Safety net: guarantees out is closed even if a stage below panics.
+		// No-op once CloseWithError/Close has already run (guarded by closeOnce).
 		defer out.Close()
+
 		for item := range scanned.Range() {
 			out.Send(item)
 		}
-		// Scan never returns an error (it logs and continues), so the scan
-		// stage cannot fail; drain the queue once all inputs are scanned.
-		_ = scanned.Wait()
+		// s.Scan itself never errors, but pipeline.Pipe records any upstream
+		// stage failure (e.g. a cloud lister/extractor) on the scanned stream
+		// via in.Wait(). Propagate it to out so the module reports failure
+		// instead of silent partial success.
+		if err := scanned.Wait(); err != nil {
+			out.CloseWithError(err)
+			return
+		}
+		// Drain the timed-out retry queue once all inputs are scanned.
 		if err := s.Flush(out); err != nil {
 			slog.Warn("failed to flush timed-out secret matches", "error", err)
 		}
@@ -166,35 +175,36 @@ func (s *SecretScanner) Flush(out *pipeline.P[SecretScanResult]) error {
 	return nil
 }
 
-// drainedToScanResult builds a SecretScanResult for a recovered match,
-// reconstructing the resource metadata from the provenance stored at scan time.
+// drainedToScanResult builds a SecretScanResult for a recovered match.
+// Recovered matches do not carry the original ScanInput, so the resource
+// metadata is reconstructed from the ExtendedProvenance stored at scan time and
+// fed through the same toScanResult constructor as immediate matches — keeping a
+// single place that maps metadata onto SecretScanResult.
 func (s *SecretScanner) drainedToScanResult(match *types.Match) SecretScanResult {
-	result := SecretScanResult{Match: match}
+	input := output.ScanInput{}
 
 	prov, err := s.ps.store.GetProvenance(match.BlobID)
 	if err != nil {
 		slog.Warn("failed to load provenance for recovered match", "blob", match.BlobID.Hex(), "error", err)
-		return result
+		return toScanResult(input, match)
 	}
 
-	ext, ok := prov.(types.ExtendedProvenance)
-	if !ok {
-		return result
-	}
-
-	str := func(key string) string {
-		if v, ok := ext.Payload[key].(string); ok {
-			return v
+	if ext, ok := prov.(types.ExtendedProvenance); ok {
+		str := func(key string) string {
+			if v, ok := ext.Payload[key].(string); ok {
+				return v
+			}
+			return ""
 		}
-		return ""
+		input.Platform = str("platform")
+		input.ResourceID = str("resource_id")
+		input.ResourceType = str("resource_type")
+		input.Region = str("region")
+		input.AccountID = str("account_id")
+		input.Label = str("subresource")
 	}
-	result.ResourceRef = str("resource_id")
-	result.ResourceType = str("resource_type")
-	result.Region = str("region")
-	result.AccountID = str("account_id")
-	result.Platform = str("platform")
-	result.Label = str("subresource")
-	return result
+
+	return toScanResult(input, match)
 }
 
 // validateMatch runs the validation engine against a match, populating its ValidationResult.

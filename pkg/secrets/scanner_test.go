@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -820,4 +821,33 @@ func TestSecretScanner_ScanAndFlush_EmitsBothImmediateAndRecovered(t *testing.T)
 	}
 	assert.True(t, sawRecovered, "ScanAndFlush must emit the recovered (timed-out) match")
 	assert.GreaterOrEqual(t, len(items), 2, "should emit both the immediate match(es) and the recovered match")
+}
+
+// TestSecretScanner_ScanAndFlush_PropagatesUpstreamError guards against the P1
+// regression: when an upstream stage feeding ScanAndFlush fails (e.g. a cloud
+// lister or extractor errors), that failure must reach the output pipeline so
+// the module reports failure rather than silent partial success.
+func TestSecretScanner_ScanAndFlush_PropagatesUpstreamError(t *testing.T) {
+	s := startScanner(t)
+	s.ps.matcher = &fakeMatcher{}
+
+	upstreamErr := errors.New("extractor blew up")
+
+	// An input pipeline that emits one item then fails, mimicking pipeline.Pipe
+	// recording an upstream error on the stream feeding ScanAndFlush.
+	in := pipeline.New[output.ScanInput]()
+	go func() {
+		in.Send(output.ScanInput{
+			Content:    []byte("nothing sensitive"),
+			ResourceID: "arn:aws:s3:::demo",
+			Label:      "a.txt",
+		})
+		in.CloseWithError(upstreamErr)
+	}()
+
+	out := pipeline.New[SecretScanResult]()
+	s.ScanAndFlush(in, out)
+
+	_, err := out.Collect()
+	require.ErrorIs(t, err, upstreamErr, "upstream pipeline error must propagate to out, not be discarded")
 }
