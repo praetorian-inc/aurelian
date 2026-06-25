@@ -152,7 +152,7 @@ func (s *SecretScanner) Flush(out *pipeline.P[SecretScanResult]) error {
 
 	matches, err := s.ps.drainTimedOut()
 	if err != nil {
-		return fmt.Errorf("failed to drain timed-out matches: %w", err)
+		return fmt.Errorf("flush: %w", err)
 	}
 
 	for _, match := range matches {
@@ -179,6 +179,7 @@ func (s *SecretScanner) scanInputFor(blobID types.BlobID) output.ScanInput {
 	}
 	ext, ok := prov.(types.ExtendedProvenance)
 	if !ok {
+		slog.Warn("unexpected provenance type for recovered match", "blob", blobID.Hex(), "type", fmt.Sprintf("%T", prov))
 		return output.ScanInput{}
 	}
 	return scanInputFromProvenance(ext)
