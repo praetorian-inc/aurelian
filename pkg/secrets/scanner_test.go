@@ -851,3 +851,27 @@ func TestSecretScanner_ScanAndFlush_PropagatesUpstreamError(t *testing.T) {
 	_, err := out.Collect()
 	require.ErrorIs(t, err, upstreamErr, "upstream pipeline error must propagate to out, not be discarded")
 }
+
+// TestProvenanceScanInputRoundTrip pins the invariant that the provenance
+// payload key set lives in exactly one place: a ScanInput written to provenance
+// at scan time must reconstruct identically on the drain path. If the two sides
+// ever drift, recovered matches silently lose resource metadata.
+func TestProvenanceScanInputRoundTrip(t *testing.T) {
+	input := output.ScanInput{
+		Platform:     "aws",
+		ResourceID:   "arn:aws:lambda:us-east-1:123456789012:function:demo",
+		ResourceType: "AWS::Lambda::Function",
+		Region:       "us-east-1",
+		AccountID:    "123456789012",
+		Label:        "handler.py",
+	}
+
+	got := scanInputFromProvenance(provenanceFromScanInput(input))
+
+	assert.Equal(t, input.Platform, got.Platform)
+	assert.Equal(t, input.ResourceID, got.ResourceID)
+	assert.Equal(t, input.ResourceType, got.ResourceType)
+	assert.Equal(t, input.Region, got.Region)
+	assert.Equal(t, input.AccountID, got.AccountID)
+	assert.Equal(t, input.Label, got.Label)
+}

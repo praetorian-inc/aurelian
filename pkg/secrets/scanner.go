@@ -90,18 +90,7 @@ func (s *SecretScanner) Scan(input output.ScanInput, out *pipeline.P[SecretScanR
 	}
 
 	blobID := types.ComputeBlobID(input.Content)
-	provenance := types.ExtendedProvenance{
-		Payload: map[string]any{
-			"platform":      input.Platform,
-			"resource_id":   input.ResourceID,
-			"resource_type": input.ResourceType,
-			"region":        input.Region,
-			"account_id":    input.AccountID,
-			"subresource":   input.Label,
-		},
-	}
-
-	matches, err := s.ps.scanContent(input.Content, blobID, provenance)
+	matches, err := s.ps.scanContent(input.Content, blobID, provenanceFromScanInput(input))
 	if err != nil {
 		slog.Warn("failed to scan content for secrets", "resource", input.ResourceID, "label", input.Label, "error", err)
 		return nil
@@ -167,44 +156,32 @@ func (s *SecretScanner) Flush(out *pipeline.P[SecretScanResult]) error {
 	}
 
 	for _, match := range matches {
+		// Recovered matches do not carry the original ScanInput; reconstruct it
+		// from the provenance stored at scan time so validation and the emitted
+		// result get the same resource metadata as the immediate-match path.
+		input := s.scanInputFor(match.BlobID)
 		if s.validate && s.engine != nil {
-			s.validateMatch(match, match.RuleID)
+			s.validateMatch(match, input.ResourceID)
 		}
-		out.Send(s.drainedToScanResult(match))
+		out.Send(toScanResult(input, match))
 	}
 	return nil
 }
 
-// drainedToScanResult builds a SecretScanResult for a recovered match.
-// Recovered matches do not carry the original ScanInput, so the resource
-// metadata is reconstructed from the ExtendedProvenance stored at scan time and
-// fed through the same toScanResult constructor as immediate matches — keeping a
-// single place that maps metadata onto SecretScanResult.
-func (s *SecretScanner) drainedToScanResult(match *types.Match) SecretScanResult {
-	input := output.ScanInput{}
-
-	prov, err := s.ps.store.GetProvenance(match.BlobID)
+// scanInputFor reconstructs the ScanInput for a recovered match from the
+// ExtendedProvenance stored when the blob was first scanned. Returns a zero
+// ScanInput (and logs) if provenance is unavailable.
+func (s *SecretScanner) scanInputFor(blobID types.BlobID) output.ScanInput {
+	prov, err := s.ps.store.GetProvenance(blobID)
 	if err != nil {
-		slog.Warn("failed to load provenance for recovered match", "blob", match.BlobID.Hex(), "error", err)
-		return toScanResult(input, match)
+		slog.Warn("failed to load provenance for recovered match", "blob", blobID.Hex(), "error", err)
+		return output.ScanInput{}
 	}
-
-	if ext, ok := prov.(types.ExtendedProvenance); ok {
-		str := func(key string) string {
-			if v, ok := ext.Payload[key].(string); ok {
-				return v
-			}
-			return ""
-		}
-		input.Platform = str("platform")
-		input.ResourceID = str("resource_id")
-		input.ResourceType = str("resource_type")
-		input.Region = str("region")
-		input.AccountID = str("account_id")
-		input.Label = str("subresource")
+	ext, ok := prov.(types.ExtendedProvenance)
+	if !ok {
+		return output.ScanInput{}
 	}
-
-	return toScanResult(input, match)
+	return scanInputFromProvenance(ext)
 }
 
 // validateMatch runs the validation engine against a match, populating its ValidationResult.
@@ -226,5 +203,39 @@ func toScanResult(input output.ScanInput, match *types.Match) SecretScanResult {
 		Platform:     input.Platform,
 		Label:        input.Label,
 		Match:        match,
+	}
+}
+
+// provenanceFromScanInput and scanInputFromProvenance are inverses: they map a
+// ScanInput's resource metadata to/from the ExtendedProvenance payload stored
+// with each blob. Keeping the payload key set in this one pair prevents the
+// scan-time and drain-time sides from drifting and silently losing metadata.
+func provenanceFromScanInput(input output.ScanInput) types.ExtendedProvenance {
+	return types.ExtendedProvenance{
+		Payload: map[string]any{
+			"platform":      input.Platform,
+			"resource_id":   input.ResourceID,
+			"resource_type": input.ResourceType,
+			"region":        input.Region,
+			"account_id":    input.AccountID,
+			"subresource":   input.Label,
+		},
+	}
+}
+
+func scanInputFromProvenance(prov types.ExtendedProvenance) output.ScanInput {
+	str := func(key string) string {
+		if v, ok := prov.Payload[key].(string); ok {
+			return v
+		}
+		return ""
+	}
+	return output.ScanInput{
+		Platform:     str("platform"),
+		ResourceID:   str("resource_id"),
+		ResourceType: str("resource_type"),
+		Region:       str("region"),
+		AccountID:    str("account_id"),
+		Label:        str("subresource"),
 	}
 }
