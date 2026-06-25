@@ -3,10 +3,7 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
-      # titus ships faster than weekly (historically several tags/week, recently
-      # every ~4-5 days), so poll daily to stay current. Scoped to one dep, so
-      # Dependabot keeps a single rolling PR rather than stacking many.
-      interval: "daily"
+      interval: "weekly"
     # Only watch the internal Praetorian dependency (github.com/praetorian-inc/titus).
     # The AWS/Azure SDK surface is large and churns constantly, so it is intentionally
     # excluded here to avoid PR noise.
