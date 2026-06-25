@@ -116,6 +116,87 @@ func (s *SecretScanner) Scan(input output.ScanInput, out *pipeline.P[SecretScanR
 	return nil
 }
 
+// ScanAndFlush runs Scan over every input and then flushes any timed-out retry
+// matches into the same output pipeline, closing out when complete. It is a
+// drop-in replacement for `pipeline.Pipe(in, s.Scan, out, opts...)` that also
+// drains Titus' deferred-retry queue, so secrets that hit the regexp timeout
+// path are not silently dropped. Like pipeline.Pipe it returns immediately and
+// runs asynchronously, closing out when done. The drain runs only after every
+// Scan has completed, since the matcher's queue is shared across all scanned
+// blobs.
+func (s *SecretScanner) ScanAndFlush(in *pipeline.P[output.ScanInput], out *pipeline.P[SecretScanResult], opts ...*pipeline.PipeOpts) {
+	scanned := pipeline.New[SecretScanResult]()
+	pipeline.Pipe(in, s.Scan, scanned, opts...)
+
+	go func() {
+		defer out.Close()
+		for item := range scanned.Range() {
+			out.Send(item)
+		}
+		// Scan never returns an error (it logs and continues), so the scan
+		// stage cannot fail; drain the queue once all inputs are scanned.
+		_ = scanned.Wait()
+		if err := s.Flush(out); err != nil {
+			slog.Warn("failed to flush timed-out secret matches", "error", err)
+		}
+	}()
+}
+
+// Flush recovers matches that hit Titus' regexp timeout retry path and emits
+// them to the output pipeline. Titus withholds such matches from the per-blob
+// Scan results and queues them behind the matcher's drain; without Flush they
+// are silently dropped. Call once after all Scan calls have completed and
+// before the output pipeline is closed.
+func (s *SecretScanner) Flush(out *pipeline.P[SecretScanResult]) error {
+	if s.ps == nil {
+		return nil
+	}
+
+	matches, err := s.ps.drainTimedOut()
+	if err != nil {
+		return fmt.Errorf("failed to drain timed-out matches: %w", err)
+	}
+
+	for _, match := range matches {
+		if s.validate && s.engine != nil {
+			s.validateMatch(match, match.RuleID)
+		}
+		out.Send(s.drainedToScanResult(match))
+	}
+	return nil
+}
+
+// drainedToScanResult builds a SecretScanResult for a recovered match,
+// reconstructing the resource metadata from the provenance stored at scan time.
+func (s *SecretScanner) drainedToScanResult(match *types.Match) SecretScanResult {
+	result := SecretScanResult{Match: match}
+
+	prov, err := s.ps.store.GetProvenance(match.BlobID)
+	if err != nil {
+		slog.Warn("failed to load provenance for recovered match", "blob", match.BlobID.Hex(), "error", err)
+		return result
+	}
+
+	ext, ok := prov.(types.ExtendedProvenance)
+	if !ok {
+		return result
+	}
+
+	str := func(key string) string {
+		if v, ok := ext.Payload[key].(string); ok {
+			return v
+		}
+		return ""
+	}
+	result.ResourceRef = str("resource_id")
+	result.ResourceType = str("resource_type")
+	result.Region = str("region")
+	result.AccountID = str("account_id")
+	result.Platform = str("platform")
+	result.Label = str("subresource")
+	return result
+}
+
 // validateMatch runs the validation engine against a match, populating its ValidationResult.
 func (s *SecretScanner) validateMatch(match *types.Match, resourceID string) {
 	result, err := s.engine.ValidateMatch(context.Background(), match)

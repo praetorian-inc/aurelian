@@ -110,7 +110,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	})
 
 	scanned := pipeline.New[secrets.SecretScanResult]()
-	pipeline.Pipe(extracted, s.Scan, scanned, &pipeline.PipeOpts{
+	s.ScanAndFlush(extracted, scanned, &pipeline.PipeOpts{
 		Progress: cfg.Log.ProgressFunc("scanning for secrets"),
 	})
 	pipeline.Pipe(scanned, secrets.RiskFromScanResult, out)
