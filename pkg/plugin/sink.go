@@ -94,9 +94,15 @@ func (s *JSONLSink) Abort() error {
 // Neo4jSink buffers graph entities (AWSIAMResource / AWSIAMRelationship) as they
 // stream and seeds them into Neo4j in a single batch at Close. Seeding is inherently
 // batch (nodes -> relationships -> whole-graph enrichment), so it cannot stream; the
-// buffered entity set is bounded by AWS IAM account quotas. Non-graph results (e.g.
-// AurelianRisk from analyze-graph) are ignored, and an empty buffer is a logged
-// no-op rather than an error.
+// buffered entity set is bounded by AWS IAM account quotas.
+//
+// Content gate (the routing contract this sink owns): only graph entities are
+// buffered; non-graph results (e.g. AurelianRisk) are ignored. So `recon graph`,
+// which emits AWSIAMResource/AWSIAMRelationship, seeds the graph, while
+// `analyze graph`, which reads the graph and emits only AurelianRisk findings,
+// streams to JSONL with an empty buffer here -> Close is a logged no-op, NOT an
+// error. Neo4j is always an *additive* sink: the JSONL file is written regardless,
+// and seeding never replaces it.
 type Neo4jSink struct {
 	gf     *GraphFormatter
 	buffer []model.AurelianModel

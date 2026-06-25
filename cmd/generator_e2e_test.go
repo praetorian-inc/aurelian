@@ -119,3 +119,45 @@ func TestRunModule_NoPartialFileOnProducerError(t *testing.T) {
 	require.NoError(t, globErr)
 	assert.Empty(t, matches, "partial output file must be removed on producer error")
 }
+
+// TestRunModule_UnreachableNeo4jStillWritesJSONL: Neo4j is an additive, best-effort
+// sink. An unreachable --neo4j-uri must NOT fail the run or suppress the JSONL file;
+// the connection failure is logged and the Neo4j sink is skipped. (Modules that
+// *require* a graph as input, e.g. analyze-graph, validate their own connection in
+// Run and fail there independently of this sink.)
+func TestRunModule_UnreachableNeo4jStillWritesJSONL(t *testing.T) {
+	tmpDir := t.TempDir()
+	cmd := newE2ECommand(t, tmpDir)
+	// Point at a closed port so connectivity verification fails fast.
+	require.NoError(t, cmd.Flags().Set("neo4j-uri", "bolt://127.0.0.1:1"))
+
+	const n = 3
+	mod := &testutils.MockModule{
+		IDValue:       "e2e-neo4j-down",
+		PlatformValue: plugin.PlatformAWS,
+		CategoryValue: plugin.CategoryRecon,
+		RunFn: func(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
+			for i := 0; i < n; i++ {
+				out.Send(output.AurelianRisk{Name: "finding", ImpactedResourceID: "r-" + string(rune('A'+i))})
+			}
+			return nil
+		},
+	}
+
+	require.NoError(t, runModule(cmd, mod, plugin.PlatformAWS),
+		"unreachable Neo4j must not fail the run")
+
+	matches, err := filepath.Glob(filepath.Join(tmpDir, "e2e-neo4j-down-*.jsonl"))
+	require.NoError(t, err)
+	require.Len(t, matches, 1, "JSONL file is written even when Neo4j is unreachable")
+
+	data, err := os.ReadFile(matches[0])
+	require.NoError(t, err)
+	lines := 0
+	for _, b := range data {
+		if b == '\n' {
+			lines++
+		}
+	}
+	assert.Equal(t, n, lines, "all findings still streamed to JSONL")
+}

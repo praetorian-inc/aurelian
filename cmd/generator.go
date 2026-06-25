@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,7 +12,6 @@ import (
 	"time"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
-	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/spf13/cobra"
@@ -295,8 +295,13 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		outputPath = filepath.Join(outputDir, filename)
 	}
 
-	// JSONL file is the always-on sink. Neo4j is additive when --neo4j-uri is set;
-	// it is constructed BEFORE the stream loop so an unreachable Neo4j fails fast.
+	// JSONL file is the always-on sink. Neo4j is an additive, best-effort sink
+	// when --neo4j-uri is set: the JSONL file is always written, and an
+	// unreachable Neo4j is logged and skipped rather than failing the whole run
+	// (matching the pre-streaming behavior where the file was written first and
+	// Neo4j seeding was a bonus). Modules that *require* a graph as their input
+	// (e.g. `analyze graph`) open and validate their own connection in Run, so
+	// they still fail loudly when Neo4j is down — independent of this sink.
 	jsonl := plugin.NewJSONLSink(outputPath)
 	sinks := []plugin.Sink{jsonl}
 	if uri, _ := argsMap["neo4j-uri"].(string); uri != "" {
@@ -310,10 +315,10 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		}
 		neo, err := plugin.NewNeo4jSink(uri, username, password)
 		if err != nil {
-			_ = jsonl.Abort()
-			return fmt.Errorf("connecting to Neo4j: %w", err)
+			log.Warn("Neo4j unreachable at %s, skipping graph seeding (JSON output unaffected): %v", uri, err)
+		} else {
+			sinks = append(sinks, neo)
 		}
-		sinks = append(sinks, neo)
 	}
 
 	abortAll := func() {
@@ -328,12 +333,11 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 		for _, s := range sinks {
 			if err := s.Write(item); err != nil {
 				// Drain the rest so the unbuffered pipeline producer never blocks,
-				// then surface its error too.
+				// then surface both the write error and any producer error.
 				for range p2.Range() {
 				}
 				abortAll()
-				_ = p2.Wait()
-				return fmt.Errorf("writing output: %w", err)
+				return errors.Join(fmt.Errorf("writing output: %w", err), p2.Wait())
 			}
 		}
 		count++
@@ -365,19 +369,4 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 	}
 
 	return nil
-}
-
-// resultsContainGraphEntities reports whether the results contain at least one
-// graph entity (an AWSIAMResource or AWSIAMRelationship) that GraphFormatter can
-// seed into Neo4j. This mirrors GraphFormatter.Format's own collection contract,
-// so it cleanly distinguishes "seed the graph" (recon graph) from "read the
-// graph + emit findings" (analyze graph → AurelianRisk → no entities).
-func resultsContainGraphEntities(results []model.AurelianModel) bool {
-	for _, result := range results {
-		switch result.(type) {
-		case output.AWSIAMResource, output.AWSIAMRelationship:
-			return true
-		}
-	}
-	return false
 }
