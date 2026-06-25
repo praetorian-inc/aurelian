@@ -143,10 +143,10 @@ func removeOldDocs(docsPath string) error {
 
 func replaceFileNameOptDefaults(cmd *cobra.Command) {
 	if fileFlag := cmd.Flags().Lookup("file"); fileFlag != nil {
-		// Look for pattern like "something-1234567890.json"
-		re := regexp.MustCompile(`-\d{10}\.json`)
+		// Look for pattern like "something-1234567890.jsonl"
+		re := regexp.MustCompile(`-\d{10}\.jsonl`)
 		if re.MatchString(fileFlag.DefValue) {
-			fileFlag.DefValue = re.ReplaceAllString(fileFlag.DefValue, "-<timestamp>.json")
+			fileFlag.DefValue = re.ReplaceAllString(fileFlag.DefValue, "-<timestamp>.jsonl")
 		}
 	}
 

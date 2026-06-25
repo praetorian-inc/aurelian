@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,10 +12,8 @@ import (
 	"time"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
-	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
-	"github.com/praetorian-inc/aurelian/pkg/utils"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -286,85 +285,84 @@ func runModule(cmd *cobra.Command, module plugin.Module, platform plugin.Platfor
 	p2 := pipeline.New[model.AurelianModel]()
 	pipeline.Pipe(p1, module.Run, p2)
 
-	results, err := p2.Collect()
-	if err != nil {
+	// Resolve the output file path.
+	var outputPath string
+	if outputFile != "" {
+		outputPath = outputFile
+	} else {
+		timestamp := time.Now().Format("20060102-150405")
+		filename := fmt.Sprintf("%s-%s%s", module.ID(), timestamp, ".jsonl")
+		outputPath = filepath.Join(outputDir, filename)
+	}
+
+	// JSONL file is the always-on sink. Neo4j is an additive, best-effort sink
+	// when --neo4j-uri is set: the JSONL file is always written, and an
+	// unreachable Neo4j is logged and skipped rather than failing the whole run
+	// (matching the pre-streaming behavior where the file was written first and
+	// Neo4j seeding was a bonus). Modules that *require* a graph as their input
+	// (e.g. `analyze graph`) open and validate their own connection in Run, so
+	// they still fail loudly when Neo4j is down — independent of this sink.
+	jsonl := plugin.NewJSONLSink(outputPath)
+	sinks := []plugin.Sink{jsonl}
+	if uri, _ := argsMap["neo4j-uri"].(string); uri != "" {
+		username, _ := argsMap["neo4j-username"].(string)
+		if username == "" {
+			username = "neo4j"
+		}
+		password, _ := argsMap["neo4j-password"].(string)
+		if password == "" {
+			password = "neo4j"
+		}
+		neo, err := plugin.NewNeo4jSink(uri, username, password)
+		if err != nil {
+			log.Warn("Neo4j unreachable at %s, skipping graph seeding (JSON output unaffected): %v", uri, err)
+		} else {
+			sinks = append(sinks, neo)
+		}
+	}
+
+	abortAll := func() {
+		for _, s := range sinks {
+			_ = s.Abort()
+		}
+	}
+
+	// Stream each result to every sink as it is produced.
+	count := 0
+	for item := range p2.Range() {
+		for _, s := range sinks {
+			if err := s.Write(item); err != nil {
+				abortAll()
+				// Drain consumes the rest so the unbuffered producer never blocks,
+				// then Waits; surface both the write error and any producer error.
+				return errors.Join(fmt.Errorf("writing output: %w", err), p2.Drain())
+			}
+		}
+		count++
+	}
+
+	// Surface a producer error before finalizing sinks; discard any partial output.
+	if err := p2.Wait(); err != nil {
+		abortAll()
 		return err
 	}
 
-	// Output results if there are any
-	if len(results) > 0 {
-		// Always write the JSON output file first.
-		// Determine output file path
-		var outputPath string
-		if outputFile != "" {
-			// User specified explicit file — use as-is
-			outputPath = outputFile
-		} else {
-			// Auto-generate: {output-dir}/{moduleID}-{timestamp}.{ext}
-			timestamp := time.Now().Format("20060102-150405")
-			filename := fmt.Sprintf("%s-%s%s", module.ID(), timestamp, ".json")
-			outputPath = filepath.Join(outputDir, filename)
-		}
+	// Finalize sinks in order: JSONL first (file survives a later Neo4j failure).
+	// Always attempt to close every sink so a later sink's connection is released
+	// even if an earlier sink's Close fails; return the first error encountered.
+	var closeErrs []error
+	for _, s := range sinks {
+		closeErrs = append(closeErrs, s.Close())
+	}
+	if err := errors.Join(closeErrs...); err != nil {
+		return err
+	}
 
-		// Ensure the output directory exists
-		if err := utils.EnsureFileDirectory(outputPath); err != nil {
-			return fmt.Errorf("failed to create output directory: %w", err)
-		}
-
-		f, err := os.Create(outputPath)
-		if err != nil {
-			return fmt.Errorf("failed to create output file: %w", err)
-		}
-		defer func() { _ = f.Close() }()
-
-		formatter := &plugin.JSONFormatter{Writer: f, Pretty: true}
-		if err := formatter.Format(results); err != nil {
-			return fmt.Errorf("failed to format output: %w", err)
-		}
-
-		log.Success("output written to %s", outputPath)
-
-		// Additionally seed Neo4j when the user supplied a --neo4j-uri AND the
-		// results actually contain graph entities. This makes Neo4j an additive
-		// sink alongside the JSON file. We gate on result CONTENT (not the flag
-		// alone) so that modules which only READ the graph and emit findings
-		// (e.g. `analyze graph` → AurelianRisk) skip seeding — they have no
-		// entities to seed, and their JSON findings are already written above.
-		if uri, _ := argsMap["neo4j-uri"].(string); uri != "" && resultsContainGraphEntities(results) {
-			username, _ := argsMap["neo4j-username"].(string)
-			if username == "" {
-				username = "neo4j"
-			}
-			password, _ := argsMap["neo4j-password"].(string)
-			if password == "" {
-				password = "neo4j"
-			}
-			graphFormatter, err := plugin.NewGraphFormatter(uri, username, password)
-			if err != nil {
-				return fmt.Errorf("connecting to Neo4j: %w", err)
-			}
-			defer func() { _ = graphFormatter.Close() }()
-			if err := graphFormatter.Format(results); err != nil {
-				return fmt.Errorf("writing results to Neo4j: %w", err)
-			}
-			log.Success("results also written to Neo4j at %s", uri)
-		}
+	if count > 0 {
+		log.Success("output written to %s (%d results)", outputPath, count)
+	} else {
+		slog.Debug("no results produced, no output file written")
 	}
 
 	return nil
-}
-
-// resultsContainGraphEntities reports whether the results contain at least one
-// graph entity (an AWSIAMResource or AWSIAMRelationship) that GraphFormatter can
-// seed into Neo4j. This mirrors GraphFormatter.Format's own collection contract,
-// so it cleanly distinguishes "seed the graph" (recon graph) from "read the
-// graph + emit findings" (analyze graph → AurelianRisk → no entities).
-func resultsContainGraphEntities(results []model.AurelianModel) bool {
-	for _, result := range results {
-		switch result.(type) {
-		case output.AWSIAMResource, output.AWSIAMRelationship:
-			return true
-		}
-	}
-	return false
 }
