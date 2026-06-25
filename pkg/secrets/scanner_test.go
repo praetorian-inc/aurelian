@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -576,4 +577,301 @@ func TestSecretScanner_ScanSkipsMultipleIgnoredPaths(t *testing.T) {
 			assert.Empty(t, items, "expected %s to be ignored", label)
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Timed-out retry drain tests
+//
+// Titus v1.2+ defers matches that hit the regexp timeout retry path: they are
+// withheld from MatchWithBlobID and only recoverable via Matcher.DrainTimedOut.
+// These tests guarantee Aurelian drains that queue so those secrets are not
+// silently dropped.
+// ---------------------------------------------------------------------------
+
+// fakeMatcher implements matcher.Matcher and lets a test control exactly which
+// matches surface from MatchWithBlobID vs. the deferred DrainTimedOut queue.
+type fakeMatcher struct {
+	immediate    []*types.Match
+	queued       []*types.Match // surfaced once, via DrainTimedOut
+	drainErr     error
+	drainedCalls int
+}
+
+func (f *fakeMatcher) Match(content []byte) ([]*types.Match, error) {
+	return f.immediate, nil
+}
+
+func (f *fakeMatcher) MatchWithBlobID(content []byte, blobID types.BlobID) ([]*types.Match, error) {
+	return f.immediate, nil
+}
+
+// DrainTimedOut returns the queued matches once, mirroring the real matcher
+// which empties its retry queue on drain.
+func (f *fakeMatcher) DrainTimedOut() ([]*types.Match, error) {
+	f.drainedCalls++
+	q := f.queued
+	f.queued = nil
+	return q, f.drainErr
+}
+
+func (f *fakeMatcher) Close() error { return nil }
+
+func TestPersistentScanner_DrainTimedOut_StoresAndReturnsRecoveredMatches(t *testing.T) {
+	s := startScanner(t)
+
+	// Scan real content so a blob and a real rule match are registered in the
+	// store; the drained match must reference an existing blob + known rule.
+	content := []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF")
+	blobID := types.ComputeBlobID(content)
+	provenance := types.FileProvenance{FilePath: "creds.txt"}
+
+	real, err := s.ps.scanContent(content, blobID, provenance)
+	require.NoError(t, err)
+	require.NotEmpty(t, real, "fixture scan should produce at least one real match to borrow a RuleID from")
+	ruleID := real[0].RuleID
+
+	// Build a recovered match that the matcher only surfaces via DrainTimedOut.
+	recovered := &types.Match{
+		BlobID:   blobID,
+		RuleID:   ruleID,
+		RuleName: real[0].RuleName,
+		Groups:   [][]byte{[]byte("AKIADEADBEEFDEADBEEF_retry")},
+		Snippet: types.Snippet{
+			Matching: []byte("AKIADEADBEEFDEADBEEF"),
+		},
+	}
+
+	fake := &fakeMatcher{queued: []*types.Match{recovered}}
+	s.ps.matcher = fake
+
+	drained, err := s.ps.drainTimedOut()
+	require.NoError(t, err, "drainTimedOut should succeed")
+	require.Equal(t, 1, fake.drainedCalls, "drainTimedOut must call the matcher's DrainTimedOut")
+	require.Len(t, drained, 1, "recovered match should be returned, not dropped")
+
+	// The recovered match must be persisted (with a finding), exactly like an
+	// immediate match would be.
+	stored, err := s.ps.store.GetMatches(blobID)
+	require.NoError(t, err)
+	var found bool
+	for _, m := range stored {
+		for _, g := range m.Groups {
+			if string(g) == "AKIADEADBEEFDEADBEEF_retry" {
+				found = true
+			}
+		}
+	}
+	assert.True(t, found, "recovered match should be persisted to the store")
+}
+
+func TestPersistentScanner_DrainTimedOut_PropagatesMatcherError(t *testing.T) {
+	s := startScanner(t)
+
+	s.ps.matcher = &fakeMatcher{drainErr: assert.AnError}
+
+	_, err := s.ps.drainTimedOut()
+	require.Error(t, err, "drain error from the matcher must surface, not be swallowed")
+}
+
+func TestSecretScanner_Flush_EmitsRecoveredMatches(t *testing.T) {
+	s := startScanner(t)
+
+	// Register a blob and borrow a real RuleID, as above.
+	content := []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF")
+	blobID := types.ComputeBlobID(content)
+	real, err := s.ps.scanContent(content, blobID, types.FileProvenance{FilePath: "creds.txt"})
+	require.NoError(t, err)
+	require.NotEmpty(t, real)
+
+	recovered := &types.Match{
+		BlobID:   blobID,
+		RuleID:   real[0].RuleID,
+		RuleName: real[0].RuleName,
+		Groups:   [][]byte{[]byte("AKIADEADBEEFDEADBEEF_retry")},
+		Snippet:  types.Snippet{Matching: []byte("AKIADEADBEEFDEADBEEF")},
+	}
+	s.ps.matcher = &fakeMatcher{queued: []*types.Match{recovered}}
+
+	out := pipeline.New[SecretScanResult]()
+	go func() {
+		defer out.Close()
+		require.NoError(t, s.Flush(out))
+	}()
+
+	items, err := out.Collect()
+	require.NoError(t, err)
+	require.Len(t, items, 1, "Flush must emit recovered matches to the output pipeline")
+	assert.Same(t, recovered, items[0].Match, "emitted result should carry the recovered match")
+}
+
+func TestSecretScanner_Flush_NoScannerIsNoOp(t *testing.T) {
+	var s SecretScanner
+	out := pipeline.New[SecretScanResult]()
+	go func() {
+		defer out.Close()
+		assert.NoError(t, s.Flush(out), "Flush before Start should be a safe no-op")
+	}()
+	items, err := out.Collect()
+	require.NoError(t, err)
+	assert.Empty(t, items)
+}
+
+// TestSecretScanner_Flush_EmptyDrainEmitsNothing covers the common case: a scan
+// with zero timeouts. Flush must drain an empty queue, emit nothing, and close
+// cleanly. This path runs on virtually every real scan.
+func TestSecretScanner_Flush_EmptyDrainEmitsNothing(t *testing.T) {
+	s := startScanner(t)
+	s.ps.matcher = &fakeMatcher{} // no queued matches
+
+	out := pipeline.New[SecretScanResult]()
+	go func() {
+		defer out.Close()
+		require.NoError(t, s.Flush(out))
+	}()
+
+	items, err := out.Collect()
+	require.NoError(t, err)
+	assert.Empty(t, items, "Flush with no timed-out matches must emit nothing")
+}
+
+// TestSecretScanner_Flush_EmitsRecoveredMatchEvenWhenProvenanceMissing pins the
+// fix's core guarantee: a recovered match is never dropped. Even when provenance
+// lookup yields no usable metadata, the match must still be emitted (just
+// without resource attribution) rather than silently discarded.
+func TestSecretScanner_Flush_EmitsRecoveredMatchEvenWhenProvenanceMissing(t *testing.T) {
+	s := startScanner(t)
+
+	// A recovered match for a blob that was never scanned, so the store has no
+	// provenance for it.
+	unknownBlob := types.ComputeBlobID([]byte("never-scanned-content"))
+	content := []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF")
+	real, err := s.ps.scanContent(content, types.ComputeBlobID(content), types.FileProvenance{FilePath: "x.txt"})
+	require.NoError(t, err)
+	require.NotEmpty(t, real)
+
+	recovered := &types.Match{
+		BlobID:   unknownBlob,
+		RuleID:   real[0].RuleID,
+		RuleName: real[0].RuleName,
+		Groups:   [][]byte{[]byte("AKIADEADBEEFDEADBEEF_orphan")},
+		Snippet:  types.Snippet{Matching: []byte("AKIADEADBEEFDEADBEEF")},
+	}
+	// AddBlob so storeMatchAndFinding's FK is satisfied, but add NO provenance.
+	require.NoError(t, s.ps.store.AddBlob(unknownBlob, int64(len(content))))
+	s.ps.matcher = &fakeMatcher{queued: []*types.Match{recovered}}
+
+	out := pipeline.New[SecretScanResult]()
+	go func() {
+		defer out.Close()
+		require.NoError(t, s.Flush(out))
+	}()
+
+	items, err := out.Collect()
+	require.NoError(t, err)
+	require.Len(t, items, 1, "recovered match must still be emitted when provenance is missing")
+	assert.Same(t, recovered, items[0].Match, "the recovered match itself must survive")
+	assert.Empty(t, items[0].ResourceRef, "metadata is absent without provenance, but the match is not dropped")
+}
+
+func TestSecretScanner_ScanAndFlush_EmitsBothImmediateAndRecovered(t *testing.T) {
+	s := startScanner(t)
+
+	// Register the blob so the recovered match references an existing blob, and
+	// borrow a real RuleID. Scan via the public path so provenance is stored.
+	content := []byte("aws_access_key_id=AKIADEADBEEFDEADBEEF")
+	blobID := types.ComputeBlobID(content)
+	input := output.ScanInput{
+		Content:      content,
+		ResourceID:   "arn:aws:lambda:us-east-1:123456789012:function:demo",
+		ResourceType: "AWS::Lambda::Function",
+		Region:       "us-east-1",
+		AccountID:    "123456789012",
+		Label:        "handler.py",
+	}
+
+	// Prime the store + capture a real RuleID by scanning once directly.
+	real, err := s.ps.scanContent(content, blobID, types.ExtendedProvenance{Payload: map[string]any{
+		"resource_id": input.ResourceID, "subresource": input.Label,
+	}})
+	require.NoError(t, err)
+	require.NotEmpty(t, real)
+
+	recovered := &types.Match{
+		BlobID:   blobID,
+		RuleID:   real[0].RuleID,
+		RuleName: real[0].RuleName,
+		Groups:   [][]byte{[]byte("AKIADEADBEEFDEADBEEF_retry")},
+		Snippet:  types.Snippet{Matching: []byte("AKIADEADBEEFDEADBEEF")},
+	}
+	s.ps.matcher = &fakeMatcher{immediate: real, queued: []*types.Match{recovered}}
+
+	in := pipeline.From(input)
+	out := pipeline.New[SecretScanResult]()
+	s.ScanAndFlush(in, out)
+
+	items, err := out.Collect()
+	require.NoError(t, err)
+
+	var sawRecovered bool
+	for _, it := range items {
+		if it.Match == recovered {
+			sawRecovered = true
+			assert.Equal(t, input.ResourceID, it.ResourceRef, "recovered result should carry resource metadata from stored provenance")
+		}
+	}
+	assert.True(t, sawRecovered, "ScanAndFlush must emit the recovered (timed-out) match")
+	assert.GreaterOrEqual(t, len(items), 2, "should emit both the immediate match(es) and the recovered match")
+}
+
+// TestSecretScanner_ScanAndFlush_PropagatesUpstreamError guards against the P1
+// regression: when an upstream stage feeding ScanAndFlush fails (e.g. a cloud
+// lister or extractor errors), that failure must reach the output pipeline so
+// the module reports failure rather than silent partial success.
+func TestSecretScanner_ScanAndFlush_PropagatesUpstreamError(t *testing.T) {
+	s := startScanner(t)
+	s.ps.matcher = &fakeMatcher{}
+
+	upstreamErr := errors.New("extractor blew up")
+
+	// An input pipeline that emits one item then fails, mimicking pipeline.Pipe
+	// recording an upstream error on the stream feeding ScanAndFlush.
+	in := pipeline.New[output.ScanInput]()
+	go func() {
+		in.Send(output.ScanInput{
+			Content:    []byte("nothing sensitive"),
+			ResourceID: "arn:aws:s3:::demo",
+			Label:      "a.txt",
+		})
+		in.CloseWithError(upstreamErr)
+	}()
+
+	out := pipeline.New[SecretScanResult]()
+	s.ScanAndFlush(in, out)
+
+	_, err := out.Collect()
+	require.ErrorIs(t, err, upstreamErr, "upstream pipeline error must propagate to out, not be discarded")
+}
+
+// TestProvenanceScanInputRoundTrip pins the invariant that the provenance
+// payload key set lives in exactly one place: a ScanInput written to provenance
+// at scan time must reconstruct identically on the drain path. If the two sides
+// ever drift, recovered matches silently lose resource metadata.
+func TestProvenanceScanInputRoundTrip(t *testing.T) {
+	input := output.ScanInput{
+		Platform:     "aws",
+		ResourceID:   "arn:aws:lambda:us-east-1:123456789012:function:demo",
+		ResourceType: "AWS::Lambda::Function",
+		Region:       "us-east-1",
+		AccountID:    "123456789012",
+		Label:        "handler.py",
+	}
+
+	got := scanInputFromProvenance(provenanceFromScanInput(input))
+
+	assert.Equal(t, input.Platform, got.Platform)
+	assert.Equal(t, input.ResourceID, got.ResourceID)
+	assert.Equal(t, input.ResourceType, got.ResourceType)
+	assert.Equal(t, input.Region, got.Region)
+	assert.Equal(t, input.AccountID, got.AccountID)
+	assert.Equal(t, input.Label, got.Label)
 }
