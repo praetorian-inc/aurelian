@@ -68,6 +68,41 @@ func TestJSONLSink_AbortRemovesPartialFile(t *testing.T) {
 	assert.True(t, os.IsNotExist(statErr), "Abort removes the partial file")
 }
 
+// TestJSONLSink_AbortPreservesExistingFile: writes stage through a temp file and
+// are only renamed onto the final path on Close, so an aborted run must NOT
+// truncate or delete a pre-existing file at the destination.
+func TestJSONLSink_AbortPreservesExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "report.jsonl")
+	const original = "{\"name\":\"previous-good-report\"}\n"
+	require.NoError(t, os.WriteFile(path, []byte(original), 0o644))
+
+	s := NewJSONLSink(path)
+	require.NoError(t, s.Write(output.AurelianRisk{Name: "new-partial"}))
+	require.NoError(t, s.Abort())
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, original, string(got), "pre-existing report must survive an aborted run intact")
+}
+
+// TestJSONLSink_CloseReplacesExistingFile: a successful Close atomically replaces
+// a pre-existing file with the new output.
+func TestJSONLSink_CloseReplacesExistingFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "report.jsonl")
+	require.NoError(t, os.WriteFile(path, []byte("{\"name\":\"stale\"}\n"), 0o644))
+
+	s := NewJSONLSink(path)
+	require.NoError(t, s.Write(output.AurelianRisk{Name: "fresh"}))
+	require.NoError(t, s.Close())
+
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Contains(t, string(got), "fresh")
+	assert.NotContains(t, string(got), "stale", "successful Close replaces the old file")
+}
+
 func TestNeo4jSink_SeedsOnlyGraphEntities(t *testing.T) {
 	mock := &mockGraphDB{}
 	gf := &GraphFormatter{db: mock, config: graph.NewConfig("bolt://x", "u", "p")}

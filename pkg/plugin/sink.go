@@ -3,9 +3,11 @@ package plugin
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -26,10 +28,17 @@ type Sink interface {
 }
 
 // JSONLSink streams results to a file as JSON Lines (one JSON object per line).
-// The file (and its parent directory) is created lazily on the first Write, so a
-// run that produces zero items leaves no file and no directory behind.
+//
+// Writes are staged in a sibling temp file and atomically renamed onto the final
+// path only on a successful Close, so: (1) a pre-existing file at the final path
+// is never truncated until the new output is complete, (2) Abort (failure) leaves
+// the final path untouched and removes only the temp file, and (3) readers never
+// observe a partial file. The temp file (and the parent directory) is created
+// lazily on the first Write, so a run that produces zero items leaves nothing
+// behind.
 type JSONLSink struct {
 	path string
+	tmp  string
 	f    *os.File
 	w    *bufio.Writer
 	enc  *json.Encoder
@@ -48,17 +57,21 @@ func (s *JSONLSink) ensureOpen() error {
 	if err := utils.EnsureFileDirectory(s.path); err != nil {
 		return fmt.Errorf("creating output directory: %w", err)
 	}
-	f, err := os.Create(s.path)
+	// Stage in a sibling temp file so the final path is only written atomically
+	// on success (see Close); a mid-stream failure cannot truncate or delete an
+	// existing file at s.path.
+	f, err := os.CreateTemp(filepath.Dir(s.path), filepath.Base(s.path)+".*.tmp")
 	if err != nil {
 		return fmt.Errorf("creating output file: %w", err)
 	}
+	s.tmp = f.Name()
 	s.f = f
 	s.w = bufio.NewWriter(f)
 	s.enc = json.NewEncoder(s.w) // compact; emits a trailing newline per Encode
 	return nil
 }
 
-// Write lazily opens the file on first call and encodes item as one JSON line.
+// Write lazily opens the temp file on first call and encodes item as one JSON line.
 func (s *JSONLSink) Write(item model.AurelianModel) error {
 	if err := s.ensureOpen(); err != nil {
 		return err
@@ -66,29 +79,39 @@ func (s *JSONLSink) Write(item model.AurelianModel) error {
 	return s.enc.Encode(item)
 }
 
-// Close flushes and closes the file, keeping it. No-op if nothing was written.
+// Close flushes the temp file and atomically renames it onto the final path.
+// No-op if nothing was written. On flush/close failure the temp file is removed
+// and the final path is left untouched.
 func (s *JSONLSink) Close() error {
 	if s.f == nil {
 		return nil
 	}
+	tmp := s.tmp
 	flushErr := s.w.Flush()
 	closeErr := s.f.Close()
-	s.f, s.w, s.enc = nil, nil, nil
-	if flushErr != nil {
-		return flushErr
+	s.f, s.w, s.enc, s.tmp = nil, nil, nil, ""
+	if err := errors.Join(flushErr, closeErr); err != nil {
+		_ = os.Remove(tmp)
+		return err
 	}
-	return closeErr
+	if err := os.Rename(tmp, s.path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("finalizing output file: %w", err)
+	}
+	return nil
 }
 
-// Abort closes and removes the partial file. No-op if nothing was written.
+// Abort closes and removes the temp file, leaving the final path untouched.
+// No-op if nothing was written.
 func (s *JSONLSink) Abort() error {
 	if s.f == nil {
 		return nil
 	}
+	tmp := s.tmp
 	_ = s.w.Flush()
 	_ = s.f.Close()
-	s.f, s.w, s.enc = nil, nil, nil
-	return os.Remove(s.path)
+	s.f, s.w, s.enc, s.tmp = nil, nil, nil, ""
+	return os.Remove(tmp)
 }
 
 // Neo4jSink buffers graph entities (AWSIAMResource / AWSIAMRelationship) as they
@@ -144,12 +167,13 @@ func (s *Neo4jSink) Write(item model.AurelianModel) error {
 // Close seeds the buffered graph entities into Neo4j, then closes the connection.
 // An empty buffer (no graph entities streamed) is a logged no-op, not an error.
 func (s *Neo4jSink) Close() error {
-	defer func() { _ = s.gf.Close() }()
 	if len(s.buffer) == 0 {
 		slog.Info("no graph entities in results, skipping Neo4j seeding")
-		return nil
+		return s.gf.Close()
 	}
-	return s.gf.Format(s.buffer)
+	// Surface both a seeding failure and a DB-close failure rather than letting
+	// the deferred close swallow its error.
+	return errors.Join(s.gf.Format(s.buffer), s.gf.Close())
 }
 
 // Abort closes the Neo4j connection without seeding.
