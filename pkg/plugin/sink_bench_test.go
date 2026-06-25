@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"encoding/json"
 	"io"
 	"path/filepath"
 	"strconv"
@@ -13,7 +14,7 @@ import (
 // makeBenchItems builds n synthetic findings sized like a real secret finding.
 func makeBenchItems(n int) []model.AurelianModel {
 	items := make([]model.AurelianModel, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		items[i] = output.AurelianRisk{Name: "secret-finding-" + strconv.Itoa(i)}
 	}
 	return items
@@ -21,9 +22,11 @@ func makeBenchItems(n int) []model.AurelianModel {
 
 var benchSizes = []int{1000, 100000}
 
-// BenchmarkOutputCollect models the OLD path: accumulate the full slice, then
-// pretty-print the whole thing to io.Discard. B/op and allocs/op grow ~linearly
-// with N (it holds every item plus the indented serialization).
+// BenchmarkOutputCollect models the OLD output path (replaced by JSONLSink):
+// accumulate the full slice, then pretty-print the whole thing to io.Discard.
+// This is the exact work the removed Collect()+JSONFormatter{Pretty:true} did,
+// inlined here so the comparison survives the type's deletion. B/op and allocs/op
+// grow ~linearly with N (it holds every item plus the indented serialization).
 func BenchmarkOutputCollect(b *testing.B) {
 	for _, n := range benchSizes {
 		items := makeBenchItems(n)
@@ -32,8 +35,9 @@ func BenchmarkOutputCollect(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				var results []model.AurelianModel // grow like Collect()
 				results = append(results, items...)
-				f := &JSONFormatter{Writer: io.Discard, Pretty: true}
-				if err := f.Format(results); err != nil {
+				enc := json.NewEncoder(io.Discard)
+				enc.SetIndent("", "  ")
+				if err := enc.Encode(results); err != nil {
 					b.Fatal(err)
 				}
 			}
