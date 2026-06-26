@@ -62,25 +62,7 @@ func (l *CloudRunLister) List(projectID string, out *pipeline.P[output.GCPResour
 		g.Go(func() error {
 			err := svc.Projects.Locations.Services.List(location).Pages(context.Background(), func(resp *runapi.GoogleCloudRunV2ListServicesResponse) error {
 				for _, service := range resp.Services {
-					r := output.NewGCPResource(projectID, "run.googleapis.com/Service", service.Name)
-					r.DisplayName = service.Name
-					r.Labels = service.Labels
-
-					if service.Uri != "" {
-						r.URLs = []string{service.Uri}
-					}
-
-					props := map[string]any{}
-
-					// Detect Gen2 Cloud Functions.
-					managedBy, hasManagedBy := service.Labels["goog-managed-by"]
-					if (hasManagedBy && managedBy == "cloudfunctions") ||
-						(service.Uri != "" && strings.Contains(service.Uri, "cloudfunctions.net")) {
-						props["isGen2CloudFunction"] = true
-					}
-
-					r.Properties = props
-					out.Send(r)
+					sendCloudRunService(projectID, service, out)
 				}
 				return nil
 			})
@@ -98,4 +80,54 @@ func (l *CloudRunLister) List(projectID string, out *pipeline.P[output.GCPResour
 	return g.Wait()
 }
 
-func (l *CloudRunLister) ResourceType() string { return "run.googleapis.com/Service" }
+func (l *CloudRunLister) ListByResourceID(input ResourceIDInput, out *pipeline.P[output.GCPResource]) error {
+	name := fullGCPResourceName(input.ProjectID, input.ResourceID)
+	if _, ok := pathSegment(name, "locations"); !ok {
+		return newResourceIDError(input.ResourceType, input.ResourceID, "a full path containing locations/{location}/services/{name}")
+	}
+	if _, ok := pathSegment(name, "services"); !ok {
+		return newResourceIDError(input.ResourceType, input.ResourceID, "a full path containing locations/{location}/services/{name}")
+	}
+
+	svc, err := runapi.NewService(context.Background(), l.clientOptions...)
+	if err != nil {
+		return fmt.Errorf("creating cloud run client: %w", err)
+	}
+	service, err := svc.Projects.Locations.Services.Get(name).Do()
+	if err != nil {
+		if gcperrors.ShouldSkip(err) {
+			slog.Debug("skipping cloud run service", "project", input.ProjectID, "resource", name, "reason", err)
+			return nil
+		}
+		return fmt.Errorf("getting cloud run service %s: %w", name, err)
+	}
+	sendCloudRunService(input.ProjectID, service, out)
+	return nil
+}
+
+func (l *CloudRunLister) ResourceTypes() []string { return []string{"run.googleapis.com/Service"} }
+
+func sendCloudRunService(projectID string, service *runapi.GoogleCloudRunV2Service, out *pipeline.P[output.GCPResource]) {
+	r := output.NewGCPResource(projectID, "run.googleapis.com/Service", service.Name)
+	r.DisplayName = service.Name
+	r.Labels = service.Labels
+	if location, ok := pathSegment(service.Name, "locations"); ok {
+		r.Location = location
+	}
+
+	if service.Uri != "" {
+		r.URLs = []string{service.Uri}
+	}
+
+	props := map[string]any{}
+
+	// Detect Gen2 Cloud Functions.
+	managedBy, hasManagedBy := service.Labels["goog-managed-by"]
+	if (hasManagedBy && managedBy == "cloudfunctions") ||
+		(service.Uri != "" && strings.Contains(service.Uri, "cloudfunctions.net")) {
+		props["isGen2CloudFunction"] = true
+	}
+
+	r.Properties = props
+	out.Send(r)
+}

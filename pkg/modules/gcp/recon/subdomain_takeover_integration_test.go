@@ -28,24 +28,9 @@ func TestGCPSubdomainTakeover(t *testing.T) {
 
 	projectID := fixture.Output("project_id")
 
-	cfg := plugin.Config{
-		Args: map[string]any{
-			"project-id": []string{projectID},
-		},
-		Context: context.Background(),
-	}
-
-	p1 := pipeline.From(cfg)
-	p2 := pipeline.New[model.AurelianModel]()
-	pipeline.Pipe(p1, mod.Run, p2)
-
-	var risks []output.AurelianRisk
-	for m := range p2.Range() {
-		if r, ok := m.(output.AurelianRisk); ok {
-			risks = append(risks, r)
-		}
-	}
-	require.NoError(t, p2.Wait())
+	risks := runGCPSubdomainTakeover(t, mod, map[string]any{
+		"project-id": []string{projectID},
+	})
 
 	// Filter to risks from our test zone (module scans all zones in the project).
 	zoneName := fixture.Output("zone_name")
@@ -138,6 +123,31 @@ func TestGCPSubdomainTakeover(t *testing.T) {
 		assert.NotEmpty(t, ctx["remediation"])
 	})
 
+	t.Run("direct resource mode detects dangling records", func(t *testing.T) {
+		directRisks := runGCPSubdomainTakeover(t, mod, map[string]any{
+			"project-id":    []string{projectID},
+			"resource-type": []string{"dns.googleapis.com/ManagedZone"},
+			"resource-id":   []string{zoneName},
+		})
+		require.NotEmpty(t, directRisks, "expected direct managed zone scan risks for %s", zoneName)
+
+		for _, recordOutput := range []string{
+			"storage_cname_record",
+			"run_cname_record",
+			"appengine_cname_record",
+			"orphaned_ip_record",
+			"ns_record",
+		} {
+			recordName := fixture.Output(recordOutput)
+			assert.NotNilf(t, findRiskByRecord(directRisks, recordName), "expected direct scan risk for %s", recordName)
+		}
+
+		for _, risk := range directRisks {
+			assert.Contains(t, risk.ImpactedResourceID, zoneName)
+			assert.NotEmpty(t, risk.Context, "risk context should not be empty for %s", risk.ImpactedResourceID)
+		}
+	})
+
 	// --- Negative testing ---
 
 	t.Run("safe CNAME does not trigger finding", func(t *testing.T) {
@@ -220,6 +230,27 @@ func TestGCPSubdomainTakeover(t *testing.T) {
 			seen[r.DeduplicationID] = true
 		}
 	})
+}
+
+func runGCPSubdomainTakeover(t *testing.T, mod plugin.Module, args map[string]any) []output.AurelianRisk {
+	t.Helper()
+	cfg := plugin.Config{
+		Args:    args,
+		Context: context.Background(),
+	}
+
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	var risks []output.AurelianRisk
+	for m := range p2.Range() {
+		if r, ok := m.(output.AurelianRisk); ok {
+			risks = append(risks, r)
+		}
+	}
+	require.NoError(t, p2.Wait())
+	return risks
 }
 
 // findRiskByRecord finds the first risk whose ImpactedResourceID contains the record name.

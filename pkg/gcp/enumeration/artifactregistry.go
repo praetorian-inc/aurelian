@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/artifactregistry/v1"
 	"google.golang.org/api/option"
 
@@ -30,18 +31,37 @@ func (l *ArtifactRegistryLister) List(projectID string, out *pipeline.P[output.G
 		return fmt.Errorf("creating artifact registry client: %w", err)
 	}
 
-	parent := "projects/" + projectID + "/locations/-"
-	err = svc.Projects.Locations.Repositories.List(parent).Pages(context.Background(), func(resp *artifactregistry.ListRepositoriesResponse) error {
-		for _, repo := range resp.Repositories {
-			r := output.NewGCPResource(projectID, "artifactregistry.googleapis.com/Repository", repo.Name)
-			r.DisplayName = repo.Name
-			r.Labels = repo.Labels
-			r.Properties = map[string]any{
-				"format":    repo.Format,
-				"mode":      repo.Mode,
-				"sizeBytes": repo.SizeBytes,
+	var locations []string
+	err = svc.Projects.Locations.List("projects/"+projectID).Pages(context.Background(), func(resp *artifactregistry.ListLocationsResponse) error {
+		for _, loc := range resp.Locations {
+			if loc.Name != "" {
+				locations = append(locations, loc.Name)
 			}
-			out.Send(r)
+		}
+		return nil
+	})
+	if err != nil {
+		if gcperrors.ShouldSkip(err) {
+			slog.Debug("skipping artifact registry", "project", projectID, "reason", err)
+			return nil
+		}
+		return fmt.Errorf("listing artifact registry locations: %w", err)
+	}
+
+	g := errgroup.Group{}
+	g.SetLimit(10)
+	for _, location := range locations {
+		g.Go(func() error {
+			return l.listRepositories(svc, projectID, location, out)
+		})
+	}
+	return g.Wait()
+}
+
+func (l *ArtifactRegistryLister) listRepositories(svc *artifactregistry.Service, projectID, parent string, out *pipeline.P[output.GCPResource]) error {
+	err := svc.Projects.Locations.Repositories.List(parent).Pages(context.Background(), func(resp *artifactregistry.ListRepositoriesResponse) error {
+		for _, repo := range resp.Repositories {
+			sendArtifactRepository(projectID, repo, out)
 
 			// For DOCKER-format repos, also list Docker images.
 			if repo.Format == "DOCKER" {
@@ -58,10 +78,10 @@ func (l *ArtifactRegistryLister) List(projectID string, out *pipeline.P[output.G
 	})
 	if err != nil {
 		if gcperrors.ShouldSkip(err) {
-			slog.Debug("skipping artifact registry", "project", projectID, "reason", err)
+			slog.Debug("skipping artifact registry repositories", "project", projectID, "location", parent, "reason", err)
 			return nil
 		}
-		return fmt.Errorf("listing artifact registry repositories: %w", err)
+		return fmt.Errorf("listing artifact registry repositories in %s: %w", parent, err)
 	}
 	return nil
 }
@@ -69,18 +89,74 @@ func (l *ArtifactRegistryLister) List(projectID string, out *pipeline.P[output.G
 func (l *ArtifactRegistryLister) listDockerImages(svc *artifactregistry.Service, projectID, repoName string, out *pipeline.P[output.GCPResource]) error {
 	return svc.Projects.Locations.Repositories.DockerImages.List(repoName).Pages(context.Background(), func(resp *artifactregistry.ListDockerImagesResponse) error {
 		for _, img := range resp.DockerImages {
-			r := output.NewGCPResource(projectID, "artifactregistry.googleapis.com/DockerImage", img.Name)
-			r.DisplayName = img.Uri
-			r.URLs = []string{img.Uri}
-			r.Properties = map[string]any{
-				"tags":       img.Tags,
-				"uploadTime": img.UploadTime,
-				"mediaType":  img.MediaType,
-			}
-			out.Send(r)
+			sendDockerImage(projectID, img, out)
 		}
 		return nil
 	})
 }
 
-func (l *ArtifactRegistryLister) ResourceType() string { return "artifactregistry.googleapis.com/Repository" }
+func (l *ArtifactRegistryLister) ListByResourceID(input ResourceIDInput, out *pipeline.P[output.GCPResource]) error {
+	svc, err := artifactregistry.NewService(context.Background(), l.clientOptions...)
+	if err != nil {
+		return fmt.Errorf("creating artifact registry client: %w", err)
+	}
+	name := fullGCPResourceName(input.ProjectID, input.ResourceID)
+	if _, ok := pathSegment(name, "locations"); !ok {
+		return newResourceIDError(input.ResourceType, input.ResourceID, "a full path containing locations/{location}/repositories/{repository}")
+	}
+	if _, ok := pathSegment(name, "repositories"); !ok {
+		return newResourceIDError(input.ResourceType, input.ResourceID, "a full path containing locations/{location}/repositories/{repository}")
+	}
+
+	if input.ResourceType == "artifactregistry.googleapis.com/DockerImage" {
+		img, err := svc.Projects.Locations.Repositories.DockerImages.Get(name).Do()
+		if err != nil {
+			if gcperrors.ShouldSkip(err) {
+				slog.Debug("skipping docker image", "project", input.ProjectID, "image", name, "reason", err)
+				return nil
+			}
+			return fmt.Errorf("getting docker image %s: %w", name, err)
+		}
+		sendDockerImage(input.ProjectID, img, out)
+		return nil
+	}
+
+	repo, err := svc.Projects.Locations.Repositories.Get(name).Do()
+	if err != nil {
+		if gcperrors.ShouldSkip(err) {
+			slog.Debug("skipping artifact registry repository", "project", input.ProjectID, "repository", name, "reason", err)
+			return nil
+		}
+		return fmt.Errorf("getting artifact registry repository %s: %w", name, err)
+	}
+	sendArtifactRepository(input.ProjectID, repo, out)
+	return nil
+}
+
+func (l *ArtifactRegistryLister) ResourceTypes() []string {
+	return []string{"artifactregistry.googleapis.com/Repository", "artifactregistry.googleapis.com/DockerImage"}
+}
+
+func sendArtifactRepository(projectID string, repo *artifactregistry.Repository, out *pipeline.P[output.GCPResource]) {
+	r := output.NewGCPResource(projectID, "artifactregistry.googleapis.com/Repository", repo.Name)
+	r.DisplayName = repo.Name
+	r.Labels = repo.Labels
+	r.Properties = map[string]any{
+		"format":    repo.Format,
+		"mode":      repo.Mode,
+		"sizeBytes": repo.SizeBytes,
+	}
+	out.Send(r)
+}
+
+func sendDockerImage(projectID string, img *artifactregistry.DockerImage, out *pipeline.P[output.GCPResource]) {
+	r := output.NewGCPResource(projectID, "artifactregistry.googleapis.com/DockerImage", img.Name)
+	r.DisplayName = img.Uri
+	r.URLs = []string{img.Uri}
+	r.Properties = map[string]any{
+		"tags":       img.Tags,
+		"uploadTime": img.UploadTime,
+		"mediaType":  img.MediaType,
+	}
+	out.Send(r)
+}

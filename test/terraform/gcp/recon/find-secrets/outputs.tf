@@ -2,6 +2,14 @@ output "project_id" {
   value = data.google_project.current.project_id
 }
 
+output "region" {
+  value = var.region
+}
+
+output "zone" {
+  value = var.zone
+}
+
 output "instance_name" {
   value = google_compute_instance.with_secret.name
 }

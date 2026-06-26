@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"google.golang.org/api/appengine/v1"
 	"google.golang.org/api/option"
@@ -43,35 +44,12 @@ func (l *AppEngineLister) List(projectID string, out *pipeline.P[output.GCPResou
 	// List services.
 	err = svc.Apps.Services.List(projectID).Pages(context.Background(), func(resp *appengine.ListServicesResponse) error {
 		for _, service := range resp.Services {
-			r := output.NewGCPResource(projectID, "appengine.googleapis.com/Service", service.Id)
-			r.DisplayName = service.Id
-
-			if app.DefaultHostname != "" {
-				r.URLs = []string{"https://" + app.DefaultHostname}
-			}
-
-			r.Properties = map[string]any{
-				"servingStatus": app.ServingStatus,
-			}
-			out.Send(r)
+			sendAppEngineService(projectID, app, service, out)
 
 			// List versions for each service.
 			err := svc.Apps.Services.Versions.List(projectID, service.Id).Pages(context.Background(), func(vResp *appengine.ListVersionsResponse) error {
 				for _, version := range vResp.Versions {
-					vr := output.NewGCPResource(projectID, "appengine.googleapis.com/Version", version.Id)
-					vr.DisplayName = version.Id
-					vr.Properties = map[string]any{
-						"servingStatus": version.ServingStatus,
-						"runtime":       version.Runtime,
-						"env":           version.Env,
-						"service":       service.Id,
-					}
-
-					if version.VersionUrl != "" {
-						vr.URLs = []string{version.VersionUrl}
-					}
-
-					out.Send(vr)
+					sendAppEngineVersion(projectID, service.Id, version, out)
 				}
 				return nil
 			})
@@ -95,4 +73,101 @@ func (l *AppEngineLister) List(projectID string, out *pipeline.P[output.GCPResou
 	return nil
 }
 
-func (l *AppEngineLister) ResourceType() string { return "appengine.googleapis.com/Service" }
+func (l *AppEngineLister) ListByResourceID(input ResourceIDInput, out *pipeline.P[output.GCPResource]) error {
+	svc, err := appengine.NewService(context.Background(), l.clientOptions...)
+	if err != nil {
+		return fmt.Errorf("creating appengine client: %w", err)
+	}
+	app, err := svc.Apps.Get(input.ProjectID).Do()
+	if err != nil {
+		if gcperrors.ShouldSkip(err) {
+			slog.Debug("skipping app engine", "project", input.ProjectID, "reason", err)
+			return nil
+		}
+		return fmt.Errorf("getting app engine app: %w", err)
+	}
+
+	if input.ResourceType == "appengine.googleapis.com/Version" {
+		serviceID, versionID, err := parseAppEngineVersionResourceID(input.ProjectID, input.ResourceID)
+		if err != nil {
+			return err
+		}
+		version, err := svc.Apps.Services.Versions.Get(input.ProjectID, serviceID, versionID).Do()
+		if err != nil {
+			if gcperrors.ShouldSkip(err) {
+				slog.Debug("skipping app engine version", "project", input.ProjectID, "service", serviceID, "version", versionID, "reason", err)
+				return nil
+			}
+			return fmt.Errorf("getting app engine version %s/%s: %w", serviceID, versionID, err)
+		}
+		sendAppEngineVersion(input.ProjectID, serviceID, version, out)
+		return nil
+	}
+
+	serviceID := parseAppEngineServiceResourceID(input.ResourceID)
+	service, err := svc.Apps.Services.Get(input.ProjectID, serviceID).Do()
+	if err != nil {
+		if gcperrors.ShouldSkip(err) {
+			slog.Debug("skipping app engine service", "project", input.ProjectID, "service", serviceID, "reason", err)
+			return nil
+		}
+		return fmt.Errorf("getting app engine service %s: %w", serviceID, err)
+	}
+	sendAppEngineService(input.ProjectID, app, service, out)
+	return nil
+}
+
+func (l *AppEngineLister) ResourceTypes() []string {
+	return []string{"appengine.googleapis.com/Service", "appengine.googleapis.com/Version"}
+}
+
+func sendAppEngineService(projectID string, app *appengine.Application, service *appengine.Service, out *pipeline.P[output.GCPResource]) {
+	r := output.NewGCPResource(projectID, "appengine.googleapis.com/Service", service.Id)
+	r.DisplayName = service.Id
+
+	if app.DefaultHostname != "" {
+		r.URLs = []string{"https://" + app.DefaultHostname}
+	}
+
+	r.Properties = map[string]any{
+		"servingStatus": app.ServingStatus,
+	}
+	out.Send(r)
+}
+
+func sendAppEngineVersion(projectID, serviceID string, version *appengine.Version, out *pipeline.P[output.GCPResource]) {
+	vr := output.NewGCPResource(projectID, "appengine.googleapis.com/Version", version.Id)
+	vr.DisplayName = version.Id
+	vr.Properties = map[string]any{
+		"servingStatus": version.ServingStatus,
+		"runtime":       version.Runtime,
+		"env":           version.Env,
+		"service":       serviceID,
+	}
+
+	if version.VersionUrl != "" {
+		vr.URLs = []string{version.VersionUrl}
+	}
+
+	out.Send(vr)
+}
+
+func parseAppEngineServiceResourceID(resourceID string) string {
+	if serviceID, ok := pathSegment(resourceID, "services"); ok {
+		return serviceID
+	}
+	return lastPathPart(resourceID)
+}
+
+func parseAppEngineVersionResourceID(projectID, resourceID string) (string, string, error) {
+	if serviceID, ok := pathSegment(resourceID, "services"); ok {
+		if versionID, ok := pathSegment(resourceID, "versions"); ok {
+			return serviceID, versionID, nil
+		}
+	}
+	parts := strings.Split(strings.Trim(resourceID, "/"), "/")
+	if len(parts) == 2 {
+		return parts[0], parts[1], nil
+	}
+	return "", "", newResourceIDError("appengine.googleapis.com/Version", resourceID, fmt.Sprintf("service/version or a full path like projects/%s/services/{service}/versions/{version}", projectID))
+}

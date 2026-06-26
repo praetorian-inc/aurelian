@@ -5,19 +5,51 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$PROJECT_DIR/.env.integration"
 
-GO_FLAGS=""
+GO_TEST_FLAGS=()
 TARGET="./..."
 DESTROY_FIXTURES=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --go-flags)
-      GO_FLAGS="$2"
+    -v)
+      GO_TEST_FLAGS+=("-v")
+      shift
+      ;;
+    -run)
+      if [[ $# -lt 2 ]]; then
+        echo "ERROR: -run requires a pattern." >&2
+        exit 1
+      fi
+      GO_TEST_FLAGS+=("-run" "$2")
       shift 2
       ;;
-    --go-flags=*)
-      GO_FLAGS="${1#*=}"
+    -run=*)
+      GO_TEST_FLAGS+=("$1")
+      shift
+      ;;
+    -count)
+      if [[ $# -lt 2 ]]; then
+        echo "ERROR: -count requires a value." >&2
+        exit 1
+      fi
+      GO_TEST_FLAGS+=("-count" "$2")
+      shift 2
+      ;;
+    -count=*)
+      GO_TEST_FLAGS+=("$1")
+      shift
+      ;;
+    -timeout)
+      if [[ $# -lt 2 ]]; then
+        echo "ERROR: -timeout requires a duration." >&2
+        exit 1
+      fi
+      GO_TEST_FLAGS+=("-timeout" "$2")
+      shift 2
+      ;;
+    -timeout=*)
+      GO_TEST_FLAGS+=("$1")
       shift
       ;;
     --destroy)
@@ -25,7 +57,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      echo "Usage: $0 [TARGET] [--go-flags '<additional go test flags>']"
+      echo "Usage: $0 [TARGET] [-v] [-run PATTERN] [-count N] [-timeout DURATION]"
       echo ""
       echo "Runs Aurelian integration tests."
       echo ""
@@ -33,7 +65,10 @@ while [[ $# -gt 0 ]]; do
       echo "  TARGET        Go test target pattern (default: ./...)"
       echo ""
       echo "Options:"
-      echo "  --go-flags    Additional flags to pass to 'go test' (e.g. '--go-flags \"-v -timeout 30m\"')"
+      echo "  -v            Verbose go test output"
+      echo "  -run PATTERN  Run only tests matching PATTERN"
+      echo "  -count N      Run tests N times / control go test cache"
+      echo "  -timeout D    Fail tests after duration D (e.g. 30m, 1h)"
       echo "  --destroy     Destroy and redeploy Terraform fixtures before running tests"
       echo ""
       echo "Examples:"
@@ -41,6 +76,7 @@ while [[ $# -gt 0 ]]; do
       echo "  $0 ./pkg/azure/...              # run just azure component tests"
       echo "  $0 ./pkg/modules/aws/recon/...  # run just aws recon module tests"
       echo "  $0 ./pkg/modules/gcp/recon/...  # run just gcp recon module tests"
+      echo "  $0 ./pkg/gcp/enumeration/... -v -run TestEnumeratorIntegration -count 1 -timeout 30m"
       exit 0
       ;;
     -*)
@@ -182,4 +218,4 @@ if $DESTROY_FIXTURES; then
 fi
 
 set -x
-go test -tags compute,integration -p=1 $GO_FLAGS "$TARGET"
+go test -tags compute,integration -p=1 "${GO_TEST_FLAGS[@]}" "$TARGET"

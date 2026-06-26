@@ -12,6 +12,7 @@ type GCPCommonRecon struct {
 	OrgID              []string              `param:"org-id"               desc:"GCP organization IDs" shortcode:"o"`
 	FolderID           []string              `param:"folder-id"            desc:"GCP folder IDs"`
 	ResourceType       []string              `param:"resource-type"        desc:"Resource types to enumerate" default:"all" shortcode:"t"`
+	ResourceID         []string              `param:"resource-id"          desc:"GCP resource ID(s) to scan directly" shortcode:"i"`
 	Concurrency        int                   `param:"concurrency"          desc:"Max concurrent API requests" default:"5"`
 	CredentialsFile    string                `param:"creds-file"           desc:"Path to GCP credentials JSON" shortcode:"c"`
 	IncludeSysProjects bool                  `param:"include-sys-projects" desc:"Include system projects" default:"false"`

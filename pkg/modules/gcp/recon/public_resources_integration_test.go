@@ -5,6 +5,7 @@ package recon_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
@@ -28,38 +29,19 @@ func TestGCPPublicResources(t *testing.T) {
 
 	projectID := fixture.Output("project_id")
 
-	cfg := plugin.Config{
-		Args: map[string]any{
-			"project-id": []string{projectID},
-			"resource-type": []string{
-				"storage.googleapis.com/Bucket",
-				"compute.googleapis.com/Instance",
-				"sqladmin.googleapis.com/Instance",
-				"cloudfunctions.googleapis.com/Function",
-				"run.googleapis.com/Service",
-				"compute.googleapis.com/Address",
-				"compute.googleapis.com/GlobalAddress",
-				"compute.googleapis.com/ForwardingRule",
-			},
+	resources, risks := runGCPPublicResources(t, mod, map[string]any{
+		"project-id": []string{projectID},
+		"resource-type": []string{
+			"storage.googleapis.com/Bucket",
+			"compute.googleapis.com/Instance",
+			"sqladmin.googleapis.com/Instance",
+			"cloudfunctions.googleapis.com/Function",
+			"run.googleapis.com/Service",
+			"compute.googleapis.com/Address",
+			"compute.googleapis.com/GlobalAddress",
+			"compute.googleapis.com/ForwardingRule",
 		},
-		Context: context.Background(),
-	}
-
-	p1 := pipeline.From(cfg)
-	p2 := pipeline.New[model.AurelianModel]()
-	pipeline.Pipe(p1, mod.Run, p2)
-
-	var resources []output.GCPResource
-	var risks []output.AurelianRisk
-	for m := range p2.Range() {
-		switch v := m.(type) {
-		case output.GCPResource:
-			resources = append(resources, v)
-		case output.AurelianRisk:
-			risks = append(risks, v)
-		}
-	}
-	require.NoError(t, p2.Wait())
+	})
 	require.NotEmpty(t, risks, "should emit at least one risk for public resources")
 
 	t.Run("risk fields are populated", func(t *testing.T) {
@@ -162,6 +144,101 @@ func TestGCPPublicResources(t *testing.T) {
 				"unexpected risk name %q", risk.Name)
 		}
 	})
+
+	t.Run("direct resource mode detects public resources", func(t *testing.T) {
+		zone := fixture.Output("instance_zone")
+		region := gcpRegionFromZone(zone)
+		cases := []struct {
+			name         string
+			resourceType string
+			resourceID   string
+			wantName     string
+		}{
+			{
+				name:         "compute instance",
+				resourceType: "compute.googleapis.com/Instance",
+				resourceID:   "projects/" + projectID + "/zones/" + zone + "/instances/" + fixture.Output("instance_name"),
+				wantName:     fixture.Output("instance_name"),
+			},
+			{
+				name:         "sql instance",
+				resourceType: "sqladmin.googleapis.com/Instance",
+				resourceID:   fixture.Output("sql_instance_name"),
+				wantName:     fixture.Output("sql_instance_name"),
+			},
+			{
+				name:         "cloud function",
+				resourceType: "cloudfunctions.googleapis.com/Function",
+				resourceID:   "projects/" + projectID + "/locations/" + region + "/functions/" + fixture.Output("function_name"),
+				wantName:     fixture.Output("function_name"),
+			},
+			{
+				name:         "cloud run service",
+				resourceType: "run.googleapis.com/Service",
+				resourceID:   "projects/" + projectID + "/locations/" + region + "/services/" + fixture.Output("cloud_run_public_name"),
+				wantName:     fixture.Output("cloud_run_public_name"),
+			},
+			{
+				name:         "regional address",
+				resourceType: "compute.googleapis.com/Address",
+				resourceID:   "projects/" + projectID + "/regions/" + region + "/addresses/" + fixture.Output("regional_address_name"),
+				wantName:     fixture.Output("regional_address_name"),
+			},
+			{
+				name:         "global address",
+				resourceType: "compute.googleapis.com/GlobalAddress",
+				resourceID:   "projects/" + projectID + "/global/addresses/" + fixture.Output("global_address_name"),
+				wantName:     fixture.Output("global_address_name"),
+			},
+			{
+				name:         "regional forwarding rule",
+				resourceType: "compute.googleapis.com/ForwardingRule",
+				resourceID:   "projects/" + projectID + "/regions/" + region + "/forwardingRules/" + fixture.Output("regional_forwarding_rule_name"),
+				wantName:     fixture.Output("regional_forwarding_rule_name"),
+			},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				directResources, directRisks := runGCPPublicResources(t, mod, map[string]any{
+					"project-id":    []string{projectID},
+					"resource-type": []string{tc.resourceType},
+					"resource-id":   []string{tc.resourceID},
+				})
+				require.NotEmpty(t, directResources, "expected direct scan resource for %s", tc.name)
+				require.NotEmpty(t, directRisks, "expected direct scan risk for %s", tc.name)
+				assert.True(t, hasRiskForNamedResource(directResources, directRisks, tc.wantName), "expected direct scan risk for %s", tc.wantName)
+				for _, risk := range directRisks {
+					assert.NotEmpty(t, risk.Context, "risk Context must be set")
+				}
+			})
+		}
+	})
+}
+
+func runGCPPublicResources(t *testing.T, mod plugin.Module, args map[string]any) ([]output.GCPResource, []output.AurelianRisk) {
+	t.Helper()
+	cfg := plugin.Config{
+		Args:    args,
+		Context: context.Background(),
+	}
+
+	p1 := pipeline.From(cfg)
+	p2 := pipeline.New[model.AurelianModel]()
+	pipeline.Pipe(p1, mod.Run, p2)
+
+	var resources []output.GCPResource
+	var risks []output.AurelianRisk
+	for m := range p2.Range() {
+		switch v := m.(type) {
+		case output.GCPResource:
+			resources = append(resources, v)
+		case output.AurelianRisk:
+			risks = append(risks, v)
+		}
+	}
+	require.NoError(t, p2.Wait())
+	return resources, risks
 }
 
 // hasRiskForNamedResource finds a resource by display name, then checks if
@@ -185,3 +262,10 @@ func findRiskForNamedResource(resources []output.GCPResource, risks []output.Aur
 	return nil
 }
 
+func gcpRegionFromZone(zone string) string {
+	parts := strings.Split(zone, "-")
+	if len(parts) < 3 {
+		return zone
+	}
+	return strings.Join(parts[:len(parts)-1], "-")
+}

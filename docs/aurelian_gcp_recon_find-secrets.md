@@ -20,6 +20,7 @@ aurelian gcp recon find-secrets [flags]
   -o, --org-id strings                 GCP organization IDs
       --output-dir string              Base output directory (default "aurelian-output")
   -p, --project-id strings             GCP project IDs
+  -i, --resource-id strings            GCP resource ID(s) to scan directly
   -t, --resource-type strings          Resource types to enumerate (default [all])
       --ruleset string                 Titus ruleset to apply; empty string disables ruleset filtering (default "default")
       --validate                       Validate detected secrets against their source APIs

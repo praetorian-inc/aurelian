@@ -1,6 +1,9 @@
 package recon
 
 import (
+	"fmt"
+	"slices"
+
 	"github.com/praetorian-inc/aurelian/pkg/gcp/dnstakeover"
 	"github.com/praetorian-inc/aurelian/pkg/gcp/hierarchy"
 	"github.com/praetorian-inc/aurelian/pkg/model"
@@ -43,8 +46,10 @@ func (m *GCPSubdomainTakeoverModule) References() []string {
 	}
 }
 
+var subdomainTakeoverResourceTypes = []string{"dns.googleapis.com/ManagedZone"}
+
 func (m *GCPSubdomainTakeoverModule) SupportedResourceTypes() []string {
-	return supportedInputTypes
+	return append(slices.Clone(supportedInputTypes), subdomainTakeoverResourceTypes...)
 }
 
 func (m *GCPSubdomainTakeoverModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
@@ -57,6 +62,29 @@ func (m *GCPSubdomainTakeoverModule) Run(cfg plugin.Config, out *pipeline.P[mode
 
 	cfg.Info("scanning Cloud DNS for dangling records")
 
+	var records *pipeline.P[dnstakeover.DNSRecord]
+	if len(c.ResourceID) > 0 {
+		records, err = m.listRecordsByResourceID(c)
+		if err != nil {
+			return err
+		}
+	} else {
+		records = m.listRecordsByHierarchy(cfg, c)
+	}
+
+	pipeline.Pipe(records, checker.Check, out, &pipeline.PipeOpts{
+		Progress:    cfg.Log.ProgressFunc("checking for takeover"),
+		Concurrency: c.Concurrency,
+	})
+
+	if err := out.Wait(); err != nil {
+		return err
+	}
+	cfg.Success("subdomain takeover scan complete")
+	return nil
+}
+
+func (m *GCPSubdomainTakeoverModule) listRecordsByHierarchy(cfg plugin.Config, c GCPSubdomainTakeoverConfig) *pipeline.P[dnstakeover.DNSRecord] {
 	resolver := hierarchy.NewResolver(c.GCPCommonRecon)
 	input := hierarchy.HierarchyResolverInput{
 		OrgIDs:     c.OrgID,
@@ -76,15 +104,35 @@ func (m *GCPSubdomainTakeoverModule) Run(cfg plugin.Config, out *pipeline.P[mode
 	pipeline.Pipe(projects, enumerator.EnumerateProject, records, &pipeline.PipeOpts{
 		Progress: cfg.Log.ProgressFunc("enumerating dns records"),
 	})
+	return records
+}
 
-	pipeline.Pipe(records, checker.Check, out, &pipeline.PipeOpts{
-		Progress:    cfg.Log.ProgressFunc("checking for takeover"),
-		Concurrency: c.Concurrency,
-	})
-
-	if err := out.Wait(); err != nil {
-		return err
+func (m *GCPSubdomainTakeoverModule) listRecordsByResourceID(c GCPSubdomainTakeoverConfig) (*pipeline.P[dnstakeover.DNSRecord], error) {
+	if len(c.ProjectID) != 1 {
+		return nil, fmt.Errorf("direct GCP subdomain takeover scanning requires exactly one --project-id")
 	}
-	cfg.Success("subdomain takeover scan complete")
-	return nil
+	if len(c.ResourceType) != 1 || c.ResourceType[0] == "all" {
+		return nil, fmt.Errorf("direct GCP subdomain takeover scanning requires exactly one --resource-type")
+	}
+	resourceType := c.ResourceType[0]
+	if resolved, err := resolveAlias(resourceType); err == nil {
+		resourceType = resolved
+	}
+	if !slices.Contains(subdomainTakeoverResourceTypes, resourceType) {
+		return nil, fmt.Errorf("resource type %q is not supported for direct GCP subdomain takeover scanning", resourceType)
+	}
+
+	inputs := make([]dnstakeover.ManagedZoneInput, 0, len(c.ResourceID))
+	for _, resourceID := range c.ResourceID {
+		inputs = append(inputs, dnstakeover.ManagedZoneInput{
+			ProjectID:  c.ProjectID[0],
+			ResourceID: resourceID,
+		})
+	}
+
+	inputStream := pipeline.From(inputs...)
+	records := pipeline.New[dnstakeover.DNSRecord]()
+	enumerator := dnstakeover.NewDNSEnumerator(c.ClientOptions)
+	pipeline.Pipe(inputStream, enumerator.EnumerateManagedZone, records, &pipeline.PipeOpts{Concurrency: c.Concurrency})
+	return records, nil
 }

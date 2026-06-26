@@ -72,16 +72,6 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 		c.DBPath = secrets.DefaultDBPath(c.OutputDir)
 	}
 
-	var s secrets.SecretScanner
-	if err := s.Start(c.ScannerConfig); err != nil {
-		return fmt.Errorf("failed to create Titus scanner: %w", err)
-	}
-	defer func() {
-		if closeErr := s.Close(); closeErr != nil {
-			slog.Warn("failed to close Titus scanner", "error", closeErr)
-		}
-	}()
-
 	// Branch: resource-level targeting (like AWS ResourceARN) vs subscription-wide scan.
 	var listed *pipeline.P[output.AzureResource]
 	if len(c.ResourceID) > 0 {
@@ -98,6 +88,11 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 		}
 	}
 
+	var s secrets.SecretScanner
+	if err := s.Start(c.ScannerConfig); err != nil {
+		return fmt.Errorf("failed to create Titus scanner: %w", err)
+	}
+
 	extractor := extraction.NewAzureExtractor(c.AzureCredential)
 	extractor.MaxCosmosDocSize = m.MaxCosmosDocSize
 	extractor.MaxCosmosDocScan = m.MaxCosmosDocScan
@@ -107,7 +102,7 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 
 	// Scan extracted content and convert results to risks.
 	scanned := pipeline.New[secrets.SecretScanResult]()
-	s.ScanAndFlush(extracted, scanned)
+	s.ScanFlushAndClose(extracted, scanned)
 	pipeline.Pipe(scanned, secrets.RiskFromScanResult, out)
 
 	return out.Wait()
@@ -225,4 +220,3 @@ func (m *AzureFindSecretsModule) toListerInput(sub azuretypes.SubscriptionInfo, 
 	})
 	return nil
 }
-

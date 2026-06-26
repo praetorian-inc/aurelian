@@ -33,14 +33,7 @@ func (l *DNSZoneLister) List(projectID string, out *pipeline.P[output.GCPResourc
 	call := svc.ManagedZones.List(projectID)
 	err = call.Pages(context.Background(), func(resp *dnsapi.ManagedZonesListResponse) error {
 		for _, zone := range resp.ManagedZones {
-			r := output.NewGCPResource(projectID, "dns.googleapis.com/ManagedZone", zone.Name)
-			r.DisplayName = zone.Name
-			r.Properties = map[string]any{
-				"dnsName":     zone.DnsName,
-				"visibility":  zone.Visibility,
-				"description": zone.Description,
-			}
-			out.Send(r)
+			sendDNSZone(projectID, zone, out)
 		}
 		return nil
 	})
@@ -54,4 +47,33 @@ func (l *DNSZoneLister) List(projectID string, out *pipeline.P[output.GCPResourc
 	return nil
 }
 
-func (l *DNSZoneLister) ResourceType() string { return "dns.googleapis.com/ManagedZone" }
+func (l *DNSZoneLister) ListByResourceID(input ResourceIDInput, out *pipeline.P[output.GCPResource]) error {
+	svc, err := dnsapi.NewService(context.Background(), l.clientOptions...)
+	if err != nil {
+		return fmt.Errorf("creating dns client: %w", err)
+	}
+	zoneName := lastPathPart(input.ResourceID)
+	zone, err := svc.ManagedZones.Get(input.ProjectID, zoneName).Do()
+	if err != nil {
+		if gcperrors.ShouldSkip(err) {
+			slog.Debug("skipping dns zone", "project", input.ProjectID, "zone", zoneName, "reason", err)
+			return nil
+		}
+		return fmt.Errorf("getting dns zone %s: %w", zoneName, err)
+	}
+	sendDNSZone(input.ProjectID, zone, out)
+	return nil
+}
+
+func (l *DNSZoneLister) ResourceTypes() []string { return []string{"dns.googleapis.com/ManagedZone"} }
+
+func sendDNSZone(projectID string, zone *dnsapi.ManagedZone, out *pipeline.P[output.GCPResource]) {
+	r := output.NewGCPResource(projectID, "dns.googleapis.com/ManagedZone", zone.Name)
+	r.DisplayName = zone.Name
+	r.Properties = map[string]any{
+		"dnsName":     zone.DnsName,
+		"visibility":  zone.Visibility,
+		"description": zone.Description,
+	}
+	out.Send(r)
+}

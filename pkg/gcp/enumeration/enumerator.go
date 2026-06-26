@@ -1,6 +1,7 @@
 package enumeration
 
 import (
+	"fmt"
 	"log/slog"
 	"slices"
 
@@ -12,10 +13,18 @@ import (
 	"google.golang.org/api/option"
 )
 
-// ResourceLister lists resources of a specific type within a project.
+// ResourceIDInput identifies a single GCP resource to fetch directly.
+type ResourceIDInput struct {
+	ProjectID    string
+	ResourceType string
+	ResourceID   string
+}
+
+// ResourceLister lists resources of one or more specific types within a project.
 type ResourceLister interface {
-	ResourceType() string
+	ResourceTypes() []string
 	List(projectID string, out *pipeline.P[output.GCPResource]) error
+	ListByResourceID(input ResourceIDInput, out *pipeline.P[output.GCPResource]) error
 }
 
 // Enumerator dispatches resource listing to registered type-specific listers.
@@ -28,7 +37,7 @@ type Enumerator struct {
 func NewEnumerator(opts plugin.GCPCommonRecon) *Enumerator {
 	co := opts.ClientOptions
 	return &Enumerator{
-		listers: buildDefaultListers(co),
+		listers:     buildDefaultListers(co),
 		concurrency: opts.Concurrency,
 	}
 }
@@ -37,7 +46,7 @@ func NewEnumerator(opts plugin.GCPCommonRecon) *Enumerator {
 func (e *Enumerator) ForTypes(types []string) *Enumerator {
 	var filtered []ResourceLister
 	for _, l := range e.listers {
-		if slices.Contains(types, l.ResourceType()) {
+		if resourceTypesOverlap(types, l.ResourceTypes()) {
 			filtered = append(filtered, l)
 		}
 	}
@@ -53,7 +62,7 @@ func (e *Enumerator) ListForProject(projectID string, out *pipeline.P[output.GCP
 		g.Go(func() error {
 			if err := lister.List(projectID, out); err != nil {
 				slog.Warn("resource listing failed",
-					"type", lister.ResourceType(),
+					"types", lister.ResourceTypes(),
 					"project", projectID,
 					"error", err)
 			}
@@ -61,6 +70,25 @@ func (e *Enumerator) ListForProject(projectID string, out *pipeline.P[output.GCP
 		})
 	}
 	return g.Wait()
+}
+
+// ListByResourceID fetches one resource by dispatching to the lister for input.ResourceType.
+func (e *Enumerator) ListByResourceID(input ResourceIDInput, out *pipeline.P[output.GCPResource]) error {
+	for _, lister := range e.listers {
+		if slices.Contains(lister.ResourceTypes(), input.ResourceType) {
+			return lister.ListByResourceID(input, out)
+		}
+	}
+	return fmt.Errorf("unsupported GCP resource type %q", input.ResourceType)
+}
+
+func resourceTypesOverlap(requested, supported []string) bool {
+	for _, t := range requested {
+		if slices.Contains(supported, t) {
+			return true
+		}
+	}
+	return false
 }
 
 func buildDefaultListers(co []option.ClientOption) []ResourceLister {

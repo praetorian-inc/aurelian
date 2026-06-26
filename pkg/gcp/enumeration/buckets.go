@@ -33,17 +33,7 @@ func (l *BucketLister) List(projectID string, out *pipeline.P[output.GCPResource
 	call := svc.Buckets.List(projectID)
 	err = call.Pages(context.Background(), func(resp *gcsapi.Buckets) error {
 		for _, bucket := range resp.Items {
-			r := output.NewGCPResource(projectID, "storage.googleapis.com/Bucket", bucket.Id)
-			r.DisplayName = bucket.Name
-			r.Location = bucket.Location
-			r.Labels = bucket.Labels
-			r.Properties = map[string]any{
-				"storageClass":     bucket.StorageClass,
-				"iamConfiguration": bucket.IamConfiguration,
-				"timeCreated":      bucket.TimeCreated,
-				"versioning":       bucket.Versioning,
-			}
-			out.Send(r)
+			sendBucket(projectID, bucket, out)
 		}
 		return nil
 	})
@@ -57,4 +47,39 @@ func (l *BucketLister) List(projectID string, out *pipeline.P[output.GCPResource
 	return nil
 }
 
-func (l *BucketLister) ResourceType() string { return "storage.googleapis.com/Bucket" }
+func (l *BucketLister) ListByResourceID(input ResourceIDInput, out *pipeline.P[output.GCPResource]) error {
+	svc, err := gcsapi.NewService(context.Background(), l.clientOptions...)
+	if err != nil {
+		return fmt.Errorf("creating storage client: %w", err)
+	}
+	bucketName := input.ResourceID
+	if parsed, ok := pathSegment(input.ResourceID, "buckets"); ok {
+		bucketName = parsed
+	}
+	bucket, err := svc.Buckets.Get(bucketName).Do()
+	if err != nil {
+		if gcperrors.ShouldSkip(err) {
+			slog.Debug("skipping storage bucket", "project", input.ProjectID, "bucket", bucketName, "reason", err)
+			return nil
+		}
+		return fmt.Errorf("getting storage bucket %s: %w", bucketName, err)
+	}
+	sendBucket(input.ProjectID, bucket, out)
+	return nil
+}
+
+func (l *BucketLister) ResourceTypes() []string { return []string{"storage.googleapis.com/Bucket"} }
+
+func sendBucket(projectID string, bucket *gcsapi.Bucket, out *pipeline.P[output.GCPResource]) {
+	r := output.NewGCPResource(projectID, "storage.googleapis.com/Bucket", bucket.Id)
+	r.DisplayName = bucket.Name
+	r.Location = bucket.Location
+	r.Labels = bucket.Labels
+	r.Properties = map[string]any{
+		"storageClass":     bucket.StorageClass,
+		"iamConfiguration": bucket.IamConfiguration,
+		"timeCreated":      bucket.TimeCreated,
+		"versioning":       bucket.Versioning,
+	}
+	out.Send(r)
+}

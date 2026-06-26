@@ -16,6 +16,7 @@ aurelian gcp recon subdomain-takeover [flags]
       --include-sys-projects    Include system projects
   -o, --org-id strings          GCP organization IDs
   -p, --project-id strings      GCP project IDs
+  -i, --resource-id strings     GCP resource ID(s) to scan directly
   -t, --resource-type strings   Resource types to enumerate (default [all])
 ```
 
