@@ -19,9 +19,11 @@ func IsPermissionDenied(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := err.Error()
+	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "does not have permission") ||
-		strings.Contains(msg, "PERMISSION_DENIED")
+		strings.Contains(msg, "permission denied") ||
+		strings.Contains(msg, "permission_denied") ||
+		strings.Contains(msg, "location_policy_violated")
 }
 
 // IsQuotaExceeded returns true if the error indicates a rate limit or quota issue.

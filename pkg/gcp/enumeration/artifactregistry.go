@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/artifactregistry/v1"
 	"google.golang.org/api/option"
 
@@ -30,8 +31,35 @@ func (l *ArtifactRegistryLister) List(projectID string, out *pipeline.P[output.G
 		return fmt.Errorf("creating artifact registry client: %w", err)
 	}
 
-	parent := "projects/" + projectID + "/locations/-"
-	err = svc.Projects.Locations.Repositories.List(parent).Pages(context.Background(), func(resp *artifactregistry.ListRepositoriesResponse) error {
+	var locations []string
+	err = svc.Projects.Locations.List("projects/"+projectID).Pages(context.Background(), func(resp *artifactregistry.ListLocationsResponse) error {
+		for _, loc := range resp.Locations {
+			if loc.Name != "" {
+				locations = append(locations, loc.Name)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		if gcperrors.ShouldSkip(err) {
+			slog.Debug("skipping artifact registry", "project", projectID, "reason", err)
+			return nil
+		}
+		return fmt.Errorf("listing artifact registry locations: %w", err)
+	}
+
+	g := errgroup.Group{}
+	g.SetLimit(10)
+	for _, location := range locations {
+		g.Go(func() error {
+			return l.listRepositories(svc, projectID, location, out)
+		})
+	}
+	return g.Wait()
+}
+
+func (l *ArtifactRegistryLister) listRepositories(svc *artifactregistry.Service, projectID, parent string, out *pipeline.P[output.GCPResource]) error {
+	err := svc.Projects.Locations.Repositories.List(parent).Pages(context.Background(), func(resp *artifactregistry.ListRepositoriesResponse) error {
 		for _, repo := range resp.Repositories {
 			sendArtifactRepository(projectID, repo, out)
 
@@ -50,10 +78,10 @@ func (l *ArtifactRegistryLister) List(projectID string, out *pipeline.P[output.G
 	})
 	if err != nil {
 		if gcperrors.ShouldSkip(err) {
-			slog.Debug("skipping artifact registry", "project", projectID, "reason", err)
+			slog.Debug("skipping artifact registry repositories", "project", projectID, "location", parent, "reason", err)
 			return nil
 		}
-		return fmt.Errorf("listing artifact registry repositories: %w", err)
+		return fmt.Errorf("listing artifact registry repositories in %s: %w", parent, err)
 	}
 	return nil
 }

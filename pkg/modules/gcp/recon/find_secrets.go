@@ -137,9 +137,9 @@ func (m *GCPFindSecretsModule) listByResourceID(c GCPFindSecretsConfig) (*pipeli
 	if len(c.ResourceType) != 1 || c.ResourceType[0] == "all" {
 		return nil, fmt.Errorf("direct GCP resource scanning requires exactly one --resource-type")
 	}
-	resourceType, err := resolveAlias(c.ResourceType[0])
-	if err != nil {
-		return nil, err
+	resourceType := c.ResourceType[0]
+	if resolved, err := resolveAlias(resourceType); err == nil {
+		resourceType = resolved
 	}
 	if !slices.Contains(secretsResourceTypes, resourceType) {
 		return nil, fmt.Errorf("resource type %q is not supported for direct GCP secret scanning", resourceType)
