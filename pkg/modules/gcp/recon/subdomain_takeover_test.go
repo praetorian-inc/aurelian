@@ -7,19 +7,21 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGCPPublicResourcesModule_Metadata(t *testing.T) {
-	m := &GCPPublicResourcesModule{}
-	assert.Equal(t, "public-resources", m.ID())
+func TestGCPSubdomainTakeoverModule_Metadata(t *testing.T) {
+	m := &GCPSubdomainTakeoverModule{}
+	assert.Equal(t, "subdomain-takeover", m.ID())
 	assert.Equal(t, plugin.PlatformGCP, m.Platform())
+	assert.Equal(t, plugin.CategoryRecon, m.Category())
+	assert.NotNil(t, m.Parameters())
 }
 
-func TestPublicResources_SupportedResourceTypes(t *testing.T) {
-	m := &GCPPublicResourcesModule{}
+func TestGCPSubdomainTakeover_SupportedResourceTypes(t *testing.T) {
+	m := &GCPSubdomainTakeoverModule{}
 	types := m.SupportedResourceTypes()
 	expected := append([]string{
 		"cloudresourcemanager.googleapis.com/Organization",
 		"cloudresourcemanager.googleapis.com/Folder",
 		"cloudresourcemanager.googleapis.com/Project",
-	}, publicResourceTypes...)
+	}, subdomainTakeoverResourceTypes...)
 	assert.ElementsMatch(t, expected, types)
 }

@@ -18,6 +18,7 @@ var listResourceMap = map[string]resourceTypeInfo{
 	"compute.googleapis.com/ForwardingRule": {aliases: []string{"forwardingrule"}},
 	"compute.googleapis.com/GlobalForwardingRule": {aliases: []string{"globalforwardingrule"}},
 	"compute.googleapis.com/Address":              {aliases: []string{"address"}},
+	"compute.googleapis.com/GlobalAddress":        {aliases: []string{"globaladdress"}},
 	"dns.googleapis.com/ManagedZone":              {aliases: []string{"dnszone", "managedzone"}},
 	"storage.googleapis.com/Bucket":               {aliases: []string{"bucket"}},
 	"sqladmin.googleapis.com/Instance":            {aliases: []string{"sql"}},

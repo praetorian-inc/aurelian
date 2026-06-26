@@ -61,6 +61,7 @@ func NewChecker(clientOptions []option.ClientOption) (*Checker, error) {
 // Check evaluates a DNS record for takeover vulnerabilities.
 // Pipeline signature: DNSRecord -> model.AurelianModel.
 func (c *Checker) Check(rec DNSRecord, out *pipeline.P[model.AurelianModel]) error {
+	slog.Info("checking record", "record", rec)
 	switch rec.Type {
 	case "CNAME":
 		c.checkCNAME(rec, out)
