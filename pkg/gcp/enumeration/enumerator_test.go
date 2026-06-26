@@ -10,14 +10,21 @@ import (
 )
 
 type mockLister struct {
-	resourceType string
-	listFunc     func(string, *pipeline.P[output.GCPResource]) error
+	resourceTypes        []string
+	listFunc             func(string, *pipeline.P[output.GCPResource]) error
+	listByResourceIDFunc func(ResourceIDInput, *pipeline.P[output.GCPResource]) error
 }
 
-func (m *mockLister) ResourceType() string { return m.resourceType }
+func (m *mockLister) ResourceTypes() []string { return m.resourceTypes }
 func (m *mockLister) List(projectID string, out *pipeline.P[output.GCPResource]) error {
 	if m.listFunc != nil {
 		return m.listFunc(projectID, out)
+	}
+	return nil
+}
+func (m *mockLister) ListByResourceID(input ResourceIDInput, out *pipeline.P[output.GCPResource]) error {
+	if m.listByResourceIDFunc != nil {
+		return m.listByResourceIDFunc(input, out)
 	}
 	return nil
 }
@@ -25,17 +32,17 @@ func (m *mockLister) List(projectID string, out *pipeline.P[output.GCPResource])
 func TestEnumerator_ForTypes_Filters(t *testing.T) {
 	e := &Enumerator{
 		listers: []ResourceLister{
-			&mockLister{resourceType: "type-a"},
-			&mockLister{resourceType: "type-b"},
-			&mockLister{resourceType: "type-c"},
+			&mockLister{resourceTypes: []string{"type-a"}},
+			&mockLister{resourceTypes: []string{"type-b"}},
+			&mockLister{resourceTypes: []string{"type-c"}},
 		},
 		concurrency: 2,
 	}
 
 	filtered := e.ForTypes([]string{"type-a", "type-c"})
 	assert.Len(t, filtered.listers, 2)
-	assert.Equal(t, "type-a", filtered.listers[0].ResourceType())
-	assert.Equal(t, "type-c", filtered.listers[1].ResourceType())
+	assert.Equal(t, []string{"type-a"}, filtered.listers[0].ResourceTypes())
+	assert.Equal(t, []string{"type-c"}, filtered.listers[1].ResourceTypes())
 }
 
 func TestEnumerator_ListForProject_CallsAllListers(t *testing.T) {
@@ -44,7 +51,7 @@ func TestEnumerator_ListForProject_CallsAllListers(t *testing.T) {
 	e := &Enumerator{
 		listers: []ResourceLister{
 			&mockLister{
-				resourceType: "type-a",
+				resourceTypes: []string{"type-a"},
 				listFunc: func(pid string, out *pipeline.P[output.GCPResource]) error {
 					mu.Lock()
 					called["type-a"] = true
@@ -54,7 +61,7 @@ func TestEnumerator_ListForProject_CallsAllListers(t *testing.T) {
 				},
 			},
 			&mockLister{
-				resourceType: "type-b",
+				resourceTypes: []string{"type-b"},
 				listFunc: func(pid string, out *pipeline.P[output.GCPResource]) error {
 					mu.Lock()
 					called["type-b"] = true

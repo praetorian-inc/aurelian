@@ -3,6 +3,7 @@ package recon
 import (
 	"fmt"
 	"log/slog"
+	"slices"
 
 	"github.com/praetorian-inc/aurelian/pkg/gcp/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/gcp/extraction"
@@ -50,7 +51,7 @@ func (m *GCPFindSecretsModule) References() []string {
 }
 
 func (m *GCPFindSecretsModule) SupportedResourceTypes() []string {
-	return supportedInputTypes
+	return append(slices.Clone(supportedInputTypes), secretsResourceTypes...)
 }
 
 func (m *GCPFindSecretsModule) Parameters() any {
@@ -82,6 +83,31 @@ func (m *GCPFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aureli
 		}
 	}()
 
+	var listed *pipeline.P[output.GCPResource]
+	var err error
+	if len(c.ResourceID) > 0 {
+		listed, err = m.listByResourceID(c)
+		if err != nil {
+			return err
+		}
+	} else {
+		listed = m.listByHierarchy(c)
+	}
+
+	// Extract content from resources.
+	extractor := extraction.NewGCPExtractor(c.GCPCommonRecon)
+	extracted := pipeline.New[output.ScanInput]()
+	pipeline.Pipe(listed, extractor.Extract, extracted)
+
+	// Scan for secrets.
+	scanned := pipeline.New[secrets.SecretScanResult]()
+	pipeline.Pipe(extracted, s.Scan, scanned)
+	pipeline.Pipe(scanned, secrets.RiskFromScanResult, out)
+
+	return out.Wait()
+}
+
+func (m *GCPFindSecretsModule) listByHierarchy(c GCPFindSecretsConfig) *pipeline.P[output.GCPResource] {
 	// Resolve hierarchy: org/folder/project → project IDs.
 	resolver := hierarchy.NewResolver(c.GCPCommonRecon)
 	input := hierarchy.HierarchyResolverInput{
@@ -101,18 +127,38 @@ func (m *GCPFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aureli
 	enumerator := enumeration.NewEnumerator(c.GCPCommonRecon).ForTypes(secretsResourceTypes)
 	listed := pipeline.New[output.GCPResource]()
 	pipeline.Pipe(projects, enumerator.ListForProject, listed)
+	return listed
+}
 
-	// Extract content from resources.
-	extractor := extraction.NewGCPExtractor(c.GCPCommonRecon)
-	extracted := pipeline.New[output.ScanInput]()
-	pipeline.Pipe(listed, extractor.Extract, extracted)
+func (m *GCPFindSecretsModule) listByResourceID(c GCPFindSecretsConfig) (*pipeline.P[output.GCPResource], error) {
+	if len(c.ProjectID) != 1 {
+		return nil, fmt.Errorf("direct GCP resource scanning requires exactly one --project-id")
+	}
+	if len(c.ResourceType) != 1 || c.ResourceType[0] == "all" {
+		return nil, fmt.Errorf("direct GCP resource scanning requires exactly one --resource-type")
+	}
+	resourceType, err := resolveAlias(c.ResourceType[0])
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(secretsResourceTypes, resourceType) {
+		return nil, fmt.Errorf("resource type %q is not supported for direct GCP secret scanning", resourceType)
+	}
 
-	// Scan for secrets.
-	scanned := pipeline.New[secrets.SecretScanResult]()
-	pipeline.Pipe(extracted, s.Scan, scanned)
-	pipeline.Pipe(scanned, secrets.RiskFromScanResult, out)
+	inputs := make([]enumeration.ResourceIDInput, 0, len(c.ResourceID))
+	for _, resourceID := range c.ResourceID {
+		inputs = append(inputs, enumeration.ResourceIDInput{
+			ProjectID:    c.ProjectID[0],
+			ResourceType: resourceType,
+			ResourceID:   resourceID,
+		})
+	}
 
-	return out.Wait()
+	inputStream := pipeline.From(inputs...)
+	listed := pipeline.New[output.GCPResource]()
+	enumerator := enumeration.NewEnumerator(c.GCPCommonRecon)
+	pipeline.Pipe(inputStream, enumerator.ListByResourceID, listed, &pipeline.PipeOpts{Concurrency: c.Concurrency})
+	return listed, nil
 }
 
 func splitHierarchyResources(res output.GCPResource, p *pipeline.P[string]) error {
@@ -121,4 +167,3 @@ func splitHierarchyResources(res output.GCPResource, p *pipeline.P[string]) erro
 	}
 	return nil
 }
-

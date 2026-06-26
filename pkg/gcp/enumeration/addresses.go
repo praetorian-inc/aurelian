@@ -34,19 +34,7 @@ func (l *AddressLister) List(projectID string, out *pipeline.P[output.GCPResourc
 	// Global addresses.
 	err = svc.GlobalAddresses.List(projectID).Pages(context.Background(), func(resp *computeapi.AddressList) error {
 		for _, addr := range resp.Items {
-			r := output.NewGCPResource(projectID, "compute.googleapis.com/GlobalAddress", fmt.Sprintf("%d", addr.Id))
-			r.DisplayName = addr.Name
-			r.Location = "global"
-			r.Labels = addr.Labels
-			if addr.Address != "" {
-				r.IPs = []string{addr.Address}
-			}
-			r.Properties = map[string]any{
-				"status":      addr.Status,
-				"addressType": addr.AddressType,
-				"purpose":     addr.Purpose,
-			}
-			out.Send(r)
+			sendAddress(projectID, "compute.googleapis.com/GlobalAddress", "global", addr, out)
 		}
 		return nil
 	})
@@ -82,19 +70,7 @@ func (l *AddressLister) List(projectID string, out *pipeline.P[output.GCPResourc
 		g.Go(func() error {
 			err := svc.Addresses.List(projectID, region).Pages(context.Background(), func(resp *computeapi.AddressList) error {
 				for _, addr := range resp.Items {
-					r := output.NewGCPResource(projectID, "compute.googleapis.com/Address", fmt.Sprintf("%d", addr.Id))
-					r.DisplayName = addr.Name
-					r.Location = region
-					r.Labels = addr.Labels
-					if addr.Address != "" {
-						r.IPs = []string{addr.Address}
-					}
-					r.Properties = map[string]any{
-						"status":      addr.Status,
-						"addressType": addr.AddressType,
-						"purpose":     addr.Purpose,
-					}
-					out.Send(r)
+					sendAddress(projectID, "compute.googleapis.com/Address", region, addr, out)
 				}
 				return nil
 			})
@@ -112,4 +88,62 @@ func (l *AddressLister) List(projectID string, out *pipeline.P[output.GCPResourc
 	return g.Wait()
 }
 
-func (l *AddressLister) ResourceType() string { return "compute.googleapis.com/Address" }
+func (l *AddressLister) ListByResourceID(input ResourceIDInput, out *pipeline.P[output.GCPResource]) error {
+	svc, err := computeapi.NewService(context.Background(), l.clientOptions...)
+	if err != nil {
+		return fmt.Errorf("creating compute client: %w", err)
+	}
+
+	name, ok := pathSegment(input.ResourceID, "addresses")
+	if !ok {
+		return newResourceIDError(input.ResourceType, input.ResourceID, "a full path containing addresses/{name}")
+	}
+
+	if input.ResourceType == "compute.googleapis.com/GlobalAddress" {
+		addr, err := svc.GlobalAddresses.Get(input.ProjectID, name).Do()
+		if err != nil {
+			if gcperrors.ShouldSkip(err) {
+				slog.Debug("skipping global address", "project", input.ProjectID, "name", name, "reason", err)
+				return nil
+			}
+			return fmt.Errorf("getting global address %s: %w", name, err)
+		}
+		sendAddress(input.ProjectID, input.ResourceType, "global", addr, out)
+		return nil
+	}
+
+	region, ok := pathSegment(input.ResourceID, "regions")
+	if !ok {
+		return newResourceIDError(input.ResourceType, input.ResourceID, "a full path containing regions/{region}/addresses/{name}")
+	}
+	addr, err := svc.Addresses.Get(input.ProjectID, region, name).Do()
+	if err != nil {
+		if gcperrors.ShouldSkip(err) {
+			slog.Debug("skipping address", "project", input.ProjectID, "region", region, "name", name, "reason", err)
+			return nil
+		}
+		return fmt.Errorf("getting address %s in region %s: %w", name, region, err)
+	}
+	sendAddress(input.ProjectID, input.ResourceType, region, addr, out)
+	return nil
+}
+
+func (l *AddressLister) ResourceTypes() []string {
+	return []string{"compute.googleapis.com/Address", "compute.googleapis.com/GlobalAddress"}
+}
+
+func sendAddress(projectID, resourceType, location string, addr *computeapi.Address, out *pipeline.P[output.GCPResource]) {
+	r := output.NewGCPResource(projectID, resourceType, fmt.Sprintf("%d", addr.Id))
+	r.DisplayName = addr.Name
+	r.Location = location
+	r.Labels = addr.Labels
+	if addr.Address != "" {
+		r.IPs = []string{addr.Address}
+	}
+	r.Properties = map[string]any{
+		"status":      addr.Status,
+		"addressType": addr.AddressType,
+		"purpose":     addr.Purpose,
+	}
+	out.Send(r)
+}

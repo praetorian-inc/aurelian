@@ -24,6 +24,7 @@ var listResourceMap = map[string]resourceTypeInfo{
 	"cloudfunctions.googleapis.com/Function":      {aliases: []string{"function", "cloudfunction"}},
 	"run.googleapis.com/Service":                  {aliases: []string{"runservice", "cloudrunservice"}},
 	"appengine.googleapis.com/Service":            {aliases: []string{"appengineservice"}},
+	"appengine.googleapis.com/Version":            {aliases: []string{"appengineversion"}},
 	"artifactregistry.googleapis.com/Repository":  {aliases: []string{"artifactrepo"}},
 	"artifactregistry.googleapis.com/DockerImage": {aliases: []string{"dockerimage"}},
 	"firebasehosting.googleapis.com/Site":         {aliases: []string{"firebase", "hostingsite"}},

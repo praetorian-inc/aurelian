@@ -34,17 +34,7 @@ func (l *ForwardingRuleLister) List(projectID string, out *pipeline.P[output.GCP
 	// Global forwarding rules.
 	err = svc.GlobalForwardingRules.List(projectID).Pages(context.Background(), func(resp *computeapi.ForwardingRuleList) error {
 		for _, rule := range resp.Items {
-			r := output.NewGCPResource(projectID, "compute.googleapis.com/GlobalForwardingRule", fmt.Sprintf("%d", rule.Id))
-			r.DisplayName = rule.Name
-			r.Location = "global"
-			r.Labels = rule.Labels
-			if rule.IPAddress != "" {
-				r.IPs = []string{rule.IPAddress}
-			}
-			r.Properties = map[string]any{
-				"target": rule.Target,
-			}
-			out.Send(r)
+			sendForwardingRule(projectID, "compute.googleapis.com/GlobalForwardingRule", "global", rule, out)
 		}
 		return nil
 	})
@@ -80,17 +70,7 @@ func (l *ForwardingRuleLister) List(projectID string, out *pipeline.P[output.GCP
 		g.Go(func() error {
 			err := svc.ForwardingRules.List(projectID, region).Pages(context.Background(), func(resp *computeapi.ForwardingRuleList) error {
 				for _, rule := range resp.Items {
-					r := output.NewGCPResource(projectID, "compute.googleapis.com/ForwardingRule", fmt.Sprintf("%d", rule.Id))
-					r.DisplayName = rule.Name
-					r.Location = region
-					r.Labels = rule.Labels
-					if rule.IPAddress != "" {
-						r.IPs = []string{rule.IPAddress}
-					}
-					r.Properties = map[string]any{
-						"target": rule.Target,
-					}
-					out.Send(r)
+					sendForwardingRule(projectID, "compute.googleapis.com/ForwardingRule", region, rule, out)
 				}
 				return nil
 			})
@@ -108,4 +88,60 @@ func (l *ForwardingRuleLister) List(projectID string, out *pipeline.P[output.GCP
 	return g.Wait()
 }
 
-func (l *ForwardingRuleLister) ResourceType() string { return "compute.googleapis.com/ForwardingRule" }
+func (l *ForwardingRuleLister) ListByResourceID(input ResourceIDInput, out *pipeline.P[output.GCPResource]) error {
+	svc, err := computeapi.NewService(context.Background(), l.clientOptions...)
+	if err != nil {
+		return fmt.Errorf("creating compute client: %w", err)
+	}
+
+	name, ok := pathSegment(input.ResourceID, "forwardingRules")
+	if !ok {
+		return newResourceIDError(input.ResourceType, input.ResourceID, "a full path containing forwardingRules/{name}")
+	}
+
+	if input.ResourceType == "compute.googleapis.com/GlobalForwardingRule" {
+		rule, err := svc.GlobalForwardingRules.Get(input.ProjectID, name).Do()
+		if err != nil {
+			if gcperrors.ShouldSkip(err) {
+				slog.Debug("skipping global forwarding rule", "project", input.ProjectID, "name", name, "reason", err)
+				return nil
+			}
+			return fmt.Errorf("getting global forwarding rule %s: %w", name, err)
+		}
+		sendForwardingRule(input.ProjectID, input.ResourceType, "global", rule, out)
+		return nil
+	}
+
+	region, ok := pathSegment(input.ResourceID, "regions")
+	if !ok {
+		return newResourceIDError(input.ResourceType, input.ResourceID, "a full path containing regions/{region}/forwardingRules/{name}")
+	}
+	rule, err := svc.ForwardingRules.Get(input.ProjectID, region, name).Do()
+	if err != nil {
+		if gcperrors.ShouldSkip(err) {
+			slog.Debug("skipping forwarding rule", "project", input.ProjectID, "region", region, "name", name, "reason", err)
+			return nil
+		}
+		return fmt.Errorf("getting forwarding rule %s in region %s: %w", name, region, err)
+	}
+	sendForwardingRule(input.ProjectID, input.ResourceType, region, rule, out)
+	return nil
+}
+
+func (l *ForwardingRuleLister) ResourceTypes() []string {
+	return []string{"compute.googleapis.com/ForwardingRule", "compute.googleapis.com/GlobalForwardingRule"}
+}
+
+func sendForwardingRule(projectID, resourceType, location string, rule *computeapi.ForwardingRule, out *pipeline.P[output.GCPResource]) {
+	r := output.NewGCPResource(projectID, resourceType, fmt.Sprintf("%d", rule.Id))
+	r.DisplayName = rule.Name
+	r.Location = location
+	r.Labels = rule.Labels
+	if rule.IPAddress != "" {
+		r.IPs = []string{rule.IPAddress}
+	}
+	r.Properties = map[string]any{
+		"target": rule.Target,
+	}
+	out.Send(r)
+}
