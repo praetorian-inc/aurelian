@@ -63,16 +63,6 @@ func (s *SecretScanner) Start(cfg ScannerConfig) error {
 	return nil
 }
 
-// Close closes the underlying persistent scanner and releases resources.
-func (s *SecretScanner) Close() error {
-	if s.ps == nil {
-		return nil
-	}
-	err := s.ps.close()
-	s.ps = nil
-	return err
-}
-
 // DBPath returns the path to the SQLite database, or empty string if not started.
 func (s *SecretScanner) DBPath() string {
 	if s.ps == nil {
@@ -81,38 +71,19 @@ func (s *SecretScanner) DBPath() string {
 	return s.ps.dbPath
 }
 
-// Scan is a pipeline-compatible method that scans a ScanInput for secrets
-// and sends SecretScanResult values to the output pipeline.
-func (s *SecretScanner) Scan(input output.ScanInput, out *pipeline.P[SecretScanResult]) error {
-	if input.PathFilterable && s.ignorePath != nil && s.ignorePath(input.Label) {
-		slog.Debug("skipping ignored path", "label", input.Label, "resource", input.ResourceID)
-		return nil
-	}
-
-	blobID := types.ComputeBlobID(input.Content)
-	matches, err := s.ps.scanContent(input.Content, blobID, provenanceFromScanInput(input))
-	if err != nil {
-		slog.Warn("failed to scan content for secrets", "resource", input.ResourceID, "label", input.Label, "error", err)
-		return nil
-	}
-
-	for _, match := range matches {
-		if s.validate && s.engine != nil {
-			s.validateMatch(match, input.ResourceID)
-		}
-		out.Send(toScanResult(input, match))
-	}
-	return nil
-}
-
-// ScanFlushAndClose runs Scan over every input, flushes any timed-out retry
+// ScanFlushAndClose runs ScanFlushAndClose over every input, flushes any timed-out retry
 // matches into the same output pipeline, closes the scanner, then closes out.
-// It is a drop-in replacement for `pipeline.Pipe(in, s.Scan, out, opts...)`
+// It is a drop-in replacement for `pipeline.Pipe(in, s.ScanFlushAndClose, out, opts...)`
 // when the caller is done with the scanner. The drain runs only after every
-// Scan has completed, since the matcher's queue is shared across all scanned
+// ScanFlushAndClose has completed, since the matcher's queue is shared across all scanned
 // blobs. Closing the scanner before closing out ensures downstream consumers
 // do not observe completion while the Titus database is still open.
 func (s *SecretScanner) ScanFlushAndClose(in *pipeline.P[output.ScanInput], out *pipeline.P[SecretScanResult], opts ...*pipeline.PipeOpts) {
+	if s.ps == nil {
+		out.CloseWithError(fmt.Errorf("secret scanner not started or already closed"))
+		return
+	}
+
 	scanned := pipeline.New[SecretScanResult]()
 	pipeline.Pipe(in, s.Scan, scanned, opts...)
 
@@ -147,6 +118,34 @@ func (s *SecretScanner) ScanFlushAndClose(in *pipeline.P[output.ScanInput], out 
 	}()
 }
 
+// Scan is a pipeline-compatible method that scans a ScanInput for secrets
+// and sends SecretScanResult values to the output pipeline.
+func (s *SecretScanner) Scan(input output.ScanInput, out *pipeline.P[SecretScanResult]) error {
+	if s.ps == nil {
+		return fmt.Errorf("secret scanner not started or already closed")
+	}
+
+	if input.PathFilterable && s.ignorePath != nil && s.ignorePath(input.Label) {
+		slog.Debug("skipping ignored path", "label", input.Label, "resource", input.ResourceID)
+		return nil
+	}
+
+	blobID := types.ComputeBlobID(input.Content)
+	matches, err := s.ps.scanContent(input.Content, blobID, provenanceFromScanInput(input))
+	if err != nil {
+		slog.Warn("failed to scan content for secrets", "resource", input.ResourceID, "label", input.Label, "error", err)
+		return nil
+	}
+
+	for _, match := range matches {
+		if s.validate && s.engine != nil {
+			s.validateMatch(match, input.ResourceID)
+		}
+		out.Send(toScanResult(input, match))
+	}
+	return nil
+}
+
 // Flush recovers matches that hit Titus' regexp timeout retry path and emits
 // them to the output pipeline. Titus withholds such matches from the per-blob
 // Scan results and queues them behind the matcher's drain; without Flush they
@@ -173,6 +172,16 @@ func (s *SecretScanner) Flush(out *pipeline.P[SecretScanResult]) error {
 		out.Send(toScanResult(input, match))
 	}
 	return nil
+}
+
+// Close closes the underlying persistent scanner and releases resources.
+func (s *SecretScanner) Close() error {
+	if s.ps == nil {
+		return nil
+	}
+	err := s.ps.close()
+	s.ps = nil
+	return err
 }
 
 // scanInputFor reconstructs the ScanInput for a recovered match from the

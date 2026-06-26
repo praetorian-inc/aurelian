@@ -756,6 +756,22 @@ resource "azurerm_cosmosdb_sql_container" "config" {
   partition_key_path  = "/id"
 }
 
+# Grant the test runner Cosmos DB native data-plane read access for this fixture
+# account. Azure RBAC Reader/Owner is not sufficient for the Cosmos SDK calls
+# used by the find-secrets extractor.
+resource "azurerm_cosmosdb_sql_role_assignment" "data_reader" {
+  resource_group_name = azurerm_resource_group.test.name
+  account_name        = azurerm_cosmosdb_account.test.name
+  role_definition_id  = "${azurerm_cosmosdb_account.test.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000001"
+  principal_id        = data.azurerm_client_config.current.object_id
+  scope               = azurerm_cosmosdb_account.test.id
+}
+
+resource "time_sleep" "cosmos_rbac_propagation" {
+  depends_on      = [azurerm_cosmosdb_sql_role_assignment.data_reader]
+  create_duration = "60s"
+}
+
 resource "azurerm_cosmosdb_sql_stored_procedure" "test" {
   name                = "getSecret"
   resource_group_name = azurerm_resource_group.test.name
