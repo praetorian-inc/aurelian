@@ -76,8 +76,8 @@ func TestSecretScanner_ScanPipelineNoSecrets(t *testing.T) {
 
 func TestToScanResult_CarriesFullMatch(t *testing.T) {
 	match := &types.Match{
-		RuleID:    "np.aws.1",
-		RuleName:  "AWS API Key",
+		RuleID:   "np.aws.1",
+		RuleName: "AWS API Key",
 		Snippet: types.Snippet{
 			Before:   []byte("before"),
 			Matching: []byte("AKIAIOSFODNN7EXAMPLE"),
@@ -773,7 +773,7 @@ func TestSecretScanner_Flush_EmitsRecoveredMatchEvenWhenProvenanceMissing(t *tes
 	assert.Empty(t, items[0].ResourceRef, "metadata is absent without provenance, but the match is not dropped")
 }
 
-func TestSecretScanner_ScanAndFlush_EmitsBothImmediateAndRecovered(t *testing.T) {
+func TestSecretScanner_ScanFlushAndClose_EmitsBothImmediateAndRecovered(t *testing.T) {
 	s := startScanner(t)
 
 	// Register the blob so the recovered match references an existing blob, and
@@ -807,10 +807,11 @@ func TestSecretScanner_ScanAndFlush_EmitsBothImmediateAndRecovered(t *testing.T)
 
 	in := pipeline.From(input)
 	out := pipeline.New[SecretScanResult]()
-	s.ScanAndFlush(in, out)
+	s.ScanFlushAndClose(in, out)
 
 	items, err := out.Collect()
 	require.NoError(t, err)
+	assert.Empty(t, s.DBPath(), "ScanFlushAndClose should close the scanner before closing output")
 
 	var sawRecovered bool
 	for _, it := range items {
@@ -819,22 +820,22 @@ func TestSecretScanner_ScanAndFlush_EmitsBothImmediateAndRecovered(t *testing.T)
 			assert.Equal(t, input.ResourceID, it.ResourceRef, "recovered result should carry resource metadata from stored provenance")
 		}
 	}
-	assert.True(t, sawRecovered, "ScanAndFlush must emit the recovered (timed-out) match")
+	assert.True(t, sawRecovered, "ScanFlushAndClose must emit the recovered (timed-out) match")
 	assert.GreaterOrEqual(t, len(items), 2, "should emit both the immediate match(es) and the recovered match")
 }
 
-// TestSecretScanner_ScanAndFlush_PropagatesUpstreamError guards against the P1
-// regression: when an upstream stage feeding ScanAndFlush fails (e.g. a cloud
+// TestSecretScanner_ScanFlushAndClose_PropagatesUpstreamError guards against the P1
+// regression: when an upstream stage feeding ScanFlushAndClose fails (e.g. a cloud
 // lister or extractor errors), that failure must reach the output pipeline so
 // the module reports failure rather than silent partial success.
-func TestSecretScanner_ScanAndFlush_PropagatesUpstreamError(t *testing.T) {
+func TestSecretScanner_ScanFlushAndClose_PropagatesUpstreamError(t *testing.T) {
 	s := startScanner(t)
 	s.ps.matcher = &fakeMatcher{}
 
 	upstreamErr := errors.New("extractor blew up")
 
 	// An input pipeline that emits one item then fails, mimicking pipeline.Pipe
-	// recording an upstream error on the stream feeding ScanAndFlush.
+	// recording an upstream error on the stream feeding ScanFlushAndClose.
 	in := pipeline.New[output.ScanInput]()
 	go func() {
 		in.Send(output.ScanInput{
@@ -846,10 +847,11 @@ func TestSecretScanner_ScanAndFlush_PropagatesUpstreamError(t *testing.T) {
 	}()
 
 	out := pipeline.New[SecretScanResult]()
-	s.ScanAndFlush(in, out)
+	s.ScanFlushAndClose(in, out)
 
 	_, err := out.Collect()
 	require.ErrorIs(t, err, upstreamErr, "upstream pipeline error must propagate to out, not be discarded")
+	assert.Empty(t, s.DBPath(), "ScanFlushAndClose should close the scanner even on upstream errors")
 }
 
 // TestProvenanceScanInputRoundTrip pins the invariant that the provenance

@@ -105,22 +105,29 @@ func (s *SecretScanner) Scan(input output.ScanInput, out *pipeline.P[SecretScanR
 	return nil
 }
 
-// ScanAndFlush runs Scan over every input and then flushes any timed-out retry
-// matches into the same output pipeline, closing out when complete. It is a
-// drop-in replacement for `pipeline.Pipe(in, s.Scan, out, opts...)` that also
-// drains Titus' deferred-retry queue, so secrets that hit the regexp timeout
-// path are not silently dropped. Like pipeline.Pipe it returns immediately and
-// runs asynchronously, closing out when done. The drain runs only after every
+// ScanFlushAndClose runs Scan over every input, flushes any timed-out retry
+// matches into the same output pipeline, closes the scanner, then closes out.
+// It is a drop-in replacement for `pipeline.Pipe(in, s.Scan, out, opts...)`
+// when the caller is done with the scanner. The drain runs only after every
 // Scan has completed, since the matcher's queue is shared across all scanned
-// blobs.
-func (s *SecretScanner) ScanAndFlush(in *pipeline.P[output.ScanInput], out *pipeline.P[SecretScanResult], opts ...*pipeline.PipeOpts) {
+// blobs. Closing the scanner before closing out ensures downstream consumers
+// do not observe completion while the Titus database is still open.
+func (s *SecretScanner) ScanFlushAndClose(in *pipeline.P[output.ScanInput], out *pipeline.P[SecretScanResult], opts ...*pipeline.PipeOpts) {
 	scanned := pipeline.New[SecretScanResult]()
 	pipeline.Pipe(in, s.Scan, scanned, opts...)
 
 	go func() {
-		// Safety net: guarantees out is closed even if a stage below panics.
-		// No-op once CloseWithError/Close has already run (guarded by closeOnce).
-		defer out.Close()
+		var err error
+		defer func() {
+			if closeErr := s.Close(); closeErr != nil {
+				slog.Warn("failed to close Titus scanner", "error", closeErr)
+			}
+			if err != nil {
+				out.CloseWithError(err)
+				return
+			}
+			out.Close()
+		}()
 
 		for item := range scanned.Range() {
 			out.Send(item)
@@ -129,13 +136,13 @@ func (s *SecretScanner) ScanAndFlush(in *pipeline.P[output.ScanInput], out *pipe
 		// stage failure (e.g. a cloud lister/extractor) on the scanned stream
 		// via in.Wait(). Propagate it to out so the module reports failure
 		// instead of silent partial success.
-		if err := scanned.Wait(); err != nil {
-			out.CloseWithError(err)
+		if waitErr := scanned.Wait(); waitErr != nil {
+			err = waitErr
 			return
 		}
 		// Drain the timed-out retry queue once all inputs are scanned.
-		if err := s.Flush(out); err != nil {
-			slog.Warn("failed to flush timed-out secret matches", "error", err)
+		if flushErr := s.Flush(out); flushErr != nil {
+			slog.Warn("failed to flush timed-out secret matches", "error", flushErr)
 		}
 	}()
 }

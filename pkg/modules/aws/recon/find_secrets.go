@@ -2,7 +2,6 @@ package recon
 
 import (
 	"fmt"
-	"log/slog"
 
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/aws/extraction"
@@ -73,21 +72,16 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		c.DBPath = secrets.DefaultDBPath(c.OutputDir)
 	}
 
-	var s secrets.SecretScanner
-	if err := s.Start(c.ScannerConfig); err != nil {
-		return fmt.Errorf("failed to create Titus scanner: %w", err)
-	}
-	defer func() {
-		if closeErr := s.Close(); closeErr != nil {
-			slog.Warn("failed to close Titus scanner", "error", closeErr)
-		}
-	}()
-
 	cfg.Info("scanning %d resource types for secrets", len(m.SupportedResourceTypes()))
 
 	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
 	if err != nil {
 		return fmt.Errorf("failed to collect inputs: %w", err)
+	}
+
+	var s secrets.SecretScanner
+	if err := s.Start(c.ScannerConfig); err != nil {
+		return fmt.Errorf("failed to create Titus scanner: %w", err)
 	}
 
 	lister := cclist.NewEnumerator(c.AWSCommonRecon)
@@ -110,7 +104,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	})
 
 	scanned := pipeline.New[secrets.SecretScanResult]()
-	s.ScanAndFlush(extracted, scanned, &pipeline.PipeOpts{
+	s.ScanFlushAndClose(extracted, scanned, &pipeline.PipeOpts{
 		Progress: cfg.Log.ProgressFunc("scanning for secrets"),
 	})
 	pipeline.Pipe(scanned, secrets.RiskFromScanResult, out)
@@ -122,4 +116,3 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	cfg.Success("secret scanning complete")
 	return nil
 }
-

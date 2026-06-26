@@ -2,7 +2,6 @@ package recon
 
 import (
 	"fmt"
-	"log/slog"
 	"slices"
 
 	"github.com/praetorian-inc/aurelian/pkg/gcp/enumeration"
@@ -73,16 +72,6 @@ func (m *GCPFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aureli
 		c.DBPath = secrets.DefaultDBPath(c.OutputDir)
 	}
 
-	var s secrets.SecretScanner
-	if err := s.Start(c.ScannerConfig); err != nil {
-		return fmt.Errorf("failed to create Titus scanner: %w", err)
-	}
-	defer func() {
-		if closeErr := s.Close(); closeErr != nil {
-			slog.Warn("failed to close Titus scanner", "error", closeErr)
-		}
-	}()
-
 	var listed *pipeline.P[output.GCPResource]
 	var err error
 	if len(c.ResourceID) > 0 {
@@ -94,6 +83,11 @@ func (m *GCPFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aureli
 		listed = m.listByHierarchy(c)
 	}
 
+	var s secrets.SecretScanner
+	if err := s.Start(c.ScannerConfig); err != nil {
+		return fmt.Errorf("failed to create Titus scanner: %w", err)
+	}
+
 	// Extract content from resources.
 	extractor := extraction.NewGCPExtractor(c.GCPCommonRecon)
 	extracted := pipeline.New[output.ScanInput]()
@@ -101,7 +95,7 @@ func (m *GCPFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aureli
 
 	// Scan for secrets.
 	scanned := pipeline.New[secrets.SecretScanResult]()
-	s.ScanAndFlush(extracted, scanned)
+	s.ScanFlushAndClose(extracted, scanned)
 	pipeline.Pipe(scanned, secrets.RiskFromScanResult, out)
 
 	return out.Wait()
