@@ -39,6 +39,31 @@ func TestEmitter_ErrorPropagation(t *testing.T) {
 	require.Error(t, e.Wait())
 }
 
+func TestEmitter_CloseWithError(t *testing.T) {
+	e := New[int]()
+	sentinel := errors.New("boom")
+	go func() {
+		e.Send(1)
+		e.CloseWithError(sentinel)
+	}()
+
+	for range e.Range() {
+	}
+
+	assert.ErrorIs(t, e.Wait(), sentinel, "CloseWithError must surface the error via Wait")
+}
+
+func TestEmitter_CloseWithError_NilIsCleanClose(t *testing.T) {
+	e := New[int]()
+	go func() {
+		e.Send(1)
+		e.CloseWithError(nil)
+	}()
+	for range e.Range() {
+	}
+	assert.NoError(t, e.Wait(), "CloseWithError(nil) behaves like a normal Close")
+}
+
 func TestPipe(t *testing.T) {
 	in := From(1, 2, 3)
 	out := New[string]()

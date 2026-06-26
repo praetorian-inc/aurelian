@@ -107,7 +107,7 @@ func (m *AzureFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aure
 
 	// Scan extracted content and convert results to risks.
 	scanned := pipeline.New[secrets.SecretScanResult]()
-	pipeline.Pipe(extracted, s.Scan, scanned)
+	s.ScanAndFlush(extracted, scanned)
 	pipeline.Pipe(scanned, secrets.RiskFromScanResult, out)
 
 	return out.Wait()

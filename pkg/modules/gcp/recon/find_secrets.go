@@ -101,7 +101,7 @@ func (m *GCPFindSecretsModule) Run(_ plugin.Config, out *pipeline.P[model.Aureli
 
 	// Scan for secrets.
 	scanned := pipeline.New[secrets.SecretScanResult]()
-	pipeline.Pipe(extracted, s.Scan, scanned)
+	s.ScanAndFlush(extracted, scanned)
 	pipeline.Pipe(scanned, secrets.RiskFromScanResult, out)
 
 	return out.Wait()

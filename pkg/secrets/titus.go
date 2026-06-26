@@ -136,6 +136,30 @@ func (ps *persistentScanner) scanContent(content []byte, blobID types.BlobID, pr
 	return matches, nil
 }
 
+// drainTimedOut recovers matches that hit Titus' regexp timeout retry path.
+// Such matches are withheld from MatchWithBlobID and queued behind the
+// matcher's DrainTimedOut; without draining they are silently dropped. Each
+// recovered match is persisted (with its finding) exactly like an immediate
+// match and returned to the caller.
+//
+// Must be called after all scanContent calls have completed, since the matcher
+// drains a queue shared across every blob scanned.
+func (ps *persistentScanner) drainTimedOut() ([]*types.Match, error) {
+	matches, err := ps.matcher.DrainTimedOut()
+	if err != nil {
+		return nil, fmt.Errorf("failed to drain timed-out matches: %w", err)
+	}
+
+	for _, match := range matches {
+		if err := ps.storeMatchAndFinding(match); err != nil {
+			return nil, err
+		}
+	}
+	ps.populateFindingIDs(matches)
+
+	return matches, nil
+}
+
 func (ps *persistentScanner) storeMatchAndFinding(match *types.Match) error {
 	if err := ps.store.AddMatch(match); err != nil {
 		return fmt.Errorf("failed to store match: %w", err)

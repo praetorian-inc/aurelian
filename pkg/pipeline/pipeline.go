@@ -64,6 +64,19 @@ func (e *P[T]) Close() {
 	})
 }
 
+// CloseWithError records err as the pipeline's error and then closes it, so a
+// downstream Wait() observes the failure. Use it when a producer needs to
+// propagate an error from a stage it consumed (e.g. a wrapped sub-pipeline)
+// onto the pipeline it owns. A nil err is equivalent to Close. Like Close it is
+// safe to call multiple times; only the first call takes effect.
+func (e *P[T]) CloseWithError(err error) {
+	e.closeOnce.Do(func() {
+		e.err = err
+		close(e.ch)
+		close(e.done)
+	})
+}
+
 // Wait blocks until the producer signals completion and returns its error.
 func (e *P[T]) Wait() error {
 	<-e.done
