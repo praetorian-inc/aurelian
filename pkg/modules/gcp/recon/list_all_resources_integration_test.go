@@ -146,6 +146,7 @@ func TestGCPListAllResources(t *testing.T) {
 	})
 
 	t.Run("discovers addresses", func(t *testing.T) {
+		region := gcpRegionFromZone(fixture.Output("instance_zone"))
 		globalAddr := fixture.Output("global_address_name")
 		regionalAddr := fixture.Output("regional_address_name")
 
@@ -158,10 +159,13 @@ func TestGCPListAllResources(t *testing.T) {
 		require.GreaterOrEqual(t, len(found), 2, "expected at least 2 addresses")
 
 		assertResourceByName(t, found, globalAddr, projectID, "compute.googleapis.com/GlobalAddress")
+		assertResourceIDByName(t, found, globalAddr, "projects/"+projectID+"/global/addresses/"+globalAddr)
 		assertResourceByName(t, found, regionalAddr, projectID, "compute.googleapis.com/Address")
+		assertResourceIDByName(t, found, regionalAddr, "projects/"+projectID+"/regions/"+region+"/addresses/"+regionalAddr)
 	})
 
 	t.Run("discovers forwarding rules", func(t *testing.T) {
+		region := gcpRegionFromZone(fixture.Output("instance_zone"))
 		fwdRuleName := fixture.Output("regional_forwarding_rule_name")
 
 		var found []output.GCPResource
@@ -173,6 +177,7 @@ func TestGCPListAllResources(t *testing.T) {
 		require.GreaterOrEqual(t, len(found), 1, "expected at least 1 forwarding rule")
 
 		assertResourceByName(t, found, fwdRuleName, projectID, "compute.googleapis.com/ForwardingRule")
+		assertResourceIDByName(t, found, fwdRuleName, "projects/"+projectID+"/regions/"+region+"/forwardingRules/"+fwdRuleName)
 	})
 
 	t.Run("discovers private compute instances", func(t *testing.T) {
@@ -233,6 +238,17 @@ func assertResourceByName(t *testing.T, resources []output.GCPResource, name, pr
 			assert.Equal(t, projectID, r.ProjectID, "ProjectID mismatch for %s", name)
 			assert.Equal(t, resourceType, r.ResourceType, "ResourceType mismatch for %s", name)
 			assert.NotEmpty(t, r.ResourceID, "ResourceID must be set for %s", name)
+			return
+		}
+	}
+	t.Errorf("expected resource with name %q in %d results", name, len(resources))
+}
+
+func assertResourceIDByName(t *testing.T, resources []output.GCPResource, name, wantResourceID string) {
+	t.Helper()
+	for _, r := range resources {
+		if containsName(r, name) {
+			assert.Equal(t, wantResourceID, r.ResourceID)
 			return
 		}
 	}

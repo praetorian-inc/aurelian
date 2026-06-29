@@ -133,7 +133,7 @@ func (l *ForwardingRuleLister) ResourceTypes() []string {
 }
 
 func sendForwardingRule(projectID, resourceType, location string, rule *computeapi.ForwardingRule, out *pipeline.P[output.GCPResource]) {
-	r := output.NewGCPResource(projectID, resourceType, fmt.Sprintf("%d", rule.Id))
+	r := output.NewGCPResource(projectID, resourceType, forwardingRuleResourceID(projectID, location, rule.Name))
 	r.DisplayName = rule.Name
 	r.Location = location
 	r.Labels = rule.Labels
@@ -141,7 +141,15 @@ func sendForwardingRule(projectID, resourceType, location string, rule *computea
 		r.IPs = []string{rule.IPAddress}
 	}
 	r.Properties = map[string]any{
+		"id":     fmt.Sprintf("%d", rule.Id),
 		"target": rule.Target,
 	}
 	out.Send(r)
+}
+
+func forwardingRuleResourceID(projectID, location, name string) string {
+	if location == "global" {
+		return fmt.Sprintf("projects/%s/global/forwardingRules/%s", projectID, name)
+	}
+	return fmt.Sprintf("projects/%s/regions/%s/forwardingRules/%s", projectID, location, name)
 }

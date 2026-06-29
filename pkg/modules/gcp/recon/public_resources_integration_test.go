@@ -149,10 +149,11 @@ func TestGCPPublicResources(t *testing.T) {
 		zone := fixture.Output("instance_zone")
 		region := gcpRegionFromZone(zone)
 		cases := []struct {
-			name         string
-			resourceType string
-			resourceID   string
-			wantName     string
+			name           string
+			resourceType   string
+			resourceID     string
+			wantName       string
+			wantResourceID string
 		}{
 			{
 				name:         "compute instance",
@@ -179,22 +180,25 @@ func TestGCPPublicResources(t *testing.T) {
 				wantName:     fixture.Output("cloud_run_public_name"),
 			},
 			{
-				name:         "regional address",
-				resourceType: "compute.googleapis.com/Address",
-				resourceID:   "projects/" + projectID + "/regions/" + region + "/addresses/" + fixture.Output("regional_address_name"),
-				wantName:     fixture.Output("regional_address_name"),
+				name:           "regional address",
+				resourceType:   "compute.googleapis.com/Address",
+				resourceID:     "projects/" + projectID + "/regions/" + region + "/addresses/" + fixture.Output("regional_address_name"),
+				wantName:       fixture.Output("regional_address_name"),
+				wantResourceID: "projects/" + projectID + "/regions/" + region + "/addresses/" + fixture.Output("regional_address_name"),
 			},
 			{
-				name:         "global address",
-				resourceType: "compute.googleapis.com/GlobalAddress",
-				resourceID:   "projects/" + projectID + "/global/addresses/" + fixture.Output("global_address_name"),
-				wantName:     fixture.Output("global_address_name"),
+				name:           "global address",
+				resourceType:   "compute.googleapis.com/GlobalAddress",
+				resourceID:     "projects/" + projectID + "/global/addresses/" + fixture.Output("global_address_name"),
+				wantName:       fixture.Output("global_address_name"),
+				wantResourceID: "projects/" + projectID + "/global/addresses/" + fixture.Output("global_address_name"),
 			},
 			{
-				name:         "regional forwarding rule",
-				resourceType: "compute.googleapis.com/ForwardingRule",
-				resourceID:   "projects/" + projectID + "/regions/" + region + "/forwardingRules/" + fixture.Output("regional_forwarding_rule_name"),
-				wantName:     fixture.Output("regional_forwarding_rule_name"),
+				name:           "regional forwarding rule",
+				resourceType:   "compute.googleapis.com/ForwardingRule",
+				resourceID:     "projects/" + projectID + "/regions/" + region + "/forwardingRules/" + fixture.Output("regional_forwarding_rule_name"),
+				wantName:       fixture.Output("regional_forwarding_rule_name"),
+				wantResourceID: "projects/" + projectID + "/regions/" + region + "/forwardingRules/" + fixture.Output("regional_forwarding_rule_name"),
 			},
 		}
 
@@ -207,6 +211,9 @@ func TestGCPPublicResources(t *testing.T) {
 				})
 				require.NotEmpty(t, directResources, "expected direct scan resource for %s", tc.name)
 				require.NotEmpty(t, directRisks, "expected direct scan risk for %s", tc.name)
+				if tc.wantResourceID != "" {
+					assert.Equal(t, tc.wantResourceID, directResources[0].ResourceID)
+				}
 				assert.True(t, hasRiskForNamedResource(directResources, directRisks, tc.wantName), "expected direct scan risk for %s", tc.wantName)
 				for _, risk := range directRisks {
 					assert.NotEmpty(t, risk.Context, "risk Context must be set")
@@ -242,8 +249,7 @@ func runGCPPublicResources(t *testing.T, mod plugin.Module, args map[string]any)
 }
 
 // hasRiskForNamedResource finds a resource by display name, then checks if
-// there's a matching risk by ResourceID. This handles resources whose
-// ResourceID is a numeric ID rather than a name.
+// there's a matching risk by ResourceID.
 func hasRiskForNamedResource(resources []output.GCPResource, risks []output.AurelianRisk, name string) bool {
 	return findRiskForNamedResource(resources, risks, name) != nil
 }
