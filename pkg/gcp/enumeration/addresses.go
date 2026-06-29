@@ -133,7 +133,11 @@ func (l *AddressLister) ResourceTypes() []string {
 }
 
 func sendAddress(projectID, resourceType, location string, addr *computeapi.Address, out *pipeline.P[output.GCPResource]) {
-	r := output.NewGCPResource(projectID, resourceType, fmt.Sprintf("%d", addr.Id))
+	resourceID := relativeGCPResourceID(addr.SelfLink)
+	if resourceID == "" {
+		resourceID = addressResourceID(projectID, location, addr.Name)
+	}
+	r := output.NewGCPResource(projectID, resourceType, resourceID)
 	r.DisplayName = addr.Name
 	r.Location = location
 	r.Labels = addr.Labels
@@ -141,9 +145,17 @@ func sendAddress(projectID, resourceType, location string, addr *computeapi.Addr
 		r.IPs = []string{addr.Address}
 	}
 	r.Properties = map[string]any{
+		"id":          fmt.Sprintf("%d", addr.Id),
 		"status":      addr.Status,
 		"addressType": addr.AddressType,
 		"purpose":     addr.Purpose,
 	}
 	out.Send(r)
+}
+
+func addressResourceID(projectID, location, name string) string {
+	if location == "global" {
+		return fmt.Sprintf("projects/%s/global/addresses/%s", projectID, name)
+	}
+	return fmt.Sprintf("projects/%s/regions/%s/addresses/%s", projectID, location, name)
 }

@@ -33,3 +33,20 @@ func fullGCPResourceName(projectID, resourceID string) string {
 	}
 	return "projects/" + projectID + "/" + strings.TrimPrefix(resourceID, "/")
 }
+
+func relativeGCPResourceID(selfLink string) string {
+	selfLink = strings.TrimSpace(selfLink)
+	if selfLink == "" {
+		return ""
+	}
+	selfLink, _, _ = strings.Cut(selfLink, "?")
+	selfLink, _, _ = strings.Cut(selfLink, "#")
+	selfLink = strings.TrimSuffix(selfLink, "/")
+	if strings.HasPrefix(selfLink, "projects/") {
+		return selfLink
+	}
+	if idx := strings.Index(selfLink, "/projects/"); idx >= 0 {
+		return strings.TrimPrefix(selfLink[idx:], "/")
+	}
+	return strings.TrimPrefix(selfLink, "/")
+}

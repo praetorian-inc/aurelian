@@ -78,21 +78,33 @@ func TestEnumeratorIntegration(t *testing.T) {
 	})
 
 	t.Run("discovers addresses", func(t *testing.T) {
+		region := regionFromZone(fixture.Output("instance_zone"))
+
 		addrName := fixture.Output("regional_address_name")
-		assertContainsResource(t, resources, "compute.googleapis.com/Address", addrName)
+		assertResourceIDForName(t, resources, "compute.googleapis.com/Address", addrName,
+			"projects/"+projectID+"/regions/"+region+"/addresses/"+addrName)
 
 		globalAddrName := fixture.Output("global_address_name")
-		assertContainsResource(t, resources, "compute.googleapis.com/GlobalAddress", globalAddrName)
+		assertResourceIDForName(t, resources, "compute.googleapis.com/GlobalAddress", globalAddrName,
+			"projects/"+projectID+"/global/addresses/"+globalAddrName)
+	})
+
+	t.Run("discovers forwarding rules", func(t *testing.T) {
+		region := regionFromZone(fixture.Output("instance_zone"))
+		fwdRuleName := fixture.Output("regional_forwarding_rule_name")
+		assertResourceIDForName(t, resources, "compute.googleapis.com/ForwardingRule", fwdRuleName,
+			"projects/"+projectID+"/regions/"+region+"/forwardingRules/"+fwdRuleName)
 	})
 
 	t.Run("ListByResourceID fetches fixture resources", func(t *testing.T) {
 		zone := fixture.Output("instance_zone")
 		region := regionFromZone(zone)
 		cases := []struct {
-			name         string
-			resourceType string
-			resourceID   string
-			wantName     string
+			name           string
+			resourceType   string
+			resourceID     string
+			wantName       string
+			wantResourceID string
 		}{
 			{
 				name:         "bucket",
@@ -131,22 +143,25 @@ func TestEnumeratorIntegration(t *testing.T) {
 				wantName:     fixture.Output("cloud_run_public_name"),
 			},
 			{
-				name:         "regional address",
-				resourceType: "compute.googleapis.com/Address",
-				resourceID:   "projects/" + projectID + "/regions/" + region + "/addresses/" + fixture.Output("regional_address_name"),
-				wantName:     fixture.Output("regional_address_name"),
+				name:           "regional address",
+				resourceType:   "compute.googleapis.com/Address",
+				resourceID:     "projects/" + projectID + "/regions/" + region + "/addresses/" + fixture.Output("regional_address_name"),
+				wantName:       fixture.Output("regional_address_name"),
+				wantResourceID: "projects/" + projectID + "/regions/" + region + "/addresses/" + fixture.Output("regional_address_name"),
 			},
 			{
-				name:         "global address",
-				resourceType: "compute.googleapis.com/GlobalAddress",
-				resourceID:   "projects/" + projectID + "/global/addresses/" + fixture.Output("global_address_name"),
-				wantName:     fixture.Output("global_address_name"),
+				name:           "global address",
+				resourceType:   "compute.googleapis.com/GlobalAddress",
+				resourceID:     "projects/" + projectID + "/global/addresses/" + fixture.Output("global_address_name"),
+				wantName:       fixture.Output("global_address_name"),
+				wantResourceID: "projects/" + projectID + "/global/addresses/" + fixture.Output("global_address_name"),
 			},
 			{
-				name:         "regional forwarding rule",
-				resourceType: "compute.googleapis.com/ForwardingRule",
-				resourceID:   "projects/" + projectID + "/regions/" + region + "/forwardingRules/" + fixture.Output("regional_forwarding_rule_name"),
-				wantName:     fixture.Output("regional_forwarding_rule_name"),
+				name:           "regional forwarding rule",
+				resourceType:   "compute.googleapis.com/ForwardingRule",
+				resourceID:     "projects/" + projectID + "/regions/" + region + "/forwardingRules/" + fixture.Output("regional_forwarding_rule_name"),
+				wantName:       fixture.Output("regional_forwarding_rule_name"),
+				wantResourceID: "projects/" + projectID + "/regions/" + region + "/forwardingRules/" + fixture.Output("regional_forwarding_rule_name"),
 			},
 		}
 
@@ -161,6 +176,9 @@ func TestEnumeratorIntegration(t *testing.T) {
 				assert.Equal(t, tc.resourceType, directResources[0].ResourceType)
 				assert.Equal(t, projectID, directResources[0].ProjectID)
 				assertResourceMatchesName(t, directResources[0], tc.wantName)
+				if tc.wantResourceID != "" {
+					assert.Equal(t, tc.wantResourceID, directResources[0].ResourceID)
+				}
 			})
 		}
 	})
@@ -216,6 +234,17 @@ func assertContainsResource(t *testing.T, resources []output.GCPResource, resour
 	t.Helper()
 	for _, r := range resources {
 		if r.ResourceType == resourceType && resourceMatchesName(r, nameSubstr) {
+			return
+		}
+	}
+	t.Errorf("expected resource of type %q containing %q in %d results", resourceType, nameSubstr, len(resources))
+}
+
+func assertResourceIDForName(t *testing.T, resources []output.GCPResource, resourceType, nameSubstr, wantResourceID string) {
+	t.Helper()
+	for _, r := range resources {
+		if r.ResourceType == resourceType && resourceMatchesName(r, nameSubstr) {
+			assert.Equal(t, wantResourceID, r.ResourceID)
 			return
 		}
 	}
