@@ -133,7 +133,11 @@ func (l *AddressLister) ResourceTypes() []string {
 }
 
 func sendAddress(projectID, resourceType, location string, addr *computeapi.Address, out *pipeline.P[output.GCPResource]) {
-	r := output.NewGCPResource(projectID, resourceType, addressResourceID(projectID, location, addr.Name))
+	resourceID := relativeGCPResourceID(addr.SelfLink)
+	if resourceID == "" {
+		resourceID = addressResourceID(projectID, location, addr.Name)
+	}
+	r := output.NewGCPResource(projectID, resourceType, resourceID)
 	r.DisplayName = addr.Name
 	r.Location = location
 	r.Labels = addr.Labels

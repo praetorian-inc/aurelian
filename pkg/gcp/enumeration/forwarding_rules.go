@@ -133,7 +133,11 @@ func (l *ForwardingRuleLister) ResourceTypes() []string {
 }
 
 func sendForwardingRule(projectID, resourceType, location string, rule *computeapi.ForwardingRule, out *pipeline.P[output.GCPResource]) {
-	r := output.NewGCPResource(projectID, resourceType, forwardingRuleResourceID(projectID, location, rule.Name))
+	resourceID := relativeGCPResourceID(rule.SelfLink)
+	if resourceID == "" {
+		resourceID = forwardingRuleResourceID(projectID, location, rule.Name)
+	}
+	r := output.NewGCPResource(projectID, resourceType, resourceID)
 	r.DisplayName = rule.Name
 	r.Location = location
 	r.Labels = rule.Labels
