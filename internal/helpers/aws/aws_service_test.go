@@ -44,10 +44,13 @@ func TestRegionForService(t *testing.T) {
 			want:           "us-east-1",
 		},
 		{
-			name:           "IAM literal global sentinel falls back to us-east-1",
+			// The "global" sentinel is handled by the config provider, not here:
+			// IAM resources never reach this function (no enricher/evaluator), so it
+			// passes any other region string through untouched.
+			name:           "unrecognized region string passes through unchanged",
 			resourceType:   "AWS::IAM::Role",
 			resourceRegion: "global",
-			want:           "us-east-1",
+			want:           "global",
 		},
 		{
 			name:           "global resource that already carries a real region keeps it",
