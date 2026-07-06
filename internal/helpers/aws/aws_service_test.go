@@ -44,10 +44,10 @@ func TestRegionForService(t *testing.T) {
 			want:           "us-east-1",
 		},
 		{
-			// The "global" sentinel is handled by the config provider, not here:
-			// IAM resources never reach this function (no enricher/evaluator), so it
-			// passes any other region string through untouched.
-			name:           "unrecognized region string passes through unchanged",
+			// Only an empty region is rewritten; a non-empty region is always
+			// trusted, even the IAM enumerator's "global" sentinel (IAM resources
+			// never reach this function, so this case is defensive).
+			name:           "non-empty region passes through unchanged",
 			resourceType:   "AWS::IAM::Role",
 			resourceRegion: "global",
 			want:           "global",
