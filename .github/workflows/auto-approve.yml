@@ -15,6 +15,12 @@
 # approval auto-dismisses it and re-runs this gate — a bot approval cannot
 # survive a follow-up push.
 #
+# TRIGGERS (mirrors ai-review.yml):
+#   • check_suite completed — automatic; fires once CI has results.
+#   • issue_comment "@auto-approve" from a write-access collaborator — manual
+#     re-run on demand.
+# It does NOT auto-run on PR open/synchronize; there'd be no CI to read yet.
+#
 # WHY A GITHUB APP: a review from the default GITHUB_TOKEN (github-actions) does
 # NOT count toward the required-approval ruleset. Only a distinct identity's
 # review counts. We use a GitHub App token.
@@ -38,18 +44,19 @@
 name: Auto-Approve
 
 on:
-  # Re-evaluate whenever checks finish, a review event lands, or the AI-review
-  # bot posts its comment. Each entry point converges on the same gate job.
+  # Two entry points, mirroring ai-review.yml:
+  #   • check_suite completed — the automatic trigger. Only fires once CI has
+  #     produced results, so the "all checks green" gate has something to read.
+  #   • issue_comment created — the manual trigger. A maintainer comments
+  #     `@auto-approve` on the PR to re-run the gate on demand.
   check_suite:
     types: [completed]
   issue_comment:
-    types: [created, edited]
-  pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [created]
 
 concurrency:
   # One evaluation per PR at a time; supersede stale runs.
-  group: auto-approve-${{ github.event.pull_request.number || github.event.issue.number || github.event.check_suite.pull_requests[0].number }}
+  group: auto-approve-${{ github.event.issue.number || github.event.check_suite.pull_requests[0].number }}
   cancel-in-progress: true
 
 permissions:
@@ -61,35 +68,58 @@ env:
 
 jobs:
   gate:
+    # Skip bot actors; for comments require the explicit `@auto-approve` phrase
+    # on a PR (not a plain issue). check_suite runs unconditionally (the gate
+    # step itself resolves whether a PR is attached and fails-closed if not).
+    if: >
+      !contains(github.actor, '[bot]') &&
+      (
+        github.event_name == 'check_suite' ||
+        (
+          github.event_name == 'issue_comment' &&
+          github.event.issue.pull_request != null &&
+          contains(github.event.comment.body, '@auto-approve')
+        )
+      )
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      # ── Resolve the PR number regardless of which event triggered us. ────────
+      # ── Resolve the PR number from whichever event triggered us. ─────────────
       - name: Resolve PR number
         id: which
         env:
           EVENT: ${{ github.event_name }}
-          PR_FROM_PR: ${{ github.event.pull_request.number }}
           PR_FROM_ISSUE: ${{ github.event.issue.number }}
-          IS_PR_COMMENT: ${{ github.event.issue.pull_request != null }}
           PR_FROM_SUITE: ${{ github.event.check_suite.pull_requests[0].number }}
         run: |
           set -euo pipefail
           case "$EVENT" in
-            pull_request_target) NUM="$PR_FROM_PR" ;;
-            issue_comment)
-              # Only proceed for comments on PRs, not plain issues.
-              if [[ "$IS_PR_COMMENT" != "true" ]]; then
-                echo "notpr=true" >> "$GITHUB_OUTPUT"; exit 0
-              fi
-              NUM="$PR_FROM_ISSUE" ;;
-            check_suite) NUM="${PR_FROM_SUITE:-}" ;;
-            *) NUM="" ;;
+            issue_comment) NUM="$PR_FROM_ISSUE" ;;      # if: already ensured this is a PR comment
+            check_suite)   NUM="${PR_FROM_SUITE:-}" ;;  # empty if the suite has no PR (e.g. push to a branch)
+            *)             NUM="" ;;
           esac
           if [[ -z "${NUM:-}" || "$NUM" == "null" ]]; then
             echo "notpr=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           echo "number=$NUM" >> "$GITHUB_OUTPUT"
+
+      # ── For the manual @auto-approve path, verify the commenter has write
+      # access — mirrors ai-review.yml. Prevents a drive-by outsider comment
+      # from arming the gate. (Uses the default token; collaborator-permission
+      # is readable with it.)
+      - name: Verify commenter has write access
+        if: github.event_name == 'issue_comment' && steps.which.outputs.notpr != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.event.comment.user.login }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          PERM=$(gh api "repos/${REPO}/collaborators/${ACTOR}/permission" --jq .permission 2>/dev/null || echo none)
+          case "$PERM" in
+            admin|maintain|write) echo "OK: $ACTOR has $PERM" ;;
+            *) echo "::error::$ACTOR lacks write access (got '$PERM'); refusing."; exit 1 ;;
+          esac
 
       # ── Mint an App token (the only identity whose approval counts). ─────────
       - name: Generate App token
