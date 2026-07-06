@@ -1,0 +1,242 @@
+# Auto-Approve
+#
+# Submits a single APPROVE review on a PR when ALL of these hold:
+#   1. PR author is an ACTIVE member of the `nebula` team.
+#   2. EVERY commit on the PR was authored AND committed by an active `nebula`
+#      member (or a trusted bot). Any external / unlinked contributor blocks.
+#   3. Every completed check-run on the PR head SHA succeeded
+#      (success/neutral/skipped OK; anything else blocks). No check pending.
+#   4. The latest `## AI Review` comment (from github-actions) for the CURRENT
+#      head SHA literally contains "No issues found — LGTM".
+#   5. The PR is open, on this repo (not a fork), and not already approved by us.
+#
+# This bot ONLY approves. It never merges. A human still clicks Merge.
+# `Protect Main` has dismiss_stale_reviews_on_push:true, so any push after
+# approval auto-dismisses it and re-runs this gate — a bot approval cannot
+# survive a follow-up push.
+#
+# WHY A GITHUB APP: a review from the default GITHUB_TOKEN (github-actions) does
+# NOT count toward the required-approval ruleset. Only a distinct identity's
+# review counts. We use a GitHub App token.
+#
+# ─── SETUP REQUIRED BEFORE ENABLING ───────────────────────────────────────────
+#   • Reuse (or create) a GitHub App installed on this repo with permissions:
+#         Pull requests: Read & write   (submit reviews, read commits)
+#         Contents:      Read            (read head SHA / commits)
+#         Members:       Read            (team membership check)
+#         Checks:        Read            (check-run conclusions)
+#     Candidate to reuse: `praetorian-plugin-ci` (App id/private key from an
+#     org admin). CONFIRM it is installed on aurelian and has `members:read`
+#     + `pull_requests:write` before relying on it.
+#   • Add two repo secrets:
+#         AUTO_APPROVE_APP_ID
+#         AUTO_APPROVE_APP_PRIVATE_KEY   (the App's PEM private key)
+#   • If reusing an App whose secrets are named differently, update the two
+#     `secrets.*` references in the "Generate App token" step below.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Auto-Approve
+
+on:
+  # Re-evaluate whenever checks finish, a review event lands, or the AI-review
+  # bot posts its comment. Each entry point converges on the same gate job.
+  check_suite:
+    types: [completed]
+  issue_comment:
+    types: [created, edited]
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  # One evaluation per PR at a time; supersede stale runs.
+  group: auto-approve-${{ github.event.pull_request.number || github.event.issue.number || github.event.check_suite.pull_requests[0].number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TEAM_SLUG: nebula
+  ORG: praetorian-inc
+
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      # ── Resolve the PR number regardless of which event triggered us. ────────
+      - name: Resolve PR number
+        id: which
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_FROM_PR: ${{ github.event.pull_request.number }}
+          PR_FROM_ISSUE: ${{ github.event.issue.number }}
+          IS_PR_COMMENT: ${{ github.event.issue.pull_request != null }}
+          PR_FROM_SUITE: ${{ github.event.check_suite.pull_requests[0].number }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            pull_request_target) NUM="$PR_FROM_PR" ;;
+            issue_comment)
+              # Only proceed for comments on PRs, not plain issues.
+              if [[ "$IS_PR_COMMENT" != "true" ]]; then
+                echo "notpr=true" >> "$GITHUB_OUTPUT"; exit 0
+              fi
+              NUM="$PR_FROM_ISSUE" ;;
+            check_suite) NUM="${PR_FROM_SUITE:-}" ;;
+            *) NUM="" ;;
+          esac
+          if [[ -z "${NUM:-}" || "$NUM" == "null" ]]; then
+            echo "notpr=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          echo "number=$NUM" >> "$GITHUB_OUTPUT"
+
+      # ── Mint an App token (the only identity whose approval counts). ─────────
+      - name: Generate App token
+        id: apptoken
+        if: steps.which.outputs.notpr != 'true'
+        uses: actions/create-github-app-token@a8d616148505b5069dccd32f177bb87d7f39123b  # v2.0.6
+        with:
+          app-id: ${{ secrets.AUTO_APPROVE_APP_ID }}
+          private-key: ${{ secrets.AUTO_APPROVE_APP_PRIVATE_KEY }}
+
+      # ── The gate. Fail-closed: any uncertainty -> no approval, exit 0. ───────
+      - name: Evaluate gates and approve
+        if: steps.which.outputs.notpr != 'true'
+        env:
+          GH_TOKEN: ${{ steps.apptoken.outputs.token }}
+          REPO: ${{ github.repository }}
+          NUM: ${{ steps.which.outputs.number }}
+          AI_REVIEW_ACTOR: github-actions
+          # The exact clear-verdict phrase emitted by ai-review.yml.
+          LGTM_PHRASE: "No issues found — LGTM"
+        run: |
+          set -euo pipefail
+
+          skip() { echo "::notice::auto-approve skipped: $1"; exit 0; }
+
+          # ── PR must be OPEN, not a draft, and not a fork. ──────────────────
+          PR=$(gh pr view "$NUM" --repo "$REPO" \
+                --json state,isDraft,headRefOid,headRepositoryOwner,author,reviews 2>/dev/null) \
+            || skip "cannot read PR #$NUM"
+
+          STATE=$(jq -r '.state' <<<"$PR")
+          DRAFT=$(jq -r '.isDraft' <<<"$PR")
+          SHA=$(jq -r '.headRefOid' <<<"$PR")
+          HEAD_OWNER=$(jq -r '.headRepositoryOwner.login // empty' <<<"$PR")
+          AUTHOR=$(jq -r '.author.login' <<<"$PR")
+
+          [[ "$STATE" == "OPEN" ]]        || skip "PR is $STATE"
+          [[ "$DRAFT" == "false" ]]       || skip "PR is a draft"
+          [[ "$HEAD_OWNER" == "${ORG}" ]] || skip "head is on a fork ($HEAD_OWNER)"
+
+          # ── Idempotency: bail if we (this App) already approved this SHA. ──
+          # A push dismisses stale approvals, so an existing APPROVED review at
+          # the current head means our job is done.
+          ALREADY=$(jq -r --arg sha "$SHA" \
+            '[.reviews[] | select(.state=="APPROVED" and .commit.oid==$sha)] | length' <<<"$PR" 2>/dev/null || echo 0)
+          [[ "${ALREADY:-0}" == "0" ]] || skip "already approved at $SHA"
+
+          # ── Membership helper (cached): is $1 an active nebula member? ─────
+          # Bots on the allowlist are treated as trusted (return 0) without an
+          # API call. web-flow is GitHub's committer identity for web-UI /
+          # merge commits and is accepted ONLY in the committer position (the
+          # caller decides). Results cached in $MCACHE so each unique login is
+          # looked up at most once — this bounds the number of API round-trips
+          # (and their latency), NOT any monetary cost: the membership endpoint
+          # is free; a call just costs one rate-limit unit and one network hop.
+          declare -A MCACHE
+          BOT_ALLOWLIST="dependabot[bot] github-actions[bot]"
+          is_nebula() {
+            local login="$1"
+            [[ -n "$login" && "$login" != "null" ]] || return 1        # unlinked -> not a member
+            case " $BOT_ALLOWLIST " in *" $login "*) return 0 ;; esac    # trusted bot
+            if [[ -n "${MCACHE[$login]:-}" ]]; then
+              [[ "${MCACHE[$login]}" == "active" ]]; return
+            fi
+            local st
+            st=$(gh api "orgs/${ORG}/teams/${TEAM_SLUG}/memberships/${login}" \
+                  --jq '.state' 2>/dev/null || echo "none")
+            MCACHE[$login]="$st"
+            [[ "$st" == "active" ]]
+          }
+
+          # ── GATE 1: PR author is an ACTIVE member of $TEAM_SLUG. ───────────
+          is_nebula "$AUTHOR" \
+            || skip "author $AUTHOR not an active member of ${TEAM_SLUG}"
+
+          # ── GATE 2: every commit is authored AND committed by nebula. ──────
+          # Pull all commits; for each, require both the GitHub-linked author
+          # login and committer login to be nebula (or an allowlisted bot).
+          # web-flow is accepted as a *committer* only (squash / web edits /
+          # merge commits). Any unlinked identity (login==null) blocks.
+          COMMITS=$(gh api "repos/${REPO}/pulls/${NUM}/commits" --paginate \
+                     --jq '.[] | {sha: .sha, author: .author.login, committer: .committer.login}' 2>/dev/null) \
+            || skip "cannot read commits for PR #$NUM"
+
+          [[ -n "$COMMITS" ]] || skip "no commits found for PR #$NUM"
+
+          while IFS=$'\t' read -r c_sha c_author c_committer; do
+            is_nebula "$c_author" \
+              || skip "commit ${c_sha:0:12} authored by non-nebula '${c_author}'"
+            # committer: nebula/bot OR the web-flow merge/web-edit identity.
+            if [[ "$c_committer" != "web-flow" ]]; then
+              is_nebula "$c_committer" \
+                || skip "commit ${c_sha:0:12} committed by non-nebula '${c_committer}'"
+            fi
+          done < <(jq -r '[.sha, (.author // "null"), (.committer // "null")] | @tsv' <<<"$COMMITS")
+
+          # ── GATE 3: every completed check on head SHA is green. ────────────
+          # success/neutral/skipped are acceptable; queued/in_progress means
+          # not-yet-done (block, we'll re-run on check_suite completion);
+          # anything else (failure/cancelled/timed_out/action_required) blocks.
+          CHECKS=$(gh api "repos/${REPO}/commits/${SHA}/check-runs" --paginate \
+                    --jq '.check_runs[] | {name, status, conclusion}' 2>/dev/null) \
+            || skip "cannot read check-runs for $SHA"
+
+          if [[ -z "$CHECKS" ]]; then
+            skip "no check-runs reported for $SHA"
+          fi
+
+          # Do not treat our own Auto-Approve run as a check to wait on.
+          PENDING=$(jq -rs '[.[] | select(.name!="gate" and .status!="completed")] | length' <<<"$CHECKS")
+          [[ "$PENDING" == "0" ]] || skip "$PENDING check(s) still running"
+
+          BAD=$(jq -rs '[.[]
+                  | select(.status=="completed")
+                  | select((.conclusion // "") as $c
+                      | ($c=="success" or $c=="neutral" or $c=="skipped") | not)
+                  | .name] | join(", ")' <<<"$CHECKS")
+          [[ -z "$BAD" ]] || skip "failing/incomplete checks: $BAD"
+
+          # ── GATE 4: AI review clear for THIS head SHA. ─────────────────────
+          # Find the most recent `## AI Review` comment from the AI-review bot.
+          # It must contain the literal LGTM phrase. Combined with
+          # dismiss-stale-reviews-on-push + re-trigger, an old comment cannot
+          # approve new code. We require the NEWEST AI-review comment to be the
+          # LGTM one (a later comment with findings supersedes an earlier LGTM).
+          COMMENTS=$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate \
+                      --jq "[.[] | select(.user.login==\"${AI_REVIEW_ACTOR}\") | select(.body | contains(\"## AI Review\"))] | last" 2>/dev/null) \
+            || skip "cannot read PR comments"
+
+          [[ -n "$COMMENTS" && "$COMMENTS" != "null" ]] \
+            || skip "no AI Review comment found"
+
+          if ! jq -e --arg p "$LGTM_PHRASE" '.body | contains($p)' <<<"$COMMENTS" >/dev/null; then
+            skip "latest AI Review is not a clear LGTM"
+          fi
+
+          # ── All gates passed. Submit the counted APPROVE review. ───────────
+          cat > /tmp/approve-body.md <<EOF
+          ✅ Auto-approved by policy gate.
+
+          - Author \`${AUTHOR}\` is an active member of \`${ORG}/${TEAM_SLUG}\`.
+          - Every commit authored & committed by \`${TEAM_SLUG}\` members (or trusted bots).
+          - All checks on \`${SHA:0:12}\` are green.
+          - AI Review verdict: clear (\`${LGTM_PHRASE}\`).
+
+          This is an advisory automated approval. A human must still merge.
+          EOF
+
+          gh pr review "$NUM" --repo "$REPO" --approve --body-file /tmp/approve-body.md
+          echo "::notice::Approved PR #$NUM at $SHA"
