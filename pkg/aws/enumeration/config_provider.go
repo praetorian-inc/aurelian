@@ -26,7 +26,22 @@ func NewAWSConfigProvider(opts plugin.AWSCommonRecon) *AWSConfigProvider {
 	}
 }
 
+// normalizeConfigRegion maps the region-less sentinels used for global resources
+// onto us-east-1. Global-service resources reach the provider either with an empty
+// region (CloudControlToAWSResource stamps Region:"") or with the literal "global"
+// (the IAM enumerator's sentinel); the SDK accepts neither. Their control planes
+// live in us-east-1, so resolve to that rather than warning and defaulting deeper
+// in NewAWSConfig. Real regions pass through unchanged.
+func normalizeConfigRegion(region string) string {
+	if region == "" || region == "global" {
+		return "us-east-1"
+	}
+	return region
+}
+
 func (p *AWSConfigProvider) GetAWSConfig(region string) (*aws.Config, error) {
+	region = normalizeConfigRegion(region)
+
 	p.configMu.RLock()
 	if cfg, ok := p.configs[region]; ok {
 		p.configMu.RUnlock()
