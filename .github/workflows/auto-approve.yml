@@ -1,7 +1,6 @@
-# Auto-Approve: submits ONE counted APPROVE (via GitHub App token) when the PR
-# author + every commit are active `nebula` members, all checks are green, and
-# the latest `## AI Review` comment says the LGTM phrase. Never merges.
-# Fail-closed: any uncertainty -> skip, no approval.
+# Auto-Approve: submits ONE counted APPROVE (via GitHub App token) when author +
+# every commit are active `nebula` members, checks are green, and the latest
+# `## AI Review` comment is an LGTM. Never merges. Fail-closed.
 name: Auto-Approve
 
 on:
@@ -23,12 +22,6 @@ env:
 
 jobs:
   gate:
-    # The App secrets live in the `auto-approve` environment, whose deployment
-    # branch policy allows the default branch ONLY. This binds the token to
-    # runs of THIS workflow on the default branch — a workflow on any other
-    # branch (e.g. an attacker's feature branch) cannot read the secrets, so it
-    # cannot mint the App token and self-approve PRs. Repo-level secrets would
-    # be readable by every write collaborator's branch workflows; this is not.
     environment: auto-approve
     # Skip bots; comments must be `@auto-approve` on a PR. check_suite runs
     # unconditionally (the gate resolves the PR and fails-closed if none).
