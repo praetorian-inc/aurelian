@@ -191,8 +191,16 @@ jobs:
           fi
           pass "LGTM @ ${REVIEW_DATE} >= head @ ${HEAD_DATE}"
 
+          # TOCTOU guard: all gates validated $SHA. Re-read head immediately
+          # before approving and require it to be unchanged, so a commit pushed
+          # during evaluation cannot receive this approval.
+          NOW_SHA=$(gh api "repos/${REPO}/pulls/${NUM}" --jq '.head.sha' 2>/dev/null) \
+            || skip "cannot re-read head before approving"
+          [[ "$NOW_SHA" == "$SHA" ]] \
+            || skip "head moved during evaluation ($SHA -> $NOW_SHA); re-run after CI"
+
           echo "DECISION: APPROVE PR #${NUM} @ ${SHA:0:12}"
-          cat > /tmp/approve-body.md <<EOF
+          BODY=$(cat <<EOF
           ✅ Auto-approved by policy gate.
 
           - Author \`${AUTHOR}\` is an active member of \`${ORG}/${TEAM_SLUG}\`.
@@ -202,6 +210,12 @@ jobs:
 
           This is an advisory automated approval. A human must still merge.
           EOF
+          )
 
-          gh pr review "$NUM" --repo "$REPO" --approve --body-file /tmp/approve-body.md
+          # Pin the review to the validated commit via commit_id, so the approval
+          # binds to $SHA (not "current head"); with dismiss-on-push this is a
+          # second line of defence behind the head re-check above.
+          gh api "repos/${REPO}/pulls/${NUM}/reviews" \
+            -f "commit_id=${SHA}" -f "event=APPROVE" -f "body=${BODY}" >/dev/null \
+            || skip "approve call failed (head may have moved to reject commit_id ${SHA:0:12})"
           echo "::notice::Approved PR #$NUM at $SHA"
