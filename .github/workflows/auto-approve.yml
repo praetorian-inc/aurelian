@@ -161,8 +161,12 @@ jobs:
           # Bind the LGTM to the exact reviewed commit via ai-review's SHA marker.
           GATE="4 (AI review)"
           SHA_MARKER="<!-- reviewed-sha: ${SHA} -->"
-          REVIEW=$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate \
-                    --jq "[.[] | select(.user.login==\"${AI_REVIEW_ACTOR}\") | select(.body | contains(\"## AI Review\"))] | last" 2>/dev/null) \
+          # --slurp (not --jq) so pagination is combined into one array of pages
+          # before filtering; `--jq ... | last` would run per-page and pick null
+          # on any page lacking an AI Review comment.
+          REVIEW=$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate --slurp 2>/dev/null \
+                    | jq -c --arg a "$AI_REVIEW_ACTOR" \
+                        '[ .[][] | select(.user.login==$a) | select(.body | contains("## AI Review")) ] | last') \
             || skip "cannot read PR comments"
 
           [[ -n "$REVIEW" && "$REVIEW" != "null" ]] \
