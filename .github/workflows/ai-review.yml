@@ -242,9 +242,7 @@ jobs:
 
             ## Output Format
 
-            Write `/tmp/review.md` exactly as (the first line MUST be the marker
-            below, copied verbatim including the exact SHA — it lets downstream
-            automation bind this review to the reviewed commit):
+            Write `/tmp/review.md` exactly as:
 
             ```
             <!-- reviewed-sha: ${{ steps.pr.outputs.sha }} -->
