@@ -52,7 +52,9 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          PERM=$(gh api "repos/${REPO}/collaborators/${ACTOR}/permission" --jq .permission 2>/dev/null || echo none)
+          if ! PERM=$(gh api "repos/${REPO}/collaborators/${ACTOR}/permission" --jq .permission 2>/dev/null); then
+            echo "::error::cannot read ${ACTOR}'s permission (GITHUB_TOKEN access?); refusing."; exit 1
+          fi
           case "$PERM" in
             admin|maintain|write) echo "OK: $ACTOR has $PERM" ;;
             *) echo "::error::$ACTOR lacks write access (got '$PERM'); refusing."; exit 1 ;;
@@ -151,7 +153,7 @@ jobs:
 
           [[ -n "$CHECKS" ]] || skip "no check-runs reported for $SHA"
 
-          PENDING=$(jq -rs '[.[] | select(.name!="gate" and .status!="completed")] | length' <<<"$CHECKS")
+          PENDING=$(jq -rs '[.[] | select(.status!="completed")] | length' <<<"$CHECKS")
           [[ "$PENDING" == "0" ]] || skip "$PENDING check(s) still running"
 
           BAD=$(jq -rs '[.[]
