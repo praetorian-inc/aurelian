@@ -21,7 +21,6 @@ env:
 jobs:
   gate:
     environment: auto-approve
-    # Skip bots; require an `@auto-approve` comment on a PR (not a plain issue).
     if: >
       !contains(github.actor, '[bot]') &&
       github.event.issue.pull_request != null &&
@@ -40,7 +39,6 @@ jobs:
           fi
           echo "number=$NUM" >> "$GITHUB_OUTPUT"
 
-      # Require the commenter to have write access (drive-by guard).
       - name: Verify commenter has write access
         if: steps.which.outputs.notpr != 'true'
         env:
@@ -57,7 +55,6 @@ jobs:
             *) echo "::error::$ACTOR lacks write access (got '$PERM'); refusing."; exit 1 ;;
           esac
 
-      # App token: the only identity whose approval counts toward the ruleset.
       - name: Generate App token
         id: apptoken
         if: steps.which.outputs.notpr != 'true'
@@ -102,7 +99,6 @@ jobs:
           [[ "${ALREADY:-0}" == "0" ]] || skip "already approved at ${SHA:0:12}"
           pass "open, non-draft, non-fork; not yet approved @ ${SHA:0:12}"
 
-          # Membership helper (cached): is $1 an active nebula member?
           declare -A MCACHE
           BOT_ALLOWLIST="dependabot[bot] github-actions[bot]"
           is_nebula() {
