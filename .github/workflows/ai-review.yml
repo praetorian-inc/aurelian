@@ -294,7 +294,10 @@ jobs:
           set -euo pipefail
           if [[ -s /tmp/review.md ]]; then
             gh pr comment "$NUM" --repo "$REPO" --body-file /tmp/review.md
-            if grep -qF "$LGTM_PHRASE" /tmp/review.md; then
+            # LGTM only when the phrase STARTS a line (ai-review emits
+            # "No issues found — LGTM pending human review."), so the phrase
+            # merely quoted inside a finding does not count as a pass.
+            if grep -qxE "[[:space:]]*${LGTM_PHRASE}.*" /tmp/review.md; then
               echo "verdict=lgtm" >> "$GITHUB_OUTPUT"
             fi
           else
