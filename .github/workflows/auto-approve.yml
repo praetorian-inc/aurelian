@@ -87,18 +87,18 @@ jobs:
 
           GATE="0 (state)"
           PR=$(gh pr view "$NUM" --repo "$REPO" \
-                --json state,isDraft,headRefOid,headRepositoryOwner,author,reviews 2>/dev/null) \
+                --json state,isDraft,headRefOid,isCrossRepository,author,reviews 2>/dev/null) \
             || skip "cannot read PR #$NUM"
 
           STATE=$(jq -r '.state' <<<"$PR")
           DRAFT=$(jq -r '.isDraft' <<<"$PR")
           SHA=$(jq -r '.headRefOid' <<<"$PR")
-          HEAD_OWNER=$(jq -r '.headRepositoryOwner.login // empty' <<<"$PR")
+          CROSS_REPO=$(jq -r '.isCrossRepository' <<<"$PR")
           AUTHOR=$(jq -r '.author.login' <<<"$PR")
 
-          [[ "$STATE" == "OPEN" ]]        || skip "PR is $STATE"
-          [[ "$DRAFT" == "false" ]]       || skip "PR is a draft"
-          [[ "$HEAD_OWNER" == "${ORG}" ]] || skip "head is on a fork ($HEAD_OWNER)"
+          [[ "$STATE" == "OPEN" ]]     || skip "PR is $STATE"
+          [[ "$DRAFT" == "false" ]]    || skip "PR is a draft"
+          [[ "$CROSS_REPO" == "false" ]] || skip "head is on a fork (cross-repository)"
 
           ALREADY=$(jq -r --arg sha "$SHA" \
             '[.reviews[] | select(.state=="APPROVED" and .commit.oid==$sha)] | length' <<<"$PR" 2>/dev/null || echo 0)
@@ -165,14 +165,12 @@ jobs:
           N_CHECKS=$(jq -rs 'length' <<<"$CHECKS")
           pass "${N_CHECKS} checks green, 0 pending @ ${SHA:0:12}"
 
-          # ai-review does not run on `synchronize`, so an LGTM from a previous
-          # SHA must not approve newly-pushed code: require the comment to be
-          # newer than the head commit, and the LGTM phrase to start a line.
+          # ai-review does not run on `synchronize`. Bind the LGTM to the exact
+          # reviewed commit via the `<!-- reviewed-sha: X -->` marker ai-review
+          # stamps into its comment (SHA is non-forgeable, unlike commit dates):
+          # the marker must equal the current head $SHA.
           GATE="4 (AI review)"
-          HEAD_DATE=$(gh api "repos/${REPO}/commits/${SHA}" \
-                       --jq '.commit.committer.date' 2>/dev/null) \
-            || skip "cannot read head commit date for $SHA"
-
+          SHA_MARKER="<!-- reviewed-sha: ${SHA} -->"
           REVIEW=$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate \
                     --jq "[.[] | select(.user.login==\"${AI_REVIEW_ACTOR}\") | select(.body | contains(\"## AI Review\"))] | last" 2>/dev/null) \
             || skip "cannot read PR comments"
@@ -180,16 +178,15 @@ jobs:
           [[ -n "$REVIEW" && "$REVIEW" != "null" ]] \
             || skip "no AI Review comment found"
 
-          REVIEW_DATE=$(jq -r '.created_at' <<<"$REVIEW")
-          [[ "$REVIEW_DATE" > "$HEAD_DATE" || "$REVIEW_DATE" == "$HEAD_DATE" ]] \
-            || skip "AI Review ($REVIEW_DATE) predates head commit ($HEAD_DATE); re-run AI review"
+          jq -e --arg m "$SHA_MARKER" '.body | contains($m)' <<<"$REVIEW" >/dev/null \
+            || skip "AI Review is not for the current head ${SHA:0:12}; re-run @ai-review"
 
           if ! jq -e --arg p "$LGTM_PHRASE" \
                 '.body | split("\n") | map(gsub("^\\s+";"")) | any(startswith($p))' \
                 <<<"$REVIEW" >/dev/null; then
             skip "latest AI Review is not a clear LGTM for the current head"
           fi
-          pass "LGTM @ ${REVIEW_DATE} >= head @ ${HEAD_DATE}"
+          pass "LGTM for reviewed-sha ${SHA:0:12}"
 
           # TOCTOU guard: all gates validated $SHA. Re-read head immediately
           # before approving and require it to be unchanged, so a commit pushed
