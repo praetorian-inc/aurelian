@@ -142,7 +142,7 @@ jobs:
                 || skip "commit ${c_sha:0:12} committed by non-nebula '${c_committer}'"
             fi
           done < <(jq -r '[.sha, (.author // "null"), (.committer // "null")] | @tsv' <<<"$COMMITS")
-          pass "${N_COMMITS}/${N_COMMITS} commits by ${TEAM_SLUG} members (or trusted bots)"
+          pass "all ${N_COMMITS} commits by ${TEAM_SLUG} members (or trusted bots)"
 
           GATE="3 (checks)"
           CHECKS=$(gh api "repos/${REPO}/commits/${SHA}/check-runs" --paginate \
