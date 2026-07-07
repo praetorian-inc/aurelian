@@ -121,6 +121,13 @@ jobs:
           pass "$AUTHOR is an active ${TEAM_SLUG} member"
 
           GATE="2 (commits)"
+          # The pulls/{n}/commits endpoint caps at 250; beyond that some commits
+          # would go unchecked. Fail closed if the PR exceeds the cap.
+          TOTAL_COMMITS=$(gh pr view "$NUM" --repo "$REPO" --json commits --jq '.commits | length' 2>/dev/null) \
+            || skip "cannot count commits for PR #$NUM"
+          [[ "$TOTAL_COMMITS" -le 250 ]] \
+            || skip "PR has $TOTAL_COMMITS commits (>250 API cap); cannot verify all"
+
           COMMITS=$(gh api "repos/${REPO}/pulls/${NUM}/commits" --paginate \
                      --jq '.[] | {sha: .sha, author: .author.login, committer: .committer.login}' 2>/dev/null) \
             || skip "cannot read commits for PR #$NUM"
