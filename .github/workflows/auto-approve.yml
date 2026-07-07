@@ -137,7 +137,10 @@ jobs:
           GH_TOKEN: ${{ steps.apptoken.outputs.token }}
           REPO: ${{ github.repository }}
           NUM: ${{ steps.which.outputs.number }}
-          AI_REVIEW_ACTOR: github-actions
+          # The ai-review bot posts as `github-actions[bot]` (verified across
+          # aurelian PRs); the bare `github-actions` login never matches, so
+          # Gate 4 would always skip. Must include the `[bot]` suffix.
+          AI_REVIEW_ACTOR: github-actions[bot]
           # The exact clear-verdict phrase emitted by ai-review.yml.
           LGTM_PHRASE: "No issues found — LGTM"
         run: |
