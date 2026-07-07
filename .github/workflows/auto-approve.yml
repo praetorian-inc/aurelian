@@ -23,6 +23,13 @@ env:
 
 jobs:
   gate:
+    # The App secrets live in the `auto-approve` environment, whose deployment
+    # branch policy allows the default branch ONLY. This binds the token to
+    # runs of THIS workflow on the default branch — a workflow on any other
+    # branch (e.g. an attacker's feature branch) cannot read the secrets, so it
+    # cannot mint the App token and self-approve PRs. Repo-level secrets would
+    # be readable by every write collaborator's branch workflows; this is not.
+    environment: auto-approve
     # Skip bots; comments must be `@auto-approve` on a PR. check_suite runs
     # unconditionally (the gate resolves the PR and fails-closed if none).
     if: >
