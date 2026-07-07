@@ -332,12 +332,12 @@ jobs:
           skip() { echo "::notice::auto-approve skipped: $1"; exit 0; }
 
           PR=$(gh pr view "$NUM" --repo "$REPO" \
-                --json state,isDraft,headRefOid,isCrossRepository,author,reviews 2>/dev/null) \
+                --json isDraft,author,reviews 2>/dev/null) \
             || skip "cannot read PR #$NUM"
 
-          [[ "$(jq -r .state <<<"$PR")" == "OPEN" ]]        || skip "PR is not open"
-          [[ "$(jq -r .isDraft <<<"$PR")" == "false" ]]     || skip "PR is a draft"
-          [[ "$(jq -r .isCrossRepository <<<"$PR")" == "false" ]] || skip "head is on a fork"
+          # Only draft needs re-checking here: the review job cannot emit a
+          # verdict for a closed/fork PR, but the @ai-review path can run on a draft.
+          [[ "$(jq -r .isDraft <<<"$PR")" == "false" ]] || skip "PR is a draft"
 
           AUTHOR=$(jq -r '.author.login' <<<"$PR")
           gh api "orgs/${ORG}/teams/${TEAM_SLUG}/memberships/${AUTHOR}" --jq '.state' 2>/dev/null | grep -qx active \
