@@ -4,13 +4,14 @@
 name: Auto-Approve
 
 on:
-  check_suite:
-    types: [completed]
+  # Manual only: a maintainer comments `@auto-approve` on the PR. (There is no
+  # automatic trigger — check_suite doesn't fire for Actions-created CI, and we
+  # deliberately require a human to arm the gate.)
   issue_comment:
     types: [created]
 
 concurrency:
-  group: auto-approve-${{ github.event.issue.number || github.event.check_suite.pull_requests[0].number }}
+  group: auto-approve-${{ github.event.issue.number }}
   cancel-in-progress: true
 
 permissions:
@@ -23,42 +24,28 @@ env:
 jobs:
   gate:
     environment: auto-approve
-    # Skip bots; comments must be `@auto-approve` on a PR. check_suite runs
-    # unconditionally (the gate resolves the PR and fails-closed if none).
+    # Skip bots; require an `@auto-approve` comment on a PR (not a plain issue).
     if: >
       !contains(github.actor, '[bot]') &&
-      (
-        github.event_name == 'check_suite' ||
-        (
-          github.event_name == 'issue_comment' &&
-          github.event.issue.pull_request != null &&
-          contains(github.event.comment.body, '@auto-approve')
-        )
-      )
+      github.event.issue.pull_request != null &&
+      contains(github.event.comment.body, '@auto-approve')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: Resolve PR number
         id: which
         env:
-          EVENT: ${{ github.event_name }}
-          PR_FROM_ISSUE: ${{ github.event.issue.number }}
-          PR_FROM_SUITE: ${{ github.event.check_suite.pull_requests[0].number }}
+          NUM: ${{ github.event.issue.number }}   # if: already ensured this is a PR comment
         run: |
           set -euo pipefail
-          case "$EVENT" in
-            issue_comment) NUM="$PR_FROM_ISSUE" ;;      # if: already ensured PR comment
-            check_suite)   NUM="${PR_FROM_SUITE:-}" ;;  # empty if suite has no PR
-            *)             NUM="" ;;
-          esac
           if [[ -z "${NUM:-}" || "$NUM" == "null" ]]; then
             echo "notpr=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           echo "number=$NUM" >> "$GITHUB_OUTPUT"
 
-      # Manual @auto-approve path: require commenter write access (drive-by guard).
+      # Require the commenter to have write access (drive-by guard).
       - name: Verify commenter has write access
-        if: github.event_name == 'issue_comment' && steps.which.outputs.notpr != 'true'
+        if: steps.which.outputs.notpr != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ACTOR: ${{ github.event.comment.user.login }}
@@ -92,9 +79,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          skip() { echo "::notice::auto-approve skipped: $1"; exit 0; }
+          GATE=""
+          pass() { echo "GATE ${GATE}: PASS — $1"; }
+          skip() { echo "GATE ${GATE}: FAIL — $1"; echo "DECISION: SKIP (PR #${NUM:-?})"; echo "::notice::auto-approve skipped at gate ${GATE}: $1"; exit 0; }
 
-          # ── GATE 0: open, not draft, not a fork. ──
+          GATE="0 (state)"
           PR=$(gh pr view "$NUM" --repo "$REPO" \
                 --json state,isDraft,headRefOid,headRepositoryOwner,author,reviews 2>/dev/null) \
             || skip "cannot read PR #$NUM"
@@ -109,11 +98,10 @@ jobs:
           [[ "$DRAFT" == "false" ]]       || skip "PR is a draft"
           [[ "$HEAD_OWNER" == "${ORG}" ]] || skip "head is on a fork ($HEAD_OWNER)"
 
-          # Idempotency: a push dismisses stale approvals, so an APPROVED review
-          # already at this SHA means we're done.
           ALREADY=$(jq -r --arg sha "$SHA" \
             '[.reviews[] | select(.state=="APPROVED" and .commit.oid==$sha)] | length' <<<"$PR" 2>/dev/null || echo 0)
-          [[ "${ALREADY:-0}" == "0" ]] || skip "already approved at $SHA"
+          [[ "${ALREADY:-0}" == "0" ]] || skip "already approved at ${SHA:0:12}"
+          pass "open, non-draft, non-fork; not yet approved @ ${SHA:0:12}"
 
           # Membership helper (cached): is $1 an active nebula member?
           declare -A MCACHE
@@ -132,39 +120,37 @@ jobs:
             [[ "$st" == "active" ]]
           }
 
-          # ── GATE 1: author is an active nebula member. ──
+          GATE="1 (author)"
           is_nebula "$AUTHOR" \
             || skip "author $AUTHOR not an active member of ${TEAM_SLUG}"
+          pass "$AUTHOR is an active ${TEAM_SLUG} member"
 
-          # ── GATE 2: every commit authored AND committed by nebula. ──
+          GATE="2 (commits)"
           COMMITS=$(gh api "repos/${REPO}/pulls/${NUM}/commits" --paginate \
                      --jq '.[] | {sha: .sha, author: .author.login, committer: .committer.login}' 2>/dev/null) \
             || skip "cannot read commits for PR #$NUM"
 
           [[ -n "$COMMITS" ]] || skip "no commits found for PR #$NUM"
 
+          N_COMMITS=0
           while IFS=$'\t' read -r c_sha c_author c_committer; do
+            N_COMMITS=$((N_COMMITS+1))
             is_nebula "$c_author" \
               || skip "commit ${c_sha:0:12} authored by non-nebula '${c_author}'"
-            # web-flow (GitHub's web-UI / merge / squash identity) OK as committer only.
             if [[ "$c_committer" != "web-flow" ]]; then
               is_nebula "$c_committer" \
                 || skip "commit ${c_sha:0:12} committed by non-nebula '${c_committer}'"
             fi
           done < <(jq -r '[.sha, (.author // "null"), (.committer // "null")] | @tsv' <<<"$COMMITS")
+          pass "${N_COMMITS}/${N_COMMITS} commits by ${TEAM_SLUG} members (or trusted bots)"
 
-          # ── GATE 3: every completed check on head SHA is green. ──
-          # success/neutral/skipped OK; pending blocks (re-runs on next check_suite);
-          # failure/cancelled/timed_out/action_required block.
+          GATE="3 (checks)"
           CHECKS=$(gh api "repos/${REPO}/commits/${SHA}/check-runs" --paginate \
                     --jq '.check_runs[] | {name, status, conclusion}' 2>/dev/null) \
             || skip "cannot read check-runs for $SHA"
 
-          if [[ -z "$CHECKS" ]]; then
-            skip "no check-runs reported for $SHA"
-          fi
+          [[ -n "$CHECKS" ]] || skip "no check-runs reported for $SHA"
 
-          # Don't wait on our own Auto-Approve run.
           PENDING=$(jq -rs '[.[] | select(.name!="gate" and .status!="completed")] | length' <<<"$CHECKS")
           [[ "$PENDING" == "0" ]] || skip "$PENDING check(s) still running"
 
@@ -174,21 +160,36 @@ jobs:
                       | ($c=="success" or $c=="neutral" or $c=="skipped") | not)
                   | .name] | join(", ")' <<<"$CHECKS")
           [[ -z "$BAD" ]] || skip "failing/incomplete checks: $BAD"
+          N_CHECKS=$(jq -rs 'length' <<<"$CHECKS")
+          pass "${N_CHECKS} checks green, 0 pending @ ${SHA:0:12}"
 
-          # ── GATE 4: newest `## AI Review` comment must contain the LGTM phrase. ──
-          # (A later findings comment supersedes an earlier LGTM.)
-          COMMENTS=$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate \
-                      --jq "[.[] | select(.user.login==\"${AI_REVIEW_ACTOR}\") | select(.body | contains(\"## AI Review\"))] | last" 2>/dev/null) \
+          # ai-review does not run on `synchronize`, so an LGTM from a previous
+          # SHA must not approve newly-pushed code: require the comment to be
+          # newer than the head commit, and the LGTM phrase to start a line.
+          GATE="4 (AI review)"
+          HEAD_DATE=$(gh api "repos/${REPO}/commits/${SHA}" \
+                       --jq '.commit.committer.date' 2>/dev/null) \
+            || skip "cannot read head commit date for $SHA"
+
+          REVIEW=$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate \
+                    --jq "[.[] | select(.user.login==\"${AI_REVIEW_ACTOR}\") | select(.body | contains(\"## AI Review\"))] | last" 2>/dev/null) \
             || skip "cannot read PR comments"
 
-          [[ -n "$COMMENTS" && "$COMMENTS" != "null" ]] \
+          [[ -n "$REVIEW" && "$REVIEW" != "null" ]] \
             || skip "no AI Review comment found"
 
-          if ! jq -e --arg p "$LGTM_PHRASE" '.body | contains($p)' <<<"$COMMENTS" >/dev/null; then
-            skip "latest AI Review is not a clear LGTM"
-          fi
+          REVIEW_DATE=$(jq -r '.created_at' <<<"$REVIEW")
+          [[ "$REVIEW_DATE" > "$HEAD_DATE" || "$REVIEW_DATE" == "$HEAD_DATE" ]] \
+            || skip "AI Review ($REVIEW_DATE) predates head commit ($HEAD_DATE); re-run AI review"
 
-          # ── All gates passed. Submit the counted APPROVE. ──
+          if ! jq -e --arg p "$LGTM_PHRASE" \
+                '.body | split("\n") | map(gsub("^\\s+";"")) | any(startswith($p))' \
+                <<<"$REVIEW" >/dev/null; then
+            skip "latest AI Review is not a clear LGTM for the current head"
+          fi
+          pass "LGTM @ ${REVIEW_DATE} >= head @ ${HEAD_DATE}"
+
+          echo "DECISION: APPROVE PR #${NUM} @ ${SHA:0:12}"
           cat > /tmp/approve-body.md <<EOF
           ✅ Auto-approved by policy gate.
 
