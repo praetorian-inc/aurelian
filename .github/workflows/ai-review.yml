@@ -111,9 +111,11 @@ jobs:
             2. `gh pr diff ${{ steps.pr.outputs.number }} --repo ${{ github.repository }}` for the diff.
             3. Read each changed file in full — never review a diff in isolation.
             4. Walk the rule tiers below in order; flag only what is observable in the diff.
-            5. Post the review as a single top-level comment with
-               `gh pr comment ${{ steps.pr.outputs.number }} --repo ${{ github.repository }} --body "<review>"`
-               (format below). One comment; no inline comments.
+            5. Post the review as a single top-level comment, piping the body via
+               stdin so backticks / `$(...)` in the review are never shell-evaluated:
+               `gh pr comment ${{ steps.pr.outputs.number }} --repo ${{ github.repository }} --body-file - <<'REVIEW_EOF'`
+               then the review (format below) then a line with `REVIEW_EOF`.
+               One comment; no inline comments.
             6. Return the structured result: `verdict` = "lgtm" if there are no
                findings, else "changes".
 

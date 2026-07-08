@@ -77,6 +77,14 @@ jobs:
           ALREADY=$(jq -r --arg s "$SHA" '[.reviews[]|select(.state=="APPROVED" and .commit.oid==$s)]|length' <<<"$PR")
           [[ "$ALREADY" == "0" ]] || skip "already approved at ${SHA:0:12}"
 
+          # verdict=lgtm alone isn't proof the review was posted (the model could
+          # return lgtm while `gh pr comment` failed). Require a real
+          # `## AI Review` comment from the review bot to exist on the PR.
+          # --slurp can't combine with --jq, so pipe raw pages to jq and flatten.
+          HAS_REVIEW=$(gh api "repos/${REPO}/issues/${NUM}/comments" --paginate --slurp 2>/dev/null \
+                        | jq '[.[][] | select(.user.login=="github-actions[bot]") | select(.body | contains("## AI Review"))] | length' 2>/dev/null || echo 0)
+          [[ "${HAS_REVIEW:-0}" -gt 0 ]] || skip "no AI Review comment posted; refusing to approve"
+
           gh api "repos/${REPO}/pulls/${NUM}/reviews" \
             -f "commit_id=${SHA}" -f "event=APPROVE" \
             -f "body=✅ Auto-approved: clean AI review + author is an active ${ORG}/${TEAM_SLUG} member. A human must still merge." >/dev/null \
