@@ -1,0 +1,84 @@
+# Privileged half of the two-workflow pattern. Runs after "AI Review" (the
+# unprivileged workflow) completes. workflow_run executes in the DEFAULT-branch
+# (main) context, so github.ref is main — which passes the auto-approve
+# environment's default-branch-only policy AND runs main's copy of this file (a
+# PR cannot alter it). It never checks out or runs PR code; it reads the handoff
+# artifact as UNTRUSTED data and re-validates everything against the API.
+name: Auto-Approve
+
+on:
+  workflow_run:
+    workflows: [AI Review]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read          # download the triggering run's artifact
+
+jobs:
+  approve:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: auto-approve
+    env:
+      TEAM_SLUG: nebula
+      ORG: praetorian-inc
+    steps:
+      - name: Download approval handoff
+        id: dl
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: approval-handoff
+          path: handoff
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate App token
+        id: apptoken
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          app-id: ${{ secrets.AUTO_APPROVE_APP_ID }}
+          private-key: ${{ secrets.AUTO_APPROVE_APP_PRIVATE_KEY }}
+
+      - name: Evaluate and approve
+        env:
+          GH_TOKEN: ${{ steps.apptoken.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          skip() { echo "::notice::auto-approve skipped: $1"; exit 0; }
+
+          # ── Artifact is UNTRUSTED (produced by a PR-context run). Validate shape. ──
+          NUM=$(tr -d '[:space:]' < handoff/pr_number 2>/dev/null || echo "")
+          SHA=$(tr -d '[:space:]' < handoff/sha 2>/dev/null || echo "")
+          VERDICT=$(tr -d '[:space:]' < handoff/verdict 2>/dev/null || echo "")
+          [[ "$NUM" =~ ^[0-9]+$ ]]        || skip "bad pr_number in handoff"
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]  || skip "bad sha in handoff"
+          [[ "$VERDICT" == "lgtm" ]]      || skip "verdict is not lgtm ('$VERDICT')"
+
+          # ── Re-validate everything against the API (never trust the artifact). ──
+          PR=$(gh pr view "$NUM" --repo "$REPO" \
+                --json state,isDraft,isCrossRepository,headRefOid,author,reviews 2>/dev/null) \
+            || skip "cannot read PR #$NUM"
+
+          [[ "$(jq -r .state <<<"$PR")" == "OPEN" ]]             || skip "PR is not open"
+          [[ "$(jq -r .isDraft <<<"$PR")" == "false" ]]         || skip "PR is a draft"
+          [[ "$(jq -r .isCrossRepository <<<"$PR")" == "false" ]] || skip "head is on a fork"
+
+          # Head must still be the reviewed SHA (the artifact's SHA, confirmed live).
+          HEAD=$(jq -r .headRefOid <<<"$PR")
+          [[ "$HEAD" == "$SHA" ]] || skip "head moved since review ($SHA -> $HEAD)"
+
+          AUTHOR=$(jq -r '.author.login' <<<"$PR")
+          gh api "orgs/${ORG}/teams/${TEAM_SLUG}/memberships/${AUTHOR}" --jq '.state' 2>/dev/null | grep -qx active \
+            || skip "author $AUTHOR is not an active ${TEAM_SLUG} member"
+
+          ALREADY=$(jq -r --arg s "$SHA" '[.reviews[]|select(.state=="APPROVED" and .commit.oid==$s)]|length' <<<"$PR")
+          [[ "$ALREADY" == "0" ]] || skip "already approved at ${SHA:0:12}"
+
+          gh api "repos/${REPO}/pulls/${NUM}/reviews" \
+            -f "commit_id=${SHA}" -f "event=APPROVE" \
+            -f "body=✅ Auto-approved: clean AI review + author is an active ${ORG}/${TEAM_SLUG} member. A human must still merge." >/dev/null \
+            || skip "approve call failed (head may have moved)"
+          echo "::notice::Approved PR #$NUM at $SHA"
