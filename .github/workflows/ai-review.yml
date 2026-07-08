@@ -295,6 +295,7 @@ jobs:
         run: |
           set -euo pipefail
           VERDICT=$(jq -r '.verdict // ""' <<<"${SO:-}" 2>/dev/null || echo "")
+          echo "handoff: pr_number=$NUM sha=$SHA verdict=$VERDICT"
           mkdir -p handoff
           printf '%s\n' "$NUM"     > handoff/pr_number
           printf '%s\n' "$SHA"     > handoff/sha
