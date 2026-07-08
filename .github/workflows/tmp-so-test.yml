@@ -15,6 +15,7 @@ jobs:
     if: startsWith(github.head_ref, 'tmp-structured-output-test')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    environment: tmp-so-test
     steps:
       - name: Run model with json-schema
         id: run
