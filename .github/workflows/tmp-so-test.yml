@@ -1,16 +1,17 @@
-# THROWAWAY test — delete this branch after. Proves claude-code-action's
+# THROWAWAY test — delete this branch/PR after. Proves claude-code-action's
 # structured_output survives step-to-step (no /tmp file handoff).
 name: TMP Structured Output Test
 
 on:
-  push:
-    branches: [tmp-structured-output-test]
+  pull_request:
+    types: [opened, synchronize]
 
 permissions:
   contents: read
 
 jobs:
   probe:
+    if: startsWith(github.head_ref, 'tmp-structured-output-test')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -39,6 +40,3 @@ jobs:
           echo "=== parsed ==="
           echo "verdict:  $(echo "$SO" | jq -r '.verdict')"
           echo "review_markdown (first line): $(echo "$SO" | jq -r '.review_markdown' | head -1)"
-          echo "=== execution_file present? ==="
-          echo "path: ${{ steps.run.outputs.execution_file }}"
-          [[ -f "${{ steps.run.outputs.execution_file }}" ]] && echo "execution_file EXISTS" || echo "execution_file MISSING"
