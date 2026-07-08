@@ -32,7 +32,7 @@ func (e *AWSEnricher) Enrich(r output.AWSResource, out *pipeline.P[output.AWSRes
 	}
 
 	awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
-		Region:     r.Region,
+		Region:     awshelpers.RegionForService(r.ResourceType, r.Region),
 		Profile:    e.opts.Profile,
 		ProfileDir: e.opts.ProfileDir,
 	})
