@@ -291,14 +291,21 @@ jobs:
           set -uo pipefail
           echo "=== /tmp/review.md present? ==="
           ls -la /tmp/review.md 2>&1 || echo "MISSING"
-          echo "=== execution_file path: $EXEC_FILE ==="
-          if [[ -n "${EXEC_FILE:-}" && -f "$EXEC_FILE" ]]; then
+          # On a non-success exit the action may throw before setting the
+          # execution_file output, but still writes it to runner temp — fall back.
+          FILE="${EXEC_FILE:-}"
+          [[ -n "$FILE" && -f "$FILE" ]] || FILE="${RUNNER_TEMP}/claude-execution-output.json"
+          echo "=== execution_file: $FILE ==="
+          if [[ -f "$FILE" ]]; then
             echo "--- result turn (denials, cost, error) ---"
-            jq '.[] | select(.type=="result") | {is_error, num_turns, permission_denials_count, permission_denials}' "$EXEC_FILE" 2>&1 || true
-            echo "--- every tool_use name + any tool_result is_error ---"
-            jq -r '.[] | (.message.content[]? | select(.type=="tool_use") | "TOOL_USE: \(.name) \(.input.file_path // .input.command // "")"), (.message.content[]? | select(.type=="tool_result" and .is_error==true) | "DENIED/ERR: \(.content)")' "$EXEC_FILE" 2>&1 | head -60 || true
+            jq '.[] | select(.type=="result") | {is_error, num_turns, permission_denials_count, permission_denials}' "$FILE" 2>&1 || true
+            # Errors FIRST and un-truncated, so denials are never hidden behind tool_use noise.
+            echo "--- tool_result errors / denials ---"
+            jq -r '.[] | .message.content[]? | select(.type=="tool_result" and .is_error==true) | "DENIED/ERR: \(.content)"' "$FILE" 2>&1 || true
+            echo "--- tool_use calls (truncated) ---"
+            jq -r '.[] | .message.content[]? | select(.type=="tool_use") | "TOOL_USE: \(.name) \(.input.file_path // .input.command // "")"' "$FILE" 2>&1 | head -60 || true
           else
-            echo "execution_file missing"
+            echo "execution_file missing at output + runner-temp fallback"
           fi
 
       - name: Post review comment
