@@ -10,6 +10,7 @@ import (
 	smithy "github.com/aws/smithy-go"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
+	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -94,6 +95,19 @@ func TestEnumerator_List_InvalidIdentifier(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "identifier must be either an ARN or CloudControl resource type")
+}
+
+func TestNewEnumerator_RegistersRAMResourceShare(t *testing.T) {
+	e := NewEnumerator(plugin.AWSCommonRecon{Regions: []string{"us-east-1"}, Concurrency: 1})
+	defer func() { _ = e.Close() }()
+
+	enum, ok := e.enumerators["AWS::RAM::ResourceShare"]
+	if !ok {
+		t.Fatal("expected AWS::RAM::ResourceShare to be registered on the dispatcher")
+	}
+	if got := enum.ResourceType(); got != "AWS::RAM::ResourceShare" {
+		t.Errorf("registered enumerator ResourceType() = %q, want AWS::RAM::ResourceShare", got)
+	}
 }
 
 func TestEnumerator_enumerateByType_DispatchesSSMToRegisteredEnumerator(t *testing.T) {

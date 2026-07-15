@@ -397,6 +397,9 @@ var serviceResourcePrefixes = map[string][]resourcePrefixEntry{
 		{prefix: "subnet/", resourceType: "AWS::EC2::Subnet"},
 		{prefix: "vpc/", resourceType: "AWS::EC2::VPC"},
 	},
+	"ram": {
+		{prefix: "resource-share/", resourceType: "AWS::RAM::ResourceShare"},
+	},
 	"ssm": {
 		{prefix: "document/", resourceType: "AWS::SSM::Document"},
 		{prefix: "parameter/", resourceType: "AWS::SSM::Parameter"},

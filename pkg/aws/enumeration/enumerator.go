@@ -85,6 +85,7 @@ func NewEnumeratorWithProvider(opts plugin.AWSCommonRecon, provider *AWSConfigPr
 	e.Register(NewSSMParameterEnumerator(opts, provider, skipReport))
 	e.Register(NewOpenSearchDomainEnumerator(opts, provider, skipReport))
 	e.Register(NewClassicELBEnumerator(opts, provider, skipReport))
+	e.Register(NewRAMResourceShareEnumerator(opts, provider, skipReport))
 
 	return e
 }

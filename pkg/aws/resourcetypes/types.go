@@ -46,6 +46,7 @@ var baseline = []string{
 	"AWS::IAM::Role",
 	"AWS::IAM::User",
 	"AWS::KMS::Key",
+	"AWS::RAM::ResourceShare",
 	"AWS::RDS::DBCluster",
 	"AWS::SecretsManager::Secret",
 }
