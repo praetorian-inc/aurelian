@@ -24,17 +24,10 @@ func TestRAMResourceShareEnumerator(t *testing.T) {
 	provider := NewAWSConfigProvider(opts)
 	enum := NewRAMResourceShareEnumerator(opts, provider, NewSkipReport())
 
-	out := pipeline.New[output.AWSResource]()
-	go func() {
-		require.NoError(t, enum.EnumerateAll(out))
-		out.Close()
-	}()
-
-	var results []output.AWSResource
-	for r := range out.Range() {
-		results = append(results, r)
-	}
-	require.NoError(t, out.Wait())
+	results, err := collectResourceShareResults(func(out *pipeline.P[output.AWSResource]) error {
+		return enum.EnumerateAll(out)
+	})
+	require.NoError(t, err)
 	require.NotEmpty(t, results)
 
 	externalArn := fixture.Output("external_share_arn")
@@ -55,4 +48,19 @@ func TestRAMResourceShareEnumerator(t *testing.T) {
 	org, ok := byArn[orgOnlyArn]
 	require.True(t, ok, "org-only share %s should be enumerated", orgOnlyArn)
 	assert.Equal(t, false, org.Properties["AllowExternalPrincipals"])
+}
+
+func collectResourceShareResults(run func(out *pipeline.P[output.AWSResource]) error) ([]output.AWSResource, error) {
+	out := pipeline.New[output.AWSResource]()
+	resultCh := make(chan []output.AWSResource, 1)
+	go func() {
+		var results []output.AWSResource
+		for r := range out.Range() {
+			results = append(results, r)
+		}
+		resultCh <- results
+	}()
+	err := run(out)
+	out.Close()
+	return <-resultCh, err
 }
