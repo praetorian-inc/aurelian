@@ -51,10 +51,7 @@ func (imdsCheck) Evaluate(r output.AWSResource) *output.AurelianRisk {
 	if propString(r.Properties, "InstanceStateName") == "terminated" {
 		return nil
 	}
-	if propString(r.Properties, "MetadataHttpEndpoint") == "disabled" {
-		return nil
-	}
-	if tokens == "required" {
+	if tokens != "optional" || propString(r.Properties, "MetadataHttpEndpoint") != "enabled" {
 		return nil
 	}
 

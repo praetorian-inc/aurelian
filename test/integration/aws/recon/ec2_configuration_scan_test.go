@@ -35,6 +35,7 @@ func TestConfigurationScanIMDSRisk(t *testing.T) {
 	flagged := fixture.OutputList("flagged_instance_ids")
 	safe := fixture.OutputList("safe_instance_ids")
 	require.NotEmpty(t, flagged, "fixture must define flagged instances")
+	require.NotEmpty(t, safe, "fixture must define safe instances")
 
 	riskedARNs := []string{}
 	for _, r := range results {

@@ -1,6 +1,9 @@
 package recon
 
 import (
+	"fmt"
+	"slices"
+
 	"github.com/praetorian-inc/aurelian/pkg/aws/enrichment"
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/model"
@@ -54,6 +57,7 @@ func (m *AWSConfigurationScanModule) SupportedResourceTypes() []string {
 	for t := range types {
 		out = append(out, t)
 	}
+	slices.Sort(out)
 	return out
 }
 
@@ -84,12 +88,15 @@ func (m *AWSConfigurationScanModule) Run(cfg plugin.Config, out *pipeline.P[mode
 	lister := cclist.NewEnumerator(c.AWSCommonRecon)
 	defer func() { _ = lister.Close() }()
 
-	resourceTypes := m.SupportedResourceTypes()
-	cfg.Info("configuration scan: %d resource type(s) across %d region(s)", len(resourceTypes), len(c.Regions))
+	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
+	if err != nil {
+		return fmt.Errorf("failed to collect inputs: %w", err)
+	}
+	cfg.Info("configuration scan: %d input(s) across %d region(s)", len(inputs), len(c.Regions))
 
-	typePipeline := pipeline.From(resourceTypes...)
+	inputPipeline := pipeline.From(inputs...)
 	listed := pipeline.New[output.AWSResource]()
-	pipeline.Pipe(typePipeline, lister.List, listed, &pipeline.PipeOpts{
+	pipeline.Pipe(inputPipeline, lister.List, listed, &pipeline.PipeOpts{
 		Progress: cfg.Log.ProgressFunc("listing resources"),
 	})
 
