@@ -1,0 +1,38 @@
+id: "1.2.2"
+title: "Ensure sign-in to shared mailboxes is blocked"
+service: exchange
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that direct sign-in to shared mailboxes is blocked by
+  disabling the user account associated with each shared mailbox.
+rationale: |
+  Shared mailboxes have credentials that could be used for direct
+  sign-in. Since shared mailboxes are often excluded from MFA
+  policies and conditional access, direct sign-in provides an
+  unprotected access path that bypasses security controls.
+impact: |
+  Users will only be able to access shared mailboxes through
+  delegation (Send As, Send on Behalf, Full Access) from their own
+  authenticated accounts.
+remediation: |
+  For each shared mailbox, block sign-in by running
+  Set-MsolUser -UserPrincipalName <mailbox> -BlockCredential $true
+  or disabling the account in Entra ID.
+references:
+  - "https://learn.microsoft.com/en-us/microsoft-365/admin/email/about-shared-mailboxes"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 1.2.2"
+cis_controls:
+  - "v8: 5.3"
+  - "v8: 6.3"
+guard:
+  finding_slug: "m365-cis-1-2-2-shared-mailbox-signin-disabled"
+  phase_tag: "phase_m365_exchange"
+  asset_type: "m365tenant"
+  cwe: "CWE-287"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - shared_mailboxes
+  - user_sign_in_status

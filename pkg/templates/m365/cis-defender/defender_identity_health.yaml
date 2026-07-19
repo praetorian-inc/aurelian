@@ -1,0 +1,37 @@
+id: "defender.identity.health"
+title: "Ensure Microsoft Defender for Identity health issues are reviewed"
+service: defender
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that Microsoft Defender for Identity is deployed and all
+  health issues are reviewed and addressed to ensure proper identity
+  threat detection.
+rationale: |
+  Defender for Identity monitors Active Directory signals to detect
+  advanced threats, compromised identities, and malicious insider
+  actions. Unresolved health issues indicate sensor failures or
+  configuration problems that create detection blind spots.
+impact: |
+  Resolving health issues may require updating sensors, adjusting
+  network configurations, or modifying service accounts.
+remediation: |
+  Navigate to Microsoft 365 Defender > Settings > Identities and
+  review the health center for any unresolved issues. Address each
+  health alert according to Microsoft guidance.
+references:
+  - "https://learn.microsoft.com/en-us/defender-for-identity/health-alerts"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0"
+cis_controls:
+  - "v8: 13.1"
+  - "v8: 13.3"
+guard:
+  finding_slug: "m365-cis-defender-identity-health"
+  phase_tag: "phase_m365_defender"
+  asset_type: "m365tenant"
+  cwe: "CWE-778"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - defender_identity_health
