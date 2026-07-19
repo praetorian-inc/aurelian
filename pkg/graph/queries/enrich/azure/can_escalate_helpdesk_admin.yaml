@@ -1,0 +1,38 @@
+id: azure/enrich/can-escalate-helpdesk-admin
+name: Helpdesk Administrator Escalation
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Helpdesk Administrators can reset passwords for non-admin users. Creates
+  CAN_ESCALATE edges to users without privileged directory roles.
+severity: medium
+order: 61
+cypher: |
+  MATCH (attacker)-[perm:HAS_PERMISSION]->(rd:RoleDefinition)
+  WHERE rd.displayName = 'Helpdesk Administrator'
+     OR rd.templateId = '729827e3-9c14-49f7-bb1b-9608f156bbb8'
+  SET attacker._canEscalate = true
+  WITH attacker, perm
+  MATCH (target:User)
+  WHERE target <> attacker
+    AND NOT EXISTS {
+      MATCH (target)-[:HAS_PERMISSION]->(adminRd:RoleDefinition)
+      WHERE NOT adminRd.templateId IN [
+        '88d8e3e3-8f55-4a1e-953a-9b9898b8876b',
+        '95e79109-95c0-4d8e-aee3-d01accf2d47b',
+        '729827e3-9c14-49f7-bb1b-9608f156bbb8',
+        '790c1fb9-7f7d-4f88-86a1-ef1f95c05c1b',
+        '966707d0-3269-4727-9be2-8c3a10f19b9d',
+        '4a5d8f65-41da-4de4-8968-e035b65339cf',
+        '27460883-1df1-4691-b032-3b79643e5e63',
+        '75934031-6c7e-415a-99d7-48dbd49e875e'
+      ]
+    }
+  WITH DISTINCT attacker, target, perm
+  MERGE (attacker)-[r:CAN_ESCALATE {method: 'PasswordResetViaHelpdeskAdmin'}]->(target)
+  ON CREATE SET
+    r.condition = 'Can reset passwords for users with no admin roles or specific low-privilege roles',
+    r.category = 'DirectoryRole',
+    r.source = perm.source
+  RETURN count(*) AS created
