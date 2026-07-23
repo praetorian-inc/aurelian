@@ -46,6 +46,18 @@ func TestBuildResourceARN(t *testing.T) {
 	}
 }
 
+func TestResolveResourceType_RAM(t *testing.T) {
+	rt, ok := ResolveResourceType("ram", "resource-share/abc-123")
+	if !ok || rt != "AWS::RAM::ResourceShare" {
+		t.Errorf("ResolveResourceType(ram, resource-share/...) = (%q, %v), want (AWS::RAM::ResourceShare, true)", rt, ok)
+	}
+
+	// A RAM permission ARN must NOT resolve to ResourceShare.
+	if rt, ok := ResolveResourceType("ram", "permission/AWSRAMDefaultPermissionSubnet"); ok {
+		t.Errorf("ResolveResourceType(ram, permission/...) unexpectedly resolved to %q", rt)
+	}
+}
+
 // TestResolveResourceType_OpenSearch locks the by-ARN dispatch for OpenSearch /
 // legacy Elasticsearch domains. Both use the "es" service segment, and they must
 // resolve to the type the native OpenSearchDomainEnumerator is registered under
