@@ -3,7 +3,6 @@ package enumeration
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -11,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ram"
 	ramtypes "github.com/aws/aws-sdk-go-v2/service/ram/types"
+	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -94,29 +94,40 @@ func (l *RAMResourceShareEnumerator) EnumerateAll(out *pipeline.P[output.AWSReso
 		return fmt.Errorf("no regions configured")
 	}
 
-	accountID, err := l.provider.GetAccountID(l.Regions[0])
-	if err != nil {
-		return fmt.Errorf("get account ID: %w", err)
-	}
-
+	// Account ID is resolved inside each region's own (already-validated) config
+	// rather than from a single prerequisite region, so one disabled region does
+	// not abort the whole enumeration. It is only used as a fallback when a share
+	// omits OwningAccountId.
 	actor := ratelimit.NewCrossRegionActor(l.Concurrency)
 	return actor.ActInRegions(l.Regions, func(region string) error {
-		return l.listSharesInRegion(region, accountID, out)
+		return l.listSharesInRegion(region, out)
 	})
 }
 
-func (l *RAMResourceShareEnumerator) listSharesInRegion(region, accountID string, out *pipeline.P[output.AWSResource]) error {
+func (l *RAMResourceShareEnumerator) listSharesInRegion(region string, out *pipeline.P[output.AWSResource]) error {
 	cfg, err := l.provider.GetAWSConfig(region)
 	if err != nil {
 		return fmt.Errorf("create RAM client for %s: %w", region, err)
 	}
+
+	var skipped []SkippedOp
+	defer func() { l.skipReport.RecordBatch(skipped) }()
+
+	accountID, err := awshelpers.GetAccountId(*cfg)
+	if err != nil {
+		if op := ClassifySkippable(err, "sts", "GetCallerIdentity", region); op != nil {
+			skipped = append(skipped, *op)
+			return nil
+		}
+		return fmt.Errorf("resolve account for %s: %w", region, err)
+	}
+
 	client := ram.NewFromConfig(*cfg)
 
 	paginator := ram.NewGetResourceSharesPaginator(client, &ram.GetResourceSharesInput{
 		ResourceOwner:       ramtypes.ResourceOwnerSelf,
 		ResourceShareStatus: ramtypes.ResourceShareStatusActive,
 	})
-	var skipped []SkippedOp
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(context.Background())
 		if err != nil {
@@ -131,21 +142,28 @@ func (l *RAMResourceShareEnumerator) listSharesInRegion(region, accountID string
 			if arn == "" {
 				continue
 			}
-			principals := l.associatedEntities(client, arn, ramtypes.ResourceShareAssociationTypePrincipal, region, &skipped)
-			resources := l.associatedEntities(client, arn, ramtypes.ResourceShareAssociationTypeResource, region, &skipped)
+			principals, err := l.associatedEntities(client, arn, ramtypes.ResourceShareAssociationTypePrincipal, region, &skipped)
+			if err != nil {
+				return err
+			}
+			resources, err := l.associatedEntities(client, arn, ramtypes.ResourceShareAssociationTypeResource, region, &skipped)
+			if err != nil {
+				return err
+			}
 			out.Send(buildResourceShareResource(share, principals, resources, accountID, region))
 		}
 	}
-
-	l.skipReport.RecordBatch(skipped)
 	return nil
 }
 
 // associatedEntities returns the AssociatedEntity values for a share for the
 // given association type (PRINCIPAL → account/org/OU/role ARNs; RESOURCE →
-// resource ARNs). Skippable errors are appended to skipped and an empty slice
-// is returned so the share is still emitted with whatever else resolved.
-func (l *RAMResourceShareEnumerator) associatedEntities(client *ram.Client, shareArn string, assocType ramtypes.ResourceShareAssociationType, region string, skipped *[]SkippedOp) []string {
+// resource ARNs). A skippable error (access denied, region unsupported) is
+// appended to skipped and the entities resolved so far are returned, so the
+// share is still emitted best-effort. A non-skippable error is returned to the
+// caller so a genuine failure aborts the region rather than silently emitting a
+// share with a misleading (partial) principals/resources set.
+func (l *RAMResourceShareEnumerator) associatedEntities(client *ram.Client, shareArn string, assocType ramtypes.ResourceShareAssociationType, region string, skipped *[]SkippedOp) ([]string, error) {
 	paginator := ram.NewGetResourceShareAssociationsPaginator(client, &ram.GetResourceShareAssociationsInput{
 		AssociationType:   assocType,
 		AssociationStatus: ramtypes.ResourceShareAssociationStatusAssociated,
@@ -157,22 +175,9 @@ func (l *RAMResourceShareEnumerator) associatedEntities(client *ram.Client, shar
 		if err != nil {
 			if op := ClassifySkippable(err, "ram", "GetResourceShareAssociations", region); op != nil {
 				*skipped = append(*skipped, *op)
-				return entities
+				return entities, nil
 			}
-			// The share is still emitted with whatever resolved, but the
-			// non-skippable failure is recorded so the data gap (possibly-empty
-			// or partial principals/resources) is visible in the skip report
-			// rather than silently swallowed by a log line.
-			slog.Warn("non-skippable GetResourceShareAssociations error, emitting partial associations",
-				"share", shareArn, "type", string(assocType), "region", region, "error", err)
-			*skipped = append(*skipped, SkippedOp{
-				Region:    region,
-				Service:   "ram",
-				Operation: "GetResourceShareAssociations",
-				ErrorCode: SkipReason(err),
-				Detail:    err.Error(),
-			})
-			return entities
+			return nil, fmt.Errorf("get %s associations for %s in %s: %w", assocType, shareArn, region, err)
 		}
 		for _, assoc := range page.ResourceShareAssociations {
 			if e := aws.ToString(assoc.AssociatedEntity); e != "" {
@@ -180,7 +185,7 @@ func (l *RAMResourceShareEnumerator) associatedEntities(client *ram.Client, shar
 			}
 		}
 	}
-	return entities
+	return entities, nil
 }
 
 // EnumerateByARN fetches a single RAM resource share by ARN (ResourceOwner=SELF).
@@ -219,10 +224,17 @@ func (l *RAMResourceShareEnumerator) EnumerateByARN(arn string, out *pipeline.P[
 	}
 
 	var skipped []SkippedOp
+	defer func() { l.skipReport.RecordBatch(skipped) }()
+
 	share := resp.ResourceShares[0]
-	principals := l.associatedEntities(client, arn, ramtypes.ResourceShareAssociationTypePrincipal, parsed.Region, &skipped)
-	resources := l.associatedEntities(client, arn, ramtypes.ResourceShareAssociationTypeResource, parsed.Region, &skipped)
-	l.skipReport.RecordBatch(skipped)
+	principals, err := l.associatedEntities(client, arn, ramtypes.ResourceShareAssociationTypePrincipal, parsed.Region, &skipped)
+	if err != nil {
+		return err
+	}
+	resources, err := l.associatedEntities(client, arn, ramtypes.ResourceShareAssociationTypeResource, parsed.Region, &skipped)
+	if err != nil {
+		return err
+	}
 
 	out.Send(buildResourceShareResource(share, principals, resources, parsed.AccountID, parsed.Region))
 	return nil
