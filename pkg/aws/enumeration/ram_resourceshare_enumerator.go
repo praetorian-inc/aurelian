@@ -113,7 +113,8 @@ func (l *RAMResourceShareEnumerator) listSharesInRegion(region, accountID string
 	client := ram.NewFromConfig(*cfg)
 
 	paginator := ram.NewGetResourceSharesPaginator(client, &ram.GetResourceSharesInput{
-		ResourceOwner: ramtypes.ResourceOwnerSelf,
+		ResourceOwner:       ramtypes.ResourceOwnerSelf,
+		ResourceShareStatus: ramtypes.ResourceShareStatusActive,
 	})
 	var skipped []SkippedOp
 	for paginator.HasMorePages() {
@@ -147,6 +148,7 @@ func (l *RAMResourceShareEnumerator) listSharesInRegion(region, accountID string
 func (l *RAMResourceShareEnumerator) associatedEntities(client *ram.Client, shareArn string, assocType ramtypes.ResourceShareAssociationType, region string, skipped *[]SkippedOp) []string {
 	paginator := ram.NewGetResourceShareAssociationsPaginator(client, &ram.GetResourceShareAssociationsInput{
 		AssociationType:   assocType,
+		AssociationStatus: ramtypes.ResourceShareAssociationStatusAssociated,
 		ResourceShareArns: []string{shareArn},
 	})
 	var entities []string
@@ -157,8 +159,19 @@ func (l *RAMResourceShareEnumerator) associatedEntities(client *ram.Client, shar
 				*skipped = append(*skipped, *op)
 				return entities
 			}
+			// The share is still emitted with whatever resolved, but the
+			// non-skippable failure is recorded so the data gap (possibly-empty
+			// or partial principals/resources) is visible in the skip report
+			// rather than silently swallowed by a log line.
 			slog.Warn("non-skippable GetResourceShareAssociations error, emitting partial associations",
 				"share", shareArn, "type", string(assocType), "region", region, "error", err)
+			*skipped = append(*skipped, SkippedOp{
+				Region:    region,
+				Service:   "ram",
+				Operation: "GetResourceShareAssociations",
+				ErrorCode: SkipReason(err),
+				Detail:    err.Error(),
+			})
 			return entities
 		}
 		for _, assoc := range page.ResourceShareAssociations {
@@ -190,8 +203,9 @@ func (l *RAMResourceShareEnumerator) EnumerateByARN(arn string, out *pipeline.P[
 	client := ram.NewFromConfig(*cfg)
 
 	resp, err := client.GetResourceShares(context.Background(), &ram.GetResourceSharesInput{
-		ResourceOwner:     ramtypes.ResourceOwnerSelf,
-		ResourceShareArns: []string{arn},
+		ResourceOwner:       ramtypes.ResourceOwnerSelf,
+		ResourceShareStatus: ramtypes.ResourceShareStatusActive,
+		ResourceShareArns:   []string{arn},
 	})
 	if err != nil {
 		if op := ClassifySkippable(err, "ram", "GetResourceShares", parsed.Region); op != nil {
