@@ -1,1 +1,6 @@
 .github/workflows/ @praetorian-inc/CapDev-Maintainers-CloudSec @praetorian-inc/CapDev-Admins-All
+/CODEOWNERS        @praetorian-inc/CapDev-Maintainers-CloudSec @praetorian-inc/CapDev-Admins-All
+/AGENTS.md         @praetorian-inc/CapDev-Maintainers-CloudSec @praetorian-inc/CapDev-Admins-All
+/ARCHITECTURE.md   @praetorian-inc/CapDev-Maintainers-CloudSec @praetorian-inc/CapDev-Admins-All
+/DEVELOPMENT.md    @praetorian-inc/CapDev-Maintainers-CloudSec @praetorian-inc/CapDev-Admins-All
+/.agents/          @praetorian-inc/CapDev-Maintainers-CloudSec @praetorian-inc/CapDev-Admins-All
