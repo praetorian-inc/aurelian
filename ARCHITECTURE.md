@@ -220,3 +220,85 @@ An enricher returning an error does not fail the pipeline. The applier logs
 A failure to build the per-region cloud config is likewise logged and skipped. Write
 enrichers so a partial result is still useful, and never rely on an enricher's error
 to abort a scan.
+
+## 8. Output types
+
+`pkg/output` holds every result type. All of them embed `model.BaseAurelianModel` and
+therefore satisfy `model.AurelianModel`. This is the complete set:
+
+| Type | Source | Use |
+| --- | --- | --- |
+| `output.AWSResource` | `aws_resource.go:19` | An AWS resource and its properties |
+| `output.AzureResource` | `azure_resource.go:6` | An Azure resource |
+| `output.GCPResource` | `gcp_resource.go:6` | A GCP resource |
+| `output.AWSIAMResource` | `aws_iam_resource.go:8` | IAM principals and policies |
+| `output.AWSIAMRelationship` | `aws_iam_relationship.go:7` | Edges between IAM principals |
+| `output.AurelianRisk` | `aurelian_risk.go:36` | A security finding |
+| `output.Risk` | `risk.go:8` | Legacy finding shape — see below |
+| `output.AnalyzeResult` | `analyze_result.go:13` | Analysis module results |
+| `output.CallerIdentity` | `aws_caller_identity.go:7` | Resolved AWS caller |
+| `output.AWSCostSummary` | `aws_cost_summary.go:10` | Cost Explorer summary |
+| `output.AzureConditionalAccessPolicy` | `azure_conditional_access.go:6` | Entra CA policy, with `output.ResolvedEntity` and the `ConditionalAccess*` sub-shapes |
+| `output.ScanInput` | `scan_input.go:4` | Scan target descriptor |
+
+There is no `CloudResource` type and no `SecretFinding` type; anything citing either
+is wrong. Secret scanning results are `secrets.SecretScanResult`
+(`pkg/secrets/scanner.go:24`).
+
+### Risk versus AurelianRisk
+
+Both exist. They are not interchangeable.
+
+`output.AurelianRisk` is the current shape and the one modules emit: 15 composite
+literals across 9 files under `pkg/modules/`, referenced by 28 files. It carries a
+`RiskSeverity` (`output.NormalizeSeverity` canonicalizes the string) and a
+`json.RawMessage` context blob.
+
+`output.Risk` has zero composite literals under `pkg/modules/`. It is constructed only
+by the CDK scanner in `pkg/aws/cdk` (10 literals) and forwarded unchanged by one
+module, `pkg/modules/aws/recon/cdk_bucket_takeover.go:64`. It carries a `Target
+*AWSResource` and a two-letter `Status` severity code.
+
+New findings use `output.AurelianRisk`. `output.Risk` stays confined to the CDK path.
+
+### Direction
+
+Output types are migrating to capability-sdk/pkg/capmodel. Not yet landed in Aurelian:
+go.mod has no capability-sdk requirement and the tree has no capmodel references.
+
+Plan: docs/superpowers/plans/2026-04-29-aurelian-capability-sdk-migration.md
+Aurelian's work is phases 4-6, gated behind phases 1-3 in capability-sdk, tabularium,
+and guard. Translation will live in pkg/sdkadapter/, not in modules. capmodel has
+per-CSP resource models and its own risk and proof models.
+
+When phase 4 lands and pkg/sdkadapter/ exists, this section flips: capmodel becomes
+current, pkg/output becomes legacy, and the section 10 import boundary narrows to
+modules only. This doc is staged for that, not stale.
+
+## 9. Cross-cutting infrastructure
+
+Use these rather than hand-rolling. Each already handles a failure mode that bit this
+codebase.
+
+**Pagination and retry.** `pkg/ratelimit` supplies one paginator per CSP, differing
+only in the retry predicate: `ratelimit.NewAWSPaginator` (`paginator.go:20`, retries
+`ThrottlingException: Rate exceeded`), `ratelimit.NewGCPPaginator` (`:30`, retries 429
+and 503), `ratelimit.NewAzurePaginator` (`:43`, retries 429 and 503 via
+`azcore.ResponseError`). Default `MaxAttempts` is 5.
+
+**Region fan-out.** `ratelimit.NewCrossRegionActor(concurrency)`
+(`region_actor.go:19`). `ActInRegions` bounds workers with `errgroup` `SetLimit` and
+acquires the per-region limiter for each call; `ActInRegion` does one region. Do not
+write manual region loops — they bypass the per-region limiter and throttle the account.
+
+**Rate limiting.** `ratelimit.NewAWSRegionLimiter(limit)` (`aws_region_limiter.go:48`)
+gives each region its own semaphore. `ratelimit.Global()` (`:57`) also exists: a
+process-wide singleton fixed at 5 per region, shared by every concurrent scan. It has
+no callers today and new code does not add one — see section 10.
+
+**Keyed state.** `store.Map[T]` (`pkg/store/map.go:43`). `store.NewMap[T]()` (`:48`)
+returns a **value**, not a pointer; a zero-value `Map` is safe to use, so call sites
+need no nil checks. Build tags select the backend: `compute` uses SQLite
+(`pkg/store/new_map_sqlite.go`), `!compute` uses memory (`pkg/store/new_map.go`).
+Reach for it only when a later stage needs random-access lookup of earlier results. A
+pipeline is almost always the better answer.
