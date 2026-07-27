@@ -41,9 +41,9 @@ Dependency direction is one-way: `cmd/` → `pkg/plugin` → `pkg/modules/` →
 | Directory | Contents | Rule |
 | --- | --- | --- |
 | `pkg/modules/<csp>/<category>/` | Module implementations. `<csp>` ∈ aws, azure, gcp. `<category>` ∈ recon, analyze, enrichers, evaluators. | One module per file. Register in `init()`. No cloud API calls — delegate to a component. |
+| `pkg/modules/aws/rules/` | Declarative YAML rules consumed by `pkg/modules/common/`. | Data, not code. |
 | `pkg/modules/common/` | CSP-agnostic YAML rule engine: analyzer, matcher, rule. | Not a CSP. Nothing CSP-specific goes here. |
 | `pkg/modules/loader/` | Generated blank-import file. | `pkg/modules/loader/loader.go` is generated — `go generate ./pkg/modules/loader`. Never hand-edit. |
-| `pkg/modules/aws/rules/` | Declarative YAML rules consumed by `pkg/modules/common/`. | Data, not code. |
 | `pkg/<csp>/<service>/` | Components: enumerators, checkers, listers, extractors, enrichment appliers. | Cloud API work lives here and only here. Must not import `pkg/modules/`. |
 | `pkg/types/` | Shared structural types (IAM policy, GAAD, enriched resource description). | Cross-package types only. Not module-local shapes. |
 | `pkg/graph/` | Neo4j adapters, queries, transformers. | Graph concerns only. |
@@ -59,7 +59,7 @@ in `init()` with `plugin.Register` (`pkg/plugin/registry.go:30`). Registration k
 `platform/category/id`; a duplicate key panics at startup.
 
 - **Metadata** methods (`ID`, `Name`, `Description`, `Platform`, `Category`,
-  `OpsecLevel`, `Authors`, `References`) are constant expressions. No I/O.
+  `OpsecLevel`, `Authors`, `References`) return fixed values. No I/O, no config reads.
 - **`SupportedResourceTypes()`** returns the module's *input targets* — the resource
   types a caller may aim it at. Never the types it discovers internally. Guard matches
   on this value to decide dispatch, so widening it changes orchestration.
@@ -144,14 +144,14 @@ module that needs them, which is what makes them reusable across modules.
 
 ### The registry pattern
 
-Three registries exist, all with the same shape: a package-level map guarded by a
+Every registry in `pkg/plugin` has the same shape: a package-level map guarded by a
 mutex, a `Register*` function called from `init()`, and a `Get*` lookup at dispatch
-time.
+time. Enrichers get one registry per CSP, not one shared map.
 
 | Registry | Register | Keyed on |
 | --- | --- | --- |
 | Modules | `plugin.Register` | `platform/category/id` |
-| Enrichers | `plugin.RegisterEnricher` and per-CSP peers | resource type |
+| Enrichers (one per CSP) | `plugin.RegisterEnricher`, `plugin.RegisterAzureEnricher`, `plugin.RegisterGCPEnricher` | resource type |
 | Azure evaluators | `plugin.RegisterAzureEvaluator` | template ID |
 
 Registration is a side effect of importing the package. Blank imports in
@@ -223,8 +223,9 @@ to abort a scan.
 
 ## 8. Output types
 
-`pkg/output` holds every result type. All of them embed `model.BaseAurelianModel` and
-therefore satisfy `model.AurelianModel`. This is the complete set:
+`pkg/output` holds every result type. Emitted types satisfy `model.AurelianModel` by
+embedding `model.BaseAurelianModel` — `output.AWSIAMResource` gets it transitively
+through the `output.AWSResource` it embeds. This is the complete set:
 
 | Type | Source | Use |
 | --- | --- | --- |
@@ -239,7 +240,7 @@ therefore satisfy `model.AurelianModel`. This is the complete set:
 | `output.CallerIdentity` | `aws_caller_identity.go:7` | Resolved AWS caller |
 | `output.AWSCostSummary` | `aws_cost_summary.go:10` | Cost Explorer summary |
 | `output.AzureConditionalAccessPolicy` | `azure_conditional_access.go:6` | Entra CA policy, with `output.ResolvedEntity` and the `ConditionalAccess*` sub-shapes |
-| `output.ScanInput` | `scan_input.go:4` | Scan target descriptor |
+| `output.ScanInput` | `scan_input.go:4` | Content extracted for secret scanning. The one exception: it does not embed `model.BaseAurelianModel` and is not emitted — it is an intermediate carried between `pkg/<csp>/extraction/` and the scanner. |
 
 There is no `CloudResource` type and no `SecretFinding` type; anything citing either
 is wrong. Secret scanning results are `secrets.SecretScanResult`
@@ -305,7 +306,9 @@ pipeline is almost always the better answer.
 
 ## 10. Boundaries
 
-Six prohibitions. Each is currently clean; a PR that breaks one is a regression.
+Six prohibitions. Prohibitions 1, 2, 3, 4, and 6 have zero violations today, so any
+hit is a regression. Prohibition 5 has pre-existing violations; it binds new and
+changed code.
 
 1. **AWS SDK v2 only.** `github.com/aws/aws-sdk-go` (v1) is prohibited. go.mod
    requires only `aws-sdk-go-v2` modules and the tree has zero v1 imports.
