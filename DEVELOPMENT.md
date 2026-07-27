@@ -47,9 +47,6 @@ If the stdlib has a function for it, use the stdlib function. A manual loop that
 | `sync.WaitGroup` + error channel | `errgroup` (§4) |
 | Manual `b.N` loop in a benchmark | `for b.Loop()` |
 
-Loop variable copies (`v := v` at the top of a loop body) are dead code. Delete on
-sight.
-
 Multi-field sort composes through `cmp.Or`:
 
 ```go
