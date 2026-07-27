@@ -51,3 +51,76 @@ Dependency direction is one-way: `cmd/` → `pkg/plugin` → `pkg/modules/` →
 
 `pkg/model`, `pkg/pipeline`, `pkg/plugin`, `pkg/output`, `pkg/ratelimit`, `pkg/store`
 are framework packages, contracted in sections 3 through 9.
+
+## 3. Module contract
+
+A module implements `plugin.Module` (`pkg/plugin/module.go:78`) and registers itself
+in `init()` with `plugin.Register` (`pkg/plugin/registry.go:30`). Registration keys on
+`platform/category/id`; a duplicate key panics at startup.
+
+- **Metadata** methods (`ID`, `Name`, `Description`, `Platform`, `Category`,
+  `OpsecLevel`, `Authors`, `References`) are constant expressions. No I/O.
+- **`SupportedResourceTypes()`** returns the module's *input targets* — the resource
+  types a caller may aim it at. Never the types it discovers internally. Guard matches
+  on this value to decide dispatch, so widening it changes orchestration.
+- **`Parameters()`** returns a pointer to the module's config struct, or nil. The
+  registry wraps every module in `plugin.ModuleWrapper` (`pkg/plugin/module.go:109`),
+  which calls `plugin.Bind` and then the post-binders before `Run`. A module must not
+  call `Bind` itself.
+- **`Run()`** stays thin: read the bound config, build the pipeline topology, delegate
+  to `pkg/<csp>/<service>/` components, emit. Cloud API calls in `Run` are a layering
+  violation.
+
+Modules emit `model.AurelianModel` (`pkg/model/model.go:13`). The interface is sealed
+by an unexported token; the only way to satisfy it is to embed
+`model.BaseAurelianModel`.
+
+The caller owns the output pipeline, including `Close`. `cmd/generator.go:287` runs
+`Run` as a `pipeline.Pipe` stage, so `Pipe` closes the pipeline once `Run` returns. A
+module must never close the pipeline it was handed.
+
+## 4. Pipeline lifecycle
+
+`pipeline.P[T]` (`pkg/pipeline/pipeline.go:18`) wraps an unbuffered channel. Unbuffered
+means every `Send` blocks until a consumer reads — backpressure is the default and
+stalls are real.
+
+Surface (`pkg/pipeline/pipeline.go`):
+
+```
+Send(item T)            Sent() int64      Close()
+CloseWithError(error)   Wait() error      Range() <-chan T
+Drain() error           Collect() ([]T, error)
+```
+
+`Send` returns nothing. There is no error to check.
+
+### What Run returns
+
+Because the caller closes the output pipeline only *after* `Run` returns, what `Run`
+returns decides whether in-flight producers are still writing when that close happens.
+Choose from the table. A wrong choice deadlocks or truncates output.
+
+| Situation | Return |
+| --- | --- |
+| Direct `out.Send()`, no internal pipeline | `return nil` |
+| `pipeline.Pipe(x, fn, out)` targets `out` | `return out.Wait()` |
+| Internal pipeline drained via `Range()`, re-emitted | `return internal.Wait()` |
+
+Row 2: the inner `Pipe` owns `out` and closes it, so `out.Wait()` blocks until that
+stage finishes. Returning `nil` instead races the outer close against a live producer.
+
+Row 3: `out` is written synchronously by `Run`'s own goroutine, so `nil` would be safe
+for ordering — but returning `internal.Wait()` is what propagates the internal stage's
+error. Both `Range()` and `Collect()` must be followed by a `Wait()` whose error is
+returned; ranging alone silently discards upstream failures.
+
+Never `return out.Wait()` when nothing else closes `out`. `Wait` blocks on a channel
+the caller closes only after `Run` returns — that is the deadlock.
+
+### Stage options
+
+`pipeline.PipeOpts` (`pkg/pipeline/pipeline.go:112`) carries `Concurrency` and
+`Progress`. `Concurrency > 1` selects `pipeParallel`, which bounds workers with
+`errgroup` `SetLimit` (`:221`); otherwise stages run sequentially. Concurrency comes
+from a bound parameter, never a literal — see section 6.
