@@ -154,3 +154,44 @@ Three valid uses, and no others:
   Method constraints force wrapper types around primitives.
 - Iterators are `iter.Seq[V]` and `iter.Seq2[K, V]`. Always honor a false return from
   `yield` and stop. Never use a channel as an iterator.
+
+## 7. DRY
+
+**Rule.** Extract logic that appears three times into a shared component or helper.
+
+**Trigger.** The same logic appears a third time. Two occurrences is not a violation —
+two is the sample size at which the wrong abstraction still looks correct. Naming
+tells: numbered identifiers (`data1`, `data2`), parallel function families, adjacent
+blocks differing only in a constant.
+
+**Carve-outs.** Parallel implementations of one interface that merely resemble each
+other and will diverge on their own schedule. Generated code. Test fixtures and test
+setup, where readability beats deduplication. Patterns not yet clear enough to name.
+See ARCHITECTURE.md §11.
+
+## 8. YAGNI
+
+**Rule.** Build only what the current change requires.
+
+**Trigger.** A parameter, struct field, config value, or exported helper added in this
+diff with zero readers in this diff. An interface with one implementation and no second
+one named in the PR. A config struct where a literal or an existing flag would do. A
+dependency for something the stdlib already does. Compile-time interface-compliance
+assertions, and placeholder types with no members.
+
+**Carve-outs.** ARCHITECTURE.md §11 load-bearing patterns. Correctness work the
+requested change depends on: a bug that would break it, a security hole it would
+introduce, a data-loss path it would open. Take those, and say so in the PR
+description.
+
+## 9. Comments
+
+**Rule.** Comment why, never what.
+
+**Trigger.** A comment restating what the next line does. Doc comments of the form
+`// NewFoo creates a new Foo` on a self-describing signature.
+
+**Carve-outs.** Non-obvious behavior, and the reason for it. External constraints the
+code cannot express (rate limits, provider quirks, protocol requirements). Algorithms
+whose correctness argument is not visible locally. Deliberate-simplification markers
+recording that the simple form was chosen on purpose.
