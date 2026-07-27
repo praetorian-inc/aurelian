@@ -302,3 +302,49 @@ need no nil checks. Build tags select the backend: `compute` uses SQLite
 (`pkg/store/new_map_sqlite.go`), `!compute` uses memory (`pkg/store/new_map.go`).
 Reach for it only when a later stage needs random-access lookup of earlier results. A
 pipeline is almost always the better answer.
+
+## 10. Boundaries
+
+Six prohibitions. Each is currently clean; a PR that breaks one is a regression.
+
+1. **AWS SDK v2 only.** `github.com/aws/aws-sdk-go` (v1) is prohibited. go.mod
+   requires only `aws-sdk-go-v2` modules and the tree has zero v1 imports.
+2. **No Chariot or Tabularium imports under `pkg/modules/`.** Zero today. Aurelian
+   ships as a standalone binary and module code stays free of platform coupling.
+3. **No dispatcher or orchestrator package.** Neither pkg/dispatcher nor
+   pkg/orchestrator exists and neither may be created. Dispatch is the registry
+   (section 5); modules go in `pkg/modules/`.
+4. **No `ratelimit.Global()` in new code.** It is a process-wide singleton pinned at 5
+   concurrent calls per region, shared across unrelated scans, with no way to tune it
+   per module. Construct a scoped `ratelimit.NewAWSRegionLimiter(limit)` or use
+   `ratelimit.NewCrossRegionActor`. Current callers: zero. Keep it that way.
+5. **Parse resource identifiers with a real parser, never `strings.Split`.** AWS:
+   `arn.Parse` from the SDK. Azure: `arm.ParseResourceID`. GCP publishes no equivalent
+   — use the shared helpers in `pkg/gcp/enumeration/resource_helpers.go` rather than
+   splitting a self-link inline.
+6. **No `capability-sdk` import under `pkg/modules/`.** Modules emit
+   `model.AurelianModel`; translation to capmodel belongs in a future
+   pkg/sdkadapter/. From the migration plan's constraint table: *"No capability-sdk
+   imports leak into Aurelian module `init()`. SDK registration lives in chariot
+   bridge."* This is enforceable now, before any of the migration lands, and it is what
+   protects the standalone-binary constraint. Section 8 Direction describes the
+   migration; this is the rule.
+
+## 11. Load-bearing patterns
+
+These four look like dead code, over-engineering, or indirection for its own sake.
+They are none of those. Do not flag them, and do not "simplify" them away.
+
+1. **Blank imports for `init()` side effects.** `_ "path"` in `cmd/module_imports.go`
+   and `pkg/modules/loader/loader.go` is the only thing that makes a module reachable.
+   An unused-looking import here is the wiring.
+2. **`init()` functions and registry self-registration.** `plugin.Register`,
+   `plugin.RegisterEnricher` and peers, `plugin.RegisterAzureEvaluator`. The registered
+   function has no static caller by design; the registry is the caller.
+3. **Dispatch through a registry or reflection.** Enricher and evaluator functions are
+   invoked from a map keyed by resource type or template ID. `plugin.PostBinder` is
+   discovered by reflection over embedded structs (`pkg/plugin/module.go:136`). Neither
+   has a call site a static analyzer can see.
+4. **Interface boundaries for CSP polymorphism.** An interface with one implementation
+   today is correct when it exists to hold the AWS/Azure/GCP/Kubernetes shape uniform.
+   The second implementation is the point.
