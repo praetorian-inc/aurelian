@@ -10,6 +10,12 @@ on:
       - 'scripts/check-architecture-refs.sh'
       - '.github/workflows/docs-check.yml'
       - 'go.mod'
+      # Source roots the gate resolves against. Docs go stale when CODE moves, not
+      # when docs move, so a rename under pkg/ must trigger this check too.
+      - 'pkg/**'
+      - 'cmd/**'
+      - 'test/**'
+      - 'internal/**'
   push:
     branches: [main]
 
@@ -57,9 +63,15 @@ jobs:
             echo "== $d"
             test -f "$d/SKILL.md" || { echo "::error::$d missing SKILL.md"; exit 1; }
             test ! -d "$d/references" || { echo "::error::$d has references/ (skills are self-contained)"; exit 1; }
-            name=$(awk -F': *' '/^name:/{print $2; exit}' "$d/SKILL.md")
+            # Extract metadata ONLY from the YAML front matter block. A bare grep for
+            # 'name:' matches anywhere in the body, so a file with no front matter at
+            # all would pass this gate.
+            head -1 "$d/SKILL.md" | grep -qx -- '---' || { echo "::error::$d SKILL.md must open with ---"; exit 1; }
+            fm=$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f' "$d/SKILL.md")
+            printf '%s\n' "$fm" | grep -q '^name:' || { echo "::error::$d front matter missing name"; exit 1; }
+            printf '%s\n' "$fm" | grep -q '^description:' || { echo "::error::$d front matter missing description"; exit 1; }
+            name=$(printf '%s\n' "$fm" | awk -F': *' '/^name:/{print $2; exit}')
             [ "$name" = "$(basename "$d")" ] || { echo "::error::$d name '$name' != dir"; exit 1; }
-            grep -q '^description:' "$d/SKILL.md" || { echo "::error::$d missing description"; exit 1; }
             case "$name" in
               *[![:lower:][:digit:]-]*|-*|*-|*--*) echo "::error::$d name '$name' must be lowercase/digits/single hyphens"; exit 1;;
             esac

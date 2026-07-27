@@ -23,7 +23,11 @@ fi
 # citing any Go version would fail the gate.
 while IFS= read -r bad; do
   [ -n "$bad" ] || continue
-  case "$bad" in *"${gomod_ver%.*}"*) ;; *) note "stale Go version '$bad' (go.mod: $gomod_ver)";; esac
+  # Compare on major.minor. go.mod may be two-part ("1.25") or three-part
+  # ("1.25.8"); ${v%.*} on a two-part value yields "1", which would match any
+  # 1.x and silently disable this check.
+  case "$gomod_ver" in *.*.*) want="${gomod_ver%.*}";; *) want="$gomod_ver";; esac
+  case "$bad" in *"$want"*) ;; *) note "stale Go version '$bad' (go.mod: $gomod_ver)";; esac
 done < <(grep -ohE 'Go 1\.[0-9]+' "${DOCS[@]}" 2>/dev/null | sort -u)
 
 # 2. Every backticked repo path must exist
@@ -45,7 +49,12 @@ for doc in "${DOCS[@]}"; do
   for sym in $(grep -ohE '`(pipeline|plugin|ratelimit|store|output|model)\.[A-Z][A-Za-z0-9_]*`' "$doc" \
                | tr -d '`' | sort -u); do
     pkgname="${sym%%.*}"; ident="${sym##*.}"
-    grep -rqE "^(func|type|var|const) +\(?[A-Za-z]* ?\*?[A-Za-z\[\]]*\)? *${ident}\b|^(func|type) +${ident}\b" \
+    # Three shapes must resolve:
+    #   1. top-level  func/type/var/const Name ...
+    #   2. methods    func (r *Recv) Name(...)  and generic receivers func (r *R[T, K]) Name
+    #   3. block members  const ( ... \n\tName Type = ... )  -- an indented member of a
+    #      const(/var( block. Without this a real block constant is reported unresolved.
+    grep -rqE "^(func|type|var|const) +${ident}\b|^func +\([^)]*\) *${ident}\b|^[[:space:]]+${ident}([[:space:]]|,|=)" \
       "pkg/${pkgname}/" 2>/dev/null || note "$doc: unresolved identifier: $sym"
   done
 done

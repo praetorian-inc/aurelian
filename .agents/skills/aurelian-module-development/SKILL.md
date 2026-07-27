@@ -38,7 +38,7 @@ Ordered. Do not skip step 6.
 2. **Define the config struct.** Embed the CSP common struct rather than redeclaring
    its fields; ARCHITECTURE.md §6 lists the embeds and the supported tags. Every
    exported, non-embedded field needs a `param` tag or binding fails at runtime.
-   Concurrency limits, thresholds, and timeouts are parameters, never literals.
+   §6 also governs what must be a parameter rather than a constant.
 
 3. **Declare the module struct**, embedding the config struct.
 

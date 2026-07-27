@@ -32,9 +32,22 @@ Seven layers. Each depends only on those below it.
    `pkg/<csp>/enrichment/` as a pipeline stage.
 7. **Output** — `pkg/output`. Result types. Serialized by `cmd/generator.go`.
 
-Dependency direction is one-way: `cmd/` → `pkg/plugin` → `pkg/modules/` →
-`pkg/<csp>/<service>/` → `pkg/output` → `pkg/model`. Components must not import
-`pkg/modules/`. Nothing under `pkg/` may import `cmd/`.
+Dependency direction, stated as "imports" rather than arrows:
+
+- `cmd/` imports `pkg/modules/<csp>/<category>/` — blank imports, for `init()` registration —
+  plus `pkg/plugin`, `pkg/output`, `pkg/model`.
+- `pkg/modules/` imports `pkg/plugin`, `pkg/<csp>/<service>/`, `pkg/output`, `pkg/pipeline`.
+- `pkg/plugin` imports `pkg/output`, `pkg/model`, `pkg/pipeline`, `pkg/templates`, `pkg/graph`,
+  and some `pkg/<csp>/<service>/` packages. It **never** imports `pkg/modules/`.
+
+Two rules follow, and both hold today:
+
+- **Nothing under `pkg/` imports `cmd/`.** Zero violations.
+- **`pkg/plugin` does not import `pkg/modules/`.** Zero violations. Registration is inverted:
+  107 module files import `pkg/plugin` and register themselves through it.
+
+Components under `pkg/<csp>/<service>/` do not import `pkg/modules/` in production code. One
+test file blank-imports `pkg/modules/loader` for registration coverage; that is not a violation.
 
 ## 2. Directory contract
 
