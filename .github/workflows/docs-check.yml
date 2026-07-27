@@ -1,0 +1,31 @@
+name: Docs Check
+
+on:
+  pull_request:
+    paths:
+      - 'ARCHITECTURE.md'
+      - 'DEVELOPMENT.md'
+      - 'AGENTS.md'
+      - '.agents/**'
+      - 'scripts/check-architecture-refs.sh'
+      - '.github/workflows/docs-check.yml'
+      - 'go.mod'
+  push:
+    branches: [main]
+
+concurrency:
+  group: docs-check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  refs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Check doc references
+        run: bash scripts/check-architecture-refs.sh
