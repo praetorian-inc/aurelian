@@ -1,0 +1,37 @@
+id: "8.5.2"
+title: "Ensure anonymous users cannot start meetings"
+service: teams
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that anonymous users and dial-in callers cannot start
+  Teams meetings before an authenticated organizer joins.
+rationale: |
+  If anonymous users can start meetings, they may begin recording
+  or access meeting resources before the organizer arrives. This
+  creates opportunities for unauthorized access to meeting content
+  and attendee information.
+impact: |
+  Meetings will not start until an authenticated organizer or
+  presenter joins, potentially causing brief delays for external
+  participants.
+remediation: |
+  Navigate to Teams Admin Center > Meetings > Meeting policies and
+  ensure "Anonymous users and dial-in callers can start a meeting"
+  is disabled.
+references:
+  - "https://learn.microsoft.com/en-us/microsoftteams/meeting-policies-participants-and-guests"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 8.5.2"
+cis_controls:
+  - "v8: 6.1"
+  - "v8: 6.8"
+guard:
+  finding_slug: "m365-cis-8-5-2-anonymous-start-disabled"
+  phase_tag: "phase_m365_teams"
+  asset_type: "m365tenant"
+  cwe: "CWE-287"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - teams_meeting_policies

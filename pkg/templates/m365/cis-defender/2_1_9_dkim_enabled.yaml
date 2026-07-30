@@ -1,0 +1,36 @@
+id: "2.1.9"
+title: "Ensure DKIM is enabled for all Exchange Online domains"
+service: defender
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that DomainKeys Identified Mail (DKIM) signing is enabled
+  for all custom domains configured in Exchange Online.
+rationale: |
+  DKIM provides cryptographic authentication of email origin,
+  preventing spoofing of the organization's domains. Without DKIM,
+  attackers can forge emails appearing to come from the organization's
+  domain, enabling phishing and business email compromise attacks.
+impact: |
+  DNS records must be published for DKIM. No impact on legitimate
+  email delivery once configured.
+remediation: |
+  Navigate to Microsoft 365 Defender > Policies & rules > Threat
+  policies > Email authentication settings > DKIM and enable DKIM
+  signing for each custom domain.
+references:
+  - "https://learn.microsoft.com/en-us/defender-office-365/email-authentication-dkim-configure"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 2.1.9"
+cis_controls:
+  - "v8: 9.5"
+guard:
+  finding_slug: "m365-cis-2-1-9-dkim-enabled"
+  phase_tag: "phase_m365_defender"
+  asset_type: "m365tenant"
+  cwe: "CWE-287"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:H/VA:N/SC:N/SI:H/SA:N"
+data_requirements:
+  - dkim_signing_config
+  - accepted_domains

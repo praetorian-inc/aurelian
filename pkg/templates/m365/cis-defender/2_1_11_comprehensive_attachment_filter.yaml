@@ -1,0 +1,38 @@
+id: "2.1.11"
+title: "Ensure comprehensive attachment filtering is applied"
+service: defender
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that the anti-malware policy includes a comprehensive list
+  of file type extensions to filter beyond the default common
+  attachment types.
+rationale: |
+  The default common attachment filter may not cover all file types
+  used for malware delivery. A comprehensive filter that includes
+  additional executable, script, and archive formats provides defense
+  in depth against evolving malware delivery techniques.
+impact: |
+  Additional file types will be blocked, potentially affecting
+  legitimate business communications that use less common file
+  formats. Users may need alternate delivery methods.
+remediation: |
+  Navigate to Microsoft 365 Defender > Policies & rules > Threat
+  policies > Anti-malware and add comprehensive file type extensions
+  to the attachment filter list.
+references:
+  - "https://learn.microsoft.com/en-us/defender-office-365/anti-malware-protection-about"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 2.1.11"
+cis_controls:
+  - "v8: 9.3"
+  - "v8: 9.7"
+guard:
+  finding_slug: "m365-cis-2-1-11-comprehensive-attachment-filter"
+  phase_tag: "phase_m365_defender"
+  asset_type: "m365tenant"
+  cwe: "CWE-1188"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - anti_malware_policies

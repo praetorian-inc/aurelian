@@ -1,0 +1,37 @@
+id: "5.2.2.12"
+title: "Ensure the device code authentication flow is blocked"
+service: entra
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that a Conditional Access policy blocks the device code
+  authentication flow for all users.
+rationale: |
+  The device code flow is commonly abused in phishing attacks where
+  an attacker tricks a user into entering a code on a legitimate
+  Microsoft login page, granting the attacker a valid token. Blocking
+  this flow eliminates a significant social engineering attack vector.
+impact: |
+  Legitimate use of device code flow (e.g., signing into devices
+  without browsers) will be blocked. Alternative authentication
+  methods must be used for such scenarios.
+remediation: |
+  Create a Conditional Access policy targeting all users with the
+  condition "Authentication flows" set to "Device code flow" and
+  an access control set to "Block".
+references:
+  - "https://learn.microsoft.com/en-us/entra/identity/conditional-access/how-to-policy-authentication-flows"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 5.2.2.12"
+cis_controls:
+  - "v8: 6.3"
+  - "v8: 9.3"
+guard:
+  finding_slug: "m365-cis-5-2-2-12-device-code-flow-blocked"
+  phase_tag: "phase_m365_entra"
+  asset_type: "m365tenant"
+  cwe: "CWE-287"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - conditional_access_policies

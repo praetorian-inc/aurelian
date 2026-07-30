@@ -1,0 +1,34 @@
+id: "5.1.2.4"
+title: "Ensure the admin center access is restricted to administrative roles"
+service: entra
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that access to the Entra ID administration portal is
+  restricted to users with administrative roles only.
+rationale: |
+  Allowing non-admin users to access the admin portal exposes
+  administrative interfaces and increases the attack surface.
+  Restricting portal access limits reconnaissance opportunities
+  for compromised standard user accounts.
+impact: |
+  Non-administrative users will be unable to access the Entra ID
+  admin portal, which should not affect normal user workflows.
+remediation: |
+  Navigate to Entra ID > User settings and set "Restrict access to
+  Microsoft Entra admin center" to "Yes".
+references:
+  - "https://learn.microsoft.com/en-us/entra/fundamentals/users-default-permissions"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 5.1.2.4"
+cis_controls:
+  - "v8: 6.8"
+guard:
+  finding_slug: "m365-cis-5-1-2-4-admin-portals-restricted"
+  phase_tag: "phase_m365_entra"
+  asset_type: "m365tenant"
+  cwe: "CWE-732"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - authorization_policy

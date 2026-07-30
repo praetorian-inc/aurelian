@@ -1,0 +1,40 @@
+id: "1.1.4"
+title: "Ensure administrative accounts do not have excessive licenses"
+service: admin
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that accounts with administrative roles have reduced license
+  assignments, removing unnecessary productivity licenses that
+  increase the attack surface.
+rationale: |
+  Administrative accounts with full productivity licenses (Exchange,
+  Teams, SharePoint) present a larger attack surface. If compromised,
+  the attacker has both administrative privileges and access to
+  collaboration tools for lateral movement and data exfiltration.
+impact: |
+  Administrative accounts may lose access to productivity tools.
+  Administrators should use separate non-admin accounts for daily
+  productivity tasks.
+remediation: |
+  Review license assignments for administrative accounts in the
+  Microsoft 365 Admin Center and remove unnecessary productivity
+  licenses. Ensure administrators have separate standard accounts
+  for daily work.
+references:
+  - "https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/security-planning"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 1.1.4"
+cis_controls:
+  - "v8: 5.4"
+  - "v8: 6.5"
+guard:
+  finding_slug: "m365-cis-1-1-4-admin-reduced-license"
+  phase_tag: "phase_m365_admin"
+  asset_type: "m365tenant"
+  cwe: "CWE-732"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:H/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - directory_roles
+  - user_licenses
