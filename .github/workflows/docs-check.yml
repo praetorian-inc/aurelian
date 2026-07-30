@@ -45,37 +45,32 @@ jobs:
       - name: Validate Agent Skills
         run: |
           set -euo pipefail
-          # LC_ALL=C is load-bearing: under a UTF-8 locale bash's [a-z] range
-          # follows collation order and matches uppercase, so the name check
-          # below would accept "Aurelian-Code-Review". Do not remove.
+          # LC_ALL=C: under a UTF-8 locale bash's [a-z] follows collation order and
+          # matches uppercase, so the name check would accept "Aurelian-Code-Review".
           export LC_ALL=C
           shopt -s nullglob
           dirs=(.agents/skills/*/)
-          # Without this guard an unexpanded/empty glob iterates zero times and
-          # the job passes having validated nothing -- including if every skill
-          # is later deleted.
-          if [ ${#dirs[@]} -eq 0 ]; then
-            echo "::error::no skill directories found under .agents/skills/ - nothing to validate"
-            exit 1
-          fi
-          count=0
+          # An empty glob would iterate zero times and pass having validated nothing.
+          [ ${#dirs[@]} -gt 0 ] || { echo "::error::no skill directories under .agents/skills/"; exit 1; }
+
           for d in "${dirs[@]}"; do
             echo "== $d"
-            test -f "$d/SKILL.md" || { echo "::error::$d missing SKILL.md"; exit 1; }
-            test ! -d "$d/references" || { echo "::error::$d has references/ (skills are self-contained)"; exit 1; }
-            # Extract metadata ONLY from the YAML front matter block. A bare grep for
-            # 'name:' matches anywhere in the body, so a file with no front matter at
-            # all would pass this gate.
-            head -1 "$d/SKILL.md" | grep -qx -- '---' || { echo "::error::$d SKILL.md must open with ---"; exit 1; }
-            fm=$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f' "$d/SKILL.md")
-            printf '%s\n' "$fm" | grep -q '^name:' || { echo "::error::$d front matter missing name"; exit 1; }
-            printf '%s\n' "$fm" | grep -q '^description:' || { echo "::error::$d front matter missing description"; exit 1; }
-            name=$(printf '%s\n' "$fm" | awk -F': *' '/^name:/{print $2; exit}')
-            [ "$name" = "$(basename "$d")" ] || { echo "::error::$d name '$name' != dir"; exit 1; }
-            case "$name" in
-              *[![:lower:][:digit:]-]*|-*|*-|*--*) echo "::error::$d name '$name' must be lowercase/digits/single hyphens"; exit 1;;
-            esac
-            [ "${#name}" -le 64 ] || { echo "::error::$d name '$name' exceeds 64 chars"; exit 1; }
-            count=$((count + 1))
+            f="$d/SKILL.md"; name=$(basename "$d")
+            die() { echo "::error::$d $1"; exit 1; }
+
+            test -f "$f"              || die "missing SKILL.md"
+            test ! -d "$d/references" || die "has references/ (skills are self-contained)"
+
+            # Read metadata only from the front matter block; a bare grep for "name:"
+            # matches the body, so a file with no front matter would pass.
+            head -1 "$f" | grep -qx -- '---' || die "SKILL.md must open with ---"
+            fm=$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f' "$f")
+            grep -q '^description:' <<<"$fm" || die "front matter missing description"
+            grep -q '^name:'        <<<"$fm" || die "front matter missing name"
+
+            declared=$(awk -F': *' '/^name:/{print $2; exit}' <<<"$fm")
+            [ "$declared" = "$name" ] || die "name '$declared' != directory"
+            [ ${#name} -le 64 ]       || die "name exceeds 64 chars"
+            case "$name" in *[![:lower:][:digit:]-]*|-*|*-|*--*) die "name must be lowercase/digits/single hyphens";; esac
           done
-          echo "validated $count skill(s)"
+          echo "validated ${#dirs[@]} skill(s)"
