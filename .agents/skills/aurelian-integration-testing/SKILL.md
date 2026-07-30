@@ -1,6 +1,6 @@
 ---
 name: aurelian-integration-testing
-description: Use when writing or modifying integration tests for Aurelian modules and components - covers Terraform fixtures, test structure, assertion quality, Neo4j graph tests, and teardown
+description: Use when writing, modifying, running, or tearing down integration tests for Aurelian modules and components - covers Terraform fixtures, test structure, assertion quality, Neo4j graph tests, executing the suite, and destroying fixtures
 license: Apache-2.0
 ---
 

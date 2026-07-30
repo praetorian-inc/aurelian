@@ -26,6 +26,15 @@ finding — a paraphrase drifts from the source and the author cannot contest it
 - Flag only what you can pin to a concrete file and line.
 - Flag only what is observable in the diff.
 
+Adjacent pre-existing issues are the one exception, and they are **not** findings. If
+the diff leads you to a real problem in untouched code, put it in Notes, say it is
+pre-existing and out of scope, and name the file. It does not count against the caps
+and does not change the verdict. Two reasons: the observation is worth keeping as
+backlog rather than discarding, and recording it separately stops it leaking into the
+findings table where it would block a PR that did not cause it. If it genuinely blocks
+this change — the diff cannot be correct until it is fixed — then it is in scope, and
+it goes in the table as a finding like any other.
+
 ## Procedure
 
 1. Read the PR title and body.
@@ -43,11 +52,21 @@ principle finding.
 Spend most of the budget here. These are review-only judgments: no document can state
 them in advance because they depend on what the diff does.
 
+**Every list in this pass is illustrative, not exhaustive.** The headings name the
+classes of defect worth hunting; the bullets are the shapes seen most often in this
+codebase. A defect that changes behaviour belongs in this pass whether or not it
+matches a bullet. Do not treat a list as a checklist you can complete, and never
+withhold a real finding because it is not enumerated.
+
 ### Intent
 
 Does the change do what the PR body and the changed function names claim? Flag scope
-creep beyond stated intent. A title-versus-code mismatch is not itself a defect — flag
-it only when the divergence introduces real risk.
+creep beyond stated intent.
+
+A PR body is a snapshot: authors push commits without rewriting it, so it is routinely
+incomplete rather than wrong. Silence in the body is not a finding. Flag only when the
+code **contradicts** a stated claim, or when work outside the stated scope carries real
+risk. Never open a finding whose remedy is "update the PR description".
 
 ### Logic
 
@@ -67,7 +86,8 @@ it only when the divergence introduces real risk.
 - A local variable shadowing an imported package name — `pipeline`, `context`,
   `errors`.
 
-The rules behind these are `DEVELOPMENT.md` §4. Your job is spotting the instance.
+The rules behind these are `DEVELOPMENT.md` §4, which you have already read. Cite the
+section; do not restate it. Your job is spotting the instance in the diff.
 
 ### Panic risk
 
@@ -180,4 +200,8 @@ Caps:
 - Quality over quantity. If a finding would not survive a human reviewer's pushback,
   omit it.
 
-If nothing significant: `No issues found — LGTM pending human review.`
+Use `No issues found — LGTM pending human review.` only when pass 1 produced nothing
+at all and passes 2 and 3 produced nothing above low severity. A low-severity finding
+still goes in the table; it does not by itself withhold the line. Anything in pass 1,
+or any medium or high from passes 2 or 3, means findings — not LGTM. Notes entries do
+not affect this: pre-existing observations are compatible with LGTM.
