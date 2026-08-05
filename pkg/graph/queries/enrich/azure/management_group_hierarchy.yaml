@@ -1,0 +1,16 @@
+id: azure/enrich/management-group-hierarchy
+name: Management Group Hierarchy Metadata
+platform: azure
+type: enrich
+category: metadata
+description: |
+  Sets hierarchy depth and child count metadata on management group nodes
+  for easier traversal and analysis.
+severity: info
+order: 5
+cypher: |
+  MATCH (mg:ManagementGroup)
+  OPTIONAL MATCH (mg)-[:CONTAINS]->(child)
+  WITH mg, count(child) AS childCount
+  SET mg._childCount = childCount, mg._enriched = true
+  RETURN mg.id AS mgId, mg.displayName AS mgName, childCount

@@ -1,0 +1,25 @@
+id: azure/enrich/can-escalate-groups-admin
+name: Groups Administrator Escalation
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Groups Administrators can create, delete, and manage all aspects of groups
+  including adding members to privileged groups.
+severity: high
+order: 58
+cypher: |
+  MATCH (attacker)-[perm:HAS_PERMISSION]->(rd:RoleDefinition)
+  WHERE rd.displayName = 'Groups Administrator'
+     OR rd.templateId = 'fdd7a751-b60b-444a-984c-02652fe8fa1c'
+  SET attacker._canEscalate = true
+  WITH attacker, perm
+  MATCH (target:Group)
+  WHERE target <> attacker
+  WITH DISTINCT attacker, target, perm
+  MERGE (attacker)-[r:CAN_ESCALATE {method: 'GroupsAdministrator'}]->(target)
+  ON CREATE SET
+    r.condition = 'Groups Administrator can manage all group memberships including privileged groups',
+    r.category = 'DirectoryRole',
+    r.source = perm.source
+  RETURN count(r) AS created

@@ -1,0 +1,25 @@
+id: azure/enrich/can-escalate-graph-app-write
+name: Graph API Application.ReadWrite.All Escalation
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Service principals with Application.ReadWrite.All can add credentials to
+  any application or service principal and authenticate as them, inheriting
+  all their permissions.
+severity: critical
+order: 71
+cypher: |
+  MATCH (attacker:ServicePrincipal)-[perm:HAS_PERMISSION {source: 'Microsoft Graph App Role'}]->(resource:ServicePrincipal)
+  WHERE resource.displayName = 'Microsoft Graph' OR resource.appId = '00000003-0000-0000-c000-000000000000'
+  SET attacker._hasGraphApiPermissions = true
+  WITH attacker
+  MATCH (target)
+  WHERE (target:Application OR target:ServicePrincipal)
+    AND target <> attacker
+  WITH DISTINCT attacker, target
+  MERGE (attacker)-[r:CAN_ESCALATE {method: 'GraphApplicationReadWrite'}]->(target)
+  ON CREATE SET
+    r.condition = 'Service Principal with Application.ReadWrite.All can add credentials to any application or service principal then authenticate as them',
+    r.category = 'GraphPermission'
+  RETURN count(r) AS created

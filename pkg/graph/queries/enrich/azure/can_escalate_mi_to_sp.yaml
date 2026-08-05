@@ -1,0 +1,20 @@
+id: azure/enrich/can-escalate-mi-to-sp
+name: Managed Identity to Service Principal Escalation
+platform: azure
+type: enrich
+category: escalation
+description: |
+  Managed identity compromise (via IMDS token theft from the attached resource)
+  provides access to the corresponding Service Principal and all its permissions.
+  Creates CAN_ESCALATE edges from ManagedIdentity nodes to their linked
+  ServicePrincipal nodes.
+severity: high
+order: 93
+cypher: |
+  MATCH (mi:ManagedIdentity)-[:CONTAINS]->(sp:ServicePrincipal)
+  WITH DISTINCT mi, sp
+  MERGE (mi)-[r:CAN_ESCALATE {method: 'ManagedIdentityToServicePrincipal'}]->(sp)
+  ON CREATE SET
+    r.condition = 'Managed Identity compromise via IMDS token theft provides access to Service Principal and all its permissions',
+    r.category = 'ManagedIdentity'
+  RETURN count(r) AS created

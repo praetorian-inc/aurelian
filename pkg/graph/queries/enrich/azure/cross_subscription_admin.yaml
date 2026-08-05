@@ -1,0 +1,19 @@
+id: azure/enrich/cross-subscription-admin
+name: Cross-Subscription Administrative Access
+platform: azure
+type: enrich
+category: privesc
+description: |
+  Identifies principals with Owner or Contributor role across multiple
+  Azure subscriptions, indicating broad administrative access.
+severity: high
+order: 25
+cypher: |
+  MATCH (p:Principal)-[r:HAS_PERMISSION {source: 'Azure RBAC'}]->(sub:Subscription)
+  WHERE r.roleDefinitionId CONTAINS '8e3af657-a8ff-443c-a75c-2fe8c4bcb635'
+     OR r.roleDefinitionId CONTAINS 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+     OR r.roleDefinitionId CONTAINS '18d7d88d-d35e-4fb5-a5c3-7773c20a72d9'
+  WITH p, count(DISTINCT sub) AS subCount
+  WHERE subCount > 1
+  SET p._crossSubAdmin = true, p._adminSubCount = subCount
+  RETURN p.id AS principalId, subCount

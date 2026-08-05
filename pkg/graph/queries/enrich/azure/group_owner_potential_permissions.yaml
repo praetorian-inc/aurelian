@@ -1,0 +1,17 @@
+id: azure/enrich/group-owner-potential-permissions
+name: Group Owner Potential Permission Materialization
+platform: azure
+type: enrich
+category: permissions
+description: |
+  Identifies permissions that group owners could obtain by adding themselves
+  to groups they own. Sets _hasPotentialPermissions marker on owners of
+  groups with privileged role assignments.
+severity: high
+order: 41
+cypher: |
+  MATCH (owner)-[:OWNS]->(group:Group)-[groupPerm:HAS_PERMISSION]->(target)
+  WHERE groupPerm.source IS NOT NULL
+  SET owner._hasPotentialPermissions = true,
+      owner._potentialViaGroup = group.displayName
+  RETURN count(DISTINCT owner) AS ownersWithPotentialPerms
