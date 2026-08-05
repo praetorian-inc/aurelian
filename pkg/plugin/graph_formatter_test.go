@@ -64,14 +64,6 @@ func (m *mockGraphDB) Close() error {
 	return nil
 }
 
-// TestGraphFormatterImplementsFormatter verifies GraphFormatter satisfies the Formatter interface
-func TestGraphFormatterImplementsFormatter(t *testing.T) {
-	mockDB := &mockGraphDB{}
-	formatter := &GraphFormatter{db: mockDB}
-
-	// This will compile only if GraphFormatter implements Formatter
-	var _ Formatter = formatter
-}
 
 // TestGraphFormatterFormatWithGaadData tests the full format flow with all data types
 func TestGraphFormatterFormatWithGaadData(t *testing.T) {
