@@ -6,7 +6,11 @@ package resourcetypes_test
 
 import (
 	"regexp"
+	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/praetorian-inc/aurelian/pkg/aws/resourcetypes"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
@@ -122,6 +126,271 @@ func TestExclusions_AreReferenced(t *testing.T) {
 		if !referenced[rt] {
 			t.Errorf("exclusion %q is not declared by any module or in GetAll(); delete the dead exclusion", rt)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Region-scope partition (LAB-5615 Phase A).
+//
+// These tests MUST live in this file, not in the internal types_test.go. This
+// file is package resourcetypes_test and blank-imports the module loader
+// (see the import block above), so GetAll() observes the full runtime union.
+// The same assertions written internally would see GetAll() collapse to the
+// 20-entry baseline (types.go:31-52), which carries IAM::Policy/Role/User but
+// none of IAM::Group, Route53::HostedZone, CloudFront::Distribution, or
+// Organizations::Organization — passing green while never observing four of
+// the seven global types, i.e. certifying the exact bug they exist to catch.
+// ---------------------------------------------------------------------------
+
+// serviceOf extracts the <Service> segment of an AWS::<Service>::<Resource>
+// type. Used only to derive the observed service namespace from GetAll(); the
+// classification itself is exercised through GetGlobal/GetRegional so these
+// tests never re-implement the predicate under test.
+func serviceOf(t *testing.T, rt string) string {
+	t.Helper()
+	parts := strings.Split(rt, "::")
+	require.Len(t, parts, 3, "resource type %q is not AWS::Service::Resource", rt)
+	return parts[1]
+}
+
+// reviewedRegionalServices is the drift guard's allow-list: every service in
+// the GetAll() union that a human has reviewed and deliberately classified as
+// REGIONAL. It is intentionally a hand-maintained literal, not a derivation —
+// a derived set would absorb any newly registered service silently, which is
+// precisely the failure TestScope_ReviewedServiceLedger exists to prevent.
+//
+// Adding a service here is an assertion that you checked its control plane and
+// confirmed it is region-scoped. If it is global, add it to the scope ledger in
+// scope.go with a justification instead.
+var reviewedRegionalServices = map[string]struct{}{
+	"Amplify":                {},
+	"ApiGateway":             {},
+	"ApiGatewayV2":           {},
+	"AppRunner":              {},
+	"AppSync":                {},
+	"AutoScaling":            {},
+	"CloudFormation":         {},
+	"CloudWatch":             {},
+	"Cognito":                {},
+	"DynamoDB":               {},
+	"EC2":                    {},
+	"ECS":                    {},
+	"EFS":                    {},
+	"EKS":                    {},
+	"ElasticBeanstalk":       {},
+	"ElasticLoadBalancing":   {},
+	"ElasticLoadBalancingV2": {},
+	"Elasticsearch":          {},
+	"GlobalAccelerator":      {},
+	"KMS":                    {},
+	"Lambda":                 {},
+	"Logs":                   {},
+	"OpenSearchService":      {},
+	"RAM":                    {},
+	"RDS":                    {},
+	"Redshift":               {},
+	"S3":                     {},
+	"SNS":                    {},
+	"SQS":                    {},
+	"SSM":                    {},
+	"SecretsManager":         {},
+	"StepFunctions":          {},
+	"Transfer":               {},
+}
+
+// TestPartition_RegistryPopulated is the sentinel guarding every other test in
+// this group. AWS::Route53::HostedZone is declared ONLY by a consumer module
+// (pkg/modules/aws/recon/subdomain_takeover.go:46) and is absent from baseline,
+// so it appears in GetAll() if and only if the blank loader import above is
+// still present.
+//
+// WHY THIS EXISTS: if an import-tidier (goimports on a stale file, an IDE
+// "remove unused imports" action, a merge that drops the line) strips that
+// blank import, the registry goes empty, GetAll() collapses to baseline, and
+// every partition test below would keep passing while silently observing a
+// fraction of the real type set. This test fails loudly in that case instead.
+// Do not delete it, and do not "fix" it by adding Route53::HostedZone to
+// baseline — that would defeat the detection.
+func TestPartition_RegistryPopulated(t *testing.T) {
+	assert.Contains(t, resourcetypes.GetAll(), "AWS::Route53::HostedZone",
+		"loader blank-import appears to have been stripped: GetAll() no longer "+
+			"contains the consumer-only type AWS::Route53::HostedZone, so the "+
+			"registry is not populated and every partition test in this file is vacuous")
+}
+
+func TestPartition_IsDisjoint(t *testing.T) {
+	global := resourcetypes.GetGlobal()
+	regional := make(map[string]bool, len(global))
+	for _, rt := range resourcetypes.GetRegional() {
+		regional[rt] = true
+	}
+
+	for _, rt := range global {
+		assert.False(t, regional[rt],
+			"resource type %q is in both GetGlobal() and GetRegional(); the partition must be disjoint", rt)
+	}
+}
+
+func TestPartition_UnionEqualsGetAll(t *testing.T) {
+	// GetAll() is already exclusion-filtered upstream (union.go:48-50), so the
+	// two halves must reconstruct it EXACTLY — not "GetAll() minus exclusions".
+	union := append(resourcetypes.GetGlobal(), resourcetypes.GetRegional()...)
+	assert.ElementsMatch(t, resourcetypes.GetAll(), union,
+		"GetGlobal() + GetRegional() must reconstruct GetAll() exactly")
+}
+
+// TestPartition_AccessorContract covers the accessor guarantees GetGlobal and
+// GetRegional advertise: the two halves account for every type in GetAll(),
+// each preserves GetAll()'s sort order, and neither aliases the union cache.
+func TestPartition_AccessorContract(t *testing.T) {
+	global := resourcetypes.GetGlobal()
+	regional := resourcetypes.GetRegional()
+
+	assert.Len(t, global, 7)
+	assert.Len(t, regional, 42)
+	assert.Equal(t, len(resourcetypes.GetAll()), len(global)+len(regional))
+
+	assert.IsNonDecreasing(t, global, "GetGlobal() must preserve GetAll()'s sort order")
+	assert.IsNonDecreasing(t, regional, "GetRegional() must preserve GetAll()'s sort order")
+
+	// Neither accessor may hand out a window onto allCache.
+	require.NotEmpty(t, global)
+	require.NotEmpty(t, regional)
+	global[0] = "MUTATED"
+	regional[0] = "MUTATED"
+	assert.NotEqual(t, "MUTATED", resourcetypes.GetGlobal()[0],
+		"GetGlobal() leaked the union cache; a caller's mutation persisted")
+	assert.NotEqual(t, "MUTATED", resourcetypes.GetRegional()[0],
+		"GetRegional() leaked the union cache; a caller's mutation persisted")
+	assert.NotContains(t, resourcetypes.GetAll(), "MUTATED",
+		"partition accessors leaked into GetAll()")
+}
+
+func TestGetGlobal_ExactSet(t *testing.T) {
+	assert.ElementsMatch(t, []string{
+		"AWS::CloudFront::Distribution",
+		"AWS::IAM::Group",
+		"AWS::IAM::Policy",
+		"AWS::IAM::Role",
+		"AWS::IAM::User",
+		"AWS::Organizations::Organization",
+		"AWS::Route53::HostedZone",
+	}, resourcetypes.GetGlobal())
+}
+
+// TestGetRegional_KeepsGlobalAccelerator pins a deliberate non-entry in the
+// scope ledger.
+//
+// Global Accelerator is global by nature, and the name invites a contributor to
+// "fix the obvious omission" by adding it to the ledger. That would be an
+// inventory-losing bug: its control plane is pinned to us-west-2, whereas the
+// four genuinely-global services all resolve to us-east-1. Classifying it
+// global would route it to a us-east-1 global shard where it answers nothing,
+// silently dropping every accelerator from inventory — a total loss that no
+// partition or count test could detect. Today CloudControl's fan-out
+// (cloud_control_enumerator.go:256) reaches it in us-west-2 as a regional type.
+func TestGetRegional_KeepsGlobalAccelerator(t *testing.T) {
+	assert.Contains(t, resourcetypes.GetRegional(), "AWS::GlobalAccelerator::Accelerator",
+		"GlobalAccelerator must stay REGIONAL: its control plane pins us-west-2, not "+
+			"us-east-1, so classifying it global routes it to a shard where it answers "+
+			"nowhere and silently drops all accelerators from inventory")
+}
+
+// TestGetRegional_KeepsS3Bucket pins the second deliberate non-entry.
+//
+// S3 is often called global, but listBucketsInRegion already filters
+// server-side on BucketRegion (s3_enumerator.go:129-131), and the enumerator's
+// doc comment (s3_enumerator.go:16-17) records that this exists specifically to
+// avoid the duplicate enumeration CloudControl causes. Classifying S3 global
+// would bypass that per-region filter.
+func TestGetRegional_KeepsS3Bucket(t *testing.T) {
+	assert.Contains(t, resourcetypes.GetRegional(), "AWS::S3::Bucket",
+		"S3 must stay REGIONAL: listBucketsInRegion filters server-side on "+
+			"BucketRegion (s3_enumerator.go:129-131) to avoid CloudControl duplicate enumeration")
+}
+
+// TestScope_NoDeadLedgerEntries mirrors TestExclusions_AreReferenced: a ledger
+// entry for a service no type actually uses is dead weight from a past
+// refactor and should be deleted.
+func TestScope_NoDeadLedgerEntries(t *testing.T) {
+	observed := make(map[string]bool)
+	for _, rt := range resourcetypes.GetAll() {
+		observed[serviceOf(t, rt)] = true
+	}
+
+	for svc := range resourcetypes.GlobalServicesForTest() {
+		assert.True(t, observed[svc],
+			"scope ledger entry %q matches no type in GetAll(); delete the dead entry", svc)
+	}
+}
+
+// TestScope_ReviewedServiceLedger is the drift guard. Every service in the
+// GetAll() union must be explicitly classified — either global (scope.go's
+// ledger) or reviewed-regional (reviewedRegionalServices above). A newly
+// registered service therefore fails HERE, by name, rather than being silently
+// absorbed by the regional default and shipped unreviewed.
+func TestScope_ReviewedServiceLedger(t *testing.T) {
+	classified := make(map[string]bool, len(reviewedRegionalServices))
+	for svc := range reviewedRegionalServices {
+		classified[svc] = true
+	}
+	for svc := range resourcetypes.GlobalServicesForTest() {
+		classified[svc] = true
+	}
+
+	observed := make(map[string]bool)
+	for _, rt := range resourcetypes.GetAll() {
+		observed[serviceOf(t, rt)] = true
+	}
+
+	for svc := range observed {
+		assert.True(t, classified[svc],
+			"AWS service %q appears in GetAll() but is not classified for region scope. "+
+				"Classify it: if its control plane is global, add %q to the ledger in "+
+				"pkg/aws/resourcetypes/scope.go with a justification; if it is region-scoped, "+
+				"add %q to reviewedRegionalServices in this file. Do not leave it unclassified — "+
+				"the regional default would ship it unreviewed.", svc, svc, svc)
+	}
+
+	for svc := range classified {
+		assert.True(t, observed[svc],
+			"service %q is classified but no longer appears in GetAll(); remove the stale entry", svc)
+	}
+}
+
+func TestScope_AllEntriesJustified(t *testing.T) {
+	for svc, justification := range resourcetypes.GlobalServicesForTest() {
+		assert.NotEmpty(t, justification, "scope ledger entry %q has an empty justification", svc)
+	}
+}
+
+// TestIsGlobal_TypeParsing covers the T001 acceptance criteria for the
+// predicate itself: it keys on the SERVICE segment, and malformed input
+// returns false rather than panicking.
+func TestIsGlobal_TypeParsing(t *testing.T) {
+	tests := []struct {
+		name string
+		rt   string
+		want bool
+	}{
+		{"global service", "AWS::IAM::Role", true},
+		{"global service, other resource", "AWS::IAM::Group", true},
+		{"regional service", "AWS::EC2::Instance", false},
+		{"global-sounding but regional", "AWS::GlobalAccelerator::Accelerator", false},
+		{"s3 is regional", "AWS::S3::Bucket", false},
+		{"empty string", "", false},
+		{"no separators", "garbage", false},
+		{"two segments", "AWS::IAM", false},
+		{"four segments", "AWS::IAM::Role::Extra", false},
+		{"service in wrong position", "IAM::AWS::Role", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.NotPanics(t, func() {
+				assert.Equal(t, tt.want, resourcetypes.IsGlobal(tt.rt))
+			})
+		})
 	}
 }
 
