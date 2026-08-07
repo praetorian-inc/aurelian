@@ -6,6 +6,7 @@ package resourcetypes_test
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -33,10 +34,8 @@ func TestModuleConsumerCoverage(t *testing.T) {
 
 	for _, m := range plugin.ByPlatform(plugin.PlatformAWS) {
 		for _, rt := range m.SupportedResourceTypes() {
-			if all[rt] || resourcetypes.IsExcluded(rt) {
-				continue
-			}
-			t.Errorf("module %q declares %q which is not in GetAll() and not excluded",
+			assert.True(t, all[rt] || resourcetypes.IsExcluded(rt),
+				"module %q declares %q which is not in GetAll() and not excluded",
 				m.ID(), rt)
 		}
 	}
@@ -49,31 +48,24 @@ func TestSummary_SubsetOfGetAll(t *testing.T) {
 	}
 
 	for _, rt := range resourcetypes.GetSummary() {
-		if !all[rt] {
-			t.Errorf("summary type %q is not in GetAll()", rt)
-		}
+		assert.True(t, all[rt], "summary type %q is not in GetAll()", rt)
 	}
 }
 
 func TestIsValid_ConsumerType(t *testing.T) {
-	if !resourcetypes.IsValid("AWS::EC2::Instance") {
-		t.Error("expected AWS::EC2::Instance to be valid (declared by find-secrets and public-resources)")
-	}
+	assert.True(t, resourcetypes.IsValid("AWS::EC2::Instance"),
+		"expected AWS::EC2::Instance to be valid (declared by find-secrets and public-resources)")
 }
 
 func TestValidate_AcceptsConsumerTypes(t *testing.T) {
 	err := resourcetypes.Validate([]string{"AWS::EC2::Instance", "AWS::S3::Bucket"})
-	if err != nil {
-		t.Errorf("expected no error for valid consumer types, got: %v", err)
-	}
+	assert.NoError(t, err, "expected no error for valid consumer types")
 }
 
 func TestGetAll_FormatValid(t *testing.T) {
 	re := regexp.MustCompile(`^AWS::[A-Z][A-Za-z0-9]*::[A-Z][A-Za-z0-9]*$`)
 	for _, rt := range resourcetypes.GetAll() {
-		if !re.MatchString(rt) {
-			t.Errorf("GetAll returned malformed type %q", rt)
-		}
+		assert.True(t, re.MatchString(rt), "GetAll returned malformed type %q", rt)
 	}
 }
 
@@ -82,13 +74,12 @@ func TestGetAll_SortedAndDeduped(t *testing.T) {
 
 	seen := make(map[string]bool, len(all))
 	for i, rt := range all {
-		if seen[rt] {
-			t.Errorf("duplicate type in GetAll(): %q", rt)
-		}
+		assert.False(t, seen[rt], "duplicate type in GetAll(): %q", rt)
 		seen[rt] = true
 
-		if i > 0 && all[i-1] >= rt {
-			t.Errorf("GetAll() not sorted: %q >= %q at index %d", all[i-1], rt, i)
+		if i > 0 {
+			assert.Less(t, all[i-1], rt,
+				"GetAll() not sorted: %q >= %q at index %d", all[i-1], rt, i)
 		}
 	}
 }
@@ -102,9 +93,8 @@ func TestGetAll_DefensiveCopy(t *testing.T) {
 	first[0] = "MUTATED"
 
 	second := resourcetypes.GetAll()
-	if second[0] != original {
-		t.Errorf("GetAll() leaked internal cache; mutation persisted (got %q, want %q)", second[0], original)
-	}
+	assert.Equal(t, original, second[0],
+		"GetAll() leaked internal cache; mutation persisted")
 }
 
 func TestExclusions_AreReferenced(t *testing.T) {
@@ -123,9 +113,8 @@ func TestExclusions_AreReferenced(t *testing.T) {
 	}
 
 	for _, rt := range resourcetypes.ExclusionsForTest() {
-		if !referenced[rt] {
-			t.Errorf("exclusion %q is not declared by any module or in GetAll(); delete the dead exclusion", rt)
-		}
+		assert.True(t, referenced[rt],
+			"exclusion %q is not declared by any module or in GetAll(); delete the dead exclusion", rt)
 	}
 }
 
@@ -266,6 +255,64 @@ func TestPartition_AccessorContract(t *testing.T) {
 		"partition accessors leaked into GetAll()")
 }
 
+// TestRegionsModule_DeclarationDoesNotLeakIntoUnion pins the inertness argument
+// in AWSRegionsModule.SupportedResourceTypes' doc comment.
+//
+// The regions module declares AWS::Organizations::Account purely as a Guard
+// dispatch key (Guard's agora.MatchesSupportedResourceType rejects a module with
+// an empty list, so nil would make it undispatchable for every target). The
+// declaration must stay invisible to list-all: exclusions.go:14 lists the type
+// and union.go:48-49 deletes exclusions before allCache is built at :51.
+//
+// This test lives HERE rather than beside the module because pkg/modules/loader
+// blank-imports pkg/modules/aws/recon (loader.go:9), so a test in package recon
+// cannot import the loader to populate the registry. This file already carries
+// that import and TestPartition_RegistryPopulated guards it.
+//
+// If this fails, the exclusion was dropped or the union stopped filtering — the
+// fix is to restore the exclusion, NOT to stop declaring the dispatch key.
+func TestRegionsModule_DeclarationDoesNotLeakIntoUnion(t *testing.T) {
+	const dispatchKey = "AWS::Organizations::Account"
+
+	// Precondition: the module really does declare it, so this test cannot pass
+	// vacuously if the declaration is reverted to nil.
+	declared := false
+	for _, m := range plugin.ByPlatform(plugin.PlatformAWS) {
+		if m.ID() == "regions" && slices.Contains(m.SupportedResourceTypes(), dispatchKey) {
+			declared = true
+			break
+		}
+	}
+	require.True(t, declared,
+		"precondition: the regions module must declare %q as its Guard dispatch key; "+
+			"without the declaration this test proves nothing", dispatchKey)
+
+	assert.NotContains(t, resourcetypes.GetAll(), dispatchKey,
+		"the regions module's dispatch key leaked into list-all's union; it is on the "+
+			"exclusion list (exclusions.go:14) and union.go:48-49 must delete it before "+
+			"allCache is built")
+
+	// GetGlobal/GetRegional filter allCache, so neither half can carry it either.
+	assert.NotContains(t, resourcetypes.GetGlobal(), dispatchKey)
+	assert.NotContains(t, resourcetypes.GetRegional(), dispatchKey)
+
+	// Organizations IS a global service (scope.go:57), so had the key reached
+	// allCache it would have landed in GetGlobal and broken the exact set below.
+	// Restating that set here makes the coupling explicit at the point of risk.
+	assert.ElementsMatch(t, []string{
+		"AWS::CloudFront::Distribution",
+		"AWS::IAM::Group",
+		"AWS::IAM::Policy",
+		"AWS::IAM::Role",
+		"AWS::IAM::User",
+		"AWS::Organizations::Organization",
+		"AWS::Route53::HostedZone",
+	}, resourcetypes.GetGlobal(),
+		"GetGlobal() must still be exactly the 7 reviewed global types; note the "+
+			"Organizations entry is ::Organization, a DIFFERENT type from the "+
+			"::Account dispatch key")
+}
+
 func TestGetGlobal_ExactSet(t *testing.T) {
 	assert.ElementsMatch(t, []string{
 		"AWS::CloudFront::Distribution",
@@ -397,25 +444,17 @@ func TestIsGlobal_TypeParsing(t *testing.T) {
 func TestResetForTest_AllowsRecomputation(t *testing.T) {
 	// Force the cache to populate.
 	first := resourcetypes.GetAll()
-	if len(first) == 0 {
-		t.Fatal("expected non-empty GetAll on first call")
-	}
+	require.NotEmpty(t, first, "expected non-empty GetAll on first call")
 
 	// Reset and re-fetch — must not panic and must return a valid slice.
 	resourcetypes.ResetForTest()
 	second := resourcetypes.GetAll()
-	if len(second) == 0 {
-		t.Fatal("expected non-empty GetAll after ResetForTest")
-	}
+	require.NotEmpty(t, second, "expected non-empty GetAll after ResetForTest")
 
 	// The post-reset slice should match the pre-reset slice byte-for-byte
 	// because no module/exclusion state changed between the two calls.
-	if len(first) != len(second) {
-		t.Fatalf("post-reset GetAll length differs: before=%d after=%d", len(first), len(second))
-	}
+	require.Len(t, second, len(first), "post-reset GetAll length differs")
 	for i := range first {
-		if first[i] != second[i] {
-			t.Errorf("index %d differs: before=%q after=%q", i, first[i], second[i])
-		}
+		assert.Equal(t, first[i], second[i], "index %d differs", i)
 	}
 }

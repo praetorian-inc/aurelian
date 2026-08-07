@@ -69,28 +69,27 @@ type RegionResolver struct {
 // Tier 3: Hardcoded Regions list
 func (r *RegionResolver) GetEnabledRegions(ctx context.Context) ([]string, error) {
 	regions, _ := r.resolveRegions(ctx)
-	return regions, nil
+	return slices.Clone(regions), nil
 }
 
 // getEnabledRegionsWithSource resolves enabled regions and reports which tier of
 // the ladder produced them.
 //
-// Two things differ from GetEnabledRegions, and both belong on this path only:
+// One thing differs from GetEnabledRegions, and it belongs on this path only: a
+// tier-3 result is logged at Warn as well as Debug. The shipped binary hardcodes
+// configureSlog("none") (cmd/generator.go), which maps to slog.LevelWarn, so every
+// Debug line is discarded at every user-selectable setting. A silent fallback is
+// exactly the failure LAB-5615 exists to make visible, so it has to be logged at a
+// level that survives.
 //
-//   - A tier-3 result is logged at Warn as well as Debug. The shipped binary
-//     hardcodes configureSlog("none") (cmd/generator.go), which maps to
-//     slog.LevelWarn, so every Debug line on this path is discarded at every
-//     user-selectable setting. A silent fallback is exactly the failure LAB-5615
-//     exists to make visible, so it has to be logged at a level that survives.
-//   - The returned slice is cloned. resolveRegions returns the package-level
-//     Regions variable itself at tier 3; handing that out to a caller who is
-//     entitled to sort it would permanently reorder a process-global that
-//     AWSCommonRecon.PostBind reads on the live bind path.
+// Cloning is NOT such a difference. resolveRegions returns the package-level
+// Regions variable itself at tier 3, and both entry points clone before handing it
+// outward — see its doc comment. This path is not special in that respect.
 //
 // A tier-3 result is not an error. Some accounts legitimately cannot reach the
-// control plane, and failing here would deny them inventory entirely — the
-// problem LAB-5615 was filed to fix. The source is the signal instead.
-func (r *RegionResolver) getEnabledRegionsWithSource(ctx context.Context) ([]string, output.RegionSource, error) {
+// control plane, and failing here would deny them inventory entirely — the problem
+// LAB-5615 was filed to fix. The source is the signal instead.
+func (r *RegionResolver) getEnabledRegionsWithSource(ctx context.Context) ([]string, output.RegionSource) {
 	regions, source := r.resolveRegions(ctx)
 
 	if source == output.SourceStaticFallback {
@@ -101,7 +100,7 @@ func (r *RegionResolver) getEnabledRegionsWithSource(ctx context.Context) ([]str
 		)
 	}
 
-	return slices.Clone(regions), source, nil
+	return slices.Clone(regions), source
 }
 
 // resolveRegions walks the tiered fallback ladder and reports both the regions
@@ -255,5 +254,6 @@ func EnabledRegionsWithSource(ctx context.Context, profile, profileDir string) (
 		ec2Client:     ec2.NewFromConfig(cfg),
 	}
 
-	return resolver.getEnabledRegionsWithSource(ctx)
+	regions, source := resolver.getEnabledRegionsWithSource(ctx)
+	return regions, source, nil
 }

@@ -70,9 +70,10 @@ var _ model.AurelianModel = (*AWSEnabledRegions)(nil)
 // other code reads on a live path. Cloning here makes that class of bug
 // unreachable regardless of what the caller hands in.
 func NewAWSEnabledRegions(regions []string, source RegionSource) AWSEnabledRegions {
+	stored := slices.Clone(regions)
 	return AWSEnabledRegions{
-		Regions: slices.Clone(regions),
-		Count:   len(regions),
+		Regions: stored,
+		Count:   len(stored),
 		Source:  source,
 	}
 }

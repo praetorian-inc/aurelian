@@ -137,14 +137,21 @@ func TestAWSRegionsModule_Metadata(t *testing.T) {
 	assert.Equal(t, plugin.CategoryRecon, m.Category())
 	assert.NotEmpty(t, m.Name())
 	assert.NotEmpty(t, m.Description())
-	assert.NotEmpty(t, m.OpsecLevel())
+	assert.Equal(t, "moderate", m.OpsecLevel())
 	assert.NotEmpty(t, m.Authors())
 
-	// The module reads no resource types: it answers a question ABOUT the account
-	// rather than enumerating resources. A non-nil value here would put it in
-	// resourcetypes' consumer-coverage drift test for types it never touches.
-	assert.Nil(t, m.SupportedResourceTypes(),
-		"regions enumerates no resource types; see TestModuleConsumerCoverage")
+	// The module enumerates no resource types — it answers a question ABOUT the
+	// account rather than enumerating resources. The value below is therefore a
+	// Guard DISPATCH KEY, not an enumeration claim: agora.MatchesSupportedResourceType
+	// short-circuits false on an empty list, so returning nil here would make the
+	// module undispatchable for every target.
+	//
+	// That the declaration cannot leak into list-all's union is pinned separately
+	// by TestRegionsModule_DeclarationDoesNotLeakIntoUnion in
+	// pkg/aws/resourcetypes/coverage_test.go.
+	assert.Equal(t, []string{"AWS::Organizations::Account"}, m.SupportedResourceTypes(),
+		"regions must declare the Organizations::Account dispatch key so Guard's "+
+			"aws_factory gate can dispatch it; see SupportedResourceTypes' doc comment")
 
 	require.NotEmpty(t, m.References())
 	for _, ref := range m.References() {
@@ -195,35 +202,60 @@ func TestAWSRegionsModule_Run_PropagatesSourceVerbatim(t *testing.T) {
 	}
 }
 
-// TestAWSRegionsModule_Run_AuthoritativeSourceSurvivesCoincidence is the
-// adversarial half of the passthrough contract, and the case a naive test misses.
+// TestAWSRegionsModule_Run_AuthoritativeSourceSurvivesCoincidence is the inverse
+// of the unequal-list case above. An account that has genuinely enabled every
+// region returns a list equal to the compiled-in one; a comparison-based
+// implementation would see that match and stamp it "static-fallback", reporting a
+// stale guess for the one account whose answer was fully authoritative.
 //
-// An account that has genuinely enabled every region returns a list EQUAL to the
-// compiled-in 31. A comparison-based implementation would look at that list, see it
-// match helpers.Regions, and stamp it "static-fallback" — reporting a stale guess
-// for the one account whose answer was fully authoritative. The operator then
-// distrusts correct inventory.
-//
-// This is the inverse of the unequal-list case above: together they close both
-// directions, so no comparison-based implementation can pass by coincidence.
+// Both orderings are exercised. helpers.Regions is unsorted and Run sorts before
+// emitting, so with only the unsorted fixture an implementation that compared its
+// POST-SORT list against the unsorted global would never match and would pass
+// without ever facing the coincidence. The pre-sorted fixture closes that gap.
 func TestAWSRegionsModule_Run_AuthoritativeSourceSurvivesCoincidence(t *testing.T) {
-	// Precondition: the fixture really is the static list, so the coincidence this
-	// test describes is actually being exercised.
-	coincident := append([]string(nil), helpers.Regions...)
-	require.ElementsMatch(t, helpers.Regions, coincident,
-		"precondition: the fixture must equal the compiled-in list")
+	// Preconditions that actually constrain something. Asserting a copy of
+	// helpers.Regions against helpers.Regions cannot fail, so pin the two
+	// properties the sub-cases below rely on instead: the list is non-trivial (a
+	// 1-element list makes the coincidence something no implementation could get
+	// wrong), and it is genuinely unsorted (otherwise the two fixtures collapse
+	// into one and the sorted sub-case stops adding coverage).
+	require.Greater(t, len(helpers.Regions), 10,
+		"precondition: the compiled-in region list must be non-trivial for this "+
+			"coincidence to be meaningful")
 
-	items, err := runModule(t, func(context.Context, string, string) ([]string, output.RegionSource, error) {
-		return coincident, output.SourceAccountAPI, nil
-	})
-	require.NoError(t, err)
+	sorted := append([]string(nil), helpers.Regions...)
+	sort.Strings(sorted)
+	require.NotEqual(t, helpers.Regions, sorted,
+		"precondition: helpers.Regions must be unsorted, or the sorted sub-case below "+
+			"is a duplicate of the unsorted one")
 
-	got := sole(t, items)
-	assert.Equal(t, output.SourceAccountAPI, got.Source,
-		"a list that coincidentally equals the compiled-in region list must still report "+
-			"the source the resolver determined; stamping it static-fallback would report a "+
-			"stale guess for an account whose answer was fully authoritative")
-	assert.Len(t, got.Regions, len(helpers.Regions))
+	cases := []struct {
+		name    string
+		fixture []string
+	}{
+		{"unsorted compiled-in list", append([]string(nil), helpers.Regions...)},
+		{"pre-sorted compiled-in list", append([]string(nil), sorted...)},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			items, err := runModule(t, func(context.Context, string, string) ([]string, output.RegionSource, error) {
+				return tc.fixture, output.SourceAccountAPI, nil
+			})
+			require.NoError(t, err)
+
+			got := sole(t, items)
+			assert.Equal(t, output.SourceAccountAPI, got.Source,
+				"a list that coincidentally equals the compiled-in region list must still report "+
+					"the source the resolver determined; stamping it static-fallback would report a "+
+					"stale guess for an account whose answer was fully authoritative")
+
+			// Order-sensitive, against the sorted list: a length check alone would
+			// accept a result that dropped one region and duplicated another.
+			assert.Equal(t, sorted, got.Regions,
+				"the emitted list must be exactly the resolver's list, sorted")
+		})
+	}
 }
 
 // TestAWSRegionsModule_Run_StaticFallbackReachesOutput pins the tier-3 wire value

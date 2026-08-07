@@ -57,6 +57,14 @@ var globalServices = map[string]string{
 	"Organizations": "Single global endpoint; the organization is a global singleton per account tree.",
 }
 
+// IsGlobal, GetGlobal, and GetRegional are exported solely for Phase B (Guard)
+// consumption. Nothing inside Aurelian calls them outside tests: the
+// global-vs-regional shard split they exist to drive lives in Guard, which is a
+// separate Go module and can only reach this ledger through an exported surface.
+// Compare RegionSource in pkg/output (aws_regions.go:12-15), exported for the
+// same reason. An "unused export" sweep of this repo alone will flag all three;
+// they are not dead code.
+
 // IsGlobal reports whether a resource type belongs to a global-endpoint
 // service, by looking up the <Service> segment of AWS::<Service>::<Resource> in
 // the scope ledger. Input that is not exactly three "::"-separated segments is

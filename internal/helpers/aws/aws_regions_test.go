@@ -351,9 +351,11 @@ func TestGetEnabledRegionsWithSource_ReportsTier(t *testing.T) {
 				ec2Client:     tt.ec2Client,
 			}
 
-			regions, source, err := resolver.getEnabledRegionsWithSource(context.Background())
+			// There is no error to check: getEnabledRegionsWithSource returns no
+			// error at all, so "a fallback never surfaces as an error" is now
+			// enforced by the signature rather than asserted case by case.
+			regions, source := resolver.getEnabledRegionsWithSource(context.Background())
 
-			require.NoError(t, err, "fallback must never surface as an error")
 			assert.Equal(t, tt.expectedSource, source)
 			assert.Equal(t, tt.expectRegions, regions)
 			assert.Equal(t, before, Regions, "package Regions var must be unmutated")
@@ -368,9 +370,8 @@ func TestGetEnabledRegionsWithSource_NilClientsSkipTiers(t *testing.T) {
 		ec2Client: succeedingEC2Client("ap-south-1"),
 	}
 
-	regions, source, err := resolver.getEnabledRegionsWithSource(context.Background())
+	regions, source := resolver.getEnabledRegionsWithSource(context.Background())
 
-	require.NoError(t, err)
 	assert.Equal(t, output.SourceEC2API, source)
 	assert.Equal(t, []string{"ap-south-1"}, regions)
 }
@@ -378,9 +379,8 @@ func TestGetEnabledRegionsWithSource_NilClientsSkipTiers(t *testing.T) {
 func TestGetEnabledRegionsWithSource_NoClientsFallsBackToStatic(t *testing.T) {
 	resolver := &RegionResolver{}
 
-	regions, source, err := resolver.getEnabledRegionsWithSource(context.Background())
+	regions, source := resolver.getEnabledRegionsWithSource(context.Background())
 
-	require.NoError(t, err)
 	assert.Equal(t, output.SourceStaticFallback, source)
 	assert.Equal(t, Regions, regions)
 }
@@ -397,8 +397,7 @@ func TestGetEnabledRegionsWithSource_StaticFallbackDoesNotAliasPackageVar(t *tes
 		ec2Client:     failingEC2Client(fmt.Errorf("boom")),
 	}
 
-	regions, source, err := resolver.getEnabledRegionsWithSource(context.Background())
-	require.NoError(t, err)
+	regions, source := resolver.getEnabledRegionsWithSource(context.Background())
 	require.Equal(t, output.SourceStaticFallback, source)
 	require.Equal(t, before, regions, "precondition: fallback returns the static list")
 
@@ -419,8 +418,7 @@ func TestGetEnabledRegionsWithSource_ReturnedSliceIsWritable(t *testing.T) {
 	before := regionsSnapshot()
 
 	resolver := &RegionResolver{}
-	regions, _, err := resolver.getEnabledRegionsWithSource(context.Background())
-	require.NoError(t, err)
+	regions, _ := resolver.getEnabledRegionsWithSource(context.Background())
 	require.NotEmpty(t, regions)
 
 	regions[0] = "MUTATED"
@@ -466,8 +464,7 @@ func TestGetEnabledRegionsWithSource_PropagatesContextToClients(t *testing.T) {
 		},
 	}
 
-	_, source, err := resolver.getEnabledRegionsWithSource(ctx)
-	require.NoError(t, err)
+	_, source := resolver.getEnabledRegionsWithSource(ctx)
 	assert.Equal(t, output.SourceStaticFallback, source,
 		"a cancelled context degrades to the static list, it does not error")
 
@@ -531,11 +528,14 @@ func TestEnabledRegionsWithSource_PropagatesConfigError(t *testing.T) {
 // whether GetEnabledRegions returns the package var or a copy of it. Nothing here
 // writes through the returned slice, so no mutation claim is being made.
 //
-// The legacy path's ALIASING behaviour is a separate contract, pinned by pointer
-// identity in TestResolveRegions_TierThreeAliasingContractPerEntryPoint below.
-// Do not add a write-through assertion here: GetEnabledRegions genuinely returns
-// the package var itself, so writing through it would mutate a process-global and
-// fail. That aliasing is a frozen pre-existing hazard, not a guarantee.
+// The legacy path's CLONING behaviour is a separate contract, pinned by pointer
+// identity in TestResolveRegions_TierThreeResultIsAlwaysCloned below.
+//
+// A write-through assertion would now be legitimate here: GetEnabledRegions
+// clones at tier 3, so writing through the returned slice can no longer mutate
+// the process-global Regions var. It is simply not this test's job — this test
+// covers fall-through, and the clone is pinned by pointer identity below, which
+// is a stronger check than mutation and does not disturb the package var.
 func TestEnabledRegions_FallsBackToStaticList(t *testing.T) {
 	before := regionsSnapshot()
 
@@ -551,36 +551,26 @@ func TestEnabledRegions_FallsBackToStaticList(t *testing.T) {
 	assert.True(t, slices.Equal(before, Regions), "package Regions var must be unmutated")
 }
 
-// The refactor moved both entry points onto a shared resolveRegions ladder. That
-// indirection must not have changed either one's ALIASING behaviour, which the
-// value-equality assertions above cannot see: they pass identically whether the
-// function returns the package var or a copy of it.
+// Both entry points share the resolveRegions ladder, and BOTH must hand the
+// caller a clone at tier 3. Value equality cannot see that — the assertions
+// above pass identically whether a function returns the package var or a copy of
+// it. Only pointer identity can.
 //
-// The two entry points deliberately differ, and this test pins both halves:
+// resolveRegions itself still returns the package-level Regions variable ITSELF
+// at tier 3; that is deliberate and unchanged (see its doc comment). The
+// guarantee lives at the two entry points, each of which clones before handing
+// the slice outward:
 //
-//   - GetEnabledRegions (legacy) returns the package var ITSELF at tier 3. That
-//     is pre-existing behaviour, verified against HEAD, and is preserved.
+//   - GetEnabledRegions (legacy) returns slices.Clone of it.
 //   - getEnabledRegionsWithSource (new) returns slices.Clone of it.
 //
-// Asserting Same on one and NotSame on the other in the same test makes each a
-// live control for the other: a change that made the legacy path clone, or the
-// new path alias, fails here rather than passing silently. Pointer identity is
-// checked instead of mutating, so the package var is never disturbed.
-//
-// # If the Same half fails, do not work around it
-//
-// The Same assertion PINS a hazard, it does not endorse one. Handing a caller the
-// package var itself is a latent process-global corruption; requirement A froze it
-// on the legacy path only because changing shared behaviour was out of scope for
-// LAB-5615, not because it is correct.
-//
-// So if a future change makes GetEnabledRegions clone, that is an IMPROVEMENT and
-// this assertion has served its purpose. The correct response is to DELETE the
-// Same assertion (and this section), leaving the NotSame half in place. Do not
-// "fix" the failure by reintroducing the alias, and do not weaken it to
-// value-equality — that would silently restore the hazard the pointer check exists
-// to make visible. The NotSame half, by contrast, is a real guarantee: keep it.
-func TestResolveRegions_TierThreeAliasingContractPerEntryPoint(t *testing.T) {
+// Both halves are real guarantees, not frozen hazards: a caller entitled to sort
+// its result must not be able to permanently reorder the process-global Regions
+// var that AWSCommonRecon.PostBind reads on the live bind path. Do not weaken
+// either assertion to value-equality — that would silently restore the aliasing
+// the pointer check exists to exclude. Pointer identity is checked instead of
+// mutating, so the package var is never disturbed.
+func TestResolveRegions_TierThreeResultIsAlwaysCloned(t *testing.T) {
 	before := regionsSnapshot()
 	require.NotEmpty(t, Regions, "precondition: the static list is non-empty")
 
@@ -595,12 +585,11 @@ func TestResolveRegions_TierThreeAliasingContractPerEntryPoint(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, before, legacy, "precondition: legacy fell through to tier 3")
 
-	assert.Same(t, &Regions[0], &legacy[0],
-		"GetEnabledRegions must keep returning the package Regions var itself at "+
-			"tier 3; delegating to resolveRegions must not have introduced a copy")
+	assert.NotSame(t, &Regions[0], &legacy[0],
+		"GetEnabledRegions must return a CLONE at tier 3, so a caller that sorts "+
+			"the result cannot reorder the process-global Regions var")
 
-	cloned, source, err := newResolver().getEnabledRegionsWithSource(context.Background())
-	require.NoError(t, err)
+	cloned, source := newResolver().getEnabledRegionsWithSource(context.Background())
 	require.Equal(t, output.SourceStaticFallback, source)
 	require.Equal(t, before, cloned, "precondition: the new path fell through to tier 3")
 
@@ -694,8 +683,7 @@ func TestGetEnabledRegionsWithSource_StaticFallbackLogsAtWarn(t *testing.T) {
 			slog.SetDefault(slog.New(h))
 			t.Cleanup(func() { slog.SetDefault(restore) })
 
-			_, source, err := tt.resolver().getEnabledRegionsWithSource(context.Background())
-			require.NoError(t, err)
+			_, source := tt.resolver().getEnabledRegionsWithSource(context.Background())
 			require.Equal(t, tt.wantSource, source,
 				"precondition: the intended tier did not produce the list")
 
