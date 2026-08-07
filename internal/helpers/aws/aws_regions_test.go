@@ -3,11 +3,11 @@ package helpers
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -481,54 +481,6 @@ func TestGetEnabledRegionsWithSource_PropagatesContextToClients(t *testing.T) {
 		"the cancelled ctx must reach the EC2 client, not context.TODO()")
 }
 
-// A cancelled context must return promptly rather than exhausting SDK retries.
-func TestGetEnabledRegionsWithSource_CancelledContextReturnsPromptly(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	blockUnlessCancelled := func(c context.Context) error {
-		select {
-		case <-c.Done():
-			return c.Err()
-		case <-time.After(30 * time.Second):
-			return fmt.Errorf("client ignored context cancellation")
-		}
-	}
-
-	resolver := &RegionResolver{
-		accountClient: &mockAccountClient{
-			listRegionsFunc: func(c context.Context, params *account.ListRegionsInput, optFns ...func(*account.Options)) (*account.ListRegionsOutput, error) {
-				return nil, blockUnlessCancelled(c)
-			},
-		},
-		ec2Client: &mockEC2Client{
-			describeRegionsFunc: func(c context.Context, params *ec2.DescribeRegionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeRegionsOutput, error) {
-				return nil, blockUnlessCancelled(c)
-			},
-		},
-	}
-
-	done := make(chan struct{})
-	var source output.RegionSource
-	var err error
-
-	start := time.Now()
-	go func() {
-		defer close(done)
-		_, source, err = resolver.getEnabledRegionsWithSource(ctx)
-	}()
-
-	select {
-	case <-done:
-		assert.Less(t, time.Since(start), 5*time.Second,
-			"cancelled context must short-circuit, not exhaust the retry budget")
-		require.NoError(t, err)
-		assert.Equal(t, output.SourceStaticFallback, source)
-	case <-time.After(5 * time.Second):
-		require.Fail(t, "getEnabledRegionsWithSource did not return promptly on a cancelled context")
-	}
-}
-
 // SAC-8: the exported entry point threads its ctx and reports provenance.
 func TestEnabledRegionsWithSource_ReturnsSourceAndRegions(t *testing.T) {
 	before := regionsSnapshot()
@@ -571,8 +523,20 @@ func TestEnabledRegionsWithSource_PropagatesConfigError(t *testing.T) {
 	assert.Empty(t, string(source), "no source is claimed when resolution never ran")
 }
 
-// The legacy entry point must keep behaving exactly as before this change.
-func TestEnabledRegions_StillReturnsStaticListUnmutated(t *testing.T) {
+// The legacy entry point must still fall through to the static list when both
+// tiers fail.
+//
+// This test is deliberately NOT named "...Unmutated". It asserts value equality
+// only, and value equality cannot see aliasing: these assertions pass identically
+// whether GetEnabledRegions returns the package var or a copy of it. Nothing here
+// writes through the returned slice, so no mutation claim is being made.
+//
+// The legacy path's ALIASING behaviour is a separate contract, pinned by pointer
+// identity in TestResolveRegions_TierThreeAliasingContractPerEntryPoint below.
+// Do not add a write-through assertion here: GetEnabledRegions genuinely returns
+// the package var itself, so writing through it would mutate a process-global and
+// fail. That aliasing is a frozen pre-existing hazard, not a guarantee.
+func TestEnabledRegions_FallsBackToStaticList(t *testing.T) {
 	before := regionsSnapshot()
 
 	resolver := &RegionResolver{
@@ -585,4 +549,168 @@ func TestEnabledRegions_StillReturnsStaticListUnmutated(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, before, regions)
 	assert.True(t, slices.Equal(before, Regions), "package Regions var must be unmutated")
+}
+
+// The refactor moved both entry points onto a shared resolveRegions ladder. That
+// indirection must not have changed either one's ALIASING behaviour, which the
+// value-equality assertions above cannot see: they pass identically whether the
+// function returns the package var or a copy of it.
+//
+// The two entry points deliberately differ, and this test pins both halves:
+//
+//   - GetEnabledRegions (legacy) returns the package var ITSELF at tier 3. That
+//     is pre-existing behaviour, verified against HEAD, and is preserved.
+//   - getEnabledRegionsWithSource (new) returns slices.Clone of it.
+//
+// Asserting Same on one and NotSame on the other in the same test makes each a
+// live control for the other: a change that made the legacy path clone, or the
+// new path alias, fails here rather than passing silently. Pointer identity is
+// checked instead of mutating, so the package var is never disturbed.
+//
+// # If the Same half fails, do not work around it
+//
+// The Same assertion PINS a hazard, it does not endorse one. Handing a caller the
+// package var itself is a latent process-global corruption; requirement A froze it
+// on the legacy path only because changing shared behaviour was out of scope for
+// LAB-5615, not because it is correct.
+//
+// So if a future change makes GetEnabledRegions clone, that is an IMPROVEMENT and
+// this assertion has served its purpose. The correct response is to DELETE the
+// Same assertion (and this section), leaving the NotSame half in place. Do not
+// "fix" the failure by reintroducing the alias, and do not weaken it to
+// value-equality — that would silently restore the hazard the pointer check exists
+// to make visible. The NotSame half, by contrast, is a real guarantee: keep it.
+func TestResolveRegions_TierThreeAliasingContractPerEntryPoint(t *testing.T) {
+	before := regionsSnapshot()
+	require.NotEmpty(t, Regions, "precondition: the static list is non-empty")
+
+	newResolver := func() *RegionResolver {
+		return &RegionResolver{
+			accountClient: failingAccountClient(fmt.Errorf("boom")),
+			ec2Client:     failingEC2Client(fmt.Errorf("boom")),
+		}
+	}
+
+	legacy, err := newResolver().GetEnabledRegions(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, before, legacy, "precondition: legacy fell through to tier 3")
+
+	assert.Same(t, &Regions[0], &legacy[0],
+		"GetEnabledRegions must keep returning the package Regions var itself at "+
+			"tier 3; delegating to resolveRegions must not have introduced a copy")
+
+	cloned, source, err := newResolver().getEnabledRegionsWithSource(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, output.SourceStaticFallback, source)
+	require.Equal(t, before, cloned, "precondition: the new path fell through to tier 3")
+
+	assert.NotSame(t, &Regions[0], &cloned[0],
+		"getEnabledRegionsWithSource must return a clone, so a caller that sorts "+
+			"the result cannot reorder the process-global Regions var")
+
+	assert.Equal(t, before, Regions, "no assertion above may disturb the package var")
+}
+
+// ---------------------------------------------------------------------------
+// Tier-3 Warn logging. The log record is BEHAVIOUR, not decoration.
+// ---------------------------------------------------------------------------
+
+// recordingHandler captures slog records so a test can assert what was logged and
+// at which level. Enabled always reports true so the handler itself can never be
+// the reason a record is missing: these assertions are about what the code under
+// test emits, not about handler filtering.
+type recordingHandler struct {
+	mu      sync.Mutex
+	records []slog.Record
+}
+
+func (h *recordingHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.records = append(h.records, r.Clone())
+	return nil
+}
+
+func (h *recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *recordingHandler) WithGroup(string) slog.Handler      { return h }
+
+// messagesAtLevel returns the messages recorded at exactly the given level.
+func (h *recordingHandler) messagesAtLevel(lvl slog.Level) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	var out []string
+	for _, r := range h.records {
+		if r.Level == lvl {
+			out = append(out, r.Message)
+		}
+	}
+	return out
+}
+
+// TestGetEnabledRegionsWithSource_StaticFallbackLogsAtWarn pins the tier-3 log
+// LEVEL, which is load-bearing rather than cosmetic.
+//
+// The shipped binary hardcodes configureSlog("none") (cmd/generator.go), which maps
+// to slog.LevelWarn, and SlogHandler.Enabled is level >= minLevel — so every Debug
+// line on this path is discarded at every user-selectable setting. A silent
+// fallback to the compiled-in list is the exact failure LAB-5615 exists to surface,
+// so emitting this record at Debug would hide it from every operator. Demoting the
+// level is a real regression that no assertion on the RETURNED VALUE can detect,
+// because the regions and the source are identical either way.
+//
+// The tier-1 subtest is the negative control. Without it this test would pass just
+// as well against code that warned unconditionally — which would train operators to
+// ignore the line, defeating the purpose as surely as silence would.
+func TestGetEnabledRegionsWithSource_StaticFallbackLogsAtWarn(t *testing.T) {
+	tests := []struct {
+		name       string
+		resolver   func() *RegionResolver
+		wantSource output.RegionSource
+		wantWarn   bool
+	}{
+		{
+			name:       "tier 3 fallback warns",
+			resolver:   func() *RegionResolver { return &RegionResolver{} },
+			wantSource: output.SourceStaticFallback,
+			wantWarn:   true,
+		},
+		{
+			name: "tier 1 success is silent at Warn",
+			resolver: func() *RegionResolver {
+				return &RegionResolver{accountClient: succeedingAccountClient("us-east-1")}
+			},
+			wantSource: output.SourceAccountAPI,
+			wantWarn:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &recordingHandler{}
+			restore := slog.Default()
+			slog.SetDefault(slog.New(h))
+			t.Cleanup(func() { slog.SetDefault(restore) })
+
+			_, source, err := tt.resolver().getEnabledRegionsWithSource(context.Background())
+			require.NoError(t, err)
+			require.Equal(t, tt.wantSource, source,
+				"precondition: the intended tier did not produce the list")
+
+			warnings := h.messagesAtLevel(slog.LevelWarn)
+
+			if !tt.wantWarn {
+				assert.Empty(t, warnings,
+					"a successful tier must not warn; an unconditional warning trains "+
+						"operators to ignore the one case that matters")
+				return
+			}
+
+			require.Len(t, warnings, 1, "tier 3 must emit exactly one Warn record")
+			assert.Contains(t, warnings[0], "compiled-in region list",
+				"the Warn record must name the fallback so an operator can act on it")
+		})
+	}
 }

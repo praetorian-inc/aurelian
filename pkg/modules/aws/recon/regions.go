@@ -1,6 +1,7 @@
 package recon
 
 import (
+	"context"
 	"fmt"
 	"slices"
 
@@ -27,6 +28,16 @@ type RegionsConfig struct {
 
 type AWSRegionsModule struct {
 	RegionsConfig
+
+	// enabledRegions resolves the account's enabled regions and the provenance
+	// of that answer. It exists purely as a test seam: helpers'
+	// AccountRegionLister/EC2RegionLister and its default config loader are
+	// unexported inside package helpers, so a test in this package cannot
+	// otherwise drive Run without live AWS credentials.
+	//
+	// A nil value means "use the real helper", which is how the instance
+	// registered in init() always runs — nothing outside a test sets it.
+	enabledRegions func(ctx context.Context, profile, profileDir string) ([]string, output.RegionSource, error)
 }
 
 func (m *AWSRegionsModule) ID() string                { return "regions" }
@@ -58,7 +69,12 @@ func (m *AWSRegionsModule) Parameters() any {
 func (m *AWSRegionsModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.RegionsConfig
 
-	regions, source, err := helpers.EnabledRegionsWithSource(cfg.Context, c.Profile, c.ProfileDir)
+	resolve := m.enabledRegions
+	if resolve == nil {
+		resolve = helpers.EnabledRegionsWithSource
+	}
+
+	regions, source, err := resolve(cfg.Context, c.Profile, c.ProfileDir)
 	if err != nil {
 		return fmt.Errorf("regions: resolve enabled regions: %w", err)
 	}
