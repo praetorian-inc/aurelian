@@ -494,8 +494,16 @@ func TestEnabledRegionsWithSource_ReturnsSourceAndRegions(t *testing.T) {
 	regions, source, err := EnabledRegionsWithSource(ctx, "test-profile", "/tmp/test-profiles")
 
 	require.NoError(t, err, "an unreachable control plane must degrade, not fail")
-	assert.NotEmpty(t, regions)
 	assert.Equal(t, output.SourceStaticFallback, source)
+
+	// Order-sensitive equality against the whole compiled-in list, not NotEmpty.
+	// Reporting static-fallback is a claim about WHICH list came back: a bug that
+	// degraded to a truncated list — or to a plausible single-region default like
+	// {"us-east-1"} — while still stamping static-fallback would satisfy NotEmpty
+	// and ship silently reduced scan coverage under an authoritative-looking source.
+	assert.Equal(t, before, regions,
+		"a static-fallback result must be exactly the compiled-in list, in its "+
+			"compiled-in order")
 	assert.Equal(t, before, Regions, "package Regions var must be unmutated")
 
 	// The caller owns the result and may sort it.

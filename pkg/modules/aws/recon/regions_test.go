@@ -208,26 +208,37 @@ func TestAWSRegionsModule_Run_PropagatesSourceVerbatim(t *testing.T) {
 // implementation would see that match and stamp it "static-fallback", reporting a
 // stale guess for the one account whose answer was fully authoritative.
 //
-// Both orderings are exercised. helpers.Regions is unsorted and Run sorts before
-// emitting, so with only the unsorted fixture an implementation that compared its
-// POST-SORT list against the unsorted global would never match and would pass
-// without ever facing the coincidence. The pre-sorted fixture closes that gap.
+// Both orderings are exercised, because "compare against the static list" has two
+// distinct spellings and each sub-case catches a different one. helpers.Regions is
+// unsorted, and Run sorts before emitting:
+//
+//   - The UNSORTED fixture catches an implementation comparing its input against
+//     helpers.Regions as-is.
+//   - The PRE-SORTED fixture catches one comparing its input against a SORTED copy
+//     of helpers.Regions. That variant sees no match on the unsorted fixture, so
+//     the unsorted sub-case alone would let it pass.
+//
+// Both are verified by perturbation: each implementation reddens exactly its own
+// sub-case and leaves the other green. Dropping either fixture retires real
+// coverage.
+//
+// A third spelling — comparing the POST-SORT list against the unsorted global — is
+// caught by nothing here, and correctly so: a sorted list can never equal an
+// unsorted one, so that comparison never fires and is unobservable rather than a
+// bug. Do not add a fixture chasing it.
 func TestAWSRegionsModule_Run_AuthoritativeSourceSurvivesCoincidence(t *testing.T) {
-	// Preconditions that actually constrain something. Asserting a copy of
-	// helpers.Regions against helpers.Regions cannot fail, so pin the two
-	// properties the sub-cases below rely on instead: the list is non-trivial (a
-	// 1-element list makes the coincidence something no implementation could get
-	// wrong), and it is genuinely unsorted (otherwise the two fixtures collapse
-	// into one and the sorted sub-case stops adding coverage).
-	require.Greater(t, len(helpers.Regions), 10,
-		"precondition: the compiled-in region list must be non-trivial for this "+
-			"coincidence to be meaningful")
+	// Preconditions with teeth. Asserting a copy of helpers.Regions back against
+	// helpers.Regions cannot fail — it constrains the test's own two lines, not the
+	// code. What this test actually depends on is that Run's sort is observable:
+	// an empty or already-sorted static list would collapse the two sub-cases below
+	// into one and silently retire the coverage the sorted case exists to add.
+	require.NotEmpty(t, helpers.Regions,
+		"precondition: the static list is non-empty, so the coincidence is real")
 
 	sorted := append([]string(nil), helpers.Regions...)
 	sort.Strings(sorted)
 	require.NotEqual(t, helpers.Regions, sorted,
-		"precondition: helpers.Regions must be unsorted, or the sorted sub-case below "+
-			"is a duplicate of the unsorted one")
+		"precondition: the static list is not already sorted, so sort() is observable")
 
 	cases := []struct {
 		name    string
@@ -403,11 +414,14 @@ func TestAWSRegionsModule_Run_ResolutionErrorEmitsNothing(t *testing.T) {
 // carried a non-nil stub, the shipped binary would silently report fabricated
 // regions — a far worse failure than the one the seam exists to make testable.
 // Nil here means Run falls through to helpers.EnabledRegionsWithSource.
+//
+// Deliberately absent: an assertion that (&AWSRegionsModule{}).enabledRegions is
+// nil. The Go spec guarantees an unset func field in a composite literal is nil,
+// so no edit to production code could turn that red — it constrains the compiler,
+// not this module. Verified by perturbation: registering a stubbed instance in
+// init() leaves that assertion green and fails only the registry check below. Do
+// not re-add it.
 func TestAWSRegionsModule_RegisteredInstanceUsesRealHelper(t *testing.T) {
-	assert.Nil(t, (&AWSRegionsModule{}).enabledRegions,
-		"a freshly constructed module must leave the seam nil so Run uses the real "+
-			"helper; only tests may set it")
-
 	for _, m := range plugin.ByPlatform(plugin.PlatformAWS) {
 		if m.ID() != "regions" {
 			continue
