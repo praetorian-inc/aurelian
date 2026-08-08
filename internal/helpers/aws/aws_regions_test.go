@@ -8,6 +8,7 @@ import (
 	"sort"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -131,36 +132,38 @@ func TestEnabledRegions_BothAPIsFail_FallsBackToHardcoded(t *testing.T) {
 }
 
 func TestEnabledRegions_FullTieredFallback(t *testing.T) {
+	// There is no expected-provenance column. GetEnabledRegions returns
+	// ([]string, error) and never reports which tier produced the list, so a
+	// row could only carry a tier name the loop body has no way to check —
+	// which is what the deleted expectedFallback field was. Provenance IS
+	// asserted, on the entry point that actually returns it, in
+	// TestGetEnabledRegionsWithSource_ReportsTier.
 	tests := []struct {
-		name             string
-		accountError     error
-		accountRegions   []string
-		ec2Error         error
-		ec2Regions       []string
-		expectedRegions  []string
-		expectedFallback string
+		name            string
+		accountError    error
+		accountRegions  []string
+		ec2Error        error
+		ec2Regions      []string
+		expectedRegions []string
 	}{
 		{
-			name:             "Account API success",
-			accountError:     nil,
-			accountRegions:   []string{"us-east-1", "us-west-2"},
-			expectedRegions:  []string{"us-east-1", "us-west-2"},
-			expectedFallback: "account",
+			name:            "Account API success",
+			accountError:    nil,
+			accountRegions:  []string{"us-east-1", "us-west-2"},
+			expectedRegions: []string{"us-east-1", "us-west-2"},
 		},
 		{
-			name:             "Account fails, EC2 succeeds",
-			accountError:     fmt.Errorf("account error"),
-			ec2Error:         nil,
-			ec2Regions:       []string{"us-east-1", "eu-west-1"},
-			expectedRegions:  []string{"us-east-1", "eu-west-1"},
-			expectedFallback: "ec2",
+			name:            "Account fails, EC2 succeeds",
+			accountError:    fmt.Errorf("account error"),
+			ec2Error:        nil,
+			ec2Regions:      []string{"us-east-1", "eu-west-1"},
+			expectedRegions: []string{"us-east-1", "eu-west-1"},
 		},
 		{
-			name:             "Both fail, hardcoded fallback",
-			accountError:     fmt.Errorf("account error"),
-			ec2Error:         fmt.Errorf("ec2 error"),
-			expectedRegions:  Regions,
-			expectedFallback: "hardcoded",
+			name:            "Both fail, hardcoded fallback",
+			accountError:    fmt.Errorf("account error"),
+			ec2Error:        fmt.Errorf("ec2 error"),
+			expectedRegions: Regions,
 		},
 	}
 
@@ -475,8 +478,25 @@ func TestGetEnabledRegionsWithSource_PropagatesContextToClients(t *testing.T) {
 	}
 
 	_, source := resolver.getEnabledRegionsWithSource(ctx)
+	// Scope note: this is a claim about getEnabledRegionsWithSource ALONE, which
+	// has no error return at all — it reports provenance and nothing else, so a
+	// cancelled context can only ever show up here as a tier-3 source. It is NOT
+	// a claim about what the package does with a cancelled context. The two
+	// exported entry points that have an error to return turn exactly this state
+	// (static fallback reached under a done ctx) into one, each at its own
+	// separate fmt.Errorf call site: EnabledRegionsWithSource, which wraps this
+	// function, and GetEnabledRegions, which is not a wrapper of it at all — it
+	// reaches the same state through resolveRegions, because this path's tier-3
+	// Warn belongs to it alone. See
+	// TestEnabledRegionsWithSource_CanceledContextIsAnError and
+	// TestGetEnabledRegions_CanceledContextIsAnError.
 	assert.Equal(t, output.SourceStaticFallback, source,
-		"a cancelled context degrades to the static list, it does not error")
+		"getEnabledRegionsWithSource has no error return, so a cancelled context "+
+			"can only surface here as static-fallback provenance; the error is "+
+			"added by the two exported entry points that have one to return "+
+			"(EnabledRegionsWithSource, which wraps this function, and "+
+			"GetEnabledRegions, which reaches the same state through "+
+			"resolveRegions), not by this helper")
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -489,7 +509,21 @@ func TestGetEnabledRegionsWithSource_PropagatesContextToClients(t *testing.T) {
 }
 
 // SAC-8: the exported entry point threads its ctx and reports provenance.
-func TestEnabledRegionsWithSource_ReturnsSourceAndRegions(t *testing.T) {
+//
+// The context here is LIVE, and that is the whole point of this test. An
+// unreachable control plane and an abandoned caller are the two categories the
+// LAB-5615 guard exists to separate, and only the first one degrades: the
+// mocked loader hands back a config carrying no credentials, so tier 1 and
+// tier 2 both fail on their own merits while the caller is still waiting for an
+// answer. That is a genuine unreachable-control-plane scenario, so
+// "must degrade, not fail" is true here and assertable — EnabledRegionsWithSource
+// has an error return to check it against.
+//
+// The cancelled-context counterpart is
+// TestEnabledRegionsWithSource_CanceledContextIsAnError, which asserts the
+// opposite outcome. Do not merge the two: sharing a fixture between them would
+// re-conflate exactly the two categories the production guard distinguishes.
+func TestEnabledRegionsWithSource_UnreachableTiersDegradeToStaticList(t *testing.T) {
 	before := regionsSnapshot()
 
 	oldLoader := defaultConfigLoader
@@ -498,10 +532,7 @@ func TestEnabledRegionsWithSource_ReturnsSourceAndRegions(t *testing.T) {
 		return aws.Config{Region: "us-east-1"}, nil
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	regions, source, err := EnabledRegionsWithSource(ctx, "test-profile", "/tmp/test-profiles")
+	regions, source, err := EnabledRegionsWithSource(context.Background(), "test-profile", "/tmp/test-profiles")
 
 	require.NoError(t, err, "an unreachable control plane must degrade, not fail")
 	assert.Equal(t, output.SourceStaticFallback, source)
@@ -519,6 +550,85 @@ func TestEnabledRegionsWithSource_ReturnsSourceAndRegions(t *testing.T) {
 	// The caller owns the result and may sort it.
 	sort.Strings(regions)
 	assert.Equal(t, before, Regions, "sorting the result must not touch the package var")
+
+	// Sanity: sorting actually reordered the local slice, so the assertion above
+	// is meaningful rather than vacuously true. Without this, a compiled-in list
+	// that happened to be sorted would make sort.Strings a no-op and the
+	// sort-safety claim would hold for the wrong reason.
+	require.NotEqual(t, before, regions,
+		"precondition: the static list is not already sorted, so sort() is observable")
+}
+
+// The exported entry point must NOT report the compiled-in list as an answer
+// when the caller has already abandoned the work.
+//
+// This is the other side of the line drawn above. A tier miss means the remote
+// end could not be reached, and degrading is correct. A done context means the
+// CALLER walked away: both SDK calls fail with that context error, the ladder
+// reaches tier 3, and handing back the compiled-in list with a nil error would
+// give an abandoned coordinator fabricated coverage to fan every downstream
+// shard across.
+//
+// Both wrapped sentinels are pinned, not just one. errors.Is working here is
+// bought entirely by the %w in the guard's fmt.Errorf; a future refactor to %v
+// would still produce an error with an identical message, so require.Error and
+// any Contains-style check on the text would both keep passing while errors.Is
+// silently went false at every call site. Only ErrorIs catches that.
+func TestEnabledRegionsWithSource_CanceledContextIsAnError(t *testing.T) {
+	tests := []struct {
+		name         string
+		ctx          func(t *testing.T) context.Context
+		wantSentinel error
+	}{
+		{
+			name: "caller cancelled",
+			ctx: func(t *testing.T) context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			},
+			wantSentinel: context.Canceled,
+		},
+		{
+			name: "caller deadline already passed",
+			ctx: func(t *testing.T) context.Context {
+				ctx, cancel := context.WithTimeout(context.Background(), -1*time.Second)
+				t.Cleanup(cancel)
+				return ctx
+			},
+			wantSentinel: context.DeadlineExceeded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := regionsSnapshot()
+
+			oldLoader := defaultConfigLoader
+			defer func() { defaultConfigLoader = oldLoader }()
+			defaultConfigLoader = func(ctx context.Context, optFns ...func(*config.LoadOptions) error) (aws.Config, error) {
+				return aws.Config{Region: "us-east-1"}, nil
+			}
+
+			ctx := tt.ctx(t)
+			require.ErrorIs(t, ctx.Err(), tt.wantSentinel,
+				"precondition: the context must already be done with the intended cause")
+
+			regions, source, err := EnabledRegionsWithSource(ctx, "test-profile", "/tmp/test-profiles")
+
+			require.Error(t, err,
+				"a static-fallback result reached under a done context is fabricated "+
+					"coverage, not an answer")
+			assert.ErrorIs(t, err, tt.wantSentinel,
+				"the guard must wrap ctx.Err() with %w so errors.Is keeps working at "+
+					"the call site")
+			assert.Nil(t, regions,
+				"no region list may be handed back when none was actually fetched")
+			assert.Empty(t, string(source),
+				"no provenance may be claimed for a list the ladder never fetched")
+			assert.Equal(t, before, Regions, "package Regions var must be unmutated")
+		})
+	}
 }
 
 // EnabledRegionsWithSource must surface config errors rather than silently
@@ -567,6 +677,115 @@ func TestEnabledRegions_FallsBackToStaticList(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, before, regions)
 	assert.True(t, slices.Equal(before, Regions), "package Regions var must be unmutated")
+}
+
+// GetEnabledRegions carries the same cancellation guard as
+// EnabledRegionsWithSource, and it is pinned here for the same reason: the %w
+// wrap is what makes errors.Is work, and the two guards are separate
+// fmt.Errorf call sites, so an assertion on one cannot catch a regression in
+// the other.
+//
+// Honest scope note: this path is not reachable with a done context from any
+// in-repo caller today. GetEnabledRegions is reached from EnabledRegions, which
+// passes context.TODO(), and ResolveRegions likewise — both have an
+// unconditionally nil Err(). The guard is pinned as defensive symmetry with the
+// exported wrapper above, so that a future caller threading a real context gets
+// the same contract rather than fabricated coverage, and so that the two guards
+// cannot silently drift apart.
+//
+// The third row is a negative control and it is what gives the first two their
+// meaning. Without it this test would pass just as happily against a guard
+// written as `if ctx.Err() != nil` with no source check — a guard that would
+// throw away real tier-1 data whenever the caller's context finished a moment
+// after the SDK answered. The narrowness of the guard is a behaviour, and only a
+// case where the context is done AND a tier succeeded can observe it.
+func TestGetEnabledRegions_CanceledContextIsAnError(t *testing.T) {
+	doneCtx := func(t *testing.T) context.Context {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		return ctx
+	}
+
+	tests := []struct {
+		name         string
+		resolver     func() *RegionResolver
+		ctx          func(t *testing.T) context.Context
+		wantSentinel error // nil means the call must succeed
+		wantRegions  []string
+	}{
+		{
+			name: "cancelled caller reaching tier 3 is an error",
+			resolver: func() *RegionResolver {
+				return &RegionResolver{
+					accountClient: failingAccountClient(fmt.Errorf("account API unreachable")),
+					ec2Client:     failingEC2Client(fmt.Errorf("ec2 API unreachable")),
+				}
+			},
+			ctx:          doneCtx,
+			wantSentinel: context.Canceled,
+		},
+		{
+			name: "expired deadline reaching tier 3 is an error",
+			resolver: func() *RegionResolver {
+				return &RegionResolver{
+					accountClient: failingAccountClient(fmt.Errorf("account API unreachable")),
+					ec2Client:     failingEC2Client(fmt.Errorf("ec2 API unreachable")),
+				}
+			},
+			ctx: func(t *testing.T) context.Context {
+				ctx, cancel := context.WithTimeout(context.Background(), -1*time.Second)
+				t.Cleanup(cancel)
+				return ctx
+			},
+			wantSentinel: context.DeadlineExceeded,
+		},
+		{
+			// Negative control: the guard is scoped to the fabricated case only.
+			// Tier 1 answered, so this list is data the ladder really fetched and
+			// it must be returned even though the context finished.
+			name: "tier 1 success under a done ctx is still real data",
+			resolver: func() *RegionResolver {
+				return &RegionResolver{
+					accountClient: succeedingAccountClient("us-east-1", "eu-west-1"),
+					ec2Client:     failingEC2Client(fmt.Errorf("must not be consulted")),
+				}
+			},
+			ctx:          doneCtx,
+			wantSentinel: nil,
+			wantRegions:  []string{"us-east-1", "eu-west-1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			before := regionsSnapshot()
+
+			ctx := tt.ctx(t)
+			require.Error(t, ctx.Err(),
+				"precondition: every row here runs under an already-done context")
+
+			regions, err := tt.resolver().GetEnabledRegions(ctx)
+
+			if tt.wantSentinel == nil {
+				require.NoError(t, err,
+					"a tier that actually answered must not be discarded just because "+
+						"the caller's context finished afterwards")
+				assert.Equal(t, tt.wantRegions, regions,
+					"the fetched list must be returned unchanged")
+			} else {
+				require.Error(t, err,
+					"a static-fallback result reached under a done context is fabricated "+
+						"coverage, not an answer")
+				assert.ErrorIs(t, err, tt.wantSentinel,
+					"the guard must wrap ctx.Err() with %w so errors.Is keeps working at "+
+						"the call site")
+				assert.Nil(t, regions,
+					"no region list may be handed back when none was actually fetched")
+			}
+
+			assert.Equal(t, before, Regions, "package Regions var must be unmutated")
+		})
+	}
 }
 
 // Both entry points share the resolveRegions ladder, and BOTH must hand the

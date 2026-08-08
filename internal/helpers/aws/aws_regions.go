@@ -67,8 +67,32 @@ type RegionResolver struct {
 // Tier 1: AWS Account API
 // Tier 2: EC2 API
 // Tier 3: Hardcoded Regions list
+//
+// A tier miss still degrades silently to the static list — failing on one would
+// deny inventory to accounts that legitimately cannot reach the control plane,
+// which is the bug LAB-5615 exists to fix. That reasoning is about the REMOTE
+// end, and it does not extend to the caller: a static-fallback result reached
+// under a done context is returned as an error, wrapping ctx.Err() so both
+// errors.Is(err, context.Canceled) and errors.Is(err, context.DeadlineExceeded)
+// work at the call site. When the caller has abandoned the work, both SDK calls
+// fail with that same context error, and reporting the compiled-in list as a
+// successful answer would fabricate coverage the ladder never fetched.
+//
+// The guard is deliberately narrow. A tier-1 or tier-2 success is real data that
+// was actually retrieved, so it is returned even if the context finished
+// afterwards; only the fabricated case is an error.
+//
+// It reads source from resolveRegions directly rather than routing through
+// getEnabledRegionsWithSource, which would obtain the same value: that path's
+// tier-3 Warn belongs to it alone (see its doc comment), and borrowing it to
+// reach source would emit that record on this path too.
 func (r *RegionResolver) GetEnabledRegions(ctx context.Context) ([]string, error) {
-	regions, _ := r.resolveRegions(ctx)
+	regions, source := r.resolveRegions(ctx)
+
+	if source == output.SourceStaticFallback && ctx.Err() != nil {
+		return nil, fmt.Errorf("region resolution canceled before any tier succeeded: %w", ctx.Err())
+	}
+
 	return slices.Clone(regions), nil
 }
 
@@ -94,9 +118,25 @@ func (r *RegionResolver) GetEnabledRegions(ctx context.Context) ([]string, error
 // Regions variable itself at tier 3, and both entry points clone before handing it
 // outward — see its doc comment. This path is not special in that respect.
 //
-// A tier-3 result is not an error. Some accounts legitimately cannot reach the
-// control plane, and failing here would deny them inventory entirely — the problem
-// LAB-5615 was filed to fix. The source is the signal instead.
+// A tier miss is not an error on any path. Some accounts legitimately cannot
+// reach the control plane, and failing on that would deny them inventory
+// entirely — the problem LAB-5615 was filed to fix. The ladder degrades to the
+// static list and the source is the signal instead.
+//
+// Here that is the whole story, because this function has no error return at
+// all: whatever made the ladder fall through, a tier-3 source is the only thing
+// observable on this path.
+//
+// The one case that IS an error is added by the two exported entry points that
+// have an error to return — EnabledRegionsWithSource, which wraps this
+// function, and GetEnabledRegions, which reaches the same state through
+// resolveRegions. Each rejects a static-fallback result reached under an
+// already-done context: the caller has abandoned the work, and handing back the
+// compiled-in list as an answer would fabricate coverage no tier ever fetched.
+//
+// So the two are different categories rather than degrees of one. An
+// unreachable control plane is the remote end failing, and only that degrades;
+// an abandoned caller is this side giving up, and that is reported.
 func (r *RegionResolver) getEnabledRegionsWithSource(ctx context.Context) ([]string, output.RegionSource) {
 	regions, source := r.resolveRegions(ctx)
 
@@ -125,24 +165,24 @@ func (r *RegionResolver) resolveRegions(ctx context.Context) ([]string, output.R
 	if r.accountClient != nil {
 		regions, err := r.getEnabledRegionsFromAccount(ctx)
 		if err == nil && len(regions) > 0 {
-			slog.Debug("Retrieved enabled regions from AWS Account API")
+			slog.DebugContext(ctx, "Retrieved enabled regions from AWS Account API")
 			return regions, output.SourceAccountAPI
 		}
-		slog.Debug("Failed to get regions from AWS Account API, trying EC2", "error", err)
+		slog.DebugContext(ctx, "Failed to get regions from AWS Account API, trying EC2", "error", err)
 	}
 
 	// Tier 2: Try EC2 API
 	if r.ec2Client != nil {
 		regions, err := r.getEnabledRegionsFromEC2(ctx)
 		if err == nil && len(regions) > 0 {
-			slog.Debug("Retrieved enabled regions from EC2 API")
+			slog.DebugContext(ctx, "Retrieved enabled regions from EC2 API")
 			return regions, output.SourceEC2API
 		}
-		slog.Debug("Failed to get regions from EC2 API, using hardcoded list", "error", err)
+		slog.DebugContext(ctx, "Failed to get regions from EC2 API, using hardcoded list", "error", err)
 	}
 
 	// Tier 3: Fallback to hardcoded list
-	slog.Debug("Using hardcoded region list as fallback")
+	slog.DebugContext(ctx, "Using hardcoded region list as fallback")
 	return Regions, output.SourceStaticFallback
 }
 
@@ -249,21 +289,38 @@ func EnabledRegions(profile string, profileDir string) ([]string, error) {
 // Unlike EnabledRegions, it threads the caller's context into the region-tier
 // SDK calls rather than using context.TODO(). That scope is exact, and narrower
 // than "the SDK calls": the config load inside newRegionResolver does NOT see the
-// caller's ctx, because NewAWSConfig hands its own loader a context.TODO()
-// internally and takes no context parameter to override it. The caller's ctx
-// first takes effect at the getEnabledRegionsWithSource call, so it governs only
-// the Account/EC2 API calls the ladder makes from there.
+// caller's ctx, because NewAWSConfig delegates to newAWSConfigWith, which hands
+// the loader a context.TODO() — and neither takes a context parameter to override
+// it. The caller's ctx first takes effect at the getEnabledRegionsWithSource
+// call, so it governs only the Account/EC2 API calls the ladder makes from there.
 //
 // Those are the calls that matter here. The coordinator calling this is a single
-// point of failure for every downstream shard, and NewAWSConfig requests
-// aws.RetryModeAdaptive for the clients newRegionResolver builds — without a
-// cancellable context an unreachable endpoint would retry until the SDK budget is
-// exhausted with no way to cancel.
+// point of failure for every downstream shard, and buildLoadOptions requests
+// aws.RetryModeAdaptive for the config behind the clients newRegionResolver
+// builds — without a cancellable context an unreachable endpoint would retry
+// until the SDK budget is exhausted with no way to cancel.
 //
 // A config failure is returned as an error, since it is a caller problem rather
 // than a tier miss. Once resolution starts, no tier failure is an error: it
 // degrades to the static list, because failing here would generalize the very
 // bug LAB-5615 exists to fix (accounts receiving no inventory at all).
+//
+// One caller-side case is an error, and it is not a tier failure. That
+// degrade-silently rule is about the REMOTE end being unreachable; a
+// caller-initiated cancellation is the opposite situation — the caller has
+// abandoned the work. When the ctx threaded above is already done, both SDK
+// calls fail with that context error, the ladder reaches tier 3, and returning
+// the compiled-in list with a nil error would hand an abandoned coordinator
+// fabricated coverage to fan every downstream shard across. So a static-fallback
+// result under a done context returns an error wrapping ctx.Err(), which keeps
+// errors.Is(err, context.Canceled) and errors.Is(err, context.DeadlineExceeded)
+// working at the call site. Reporting success there would also undercut this
+// function's own rationale for threading ctx at all: cancellation would abort
+// the SDK retries and then be reported as an answer.
+//
+// The guard is scoped to the fabricated case only, not to ctx.Err() != nil. A
+// tier-1 or tier-2 success is data the ladder actually fetched, and returning it
+// is correct even if the context finished afterwards.
 func EnabledRegionsWithSource(ctx context.Context, profile, profileDir string) ([]string, output.RegionSource, error) {
 	resolver, err := newRegionResolver(profile, profileDir)
 	if err != nil {
@@ -271,5 +328,9 @@ func EnabledRegionsWithSource(ctx context.Context, profile, profileDir string) (
 	}
 
 	regions, source := resolver.getEnabledRegionsWithSource(ctx)
+	if source == output.SourceStaticFallback && ctx.Err() != nil {
+		return nil, "", fmt.Errorf("region resolution canceled before any tier succeeded: %w", ctx.Err())
+	}
+
 	return regions, source, nil
 }

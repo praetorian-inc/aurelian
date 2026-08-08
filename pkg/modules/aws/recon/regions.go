@@ -63,24 +63,26 @@ func (m *AWSRegionsModule) References() []string {
 // answers a question ABOUT the account.
 //
 // The value is required for dispatch, not for listing. Guard's
-// agora.MatchesSupportedResourceType (backend/pkg/aurelian/agora/helpers.go:28-30)
+// agora.MatchesSupportedResourceType (backend/pkg/aurelian/agora/helpers.go)
 // short-circuits `return false` when len(supported) == 0, and
-// backend/pkg/aurelian/aws/aws_factory.go:87 uses that as its dispatch gate.
+// backend/pkg/aurelian/aws/aws_factory.go uses that as its dispatch gate.
 // Returning nil would therefore make the region coordinator undispatchable for
 // EVERY target, not merely absent from listings.
 //
 // Declaring it is provably inert inside Aurelian, for three independent reasons:
 //
-//  1. pkg/aws/resourcetypes/union.go:39 is the sole registry-level consumer of
-//     this method, so nothing else observes the declaration.
-//  2. Four sibling modules already declare the same type —
-//     cdk_bucket_takeover.go:48, iam_quick_analyze.go:56, graph.go:77, and
-//     list_all_resources.go:47 — and ensureComputed accumulates into a SET, so
-//     this adds no new member.
-//  3. pkg/aws/resourcetypes/exclusions.go:14 lists the type, and union.go:48-49
-//     deletes exclusions BEFORE allCache is built at union.go:51. It can never
-//     reach GetAll(), and therefore never GetGlobal()/GetRegional(), which
-//     filter allCache.
+//  1. The loop over every registered module's SupportedResourceTypes() in
+//     pkg/aws/resourcetypes/union.go is the sole registry-level consumer of this
+//     method, so nothing else observes the declaration.
+//  2. Four sibling modules in this package already declare the same type —
+//     cdk_bucket_takeover.go, iam_quick_analyze.go, graph.go, and
+//     list_all_resources.go — and ensureComputed accumulates into a SET, so this
+//     adds no new member.
+//  3. pkg/aws/resourcetypes/exclusions.go lists the type, and ensureComputed
+//     deletes every exclusion from its accumulator BEFORE it builds allCache
+//     from what remains — that ordering is what makes the exclusion effective.
+//     The type can never reach GetAll(), and therefore never
+//     GetGlobal()/GetRegional(), which filter allCache.
 //
 // Pinned by TestRegionsModule_DeclarationDoesNotLeakIntoUnion in
 // pkg/aws/resourcetypes/coverage_test.go.
