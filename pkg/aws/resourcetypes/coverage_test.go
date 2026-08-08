@@ -231,12 +231,28 @@ func TestPartition_UnionEqualsGetAll(t *testing.T) {
 // TestPartition_AccessorContract covers the accessor guarantees GetGlobal and
 // GetRegional advertise: the two halves account for every type in GetAll(),
 // each preserves GetAll()'s sort order, and neither aliases the union cache.
+//
+// The count guarantee is tied STRUCTURALLY below — len(global)+len(regional)
+// against len(GetAll()) — never pinned as literals. Do not re-add assertions of
+// the form assert.Len(t, global, 7) / assert.Len(t, regional, 42):
+//
+//   - They serve none of the three guarantees this test scopes itself to, and
+//     the structural equality is what actually discharges the first of them.
+//   - A literal global count is a strictly weaker duplicate of
+//     TestGetGlobal_ExactSet, which names all seven types; nothing can redden the
+//     count that does not also redden that test, and it tells you WHICH type moved.
+//   - A literal regional count fires on legitimate additions, and its only
+//     available remedy is to bump the number — training exactly the reflex that
+//     makes the next real drift invisible. The risk it appears to guard (a type
+//     under a brand-new service silently defaulting to regional) is held by
+//     TestScope_ReviewedServiceLedger, which names the service.
+//
+// Verified by perturbation: moving a single type between scopes reddens the
+// named-set tests and reports the type, with no count literals present.
 func TestPartition_AccessorContract(t *testing.T) {
 	global := resourcetypes.GetGlobal()
 	regional := resourcetypes.GetRegional()
 
-	assert.Len(t, global, 7)
-	assert.Len(t, regional, 42)
 	assert.Equal(t, len(resourcetypes.GetAll()), len(global)+len(regional))
 
 	assert.IsNonDecreasing(t, global, "GetGlobal() must preserve GetAll()'s sort order")
