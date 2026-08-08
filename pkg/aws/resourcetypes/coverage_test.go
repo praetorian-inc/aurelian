@@ -435,6 +435,58 @@ func TestScope_ReviewedServiceLedger(t *testing.T) {
 	}
 }
 
+// TestScope_LedgersAreDisjoint asserts no service is classified BOTH global and
+// reviewed-regional. It is the guard TestScope_ReviewedServiceLedger
+// structurally cannot be.
+//
+// That test builds `classified` as the UNION of the two ledgers, then asserts
+// observed ⊆ classified and classified ⊆ observed. A service listed twice is the
+// same single member of that union, so both inclusions still hold and the guard
+// stays green — union is idempotent, and the overlap is exactly the information
+// it discards.
+//
+// Measured 2026-08-08, both drift directions, to establish this is not a
+// duplicate of a guard that already fires:
+//
+//   - Promoting a service to globalServices while leaving it in
+//     reviewedRegionalServices is NOT silent. Its types move into GetGlobal(),
+//     and exactly two tests redden for ANY such service:
+//     TestGetGlobal_ExactSet and
+//     TestRegionsModule_DeclarationDoesNotLeakIntoUnion. That pair is one
+//     observation in two framings — the same ElementsMatch over GetGlobal()
+//     gaining an element — not two independent detections. It holds for every
+//     entry because TestScope_ReviewedServiceLedger equates the two ledgers'
+//     union with the services in GetAll(), so each has a type to move.
+//     Two further tests redden only for SOME services, so neither can be
+//     relied on here. TestEmptyRegistry_UnionCollapsesToBaselineAndWarns
+//     matches against the EMPTY-registry GetGlobal(), so it fires only when
+//     the promoted service has a type in baseline (types.go).
+//     TestIsGlobal_TypeParsing exercises the IsGlobal string parser over a
+//     fixed fixture table, so it fires only for S3, GlobalAccelerator, EC2 or
+//     IAM; it takes no part in scope-drift detection generally. Measured
+//     2026-08-08: promoting "KMS" (in baseline) reddens three of the four,
+//     promoting "Lambda" (not in baseline) reddens only the universal two.
+//   - The reverse IS silent, and is the gap this test closes: adding a service
+//     ALREADY in globalServices to reviewedRegionalServices touches test-only
+//     data, so the union, GetGlobal() and GetRegional() are all unchanged and
+//     every test in the package stays green — while reviewedRegionalServices now
+//     asserts, per its own doc comment, that a global control plane is
+//     region-scoped.
+//
+// Recipe: add "IAM": {} to reviewedRegionalServices above. ONLY this test
+// reddens, and it names IAM.
+func TestScope_LedgersAreDisjoint(t *testing.T) {
+	for svc := range resourcetypes.GlobalServicesForTest() {
+		_, alsoRegional := reviewedRegionalServices[svc]
+		assert.False(t, alsoRegional,
+			"service %q is in BOTH scope ledgers: globalServices in scope.go and "+
+				"reviewedRegionalServices in this file. It cannot be both, and listing it "+
+				"in reviewedRegionalServices asserts its control plane is region-scoped. "+
+				"Delete %q from whichever ledger is wrong: from reviewedRegionalServices "+
+				"if it is genuinely global, from globalServices if it is not.", svc, svc)
+	}
+}
+
 // TestIsGlobal_TypeParsing covers the T001 acceptance criteria for the
 // predicate itself: it keys on the SERVICE segment, and malformed input
 // returns false rather than panicking.
