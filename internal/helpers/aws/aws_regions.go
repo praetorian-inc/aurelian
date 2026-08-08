@@ -164,12 +164,22 @@ func (r *RegionResolver) getEnabledRegionsWithSource(ctx context.Context) ([]str
 // silent fallback is exactly the failure LAB-5615 exists to make visible, and Warn
 // is the one level immune to the obvious future edit — making the logger quieter.
 //
-// The Warn is gated on ctx.Err() == nil. Both callers convert a static-fallback
-// result reached under a done context into an error, so nothing is scanned on that
-// path, and a "scan coverage may omit regions" record would describe work that
-// never happens. The gate depends on that conversion: a future caller of this
-// function that returns a tier-3 result successfully under a done context would
-// get no Warn.
+// The Warn is gated on ctx.Err() == nil. A static-fallback result reached under a
+// done context is converted into an error before anything is scanned, so a "scan
+// coverage may omit regions" record would describe work that never happens.
+//
+// That conversion lives at the two exported entry points, not at this function's
+// two direct callers. GetEnabledRegions is both: it calls this function and holds
+// the guard itself. The other direct caller, getEnabledRegionsWithSource, does not
+// convert and cannot — it returns only regions and a source, with no error term to
+// convert into. Its guard sits one frame further out, in EnabledRegionsWithSource,
+// so its safety is inherited from that single production caller rather than held
+// locally.
+//
+// The gap that leaves is concrete rather than hypothetical. A new caller of
+// getEnabledRegionsWithSource, or of this function, that returns a tier-3 result
+// successfully under a done context gets no Warn and no error, leaving exactly the
+// silent fallback this record exists to expose.
 //
 // The gate races, and the race does not close at this layer or any other. This
 // function can observe a live context, warn, and have the caller's guard observe a
