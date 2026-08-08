@@ -76,11 +76,19 @@ func (r *RegionResolver) GetEnabledRegions(ctx context.Context) ([]string, error
 // the ladder produced them.
 //
 // One thing differs from GetEnabledRegions, and it belongs on this path only: a
-// tier-3 result is logged at Warn as well as Debug. The shipped binary hardcodes
-// configureSlog("none") (cmd/generator.go), which maps to slog.LevelWarn, so every
-// Debug line is discarded at every user-selectable setting. A silent fallback is
-// exactly the failure LAB-5615 exists to make visible, so it has to be logged at a
-// level that survives.
+// tier-3 result is logged at Warn as well as Debug — the Debug sits in the shared
+// resolveRegions, which both entry points reach. configureSlog (cmd/generator.go)
+// has exactly one call site, and it passes the literal "none", which maps to
+// slog.LevelWarn. That level is hardcoded rather than selected, so the Debug line
+// is suppressed in the shipped binary.
+//
+// The Warn survives strictly more than that. SlogHandler.Enabled (pkg/plugin/log.go)
+// does not simply compare against minLevel: it short-circuits `return true` for
+// anything at Warn or above, falling through to the minLevel comparison only below
+// Warn. The record therefore stands even if that hardcoded level is later raised to
+// "error". A silent fallback is exactly the failure LAB-5615 exists to make visible,
+// and Warn is the one level immune to the obvious future edit — making the logger
+// quieter.
 //
 // Cloning is NOT such a difference. resolveRegions returns the package-level
 // Regions variable itself at tier 3, and both entry points clone before handing it
@@ -227,11 +235,19 @@ func EnabledRegions(profile string, profileDir string) ([]string, error) {
 // EnabledRegionsWithSource returns the enabled AWS regions for the given profile
 // together with the provenance of that list.
 //
-// Unlike EnabledRegions, it takes a context from the caller and threads it into
-// the SDK calls rather than using context.TODO(). The coordinator calling this is
-// a single point of failure for every downstream shard, and NewAWSConfig requests
-// aws.RetryModeAdaptive (aws_config.go:54) — under context.TODO() an unreachable
-// endpoint would retry until the SDK budget is exhausted with no way to cancel.
+// Unlike EnabledRegions, it threads the caller's context into the region-tier
+// SDK calls rather than using context.TODO(). That scope is exact, and narrower
+// than "the SDK calls": the NewAWSConfig call below does NOT see the caller's
+// ctx, because NewAWSConfig hands its own loader a context.TODO() internally
+// (aws_config.go:35) and takes no context parameter to override it. The caller's
+// ctx first takes effect at the getEnabledRegionsWithSource call, so it governs
+// only the Account/EC2 API calls the ladder makes from there.
+//
+// Those are the calls that matter here. The coordinator calling this is a single
+// point of failure for every downstream shard, and NewAWSConfig requests
+// aws.RetryModeAdaptive (aws_config.go:54) for the clients built from cfg —
+// without a cancellable context an unreachable endpoint would retry until the
+// SDK budget is exhausted with no way to cancel.
 //
 // A config failure is returned as an error, since it is a caller problem rather
 // than a tier miss. Once resolution starts, no tier failure is an error: it

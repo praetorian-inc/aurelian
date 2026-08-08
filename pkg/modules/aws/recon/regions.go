@@ -64,9 +64,10 @@ func (m *AWSRegionsModule) References() []string {
 //
 // The value is required for dispatch, not for listing. Guard's
 // agora.MatchesSupportedResourceType (backend/pkg/aurelian/agora/helpers.go:28-30)
-// short-circuits `return false` when len(supported) == 0, and aws_factory.go:87
-// uses that as its dispatch gate. Returning nil would therefore make the region
-// coordinator undispatchable for EVERY target, not merely absent from listings.
+// short-circuits `return false` when len(supported) == 0, and
+// backend/pkg/aurelian/aws/aws_factory.go:87 uses that as its dispatch gate.
+// Returning nil would therefore make the region coordinator undispatchable for
+// EVERY target, not merely absent from listings.
 //
 // Declaring it is provably inert inside Aurelian, for three independent reasons:
 //
@@ -91,15 +92,24 @@ func (m *AWSRegionsModule) Parameters() any {
 	return &m.RegionsConfig
 }
 
+// resolver returns the function Run uses to resolve enabled regions: the
+// enabledRegions seam when a test has set one, otherwise the real helper.
+//
+// This is split out of Run so the default binding can be asserted without being
+// invoked. Reaching the default through Run means making a live AWS call, which
+// on a credentialed machine can succeed — turning the assertion into one that
+// passes for the wrong reason.
+func (m *AWSRegionsModule) resolver() func(ctx context.Context, profile, profileDir string) ([]string, output.RegionSource, error) {
+	if m.enabledRegions == nil {
+		return helpers.EnabledRegionsWithSource
+	}
+	return m.enabledRegions
+}
+
 func (m *AWSRegionsModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
 	c := m.RegionsConfig
 
-	resolve := m.enabledRegions
-	if resolve == nil {
-		resolve = helpers.EnabledRegionsWithSource
-	}
-
-	regions, source, err := resolve(cfg.Context, c.Profile, c.ProfileDir)
+	regions, source, err := m.resolver()(cfg.Context, c.Profile, c.ProfileDir)
 	if err != nil {
 		return fmt.Errorf("regions: resolve enabled regions: %w", err)
 	}
