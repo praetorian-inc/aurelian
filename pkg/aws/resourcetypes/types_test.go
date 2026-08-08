@@ -84,6 +84,18 @@ func TestExclusions_HaveJustifications(t *testing.T) {
 	}
 }
 
+// The region-scope ledger in scope.go carries the same obligation the exclusion
+// ledger above does: an entry with no stated reason cannot be reviewed later.
+// It lives here, alongside its twin, because it reads globalServices directly
+// and needs nothing the module registry provides.
+func TestScope_AllEntriesJustified(t *testing.T) {
+	for svc, justification := range globalServices {
+		if justification == "" {
+			t.Errorf("scope ledger entry %q has empty justification", svc)
+		}
+	}
+}
+
 func TestExclusions_NotInBaseline(t *testing.T) {
 	baselineSet := make(map[string]bool, len(baseline))
 	for _, rt := range baseline {

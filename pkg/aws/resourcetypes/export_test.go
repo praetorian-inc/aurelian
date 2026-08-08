@@ -1,6 +1,9 @@
 package resourcetypes
 
-import "sync"
+import (
+	"maps"
+	"sync"
+)
 
 // ResetForTest invalidates the process-lifetime union cache. Tests that mutate
 // the plugin registry (e.g., via plugin.ResetRegistry()) must call this before
@@ -23,4 +26,18 @@ func ExclusionsForTest() []string {
 		out = append(out, rt)
 	}
 	return out
+}
+
+// GlobalServicesForTest returns a copy of the region-scope ledger from
+// scope.go, keyed by service segment with the justification as the value.
+// Visible only to test binaries; it lets external test packages enumerate the
+// ledger — for the dead-entry and drift checks, which need the registry
+// populated — without exporting the map itself.
+//
+// The copy, not the return type, is what protects the ledger: globalServices is
+// a package-level var that IsGlobal reads on every call, so handing out the map
+// would let any test mutate it for every other test in the binary. That holds
+// whether callers read the values or only the keys.
+func GlobalServicesForTest() map[string]string {
+	return maps.Clone(globalServices)
 }
