@@ -29,13 +29,32 @@ var (
 // Validate() from a package init() function. If invoked before all module
 // init() functions have registered, the union will be permanently incomplete
 // for the lifetime of the process.
+//
+// Cross-module loader requirement: the consumer-module half of the union comes
+// from the plugin registry, which is populated by the init() functions the
+// generated loader in pkg/modules/loader blank-imports. A consumer in another
+// Go module (Guard) gets nothing from that loader unless it blank-imports it
+// itself, and this package cannot import it — the loader blank-imports
+// pkg/modules/aws/recon, whose helper.go imports this package, so the import
+// would close a cycle. An empty registry is therefore a legitimate reachable
+// state, not a bug here; the build logs a Warn when it happens.
 func ensureComputed() {
 	allOnce.Do(func() {
 		seen := make(map[string]struct{})
 		for _, rt := range baseline {
 			seen[rt] = struct{}{}
 		}
-		for _, m := range plugin.ByPlatform(plugin.PlatformAWS) {
+		modules := plugin.ByPlatform(plugin.PlatformAWS)
+		if len(modules) == 0 {
+			slog.Warn("no AWS modules are registered; the resource-type union was "+
+				"built from the baseline list alone, so GetAll, IsValid, Validate, "+
+				"GetGlobal, and GetRegional will under-report. A consumer outside "+
+				"this Go module must blank-import "+
+				"github.com/praetorian-inc/aurelian/pkg/modules/loader before its "+
+				"first call",
+				"baseline_count", len(baseline))
+		}
+		for _, m := range modules {
 			for _, rt := range m.SupportedResourceTypes() {
 				if !typeFormat.MatchString(rt) {
 					slog.Warn("dropping malformed resource type from list-all union",

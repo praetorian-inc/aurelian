@@ -5,9 +5,12 @@
 package resourcetypes_test
 
 import (
+	"context"
+	"log/slog"
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -491,4 +494,173 @@ func TestResetForTest_AllowsRecomputation(t *testing.T) {
 	for i := range first {
 		assert.Equal(t, first[i], second[i], "index %d differs", i)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Empty-registry degradation (the other direction from
+// TestPartition_RegistryPopulated).
+//
+// That sentinel guards THIS binary: it fails if the loader blank-import above is
+// stripped. It says nothing about a consumer in another Go module, which never
+// had the import to strip. Guard is exactly such a consumer, and for it an empty
+// registry is a reachable state rather than a bug — so what the union does in
+// that state is behaviour, and gets pinned here.
+// ---------------------------------------------------------------------------
+
+// warnRecorder captures slog records so a test can assert what was logged and at
+// which level. Enabled always reports true so the handler can never itself be the
+// reason a record is missing.
+//
+// It is a deliberate near-duplicate of recordingHandler in
+// internal/helpers/aws/aws_regions_test.go: both are unexported test helpers in
+// different packages, and this one carries only the projection its two
+// assertions need. Extracting a shared testutil package to save ~20 lines would
+// add a non-test import path to the tree for no behavioural gain.
+type warnRecorder struct {
+	mu       sync.Mutex
+	messages []string
+}
+
+func (h *warnRecorder) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *warnRecorder) Handle(_ context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if r.Level == slog.LevelWarn {
+		h.messages = append(h.messages, r.Message)
+	}
+	return nil
+}
+
+func (h *warnRecorder) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *warnRecorder) WithGroup(string) slog.Handler      { return h }
+
+func (h *warnRecorder) warnings() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.messages...)
+}
+
+// captureWarnings routes the default logger into a warnRecorder for the duration
+// of the test and restores the previous logger afterwards. The previous logger is
+// captured BEFORE SetDefault so nested or successive captures still restore the
+// right one.
+func captureWarnings(t *testing.T) *warnRecorder {
+	t.Helper()
+
+	h := &warnRecorder{}
+	restore := slog.Default()
+	slog.SetDefault(slog.New(h))
+	t.Cleanup(func() { slog.SetDefault(restore) })
+	return h
+}
+
+// withEmptyRegistry swaps a fresh, empty plugin registry in for the duration of
+// the test and puts the real one back afterwards.
+//
+// plugin.ResetRegistry() on its own would be ONE-WAY — the loader's init()
+// functions cannot be re-run, and plugin.Register panics on a duplicate key — so
+// every later test in this binary would observe a permanently empty registry.
+// The escape is that plugin.Registry is an exported package var that ResetRegistry
+// simply REASSIGNS: saving the pointer and putting it back restores the populated
+// registry whole, with nothing re-registered. That is what makes this test safe to
+// run in the same binary as every test above, and it is why no separate
+// loader-free test package is needed to reach this state.
+//
+// The union cache is reset on both edges, because it is process-lifetime and does
+// not observe registry changes on its own. The cleanup re-asserts the sentinel
+// type so a restore that silently failed reddens HERE, by name, instead of
+// reddening some unrelated test that happens to run next.
+func withEmptyRegistry(t *testing.T) {
+	t.Helper()
+
+	saved := plugin.Registry
+	t.Cleanup(func() {
+		plugin.Registry = saved
+		resourcetypes.ResetForTest()
+		assert.Contains(t, resourcetypes.GetAll(), "AWS::Route53::HostedZone",
+			"registry restore failed: the union did not come back populated, so every "+
+				"test after this one is running against a truncated type set")
+	})
+
+	plugin.ResetRegistry()
+	resourcetypes.ResetForTest()
+}
+
+// TestEmptyRegistry_UnionCollapsesToBaselineAndWarns pins what an out-of-module
+// consumer sees when it reaches this package without blank-importing
+// pkg/modules/loader.
+//
+// Three things are behaviour here, none of them observable from a populated
+// binary:
+//
+//   - The union collapses. Every consumer-declared type is gone, which is a far
+//     wider loss than the four global types alone.
+//   - The collapse is RECORDED. A truncated union is otherwise indistinguishable
+//     from a good one at the call site, so the Warn is the only signal; demoting
+//     it to Debug or deleting it is a regression no assertion on the returned
+//     value can catch. Same argument, same shape, as the tier-3 fallback Warn in
+//     internal/helpers/aws.
+//   - IsGlobal does NOT degrade. It is pure, so it keeps classifying types the
+//     truncated union no longer lists — the asymmetry the export note in scope.go
+//     now documents for Guard.
+func TestEmptyRegistry_UnionCollapsesToBaselineAndWarns(t *testing.T) {
+	// Precondition: measure the populated union first, so a change that empties
+	// the registry for every test cannot make the comparison below vacuous.
+	populated := resourcetypes.GetAll()
+	require.Contains(t, populated, "AWS::Route53::HostedZone",
+		"precondition: the registry must start populated for this test to mean anything")
+
+	withEmptyRegistry(t)
+	h := captureWarnings(t)
+
+	require.Empty(t, plugin.ByPlatform(plugin.PlatformAWS),
+		"precondition: the registry swap did not take effect")
+
+	truncated := resourcetypes.GetAll()
+	assert.Less(t, len(truncated), len(populated),
+		"an empty registry must shrink the union: got %d types, populated is %d",
+		len(truncated), len(populated))
+	assert.NotContains(t, truncated, "AWS::Route53::HostedZone",
+		"AWS::Route53::HostedZone is declared only by a consumer module, so it "+
+			"cannot survive an empty registry")
+
+	// The exact set the reviewer's report is about: GetGlobal keeps only the
+	// baseline IAM types and loses the four that reach it through modules.
+	assert.ElementsMatch(t, []string{
+		"AWS::IAM::Policy",
+		"AWS::IAM::Role",
+		"AWS::IAM::User",
+	}, resourcetypes.GetGlobal(),
+		"with an empty registry GetGlobal must fall to the three baseline IAM types; "+
+			"CloudFront::Distribution, IAM::Group, Organizations::Organization and "+
+			"Route53::HostedZone all reach it only through registered modules")
+
+	// IsGlobal reads the ledger, not the union, so it is indifferent to all of it.
+	assert.True(t, resourcetypes.IsGlobal("AWS::Route53::HostedZone"),
+		"IsGlobal must stay pure: it classifies correctly even for a type the "+
+			"truncated union no longer lists")
+
+	warnings := h.warnings()
+	require.Len(t, warnings, 1, "the empty-registry union build must emit exactly one Warn")
+	assert.Contains(t, warnings[0], "pkg/modules/loader",
+		"the Warn must name the import a consumer has to add, not just report the symptom")
+}
+
+// TestPopulatedRegistry_UnionBuildIsSilent is the negative control for the Warn
+// above. Without it the assertion would pass just as well against a union build
+// that warned unconditionally — which trains operators to ignore the line and
+// defeats it as thoroughly as silence would.
+func TestPopulatedRegistry_UnionBuildIsSilent(t *testing.T) {
+	require.NotEmpty(t, plugin.ByPlatform(plugin.PlatformAWS),
+		"precondition: the registry must be populated for this control to discriminate")
+
+	h := captureWarnings(t)
+
+	resourcetypes.ResetForTest()
+	require.Contains(t, resourcetypes.GetAll(), "AWS::Route53::HostedZone",
+		"precondition: the rebuild must have seen the populated registry")
+
+	assert.Empty(t, h.warnings(),
+		"a populated union build must be silent at Warn")
 }

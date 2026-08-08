@@ -64,6 +64,14 @@ var globalServices = map[string]string{
 // Compare the RegionSource type in pkg/output, exported for the same reason. An
 // "unused export" sweep of this repo alone will flag all three; they are not
 // dead code.
+//
+// What a Guard-side caller must do: GetGlobal and GetRegional filter the runtime
+// union, which is assembled from the plugin registry, so a consumer in another Go
+// module must blank-import
+// github.com/praetorian-inc/aurelian/pkg/modules/loader before its first call.
+// Without it both halves are built from the baseline list alone and silently
+// under-report — ensureComputed logs a Warn on that build. IsGlobal carries no
+// such requirement; it is pure and reads only the ledger above.
 
 // IsGlobal reports whether a resource type belongs to a global-endpoint
 // service, by looking up the <Service> segment of AWS::<Service>::<Resource> in
