@@ -67,8 +67,11 @@ var globalServices = map[string]string{
 
 // IsGlobal reports whether a resource type belongs to a global-endpoint
 // service, by looking up the <Service> segment of AWS::<Service>::<Resource> in
-// the scope ledger. Input that is not exactly three "::"-separated segments is
-// not a resource type and reports false.
+// the scope ledger. Input is a resource type only if it is exactly three
+// "::"-separated segments whose first is the literal "AWS" and whose <Resource>
+// segment is non-empty; anything else reports false. An empty <Service> segment
+// reports false as well, via the ledger lookup rather than a segment check —
+// no ledger key is empty.
 //
 // IsGlobal is PURE: it reads only the package-level ledger literal and never
 // touches the plugin registry or the union cache. That is deliberate — it makes
@@ -77,7 +80,7 @@ var globalServices = map[string]string{
 // be true if it called ensureComputed. Keep it that way.
 func IsGlobal(rt string) bool {
 	parts := strings.Split(rt, "::")
-	if len(parts) != 3 {
+	if len(parts) != 3 || parts[0] != "AWS" || parts[2] == "" {
 		return false
 	}
 	_, ok := globalServices[parts[1]]

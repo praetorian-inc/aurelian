@@ -431,6 +431,17 @@ func TestScope_ReviewedServiceLedger(t *testing.T) {
 // TestIsGlobal_TypeParsing covers the T001 acceptance criteria for the
 // predicate itself: it keys on the SERVICE segment, and malformed input
 // returns false rather than panicking.
+//
+// Recipe for the format cases: drop `|| parts[0] != "AWS" || parts[2] == ""`
+// from IsGlobal, leaving the len(parts) != 3 check alone. Exactly the three
+// fixtures "other::IAM::Role", "::IAM::Role", and "AWS::IAM::" redden — each
+// keeps the ledger service "IAM" in parts[1], so a length-only check looks it up
+// and reports true.
+//
+// There is deliberately NO empty-service fixture ("AWS::::Role"). It reports
+// false under the length-only implementation too, because "" is not a key in
+// globalServices (scope.go) — so no such fixture can redden, and one would read
+// as covering a segment check while discriminating against nothing.
 func TestIsGlobal_TypeParsing(t *testing.T) {
 	tests := []struct {
 		name string
@@ -446,7 +457,9 @@ func TestIsGlobal_TypeParsing(t *testing.T) {
 		{"no separators", "garbage", false},
 		{"two segments", "AWS::IAM", false},
 		{"four segments", "AWS::IAM::Role::Extra", false},
-		{"service in wrong position", "IAM::AWS::Role", false},
+		{"non-AWS prefix, real global service in service position", "other::IAM::Role", false},
+		{"empty prefix, real global service in service position", "::IAM::Role", false},
+		{"empty resource segment, global service", "AWS::IAM::", false},
 	}
 
 	for _, tt := range tests {
