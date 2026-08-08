@@ -912,6 +912,10 @@ func attrsOf(r slog.Record) map[string]slog.Value {
 //
 // The previous logger is captured BEFORE SetDefault, not reconstructed after, so
 // a test that runs after another capture still restores the right one.
+//
+// Callers must not call t.Parallel(): this swaps the process-global default slog
+// logger, so parallel callers would capture each other's records and restore the
+// wrong logger on cleanup.
 func captureLogs(t *testing.T) *recordingHandler {
 	t.Helper()
 
