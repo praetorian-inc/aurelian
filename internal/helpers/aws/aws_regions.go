@@ -83,9 +83,12 @@ type RegionResolver struct {
 // afterwards; only the fabricated case is an error.
 //
 // It reads source from resolveRegions directly rather than routing through
-// getEnabledRegionsWithSource, which would obtain the same value: that path's
-// tier-3 Warn belongs to it alone (see its doc comment), and borrowing it to
-// reach source would emit that record on this path too.
+// getEnabledRegionsWithSource, which would obtain the same value. The tier-3
+// Warn no longer separates the two: that record lives in the shared
+// resolveRegions, so this path emits it as well — which is the point, since this
+// is the path both legacy entry points reach. What is left is that
+// getEnabledRegionsWithSource already clones, so borrowing it would copy a list
+// this function copies again on the way out.
 func (r *RegionResolver) GetEnabledRegions(ctx context.Context) ([]string, error) {
 	regions, source := r.resolveRegions(ctx)
 
@@ -99,22 +102,11 @@ func (r *RegionResolver) GetEnabledRegions(ctx context.Context) ([]string, error
 // getEnabledRegionsWithSource resolves enabled regions and reports which tier of
 // the ladder produced them.
 //
-// One thing differs from GetEnabledRegions, and it belongs on this path only: a
-// tier-3 result is logged at Warn as well as Debug — the Debug sits in the shared
-// resolveRegions, which both entry points reach. configureSlog (cmd/generator.go)
-// has exactly one call site, and it passes the literal "none", which maps to
-// slog.LevelWarn. That level is hardcoded rather than selected, so the Debug line
-// is suppressed in the shipped binary.
+// Tier-3 logging does not distinguish this path from GetEnabledRegions. Both the
+// Debug and the Warn sit in the shared resolveRegions, which both entry points
+// reach, and the reasoning for the Warn's level lives there with it.
 //
-// The Warn survives strictly more than that. SlogHandler.Enabled (pkg/plugin/log.go)
-// does not simply compare against minLevel: it short-circuits `return true` for
-// anything at Warn or above, falling through to the minLevel comparison only below
-// Warn. The record therefore stands even if that hardcoded level is later raised to
-// "error". A silent fallback is exactly the failure LAB-5615 exists to make visible,
-// and Warn is the one level immune to the obvious future edit — making the logger
-// quieter.
-//
-// Cloning is NOT such a difference. resolveRegions returns the package-level
+// Cloning does not distinguish it either. resolveRegions returns the package-level
 // Regions variable itself at tier 3, and both entry points clone before handing it
 // outward — see its doc comment. This path is not special in that respect.
 //
@@ -140,14 +132,6 @@ func (r *RegionResolver) GetEnabledRegions(ctx context.Context) ([]string, error
 func (r *RegionResolver) getEnabledRegionsWithSource(ctx context.Context) ([]string, output.RegionSource) {
 	regions, source := r.resolveRegions(ctx)
 
-	if source == output.SourceStaticFallback {
-		slog.WarnContext(ctx, "AWS region enumeration fell back to the compiled-in region list; "+
-			"scan coverage may omit regions enabled for this account and may include regions it has not enabled",
-			"source", string(source),
-			"region_count", len(regions),
-		)
-	}
-
 	return slices.Clone(regions), source
 }
 
@@ -160,6 +144,40 @@ func (r *RegionResolver) getEnabledRegionsWithSource(ctx context.Context) ([]str
 //
 // A tier-3 return is the package-level Regions variable itself, not a copy.
 // Callers that hand the result outward must clone it.
+//
+// A tier-3 return is also the one logged at Warn rather than only Debug, and the
+// record sits here because both entry points reach it. Two of the three live
+// production entry points reach tier 3 only through GetEnabledRegions — PostBind
+// in pkg/plugin/aws_params.go and the CDK scan path through ResolveRegions in
+// pkg/aws/cdk/scan.go — while the recon module takes EnabledRegionsWithSource as
+// a func value and reaches it through getEnabledRegionsWithSource. Warning from
+// either entry point alone would leave the other callers falling back silently.
+//
+// The level is Warn for reachability, not emphasis. configureSlog
+// (cmd/generator.go) has exactly one call site and passes the literal "none",
+// which maps to slog.LevelWarn. That level is hardcoded rather than selected, so
+// the Debug line below is suppressed in the shipped binary. The Warn survives
+// strictly more than that: SlogHandler.Enabled (pkg/plugin/log.go) does not simply
+// compare against minLevel — it short-circuits `return true` for anything at Warn
+// or above, falling through to the minLevel comparison only below Warn. The record
+// therefore stands even if that hardcoded level is later raised to "error". A
+// silent fallback is exactly the failure LAB-5615 exists to make visible, and Warn
+// is the one level immune to the obvious future edit — making the logger quieter.
+//
+// The Warn is gated on ctx.Err() == nil. Both callers convert a static-fallback
+// result reached under a done context into an error, so nothing is scanned on that
+// path, and a "scan coverage may omit regions" record would describe work that
+// never happens. The gate depends on that conversion: a future caller of this
+// function that returns a tier-3 result successfully under a done context would
+// get no Warn.
+//
+// The gate races, and the race does not close at this layer or any other. This
+// function can observe a live context, warn, and have the caller's guard observe a
+// done one microseconds later — pairing the Warn with an error after all. That
+// window is inherent to checking a context twice, and it is strictly narrower than
+// warning unconditionally, where the pairing happened on every cancelled call
+// rather than only on a race. Synchronising here would not remove it, because the
+// context can finish after whichever check is last.
 func (r *RegionResolver) resolveRegions(ctx context.Context) ([]string, output.RegionSource) {
 	// Tier 1: Try AWS Account API first
 	if r.accountClient != nil {
@@ -183,6 +201,13 @@ func (r *RegionResolver) resolveRegions(ctx context.Context) ([]string, output.R
 
 	// Tier 3: Fallback to hardcoded list
 	slog.DebugContext(ctx, "Using hardcoded region list as fallback")
+	if ctx.Err() == nil {
+		slog.WarnContext(ctx, "AWS region enumeration fell back to the compiled-in region list; "+
+			"scan coverage may omit regions enabled for this account and may include regions it has not enabled",
+			"source", string(output.SourceStaticFallback),
+			"region_count", len(Regions),
+		)
+	}
 	return Regions, output.SourceStaticFallback
 }
 

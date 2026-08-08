@@ -862,18 +862,64 @@ func (h *recordingHandler) Handle(_ context.Context, r slog.Record) error {
 func (h *recordingHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h *recordingHandler) WithGroup(string) slog.Handler      { return h }
 
-// messagesAtLevel returns the messages recorded at exactly the given level.
-func (h *recordingHandler) messagesAtLevel(lvl slog.Level) []string {
+// recordsAtLevel returns the records captured at exactly the given level.
+//
+// Handle stores each record WHOLE — h.records = append(h.records, r.Clone()) —
+// so attributes are already retained and no change to Handle or to the struct is
+// needed to assert on them. messagesAtLevel is a projection of this down to
+// Message; a claim about "source" or "region_count" needs the record itself.
+//
+// Records are cloned again on the way out. slog.Record's attributes live partly
+// in a backing array shared with the value the handler was given, so handing the
+// stored record out directly would let a caller's Attrs iteration alias state the
+// handler still owns.
+func (h *recordingHandler) recordsAtLevel(lvl slog.Level) []slog.Record {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	var out []string
+	var out []slog.Record
 	for _, r := range h.records {
 		if r.Level == lvl {
-			out = append(out, r.Message)
+			out = append(out, r.Clone())
 		}
 	}
 	return out
+}
+
+// messagesAtLevel returns the messages recorded at exactly the given level.
+func (h *recordingHandler) messagesAtLevel(lvl slog.Level) []string {
+	var out []string
+	for _, r := range h.recordsAtLevel(lvl) {
+		out = append(out, r.Message)
+	}
+	return out
+}
+
+// attrsOf flattens a record's attributes into a map keyed by attribute name, so
+// an assertion can name the key it cares about instead of depending on the order
+// the production call site happens to pass them in.
+func attrsOf(r slog.Record) map[string]slog.Value {
+	out := make(map[string]slog.Value, r.NumAttrs())
+	r.Attrs(func(a slog.Attr) bool {
+		out[a.Key] = a.Value
+		return true
+	})
+	return out
+}
+
+// captureLogs routes the default logger into a recordingHandler for the duration
+// of the test and restores the previous logger afterwards.
+//
+// The previous logger is captured BEFORE SetDefault, not reconstructed after, so
+// a test that runs after another capture still restores the right one.
+func captureLogs(t *testing.T) *recordingHandler {
+	t.Helper()
+
+	h := &recordingHandler{}
+	restore := slog.Default()
+	slog.SetDefault(slog.New(h))
+	t.Cleanup(func() { slog.SetDefault(restore) })
+	return h
 }
 
 // TestGetEnabledRegionsWithSource_StaticFallbackLogsAtWarn pins the tier-3 log
@@ -958,6 +1004,206 @@ func TestGetEnabledRegionsWithSource_StaticFallbackLogsAtWarn(t *testing.T) {
 			require.Len(t, warnings, 1, "tier 3 must emit exactly one Warn record")
 			assert.Contains(t, warnings[0], "compiled-in region list",
 				"the Warn record must name the fallback so an operator can act on it")
+		})
+	}
+}
+
+// TestGetEnabledRegions_StaticFallbackLogsAtWarn pins the tier-3 Warn on the
+// LEGACY entry point, which the test above cannot see.
+//
+// GetEnabledRegions does not route through getEnabledRegionsWithSource. It calls
+// resolveRegions itself, so a pin on getEnabledRegionsWithSource makes no claim
+// about this path — and this is the path that carries most of production. Two of
+// the three live entry points reach the ladder only here:
+//
+//   - AWSCommonRecon.PostBind (pkg/plugin/aws_params.go) resolves a literal
+//     "all" regions value through helpers.EnabledRegions.
+//   - The CDK scan path (pkg/aws/cdk/scan.go) calls helpers.ResolveRegions,
+//     which forwards an "all" value to that same EnabledRegions.
+//
+// Both of those land in GetEnabledRegions. Only the recon module reaches the
+// other function, and it does so by taking helpers.EnabledRegionsWithSource as a
+// func VALUE rather than calling it, which is why a grep for a call site finds
+// just two of the three.
+//
+// This test is the pin for the exact regression that was reported: with the Warn
+// sitting in getEnabledRegionsWithSource instead of in the shared resolveRegions,
+// those two entry points fall back to the compiled-in list in total silence while
+// the test above stays green. That divergence is the whole reason this test
+// exists separately rather than as another row of the one above.
+//
+// The tier-1 and tier-2 rows are negative controls, and both are required for the
+// same structural reason the other test gives, localised to this entry point: a
+// spurious warn added here — say one guarded by `source != output.SourceAccountAPI`
+// — satisfies the tier-1 row while warning on every EC2-API success. A single
+// control cannot tell those apart. An unconditional warning is not a harmless
+// excess either; it trains an operator to skip the line, which loses the tier-3
+// signal just as completely as emitting nothing would.
+func TestGetEnabledRegions_StaticFallbackLogsAtWarn(t *testing.T) {
+	tests := []struct {
+		name        string
+		resolver    func() *RegionResolver
+		wantRegions []string
+		wantWarn    bool
+	}{
+		{
+			name:        "tier 3 fallback warns",
+			resolver:    func() *RegionResolver { return &RegionResolver{} },
+			wantRegions: Regions,
+			wantWarn:    true,
+		},
+		{
+			name: "tier 1 success is silent at Warn",
+			resolver: func() *RegionResolver {
+				return &RegionResolver{accountClient: succeedingAccountClient("us-east-1")}
+			},
+			wantRegions: []string{"us-east-1"},
+			wantWarn:    false,
+		},
+		{
+			name: "tier 2 success is silent at Warn",
+			resolver: func() *RegionResolver {
+				return &RegionResolver{
+					accountClient: failingAccountClient(fmt.Errorf("account API denied")),
+					ec2Client:     succeedingEC2Client("us-east-1", "eu-west-1"),
+				}
+			},
+			wantRegions: []string{"us-east-1", "eu-west-1"},
+			wantWarn:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := captureLogs(t)
+
+			// The context is LIVE. The gate on the Warn is ctx.Err() == nil, so a
+			// done context here would suppress the record for a reason that has
+			// nothing to do with the tier — see the gate test below, which asserts
+			// exactly that and is the complement of this one.
+			regions, err := tt.resolver().GetEnabledRegions(context.Background())
+
+			// GetEnabledRegions reports no provenance, so the returned list is the
+			// only evidence available that the intended tier is the one that ran.
+			require.NoError(t, err, "precondition: a live-context resolution must not error")
+			require.Equal(t, tt.wantRegions, regions,
+				"precondition: the intended tier did not produce the list")
+
+			warns := h.recordsAtLevel(slog.LevelWarn)
+
+			if !tt.wantWarn {
+				assert.Empty(t, warns,
+					"a tier that actually answered must not warn on this entry point; "+
+						"a warning here describes coverage loss that did not happen")
+				return
+			}
+
+			require.Len(t, warns, 1,
+				"the legacy entry point must emit exactly one Warn when it falls back "+
+					"to the compiled-in list")
+			assert.Contains(t, warns[0].Message, "compiled-in region list",
+				"the Warn must name the fallback so an operator can act on it")
+
+			// Attributes are asserted on THIS path rather than the other one because
+			// this is the path that had no coverage at all: the record's level, text
+			// and attributes were all unobserved from GetEnabledRegions until now.
+			// Asserting them once is enough for both entry points, and not by
+			// assumption — resolveRegions holds the only slog.Warn call site in this
+			// file, so there is no second record that could drift from this one.
+			attrs := attrsOf(warns[0])
+
+			source, ok := attrs["source"]
+			require.True(t, ok, "the Warn must carry a source attribute")
+			assert.Equal(t, string(output.SourceStaticFallback), source.String(),
+				"the Warn must name the provenance it is warning about, so an operator "+
+					"reading the log can tell this record apart from a tier that answered")
+
+			count, ok := attrs["region_count"]
+			require.True(t, ok, "the Warn must carry a region_count attribute")
+			assert.Equal(t, int64(len(regions)), count.Int64(),
+				"region_count must describe the list the caller actually received; a "+
+					"count that disagrees with it would misreport the scan's breadth")
+		})
+	}
+}
+
+// The tier-3 Warn must be suppressed when the caller has already abandoned the
+// work, and this is the half of that behaviour no returned value can show.
+//
+// GetEnabledRegions converts a static-fallback result reached under a done
+// context into an error: nothing is scanned on that path. A record reading
+// "scan coverage may omit regions" would therefore describe a scan that never
+// runs, which is a false alarm attached to a call that already failed loudly.
+//
+// The error assertions here are PRECONDITIONS, not the claim. They establish
+// that the row really did reach the abandoned-caller path rather than passing
+// for some unrelated reason; the sentinels themselves are pinned in
+// TestGetEnabledRegions_CanceledContextIsAnError, and duplicating that here
+// would give two tests one owner. The claim is the ABSENCE of the record, which
+// is asserted explicitly — a returned value cannot express it.
+//
+// Both causes are covered because the gate is ctx.Err() == nil, which is
+// cause-blind, and a regression need not be. A gate narrowed to
+// !errors.Is(ctx.Err(), context.Canceled) still suppresses the record for a
+// cancelled caller while emitting it for an expired deadline; the cancelled row
+// alone cannot see that, and the deadline row is what fails.
+//
+// This test and the one above are complements rather than overlaps: alone, this
+// one is satisfied by an implementation that never warns at all, and that
+// implementation is exactly what the tier-3 row above rejects.
+func TestGetEnabledRegions_DoneContextSuppressesTierThreeWarn(t *testing.T) {
+	tests := []struct {
+		name         string
+		ctx          func(t *testing.T) context.Context
+		wantSentinel error
+	}{
+		{
+			name: "caller cancelled",
+			ctx: func(t *testing.T) context.Context {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx
+			},
+			wantSentinel: context.Canceled,
+		},
+		{
+			name: "caller deadline already passed",
+			ctx: func(t *testing.T) context.Context {
+				ctx, cancel := context.WithTimeout(context.Background(), -1*time.Second)
+				t.Cleanup(cancel)
+				return ctx
+			},
+			wantSentinel: context.DeadlineExceeded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := captureLogs(t)
+
+			ctx := tt.ctx(t)
+			require.ErrorIs(t, ctx.Err(), tt.wantSentinel,
+				"precondition: the context must already be done with the intended cause")
+
+			resolver := &RegionResolver{
+				accountClient: failingAccountClient(fmt.Errorf("account API unreachable")),
+				ec2Client:     failingEC2Client(fmt.Errorf("ec2 API unreachable")),
+			}
+
+			regions, err := resolver.GetEnabledRegions(ctx)
+
+			require.Error(t, err,
+				"precondition: this row must reach the abandoned-caller path, where the "+
+					"static fallback is reported as an error rather than an answer")
+			require.ErrorIs(t, err, tt.wantSentinel,
+				"precondition: the error must be the one caused by this row's context")
+			require.Nil(t, regions,
+				"precondition: no list is handed back on the abandoned-caller path")
+
+			assert.Empty(t, h.recordsAtLevel(slog.LevelWarn),
+				"no Warn may be emitted when the caller has abandoned the work; the "+
+					"record claims scan coverage may be reduced, and this call scans "+
+					"nothing at all")
 		})
 	}
 }
