@@ -101,7 +101,7 @@ func (r *RegionResolver) getEnabledRegionsWithSource(ctx context.Context) ([]str
 	regions, source := r.resolveRegions(ctx)
 
 	if source == output.SourceStaticFallback {
-		slog.Warn("AWS region enumeration fell back to the compiled-in region list; "+
+		slog.WarnContext(ctx, "AWS region enumeration fell back to the compiled-in region list; "+
 			"scan coverage may omit regions enabled for this account and may include regions it has not enabled",
 			"source", string(source),
 			"region_count", len(regions),
@@ -209,11 +209,13 @@ func ResolveRegions(regions []string, profile, profileDir string) ([]string, err
 	return regions, nil
 }
 
-// EnabledRegions returns the list of enabled AWS regions for the given profile.
-// It uses NewAWSConfig to get credentials and then queries AWS APIs.
-// Signature changed: accepts profile and profileDir directly instead of []*types.Option.
-func EnabledRegions(profile string, profileDir string) ([]string, error) {
-	// Use NewAWSConfig to get AWS configuration
+// newRegionResolver builds a RegionResolver backed by real AWS clients. It is the
+// single place both public entry points construct that resolver, so a change to
+// the config input cannot be applied to one path and silently missed on the other.
+//
+// It returns (nil, err) on a config failure; callers adapt that to their own
+// signature, which differs between the two entry points.
+func newRegionResolver(profile, profileDir string) (*RegionResolver, error) {
 	cfg, err := NewAWSConfig(AWSConfigInput{
 		Region:     "us-east-1",
 		Profile:    profile,
@@ -223,10 +225,19 @@ func EnabledRegions(profile string, profileDir string) ([]string, error) {
 		return nil, err
 	}
 
-	// Create resolver with real AWS clients
-	resolver := &RegionResolver{
+	return &RegionResolver{
 		accountClient: account.NewFromConfig(cfg),
 		ec2Client:     ec2.NewFromConfig(cfg),
+	}, nil
+}
+
+// EnabledRegions returns the list of enabled AWS regions for the given profile.
+// It uses NewAWSConfig to get credentials and then queries AWS APIs.
+// Signature changed: accepts profile and profileDir directly instead of []*types.Option.
+func EnabledRegions(profile string, profileDir string) ([]string, error) {
+	resolver, err := newRegionResolver(profile, profileDir)
+	if err != nil {
+		return nil, err
 	}
 
 	return resolver.GetEnabledRegions(context.TODO())
@@ -237,37 +248,26 @@ func EnabledRegions(profile string, profileDir string) ([]string, error) {
 //
 // Unlike EnabledRegions, it threads the caller's context into the region-tier
 // SDK calls rather than using context.TODO(). That scope is exact, and narrower
-// than "the SDK calls": the NewAWSConfig call below does NOT see the caller's
-// ctx, because NewAWSConfig hands its own loader a context.TODO() internally
-// (aws_config.go:35) and takes no context parameter to override it. The caller's
-// ctx first takes effect at the getEnabledRegionsWithSource call, so it governs
-// only the Account/EC2 API calls the ladder makes from there.
+// than "the SDK calls": the config load inside newRegionResolver does NOT see the
+// caller's ctx, because NewAWSConfig hands its own loader a context.TODO()
+// internally and takes no context parameter to override it. The caller's ctx
+// first takes effect at the getEnabledRegionsWithSource call, so it governs only
+// the Account/EC2 API calls the ladder makes from there.
 //
 // Those are the calls that matter here. The coordinator calling this is a single
 // point of failure for every downstream shard, and NewAWSConfig requests
-// aws.RetryModeAdaptive (aws_config.go:54) for the clients built from cfg —
-// without a cancellable context an unreachable endpoint would retry until the
-// SDK budget is exhausted with no way to cancel.
+// aws.RetryModeAdaptive for the clients newRegionResolver builds — without a
+// cancellable context an unreachable endpoint would retry until the SDK budget is
+// exhausted with no way to cancel.
 //
 // A config failure is returned as an error, since it is a caller problem rather
 // than a tier miss. Once resolution starts, no tier failure is an error: it
 // degrades to the static list, because failing here would generalize the very
 // bug LAB-5615 exists to fix (accounts receiving no inventory at all).
 func EnabledRegionsWithSource(ctx context.Context, profile, profileDir string) ([]string, output.RegionSource, error) {
-	// Use NewAWSConfig to get AWS configuration
-	cfg, err := NewAWSConfig(AWSConfigInput{
-		Region:     "us-east-1",
-		Profile:    profile,
-		ProfileDir: profileDir,
-	})
+	resolver, err := newRegionResolver(profile, profileDir)
 	if err != nil {
 		return nil, "", err
-	}
-
-	// Create resolver with real AWS clients
-	resolver := &RegionResolver{
-		accountClient: account.NewFromConfig(cfg),
-		ec2Client:     ec2.NewFromConfig(cfg),
 	}
 
 	regions, source := resolver.getEnabledRegionsWithSource(ctx)

@@ -10,7 +10,6 @@ package output_test
 import (
 	"encoding/json"
 	"sort"
-	"strings"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
@@ -178,6 +177,6 @@ func TestAWSEnabledRegions_SourceSerialisesAsPlainString(t *testing.T) {
 	raw, err := json.Marshal(m)
 	require.NoError(t, err)
 
-	assert.True(t, strings.Contains(string(raw), `"source":"static-fallback"`),
-		"source must serialise as a bare string, got %s", raw)
+	assert.Contains(t, string(raw), `"source":"static-fallback"`,
+		"source must serialise as a bare string")
 }
