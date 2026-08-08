@@ -983,10 +983,7 @@ func TestGetEnabledRegionsWithSource_StaticFallbackLogsAtWarn(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := &recordingHandler{}
-			restore := slog.Default()
-			slog.SetDefault(slog.New(h))
-			t.Cleanup(func() { slog.SetDefault(restore) })
+			h := captureLogs(t)
 
 			_, source := tt.resolver().getEnabledRegionsWithSource(context.Background())
 			require.Equal(t, tt.wantSource, source,

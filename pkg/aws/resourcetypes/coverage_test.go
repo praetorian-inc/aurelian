@@ -135,9 +135,9 @@ func TestExclusions_AreReferenced(t *testing.T) {
 // fact. go test links package resourcetypes and package resourcetypes_test into
 // a single binary, so the loader's init() has already populated the registry
 // before any test in either package runs. Measured 2026-08-08: an internal probe
-// calling GetAll() directly observes the same 49-entry union an external one
-// does. Do not re-justify this file's location with a runtime claim about what
-// GetAll() returns — that claim is false.
+// calling GetAll() directly observes the same union an external one does. Do not
+// re-justify this file's location with a runtime claim about what GetAll()
+// returns — that claim is false.
 // ---------------------------------------------------------------------------
 
 // serviceOf extracts the <Service> segment of an AWS::<Service>::<Resource>
@@ -545,6 +545,10 @@ func (h *warnRecorder) warnings() []string {
 // of the test and restores the previous logger afterwards. The previous logger is
 // captured BEFORE SetDefault so nested or successive captures still restore the
 // right one.
+//
+// Callers must not call t.Parallel(): this swaps the process-global default slog
+// logger, so parallel callers would capture each other's records and restore the
+// wrong logger on cleanup.
 func captureWarnings(t *testing.T) *warnRecorder {
 	t.Helper()
 
@@ -571,6 +575,10 @@ func captureWarnings(t *testing.T) *warnRecorder {
 // not observe registry changes on its own. The cleanup re-asserts the sentinel
 // type so a restore that silently failed reddens HERE, by name, instead of
 // reddening some unrelated test that happens to run next.
+//
+// Callers must not call t.Parallel(): this reassigns the process-global
+// plugin.Registry and resets the process-lifetime union cache, so a parallel
+// caller would observe the emptied registry staged for this test.
 func withEmptyRegistry(t *testing.T) {
 	t.Helper()
 

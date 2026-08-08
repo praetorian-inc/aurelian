@@ -14,10 +14,19 @@ import "strings"
 // every type under a global endpoint is global, and no type under a regional
 // endpoint is. Keying on the service makes that structural fact explicit
 // instead of restating it once per type. It also keeps the ledger reviewable —
-// the current union is 49 resource types but only 37 distinct services, and the
-// four entries below cover all seven global types. A reviewer can audit a
-// 4-entry ledger against AWS documentation; a 49-entry type map is a wall of
-// text where a single wrong line silently loses inventory.
+// every global type in the union falls under one of the four entries below,
+// while an equivalent per-type map would need one line for every type in the
+// union, global or not. A reviewer can audit a four-entry ledger against AWS
+// documentation; that per-type map is a wall of text where a single wrong line
+// silently loses inventory.
+//
+// That comparison is deliberately written without counts. The union grows
+// whenever a module declares a new type, and no test pins its size, so any
+// figure here would go stale in silence — the same defect this ledger exists
+// to prevent. What is pinned is the relationship, not the magnitude:
+// TestPartition_UnionEqualsGetAll holds the partition exact, and
+// TestScope_ReviewedServiceLedger reddens on a type under an unclassified
+// service.
 //
 // The corollary is that a new resource type under an already-classified service
 // is inherited automatically and correctly (a fifth IAM type is global without

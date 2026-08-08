@@ -1,6 +1,9 @@
 package resourcetypes
 
-import "sync"
+import (
+	"maps"
+	"sync"
+)
 
 // ResetForTest invalidates the process-lifetime union cache. Tests that mutate
 // the plugin registry (e.g., via plugin.ResetRegistry()) must call this before
@@ -36,9 +39,5 @@ func ExclusionsForTest() []string {
 // would let any test mutate it for every other test in the binary. That holds
 // whether callers read the values or only the keys.
 func GlobalServicesForTest() map[string]string {
-	out := make(map[string]string, len(globalServices))
-	for svc, justification := range globalServices {
-		out[svc] = justification
-	}
-	return out
+	return maps.Clone(globalServices)
 }
