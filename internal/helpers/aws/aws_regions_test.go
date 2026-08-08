@@ -233,6 +233,8 @@ func TestEnabledRegions_EmptyProfile(t *testing.T) {
 func TestEnabledRegions_IntegrationWithNewAWSConfig(t *testing.T) {
 	// Test that EnabledRegions signature accepts profile and profileDir
 	// This will be the public API
+	before := regionsSnapshot()
+
 	profile := "test-profile"
 	profileDir := "/tmp/test-profiles"
 
@@ -249,12 +251,20 @@ func TestEnabledRegions_IntegrationWithNewAWSConfig(t *testing.T) {
 		return mockCfg, nil
 	}
 
-	// This should compile and work with the new signature
+	// The mocked loader hands back a config carrying no credentials, so tier 1 and
+	// tier 2 both fail and resolution lands on tier 3.
 	regions, err := EnabledRegions(profile, profileDir)
 
-	// We expect it to fallback to hardcoded list since we don't have real AWS clients
-	assert.NoError(t, err)
-	assert.NotEmpty(t, regions)
+	require.NoError(t, err, "a tier-3 fallback must degrade, not error")
+
+	// Order-sensitive equality against the whole compiled-in list, not NotEmpty.
+	// NotEmpty is satisfied by a single element, so a regression that truncated the
+	// fallback — or swapped it for a plausible-looking default like {"us-east-1"} —
+	// would pass here while silently cutting scan coverage to one region.
+	assert.Equal(t, before, regions,
+		"a tier-3 result must be exactly the compiled-in list, in its "+
+			"compiled-in order")
+	assert.Equal(t, before, Regions, "package Regions var must be unmutated")
 }
 
 // ---------------------------------------------------------------------------
@@ -650,17 +660,28 @@ func (h *recordingHandler) messagesAtLevel(lvl slog.Level) []string {
 // TestGetEnabledRegionsWithSource_StaticFallbackLogsAtWarn pins the tier-3 log
 // LEVEL, which is load-bearing rather than cosmetic.
 //
-// The shipped binary hardcodes configureSlog("none") (cmd/generator.go), which maps
-// to slog.LevelWarn, and SlogHandler.Enabled is level >= minLevel — so every Debug
-// line on this path is discarded at every user-selectable setting. A silent
-// fallback to the compiled-in list is the exact failure LAB-5615 exists to surface,
-// so emitting this record at Debug would hide it from every operator. Demoting the
-// level is a real regression that no assertion on the RETURNED VALUE can detect,
-// because the regions and the source are identical either way.
+// Demoting this record to Debug is a regression that no assertion on the RETURNED
+// VALUE can catch: the regions and the source come back identical either way, so
+// only an assertion on the record itself sees it. A silent drop to the compiled-in
+// list is precisely the failure LAB-5615 exists to surface.
 //
-// The tier-1 subtest is the negative control. Without it this test would pass just
-// as well against code that warned unconditionally — which would train operators to
-// ignore the line, defeating the purpose as surely as silence would.
+// Two facts make Warn the level that has to be pinned:
+//
+//   - Nothing selects the level at runtime. configureSlog (cmd/generator.go) is
+//     reached from exactly one call site, which passes a string literal resolving
+//     to slog.LevelWarn. There is no flag and no env var that raises verbosity, so
+//     a Debug record on this path reaches no operator.
+//   - SlogHandler.Enabled (pkg/plugin/log.go) returns true outright for Warn and
+//     above, consulting its configured minimum only for levels below that. The
+//     record therefore keeps passing even if that hardcoded level is later quieted
+//     to "error".
+//
+// The tier-1 and tier-2 rows are negative controls. Without them this test would
+// pass equally well against code that warned on every call, which trains operators
+// to ignore the line and defeats the purpose as thoroughly as silence would. Both
+// rows are needed because they are different branches of the ladder: a guard that
+// is wrong for exactly one of them — say `source != output.SourceAccountAPI` —
+// would satisfy the tier-1 row while warning spuriously on every EC2-API success.
 func TestGetEnabledRegionsWithSource_StaticFallbackLogsAtWarn(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -680,6 +701,17 @@ func TestGetEnabledRegionsWithSource_StaticFallbackLogsAtWarn(t *testing.T) {
 				return &RegionResolver{accountClient: succeedingAccountClient("us-east-1")}
 			},
 			wantSource: output.SourceAccountAPI,
+			wantWarn:   false,
+		},
+		{
+			name: "tier 2 success is silent at Warn",
+			resolver: func() *RegionResolver {
+				return &RegionResolver{
+					accountClient: failingAccountClient(fmt.Errorf("account API denied")),
+					ec2Client:     succeedingEC2Client("us-east-1", "eu-west-1"),
+				}
+			},
+			wantSource: output.SourceEC2API,
 			wantWarn:   false,
 		},
 	}

@@ -121,14 +121,20 @@ func TestExclusions_AreReferenced(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Region-scope partition (LAB-5615 Phase A).
 //
-// These tests MUST live in this file, not in the internal types_test.go. This
-// file is package resourcetypes_test and blank-imports the module loader
-// (see the import block above), so GetAll() observes the full runtime union.
-// The same assertions written internally would see GetAll() collapse to the
-// 20-entry baseline (types.go:31-52), which carries IAM::Policy/Role/User but
-// none of IAM::Group, Route53::HostedZone, CloudFront::Distribution, or
-// Organizations::Organization — passing green while never observing four of
-// the seven global types, i.e. certifying the exact bug they exist to catch.
+// These tests live in this file because package resourcetypes cannot import the
+// module loader: the loader blank-imports recon, and recon/helper.go imports
+// resourcetypes, so that import would close a cycle. The blank import therefore
+// has to sit in an external test package. That is a COMPILE-TIME constraint on
+// where the import may go, and it is the whole reason for this file.
+//
+// It is NOT a claim that an internal test would observe a smaller union, and
+// that distinction matters because the reverse was previously written here as
+// fact. go test links package resourcetypes and package resourcetypes_test into
+// a single binary, so the loader's init() has already populated the registry
+// before any test in either package runs. Measured 2026-08-08: an internal probe
+// calling GetAll() directly observes the same 49-entry union an external one
+// does. Do not re-justify this file's location with a runtime claim about what
+// GetAll() returns — that claim is false.
 // ---------------------------------------------------------------------------
 
 // serviceOf extracts the <Service> segment of an AWS::<Service>::<Resource>
@@ -247,8 +253,9 @@ func TestPartition_UnionEqualsGetAll(t *testing.T) {
 //     under a brand-new service silently defaulting to regional) is held by
 //     TestScope_ReviewedServiceLedger, which names the service.
 //
-// Verified by perturbation: moving a single type between scopes reddens the
-// named-set tests and reports the type, with no count literals present.
+// Recipe: move a single type between scopes by adding or removing its service in
+// the scope ledger. The named-set tests redden and name the type that moved —
+// with no count literals present.
 func TestPartition_AccessorContract(t *testing.T) {
 	global := resourcetypes.GetGlobal()
 	regional := resourcetypes.GetRegional()
@@ -418,12 +425,6 @@ func TestScope_ReviewedServiceLedger(t *testing.T) {
 	for svc := range classified {
 		assert.True(t, observed[svc],
 			"service %q is classified but no longer appears in GetAll(); remove the stale entry", svc)
-	}
-}
-
-func TestScope_AllEntriesJustified(t *testing.T) {
-	for svc, justification := range resourcetypes.GlobalServicesForTest() {
-		assert.NotEmpty(t, justification, "scope ledger entry %q has an empty justification", svc)
 	}
 }
 

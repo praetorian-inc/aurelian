@@ -19,6 +19,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Pins what production's own assertion does not: that the VALUE the constructor
+// returns satisfies the sealed marker interface, reached through exported
+// identifiers only — the wire contract this file's header exists to prove. The
+// pointer form is already pinned by aws_regions.go's compile-time assertion.
+var _ model.AurelianModel = output.NewAWSEnabledRegions(nil, output.SourceEC2API)
+
 // marshalKeys marshals v and returns its top-level JSON object keys.
 func marshalKeys(t *testing.T, v any) ([]string, string) {
 	t.Helper()
@@ -174,15 +180,4 @@ func TestAWSEnabledRegions_SourceSerialisesAsPlainString(t *testing.T) {
 
 	assert.True(t, strings.Contains(string(raw), `"source":"static-fallback"`),
 		"source must serialise as a bare string, got %s", raw)
-}
-
-// Compile-time proof the type satisfies the sealed marker interface. A type
-// that fails to embed BaseAurelianModel cannot be sent, so this is a real
-// runtime capability, not decoration.
-func TestAWSEnabledRegions_SatisfiesAurelianModel(t *testing.T) {
-	var m model.AurelianModel = &output.AWSEnabledRegions{}
-	assert.NotNil(t, m)
-
-	var byValue model.AurelianModel = output.NewAWSEnabledRegions(nil, output.SourceEC2API)
-	assert.NotNil(t, byValue)
 }

@@ -27,14 +27,14 @@ func ExclusionsForTest() []string {
 
 // GlobalServicesForTest returns a copy of the region-scope ledger from
 // scope.go, keyed by service segment with the justification as the value.
-// Visible only to test binaries; lets external test packages enumerate the
-// ledger — for dead-entry and drift checks — and assert its justifications
-// without exporting the map itself.
+// Visible only to test binaries; it lets external test packages enumerate the
+// ledger — for the dead-entry and drift checks, which need the registry
+// populated — without exporting the map itself.
 //
-// It returns the map rather than just the keys because the justification check
-// (TestScope_AllEntriesJustified) must live alongside the drift guard in the
-// external coverage_test.go, where the registry is populated; a keys-only
-// accessor would force a second exported helper for the values.
+// The copy, not the return type, is what protects the ledger: globalServices is
+// a package-level var that IsGlobal reads on every call, so handing out the map
+// would let any test mutate it for every other test in the binary. That holds
+// whether callers read the values or only the keys.
 func GlobalServicesForTest() map[string]string {
 	out := make(map[string]string, len(globalServices))
 	for svc, justification := range globalServices {

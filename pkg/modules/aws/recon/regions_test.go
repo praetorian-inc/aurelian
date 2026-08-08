@@ -3,6 +3,7 @@ package recon
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sort"
 	"testing"
 
@@ -218,9 +219,14 @@ func TestAWSRegionsModule_Run_PropagatesSourceVerbatim(t *testing.T) {
 //     of helpers.Regions. That variant sees no match on the unsorted fixture, so
 //     the unsorted sub-case alone would let it pass.
 //
-// Both are verified by perturbation: each implementation reddens exactly its own
-// sub-case and leaves the other green. Dropping either fixture retires real
-// coverage.
+// Recipe for re-checking that each fixture still carries its own case. In Run,
+// stamp the source static-fallback whenever the RESOLVER'S list — before the sort
+// — equals helpers.Regions as-is: the "unsorted compiled-in list" sub-case must
+// redden on the Source assertion while "pre-sorted compiled-in list" stays green.
+// Now compare against a sorted copy of helpers.Regions instead: exactly the
+// reverse. A mutation that reddens both sub-cases, or neither, means the pair has
+// stopped discriminating and needs re-deriving — not that either fixture is
+// redundant.
 //
 // A third spelling — comparing the POST-SORT list against the unsorted global — is
 // caught by nothing here, and correctly so: a sorted list can never equal an
@@ -418,9 +424,9 @@ func TestAWSRegionsModule_Run_ResolutionErrorEmitsNothing(t *testing.T) {
 // Deliberately absent: an assertion that (&AWSRegionsModule{}).enabledRegions is
 // nil. The Go spec guarantees an unset func field in a composite literal is nil,
 // so no edit to production code could turn that red — it constrains the compiler,
-// not this module. Verified by perturbation: registering a stubbed instance in
-// init() leaves that assertion green and fails only the registry check below. Do
-// not re-add it.
+// not this module. Recipe, if that is ever doubted: register a stubbed instance
+// in init(). The registry check below reddens; the nil assertion, had it been
+// kept, stays green throughout. Do not re-add it.
 func TestAWSRegionsModule_RegisteredInstanceUsesRealHelper(t *testing.T) {
 	for _, m := range plugin.ByPlatform(plugin.PlatformAWS) {
 		if m.ID() != "regions" {
@@ -443,4 +449,47 @@ func TestAWSRegionsModule_RegisteredInstanceUsesRealHelper(t *testing.T) {
 	}
 
 	require.Fail(t, "module \"regions\" is not registered for platform AWS")
+}
+
+// TestAWSRegionsModule_ResolverDefaultsToRealHelper pins the OTHER half of the
+// seam: that the default binding is the real helper, not merely that the field is
+// nil.
+//
+// This is a different proposition from the "deliberately absent" note above. That
+// one concerned enabledRegions == nil on a bare composite literal, which the Go
+// spec guarantees and no production edit can redden. This one is falsifiable:
+// delete or invert the nil branch in resolver() and this test goes red.
+//
+// The returned function is deliberately NOT called. Invoking the default means a
+// live AWS call, which on a credentialed machine can succeed — an assertion that
+// passes for the wrong reason. Comparing code pointers keeps the check offline:
+// no network, no credentials, no Run.
+//
+// Go funcs are not comparable with ==, so identity is established via
+// reflect.Value.Pointer, which returns the underlying code pointer.
+func TestAWSRegionsModule_ResolverDefaultsToRealHelper(t *testing.T) {
+	got := reflect.ValueOf((&AWSRegionsModule{}).resolver()).Pointer()
+	want := reflect.ValueOf(helpers.EnabledRegionsWithSource).Pointer()
+
+	assert.Equal(t, want, got,
+		"resolver() must return helpers.EnabledRegionsWithSource when the "+
+			"enabledRegions seam is unset; a module that defaulted elsewhere would "+
+			"resolve regions from something other than the real ladder")
+}
+
+// A set seam must win over the default, or the stub every other test in this file
+// relies on would be silently ignored.
+func TestAWSRegionsModule_ResolverPrefersSeamWhenSet(t *testing.T) {
+	stub := func(ctx context.Context, profile, profileDir string) ([]string, output.RegionSource, error) {
+		return nil, output.SourceEC2API, nil
+	}
+
+	m := &AWSRegionsModule{enabledRegions: stub}
+
+	assert.Equal(t, reflect.ValueOf(stub).Pointer(),
+		reflect.ValueOf(m.resolver()).Pointer(),
+		"a set enabledRegions seam must be returned in preference to the helper")
+	assert.NotEqual(t, reflect.ValueOf(helpers.EnabledRegionsWithSource).Pointer(),
+		reflect.ValueOf(m.resolver()).Pointer(),
+		"a set seam must not fall through to the real helper")
 }
