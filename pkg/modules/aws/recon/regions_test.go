@@ -433,9 +433,9 @@ func TestAWSRegionsModule_RegisteredInstanceUsesRealHelper(t *testing.T) {
 			continue
 		}
 
-		// plugin.Register wraps every module in &ModuleWrapper{Module: m}
-		// (registry.go:41), so the registry hands back the wrapper, never the
-		// concrete module. Unwrap one layer before asserting on our own type.
+		// plugin.Register wraps every module in &ModuleWrapper{Module: m}, so the
+		// registry hands back the wrapper, never the concrete module. Unwrap one
+		// layer before asserting on our own type.
 		wrapper, ok := m.(*plugin.ModuleWrapper)
 		require.True(t, ok, "expected the registry to hand back a *plugin.ModuleWrapper, got %T", m)
 

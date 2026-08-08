@@ -195,9 +195,9 @@ var reviewedRegionalServices = map[string]struct{}{
 
 // TestPartition_RegistryPopulated is the sentinel guarding every other test in
 // this group. AWS::Route53::HostedZone is declared ONLY by a consumer module
-// (pkg/modules/aws/recon/subdomain_takeover.go:46) and is absent from baseline,
-// so it appears in GetAll() if and only if the blank loader import above is
-// still present.
+// (SubdomainTakeoverModule.SupportedResourceTypes in pkg/modules/aws/recon) and
+// is absent from baseline, so it appears in GetAll() if and only if the blank
+// loader import above is still present.
 //
 // WHY THIS EXISTS: if an import-tidier (goimports on a stale file, an IDE
 // "remove unused imports" action, a merge that drops the line) strips that
@@ -227,8 +227,9 @@ func TestPartition_IsDisjoint(t *testing.T) {
 }
 
 func TestPartition_UnionEqualsGetAll(t *testing.T) {
-	// GetAll() is already exclusion-filtered upstream (union.go:48-50), so the
-	// two halves must reconstruct it EXACTLY — not "GetAll() minus exclusions".
+	// GetAll() is already exclusion-filtered upstream by the exclusion-deletion
+	// loop in ensureComputed, so the two halves must reconstruct it EXACTLY —
+	// not "GetAll() minus exclusions".
 	union := append(resourcetypes.GetGlobal(), resourcetypes.GetRegional()...)
 	assert.ElementsMatch(t, resourcetypes.GetAll(), union,
 		"GetGlobal() + GetRegional() must reconstruct GetAll() exactly")
@@ -284,13 +285,14 @@ func TestPartition_AccessorContract(t *testing.T) {
 // The regions module declares AWS::Organizations::Account purely as a Guard
 // dispatch key (Guard's agora.MatchesSupportedResourceType rejects a module with
 // an empty list, so nil would make it undispatchable for every target). The
-// declaration must stay invisible to list-all: exclusions.go:14 lists the type
-// and union.go:48-49 deletes exclusions before allCache is built at :51.
+// declaration must stay invisible to list-all: the exclusions map lists the type
+// and ensureComputed's exclusion-deletion loop removes it from the seen set
+// before allCache is built from that set.
 //
-// This test lives HERE rather than beside the module because pkg/modules/loader
-// blank-imports pkg/modules/aws/recon (loader.go:9), so a test in package recon
-// cannot import the loader to populate the registry. This file already carries
-// that import and TestPartition_RegistryPopulated guards it.
+// This test lives HERE rather than beside the module because the generated
+// loader in pkg/modules/loader blank-imports pkg/modules/aws/recon, so a test
+// in package recon cannot import the loader to populate the registry. This file
+// already carries that import and TestPartition_RegistryPopulated guards it.
 //
 // If this fails, the exclusion was dropped or the union stopped filtering — the
 // fix is to restore the exclusion, NOT to stop declaring the dispatch key.
@@ -312,16 +314,17 @@ func TestRegionsModule_DeclarationDoesNotLeakIntoUnion(t *testing.T) {
 
 	assert.NotContains(t, resourcetypes.GetAll(), dispatchKey,
 		"the regions module's dispatch key leaked into list-all's union; it is on the "+
-			"exclusion list (exclusions.go:14) and union.go:48-49 must delete it before "+
-			"allCache is built")
+			"exclusion list in exclusions.go and ensureComputed's exclusion-deletion loop "+
+			"must delete it before allCache is built")
 
 	// GetGlobal/GetRegional filter allCache, so neither half can carry it either.
 	assert.NotContains(t, resourcetypes.GetGlobal(), dispatchKey)
 	assert.NotContains(t, resourcetypes.GetRegional(), dispatchKey)
 
-	// Organizations IS a global service (scope.go:57), so had the key reached
-	// allCache it would have landed in GetGlobal and broken the exact set below.
-	// Restating that set here makes the coupling explicit at the point of risk.
+	// Organizations IS a global service (the "Organizations" key in scope.go's
+	// globalServices ledger), so had the key reached allCache it would have
+	// landed in GetGlobal and broken the exact set below. Restating that set
+	// here makes the coupling explicit at the point of risk.
 	assert.ElementsMatch(t, []string{
 		"AWS::CloudFront::Distribution",
 		"AWS::IAM::Group",
@@ -357,8 +360,9 @@ func TestGetGlobal_ExactSet(t *testing.T) {
 // four genuinely-global services all resolve to us-east-1. Classifying it
 // global would route it to a us-east-1 global shard where it answers nothing,
 // silently dropping every accelerator from inventory — a total loss that no
-// partition or count test could detect. Today CloudControl's fan-out
-// (cloud_control_enumerator.go:256) reaches it in us-west-2 as a regional type.
+// partition or count test could detect. Today CloudControl's fan-out (the
+// ActInRegions call in CloudControlEnumerator.EnumerateByType) reaches it in
+// us-west-2 as a regional type.
 func TestGetRegional_KeepsGlobalAccelerator(t *testing.T) {
 	assert.Contains(t, resourcetypes.GetRegional(), "AWS::GlobalAccelerator::Accelerator",
 		"GlobalAccelerator must stay REGIONAL: its control plane pins us-west-2, not "+
@@ -369,14 +373,14 @@ func TestGetRegional_KeepsGlobalAccelerator(t *testing.T) {
 // TestGetRegional_KeepsS3Bucket pins the second deliberate non-entry.
 //
 // S3 is often called global, but listBucketsInRegion already filters
-// server-side on BucketRegion (s3_enumerator.go:129-131), and the enumerator's
-// doc comment (s3_enumerator.go:16-17) records that this exists specifically to
-// avoid the duplicate enumeration CloudControl causes. Classifying S3 global
-// would bypass that per-region filter.
+// server-side on the BucketRegion it sets on s3.ListBucketsInput, and the
+// S3Enumerator doc comment records that this exists specifically to avoid the
+// duplicate enumeration CloudControl causes. Classifying S3 global would bypass
+// that per-region filter.
 func TestGetRegional_KeepsS3Bucket(t *testing.T) {
 	assert.Contains(t, resourcetypes.GetRegional(), "AWS::S3::Bucket",
-		"S3 must stay REGIONAL: listBucketsInRegion filters server-side on "+
-			"BucketRegion (s3_enumerator.go:129-131) to avoid CloudControl duplicate enumeration")
+		"S3 must stay REGIONAL: listBucketsInRegion filters server-side on the "+
+			"BucketRegion it sets on s3.ListBucketsInput to avoid CloudControl duplicate enumeration")
 }
 
 // TestScope_NoDeadLedgerEntries mirrors TestExclusions_AreReferenced: a ledger

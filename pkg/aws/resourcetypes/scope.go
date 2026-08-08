@@ -45,9 +45,9 @@ import "strings"
 //     nowhere, silently dropping every accelerator from inventory — a total
 //     loss no partition or count test can detect. Pinned by
 //     TestGetRegional_KeepsGlobalAccelerator.
-//   - S3 — listBucketsInRegion already filters server-side on BucketRegion
-//     (s3_enumerator.go:129-131), and that enumerator's doc comment
-//     (s3_enumerator.go:16-17) records that it exists specifically to avoid the
+//   - S3 — listBucketsInRegion in pkg/aws/enumeration already filters
+//     server-side on the BucketRegion it sets on s3.ListBucketsInput, and the
+//     S3Enumerator doc comment records that it exists specifically to avoid the
 //     duplicate enumeration CloudControl causes. Pinned by
 //     TestGetRegional_KeepsS3Bucket.
 var globalServices = map[string]string{
@@ -61,9 +61,9 @@ var globalServices = map[string]string{
 // consumption. Nothing inside Aurelian calls them outside tests: the
 // global-vs-regional shard split they exist to drive lives in Guard, which is a
 // separate Go module and can only reach this ledger through an exported surface.
-// Compare RegionSource in pkg/output (aws_regions.go:12-15), exported for the
-// same reason. An "unused export" sweep of this repo alone will flag all three;
-// they are not dead code.
+// Compare the RegionSource type in pkg/output, exported for the same reason. An
+// "unused export" sweep of this repo alone will flag all three; they are not
+// dead code.
 
 // IsGlobal reports whether a resource type belongs to a global-endpoint
 // service, by looking up the <Service> segment of AWS::<Service>::<Resource> in
@@ -89,8 +89,8 @@ func IsGlobal(rt string) bool {
 
 // GetGlobal returns the resource types in GetAll() that belong to a
 // global-endpoint service. The result is a fresh slice that never aliases the
-// union cache, and it preserves GetAll()'s sort order because allCache is
-// already sorted (union.go:55) and filtering is order-preserving.
+// union cache, and it preserves GetAll()'s sort order because ensureComputed
+// leaves allCache sorted and filtering is order-preserving.
 func GetGlobal() []string {
 	ensureComputed()
 	out := make([]string, 0, len(allCache))
