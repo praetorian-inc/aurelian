@@ -67,12 +67,14 @@ var globalServices = map[string]string{
 }
 
 // IsGlobal, GetGlobal, and GetRegional are exported solely for Phase B (Guard)
-// consumption. Nothing inside Aurelian calls them outside tests: the
-// global-vs-regional shard split they exist to drive lives in Guard, which is a
-// separate Go module and can only reach this ledger through an exported surface.
-// Compare the RegionSource type in pkg/output, exported for the same reason. An
-// "unused export" sweep of this repo alone will flag all three; they are not
-// dead code.
+// consumption. Nothing inside Aurelian calls GetGlobal or GetRegional outside
+// tests; IsGlobal is the exception, called by both of them in the filter loops
+// below. The global-vs-regional shard split they exist to drive lives in Guard,
+// which is a separate Go module and can only reach this ledger through an
+// exported surface. Compare the RegionSource type in pkg/output, exported for
+// the same reason. An "unused export" sweep of this repo alone will flag two of
+// the three — those in-package references keep IsGlobal off that list — and
+// none of them is dead code.
 //
 // What a Guard-side caller must do: GetGlobal and GetRegional filter the runtime
 // union, which is assembled from the plugin registry, so a consumer in another Go

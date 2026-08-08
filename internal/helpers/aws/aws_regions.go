@@ -120,11 +120,14 @@ func (r *RegionResolver) GetEnabledRegions(ctx context.Context) ([]string, error
 // observable on this path.
 //
 // The one case that IS an error is added by the two exported entry points that
-// have an error to return — EnabledRegionsWithSource, which wraps this
+// hold the guard themselves — EnabledRegionsWithSource, which wraps this
 // function, and GetEnabledRegions, which reaches the same state through
 // resolveRegions. Each rejects a static-fallback result reached under an
 // already-done context: the caller has abandoned the work, and handing back the
 // compiled-in list as an answer would fabricate coverage no tier ever fetched.
+// The other exported entry points with an error to return, EnabledRegions and
+// ResolveRegions, add no guard of their own and inherit this one by calling
+// through GetEnabledRegions.
 //
 // So the two are different categories rather than degrees of one. An
 // unreachable control plane is the remote end failing, and only that degrades;
@@ -276,7 +279,9 @@ func (r *RegionResolver) getEnabledRegionsFromEC2(ctx context.Context) ([]string
 }
 
 // ResolveRegions expands a regions slice, replacing ["all"] with the actual
-// enabled region list via STS. Returns the input unchanged if not ["all"].
+// enabled region list, obtained through EnabledRegions from the AWS Account
+// and EC2 APIs with the compiled-in list as a fallback — the tiered ladder
+// documented on resolveRegions. Returns the input unchanged if not ["all"].
 func ResolveRegions(regions []string, profile, profileDir string) ([]string, error) {
 	if len(regions) == 1 && strings.ToLower(regions[0]) == "all" {
 		return EnabledRegions(profile, profileDir)

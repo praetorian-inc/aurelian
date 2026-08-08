@@ -10,6 +10,7 @@ package output_test
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
@@ -79,12 +80,34 @@ func TestAWSEnabledRegions_LeaksNoIdentityOrPaths(t *testing.T) {
 
 	keys, raw := marshalKeys(t, m)
 
-	for _, forbidden := range []string{
-		"account", "arn", "profile", "profileDir", "profile_dir",
+	// Matched as a substring of each key, not as a whole key. Handing
+	// assert.NotContains a []string haystack makes it an element-equality
+	// check, which rejects only a key spelled exactly "account" — accountId,
+	// arnValue and profileName would every one of them pass a guard whose
+	// stated job is keeping identity material off the wire. Lowercasing the
+	// key first makes the match case-insensitive, so a camelCase spelling
+	// cannot slip past either.
+	//
+	// The tokens are lowercase because the key is, and none subsumes another.
+	// "profileDir" and "profile_dir" were separate entries while this compared
+	// whole keys; under substring matching "profile" already covers both, and
+	// a mixed-case token could never match a lowercased key at all.
+	forbiddenTokens := []string{
+		"account", "arn", "profile",
 		"path", "credentials", "identity", "user",
-	} {
-		assert.NotContains(t, keys, forbidden,
-			"field %q must never appear in AWSEnabledRegions", forbidden)
+	}
+
+	// Non-vacuity guard: an empty key set would make the loop below assert
+	// nothing while still reporting green.
+	require.NotEmpty(t, keys, "precondition: the model must marshal some keys")
+
+	for _, key := range keys {
+		lower := strings.ToLower(key)
+		for _, forbidden := range forbiddenTokens {
+			assert.NotContains(t, lower, forbidden,
+				"key %q contains forbidden token %q; AWSEnabledRegions must "+
+					"carry no identity material", key, forbidden)
+		}
 	}
 
 	// Region names and RegionSource values contain no path separator, so any
