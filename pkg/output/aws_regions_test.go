@@ -1,10 +1,6 @@
-// Package output_test exercises AWSEnabledRegions from OUTSIDE the package.
-//
-// The external test package is deliberate: Guard consumes this type from a
-// separate Go module and can therefore only reach exported identifiers. Testing
-// from `output_test` proves the wire contract is constructible without any
-// package-internal access, which is the whole reason RegionSource is exported
-// here rather than declared in internal/helpers/aws.
+// Package output_test exercises AWSEnabledRegions from outside the package:
+// Guard consumes this type from a separate Go module and can therefore reach
+// only exported identifiers, which is why RegionSource is exported here.
 package output_test
 
 import (
@@ -19,10 +15,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Pins what production's own assertion does not: that the VALUE the constructor
-// returns satisfies the sealed marker interface, reached through exported
-// identifiers only — the wire contract this file's header exists to prove. The
-// pointer form is already pinned by aws_regions.go's compile-time assertion.
+// Pins the VALUE the constructor returns, reached through exported identifiers
+// only; aws_regions.go's own compile-time assertion covers the pointer form.
 var _ model.AurelianModel = output.NewAWSEnabledRegions(nil, output.SourceEC2API)
 
 // marshalKeys marshals v and returns its top-level JSON object keys.
@@ -44,7 +38,6 @@ func marshalKeys(t *testing.T, v any) ([]string, string) {
 	return keys, string(raw)
 }
 
-// SAC-7: the marshalled object exposes exactly regions, count, source.
 func TestAWSEnabledRegions_MarshalsExactlyThreeFields(t *testing.T) {
 	m := output.NewAWSEnabledRegions(
 		[]string{"us-east-1", "us-west-2"},
@@ -57,7 +50,6 @@ func TestAWSEnabledRegions_MarshalsExactlyThreeFields(t *testing.T) {
 		"AWSEnabledRegions must marshal exactly three fields; got %s", raw)
 }
 
-// SAC-7: the embedded marker type must contribute no wire fields.
 func TestAWSEnabledRegions_EmbeddedModelAddsNoFields(t *testing.T) {
 	m := output.NewAWSEnabledRegions([]string{"eu-west-1"}, output.SourceEC2API)
 
@@ -68,10 +60,8 @@ func TestAWSEnabledRegions_EmbeddedModelAddsNoFields(t *testing.T) {
 	assert.NotContains(t, raw, "IsAurelianModel")
 }
 
-// SAC-7: no identity material and no filesystem paths may appear.
-//
-// This is the de-escalation assertion. CallerIdentity (same package) already
-// emits a full ARN and account ID; AWSEnabledRegions must emit strictly less.
+// CallerIdentity in this same package already emits a full ARN and account ID.
+// AWSEnabledRegions must emit strictly less.
 func TestAWSEnabledRegions_LeaksNoIdentityOrPaths(t *testing.T) {
 	m := output.NewAWSEnabledRegions(
 		[]string{"us-east-1", "us-gov-west-1"},
@@ -80,18 +70,10 @@ func TestAWSEnabledRegions_LeaksNoIdentityOrPaths(t *testing.T) {
 
 	keys, raw := marshalKeys(t, m)
 
-	// Matched as a substring of each key, not as a whole key. Handing
-	// assert.NotContains a []string haystack makes it an element-equality
-	// check, which rejects only a key spelled exactly "account" — accountId,
-	// arnValue and profileName would every one of them pass a guard whose
-	// stated job is keeping identity material off the wire. Lowercasing the
-	// key first makes the match case-insensitive, so a camelCase spelling
-	// cannot slip past either.
-	//
-	// The tokens are lowercase because the key is, and none subsumes another.
-	// "profileDir" and "profile_dir" were separate entries while this compared
-	// whole keys; under substring matching "profile" already covers both, and
-	// a mixed-case token could never match a lowercased key at all.
+	// Matched as a substring of each lowercased key. Handing assert.NotContains
+	// a []string haystack would make it element-equality, rejecting only a key
+	// spelled exactly "account" and letting accountId, arnValue and profileName
+	// past a guard meant to keep identity material off the wire.
 	forbiddenTokens := []string{
 		"account", "arn", "profile",
 		"path", "credentials", "identity", "user",
@@ -116,7 +98,6 @@ func TestAWSEnabledRegions_LeaksNoIdentityOrPaths(t *testing.T) {
 		"payload must contain no path separator (no filesystem path, no ARN): %s", raw)
 	assert.NotContains(t, raw, `"arn:`, "payload must contain no ARN")
 
-	// Guard against an account ID leaking as a bare 12-digit string.
 	assert.NotRegexp(t, `\b\d{12}\b`, raw, "payload must contain no AWS account ID")
 }
 
@@ -143,7 +124,7 @@ func TestAWSEnabledRegions_IsDeEscalationRelativeToCallerIdentity(t *testing.T) 
 	}
 }
 
-// SAC-7: Count is an invariant of construction, not a caller obligation.
+// Count is an invariant of construction, not a caller obligation.
 func TestNewAWSEnabledRegions_CountMatchesRegions(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -175,12 +156,10 @@ func TestNewAWSEnabledRegions_DoesNotAliasCallerSlice(t *testing.T) {
 
 	m := output.NewAWSEnabledRegions(caller, output.SourceStaticFallback)
 
-	// Mutating the model must not disturb the caller's slice.
 	sort.Strings(m.Regions)
 	assert.Equal(t, original, caller,
 		"constructing the model must not alias the caller's backing array")
 
-	// And mutating the caller's slice must not disturb the model.
 	caller[0] = "MUTATED"
 	assert.NotContains(t, m.Regions, "MUTATED",
 		"model must hold its own copy")

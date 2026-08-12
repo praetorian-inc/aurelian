@@ -46,10 +46,8 @@ func TestResultsContainGraphEntities(t *testing.T) {
 			want: true,
 		},
 		{
-			// LAB-5615: AWSEnabledRegions is inventory data, not a graph node or
-			// edge. It must fall THROUGH this gate — a coordinator run that only
-			// resolves regions has nothing for GraphFormatter to seed, and treating
-			// it as a graph entity would trigger a pointless Neo4j write.
+			// Inventory data, not a graph node or edge: a coordinator run that
+			// only resolves regions has nothing for GraphFormatter to seed.
 			name: "only AWSEnabledRegions (region coordinator) does not seed",
 			results: []model.AurelianModel{
 				output.NewAWSEnabledRegions([]string{"us-east-1", "us-west-2"}, output.SourceAccountAPI),
@@ -57,10 +55,9 @@ func TestResultsContainGraphEntities(t *testing.T) {
 			want: false,
 		},
 		{
-			// AWSRegionsModule.Run sends &result, so the POINTER spelling is what
-			// actually reaches this gate in production. Both spellings are pinned:
-			// a future `case output.AWSEnabledRegions:` added to the type switch is
-			// caught by the row above, a `case *output.AWSEnabledRegions:` by this one.
+			// AWSRegionsModule.Run sends &result, so the pointer spelling is what
+			// reaches this gate in production. Both spellings are pinned so a
+			// future type-switch case on either one is caught.
 			name: "AWSEnabledRegions pointer (as the module emits it) does not seed",
 			results: []model.AurelianModel{
 				&output.AWSEnabledRegions{

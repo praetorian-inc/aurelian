@@ -50,25 +50,18 @@ type AWSEnabledRegions struct {
 	// Count is always len(Regions), maintained by NewAWSEnabledRegions.
 	Count int `json:"count"`
 
-	// Source records which tier produced Regions, so a downstream consumer can
-	// distinguish an authoritative list from a stale compiled-in guess.
 	Source RegionSource `json:"source"`
 }
 
-// Compile-time proof that the type satisfies the sealed marker interface.
-// The interface is sealed by an unexported token, so a type that fails to embed
-// BaseAurelianModel cannot be sent at all; this assertion turns that failure
-// into a build error rather than a runtime surprise.
+// Compile-time proof that AWSEnabledRegions satisfies the sealed marker interface.
 var _ model.AurelianModel = (*AWSEnabledRegions)(nil)
 
 // NewAWSEnabledRegions builds an AWSEnabledRegions, keeping Count consistent
 // with Regions by construction so the two cannot drift.
 //
-// The input slice is cloned. Tier 3 of the resolution ladder returns a
-// package-level variable, so storing the caller's slice unchanged would let any
-// later in-place sort of Regions permanently reorder a process-global that
-// other code reads on a live path. Cloning here makes that class of bug
-// unreachable regardless of what the caller hands in.
+// The input slice is cloned because tier 3 of the resolution ladder returns a
+// package-level variable: storing the caller's slice would let a later in-place
+// sort permanently reorder a process-global that other code reads on a live path.
 func NewAWSEnabledRegions(regions []string, source RegionSource) AWSEnabledRegions {
 	stored := slices.Clone(regions)
 	return AWSEnabledRegions{

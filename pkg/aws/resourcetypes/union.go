@@ -23,21 +23,15 @@ var (
 //
 // The cache has process-lifetime: it is NOT invalidated when
 // plugin.ResetRegistry() is called. Tests that need a fresh union must call
-// ResetForTest (see export_test.go).
+// ResetForTest.
 //
 // Important init-order constraint: do NOT call GetAll(), IsValid(), or
 // Validate() from a package init() function. If invoked before all module
 // init() functions have registered, the union will be permanently incomplete
 // for the lifetime of the process.
 //
-// Cross-module loader requirement: the consumer-module half of the union comes
-// from the plugin registry, which is populated by the init() functions the
-// generated loader in pkg/modules/loader blank-imports. A consumer in another
-// Go module (Guard) gets nothing from that loader unless it blank-imports it
-// itself, and this package cannot import it — the loader blank-imports
-// pkg/modules/aws/recon, whose helper.go imports this package, so the import
-// would close a cycle. An empty registry is therefore a legitimate reachable
-// state, not a bug here; the build logs a Warn when it happens.
+// An empty registry is a legitimate reachable state here, not a bug; the build
+// logs a Warn saying what a consumer must do about it.
 func ensureComputed() {
 	allOnce.Do(func() {
 		seen := make(map[string]struct{})

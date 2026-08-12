@@ -21,8 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Mock implementations for testability
-
 type mockAccountClient struct {
 	listRegionsFunc func(ctx context.Context, params *account.ListRegionsInput, optFns ...func(*account.Options)) (*account.ListRegionsOutput, error)
 }
@@ -46,7 +44,6 @@ func (m *mockEC2Client) DescribeRegions(ctx context.Context, params *ec2.Describ
 }
 
 func TestEnabledRegions_AccountAPISuccess(t *testing.T) {
-	// Setup mock Account API that returns regions
 	mockAccount := &mockAccountClient{
 		listRegionsFunc: func(ctx context.Context, params *account.ListRegionsInput, optFns ...func(*account.Options)) (*account.ListRegionsOutput, error) {
 			usEast1 := "us-east-1"
@@ -71,14 +68,12 @@ func TestEnabledRegions_AccountAPISuccess(t *testing.T) {
 }
 
 func TestEnabledRegions_AccountAPIFails_FallsBackToEC2(t *testing.T) {
-	// Account API fails
 	mockAccount := &mockAccountClient{
 		listRegionsFunc: func(ctx context.Context, params *account.ListRegionsInput, optFns ...func(*account.Options)) (*account.ListRegionsOutput, error) {
 			return nil, fmt.Errorf("account API error")
 		},
 	}
 
-	// EC2 API succeeds
 	mockEC2 := &mockEC2Client{
 		describeRegionsFunc: func(ctx context.Context, params *ec2.DescribeRegionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeRegionsOutput, error) {
 			usEast1 := "us-east-1"
@@ -104,14 +99,12 @@ func TestEnabledRegions_AccountAPIFails_FallsBackToEC2(t *testing.T) {
 }
 
 func TestEnabledRegions_BothAPIsFail_FallsBackToHardcoded(t *testing.T) {
-	// Account API fails
 	mockAccount := &mockAccountClient{
 		listRegionsFunc: func(ctx context.Context, params *account.ListRegionsInput, optFns ...func(*account.Options)) (*account.ListRegionsOutput, error) {
 			return nil, fmt.Errorf("account API error")
 		},
 	}
 
-	// EC2 API fails
 	mockEC2 := &mockEC2Client{
 		describeRegionsFunc: func(ctx context.Context, params *ec2.DescribeRegionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeRegionsOutput, error) {
 			return nil, fmt.Errorf("ec2 API error")
@@ -126,18 +119,11 @@ func TestEnabledRegions_BothAPIsFail_FallsBackToHardcoded(t *testing.T) {
 	regions, err := resolver.GetEnabledRegions(context.Background())
 
 	assert.NoError(t, err)
-	// Should fallback to hardcoded Regions list
 	assert.Equal(t, Regions, regions)
 	assert.Greater(t, len(regions), 0, "hardcoded Regions list should not be empty")
 }
 
 func TestEnabledRegions_FullTieredFallback(t *testing.T) {
-	// There is no expected-provenance column. GetEnabledRegions returns
-	// ([]string, error) and never reports which tier produced the list, so a
-	// row could only carry a tier name the loop body has no way to check —
-	// which is what the deleted expectedFallback field was. Provenance IS
-	// asserted, on the entry point that actually returns it, in
-	// TestGetEnabledRegionsWithSource_ReportsTier.
 	tests := []struct {
 		name            string
 		accountError    error
@@ -211,7 +197,6 @@ func TestEnabledRegions_FullTieredFallback(t *testing.T) {
 }
 
 func TestEnabledRegions_EmptyProfile(t *testing.T) {
-	// Test that EnabledRegions works with empty profile
 	mockAccount := &mockAccountClient{
 		listRegionsFunc: func(ctx context.Context, params *account.ListRegionsInput, optFns ...func(*account.Options)) (*account.ListRegionsOutput, error) {
 			usEast1 := "us-east-1"
@@ -234,19 +219,15 @@ func TestEnabledRegions_EmptyProfile(t *testing.T) {
 }
 
 func TestEnabledRegions_IntegrationWithNewAWSConfig(t *testing.T) {
-	// Test that EnabledRegions signature accepts profile and profileDir
-	// This will be the public API
 	before := regionsSnapshot()
 
 	profile := "test-profile"
 	profileDir := "/tmp/test-profiles"
 
-	// Create a mock config
 	mockCfg := aws.Config{
 		Region: "us-east-1",
 	}
 
-	// Mock the config loader
 	oldLoader := defaultConfigLoader
 	defer func() { defaultConfigLoader = oldLoader }()
 
@@ -260,23 +241,18 @@ func TestEnabledRegions_IntegrationWithNewAWSConfig(t *testing.T) {
 
 	require.NoError(t, err, "a tier-3 fallback must degrade, not error")
 
-	// Order-sensitive equality against the whole compiled-in list, not NotEmpty.
-	// NotEmpty is satisfied by a single element, so a regression that truncated the
-	// fallback — or swapped it for a plausible-looking default like {"us-east-1"} —
-	// would pass here while silently cutting scan coverage to one region.
+	// Equality against the whole list, not NotEmpty: NotEmpty is satisfied by a
+	// single element, so a regression that truncated the fallback would pass here
+	// while silently cutting scan coverage to one region.
 	assert.Equal(t, before, regions,
 		"a tier-3 result must be exactly the compiled-in list, in its "+
 			"compiled-in order")
 	assert.Equal(t, before, Regions, "package Regions var must be unmutated")
 }
 
-// ---------------------------------------------------------------------------
-// LAB-5615 / T007 — EnabledRegionsWithSource provenance (SAC-8, SAC-9)
-// ---------------------------------------------------------------------------
-
 // regionsSnapshot captures the package-level Regions var so a test can prove it
-// was not mutated. Tier 3 returns that variable, so any caller that sorts the
-// result in place would permanently reorder a process-global.
+// was not mutated: tier 3 returns that variable, so a caller sorting the result
+// in place would permanently reorder a process-global.
 func regionsSnapshot() []string {
 	return append([]string(nil), Regions...)
 }
@@ -323,7 +299,6 @@ func failingEC2Client(err error) *mockEC2Client {
 	}
 }
 
-// SAC-8: each tier reports the provenance that actually produced the list.
 func TestGetEnabledRegionsWithSource_ReportsTier(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -364,9 +339,8 @@ func TestGetEnabledRegionsWithSource_ReportsTier(t *testing.T) {
 				ec2Client:     tt.ec2Client,
 			}
 
-			// There is no error to check: getEnabledRegionsWithSource returns no
-			// error at all, so "a fallback never surfaces as an error" is now
-			// enforced by the signature rather than asserted case by case.
+			// No error to check: the signature has no error return, so "a fallback
+			// never surfaces as an error" is enforced by the type, not asserted.
 			regions, source := resolver.getEnabledRegionsWithSource(context.Background())
 
 			assert.Equal(t, tt.expectedSource, source)
@@ -376,8 +350,7 @@ func TestGetEnabledRegionsWithSource_ReportsTier(t *testing.T) {
 	}
 }
 
-// A nil account client must skip tier 1 rather than panic, matching
-// GetEnabledRegions' existing nil-guard behaviour.
+// A nil client must skip its tier rather than panic.
 func TestGetEnabledRegionsWithSource_NilClientsSkipTiers(t *testing.T) {
 	resolver := &RegionResolver{
 		ec2Client: succeedingEC2Client("ap-south-1"),
@@ -398,9 +371,7 @@ func TestGetEnabledRegionsWithSource_NoClientsFallsBackToStatic(t *testing.T) {
 	assert.Equal(t, Regions, regions)
 }
 
-// SAC-9 / mutation hazard: the returned slice must not alias the package var.
-//
-// This is the regression test for the hazard. Delete the clone in
+// The returned slice must not alias the package var: delete the clone in
 // getEnabledRegionsWithSource and this test fails.
 func TestGetEnabledRegionsWithSource_StaticFallbackDoesNotAliasPackageVar(t *testing.T) {
 	before := regionsSnapshot()
@@ -414,14 +385,11 @@ func TestGetEnabledRegionsWithSource_StaticFallbackDoesNotAliasPackageVar(t *tes
 	require.Equal(t, output.SourceStaticFallback, source)
 	require.Equal(t, before, regions, "precondition: fallback returns the static list")
 
-	// The caller sorts, as the Batch 3 coordinator will.
 	sort.Strings(regions)
 
 	assert.Equal(t, before, Regions,
 		"sorting the returned slice must not reorder the package Regions var")
 
-	// Sanity: sorting actually changed the local slice, so the assertion above
-	// is meaningful rather than vacuously true.
 	require.NotEqual(t, before, regions,
 		"precondition: the static list is not already sorted, so sort() is observable")
 }
@@ -440,12 +408,9 @@ func TestGetEnabledRegionsWithSource_ReturnedSliceIsWritable(t *testing.T) {
 	assert.NotContains(t, Regions, "MUTATED")
 }
 
-// SAC-9 / F-4: a cancelled context must reach the SDK clients.
-//
-// The coordinator is the single point of failure for every downstream shard.
-// With aws.RetryModeAdaptive an unreachable endpoint retries until the SDK
-// budget is exhausted, so the context must be threaded all the way down rather
-// than replaced with context.TODO().
+// A cancelled context must reach the SDK clients: under aws.RetryModeAdaptive an
+// unreachable endpoint retries until the SDK budget is exhausted, so a
+// context.TODO() here would leave an abandoned caller waiting out every retry.
 func TestGetEnabledRegionsWithSource_PropagatesContextToClients(t *testing.T) {
 	var (
 		mu            sync.Mutex
@@ -478,18 +443,6 @@ func TestGetEnabledRegionsWithSource_PropagatesContextToClients(t *testing.T) {
 	}
 
 	_, source := resolver.getEnabledRegionsWithSource(ctx)
-	// Scope note: this is a claim about getEnabledRegionsWithSource ALONE, which
-	// has no error return at all — it reports provenance and nothing else, so a
-	// cancelled context can only ever show up here as a tier-3 source. It is NOT
-	// a claim about what the package does with a cancelled context. The two
-	// exported entry points that have an error to return turn exactly this state
-	// (static fallback reached under a done ctx) into one, each at its own
-	// separate fmt.Errorf call site: EnabledRegionsWithSource, which wraps this
-	// function, and GetEnabledRegions, which is not a wrapper of it at all — it
-	// reaches the same state through resolveRegions, because this path's tier-3
-	// Warn belongs to it alone. See
-	// TestEnabledRegionsWithSource_CanceledContextIsAnError and
-	// TestGetEnabledRegions_CanceledContextIsAnError.
 	assert.Equal(t, output.SourceStaticFallback, source,
 		"getEnabledRegionsWithSource has no error return, so a cancelled context "+
 			"can only surface here as static-fallback provenance; the error is "+
@@ -508,21 +461,12 @@ func TestGetEnabledRegionsWithSource_PropagatesContextToClients(t *testing.T) {
 		"the cancelled ctx must reach the EC2 client, not context.TODO()")
 }
 
-// SAC-8: the exported entry point threads its ctx and reports provenance.
+// The context here is LIVE, and that is the point: tiers 1 and 2 fail on their
+// own merits while the caller is still waiting, so degrading is correct.
 //
-// The context here is LIVE, and that is the whole point of this test. An
-// unreachable control plane and an abandoned caller are the two categories the
-// LAB-5615 guard exists to separate, and only the first one degrades: the
-// mocked loader hands back a config carrying no credentials, so tier 1 and
-// tier 2 both fail on their own merits while the caller is still waiting for an
-// answer. That is a genuine unreachable-control-plane scenario, so
-// "must degrade, not fail" is true here and assertable — EnabledRegionsWithSource
-// has an error return to check it against.
-//
-// The cancelled-context counterpart is
-// TestEnabledRegionsWithSource_CanceledContextIsAnError, which asserts the
-// opposite outcome. Do not merge the two: sharing a fixture between them would
-// re-conflate exactly the two categories the production guard distinguishes.
+// Do not merge this fixture with TestEnabledRegionsWithSource_CanceledContextIsAnError,
+// which asserts the opposite outcome: sharing one would re-conflate the
+// unreachable-control-plane and abandoned-caller cases the guard separates.
 func TestEnabledRegionsWithSource_UnreachableTiersDegradeToStaticList(t *testing.T) {
 	before := regionsSnapshot()
 
@@ -537,43 +481,28 @@ func TestEnabledRegionsWithSource_UnreachableTiersDegradeToStaticList(t *testing
 	require.NoError(t, err, "an unreachable control plane must degrade, not fail")
 	assert.Equal(t, output.SourceStaticFallback, source)
 
-	// Order-sensitive equality against the whole compiled-in list, not NotEmpty.
-	// Reporting static-fallback is a claim about WHICH list came back: a bug that
-	// degraded to a truncated list — or to a plausible single-region default like
-	// {"us-east-1"} — while still stamping static-fallback would satisfy NotEmpty
-	// and ship silently reduced scan coverage under an authoritative-looking source.
+	// Equality against the whole list, not NotEmpty: a bug that degraded to a
+	// truncated list while still stamping static-fallback would satisfy NotEmpty
+	// and ship reduced coverage under an authoritative-looking source.
 	assert.Equal(t, before, regions,
 		"a static-fallback result must be exactly the compiled-in list, in its "+
 			"compiled-in order")
 	assert.Equal(t, before, Regions, "package Regions var must be unmutated")
 
-	// The caller owns the result and may sort it.
 	sort.Strings(regions)
 	assert.Equal(t, before, Regions, "sorting the result must not touch the package var")
 
-	// Sanity: sorting actually reordered the local slice, so the assertion above
-	// is meaningful rather than vacuously true. Without this, a compiled-in list
-	// that happened to be sorted would make sort.Strings a no-op and the
-	// sort-safety claim would hold for the wrong reason.
 	require.NotEqual(t, before, regions,
 		"precondition: the static list is not already sorted, so sort() is observable")
 }
 
-// The exported entry point must NOT report the compiled-in list as an answer
-// when the caller has already abandoned the work.
+// The other side of that line: a done context means the CALLER walked away, so
+// the compiled-in list with a nil error would hand an abandoned coordinator
+// fabricated coverage to fan every downstream shard across.
 //
-// This is the other side of the line drawn above. A tier miss means the remote
-// end could not be reached, and degrading is correct. A done context means the
-// CALLER walked away: both SDK calls fail with that context error, the ladder
-// reaches tier 3, and handing back the compiled-in list with a nil error would
-// give an abandoned coordinator fabricated coverage to fan every downstream
-// shard across.
-//
-// Both wrapped sentinels are pinned, not just one. errors.Is working here is
-// bought entirely by the %w in the guard's fmt.Errorf; a future refactor to %v
-// would still produce an error with an identical message, so require.Error and
-// any Contains-style check on the text would both keep passing while errors.Is
-// silently went false at every call site. Only ErrorIs catches that.
+// ErrorIs, not Contains: errors.Is works only because of the %w in the guard's
+// fmt.Errorf, and a refactor to %v would leave the message identical — so a text
+// check would stay green while errors.Is silently went false.
 func TestEnabledRegionsWithSource_CanceledContextIsAnError(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -631,8 +560,8 @@ func TestEnabledRegionsWithSource_CanceledContextIsAnError(t *testing.T) {
 	}
 }
 
-// EnabledRegionsWithSource must surface config errors rather than silently
-// falling back, because a config failure is a caller problem, not a tier miss.
+// A config failure is a caller problem, not a tier miss, so it must surface
+// rather than degrade to the static list.
 func TestEnabledRegionsWithSource_PropagatesConfigError(t *testing.T) {
 	oldLoader := defaultConfigLoader
 	defer func() { defaultConfigLoader = oldLoader }()
@@ -648,22 +577,9 @@ func TestEnabledRegionsWithSource_PropagatesConfigError(t *testing.T) {
 	assert.Empty(t, string(source), "no source is claimed when resolution never ran")
 }
 
-// The legacy entry point must still fall through to the static list when both
-// tiers fail.
-//
-// This test is deliberately NOT named "...Unmutated". It asserts value equality
-// only, and value equality cannot see aliasing: these assertions pass identically
-// whether GetEnabledRegions returns the package var or a copy of it. Nothing here
-// writes through the returned slice, so no mutation claim is being made.
-//
-// The legacy path's CLONING behaviour is a separate contract, pinned by pointer
-// identity in TestResolveRegions_TierThreeResultIsAlwaysCloned below.
-//
-// A write-through assertion would now be legitimate here: GetEnabledRegions
-// clones at tier 3, so writing through the returned slice can no longer mutate
-// the process-global Regions var. It is simply not this test's job — this test
-// covers fall-through, and the clone is pinned by pointer identity below, which
-// is a stronger check than mutation and does not disturb the package var.
+// Value equality only: these assertions pass identically whether the tier-3
+// result aliases the package var or clones it. Aliasing is a separate contract,
+// asserted by pointer identity in its own test.
 func TestEnabledRegions_FallsBackToStaticList(t *testing.T) {
 	before := regionsSnapshot()
 
@@ -679,26 +595,15 @@ func TestEnabledRegions_FallsBackToStaticList(t *testing.T) {
 	assert.True(t, slices.Equal(before, Regions), "package Regions var must be unmutated")
 }
 
-// GetEnabledRegions carries the same cancellation guard as
-// EnabledRegionsWithSource, and it is pinned here for the same reason: the %w
-// wrap is what makes errors.Is work, and the two guards are separate
-// fmt.Errorf call sites, so an assertion on one cannot catch a regression in
-// the other.
+// The two entry points' cancellation guards are separate fmt.Errorf call sites,
+// so pinning one cannot catch a regression in the other. No in-repo caller
+// reaches this one with a done context today; it is pinned as defensive symmetry
+// so the two guards cannot silently drift apart.
 //
-// Honest scope note: this path is not reachable with a done context from any
-// in-repo caller today. GetEnabledRegions is reached from EnabledRegions, which
-// passes context.TODO(), and ResolveRegions likewise — both have an
-// unconditionally nil Err(). The guard is pinned as defensive symmetry with the
-// exported wrapper above, so that a future caller threading a real context gets
-// the same contract rather than fabricated coverage, and so that the two guards
-// cannot silently drift apart.
-//
-// The third row is a negative control and it is what gives the first two their
-// meaning. Without it this test would pass just as happily against a guard
-// written as `if ctx.Err() != nil` with no source check — a guard that would
-// throw away real tier-1 data whenever the caller's context finished a moment
-// after the SDK answered. The narrowness of the guard is a behaviour, and only a
-// case where the context is done AND a tier succeeded can observe it.
+// The third row is a negative control, and it is what gives the first two their
+// meaning: without it this test would pass equally against a guard written as
+// `if ctx.Err() != nil` with no source check — one that would throw away real
+// tier-1 data whenever the caller's context finished just after the SDK answered.
 func TestGetEnabledRegions_CanceledContextIsAnError(t *testing.T) {
 	doneCtx := func(t *testing.T) context.Context {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -740,9 +645,8 @@ func TestGetEnabledRegions_CanceledContextIsAnError(t *testing.T) {
 			wantSentinel: context.DeadlineExceeded,
 		},
 		{
-			// Negative control: the guard is scoped to the fabricated case only.
-			// Tier 1 answered, so this list is data the ladder really fetched and
-			// it must be returned even though the context finished.
+			// Negative control: tier 1 answered, so this is data the ladder really
+			// fetched and it must be returned even though the context finished.
 			name: "tier 1 success under a done ctx is still real data",
 			resolver: func() *RegionResolver {
 				return &RegionResolver{
@@ -788,25 +692,11 @@ func TestGetEnabledRegions_CanceledContextIsAnError(t *testing.T) {
 	}
 }
 
-// Both entry points share the resolveRegions ladder, and BOTH must hand the
-// caller a clone at tier 3. Value equality cannot see that — the assertions
-// above pass identically whether a function returns the package var or a copy of
-// it. Only pointer identity can.
-//
-// resolveRegions itself still returns the package-level Regions variable ITSELF
-// at tier 3; that is deliberate and unchanged (see its doc comment). The
-// guarantee lives at the two entry points, each of which clones before handing
-// the slice outward:
-//
-//   - GetEnabledRegions (legacy) returns slices.Clone of it.
-//   - getEnabledRegionsWithSource (new) returns slices.Clone of it.
-//
-// Both halves are real guarantees, not frozen hazards: a caller entitled to sort
-// its result must not be able to permanently reorder the process-global Regions
-// var that AWSCommonRecon.PostBind reads on the live bind path. Do not weaken
-// either assertion to value-equality — that would silently restore the aliasing
-// the pointer check exists to exclude. Pointer identity is checked instead of
-// mutating, so the package var is never disturbed.
+// Both entry points must hand the caller a clone at tier 3, and value equality
+// cannot see that — only pointer identity can. Do not weaken either NotSame to
+// value equality: that would silently restore the aliasing the pointer check
+// exists to exclude, letting a caller who sorts its result permanently reorder
+// the process-global Regions var.
 func TestResolveRegions_TierThreeResultIsAlwaysCloned(t *testing.T) {
 	before := regionsSnapshot()
 	require.NotEmpty(t, Regions, "precondition: the static list is non-empty")
@@ -837,14 +727,9 @@ func TestResolveRegions_TierThreeResultIsAlwaysCloned(t *testing.T) {
 	assert.Equal(t, before, Regions, "no assertion above may disturb the package var")
 }
 
-// ---------------------------------------------------------------------------
-// Tier-3 Warn logging. The log record is BEHAVIOUR, not decoration.
-// ---------------------------------------------------------------------------
-
-// recordingHandler captures slog records so a test can assert what was logged and
-// at which level. Enabled always reports true so the handler itself can never be
-// the reason a record is missing: these assertions are about what the code under
-// test emits, not about handler filtering.
+// recordingHandler captures slog records so a test can assert what was logged
+// and at which level. Enabled always reports true so the handler can never
+// itself be the reason a record is missing.
 type recordingHandler struct {
 	mu      sync.Mutex
 	records []slog.Record
@@ -864,13 +749,8 @@ func (h *recordingHandler) WithGroup(string) slog.Handler      { return h }
 
 // recordsAtLevel returns the records captured at exactly the given level.
 //
-// Handle stores each record WHOLE — h.records = append(h.records, r.Clone()) —
-// so attributes are already retained and no change to Handle or to the struct is
-// needed to assert on them. messagesAtLevel is a projection of this down to
-// Message; a claim about "source" or "region_count" needs the record itself.
-//
-// Records are cloned again on the way out. slog.Record's attributes live partly
-// in a backing array shared with the value the handler was given, so handing the
+// Records are cloned on the way out: a slog.Record's attributes live partly in a
+// backing array shared with the value the handler was given, so handing the
 // stored record out directly would let a caller's Attrs iteration alias state the
 // handler still owns.
 func (h *recordingHandler) recordsAtLevel(lvl slog.Level) []slog.Record {
@@ -895,9 +775,8 @@ func (h *recordingHandler) messagesAtLevel(lvl slog.Level) []string {
 	return out
 }
 
-// attrsOf flattens a record's attributes into a map keyed by attribute name, so
-// an assertion can name the key it cares about instead of depending on the order
-// the production call site happens to pass them in.
+// attrsOf flattens a record's attributes into a map so an assertion can name the
+// key it cares about rather than depend on the order they were passed in.
 func attrsOf(r slog.Record) map[string]slog.Value {
 	out := make(map[string]slog.Value, r.NumAttrs())
 	r.Attrs(func(a slog.Attr) bool {
@@ -907,9 +786,7 @@ func attrsOf(r slog.Record) map[string]slog.Value {
 	return out
 }
 
-// captureLogs routes the default logger into a recordingHandler for the duration
-// of the test and restores the previous logger afterwards.
-//
+// captureLogs routes the default logger into a recordingHandler for the test.
 // The previous logger is captured BEFORE SetDefault, not reconstructed after, so
 // a test that runs after another capture still restores the right one.
 //
@@ -926,31 +803,14 @@ func captureLogs(t *testing.T) *recordingHandler {
 	return h
 }
 
-// TestGetEnabledRegionsWithSource_StaticFallbackLogsAtWarn pins the tier-3 log
-// LEVEL, which is load-bearing rather than cosmetic.
+// The tier-3 log LEVEL is load-bearing, not cosmetic. Demoting this record to
+// Debug is a regression no assertion on the returned value can catch — the
+// regions and the source come back identical either way — and nothing raises
+// verbosity at runtime, so a Debug record on this path reaches no operator.
 //
-// Demoting this record to Debug is a regression that no assertion on the RETURNED
-// VALUE can catch: the regions and the source come back identical either way, so
-// only an assertion on the record itself sees it. A silent drop to the compiled-in
-// list is precisely the failure LAB-5615 exists to surface.
-//
-// Two facts make Warn the level that has to be pinned:
-//
-//   - Nothing selects the level at runtime. configureSlog (cmd/generator.go) is
-//     reached from exactly one call site, which passes a string literal resolving
-//     to slog.LevelWarn. There is no flag and no env var that raises verbosity, so
-//     a Debug record on this path reaches no operator.
-//   - SlogHandler.Enabled (pkg/plugin/log.go) returns true outright for Warn and
-//     above, consulting its configured minimum only for levels below that. The
-//     record therefore keeps passing even if that hardcoded level is later quieted
-//     to "error".
-//
-// The tier-1 and tier-2 rows are negative controls. Without them this test would
-// pass equally well against code that warned on every call, which trains operators
-// to ignore the line and defeats the purpose as thoroughly as silence would. Both
-// rows are needed because they are different branches of the ladder: a guard that
-// is wrong for exactly one of them — say `source != output.SourceAccountAPI` —
-// would satisfy the tier-1 row while warning spuriously on every EC2-API success.
+// The tier-1 and tier-2 rows are negative controls, and both are needed: a guard
+// wrong for exactly one of them — say `source != output.SourceAccountAPI` — would
+// satisfy the tier-1 row while warning spuriously on every EC2-API success.
 func TestGetEnabledRegionsWithSource_StaticFallbackLogsAtWarn(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -1009,37 +869,16 @@ func TestGetEnabledRegionsWithSource_StaticFallbackLogsAtWarn(t *testing.T) {
 	}
 }
 
-// TestGetEnabledRegions_StaticFallbackLogsAtWarn pins the tier-3 Warn on the
-// LEGACY entry point, which the test above cannot see.
+// Pins the tier-3 Warn on the LEGACY entry point: GetEnabledRegions calls
+// resolveRegions directly rather than routing through getEnabledRegionsWithSource,
+// and it carries most of production — AWSCommonRecon.PostBind and the CDK scan
+// path both reach the ladder only here, via helpers.EnabledRegions. That is the
+// reported regression: with the Warn on the other function, both entry points
+// fell back to the compiled-in list in silence.
 //
-// GetEnabledRegions does not route through getEnabledRegionsWithSource. It calls
-// resolveRegions itself, so a pin on getEnabledRegionsWithSource makes no claim
-// about this path — and this is the path that carries most of production. Two of
-// the three live entry points reach the ladder only here:
-//
-//   - AWSCommonRecon.PostBind (pkg/plugin/aws_params.go) resolves a literal
-//     "all" regions value through helpers.EnabledRegions.
-//   - The CDK scan path (pkg/aws/cdk/scan.go) calls helpers.ResolveRegions,
-//     which forwards an "all" value to that same EnabledRegions.
-//
-// Both of those land in GetEnabledRegions. Only the recon module reaches the
-// other function, and it does so by taking helpers.EnabledRegionsWithSource as a
-// func VALUE rather than calling it, which is why a grep for a call site finds
-// just two of the three.
-//
-// This test is the pin for the exact regression that was reported: with the Warn
-// sitting in getEnabledRegionsWithSource instead of in the shared resolveRegions,
-// those two entry points fall back to the compiled-in list in total silence while
-// the test above stays green. That divergence is the whole reason this test
-// exists separately rather than as another row of the one above.
-//
-// The tier-1 and tier-2 rows are negative controls, and both are required for the
-// same structural reason the other test gives, localised to this entry point: a
-// spurious warn added here — say one guarded by `source != output.SourceAccountAPI`
-// — satisfies the tier-1 row while warning on every EC2-API success. A single
-// control cannot tell those apart. An unconditional warning is not a harmless
-// excess either; it trains an operator to skip the line, which loses the tier-3
-// signal just as completely as emitting nothing would.
+// The tier-1 and tier-2 rows are negative controls, and both are needed: a warn
+// guarded by `source != output.SourceAccountAPI` satisfies the tier-1 row while
+// warning on every EC2-API success.
 func TestGetEnabledRegions_StaticFallbackLogsAtWarn(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -1078,10 +917,8 @@ func TestGetEnabledRegions_StaticFallbackLogsAtWarn(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			h := captureLogs(t)
 
-			// The context is LIVE. The gate on the Warn is ctx.Err() == nil, so a
-			// done context here would suppress the record for a reason that has
-			// nothing to do with the tier — see the gate test below, which asserts
-			// exactly that and is the complement of this one.
+			// The context is LIVE: the gate on the Warn is ctx.Err() == nil, so a
+			// done context would suppress the record for a reason unrelated to the tier.
 			regions, err := tt.resolver().GetEnabledRegions(context.Background())
 
 			// GetEnabledRegions reports no provenance, so the returned list is the
@@ -1105,11 +942,8 @@ func TestGetEnabledRegions_StaticFallbackLogsAtWarn(t *testing.T) {
 			assert.Contains(t, warns[0].Message, "compiled-in region list",
 				"the Warn must name the fallback so an operator can act on it")
 
-			// Attributes are asserted on THIS path rather than the other one because
-			// this is the path that had no coverage at all: the record's level, text
-			// and attributes were all unobserved from GetEnabledRegions until now.
-			// Asserting them once is enough for both entry points, and not by
-			// assumption — resolveRegions holds the only slog.Warn call site in this
+			// Attributes are asserted only here, and once is enough — not by
+			// assumption: resolveRegions holds the only slog.Warn call site in this
 			// file, so there is no second record that could drift from this one.
 			attrs := attrsOf(warns[0])
 
@@ -1129,29 +963,17 @@ func TestGetEnabledRegions_StaticFallbackLogsAtWarn(t *testing.T) {
 }
 
 // The tier-3 Warn must be suppressed when the caller has already abandoned the
-// work, and this is the half of that behaviour no returned value can show.
+// work — the half of that behaviour no returned value can show. Nothing is
+// scanned, so a record reading "scan coverage may omit regions" would be a false
+// alarm on a call that already failed loudly. Alone this test is satisfied by an
+// implementation that never warns at all, which is what makes the tier-3 row in
+// the test above its complement rather than an overlap.
 //
-// GetEnabledRegions converts a static-fallback result reached under a done
-// context into an error: nothing is scanned on that path. A record reading
-// "scan coverage may omit regions" would therefore describe a scan that never
-// runs, which is a false alarm attached to a call that already failed loudly.
-//
-// The error assertions here are PRECONDITIONS, not the claim. They establish
-// that the row really did reach the abandoned-caller path rather than passing
-// for some unrelated reason; the sentinels themselves are pinned in
-// TestGetEnabledRegions_CanceledContextIsAnError, and duplicating that here
-// would give two tests one owner. The claim is the ABSENCE of the record, which
-// is asserted explicitly — a returned value cannot express it.
-//
-// Both causes are covered because the gate is ctx.Err() == nil, which is
-// cause-blind, and a regression need not be. A gate narrowed to
-// !errors.Is(ctx.Err(), context.Canceled) still suppresses the record for a
-// cancelled caller while emitting it for an expired deadline; the cancelled row
-// alone cannot see that, and the deadline row is what fails.
-//
-// This test and the one above are complements rather than overlaps: alone, this
-// one is satisfied by an implementation that never warns at all, and that
-// implementation is exactly what the tier-3 row above rejects.
+// The error assertions are PRECONDITIONS, not the claim — they establish that the
+// row really reached the abandoned-caller path; the claim is the ABSENCE of the
+// record. Both causes are covered because the gate is ctx.Err() == nil, which is
+// cause-blind: a gate narrowed to !errors.Is(ctx.Err(), context.Canceled) would
+// still suppress for a cancelled caller, and only the deadline row would fail.
 func TestGetEnabledRegions_DoneContextSuppressesTierThreeWarn(t *testing.T) {
 	tests := []struct {
 		name         string
