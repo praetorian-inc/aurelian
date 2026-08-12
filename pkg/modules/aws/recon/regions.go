@@ -81,9 +81,9 @@ func (m *AWSRegionsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 		return fmt.Errorf("regions: resolve enabled regions: %w", err)
 	}
 
-	// Clone before sorting: at tier 3 the ladder's result originates from the
-	// package-level helpers.Regions variable, which another live path reads, so
-	// sorting in place would permanently reorder a process-global.
+	// Clone before sorting: at tier 3 the resolver's result originates from the
+	// package-level helpers.Regions. The helper clones today, but Run must not
+	// depend on that, and an injected resolver need not clone at all.
 	sorted := slices.Clone(regions)
 	slices.Sort(sorted)
 
