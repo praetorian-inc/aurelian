@@ -78,7 +78,7 @@ Covert techniques that avoid CloudTrail logging. The `whoami` module identifies 
 
 | Platform | Alias | Modules | Capabilities |
 |----------|-------|---------|--------------|
-| **Amazon Web Services (AWS)** | `aws`, `amazon` | 12 | Secrets, public resources, IAM graph, subdomain takeover, OPSEC whoami, cost analysis, CDK/CloudFront takeover |
+| **Amazon Web Services (AWS)** | `aws`, `amazon` | 16 | Secrets, public resources, IAM graph, subdomain takeover, OPSEC whoami, cost analysis, CDK/CloudFront takeover, enabled-region discovery |
 | **Microsoft Azure** | `azure`, `az` | 6 | Secrets, public resources, configuration scan, subdomain takeover, conditional access policies |
 | **Google Cloud Platform (GCP)** | `gcp`, `google` | 4 | Secrets, public resources, subdomain takeover, resource enumeration |
 
@@ -196,6 +196,10 @@ aurelian list-modules
 | `cost-summary` | Summarizes AWS cost and usage data |
 | `cdk-bucket-takeover` | Detects orphaned CDK bootstrap buckets |
 | `cloudfront-s3-takeover` | Detects CloudFront distributions pointing to unclaimed S3 origins |
+| `regions` | Lists the regions enabled for the account, reporting whether the list came from the Account API, the EC2 API, or the compiled-in fallback |
+| `configuration-scan` | Evaluates resource configuration posture and emits risks from typed checks |
+| `get-console` | Generates a federated AWS Console sign-in URL from STS credentials |
+| `iam-quick-analyze` | Scans GAAD for privilege escalation and trust issues without Neo4j |
 
 ### AWS Analysis
 

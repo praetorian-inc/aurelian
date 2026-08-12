@@ -23,19 +23,32 @@ var (
 //
 // The cache has process-lifetime: it is NOT invalidated when
 // plugin.ResetRegistry() is called. Tests that need a fresh union must call
-// ResetForTest (see export_test.go).
+// ResetForTest.
 //
 // Important init-order constraint: do NOT call GetAll(), IsValid(), or
 // Validate() from a package init() function. If invoked before all module
 // init() functions have registered, the union will be permanently incomplete
 // for the lifetime of the process.
+//
+// An empty registry is a legitimate reachable state here, not a bug; the build
+// logs a Warn saying what a consumer must do about it.
 func ensureComputed() {
 	allOnce.Do(func() {
 		seen := make(map[string]struct{})
 		for _, rt := range baseline {
 			seen[rt] = struct{}{}
 		}
-		for _, m := range plugin.ByPlatform(plugin.PlatformAWS) {
+		modules := plugin.ByPlatform(plugin.PlatformAWS)
+		if len(modules) == 0 {
+			slog.Warn("no AWS modules are registered; the resource-type union was "+
+				"built from the baseline list alone, so GetAll, IsValid, Validate, "+
+				"GetGlobal, and GetRegional will under-report. A consumer outside "+
+				"this Go module must blank-import "+
+				"github.com/praetorian-inc/aurelian/pkg/modules/loader before its "+
+				"first call",
+				"baseline_count", len(baseline))
+		}
+		for _, m := range modules {
 			for _, rt := range m.SupportedResourceTypes() {
 				if !typeFormat.MatchString(rt) {
 					slog.Warn("dropping malformed resource type from list-all union",
