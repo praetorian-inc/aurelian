@@ -464,7 +464,7 @@ func TestGetEnabledRegionsWithSource_PropagatesContextToClients(t *testing.T) {
 // The context here is LIVE, and that is the point: tiers 1 and 2 fail on their
 // own merits while the caller is still waiting, so degrading is correct.
 //
-// Do not merge this fixture with TestEnabledRegionsWithSource_CanceledContextIsAnError,
+// Do not merge this fixture with TestEnabledRegionsWithSource_DoneContextIsAnError,
 // which asserts the opposite outcome: sharing one would re-conflate the
 // unreachable-control-plane and abandoned-caller cases the guard separates.
 func TestEnabledRegionsWithSource_UnreachableTiersDegradeToStaticList(t *testing.T) {
@@ -503,7 +503,7 @@ func TestEnabledRegionsWithSource_UnreachableTiersDegradeToStaticList(t *testing
 // ErrorIs, not Contains: errors.Is works only because of the %w in the guard's
 // fmt.Errorf, and a refactor to %v would leave the message identical — so a text
 // check would stay green while errors.Is silently went false.
-func TestEnabledRegionsWithSource_CanceledContextIsAnError(t *testing.T) {
+func TestEnabledRegionsWithSource_DoneContextIsAnError(t *testing.T) {
 	tests := []struct {
 		name         string
 		ctx          func(t *testing.T) context.Context
@@ -604,7 +604,7 @@ func TestEnabledRegions_FallsBackToStaticList(t *testing.T) {
 // meaning: without it this test would pass equally against a guard written as
 // `if ctx.Err() != nil` with no source check — one that would throw away real
 // tier-1 data whenever the caller's context finished just after the SDK answered.
-func TestGetEnabledRegions_CanceledContextIsAnError(t *testing.T) {
+func TestGetEnabledRegions_DoneContextIsAnError(t *testing.T) {
 	doneCtx := func(t *testing.T) context.Context {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()

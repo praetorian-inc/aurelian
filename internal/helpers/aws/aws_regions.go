@@ -66,7 +66,7 @@ func (r *RegionResolver) GetEnabledRegions(ctx context.Context) ([]string, error
 	regions, source := r.resolveRegions(ctx)
 
 	if fabricatedUnderDoneContext(ctx, source) {
-		return nil, fmt.Errorf("region resolution canceled before any tier succeeded: %w", ctx.Err())
+		return nil, fmt.Errorf("region resolution abandoned before any tier succeeded: %w", ctx.Err())
 	}
 
 	return slices.Clone(regions), nil
@@ -241,7 +241,7 @@ func EnabledRegionsWithSource(ctx context.Context, profile, profileDir string) (
 
 	regions, source := resolver.getEnabledRegionsWithSource(ctx)
 	if fabricatedUnderDoneContext(ctx, source) {
-		return nil, "", fmt.Errorf("region resolution canceled before any tier succeeded: %w", ctx.Err())
+		return nil, "", fmt.Errorf("region resolution abandoned before any tier succeeded: %w", ctx.Err())
 	}
 
 	return regions, source, nil
