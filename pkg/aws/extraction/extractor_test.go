@@ -60,6 +60,28 @@ func TestExtract_FirstExtractorFailsSecondSucceeds(t *testing.T) {
 	assert.Equal(t, "ok", items[0].Label)
 }
 
+func TestExtract_FailOnErrorRejectsPartialExtraction(t *testing.T) {
+	mustRegister("AWS::UnitTest::StrictType", "fails", func(_ extractContext, _ output.AWSResource, _ *pipeline.P[output.ScanInput]) error {
+		return errors.New("boom")
+	})
+	mustRegister("AWS::UnitTest::StrictType", "works", func(_ extractContext, r output.AWSResource, out *pipeline.P[output.ScanInput]) error {
+		out.Send(output.ScanInput{ResourceID: r.ResourceID, Label: "ok", Content: []byte("content")})
+		return nil
+	})
+
+	ex := NewAWSExtractor(plugin.AWSCommonRecon{Concurrency: 1}, Config{FailOnError: true})
+	out := pipeline.New[output.ScanInput]()
+	go func() {
+		err := ex.Extract(output.AWSResource{ResourceType: "AWS::UnitTest::StrictType", ResourceID: "r1", Region: "us-east-1"}, out)
+		out.CloseWithError(err)
+	}()
+
+	items, err := out.Collect()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "boom")
+	require.Len(t, items, 1, "all extractors should run before the partial result is rejected")
+}
+
 func TestExtract_ECSPropertiesExtractor(t *testing.T) {
 	ex := NewAWSExtractor(plugin.AWSCommonRecon{Concurrency: 1}, Config{})
 	out := pipeline.New[output.ScanInput]()

@@ -2,6 +2,7 @@ package extraction
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -17,6 +18,10 @@ type Config struct {
 	MaxEvents   int
 	MaxStreams  int
 	NewestFirst bool
+	// FailOnError makes extraction failures fail the pipeline instead of producing
+	// partial results. Incremental callers need this guarantee before advancing a
+	// successful-scan checkpoint.
+	FailOnError bool
 }
 
 // AWSExtractor extracts scanable content from AWS resources.
@@ -46,14 +51,22 @@ func (e *AWSExtractor) Extract(r output.AWSResource, out *pipeline.P[output.Scan
 		awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{Region: r.Region, Profile: e.opts.Profile, ProfileDir: e.opts.ProfileDir})
 		if err != nil {
 			slog.Warn("failed to create AWS config for extraction, skipping extractors", "resource", r.ResourceID, "region", r.Region, "error", err)
+			if e.cfg.FailOnError {
+				return fmt.Errorf("create AWS config for %s: %w", r.ResourceID, err)
+			}
 			return nil
 		}
 
 		ec := extractContext{Context: context.Background(), AWSConfig: awsCfg, Config: e.cfg, Concurrency: e.opts.Concurrency}
+		var errs error
 		for _, ext := range extractors {
 			if err := ext.Fn(ec, r, out); err != nil {
 				slog.Warn("extractor failed", "name", ext.Name, "type", r.ResourceType, "resource", r.ResourceID, "error", err)
+				errs = errors.Join(errs, fmt.Errorf("%s: %w", ext.Name, err))
 			}
+		}
+		if e.cfg.FailOnError && errs != nil {
+			return fmt.Errorf("extract %s: %w", r.ResourceID, errs)
 		}
 		return nil
 	})

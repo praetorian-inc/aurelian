@@ -3,7 +3,6 @@ package secrets
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
@@ -83,8 +82,7 @@ func (r SecretScanResult) ToRisk() (output.AurelianRisk, error) {
 func RiskFromScanResult(result SecretScanResult, out *pipeline.P[model.AurelianModel]) error {
 	risk, err := result.ToRisk()
 	if err != nil {
-		slog.Warn("failed to build risk", "resource", result.ResourceRef, "error", err)
-		return nil
+		return fmt.Errorf("build risk for %s: %w", result.ResourceRef, err)
 	}
 	out.Send(risk)
 	return nil

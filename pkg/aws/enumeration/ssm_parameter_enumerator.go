@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -112,9 +113,11 @@ func (e *SSMParameterEnumerator) EnumerateByARN(arn string, out *pipeline.P[outp
 			Region:       parsed.Region,
 			DisplayName:  name,
 			Properties: map[string]any{
-				"Name": name,
-				"Type": string(p.Type),
-				"Tier": string(p.Tier),
+				"Name":             name,
+				"Type":             string(p.Type),
+				"Tier":             string(p.Tier),
+				"Version":          p.Version,
+				"LastModifiedDate": formatOptionalTime(p.LastModifiedDate),
 			},
 		})
 	}
@@ -158,13 +161,22 @@ func (e *SSMParameterEnumerator) listParametersInRegion(region, accountID string
 				Region:       region,
 				DisplayName:  name,
 				Properties: map[string]any{
-					"Name": name,
-					"Type": string(p.Type),
-					"Tier": string(p.Tier),
+					"Name":             name,
+					"Type":             string(p.Type),
+					"Tier":             string(p.Tier),
+					"Version":          p.Version,
+					"LastModifiedDate": formatOptionalTime(p.LastModifiedDate),
 				},
 			})
 		}
 	}
 	e.skipReport.RecordBatch(skipped)
 	return nil
+}
+
+func formatOptionalTime(value *time.Time) string {
+	if value == nil {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
 }

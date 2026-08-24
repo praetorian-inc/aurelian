@@ -593,16 +593,17 @@ func TestSecretScanner_ScanSkipsMultipleIgnoredPaths(t *testing.T) {
 type fakeMatcher struct {
 	immediate    []*types.Match
 	queued       []*types.Match // surfaced once, via DrainTimedOut
+	matchErr     error
 	drainErr     error
 	drainedCalls int
 }
 
 func (f *fakeMatcher) Match(content []byte) ([]*types.Match, error) {
-	return f.immediate, nil
+	return f.immediate, f.matchErr
 }
 
 func (f *fakeMatcher) MatchWithBlobID(content []byte, blobID types.BlobID) ([]*types.Match, error) {
-	return f.immediate, nil
+	return f.immediate, f.matchErr
 }
 
 // DrainTimedOut returns the queued matches once, mirroring the real matcher
@@ -852,6 +853,37 @@ func TestSecretScanner_ScanFlushAndClose_PropagatesUpstreamError(t *testing.T) {
 	_, err := out.Collect()
 	require.ErrorIs(t, err, upstreamErr, "upstream pipeline error must propagate to out, not be discarded")
 	assert.Empty(t, s.DBPath(), "ScanFlushAndClose should close the scanner even on upstream errors")
+}
+
+func TestSecretScanner_ScanFlushAndClose_StrictModePropagatesTitusError(t *testing.T) {
+	s := startScanner(t)
+	s.SetFailOnError(true)
+	s.ps.matcher = &fakeMatcher{matchErr: assert.AnError}
+
+	in := pipeline.From(output.ScanInput{
+		Content:    []byte("content"),
+		ResourceID: "resource-1",
+		Label:      "content.txt",
+	})
+	out := pipeline.New[SecretScanResult]()
+	s.ScanFlushAndClose(in, out)
+
+	_, err := out.Collect()
+	require.ErrorIs(t, err, assert.AnError)
+	assert.Empty(t, s.DBPath(), "strict failures must still close the scanner")
+}
+
+func TestSecretScanner_ScanFlushAndClose_StrictModePropagatesFlushError(t *testing.T) {
+	s := startScanner(t)
+	s.SetFailOnError(true)
+	s.ps.matcher = &fakeMatcher{drainErr: assert.AnError}
+
+	out := pipeline.New[SecretScanResult]()
+	s.ScanFlushAndClose(pipeline.From[output.ScanInput](), out)
+
+	_, err := out.Collect()
+	require.ErrorIs(t, err, assert.AnError)
+	assert.Empty(t, s.DBPath(), "strict failures must still close the scanner")
 }
 
 // TestProvenanceScanInputRoundTrip pins the invariant that the provenance
