@@ -72,7 +72,7 @@ func (l *LambdaFunctionEnumerator) EnumerateByARN(arn string, out *pipeline.P[ou
 		return fmt.Errorf("invalid Lambda function ARN resource: %q", parsed.Resource)
 	}
 	if parsed.Region == "" {
-		return fmt.Errorf("Lambda function ARN missing region: %q", arn)
+		return fmt.Errorf("lambda function ARN missing region: %q", arn)
 	}
 
 	cfg, err := l.provider.GetAWSConfig(parsed.Region)
