@@ -119,6 +119,7 @@ func buildECSTaskDefinitionResource(td *ecstypes.TaskDefinition, accountID, regi
 		AccountRef:   accountID,
 		Region:       region,
 		DisplayName:  family,
+		LastModified: td.RegisteredAt,
 		Properties: map[string]any{
 			"Family": family,
 			// TaskRoleArn (the role the task's containers assume — the escalation target) and

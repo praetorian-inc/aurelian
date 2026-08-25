@@ -84,6 +84,10 @@ func (l *CloudFormationStackEnumerator) listStacksInRegion(region, accountID str
 
 func buildStackResource(stack cfntypes.Stack, accountID, region string) output.AWSResource {
 	stackName := aws.ToString(stack.StackName)
+	lastModified := stack.LastUpdatedTime
+	if lastModified == nil {
+		lastModified = stack.CreationTime
+	}
 
 	// StackId is a full ARN; fall back to a synthesized ARN if absent (DescribeStacks
 	// always returns StackId, but guard against a nil so the node still keys cleanly).
@@ -99,6 +103,7 @@ func buildStackResource(stack cfntypes.Stack, accountID, region string) output.A
 		AccountRef:   accountID,
 		Region:       region,
 		DisplayName:  stackName,
+		LastModified: lastModified,
 		Properties: map[string]any{
 			"StackName": stackName,
 			// RoleARN is the stack's service role; resource_service_role.yaml substring-

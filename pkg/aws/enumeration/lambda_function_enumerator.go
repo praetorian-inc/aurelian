@@ -3,6 +3,7 @@ package enumeration
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
@@ -100,6 +101,7 @@ func buildLambdaFunctionResource(fn lambdatypes.FunctionConfiguration, accountID
 		AccountRef:   accountID,
 		Region:       region,
 		DisplayName:  name,
+		LastModified: parseLambdaLastModified(aws.ToString(fn.LastModified)),
 		Properties: map[string]any{
 			"FunctionName": name,
 			// Role is the function's execution role; NodeFromAWSResource promotes it to a
@@ -108,4 +110,14 @@ func buildLambdaFunctionResource(fn lambdatypes.FunctionConfiguration, accountID
 			"Role": aws.ToString(fn.Role),
 		},
 	}
+}
+
+func parseLambdaLastModified(value string) *time.Time {
+	for _, layout := range []string{"2006-01-02T15:04:05.000-0700", "2006-01-02T15:04:05-0700"} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			parsed = parsed.UTC()
+			return &parsed
+		}
+	}
+	return nil
 }

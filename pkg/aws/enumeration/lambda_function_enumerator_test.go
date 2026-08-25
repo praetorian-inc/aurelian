@@ -2,6 +2,7 @@ package enumeration
 
 import (
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
@@ -13,6 +14,7 @@ func TestBuildLambdaFunctionResource(t *testing.T) {
 		FunctionName: aws.String("pl-prod-lambda-003-target"),
 		FunctionArn:  aws.String("arn:aws:lambda:us-east-1:123456789012:function:pl-prod-lambda-003-target"),
 		Role:         aws.String("arn:aws:iam::123456789012:role/pl-prod-lambda-003-exec-role"),
+		LastModified: aws.String("2026-08-24T12:34:56.789+0000"),
 	}
 
 	r := buildLambdaFunctionResource(fn, "123456789012", "us-east-1")
@@ -22,6 +24,7 @@ func TestBuildLambdaFunctionResource(t *testing.T) {
 	assert.Equal(t, "arn:aws:lambda:us-east-1:123456789012:function:pl-prod-lambda-003-target", r.ARN)
 	assert.Equal(t, "123456789012", r.AccountRef)
 	assert.Equal(t, "us-east-1", r.Region)
+	assert.Equal(t, time.Date(2026, time.August, 24, 12, 34, 56, 789000000, time.UTC), *r.LastModified)
 	// Role must be captured under "Role" so NodeFromAWSResource promotes it to a top-level
 	// node prop and resource_to_role.yaml matches resource.Role = role.Arn for HAS_ROLE.
 	assert.Equal(t, "arn:aws:iam::123456789012:role/pl-prod-lambda-003-exec-role", r.Properties["Role"])

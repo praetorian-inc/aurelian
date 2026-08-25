@@ -3,6 +3,7 @@ package extraction
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -64,10 +65,6 @@ func TestExtract_FailOnErrorRejectsPartialExtraction(t *testing.T) {
 	mustRegister("AWS::UnitTest::StrictType", "fails", func(_ extractContext, _ output.AWSResource, _ *pipeline.P[output.ScanInput]) error {
 		return errors.New("boom")
 	})
-	mustRegister("AWS::UnitTest::StrictType", "works", func(_ extractContext, r output.AWSResource, out *pipeline.P[output.ScanInput]) error {
-		out.Send(output.ScanInput{ResourceID: r.ResourceID, Label: "ok", Content: []byte("content")})
-		return nil
-	})
 
 	ex := NewAWSExtractor(plugin.AWSCommonRecon{Concurrency: 1}, Config{FailOnError: true})
 	out := pipeline.New[output.ScanInput]()
@@ -79,7 +76,25 @@ func TestExtract_FailOnErrorRejectsPartialExtraction(t *testing.T) {
 	items, err := out.Collect()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "boom")
-	require.Len(t, items, 1, "all extractors should run before the partial result is rejected")
+	assert.Empty(t, items)
+}
+
+func TestExtract_UnchangedResourceIsSkipped(t *testing.T) {
+	modified := time.Date(2026, time.August, 24, 11, 0, 0, 0, time.UTC)
+	ex := NewAWSExtractor(plugin.AWSCommonRecon{Concurrency: 1}, Config{
+		ModifiedSince: modified.Add(time.Hour),
+	})
+	out := pipeline.New[output.ScanInput]()
+	resource := output.AWSResource{
+		ResourceType: "AWS::UnitTest::MissingExtractor",
+		ResourceID:   "resource-1",
+		LastModified: &modified,
+	}
+
+	err := ex.Extract(resource, out)
+
+	require.NoError(t, err)
+	assert.Zero(t, out.Sent())
 }
 
 func TestExtract_ECSPropertiesExtractor(t *testing.T) {

@@ -105,25 +105,15 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		Progress: cfg.Log.ProgressFunc("listing resources"),
 	})
 
-	toExtract := listed
-	if incremental && !modifiedSince.IsZero() {
-		filtered := pipeline.New[output.AWSResource]()
-		detector := extraction.NewModifiedSinceFilter(c.AWSCommonRecon, modifiedSince)
-		pipeline.Pipe(listed, detector.Filter, filtered, &pipeline.PipeOpts{
-			Progress:    cfg.Log.ProgressFunc("checking for resource changes"),
-			Concurrency: m.Concurrency,
-		})
-		toExtract = filtered
-	}
-
 	extractor := extraction.NewAWSExtractor(c.AWSCommonRecon, extraction.Config{
-		MaxEvents:   c.MaxEvents,
-		MaxStreams:  c.MaxStreams,
-		FailOnError: incremental,
+		MaxEvents:     c.MaxEvents,
+		MaxStreams:    c.MaxStreams,
+		ModifiedSince: modifiedSince,
+		FailOnError:   incremental,
 	})
 
 	extracted := pipeline.New[output.ScanInput]()
-	pipeline.Pipe(toExtract, extractor.Extract, extracted, &pipeline.PipeOpts{
+	pipeline.Pipe(listed, extractor.Extract, extracted, &pipeline.PipeOpts{
 		Progress:    cfg.Log.ProgressFunc("extracting content"),
 		Concurrency: m.Concurrency,
 	})
