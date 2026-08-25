@@ -3,8 +3,11 @@ package enumeration
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -60,6 +63,40 @@ func (l *LambdaFunctionEnumerator) EnumerateAll(out *pipeline.P[output.AWSResour
 	})
 }
 
+func (l *LambdaFunctionEnumerator) EnumerateByARN(arn string, out *pipeline.P[output.AWSResource]) error {
+	parsed, err := awsarn.Parse(arn)
+	if err != nil {
+		return fmt.Errorf("parse ARN %q: %w", arn, err)
+	}
+	if _, ok := strings.CutPrefix(parsed.Resource, "function:"); !ok {
+		return fmt.Errorf("invalid Lambda function ARN resource: %q", parsed.Resource)
+	}
+	if parsed.Region == "" {
+		return fmt.Errorf("lambda function ARN missing region: %q", arn)
+	}
+
+	cfg, err := l.provider.GetAWSConfig(parsed.Region)
+	if err != nil {
+		return fmt.Errorf("create Lambda client for %s: %w", parsed.Region, err)
+	}
+	result, err := lambda.NewFromConfig(*cfg).GetFunction(context.Background(), &lambda.GetFunctionInput{
+		FunctionName: aws.String(arn),
+	})
+	if err != nil {
+		if op := ClassifySkippable(err, "lambda", "GetFunction", parsed.Region); op != nil {
+			l.skipReport.Record(*op)
+			return nil
+		}
+		return fmt.Errorf("get function %s: %w", arn, err)
+	}
+	if result.Configuration == nil {
+		return fmt.Errorf("get function %s returned no configuration", arn)
+	}
+
+	out.Send(buildLambdaFunctionResource(*result.Configuration, parsed.AccountID, parsed.Region))
+	return nil
+}
+
 func (l *LambdaFunctionEnumerator) listFunctionsInRegion(region, accountID string, out *pipeline.P[output.AWSResource]) error {
 	cfg, err := l.provider.GetAWSConfig(region)
 	if err != nil {
@@ -100,6 +137,7 @@ func buildLambdaFunctionResource(fn lambdatypes.FunctionConfiguration, accountID
 		AccountRef:   accountID,
 		Region:       region,
 		DisplayName:  name,
+		LastModified: parseLambdaLastModified(aws.ToString(fn.LastModified)),
 		Properties: map[string]any{
 			"FunctionName": name,
 			// Role is the function's execution role; NodeFromAWSResource promotes it to a
@@ -108,4 +146,14 @@ func buildLambdaFunctionResource(fn lambdatypes.FunctionConfiguration, accountID
 			"Role": aws.ToString(fn.Role),
 		},
 	}
+}
+
+func parseLambdaLastModified(value string) *time.Time {
+	for _, layout := range []string{"2006-01-02T15:04:05.000-0700", "2006-01-02T15:04:05-0700"} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			parsed = parsed.UTC()
+			return &parsed
+		}
+	}
+	return nil
 }

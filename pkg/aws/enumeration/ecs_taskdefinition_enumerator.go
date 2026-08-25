@@ -3,8 +3,10 @@ package enumeration
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -56,6 +58,40 @@ func (l *ECSTaskDefinitionEnumerator) EnumerateAll(out *pipeline.P[output.AWSRes
 	return actor.ActInRegions(l.Regions, func(region string) error {
 		return l.listTaskDefinitionsInRegion(region, accountID, out)
 	})
+}
+
+func (l *ECSTaskDefinitionEnumerator) EnumerateByARN(arn string, out *pipeline.P[output.AWSResource]) error {
+	parsed, err := awsarn.Parse(arn)
+	if err != nil {
+		return fmt.Errorf("parse ARN %q: %w", arn, err)
+	}
+	if _, ok := strings.CutPrefix(parsed.Resource, "task-definition/"); !ok {
+		return fmt.Errorf("invalid ECS task definition ARN resource: %q", parsed.Resource)
+	}
+	if parsed.Region == "" {
+		return fmt.Errorf("ECS task definition ARN missing region: %q", arn)
+	}
+
+	cfg, err := l.provider.GetAWSConfig(parsed.Region)
+	if err != nil {
+		return fmt.Errorf("create ECS client for %s: %w", parsed.Region, err)
+	}
+	result, err := ecs.NewFromConfig(*cfg).DescribeTaskDefinition(context.Background(), &ecs.DescribeTaskDefinitionInput{
+		TaskDefinition: aws.String(arn),
+	})
+	if err != nil {
+		if op := ClassifySkippable(err, "ecs", "DescribeTaskDefinition", parsed.Region); op != nil {
+			l.skipReport.Record(*op)
+			return nil
+		}
+		return fmt.Errorf("describe task definition %s: %w", arn, err)
+	}
+	if result.TaskDefinition == nil {
+		return fmt.Errorf("describe task definition %s returned no task definition", arn)
+	}
+
+	out.Send(buildECSTaskDefinitionResource(result.TaskDefinition, parsed.AccountID, parsed.Region))
+	return nil
 }
 
 func (l *ECSTaskDefinitionEnumerator) listTaskDefinitionsInRegion(region, accountID string, out *pipeline.P[output.AWSResource]) error {
@@ -119,6 +155,7 @@ func buildECSTaskDefinitionResource(td *ecstypes.TaskDefinition, accountID, regi
 		AccountRef:   accountID,
 		Region:       region,
 		DisplayName:  family,
+		LastModified: td.RegisteredAt,
 		Properties: map[string]any{
 			"Family": family,
 			// TaskRoleArn (the role the task's containers assume — the escalation target) and

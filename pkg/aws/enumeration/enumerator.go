@@ -81,6 +81,9 @@ func NewEnumeratorWithProvider(opts plugin.AWSCommonRecon, provider *AWSConfigPr
 	e.Register(iamEnum.UserEnumerator())
 
 	e.Register(NewEC2ImageEnumerator(opts, provider, skipReport))
+	e.Register(NewLambdaFunctionEnumerator(opts, provider, skipReport))
+	e.Register(NewCloudFormationStackEnumerator(opts, provider, skipReport))
+	e.Register(NewECSTaskDefinitionEnumerator(opts, provider, skipReport))
 	e.Register(NewSSMDocumentEnumerator(opts, provider, skipReport))
 	e.Register(NewSSMParameterEnumerator(opts, provider, skipReport))
 	e.Register(NewOpenSearchDomainEnumerator(opts, provider, skipReport))

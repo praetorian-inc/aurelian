@@ -2,6 +2,7 @@ package enumeration
 
 import (
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ecstypes "github.com/aws/aws-sdk-go-v2/service/ecs/types"
@@ -9,11 +10,13 @@ import (
 )
 
 func TestBuildECSTaskDefinitionResource(t *testing.T) {
+	registered := time.Date(2026, time.August, 24, 12, 0, 0, 0, time.UTC)
 	td := &ecstypes.TaskDefinition{
 		Family:            aws.String("web-task"),
 		TaskDefinitionArn: aws.String("arn:aws:ecs:us-east-2:123456789012:task-definition/web-task:3"),
 		TaskRoleArn:       aws.String("arn:aws:iam::123456789012:role/ecs-task-role"),
 		ExecutionRoleArn:  aws.String("arn:aws:iam::123456789012:role/ecs-exec-role"),
+		RegisteredAt:      &registered,
 	}
 
 	r := buildECSTaskDefinitionResource(td, "123456789012", "us-east-2")
@@ -23,6 +26,7 @@ func TestBuildECSTaskDefinitionResource(t *testing.T) {
 	assert.Equal(t, "arn:aws:ecs:us-east-2:123456789012:task-definition/web-task:3", r.ARN)
 	assert.Equal(t, "123456789012", r.AccountRef)
 	assert.Equal(t, "us-east-2", r.Region)
+	assert.Equal(t, registered, *r.LastModified)
 	// Both TaskRoleArn and ExecutionRoleArn must be captured so resource_service_role.yaml
 	// can substring-match whichever is privileged inside the flattened properties JSON string
 	// and create the HAS_ROLE edge.

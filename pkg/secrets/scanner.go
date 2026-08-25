@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -14,10 +15,11 @@ import (
 
 // SecretScanner provides an object-oriented interface for scanning content for secrets.
 type SecretScanner struct {
-	ps         *persistentScanner
-	validate   bool
-	engine     *validator.Engine
-	ignorePath func(string) bool
+	ps          *persistentScanner
+	validate    bool
+	engine      *validator.Engine
+	ignorePath  func(string) bool
+	failOnError bool
 }
 
 // SecretScanResult represents a secret detection result emitted by the scanner.
@@ -33,6 +35,7 @@ type SecretScanResult struct {
 
 // Start creates a new persistent scanner and stores it as a field.
 func (s *SecretScanner) Start(cfg ScannerConfig) error {
+	s.failOnError = false
 	ps, err := newPersistentScanner(cfg.DBPath, cfg.Ruleset, cfg.DisabledTitusRules)
 	if err != nil {
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
@@ -71,6 +74,14 @@ func (s *SecretScanner) DBPath() string {
 	return s.ps.dbPath
 }
 
+// SetFailOnError controls whether Titus scan, flush, and close failures are
+// returned to the pipeline. Incremental callers must enable it so they do not
+// advance a checkpoint after a partial scan. The default preserves the legacy
+// best-effort behavior for existing modules.
+func (s *SecretScanner) SetFailOnError(enabled bool) {
+	s.failOnError = enabled
+}
+
 // ScanFlushAndClose runs ScanFlushAndClose over every input, flushes any timed-out retry
 // matches into the same output pipeline, closes the scanner, then closes out.
 // It is a drop-in replacement for `pipeline.Pipe(in, s.ScanFlushAndClose, out, opts...)`
@@ -92,6 +103,9 @@ func (s *SecretScanner) ScanFlushAndClose(in *pipeline.P[output.ScanInput], out 
 		defer func() {
 			if closeErr := s.Close(); closeErr != nil {
 				slog.Warn("failed to close Titus scanner", "error", closeErr)
+				if s.failOnError {
+					err = errors.Join(err, fmt.Errorf("close Titus scanner: %w", closeErr))
+				}
 			}
 			if err != nil {
 				out.CloseWithError(err)
@@ -103,10 +117,8 @@ func (s *SecretScanner) ScanFlushAndClose(in *pipeline.P[output.ScanInput], out 
 		for item := range scanned.Range() {
 			out.Send(item)
 		}
-		// s.Scan itself never errors, but pipeline.Pipe records any upstream
-		// stage failure (e.g. a cloud lister/extractor) on the scanned stream
-		// via in.Wait(). Propagate it to out so the module reports failure
-		// instead of silent partial success.
+		// Propagate scanner and upstream stage failures so the module reports
+		// failure instead of silent partial success.
 		if waitErr := scanned.Wait(); waitErr != nil {
 			err = waitErr
 			return
@@ -114,6 +126,9 @@ func (s *SecretScanner) ScanFlushAndClose(in *pipeline.P[output.ScanInput], out 
 		// Drain the timed-out retry queue once all inputs are scanned.
 		if flushErr := s.Flush(out); flushErr != nil {
 			slog.Warn("failed to flush timed-out secret matches", "error", flushErr)
+			if s.failOnError {
+				err = flushErr
+			}
 		}
 	}()
 }
@@ -134,6 +149,9 @@ func (s *SecretScanner) Scan(input output.ScanInput, out *pipeline.P[SecretScanR
 	matches, err := s.ps.scanContent(input.Content, blobID, provenanceFromScanInput(input))
 	if err != nil {
 		slog.Warn("failed to scan content for secrets", "resource", input.ResourceID, "label", input.Label, "error", err)
+		if s.failOnError {
+			return fmt.Errorf("scan %s (%s): %w", input.ResourceID, input.Label, err)
+		}
 		return nil
 	}
 

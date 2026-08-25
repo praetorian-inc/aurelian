@@ -2,6 +2,7 @@ package enumeration
 
 import (
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	cfntypes "github.com/aws/aws-sdk-go-v2/service/cloudformation/types"
@@ -9,11 +10,15 @@ import (
 )
 
 func TestBuildStackResource(t *testing.T) {
+	created := time.Date(2026, time.August, 23, 12, 0, 0, 0, time.UTC)
+	updated := created.Add(time.Hour)
 	stack := cfntypes.Stack{
-		StackName:   aws.String("my-stack"),
-		StackId:     aws.String("arn:aws:cloudformation:us-east-2:123456789012:stack/my-stack/abc-123"),
-		StackStatus: cfntypes.StackStatusCreateComplete,
-		RoleARN:     aws.String("arn:aws:iam::123456789012:role/stack-service-role"),
+		StackName:       aws.String("my-stack"),
+		StackId:         aws.String("arn:aws:cloudformation:us-east-2:123456789012:stack/my-stack/abc-123"),
+		StackStatus:     cfntypes.StackStatusCreateComplete,
+		RoleARN:         aws.String("arn:aws:iam::123456789012:role/stack-service-role"),
+		CreationTime:    &created,
+		LastUpdatedTime: &updated,
 	}
 
 	r := buildStackResource(stack, "123456789012", "us-east-2")
@@ -24,6 +29,7 @@ func TestBuildStackResource(t *testing.T) {
 	assert.Equal(t, "arn:aws:cloudformation:us-east-2:123456789012:stack/my-stack/abc-123", r.ARN)
 	assert.Equal(t, "123456789012", r.AccountRef)
 	assert.Equal(t, "us-east-2", r.Region)
+	assert.Equal(t, updated, *r.LastModified)
 	assert.Equal(t, "CREATE_COMPLETE", r.Properties["StackStatus"])
 	// RoleARN must be captured so resource_service_role.yaml can substring-match it
 	// inside the flattened properties JSON string and create the HAS_ROLE edge.

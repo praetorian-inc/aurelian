@@ -111,6 +111,7 @@ func (e *SSMParameterEnumerator) EnumerateByARN(arn string, out *pipeline.P[outp
 			AccountRef:   parsed.AccountID,
 			Region:       parsed.Region,
 			DisplayName:  name,
+			LastModified: p.LastModifiedDate,
 			Properties: map[string]any{
 				"Name": name,
 				"Type": string(p.Type),
@@ -157,6 +158,7 @@ func (e *SSMParameterEnumerator) listParametersInRegion(region, accountID string
 				AccountRef:   accountID,
 				Region:       region,
 				DisplayName:  name,
+				LastModified: p.LastModifiedDate,
 				Properties: map[string]any{
 					"Name": name,
 					"Type": string(p.Type),

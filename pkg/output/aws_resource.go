@@ -1,6 +1,8 @@
 package output
 
 import (
+	"time"
+
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/types"
 )
@@ -36,6 +38,9 @@ type AWSResource struct {
 
 	// DisplayName is a human-readable name for the resource (optional)
 	DisplayName string `json:"display_name,omitempty"`
+
+	// LastModified is the last authoritative modification time reported by AWS.
+	LastModified *time.Time `json:"last_modified,omitempty"`
 
 	// Properties contains additional resource metadata as key-value pairs (optional)
 	Properties map[string]any `json:"properties,omitempty"`

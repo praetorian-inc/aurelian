@@ -110,6 +110,21 @@ func TestNewEnumerator_RegistersRAMResourceShare(t *testing.T) {
 	}
 }
 
+func TestNewEnumerator_RegistersTimestampEnumerators(t *testing.T) {
+	e := NewEnumerator(plugin.AWSCommonRecon{Regions: []string{"us-east-1"}, Concurrency: 1})
+	defer func() { _ = e.Close() }()
+
+	for _, resourceType := range []string{
+		"AWS::Lambda::Function",
+		"AWS::CloudFormation::Stack",
+		"AWS::ECS::TaskDefinition",
+		"AWS::SSM::Parameter",
+	} {
+		_, ok := e.enumerators[resourceType]
+		require.True(t, ok, "%s should use its timestamp-bearing enumerator", resourceType)
+	}
+}
+
 func TestEnumerator_enumerateByType_DispatchesSSMToRegisteredEnumerator(t *testing.T) {
 	mock := &mockResourceEnumerator{resourceType: "AWS::SSM::Document"}
 	e := newTestEnumerator(map[string]ResourceEnumerator{"AWS::SSM::Document": mock})
@@ -483,4 +498,3 @@ func TestEnumerator_List_FatalError_StopsPipeline(t *testing.T) {
 	assert.Equal(t, 1, callCount,
 		"pipeline must stop after first fatal error — second type should not be attempted")
 }
-

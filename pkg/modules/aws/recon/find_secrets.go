@@ -2,6 +2,7 @@ package recon
 
 import (
 	"fmt"
+	"time"
 
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/aws/extraction"
@@ -20,8 +21,9 @@ func init() {
 type FindSecretsConfig struct {
 	plugin.AWSCommonRecon
 	secrets.ScannerConfig
-	MaxEvents  int `param:"max-events" desc:"Max log events per log group" default:"10000"`
-	MaxStreams int `param:"max-streams" desc:"Max streams to sample per log group" default:"10"`
+	MaxEvents     int    `param:"max-events" desc:"Max log events per log group" default:"10000"`
+	MaxStreams    int    `param:"max-streams" desc:"Max streams to sample per log group" default:"10"`
+	ModifiedSince string `param:"modified-since" desc:"RFC3339 timestamp of the last successful scan; unchanged resources with reliable AWS modification metadata are skipped"`
 }
 
 // AWSFindSecretsModule scans AWS resources for hardcoded secrets using Titus.
@@ -72,6 +74,16 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		c.DBPath = secrets.DefaultDBPath(c.OutputDir)
 	}
 
+	var modifiedSince time.Time
+	incremental := c.ModifiedSince != ""
+	if incremental {
+		var err error
+		modifiedSince, err = time.Parse(time.RFC3339Nano, c.ModifiedSince)
+		if err != nil {
+			return fmt.Errorf("invalid modified-since timestamp %q: %w", c.ModifiedSince, err)
+		}
+	}
+
 	cfg.Info("scanning %d resource types for secrets", len(m.SupportedResourceTypes()))
 
 	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
@@ -83,6 +95,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	if err := s.Start(c.ScannerConfig); err != nil {
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
 	}
+	s.SetFailOnError(incremental)
 
 	lister := cclist.NewEnumerator(c.AWSCommonRecon)
 	defer func() { _ = lister.Close() }()
@@ -93,8 +106,10 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 	})
 
 	extractor := extraction.NewAWSExtractor(c.AWSCommonRecon, extraction.Config{
-		MaxEvents:  c.MaxEvents,
-		MaxStreams: c.MaxStreams,
+		MaxEvents:     c.MaxEvents,
+		MaxStreams:    c.MaxStreams,
+		ModifiedSince: modifiedSince,
+		FailOnError:   incremental,
 	})
 
 	extracted := pipeline.New[output.ScanInput]()
@@ -111,6 +126,9 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 
 	if err := out.Wait(); err != nil {
 		return err
+	}
+	if incremental && lister.Skipped.Len() > 0 {
+		return fmt.Errorf("resource enumeration was incomplete: %s", lister.Skipped.Summary())
 	}
 
 	cfg.Success("secret scanning complete")
