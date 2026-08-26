@@ -2,6 +2,7 @@ package enumeration
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -90,7 +91,11 @@ func (l *ECSTaskDefinitionEnumerator) EnumerateByARN(arn string, out *pipeline.P
 		return fmt.Errorf("describe task definition %s returned no task definition", arn)
 	}
 
-	out.Send(buildECSTaskDefinitionResource(result.TaskDefinition, parsed.AccountID, parsed.Region))
+	resource, err := buildECSTaskDefinitionResource(result.TaskDefinition, parsed.AccountID, parsed.Region)
+	if err != nil {
+		return fmt.Errorf("build task definition resource %s: %w", arn, err)
+	}
+	out.Send(resource)
 	return nil
 }
 
@@ -130,7 +135,11 @@ func (l *ECSTaskDefinitionEnumerator) listTaskDefinitionsInRegion(region, accoun
 			if detail.TaskDefinition == nil {
 				continue
 			}
-			out.Send(buildECSTaskDefinitionResource(detail.TaskDefinition, accountID, region))
+			resource, err := buildECSTaskDefinitionResource(detail.TaskDefinition, accountID, region)
+			if err != nil {
+				return fmt.Errorf("build task definition resource %s: %w", arn, err)
+			}
+			out.Send(resource)
 		}
 	}
 
@@ -138,8 +147,17 @@ func (l *ECSTaskDefinitionEnumerator) listTaskDefinitionsInRegion(region, accoun
 	return nil
 }
 
-func buildECSTaskDefinitionResource(td *ecstypes.TaskDefinition, accountID, region string) output.AWSResource {
+func buildECSTaskDefinitionResource(td *ecstypes.TaskDefinition, accountID, region string) (output.AWSResource, error) {
 	family := aws.ToString(td.Family)
+
+	data, err := json.Marshal(td)
+	if err != nil {
+		return output.AWSResource{}, fmt.Errorf("marshal task definition: %w", err)
+	}
+	properties := make(map[string]any)
+	if err := json.Unmarshal(data, &properties); err != nil {
+		return output.AWSResource{}, fmt.Errorf("normalize task definition properties: %w", err)
+	}
 
 	// TaskDefinitionArn is the full revision ARN (family:revision); fall back to a
 	// synthesized ARN if absent so the node still keys cleanly.
@@ -156,14 +174,6 @@ func buildECSTaskDefinitionResource(td *ecstypes.TaskDefinition, accountID, regi
 		Region:       region,
 		DisplayName:  family,
 		LastModified: td.RegisteredAt,
-		Properties: map[string]any{
-			"Family": family,
-			// TaskRoleArn (the role the task's containers assume — the escalation target) and
-			// ExecutionRoleArn (the role the agent uses to pull images / write logs). Both are
-			// substring-matched (quoted) inside the flattened `properties` JSON string by
-			// resource_service_role.yaml to create the (TaskDefinition)-[:HAS_ROLE]->(Role) edge.
-			"TaskRoleArn":      aws.ToString(td.TaskRoleArn),
-			"ExecutionRoleArn": aws.ToString(td.ExecutionRoleArn),
-		},
-	}
+		Properties:   properties,
+	}, nil
 }
