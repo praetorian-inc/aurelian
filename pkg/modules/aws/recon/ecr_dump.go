@@ -15,13 +15,13 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
-	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecrpublic"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
 	awshelpers "github.com/praetorian-inc/aurelian/internal/helpers/aws"
+	cclist "github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -80,6 +80,7 @@ type ecrImage struct {
 	RepoName  string
 	Region    string
 	AccountID string
+	ARN       string
 	ImageURI  string
 	Tag       string
 	Auth      authn.Authenticator
@@ -95,6 +96,34 @@ type ecrDumpRun struct {
 	extract       bool
 	modifiedSince time.Time
 	incremental   bool
+	profile       string
+	profileDir    string
+	authByRegion  map[string]authn.Authenticator
+}
+
+// auth returns the private-registry authenticator for a region, fetching it at
+// most once. GetAuthorizationToken issues a 12-hour token, so one call per
+// region covers an entire run no matter how many repositories it visits.
+func (r *ecrDumpRun) auth(region string) (authn.Authenticator, error) {
+	if a, ok := r.authByRegion[region]; ok {
+		return a, nil
+	}
+
+	awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
+		Region:     region,
+		Profile:    r.profile,
+		ProfileDir: r.profileDir,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("load AWS config for %s: %w", region, err)
+	}
+
+	a, err := getECRAuth(context.TODO(), ecr.NewFromConfig(awsCfg))
+	if err != nil {
+		return nil, err
+	}
+	r.authByRegion[region] = a
+	return a, nil
 }
 
 // skipUnchanged reports whether an image pushed at pushedAt predates the
@@ -178,71 +207,76 @@ func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 		extract:       m.Extract,
 		modifiedSince: modifiedSince,
 		incremental:   incremental,
+		profile:       m.Profile,
+		profileDir:    m.ProfileDir,
+		authByRegion:  make(map[string]authn.Authenticator),
+	}
+
+	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
+	if err != nil {
+		return fmt.Errorf("failed to collect inputs: %w", err)
+	}
+
+	// AWS::ECR::PublicRepository has a single us-east-1 control plane and so no
+	// per-region enumerator; this module enumerates it directly. Everything else
+	// goes to the shared dispatcher, which resolves repository ARNs as well as
+	// type names, and which reaches ECRRepositoryEnumerator for the private type.
+	var listInputs []string
+	scanPublic := false
+	for _, input := range inputs {
+		if input == "AWS::ECR::PublicRepository" {
+			scanPublic = true
+			continue
+		}
+		listInputs = append(listInputs, input)
 	}
 
 	var allFindings []scanFinding
 
-	for _, region := range m.Regions {
-		awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
-			Region:     region,
+	lister := cclist.NewEnumerator(c.AWSCommonRecon)
+	defer func() { _ = lister.Close() }()
+
+	if len(listInputs) > 0 {
+		listOpts := &pipeline.PipeOpts{}
+		if cfg.Log != nil {
+			listOpts.Progress = cfg.Log.ProgressFunc("listing ECR repositories")
+		}
+
+		listed := pipeline.New[output.AWSResource]()
+		pipeline.Pipe(pipeline.From(listInputs...), lister.List, listed, listOpts)
+
+		// Drain the listing before pulling anything. Ranging while pulling would
+		// leave the producer blocked on an unread channel if a pull fails and this
+		// returns early; repository metadata is small enough to hold.
+		repos, listErr := listed.Collect()
+		if listErr != nil {
+			return fmt.Errorf("listing ECR repositories: %w", listErr)
+		}
+
+		for _, repo := range repos {
+			findings, err := m.processRepository(run, repo)
+			allFindings = append(allFindings, findings...)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	if scanPublic {
+		publicCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
+			Region:     "us-east-1",
 			Profile:    m.Profile,
 			ProfileDir: m.ProfileDir,
 		})
 		if err != nil {
-			if fatal := run.problem("failed to load AWS config for %s: %v", region, err); fatal != nil {
+			if fatal := run.problem("failed to load AWS config for public ECR: %v", err); fatal != nil {
 				return fatal
 			}
-			continue
-		}
-
-		ctx := context.TODO()
-
-		// --- Private ECR repositories ---
-		privateClient := ecr.NewFromConfig(awsCfg)
-		repos, err := listECRRepos(ctx, privateClient)
-		if err != nil {
-			if fatal := run.problem("failed to list private ECR repos in %s: %v", region, err); fatal != nil {
-				return fatal
-			}
-		}
-
-		if len(repos) > 0 {
-			cfg.Info("found %d private ECR repos in %s", len(repos), region)
-
-			auth, accountID, err := getECRAuth(ctx, privateClient)
+		} else {
+			publicFindings, err := m.processPublicRepos(context.TODO(), run, ecrpublic.NewFromConfig(publicCfg))
+			allFindings = append(allFindings, publicFindings...)
 			if err != nil {
-				if fatal := run.problem("failed to get private ECR auth in %s: %v", region, err); fatal != nil {
-					return fatal
-				}
-			} else {
-				for _, repo := range repos {
-					findings, err := m.processPrivateRepo(ctx, run, privateClient, repo, region, accountID, auth)
-					allFindings = append(allFindings, findings...)
-					if err != nil {
-						return err
-					}
-				}
-			}
-		}
-
-		// --- Public ECR repositories (only from us-east-1) ---
-		if region == "us-east-1" {
-			publicCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
-				Region:     "us-east-1",
-				Profile:    m.Profile,
-				ProfileDir: m.ProfileDir,
-			})
-			if err != nil {
-				if fatal := run.problem("failed to load AWS config for public ECR: %v", err); fatal != nil {
-					return fatal
-				}
-			} else {
-				publicClient := ecrpublic.NewFromConfig(publicCfg)
-				publicFindings, err := m.processPublicRepos(ctx, run, publicClient)
-				allFindings = append(allFindings, publicFindings...)
-				if err != nil {
-					return err
-				}
+				return err
 			}
 		}
 	}
@@ -258,46 +292,50 @@ func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 	// Print console summary grouped by rule (matches Nebula's NPFindingsConsoleOutputter).
 	printFindingsSummary(cfg, allFindings)
 
+	// An incremental caller must not advance its checkpoint past repositories
+	// that enumeration never reached. Same gate find-secrets applies.
+	if incremental && lister.Skipped.Len() > 0 {
+		return fmt.Errorf("resource enumeration was incomplete: %s", lister.Skipped.Summary())
+	}
+
 	return nil
 }
 
-func (m *AWSECRDumpModule) processPrivateRepo(
-	ctx context.Context, run *ecrDumpRun, client *ecr.Client,
-	repo ecrtypes.Repository, region, accountID string,
-	auth authn.Authenticator,
-) ([]scanFinding, error) {
-	repoName := valStr(repo.RepositoryName)
-	if repoName == "" {
-		return nil, nil
-	}
-
-	latest, err := getLatestImage(ctx, client, repoName, region, accountID)
-	if errors.Is(err, errNoImages) {
-		run.cfg.Info("skipping %s: repository has no images", repoName)
-		return nil, nil
-	}
-	if err != nil {
-		return nil, run.problem("failed to describe images in %s: %v", repoName, err)
-	}
-
-	if run.skipUnchanged(latest.PushedAt) {
+// processRepository pulls, extracts and scans the newest image of one listed
+// repository. The image reference and its push time come from the enumerated
+// resource, so no ECR call is repeated here.
+func (m *AWSECRDumpModule) processRepository(run *ecrDumpRun, repo output.AWSResource) ([]scanFinding, error) {
+	if run.skipUnchanged(repo.LastModified) {
 		run.cfg.Info("skipping unchanged repository %s (newest image pushed %s)",
-			repoName, latest.PushedAt.Format(time.RFC3339))
+			repo.ResourceID, repo.LastModified.Format(time.RFC3339))
 		return nil, nil
 	}
 
-	run.cfg.Info("pulling %s:%s", repoName, latest.Tag)
+	imageURI, _ := repo.Properties[cclist.ECRPropImageURI].(string)
+	if imageURI == "" {
+		// No published reference means the repository holds no images, or that
+		// DescribeImages was denied and recorded as a skip by the enumerator.
+		run.cfg.Info("skipping %s: no image reference was enumerated", repo.ResourceID)
+		return nil, nil
+	}
+	tag, _ := repo.Properties[cclist.ECRPropImageTag].(string)
 
-	img := ecrImage{
-		RepoName:  repoName,
-		Region:    region,
-		AccountID: accountID,
-		ImageURI:  latest.URI,
-		Tag:       latest.Tag,
-		Auth:      auth,
+	auth, err := run.auth(repo.Region)
+	if err != nil {
+		return nil, run.problem("failed to get private ECR auth in %s: %v", repo.Region, err)
 	}
 
-	return m.pullExtractScan(run, img)
+	run.cfg.Info("pulling %s:%s", repo.ResourceID, tag)
+
+	return m.pullExtractScan(run, ecrImage{
+		RepoName:  repo.ResourceID,
+		Region:    repo.Region,
+		AccountID: repo.AccountRef,
+		ARN:       repo.ARN,
+		ImageURI:  imageURI,
+		Tag:       tag,
+		Auth:      auth,
+	})
 }
 
 func (m *AWSECRDumpModule) processPublicRepos(
@@ -491,89 +529,33 @@ func truncate(s string, maxLen int) string {
 
 // --- Private ECR functions ---
 
-func listECRRepos(ctx context.Context, client *ecr.Client) ([]ecrtypes.Repository, error) {
-	var repos []ecrtypes.Repository
-	paginator := ecr.NewDescribeRepositoriesPaginator(client, &ecr.DescribeRepositoriesInput{})
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
-		if err != nil {
-			return repos, err
-		}
-		repos = append(repos, page.Repositories...)
-	}
-	return repos, nil
-}
-
-func getECRAuth(ctx context.Context, client *ecr.Client) (authn.Authenticator, string, error) {
+// getECRAuth exchanges the caller's credentials for a registry authenticator.
+// The account ID is no longer derived from ProxyEndpoint: it arrives on the
+// enumerated resource as AccountRef.
+func getECRAuth(ctx context.Context, client *ecr.Client) (authn.Authenticator, error) {
 	resp, err := client.GetAuthorizationToken(ctx, &ecr.GetAuthorizationTokenInput{})
 	if err != nil {
-		return nil, "", fmt.Errorf("GetAuthorizationToken: %w", err)
+		return nil, fmt.Errorf("GetAuthorizationToken: %w", err)
 	}
 	if len(resp.AuthorizationData) == 0 {
-		return nil, "", fmt.Errorf("no authorization data returned")
+		return nil, fmt.Errorf("no authorization data returned")
 	}
 
-	authData := resp.AuthorizationData[0]
-	decoded, err := base64.StdEncoding.DecodeString(valStr(authData.AuthorizationToken))
+	decoded, err := base64.StdEncoding.DecodeString(valStr(resp.AuthorizationData[0].AuthorizationToken))
 	if err != nil {
-		return nil, "", fmt.Errorf("decoding auth token: %w", err)
+		return nil, fmt.Errorf("decoding auth token: %w", err)
 	}
 
 	// Token format: "AWS:<password>"
 	parts := strings.SplitN(string(decoded), ":", 2)
 	if len(parts) != 2 {
-		return nil, "", fmt.Errorf("unexpected auth token format")
+		return nil, fmt.Errorf("unexpected auth token format")
 	}
 
-	// Extract account ID from proxy endpoint.
-	endpoint := valStr(authData.ProxyEndpoint)
-	accountID := ""
-	if strings.Contains(endpoint, ".dkr.ecr.") {
-		endpoint = strings.TrimPrefix(endpoint, "https://")
-		accountID, _, _ = strings.Cut(endpoint, ".")
-	}
-
-	auth := authn.FromConfig(authn.AuthConfig{
+	return authn.FromConfig(authn.AuthConfig{
 		Username: parts[0],
 		Password: parts[1],
-	})
-
-	return auth, accountID, nil
-}
-
-func getLatestImage(ctx context.Context, client *ecr.Client, repoName, region, accountID string) (latestImage, error) {
-	resp, err := client.DescribeImages(ctx, &ecr.DescribeImagesInput{
-		RepositoryName: &repoName,
-		MaxResults:     intPtr(1000),
-	})
-	if err != nil {
-		return latestImage{}, err
-	}
-	if len(resp.ImageDetails) == 0 {
-		return latestImage{}, errNoImages
-	}
-
-	// Sort by push time, newest first.
-	sort.Slice(resp.ImageDetails, func(i, j int) bool {
-		ti := resp.ImageDetails[i].ImagePushedAt
-		tj := resp.ImageDetails[j].ImagePushedAt
-		if ti == nil || tj == nil {
-			return ti != nil
-		}
-		return ti.After(*tj)
-	})
-
-	latest := resp.ImageDetails[0]
-	tag := "latest"
-	if len(latest.ImageTags) > 0 {
-		tag = latest.ImageTags[0]
-	}
-
-	return latestImage{
-		URI:      fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s", accountID, region, repoName, tag),
-		Tag:      tag,
-		PushedAt: latest.ImagePushedAt,
-	}, nil
+	}), nil
 }
 
 // --- Public ECR functions ---
@@ -685,7 +667,10 @@ func pullAndExtract(img ecrImage, extractDir string, extractToFS, failOnError bo
 	if img.IsPublic {
 		resourceType = "AWS::ECR::PublicRepository"
 	}
-	arn := fmt.Sprintf("arn:aws:ecr:%s:%s:repository/%s", img.Region, img.AccountID, img.RepoName)
+	arn := img.ARN
+	if arn == "" {
+		arn = fmt.Sprintf("arn:aws:ecr:%s:%s:repository/%s", img.Region, img.AccountID, img.RepoName)
+	}
 
 	for i, layer := range layers {
 		rc, err := layer.Uncompressed()
@@ -798,5 +783,3 @@ func valStr(s *string) string {
 	}
 	return *s
 }
-
-func intPtr(i int32) *int32 { return &i }
