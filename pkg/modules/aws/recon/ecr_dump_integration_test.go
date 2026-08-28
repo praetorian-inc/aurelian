@@ -87,8 +87,20 @@ func buildTarGzLayer(filePath string, content []byte) (v1.Layer, error) {
 	}, tarball.WithCompressedCaching)
 }
 
-// pushTestImage pushes a minimal image with a planted secret file to an ECR repo.
+// pushTestImage pushes a minimal :latest image with a planted secret file.
 func pushTestImage(t *testing.T, client *ecr.Client, repoName, region string) {
+	t.Helper()
+	secretContent := []byte(`# Application Configuration
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+DATABASE_URL=postgres://admin:supersecret@db.internal:5432/app
+`)
+	pushTaggedTestImage(t, client, repoName, region, "latest", secretContent)
+}
+
+// pushTaggedTestImage pushes a minimal single-layer image under one tag, with
+// the given file content planted at app/config.txt.
+func pushTaggedTestImage(t *testing.T, client *ecr.Client, repoName, region, tag string, secretContent []byte) {
 	t.Helper()
 	ctx := context.TODO()
 
@@ -111,20 +123,14 @@ func pushTestImage(t *testing.T, client *ecr.Client, repoName, region string) {
 		Password: parts[1],
 	})
 
-	// Build a proper tar.gz layer with a planted secret.
-	secretContent := []byte(`# Application Configuration
-AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
-AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
-DATABASE_URL=postgres://admin:supersecret@db.internal:5432/app
-`)
-
+	// Build a proper tar.gz layer with the planted secret.
 	layer, err := buildTarGzLayer("app/config.txt", secretContent)
 	require.NoError(t, err)
 
 	img, err := mutate.AppendLayers(empty.Image, layer)
 	require.NoError(t, err)
 
-	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:latest", accountID, region, repoName)
+	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s", accountID, region, repoName, tag)
 	ref, err := name.ParseReference(imageURI)
 	require.NoError(t, err)
 
@@ -292,6 +298,67 @@ func TestECRDumpIntegration(t *testing.T) {
 			assert.NotContains(t, risk.ImpactedResourceID, secretRepoName,
 				"repo pushed before the checkpoint should have been skipped, got %s", risk.ImpactedResourceID)
 		}
+	})
+
+	t.Run("images=all scans every image and keeps their findings distinct", func(t *testing.T) {
+		// A second image in the same repository. Both carry a secret, and both
+		// extract a layer 0, so this also covers the per-image label and extract
+		// directory split.
+		pushTaggedTestImage(t, client, secretRepoName, testRegion, "v2",
+			[]byte("SECOND_AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n"))
+
+		extractDir := t.TempDir()
+		cfg := plugin.Config{
+			Args: map[string]any{
+				"regions":    []string{testRegion},
+				"extract":    true,
+				"output-dir": extractDir,
+				"images":     "all",
+			},
+			Context: ctx,
+		}
+
+		in := pipeline.From(cfg)
+		results := pipeline.New[model.AurelianModel]()
+		pipeline.Pipe(in, mod.Run, results)
+
+		collected, err := results.Collect()
+		require.NoError(t, err)
+		require.NotEmpty(t, collected)
+
+		// Each image gets its own directory, so layer0/ from one cannot overwrite
+		// layer0/ from the other.
+		repoDir := filepath.Join(extractDir, "ecr-images", sanitizeName(secretRepoName))
+		entries, err := os.ReadDir(repoDir)
+		require.NoError(t, err)
+		assert.GreaterOrEqual(t, len(entries), 2,
+			"images=all should extract each image into its own directory under %s", repoDir)
+	})
+
+	t.Run("images=<tag> scans only the tagged image", func(t *testing.T) {
+		extractDir := t.TempDir()
+		cfg := plugin.Config{
+			Args: map[string]any{
+				"regions":    []string{testRegion},
+				"extract":    true,
+				"output-dir": extractDir,
+				"images":     "v2",
+			},
+			Context: ctx,
+		}
+
+		in := pipeline.From(cfg)
+		results := pipeline.New[model.AurelianModel]()
+		pipeline.Pipe(in, mod.Run, results)
+
+		_, err := results.Collect()
+		require.NoError(t, err)
+
+		repoDir := filepath.Join(extractDir, "ecr-images", sanitizeName(secretRepoName))
+		entries, err := os.ReadDir(repoDir)
+		require.NoError(t, err)
+		require.Len(t, entries, 1, "only the requested tag should be pulled")
+		assert.Equal(t, sanitizeName("v2"), entries[0].Name())
 	})
 
 	t.Run("modified-since still scans a repo pushed after the checkpoint", func(t *testing.T) {
