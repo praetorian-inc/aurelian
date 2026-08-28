@@ -3,7 +3,12 @@ package recon
 import (
 	"testing"
 
+	"github.com/praetorian-inc/aurelian/pkg/model"
+	"github.com/praetorian-inc/aurelian/pkg/output"
+	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
+	"github.com/praetorian-inc/aurelian/pkg/secrets"
+	"github.com/praetorian-inc/titus/pkg/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -68,4 +73,47 @@ func TestIsBinary(t *testing.T) {
 	assert.True(t, isBinary([]byte{0x89, 0x50, 0x4e, 0x47, 0x00})) // PNG header with null
 	assert.True(t, isBinary([]byte("ELF\x00binary")))
 	assert.False(t, isBinary([]byte{}))
+}
+
+func TestEmitResultsBuildsSecretRisks(t *testing.T) {
+	result := secrets.SecretScanResult{
+		ResourceRef:  "arn:aws:ecr:us-east-2:123456789012:repository/my-repo",
+		ResourceType: "AWS::ECR::Repository",
+		Region:       "us-east-2",
+		AccountID:    "123456789012",
+		Platform:     "aws",
+		Label:        "my-repo:layer0/app/config.txt",
+		Match: &types.Match{
+			RuleID:    "np.aws.1",
+			RuleName:  "AWS API Key",
+			FindingID: "abcdef1234567890",
+			Snippet: types.Snippet{
+				Before:   []byte("AWS_ACCESS_KEY_ID="),
+				Matching: []byte("AKIAIOSFODNN7EXAMPLE"),
+				After:    []byte("\n"),
+			},
+		},
+	}
+
+	out := pipeline.New[model.AurelianModel]()
+	var findings []scanFinding
+	go func() {
+		defer out.Close()
+		findings = emitResults([]secrets.SecretScanResult{result}, out)
+	}()
+
+	emitted, err := out.Collect()
+	require.NoError(t, err)
+	require.Len(t, emitted, 1, "one scan result should emit one risk")
+
+	risk, ok := emitted[0].(output.AurelianRisk)
+	require.True(t, ok, "emitted model should be an AurelianRisk")
+	assert.Equal(t, "aws-secret-aws", risk.Name)
+	assert.Equal(t, "arn:aws:ecr:us-east-2:123456789012:repository/my-repo:abcdef12", risk.ImpactedResourceID)
+	assert.Equal(t, "abcdef1234567890", risk.DeduplicationID)
+	assert.NotEmpty(t, risk.Context, "risk must carry proof context")
+
+	require.Len(t, findings, 1, "one scan result should produce one console finding")
+	assert.Equal(t, "AWS API Key", findings[0].RuleName)
+	assert.Equal(t, "my-repo:layer0/app/config.txt", findings[0].Label)
 }

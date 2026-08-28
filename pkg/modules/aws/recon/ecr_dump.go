@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,7 +25,6 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
 	"github.com/praetorian-inc/aurelian/pkg/plugin"
 	"github.com/praetorian-inc/aurelian/pkg/secrets"
-	"github.com/praetorian-inc/titus/pkg/types"
 )
 
 func init() {
@@ -87,14 +85,14 @@ type ecrImage struct {
 
 // scanFinding tracks a finding for console summary output.
 type scanFinding struct {
-	RuleName string
+	RuleName  string
 	FindingID string
-	Label    string
-	Resource string
-	Region   string
-	Before   string
-	Matching string
-	After    string
+	Label     string
+	Resource  string
+	Region    string
+	Before    string
+	Matching  string
+	After     string
 }
 
 func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
@@ -164,6 +162,12 @@ func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 			}
 		}
 	}
+
+	deferred, err := flushDeferredMatches(&scanner)
+	if err != nil {
+		cfg.Warn("failed to drain deferred secret matches: %v", err)
+	}
+	allFindings = append(allFindings, emitResults(deferred, out)...)
 
 	// Print console summary grouped by rule (matches Nebula's NPFindingsConsoleOutputter).
 	printFindingsSummary(cfg, allFindings)
@@ -289,31 +293,57 @@ func (m *AWSECRDumpModule) pullExtractScan(
 			continue
 		}
 
-		for _, result := range results {
-			proof := buildECRProofData(result, result.Match)
-			proofBytes, err := json.MarshalIndent(proof, "", "  ")
-			if err != nil {
-				continue
-			}
-			out.Send(secrets.NewSecretRisk(result, "aws", proofBytes))
-
-			ruleName := result.Match.RuleName
-			if ruleName == "" {
-				ruleName = result.Match.RuleID
-			}
-			findings = append(findings, scanFinding{
-				RuleName:  ruleName,
-				FindingID: result.Match.FindingID,
-				Label:     result.Label,
-				Resource:  result.ResourceRef,
-				Region:    result.Region,
-				Before:    truncate(string(result.Match.Snippet.Before), 50),
-				Matching:  truncate(string(result.Match.Snippet.Matching), 60),
-				After:     truncate(string(result.Match.Snippet.After), 50),
-			})
-		}
+		findings = append(findings, emitResults(results, out)...)
 	}
 	return findings
+}
+
+// emitResults sends an AurelianRisk for every scan result and returns the
+// corresponding console summary rows.
+func emitResults(results []secrets.SecretScanResult, out *pipeline.P[model.AurelianModel]) []scanFinding {
+	var findings []scanFinding
+	for _, result := range results {
+		risk, err := result.ToRisk()
+		if err != nil {
+			slog.Warn("failed to build risk", "resource", result.ResourceRef, "error", err)
+			continue
+		}
+		out.Send(risk)
+
+		ruleName := result.Match.RuleName
+		if ruleName == "" {
+			ruleName = result.Match.RuleID
+		}
+		findings = append(findings, scanFinding{
+			RuleName:  ruleName,
+			FindingID: result.Match.FindingID,
+			Label:     result.Label,
+			Resource:  result.ResourceRef,
+			Region:    result.Region,
+			Before:    truncate(string(result.Match.Snippet.Before), 50),
+			Matching:  truncate(string(result.Match.Snippet.Matching), 60),
+			After:     truncate(string(result.Match.Snippet.After), 50),
+		})
+	}
+	return findings
+}
+
+// flushDeferredMatches drains the matches Titus withholds behind its
+// regexp-timeout retry queue. Call once after every Scan has completed and
+// before the scanner is closed; without the drain those matches are dropped.
+func flushDeferredMatches(scanner *secrets.SecretScanner) ([]secrets.SecretScanResult, error) {
+	flushed := pipeline.New[secrets.SecretScanResult]()
+	var flushErr error
+	go func() {
+		flushErr = scanner.Flush(flushed)
+		flushed.Close()
+	}()
+
+	results, err := flushed.Collect()
+	if err != nil {
+		return results, err
+	}
+	return results, flushErr
 }
 
 // printFindingsSummary outputs findings grouped by rule name, matching Nebula's NPFindingsConsoleOutputter.
@@ -556,7 +586,7 @@ func pullAndExtract(img ecrImage, extractDir string, extractToFS bool) ([]output
 		}
 
 		inputs, err := extractLayer(rc, extractDir, extractToFS, arn, img.Region, img.AccountID, img.RepoName, resourceType, i)
-		rc.Close()
+		_ = rc.Close()
 		if err != nil {
 			slog.Warn("failed to extract layer", "layer", i, "error", err)
 			continue
@@ -612,6 +642,7 @@ func extractLayer(r io.Reader, extractDir string, extractToFS bool, arn, region,
 			ResourceType: resourceType,
 			Region:       region,
 			AccountID:    accountID,
+			Platform:     "aws",
 			Label:        label,
 		})
 	}
@@ -654,35 +685,3 @@ func valStr(s *string) string {
 }
 
 func intPtr(i int32) *int32 { return &i }
-
-func buildECRProofData(result secrets.SecretScanResult, match *types.Match) map[string]interface{} {
-	return map[string]interface{}{
-		"finding_id":   match.FindingID,
-		"rule_name":    match.RuleName,
-		"rule_text_id": match.RuleID,
-		"resource_ref": result.ResourceRef,
-		"num_matches":  1,
-		"matches": []map[string]interface{}{
-			{
-				"provenance": []map[string]interface{}{
-					{
-						"kind":          "container_image",
-						"platform":      "aws",
-						"resource_id":   result.ResourceRef,
-						"resource_type": result.ResourceType,
-						"region":        result.Region,
-						"account_id":    result.AccountID,
-						"first_commit": map[string]interface{}{
-							"blob_path": result.Label,
-						},
-					},
-				},
-				"snippet": map[string]string{
-					"before":   string(match.Snippet.Before),
-					"matching": string(match.Snippet.Matching),
-					"after":    string(match.Snippet.After),
-				},
-			},
-		},
-	}
-}
