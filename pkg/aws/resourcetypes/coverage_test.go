@@ -148,6 +148,7 @@ var reviewedRegionalServices = map[string]struct{}{
 	"Cognito":                {},
 	"DynamoDB":               {},
 	"EC2":                    {},
+	"ECR":                    {},
 	"ECS":                    {},
 	"EFS":                    {},
 	"EKS":                    {},

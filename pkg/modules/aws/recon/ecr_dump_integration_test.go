@@ -65,9 +65,9 @@ func buildTarGzLayer(filePath string, content []byte) (v1.Layer, error) {
 	tw := tar.NewWriter(gw)
 
 	if err := tw.WriteHeader(&tar.Header{
-		Name:    filePath,
-		Size:    int64(len(content)),
-		Mode:    0o644,
+		Name:     filePath,
+		Size:     int64(len(content)),
+		Mode:     0o644,
 		Typeflag: tar.TypeReg,
 	}); err != nil {
 		return nil, err
