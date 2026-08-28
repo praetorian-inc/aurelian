@@ -15,6 +15,7 @@ aurelian aws recon ecr-dump [flags]
       --extract                        Extract image layers to filesystem (default true)
   -h, --help                           help for ecr-dump
       --ignore-file string             Path to gitignore-style file for skipping paths; when empty uses a default list
+      --modified-since string          RFC3339 timestamp of the last successful scan; repositories whose newest image was pushed no later than this are skipped
       --opsec_level string             Operational security level for AWS operations (default "none")
       --output-dir string              Base output directory (default "aurelian-output")
   -p, --profile string                 AWS profile to use
