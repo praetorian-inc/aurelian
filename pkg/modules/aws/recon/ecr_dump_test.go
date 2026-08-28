@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	cclist "github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -182,4 +183,49 @@ func TestECRDumpRejectsInvalidModifiedSince(t *testing.T) {
 	err := m.Run(plugin.Config{}, pipeline.New[model.AurelianModel]())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid modified-since timestamp")
+}
+
+func TestECRDumpProcessRepositorySkipsWithoutTouchingAWS(t *testing.T) {
+	m := &AWSECRDumpModule{}
+	checkpoint := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	pushedBefore := checkpoint.Add(-time.Hour)
+
+	tests := []struct {
+		name string
+		run  *ecrDumpRun
+		repo output.AWSResource
+	}{
+		{
+			name: "unchanged repository is skipped before the pull",
+			run:  &ecrDumpRun{modifiedSince: checkpoint, incremental: true},
+			repo: output.AWSResource{
+				ResourceID:   "app",
+				Region:       "us-east-2",
+				LastModified: &pushedBefore,
+				Properties: map[string]any{
+					cclist.ECRPropImageURI: "123456789012.dkr.ecr.us-east-2.amazonaws.com/app:v1",
+					cclist.ECRPropImageTag: "v1",
+				},
+			},
+		},
+		{
+			name: "repository with no enumerated image reference is skipped",
+			run:  &ecrDumpRun{},
+			repo: output.AWSResource{
+				ResourceID: "empty",
+				Region:     "us-east-2",
+				Properties: map[string]any{},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// A nil auth cache would panic if the skip fell through to run.auth,
+			// which is the point: these paths must not reach AWS at all.
+			findings, err := m.processRepository(tt.run, tt.repo)
+			require.NoError(t, err)
+			assert.Empty(t, findings)
+		})
+	}
 }
