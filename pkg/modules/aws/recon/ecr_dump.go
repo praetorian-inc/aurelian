@@ -10,10 +10,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/aws/aws-sdk-go-v2/service/ecrpublic"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -37,6 +39,7 @@ type ECRDumpConfig struct {
 	plugin.AWSCommonRecon
 	secrets.ScannerConfig
 	Extract       bool   `param:"extract" desc:"Extract image layers to filesystem" default:"true"`
+	Images        string `param:"images" desc:"Which images to scan per repository: \"newest\" (most recently pushed), \"all\", or a tag name such as \"latest\"" default:"newest"`
 	ModifiedSince string `param:"modified-since" desc:"RFC3339 timestamp of the last successful scan; repositories whose newest image was pushed no later than this are skipped"`
 }
 
@@ -87,6 +90,22 @@ type ecrImage struct {
 	IsPublic  bool
 }
 
+// Reserved values for --images. Anything else is taken as a tag name, so
+// `--images latest` selects the image tagged "latest" rather than the most
+// recently pushed one, which is frequently a different image.
+const (
+	imagesNewest = "newest"
+	imagesAll    = "all"
+)
+
+// regionSession holds the per-region ECR client and registry authenticator.
+// GetAuthorizationToken issues a 12-hour token, so one call per region covers an
+// entire run no matter how many repositories or images it visits.
+type regionSession struct {
+	client *ecr.Client
+	auth   authn.Authenticator
+}
+
 // ecrDumpRun carries the per-invocation state every enumeration helper needs.
 type ecrDumpRun struct {
 	cfg           plugin.Config
@@ -96,17 +115,30 @@ type ecrDumpRun struct {
 	extract       bool
 	modifiedSince time.Time
 	incremental   bool
+	images        string
 	profile       string
 	profileDir    string
-	authByRegion  map[string]authn.Authenticator
+	sessions      map[string]*regionSession
 }
 
-// auth returns the private-registry authenticator for a region, fetching it at
-// most once. GetAuthorizationToken issues a 12-hour token, so one call per
-// region covers an entire run no matter how many repositories it visits.
-func (r *ecrDumpRun) auth(region string) (authn.Authenticator, error) {
-	if a, ok := r.authByRegion[region]; ok {
-		return a, nil
+// mode returns the effective --images selection. An unset value behaves as the
+// documented default rather than as a tag selector matching nothing, so a run is
+// safe however it was constructed.
+func (r *ecrDumpRun) mode() string {
+	if r.images == "" {
+		return imagesNewest
+	}
+	return r.images
+}
+
+// session returns the ECR client and authenticator for a region, resolving them
+// at most once per run.
+func (r *ecrDumpRun) session(region string) (*regionSession, error) {
+	if s, ok := r.sessions[region]; ok {
+		return s, nil
+	}
+	if r.sessions == nil {
+		r.sessions = make(map[string]*regionSession)
 	}
 
 	awsCfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
@@ -118,12 +150,137 @@ func (r *ecrDumpRun) auth(region string) (authn.Authenticator, error) {
 		return nil, fmt.Errorf("load AWS config for %s: %w", region, err)
 	}
 
-	a, err := getECRAuth(context.TODO(), ecr.NewFromConfig(awsCfg))
+	client := ecr.NewFromConfig(awsCfg)
+	auth, err := getECRAuth(context.TODO(), client)
 	if err != nil {
 		return nil, err
 	}
-	r.authByRegion[region] = a
-	return a, nil
+
+	s := &regionSession{client: client, auth: auth}
+	r.sessions[region] = s
+	return s, nil
+}
+
+// imageCandidate is the selection-relevant subset of an ECR image. The private
+// and public registries return different SDK types, so both are mapped onto this
+// and share one selection policy.
+type imageCandidate struct {
+	Tags     []string
+	Digest   string
+	PushedAt *time.Time
+}
+
+// chooseImages applies the --images policy plus the modified-since filter to a
+// repository's images, which must arrive most-recently-pushed first. base
+// carries the repository identity every returned image inherits.
+func (r *ecrDumpRun) chooseImages(base ecrImage, repoURI string, candidates []imageCandidate) []ecrImage {
+	wantTag := ""
+	switch r.mode() {
+	case imagesNewest:
+		if len(candidates) == 0 {
+			return nil
+		}
+		candidates = candidates[:1]
+	case imagesAll:
+	default:
+		wantTag = r.mode()
+	}
+
+	var selected []ecrImage
+	for _, candidate := range candidates {
+		if wantTag != "" && !slices.Contains(candidate.Tags, wantTag) {
+			continue
+		}
+		// An image pushed no later than the checkpoint cannot have changed, so
+		// filter per image rather than only per repository.
+		if r.skipUnchanged(candidate.PushedAt) {
+			continue
+		}
+
+		img := base
+		img.Tag, img.ImageURI = imageReference(repoURI, candidate, wantTag)
+		if img.ImageURI == "" {
+			// Neither a tag nor a digest: nothing pullable to reference.
+			continue
+		}
+		selected = append(selected, img)
+	}
+	return selected
+}
+
+// selectImages resolves which images of a repository to scan.
+//
+// The default "newest" mode is answered entirely from the enumerated resource,
+// so it costs no extra API call. "all" and tag selection need the repository's
+// image list, which is fetched once. In every mode an image pushed no later than
+// the modified-since checkpoint is dropped, so an incremental "all" run
+// re-scans only the images that actually changed.
+func (r *ecrDumpRun) selectImages(repo output.AWSResource) ([]ecrImage, error) {
+	base := ecrImage{
+		RepoName:  repo.ResourceID,
+		Region:    repo.Region,
+		AccountID: repo.AccountRef,
+		ARN:       repo.ARN,
+	}
+
+	if r.mode() == imagesNewest {
+		uri, _ := repo.Properties[cclist.ECRPropImageURI].(string)
+		if uri == "" {
+			// No published reference: the repository holds no images, or
+			// DescribeImages was denied and recorded as a skip by the enumerator.
+			return nil, nil
+		}
+		base.Tag, _ = repo.Properties[cclist.ECRPropImageTag].(string)
+		base.ImageURI = uri
+		return []ecrImage{base}, nil
+	}
+
+	session, err := r.session(repo.Region)
+	if err != nil {
+		return nil, err
+	}
+	details, skipped, err := cclist.ECRImages(context.TODO(), session.client, repo.ResourceID, repo.Region)
+	if err != nil {
+		return nil, err
+	}
+	if skipped != nil {
+		// A denial or throttle here hides images the scan should have seen, so it
+		// is a partial failure rather than an empty repository.
+		return nil, fmt.Errorf("listing images in %s was skipped: %s %s in %s (%s)",
+			repo.ResourceID, skipped.Service, skipped.Operation, skipped.Region, skipped.ErrorCode)
+	}
+
+	repoURI, _ := repo.Properties["RepositoryUri"].(string)
+	if repoURI == "" {
+		repoURI = fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s", repo.AccountRef, repo.Region, repo.ResourceID)
+	}
+
+	candidates := make([]imageCandidate, 0, len(details))
+	for _, detail := range details {
+		candidates = append(candidates, imageCandidate{
+			Tags:     detail.ImageTags,
+			Digest:   aws.ToString(detail.ImageDigest),
+			PushedAt: detail.ImagePushedAt,
+		})
+	}
+
+	return r.chooseImages(base, repoURI, candidates), nil
+}
+
+// imageReference builds the pull reference for one image. It prefers the
+// requested tag, then the image's first tag, and falls back to the digest for an
+// image pushed without any tag.
+func imageReference(repoURI string, candidate imageCandidate, wantTag string) (tag, uri string) {
+	if wantTag != "" && slices.Contains(candidate.Tags, wantTag) {
+		return wantTag, fmt.Sprintf("%s:%s", repoURI, wantTag)
+	}
+	if len(candidate.Tags) > 0 {
+		return candidate.Tags[0], fmt.Sprintf("%s:%s", repoURI, candidate.Tags[0])
+	}
+	if candidate.Digest != "" {
+		return candidate.Digest, fmt.Sprintf("%s@%s", repoURI, candidate.Digest)
+	}
+	return "", ""
 }
 
 // skipUnchanged reports whether an image pushed at pushedAt predates the
@@ -146,16 +303,14 @@ func (r *ecrDumpRun) problem(format string, args ...any) error {
 	return nil
 }
 
-// latestImage identifies the newest image in a repository.
-type latestImage struct {
-	URI      string
-	Tag      string
-	PushedAt *time.Time
+// ref identifies an image within its repository, for scan labels and extract
+// paths. A digest already carries its algorithm prefix, so it is used as-is.
+func (i ecrImage) ref() string {
+	if i.Tag == "" {
+		return i.RepoName
+	}
+	return fmt.Sprintf("%s:%s", i.RepoName, i.Tag)
 }
-
-// errNoImages distinguishes an empty repository, which is a normal skip, from a
-// DescribeImages failure, which hides content the scan should have seen.
-var errNoImages = errors.New("repository contains no images")
 
 // scanFinding tracks a finding for console summary output.
 type scanFinding struct {
@@ -207,9 +362,10 @@ func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 		extract:       m.Extract,
 		modifiedSince: modifiedSince,
 		incremental:   incremental,
+		images:        c.Images,
 		profile:       m.Profile,
 		profileDir:    m.ProfileDir,
-		authByRegion:  make(map[string]authn.Authenticator),
+		sessions:      make(map[string]*regionSession),
 	}
 
 	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
@@ -305,37 +461,41 @@ func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 // repository. The image reference and its push time come from the enumerated
 // resource, so no ECR call is repeated here.
 func (m *AWSECRDumpModule) processRepository(run *ecrDumpRun, repo output.AWSResource) ([]scanFinding, error) {
+	// The newest push time bounds every image in the repository, so a repository
+	// unchanged since the checkpoint can be skipped without listing its images at
+	// all — whichever selection mode is in force.
 	if run.skipUnchanged(repo.LastModified) {
 		run.cfg.Info("skipping unchanged repository %s (newest image pushed %s)",
 			repo.ResourceID, repo.LastModified.Format(time.RFC3339))
 		return nil, nil
 	}
 
-	imageURI, _ := repo.Properties[cclist.ECRPropImageURI].(string)
-	if imageURI == "" {
-		// No published reference means the repository holds no images, or that
-		// DescribeImages was denied and recorded as a skip by the enumerator.
-		run.cfg.Info("skipping %s: no image reference was enumerated", repo.ResourceID)
+	images, err := run.selectImages(repo)
+	if err != nil {
+		return nil, run.problem("failed to list images in %s: %v", repo.ResourceID, err)
+	}
+	if len(images) == 0 {
+		run.cfg.Info("skipping %s: no images matched %q", repo.ResourceID, run.mode())
 		return nil, nil
 	}
-	tag, _ := repo.Properties[cclist.ECRPropImageTag].(string)
 
-	auth, err := run.auth(repo.Region)
+	session, err := run.session(repo.Region)
 	if err != nil {
 		return nil, run.problem("failed to get private ECR auth in %s: %v", repo.Region, err)
 	}
 
-	run.cfg.Info("pulling %s:%s", repo.ResourceID, tag)
+	var findings []scanFinding
+	for _, img := range images {
+		img.Auth = session.auth
+		run.cfg.Info("pulling %s", img.ImageURI)
 
-	return m.pullExtractScan(run, ecrImage{
-		RepoName:  repo.ResourceID,
-		Region:    repo.Region,
-		AccountID: repo.AccountRef,
-		ARN:       repo.ARN,
-		ImageURI:  imageURI,
-		Tag:       tag,
-		Auth:      auth,
-	})
+		imageFindings, err := m.pullExtractScan(run, img)
+		findings = append(findings, imageFindings...)
+		if err != nil {
+			return findings, err
+		}
+	}
+	return findings, nil
 }
 
 func (m *AWSECRDumpModule) processPublicRepos(
@@ -370,11 +530,7 @@ func (m *AWSECRDumpModule) processPublicRepos(
 			registryAlias = parts[0]
 		}
 
-		latest, err := getLatestPublicImage(ctx, client, repoName, registryAlias)
-		if errors.Is(err, errNoImages) {
-			run.cfg.Info("skipping public repo %s: repository has no images", repoName)
-			continue
-		}
+		candidates, err := publicImageCandidates(ctx, client, repoName)
 		if err != nil {
 			if fatal := run.problem("failed to describe images in public repo %s: %v", repoName, err); fatal != nil {
 				return allFindings, fatal
@@ -382,38 +538,69 @@ func (m *AWSECRDumpModule) processPublicRepos(
 			continue
 		}
 
-		if run.skipUnchanged(latest.PushedAt) {
-			run.cfg.Info("skipping unchanged public repository %s (newest image pushed %s)",
-				repoName, latest.PushedAt.Format(time.RFC3339))
-			continue
-		}
-
-		run.cfg.Info("pulling public %s:%s", repoName, latest.Tag)
-
-		// Get registryId as accountID for public repos.
-		accountID := valStr(repo.RegistryId)
-
-		img := ecrImage{
-			RepoName:  repoName,
-			Region:    "us-east-1",
-			AccountID: accountID,
-			ImageURI:  latest.URI,
-			Tag:       latest.Tag,
+		// registryAlias is unused for pulling — RepositoryUri already carries
+		// public.ecr.aws/{alias}/{repo} — but it is kept for the log line.
+		base := ecrImage{
+			RepoName: repoName,
+			Region:   "us-east-1",
+			// Public repositories report the owning registry as RegistryId.
+			AccountID: valStr(repo.RegistryId),
 			Auth:      auth,
 			IsPublic:  true,
 		}
 
-		findings, err := m.pullExtractScan(run, img)
-		allFindings = append(allFindings, findings...)
-		if err != nil {
-			return allFindings, err
+		images := run.chooseImages(base, repoURI, candidates)
+		if len(images) == 0 {
+			run.cfg.Info("skipping public repo %s/%s: no images matched %q", registryAlias, repoName, run.mode())
+			continue
+		}
+
+		for _, img := range images {
+			run.cfg.Info("pulling public %s", img.ImageURI)
+
+			findings, err := m.pullExtractScan(run, img)
+			allFindings = append(allFindings, findings...)
+			if err != nil {
+				return allFindings, err
+			}
 		}
 	}
 	return allFindings, nil
 }
 
+// publicImageCandidates lists a public repository's images, most recently
+// pushed first.
+func publicImageCandidates(ctx context.Context, client *ecrpublic.Client, repoName string) ([]imageCandidate, error) {
+	resp, err := client.DescribeImages(ctx, &ecrpublic.DescribeImagesInput{
+		RepositoryName: &repoName,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	candidates := make([]imageCandidate, 0, len(resp.ImageDetails))
+	for _, detail := range resp.ImageDetails {
+		candidates = append(candidates, imageCandidate{
+			Tags:     detail.ImageTags,
+			Digest:   valStr(detail.ImageDigest),
+			PushedAt: detail.ImagePushedAt,
+		})
+	}
+
+	sort.SliceStable(candidates, func(i, j int) bool {
+		ti, tj := candidates[i].PushedAt, candidates[j].PushedAt
+		if ti == nil || tj == nil {
+			return ti != nil
+		}
+		return ti.After(*tj)
+	})
+	return candidates, nil
+}
+
 func (m *AWSECRDumpModule) pullExtractScan(run *ecrDumpRun, img ecrImage) ([]scanFinding, error) {
-	extractDir := filepath.Join(run.outputDir, sanitizeName(img.RepoName))
+	// Layers are numbered per image, so two images of one repository would both
+	// write layer0/ and clobber each other. Give every image its own directory.
+	extractDir := filepath.Join(run.outputDir, sanitizeName(img.RepoName), sanitizeName(img.Tag))
 	scanInputs, err := pullAndExtract(img, extractDir, run.extract, run.incremental)
 	if err != nil {
 		return nil, run.problem("failed to pull/extract %s: %v", img.RepoName, err)
@@ -604,41 +791,19 @@ func getPublicECRAuth(ctx context.Context, client *ecrpublic.Client) (authn.Auth
 	return auth, nil
 }
 
-func getLatestPublicImage(ctx context.Context, client *ecrpublic.Client, repoName, registryAlias string) (latestImage, error) {
-	resp, err := client.DescribeImages(ctx, &ecrpublic.DescribeImagesInput{
-		RepositoryName: &repoName,
-	})
-	if err != nil {
-		return latestImage{}, err
-	}
-	if len(resp.ImageDetails) == 0 {
-		return latestImage{}, errNoImages
-	}
-
-	// Sort by push time, newest first.
-	sort.Slice(resp.ImageDetails, func(i, j int) bool {
-		ti := resp.ImageDetails[i].ImagePushedAt
-		tj := resp.ImageDetails[j].ImagePushedAt
-		if ti == nil || tj == nil {
-			return ti != nil
-		}
-		return ti.After(*tj)
-	})
-
-	latest := resp.ImageDetails[0]
-	tag := "latest"
-	if len(latest.ImageTags) > 0 {
-		tag = latest.ImageTags[0]
-	}
-
-	return latestImage{
-		URI:      fmt.Sprintf("public.ecr.aws/%s/%s:%s", registryAlias, repoName, tag),
-		Tag:      tag,
-		PushedAt: latest.ImagePushedAt,
-	}, nil
-}
-
 // --- Shared functions ---
+
+// layerScanTarget is the per-image metadata every file extracted from that image
+// inherits. It replaces threading seven positional strings into extractLayer.
+type layerScanTarget struct {
+	arn          string
+	resourceType string
+	region       string
+	accountID    string
+	// imageRef identifies the image within its repository and prefixes every
+	// scan label, so findings from two images of one repository stay distinct.
+	imageRef string
+}
 
 func pullAndExtract(img ecrImage, extractDir string, extractToFS, failOnError bool) ([]output.ScanInput, error) {
 	ref, err := name.ParseReference(img.ImageURI)
@@ -663,13 +828,18 @@ func pullAndExtract(img ecrImage, extractDir string, extractToFS, failOnError bo
 	}
 
 	var scanInputs []output.ScanInput
-	resourceType := "AWS::ECR::Repository"
-	if img.IsPublic {
-		resourceType = "AWS::ECR::PublicRepository"
+	target := layerScanTarget{
+		arn:          img.ARN,
+		resourceType: "AWS::ECR::Repository",
+		region:       img.Region,
+		accountID:    img.AccountID,
+		imageRef:     img.ref(),
 	}
-	arn := img.ARN
-	if arn == "" {
-		arn = fmt.Sprintf("arn:aws:ecr:%s:%s:repository/%s", img.Region, img.AccountID, img.RepoName)
+	if img.IsPublic {
+		target.resourceType = "AWS::ECR::PublicRepository"
+	}
+	if target.arn == "" {
+		target.arn = fmt.Sprintf("arn:aws:ecr:%s:%s:repository/%s", img.Region, img.AccountID, img.RepoName)
 	}
 
 	for i, layer := range layers {
@@ -682,7 +852,7 @@ func pullAndExtract(img ecrImage, extractDir string, extractToFS, failOnError bo
 			continue
 		}
 
-		inputs, err := extractLayer(rc, extractDir, extractToFS, arn, img.Region, img.AccountID, img.RepoName, resourceType, i)
+		inputs, err := extractLayer(rc, target, extractDir, extractToFS, i)
 		_ = rc.Close()
 		if err != nil {
 			if failOnError {
@@ -697,7 +867,7 @@ func pullAndExtract(img ecrImage, extractDir string, extractToFS, failOnError bo
 	return scanInputs, nil
 }
 
-func extractLayer(r io.Reader, extractDir string, extractToFS bool, arn, region, accountID, repoName, resourceType string, layerIdx int) ([]output.ScanInput, error) {
+func extractLayer(r io.Reader, target layerScanTarget, extractDir string, extractToFS bool, layerIdx int) ([]output.ScanInput, error) {
 	tr := tar.NewReader(r)
 	var scanInputs []output.ScanInput
 
@@ -735,15 +905,14 @@ func extractLayer(r io.Reader, extractDir string, extractToFS bool, arn, region,
 			}
 		}
 
-		label := fmt.Sprintf("%s:layer%d/%s", repoName, layerIdx, hdr.Name)
 		scanInputs = append(scanInputs, output.ScanInput{
 			Content:      content,
-			ResourceID:   arn,
-			ResourceType: resourceType,
-			Region:       region,
-			AccountID:    accountID,
+			ResourceID:   target.arn,
+			ResourceType: target.resourceType,
+			Region:       target.region,
+			AccountID:    target.accountID,
 			Platform:     "aws",
-			Label:        label,
+			Label:        fmt.Sprintf("%s:layer%d/%s", target.imageRef, layerIdx, hdr.Name),
 		})
 	}
 

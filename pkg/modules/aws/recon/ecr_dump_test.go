@@ -1,6 +1,11 @@
 package recon
 
 import (
+	"archive/tar"
+	"bytes"
+	"io"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -228,4 +233,215 @@ func TestECRDumpProcessRepositorySkipsWithoutTouchingAWS(t *testing.T) {
 			assert.Empty(t, findings)
 		})
 	}
+}
+
+func TestECRDumpChooseImages(t *testing.T) {
+	checkpoint := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	older := checkpoint.Add(-time.Hour)
+	newer := checkpoint.Add(time.Hour)
+	newest := checkpoint.Add(2 * time.Hour)
+
+	// Sorted most recently pushed first, as chooseImages requires.
+	candidates := []imageCandidate{
+		{Tags: []string{"v3"}, Digest: "sha256:cccc", PushedAt: &newest},
+		{Tags: []string{"v2", "latest"}, Digest: "sha256:bbbb", PushedAt: &newer},
+		{Tags: []string{"v1"}, Digest: "sha256:aaaa", PushedAt: &older},
+	}
+	const repoURI = "123456789012.dkr.ecr.us-east-2.amazonaws.com/app"
+
+	tests := []struct {
+		name        string
+		images      string
+		incremental bool
+		wantURIs    []string
+	}{
+		{
+			name:     "unset selects the most recently pushed image",
+			wantURIs: []string{repoURI + ":v3"},
+		},
+		{
+			name:     "newest selects the most recently pushed image",
+			images:   imagesNewest,
+			wantURIs: []string{repoURI + ":v3"},
+		},
+		{
+			name:     "all selects every image",
+			images:   imagesAll,
+			wantURIs: []string{repoURI + ":v3", repoURI + ":v2", repoURI + ":v1"},
+		},
+		{
+			name:   "a tag selects only the image carrying it",
+			images: "v1",
+			// v1 is the oldest image, so this proves tag selection is not
+			// restricted to the newest push.
+			wantURIs: []string{repoURI + ":v1"},
+		},
+		{
+			name:   "latest means the tag, not the most recent push",
+			images: "latest",
+			// The newest image is v3, but only v2 carries the "latest" tag, and
+			// the reference uses the requested tag rather than the image's first.
+			wantURIs: []string{repoURI + ":latest"},
+		},
+		{
+			name:     "an unmatched tag selects nothing",
+			images:   "nope",
+			wantURIs: nil,
+		},
+		{
+			name:        "all skips images pushed no later than the checkpoint",
+			images:      imagesAll,
+			incremental: true,
+			wantURIs:    []string{repoURI + ":v3", repoURI + ":v2"},
+		},
+		{
+			name:        "a tag on an unchanged image is skipped",
+			images:      "v1",
+			incremental: true,
+			wantURIs:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			run := &ecrDumpRun{
+				images:        tt.images,
+				incremental:   tt.incremental,
+				modifiedSince: checkpoint,
+			}
+			base := ecrImage{RepoName: "app", Region: "us-east-2", AccountID: "123456789012"}
+
+			selected := run.chooseImages(base, repoURI, candidates)
+
+			var got []string
+			for _, img := range selected {
+				got = append(got, img.ImageURI)
+				assert.Equal(t, "app", img.RepoName, "repository identity must carry over")
+			}
+			assert.Equal(t, tt.wantURIs, got)
+		})
+	}
+}
+
+func TestECRDumpChooseImagesEmptyRepository(t *testing.T) {
+	run := &ecrDumpRun{}
+	assert.Empty(t, run.chooseImages(ecrImage{RepoName: "empty"}, "uri", nil))
+}
+
+func TestImageReference(t *testing.T) {
+	const repoURI = "123456789012.dkr.ecr.us-east-2.amazonaws.com/app"
+
+	t.Run("prefers the requested tag over the image's first", func(t *testing.T) {
+		tag, uri := imageReference(repoURI, imageCandidate{Tags: []string{"latest", "v2"}}, "v2")
+		assert.Equal(t, "v2", tag)
+		assert.Equal(t, repoURI+":v2", uri)
+	})
+
+	t.Run("falls back to the first tag", func(t *testing.T) {
+		tag, uri := imageReference(repoURI, imageCandidate{Tags: []string{"latest", "v2"}}, "")
+		assert.Equal(t, "latest", tag)
+		assert.Equal(t, repoURI+":latest", uri)
+	})
+
+	t.Run("references an untagged image by digest", func(t *testing.T) {
+		tag, uri := imageReference(repoURI, imageCandidate{Digest: "sha256:abcd"}, "")
+		assert.Equal(t, "sha256:abcd", tag)
+		assert.Equal(t, repoURI+"@sha256:abcd", uri)
+	})
+
+	t.Run("an image with neither tag nor digest is unpullable", func(t *testing.T) {
+		tag, uri := imageReference(repoURI, imageCandidate{}, "")
+		assert.Empty(t, tag)
+		assert.Empty(t, uri)
+	})
+}
+
+func TestECRImageRef(t *testing.T) {
+	// The ref prefixes scan labels and extract paths, so two images of one
+	// repository must not produce the same value.
+	v1 := ecrImage{RepoName: "app", Tag: "v1"}
+	v2 := ecrImage{RepoName: "app", Tag: "v2"}
+	assert.Equal(t, "app:v1", v1.ref())
+	assert.NotEqual(t, v1.ref(), v2.ref())
+	assert.NotEqual(t, sanitizeName(v1.Tag), sanitizeName(v2.Tag),
+		"per-image extract directories must differ or layer0/ collides")
+
+	// A repository with no resolvable tag still yields a usable ref.
+	assert.Equal(t, "app", ecrImage{RepoName: "app"}.ref())
+}
+
+func TestExtractLayerLabelsAreImageScoped(t *testing.T) {
+	// Two images of one repository both produce a layer 0 containing the same
+	// path. Without the image in the label the two findings are indistinguishable.
+	tarFor := func(t *testing.T) io.Reader {
+		t.Helper()
+		var buf bytes.Buffer
+		tw := tar.NewWriter(&buf)
+		content := []byte("AWS_SECRET_ACCESS_KEY=placeholder\n")
+		require.NoError(t, tw.WriteHeader(&tar.Header{
+			Name:     "app/config.env",
+			Size:     int64(len(content)),
+			Mode:     0o644,
+			Typeflag: tar.TypeReg,
+		}))
+		_, err := tw.Write(content)
+		require.NoError(t, err)
+		require.NoError(t, tw.Close())
+		return &buf
+	}
+
+	target := layerScanTarget{
+		arn:          "arn:aws:ecr:us-east-2:123456789012:repository/app",
+		resourceType: "AWS::ECR::Repository",
+		region:       "us-east-2",
+		accountID:    "123456789012",
+	}
+
+	targetV1 := target
+	targetV1.imageRef = ecrImage{RepoName: "app", Tag: "v1"}.ref()
+	targetV2 := target
+	targetV2.imageRef = ecrImage{RepoName: "app", Tag: "v2"}.ref()
+
+	v1, err := extractLayer(tarFor(t), targetV1, t.TempDir(), false, 0)
+	require.NoError(t, err)
+	require.Len(t, v1, 1)
+
+	v2, err := extractLayer(tarFor(t), targetV2, t.TempDir(), false, 0)
+	require.NoError(t, err)
+	require.Len(t, v2, 1)
+
+	assert.Equal(t, "app:v1:layer0/app/config.env", v1[0].Label)
+	assert.Equal(t, "app:v2:layer0/app/config.env", v2[0].Label)
+	assert.NotEqual(t, v1[0].Label, v2[0].Label)
+
+	// Everything else about the two inputs is identical: same repository, so the
+	// same ARN, and both are attributed to AWS.
+	assert.Equal(t, target.arn, v1[0].ResourceID)
+	assert.Equal(t, "aws", v1[0].Platform)
+	assert.Equal(t, target.resourceType, v1[0].ResourceType)
+}
+
+func TestExtractLayerWritesUnderTheGivenDirectory(t *testing.T) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	content := []byte("token=placeholder\n")
+	require.NoError(t, tw.WriteHeader(&tar.Header{
+		Name:     "etc/app.conf",
+		Size:     int64(len(content)),
+		Mode:     0o644,
+		Typeflag: tar.TypeReg,
+	}))
+	_, err := tw.Write(content)
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+
+	dir := t.TempDir()
+	inputs, err := extractLayer(&buf, layerScanTarget{imageRef: "app:v1"}, dir, true, 0)
+	require.NoError(t, err)
+	require.Len(t, inputs, 1)
+
+	written := filepath.Join(dir, "layer0", "etc", "app.conf")
+	got, err := os.ReadFile(written)
+	require.NoError(t, err, "layer file should be written beneath the per-image directory")
+	assert.Equal(t, content, got)
 }

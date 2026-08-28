@@ -148,43 +148,64 @@ func (l *ECRRepositoryEnumerator) listRepositoriesInRegion(region, accountID str
 // but its LastModified is left nil so a modified-since consumer fails open and
 // scans it instead of silently treating it as unchanged.
 func (l *ECRRepositoryEnumerator) describeRepository(client *ecr.Client, repo ecrtypes.Repository, accountID, region string) (output.AWSResource, []SkippedOp, error) {
-	newest, err := newestImage(client, aws.ToString(repo.RepositoryName))
+	newest, skipped, err := newestImage(client, aws.ToString(repo.RepositoryName), region)
 	if err != nil {
-		if op := ClassifySkippable(err, "ecr", "DescribeImages", region); op != nil {
-			return buildECRRepositoryResource(repo, nil, accountID, region), []SkippedOp{*op}, nil
-		}
-		return output.AWSResource{}, nil, fmt.Errorf("describe images in %s (%s): %w",
-			aws.ToString(repo.RepositoryName), region, err)
+		return output.AWSResource{}, nil, err
+	}
+	if skipped != nil {
+		return buildECRRepositoryResource(repo, nil, accountID, region), []SkippedOp{*skipped}, nil
 	}
 	return buildECRRepositoryResource(repo, newest, accountID, region), nil, nil
 }
 
-// newestImage returns the most recently pushed image in a repository, or nil
-// when the repository holds none.
-func newestImage(client *ecr.Client, repoName string) (*ecrtypes.ImageDetail, error) {
+// ECRImages returns every image in a repository, most recently pushed first.
+// Images with no push timestamp sort last, since they cannot be ordered.
+//
+// It is exported because image SELECTION is a consumer's policy while talking to
+// ECR is this package's job: ecr-dump uses it to scan every image, or one tag,
+// rather than only the newest that the enumerated resource advertises.
+//
+// A skippable failure — a denial or a throttle — is returned as a non-nil
+// SkippedOp with a nil error, so the caller records it and continues rather than
+// treating an ECR permission boundary as a fatal error. Only unexpected failures
+// come back as an error.
+func ECRImages(ctx context.Context, client *ecr.Client, repoName, region string) ([]ecrtypes.ImageDetail, *SkippedOp, error) {
 	var details []ecrtypes.ImageDetail
 	paginator := ecr.NewDescribeImagesPaginator(client, &ecr.DescribeImagesInput{
 		RepositoryName: aws.String(repoName),
 	})
 	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(context.Background())
+		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			return nil, err
+			if op := ClassifySkippable(err, "ecr", "DescribeImages", region); op != nil {
+				return nil, op, nil
+			}
+			return nil, nil, fmt.Errorf("describe images in %s (%s): %w", repoName, region, err)
 		}
 		details = append(details, page.ImageDetails...)
 	}
-	if len(details) == 0 {
-		return nil, nil
-	}
 
-	sort.Slice(details, func(i, j int) bool {
+	sort.SliceStable(details, func(i, j int) bool {
 		ti, tj := details[i].ImagePushedAt, details[j].ImagePushedAt
 		if ti == nil || tj == nil {
 			return ti != nil
 		}
 		return ti.After(*tj)
 	})
-	return &details[0], nil
+	return details, nil, nil
+}
+
+// newestImage returns the most recently pushed image in a repository, or nil
+// when the repository holds none.
+func newestImage(client *ecr.Client, repoName, region string) (*ecrtypes.ImageDetail, *SkippedOp, error) {
+	details, skipped, err := ECRImages(context.Background(), client, repoName, region)
+	if err != nil || skipped != nil {
+		return nil, skipped, err
+	}
+	if len(details) == 0 {
+		return nil, nil, nil
+	}
+	return &details[0], nil, nil
 }
 
 // Properties keys published for consumers that pull the newest image. They are
