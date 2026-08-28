@@ -2,6 +2,7 @@ package recon
 
 import (
 	"testing"
+	"time"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -116,4 +117,69 @@ func TestEmitResultsBuildsSecretRisks(t *testing.T) {
 	require.Len(t, findings, 1, "one scan result should produce one console finding")
 	assert.Equal(t, "AWS API Key", findings[0].RuleName)
 	assert.Equal(t, "my-repo:layer0/app/config.txt", findings[0].Label)
+}
+
+func TestECRDumpSkipUnchanged(t *testing.T) {
+	checkpoint := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	before := checkpoint.Add(-time.Hour)
+	after := checkpoint.Add(time.Hour)
+
+	tests := []struct {
+		name        string
+		incremental bool
+		pushedAt    *time.Time
+		want        bool
+	}{
+		{"pushed before checkpoint is skipped", true, &before, true},
+		{"pushed exactly at checkpoint is skipped", true, &checkpoint, true},
+		{"pushed after checkpoint is scanned", true, &after, false},
+		{"missing push time fails open", true, nil, false},
+		{"non-incremental run never skips", false, &before, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			run := &ecrDumpRun{modifiedSince: checkpoint, incremental: tt.incremental}
+			assert.Equal(t, tt.want, run.skipUnchanged(tt.pushedAt))
+		})
+	}
+}
+
+func TestECRDumpProblemFailsClosedWhenIncremental(t *testing.T) {
+	run := &ecrDumpRun{incremental: true}
+	err := run.problem("failed to list repos in %s: %v", "us-east-2", assert.AnError)
+	require.Error(t, err, "an incremental run must not report success after skipping content")
+	assert.Contains(t, err.Error(), "us-east-2")
+}
+
+func TestECRDumpProblemContinuesWhenBestEffort(t *testing.T) {
+	// A zero-value Config has no Logger; Warn is a no-op. What matters is that
+	// no error escapes, which is what lets the run continue to the next repo.
+	run := &ecrDumpRun{cfg: plugin.Config{}}
+	assert.NoError(t, run.problem("failed to list repos: %v", assert.AnError))
+}
+
+func TestECRDumpModifiedSinceParameter(t *testing.T) {
+	m := &AWSECRDumpModule{}
+	params, err := plugin.ParametersFrom(m.Parameters())
+	require.NoError(t, err)
+
+	var found bool
+	for _, p := range params {
+		if p.Name == "modified-since" {
+			found = true
+		}
+	}
+	assert.True(t, found, "ecr-dump should expose --modified-since like find-secrets does")
+}
+
+func TestECRDumpRejectsInvalidModifiedSince(t *testing.T) {
+	m := &AWSECRDumpModule{}
+	m.ModifiedSince = "not-a-timestamp"
+
+	// Run rejects the timestamp before it starts the scanner or reaches AWS, so
+	// nothing is ever sent to the output pipeline.
+	err := m.Run(plugin.Config{}, pipeline.New[model.AurelianModel]())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid modified-since timestamp")
 }

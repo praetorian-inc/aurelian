@@ -260,6 +260,69 @@ func TestECRDumpIntegration(t *testing.T) {
 				"should not have findings for empty repo %s", emptyRepoName)
 		}
 	})
+
+	// The modified-since contract from #258: a repository whose newest image was
+	// pushed no later than the checkpoint is skipped entirely, so the second run
+	// of an unchanged registry must re-report nothing.
+	t.Run("modified-since skips a repo whose newest image predates the checkpoint", func(t *testing.T) {
+		checkpoint := time.Now().UTC().Format(time.RFC3339Nano)
+
+		cfg := plugin.Config{
+			Args: map[string]any{
+				"regions":        []string{testRegion},
+				"extract":        false,
+				"output-dir":     t.TempDir(),
+				"modified-since": checkpoint,
+			},
+			Context: ctx,
+		}
+
+		in := pipeline.From(cfg)
+		results := pipeline.New[model.AurelianModel]()
+		pipeline.Pipe(in, mod.Run, results)
+
+		collected, err := results.Collect()
+		require.NoError(t, err, "an incremental run over an unchanged registry must succeed")
+
+		for _, r := range collected {
+			risk, ok := r.(output.AurelianRisk)
+			if !ok {
+				continue
+			}
+			assert.NotContains(t, risk.ImpactedResourceID, secretRepoName,
+				"repo pushed before the checkpoint should have been skipped, got %s", risk.ImpactedResourceID)
+		}
+	})
+
+	t.Run("modified-since still scans a repo pushed after the checkpoint", func(t *testing.T) {
+		checkpoint := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339Nano)
+
+		cfg := plugin.Config{
+			Args: map[string]any{
+				"regions":        []string{testRegion},
+				"extract":        false,
+				"output-dir":     t.TempDir(),
+				"modified-since": checkpoint,
+			},
+			Context: ctx,
+		}
+
+		in := pipeline.From(cfg)
+		results := pipeline.New[model.AurelianModel]()
+		pipeline.Pipe(in, mod.Run, results)
+
+		collected, err := results.Collect()
+		require.NoError(t, err)
+
+		var found bool
+		for _, r := range collected {
+			if risk, ok := r.(output.AurelianRisk); ok && strings.Contains(risk.ImpactedResourceID, secretRepoName) {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "repo pushed after the checkpoint must still be scanned")
+	})
 }
 
 func TestECRDumpEmptyRegistry(t *testing.T) {

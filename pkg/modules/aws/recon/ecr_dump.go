@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	ecrtypes "github.com/aws/aws-sdk-go-v2/service/ecr/types"
@@ -34,7 +36,8 @@ func init() {
 type ECRDumpConfig struct {
 	plugin.AWSCommonRecon
 	secrets.ScannerConfig
-	Extract bool `param:"extract" desc:"Extract image layers to filesystem" default:"true"`
+	Extract       bool   `param:"extract" desc:"Extract image layers to filesystem" default:"true"`
+	ModifiedSince string `param:"modified-since" desc:"RFC3339 timestamp of the last successful scan; repositories whose newest image was pushed no later than this are skipped"`
 }
 
 type AWSECRDumpModule struct {
@@ -83,6 +86,48 @@ type ecrImage struct {
 	IsPublic  bool
 }
 
+// ecrDumpRun carries the per-invocation state every enumeration helper needs.
+type ecrDumpRun struct {
+	cfg           plugin.Config
+	out           *pipeline.P[model.AurelianModel]
+	scanner       *secrets.SecretScanner
+	outputDir     string
+	extract       bool
+	modifiedSince time.Time
+	incremental   bool
+}
+
+// skipUnchanged reports whether an image pushed at pushedAt predates the
+// modified-since checkpoint. An image with no push timestamp is never skipped:
+// missing modification metadata must fail open, the same way a nil
+// AWSResource.LastModified does in the shared AWS extractor.
+func (r *ecrDumpRun) skipUnchanged(pushedAt *time.Time) bool {
+	return r.incremental && pushedAt != nil && !pushedAt.After(r.modifiedSince)
+}
+
+// problem reports a partial-failure condition. A best-effort run logs it and
+// carries on; an incremental run turns it into an error, because a caller that
+// advances its modified-since checkpoint must never be told that a scan which
+// skipped content succeeded.
+func (r *ecrDumpRun) problem(format string, args ...any) error {
+	if r.incremental {
+		return fmt.Errorf(format, args...)
+	}
+	r.cfg.Warn(format, args...)
+	return nil
+}
+
+// latestImage identifies the newest image in a repository.
+type latestImage struct {
+	URI      string
+	Tag      string
+	PushedAt *time.Time
+}
+
+// errNoImages distinguishes an empty repository, which is a normal skip, from a
+// DescribeImages failure, which hides content the scan should have seen.
+var errNoImages = errors.New("repository contains no images")
+
 // scanFinding tracks a finding for console summary output.
 type scanFinding struct {
 	RuleName  string
@@ -95,23 +140,46 @@ type scanFinding struct {
 	After     string
 }
 
-func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) error {
+func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.AurelianModel]) (runErr error) {
 	c := m.ECRDumpConfig
 	if c.DBPath == "" {
 		c.DBPath = secrets.DefaultDBPath(c.OutputDir)
+	}
+
+	var modifiedSince time.Time
+	incremental := c.ModifiedSince != ""
+	if incremental {
+		var parseErr error
+		modifiedSince, parseErr = time.Parse(time.RFC3339Nano, c.ModifiedSince)
+		if parseErr != nil {
+			return fmt.Errorf("invalid modified-since timestamp %q: %w", c.ModifiedSince, parseErr)
+		}
 	}
 
 	var scanner secrets.SecretScanner
 	if err := scanner.Start(c.ScannerConfig); err != nil {
 		return fmt.Errorf("failed to create Titus scanner: %w", err)
 	}
+	scanner.SetFailOnError(incremental)
 	defer func() {
 		if closeErr := scanner.Close(); closeErr != nil {
 			slog.Warn("failed to close Titus scanner", "error", closeErr)
+			if incremental {
+				runErr = errors.Join(runErr, fmt.Errorf("close Titus scanner: %w", closeErr))
+			}
 		}
 	}()
 
-	outputDir := filepath.Join(c.OutputDir, "ecr-images")
+	run := &ecrDumpRun{
+		cfg:           cfg,
+		out:           out,
+		scanner:       &scanner,
+		outputDir:     filepath.Join(c.OutputDir, "ecr-images"),
+		extract:       m.Extract,
+		modifiedSince: modifiedSince,
+		incremental:   incremental,
+	}
+
 	var allFindings []scanFinding
 
 	for _, region := range m.Regions {
@@ -121,7 +189,9 @@ func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 			ProfileDir: m.ProfileDir,
 		})
 		if err != nil {
-			cfg.Warn("failed to load AWS config for %s: %v", region, err)
+			if fatal := run.problem("failed to load AWS config for %s: %v", region, err); fatal != nil {
+				return fatal
+			}
 			continue
 		}
 
@@ -131,7 +201,9 @@ func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 		privateClient := ecr.NewFromConfig(awsCfg)
 		repos, err := listECRRepos(ctx, privateClient)
 		if err != nil {
-			cfg.Warn("failed to list private ECR repos in %s: %v", region, err)
+			if fatal := run.problem("failed to list private ECR repos in %s: %v", region, err); fatal != nil {
+				return fatal
+			}
 		}
 
 		if len(repos) > 0 {
@@ -139,11 +211,16 @@ func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 
 			auth, accountID, err := getECRAuth(ctx, privateClient)
 			if err != nil {
-				cfg.Warn("failed to get private ECR auth in %s: %v", region, err)
+				if fatal := run.problem("failed to get private ECR auth in %s: %v", region, err); fatal != nil {
+					return fatal
+				}
 			} else {
 				for _, repo := range repos {
-					findings := m.processPrivateRepo(cfg, ctx, privateClient, repo, region, accountID, auth, outputDir, &scanner, out)
+					findings, err := m.processPrivateRepo(ctx, run, privateClient, repo, region, accountID, auth)
 					allFindings = append(allFindings, findings...)
+					if err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -155,17 +232,26 @@ func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 				Profile:    m.Profile,
 				ProfileDir: m.ProfileDir,
 			})
-			if err == nil {
+			if err != nil {
+				if fatal := run.problem("failed to load AWS config for public ECR: %v", err); fatal != nil {
+					return fatal
+				}
+			} else {
 				publicClient := ecrpublic.NewFromConfig(publicCfg)
-				publicFindings := m.processPublicRepos(cfg, ctx, publicClient, outputDir, &scanner, out)
+				publicFindings, err := m.processPublicRepos(ctx, run, publicClient)
 				allFindings = append(allFindings, publicFindings...)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
 
-	deferred, err := flushDeferredMatches(&scanner)
-	if err != nil {
-		cfg.Warn("failed to drain deferred secret matches: %v", err)
+	deferred, flushErr := flushDeferredMatches(&scanner)
+	if flushErr != nil {
+		if fatal := run.problem("failed to drain deferred secret matches: %v", flushErr); fatal != nil {
+			return fatal
+		}
 	}
 	allFindings = append(allFindings, emitResults(deferred, out)...)
 
@@ -176,55 +262,60 @@ func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 }
 
 func (m *AWSECRDumpModule) processPrivateRepo(
-	cfg plugin.Config, ctx context.Context, client *ecr.Client,
+	ctx context.Context, run *ecrDumpRun, client *ecr.Client,
 	repo ecrtypes.Repository, region, accountID string,
-	auth authn.Authenticator, outputDir string,
-	scanner *secrets.SecretScanner, out *pipeline.P[model.AurelianModel],
-) []scanFinding {
+	auth authn.Authenticator,
+) ([]scanFinding, error) {
 	repoName := valStr(repo.RepositoryName)
 	if repoName == "" {
-		return nil
+		return nil, nil
 	}
 
-	imageURI, tag, err := getLatestImage(ctx, client, repoName, region, accountID)
+	latest, err := getLatestImage(ctx, client, repoName, region, accountID)
+	if errors.Is(err, errNoImages) {
+		run.cfg.Info("skipping %s: repository has no images", repoName)
+		return nil, nil
+	}
 	if err != nil {
-		cfg.Warn("no images in %s: %v", repoName, err)
-		return nil
+		return nil, run.problem("failed to describe images in %s: %v", repoName, err)
 	}
 
-	cfg.Info("pulling %s:%s", repoName, tag)
+	if run.skipUnchanged(latest.PushedAt) {
+		run.cfg.Info("skipping unchanged repository %s (newest image pushed %s)",
+			repoName, latest.PushedAt.Format(time.RFC3339))
+		return nil, nil
+	}
+
+	run.cfg.Info("pulling %s:%s", repoName, latest.Tag)
 
 	img := ecrImage{
 		RepoName:  repoName,
 		Region:    region,
 		AccountID: accountID,
-		ImageURI:  imageURI,
-		Tag:       tag,
+		ImageURI:  latest.URI,
+		Tag:       latest.Tag,
 		Auth:      auth,
 	}
 
-	return m.pullExtractScan(cfg, img, outputDir, scanner, out)
+	return m.pullExtractScan(run, img)
 }
 
 func (m *AWSECRDumpModule) processPublicRepos(
-	cfg plugin.Config, ctx context.Context, client *ecrpublic.Client,
-	outputDir string, scanner *secrets.SecretScanner, out *pipeline.P[model.AurelianModel],
-) []scanFinding {
+	ctx context.Context, run *ecrDumpRun, client *ecrpublic.Client,
+) ([]scanFinding, error) {
 	repos, err := listPublicECRRepos(ctx, client)
 	if err != nil {
-		cfg.Warn("failed to list public ECR repos: %v", err)
-		return nil
+		return nil, run.problem("failed to list public ECR repos: %v", err)
 	}
 	if len(repos) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	cfg.Info("found %d public ECR repos", len(repos))
+	run.cfg.Info("found %d public ECR repos", len(repos))
 
 	auth, err := getPublicECRAuth(ctx, client)
 	if err != nil {
-		cfg.Warn("failed to get public ECR auth: %v", err)
-		return nil
+		return nil, run.problem("failed to get public ECR auth: %v", err)
 	}
 
 	var allFindings []scanFinding
@@ -241,13 +332,25 @@ func (m *AWSECRDumpModule) processPublicRepos(
 			registryAlias = parts[0]
 		}
 
-		imageURI, tag, err := getLatestPublicImage(ctx, client, repoName, registryAlias)
+		latest, err := getLatestPublicImage(ctx, client, repoName, registryAlias)
+		if errors.Is(err, errNoImages) {
+			run.cfg.Info("skipping public repo %s: repository has no images", repoName)
+			continue
+		}
 		if err != nil {
-			cfg.Warn("no images in public repo %s: %v", repoName, err)
+			if fatal := run.problem("failed to describe images in public repo %s: %v", repoName, err); fatal != nil {
+				return allFindings, fatal
+			}
 			continue
 		}
 
-		cfg.Info("pulling public %s:%s", repoName, tag)
+		if run.skipUnchanged(latest.PushedAt) {
+			run.cfg.Info("skipping unchanged public repository %s (newest image pushed %s)",
+				repoName, latest.PushedAt.Format(time.RFC3339))
+			continue
+		}
+
+		run.cfg.Info("pulling public %s:%s", repoName, latest.Tag)
 
 		// Get registryId as accountID for public repos.
 		accountID := valStr(repo.RegistryId)
@@ -256,46 +359,46 @@ func (m *AWSECRDumpModule) processPublicRepos(
 			RepoName:  repoName,
 			Region:    "us-east-1",
 			AccountID: accountID,
-			ImageURI:  imageURI,
-			Tag:       tag,
+			ImageURI:  latest.URI,
+			Tag:       latest.Tag,
 			Auth:      auth,
 			IsPublic:  true,
 		}
 
-		findings := m.pullExtractScan(cfg, img, outputDir, scanner, out)
+		findings, err := m.pullExtractScan(run, img)
 		allFindings = append(allFindings, findings...)
+		if err != nil {
+			return allFindings, err
+		}
 	}
-	return allFindings
+	return allFindings, nil
 }
 
-func (m *AWSECRDumpModule) pullExtractScan(
-	cfg plugin.Config, img ecrImage, outputDir string,
-	scanner *secrets.SecretScanner, out *pipeline.P[model.AurelianModel],
-) []scanFinding {
-	extractDir := filepath.Join(outputDir, sanitizeName(img.RepoName))
-	scanInputs, err := pullAndExtract(img, extractDir, m.Extract)
+func (m *AWSECRDumpModule) pullExtractScan(run *ecrDumpRun, img ecrImage) ([]scanFinding, error) {
+	extractDir := filepath.Join(run.outputDir, sanitizeName(img.RepoName))
+	scanInputs, err := pullAndExtract(img, extractDir, run.extract, run.incremental)
 	if err != nil {
-		cfg.Warn("failed to pull/extract %s: %v", img.RepoName, err)
-		return nil
+		return nil, run.problem("failed to pull/extract %s: %v", img.RepoName, err)
 	}
 
-	cfg.Success("extracted %d files from %s", len(scanInputs), img.RepoName)
+	run.cfg.Success("extracted %d files from %s", len(scanInputs), img.RepoName)
 
 	var findings []scanFinding
 	for _, si := range scanInputs {
 		scanPipeline := pipeline.From(si)
 		scanned := pipeline.New[secrets.SecretScanResult]()
-		pipeline.Pipe(scanPipeline, scanner.Scan, scanned)
+		pipeline.Pipe(scanPipeline, run.scanner.Scan, scanned)
 
 		results, err := scanned.Collect()
+		findings = append(findings, emitResults(results, run.out)...)
 		if err != nil {
-			slog.Warn("scan error", "repo", img.RepoName, "error", err)
+			if fatal := run.problem("failed to scan %s (%s): %v", img.RepoName, si.Label, err); fatal != nil {
+				return findings, fatal
+			}
 			continue
 		}
-
-		findings = append(findings, emitResults(results, out)...)
 	}
-	return findings
+	return findings, nil
 }
 
 // emitResults sends an AurelianRisk for every scan result and returns the
@@ -438,16 +541,16 @@ func getECRAuth(ctx context.Context, client *ecr.Client) (authn.Authenticator, s
 	return auth, accountID, nil
 }
 
-func getLatestImage(ctx context.Context, client *ecr.Client, repoName, region, accountID string) (string, string, error) {
+func getLatestImage(ctx context.Context, client *ecr.Client, repoName, region, accountID string) (latestImage, error) {
 	resp, err := client.DescribeImages(ctx, &ecr.DescribeImagesInput{
 		RepositoryName: &repoName,
 		MaxResults:     intPtr(1000),
 	})
 	if err != nil {
-		return "", "", err
+		return latestImage{}, err
 	}
 	if len(resp.ImageDetails) == 0 {
-		return "", "", fmt.Errorf("no images found")
+		return latestImage{}, errNoImages
 	}
 
 	// Sort by push time, newest first.
@@ -466,8 +569,11 @@ func getLatestImage(ctx context.Context, client *ecr.Client, repoName, region, a
 		tag = latest.ImageTags[0]
 	}
 
-	imageURI := fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s", accountID, region, repoName, tag)
-	return imageURI, tag, nil
+	return latestImage{
+		URI:      fmt.Sprintf("%s.dkr.ecr.%s.amazonaws.com/%s:%s", accountID, region, repoName, tag),
+		Tag:      tag,
+		PushedAt: latest.ImagePushedAt,
+	}, nil
 }
 
 // --- Public ECR functions ---
@@ -516,15 +622,15 @@ func getPublicECRAuth(ctx context.Context, client *ecrpublic.Client) (authn.Auth
 	return auth, nil
 }
 
-func getLatestPublicImage(ctx context.Context, client *ecrpublic.Client, repoName, registryAlias string) (string, string, error) {
+func getLatestPublicImage(ctx context.Context, client *ecrpublic.Client, repoName, registryAlias string) (latestImage, error) {
 	resp, err := client.DescribeImages(ctx, &ecrpublic.DescribeImagesInput{
 		RepositoryName: &repoName,
 	})
 	if err != nil {
-		return "", "", err
+		return latestImage{}, err
 	}
 	if len(resp.ImageDetails) == 0 {
-		return "", "", fmt.Errorf("no images found")
+		return latestImage{}, errNoImages
 	}
 
 	// Sort by push time, newest first.
@@ -543,13 +649,16 @@ func getLatestPublicImage(ctx context.Context, client *ecrpublic.Client, repoNam
 		tag = latest.ImageTags[0]
 	}
 
-	imageURI := fmt.Sprintf("public.ecr.aws/%s/%s:%s", registryAlias, repoName, tag)
-	return imageURI, tag, nil
+	return latestImage{
+		URI:      fmt.Sprintf("public.ecr.aws/%s/%s:%s", registryAlias, repoName, tag),
+		Tag:      tag,
+		PushedAt: latest.ImagePushedAt,
+	}, nil
 }
 
 // --- Shared functions ---
 
-func pullAndExtract(img ecrImage, extractDir string, extractToFS bool) ([]output.ScanInput, error) {
+func pullAndExtract(img ecrImage, extractDir string, extractToFS, failOnError bool) ([]output.ScanInput, error) {
 	ref, err := name.ParseReference(img.ImageURI)
 	if err != nil {
 		return nil, fmt.Errorf("parsing image ref: %w", err)
@@ -581,6 +690,9 @@ func pullAndExtract(img ecrImage, extractDir string, extractToFS bool) ([]output
 	for i, layer := range layers {
 		rc, err := layer.Uncompressed()
 		if err != nil {
+			if failOnError {
+				return nil, fmt.Errorf("read layer %d of %s: %w", i, img.RepoName, err)
+			}
 			slog.Warn("failed to read layer", "layer", i, "error", err)
 			continue
 		}
@@ -588,6 +700,9 @@ func pullAndExtract(img ecrImage, extractDir string, extractToFS bool) ([]output
 		inputs, err := extractLayer(rc, extractDir, extractToFS, arn, img.Region, img.AccountID, img.RepoName, resourceType, i)
 		_ = rc.Close()
 		if err != nil {
+			if failOnError {
+				return nil, fmt.Errorf("extract layer %d of %s: %w", i, img.RepoName, err)
+			}
 			slog.Warn("failed to extract layer", "layer", i, "error", err)
 			continue
 		}
