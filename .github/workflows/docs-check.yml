@@ -1,0 +1,76 @@
+name: Docs Check
+
+on:
+  pull_request:
+    paths:
+      - 'ARCHITECTURE.md'
+      - 'DEVELOPMENT.md'
+      - 'AGENTS.md'
+      - '.agents/**'
+      - 'scripts/check-architecture-refs.sh'
+      - '.github/workflows/docs-check.yml'
+      - 'go.mod'
+      # Source roots the gate resolves against. Docs go stale when CODE moves, not
+      # when docs move, so a rename under pkg/ must trigger this check too.
+      - 'pkg/**'
+      - 'cmd/**'
+      - 'test/**'
+      - 'internal/**'
+  push:
+    branches: [main]
+
+concurrency:
+  group: docs-check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  refs:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Check doc references
+        run: bash scripts/check-architecture-refs.sh
+
+  skills:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Validate Agent Skills
+        run: |
+          set -euo pipefail
+          # LC_ALL=C: under a UTF-8 locale bash's [a-z] follows collation order and
+          # matches uppercase, so the name check would accept "Aurelian-Code-Review".
+          export LC_ALL=C
+          shopt -s nullglob
+          dirs=(.agents/skills/*/)
+          # An empty glob would iterate zero times and pass having validated nothing.
+          [ ${#dirs[@]} -gt 0 ] || { echo "::error::no skill directories under .agents/skills/"; exit 1; }
+
+          for d in "${dirs[@]}"; do
+            echo "== $d"
+            f="$d/SKILL.md"; name=$(basename "$d")
+            die() { echo "::error::$d $1"; exit 1; }
+
+            test -f "$f"              || die "missing SKILL.md"
+            test ! -d "$d/references" || die "has references/ (skills are self-contained)"
+
+            # Read metadata only from the front matter block; a bare grep for "name:"
+            # matches the body, so a file with no front matter would pass.
+            head -1 "$f" | grep -qx -- '---' || die "SKILL.md must open with ---"
+            fm=$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f' "$f")
+            grep -q '^description:' <<<"$fm" || die "front matter missing description"
+            grep -q '^name:'        <<<"$fm" || die "front matter missing name"
+
+            declared=$(awk -F': *' '/^name:/{print $2; exit}' <<<"$fm")
+            [ "$declared" = "$name" ] || die "name '$declared' != directory"
+            [ ${#name} -le 64 ]       || die "name exceeds 64 chars"
+            case "$name" in *[![:lower:][:digit:]-]*|-*|*-|*--*) die "name must be lowercase/digits/single hyphens";; esac
+          done
+          echo "validated ${#dirs[@]} skill(s)"
