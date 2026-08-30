@@ -1,0 +1,37 @@
+id: "1.3.3"
+title: "Ensure external calendar sharing is disabled"
+service: admin
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that calendar sharing with external users is disabled or
+  limited to free/busy information only.
+rationale: |
+  Calendar details can reveal sensitive information including meeting
+  topics, attendee lists, locations, and organizational structure.
+  External calendar sharing exposes this information to parties
+  outside the organization, enabling social engineering and
+  reconnaissance.
+impact: |
+  Users will be unable to share detailed calendar information with
+  external users. Free/busy information may still be available
+  depending on the configured level.
+remediation: |
+  Navigate to Microsoft 365 Admin Center > Settings > Org settings >
+  Calendar and disable external sharing or limit to free/busy
+  information only.
+references:
+  - "https://learn.microsoft.com/en-us/microsoft-365/admin/manage/share-calendars-with-external-users"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 1.3.3"
+cis_controls:
+  - "v8: 3.3"
+guard:
+  finding_slug: "m365-cis-1-3-3-external-calendar-sharing-disabled"
+  phase_tag: "phase_m365_admin"
+  asset_type: "m365tenant"
+  cwe: "CWE-200"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - organization_config

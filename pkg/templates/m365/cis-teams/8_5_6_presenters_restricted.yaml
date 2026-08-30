@@ -1,0 +1,36 @@
+id: "8.5.6"
+title: "Ensure only organizers and co-organizers can present"
+service: teams
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that the default meeting policy restricts the presenter
+  role to organizers and co-organizers, preventing other participants
+  from sharing content.
+rationale: |
+  Unrestricted presenter access allows any participant to share
+  their screen, potentially displaying inappropriate or malicious
+  content to all attendees. Restricting presenter access ensures
+  meeting content is controlled by the organizer.
+impact: |
+  Only organizers and co-organizers can present by default.
+  Organizers can promote specific participants during meetings as
+  needed.
+remediation: |
+  Navigate to Teams Admin Center > Meetings > Meeting policies and
+  set "Who can present" to "Only organizers and co-organizers".
+references:
+  - "https://learn.microsoft.com/en-us/microsoftteams/meeting-policies-content-sharing"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 8.5.6"
+cis_controls:
+  - "v8: 6.1"
+guard:
+  finding_slug: "m365-cis-8-5-6-presenters-restricted"
+  phase_tag: "phase_m365_teams"
+  asset_type: "m365tenant"
+  cwe: "CWE-16"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - teams_meeting_policies

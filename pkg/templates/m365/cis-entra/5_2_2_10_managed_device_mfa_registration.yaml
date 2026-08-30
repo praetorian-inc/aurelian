@@ -1,0 +1,38 @@
+id: "5.2.2.10"
+title: "Ensure a managed device is required to complete MFA registration"
+service: entra
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that a Conditional Access policy ensures only managed
+  (compliant or hybrid Azure AD joined) devices can complete MFA
+  registration to prevent adversary-in-the-middle MFA hijacking.
+rationale: |
+  Attackers who obtain initial credentials may attempt to register
+  their own MFA device. Requiring a managed device for MFA
+  registration ensures that only trusted, corporate-managed endpoints
+  can enroll authentication methods.
+impact: |
+  Users without a managed device will be unable to register MFA
+  methods until their device is enrolled and compliant.
+remediation: |
+  Create a Conditional Access policy targeting the user action
+  "Register security information" with a grant control requiring
+  a compliant device or hybrid Azure AD joined device.
+references:
+  - "https://learn.microsoft.com/en-us/entra/identity/conditional-access/howto-conditional-access-policy-registration"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 5.2.2.10"
+cis_controls:
+  - "v8: 6.3"
+  - "v8: 6.4"
+guard:
+  finding_slug: "m365-cis-5-2-2-10-managed-device-mfa-registration"
+  phase_tag: "phase_m365_entra"
+  asset_type: "m365tenant"
+  cwe: "CWE-308"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - conditional_access_policies
+  - device_compliance_policies

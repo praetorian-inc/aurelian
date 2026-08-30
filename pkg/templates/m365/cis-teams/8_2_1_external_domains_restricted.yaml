@@ -1,0 +1,37 @@
+id: "8.2.1"
+title: "Ensure external domains are restricted in Teams"
+service: teams
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that external access in Microsoft Teams is configured to
+  allow communication only with specific approved domains rather
+  than all external domains.
+rationale: |
+  Unrestricted external domain access allows users to communicate
+  with anyone outside the organization, creating phishing and social
+  engineering vectors. Restricting to approved domains limits the
+  attack surface to known partner organizations.
+impact: |
+  Users will only be able to communicate with external users from
+  approved domains. New partner domains must be explicitly added.
+remediation: |
+  Navigate to Teams Admin Center > External access and set external
+  access to "Allow only specific external domains" with an approved
+  domain list.
+references:
+  - "https://learn.microsoft.com/en-us/microsoftteams/manage-external-access"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 8.2.1"
+cis_controls:
+  - "v8: 6.1"
+  - "v8: 6.8"
+guard:
+  finding_slug: "m365-cis-8-2-1-external-domains-restricted"
+  phase_tag: "phase_m365_teams"
+  asset_type: "m365tenant"
+  cwe: "CWE-732"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - teams_external_access
