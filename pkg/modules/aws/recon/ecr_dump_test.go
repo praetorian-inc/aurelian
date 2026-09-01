@@ -256,11 +256,17 @@ func TestECRDumpChooseImages(t *testing.T) {
 		wantURIs    []string
 	}{
 		{
-			name:     "unset selects the most recently pushed image",
-			wantURIs: []string{repoURI + ":v3"},
+			name: "unset resolves the latest tag, as a Docker client would",
+			// v3 is the newest push, but "latest" is what a client resolves.
+			wantURIs: []string{repoURI + ":latest"},
 		},
 		{
-			name:     "newest selects the most recently pushed image",
+			name:     "latest resolves the latest tag",
+			images:   imagesLatest,
+			wantURIs: []string{repoURI + ":latest"},
+		},
+		{
+			name:     "newest selects by push time, not by tag",
 			images:   imagesNewest,
 			wantURIs: []string{repoURI + ":v3"},
 		},
@@ -275,13 +281,6 @@ func TestECRDumpChooseImages(t *testing.T) {
 			// v1 is the oldest image, so this proves tag selection is not
 			// restricted to the newest push.
 			wantURIs: []string{repoURI + ":v1"},
-		},
-		{
-			name:   "latest means the tag, not the most recent push",
-			images: "latest",
-			// The newest image is v3, but only v2 carries the "latest" tag, and
-			// the reference uses the requested tag rather than the image's first.
-			wantURIs: []string{repoURI + ":latest"},
 		},
 		{
 			name:     "an unmatched tag selects nothing",
@@ -299,6 +298,14 @@ func TestECRDumpChooseImages(t *testing.T) {
 			images:      "v1",
 			incremental: true,
 			wantURIs:    nil,
+		},
+		{
+			name:        "an unchanged latest tag is skipped",
+			images:      imagesLatest,
+			incremental: true,
+			// The latest-tagged image (v2) was pushed after the checkpoint here,
+			// so it survives; see the fallback test for the no-latest case.
+			wantURIs: []string{repoURI + ":latest"},
 		},
 	}
 
@@ -326,6 +333,23 @@ func TestECRDumpChooseImages(t *testing.T) {
 func TestECRDumpChooseImagesEmptyRepository(t *testing.T) {
 	run := &ecrDumpRun{}
 	assert.Empty(t, run.chooseImages(ecrImage{RepoName: "empty"}, "uri", nil))
+}
+
+func TestECRDumpChooseImagesFallsBackWhenNoLatestTag(t *testing.T) {
+	// Version-tagged registries commonly have no "latest". Skipping them would
+	// drop most of such a registry from the scan, so the newest push is used.
+	newest := time.Date(2026, time.August, 3, 0, 0, 0, 0, time.UTC)
+	older := newest.Add(-time.Hour)
+	candidates := []imageCandidate{
+		{Tags: []string{"v3"}, PushedAt: &newest},
+		{Tags: []string{"v2"}, PushedAt: &older},
+	}
+
+	run := &ecrDumpRun{images: imagesLatest}
+	selected := run.chooseImages(ecrImage{RepoName: "app"}, "uri", candidates)
+
+	require.Len(t, selected, 1)
+	assert.Equal(t, "uri:v3", selected[0].ImageURI)
 }
 
 func TestImageReference(t *testing.T) {
@@ -444,4 +468,59 @@ func TestExtractLayerWritesUnderTheGivenDirectory(t *testing.T) {
 	got, err := os.ReadFile(written)
 	require.NoError(t, err, "layer file should be written beneath the per-image directory")
 	assert.Equal(t, content, got)
+}
+
+func TestECRDumpSelectImagesUsesPublishedReferences(t *testing.T) {
+	// Both single-image modes must be answerable from the enumerated resource
+	// alone. A nil session map would panic if either reached AWS, which is the
+	// assertion: the default mode costs no extra API call.
+	repo := output.AWSResource{
+		ResourceID: "app",
+		Region:     "us-east-2",
+		AccountRef: "123456789012",
+		ARN:        "arn:aws:ecr:us-east-2:123456789012:repository/app",
+		Properties: map[string]any{
+			cclist.ECRPropImageURI:     "123456789012.dkr.ecr.us-east-2.amazonaws.com/app:v3",
+			cclist.ECRPropImageTag:     "v3",
+			cclist.ECRPropLatestTagURI: "123456789012.dkr.ecr.us-east-2.amazonaws.com/app:latest",
+		},
+	}
+
+	t.Run("default resolves the latest tag", func(t *testing.T) {
+		selected, err := (&ecrDumpRun{}).selectImages(repo)
+		require.NoError(t, err)
+		require.Len(t, selected, 1)
+		assert.Equal(t, "latest", selected[0].Tag)
+		assert.Equal(t, "123456789012.dkr.ecr.us-east-2.amazonaws.com/app:latest", selected[0].ImageURI)
+		assert.Equal(t, repo.ARN, selected[0].ARN, "the enumerated ARN must carry over")
+	})
+
+	t.Run("newest resolves the most recent push", func(t *testing.T) {
+		selected, err := (&ecrDumpRun{images: imagesNewest}).selectImages(repo)
+		require.NoError(t, err)
+		require.Len(t, selected, 1)
+		assert.Equal(t, "v3", selected[0].Tag)
+	})
+
+	t.Run("default falls back to the newest push when no latest tag exists", func(t *testing.T) {
+		noLatest := repo
+		noLatest.Properties = map[string]any{
+			cclist.ECRPropImageURI: "123456789012.dkr.ecr.us-east-2.amazonaws.com/app:v3",
+			cclist.ECRPropImageTag: "v3",
+		}
+
+		selected, err := (&ecrDumpRun{}).selectImages(noLatest)
+		require.NoError(t, err)
+		require.Len(t, selected, 1)
+		assert.Equal(t, "v3", selected[0].Tag)
+	})
+
+	t.Run("an empty repository selects nothing", func(t *testing.T) {
+		empty := repo
+		empty.Properties = map[string]any{}
+
+		selected, err := (&ecrDumpRun{}).selectImages(empty)
+		require.NoError(t, err)
+		assert.Empty(t, selected)
+	})
 }

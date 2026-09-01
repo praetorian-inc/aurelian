@@ -39,7 +39,7 @@ type ECRDumpConfig struct {
 	plugin.AWSCommonRecon
 	secrets.ScannerConfig
 	Extract       bool   `param:"extract" desc:"Extract image layers to filesystem" default:"true"`
-	Images        string `param:"images" desc:"Which images to scan per repository: \"newest\" (most recently pushed), \"all\", or a tag name such as \"latest\"" default:"newest"`
+	Images        string `param:"images" desc:"Which images to scan per repository: \"latest\" (the tag a Docker client resolves), \"newest\" (most recently pushed), \"all\", or any other tag name" default:"latest"`
 	ModifiedSince string `param:"modified-since" desc:"RFC3339 timestamp of the last successful scan; repositories whose newest image was pushed no later than this are skipped"`
 }
 
@@ -90,10 +90,16 @@ type ecrImage struct {
 	IsPublic  bool
 }
 
-// Reserved values for --images. Anything else is taken as a tag name, so
-// `--images latest` selects the image tagged "latest" rather than the most
-// recently pushed one, which is frequently a different image.
+// Reserved values for --images. Anything else is taken as a tag name.
+//
+// "latest" is the default because that is the tag a Docker client resolves when
+// a reference carries none, so it is the image an operator means by "the" image
+// in a repository. It is NOT a synonym for the most recently pushed image: a
+// release tagged v3 pushed after latest leaves the two pointing at different
+// images. "newest" selects by push time for the cases where that is what you
+// want.
 const (
+	imagesLatest = "latest"
 	imagesNewest = "newest"
 	imagesAll    = "all"
 )
@@ -126,7 +132,7 @@ type ecrDumpRun struct {
 // safe however it was constructed.
 func (r *ecrDumpRun) mode() string {
 	if r.images == "" {
-		return imagesNewest
+		return imagesLatest
 	}
 	return r.images
 }
@@ -174,12 +180,25 @@ type imageCandidate struct {
 // repository's images, which must arrive most-recently-pushed first. base
 // carries the repository identity every returned image inherits.
 func (r *ecrDumpRun) chooseImages(base ecrImage, repoURI string, candidates []imageCandidate) []ecrImage {
+	if len(candidates) == 0 {
+		return nil
+	}
+
 	wantTag := ""
 	switch r.mode() {
-	case imagesNewest:
-		if len(candidates) == 0 {
-			return nil
+	case imagesLatest:
+		if i := slices.IndexFunc(candidates, func(c imageCandidate) bool {
+			return slices.Contains(c.Tags, imagesLatest)
+		}); i >= 0 {
+			candidates, wantTag = candidates[i:i+1], imagesLatest
+			break
 		}
+		// Version-tagged registries commonly have no "latest" at all. Falling
+		// back to the most recently pushed image keeps them in scope; skipping
+		// them would silently drop most of a semver-tagged registry from a
+		// secret scan.
+		candidates = candidates[:1]
+	case imagesNewest:
 		candidates = candidates[:1]
 	case imagesAll:
 	default:
@@ -223,11 +242,30 @@ func (r *ecrDumpRun) selectImages(repo output.AWSResource) ([]ecrImage, error) {
 		ARN:       repo.ARN,
 	}
 
-	if r.mode() == imagesNewest {
+	// Both single-image modes are answered from the references the enumerator
+	// already published, so neither costs an API call here.
+	switch r.mode() {
+	case imagesLatest:
+		if uri, _ := repo.Properties[cclist.ECRPropLatestTagURI].(string); uri != "" {
+			base.Tag, base.ImageURI = imagesLatest, uri
+			return []ecrImage{base}, nil
+		}
+
 		uri, _ := repo.Properties[cclist.ECRPropImageURI].(string)
 		if uri == "" {
 			// No published reference: the repository holds no images, or
 			// DescribeImages was denied and recorded as a skip by the enumerator.
+			return nil, nil
+		}
+		base.Tag, _ = repo.Properties[cclist.ECRPropImageTag].(string)
+		base.ImageURI = uri
+		r.cfg.Info("%s has no %q tag; scanning its most recently pushed image (%s)",
+			repo.ResourceID, imagesLatest, base.Tag)
+		return []ecrImage{base}, nil
+
+	case imagesNewest:
+		uri, _ := repo.Properties[cclist.ECRPropImageURI].(string)
+		if uri == "" {
 			return nil, nil
 		}
 		base.Tag, _ = repo.Properties[cclist.ECRPropImageTag].(string)

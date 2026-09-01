@@ -15,7 +15,7 @@ aurelian aws recon ecr-dump [flags]
       --extract                        Extract image layers to filesystem (default true)
   -h, --help                           help for ecr-dump
       --ignore-file string             Path to gitignore-style file for skipping paths; when empty uses a default list
-      --images string                  Which images to scan per repository: "newest" (most recently pushed), "all", or a tag name such as "latest" (default "newest")
+      --images string                  Which images to scan per repository: "latest" (the tag a Docker client resolves), "newest" (most recently pushed), "all", or any other tag name (default "latest")
       --modified-since string          RFC3339 timestamp of the last successful scan; repositories whose newest image was pushed no later than this are skipped
       --opsec_level string             Operational security level for AWS operations (default "none")
       --output-dir string              Base output directory (default "aurelian-output")
