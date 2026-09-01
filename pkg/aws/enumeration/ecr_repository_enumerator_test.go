@@ -61,6 +61,9 @@ func TestBuildECRRepositoryResourcePublishesBothReferences(t *testing.T) {
 	assert.Equal(t, "v3", r.Properties[ECRPropImageTag])
 	assert.Equal(t, "123456789012.dkr.ecr.us-east-2.amazonaws.com/app:latest", r.Properties[ECRPropLatestTagURI])
 	assert.Equal(t, newestPush, *r.LastModified, "LastModified must track the newest push, not the latest tag")
+	// An incremental consumer needs the latest-tagged image's OWN push time:
+	// LastModified would tell it v3 changed and make it re-pull an unchanged v2.
+	assert.Equal(t, olderPush.Format(time.RFC3339Nano), r.Properties[ECRPropLatestTagPushedAt])
 }
 
 func TestBuildECRRepositoryResourceNoLatestTag(t *testing.T) {
@@ -112,19 +115,41 @@ func TestBuildECRRepositoryResourceNoImages(t *testing.T) {
 }
 
 func TestBuildECRRepositoryResourceUntaggedImage(t *testing.T) {
-	// An image pushed by digest carries no tags. The reference falls back to
-	// :latest, which is what the ECR API resolves for an untagged push.
+	// An image pushed by digest carries no tags, and ECR does NOT resolve it
+	// under "latest". Defaulting the tag would publish a reference that either
+	// fails to pull or silently resolves to a different, older image.
 	pushed := time.Date(2026, time.August, 20, 8, 30, 0, 0, time.UTC)
 	repo := ecrtypes.Repository{
 		RepositoryName: aws.String("untagged"),
 		RepositoryArn:  aws.String("arn:aws:ecr:us-west-2:123456789012:repository/untagged"),
 		RepositoryUri:  aws.String("123456789012.dkr.ecr.us-west-2.amazonaws.com/untagged"),
 	}
+	newest := &ecrtypes.ImageDetail{
+		ImagePushedAt: &pushed,
+		ImageDigest:   aws.String("sha256:9f2c1e"),
+	}
+
+	r := buildECRRepositoryResource(repo, newest, nil, "123456789012", "us-west-2")
+
+	assert.Equal(t, "123456789012.dkr.ecr.us-west-2.amazonaws.com/untagged@sha256:9f2c1e", r.Properties[ECRPropImageURI])
+	assert.Equal(t, "sha256:9f2c1e", r.Properties[ECRPropImageTag])
+	assert.Equal(t, pushed, *r.LastModified)
+	assert.Nil(t, r.Properties[ECRPropLatestTagURI], "an untagged image is not a latest-tagged image")
+}
+
+func TestBuildECRRepositoryResourceUntaggedWithoutDigest(t *testing.T) {
+	// Neither tag nor digest means nothing pullable; publish no reference rather
+	// than one that cannot resolve. LastModified still records the push.
+	pushed := time.Date(2026, time.August, 20, 8, 30, 0, 0, time.UTC)
+	repo := ecrtypes.Repository{
+		RepositoryName: aws.String("odd"),
+		RepositoryUri:  aws.String("123456789012.dkr.ecr.us-west-2.amazonaws.com/odd"),
+	}
 
 	r := buildECRRepositoryResource(repo, &ecrtypes.ImageDetail{ImagePushedAt: &pushed}, nil, "123456789012", "us-west-2")
 
-	assert.Equal(t, "123456789012.dkr.ecr.us-west-2.amazonaws.com/untagged:latest", r.Properties[ECRPropImageURI])
-	assert.Equal(t, "latest", r.Properties[ECRPropImageTag])
+	assert.Nil(t, r.Properties[ECRPropImageURI])
+	assert.Nil(t, r.Properties[ECRPropImageTag])
 	assert.Equal(t, pushed, *r.LastModified)
 }
 
