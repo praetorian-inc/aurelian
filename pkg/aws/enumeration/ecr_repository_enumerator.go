@@ -3,6 +3,7 @@ package enumeration
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -148,14 +149,30 @@ func (l *ECRRepositoryEnumerator) listRepositoriesInRegion(region, accountID str
 // but its LastModified is left nil so a modified-since consumer fails open and
 // scans it instead of silently treating it as unchanged.
 func (l *ECRRepositoryEnumerator) describeRepository(client *ecr.Client, repo ecrtypes.Repository, accountID, region string) (output.AWSResource, []SkippedOp, error) {
-	newest, skipped, err := newestImage(client, aws.ToString(repo.RepositoryName), region)
+	details, skipped, err := ECRImages(context.Background(), client, aws.ToString(repo.RepositoryName), region)
 	if err != nil {
 		return output.AWSResource{}, nil, err
 	}
 	if skipped != nil {
-		return buildECRRepositoryResource(repo, nil, accountID, region), []SkippedOp{*skipped}, nil
+		return buildECRRepositoryResource(repo, nil, nil, accountID, region), []SkippedOp{*skipped}, nil
 	}
-	return buildECRRepositoryResource(repo, newest, accountID, region), nil, nil
+
+	var newest *ecrtypes.ImageDetail
+	if len(details) > 0 {
+		// ECRImages sorts most recently pushed first.
+		newest = &details[0]
+	}
+	return buildECRRepositoryResource(repo, newest, imageWithTag(details, dockerDefaultTag), accountID, region), nil, nil
+}
+
+// imageWithTag returns the first image carrying tag, or nil if none does.
+func imageWithTag(details []ecrtypes.ImageDetail, tag string) *ecrtypes.ImageDetail {
+	for i := range details {
+		if slices.Contains(details[i].ImageTags, tag) {
+			return &details[i]
+		}
+	}
+	return nil
 }
 
 // ECRImages returns every image in a repository, most recently pushed first.
@@ -195,30 +212,31 @@ func ECRImages(ctx context.Context, client *ecr.Client, repoName, region string)
 	return details, nil, nil
 }
 
-// newestImage returns the most recently pushed image in a repository, or nil
-// when the repository holds none.
-func newestImage(client *ecr.Client, repoName, region string) (*ecrtypes.ImageDetail, *SkippedOp, error) {
-	details, skipped, err := ECRImages(context.Background(), client, repoName, region)
-	if err != nil || skipped != nil {
-		return nil, skipped, err
-	}
-	if len(details) == 0 {
-		return nil, nil, nil
-	}
-	return &details[0], nil, nil
-}
-
-// Properties keys published for consumers that pull the newest image. They are
-// absent when the repository holds no images, or when DescribeImages was denied.
+// Properties keys published for consumers that pull an image. All are absent
+// when the repository holds no images, or when DescribeImages was denied.
+//
+// Both references are published because "the newest image" and "the image a
+// Docker client resolves" are different things: the former is whatever was
+// pushed last, the latter is the "latest" tag. DescribeImages has already been
+// called for LastModified, so publishing both costs nothing and spares the
+// consumer a second call.
 const (
-	// ECRPropImageURI is the fully qualified pull reference, e.g.
-	// 123456789012.dkr.ecr.us-east-2.amazonaws.com/app:v3.
+	// ECRPropImageURI is the pull reference of the most recently pushed image,
+	// e.g. 123456789012.dkr.ecr.us-east-2.amazonaws.com/app:v3.
 	ECRPropImageURI = "NewestImageURI"
 	// ECRPropImageTag is the tag component of ECRPropImageURI.
 	ECRPropImageTag = "NewestImageTag"
+	// ECRPropLatestTagURI is the pull reference of the image tagged "latest",
+	// the tag a Docker client resolves when none is given. Absent when the
+	// repository has no such tag, which is normal for version-tagged registries.
+	ECRPropLatestTagURI = "LatestTagImageURI"
 )
 
-func buildECRRepositoryResource(repo ecrtypes.Repository, newest *ecrtypes.ImageDetail, accountID, region string) output.AWSResource {
+// dockerDefaultTag is the tag a container client resolves when a reference
+// carries none.
+const dockerDefaultTag = "latest"
+
+func buildECRRepositoryResource(repo ecrtypes.Repository, newest, latestTagged *ecrtypes.ImageDetail, accountID, region string) output.AWSResource {
 	name := aws.ToString(repo.RepositoryName)
 
 	properties := map[string]any{
@@ -239,18 +257,24 @@ func buildECRRepositoryResource(repo ecrtypes.Repository, newest *ecrtypes.Image
 		Properties:   properties,
 	}
 
+	// RepositoryUri is the authoritative registry host and path; building
+	// references from it avoids reconstructing the ECR endpoint by hand.
+	repoURI := aws.ToString(repo.RepositoryUri)
+
 	if newest != nil {
-		tag := "latest"
+		tag := dockerDefaultTag
 		if len(newest.ImageTags) > 0 {
 			tag = newest.ImageTags[0]
 		}
-		// RepositoryUri is the authoritative registry host and path; building the
-		// reference from it avoids reconstructing the ECR endpoint by hand.
-		if uri := aws.ToString(repo.RepositoryUri); uri != "" {
-			properties[ECRPropImageURI] = fmt.Sprintf("%s:%s", uri, tag)
+		if repoURI != "" {
+			properties[ECRPropImageURI] = fmt.Sprintf("%s:%s", repoURI, tag)
 		}
 		properties[ECRPropImageTag] = tag
 		resource.LastModified = newest.ImagePushedAt
+	}
+
+	if latestTagged != nil && repoURI != "" {
+		properties[ECRPropLatestTagURI] = fmt.Sprintf("%s:%s", repoURI, dockerDefaultTag)
 	}
 
 	return resource
