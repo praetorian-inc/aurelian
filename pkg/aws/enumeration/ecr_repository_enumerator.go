@@ -243,6 +243,18 @@ const (
 	// image, so an incremental consumer needs this to tell whether the image it
 	// resolves has itself changed.
 	ECRPropLatestTagPushedAt = "LatestTagPushedAt"
+
+	// ECRPropImageDigest and ECRPropLatestTagDigest are the content digests of
+	// the images the two references above point at.
+	//
+	// A digest is the image's content hash, so it is IMMUTABLE: the bytes behind
+	// sha256:abc… can never change. That makes it a stronger scan key than any
+	// timestamp — a consumer that has scanned a digest never needs to scan it
+	// again, whereas a push time only says the repository changed, not that the
+	// image a tag resolves to did. Publishing both digests lets a consumer skip
+	// exactly, instead of re-pulling because some sibling tag moved.
+	ECRPropImageDigest     = "NewestImageDigest"
+	ECRPropLatestTagDigest = "LatestTagImageDigest"
 )
 
 // dockerDefaultTag is the tag a container client resolves when a reference
@@ -291,6 +303,9 @@ func buildECRRepositoryResource(repo ecrtypes.Repository, newest, latestTagged *
 		} else if digest := aws.ToString(newest.ImageDigest); digest != "" {
 			properties[ECRPropImageTag] = digest
 		}
+		if digest := aws.ToString(newest.ImageDigest); digest != "" {
+			properties[ECRPropImageDigest] = digest
+		}
 		resource.LastModified = newest.ImagePushedAt
 	}
 
@@ -301,6 +316,9 @@ func buildECRRepositoryResource(repo ecrtypes.Repository, newest, latestTagged *
 		// whether the image it is about to pull actually changed.
 		if latestTagged.ImagePushedAt != nil {
 			properties[ECRPropLatestTagPushedAt] = latestTagged.ImagePushedAt.UTC().Format(time.RFC3339Nano)
+		}
+		if digest := aws.ToString(latestTagged.ImageDigest); digest != "" {
+			properties[ECRPropLatestTagDigest] = digest
 		}
 	}
 

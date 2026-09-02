@@ -40,9 +40,10 @@ func init() {
 type ECRDumpConfig struct {
 	plugin.AWSCommonRecon
 	secrets.ScannerConfig
-	Extract       bool   `param:"extract" desc:"Extract image layers to filesystem" default:"true"`
-	Images        string `param:"images" desc:"Which images to scan per repository: \"latest\" (the tag a Docker client resolves), \"newest\" (most recently pushed), \"all\", or any other tag name" default:"latest"`
-	ModifiedSince string `param:"modified-since" desc:"RFC3339 timestamp of the last successful scan; repositories whose newest image was pushed no later than this are skipped"`
+	Extract       bool     `param:"extract" desc:"Extract image layers to filesystem" default:"true"`
+	Images        string   `param:"images" desc:"Which images to scan per repository: \"latest\" (the tag a Docker client resolves), \"newest\" (most recently pushed), \"all\", or any other tag name" default:"latest"`
+	ModifiedSince string   `param:"modified-since" desc:"RFC3339 timestamp of the last successful scan; repositories whose newest image was pushed no later than this are skipped"`
+	SkipDigests   []string `param:"skip-digests" desc:"Image digests already scanned; an image with a matching digest is skipped. A digest is a content hash, so its bytes can never change and one scan is enough forever"`
 }
 
 type AWSECRDumpModule struct {
@@ -98,6 +99,9 @@ type ecrImage struct {
 	// it, and so an incremental caller has a real value to advance its
 	// --modified-since checkpoint to instead of wall-clock time.
 	PushedAt *time.Time
+	// Digest is the image's immutable content hash. It is the scan key a caller
+	// records so this image is never pulled or scanned a second time.
+	Digest   string
 	Auth     authn.Authenticator
 	IsPublic bool
 }
@@ -134,9 +138,40 @@ type ecrDumpRun struct {
 	modifiedSince time.Time
 	incremental   bool
 	images        string
+	skipDigests   map[string]struct{}
 	profile       string
 	profileDir    string
 	sessions      map[string]*regionSession
+}
+
+// digestSet indexes the already-scanned digests for lookup.
+func digestSet(digests []string) map[string]struct{} {
+	if len(digests) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(digests))
+	for _, d := range digests {
+		if d = strings.TrimSpace(d); d != "" {
+			set[d] = struct{}{}
+		}
+	}
+	return set
+}
+
+// alreadyScanned reports whether an image's content has been scanned before.
+//
+// A digest is the image's content hash, so it is immutable: the bytes behind
+// sha256:abc… can never change, and one scan of them is enough forever. This is
+// exact where the modified-since checkpoint is only a proxy — a repository's
+// newest push time moves when ANY tag is pushed, so a time-based check re-pulls
+// an unchanged image whenever a sibling tag moves, while this does not.
+func (r *ecrDumpRun) alreadyScanned(digest string) bool {
+	if digest == "" {
+		// No digest means no immutability guarantee, so fail open and scan.
+		return false
+	}
+	_, seen := r.skipDigests[digest]
+	return seen
 }
 
 // mode returns the effective --images selection. An unset value behaves as the
@@ -222,6 +257,10 @@ func (r *ecrDumpRun) chooseImages(base ecrImage, repoURI string, candidates []im
 		if wantTag != "" && !slices.Contains(candidate.Tags, wantTag) {
 			continue
 		}
+		// Content already scanned can never differ, whatever its push time says.
+		if r.alreadyScanned(candidate.Digest) {
+			continue
+		}
 		// An image pushed no later than the checkpoint cannot have changed, so
 		// filter per image rather than only per repository.
 		if r.skipUnchanged(candidate.PushedAt) {
@@ -230,6 +269,7 @@ func (r *ecrDumpRun) chooseImages(base ecrImage, repoURI string, candidates []im
 
 		img := base
 		img.PushedAt = candidate.PushedAt
+		img.Digest = candidate.Digest
 		img.Tag, img.ImageURI = imageReference(repoURI, candidate, wantTag)
 		if img.ImageURI == "" {
 			// Neither a tag nor a digest: nothing pullable to reference.
@@ -260,6 +300,16 @@ func (r *ecrDumpRun) selectImages(repo output.AWSResource) ([]ecrImage, error) {
 	switch r.mode() {
 	case imagesLatest:
 		if uri, _ := repo.Properties[cclist.ECRPropLatestTagURI].(string); uri != "" {
+			digest, _ := repo.Properties[cclist.ECRPropLatestTagDigest].(string)
+
+			// The digest is exact: if this content was scanned before it cannot
+			// have changed, even though the repository's newest push time moved
+			// because some sibling tag was pushed.
+			if r.alreadyScanned(digest) {
+				r.cfg.Info("skipping %s: its %q image (%s) was already scanned",
+					repo.ResourceID, imagesLatest, digest)
+				return nil, nil
+			}
 			// LastModified tracks the newest push, which is often a different
 			// image, so a newer v3 can make the repository eligible while the
 			// "latest" image itself is unchanged. Check that image's own push
@@ -270,6 +320,7 @@ func (r *ecrDumpRun) selectImages(repo output.AWSResource) ([]ecrImage, error) {
 			}
 			base.Tag, base.ImageURI = imagesLatest, uri
 			base.PushedAt = latestTagPushedAt(repo)
+			base.Digest = digest
 			return []ecrImage{base}, nil
 		}
 
@@ -284,6 +335,12 @@ func (r *ecrDumpRun) selectImages(repo output.AWSResource) ([]ecrImage, error) {
 		// The newest image is what LastModified tracks, so it is this image's
 		// own push time.
 		base.PushedAt = repo.LastModified
+		base.Digest, _ = repo.Properties[cclist.ECRPropImageDigest].(string)
+		if r.alreadyScanned(base.Digest) {
+			r.cfg.Info("skipping %s: its newest image (%s) was already scanned",
+				repo.ResourceID, base.Digest)
+			return nil, nil
+		}
 		r.cfg.Info("%s has no %q tag; scanning its most recently pushed image (%s)",
 			repo.ResourceID, imagesLatest, base.Tag)
 		return []ecrImage{base}, nil
@@ -296,6 +353,12 @@ func (r *ecrDumpRun) selectImages(repo output.AWSResource) ([]ecrImage, error) {
 		base.Tag, _ = repo.Properties[cclist.ECRPropImageTag].(string)
 		base.ImageURI = uri
 		base.PushedAt = repo.LastModified
+		base.Digest, _ = repo.Properties[cclist.ECRPropImageDigest].(string)
+		if r.alreadyScanned(base.Digest) {
+			r.cfg.Info("skipping %s: its newest image (%s) was already scanned",
+				repo.ResourceID, base.Digest)
+			return nil, nil
+		}
 		return []ecrImage{base}, nil
 	}
 
@@ -452,6 +515,7 @@ func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 		modifiedSince: modifiedSince,
 		incremental:   incremental,
 		images:        c.Images,
+		skipDigests:   digestSet(c.SkipDigests),
 		profile:       m.Profile,
 		profileDir:    m.ProfileDir,
 		sessions:      make(map[string]*regionSession),
@@ -587,6 +651,7 @@ func (m *AWSECRDumpModule) processRepository(run *ecrDumpRun, repo output.AWSRes
 	}
 
 	var findings []scanFinding
+	var scanned []string
 	for _, img := range images {
 		img.Auth = session.auth
 		run.cfg.Info("pulling %s", img.ImageURI)
@@ -594,10 +659,40 @@ func (m *AWSECRDumpModule) processRepository(run *ecrDumpRun, repo output.AWSRes
 		imageFindings, err := m.pullExtractScan(run, img)
 		findings = append(findings, imageFindings...)
 		if err != nil {
+			// Report the digests that did complete so a caller can still skip
+			// them next run; the ones that failed are deliberately omitted.
+			run.reportScanned(repo, scanned)
 			return findings, err
 		}
+		if img.Digest != "" {
+			scanned = append(scanned, img.Digest)
+		}
 	}
+
+	run.reportScanned(repo, scanned)
 	return findings, nil
+}
+
+// reportScanned emits the repository carrying the digests just scanned, so a
+// caller can persist them and skip that content forever after. It is emitted
+// even when no secrets were found, since "scanned and clean" is what makes the
+// next run cheap.
+func (r *ecrDumpRun) reportScanned(repo output.AWSResource, digests []string) {
+	if len(digests) == 0 {
+		return
+	}
+
+	// Copy the properties: the enumerated map is shared with whatever else
+	// consumes this resource, and stamping it in place would mutate their view.
+	properties := make(map[string]any, len(repo.Properties)+1)
+	for k, v := range repo.Properties {
+		properties[k] = v
+	}
+	properties[output.ECRScannedDigestsProperty] = strings.Join(digests, ",")
+
+	reported := repo
+	reported.Properties = properties
+	r.out.Send(reported)
 }
 
 // processPublicRepos scans public repositories. A non-empty onlyRepos restricts

@@ -300,6 +300,53 @@ func TestECRDumpIntegration(t *testing.T) {
 	// The modified-since contract from #258: a repository whose newest image was
 	// pushed no later than the checkpoint is skipped entirely, so the second run
 	// of an unchanged registry must re-report nothing.
+	t.Run("reports the scanned digest and skips it on a second run", func(t *testing.T) {
+		// The immutability contract, end to end: the module reports which content
+		// it scanned, and feeding that back suppresses the pull entirely — the
+		// mechanism Guard needs to scan an image's bytes exactly once, ever.
+		runModule := func(t *testing.T, skipDigests []string) []model.AurelianModel {
+			t.Helper()
+			args := map[string]any{
+				"regions":    []string{testRegion},
+				"extract":    false,
+				"output-dir": t.TempDir(),
+			}
+			if len(skipDigests) > 0 {
+				args["skip-digests"] = skipDigests
+			}
+
+			in := pipeline.From(plugin.Config{Args: args, Context: ctx})
+			results := pipeline.New[model.AurelianModel]()
+			pipeline.Pipe(in, mod.Run, results)
+			collected, err := results.Collect()
+			require.NoError(t, err)
+			return collected
+		}
+
+		var digests string
+		for _, m := range runModule(t, nil) {
+			resource, ok := m.(output.AWSResource)
+			if !ok || resource.ResourceID != secretRepoName {
+				continue
+			}
+			digests, _ = resource.Properties[output.ECRScannedDigestsProperty].(string)
+		}
+		require.NotEmpty(t, digests, "the module must report which content it scanned")
+		require.True(t, strings.HasPrefix(digests, "sha256:"), "expected a content digest, got %q", digests)
+
+		// Feed the reported digest back: the image must not be scanned again.
+		for _, m := range runModule(t, strings.Split(digests, ",")) {
+			if risk, ok := m.(output.AurelianRisk); ok {
+				assert.NotContains(t, risk.ImpactedResourceID, secretRepoName,
+					"an already-scanned digest must not be pulled or scanned again")
+			}
+			if resource, ok := m.(output.AWSResource); ok && resource.ResourceID == secretRepoName {
+				assert.Nil(t, resource.Properties[output.ECRScannedDigestsProperty],
+					"a repository with nothing newly scanned must not claim coverage")
+			}
+		}
+	})
+
 	t.Run("modified-since skips a repo whose newest image predates the checkpoint", func(t *testing.T) {
 		checkpoint := time.Now().UTC().Format(time.RFC3339Nano)
 

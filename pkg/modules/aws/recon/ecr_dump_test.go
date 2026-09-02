@@ -763,3 +763,129 @@ func TestExtractLayerSurfacesLastModified(t *testing.T) {
 	require.NotNil(t, inputs[0].LastModified, "every extracted file inherits the image's push time")
 	assert.True(t, inputs[0].LastModified.Equal(pushed))
 }
+
+func TestECRDumpSkipsAlreadyScannedDigests(t *testing.T) {
+	// A digest is an immutable content hash, so one scan is enough forever. This
+	// is exact where the modified-since checkpoint is only a proxy.
+	const scanned = "sha256:aaaa"
+	pushed := time.Date(2026, 8, 20, 8, 30, 0, 0, time.UTC)
+
+	t.Run("latest mode skips a repo whose latest image was already scanned", func(t *testing.T) {
+		run := &ecrDumpRun{skipDigests: digestSet([]string{scanned})}
+		selected, err := run.selectImages(output.AWSResource{
+			ResourceID: "app",
+			Properties: map[string]any{
+				cclist.ECRPropLatestTagURI:    "uri:latest",
+				cclist.ECRPropLatestTagDigest: scanned,
+			},
+		})
+		require.NoError(t, err)
+		assert.Empty(t, selected)
+	})
+
+	t.Run("a moved sibling tag does not force a re-pull", func(t *testing.T) {
+		// The repository's newest push time moved because v3 was pushed, so the
+		// time-based check would re-pull. The digest says the latest image's
+		// content is unchanged, so it must not.
+		newerPush := pushed.Add(48 * time.Hour)
+		run := &ecrDumpRun{
+			incremental:   true,
+			modifiedSince: pushed,
+			skipDigests:   digestSet([]string{scanned}),
+		}
+		selected, err := run.selectImages(output.AWSResource{
+			ResourceID:   "app",
+			LastModified: &newerPush,
+			Properties: map[string]any{
+				cclist.ECRPropLatestTagURI:      "uri:latest",
+				cclist.ECRPropLatestTagDigest:   scanned,
+				cclist.ECRPropLatestTagPushedAt: newerPush.Format(time.RFC3339Nano),
+			},
+		})
+		require.NoError(t, err)
+		assert.Empty(t, selected, "an already-scanned digest must win over a moved push time")
+	})
+
+	t.Run("newest mode skips an already-scanned digest", func(t *testing.T) {
+		run := &ecrDumpRun{images: imagesNewest, skipDigests: digestSet([]string{scanned})}
+		selected, err := run.selectImages(output.AWSResource{
+			ResourceID: "app",
+			Properties: map[string]any{
+				cclist.ECRPropImageURI:    "uri:v3",
+				cclist.ECRPropImageDigest: scanned,
+			},
+		})
+		require.NoError(t, err)
+		assert.Empty(t, selected)
+	})
+
+	t.Run("all mode skips only the scanned digests", func(t *testing.T) {
+		run := &ecrDumpRun{images: imagesAll, skipDigests: digestSet([]string{scanned})}
+		selected := run.chooseImages(ecrImage{RepoName: "app"}, "uri", []imageCandidate{
+			{Tags: []string{"v3"}, Digest: "sha256:bbbb", PushedAt: &pushed},
+			{Tags: []string{"v1"}, Digest: scanned, PushedAt: &pushed},
+		})
+		require.Len(t, selected, 1)
+		assert.Equal(t, "sha256:bbbb", selected[0].Digest)
+		assert.Equal(t, "uri:v3", selected[0].ImageURI)
+	})
+
+	t.Run("an image with no digest fails open", func(t *testing.T) {
+		// No digest means no immutability guarantee, so it must be scanned.
+		run := &ecrDumpRun{images: imagesAll, skipDigests: digestSet([]string{scanned})}
+		selected := run.chooseImages(ecrImage{RepoName: "app"}, "uri", []imageCandidate{
+			{Tags: []string{"v3"}, PushedAt: &pushed},
+		})
+		require.Len(t, selected, 1)
+	})
+}
+
+func TestDigestSet(t *testing.T) {
+	assert.Nil(t, digestSet(nil))
+	assert.Nil(t, digestSet([]string{}))
+
+	set := digestSet([]string{"sha256:a", "  sha256:b  ", "", "   "})
+	assert.Len(t, set, 2, "blank entries must not become skip keys")
+	_, ok := set["sha256:b"]
+	assert.True(t, ok, "surrounding whitespace should be trimmed")
+}
+
+func TestECRDumpReportsScannedDigests(t *testing.T) {
+	repo := output.AWSResource{
+		ResourceID: "app",
+		ARN:        "arn:aws:ecr:us-east-2:123456789012:repository/app",
+		Properties: map[string]any{cclist.ECRPropImageTag: "v3"},
+	}
+
+	out := pipeline.New[model.AurelianModel]()
+	run := &ecrDumpRun{out: out}
+	go func() {
+		defer out.Close()
+		run.reportScanned(repo, []string{"sha256:aaaa", "sha256:bbbb"})
+	}()
+
+	emitted, err := out.Collect()
+	require.NoError(t, err)
+	require.Len(t, emitted, 1)
+
+	reported, ok := emitted[0].(output.AWSResource)
+	require.True(t, ok)
+	assert.Equal(t, "sha256:aaaa,sha256:bbbb", reported.Properties[output.ECRScannedDigestsProperty])
+	assert.Equal(t, "v3", reported.Properties[cclist.ECRPropImageTag], "enumerated properties must survive")
+
+	// The enumerated map is shared with other consumers and must not be stamped.
+	assert.Nil(t, repo.Properties[output.ECRScannedDigestsProperty])
+}
+
+func TestECRDumpReportsNothingWhenNoImageScanned(t *testing.T) {
+	out := pipeline.New[model.AurelianModel]()
+	run := &ecrDumpRun{out: out}
+	go func() {
+		defer out.Close()
+		run.reportScanned(output.AWSResource{ResourceID: "app"}, nil)
+	}()
+
+	emitted, err := out.Collect()
+	require.NoError(t, err)
+	assert.Empty(t, emitted, "a repository with nothing scanned must not claim coverage")
+}

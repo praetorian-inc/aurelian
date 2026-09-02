@@ -52,8 +52,16 @@ func TestBuildECRRepositoryResourcePublishesBothReferences(t *testing.T) {
 		RepositoryArn:  aws.String("arn:aws:ecr:us-east-2:123456789012:repository/app"),
 		RepositoryUri:  aws.String("123456789012.dkr.ecr.us-east-2.amazonaws.com/app"),
 	}
-	newest := &ecrtypes.ImageDetail{ImageTags: []string{"v3"}, ImagePushedAt: &newestPush}
-	latestTagged := &ecrtypes.ImageDetail{ImageTags: []string{"v2", "latest"}, ImagePushedAt: &olderPush}
+	newest := &ecrtypes.ImageDetail{
+		ImageTags:     []string{"v3"},
+		ImagePushedAt: &newestPush,
+		ImageDigest:   aws.String("sha256:newest"),
+	}
+	latestTagged := &ecrtypes.ImageDetail{
+		ImageTags:     []string{"v2", "latest"},
+		ImagePushedAt: &olderPush,
+		ImageDigest:   aws.String("sha256:latest"),
+	}
 
 	r := buildECRRepositoryResource(repo, newest, latestTagged, "123456789012", "us-east-2")
 
@@ -64,6 +72,12 @@ func TestBuildECRRepositoryResourcePublishesBothReferences(t *testing.T) {
 	// An incremental consumer needs the latest-tagged image's OWN push time:
 	// LastModified would tell it v3 changed and make it re-pull an unchanged v2.
 	assert.Equal(t, olderPush.Format(time.RFC3339Nano), r.Properties[ECRPropLatestTagPushedAt])
+	// Digests are the immutable scan key: a consumer records these so the same
+	// content is never pulled twice, and the two references point at different
+	// images so both digests must be published.
+	assert.Equal(t, "sha256:newest", r.Properties[ECRPropImageDigest])
+	assert.Equal(t, "sha256:latest", r.Properties[ECRPropLatestTagDigest])
+	assert.NotEqual(t, r.Properties[ECRPropImageDigest], r.Properties[ECRPropLatestTagDigest])
 }
 
 func TestBuildECRRepositoryResourceNoLatestTag(t *testing.T) {
