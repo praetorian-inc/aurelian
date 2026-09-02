@@ -691,3 +691,75 @@ func TestECRDumpPublicARNRoutingContract(t *testing.T) {
 	assert.Equal(t, "ecr", priv.Service)
 	assert.Equal(t, "us-east-2", priv.Region)
 }
+
+func TestECRDumpSurfacesImagePushTime(t *testing.T) {
+	// The push time that drives the skip must also reach the emitted risk, and it
+	// must be the SPECIFIC image's push time, not the repository's newest.
+	checkpoint := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	newestPush := checkpoint.Add(2 * time.Hour)
+	latestPush := checkpoint.Add(time.Hour)
+
+	repo := output.AWSResource{
+		ResourceID:   "app",
+		Region:       "us-east-2",
+		AccountRef:   "123456789012",
+		ARN:          "arn:aws:ecr:us-east-2:123456789012:repository/app",
+		LastModified: &newestPush,
+		Properties: map[string]any{
+			cclist.ECRPropImageURI:          "123456789012.dkr.ecr.us-east-2.amazonaws.com/app:v3",
+			cclist.ECRPropImageTag:          "v3",
+			cclist.ECRPropLatestTagURI:      "123456789012.dkr.ecr.us-east-2.amazonaws.com/app:latest",
+			cclist.ECRPropLatestTagPushedAt: latestPush.Format(time.RFC3339Nano),
+		},
+	}
+
+	t.Run("latest mode reports the latest-tagged image's push time", func(t *testing.T) {
+		selected, err := (&ecrDumpRun{}).selectImages(repo)
+		require.NoError(t, err)
+		require.Len(t, selected, 1)
+		require.NotNil(t, selected[0].PushedAt)
+		assert.True(t, selected[0].PushedAt.Equal(latestPush),
+			"must be the latest-tagged image's own push time, not the repository's newest")
+	})
+
+	t.Run("newest mode reports the newest push time", func(t *testing.T) {
+		selected, err := (&ecrDumpRun{images: imagesNewest}).selectImages(repo)
+		require.NoError(t, err)
+		require.Len(t, selected, 1)
+		require.NotNil(t, selected[0].PushedAt)
+		assert.True(t, selected[0].PushedAt.Equal(newestPush))
+	})
+
+	t.Run("all mode reports each image's own push time", func(t *testing.T) {
+		older := checkpoint.Add(-time.Hour)
+		run := &ecrDumpRun{images: imagesAll}
+		selected := run.chooseImages(ecrImage{RepoName: "app"}, "uri", []imageCandidate{
+			{Tags: []string{"v3"}, PushedAt: &newestPush},
+			{Tags: []string{"v1"}, PushedAt: &older},
+		})
+
+		require.Len(t, selected, 2)
+		assert.True(t, selected[0].PushedAt.Equal(newestPush))
+		assert.True(t, selected[1].PushedAt.Equal(older))
+	})
+}
+
+func TestExtractLayerSurfacesLastModified(t *testing.T) {
+	pushed := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	content := []byte("token=placeholder\n")
+	require.NoError(t, tw.WriteHeader(&tar.Header{
+		Name: "app/config.env", Size: int64(len(content)), Mode: 0o644, Typeflag: tar.TypeReg,
+	}))
+	_, err := tw.Write(content)
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+
+	inputs, err := extractLayer(&buf, layerScanTarget{imageRef: "app:v3", pushedAt: &pushed}, t.TempDir(), false, 0)
+	require.NoError(t, err)
+	require.Len(t, inputs, 1)
+	require.NotNil(t, inputs[0].LastModified, "every extracted file inherits the image's push time")
+	assert.True(t, inputs[0].LastModified.Equal(pushed))
+}

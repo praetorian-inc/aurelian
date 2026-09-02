@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -226,6 +227,35 @@ func TestECRDumpIntegration(t *testing.T) {
 	t.Run("all risks have non-empty context", func(t *testing.T) {
 		for _, risk := range risks {
 			assert.NotEmpty(t, risk.Context, "risk context should not be empty for %s", risk.ImpactedResourceID)
+		}
+	})
+
+	t.Run("risk proof records the image push time", func(t *testing.T) {
+		// #258 introduced LastModified but consumed it only as an input-side skip
+		// filter, so findings never recorded which revision of a resource
+		// produced them. This asserts it reaches the emitted proof, which is what
+		// lets a caller advance a --modified-since checkpoint to a real value
+		// instead of wall-clock time.
+		require.NotEmpty(t, risks)
+		for _, risk := range risks {
+			var proof struct {
+				Matches []struct {
+					Provenance []struct {
+						LastModified string `json:"last_modified"`
+					} `json:"provenance"`
+				} `json:"matches"`
+			}
+			require.NoError(t, json.Unmarshal(risk.Context, &proof))
+			require.NotEmpty(t, proof.Matches)
+			require.NotEmpty(t, proof.Matches[0].Provenance)
+
+			raw := proof.Matches[0].Provenance[0].LastModified
+			require.NotEmpty(t, raw, "proof for %s should carry the image push time", risk.ImpactedResourceID)
+			pushed, err := time.Parse(time.RFC3339Nano, raw)
+			require.NoError(t, err, "last_modified must be RFC3339Nano, got %q", raw)
+			assert.False(t, pushed.IsZero())
+			assert.WithinDuration(t, time.Now(), pushed, time.Hour,
+				"the fixture image was pushed moments ago, so its recorded push time should be recent")
 		}
 	})
 

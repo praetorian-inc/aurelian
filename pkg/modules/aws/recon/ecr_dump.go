@@ -92,8 +92,14 @@ type ecrImage struct {
 	ARN       string
 	ImageURI  string
 	Tag       string
-	Auth      authn.Authenticator
-	IsPublic  bool
+	// PushedAt is this image's own push time, the authoritative modification
+	// time for everything extracted from it. It reaches the emitted risk via
+	// ScanInput.LastModified so a finding records which image revision produced
+	// it, and so an incremental caller has a real value to advance its
+	// --modified-since checkpoint to instead of wall-clock time.
+	PushedAt *time.Time
+	Auth     authn.Authenticator
+	IsPublic bool
 }
 
 // Reserved values for --images. Anything else is taken as a tag name.
@@ -223,6 +229,7 @@ func (r *ecrDumpRun) chooseImages(base ecrImage, repoURI string, candidates []im
 		}
 
 		img := base
+		img.PushedAt = candidate.PushedAt
 		img.Tag, img.ImageURI = imageReference(repoURI, candidate, wantTag)
 		if img.ImageURI == "" {
 			// Neither a tag nor a digest: nothing pullable to reference.
@@ -262,6 +269,7 @@ func (r *ecrDumpRun) selectImages(repo output.AWSResource) ([]ecrImage, error) {
 				return nil, nil
 			}
 			base.Tag, base.ImageURI = imagesLatest, uri
+			base.PushedAt = latestTagPushedAt(repo)
 			return []ecrImage{base}, nil
 		}
 
@@ -273,6 +281,9 @@ func (r *ecrDumpRun) selectImages(repo output.AWSResource) ([]ecrImage, error) {
 		}
 		base.Tag, _ = repo.Properties[cclist.ECRPropImageTag].(string)
 		base.ImageURI = uri
+		// The newest image is what LastModified tracks, so it is this image's
+		// own push time.
+		base.PushedAt = repo.LastModified
 		r.cfg.Info("%s has no %q tag; scanning its most recently pushed image (%s)",
 			repo.ResourceID, imagesLatest, base.Tag)
 		return []ecrImage{base}, nil
@@ -284,6 +295,7 @@ func (r *ecrDumpRun) selectImages(repo output.AWSResource) ([]ecrImage, error) {
 		}
 		base.Tag, _ = repo.Properties[cclist.ECRPropImageTag].(string)
 		base.ImageURI = uri
+		base.PushedAt = repo.LastModified
 		return []ecrImage{base}, nil
 	}
 
@@ -924,6 +936,9 @@ type layerScanTarget struct {
 	resourceType string
 	region       string
 	accountID    string
+	// pushedAt is the image's push time, surfaced on every ScanInput as
+	// LastModified.
+	pushedAt *time.Time
 	// imageRef identifies the image within its repository and prefixes every
 	// scan label, so findings from two images of one repository stay distinct.
 	imageRef string
@@ -957,6 +972,7 @@ func pullAndExtract(img ecrImage, extractDir string, extractToFS, failOnError bo
 		resourceType: "AWS::ECR::Repository",
 		region:       img.Region,
 		accountID:    img.AccountID,
+		pushedAt:     img.PushedAt,
 		imageRef:     img.ref(),
 	}
 	if img.IsPublic {
@@ -1038,6 +1054,7 @@ func extractLayer(r io.Reader, target layerScanTarget, extractDir string, extrac
 			Region:       target.region,
 			AccountID:    target.accountID,
 			Platform:     "aws",
+			LastModified: target.pushedAt,
 			Label:        fmt.Sprintf("%s:layer%d/%s", target.imageRef, layerIdx, hdr.Name),
 			// A container layer is a filesystem, so its entries are exactly what
 			// the ignore machinery is for. Without this, --ignore-file and the
