@@ -25,6 +25,7 @@ aurelian aws recon ecr-dump [flags]
   -a, --resource-arn strings           AWS target resource ARN
   -t, --resource-type strings          AWS Cloud Control resource type (default [all])
       --ruleset string                 Titus ruleset to apply; empty string disables ruleset filtering (default "default")
+      --skip-digests strings           Image digests already scanned; an image with a matching digest is skipped. A digest is a content hash, so its bytes can never change and one scan is enough forever
       --validate                       Validate detected secrets against their source APIs
 ```
 

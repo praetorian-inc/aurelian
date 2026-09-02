@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -30,6 +31,7 @@ func (r SecretScanResult) proofData() map[string]any {
 						"region":        r.Region,
 						"account_id":    r.AccountID,
 						"subresource":   r.Label,
+						"last_modified": lastModifiedProof(r.LastModified),
 					},
 				},
 				"snippet": map[string]string{
@@ -66,6 +68,16 @@ func (r SecretScanResult) proofData() map[string]any {
 	}
 
 	return proof
+}
+
+// lastModifiedProof renders the source resource's modification time for the
+// proof payload, or nil when the enumerator reported none. Emitting nil rather
+// than a zero timestamp keeps "unknown" distinguishable from "the epoch".
+func lastModifiedProof(t *time.Time) any {
+	if t == nil {
+		return nil
+	}
+	return t.UTC().Format(time.RFC3339Nano)
 }
 
 // ToRisk converts a scan result into an AurelianRisk with marshalled proof.

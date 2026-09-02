@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 	"github.com/aws/aws-sdk-go-v2/service/ecrpublic"
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -38,9 +40,10 @@ func init() {
 type ECRDumpConfig struct {
 	plugin.AWSCommonRecon
 	secrets.ScannerConfig
-	Extract       bool   `param:"extract" desc:"Extract image layers to filesystem" default:"true"`
-	Images        string `param:"images" desc:"Which images to scan per repository: \"latest\" (the tag a Docker client resolves), \"newest\" (most recently pushed), \"all\", or any other tag name" default:"latest"`
-	ModifiedSince string `param:"modified-since" desc:"RFC3339 timestamp of the last successful scan; repositories whose newest image was pushed no later than this are skipped"`
+	Extract       bool     `param:"extract" desc:"Extract image layers to filesystem" default:"true"`
+	Images        string   `param:"images" desc:"Which images to scan per repository: \"latest\" (the tag a Docker client resolves), \"newest\" (most recently pushed), \"all\", or any other tag name" default:"latest"`
+	ModifiedSince string   `param:"modified-since" desc:"RFC3339 timestamp of the last successful scan; repositories whose newest image was pushed no later than this are skipped"`
+	SkipDigests   []string `param:"skip-digests" desc:"Image digests already scanned; an image with a matching digest is skipped. A digest is a content hash, so its bytes can never change and one scan is enough forever"`
 }
 
 type AWSECRDumpModule struct {
@@ -67,10 +70,14 @@ func (m *AWSECRDumpModule) References() []string {
 	}
 }
 
+// publicRepositoryType is handled by this module rather than the shared
+// enumerator: ECR Public has a single us-east-1 control plane.
+const publicRepositoryType = "AWS::ECR::PublicRepository"
+
 func (m *AWSECRDumpModule) SupportedResourceTypes() []string {
 	return []string{
 		"AWS::ECR::Repository",
-		"AWS::ECR::PublicRepository",
+		publicRepositoryType,
 	}
 }
 
@@ -86,8 +93,17 @@ type ecrImage struct {
 	ARN       string
 	ImageURI  string
 	Tag       string
-	Auth      authn.Authenticator
-	IsPublic  bool
+	// PushedAt is this image's own push time, the authoritative modification
+	// time for everything extracted from it. It reaches the emitted risk via
+	// ScanInput.LastModified so a finding records which image revision produced
+	// it, and so an incremental caller has a real value to advance its
+	// --modified-since checkpoint to instead of wall-clock time.
+	PushedAt *time.Time
+	// Digest is the image's immutable content hash. It is the scan key a caller
+	// records so this image is never pulled or scanned a second time.
+	Digest   string
+	Auth     authn.Authenticator
+	IsPublic bool
 }
 
 // Reserved values for --images. Anything else is taken as a tag name.
@@ -122,9 +138,40 @@ type ecrDumpRun struct {
 	modifiedSince time.Time
 	incremental   bool
 	images        string
+	skipDigests   map[string]struct{}
 	profile       string
 	profileDir    string
 	sessions      map[string]*regionSession
+}
+
+// digestSet indexes the already-scanned digests for lookup.
+func digestSet(digests []string) map[string]struct{} {
+	if len(digests) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(digests))
+	for _, d := range digests {
+		if d = strings.TrimSpace(d); d != "" {
+			set[d] = struct{}{}
+		}
+	}
+	return set
+}
+
+// alreadyScanned reports whether an image's content has been scanned before.
+//
+// A digest is the image's content hash, so it is immutable: the bytes behind
+// sha256:abc… can never change, and one scan of them is enough forever. This is
+// exact where the modified-since checkpoint is only a proxy — a repository's
+// newest push time moves when ANY tag is pushed, so a time-based check re-pulls
+// an unchanged image whenever a sibling tag moves, while this does not.
+func (r *ecrDumpRun) alreadyScanned(digest string) bool {
+	if digest == "" {
+		// No digest means no immutability guarantee, so fail open and scan.
+		return false
+	}
+	_, seen := r.skipDigests[digest]
+	return seen
 }
 
 // mode returns the effective --images selection. An unset value behaves as the
@@ -210,6 +257,10 @@ func (r *ecrDumpRun) chooseImages(base ecrImage, repoURI string, candidates []im
 		if wantTag != "" && !slices.Contains(candidate.Tags, wantTag) {
 			continue
 		}
+		// Content already scanned can never differ, whatever its push time says.
+		if r.alreadyScanned(candidate.Digest) {
+			continue
+		}
 		// An image pushed no later than the checkpoint cannot have changed, so
 		// filter per image rather than only per repository.
 		if r.skipUnchanged(candidate.PushedAt) {
@@ -217,6 +268,8 @@ func (r *ecrDumpRun) chooseImages(base ecrImage, repoURI string, candidates []im
 		}
 
 		img := base
+		img.PushedAt = candidate.PushedAt
+		img.Digest = candidate.Digest
 		img.Tag, img.ImageURI = imageReference(repoURI, candidate, wantTag)
 		if img.ImageURI == "" {
 			// Neither a tag nor a digest: nothing pullable to reference.
@@ -247,7 +300,27 @@ func (r *ecrDumpRun) selectImages(repo output.AWSResource) ([]ecrImage, error) {
 	switch r.mode() {
 	case imagesLatest:
 		if uri, _ := repo.Properties[cclist.ECRPropLatestTagURI].(string); uri != "" {
+			digest, _ := repo.Properties[cclist.ECRPropLatestTagDigest].(string)
+
+			// The digest is exact: if this content was scanned before it cannot
+			// have changed, even though the repository's newest push time moved
+			// because some sibling tag was pushed.
+			if r.alreadyScanned(digest) {
+				r.cfg.Info("skipping %s: its %q image (%s) was already scanned",
+					repo.ResourceID, imagesLatest, digest)
+				return nil, nil
+			}
+			// LastModified tracks the newest push, which is often a different
+			// image, so a newer v3 can make the repository eligible while the
+			// "latest" image itself is unchanged. Check that image's own push
+			// time before pulling it again.
+			if r.skipUnchanged(latestTagPushedAt(repo)) {
+				r.cfg.Info("skipping %s: its %q image is unchanged", repo.ResourceID, imagesLatest)
+				return nil, nil
+			}
 			base.Tag, base.ImageURI = imagesLatest, uri
+			base.PushedAt = latestTagPushedAt(repo)
+			base.Digest = digest
 			return []ecrImage{base}, nil
 		}
 
@@ -259,6 +332,15 @@ func (r *ecrDumpRun) selectImages(repo output.AWSResource) ([]ecrImage, error) {
 		}
 		base.Tag, _ = repo.Properties[cclist.ECRPropImageTag].(string)
 		base.ImageURI = uri
+		// The newest image is what LastModified tracks, so it is this image's
+		// own push time.
+		base.PushedAt = repo.LastModified
+		base.Digest, _ = repo.Properties[cclist.ECRPropImageDigest].(string)
+		if r.alreadyScanned(base.Digest) {
+			r.cfg.Info("skipping %s: its newest image (%s) was already scanned",
+				repo.ResourceID, base.Digest)
+			return nil, nil
+		}
 		r.cfg.Info("%s has no %q tag; scanning its most recently pushed image (%s)",
 			repo.ResourceID, imagesLatest, base.Tag)
 		return []ecrImage{base}, nil
@@ -270,6 +352,13 @@ func (r *ecrDumpRun) selectImages(repo output.AWSResource) ([]ecrImage, error) {
 		}
 		base.Tag, _ = repo.Properties[cclist.ECRPropImageTag].(string)
 		base.ImageURI = uri
+		base.PushedAt = repo.LastModified
+		base.Digest, _ = repo.Properties[cclist.ECRPropImageDigest].(string)
+		if r.alreadyScanned(base.Digest) {
+			r.cfg.Info("skipping %s: its newest image (%s) was already scanned",
+				repo.ResourceID, base.Digest)
+			return nil, nil
+		}
 		return []ecrImage{base}, nil
 	}
 
@@ -303,6 +392,21 @@ func (r *ecrDumpRun) selectImages(repo output.AWSResource) ([]ecrImage, error) {
 	}
 
 	return r.chooseImages(base, repoURI, candidates), nil
+}
+
+// latestTagPushedAt reads the push time the enumerator published for the
+// "latest"-tagged image. A missing or unparseable value yields nil, which fails
+// open: the image is scanned rather than assumed unchanged.
+func latestTagPushedAt(repo output.AWSResource) *time.Time {
+	raw, _ := repo.Properties[cclist.ECRPropLatestTagPushedAt].(string)
+	if raw == "" {
+		return nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return nil
+	}
+	return &parsed
 }
 
 // imageReference builds the pull reference for one image. It prefers the
@@ -339,6 +443,16 @@ func (r *ecrDumpRun) problem(format string, args ...any) error {
 	}
 	r.cfg.Warn(format, args...)
 	return nil
+}
+
+// fallbackRepositoryARN synthesizes a repository ARN for the rare case where the
+// API reported none. Public repositories live in the ecr-public partition and
+// their ARNs carry no region, so the two shapes differ.
+func fallbackRepositoryARN(img ecrImage) string {
+	if img.IsPublic {
+		return fmt.Sprintf("arn:aws:ecr-public::%s:repository/%s", img.AccountID, img.RepoName)
+	}
+	return fmt.Sprintf("arn:aws:ecr:%s:%s:repository/%s", img.Region, img.AccountID, img.RepoName)
 }
 
 // ref identifies an image within its repository, for scan labels and extract
@@ -401,6 +515,7 @@ func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 		modifiedSince: modifiedSince,
 		incremental:   incremental,
 		images:        c.Images,
+		skipDigests:   digestSet(c.SkipDigests),
 		profile:       m.Profile,
 		profileDir:    m.ProfileDir,
 		sessions:      make(map[string]*regionSession),
@@ -416,10 +531,23 @@ func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 	// goes to the shared dispatcher, which resolves repository ARNs as well as
 	// type names, and which reaches ECRRepositoryEnumerator for the private type.
 	var listInputs []string
+	var publicRepoFilter []string
 	scanPublic := false
 	for _, input := range inputs {
-		if input == "AWS::ECR::PublicRepository" {
+		if input == publicRepositoryType {
 			scanPublic = true
+			continue
+		}
+		// An ECR Public ARN names the "ecr-public" service and carries no region.
+		// The shared dispatcher cannot resolve that service, so it would hand the
+		// ARN to CloudControl and fail rather than reaching the public path.
+		if parsed, err := awsarn.Parse(input); err == nil && parsed.Service == "ecr-public" {
+			repoName, ok := strings.CutPrefix(parsed.Resource, "repository/")
+			if !ok || repoName == "" {
+				return fmt.Errorf("invalid ECR Public repository ARN: %q", input)
+			}
+			scanPublic = true
+			publicRepoFilter = append(publicRepoFilter, repoName)
 			continue
 		}
 		listInputs = append(listInputs, input)
@@ -467,7 +595,7 @@ func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 				return fatal
 			}
 		} else {
-			publicFindings, err := m.processPublicRepos(context.TODO(), run, ecrpublic.NewFromConfig(publicCfg))
+			publicFindings, err := m.processPublicRepos(context.TODO(), run, ecrpublic.NewFromConfig(publicCfg), publicRepoFilter)
 			allFindings = append(allFindings, publicFindings...)
 			if err != nil {
 				return err
@@ -523,6 +651,7 @@ func (m *AWSECRDumpModule) processRepository(run *ecrDumpRun, repo output.AWSRes
 	}
 
 	var findings []scanFinding
+	var scanned []string
 	for _, img := range images {
 		img.Auth = session.auth
 		run.cfg.Info("pulling %s", img.ImageURI)
@@ -530,14 +659,47 @@ func (m *AWSECRDumpModule) processRepository(run *ecrDumpRun, repo output.AWSRes
 		imageFindings, err := m.pullExtractScan(run, img)
 		findings = append(findings, imageFindings...)
 		if err != nil {
+			// Report the digests that did complete so a caller can still skip
+			// them next run; the ones that failed are deliberately omitted.
+			run.reportScanned(repo, scanned)
 			return findings, err
 		}
+		if img.Digest != "" {
+			scanned = append(scanned, img.Digest)
+		}
 	}
+
+	run.reportScanned(repo, scanned)
 	return findings, nil
 }
 
+// reportScanned emits the repository carrying the digests just scanned, so a
+// caller can persist them and skip that content forever after. It is emitted
+// even when no secrets were found, since "scanned and clean" is what makes the
+// next run cheap.
+func (r *ecrDumpRun) reportScanned(repo output.AWSResource, digests []string) {
+	if len(digests) == 0 {
+		return
+	}
+
+	// Copy the properties: the enumerated map is shared with whatever else
+	// consumes this resource, and stamping it in place would mutate their view.
+	properties := make(map[string]any, len(repo.Properties)+1)
+	for k, v := range repo.Properties {
+		properties[k] = v
+	}
+	properties[output.ECRScannedDigestsProperty] = strings.Join(digests, ",")
+
+	reported := repo
+	reported.Properties = properties
+	r.out.Send(reported)
+}
+
+// processPublicRepos scans public repositories. A non-empty onlyRepos restricts
+// the scan to those repository names, which is how a public repository ARN
+// passed via --resource-arn is honoured.
 func (m *AWSECRDumpModule) processPublicRepos(
-	ctx context.Context, run *ecrDumpRun, client *ecrpublic.Client,
+	ctx context.Context, run *ecrDumpRun, client *ecrpublic.Client, onlyRepos []string,
 ) ([]scanFinding, error) {
 	repos, err := listPublicECRRepos(ctx, client)
 	if err != nil {
@@ -559,6 +721,9 @@ func (m *AWSECRDumpModule) processPublicRepos(
 		repoName := valStr(repo.RepositoryName)
 		repoURI := valStr(repo.RepositoryUri)
 		if repoName == "" || repoURI == "" {
+			continue
+		}
+		if len(onlyRepos) > 0 && !slices.Contains(onlyRepos, repoName) {
 			continue
 		}
 
@@ -583,8 +748,12 @@ func (m *AWSECRDumpModule) processPublicRepos(
 			Region:   "us-east-1",
 			// Public repositories report the owning registry as RegistryId.
 			AccountID: valStr(repo.RegistryId),
-			Auth:      auth,
-			IsPublic:  true,
+			// ECR Public ARNs live in the ecr-public partition and carry no
+			// region, so the private arn:aws:ecr:<region>:... shape cannot be
+			// synthesized for them. Use the one the API reports.
+			ARN:      valStr(repo.RepositoryArn),
+			Auth:     auth,
+			IsPublic: true,
 		}
 
 		images := run.chooseImages(base, repoURI, candidates)
@@ -609,20 +778,27 @@ func (m *AWSECRDumpModule) processPublicRepos(
 // publicImageCandidates lists a public repository's images, most recently
 // pushed first.
 func publicImageCandidates(ctx context.Context, client *ecrpublic.Client, repoName string) ([]imageCandidate, error) {
-	resp, err := client.DescribeImages(ctx, &ecrpublic.DescribeImagesInput{
-		RepositoryName: &repoName,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	candidates := make([]imageCandidate, 0, len(resp.ImageDetails))
-	for _, detail := range resp.ImageDetails {
-		candidates = append(candidates, imageCandidate{
-			Tags:     detail.ImageTags,
-			Digest:   valStr(detail.ImageDigest),
-			PushedAt: detail.ImagePushedAt,
+	var candidates []imageCandidate
+	var next *string
+	for {
+		resp, err := client.DescribeImages(ctx, &ecrpublic.DescribeImagesInput{
+			RepositoryName: &repoName,
+			NextToken:      next,
 		})
+		if err != nil {
+			return nil, err
+		}
+		for _, detail := range resp.ImageDetails {
+			candidates = append(candidates, imageCandidate{
+				Tags:     detail.ImageTags,
+				Digest:   valStr(detail.ImageDigest),
+				PushedAt: detail.ImagePushedAt,
+			})
+		}
+		if resp.NextToken == nil || *resp.NextToken == "" {
+			break
+		}
+		next = resp.NextToken
 	}
 
 	sort.SliceStable(candidates, func(i, j int) bool {
@@ -785,26 +961,37 @@ func getECRAuth(ctx context.Context, client *ecr.Client) (authn.Authenticator, e
 
 // --- Public ECR functions ---
 
+// listPublicECRRepos lists every public repository, following NextToken. A
+// single-page listing silently dropped every repository after the first page
+// while still reporting success.
 func listPublicECRRepos(ctx context.Context, client *ecrpublic.Client) ([]ecrpublicRepo, error) {
 	var repos []ecrpublicRepo
-	resp, err := client.DescribeRepositories(ctx, &ecrpublic.DescribeRepositoriesInput{})
-	if err != nil {
-		return nil, err
+	var next *string
+	for {
+		resp, err := client.DescribeRepositories(ctx, &ecrpublic.DescribeRepositoriesInput{NextToken: next})
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range resp.Repositories {
+			repos = append(repos, ecrpublicRepo{
+				RepositoryName: r.RepositoryName,
+				RepositoryUri:  r.RepositoryUri,
+				RegistryId:     r.RegistryId,
+				RepositoryArn:  r.RepositoryArn,
+			})
+		}
+		if resp.NextToken == nil || *resp.NextToken == "" {
+			return repos, nil
+		}
+		next = resp.NextToken
 	}
-	for _, r := range resp.Repositories {
-		repos = append(repos, ecrpublicRepo{
-			RepositoryName: r.RepositoryName,
-			RepositoryUri:  r.RepositoryUri,
-			RegistryId:     r.RegistryId,
-		})
-	}
-	return repos, nil
 }
 
 type ecrpublicRepo struct {
 	RepositoryName *string
 	RepositoryUri  *string
 	RegistryId     *string
+	RepositoryArn  *string
 }
 
 func getPublicECRAuth(ctx context.Context, client *ecrpublic.Client) (authn.Authenticator, error) {
@@ -821,12 +1008,18 @@ func getPublicECRAuth(ctx context.Context, client *ecrpublic.Client) (authn.Auth
 		return nil, fmt.Errorf("decoding public auth token: %w", err)
 	}
 
-	auth := authn.FromConfig(authn.AuthConfig{
-		Username: "AWS",
-		Password: string(decoded),
-	})
+	// The public token decodes to "AWS:<password>", exactly like the private one.
+	// Passing the whole decoded value as the password produced credentials of
+	// "AWS" / "AWS:<password>", which every registry pull rejected.
+	parts := strings.SplitN(string(decoded), ":", 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("unexpected public auth token format")
+	}
 
-	return auth, nil
+	return authn.FromConfig(authn.AuthConfig{
+		Username: parts[0],
+		Password: parts[1],
+	}), nil
 }
 
 // --- Shared functions ---
@@ -838,6 +1031,9 @@ type layerScanTarget struct {
 	resourceType string
 	region       string
 	accountID    string
+	// pushedAt is the image's push time, surfaced on every ScanInput as
+	// LastModified.
+	pushedAt *time.Time
 	// imageRef identifies the image within its repository and prefixes every
 	// scan label, so findings from two images of one repository stay distinct.
 	imageRef string
@@ -871,13 +1067,14 @@ func pullAndExtract(img ecrImage, extractDir string, extractToFS, failOnError bo
 		resourceType: "AWS::ECR::Repository",
 		region:       img.Region,
 		accountID:    img.AccountID,
+		pushedAt:     img.PushedAt,
 		imageRef:     img.ref(),
 	}
 	if img.IsPublic {
 		target.resourceType = "AWS::ECR::PublicRepository"
 	}
 	if target.arn == "" {
-		target.arn = fmt.Sprintf("arn:aws:ecr:%s:%s:repository/%s", img.Region, img.AccountID, img.RepoName)
+		target.arn = fallbackRepositoryARN(img)
 	}
 
 	for i, layer := range layers {
@@ -937,8 +1134,10 @@ func extractLayer(r io.Reader, target layerScanTarget, extractDir string, extrac
 		}
 
 		if extractToFS {
-			outPath := filepath.Join(extractDir, fmt.Sprintf("layer%d", layerIdx), filepath.Clean(hdr.Name))
-			if err := writeExtractedFile(outPath, content); err != nil {
+			outPath, err := safeExtractPath(filepath.Join(extractDir, fmt.Sprintf("layer%d", layerIdx)), hdr.Name)
+			if err != nil {
+				slog.Warn("refusing to extract layer entry", "entry", hdr.Name, "error", err)
+			} else if err := writeExtractedFile(outPath, content); err != nil {
 				slog.Debug("failed to write extracted file", "path", outPath, "error", err)
 			}
 		}
@@ -950,11 +1149,48 @@ func extractLayer(r io.Reader, target layerScanTarget, extractDir string, extrac
 			Region:       target.region,
 			AccountID:    target.accountID,
 			Platform:     "aws",
+			LastModified: target.pushedAt,
 			Label:        fmt.Sprintf("%s:layer%d/%s", target.imageRef, layerIdx, hdr.Name),
+			// A container layer is a filesystem, so its entries are exactly what
+			// the ignore machinery is for. Without this, --ignore-file and the
+			// default exclusions (**/node_modules/**, vendored crypto self-tests)
+			// never applied to ECR scans, which is most of the finding noise a
+			// container image produces. The "<repo>:<tag>:layerN/" prefix is a
+			// legal path segment, so gitignore patterns still match the entry
+			// path beneath it.
+			PathFilterable: true,
 		})
 	}
 
 	return scanInputs, nil
+}
+
+// safeExtractPath resolves a tar entry name beneath root and refuses anything
+// that escapes it.
+//
+// Layer contents are attacker-controlled: an image can name a regular-file
+// entry "../../../../etc/cron.d/pwn". filepath.Clean preserves those leading
+// "..", so joining it to the extraction directory resolved OUTSIDE it and
+// handed a hostile registry an arbitrary file write on the scanning host, with
+// --extract enabled by default. Anchoring the name at "/" before cleaning
+// strips the traversal; the Rel check then re-verifies containment rather than
+// trusting that reasoning.
+func safeExtractPath(root, name string) (string, error) {
+	// A layer entry names a path inside the image's own filesystem, so a leading
+	// "/" just means the image root and anchors at the extraction root.
+	rel := path.Clean(strings.TrimPrefix(filepath.ToSlash(name), "/"))
+
+	// Traversal is refused rather than silently relocated: a ".." that escapes is
+	// either an attack or a corrupt image, and quietly rewriting it to a
+	// different path would misrepresent what the image actually contains.
+	if rel == ".." || strings.HasPrefix(rel, "../") {
+		return "", fmt.Errorf("entry %q escapes the extraction directory", name)
+	}
+	if rel == "." || rel == "" {
+		return "", fmt.Errorf("entry %q has no filename", name)
+	}
+
+	return filepath.Join(root, filepath.FromSlash(rel)), nil
 }
 
 func writeExtractedFile(path string, content []byte) error {

@@ -6,9 +6,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
 	cclist "github.com/praetorian-inc/aurelian/pkg/aws/enumeration"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
@@ -523,4 +525,367 @@ func TestECRDumpSelectImagesUsesPublishedReferences(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, selected)
 	})
+}
+
+func TestFallbackRepositoryARN(t *testing.T) {
+	// The two registries use different ARN shapes: ECR Public lives in the
+	// ecr-public partition and carries no region. Minting the private shape for a
+	// public repository would give findings a resource identifier that does not
+	// exist.
+	t.Run("private repositories are region-scoped", func(t *testing.T) {
+		got := fallbackRepositoryARN(ecrImage{RepoName: "app", Region: "us-east-2", AccountID: "123456789012"})
+		assert.Equal(t, "arn:aws:ecr:us-east-2:123456789012:repository/app", got)
+	})
+
+	t.Run("public repositories carry no region", func(t *testing.T) {
+		got := fallbackRepositoryARN(ecrImage{RepoName: "app", Region: "us-east-1", AccountID: "123456789012", IsPublic: true})
+		assert.Equal(t, "arn:aws:ecr-public::123456789012:repository/app", got)
+	})
+}
+
+func TestSafeExtractPath(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "layer0")
+
+	t.Run("rejects entries that escape the extraction root", func(t *testing.T) {
+		// Layer contents are attacker-controlled. filepath.Clean preserves
+		// leading "..", so joining an entry like this used to resolve outside the
+		// extraction directory and hand a hostile image an arbitrary file write.
+		for _, name := range []string{
+			"../../../../../../tmp/payload",
+			"app/../../../../etc/cron.d/pwn",
+			"./../../out",
+		} {
+			_, err := safeExtractPath(root, name)
+			require.Error(t, err, "entry %q must be refused", name)
+			assert.Contains(t, err.Error(), "escapes the extraction directory")
+		}
+	})
+
+	t.Run("anchors absolute entries beneath the root", func(t *testing.T) {
+		// A layer entry names a path inside the image filesystem, so a leading
+		// "/" means the image root, not the host root.
+		got, err := safeExtractPath(root, "/etc/passwd")
+		require.NoError(t, err)
+		assert.Equal(t, filepath.Join(root, "etc", "passwd"), got)
+	})
+
+	t.Run("rejects an entry with no filename", func(t *testing.T) {
+		for _, name := range []string{"", ".", "/"} {
+			_, err := safeExtractPath(root, name)
+			assert.Error(t, err, "entry %q must be refused", name)
+		}
+	})
+
+	t.Run("passes ordinary relative entries through", func(t *testing.T) {
+		got, err := safeExtractPath(root, "app/config.env")
+		require.NoError(t, err)
+		assert.Equal(t, filepath.Join(root, "app", "config.env"), got)
+	})
+
+	t.Run("normalises interior traversal that stays inside", func(t *testing.T) {
+		got, err := safeExtractPath(root, "app/sub/../config.env")
+		require.NoError(t, err)
+		assert.Equal(t, filepath.Join(root, "app", "config.env"), got)
+	})
+}
+
+func TestExtractLayerRefusesTraversalEntries(t *testing.T) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	content := []byte("token=placeholder\n")
+	// A hostile entry alongside a benign one: the hostile write is refused while
+	// the benign file still lands, and both are still handed to the scanner.
+	for _, name := range []string{"../../../../escape.txt", "app/ok.txt"} {
+		require.NoError(t, tw.WriteHeader(&tar.Header{
+			Name: name, Size: int64(len(content)), Mode: 0o644, Typeflag: tar.TypeReg,
+		}))
+		_, err := tw.Write(content)
+		require.NoError(t, err)
+	}
+	require.NoError(t, tw.Close())
+
+	dir := t.TempDir()
+	extractDir := filepath.Join(dir, "images")
+	inputs, err := extractLayer(&buf, layerScanTarget{imageRef: "app:v1"}, extractDir, true, 0)
+	require.NoError(t, err)
+	assert.Len(t, inputs, 2, "both entries are still scanned; only the write is refused")
+
+	_, err = os.Stat(filepath.Join(dir, "escape.txt"))
+	assert.True(t, os.IsNotExist(err), "traversal entry must not be written outside the extraction directory")
+
+	_, err = os.Stat(filepath.Join(extractDir, "layer0", "app", "ok.txt"))
+	assert.NoError(t, err, "the benign entry should still be extracted")
+}
+
+func TestGetPublicECRAuthSplitsTheDecodedToken(t *testing.T) {
+	// ECR Public's token decodes to "AWS:<password>", exactly like the private
+	// one. Passing the whole decoded value as the password produced credentials
+	// of "AWS" / "AWS:<password>", which the registry rejected on every pull.
+	// This asserts the shared expectation the helper relies on.
+	decoded := "AWS:supersecretpassword"
+	parts := strings.SplitN(decoded, ":", 2)
+	require.Len(t, parts, 2)
+	assert.Equal(t, "AWS", parts[0])
+	assert.Equal(t, "supersecretpassword", parts[1])
+}
+
+func TestLatestTagPushedAt(t *testing.T) {
+	pushed := time.Date(2026, 8, 20, 8, 30, 0, 0, time.UTC)
+
+	t.Run("parses the published timestamp", func(t *testing.T) {
+		got := latestTagPushedAt(output.AWSResource{Properties: map[string]any{
+			cclist.ECRPropLatestTagPushedAt: pushed.Format(time.RFC3339Nano),
+		}})
+		require.NotNil(t, got)
+		assert.True(t, got.Equal(pushed))
+	})
+
+	t.Run("fails open on a missing or unparseable value", func(t *testing.T) {
+		// nil means "unknown", and skipUnchanged treats unknown as changed, so
+		// the image is scanned rather than assumed unchanged.
+		assert.Nil(t, latestTagPushedAt(output.AWSResource{Properties: map[string]any{}}))
+		assert.Nil(t, latestTagPushedAt(output.AWSResource{Properties: map[string]any{
+			cclist.ECRPropLatestTagPushedAt: "not-a-timestamp",
+		}}))
+	})
+}
+
+func TestExtractLayerMarksEntriesPathFilterable(t *testing.T) {
+	// Container layers are filesystems, so their entries must be eligible for
+	// the ignore machinery: SecretScanner.Scan only consults the matcher when
+	// PathFilterable is set, and without it --ignore-file and the default
+	// **/node_modules/** exclusion never applied to ECR scans.
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	content := []byte("token=placeholder\n")
+	require.NoError(t, tw.WriteHeader(&tar.Header{
+		Name: "app/config.env", Size: int64(len(content)), Mode: 0o644, Typeflag: tar.TypeReg,
+	}))
+	_, err := tw.Write(content)
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+
+	inputs, err := extractLayer(&buf, layerScanTarget{imageRef: "app:v1"}, t.TempDir(), false, 0)
+	require.NoError(t, err)
+	require.Len(t, inputs, 1)
+	assert.True(t, inputs[0].PathFilterable)
+}
+
+func TestECRDumpPublicARNRoutingContract(t *testing.T) {
+	// An ECR Public ARN names the "ecr-public" service and carries no region.
+	// The shared dispatcher cannot resolve that service, so Run must peel these
+	// off and route them to the module's own public path. This asserts the
+	// parsing contract that routing depends on.
+	parsed, err := awsarn.Parse("arn:aws:ecr-public::123456789012:repository/my-repo")
+	require.NoError(t, err)
+	assert.Equal(t, "ecr-public", parsed.Service)
+	assert.Empty(t, parsed.Region, "ECR Public ARNs carry no region")
+
+	repoName, ok := strings.CutPrefix(parsed.Resource, "repository/")
+	require.True(t, ok)
+	assert.Equal(t, "my-repo", repoName)
+
+	// A private ARN must NOT be diverted: it belongs to the shared enumerator.
+	priv, err := awsarn.Parse("arn:aws:ecr:us-east-2:123456789012:repository/my-repo")
+	require.NoError(t, err)
+	assert.Equal(t, "ecr", priv.Service)
+	assert.Equal(t, "us-east-2", priv.Region)
+}
+
+func TestECRDumpSurfacesImagePushTime(t *testing.T) {
+	// The push time that drives the skip must also reach the emitted risk, and it
+	// must be the SPECIFIC image's push time, not the repository's newest.
+	checkpoint := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	newestPush := checkpoint.Add(2 * time.Hour)
+	latestPush := checkpoint.Add(time.Hour)
+
+	repo := output.AWSResource{
+		ResourceID:   "app",
+		Region:       "us-east-2",
+		AccountRef:   "123456789012",
+		ARN:          "arn:aws:ecr:us-east-2:123456789012:repository/app",
+		LastModified: &newestPush,
+		Properties: map[string]any{
+			cclist.ECRPropImageURI:          "123456789012.dkr.ecr.us-east-2.amazonaws.com/app:v3",
+			cclist.ECRPropImageTag:          "v3",
+			cclist.ECRPropLatestTagURI:      "123456789012.dkr.ecr.us-east-2.amazonaws.com/app:latest",
+			cclist.ECRPropLatestTagPushedAt: latestPush.Format(time.RFC3339Nano),
+		},
+	}
+
+	t.Run("latest mode reports the latest-tagged image's push time", func(t *testing.T) {
+		selected, err := (&ecrDumpRun{}).selectImages(repo)
+		require.NoError(t, err)
+		require.Len(t, selected, 1)
+		require.NotNil(t, selected[0].PushedAt)
+		assert.True(t, selected[0].PushedAt.Equal(latestPush),
+			"must be the latest-tagged image's own push time, not the repository's newest")
+	})
+
+	t.Run("newest mode reports the newest push time", func(t *testing.T) {
+		selected, err := (&ecrDumpRun{images: imagesNewest}).selectImages(repo)
+		require.NoError(t, err)
+		require.Len(t, selected, 1)
+		require.NotNil(t, selected[0].PushedAt)
+		assert.True(t, selected[0].PushedAt.Equal(newestPush))
+	})
+
+	t.Run("all mode reports each image's own push time", func(t *testing.T) {
+		older := checkpoint.Add(-time.Hour)
+		run := &ecrDumpRun{images: imagesAll}
+		selected := run.chooseImages(ecrImage{RepoName: "app"}, "uri", []imageCandidate{
+			{Tags: []string{"v3"}, PushedAt: &newestPush},
+			{Tags: []string{"v1"}, PushedAt: &older},
+		})
+
+		require.Len(t, selected, 2)
+		assert.True(t, selected[0].PushedAt.Equal(newestPush))
+		assert.True(t, selected[1].PushedAt.Equal(older))
+	})
+}
+
+func TestExtractLayerSurfacesLastModified(t *testing.T) {
+	pushed := time.Date(2026, 8, 24, 12, 0, 0, 0, time.UTC)
+
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	content := []byte("token=placeholder\n")
+	require.NoError(t, tw.WriteHeader(&tar.Header{
+		Name: "app/config.env", Size: int64(len(content)), Mode: 0o644, Typeflag: tar.TypeReg,
+	}))
+	_, err := tw.Write(content)
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+
+	inputs, err := extractLayer(&buf, layerScanTarget{imageRef: "app:v3", pushedAt: &pushed}, t.TempDir(), false, 0)
+	require.NoError(t, err)
+	require.Len(t, inputs, 1)
+	require.NotNil(t, inputs[0].LastModified, "every extracted file inherits the image's push time")
+	assert.True(t, inputs[0].LastModified.Equal(pushed))
+}
+
+func TestECRDumpSkipsAlreadyScannedDigests(t *testing.T) {
+	// A digest is an immutable content hash, so one scan is enough forever. This
+	// is exact where the modified-since checkpoint is only a proxy.
+	const scanned = "sha256:aaaa"
+	pushed := time.Date(2026, 8, 20, 8, 30, 0, 0, time.UTC)
+
+	t.Run("latest mode skips a repo whose latest image was already scanned", func(t *testing.T) {
+		run := &ecrDumpRun{skipDigests: digestSet([]string{scanned})}
+		selected, err := run.selectImages(output.AWSResource{
+			ResourceID: "app",
+			Properties: map[string]any{
+				cclist.ECRPropLatestTagURI:    "uri:latest",
+				cclist.ECRPropLatestTagDigest: scanned,
+			},
+		})
+		require.NoError(t, err)
+		assert.Empty(t, selected)
+	})
+
+	t.Run("a moved sibling tag does not force a re-pull", func(t *testing.T) {
+		// The repository's newest push time moved because v3 was pushed, so the
+		// time-based check would re-pull. The digest says the latest image's
+		// content is unchanged, so it must not.
+		newerPush := pushed.Add(48 * time.Hour)
+		run := &ecrDumpRun{
+			incremental:   true,
+			modifiedSince: pushed,
+			skipDigests:   digestSet([]string{scanned}),
+		}
+		selected, err := run.selectImages(output.AWSResource{
+			ResourceID:   "app",
+			LastModified: &newerPush,
+			Properties: map[string]any{
+				cclist.ECRPropLatestTagURI:      "uri:latest",
+				cclist.ECRPropLatestTagDigest:   scanned,
+				cclist.ECRPropLatestTagPushedAt: newerPush.Format(time.RFC3339Nano),
+			},
+		})
+		require.NoError(t, err)
+		assert.Empty(t, selected, "an already-scanned digest must win over a moved push time")
+	})
+
+	t.Run("newest mode skips an already-scanned digest", func(t *testing.T) {
+		run := &ecrDumpRun{images: imagesNewest, skipDigests: digestSet([]string{scanned})}
+		selected, err := run.selectImages(output.AWSResource{
+			ResourceID: "app",
+			Properties: map[string]any{
+				cclist.ECRPropImageURI:    "uri:v3",
+				cclist.ECRPropImageDigest: scanned,
+			},
+		})
+		require.NoError(t, err)
+		assert.Empty(t, selected)
+	})
+
+	t.Run("all mode skips only the scanned digests", func(t *testing.T) {
+		run := &ecrDumpRun{images: imagesAll, skipDigests: digestSet([]string{scanned})}
+		selected := run.chooseImages(ecrImage{RepoName: "app"}, "uri", []imageCandidate{
+			{Tags: []string{"v3"}, Digest: "sha256:bbbb", PushedAt: &pushed},
+			{Tags: []string{"v1"}, Digest: scanned, PushedAt: &pushed},
+		})
+		require.Len(t, selected, 1)
+		assert.Equal(t, "sha256:bbbb", selected[0].Digest)
+		assert.Equal(t, "uri:v3", selected[0].ImageURI)
+	})
+
+	t.Run("an image with no digest fails open", func(t *testing.T) {
+		// No digest means no immutability guarantee, so it must be scanned.
+		run := &ecrDumpRun{images: imagesAll, skipDigests: digestSet([]string{scanned})}
+		selected := run.chooseImages(ecrImage{RepoName: "app"}, "uri", []imageCandidate{
+			{Tags: []string{"v3"}, PushedAt: &pushed},
+		})
+		require.Len(t, selected, 1)
+	})
+}
+
+func TestDigestSet(t *testing.T) {
+	assert.Nil(t, digestSet(nil))
+	assert.Nil(t, digestSet([]string{}))
+
+	set := digestSet([]string{"sha256:a", "  sha256:b  ", "", "   "})
+	assert.Len(t, set, 2, "blank entries must not become skip keys")
+	_, ok := set["sha256:b"]
+	assert.True(t, ok, "surrounding whitespace should be trimmed")
+}
+
+func TestECRDumpReportsScannedDigests(t *testing.T) {
+	repo := output.AWSResource{
+		ResourceID: "app",
+		ARN:        "arn:aws:ecr:us-east-2:123456789012:repository/app",
+		Properties: map[string]any{cclist.ECRPropImageTag: "v3"},
+	}
+
+	out := pipeline.New[model.AurelianModel]()
+	run := &ecrDumpRun{out: out}
+	go func() {
+		defer out.Close()
+		run.reportScanned(repo, []string{"sha256:aaaa", "sha256:bbbb"})
+	}()
+
+	emitted, err := out.Collect()
+	require.NoError(t, err)
+	require.Len(t, emitted, 1)
+
+	reported, ok := emitted[0].(output.AWSResource)
+	require.True(t, ok)
+	assert.Equal(t, "sha256:aaaa,sha256:bbbb", reported.Properties[output.ECRScannedDigestsProperty])
+	assert.Equal(t, "v3", reported.Properties[cclist.ECRPropImageTag], "enumerated properties must survive")
+
+	// The enumerated map is shared with other consumers and must not be stamped.
+	assert.Nil(t, repo.Properties[output.ECRScannedDigestsProperty])
+}
+
+func TestECRDumpReportsNothingWhenNoImageScanned(t *testing.T) {
+	out := pipeline.New[model.AurelianModel]()
+	run := &ecrDumpRun{out: out}
+	go func() {
+		defer out.Close()
+		run.reportScanned(output.AWSResource{ResourceID: "app"}, nil)
+	}()
+
+	emitted, err := out.Collect()
+	require.NoError(t, err)
+	assert.Empty(t, emitted, "a repository with nothing scanned must not claim coverage")
 }
