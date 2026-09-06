@@ -60,7 +60,8 @@ func (m *AWSFindSecretsModule) SupportedResourceTypes() []string {
 		"AWS::SSM::Document",
 		"AWS::SSM::Parameter",
 		"AWS::StepFunctions::StateMachine",
-		// TODO: AWS::ECR::Repository — container image scanning deferred to follow-up PR.
+		// AWS::ECR::Repository is handled by the ecr-dump module, which pulls and
+		// extracts container layers rather than reading a resource description.
 	}
 }
 
