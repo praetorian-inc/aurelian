@@ -93,7 +93,7 @@ func TestExtractBucketName(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.domain, func(t *testing.T) {
-			assert.Equal(t, tt.expected, extractBucketName(tt.domain))
+			assert.Equal(t, tt.expected, ExtractBucketName(tt.domain))
 		})
 	}
 }

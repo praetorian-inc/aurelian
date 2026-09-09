@@ -96,19 +96,12 @@ func (e *Route53Enumerator) enumerateRecords(ctx context.Context, client *route5
 		}
 
 		for _, rrs := range resp.ResourceRecordSets {
-			var values []string
-			for _, rr := range rrs.ResourceRecords {
-				if rr.Value != nil {
-					values = append(values, aws.ToString(rr.Value))
-				}
-			}
-
 			out.Send(Route53Record{
 				ZoneID:     zoneID,
 				ZoneName:   zoneName,
 				RecordName: strings.TrimSuffix(aws.ToString(rrs.Name), "."),
 				Type:       string(rrs.Type),
-				Values:     values,
+				Values:     recordValues(rrs),
 				IsAlias:    rrs.AliasTarget != nil,
 			})
 		}
@@ -121,4 +114,17 @@ func (e *Route53Enumerator) enumerateRecords(ctx context.Context, client *route5
 	}
 
 	return nil
+}
+
+func recordValues(rrs r53types.ResourceRecordSet) []string {
+	var values []string
+	for _, rr := range rrs.ResourceRecords {
+		if rr.Value != nil {
+			values = append(values, aws.ToString(rr.Value))
+		}
+	}
+	if rrs.AliasTarget != nil && rrs.AliasTarget.DNSName != nil {
+		values = append(values, strings.TrimSuffix(aws.ToString(rrs.AliasTarget.DNSName), "."))
+	}
+	return values
 }

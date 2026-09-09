@@ -16,10 +16,10 @@ type S3API interface {
 	GetBucketLocation(ctx context.Context, params *s3.GetBucketLocationInput, optFns ...func(*s3.Options)) (*s3.GetBucketLocationOutput, error)
 }
 
-// checkBucketExists determines whether an S3 bucket exists and is owned by the
+// CheckBucketExists determines whether an S3 bucket exists and is owned by the
 // current account. On a PermanentRedirect (bucket exists globally but in a
 // different region), it falls through to GetBucketLocation to verify ownership.
-func checkBucketExists(ctx context.Context, client S3API, bucketName string) BucketExistence {
+func CheckBucketExists(ctx context.Context, client S3API, bucketName string) BucketExistence {
 	_, err := client.HeadBucket(ctx, &s3.HeadBucketInput{
 		Bucket: &bucketName,
 	})
@@ -115,13 +115,13 @@ func checkDistributionOrigins(ctx context.Context, client S3API, dist Distributi
 			continue
 		}
 
-		bucketName := extractBucketName(origin.DomainName)
+		bucketName := ExtractBucketName(origin.DomainName)
 		if bucketName == "" {
 			slog.Debug("could not extract bucket name from origin domain", "domain", origin.DomainName)
 			continue
 		}
 
-		existence := checkBucketExists(ctx, client, bucketName)
+		existence := CheckBucketExists(ctx, client, bucketName)
 		if existence == BucketNotExists || existence == BucketExistsNotOwned {
 			vulnerable = append(vulnerable, VulnerableDistribution{
 				DistributionID:     dist.ID,
