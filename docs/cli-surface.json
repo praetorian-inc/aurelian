@@ -1,0 +1,2735 @@
+{
+  "schemaVersion": 1,
+  "surfaceHash": "sha256:3a3df07d804d8610b437eae54f3758618fe475e9ebbbe650cf1ae62b535be463",
+  "commands": [
+    {
+      "path": "aurelian",
+      "use": "aurelian",
+      "short": "Aurelian - Cloud Security Testing Framework",
+      "runnable": false,
+      "flags": [
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)"
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws",
+      "use": "aws",
+      "short": "aws platform commands",
+      "aliases": [
+        "amazon"
+      ],
+      "runnable": false,
+      "flags": [
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws analyze",
+      "use": "analyze",
+      "short": "analyze commands for aws",
+      "runnable": false,
+      "flags": [
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws analyze access-key-to-account-id",
+      "use": "access-key-to-account-id",
+      "short": "Derives the AWS account ID from an access key ID using base32 decoding without making any API calls.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "access-key-id",
+          "shorthand": "k",
+          "type": "string",
+          "usage": "AWS access key ID (AKIA... or ASIA...) (required)"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws analyze analyze-iam-permissions",
+      "use": "analyze-iam-permissions",
+      "short": "Analyzes IAM permissions from GAAD data to detect privilege escalation paths, cross-account access, and create-then-use attack patterns. Requires GAAD JSON file from account-auth-details module.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "gaad-file",
+          "type": "string",
+          "usage": "Path to GAAD JSON file (from account-auth-details module) (required)"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "org-policies-file",
+          "type": "string",
+          "usage": "Path to Org Policies JSON file (from org-policies module)"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "resource-policies-file",
+          "type": "string",
+          "usage": "Path to Resource Policies JSON file"
+        },
+        {
+          "name": "resources-file",
+          "type": "string",
+          "usage": "Path to Resources JSON file (from list-all module)"
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws analyze expand-actions",
+      "use": "expand-actions",
+      "short": "Expands wildcard IAM action patterns (e.g. s3:Get* or *) into the full list of matching AWS actions by fetching the AWS Policy Generator service map.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "action",
+          "type": "string",
+          "usage": "IAM action pattern to expand (supports wildcards, e.g. s3:Get* or *) (required)"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws analyze graph",
+      "use": "graph",
+      "short": "Analyzes a Neo4j graph populated by `aws recon graph --neo4j-uri` and surfaces privilege-escalation paths (non-admin principal → admin target) as risk findings. Requires --neo4j-uri pointing at the seeded graph.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "neo4j-password",
+          "type": "string",
+          "default": "neo4j",
+          "usage": "Neo4j password"
+        },
+        {
+          "name": "neo4j-uri",
+          "type": "string",
+          "usage": "Neo4j connection URI (e.g., bolt://localhost:7687)"
+        },
+        {
+          "name": "neo4j-username",
+          "type": "string",
+          "default": "neo4j",
+          "usage": "Neo4j username"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws analyze ip-lookup",
+      "use": "ip-lookup",
+      "short": "Looks up an IP address against the AWS published IP ranges to determine whether it belongs to AWS, and if so, which service, region, and network border group.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "ip",
+          "type": "string",
+          "usage": "IP address to look up in AWS IP ranges (required)"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws analyze known-account",
+      "use": "known-account",
+      "short": "Looks up an AWS account ID against known public account databases to identify the owning organization.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "account-id",
+          "type": "string",
+          "usage": "AWS account ID to look up (required)"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon",
+      "use": "recon",
+      "short": "recon commands for aws",
+      "runnable": false,
+      "flags": [
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon account-auth-details",
+      "use": "account-auth-details",
+      "short": "Retrieves IAM account authorization details including users, roles, groups, and policies. Supports multiple profiles for multi-account collection. IAM is a global service, so this module always queries us-east-1 region.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "profile",
+          "type": "string",
+          "usage": "AWS profile to use"
+        },
+        {
+          "name": "profile-dir",
+          "type": "string",
+          "usage": "Set to override the default AWS profile directory"
+        },
+        {
+          "name": "profiles",
+          "shorthand": "p",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "AWS profiles to collect (comma-separated)"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon cdk-bucket-takeover",
+      "use": "cdk-bucket-takeover",
+      "short": "Detects AWS CDK S3 bucket takeover vulnerabilities by identifying missing CDK staging buckets and insecure IAM policies. Scans for CDK bootstrap roles and validates associated S3 buckets for potential account takeover risks.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "cdk-qualifiers",
+          "shorthand": "q",
+          "type": "stringSlice",
+          "default": "[hnb659fds]",
+          "usage": "CDK bootstrap qualifiers to check"
+        },
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Maximum concurrent API requests"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "opsec_level",
+          "type": "string",
+          "default": "none",
+          "usage": "Operational security level for AWS operations"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "profile",
+          "shorthand": "p",
+          "type": "string",
+          "usage": "AWS profile to use"
+        },
+        {
+          "name": "profile-dir",
+          "type": "string",
+          "usage": "Set to override the default AWS profile directory"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "regions",
+          "shorthand": "r",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS regions to scan"
+        },
+        {
+          "name": "resource-arn",
+          "shorthand": "a",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "AWS target resource ARN"
+        },
+        {
+          "name": "resource-type",
+          "shorthand": "t",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS Cloud Control resource type"
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon cloudfront-s3-takeover",
+      "use": "cloudfront-s3-takeover",
+      "short": "Detects CloudFront distributions with S3 origins pointing to non-existent buckets, which could allow attackers to take over the domain by creating the missing bucket. Also identifies Route53 records pointing to vulnerable distributions.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Maximum concurrent API requests"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "opsec_level",
+          "type": "string",
+          "default": "none",
+          "usage": "Operational security level for AWS operations"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "profile",
+          "shorthand": "p",
+          "type": "string",
+          "usage": "AWS profile to use"
+        },
+        {
+          "name": "profile-dir",
+          "type": "string",
+          "usage": "Set to override the default AWS profile directory"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "regions",
+          "shorthand": "r",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS regions to scan"
+        },
+        {
+          "name": "resource-arn",
+          "shorthand": "a",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "AWS target resource ARN"
+        },
+        {
+          "name": "resource-type",
+          "shorthand": "t",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS Cloud Control resource type"
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon configuration-scan",
+      "use": "configuration-scan",
+      "short": "Evaluates AWS resource configuration posture and emits risks. Enumerates supported resource types once, enriches them, and runs typed checks (currently: EC2 IMDSv1 enabled).",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Maximum concurrent API requests"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "opsec_level",
+          "type": "string",
+          "default": "none",
+          "usage": "Operational security level for AWS operations"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "profile",
+          "shorthand": "p",
+          "type": "string",
+          "usage": "AWS profile to use"
+        },
+        {
+          "name": "profile-dir",
+          "type": "string",
+          "usage": "Set to override the default AWS profile directory"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "regions",
+          "shorthand": "r",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS regions to scan"
+        },
+        {
+          "name": "resource-arn",
+          "shorthand": "a",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "AWS target resource ARN"
+        },
+        {
+          "name": "resource-type",
+          "shorthand": "t",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS Cloud Control resource type"
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon cost-summary",
+      "use": "cost-summary",
+      "short": "Use Cost Explorer to summarize the services and regions in use, displaying costs in a markdown table.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "days",
+          "shorthand": "d",
+          "type": "int",
+          "default": "30",
+          "usage": "Number of days to look back for cost data"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "opsec_level",
+          "type": "string",
+          "default": "none",
+          "usage": "Operational security level for AWS operations"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "profile",
+          "shorthand": "p",
+          "type": "string",
+          "usage": "AWS profile to use"
+        },
+        {
+          "name": "profile-dir",
+          "type": "string",
+          "usage": "Set to override the default AWS profile directory"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon find-secrets",
+      "use": "find-secrets",
+      "short": "Enumerates AWS resources via Cloud Control, extracts content likely to contain hardcoded secrets (EC2 user data, Lambda code, CloudFormation templates, CloudWatch logs, ECS task definitions, SSM documents and Parameter Store parameters, Step Functions executions), and scans with Titus.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Maximum concurrent API requests"
+        },
+        {
+          "name": "db-path",
+          "type": "string",
+          "usage": "Path for Titus SQLite database"
+        },
+        {
+          "name": "disabled-titus-rules",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "Rule IDs to exclude from scanning"
+        },
+        {
+          "name": "ignore-file",
+          "type": "string",
+          "usage": "Path to gitignore-style file for skipping paths; when empty uses a default list"
+        },
+        {
+          "name": "max-events",
+          "type": "int",
+          "default": "10000",
+          "usage": "Max log events per log group"
+        },
+        {
+          "name": "max-streams",
+          "type": "int",
+          "default": "10",
+          "usage": "Max streams to sample per log group"
+        },
+        {
+          "name": "modified-since",
+          "type": "string",
+          "usage": "RFC3339 timestamp of the last successful scan; unchanged resources with reliable AWS modification metadata are skipped"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "opsec_level",
+          "type": "string",
+          "default": "none",
+          "usage": "Operational security level for AWS operations"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "profile",
+          "shorthand": "p",
+          "type": "string",
+          "usage": "AWS profile to use"
+        },
+        {
+          "name": "profile-dir",
+          "type": "string",
+          "usage": "Set to override the default AWS profile directory"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "regions",
+          "shorthand": "r",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS regions to scan"
+        },
+        {
+          "name": "resource-arn",
+          "shorthand": "a",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "AWS target resource ARN"
+        },
+        {
+          "name": "resource-type",
+          "shorthand": "t",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS Cloud Control resource type"
+        },
+        {
+          "name": "ruleset",
+          "type": "string",
+          "default": "default",
+          "usage": "Titus ruleset to apply; empty string disables ruleset filtering"
+        },
+        {
+          "name": "validate",
+          "type": "bool",
+          "default": "false",
+          "usage": "Validate detected secrets against their source APIs"
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon get-console",
+      "use": "get-console",
+      "short": "Generates a federated AWS Console sign-in URL using STS credentials. Supports three credential paths: existing assumed-role session, role assumption via AssumeRole, and federation token via GetFederationToken.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "duration",
+          "type": "int",
+          "default": "3600",
+          "usage": "Session duration in seconds (900-129600)"
+        },
+        {
+          "name": "federation-name",
+          "type": "string",
+          "default": "aurelian-console",
+          "usage": "Name for federation token request"
+        },
+        {
+          "name": "mfa-token",
+          "type": "string",
+          "usage": "MFA token code for role assumption"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "opsec_level",
+          "type": "string",
+          "default": "none",
+          "usage": "Operational security level for AWS operations"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "profile",
+          "shorthand": "p",
+          "type": "string",
+          "usage": "AWS profile to use"
+        },
+        {
+          "name": "profile-dir",
+          "type": "string",
+          "usage": "Set to override the default AWS profile directory"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "role-arn",
+          "type": "string",
+          "usage": "IAM role ARN to assume before generating console URL"
+        },
+        {
+          "name": "role-session-name",
+          "type": "string",
+          "default": "aurelian-console",
+          "usage": "Session name for assumed role"
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon graph",
+      "use": "graph",
+      "short": "Collects AWS IAM data (GAAD, resources, policies), evaluates permissions, and detects privilege escalation paths. Outputs JSON by default; use --neo4j-uri to populate graph database with relationships.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Maximum concurrent API requests"
+        },
+        {
+          "name": "neo4j-password",
+          "type": "string",
+          "default": "neo4j",
+          "usage": "Neo4j password"
+        },
+        {
+          "name": "neo4j-uri",
+          "type": "string",
+          "usage": "Neo4j connection URI (e.g., bolt://localhost:7687)"
+        },
+        {
+          "name": "neo4j-username",
+          "type": "string",
+          "default": "neo4j",
+          "usage": "Neo4j username"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "opsec_level",
+          "type": "string",
+          "default": "none",
+          "usage": "Operational security level for AWS operations"
+        },
+        {
+          "name": "org-policies-file",
+          "type": "string",
+          "usage": "Path to Org Policies JSON file"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "profile",
+          "shorthand": "p",
+          "type": "string",
+          "usage": "AWS profile to use"
+        },
+        {
+          "name": "profile-dir",
+          "type": "string",
+          "usage": "Set to override the default AWS profile directory"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "regions",
+          "shorthand": "r",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS regions to scan"
+        },
+        {
+          "name": "resource-arn",
+          "shorthand": "a",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "AWS target resource ARN"
+        },
+        {
+          "name": "resource-type",
+          "shorthand": "t",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS Cloud Control resource type"
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon iam-quick-analyze",
+      "use": "iam-quick-analyze",
+      "short": "Quick IAM analysis: collects GAAD from one or more AWS profiles, scans for privilege escalation paths and trust relationship issues. Faster than the full graph module — no resource enumeration or Neo4j required.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "gaad-dir",
+          "shorthand": "D",
+          "type": "string",
+          "usage": "Directory of pre-collected GAAD JSON files (skips live collection)"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "profile-dir",
+          "type": "string",
+          "usage": "Set to override the default AWS profile directory"
+        },
+        {
+          "name": "profiles",
+          "shorthand": "p",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "AWS profiles to analyze (comma-separated)"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon list-all",
+      "use": "list-all",
+      "short": "List resources in an AWS account using CloudControl API. Supports 'full' scan for all resources or 'summary' scan for key services. Can scan multiple regions concurrently.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Maximum concurrent API requests"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "opsec_level",
+          "type": "string",
+          "default": "none",
+          "usage": "Operational security level for AWS operations"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "profile",
+          "shorthand": "p",
+          "type": "string",
+          "usage": "AWS profile to use"
+        },
+        {
+          "name": "profile-dir",
+          "type": "string",
+          "usage": "Set to override the default AWS profile directory"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "regions",
+          "shorthand": "r",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS regions to scan"
+        },
+        {
+          "name": "resource-arn",
+          "shorthand": "a",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "AWS target resource ARN"
+        },
+        {
+          "name": "resource-type",
+          "shorthand": "t",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS Cloud Control resource type"
+        },
+        {
+          "name": "scan-type",
+          "shorthand": "s",
+          "type": "string",
+          "default": "full",
+          "usage": "Scan type - 'full' for all resources or 'summary' for key services"
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon org-policies",
+      "use": "org-policies",
+      "short": "Collects AWS Organizations service control policies (SCPs) and resource control policies (RCPs), including the organizational hierarchy and policy-to-target mappings.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "opsec_level",
+          "type": "string",
+          "default": "none",
+          "usage": "Operational security level for AWS operations"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "profile",
+          "shorthand": "p",
+          "type": "string",
+          "usage": "AWS profile to use"
+        },
+        {
+          "name": "profile-dir",
+          "type": "string",
+          "usage": "Set to override the default AWS profile directory"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon public-resources",
+      "use": "public-resources",
+      "short": "Finds publicly accessible AWS resources through policy evaluation, property inspection, and enrichment. Combines resource listing, enrichment, policy fetching, and public access evaluation to identify resources that are exposed to the internet or allow anonymous access.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Maximum concurrent API requests"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "opsec_level",
+          "type": "string",
+          "default": "none",
+          "usage": "Operational security level for AWS operations"
+        },
+        {
+          "name": "org-policies-file",
+          "type": "string",
+          "usage": "Path to Org Policies JSON file"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "profile",
+          "shorthand": "p",
+          "type": "string",
+          "usage": "AWS profile to use"
+        },
+        {
+          "name": "profile-dir",
+          "type": "string",
+          "usage": "Set to override the default AWS profile directory"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "regions",
+          "shorthand": "r",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS regions to scan"
+        },
+        {
+          "name": "resource-arn",
+          "shorthand": "a",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "AWS target resource ARN"
+        },
+        {
+          "name": "resource-type",
+          "shorthand": "t",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS Cloud Control resource type"
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon regions",
+      "use": "regions",
+      "short": "Lists the AWS regions enabled for the account, reporting whether the list came from the Account API, the EC2 API, or the compiled-in fallback list.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "opsec_level",
+          "type": "string",
+          "default": "none",
+          "usage": "Operational security level for AWS operations"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "profile",
+          "shorthand": "p",
+          "type": "string",
+          "usage": "AWS profile to use"
+        },
+        {
+          "name": "profile-dir",
+          "type": "string",
+          "usage": "Set to override the default AWS profile directory"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon resource-policies",
+      "use": "resource-policies",
+      "short": "Retrieves resource-based policies for AWS resources that support them (S3 buckets, Lambda functions, SNS topics, SQS queues, EFS file systems, OpenSearch/Elasticsearch domains). Policies are added to the ResourcePolicy property of each resource.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Maximum concurrent API requests"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "opsec_level",
+          "type": "string",
+          "default": "none",
+          "usage": "Operational security level for AWS operations"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "profile",
+          "shorthand": "p",
+          "type": "string",
+          "usage": "AWS profile to use"
+        },
+        {
+          "name": "profile-dir",
+          "type": "string",
+          "usage": "Set to override the default AWS profile directory"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "regions",
+          "shorthand": "r",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS regions to scan"
+        },
+        {
+          "name": "resource-arn",
+          "shorthand": "a",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "AWS target resource ARN"
+        },
+        {
+          "name": "resource-type",
+          "shorthand": "t",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS Cloud Control resource type"
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon subdomain-takeover",
+      "use": "subdomain-takeover",
+      "short": "Detects dangling DNS records in Route53 that are vulnerable to subdomain takeover. Enumerates all records from public hosted zones and checks for: Elastic Beanstalk CNAME hijacking, dangling Elastic IP A records, and orphaned NS delegations.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Maximum concurrent API requests"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "opsec_level",
+          "type": "string",
+          "default": "none",
+          "usage": "Operational security level for AWS operations"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "profile",
+          "shorthand": "p",
+          "type": "string",
+          "usage": "AWS profile to use"
+        },
+        {
+          "name": "profile-dir",
+          "type": "string",
+          "usage": "Set to override the default AWS profile directory"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "regions",
+          "shorthand": "r",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS regions to scan"
+        },
+        {
+          "name": "resource-arn",
+          "shorthand": "a",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "AWS target resource ARN"
+        },
+        {
+          "name": "resource-type",
+          "shorthand": "t",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "AWS Cloud Control resource type"
+        }
+      ]
+    },
+    {
+      "path": "aurelian aws recon whoami",
+      "use": "whoami",
+      "short": "Covert whoami using AWS APIs that leak the caller ARN in error messages without logging to CloudTrail. Supports timestream, pinpoint, and sqs techniques.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "action",
+          "type": "string",
+          "default": "all",
+          "usage": "Whoami technique: timestream, pinpoint, sqs, or all"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "opsec_level",
+          "type": "string",
+          "default": "none",
+          "usage": "Operational security level for AWS operations"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "profile",
+          "shorthand": "p",
+          "type": "string",
+          "usage": "AWS profile to use"
+        },
+        {
+          "name": "profile-dir",
+          "type": "string",
+          "usage": "Set to override the default AWS profile directory"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian azure",
+      "use": "azure",
+      "short": "azure platform commands",
+      "aliases": [
+        "az"
+      ],
+      "runnable": false,
+      "flags": [
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian azure recon",
+      "use": "recon",
+      "short": "recon commands for azure",
+      "runnable": false,
+      "flags": [
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian azure recon apim-audit",
+      "use": "apim-audit",
+      "short": "Audits Azure API Management services for security weaknesses across two checks: (1) APIs (including MCP servers) with no authentication controls at the service, product, or API scope — inspects policy XML for validate-jwt, validate-azure-ad-token, ip-filter, and check-header elements, and confirms whether a subscription is required; (2) backends configured behind APIM that are reachable without traversing the gateway — Azure App Service backends are checked for publicNetworkAccess and IP restrictions, non-Azure backends (OpenShift, GCP Cloud Run, internal hosts) are flagged for manual triage.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Maximum concurrent API requests"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "subscription-ids",
+          "shorthand": "s",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions"
+        }
+      ]
+    },
+    {
+      "path": "aurelian azure recon apim-cross-tenant",
+      "use": "apim-cross-tenant",
+      "short": "Enumerates Azure APIM developer portal resources (APIs, products, delegation settings) without authentication, then optionally performs a cross-tenant captcha relay attack to create an account on the target portal and enumerate authenticated resources and subscription keys.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "attacker",
+          "type": "string",
+          "usage": "Attacker-controlled APIM portal URL (required for bypass mode)"
+        },
+        {
+          "name": "email",
+          "type": "string",
+          "usage": "Account email (required for authenticated and bypass modes)"
+        },
+        {
+          "name": "first",
+          "type": "string",
+          "default": "Test",
+          "usage": "First name for registration (bypass mode)"
+        },
+        {
+          "name": "insecure",
+          "shorthand": "k",
+          "type": "bool",
+          "default": "false",
+          "usage": "Skip TLS certificate verification"
+        },
+        {
+          "name": "last",
+          "type": "string",
+          "default": "User",
+          "usage": "Last name for registration (bypass mode)"
+        },
+        {
+          "name": "mode",
+          "type": "string",
+          "default": "passive",
+          "usage": "Scan mode: passive (unauthenticated enum only), authenticated (login + enum), bypass (cross-tenant captcha relay + signup + enum)"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "openai-key",
+          "type": "string",
+          "usage": "OpenAI API key for audio captcha transcription (bypass mode); falls back to OPENAI_API_KEY env var if unset"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "password",
+          "type": "string",
+          "usage": "Account password (required for authenticated and bypass modes)"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "target",
+          "type": "string",
+          "usage": "Target APIM developer portal URL (required)"
+        }
+      ]
+    },
+    {
+      "path": "aurelian azure recon conditional-access-policies",
+      "use": "conditional-access-policies",
+      "short": "Enumerates Azure AD Conditional Access Policies via the Microsoft Graph API",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian azure recon configuration-scan",
+      "use": "configuration-scan",
+      "short": "Detects Azure configuration issues including weak authentication, disabled RBAC, privilege escalation paths, and overly permissive access rules via Azure Resource Graph.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Maximum concurrent API requests"
+        },
+        {
+          "name": "enricher-timeout",
+          "type": "int",
+          "default": "120",
+          "usage": "Per-resource enricher timeout in seconds"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "subscription-ids",
+          "shorthand": "s",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions"
+        },
+        {
+          "name": "template-dir",
+          "type": "string",
+          "usage": "Optional directory with additional YAML query templates"
+        }
+      ]
+    },
+    {
+      "path": "aurelian azure recon find-secrets",
+      "use": "find-secrets",
+      "short": "Enumerates Azure resources via Resource Graph, extracts content likely to contain hardcoded secrets (VM user data, web app settings, automation variables, storage blobs, container env vars, Cosmos DB, APIM named values, Key Vault, and 30+ other sources), and scans with Titus.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Maximum concurrent API requests"
+        },
+        {
+          "name": "db-path",
+          "type": "string",
+          "usage": "Path for Titus SQLite database"
+        },
+        {
+          "name": "disabled-titus-rules",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "Rule IDs to exclude from scanning"
+        },
+        {
+          "name": "ignore-file",
+          "type": "string",
+          "usage": "Path to gitignore-style file for skipping paths; when empty uses a default list"
+        },
+        {
+          "name": "max-cosmos-doc-scan",
+          "type": "int",
+          "default": "50",
+          "usage": "Max total Cosmos documents to scan per container"
+        },
+        {
+          "name": "max-cosmos-doc-size",
+          "type": "int",
+          "default": "1048576",
+          "usage": "Max individual Cosmos document size in bytes"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "resource-id",
+          "shorthand": "i",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "Azure resource ID(s) to scan directly, skipping enumeration"
+        },
+        {
+          "name": "ruleset",
+          "type": "string",
+          "default": "default",
+          "usage": "Titus ruleset to apply; empty string disables ruleset filtering"
+        },
+        {
+          "name": "subscription-ids",
+          "shorthand": "s",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions"
+        },
+        {
+          "name": "validate",
+          "type": "bool",
+          "default": "false",
+          "usage": "Validate detected secrets against their source APIs"
+        }
+      ]
+    },
+    {
+      "path": "aurelian azure recon list-all",
+      "use": "list-all",
+      "short": "List all Azure resources across subscriptions using Azure Resource Graph. Supports scanning specific subscriptions or all accessible subscriptions.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Maximum concurrent API requests"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "subscription-ids",
+          "shorthand": "s",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions"
+        }
+      ]
+    },
+    {
+      "path": "aurelian azure recon public-resources",
+      "use": "public-resources",
+      "short": "Identifies publicly accessible Azure resources by executing Azure Resource Graph query templates against target subscriptions. Detects public storage accounts, databases, key vaults, web apps, and other resources exposed to the internet.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Maximum concurrent API requests"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "subscription-ids",
+          "shorthand": "s",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions"
+        },
+        {
+          "name": "template-dir",
+          "type": "string",
+          "usage": "Optional directory with additional YAML query templates"
+        }
+      ]
+    },
+    {
+      "path": "aurelian azure recon subdomain-takeover",
+      "use": "subdomain-takeover",
+      "short": "Scan for dangling DNS records in Azure DNS zones that could enable subdomain takeover. Checks CNAME records for unclaimed App Service, Blob Storage, CDN, and Traffic Manager names; A/AAAA records for orphaned public IPs; and NS delegations to non-existent Azure DNS zones.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Maximum concurrent API requests"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "subscription-ids",
+          "shorthand": "s",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "Azure subscription ID(s) or 'all' to enumerate all accessible subscriptions"
+        }
+      ]
+    },
+    {
+      "path": "aurelian gcp",
+      "use": "gcp",
+      "short": "gcp platform commands",
+      "aliases": [
+        "google"
+      ],
+      "runnable": false,
+      "flags": [
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian gcp recon",
+      "use": "recon",
+      "short": "recon commands for gcp",
+      "runnable": false,
+      "flags": [
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian gcp recon find-secrets",
+      "use": "find-secrets",
+      "short": "Enumerates GCP resources via project hierarchy, extracts content likely to contain hardcoded secrets (Compute metadata/startup scripts, Cloud Functions source, Cloud Run environment variables, App Engine environment variables), and scans with Titus.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Max concurrent API requests"
+        },
+        {
+          "name": "creds-file",
+          "shorthand": "c",
+          "type": "string",
+          "usage": "Path to GCP credentials JSON"
+        },
+        {
+          "name": "db-path",
+          "type": "string",
+          "usage": "Path for Titus SQLite database"
+        },
+        {
+          "name": "disabled-titus-rules",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "Rule IDs to exclude from scanning"
+        },
+        {
+          "name": "folder-id",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "GCP folder IDs"
+        },
+        {
+          "name": "ignore-file",
+          "type": "string",
+          "usage": "Path to gitignore-style file for skipping paths; when empty uses a default list"
+        },
+        {
+          "name": "include-sys-projects",
+          "type": "bool",
+          "default": "false",
+          "usage": "Include system projects"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "org-id",
+          "shorthand": "o",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "GCP organization IDs"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Base output directory"
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "project-id",
+          "shorthand": "p",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "GCP project IDs"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "resource-id",
+          "shorthand": "i",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "GCP resource ID(s) to scan directly"
+        },
+        {
+          "name": "resource-type",
+          "shorthand": "t",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "Resource types to enumerate"
+        },
+        {
+          "name": "ruleset",
+          "type": "string",
+          "default": "default",
+          "usage": "Titus ruleset to apply; empty string disables ruleset filtering"
+        },
+        {
+          "name": "validate",
+          "type": "bool",
+          "default": "false",
+          "usage": "Validate detected secrets against their source APIs"
+        }
+      ]
+    },
+    {
+      "path": "aurelian gcp recon list-all",
+      "use": "list-all",
+      "short": "List GCP resources across organization, folder, or project scope. Supports filtering by resource type and evaluates public/anonymous access.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Max concurrent API requests"
+        },
+        {
+          "name": "creds-file",
+          "shorthand": "c",
+          "type": "string",
+          "usage": "Path to GCP credentials JSON"
+        },
+        {
+          "name": "folder-id",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "GCP folder IDs"
+        },
+        {
+          "name": "include-sys-projects",
+          "type": "bool",
+          "default": "false",
+          "usage": "Include system projects"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "org-id",
+          "shorthand": "o",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "GCP organization IDs"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "project-id",
+          "shorthand": "p",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "GCP project IDs"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "resource-id",
+          "shorthand": "i",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "GCP resource ID(s) to scan directly"
+        },
+        {
+          "name": "resource-type",
+          "shorthand": "t",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "Resource types to enumerate"
+        }
+      ]
+    },
+    {
+      "path": "aurelian gcp recon public-resources",
+      "use": "public-resources",
+      "short": "List GCP resources with public network exposure or anonymous access. Focuses on resource types with meaningful public access indicators.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Max concurrent API requests"
+        },
+        {
+          "name": "creds-file",
+          "shorthand": "c",
+          "type": "string",
+          "usage": "Path to GCP credentials JSON"
+        },
+        {
+          "name": "folder-id",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "GCP folder IDs"
+        },
+        {
+          "name": "include-sys-projects",
+          "type": "bool",
+          "default": "false",
+          "usage": "Include system projects"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "org-id",
+          "shorthand": "o",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "GCP organization IDs"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "project-id",
+          "shorthand": "p",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "GCP project IDs"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "resource-id",
+          "shorthand": "i",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "GCP resource ID(s) to scan directly"
+        },
+        {
+          "name": "resource-type",
+          "shorthand": "t",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "Resource types to enumerate"
+        }
+      ]
+    },
+    {
+      "path": "aurelian gcp recon subdomain-takeover",
+      "use": "subdomain-takeover",
+      "short": "Scan for dangling DNS records in Cloud DNS that could enable subdomain takeover. Checks CNAME records for non-existent Cloud Storage buckets, Cloud Run services, and App Engine apps; A/AAAA records for orphaned IPs; and NS delegations to unclaimed Cloud DNS zones.",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "concurrency",
+          "type": "int",
+          "default": "5",
+          "usage": "Max concurrent API requests"
+        },
+        {
+          "name": "creds-file",
+          "shorthand": "c",
+          "type": "string",
+          "usage": "Path to GCP credentials JSON"
+        },
+        {
+          "name": "folder-id",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "GCP folder IDs"
+        },
+        {
+          "name": "include-sys-projects",
+          "type": "bool",
+          "default": "false",
+          "usage": "Include system projects"
+        },
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "org-id",
+          "shorthand": "o",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "GCP organization IDs"
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "project-id",
+          "shorthand": "p",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "GCP project IDs"
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        },
+        {
+          "name": "resource-id",
+          "shorthand": "i",
+          "type": "stringSlice",
+          "default": "[]",
+          "usage": "GCP resource ID(s) to scan directly"
+        },
+        {
+          "name": "resource-type",
+          "shorthand": "t",
+          "type": "stringSlice",
+          "default": "[all]",
+          "usage": "Resource types to enumerate"
+        }
+      ]
+    },
+    {
+      "path": "aurelian gendoc",
+      "use": "gendoc",
+      "short": "Generate Markdown documentation",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian list-modules",
+      "use": "list-modules",
+      "short": "Display available Aurelian modules in a tree structure",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    },
+    {
+      "path": "aurelian version",
+      "use": "version",
+      "short": "Print the version number of Aurelian",
+      "runnable": true,
+      "flags": [
+        {
+          "name": "no-color",
+          "type": "bool",
+          "default": "false",
+          "usage": "Disable colored output",
+          "inherited": true
+        },
+        {
+          "name": "output-dir",
+          "type": "string",
+          "default": "aurelian-output",
+          "usage": "Output directory (default: aurelian-output)",
+          "inherited": true
+        },
+        {
+          "name": "output-file",
+          "shorthand": "f",
+          "type": "string",
+          "usage": "Output file path (overrides --output-dir)",
+          "inherited": true
+        },
+        {
+          "name": "quiet",
+          "type": "bool",
+          "default": "false",
+          "usage": "Suppress user messages (overrides default verbose CLI mode)",
+          "inherited": true
+        }
+      ]
+    }
+  ]
+}

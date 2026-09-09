@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// TestOutputFlagWritesToFile verifies that the --output flag writes results to a file instead of stdout
+// TestOutputFlagWritesToFile verifies that the --output-file flag writes results to a file instead of stdout
 func TestOutputFlagWritesToFile(t *testing.T) {
 	// Create a temporary directory for the test
 	tmpDir := t.TempDir()

@@ -85,6 +85,7 @@ require (
 	github.com/microsoftgraph/msgraph-sdk-go-core v1.4.0
 	github.com/muesli/termenv v0.16.0
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.4
+	github.com/praetorian-inc/capability-sdk v0.0.0-20260908174325-de5f920e8132
 	github.com/praetorian-inc/titus v1.2.6
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
