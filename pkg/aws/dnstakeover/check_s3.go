@@ -76,8 +76,12 @@ func checkS3WithClient(ctx CheckContext, client cloudfront.S3API, rec Route53Rec
 func s3BucketFromRecord(rec Route53Record) (string, bool) {
 	for _, val := range rec.Values {
 		host := strings.TrimSuffix(val, ".")
-		if bucket := cloudfront.ExtractBucketName(host); bucket != "" {
-			return bucket, true
+		// ExtractBucketName's fallback keys on substring ".s3" and will
+		// return a bucket for non-AWS hosts (e.g. files.s3.internal.example.com).
+		if strings.HasSuffix(host, ".amazonaws.com") {
+			if bucket := cloudfront.ExtractBucketName(host); bucket != "" {
+				return bucket, true
+			}
 		}
 		if rec.IsAlias && s3WebsiteEndpointPattern.MatchString(host) {
 			name := strings.TrimSuffix(rec.RecordName, ".")
