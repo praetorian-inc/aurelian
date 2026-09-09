@@ -78,6 +78,15 @@ func TestS3BucketFromTarget_SkipELB(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestS3BucketFromTarget_SkipNonAWS_S3Substring(t *testing.T) {
+	_, ok := s3BucketFromRecord(Route53Record{
+		Type:       "CNAME",
+		RecordName: "files.example.com",
+		Values:     []string{"files.s3.internal.example.com"},
+	})
+	assert.False(t, ok, "non-AWS host containing .s3 must not parse as an S3 website bucket")
+}
+
 func TestCheckS3_MissingBucketEmitsRisk(t *testing.T) {
 	client := &mockS3Client{
 		bucketResponses: map[string]error{
