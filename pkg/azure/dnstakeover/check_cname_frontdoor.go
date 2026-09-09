@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cdn/armcdn"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/frontdoor/armfrontdoor"
 	"github.com/praetorian-inc/aurelian/pkg/model"
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -18,14 +18,26 @@ func init() {
 
 const frontdoorSuffix = ".azurefd.net"
 
+type frontDoorNameAvailabilityClient interface {
+	Check(ctx context.Context, checkFrontDoorNameAvailabilityInput armfrontdoor.CheckNameAvailabilityInput, options *armfrontdoor.NameAvailabilityWithSubscriptionClientCheckOptions) (armfrontdoor.NameAvailabilityWithSubscriptionClientCheckResponse, error)
+}
+
 func checkFrontDoor(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model.AurelianModel]) error {
+	client, err := armfrontdoor.NewNameAvailabilityWithSubscriptionClient(ctx.SubscriptionID, ctx.Credential, nil)
+	if err != nil {
+		return fmt.Errorf("create front door client: %w", err)
+	}
+	return checkFrontDoorWithClient(client, rec, out)
+}
+
+func checkFrontDoorWithClient(client frontDoorNameAvailabilityClient, rec AzureDNSRecord, out *pipeline.P[model.AurelianModel]) error {
 	for _, val := range rec.Values {
 		endpointName, ok := frontDoorEndpointName(val)
 		if !ok {
 			continue
 		}
 
-		available, err := checkFrontDoorNameAvailability(ctx, endpointName)
+		available, err := checkFrontDoorNameAvailability(client, endpointName)
 		if err != nil {
 			slog.Warn("front door name check failed",
 				"record", rec.RecordName, "endpoint", endpointName, "error", err)
@@ -68,17 +80,12 @@ func frontDoorEndpointName(val string) (string, bool) {
 	return name, true
 }
 
-func checkFrontDoorNameAvailability(ctx CheckContext, endpointName string) (bool, error) {
-	client, err := armcdn.NewManagementClient(ctx.SubscriptionID, ctx.Credential, nil)
-	if err != nil {
-		return false, fmt.Errorf("create cdn client: %w", err)
-	}
-
-	resp, err := client.CheckNameAvailabilityWithSubscription(
+func checkFrontDoorNameAvailability(client frontDoorNameAvailabilityClient, endpointName string) (bool, error) {
+	resp, err := client.Check(
 		context.Background(),
-		armcdn.CheckNameAvailabilityInput{
+		armfrontdoor.CheckNameAvailabilityInput{
 			Name: &endpointName,
-			Type: ptrTo(armcdn.ResourceTypeMicrosoftCdnProfilesAfdEndpoints),
+			Type: ptrTo(armfrontdoor.ResourceTypeMicrosoftNetworkFrontDoors),
 		},
 		nil,
 	)
@@ -86,8 +93,8 @@ func checkFrontDoorNameAvailability(ctx CheckContext, endpointName string) (bool
 		return false, fmt.Errorf("check name availability: %w", err)
 	}
 
-	if resp.NameAvailable == nil {
+	if resp.NameAvailability == nil {
 		return false, nil
 	}
-	return *resp.NameAvailable, nil
+	return *resp.NameAvailability == armfrontdoor.AvailabilityAvailable, nil
 }

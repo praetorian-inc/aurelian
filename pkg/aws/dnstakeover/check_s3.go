@@ -20,9 +20,8 @@ func init() {
 	mustRegister("AAAA", "s3-website-takeover", checkS3)
 }
 
-// s3WebsiteEndpointPattern matches regional S3 website alias targets that do
-// not include the bucket name (the record FQDN is the bucket).
 var s3WebsiteEndpointPattern = regexp.MustCompile(`^s3-website[-.](?:dualstack\.)?[a-z0-9-]+\.amazonaws\.com$`)
+var s3VirtualHostedWebsitePattern = regexp.MustCompile(`^.+\.s3-website[-.].+\.amazonaws\.com$`)
 
 func checkS3(ctx CheckContext, rec Route53Record, out *pipeline.P[model.AurelianModel]) error {
 	cfg, err := awshelpers.NewAWSConfig(awshelpers.AWSConfigInput{
@@ -74,21 +73,26 @@ func checkS3WithClient(ctx CheckContext, client cloudfront.S3API, rec Route53Rec
 }
 
 func s3BucketFromRecord(rec Route53Record) (string, bool) {
+	name := strings.TrimSuffix(rec.RecordName, ".")
+	if name == "" {
+		return "", false
+	}
 	for _, val := range rec.Values {
 		host := strings.TrimSuffix(val, ".")
-		// ExtractBucketName's fallback keys on substring ".s3" and will
-		// return a bucket for non-AWS hosts (e.g. files.s3.internal.example.com).
-		if strings.HasSuffix(host, ".amazonaws.com") {
-			if bucket := cloudfront.ExtractBucketName(host); bucket != "" {
-				return bucket, true
-			}
-		}
-		if rec.IsAlias && s3WebsiteEndpointPattern.MatchString(host) {
-			name := strings.TrimSuffix(rec.RecordName, ".")
-			if name != "" {
-				return name, true
-			}
+		if isS3WebsiteEndpoint(host) {
+			return name, true
 		}
 	}
 	return "", false
+}
+
+func isS3WebsiteEndpoint(host string) bool {
+	if strings.Contains(host, "s3-accesspoint") ||
+		strings.Contains(host, "s3-object-lambda") ||
+		strings.Contains(host, "s3-control") ||
+		strings.HasSuffix(host, ".vpce.amazonaws.com") ||
+		strings.Contains(host, ".elb.") {
+		return false
+	}
+	return s3WebsiteEndpointPattern.MatchString(host) || s3VirtualHostedWebsitePattern.MatchString(host)
 }
