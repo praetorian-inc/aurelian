@@ -1,0 +1,38 @@
+id: "1.1.1"
+title: "Ensure administrative accounts are cloud-only"
+service: entra
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that all users with administrative roles are cloud-only
+  accounts and not synchronized from on-premises Active Directory.
+rationale: |
+  Synchronized admin accounts inherit on-premises attack paths. If
+  on-premises AD is compromised, synced admin accounts provide direct
+  access to the cloud tenant. Cloud-only admin accounts isolate cloud
+  administration from on-premises threats.
+impact: |
+  Organizations must create dedicated cloud-only admin accounts,
+  which adds account management overhead but significantly reduces
+  hybrid attack surface.
+remediation: |
+  Create dedicated cloud-only accounts for all administrative roles.
+  Remove administrative role assignments from synchronized accounts
+  and use the cloud-only accounts for admin tasks.
+references:
+  - "https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/security-planning"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 1.1.1"
+cis_controls:
+  - "v8: 5.4"
+  - "v8: 6.5"
+guard:
+  finding_slug: "m365-cis-1-1-1-admin-users-cloud-only"
+  phase_tag: "phase_m365_entra"
+  asset_type: "m365tenant"
+  cwe: "CWE-287"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:H/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - directory_roles
+  - users

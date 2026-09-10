@@ -1,0 +1,37 @@
+id: "6.1.2"
+title: "Ensure mailbox auditing for E5 users is enabled"
+service: exchange
+level: L2
+profile: "E5 Level 2"
+execution: Automated
+severity: high
+description: |
+  Verify that mailbox auditing is not bypassed for any individual
+  user mailboxes, especially those with E5 licensing that enables
+  advanced audit capabilities.
+rationale: |
+  Individual mailboxes can have auditing disabled via the
+  AuditEnabled property override. If auditing is bypassed on specific
+  mailboxes, unauthorized access to those mailboxes cannot be tracked,
+  creating investigative blind spots.
+impact: |
+  Enabling auditing on individual mailboxes has no significant
+  performance impact and ensures comprehensive audit coverage.
+remediation: |
+  Run Get-Mailbox -ResultSize Unlimited | Where-Object {$_.AuditEnabled
+  -eq $false} to identify mailboxes with disabled auditing, then
+  enable auditing with Set-Mailbox -AuditEnabled $true.
+references:
+  - "https://learn.microsoft.com/en-us/purview/audit-mailboxes"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 6.1.2"
+cis_controls:
+  - "v8: 8.2"
+  - "v8: 8.5"
+guard:
+  finding_slug: "m365-cis-6-1-2-user-mailbox-auditing"
+  phase_tag: "phase_m365_exchange"
+  asset_type: "m365tenant"
+  cwe: "CWE-778"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - mailbox_audit_settings

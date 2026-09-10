@@ -1,0 +1,36 @@
+id: "8.5.3"
+title: "Ensure only people in my organization can bypass the lobby"
+service: teams
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that the Teams meeting policy is configured so that only
+  authenticated users from the organization can bypass the meeting
+  lobby automatically.
+rationale: |
+  The lobby provides a gatekeeping mechanism that allows organizers
+  to vet participants before granting meeting access. Allowing
+  external users to bypass the lobby removes this control and
+  enables unauthorized access to meetings.
+impact: |
+  External participants and guests will wait in the lobby until
+  admitted by an organizer or presenter, adding minor meeting
+  management overhead.
+remediation: |
+  Navigate to Teams Admin Center > Meetings > Meeting policies and
+  set "Who can bypass the lobby" to "People in my organization".
+references:
+  - "https://learn.microsoft.com/en-us/microsoftteams/who-can-bypass-meeting-lobby"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 8.5.3"
+cis_controls:
+  - "v8: 6.1"
+guard:
+  finding_slug: "m365-cis-8-5-3-org-users-bypass-lobby"
+  phase_tag: "phase_m365_teams"
+  asset_type: "m365tenant"
+  cwe: "CWE-16"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - teams_meeting_policies

@@ -1,0 +1,35 @@
+id: "8.6.1"
+title: "Ensure users can report security concerns in Teams"
+service: teams
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that the security reporting feature is enabled in Teams,
+  allowing users to report suspicious messages and content directly
+  from the Teams client.
+rationale: |
+  User reporting provides an additional detection layer by leveraging
+  organizational users to identify phishing, malicious content, and
+  suspicious behavior in Teams. Without this capability, threats that
+  bypass automated controls may go undetected.
+impact: |
+  Users will see a reporting option in Teams. Security teams will
+  receive and need to triage user-submitted reports.
+remediation: |
+  Navigate to Teams Admin Center > Messaging policies and enable
+  the user reporting feature for security concerns.
+references:
+  - "https://learn.microsoft.com/en-us/microsoftteams/manage-teams-with-policies"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 8.6.1"
+cis_controls:
+  - "v8: 17.5"
+guard:
+  finding_slug: "m365-cis-8-6-1-security-reporting-enabled"
+  phase_tag: "phase_m365_teams"
+  asset_type: "m365tenant"
+  cwe: "CWE-778"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - teams_messaging_policies

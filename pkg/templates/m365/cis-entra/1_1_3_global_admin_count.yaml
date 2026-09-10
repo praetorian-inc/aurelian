@@ -1,0 +1,39 @@
+id: "1.1.3"
+title: "Ensure fewer than five users have Global Administrator role"
+service: entra
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that the number of users assigned the Global Administrator
+  role is between two and four (inclusive). At least two are needed
+  for redundancy but more than four increases the attack surface.
+rationale: |
+  The Global Administrator role has unrestricted access to all tenant
+  settings and data. Minimizing the number of Global Administrators
+  reduces the number of high-value targets and limits blast radius
+  if an admin account is compromised.
+impact: |
+  Some administrators may need to be reassigned to more specific
+  administrative roles following the principle of least privilege.
+remediation: |
+  Review Global Administrator role assignments and reduce to between
+  two and four. Reassign excess Global Administrators to more
+  granular roles such as Exchange Administrator or Security
+  Administrator.
+references:
+  - "https://learn.microsoft.com/en-us/entra/identity/role-based-access-control/best-practices"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 1.1.3"
+cis_controls:
+  - "v8: 5.4"
+  - "v8: 6.5"
+guard:
+  finding_slug: "m365-cis-1-1-3-global-admin-count"
+  phase_tag: "phase_m365_entra"
+  asset_type: "m365tenant"
+  cwe: "CWE-732"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:H/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - directory_roles
+  - role_assignments

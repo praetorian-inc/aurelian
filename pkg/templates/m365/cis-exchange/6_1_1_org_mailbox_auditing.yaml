@@ -1,0 +1,35 @@
+id: "6.1.1"
+title: "Ensure mailbox auditing for all users is enabled"
+service: exchange
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that mailbox auditing is enabled at the organization level
+  for all mailboxes in Exchange Online.
+rationale: |
+  Mailbox auditing records mailbox access, moves, and deletions
+  performed by mailbox owners, delegates, and administrators. Without
+  auditing, unauthorized mailbox access and data exfiltration cannot
+  be detected or investigated.
+impact: |
+  Mailbox auditing is enabled by default in Exchange Online. Enabling
+  it has minimal performance impact and is a standard configuration.
+remediation: |
+  Run Set-OrganizationConfig -AuditDisabled $false in Exchange Online
+  PowerShell to ensure organization-level mailbox auditing is enabled.
+references:
+  - "https://learn.microsoft.com/en-us/purview/audit-mailboxes"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 6.1.1"
+cis_controls:
+  - "v8: 8.2"
+  - "v8: 8.5"
+guard:
+  finding_slug: "m365-cis-6-1-1-org-mailbox-auditing"
+  phase_tag: "phase_m365_exchange"
+  asset_type: "m365tenant"
+  cwe: "CWE-778"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - organization_config

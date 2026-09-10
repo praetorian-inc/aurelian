@@ -1,0 +1,38 @@
+id: "5.2.2.6"
+title: "Ensure a Conditional Access policy exists to block user risk"
+service: entra
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that a Conditional Access policy is configured to block or
+  require password change for users identified as high risk by Entra
+  ID Identity Protection.
+rationale: |
+  User risk detections leverage machine learning to identify
+  compromised credentials, leaked passwords, and anomalous sign-in
+  patterns. Without a policy to act on user risk, compromised accounts
+  remain accessible to attackers.
+impact: |
+  Users flagged as high risk will be blocked or required to change
+  their password, which may cause temporary access disruption.
+remediation: |
+  Create a Conditional Access policy targeting all users with the
+  condition "User risk" set to "High" and a grant control that
+  requires password change or blocks access.
+references:
+  - "https://learn.microsoft.com/en-us/entra/id-protection/howto-identity-protection-configure-risk-policies"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 5.2.2.6"
+cis_controls:
+  - "v8: 6.3"
+  - "v8: 13.5"
+guard:
+  finding_slug: "m365-cis-5-2-2-6-user-risk-ca-policy"
+  phase_tag: "phase_m365_entra"
+  asset_type: "m365tenant"
+  cwe: "CWE-287"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - conditional_access_policies
+  - identity_protection_settings

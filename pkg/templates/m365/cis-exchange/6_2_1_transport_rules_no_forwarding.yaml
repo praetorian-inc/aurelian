@@ -1,0 +1,37 @@
+id: "6.2.1"
+title: "Ensure mail transport rules do not forward email to external domains"
+service: exchange
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that no Exchange transport rules are configured to
+  automatically forward email to external domains.
+rationale: |
+  Transport rules that forward email externally can be used for
+  data exfiltration. Attackers who gain administrative access often
+  create forwarding rules to silently copy all email to external
+  mailboxes for persistent access to communications.
+impact: |
+  Legitimate transport rules that forward email externally will need
+  to be reviewed and potentially reconfigured to use approved
+  mechanisms.
+remediation: |
+  Review all transport rules in Exchange Admin Center > Mail flow >
+  Rules and remove or disable any rules that forward email to
+  external domains.
+references:
+  - "https://learn.microsoft.com/en-us/exchange/security-and-compliance/mail-flow-rules/mail-flow-rules"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 6.2.1"
+cis_controls:
+  - "v8: 9.3"
+  - "v8: 13.4"
+guard:
+  finding_slug: "m365-cis-6-2-1-transport-rules-no-forwarding"
+  phase_tag: "phase_m365_exchange"
+  asset_type: "m365tenant"
+  cwe: "CWE-200"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:H/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - transport_rules

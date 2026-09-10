@@ -1,0 +1,36 @@
+id: "7.2.6"
+title: "Ensure that SharePoint does not allow anonymous sharing links"
+service: sharepoint
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that SharePoint and OneDrive are configured to prevent
+  creation of anonymous ("Anyone") sharing links.
+rationale: |
+  Anonymous sharing links provide access to content without any
+  authentication requirement. Anyone who obtains the link URL can
+  access the shared content, creating significant data exfiltration
+  risk if links are leaked or forwarded.
+impact: |
+  Users will be unable to create anonymous sharing links. All
+  external sharing will require recipients to authenticate.
+remediation: |
+  Run Set-SPOTenant -SharingCapability ExternalUserSharingOnly in
+  SharePoint Online PowerShell to disable anonymous sharing links
+  while still allowing authenticated external sharing.
+references:
+  - "https://learn.microsoft.com/en-us/sharepoint/turn-external-sharing-on-or-off"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 7.2.6"
+cis_controls:
+  - "v8: 3.3"
+  - "v8: 6.8"
+guard:
+  finding_slug: "m365-cis-7-2-6-no-anonymous-sharing"
+  phase_tag: "phase_m365_sharepoint"
+  asset_type: "m365tenant"
+  cwe: "CWE-732"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - spo_tenant_settings

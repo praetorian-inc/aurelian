@@ -1,0 +1,41 @@
+id: "5.2.2.5"
+title: "Ensure phishing-resistant MFA strength is required for administrators"
+service: entra
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that a Conditional Access policy requires phishing-resistant
+  MFA (FIDO2 security keys or Windows Hello for Business) for all
+  users assigned administrative directory roles.
+rationale: |
+  Standard MFA methods such as SMS or phone calls are susceptible to
+  phishing and SIM-swapping attacks. Phishing-resistant MFA eliminates
+  these attack vectors for privileged accounts, significantly reducing
+  the risk of admin account compromise.
+impact: |
+  Administrators must enroll in phishing-resistant MFA methods such as
+  FIDO2 security keys or Windows Hello for Business. Hardware token
+  procurement may be required.
+remediation: |
+  Create or update a Conditional Access policy targeting all
+  administrative directory roles with an authentication strength
+  requirement set to "Phishing-resistant MFA".
+references:
+  - "https://learn.microsoft.com/en-us/entra/identity/authentication/concept-authentication-strengths"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 5.2.2.5"
+cis_controls:
+  - "v8: 6.3"
+  - "v8: 6.4"
+  - "v8: 6.5"
+guard:
+  finding_slug: "m365-cis-5-2-2-5-phishing-resistant-mfa-admins"
+  phase_tag: "phase_m365_entra"
+  asset_type: "m365tenant"
+  cwe: "CWE-308"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - conditional_access_policies
+  - directory_roles
+  - authentication_strengths

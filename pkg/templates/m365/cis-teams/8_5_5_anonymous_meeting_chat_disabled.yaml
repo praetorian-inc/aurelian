@@ -1,0 +1,34 @@
+id: "8.5.5"
+title: "Ensure meeting chat is restricted for anonymous users"
+service: teams
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that anonymous users are prevented from using the meeting
+  chat feature during Teams meetings.
+rationale: |
+  Anonymous meeting chat allows unidentified participants to send
+  messages including links that could be malicious. Restricting chat
+  for anonymous users prevents potential phishing and social
+  engineering through meeting chat.
+impact: |
+  Anonymous participants will be unable to use the meeting chat.
+  They can still participate in audio and video.
+remediation: |
+  Navigate to Teams Admin Center > Meetings > Meeting policies and
+  configure meeting chat to exclude anonymous participants.
+references:
+  - "https://learn.microsoft.com/en-us/microsoftteams/meeting-policies-participants-and-guests"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 8.5.5"
+cis_controls:
+  - "v8: 6.1"
+guard:
+  finding_slug: "m365-cis-8-5-5-anonymous-meeting-chat-disabled"
+  phase_tag: "phase_m365_teams"
+  asset_type: "m365tenant"
+  cwe: "CWE-16"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - teams_meeting_policies

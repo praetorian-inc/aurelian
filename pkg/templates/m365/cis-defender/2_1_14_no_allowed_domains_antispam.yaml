@@ -1,0 +1,37 @@
+id: "2.1.14"
+title: "Ensure no allowed domains are configured in anti-spam policies"
+service: defender
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: high
+description: |
+  Verify that no domains are added to the allowed domains list in
+  anti-spam policies, as allowed domains bypass spam filtering.
+rationale: |
+  Allowed domains in anti-spam policies completely bypass spam
+  filtering for all email from those domains. Attackers who compromise
+  an allowed domain or spoof its addresses can deliver phishing and
+  malware without detection.
+impact: |
+  Removing allowed domains will subject email from those domains to
+  normal spam filtering. Some legitimate email may be quarantined
+  initially.
+remediation: |
+  Navigate to Microsoft 365 Defender > Policies & rules > Threat
+  policies > Anti-spam and remove all entries from the allowed
+  domains list in each anti-spam policy.
+references:
+  - "https://learn.microsoft.com/en-us/defender-office-365/anti-spam-protection-about"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 2.1.14"
+cis_controls:
+  - "v8: 9.3"
+  - "v8: 9.7"
+guard:
+  finding_slug: "m365-cis-2-1-14-no-allowed-domains-antispam"
+  phase_tag: "phase_m365_defender"
+  asset_type: "m365tenant"
+  cwe: "CWE-16"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:N/SC:H/SI:H/SA:N"
+data_requirements:
+  - anti_spam_policies

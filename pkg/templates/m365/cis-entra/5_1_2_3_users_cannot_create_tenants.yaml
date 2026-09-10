@@ -1,0 +1,34 @@
+id: "5.1.2.3"
+title: "Ensure that users cannot create tenants"
+service: entra
+level: L1
+profile: "E3 Level 1"
+execution: Automated
+severity: medium
+description: |
+  Verify that standard users are prevented from creating new Entra ID
+  tenants. Only administrators should have this capability.
+rationale: |
+  Allowing users to create tenants can lead to shadow IT environments
+  that are unmanaged and unmonitored. These rogue tenants can be used
+  to exfiltrate data or host malicious applications outside of
+  organizational security controls.
+impact: |
+  Users will need to request administrator assistance to create new
+  tenants, which may slow down legitimate development scenarios.
+remediation: |
+  Navigate to Entra ID > User settings and set "Users can create
+  tenants" to "No".
+references:
+  - "https://learn.microsoft.com/en-us/entra/fundamentals/users-default-permissions"
+  - "CIS Microsoft 365 Foundations Benchmark v6.0.0 Section 5.1.2.3"
+cis_controls:
+  - "v8: 6.8"
+guard:
+  finding_slug: "m365-cis-5-1-2-3-users-cannot-create-tenants"
+  phase_tag: "phase_m365_entra"
+  asset_type: "m365tenant"
+  cwe: "CWE-732"
+  cvss_vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:L/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
+data_requirements:
+  - authorization_policy
