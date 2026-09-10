@@ -130,11 +130,14 @@ type regionSession struct {
 
 // ecrDumpRun carries the per-invocation state every enumeration helper needs.
 type ecrDumpRun struct {
-	cfg           plugin.Config
-	out           *pipeline.P[model.AurelianModel]
-	scanner       *secrets.SecretScanner
-	outputDir     string
-	extract       bool
+	cfg       plugin.Config
+	out       *pipeline.P[model.AurelianModel]
+	scanner   *secrets.SecretScanner
+	outputDir string
+	extract   bool
+	// imagesScanned counts images actually pulled and scanned, so the summary
+	// can distinguish "scanned clean" from "scanned nothing".
+	imagesScanned int
 	modifiedSince time.Time
 	incremental   bool
 	images        string
@@ -575,6 +578,14 @@ func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 			return fmt.Errorf("listing ECR repositories: %w", listErr)
 		}
 
+		cfg.Info("found %d private ECR repositories", len(repos))
+		if len(repos) == 0 {
+			// Distinguish an empty registry from a permission problem: the
+			// enumerator records denials in its skip report, which Close logs.
+			cfg.Info("no private ECR repositories were enumerated; " +
+				"check ecr:DescribeRepositories permissions and --regions if this is unexpected")
+		}
+
 		for _, repo := range repos {
 			findings, err := m.processRepository(run, repo)
 			allFindings = append(allFindings, findings...)
@@ -612,7 +623,7 @@ func (m *AWSECRDumpModule) Run(cfg plugin.Config, out *pipeline.P[model.Aurelian
 	allFindings = append(allFindings, emitResults(deferred, out)...)
 
 	// Print console summary grouped by rule (matches Nebula's NPFindingsConsoleOutputter).
-	printFindingsSummary(cfg, allFindings)
+	printFindingsSummary(cfg, run.imagesScanned, allFindings)
 
 	// An incremental caller must not advance its checkpoint past repositories
 	// that enumeration never reached. Same gate find-secrets applies.
@@ -820,7 +831,8 @@ func (m *AWSECRDumpModule) pullExtractScan(run *ecrDumpRun, img ecrImage) ([]sca
 		return nil, run.problem("failed to pull/extract %s: %v", img.RepoName, err)
 	}
 
-	run.cfg.Success("extracted %d files from %s", len(scanInputs), img.RepoName)
+	run.imagesScanned++
+	run.cfg.Success("extracted %d files from %s (%s)", len(scanInputs), img.RepoName, img.Tag)
 
 	var findings []scanFinding
 	for _, si := range scanInputs {
@@ -889,9 +901,13 @@ func flushDeferredMatches(scanner *secrets.SecretScanner) ([]secrets.SecretScanR
 }
 
 // printFindingsSummary outputs findings grouped by rule name, matching Nebula's NPFindingsConsoleOutputter.
-func printFindingsSummary(cfg plugin.Config, findings []scanFinding) {
+func printFindingsSummary(cfg plugin.Config, imagesScanned int, findings []scanFinding) {
 	if len(findings) == 0 {
-		cfg.Success("ECR dump complete — no secrets found")
+		if imagesScanned == 0 {
+			cfg.Success("ECR dump complete — no images were scanned")
+			return
+		}
+		cfg.Success("ECR dump complete — scanned %d image(s), no secrets found", imagesScanned)
 		return
 	}
 
@@ -918,7 +934,8 @@ func printFindingsSummary(cfg plugin.Config, findings []scanFinding) {
 		}
 	}
 
-	cfg.Success("ECR dump complete — %d findings across %d rules", len(findings), len(ruleOrder))
+	cfg.Success("ECR dump complete — %d findings across %d rules in %d image(s)",
+		len(findings), len(ruleOrder), imagesScanned)
 }
 
 func truncate(s string, maxLen int) string {
