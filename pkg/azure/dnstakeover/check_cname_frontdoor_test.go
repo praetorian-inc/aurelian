@@ -103,12 +103,14 @@ func TestCheckFrontDoor_HashedZ01SkipsCheck(t *testing.T) {
 func collectFrontDoorRisks(t *testing.T, client *mockFrontDoorClient, rec AzureDNSRecord) []output.AurelianRisk {
 	t.Helper()
 	out := pipeline.New[model.AurelianModel]()
+	errCh := make(chan error, 1)
 	go func() {
 		defer out.Close()
-		require.NoError(t, checkFrontDoorWithClient(client, rec, out))
+		errCh <- checkFrontDoorWithClient(context.Background(), client, rec, out)
 	}()
 	items, err := out.Collect()
 	require.NoError(t, err)
+	require.NoError(t, <-errCh)
 
 	risks := make([]output.AurelianRisk, 0, len(items))
 	for _, item := range items {

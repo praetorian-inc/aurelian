@@ -108,6 +108,16 @@ func TestS3BucketFromTarget_SkipAccessPointObjectLambdaVPCE(t *testing.T) {
 	}
 }
 
+func TestS3BucketFromTarget_WebsiteBucketLabelContainsAccessPoint(t *testing.T) {
+	b, ok := s3BucketFromRecord(Route53Record{
+		Type:       "CNAME",
+		RecordName: "blog.example.com",
+		Values:     []string{"logs-s3-accesspoint.s3-website-us-east-1.amazonaws.com"},
+	})
+	require.True(t, ok)
+	assert.Equal(t, "blog.example.com", b)
+}
+
 func TestCheckS3_MissingBucketEmitsRisk(t *testing.T) {
 	client := &mockS3Client{
 		bucketResponses: map[string]error{
@@ -204,15 +214,17 @@ func TestCheckS3_RecordBucketMissingTargetLabelPresentEmitsRisk(t *testing.T) {
 func collectS3Risks(t *testing.T, client *mockS3Client, rec Route53Record) []output.AurelianRisk {
 	t.Helper()
 	out := pipeline.New[model.AurelianModel]()
+	errCh := make(chan error, 1)
 	go func() {
 		defer out.Close()
-		require.NoError(t, checkS3WithClient(CheckContext{
+		errCh <- checkS3WithClient(CheckContext{
 			Ctx:       context.Background(),
 			AccountID: "123456789012",
-		}, client, rec, out))
+		}, client, rec, out)
 	}()
 	items, err := out.Collect()
 	require.NoError(t, err)
+	require.NoError(t, <-errCh)
 
 	risks := make([]output.AurelianRisk, 0, len(items))
 	for _, item := range items {

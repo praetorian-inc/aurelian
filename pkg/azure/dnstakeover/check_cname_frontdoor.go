@@ -27,17 +27,17 @@ func checkFrontDoor(ctx CheckContext, rec AzureDNSRecord, out *pipeline.P[model.
 	if err != nil {
 		return fmt.Errorf("create front door client: %w", err)
 	}
-	return checkFrontDoorWithClient(client, rec, out)
+	return checkFrontDoorWithClient(ctx.Ctx, client, rec, out)
 }
 
-func checkFrontDoorWithClient(client frontDoorNameAvailabilityClient, rec AzureDNSRecord, out *pipeline.P[model.AurelianModel]) error {
+func checkFrontDoorWithClient(ctx context.Context, client frontDoorNameAvailabilityClient, rec AzureDNSRecord, out *pipeline.P[model.AurelianModel]) error {
 	for _, val := range rec.Values {
 		endpointName, ok := frontDoorEndpointName(val)
 		if !ok {
 			continue
 		}
 
-		available, err := checkFrontDoorNameAvailability(client, endpointName)
+		available, err := checkFrontDoorNameAvailability(ctx, client, endpointName)
 		if err != nil {
 			slog.Warn("front door name check failed",
 				"record", rec.RecordName, "endpoint", endpointName, "error", err)
@@ -80,9 +80,9 @@ func frontDoorEndpointName(val string) (string, bool) {
 	return name, true
 }
 
-func checkFrontDoorNameAvailability(client frontDoorNameAvailabilityClient, endpointName string) (bool, error) {
+func checkFrontDoorNameAvailability(ctx context.Context, client frontDoorNameAvailabilityClient, endpointName string) (bool, error) {
 	resp, err := client.Check(
-		context.Background(),
+		ctx,
 		armfrontdoor.CheckNameAvailabilityInput{
 			Name: &endpointName,
 			Type: ptrTo(armfrontdoor.ResourceTypeMicrosoftNetworkFrontDoors),

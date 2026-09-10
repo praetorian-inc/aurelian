@@ -87,12 +87,5 @@ func s3BucketFromRecord(rec Route53Record) (string, bool) {
 }
 
 func isS3WebsiteEndpoint(host string) bool {
-	if strings.Contains(host, "s3-accesspoint") ||
-		strings.Contains(host, "s3-object-lambda") ||
-		strings.Contains(host, "s3-control") ||
-		strings.HasSuffix(host, ".vpce.amazonaws.com") ||
-		strings.Contains(host, ".elb.") {
-		return false
-	}
 	return s3WebsiteEndpointPattern.MatchString(host) || s3VirtualHostedWebsitePattern.MatchString(host)
 }
