@@ -56,6 +56,8 @@ github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/digitaltwins/armdigitaltwi
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/digitaltwins/armdigitaltwins v1.2.0/go.mod h1:ESqbgba0Fl1eop2bwoJ84Vmh+d093eDrYK2TdR9bKEM=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns v1.2.0 h1:lpOxwrQ919lCZoNCd69rVt8u1eLZuMORrGXqy8sNf3c=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns v1.2.0/go.mod h1:fSvRkb8d26z9dbL40Uf/OO6Vo9iExtZK3D0ulRV+8M0=
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/frontdoor/armfrontdoor v1.4.0 h1:dz5II+dFuMkrdpIkO9f/Ht3f8hnRUURiQdLj1hwKO5Q=
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/frontdoor/armfrontdoor v1.4.0/go.mod h1:0tuwjeZbMwLV7h1bcyfTlnXUH6GBKkPml8ukX6EoS3o=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/hybridcompute/armhybridcompute/v2 v2.0.0 h1:VvSZmyJEBvdzQXbs1Ued+iaapfSze5+rawR0EFFzyVw=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/hybridcompute/armhybridcompute/v2 v2.0.0/go.mod h1:6BoXNi4OfvyyIdP4vl4fEGt8CWHFFDMHgiUtNLHl1/0=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/internal v1.1.2 h1:mLY+pNLjCUeKhgnAJWAKhEUQM+RJQo2H1fuGSw1Ky1E=
