@@ -284,6 +284,62 @@ func TestCollectStructuralFacts(t *testing.T) {
 	assert.True(t, found, "should find lambda execution role from MyFunc to LambdaRole")
 }
 
+func TestCollectStructuralFacts_CustomerManagedPolicyAttachment(t *testing.T) {
+	gaad := newTestGAAD()
+	facts := CollectStructuralFacts(gaad, store.NewMap[output.AWSResource]())
+
+	found := false
+	for _, f := range facts {
+		if f.Type == FactPolicyAttachment &&
+			f.From == "arn:aws:iam::111111111111:policy/ReadOnly" &&
+			f.To == "arn:aws:iam::111111111111:user/Dev" {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "customer-managed ReadOnly attachment on Dev should emit policy_attachment from policy ARN to user ARN")
+}
+
+func TestCollectStructuralFacts_AWSManagedPolicyAttachmentNotEmitted(t *testing.T) {
+	gaad := newTestGAAD()
+	facts := CollectStructuralFacts(gaad, store.NewMap[output.AWSResource]())
+
+	awsManaged := "arn:aws:iam::aws:policy/AdministratorAccess"
+	adminGroup := "arn:aws:iam::111111111111:group/Admin"
+	for _, f := range facts {
+		if f.Type != FactPolicyAttachment {
+			continue
+		}
+		assert.NotEqual(t, awsManaged, f.From, "AWS-managed AdministratorAccess must not be emitted as policy_attachment From")
+		assert.NotEqual(t, awsManaged, f.To, "AWS-managed AdministratorAccess must not be emitted as policy_attachment To")
+		assert.False(t, f.From == awsManaged && f.To == adminGroup,
+			"AWS-managed AdministratorAccess on Admin group must not be emitted")
+	}
+}
+
+func TestCollectStructuralFacts_EmptyPolicyArnSkipped(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111111111111",
+		[]types.UserDetail{
+			{
+				Arn:      "arn:aws:iam::111111111111:user/NoArn",
+				UserName: "NoArn",
+				AttachedManagedPolicies: []types.ManagedPolicy{
+					{PolicyName: "Orphan", PolicyArn: ""},
+				},
+			},
+		}, nil, nil, nil)
+	resources := store.NewMap[output.AWSResource]()
+
+	facts := CollectStructuralFacts(gaad, resources)
+	for _, f := range facts {
+		if f.Type == FactPolicyAttachment {
+			assert.NotEmpty(t, f.From, "empty PolicyArn must not emit policy_attachment")
+			assert.NotEqual(t, "arn:aws:iam::111111111111:user/NoArn", f.To,
+				"principal with empty PolicyArn should not receive a policy_attachment")
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Coverage Tracker (A.6)
 // ---------------------------------------------------------------------------

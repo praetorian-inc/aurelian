@@ -181,6 +181,7 @@ const (
 	FactCodeBuildServiceRole StructuralFactType = "codebuild_service_role"
 	FactECSTaskRole          StructuralFactType = "ecs_task_role"
 	FactGroupMembership      StructuralFactType = "group_membership"
+	FactPolicyAttachment     StructuralFactType = "policy_attachment"
 )
 
 // StructuralFact is a non-permission relationship between entities.

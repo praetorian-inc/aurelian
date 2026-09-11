@@ -312,6 +312,21 @@ func CollectStructuralFacts(gaad *types.AuthorizationAccountDetails, resources s
 		return true
 	})
 
+	// Policy attachments: customer-managed policy ARN → principal ARN.
+	// AWS-managed policies cannot be rewritten via CreatePolicyVersion.
+	gaad.Users.Range(func(_ string, u types.UserDetail) bool {
+		facts = appendPolicyAttachmentFacts(facts, u.Arn, u.AttachedManagedPolicies)
+		return true
+	})
+	gaad.Roles.Range(func(_ string, r types.RoleDetail) bool {
+		facts = appendPolicyAttachmentFacts(facts, r.Arn, r.AttachedManagedPolicies)
+		return true
+	})
+	gaad.Groups.Range(func(_ string, g types.GroupDetail) bool {
+		facts = appendPolicyAttachmentFacts(facts, g.Arn, g.AttachedManagedPolicies)
+		return true
+	})
+
 	// Trust relationships: from role being assumed → to principal trusted to assume it
 	gaad.Roles.Range(func(_ string, r types.RoleDetail) bool {
 		if r.AssumeRolePolicyDocument.Statement == nil {
@@ -402,6 +417,36 @@ func CollectStructuralFacts(gaad *types.AuthorizationAccountDetails, resources s
 	})
 
 	return facts
+}
+
+// appendPolicyAttachmentFacts emits policy_attachment facts for customer-managed
+// IAM policies attached to a principal. from = policy ARN, to = principal ARN.
+func appendPolicyAttachmentFacts(facts []StructuralFact, principalARN string, attached []types.ManagedPolicy) []StructuralFact {
+	for _, mp := range attached {
+		if !isCustomerManagedPolicyARN(mp.PolicyArn) {
+			continue
+		}
+		facts = append(facts, StructuralFact{
+			Type:       FactPolicyAttachment,
+			From:       mp.PolicyArn,
+			To:         principalARN,
+			Confidence: 1.0,
+		})
+	}
+	return facts
+}
+
+// isCustomerManagedPolicyARN reports whether arn is a rewriteable IAM managed
+// policy. Empty ARNs, non-IAM/non-policy ARNs, and AWS-managed policies
+// (arn:...:iam::aws:policy/...) are rejected.
+func isCustomerManagedPolicyARN(policyARN string) bool {
+	if policyARN == "" {
+		return false
+	}
+	if strings.Contains(policyARN, ":iam::aws:policy/") {
+		return false
+	}
+	return strings.Contains(policyARN, ":iam:") && strings.Contains(policyARN, ":policy/")
 }
 
 // extractProperty returns a string property from an AWSResource's Properties map.
