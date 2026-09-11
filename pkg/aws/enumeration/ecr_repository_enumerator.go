@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -88,9 +89,16 @@ func (l *ECRRepositoryEnumerator) EnumerateByARN(arn string, out *pipeline.P[out
 	}
 	client := ecr.NewFromConfig(*cfg)
 
-	result, err := client.DescribeRepositories(context.Background(), &ecr.DescribeRepositoriesInput{
-		RepositoryNames: []string{name},
-	})
+	// Without RegistryId, DescribeRepositories defaults to the caller's own
+	// registry, so a cross-account ARN would either fail or silently resolve a
+	// same-named repository in the caller's account and then attribute it to the
+	// ARN's account.
+	input := &ecr.DescribeRepositoriesInput{RepositoryNames: []string{name}}
+	if parsed.AccountID != "" {
+		input.RegistryId = aws.String(parsed.AccountID)
+	}
+
+	result, err := client.DescribeRepositories(context.Background(), input)
 	if err != nil {
 		if op := ClassifySkippable(err, "ecr", "DescribeRepositories", parsed.Region); op != nil {
 			l.skipReport.Record(*op)
@@ -230,6 +238,23 @@ const (
 	// the tag a Docker client resolves when none is given. Absent when the
 	// repository has no such tag, which is normal for version-tagged registries.
 	ECRPropLatestTagURI = "LatestTagImageURI"
+	// ECRPropLatestTagPushedAt is the RFC3339Nano push time of the image tagged
+	// "latest". LastModified tracks the NEWEST push, which is often a different
+	// image, so an incremental consumer needs this to tell whether the image it
+	// resolves has itself changed.
+	ECRPropLatestTagPushedAt = "LatestTagPushedAt"
+
+	// ECRPropImageDigest and ECRPropLatestTagDigest are the content digests of
+	// the images the two references above point at.
+	//
+	// A digest is the image's content hash, so it is IMMUTABLE: the bytes behind
+	// sha256:abc… can never change. That makes it a stronger scan key than any
+	// timestamp — a consumer that has scanned a digest never needs to scan it
+	// again, whereas a push time only says the repository changed, not that the
+	// image a tag resolves to did. Publishing both digests lets a consumer skip
+	// exactly, instead of re-pulling because some sibling tag moved.
+	ECRPropImageDigest     = "NewestImageDigest"
+	ECRPropLatestTagDigest = "LatestTagImageDigest"
 )
 
 // dockerDefaultTag is the tag a container client resolves when a reference
@@ -262,19 +287,39 @@ func buildECRRepositoryResource(repo ecrtypes.Repository, newest, latestTagged *
 	repoURI := aws.ToString(repo.RepositoryUri)
 
 	if newest != nil {
-		tag := dockerDefaultTag
-		if len(newest.ImageTags) > 0 {
-			tag = newest.ImageTags[0]
-		}
+		// An image pushed by digest carries no tag, and ECR does NOT resolve it
+		// under "latest". Defaulting the tag would publish a reference that
+		// either fails to pull or, worse, silently resolves to a different and
+		// older image. Reference it by digest instead.
 		if repoURI != "" {
-			properties[ECRPropImageURI] = fmt.Sprintf("%s:%s", repoURI, tag)
+			if len(newest.ImageTags) > 0 {
+				properties[ECRPropImageURI] = fmt.Sprintf("%s:%s", repoURI, newest.ImageTags[0])
+			} else if digest := aws.ToString(newest.ImageDigest); digest != "" {
+				properties[ECRPropImageURI] = fmt.Sprintf("%s@%s", repoURI, digest)
+			}
 		}
-		properties[ECRPropImageTag] = tag
+		if len(newest.ImageTags) > 0 {
+			properties[ECRPropImageTag] = newest.ImageTags[0]
+		} else if digest := aws.ToString(newest.ImageDigest); digest != "" {
+			properties[ECRPropImageTag] = digest
+		}
+		if digest := aws.ToString(newest.ImageDigest); digest != "" {
+			properties[ECRPropImageDigest] = digest
+		}
 		resource.LastModified = newest.ImagePushedAt
 	}
 
 	if latestTagged != nil && repoURI != "" {
 		properties[ECRPropLatestTagURI] = fmt.Sprintf("%s:%s", repoURI, dockerDefaultTag)
+		// The "latest" tag and the newest push are frequently different images,
+		// so an incremental consumer needs this image's own push time to decide
+		// whether the image it is about to pull actually changed.
+		if latestTagged.ImagePushedAt != nil {
+			properties[ECRPropLatestTagPushedAt] = latestTagged.ImagePushedAt.UTC().Format(time.RFC3339Nano)
+		}
+		if digest := aws.ToString(latestTagged.ImageDigest); digest != "" {
+			properties[ECRPropLatestTagDigest] = digest
+		}
 	}
 
 	return resource

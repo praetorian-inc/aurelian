@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -229,6 +230,35 @@ func TestECRDumpIntegration(t *testing.T) {
 		}
 	})
 
+	t.Run("risk proof records the image push time", func(t *testing.T) {
+		// #258 introduced LastModified but consumed it only as an input-side skip
+		// filter, so findings never recorded which revision of a resource
+		// produced them. This asserts it reaches the emitted proof, which is what
+		// lets a caller advance a --modified-since checkpoint to a real value
+		// instead of wall-clock time.
+		require.NotEmpty(t, risks)
+		for _, risk := range risks {
+			var proof struct {
+				Matches []struct {
+					Provenance []struct {
+						LastModified string `json:"last_modified"`
+					} `json:"provenance"`
+				} `json:"matches"`
+			}
+			require.NoError(t, json.Unmarshal(risk.Context, &proof))
+			require.NotEmpty(t, proof.Matches)
+			require.NotEmpty(t, proof.Matches[0].Provenance)
+
+			raw := proof.Matches[0].Provenance[0].LastModified
+			require.NotEmpty(t, raw, "proof for %s should carry the image push time", risk.ImpactedResourceID)
+			pushed, err := time.Parse(time.RFC3339Nano, raw)
+			require.NoError(t, err, "last_modified must be RFC3339Nano, got %q", raw)
+			assert.False(t, pushed.IsZero())
+			assert.WithinDuration(t, time.Now(), pushed, time.Hour,
+				"the fixture image was pushed moments ago, so its recorded push time should be recent")
+		}
+	})
+
 	t.Run("risks reference ECR resource identifiers", func(t *testing.T) {
 		for _, risk := range risks {
 			assert.Contains(t, risk.ImpactedResourceID, "ecr",
@@ -270,6 +300,53 @@ func TestECRDumpIntegration(t *testing.T) {
 	// The modified-since contract from #258: a repository whose newest image was
 	// pushed no later than the checkpoint is skipped entirely, so the second run
 	// of an unchanged registry must re-report nothing.
+	t.Run("reports the scanned digest and skips it on a second run", func(t *testing.T) {
+		// The immutability contract, end to end: the module reports which content
+		// it scanned, and feeding that back suppresses the pull entirely — the
+		// mechanism Guard needs to scan an image's bytes exactly once, ever.
+		runModule := func(t *testing.T, skipDigests []string) []model.AurelianModel {
+			t.Helper()
+			args := map[string]any{
+				"regions":    []string{testRegion},
+				"extract":    false,
+				"output-dir": t.TempDir(),
+			}
+			if len(skipDigests) > 0 {
+				args["skip-digests"] = skipDigests
+			}
+
+			in := pipeline.From(plugin.Config{Args: args, Context: ctx})
+			results := pipeline.New[model.AurelianModel]()
+			pipeline.Pipe(in, mod.Run, results)
+			collected, err := results.Collect()
+			require.NoError(t, err)
+			return collected
+		}
+
+		var digests string
+		for _, m := range runModule(t, nil) {
+			resource, ok := m.(output.AWSResource)
+			if !ok || resource.ResourceID != secretRepoName {
+				continue
+			}
+			digests, _ = resource.Properties[output.ECRScannedDigestsProperty].(string)
+		}
+		require.NotEmpty(t, digests, "the module must report which content it scanned")
+		require.True(t, strings.HasPrefix(digests, "sha256:"), "expected a content digest, got %q", digests)
+
+		// Feed the reported digest back: the image must not be scanned again.
+		for _, m := range runModule(t, strings.Split(digests, ",")) {
+			if risk, ok := m.(output.AurelianRisk); ok {
+				assert.NotContains(t, risk.ImpactedResourceID, secretRepoName,
+					"an already-scanned digest must not be pulled or scanned again")
+			}
+			if resource, ok := m.(output.AWSResource); ok && resource.ResourceID == secretRepoName {
+				assert.Nil(t, resource.Properties[output.ECRScannedDigestsProperty],
+					"a repository with nothing newly scanned must not claim coverage")
+			}
+		}
+	})
+
 	t.Run("modified-since skips a repo whose newest image predates the checkpoint", func(t *testing.T) {
 		checkpoint := time.Now().UTC().Format(time.RFC3339Nano)
 
