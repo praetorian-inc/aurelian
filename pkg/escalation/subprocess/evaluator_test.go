@@ -991,6 +991,13 @@ func TestWhoCanBulk_ParallelPropagatesError(t *testing.T) {
 // shape where per-principal statement collection (managed-policy resolution +
 // group walking) is expensive, so hoisting it out of the target loop matters.
 func benchGAAD(nUsers, nManaged int) *types.AuthorizationAccountDetails {
+	return benchGAADAttached(nUsers, nManaged, nUsers)
+}
+
+// benchGAADAttached is benchGAAD with s3 Get*/List* attached to only the first
+// nAttached users (and only those users in group Eng). nAttached == nUsers is
+// the shared-policy shape; nAttached == 1 is the sparse WhoCan shape.
+func benchGAADAttached(nUsers, nManaged, nAttached int) *types.AuthorizationAccountDetails {
 	managed := make([]types.ManagedPolicyDetail, nManaged)
 	attached := make([]types.ManagedPolicy, nManaged)
 	for i := 0; i < nManaged; i++ {
@@ -1013,10 +1020,12 @@ func benchGAAD(nUsers, nManaged int) *types.AuthorizationAccountDetails {
 	users := make([]types.UserDetail, nUsers)
 	for i := 0; i < nUsers; i++ {
 		users[i] = types.UserDetail{
-			Arn:                     "arn:aws:iam::111111111111:user/U" + string(rune('a'+i%26)) + string(rune('0'+i/26)),
-			UserName:                "U" + string(rune('a'+i%26)),
-			AttachedManagedPolicies: attached,
-			GroupList:               []string{"Eng"},
+			Arn:      "arn:aws:iam::111111111111:user/U" + string(rune('a'+i%26)) + string(rune('0'+i/26)),
+			UserName: "U" + string(rune('a'+i%26)),
+		}
+		if i < nAttached {
+			users[i].AttachedManagedPolicies = attached
+			users[i].GroupList = []string{"Eng"}
 		}
 	}
 	return types.NewAuthorizationAccountDetails("111111111111", users, []types.GroupDetail{group}, nil, managed)
@@ -1041,6 +1050,32 @@ func BenchmarkWhoCanBulk(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := eval.WhoCanBulk("s3:GetObject", principals, targets); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkWhoCan(b *testing.B) {
+	eval := NewEvaluator(benchGAAD(10, 8), nil, nil)
+	principals, _ := benchInputs(eval.gaad)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := eval.WhoCan("s3:GetObject", principals); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkWhoCanSparse(b *testing.B) {
+	eval := NewEvaluator(benchGAADAttached(10, 8, 1), nil, nil)
+	principals, _ := benchInputs(eval.gaad)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := eval.WhoCan("s3:GetObject", principals); err != nil {
 			b.Fatal(err)
 		}
 	}
