@@ -481,6 +481,74 @@ func TestEvaluator_WhoCan_OmitsDeniedRole(t *testing.T) {
 	assert.NotContains(t, lines[0], `"grants":null`)
 }
 
+func TestEvaluator_WhoCan_SkipsEvaluateWhenNoAllow(t *testing.T) {
+	checkWithStatementsCalls.Store(0)
+
+	principalARN := "arn:aws:iam::111111111111:user/Dev"
+	readOnlyStmt := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"s3:Get*"}, Resource: &types.DynaString{"*"}},
+	}
+	gaad := types.NewAuthorizationAccountDetails("111111111111",
+		[]types.UserDetail{{
+			Arn:      principalARN,
+			UserName: "Dev",
+			UserPolicyList: []types.InlinePolicy{
+				{PolicyName: "S3Get", PolicyDocument: types.Policy{Statement: &readOnlyStmt}},
+			},
+		}},
+		nil,
+		nil,
+		nil,
+	)
+	eval := NewEvaluator(gaad, nil, nil)
+
+	grants, err := eval.WhoCan("iam:PutRolePolicy", []string{principalARN})
+	require.NoError(t, err)
+	assert.Empty(t, grants, "principal with only s3:Get* must not grant iam:PutRolePolicy")
+	assert.Equal(t, int64(0), checkWithStatementsCalls.Load(),
+		"principal with no Allow for the queried action must not be Evaluate'd")
+}
+
+func TestEvaluator_WhoCan_ConcreteAllowOmitsOtherRoles(t *testing.T) {
+	principalARN := "arn:aws:iam::111111111111:role/Admin"
+	allowedARN := "arn:aws:iam::111111111111:role/AllowedRole"
+	otherARN := "arn:aws:iam::111111111111:role/OtherRole"
+
+	stmts := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"iam:PutRolePolicy"}, Resource: &types.DynaString{allowedARN}},
+	}
+	gaad := types.NewAuthorizationAccountDetails("111111111111",
+		nil,
+		nil,
+		[]types.RoleDetail{
+			{
+				Arn:      principalARN,
+				RoleName: "Admin",
+				RolePolicyList: []types.InlinePolicy{
+					{PolicyName: "PutOneRole", PolicyDocument: types.Policy{Statement: &stmts}},
+				},
+			},
+			{Arn: allowedARN, RoleName: "AllowedRole"},
+			{Arn: otherARN, RoleName: "OtherRole"},
+		},
+		nil,
+	)
+	eval := NewEvaluator(gaad, nil, nil)
+
+	grants, err := eval.WhoCan("iam:PutRolePolicy", []string{principalARN})
+	require.NoError(t, err)
+
+	targets := make([]string, 0, len(grants))
+	for _, g := range grants {
+		assert.Equal(t, "allowed", g.Result)
+		assert.Equal(t, principalARN, g.Principal)
+		targets = append(targets, g.Target)
+	}
+	assert.Contains(t, targets, allowedARN)
+	assert.NotContains(t, targets, otherARN, "WhoCan must not return roles outside the concrete Allow")
+	assert.NotContains(t, targets, principalARN, "WhoCan must not return the acting role when it is not in the Allow resource")
+}
+
 func TestWhoCanBulk_MixedResults(t *testing.T) {
 	// Admin can do iam:PutRolePolicy, Dev cannot.
 	eval := NewEvaluator(newTestGAAD(), nil, nil)

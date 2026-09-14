@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -26,6 +27,11 @@ type Evaluator struct {
 	policyData  *iam.PolicyData
 	evaluator   *iam.PolicyEvaluator
 }
+
+// checkWithStatementsCalls counts Evaluate invocations through
+// checkWithStatements. Tests reset and read it; WhoCan must not Evaluate a
+// principal that has no Allow for the queried action.
+var checkWithStatementsCalls atomic.Int64
 
 // NewEvaluator creates a new subprocess evaluator from loaded IAM data.
 func NewEvaluator(gaad *types.AuthorizationAccountDetails, orgPolicies *orgpolicies.OrgPolicies, resourcePolicies map[string]*types.Policy) *Evaluator {
@@ -50,6 +56,7 @@ func (e *Evaluator) CheckSpecific(principal, action, target string) (*CheckRespo
 // target. The statements are read-only input to Evaluate, so sharing one copy
 // across targets is safe and yields identical results to a per-call collection.
 func (e *Evaluator) checkWithStatements(principal, action, target string, identityStmts, boundaryStmts *types.PolicyStatementList) (*CheckResponse, error) {
+	checkWithStatementsCalls.Add(1)
 	rc := e.buildRequestContext(principal, target)
 	if err := rc.PopulateDefaultRequestConditionKeys(target); err != nil {
 		return nil, fmt.Errorf("populating request context: %w", err)
@@ -197,12 +204,44 @@ func (e *Evaluator) WhoCanBulk(action string, principals, targets []string) ([]G
 	return grants, nil
 }
 
-// WhoCan evaluates action for the given principals against every identity
-// ARN in the GAAD (Users, Roles, and Groups — the same set ListGrants
-// walks). Each (principal, target) pair is evaluated independently via
-// WhoCanBulk so a deny on one target cannot be reused as the verdict for
-// another.
+// WhoCan evaluates action for the given principals against identity ARNs
+// proposed from each principal's identity Allow statements (the same Allow
+// walk ListGrants uses). Deny is not used to drop candidates — it stays in
+// Evaluate. A principal with no matching Allow is skipped (zero Evaluate).
 func (e *Evaluator) WhoCan(action string, principals []string) ([]Grant, error) {
+	universe := e.identityUniverse()
+	grants := make([]Grant, 0)
+	for _, principal := range principals {
+		proposed := e.proposeWhoCanTargets(principal, action, universe)
+		if len(proposed) == 0 {
+			continue
+		}
+		identityStmts, boundaryStmts := e.collectStatementsForPrincipal(principal)
+		for _, target := range proposed {
+			resp, err := e.checkWithStatements(principal, action, target, identityStmts, boundaryStmts)
+			if err != nil {
+				return nil, fmt.Errorf("evaluating %s -> %s on %s: %w", principal, action, target, err)
+			}
+			if resp.Result != "allowed" {
+				continue
+			}
+			conditions := resp.Conditions
+			if conditions == nil {
+				conditions = []Condition{}
+			}
+			grants = append(grants, Grant{
+				Principal:  principal,
+				Target:     target,
+				Result:     "allowed",
+				Conditions: conditions,
+			})
+		}
+	}
+	return grants, nil
+}
+
+// identityUniverse is the GAAD Users+Roles+Groups ARN set ListGrants walks.
+func (e *Evaluator) identityUniverse() []string {
 	universe := make([]string, 0)
 	e.gaad.Users.Range(func(_ string, u types.UserDetail) bool {
 		universe = append(universe, u.Arn)
@@ -216,7 +255,71 @@ func (e *Evaluator) WhoCan(action string, principals []string) ([]Grant, error) 
 		universe = append(universe, g.Arn)
 		return true
 	})
-	return e.WhoCanBulk(action, principals, universe)
+	return universe
+}
+
+// proposeWhoCanTargets expands identity Allow resource patterns that match
+// action against universe. Concrete ARNs are kept only if present; globs
+// expand to matching universe ARNs. Deny statements are ignored.
+func (e *Evaluator) proposeWhoCanTargets(principal, action string, universe []string) []string {
+	var allowPatterns []string
+	for _, stmt := range e.identityStatementsForPrincipal(principal) {
+		if !strings.EqualFold(stmt.Effect, "Allow") {
+			continue
+		}
+		if !allowActionMatches(&stmt, action) {
+			continue
+		}
+		allowPatterns = append(allowPatterns, stmtResources(&stmt)...)
+	}
+	if len(allowPatterns) == 0 {
+		return nil
+	}
+	proposed := make([]string, 0)
+	for _, arn := range universe {
+		for _, pattern := range allowPatterns {
+			if iam.MatchesPattern(pattern, arn) {
+				proposed = append(proposed, arn)
+				break
+			}
+		}
+	}
+	return proposed
+}
+
+func allowActionMatches(stmt *types.PolicyStatement, action string) bool {
+	for _, a := range stmtActions(stmt) {
+		if iam.MatchesPattern(a, action) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *Evaluator) identityStatementsForPrincipal(principalArn string) types.PolicyStatementList {
+	if user, ok := e.gaad.Users.Get(principalArn); ok {
+		return e.collectUserStatements(&user)
+	}
+	if role, ok := e.gaad.Roles.Get(principalArn); ok {
+		return e.collectRoleStatements(&role)
+	}
+	if group, ok := e.gaad.Groups.Get(principalArn); ok {
+		return e.collectGroupStatements(&group)
+	}
+	return nil
+}
+
+func (e *Evaluator) collectGroupStatements(g *types.GroupDetail) types.PolicyStatementList {
+	var stmts types.PolicyStatementList
+	for _, p := range g.GroupPolicyList {
+		if p.PolicyDocument.Statement != nil {
+			stmts = append(stmts, *p.PolicyDocument.Statement...)
+		}
+	}
+	for _, mp := range g.AttachedManagedPolicies {
+		stmts = append(stmts, e.resolveManagedPolicy(mp)...)
+	}
+	return stmts
 }
 
 // whoCanBulkSerial is the single-threaded cross-product. It is the worker=1
