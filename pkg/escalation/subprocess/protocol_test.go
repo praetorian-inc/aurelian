@@ -17,6 +17,7 @@ type mockHandler struct {
 	checkAnyTargetFn      func(principal, action string) (*CheckResponse, error)
 	checkCounterfactualFn func(principal, action, target string, removed []RemovedStatement) (*CheckResponse, error)
 	whoCanBulkFn          func(action string, principals, targets []string) ([]Grant, error)
+	whoCanFn              func(action string, principals []string) ([]Grant, error)
 	listGrantsFn          func() (*ListGrantsResponse, error)
 }
 
@@ -63,6 +64,13 @@ func (m *mockHandler) WhoCanBulk(action string, principals, targets []string) ([
 		}
 	}
 	return grants, nil
+}
+
+func (m *mockHandler) WhoCan(action string, principals []string) ([]Grant, error) {
+	if m.whoCanFn != nil {
+		return m.whoCanFn(action, principals)
+	}
+	return []Grant{}, nil
 }
 
 func (m *mockHandler) ListGrants() (*ListGrantsResponse, error) {
@@ -201,6 +209,62 @@ func TestWhoCanBulk_Advertised(t *testing.T) {
 	var resp HandshakeResponse
 	require.NoError(t, json.Unmarshal([]byte(lines[0]), &resp))
 	assert.Contains(t, resp.Capabilities, "who_can_bulk")
+}
+
+func TestWhoCan_Advertised(t *testing.T) {
+	lines := runProtocol(t, `{"type":"handshake","version":"1.0"}`+"\n"+`{"type":"shutdown"}`+"\n", newAllowHandler())
+	require.Len(t, lines, 1)
+
+	var resp HandshakeResponse
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &resp))
+	assert.Contains(t, resp.Capabilities, "who_can")
+}
+
+func TestWhoCan_MissingAction(t *testing.T) {
+	h := newAllowHandler()
+	h.whoCanFn = func(action string, principals []string) ([]Grant, error) {
+		if action == "" {
+			return nil, fmt.Errorf("missing action")
+		}
+		return []Grant{}, nil
+	}
+
+	input := `{"type":"who_can","principals":["arn:aws:iam::111:role/A"]}` + "\n" + `{"type":"shutdown"}` + "\n"
+	lines := runProtocol(t, input, h)
+	require.Len(t, lines, 1)
+
+	var resp ErrorResponse
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &resp))
+	assert.Contains(t, resp.Error, "missing action")
+}
+
+func TestWhoCan_OmitsDeniedPairs(t *testing.T) {
+	allowed := "arn:aws:iam::111111111111:role/Allowed"
+	denied := "arn:aws:iam::111111111111:role/Denied"
+	admin := "arn:aws:iam::111111111111:role/Admin"
+
+	h := newAllowHandler()
+	h.checkSpecificFn = func(_, _, target string) (*CheckResponse, error) {
+		if target == denied {
+			return &CheckResponse{Result: "denied", ResourceConstraint: nil}, nil
+		}
+		return &CheckResponse{Result: "allowed", Conditions: []Condition{}, ResourceConstraint: nil}, nil
+	}
+	h.whoCanFn = func(action string, principals []string) ([]Grant, error) {
+		return h.WhoCanBulk(action, principals, []string{allowed, denied})
+	}
+
+	input := `{"type":"who_can","action":"iam:PutRolePolicy","principals":["` + admin + `"]}` + "\n" + `{"type":"shutdown"}` + "\n"
+	lines := runProtocol(t, input, h)
+	require.Len(t, lines, 1)
+
+	var resp WhoCanBulkResponse
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &resp))
+	require.Len(t, resp.Grants, 1)
+	assert.Equal(t, admin, resp.Grants[0].Principal)
+	assert.Equal(t, allowed, resp.Grants[0].Target)
+	assert.Equal(t, "allowed", resp.Grants[0].Result)
+	assert.NotEqual(t, denied, resp.Grants[0].Target)
 }
 
 func TestShutdown(t *testing.T) {

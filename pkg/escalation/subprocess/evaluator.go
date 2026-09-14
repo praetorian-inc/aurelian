@@ -197,6 +197,28 @@ func (e *Evaluator) WhoCanBulk(action string, principals, targets []string) ([]G
 	return grants, nil
 }
 
+// WhoCan evaluates action for the given principals against every identity
+// ARN in the GAAD (Users, Roles, and Groups — the same set ListGrants
+// walks). Each (principal, target) pair is evaluated independently via
+// WhoCanBulk so a deny on one target cannot be reused as the verdict for
+// another.
+func (e *Evaluator) WhoCan(action string, principals []string) ([]Grant, error) {
+	universe := make([]string, 0)
+	e.gaad.Users.Range(func(_ string, u types.UserDetail) bool {
+		universe = append(universe, u.Arn)
+		return true
+	})
+	e.gaad.Roles.Range(func(_ string, r types.RoleDetail) bool {
+		universe = append(universe, r.Arn)
+		return true
+	})
+	e.gaad.Groups.Range(func(_ string, g types.GroupDetail) bool {
+		universe = append(universe, g.Arn)
+		return true
+	})
+	return e.WhoCanBulk(action, principals, universe)
+}
+
 // whoCanBulkSerial is the single-threaded cross-product. It is the worker=1
 // fallback and the reference behavior the parallel path must match exactly.
 func (e *Evaluator) whoCanBulkSerial(action string, principals, targets []string) ([]Grant, error) {

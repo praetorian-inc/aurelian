@@ -17,22 +17,23 @@ const ProtocolVersion = "1.0"
 
 // Query types.
 const (
-	TypeHandshake          = "handshake"
-	TypeCheckSpecific      = "check_specific"
-	TypeCheckAnyTarget     = "check_any_target"
+	TypeHandshake           = "handshake"
+	TypeCheckSpecific       = "check_specific"
+	TypeCheckAnyTarget      = "check_any_target"
 	TypeCheckCounterfactual = "check_counterfactual"
-	TypeWhoCanBulk         = "who_can_bulk"
-	TypeListGrants         = "list_grants"
-	TypeShutdown           = "shutdown"
+	TypeWhoCanBulk          = "who_can_bulk"
+	TypeWhoCan              = "who_can"
+	TypeListGrants          = "list_grants"
+	TypeShutdown            = "shutdown"
 )
 
 // Request is a query from the solver (stdin).
 type Request struct {
-	Type      string          `json:"type"`
-	Version   string          `json:"version,omitempty"`
-	Principal string          `json:"principal,omitempty"`
-	Action    string          `json:"action,omitempty"`
-	Target    string          `json:"target,omitempty"`
+	Type      string `json:"type"`
+	Version   string `json:"version,omitempty"`
+	Principal string `json:"principal,omitempty"`
+	Action    string `json:"action,omitempty"`
+	Target    string `json:"target,omitempty"`
 
 	// check_counterfactual
 	RemovedStatements []RemovedStatement `json:"removed_statements,omitempty"`
@@ -70,8 +71,9 @@ type Condition struct {
 	Values   []string `json:"values"`
 }
 
-// WhoCanBulkResponse is the response to who_can_bulk. Only allowed grants
-// are included; denied pairs are omitted.
+// WhoCanBulkResponse is the response to who_can_bulk and who_can. Only
+// allowed grants are included; denied pairs are omitted. Grants is never
+// null: an empty result is [].
 type WhoCanBulkResponse struct {
 	Grants []Grant `json:"grants"`
 }
@@ -86,7 +88,7 @@ type Grant struct {
 
 // ListGrantsEntry is a principal's effective statements in a list_grants response.
 type ListGrantsEntry struct {
-	Principal           string               `json:"principal"`
+	Principal           string                `json:"principal"`
 	EffectiveStatements []ListGrantsStatement `json:"effective_statements"`
 }
 
@@ -114,6 +116,7 @@ type Handler interface {
 	CheckAnyTarget(principal, action string) (*CheckResponse, error)
 	CheckCounterfactual(principal, action, target string, removed []RemovedStatement) (*CheckResponse, error)
 	WhoCanBulk(action string, principals, targets []string) ([]Grant, error)
+	WhoCan(action string, principals []string) ([]Grant, error)
 	ListGrants() (*ListGrantsResponse, error)
 }
 
@@ -124,7 +127,7 @@ func Serve(r io.Reader, w io.Writer, h Handler) error {
 	// Increase buffer for large who_can_bulk requests.
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
-	capabilities := []string{"check_specific", "check_any_target", "check_counterfactual", "who_can_bulk", "list_grants"}
+	capabilities := []string{"check_specific", "check_any_target", "check_counterfactual", "who_can_bulk", "who_can", "list_grants"}
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -178,6 +181,18 @@ func Serve(r io.Reader, w io.Writer, h Handler) error {
 				slog.Error("who_can_bulk failed", "error", err)
 				writeJSON(w, ErrorResponse{Error: err.Error()})
 			} else {
+				writeJSON(w, WhoCanBulkResponse{Grants: grants})
+			}
+
+		case TypeWhoCan:
+			grants, err := h.WhoCan(req.Action, req.Principals)
+			if err != nil {
+				slog.Error("who_can failed", "error", err)
+				writeJSON(w, ErrorResponse{Error: err.Error()})
+			} else {
+				if grants == nil {
+					grants = []Grant{}
+				}
 				writeJSON(w, WhoCanBulkResponse{Grants: grants})
 			}
 

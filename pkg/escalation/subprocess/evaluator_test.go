@@ -408,6 +408,79 @@ func TestListGrants_EndToEnd(t *testing.T) {
 	assert.NotEmpty(t, byPrincipal["arn:aws:iam::111111111111:role/Admin"].EffectiveStatements)
 }
 
+func TestEvaluator_WhoCan_OmitsDeniedRole(t *testing.T) {
+	adminARN := "arn:aws:iam::111111111111:role/Admin"
+	allowedARN := "arn:aws:iam::111111111111:role/AllowedRole"
+	deniedARN := "arn:aws:iam::111111111111:role/DeniedRole"
+
+	// Allow * plus an explicit Deny of one role ARN. WhoCan must evaluate
+	// each target independently: reusing a single Allow verdict would leak
+	// DeniedRole into the grant set.
+	stmts := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
+		{Effect: "Deny", Action: &types.DynaString{"*"}, Resource: &types.DynaString{deniedARN}},
+	}
+	gaad := types.NewAuthorizationAccountDetails("111111111111",
+		nil,
+		nil,
+		[]types.RoleDetail{
+			{
+				Arn:      adminARN,
+				RoleName: "Admin",
+				RolePolicyList: []types.InlinePolicy{
+					{PolicyName: "AllowAllDenyOne", PolicyDocument: types.Policy{Statement: &stmts}},
+				},
+			},
+			{Arn: allowedARN, RoleName: "AllowedRole"},
+			{Arn: deniedARN, RoleName: "DeniedRole"},
+		},
+		nil,
+	)
+	eval := NewEvaluator(gaad, nil, nil)
+
+	allowed, err := eval.CheckSpecific(adminARN, "iam:PutRolePolicy", allowedARN)
+	require.NoError(t, err)
+	require.Equal(t, "allowed", allowed.Result, "Admin Allow * must grant AllowedRole")
+
+	denied, err := eval.CheckSpecific(adminARN, "iam:PutRolePolicy", deniedARN)
+	require.NoError(t, err)
+	require.Equal(t, "denied", denied.Result, "explicit Deny on DeniedRole must win — otherwise WhoCan cannot discriminate vs verdict reuse")
+
+	grants, err := eval.WhoCan("iam:PutRolePolicy", []string{adminARN})
+	require.NoError(t, err)
+
+	targets := make([]string, 0, len(grants))
+	for _, g := range grants {
+		assert.Equal(t, "allowed", g.Result)
+		assert.Equal(t, adminARN, g.Principal)
+		targets = append(targets, g.Target)
+	}
+	assert.Contains(t, targets, allowedARN)
+	assert.Contains(t, targets, adminARN)
+	assert.NotContains(t, targets, deniedARN, "WhoCan must omit the denied role rather than reuse the Allow * verdict")
+
+	input := `{"type":"who_can","action":"iam:PutRolePolicy","principals":["` + adminARN + `"]}` + "\n" + `{"type":"shutdown"}` + "\n"
+	in := strings.NewReader(input)
+	var out bytes.Buffer
+	require.NoError(t, Serve(in, &out, eval))
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	require.Len(t, lines, 1)
+
+	var resp WhoCanBulkResponse
+	require.NoError(t, json.Unmarshal([]byte(lines[0]), &resp))
+
+	wireTargets := make([]string, 0, len(resp.Grants))
+	for _, g := range resp.Grants {
+		assert.Equal(t, "allowed", g.Result)
+		wireTargets = append(wireTargets, g.Target)
+	}
+	assert.Contains(t, wireTargets, allowedARN)
+	assert.NotContains(t, wireTargets, deniedARN)
+	assert.Contains(t, lines[0], `"grants":`)
+	assert.NotContains(t, lines[0], `"grants":null`)
+}
+
 func TestWhoCanBulk_MixedResults(t *testing.T) {
 	// Admin can do iam:PutRolePolicy, Dev cannot.
 	eval := NewEvaluator(newTestGAAD(), nil, nil)
