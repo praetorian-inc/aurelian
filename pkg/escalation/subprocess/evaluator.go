@@ -1,6 +1,7 @@
 package subprocess
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -204,40 +205,110 @@ func (e *Evaluator) WhoCanBulk(action string, principals, targets []string) ([]G
 	return grants, nil
 }
 
+// whoCanPrincipalSet is one distinct identity statement set (Allow and Deny)
+// plus every principal that shares it. WhoCan evaluates the representative
+// against proposed targets once, then replicates Allowed grants onto members.
+type whoCanPrincipalSet struct {
+	principals    []string
+	identityStmts *types.PolicyStatementList
+	boundaryStmts *types.PolicyStatementList
+	proposed      []string
+}
+
 // WhoCan evaluates action for the given principals against identity ARNs
 // proposed from each principal's identity Allow statements (the same Allow
 // walk ListGrants uses). Deny is not used to drop candidates — it stays in
 // Evaluate. A principal with no matching Allow is skipped (zero Evaluate).
+// Principals that share an identical identity statement set (Allow and Deny)
+// are evaluated once; Allowed grants are replicated onto every member.
 func (e *Evaluator) WhoCan(action string, principals []string) ([]Grant, error) {
 	universe := e.identityUniverse()
+	sets, err := e.groupWhoCanByIdentity(action, principals, universe)
+	if err != nil {
+		return nil, err
+	}
 	grants := make([]Grant, 0)
+	for _, s := range sets {
+		allowed, err := e.whoCanGrantsForSet(action, s)
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range s.principals {
+			for _, g := range allowed {
+				g.Principal = p
+				grants = append(grants, g)
+			}
+		}
+	}
+	return grants, nil
+}
+
+func (e *Evaluator) groupWhoCanByIdentity(action string, principals, universe []string) ([]*whoCanPrincipalSet, error) {
+	sets := make(map[string]*whoCanPrincipalSet)
+	order := make([]string, 0)
 	for _, principal := range principals {
 		proposed := e.proposeWhoCanTargets(principal, action, universe)
 		if len(proposed) == 0 {
 			continue
 		}
 		identityStmts, boundaryStmts := e.collectStatementsForPrincipal(principal)
-		for _, target := range proposed {
-			resp, err := e.checkWithStatements(principal, action, target, identityStmts, boundaryStmts)
-			if err != nil {
-				return nil, fmt.Errorf("evaluating %s -> %s on %s: %w", principal, action, target, err)
-			}
-			if resp.Result != "allowed" {
-				continue
-			}
-			conditions := resp.Conditions
-			if conditions == nil {
-				conditions = []Condition{}
-			}
-			grants = append(grants, Grant{
-				Principal:  principal,
-				Target:     target,
-				Result:     "allowed",
-				Conditions: conditions,
-			})
+		key, err := identityStatementKey(identityStmts)
+		if err != nil {
+			return nil, fmt.Errorf("keying identity statements for %s: %w", principal, err)
 		}
+		if s, ok := sets[key]; ok {
+			s.principals = append(s.principals, principal)
+			continue
+		}
+		sets[key] = &whoCanPrincipalSet{
+			principals:    []string{principal},
+			identityStmts: identityStmts,
+			boundaryStmts: boundaryStmts,
+			proposed:      proposed,
+		}
+		order = append(order, key)
 	}
-	return grants, nil
+	grouped := make([]*whoCanPrincipalSet, 0, len(order))
+	for _, key := range order {
+		grouped = append(grouped, sets[key])
+	}
+	return grouped, nil
+}
+
+func (e *Evaluator) whoCanGrantsForSet(action string, s *whoCanPrincipalSet) ([]Grant, error) {
+	rep := s.principals[0]
+	allowed := make([]Grant, 0)
+	for _, target := range s.proposed {
+		resp, err := e.checkWithStatements(rep, action, target, s.identityStmts, s.boundaryStmts)
+		if err != nil {
+			return nil, fmt.Errorf("evaluating %s -> %s on %s: %w", rep, action, target, err)
+		}
+		if resp.Result != "allowed" {
+			continue
+		}
+		conditions := resp.Conditions
+		if conditions == nil {
+			conditions = []Condition{}
+		}
+		allowed = append(allowed, Grant{
+			Principal:  rep,
+			Target:     target,
+			Result:     "allowed",
+			Conditions: conditions,
+		})
+	}
+	return allowed, nil
+}
+
+func identityStatementKey(stmts *types.PolicyStatementList) (string, error) {
+	if stmts == nil {
+		return "null", nil
+	}
+	b, err := json.Marshal(*stmts)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // identityUniverse is the GAAD Users+Roles+Groups ARN set ListGrants walks.

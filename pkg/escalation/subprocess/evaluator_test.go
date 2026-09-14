@@ -549,6 +549,151 @@ func TestEvaluator_WhoCan_ConcreteAllowOmitsOtherRoles(t *testing.T) {
 	assert.NotContains(t, targets, principalARN, "WhoCan must not return the acting role when it is not in the Allow resource")
 }
 
+func TestEvaluator_WhoCan_DedupsIdenticalPolicySet(t *testing.T) {
+	// N principals share one attached managed policy (identical Allow+Deny).
+	// WhoCan may Evaluate once per expanded target for that set, then replicate
+	// the verdict vector onto every principal. Resource-axis reuse is still
+	// forbidden (see TestEvaluator_WhoCan_OmitsDeniedRole).
+	principals := []string{
+		"arn:aws:iam::111111111111:role/Clone0",
+		"arn:aws:iam::111111111111:role/Clone1",
+		"arn:aws:iam::111111111111:role/Clone2",
+		"arn:aws:iam::111111111111:role/Clone3",
+		"arn:aws:iam::111111111111:role/Clone4",
+	}
+	extraARNs := []string{
+		"arn:aws:iam::111111111111:role/ExtraA",
+		"arn:aws:iam::111111111111:role/ExtraB",
+		"arn:aws:iam::111111111111:role/ExtraC",
+	}
+	policyARN := "arn:aws:iam::111111111111:policy/SharedAdmin"
+	allowAll := types.Policy{Statement: &types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
+	}}
+	attached := []types.ManagedPolicy{{PolicyName: "SharedAdmin", PolicyArn: policyARN}}
+
+	roles := make([]types.RoleDetail, 0, len(principals)+len(extraARNs))
+	for i, arn := range principals {
+		roles = append(roles, types.RoleDetail{
+			Arn:                     arn,
+			RoleName:                "Clone" + string(rune('0'+i)),
+			AttachedManagedPolicies: attached,
+		})
+	}
+	for i, arn := range extraARNs {
+		roles = append(roles, types.RoleDetail{
+			Arn:      arn,
+			RoleName: "Extra" + string(rune('A'+i)),
+		})
+	}
+	gaad := types.NewAuthorizationAccountDetails("111111111111",
+		nil,
+		nil,
+		roles,
+		[]types.ManagedPolicyDetail{{
+			Arn:        policyARN,
+			PolicyName: "SharedAdmin",
+			PolicyVersionList: []types.PolicyVersion{
+				{VersionId: "v1", IsDefaultVersion: true, Document: allowAll},
+			},
+		}},
+	)
+	eval := NewEvaluator(gaad, nil, nil)
+
+	checkWithStatementsCalls.Store(0)
+	_, err := eval.WhoCan("iam:PutRolePolicy", []string{principals[0]})
+	require.NoError(t, err)
+	expanded := checkWithStatementsCalls.Load()
+	require.Greater(t, expanded, int64(len(principals)),
+		"|expanded targets| must exceed N so a per-principal count cannot masquerade as per-target")
+
+	checkWithStatementsCalls.Store(0)
+	grants, err := eval.WhoCan("iam:PutRolePolicy", principals)
+	require.NoError(t, err)
+
+	byPrincipal := make(map[string][]string)
+	for _, g := range grants {
+		assert.Equal(t, "allowed", g.Result)
+		byPrincipal[g.Principal] = append(byPrincipal[g.Principal], g.Target)
+	}
+	require.Len(t, byPrincipal, len(principals), "grants must replicate onto every principal sharing the set")
+	first := byPrincipal[principals[0]]
+	for _, p := range principals {
+		require.Contains(t, byPrincipal, p, "missing replicated grants for %s", p)
+		assert.ElementsMatch(t, first, byPrincipal[p], "verdict vector must be replicated, not re-derived per principal")
+	}
+
+	got := checkWithStatementsCalls.Load()
+	assert.Equal(t, expanded, got,
+		"identical Allow+Deny set must Evaluate once per expanded target, not N*|targets|")
+}
+
+func TestEvaluator_WhoCan_KeepsDistinctDenySetsSeparate(t *testing.T) {
+	// Same Allow * but different Deny ARNs must not share a set keyed on Allow only.
+	aARN := "arn:aws:iam::111111111111:role/A"
+	bARN := "arn:aws:iam::111111111111:role/B"
+	denyA := "arn:aws:iam::111111111111:role/DeniedByA"
+	denyB := "arn:aws:iam::111111111111:role/DeniedByB"
+	stmtsA := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
+		{Effect: "Deny", Action: &types.DynaString{"*"}, Resource: &types.DynaString{denyA}},
+	}
+	stmtsB := types.PolicyStatementList{
+		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
+		{Effect: "Deny", Action: &types.DynaString{"*"}, Resource: &types.DynaString{denyB}},
+	}
+	gaad := types.NewAuthorizationAccountDetails("111111111111",
+		nil,
+		nil,
+		[]types.RoleDetail{
+			{
+				Arn:      aARN,
+				RoleName: "A",
+				RolePolicyList: []types.InlinePolicy{
+					{PolicyName: "AllowAllDenyA", PolicyDocument: types.Policy{Statement: &stmtsA}},
+				},
+			},
+			{
+				Arn:      bARN,
+				RoleName: "B",
+				RolePolicyList: []types.InlinePolicy{
+					{PolicyName: "AllowAllDenyB", PolicyDocument: types.Policy{Statement: &stmtsB}},
+				},
+			},
+			{Arn: denyA, RoleName: "DeniedByA"},
+			{Arn: denyB, RoleName: "DeniedByB"},
+		},
+		nil,
+	)
+	eval := NewEvaluator(gaad, nil, nil)
+
+	checkWithStatementsCalls.Store(0)
+	_, err := eval.WhoCan("iam:PutRolePolicy", []string{aARN})
+	require.NoError(t, err)
+	expanded := checkWithStatementsCalls.Load()
+	require.Greater(t, expanded, int64(0))
+
+	checkWithStatementsCalls.Store(0)
+	grants, err := eval.WhoCan("iam:PutRolePolicy", []string{aARN, bARN})
+	require.NoError(t, err)
+
+	byPrincipal := make(map[string][]string)
+	for _, g := range grants {
+		assert.Equal(t, "allowed", g.Result)
+		byPrincipal[g.Principal] = append(byPrincipal[g.Principal], g.Target)
+	}
+	require.Contains(t, byPrincipal, aARN)
+	require.Contains(t, byPrincipal, bARN)
+	assert.NotContains(t, byPrincipal[aARN], denyA)
+	assert.Contains(t, byPrincipal[aARN], denyB)
+	assert.NotContains(t, byPrincipal[bARN], denyB)
+	assert.Contains(t, byPrincipal[bARN], denyA)
+
+	got := checkWithStatementsCalls.Load()
+	assert.Equal(t, 2*expanded, got,
+		"distinct Deny ARNs must not share an eval set keyed on Allow only")
+}
+
 func TestWhoCanBulk_MixedResults(t *testing.T) {
 	// Admin can do iam:PutRolePolicy, Dev cannot.
 	eval := NewEvaluator(newTestGAAD(), nil, nil)
