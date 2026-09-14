@@ -255,6 +255,8 @@ var escalationExtraResourceTypes = []string{
 	"AWS::EC2::Instance",
 	"AWS::CodeBuild::Project",
 	"AWS::ECS::TaskDefinition",
+	"AWS::Athena::WorkGroup",
+	"AWS::SageMaker::Space",
 }
 
 func (m *AWSGraphModule) collectResourcesWithPolicies(eg *errgroup.Group, c GraphConfig, collector *resourcepolicies.ResourcePolicyCollector, resolvedRegions []string, provider *enumeration.AWSConfigProvider, skipReport *enumeration.SkipReport) {

@@ -180,6 +180,8 @@ const (
 	FactTrustRelationship    StructuralFactType = "trust_relationship"
 	FactCodeBuildServiceRole StructuralFactType = "codebuild_service_role"
 	FactECSTaskRole          StructuralFactType = "ecs_task_role"
+	FactAthenaWorkgroupRole  StructuralFactType = "athena_workgroup_role"
+	FactSageMakerSpaceRole   StructuralFactType = "sagemaker_space_role"
 	FactGroupMembership      StructuralFactType = "group_membership"
 	FactPolicyAttachment     StructuralFactType = "policy_attachment"
 )

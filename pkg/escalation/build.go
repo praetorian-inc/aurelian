@@ -412,6 +412,28 @@ func CollectStructuralFacts(gaad *types.AuthorizationAccountDetails, resources s
 					Confidence: 1.0,
 				})
 			}
+		case "AWS::Athena::WorkGroup":
+			if roleARN, ok := extractProperty(r, "ExecutionRole"); ok && roleARN != "" {
+				facts = append(facts, StructuralFact{
+					Type:       FactAthenaWorkgroupRole,
+					From:       r.ARN,
+					To:         roleARN,
+					Confidence: 1.0,
+				})
+			}
+		case "AWS::SageMaker::Space":
+			roleARN, ok := extractProperty(r, "ExecutionRole")
+			if roleARN == "" {
+				roleARN, ok = extractProperty(r, "ExecutionRoleArn")
+			}
+			if ok && roleARN != "" {
+				facts = append(facts, StructuralFact{
+					Type:       FactSageMakerSpaceRole,
+					From:       r.ARN,
+					To:         roleARN,
+					Confidence: 1.0,
+				})
+			}
 		}
 		return true
 	})

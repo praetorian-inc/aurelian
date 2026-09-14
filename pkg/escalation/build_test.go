@@ -480,6 +480,103 @@ func TestCollectStructuralFacts_LambdaWithNoRoleProperty(t *testing.T) {
 	}
 }
 
+func TestCollectStructuralFacts_AthenaWorkGroupRole(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
+	resources := store.NewMap[output.AWSResource]()
+	wgARN := "arn:aws:athena:us-east-1:111111111111:workgroup/analytics"
+	roleARN := "arn:aws:iam::111111111111:role/AthenaWGRole"
+	resources.Set(wgARN, output.AWSResource{
+		ResourceType: "AWS::Athena::WorkGroup",
+		ARN:          wgARN,
+		AccountRef:   "111111111111",
+		// Top-level Properties.ExecutionRole — same extractProperty shape as
+		// Lambda Role / ECS TaskRoleArn. Nested WorkGroupConfiguration.ExecutionRole
+		// is not required by this test.
+		Properties: map[string]any{"ExecutionRole": roleARN},
+	})
+
+	facts := CollectStructuralFacts(gaad, resources)
+	found := false
+	for _, f := range facts {
+		if f.Type == StructuralFactType("athena_workgroup_role") &&
+			f.From == wgARN &&
+			f.To == roleARN {
+			found = true
+		}
+	}
+	assert.True(t, found, "should find athena_workgroup_role from workgroup ARN to role ARN")
+}
+
+func TestCollectStructuralFacts_SageMakerSpaceRole(t *testing.T) {
+	spaceARN := "arn:aws:sagemaker:us-east-1:111111111111:space/domain/research"
+	roleARN := "arn:aws:iam::111111111111:role/SpaceRole"
+
+	for _, tc := range []struct {
+		name string
+		key  string
+	}{
+		{name: "ExecutionRole", key: "ExecutionRole"},
+		{name: "ExecutionRoleArn", key: "ExecutionRoleArn"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
+			resources := store.NewMap[output.AWSResource]()
+			resources.Set(spaceARN, output.AWSResource{
+				ResourceType: "AWS::SageMaker::Space",
+				ARN:          spaceARN,
+				AccountRef:   "111111111111",
+				Properties:   map[string]any{tc.key: roleARN},
+			})
+
+			facts := CollectStructuralFacts(gaad, resources)
+			found := false
+			for _, f := range facts {
+				if f.Type == StructuralFactType("sagemaker_space_role") &&
+					f.From == spaceARN &&
+					f.To == roleARN {
+					found = true
+				}
+			}
+			assert.True(t, found, "should find sagemaker_space_role from space ARN to role ARN")
+		})
+	}
+}
+
+func TestCollectStructuralFacts_WorkGroupAndSpaceWithoutRole(t *testing.T) {
+	gaad := types.NewAuthorizationAccountDetails("111111111111", nil, nil, nil, nil)
+	resources := store.NewMap[output.AWSResource]()
+	resources.Set("arn:aws:athena:us-east-1:111111111111:workgroup/empty", output.AWSResource{
+		ResourceType: "AWS::Athena::WorkGroup",
+		ARN:          "arn:aws:athena:us-east-1:111111111111:workgroup/empty",
+		AccountRef:   "111111111111",
+		Properties:   map[string]any{"ExecutionRole": ""},
+	})
+	resources.Set("arn:aws:athena:us-east-1:111111111111:workgroup/missing", output.AWSResource{
+		ResourceType: "AWS::Athena::WorkGroup",
+		ARN:          "arn:aws:athena:us-east-1:111111111111:workgroup/missing",
+		AccountRef:   "111111111111",
+	})
+	resources.Set("arn:aws:sagemaker:us-east-1:111111111111:space/domain/empty", output.AWSResource{
+		ResourceType: "AWS::SageMaker::Space",
+		ARN:          "arn:aws:sagemaker:us-east-1:111111111111:space/domain/empty",
+		AccountRef:   "111111111111",
+		Properties:   map[string]any{"ExecutionRole": "", "ExecutionRoleArn": ""},
+	})
+	resources.Set("arn:aws:sagemaker:us-east-1:111111111111:space/domain/missing", output.AWSResource{
+		ResourceType: "AWS::SageMaker::Space",
+		ARN:          "arn:aws:sagemaker:us-east-1:111111111111:space/domain/missing",
+		AccountRef:   "111111111111",
+	})
+
+	facts := CollectStructuralFacts(gaad, resources)
+	for _, f := range facts {
+		assert.NotEqual(t, StructuralFactType("athena_workgroup_role"), f.Type,
+			"should not create athena_workgroup_role for WorkGroup with empty/missing ExecutionRole")
+		assert.NotEqual(t, StructuralFactType("sagemaker_space_role"), f.Type,
+			"should not create sagemaker_space_role for Space with empty/missing role property")
+	}
+}
+
 func TestIsAdminGroup_AttachedManagedPolicy(t *testing.T) {
 	adminStmt := types.PolicyStatementList{
 		{Effect: "Allow", Action: &types.DynaString{"*"}, Resource: &types.DynaString{"*"}},
