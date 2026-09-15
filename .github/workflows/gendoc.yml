@@ -24,7 +24,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.22'
+          # Track go.mod rather than a hardcoded pin, as the shared go-ci
+          # workflow does. The previous '1.22' only kept working because
+          # GOTOOLCHAIN=auto silently downloaded a newer toolchain.
+          go-version-file: go.mod
           cache: true
 
       - name: Configure Git for private modules
