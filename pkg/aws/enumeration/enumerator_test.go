@@ -117,6 +117,7 @@ func TestNewEnumerator_RegistersTimestampEnumerators(t *testing.T) {
 	for _, resourceType := range []string{
 		"AWS::Lambda::Function",
 		"AWS::CloudFormation::Stack",
+		"AWS::ECR::Repository",
 		"AWS::ECS::TaskDefinition",
 		"AWS::SSM::Parameter",
 	} {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/praetorian-inc/aurelian/pkg/output"
 	"github.com/praetorian-inc/aurelian/pkg/pipeline"
@@ -24,12 +25,16 @@ type SecretScanner struct {
 
 // SecretScanResult represents a secret detection result emitted by the scanner.
 type SecretScanResult struct {
-	ResourceRef  string       `json:"resource_ref"`
-	ResourceType string       `json:"resource_type"`
-	Region       string       `json:"region"`
-	AccountID    string       `json:"account_id"`
-	Platform     string       `json:"platform"`
-	Label        string       `json:"label"`
+	ResourceRef  string `json:"resource_ref"`
+	ResourceType string `json:"resource_type"`
+	Region       string `json:"region"`
+	AccountID    string `json:"account_id"`
+	Platform     string `json:"platform"`
+	Label        string `json:"label"`
+	// LastModified is the source resource's authoritative modification time, when
+	// the enumerator reported one. It tells a consumer which revision of the
+	// resource this finding came from.
+	LastModified *time.Time   `json:"last_modified,omitempty"`
 	Match        *types.Match `json:"match"`
 }
 
@@ -237,6 +242,7 @@ func toScanResult(input output.ScanInput, match *types.Match) SecretScanResult {
 		AccountID:    input.AccountID,
 		Platform:     input.Platform,
 		Label:        input.Label,
+		LastModified: input.LastModified,
 		Match:        match,
 	}
 }
@@ -254,8 +260,32 @@ func provenanceFromScanInput(input output.ScanInput) types.ExtendedProvenance {
 			"region":        input.Region,
 			"account_id":    input.AccountID,
 			"subresource":   input.Label,
+			"last_modified": formatProvenanceTime(input.LastModified),
 		},
 	}
+}
+
+// formatProvenanceTime renders a modification time for the provenance payload,
+// which holds only scalars. An absent time becomes "" so the round trip through
+// scanInputFromProvenance yields nil again rather than a zero time.
+func formatProvenanceTime(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339Nano)
+}
+
+// parseProvenanceTime is formatProvenanceTime's inverse. An empty or malformed
+// value yields nil, which downstream treats as "unknown".
+func parseProvenanceTime(value string) *time.Time {
+	if value == "" {
+		return nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return nil
+	}
+	return &parsed
 }
 
 func scanInputFromProvenance(prov types.ExtendedProvenance) output.ScanInput {
@@ -272,5 +302,6 @@ func scanInputFromProvenance(prov types.ExtendedProvenance) output.ScanInput {
 		Region:       str("region"),
 		AccountID:    str("account_id"),
 		Label:        str("subresource"),
+		LastModified: parseProvenanceTime(str("last_modified")),
 	}
 }

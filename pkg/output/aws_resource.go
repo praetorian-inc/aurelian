@@ -18,6 +18,16 @@ const (
 // AWSResource represents an AWS cloud resource discovered during scanning.
 // This type replaces the Tabularium AWSResource type to eliminate the
 // dependency on Tabularium in Aurelian.
+// ECRScannedDigestsProperty is the Properties key ecr-dump stamps on a
+// repository it scanned, holding the comma-separated content digests of the
+// images it actually pulled.
+//
+// A digest is an immutable content hash, so a consumer that records these never
+// needs to scan those bytes again. It is reported whether or not secrets were
+// found — "we scanned this content and it was clean" is exactly the fact that
+// makes the next run cheap, and a findings-only channel could not carry it.
+const ECRScannedDigestsProperty = "ScannedImageDigests"
+
 type AWSResource struct {
 	model.BaseAurelianModel
 

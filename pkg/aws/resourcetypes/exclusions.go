@@ -12,6 +12,7 @@ package resourcetypes
 // suppress a type it declares unnecessarily.
 var exclusions = map[string]string{
 	"AWS::Organizations::Account": "Pseudo-input used by Guard to pass account context to modules; enumerating it would discover sibling accounts in the org rather than resources within the current account.",
+	"AWS::ECR::PublicRepository":  "ECR Public has a single us-east-1 control plane (ecr-public.amazonaws.com), so a per-region CloudControl fan-out would query it in every other region where the API does not answer; the ecr-dump module enumerates public repositories directly.",
 }
 
 // IsExcluded reports whether a resource type is on the exclusion list.

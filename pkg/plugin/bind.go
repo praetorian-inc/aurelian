@@ -138,6 +138,14 @@ func setFields(ps *Parameters, v reflect.Value, t reflect.Type) error {
 
 		val := ps.effectiveValue(name)
 		if val == nil {
+			// A parameter with neither a supplied value nor a default must RESET
+			// the field, not leave whatever a previous Bind wrote into it.
+			// Registry modules are singletons, so a retained value silently leaks
+			// from one Run to the next in the same process: a --modified-since
+			// checkpoint from an earlier run would suppress a later full scan.
+			// Nothing legitimately populates a param-tagged field before Bind —
+			// PostBind runs after it — so zeroing is the correct default.
+			fv.SetZero()
 			continue
 		}
 
