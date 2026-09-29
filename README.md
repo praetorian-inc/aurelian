@@ -119,6 +119,34 @@ go build -tags cache_sqlite -o aurelian .
 
 ## Quick Start
 
+### Subcommands
+
+<!-- BEGIN generated: cli-subcommands -->
+Aurelian organizes its functionality into these focused subcommands:
+
+```bash
+aurelian aws          # aws platform commands
+aurelian azure        # azure platform commands
+aurelian gcp          # gcp platform commands
+aurelian gendoc       # Generate Markdown documentation
+aurelian list-modules # Display available Aurelian modules in a tree structure
+aurelian version      # Print the version number of Aurelian
+```
+<!-- END generated: cli-subcommands -->
+
+<!-- BEGIN generated: cli-aliases -->
+Some subcommands carry aliases for discoverability:
+
+| Subcommand | Aliases |
+| --- | --- |
+| `aws` | `amazon` |
+| `azure` | `az` |
+| `gcp` | `google` |
+
+The full reference — every subcommand, alias and flag, including the ones hidden from `--help` — is generated into [docs/CLI.md](docs/CLI.md).
+<!-- END generated: cli-aliases -->
+
+
 ### Verify Your Identity (OPSEC-Safe)
 
 ```sh
@@ -133,7 +161,7 @@ aurelian aws recon whoami
 aurelian aws recon find-secrets
 
 # Scan Azure subscriptions
-aurelian azure recon find-secrets --subscription-id <id>
+aurelian azure recon find-secrets --subscription-ids <id>
 
 # Scan GCP projects
 aurelian gcp recon find-secrets --project-id <id>
@@ -146,7 +174,7 @@ aurelian gcp recon find-secrets --project-id <id>
 aurelian aws recon public-resources
 
 # Azure public resources
-aurelian azure recon public-resources --subscription-id <id>
+aurelian azure recon public-resources --subscription-ids <id>
 
 # GCP public resources
 aurelian gcp recon public-resources --project-id <id>
@@ -166,7 +194,7 @@ aurelian aws analyze analyze-iam-permissions --gaad-file gaad.json
 
 ```sh
 aurelian aws   recon subdomain-takeover
-aurelian azure recon subdomain-takeover --subscription-id <id>
+aurelian azure recon subdomain-takeover --subscription-ids <id>
 aurelian gcp   recon subdomain-takeover --project-id <id>
 ```
 

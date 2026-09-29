@@ -82,6 +82,8 @@ release:
   draft: false
   prerelease: auto
   name_template: "Aurelian {{ .Tag }}"
+  extra_files:
+    - glob: docs/cli-surface.json
   header: |
     ## Installation
 
