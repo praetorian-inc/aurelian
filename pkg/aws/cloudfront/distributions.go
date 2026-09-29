@@ -45,8 +45,8 @@ var bucketNamePatterns = []struct {
 	{regexp.MustCompile(`^s3-([a-z0-9-]+)\.amazonaws\.com/([^/]+)`), 2},
 }
 
-// extractBucketName extracts the S3 bucket name from an origin domain using regex-based matching.
-func extractBucketName(originDomain string) string {
+// ExtractBucketName extracts the S3 bucket name from an origin domain using regex-based matching.
+func ExtractBucketName(originDomain string) string {
 	domain := strings.TrimPrefix(originDomain, "https://")
 	domain = strings.TrimPrefix(domain, "http://")
 
