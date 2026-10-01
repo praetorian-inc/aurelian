@@ -2,6 +2,7 @@ package enumeration
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -33,15 +34,16 @@ func (s *logGroupLastModified) regionStamper(region string) stampFunc {
 
 func (s *logGroupLastModified) resourceStamper(region string) stampFunc {
 	return func(r *output.AWSResource) error {
-		r.LastModified = s.lastIngestion(region, logGroupName(r))
+		r.LastModified = s.lastIngestion(region, r)
 		return nil
 	}
 }
 
-func (s *logGroupLastModified) lastIngestion(region, name string) *time.Time {
+func (s *logGroupLastModified) lastIngestion(region string, r *output.AWSResource) *time.Time {
+	name := logGroupName(r)
 	cfg, err := s.provider.GetAWSConfig(region)
 	if err != nil {
-		warnTimestampFailure(err, "logs", "DescribeLogStreams", region, name)
+		logTimestampFailure(slog.LevelWarn, err, "logs", "DescribeLogStreams", region, r)
 		return nil
 	}
 
@@ -56,7 +58,7 @@ func (s *logGroupLastModified) lastIngestion(region, name string) *time.Time {
 			s.skipReport.Record(*op)
 			return nil
 		}
-		warnTimestampFailure(err, "logs", "DescribeLogStreams", region, name)
+		logTimestampFailure(slog.LevelWarn, err, "logs", "DescribeLogStreams", region, r)
 		return nil
 	}
 

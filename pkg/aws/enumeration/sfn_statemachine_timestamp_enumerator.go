@@ -3,6 +3,7 @@ package enumeration
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -28,7 +29,8 @@ func NewSFNStateMachineTimestampEnumerator(cc *CloudControlEnumerator, provider 
 func (s *sfnStateMachineLastModified) regionStamper(region string) stampFunc {
 	var creationDates map[string]*time.Time
 	loaded := false
-	lookup := func(arn string) (*time.Time, error) {
+	lookup := func(r *output.AWSResource) (*time.Time, error) {
+		arn := r.ResourceID
 		if !loaded {
 			loaded = true
 			creationDates = s.listCreationDates(region)
@@ -39,7 +41,7 @@ func (s *sfnStateMachineLastModified) regionStamper(region string) stampFunc {
 		created, found := creationDates[arn]
 		if !found {
 			// Created after the list call; describe it directly.
-			return s.describeCreationDate(region, arn)
+			return s.describeCreationDate(region, r)
 		}
 		if created == nil {
 			return nil, fmt.Errorf("ListStateMachines returned %s in %s without CreationDate", arn, region)
@@ -53,14 +55,14 @@ func (s *sfnStateMachineLastModified) regionStamper(region string) stampFunc {
 
 func (s *sfnStateMachineLastModified) resourceStamper(region string) stampFunc {
 	return func(r *output.AWSResource) error {
-		return s.stamp(region, r, func(arn string) (*time.Time, error) {
-			return s.describeCreationDate(region, arn)
+		return s.stamp(region, r, func(r *output.AWSResource) (*time.Time, error) {
+			return s.describeCreationDate(region, r)
 		})
 	}
 }
 
 // creationDateLookup returns (nil, nil) when the call failed and was recorded.
-type creationDateLookup func(arn string) (*time.Time, error)
+type creationDateLookup func(r *output.AWSResource) (*time.Time, error)
 
 func (s *sfnStateMachineLastModified) stamp(region string, r *output.AWSResource, creationDate creationDateLookup) error {
 	// CloudControl's identifier for a state machine is its ARN.
@@ -68,7 +70,7 @@ func (s *sfnStateMachineLastModified) stamp(region string, r *output.AWSResource
 
 	client, err := s.client(region)
 	if err != nil {
-		warnTimestampFailure(err, "stepfunctions", "ListExecutions", region, arn)
+		logTimestampFailure(slog.LevelWarn, err, "stepfunctions", "ListExecutions", region, r)
 		return nil
 	}
 
@@ -81,7 +83,7 @@ func (s *sfnStateMachineLastModified) stamp(region string, r *output.AWSResource
 			s.skipReport.Record(*op)
 			return nil
 		}
-		warnTimestampFailure(err, "stepfunctions", "ListExecutions", region, arn)
+		logTimestampFailure(slog.LevelWarn, err, "stepfunctions", "ListExecutions", region, r)
 		return nil
 	}
 
@@ -98,7 +100,7 @@ func (s *sfnStateMachineLastModified) stamp(region string, r *output.AWSResource
 		return nil
 	}
 
-	created, err := creationDate(arn)
+	created, err := creationDate(r)
 	if err != nil {
 		return err
 	}
@@ -111,7 +113,7 @@ func (s *sfnStateMachineLastModified) stamp(region string, r *output.AWSResource
 func (s *sfnStateMachineLastModified) listCreationDates(region string) map[string]*time.Time {
 	client, err := s.client(region)
 	if err != nil {
-		warnTimestampFailure(err, "stepfunctions", "ListStateMachines", region, "")
+		logTimestampFailure(slog.LevelWarn, err, "stepfunctions", "ListStateMachines", region, nil)
 		return nil
 	}
 
@@ -124,7 +126,7 @@ func (s *sfnStateMachineLastModified) listCreationDates(region string) map[strin
 				s.skipReport.Record(*op)
 				return nil
 			}
-			warnTimestampFailure(err, "stepfunctions", "ListStateMachines", region, "")
+			logTimestampFailure(slog.LevelWarn, err, "stepfunctions", "ListStateMachines", region, nil)
 			return nil
 		}
 		for _, sm := range page.StateMachines {
@@ -134,10 +136,11 @@ func (s *sfnStateMachineLastModified) listCreationDates(region string) map[strin
 	return creationDates
 }
 
-func (s *sfnStateMachineLastModified) describeCreationDate(region, arn string) (*time.Time, error) {
+func (s *sfnStateMachineLastModified) describeCreationDate(region string, r *output.AWSResource) (*time.Time, error) {
+	arn := r.ResourceID
 	client, err := s.client(region)
 	if err != nil {
-		warnTimestampFailure(err, "stepfunctions", "DescribeStateMachine", region, arn)
+		logTimestampFailure(slog.LevelWarn, err, "stepfunctions", "DescribeStateMachine", region, r)
 		return nil, nil
 	}
 	resp, err := client.DescribeStateMachine(context.Background(), &sfn.DescribeStateMachineInput{StateMachineArn: aws.String(arn)})
@@ -146,7 +149,7 @@ func (s *sfnStateMachineLastModified) describeCreationDate(region, arn string) (
 			s.skipReport.Record(*op)
 			return nil, nil
 		}
-		warnTimestampFailure(err, "stepfunctions", "DescribeStateMachine", region, arn)
+		logTimestampFailure(slog.LevelWarn, err, "stepfunctions", "DescribeStateMachine", region, r)
 		return nil, nil
 	}
 	if resp.CreationDate == nil {

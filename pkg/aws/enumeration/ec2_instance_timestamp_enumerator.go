@@ -49,7 +49,7 @@ func (s *ec2InstanceLastModified) resourceStamper(region string) stampFunc {
 func (s *ec2InstanceLastModified) describeLaunchTimes(region string, instanceIDs []string) map[string]*time.Time {
 	cfg, err := s.provider.GetAWSConfig(region)
 	if err != nil {
-		warnTimestampFailure(err, "ec2", "DescribeInstances", region, "")
+		logTimestampFailure(slog.LevelWarn, err, "ec2", "DescribeInstances", region, nil)
 		return nil
 	}
 
@@ -62,7 +62,7 @@ func (s *ec2InstanceLastModified) describeLaunchTimes(region string, instanceIDs
 				s.skipReport.Record(*op)
 				return nil
 			}
-			warnTimestampFailure(err, "ec2", "DescribeInstances", region, "")
+			logTimestampFailure(slog.LevelWarn, err, "ec2", "DescribeInstances", region, nil)
 			return nil
 		}
 		for _, reservation := range page.Reservations {

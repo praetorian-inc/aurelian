@@ -1,7 +1,7 @@
 package enumeration
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"log/slog"
 
@@ -11,9 +11,9 @@ import (
 )
 
 // stampFunc sets LastModified on a resource from a native API. It returns an
-// error only when AWS omits a field its API contract guarantees; call failures
-// are recorded (see recordTimestampFailure) and leave LastModified nil so the
-// resource is still emitted and scanned.
+// error, naming the field, only when AWS omits a field its API contract
+// guarantees; call failures are recorded (skip report or logTimestampFailure)
+// and leave LastModified nil so the resource is still emitted and scanned.
 type stampFunc func(r *output.AWSResource) error
 
 // lastModifiedSource supplies stampers for a CloudControl-listed type.
@@ -65,28 +65,36 @@ func (e *CloudControlTimestampEnumerator) EnumerateByARN(arn string, out *pipeli
 	}, e.source.resourceStamper(region), out)
 }
 
-// listAndStamp streams list's output through stamp into out. A resource whose
-// stamp fails is withheld rather than sent with a guessed time; the rest are
-// still emitted and the failures are returned together.
+// listAndStamp streams list's output through stamp into out. A failed stamp
+// affects only its resource: it is logged and the resource is still emitted
+// with LastModified nil (always scanned), never a guessed time. Only list's
+// own error is returned.
 func (e *CloudControlTimestampEnumerator) listAndStamp(list func(*pipeline.P[output.AWSResource]) error, stamp stampFunc, out *pipeline.P[output.AWSResource]) error {
 	listed := pipeline.New[output.AWSResource]()
 	go func() { listed.CloseWithError(list(listed)) }()
 
-	var stampErrs []error
 	for r := range listed.Range() {
 		if err := stamp(&r); err != nil {
-			stampErrs = append(stampErrs, err)
-			continue
+			r.LastModified = nil
+			logTimestampFailure(slog.LevelError, err, "", "", r.Region, &r)
 		}
 		out.Send(r)
 	}
-	return errors.Join(append(stampErrs, listed.Wait())...)
+	return listed.Wait()
 }
 
-// warnTimestampFailure logs a timestamp call failure that ClassifySkippable
-// did not claim. The caller leaves LastModified nil so the resource is still
-// emitted and always scanned.
-func warnTimestampFailure(err error, service, operation, region, resource string) {
-	slog.Warn("failed to read last-modified time; resource will always be scanned",
-		"service", service, "operation", operation, "region", region, "resource", resource, "error", err)
+// logTimestampFailure is the single log line for every LastModified failure,
+// so each carries the same fields. Missing contracted fields log at Error;
+// call failures ClassifySkippable did not claim log at Warn. service and
+// operation are empty when the error text already names them; r is nil for a
+// region-wide call. The caller leaves LastModified nil so affected resources
+// are still emitted and always scanned.
+func logTimestampFailure(level slog.Level, err error, service, operation, region string, r *output.AWSResource) {
+	var resourceType, resourceID, arn string
+	if r != nil {
+		resourceType, resourceID, arn = r.ResourceType, r.ResourceID, r.ARN
+	}
+	slog.Log(context.Background(), level, "failed to read last-modified time; resource will always be scanned",
+		"resource_type", resourceType, "resource_id", resourceID, "arn", arn, "region", region,
+		"service", service, "operation", operation, "error", err)
 }

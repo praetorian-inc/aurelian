@@ -3,6 +3,7 @@ package enumeration
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -138,21 +139,22 @@ func (e *SSMDocumentEnumerator) listDocumentsInRegion(region, accountID string, 
 
 		for _, doc := range page.DocumentIdentifiers {
 			name := aws.ToString(doc.Name)
-			out.Send(output.AWSResource{
+			r := output.AWSResource{
 				ResourceType: "AWS::SSM::Document",
 				ResourceID:   name,
 				ARN:          fmt.Sprintf("arn:aws:ssm:%s:%s:document/%s", region, accountID, name),
 				AccountRef:   accountID,
 				Region:       region,
 				DisplayName:  name,
-				LastModified: e.defaultVersionCreatedDate(client, region, name),
 				Properties: map[string]any{
 					"Name":            name,
 					"Owner":           aws.ToString(doc.Owner),
 					"DocumentVersion": aws.ToString(doc.DocumentVersion),
 					"DocumentType":    string(doc.DocumentType),
 				},
-			})
+			}
+			r.LastModified = e.defaultVersionCreatedDate(client, &r)
+			out.Send(r)
 		}
 	}
 
@@ -163,7 +165,8 @@ func (e *SSMDocumentEnumerator) listDocumentsInRegion(region, accountID string, 
 // defaultVersionCreatedDate reads the default version's CreatedDate, which
 // moves when a new default is set. ListDocuments' CreatedDate is not
 // documented to track versions, and the extractor scans the default version.
-func (e *SSMDocumentEnumerator) defaultVersionCreatedDate(client *ssm.Client, region, name string) *time.Time {
+func (e *SSMDocumentEnumerator) defaultVersionCreatedDate(client *ssm.Client, r *output.AWSResource) *time.Time {
+	region, name := r.Region, r.ResourceID
 	result, err := client.DescribeDocument(context.Background(), &ssm.DescribeDocumentInput{
 		Name:            aws.String(name),
 		DocumentVersion: aws.String(ssmDefaultDocumentVersion),
@@ -173,7 +176,7 @@ func (e *SSMDocumentEnumerator) defaultVersionCreatedDate(client *ssm.Client, re
 			e.skipReport.Record(*op)
 			return nil
 		}
-		warnTimestampFailure(err, "ssm", "DescribeDocument", region, name)
+		logTimestampFailure(slog.LevelWarn, err, "ssm", "DescribeDocument", region, r)
 		return nil
 	}
 	if result.Document == nil {
