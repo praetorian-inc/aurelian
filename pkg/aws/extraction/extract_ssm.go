@@ -2,6 +2,7 @@ package extraction
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
@@ -14,6 +15,12 @@ func init() {
 	mustRegister("AWS::SSM::Document", "ssm-document", extractSSM)
 }
 
+// extractSSM scans every version of an SSM document, not only the default:
+// any version is readable with GetDocument, so a secret removed from the
+// default can still be exposed by an older or newer one. Each version is
+// emitted with ResourceID "<document ARN>:<version>" so findings record which
+// version holds the secret. A version whose GetDocument fails is logged and
+// skipped; a ListDocumentVersions failure fails the extractor.
 func extractSSM(ctx extractContext, r output.AWSResource, out *pipeline.P[output.ScanInput]) error {
 	docName := r.ResourceID
 	if name, ok := r.Properties["Name"].(string); ok && name != "" {
@@ -21,19 +28,38 @@ func extractSSM(ctx extractContext, r output.AWSResource, out *pipeline.P[output
 	}
 
 	client := ssm.NewFromConfig(ctx.AWSConfig)
-	resp, err := client.GetDocument(ctx.Context, &ssm.GetDocumentInput{
+	paginator := ssm.NewListDocumentVersionsPaginator(client, &ssm.ListDocumentVersionsInput{
 		Name: aws.String(docName),
 	})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx.Context)
+		if err != nil {
+			return fmt.Errorf("ListDocumentVersions failed for %s: %w", docName, err)
+		}
+		for _, v := range page.DocumentVersions {
+			extractSSMDocumentVersion(ctx, client, r, docName, aws.ToString(v.DocumentVersion), out)
+		}
+	}
+	return nil
+}
+
+func extractSSMDocumentVersion(ctx extractContext, client *ssm.Client, r output.AWSResource, docName, version string, out *pipeline.P[output.ScanInput]) {
+	resp, err := client.GetDocument(ctx.Context, &ssm.GetDocumentInput{
+		Name:            aws.String(docName),
+		DocumentVersion: aws.String(version),
+	})
 	if err != nil {
-		return fmt.Errorf("GetDocument failed for %s: %w", docName, err)
+		slog.Warn("GetDocument failed for document version, skipping version", "arn", r.ARN, "version", version, "error", err)
+		return
 	}
 
 	if resp.Content == nil || *resp.Content == "" {
-		return nil
+		return
 	}
 
-	out.Send(output.ScanInputFromAWSResource(r, "Document", []byte(*resp.Content)))
-	return nil
+	in := output.ScanInputFromAWSResource(r, "Document version "+version, []byte(*resp.Content))
+	in.ResourceID = r.ARN + ":" + version
+	out.Send(in)
 }
 
 func init() {
