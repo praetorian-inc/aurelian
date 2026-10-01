@@ -16,6 +16,10 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
+// ssmDefaultDocumentVersion selects the document's default version — the one
+// the extractor scans — so every LastModified is read from the same version.
+const ssmDefaultDocumentVersion = "$DEFAULT"
+
 // SSMDocumentEnumerator enumerates SSM documents owned by the account using the
 // native SSM SDK, filtering to Owner=Self to exclude AWS-managed and third-party
 // documents.
@@ -75,7 +79,8 @@ func (e *SSMDocumentEnumerator) EnumerateByARN(arn string, out *pipeline.P[outpu
 	client := ssm.NewFromConfig(*cfg)
 
 	result, err := client.DescribeDocument(context.Background(), &ssm.DescribeDocumentInput{
-		Name: aws.String(docName),
+		Name:            aws.String(docName),
+		DocumentVersion: aws.String(ssmDefaultDocumentVersion),
 	})
 	if err != nil {
 		if op := ClassifySkippable(err, "ssm", "DescribeDocument", parsed.Region); op != nil {
@@ -161,7 +166,7 @@ func (e *SSMDocumentEnumerator) listDocumentsInRegion(region, accountID string, 
 func (e *SSMDocumentEnumerator) defaultVersionCreatedDate(client *ssm.Client, region, name string) *time.Time {
 	result, err := client.DescribeDocument(context.Background(), &ssm.DescribeDocumentInput{
 		Name:            aws.String(name),
-		DocumentVersion: aws.String("$DEFAULT"),
+		DocumentVersion: aws.String(ssmDefaultDocumentVersion),
 	})
 	if err != nil {
 		if op := ClassifySkippable(err, "ssm", "DescribeDocument", region); op != nil {
