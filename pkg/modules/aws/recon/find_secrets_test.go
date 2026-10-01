@@ -340,3 +340,28 @@ func TestRiskFromScanResult_ImpactedResourceID_NoFindingID(t *testing.T) {
 	risk := items[0].(output.AurelianRisk)
 	assert.Equal(t, "i-08da3f571f1346176", risk.ImpactedResourceID, "should use bare ResourceRef when FindingID is empty")
 }
+
+func TestFindSecretsExposesLogsSinceParameter(t *testing.T) {
+	m := &AWSFindSecretsModule{}
+	params, err := plugin.ParametersFrom(m.Parameters())
+	require.NoError(t, err)
+
+	var found bool
+	for _, p := range params {
+		if p.Name == "logs-since" {
+			found = true
+		}
+	}
+	assert.True(t, found, "find-secrets should accept logs-since")
+}
+
+func TestFindSecretsRejectsInvalidLogsSince(t *testing.T) {
+	m := &AWSFindSecretsModule{FindSecretsConfig: FindSecretsConfig{LogsSince: "yesterday"}}
+	out := pipeline.New[model.AurelianModel]()
+
+	err := m.Run(plugin.Config{}, out)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid logs-since timestamp")
+	assert.Contains(t, err.Error(), "yesterday")
+}
