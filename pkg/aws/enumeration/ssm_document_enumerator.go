@@ -17,9 +17,15 @@ import (
 	"github.com/praetorian-inc/aurelian/pkg/ratelimit"
 )
 
-// ssmDefaultDocumentVersion selects the document's default version — the one
-// the extractor scans — so every LastModified is read from the same version.
+// ssmDefaultDocumentVersion selects the document's default version, which the
+// emitted Properties describe on both enumeration paths.
 const ssmDefaultDocumentVersion = "$DEFAULT"
+
+// ssmLatestDocumentVersion selects the newest document version. Its
+// CreatedDate is the document's LastModified: the extractor scans every
+// version, and the default version's CreatedDate does not move when the
+// default changes.
+const ssmLatestDocumentVersion = "$LATEST"
 
 // SSMDocumentEnumerator enumerates SSM documents owned by the account using the
 // native SSM SDK, filtering to Owner=Self to exclude AWS-managed and third-party
@@ -92,21 +98,22 @@ func (e *SSMDocumentEnumerator) EnumerateByARN(arn string, out *pipeline.P[outpu
 	}
 
 	doc := result.Document
-	out.Send(output.AWSResource{
+	r := output.AWSResource{
 		ResourceType: "AWS::SSM::Document",
 		ResourceID:   aws.ToString(doc.Name),
 		ARN:          fmt.Sprintf("arn:aws:ssm:%s:%s:document/%s", parsed.Region, parsed.AccountID, aws.ToString(doc.Name)),
 		AccountRef:   parsed.AccountID,
 		Region:       parsed.Region,
 		DisplayName:  aws.ToString(doc.Name),
-		LastModified: doc.CreatedDate,
 		Properties: map[string]any{
 			"Name":            aws.ToString(doc.Name),
 			"Owner":           aws.ToString(doc.Owner),
 			"DocumentVersion": aws.ToString(doc.DocumentVersion),
 			"DocumentType":    string(doc.DocumentType),
 		},
-	})
+	}
+	r.LastModified = e.latestVersionCreatedDate(client, &r)
+	out.Send(r)
 	return nil
 }
 
@@ -153,7 +160,7 @@ func (e *SSMDocumentEnumerator) listDocumentsInRegion(region, accountID string, 
 					"DocumentType":    string(doc.DocumentType),
 				},
 			}
-			r.LastModified = e.defaultVersionCreatedDate(client, &r)
+			r.LastModified = e.latestVersionCreatedDate(client, &r)
 			out.Send(r)
 		}
 	}
@@ -162,14 +169,16 @@ func (e *SSMDocumentEnumerator) listDocumentsInRegion(region, accountID string, 
 	return nil
 }
 
-// defaultVersionCreatedDate reads the default version's CreatedDate, which
-// moves when a new default is set. ListDocuments' CreatedDate is not
-// documented to track versions, and the extractor scans the default version.
-func (e *SSMDocumentEnumerator) defaultVersionCreatedDate(client *ssm.Client, r *output.AWSResource) *time.Time {
+// latestVersionCreatedDate reads the newest version's CreatedDate, which moves
+// whenever a version is added. The extractor scans every version, so a new
+// version anywhere must invalidate the resource; the default version's
+// CreatedDate stays put when the default is promoted or rolled back.
+// A failure is logged and yields nil, so the resource is always scanned.
+func (e *SSMDocumentEnumerator) latestVersionCreatedDate(client *ssm.Client, r *output.AWSResource) *time.Time {
 	region, name := r.Region, r.ResourceID
 	result, err := client.DescribeDocument(context.Background(), &ssm.DescribeDocumentInput{
 		Name:            aws.String(name),
-		DocumentVersion: aws.String(ssmDefaultDocumentVersion),
+		DocumentVersion: aws.String(ssmLatestDocumentVersion),
 	})
 	if err != nil {
 		if op := ClassifySkippable(err, "ssm", "DescribeDocument", region); op != nil {
