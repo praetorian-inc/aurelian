@@ -89,6 +89,9 @@ func NewEnumeratorWithProvider(opts plugin.AWSCommonRecon, provider *AWSConfigPr
 	e.Register(NewOpenSearchDomainEnumerator(opts, provider, skipReport))
 	e.Register(NewClassicELBEnumerator(opts, provider, skipReport))
 	e.Register(NewRAMResourceShareEnumerator(opts, provider, skipReport))
+	e.Register(NewEC2InstanceTimestampEnumerator(cc, provider, skipReport))
+	e.Register(NewLogGroupTimestampEnumerator(cc, provider, skipReport))
+	e.Register(NewSFNStateMachineTimestampEnumerator(cc, provider, skipReport))
 
 	return e
 }

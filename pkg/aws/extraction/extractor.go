@@ -19,6 +19,9 @@ type Config struct {
 	MaxStreams    int
 	NewestFirst   bool
 	ModifiedSince time.Time
+	// LogsSince bounds the log extractor to events after the last successful
+	// scan (minus logsLagBuffer). Zero reads from the start of each stream.
+	LogsSince time.Time
 	// FailOnError makes extraction failures fail the pipeline instead of producing
 	// partial results. Incremental callers need this guarantee before advancing a
 	// successful-scan checkpoint.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsarn "github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -92,6 +93,7 @@ func (e *SSMDocumentEnumerator) EnumerateByARN(arn string, out *pipeline.P[outpu
 		AccountRef:   parsed.AccountID,
 		Region:       parsed.Region,
 		DisplayName:  aws.ToString(doc.Name),
+		LastModified: doc.CreatedDate,
 		Properties: map[string]any{
 			"Name":            aws.ToString(doc.Name),
 			"Owner":           aws.ToString(doc.Owner),
@@ -138,6 +140,7 @@ func (e *SSMDocumentEnumerator) listDocumentsInRegion(region, accountID string, 
 				AccountRef:   accountID,
 				Region:       region,
 				DisplayName:  name,
+				LastModified: e.defaultVersionCreatedDate(client, region, name),
 				Properties: map[string]any{
 					"Name":            name,
 					"Owner":           aws.ToString(doc.Owner),
@@ -150,4 +153,26 @@ func (e *SSMDocumentEnumerator) listDocumentsInRegion(region, accountID string, 
 
 	e.skipReport.RecordBatch(skipped)
 	return nil
+}
+
+// defaultVersionCreatedDate reads the default version's CreatedDate, which
+// moves when a new default is set. ListDocuments' CreatedDate is not
+// documented to track versions, and the extractor scans the default version.
+func (e *SSMDocumentEnumerator) defaultVersionCreatedDate(client *ssm.Client, region, name string) *time.Time {
+	result, err := client.DescribeDocument(context.Background(), &ssm.DescribeDocumentInput{
+		Name:            aws.String(name),
+		DocumentVersion: aws.String("$DEFAULT"),
+	})
+	if err != nil {
+		if op := ClassifySkippable(err, "ssm", "DescribeDocument", region); op != nil {
+			e.skipReport.Record(*op)
+			return nil
+		}
+		warnTimestampFailure(err, "ssm", "DescribeDocument", region, name)
+		return nil
+	}
+	if result.Document == nil {
+		return nil
+	}
+	return result.Document.CreatedDate
 }

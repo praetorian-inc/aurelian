@@ -24,6 +24,7 @@ type FindSecretsConfig struct {
 	MaxEvents     int    `param:"max-events" desc:"Max log events per log group" default:"10000"`
 	MaxStreams    int    `param:"max-streams" desc:"Max streams to sample per log group" default:"10"`
 	ModifiedSince string `param:"modified-since" desc:"RFC3339 timestamp of the last successful scan; unchanged resources with reliable AWS modification metadata are skipped"`
+	LogsSince     string `param:"logs-since" desc:"RFC3339 timestamp of the last successful scan; log events older than this (minus a lag buffer) are not read"`
 }
 
 // AWSFindSecretsModule scans AWS resources for hardcoded secrets using Titus.
@@ -84,6 +85,15 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		}
 	}
 
+	var logsSince time.Time
+	if c.LogsSince != "" {
+		var err error
+		logsSince, err = time.Parse(time.RFC3339Nano, c.LogsSince)
+		if err != nil {
+			return fmt.Errorf("invalid logs-since timestamp %q: %w", c.LogsSince, err)
+		}
+	}
+
 	cfg.Info("scanning %d resource types for secrets", len(m.SupportedResourceTypes()))
 
 	inputs, err := collectInputs(m.AWSCommonRecon, m.SupportedResourceTypes())
@@ -109,6 +119,7 @@ func (m *AWSFindSecretsModule) Run(cfg plugin.Config, out *pipeline.P[model.Aure
 		MaxEvents:     c.MaxEvents,
 		MaxStreams:    c.MaxStreams,
 		ModifiedSince: modifiedSince,
+		LogsSince:     logsSince,
 		FailOnError:   incremental,
 	})
 
