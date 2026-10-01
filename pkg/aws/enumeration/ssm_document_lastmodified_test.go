@@ -93,3 +93,27 @@ func TestSSMDocument_EnumerateByARNStampsDescribedCreatedDate(t *testing.T) {
 	require.NotNil(t, resources[0].LastModified)
 	assert.Equal(t, defaultCreated, resources[0].LastModified.UTC())
 }
+
+func TestSSMDocument_EnumerateByARNDescribesDefaultVersion(t *testing.T) {
+	defaultCreated := time.Date(2026, 9, 9, 9, 9, 9, 0, time.UTC)
+	fake, skipReport, enum := newSSMDocumentFixture(t)
+	fake.reply("DescribeDocument", ssmDescribeDocument(defaultCreated))
+
+	resources, err := collectResources(t, func(out *pipeline.P[output.AWSResource]) error {
+		return enum.EnumerateByARN("arn:aws:ssm:us-east-1:123456789012:document/deploy", out)
+	})
+
+	require.NoError(t, err)
+	assert.Zero(t, skipReport.Len())
+
+	requests := fake.requests("DescribeDocument")
+	require.Len(t, requests, 1)
+	assert.Contains(t, requests[0], `"DocumentVersion":"$DEFAULT"`,
+		"ARN path must describe the default version, the one the extractor scans")
+	assert.Contains(t, requests[0], `"Name":"deploy"`)
+
+	require.Len(t, resources, 1)
+	require.NotNil(t, resources[0].LastModified)
+	assert.Equal(t, defaultCreated, resources[0].LastModified.UTC(),
+		"LastModified is the described document's CreatedDate")
+}
