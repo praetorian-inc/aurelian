@@ -70,17 +70,8 @@ func TestFindSecretsParameters(t *testing.T) {
 	assert.True(t, paramNames["db-path"], "should have db-path param")
 	assert.True(t, paramNames["max-events"], "should have max-events param")
 	assert.True(t, paramNames["max-streams"], "should have max-streams param")
-	assert.True(t, paramNames["modified-since"], "should have modified-since param")
-}
-
-func TestFindSecretsRejectsInvalidModifiedSince(t *testing.T) {
-	m := &AWSFindSecretsModule{FindSecretsConfig: FindSecretsConfig{ModifiedSince: "not-a-timestamp"}}
-	out := pipeline.New[model.AurelianModel]()
-
-	err := m.Run(plugin.Config{}, out)
-
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid modified-since timestamp")
+	assert.True(t, paramNames["logs-since"], "should have logs-since param")
+	assert.False(t, paramNames["modified-since"], "modified-since param was removed (ENG-8770)")
 }
 
 func TestExtractRuleShortName(t *testing.T) {
