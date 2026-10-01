@@ -77,28 +77,37 @@ func runExtractLogs(t *testing.T, cfg Config) ([]output.ScanInput, []map[string]
 	return items, fake.filters
 }
 
-func TestExtractLogs_LogsSinceSetsStartTimeWithLagBuffer(t *testing.T) {
-	since := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
-
-	items, filters := runExtractLogs(t, Config{MaxEvents: 100, MaxStreams: 10, LogsSince: since})
-
-	require.Len(t, filters, 2, "one FilterLogEvents request per stream")
-	want := since.Add(-6 * time.Hour).UnixMilli()
-	for _, f := range filters {
-		require.Contains(t, f, "startTime")
-		assert.EqualValues(t, want, f["startTime"], "startTime is logs-since minus the 6h lag buffer, in milliseconds")
+// FilterLogEvents rejects a negative startTime, so a logs-since whose
+// lag-buffered cutoff lands at or before the epoch must send none and read
+// each stream from its start; a later cutoff is sent as (logs-since - 6h) ms.
+func TestExtractLogs_StartTimeOnlyWhenCutoffIsAfterEpoch(t *testing.T) {
+	cases := []struct {
+		name  string
+		since time.Time
+		want  *int64 // nil: the request must carry no startTime
+	}{
+		{name: "unset logs-since (Go zero time)", since: time.Time{}},
+		{name: "logs-since exactly the epoch", since: time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)},
+		{name: "buffer pushes cutoff before the epoch", since: time.Date(1970, 1, 1, 5, 59, 59, 0, time.UTC)},
+		{name: "cutoff one second after the epoch", since: time.Date(1970, 1, 1, 6, 0, 1, 0, time.UTC), want: aws.Int64(1000)},
+		{name: "recent logs-since", since: time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC), want: aws.Int64(time.Date(2026, 9, 30, 6, 0, 0, 0, time.UTC).UnixMilli())},
 	}
-	assert.Len(t, items, 2, "events are still extracted")
-}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			items, filters := runExtractLogs(t, Config{MaxEvents: 100, MaxStreams: 10, LogsSince: tc.since})
 
-func TestExtractLogs_UnsetLogsSinceSendsNoStartTime(t *testing.T) {
-	items, filters := runExtractLogs(t, Config{MaxEvents: 100, MaxStreams: 10})
-
-	require.Len(t, filters, 2)
-	for _, f := range filters {
-		assert.NotContains(t, f, "startTime", "without logs-since the request reads from the start of each stream, as before")
+			require.Len(t, filters, 2, "one FilterLogEvents request per stream")
+			for _, f := range filters {
+				if tc.want == nil {
+					assert.NotContains(t, f, "startTime", "a cutoff at or before the epoch must not be sent")
+					continue
+				}
+				require.Contains(t, f, "startTime")
+				assert.EqualValues(t, *tc.want, f["startTime"], "startTime is logs-since minus the 6h lag buffer, in milliseconds")
+			}
+			assert.Len(t, items, 2, "events are still extracted")
+		})
 	}
-	assert.Len(t, items, 2)
 }
 
 func TestExtract_LogsSinceNeverSkipsAResource(t *testing.T) {
